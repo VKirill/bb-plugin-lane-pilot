@@ -128,7 +128,7 @@ export async function bbEnvironmentsByHost(bb: ServerCore["bb"]): Promise<{ byHo
 export async function runDailyWorktreePass(ctx: Pick<ServerCore, "bb" | "db" | "log" | "isDisposed" | "host">, now = Date.now(), options: { dryRun?: boolean; teardownWaitMs?: number } = {}): Promise<CleanupPassOutcome> {
   const { bb, db } = ctx;
   const settings = loadProjectSettings(db, GLOBAL_SETTINGS_PROJECT_ID);
-  if (configuredSetting(settings, "cleanup.worktrees") === "off") return { status: "off", removed: 0, freedBytes: 0, kept: 0, report: "cleanup.worktrees=off" };
+  if (configuredSetting(settings, "cleanup.worktrees") === "off") return { status: "off", removed: 0, freedBytes: 0, kept: 0, hourlyRemoved: [], hourlyTmpRemoved: [], report: "cleanup.worktrees=off" };
   const dryRun = options.dryRun === true;
   await ensureLegacyWorktreesAdopted(ctx);
   if (!dryRun) await bestEffort(ctx.log, "worktree registry reconcile", reconcileWorktreeRegistry(ctx, now), 0);
@@ -142,6 +142,8 @@ export async function runDailyWorktreePass(ctx: Pick<ServerCore, "bb" | "db" | "
   const outside: Array<{ host: string; path: string; reason: string; detail: string; bytes: number }> = [];
   const decisions: HubDecision[] = [];
   const searches: NonNullable<CleanupPassOutcome["search"]> = [];
+  const hourlyRemoved: Array<{ host: string; path: string }> = [];
+  const hourlyTmpRemoved: Array<{ host: string; path: string }> = [];
   const branchesKept: string[] = [];
   const errors: string[] = environments.error ? [environments.error] : [];
   const notes: string[] = [];
@@ -149,9 +151,10 @@ export async function runDailyWorktreePass(ctx: Pick<ServerCore, "bb" | "db" | "
     if (ctx.isDisposed()) break;
     const name = machine.name ?? machine.id;
     const legacyDeep = { folders: [...inputs.folders.get(machine.id) ?? []], bbEnvPaths: [...inputs.bbEnvPaths.get(machine.id) ?? []], abandonedPaths: [...inputs.abandoned.get(machine.id) ?? []],
-      registryPaths: inputs.registry.get(machine.id) ?? [], maxAgeMs, youngMs: WORKTREE_YOUNG_MS, now: Math.round(now), ...(dryRun ? { dryRun: true } : {}) };
+      registryPaths: inputs.registry.get(machine.id) ?? [], maxAgeMs, youngMs: WORKTREE_YOUNG_MS, now: Math.round(now), ...(dryRun ? { dryRun: true, hourlyGraceMs: worktreeGraceMs(db) } : {}) };
+    const { hourlyGraceMs: _hourlyGraceMs, ...legacyDeepForOldHost } = legacyDeep;
     const call = (deep: Record<string, unknown>) => ctx.host.call("worktreeJanitor", {
-      // A dry run gives the hourly part an endless grace too: a host that ignored `deep.dryRun` would still remove no worktree.
+      // Keep the top-level grace endless for old strict hosts; current hosts get the normal hourly grace through deep.hourlyGraceMs.
       requestedHostId: machine.id, protectedPaths, graceMs: dryRun ? Number.MAX_SAFE_INTEGER : worktreeGraceMs(db), deep,
     } as never, { hostId: machine.id, timeoutMs: 30 * 60_000 }) as Promise<HostAnswer>;
     const textOf = (cause: unknown) => cause instanceof Error ? cause.message : String(cause);
@@ -165,7 +168,7 @@ export async function runDailyWorktreePass(ctx: Pick<ServerCore, "bb" | "db" | "
       // it is asked once more for the daily pass it knows, without them and without the BB environment paths (no BB environment is removed
       // except by BB). A machine before 0.1.562 refuses `deep` itself: nothing is removed there, its hourly sweep keeps running.
       try {
-        out = await call({ ...legacyDeep, bbEnvPaths: [] });
+        out = await call({ ...legacyDeepForOldHost, bbEnvPaths: [] });
         notes.push(`${name}: ran the old daily pass (no home search, no BB-environment decisions): its Lane Pilot build is older (update the plugin there)`);
       } catch (again) {
         const second = textOf(again);
@@ -176,12 +179,18 @@ export async function runDailyWorktreePass(ctx: Pick<ServerCore, "bb" | "db" | "
     const deep = out.deep;
     if (!deep) {
       // A host that took the call but ignored `deep` ran its hourly sweep only: its removals are real, their registry rows close.
+      for (const path of out.removed ?? []) hourlyRemoved.push({ host: name, path });
+      for (const path of out.tmpRemoved ?? []) hourlyTmpRemoved.push({ host: name, path });
       if (!dryRun) for (const path of out.removed ?? []) closed += releaseWorktreesUnder(db, machine.id, path, now);
       removed += out.removed?.length ?? 0;
       errors.push(`${machine.name ?? machine.id}: ${NO_DAILY_PASS}; only its hourly sweep ran`);
       continue;
     }
     const host = machine.name ?? machine.id;
+    const hostHourlyRemoved = (out.removed ?? []).map((path) => ({ host, path }));
+    const hostHourlyTmpRemoved = (out.tmpRemoved ?? []).map((path) => ({ host, path }));
+    hourlyRemoved.push(...hostHourlyRemoved);
+    hourlyTmpRemoved.push(...hostHourlyTmpRemoved);
     if (deep.search) searches.push({ host, ...deep.search });
     // A BB environment the machine found merged, clean and old: BB removes it (its provider runs `git worktree remove`), never this pass by
     // hand. BB refuses while a thread that is not archived is in it; then it is kept with BB's answer.
@@ -225,28 +234,36 @@ export async function runDailyWorktreePass(ctx: Pick<ServerCore, "bb" | "db" | "
       }
     }
     deep.freedBytes += envFreed;
+    // In a dry pass the hourly sweep reports its candidates without removing them, so the deep
+    // search can see an old Lane copy again. Count/report that path once; actual deep runs cannot
+    // see a copy already removed by hourly, but the same guard keeps host receipts honest.
+    const hourlyPaths = new Set(out.removed ?? []);
+    const deepRemoved = deep.removed.filter((row) => !hourlyPaths.has(row.path));
+    const duplicateFreed = deep.removed.reduce((sum, row) => sum + (hourlyPaths.has(row.path) ? row.bytes : 0), 0);
+    const deepFreedBytes = Math.max(0, deep.freedBytes - duplicateFreed);
     if (!dryRun) {
-      for (const row of deep.removed) closed += releaseWorktreesUnder(db, machine.id, row.path, now);
+      for (const row of deepRemoved) closed += releaseWorktreesUnder(db, machine.id, row.path, now);
       for (const path of out.removed ?? []) closed += releaseWorktreesUnder(db, machine.id, path, now);
       for (const path of deep.registryGone) { const before = closed; closed += releaseWorktreesUnder(db, machine.id, path, now); if (closed === before) releaseWorktree(db, machine.id, path, now); }
     }
     const reported = deep.kept.filter((row) => (REPORTED_KEEP_REASONS as readonly string[]).includes(row.reason));
     const keptUnmerged = deep.kept.filter((row) => row.reason === "unmerged").length;
     const byClass: Record<string, { removed: number; freedBytes: number; kept: Record<string, number> }> = {};
-    for (const row of deep.removed) { const entry = byClass[row.cls] ??= { removed: 0, freedBytes: 0, kept: {} }; entry.removed += 1; entry.freedBytes += row.bytes; }
+    for (const row of deepRemoved) { const entry = byClass[row.cls] ??= { removed: 0, freedBytes: 0, kept: {} }; entry.removed += 1; entry.freedBytes += row.bytes; }
     for (const row of deep.kept) { const entry = byClass[row.cls] ??= { removed: 0, freedBytes: 0, kept: {} }; entry.kept[row.reason] = (entry.kept[row.reason] ?? 0) + 1; }
     for (const row of deep.decisions ?? []) if (row.decision === "skip") { const entry = byClass.outside ??= { removed: 0, freedBytes: 0, kept: {} }; entry.kept[row.reason] = (entry.kept[row.reason] ?? 0) + 1; }
-    const hostRemoved = deep.removed.length + (out.removed?.length ?? 0);
-    const hostFreed = deep.freedBytes + (out.freedBytes ?? 0) + (out.tmpFreedBytes ?? 0);
+    const hostRemoved = deepRemoved.length + (out.removed?.length ?? 0);
+    const hostFreed = deepFreedBytes + (out.freedBytes ?? 0) + (out.tmpFreedBytes ?? 0);
     removed += hostRemoved; freedBytes += hostFreed; kept += reported.length + (out.kept?.length ?? 0); keptUnmergedAll += keptUnmerged; pruned += deep.pruned;
     for (const row of reported) attention.push({ host: machine.name ?? machine.id, path: row.path, reason: row.reason, detail: row.detail, bytes: row.bytes });
     for (const row of deep.branchesKept) branchesKept.push(`${machine.name ?? machine.id}: ${row.branch} (${row.repo}) — ${row.reason}`);
     for (const error of [...deep.errors, ...(out.errors ?? [])]) errors.push(`${machine.name ?? machine.id}: ${error}`);
     if (!dryRun) recordJanitorSweep(db, {
-      at: now, host: machine.id, pass: "daily", removed: hostRemoved, freedBytes: Math.round(deep.freedBytes + (out.freedBytes ?? 0)), tmpRemoved: out.tmpRemoved?.length ?? 0, tmpFreedBytes: Math.round(out.tmpFreedBytes ?? 0),
+      at: now, host: machine.id, pass: "daily", removed: hostRemoved, freedBytes: Math.round(deepFreedBytes + (out.freedBytes ?? 0)), tmpRemoved: out.tmpRemoved?.length ?? 0, tmpFreedBytes: Math.round(out.tmpFreedBytes ?? 0),
       keptJson: JSON.stringify(reported.slice(0, 50).map((row) => `${row.path} (${row.reason}: ${row.detail})`)), keptUnmerged,
       reportJson: JSON.stringify({ classes: byClass, pruned: deep.pruned, registryClosed: deep.registryGone.length, repos: deep.repos, branchesKept: deep.branchesKept.slice(0, 50),
-        removed: deep.removed.slice(0, 100).map((row) => ({ path: row.path, cls: row.cls, bytes: row.bytes, branch: row.branch, branchDeleted: row.branchDeleted, why: row.why, how: row.how })), errors: deep.errors.slice(0, 20),
+        removed: deepRemoved.slice(0, 100).map((row) => ({ path: row.path, cls: row.cls, bytes: row.bytes, branch: row.branch, branchDeleted: row.branchDeleted, why: row.why, how: row.how })), errors: deep.errors.slice(0, 20),
+        hourlyRemoved: hostHourlyRemoved.slice(0, 2000), hourlyTmpRemoved: hostHourlyTmpRemoved.slice(0, 2000),
         search: deep.search ?? null, oldPass: notes.some((line) => line.startsWith(`${name}: `)),
         decisions: decisions.slice(firstDecision, firstDecision + 1000).map((row) => ({ path: row.path, cls: row.cls, decision: row.decision, reason: row.reason, detail: row.detail, ...(row.outcome ? { outcome: row.outcome } : {}) })) }),
     });
@@ -260,12 +277,17 @@ export async function runDailyWorktreePass(ctx: Pick<ServerCore, "bb" | "db" | "
   }
   if (errors.length) ctx.log(`Lane Pilot daily worktree pass: ${errors.slice(0, 5).join("; ")}`);
   // The removals are named first (a dry run must say what it would remove, not only what it keeps); the full list is in `decisions`.
-  const removals = decisions.filter((row) => row.decision === "remove");
+  const hourlyRemovalKeys = new Set(hourlyRemoved.map((row) => `${row.host}\0${row.path}`));
+  const removals = decisions.filter((row) => row.decision === "remove" && !hourlyRemovalKeys.has(`${row.host}\0${row.path}`));
   // The status counts the machines that failed; an unread environment list is reported, but it fails no pass on its own.
   const machineErrors = errors.length - (environments.error ? 1 : 0);
   return { status: hosts.length && machineErrors >= hosts.length && !removed ? "error" : "ok", removed, freedBytes, kept, decisions, search: searches,
+    hourlyRemoved, hourlyTmpRemoved,
     report: [report,
       ...notes.map((line) => `- ${line}`),
+      ...hourlyRemoved.slice(0, 30).map((row) => `- ${dryRun ? "удалилось бы" : "удалено"}: ${row.host}: ${row.path} — hourly sweep`),
+      ...(hourlyRemoved.length > 30 ? [`- … и ещё ${hourlyRemoved.length - 30} hourly removals (полный список: ${dryRun ? "--json" : "запись daily report_json"})`] : []),
+      ...hourlyTmpRemoved.slice(0, 10).map((row) => `- ${dryRun ? "удалилось бы" : "удалено"}: ${row.host}: ${row.path} — hourly tmp sweep`),
       ...removals.slice(0, 30).map((row) => `- ${dryRun ? "удалилось бы" : row.outcome === "asked" ? "попросили BB удалить" : "удалено"}: ${row.host}: ${row.path} — ${row.detail}`),
       ...(removals.length > 30 ? [`- … и ещё ${removals.length - 30} (полный список: --json, decisions)`] : []),
       ...attention.slice(0, 20).map((row) => `- ${row.host}: ${row.path} — ${reasonWord[row.reason] ?? row.reason}: ${row.detail}`),
@@ -341,7 +363,8 @@ function postCleanupItem(db: ServerCore["db"], attention: Array<{ host: string; 
 
 /**
  * One cleanup pass, as the graph's step and `bb lane-pilot worktree-cleanup` run it. A dry run is always the daily pass's: it decides for every
- * class, Lane Pilot's root included, and removes nothing (the hourly sweep has no dry mode, so `hourly` + dry run must not reach it).
+ * class, Lane Pilot's root included, and removes nothing; the hourly candidates are read with the current host's normal grace while
+ * the top-level grace remains infinite for old strict hosts.
  * A pass that throws ends `error` with the reason.
  */
 export async function runWorktreeCleanupPass(ctx: Pick<ServerCore, "bb" | "db" | "log" | "isDisposed" | "host">, sweeps: AttemptSweeps, input: { pass: "hourly" | "daily"; dryRun?: boolean }, now = Date.now()): Promise<CleanupPassOutcome & { pass: "hourly" | "daily"; dryRun: boolean }> {
@@ -351,7 +374,7 @@ export async function runWorktreeCleanupPass(ctx: Pick<ServerCore, "bb" | "db" |
     const out = pass === "daily" ? await runDailyWorktreePass(ctx, now, { dryRun }) : await runHourlyWorktreePass(ctx, sweeps, now);
     return { ...out, pass, dryRun };
   } catch (cause) {
-    return { status: "error", removed: 0, freedBytes: 0, kept: 0, report: `the ${pass} pass stopped: ${cause instanceof Error ? cause.message : String(cause)}`.slice(0, 2000), pass, dryRun };
+    return { status: "error", removed: 0, freedBytes: 0, kept: 0, hourlyRemoved: [], hourlyTmpRemoved: [], report: `the ${pass} pass stopped: ${cause instanceof Error ? cause.message : String(cause)}`.slice(0, 2000), pass, dryRun };
   }
 }
 
@@ -364,7 +387,7 @@ export function registerWorktreeCleanupActions(engine: WorkflowEngine, ctx: Pick
     reentrant: true,
     run: async (c) => {
       const out = await runWorktreeCleanupPass(ctx, sweeps, { pass: String(c.resolve("$inputs.pass") ?? "hourly") === "daily" ? "daily" : "hourly", dryRun: c.resolve("$inputs.dry_run") === true });
-      return { output: { status: out.status, removed: out.removed, freed_bytes: Math.round(out.freedBytes), kept: out.kept, report: out.report.slice(0, 16_000) } };
+      return { output: { status: out.status, removed: out.removed, freed_bytes: Math.round(out.freedBytes), kept: out.kept, hourly_removed: out.hourlyRemoved ?? [], hourly_tmp_removed: out.hourlyTmpRemoved ?? [], report: out.report.slice(0, 16_000) } };
     },
   });
 }
@@ -380,7 +403,7 @@ export async function runWorktreeCleanupCli(ctx: Pick<ServerCore, "bb" | "db" | 
   if (unknown.length) return { exitCode: 2, stderr: `unknown argument ${unknown[0]}\nusage: ${WORKTREE_CLEANUP_USAGE}` };
   const out = await runWorktreeCleanupPass(ctx, sweeps, { pass: args.includes("--daily") ? "daily" : "hourly", dryRun: args.includes("--dry-run") });
   const stdout = args.includes("--json")
-    ? JSON.stringify({ pass: out.pass, dry_run: out.dryRun, status: out.status, removed: out.removed, freed_bytes: Math.round(out.freedBytes), kept: out.kept, report: out.report,
+    ? JSON.stringify({ pass: out.pass, dry_run: out.dryRun, status: out.status, removed: out.removed, freed_bytes: Math.round(out.freedBytes), kept: out.kept, hourly_removed: out.hourlyRemoved ?? [], hourly_tmp_removed: out.hourlyTmpRemoved ?? [], report: out.report,
       ...(out.decisions ? { decisions: out.decisions } : {}), ...(out.search ? { search: out.search } : {}) }, null, 2)
     : `${out.pass}${out.dryRun ? " (dry run)" : ""}: ${out.status}\n${out.report}`;
   return { exitCode: out.status === "error" ? 1 : 0, stdout };

@@ -53,6 +53,8 @@ export const gitHostMethods = {
         search: z.object({ roots: z.array(z.string().startsWith("/")).max(20).optional(), maxDepth: z.number().int().min(0).max(8),
           maxRepos: z.number().int().min(1).max(5000).optional(), budgetMs: z.number().int().min(1000).max(900_000).optional() }).strict().optional(),
         maxAgeMs: z.number().int().min(0), youngMs: z.number().int().min(0), dryRun: z.boolean().optional(),
+        // In a dry daily pass the top-level grace stays infinite for old strict hosts; current hosts use this normal hourly grace.
+        hourlyGraceMs: z.number().int().min(0).optional(),
         // The hub's clock for the ages (a pass replayed for a past or future moment; the machines' clocks agree within minutes).
         now: z.number().int().positive().optional() }).strict().optional() }).strict(),
     output: z.object({ hostId: z.string(), removed: z.array(z.string()), freedBytes: z.number(),

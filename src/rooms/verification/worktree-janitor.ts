@@ -56,7 +56,7 @@ async function uniqueCommits(top: string): Promise<boolean> {
 
 /** Tracked-file edits only: a dead worktree's node_modules or dist writes are untracked noise, not work. */
 async function hasEdits(top: string): Promise<boolean | null> {
-  const status = await git(top, ["status", "--porcelain", "--untracked-files=no"]);
+  const status = await git(top, ["--no-optional-locks", "status", "--porcelain", "--untracked-files=no"]);
   return status.ok ? status.stdout.trim() !== "" : null;
 }
 
@@ -90,6 +90,8 @@ export async function sweepLaneWorktrees(input: {
   tmpDir?: string;
   tmpPrefixes?: readonly string[];
   tmpMaxAgeMs?: number;
+  /** Read and report candidates only; no folder, worktree admin data or branch is changed. */
+  dryRun?: boolean;
 }): Promise<JanitorReceipt> {
   const now = input.now ?? Date.now();
   const receipt: JanitorReceipt = { removed: [], freedBytes: 0, kept: [], tmpRemoved: [], tmpFreedBytes: 0, errors: [] };
@@ -120,12 +122,14 @@ export async function sweepLaneWorktrees(input: {
         };
         // A folder cut off from git (its .git names an admin dir git gave away, or has none) is retired, never asked git.
         const gitMarker = await lstatOrNull(join(top, ".git"));
-        if (!gitMarker) { await bestEffort(console.warn, `janitor remove ${top}`, rm(top, { recursive: true, force: true }), undefined); await bestEffort(console.warn, `janitor rmdir ${groupDir}`, rmdir(groupDir), undefined); await retire(); continue; }
+        if (!gitMarker) { if (!input.dryRun) { await bestEffort(console.warn, `janitor remove ${top}`, rm(top, { recursive: true, force: true }), undefined); await bestEffort(console.warn, `janitor rmdir ${groupDir}`, rmdir(groupDir), undefined); } await retire(); continue; }
         const orphan = await orphanedWorktree(top);
         if (orphan) {
-          await bestEffort(console.warn, `janitor orphan rename ${orphan.top}`, rename(join(orphan.top, ".git"), join(orphan.top, ".git.orphaned")), undefined);
-          await bestEffort(console.warn, `janitor orphan remove ${orphan.top}`, rm(orphan.top, { recursive: true, force: true }), undefined);
-          await bestEffort(console.warn, `janitor rmdir ${groupDir}`, rmdir(groupDir), undefined);
+          if (!input.dryRun) {
+            await bestEffort(console.warn, `janitor orphan rename ${orphan.top}`, rename(join(orphan.top, ".git"), join(orphan.top, ".git.orphaned")), undefined);
+            await bestEffort(console.warn, `janitor orphan remove ${orphan.top}`, rm(orphan.top, { recursive: true, force: true }), undefined);
+            await bestEffort(console.warn, `janitor rmdir ${groupDir}`, rmdir(groupDir), undefined);
+          }
           await retire();
           continue;
         }
@@ -134,7 +138,7 @@ export async function sweepLaneWorktrees(input: {
         if (dirty === null) { receipt.errors.push(`${top}: git status failed`); continue; }
         if (dirty) { await retire("uncommitted edits"); continue; }
         if (await uniqueCommits(top)) { await retire("commits no other branch or remote has"); continue; }
-        await removeCopy(top);
+        if (!input.dryRun) await removeCopy(top);
         await retire();
       } catch (cause) {
         // One unreadable folder (a chmod-000 checkout, a dangling mount) is a named skip, never the end of the sweep.
@@ -143,7 +147,7 @@ export async function sweepLaneWorktrees(input: {
         console.warn(`lane-pilot: worktree sweep skipped ${top}: ${message}`);
       }
     }
-    await bestEffort(console.warn, `janitor rmdir ${groupDir}`, rmdir(groupDir), undefined);
+    if (!input.dryRun) await bestEffort(console.warn, `janitor rmdir ${groupDir}`, rmdir(groupDir), undefined);
   }
 
   // Lane Pilot's own check/drill tmp folders older than a day go the same way, by prefix only.
@@ -157,7 +161,7 @@ export async function sweepLaneWorktrees(input: {
       const info = await lstatOrNull(path);
       if (!info || now - info.mtimeMs < tmpMaxAge) continue;
       const bytes = await dirBytes(path);
-      await bestEffort(console.warn, `janitor tmp remove ${path}`, rm(path, { recursive: true, force: true }), undefined);
+      if (!input.dryRun) await bestEffort(console.warn, `janitor tmp remove ${path}`, rm(path, { recursive: true, force: true }), undefined);
       receipt.tmpRemoved.push(path);
       receipt.tmpFreedBytes += bytes;
     } catch (cause) {

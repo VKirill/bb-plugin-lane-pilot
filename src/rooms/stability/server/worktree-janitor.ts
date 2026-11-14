@@ -274,6 +274,9 @@ export type HubDecision = SweepDecision & {
 /** What one pass of the graph lp.worktree-cleanup reports: its status, the counts and one line for the board's run output. */
 export type CleanupPassOutcome = {
   status: "ok" | "off" | "error"; removed: number; freedBytes: number; kept: number; report: string;
+  /** Full machine-readable hourly candidates from the daily pass, including dry runs (which do not persist a janitor row). */
+  hourlyRemoved: Array<{ host: string; path: string }>;
+  hourlyTmpRemoved: Array<{ host: string; path: string }>;
   /** The daily pass: every linked worktree looked at on every machine, with its decision and reason. */
   decisions?: HubDecision[];
   /** The daily pass: the bounded home search on each machine (roots, depth, repositories, folders read, time). */
@@ -284,11 +287,11 @@ export const gb = (bytes: number) => `${(bytes / 1024 ** 3).toFixed(1)} ГБ`;
 
 /** The hourly pass: the registry's dead rows first, then Lane Pilot's root on every connected machine. */
 export async function runHourlyWorktreePass(ctx: Pick<ServerCore, "bb" | "db" | "log" | "isDisposed" | "host">, sweeps: AttemptSweeps, now = Date.now(), signal?: AbortSignal): Promise<CleanupPassOutcome> {
-  if (configuredSetting(loadProjectSettings(ctx.db, GLOBAL_SETTINGS_PROJECT_ID), "cleanup.worktrees") === "off") return { status: "off", removed: 0, freedBytes: 0, kept: 0, report: "cleanup.worktrees=off" };
+  if (configuredSetting(loadProjectSettings(ctx.db, GLOBAL_SETTINGS_PROJECT_ID), "cleanup.worktrees") === "off") return { status: "off", removed: 0, freedBytes: 0, kept: 0, hourlyRemoved: [], hourlyTmpRemoved: [], report: "cleanup.worktrees=off" };
   const reconciled = await bestEffort(ctx.log, "worktree registry reconcile", reconcileWorktreeRegistry(ctx, now), 0);
   const outcome = await runWorktreeJanitor(ctx, sweeps, now, signal);
   if (outcome.removed || outcome.kept) ctx.log(`Lane Pilot janitor: removed ${outcome.removed} worktree(s), freed ${Math.round(outcome.freedBytes / 1e6)} MB, kept ${outcome.kept}`);
-  return { status: "ok", removed: outcome.removed + reconciled, freedBytes: outcome.freedBytes, kept: outcome.kept,
+  return { status: "ok", removed: outcome.removed + reconciled, freedBytes: outcome.freedBytes, kept: outcome.kept, hourlyRemoved: [], hourlyTmpRemoved: [],
     report: `Удалено ${outcome.removed + reconciled} worktree, освобождено ${gb(outcome.freedBytes)}; оставлено ${outcome.kept}` };
 }
 

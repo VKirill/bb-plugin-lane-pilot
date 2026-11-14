@@ -152,13 +152,13 @@ export const gitCreateWorktree: ExperimentalHostRpcHandlers<typeof hostContract>
 
 /**
  * The hourly sweep of Lane Pilot's root; with `deep`, the daily pass over every class in the project repositories after it
- * (docs/worktrees.md). A dry run reads and decides only, so the hourly part (which removes) is left out of it.
+ * (docs/worktrees.md). A dry run reads and decides only, including the hourly candidates, without removing them.
  */
 export const worktreeJanitor: ExperimentalHostRpcHandlers<typeof hostContract>["worktreeJanitor"] = async (input) => {
   const protectedPaths=new Set(input.protectedPaths);
-  const hourly=input.deep?.dryRun
-    ?{removed:[],freedBytes:0,kept:[],tmpRemoved:[],tmpFreedBytes:0,errors:[]}
-    :await sweepLaneWorktrees({root:laneWorktreeRoot(),protectedPaths,graceMs:input.graceMs??2*3_600_000});
+  const hourlyGraceMs = input.deep?.dryRun ? input.deep.hourlyGraceMs ?? input.graceMs ?? 2 * 3_600_000 : input.graceMs ?? 2 * 3_600_000;
+  const hourly=await sweepLaneWorktrees({root:laneWorktreeRoot(),protectedPaths,graceMs:hourlyGraceMs,
+    ...(input.deep?.dryRun ? { dryRun:true } : {})});
   const search=input.deep?.search;
   const deep=input.deep?await sweepWorktreeClasses({laneRoot:laneWorktreeRoot(),folders:input.deep.folders,bbEnvPaths:input.deep.bbEnvPaths??[],bbEnvs:input.deep.bbEnvs??[],protectedPaths,
     // The bounded search starts at this machine's home unless the hub names the roots (docs/worktrees.md).

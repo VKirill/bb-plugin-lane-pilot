@@ -29,7 +29,7 @@ const OLD_JANITOR_INPUT = z.object({ requestedHostId: z.string().min(1), protect
 
 /** A machine on 0.1.562–0.1.564: the daily pass's `deep` without the keys of 0.1.565 (`bbEnvs`, `search`), still strict. */
 const CURRENT_DEEP = (hostContract.worktreeJanitor.input.shape.deep as unknown as { unwrap(): z.ZodObject<z.ZodRawShape> }).unwrap();
-const JANITOR_INPUT_0564 = hostContract.worktreeJanitor.input.extend({ deep: CURRENT_DEEP.omit({ bbEnvs: true, search: true } as never).strict().optional() }).strict();
+const JANITOR_INPUT_0564 = hostContract.worktreeJanitor.input.extend({ deep: CURRENT_DEEP.omit({ bbEnvs: true, search: true, hourlyGraceMs: true } as never).strict().optional() }).strict();
 
 const emptyDeep =(over: Record<string, unknown> = {}) => ({ removed: [], freedBytes: 0, kept: [], branchesKept: [], pruned: 0, registryGone: [], repos: 1, errors: [], dryRun: false, ...over });
 
@@ -234,10 +234,21 @@ describe("the other live edges of the batch", () => {
     const janitor = w.calls.filter((item) => item.method === "worktreeJanitor");
     expect(janitor[0]!.input.deep).toMatchObject({ dryRun: true });
     expect(janitor[0]!.input.graceMs).toBe(Number.MAX_SAFE_INTEGER);
+    expect(janitor[0]!.input.deep).toMatchObject({ hourlyGraceMs: 2 * 3_600_000 });
     expect(w.db.prepare("SELECT COUNT(*) AS n FROM lane_pilot_janitor").get()).toEqual({ n: 0 });
     expect(w.ownerItems()).toEqual([]);
     expect((await runWorktreeCleanupCli(w.ctx, w.sweeps, ["--bogus"])).exitCode).toBe(2);
     const hourly = await runWorktreeCleanupCli(w.ctx, w.sweeps, ["--json"]);
     expect(JSON.parse(hourly.stdout!)).toMatchObject({ pass: "hourly", dry_run: false, status: "ok" });
+  });
+
+  it("keeps the dry hourly sweep protected on a strict 0.1.564 host", async () => {
+    const w = hub({ host0564: true });
+    const dry = await runWorktreeCleanupCli(w.ctx, w.sweeps, ["--dry-run"]);
+    expect(dry.exitCode).toBe(0);
+    const janitor = w.calls.filter((item) => item.method === "worktreeJanitor");
+    expect(janitor.map((item) => item.input.graceMs)).toEqual([Number.MAX_SAFE_INTEGER, Number.MAX_SAFE_INTEGER]);
+    expect((janitor[0]!.input.deep as Record<string, unknown>)).toHaveProperty("hourlyGraceMs");
+    expect((janitor[1]!.input.deep as Record<string, unknown>)).not.toHaveProperty("hourlyGraceMs");
   });
 });

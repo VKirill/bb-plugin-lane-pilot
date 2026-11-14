@@ -3,7 +3,7 @@
 // managed classes (listed, never removed, even merged and detached), and BB environments (BB removes them; a live thread keeps them).
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
-import { mkdtemp, realpath } from "node:fs/promises";
+import { mkdtemp, realpath, utimes } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -209,48 +209,62 @@ describe("the daily pass from the hub", () => {
   }
 
   it("[sma:dt_wt_sweep] asks BB to remove an archived thread's merged environment, names what a dry run would remove, and posts the outside list once", async () => {
-    const { dir, base, add, commit } = await fixture();
+    const { dir, base, laneRoot, add, commit } = await fixture();
     const bbRoot = join(dir, ".bb-machines", "m", "plugins", "environment-git-worktree", "host-data", "worktrees");
     const env = add(base, join(bbRoot, "thr_a-1", "app"), "bb/thr_a");
     commit(env, "env.txt");
     git(base, "merge", "-q", "--no-ff", "-m", "env", "bb/thr_a");
     const release = add(base, join(dir, "releases", "wt-1"), null);
+    const hourly = add(base, join(laneRoot, "app", "lpattempt_hourly"), "lane/hourly");
+    git(base, "merge", "-q", "--no-ff", "-m", "hourly", "lane/hourly");
     // A repository no project names, reached by the home search only.
     const stack = repo(join(dir, "tools", "lane-stack"));
     const night = add(stack, join(stack, ".worktrees", "night-1"), "night-1");
+    vi.stubEnv("LANE_PILOT_WORKTREE_ROOT", laneRoot);
     const { db, ctx, deleted, threadQueries } = await hub(dir, [{ id: "env_a", path: env }]);
     const now = Date.now() + 8 * DAY;
+    const hourlyAt = Date.now() - 12 * 60 * 60 * 1_000;
+    await utimes(hourly, hourlyAt / 1_000, hourlyAt / 1_000);
+    await utimes(join(hourly, ".git"), hourlyAt / 1_000, hourlyAt / 1_000);
+    await utimes(join(hourly, "a.txt"), hourlyAt / 1_000, hourlyAt / 1_000);
+    await utimes(join(hourly, "env.txt"), hourlyAt / 1_000, hourlyAt / 1_000);
 
     const dry = await runDailyWorktreePass(ctx, now, { dryRun: true });
     expect(deleted).toEqual([]);
     expect(threadQueries[0]).toMatchObject({ archived: false, includeHidden: true });
-    expect(dry.decisions?.filter((row) => row.decision === "remove").map((row) => [row.host, row.path, row.via]).sort()).toEqual([["Machine", env, "bb"], ["Machine", night, "git"]].sort());
+    expect(dry.decisions?.filter((row) => row.decision === "remove").map((row) => [row.host, row.path, row.via]).sort()).toEqual([["Machine", env, "bb"], ["Machine", hourly, "git"], ["Machine", night, "git"]].sort());
     expect(dry.decisions?.find((row) => row.path === release)).toMatchObject({ decision: "skip", reason: "outside", merged: "ancestor" });
     expect(dry.report).toContain(`удалилось бы: Machine: ${night}`);
     expect(dry.report).toContain(`удалилось бы: Machine: ${env}`);
+    expect(dry.report).toContain(`удалилось бы: Machine: ${hourly}`);
     expect(dry.search?.[0]).toMatchObject({ host: "Machine", roots: [dir], maxDepth: 5, truncated: false });
-    expect(existsSync(night) && existsSync(env)).toBe(true);
+    expect(existsSync(night) && existsSync(env) && existsSync(hourly)).toBe(true);
+    expect(git(base, "branch", "--list", "lane/hourly")).toContain("lane/hourly");
     const cli = await runWorktreeCleanupCli(ctx, {} as never, ["--dry-run", "--json"]);
-    const json = JSON.parse(cli.stdout!) as { dry_run: boolean; decisions: Array<{ path: string; decision: string; reason: string }> };
+    const json = JSON.parse(cli.stdout!) as { dry_run: boolean; decisions: Array<{ path: string; decision: string; reason: string }>; hourly_removed: Array<{ host: string; path: string }> };
     expect(json.dry_run).toBe(true);
+    expect(json.hourly_removed).toEqual([{ host: "Machine", path: hourly }]);
     expect(json.decisions.map((row) => row.path)).toEqual(expect.arrayContaining([env, night, release]));
 
     const real = await runDailyWorktreePass(ctx, now, { teardownWaitMs: 300 });
     expect(real.status).toBe("ok");
     expect(deleted).toEqual(["env_a"]);
     expect(existsSync(night)).toBe(false);
+    expect(existsSync(hourly)).toBe(false);
     expect(existsSync(env)).toBe(true); // BB's provider removes it; this pass never touched the folder
     // BB took the delete but has not torn the environment down: «asked», not «removed», and neither counted nor freed.
     expect(real.decisions?.find((row) => row.path === env)).toMatchObject({ decision: "remove", via: "bb", outcome: "asked" });
     expect(real.report).toContain(`попросили BB удалить: Machine: ${env}`);
     expect(real.report).toContain("asked BB to remove the environment (BB: ready, teardown running); the next pass sees whether its folder is gone");
     expect(real.report).not.toContain(`удалено: Machine: ${env}`);
-    expect(real.removed).toBe(1);
+    expect(real.removed).toBe(2);
     const nightBytes = dry.decisions!.find((row) => row.path === night)!.bytes;
-    expect(real.freedBytes).toBe(nightBytes);
+    const hourlyBytes = dry.decisions!.find((row) => row.path === hourly)!.bytes;
+    expect(real.freedBytes).toBe(nightBytes + hourlyBytes);
     const janitorRow = JSON.parse((db.prepare("SELECT report_json FROM lane_pilot_janitor WHERE pass='daily'").get() as { report_json: string }).report_json);
     expect(janitorRow.classes["bb-env"]?.removed ?? 0).toBe(0);
     expect(janitorRow.decisions.find((row: { path: string }) => row.path === env).outcome).toBe("asked");
+    expect(janitorRow.hourlyRemoved).toEqual([{ host: "Machine", path: hourly }]);
     expect(existsSync(release)).toBe(true);
     const outsideItems = () => db.prepare("SELECT key, state FROM lane_pilot_owner_item WHERE key LIKE ?").all(`${OUTSIDE_ITEM_PREFIX}%`) as Array<{ key: string; state: string }>;
     expect(outsideItems().filter((row) => row.state === "open")).toHaveLength(1);
