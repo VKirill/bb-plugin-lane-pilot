@@ -20,6 +20,7 @@ from pathlib import Path
 
 from lp_drill.env import ROOT
 from lp_drill.prove import Proofs
+from lp_drill.scenes.sma_r07_c import NODES_C, prove_c
 
 NODES = ["n599", "n600", "n602", "n603", "n604", "n605", "n606", "n608", "n610", "n611", "n613", "n614", "n617", "n618", "n619", "n620", "n621", "n622",
          "n623", "n624", "n625",
@@ -27,6 +28,7 @@ NODES = ["n599", "n600", "n602", "n603", "n604", "n605", "n606", "n608", "n610",
          "n626", "n627", "n629", "n630", "n631", "n632", "n633", "n634", "n635", "n636", "n637", "n638", "n639", "n640", "n641", "n642", "n643", "n644",
          "n645", "n646", "n647", "n648", "n649", "n650", "n651", "n652", "n653", "n654", "n655", "n656"]
 PROBE = ROOT / "scripts/lp_drill/scenes/sma_r07_probe.ts"
+NODES = [*NODES, *NODES_C]
 
 # Batch b: node -> (the card's smaId, what the re-run tests must have shown). The tests are the contract index's: the new ones of
 # tests/sma/four-proofs-r07-b.test.ts and the older tagged ones in the parity files; one vitest run reads them all.
@@ -197,4 +199,5 @@ def scenario_sma_r07(tmp: Path) -> dict:
     for node, (sma, what) in BATCH_B.items():
         passed, failed = results.get(sma, (0, 0))
         proofs.prove(node, passed >= 1 and failed == 0, f"{what}: tests of {sma} re-run on this commit: {passed} passed, {failed} failed")
+    prove_c(proofs, tmp)
     return proofs.verdict("sma_r07")
