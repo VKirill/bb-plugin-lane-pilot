@@ -3,7 +3,7 @@ import { contractEditions, countAttempts, getAttempt, getRunSettingsScopes, getT
 import type {StageHelperSettings} from "../../platform/server";
 import type { PrototypeConfig, TaskV2 } from "../../contracts";
 import { QUALITY_MODE_SETTING, resolveQualityMode } from "../../contracts/quality-mode";
-import { appendExcludeCommand, persistTaskFolder } from "../../verification";
+import { appendExcludeCommand, filecardsFileText, persistTaskFolder, reflexesFileText } from "../../verification";
 import { hasTaskHome, TASK_HOME_EXCLUDE } from "../../storage";
 import { recordPlanCritique, recordPlannerRevision, recordTaskHomeFile, stagePlanText } from "./task-home";
 import { pmReadBrief } from "../writer-brief";
@@ -16,7 +16,7 @@ import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import type { ServerCore } from "../../contracts/server";
 
 import { runOnHost } from "@lane-pilot/host-calls";
-import { isNotFound, maskCredentials, orMiss, parseJsonOr } from "@lane-pilot/kit";
+import { isNotFound, orMiss, parseJsonOr } from "@lane-pilot/kit";
 import { withUsage } from "../../usage/server";
 import { taskUsage } from "./attempt-usage";
 import { reflexLinesOf, taskFileCards } from "./writer-knowledge";
@@ -301,10 +301,10 @@ export function registerDispatchExecutors(engine: WorkflowEngine, bb?: BbPluginA
     if (hasTaskHome(r.ctx.db, r.taskId)) {
       await exclude?.(TASK_HOME_EXCLUDE).catch((cause: unknown) => bb.log.warn(`Lane Pilot skipped the task-home exclude line: ${cause instanceof Error ? cause.message : String(cause)}`));
       const producer = { node: "task-folder", graph: "lp-task-pipeline", stage_id: "task-folder", wf_step_key: ctx.stepKey };
-      const lines = reflexes.filter((line) => /WHEN\s+.+?\s*(?:→|->)\s*.+/.test(line));
-      if (lines.length) await recordTaskHomeFile(r.ctx, { taskId: r.taskId, kind: "reflexes", name: "REFLEXES.md", content: `# Reflexes\n\n${lines.join("\n")}\n`, producer, readers: ["guard"] });
-      const cards = (filecards ?? []).map((line) => maskCredentials(line.slice(0, 260)).text).filter(Boolean).slice(0, 40);
-      if (cards.length) await recordTaskHomeFile(r.ctx, { taskId: r.taskId, kind: "filecards", name: "FILECARDS.md", content: `# File notes\n\n${cards.join("\n")}\n`, producer, readers: ["guard"] });
+      const lines = reflexesFileText(reflexes);
+      if (lines) await recordTaskHomeFile(r.ctx, { taskId: r.taskId, kind: "reflexes", name: "REFLEXES.md", content: lines, producer, readers: ["guard"] });
+      const cards = filecardsFileText(filecards ?? []);
+      if (cards) await recordTaskHomeFile(r.ctx, { taskId: r.taskId, kind: "filecards", name: "FILECARDS.md", content: cards, producer, readers: ["guard"] });
       return { ok: true };
     }
     // A task dispatched before the switch keeps its old folder to the end (no mixing inside one task); a failed write stops it too.

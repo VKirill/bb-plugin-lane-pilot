@@ -244,9 +244,10 @@ g._run_streams({"session_id": "s-perf"}, "Bash", "ls", "")
     const rrepo = newRepo("r18b-reflex-"); const rules = ["WHEN prisma migrate -> run it on a copy first", "always write tests first"];
     const written: Record<string, string> = {};
     await persistTaskFolder({ taskId: "task-r", reflexes: reflexLinesOf(rules), writeFile: async (rel, content) => { written[rel] = content; } });
-    mkdirSync(join(rrepo, ".agents/plans/items/task-r"), { recursive: true }); writeFileSync(join(rrepo, ".agents/plans/items/task-r/REFLEXES.md"), written[".agents/plans/items/task-r/REFLEXES.md"]!);
-    const rhome = tmp("r18b-reflex-home-"); const migrate = () => hint(guard(bash("npx prisma migrate dev", rrepo), rhome).stdout);
-    out.n1453 = { lines: reflexLinesOf(rules), file: written[".agents/plans/items/task-r/REFLEXES.md"], fires: [migrate(), migrate(), migrate()], other: hint(guard(bash("npx prisma generate", rrepo, { session_id: "g9" }), rhome).stdout) };
+    // The guard reads the note only in the task home the spawn names (LANE_TASK_DIR), never «the newest» folder.
+    const rdir = join(rrepo, ".agents/tasks/task-r"); mkdirSync(rdir, { recursive: true }); writeFileSync(join(rdir, "REFLEXES.md"), written[".agents/plans/items/task-r/REFLEXES.md"]!);
+    const rhome = tmp("r18b-reflex-home-"); const migrate = () => hint(guard(bash("npx prisma migrate dev", rrepo), rhome, { LANE_TASK_DIR: rdir }).stdout);
+    out.n1453 = { lines: reflexLinesOf(rules), file: written[".agents/plans/items/task-r/REFLEXES.md"], fires: [migrate(), migrate(), migrate()], other: hint(guard(bash("npx prisma generate", rrepo, { session_id: "g9" }), rhome, { LANE_TASK_DIR: rdir }).stdout) };
 
     const arepo = newRepo("r18b-airbag-"); writeFileSync(join(arepo, "work.txt"), "unsaved work\n"); const ahome = tmp("r18b-airbag-home-");
     const status = guard(bash("git status", arepo), ahome); const before = refs(arepo);
@@ -262,8 +263,8 @@ g._run_streams({"session_id": "s-perf"}, "Bash", "ls", "")
     const cardFile: Record<string, string> = {};
     await persistTaskFolder({ taskId: "task-c", filecards: ["src/a.ts -> generated file, edit the template", `src/b.ts -> token ${secret} leaked`], writeFile: async (rel, content) => { cardFile[rel] = content; } });
     const card = cardFile[".agents/plans/items/task-c/FILECARDS.md"]!;
-    const crepo = tmp("r18b-context-"); mkdirSync(join(crepo, ".agents/plans/items/task-c"), { recursive: true }); writeFileSync(join(crepo, ".agents/plans/items/task-c/FILECARDS.md"), card);
-    const chome = tmp("r18b-context-home-"); const note = (f: string) => hint(guard(edit(f, crepo, "cx1"), chome).stdout);
+    const crepo = tmp("r18b-context-"); const cdir = join(crepo, ".agents/tasks/task-c"); mkdirSync(cdir, { recursive: true }); writeFileSync(join(cdir, "FILECARDS.md"), card);
+    const chome = tmp("r18b-context-home-"); const note = (f: string) => hint(guard(edit(f, crepo, "cx1"), chome, { LANE_TASK_DIR: cdir }).stdout);
     out.n1459 = { head: card.split("\n").slice(0, 3).join("|"), secretKept: card.includes("abcdefghijklmnopqrstuvwxyz0123456789"), notes: [note("src/a.ts"), note("src/a.ts"), note("src/a.ts"), note("src/c.ts")] };
 
     const whome = tmp("r18b-warn-"); mkdirSync(join(whome, ".lane-pilot"), { recursive: true });
