@@ -177,6 +177,7 @@ export const SETTING_META: Record<string, SettingMeta> = {
   "bench.noise_auto": { label: "field_s569", help: "reason_s569" },
   "cleanup.worktrees": { label: "field_s600", help: "reason_s600" },
   "cleanup.worktree_grace_hours": { label: "field_s601", help: "reason_s601", unit: "fieldUnitHours" },
+  "cleanup.worktree_max_age_days": { label: "field_s624", help: "reason_s624", unit: "fieldUnitDays" },
   "lead.enabled": { label: "field_s602", help: "reason_s602" },
   "lead.project": { label: "field_s603", help: "reason_s603" },
   "lead.projects": { label: "field_s604", help: "reason_s604" },

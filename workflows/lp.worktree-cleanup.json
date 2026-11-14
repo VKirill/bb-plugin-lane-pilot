@@ -1,0 +1,122 @@
+{
+  "id": "lp.worktree-cleanup",
+  "startedBy": "worktree-cleanup",
+  "name": {
+    "en": "Worktree cleanup",
+    "ru": "Уборка worktree"
+  },
+  "description": {
+    "en": "The body of Lane Pilot's two system schedules on the schedule board (docs/worktrees.md). The hourly pass sweeps Lane Pilot's own worktree root on every connected machine (copies no open attempt or live pass holds, clean and merged, older than cleanup.worktree_grace_hours) and closes the registry rows whose owner is gone. The daily pass runs git worktree prune in the project repositories and sweeps every class — Lane Pilot's root, .claude/worktrees, .worktrees, .git/lp-phases and the BB environments of Lane Pilot attempts: merged (squash and rebase too), clean and untouched for cleanup.worktree_max_age_days, or of a cancelled task, goes with its branch; unmerged commits and uncommitted changes are never deleted and are reported; one row in lane_pilot_janitor per machine and one owner line per pass.",
+    "ru": "Тело двух системных расписаний Lane Pilot на доске расписаний (docs/worktrees.md). Ежечасный проход метёт корень worktree Lane Pilot на каждой подключённой машине (копии, которые не держит открытая попытка или живой проход, чистые и влитые, старше cleanup.worktree_grace_hours) и закрывает строки реестра, чей владелец ушёл. Ежедневный проход делает git worktree prune в репозиториях проектов и метёт все классы — корень Lane Pilot, .claude/worktrees, .worktrees, .git/lp-phases и BB-окружения попыток Lane Pilot: влитое (и squash, и rebase), чистое и нетронутое cleanup.worktree_max_age_days дней или отменённой задачи уходит вместе с веткой; невлитые коммиты и незакоммиченные правки не удаляются никогда и попадают в отчёт; одна строка в lane_pilot_janitor на машину и одна строка владельцу на проход."
+  },
+  "not_for": [
+    "anything a person asks in a chat: Lane Pilot's system schedules «Уборка worktree: ежечасно» and «Уборка worktree: ежедневно» start it; «Запустить сейчас» on the board runs a pass by hand"
+  ],
+  "status": "published",
+  "tags": [
+    "schedule",
+    "cleanup"
+  ],
+  "triggers": [
+    "manual"
+  ],
+  "inputs": {
+    "pass": {
+      "type": "string",
+      "default": "hourly",
+      "note": "hourly: Lane Pilot's root and the registry; daily: every class on every machine, with git worktree prune"
+    },
+    "dry_run": {
+      "type": "bool",
+      "default": false,
+      "note": "decide and report only; nothing is removed"
+    }
+  },
+  "outputs": {
+    "status": "ok|off|error",
+    "removed": "int",
+    "freed_bytes": "int",
+    "kept": "int",
+    "report": "string"
+  },
+  "live_success": {
+    "output": "status",
+    "in": [
+      "ok",
+      "off"
+    ]
+  },
+  "goal_audit": "exempt",
+  "budget": {
+    "max_minutes": 60,
+    "max_usd": 0.01
+  },
+  "nodes": [
+    {
+      "id": "sweep",
+      "type": "action",
+      "action": "lp.worktree_cleanup",
+      "title": {
+        "en": "Sweep the worktrees",
+        "ru": "Убрать worktree"
+      },
+      "rule": "code: the hub sends each connected machine the paths live work holds; the machine removes what is merged or abandoned, clean and old enough, with its branch, and keeps what has unmerged commits or uncommitted changes; the receipt is one janitor row per machine and, for the daily pass, one owner line",
+      "out": {
+        "status": "ok|off|error",
+        "removed": "int",
+        "freed_bytes": "int",
+        "kept": "int",
+        "report": "string"
+      }
+    },
+    {
+      "id": "done",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "sweep.status",
+        "removed": "sweep.removed",
+        "freed_bytes": "sweep.freed_bytes",
+        "kept": "sweep.kept",
+        "report": "sweep.report"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "start",
+      "to": "sweep"
+    },
+    {
+      "from": "sweep",
+      "to": "done"
+    }
+  ],
+  "test": {
+    "id": "lp-worktree-cleanup-1",
+    "sim": {
+      "input": {
+        "pass": "daily",
+        "dry_run": false
+      },
+      "stubs": {
+        "sweep": {
+          "status": "ok",
+          "removed": 3,
+          "freed_bytes": 3221225472,
+          "kept": 1,
+          "report": "Удалено 3 worktree, освобождено 3.0 ГБ; оставлено 1 (невлитые коммиты 1)"
+        }
+      },
+      "expect_path": [
+        "sweep",
+        "done"
+      ],
+      "expect_output": {
+        "status": "ok",
+        "removed": 3
+      }
+    },
+    "live": "press «Запустить сейчас» on the board's «Уборка worktree: ежедневно», then read the run's output, bb lane-pilot janitor rows (lane_pilot_janitor) and the owner line «Уборка worktree»"
+  }
+}

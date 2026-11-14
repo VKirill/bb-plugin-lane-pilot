@@ -165,6 +165,7 @@ export const SETTING_CATALOG: SettingSpec[] = [
   { key:"checks.fail_fast", channel:"OWN", reason:"Native Lane Pilot verification: order checks by expected fail cost and stop starting new checks after the first non-zero exit" },
   { key:"cleanup.worktrees", channel:"OWN", reason:"Native Lane Pilot janitor: the hourly sweep of finished worktree copies and Lane Pilot tmp folders on every connected machine" },
   { key:"cleanup.worktree_grace_hours", channel:"OWN", reason:"Native Lane Pilot janitor: hours a worktree copy sits untouched before the sweep may remove it" },
+  { key:"cleanup.worktree_max_age_days", channel:"OWN", reason:"Native Lane Pilot janitor: days a merged or abandoned worktree copy sits untouched before the daily pass removes it with its branch" },
   { key:"lead.enabled", channel:"OWN", reason:"Native Lane Pilot lead («Штурман», src/rooms/lead/settings.ts): the switch of its ticks" },
   { key:"lead.project", channel:"OWN", reason:"Native Lane Pilot lead: the project its chat and tick runs live in" },
   { key:"lead.projects", channel:"OWN", reason:"Native Lane Pilot lead: the projects a tick reads and proposes for" },

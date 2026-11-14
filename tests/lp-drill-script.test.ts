@@ -123,4 +123,37 @@ print(json.dumps(out))
     expect(out.fresh).toEqual({ names: ["guard_hash", "deferrals", "checkers", "lead_shadow", "episodes"], skipped: ["helper_providers", "memory_paths", "parallel3"] });
     expect(out.stale).toEqual({ names: ["guard_hash", "deferrals", "checkers", "memory_paths", "helper_providers", "parallel3", "lead_shadow", "episodes"], skipped: [] });
   });
+
+  it("[sma:ta_cleanup] parallel3: an accepted task whose worktree, lane branch, folder or registry row is left is red; a fully removed one is green", () => {
+    const code = String.raw`
+import importlib.util, json, os, subprocess, sys, tempfile
+spec = importlib.util.spec_from_file_location("drill", sys.argv[1]); d = importlib.util.module_from_spec(spec); spec.loader.exec_module(d)
+tmp = tempfile.mkdtemp(prefix="lp-drill-wt-")
+base = os.path.join(tmp, "sandbox")
+g = lambda cwd, *a: subprocess.run(["git", "-C", cwd, *a], check=True, capture_output=True, text=True).stdout
+os.makedirs(base); g(base, "init", "-q", "-b", "main"); g(base, "config", "user.email", "t@t"); g(base, "config", "user.name", "t")
+open(os.path.join(base, "a.txt"), "w").write("a"); g(base, "add", "."); g(base, "commit", "-qm", "init")
+left = os.path.join(tmp, "wt", "sandbox", "lpattempt_left")
+g(base, "worktree", "add", "-q", "-b", "lane/lpattempt_left", left, "HEAD")
+gone = os.path.join(tmp, "wt", "sandbox", "lpattempt_gone")
+task = lambda attempt, path: {"task": attempt, "state": "accepted", "attempt": attempt, "workspace": path}
+print(json.dumps([
+  d.worktree_leftovers(base, task("lpattempt_left", left), [{"path": left, "released_at": None}]),
+  d.worktree_leftovers(base, task("lpattempt_gone", gone), [{"path": gone, "released_at": 1}]),
+  d.worktree_leftovers(base, task("lpattempt_gone", gone), []),
+  d.worktree_leftovers(base, {**task("lpattempt_left", left), "state": "failed"}, []),
+]))
+`;
+    const run = spawnSync("python3", ["-I", "-c", code, fileURLToPath(new URL("../scripts/lp-drill.py", import.meta.url))], { encoding: "utf8", timeout: 30_000, env: { ...ownEnv, BB_CLI: "/nonexistent/bb" } });
+    expect(run.status, run.stderr).toBe(0);
+    const [left, gone, noRow, failed] = JSON.parse(run.stdout.trim().split("\n").at(-1)!) as string[][];
+    expect(left).toHaveLength(4);
+    expect(left.join("\n")).toMatch(/git worktree list still has .*lpattempt_left/);
+    expect(left.join("\n")).toContain("branch lane/lpattempt_left is still there");
+    expect(left.join("\n")).toContain("is still on disk");
+    expect(left.join("\n")).toContain("is not released");
+    expect(gone).toEqual([]);
+    expect(noRow).toEqual(["lpattempt_gone: no lane_pilot_worktree row for attempt lpattempt_gone"]);
+    expect(failed).toEqual([]);
+  });
 });

@@ -14,7 +14,7 @@ sources:
   - docs/enabled-settings.snapshot.json
 ---
 
-<!-- enabled-settings:structure a3065e9804060a38 -->
+<!-- enabled-settings:structure 186b0ba2a9d1f282 -->
 
 # Enabled settings (generated)
 
@@ -59,6 +59,7 @@ switches: `quick` disables both critiques, `full` enables them (`src/rooms/criti
 | `checks.fail_fast` | `on` | — | verification: order checks by expected fail cost and stop starting new checks after the first non-zero exit |
 | `checks.require_red_on_base` | `medium` | — | baseline gate: a task of medium risk or more whose every check is green on the base does not start |
 | `cleanup.worktree_grace_hours` | `2` | — | janitor: hours a worktree copy sits untouched before the sweep may remove it |
+| `cleanup.worktree_max_age_days` | `7` | — | janitor: days a merged or abandoned worktree copy sits untouched before the daily pass removes it with its branch |
 | `cleanup.worktrees` | `on` | — | janitor: the hourly sweep of finished worktree copies and Lane Pilot tmp folders on every connected machine |
 | `code_critique.agent` | `code-critic` | — | code-critique role label included in its prompt |
 | `code_critique.auto_fix` | `true` | — | returns actionable findings to the original writer for a bounded repair round |

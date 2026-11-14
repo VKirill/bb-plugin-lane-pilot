@@ -26,6 +26,42 @@ def verification_ran(ctx: "Context", task_ids: list[str]) -> dict[str, bool]:
     return found
 
 
+def worktree_leftovers(cwd: str, task: dict, registry: list[dict]) -> list[str]:
+    """After a task was accepted and merged nothing of its worktree is left (docs/worktrees.md, SMA ta_cleanup): no entry in
+    `git worktree list`, no branch lane/<attempt>, no folder, and every lane_pilot_worktree row of the attempt released.
+    `registry` holds the attempt's rows (owner_id = attempt id) with path and released_at."""
+    path, attempt, name = task.get("workspace"), task.get("attempt"), task.get("task")
+    if task.get("state") != "accepted" or not path or not attempt:
+        return []
+    problems = []
+    tops = [line[len("worktree "):] for line in git(cwd, "worktree", "list", "--porcelain").splitlines() if line.startswith("worktree ")]
+    held = [top for top in tops[1:] if path == top or path.startswith(top.rstrip("/") + "/")]
+    if held:
+        problems.append(f"{name}: git worktree list still has {held[0]}")
+    if git(cwd, "branch", "--list", f"lane/{attempt}"):
+        problems.append(f"{name}: branch lane/{attempt} is still there after the merge")
+    if Path(path).exists():
+        problems.append(f"{name}: the folder {path} is still on disk after the merge")
+    if not registry:
+        problems.append(f"{name}: no lane_pilot_worktree row for attempt {attempt}")
+    for row in registry:
+        if not row.get("released_at"):
+            problems.append(f"{name}: lane_pilot_worktree row of {row.get('path')} is not released")
+    return problems
+
+
+def worktree_registry(attempts: list[str]) -> dict[str, list[dict]]:
+    """attempt id -> its lane_pilot_worktree rows."""
+    known = [a for a in attempts if a]
+    out: dict[str, list[dict]] = {a: [] for a in known}
+    if not known:
+        return out
+    quoted = ",".join("'" + a.replace("'", "''") + "'" for a in known)
+    for row in hubsql(f"select owner_id, path, released_at from lane_pilot_worktree where owner_kind='attempt' and owner_id in ({quoted});"):
+        out.setdefault(row["owner_id"], []).append(row)
+    return out
+
+
 def scenario_parallel3(ctx: Context) -> dict:
     specs = tasks_parallel3(ctx.cwd)
     with ThreadPoolExecutor(3) as pool:
@@ -49,7 +85,11 @@ def scenario_parallel3(ctx: Context) -> dict:
     if accepted and not all(ran.values()):
         problems.append(f"the verification stage did not run the task's check with exit 0: {', '.join(t for t, ok in ran.items() if not ok)}")
     problems += provider_problems(tasks)
-    return verdict("parallel3", problems, tasks=tasks, checks={"allAccepted": accepted, "eachInOwnWorktree": own, "filesInSandbox": merged, "checksRan": all(ran.values())},
+    # The merge removed what it merged: worktree, branch, folder, registry row (0.1.561; before it the default path left them to the janitor).
+    registry = worktree_registry([t["attempt"] for t in tasks])
+    leftovers = [p for t in tasks for p in worktree_leftovers(ctx.cwd, t, registry.get(t["attempt"] or "", []))]
+    problems += leftovers
+    return verdict("parallel3", problems, tasks=tasks, checks={"allAccepted": accepted, "eachInOwnWorktree": own, "filesInSandbox": merged, "checksRan": all(ran.values()), "worktreesGone": accepted and not leftovers},
                    dispatch={s["id"]: ctx.dispatches.get(s["id"]) for s in specs})
 def flow_contract_stages() -> set[str]:
     """Stage ids a receipt of the task pipeline may carry: the graph's agent/subworkflow nodes plus the writer node's own stages."""

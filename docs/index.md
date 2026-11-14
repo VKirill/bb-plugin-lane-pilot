@@ -101,6 +101,7 @@ Built by Lane Pilot from page frontmatter.
 | [Workflow chain executors](workflow-executors.md) | component | active | 2026-11-08 |
 | [Workflow router](workflow-router.md) | component | active | 2026-10-30 |
 | [Workflow triggers](workflow-triggers.md) | component | active | 2026-10-30 |
+| [Worktrees — where they live, who removes them, the cleanup schedule](worktrees.md) | component | active | 2026-11-14 |
 | [docs/writer-hold.md](writer-hold.md) | — | — | — |
 
 ## Workspace docs
