@@ -10,9 +10,11 @@ const SCENE = drill("sma_r08");
 
 export default {
 
+  n673: { mutation: flip("core:apps/server/src/routes/plugins.ts", "conflict: 409,", "conflict: 400,") },
   n674: { mutation: wrongTarget("src/rooms/contracts/index.ts", "  ...rpcWorkflowMap,", "  ...rpcWorkflowExport,"), trace: SCENE },
   n675: { mutation: flip("src/rooms/contracts/rpc-ops.ts", "halt_run: {\n    input: z.object({ runId: z.string().min(1) }).strict(),", "halt_run: {\n    input: z.object({ runId: z.string() }).strict(),"), trace: SCENE },
   n678: { mutation: flip("src/rooms/runs/server/task-reconcile.ts", "graceMs:startup ? 0 : PERIODIC_INTENT_GRACE_MS", "graceMs:startup ? PERIODIC_INTENT_GRACE_MS : 0"), trace: SCENE },
+  n680: { mutation: distort("core:apps/server/src/server.ts", 'message: "Unauthorized" }', 'message: "Unauthorised" }') },
   n682: { mutation: flip("src/rooms/front/server/index.ts", "if (!MUTATING_RPC.test(name)) return;", "if (MUTATING_RPC.test(name)) return;"), trace: SCENE },
   n683: { mutation: flip("src/rooms/core/server/rpc-timing.ts", '${refused ? " refused" : failed ? " failed" : ""}', '${refused ? " failed" : failed ? " refused" : ""}'), trace: SCENE },
   n684: { mutation: distort("app.tsx", 'path: "lane-pilot-cockpit",', 'path: "lane-pilot-cockpit-x",'), trace: SCENE },
@@ -24,6 +26,8 @@ export default {
   n690: { mutation: flip("packages/models/src/model-profiles.ts", "entry === key ||", "entry !== key ||"), trace: SCENE },
   n691: { mutation: flip("src/rooms/contracts/native-agent-static.ts", "return (MAIN_AGENT_PROFILE_IDS as readonly string[]).includes(id);", "return !(MAIN_AGENT_PROFILE_IDS as readonly string[]).includes(id);"), trace: SCENE },
   n692: { mutation: distort("src/rooms/writer/server/writer-task.ts", 'context.skills.join(", ")', 'context.skills.join(" ")'), trace: SCENE },
+  n693: { mutation: distort("core:apps/server/src/services/skills/skill-listing.ts", 'contents: Buffer.from(args.content, "utf8"),', 'contents: Buffer.from(args.content.trim(), "utf8"),') },
+  n694: { mutation: flip("core:apps/server/src/services/skills/skill-listing.ts", 'return { scope: "bb-user", provider: null, manageable: true };', 'return { scope: "bb-project", provider: null, manageable: true };') },
   n695: { mutation: distort("src/rooms/contracts/helper-context.ts", 'skills: ["lp-writer", "karpathy-guidelines"], mcpServers: ["gitnexus"] };', 'skills: ["lp-writer", "karpathy-guidelines"], mcpServers: ["metamcp"] };'), trace: SCENE, voidReview: voidIsHave("реестр подключений MCP на машине держат BB и MetaMCP; какие серверы получает роль, задаёт профиль роли (mcpServers, обязательные серверы), переключатель — n696") },
   n696: { mutation: flip("src/rooms/contracts/helper-context.ts", 'out[group] = mode === "allow"', 'out[group] = mode !== "allow"'), trace: SCENE },
   n697: { mutation: flip("src/rooms/runs/conveyor.ts", "else if ((await conveyorState(kv)).on) await kv.set", "else if (!(await conveyorState(kv)).on) await kv.set"), trace: SCENE },
@@ -33,8 +37,17 @@ export default {
   n701: { mutation: flip("src/rooms/front/server/index.ts", 'const path = helper.kind === "skill" ?', 'const path = helper.kind !== "skill" ?'), trace: SCENE },
   n702: { mutation: flip("src/rooms/front/server/index.ts", 'written.status === "conflict" ?', 'written.status !== "conflict" ?'), reach: entry("the owner picks the project's own helpers in the window and takes them as drafts"), trace: SCENE },
   n703: { voidReview: voidStays("блока домохозяйства нет: машины и единственный хаб принадлежат ядру BB, плагин берёт hostId у BB, и поведения от самообъявленной роли нет") },
+  n707: { mutation: flip("core:apps/server/src/services/hosts/host-enrollment.ts", "args.hostId ?? createHostId()", "createHostId()") },
+  n708: { mutation: distort("core:apps/server/src/services/machine-auth.ts", "remaining: 1,", "remaining: 2,") },
+  n709: { mutation: flip("core:apps/server/src/services/machine-auth.ts", "verified.metadata.hostId !== hostId", "verified.metadata.hostId === hostId") },
   n710: { voidReview: voidStays("нет адреса, приходящего от пира: хосты приходят из регистрации BB, единственный внешний адрес events.webhook_url задаёт владелец (только https), SSRF-входа нет") },
+  n711: { mutation: distort("core:apps/server/src/internal/hosts.ts", "name: payload.hostName,", "name: payload.hostId,") },
+  n712: { mutation: distort("core:apps/server/src/routes/hosts.ts", "const sessionId = deps.hub.getDaemonSessionIdForHost(hostId);", "const sessionId = deps.hub.getDaemonSessionIdForHost(hostId) && null;") },
   n714: { voidReview: voidIsHave("назначение «на пира можно передать только разрешённые действия» выполняет закрытый контракт хоста: фиксированный список методов, слова ворот в него не входят (n688)") },
+  n723: { mutation: distort("core:packages/db/src/data/projects.ts", "name: input.name,", "name: input.name.toLowerCase(),") },
+  n724: { mutation: distort("core:packages/db/src/data/projects.ts", ".set({ ...input, updatedAt: now })", ".set({ ...input, id: `${id}_x`, updatedAt: now })") },
+  n725: { mutation: distort("core:apps/server/src/routes/projects.ts", "threads: threadsByProjectId.get(project.id) ?? [],", "threads: [...threadsByProjectId.values()][0] ?? [],") },
+  n728: { mutation: flip("core:packages/db/src/data/projects.ts", "isDefault: true,", "isDefault: false,") },
   n744: { voidReview: voidStays("по собственной карте SMA значение стиля осталось без экрана и никем не читается; факты стиля живут в DESIGN.md") },
   n750: { voidReview: voidIsHave("публикация требует квитанции зелёного полного прогона, ключённой по дереву и версии node и лежащей на диске (переживает рестарт), — предела SMA «только в памяти» нет") },
 } satisfies RegionEvidence;
