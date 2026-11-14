@@ -2,7 +2,7 @@
 // One line per node, sorted by node number; a batch agent edits only its nodes' lines. The lines below are the
 // framework's worked examples (2026-11-14): each mutation was killed by a real `npm run sma:mutate` run
 // (attest/r01.json) and each trace was run on the hub snapshot of the same day.
-import { distort, drill, entry, flip, gate, isSet, outside, receipt, type RegionEvidence, rows, settingRow, transition, via, voidIsHave, wrongTarget } from "./types";
+import { distort, drill, entry, flip, gate, isSet, outside, receipt, type RegionEvidence, rows, settingRow, skipWrite, transition, via, voidIsHave, wrongTarget } from "./types";
 
 const TASK_HOME = "src/rooms/writer/server/task-home.ts";
 
@@ -420,9 +420,68 @@ export default {
     mutation: flip("packages/workflow-engine/src/verdict.ts", "if (status === \"rework\" && high + critical === 0) status = \"pass\";", "if (status === \"rework\" && high + critical !== 0) status = \"pass\";"),
     trace: receipt("code-critique", "pass"),
   },
+  n288: {
+    mutation: flip("src/rooms/phase/logic/acceptance.ts", '(word?.decision === "yes" && word[pick] === true)', '(word?.decision === "yes" && word[pick] !== true)'),
+    trace: drill("sma_r01"),
+  },
+  n289: {
+    mutation: flip("src/rooms/phase/logic/acceptance.ts", 'line("composition_verified", verdict?.state === "passed",', 'line("composition_verified", verdict?.state !== "passed",'),
+    trace: drill("sma_r01"),
+  },
+  n290: {
+    mutation: distort("src/rooms/verification/git-integrate/merge.ts", "reason:error.message,holder:error.holder}", 'reason:error.message,holder:"unknown"}'),
+    trace: drill("sma_r01"),
+  },
+  n291: {
+    mutation: flip("src/rooms/verification/git-integrate/merge.ts", "if(now!==input.expectedHead) return fail(", "if(now===input.expectedHead) return fail("),
+    trace: drill("sma_r01"),
+  },
+  n292: {
+    mutation: flip("src/rooms/phase/logic/acceptance.ts", "phase.record.bookWritten.seq === now.book.lastSeq && now.book.readSha", "phase.record.bookWritten.seq !== now.book.lastSeq && now.book.readSha"),
+    trace: drill("sma_r01"),
+  },
+  n293: {
+    mutation: flip("src/rooms/phase/logic/gates.ts", 'if (!checks.length && task.verify !== "none")', 'if (!checks.length && task.verify === "none")'),
+    trace: drill("sma_r01"),
+  },
   // The accepted attempt's receipts are written once into the task home in the base, so they outlive the worktree's removal (T13).
   n294: { mutation: wrongTarget(TASK_HOME, 'kind: "acceptance", name: "acceptance.json",', 'kind: "acceptance", name: `attempts/${input.attemptId}/acceptance.json`,'), trace: drill("task_home") },
-  n300: { reach: entry("a PM or the owner enqueues a task contract") },
+  n295: {
+    mutation: flip("src/rooms/workflow/server/after-accept.ts", 'if (event.scope !== "task" || event.status !== "accepted") return;', 'if (event.scope !== "task" || event.status === "accepted") return;'),
+    trace: drill("sma_r01"),
+  },
+  n296: {
+    mutation: flip("src/rooms/verification/server/merge-intent.ts", "if (!verdict.landed) { await clearMergeIntent(kv, intent.attemptId); continue; }", "if (verdict.landed) { await clearMergeIntent(kv, intent.attemptId); continue; }"),
+    reach: entry("the plugin restarts after a merge landed on the project's machine and before the attempt's state caught up; the periodic pass reads the merge intent"),
+    trace: drill("sma_r01"),
+  },
+  n297: {
+    mutation: flip("src/rooms/tasks/words.ts", "if (attemptId && latest.attemptId && latest.attemptId !== attemptId)", "if (attemptId && latest.attemptId && latest.attemptId === attemptId)"),
+    trace: drill("sma_r01"),
+  },
+  n298: {
+    mutation: flip("src/rooms/phase/logic/acceptance.ts", "latest && latest.key === acceptanceKey(phase.record) ? latest : undefined", "latest && latest.key !== acceptanceKey(phase.record) ? latest : undefined"),
+    reach: entry("the owner's word on an acceptance package arrives after the plan or the tree it judged has changed"),
+    trace: drill("sma_r01"),
+  },
+  n299: {
+    mutation: flip("src/rooms/contracts/task-enums.ts", 'phase: { promise: "require", topicLoop: false, drawing: false },', 'phase: { promise: "warn", topicLoop: false, drawing: false },'),
+    trace: drill("sma_r01"),
+  },
+  n300: {
+    mutation: distort("src/rooms/tasks/server/contract-lint.ts", '{ runId, state:"validation_failed", ...data,', '{ runId, state:"rejected", ...data,'),
+    reach: entry("a PM or the owner enqueues a task contract"),
+    trace: drill("sma_r01"),
+  },
+  n301: {
+    mutation: skipWrite("src/rooms/storage/tasks-store.ts", "if (result.changes > 0) recordContractEdition(db, taskId, contract, getTaskPlan(db, taskId), reason);", "if (result.changes < 0) recordContractEdition(db, taskId, contract, getTaskPlan(db, taskId), reason);"),
+    trace: drill("sma_r01"),
+  },
+  n302: {
+    mutation: flip("src/rooms/tasks/rails.ts", "if (promise && !promiseOk) errors.push", "if (promise && promiseOk) errors.push"),
+    reach: entry("a PM or the owner enqueues a task whose contract carries a promise"),
+    trace: drill("sma_r01"),
+  },
   n306: {
     mutation: distort("src/rooms/tasks/rails.ts", "held)/.test(code)) return \"dependency\";", "held)/.test(code)) return \"conflict\";"),
     trace: transition({ to: "blocked", reason: "depends_on" }),
