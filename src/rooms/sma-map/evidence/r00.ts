@@ -24,7 +24,7 @@ const OPEN_SWITCHES = {
 
 export default {
   n0: { mutation: distort(ADMISSION, "`phase opened: ${input.title}${wordTurns.mode", "`phase opened: ${input.goal}${wordTurns.mode"), reach: { ...entry("the PM opens a phase for a goal"), notGatedBy: OPEN_SWITCHES }, trace: [part({ section: "goal", kind: "opened" }), drill(SCENE)] },
-  n1: { mutation: distort("src/rooms/phase/logic/next-action.ts", 'rubricLine("discussion")}${check.ok ? "" : `\nOpen: ${check.why.join("; ")}`}', 'rubricLine("discussion")}${check.ok ? "" : `\nOpen: ${check.why.join(", ")}`}'), trace: drill(SCENE) },
+  n1: { mutation: distort("src/rooms/phase/logic/next-action.ts", 'rubricLine("discussion")}${check.ok ? "" : `\\nOpen: ${check.why.join("; ")}`}', 'rubricLine("discussion")}${check.ok ? "" : `\\nOpen: ${check.why.join(", ")}`}'), trace: drill(SCENE) },
   n2: { mutation: distort(ADMISSION, ".filter(Boolean).slice(0, 30);", ".filter(Boolean).slice(1, 30);"), trace: drill(SCENE) },
   n3: { mutation: flip(GATES, 'if (!record.context?.appetite?.trim()) why.push("no appetite', 'if (record.context?.appetite?.trim()) why.push("no appetite'), trace: drill(SCENE) },
   n4: { mutation: distort(RECORD, 'export const RISK_KINDS = ["value", "usability", "feasibility", "viability"] as const;', 'export const RISK_KINDS = ["value", "usability", "viability", "feasibility"] as const;'), trace: drill(SCENE) },
