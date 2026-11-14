@@ -52,7 +52,7 @@ The owner's rule (ТЗ sma-parity, section 4д; owner decision №1 outranks the
 | `lp.plan` | `workflow-task-book.ts` (`lp.lint_contract`), `workflows/lp.plan.json` | The lint computes `lint.waves` from `depends_on`. The plan emits those instead of the planner's own waves (a disagreement is logged). A cycle, or a link to no task of the plan or run, sends the plan back to the planner. Two tasks of one computed wave that own the same paths must be linked. |
 | Phase plan | `phase/logic/gates.ts` (`waveProblems`, `withComputedWaves`, `pieceDeps`), `phase/server/auto-stages.ts` (`planItems`) | `planItems` lays the waves out from `depends_on` and throws on a cycle. A piece the PM submits without a wave gets its computed one. A piece with no computable wave is refused, never put into wave 1 silently. A given wave must be later than its dependencies' waves. |
 | Phase issue | `phase/logic/waves.ts` (`issuable`) | A piece is offered once every piece it depends on is accepted. The wave stays an address (budget, stop, board, review) and the wave's lines and review still hold the phase's exit, but a wave is not a barrier. Inside a phase, `main` is the phase's candidate branch `phase/<id>`: pieces are cut from it and merged into it. |
-| Graphs (`lp.build` and others) | `workflow-lp-task.ts`, `workflow-task-contract.ts` (`graphTaskStem`, `graphTaskId`, `graphDependsOn`) | A graph's code task is named `w<stem>-<id>`, with one stem per graph run, and its `depends_on` is rewritten with the same prefix. A name that is a task the PM already dispatched in the run keeps its name. The engine's `order: "depends_on"` holds graph dependents, and the writer wait holds them while a dependency is blocked. |
+| Graphs (`lp.build` and others) | `workflow-lp-task.ts`, `workflow-task-contract.ts` (`graphTaskStem`, `graphTaskId`, `graphDependsOn`) | A graph's code task is named `w<stem>-<id>`, with one stem per graph run, and its `depends_on` is rewritten with the same prefix. A name that is a task the PM already dispatched in the run keeps its name. The engine's `order: "depends_on"` holds graph dependents until their dependencies end. `lp.build` sets `on_child_fail: "block_dependents"`: a dependent of a task that did not end accepted (blocked, failed, cancelled, needs_human) is never dispatched, it arrives at the join as `upstream_blocked:<id>` and is counted in `blocked_ids`; tasks that do not depend on it go on (`engine-branches.ts` `gates`). |
 | Wait | `writer/server/start-wait-dependencies.ts` (`waitForDependencies`, `storedDependsOn`) | Re-reads `depends_on` from the stored contract on every poll and resolves names with `latestRunTaskAttempt` (run-scoped, follows redispatches). A blocked dependency is waited for up to 6 h (`DEPENDENCY_REDO_WAIT_MS`), a canceled one for `CANCELED_REDO_WAIT_MS`. A name that never appears ends the wait after two minutes from when the wait first saw it. |
 | Overlap | `writer/server/start-wait-overlap.ts` | Two tasks whose `owns_paths` overlap (or that share an area) do not run together. A queued task still waiting for its own dependencies holds no one. |
 | Base proof | `writer/server/start-dependency-base.ts` (`checkDependencyBase`), called in `spawn.ts` right after `bindAttemptWorkspace` | For a git workspace, each accepted dependency's merge commit (from `lane_pilot_attempt_change`) must be an ancestor of the worktree's HEAD. A missing one ends the start with `attempt_worktree_base_missing_dependency: …` before any writer turn. That reason is the free `harness` class: the attempt is not charged and is retried. If git does not answer, the start goes on and the log says it is unproven. |
@@ -64,8 +64,16 @@ These map cards contradict the rule or owner decision №1:
 - `n365 bi_eligible`: «the next wave waits for this one's acceptance». A piece waits only for its own dependencies.
 - `n366 bi_broken`: «a broken piece stops issue and asks the owner». A broken piece holds only its dependents. The phase's decide
   turn (skip, retry, cancel) is still offered for it.
-- `n333 cg_batch_turn`, `n363 bi_pilot`, `n364 bi_fanout`: the wave pilot (`writer/server/pilot/logic.ts`). It is unchanged, but its
-  area-and-kind form holds siblings that share neither a link nor files. See the report for the decision that is pending.
+
+## Kept as they are
+
+- The wave pilot (`n333 cg_batch_turn`, `n363 bi_pilot`, `n364 bi_fanout`, `writer/server/pilot/logic.ts`) stays. The rule says which
+  tasks may run together (no link, no shared files); it does not say every such pair must. The pilot holds siblings of one area and
+  kind, or of one shared resource, until the first of them is accepted, and the wait names it in the stage reason. A task the PM
+  ordered with `depends_on` gets no pilot.
+- A dependent waits for a blocked dependency for 6 h (`DEPENDENCY_REDO_WAIT_MS`), then ends blocked with the reason and goes back to
+  the PM. It never starts without its dependency. The limit stays because a queued task holds the tasks queued behind it on the same
+  files (`start-wait-overlap.ts`): a wait without an end would hold independent work for good. A plugin reload restarts the count.
 
 ## How to read the result in the database
 

@@ -49,9 +49,12 @@ export function gates(engine: WorkflowEngine, run: RunRow, c: Compiled, pending:
     const arrived = new Map((j.db.prepare("SELECT branch, data_json FROM lane_pilot_wf_arrival WHERE run_id=? AND group_key=?").all(run.id, input.group) as Array<{ branch: number; data_json: string }>)
       .map((row) => [row.branch, asObject(row.data_json)]));
     if (input.after.some((dep) => !arrived.has(dep))) continue;
-    const failed = input.after.find((dep) => arrived.get(dep)!.$failed !== undefined);
-    const branch = failed !== undefined ? branchOf(engine, run, c, step) : null;
-    if (failed === undefined || !branch || branch.parallel.on_child_fail !== "block_dependents") { ready.push(step); continue; }
+    const branch = branchOf(engine, run, c, step);
+    // A code task ends its step whatever its state: one that is not accepted (blocked, failed, cancelled, needs_human) did not deliver
+    // what its dependents build on, the same as a failed branch.
+    const lost = (data: Record<string, unknown>) => data.$failed !== undefined || (c.nodes.get(step.node_id)?.type === "lp-task" && data.state !== "accepted");
+    const failed = branch?.parallel.on_child_fail === "block_dependents" ? input.after.find((dep) => lost(arrived.get(dep)!)) : undefined;
+    if (failed === undefined || !branch) { ready.push(step); continue; }
     const dependency = (asObject(j.getStep(run.id, input.group)!.input_json) as { items?: unknown[] }).items?.[failed];
     const label = typeof dependency === "object" && dependency !== null && typeof (dependency as { id?: unknown }).id === "string" ? (dependency as { id: string }).id : String(failed);
     if (!j.moveStep(run.id, step.step_key, "pending", "canceled", { error: `upstream_blocked:${label}`, ended: true })) continue;
