@@ -10,7 +10,7 @@ import { SMA_CARDS, SMA_NODES, SMA_REGIONS, type SmaKind } from "./graph";
 export type SmaRow = { id: string; smaId: string; region: string; group: string; kind: SmaKind; label: string; detail: string; unsure: boolean;
   status: SmaStatus; ours: string; proof?: string; contracts: readonly string[]; gaps: readonly string[] };
 /** proven: a proof link (navigation); contract: a test checks the card's behaviour; upstream: SMA itself left the node unwired; void: nothing here for the card to guard. */
-export type SmaCounts = { total: number; have: number; partial: number; missing: number; skip: number; upstream: number; void: number; proven: number; contract: number };
+export type SmaCounts = { total: number; have: number; partial: number; missing: number; skip: number; upstream: number; void: number; deviation: number; "deviation-data": number; proven: number; contract: number };
 
 /** Repositories a proof can point into: this one, Lane Stack and the BB core with its vk layer. */
 export type ProofRoots = { lanePilot: string; laneStack?: string; core?: string; telegram?: string };
@@ -31,12 +31,12 @@ export function smaRows(): SmaRow[] {
  * Mapped: we have it and a proof points at the code, or SMA itself left it unwired and we hold the same state. A proof link is not
  * a check of behaviour (2026-10-29 conformance audit: the «100%» counted links): conformance is `isChecked`, a contract test.
  */
-export const isDone = (row: SmaRow) => (row.status === "have" && !!row.proof) || row.status === "upstream" || row.status === "void";
+export const isDone = (row: SmaRow) => (row.status === "have" && !!row.proof) || row.status === "upstream" || row.status === "void" || row.status === "deviation" || row.status === "deviation-data";
 /** Checked: a contract test (`[sma:<id>]` in its title, contracts.ts) holds our code to the card's behaviour. */
 export const isChecked = (row: SmaRow) => row.contracts.length > 0;
 
 export function smaCounts(rows: readonly SmaRow[]): SmaCounts {
-  const counts: SmaCounts = { total: rows.length, have: 0, partial: 0, missing: 0, skip: 0, upstream: 0, void: 0, proven: 0, contract: 0 };
+  const counts: SmaCounts = { total: rows.length, have: 0, partial: 0, missing: 0, skip: 0, upstream: 0, void: 0, deviation: 0, "deviation-data": 0, proven: 0, contract: 0 };
   for (const row of rows) {
     counts[row.status] += 1;
     if (row.status === "have" && row.proof) counts.proven += 1;
@@ -52,38 +52,39 @@ export const smaDonePercent = (rows: readonly SmaRow[]) => percent(rows.filter(i
 export const smaCheckedPercent = (rows: readonly SmaRow[]) => percent(rows.filter(isChecked).length, rows.length);
 
 /**
- * The split evidence states of one node (roast X-2): `have`/`partial` is one claim, not a ladder.
+ * The proof-link ladder of one node (roast X-2), kept as the weaker signal beside the four proofs of sma-parity-tz.md §4
+ * (states.ts: checked, mutated, reachable, outcome-verified):
  * - `available`: we declare a counterpart (have or partial).
- * - `reachable`: its proof link resolves on this machine (a proof into an absent sibling repo is unjudged, never reachable).
+ * - `proofResolved`: its proof link resolves on this machine (a proof into an absent sibling repo is unjudged: null).
+ *   It was called `reachable` until 2026-11-14; reachability is now TZ 4.3 (reach.ts), not «the link resolves».
  * - `checked`: a contract test holds the code to the card's behaviour.
- * - `outcome-verified`: checked AND the group left a live trace in the window (`--live`): the thing ran, not just exists.
- * `observed` is the live trace alone (a group can run without a contract test).
+ * - `outcome`: checked AND the node's GROUP left a live trace (`groupObserved`) — not node-level evidence.
  */
-export type SmaEvidence = { available: boolean; reachable: boolean | null; checked: boolean; outcome: "verified" | "unverified" | "unknown" };
+export type SmaEvidence = { available: boolean; proofResolved: boolean | null; checked: boolean; outcome: "verified" | "unverified" | "unknown" };
 
-export function smaEvidence(row: SmaRow, roots: ProofRoots, observed?: boolean): SmaEvidence {
+export function smaEvidence(row: SmaRow, roots: ProofRoots, groupObserved?: boolean): SmaEvidence {
   const available = row.status === "have" || row.status === "partial";
-  const reachable = !row.proof ? null : unjudgedProof(row.proof, roots) ? null : brokenProof(row.proof, roots) === null;
+  const proofResolved = !row.proof ? null : unjudgedProof(row.proof, roots) ? null : brokenProof(row.proof, roots) === null;
   const checked = isChecked(row);
-  const outcome = observed === undefined ? "unknown" : observed && checked ? "verified" : "unverified";
-  return { available, reachable, checked, outcome };
+  const outcome = groupObserved === undefined ? "unknown" : groupObserved && checked ? "verified" : "unverified";
+  return { available, proofResolved, checked, outcome };
 }
 
-/** The split-state tally over the map (`--states`). `observed`/`outcomeVerified` fill only when live rows were read. */
-export type SmaStateCounts = { total: number; available: number; reachable: number; unreachable: number; unjudged: number; checked: number; observed: number | null; outcomeVerified: number | null };
+/** The proof-link tally over the map. `groupObserved`/`groupOutcomeVerified` fill only when live group rows were read. */
+export type SmaStateCounts = { total: number; available: number; proofResolved: number; proofBroken: number; proofUnjudged: number; checked: number; groupObserved: number | null; groupOutcomeVerified: number | null };
 
-export function smaStateCounts(rows: readonly SmaRow[], roots: ProofRoots, observedOf?: (row: SmaRow) => boolean | undefined): SmaStateCounts {
-  const out: SmaStateCounts = { total: rows.length, available: 0, reachable: 0, unreachable: 0, unjudged: 0, checked: 0, observed: observedOf ? 0 : null, outcomeVerified: observedOf ? 0 : null };
+export function smaStateCounts(rows: readonly SmaRow[], roots: ProofRoots, groupObservedOf?: (row: SmaRow) => boolean | undefined): SmaStateCounts {
+  const out: SmaStateCounts = { total: rows.length, available: 0, proofResolved: 0, proofBroken: 0, proofUnjudged: 0, checked: 0, groupObserved: groupObservedOf ? 0 : null, groupOutcomeVerified: groupObservedOf ? 0 : null };
   for (const row of rows) {
-    const observed = observedOf?.(row);
+    const observed = groupObservedOf?.(row);
     const evidence = smaEvidence(row, roots, observed);
     if (evidence.available) out.available++;
-    if (evidence.reachable === true) out.reachable++;
-    else if (evidence.reachable === false) out.unreachable++;
-    else if (row.proof) out.unjudged++;
+    if (evidence.proofResolved === true) out.proofResolved++;
+    else if (evidence.proofResolved === false) out.proofBroken++;
+    else if (row.proof) out.proofUnjudged++;
     if (evidence.checked) out.checked++;
-    if (observed === true) out.observed!++;
-    if (evidence.outcome === "verified") out.outcomeVerified!++;
+    if (observed === true) out.groupObserved!++;
+    if (evidence.outcome === "verified") out.groupOutcomeVerified!++;
   }
   return out;
 }
