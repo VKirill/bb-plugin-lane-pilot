@@ -1,7 +1,7 @@
 // Region 8 · Daemon front outside the graphs — per-node evidence of the four proofs (docs/sma-evidence.md).
 // One line per node, sorted by node number; a batch agent edits only its nodes' lines. Lines with seedEntry or a lone
 // wfRun/wfStep trace were derived mechanically by scripts/sma-seed-evidence.ts (2026-11-14), not authored.
-import { distort, drill, entry, flip, wrongTarget, type RegionEvidence, voidIsHave, voidStays } from "./types";
+import { distort, drill, entry, flip, skipWrite, wrongTarget, type RegionEvidence, voidIsHave, voidStays } from "./types";
 
 // Batch a (n674–n702): the door, the window, the roster and the helper import write no hub table row (the journal and the conveyor are plugin KV, the drafts
 // go to a machine), so each node's trace is its own prove() line in scripts/lp_drill/scenes/sma_r08.py. Later batches append their nodes to the same scene.
@@ -33,8 +33,42 @@ export default {
   n701: { mutation: flip("src/rooms/front/server/index.ts", 'const path = helper.kind === "skill" ?', 'const path = helper.kind !== "skill" ?'), trace: SCENE },
   n702: { mutation: flip("src/rooms/front/server/index.ts", 'written.status === "conflict" ?', 'written.status !== "conflict" ?'), reach: entry("the owner picks the project's own helpers in the window and takes them as drafts"), trace: SCENE },
   n703: { voidReview: voidStays("блока домохозяйства нет: машины и единственный хаб принадлежат ядру BB, плагин берёт hostId у BB, и поведения от самообъявленной роли нет") },
+  n704: { mutation: flip("src/rooms/front/server/index.ts", "lastOnlineAt: online ? now : before?.lastOnlineAt ?? null }", "lastOnlineAt: online ? before?.lastOnlineAt ?? null : now }"), trace: SCENE },
+  n705: { mutation: flip("src/rooms/front/server/index.ts", "next.answered = answer != null;", "next.answered = answer == null;"), trace: SCENE },
+  n706: { mutation: flip("src/rooms/front/server/index.ts", "if (!listed.some((row) => row.id === id)) snapshots.delete(id);", "if (listed.some((row) => row.id === id)) snapshots.delete(id);"), trace: SCENE },
   n710: { voidReview: voidStays("нет адреса, приходящего от пира: хосты приходят из регистрации BB, единственный внешний адрес events.webhook_url задаёт владелец (только https), SSRF-входа нет") },
-  n714: { voidReview: voidIsHave("назначение «на пира можно передать только разрешённые действия» выполняет закрытый контракт хоста: фиксированный список методов, слова ворот в него не входят (n688)") },
+  n713: { mutation: wrongTarget("packages/host-calls/src/run-on-host.ts", "{ hostId: args.hostId, timeoutMs:", "{ hostId: \"hub\", timeoutMs:"), trace: SCENE },
+  n714: { mutation: distort("src/rooms/contracts/host.ts", "  ...jobHostMethods,", "  ...{},"), trace: SCENE, voidReview: voidIsHave("назначение «на пира можно передать только разрешённые действия» выполняет закрытый контракт хоста: фиксированный список методов, слова ворот в него не входят (n688)") },
+  n715: { mutation: distort("src/rooms/front/logic.ts", "? `${peer.name ?? peer.hostId}: на связи`", "? `${peer.hostId}: на связи`"), trace: SCENE },
+  n716: { mutation: distort("src/rooms/front/server/index.ts", "steps: FIRST_RUN_STEPS, draft };", "steps: [...FIRST_RUN_STEPS].reverse(), draft };"), trace: SCENE },
+  n717: { mutation: distort("src/rooms/front/logic.ts", "setting: \"quality_mode\" }", "setting: \"quality\" }"), trace: SCENE },
+  n718: { mutation: distort("src/rooms/front/logic.ts", "answers: { ...draft.answers, [step]: answer.trim().slice(0, 2000) }", "answers: { [step]: answer.trim().slice(0, 2000) }"), trace: SCENE },
+  n719: { mutation: flip("src/rooms/front/logic.ts", "if (secretShaped(answer)) throw", "if (!secretShaped(answer)) throw"), reach: entry("the owner types a pasted key or a password as the answer of a first-run step"), trace: SCENE },
+  n720: { mutation: flip("src/rooms/front/logic.ts", "!settings[\"writer.provider\"] && !settings[\"writerProviderId\"]", "!settings[\"writer.provider\"] && settings[\"writerProviderId\"]"), trace: SCENE },
+  n721: { mutation: skipWrite("src/rooms/front/server/index.ts", "for (const [key, value] of Object.entries(settings)) saveProjectSetting(db, projectId, key, value);", ""), trace: SCENE },
+  n722: { mutation: flip("src/rooms/contracts/planning-root.ts", "if (problem) { warnOnce(log,", "if (!problem) { warnOnce(log,"), trace: SCENE },
+  n726: { mutation: wrongTarget("src/rooms/contracts/planning-root.ts", "return planningHomeOf(settings, check, log) ?? run?.writer_workspace_path ?? null;", "return run?.writer_workspace_path ?? planningHomeOf(settings, check, log) ?? null;"), trace: SCENE },
+  n727: { mutation: distort("src/rooms/storage/settings-store.ts", "ON CONFLICT(project_id,binding_id,key) DO UPDATE SET version=excluded.version`).run(projectId,bindingId,key,version);", "ON CONFLICT(project_id,binding_id,key) DO UPDATE SET version=version`).run(projectId,bindingId,key,version);"), trace: SCENE },
+  n729: { mutation: flip("src/rooms/host-worker/handlers/git.ts", "...(input.commit?{commit:input.commit}:{}),\n    ...(input.taskId", "...(!input.commit?{commit:input.commit}:{}),\n    ...(input.taskId"), reach: entry("a writer task starts: its attempt gets a worktree cut from the project's own checkout"), trace: SCENE },
+  n730: { mutation: distort("src/rooms/phase/stages.ts", "\".agents/planning/ROADMAP.md\", \".agents/planning/REQUIREMENTS.md\"", "\".agents/planning/ROADMAP.md\", \".agents/REQUIREMENTS.md\""), reach: entry("a phase reaches its discussion stage and the PM reads the roadmap and the requirements"), trace: SCENE },
+  n731: { mutation: flip("src/rooms/runs/server/task-board.ts", "phase = planning ? \"planning\" : waitingFor.length ? \"waiting\" : \"queued\";", "phase = planning ? \"planning\" : waitingFor.length ? \"queued\" : \"waiting\";"), trace: SCENE },
+  n732: { mutation: distort("src/rooms/runs/server/task-board.ts", "{ column = \"done\"; phase = row.state; }", "{ column = \"done\"; phase = \"accepted\"; }"), trace: SCENE },
+  n733: { mutation: flip("src/rooms/cockpit/server.ts", "const peers = (await services.front.peers()).filter((peer) => peer.online);", "const peers = (await services.front.peers()).filter((peer) => !peer.online);"), trace: SCENE },
+  n734: { mutation: distort("src/rooms/storage/settings-store.ts", "...[\"\", ...scopes].map(", "...[...scopes, \"\"].map("), trace: SCENE },
+  n735: { mutation: distort("src/rooms/front/server/index.ts", "process.env.BB_PUBLIC_URL ?? \"the BB hub\"", "process.env.BB_PUBLIC_URL ?? \"the hub\""), trace: SCENE },
+  n736: { mutation: distort("src/rooms/front/server/index.ts", ": \"lane-coord status\";", ": \"lane-coord status --all\";"), trace: SCENE },
+  n737: { mutation: distort("lane-stack/hooks/guard_shell.py", "_CLAIMS_WINDOW_MS = 30 * 60_000", "_CLAIMS_WINDOW_MS = 120 * 60_000"), trace: SCENE },
+  n738: { mutation: distort("src/rooms/front/server/index.ts", "--reason '${clear.reason.replace(/'/g, \"\")}'", "--reason 'n/a'"), trace: SCENE },
+  n739: { mutation: flip("src/rooms/backlog/logic.ts", "item.dependsOn.every((id) => done.has(id))", "item.dependsOn.some((id) => done.has(id))"), trace: SCENE },
+  n740: { mutation: distort("src/rooms/memory/server/memory.ts", "context:[selected.nothingRelevant?NOTHING_RELEVANT:selected.text,tiers.text]", "context:[selected.text,tiers.text]"), trace: SCENE },
+  n741: { mutation: distort("src/rooms/tools/server/receipts.ts", "Date.now() - 14 * 86_400_000", "Date.now() - 140 * 86_400_000"), trace: SCENE },
+  n742: { mutation: distort("src/rooms/platform/server/realtime.ts", "pending.set(`${projectId}|${kind}|${threadId ?? \"\"}|${id ?? \"\"}`,", "pending.set(`${projectId}|${threadId ?? \"\"}|${id ?? \"\"}`,"), trace: SCENE },
+  n743: { mutation: distort("packages/ui-kit/src/realtime-channel.ts", "\"schedule\", \"harness\"]", "\"schedule\", \"harness2\"]"), trace: SCENE },
   n744: { voidReview: voidStays("по собственной карте SMA значение стиля осталось без экрана и никем не читается; факты стиля живут в DESIGN.md") },
-  n750: { voidReview: voidIsHave("публикация требует квитанции зелёного полного прогона, ключённой по дереву и версии node и лежащей на диске (переживает рестарт), — предела SMA «только в памяти» нет") },
+  n747: { mutation: flip("scripts/lp-ship.ts", "if (rc !== 0) { console.log(`gate: ${name} failed`); return rc; }", "if (rc === 0) { console.log(`gate: ${name} failed`); return rc; }"), trace: SCENE },
+  n748: { mutation: flip("scripts/lp_drill/lock.py", "os.kill(int((lock / \"pid\").read_text()), 0)\n                return False", "os.kill(int((lock / \"pid\").read_text()), 0)\n                return True"), reach: entry("the nightly drill and the deploy drill start while one already runs"), trace: SCENE },
+  n749: { mutation: distort("src/rooms/writer/cli-run.ts", "exitCode: result.status ?? 1,", "exitCode: result.status ?? 0,"), trace: SCENE },
+  n750: { mutation: wrongTarget("scripts/lp-ship.ts", "const key = `${git(\"rev-parse\", \"HEAD^{tree}\")}-${process.version}`;", "const key = `${git(\"rev-parse\", \"HEAD\")}-${process.version}`;"), trace: SCENE, voidReview: voidIsHave("публикация требует квитанции зелёного полного прогона, ключённой по дереву и версии node и лежащей на диске (переживает рестарт), — предела SMA «только в памяти» нет") },
+  n753: { mutation: flip("src/rooms/native-install/native-install-bootstrap.ts", "  if (!await exists(dest)) {", "  if (await exists(dest)) {"), reach: entry("a machine is prepared for Lane Pilot: the owner enables it or a new host connects"), trace: SCENE },
+  n754: { mutation: flip("src/rooms/native-install/server/rpc/stack.ts", "if (!confirmExternalOps) return { schemaVersion:1, action:\"install\"", "if (confirmExternalOps) return { schemaVersion:1, action:\"install\""), trace: SCENE },
 } satisfies RegionEvidence;
