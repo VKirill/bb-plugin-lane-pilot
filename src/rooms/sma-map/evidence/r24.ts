@@ -106,6 +106,7 @@ export default {
     mutation: distort("src/rooms/writer/progress-journal.ts", "`… ${lines.length - PROGRESS_CAP} more not shown`", "`… ${lines.length - PROGRESS_CAP + 1} more not shown`"),
     trace: drill("sma_r24"),
   },
+  n1675: { mutation: flip("src/rooms/native-agent/terminal-parity.ts", "const same = gaps.onlySession.length === 0 && gaps.onlyTerminal.length === 0;", "const same = gaps.onlySession.length === 0 || gaps.onlyTerminal.length === 0;"), reach: entry("the owner runs bb lane-pilot parity for an attempt"), trace: drill("sma_tails") },
   n1676: {
     mutation: flip("src/rooms/native-agent/native-claude-host.ts", "if rule not in mine: mine.append(rule)", "if rule in mine: mine.append(rule)"),
     reach: entry("a helper (non-person) Claude session is launched through the native launcher"),

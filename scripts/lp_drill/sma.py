@@ -7,13 +7,14 @@ import importlib
 import re
 from pathlib import Path
 
-SMA_FILE = re.compile(r"^sma_r\d\d$")
+SMA_FILE = re.compile(r"^sma_(r\d\d|tails)$")  # sma_tails: the nodes no region batch owns (one module of its own)
 
 
 def discover() -> dict[str, dict]:
     """name -> {"run": scenario function, "nodes": [node ids]} for every scenes/sma_rNN.py, sorted by name."""
     found: dict[str, dict] = {}
-    for path in sorted((Path(__file__).resolve().parent / "scenes").glob("sma_r[0-9][0-9].py")):
+    scenes = Path(__file__).resolve().parent / "scenes"
+    for path in sorted([*scenes.glob("sma_r[0-9][0-9].py"), *scenes.glob("sma_tails.py")]):
         if not SMA_FILE.match(path.stem):
             continue
         module = importlib.import_module(f"lp_drill.scenes.{path.stem}")

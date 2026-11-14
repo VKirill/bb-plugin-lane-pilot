@@ -36,6 +36,7 @@ export default {
   n554: { mutation: distort(TOOLS, "byModel: rows,", "byModel: rows.slice(1),"), trace: drill("sma_r06") },
   n555: { mutation: distort(TOOLS, "?? 0) + 1;", "?? 0) + 2;"), trace: drill("sma_r06") },
   n556: { mutation: distort(TOOLS, 'states: ["accepted","blocked","canceled"], limit: 15', 'states: ["accepted","canceled"], limit: 15'), trace: drill("sma_r06") },
+  n557: { mutation: distort(INTAKE, 'if (clean.length <= 80 && !clean.includes("\\n")) return { kind: "small", confident: false };', 'if (clean.length <= 80 && !clean.includes("\\n")) return { kind: "small", confident: true };'), trace: drill("sma_tails") },
   n558: { mutation: distort("src/rooms/phase/logic/signatures.ts", "canonical({ contextSha, items })", "canonical({ items })"), trace: drill("sma_r06") },
   n559: { mutation: distort("src/rooms/phase/server/intake.ts", "return { started: true, via: known.via, id: known.id };", "return { started: true, via: known.via, id: `${known.id}~` };"), reach: entry("the owner answers «да» to a proposal in the PM chat (the lead road: lead:<road> key)"), trace: drill("sma_r06") },
   // The worked example of a proof in the core (docs/sma-evidence.md «Proofs in a sibling repository»): the [sma:m_ce_recover] test is in
@@ -44,6 +45,7 @@ export default {
   n561: { mutation: flip("src/rooms/native-agent/ui/composer-boundary.tsx", 'if (role !== "pm") return null;', 'if (role === "pm") return null;'), reach: entry("a person opens a PM chat: the line draws under its input"), trace: drill("sma_r06") },
   n562: { mutation: distort("src/rooms/tasks/server/contract-lint.ts", 'code:"output_unowned"', 'code:"output_owned"'), trace: drill("sma_r06") },
   n563: { mutation: wrongTarget("src/rooms/usage/server/token-usage.ts", ".run(thread.id, thread.projectId, cursor.last_provider || thread.providerId, cursor.last_seq,", ".run(thread.projectId, thread.projectId, cursor.last_provider || thread.providerId, cursor.last_seq,"), trace: drill("sma_r06") },
+  n564: { mutation: distort("lane-stack/hooks/guard_shell.py", 'gh\\s+release\\b", scan)', 'gh\\s+releaze\\b", scan)'), reach: entry("a Lane Pilot PM chat starts, and a writer's attempt runs shell commands under the guard"), trace: drill("sma_tails") },
   n565: { mutation: distort("src/rooms/native-agent/server/activation.ts", "const spawnProviderId = native?.providerId ?? config.pmProviderId;", "const spawnProviderId = native?.providerId ?? config.writerProviderId;"), trace: drill("sma_r06") },
   n566: { mutation: flip("src/rooms/native-agent/server/activation.ts", 'if (valueAt(sourceMetadata, "role") === "writer") {', 'if (valueAt(sourceMetadata, "role") !== "writer") {'), trace: drill("sma_r06") },
   n567: { mutation: distort("src/rooms/stability/server/pm-turn-watch.ts", "maxTurns: limits.maxTurns > 0 ? limits.maxTurns : 0", "maxTurns: limits.maxTurns > 0 ? limits.maxTurns + 1 : 0"), trace: drill("sma_r06") },
