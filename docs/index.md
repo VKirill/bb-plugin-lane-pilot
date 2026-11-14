@@ -10,9 +10,8 @@ Built by Lane Pilot from page frontmatter.
 
 | Page | Type | Status | Updated |
 |---|---|---|---|
-| [Агенты Lane Pilot: кто есть кто](agents.md) | component | active | 2026-11-14 |
 | [Anamnesis and owner profile](anamnesis.md) | component | active | 2026-10-10 |
-| [Lane Pilot architecture](architecture.md) | architecture | active | 2026-10-30 |
+| [Lane Pilot architecture](architecture.md) | architecture | active | 2026-11-14 |
 | [Maslov work-graphs vs Lane Pilot — gap audit](audits/maslov-graphs-vs-lane-pilot.md) | audit | draft | — |
 | [Backlog to tasks by readiness](backlog.md) | component | active | 2026-10-23 |
 | [The baseline before a writer and the regression pass after acceptance](baseline.md) | component | active | 2026-10-29 |
@@ -27,41 +26,40 @@ Built by Lane Pilot from page frontmatter.
 | [Architectural decisions](decisions.md) | decisions | active | 2026-10-29 |
 | [Protecting Lane Pilot database access](decisions/2026-10-08-lane-pilot-data-db-access.md) | decisions | active | 2026-10-30 |
 | [SDK audit wave 12: implemented items and rejections](decisions/2026-10-30-sdk-audit-wave12.md) | decisions | decided | — |
-| [Register of deferrals](deferrals.md) | component | active | 2026-10-30 |
-| [Build and deploy Lane Pilot](deployment.md) | deployment | active | 2026-10-30 |
+| [Register of deferrals](deferrals.md) | component | active | 2026-11-14 |
+| [Build and deploy Lane Pilot](deployment.md) | deployment | active | 2026-11-14 |
 | [Design evaluation rubric](design-eval.md) | component | active | 2026-10-25 |
 | [The nightly docs pass](docs-night.md) | component | active | 2026-10-30 |
 | [Enabled settings (generated)](enabled-settings.md) | component | generated | 2026-10-30 |
 | [Errands: the page and the read model](errands.md) | component | active | 2026-11-01 |
 | [The task pipeline](flows/task-pipeline.md) | flow | active | 2026-10-30 |
 | [Plan forecast and calibration](forecast.md) | component | active | 2026-10-23 |
-| [Cross-cutting gotchas](gotchas.md) | gotchas | active | 2026-11-09 |
-| [Development](guide/development.md) | overview | active | 2026-11-06 |
+| [Cross-cutting gotchas](gotchas.md) | gotchas | active | 2026-11-14 |
+| [Development](guide/development.md) | overview | active | 2026-11-14 |
 | [Failure handling and stability](guide/failures.md) | overview | active | 2026-11-06 |
-| [How a piece of work flows](guide/flow.md) | overview | active | 2026-11-06 |
+| [How a piece of work flows](guide/flow.md) | overview | active | 2026-11-14 |
 | [Everything is a graph](guide/graphs.md) | overview | active | 2026-11-06 |
-| [CLI, agent tools, UI and RPC](guide/interfaces.md) | overview | active | 2026-11-06 |
-| [Memory](guide/memory.md) | overview | active | 2026-11-06 |
-| [Observability](guide/observability.md) | overview | active | 2026-11-06 |
-| [Roles, agents and models](guide/roles.md) | overview | active | 2026-11-06 |
 | [The hand-off standard](guide/handoff.md) | reference | active | 2026-11-10 |
 | [The hook standard](guide/hooks.md) | reference | active | 2026-11-10 |
+| [CLI, agent tools, UI and RPC](guide/interfaces.md) | overview | active | 2026-11-06 |
+| [Memory](guide/memory.md) | overview | active | 2026-11-06 |
+| [Observability](guide/observability.md) | overview | active | 2026-11-14 |
+| [Roles, agents and models](guide/roles.md) | overview | active | 2026-11-14 |
 | [Self-improvement](guide/self-improvement.md) | overview | active | 2026-11-06 |
-| [Settings and experimental features](guide/settings.md) | overview | active | 2026-11-06 |
+| [Settings and experimental features](guide/settings.md) | overview | active | 2026-11-10 |
 | [Writer harness](harness.md) | component | active | 2026-10-29 |
 | [Hypotheses checked on the bench](hypotheses.md) | component | active | 2026-10-23 |
 | [docs/invoice-send.md](invoice-send.md) | — | — | — |
 | [The lead («Штурман»)](lead.md) | component | active | 2026-11-01 |
-| [Learning from the owner's messages](learning.md) | component | active | 2026-10-29 |
+| [Learning from the owner's messages](learning.md) | component | active | 2026-11-13 |
 | [LP-Bench, the fixed task set](lp-bench.md) | component | active | 2026-10-30 |
 | [Memory tiers (SMA D2-8)](memory-tiers.md) | component | active | 2026-10-28 |
-| [Project memory](memory.md) | component | active | 2026-10-30 |
 | [Native agent activation and dispatch](native-agent.md) | component | active | 2026-10-29 |
-| [Night policy: what the night may decide without the owner](night-policy.md) | component | active | 2026-10-22 |
+| [Night policy: what the night may decide without the owner](night-policy.md) | component | active | 2026-11-14 |
 | [Outage record and the conveyor switch](outage-conveyor.md) | component | active | 2026-10-23 |
-| [Lane Pilot overview](overview.md) | overview | active | 2026-10-30 |
+| [Lane Pilot overview](overview.md) | overview | active | 2026-11-14 |
 | [The owner at the keyboard](owner-presence.md) | component | active | 2026-10-25 |
-| [Waiting for the owner](owner-waiting.md) | component | active | 2026-10-30 |
+| [Waiting for the owner](owner-waiting.md) | component | active | 2026-11-14 |
 | [Package operation details](package-operations.md) | component | active | 2026-10-28 |
 | [Shared packages](packages.md) | component | active | 2026-10-30 |
 | [Phases](phases.md) | component | active | 2026-10-30 |
@@ -93,8 +91,8 @@ Built by Lane Pilot from page frontmatter.
 | [docs/telegram-send.md](telegram-send.md) | — | — | — |
 | [Twins against the real thing](twins.md) | component | active | 2026-10-23 |
 | [Writer validation decisions](validator-decisions.md) | decisions | active | 2026-10-20 |
-| [The wall journal and the night loop](wall.md) | component | active | 2026-10-22 |
-| [Сторож хаба и подъём BB](watchdog.md) | — | — | 2026-10-24 |
+| [The wall journal and the night loop](wall.md) | component | active | 2026-11-14 |
+| [Сторож хаба и подъём BB](watchdog.md) | — | — | 2026-11-11 |
 | [Declared wires](wires.md) | component | active | 2026-10-23 |
 | [The work graph](work-graph.md) | component | active | 2026-10-23 |
 | [Workflow engine integration](workflow-engine.md) | overview | active | 2026-10-10 |

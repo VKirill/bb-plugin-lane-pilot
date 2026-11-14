@@ -70,5 +70,4 @@ The array is positional: the hub records every applied statement by index and re
 - [Lane Pilot architecture](architecture.md)
 - [Build and deploy Lane Pilot](deployment.md)
 - [Development](guide/development.md)
-- [Project memory](memory.md)
 - [Lane Pilot overview](overview.md)

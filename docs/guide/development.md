@@ -6,9 +6,10 @@ status: active
 created: 2026-11-06
 confidence: medium
 tags: [guide, development]
-updated: 2026-11-06
+updated: 2026-11-14
 sources:
   - package.json
+  - src/rooms/migrations.ts
   - src/rooms/storage/database.ts
   - scripts/lp-drill.py
 ---
@@ -23,7 +24,7 @@ sources:
 |---|---|
 | `server.ts`, `host.ts`, `app.tsx` | The three BB entries. They only assemble: server wiring and RPC in `server.ts`, host handlers in `host.ts`, the React app in `app.tsx`. |
 | `src/rooms/<room>/` | One folder per subsystem (writer, runs, critique, memory, wall, bench, harness, council, workflow, settings, ui-shell and many more). A room exposes three public files: `index.ts` (domain), `server/index.ts` and `ui/index.ts`. Everything else in the room is private. |
-| `packages/*` | npm workspaces under the `@lane-pilot/` scope: `contracts`, `council`, `handoff`, `harness-core`, `host-calls`, `i18n`, `kit`, `memory-core`, `models`, `pixel-world`, `resilience`, `run-insights`, `settings-catalog`, `thread-observe`, `ui-kit`, `workflow-engine`, `world-sim`. Four of them have their own `docs/` (`i18n`, `ui-kit`, `workflow-engine`, `world-sim`). |
+| `packages/*` | npm workspaces under the `@lane-pilot/` scope: `contracts`, `council`, `handoff`, `harness-core`, `host-calls`, `i18n`, `kit`, `memory-core`, `models`, `pixel-world`, `resilience`, `run-insights`, `settings-catalog`, `thread-observe`, `ui-kit`, `workflow-engine`, `world-sim`. Seven keep their own workspace docs (`i18n`, `kit`, `memory-core`, `models`, `ui-kit`, `workflow-engine`, `world-sim`); the rest belong to root `docs/`. |
 | `workflows/` | The shipped graphs (JSON). |
 | `lane-stack/` | Guard hooks, the OpenCode `opencode-lane` plugin, bin helpers and schemas installed on hosts for writer and helper sessions. |
 | `policy/`, `bench/` | The night policy and its exam; the bench task sources (`known-bugs-v1.json`, `real-prs-v1.json`). |
@@ -50,7 +51,7 @@ sources:
 
 ## Database migrations
 
-The plugin's SQLite schema is one positional array in `src/rooms/storage/database.ts`, assembled from the rooms' and packages' migration lists. It is **append-only**: the hub records every applied statement by index and refuses a plugin whose statement at an index differs. Add a new statement at the end of the array (never inside a package list spread in the middle) and add its SHA-256 to `tests/fixtures/migrations.lock.json`; `tests/migration-lineage.test.ts` fails when a locked statement moved or changed and when a new one has no hash. See [docs/data-model.md](../data-model.md).
+The plugin's SQLite schema is one positional `migrations` array in `src/rooms/migrations.ts`, assembled from the rooms' and packages' migration lists and applied at startup by `openDatabase` in `src/rooms/storage/database.ts`. It is **append-only**: the hub records every applied statement by index and refuses a plugin whose statement at an index differs. Add a new statement at the end of the array (never inside a package list spread in the middle) and add its SHA-256 to `tests/fixtures/migrations.lock.json`; `tests/migration-lineage.test.ts` fails when a locked statement moved or changed and when a new one has no hash. See [docs/data-model.md](../data-model.md).
 
 ## Deploy
 
@@ -60,4 +61,4 @@ Release notes of every version are in [CHANGELOG.md](../../CHANGELOG.md); ADRs a
 
 ## Sources
 
-Where this page's claims start in the code: `package.json:1-21`, `src/rooms/storage/database.ts:48-68`, `scripts/lp-drill.py:123-143`. The deep pages linked above cite the rest.
+Where this page's claims start in the code: `package.json:1-21`, `src/rooms/migrations.ts:1-60`, `src/rooms/storage/database.ts:20-26`, `scripts/lp-drill.py:123-143`. The deep pages linked above cite the rest.
