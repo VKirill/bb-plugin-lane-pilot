@@ -18,7 +18,8 @@ const flag = (argv: readonly string[], name: string) => { const at = argv.indexO
 export function defaultProofRoots(cwd: string): ProofRoots {
   // Beside the plugin on a Mac checkout, under ~/tools on the Linux hosts.
   const laneStack = [join(cwd, "..", "claude-lane-stack"), join(homedir(), "tools", "claude-lane-stack")].find((path) => existsSync(path)) ?? join(cwd, "..", "claude-lane-stack");
-  const core = join(homedir(), ".local", "share", "bb-source-vk");
+  // The BB core sources (vk layer): the Mac/hub checkout first, else the sibling bb-core repository on the Linux hosts.
+  const core = [join(homedir(), ".local", "share", "bb-source-vk"), join(cwd, "..", "bb-core", "vk"), join(cwd, "..", "..", "..", "..", "bb-core", "vk")].find((path) => existsSync(path)) ?? join(homedir(), ".local", "share", "bb-source-vk");
   const telegram = join(cwd, "..", "bb-plugin-telegram-projects");
   // Sources, not a built copy: the hub's install has no src/, and a proof cannot be judged there.
   return { lanePilot: existsSync(join(cwd, "src/rooms/sma-map/entries.ts")) ? cwd : "", ...(existsSync(laneStack) ? { laneStack } : {}), ...(existsSync(core) ? { core } : {}), ...(existsSync(telegram) ? { telegram } : {}) };
