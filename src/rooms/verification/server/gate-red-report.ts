@@ -1,6 +1,7 @@
 import { join } from "node:path";
 import { finishGateRun } from "../../storage";
 import { bestEffort } from "@lane-pilot/kit";
+import { writeReplacing } from "../../storage";
 import type { GateAttributeResult } from "../integration-gate-host";
 import { unhandledErrorBlock } from "../gate-output";
 import { attributeFailures } from "./gate-attribution";
@@ -175,15 +176,7 @@ export async function reportRed(deps: {
   const logFullPath = join(basePath, logRelativePath);
   const logContent = `$ ${gateCommand}\nexit ${activeExitCode}\n\n${activeStdout}\n${activeStderr}`.trim() + "\n";
 
-  await bestEffort(ctx.log, `gate log write ${logRelativePath}`, bb.sdk.files.write({
-    hostId: configHostId,
-    rootPath: basePath,
-    path: logFullPath,
-    content: logContent,
-    contentEncoding: "utf8",
-    createParents: true,
-    expectedSha256: null,
-  }), undefined);
+  await bestEffort(ctx.log, `gate log write ${logRelativePath}`, writeReplacing(bb.sdk.files, { hostId: configHostId, rootPath: basePath, path: logFullPath, content: logContent, createParents: true }), undefined);
 
   if (culprit) {
     // The culprit's attempt is accepted and its worktree gone: a message into its old writer thread had no loop waiting for the turn, so

@@ -1,3 +1,4 @@
+import { coreFileWrite, mapStore } from "./helpers/core-files";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { afterEach, describe, expect, it } from "vitest";
 import { WorkflowEngine, registerPureActions, validateWorkflow } from "@lane-pilot/workflow-engine";
@@ -73,7 +74,7 @@ function world(options: { answer?: Answer; hold?: (meta: Record<string, any>) =>
       },
       files: {
         read: async ({ path }: { path: string }) => ({ content: path.endsWith("PROJECT.md") ? "A photo cabinet; account is required before payment." : null }) as never,
-        write: async ({ path, content }: { path: string; content: string }) => { state.written.set(path, content); return { ok: true } as never; },
+        write: coreFileWrite(mapStore(state.written)) as never,
       },
     },
   });

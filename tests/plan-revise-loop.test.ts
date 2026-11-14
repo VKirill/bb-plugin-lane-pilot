@@ -5,6 +5,7 @@ import plugin from "../server";
 import type { TaskV2 } from "../src/rooms/contracts";
 import { shouldRunPlanCritique } from "../src/rooms/critique/critique";
 import { parsePlanRevision, planReviseConfig } from "../src/rooms/writer/server/plan-revise";
+import { coreFileWrite, mapStore } from "./helpers/core-files";
 import { contractEditions, createRun, getAttempt, getTaskPlan, listStageReceipts, openDatabase, renderTaskManifest, saveProjectSetting, savePrototypeConfig, setRunThread } from "../src/rooms/plugin-db";
 
 /**
@@ -128,7 +129,7 @@ async function runScenario(scenario: Scenario) {
       files: {
         listPaths: async () => ({ truncated: false, paths: [{ kind: "file", name: "README.md", path: "README.md", positions: [], score: 1 }] }) as never,
         read: async ({ path }) => written.has(path) ? { content: written.get(path)! } : path.endsWith("README.md") ? { content: "readme\n" } : path.endsWith(".txt") ? { content: "reviewed output\n", sha256: noteSha } : { content: null },
-        write: async (args) => { const { path, content } = args as unknown as { path: string; content: string }; written.set(path, content); return { ok: true } as never; },
+        write: coreFileWrite(mapStore(written)) as never,
       },
     },
     experimental_callHostRpc: async (call) => {

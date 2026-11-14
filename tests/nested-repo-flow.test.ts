@@ -1,3 +1,4 @@
+import { coreFileWrite, diskStore } from "./helpers/core-files";
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -83,7 +84,7 @@ async function setup(writerEdits: (workspace: string) => string) {
         return existsSync(path) ? { content: readFileSync(path, "utf8") } : { content: null };
       },
       listPaths: async () => ({ paths: [] }) as never,
-      write: async (args) => { put("/", (args as { path: string }).path, (args as { content: string }).content); return { ok: true } as never; },
+      write: coreFileWrite(diskStore()) as never,
     }, projects: {
       get: async () => ({ id: projectId, name: projectId, sources: [{ hostId: "host-umbrella", path: folder }] }) as never,
       list: async () => [] as never,

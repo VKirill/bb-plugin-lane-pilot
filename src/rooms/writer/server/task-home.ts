@@ -1,5 +1,6 @@
 import { isAbsolute, relative, resolve } from "node:path";
 import { isNotFound, orMiss, sha256Hex } from "@lane-pilot/kit";
+import { writeReplacing, type ReplacingWrite } from "../../storage";
 import {
   countTaskFiles, currentTaskFilePaths, getTaskPlan, hasTaskHome, latestTaskAttemptId, openTaskAttemptWorkspace, taskContractEditionNumber, taskFileAttempts, listStageReceipts, noteTaskFileRead, openTaskHome, placeTaskHome, readTaskFile, recordTaskFile, resolveTaskFile, taskHomeOf, TASK_HOME_EXCLUDE,
   type ResolvedTaskFile, type TaskFileIo, type TaskFileKind, type TaskFileProducer,
@@ -14,7 +15,7 @@ import type { TaskV2 } from "../../contracts";
 
 type Files = { sdk: { files: {
   read(args: { hostId: string; rootPath: string; path: string }): Promise<unknown> | unknown;
-  write(args: { hostId: string; rootPath: string; path: string; content: string; contentEncoding: "utf8"; createParents: boolean; expectedSha256: null }): Promise<unknown> | unknown;
+  write(args: ReplacingWrite & { contentEncoding: "utf8" }): Promise<unknown> | unknown;
 } } };
 
 /** Absolute-path reads and writes on one host, rooted at `rootPath` (the bb file API needs a root). A missing file reads as null. */
@@ -26,7 +27,7 @@ export function bbTaskFileIo(bb: Files, hostId: string, rootPath: string): TaskF
       return typeof content === "string" ? content : null;
     },
     write: async (absPath, content) => {
-      await bb.sdk.files.write({ hostId, rootPath, path: absPath, content, contentEncoding: "utf8", createParents: true, expectedSha256: null });
+      await writeReplacing(bb.sdk.files, { hostId, rootPath, path: absPath, content, createParents: true });
     },
   };
 }

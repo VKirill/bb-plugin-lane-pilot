@@ -11,6 +11,7 @@ import type { TaskV2 } from "../../contracts";
 
 import type { ServerCore } from "../../contracts/server";
 import { bestEffort } from "@lane-pilot/kit";
+import { writeReplacing } from "../../storage";
 
 import type { BaselineApi } from "../../baseline/server/baseline";
 import type { LeadRoadApi } from "../../contracts";
@@ -138,8 +139,8 @@ export function mountVerificationAttemptFinished(ctx: ServerCore, services: Serv
     const { fix, plan, logs } = postMergeRepair(onMain, confirmed);
     // The writer reads the failure from its task folder; a full log per failing check, best-effort.
     for (const log of logs) {
-      await bestEffort(ctx.log, "post-merge check log write", ctx.bb.sdk.files.write({ hostId: input.config.hostId, rootPath: input.basePath, path: `${input.basePath}/${log.path}`,
-        content: log.content, contentEncoding: "utf8", createParents: true, expectedSha256: null }), undefined);
+      await bestEffort(ctx.log, "post-merge check log write", writeReplacing(ctx.bb.sdk.files, { hostId: input.config.hostId, rootPath: input.basePath, path: `${input.basePath}/${log.path}`,
+        content: log.content, createParents: true }), undefined);
     }
     const sent = await services.dispatchWriter({ threadId: input.pmThreadId, projectId: input.projectId, task: fix, plan }).catch((cause: unknown) => ({ state: "rejected", reason: cause instanceof Error ? cause.message : String(cause) }));
     const notStarted = String(sent.state) === "rejected" || String(sent.state) === "blocked" || (sent as { ok?: unknown }).ok === false;

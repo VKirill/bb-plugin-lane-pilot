@@ -4,6 +4,7 @@ import { getRun, getRunSettingsScopes, latestGateRun, listOpenAttempts, listOpen
 import { getPhase, listPhases } from "../../phase";
 import { profilePairProblem, unsafeReason } from "../../anamnesis";
 import { bestEffort, sha256Hex } from "@lane-pilot/kit";
+import { writeReplacing } from "../../storage";
 import { list, rec, str, pmCheckout, quote, needLanePilot } from "./workflow-chain-runtime";
 import type { Row } from "./workflow-chain-runtime";
 import type { StepContext, WorkflowEngine } from "@lane-pilot/workflow-engine";
@@ -166,7 +167,7 @@ export function registerProjectActions(engine: WorkflowEngine, ctx: ServerCore, 
       const read = async (rel: string) => (await bestEffort(ctx.log, "milestone archive read", runOnHost(ctx.host, { hostId: checkout.hostId, cwd: root, command: `cat ${quote(rel)} 2>/dev/null || true`, timeoutSec: 15, timeoutMs: 20_000 }), null))?.stdout ?? "";
       const write = async (rel: string, content: string) => {
         if (root === checkout.path) noteEngineWrite(checkout.path, rel);
-        await bb.sdk.files.write({ hostId: checkout.hostId, rootPath: root, path: `${root}/${rel}`, content, contentEncoding: "utf8", createParents: true, expectedSha256: null });
+        await writeReplacing(bb.sdk.files, { hostId: checkout.hostId, rootPath: root, path: `${root}/${rel}`, content, createParents: true });
       };
       // The closing milestone is named by its goal. new-milestone names none: the previous milestone is the roadmap's own heading when it has one, else the date.
       const params = rec(rec(c.node).params);
@@ -215,7 +216,7 @@ export function registerProjectActions(engine: WorkflowEngine, ctx: ServerCore, 
       });
       for (const { id, title, lens } of byId.values()) if (!seen.has(id)) lines.push(`- ${id}${lens ? ` [${lens}]` : ""}${title ? ` ${title}` : ""} (last seen ${milestone})`);
       noteEngineWrite(checkout.path, path);
-      await bb.sdk.files.write({ hostId: checkout.hostId, rootPath: checkout.path, path: `${checkout.path}/${path}`, content: `${lines.join("\n").replace(/\n{3,}/g, "\n\n")}\n`, contentEncoding: "utf8", createParents: true, expectedSha256: null });
+      await writeReplacing(bb.sdk.files, { hostId: checkout.hostId, rootPath: checkout.path, path: `${checkout.path}/${path}`, content: `${lines.join("\n").replace(/\n{3,}/g, "\n\n")}\n`, createParents: true });
       return { updated: byId.size, total: lines.filter((row) => /- INS-[A-Za-z0-9]{6,}/.test(row)).length, path };
     } catch (cause) {
       ctx.log(`living retro not written, the close goes on: ${cause instanceof Error ? cause.message : String(cause)}`);

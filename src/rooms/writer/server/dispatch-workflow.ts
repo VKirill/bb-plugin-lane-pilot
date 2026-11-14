@@ -17,6 +17,7 @@ import type { ServerCore } from "../../contracts/server";
 
 import { runOnHost } from "@lane-pilot/host-calls";
 import { isNotFound, orMiss, parseJsonOr } from "@lane-pilot/kit";
+import { writeReplacing } from "../../storage";
 import { withUsage } from "../../usage/server";
 import { taskUsage } from "./attempt-usage";
 import { reflexLinesOf, taskFileCards } from "./writer-knowledge";
@@ -315,7 +316,7 @@ export function registerDispatchExecutors(engine: WorkflowEngine, bb?: BbPluginA
         reflexes, filecards, exclude,
         exists: async (rel) => (await orMiss(Promise.resolve().then(() => bb.sdk.files.read({ hostId: r.config.hostId, rootPath: r.workspacePath, path: `${r.workspacePath}/${rel}` })), null, isNotFound)) !== null,
         writeFile: async (rel, content) => {
-          await bb.sdk.files.write({ hostId: r.config.hostId, rootPath: r.workspacePath, path: `${r.workspacePath}/${rel}`, content, contentEncoding: "utf8", createParents: true, expectedSha256: null });
+          await writeReplacing(bb.sdk.files, { hostId: r.config.hostId, rootPath: r.workspacePath, path: `${r.workspacePath}/${rel}`, content, createParents: true });
         },
       });
     } catch (cause) {

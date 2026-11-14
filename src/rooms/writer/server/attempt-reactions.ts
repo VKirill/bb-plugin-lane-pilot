@@ -7,6 +7,7 @@ import { recordSkillSwitchMetric } from "../skill-switch";
 import { createSkillMaterializer, recordedMaterializedSkills } from "./skill-materialize";
 import { recordedWriterSkills } from "./skill-pick";
 import { outputText, redactKnown } from "@lane-pilot/kit";
+import { writeReplacing } from "../../storage";
 import { scrubQuote } from "../../anamnesis";
 import { upsertLessonProposal } from "@lane-pilot/run-insights";
 import { writerMarkers } from "../../tasks";
@@ -137,7 +138,7 @@ export async function writeTaskOutcome(ctx: Pick<ServerCore, "bb" | "db" | "log"
     ].join("\n");
     await persistTaskFolder({ taskId: event.taskId, outcome: markdown,
       writeFile: async (rel, content) => {
-        await bb.sdk.files.write({ hostId: event.config.hostId, rootPath: workspace, path: `${workspace}/${rel}`, content, contentEncoding: "utf8", createParents: false, expectedSha256: null });
+        await writeReplacing(bb.sdk.files, { hostId: event.config.hostId, rootPath: workspace, path: `${workspace}/${rel}`, content, createParents: false });
       } });
   } catch (cause) {
     ctx.log(`task OUTCOME.md write for ${event.taskId} failed: ${cause instanceof Error ? cause.message : String(cause)}`);

@@ -1,3 +1,4 @@
+import { coreFileWrite, mapStore } from "./helpers/core-files";
 import { countAttempts } from "../src/rooms/plugin-db";
 import { createHash } from "node:crypto";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
@@ -555,10 +556,7 @@ describe("BB writer validation on the server path", () => {
         files:{
           read: async ({ path }) => path.endsWith("README.md") ? { content:"task read-first fixture\n" }
             : path.endsWith("hello.txt") ? { content:"hello\n" } : { content:null },
-          write: async ({ path, content }) => {
-            written.set(String(path), String(content));
-            return { ok:true };
-          },
+          write: coreFileWrite(mapStore(written)) as never,
         },
       },
       experimental_callHostRpc: (call) => {
