@@ -1374,7 +1374,7 @@ export const SMA_ENTRIES: Readonly<Record<string, SmaEntry>> = {
   n1360: ["have", "итог и следующие шаги", "workflows/project-start.json#Recap in five lines"],
   n1361: ["have", "sma start-map", "workflows/project-start.json#\"entry\""],
   n1362: ["have", "предпросмотр блока корпуса из записей, без записи в файлы агента", "workflows/project-start.json"],
-  n1363: ["have", "sma profile", "src/rooms/tools/server/cli-project.ts#if (command === \"profile\") {"],
+  n1363: ["have", "sma profile", "src/rooms/tools/server/cli-project.ts#cliProject"],
   n1364: ["have", "построитель карты ценности", "workflows/project-start.json#VALUE-MAP.md"],
   n1365: ["have", "предпросмотр графа памяти", "workflows/project-start.json#the memory graph of notes by area"],
   n1366: ["have", "единый вход к настройкам проекта — settings-store (loadProjectSettings), комната настроек пишет через одну дверь", "src/rooms/storage/settings-store.ts#loadProjectSettings"],
