@@ -8,6 +8,7 @@ import { stringAt } from "@lane-pilot/kit";
 import { isDocumentaryRole } from "../../contracts";
 import { rememberThreadModel } from "./spawn-model";
 import { noteZcodeThread, reserveZcodeSlot } from "./zcode-slot";
+import { withLaunchTuning } from "./launch-tuning";
 
 /**
  * The PM agents the bundled guard (lane-pilot-pm, plus the older orchestrator names) reads the rules of: it keys
@@ -184,7 +185,8 @@ export function fullAccessSpawn(bb: BbPluginApi, args: Parameters<BbPluginApi["s
     const namedTier = args.serviceTier === "default" || args.serviceTier === "fast";
     const sendTier = supportsTier === true || (supportsTier === null && namedTier);
 
-    const quiet = quietHelper(args, graphStepLookupByApi.get(bb));
+    // Launch tuning (launch-tuning.ts): read-only helpers start in the provider's read-only mode; every other spawn passes through unchanged.
+    const quiet = withLaunchTuning(quietHelper(args, graphStepLookupByApi.get(bb)));
     const { serviceTier: _incomingTier, ...restQuiet } = quiet;
     let executionInputSources = restQuiet.executionInputSources ? { ...restQuiet.executionInputSources } : undefined;
     if (executionInputSources) {
