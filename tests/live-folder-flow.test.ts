@@ -164,8 +164,9 @@ describe("a plain folder without git, end to end", () => {
     expect(existsSync(join(env.folder, ".git"))).toBe(false);
     noGit(env);
     expect(env.threadSpawns.filter((row) => row.role === "writer")).toHaveLength(1);
-    // The receipt names the mode.
-    const receipt = [...env.writes].find(([path]) => path.endsWith("lane-pilot-receipt.json"));
+    // The receipt names the mode; it is written once into the task's home (docs/task-folder.md), not the run's shared artifacts.
+    const receipt = [...env.writes].find(([path]) => path.endsWith("/.agents/tasks/live-task/receipt.json"));
+    expect([...env.writes].some(([path]) => path.endsWith("lane-pilot-receipt.json"))).toBe(false);
     expect(receipt && JSON.parse(receipt[1])).toMatchObject({ status: "accepted", workspace: "live-folder", ownsPaths: ["hello.txt", "src/**"] });
     expect(loadProjectSettings(env.db, projectId)["writer.lastResult"]).toMatchObject({ workspace: "live-folder" });
     const writerStage = listStageReceipts(env.db, runId, "live-task").find((row) => row.stageId === "writer-agent")!;

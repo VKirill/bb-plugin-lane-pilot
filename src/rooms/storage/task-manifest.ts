@@ -334,3 +334,38 @@ export async function placeTaskHome(db: LanePilotDatabase, from: TaskFileIo, to:
 }
 
 const resolveSame = (a: string, b: string) => a.replace(/\/+$/, "") === b.replace(/\/+$/, "");
+
+/** The current (not superseded) file paths of a task's home, in recording order: the brief lists them, never a folder listing. */
+export function currentTaskFilePaths(db: LanePilotDatabase, taskId: string): string[] {
+  if (!tablesReady(db)) return [];
+  return (db.prepare("SELECT path FROM lane_pilot_task_file WHERE task_id=? AND superseded_by IS NULL ORDER BY created_at, rowid").all(taskId) as Array<{ path: string }>).map((row) => row.path);
+}
+
+/** How many files of a kind a task's home has recorded (the round number of a critique verdict). */
+export function countTaskFiles(db: LanePilotDatabase, taskId: string, kind: TaskFileKind): number {
+  if (!tablesReady(db)) return 0;
+  return (db.prepare("SELECT COUNT(*) AS n FROM lane_pilot_task_file WHERE task_id=? AND kind=?").get(taskId, kind) as { n: number }).n;
+}
+
+/** The attempts that recorded a file of a kind, in recording order (each attempt's report for the lessons). */
+export function taskFileAttempts(db: LanePilotDatabase, taskId: string, kind: TaskFileKind): string[] {
+  if (!tablesReady(db)) return [];
+  return (db.prepare("SELECT DISTINCT attempt_id FROM lane_pilot_task_file WHERE task_id=? AND kind=? AND attempt_id IS NOT NULL ORDER BY created_at, rowid").all(taskId, kind) as Array<{ attempt_id: string }>)
+    .map((row) => row.attempt_id);
+}
+
+/** The task's latest attempt id, or null. */
+export function latestTaskAttemptId(db: LanePilotDatabase, taskId: string): string | null {
+  return (db.prepare("SELECT id FROM lane_pilot_attempt WHERE task_id=? ORDER BY created_at DESC, rowid DESC LIMIT 1").get(taskId) as { id: string } | undefined)?.id ?? null;
+}
+
+/** The workspace of the task's open attempt (running, blocked or queued), or null. */
+export function openTaskAttemptWorkspace(db: LanePilotDatabase, taskId: string): string | null {
+  return (db.prepare("SELECT workspace_path FROM lane_pilot_attempt WHERE task_id=? AND state IN ('running','blocked','queued') AND workspace_path IS NOT NULL ORDER BY created_at DESC, rowid DESC LIMIT 1")
+    .get(taskId) as { workspace_path: string } | undefined)?.workspace_path ?? null;
+}
+
+/** The task's current contract edition number (1 before any lane_pilot_update_task). */
+export function taskContractEditionNumber(db: LanePilotDatabase, taskId: string): number {
+  return (db.prepare("SELECT COALESCE(MAX(edition),1) AS n FROM lane_pilot_task_contract_edition WHERE task_id=?").get(taskId) as { n: number }).n;
+}

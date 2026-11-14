@@ -106,7 +106,7 @@ Every row is in the catalog (`scripts/ui-catalog-hand.json`, written by `scripts
 | `regress.check_cap_sec` | `src/rooms/baseline/logic.ts:244` | `checkCapSec: number` |
 | `regress.budget_sec` | `src/rooms/baseline/logic.ts:246` | `budgetSec: number` |
 | `regress.bisect_steps` | `src/rooms/baseline/logic.ts:248` | `bisectSteps: number` |
-| `plan_fact.mode` | `src/rooms/writer/server/plan-fact.ts:12` | `PLAN_FACT_MODE_SETTING` |
+| `plan_fact.mode` | `src/rooms/writer/server/plan-fact.ts:15` | `PLAN_FACT_MODE_SETTING` |
 | `critic.code.default_for_risk` | `src/rooms/contracts/quality-mode.ts:53` | `CODE_CRITIC_DEFAULT_SETTING` |
 | `memory.note_budget` | `packages/memory-core/src/settings.ts:7` | `noteBudget` |
 

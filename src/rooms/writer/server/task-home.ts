@@ -1,7 +1,7 @@
 import { isAbsolute, relative, resolve } from "node:path";
 import { isNotFound, orMiss, sha256Hex } from "@lane-pilot/kit";
 import {
-  getTaskPlan, hasTaskHome, listStageReceipts, noteTaskFileRead, openTaskHome, placeTaskHome, readTaskFile, recordTaskFile, resolveTaskFile, taskHomeOf, TASK_HOME_EXCLUDE,
+  countTaskFiles, currentTaskFilePaths, getTaskPlan, hasTaskHome, latestTaskAttemptId, openTaskAttemptWorkspace, taskContractEditionNumber, taskFileAttempts, listStageReceipts, noteTaskFileRead, openTaskHome, placeTaskHome, readTaskFile, recordTaskFile, resolveTaskFile, taskHomeOf, TASK_HOME_EXCLUDE,
   type ResolvedTaskFile, type TaskFileIo, type TaskFileKind, type TaskFileProducer,
 } from "../../storage";
 import type { ServerCore } from "../../contracts/server";
@@ -138,12 +138,11 @@ export async function placeTaskHomeIn(ctx: Pick<ServerCore, "bb" | "db">, input:
 /** The brief's view of the task home: its folder and the files its manifest lists (no folder listing). Null for a task on the old layout. */
 export function taskHomeBrief(db: ServerCore["db"], taskId: string, attemptId?: string): { path: string; files: string[]; plan: string | null; checkLog: string | null; attemptFolder: string | null } | null {
   if (!hasTaskHome(db, taskId)) return null;
-  const rows = db.prepare("SELECT path FROM lane_pilot_task_file WHERE task_id=? AND superseded_by IS NULL ORDER BY created_at, rowid").all(taskId) as Array<{ path: string }>;
   const plan = resolveTaskFile(db, taskId, "plan");
   const checkLog = resolveTaskFile(db, taskId, "check-log");
   return {
     path: `.agents/tasks/${taskId}/`,
-    files: rows.map((row) => row.path),
+    files: currentTaskFilePaths(db, taskId),
     plan: plan?.repoPath ?? null,
     checkLog: checkLog?.repoPath ?? null,
     attemptFolder: attemptId ? `.agents/tasks/${taskId}/attempts/${attemptId}/` : null,
@@ -184,7 +183,7 @@ export async function keepWriterNotes(ctx: Pick<ServerCore, "bb" | "db" | "log">
 export async function appendTaskQaHome(ctx: Pick<ServerCore, "bb" | "db">, input: { taskId: string; attemptId?: string | null; question: string; answer?: string; mirrorRoot?: string | null }): Promise<boolean> {
   const home = taskHomeOf(ctx.db, input.taskId);
   if (!home) return false;
-  const attemptId = input.attemptId ?? (ctx.db.prepare("SELECT id FROM lane_pilot_attempt WHERE task_id=? ORDER BY created_at DESC, rowid DESC LIMIT 1").get(input.taskId) as { id: string } | undefined)?.id ?? null;
+  const attemptId = input.attemptId ?? latestTaskAttemptId(ctx.db, input.taskId);
   const name = attemptId ? `attempts/${attemptId}/QA.md` : "QA.md";
   try {
     const io = bbTaskFileIo(ctx.bb as unknown as Files, home.host_id, home.base_path);
@@ -204,7 +203,7 @@ export async function appendTaskQaHome(ctx: Pick<ServerCore, "bb" | "db">, input
  */
 export async function recordTaskEdition(ctx: Pick<ServerCore, "bb" | "db">, input: { taskId: string; task: TaskV2; plan: string; mirrorRoot?: string | null }): Promise<boolean> {
   if (!hasTaskHome(ctx.db, input.taskId)) return false;
-  const edition = (ctx.db.prepare("SELECT COALESCE(MAX(edition),1) AS n FROM lane_pilot_task_contract_edition WHERE task_id=?").get(input.taskId) as { n: number }).n;
+  const edition = taskContractEditionNumber(ctx.db, input.taskId);
   const producer: TaskFileProducer = { node: "update-task", graph: "lp-task-pipeline", stage_id: "dispatch" };
   const mirrorRoot = input.mirrorRoot ?? null;
   await recordTaskHomeFile(ctx, { taskId: input.taskId, kind: "contract", name: `contract.v${edition}.json`, content: `${JSON.stringify(input.task, null, 2)}\n`, producer, readers: ["pm-read", "plan-critique", "writer"], mirrorRoot });
@@ -214,8 +213,8 @@ export async function recordTaskEdition(ctx: Pick<ServerCore, "bb" | "db">, inpu
 
 /** The worktree of the task's open attempt (running, blocked or queued), or null. */
 export function openAttemptWorktree(db: ServerCore["db"], taskId: string, basePath: string): string | null {
-  const row = db.prepare("SELECT workspace_path FROM lane_pilot_attempt WHERE task_id=? AND state IN ('running','blocked','queued') AND workspace_path IS NOT NULL ORDER BY created_at DESC, rowid DESC LIMIT 1").get(taskId) as { workspace_path: string } | undefined;
-  return row && row.workspace_path.replace(/\/+$/, "") !== basePath.replace(/\/+$/, "") ? row.workspace_path : null;
+  const workspace = openTaskAttemptWorkspace(db, taskId);
+  return workspace && workspace.replace(/\/+$/, "") !== basePath.replace(/\/+$/, "") ? workspace : null;
 }
 
 const slugOf = (command: string) => command.replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60) || "check";
@@ -284,7 +283,7 @@ export async function recordCritiqueRound(ctx: Pick<ServerCore, "bb" | "db" | "l
  */
 export async function recordPlanCritique(ctx: Pick<ServerCore, "bb" | "db">, input: { taskId: string; runId: string; allowed: boolean; reason?: string | undefined; wfStepKey?: string }): Promise<ResolvedTaskFile | null> {
   if (!hasTaskHome(ctx.db, input.taskId)) return null;
-  const round = (ctx.db.prepare("SELECT COUNT(*) AS n FROM lane_pilot_task_file WHERE task_id=? AND kind='plan-critique'").get(input.taskId) as { n: number }).n + 1;
+  const round = countTaskFiles(ctx.db, input.taskId, "plan-critique") + 1;
   const plan = resolveTaskFile(ctx.db, input.taskId, "plan");
   const receipt = listStageReceipts(ctx.db, input.runId, input.taskId).find((row) => row.stageId === "plan-critique");
   return recordTaskHomeFile(ctx, { taskId: input.taskId, kind: "plan-critique", name: `critique/plan.r${round}.json`, round,
@@ -304,10 +303,10 @@ export async function recordTaskClose(ctx: Pick<ServerCore, "bb" | "db">, input:
   const io = taskHomeIo(ctx, input.taskId);
   if (!io) return null;
   const producer: TaskFileProducer = { node: "lessons", graph: "lp-task-pipeline", stage_id: "after-accept", run_id: input.runId, attempt_id: input.attemptId };
-  const attempts = ctx.db.prepare("SELECT DISTINCT attempt_id FROM lane_pilot_task_file WHERE task_id=? AND kind='writer-report' AND attempt_id IS NOT NULL ORDER BY created_at, rowid").all(input.taskId) as Array<{ attempt_id: string }>;
+  const attempts = taskFileAttempts(ctx.db, input.taskId, "writer-report");
   const lessons: string[] = [];
   const sources: string[] = [];
-  for (const { attempt_id: attemptId } of attempts) {
+  for (const attemptId of attempts) {
     const report = await readTaskFile(ctx.db, io, { taskId: input.taskId, kind: "writer-report", attemptId, reader: "lessons", refreshManifest: false });
     if (!report) continue;
     sources.push(`- ${report.path} (sha256 ${report.sha256})`);

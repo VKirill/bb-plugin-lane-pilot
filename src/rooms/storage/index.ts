@@ -47,6 +47,7 @@ export {
   TASK_MANIFEST_SCHEMA, TASK_HOME_ROOT, TASK_HOME_EXCLUDE, TASK_MANIFEST_FILE, TASK_FILE_KINDS, isTaskFileKind, taskHomeRel, taskHomeAbs, isTaskHomePath, taskHomeOwner,
   openTaskHome, taskHomeOf, hasTaskHome, listTaskFiles, recordTaskFileRow, legacyTaskFilePath, resolveTaskFile, noteTaskFileRead, legacyReadCount,
   renderTaskManifest, renderTaskManifestJson, writeTaskManifest, recordTaskFile, readTaskFile, placeTaskHome,
+  currentTaskFilePaths, countTaskFiles, taskFileAttempts, latestTaskAttemptId, openTaskAttemptWorkspace, taskContractEditionNumber,
 } from "./task-manifest";
 export type { TaskFileKind, TaskHomeRow, TaskFileRow, TaskFileProducer, ResolvedTaskFile, TaskFileIo, ReadTaskFile } from "./task-manifest";
 export { insertTaskDraftRow, getTaskDraftRow, saveDraftResults, pruneTaskDraftRows, listBatchDraftRows, type TaskDraftRow } from "./task-draft-store";
