@@ -2,7 +2,7 @@
 title: Models Workspace — Gotchas
 type: gotchas
 created: 2026-11-08
-updated: 2026-11-12
+updated: 2026-11-14
 status: active
 confidence: medium
 tags: [models, gotchas, edge-cases, validation, providers]
@@ -29,15 +29,15 @@ TL;DR: Critical edge cases, provider mismatches, profile restrictions, and valid
 
 ## Native provider family enforcement
 
-- The native providers `claude-code` and `codex` can only serve models belonging to their native model families (packages/models/src/role-models.ts:192-193).
-- If a caller supplies an invalid pair like `{ provider: "codex", model: "claude-opus-5-5" }`, `rowOption` rejects the option as invalid (`undefined`) (packages/models/src/role-models.ts:192-193).
-- When normalizing providers before execution, `consistentProvider` overrides any mismatched native provider; for example, passing `claude-code` with a GPT model forces provider `codex` (packages/models/src/role-models.ts:287-295).
+- The native providers `claude-code` and `codex` can only serve models belonging to their native model families (packages/models/src/role-models.ts:194-195).
+- If a caller supplies an invalid pair like `{ provider: "codex", model: "claude-opus-5-5" }`, `rowOption` rejects the option as invalid (`undefined`) (packages/models/src/role-models.ts:194-195).
+- When normalizing providers before execution, `consistentProvider` overrides a mismatched native provider (`claude-code` or `codex`) for any model in `ROLE_MODEL_OPTIONS`; for example, passing `claude-code` with `gpt-6.1-sol` forces provider `codex` (packages/models/src/role-models.ts:289-298).
 
 ## ZCode exactOnly matching vs OpenCode GLM
 
-- The ZCode option `glm-5.3-flash-free` defines `exactOnly: true` (packages/models/src/role-models.ts:47).
-- In `optionOfName`, models whose name ends with the same suffix (such as `zai-coding-plan/glm-5.3-flash`) do not resolve to the ZCode option (packages/models/src/role-models.ts:55-58).
-- Calling `consistentProvider(null, "glm-5.3-flash-free")` returns `"zcode"`, whereas `consistentProvider(null, "zai-coding-plan/glm-5.3-flash")` returns `null` because the OpenCode model is not in the role table (packages/models/tests/zcode.test.ts:32-33).
+- The ZCode option `glm-5.3-flash-free` defines `exactOnly: true` (packages/models/src/role-models.ts:48).
+- In `optionOfName`, models whose name ends with the same suffix (such as `zai-coding-plan/glm-5.3-flash`) do not resolve to the ZCode option (packages/models/src/role-models.ts:56-59).
+- Calling `consistentProvider(null, "glm-5.3-flash-free")` returns `"zcode"`, whereas `consistentProvider(null, "zai-coding-plan/glm-5.3-flash")` returns `null` because the OpenCode model is not in the role table (packages/models/tests/zcode.test.ts:27-28).
 
 ## Claude profile roles cannot switch providers
 
@@ -66,20 +66,20 @@ TL;DR: Critical edge cases, provider mismatches, profile restrictions, and valid
 
 ## Host connectivity semantics: Gemini vs native providers
 
-- For Gemini models routed through 9router (`router9/ag/gemini-3.8-flash-high`), `offeredForRole` returns `false` (not `null`) if the machine is connected but lacks the model in its catalog (packages/models/src/role-models.ts:266-271).
-- This explicit `false` allows review roles (`plan-critic`, `code-critic`) to drop to their GPT fallback model (`gpt-6.1-sol`) immediately rather than failing inside the spawn (packages/models/src/role-models.ts:261-264, :274-278).
-- For native providers (`claude-code`, `codex`), missing catalog entries return `null` because native providers are assumed available across connected machines (packages/models/src/role-models.ts:269-271).
+- For Gemini models routed through 9router (`router9/ag/gemini-3.8-flash-high`), `offeredForRole` returns `false` (not `null`) if the machine is connected but lacks the model in its catalog (packages/models/src/role-models.ts:268-274).
+- This explicit `false` allows review roles (`plan-critic`, `code-critic`) to drop to their GPT fallback model (`gpt-6.1-sol`) immediately rather than failing inside the spawn (packages/models/src/role-models.ts:263-267, :277-281).
+- For native providers (`claude-code`, `codex`), missing catalog entries return `null` because native providers are assumed available across connected machines (packages/models/src/role-models.ts:271-273).
 
 ## Inherited legacy escalation vs explicit light configuration
 
-- Deciding roles define a `least` tier requirement in `ROLE_LEAST_TIER` (e.g. `planner` requires `strong`, `code-critic` requires `standard`) (packages/models/src/agent-model.ts:100; packages/models/src/role-models.ts:77-78).
-- If a role inherits a legacy stage setting below its `least` tier, `resolveRoleModel` passes over that setting, promotes the selection to the role default, and records `escalated: true` with issue `escalated_for_role` (packages/models/src/role-models.ts:319-321; packages/models/src/agent-model.ts:119, :161).
+- Deciding roles define a `least` tier requirement in `ROLE_LEAST_TIER` (e.g. `planner` requires `strong`, `code-critic` requires `standard`) (packages/models/src/agent-model.ts:100; packages/models/src/role-models.ts:79, :105, :124).
+- If a role inherits a legacy stage setting below its `least` tier, `resolveRoleModel` passes over that setting, promotes the selection to the role default, and records `escalated: true` with issue `escalated_for_role` (packages/models/src/role-models.ts:321-324; packages/models/src/agent-model.ts:119, :161).
 - If the owner explicitly picks a light model in `role_model.<role>`, the pick is honored without promotion, and issue `light_model_for_role` is emitted as a diagnostic warning (packages/models/src/agent-model.ts:120, :163).
 
 ## Provider limit notice character count ceiling
 
 - The function `providerLimitNotice` inspects stdout/stderr for provider quota exhaustion keywords using `PROVIDER_LIMIT` (packages/models/src/provider-limit.ts:3-12).
-- Its reset-time forms include `unavailable (reset after …)` and `http 403 (reset after …)` (packages/models/src/provider-limit.ts:3).
+- Its matched forms include `unavailable (reset after …)`, `[403]`, and bare `http 403` at a word boundary (packages/models/src/provider-limit.ts:3).
 - Outputs exceeding 400 characters are discarded by `providerLimitNotice` and return `null` (packages/models/src/provider-limit.ts:9-12).
 - This length guard prevents false positives when a build log, test run, or diff report mentions rate-limiting logic or variables (packages/models/src/provider-limit.ts:9-12).
 

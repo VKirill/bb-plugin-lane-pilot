@@ -2,7 +2,7 @@
 title: Token Pricing and Compatibility
 type: component
 created: 2026-11-08
-updated: 2026-11-12
+updated: 2026-11-14
 status: active
 confidence: medium
 tags: [models, pricing, token-costs, provider-limits, picker-compatibility]
@@ -29,10 +29,10 @@ It standardizes per-token rates across providers, catches provider refusals from
 1. Normalize model identifiers via `priceFor`: strip trailing context tags `[..]` and date snapshot suffixes `-YYYYMMDD` (packages/models/src/model-prices.ts:25-28).
 2. Fetch per-million token rates from `MODEL_PRICES`: uncached input, cache read, 5-minute cache write, and output (packages/models/src/model-prices.ts:6-23).
 3. Compute total run cost via `costUsd`: multiply usage counters by rates, divide by 1,000,000, and clamp to non-negative with `Math.max(0, usd)` (packages/models/src/model-prices.ts:30-41).
-4. Parse raw process output with `providerLimitNotice`: trim whitespace, verify length <= 400 characters, match against `PROVIDER_LIMIT` regex, and return a normalized 200-character notice (packages/models/src/provider-limit.ts:9-13). The regex recognizes provider responses such as `unavailable (reset after …)` and `http 403 (reset after …)` (packages/models/src/provider-limit.ts:3).
+4. Parse raw process output with `providerLimitNotice`: trim whitespace, verify length <= 400 characters, match against `PROVIDER_LIMIT` regex, and return a normalized 200-character notice (packages/models/src/provider-limit.ts:9-13). The regex recognizes provider responses such as `unavailable (reset after …)`, `[403]`, and bare `http 403` at a word boundary (packages/models/src/provider-limit.ts:3).
 5. Adjust reasoning levels via `compatibleReasoningLevel`: retain requested level when in `supported`, otherwise fall back to `defaultReasoningEffort` if supported, else return null (packages/models/src/picker-compat.ts:1-11).
 6. Adjust service tiers via `compatibleServiceTier`: map requested tier ("default", "fast", or null) against `supported` tiers, ensuring standard speed defaults on providers advertising only "fast" (packages/models/src/picker-compat.ts:13-21).
-7. Read setting values with `settingOff` (false, 0, "0", "off", "false", "no") and `settingOn` (true, 1, "1", "true", "on", "yes") (packages/models/src/setting-value.ts:2-5, :46-49). Read an `on|off` switch with `switchOn`: explicit `on` enables it, explicit `off` disables it, and any other or unset value uses membership in `SWITCHES_ON_BY_DEFAULT` (packages/models/src/setting-value.ts:11-19, :46-50). Read a word switch with `switchWord`: trim and lowercase the stored word, accept only its listed words, and use that key's fallback otherwise (packages/models/src/setting-value.ts:34-37).
+7. Read setting values with `settingOff` (false, 0, "0", "off", "false", "no") and `settingOn` (true, 1, "1", "true", "on", "yes") (packages/models/src/setting-value.ts:2-5, :53-56). Read an `on|off` switch with `switchOn`: explicit `on` enables it, explicit `off` disables it, and any other or unset value uses membership in `SWITCHES_ON_BY_DEFAULT` (packages/models/src/setting-value.ts:11-24, :46-50). Read a word switch with `switchWord`: trim and lowercase the stored word, accept only its listed words, and use that key's fallback otherwise (packages/models/src/setting-value.ts:34-38).
 
 ### Model list prices (USD per 1M tokens)
 
@@ -61,7 +61,7 @@ It standardizes per-token rates across providers, catches provider refusals from
 | Unknown model | Model name not found in `MODEL_PRICES` after suffix stripping | `priceFor` and `costUsd` return `null` | (packages/models/src/model-prices.ts:27, :34) |
 | Long output text | Output length > 400 characters matching limit words | `providerLimitNotice` returns `null` (not a quota notice) | (packages/models/src/provider-limit.ts:11) |
 | Non-limit text | Output text does not match `PROVIDER_LIMIT` regex | `providerLimitNotice` returns `null` | (packages/models/src/provider-limit.ts:11) |
-| Reset-time refusal | Provider response contains `unavailable (reset after …)` or `http 403 (reset after …)` | `PROVIDER_LIMIT` recognizes these forms | (packages/models/src/provider-limit.ts:3) |
+| Provider HTTP 403 / reset-time refusal | Provider response contains `unavailable (reset after …)`, `[403]`, or bare `http 403` | `PROVIDER_LIMIT` recognizes these forms | (packages/models/src/provider-limit.ts:3) |
 | Unsupported reasoning | Requested level not in `supported` and default unsupported | `compatibleReasoningLevel` returns `null` | (packages/models/src/picker-compat.ts:10) |
 
 ## Business rules
@@ -70,8 +70,8 @@ It standardizes per-token rates across providers, catches provider refusals from
 - Distinct cache write pricing: 5-minute cache writes have separate rates from uncached inputs and cache reads (packages/models/src/model-prices.ts:6, :35-40).
 - Rate limit false-positive protection: Legitimate reports that mention rate-limit files or tests exceed 400 characters; `providerLimitNotice` requires <= 400 characters to treat the output as a provider refusal (packages/models/src/provider-limit.ts:9-12).
 - Fast-only provider normal speed: Providers that only list "fast" still run models at normal speed ("default") (packages/models/src/picker-compat.ts:17-18).
-- Boolean value parsing: `settingOff` considers false, 0, "0", "off", "false", and "no" disabled; `settingOn` considers true, 1, "1", "true", "on", and "yes" enabled (packages/models/src/setting-value.ts:2-5, :46-54).
-- Switch defaults: `switchOn` recognizes only the trimmed, lowercased words "on" and "off" as explicit values; all other values use the shared default-on key set (packages/models/src/setting-value.ts:46-50), whose keys are listed in `SWITCHES_ON_BY_DEFAULT` (packages/models/src/setting-value.ts:11-19). `switchWord` recognizes only the words listed for its key and falls back for an unset or unrecognized value (packages/models/src/setting-value.ts:26-38).
+- Boolean value parsing: `settingOff` considers false, 0, "0", "off", "false", and "no" disabled; `settingOn` considers true, 1, "1", "true", "on", and "yes" enabled (packages/models/src/setting-value.ts:2-5, :53-56).
+- Switch defaults: `switchOn` recognizes only the trimmed, lowercased words "on" and "off" as explicit values; all other values use the shared default-on key set (packages/models/src/setting-value.ts:46-50), whose keys are listed in `SWITCHES_ON_BY_DEFAULT` (packages/models/src/setting-value.ts:11-24). `switchWord` recognizes only the words listed for its key and falls back for an unset or unrecognized value (packages/models/src/setting-value.ts:27-38).
 
 ## Public API
 
@@ -84,12 +84,12 @@ It standardizes per-token rates across providers, catches provider refusals from
 | `providerLimitNotice` | Detects provider refusal notices in short command outputs | (packages/models/src/provider-limit.ts:9-13) |
 | `compatibleReasoningLevel` | Maps requested reasoning effort to supported model efforts | (packages/models/src/picker-compat.ts:1-11) |
 | `compatibleServiceTier` | Maps requested service tier to supported provider tiers | (packages/models/src/picker-compat.ts:13-21) |
-| `SWITCHES_ON_BY_DEFAULT` | Keys whose unset or unrecognized on/off switch value resolves to on | (packages/models/src/setting-value.ts:11-19) |
+| `SWITCHES_ON_BY_DEFAULT` | Keys whose unset or unrecognized on/off switch value resolves to on | (packages/models/src/setting-value.ts:11-24) |
 | `SWITCH_WORD_DEFAULTS` | Fallback word and accepted words for each word switch | (packages/models/src/setting-value.ts:27-31) |
 | `switchOn` | Resolves an on/off switch from its stored word or shared default set | (packages/models/src/setting-value.ts:46-50) |
-| `switchWord` | Resolves a word switch from its accepted words or configured fallback | (packages/models/src/setting-value.ts:34-37) |
+| `switchWord` | Resolves a word switch from its accepted words or configured fallback | (packages/models/src/setting-value.ts:34-38) |
 | `settingOff` | Evaluates whether a configuration value represents off | (packages/models/src/setting-value.ts:2-5) |
-| `settingOn` | Evaluates whether a configuration value represents on | (packages/models/src/setting-value.ts:46-54) |
+| `settingOn` | Evaluates whether a configuration value represents on | (packages/models/src/setting-value.ts:53-56) |
 
 ## Gotchas
 

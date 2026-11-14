@@ -2,7 +2,7 @@
 title: Models Workspace — Overview
 type: overview
 created: 2026-11-08
-updated: 2026-11-11
+updated: 2026-11-14
 status: active
 confidence: medium
 tags: [models, catalog, role-models, pricing, writers]
@@ -29,13 +29,14 @@ sources:
   - src/rooms/workflow/server/workflow-step-executors.ts
   - src/rooms/usage/server/token-usage.ts
   - src/rooms/writer/server/start.ts
-  - src/rooms/writer/server/finish.ts
+  - src/rooms/writer/server/writer-hold.ts
+  - src/rooms/writer/server/finish-attempt-body.ts
   - packages/workflow-engine/src/capabilities.ts
 ---
 
 # Models Workspace — Overview
 
-TL;DR: Pure data and resolution logic for model catalogs, role-to-model assignments, writer anamnesis, Jev reasoning, token pricing, and provider compatibility without SDK dependencies.
+TL;DR: Pure data and resolution logic for model catalogs, role-to-model assignments, writer profiles, effort clamping, token pricing, and provider compatibility without SDK dependencies.
 
 ## What it is
 
@@ -45,10 +46,10 @@ Its entry point re-exports the complete public API spanning model catalogs, role
 
 Key subsystems include:
 - The role-to-model table mapping agent roles to models, enforcing cross-family judge pairing, managing fallback pools, and handling provider usage limits (packages/models/src/role-models.ts:1-13, packages/models/src/agent-model.ts:12-29).
-- The writers' anamnesis profiles, worker-level exclusions, effort clamping to the live catalog, service tier translation, and task rotation (packages/models/src/model-profiles.ts:1-6, packages/models/src/model-profiles.ts:112-120, packages/models/src/writer-reasoning.ts:9-30, packages/models/src/writer-fallbacks.ts:57-84).
+- Known writer profiles, worker-level exclusions, effort clamping to the live catalog, service tier translation, and task rotation (packages/models/src/model-profiles.ts:1-4, :41-46, packages/models/src/writer-reasoning.ts:7-32, packages/models/src/writer-fallbacks.ts:57-84).
 - The catalog schema, host availability checks, node effort filters, and model cost classification (packages/models/src/model-catalog.ts:9-31, :70-87).
 - Token pricing tables and USD calculations (packages/models/src/model-prices.ts:6-42).
-- Provider limit detections, including reset-time `http 403` responses (packages/models/src/provider-limit.ts:3; see [Token Pricing and Compatibility](features/token-pricing.md)).
+- Provider limit detections, including `[403]` and bare `http 403` responses (packages/models/src/provider-limit.ts:3; see [Token Pricing and Compatibility](features/token-pricing.md)).
 - Picker compatibility remaps (packages/models/src/picker-compat.ts:1-21).
 - ZCode desktop provider integration, free promo window schedules, and environment failure detection (packages/models/src/zcode.ts:3-11, :47-62).
 - Declarative role specifications, RPC save mappings, and atomic setting key generation (packages/models/src/role-specs.ts:1-10, :155-188).
@@ -64,20 +65,20 @@ Key subsystems include:
 Import models, helpers, and types from `@lane-pilot/models`:
 
 1. Resolve the model for a workflow role or agent step:
-   Import `resolveAgentModel` (packages/models/src/agent-model.ts:104-187) or `resolveRoleModel` (packages/models/src/role-models.ts:310-322).
+   Import `resolveAgentModel` for full step resolution with host, cross-family, and spent checks (packages/models/src/agent-model.ts:104-187) or `resolveRoleModel` for settings-only resolution (packages/models/src/role-models.ts:313-325).
 2. Validate a user or node choice against a machine catalog:
    Call `validateChoice` with the current `ModelCatalog` (packages/models/src/model-catalog.ts:70-87).
 3. Compute token usage costs:
    Call `costUsd` with token breakdowns (packages/models/src/model-prices.ts:30-42).
 4. Configure writer execution selections:
-   Call `writerExecutionSelection` with consistent provider resolution (packages/models/src/writer-reasoning.ts:64-84).
+   Call `writerExecutionSelection` with consistent provider resolution (packages/models/src/writer-reasoning.ts:61-80).
 
 ## Public entry points
 
 | Export area | Core functions and constants | Evidence |
 |---|---|---|
-| Role-to-model table | `ROLE_TABLE`, `ROLE_IDS`, `resolveRoleModel`, `resolveAgentModel`, `judgeAgainstAuthor`, `peerOffSpent`, `roleModelProblem` | (packages/models/src/role-models.ts:102-145; packages/models/src/agent-model.ts:104-187) |
-| Writer execution | `WRITER_PROFILES`, `writerSwitchedOff`, `writerExecutionSelection`, `resolveWriterReasoning`, `writerFallbackChain`, `rotatedWriterSettings` | (packages/models/src/model-profiles.ts:24-129; packages/models/src/writer-reasoning.ts:64-84; packages/models/src/writer-fallbacks.ts:44-84) |
+| Role-to-model table | `ROLE_TABLE`, `ROLE_IDS`, `resolveRoleModel`, `resolveAgentModel`, `judgeAgainstAuthor`, `peerOffSpent`, `roleModelProblem` | (packages/models/src/role-models.ts:103-146; packages/models/src/agent-model.ts:104-187) |
+| Writer execution | `WRITER_PROFILES`, `writerSwitchedOff`, `writerExecutionSelection`, `resolveWriterReasoning`, `writerFallbackChain`, `rotatedWriterSettings` | (packages/models/src/model-profiles.ts:16-46; packages/models/src/writer-reasoning.ts:12-32, :61-80; packages/models/src/writer-fallbacks.ts:44-84) |
 | Catalog validation | `findProvider`, `findModel`, `findModelIn`, `offeredOnHost`, `validateChoice`, `nodeEffortsFor`, `costTier` | (packages/models/src/model-catalog.ts:40-107) |
 | Pricing and limits | `MODEL_PRICES`, `priceFor`, `costUsd`, `providerLimitNotice`, `compatibleReasoningLevel`, `compatibleServiceTier` | (packages/models/src/model-prices.ts:6-42; packages/models/src/provider-limit.ts:9-13; packages/models/src/picker-compat.ts:1-21) |
 | ZCode integration | `zcodeBlock`, `zcodeWindowBlock`, `inZcodePromo`, `nextZcodePromoStart`, `zcodeEnvironmentError`, `ZCODE_FREE_ROWS` | (packages/models/src/zcode.ts:31-84) |
@@ -86,9 +87,9 @@ Import models, helpers, and types from `@lane-pilot/models`:
 ## Configuration
 
 Settings keys inspected and formatted by this package include:
-- `role_model.<role>`: JSON object `{ provider?, model, reasoning_effort?, pool? }` storing custom role picks (packages/models/src/role-models.ts:146-147, :228-250).
+- `role_model.<role>`: JSON object `{ provider?, model, reasoning_effort?, pool? }` storing custom role picks (packages/models/src/role-models.ts:149-150, :231-253).
 - `writer.provider`, `writer.model`, `writer.reasoning_effort`, `writer.service_tier`: primary writer settings (packages/models/src/role-specs.ts:20-21).
-- `writer.models_off`: worker exclusion setting; matching forms are documented in [Writer Selection and Fallbacks](features/writer-selection.md) (packages/models/src/model-profiles.ts:121-129).
+- `writer.models_off`: worker exclusion setting; matching forms are documented in [Writer Selection and Fallbacks](features/writer-selection.md) (packages/models/src/model-profiles.ts:41-46).
 - `writer.fallback<slot>.provider`, `.model`, `.reasoning_effort`: writer fallback chain slots (packages/models/src/writer-fallbacks.ts:21-25).
 - `writer.rotation_share`: percentage of tasks swapped to fallback 1 (packages/models/src/writer-fallbacks.ts:73-75).
 - `zcode.window`: promo hour policy (`promo` or `always`) (packages/models/src/zcode.ts:13-15).
@@ -100,13 +101,13 @@ Settings keys inspected and formatted by this package include:
 - Native agent settings RPCs save role selections with `roleSpec`, `compatibleReasoningLevel`, and `compatibleServiceTier` (src/rooms/settings/server/rpc/selections.ts:3).
 - Workflow step execution verifies choices with `validateChoice` and falls back with `writerFallbackChain` (src/rooms/workflow/server/workflow-step-executors.ts:3-6).
 - Token usage screens and background accounting use `MODEL_PRICES` and `costUsd` (src/rooms/usage/server/token-usage.ts:5).
-- Writer lifecycle dispatches and logs read `WRITER_PROFILES`, `providerLimitNotice`, and `rotatedWriterSettings` (src/rooms/writer/server/start.ts:9, src/rooms/writer/server/finish.ts:11).
+- Writer lifecycle dispatches, holds, and attempt endings read `writerSwitchedOff`, `providerLimitNotice`, `writerFallbackChain`, and `rotatedWriterSettings` (src/rooms/writer/server/start.ts:9, src/rooms/writer/server/writer-hold.ts:2, src/rooms/writer/server/finish-attempt-body.ts:4).
 - The standalone package `@lane-pilot/workflow-engine` validates roles with `resolveRoleModel` and `offeredOnHost` (packages/workflow-engine/src/capabilities.ts:1).
 
 ## Where to look next
 
 - [Role-to-Model Resolution](features/role-models.md) — role assignments, cross-family pairing, and fallback pools.
-- [Writer Selection and Fallbacks](features/writer-selection.md) — writer anamnesis, Jev effort routing, and fallback rotation.
+- [Writer Selection and Fallbacks](features/writer-selection.md) — known writer profiles, effort clamping, service tiers, and fallback rotation.
 - [Model Catalog and Validation](features/model-catalog.md) — machine catalog normalization, choice validation, and cost tiers.
 - [Token Pricing and Compatibility](features/token-pricing.md) — list prices, token calculations, and limit notices.
 - [ZCode Integration Rules](features/zcode-integration.md) — desktop client promo schedule, slot limits, and background jobs.
