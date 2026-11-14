@@ -63,9 +63,9 @@ describe("the door: table, match, journal, named failure (n674, n675, n682, n683
     const logged: string[] = [];
     let clock = 0;
     const handlers = timeRpcHandlers({
-      broken: async () => { throw new Error("disk gone"); },
-      refused: async () => { throw Object.assign(new Error("the owner gate"), { refused: true }); },
-      fine: async () => ({ ok: true }),
+      broken: async (_input: never) => { throw new Error("disk gone"); },
+      refused: async (_input: never) => { throw Object.assign(new Error("the owner gate"), { refused: true }); },
+      fine: async (_input: never) => ({ ok: true }),
     }, (line) => logged.push(line), () => (clock += 40));
     await expect(handlers.broken(undefined as never)).rejects.toThrow("disk gone");
     await expect(handlers.refused(undefined as never)).rejects.toThrow("the owner gate");
