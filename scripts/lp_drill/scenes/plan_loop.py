@@ -1,7 +1,9 @@
 """The planner <-> critic loop on direct dispatch: plan_revise, plan_revise_cap, plan_l.
 
-The plan of a direct dispatch (bb lane-pilot dispatch-bb) is the task's objective (src/rooms/writer/server/dispatch.ts: args.plan ?? objective),
-so a plan defect is planted in the objective text. Each scene sets its own project settings and puts them back (lp_drill.scoped_settings)."""
+The plan of a direct dispatch is `bb lane-pilot dispatch-bb ... --plan <text>` (src/rooms/writer/server/dispatch.ts: args.plan ?? objective);
+without --plan the objective is the plan. plan_revise sends its own plan so that only the plan is deficient: a defect planted in the objective
+is the PM's to fix, and the planner rightly answers needs_pm (live 2026-11-14-083920). Each scene sets its own project settings and puts them
+back (lp_drill.scoped_settings)."""
 from __future__ import annotations
 
 import re
@@ -30,13 +32,19 @@ def _check(paths: list[str], cwd: str) -> list[dict]:
 
 
 def plan_revise_task(ctx: "Context") -> dict:
-    """Both files are expected and owned, the acceptance and the check ask for both, and the plan (the objective) names a step for the first
-    only: the critic should return the plan, and the planner can fix it by editing the plan text alone."""
+    """The contract states the whole job: both files are expected and owned, and the objective, the acceptance and the check ask for both.
+    Only the plan (plan_revise_plan, sent with --plan) is deficient, so the planner can fix it by the plan text alone."""
     first, second = f"notes/drill/plan-revise-{STAMP}/alpha.md", f"notes/drill/plan-revise-{STAMP}/beta.md"
     return task(f"drill-{STAMP}-plan-revise", f"Drill {STAMP} plan revise: two notes", [first, second],
-                f"Create the file {first} with exactly one line: `# alpha.md`. That is the whole job; nothing else is created.",
+                f"Create two files, each with exactly one line, its own heading: {first} with `# alpha.md` and {second} with `# beta.md`. Nothing else is created.",
                 [f"{first} exists and its first line is `# alpha.md`.", f"{second} exists and its first line is `# beta.md`."], ctx.cwd,
                 verification=_check([first, second], ctx.cwd))
+
+
+def plan_revise_plan(spec: dict) -> str:
+    """The planted hole: a step for the first file only, nothing for the second, which the contract expects, owns and checks."""
+    first = spec["expected_outputs"][0]
+    return f"1. Create {first} with exactly one line: `# alpha.md`.\n2. Run the task's check."
 
 
 def plan_revise_cap_task(ctx: "Context") -> dict:
@@ -127,13 +135,13 @@ def plan_l_problems(row: dict, evidence: dict) -> list[str]:
     return problems
 
 
-def run_loop_task(ctx: "Context", spec: dict, settings: dict, judge) -> tuple[dict, dict, list[str]]:
-    """Dispatches one task under the scene's settings (put back afterwards, an exception included) and judges what the hub holds."""
+def run_loop_task(ctx: "Context", spec: dict, settings: dict, judge, plan: str | None = None) -> tuple[dict, dict, list[str]]:
+    """Dispatches one task (with its own plan when given) under the scene's settings (put back afterwards, an exception included) and judges what the hub holds."""
     problems: list[str] = []
     row: dict = {}
     evidence: dict = {}
     with scoped_settings(ctx, settings, problems):
-        if not ctx.dispatch(spec):
+        if not (ctx.dispatch(spec, plan) if plan else ctx.dispatch(spec)):
             problems.append("dispatch-bb exited with an error")
         else:
             row = summarize(ctx.wait_ended([spec["id"]]), spec["id"], ctx.cwd, spec["expected_outputs"][0])
@@ -143,9 +151,10 @@ def run_loop_task(ctx: "Context", spec: dict, settings: dict, judge) -> tuple[di
 
 
 def scenario_plan_revise(ctx: "Context") -> dict:
-    """A plan with a planted hole (no step for beta.md, which is owned and expected) goes through the critic with plan_critique.revise_by=planner:
+    """A plan with a planted hole (no step for beta.md, which the objective names and the contract owns and expects) goes through the critic with plan_critique.revise_by=planner:
     the planner revises the plan text, the critic passes it, the writer lands the task, and the attempt is never blocked."""
-    row, evidence, problems = run_loop_task(ctx, plan_revise_task(ctx), PLAN_REVISE_SETTINGS, revise_problems)
+    spec = plan_revise_task(ctx)
+    row, evidence, problems = run_loop_task(ctx, spec, PLAN_REVISE_SETTINGS, revise_problems, plan=plan_revise_plan(spec))
     return verdict("plan_revise", problems, tasks=[row] if row else [], editions=evidence.get("editions"), receipts=[r.get("state") for r in evidence.get("receipts") or []],
                    steps=[s.get("node_id") for s in evidence.get("steps") or []])
 

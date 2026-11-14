@@ -2,6 +2,9 @@ import { TASK_RECORD_USAGE } from "./task-record";
 import { AGENTS_USAGE, ANAMNESIS_USAGE, BACKLOG_USAGE, BASELINE_USAGE, BENCH_USAGE, CAPABILITY_USAGE, CATALOG_USAGE, CHECKERS_USAGE, COVERAGE_USAGE, DEFERRAL_USAGE, DESIGN_PAIR_USAGE, EPISODES_USAGE, FORECAST_USAGE, LEAD_USAGE, LEARNING_USAGE, MEMORY_COMPRESS_USAGE, MEMORY_CONFLICT_USAGE, MEMORY_EVAL_USAGE, OUTAGE_USAGE, PHASE_USAGE, PM_REPLAY_USAGE, PM_SKILLS_USAGE, POLICY_USAGE, PROFILE_KEYS, PROJECT_PASSPORT_USAGE, ROLLBACK_USAGE, RULES_USAGE, RUN_GOAL_USAGE, SCHEDULE_USAGE, SKILLS_USAGE, SMA_MAP_USAGE, WAITING_USAGE, WALL_USAGE, WINDOW_USAGE, excavate, join, manifest, passport, preship, waitThreadIdle } from "./cli-imports";
 const MEMORY_CLI_USAGE = 'bb lane-pilot memory search "<question>" [--project P] | memory search --recall --query "<words>" [--cwd <path>] [--project P]   (read-only: confirmed notes by the word index, masked, one per line) | memory write "<fact>" [--project P] | memory duplicates [--project P] [--json]   (read-only audit of near-duplicate notes) | memory dedupe --project P [--apply]   (merge them; dry run unless --apply, --apply is for the owner) | memory move-section --from-project P --section <folderId> --to-project Q [--to-section <folderId>|--root] [--apply]   (move the notes, rules and learning rows of a section to another project; dry run unless --apply, --apply is for the owner, it writes a backup first) | memory judge-stats [--days N] [--json] [--project P] | memory history "<question>" [--project P] [--source tasks|execution|transcripts|lessons|books]   (the project memory on the hub; inside a BB thread the project is the thread\'s own)';
 
+/** dispatch-bb: the task contract, and the plan apart from it with --plan (lane_pilot_dispatch_writer's `plan`; without it the objective is the plan). */
+export const DISPATCH_BB_USAGE = "bb lane-pilot dispatch-bb <project-id> <pm-thread-id> [task-json] [base-ref] [critic-code-default: off|medium|high] [--plan \"<plan text>\"]";
+
 const usage = [
     "bb lane-pilot configure <json>",
     "bb lane-pilot activate <project-id> <ordinary-source-thread-id>",
@@ -30,7 +33,7 @@ const usage = [
     "bb lane-pilot host-rollback <host-id> <snapshot-path>",
     "bb lane-pilot host-connect-opencode <host-id>",
     "bb lane-pilot resume [project-id]",
-    "bb lane-pilot dispatch-bb <project-id> <pm-thread-id> [task-json] [base-ref] [critic-code-default: off|medium|high]",
+    DISPATCH_BB_USAGE,
     "bb lane-pilot events-list <thread-id>",
     "bb lane-pilot wait-thread <thread-id>",
     "bb lane-pilot workflow-trigger <project-id> <workflow-id> [inputs-json] [key]",
@@ -102,7 +105,7 @@ const commands:Array<{ name:string; summary:string; usage:string }> = [
       { name:"host-rollback", summary:"Rollback a snapshot", usage:"bb lane-pilot host-rollback <host-id> <snapshot-path>" },
       { name:"host-connect-opencode", summary:"S5 JSONC plugin patch", usage:"bb lane-pilot host-connect-opencode <host-id>" },
       { name:"resume", summary:"Reconcile orphaned writer attempts without spawning duplicates", usage:"bb lane-pilot resume [project-id]" },
-      { name:"dispatch-bb", summary:"Dispatch a BB writer task, optional task-v2 JSON", usage:"bb lane-pilot dispatch-bb <project-id> <pm-thread-id> [task-json] [base-ref] [critic-code-default: off|medium|high]" },
+      { name:"dispatch-bb", summary:"Dispatch a BB writer task, optional task-v2 JSON", usage:DISPATCH_BB_USAGE },
       { name:"events-list", summary:"Read-only SDK events.list probe", usage:"bb lane-pilot events-list <thread-id>" },
       { name:"wait-thread", summary:"Read-only waitThreadIdle probe", usage:"bb lane-pilot wait-thread <thread-id>" },
       { name:"anamnesis", summary:"What Lane Pilot knows about its owner (records on the owner's machine); sensitive ones only on explicit request", usage:"bb lane-pilot anamnesis status|list|show|history|add|edit|confirm|reject|forget|sources|host" },

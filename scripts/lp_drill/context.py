@@ -63,8 +63,9 @@ class Context:
             rc, out, err = bb("lane-pilot", "finish", self.project, row["id"])
             log(f"leftover run {row['id']}: finish {'ok' if rc == 0 else (out + err).strip()[:200]}")
 
-    def dispatch(self, spec: dict) -> bool:
-        rc, out, err = bb("lane-pilot", "dispatch-bb", self.project, self.pm, json.dumps(spec))
+    def dispatch(self, spec: dict, plan: str | None = None) -> bool:
+        """dispatch-bb of one task; `plan` goes apart from the contract (--plan), absent: the objective is the plan."""
+        rc, out, err = bb("lane-pilot", "dispatch-bb", self.project, self.pm, json.dumps(spec), *(["--plan", plan] if plan else []))
         self.dispatches[spec["id"]] = (out + err).strip()[:600]
         if rc != 0:
             log(f"dispatch of {spec['id']} failed: {self.dispatches[spec['id']][:200]}")
