@@ -8,6 +8,7 @@ from lp_drill.tasks import (note_task, task_limit, task_memory, task_moved, task
                             task_reload, tasks_conflict, tasks_no_code_exit, tasks_parallel3)
 from lp_drill.scenes.owner import live_press, live_word_scene
 from lp_drill.scenes.task_home import task_home_specs
+from lp_drill.scenes.run_home import RUN_GRAPH as RUN_HOME_GRAPH, run_home_inputs
 
 def dry_run(names: list[str], series: bool = False) -> None:
     print(f"drill {STAMP} in {SANDBOX['project']} ({SANDBOX['cwd']}), no-git {NOGIT['project']} ({NOGIT['cwd']}), hub db {HUB}:{HUB_DB}; scenarios: {', '.join(names)}")
@@ -27,6 +28,8 @@ def dry_run(names: list[str], series: bool = False) -> None:
         expects["plan_split"] = {"scenario": "in EXTRA (by name or --series task)", "judge": "plan_split_problems", "sql": PLAN_SPLIT_SQL}
     documents["task_home"] = task_home_specs(cwd)
     expects["task_home"] = {"judge": "manifest_problems + shared_leaks + neighbour_problems", "home": ".agents/tasks/<id>/manifest.json"}
+    documents["run_home"] = [{"graph": RUN_HOME_GRAPH, "inputs": run_home_inputs(letter), "key": f"drill-{STAMP}-run-home-{letter}"} for letter in "ab"]
+    expects["run_home"] = {"judge": "manifest_problems + shared_leaks + distinct_problems", "home": ".agents/runs/<run-id>/manifest.json"}
     if series:
         documents["no_code_exit"] = tasks_no_code_exit(cwd, True)
         expects["no_code_exit"] = {f"drill-answer-{STAMP}": "accepted_first_attempt", f"drill-human-{STAMP}": "held_with_question", f"drill-noedit-{STAMP}": "not_accepted"}
