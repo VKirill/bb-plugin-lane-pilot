@@ -1,10 +1,10 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { sha256Hex } from "@lane-pilot/kit";
 import { afterEach, describe, expect, it } from "vitest";
-import { runCodeCritique } from "../src/rooms/critique/server/critique-runs";
+import { codeCritiqueTaskContext, runCodeCritique } from "../src/rooms/critique/server/critique-runs";
 import { codeCritiquePrompt, codeCritiqueSource } from "../src/rooms/critique/code-critique";
 import { stageHelperSettings } from "../src/rooms/settings/server/stage-settings";
-import { createAttempt, createRun, createTask, listStageReceipts, openDatabase, saveProjectSetting, setRunThread } from "../src/rooms/plugin-db";
+import { createAttempt, createRun, createTask, listStageReceipts, openDatabase, saveProjectSetting, saveTaskPlan, setRunThread } from "../src/rooms/plugin-db";
 import { openTaskHome, recordTaskFile } from "../src/rooms/storage";
 import { writeDispatchHome } from "../src/rooms/writer/server/task-home";
 import type { TaskFileIo } from "../src/rooms/storage";
@@ -40,7 +40,10 @@ function world() {
   harness.sdk.stub("providers.models", async () => ({ models: CRITIC_MODELS.map((id) => ({ id, model: id, supportedReasoningEfforts: EFFORTS })) }));
   harness.sdk.stub("threads.get", async () => ({ id: "pm", projectId: "P", status: "idle" }));
   harness.sdk.stub("threads.spawn", async (input: Record<string, unknown>) => { spawns.push(input); return { id: `crit${spawns.length}` }; });
-  harness.sdk.stub("threads.events.list", async () => [{ type: "turn/started", seq: 1 }, { type: "turn/completed", seq: 2, data: { status: "completed" } }]);
+  harness.sdk.stub("threads.events.list", async ({ threadId }: { threadId?: string }) => [
+    { type: "turn/started", threadId, seq: 1 },
+    { type: "turn/completed", threadId, seq: 2, data: { status: "completed" } },
+  ]);
   harness.sdk.stub("threads.output", async () => ({ output: APPROVE }));
   harness.sdk.stub("threads.stop", async () => undefined);
   harness.sdk.stub("threads.send", async () => ({}));
@@ -117,6 +120,29 @@ describe("code critique reads the task home's plan-source snapshot", () => {
     expect(result.allowed).toBe(false);
     expect(result.reason).toContain("code_critique_plan_source_unreadable");
     expect(w.spawns).toHaveLength(0);
+  });
+
+  it("a PLAN.md unreadable on its host falls back to the dispatch-saved copy under the manifest hash", async () => {
+    const w = world();
+    w.files.set("/repo/.agents/plans/shared-plan.md", "# Shared plan\nv1\n");
+    const plan = "Follow .agents/plans/shared-plan.md for the details.\n";
+    await writeDispatchHome(w.db, io(w.files), { taskId: "t1", projectId: "P", runId: "r", basePath: "/repo", hostId: "h", task: task("medium"), plan });
+    saveTaskPlan(w.db, "t1", plan);
+    w.files.delete("/repo/.agents/tasks/t1/PLAN.md");
+    const result = await codeCritiqueTaskContext(w.bb, w.db, "t1");
+    expect(result.blockReason).toBeUndefined();
+    expect(result.context?.planSource.path).toBe(".agents/tasks/t1/context/plan-source.md");
+  });
+
+  it("a stored plan copy that does not match the manifest hash stays a named block", async () => {
+    const w = world();
+    const plan = "Follow .agents/plans/shared-plan.md for the details.\n";
+    await writeDispatchHome(w.db, io(w.files), { taskId: "t1", projectId: "P", runId: "r", basePath: "/repo", hostId: "h", task: task("medium"), plan });
+    saveTaskPlan(w.db, "t1", "a different plan\n");
+    w.files.delete("/repo/.agents/tasks/t1/PLAN.md");
+    const result = await codeCritiqueTaskContext(w.bb, w.db, "t1");
+    expect(result.context).toBeUndefined();
+    expect(result.blockReason).toContain("code_critique_plan_unreadable");
   });
 
   it("a task on the old layout gets no task-home context: the prompt and the stage input are unchanged", async () => {

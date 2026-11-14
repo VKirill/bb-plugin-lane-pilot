@@ -1,7 +1,7 @@
 import { isNotFound, orMiss, sha256Hex } from "@lane-pilot/kit";
 import { writeReplacing, type ReplacingWrite } from "../../storage";
 import {
-  countTaskFiles, currentTaskFilePaths, getTaskPlan, hasTaskHome, latestTaskAttemptId, openTaskAttemptWorkspace, planSourcePaths, taskContractEditionNumber, taskFileAttempts, listStageReceipts, noteTaskFileRead, openTaskHome, placeTaskHome, readTaskFile, recordTaskFile, resolveTaskFile, taskHomeOf, TASK_HOME_EXCLUDE,
+  countTaskFiles, currentTaskFilePaths, hasTaskHome, latestTaskAttemptId, openTaskAttemptWorkspace, planSourcePaths, taskContractEditionNumber, taskFileAttempts, taskPlanDbCopy, listStageReceipts, noteTaskFileRead, openTaskHome, placeTaskHome, readTaskFile, recordTaskFile, resolveTaskFile, taskHomeOf, TASK_HOME_EXCLUDE,
   type ResolvedTaskFile, type TaskFileIo, type TaskFileKind, type TaskFileProducer,
 } from "../../storage";
 import type { ServerCore } from "../../contracts/server";
@@ -83,11 +83,10 @@ export async function stagePlanText(ctx: Pick<ServerCore, "bb" | "db">, taskId: 
   const read = await readTaskFile(ctx.db, io, { taskId, kind: "plan", reader });
   if (read) return read.text;
   // The file cannot be read on its host, but the database keeps the plan the dispatch wrote: taken only when its hash is the manifest row's.
-  const saved = getTaskPlan(ctx.db, taskId);
-  const text = saved === null ? null : saved.endsWith("\n") ? saved : `${saved}\n`;
-  if (text !== null && sha256Hex(text) === found.sha256) {
+  const copy = taskPlanDbCopy(ctx.db, taskId, found.sha256);
+  if (copy !== null) {
     noteTaskFileRead(ctx.db, { taskId, path: found.path, kind: "plan", reader: `${reader}:db-copy`, sha256: found.sha256, legacy: false });
-    return saved!;
+    return copy;
   }
   throw new Error(`task ${taskId}: its home's PLAN.md cannot be read and no stored copy matches its manifest hash; the stage stops instead of guessing a plan`);
 }

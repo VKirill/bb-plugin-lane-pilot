@@ -1,4 +1,4 @@
-import { claimStageSpawn, getRun, listStageReceipts, openDatabase, planSourcePaths, readTaskFile, resolveTaskFile, taskHomeOf, writeReplacing, type TaskFileIo } from "../../../storage";
+import { claimStageSpawn, getRun, listStageReceipts, noteTaskFileRead, openDatabase, planSourcePaths, readTaskFile, resolveTaskFile, taskHomeOf, taskPlanDbCopy, writeReplacing, type TaskFileIo } from "../../../storage";
 import { criticAcrossFamilies, criticOffSpent, criticPairCandidates, effortAfterMove, latestWriterPair, pairApartFromWriter, pickCriticByAccuracy, roleSelection, sdkCriticCatalog, usable } from "../../critic-pair";
 import { criticStats } from "../../critic-stats";
 import { bbServiceTier, findModelIn, listedServiceTier, modelFamily, resolveStageWriterSelection, writerExecutionSelection, writerServiceTier } from "@lane-pilot/models";
@@ -50,8 +50,17 @@ export async function codeCritiqueTaskContext(bb: BbPluginApi, db: ReturnType<ty
   };
   const plan = resolveTaskFile(db, taskId, "plan");
   const planRead = plan ? await readTaskFile(db, io, { taskId, kind: "plan", reader: "code-critique" }) : null;
-  if (plan && !planRead) return { blockReason: `code_critique_plan_unreadable:${plan.repoPath}` };
-  const refs = planRead ? planSourcePaths(planRead.text, home.base_path) : [];
+  // A PLAN.md unreadable on its host yields to the dispatch-saved copy under the manifest row's hash — the same rule stagePlanText applies.
+  let planText = planRead?.text ?? null;
+  if (plan && !planRead) {
+    const copy = taskPlanDbCopy(db, taskId, plan.sha256);
+    if (copy !== null) {
+      noteTaskFileRead(db, { taskId, path: plan.path, kind: "plan", reader: "code-critique:db-copy", sha256: plan.sha256, legacy: false });
+      planText = copy;
+    }
+  }
+  if (plan && planText === null) return { blockReason: `code_critique_plan_unreadable:${plan.repoPath}` };
+  const refs = planText === null ? [] : planSourcePaths(planText, home.base_path);
   const snapshot = resolveTaskFile(db, taskId, "plan-source");
   if (!snapshot) {
     return refs.length ? { blockReason: `code_critique_plan_source_missing:${refs.join(",")}` } : {};

@@ -2,7 +2,7 @@ import { isAbsolute, relative, resolve } from "node:path";
 import { sha256Hex } from "@lane-pilot/kit";
 import packageJson from "../../../package.json";
 import type { LanePilotDatabase } from "./database";
-import { taskBasePath } from "./tasks-store";
+import { getTaskPlan, taskBasePath } from "./tasks-store";
 
 /**
  * One home per task (docs/task-folder.md, SMA n233 «one folder per attempt», n397/n405 «a narrowly granted folder»): every file of a task lives
@@ -296,6 +296,18 @@ export async function readTaskFile(db: LanePilotDatabase, io: TaskFileIo, input:
   noteTaskFileRead(db, { taskId: input.taskId, path: found.path, kind: input.kind, reader: input.reader, sha256: sha, legacy: found.legacy });
   if (!found.legacy && input.refreshManifest !== false) await writeTaskManifest(db, io, input.taskId).catch(() => undefined);
   return { ...found, text, recordedSha256: found.sha256, sha256: sha, drift: found.sha256 !== null && found.sha256 !== sha };
+}
+
+/**
+ * The plan the dispatch saved in the database, accepted only when its hash is the manifest row's — the fallback for a PLAN.md
+ * that cannot be read on its host (docs/task-folder.md). One normalization rule for every reader (stagePlanText, the code
+ * critic): a missing trailing newline is added for the hash, the saved text itself is returned.
+ */
+export function taskPlanDbCopy(db: LanePilotDatabase, taskId: string, rowSha256: string | null): string | null {
+  const saved = getTaskPlan(db, taskId);
+  if (saved === null || rowSha256 === null) return null;
+  const text = saved.endsWith("\n") ? saved : `${saved}\n`;
+  return sha256Hex(text) === rowSha256 ? saved : null;
 }
 
 /** The old layout's own files a worktree of a task on it gets (by exact name; never another task's folder). */
