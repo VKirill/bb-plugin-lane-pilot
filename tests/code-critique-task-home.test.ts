@@ -131,7 +131,7 @@ describe("code critique reads the task home's plan-source snapshot", () => {
     w.files.delete("/repo/.agents/tasks/t1/PLAN.md");
     const result = await codeCritiqueTaskContext(w.bb, w.db, "t1");
     expect(result.blockReason).toBeUndefined();
-    expect(result.context?.planSource.path).toBe(".agents/tasks/t1/context/plan-source.md");
+    expect(result.context?.planSource?.path).toBe(".agents/tasks/t1/context/plan-source.md");
   });
 
   it("a stored plan copy that does not match the manifest hash stays a named block", async () => {
