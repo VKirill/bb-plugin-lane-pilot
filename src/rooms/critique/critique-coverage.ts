@@ -4,7 +4,9 @@ import { lstat, open, readdir, realpath } from "node:fs/promises";
 import { basename, extname, isAbsolute, join, relative, sep } from "node:path";
 
 export type CoverageFinding={code:"plan_path_unowned"|"owns_gap"|"coverage_scan_truncated"|"owns_overlap"|"verify_missing"|"verify_heavy"|"owns_empty"|"plan_missing"|"no_tasks"|"caller_unowned"|"task_placeholder"|"output_unowned"|"output_binary"|"verify_filter_ignored"|"depends_cycle"|"depends_self";path:string;severity:"error"|"warning"|"info";finding:string};
-export type CoverageScan={status:"complete"|"truncated";pathCount:number;findings:CoverageFinding[]};
+/** The direct callers GitNexus found for one symbol of an owned file: up to 5 as `file:symbol`, and how many there are in all. */
+export type CoverageCallers={file:string;symbol:string;callers:string[];total:number};
+export type CoverageScan={status:"complete"|"truncated";pathCount:number;findings:CoverageFinding[];callers?:CoverageCallers[]};
 const SKIP=new Set([".git",".gitnexus","node_modules",".agents",".bb",".claude",".lane-pilot","dist","build","vendor","__pycache__",".venv",".tox","coverage",".nuxt",".next",".cache"]);
 const TEXT=new Set([".ts",".tsx",".js",".jsx",".mjs",".cjs",".py",".md",".json",".yaml",".yml",".sh",".go",".rs"]);
 const CODE=new Set([".ts",".tsx",".js",".jsx",".mjs",".cjs",".py",".go",".rs"]);
@@ -127,14 +129,31 @@ export function collectGitNexusCallerPaths(payload:unknown,root:string):string[]
   }
   return [...paths];
 }
-async function runGitNexusCallers(root:string,targets:readonly {filePath:string;symbol:string}[]):Promise<{paths:string[];complete:boolean}> {
-  if(targets.length===0)return {paths:[],complete:true};
+/** `file:symbol` of the direct callers (depth 1) of an impact payload, as the graph names them. */
+export function callerLabels(payload:unknown,root:string):string[] {
+  if(!payload||typeof payload!=="object")return [];
+  const level=((payload as Record<string,unknown>).byDepth as Record<string,unknown>|undefined)?.["1"];
+  if(!Array.isArray(level))return [];
+  const labels=new Set<string>();
+  for(const item of level) {
+    if(!item||typeof item!=="object")continue;
+    const row=item as Record<string,unknown>;
+    const raw=[row.filePath,row.file_path,row.file,row.path].find((value)=>typeof value==="string");
+    if(typeof raw!=="string"||!raw.trim())continue;
+    const candidate=raw.replace(/\\/g,"/"),file=(isAbsolute(candidate)?relative(root,candidate):candidate).replace(/^\.\//,"");
+    if(!file||file.startsWith("../")||isAbsolute(file))continue;
+    labels.add(typeof row.name==="string"&&row.name?`${file}:${row.name}`:file);
+  }
+  return [...labels];
+}
+async function runGitNexusCallers(root:string,targets:readonly {filePath:string;symbol:string}[]):Promise<{paths:string[];complete:boolean;callers:CoverageCallers[]}> {
+  if(targets.length===0)return {paths:[],complete:true,callers:[]};
   const info=await lstatOrNull(join(root,".gitnexus"));
-  if(!info?.isDirectory()||info.isSymbolicLink())return {paths:[],complete:false};
-  const deadline=Date.now()+8_000,paths=new Set<string>();
+  if(!info?.isDirectory()||info.isSymbolicLink())return {paths:[],complete:false,callers:[]};
+  const deadline=Date.now()+8_000,paths=new Set<string>(),callers:CoverageCallers[]=[];
   const status=await spawnAsync("gitnexus",["status","--json"],{cwd:root,timeout:1_500,maxBuffer:512*1024});
   const statusJson=jsonFromCli(status.stdout??"");
-  if(status.status!==0||status.error||statusJson?.status!=="up-to-date")return {paths:[],complete:false};
+  if(status.status!==0||status.error||statusJson?.status!=="up-to-date")return {paths:[],complete:false,callers:[]};
   const bounded=targets.slice(0,16);let complete=bounded.length===targets.length;
   for(const target of bounded) {
     const remaining=deadline-Date.now();if(remaining<=0){complete=false;break;}
@@ -146,10 +165,12 @@ async function runGitNexusCallers(root:string,targets:readonly {filePath:string;
     for(const path of collectGitNexusCallerPaths(impact,root))paths.add(path);
     const counts=impact.byDepthCounts;
     const count=counts&&typeof counts==="object"?Number((counts as Record<string,unknown>)["1"]):NaN;
+    const labels=callerLabels(impact,root);
+    if(labels.length)callers.push({file:target.filePath,symbol:target.symbol,callers:labels.slice(0,5),total:Number.isFinite(count)&&count>=labels.length?count:labels.length});
     const returned=Array.isArray((impact.byDepth as Record<string,unknown>|undefined)?.["1"])?((impact.byDepth as Record<string,unknown>)["1"] as unknown[]).length:0;
     if(Number.isFinite(count)&&count>returned)complete=false;
   }
-  return {paths:[...paths],complete};
+  return {paths:[...paths],complete,callers};
 }
 export function findTaskPlaceholderPaths(value:unknown):string[] {
   const found:string[]=[];let visited=0;
@@ -293,7 +314,7 @@ export async function scanCritiqueCoverage(input:{workspacePath:string;plan:stri
   if(workspaceTruncated)add(findings,"coverage_scan_truncated",".","Workspace path/read limits were reached; structural ownership coverage is partial");
   if(unreadable.length){truncated=true;add(findings,"coverage_scan_truncated",".",`${unreadable.length} file(s) could not be read and were skipped: ${unreadable.slice(0,10).join(", ")}${unreadable.length>10?", …":""}`,"warning");}
   if(findings.some((finding)=>finding.code==="coverage_scan_truncated"))truncated=true;
-  return {status:truncated?"truncated":"complete",pathCount:files.length,findings};
+  return {status:truncated?"truncated":"complete",pathCount:files.length,findings,...(graph.callers.length?{callers:graph.callers}:{})};
 }
 
 const GAP_CODES=new Set<CoverageFinding["code"]>(["owns_gap","caller_unowned","plan_path_unowned"]);

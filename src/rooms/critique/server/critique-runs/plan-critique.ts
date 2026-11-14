@@ -9,7 +9,8 @@ import { sha256 } from "../../../tasks";
 import { critiquePrompt, parseCritique, shouldRunPlanCritique } from "../../critique";
 import { ownerWordsOfRun } from "../owner-words";
 import { binaryOutputs, dropIntendedGaps, dropNoisyGaps, findTaskPlaceholderPaths } from "../../critique-coverage";
-import type { CoverageFinding } from "../../critique-coverage";
+import type { CoverageCallers, CoverageFinding } from "../../critique-coverage";
+import { inlinePlanFile } from "./plan-text";
 import { boundedAgentName } from "../../../contracts";
 import { graphStepMetadata, setAsideOnStartFailure, zcodeBusyPeek } from "../../../platform/server";
 import type { StageHelperSettings } from "../../../platform/server";
@@ -52,6 +53,7 @@ export async function runPlanCritique(input:{bb:BbPluginApi;db:ReturnType<typeof
   const runTasks = listLiveTasksForRun(input.db,input.runId).map((row) => ({id:row.id,...row.contract as {lane?:string;owns_paths?:string[];verify?:TaskV2["verify"];verification?:TaskV2["verification"]}}));
   let coverageStatus:"complete"|"truncated"|"unavailable"="unavailable";
   let coveragePathCount=0;
+  let coverageCallers:CoverageCallers[]|undefined;
   let structuralFindings:CoverageFinding[]=runTasks.flatMap((task)=>findTaskPlaceholderPaths(task).map((path)=>({code:"task_placeholder" as const,path:`tasks/${task.id}/${path}`,
     severity:"error" as const,finding:`Task ${task.id} contains unresolved REPLACE_ME at ${path}`}))).slice(0,10);
   // An expected file the task may not write fails every attempt (SelfyStudio 2026-10-03): caught here, before a writer runs.
@@ -72,7 +74,7 @@ export async function runPlanCritique(input:{bb:BbPluginApi;db:ReturnType<typeof
     const scan=await coverageHost.call("inspectCritiqueCoverage",{requestedHostId:input.config.hostId,workspacePath:input.task.project_cwd,
       plan:input.plan,tasks:runTasks.map((task)=>({id:task.id,lane:task.lane??"write",ownsPaths:task.owns_paths??[],hasVerification:task.verify==="none"||!!task.verification?.length,
         verification:(task.verification??[]).map((command)=>({command:command.command,timeoutSec:command.timeout_sec??undefined}))}))},{hostId:input.config.hostId,timeoutMs:30_000});
-    coverageStatus=scan.status;coveragePathCount=scan.pathCount;// A bad command of a task already running must not block an unrelated dispatch of the run.
+    coverageStatus=scan.status;coveragePathCount=scan.pathCount;coverageCallers=scan.callers;// A bad command of a task already running must not block an unrelated dispatch of the run.
     structuralFindings=[...structuralFindings,...dropNoisyGaps(dropIntendedGaps(scan.findings,input.task.never_touch??[])).map((finding)=>finding.code==="verify_filter_ignored"&&finding.path!==`tasks/${input.task.id}`?{...finding,severity:"warning" as const}:finding)].slice(0,10);
   } catch {
     coverageStatus="unavailable";
@@ -81,7 +83,9 @@ export async function runPlanCritique(input:{bb:BbPluginApi;db:ReturnType<typeof
   if(coverageStatus==="unavailable") structuralFindings.push({code:"coverage_scan_truncated",path:".",severity:"warning",finding:"Workspace path listing is unavailable; only plan/TaskV2 data was reviewed"});
   // The owner's own words feed the prompt and the input hash: a critique of the same plan without them is not reused.
   const ownerWords = await ownerWordsOfRun({ bb: input.bb, db: input.db, runId: input.runId, taskId: input.taskId });
-  const source = `${input.plan}\n\n${JSON.stringify(input.task)}\n\nagent=${agent}\n\npm_read=${input.pmReadContext ?? ""}\n\nstructural_coverage=${coverageStatus}\n\nstructural_findings=${JSON.stringify(structuralFindings)}\n\nowner_words=${JSON.stringify(ownerWords)}`;
+  // A plan that is just the path of a file under the project is read here: the critic gets the text, the receipt the sha256 of the version it judged.
+  const planFile = await inlinePlanFile(input.bb,{hostId:input.config.hostId,projectCwd:input.task.project_cwd,plan:input.plan});
+  const source = `${input.plan}\n\n${JSON.stringify(input.task)}\n\nagent=${agent}\n\npm_read=${input.pmReadContext ?? ""}\n\nstructural_coverage=${coverageStatus}\n\nstructural_findings=${JSON.stringify(structuralFindings)}\n\nowner_words=${JSON.stringify(ownerWords)}${planFile?`\n\nplan_file_sha256=${planFile.sha256}`:""}`;
   const base = { runId:input.runId, taskId:input.taskId, stageId:"plan-critique" as const, input:source };
   // A resumed dispatch keeps a critique that passed on this very input (resetHelperStages): it is not bought twice.
   const kept = listStageReceipts(input.db,input.runId,input.taskId).find((row) => row.stageId === "plan-critique");
@@ -173,7 +177,7 @@ export async function runPlanCritique(input:{bb:BbPluginApi;db:ReturnType<typeof
           ...placement,
           ...requiredPolicyField(input.bb, helperPolicy, providerId, "plan-critic"),
           ...writerExecutionSelection(providerId, modelId, configuredEffort, serviceTier),
-          prompt:critiquePrompt({ plan:input.plan, task:input.task, agent, pmReadContext:input.pmReadContext, structuralFindings, ownerWords }),
+          prompt:critiquePrompt({ plan:input.plan, task:input.task, agent, pmReadContext:input.pmReadContext, structuralFindings, ownerWords, ...(planFile?{planText:planFile.inlined}:{}), ...(coverageCallers?{callers:coverageCallers}:{}) }),
           environment:{ type:"host", hostId:input.config.hostId,
             workspace:{ type:"unmanaged", path:input.task.project_cwd } },
           pluginMetadata:{ role:"plan-critic", lanePilotRunId:input.runId, lanePilotTaskId:input.taskId,
@@ -190,7 +194,7 @@ export async function runPlanCritique(input:{bb:BbPluginApi;db:ReturnType<typeof
         // the path, so only file, line and quoted evidence are required (settleVerdict). A host-side path check if invented paths show up.
         const critique = await readAnswer(input.bb, threadId, raw, parseCritique, "status, summary, findings and evidence");
         const blocked = critique.decision === "changes_requested" && mode === "gate";
-        const result = { ...critique, mode, critic_tier:criticTier, ...(qualityMode !== "standard" ? { qualityMode } : {}), structuralCoverage:{status:coverageStatus,pathCount:coveragePathCount}, structuralFindings, rawOutput:raw.slice(0, 12_000) };
+        const result = { ...critique, mode, critic_tier:criticTier, ...(planFile?{plan_sha256:planFile.sha256}:{}), ...(qualityMode !== "standard" ? { qualityMode } : {}), structuralCoverage:{status:coverageStatus,pathCount:coveragePathCount}, structuralFindings, rawOutput:raw.slice(0, 12_000) };
         const why = verdictReasons(critique, "plan-critique");
         recordStage(input.db, { ...base, state:blocked ? "blocked" : "passed", providerId, model:modelId,
           threadId, result, reason:blocked ? why.receipt : undefined });

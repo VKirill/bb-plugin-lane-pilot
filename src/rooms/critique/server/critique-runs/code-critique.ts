@@ -25,6 +25,8 @@ import { limitProbe, logLimitMove } from "./limit-probe";
 import { verdictReasons } from "./verdict-reasons";
 import { readCodeCritique } from "./read-answer";
 import { attemptEnvironment } from "./attempt-diffs";
+import { verifySeriousFindings } from "./verify-findings";
+import type { VerifierOutcome } from "./verify-findings";
 
 export async function runCodeCritique(input:{
   bb:BbPluginApi;db:ReturnType<typeof openDatabase>;projectId:string;runId:string;stageHelperSettings:StageHelperSettings;taskId:string;
@@ -33,6 +35,8 @@ export async function runCodeCritique(input:{
   criticDefault?:CodeCriticDefault;
   /** The graph step the review runs inside (the `writer` node of the task's pipeline run): the critic's thread carries its ids. */
   workflow?:{runId:string;stepKey?:string;nodeId?:string};
+  /** Sends the verifier's prompt to a pair and returns its answer (tests pass a fake; the default starts a read-only helper thread). */
+  verifierRun?:(prompt:string,pair:{providerId:string;model:string})=>Promise<string>;
 }): Promise<{allowed:boolean;reason?:string;review:"passed"|"not_required";critique?:unknown;parsed?:ReturnType<typeof parseCodeCritique>;settings?:ReturnType<typeof parseCodeCritiqueSettings>;policy?:FrozenCritiquePolicy}> {
   // The code check on the critic's opinion: a finding's line must exist in the file the critic was shown.
   const cites = candidateCitations(input.evidence.files, MAX_FILE_EXCERPT_BYTES);
@@ -334,10 +338,48 @@ export async function runCodeCritique(input:{
           raws.push(raw);
           critiques.push(await readCodeCritique(input.bb, threadId, raw, cites));
         }
-        const critique = unionCriticFails(critiques);
+        let critique = unionCriticFails(critiques);
         const raw = raws.join("\n");
+        // A strict critique that stops on a critical or high finding gets one independent look at those findings by a model of another family.
+        let verifier: VerifierOutcome | null = null;
+        if (level.tier === "strict") {
+          const verifierThread: { id: string | null } = { id: null };
+          const checked = await verifySeriousFindings({
+            critique, critic:{ providerId, model:modelId }, effort:configuredEffort, tier, catalog:criticCatalog, task:input.task, workspace:input.task.project_cwd,
+            run: input.verifierRun ?? (async (prompt, pair) => {
+              const [providers, models] = await Promise.all([input.bb.sdk.providers.list({ hostId:input.config.hostId }), input.bb.sdk.providers.models({ providerId:pair.providerId, hostId:input.config.hostId })]);
+              const peerProvider = providers.find((row) => row.id === pair.providerId && row.available);
+              if (!peerProvider || !findModelIn(models.models, pair.model)) throw new Error("verifier_provider_or_model_unavailable");
+              const peerTier = listedServiceTier(peerProvider, bbServiceTier(tier));
+              const started = await fullAccessSpawn(input.bb, {
+                ...placement,
+                ...requiredPolicyField(input.bb, helperPolicy, pair.providerId, "code-critic"),
+                ...writerExecutionSelection(pair.providerId, pair.model, configuredEffort, peerTier && (peerProvider.serviceTiers ?? []).some((item) => item.id === peerTier) ? peerTier : null),
+                prompt,
+                environment:attemptEnvironment(input.db, input.runId, input.taskId, input.task.project_cwd)
+                  ?? { type:"host", hostId:input.config.hostId, workspace:{ type:"unmanaged", path:input.task.project_cwd } },
+                pluginMetadata:{ role:"code-critic", lanePilotRunId:input.runId, lanePilotTaskId:input.taskId, stageId:"code-critique-verifier",
+                  parentPmThreadId:getRun(input.db, input.runId)?.pm_thread_id ?? null, helperMode:helperPolicy.mode, helperRequired:helperPolicy.policy?.required===true, verifier:true, ...graphStepMetadata(input.workflow) },
+              });
+              verifierThread.id = stringAt(started, "id");
+              if (!verifierThread.id) throw new Error("verifier_thread_id_missing");
+              try {
+                await waitThreadIdle(input.bb, verifierThread.id, "critique_thread_timeout");
+                const answer = (await input.bb.sdk.threads.output({ threadId:verifierThread.id })).output;
+                if (typeof answer !== "string" || !answer.trim()) throw new Error("verifier_output_empty");
+                return answer;
+              } catch (cause) {
+                const thread = await orMiss(input.bb.sdk.threads.get({ threadId:verifierThread.id }), null, isNotFound);
+                if (stringAt(thread, "status") === "active" || stringAt(thread, "status") === "starting") await bestEffort(input.bb.log, "verifier thread stop", input.bb.sdk.threads.stop({ threadId:verifierThread.id }), undefined);
+                throw cause;
+              }
+            }),
+          });
+          critique = checked.critique;
+          verifier = checked.outcome;
+        }
         const blocked = codeCritiqueStops(parsed.mode, critique);
-        const result = { ...snapshot, ...critique, policy, reviewer:{ providerId, model:modelId, reasoningEffort:configuredEffort, serviceTier:tier, mode:parsed.mode, maxRounds:parsed.maxRounds, autoFix:parsed.autoFix }, rawOutput:raw.slice(0, 12_000) };
+        const result = { ...snapshot, ...critique, ...(verifier ? { verifier } : {}), policy, reviewer:{ providerId, model:modelId, reasoningEffort:configuredEffort, serviceTier:tier, mode:parsed.mode, maxRounds:parsed.maxRounds, autoFix:parsed.autoFix }, rawOutput:raw.slice(0, 12_000) };
         recordStage(input.db, { ...base, state:blocked ? "blocked" : "passed", providerId, model:modelId,
           threadId, result, reason:blocked ? verdictReasons(critique,"code-critique").receipt : undefined });
         return blocked
