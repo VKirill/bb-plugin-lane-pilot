@@ -165,6 +165,8 @@ function asObject(value: unknown): Record<string, unknown> | null {
 
 /** A PreToolUse hook as written: its group's matcher and every field of the handler (timeout ...), not only the command line. */
 type HookEntry = { matcher: string; command: string; fields: Record<string, unknown> };
+/** The PreToolUse matcher of the subagent tool under both of its names. */
+export const SUBAGENT_MATCHER = "Task|Agent";
 
 function hookEntries(settings: unknown): HookEntry[] {
   const hooks = asObject(asObject(settings)?.hooks);
@@ -311,10 +313,12 @@ export async function materializeNativeHookSession(input: {
     groups.set("*", [...(groups.get("*") ?? []), { type: "command", command: line }]);
   }
   // Written from the bundle, like the guard: the host's dist has no cli.ts beside this module.
-  // Task only: the pack inject. Stall is PostToolUse. Neither is a second process on every PreToolUse.
+  // The subagent tool only: the pack inject. Stall is PostToolUse. Neither is a second process on every PreToolUse.
+  // Claude Code names that tool Agent (Task before the rename) and a matcher is an exact name list, so both are listed:
+  // under "Task" alone the spend cap, the pack and the subagent record never run for an Agent call.
   const sessionHook = await writeTextHook(join(hooksDir, "session-hook.mjs"), SESSION_HOOK_SOURCE);
   const sessionLine = `node ${shellQuote(sessionHook)}`;
-  groups.set("Task", [...(groups.get("Task") ?? []), { type: "command", command: sessionLine }]);
+  groups.set(SUBAGENT_MATCHER, [...(groups.get(SUBAGENT_MATCHER) ?? []), { type: "command", command: sessionLine }]);
   wrapped.push(sessionLine);
 
   const base = asObject(project) ?? {};

@@ -121,7 +121,8 @@ it("keeps a project hook's matcher and timeout in the native session and adds th
   const result = await materializeNativeHookSession({ cwd, destDir: join(root, "session") });
   const settings = JSON.parse(await readFile(result.settingsPath, "utf8")) as { hooks: { PreToolUse: Array<{ matcher: string; hooks: Array<{ command: string; timeout?: number }> }> } };
   const groups = settings.hooks.PreToolUse;
-  expect(groups.map((group) => group.matcher)).toEqual(["Bash", "*", "Task"]);
+  // The subagent group names both tool names: Claude Code matches a matcher as an exact name list, and the tool is Agent now.
+  expect(groups.map((group) => group.matcher)).toEqual(["Bash", "*", "Task|Agent"]);
   expect(groups[0]!.hooks).toHaveLength(1);
   expect(groups[0]!.hooks[0]!.timeout).toBe(3);
   expect(groups[0]!.hooks[0]!.command).toContain("echo audit-hook");
