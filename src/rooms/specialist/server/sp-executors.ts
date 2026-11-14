@@ -199,8 +199,7 @@ export function registerSpExecutors(
     const reportRel = `.agents/${domain}/reports/${c.workflow.id}-${node.id}.json`;
     const reportText = JSON.stringify(res.raw, null, 2);
     await writeCheckoutFile(ctx, checkout, reportRel, reportText);
-    // Both files below sit at a fixed path that EVERY run of this graph replaces, by design (a daily job's «latest»). The run's manifest names the run
-    // that wrote the current one, and the pointer file says it too, so a reader can tell whose bridge it took.
+    // Both files below sit at a fixed path every run of this graph replaces by design (a daily «latest»); the run's manifest and the pointer file name the run that wrote the current one.
     const latestRel = asStr(args.latest_out).replace(/^\/+/, "");
     const pointed: Array<{ repoPath: string; content: string; kind: "latest-pointer" }> = [{ repoPath: reportRel, content: reportText, kind: "latest-pointer" }];
     if (checkout && latestRel.startsWith(".agents/") && !latestRel.split("/").includes("..")) {

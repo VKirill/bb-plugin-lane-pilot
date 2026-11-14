@@ -96,7 +96,8 @@ async function setup(script: Script, options: { pmEvents?: () => Row[]; firstTur
       files: {
         write: async (args: unknown) => {
           if (options.failWrites) throw new Error("disk full");
-          return coreFileWrite(diskStore(), (path, content) => { writes.push({ path, content }); })(args) as never;
+          // `writes` are the files the nodes made; the run's own manifest (.agents/runs/<run>/manifest.json, tests/workflow/run-home.test.ts) is not one of them.
+          return coreFileWrite(diskStore(), (path, content) => { if (!/\/\.agents\/runs\/[^/]+\/manifest\.json$/.test(path)) writes.push({ path, content }); })(args) as never;
         },
       },
     },

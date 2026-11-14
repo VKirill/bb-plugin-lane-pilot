@@ -327,7 +327,8 @@ describe("reference cards carried by behaviour (c2)", () => {
   it("[sma:k_d_ref_planner] the lp.plan planner prompt holds the task-size, wave-overlap and vertical-slice rules, and the planning rubric names uncovered requirements", () => {
     const prompt = String(node("lp.plan", "plan").prompt);
     expect(prompt).toContain("15-60");
-    expect(prompt).toContain("owns_paths must not overlap");
+    // The overlap rule after waves became code (docs/plan-split.md): the planner writes no waves, two tasks on one path are linked by depends_on.
+    expect(prompt).toContain("two tasks that own the same path must be linked by depends_on");
     expect(prompt).toContain("vertical slice");
     expect(STAGE_RUBRICS.planning.antipatterns).toContain("a requirement no piece covers");
   });
