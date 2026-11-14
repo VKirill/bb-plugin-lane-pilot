@@ -1,6 +1,7 @@
 // Region 7 · Providers, models, accounts — per-node evidence of the four proofs (docs/sma-evidence.md).
 // One line per node, sorted by node number; a batch agent edits only its nodes' lines. Lines with seedEntry or a lone
 // wfRun/wfStep trace were derived mechanically by scripts/sma-seed-evidence.ts (2026-11-14), not authored.
+// Batch b (n626 .. n656, 30 nodes; n628 is void): the same scene proves the nodes with no row of their own; the node ids n626 .. n656 are listed in the scene.
 // Batch a (n596 .. n625): the nodes without a hub row of their own are proved by the region scene scripts/lp_drill/scenes/sma_r07.py; the capability
 // nodes (n601, n607, n609) by the rows of the capability table. Core-resident, nothing to mutate here: n596, n597, n598, n612, n615, n616
 // (their proof anchors are `core:` paths in bb-core).
@@ -11,9 +12,11 @@ const WORKER = "src/rooms/verification/worker-user.ts";
 const LOGIC = "src/rooms/capability/logic.ts";
 const MODELS = "packages/models/src/role-models.ts";
 const HOST = "src/rooms/native-agent/native-claude-host.ts";
+const MONEY = "src/rooms/money/server.ts";
+const PROBE = "src/rooms/native-agent/server/helper-probe.ts";
 
 export default {
-  n599: { mutation: flip("src/rooms/stability/server/worktree-janitor.ts", "return strictProjects.get(task.projectId) ? task.keys : [];", "return strictProjects.get(task.projectId) ? [] : task.keys;"), reach: entry("the hourly janitor sweep finds a task that ended a day ago in a project with worker.strict_user on"), trace: drill("sma_r07") },
+  n599: { mutation: flip("src/rooms/stability/server/worktree-janitor.ts", "return strictProjects.get(task.projectId) ? task.keys : [];", "return strictProjects.get(task.projectId) ? [] : task.keys;"), reach: entry("the hourly janitor sweep finds a task that ended a day ago in a project with worker.strict_user on", { "worker.strict_user": "on" }), trace: drill("sma_r07") },
   n600: { mutation: distort("src/rooms/host-worker/handlers/machine.ts", 'leanCodexConfig(disableCodexMemories(base), input.profile ?? "code")', 'leanCodexConfig(disableCodexMemories(base), input.profile ?? "open")'), trace: drill("sma_r07") },
   n601: { mutation: flip(LOGIC, "if (!version) continue;\n    if (CAPABILITIES.some(", "if (version) continue;\n    if (CAPABILITIES.some("), trace: rows("lane_pilot_capability", "at", "state IN ('supported','not_supported')") },
   n602: { mutation: flip("src/rooms/stability/server/canary.ts", "if (!entry.projectIds.includes(chain.projectId)) entry.projectIds.push(chain.projectId);", "if (entry.projectIds.includes(chain.projectId)) entry.projectIds.push(chain.projectId);"), trace: drill("sma_r07") },
@@ -39,6 +42,36 @@ export default {
   n623: { mutation: flip(HOST, "if not os.path.exists(_p): _why=", "if os.path.exists(_p): _why="), trace: drill("sma_r07") },
   n624: { mutation: distort(MODELS, '{ id: "pm-reader", default: { model: "claude-haiku-5-5", effort: "low",', '{ id: "pm-reader", default: { model: "claude-haiku-5-5", effort: "medium",'), trace: drill("sma_r07") },
   n625: { mutation: flip("src/rooms/writer/server/spawn.ts", "if (got.providerId && got.providerId !== selectedProviderId) {", "if (got.providerId && got.providerId === selectedProviderId) {"), trace: drill("sma_r07") },
+  n626: { mutation: distort("src/rooms/writer/argv-builder.ts", '"--dangerously-bypass-approvals-and-sandbox", "--yolo"];', '"--dangerously-bypass-approvals-and-sandbox"];'), reach: entry("a writer or a helper launch assembles the lane CLI's argv"), trace: drill("sma_r07") },
+  n627: { mutation: wrongTarget("src/rooms/contracts/helper-context.ts", "const profile = ROLE_PROFILES[role] ?? CUSTOM_SPECIALIST_PROFILE;\n  const base = group", "const profile = CUSTOM_SPECIALIST_PROFILE;\n  const base = group"), reach: entry("a helper starts in a role (a stage's agent, a critic, a specialist of the owner)"), trace: drill("sma_r07") },
   n628: { voidReview: voidStays("из пула воркеров задача роль не выбирает; писатель один (writer.provider/model) с цепочкой запасных, навыки задаёт правило по заявленным навыкам задачи и папке проекта") },
-  n656: { voidReview: voidIsHave("пару дизайнов судит независимый измеритель по рубрике (overflow, contrast, targets, …) без участия автора; выбор пары — design-pair-answer PM") },
+  n629: { mutation: flip("src/rooms/owner-presence/logic.ts", "now - mark.at > windowMs", "now - mark.at < windowMs"), reach: entry("the owner types a message in a thread of his own and a writer is about to start on that provider"), trace: drill("sma_r07") },
+  n630: { mutation: flip(HOLD, "if (mark && now - mark.at <= PRESENCE_WINDOW_MS) {", "if (mark && now - mark.at > PRESENCE_WINDOW_MS) {"), reach: entry("a writer attempt asks the chain for a free member while the owner works in one of its providers"), trace: drill("sma_r07") },
+  n631: { mutation: distort(HOLD, "wakeAt: timed.length ? Math.min(...timed) : null", "wakeAt: timed.length ? Math.max(...timed) : null"), trace: drill("sma_r07") },
+  n632: { mutation: flip(HOLD, "  if (spent) {\n    const reset", "  if (!spent) {\n    const reset"), trace: drill("sma_r07") },
+  n633: { mutation: flip(HOLD, "&& free && isPaid(free.member.providerId)) {", "&& free && !isPaid(free.member.providerId)) {"), trace: drill("sma_r07") },
+  n634: { mutation: distort(MONEY, "return moneyHold(providerId, status().monthUsd, moneyCapFrom(settings()), taskUsd);", "return moneyHold(providerId, 0, moneyCapFrom(settings()), taskUsd);"), reach: entry("a writer attempt asks the money of the hub whether a paid member of its chain may start"), trace: drill("sma_r07") },
+  n635: { mutation: wrongTarget(MONEY, 'const cap = capOf(settings()["money.monthly_cap_usd"]);', 'const cap = capOf(settings()["money.silent_estimate_tokens"]);'), trace: drill("sma_r07") },
+  n636: { mutation: flip("src/rooms/money/logic.ts", "return Number.isFinite(cap) && cap > 0 ? cap : null;", "return Number.isFinite(cap) && cap >= 0 ? cap : null;"), trace: drill("sma_r07") },
+  n637: { mutation: distort("src/rooms/cockpit/ui/screens-day.tsx", '"unlimited" : Number(cap), expectedVersion', '"unlimited" : Number(cap) * 100, expectedVersion'), trace: drill("sma_r07") },
+  n638: { mutation: flip("src/rooms/money/logic.ts", "if (monthUsd >= cap) return", "if (monthUsd > cap) return"), trace: drill("sma_r07") },
+  n639: { mutation: flip("src/rooms/money/logic.ts", 'return cap === null && switchOn(settings, "money.cap_unset_zero") ? 0 : cap;', 'return cap === null && !switchOn(settings, "money.cap_unset_zero") ? 0 : cap;'), trace: drill("sma_r07") },
+  n640: { mutation: flip(HOLD, "const money = !isPaid(input.providerId) ? null : await", "const money = isPaid(input.providerId) ? null : await"), trace: drill("sma_r07") },
+  n641: { mutation: distort(MONEY, "return price ? appetiteTokens * price.outputPerM / 1_000_000 : 0;", "return price ? appetiteTokens * price.inputPerM / 1_000_000 : 0;"), reach: entry("a paid-lane writer with a task appetite is about to start"), trace: drill("sma_r07") },
+  n642: { mutation: flip("src/rooms/money/logic.ts", "if (!isPaid(providerId)) return null;\n  const list", "if (isPaid(providerId)) return null;\n  const list"), trace: drill("sma_r07") },
+  n643: { mutation: flip("src/rooms/money/logic.ts", "if (row.day.startsWith(month)) {", "if (!row.day.startsWith(month)) {"), trace: drill("sma_r07") },
+  n644: { mutation: distort("src/rooms/money/logic.ts", "byProvider[row.providerId] = (byProvider[row.providerId] ?? 0) + usd; }", "byProvider[row.providerId] = usd; }"), reach: entry("the money screen or a paid member's hold reads the spend book"), trace: drill("sma_r07") },
+  n645: { mutation: distort(MONEY, "usd += tokens * (price.inputPerM + price.outputPerM) / 2 / 1_000_000;", "usd += tokens * (price.inputPerM + price.outputPerM) / 4 / 1_000_000;"), reach: entry("a paid-lane attempt ended without usage events and the spend book is read"), trace: drill("sma_r07") },
+  n646: { mutation: distort("src/rooms/money/logic.ts", "Array.from({ length: 14 }, (_, index) => new Date(now - (13 - index)", "Array.from({ length: 13 }, (_, index) => new Date(now - (13 - index)"), reach: entry("the money screen is opened"), trace: drill("sma_r07") },
+  n647: { mutation: wrongTarget("src/rooms/capability/server/capability.ts", "SANDBOX_PROJECT_ID, runId, item.providerId, item.model, capability)", "SANDBOX_PROJECT_ID, runId, item.providerId, item.providerId, capability)"), trace: drill("sma_r07") },
+  n648: { mutation: flip("src/rooms/capability/server/capability.ts", 'return value !== "observe" && value !== "off";', 'return value === "observe" || value === "off";'), reach: entry("a documentary stage is about to spawn on a provider"), trace: drill("sma_r07") },
+  n649: { mutation: wrongTarget(LOGIC, "provider.pluginId ? version.get(provider.pluginId) ?? null : null", "provider.pluginId ? version.get(provider.id) ?? null : null"), reach: entry("the hourly capability sweep or the documentary gate reads the installed adapters"), trace: drill("sma_r07") },
+  n650: { mutation: distort(LOGIC, '"documentary.hooks", "documentary.session_end"];', '"documentary.hooks"];'), trace: drill("sma_r07") },
+  n651: { mutation: flip(PROBE, 'return toolCallsText(Array.isArray(listed) ? listed : []).includes("lane-pilot status") ?', 'return !toolCallsText(Array.isArray(listed) ? listed : []).includes("lane-pilot status") ?'), trace: drill("sma_r07") },
+  n652: { mutation: flip(PROBE, 'typeof output === "string" && /RESUMED/.test(output)', 'typeof output === "string" && !/RESUMED/.test(output)'), trace: drill("sma_r07") },
+  n653: { mutation: flip(PROBE, "if (!confirm.stopped) return", "if (confirm.stopped) return"), trace: drill("sma_r07") },
+  n654: { mutation: flip(PROBE, "&& !/(^|\\/)\\.lp-probe-/.test(path));", "&& /(^|\\/)\\.lp-probe-/.test(path));"), trace: drill("sma_r07") },
+  n655: { mutation: distort("src/rooms/writer/progress-journal.ts", 'type !== "commandExecution") continue;', 'type !== "commandExecutionX") continue;'), trace: drill("sma_r07") },
+  n656: { mutation: flip("src/rooms/design-eval/logic.ts", 'sa.score > sb.score ? "a" : "b"', 'sa.score < sb.score ? "a" : "b"'), reach: entry("a design-lead result or a skill change is compared as a pair"), trace: drill("sma_r07"),
+    voidReview: voidIsHave("пару дизайнов судит независимый измеритель по рубрике (overflow, contrast, targets, …) без участия автора; выбор пары — design-pair-answer PM") },
 } satisfies RegionEvidence;
