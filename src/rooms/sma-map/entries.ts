@@ -1376,7 +1376,7 @@ export const SMA_ENTRIES: Readonly<Record<string, SmaEntry>> = {
   n1362: ["have", "предпросмотр блока корпуса из записей, без записи в файлы агента", "src/rooms/memory/server/session-memory.ts#confirmedWordHits"],
   n1363: ["have", "sma profile", "src/rooms/tools/server/cli-project.ts#cliProject"],
   n1364: ["have", "построитель карты ценности", "workflows/project-start.json#VALUE-MAP.md"],
-  n1365: ["void", "нет предмета: граф памяти по областям из git ls-files и кандидатов рефлексов никто не строит — память проекта это корпус хаба и ведётся автоматически; предпросмотр старта показывает подтверждённые записи хаба (n1362)"],
+  n1365: ["deviation", "решение 3 (память только на хабе, полностью автоматическая): граф памяти по областям из git ls-files и кандидатов рефлексов SMA строит по файлам проекта; у нас память — корпус хаба, предпросмотр старта показывает его подтверждённые записи (n1362)"],
   n1366: ["have", "единый вход к настройкам проекта — settings-store (loadProjectSettings), комната настроек пишет через одну дверь", "src/rooms/storage/settings-store.ts#loadProjectSettings"],
   n1367: ["have", "единственный писатель профиля", "workflows/project-start.json#\"profile_write\""],
   n1368: ["have", "framework-selector рекомендует один вариант и не строит фичу", "src/rooms/contracts/bundled-agents.json#You are **framework-selector**"],
