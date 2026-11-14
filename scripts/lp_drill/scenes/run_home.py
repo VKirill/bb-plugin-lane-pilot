@@ -70,14 +70,22 @@ def run_manifest_problems(cwd: str, run_id: str, workflow: str = RUN_GRAPH) -> l
 
 def run_shared_leaks(before: set[str], after: set[str], run_ids: list[str], cwd: str) -> list[str]:
     """New files in the shared folders that belong to none of the runs: not the run's manifest, not a file its manifest lists, not its
-    PM-chat spill (`.bb/chats/<pm>/artifacts/wf-<first 24 of the run id>/`)."""
+    PM-chat spill (`.bb/chats/<pm>/artifacts/wf-<first 24 of the run id>/`), or BB's automatic chat exports (`thread.json`, `README.md`, `history/**`)."""
     own: set[str] = set()
     spills: list[str] = []
     for run_id in run_ids:
         own.add(f".agents/runs/{run_id}/manifest.json")
         own.update(str(row.get("path")) for row in run_manifest_rows(read_run_manifest(cwd, run_id)))
         spills.append(f"/artifacts/wf-{run_id[:24]}/")
-    return [path for path in sorted(after - before) if path not in own and not any(spill in path for spill in spills)]
+    def chat_export(path: str) -> bool:
+        parts = path.split("/")
+        if len(parts) < 4 or parts[:2] != [".bb", "chats"] or not parts[2]:
+            return False
+        if len(parts) == 4 and parts[3] in {"thread.json", "README.md"}:
+            return True
+        return len(parts) > 4 and parts[3] == "history"
+
+    return [path for path in sorted(after - before) if path not in own and not any(spill in path for spill in spills) and not chat_export(path)]
 
 
 def run_distinct_problems(cwd: str, run_ids: list[str]) -> list[str]:

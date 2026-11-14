@@ -76,6 +76,11 @@ describe("the drill's run_home scene", () => {
     expect(clashes(shared)).toEqual([expect.stringContaining("was written by both")]);
     expect(clashes(world((rows, run) => rows.map((row) => ({ ...row, replaces: `${run}:x` }))))[0]).toContain("replaced");
     expect(leaks(world(), [".agents/plans/stray.md", `.bb/chats/pm/artifacts/wf-${A.slice(0, 24)}/tasks.1234abcd.json`])).toEqual([".agents/plans/stray.md"]);
+    const chat = `.bb/chats/${A}`;
+    expect(leaks(world(), [
+      `${chat}/thread.json`, `${chat}/README.md`, `${chat}/history/index.json`, `${chat}/history/session/page-00000.json`,
+      `${chat}/artifacts/history/note.md`, `${chat}/history-note.md`, ".agents/todos/history/note.md",
+    ])).toEqual([".agents/todos/history/note.md", `${chat}/artifacts/history/note.md`, `${chat}/history-note.md`]);
   });
 
   it("starts through the manual workflow RPC, waits on its returned IDs, and preserves an accepted run when the other start is refused", () => {
