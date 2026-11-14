@@ -47,7 +47,7 @@ export default {
   n1171: { mutation: distort(STAGES, "(animat\\p{L}*|motion|transition|", "(animat\\p{L}*|motion|"), trace: drill("sma_r16") },
   n1172: { mutation: flip(STAGES, "notes && motionRows([item]).length ? ", "!notes && motionRows([item]).length ? "), trace: drill("sma_r16") },
   n1173: { mutation: wrongTarget("src/rooms/writer/server/reassign.ts", "providerId: text(input.providerId) ?? current.providerId,", "providerId: current.providerId ?? text(input.providerId),"), trace: drill("sma_r16") },
-  n1174: { mutation: distort(DRIVER_STEPS, "phase.record.issueCap ?? 8", "phase.record.issueCap ?? 1"), trace: drill("sma_r16") },
+  n1174: { mutation: distort(DRIVER_STEPS, "phase.record.issueCap ?? 8", "8 ?? phase.record.issueCap"), trace: drill("sma_r16") },
   n1175: { mutation: distort(DRIVER_STEPS, "phase.record.subagents === false ? 1 :", "phase.record.subagents === false ? 2 :"), trace: drill("sma_r16") },
   n1176: { mutation: flip(WAVES, "return { id, ok: failing.length === 0, detail:", "return { id, ok: failing.length !== 0, detail:"), trace: drill("sma_r16") },
   n1177: { mutation: flip("src/rooms/critique/code-critique.ts", '  if (mode === "gate") return true;', '  if (mode !== "gate") return true;'), trace: drill("sma_r16") },
