@@ -1,6 +1,7 @@
 """The plan split scenario: depends_on decides the order of a plan, nothing else does."""
 from __future__ import annotations
 
+import os
 import json
 import re
 import shlex
@@ -212,6 +213,9 @@ def scenario_plan_split(ctx: "Context") -> dict:
     the explicit depends_on; a task starts when its dependencies are accepted and merged and its worktree is cut from that main;
     a failed task holds its dependents and nobody else. Judged by plan_split_problems over the query PLAN_SPLIT_SQL (printed below; :run is
     the run id) plus the writer-stage reason of d-d while d-c is blocked (PLAN_SPLIT_REASON_SQL). Full set only."""
+    if not os.path.isdir(ctx.cwd):
+        # The bases are judged by git in the sandbox checkout: from another machine every base would read «lacks the merge» (live, 2026-11-14).
+        return verdict("plan_split", [f"cannot_judge: the sandbox checkout {ctx.cwd} is not on this machine; run where it is, or with the deploy's LP_DRILL_PROJECT, LP_DRILL_ENVIRONMENT and LP_DRILL_CWD"])
     ids, specs = plan_split_ids(), plan_split_tasks(ctx.cwd)
     problems: list[str] = []
     for name in PLAN_SPLIT_PLAN:
