@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.569
+
+- **A successful integration job releases its worktree registry row.** The direct host path recorded the removal; the host-job path returned before that record. Both now share the same postprocessing, including the fallback path. Checked by `tests/worktree-standard.test.ts` (successful job, direct call and failed job).
+- **Memory-path coverage requires behavioral evidence.** Fourteen paths now name tests that exercise their consumers; five missing checks cover replay policy, memory import evaluation, prompt construction, the phase owner card and the strict coverage command. Checked by `tests/memory-paths.test.ts`, `tests/coverage.test.ts`, `tests/pm-replay.test.ts`, `tests/server/session-memory.test.ts` and the SMA parity tests.
+- **The drill checks the workflow that actually ran.** `run_home` starts manual runs and waits for their returned IDs; BB's own chat exports do not count as leaked workflow files. `task_home` requests its critics through the contract's full quality mode. `plan_split` checks the recorded block before the replacement starts, even if the original attempt later resumes. Checked by `tests/lp-drill-run-home.test.ts`, `tests/lp-drill-task-home.test.ts` and `tests/lp-drill-plan-split.test.ts`.
+- **Read-only drill calls survive a brief hub pause, and region nine reaches its rename probes.** Read retries are bounded and never repeat writes. The `npm test` SMA proof runs the full suite without a file filter. Checked by `tests/lp-drill-hub-pause.test.ts`, `tests/sma/four-proofs-r27-npmtest.test.ts` and the `sma_r09` drill scene.
+- **The skills describe the current contract and role permissions.** Verification examples distinguish writer-visible checks from hidden checks; role file access, deterministic routing and project-life output paths match the runtime. Checked by `tests/handoff-standard.test.ts`, `tests/writer-validate.test.ts`, `tests/pm-instructions.test.ts` and the skill publication checks.
+
 ## 0.1.568
 
 - **A second write of a file through the bb file API is applied.** In the bb core `expectedSha256: null` means «the file must not exist»: over an existing file it answers `conflict` with HTTP 200 and writes nothing. Twelve call sites sent it, so the task manifest listed only the contract (the live scene `task_home` on 0.1.567 failed on exactly that), and a reopened attempt's QA note, the check logs, an updated contract, the critique rounds, the council record and the red-gate report kept their first edition. One helper, `writeReplacing`, leaves the key out and throws on any answer but `written`; the test hosts now behave as the core does. Checked by `tests/live-folder-flow.test.ts` (red on 0.1.567: the second manifest write is dropped; green now).
