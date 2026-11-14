@@ -183,7 +183,13 @@ with dark(name) as (
   union all
   select 'lane_pilot_run' as name where (select count(*) from lane_pilot_run where created_at >= (select since from lp_morning_30)) = 0
   union all
+  select 'lane_pilot_run_file' as name where (select count(*) from lane_pilot_run_file where created_at >= (select since from lp_morning_30)) = 0
+  union all
+  select 'lane_pilot_run_file_read' as name where (select count(*) from lane_pilot_run_file_read where at >= (select since from lp_morning_30)) = 0
+  union all
   select 'lane_pilot_run_goal' as name where (select count(*) from lane_pilot_run_goal where at >= (select since from lp_morning_30)) = 0
+  union all
+  select 'lane_pilot_run_home' as name where (select count(*) from lane_pilot_run_home where created_at >= (select since from lp_morning_30)) = 0
   union all
   select 'lane_pilot_schedule' as name where (select count(*) from lane_pilot_schedule where created_at >= (select since from lp_morning_30)) = 0
   union all

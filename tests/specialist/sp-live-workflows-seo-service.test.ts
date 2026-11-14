@@ -93,7 +93,7 @@ describe("Live E2E: SEO shelf (6/6 graphs) & Service shelf (3/3 graphs)", () => 
       queue_path: ".agents/seo/monitor/queue.json",
       recommendations: ["Обновить 4 страницы на позициях 5-12"],
     });
-    expect(String(summary.output?.report_path)).toMatch(/^\.agents\/seo\/monitor\/\d{4}-\d{2}-\d{2}\/$/);
+    expect(String(summary.output?.report_path)).toMatch(/^\.agents\/seo\/monitor\/\d{4}-\d{2}-\d{2}-wfrun_[0-9a-f]+\/$/);
     expect(existsSync(join(t.checkout, ".agents/seo/reports/seo-monitor-pulse_rules.json"))).toBe(true);
     expect(existsSync(join(t.checkout, ".agents/seo/reports/seo-monitor-ai_watch.json"))).toBe(true);
   });

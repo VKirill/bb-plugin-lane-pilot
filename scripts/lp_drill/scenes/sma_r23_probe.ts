@@ -87,7 +87,7 @@ const planner = await spawnOf("lp.plan", "plan");
 const tasks = ["a", "b", "c"].map((id) => ({ id, objective: id }));
 const lintErrors = ["t1 and t2 run in the same wave (neither depends on the other) but both own src"];
 const loop = await runSim("lp.plan", { input: { goal: "g" }, stubs: { plan: { tasks, task_count: 3 }, lint: [{ ok: false, errors: lintErrors }, { ok: true, errors: [] }], plan_critic: { status: "pass" } } });
-s.planner = { role: planner.role, rule: planner.prompt.includes("owns_paths must not overlap inside a wave"), method: planner.prompt.includes(PLANNER_METHOD.join("\n")), path: ran(loop), gaps: loop.called("plan")[1]?.input.gaps };
+s.planner = { role: planner.role, rule: planner.prompt.includes("two tasks that own the same path must be linked by depends_on"), method: planner.prompt.includes(PLANNER_METHOD.join("\n")), path: ran(loop), gaps: loop.called("plan")[1]?.input.gaps };
 const strategy = await spawnOf("lp.plan", "strategy");
 const vStubs = { plan: { tasks: [{ id: "a", objective: "a" }], task_count: 1 }, plan_critic: { status: "pass" }, strategy: { validation_md: "V: an empty list fixture" }, research: { research_md: "R" }, patterns: { patterns_md: "P" } };
 const vOn = await runSim("lp.plan", { input: { goal: "g", validation: true }, stubs: vStubs });

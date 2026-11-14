@@ -256,7 +256,7 @@ describe("Specialist OS live ActionOrder dispatch, PDAS v1 artifacts, and G-22..
           params: fsParams,
           out: [{ name: "folder", type: "string" }],
         },
-        workflow: { id: "seo-page-build", version: 1, name: { en: "SEO Page Build" }, nodes: [] } as unknown as Workflow,
+        workflow: { id: "seo-page-build", version: 1, name: { en: "SEO Page Build" }, nodes: [], edges: [] } as unknown as Workflow,
         runtime: env.rt,
         template: (v: unknown) => v,
         render: (s: string) => s,
