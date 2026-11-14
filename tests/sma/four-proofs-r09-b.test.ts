@@ -11,7 +11,9 @@ import plugin from "../../server";
 import { backlogReadCommand } from "../../src/rooms/backlog";
 import { backlogRpc, createBacklog } from "../../src/rooms/backlog/server";
 import { createRun, openDatabase, savePrototypeConfig } from "../../src/rooms/plugin-db";
-import { loadProjectSettings, saveProjectSetting } from "../../src/rooms/storage";
+import { HELPER_ROOTS } from "../../src/rooms/front/logic";
+import { planningRoot } from "../../src/rooms/contracts/planning-root";
+import { loadProjectSettings,saveProjectSetting } from "../../src/rooms/storage";
 
 const cleanup: Array<() => Promise<void>> = [];
 afterEach(async () => { for (const fn of cleanup.splice(0)) await fn(); });
@@ -105,7 +107,7 @@ describe("region 9 · bring your own helpers on the server", () => {
     expect(found.map((row) => `${row.format}:${row.kind}:${row.name}:${row.description}`)).toEqual(["claude:agent:yard:A yard agent.", "claude:skill:pick:Use when picking."]);
     expect(sent).toHaveLength(1);
     expect(sent[0]).toMatchObject({ method: "listDocsPages", input: { requestedHostId: "h1", projectCwd: "/ws", skipOversized: true }, options: { hostId: "h1" } });
-    expect(sent[0]!.input.roots).toContain(".claude/agents");
+    expect(sent[0]!.input.roots).toEqual([...HELPER_ROOTS]);
   });
 
   it("[sma:d_import_enroll] helpers_import writes only the chosen helpers as drafts in their kind's forge folder, only if absent; a draft that exists answers «kept» and a host failure is said as «failed»", async () => {
@@ -135,6 +137,19 @@ describe("region 9 · the update on the machine", () => {
     expect(sent.map((c) => [c.input.command, c.input.timeoutSec, c.input.cwd, c.input.requestedHostId])).toEqual([["lane-stack-update --json", 60, "/tmp", "h1"], ["lane-stack-update --json --yes", 600, "/tmp", "h1"]]);
     const failed = await world(() => ({ hostId: "h1", exitCode: 2, stdout: "", stderr: "no network" }));
     expect(await failed.call("cockpit_update", { hostId: "h1", apply: false })).toEqual({ exitCode: 2, output: "no network" });
+  });
+});
+
+describe("region 9 · the planning home", () => {
+  it("[sma:d_project_planning] the planning root is the project's own home when a valid one is set, the run's checkout when none is set or the value is unusable, and nothing without a run", () => {
+    const run = { writer_workspace_path: "/checkout" };
+    const check = { userHome: "/home/u" };
+    expect(planningRoot(run, { "project.planning_home": "/srv/plans/" }, check)).toBe("/srv/plans");
+    expect(planningRoot(run, {}, check)).toBe("/checkout");
+    expect(planningRoot(run, { "project.planning_home": "relative/dir" }, check)).toBe("/checkout");
+    expect(planningRoot(run, { "project.planning_home": "/home/u" }, check)).toBe("/checkout");
+    expect(planningRoot({ writer_workspace_path: null }, {}, check)).toBeNull();
+    expect(planningRoot(null, { "project.planning_home": "/srv/plans" }, check)).toBe("/srv/plans");
   });
 });
 

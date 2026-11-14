@@ -62,7 +62,7 @@ export default {
   n801: { reach: seedEntry("the owner presses the door in the window") },
   n802: { reach: seedEntry("the owner presses the door in the window") },
   n803: { reach: seedEntry("the owner presses the door in the window") },
-  n804: { mutation: flip("src/rooms/front/server/index.ts", "filter((row): row is NonNullable<typeof row> => !!row)", "filter((row): row is NonNullable<typeof row> => !row)"), reach: entry("the owner opens the Forge screen of a project that has a run"), trace: SCENE },
+  n804: { mutation: distort("src/rooms/front/server/index.ts", "roots: [...HELPER_ROOTS], skipOversized: true", "roots: [...HELPER_ROOTS].slice(1), skipOversized: true"), reach: entry("the owner opens the Forge screen of a project that has a run"), trace: SCENE },
   n805: { mutation: distort(SO, "/applied|kept/.test(row.status)", "/written|kept/.test(row.status)"), reach: entry("the owner ticks found helpers on the Forge screen and presses «Take as drafts»"), trace: SCENE },
   n806: { mutation: distort(SO, "{s.steps.indexOf(step) + 1}/4", "{s.steps.indexOf(step) + 2}/4"), reach: entry("the owner opens a project never set up (the cockpit stands the first run in front once) or the First run screen"), trace: SCENE },
   n807: { mutation: wrongTarget(SO, 'rpc.call("first_run_answer", { projectId, step: step.id, answer })', 'rpc.call("first_run_answer", { projectId, step: "goal", answer })'), reach: entry("the owner types an answer to a step of the first-run interview and presses Send"), trace: SCENE },
