@@ -205,8 +205,9 @@ describe("pool readiness and the green word (parity d10-rest-1)", () => {
 
   it("[sma:k_d_tpl_instructions] instructionForms gives the CLAUDE.md, Copilot and preferences forms, each pointing at PROJECT.md", () => {
     const forms = instructionForms({ name: "X", test: "npm test" });
-    for (const body of [forms.claudeMd, forms.copilotInstructions, forms.preferences]) expect(body).toContain("PROJECT.md");
-    expect(forms.claudeMd).toContain("# X");
+    for (const body of [forms.agentsMd, forms.copilotInstructions, forms.preferences]) expect(body).toContain("PROJECT.md");
+    expect(forms.agentsMd).toContain("# X");
+    expect(forms.claudeMd.trim()).toBe("@AGENTS.md");
     expect(forms.copilotInstructions).toContain("Copilot");
     expect(forms.preferences).toContain("npm test");
     expect(forms.preferences).toContain("Forbidden");
