@@ -806,7 +806,7 @@ export const SMA_ENTRIES: Readonly<Record<string, SmaEntry>> = {
   n792: ["have", "переименовать проект", "core:apps/app/src/components/project#"],
   n793: ["have", "выбрать проект", "src/rooms/cockpit/ui/cockpit-page.tsx#CockpitPage"],
   n794: ["have", "аудит 2026-11-10: поведения карточки в коде нет (было заявлено «дверь планирования — инструмент фазы, не HTTP конвейера»)", "src/rooms/contracts/planning-root.ts#planningRoot"],
-  n795: ["have", "машины", "core:apps/app/src/components/settings/MachinesSettingsSection.tsx#MachinesSettingsSection"],
+  n795: ["have", "машины", "src/rooms/cockpit/ui/screens-ops.tsx#SystemScreen"],
   n796: ["have", "сопрячь машину", "core:apps/app/src/components/dialogs/AddMachineDialog.tsx#AddMachineDialog"],
   n797: ["have", "добавить машину", "core:apps/app/src/components/dialogs/AddMachineDialog.tsx#AddMachineDialog"],
   n798: ["have", "убрать машину", "core:apps/app/src/components/machines/MachineRemoveDialog.tsx#MachineRemoveDialog"],
