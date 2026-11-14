@@ -1143,4 +1143,4 @@ export const SMA_CONTRACT_TESTS: Readonly<Record<string, readonly string[]>> = {
   wr_vendors: ["tests/sma/parity-j2-series-prep.test.ts › an api lane is its own paid vendor group while the subscription lanes are not paid","tests/sma/parity-j2-series-prep.test.ts › an install with no setting resolves a writer to claude-code","tests/sma/worker-lane-1.test.ts › claude and codex are vendor groups, and claude is one of the cores"],
   wr_windows: ["tests/sma/worker-gates-1.test.ts › an exhausted window is a limit: it spends no attempt and the next step is to wait"],
 };
-export const SMA_SIBLING_TESTS_AT: Readonly<Partial<Record<"core" | "telegram", string>>> = {"core":"732754269551","telegram":"5163dbaa5d5b"};
+export const SMA_SIBLING_TESTS_AT: Readonly<Partial<Record<"core" | "telegram", string>>> = {"core":"732754269551","telegram":"c7573a2e7970"};
