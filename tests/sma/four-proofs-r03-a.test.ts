@@ -62,7 +62,7 @@ describe("capability cells: probes, receipts and the mandatory cells", () => {
       stop: async () => undefined,
       output: async () => ({ output }),
     } } }) as never;
-    const role = PROBES["documentary.role"].check;
+    const role = PROBES["documentary.role"].check as (a: unknown) => Promise<{ ok: boolean; reason?: string }>;
     const args = (bb: never) => ({ bb, threadId: "t", hostId: "h", workspace: "/w", output: "ROLE" });
     expect(await role(args(bbWith({ role: "pm-reader" }, "")))).toEqual({ ok: true });
     const wrong = await role(args(bbWith({ role: "writer" }, "")));

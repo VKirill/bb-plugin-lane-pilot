@@ -1,7 +1,8 @@
 // Probe of scenes/sma_r03.py (region 3, the worker): runs the REAL code of THIS checkout (the commit under drill) on stand-in hosts, scratch databases and
-// temporary folders, and prints what it saw as one JSON line. It judges nothing: the scene compares each value with the card's expected result and
+// temporary folders, and writes what it saw as one JSON file (SMA_R03_OUT). It runs under vitest (the rooms import each other in cycles plain tsx rejects: sma_r03.vitest.config.ts). It judges nothing: the scene compares each value with the card's expected result and
 // prove()s it. No model turn, no hub write, no real sudo (a fake one is put on PATH for the script checks).
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
+import { it, vi } from "vitest";
 import { join } from "node:path";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { WORKER_ENVELOPE } from "../../../src/rooms/tasks/rails";
@@ -18,6 +19,8 @@ import {
   acceptedReceipts, capabilitySweep, checksAsWorker, confinedRun, contract, criticEnvironments, folderGrants, guardOnce, permitChannel, permitDecision,
   pmActivation, roleModels, workerUserScript, writerLauncher, writerLaunch,
 } from "../../../tests/sma/r03-world-a";
+
+vi.mock("@lane-pilot/thread-observe", async (importOriginal) => ({ ...(await importOriginal() as Record<string, unknown>), waitThreadIdle: async () => undefined }));
 
 const ROOT = join(__dirname, "../../..");
 const flow = (file: string) => (JSON.parse(readFileSync(join(ROOT, file), "utf8")) as { nodes: Array<{ id: string; role?: string }> }).nodes;
@@ -89,13 +92,10 @@ const observe: Record<string, () => unknown> = {
   n414: () => ({ capacity: LIMIT.test("capacity_saturated:p"), quota: LIMIT.test("writer_provider_limit:p"), breaker: LIMIT.test("writer_provider_unavailable:breaker_open"), plain: LIMIT.test("verification_failed") }),
 };
 
-async function main() {
-  const wanted = process.argv.slice(2);
-  const names = wanted.length ? wanted : Object.keys(observe);
+it("sma_r03 probe", async () => {
   const seen: Record<string, unknown> = {};
-  for (const name of names) {
-    try { seen[name] = await observe[name]!(); } catch (cause) { seen[name] = { threw: cause instanceof Error ? cause.message : String(cause) }; }
+  for (const [name, run] of Object.entries(observe)) {
+    try { seen[name] = await run(); } catch (cause) { seen[name] = { threw: cause instanceof Error ? cause.message : String(cause) }; }
   }
-  process.stdout.write(`${JSON.stringify(seen)}\n`);
-}
-void main();
+  writeFileSync(process.env.SMA_R03_OUT ?? "/tmp/sma_r03_probe.json", JSON.stringify(seen));
+}, 600_000);

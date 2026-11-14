@@ -15,7 +15,7 @@ import { createSecrets } from "../../src/rooms/secrets/server/secrets";
 import { CAPABILITIES, listReceipts } from "../../src/rooms/capability";
 import { createCapabilities } from "../../src/rooms/capability/server";
 import { mountPermits } from "../../src/rooms/writer/server";
-import { answerPermit, listPermitTickets } from "../../src/rooms/host-worker/host-handlers";
+import { answerPermit, listPermitTickets } from "../../src/rooms/host-worker/handlers/machine";
 import { claudeGuardLauncherScript, WRITER_DISALLOWED_TOOLS } from "../../src/rooms/native-agent/claude-guard-launch";
 import { createActivation } from "../../src/rooms/native-agent/server/activation";
 import { createCore } from "../../src/rooms/core/server/core";
