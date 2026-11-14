@@ -90,7 +90,7 @@ export default {
   n1214: { mutation: flip("workflows/debug.json", "investigate.confidence >= 40", "investigate.confidence < 40"), reach: seedEntry("the owner runs the command"), trace: [wfRun("debug"), drill("sma_r16")] },
   n1215: { mutation: flip("src/rooms/runs/timeline.ts", '${row.refused ? " (refused)" : ""}', '${!row.refused ? " (refused)" : ""}'), reach: seedEntry("the owner runs the command"), trace: drill("sma_r16") },
   n1216: { mutation: flip("src/rooms/project-life/plans-health.ts", ".filter((report) => report.missingInIndex.length || report.deadIndexLines.length)", ".filter((report) => report.missingInIndex.length && report.deadIndexLines.length)"), reach: seedEntry("the owner runs the command"), trace: drill("sma_r16") },
-  n1217: { mutation: flip("src/rooms/rollback/server/rollback.ts", 'if (previous) return refuse(t, "revert", ref,', 'if (!previous) return refuse(t, "revert", ref,'), reach: seedEntry("the owner runs the command"), trace: drill("sma_r16") },
+  n1217: { mutation: flip("src/rooms/rollback/server/rollback.ts", 'row.state === "merged" && row.changeSha === changeSha', 'row.state === "refused" && row.changeSha === changeSha'), reach: seedEntry("the owner runs the command"), trace: drill("sma_r16") },
   n1218: { mutation: flip("src/rooms/workflow/server/workflow-ops.ts", "hasMore: rows.length > input.limit,", "hasMore: rows.length >= input.limit,"), trace: drill("sma_r16") },
   n1219: { mutation: flip("workflows/debug.json", '"when": "session.found"', '"when": "!session.found"'), trace: drill("sma_r16") },
   n1220: { mutation: distort("workflows/debug.json", "$inputs.symptom.length >= 40", "$inputs.symptom.length >= 4"), trace: [wfRun("debug"), drill("sma_r16")] },
