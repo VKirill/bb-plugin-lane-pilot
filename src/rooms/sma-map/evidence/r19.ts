@@ -55,7 +55,7 @@ export default {
   n1502: { mutation: distort("src/rooms/learning/pm-rules.ts", "lines.push(`- ${rule.rule}`);", "lines.push(`- ${rule.rule.slice(0, 12)}`);"), trace: drill("sma_r19") },
   n1503: { voidReview: voidStays("statusLine плагин не устанавливает (см. n1491), единственная правка — чистильщик старой строки (n1411); второй реализации для согласования нет") },
   n1504: { mutation: distort("src/rooms/migrations.ts", "kind TEXT NOT NULL CHECK(kind IN ('core','note')),", "kind TEXT NOT NULL CHECK(kind IN ('core','notes')),"), trace: drill("sma_r19") },
-  n1505: { mutation: flip("src/rooms/learning/pm-rules.ts", "if (text.length <= 4_000) chosen.push(rule);", "if (text.length > 4_000) chosen.push(rule);"), trace: drill("sma_r19") },
+  n1505: { mutation: distort("src/rooms/learning/pm-rules.ts", "return pmRulesBlock(chosen, budget).text.trim() || null;", "return pmRulesBlock(chosen.slice(0, 1), budget).text.trim() || null;"), trace: drill("sma_r19") },
   n1506: { reach: seedEntry("the owner runs the command") },
   n1508: { mutation: flip("src/rooms/native-install/server/rpc/stack.ts", 'if (!confirmExternalOps) return { schemaVersion:1, action:"install"', 'if (confirmExternalOps) return { schemaVersion:1, action:"install"'), trace: drill("sma_r19") },
   n1509: { mutation: wrongTarget("src/rooms/native-install/server/rpc/stack.ts", "const result = await nativeInstaller.install(config.hostId);", "const result = await nativeInstaller.install(`${config.hostId}-x`);"), trace: drill("sma_r19") },
