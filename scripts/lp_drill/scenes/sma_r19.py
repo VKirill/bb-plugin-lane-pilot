@@ -6,6 +6,10 @@ folders and a scratch database, through sma_r19_probe.ts — never the real home
 files and rows look like afterwards with the node card's result, including that the person's own settings, lines and files are still there byte for byte.
 Run: scripts/lp-drill.sh --scenario sma_r19.
 
+Batch b (n1498 … n1516) adds n1498 roles in --agents, n1500 the session settings copy, n1501 state in the plugin database, n1502 / n1505 rules in the prompt, n1504 the memory
+scaffold, n1508 / n1509 the install door and the installer, n1515 an update keeps the owner's files, n1516 the check of the reapplied guard. Core-resident and not proved here:
+n1499, n1506, n1507, n1510 - n1514.
+
 Core-resident nodes (the main claim lives in bb-core: n1474 npx init, n1477 engine copy, n1483 thin skills, n1495 done report, n1496 engine folder) are proved here
 only for Lane Pilot's own half: the per-machine install result it reads, the receipt it stores, the graphs it offers and starts.
 """
@@ -19,7 +23,8 @@ from lp_drill.env import ROOT
 from lp_drill.prove import Proofs
 
 NODES = ["n1464", "n1465", "n1466", "n1467", "n1468", "n1469", "n1470", "n1471", "n1472", "n1473", "n1474", "n1476", "n1477", "n1478", "n1479", "n1480", "n1481",
-         "n1482", "n1483", "n1486", "n1487", "n1488", "n1489", "n1490", "n1492", "n1493", "n1494", "n1495", "n1496", "n1497"]
+         "n1482", "n1483", "n1486", "n1487", "n1488", "n1489", "n1490", "n1492", "n1493", "n1494", "n1495", "n1496", "n1497",
+         "n1498", "n1500", "n1501", "n1502", "n1504", "n1505", "n1508", "n1509", "n1515", "n1516"]
 PROBE = ROOT / "scripts/lp_drill/scenes/sma_r19_probe.ts"
 EXCLUDE = "# my own\nbuild/\n**/.agents/runs/\n**/.agents/reports/\n**/.bb/chats/\n**/notes/lock/\n**/.zcode/\n"
 
@@ -116,4 +121,36 @@ def scenario_sma_r19(tmp: Path) -> dict:
     proofs.prove("n1496", s["n1496"] == {"moved": True, "gone": True, "backup": "# old installer\n"}, f"old checkout {s['n1496']}")
     # n1497 Runtime scripts/sma in the project (our form: hook programs from the bundle in the session folder).
     proofs.prove("n1497", s["n1497"] == {"bundled": [True, True, True], "refreshed": True}, f"bundled hook files {s['n1497']}")
+
+    # ---- batch b ----
+    # n1498 Roles: one --agents definition per role with the compiled text; nothing written into .claude/agents.
+    r = s["n1498"]
+    proofs.prove("n1498", r["keys"] == ["dev-orchestrator"] and r["description"] and r["prompt"] and r["projectSame"] and r["agents"] == ["mine.md"], f"role definition {r}")
+    # n1500 Settings: a copy in the session folder, the person's files untouched, their keys and hooks merged, the guard once.
+    r = s["n1500"]
+    proofs.prove("n1500", r["inSession"] and r["projectSame"] and r["model"] == "claude-local" and r["env"] == {"KEEP_ME": "1"} and r["person"] and r["guards"] == 1, f"session settings {r}")
+    # n1501 Project state: rows in the plugin database, no state folder in the project.
+    r = s["n1501"]
+    proofs.prove("n1501", r["runs"] == [{"id": "lprun-b1", "project_id": "proj-b", "state": "pending"}] and r["secondHandle"] == 1 and r["fk"] == 1 and r["projectSame"] and r["noSmaFolder"], f"run state {r}")
+    # n1502 Managed blocks in CLAUDE.md: a prompt block, no markers, the file untouched.
+    r = s["n1502"]
+    proofs.prove("n1502", r["empty"] == "" and r["lines"] == ["- Quote the contract wording when you ask the owner a question", "- Never plan past the signed context, whatever the owner's hurry says"] and not r["marker"] and r["claudeMdSame"], f"rules block {r}")
+    # n1504 Memory corpus scaffold: the table with its rules, empty.
+    r = s["n1504"]
+    proofs.prove("n1504", r["empty"] == [0, 0] and r["inserts"] == ["ok", "ok", "refused", "refused"] and r["after"] == 2, f"scaffold {r}")
+    # n1505 Rules block splice: into the prompt, whole lines, a torn CLAUDE.md left alone.
+    r = s["n1505"]
+    proofs.prove("n1505", r["lines"] == ["- Keep every diff under two hundred lines", "- Ask before touching the lock file"] and not r["torn"] and r["claudeMdSame"], f"resume instructions {r}")
+    # n1508 One explicit yes: no yes, nothing runs and nothing is stored.
+    r = s["n1508"]
+    proofs.prove("n1508", r["blocked"] == "blocked" and r["callsBlocked"] == 0 and r["stored"] is None and r["ok"] == "ok" and r["reason"].endswith("no operation was run."), f"install door {r}")
+    # n1509 Re-run the standard installer: the project's machine only, repeatable.
+    r = s["n1509"]
+    proofs.prove("n1509", r["calls"] == [{"method": "nativeInstall", "action": "install", "requested": "host-up"}] and r["hosts"] == ["native-install:host:host-up"] and r["first"] == "enabled" and r["second"] == "enabled" and r["guardIsBundle"] and r["repeatSame"], f"installer {r}")
+    # n1515 What an update preserves: the owner's memory, skills, state, settings; an edited guard stays.
+    r = s["n1515"]
+    proofs.prove("n1515", r["placed"] and r["status"] == "enabled" and r["personSame"] and r["guardKept"], f"update over owner files {r}")
+    # n1516 Check of reapplied patches: applied only for the bundled file and exactly one hook entry; owner lines survive.
+    r = s["n1516"]
+    proofs.prove("n1516", r["steps"] == [False, True, False, True, False] and r["repaired"] == 1 and r["ownerKept"], f"guard check {r}")
     return proofs.verdict("sma_r19", checked=len(NODES))
