@@ -751,7 +751,7 @@ export const SMA_CONTRACT_TESTS: Readonly<Record<string, readonly string[]>> = {
   m_sp_already: ["tests/sma/supervisor-watch-1.test.ts › an open door is left alone: the lift records that it skipped and does not count a lift"],
   m_sp_grant_rows: ["tests/sma/four-proofs-r12-a.test.ts › every granted folder is a row of the ledger with who got it and who keeps it; a folder that could not be granted is not listed"],
   m_sp_grants: ["tests/sma/worker-gates-1.test.ts › the grant commands name only the run folder that was passed"],
-  m_sp_install_watch: ["tests/sma/parity-d1-watchdog-2.test.ts › without administrator rights the install says the refusal in words before the fallback"],
+  m_sp_install_watch: ["tests/sma/four-proofs-r12-b.test.ts › with sudo refused the install prints the refusal line whole, then installs a user unit; with sudo allowed it installs the system service and prints no refusal","tests/sma/parity-d1-watchdog-2.test.ts › without administrator rights the install says the refusal in words before the fallback"],
   m_sp_lift_log: ["tests/sma/supervisor-watch-1.test.ts › a line belongs to its day, and the daily count is that day's events"],
   m_sp_lift_ps: ["tests/sma/four-proofs-r12-a.test.ts › without administrator rights the Windows guide puts a shortcut in the startup folder with the same command"],
   m_sp_log_day: ["tests/sma/supervisor-watch-1.test.ts › a line belongs to its day, and the daily count is that day's events"],
