@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- **The canary reads the project list once.** The BB SDK ignores the unsupported `archived` option, so the second read repeated the successful first request and could produce `canary archived project list: fetch failed` without adding any projects (hub, 2026-11-14). The canary now uses the typed SDK call; sandbox exclusions and the cached list on a failed refresh are preserved. Checked by `tests/server/canary.test.ts` and a replay with the real SDK and 25 project rows from the hub.
+
 ## 0.1.570
 
 - **The hub can build and load SMA facts without development dependencies.** The chain-test compiler is loaded only when scanning a source checkout; deployed reports use the generated facts. Checked by `tests/sma-runtime-bundle.test.ts`, which bundles and imports the facts with TypeScript unavailable, and by the existing chain-coverage tests.
