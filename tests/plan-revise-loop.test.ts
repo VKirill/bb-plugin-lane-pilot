@@ -300,8 +300,8 @@ describe("the planner revises a plan the critic returned", () => {
     expect(bare.spawned.find((row) => row.stageId === "plan-critique")!.prompt).not.toContain(own);
   }, 60_000);
 
-  it("plan_critique.revise_by pm (the default) keeps today's path: the return blocks for the PM at once", async () => {
-    const run = await runScenario({ critic: [rework(1), PASS] });
+  it("plan_critique.revise_by pm keeps the old path: the return blocks for the PM at once", async () => {
+    const run = await runScenario({ settings: { "plan_critique.revise_by": "pm" }, critic: [rework(1), PASS] });
     expect(run.attempt).toMatchObject({ state: "blocked", reason: "plan_critique_blocked" });
     expect(run.criticThreads).toBe(1);
     expect(run.spawned.some((row) => row.role === "planner")).toBe(false);
@@ -342,9 +342,11 @@ describe("the planner revises a plan the critic returned", () => {
     const seven = await runScenario({ settings: common, critic: [PASS], task: { risk: "medium", owns_paths: owns(7) } });
     expect(seven.stages["plan-critique"]).toMatchObject({ state: "skipped", reason: "below_critique_threshold" });
     expect(seven.criticThreads).toBe(0);
-    // The policy itself: off at 0, and the reason names the count.
+    // The policy itself: the default threshold is 8 (D1), 0 turns it off, and the reason names the count.
     expect(shouldRunPlanCritique({ taskRisk: "medium", tasks: [{ lane: "writer" }], ownsPaths: 8, minOwnsPaths: 8 })).toMatchObject({ run: true, reason: "8 owns_paths>=8" });
-    expect(shouldRunPlanCritique({ taskRisk: "medium", tasks: [{ lane: "writer" }], ownsPaths: 27 })).toMatchObject({ run: false });
+    expect(shouldRunPlanCritique({ taskRisk: "medium", tasks: [{ lane: "writer" }], ownsPaths: 8 })).toMatchObject({ run: true, reason: "8 owns_paths>=8" });
+    expect(shouldRunPlanCritique({ taskRisk: "medium", tasks: [{ lane: "writer" }], ownsPaths: 7 })).toMatchObject({ run: false });
+    expect(shouldRunPlanCritique({ taskRisk: "medium", tasks: [{ lane: "writer" }], ownsPaths: 27, minOwnsPaths: 0 })).toMatchObject({ run: false });
   }, 60_000);
 
   it("a planner that returns the same plan sends the task to the PM; the critic never sees the same plan twice", async () => {
@@ -383,10 +385,11 @@ describe("the planner revises a plan the critic returned", () => {
 });
 
 describe("the planner loop's settings and answer", () => {
-  it("defaults keep today's behaviour: the PM revises, three rounds at most", () => {
-    expect(planReviseConfig({})).toEqual({ by: "pm", maxRounds: 3 });
+  it("defaults (D1, since 0.1.567): the planner revises, three rounds at most; pm is the explicit opt-out", () => {
+    expect(planReviseConfig({})).toEqual({ by: "planner", maxRounds: 3 });
     expect(planReviseConfig({ "plan_critique.revise_by": "planner", "plan_critique.max_rounds": 9 })).toEqual({ by: "planner", maxRounds: 3 });
-    expect(planReviseConfig({ "plan_critique.max_rounds": 0 })).toEqual({ by: "pm", maxRounds: 1 });
+    expect(planReviseConfig({ "plan_critique.revise_by": "pm", "plan_critique.max_rounds": 0 })).toEqual({ by: "pm", maxRounds: 1 });
+    expect(planReviseConfig({ "plan_critique.revise_by": "nonsense" })).toEqual({ by: "planner", maxRounds: 3 });
   });
 
   it("reads the planner's answer: a plan with its edition, or needs_pm", () => {

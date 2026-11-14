@@ -33,11 +33,11 @@ export const PM_STOPPED_PLANNER_LOOP = "pm_update:planner_loop_stopped";
 export type PlanReviseConfig = { by: "pm" | "planner"; maxRounds: number };
 
 /**
- * `plan_critique.revise_by` (`pm`, the default: today's path, the PM fixes every return; `planner`: the planner revises first) and
+ * `plan_critique.revise_by` (`planner`, the default since 0.1.567: the planner revises first; `pm`: the PM fixes every return) and
  * `plan_critique.max_rounds` (how many times the planner may revise, 1 to 3, default 3).
  */
 export function planReviseConfig(settings: Readonly<Record<string, unknown>>): PlanReviseConfig {
-  const by = String(settings["plan_critique.revise_by"] ?? "pm").trim().toLowerCase() === "planner" ? "planner" : "pm";
+  const by = String(settings["plan_critique.revise_by"] ?? "planner").trim().toLowerCase() === "pm" ? "pm" : "planner";
   const raw = Number(settings["plan_critique.max_rounds"] ?? 3);
   const maxRounds = Number.isFinite(raw) ? Math.min(3, Math.max(1, Math.trunc(raw))) : 3;
   return { by, maxRounds };
