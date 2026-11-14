@@ -8,14 +8,17 @@ from __future__ import annotations
 from lp_drill.prove import Proofs
 from lp_drill.scenes.sma_r00_a import NODES_A, prove_a
 from lp_drill.scenes.sma_r00_b import NODES_B, prove_b
+from lp_drill.scenes.sma_r00_c import NODES_C, prove_c
 
 NODES = []
 NODES += NODES_A
 NODES += NODES_B
+NODES += NODES_C
 
 
 def scenario_sma_r00(tmp) -> dict:
     proofs = Proofs()
     prove_a(proofs, tmp)
     prove_b(proofs, tmp)
+    prove_c(proofs, tmp)
     return proofs.verdict("sma_r00", checked=len(NODES))
