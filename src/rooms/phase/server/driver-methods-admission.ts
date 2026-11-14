@@ -31,7 +31,7 @@ export function installAdmissionMethods(tools: MethodsTools) {
     const runId = latestRunForPmThread(db, input.pmThreadId)?.id ?? null;
     insertPhase(db, { id, projectId: input.projectId, pmThreadId: input.pmThreadId, runId, title: input.title.slice(0, 200), goal: input.goal.slice(0, 4000), at: now() });
     const settings = await ctx.effectiveProjectSettings(input.projectId).then((result) => result.values as Record<string, unknown>, () => ({} as Record<string, unknown>));
-    const ownerWords = ownerWordsOn(settings);
+    const ownerWords = ownerWordsOn(settings, { text: [input.title, input.goal] });
     const waveReview = String(settings["phase.wave_review"] ?? "on") !== "off";
     const capSetting = Number(settings["phase.issue_cap"] ?? 8);
     const issueCap = Number.isInteger(capSetting) && capSetting >= 1 && capSetting <= 50 ? capSetting : 8;

@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { DATA_PATH, MONEY_PATH } from "../tasks";
 
 /**
  * How hard the code critic looks at a finished attempt, decided by rule from the task and its evidence (no model call). It replaced the
@@ -17,7 +18,9 @@ import { createHash } from "node:crypto";
  */
 export type CriticLevel = { tier: "strict" | "normal" | "skip"; reason: string };
 
-const SENSITIVE = /(^|[/._-])(auth|oauth|login|secret|secrets|password|credential|credentials|crypto|payment|payments|billing|invoice|invoices|checkout|refund|stripe|yookassa|cloudpayments|wallet|money|price|pricing|migration|migrations|permission|permissions|acl|rbac|deploy|deployment|dockerfile|docker-compose|ecosystem\.config|nginx|angie|systemd)([/._-]|$)|\.sql$|(^|\/)\.github\/workflows\/|(^|\/)infra\//i;
+// Money, migrations and schema come from the shared classifier (tasks/sensitive.ts, also the owner's three classes); the rest is the critic's own.
+const SENSITIVE_OTHER = /(^|[/._-])(auth|oauth|login|secret|secrets|password|credential|credentials|crypto|permission|permissions|acl|rbac|deploy|deployment|dockerfile|docker-compose|ecosystem\.config|nginx|angie|systemd)([/._-]|$)|(^|\/)\.github\/workflows\/|(^|\/)infra\//i;
+const isSensitivePath = (path: string): boolean => SENSITIVE_OTHER.test(path) || MONEY_PATH.test(path) || DATA_PATH.test(path);
 const DOCS_OR_TESTS = /\.(md|mdx|rst)$|(^|\/)docs\/|(^|\/)(tests?|__tests__|spec)\/|\.(test|spec)\.[cm]?[jt]sx?$|(^|\/)(package-lock\.json|pnpm-lock\.yaml|yarn\.lock|bun\.lockb?|Cargo\.lock|poetry\.lock|uv\.lock)$/i;
 const SMALL_KINDS = new Set(["chore", "refactor", "docs"]);
 
@@ -39,7 +42,7 @@ export function criticLevel(input: {
   if (input.referenceTestEdits?.length) return { tier: "strict", reason: "reference_tests_edited" };
   if (input.repoScope) return { tier: "strict", reason: "repo_scope" };
   if (input.risk === "high" || input.risk === "critical") return { tier: "strict", reason: `risk_${input.risk}` };
-  const sensitive = input.paths.find((path) => SENSITIVE.test(path));
+  const sensitive = input.paths.find(isSensitivePath);
   if (sensitive) return { tier: "strict", reason: `sensitive_path:${sensitive}` };
   const docsOnly = input.paths.length > 0 && input.paths.every((path) => DOCS_OR_TESTS.test(path));
   if (input.checks.length === 0 && !docsOnly) return { tier: "strict", reason: "no_checks" };

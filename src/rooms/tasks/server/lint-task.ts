@@ -10,6 +10,7 @@ import { checkProgram, type BirthKind } from "../rails";
 import { sha256Hex } from "@lane-pilot/kit";
 import type { ReadWriterWorkspaceFile } from "../../platform/server";
 import { ownerWordsOn } from "../words";
+import { taskStepEvidence } from "../sensitive";
 import { allowedSecretNames } from "../../secrets/server";
 import { parseIntegrationGateSettings } from "../../contracts/integration-gate";
 import type { LintOpenTask, PathKind } from "./contract-lint";
@@ -97,7 +98,7 @@ export function createTaskLinter(ctx: ServerCore, services: Services) {
         programs = new Map(Object.entries(answer.found));
       } catch { programs = null; }
     }
-    const ownerWords = ownerWordsOn(settings);
+    const ownerWords = ownerWordsOn(settings, taskStepEvidence(task));
     // What the project recorded of each check: its green durations (the store checkTimeoutSec reads) and the limits it timed out at.
     const checkHistory = (check:{ command:string; cwd:string }) => { const ref = { command:check.command, cwd:check.cwd, root:task.project_cwd }; return { greenMs:listCheckDurations(db, projectId, ref), timedOutSec:listCheckTimeouts(db, projectId, ref) }; };
     const qualityMode = resolveQualityMode(task, settings[QUALITY_MODE_SETTING]);

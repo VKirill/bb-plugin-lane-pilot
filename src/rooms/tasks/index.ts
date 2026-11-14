@@ -24,6 +24,8 @@ export type { TestEditHold, TestFitFile, TestFitHit } from "./test-fit";
 export type { BirthKind, BlockingClass, CheckMeasure, CheckRecipe, FactKind, Priority, QuestionKind, WriterMarkers } from "./rails";
 export { OWNER_WORD_WAIT_MS, TASK_WORDS_KEY, landingWordAsked, landingWordGap, ownerSaidNo, ownerWordsMode, ownerWordsOn, readTaskApproach, recordTaskApproach, recordTaskQuestions, recordTaskWord, taskApproachKey, taskQuestionsKey, taskWordKey, waitingAttemptId, type OwnerWordsMode } from "./words";
 export type { TaskWord } from "./words";
+export { DATA_PATH, DEPLOY_PIPELINE_PATH, DOCS_OR_TEST_PATH, MONEY_PATH, productionDeployText, sensitiveHits, taskStepEvidence } from "./sensitive";
+export type { SensitiveClass, SensitiveHit, StepEvidence } from "./sensitive";
 export { SHARED_PATH_TASKS, batchShapeAdvice } from "./batch-shape";
 export type { OpenShape } from "./batch-shape";
 export { TASK_SIZE_MIN_SAMPLE, taskSizeOf, taskSizeText } from "./task-size";

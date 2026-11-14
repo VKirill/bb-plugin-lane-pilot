@@ -275,7 +275,7 @@ describe("parity g6 rest a", () => {
       expect(settingValue(env.db, "p2", "protection.disarm.code_critique.mode")).toBeUndefined();
       expect(ownerItems(env.db, "protection-rearm:p2:%")).toHaveLength(0);
       expect(settingValue(env.db, "p3", "plan_fact.mode")).toBe("gate");
-      expect(settingValue(env.db, "p3", "owner.words")).toBe("risky");
+      expect(settingValue(env.db, "p3", "owner.words")).toBe("sensitive");
       await env.harness.lifecycle.dispose();
     });
 
@@ -556,7 +556,7 @@ describe("parity g6 rest a", () => {
       expect(byKey["plan_critique.mode"]!.current).toBe("gate");
       expect(byKey["code_critique.mode"]!.current).toBe("advisory");     // the catalog default, not the protection's "armed" word
       expect(byKey["plan_fact.mode"]!.current).toBe("record");
-      expect(byKey["owner.words"]!.current).toBe("risky");
+      expect(byKey["owner.words"]!.current).toBe("sensitive");
       expect(byKey["plan_critique.mode"]!.disarmed).toBe(false);
       expect(byKey["code_critique.mode"]!.disarmed).toBe(true);
     });

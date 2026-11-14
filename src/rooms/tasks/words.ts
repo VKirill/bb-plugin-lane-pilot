@@ -5,6 +5,7 @@
  */
 import { taskFamily } from "@lane-pilot/contracts";
 import { liveAttemptsOfRun } from "../storage";
+import { sensitiveHits, type StepEvidence } from "./sensitive";
 
 export type TaskWord = { turn: "land"; decision: "yes" | "no"; text: string; at: number; /** The attempt (the candidate tree) the word was given for: a yes is revoked when another candidate replaces it (SMA ta_replace). */ attemptId?: string | null };
 
@@ -13,24 +14,39 @@ export const TASK_WORDS_KEY = "lp.task.words";
 export const OWNER_WORD_WAIT_MS = 6 * 3600_000;
 
 /**
- * The setting owner.words: `on` (every verified task waits for the word), `risky` (only a task of risk high; the default) or `off`.
+ * The setting owner.words: `on` (every verified task waits for the word), `risky` (only a task of risk high or critical), `sensitive` (the
+ * default: only a step in one of three classes — money, database migrations and destructive data operations, a deploy to production; see
+ * sensitive.ts) or `off`.
  * SMA waits for a person at these turns (map 481d75c2: Authorized by a person, Two human decisions, Issue gate, Person accepts the wave,
  * Plan row awaits a word, Draft awaits a person); the owner asked for Lane Pilot one in one with it, its person steps included (2026-10-29),
  * then found a two-test fix waiting hours for his «да» while it held its area (SelfyStudio, 2026-10-31) and chose: the word for risky
- * tasks only. The other person steps (a phase's turns, a forge draft, a permit) keep asking on `risky` as on `on`.
+ * tasks only. On 2026-11-14, with a strong plan critic, a strict code critic and a cross-family verifier of high findings behind a high-risk
+ * task, he narrowed it again: his word only for money, data and production deploys; everything else lands by itself, whatever its risk.
+ * The other person steps (a phase's turns, a forge draft, a permit) follow the same rule: on `on` and `risky` they ask as before, on
+ * `sensitive` only a step that is itself in the three classes asks, on `off` none.
  * LANE_PILOT_OWNER_WORDS_DEFAULT changes the default where no setting says (the test suite runs the machine path with it off).
  */
-export type OwnerWordsMode = "on" | "risky" | "off";
+export type OwnerWordsMode = "on" | "risky" | "sensitive" | "off";
 export const ownerWordsMode = (settings: Readonly<Record<string, unknown>>): OwnerWordsMode => {
-  const raw = String(settings["owner.words"] ?? process.env.LANE_PILOT_OWNER_WORDS_DEFAULT ?? "risky");
-  return raw === "off" ? "off" : raw === "on" ? "on" : "risky";
+  const raw = String(settings["owner.words"] ?? process.env.LANE_PILOT_OWNER_WORDS_DEFAULT ?? "sensitive");
+  return raw === "off" ? "off" : raw === "on" ? "on" : raw === "risky" ? "risky" : "sensitive";
 };
-/** Is the owner's word asked anywhere (the person steps): everything but `off`. */
-export const ownerWordsOn = (settings: Readonly<Record<string, unknown>>) => ownerWordsMode(settings) !== "off";
-/** Does this task's landing wait for the word: every task on `on`, a task of risk high or critical on `risky`, none on `off`. */
-export const landingWordAsked = (settings: Readonly<Record<string, unknown>>, risk: string | undefined): boolean => {
+/**
+ * Is the owner's word asked at this person step (a phase's turns, a forge draft, a contract's clarification, a permit): always on `on` and
+ * `risky`, never on `off`, on `sensitive` only when the step itself is in the money / data / production-deploy classes (`step` is its
+ * evidence; without it nothing is known and nothing asks).
+ */
+export const ownerWordsOn = (settings: Readonly<Record<string, unknown>>, step?: StepEvidence): boolean => {
   const mode = ownerWordsMode(settings);
-  return mode === "on" || (mode === "risky" && (risk === "high" || risk === "critical"));
+  return mode === "on" || mode === "risky" || (mode === "sensitive" && !!step && sensitiveHits(step).length > 0);
+};
+/**
+ * Does this task's landing wait for the word: every task on `on`, a task of risk high or critical on `risky`, a task whose evidence (changed
+ * paths, check commands, text) is in the three classes on `sensitive` (whatever its risk), none on `off`.
+ */
+export const landingWordAsked = (settings: Readonly<Record<string, unknown>>, risk: string | undefined, step?: StepEvidence): boolean => {
+  const mode = ownerWordsMode(settings);
+  return mode === "on" || (mode === "risky" && (risk === "high" || risk === "critical")) || (mode === "sensitive" && !!step && sensitiveHits(step).length > 0);
 };
 export const taskWordKey = (runId: string, family: string) => `${runId}:${family}`;
 

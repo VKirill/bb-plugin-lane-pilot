@@ -824,7 +824,7 @@ export const SMA_CONTRACT_TESTS: Readonly<Record<string, readonly string[]>> = {
   sc_phase_card: ["tests/sma/parity-d6-window-2.test.ts › a record with design.drawing, lessons.analysis and observation shows the three sections; without them none"],
   sc_phase_disc: ["tests/sma/parity-d6-window-2.test.ts › discussionLines puts appetite, no-gos and the feasibility risk under the right labels and «не названо» for the empty ones"],
   sc_spend: ["tests/sma/parity-d10-rest-2.test.ts › ceilingLine({turns:4}, {monthUsd:45, cap:50}) names 4 of 5 turns and marks the money over 90 percent; with cap null it shows the spend only"],
-  ta_authorized: ["tests/owner-words-default.test.ts › is asked when no setting says, and not when the project turns it off"],
+  ta_authorized: ["tests/owner-words-default.test.ts › the default is sensitive; a project may turn the word on for every step, to risky, or off"],
   ta_book_close: ["tests/sma/parity-b3-taskrec.test.ts › acceptance holds until BOOK.md is written and re-read"],
   ta_closed: ["tests/sma/parity-b3-taskrec.test.ts › the phase is closed only after its closing docs read back intact"],
   ta_decisions: ["tests/sma/task-graph-1.test.ts › with owner.words on, useful and limits are refused until that person says yes on this package"],

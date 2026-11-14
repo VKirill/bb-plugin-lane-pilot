@@ -100,7 +100,8 @@ export function mountForge(ctx: ServerCore, services: Services): void {
         return JSON.stringify({ requested: true, next: "step confirm puts it in place" });
       }
       if (!receipt.requestedAt) throw refuse("enabling is two steps: request first, then confirm", "no_request");
-      const ownerWords = ownerWordsOn(loadProjectSettings(db, context.projectId));
+      const ownerWords = ownerWordsOn(loadProjectSettings(db, context.projectId), input.kind === "workflow" ? { text: [text] } : undefined);
+      // On owner.words=sensitive a skill or a role never asks (it does nothing in the three classes by being enabled); a workflow asks when its own text puts it there.
       if (ownerWords && !(input.ownerSaid && isWholeConsent(input.ownerSaid))) throw refuse("owner.words is on: ask the owner (lane_pilot_ask_owner) and pass his whole «да» as ownerSaid", "owner_word");
       const target = enabledPath(input.kind, input.name);
       if (input.kind === "workflow") {
