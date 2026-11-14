@@ -1686,7 +1686,7 @@ export const SMA_ENTRIES: Readonly<Record<string, SmaEntry>> = {
   n1672: ["have", "форма решения по билету", "src/rooms/writer/server/permits.ts#execute"],
   n1673: ["have", "работника останавливают перед командой, ходом и ступенью: разрешение команды, бюджет запуска, пауза перед стадией", "lane-stack/hooks/guard_shell.py#_permit_or_ticket"],
   n1674: ["have", "прогресс воркера не пишется так, чтобы перезагрузка могла его продолжить", "src/rooms/writer/progress-journal.ts#progressJournal"],
-  n1675: ["have", "шесть квитанций паритета: правила, сессия/терминал, хеш охранника, хуки, контракт, покрытие", "tests/helpers/guard-tools.ts#parityGaps"],
+  n1675: ["have", "шесть квитанций паритета: правила, сессия/терминал, хеш охранника, хуки, контракт, покрытие", "src/rooms/guard-tools/guard-tools.ts#parityGaps"],
   n1676: ["have", "помощник получает запреты человека, но не его разрешения и не обход; запуск сливает настройки и убирает пользовательский источник", "src/rooms/native-agent/native-claude-host.ts#claudeExecLine"],
   n1677: ["have", "какая учётная запись у сессии, решает BB по папке конфига", "core:plugins/provider-usage/usage-normalization.ts#selectUsageResources"],
   n1678: ["have", "из кеша окон не собирается один сегмент статусной строки", "src/rooms/usage/statusline-segment.ts#usageSegment"],
