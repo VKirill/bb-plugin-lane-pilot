@@ -36,6 +36,10 @@ Scenarios (each writes its verdict into the receipt, .agents/runs/drills/<date>.
                  project has open attempts)
   provider       one task: its attempt runs on a BB environment of Lane Pilot's own worktree provider (environment_id set, no
                  holder thread, own worktree). A silent fallback to the old path fails it: a broken provider must not ship
+  plan_split     the plan split rule on six tasks in one run (a; b, c after a; d after b and c; e alone; f after d), c red on purpose and sent
+                 again as c.2, and a dependency cycle refused with depends_cycle: dependents start after their dependencies are accepted and
+                 merged, from a worktree cut from that main; independents do not wait for a failure. Full set only, not --quick;
+                 run it with `scripts/lp-drill.sh --scenario plan_split`
   nogit          a project whose folder is not a git repo (live-folder mode): accepted, file in the folder, no .git created
   nogit_repo     a task over one git repository inside that folder (repo-a): it moves into the repository, works in its own
                  worktree and is merged into its main as a commit; the folder still has no .git
@@ -94,10 +98,11 @@ import lp_drill.scenes.phase
 import lp_drill.scenes.providers
 import lp_drill.scenes.writers
 import lp_drill.scenes.nogit
+import lp_drill.scenes.plan_split
 import lp_drill.scenes.hub_outage
 import lp_drill.lock
 
-for _mod in (lp_drill.env, lp_drill.hub, lp_drill.report, lp_drill.tasks, lp_drill.context, lp_drill.select, lp_drill.series, lp_drill.preview, lp_drill.scenes.memory, lp_drill.scenes.owner, lp_drill.scenes.skills, lp_drill.scenes.guard, lp_drill.scenes.deferrals, lp_drill.scenes.hub_checks, lp_drill.scenes.checkers, lp_drill.scenes.revert, lp_drill.scenes.phase, lp_drill.scenes.providers, lp_drill.scenes.writers, lp_drill.scenes.nogit, lp_drill.scenes.hub_outage, lp_drill.lock,):
+for _mod in (lp_drill.env, lp_drill.hub, lp_drill.report, lp_drill.tasks, lp_drill.context, lp_drill.select, lp_drill.series, lp_drill.preview, lp_drill.scenes.memory, lp_drill.scenes.owner, lp_drill.scenes.skills, lp_drill.scenes.guard, lp_drill.scenes.deferrals, lp_drill.scenes.hub_checks, lp_drill.scenes.checkers, lp_drill.scenes.revert, lp_drill.scenes.phase, lp_drill.scenes.providers, lp_drill.scenes.writers, lp_drill.scenes.nogit, lp_drill.scenes.plan_split, lp_drill.scenes.hub_outage, lp_drill.lock,):
     for _name in dir(_mod):
         if not _name.startswith("__"):
             _value = getattr(_mod, _name)
@@ -132,7 +137,7 @@ del _mod, _name, _value
 for _tmp in ("_mname", "_member", "_wrap", "_fn"):
     globals().pop(_tmp, None)
 del _tmp
-ALL = ["guard_hash", "deferrals", "checkers", "watchdog", "memory_paths", "helper_providers", "parallel3", "conflict", "main_moved", "provider", "provider_limit", "live_word", "no_code_exit", "skills", "phase", "phase_route", "reload", "nogit", "nogit_repo", "flow_contract", "lead_shadow", "episodes", "memory_thread"]
+ALL = ["guard_hash", "deferrals", "checkers", "watchdog", "memory_paths", "helper_providers", "parallel3", "conflict", "main_moved", "provider", "provider_limit", "live_word", "no_code_exit", "skills", "phase", "phase_route", "reload", "nogit", "nogit_repo", "flow_contract", "plan_split", "lead_shadow", "episodes", "memory_thread"]
 # Scenes that run only by name (--scenario) or under --series: the deploy drill (--quick) and a plain run never reach them.
 EXTRA = ["skills_screen", "revert"]
 QUICK = ["guard_hash", "deferrals", "checkers", "memory_paths", "helper_providers", "parallel3", "lead_shadow", "episodes"]
@@ -140,7 +145,7 @@ QUICK = ["guard_hash", "deferrals", "checkers", "memory_paths", "helper_provider
 # metrics. A `vitest:` entry runs its story file as the suite's scene; `metrics` holds no scenario — series_metrics
 # judges the archive last, after every other suite.
 SUITES = {
-    "task": ["parallel3", "conflict", "main_moved", "provider", "provider_limit", "reload", "nogit", "nogit_repo", "revert"],
+    "task": ["parallel3", "conflict", "main_moved", "provider", "provider_limit", "reload", "nogit", "nogit_repo", "revert", "plan_split"],
     "batch": ["helper_providers", "flow_contract", "live_word"],
     "phase": ["phase", "phase_route", "no_code_exit"],
     "release": ["guard_hash", "deferrals", "checkers", "watchdog"],
