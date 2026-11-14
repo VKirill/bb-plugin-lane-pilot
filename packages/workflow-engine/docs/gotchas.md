@@ -2,13 +2,14 @@
 title: Workflow Engine Gotchas
 type: gotchas
 created: 2026-10-10
-updated: 2026-10-30
+updated: 2026-11-14
 status: active
 confidence: medium
 tags: [workflow-engine, gotchas]
 sources:
-  - packages/workflow-engine/src/engine.ts
-  - packages/workflow-engine/src/db.ts
+  - packages/workflow-engine/src/engine-types.ts
+  - packages/workflow-engine/src/engine-step.ts
+  - packages/workflow-engine/src/step-types.ts
   - packages/workflow-engine/src/journal.ts
   - packages/workflow-engine/src/ops-store.ts
   - packages/workflow-engine/src/store.ts
@@ -22,11 +23,11 @@ TL;DR: The main sharp edges are executor side-effect recovery, what counts as a 
 
 ### External effects outside the effect API are not journaled
 
-**Problem:** `ctx.effect` records intent and outcome so the engine can reconcile external work after reload; a direct external call bypasses that record (`packages/workflow-engine/src/engine.ts:94-95`).
+**Problem:** `ctx.effect` records intent and outcome so the engine can reconcile external work after reload; a direct external call bypasses that record (`packages/workflow-engine/src/step-types.ts:49-50`).
 
 **Risk:** A restarted or reentrant executor can repeat an external operation whose completion was not recorded.
 
-**Workaround:** Route retry-sensitive external operations through `ctx.effect` and provide `reconcile` when the external system can report whether the operation happened (`packages/workflow-engine/src/engine.ts:70`, `packages/workflow-engine/src/engine.ts:741-770`).
+**Workaround:** Route retry-sensitive external operations through `ctx.effect` and provide `reconcile` when the external system can report whether the operation happened (`packages/workflow-engine/src/step-types.ts:25`, `packages/workflow-engine/src/engine-step.ts:48-80`).
 
 ## High
 
@@ -52,13 +53,13 @@ TL;DR: The main sharp edges are executor side-effect recovery, what counts as a 
 
 **Problem:** Failed or unavailable host checks create `unverified` issues; `ok` is false only when an issue has level `missing` (`packages/workflow-engine/src/preflight.ts:79-90`, `packages/workflow-engine/src/preflight.ts:127`).
 
-**Risk:** A passing preflight can include requirements the host could not confirm.
+**Risk:** A passing preflight can include requirements the host did not confirm (`packages/workflow-engine/src/preflight.ts:79-90`).
 
 **Workaround:** Review `issues` as well as `ok` when deciding whether to start a workflow (`packages/workflow-engine/src/preflight.ts:24-33`, `packages/workflow-engine/src/preflight.ts:73-78`).
 
 ### A database handle is required; the package does not initialize a database
 
-**Problem:** `WorkflowEngine` and the stores receive an existing `LanePilotDatabase`, which is a `better-sqlite3` handle (`packages/workflow-engine/src/db.ts:1-4`, `packages/workflow-engine/src/engine.ts:124-127`).
+**Problem:** `WorkflowEngine` and the stores receive an existing `better-sqlite3` `Database` handle (`packages/workflow-engine/src/journal.ts:1`, `packages/workflow-engine/src/engine-types.ts:1`, `packages/workflow-engine/src/engine-types.ts:25-26`).
 
 **Risk:** Constructing the engine before the host applies `workflowMigrations`, `draftMigrations`, `workflowOpsMigrations`, and the appended `workflowNotVerifiedMigrations` leaves required tables absent or without the widened run-status CHECK (`packages/workflow-engine/src/journal.ts:10-12`, `packages/workflow-engine/src/draft-store.ts:10-13`, `packages/workflow-engine/src/ops-store.ts:15-18`, `packages/workflow-engine/src/ops-store.ts:43-48`).
 

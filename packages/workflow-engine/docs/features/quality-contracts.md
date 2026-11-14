@@ -2,7 +2,7 @@
 title: Workflow Quality and Contracts
 type: component
 created: 2026-10-10
-updated: 2026-11-11
+updated: 2026-11-14
 status: active
 confidence: medium
 tags: [workflow-engine, artifacts, contracts, verdicts, quality-mode]
@@ -14,6 +14,9 @@ sources:
   - packages/workflow-engine/src/schema.ts
   - packages/workflow-engine/src/agent-output.ts
   - packages/workflow-engine/src/engine.ts
+  - packages/workflow-engine/src/engine-start.ts
+  - packages/workflow-engine/src/engine-step.ts
+  - packages/workflow-engine/src/step-output.ts
   - packages/workflow-engine/src/model-json.ts
   - packages/workflow-engine/src/require-green.ts
   - packages/workflow-engine/src/values.ts
@@ -32,7 +35,7 @@ This capability validates declared artifacts with `checkProduces` (`packages/wor
 2. `checkProduces` checks required fields, list cardinality when `each` is set, and each artifact value; at most 12 problem strings are returned (`packages/workflow-engine/src/artifacts.ts:204-226`).
 3. `contractProblems` compares output fields, `produces`, and gates; `contractSample` provides values for draft test fixtures and `contractRepairPrompt` describes repair requirements (`packages/workflow-engine/src/contract.ts:26-93`).
 4. Agent output helpers build a JSON output contract with `outputContract` and extract an object from model text; parse failures raise `AgentOutputError` (`packages/workflow-engine/src/agent-output.ts:8-19`, `packages/workflow-engine/src/agent-output.ts:20-28`, `packages/workflow-engine/src/agent-output.ts:29-61`).
-5. Verdict helpers normalize legacy and current critique shapes, classify serious findings with `isHardCritical` (`packages/workflow-engine/src/verdict.ts:158-163`), settle final status and attach `sides` with `settleVerdict` (`packages/workflow-engine/src/verdict.ts:167-195`), and determine blocking outcome with `blockReason` (`packages/workflow-engine/src/verdict.ts:223-245`).
+5. Verdict helpers normalize legacy and current critique shapes, classify serious findings with `isHardCritical` (`packages/workflow-engine/src/verdict.ts:159-164`), settle final status and attach `sides` with `settleVerdict` (`packages/workflow-engine/src/verdict.ts:177-197`), and determine blocking outcome with `blockReason` (`packages/workflow-engine/src/verdict.ts:233-240`).
 6. `resolveTaskQualityMode` picks a task quality mode once, in the order contract, node, workflow, project, and refuses a `full` request inside a `fixed: quick` workflow as a conflict (`packages/workflow-engine/src/quality-mode.ts:16-40`).
 7. `requireGreen` inspects maintenance stage verdicts and throws naming every red stage (`failed`, `blocked`, `running`, `error`, `unknown`) to fail the graph run without modifying accepted task state (`packages/workflow-engine/src/require-green.ts:5-15`).
 
@@ -44,9 +47,9 @@ This capability validates declared artifacts with `checkProduces` (`packages/wor
 | Required produced value | `required` defaults to true; optional missing field skips validation | Missing required field is reported (`packages/workflow-engine/src/artifacts.ts:204-213`). |
 | List artifact | `each: true` | Non-array value reports a list error; each element is schema-checked (`packages/workflow-engine/src/artifacts.ts:215-222`). |
 | Agent JSON extraction | Model response text | Missing or invalid object raises `AgentOutputError` (`packages/workflow-engine/src/agent-output.ts:8-19`, `packages/workflow-engine/src/agent-output.ts:29-61`). |
-| Verdict compatibility | Current verdict or recognized legacy shape | Conversion helpers map supported legacy fields and statuses via `legacyDecisionToStatus` and `isVerdictShape`; unsupported shape is not a verdict (`packages/workflow-engine/src/verdict.ts:108-121`). |
+| Verdict compatibility | Current verdict or recognized legacy shape | Conversion helpers map supported legacy fields and statuses via `legacyDecisionToStatus` and `isVerdictShape`; unsupported shape is not a verdict (`packages/workflow-engine/src/verdict.ts:118-131`). |
 | Verdict finding parse | A critic's answer object | Unknown keys are dropped, not refused; an empty string or null in an optional text field reads as absent; a missing `file` or `evidence` reads as empty (`packages/workflow-engine/src/verdict.ts:20-35`). |
-| Verdict sides | Settled verdict and kind (`plan`, `code`, or `specialist`) | Returns `outcome` and `process`, each `ok` or `fail`; failed rubric items need at least 12 evidence characters, and serious findings map through their criterion (`packages/workflow-engine/src/verdict.ts:85-105`). |
+| Verdict sides | Settled verdict and kind (`plan`, `code`, or `specialist`) | Returns `outcome` and `process`, each `ok` or `fail`; failed rubric items need at least 12 evidence characters, and serious findings map through their criterion (`packages/workflow-engine/src/verdict.ts:86-104`). |
 | Quality-mode resolution | Contract, node mode, explicit input, workflow policy, project policy | A valid mode with its source, or `ok: false` with code `quality_mode_conflict` when `full` is asked inside a `fixed: quick` workflow (`packages/workflow-engine/src/quality-mode.ts:26-39`). |
 | Maintenance stage verdict | Graph name and `StageVerdict` list | Throws `${graph}_blocked` if any bad stage is blocked, otherwise `${graph}_failed`, listing each offending stage; returns cleanly when all stages are green (`packages/workflow-engine/src/require-green.ts:10-15`). |
 
@@ -54,9 +57,9 @@ This capability validates declared artifacts with `checkProduces` (`packages/wor
 
 - Artifact IDs use `<lowercase-kind>/<version>` syntax with kind length up to 40 characters and version from 1 to 999 (`packages/workflow-engine/src/artifacts.ts:168-172`).
 - `checkProduces` validates the whole output when no field is named, a specific output field when `field` is set, and each array member when `each` is true; aggregate errors are capped at 12 (`packages/workflow-engine/src/artifacts.ts:204-226`).
-- Verdict status and severity vocabularies are enumerated in `VERDICT_STATUSES` and `VERDICT_SEVERITIES`; `settleVerdict` derives final status from findings, while `isHardCritical` identifies the high-severity blocking class (`packages/workflow-engine/src/verdict.ts:9-13`, `packages/workflow-engine/src/verdict.ts:158-163`, `packages/workflow-engine/src/verdict.ts:167-187`).
-- `verdictSides` maps failing rubric IDs to outcome or process by verdict kind; a rubric failure counts only with at least 12 non-whitespace evidence characters, and a serious finding counts on its axis only when its `criterion` matches a rubric ID. If neither side fails but status is not `pass`, outcome is marked failed (`packages/workflow-engine/src/verdict.ts:85-105`).
-- The verdict schemas are typed where the host reads them and closed nowhere: finding schemas validate `severity` and `evidence` without `.strict()`, while verdict objects accept `summary` and `findings` without rejecting extra keys (`packages/workflow-engine/src/verdict.ts:20-35`, `packages/workflow-engine/src/verdict.ts:59-67`).
+- Verdict status and severity vocabularies are enumerated in `VERDICT_STATUSES` and `VERDICT_SEVERITIES`; `settleVerdict` derives final status from findings, while `isHardCritical` identifies the high-severity blocking class (`packages/workflow-engine/src/verdict.ts:9-12`, `packages/workflow-engine/src/verdict.ts:159-164`, `packages/workflow-engine/src/verdict.ts:177-197`).
+- `verdictSides` maps failing rubric IDs to outcome or process by verdict kind; a rubric failure counts only with at least 12 non-whitespace evidence characters, and a serious finding counts on its axis only when its `criterion` matches a rubric ID. If neither side fails but status is not `pass`, outcome is marked failed (`packages/workflow-engine/src/verdict.ts:86-104`).
+- The verdict schemas are typed where the host reads them and closed nowhere: finding schemas validate `severity` and `evidence` without `.strict()`, while verdict objects accept `summary` and `findings` without rejecting extra keys (`packages/workflow-engine/src/verdict.ts:20-35`, `packages/workflow-engine/src/verdict.ts:60-77`).
 - `requireGreen` fails a maintenance graph run if any stage is in a non-green state (`failed`, `blocked`, `running`, `error`, `unknown`), naming the graph and bad stages (`packages/workflow-engine/src/require-green.ts:5-15`).
 
 ## Public API
@@ -66,7 +69,7 @@ This capability validates declared artifacts with `checkProduces` (`packages/wor
 | `ARTIFACTS`, `artifactDef`, `validateArtifact`, `checkProduces`, `summarizeValue` | Resolve and validate artifact values (`packages/workflow-engine/src/artifacts.ts:160-257`). |
 | `contractProblems`, `contractSample`, `contractRepairPrompt` | Check and explain node output requirements (`packages/workflow-engine/src/contract.ts:26-93`). |
 | `outputContract`, `parseAgentOutput`, `agentPrompt`, `AgentOutputError` | Define and parse model output (`packages/workflow-engine/src/agent-output.ts:8-128`). |
-| `settleVerdict`, `verdictSides`, `RUBRIC_AXIS`, `isHardCritical`, `blockReason`, conversion helpers | Normalize verdicts, classify outcome and process, and determine blocking outcome (`packages/workflow-engine/src/verdict.ts:85-105`, `packages/workflow-engine/src/verdict.ts:149-245`). |
+| `settleVerdict`, `verdictSides`, `RUBRIC_AXIS`, `isHardCritical`, `blockReason`, conversion helpers | Normalize verdicts, classify outcome and process, and determine blocking outcome (`packages/workflow-engine/src/verdict.ts:86-104`, `packages/workflow-engine/src/verdict.ts:159-240`). |
 | `extractModelJson`, `clipped`, `NO_TOOLS_LINE`, `REVIEW_READ_ONLY_LINE` | Extract bounded model JSON from text, clip lengths, and enforce tool boundaries (`packages/workflow-engine/src/model-json.ts:9-49`). |
 | `resolveTaskQualityMode`, `QualityPick` | Resolve a task's quality mode once, with an explicit conflict result (`packages/workflow-engine/src/quality-mode.ts:9-40`). |
 | `requireGreen`, `StageVerdict` | Ensure maintenance graph stages completed cleanly, throwing on red states (`packages/workflow-engine/src/require-green.ts:7-15`). |
@@ -79,7 +82,7 @@ This capability validates declared artifacts with `checkProduces` (`packages/wor
 
 Artifact contracts distinguish a kind/version schema from where a produced artifact lives in a node output. A `field` points to a nested output field, `each` validates a list of artifacts, and `required: false` permits absence (`packages/workflow-engine/src/artifacts.ts:197-226`).
 
-Output contracts are evaluated after a step returns, so a malformed output becomes a failed step rather than accepted workflow state (`packages/workflow-engine/src/engine.ts:181-186`).
+Output contracts are evaluated after a step returns, so a malformed output becomes a failed step rather than accepted workflow state (`packages/workflow-engine/src/step-output.ts:8-19`, `packages/workflow-engine/src/engine-step.ts:213-215`).
 
 ## Dependencies
 
@@ -98,9 +101,9 @@ Artifact, contract, and verdict schemas use Zod. This package does not call a mo
 
 1. Object extraction. `extractJsonObject` first tries the fenced JSON blocks, newest first, and returns the first whose body starts with `{` and parses; failing that, it walks backwards from the last `}` and tries each balanced `{...}` span, stopping at the first span that fails to parse (`packages/workflow-engine/src/agent-output.ts:29-51`).
 2. Shape check. No object at all throws `AgentOutputError("no_json")`; a JSON array or other non-object throws `AgentOutputError("not_object")` (`packages/workflow-engine/src/agent-output.ts:54-55`).
-3. Field copy with light coercion. Only the declared field names are taken by `parseAgentOutput` (`packages/workflow-engine/src/agent-output.ts:52-61`); each value is coerced — numeric text becomes a number, `"true"`/`"false"` text a boolean, a number or boolean for a string field becomes text, and JSON-looking text for an array/object field is parsed (`packages/workflow-engine/src/agent-output.ts:42-50`). Undeclared keys are dropped, absent optional fields stay absent, and the engine's `checkOutput` does the strict check afterwards (`packages/workflow-engine/src/values.ts:30-44`).
+3. Field copy with light coercion. Only the declared field names are taken by `parseAgentOutput` (`packages/workflow-engine/src/agent-output.ts:52-61`); each value is coerced — numeric text becomes a number, `"true"`/`"false"` text a boolean, a number or boolean for a string field becomes text, and JSON-looking text for an array/object field is parsed (`packages/workflow-engine/src/agent-output.ts:42-50`). Undeclared keys are dropped, absent optional fields stay absent, and the engine's `checkOutput` does the strict check afterwards (`packages/workflow-engine/src/values.ts:39-54`).
 
-Failure outcome: the two `AgentOutputError` codes above, plus bad JSON inside a candidate span, which simply makes `extractJsonObject` try the next one (`packages/workflow-engine/src/agent-output.ts:31`, `packages/workflow-engine/src/agent-output.ts:36`).
+Failure outcome: `AgentOutputError` is thrown for missing JSON or non-object JSON (`packages/workflow-engine/src/agent-output.ts:8-10,54-55`). Bad JSON inside a candidate span makes `extractJsonObject` try the next candidate (`packages/workflow-engine/src/agent-output.ts:29-39`).
 
 ### `agentPrompt`
 
@@ -121,17 +124,17 @@ Failure outcome: none — the function only formats text and never throws; a bla
 
 ### `settleVerdict`
 
-The function first maps findings: critical/high findings that do not satisfy `counts` are demoted to medium and increment `demoted`. A counted finding must name a nonblank file and contain at least 12 characters of evidence; it also needs a line except for `specialist` verdicts (`packages/workflow-engine/src/verdict.ts:133-136`, `packages/workflow-engine/src/verdict.ts:176-181`). It then counts critical, high, and hard-critical findings with `isHardCritical` (`packages/workflow-engine/src/verdict.ts:158-163`, `packages/workflow-engine/src/verdict.ts:183-185`).
+The function first maps findings: critical/high findings that do not satisfy `counts` are demoted to medium and increment `demoted`. A counted finding must name a nonblank file and contain at least 12 characters of evidence; it also needs a line except for `specialist` verdicts (`packages/workflow-engine/src/verdict.ts:134-137`, `packages/workflow-engine/src/verdict.ts:177-182`). It then counts critical, high, and hard-critical findings with `isHardCritical` (`packages/workflow-engine/src/verdict.ts:159-164`, `packages/workflow-engine/src/verdict.ts:177-197`).
 
-For `kind: "code"`, one hard-critical finding or more than five high findings forces `block`. If the incoming status is `block` but that threshold is not met, remaining high/critical findings reduce it to `rework`; without serious findings it becomes `pass`. A `rework` with no serious finding also becomes `pass`. For all kinds, a `pass` with any remaining critical/high finding becomes `rework` (`packages/workflow-engine/src/verdict.ts:186-194`).
+For `kind: "code"`, one hard-critical finding or more than five high findings forces `block`. If the incoming status is `block` but that threshold is not met, remaining high/critical findings reduce it to `rework`; without serious findings it becomes `pass`. A `rework` with no serious finding also becomes `pass`. For all kinds, a `pass` with any remaining critical/high finding becomes `rework` (`packages/workflow-engine/src/verdict.ts:177-197`).
 
-The return preserves other fields while replacing status and findings, tracking `demoted` findings (`packages/workflow-engine/src/verdict.ts:165`, `packages/workflow-engine/src/verdict.ts:194-195`). The function has no exception branch; it expects a verdict matching the declared `Verdict` shape (`packages/workflow-engine/src/verdict.ts:72`, `packages/workflow-engine/src/verdict.ts:176-195`).
+The return preserves other fields while replacing status and findings, tracking `demoted` findings (`packages/workflow-engine/src/verdict.ts:177-197`). The function has no exception branch; it expects a verdict matching the declared `Verdict` shape (`packages/workflow-engine/src/verdict.ts:60-77`, `packages/workflow-engine/src/verdict.ts:177-197`).
 
 ### `verdictSides`
 
-`settleVerdict` attaches a `sides` result to the settled verdict. `verdictSides` uses the verdict kind's `RUBRIC_AXIS` mapping: plan acceptance/dependencies, code acceptance/checks, and specialist risk measure outcome; plan scope/read-first, code tests/substance, and specialist mitigation measure process (`packages/workflow-engine/src/verdict.ts:85-95`, `packages/workflow-engine/src/verdict.ts:192-195`).
+`settleVerdict` attaches a `sides` result to the settled verdict. `verdictSides` uses the verdict kind's `RUBRIC_AXIS` mapping: plan acceptance/dependencies, code acceptance/checks, and specialist risk measure outcome; plan scope, code tests/substance, and specialist mitigation measure process (`packages/workflow-engine/src/verdict.ts:86-90`, `packages/workflow-engine/src/verdict.ts:177-197`).
 
-A rubric item marks its mapped side as failed only when `result` is `fail` and trimmed evidence has at least 12 characters. A critical or high finding marks a side only when its `criterion` maps to an axis. If no rubric item or serious finding marks either side and status is not `pass`, outcome is failed; otherwise each unmarked side is `ok` (`packages/workflow-engine/src/verdict.ts:92-105`).
+A rubric item marks its mapped side as failed only when `result` is `fail` and trimmed evidence has at least 12 characters. A critical or high finding marks a side only when its `criterion` maps to an axis. If no rubric item or serious finding marks either side and status is not `pass`, outcome is failed; otherwise each unmarked side is `ok` (`packages/workflow-engine/src/verdict.ts:93-104`).
 
 ## Task quality mode
 
@@ -145,9 +148,9 @@ A task's quality mode is decided once, before a run starts, in this order — th
 | 2 | Workflow policy | `fixed` is the mode of an inherited `$mode`; `min` raises a lower request; otherwise the asked mode, then the workflow `default`, then the project's mode, then `standard` (`packages/workflow-engine/src/quality-mode.ts:35-37`). |
 | 3 | Project | Used only when neither the contract, the node, nor the workflow named a mode (`packages/workflow-engine/src/quality-mode.ts:35`, `packages/workflow-engine/src/quality-mode.ts:38-39`). |
 
-Conflict: when the workflow's mode is `fixed: quick` and a contract, the node, or an explicit `quality_mode` input asks for `full`, the result is `ok: false` with code `quality_mode_conflict` — it is not silently run as quick. A plain `start({ mode: "full" })` (an inherited `$mode`, not an explicit input) is still run as the workflow's fixed mode (`packages/workflow-engine/src/quality-mode.ts:19-30`). `WorkflowEngine.start` applies this resolver and throws a `WorkflowError` with that code when it reports a conflict (`packages/workflow-engine/src/engine.ts:204`, `packages/workflow-engine/src/engine.ts:281-282`, `packages/workflow-engine/src/engine.ts:310-312`, `packages/workflow-engine/src/validate.ts:22-25`).
+Conflict: when the workflow's mode is `fixed: quick` and a contract, the node, or an explicit `quality_mode` input asks for `full`, the result is `ok: false` with code `quality_mode_conflict` — it is not silently run as quick. A plain `start({ mode: "full" })` (an inherited `$mode`, not an explicit input) is still run as the workflow's fixed mode (`packages/workflow-engine/src/quality-mode.ts:19-30`). `WorkflowEngine.start` applies this resolver and throws a `WorkflowError` with that code when it reports a conflict (`packages/workflow-engine/src/engine.ts:97-107`, `packages/workflow-engine/src/engine-start.ts:50-54`, `packages/workflow-engine/src/validate.ts:22-26`).
 
-The workflow-level field is `quality_mode { default, effect, min, fixed }` (`packages/workflow-engine/src/schema.ts:314-319`).
+The workflow-level field is `quality_mode { default, effect, min, fixed }` (`packages/workflow-engine/src/schema.ts:312`).
 
 <!-- lane-pilot:backlinks -->
 ## Referenced by
