@@ -11,6 +11,7 @@ const INTAKE = "src/rooms/phase/intake.ts";
 const LIVE = "src/rooms/runs/server/thread-live.ts";
 
 export default {
+  n529: { mutation: distort("core:apps/server/src/services/threads/thread-events.ts", "return appendThreadEventInTransactionWithAttention(db, args).sequence;", "return appendThreadEventInTransactionWithAttention(db, args).sequence + 1;"), trace: drill("sma_r06") },
   n530: { mutation: flip(INTAKE, "MACHINE_TEXT.some((pattern) => pattern.test(text))", "!MACHINE_TEXT.some((pattern) => pattern.test(text))"), trace: drill("sma_r06") },
   n531: { mutation: flip("core:packages/server-contract/src/api/threads.ts", "ids.length <= THREAD_LIST_MAX_IDS &&", "ids.length < THREAD_LIST_MAX_IDS &&") },
   n532: { mutation: flip("core:packages/server-contract/src/api/threads.ts", "value.title !== undefined ||", "value.title === undefined ||") },
@@ -27,8 +28,10 @@ export default {
   n543: { mutation: flip(LIVE, 'item.kind === "task" && (!focus ||', 'item.kind !== "task" && (!focus ||'), trace: drill("sma_r06") },
   n544: { mutation: distort("src/rooms/phase/logic/next-action.ts", "stage 1, discussion. Goal:", "stage 1, planning. Goal:"), trace: drill("sma_r06") },
   n545: { mutation: flip(LIVE, 'role = writer ? "writer" : "helper";', 'role = writer ? "helper" : "writer";'), reach: entry("a person opens the Lane Pilot info panel of a chat, or the sidebar draws a conversation's live dot"), trace: drill("sma_r06") },
+  n546: { mutation: distort("core:apps/server/src/ws/hub.ts", "...(metadata ? { metadata } : {}),", "...(metadata ? { metadata: { ...metadata, eventTypes: [] } } : {}),"), reach: entry("a window is subscribed to a thread and an event is appended to it") },
   n547: { mutation: skipWrite("src/rooms/runs/server/cancel.ts", "await bb.sdk.threads.stop({ threadId: attempt.thread_id });"), trace: drill("sma_r06") },
   n548: { mutation: flip("src/rooms/phase/server/intake.ts", "if (result.started) await bb.storage.kv.set(slot,", "if (!result.started) await bb.storage.kv.set(slot,"), trace: drill("sma_r06") },
+  n549: { mutation: distort("core:apps/server/src/services/threads/turn-failed.ts", "requestSequence: row.sequence,", "requestSequence: row.sequence + 1,"), trace: drill("sma_r06") },
   n550: { mutation: distort(RAILS, 'return "failure";', 'return "history";'), trace: drill("sma_r06") },
   n551: { mutation: flip(RAILS, "words.length > 0 && words.every(", "words.length > 0 && words.some("), trace: drill("sma_r06") },
   n552: { mutation: flip("src/rooms/phase/server/tool.ts", "if (context.threadId !== own) throw", "if (context.threadId === own) throw"), trace: drill("sma_r06") },
@@ -51,6 +54,8 @@ export default {
   n569: { mutation: flip("src/rooms/writer/server/dispatch.ts", 'rel.startsWith("..")', 'rel.startsWith("../..")'), trace: drill("sma_r06") },
   n570: { mutation: distort(TOOLS, 'listRunTaskSummaries(db, runId ?? "")', 'listRunTaskSummaries(db, "")'), trace: drill("sma_r06") },
   n571: { mutation: flip("src/rooms/native-agent/server/activation.ts", "...mainAgentBinding,", "...(native ? mainAgentBinding : {}),"), trace: drill("sma_r06") },
+  n572: { mutation: flip("core:apps/server/src/services/threads/dispatch-attempt.ts", 'if (thread.status !== "idle" && thread.status !== "error") {', 'if (thread.status === "idle" && thread.status !== "error") {') },
+  n573: { mutation: flip("core:apps/server/src/services/threads/thread-send.ts", "if (isStandaloneBuiltinClearCommand(args.payload.input)) {", "if (!isStandaloneBuiltinClearCommand(args.payload.input)) {") },
   n574: { mutation: distort("src/rooms/stability/server/pm-turn-watch.ts", "limits.turnLimitMin * 60_000", "limits.turnLimitMin * 30_000"), trace: drill("sma_r06") },
   n575: { mutation: distort("src/rooms/usage/server/token-usage.ts", 'model: model || "unknown",', 'model: "unknown",'), reach: entry("a PM turn ends and the usage sync runs (the periodic token sync over the thread events)"), trace: drill("sma_r06") },
   n576: { mutation: flip("src/rooms/backlog/server/scanner.ts", "const fetched = freshened.exitCode === 0;", "const fetched = freshened.exitCode !== 0;"), trace: drill("sma_r06") },

@@ -16,10 +16,12 @@ import subprocess
 from lp_drill.env import ROOT
 from lp_drill.prove import Proofs
 from lp_drill.scenes.sma_r06_b import NODES_B, prove_b
+from lp_drill.scenes.sma_r06_core_b import NODES_CORE_B, prove_core_b
 
 NODES = ["n530", "n534", "n535", "n536", "n537", "n538", "n539", "n541", "n542", "n543", "n544", "n545", "n547", "n548", "n550", "n551", "n552",
          "n553", "n554", "n555", "n556", "n558"]
 NODES = NODES + NODES_B
+NODES = NODES + NODES_CORE_B
 PROBE = ROOT / "scripts/lp_drill/scenes/sma_r06_probe.ts"
 
 
@@ -129,4 +131,5 @@ def scenario_sma_r06(tmp) -> dict:
           and "stale" in pr["staleRefusal"] and pr["signed"] == ["yes:true"] and pr["planKey"])
     proofs.prove("n558", ok, f"plan hash {pr['sha'][:12]}…; another key -> {pr['wrongKey'][:40]!r}, a 25 h old proposal with a 24 h term -> {pr['staleRefusal'][:40]!r}, the keyed yes signed {pr['signed']}")
     prove_b(proofs, tmp)
+    prove_core_b(proofs, tmp)
     return proofs.verdict("sma_r06", checked=len(NODES))
