@@ -11,6 +11,9 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { adapterVersions, dueProbes } from "../../src/rooms/capability/logic";
 import { WORKER_ENVELOPE } from "../../src/rooms/tasks/rails";
 import { existsSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { userInfo } from "node:os";
+import { workerReachable } from "../../src/rooms/verification/worker-user";
 import {
   guardOnce, permitDecision, permitChannel,
   acceptedReceipts, capabilitySweep, checksAsWorker, confinedRun, criticEnvironments, folderGrants, pmActivation, roleModels, workerUserScript, writerLaunch,
@@ -228,5 +231,15 @@ describe("worker gates: values, not only shapes", () => {
   it("[sma:wc_applicable] the installed version of a provider is its adapter plugin's, by plugin id; none for a provider with no plugin or a missing one", () => {
     const versions = adapterVersions([{ id: "codex", pluginId: "provider-codex" }, { id: "acp", pluginId: null }, { id: "ghost", pluginId: "gone" }], [{ id: "provider-codex", version: "0.1.0" }, { id: "codex", version: "9.9.9" }]);
     expect([...versions.entries()]).toEqual([["codex", "0.1.0"], ["acp", null], ["ghost", null]]);
+  });
+});
+
+describe("the worker user probe", () => {
+  it("[sma:wi_probe] a user sudo can run a no-op as is reachable, one that does not exist is not; a bad name is not a pass", async () => {
+    const me = userInfo().username;
+    expect(await workerReachable("Bad User")).toBe(false);
+    expect(await workerReachable("lp-sma-no-such-user")).toBe(false);
+    const sudoWorks = spawnSync("/usr/bin/sudo", ["-n", "-u", me, "/usr/bin/true"]).status === 0;
+    if (sudoWorks) expect(await workerReachable(me)).toBe(true); // a machine without passwordless sudo cannot show the reachable side
   });
 });
