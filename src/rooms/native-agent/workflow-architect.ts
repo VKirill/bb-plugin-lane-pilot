@@ -48,7 +48,7 @@ Every field of every node type is in the reference; these are the rules a chain 
 - \`requires\` is checked before a live run; list in \`requires.skills\` the skills the chain cannot work without, and secrets as Env Catalog names only.
 
 ## Who runs a step, and on which model
-- \`role\` decides what the thread can reach, and the default does not reach much: an unknown role, \`worker\` included, runs as \`analyst\` (reads the code graph, nothing else: no browser, no accounts). Pick by the job: \`errand\` for the browser, a signed-in site, mail or an Env Catalog account; \`analyst\`, \`planner\`, \`auditor\`, \`debugger\` to read and judge the repository; \`specialist:<name>\` for design, copy, SEO and web research.
+- \`role\` decides what the thread can reach, and the default does not reach much: an unknown role, \`worker\` included, runs as \`analyst\` (reads the repository with file tools, nothing else: no browser, no accounts). Pick by the job: \`errand\` for the browser, a signed-in site, mail or an Env Catalog account; \`analyst\`, \`planner\`, \`auditor\`, \`debugger\` to read and judge the repository; \`specialist:<name>\` for design, copy, SEO and web research.
 - The model belongs to the role, not to the step: one table «role -> model» in the owner's Settings, the same in every graph. Pick the \`role\` by the job and put no model on the node (\`provider\`, \`model\`, \`reasoning\`, \`service_tier\` and \`model_preset\` are ignored and the validator warns). \`lane_pilot_workflow_capabilities\` (\`sections: ["models"]\`) shows the table as it stands. \`lp-task\` runs on the writer's model, decisions and code actions on none.
 
 ## How the chain starts

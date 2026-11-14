@@ -2,10 +2,10 @@
 
 Contents: orchestrator rules · authoring checklist · writer rules · schema-v2 fields · verification tiers · owns, dirt and caches.
 
-> **Inside a Lane Pilot chat** (`LANE_PILOT_AGENT_TYPE` set / tools `lane_pilot_*` present) the contract is the task-v2 JSON in the `plan` of `lane_pilot_dispatch_writer`, and its schema is strict: exactly `schema_version`, `id`, `title`, `risk`, `lane`, `project_cwd`, `read_first`, `interfaces`, `invariants`, `out_of_scope`, `expected_outputs`, `owns_paths`, `never_touch`, `depends_on`, `objective`, `acceptance`, `verify`, `verification[{command, cwd, timeout_sec?}]` (`timeout_sec` up to 7200). Any other field (`context_selectors`, `impact_*`, `skills`) makes Lane Pilot reject the whole contract: put line windows in `objective` or `interfaces` as `path:start-end`. The `plan` is the plan as text (a path is replaced by that file's text); Lane Pilot keeps it in the task's folder `.agents/tasks/<id>/PLAN.md`, so `read_first` names source files only: a path into another task's folder, into the shared `.agents/plans/*` or into another chat's `.bb/chats/` is refused. `depends_on` names tasks of this run and is the only ordering (a cycle or a self-dependency is refused at dispatch; the task starts once its dependencies are accepted and merged). The writer's own notes (`QUESTIONS.md`, `CHECKPOINT.md`) go to its attempt folder in that home; Lane Pilot keeps them. The writer RUNS `verification` and Lane Pilot re-runs it at acceptance, so every task needs real verification commands. Lane Pilot owns run state; `run-init`, `run-validate --phase`, `lane-ctl`, `run-supervisor`, the L0 rule «writer does not run tests» and `lane = adoc main_write` below are the terminal Lane Stack harness.
+> **Inside a Lane Pilot chat** (`LANE_PILOT_AGENT_TYPE` set / tools `lane_pilot_*` present) the contract is the task-v2 JSON in the `plan` of `lane_pilot_dispatch_writer`. Its required fields are `schema_version`, `id`, `title`, `risk`, `lane`, `project_cwd`, `read_first`, `interfaces`, `invariants`, `out_of_scope`, `expected_outputs`, `owns_paths`, `never_touch`, `depends_on`, `objective`, `acceptance`, `verify`, and `verification`; valid optional fields are `skills`, `area`, `display_title`, `kind`, `quality_mode`, `qa_cases`, `qa_url`, `qa_env_class`, `qa_dev_server`, `convergence`, `files`, `appetite`, `forecast`, `wires`, `promise`, `priority`, `clarify`, `drawing`, `test_removals`, `fixes_regressions`, and `repo_scope`. Each `verification` item accepts `command`, `cwd`, optional `timeout_sec` (1–7200), optional `secrets`, and optional `hidden`; any other field is rejected. `context_selectors` and `impact_*` are terminal Lane Stack fields, not Lane Pilot task fields. The `plan` is the plan as text (a path is replaced by that file's text); Lane Pilot keeps it in the task's folder `.agents/tasks/<id>/PLAN.md`, so `read_first` names source files only: a path into another task's folder, into the shared `.agents/plans/*` or into another chat's `.bb/chats/` is refused. `depends_on` names tasks of this run and is the only ordering (a cycle or a self-dependency is refused at dispatch; the task starts once its dependencies are accepted and merged). The writer's own notes (`QUESTIONS.md`, `CHECKPOINT.md`) go to its attempt folder in that home; Lane Pilot keeps them. The writer runs the supplied, non-hidden `verification` commands shown in its brief; hidden holdouts are omitted from that brief. Acceptance runs every declared verification item, including hidden holdouts, then checks the acceptance lines. Lane Pilot owns run state. The sections explicitly marked **terminal Lane Stack only** below do not govern an LP writer.
 
 
-## Orchestrator must
+## Orchestrator must (terminal Lane Stack only)
 
 1. `run-init` → fill PLAN/SPEC/tasks → `run-validate --phase pre-dispatch` before dispatch.  
 2. Set **`owns_paths`**, **`never_touch`**, behavioral **`acceptance`**.  
@@ -37,7 +37,7 @@ Contents: orchestrator rules · authoring checklist · writer rules · schema-v2
 - [ ] Package caches, `node_modules`, `.npm-cache`, build caches are **never** in owns  
 - [ ] `never_touch` covers secrets, prisma (if frozen), unrelated products  
 
-### Verification (L1)
+### Verification (terminal Lane Stack L1 only)
 
 - [ ] Commands are path-scoped unit/typecheck for **this** task  
 - [ ] No bare monorepo `npm run build` / root `npm test` on multi-task runs (that is L2)  
@@ -58,16 +58,26 @@ Contents: orchestrator rules · authoring checklist · writer rules · schema-v2
 
 ---
 
-## Lane must (writer)
+## Lane must (terminal Lane Stack writer only)
 
 1. Read the complete raw task YAML supplied in the prompt; open TASK_FILE if absent or uncertain.
 2. Work only in `PROJECT_CWD`.  
 3. Edit **only** `owns_paths`. Honor `never_touch`.  
-4. Do not write `.agents`.  
+4. Do not write `.agents` (terminal harness rule).
 5. Do **not** run tests/typecheck/`verification[]`; L1 is `lane-ctl verify`. Report in English.  
 6. No git merge/push main.  
 7. Outside-owns build break → report Gaps, do not “fix the world”.  
 8. Do not run monorepo suites or Worker checks.  
+
+---
+
+## Lane Pilot writer must
+
+1. Read the task contract, task-home manifest/brief, and the source files named by `read_first`.
+2. Work in `project_cwd`; edit only `owns_paths` and honor `never_touch`.
+3. Run every supplied, non-hidden command in `verification[]` and report its result; Lane Pilot runs every declared item, including hidden holdouts, at acceptance.
+4. Put `QUESTIONS.md` and `CHECKPOINT.md` in the writer's own attempt folder under that task home. Do not edit shared project-level `.agents/` planning files or another task's home.
+5. Do not merge or push main; report an outside-owns build break instead of broadening scope.
 
 ---
 
@@ -83,24 +93,24 @@ Identity (must match adoc / run): `schema_version`, `id`, `title`, `risk`, `lane
 | `never_touch` | Owns gate | Secrets / unrelated | `.env*` minimum |
 | `read_first` | Packet files | Existing files, no notes | `[]` if none |
 | `context_selectors` (terminal only) | Packet line windows | `{path, start_line, end_line}` | omit (do not put windows in `read_first`) |
-| `verification` | L1 `lane-ctl verify` | Focused commands | `[]` only with `verify: none` |
-| `verify` | Schema only | `tests` / `smoke` / `none` matching L1 | do not invent a second suite |
+| `verification` | Lane Pilot writer + acceptance; terminal L1 is separate below | Focused commands; writer sees/runs only non-hidden items, acceptance runs all declared items | `[]` only with `verify: none` |
+| `verify` | Task schema / Lane Pilot acceptance | `tests` / `smoke` / `none` describing the contract | do not invent a second suite |
 | `depends_on` | DAG | Real compile/data ids | `[]` |
 | `interfaces` | Prompt + path scrape | Signatures / type names | `[]` |
 | `invariants` | Prompt | Product constraints | `[]` |
 | `out_of_scope` | Prompt | Non-goals not already in `never_touch` | `[]` |
 | `expected_outputs` | Schema + prompt | Artifact path this task creates | one path, not “typecheck green” |
 | `impact_receipt` / `impact_targets` (terminal only) | Packet | Only if you captured a receipt | omit |
-| `skills` (terminal only) | Claude prompt inject | `impeccable-ui` on UI tasks | omit (OpenCode ignores) |
+| `skills` | PM hints / helper skills | Skill names the writer needs | omit when none |
 
-`run-validate --phase pre-dispatch` rejects: `git checkout`/`restore` in the YAML; `read_first` prose (`section C4`, `lines 10-20`); missing `read_first` files; CONTINUATION / Gaps / HARD RULE / `wc -l` / edit-tool recovery in `interfaces` or `invariants`.
+`run-validate --phase pre-dispatch` (terminal Lane Stack only) rejects: `git checkout`/`restore` in the YAML; `read_first` prose (`section C4`, `lines 10-20`); missing `read_first` files; CONTINUATION / Gaps / HARD RULE / `wc -l` / edit-tool recovery in `interfaces` or `invariants`.
 
 No mutable `status` / free-form verify strings on new runs.
 
 
 ---
 
-## Verification tiers
+## Verification tiers (terminal Lane Stack only)
 
 | Tier | Who | What |
 |------|-----|------|
@@ -108,7 +118,9 @@ No mutable `status` / free-form verify strings on new runs.
 | **L1** | `lane-ctl verify` | Task `verification[]` only |
 | **L2** | PM / CI | One full or affected suite per run |
 
-### Worktree + pre-authored checkers
+In Lane Pilot, the writer runs the supplied non-hidden checks; acceptance runs all `verification[]`, including hidden holdouts; the terminal L0/L1/L2 split above is not an LP writer instruction.
+
+### Worktree + pre-authored checkers (terminal Lane Stack only)
 
 `verification.cwd` must equal the task worktree/`project_cwd`. Relative scripts
 resolve **inside that tree**. Main checkout `.agents/runs/<slug>/artifacts/001/check.py`

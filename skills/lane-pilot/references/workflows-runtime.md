@@ -8,13 +8,17 @@ An `agent` step is a helper thread of the project's Lane Pilot PM chat: the prof
 
 | role | reaches | use for |
 |---|---|---|
-| `analyst`, `planner`, `auditor`, `debugger` | repository read, code graph (gitnexus); a built-in method | reading code and judging; the planner writes task contracts, the auditor checks goals against evidence, the debugger finds a cause |
+| `analyst`, `planner`, `auditor` | repository read via the provider's file tools; no MCP/code graph | reading code and judging; the planner writes task contracts and the auditor checks goals against evidence |
+| `debugger`, `code-critic`, `specialist-reviewer` | repository read, code graph (GitNexus) | finding a cause, reviewing a diff, or specialist review |
 | `errand` | the owner's browser (`browser-automation`, `computer-use`), Env Catalog (`env_get` by name) | anything outside the code: signed-in sites, mail, consoles, a Telegram or mail send |
 | `browser-qa` | `browser-automation` | a browser check of a URL against cases |
-| `plan-critic`, `pm-reader`, `council`, `memory` | nothing: they answer from the message | judgments on supplied text |
-| `code-critic`, `triager` | repository read, code graph | review of a diff, classifying failures |
-| `project-life` | may write `.agents/` and `CHANGELOG.md` | project notes |
+| `plan-critic`, `pm-reader` | repository read via the provider's file tools; no MCP/code graph | plan and task reading |
+| `council`, `memory` | nothing: they answer from the message | judgments on supplied text |
+| `gate-triage` | no tools; answers from the supplied gate/check text | classifying failures |
+| `project-life` | generic workflow role may write `.agents/**` and root `CHANGELOG.md` (workflow role guard) | standalone workflow project notes |
 | `specialist:design-lead`, `:copy-lead`, `:seo-specialist`, `:tavily` | each specialist's skills; may write `.agents/` | design, copy, SEO, cited web research |
+
+The `lp.project-life` action after acceptance is not a workflow role. Its stage guard allows `.agents/PROGRESS.md`, `.agents/CHANGELOG.md`, `.agents/plans/**` and `.agents/todos/**`; the normal stage path writes only `.agents/CHANGELOG.md` by script.
 
 An unknown role, and the default `worker`, runs as `analyst`: no browser and no accounts. Pick the role by what the step must reach before you write its prompt. The owner can widen a role per project in Settings, "Agent access"; do not rely on it.
 
@@ -31,7 +35,7 @@ The model belongs to the role, not to the step: one table «role -> model» in t
 
 ## The browser
 
-A step that must read signed-in pages or click: `role: errand`, skill `browser-automation` (persistent pages, snapshots, forms) or `computer-use` (one goal in the owner's Chrome through Jev); `requires.browserSession: true`; write the browser machine's id (the `browser` section of the capabilities) into the step's prompt, because `requires.machines` is shown to the owner and is neither checked nor passed to the step; for networks kept by `social-browser`, `requires.platforms`. Read-only unless the owner said otherwise. A login wall, rate limit or captcha is an enum status (`blocked`) with an edge to a `human` question or an `emit`, never a retry loop. A public search without a login: skill `tavily` (needs the Env Catalog name `TAVILY_API_KEY` in `requires.secrets`). `lane_pilot_helpers` with `action: "browser"` and `lane_pilot_errand` are the PM's tools; a graph step reaches the same browser through the skills.
+A step that must read signed-in pages or click: `role: errand`, skill `browser-automation` (persistent pages, snapshots, forms) or `computer-use` (one goal in the owner's Chrome through agent-desktop); `requires.browserSession: true`; write the browser machine's id (the `browser` section of the capabilities) into the step's prompt, because `requires.machines` is shown to the owner and is neither checked nor passed to the step; for networks kept by `social-browser`, `requires.platforms`. Read-only unless the owner said otherwise. A login wall, rate limit or captcha is an enum status (`blocked`) with an edge to a `human` question or an `emit`, never a retry loop. A public search without a login: skill `tavily` (needs the Env Catalog name `TAVILY_API_KEY` in `requires.secrets`). `lane_pilot_helpers` with `action: "browser"` and `lane_pilot_errand` are the PM's tools; a graph step reaches the same browser through the skills.
 
 ## Secrets and accounts
 
