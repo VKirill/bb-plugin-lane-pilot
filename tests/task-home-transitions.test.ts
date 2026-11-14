@@ -9,7 +9,7 @@ import {
   recordWriterReport, stagePlanText, taskHomeBrief, writeDispatchHome,
 } from "../src/rooms/writer/server/task-home";
 import { taskFolderLines } from "../src/rooms/writer/server/writer-task";
-import { readFirstScopeFindings } from "../src/rooms/tasks/server/contract-lint";
+import { readFirstScopeFindings } from "../src/rooms/tasks/server/read-first-scope";
 import { runPlanFactStage } from "../src/rooms/writer/server/plan-fact";
 
 /**
@@ -223,13 +223,15 @@ describe("main path transitions through the task manifest", () => {
   });
 
   // Mutation: update_task writing the new edition only in the base (the running writer keeps the old words) or not as a new contract edition.
-  it("T17 update_task → open worktree: contract.v2.json and the new PLAN.md are recorded and written again into the open worktree", async () => {
+  it("T17 update_task → open worktree: contract.v2.json and PLAN.v2.md (superseding PLAN.md) are recorded and written again into the open worktree", async () => {
     const w = world();
     await w.dispatch("t1", "plan one");
     w.db.prepare("INSERT INTO lane_pilot_task_contract_edition(task_id,edition,sha256,contract_json,plan,reason,at) VALUES('t1',2,'x','{}',NULL,'update',2)").run();
     await recordTaskEdition(w.ctx, { taskId: "t1", task: contract("t1"), plan: "plan two", mirrorRoot: WT });
     expect(resolveTaskFile(w.db, "t1", "contract")!.path).toBe("contract.v2.json");
-    expect(w.files.get(`${WT}/.agents/tasks/t1/PLAN.md`)).toBe("plan two\n");
+    expect(w.files.get(`${WT}/.agents/tasks/t1/PLAN.v2.md`)).toBe("plan two\n");
+    expect(resolveTaskFile(w.db, "t1", "plan")!.path).toBe("PLAN.v2.md");
+    expect((renderTaskManifest(w.db, "t1")!.files as Array<{ path: string; supersedes?: string }>).find((row) => row.path === "PLAN.v2.md")).toMatchObject({ supersedes: "PLAN.md" });
     expect(w.files.get(`${WT}/.agents/tasks/t1/contract.v2.json`)).toBeDefined();
     expect(await stagePlanText(w.ctx, "t1", "pm-read", "x")).toBe("plan two\n");
     expect(renderTaskManifest(w.db, "t1")!.contract).toMatchObject({ edition: 2, path: "contract.v2.json" });

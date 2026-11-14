@@ -198,7 +198,8 @@ export async function appendTaskQaHome(ctx: Pick<ServerCore, "bb" | "db">, input
 }
 
 /**
- * A changed task (lane_pilot_update_task): the new contract edition as `contract.v<N>.json` and the new `PLAN.md`, recorded in the home and
+ * A changed task (lane_pilot_update_task, a planner round): the new contract edition as `contract.v<N>.json` and its plan as `PLAN.v<N>.md`,
+ * superseding the last plan (the older files stay, so the chain keeps every edition the readers saw), recorded in the home and
  * written again into the open worktree of its attempt, so the running writer reads the same words the PM sent. False for a task on the old layout.
  */
 export async function recordTaskEdition(ctx: Pick<ServerCore, "bb" | "db">, input: { taskId: string; task: TaskV2; plan: string; mirrorRoot?: string | null; producer?: TaskFileProducer }): Promise<boolean> {
@@ -207,7 +208,7 @@ export async function recordTaskEdition(ctx: Pick<ServerCore, "bb" | "db">, inpu
   const producer: TaskFileProducer = input.producer ?? { node: "update-task", graph: "lp-task-pipeline", stage_id: "dispatch" };
   const mirrorRoot = input.mirrorRoot ?? null;
   await recordTaskHomeFile(ctx, { taskId: input.taskId, kind: "contract", name: `contract.v${edition}.json`, content: `${JSON.stringify(input.task, null, 2)}\n`, producer, readers: ["pm-read", "plan-critique", "writer"], mirrorRoot });
-  await recordTaskHomeFile(ctx, { taskId: input.taskId, kind: "plan", name: "PLAN.md", content: input.plan.endsWith("\n") ? input.plan : `${input.plan}\n`, producer, readers: ["pm-read", "plan-critique", "writer"], mirrorRoot });
+  await recordTaskHomeFile(ctx, { taskId: input.taskId, kind: "plan", name: edition > 1 ? `PLAN.v${edition}.md` : "PLAN.md", content: input.plan.endsWith("\n") ? input.plan : `${input.plan}\n`, producer, readers: ["pm-read", "plan-critique", "writer"], mirrorRoot });
   return true;
 }
 

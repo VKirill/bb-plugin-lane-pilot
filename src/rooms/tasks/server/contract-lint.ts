@@ -5,7 +5,6 @@ import { fileAllowedByOwns, fileBlockedByNeverTouch, matchOwnsPath, ownsPathsOve
 import { findSandboxUnsafeMissingExcludes, runnerFilterArgs, runsWholeSuite } from "../../contracts/check-commands";
 import { NO_RED_KINDS } from "../../contracts";
 import { parseReadFirstHints } from "../read-first";
-import { readFirstScopeFindings } from "./read-first-scope";
 import { maskedExitReason, needsCommitReason, passWithNoTestsReason } from "./lint-exit-status";
 import { SUBJECTIVE_WORDS } from "../../contracts/review-vocabulary"
 import { browserQaRequired } from "../../contracts/quality-mode";
@@ -55,11 +54,9 @@ export type LintInput = {
   deadDependencies:readonly { id:string; state:"blocked" | "canceled" }[];
   /** Env Catalog's answer for the secrets the checks declare (J2); absent when none is declared. */
   secrets?:SecretCheck & { catalog:readonly CatalogEntry[] | null };
-  /** The PM chat the task is dispatched from: its own `.bb/chats/<id>/` is the only chat folder a read_first may name; absent: none may. */
-  chatId?:string | null;
 };
 
-export { runnerFilterArgs, readFirstScopeFindings };
+export { runnerFilterArgs };
 
 /** The timeout a check without timeout_sec gets (the sandbox's default, writer/server/verify.ts). */
 const DEFAULT_CHECK_TIMEOUT_SEC = 120;
@@ -352,8 +349,7 @@ export function lintContract(input:LintInput):{ errors:LintFinding[]; warnings:L
     }
   }
 
-  // read_first: inside the task's own world, then a project-relative path that exists on the writer's machine and is a file.
-  errors.push(...readFirstScopeFindings(task, input.chatId));
+  // read_first: a project-relative path that exists on the writer's machine and is a file.
   try {
     for (const hint of parseReadFirstHints(task.read_first)) {
       const kind = kindOf(resolve(input.workspacePath, hint.path));

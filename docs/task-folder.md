@@ -54,6 +54,7 @@ never carries a home to main, and removing a worktree never removes a home: the 
   manifest.json                     rendered from the database; agents never write it
   contract.v1.json                  the contract at dispatch; contract.v<N>.json per lane_pilot_update_task edition
   PLAN.md                           the plan TEXT (a plan that was one path line is replaced by that file's text)
+  PLAN.v<N>.md                      the plan of contract edition N (lane_pilot_update_task or a planner round), superseding the last
   context/plan-source.md            the shared .agents/plans/* files the plan named: source_path + sha256 + their text
   REFLEXES.md, FILECARDS.md         the guard hook's notes for this task
   critique/plan.r<K>.json           plan-critique verdict K (it records the PLAN.md sha it judged)

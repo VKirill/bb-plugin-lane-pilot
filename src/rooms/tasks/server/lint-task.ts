@@ -19,6 +19,7 @@ import type { ServerCore } from "../../contracts/server";
 import type { StabilityPort } from "../../contracts/stability-api";
 import type { IsTaskSatisfied } from "../../contracts";
 import type { VerificationGatePort } from "../../contracts/integration-gate";
+import { readFirstScopeFindings } from "./read-first-scope";
 
 /**
  * The designs of a run's live phases, as the phase room keeps them. The phase room imports tasks, never the other way,
@@ -134,6 +135,8 @@ export function createTaskLinter(ctx: ServerCore, services: Services) {
         confirmedDrawings.push({ paths: drawing.paths, sha256: drawing.sha256, changed });
       }
     }
-    return lintContract({ task, workspacePath, hostId, kinds, listings, sandboxUnsafe, gate, openTasks, runTasks, deadDependencies, programs, ownerWords, qualityMode, checkHistory, birth, redoneBirth, confirmedDrawings,...(secrets ? { secrets } : {}), chatId: getRun(db, runId)?.pm_thread_id ?? null });
+    const linted = lintContract({ task, workspacePath, hostId, kinds, listings, sandboxUnsafe, gate, openTasks, runTasks, deadDependencies, programs, ownerWords, qualityMode, checkHistory, birth, redoneBirth, confirmedDrawings,...(secrets ? { secrets } : {}) });
+    // read_first stays inside the task's own world (docs/task-folder.md): no other task's home, no shared .agents/plans/, no other chat's folder.
+    return { ...linted, errors: [...readFirstScopeFindings(task, getRun(db, runId)?.pm_thread_id ?? null), ...linted.errors] };
   };
 }

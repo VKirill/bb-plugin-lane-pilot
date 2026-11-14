@@ -147,16 +147,16 @@ export function createRoleMarkerEnv(ctx: Pick<ServerCore, "bb">) {
   };
 }
 
-/**
- * `LANE_TASK_DIR`: the writer's own task home in its worktree, as the spawn put it in the thread's metadata (`laneTaskDir`). The guard hook reads
- * REFLEXES.md and FILECARDS.md only there (docs/task-folder.md); a value that is not `<abs>/.agents/tasks/<id>` is not passed on.
- */
+/** `LANE_PILOT_CHATS`: the helper write guard allows only these chats' .bb/chats/<id>/: the thread's own and the PM chat it works for (audit d8). */
 export function chatFoldersEnv(threadId: string | null, metadata: unknown): ExperimentalPluginProviderEnvEntry[] {
-  // The helper write guard allows only these chats' .bb/chats/<id>/: the thread's own and the PM chat it works for (audit d8).
   const ids = [...new Set([threadId, stringAt(metadata, "parentPmThreadId")].filter((id): id is string => typeof id === "string" && /^[A-Za-z0-9_-]{1,128}$/.test(id)))];
   return ids.length ? [{ name: "LANE_PILOT_CHATS", value: ids.join(","), reason: "Lane Pilot: the chat folders this thread may write (its own and its PM chat's)" }] : [];
 }
 
+/**
+ * `LANE_TASK_DIR`: the writer's own task home in its worktree, as the spawn put it in the thread's metadata (`laneTaskDir`). The guard hook reads
+ * REFLEXES.md and FILECARDS.md only there (docs/task-folder.md); a value that is not `<abs>/.agents/tasks/<id>` is not passed on.
+ */
 export function taskDirEnv(metadata: unknown): ExperimentalPluginProviderEnvEntry[] {
   const dir = stringAt(metadata, "laneTaskDir");
   if (!dir || !/^\/(?:[^\0]*\/)?\.agents\/tasks\/[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(dir) || dir.split("/").includes("..")) return [];
