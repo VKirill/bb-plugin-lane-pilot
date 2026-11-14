@@ -226,7 +226,7 @@ await node("n1659", async () => {
   const renewed = await harness.behavior.runCli(["integrity", "p", "--renew", "code_critique.mode", "--days", "30", "--why", "still auditing the critic"]);
   await harness.lifecycle.dispose();
   return { ok: same(early, []) && late.disarmed === true && same(late.shadow_findings, [{ taskId: "t_i", stageId: "code-critique", state: "failed", at: disarmedAt + 1000 }]) && noWhy.exitCode === 1 && renewed.exitCode === 0 && JSON.parse(renewed.stdout).renewals.length === 1,
-    detail: `a gate disarmed at T: a critique that failed before T is no shadow finding (${early.length}), one after T is (${JSON.stringify(late.shadow_findings.map((item) => item.taskId))}); renew with no reason exits ${noWhy.exitCode}, with a reason it records ${JSON.parse(renewed.stdout).renewals.length} renewal` };
+    detail: `a gate disarmed at T: a critique that failed before T is no shadow finding (${(early as unknown[]).length}), one after T is (${JSON.stringify((late.shadow_findings as Array<{ taskId: string }>).map((item) => item.taskId))}); renew with no reason exits ${noWhy.exitCode}, with a reason it records ${JSON.parse(renewed.stdout).renewals.length} renewal` };
 });
 
 // ---- the airbag, the guard and the permit round trip (the real hook, a real python process) ----

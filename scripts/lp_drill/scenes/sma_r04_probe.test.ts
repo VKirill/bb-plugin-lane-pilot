@@ -26,7 +26,7 @@ import { isHeld } from "../../../src/rooms/runs/server/runs-pause";
 import { planSignature, designDecision, type PlanItem } from "../../../src/rooms/phase/logic";
 import { listParts, savePhase, getPhase } from "../../../src/rooms/phase/store";
 import { recordStage } from "../../../src/rooms/runs/server/stage-records";
-import { runDailyWorktreePass } from "../../../src/rooms/stability/server/worktree-janitor";
+import { runDailyWorktreePass } from "../../../src/rooms/stability/server/worktree-daily-pass";
 import { gitRemoveWorktree, worktreeJanitor } from "../../../src/rooms/host-worker/host-handlers";
 import { noOptionalPlugins } from "../../../tests/optional-plugin-stubs";
 import { failedTasksAllProjects, listStageReceipts, saveProjectSetting, setAttemptWorkspace, setTaskHeldUntil } from "../../../src/rooms/storage";
