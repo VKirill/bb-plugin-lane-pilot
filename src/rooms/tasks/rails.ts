@@ -235,12 +235,12 @@ export function laneCap(setting: unknown, lane: LaneQueue): number | null {
  * The test checks every dimension names its enforcement.
  */
 export const WORKER_ENVELOPE = {
-  files: "owns_paths and never_touch: the ownership gate refuses a change outside them (src/rooms/verification/ownership.ts)",
+  files: "owns_paths and never_touch: the ownership gate refuses a change outside them (src/rooms/verification/git-ownership.ts)",
   git: "no commit, push, merge or branch switch: the guard's lane-pilot-guard, and Lane Pilot merges itself (src/rooms/verification/git-integrate.ts)",
   shell: "the guard judges the program that runs; deleting for good goes to the Trash (lane-stack hooks/guard_shell.py)",
   secrets: "no Env Catalog; a check gets a declared secret as an environment variable by name (src/rooms/secrets)",
   network: "checks run in Seatbelt or bubblewrap with the project's own sandbox settings (src/rooms/verification/sandbox.ts)",
-  tools: "the role's MCP servers, BB plugins and skills only (src/rooms/native-agent/helper-context.ts)",
+  tools: "the role's MCP servers, BB plugins and skills only (src/rooms/contracts/helper-context.ts)",
   time: "the appetite's minutes, the session's turn ceiling and the run's wall clock (packages/resilience)",
   tokens: "the run's token budget when the owner sets run.max_tokens, with the spend reserve at dispatch (src/rooms/tasks/rails.ts spendReserve); the appetite's tokens are a forecast, they stop no writer",
 } as const;
