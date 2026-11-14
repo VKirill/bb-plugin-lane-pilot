@@ -26,7 +26,7 @@ def dry_run(names: list[str], series: bool = False) -> None:
         documents["plan_split"] = [*plan_split_tasks(cwd).values(), *plan_split_cycle_tasks(cwd).values()]
         expects["plan_split"] = {"scenario": "in EXTRA (by name or --series task)", "judge": "plan_split_problems", "sql": PLAN_SPLIT_SQL}
     documents["task_home"] = task_home_specs(cwd)
-    expects["task_home"] = {"judge": "manifest_problems + shared_leaks + neighbour_problems", "home": ".agents/tasks/<id>/manifest.json"}
+    expects["task_home"] = {"judge": "manifest_problems + shared_leaks + neighbour_problems + locating_questions (receipt field tasks[].writerQuestions: an ASK_PM about where the plan, the task folder or the report is fails the scene)", "home": ".agents/tasks/<id>/manifest.json"}
     if series:
         documents["no_code_exit"] = tasks_no_code_exit(cwd, True)
         expects["no_code_exit"] = {f"drill-answer-{STAMP}": "accepted_first_attempt", f"drill-human-{STAMP}": "held_with_question", f"drill-noedit-{STAMP}": "not_accepted"}

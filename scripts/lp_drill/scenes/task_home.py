@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 from pathlib import Path
 
 from lp_drill.env import STAMP
+from lp_drill.hub import hubsql
 from lp_drill.prove import Proofs
 from lp_drill.report import sandbox_sound, summarize
 from lp_drill.tasks import note_task
@@ -98,6 +100,40 @@ def read_manifest(cwd: str, task_id: str) -> dict:
         return {}
 
 
+# A writer that works by the updated skills and brief knows where its plan, its task folder and its report are: it asks no `ASK_PM` about them
+# (the brief names the folder, lp-writer says so). A question that matches is a miss of the skills or the brief, not a task question.
+LOCATING_QUESTION = re.compile(
+    r"(where\b.{0,60}\b(plan|folder|home|report|manifest|contract)\b|which\b.{0,30}\b(folder|file|path|plan)\b|"
+    r"(cannot|can't|could not|couldn't|unable to|не могу|не нашел|не нашёл|не удалось)\s.{0,40}(find|locate|open|read|найти|открыть|прочитать).{0,60}(plan|folder|home|report|manifest|плана?|папк|отчёт|отчет)|"
+    r"\.agents/(tasks|plans)|PLAN(\.v\d+)?\.md|manifest\.json|LANE_TASK_DIR|где\s.{0,40}(план|папк|отчёт|отчет))", re.IGNORECASE)
+
+
+def locating_questions(questions: list[str]) -> list[str]:
+    """The questions that ask where something is (the plan, the task folder, the report) instead of what the task means."""
+    return [q for q in questions if LOCATING_QUESTION.search(q)]
+
+
+def writer_questions(cwd: str, rows: list[dict], task_id: str) -> list[str]:
+    """Every question the task's writer asked: the `needs_human` transitions of its attempts (hub db) and the QUESTIONS.md files of its home."""
+    questions: list[str] = []
+    attempts = [str(row["id"]) for row in rows if row.get("task_id") == task_id and row.get("id")]
+    if attempts:
+        ids = ",".join("'" + a.replace("'", "") + "'" for a in attempts)
+        for row in hubsql(f"SELECT reason FROM lane_pilot_attempt_transition WHERE attempt_id IN ({ids}) AND (to_state='needs_human' OR reason LIKE 'needs_human%' OR reason LIKE '%ASK_PM%');"):
+            if row.get("reason"):
+                questions.append(str(row["reason"])[:300])
+    home = Path(cwd) / ".agents" / "tasks" / task_id
+    for row in read_manifest(cwd, task_id).get("files") or []:
+        if isinstance(row, dict) and row.get("kind") == "questions" and row.get("path"):
+            try:
+                text = (home / str(row["path"])).read_text(encoding="utf-8").strip()
+            except OSError:
+                continue
+            if text:
+                questions.append(text[:300])
+    return list(dict.fromkeys(questions))
+
+
 # The attempt-scoped kinds: they live under attempts/<attempt-id>/ of the home (SMA n233 «One folder per attempt»).
 ATTEMPT_KINDS = ("writer-report", "checks", "barrier-input", "code-critique")
 
@@ -175,6 +211,14 @@ def scenario_task_home(ctx: "Context") -> dict:
         for task_id in ids:
             problems += manifest_problems(ctx.cwd, task_id)
         problems += neighbour_problems(ctx.cwd, rows, ids)
+        for row in tasks:
+            try:
+                row["writerQuestions"] = writer_questions(ctx.cwd, rows, row["task"])
+            except RuntimeError as cause:
+                row["writerQuestions"] = None
+                problems.append(f"{row['task']}: the writer's questions could not be read ({cause})")
+                continue
+            problems += [f"{row['task']}: the writer asked where something is, not what the task means: {q}" for q in locating_questions(row["writerQuestions"])]
         proofs = Proofs()
         for node, ok, detail in node_proofs(ctx.cwd, ids, rows, leaks, rel_plan):
             proofs.prove(node, ok, detail)
