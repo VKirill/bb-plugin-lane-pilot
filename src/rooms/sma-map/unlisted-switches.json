@@ -59,6 +59,10 @@
   "none|phase|milestone",
   "a closed phase leaves a branch: phase/<id>, or milestone/<slug> of its roadmap section"
  ],
+ "phase.autonomous": [
+  "on|off",
+  "on: when a phase closes, the next open row of the roadmap is opened as the next phase at once (unset: off, the PM is told which row is next)"
+ ],
  "ship.full_gate": [
   "on|off",
   "ship stops while the full check is red or older than six hours"
