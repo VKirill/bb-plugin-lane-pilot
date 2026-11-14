@@ -47,11 +47,22 @@ export function declaredSkills(catalog: CatalogEntry[], hints: readonly string[]
   return [...new Set(hints)].filter((name) => names.has(name)).slice(0, SKILL_HINT_LIMIT);
 }
 
+/** The hub skill with Chrome's Modern Web Guidance (its guides are on disk, no network needed). */
+export const WEB_GUIDANCE_SKILL = "modern-web-guidance";
+/** A file a web page is made of: styles, markup, component and template files. */
+const WEB_FILE = /\.(css|scss|sass|less|styl|html?|vue|svelte|astro|tsx|jsx|hbs|handlebars|ejs|njk|twig|pug|liquid|mustache|blade\.php)$/i;
+
+/** True when the task's own files (owned, expected outputs, read-first) include a web file. */
+export function taskTouchesWeb(task: Pick<TaskV2, "owns_paths" | "expected_outputs" | "read_first">): boolean {
+  const paths = [task.owns_paths, task.expected_outputs, task.read_first].flatMap((list) => (Array.isArray(list) ? list : []));
+  return paths.some((entry) => typeof entry === "string" && WEB_FILE.test(entry.trim()));
+}
+
 type Listing = { catalog: CatalogEntry[]; folders: Map<string, string> };
 
 /**
  * The extra skills of each writer spawn, by rule and without a model: the skills of the project folder, the skills the task declares
- * (the PM names them in the contract) and the built-in browser skill for a task checked on a page. The BB list is cached; a failed
+ * (the PM names them in the contract) and the web-guidance skill for a task that touches web files, and the built-in browser skill for a task checked on a page. The BB list is cached; a failed
  * listing gives the writer its role skills and never blocks a spawn.
  */
 export function createWriterSkillPick(ctx: Pick<ServerCore, "bb">, options: { log?: (message: string) => void } = {}) {
@@ -94,7 +105,9 @@ export function createWriterSkillPick(ctx: Pick<ServerCore, "bb">, options: { lo
     const hints = declaredSkills(catalog, input.task.skills ?? []);
     const projectFolder = projectFolderSkills(input.projectCwd, catalog);
     // The browser skill is built-in, not chosen: a task checked on a page gets it (sma ap_skills).
-    const named = [...new Set([...projectFolder, ...hints])];
+    // The web-guidance skill is picked by rule for a task that touches web files, when the hub lists it.
+    const web = taskTouchesWeb(input.task) && catalog.some((entry) => entry.name === WEB_GUIDANCE_SKILL) ? [WEB_GUIDANCE_SKILL] : [];
+    const named = [...new Set([...projectFolder, ...hints, ...web])];
     const skills = taskNeedsBrowser(input.task) && !named.includes("browser-automation") ? [...named, "browser-automation"] : named;
     const folders = listing?.folders ?? new Map<string, string>();
     const sources = Object.fromEntries(skills.flatMap((name) => (folders.has(name) ? [[name, folders.get(name)!] as const] : [])));
