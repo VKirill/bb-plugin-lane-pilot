@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { settingOff, settingOn } from "@lane-pilot/models";
-import type { CoverageFinding } from "./critique-coverage";
+import type { CoverageCallers, CoverageFinding } from "./critique-coverage";
 import { ANSWER_FORM_LINE, clipped, extractModelJson, REVIEW_READ_ONLY_LINE } from "@lane-pilot/workflow-engine";
 import { PLAN_CRITIC_METHOD } from "./role-method";
 import { demoteUncited } from "./citations";
@@ -115,9 +115,34 @@ export const PLAN_CRITIC_PRIORITY: readonly string[] = [
   "Example, pass: src/store/db.test.ts is in owns_paths but not in read_first; the writer can open it -> low, pass.",
 ];
 
-export function critiquePrompt(input: { plan:string; task:unknown; agent?:string; pmReadContext?:string; structuralFindings?:readonly CoverageFinding[]; ownerWords?:readonly string[] }): string {
+/** The plan file inlined into the prompt: its path, the text up to PLAN_INLINE_BYTES, and whether it was cut. */
+export type InlinedPlan = { path: string; text: string; truncated: boolean };
+export const PLAN_INLINE_BYTES = 8 * 1024;
+
+/**
+ * «Callers of what the plan changes»: per changed symbol up to 5 callers as `file:symbol` and a count of the rest, from the graph the coverage
+ * scan already queried. A caller no task owns is marked. Empty without callers (no index, nothing found).
+ */
+export function callersBlock(callers: readonly CoverageCallers[] | undefined, unowned: ReadonlySet<string> = new Set()): string {
+  if (!callers?.length) return "";
+  return callers.map((row) => {
+    const shown = row.callers.slice(0, 5).map((label) => (unowned.has(label.slice(0, label.lastIndexOf(":") < 0 ? undefined : label.lastIndexOf(":"))) ? `${label} (no task owns it)` : label));
+    const more = row.total - shown.length;
+    return `- ${row.file}#${row.symbol}: ${shown.join(", ")}${more > 0 ? ` (+${more} more)` : ""}`;
+  }).join("\n");
+}
+
+/** The paths the callers block names: a structural gap about one of them is covered by the block and is not sent as a separate finding. */
+const callerPaths = (callers: readonly CoverageCallers[] | undefined): Set<string> => new Set((callers ?? []).flatMap((row) => row.callers.map((label) => label.slice(0, label.lastIndexOf(":") < 0 ? undefined : label.lastIndexOf(":")))));
+
+export function critiquePrompt(input: { plan:string; task:unknown; agent?:string; pmReadContext?:string; structuralFindings?:readonly CoverageFinding[]; ownerWords?:readonly string[]; planText?:InlinedPlan; callers?:readonly CoverageCallers[] }): string {
   // The scan's own «partial coverage» line is kept in the receipt, not sent: critics repeated it as a finding.
-  const modelFindings = (input.structuralFindings ?? []).filter((finding) => finding.code !== "coverage_scan_truncated");
+  // A gap about a file the callers block already names is in the block, not a second finding (the receipt keeps all of them).
+  const inBlock = callerPaths(input.callers);
+  const modelFindings = (input.structuralFindings ?? []).filter((finding) => finding.code !== "coverage_scan_truncated"
+    && !((finding.code === "owns_gap" || finding.code === "caller_unowned") && inBlock.has(finding.path)));
+  const unowned = new Set((input.structuralFindings ?? []).filter((finding) => finding.code === "owns_gap" || finding.code === "caller_unowned").map((finding) => finding.path));
+  const callers = callersBlock(input.callers, unowned);
   return [
     `You are ${input.agent?.trim() || "the independent plan-critique stage"} for a bounded software task.`,
     `Review the plan against the task contract and the code. ${PLAN_CRITIC_READ_LINE}`,
@@ -136,7 +161,9 @@ export function critiquePrompt(input: { plan:string; task:unknown; agent?:string
       ownerWordsSection(input.ownerWords),
       "Compare your paraphrase with them. A plan that does something the owner did not ask for, or leaves out what he asked for in these messages, is a finding with criterion `owner intent`, file `TASK`, line 1, evidence = the owner's quoted words, severity high. Messages about something other than this task are ignored; an owner's message that this task does not fully cover is not a finding when the contract's `out_of_scope` names that part.",
     ] : []),
+    ...(callers ? ["Callers of what the plan changes (the code graph's direct callers of the symbols in the owned files; judge whether the plan keeps each of them working):", callers] : []),
     "CANONICAL PLAN:", input.plan,
+    ...(input.planText ? [input.planText.truncated ? `${input.planText.text}\n[… plan cut at ${PLAN_INLINE_BYTES} bytes; read the rest in ${input.planText.path}]` : input.planText.text] : []),
   ].join("\n\n");
 }
 

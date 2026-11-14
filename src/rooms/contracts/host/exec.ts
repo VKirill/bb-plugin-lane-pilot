@@ -90,6 +90,7 @@ export const execHostMethods = {
         verification:z.array(z.object({command:z.string().max(4096),timeoutSec:z.number().int().nonnegative().max(7200).optional()}).strict()).max(32)}).strict()).max(64)}).strict(),
     output:z.object({hostId:z.string(),status:z.enum(["complete","truncated"]),pathCount:z.number().int().nonnegative(),
       findings:z.array(z.object({code:z.enum(["plan_path_unowned","owns_gap","coverage_scan_truncated","owns_overlap","verify_missing","verify_heavy","owns_empty","plan_missing","no_tasks","caller_unowned","task_placeholder","output_unowned","output_binary","verify_filter_ignored","depends_cycle","depends_self"]),path:z.string(),
-        severity:z.enum(["error","warning","info"]),finding:z.string()}).strict()).max(10)}).strict(),
+        severity:z.enum(["error","warning","info"]),finding:z.string()}).strict()).max(10),
+      callers:z.array(z.object({file:z.string().max(500),symbol:z.string().max(200),callers:z.array(z.string().max(500)).max(5),total:z.number().int().nonnegative()}).strict()).max(16).optional()}).strict(),
   },
 };

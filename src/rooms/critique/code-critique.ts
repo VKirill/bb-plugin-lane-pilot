@@ -503,7 +503,7 @@ export function codeCritiquePrompt(input: {
 }
 
 // A non-ASCII criterion slugs to nothing; the text's hash keeps two different findings of one file from sharing an id.
-const findingId = (row: VerdictFinding): string => {
+export const findingId = (row: VerdictFinding): string => {
   const text = row.criterion ?? row.dimension ?? row.finding ?? row.evidence;
   const slug = text.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 48);
   return row.id ?? `${row.file || "finding"}:${slug || sha256Hex(text).slice(0, 6)}`;
