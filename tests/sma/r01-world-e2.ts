@@ -1,11 +1,13 @@
 // Region 1 · Task graph, batch e, second half (n303..n319): observations of the real code, shared by the tests (four-proofs-r01-e2.test.ts) and by the drill scene's probe.
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
-import { designDecision, designGate, type PhaseRecord } from "../../src/rooms/phase/logic";
+import { designDecision, designGate } from "../../src/rooms/phase/logic/design";
+import type { PhaseRecord } from "../../src/rooms/phase/logic/record";
 import { birthFindings, checkProgram, landingWordGap, ownerWordFindings } from "../../src/rooms/tasks";
 import { lintContract } from "../../src/rooms/tasks/server/contract-lint";
 import { registerQueueTool } from "../../src/rooms/tasks/server/queue-tool";
 import { buildTaskBoard } from "../../src/rooms/runs/server/task-board";
-import { createAttempt, createRun, createTask, getTask, getTaskPlan, listStageReceipts, loadPrototypeConfig, openDatabase, savePrototypeConfig, setRunThread, transitionAttempt } from "../../src/rooms/plugin-db";
+import { createAttempt, createRun, createTask, getTask, getTaskPlan, listStageReceipts, loadPrototypeConfig, savePrototypeConfig, setRunThread, transitionAttempt } from "../../src/rooms/storage";
+import { openDatabase } from "../../src/rooms/plugin-db";
 import { WorkflowEngine } from "@lane-pilot/workflow-engine";
 import { stageHelperSettings } from "../../src/rooms/settings/server/stage-settings";
 import { gateResolverFor } from "../../src/rooms/verification/server";
