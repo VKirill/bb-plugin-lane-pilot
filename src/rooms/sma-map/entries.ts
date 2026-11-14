@@ -1672,7 +1672,7 @@ export const SMA_ENTRIES: Readonly<Record<string, SmaEntry>> = {
   n1658: ["have", "доказательства", "src/rooms/storage/evidence-store.ts#listEvidence"],
   n1659: ["have", "целостность: хеш охранника на 3 машинах", "src/rooms/policy/protections.ts#integrityReport"],
   n1660: ["have", "перед разрушающим шагом за миллисекунды пишется ссылка на всё дерево с неотслеживаемыми, совет называет команду отката", "lane-stack/hooks/guard_shell.py#_git_airbag"],
-  n1661: ["have", "книга трат и окно бюджета", "src/rooms/money/logic.ts#spendBook"],
+  n1661: ["deviation", "решение владельца: деньги только по его слову — без заданного лимита платная линия не получает ни предупреждения, ни пропуска, а закрыта (настройка money.cap_unset_zero, по умолчанию on: неустановленный лимит читается как 0); у карточки «без лимита нет ни предупреждения, ни отказа» неустановленный лимит пропускал бы платные вызовы за счёт владельца без его слова; money.cap_unset_zero=off возвращает поведение карточки"],
   n1662: ["have", "расход Claude Code приводит к общему виду BB; Lane Pilot читает готовые события", "core:plugins/provider-claude-code/src/sdk-extraction.ts#toTokenUsageBreakdown"],
   n1663: ["have", "единый прайс-лист", "src/rooms/money/logic.ts#PRICE_LIST"],
   n1664: ["have", "правило, сработавшее по одной цели три раунда подряд, мягко отключается; список и возврат — команда breaker", "src/rooms/learning/breaker.ts#noteBreakerRound"],
