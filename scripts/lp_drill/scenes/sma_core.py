@@ -31,8 +31,10 @@ from pathlib import Path
 from lp_drill.env import SANDBOX
 from lp_drill.hub import bb as run_bb
 from lp_drill.prove import Proofs
+from lp_drill.scenes.sma_core_last import NODES_LAST, prove_last
 
 NODES = ["n531", "n532", "n540", "n616", "n673", "n680", "n694", "n723", "n724", "n725", "n728", "n1352", "n1412"]
+NODES = NODES + NODES_LAST
 ENV_WRITES = "LP_DRILL_SMA_CORE_WRITES"
 FIXTURE_PREFIX = "Sma-Core-Drill-"
 GONE = "thr_sma_core_drill_no_such_thread"  # an id no thread has: the doors answer before any lookup writes anything
@@ -331,6 +333,7 @@ def scenario_sma_core(tmp) -> dict:
             proofs.prove("n724", fixture["rename_ok"], fixture["rename_detail"])
             proofs.prove("n728", default_ok and fixture["default_ok"], f"{len(with_sources)} projects with sources, each has exactly one default source {default_ok}; a project made without a choice of folder: {fixture['default_detail']}")
 
+    not_proved.update(prove_last(proofs, tmp))
     return proofs.verdict("sma_core", problems, notProved=not_proved, coreBuild=core_build, hubUrl=bool(base))
 
 

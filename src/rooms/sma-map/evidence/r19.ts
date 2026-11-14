@@ -48,7 +48,8 @@ export default {
   n1496: { mutation: skipWrite(LEFT, "if (await present(checkout)) paths.push(checkout);"), trace: drill("sma_r19") },
   n1497: { mutation: distort(HOOKS, "await writeFile(temp, NATIVE_HOOK_SOURCES[name], { mode: 0o644 });", 'await writeFile(temp, NATIVE_HOOK_SOURCES["guard_shell.py"], { mode: 0o644 });'), trace: drill("sma_r19") },
   n1498: { mutation: distort("src/rooms/native-agent/native-agent-definition.ts", "description: input.compiled.description,", "description: input.compiled.prompt,"), trace: drill("sma_r19") },
-  // n1499, n1506, n1507 and n1510 - n1514 are core-resident (bb-core owns the skill roots, the update check, the version report, the git range, the registry and the local source): no mutation here.
+  // n1506, n1507 and n1510 - n1514 are anchored in bb-core (the update check, the version report, the git range, the registry and the local source); n1499 is proved on our half (the route tool's visible registry).
+  n1499: { mutation: distort("src/rooms/workflow/server/workflow-tools.ts", "${builtinWorkflows().filter(isOffered).map((w) => w.id).join(\", \")}", "${builtinWorkflows().filter(isOffered).slice(1).map((w) => w.id).join(\", \")}"), trace: drill("sma_core") },
   n1500: { mutation: wrongTarget(HOOKS, 'const settingsPath = join(input.destDir, "settings.json");', 'const settingsPath = join(cwd ? join(cwd, ".claude") : input.destDir, "settings.json");'), trace: drill("sma_r19") },
   // n1501 stays have: the state lives in the plugin's data.db (the migrate call makes the tables), never in the project folder.
   n1501: { mutation: skipWrite("src/rooms/storage/database.ts", "bb.storage.migrate(db, [...options.migrations]);"), trace: drill("sma_r19"), voidReview: voidIsHave("состояние времени выполнения (фазы, задачи, попытки, квитанции, заявки) лежит в базе плагина data.db на хабе, а не в папке проекта") },
@@ -64,6 +65,7 @@ export default {
   n1511: { mutation: distort("core:apps/server/src/services/plugins/plugin-update-jobs.ts", '(result) => update(entry, { ...base, state: "completed", result }),', '(result) => update(entry, { ...base, state: "completed", result: { ...result, applied: !result.applied } }),'), reach: seedEntry("the owner runs the command") },
   n1512: { mutation: distort("core:apps/server/src/services/plugins/update-resolver.ts", "newest: selected.newest,", "newest: args.current,"), trace: drill("sma_r19") },
   n1513: { mutation: distort("core:apps/server/src/services/plugins/update-resolver.ts", "`${intent.packageName} registry request failed: ${detail}`", "`${intent.packageName} registry request failed`") },
+  n1514: { mutation: distort("core:apps/server/src/services/plugins/install-sources.ts", 'const path = source.startsWith("path:") ? source.slice(5) : source;', 'const path = source.startsWith("path:") ? source.slice(6) : source;'), trace: drill("sma_core") },
   n1515: { mutation: flip(BOOT, "if (!await exists(dest)) {", "if (await exists(dest)) {"), reach: entry("BB updates the plugin or the owner presses install: the per-machine installer re-runs over a home that already has the owner's files"), trace: drill("sma_r19") },
   n1516: { mutation: flip(GUARD, "existingGuardHits(parsed, commandFor(guardPath)).length === 1;", "existingGuardHits(parsed, commandFor(guardPath)).length >= 1;"), trace: drill("sma_r19") },
   n1788: { reach: seedEntry("the owner runs the command") },
