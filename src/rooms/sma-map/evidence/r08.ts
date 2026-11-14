@@ -87,6 +87,7 @@ export default {
   n749: { mutation: distort("src/rooms/writer/cli-run.ts", "exitCode: result.status ?? 1,", "exitCode: result.status ?? 0,"), trace: SCENE },
   n750: { mutation: wrongTarget("scripts/lp-ship.ts", "const key = `${git(\"rev-parse\", \"HEAD^{tree}\")}-${process.version}`;", "const key = `${git(\"rev-parse\", \"HEAD\")}-${process.version}`;"), trace: SCENE, voidReview: voidIsHave("публикация требует квитанции зелёного полного прогона, ключённой по дереву и версии node и лежащей на диске (переживает рестарт), — предела SMA «только в памяти» нет") },
   n752: { mutation: flip("core:apps/server/src/services/plugins/update-resolver.ts", "if (selected.candidate.version === args.current.version) {", "if (selected.candidate.version !== args.current.version) {"), trace: drill("sma_r08") },
+  n751: { mutation: flip("workflows/ship.json", '"when": "gate.ok"', '"when": "!gate.ok"'), trace: drill("sma_tails") },
   n753: { mutation: flip("src/rooms/native-install/native-install-bootstrap.ts", "  if (!await exists(dest)) {", "  if (await exists(dest)) {"), reach: entry("a machine is prepared for Lane Pilot: the owner enables it or a new host connects"), trace: SCENE },
   n754: { mutation: flip("src/rooms/native-install/server/rpc/stack.ts", "if (!confirmExternalOps) return { schemaVersion:1, action:\"install\"", "if (confirmExternalOps) return { schemaVersion:1, action:\"install\""), trace: SCENE },
 } satisfies RegionEvidence;

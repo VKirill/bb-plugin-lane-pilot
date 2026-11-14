@@ -23,6 +23,7 @@ export default {
   n1601: { mutation: flip(STAGES, 'parts.filter((part) => part.kind === "return")', 'parts.filter((part) => part.kind !== "return")'), trace: part({ section: "lessons", kind: "concluded" }) },
   n1602: { mutation: distort(STAGES, 'fact?.verification ?? fact?.state ?? "not issued"', 'fact?.state ?? fact?.verification ?? "not issued"'), trace: part({ section: "verification", kind: "blind_verdict" }) },
   n1603: { mutation: flip(STAGES, '`- [${ok ? "x" : "!"}] ${row[2]}', '`- [${ok ? "!" : "x"}] ${row[2]}'), trace: drill("sma_r22") },
+  n1604: { mutation: flip("src/rooms/qa/server/qa-thread.ts", 'const verdict = parsed.verdict === "passed" && !allPassed ? "blocked" : parsed.verdict;', 'const verdict = parsed.verdict === "passed" && allPassed ? "blocked" : parsed.verdict;'), trace: drill("sma_tails") },
   n1605: { mutation: flip(STAGES, '...(findings.length ? findings : ["- no findings"])', '...(findings.length ? ["- no findings"] : findings)'), trace: [wfRun("lp.review"), drill("sma_r22")] },
   n1606: { mutation: flip("src/rooms/phase/logic/design.ts", "else if (drawing.reviewer === drawing.designer)", "else if (drawing.reviewer !== drawing.designer)"), trace: part({ section: "design", kind: "drawing" }) },
   n1607: { mutation: flip(STAGES, "filter((section) => ![...headings].some(", "filter((section) => [...headings].some("), trace: part({ section: "design", kind: "drawing" }) },
@@ -34,6 +35,7 @@ export default {
   n1613: { mutation: flip("src/rooms/docs/docs-lint.ts", "input.workspace ? [[\"overview\", `${docsDir}/overview.md`]]", "!input.workspace ? [[\"overview\", `${docsDir}/overview.md`]]"), trace: drill("sma_r22") },
   n1614: { mutation: flip("src/rooms/platform/code-facts.ts", "if ((head && last && head === last)", "if ((head && last && head !== last)"), trace: drill("sma_r22") },
   // One folder per task with its plan and outcome: OUTCOME.md is recorded as kind outcome in the task home (docs/task-folder.md, T14).
+  n1615: { mutation: distort("workflows/project-start.json", "STACK.md, FEATURES.md, ARCHITECTURE.md and PITFALLS.md —", "STACK.md, FEATURES.md, ARCHITECTURE.md and PITFALL.md —"), trace: drill("sma_tails") },
   n1616: { mutation: distort("src/rooms/writer/server/task-home.ts", 'kind: "outcome", name: "OUTCOME.md"', 'kind: "lesson", name: "OUTCOME.md"'),
     reach: { ...entry("a task's attempt ends accepted, blocked or canceled"), notGatedBy: { "task.outcome_file": "gates only the old-layout OUTCOME.md; a task with a home always records it in its home (attempt-reactions.ts)" } }, trace: drill("task_home") },
   n1617: { mutation: flip("src/rooms/workflow/server/workflow-task-book.ts", "if (read.exitCode === 0 && read.stdout.trim()) return { found: true, path };", "if (read.exitCode === 0 && !read.stdout.trim()) return { found: true, path };"), trace: wfStep("debug", "session") },

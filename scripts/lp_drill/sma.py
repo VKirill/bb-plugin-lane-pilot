@@ -7,7 +7,7 @@ import importlib
 import re
 from pathlib import Path
 
-SMA_FILE = re.compile(r"^sma_(r\d\d|core)$")
+SMA_FILE = re.compile(r"^sma_(r\d\d|core|tails)$")  # sma_core: nodes proved in bb-core; sma_tails: the nodes no region batch owns
 
 
 def discover() -> dict[str, dict]:

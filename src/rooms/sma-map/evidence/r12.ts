@@ -15,6 +15,7 @@ const ENTRY_INSTALL = "the owner installs the watchdog (hub-watchdog.sh install 
 const ENTRY_GUIDE = "the owner follows docs/watchdog.md to put the watchdog under the machine's scheduler";
 
 export default {
+  n993: { mutation: distort("src/rooms/writer/server/update-task.ts", "delivered = await sendServiceMessage(bb, { threadId: wheeled.thread_id!, mode:", "delivered = await sendServiceMessage(bb, { threadId: input.pmThreadId, mode:"), reach: entry("a PM sends the owner's word (a note) to a writer that is mid-turn"), trace: drill("sma_tails") },
   n994: { mutation: flip(WRITERS, "bool(checks) and all(", "bool(checks) or all("), reach: entry(DRILL), trace: drill("sma_r12") },
   n995: { mutation: flip(WRITERS, 'if answer["state"] != "accepted":', 'if answer["state"] == "accepted":'), reach: entry(`${DRILL} with --series`), trace: drill("sma_r12") },
   n996: { mutation: flip("scripts/lp_drill/scenes/owner.py", 'if red_row["state"] == "accepted":', 'if red_row["state"] != "accepted":'), reach: entry(DRILL), trace: drill("sma_r12") },
