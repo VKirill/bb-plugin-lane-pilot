@@ -32,7 +32,8 @@ export type SizeReport = {
   /** M7: share of delivered notes from a foreign (non-ancestor, non-shared) section, per production retriever. */
   foreign: Record<string, Stat>;
 };
-export type EvalReport = { seed: number; scope: EvalScope; origin: string; at: number; sizes: SizeReport[]; caveats: string[] };
+export type EvalReport = { seed: number; scope: EvalScope; origin: string; at: number; sizes: SizeReport[]; caveats: string[];
+  /** The command that repeats this report (memory-eval command, SMA k_lib_baseline); absent when the report was built by a call, not by the command. */ command?: string };
 
 const mean = (values: readonly number[]) => values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : 0;
 
@@ -172,5 +173,6 @@ export function formatEvalReport(report: EvalReport): string {
     for (const item of size.versus) lines.push(`  ${item.plain} minus ${item.production}, ${item.metric}: ${item.diff.mean >= 0 ? "+" : ""}${(item.diff.mean * 100).toFixed(0)} points [${(item.diff.lo * 100).toFixed(0)}, ${(item.diff.hi * 100).toFixed(0)}] over ${item.diff.n} questions`);
   }
   lines.push("", ...report.caveats.map((item) => `- ${item}`));
+  if (report.command) lines.push("", `reproduce: ${report.command}`);
   return lines.join("\n");
 }
