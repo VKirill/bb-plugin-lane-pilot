@@ -154,7 +154,7 @@ export const observeD = {
     const full = await quick({ full: true }, stubs);
     const plain = await quick({}, stubs);
     const o = outOf(validate);
-    return { validate: [pathOf(validate), o.status, (o.review_findings as unknown[]).length], full: [pathOf(full), outOf(full).status, (outOf(full).review_findings as unknown[]).length], plain: [pathOf(plain), plain.called("lp.review").length], policy: (nodeOf("issue-quick", "review").join as Row).policy };
+    return { validate: [pathOf(validate), o.status, ((o.review_findings as unknown[] | undefined)?.length ?? -1)], full: [pathOf(full), outOf(full).status, ((outOf(full).review_findings as unknown[] | undefined)?.length ?? -1)], plain: [pathOf(plain), plain.called("lp.review").length], policy: (nodeOf("issue-quick", "review").join as Row).policy };
   },
   async k_wq_verify() {
     const validate = await quick({ validate: true });
