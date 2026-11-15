@@ -2,12 +2,14 @@
 title: Workflow chain executors
 type: component
 created: 2026-10-30
-updated: 2026-11-08
+updated: 2026-11-15
 status: active
 confidence: medium
 tags: [workflow, executors, chains, dispatch, plan-critique]
 sources:
   - src/rooms/workflow/server/workflow-executors.ts
+  - src/rooms/workflow/server/workflow-deliverable.ts
+  - packages/workflow-engine/src/step-read.ts
   - src/rooms/writer/server/dispatch.ts
   - src/rooms/tasks/task-v2.ts
   - packages/workflow-engine/src/engine.ts
@@ -25,7 +27,7 @@ Workflow chain executors provide the execution layer for multi-step declarative 
 ## How it works
 
 1. `registerChainExecutors` registers node executors and action delegates on the shared `WorkflowEngine` instance (`src/rooms/workflow/server/workflow-executors.ts:250-259`).
-2. Artifact validation executes through `deliverable.validate`, inspecting target paths or URLs with domain validators, host commands, and agent visual reviews (`src/rooms/workflow/server/workflow-executors.ts:329-351`).
+2. Artifact validation executes through `deliverable.validate` (registered from `src/rooms/workflow/server/workflow-deliverable.ts`), inspecting target paths or URLs with domain validators, host commands, and agent visual reviews. The target comes from the node's declared `params`, then the exact persisted edge `with` mapping of the delivery, and run inputs only when nothing is declared; a declared-but-empty target is a named `rework`, never a fallback (`src/rooms/workflow/server/workflow-deliverable.ts:34-52`).
 3. The `agent` executor writes large input packets to the workspace and invokes the assigned agent model role (`src/rooms/workflow/server/workflow-executors.ts:372-397`).
 4. Human interaction in `builtin:human` composes an owner-facing question in the owner's language or records an inbox item on the owner list when no PM thread is active (`src/rooms/workflow/server/workflow-executors.ts:399-444`).
 5. The `lp-task` executor resolves the contract and quality mode, lints the task, prepares the canonical plan, and calls `dispatchWriter` (`src/rooms/workflow/server/workflow-executors.ts:508-536`).
@@ -38,7 +40,7 @@ Workflow chain executors provide the execution layer for multi-step declarative 
 | Executor | Input | Output | Failure mode |
 |---|---|---|---|
 | `lp-task` | Task contract, quality mode, timeout | Attempt state, merge commit, changed files, usage | Contract lint failure yields `failed`; rejection yields `blocked` (`src/rooms/workflow/server/workflow-executors.ts:524-530`). |
-| `deliverable.validate` | Validator name, target path, brief, host id | Verdict (`pass` or `rework`), reason, issue details | Target absence throws; validator issues return `rework` (`src/rooms/workflow/server/workflow-executors.ts:335-350`). |
+| `deliverable.validate` | Validator name, target path, brief, host id | Verdict (`pass` or `rework`), reason, issue details | Missing/empty/unsafe target or unproven producer location returns named `rework`; validator issues return `rework` (`src/rooms/workflow/server/workflow-deliverable.ts:52,74-169,184-198`). |
 | `builtin:human` | Instruction prompt, timeout, options | Form response or owner item answer | Missing PM thread posts to owner list with CLI and RPC actions (`src/rooms/workflow/server/workflow-executors.ts:433-444`). |
 | `fs.write` | File path, contents template or reads list | Folder path, handoff path, written file paths | Paths traversing outside checkout throw an error (`src/rooms/workflow/server/workflow-executors.ts:604`). |
 | `git.diff_files` | Commit range, PR number, or files array | Kept files list, count, level (`quick`/`standard`/`deep`) | Host git failure throws clipped stderr message (`src/rooms/workflow/server/workflow-executors.ts:643`). |
@@ -50,6 +52,7 @@ Workflow chain executors provide the execution layer for multi-step declarative 
 - **Reentrant plan preservation.** If a task already has a plan stored in SQLite, reentrant dispatch retains `getTaskPlan(db, valid.task.id)` unmodified. This guarantees that duplicate task detection based on SHA-256 plan hashes remains stable across workflow reloads (`src/rooms/workflow/server/workflow-executors.ts:526-530`, `src/rooms/writer/server/dispatch.ts:124-136`).
 - **Wave path isolation.** Tasks grouped in the same wave run concurrently. Their owned paths must be disjoint; any overlap causes `lp.lint_contract` to fail before dispatch (`src/rooms/workflow/server/workflow-executors.ts:703-727`).
 - **Attempt merge fact extraction.** An accepted task attempt's merge commit is verified by searching git log on the host for the `Lane-Pilot-Attempt:` commit trailer (`src/rooms/workflow/server/workflow-executors.ts:580-583`).
+- **Deliverable targets carry proven provenance.** When the target is an edge- or template-mapped node reference, `deliverable.validate` resolves the exact producer step (delivery-row ceiling for edge mappings, latest-in-scope for execution-time `{{ref}}` params templates), requires it on the delivering step's `parent_key` ancestry, and reads the location that producer's own contract proves: a single agent's bound thread environment, `fs.write`'s PM checkout or planning home, or — for a direct `subworkflow` child — the child's run-file registry row and recorded run home (`kind:"output"`, `root:"checkout"` only; planning-home rows stay unverified because the historical planning root is not recorded). `node.with` overrides, rerun-patched inputs, multi-vote producers, unreadable environments and unsupported producer types are named `rework` (`producer provenance unverified`), never inferred (`src/rooms/workflow/server/workflow-deliverable.ts:65-169`, `packages/workflow-engine/src/step-read.ts:18-101`). A fully declared location — explicit host plus absolute path, URL or `~` — bypasses producer lookup entirely; `~` resolves through `hosts.directory`, never shell expansion.
 
 ## Public API or commands
 

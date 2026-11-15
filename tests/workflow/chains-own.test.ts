@@ -105,14 +105,14 @@ describe("reels", () => {
 
   it("the spec's case: a video becomes 2 clips: transcript, selection, edit plan, render, verification, captions, delivery", async () => {
     const r = await runSim("reels", { input: video, stubs: base() });
-    expect(pathOf(r)).toBe("ingest transcribe select approve_clips edit_plan prepare render verify publish_text deliver goal_check done");
+    expect(pathOf(r)).toBe("ingest transcribe select approve_clips edit_plan prepare render verify media publish_text deliver goal_check done");
     expect(r.skipped).toEqual(["approve_clips"]);
     expect(out(r)).toMatchObject({ status: "done", clips: ["c1.mp4", "c2.mp4"], folder: "reels/x/delivery", captions_ok: true });
   });
 
   it("full mode asks the owner to approve the clip list; a change goes back to the selection in the same session", async () => {
     const r = await runSim("reels", { input: { ...video, quality_mode: "full" }, stubs: base(), humans: { approve_clips: [{ answer_kind: "change", answer: "shorter" }, { answer_kind: "ok" }] } });
-    expect(pathOf(r)).toBe("ingest transcribe select approve_clips select approve_clips edit_plan prepare render verify publish_text deliver goal_check done");
+    expect(pathOf(r)).toBe("ingest transcribe select approve_clips select approve_clips edit_plan prepare render verify media publish_text deliver goal_check done");
   });
 
   it("missing tools or a failed transcript block before anything is made", async () => {
@@ -123,7 +123,7 @@ describe("reels", () => {
 
   it("a failed timeline preparation goes back to the edit plan up to 3 times", async () => {
     const r = await runSim("reels", { input: video, stubs: { ...base(), prepare: [{ ok: false }, { ok: true }] } });
-    expect(pathOf(r)).toBe("ingest transcribe select approve_clips edit_plan prepare edit_plan prepare render verify publish_text deliver goal_check done");
+    expect(pathOf(r)).toBe("ingest transcribe select approve_clips edit_plan prepare edit_plan prepare render verify media publish_text deliver goal_check done");
     const dead = await runSim("reels", { input: video, stubs: { ...base(), prepare: { ok: false } } });
     expect(pathOf(dead)).toBe("ingest transcribe select approve_clips edit_plan prepare edit_plan prepare edit_plan prepare blocked");
   });
@@ -132,7 +132,7 @@ describe("reels", () => {
     const bad = ((ctx: { input: { item?: unknown } }) => ({ clip_file: String(ctx.input.item), ok: ctx.input.item !== "c2.mp4", issues: ctx.input.item === "c2.mp4" ? ["audio dropout"] : [] })) as never;
     const r = await runSim("reels", { input: video, stubs: { ...base(), "verify:child": bad } });
     expect(pathOf(r)).toBe("ingest transcribe select approve_clips edit_plan prepare render verify render verify partial");
-    expect(out(r)).toMatchObject({ status: "partial", clips: ["c1.mp4", "c2.mp4"] });
+    expect(out(r)).toMatchObject({ status: "partial", clips: [], bad_files: ["c2.mp4"], issues: ["audio dropout"] });
   });
 
   it("quick mode has no caption text for publishing", async () => {
@@ -143,8 +143,8 @@ describe("reels", () => {
 
   it("without a video it is a film: the style is asked, a script is written, rendered by code and checked", async () => {
     const film = { subject: "How a browser renders a page", quality_mode: "standard" };
-    const r = await runSim("reels", { input: film, stubs: { script: { script_path: "s.md", scene_count: 6 }, build_film: { film_path: "films/x/film.mp4", ok: true }, verify_film: { ok: true }, deliver: { folder: "films/x" } }, humans: { style_pick: { answer_kind: "chosen", answer: "chalk" } } });
-    expect(pathOf(r)).toBe("ingest style_pick script build_film verify_film deliver done_film");
+    const r = await runSim("reels", { input: film, stubs: { script: { script_path: "s.md", scene_count: 6 }, build_film: { film_path: "films/x/film.mp4", ok: true }, verify_film: { ok: true }, deliver_film: { folder: "films/x" } }, humans: { style_pick: { answer_kind: "chosen", answer: "chalk" } } });
+    expect(pathOf(r)).toBe("ingest style_pick script build_film verify_film deliver_film goal_check_film done_film");
     expect(out(r)).toMatchObject({ status: "done", film_path: "films/x/film.mp4", folder: "films/x" });
     expect(r.skipped).toEqual(["ingest"]);
     const styled = await runSim("reels", { input: { ...film, style: "watercolor" }, stubs: { script: {}, build_film: { ok: true }, verify_film: { ok: true } } });
@@ -154,6 +154,33 @@ describe("reels", () => {
   it("a film that fails its check is built once more, then ends partial", async () => {
     const r = await runSim("reels", { input: { subject: "s", style: "chalk" }, stubs: { build_film: { film_path: "f.mp4", ok: true }, verify_film: { ok: false, issues: ["no subtitles"] } } });
     expect(pathOf(r)).toBe("ingest style_pick script build_film verify_film build_film verify_film partial");
+  });
+
+  it("a clip that fails the video check is rendered again once, then the run is partial with only the verified files", async () => {
+    const badMedia = ((ctx: { input: { item?: unknown } }) => ({ ok: ctx.input.item !== "c2.mp4", verdict: ctx.input.item === "c2.mp4" ? "rework" : "pass", reason: ctx.input.item === "c2.mp4" ? "no audio stream" : "streams ok" })) as never;
+    const r = await runSim("reels", { input: video, stubs: { ...base(), "media:child": badMedia } });
+    expect(pathOf(r)).toBe("ingest transcribe select approve_clips edit_plan prepare render verify media render verify media partial_media");
+    expect(out(r)).toMatchObject({ status: "partial", clips: ["c1.mp4"], bad_files: ["c2.mp4"], issues: ["no audio stream"] });
+  });
+
+  it("an empty rendered path stays a failure: it is never verified, the run ends partial", async () => {
+    const r = await runSim("reels", { input: video, stubs: { ...base(), "render:child": ((ctx: { input: { item?: unknown } }) => { const id = (ctx.input.item as { id: string }).id; return { clip_id: id, file: id === "c2" ? "" : `${id}.mp4`, duration_s: 30, ok: true }; }) as never } });
+    expect(pathOf(r)).toBe("ingest transcribe select approve_clips edit_plan prepare render verify render verify partial");
+    const partial = out(r)!;
+    expect(partial).toMatchObject({ status: "partial", clips: [] });
+    expect(partial.bad_files as string[]).toHaveLength(1);
+  });
+
+  it("a render where one clip fails never reaches verify or done", async () => {
+    const r = await runSim("reels", { input: video, stubs: { ...base(), "render:child": ((ctx: { input: { item?: unknown } }) => { const id = (ctx.input.item as { id: string }).id; return { clip_id: id, file: `${id}.mp4`, duration_s: 30, ok: id !== "c2" }; }) as never } });
+    expect(pathOf(r)).toBe("ingest transcribe select approve_clips edit_plan prepare render blocked");
+    expect(out(r)).toMatchObject({ status: "blocked" });
+  });
+
+  it("a film that fails the video check ends partial with the film path as diagnostics, never done", async () => {
+    const r = await runSim("reels", { input: { subject: "s", style: "chalk" }, stubs: { build_film: { film_path: "f.mp4", ok: true }, verify_film: { ok: true }, goal_check_film: { ok: false, verdict: "rework", reason: "no audio stream" }, deliver_film: { folder: "films/x" } } });
+    expect(pathOf(r)).toBe("ingest style_pick script build_film verify_film deliver_film goal_check_film partial");
+    expect(out(r)).toMatchObject({ status: "partial", film_path: "f.mp4" });
   });
 });
 

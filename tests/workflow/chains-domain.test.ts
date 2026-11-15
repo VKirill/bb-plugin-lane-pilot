@@ -176,15 +176,45 @@ describe("billing-batch", () => {
       item_count: 2,
       status: "done",
     },
-    "invoice-send": { status: "sent", invoice_number: "101", pdf_path: ".agents/documents/invoice-101.pdf" },
+    "invoice-send": { status: "sent", invoice_number: "101", pdf_path: ".agents/documents/invoice-101.pdf", check_verdict: "match" },
     summarize: { summary_md: "# Реестр счетов\n\n1. ООО «Ромашка» — 50 000 ₽\n2. ИП Иванов — 30 000 ₽\nИтого: 80 000 ₽", total_amount: 80000, invoices_count: 2, ok_count: 2, status: "done" },
   });
 
-  it("happy path: prepare -> invoices -> summarize -> owner preview approve -> done", async () => {
+  it("happy path: prepare -> invoices -> summarize -> owner preview approve -> done (every child check matched; no file goal_check remains)", async () => {
     const r = await runSim("billing-batch", { input, stubs: base(), humans: { preview: { answer_kind: "approve", answer: "согласовано" } } });
     expect(r.summary.status).toBe("succeeded");
-    expect(pathOf(r)).toBe("prepare invoices summarize preview goal_check done");
+    expect(pathOf(r)).toBe("prepare invoices summarize preview done");
     expect(out(r)).toMatchObject({ status: "done", total_amount: 80000, invoices_count: 2, owner_decision: "approve" });
+  });
+
+  it("send_to_clients approve offers per-client dispatch only when every check matched", async () => {
+    const r = await runSim("billing-batch", { input: { ...input, send_to_clients: true }, stubs: { ...base(), "lp.propose_workflow": {} }, humans: { preview: { answer_kind: "approve", answer: "согласовано" } } });
+    expect(pathOf(r)).toBe("prepare invoices summarize preview offer_dispatch done");
+  });
+
+  it("a child check verdict other than match blocks the dispatch even after owner approve", async () => {
+    const r = await runSim("billing-batch", { input: { ...input, send_to_clients: true }, stubs: { ...base(), "invoice-send": { status: "sent", invoice_number: "101", pdf_path: ".agents/documents/invoice-101.pdf", check_verdict: "mismatch" }, "lp.propose_workflow": {} }, humans: { preview: { answer_kind: "approve", answer: "согласовано" } } });
+    expect(pathOf(r)).toBe("prepare invoices summarize preview blocked");
+    expect(pathOf(r)).not.toContain("offer_dispatch");
+    expect(out(r)).toMatchObject({ status: "blocked" });
+  });
+
+  it("an empty batch cannot pass the gate even when the model claims items", async () => {
+    const r = await runSim("billing-batch", { input, stubs: { ...base(), prepare: { ok: true, batch_items: [], item_count: 2, status: "done" } }, humans: { preview: { answer_kind: "approve", answer: "согласовано" } } });
+    expect(pathOf(r)).toBe("prepare invoices summarize preview blocked");
+    expect(out(r)).toMatchObject({ status: "blocked" });
+  });
+
+  it("a lost child branch fails the run under join policy all, before preview", async () => {
+    const invoiceSend = ((ctx: { input: { item?: { company?: string }; with?: { company?: string } } }) => {
+      const company = ctx.input.item?.company ?? ctx.input.with?.company;
+      if (company === "ИП Иванов") throw new Error("child run crashed");
+      return { status: "sent", invoice_number: "101", pdf_path: ".agents/documents/invoice-101.pdf", check_verdict: "match" };
+    }) as never;
+    const r = await runSim("billing-batch", { input, stubs: { ...base(), "invoice-send": invoiceSend }, humans: { preview: { answer_kind: "approve", answer: "согласовано" } } });
+    expect(r.summary.status).toBe("failed");
+    expect(r.summary.error).toContain("child run crashed");
+    expect(pathOf(r)).not.toContain("offer_dispatch");
   });
 
   it("owner abort stops the batch without sending", async () => {

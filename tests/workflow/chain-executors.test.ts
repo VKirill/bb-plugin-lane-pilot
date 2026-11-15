@@ -36,7 +36,7 @@ const reply = (body: Row, lead = "Done.") => `${lead}\n\n\`\`\`json\n${JSON.stri
 
 /** What a helper thread of a node spent, as BB reports it: one token-usage event of one turn, on this model. */
 type Spent = { input: number; output: number; model?: string };
-async function setup(script: Script, options: { pmEvents?: () => Row[]; firstTurnError?: string; firstTurnRetries?: boolean; dirty?: boolean; spent?: Record<string, Spent>; failWrites?: boolean; noPm?: boolean; noCheckout?: boolean; invalidParent?: boolean; offers?: Array<{ providerId: string; model: string; host?: string }>; hosts?: Array<{ id: string; name: string; status?: string }>; sources?: Array<{ hostId: string; path: string }>; failManifest?: boolean; envs?: Record<string, { hostId: string; path: string } | null> } = {}) {
+async function setup(script: Script, options: { pmEvents?: () => Row[]; firstTurnError?: string; firstTurnRetries?: boolean; dirty?: boolean; spent?: Record<string, Spent>; failWrites?: boolean; noPm?: boolean; noCheckout?: boolean; invalidParent?: boolean; offers?: Array<{ providerId: string; model: string; host?: string }>; hosts?: Array<{ id: string; name: string; status?: string }>; sources?: Array<{ hostId: string; path: string }>; failManifest?: boolean; envs?: Record<string, { hostId: string; path: string } | null>; resolveWorkflow?: (id: string, version?: number) => Workflow | null; runCommandStub?: (input: Row) => Row | null } = {}) {
   const checkout = mkdtempSync(join(tmpdir(), "lp-chain-"));
   execFileSync("git", ["init", "-q"], { cwd: checkout });
   writeFileSync(join(checkout, "README.md"), "hello\n");
@@ -47,7 +47,11 @@ async function setup(script: Script, options: { pmEvents?: () => Row[]; firstTur
     pluginId: "lane-pilot",
     experimental_callHostRpc: (async (call: { method: string; input: Row }) => {
       hostCalls.push(call);
-      if (call.method === "runCommand") return runCommand(call.input as never, undefined as never);
+      if (call.method === "runCommand") {
+        const stubbed = options.runCommandStub?.(call.input as Row);
+        if (stubbed) return stubbed;
+        return runCommand(call.input as never, undefined as never);
+      }
       throw new Error(`unexpected host method ${call.method}`);
     }) as never,
     sdk: {
@@ -123,7 +127,7 @@ async function setup(script: Script, options: { pmEvents?: () => Row[]; firstTur
   const ctx = createCore(bb, db);
   const dispatched: Row[] = [];
   const services = { dispatchWriter: vi.fn(async (args: Row) => { dispatched.push(args); return { runId: RUN, taskId: (args.task as Row).id, state: "queued" }; }), stability: { loadParked: async () => [] }, taskUsage } as unknown as Services;
-  const engine = new WorkflowEngine({ db, harnessVersion: "test", runtimeFor: chainRuntimeFor(ctx, services) });
+  const engine = new WorkflowEngine({ db, harnessVersion: "test", runtimeFor: chainRuntimeFor(ctx, services), ...(options.resolveWorkflow ? { resolveWorkflow: options.resolveWorkflow } : {}) });
   registerPureActions(engine);
   registerReducers(engine);
   // The composition root's order (server.ts: createWorkflowEngine, then registerDispatchExecutors): a chain's
@@ -1115,6 +1119,142 @@ describe("the deliverable goal check of a shipped graph", () => {
     expect(await t.engine.rerunNode(summary.runId, "check", undefined, { path: "report.md" })).toMatchObject({ ok: true });
     await t.engine.idle();
     expect(await goalCheckOutput(t, summary.runId, "check")).toMatchObject({ ok: false, reason: expect.stringContaining("rerun") });
+  });
+
+  const subworkflowParent = (childId: string): Workflow => chain({
+    inputs: [{ name: "p", type: "string", required: false }],
+    nodes: [
+      { id: "close", type: "subworkflow", workflow: childId, inputs: { p: "$inputs.p" }, output: [{ name: "report_path", type: "string" }] },
+      { id: "check", type: "action", action: "deliverable.validate", out: { ok: "bool", verdict: "string", reason: "string", details: "object" } },
+      { id: "done", type: "action", action: "emit", map: { ok: "check.ok" } },
+    ],
+    edges: [
+      { from: "start", to: "close" },
+      { from: "close", to: "check", with: { path: "close.report_path" } },
+      { from: "check", to: "done" },
+    ],
+  });
+
+  it("goal_check proves a subworkflow-forwarded artifact on the child run's recorded host and root", async () => {
+    const child = chain({
+      id: "child-write",
+      outputs: [{ name: "report_path", type: "string" }],
+      nodes: [
+        { id: "report", type: "action", action: "fs.write", path: "reports/{{run_id}}.md", contents: { content: "child report" }, out: { report_path: "string" } },
+        { id: "closed", type: "action", action: "emit", map: { report_path: "report.report_path" } },
+      ],
+      edges: [{ from: "start", to: "report" }, { from: "report", to: "closed" }],
+    });
+    // The PM checkout moves after the child recorded its run home: only the recorded root still finds the file.
+    const envs: Record<string, { hostId: string; path: string } | null> = {};
+    const secondDir = mkdtempSync(join(tmpdir(), "lp-current-pm-"));
+    try {
+      const t = await setup({}, { envs, resolveWorkflow: (id) => (id === "child-write" ? child : null) });
+      dispose = t.dispose;
+      t.engine.register("test.swap_env", { run: async () => { envs["env-pm"] = { hostId: "different-current-host", path: secondDir }; return { output: { swapped: "yes" } }; } });
+      const summary = await t.start(chain({
+        nodes: [
+          { id: "close", type: "subworkflow", workflow: "child-write", output: [{ name: "report_path", type: "string" }] },
+          { id: "swap", type: "action", action: "test.swap_env", out: [{ name: "swapped", type: "string" }] },
+          { id: "check", type: "action", action: "deliverable.validate", out: { ok: "bool", verdict: "string", reason: "string", details: "object" } },
+          { id: "done", type: "action", action: "emit", map: { ok: "check.ok" } },
+        ],
+        edges: [
+          { from: "start", to: "close" },
+          { from: "close", to: "swap" },
+          { from: "swap", to: "check", with: { path: "close.report_path" } },
+          { from: "check", to: "done" },
+        ],
+      })).done;
+      expect(summary.status).toBe("succeeded");
+      expect(await goalCheckOutput(t, summary.runId, "check")).toMatchObject({ ok: true, verdict: "pass" });
+      const childRun = t.db.prepare("SELECT id FROM lane_pilot_wf_run WHERE parent_run_id=?").get(summary.runId) as Row;
+      const home = t.db.prepare("SELECT host_id, base_path FROM lane_pilot_run_home WHERE run_id=?").get(String(childRun.id)) as Row;
+      expect(home).toMatchObject({ host_id: "local", base_path: t.checkout });
+      const read = t.hostCalls.map((call) => call.input as Row).find((input) => String(input.command ?? "").includes("/reports/"));
+      expect(read).toMatchObject({ requestedHostId: "local", cwd: "/" });
+      expect(String(read!.command)).toContain(join(t.checkout, "reports/"));
+      expect(t.hostCalls.every((call) => !String((call.input as Row).command ?? "").includes(secondDir))).toBe(true);
+    } finally {
+      rmSync(secondDir, { recursive: true, force: true });
+    }
+  });
+
+  it("goal_check names unverified provenance when the child run recorded no file at the forwarded path", async () => {
+    const ghost = chain({
+      id: "child-ghost",
+      inputs: [{ name: "p", type: "string" }],
+      outputs: [{ name: "report_path", type: "string" }],
+      nodes: [{ id: "closed", type: "action", action: "emit", map: { report_path: "$inputs.p" } }],
+      edges: [{ from: "start", to: "closed" }],
+    });
+    const t = await setup({}, { resolveWorkflow: (id) => (id === "child-ghost" ? ghost : null) });
+    dispose = t.dispose;
+    const summary = await t.start(subworkflowParent("child-ghost"), { p: "ghost/report.md" }).done;
+    expect(summary.status).toBe("succeeded");
+    expect(await goalCheckOutput(t, summary.runId, "check")).toMatchObject({ ok: false, reason: expect.stringContaining("recorded no output file") });
+  });
+
+  it("goal_check refuses a subworkflow artifact whose recorded root is planning-home", async () => {
+    const planning = mkdtempSync(join(tmpdir(), "lp-planning-"));
+    execFileSync("git", ["init", "-q"], { cwd: planning });
+    try {
+      const child = chain({
+        id: "child-plan",
+        inputs: [{ name: "p", type: "string", required: false }],
+        outputs: [{ name: "report_path", type: "string" }],
+        nodes: [
+          { id: "report", type: "action", action: "fs.write", path: ".agents/planning/child-{{run_id}}.md", contents: { content: "plan" }, out: { report_path: "string" } },
+          { id: "closed", type: "action", action: "emit", map: { report_path: "report.report_path" } },
+        ],
+        edges: [{ from: "start", to: "report" }, { from: "report", to: "closed" }],
+      });
+      const t = await setup({}, { resolveWorkflow: (id) => (id === "child-plan" ? child : null) });
+      dispose = t.dispose;
+      saveProjectSetting(t.db, PROJECT, "project.planning_home", planning);
+      const summary = await t.start(subworkflowParent("child-plan")).done;
+      expect(summary.status).toBe("succeeded");
+      expect(await goalCheckOutput(t, summary.runId, "check")).toMatchObject({ ok: false, reason: expect.stringContaining("immutable historical root") });
+    } finally {
+      rmSync(planning, { recursive: true, force: true });
+    }
+  });
+
+  it("a parallel deliverable.validate child binds {{item}} per file and the real video validator splits pass/fail (ffprobe/ffmpeg host transport stubbed)", async () => {
+    // Honest label: only the runCommand transport is stubbed — ffprobe/ffmpeg answers are canned per file; the action,
+    // target resolution, provenance and validateDeliverable("video") all run for real.
+    const t = await setup({}, { runCommandStub: (input) => {
+      const command = String(input.command ?? "");
+      if (!command.includes("ffprobe") && !command.includes("ffmpeg")) return null;
+      const good = command.includes("good.mp4");
+      const hostId = "local";
+      if (command.includes("ffprobe")) return { hostId, exitCode: 0, stderr: "", stdout: JSON.stringify({ streams: good ? [{ codec_type: "video" }, { codec_type: "audio" }] : [{ codec_type: "video" }], format: { duration: "12.5" } }) };
+      return { hostId, exitCode: 0, stderr: "", stdout: good ? '{"input_i": "-14.0"}' : '{"input_i": "-30.0"}' };
+    } });
+    dispose = t.dispose;
+    mkdirSync(join(t.checkout, "clips"), { recursive: true });
+    writeFileSync(join(t.checkout, "clips/good.mp4"), "not a real video — transport is stubbed\n");
+    writeFileSync(join(t.checkout, "clips/bad.mp4"), "not a real video — transport is stubbed\n");
+    const summary = await t.start(chain({
+      inputs: [{ name: "files", type: "array" }],
+      nodes: [
+        { id: "clips", type: "parallel", for_each: "$inputs.files", concurrency: 2,
+          child: { type: "action", action: "deliverable.validate",
+            params: { target: "{{item}}", validator: "video" },
+            out: { ok: "bool", verdict: "string", reason: "string", details: "object" } },
+          join: { policy: "all", uses: "reduce.reels.verify",
+            out: { ok_count: "int", good_files: "string[]", bad_files: "string[]", issues: "string[]" } } },
+        { id: "done", type: "action", action: "emit", map: { ok_count: "clips.ok_count", good_files: "clips.good_files", bad_files: "clips.bad_files", issues: "clips.issues" } },
+      ],
+      edges: [{ from: "start", to: "clips" }, { from: "clips", to: "done" }],
+    }), { files: ["clips/good.mp4", "clips/bad.mp4"] }).done;
+    expect(summary.status).toBe("succeeded");
+    expect(summary.output).toMatchObject({ ok_count: 1, good_files: ["clips/good.mp4"], bad_files: ["clips/bad.mp4"], issues: ["no audio stream"] });
+    const probes = t.hostCalls.map((call) => call.input as Row).filter((input) => String(input.command ?? "").includes("ffprobe"));
+    expect(probes).toHaveLength(2);
+    const commands = probes.map((probe) => String(probe.command)).join("\n");
+    expect(commands).toContain(join(t.checkout, "clips/good.mp4"));
+    expect(commands).toContain(join(t.checkout, "clips/bad.mp4"));
   });
 });
 

@@ -85,10 +85,12 @@
   },
   "outputs": {
     "status": "done|partial|blocked",
-    "clips": "Clip[]",
+    "clips": "string[]",
     "folder": "string",
     "film_path": "string",
-    "captions_ok": "bool"
+    "captions_ok": "bool",
+    "bad_files": "string[]",
+    "issues": "string[]"
   },
   "quality_mode": {
     "default": "standard",
@@ -287,7 +289,7 @@
         ],
         "type": "agent",
         "role": "errand",
-        "prompt": "Render clip {{item.id}} with FFmpeg (or a working Remotion composition for motion captions): first a short preview to check crop, Cyrillic fonts, caption positions and audio, then the full render. Output into the job folder; do not replace shared tooling.",
+        "prompt": "Render clip {{item.id}} with FFmpeg (or a working Remotion composition for motion captions): first a short preview to check crop, Cyrillic fonts, caption positions and audio, then the full render. Output into the job folder; do not replace shared tooling. Report `file` as the path relative to the project checkout root (for example reels/<job>/clip.mp4), never absolute and never relative to the job folder alone.",
         "out": {
           "clip_id": "string",
           "file": "string",
@@ -330,6 +332,37 @@
         "policy": "all",
         "out": {
           "ok_count": "int",
+          "good_files": "string[]",
+          "bad_files": "string[]",
+          "issues": "string[]"
+        },
+        "uses": "reduce.reels.verify"
+      },
+      "concurrency": 3
+    },
+    {
+      "id": "media",
+      "type": "parallel",
+      "for_each": "verify.good_files",
+      "child": {
+        "type": "action",
+        "action": "deliverable.validate",
+        "params": {
+          "target": "{{item}}",
+          "validator": "video"
+        },
+        "out": {
+          "ok": "bool",
+          "verdict": "string",
+          "reason": "string",
+          "details": "object"
+        }
+      },
+      "join": {
+        "policy": "all",
+        "out": {
+          "ok_count": "int",
+          "good_files": "string[]",
           "bad_files": "string[]",
           "issues": "string[]"
         },
@@ -486,6 +519,21 @@
       "type": "action",
       "action": "fs.write",
       "path": "reels/{{date}}-{{slug}}-{{run_id}}/delivery/",
+      "contents": {
+        "delivery.md": "# Delivery — {{date}}\n\nRun: {{run_id}}\nClips selected: {{select.clip_count}}\nRendered: {{render.files}}\nAgent verify: {{verify.ok_count}} ok, bad {{verify.bad_files}}\nMedia verify (ffprobe): {{media.ok_count}} ok, bad {{media.bad_files}}\nIssues: {{media.issues}}\n"
+      },
+      "out": {
+        "folder": "string"
+      }
+    },
+    {
+      "id": "deliver_film",
+      "type": "action",
+      "action": "fs.write",
+      "path": "reels/{{date}}-{{slug}}-{{run_id}}/delivery/",
+      "contents": {
+        "delivery.md": "# Delivery — {{date}}\n\nRun: {{run_id}}\nFilm: {{build_film.film_path}}\nVerified: {{verify_film.ok}}\nIssues: {{verify_film.issues}}\n"
+      },
       "out": {
         "folder": "string"
       }
@@ -496,9 +544,9 @@
       "action": "emit",
       "map": {
         "status": "done",
-        "clips": "render.files",
+        "clips": "media.good_files",
         "folder": "deliver.folder",
-        "captions_ok": "verify.bad_files.length == 0"
+        "captions_ok": "media.bad_files.length == 0"
       }
     },
     {
@@ -508,7 +556,7 @@
       "map": {
         "status": "done",
         "film_path": "build_film.film_path",
-        "folder": "deliver.folder"
+        "folder": "deliver_film.folder"
       }
     },
     {
@@ -517,7 +565,21 @@
       "action": "emit",
       "map": {
         "status": "partial",
-        "clips": "render.files"
+        "clips": "[]",
+        "bad_files": "verify.bad_files",
+        "issues": "verify.issues",
+        "film_path": "build_film.film_path"
+      }
+    },
+    {
+      "id": "partial_media",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "partial",
+        "clips": "media.good_files",
+        "bad_files": "media.bad_files",
+        "issues": "media.issues"
       }
     },
     {
@@ -526,6 +588,25 @@
       "action": "emit",
       "map": {
         "status": "blocked"
+      }
+    },
+    {
+      "id": "goal_check_film",
+      "type": "action",
+      "action": "deliverable.validate",
+      "params": {
+        "target": "{{build_film.film_path}}",
+        "validator": "video"
+      },
+      "title": {
+        "en": "Check the film file",
+        "ru": "Проверить файл фильма"
+      },
+      "out": {
+        "ok": "bool",
+        "verdict": "pass|rework|fail",
+        "reason": "string",
+        "details": "object"
       }
     },
     {
@@ -629,7 +710,7 @@
       "from": "render",
       "to": "verify",
       "pass": "artifact",
-      "when": "render.ok_count > 0"
+      "when": "render.ok_count > 0 && render.failed_ids.length == 0"
     },
     {
       "from": "render",
@@ -645,13 +726,31 @@
     },
     {
       "from": "verify",
-      "to": "publish_text",
+      "to": "media",
       "pass": "artifact",
-      "when": "verify.bad_files.length == 0"
+      "when": "verify.bad_files.length == 0 && verify.ok_count > 0"
     },
     {
       "from": "verify",
       "to": "partial",
+      "pass": "artifact"
+    },
+    {
+      "from": "media",
+      "to": "render",
+      "pass": "artifact",
+      "when": "media.bad_files.length > 0 && visits('media') < 2",
+      "label": "re-render failed media checks"
+    },
+    {
+      "from": "media",
+      "to": "publish_text",
+      "pass": "artifact",
+      "when": "media.bad_files.length == 0 && media.ok_count > 0"
+    },
+    {
+      "from": "media",
+      "to": "partial_media",
       "pass": "artifact"
     },
     {
@@ -688,7 +787,7 @@
     },
     {
       "from": "verify_film",
-      "to": "deliver",
+      "to": "deliver_film",
       "pass": "artifact",
       "when": "verify_film.ok"
     },
@@ -698,10 +797,9 @@
       "pass": "artifact"
     },
     {
-      "from": "deliver",
-      "to": "done_film",
-      "pass": "artifact",
-      "when": "$inputs.source == ''"
+      "from": "deliver_film",
+      "to": "goal_check_film",
+      "pass": "artifact"
     },
     {
       "from": "deliver",
@@ -718,6 +816,15 @@
     },
     {
       "from": "goal_check",
+      "to": "partial_media"
+    },
+    {
+      "from": "goal_check_film",
+      "to": "done_film",
+      "when": "goal_check_film.ok != false"
+    },
+    {
+      "from": "goal_check_film",
       "to": "partial"
     }
   ],
@@ -753,7 +860,22 @@
           ]
         },
         "verify": {
-          "bad_files": []
+          "ok_count": 2,
+          "good_files": [
+            "c1.mp4",
+            "c2.mp4"
+          ],
+          "bad_files": [],
+          "issues": []
+        },
+        "media": {
+          "ok_count": 2,
+          "good_files": [
+            "c1.mp4",
+            "c2.mp4"
+          ],
+          "bad_files": [],
+          "issues": []
         }
       },
       "expect_path": [
@@ -765,6 +887,7 @@
         "prepare",
         "render",
         "verify",
+        "media",
         "publish_text",
         "deliver",
         "goal_check",

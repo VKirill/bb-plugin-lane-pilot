@@ -135,6 +135,14 @@
           {
             "name": "pdf_paths",
             "type": "array"
+          },
+          {
+            "name": "all_checks_matched",
+            "type": "bool"
+          },
+          {
+            "name": "failed_count",
+            "type": "int"
           }
         ]
       }
@@ -211,22 +219,6 @@
       }
     },
     {
-      "id": "goal_check",
-      "type": "action",
-      "action": "deliverable.validate",
-      "title": {
-        "en": "Check the goal was met",
-        "ru": "Проверить, что цель достигнута"
-      },
-      "rule": "validateDeliverable on the artifact the run produced: the deliverable/validator/brief inputs name what to check; a fail means the goal is not met",
-      "out": {
-        "ok": "bool",
-        "verdict": "pass|rework|fail",
-        "reason": "string",
-        "details": "object"
-      }
-    },
-    {
       "id": "offer_dispatch",
       "type": "parallel",
       "for_each": "prepare.batch_items",
@@ -279,9 +271,15 @@
     },
     {
       "from": "preview",
-      "to": "goal_check",
+      "to": "offer_dispatch",
       "pass": "artifact",
-      "when": "preview.answer_kind == 'approve'"
+      "when": "preview.answer_kind == 'approve' && $inputs.send_to_clients == true && invoices.all_checks_matched"
+    },
+    {
+      "from": "preview",
+      "to": "done",
+      "pass": "artifact",
+      "when": "preview.answer_kind == 'approve' && $inputs.send_to_clients != true && invoices.all_checks_matched"
     },
     {
       "from": "preview",
@@ -289,22 +287,8 @@
       "pass": "artifact"
     },
     {
-      "from": "goal_check",
-      "to": "offer_dispatch",
-      "when": "goal_check.ok != false && $inputs.send_to_clients == true"
-    },
-    {
       "from": "offer_dispatch",
       "to": "done"
-    },
-    {
-      "from": "goal_check",
-      "to": "done",
-      "when": "goal_check.ok != false"
-    },
-    {
-      "from": "goal_check",
-      "to": "blocked"
     }
   ],
   "test": {
@@ -351,7 +335,8 @@
         "invoice-send": {
           "status": "sent",
           "invoice_number": "101",
-          "pdf_path": ".agents/documents/invoice-101.pdf"
+          "pdf_path": ".agents/documents/invoice-101.pdf",
+          "check_verdict": "match"
         },
         "summarize": {
           "summary_md": "# Реестр счетов\n\n1. ООО «Ромашка» — 50 000 ₽\n2. ИП Иванов — 30 000 ₽\nИтого: 80 000 ₽",
@@ -369,7 +354,6 @@
         "invoices",
         "summarize",
         "preview",
-        "goal_check",
         "done"
       ],
       "expect_outputs": [
@@ -382,5 +366,5 @@
     "live": "Пакетное выставление счетов в Контур.Эльбе на Mac mini, проверка реквизитов и превью реестра владельцу",
     "note": "Tested on stubs: Elba and Telegram actions answer from stubs. Live run requires Mac mini host_7sea4qaad8 with Elba session."
   },
-  "goal_check": "validate"
+  "goal_check": "gate"
 }

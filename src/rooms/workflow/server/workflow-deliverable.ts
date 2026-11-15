@@ -1,4 +1,5 @@
 import { isPlanningPath } from "../../contracts";
+import { listRunFiles, runHomeOf } from "../../storage";
 import { pmCheckout, rec, str } from "./workflow-chain-runtime";
 import type { Row, Services } from "./workflow-chain-runtime";
 import { nodeRefStep, refOf, START } from "@lane-pilot/workflow-engine";
@@ -68,6 +69,8 @@ export function registerDeliverableAction(action: Action, deps: { planHome: Plan
     // PM/planning convention of a positively identified fs.write. Anything else is named unverified, never inferred.
     let producerRoot: { hostId: string; path: string } | null = null;
     let agentProducer = false;
+    // A run-file-registry root is historical fact: it never re-resolves through the current planning-home setting.
+    let recordedRoot = false;
     if (!standalone) {
       const unverified = (why: string): Row => rework(`deliverable.validate: producer provenance unverified (${why})`);
       const run = journal.getRun(c.runId);
@@ -97,6 +100,32 @@ export function registerDeliverableAction(action: Action, deps: { planHome: Plan
         }
         if (node?.type === "action" && rec(node).action === "fs.write") {
           producerRoot = await pmCheckout(rt);
+          return null;
+        }
+        if (node?.type === "subworkflow") {
+          // The step's output is its child run's emit; the referenced file was written inside the child, so
+          // provenance is the child's own run-file row and run home, bound by (parent_run_id, parent_step_key).
+          const children = engine.journal.db.prepare("SELECT id, status, definition_json FROM lane_pilot_wf_run WHERE parent_run_id=? AND parent_step_key=?")
+            .all(c.runId, producerStep.step_key) as Array<{ id: string; status: string; definition_json: string }>;
+          const child = children.length === 1 ? children[0] : undefined;
+          if (!child || child.status !== "succeeded") return unverified("subworkflow child run missing or not succeeded");
+          const repoPath = target.replace(/^\.\/+/, "");
+          const file = listRunFiles(engine.journal.db, child.id).find((candidate) => candidate.repo_path === repoPath && candidate.kind === "output");
+          if (!file) return unverified(`child run recorded no output file at "${repoPath}"`);
+          if (file.root !== "checkout") return unverified(`recorded root "${file.root}" has no immutable historical root`);
+          const defNodes = rec(JSON.parse(child.definition_json) as unknown).nodes;
+          const writer = (Array.isArray(defNodes) ? defNodes : []).map((entry) => rec(entry)).find((entry) => entry.id === file.node_id);
+          if (rec(writer).type !== "action" || rec(writer).action !== "fs.write")
+            return unverified(`child producer "${file.node_id}" is not fs.write`);
+          const producer = rec(JSON.parse(file.producer_json) as unknown);
+          if (str(producer.run_id) !== child.id || str(producer.node) !== file.node_id) return unverified("run-file row is not bound to this child run and node");
+          const wfStep = str(producer.wf_step_key);
+          const boundStep = wfStep ? engine.journal.getStep(child.id, wfStep) : undefined;
+          if (!boundStep || boundStep.node_id !== file.node_id || boundStep.state !== "succeeded") return unverified("run-file producer step unreadable");
+          const home = runHomeOf(engine.journal.db, child.id);
+          if (!home) return unverified("child run home not recorded");
+          producerRoot = { hostId: home.host_id, path: home.base_path };
+          recordedRoot = true;
           return null;
         }
         return unverified(`producer "${nodeId}" (${node?.type ?? "unknown"}) has no location contract`);
@@ -167,7 +196,7 @@ export function registerDeliverableAction(action: Action, deps: { planHome: Plan
         if (declaredHost && declaredHost !== root!.hostId)
           return rework(`deliverable.validate: "${target}" is checkout-relative but host "${declaredHost}" is not the checkout host`);
         if (target.split("/").includes("..")) return rework(`deliverable.validate: unsafe target "${target}"`);
-        const home = !agentProducer && isPlanningPath(target) ? await planHome(rt.projectId, root!) : null;
+        const home = !agentProducer && !recordedRoot && isPlanningPath(target) ? await planHome(rt.projectId, root!) : null;
         path = `${(home ?? root!.path).replace(/\/+$/, "")}/${target}`;
         hostId = root!.hostId;
       }

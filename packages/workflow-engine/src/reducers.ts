@@ -33,9 +33,12 @@ const findingId = (finding: Row): string => str(finding.id) || `${str(finding.di
 export const REDUCERS: Record<string, Reducer> = {
   "reduce.billing-batch.invoices": (input) => {
     const ok = done(input);
+    const matched = (row: (typeof input.rows)[number]) => row.ok && row.data?.check_verdict === "match";
     return {
       invoices: ok.map((row) => str(row.data.invoice_number) || str(row.data.pdf_path)),
       pdf_paths: ok.map((row) => str(row.data.pdf_path)).filter(Boolean),
+      all_checks_matched: input.rows.length > 0 && input.rows.every(matched),
+      failed_count: input.rows.filter((row) => !matched(row)).length,
     };
   },
   "reduce.insights-post.posts": (input) => {
@@ -107,8 +110,12 @@ export const REDUCERS: Record<string, Reducer> = {
     return { files: ok.map((row) => str(row.data.file)), ok_count: ok.length, failed_ids: [...lost(input).map((row) => idOf(row.item, row.branch)), ...done(input).filter((row) => row.data.ok === false).map((row) => str(row.data.clip_id) || idOf(row.item, row.branch))] };
   },
   "reduce.reels.verify": (input) => {
-    const ok = done(input).filter((row) => row.data.ok !== false);
-    return { ok_count: ok.length, bad_files: [...lost(input).map((row) => str(row.item)), ...done(input).filter((row) => row.data.ok === false).map((row) => str(row.data.clip_file) || str(row.item))].filter(Boolean), issues: flat(done(input).map((row) => row.data), "issues") };
+    // The branch item is the file path the fan-out was given; a child's echoed clip_file is never trusted, an empty item is a failure, and only an explicit ok === true verifies.
+    const file = (row: { item: unknown }) => str(row.item);
+    const good = done(input).filter((row) => row.data.ok === true && file(row) !== "");
+    const bad = [...lost(input), ...done(input).filter((row) => row.data.ok !== true || file(row) === "")];
+    return { ok_count: good.length, good_files: good.map(file), bad_files: bad.map(file),
+      issues: [...flat(done(input).map((row) => row.data), "issues"), ...done(input).filter((row) => row.data.ok !== true).map((row) => str(row.data.reason)).filter(Boolean)] };
   },
   "reduce.roadmap-driven.sessions": (input) => {
     const doneIds: string[] = [], blocked: string[] = [];
