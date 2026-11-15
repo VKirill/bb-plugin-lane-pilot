@@ -2,7 +2,7 @@
 title: Canonical role names
 type: component
 created: 2026-11-14
-updated: 2026-11-14
+updated: 2026-11-15
 status: active
 confidence: medium
 tags: [i18n, role-names, agents, localization]
@@ -33,7 +33,7 @@ The component ensures every internal role identifier—whether used in settings 
 2. `ROLE_ID_ALIASES` maps legacy names, thread-specific identifiers, and `specialist:<employee>` prefixes onto canonical `RoleNameId` keys (`packages/i18n/src/role-names.ts:118-138`).
 3. `canonicalRoleId(id)` checks whether `id` is an own property of `ROLE_NAMES`; if not, it looks up `ROLE_ID_ALIASES[id]` and returns `null` when neither matches (`packages/i18n/src/role-names.ts:141-144`).
 4. `roleDisplayName(id, lang)` resolves `canonicalRoleId(id)` and returns `ROLE_NAMES[key][lang]`, defaulting `lang` to `"ru"`; `roleLabel(id, lang)` formats `${ROLE_NAMES[key][lang]} (${id})` for CLI output where the raw ID must remain visible (`packages/i18n/src/role-names.ts:147-156`).
-5. `roleNameEn(id)` and `roleNameRu(id)` bind `lang` to `"en"` and `"ru"` for static dictionary initialization, while `roleName(id)` in `i18n.ts` calls `roleDisplayName(id, detectLocale())` for runtime UI rendering (`packages/i18n/src/role-names.ts:159-160`, `packages/i18n/src/i18n.ts:2596-2598`).
+5. `roleNameEn(id)` and `roleNameRu(id)` bind `lang` to `"en"` and `"ru"` for static dictionary initialization, while `roleName(id)` in `i18n.ts` calls `roleDisplayName(id, detectLocale())` for runtime UI rendering (`packages/i18n/src/role-names.ts:159-160`, `packages/i18n/src/i18n.ts:2614-2616`).
 
 ### Resolution modes and kinds
 
@@ -42,7 +42,7 @@ The component ensures every internal role identifier—whether used in settings 
 | `canonicalRoleId(id)` | Direct `RoleNameId` or key in `ROLE_ID_ALIASES` | Returns canonical `RoleNameId` (`packages/i18n/src/role-names.ts:141-144`) | Returns `null` when unknown (`packages/i18n/src/role-names.ts:143`) |
 | `roleDisplayName(id, lang)` | Any role ID; `lang` `"ru" \| "en"` (default `"ru"`) | Localized display name (`packages/i18n/src/role-names.ts:147-150`) | Returns raw `id` unchanged when `canonicalRoleId(id)` is `null` (`packages/i18n/src/role-names.ts:149`) |
 | `roleLabel(id, lang)` | Any role ID; `lang` `"ru" \| "en"` (default `"ru"`) | `"Name (id)"` keeping the caller's `id` in parentheses (`packages/i18n/src/role-names.ts:153-156`) | Returns raw `id` unchanged when `canonicalRoleId(id)` is `null` (`packages/i18n/src/role-names.ts:155`) |
-| `roleName(id)` | Any role ID | Delegates to `roleDisplayName(id, detectLocale())` (`packages/i18n/src/i18n.ts:2596-2598`) | Same pass-through fallback as `roleDisplayName` (`packages/i18n/src/role-names.ts:149`) |
+| `roleName(id)` | Any role ID | Delegates to `roleDisplayName(id, detectLocale())` (`packages/i18n/src/i18n.ts:2614-2616`) | Same pass-through fallback as `roleDisplayName` (`packages/i18n/src/role-names.ts:149`) |
 | `RoleKind` | `"agent"`, `"judge"`, `"profile"`, `"code"` (`packages/i18n/src/role-names.ts:14`) | Distinguishes LLM sessions (`agent`), single-call judges (`judge`: `memory-judge`, `jev`), Codex tool profiles (`profile`), and deterministic code (`code`) (`packages/i18n/src/role-names.ts:8-12`, `packages/i18n/src/role-names.ts:53`, `packages/i18n/src/role-names.ts:64`, `packages/i18n/src/role-names.ts:106-108`) | `profile` entries use group `"service"` (`packages/i18n/src/role-names.ts:20`) |
 
 ## Business rules
@@ -52,11 +52,11 @@ The component ensures every internal role identifier—whether used in settings 
 - `ROLE_ID_ALIASES` keys must not appear in `ROLE_NAMES`, and every alias target must exist in `ROLE_NAMES` (`tests/agents-doc.test.ts:69-74`).
 - Codex config profiles (`codex-profile:code`, `codex-profile:quiet`, `codex-profile:open`) must have `kind: "profile"` and remain distinct from `writer` (`packages/i18n/src/role-names.ts:20`, `packages/i18n/src/role-names.ts:106-108`, `tests/agents-doc.test.ts:76-82`).
 - `specialist:lead` is its own canonical entry in `ROLE_NAMES` separate from `lead`, whereas the other twelve `specialist:<employee>` IDs are aliases pointing to `<employee>` (`packages/i18n/src/role-names.ts:25-26`, `packages/i18n/src/role-names.ts:126-137`).
-- Dictionary keys prefixed with `accessName_`, `roleModelName_`, and `settingCouncilSeat_`, along with `helperRole_writer` and `agentDisplayDevOrchestrator`, draw their values from `ROLE_NAMES` (`packages/i18n/src/i18n.ts:106`, `packages/i18n/src/i18n.ts:227`, `packages/i18n/src/i18n.ts:308`, `packages/i18n/src/i18n.ts:1155`, `packages/i18n/src/i18n-role-models.ts:25`, `tests/agents-doc.test.ts:93-105`).
+- Dictionary keys prefixed with `accessName_`, `roleModelName_`, and `settingCouncilSeat_`, along with `helperRole_writer` and `agentDisplayDevOrchestrator`, draw their values from `ROLE_NAMES` (`packages/i18n/src/i18n.ts:106`, `packages/i18n/src/i18n.ts:227`, `packages/i18n/src/i18n.ts:308`, `packages/i18n/src/i18n.ts:1164`, `packages/i18n/src/i18n-role-models.ts:25`, `tests/agents-doc.test.ts:93-105`).
 
 ## Public API
 
-All declarations from `role-names.ts` and `roleName` (`packages/i18n/src/i18n.ts:2596-2598`) are re-exported by the package entry point (`packages/i18n/src/index.ts:1-2`).
+All declarations from `role-names.ts` and `roleName` (`packages/i18n/src/i18n.ts:2614-2616`) are re-exported by the package entry point (`packages/i18n/src/index.ts:1-2`).
 
 | Import | Source | Purpose |
 |---|---|---|
@@ -67,7 +67,7 @@ All declarations from `role-names.ts` and `roleName` (`packages/i18n/src/i18n.ts
 | `roleDisplayName(id, lang?)` | `packages/i18n/src/role-names.ts:147-150` | Return `"ru"` (default) or `"en"` display name, or raw `id` |
 | `roleLabel(id, lang?)` | `packages/i18n/src/role-names.ts:153-156` | Return `"Name (id)"` for CLI output, or raw `id` |
 | `roleNameEn(id)`, `roleNameRu(id)` | `packages/i18n/src/role-names.ts:159-160` | Single-language helpers for static i18n dictionaries |
-| `roleName(id)` | `packages/i18n/src/i18n.ts:2596-2598` | Return display name in `detectLocale()` language |
+| `roleName(id)` | `packages/i18n/src/i18n.ts:2614-2616` | Return display name in `detectLocale()` language |
 
 ## Package shape
 
@@ -82,13 +82,13 @@ All declarations from `role-names.ts` and `roleName` (`packages/i18n/src/i18n.ts
 
 ## Dependencies
 
-`role-names.ts` has no imports or external dependencies (`packages/i18n/src/role-names.ts:1-160`). `roleName` in `i18n.ts` depends on `detectLocale` in the same module (`packages/i18n/src/i18n.ts:2493-2498`, `packages/i18n/src/i18n.ts:2596-2598`).
+`role-names.ts` has no imports or external dependencies (`packages/i18n/src/role-names.ts:1-160`). `roleName` in `i18n.ts` depends on `detectLocale` in the same module (`packages/i18n/src/i18n.ts:2511-2516`, `packages/i18n/src/i18n.ts:2614-2616`).
 
 ## Gotchas
 
-- `roleDisplayName` and `roleLabel` default `lang` to `"ru"`, whereas `detectLocale()` defaults to `"en"` when no hints are present; UI components that follow the active screen locale must call `roleName(id)` rather than omitting `lang` on `roleDisplayName` (`packages/i18n/src/role-names.ts:147-156`, `packages/i18n/src/i18n.ts:2490`, `packages/i18n/src/i18n.ts:2596-2598`).
+- `roleDisplayName` and `roleLabel` default `lang` to `"ru"`, whereas `detectLocale()` defaults to `"en"` when no hints are present; UI components that follow the active screen locale must call `roleName(id)` rather than omitting `lang` on `roleDisplayName` (`packages/i18n/src/role-names.ts:147-156`, `packages/i18n/src/i18n.ts:2508`, `packages/i18n/src/i18n.ts:2614-2616`).
 - `roleLabel(id, lang)` keeps the caller-supplied `id` inside parentheses even when resolved through an alias (for example `roleLabel("council")` produces `"Председатель совета (council)"`) (`packages/i18n/src/role-names.ts:153-156`, `tests/agents-doc.test.ts:90`).
-- Unrecognized role IDs are returned verbatim by `roleDisplayName`, `roleLabel`, and `roleName` rather than throwing (`packages/i18n/src/role-names.ts:147-156`, `packages/i18n/src/i18n.ts:2596-2598`).
+- Unrecognized role IDs are returned verbatim by `roleDisplayName`, `roleLabel`, and `roleName` rather than throwing (`packages/i18n/src/role-names.ts:147-156`, `packages/i18n/src/i18n.ts:2614-2616`).
 
 <!-- lane-pilot:backlinks -->
 ## Referenced by
