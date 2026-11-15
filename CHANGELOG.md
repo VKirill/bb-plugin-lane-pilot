@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.576
 
 - **Reels checks media files before reporting completion.** The existing verification reducer binds each verdict to its branch item, retains failed and empty paths, and feeds real `deliverable.validate` video checks. Incomplete rendering cannot report `done`; clip and film delivery indexes refer only to their own mode's outputs. `tests/workflow/chains-own.test.ts` covers routing and partial results; `chain-executors.test.ts` executes the real parallel validator with explicitly stubbed ffprobe/ffmpeg transport, not live media processing.
 - **Batch invoice approval requires every actual child result to pass its document check.** The existing reducer requires a nonempty set of successful rows with `check_verdict:"match"`; model-reported counts cannot satisfy the gate. `tests/workflow/chains-domain.test.ts` covers approval, mismatch, an empty batch despite a positive reported count, and a crashed child. Verification does not claim delivery to clients, and no live invoice was sent for these checks.
