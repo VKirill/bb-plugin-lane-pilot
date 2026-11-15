@@ -2,7 +2,7 @@ import { isPlanningPath } from "../../contracts";
 import { listRunFiles, runHomeOf } from "../../storage";
 import { pmCheckout, rec, str } from "./workflow-chain-runtime";
 import type { Row, Services } from "./workflow-chain-runtime";
-import { nodeRefStep, refOf, START } from "@lane-pilot/workflow-engine";
+import { nodeRefStep, refOf, START, wfChildRuns } from "@lane-pilot/workflow-engine";
 import type { StepContext, StepRow, WorkflowEngine } from "@lane-pilot/workflow-engine";
 import { isNotFound, orMiss, stringAt } from "@lane-pilot/kit";
 import { runOnHost } from "@lane-pilot/host-calls";
@@ -105,9 +105,8 @@ export function registerDeliverableAction(action: Action, deps: { planHome: Plan
         if (node?.type === "subworkflow") {
           // The step's output is its child run's emit; the referenced file was written inside the child, so
           // provenance is the child's own run-file row and run home, bound by (parent_run_id, parent_step_key).
-          const children = engine.journal.db.prepare("SELECT id, status, definition_json FROM lane_pilot_wf_run WHERE parent_run_id=? AND parent_step_key=?")
-            .all(c.runId, producerStep.step_key) as Array<{ id: string; status: string; definition_json: string }>;
-          const child = children.length === 1 ? children[0] : undefined;
+          const children = wfChildRuns(engine.journal.db, c.runId).filter((child) => child.parent_step_key === producerStep.step_key);
+          const child = children.length === 1 ? engine.journal.getRun(children[0]!.id) : undefined;
           if (!child || child.status !== "succeeded") return unverified("subworkflow child run missing or not succeeded");
           const repoPath = target.replace(/^\.\/+/, "");
           const file = listRunFiles(engine.journal.db, child.id).find((candidate) => candidate.repo_path === repoPath && candidate.kind === "output");
