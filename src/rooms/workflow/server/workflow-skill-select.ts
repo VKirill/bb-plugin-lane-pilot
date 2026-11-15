@@ -154,7 +154,7 @@ export async function nativeSkillSelection(args: {
         name: c.name,
         origin: c.origin,
         label: c.name,
-        ...(typeof c.argumentHint === "string" && c.argumentHint ? { argumentHint: c.argumentHint } : {}),
+        argumentHint: typeof c.argumentHint === "string" && c.argumentHint ? c.argumentHint : null,
       },
     };
     offset += token.length + 1;

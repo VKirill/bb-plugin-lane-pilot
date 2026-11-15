@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.580
+
+- **Native skill mentions keep the required nullable hint.** A workflow agent selecting `ru-text` received HTTP 400 before its thread was created because Lane Pilot omitted `argumentHint` when the catalog returned null. The shared skill-selection path now emits the required string-or-null field for both fresh and continued agents. `tests/workflow/skill-select.test.ts` covers null, missing, empty and nonempty catalog hints; a check against the actual BB prompt-input schema rejects the old payload and accepts the corrected one. Live rerun acceptance is tracked separately.
+- **Workflow notices distinguish duplicate events from a new failed attempt.** Linked-run notifications are serialized per run within the plugin instance, and their durable key includes the journal's run-transition count. Concurrent callbacks for one terminal transition share one notice; a real rerun ending with the same status gets a new notice. `tests/server/pm-notices.test.ts` reproduces the concurrent race and exercises two failures separated by the engine's real rerun. Existing exclusions, scheduled report content and output masking are retained; the existing record-before-send behavior is not a delivery guarantee.
+
 ## 0.1.579
 
 - **Asynchronous workflow results return to the PM chat.** A linked, chat-started workflow reports its terminal result or failure through the existing service-message path. The notification includes the engine status and bounded output or reason; engine success is not a claim of business acceptance. Scheduled reports and exclusions for internal upkeep, task pipelines and synchronously awaited browser tools retain their existing behavior. Regression tests in `tests/server/pm-notices.test.ts` cover the linked-run route and duplicate terminal events; a fresh live continuation remains to be verified.

@@ -35,6 +35,23 @@ describe("nativeSkillSelection", () => {
     expect(bb.sdk.projects.commands).toHaveBeenCalledWith({ projectId: "p", provider: "codex", environmentId: "e1" });
   });
 
+  it("every emitted skill mention carries argumentHint as string|null — the spawn schema requires the key", async () => {
+    const hintOf = async (row: Record<string, unknown>) => {
+      const bb = bbWith([row]);
+      const res = await select(bb, { provider: "claude-code", skills: [String(row.name)] });
+      expect(res.parts).toHaveLength(2);
+      const resource = (res.parts![0]!.mentions as Array<{ resource: Record<string, unknown> }>)[0]!.resource;
+      expect("argumentHint" in resource).toBe(true);
+      return resource.argumentHint;
+    };
+    // Catalog rows emit argumentHint:null for skills (native579 ru-text); missing/empty must normalize the same way.
+    expect(await hintOf(skill("ru-text", { origin: "user" }))).toBeNull();
+    const noKey = { name: "no-hint", source: "skill", origin: "user" };
+    expect(await hintOf(noKey)).toBeNull();
+    expect(await hintOf(skill("empty-hint", { argumentHint: "" }))).toBeNull();
+    expect(await hintOf(skill("hinted", { argumentHint: "[args]" }))).toBe("[args]");
+  });
+
   it("claude-code attaches exactly one requested-and-resolved selection and refuses multiplicity", async () => {
     const bb = bbWith([skill("a-skill"), skill("b-skill")]);
     const one = await select(bb, { provider: "claude-code", skills: ["a-skill"] });

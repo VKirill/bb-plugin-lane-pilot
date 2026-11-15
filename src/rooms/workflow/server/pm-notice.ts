@@ -1,5 +1,6 @@
 import { getRun } from "../../storage";
 import { bestEffort, maskCredentials, withoutSelectionMarkers } from "@lane-pilot/kit";
+import { wfCountRunEvents } from "@lane-pilot/workflow-engine";
 import { postOwnerItem } from "../../owner-waiting";
 import type { LanePilotDatabase } from "../../storage";
 import type { RunRow } from "../../storage";
@@ -29,8 +30,8 @@ export type WorkflowNoticeSend = {
   storage: { kv: WorkflowNoticeKv };
 };
 
-export function workflowNoticeKey(workflowRunId: string, status: string): string {
-  return `pm-notice:workflow:${workflowRunId}:${status}`;
+export function workflowNoticeKey(workflowRunId: string, status: string, transition?: number): string {
+  return `pm-notice:workflow:${workflowRunId}:${status}${transition ? `:${transition}` : ""}`;
 }
 
 /** The text a scheduled run was for: its first non-empty output field named like a report (`report_md`, `summary`, `digest`…). */
@@ -56,6 +57,8 @@ export async function maybeNotifyWorkflowRun(input: {
   pmThreadId: string | null;
   startedBySchedule: boolean;
   unmetGoalIds?: string[];
+  /** Journal run-event count naming this terminal transition; absent on paths without journal events (legacy key). */
+  transition?: number;
 }): Promise<boolean> {
   const { run } = input;
   if (!isNoticeStatus(run.status)) return false;
@@ -81,7 +84,7 @@ export async function maybeNotifyWorkflowRun(input: {
   const text = input.startedBySchedule
     ? `Lane Pilot: the scheduled run ${run.id} of ${run.workflow_id} finished. Show the owner this result in this chat as it is (no summary, nothing to act on; its helper's own completion may follow: it is the same result, say nothing about it):\n\n${body}`
     : `Lane Pilot: the run ${run.id} of ${run.workflow_id} ended ${run.status} (engine status).\n\n${body}`;
-  const key = workflowNoticeKey(run.id, run.status);
+  const key = workflowNoticeKey(run.id, run.status, input.transition);
   if (await input.bb.storage.kv.get(key)) return false;
   await bestEffort(input.log, "workflow notice record", input.bb.storage.kv.set(key, Date.now() as never), undefined);
   try {
@@ -158,12 +161,35 @@ export async function notifyWorkflowIfEnded(input: {
   if (leadRoad && input.leadRoad) { settleLeadRun(input.db, input.leadRoad, input.run, leadRoad, input.unmetGoalIds); return false; }
   const linked = input.run.link_run_id ? getRun(input.db, input.run.link_run_id) : undefined;
   if (!input.run.link_run_id) return reportEndToOwner(input.db, input.run, startedBySchedule(input.db, input.run), input.unmetGoalIds);
-  return maybeNotifyWorkflowRun({
+  // The journal's run-event count names the terminal transition: it grows on every status move and ignores step/goal
+  // noise, so a re-run that ends the same way still earns its own notice while a burst of events for one end shares
+  // one key. Read it now — before the queue — because by the time a queued notice runs a newer transition may exist.
+  const transition = wfCountRunEvents(input.db, input.run.id, "run") || undefined;
+  return enqueueRunNotice(input.bb.storage.kv, input.run.id, () => maybeNotifyWorkflowRun({
     bb: input.bb, log: input.log, run: input.run,
     pmThreadId: linked?.pm_thread_id ?? null,
     startedBySchedule: startedBySchedule(input.db, input.run),
     unmetGoalIds: input.unmetGoalIds,
-  });
+    transition,
+  }));
+}
+
+/**
+ * A run's end writes several journal rows back to back and every one of them reaches the notifier: unserialized,
+ * they all read the same terminal status and race the kv claim (live 2026-11-15: one `blocked` end sent two
+ * identical PM notices). Notices for one run go one at a time, scoped to the kv store they claim against — the kv
+ * key, not this queue, stays the durable dedup, and a settled tail frees its slot.
+ */
+const noticeQueues = new WeakMap<object, Map<string, Promise<unknown>>>();
+
+function enqueueRunNotice<T>(kv: object, runId: string, task: () => Promise<T>): Promise<T> {
+  let byRun = noticeQueues.get(kv);
+  if (!byRun) noticeQueues.set(kv, (byRun = new Map()));
+  const tail = (byRun.get(runId) ?? Promise.resolve()).then(task, task);
+  byRun.set(runId, tail);
+  const settled = () => { if (byRun.get(runId) === tail) byRun.delete(runId); };
+  void tail.then(settled, settled);
+  return tail;
 }
 
 /** The road branch a lead hand-over started this run for (intake key `intake:<pm thread>:lead:<road id>`), else null. */

@@ -173,6 +173,50 @@ describe("workflow PM notices", () => {
     expect(sends).toHaveLength(4);
     await harness.lifecycle.dispose();
   });
+
+  it("claims one notice per terminal transition: a concurrent event burst sends once, a real re-run failure sends again", async () => {
+    const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
+    const db = openDatabase(bb);
+    createRun(db, runId, projectId);
+    setRunThread(db, runId, pmThreadId);
+    // Deferred kv: the end of a run fires several journal events back to back, and a fast store can hide
+    // the check-then-set race the burst exposes.
+    const kv = bb.storage.kv;
+    const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
+    const burstBb = {
+      ...bb,
+      storage: {
+        ...bb.storage,
+        kv: {
+          get: async <T>(key: string): Promise<T | undefined> => { await tick(); return kv.get<T>(key); },
+          set: async (key: string, value: unknown) => { await tick(); await kv.set(key, value); },
+          delete: (key: string) => kv.delete(key),
+          list: (prefix?: string) => kv.list(prefix),
+        },
+      },
+    };
+    const sends: string[] = [];
+    harness.sdk.stub("threads.send", async (args: unknown) => { sends.push((args as { input: Array<{ text: string }> }).input[0]!.text); });
+    const engine = engineOn(db, {
+      search: ok(() => ({ items: ["a"], count: 1, kind: "fresh" })),
+      write: { reentrant: true, run: async () => { throw new Error("HTTP 400: Required"); } },
+    });
+    const linked = await engine.start({ workflow: wf(), inputs: { query: "q" }, link: { projectId, runId } }).done;
+    const row = () => db.prepare("SELECT * FROM lane_pilot_wf_run WHERE id=?").get(linked.runId) as RunRow;
+    expect(row().status).toBe("failed");
+    const notify = () => notifyWorkflowIfEnded({ bb: burstBb, db, log: () => undefined, run: row() });
+    // Every journal row of the terminal burst reaches the notifier with the same status snapshot.
+    await Promise.all([notify(), notify(), notify()]);
+    expect(sends).toHaveLength(1);
+    // A real re-run that fails the same way is a new transition, not a duplicate: it earns its own notice.
+    expect(await engine.rerunNode(linked.runId, "write")).toMatchObject({ ok: true });
+    for (let i = 0; i < 200 && row().status !== "failed"; i += 1) await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(row().status).toBe("failed");
+    await notify();
+    expect(sends).toHaveLength(2);
+    expect(sends[1]).toContain("ended failed");
+    await harness.lifecycle.dispose();
+  });
 });
 
 describe("council start reports the decision to the PM chat", () => {
