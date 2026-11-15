@@ -3,7 +3,7 @@
 // wfRun/wfStep trace were derived mechanically by scripts/sma-seed-evidence.ts (2026-11-14), not authored.
 // The hooks are programs a Claude Code session runs, and they write no row to the hub database: a node's trace is its own prove()
 // line in the region scene scripts/lp_drill/scenes/sma_r18.py, which runs the real hook program (src/rooms/session-hooks/cli.ts) on real hook inputs.
-import { distort, drill, entry, flip, type RegionEvidence, seedEntry, skipWrite, voidIsHave, voidStays, wrongTarget } from "./types";
+import { distort, drill, entry, flip, outside, type RegionEvidence, seedEntry, skipWrite, voidIsHave, voidStays, wrongTarget } from "./types";
 
 const LOGIC = "src/rooms/session-hooks/logic.ts";
 const CLI = "src/rooms/session-hooks/cli.ts";
@@ -22,7 +22,7 @@ export default {
   n1409: { mutation: distort(LOGIC, 'files.slice(0, 20).join(", ") || "nothing"', 'files.slice(1, 20).join(", ") || "nothing"'), trace: drill("sma_r18") },
   n1410: { mutation: distort("src/rooms/usage/statusline-segment.ts", '.join(" - ")}`;', '.join(" / ")}`;'), trace: drill("sma_r18"), voidReview: voidIsHave("сегмент строки состояния — чистая функция над кешем окон подписки (usageSegment), печатается глаголом bb lane-pilot statusline <host>; claim/коллизии в него не входят") },
   n1411: { mutation: flip("src/rooms/native-install/claude-lane-leftovers.ts", "&& !commandPointsAt((options.saved as { command: string }).command, home, STATUSLINE_SUFFIX) ? options.saved : null;", "&& commandPointsAt((options.saved as { command: string }).command, home, STATUSLINE_SUFFIX) ? options.saved : null;"), reach: entry("the owner runs the Claude Lane leftovers removal (bb lane-pilot remove-claude-lane --apply)"), trace: drill("sma_r18"), voidReview: voidIsHave("строка человека не заменяется: чистильщик снимает только statusLine старого lane-statusline и восстанавливает сохранённую строку человека байт в байт; чужую строку не трогает") },
-  n1412: { mutation: distort("core:plugins/provider-claude-code/src/usage-source.ts", "accountKey: metadata.accountKey,", "accountKey: \"wrong-account-key\","), trace: drill("sma_core") },
+  n1412: { mutation: distort("core:plugins/provider-claude-code/src/usage-source.ts", "accountKey: metadata.accountKey,", "accountKey: \"wrong-account-key\","), trace: outside("the usage-source wrapper runs inside the deployed core plugin; only its registered consumer on the hub executes it — `bb settings usage` reaches system.usageLimits directly and bypasses it (sma_core keeps the observation diagnostic, CSP-02)") },
   n1413: { mutation: flip(LOGIC, "input.lastModel !== input.model", "input.lastModel === input.model"), reach: entry(FIRES), trace: drill("sma_r18") },
   n1414: { mutation: distort(LOGIC, "!given.has(String(hit.id))).slice(0, 3);", "!given.has(String(hit.id))).slice(0, 1);"), reach: entry(FIRES), trace: drill("sma_r18") },
   n1415: { mutation: distort("core:apps/server/src/services/threads/title-generation.ts", "return clampToWidth(text, MAX_TITLE_FALLBACK_WIDTH);", "return clampToWidth(text, MAX_TITLE_FALLBACK_WIDTH - 1);") },

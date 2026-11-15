@@ -15,19 +15,21 @@ Called from sma_core.py (`not_proved.update(prove_last(proofs, tmp))`); its rece
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
+import shlex
 import subprocess
 import urllib.error
 import urllib.request
 from pathlib import Path
 
-from lp_drill.env import ROOT
-from lp_drill.hub import bb as run_bb
+from lp_drill.env import HUB, KEY, ROOT
+from lp_drill.hub import bb as run_bb, run as hub_run
 from lp_drill.prove import Proofs
 
-NODES_LAST = ["n470", "n775", "n1499", "n1514"]
+NODES_LAST = ["n470", "n775", "n1499", "n1514", "n1748"]
 PROBE_LAST = ROOT / "scripts/lp_drill/scenes/sma_core_last_probe.ts"
 NOT_PROVED_LAST = {
     "n469": "owner login is off on the hub (BB_VK_OWNER_AUTH unset; `bb owner status`: login off, no key paired): the link and its ticket trade cannot be seen there",
@@ -100,32 +102,82 @@ def prove_last(proofs: Proofs, tmp) -> dict[str, str]:
         explained = [r["id"] for r in failed if isinstance(r.get("statusDetail"), str) and r["statusDetail"].strip()]
         proofs.prove("n470", len(explained) == len(failed), f"{len(failed)} plugins in status error, {len(explained)} with a reason in the detail ({', '.join(sorted(explained)) or 'none'})")
 
-    # n775 Window assets: the core serves the plugin's built window file through GET /plugins/:id/assets/:file; a name that is no built file is 404.
+    # n775 Window assets: the core serves the plugin's built window files through GET /plugins/:id/assets/:file with their
+    # own bytes and types; a name that is no built file is 404. The authoritative bytes are the sha256 of the hub's own
+    # dist files, read over the drill's ssh transport at the rootDir the hub itself reported — never a same-named local
+    # path (the scene may run on another host). An unreadable authoritative source is unverified, not a failure.
     base = _hub_base()
+    root_dir = str((lp or {}).get("rootDir", "")).rstrip("/")
     if base is None:
         not_proved["n775"] = "no hub URL: BB_SERVER_URL is not set on this machine and `bb --help` does not show it"
+    elif not root_dir:
+        not_proved["n775"] = "the hub did not report lane-pilot's install root (`bb plugin list` has no rootDir)"
     else:
-        status, kind, body = _get(f"{base}/api/v1/plugins/lane-pilot/assets/app.js")
-        other, _, _ = _get(f"{base}/api/v1/plugins/lane-pilot/assets/package.json")
-        built = Path(str((lp or {}).get("rootDir", ""))) / "dist" / "app.js"
-        same = built.is_file() and built.read_bytes() == body
-        if status == 0:
-            not_proved["n775"] = f"the hub did not answer at {base}"
+        remote = "sha256sum " + " ".join(shlex.quote(f"{root_dir}/dist/{name}") for name in ("app.js", "app.css"))
+        rc, out, err = hub_run(["ssh", "-i", KEY, "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", HUB, remote], timeout=60)
+        sums = {}
+        if rc == 0:
+            for line in out.splitlines():
+                digest, _, name = line.partition(" ")
+                if re.fullmatch(r"[0-9a-f]{64}", digest.strip()):
+                    sums[name.strip().lstrip("*")] = digest.strip()
+        want_js = sums.get(f"{root_dir}/dist/app.js")
+        want_css = sums.get(f"{root_dir}/dist/app.css")
+        if not want_js or not want_css:
+            not_proved["n775"] = f"authoritative dist bytes unreadable on the hub at {root_dir} ({(err or out).strip()[:120] or f'sha256sum exit {rc}'})"
         else:
-            proofs.prove("n775", status == 200 and len(body) > 0 and "javascript" in kind and other == 404,
-                         f"GET /api/v1/plugins/lane-pilot/assets/app.js: {status}, {len(body)} bytes, {kind}, same bytes as the plugin's dist/app.js {same}; assets/package.json: {other}")
+            js_status, js_kind, js_body = _get(f"{base}/api/v1/plugins/lane-pilot/assets/app.js")
+            css_status, css_kind, css_body = _get(f"{base}/api/v1/plugins/lane-pilot/assets/app.css")
+            other_status, _, _ = _get(f"{base}/api/v1/plugins/lane-pilot/assets/package.json")
+            if 0 in (js_status, css_status, other_status):
+                not_proved["n775"] = f"the hub did not answer at {base}"
+            else:
+                js_same = hashlib.sha256(js_body).hexdigest() == want_js
+                css_same = hashlib.sha256(css_body).hexdigest() == want_css
+                proofs.prove("n775", js_status == 200 and css_status == 200 and js_same and css_same
+                             and "javascript" in js_kind and "css" in css_kind and other_status == 404,
+                             f"GET app.js: {js_status}, {len(js_body)} B, {js_kind}, sha256 == hub dist {js_same}; "
+                             f"GET app.css: {css_status}, {len(css_body)} B, {css_kind}, sha256 == hub dist {css_same}; "
+                             f"assets/package.json: {other_status}")
 
     # n1499 The per-workflow entries an agent sees: the route tool names exactly the ready shipped graphs by id, no fragment or pipeline among them.
     done = subprocess.run(["npx", "--yes", "vite-node", str(PROBE_LAST)], cwd=ROOT, capture_output=True, text=True, timeout=900)
     try:
-        seen = json.loads(done.stdout.strip().splitlines()[-1]).get("n1499", {})
+        payload = json.loads(done.stdout.strip().splitlines()[-1])
+        seen = payload.get("n1499", {})
+        seen1748 = payload.get("n1748", {})
     except (ValueError, IndexError, AttributeError):
         seen = {"threw": f"the probe printed no result (exit {done.returncode}): {(done.stderr or done.stdout).strip()[-200:]}"}
+        seen1748 = {"threw": seen["threw"]}
     if "threw" in seen:
         proofs.prove("n1499", False, str(seen["threw"]))
     else:
         listed, ready, hidden = seen.get("listed", []), seen.get("ready", []), seen.get("hidden", [])
         leaked = [w for w in listed if w in hidden]
         proofs.prove("n1499", bool(seen.get("registered")) and len(ready) > 10 and listed == ready and not leaked,
-                     f"lane_pilot_route names {len(listed)} graphs by id, the catalog has {len(ready)} ready ones (same list {listed == ready}); fragments or pipelines named: {leaked or 'none'} of {len(hidden)}")
+                     f"local fake-host LP registration (not the deployed core): lane_pilot_route names {len(listed)} graphs by id, the catalog has {len(ready)} ready ones (same list {listed == ready}); fragments or pipelines named: {leaked or 'none'} of {len(hidden)}")
+
+    # n1748 Window distribution as its own thing (bb-core plugin-build): a real buildPluginApp consumer on a disposable
+    # fixture in os.tmpdir() — build aside, swap whole, a failed build keeps the served files and leaves no staging
+    # residue. LOCAL observation of the sibling PRIMARY checkout @coreRev; not the deployed build, no hub write.
+    if "absent" in seen1748 or "threw" in seen1748:
+        proofs.prove("n1748", False, f"core build probe unavailable: {seen1748.get('absent') or seen1748.get('threw')}")
+    else:
+        builds = seen1748.get("builds") or []
+        dists = seen1748.get("dist") or []
+        failure = seen1748.get("failure") or {}
+        want = ["app.css", "app.js", "app.meta.json"]
+        m1 = (builds[0].get("meta") or {}) if len(builds) > 0 else {}
+        m2 = (builds[1].get("meta") or {}) if len(builds) > 1 else {}
+        ok = (len(builds) == 2 and builds[0].get("marker") is True and (builds[0].get("cssBytes") or 0) > 0
+              and m1.get("bb") == "0.9.0-test"
+              and builds[1].get("second") is True and builds[1].get("first") is False
+              and (builds[1].get("cssBytes") or 0) > 0 and builds[1].get("cssChanged") is True
+              and m2.get("bb") == "0.9.1-test" and bool(m1.get("plugin")) and m1.get("plugin") == m2.get("plugin")
+              and dists == [want, want, want]
+              and failure.get("rejected") is True and failure.get("jsSame") is True
+              and failure.get("cssSame") is True and failure.get("metaSame") is True)
+        proofs.prove("n1748", ok, f"local disposable fixture build @{seen1748.get('coreRev')} — not the deployed build: "
+                                f"two successful builds swapped js/css/meta whole (markers, css bytes changed, meta builtWith.bbVersion 0.9.0→0.9.1, pluginId stable); "
+                                f"the third build was refused (rejected={failure.get('rejected')}) and did not swap — all 3 served files stayed byte-identical, no staging residue")
     return not_proved

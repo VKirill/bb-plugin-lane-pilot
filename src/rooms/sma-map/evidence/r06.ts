@@ -3,7 +3,7 @@
 // wfRun/wfStep trace were derived mechanically by scripts/sma-seed-evidence.ts (2026-11-14), not authored.
 // Batch a (n530-n558 less the core-resident n529, n531-n533, n540, n546, n549 and the open n557): the checks, the facts and the intake read no hub
 // row of their own, so their trace is the node's prove() line in scripts/lp_drill/scenes/sma_r06.py (the probe runs the worlds of tests/sma/r06-world.ts).
-import { distort, drill, entry, flip, skipWrite, voidIsHave, wrongTarget, type RegionEvidence } from "./types";
+import { distort, drill, entry, flip, outside, skipWrite, voidIsHave, wrongTarget, type RegionEvidence } from "./types";
 
 const RAILS = "src/rooms/tasks/rails.ts";
 const TOOLS = "src/rooms/tasks/server/conversation-tools.ts";
@@ -14,7 +14,7 @@ export default {
   n529: { mutation: distort("core:apps/server/src/services/threads/thread-events.ts", "return appendThreadEventInTransactionWithAttention(db, args).sequence;", "return appendThreadEventInTransactionWithAttention(db, args).sequence + 1;"), trace: drill("sma_r06") },
   n530: { mutation: flip(INTAKE, "MACHINE_TEXT.some((pattern) => pattern.test(text))", "!MACHINE_TEXT.some((pattern) => pattern.test(text))"), trace: drill("sma_r06") },
   n531: { mutation: flip("core:packages/server-contract/src/api/threads.ts", "ids.length <= THREAD_LIST_MAX_IDS &&", "ids.length < THREAD_LIST_MAX_IDS &&"), trace: drill("sma_core") },
-  n532: { mutation: flip("core:packages/server-contract/src/api/threads.ts", "value.title !== undefined ||", "value.title === undefined ||"), trace: drill("sma_core") },
+  n532: { mutation: flip("core:packages/server-contract/src/api/threads.ts", "value.title !== undefined ||", "value.title === undefined ||"), trace: outside("the old trace was a missing-thread 404 read that never reached the title-field check; the contract effect stays unproved until a real thread update is observed") },
   n533: { mutation: flip("core:packages/domain/src/thread-lifecycle.ts", "  stopping: {\n    \"stop.settled\": \"idle\",", "  stopping: {\n    \"stop.settled\": \"error\","), trace: drill("sma_r06") },
   n534: { mutation: distort(RAILS, 'return "browser";', 'return "full";'), trace: drill("sma_r06") },
   n535: { mutation: distort(RAILS, 'return "full";', 'return "quick";'), trace: drill("sma_r06"), voidReview: voidIsHave("три рецепта проверки quick/full/browser выбираются по всему запросу, ни один байт запроса не становится командой (текущий ours-текст устарел)") },
@@ -22,7 +22,7 @@ export default {
   n537: { mutation: distort("src/rooms/verification/sandbox.ts", 'args.push("--ro-bind",guardPath,guardPath)', 'args.push("--bind",guardPath,guardPath)'), trace: drill("sma_r06") },
   n538: { mutation: flip(TOOLS, "const fails = rootsChanged && input.throwaway === true;", "const fails = rootsChanged && input.throwaway !== true;"), reach: entry("the owner asks in the chat to run the project's tests (a «проверь …» request, lane_pilot_check run)"), trace: drill("sma_r06") },
   n539: { mutation: flip(TOOLS, "receipt.stoppedCommand = stopped ? current : null;", "receipt.stoppedCommand = stopped ? null : current;"), trace: drill("sma_r06") },
-  n540: { mutation: distort("core:packages/server-contract/src/api/threads.ts", "const sendMessageRequestFieldsSchema = z.object({", "const sendMessageRequestFieldsSchema = z.looseObject({"), trace: drill("sma_core") },
+  n540: { mutation: distort("core:packages/server-contract/src/api/threads.ts", "const sendMessageRequestFieldsSchema = z.object({", "const sendMessageRequestFieldsSchema = z.looseObject({"), trace: outside("the old trace was a missing-thread 404 read that never reached the send schema; the strict/loose field effect stays unproved until a real send is observed") },
   n541: { mutation: distort("src/rooms/core/server/lifecycle-events.ts", 'extra.onQueued!("message.dispatched", valueAt(payload, "entry"))', 'extra.onQueued!("message.cancelled", valueAt(payload, "entry"))'), reach: entry("the owner sends a message in a BB chat (BB dispatches it from the thread's queue)"), trace: drill("sma_r06") },
   n542: { mutation: flip(INTAKE, 'clean.endsWith("?")', 'clean.endsWith("!")'), trace: drill("sma_r06") },
   n543: { mutation: flip(LIVE, 'item.kind === "task" && (!focus ||', 'item.kind !== "task" && (!focus ||'), trace: drill("sma_r06") },
@@ -43,8 +43,9 @@ export default {
   n558: { mutation: distort("src/rooms/phase/logic/signatures.ts", "canonical({ contextSha, items })", "canonical({ items })"), trace: drill("sma_r06") },
   n559: { mutation: distort("src/rooms/phase/server/intake.ts", "return { started: true, via: known.via, id: known.id };", "return { started: true, via: known.via, id: `${known.id}~` };"), reach: entry("the owner answers «да» to a proposal in the PM chat (the lead road: lead:<road> key)"), trace: drill("sma_r06") },
   // The worked example of a proof in the core (docs/sma-evidence.md «Proofs in a sibling repository»): the [sma:m_ce_recover] test is in
-  // bb-core on sma/core-proofs; its trace stays open (the hub would have to see a turn cut off by a dropped stream and retried).
-  n560: { mutation: flip("core:plugins/provider-retry/src/retry-policy.ts", "if (!isUnavailableFailure(failure))", "if (isUnavailableFailure(failure))") },
+  // bb-core on sma/core-proofs; the trace is the local drill in sma_r06 — the real provider-retry plugin on the SDK fake host schedules
+  // the retry for a stream-disconnected failure and decision.get/explain read the recorded decision. A deployed hub retry stays unproved.
+  n560: { mutation: flip("core:plugins/provider-retry/src/retry-policy.ts", "if (!isUnavailableFailure(failure))", "if (isUnavailableFailure(failure))"), trace: drill("sma_r06") },
   n561: { mutation: flip("src/rooms/native-agent/ui/composer-boundary.tsx", 'if (role !== "pm") return null;', 'if (role === "pm") return null;'), reach: entry("a person opens a PM chat: the line draws under its input"), trace: drill("sma_r06") },
   n562: { mutation: distort("src/rooms/tasks/server/contract-lint.ts", 'code:"output_unowned"', 'code:"output_owned"'), trace: drill("sma_r06") },
   n563: { mutation: wrongTarget("src/rooms/usage/server/token-usage.ts", ".run(thread.id, thread.projectId, cursor.last_provider || thread.providerId, cursor.last_seq,", ".run(thread.projectId, thread.projectId, cursor.last_provider || thread.providerId, cursor.last_seq,"), trace: drill("sma_r06") },

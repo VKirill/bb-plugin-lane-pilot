@@ -39,6 +39,7 @@ out.proposal = await observeProposal();
 const core = resolveSibling("core");
 if (core.root === null) {
   out.n533 = { absent: core.why };
+  out.n560 = { absent: core.why };
 } else {
   const coreRev = execFileSync("git", ["-C", core.root, "rev-parse", "--short", "HEAD"], { encoding: "utf8" }).trim();
   try {
@@ -76,6 +77,54 @@ if (core.root === null) {
     }
   } catch (cause) {
     out.n533 = { coreRev, threw: cause instanceof Error ? cause.message : String(cause) };
+  }
+  // n560 (core sibling, LOCAL drill): the real provider-retry plugin on the SDK fake host — a stream-disconnected
+  // turn.failed schedules one threads.retry whose requestId/sendAt match the decision.get diagnostic, an
+  // unauthorized failure declines with no extra send, and explain --json reads the same record. Stand-in SDK
+  // transport and tmpdir storage; no model, no hub, no provider turn, nothing deployed is claimed.
+  try {
+    const { createFakePluginHost, makeTurnFailedEvent } = await import(`${core.root}/packages/plugin-sdk/dist/testing/index.js`);
+    const { default: retryPlugin } = await import(`${core.root}/plugins/provider-retry/server.ts`);
+    const retries: { threadId: string; turnRequestId?: string; sendAt?: number; reason?: string }[] = [];
+    const host = createFakePluginHost({
+      pluginId: "provider-retry",
+      sdk: {
+        plugins: { experimental_discoverRpc: async () => [] },
+        threads: {
+          queue: { list: async () => [] },
+          retry: async (args: { threadId: string; turnRequestId?: string; sendAt?: number; reason?: string }) => {
+            retries.push(args);
+            return { ok: true, delivery: "queued", turnRequestId: args.turnRequestId ?? "", attempt: 2, queuedMessageId: "queued_n560", waitingOn: { kind: "time" }, sendAt: args.sendAt ?? null };
+          },
+          queuedMessages: {
+            delete: async () => ({ ok: true }),
+            send: async () => ({ ok: true }),
+          },
+        },
+      },
+    });
+    try {
+      await retryPlugin(host.bb);
+      const emitErrors: unknown[] = [];
+      const crash = makeTurnFailedEvent({ threadId: "thr_n560_retry", requestId: "creq_n560_retry", errorInfo: { category: "stream-disconnected", providerCode: "responseStreamDisconnected", httpStatusCode: 502 }, rateLimits: null });
+      const refused = makeTurnFailedEvent({ threadId: "thr_n560_decline", requestId: "creq_n560_decline", errorInfo: { category: "unauthorized", providerCode: null, httpStatusCode: 401 }, rateLimits: null });
+      emitErrors.push(...(await host.harness.behavior.emitThreadEvent("turn.failed", crash)).errors);
+      emitErrors.push(...(await host.harness.behavior.emitThreadEvent("turn.failed", refused)).errors);
+      const diagRetry = await host.harness.behavior.callRpc("decision.get", { threadId: "thr_n560_retry" });
+      const diagDecline = await host.harness.behavior.callRpc("decision.get", { threadId: "thr_n560_decline" });
+      const cli = await host.harness.runCli(["explain", "thr_n560_retry", "--json"]);
+      let cliExplain: unknown = cli.stdout;
+      try {
+        cliExplain = JSON.parse(cli.stdout ?? "");
+      } catch {
+        // keep the raw stdout when it is not JSON
+      }
+      out.n560 = { coreRev, requestIds: [crash.requestId, refused.requestId], retries, diagRetry, diagDecline, cliExplain, cliExit: cli.exitCode, emitErrors };
+    } finally {
+      await host.harness.dispose();
+    }
+  } catch (cause) {
+    out.n560 = { coreRev, threw: cause instanceof Error ? cause.message : String(cause) };
   }
 }
 process.stdout.write(`${JSON.stringify(out)}\n`);

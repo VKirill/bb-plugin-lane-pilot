@@ -6,7 +6,8 @@ message, the live board, the owner's yes and the proposal) write no row of their
 stand-in tools: no model, no hub write, nothing outside the machine) and the scene compares every value with the result the node's card names.
 
 Later batches of this region add their nodes to NODES and to the probe/scene below; the proofs are grouped by card, one prove() each.
-Nodes of this region whose logic lives in bb-core (core:) have nothing to prove here. Run: scripts/lp-drill.sh --scenario sma_r06
+Nodes of this region whose logic lives in bb-core (core:) are proved here only as local sibling-checkout drills inside the probe (n533, n560);
+the rest have nothing to prove here. Run: scripts/lp-drill.sh --scenario sma_r06
 """
 from __future__ import annotations
 
@@ -19,7 +20,7 @@ from lp_drill.scenes.sma_r06_b import NODES_B, prove_b
 from lp_drill.scenes.sma_r06_core_b import NODES_CORE_B, prove_core_b
 
 NODES = ["n530", "n533", "n534", "n535", "n536", "n537", "n538", "n539", "n541", "n542", "n543", "n544", "n545", "n547", "n548", "n550", "n551", "n552",
-         "n553", "n554", "n555", "n556", "n558"]
+         "n553", "n554", "n555", "n556", "n558", "n560"]
 NODES = NODES + NODES_B
 NODES = NODES + NODES_CORE_B
 PROBE = ROOT / "scripts/lp_drill/scenes/sma_r06_probe.ts"
@@ -150,6 +151,36 @@ def scenario_sma_r06(tmp) -> dict:
               and settled.get("applied") is True and p3.get("status") == "idle" and u3 == t3 and pos(u3) and pos(t3) and t3 > t1)
         proofs.prove("n533", ok, f"local migrated core DB @{n533.get('coreRev')}: «starting» --stop.requested--> {p1.get('status')}@{t1}; "
                                 f"late run.started applied={late.get('applied')}, row still {p2.get('status')}; stop.settled -> {p3.get('status')}@{t3}")
+
+    # n560 Turn finished after a crash: the real provider-retry plugin on the SDK fake host — a stream-disconnected turn.failed
+    # schedules one threads.retry whose requestId/sendAt match the decision.get diagnostic, an unauthorized failure declines with
+    # no extra send, and explain --json reads the same record. Local drill on the sibling PRIMARY checkout: stand-in SDK transport,
+    # tmpdir storage, no model, no hub, no provider turn.
+    n560 = s.get("n560") or {}
+    if n560.get("absent") or n560.get("threw"):
+        proofs.prove("n560", False, f"core retry probe unavailable: {n560.get('absent') or n560.get('threw')}")
+    else:
+        retries = n560.get("retries") or []
+        diag_r, diag_d = n560.get("diagRetry") or {}, n560.get("diagDecline") or {}
+        dec_r, dec_d = diag_r.get("decision") or {}, diag_d.get("decision") or {}
+        cli_diag = n560.get("cliExplain")
+        cli_diag = cli_diag.get("diagnostic") if isinstance(cli_diag, dict) else None
+        send_at = dec_r.get("sendAt")
+        ok = (n560.get("emitErrors") == [] and len(retries) == 1
+              and retries[0].get("threadId") == "thr_n560_retry" and retries[0].get("turnRequestId") == "creq_n560_retry"
+              and retries[0].get("reason") == "Provider unavailable" and retries[0].get("sendAt") == send_at
+              and dec_r.get("kind") == "retry" and dec_r.get("reason") == "Provider unavailable"
+              and isinstance(send_at, int) and send_at > (diag_r.get("observedAt") or 0)
+              and diag_r.get("requestId") == "creq_n560_retry" and diag_r.get("consent") is None
+              and (diag_r.get("availability") or {}).get("kind") == "not-routed"
+              and diag_d.get("requestId") == "creq_n560_decline"
+              and dec_d.get("kind") == "decline" and dec_d.get("reason") == "not-retryable"
+              and n560.get("cliExit") == 0
+              and isinstance(cli_diag, dict) and cli_diag.get("requestId") == "creq_n560_retry"
+              and (cli_diag.get("decision") or {}).get("sendAt") == send_at)
+        proofs.prove("n560", ok, f"local drill @{n560.get('coreRev')}: stream-disconnected -> {len(retries)} threads.retry "
+                                f"(requestId {diag_r.get('requestId')}, sendAt {send_at}); decline -> {dec_d.get('reason')}, "
+                                f"explain parity {isinstance(cli_diag, dict)}; stand-in SDK/tmpdir, no real turn")
 
     prove_b(proofs, tmp)
     prove_core_b(proofs, tmp)
