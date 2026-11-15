@@ -5,6 +5,8 @@ import { createPhaseDriver } from "./phase-driver";
 import { sha256Hex } from "@lane-pilot/kit";
 import { contextSignature, isPlanWordGap, nextAction, planGate, planSignature, type PhaseRecord, type PlanItem } from "../src/rooms/phase/logic";
 import { MACHINE_ANSWERER } from "../src/rooms/phase/server/driver-word-steps";
+import { autoDue } from "../src/rooms/phase/server/auto-stages";
+import { builtinWorkflow } from "../src/rooms/workflow/builtin";
 import { listParts, savePhase } from "../src/rooms/phase/store";
 import { createRun, openDatabase } from "../src/rooms/plugin-db";
 import { saveProjectSetting } from "../src/rooms/storage";
@@ -22,7 +24,7 @@ const piece = (id: string, wave: number, owns: string[], extra: Record<string, u
   task: { id, title: `Piece ${id}`, objective: `do ${id}`, kind: "code", owns_paths: owns, verification: [{ command: `npm test -- ${id}` }], acceptance: [`${id} works`], ...extra } as never,
 });
 
-async function world(words: string, input: { title?: string; goal?: string; settingRow?: boolean } = {}) {
+async function world(words: string, input: { title?: string; goal?: string; settingRow?: boolean; engineGet?: (runId: string) => unknown } = {}) {
   // The row is the project's own setting (the screen writes it); the env default is the suite's and must not decide here.
   process.env.LANE_PILOT_OWNER_WORDS_DEFAULT = "off";
   const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
@@ -32,7 +34,8 @@ async function world(words: string, input: { title?: string; goal?: string; sett
   createRun(db, "run1", "projA");
   db.prepare("UPDATE lane_pilot_run SET pm_thread_id=? WHERE id=?").run("thr_pm", "run1");
   if (input.settingRow !== false) saveProjectSetting(db, "projA", "owner.words", words);
-  const services = { runBudgets: { get: () => undefined }, readWriterWorkspaceFile: async ({ path }: { path: string }) => ({ sha256: sha256Hex(path), sizeBytes: 120, content: `# ${path}` }) };
+  const services = { runBudgets: { get: () => undefined }, readWriterWorkspaceFile: async ({ path }: { path: string }) => ({ sha256: sha256Hex(path), sizeBytes: 120, content: `# ${path}` }),
+    ...(input.engineGet ? { workflowEngine: { resolveWorkflow: (id: string) => builtinWorkflow(id), snapshot: () => null, get: input.engineGet, start: () => ({ runId: "wf_fake", created: true, done: new Promise(() => undefined) }) } } : {}) };
   const { phases } = createPhaseDriver(createCore(bb, db), services as never);
   const opened = await phases.open({ projectId: "projA", pmThreadId: "thr_pm", title: input.title ?? "Sums", goal: input.goal ?? "sums skip empty cells" });
   return { db, phases, id: opened.id, setWords: (value: string) => saveProjectSetting(db, "projA", "owner.words", value) };
@@ -125,7 +128,8 @@ describe("each turn of a phase decides the owner's word from its own evidence (o
     await phases.context({ phaseId: id, ...card });
     const planned = phases.plan({ phaseId: id, items: [piece("a", 1, ["src/sums.ts"])], ...shape, by: "pm" });
     grilled(db, "wf_grill_1", planned.record.plan!.sha, planned.record.plan!.submittedAt! + 1);
-    approve(db, phases, id);
+    // plan_bounce stays off here: this test isolates grill_gate; the bounce hold has its own cases below.
+    approve(db, phases, id, { planBounce: false });
     await phases.tick();
     const first = phases.status(id).phase;
     expect(first.stage).toBe("planning");
@@ -150,7 +154,8 @@ describe("each turn of a phase decides the owner's word from its own evidence (o
     await phases.word({ phaseId: id, turn: "context", decision: "yes", text: "да", by: "owner via screen" });
     const planned = phases.plan({ phaseId: id, items: [piece("a", 1, ["src/sums.ts"])], ...shape, by: "pm" });
     grilled(db, "wf_grill_1", planned.record.plan!.sha, Date.now() + 60_000);
-    approve(db, phases, id);
+    // plan_bounce stays off here: this test isolates grill_gate; the bounce hold has its own cases below.
+    approve(db, phases, id, { planBounce: false });
     await phases.tick();
     expect(phases.status(id).phase.record.plan?.admittedSha).toBeUndefined();
     // The owner's yes given before the grill does not lift it: the admission is refused with the open challenge, nothing is replanned.
@@ -158,6 +163,46 @@ describe("each turn of a phase decides the owner's word from its own evidence (o
       .rejects.toMatchObject({ why: expect.arrayContaining([expect.stringContaining("open grill question: what if the cell holds text?")]) });
     expect(phases.status(id).phase.record.grillReplan).toBeUndefined();
     expect(phases.status(id).phase.record.plan?.admittedSha).toBeUndefined();
+  });
+
+  it("plan bounce: a planning yes while the bounce runs holds at planning; its recorded approve admits on the next step", async () => {
+    const { db, phases, id } = await world("on", { engineGet: (runId) => runId === "wfrun_b1" ? { status: "succeeded", output: { status: "approve", rounds: 1 } } : null });
+    await phases.context({ phaseId: id, ...card });
+    await phases.word({ phaseId: id, turn: "context", decision: "yes", text: "да", by: "owner via screen" });
+    phases.plan({ phaseId: id, items: [piece("a", 1, ["src/sums.ts"])], ...shape, by: "pm" });
+    approve(db, phases, id, { planBounce: true });
+    // The machine issued the bounce for this plan sha and it is still running.
+    const running = phases.status(id).phase.record;
+    savePhase(db, id, { record: { ...running, auto: { kind: "bounce", wfRunId: "wfrun_b1", startedAt: Date.now(), planSha: running.plan!.sha } }, at: Date.now() });
+    await phases.word({ phaseId: id, turn: "planning", decision: "yes", text: "да", by: "owner via screen" });
+    let phase = phases.status(id).phase;
+    expect(phase.stage).toBe("planning");
+    expect(phase.record.plan?.admittedSha).toBeUndefined();
+    // The bounce run succeeds: the machine records its approve for this sha and the outcome itself lifts the hold —
+    // on owner.words=on no later step asks the planning word again, so the apply path must re-run admission.
+    await phases.tick();
+    phase = phases.status(id).phase;
+    expect(phase.record.plan?.bounce?.decision).toBe("approve");
+    expect(phase.record.plan?.admittedSha).toBe(phase.record.plan?.sha);
+    expect(["design", "execution"]).toContain(phase.stage);
+  });
+
+  it("plan bounce changes_requested: the planning yes waits for the machine's replan — the request is not lost", async () => {
+    const { db, phases, id } = await world("on");
+    await phases.context({ phaseId: id, ...card });
+    await phases.word({ phaseId: id, turn: "context", decision: "yes", text: "да", by: "owner via screen" });
+    phases.plan({ phaseId: id, items: [piece("a", 1, ["src/sums.ts"])], ...shape, by: "pm" });
+    approve(db, phases, id, { planBounce: true });
+    // The bounce recorded changes_requested for this sha and the replan gaps are pending.
+    const bounced = phases.status(id).phase.record;
+    savePhase(db, id, { record: { ...bounced, plan: { ...bounced.plan!, bounce: { sha: bounced.plan!.sha, decision: "changes_requested", at: Date.now() } }, replan: { gaps: "the bounce asked for changes", count: 0 } }, at: Date.now() });
+    await phases.word({ phaseId: id, turn: "planning", decision: "yes", text: "да", by: "owner via screen" });
+    const phase = phases.status(id).phase;
+    expect(phase.stage).toBe("planning");
+    expect(phase.record.plan?.admittedSha).toBeUndefined();
+    expect(phase.record.replan?.gaps).toMatch(/bounce asked/);
+    // The replan is still due: the machine plans again with the bounce's findings as the gaps.
+    expect(autoDue(phase)?.kind).toBe("plan");
   });
 });
 

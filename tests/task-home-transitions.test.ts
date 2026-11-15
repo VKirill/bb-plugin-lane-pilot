@@ -4,8 +4,9 @@ import { createHash } from "node:crypto";
 import { createAttempt, createRun, createTask, openDatabase, saveTaskGitBase } from "../src/rooms/plugin-db";
 import { taskV2Schema } from "../src/rooms/contracts";
 import { openTaskHome, readTaskFile, recordTaskFile, renderTaskManifest, resolveTaskFile, type TaskFileKind } from "../src/rooms/storage";
+import { bbTaskFileIo } from "../src/rooms/storage";
 import {
-  bbTaskFileIo, placeTaskHomeIn, recordAcceptanceFiles, recordCheckFiles, recordCritiqueRound, recordPlanCritique, recordTaskClose, recordTaskEdition,
+  placeTaskHomeIn, recordAcceptanceFiles, recordCheckFiles, recordCritiqueRound, recordPlanCritique, recordTaskClose, recordTaskEdition,
   recordWriterReport, stagePlanText, taskHomeBrief, writeDispatchHome,
 } from "../src/rooms/writer/server/task-home";
 import { taskFolderLines } from "../src/rooms/writer/server/writer-task";

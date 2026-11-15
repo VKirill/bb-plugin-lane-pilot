@@ -79,6 +79,26 @@ describe("realtime signals (H6)", () => {
     expect(harness.realtimeSignals).toHaveLength(2);
   });
 
+  it("invalidates every watched-read tag an attempt move or helper event can change", async () => {
+    const { bb, harness, db, realtime } = setup();
+    createRun(db, "run", "proj_1", "cli", "/repo");
+    db.prepare("UPDATE lane_pilot_run SET pm_thread_id='thr_pm' WHERE id='run'").run();
+    db.prepare("INSERT INTO lane_pilot_task(id,run_id,kind,contract_json,created_at) VALUES('T1','run','bb','{}',1)").run();
+    const stop = mountHelperSignals(bb, db, realtime);
+    const tags = () => (harness.experimental_rpcInvalidations as string[][]).flat();
+
+    await harness.emitThreadEvent("thread.created", { thread: makeThreadResponse({ id: "thr_w", projectId: "proj_1", parentThreadId: "thr_pm" }) });
+    expect(tags()).toEqual(expect.arrayContaining(["thread-live:thr_w", "helpers:thr_pm"]));
+
+    createAttempt(db, { id: "a1", runId: "run", taskId: "T1" });
+    transitionAttempt(db, "a1", "spawn_requested");
+    transitionAttempt(db, "a1", "running", { threadId: "thr_w" });
+    for (const tag of ["task-board:proj_1", "task-board:all", "work-graph", "money_status", "helpers:thr_pm", "thread-live:thr_w"]) {
+      expect(tags()).toContain(tag);
+    }
+    stop();
+  });
+
   it("the channel and the payload are one contract for server and screens", () => {
     expect(lpChannel("proj_1")).toBe("lp:proj_1");
     expect(parseLpSignal({ kind: "rules" })).toEqual({ kind: "rules" });

@@ -2,6 +2,7 @@ import { helperExit } from "@lane-pilot/workflow-engine";
 import { waitThreadIdle } from "@lane-pilot/thread-observe";
 import { parseCodeCritique } from "../../code-critique";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
+import { sendServiceMessage } from "../../../relay/server";
 
 /**
  * One reading of a helper's answer for every stage (the hand-off standard, docs/guide/handoff.md). A helper that took the honest
@@ -20,7 +21,7 @@ export async function readAnswer<T>(bb:BbPluginApi, threadId:string|null|undefin
     const why = (first instanceof Error ? first.message : String(first)).replace(/\s+/g, " ").slice(0, 600);
     const askedAt = Date.now();
     try {
-      await bb.sdk.threads.send({ threadId, mode:"queue-if-active", input:[{ type:"text", mentions:[], text:`Lane Pilot: your answer could not be read (${why}). Do not redo the work: send the same answer again as one valid JSON object with the keys ${keys}, and nothing else; escape every quote inside a string.` }] } as never);
+      await sendServiceMessage(bb as never, { threadId, mode:"queue-if-active", text:`Lane Pilot: your answer could not be read (${why}). Do not redo the work: send the same answer again as one valid JSON object with the keys ${keys}, and nothing else; escape every quote inside a string.` });
       // Repeating an answer is one short turn: a re-ask that BB never took in must not hold the stage forever.
       await waitThreadIdle(bb, threadId, timeoutCode, REASK_WAIT_MS, askedAt);
     } catch {

@@ -2,6 +2,7 @@ import { HARNESS_VERSION, createStatusResolver } from "../../storage";
 import type { VerificationGatePort } from "../../contracts/integration-gate";
 import type { IsTaskSatisfied } from "../../contracts";
 import { LP_ALL_PROJECTS } from "@lane-pilot/ui-kit/realtime-channel";
+import { invalidateRpcTags } from "../../platform/server";
 ;
 import { ENGINE_COMPAT_VERSION, TERMINAL_RUN, WorkflowEngine, createWorkflowCatalog, registerPureActions, registerReducers, wfRunProjectId, wfRunRow } from "@lane-pilot/workflow-engine";
 import type { RunRow } from "../../storage";
@@ -85,6 +86,8 @@ export function createWorkflowEngine(ctx: ServerCore, services: Services) {
     const project = projectOf.get(runId);
     if (project) ctx.realtime.notify(project, "workflow", undefined, runId);
     ctx.realtime.notify(LP_ALL_PROJECTS, "workflow", undefined, runId);
+    // Workflow runs sit on the watched task board too: mark its tags stale on every step move.
+    invalidateRpcTags(ctx.bb, project ? [`task-board:${project}`, "task-board:all"] : ["task-board:all"]);
     const run = wfRunRow(db, runId);
     if (!run) return;
     const unmet = engineRef.current?.lastAudit(runId)?.unmet.map((entry) => entry.id);

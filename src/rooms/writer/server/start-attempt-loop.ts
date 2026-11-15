@@ -27,6 +27,7 @@ import type { WriterTaskInput } from "./start-task-state";
 import { continueWith } from "./start-thread-takeover";
 import { spawnFreshWriter } from "./start-attempt-spawn";
 import { routeAttemptFailure } from "./start-failure-route";
+import { sendServiceMessage } from "../../relay/server";
 
       // A merge conflict or a fault of Lane Pilot or the machine does not spend an attempt; free retries are capped too.
       // Free retries are counted within this start: a task restarted after a Lane Pilot fix gets its full share,
@@ -103,9 +104,8 @@ import { routeAttemptFailure } from "./start-failure-route";
             transitionAttempt(db, state.attemptId, "accepted");
             state.last = { status:"accepted", attemptId: state.attemptId, produced:[], verification:checks,
               mainfixPreflight:"the failing checks already pass on current main" };
-            if (input.pmThreadId) void bestEffort(ctx.log, "writer mainfix notice", bb.sdk.threads.send({ threadId:input.pmThreadId, mode:"queue-if-active",
-              input:[{ type:"text", mentions:[],
-                text:`Lane Pilot: задача ${input.taskId} закрыта принятой без писателя — её проверки уже проходят на текущем main, main починила другая задача. Действий не нужно.` }] } as never), undefined);
+            if (input.pmThreadId) void bestEffort(ctx.log, "writer mainfix notice", sendServiceMessage(bb as never, { threadId:input.pmThreadId, mode:"queue-if-active",
+                text:`Lane Pilot: задача ${input.taskId} закрыта принятой без писателя — её проверки уже проходят на текущем main, main починила другая задача. Действий не нужно.` }), undefined);
           }
         }
         const spawnStop = await spawnFreshWriter(deps, state, input);

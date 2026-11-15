@@ -1,8 +1,7 @@
-import { isNotFound, orMiss, sha256Hex } from "@lane-pilot/kit";
-import { writeReplacing, type ReplacingWrite } from "../../storage";
+import { sha256Hex } from "@lane-pilot/kit";
 import {
-  countTaskFiles, currentTaskFilePaths, hasTaskHome, latestTaskAttemptId, openTaskAttemptWorkspace, planSourcePaths, taskContractEditionNumber, taskFileAttempts, taskPlanDbCopy, listStageReceipts, noteTaskFileRead, openTaskHome, placeTaskHome, readTaskFile, recordTaskFile, resolveTaskFile, taskHomeOf, TASK_HOME_EXCLUDE,
-  type ResolvedTaskFile, type TaskFileIo, type TaskFileKind, type TaskFileProducer,
+  bbTaskFileIo, countTaskFiles, currentTaskFilePaths, hasTaskHome, latestTaskAttemptId, openTaskAttemptWorkspace, planSourcePaths, taskContractEditionNumber, taskFileAttempts, taskPlanDbCopy, listStageReceipts, noteTaskFileRead, openTaskHome, placeTaskHome, readTaskFile, recordTaskFile, resolveTaskFile, taskHomeOf, TASK_HOME_EXCLUDE,
+  type ReplacingWrite, type ResolvedTaskFile, type TaskFileIo, type TaskFileKind, type TaskFileProducer,
 } from "../../storage";
 import type { ServerCore } from "../../contracts/server";
 import type { TaskV2 } from "../../contracts";
@@ -16,20 +15,6 @@ type Files = { sdk: { files: {
   read(args: { hostId: string; rootPath: string; path: string }): Promise<unknown> | unknown;
   write(args: ReplacingWrite & { contentEncoding: "utf8" }): Promise<unknown> | unknown;
 } } };
-
-/** Absolute-path reads and writes on one host, rooted at `rootPath` (the bb file API needs a root). A missing file reads as null. */
-export function bbTaskFileIo(bb: Files, hostId: string, rootPath: string): TaskFileIo {
-  return {
-    read: async (absPath) => {
-      const file = await orMiss(Promise.resolve().then(() => bb.sdk.files.read({ hostId, rootPath, path: absPath })), null, isNotFound);
-      const content = file && typeof file === "object" ? (file as { content?: unknown }).content : null;
-      return typeof content === "string" ? content : null;
-    },
-    write: async (absPath, content) => {
-      await writeReplacing(bb.sdk.files, { hostId, rootPath, path: absPath, content, createParents: true });
-    },
-  };
-}
 
 /** The io of a task's home in its base checkout, or null for a task on the old layout. */
 export function taskHomeIo(ctx: Pick<ServerCore, "bb" | "db">, taskId: string): TaskFileIo | null {

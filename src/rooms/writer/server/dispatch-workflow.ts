@@ -10,6 +10,7 @@ import { pmReadBrief } from "../writer-brief";
 import type { NodeExecutor, RunSummary, StepContext, WorkflowEngine } from "../../workflow";
 import { provideLpTaskPipeline } from "../../workflow/server";
 import { runPlanCritique, runPmRead, runSpecialistReview } from "../../critique/server";
+import { registerExecutionPacketGate } from "./execution-packet-gate";
 import { closeWriterStages, recordStage } from "../../runs/server";
 import { isMainfixTask } from "../../tasks";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
@@ -137,7 +138,10 @@ export function registerDispatchExecutors(engine: WorkflowEngine, bb?: BbPluginA
   exec("lp.pm-read", async (r, ctx) => {
     // The plan comes from the task home's PLAN.md by the manifest (docs/task-folder.md), not from what the dispatch held in memory.
     const plan = await stagePlanText(r.ctx, r.taskId, "pm-read", r.plan);
-    const pmRead = await runPmRead({ stageHelperSettings: r.services.stageHelperSettings, bb: r.ctx.bb, db: r.ctx.db, projectId: r.projectId, runId: r.runId, taskId: r.taskId, pmThreadId: r.threadId, config: r.runConfig, task: r.task, plan, workflow: stepRef(ctx) });
+    const packetSha256 = text(ctx.input.with.packetSha256);
+    const selected = ctx.input.with.selectedLines;
+    const pmRead = await runPmRead({ stageHelperSettings: r.services.stageHelperSettings, bb: r.ctx.bb, db: r.ctx.db, projectId: r.projectId, runId: r.runId, taskId: r.taskId, pmThreadId: r.threadId, config: r.runConfig, task: r.task, plan, workflow: stepRef(ctx),
+      ...(packetSha256 ? { packetSha256 } : {}), ...(typeof selected === "number" ? { selectedLines: selected } : {}) });
     return { state: pmRead.state, summary: pmRead.summary, ...(pmRead.reason !== undefined ? { reason: pmRead.reason } : {}), handoff: handoffOf("pm-read", pmRead.state, pmRead.reason) };
   }, {}, "pm-read");
 
@@ -145,6 +149,8 @@ export function registerDispatchExecutors(engine: WorkflowEngine, bb?: BbPluginA
     const settings = loadProjectSettings(r.ctx.db, r.projectId, getRunSettingsScopes(r.ctx.db, r.runId));
     return { mode: resolveQualityMode(r.task, settings[QUALITY_MODE_SETTING]) };
   }, { reentrant: true });
+
+  registerExecutionPacketGate(exec, endedReply, blockedReply);
 
   exec("lp.plan-critique", async (r, ctx) => {
     // A canceled task starts no new helper: the block branch then answers with the ended attempt.

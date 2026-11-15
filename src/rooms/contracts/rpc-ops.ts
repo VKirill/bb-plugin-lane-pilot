@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { CANCEL_CODES, acceptanceTotalsSchema, acceptanceWeekSchema } from "@lane-pilot/contracts";
+import { attemptLogTailInput, attemptLogTailOutput, emptyRpcInput, moneyStatusOutput, ownerWaitingOutput, workGraphStripsInput, workGraphStripsOutput, workGraphTaskInput, workGraphTaskOutput, worldVersionOutput } from "./ui-query-schemas";
 
 /** Run control, statistics, deploy, self-repair, canary and the stack installer. */
 export const rpcOps = {
@@ -208,13 +209,13 @@ export const rpcOps = {
   },
   /** One task's work graph: a cell per stage, who ran each (role, round, model, turns, time, tokens, cost) (src/rooms/work-graph). */
   work_graph_task: {
-    input: z.object({ runId: z.string().min(1), taskId: z.string().min(1) }).strict(),
-    output: z.unknown(),
+    input: workGraphTaskInput,
+    output: workGraphTaskOutput,
   },
   /** The stage cells and the summary line of many tasks, keyed `runId:taskId`, for the task list. */
   work_graph_strips: {
-    input: z.object({ keys: z.array(z.object({ runId: z.string().min(1), taskId: z.string().min(1) }).strict()).max(300) }).strict(),
-    output: z.unknown(),
+    input: workGraphStripsInput,
+    output: workGraphStripsOutput,
   },
   /** A proposed task draft's card: title, promise, kind, state (SMA m_sw_chat_draft, src/rooms/tasks/server/draft.ts). */
   task_draft_card: {
@@ -228,8 +229,8 @@ export const rpcOps = {
   },
   /** The tail of a task's latest attempt log in plain words (SMA m_ws_attempt_log, src/rooms/work-graph/log-tail.ts). */
   attempt_log_tail: {
-    input: z.object({ runId: z.string().min(1), taskId: z.string().min(1), projectId: z.string().min(1).optional() }).strict(),
-    output: z.unknown(),
+    input: attemptLogTailInput,
+    output: attemptLogTailOutput,
   },
   /** Stages and models over a window: green, red, rounds, cost and time per stage, and per model on each stage. */
   work_graph_stats: {
@@ -253,13 +254,13 @@ export const rpcOps = {
   },
   /** Money (src/rooms/money): spent month to date, the 14-day series, the cap and what is left of it. */
   money_status: {
-    input: z.object({}).strict(),
-    output: z.unknown(),
+    input: emptyRpcInput,
+    output: moneyStatusOutput,
   },
   /** The world version (src/rooms/relay/server): one number that grows with every attempt change; a screen reads the board again when it moved. */
   world_version: {
-    input: z.object({}).strict(),
-    output: z.object({ version: z.number().int().nonnegative() }).strict(),
+    input: emptyRpcInput,
+    output: worldVersionOutput,
   },
   /** Phases on rails (src/rooms/phase): the live and recent phases of a project or a PM chat, with stage and next action. */
   phase_list: {
@@ -378,8 +379,8 @@ export const rpcOps = {
   },
   /** «Waiting for the owner» (src/rooms/owner-waiting): what only the owner can decide, the Telegram digest of new items, and its settings. */
   owner_waiting: {
-    input: z.object({}).strict(),
-    output: z.unknown(),
+    input: emptyRpcInput,
+    output: ownerWaitingOutput,
   },
   owner_waiting_digest: {
     input: z.object({}).strict(),

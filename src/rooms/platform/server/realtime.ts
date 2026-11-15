@@ -47,7 +47,13 @@ export function createRealtime(bb: BbPluginApi, log: (message: string) => void):
   };
 }
 
-type ThreadEvents = { on?: (event: string, handler: (payload: { thread?: { projectId?: string; parentThreadId?: string | null } }) => void) => void };
+/** Marks watched RPC reads stale for the SDK's query cache; a BB without experimental_invalidate ignores it and the screens keep their poll. */
+export function invalidateRpcTags(bb: BbPluginApi, tags: readonly string[]): void {
+  try { (bb.rpc as { experimental_invalidate?: (tags: readonly string[]) => void }).experimental_invalidate?.(tags); }
+  catch { /* an older BB has no invalidate; the poll is the fallback */ }
+}
+
+type ThreadEvents = { on?: (event: string, handler: (payload: { thread?: { id?: string; projectId?: string; parentThreadId?: string | null } }) => void) => void };
 
 /**
  * Wires the sources of «helpers» changes: BB thread events of a PM chat's children, and Lane Pilot's own attempt
@@ -61,15 +67,32 @@ export function mountHelperSignals(bb: BbPluginApi, db: LanePilotDatabase, realt
     if (known) pmThreads.add(threadId);
     return known;
   };
+  // The same entities the custom channel announces, marked stale for the SDK's watched reads
+  // (ui-query-contract tags `helpers:<pmThread>` / `task-board:<project|all>` / `thread-live:<thread>` /
+  // `work-graph` / `money_status`). A BB without experimental_invalidate ignores this and the screens keep their poll.
+  const invalidate = (tags: readonly string[]) => invalidateRpcTags(bb, tags);
   const events = (bb as unknown as { events?: ThreadEvents }).events;
   for (const event of HELPER_EVENTS) {
     events?.on?.(event, ({ thread }) => {
       const parent = thread?.parentThreadId;
-      if (parent && thread?.projectId && isPmThread(parent)) realtime.notify(thread.projectId, "helpers", parent);
+      if (thread?.id) invalidate([`thread-live:${thread.id}`]);
+      if (parent && thread?.projectId && isPmThread(parent)) {
+        realtime.notify(thread.projectId, "helpers", parent);
+        invalidate([`helpers:${parent}`]);
+      }
     });
   }
   return onAttemptChanged(db, (attemptId) => {
     const row = attemptRunRef(db, attemptId);
-    if (row) realtime.notify(row.project_id, "helpers", row.pm_thread_id ?? undefined);
+    if (!row) return;
+    realtime.notify(row.project_id, "helpers", row.pm_thread_id ?? undefined);
+    invalidate([
+      `task-board:${row.project_id}`, "task-board:all",
+      // Every watched read an attempt write can move: the board and log tail (task-board tags), the stage
+      // strips and task graph (work-graph), the spend read (money_status), the thread's own live card.
+      "work-graph", "money_status",
+      ...(row.pm_thread_id ? [`helpers:${row.pm_thread_id}`] : []),
+      ...(row.thread_id ? [`thread-live:${row.thread_id}`] : []),
+    ]);
   });
 }

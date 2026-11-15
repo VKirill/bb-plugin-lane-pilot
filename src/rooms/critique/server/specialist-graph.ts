@@ -9,6 +9,7 @@ import { getRun } from "../../storage";
 import type { ServerCore } from "../../contracts/server";
 
 import type { WorkflowEngineApi } from "../../platform/server";
+import { sendServiceMessage } from "../../relay/server";
 
 /** The fields of the services bag this file reads, typed by the rooms that own them. */
 interface Services {
@@ -98,7 +99,7 @@ export async function waitSpecialistRun(ctx: ServerCore, services: Services, inp
           });
           if (!verdict.ok) {
             const remark = `Revision needed: ${validator} validator rejected ${deliverable} — ${verdict.reason}`;
-            await bestEffort(ctx.log, "specialist revision remark", ctx.bb.sdk.threads.send({ threadId, mode: "queue-if-active", input: [{ type: "text", text: remark, mentions: [] }] } as never), undefined);
+            await bestEffort(ctx.log, "specialist revision remark", sendServiceMessage(ctx.bb as never, { threadId, mode: "queue-if-active", text: remark }), undefined);
             return { ...base, state: "revision", reason: verdict.reason, output: fenceOutside("specialist", remark) };
           }
         } catch (cause) {

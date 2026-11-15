@@ -14,6 +14,13 @@ export const gitHostMethods = {
       ownsBarrier:z.boolean().optional(), ownsPaths:z.array(z.string().max(300)).max(200).optional(), neverTouch:z.array(z.string().max(300)).max(200).optional() }).strict(),
     output: z.object({ hostId:z.string(), linked:z.array(z.string()), locked:z.number().int().optional() }).strict(),
   },
+  gitOwnsBarrier: {
+    // The barrier of an attempt's lane worktree brought to a changed contract (owns_paths widened in place): nothing else
+    // of gitPrepareWorktree runs again. `not_lane_worktree`: the path is no worktree under the lane root, where no barrier is set.
+    input: z.object({ requestedHostId:z.string().min(1), worktreePath:z.string().startsWith("/"),
+      ownsPaths:z.array(z.string().max(300)).max(200), neverTouch:z.array(z.string().max(300)).max(200) }).strict(),
+    output: z.object({ hostId:z.string(), status:z.enum(["applied","not_lane_worktree"]), locked:z.number().int(), unlocked:z.number().int() }).strict(),
+  },
   gitWorktreeSnapshot: {
     input: z.object({ requestedHostId:z.string().min(1), worktreePath:z.string().startsWith("/"), name:z.string().regex(/^[A-Za-z0-9._-]{1,120}$/) }).strict(),
     output: z.object({ hostId:z.string(), status:z.enum(["clean","saved","missing","failed"]), path:z.string().nullable(), dirty:z.number().int(), ahead:z.number().int(), reason:z.string().nullable() }).strict(),

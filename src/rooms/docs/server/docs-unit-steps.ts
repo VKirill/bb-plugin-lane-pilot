@@ -15,6 +15,7 @@ import { spawnDocsThread } from "./docs-spawn";
 import { mergeDocs } from "./docs-worktree";
 import { docsUnitRecordKey, readUnitRecord, saveDocsUnitRecord, dropDocsUnitRecord, nightIsOver } from "./docs-unit-records";
 import type { NightlyShared, DocsUnitRecord, UnitInputs, UnitPlan, DocsFinding, Checked, Verified } from "./docs-night-state";
+import { sendServiceMessage } from "../../relay/server";
 
   /** What one docs unit may write: a flow its page, the root its docs/ outside docs/flows when flows exist, a workspace its folder. */
   export function unitWritable(unit:DocsUnit):(path:string)=>boolean {
@@ -264,7 +265,7 @@ state:"skipped";row:Record<string,unknown>}|{state:"ok";verified:Verified;thread
         // The repair counts only once its own turn completes, not the turn the agent already finished.
         const sentAt=Date.now()-2_000;
         await saveDocsUnitRecord(n,{...record,phase:"repairing",sentAt});
-        await bb.sdk.threads.send({threadId,mode:"queue-if-active",input:[{type:"text",text:docsRepairPrompt(checked.findings),mentions:[]}]});
+        await sendServiceMessage(bb as never, {threadId,mode:"queue-if-active",text:docsRepairPrompt(checked.findings)});
         await waitThreadIdle(bb,threadId,"docs_nightly_repair",undefined,sentAt,stop);
         checked=await inspect();
       }

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanCheckOutput } from "@lane-pilot/kit";
-import { forgetSecrets, redactKnown, redactKnownDeep, redactSecrets, registerSecrets, secretStrings } from "@lane-pilot/kit";
+import { CREDENTIAL_MASK, forgetSecrets, redactKnown, redactKnownDeep, redactSecrets, registerSecrets, secretStrings, withoutCredentials } from "@lane-pilot/kit";
 import { createCore } from "../../../src/rooms/core/server/core";
 
 // Test values only: none of them is a real credential.
@@ -40,5 +40,38 @@ describe("redact", () => {
     try { createCore(bb as never, {} as never); } catch { /* the rest of the core needs a real SDK */ }
     bb.log.warn(`failed with ${KEY}`);
     expect(lines.at(-1)).toBe("failed with ***");
+  });
+});
+
+describe("withoutCredentials", () => {
+  it("keeps ordinary EN/RU requirement prose intact", () => {
+    for (const text of [
+      "use the same token across all files",
+      "token consistency",
+      "token consistency across services",
+      "password validation",
+      "password validation rules",
+      "The password reset flow sends an email",
+      "We rotate the API key monthly",
+      "token-based authentication",
+      "password-protected routes",
+      "the password self-service portal",
+      "добавь проверку пароля и токена для всех файлов",
+      "тот же токен во всех файлах",
+      "пароль должен быть стойким",
+    ]) expect(withoutCredentials(text), text).toBe(text);
+  });
+
+  it("still masks credentials after keywords, explicit assignments and the email pattern", () => {
+    expect(withoutCredentials("pass hunter")).toBe(`pass ${CREDENTIAL_MASK}`);
+    expect(withoutCredentials("secret correcthorse")).toBe(`secret ${CREDENTIAL_MASK}`);
+    expect(withoutCredentials("token abcd1234")).toBe(`token ${CREDENTIAL_MASK}`);
+    expect(withoutCredentials("password: hunter")).toBe(`password: ${CREDENTIAL_MASK}`);
+    expect(withoutCredentials("password=hunter")).toBe(`password=${CREDENTIAL_MASK}`);
+    expect(withoutCredentials("password-hunter22")).toBe(`password-${CREDENTIAL_MASK}`);
+    expect(withoutCredentials("token - hunter")).toBe(`token - ${CREDENTIAL_MASK}`);
+    expect(withoutCredentials("пароль: abc12345")).toBe(`пароль: ${CREDENTIAL_MASK}`);
+    expect(withoutCredentials("login me@x.ru Pa55word!")).toBe(`login me@x.ru ${CREDENTIAL_MASK}`);
+    expect(withoutCredentials(withoutCredentials("token abcd1234"))).toBe(`token ${CREDENTIAL_MASK}`);
   });
 });

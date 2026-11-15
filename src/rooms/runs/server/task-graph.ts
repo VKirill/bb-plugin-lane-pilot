@@ -1,4 +1,5 @@
 import { taskRedispatchBase } from "@lane-pilot/contracts";
+import { attemptAtWork, attemptEnded, type LatestAttempt } from "../aggregation";
 import { getRunObjective, taskGraphRows } from "../../storage";
 import type { LanePilotDatabase } from "../../storage";
 
@@ -14,7 +15,8 @@ export type TaskGraphNode = {
 };
 export type TaskGraph = { nodes: TaskGraphNode[]; edges: Array<{ from: string; to: string; kind: TaskGraphEdgeKind }>; objective: string | null };
 
-const WORKING = new Set(["spawn_requested", "spawn_unknown", "running", "cancel_requested", "validation_failed"]);
+/** The latest attempt of a graph row, read with the run state's own rule (aggregation.ts). */
+const latestOf = (row: { state: string; stage_state: string | null }): LatestAttempt => ({ state: row.state, writerStage: row.stage_state });
 /** The writer-agent stage reason a waiting task records (src/rooms/writer/server/start.ts). */
 const WAIT_FOR_TASK = /^waiting for (\S+) \(thread [^)]*\): (.*)$/;
 
@@ -23,16 +25,17 @@ const kindOfWait = (why: string): TaskGraphEdgeKind =>
 
 /**
  * The run's tasks still to finish and what each waits for, so the PM chat can show what goes in parallel and what in turn.
- * A task's latest attempt decides its state; accepted and canceled tasks are left out, and a blocked one only appears when
- * a shown task waits for it (it holds the chain until it is sent again).
+ * A task's latest attempt decides its state; accepted and canceled tasks are left out, and a blocked one — or one whose
+ * writer loop ended on a failure (timeout, provider_error, validation_failed…) — only appears when a shown task waits for
+ * it (it holds the chain until it is sent again).
  */
 export function buildTaskGraph(db: LanePilotDatabase, runId: string): TaskGraph {
   const rows = taskGraphRows(db, runId) as Array<{
     id: string; contract_json: string; state: string; thread_id: string | null; attempt_id: string | null; attempt_reason: string | null; stage_state: string | null; stage_reason: string | null;
   }>;
   const contract = (json: string): { title?: unknown; depends_on?: unknown; area?: unknown } => { try { return JSON.parse(json) as never; } catch { return {}; } };
-  const open = rows.filter((row) => row.state === "queued" || WORKING.has(row.state));
-  const blocked = new Map(rows.filter((row) => row.state === "blocked").map((row) => [row.id, row]));
+  const open = rows.filter((row) => attemptAtWork(latestOf(row)));
+  const blocked = new Map(rows.filter((row) => attemptEnded(latestOf(row))).map((row) => [row.id, row]));
   // The same redispatch rule as the writer's wait (latestTaskAttemptState): `P1`, `P1.2`, `P1.2.2` are one task sent again.
   const byFamily = new Map<string, string>();
   for (const row of rows) byFamily.set(taskRedispatchBase(row.id), row.id);
@@ -52,7 +55,7 @@ export function buildTaskGraph(db: LanePilotDatabase, runId: string): TaskGraph 
   };
   for (const row of open) {
     const waiting = row.state === "queued" && row.stage_state === "pending" && /^waiting/.test(row.stage_reason ?? "");
-    node(row, WORKING.has(row.state) ? "running" : waiting ? "waiting" : "queued");
+    node(row, row.state !== "queued" ? "running" : waiting ? "waiting" : "queued");
   }
   const edge = (from: string, to: string, kind: TaskGraphEdgeKind) => {
     if (from === to) return;

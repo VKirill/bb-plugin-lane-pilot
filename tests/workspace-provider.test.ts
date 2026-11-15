@@ -37,9 +37,9 @@ const base = "/repo";
 const worktree = "/home/me/.lane-pilot/worktrees/a1/repo";
 const signal = new AbortController().signal;
 const report = { step() {}, log() {} };
-function createContext(inputs: Record<string, unknown>) {
+function createContext(inputs: Record<string, unknown>, claimPath = async () => true) {
   return { inputs, host: { id: "h" }, signal, report, attempt: 1, pathKey: "k", rebuild: false, previous: null, suggestedBranchName: "x",
-    thread: {}, project: {}, projectCheckout: null, gitRemote: null, experimental_claimPath: async () => true } as never;
+    thread: {}, project: {}, projectCheckout: null, gitRemote: null, experimental_claimPath: claimPath } as never;
 }
 function removeContext(over: Record<string, unknown>) {
   return { environment: null, hostId: "h", path: worktree, pathKey: "k", resource: null, attempt: 1, report, signal, ...over } as never;
@@ -71,6 +71,22 @@ describe("the lane-pilot-worktree environment provider", () => {
     const { calls, provider } = providerEnv((call) => call.method === "runCommand" ? { exitCode: 0, stdout: "lane/a1\n", stderr: "" } : {});
     const created = await provider.create(createContext({ basePath: base, name: "a1", path: worktree }));
     expect(created).toEqual({ status: "created", path: worktree, ownsPath: true, resource: { basePath: base, name: "a1", path: worktree } });
+    expect(calls.map((call) => call.method)).toEqual(["runCommand"]);
+  });
+
+  it("refuses to adopt a path another environment claimed, and makes nothing", async () => {
+    const { calls, provider } = providerEnv((call) => call.method === "runCommand" ? { exitCode: 0, stdout: "lane/a1\n", stderr: "" } : {});
+    const context = createContext({ basePath: base, name: "a1", path: worktree }, async () => false);
+    expect(await provider.create(context)).toEqual({ status: "failed", message: `${worktree} is already in use by another environment.` });
+    expect(calls.map((call) => call.method)).toEqual(["runCommand"]);
+  });
+
+  it("adopts without a claim on a host whose provider context has no claimPath", async () => {
+    const { calls, provider } = providerEnv((call) => call.method === "runCommand" ? { exitCode: 0, stdout: "lane/a1\n", stderr: "" } : {});
+    const context = createContext({ basePath: base, name: "a1", path: worktree }) as Record<string, unknown>;
+    delete context.experimental_claimPath;
+    const created = await provider.create(context as never);
+    expect(created).toMatchObject({ status: "created", path: worktree });
     expect(calls.map((call) => call.method)).toEqual(["runCommand"]);
   });
 

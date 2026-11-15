@@ -1,4 +1,5 @@
 import { isWholeConsent } from "../tasks";
+import { isServiceNoticeText } from "../contracts";
 
 /**
  * Rails by default (SMA: the one-turn engine and «every heavy request goes through the phase graph»). Matvey's machine reads the
@@ -14,11 +15,13 @@ export type IntakeKind = (typeof INTAKE_KINDS)[number];
 /** Lane Pilot's own notices, other threads' messages and system frames are not the owner's request. */
 // The end notice of a workflow run (pm-notice.ts) too: read as the owner's request, each one started another issue-quick, whose own end notice
 // started the next (live 2026-10-26, Vampirism Fire: wfrun_400875d6… → wfrun_71f91820… → …, every one «too vague»).
-const MACHINE_TEXT = [/^\s*\[?lane pilot\b/i, /^\s*\[bb message from/i, /^\s*<task-notification/i, /^\s*\[system/i, /^\s*\[lane pilot phase\]/i, /^\s*Workflow run wfrun_[\w-]+ of /i,
+const MACHINE_TEXT = [/^\s*\[bb message from/i, /^\s*<task-notification/i, /^\s*\[system/i, /^\s*Workflow run wfrun_[\w-]+ of /i,
   // pmPrompt() is recorded by BB as source=spawn, initiator=user, too: its activation instruction is not an owner's goal.
   /^\s*You are the Lane Pilot PM(?:\. Do not write production code yourself\.| in the selected role\.)\r?\nRun id: lprun_[\w-]+\./,
 ];
-export const isMachineMessage = (text: string) => MACHINE_TEXT.some((pattern) => pattern.test(text));
+// Lane Pilot's own notices come from the shared classifier: exact machine templates only, so a genuine owner line that
+// starts with the plugin's name («Lane Pilot, исправь …») stays an owner message (the old /^lane pilot\b/ swallowed it).
+export const isMachineMessage = (text: string) => isServiceNoticeText(text) || MACHINE_TEXT.some((pattern) => pattern.test(text));
 
 const CONSENT = /^(да|ага|угу|ок|окей|ok|okay|yes|yep|го|гоу|давай|делай|согласен|согласна|принято|подтверждаю|поехали|\+|\+\+)[\s.!)]*$/i;
 /** Above this many characters a message the rules cannot place is taken as heavy: a goal, not a fix. */

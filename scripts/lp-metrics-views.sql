@@ -1,5 +1,5 @@
 -- Views shared by scripts/lp-metrics.sh (the full report) and the daily Telegram summary on the hub. Read-only.
--- The caller attaches the BB core database as `core` (it holds the project names) and creates the temp table `lp_params(days, since_version)`:
+-- The caller provides the core facts as `core` — the plugin injects an SDK snapshot (projects), the hub script attaches bb.db — and creates the temp table `lp_params(days, since_version)`:
 --   attach 'file:/home/ubuntu/.bb/bb.db?mode=ro' as core;  create temp table lp_params(days integer, since_version text);  insert into lp_params values (7, '');
 --
 -- Version. The headline counts attempts of the current build and newer (`cur`): harness_version >= lp_params.since_version, and with

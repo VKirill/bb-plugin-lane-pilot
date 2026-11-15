@@ -5,7 +5,7 @@ import { hostContract } from "../../contracts";
 import { ENVIRONMENT_REASON } from "../../contracts/failure-class";
 import { readCheckRun } from "../../tasks/server";
 import { laneWorktreeRoot as laneRoot, laneWorktreeTargetFor, sweepLaneWorktrees, sweepWorktreeClasses } from "../../verification";
-import { createWorktree, integrateWorktree, mergeInfo, prepareWorktree, removeLaneWorktree, revertCommitsInWorktree, syncWorktree, snapshotWorktree, worktreeState, type ReplayCheck, type ReplayCheckOutcome } from "../../verification";
+import { applyLaneOwnsBarrier, createWorktree, integrateWorktree, mergeInfo, prepareWorktree, removeLaneWorktree, revertCommitsInWorktree, syncWorktree, snapshotWorktree, worktreeState, type ReplayCheck, type ReplayCheckOutcome } from "../../verification";
 import { attributeGateOnHost, bisectGateOnHost, runGateOnHost } from "../../verification";
 import { cachedReplayVerdicts, recordReplayVerdict, replayKey } from "../../verification";
 import { glueReplayCommands } from "../../verification/server";
@@ -21,6 +21,12 @@ export const gitPrepareWorktree: ExperimentalHostRpcHandlers<typeof hostContract
   hostId:process.env.BB_HOST_ID??input.requestedHostId,
   ...await prepareWorktree({basePath:input.basePath,worktreePath:input.worktreePath,
     ...(input.ownsBarrier?{ownsBarrier:true,ownsPaths:input.ownsPaths??[],neverTouch:input.neverTouch??[]}:{})}),
+});
+
+/** Only the barrier, brought to the attempt's changed contract; the lane root is this host's own (docs/worktrees.md). */
+export const gitOwnsBarrier: ExperimentalHostRpcHandlers<typeof hostContract>["gitOwnsBarrier"] = async (input, context) => ({
+  hostId:process.env.BB_HOST_ID??input.requestedHostId,
+  ...await applyLaneOwnsBarrier({laneRoot:laneWorktreeRoot(),worktreePath:input.worktreePath,ownsPaths:input.ownsPaths,neverTouch:input.neverTouch,signal:context?.signal}),
 });
 
 export const gitIntegrate: ExperimentalHostRpcHandlers<typeof hostContract>["gitIntegrate"] = async (input) => ({

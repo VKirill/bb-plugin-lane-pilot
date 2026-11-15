@@ -9,7 +9,8 @@ import { spawnAsync } from "@lane-pilot/kit";
  * Between two processes the file locks hold. The plugin's own `data.db` is read the same way, so one child sees both (core is attached).
  */
 export type SqlResult = { lines: string[]; errors: string[] };
-export type SqlJob = { file: string; core?: string | null; script: string };
+/** `core` attaches a database file (generic runner use); `snapshot` materializes SDK-fetched core facts as an in-memory `core` schema — the daily report's path, which never attaches the real bb.db. */
+export type SqlJob = { file: string; core?: string | null; snapshot?: import("./core-snapshot").CoreSnapshot | null; script: string };
 export type SqlRun = (job: SqlJob) => Promise<SqlResult>;
 
 /** Splits a script into statements at `;` outside quotes and comments; blank and comment-only pieces are dropped. */
@@ -43,7 +44,21 @@ process.stdin.on("end", () => {
   try {
     db = new DatabaseSync(job.file, { readOnly: true });
     db.exec("PRAGMA busy_timeout = 5000");
-    if (job.core) db.exec("attach database '" + job.core.replace(/'/g, "''") + "' as core");
+    if (job.snapshot) {
+      // ':memory:' inherits the read-only flag of the main file and refuses writes; the URI form opens read-write.
+      db.exec("attach database 'file:lp_report_core?mode=memory' as core");
+      db.exec("create table core.projects(id text primary key, name text)");
+      db.exec("create table core.threads(id text primary key, created_at integer)");
+      db.exec("create table core.thread_plugin_metadata(thread_id text not null, plugin_id text not null, metadata_json text not null)");
+      const ins = {
+        projects: db.prepare("insert into core.projects values (?, ?)"),
+        threads: db.prepare("insert into core.threads values (?, ?)"),
+        metadata: db.prepare("insert into core.thread_plugin_metadata values (?, ?, ?)"),
+      };
+      for (const row of job.snapshot.projects) ins.projects.run(row.id, row.name);
+      for (const row of job.snapshot.threads) ins.threads.run(row.id, row.created_at);
+      for (const row of job.snapshot.threadPluginMetadata) ins.metadata.run(row.thread_id, row.plugin_id, row.metadata_json);
+    } else if (job.core) db.exec("attach database '" + job.core.replace(/'/g, "''") + "' as core");
     for (const sql of job.statements) {
       try {
         const stmt = db.prepare(sql);
@@ -57,7 +72,7 @@ process.stdin.on("end", () => {
 });`;
 
 export const runSqliteChild: SqlRun = async (job) => {
-  const run = await spawnAsync(process.execPath, ["--no-warnings", "-e", READER], { input: JSON.stringify({ file: job.file, core: job.core ?? null, statements: splitSql(job.script) }), timeout: 120_000, maxBuffer: 16 * 1024 * 1024 });
+  const run = await spawnAsync(process.execPath, ["--no-warnings", "-e", READER], { input: JSON.stringify({ file: job.file, core: job.core ?? null, snapshot: job.snapshot ?? null, statements: splitSql(job.script) }), timeout: 120_000, maxBuffer: 16 * 1024 * 1024 });
   if (run.error || run.status !== 0) throw new Error(run.error?.message ?? `the sqlite reader exited ${run.status}: ${run.stderr.slice(-300)}`);
   return JSON.parse(run.stdout) as SqlResult;
 };

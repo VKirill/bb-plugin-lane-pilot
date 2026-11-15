@@ -22,6 +22,7 @@ export const isAdvisoryProof = (proof: StageProof): boolean => proof.kind === "a
 
 /** Per stage, what the code checks. Exhaustive over STAGE_IDS: a new stage does not compile until it declares its proof. */
 export const STAGE_PROOF: Record<StageId, StageProof> = {
+  "execution-packet": { kind: "gate", check: "buildExecutionPacket over the task's read_first: a malformed hint, a line window outside the file, a source that changed mid-read, a refused path or an uncertain read error blocks the attempt before any paid stage; a missing source or one deferred to a required on-site read (windowless over 512 KiB, beyond the host read limit or an unsupported host bound) stays advisory" },
   "pm-read": { kind: "advisory", reason: "a model's summary of the read_first excerpts; it only hands context to the critics and decides nothing",
     form: "parsePmReadResult: one JSON object with a non-blank summary (a blank or unreadable answer fails the stage)" },
   "plan-critique": { kind: "advisory", reason: "a model's verdict on the plan: it never accepts a task, and in plan_critique.mode gate (the default, SMA p2_checker) its refusal stops the attempt before the writer",

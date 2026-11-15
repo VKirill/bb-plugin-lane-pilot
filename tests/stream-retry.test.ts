@@ -1,7 +1,7 @@
 import { expect, it } from "vitest";
 import { createFakePluginHost, makeTurnFailedEvent } from "@get-bb/plugin-sdk/testing";
 import plugin from "../server";
-import { createAttempt, createRun, openDatabase, transitionAttempt } from "../src/rooms/plugin-db";
+import { createAttempt, createRun, createTask, openDatabase, transitionAttempt } from "../src/rooms/plugin-db";
 import { MAX_STREAM_RETRY_ATTEMPTS, streamRetryDecision } from "../src/rooms/writer/stream-retry";
 import { nativeSelectionSchema } from "../src/rooms/contracts/native-selection";
 
@@ -162,5 +162,46 @@ it("does not retry a writer the user canceled", async () => {
     errorInfo: streamError,
   }));
   expect(retries).toEqual([]);
+  await fake.harness.lifecycle.dispose();
+});
+
+it("stream gate uses the same durable policy: ended attempt declines even with role metadata, a live attempt allows without it", async () => {
+  const retries: string[] = [];
+  const fake = createFakePluginHost({
+    pluginId: "lane-pilot",
+    sdk: {
+      threads: {
+        retry: async (args: { threadId: string }) => {
+          retries.push(args.threadId);
+          return { ok: true as const, delivery: "sent" as const, attempt: 2, turnRequestId: "creq_gate" };
+        },
+        getPluginMetadata: async ({ threadId }: { threadId: string }) =>
+          threadId === "thr_ended" ? { role: "writer", lanePilotRunId: "lprun_gate" } : {},
+      },
+    },
+  });
+  await plugin(fake.bb);
+  const db = openDatabase(fake.bb);
+  createRun(db, "lprun_gate", "project_a");
+  createTask(db, { id: "t_gate", runId: "lprun_gate", kind: "bb", contract: {} });
+  for (const [attemptId, threadId, to] of [
+    ["att_ended", "thr_ended", "accepted"],
+    ["att_live", "thr_live", "running"],
+  ] as const) {
+    createAttempt(db, { id: attemptId, runId: "lprun_gate", taskId: "t_gate" });
+    transitionAttempt(db, attemptId, "spawn_requested");
+    transitionAttempt(db, attemptId, "running", { threadId });
+    if (to === "accepted") transitionAttempt(db, attemptId, "accepted");
+  }
+
+  // Metadata still says writer, but the attempt is accepted: the durable decision wins over the role marker.
+  await fake.harness.behavior.emitThreadEvent("turn.failed", makeTurnFailedEvent({
+    threadId: "thr_ended", requestId: "creq_ended", errorInfo: streamError,
+  }));
+  // No metadata at all: the live attempt row itself proves ownership, so the dropped stream is retried.
+  await fake.harness.behavior.emitThreadEvent("turn.failed", makeTurnFailedEvent({
+    threadId: "thr_live", requestId: "creq_live", errorInfo: streamError,
+  }));
+  expect(retries).toEqual(["thr_live"]);
   await fake.harness.lifecycle.dispose();
 });

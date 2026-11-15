@@ -1,4 +1,5 @@
 import type { Evidence } from "./model";
+import { isServiceNoticeText } from "../contracts";
 
 /**
  * The one collector of the owner's own messages (A2), ported from the retired memory-profile plugin and shared by both learning
@@ -55,7 +56,8 @@ export function ownerMessagesOf(event: EventLike, thread: ThreadLike): OwnerMess
   const out: OwnerMessage[] = [];
   groups.forEach((input, index) => {
     const text = textOf(input);
-    if (!text.trim() || AGENT_ENVELOPE.test(text)) return;
+    // Lane Pilot's own sender-less notices are recorded initiator:"user" too; the shared classifier keeps them out of owner words.
+    if (!text.trim() || AGENT_ENVELOPE.test(text) || isServiceNoticeText(text)) return;
     out.push({ id: `${thread.id}:${event.seq}:${index}`, threadId: thread.id, projectId: thread.projectId, at: event.createdAt, text });
   });
   return out;

@@ -155,15 +155,16 @@ describe("one credential masker; every writer refuses exactly what it refused be
     expect(masked.outcomes[0]!.outcome).toBe("added");
   });
 
-  it("[sma:k_lib_secretsmask] the masks (phase intake, quotes, episode enrichment) hide at least what they hid before, and the shared masker leaves prose alone", () => {
+  it("[sma:k_lib_secretsmask] the masks (phase intake, quotes, episode enrichment) hide credentials and keep ordinary prose, and the shared masker leaves prose alone", () => {
     registerSecrets(["hunter2-known-secret"]);
     try {
-      // Phase intake: main's loose form is kept, so «secret correcthorse» and «pass hunter» are masked as they were.
+      // Phase intake: the clipped keywords keep the loose form («secret correcthorse», «pass hunter»); a bare word
+      // after a full keyword is prose now, so «password reset» stays — requirement text is not a credential.
       expect(withoutCredentials("secret correcthorse")).toBe(`secret ${CREDENTIAL_MASK}`);
       expect(withoutCredentials("pass hunter")).toBe(`pass ${CREDENTIAL_MASK}`);
       expect(withoutCredentials("пароль: abc12345")).toBe(`пароль: ${CREDENTIAL_MASK}`);
       expect(withoutCredentials("login ann@example.com S3cr3t!x")).toBe(`login ann@example.com ${CREDENTIAL_MASK}`);
-      expect(withoutCredentials("The password reset flow sends an email")).toBe(`The password ${CREDENTIAL_MASK} flow sends an email`);
+      expect(withoutCredentials("The password reset flow sends an email")).toBe("The password reset flow sends an email");
       expect(withoutCredentials("Write to ann@example.com please")).toBe("Write to ann@example.com please");
       expect(withoutCredentials(withoutCredentials("token abcd1234"))).toBe(`token ${CREDENTIAL_MASK}`);
       expect(withoutCredentials(`key ${KEY}`)).not.toContain(KEY);

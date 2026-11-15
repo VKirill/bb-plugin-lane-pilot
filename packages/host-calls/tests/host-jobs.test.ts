@@ -24,7 +24,7 @@ function setup(replies:Reply[], extra:{ disposed?:() => boolean; startError?:str
       if (method === "jobStatus") return script.length > 1 ? script.shift()! : script[0]!;
       return { hostId:"h", jobId:"job_abcdefghij1", cancelled:true };
     },
-    kv: { get: async <T>(key:string) => store.get(key) as T | undefined, set: async (key, value) => { store.set(key, value); }, delete: async (key) => { store.delete(key); } },
+    kv: { get: async <T>(key:string) => store.get(key) as T | undefined, set: async (key, value) => { store.set(key, value); }, delete: async (key) => { store.delete(key); }, list: async (prefix: string) => [...store.keys()].filter((key) => key.startsWith(prefix)) },
     disposed: extra.disposed ?? (() => false),
     now: () => clock,
     sleep: async (ms) => { sleeps.push(ms); clock += ms; },
@@ -118,7 +118,7 @@ describe("host calls as background jobs", () => {
   });
 
   it("says a lost or cancelled job is lost or cancelled", async () => {
-    await expect(setup([reply("lost", { error:"the job process is gone without a result" })]).jobs.run("install", {}, options, never)).rejects.toThrow(/job lost/);
+    await expect(setup([reply("lost", { error:"the job process is gone without a result" })]).jobs.run("install", {}, options, never)).rejects.toThrow(/was lost; the same call is not resubmitted/);
     await expect(setup([reply("cancelled", { error:"cancelled" })]).jobs.run("install", {}, options, never)).rejects.toThrow(/job cancelled/);
   });
 
@@ -153,7 +153,7 @@ describe("host calls as background jobs", () => {
     const [key, entry] = [...t.store][0]!;
     const down = createHostJobs({
       call: async () => { throw new Error("host offline"); },
-      kv: { get: async <T>() => entry as T, set: async () => undefined, delete: async () => { t.store.delete(key); } },
+      kv: { get: async <T>() => entry as T, set: async () => undefined, delete: async () => { t.store.delete(key); }, list: async (prefix: string) => [...t.store.keys()].filter((k) => k.startsWith(prefix)) },
       disposed: () => false,
     });
     await expect(down.run("detect", { a:1 }, options, never)).rejects.toThrow("host offline");

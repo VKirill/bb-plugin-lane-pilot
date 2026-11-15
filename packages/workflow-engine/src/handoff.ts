@@ -52,6 +52,11 @@ export type PacketOptions = {
   goalInput?: string | undefined;
   /** The kind of an input that arrives as an artifact (`consumes[].as`). */
   kinds?: Readonly<Record<string, string>> | undefined;
+  /**
+   * Values the step's own text substitutes in (`{{…}}` in its prompt) that are too long to repeat there: kept as
+   * files like big inputs so the prompt can point at them, never listed under Inputs and never bundled away.
+   */
+  data?: readonly PacketInput[] | undefined;
   budget?: number;
 };
 
@@ -126,15 +131,20 @@ export type PacketPlan = {
 /**
  * The packet and the files behind it, decided together and without any I/O: an input over `INLINE_CHARS` stands as a reference;
  * if the packet is still over budget without its example, the largest inputs that are still inline are turned into references
- * too, so nothing a step was given is cut away from it. With `byReference: false` (the files could not be written) the packet
- * shows every input cut instead.
+ * too, so nothing a step was given is cut away from it. `data` values get the same reference treatment but stay out of the
+ * Inputs list and out of the bundle. With `byReference: false` nothing stands as a reference and the packet shows every
+ * input cut instead.
  */
 export function planPacket(options: Omit<PacketOptions, "refs"> & { chatId: string; runId: string; byReference?: boolean }): PacketPlan {
   const { chatId, runId, byReference = true, ...rest } = options;
   const budget = rest.budget ?? PACKET_BYTES;
+  const data = rest.data ?? [];
+  const dataNames = new Set(data.map((input) => input.name));
   const refs: Record<string, InputRef> = {};
   if (byReference) {
     for (const input of rest.inputs) if (isBig(input.value)) refs[input.name] = refOf(chatId, runId, input);
+    const inputNames = new Set(rest.inputs.map((input) => input.name));
+    for (const input of data) if (isBig(input.value) && !inputNames.has(input.name) && !refs[input.name]) refs[input.name] = refOf(chatId, runId, input);
     const second = LEVELS[1]!;
     const bySize = [...rest.inputs].filter((input) => !refs[input.name]).sort((a, b) => textOf(b.value).length - textOf(a.value).length);
     for (const input of bySize) {
@@ -149,10 +159,11 @@ export function planPacket(options: Omit<PacketOptions, "refs"> & { chatId: stri
     const kept = inputs.filter((input) => input.name === rest.goalInput && textOf(input.value).length <= LEVELS[1]!.goal);
     const bundled = inputs.filter((input) => !kept.includes(input));
     const all: PacketInput = { name: "inputs", value: Object.fromEntries(bundled.map((input) => [input.name, input.value])) };
-    for (const name of Object.keys(refs)) delete refs[name];
+    for (const name of Object.keys(refs)) if (!dataNames.has(name)) delete refs[name];
     refs.inputs = { ...refOf(chatId, runId, all), summary: clip(`${bundled.length} values: ${bundled.map((input) => input.name).join(", ")}`, 200) };
     inputs = [...kept, all];
   }
-  const files = Object.keys(refs).map((name) => ({ path: refs[name]!.path, text: textOf(inputs.find((input) => input.name === name)!.value) }));
+  const named = new Map<string, unknown>([...data, ...inputs].map((input) => [input.name, input.value] as const));
+  const files = Object.keys(refs).map((name) => ({ path: refs[name]!.path, text: textOf(named.get(name)) }));
   return { packet: startPacket({ ...rest, inputs, refs }), files, refs };
 }

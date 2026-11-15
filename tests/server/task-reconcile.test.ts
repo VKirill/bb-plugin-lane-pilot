@@ -1,6 +1,7 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
-import { createAttempt, createRun, getAttempt, listStageReceipts, openDatabase, saveTaskPlan, transitionAttempt } from "../../src/rooms/plugin-db";
+import { createAttempt, createRun, getAttempt, getRun, listStageReceipts, listTaskLatestAttempts, openDatabase, saveTaskPlan, setRunState, transitionAttempt } from "../../src/rooms/plugin-db";
+import { aggregateRun } from "../../src/rooms/runs/aggregation";
 import { recordStage } from "../../src/rooms/runs/server/stage-records";
 import { createStability } from "../../src/rooms/stability/server/stability";
 import type { Services } from "../../server";
@@ -16,10 +17,15 @@ function setup() {
   saveTaskPlan(db, "T1", "Fix the hero");
   const resumed:string[] = [];
   const order:string[] = [];
+  /** The run's state when the restarted writer is handed over, before any spawn. */
+  const runAtResume:Array<string | undefined> = [];
   const services = { activeWriterTasks:new Set<string>(),
-    enqueueResumedWriter:async (_projectId:string, attempt:{ task_id:string }) => { resumed.push(attempt.task_id); return true; },
+    enqueueResumedWriter:async (_projectId:string, attempt:{ task_id:string }) => { resumed.push(attempt.task_id); runAtResume.push(getRun(db, "run")?.state); return true; },
     resumeOrphans:async () => { order.push("resume"); } } as unknown as Services;
-  const ctx = { bb, db, log:() => undefined, isDisposed:() => false } as never;
+  // core's refreshRun (core.ts), recording each call and the state it wrote.
+  const refreshed:Array<[string, string]> = [];
+  const refreshRun = (runId:string) => { setRunState(db, runId, aggregateRun(listTaskLatestAttempts(db, runId))); refreshed.push([runId, getRun(db, runId)!.state]); };
+  const ctx = { bb, db, log:() => undefined, isDisposed:() => false, refreshRun } as never;
   Object.assign(services, createStability(ctx, services));
   const { reconcileTasks } = createTaskReconcile(ctx, services);
   const lostRetry = (updatedAt:number) => {
@@ -31,12 +37,12 @@ function setup() {
     transitionAttempt(db, "a1", "empty_output", { reason:"writer changed no files" });
     db.prepare("UPDATE lane_pilot_attempt SET updated_at=? WHERE id='a1'").run(updatedAt);
   };
-  return { db, services, reconcileTasks, resumed, order, lostRetry };
+  return { db, services, reconcileTasks, resumed, order, lostRetry, refreshed, runAtResume };
 }
 
 describe("ordered task reconcile", () => {
   it("ends, parks and restarts a retry lost in a reload in the SAME start-up pass", async () => {
-    const { db, services, reconcileTasks, resumed, order, lostRetry } = setup();
+    const { db, services, reconcileTasks, resumed, order, lostRetry, refreshed, runAtResume } = setup();
     lostRetry(Date.now() - 60_000);
     // `now` must sit ahead of the stamps the pass itself writes: closeOrphanWriterStages reads its clock once, then
     // transitionAttempt stamps the stray attempt a few ms later, and the freshness guard would skip the row on a tick.
@@ -48,6 +54,9 @@ describe("ordered task reconcile", () => {
     expect(getAttempt(db, "a1")?.reason).toContain("its retry was lost in a plugin reload");
     expect(await services.stability.loadParked()).toEqual([]); // restarted: no longer parked
     expect(listStageReceipts(db, "run", "T1").find((row) => row.stageId === "writer-agent")?.state).toBe("pending"); // reopened for the restart
+    // The cleanup settled the run blocked; the queued restart holds it at work again before the writer spawns (layers audit F1).
+    expect(refreshed).toEqual([["run", "blocked"], ["run", "running"]]);
+    expect(runAtResume).toEqual(["running"]);
   });
 
   it("parks it when the restart is not due yet (a machine fault waits out its backoff)", async () => {
@@ -90,5 +99,37 @@ describe("ordered task reconcile", () => {
     services.resumeOrphans = async () => { throw new Error("host offline"); };
     await reconcileTasks({ phase:"startup" });
     expect(getAttempt(db, "a1")?.state).toBe("blocked");
+  });
+
+  // 2026-11-15 layers audit (F1): the cleanup ended the attempt and its stages through storage, and the run kept «running»
+  // (holding the project) until some later attempt transition went through core.
+  it("refreshes the run whose lost retry it ended, in the same pass, and only that run", async () => {
+    const { db, reconcileTasks, lostRetry, refreshed } = setup();
+    createRun(db, "other", "proj", "cli", "/repo");
+    setRunState(db, "run", "running");
+    lostRetry(Date.now() - 60_000);
+    // The restart is not due (a machine fault), so the task stays parked and its run settles at blocked. The pass runs 5
+    // minutes ahead: past the periodic idle threshold (3 min), so the cleanup ends the lost retry, and short of the first
+    // infra backoff (10 min from the parking), so the sweep does not restart it in the same pass (+10 min did: a real restart).
+    db.prepare("UPDATE lane_pilot_attempt SET state='provider_error', reason='ENOSPC: no space left on device' WHERE id='a1'").run();
+    await reconcileTasks({ phase:"periodic", now:Date.now() + 5 * 60_000 });
+    expect(getAttempt(db, "a1")?.state).toBe("blocked");
+    expect(listStageReceipts(db, "run", "T1").find((row) => row.stageId === "writer-agent")?.state).toBe("failed");
+    expect(refreshed).toEqual([["run", "blocked"]]);
+    expect(getRun(db, "run")?.state).toBe("blocked");
+    // Nothing left to close: the next pass ends nothing again and refreshes nothing (still short of the backoff).
+    await reconcileTasks({ phase:"periodic", now:Date.now() + 6 * 60_000 });
+    expect(refreshed).toEqual([["run", "blocked"]]);
+  });
+
+  it("refreshes nothing for a task a loop of this process works on", async () => {
+    const { db, services, reconcileTasks, lostRetry, refreshed } = setup();
+    setRunState(db, "run", "running");
+    lostRetry(Date.now() - 60_000);
+    services.activeWriterTasks.add("run:T1");
+    await reconcileTasks({ phase:"periodic", now:Date.now() + 10 * 60_000 });
+    expect(getAttempt(db, "a1")?.state).toBe("empty_output");
+    expect(refreshed).toEqual([]);
+    expect(getRun(db, "run")?.state).toBe("running");
   });
 });

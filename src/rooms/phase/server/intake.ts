@@ -4,8 +4,8 @@ import { type ServerCore } from "../../contracts/server";
 import { cancelAttemptById, isRunHalted, isRunPaused } from "../../runs/server";
 import { pathClassByRules } from "@lane-pilot/workflow-engine";
 import type { PathRisk, PathSize } from "@lane-pilot/workflow-engine";
-import { intakeByRules, intakeTitle, isMachineMessage, processHint, publishedHint, railsRefusal, type IntakeKind, type ServiceKind } from "../intake";
-import { OPEN_ATTEMPT_STATES } from "../../contracts/state-machine";
+import { intakeByRules, isMachineMessage, processHint, publishedHint, railsRefusal, type IntakeKind, type ServiceKind } from "../intake";
+import { OPEN_ATTEMPT_STATES } from "../../contracts";
 import { sendServiceMessage } from "../../relay/server";
 import type { Phase } from "../logic";
 
@@ -37,12 +37,12 @@ export type IntakeTrain = {
 };
 const KEY = (threadId: string) => `phase-intake:${threadId}`;
 /**
- * A heavy goal runs as the full-lifecycle graph (setting phase.road, «graph» by default); «phase» keeps the older phase machine. Since
- * 2026-10-01 the hub's five phases finished none of their goals, all at the seams between its stages, while the task graph accepted 120
- * tasks (owner, 2026-10-31: «work goes by graphs, stable»).
+ * A heavy goal runs as the full-lifecycle graph only: the older phase machine (`phase.road=phase`) is retired for new
+ * starts — the owner ruled graphs the stable road (2026-10-31) after the phase machine finished none of its goals.
+ * Without the train a heavy request gets an explicit unavailable notice, never a silent fallback to `phases.open`.
+ * Persisted phases, their history and control APIs are untouched; only the intake fork is gone.
  */
 const railsOn = (settings: Record<string, unknown>) => String(settings["phase.rails"] ?? "off") === "on";
-const graphRoad = (settings: Record<string, unknown>) => String(settings["phase.road"] ?? "graph") !== "phase";
 /** What a hand-over key started, kept for good: the key maps to the phase or graph run whether it is alive or finished. */
 const HANDOVER_KEY = (projectId: string, key: string) => `phase-handover:${projectId}:${key}`;
 type HandOverStarted = { started: true; via: "phase" | "issue-quick" | "issue-batch" | "issue-full" | "full-lifecycle"; id: string };
@@ -109,7 +109,7 @@ export function createPhaseIntake(ctx: Deps, phases: IntakePhases, train?: Intak
     if (kind === "service" && !stopped) {
       const answered = await serviceAnswer({ run, threadId, text, service: classified.service ?? null });
       if (answered !== null) {
-        await bestEffort(ctx.log, "phase intake service answer", bb.sdk.threads.send({ threadId, mode: "queue-if-active", input: [{ type: "text", text: answered, mentions: [] }] } as never), undefined);
+        await bestEffort(ctx.log, "phase intake service answer", sendServiceMessage(bb as never, { threadId, mode: "queue-if-active", text: answered }), undefined);
         const rec: IntakeRecord = { requestId, kind: "service", by, phaseId: null, at: Date.now() };
         await bb.storage.kv.set(KEY(threadId), rec);
         return rec;
@@ -121,21 +121,25 @@ export function createPhaseIntake(ctx: Deps, phases: IntakePhases, train?: Intak
         // A new heavy message while a phase runs is the owner's correction of it (SMA: the owner may return 4 → 1); the PM reads it
         // in this very turn, and the dispatch refusal names the phase if it tries to hand the work out.
         phaseId = live.id;
-      } else if (!stopped && graphRoad(settings) && train) {
+      } else if (!stopped && train) {
         heavyRunId = train.start({ projectId: run.project_id, pmThreadId: threadId, runId: run.id, requestId, text, kind: "heavy" }) ?? undefined;
         if (heavyRunId) ctx.log(`phase intake: ${threadId} — the owner's request is heavy (${by}); full-lifecycle ${heavyRunId} started`);
+        else await heavyUnavailable(threadId, "the full-lifecycle graph did not start");
       } else if (!stopped) {
-        const phase = await phases.open({ projectId: run.project_id, pmThreadId: threadId, title: intakeTitle(text), goal: text, rails: true });
-        phaseId = phase.id;
-        ctx.log(`phase intake: ${threadId} — the owner's request is heavy (${by}); phase ${phase.id} opened`);
-        // The phase is booked now; the PM gets the discussion's step once its turn ends (the driver pokes an idle PM only).
-        await bestEffort(ctx.log, "phase intake tick", phases.tick(), { moved: 0, idle: null });
+        await heavyUnavailable(threadId, "the full-lifecycle graph is unavailable");
       }
     }
     // The rules never read a small job, a batch or a process: only the owner's word or the PM starts those graphs.
     const record: IntakeRecord = { requestId, kind, by, phaseId, at: Date.now(), ...(heavyRunId ? { wfRunId: heavyRunId } : {}) };
     await bb.storage.kv.set(KEY(threadId), record);
     return record;
+  }
+
+  /** A heavy request with no graph to carry it is said out loud — never a silent fallback to the retired phase machine. */
+  async function heavyUnavailable(threadId: string, reason: string): Promise<void> {
+    ctx.log(`phase intake: ${threadId} — heavy request not started: ${reason}`);
+    await bestEffort(ctx.log, "phase intake unavailable notice",
+      sendServiceMessage(bb as never, { threadId, text: `Тяжёлая задача не запущена: ${reason}. Phase machine retired — the full-lifecycle graph is the only road; retry when it is available.` }), undefined);
   }
 
   /** №6: the one-line answer the LP store itself gives a service request, in Russian, with @thread links where they help. */
@@ -218,15 +222,12 @@ export function createPhaseIntake(ctx: Deps, phases: IntakePhases, train?: Intak
       if (!railsOn(settings)) return { started: false, kind, reason: "phase rails are off" };
       const live = phases.list({ pmThreadId: input.pmThreadId, live: true })[0];
       if (live) return { started: false, kind, reason: `phase ${live.id} is already live in the PM chat` };
-      if (graphRoad(settings) && train) {
+      if (train) {
         const id = train.start({ projectId: run.project_id, pmThreadId: input.pmThreadId, runId: run.id, requestId: input.key, text, kind: "heavy" });
         if (id) { ctx.log(`phase intake: hand-over (${input.origin.slice(0, 80)}) is heavy (${by}); full-lifecycle ${id} started`); return { started: true, via: "full-lifecycle", id }; }
         return { started: false, kind, reason: "the full-lifecycle graph did not start" };
       }
-      const phase = await phases.open({ projectId: run.project_id, pmThreadId: input.pmThreadId, title: intakeTitle(input.text), goal: text, rails: true });
-      ctx.log(`phase intake: hand-over (${input.origin.slice(0, 80)}) is heavy (${by}); phase ${phase.id} opened`);
-      await bestEffort(ctx.log, "phase handover tick", phases.tick(), { moved: 0, idle: null });
-      return { started: true, via: "phase", id: phase.id };
+      return { started: false, kind, reason: "the full-lifecycle graph is unavailable" };
     }
     if ((kind === "small" || kind === "batch" || downFull) && train && trainOn) {
       // Decided work the size reads as large or risky would stop at issue-quick's «proposed to the full path», which nobody takes up for a

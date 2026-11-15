@@ -18,11 +18,13 @@ afterEach(async () => { for (const dispose of disposals.splice(0)) await dispose
 
 function world() {
   const calls: string[] = [];
+  const packetFiles = new Map<string, string>();
   const { bb, harness } = createFakePluginHost({ pluginId:"lane-pilot", sdk:{
     providers:{ list:async () => { calls.push("providers.list"); return [{ id:"codex", available:true, capabilities:{ supportsServiceTier:false }, serviceTiers:[] }]; },
       models:async () => { calls.push("providers.models"); return { models:[{ id:"test-model", model:"test-model", supportedReasoningEfforts:[{ reasoningEffort:"medium" }] }] }; } },
     threads:{ send:async () => ({}) },
-    files:{ write:async () => ({}), read:async () => { calls.push("files.read"); return { content:"tiny", contentEncoding:"utf8" }; } },
+    files:{ write:async ({path,content}:{path:string;content:string}) => { packetFiles.set(path,content); return { outcome:"written" }; },
+      read:async ({path}:{path?:string}) => { calls.push("files.read"); const stored = path ? packetFiles.get(path) : undefined; return { content: stored ?? "tiny", contentEncoding:"utf8" }; } },
   } as never });
   bb.hosts.experimental_client = (() => ({ call:async (method: string) => { calls.push(method); return method === "inspectCritiqueCoverage" ? { status:"complete", pathCount:1, findings:[] } : {}; } })) as never;
   const db = openDatabase(bb);

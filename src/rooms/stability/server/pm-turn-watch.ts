@@ -55,11 +55,13 @@ export function createPmTurnWatch(deps: PmTurnWatchDeps) {
     turn.timer.unref?.();
   }
 
-  /** An item of the open turn: a tool call counts toward the cap; assistant text marks the answer non-empty. */
+  /** An item of the open turn: a completed action item counts toward the cap; assistant text marks the answer non-empty. */
   async function itemCompleted(threadId: string, itemType: string): Promise<void> {
     const turn = open.get(threadId);
     if (!turn) return;
-    if (/tool/i.test(itemType)) turn.items += 1;
+    // The same two action items the writer turn ceiling counts (writer-silence callSignatureOf): toolCall and
+    // commandExecution. fileChange is the artifact of a call, not a call — it does not count.
+    if (itemType === "toolCall" || itemType === "commandExecution") turn.items += 1;
     else if (/assistant|message|text/i.test(itemType)) turn.assistantText = true;
     if (turn.maxTurns && turn.items > turn.maxTurns) await cut(threadId, `предел ходов: ${turn.maxTurns}`);
   }
@@ -100,6 +102,7 @@ export type PmTurnWatch = ReturnType<typeof createPmTurnWatch>;
 import type { ServerCore } from "../../contracts/server";
 import { getRun, openRunIdForPmThread } from "../../storage";
 import { sendServiceMessage } from "../../relay/server";
+import { installThreadEventFeed, type FeedEvent } from "./thread-event-feed";
 
 /**
  * Wires the watch into bb.events: every thread event with a type is offered to it (the watch ignores chats that are
@@ -130,18 +133,43 @@ export function mountPmTurnWatch(ctx: ServerCore): PmTurnWatch | null {
     try { events.on!(name, async (payload) => { if (!ctx.isDisposed()) await handler(payload as never); }); }
     catch (cause) { bb.log.info(`Lane Pilot PM turn watch does not listen to ${name}: ${cause instanceof Error ? cause.message : String(cause)}`); }
   };
-  // Thread events arrive as experimental_thread.events {thread, event:{type: "turn/started" | "item/completed" | "turn/completed", ...}}.
-  on("experimental_thread.events", async (payload: { thread?: { id?: unknown }; event?: { type?: unknown; item?: { type?: unknown } } }) => {
-    const threadId = payload?.thread?.id;
-    const type = payload?.event?.type;
-    if (typeof threadId !== "string" || typeof type !== "string") return;
-    if (type === "turn/started") await watch.turnStarted(threadId);
-    else if (type === "item/completed") await watch.itemCompleted(threadId, String(payload.event?.item?.type ?? ""));
-    else if (type === "turn/completed") await watch.turnCompleted(threadId);
+  // experimental_thread.events carries only {thread, sequence}: the feed reads the event log for the turn lifecycle
+  // rows (0.1.575 — the payload never held the event itself).
+  const feed = installThreadEventFeed(ctx);
+  feed.add({
+    types: new Set(["turn/started", "item/completed", "turn/completed"]),
+    handle: async (threadId, rows) => {
+      for (const row of rows) {
+        if (ctx.isDisposed()) return;
+        if (row.type === "turn/started") await watch.turnStarted(threadId);
+        else if (row.type === "item/completed") await watch.itemCompleted(threadId, itemTypeOf(row));
+        else if (row.type === "turn/completed") await watch.turnCompleted(threadId, completedInfo(row));
+      }
+    },
   });
-  on("turn.failed", async (payload: { threadId?: unknown; message?: unknown; error?: unknown }) => {
+  on("turn.failed", async (payload: { threadId?: unknown; errorInfo?: unknown }) => {
     if (typeof payload?.threadId !== "string") return;
-    await watch.turnFailed(payload.threadId, typeof payload.message === "string" ? payload.message : typeof payload.error === "string" ? payload.error : null);
+    await watch.turnFailed(payload.threadId, failureText(payload.errorInfo));
   });
   return watch;
+}
+
+/** The item type an item/completed row reports (data.item.type in the stored event). */
+function itemTypeOf(row: FeedEvent): string {
+  const item = (row.data as { item?: { type?: unknown } } | null)?.item;
+  return typeof item?.type === "string" ? item.type : "";
+}
+
+/** A failed turn's own error text (data.error.message), when the provider gave one. */
+function completedInfo(row: FeedEvent): { providerError?: string | null } | undefined {
+  const error = (row.data as { error?: { message?: unknown } } | null)?.error;
+  return typeof error?.message === "string" ? { providerError: error.message } : undefined;
+}
+
+/** turn.failed's structured ProviderErrorInfo — category, provider code and HTTP status, no message field. */
+function failureText(errorInfo: unknown): string | null {
+  if (!errorInfo || typeof errorInfo !== "object") return null;
+  const info = errorInfo as { category?: unknown; providerCode?: unknown; httpStatusCode?: unknown };
+  const parts = [info.category, info.providerCode, info.httpStatusCode].filter((part) => typeof part === "string" || typeof part === "number");
+  return parts.length ? parts.join(" ") : null;
 }

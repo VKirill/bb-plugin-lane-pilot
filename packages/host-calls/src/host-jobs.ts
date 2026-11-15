@@ -2,7 +2,7 @@ import { HOST_JOB_KINDS, HOST_JOB_MAX_SEC, type HostJobKind } from "@lane-pilot/
 import { sha256Hex } from "@lane-pilot/kit";
 
 type RawCall = (method: string, input: unknown, options: { hostId: string; timeoutMs?: number; signal?: AbortSignal }) => Promise<unknown>;
-type JobKv = { get<T>(key: string): Promise<T | undefined>; set(key: string, value: unknown): Promise<void>; delete(key: string): Promise<void> };
+type JobKv = { get<T>(key: string): Promise<T | undefined>; set(key: string, value: unknown): Promise<void>; delete(key: string): Promise<void>; list(prefix: string): Promise<string[]> };
 type JobStatusReply = { state: "running" | "succeeded" | "failed" | "cancelled" | "lost"; result?: unknown; error: string | null; progress: { updatedAt: number } };
 type JobEntry = { jobId: string; hostId: string; startedAt: number };
 
@@ -32,6 +32,13 @@ const POLL_FIRST_MS = 500;
 const POLL_MAX_MS = 10_000;
 /** The host is asked to keep a job this much longer than the poll waits for it. */
 const JOB_SLACK_SEC = 30;
+/**
+ * Kinds a `lost` job may be started again by the same logical call: their repeat cannot have side effects.
+ * Every other kind — gitIntegrate, runScript, install, the gates, snapshots — may already have done its work
+ * before the loss, so the stored jobId and its `lost` outcome are kept and the same call is refused, never
+ * silently resubmitted (audit C: worker-exit/unknown outcome is not proof of absence of effects).
+ */
+const LOST_RESUBMIT_SAFE: ReadonlySet<HostJobKind> = new Set(["detect", "coexistenceInventory"]);
 
 /**
  * A host call run as a background job: jobStart returns at once, jobStatus is polled with backoff, and the job's id
@@ -63,6 +70,9 @@ export function createHostJobs(deps: {
       if (entry) {
         // A host that cannot answer keeps the entry: the caller's retry finds the job again instead of starting a second one.
         last = await status(entry.hostId, entry.jobId);
+        if (last.state === "lost" && !LOST_RESUBMIT_SAFE.has(kind)) {
+          throw new Error(`host ${kind} job ${entry.jobId} was lost; the same call is not resubmitted — it may already have had effects. Inspect the host, then retry under a new jobKey or input`);
+        }
         const reusable = last.state === "running" || (takeFinished && (last.state === "succeeded" || last.state === "failed") && now() - last.progress.updatedAt <= REUSE_FINISHED_MS);
         if (!reusable) { await deps.kv.delete(key); entry = undefined; last = null; }
         else deps.log?.(`lane-pilot: host ${kind} picked up job ${entry.jobId} (${last.state})`);
@@ -92,6 +102,9 @@ export function createHostJobs(deps: {
         }
         const reply = last ?? await status(entry.hostId, entry.jobId);
         last = null;
+        if (reply.state === "lost" && !LOST_RESUBMIT_SAFE.has(kind)) {
+          throw new Error(`host ${kind} job ${entry.jobId} was lost; the same call is not resubmitted — it may already have had effects. Inspect the host, then retry under a new jobKey or input`);
+        }
         if (reply.state !== "running") {
           await deps.kv.delete(key);
           if (reply.state === "succeeded") return reply.result;
@@ -107,6 +120,28 @@ export function createHostJobs(deps: {
         await sleep(delay);
         delay = Math.min(Math.round(delay * 1.5), POLL_MAX_MS);
       }
+    },
+    /**
+     * Probe every stored job of one host once — the worker-exit wake, read-only diagnostics. A job the host
+     * confirms `lost` keeps its KV entry and jobId on purpose: `lost` does not prove the absence of effects,
+     * so `run` refuses to resubmit that logical call (LOST_RESUBMIT_SAFE kinds excepted) instead of deleting
+     * the evidence and starting a second mutation. Nothing is restarted or deleted here; an unreachable host
+     * leaves everything for the poll loop's bounded retry.
+     */
+    async reconcile(hostId: string): Promise<{ probed: number; lost: string[] }> {
+      const lost: string[] = [];
+      let probed = 0;
+      for (const key of await deps.kv.list(HOST_JOB_KV_PREFIX)) {
+        if (hostJobHostId(key) !== hostId) continue;
+        const entry = await deps.kv.get<JobEntry>(key);
+        if (!entry?.jobId) continue;
+        probed += 1;
+        try {
+          const reply = await status(entry.hostId, entry.jobId);
+          if (reply.state === "lost") lost.push(entry.jobId);
+        } catch { /* the host cannot answer yet; the stored entry stays for the next call or poll */ }
+      }
+      return { probed, lost };
     },
   };
 }

@@ -131,8 +131,10 @@ export async function resetHelperStages(db:ReturnType<typeof openDatabase>, stop
  * closed from that attempt's state. Runs after start-up recovery, which resumes the attempts still in flight, and
  * before the parking of faulted tasks (task-reconcile.ts), so a lost retry is parked in the same pass. `idleMs` keeps
  * an attempt that moved more recently than that alone: the periodic pass must not meet a loop between two attempts.
+ * `touched` collects the runs whose attempt or stage this pass ended, so the caller refreshes their state (they went
+ * through storage, not through core, and a run whose retry was lost read «running» until some later transition).
  */
-export function closeOrphanWriterStages(db:ReturnType<typeof openDatabase>, active:ReadonlySet<string>, idleMs = 0, now = Date.now(), scanOpen:(attemptId:string)=>boolean = () => false): number {
+export function closeOrphanWriterStages(db:ReturnType<typeof openDatabase>, active:ReadonlySet<string>, idleMs = 0, now = Date.now(), scanOpen:(attemptId:string)=>boolean = () => false, touched?:Set<string>): number {
   // A retry-eligible attempt whose loop died before its stage receipts exist (a failed spawn, a reload in the gap)
   // is visible to no receipt row: close it or nothing ever will (seed 14, fault-injection).
   for (const stray of listIdleAttemptsInStates(db, ["spawn_rejected","provider_error","timeout","empty_output","validation_failed"], now - idleMs)) {
@@ -141,6 +143,7 @@ export function closeOrphanWriterStages(db:ReturnType<typeof openDatabase>, acti
     const newer = newestAttemptState(db, stray.run_id, stray.task_id);
     if (newer && ["accepted","blocked","canceled","queued","spawn_requested","spawn_unknown","running","cancel_requested"].includes(newer)) continue;
     transitionAttempt(db, stray.id, "blocked", { reason:`${stray.reason ?? stray.state}; its retry was lost in a plugin reload`, ...failureFieldsOf({ failureCode: stray.failure_code, checkName: stray.check_name, timeoutSec: stray.timeout_sec }) });
+    touched?.add(stray.run_id);
   }
   const rows = listOpenStageTasks(db, ["writer-agent","verification","acceptance-receipt","docs-maintenance"], ["pending","running"]);
   let closed = 0;
@@ -157,12 +160,15 @@ export function closeOrphanWriterStages(db:ReturnType<typeof openDatabase>, acti
       transitionAttempt(db, latest.id, "blocked", { reason, ...failureFieldsOf({ failureCode: latest.failure_code, checkName: latest.check_name, timeoutSec: latest.timeout_sec }) });
       latest.state = "blocked";
       latest.reason = reason;
+      touched?.add(row.run_id);
     }
     if (!["accepted", "blocked", "canceled"].includes(latest.state)) continue;
     const terminal = latest.state === "accepted" ? "passed" : latest.state === "canceled" ? "canceled" : "failed";
     const attempts = countAttempts(db, row.run_id, row.task_id);
-    closed += closeWriterStages(db, { runId:row.run_id, taskId:row.task_id, plan:getTaskPlan(db, row.task_id) ?? "", terminal, attempt:attempts,
+    const ended = closeWriterStages(db, { runId:row.run_id, taskId:row.task_id, plan:getTaskPlan(db, row.task_id) ?? "", terminal, attempt:attempts,
       reason:latest.reason ?? `attempt ${latest.state}`, threadId:latest.thread_id });
+    closed += ended;
+    if (ended) touched?.add(row.run_id);
     // A docs-maintenance receipt left open when its upkeep was lost (a reload mid-run, or a project whose schedule no
     // longer runs) ends, never as a success: pending -> canceled, running -> failed. A live lp.docs-maintenance graph
     // for the same run/task is joined by the hourly pass, so it is left alone.

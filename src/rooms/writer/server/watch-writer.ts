@@ -10,6 +10,7 @@ import { bestEffort, pollPause, stringAt } from "@lane-pilot/kit";
 import { clearFollowUpCancelled, followUpCancelled, loadFollowUp } from "./sticky";
 import { loadWriterNudge } from "./writer-silence";
 import { THREAD_NOT_STARTED_REASON, WRITER_SILENT_REASON } from "../../contracts";
+import { sendServiceMessage } from "../../relay/server";
 
 const FOLLOW_UP_DELETED = "the owner deleted the queued instruction for this writer";
 
@@ -52,7 +53,7 @@ export async function watchWriterRun(deps: WatchWriterDeps): Promise<Record<stri
         const timeUsed = (Date.now() - attemptStartedAt) / (appetite.minutes * 60_000);
         if (timeUsed < 0.8) return;
         budgetAsked = true;
-        void bestEffort(ctx.log, "writer budget note", Promise.resolve().then(() => bb.sdk.threads.send({ threadId:input.pmThreadId!, mode:"queue-if-active", input:[{ type:"text", mentions:[], text:`[Lane Pilot] Task ${input.taskId} has spent ${Math.round(timeUsed * 100)}% of its appetite (${Math.round((Date.now() - attemptStartedAt) / 60_000)}/${appetite.minutes} min). Its writer stops at the appetite: raise it with lane_pilot_update_task now if the work is worth more, or let it stop.` }] } as never)), undefined);
+        void bestEffort(ctx.log, "writer budget note", Promise.resolve().then(() => sendServiceMessage(bb as never, { threadId:input.pmThreadId!, mode:"queue-if-active", text:`[Lane Pilot] Task ${input.taskId} has spent ${Math.round(timeUsed * 100)}% of its appetite (${Math.round((Date.now() - attemptStartedAt) / 60_000)}/${appetite.minutes} min). Its writer stops at the appetite: raise it with lane_pilot_update_task now if the work is worth more, or let it stop.` })), undefined);
       };
       const overBudget = () => { askBudgetOnce(); return runningWriterBudgetStop(budget.check()) ?? appetiteStop(appetite, { tokens:writerTokens, elapsedMs:Date.now() - attemptStartedAt }); };
       const stopRunningWriter = async (reason:string) => {

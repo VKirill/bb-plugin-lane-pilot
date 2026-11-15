@@ -1,7 +1,7 @@
 import { isNotFound, orMiss } from "@lane-pilot/kit";
 import type { StepContext } from "@lane-pilot/workflow-engine";
 import { openRunHome, recordRunFileRow, writeRunManifest, type RunFileKind, type TaskFileIo } from "../../storage";
-import { writeCasCheckoutFile } from "../../storage";
+import { writeCasCheckoutFile, writeFileCreateOnly } from "../../storage";
 import { noteEngineWrite } from "../../verification/server";
 import type { ChainRuntime, ServerCore } from "../../contracts/server";
 
@@ -32,12 +32,26 @@ export function checkoutFileIo(ctx: Pick<ServerCore, "bb">, checkout: Checkout):
 }
 
 /**
+ * Writes one content-addressed run file where a helper will read it — a delegate of the shared create-only contract
+ * (`writeFileCreateOnly` in storage): absent → written; already there with the same bytes → reused; different bytes at
+ * that path means the address lies, so it throws rather than overwrite silently. The caller names the delivery failure.
+ */
+export async function deliverRunFile(
+  files: { write(args: { hostId: string; rootPath: string; path: string; content: string; contentEncoding: "utf8"; createParents: boolean; expectedSha256: string | null }): Promise<unknown> | unknown },
+  checkout: { hostId: string; path: string },
+  file: { path: string; text: string },
+): Promise<void> {
+  await writeFileCreateOnly(files, { hostId: checkout.hostId, rootPath: checkout.path, path: `${checkout.path}/${file.path}`, content: file.text });
+}
+
+/**
  * Records the files the current step wrote into its run's manifest, and renders the manifest once. `repoPath` is relative to the checkout (or to the
- * planning home when `root` says so). Never throws: the files are already written, and the rows are what the next reader asks.
+ * planning home when `root` says so). Best-effort by default — the files are already written, and the rows are what the next reader asks; a caller whose
+ * files are required context passes `{ required: true }` and the failure propagates instead of only being logged.
  */
 export async function noteRunFiles(ctx: Pick<ServerCore, "bb" | "db" | "log">, rt: ChainRuntime, c: StepContext<ChainRuntime>, checkout: Checkout, files: Array<{
   repoPath: string; content: string; kind: RunFileKind; root?: "checkout" | "planning-home"; readers?: readonly string[];
-}>): Promise<void> {
+}>, options?: { required?: boolean }): Promise<void> {
   if (!files.length) return;
   try {
     openRunHome(ctx.db, { runId: c.runId, projectId: rt.projectId ?? "", workflowId: c.workflow.id, basePath: checkout.path, hostId: checkout.hostId });
@@ -51,5 +65,6 @@ export async function noteRunFiles(ctx: Pick<ServerCore, "bb" | "db" | "log">, r
     await writeRunManifest(ctx.db, checkoutFileIo(ctx, checkout), c.runId);
   } catch (cause) {
     ctx.log(`run manifest of ${c.runId}: ${files.length} file(s) not recorded (${cause instanceof Error ? cause.message : String(cause)})`);
+    if (options?.required) throw cause;
   }
 }

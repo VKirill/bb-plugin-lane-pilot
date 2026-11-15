@@ -1,5 +1,6 @@
 import { SETTING_EVENTS_WEBHOOK_URL } from "@lane-pilot/settings-catalog";
 import { getAttempt, getRun, getTask, loadProjectSettings, onAttemptChanged } from "../../storage";
+import { invalidateRpcTags } from "../../platform/server";
 import type { LanePilotDatabase } from "../../storage";
 import type { ServerCore } from "../../contracts/server";
 
@@ -43,7 +44,7 @@ export function mountOutbound(ctx: Pick<ServerCore, "db" | "bb" | "log" | "isDis
   const stop = onAttemptChanged(ctx.db, (attemptId) => {
     version += 1;
     // Watched `world_version` reads (SDK useRpcQuery) refetch at once; an older BB has no invalidate and keeps its interval (B-9).
-    (ctx.bb.rpc as { experimental_invalidate?: (tags: readonly string[]) => void }).experimental_invalidate?.(["world_version"]);
+    invalidateRpcTags(ctx.bb, ["world_version"]);
     const attempt = getAttempt(ctx.db, attemptId);
     if (!attempt || !isOutboundState(attempt.state) || sent.has(`${attemptId}:${attempt.state}`)) return;
     const run = getRun(ctx.db, attempt.run_id);

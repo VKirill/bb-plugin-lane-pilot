@@ -8,6 +8,7 @@ import { backlogIssuedTo } from "../store";
 import { bindBacklogIssued } from "../../tasks/server";
 import { backlogBoard, backlogReadCommand, issueMessage, parseBacklogOutput, type BacklogBoard, type TodoMeta } from "../logic";
 import { planningText, resolvePlanningHome } from "../../contracts";
+import { sendServiceMessage } from "../../relay/server";
 
 /**
  * The backlog scanner (SMA D2-9). Every hour, for each project whose owner's PM chat (a run of kind `cli`) was active in the last two weeks,
@@ -143,7 +144,7 @@ export function createBacklog(ctx: ServerCore) {
     if (!pm) return { ok: false, reason: "в проекте нет чата Lane Pilot, который работал за последние две недели" };
     const item = (await board(projectId)).issuable.find((row) => row.id === todoId);
     if (!item) return { ok: false, reason: `в бэклоге проекта нет пункта ${todoId}, готового к работе (уже выдан, закрыт или ждёт оценки)` };
-    await bb.sdk.threads.send({ threadId: pm, mode: "queue-if-active", input: [{ type: "text", text: issueMessage(item, await homeOf(projectId, loadPrototypeConfig(db, projectId) as never).catch(() => null)), mentions: [] }] } as never);
+    await sendServiceMessage(bb as never, { threadId: pm, mode: "queue-if-active", text: issueMessage(item, await homeOf(projectId, loadPrototypeConfig(db, projectId) as never).catch(() => null)) });
     db.prepare("INSERT OR IGNORE INTO lane_pilot_backlog_issue(project_id,todo_id,pm_thread_id,estimate,issued_at) VALUES (?,?,?,?,?)").run(projectId, todoId, pm, item.estimate, now);
     closeOwnerItem(db, offerKey(projectId, todoId), "owner", now);
     ctx.log(`backlog: ${projectId} issued ${todoId} to ${pm} on the owner's word`);

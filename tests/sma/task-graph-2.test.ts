@@ -45,6 +45,14 @@ describe("birth rails, sandbox and a crash that is an honest failure", () => {
   it("[sma:tb_dry_run] a check is judged by its program: a missing one is refused, shell syntax and a program that exists are not", () => {
     expect(checkProgram("FOO=1 npm test")).toBe("npm");
     expect(checkProgram("(echo hi)")).toBeNull();
+    // 0.1.575: wrappers with their own options resolve to the real program; shell built-ins and unknown option syntax are no program.
+    expect(checkProgram("env -u LEAD_OUTPUT_DIR npx tsx -e 1")).toBe("npx");
+    expect(checkProgram("env --unset=FOO -i BAR=1 npm test")).toBe("npm");
+    expect(checkProgram("FOO=1 env -u X sudo -u root nice -n 5 timeout -k 5 30 npm test")).toBe("npm");
+    expect(checkProgram("set -o pipefail; npm run build")).toBeNull();
+    expect(checkProgram("export PATH=/x; npm test")).toBeNull();
+    expect(checkProgram("env --bogus npx test")).toBeNull();
+    expect(checkProgram("timeout 30 npm test")).toBe("npm");
     const missing = lint({ verification: [{ command: "npm test", cwd: root }] }, { programs: new Map([["npm", false]]) });
     expect(missing.errors.map((error) => error.code)).toContain("check_not_runnable");
     const present = lint({ verification: [{ command: "npm test", cwd: root }] }, { programs: new Map([["npm", true]]) });

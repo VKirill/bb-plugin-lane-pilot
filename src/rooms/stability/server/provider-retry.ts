@@ -1,18 +1,80 @@
-import type { BbPluginApi } from "@get-bb/plugin-sdk";
+import { defineRpcContract, type BbPluginApi } from "@get-bb/plugin-sdk";
+import { z } from "zod";
+import { isOpenAttemptState } from "../../contracts";
+import { getAttempt, getRun, latestFamilyAttemptInRun, newestAttemptIdForThread, type LanePilotDatabase } from "../../storage";
 
 /**
  * BB's `provider-retry` plugin queues a retry of a failed turn in the thread that failed (a subscription limit, an
  * overload): an ordinary durable queued row with `payload.kind === "retry"` and a `sendAt`. When Lane Pilot hands the
  * task to the next writer of its chain, that row would later wake the abandoned thread and redo the same work twice.
  *
- * The plugin has no flag to respect and no RPC; what it leaves is the row, which `bb provider-retry cancel` deletes
+ * The plugin has no flag to respect; what it leaves is the row, which `bb provider-retry cancel` deletes
  * through `threads.queuedMessages.delete`. Lane Pilot does the same for a thread it has given up on, at once and for any
  * row queued afterwards (`message.queued`, because the plugin may queue its retry after Lane Pilot has seen the failure).
  * Without the plugin there is no such row and nothing happens.
+ *
+ * BB 0.49 adds a consent call: before queueing, provider-retry asks the plugin that sent the failed turn
+ * (`provider-retry.v1.consent`, discoverable) whether the retry may run; a missing, failing or slow answer counts as
+ * allow. Lane Pilot answers from its durable store, not the RAM `abandoned` set that a reload empties: the newest
+ * attempt on the thread must still be live (open, not superseded by a newer attempt of its task, run not closed).
+ * Positively ended work — accepted, canceled, failed, blocked, superseded or under a closed run — is declined;
+ * anything the store does not know stays allowed, so helper, PM and native threads keep their retries.
  */
 const REMEMBERED = 500;
 
-export function createProviderRetryGuard(bb: Pick<BbPluginApi, "sdk" | "events" | "log">) {
+export const PROVIDER_RETRY_CONSENT_METHOD = "provider-retry.v1.consent";
+
+/** Wire contract of the official provider-retry consent endpoint (bb plugins/provider-retry/src/retry-contract.ts, tag desktop-v0.49.0). */
+export const providerRetryConsentContract = defineRpcContract({
+  [PROVIDER_RETRY_CONSENT_METHOD]: {
+    input: z.object({
+      threadId: z.string().min(1),
+      requestId: z.string().min(1),
+      reason: z.enum(["Rate limited", "Provider overloaded", "Provider unavailable"]),
+      sendAt: z.number().int().nonnegative(),
+    }),
+    output: z.discriminatedUnion("kind", [
+      z.object({ kind: z.literal("allow") }),
+      z.object({ kind: z.literal("decline"), reason: z.string().min(1) }),
+    ]),
+    experimental_description:
+      "Asked of the plugin that sent a failed turn before provider retry re-runs it. Decline when the sender already ended or replaced the work; allow leaves the retry scheduled. A missing, failing, or slow answer counts as allow.",
+  },
+});
+
+export type RetryEligibility =
+  | { kind: "allow"; reason: string }
+  | { kind: "decline"; reason: string }
+  | { kind: "unknown" };
+
+/**
+ * May a queued provider retry of a failed turn in `threadId` still run? One durable answer for the consent call, the
+ * late-queued check and the stream-retry gate. Only positive evidence declines: the thread's newest attempt ended
+ * (any non-open state, `cancel_requested` included — the stop is already under way), a newer attempt of the same task
+ * family exists in the run (redispatch, «T1» → «T1.2»), or the run is closed/accepted. No attempt on the thread means
+ * no durable evidence — PM, helper, probe and native threads answer `unknown` and keep whatever the caller's own
+ * ownership check says. The turn's `requestId` is not persisted, so this is a thread/attempt/run decision, not a
+ * per-request fence.
+ */
+export function retryEligibility(db: LanePilotDatabase, threadId: string): RetryEligibility {
+  const attemptId = newestAttemptIdForThread(db, threadId);
+  const attempt = attemptId ? getAttempt(db, attemptId) : undefined;
+  if (!attempt) return { kind: "unknown" };
+  if (!isOpenAttemptState(attempt.state) || attempt.state === "cancel_requested") {
+    return { kind: "decline", reason: `attempt ${attempt.state}` };
+  }
+  const familyLatest = latestFamilyAttemptInRun(db, attempt.run_id, attempt.task_id);
+  if (familyLatest && familyLatest.id !== attempt.id) {
+    return { kind: "decline", reason: "superseded by a newer attempt" };
+  }
+  const run = getRun(db, attempt.run_id);
+  if (run && (run.closed_at !== null || run.state === "closed" || run.state === "accepted")) {
+    return { kind: "decline", reason: `run ${run.state}` };
+  }
+  return { kind: "allow", reason: `attempt ${attempt.state}` };
+}
+
+export function createProviderRetryGuard(bb: Pick<BbPluginApi, "sdk" | "events" | "log" | "rpc">, db?: LanePilotDatabase) {
   const abandoned = new Set<string>();
 
   /** Deletes every queued retry row of the thread; returns how many. Never throws. */
@@ -39,14 +101,46 @@ export function createProviderRetryGuard(bb: Pick<BbPluginApi, "sdk" | "events" 
     return await cancelQueuedRetries(threadId);
   }
 
-  bb.events.on("message.queued", async ({ entry }) => {
-    if (entry.payload.kind === "retry" && abandoned.has(entry.threadId)) {
-      await bb.sdk.threads.queuedMessages.delete({ threadId: entry.threadId, queuedMessageId: entry.id }).then(
-        () => bb.log.info(`Lane Pilot cancelled a provider retry queued in ${entry.threadId}: its task moved on`),
-        () => undefined,
-      );
+  /** The durable verdict for the queued check: a store failure answers `unknown`, keeping the historical RAM handling. */
+  function durableKind(threadId: string): RetryEligibility["kind"] {
+    if (!db) return "unknown";
+    try {
+      return retryEligibility(db, threadId).kind;
+    } catch (cause) {
+      bb.log.warn(`Lane Pilot could not check retry eligibility of ${threadId}: ${cause instanceof Error ? cause.message : String(cause)}`);
+      return "unknown";
     }
+  }
+
+  bb.events.on("message.queued", async ({ entry }) => {
+    if (entry.payload.kind !== "retry") return;
+    // One decision, same as consent and the stream gate: durable `allow` supersedes a stale `abandoned` mark (the
+    // thread was legitimately reused by a newer live attempt); `unknown` keeps the RAM behavior for threads the
+    // store does not know; only `decline` or an abandoned unknown deletes the row.
+    const kind = durableKind(entry.threadId);
+    if (kind === "allow" || (kind === "unknown" && !abandoned.has(entry.threadId))) return;
+    await bb.sdk.threads.queuedMessages.delete({ threadId: entry.threadId, queuedMessageId: entry.id }).then(
+      () => bb.log.info(`Lane Pilot cancelled a provider retry queued in ${entry.threadId}: its task moved on`),
+      () => undefined,
+    );
   });
+
+  if (db) {
+    bb.rpc.register(providerRetryConsentContract, {
+      [PROVIDER_RETRY_CONSENT_METHOD]: async (input) => {
+        try {
+          const eligibility = retryEligibility(db, input.threadId);
+          if (eligibility.kind === "decline") return { kind: "decline" as const, reason: eligibility.reason };
+          return { kind: "allow" as const };
+        } catch (cause) {
+          // Core counts a missing, failing or slow answer as allow; a store failure degrades to the same answer,
+          // loudly, rather than silently cancelling retries core would have allowed.
+          bb.log.warn(`Lane Pilot retry consent check failed for ${input.threadId}: ${cause instanceof Error ? cause.message : String(cause)}; allowing`);
+          return { kind: "allow" as const };
+        }
+      },
+    }, { experimental_discoverable: true });
+  }
 
   return { abandon, cancelQueuedRetries };
 }

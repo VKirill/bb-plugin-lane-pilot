@@ -27,7 +27,7 @@ function jobHost(over: { finish?: Record<string, unknown>; calls?: JobCall[] }) 
   const calls = over.calls ?? [];
   const cancelled = new Set<string>();
   let seq = 0;
-  const kv = { get: async () => undefined, set: async () => undefined, delete: async () => undefined };
+  const kv = { get: async () => undefined, set: async () => undefined, delete: async () => undefined, list: async () => [] };
   const raw = async (method: string, input: Record<string, unknown>) => {
     calls.push({ method, input });
     if (method === "jobStart") return { jobId: `job_${++seq}` };

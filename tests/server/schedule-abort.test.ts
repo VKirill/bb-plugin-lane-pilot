@@ -5,7 +5,7 @@ import { openDatabase } from "../../src/rooms/plugin-db";
 import { cleanupFinishedAttemptEnvironments, closeAbandonedRuns } from "../../src/rooms/runs/server/run-finish";
 import { createCore } from "../../src/rooms/core/server/core";
 import { createDeployDrain } from "../../src/rooms/stability/server/deploy-drain";
-import { createHostJobs } from "@lane-pilot/host-calls";
+import { createHostJobs, hostJobKey } from "@lane-pilot/host-calls";
 import { currentScheduleSignal, scheduleIsolated } from "../../src/rooms/platform/server/schedules";
 import { sweepWriterSilence } from "../../src/rooms/writer/server/writer-silence";
 
@@ -135,7 +135,7 @@ describe("what runs inside an isolated run stops with it", () => {
     const store = new Map<string, unknown>();
     const jobs = createHostJobs({
       call: async (method) => { calls.push(method); return method === "jobStart" ? { jobId: "job_abcdefghij1" } : { state: "running", error: null, progress: { updatedAt: Date.now() } }; },
-      kv: { get: async <T>(key: string) => store.get(key) as T | undefined, set: async (key, value) => { store.set(key, value); }, delete: async (key) => { store.delete(key); } },
+      kv: { get: async <T>(key: string) => store.get(key) as T | undefined, set: async (key, value) => { store.set(key, value); }, delete: async (key) => { store.delete(key); }, list: async (prefix: string) => [...store.keys()].filter((key) => key.startsWith(prefix)) },
       disposed: () => false,
       sleep: () => new Promise<void>((wake) => setTimeout(wake, 5)),
     });
@@ -160,5 +160,72 @@ describe("what runs inside an isolated run stops with it", () => {
     });
     expect(silent).toEqual([]);
     await expect(cleanupFinishedAttemptEnvironments(bb, db, async () => ({ status: "none", path: null }) as never, Date.now(), aborted.signal)).resolves.toEqual([]);
+  });
+
+  it("worker-exit reconcile is read-only: a lost job keeps its entry so run() can refuse the resubmit", async () => {
+    const store = new Map<string, unknown>();
+    const states: Record<string, string> = { job_lost: "lost", job_running: "running" };
+    const calls: string[] = [];
+    const jobs = createHostJobs({
+      call: async (method, input) => {
+        calls.push(method);
+        if (method === "jobStatus") return { state: states[String((input as { jobId: string }).jobId)] ?? "running", error: null, progress: { updatedAt: Date.now() } };
+        if (method === "jobStart") return { jobId: "job_new123456" };
+        throw new Error(`unexpected ${method}`);
+      },
+      kv: { get: async <T>(key: string) => store.get(key) as T | undefined, set: async (key, value) => { store.set(key, value); }, delete: async (key) => { store.delete(key); }, list: async (prefix: string) => [...store.keys()].filter((key) => key.startsWith(prefix)) },
+      disposed: () => false,
+      sleep: () => new Promise<void>(() => {}),
+    });
+    const seed = async (kind: string, hostId: string, input: unknown, jobId: string) =>
+      store.set(hostJobKey(kind as never, hostId, input), { jobId, hostId, startedAt: Date.now() });
+    await seed("gitIntegrate", "h1", { a: 1 }, "job_lost");
+    await seed("runScript", "h1", { b: 2 }, "job_running");
+    await seed("detect", "h2", { c: 3 }, "job_other_host");
+
+    const first = await jobs.reconcile("h1");
+    expect(first.probed).toBe(2);
+    expect(first.lost).toEqual(["job_lost"]);
+    // Nothing deleted: the lost job's evidence stays for run() to refuse on.
+    expect(store.size).toBe(3);
+
+    // The same logical call now refuses instead of resubmitting a possibly-effected mutation: zero jobStart.
+    calls.length = 0;
+    await expect(jobs.run("gitIntegrate", { a: 1 }, { hostId: "h1", timeoutMs: 5_000 }, async () => "direct")).rejects.toThrow(/was lost; the same call is not resubmitted/);
+    expect(calls).not.toContain("jobStart");
+    expect(store.has(hostJobKey("gitIntegrate" as never, "h1", { a: 1 }))).toBe(true);
+
+    // A read-only kind may still be resubmitted: detect is LOST_RESUBMIT_SAFE.
+    await seed("detect", "h1", { d: 4 }, "job_lost_detect");
+    states.job_lost_detect = "lost";
+    // detect picks up the lost entry, deletes it as non-reusable and starts a fresh job.
+    const detectCalls: string[] = [];
+    const jobs2 = createHostJobs({
+      call: async (method, input) => {
+        detectCalls.push(method);
+        if (method === "jobStatus") return { state: String((input as { jobId: string }).jobId) === "job_lost_detect" ? "lost" : "succeeded", result: "ok", error: null, progress: { updatedAt: Date.now() } };
+        if (method === "jobStart") return { jobId: "job_fresh123456" };
+        if (method === "jobCancel") return { ok: true };
+        return { state: "succeeded", result: "ok", error: null, progress: { updatedAt: Date.now() } };
+      },
+      kv: { get: async <T>(key: string) => store.get(key) as T | undefined, set: async (key, value) => { store.set(key, value); }, delete: async (key) => { store.delete(key); }, list: async (prefix: string) => [...store.keys()].filter((key) => key.startsWith(prefix)) },
+      disposed: () => false,
+      sleep: () => new Promise<void>((wake) => setTimeout(wake, 1)),
+    });
+    await jobs2.run("detect", { d: 4 }, { hostId: "h1", timeoutMs: 60_000 }, async () => "direct");
+    expect(detectCalls).toContain("jobStart");
+  });
+
+  it("worker-exit reconcile keeps every entry when the host cannot answer", async () => {
+    const store = new Map<string, unknown>();
+    const jobs = createHostJobs({
+      call: async () => { throw new Error("worker gone"); },
+      kv: { get: async <T>(key: string) => store.get(key) as T | undefined, set: async (key, value) => { store.set(key, value); }, delete: async (key) => { store.delete(key); }, list: async (prefix: string) => [...store.keys()].filter((key) => key.startsWith(prefix)) },
+      disposed: () => false,
+    });
+    await store.set(hostJobKey("install" as never, "h1", { x: 1 }), { jobId: "job_x", hostId: "h1", startedAt: Date.now() });
+    const out = await jobs.reconcile("h1");
+    expect(out).toEqual({ probed: 1, lost: [] });
+    expect(store.size).toBe(1);
   });
 });

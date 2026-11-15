@@ -18,6 +18,7 @@ export const STAGE_INPUT_KEYS = [
 export type StageInputKey = (typeof STAGE_INPUT_KEYS)[number];
 
 export const STAGE_INPUTS: Record<StageId, readonly StageInputKey[]> = {
+  "execution-packet": ["contract.read_first"],
   "pm-read": ["contract.read_first"],
   "plan-critique": ["contract.objective", "contract.acceptance", "contract.verification", "contract.owns_paths", "contract.expected_outputs", "plan_text", "pm_read_summary", "notes"],
   "run-gate": ["base_sha"],
@@ -37,6 +38,7 @@ export const HEAD_PARTS = ["pm_read_settings", "plan_critic", "code_critic", "li
 export type HeadPart = (typeof HEAD_PARTS)[number];
 
 export const STAGE_HEAD_DEPS: Record<StageId, readonly HeadPart[]> = {
+  "execution-packet": [],
   "pm-read": ["pm_read_settings"],
   "plan-critique": ["plan_critic", "lint"],
   "run-gate": ["gates"],

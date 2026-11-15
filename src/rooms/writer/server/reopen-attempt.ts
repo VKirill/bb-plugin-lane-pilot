@@ -13,6 +13,7 @@ import { writerLeftWorktree } from "./left-worktree";
 import { appendTaskQaHome } from "./task-home";
 import { runOnHost } from "@lane-pilot/host-calls";
 import { sendServiceMessage } from "../../relay/server";
+import { syncOwnsBarrier } from "./owns-barrier-sync";
 
 import type { WriterStartApi } from "./start";
 import type { WriterStateApi } from "./state";
@@ -36,6 +37,25 @@ export function awaitsWriterAnswer(attempt: { state: string; reason?: string | n
 /** The writer's question itself, without its NEEDS_HUMAN marker. */
 export function writerQuestion(reason: string | null | undefined): string {
   return (reason ?? "").replace(NEEDS_HUMAN_REASON, "").trim();
+}
+
+/** BB's public plugin-id syntax (bb-core packages/domain/src/plugin-id.ts `pluginIdSchema`). */
+const PLUGIN_ID = /^[a-z0-9][a-z0-9-]*$/u;
+const record = (value: unknown): Record<string, unknown> | null => (typeof value === "object" && value !== null ? value as Record<string, unknown> : null);
+
+/**
+ * The only send failure that proves the turn did not reach the writer: a dispatch hook refused it before BB queued it.
+ * Only `dispatchRejection` (bb-core apps/server/src/services/threads/dispatch-hooks.ts:218) makes it, and the SDK's
+ * BbHttpError carries it as status 409, code and flat body `{code:"dispatch_rejected", details:{pluginId}}`: the whole
+ * tuple must hold, the message text is never read. Anything else — another 4xx, a 5xx, a timeout, a lost reply — may
+ * come after the turn was queued and proves nothing (send-refusal-sdk-contract-audit.md, 2026-11-15).
+ */
+export function sendRefused(cause: unknown): boolean {
+  const err = record(cause);
+  const body = record(err?.body);
+  const details = record(body?.details);
+  return err?.status === 409 && err.code === "dispatch_rejected" && body?.code === "dispatch_rejected"
+    && typeof details?.pluginId === "string" && PLUGIN_ID.test(details.pluginId);
 }
 
 const shown = (value: unknown) => {
@@ -122,14 +142,17 @@ export function createAttemptReopen(ctx: ServerCore, services: Services) {
 
   /**
    * Reopens the attempt under the given contract. A turn that cannot be delivered puts the attempt back as it was, still
-   * blocked; the caller then puts its own stored contract back.
+   * blocked; the caller then puts its own stored contract back. With `previousContract` (an in-place change) the owns
+   * barrier follows the new owns_paths before anything else changes, and back to the old one when the turn is not delivered:
+   * a writer is never told to edit a file the OS still refuses it (EXT05). `sideEffects: "unknown"`: the barrier's state
+   * on the host is not known.
    */
   async function reopenAttempt(input: {
     projectId: string; runId: string; taskId: string; pmThreadId: string;
     attempt: NonNullable<ReturnType<typeof getAttempt>>; threadId: string; workspacePath: string;
-    config: PrototypeConfig; contract: TaskV2;
+    config: PrototypeConfig; contract: TaskV2; previousContract?: TaskV2;
     reason: string; turn: string; qaAnswer: string;
-  }): Promise<{ ok: true } | { ok: false; hint: string }> {
+  }): Promise<{ ok: true; deliveryUnknown?: true } | { ok: false; hint: string; sideEffects?: "unknown" }> {
     const { attempt, config, runId, taskId, threadId } = input;
     // The worktree may be gone (a sweep, a reboot): a turn sent there fails on its first command and the writer looks elsewhere.
     if (attempt.workspace_path) {
@@ -138,20 +161,45 @@ export function createAttemptReopen(ctx: ServerCore, services: Services) {
         .then((ran) => (ran.exitCode === 0 ? "" : `${ran.stderr ?? ""}`), (cause: unknown) => (cause instanceof Error ? cause.message : String(cause)));
       if (/ENOENT|no such file|not a directory/i.test(there)) return { ok: false, hint: "the writer's worktree is gone; redispatch the task instead (its work is in ~/.lane-pilot/released/ if it was saved)" };
     }
-    if (!transitionAttempt(db, attempt.id, "running", { threadId })) {
-      return { ok: false, hint: "the attempt can no longer be reopened; redispatch the task instead" };
+    const barrierInput = { projectId: input.projectId, runId, hostId: config.hostId, worktreePath: attempt.workspace_path };
+    if (input.previousContract) {
+      const barrier = await syncOwnsBarrier(ctx, { ...barrierInput, from: input.previousContract, to: input.contract });
+      if (!barrier.ok) return { ok: false, hint: barrier.hint, ...(barrier.uncertain ? { sideEffects: "unknown" as const } : {}) };
+    }
+    const barrierBack = async () => (input.previousContract
+      ? await syncOwnsBarrier(ctx, { ...barrierInput, from: input.contract, to: input.previousContract }) : { ok: true as const });
+    // A refused move (false, or an illegal one that throws and changes nothing) comes before any turn: the same refusal
+    // either way, so the caller puts its old contract back, and the barrier goes back with it.
+    const moved = (() => { try { return { ok: transitionAttempt(db, attempt.id, "running", { threadId }) }; }
+      catch (cause) { return { ok: false, why: cause instanceof Error ? cause.message : String(cause) }; } })();
+    if (!moved.ok) {
+      const back = await barrierBack();
+      const hint = `the attempt can no longer be reopened${typeof moved.why === "string" ? ` (${moved.why.slice(0, 200)})` : ""}; redispatch the task instead`;
+      return back.ok ? { ok: false, hint } : { ok: false, hint: `${hint}; ${back.hint}`, sideEffects: "unknown" };
     }
     reopenWriterStages(db, runId, taskId, `reopened: ${input.reason}`);
     const since = Date.now();
     await saveFollowUp(bb.storage.kv, attempt.id, since);
+    let deliveryUnknown = false;
     try {
       await sendServiceMessage(bb, { threadId, text: input.turn, senderThreadId: input.pmThreadId });
     } catch (cause) {
-      // Nothing was delivered: put the attempt and its stages back the way they were, still answerable.
-      transitionAttempt(db, attempt.id, "blocked", { threadId, reason: attempt.reason ?? undefined });
-      closeWriterStages(db, { runId, taskId, plan: getTaskPlan(db, taskId) ?? "",
-        terminal: "failed", attempt: countAttempts(db, runId, taskId), reason: attempt.reason, threadId });
-      return { ok: false, hint: `the turn could not be delivered to the writer thread (${cause instanceof Error ? cause.message : String(cause)}); the task stays blocked — redispatch it instead` };
+      const why = cause instanceof Error ? cause.message : String(cause);
+      if (!sendRefused(cause)) {
+        // The turn may have reached the writer: nothing is put back. The attempt goes on under the changed contract, whose
+        // barrier is in place, and the writer loop below reads whatever the thread answers (its old question again if nothing came).
+        deliveryUnknown = true;
+        log(`writer ${taskId}: delivery of the turn to ${threadId} is not confirmed (${why}); attempt ${attempt.id} goes on`);
+      } else {
+        // The server refused the turn, so nothing was delivered: the attempt and its stages go back, still answerable.
+        transitionAttempt(db, attempt.id, "blocked", { threadId, reason: attempt.reason ?? undefined });
+        closeWriterStages(db, { runId, taskId, plan: getTaskPlan(db, taskId) ?? "",
+          terminal: "failed", attempt: countAttempts(db, runId, taskId), reason: attempt.reason, threadId });
+        // The caller puts the old contract back: the barrier goes back with it.
+        const back = await barrierBack();
+        const hint = `the turn could not be delivered to the writer thread (${why}); the task stays blocked — redispatch it instead`;
+        return back.ok ? { ok: false, hint } : { ok: false, hint: `${hint}; ${back.hint}`, sideEffects: "unknown" };
+      }
     }
     await noteTaskQa({ bb, db }, { hostId: config.hostId, workspacePath: input.workspacePath, taskId, attemptId: attempt.id, question: writerQuestion(attempt.reason), answer: input.qaAnswer });
     const workspace = acceptedTaskWorkspace(runId, taskId, input.workspacePath, input.contract, attempt.id);
@@ -162,7 +210,7 @@ export function createAttemptReopen(ctx: ServerCore, services: Services) {
       plan: getTaskPlan(db, taskId) ?? input.contract.objective, dirtBefore: attempt.dirt_before, turnSent: true,
     });
     log(`writer ${taskId}: attempt ${attempt.id} reopened in thread ${threadId} (${input.reason})`);
-    return { ok: true };
+    return deliveryUnknown ? { ok: true, deliveryUnknown: true } : { ok: true };
   }
 
   return { checkReopenable, reopenAttempt };

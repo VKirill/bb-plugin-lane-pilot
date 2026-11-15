@@ -35,7 +35,8 @@ import { ASK_KINDS, readOwnerAskPayload } from "../../src/rooms/relay/owner-ask-
 import { createPhaseDriver } from "../phase-driver";
 import { savePhase } from "../../src/rooms/phase/store";
 import { appendTaskQa, noteTaskQa } from "../../src/rooms/writer/server/reopen-attempt";
-import { appendTaskQaHome, bbTaskFileIo, writeDispatchHome } from "../../src/rooms/writer/server/task-home";
+import { bbTaskFileIo } from "../../src/rooms/storage";
+import { appendTaskQaHome, writeDispatchHome } from "../../src/rooms/writer/server/task-home";
 import { renderTaskManifest, resolveTaskFile } from "../../src/rooms/storage";
 import { laneQueueOf } from "../../src/rooms/tasks";
 import { proposeTaskWords, taskWords } from "../../src/rooms/cockpit/ui/screens-work";
@@ -350,35 +351,53 @@ export async function observeTurnWatch() {
   const hosted = Object.assign(Object.create(bb), { pluginId: "lane-pilot", events: { on: (name: string, handler: (payload: unknown) => unknown) => { handlers.set(name, handler); } } });
   const ctx = createCore(hosted, db);
   const watch = mountPmTurnWatch(ctx as never)!;
-  const emit = (type: string, threadId: string, item?: string) => handlers.get("experimental_thread.events")!({ thread: { id: threadId }, event: { type, ...(item ? { item: { type: item } } : {}) } });
+  // The real contract (0.1.575): experimental_thread.events is a debounced {thread, sequence} wake; the watch reads the
+  // rows it announces through threads.events.list. This fixture keeps a per-thread event log and answers list queries.
+  const eventLog: Array<{ threadId: string; seq: number; type: string; createdAt: number; data: unknown }> = [];
+  let eventSeq = 0;
+  harness.sdk.stub("threads.events.list", async (query: { threadId?: string; types?: string[]; order?: string; limit?: string; afterSeq?: string; beforeSeq?: string }) => {
+    let rows = eventLog.filter((row) => row.threadId === query.threadId && (!query.types?.length || query.types.includes(row.type)));
+    if (query.afterSeq !== undefined) rows = rows.filter((row) => row.seq > Number(query.afterSeq));
+    if (query.beforeSeq !== undefined) rows = rows.filter((row) => row.seq < Number(query.beforeSeq));
+    rows = [...rows].sort((a, b) => query.order === "desc" ? b.seq - a.seq : a.seq - b.seq);
+    return rows.slice(0, Number(query.limit) || 100).map((row) => ({ seq: row.seq, type: row.type, createdAt: row.createdAt, data: row.data }));
+  });
+  const emit = async (type: string, threadId: string, item?: string) => {
+    const row = { threadId, seq: ++eventSeq, type, createdAt: Date.now(), data: type === "item/completed" ? { item: { type: item ?? "" } } : type === "turn/completed" ? { status: "completed" } : {} };
+    eventLog.push(row);
+    await handlers.get("experimental_thread.events")!({ thread: { id: threadId, status: "active" }, sequence: row.seq });
+  };
   const outcome = async (thread: string) => ((await bb.storage.kv.get(`${PM_TURN_OUTCOME_PREFIX}${thread}`)) as { outcome?: string } | null)?.outcome ?? null;
 
-  // The cap: 3 tool items pass, the 4th cuts the turn and names the cap.
+  // The cap: real action items (commandExecution + toolCall, mixed) pass to the limit; fileChange and reasoning are
+  // not calls and do not count; the item past the cap cuts the turn and names it.
   saveProjectSetting(db, "projA", "pm.max_turns", 3);
   await emit("turn/started", "thr_pm");
-  for (let i = 0; i < 3; i++) await emit("item/completed", "thr_pm", "tool/call");
+  await emit("item/completed", "thr_pm", "fileChange");
+  await emit("item/completed", "thr_pm", "reasoning");
+  for (const item of ["commandExecution", "toolCall", "commandExecution"]) await emit("item/completed", "thr_pm", item);
   const stoppedAtThree = [...stopped];
-  await emit("item/completed", "thr_pm", "tool/call");
+  await emit("item/completed", "thr_pm", "toolCall");
   const cutAtFour = { stopped: [...stopped], outcome: await outcome("thr_pm") };
 
   // A changed limit mid-turn is not this turn's cap; the next turn takes it.
   stopped.length = 0;
   await emit("turn/started", "thr_pm");
   saveProjectSetting(db, "projA", "pm.max_turns", 5);
-  for (let i = 0; i < 4; i++) await emit("item/completed", "thr_pm", "tool/call");
+  for (let i = 0; i < 4; i++) await emit("item/completed", "thr_pm", i % 2 ? "toolCall" : "commandExecution");
   const sameTurn = [...stopped];
-  await emit("item/completed", "thr_pm", "tool/call");
+  await emit("item/completed", "thr_pm", "commandExecution");
   const sameTurnAtFive = [...stopped];
-  await emit("item/completed", "thr_pm", "tool/call");
+  await emit("item/completed", "thr_pm", "toolCall");
   const sameTurnAtSix = [...stopped];
   await emit("turn/completed", "thr_pm");
 
   // The next turn takes the new cap 5: five pass, the sixth cuts.
   stopped.length = 0;
   await emit("turn/started", "thr_pm");
-  for (let i = 0; i < 5; i++) await emit("item/completed", "thr_pm", "tool/call");
+  for (let i = 0; i < 5; i++) await emit("item/completed", "thr_pm", i % 2 ? "toolCall" : "commandExecution");
   const nextAtFive = [...stopped];
-  await emit("item/completed", "thr_pm", "tool/call");
+  await emit("item/completed", "thr_pm", "commandExecution");
   const nextAtSix = { stopped: [...stopped], outcome: await outcome("thr_pm") };
 
   // A writer thread (no PM run) is ignored.
@@ -404,7 +423,7 @@ export async function observeTurnWatch() {
   await timed.turnStarted("thr_pm");
   await timed.turnFailed("thr_pm", "model overloaded");
   await timed.turnStarted("thr_pm");
-  await timed.itemCompleted("thr_pm", "assistant/message");
+  await timed.itemCompleted("thr_pm", "agentMessage");
   const before = named.length;
   await timed.turnCompleted("thr_pm");
   for (const handler of handlers.values()) void handler;

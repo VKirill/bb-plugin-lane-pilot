@@ -1,11 +1,11 @@
 import { estimateTokens, recordMemoryMixed, recordMemoryReceipt } from "@lane-pilot/memory-core";
 import { sha256Hex, stringAt, bestEffort } from "@lane-pilot/kit";
 import { writerExecutionSelection } from "@lane-pilot/models";
-import { briefMode, briefParts, STATE_MACHINE_VERSION } from "../../contracts";
+import { briefMode, briefParts, hostContract, STATE_MACHINE_VERSION } from "../../contracts";
 import type { TaskV2 } from "../../contracts";
 import type { ServerCore } from "../../contracts/server";
 import { getReasoningTrace, saveReasoningTrace, TRANSITION_KEY, HARNESS_VERSION } from "../../storage";
-import { buildExecutionPacket, renderExecutionPacket } from "../../tasks/execution-packet";
+import { buildExecutionPacket, renderExecutionPacket, readFirstIo } from "../../tasks";
 import { boundedAgentName } from "../../contracts/review-vocabulary";
 import { listReturns, renderReturnNotes } from "../../stage-return";
 import { HELPER_DISALLOWED_TOOLS, permissionEntries, WRITER_DISALLOWED_TOOLS } from "../../native-agent";
@@ -22,7 +22,6 @@ import type { HarnessApi } from "../../harness/server";
 import type { SpawnInput, WriterEnvironment } from "./spawn-types";
 import { spawnWithSeam } from "../spawn-seam";
 import { fullAccessSpawn } from "../../platform/server";
-import { resolve } from "node:path";
 
 /**
  * Everything the writer thread is launched with: the execution packet, the picked and harness skills, the brief its
@@ -48,11 +47,10 @@ export async function buildWriterLaunch(deps:{
   let executionPacket:string;
   let executionPacketSha256:string;
   try {
-    const packet = await buildExecutionPacket(attemptTask.read_first, async (path) => {
-      const file = await bb.sdk.files.read({ hostId:input.config.hostId, rootPath:workspacePath, path:resolve(workspacePath, path) });
-      if (typeof file.content !== "string") return null;
-      return { content:file.content, contentEncoding:file.contentEncoding, sha256:file.sha256, sizeBytes:file.sizeBytes };
-    });
+    const packet = await buildExecutionPacket(attemptTask.read_first, readFirstIo(
+      { files: bb.sdk.files, host: bb.hosts.experimental_client({ contract: hostContract }) },
+      { hostId: input.config.hostId, rootPath: workspacePath },
+    ));
     executionPacket = renderExecutionPacket(packet);
     executionPacketSha256 = packet.sha256;
   } catch (cause) {

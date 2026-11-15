@@ -1,26 +1,44 @@
-import { z } from "zod";
 import { defineRpcContract } from "@get-bb/plugin-sdk";
-
-const method = { input: z.unknown(), output: z.unknown() } as const;
+import {
+  attemptLogTailInput, attemptLogTailOutput, emptyRpcInput, helperThreadLabelsInput, helperThreadLabelsOutput,
+  listHelperThreadsInput, listHelperThreadsOutput, moneyStatusOutput, ownerWaitingOutput, taskBoardInput, taskBoardOutput,
+  threadLiveInput, threadLiveOutput, workGraphStripsInput, workGraphStripsOutput, workGraphTaskInput, workGraphTaskOutput,
+  worldVersionOutput,
+} from "../../contracts/ui";
 
 /**
- * ponytail: contract for the UI's watched reads only. Schemas are permissive — the server
- * validates every input anyway, and the client contract exists because experimental_useRpcQuery
- * requires one for method names and optional invalidation tags (none declared here, so the
- * poll is the staleness fallback, same as before). Ceiling: importing the real rpcContract here
- * would drag src/rooms/contracts → ../schedule → @lane-pilot/kit node builtins into the UI
- * bundle (tests/architecture forbids it). Upgrade: lift the used input/output schemas into
- * zod-only contract files, then swap `method` entries for the real ones.
+ * Contract for the UI's watched reads. Every method carries the same input schema the server contract
+ * declares (src/rooms/contracts/ui-query-schemas.ts — zod-only, the single home both sides import). Entity tags mark what a change
+ * invalidates: the server calls `bb.rpc.experimental_invalidate` where the data is written (attempt
+ * transitions, helper thread events and owner-item mutations in platform/server/realtime.ts and the
+ * owner-waiting RPC), so an open panel re-reads on the change instead of only on its slowed safety poll.
+ * The poll stays as the fallback for a BB without invalidate or watched queries.
  */
 export const uiQueryContract = defineRpcContract({
-  attempt_log_tail: method,
-  helper_thread_labels: method,
-  list_helper_threads: method,
-  money_status: method,
-  owner_waiting: method,
-  task_board: method,
-  thread_live: method,
-  work_graph_strips: method,
-  work_graph_task: method,
-  world_version: { ...method, tags: () => ["world_version"] },
+  attempt_log_tail: {
+    input: attemptLogTailInput,
+    output: attemptLogTailOutput,
+    tags: (input) => [`task-board:${input.projectId ?? "all"}`],
+  },
+  helper_thread_labels: { input: helperThreadLabelsInput, output: helperThreadLabelsOutput },
+  list_helper_threads: {
+    input: listHelperThreadsInput,
+    output: listHelperThreadsOutput,
+    tags: (input) => [`helpers:${input.threadId}`],
+  },
+  money_status: { input: emptyRpcInput, output: moneyStatusOutput, tags: () => ["money_status"] },
+  owner_waiting: { input: emptyRpcInput, output: ownerWaitingOutput, tags: () => ["owner_waiting"] },
+  task_board: {
+    input: taskBoardInput,
+    output: taskBoardOutput,
+    tags: (input) => [`task-board:${input.projectId ?? "all"}`],
+  },
+  thread_live: {
+    input: threadLiveInput,
+    output: threadLiveOutput,
+    tags: (input) => [`thread-live:${input.threadId}`],
+  },
+  work_graph_strips: { input: workGraphStripsInput, output: workGraphStripsOutput, tags: () => ["work-graph"] },
+  work_graph_task: { input: workGraphTaskInput, output: workGraphTaskOutput, tags: () => ["work-graph"] },
+  world_version: { input: emptyRpcInput, output: worldVersionOutput, tags: () => ["world_version"] },
 });

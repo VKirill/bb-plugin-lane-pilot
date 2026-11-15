@@ -11,11 +11,11 @@ import type { ExtraAccess, HelperRole } from "../../contracts/helper-context";
 import { storeNativeSelection } from "../../native-agent/server";
 import { LEAD_ID, planningText, resolvePlanningHome } from "../../contracts";
 import {bestEffort, isNotFound, orMiss, outputText, redactKnown} from "@lane-pilot/kit";
-import { READ_ONLY_LINE, agentPrompt, contractProblems, contractRepairPrompt, describeProblems, goalsBlock, hasContractProblems, honestExit, outputContract, outputFields, parseAgentOutput, planPacket, wfRunIdemParent } from "@lane-pilot/workflow-engine";
+import { READ_ONLY_LINE, agentPrompt, contractProblems, contractRepairPrompt, describeProblems, goalsBlock, hasContractProblems, honestExit, outputContract, outputFields, parseAgentOutput, wfRunIdemParent } from "@lane-pilot/workflow-engine";
 import type { ContractNode, ContractProblems } from "@lane-pilot/workflow-engine";
 import type { AgentOutputError } from "@lane-pilot/workflow-engine";
 import type { StepContext } from "@lane-pilot/workflow-engine";
-import type { PacketInput, PacketPlan } from "@lane-pilot/workflow-engine";
+import type { PacketPlan } from "@lane-pilot/workflow-engine";
 import type { Field, GraphNode } from "@lane-pilot/workflow-engine";
 import { roleMethod } from "../../critique";
 import { phaseFolder } from "../../phase";
@@ -27,6 +27,11 @@ import { SPECIALIST_GRAPH, SPECIALIST_ROLES, rememberSpecialistThread } from "..
 import { modelTier, ROLE_IDS, ROLE_MODEL_OPTIONS, roleRowOf } from "@lane-pilot/models";
 import { isDocumentaryRole } from "../../contracts";
 import { confirmedWordHits } from "../../memory/server";
+import { deliverRunFile } from "./workflow-run-home";
+import { intoThreadOf, renderTask, stepPacket } from "./workflow-agent-packet";
+import { nativeSkillSelection, skillThreadRoute, skillWorkspaceRoute } from "./workflow-skill-select";
+import type { SkillRoute } from "./workflow-skill-select";
+export { stepPacket };
 import { projectPassportBlock } from "../../passport";
 import { threadUsage } from "../../usage/server";
 import { stringAt } from "@lane-pilot/kit";
@@ -163,6 +168,10 @@ export type HelperRequest = {
   risk?: string;
   /** The step contract (`produces`, `gates`): an answer that breaks it gets the same one repair turn as an answer without a JSON block. */
   contract?: ContractNode;
+  /** The files the step's start packet points at (the `files` of its PacketPlan): the executor writes them on the PM checkout, `run` writes the same relative paths where the helper actually reads them (a placed specialist's own folder or host, a continued thread's environment). */
+  packetFiles?: ReadonlyArray<{ path: string; text: string }>;
+  /** Where `packetFiles` already are (the executor's PM checkout): `run` skips materializing again when the helper's workspace is the same place. */
+  packetFilesAt?: { hostId: string; path: string };
   signal?: AbortSignal;
 };
 /** What the step spent: tokens and the price of them, from the thread's own usage events (the budget of the run counts these). */
@@ -305,11 +314,51 @@ export function createWorkflowAgents() {
       const home = await resolvePlanningHome({ host, hostId: checkoutHostId, cwd: checkoutPath, inputs: planningHomeInputs(db, rt.projectId), log: bb.log });
       if (home) request = { ...request, prompt: planningText(request.prompt, home) };
     }
+    // The packet's files were written on the PM checkout by the executor; the helper reads them from its own workspace,
+    // which a placed specialist may have moved to another host and folder (and a step continuing a thread reads them in
+    // that thread's environment). The same relative paths are written there; when the target cannot be resolved the
+    // step fails closed — running on references that are not there is a silent cut of required context.
+    if (request.packetFiles?.length) {
+      let target = { hostId: checkoutHostId, path: checkoutPath };
+      if (request.intoThread) {
+        try {
+          const thread = await orMiss(bb.sdk.threads.get({ threadId: request.intoThread }), null, isNotFound);
+          const environmentId = stringAt(thread, "environmentId");
+          const env = environmentId ? await orMiss(bb.sdk.environments.get({ environmentId }), null, isNotFound) : null;
+          const hostId = stringAt(env, "hostId"), path = stringAt(env, "path");
+          target = hostId && path ? { hostId, path } : { hostId: "", path: "" };
+        } catch (cause) {
+          throw new HelperFailure("input_delivery", `the continued thread's environment could not be read (${cause instanceof Error ? cause.message : String(cause)}); the step fails instead of running on references that are not there`);
+        }
+      }
+      if (!target.hostId || !target.path) throw new HelperFailure("input_delivery", `the ${request.role} step's ${request.packetFiles.length} input file(s) have no workspace to land in (the continued thread's environment is unreadable); the step fails instead of running on references that are not there`);
+      // The executor already put the files at `packetFilesAt` (the PM checkout): when the helper reads them from the same
+      // place there is nothing to write again; a different host or path gets them materialized there, content-checked.
+      const at = request.packetFilesAt;
+      const samePlace = at && at.hostId === target.hostId && at.path.replace(/\/+$/, "") === target.path.replace(/\/+$/, "");
+      if (!samePlace) {
+        for (const file of request.packetFiles) {
+          try {
+            await deliverRunFile(bb.sdk.files, target, file);
+          } catch (cause) {
+            throw new HelperFailure("input_delivery", `the input file(s) of ${request.nodeId} could not be written to ${target.hostId}:${target.path} (${cause instanceof Error ? cause.message : String(cause)}); the step fails instead of running on references that are not there`);
+          }
+        }
+      }
+    }
     const watchedFrom = Date.now();
     const before = checkoutPath && checkoutHostId ? await gitRepoStatus(host, checkoutHostId, checkoutPath) : null;
 
+    // Optional node-local skill selection resolves against the actual spawn target once per run (provider fallback recomputes per attempt).
+    let spawnSkillRouteCache: Promise<SkillRoute | null> | undefined;
+    const spawnSkillRoute = () => (spawnSkillRouteCache ??= skillWorkspaceRoute(bb, rt.projectId, environment));
+
     async function spawn(req: HelperRequest): Promise<string> {
       const providerId = req.provider ?? DEFAULT_PROVIDER;
+      const selection = req.skills?.length
+        ? await nativeSkillSelection({ bb, projectId: rt.projectId, provider: providerId, route: await spawnSkillRoute(), skills: req.skills, prompt: req.prompt })
+        : null;
+      for (const note of selection?.notes ?? []) bb.log.warn(`workflow step ${req.stepKey}: ${note}`);
       const policy = requireHelperSpawn({ bb, db, projectId: rt.projectId, runId: rt.runId });
       // With no PM chat the helper is a hidden thread of the project. A scheduled agent's thread is one too even with a chat: as the chat's child its
       // end would wake whichever chat happened to be open (scheduled errands learned that, 2026-10-19); the schedule board keeps the report.
@@ -320,7 +369,7 @@ export function createWorkflowAgents() {
         ...placementArg,
         ...requiredPolicyField(bb, policy, providerId, spec.helper, withProfileAccess(extraAccessOf(req), own?.access)),
         ...writerExecutionSelection(providerId, req.model ?? DEFAULT_MODEL, req.reasoning ?? DEFAULT_REASONING, req.serviceTier ?? "default"),
-        prompt: req.prompt,
+        ...(selection?.parts ? { input: selection.parts } : { prompt: req.prompt }),
         environment,
         pluginMetadata: {
           role: spec.metadata, ...(spec.specialist ? { specialist: spec.specialist } : {}), ...(rt.origin ? { origin: rt.origin } : {}), spawnId: req.spawnKey, ...(rt.runId ? { lanePilotRunId: rt.runId } : {}), ...parent, helperMode: policy.mode,
@@ -356,7 +405,16 @@ export function createWorkflowAgents() {
       else {
         sentAt = Date.now();
         await bb.storage.kv.set(sentKey, { at: sentAt });
-        await bb.sdk.threads.send({ threadId, mode: "queue-if-active", input: [{ type: "text", text: request.prompt, mentions: [] }] } as never);
+        let input: unknown = [{ type: "text", text: request.prompt, mentions: [] }];
+        if (request.skills?.length) {
+          const target = await skillThreadRoute(bb, threadId);
+          const selection = target
+            ? await nativeSkillSelection({ bb, projectId: target.projectId, provider: target.provider, route: target.route, skills: request.skills, prompt: request.prompt })
+            : { parts: null, notes: [`selection_workspace_unverified: provider=${request.provider ?? DEFAULT_PROVIDER} skills=${request.skills.join(",")} — the continued thread's workspace is unreadable`] };
+          for (const note of selection.notes) bb.log.warn(`workflow step ${request.stepKey}: ${note}`);
+          if (selection.parts) input = selection.parts;
+        }
+        await bb.sdk.threads.send({ threadId, mode: "queue-if-active", input } as never);
       }
     } else {
       const startFolder = await bestEffort(rt.ctx.bb.log, "workflow helper start folder", projectFolder(rt.ctx.bb, rt.projectId), null);
@@ -480,36 +538,8 @@ export type WorkflowAgents = ReturnType<typeof createWorkflowAgents>;
 
 // ---------------------------------------------------------------- the executor of an agent node
 
-const GOAL_INPUTS = ["goal", "topic", "question", "query", "subject", "symptom", "idea", "task_ref"] as const;
-
-/** Whether the node has a step contract, which is what puts its inputs into a start packet. */
-const hasContract = (node: Extract<GraphNode, { type: "agent" }>): boolean => Boolean(node.produces?.length || node.consumes?.length);
-
-/** The session the step goes on in, when it continues an earlier helper's. */
-const intoThreadOf = (ctx: StepContext<ChainRuntime>, node: Extract<GraphNode, { type: "agent" }>): string | null =>
-  ctx.input.via.mode === "same-session" && node.session !== "new" ? ctx.input.via.fromThreadId ?? null : null;
-
-/**
- * The start packet of a step with a contract (W0): its goal, its inputs (the data of its edges and its `with`, the workflow's
- * inputs when it starts a session, the item of its branch, the previous step's handoff), what it must produce and its gates,
- * in about 3 KB. An input over a few hundred characters stands as a file and a summary (`files` are to be written before the helper
- * starts; `byReference: false` shows them cut when they could not be). Null for a node without a contract.
- */
-export function stepPacket(ctx: StepContext<ChainRuntime>, node: Extract<GraphNode, { type: "agent" }>, byReference = true): PacketPlan | null {
-  if (!hasContract(node)) return null;
-  const intoThread = intoThreadOf(ctx, node);
-  // A specialist run's first message (its `brief` step) already carries the task: the inputs are not repeated in the packet.
-  const values = { ...(intoThread || ctx.workflow.id === SPECIALIST_GRAPH ? {} : ctx.inputs), ...ctx.input.with };
-  const inputs: PacketInput[] = Object.entries(values).map(([name, value]) => ({ name, value }));
-  if (ctx.input.item !== undefined) inputs.push({ name: "item", value: ctx.input.item });
-  if (ctx.input.via.handoff) inputs.push({ name: "previous_handoff", value: ctx.input.via.handoff });
-  const goalName = GOAL_INPUTS.find((name) => typeof values[name] === "string" && String(values[name]).trim());
-  const kinds = Object.fromEntries((node.consumes ?? []).flatMap((spec) => (spec.as ? [[spec.as, `${spec.kind}/${spec.version}`] as const] : [])));
-  return planPacket({ step: { id: node.id, role: ctx.render(node.role), mode: ctx.mode }, ...(goalName ? { goal: String(values[goalName]), goalInput: goalName } : {}), inputs, produces: node.produces, gates: node.gates, kinds, chatId: ctx.runtime?.pmThreadId ?? "", runId: ctx.runId, byReference });
-}
-
 /** The data a node hands its helper: the mapped edge fields and the node's own `with`, and the item of its branch. */
-export function agentRequest(ctx: StepContext<ChainRuntime>, node: Extract<GraphNode, { type: "agent" }>, options: { byReference?: boolean } = {}): HelperRequest {
+export function agentRequest(ctx: StepContext<ChainRuntime>, node: Extract<GraphNode, { type: "agent" }>, options: { byReference?: boolean; plan?: PacketPlan; filesAt?: { hostId: string; path: string } } = {}): HelperRequest {
   const rt = ctx.runtime!;
   const fields = outputFields(ctx.workflow, node) as Field[];
   // The role may be taken from an input (`specialist:{{$inputs.agentId}}`: the scheduled agent's routine runs whichever agent the schedule names).
@@ -517,11 +547,14 @@ export function agentRequest(ctx: StepContext<ChainRuntime>, node: Extract<Graph
   const spec = roleSpec(role);
   const via = ctx.input.via;
   const prior = via.mode === "same-session" || via.mode === "read-prior-session" ? { mode: via.mode, threadId: via.fromThreadId ?? null } : undefined;
-  const task = ctx.render(node.prompt);
   const method = roleMethod(spec.helper.startsWith("specialist:") ? "" : role);
   const title = ctx.render(node.title?.en ?? node.label ?? node.id);
   const intoThread = intoThreadOf(ctx, node);
-  const packet = stepPacket(ctx, node, options.byReference !== false)?.packet;
+  // One plan for the packet and for what the prompt's own `{{…}}` substitutions point at (the executor hands its plan in,
+  // so the files it wrote are exactly the files the prompt references).
+  const plan = options.plan ?? stepPacket(ctx, node, options.byReference !== false);
+  const packet = plan.packet;
+  const task = renderTask(ctx, node, plan);
   // The step's own `with` over the workflow's `$inputs`: a fragment's goal reaches its helper even where no edge or node maps it. A step that
   // continues a thread was given the workflow's inputs earlier in it.
   // The routine graph of a scheduled agent carries everything the agent needs in its first message already (its `brief` step): the inputs are not repeated.
@@ -549,6 +582,7 @@ export function agentRequest(ctx: StepContext<ChainRuntime>, node: Extract<Graph
     skills: [...new Set([...(node.skills ?? []), ...(node.profile?.skills ?? [])])], plugins: [...new Set(node.plugins ?? [])], mcp: [...new Set(node.mcp ?? [])], intoThread, signal: ctx.signal,
     ...(typeof ctx.inputs?.risk === "string" ? { risk: ctx.inputs.risk } : {}),
     ...(node.produces?.length || node.gates?.length ? { contract: { id: node.id, produces: node.produces, gates: node.gates } } : {}),
+    ...(plan.files.length ? { packetFiles: plan.files, ...(options.filesAt ? { packetFilesAt: options.filesAt } : {}) } : {}),
   };
 }
 

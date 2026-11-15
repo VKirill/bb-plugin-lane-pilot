@@ -16,9 +16,22 @@ const phaseOf = (row: Raw): Phase & { pokedKey: string | null; closedAt: number 
   record: parse<PhaseRecord>(row.record_json, {}), edition: row.edition, createdAt: row.created_at, updatedAt: row.updated_at, pokedKey: row.poked_key, closedAt: row.closed_at,
 });
 
+const phaseListeners = new WeakMap<PhaseDb, Set<(phaseId: string) => void>>();
+/** Called after a phase of this database is inserted or saved (live screens re-read); returns the unsubscribe. A listener's failure never touches the write. */
+export function onPhaseChanged(db: PhaseDb, listener: (phaseId: string) => void): () => void {
+  let listeners = phaseListeners.get(db);
+  if (!listeners) { listeners = new Set(); phaseListeners.set(db, listeners); }
+  listeners.add(listener);
+  return () => { listeners!.delete(listener); };
+}
+function phaseChanged(db: PhaseDb, phaseId: string): void {
+  for (const listener of phaseListeners.get(db) ?? []) { try { listener(phaseId); } catch { /* a screen update is never worth a failed write */ } }
+}
+
 export function insertPhase(db: PhaseDb, phase: Pick<Phase, "id" | "projectId" | "pmThreadId" | "title" | "goal"> & { runId?: string | null; at: number }): void {
   db.prepare(`INSERT INTO lane_pilot_phase(id,project_id,pm_thread_id,run_id,title,goal,stage,state,record_json,created_at,updated_at)
     VALUES(?,?,?,?,?,?,'discussion','active','{}',?,?)`).run(phase.id, phase.projectId, phase.pmThreadId, phase.runId ?? null, withoutCredentials(phase.title), withoutCredentials(phase.goal), phase.at, phase.at);
+  phaseChanged(db, phase.id);
 }
 
 export function getPhase(db: PhaseDb, id: string): (Phase & { pokedKey: string | null; closedAt: number | null }) | undefined {
@@ -49,6 +62,7 @@ export function savePhase(db: PhaseDb, id: string, patch: { stage?: PhaseStage; 
   const closedAt = ended(state) ? (ended(current.state) && current.closedAt ? current.closedAt : patch.at) : current.closedAt;
   db.prepare(`UPDATE lane_pilot_phase SET stage=?, state=?, record_json=?, run_id=?, edition=edition+?, updated_at=?, closed_at=? WHERE id=?`)
     .run(patch.stage ?? current.stage, state, JSON.stringify(record), patch.runId === undefined ? current.runId : patch.runId, changed ? 1 : 0, patch.at, closedAt, id);
+  phaseChanged(db, id);
 }
 
 /**

@@ -38,7 +38,13 @@ export const AUTO_TRIES = 2;
 /** Failed runs of one stage's workflow over the phase's whole life: a new version forgets AUTO_TRIES, not this, so frequent releases do not give endless tries. */
 export const AUTO_LIFETIME_TRIES = 3 * AUTO_TRIES;
 
-export type AutoRecord = { kind: AutoKind; wfRunId: string; startedAt: number; wave?: number };
+export type AutoRecord = { kind: AutoKind; wfRunId: string; startedAt: number; wave?: number;
+  /** The plan sha a bounce was issued for (absent on older records and other kinds): its verdict counts only for that sha. */ planSha?: string };
+
+/** The tries a stage's workflow spent (AUTO_TRIES of one version, AUTO_LIFETIME_TRIES over the phase's life): spent, the machine leaves the stage to the PM. */
+export function autoTried(r: PhaseRecord, kind: AutoKind): boolean {
+  return (r.autoFailures?.[kind] ?? 0) >= AUTO_TRIES || (r.autoMachineFailures?.[kind] ?? 0) >= AUTO_TRIES || (r.autoFailuresTotal?.[kind] ?? 0) >= AUTO_LIFETIME_TRIES;
+}
 
 /** The plan gate's reasons the machine can plan away: all of them but the wait for the owner's word. */
 function planGaps(record: PhaseRecord): string[] {
@@ -50,7 +56,7 @@ function planGaps(record: PhaseRecord): string[] {
 export function autoDue(phase: Phase): AutoDue | null {
   const r = phase.record;
   if (phase.state !== "active" || r.train === false) return null;
-  const tried = (kind: AutoKind) => (r.autoFailures?.[kind] ?? 0) >= AUTO_TRIES || (r.autoMachineFailures?.[kind] ?? 0) >= AUTO_TRIES || (r.autoFailuresTotal?.[kind] ?? 0) >= AUTO_LIFETIME_TRIES;
+  const tried = (kind: AutoKind) => autoTried(r, kind);
   if (phase.stage === "discussion" && !r.context && r.signedBefore?.docs.length) return { kind: "resign" };
   if (phase.stage === "discussion" && !r.context && !tried("analyze")) return { kind: "analyze" };
   // The plan, and the plan again in «gaps» mode while its critic asks for changes (at most three rounds, the plan gate's own limit).
@@ -306,6 +312,8 @@ export type AutoApi = {
   lessons(input: { phaseId: string; analysis: string; reviewRun: string; reviewerNode?: string; by: string }): Phase;
   drawing(input: { phaseId: string; paths: string[]; designer: string; feasible: boolean; contradiction?: string; reviewer?: string; by: string }): Promise<Phase>;
   returnTo(input: { phaseId: string; to: "planning" | "discussion"; note: string; by: string }): Phase;
+  /** Re-runs the admission gate after a bounce outcome lands: the owner's planning word may already be given, and on owner.words=on no later step asks again, so the outcome itself must lift the hold (a refusal like an open grill is the gate's own answer, logged not thrown). */
+  admitIfReady?(phaseId: string): Promise<unknown>;
 };
 
 export function createAutoStages(ctx: Pick<ServerCore, "log">, services: Pick<Services, "workflowEngine">, deps: {
@@ -484,6 +492,11 @@ export function createAutoStages(ctx: Pick<ServerCore, "log">, services: Pick<Se
       // SMA k_wp_bounce: one external refinement per plan sha. changes_requested sets the replan gaps, so the existing plan
       // stage runs once more; anything else changes nothing and never blocks admission.
       if (phase.stage !== "planning" || !phase.record.plan || phase.record.plan.bounce?.sha === phase.record.plan.sha) return;
+      // The plan was replaced while the bounce ran: its verdict is about a sha that no longer stands — dropped, the new plan gets its own bounce.
+      if (auto.planSha !== undefined && auto.planSha !== phase.record.plan.sha) {
+        deps.book(phase, "plan", "bounce", `the external plan bounce answered plan ${auto.planSha.slice(0, 12)} but the plan in force is ${phase.record.plan.sha.slice(0, 12)}: its verdict is dropped`);
+        return;
+      }
       const decision = output.status === "changes_requested" ? "changes_requested" : "approve";
       const rounds = typeof output.rounds === "number" ? output.rounds : undefined;
       const bounce = { sha: phase.record.plan.sha, decision, rounds, at: deps.now() };
@@ -492,6 +505,10 @@ export function createAutoStages(ctx: Pick<ServerCore, "log">, services: Pick<Se
         : null;
       deps.book(phase, "plan", "bounce", `external plan bounce (${AUTO_WORKFLOWS.bounce}): ${decision}${rounds !== undefined ? ` in ${rounds} round(s)` : ""}${gaps ? ` — the plan runs once more on its findings` : ""}`);
       deps.save(phase.id, { ...phase.record, plan: { ...phase.record.plan, bounce }, ...(gaps ? { replan: { gaps, count: phase.record.replan?.count ?? 0 } } : {}) });
+      // The outcome is recorded: if the owner's planning word is already given the hold lifts here — on owner.words=on
+      // no later step asks again, so without this call the plan would wait for a word that never comes. changes_requested
+      // holds inside the gate until the replan lands, so the call is safe for every decision.
+      await deps.api.admitIfReady?.(phase.id).catch((cause: unknown) => ctx.log(`phase ${phase.id}: admission after the plan bounce failed: ${cause instanceof Error ? cause.message : String(cause)}`));
     } else if (auto.kind === "diagnose") {
       if (phase.stage !== "verification" || !phase.record.verification?.verdict) return;
       const diagnosis = { inputSha: phase.record.verification.verdict.inputSha,
@@ -564,7 +581,9 @@ export function createAutoStages(ctx: Pick<ServerCore, "log">, services: Pick<Se
         // A bounce that failed never blocks admission (SMA k_wp_bounce): it is recorded on the plan as unavailable, not counted.
         if (running.kind === "bounce") {
           deps.book(phase, "plan", "bounce", `the external plan bounce did not finish (${summary.error ?? summary.reason ?? summary.status}): the plan is admitted without it`);
-          deps.save(phase.id, { ...phase.record, auto: undefined, plan: phase.record.plan ? { ...phase.record.plan, bounce: { sha: phase.record.plan.sha, decision: "unavailable", at: deps.now() } } : phase.record.plan });
+          deps.save(phase.id, { ...phase.record, auto: undefined, plan: phase.record.plan ? { ...phase.record.plan, bounce: { sha: running.planSha ?? phase.record.plan.sha, decision: "unavailable", at: deps.now() } } : phase.record.plan });
+          // Same lift as a recorded verdict: «unavailable» never holds admission, and a planning word already given must not wait for a next step that never asks again.
+          await deps.api.admitIfReady?.(phase.id).catch((cause: unknown) => ctx.log(`phase ${phase.id}: admission after the failed plan bounce failed: ${cause instanceof Error ? cause.message : String(cause)}`));
           return true;
         }
         // A run a reload or deploy stopped (its helper thread died with the plugin) is not the stage's failure: it runs again and keeps its tries (live, 2026-10-25).
@@ -657,7 +676,7 @@ export function createAutoStages(ctx: Pick<ServerCore, "log">, services: Pick<Se
         ...(due.kind === "plan" || due.kind === "check" ? { mode: "full" as const } : {}),
         link: { projectId: phase.projectId, ...(phase.runId ? { runId: phase.runId } : {}) } });
       started.done.catch((cause: unknown) => ctx.log(`phase ${phase.id}: ${AUTO_WORKFLOWS[due.kind]} stopped: ${cause instanceof Error ? cause.message : String(cause)}`));
-      deps.save(phase.id, { ...phase.record, auto: { kind: due.kind, wfRunId: started.runId, startedAt: deps.now(), ...(due.wave ? { wave: due.wave } : {}) } });
+      deps.save(phase.id, { ...phase.record, auto: { kind: due.kind, wfRunId: started.runId, startedAt: deps.now(), ...(due.wave ? { wave: due.wave } : {}), ...(due.kind === "bounce" ? { planSha: phase.record.plan?.sha } : {}) } });
       deps.book(phase, "decisions", "auto_started", `Lane Pilot runs ${AUTO_WORKFLOWS[due.kind]} for the ${phase.stage} stage (${started.runId})`);
       return true;
     } catch (cause) {

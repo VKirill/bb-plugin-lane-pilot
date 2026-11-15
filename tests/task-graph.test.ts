@@ -63,4 +63,36 @@ describe("buildTaskGraph", () => {
     ]));
     expect(graph.nodes.find((node) => node.id === "dead")?.state).toBe("blocked");
   });
+
+  // 2026-11-15 layers audit (F2): the graph read the attempt state alone, so a failed attempt was either «running» for good
+  // (validation_failed) or gone from the graph, even as the blocker its dependents wait for (timeout, provider_error…).
+  const writerStage = (w:ReturnType<typeof world>, taskId:string, state:"running"|"failed") =>
+    recordStage(w.db, { runId:"run", taskId, stageId:"writer-agent", state, input:"plan", ...(state === "failed" ? { reason:"retry limit 2 exhausted" } : {}) });
+
+  it("keeps a task between two attempts of its writer loop running, then follows the next attempt to acceptance", () => {
+    const w = world();
+    w.task("t"); w.attempt("a1", "t", "spawn_requested", "running", "validation_failed");
+    writerStage(w, "t", "running");
+    const state = () => buildTaskGraph(w.db, "run").nodes.find((node) => node.id === "t")?.state;
+    expect(state()).toBe("running");
+    w.attempt("a2", "t");
+    expect(state()).toBe("queued");
+    for (const next of ["spawn_requested", "running", "accepted"]) transitionAttempt(w.db, "a2", next);
+    expect(buildTaskGraph(w.db, "run").nodes.map((node) => node.id)).not.toContain("t");
+  });
+
+  it("shows a task whose writer loop ended on a failure as the blocked task its dependents wait for", () => {
+    const w = world();
+    for (const [id, failure] of [["slow", "timeout"], ["picky", "validation_failed"]] as const) {
+      w.task(id); w.attempt(`a-${id}`, id, "spawn_requested", "running", failure);
+      writerStage(w, id, "running"); writerStage(w, id, "failed");
+      w.task(`after-${id}`, [id]); w.attempt(`a-after-${id}`, `after-${id}`);
+    }
+    const graph = buildTaskGraph(w.db, "run");
+    expect(graph.nodes.find((node) => node.id === "slow")?.state).toBe("blocked");
+    expect(graph.nodes.find((node) => node.id === "picky")?.state).toBe("blocked");
+    expect(graph.edges).toEqual(expect.arrayContaining([
+      { from:"slow", to:"after-slow", kind:"depends" }, { from:"picky", to:"after-picky", kind:"depends" },
+    ]));
+  });
 });

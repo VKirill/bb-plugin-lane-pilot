@@ -86,13 +86,27 @@ async function main() {
   }
 
   // n1405: a subscription-window event of any thread is stored by provider; another kind of limit is not; the same event again writes nothing.
+  // 0.1.575: the watch hears the real debounced {thread, sequence} wake and reads provider/rateLimits/updated rows via threads.events.list.
   {
     const store = new Map<string, unknown>(); const sets: string[] = []; const handlers: Array<(payload: unknown) => unknown> = [];
     const kv = { get: async (key: string) => store.get(key) ?? null, set: async (key: string, value: unknown) => { sets.push(key); store.set(key, value); } };
-    mountRateLimitWatch({ isDisposed: () => false, bb: { storage: { kv }, log: { info: () => {} }, events: { on: (_n: string, h: (p: unknown) => unknown) => { handlers.push(h); } } } } as never);
+    const eventLog: Array<{ threadId: string; seq: number; type: string; createdAt: number; data: unknown }> = [];
+    let eventSeq = 0;
+    const listEvents = async (query: { threadId?: string; types?: string[]; order?: string; limit?: string; afterSeq?: string; beforeSeq?: string }) => {
+      let rows = eventLog.filter((row) => row.threadId === query.threadId && (!query.types?.length || query.types.includes(row.type)));
+      if (query.afterSeq !== undefined) rows = rows.filter((row) => row.seq > Number(query.afterSeq));
+      if (query.beforeSeq !== undefined) rows = rows.filter((row) => row.seq < Number(query.beforeSeq));
+      rows = [...rows].sort((a, b) => query.order === "desc" ? b.seq - a.seq : a.seq - b.seq);
+      return rows.slice(0, Number(query.limit) || 100).map((row) => ({ seq: row.seq, type: row.type, createdAt: row.createdAt, data: row.data }));
+    };
+    mountRateLimitWatch({ isDisposed: () => false, bb: { storage: { kv }, log: { info: () => {} }, events: { on: (_n: string, h: (p: unknown) => unknown) => { handlers.push(h); } }, sdk: { threads: { events: { list: listEvents } } } } } as never);
     const reset = Date.now() + 3_600_000;
     const limits = { kind: "subscription-window", providerId: "claude-code", status: "blocked", windows: [{ label: "five-hour", providerKey: "five_hour", status: "blocked", resetsAtMs: reset }] };
-    const send = (rateLimits: Record<string, unknown>) => handlers[0]!({ event: { type: "provider/rateLimits/updated", rateLimits } });
+    const send = async (rateLimits: Record<string, unknown>) => {
+      const row = { threadId: "thr_rl", seq: ++eventSeq, type: "provider/rateLimits/updated", createdAt: Date.now(), data: { rateLimits } };
+      eventLog.push(row);
+      await handlers[0]!({ thread: { id: row.threadId, status: "active" }, sequence: row.seq });
+    };
     await send(limits);
     await send({ ...limits, kind: "credits", providerId: "other" });
     await send(limits);

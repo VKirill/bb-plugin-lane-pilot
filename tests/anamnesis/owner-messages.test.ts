@@ -26,6 +26,19 @@ describe("ownerMessagesOf: original human requests only", () => {
   it("keeps a plain user request, including the «unlabeled» system kind live BB stamps on them", () => {
     expect(ownerMessagesOf(turn(1, T, { systemMessageKind: "unlabeled" }), t).map((m) => m.id)).toEqual(["thr_1:1:0"]);
   });
+  it("drops Lane Pilot's own sender-less notices but keeps the owner's words that start with its name", () => {
+    const said = (text: string) => turn(1, T, { input: [{ type: "text", text }] });
+    for (const text of ["[Lane Pilot phase] Phase ph_1 is stuck", "Lane Pilot: results of your tasks", "[Lane Pilot service] Тяжёлая задача не запущена", "Lane Pilot: задача T1 не запущена: no writer",
+      "Lane Pilot: task T1 was not accepted and its files could not be put back", "Lane Pilot: the writer of task T1 (@thread:thr_w) is stopped on a question that needs the owner",
+      "Lane Pilot (canary alert):\nfaults", "Lane Pilot (parked tasks that need you):\n- T1", "Lane Pilot: your answer could not be read (bad json)",
+      "Lane Pilot: из беклога проекта готова к работе задача «X»", "Lane Pilot: a fresh critic returned your revised plan again"]) {
+      expect(ownerMessagesOf(said(text), t)).toEqual([]);
+    }
+    for (const text of ["Lane Pilot, исправь футер", "Lane Pilot: сделай кнопку синей", "расскажи про Lane Pilot",
+      "[Lane Pilot window] The owner asks for a new task:\nfix the footer"]) {
+      expect(ownerMessagesOf(said(text), t)).toHaveLength(1);
+    }
+  });
   it("drops agent, system, retry and agent-only content", () => {
     expect(ownerMessagesOf(turn(1, T, { initiator: "agent" }), t)).toEqual([]);
     expect(ownerMessagesOf(turn(1, T, { senderThreadId: "thr_x" }), t)).toEqual([]);

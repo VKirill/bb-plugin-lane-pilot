@@ -721,10 +721,28 @@ describe("the stored rate-limit event", () => {
     const store = new Map<string, unknown>();
     const sets: string[] = [];
     const handlers: Array<(payload: unknown) => unknown> = [];
+    // The real contract (0.1.575): experimental_thread.events is a debounced {thread, sequence} wake; the watch reads the
+    // announced rows back through threads.events.list, so this fixture keeps a per-thread event log and answers list queries.
+    const eventLog: Array<{ threadId: string; seq: number; type: string; createdAt: number; data: unknown }> = [];
+    let eventSeq = 0;
     const kv = { get: async (key: string) => store.get(key) ?? null, set: async (key: string, value: unknown) => { sets.push(key); store.set(key, value); } };
-    const ctx = { isDisposed: () => false, bb: { storage: { kv }, log: { info: () => {} }, events: { on: (_name: string, handler: (payload: unknown) => unknown) => { handlers.push(handler); } } } };
+    const ctx = { isDisposed: () => false, bb: {
+      storage: { kv }, log: { info: () => {} },
+      events: { on: (_name: string, handler: (payload: unknown) => unknown) => { handlers.push(handler); } },
+      sdk: { threads: { events: { list: async (query: { threadId?: string; types?: string[]; order?: string; limit?: string; afterSeq?: string; beforeSeq?: string }) => {
+        let rows = eventLog.filter((row) => row.threadId === query.threadId && (!query.types?.length || query.types.includes(row.type)));
+        if (query.afterSeq !== undefined) rows = rows.filter((row) => row.seq > Number(query.afterSeq));
+        if (query.beforeSeq !== undefined) rows = rows.filter((row) => row.seq < Number(query.beforeSeq));
+        rows = [...rows].sort((a, b) => query.order === "desc" ? b.seq - a.seq : a.seq - b.seq);
+        return rows.slice(0, Number(query.limit) || 100).map((row) => ({ seq: row.seq, type: row.type, createdAt: row.createdAt, data: row.data }));
+      } } } },
+    } };
     mountRateLimitWatch(ctx as never);
-    const send = (rateLimits: Record<string, unknown>) => handlers[0]!({ event: { type: "provider/rateLimits/updated", rateLimits } });
+    const send = async (rateLimits: Record<string, unknown>) => {
+      const row = { threadId: "thr_x", seq: ++eventSeq, type: "provider/rateLimits/updated", createdAt: Date.now(), data: { rateLimits } };
+      eventLog.push(row);
+      await handlers[0]!({ thread: { id: "thr_x", status: "active" }, sequence: row.seq });
+    };
     return { store, sets, kv, send };
   };
   const limits = (resetsAtMs: number, status = "blocked") => ({ kind: "subscription-window", providerId: "claude-code", status, windows: [{ label: "five-hour", providerKey: "five_hour", status, resetsAtMs }] });

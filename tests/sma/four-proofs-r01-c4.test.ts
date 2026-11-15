@@ -89,7 +89,8 @@ describe("the running session", () => {
   it("[sma:as_continue] a turn that cannot be delivered leaves the attempt blocked on the same question, and a writer that is still finishing is not reopened", async () => {
     const w = runWorld();
     transitionAttempt(w.db, "a1", "blocked", { threadId: "thr_w", reason: "needs_human: which locale?" });
-    w.harness.sdk.stub("threads.send", async () => { throw new Error("thread gone"); });
+    // BB's dispatch hooks refusing the turn before it is queued: the one failure that proves nothing was delivered (EXT05 review).
+    w.harness.sdk.stub("threads.send", async () => { throw Object.assign(new Error("thread gone"), { status: 409, code: "dispatch_rejected", body: { code: "dispatch_rejected", message: "thread gone", details: { pluginId: "guard" } } }); });
     const startWriterTask = vi.fn();
     const active = new Set<string>();
     const reopen = createAttemptReopen(w.ctx, { activeWriterTasks: active, startWriterTask } as never);
@@ -100,6 +101,17 @@ describe("the running session", () => {
     expect((out as { hint: string }).hint).toContain("the turn could not be delivered to the writer thread (thread gone); the task stays blocked");
     expect(getAttempt(w.db, "a1")).toMatchObject({ state: "blocked", reason: "needs_human: which locale?" });
     expect(startWriterTask).not.toHaveBeenCalled();
+    // The control: a send that fails without that refusal (a lost reply) may have been queued, so the attempt goes on and says so.
+    const u = runWorld();
+    transitionAttempt(u.db, "a1", "blocked", { threadId: "thr_w", reason: "needs_human: which locale?" });
+    u.harness.sdk.stub("threads.send", async () => { throw new Error("thread gone"); });
+    const startedU = vi.fn();
+    const reopenU = createAttemptReopen(u.ctx, { activeWriterTasks: new Set<string>(), startWriterTask: startedU } as never);
+    const unknown = await reopenU.reopenAttempt({ projectId: "proj1", runId: "run1", taskId: "T1", pmThreadId: "thr_pm", attempt: getAttempt(u.db, "a1")!, threadId: "thr_w",
+      workspacePath: "/ws", config, contract: u.task, reason: "answered", turn: "t", qaAnswer: "ru" });
+    expect(unknown).toEqual({ ok: true, deliveryUnknown: true });
+    expect(getAttempt(u.db, "a1")).toMatchObject({ state: "running" });
+    expect(startedU).toHaveBeenCalledTimes(1);
     active.add("run1:T1");
     expect(await reopen.checkReopenable({ runId: "run1", taskId: "T1", run: { writer_workspace_path: "/ws" } as never, attempt })).toEqual({ ok: false, hint: "the task's writer is still finishing; poll lane_pilot_wait_writer first" });
   });

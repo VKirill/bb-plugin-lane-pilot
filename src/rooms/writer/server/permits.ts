@@ -6,6 +6,7 @@ import { hostContract } from "../../contracts";
 import { getAttempt, getRun, getRunSettingsScopes, getRunWriterHost, listOpenAttempts, loadProjectSettings } from "../../storage";
 import { ownerWordsMode, sensitiveHits } from "../../tasks";
 import { recordEvidence } from "../../storage";
+import { sendServiceMessage } from "../../relay/server";
 
 /**
  * Permits (SMA map: Permission before an act, Permit channel for the worker, Permit channel opened, Ticket awaits a decision, Approve or deny
@@ -87,8 +88,8 @@ export function mountPermits(ctx: ServerCore): void {
         const run = attempt ? getRun(db, attempt.run_id) : undefined;
         if (!attempt || !run?.pm_thread_id) continue;
         try {
-          await bb.sdk.threads.send({ threadId: run.pm_thread_id, mode: "queue-if-active", input: [{ type: "text", mentions: [], text:
-            `[Lane Pilot permit] The writer of ${attempt.task_id} asks permission (${ticket.category}): \`${ticket.command.slice(0, 600)}\`. Decide with lane_pilot_permit {hostId:"${hostId}", session:"${ticket.session}", ticket:"${ticket.ticket}", decision:"allow"|"deny", why}. Allow only what the task needs; ${permitOwnerRule(ownerWordsMode(loadProjectSettings(db, run.project_id, getRunSettingsScopes(db, run.id))), ticket.command)}` }] } as never);
+          await sendServiceMessage(bb as never, { threadId: run.pm_thread_id, mode: "queue-if-active", text:
+            `[Lane Pilot permit] The writer of ${attempt.task_id} asks permission (${ticket.category}): \`${ticket.command.slice(0, 600)}\`. Decide with lane_pilot_permit {hostId:"${hostId}", session:"${ticket.session}", ticket:"${ticket.ticket}", decision:"allow"|"deny", why}. Allow only what the task needs; ${permitOwnerRule(ownerWordsMode(loadProjectSettings(db, run.project_id, getRunSettingsScopes(db, run.id))), ticket.command)}` });
         } catch {
           continue;
         }
@@ -131,7 +132,7 @@ export function mountPermits(ctx: ServerCore): void {
         checks: [{ name: "ticket", ok: true, detail: ticket ? `${ticket.category}: ${ticket.command.slice(0, 200)} @ ${ticket.cwd}` : `ticket ${input.ticket} on ${input.hostId}` }],
         by: "lane_pilot_permit", at: Date.now(),
       });
-      if (attempt?.thread_id) await bestEffort(bb.log, "permit decision notice", bb.sdk.threads.send({ threadId: attempt.thread_id, mode: "queue-if-active", input: [{ type: "text", mentions: [], text: `[Lane Pilot] Permit ${input.ticket}: ${input.decision === "allow" ? "granted — run the same command again, once" : `refused — ${input.why}`}.` }] } as never), undefined);
+      if (attempt?.thread_id) await bestEffort(bb.log, "permit decision notice", sendServiceMessage(bb as never, { threadId: attempt.thread_id, mode: "queue-if-active", text: `[Lane Pilot] Permit ${input.ticket}: ${input.decision === "allow" ? "granted — run the same command again, once" : `refused — ${input.why}`}.` }), undefined);
       return JSON.stringify({ ticket: input.ticket, decision: input.decision, written: true });
     },
   });

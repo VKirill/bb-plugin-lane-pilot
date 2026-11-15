@@ -3,7 +3,8 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { upsertProjectArtifact, saveProjectSetting } from "../../src/rooms/plugin-db";
 import { readRunFile, renderRunManifest, resolveLatestPointer, resolveRunFile } from "../../src/rooms/storage";
-import { checkoutFileIo } from "../../src/rooms/workflow/server/workflow-run-home";
+import { checkoutFileIo, deliverRunFile } from "../../src/rooms/workflow/server/workflow-run-home";
+import { sha256Hex } from "@lane-pilot/kit";
 import { PROJECT, chain, reply, runHomeWorld } from "./run-home-world";
 import type { Row } from "./run-home-world";
 
@@ -256,5 +257,24 @@ describe("every graph that writes by date or slug writes a folder of its own per
     }
     expect(checked).toBeGreaterThan(15);
     expect(shared).toEqual([]);
+  });
+});
+
+describe("deliverRunFile: a content-addressed file is written once, reused when the bytes match, never overwritten when they differ", () => {
+  const file = { path: ".bb/chats/pm/artifacts/wf-run/inputs.abc12345.json", text: '{"a":1}' };
+  const at = { hostId: "local", path: "/checkout" };
+  const filesReturning = (answer: unknown) => ({ write: async () => answer });
+
+  it("asks the SDK for create-only (expectedSha256: null) and treats a conflict with the same hash as already delivered", async () => {
+    const seen: Array<Record<string, unknown>> = [];
+    const files = { write: async (args: Record<string, unknown>) => { seen.push(args); return { outcome: "written" }; } };
+    await deliverRunFile(files as never, at, file);
+    expect(seen[0]).toMatchObject({ hostId: "local", rootPath: "/checkout", path: "/checkout/.bb/chats/pm/artifacts/wf-run/inputs.abc12345.json", expectedSha256: null });
+    await expect(deliverRunFile(filesReturning({ outcome: "conflict", currentSha256: sha256Hex(file.text) }) as never, at, file)).resolves.toBeUndefined();
+    await expect(deliverRunFile(filesReturning({ outcome: "conflict", currentSha256: "0".repeat(64) }) as never, at, file)).rejects.toThrow("different bytes");
+    // The shared create-only contract is strict: a missing or unstructured SDK answer is a failed required delivery, never an assumed write.
+    await expect(deliverRunFile(filesReturning(undefined) as never, at, file)).rejects.toThrow("not applied");
+    await expect(deliverRunFile(filesReturning({}) as never, at, file)).rejects.toThrow("not applied");
+    await expect(deliverRunFile(filesReturning({ outcome: "maybe" }) as never, at, file)).rejects.toThrow("not applied");
   });
 });

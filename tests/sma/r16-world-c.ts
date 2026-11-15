@@ -566,7 +566,6 @@ export const observeC = {
       create table lane_pilot_token_cursor(thread_id text primary key, provider_id text not null default '', last_provider text not null default '', total_json text not null default '{}');
       create table lane_pilot_failure_triage(project_id text, attempt_id text, reason text, origin text, failed_at integer);
       create table lane_pilot_project_settings(project_id text, key text, value text);`);
-    const core = new Database(join(dir, "core.db")); core.exec("create table projects(id text primary key, name text); insert into projects values ('proj_real', 'SelfyStudio'), ('proj_sbx', 'LP sandbox 1')"); core.close();
     const now = Date.now();
     data.exec("insert into lane_pilot_run values ('r1', 'proj_real'), ('r2', 'proj_sbx')");
     const insert = data.prepare("insert into lane_pilot_attempt(id, run_id, task_id, state, reason, created_at, updated_at, harness_version) values (?, ?, ?, ?, ?, ?, ?, '0.1.559')");
@@ -574,7 +573,8 @@ export const observeC = {
     insert.run("a2", "r1", "t2", "blocked", "internal_error: x | y", now - 3_600_000, now - 3_000_000);
     insert.run("a3", "r2", "drill-1", "accepted", null, now - 3_600_000, now - 3_000_000);
     insert.run("a4", "r1", "old", "accepted", null, now - 40 * 86_400_000, now - 40 * 86_400_000);
-    const text = await buildDailyReport({ db: data as never, dataFile: join(dir, "data.db"), coreFile: join(dir, "core.db"), run: runSqliteChild, now: () => now });
+    const coreSnapshot = async () => ({ snapshot: { projects: [{ id: "proj_real", name: "SelfyStudio" }, { id: "proj_sbx", name: "LP sandbox 1" }], threads: [], threadPluginMetadata: [] }, degraded: [] as string[] });
+    const text = await buildDailyReport({ db: data as never, dataFile: join(dir, "data.db"), coreSnapshot, run: runSqliteChild, now: () => now });
     data.close(); rmSync(dir, { recursive: true, force: true });
     const grab = (re: RegExp) => re.exec(text)?.[1] ?? null;
     return { head: text.split("\n")[0]!.slice(0, 33), done: grab(/Живые проекты, по задачам: ([^.]*\(\d+\.\d%\))/), lpErrors: grab(/Ошибка LP: (\d+)/), outside: grab(/Вне счёта: ([^.]*)\./), sandbox: grab(/Песочницы и учения отдельно: (\d+ попыток, принято [\d.]+%)/), old: grab(/Старые версии \(до [\d.]+\), для сравнения: (\d+ попыток, принято [\d.]+%)/),

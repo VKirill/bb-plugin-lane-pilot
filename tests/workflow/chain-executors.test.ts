@@ -35,7 +35,7 @@ const reply = (body: Row, lead = "Done.") => `${lead}\n\n\`\`\`json\n${JSON.stri
 
 /** What a helper thread of a node spent, as BB reports it: one token-usage event of one turn, on this model. */
 type Spent = { input: number; output: number; model?: string };
-async function setup(script: Script, options: { pmEvents?: () => Row[]; firstTurnError?: string; firstTurnRetries?: boolean; dirty?: boolean; spent?: Record<string, Spent>; failWrites?: boolean; noPm?: boolean; invalidParent?: boolean; offers?: Array<{ providerId: string; model: string; host?: string }> } = {}) {
+async function setup(script: Script, options: { pmEvents?: () => Row[]; firstTurnError?: string; firstTurnRetries?: boolean; dirty?: boolean; spent?: Record<string, Spent>; failWrites?: boolean; noPm?: boolean; invalidParent?: boolean; offers?: Array<{ providerId: string; model: string; host?: string }>; hosts?: Array<{ id: string; name: string; status?: string }>; sources?: Array<{ hostId: string; path: string }>; failManifest?: boolean } = {}) {
   const checkout = mkdtempSync(join(tmpdir(), "lp-chain-"));
   execFileSync("git", ["init", "-q"], { cwd: checkout });
   writeFileSync(join(checkout, "README.md"), "hello\n");
@@ -84,18 +84,21 @@ async function setup(script: Script, options: { pmEvents?: () => Row[]; firstTur
         },
       },
       // The machine's catalog, when a test says which models it offers (otherwise the catalog is cold and every model counts as offered).
-      ...(options.offers ? {
-        hosts: { list: async () => [...new Set(options.offers!.map((row) => row.host ?? "local"))].map((id) => ({ id, name: id, status: "connected" })) },
-        providers: {
-          list: async (args?: { hostId?: string }) => [...new Set(options.offers!.filter((row) => (row.host ?? "local") === args?.hostId).map((row) => row.providerId))].map((id) => ({ id, displayName: id, available: true, capabilities: {}, serviceTiers: [] })),
-          models: async (args?: { providerId?: string; hostId?: string }) => ({ models: options.offers!.filter((row) => row.providerId === args?.providerId && (row.host ?? "local") === args?.hostId).map((row) => ({ id: row.model, model: row.model, displayName: row.model, supportedReasoningEfforts: [{ reasoningEffort: "high" }], defaultReasoningEffort: "high", isDefault: true })) }),
-        },
+      ...(options.offers || options.hosts ? {
+        hosts: { list: async () => options.hosts ?? [...new Set(options.offers!.map((row) => row.host ?? "local"))].map((id) => ({ id, name: id, status: "connected" })) },
+        ...(options.offers ? {
+          providers: {
+            list: async (args?: { hostId?: string }) => [...new Set(options.offers!.filter((row) => (row.host ?? "local") === args?.hostId).map((row) => row.providerId))].map((id) => ({ id, displayName: id, available: true, capabilities: {}, serviceTiers: [] })),
+            models: async (args?: { providerId?: string; hostId?: string }) => ({ models: options.offers!.filter((row) => row.providerId === args?.providerId && (row.host ?? "local") === args?.hostId).map((row) => ({ id: row.model, model: row.model, displayName: row.model, supportedReasoningEfforts: [{ reasoningEffort: "high" }], defaultReasoningEffort: "high", isDefault: true })) }),
+          },
+        } : {}),
       } : {}),
       environments: { get: async () => ({ id: "env-pm", hostId: "local", path: checkout, status: "ready" }) },
-      projects: { get: async () => ({ id: PROJECT, name: "Project", sources: [{ hostId: "local", path: checkout }] }) },
+      projects: { get: async () => ({ id: PROJECT, name: "Project", sources: options.sources ?? [{ hostId: "local", path: checkout }] }) },
       files: {
         write: async (args: unknown) => {
-          if (options.failWrites) throw new Error("disk full");
+          const filePath = String((args as { path?: unknown }).path ?? "");
+          if (options.failWrites || (options.failManifest && filePath.endsWith("manifest.json"))) throw new Error("disk full");
           // `writes` are the files the nodes made; the run's own manifest (.agents/runs/<run>/manifest.json, tests/workflow/run-home.test.ts) is not one of them.
           return coreFileWrite(diskStore(), (path, content) => { if (!/\/\.agents\/runs\/[^/]+\/manifest\.json$/.test(path)) writes.push({ path, content }); })(args) as never;
         },
@@ -965,13 +968,15 @@ describe("handoff by reference and the start packet (W0)", () => {
     expect(packet).toContain("- note: short note");
     expect(packet).toMatch(/- tasks — by reference, \d+\.\d KB: list of 40: Task number 1 of the plan; Task number 2 of the plan; Task number 3 of the plan; \.\.\.\n {2}file: \.bb\/chats\/chain-pm\/artifacts\/wf-[A-Za-z0-9_-]+\/tasks\.[0-9a-f]{8}\.json/);
     expect(packet).toContain("Produce:\n- report/1 as the whole answer; needs handoff");
-    // The full text is not in the prompt, it is in the file, exactly as the engine passed it.
+    // The full text is not in the prompt, it is in the file, exactly as the engine passed it. The helper's workspace is the
+    // PM checkout here, so the runner reuses the executor's write instead of writing it twice.
     expect(prompt).not.toContain("Task number 17 of the plan");
-    expect(t.writes).toHaveLength(1);
-    expect(t.writes[0]!.path).toMatch(/\/\.bb\/chats\/chain-pm\/artifacts\/wf-[^/]+\/tasks\.[0-9a-f]{8}\.json$/);
-    expect(JSON.parse(t.writes[0]!.content)).toEqual(big);
-    expect(existsSync(t.writes[0]!.path)).toBe(true);
-    expect(prompt).toContain(t.writes[0]!.path.slice(t.checkout.length + 1));
+    const files = [...new Map(t.writes.map((write) => [write.path, write])).values()];
+    expect(files).toHaveLength(1);
+    expect(files[0]!.path).toMatch(/\/\.bb\/chats\/chain-pm\/artifacts\/wf-[^/]+\/tasks\.[0-9a-f]{8}\.json$/);
+    expect(JSON.parse(files[0]!.content)).toEqual(big);
+    expect(existsSync(files[0]!.path)).toBe(true);
+    expect(prompt).toContain(files[0]!.path.slice(t.checkout.length + 1));
   });
 
   it("the packet is about 3 KB however much the step was given", async () => {
@@ -986,8 +991,9 @@ describe("handoff by reference and the start packet (W0)", () => {
     expect(packet).toContain("Produce:");
     // Inputs that did not fit became one file rather than being cut away: all of them are in it.
     expect(packet).toMatch(/- inputs — by reference, [\d.]+ KB: 32 values: goal, tasks, extra0, extra1/);
-    expect(t.writes).toHaveLength(1);
-    const kept = JSON.parse(t.writes[0]!.content) as Row;
+    const files = [...new Map(t.writes.map((write) => [write.path, write])).values()];
+    expect(files).toHaveLength(1);
+    const kept = JSON.parse(files[0]!.content) as Row;
     expect(Object.keys(kept)).toHaveLength(32);
     expect(kept.extra29).toBe(many.extra29);
     expect(String(kept.goal)).toHaveLength(4000);
@@ -1006,30 +1012,68 @@ describe("handoff by reference and the start packet (W0)", () => {
     const t = await setup({ first: [reply({ n: 1, handoff: "a" })], second: [reply({ n: 2, handoff: "b" })] });
     dispose = t.dispose;
     await t.start(twice, { tasks: big }).done;
-    expect(t.writes).toHaveLength(2);
-    expect(t.writes[1]!.path).toBe(t.writes[0]!.path);
-    expect(t.writes[1]!.content).toBe(t.writes[0]!.content);
+    // Each step's file is written once on the PM checkout (the helper's workspace is the same place, so the runner reuses it): one path, one content.
+    expect(new Set(t.writes.map((write) => write.path)).size).toBe(1);
+    expect(new Set(t.writes.map((write) => write.content)).size).toBe(1);
   });
 
-  it("when the file cannot be written the packet shows the input cut, and the step still runs", async () => {
+  it("when an input file cannot be written the step fails before a helper starts, not on cut inputs", async () => {
     const t = await setup({ read: [reply({ count: 1, handoff: "h" })] }, { failWrites: true });
     dispose = t.dispose;
     const summary = await t.start(reader(), run).done;
-    expect(summary.status).toBe("succeeded");
-    const packet = packetOf(String(t.spawned[0]!.prompt));
-    expect(packet).toContain("(cut)");
-    expect(packet).not.toContain("by reference");
+    expect(summary.status).toBe("failed");
+    expect(summary.error).toContain("input_delivery_failed");
+    expect(t.spawned).toHaveLength(0);
   });
 
-  it("a node without a contract keeps the whole inputs in its prompt, as before", async () => {
+  it("when the run manifest cannot record the inputs the step fails before a helper starts too — the SDK write itself rejects", async () => {
+    const t = await setup({ read: [reply({ count: 1, handoff: "h" })] }, { failManifest: true });
+    dispose = t.dispose;
+    const summary = await t.start(reader(), run).done;
+    expect(summary.status).toBe("failed");
+    expect(summary.error).toContain("input_delivery_failed");
+    expect(t.spawned).toHaveLength(0);
+  });
+
+  it("a node without a contract gets the same packet: its big inputs stand as files there too", async () => {
     const t = await setup({ read: [reply({ count: 1, handoff: "h" })] });
     dispose = t.dispose;
-    await t.start(reader({ produces: undefined }), run).done;
+    const summary = await t.start(reader({ produces: undefined }), run).done;
+    expect(summary.status).toBe("succeeded");
     const prompt = String(t.spawned[0]!.prompt);
-    expect(prompt).toContain("<inputs>");
-    expect(prompt).toContain("Task number 17 of the plan");
-    expect(prompt).not.toContain("<step-packet>");
-    expect(t.writes).toHaveLength(0);
+    expect(prompt).toContain("<step-packet>");
+    expect(prompt).not.toContain("<inputs>");
+    expect(prompt).not.toContain("Task number 17 of the plan");
+    expect(prompt).toMatch(/file: \.bb\/chats\/chain-pm\/artifacts\/wf-[^/]+\//);
+    expect(t.writes.some((write) => write.content.includes("Task number 17 of the plan"))).toBe(true);
+  });
+
+  it("a {{…}} of the prompt that resolves to a big value is kept whole in a file too: the prompt carries the file's reference, not the text", async () => {
+    const t = await setup({ read: [reply({ count: 1, handoff: "h" })] });
+    dispose = t.dispose;
+    const summary = await t.start(reader({ prompt: "Count the tasks in {{$inputs.tasks}}." }), run).done;
+    expect(summary.status).toBe("succeeded");
+    const prompt = String(t.spawned[0]!.prompt);
+    expect(prompt).not.toContain("Task number 17 of the plan");
+    expect(prompt).toContain("the whole value of `{{$inputs.tasks}}`");
+    const kept = t.writes.find((write) => /prompt-inputs-tasks\.[0-9a-f]{8}\.json$/.test(write.path));
+    expect(kept).toBeDefined();
+    expect(JSON.parse(kept!.content)).toEqual(big);
+    expect(prompt).toContain(`file: ${kept!.path.slice(t.checkout.length + 1)}`);
+  });
+
+  it("a specialist placed on another host gets the packet's files in ITS workspace too, not only the PM checkout", async () => {
+    const remote = mkdtempSync(join(tmpdir(), "lp-chain-remote-"));
+    const t = await setup({ read: [reply({ count: 1, handoff: "h" })] }, {
+      hosts: [{ id: "mac", name: "Mac mini", status: "connected" }],
+      sources: [{ hostId: "mac", path: remote }],
+    });
+    dispose = t.dispose;
+    const summary = await t.start(reader({ role: "specialist:game-dev" }), run).done;
+    expect(summary.status).toBe("succeeded");
+    expect(t.spawned[0]!.environment).toMatchObject({ hostId: "mac", workspace: { path: remote } });
+    const delivered = t.writes.filter((write) => write.path.startsWith(`${remote}/`));
+    expect(delivered.some((write) => write.content.includes("Task number 17 of the plan"))).toBe(true);
   });
 
   it("a required artifact that did not arrive under its name stops the step before a helper is started", async () => {

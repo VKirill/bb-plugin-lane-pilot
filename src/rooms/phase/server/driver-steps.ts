@@ -17,6 +17,7 @@ import { getPhase, listParts, notePoked, savePhase } from "../store";
 import { checkProofs, hostGit, phaseProofRecords, renderProofCurrency } from "./proof-currency";
 import { candidateBranch } from "./candidate";
 import { installWordSteps } from "./driver-word-steps";
+import { sendServiceMessage } from "../../relay/server";
 import { PhaseRefusal, STAGE_RU, type DriverBase } from "./driver-tools";
 import type { Docs } from "./driver-docs";
 import type { Methods } from "./driver-methods";
@@ -184,8 +185,7 @@ export function installSteps(tools: StepsTools) {
         const why = "the drawing's files changed since it was recorded";
         if (!listParts(db, phase.id).some((part) => part.kind === "stale_consent" && part.text.startsWith(why))) {
           book(phase, "execution", "stale_consent", `${why} — nothing issues until the drawing is recorded again`);
-          await bestEffort(ctx.log, "phase stale drawing notice", bb.sdk.threads.send({ threadId: phase.pmThreadId, mode: "queue-if-active", input: [{ type: "text", mentions: [], text:
-            `[Lane Pilot phase] Phase ${phase.id} «${phase.title}» issues nothing: its drawing files were edited after the drawing was recorded. Return the phase to design (lane_pilot_phase {action:"return", phaseId:"${phase.id}", to:"design", note}), record the drawing again and get the design word for it.` }] } as never), undefined);
+          await bestEffort(ctx.log, "phase stale drawing notice", sendServiceMessage(bb as never, { threadId: phase.pmThreadId, mode: "queue-if-active", text: `[Lane Pilot phase] Phase ${phase.id} «${phase.title}» issues nothing: its drawing files were edited after the drawing was recorded. Return the phase to design (lane_pilot_phase {action:"return", phaseId:"${phase.id}", to:"design", note}), record the drawing again and get the design word for it.` }), undefined);
         }
         return phase;
       }
@@ -532,8 +532,7 @@ export function installSteps(tools: StepsTools) {
         const lastSaid = [...listParts(db, phase.id)].reverse().find((part) => part.kind === "closing_docs_unconfirmed")?.at ?? 0;
         if (now() - lastSaid < 24 * 3_600_000) return mustGet(phase.id);
         book(phase, "lessons", "closing_docs_unconfirmed", `closing docs not confirmed: ${missed.join(", ")} did not read back as written`);
-        await bestEffort(ctx.log, "phase closing docs notice", bb.sdk.threads.send({ threadId: phase.pmThreadId, mode: "queue-if-active", input: [{ type: "text", mentions: [], text:
-          `[Lane Pilot phase] Phase ${phase.id} «${phase.title}» could not be closed: its closing documents did not read back intact (SUMMARY.md / BOOK.md). Check the writer workspace; the next pass tries again.` }] } as never), undefined);
+        await bestEffort(ctx.log, "phase closing docs notice", sendServiceMessage(bb as never, { threadId: phase.pmThreadId, mode: "queue-if-active", text: `[Lane Pilot phase] Phase ${phase.id} «${phase.title}» could not be closed: its closing documents did not read back intact (SUMMARY.md / BOOK.md). Check the writer workspace; the next pass tries again.` }), undefined);
         return mustGet(phase.id);
       }
     }
@@ -560,8 +559,8 @@ export function installSteps(tools: StepsTools) {
       const opened = await tools.open({ projectId: phase.projectId, pmThreadId: phase.pmThreadId, title: next.name, goal: next.goal || next.name, roadmapRow: next.n });
       book(phase, "decisions", "transition", `autonomous: the next phase ${opened.id} «${next.name}» (roadmap ${next.n}) is open`);
     } else if (next) {
-      await bestEffort(ctx.log, "phase next-roadmap notice", bb.sdk.threads.send({ threadId: phase.pmThreadId, mode: "queue-if-active", input: [{ type: "text", mentions: [], text:
-        `[Lane Pilot phase] Phase ${phase.id} «${phase.title}» is closed. Next on the roadmap: ${next.n} «${next.name}»${next.goal ? ` — ${next.goal}` : ""}. Open it with lane_pilot_phase {action:"open", title, goal, roadmapRow:"${next.n}"} when it is time.` }] } as never), undefined);
+      await bestEffort(ctx.log, "phase next-roadmap notice", sendServiceMessage(bb as never, { threadId: phase.pmThreadId, mode: "queue-if-active", text:
+        `[Lane Pilot phase] Phase ${phase.id} «${phase.title}» is closed. Next on the roadmap: ${next.n} «${next.name}»${next.goal ? ` — ${next.goal}` : ""}. Open it with lane_pilot_phase {action:"open", title, goal, roadmapRow:"${next.n}"} when it is time.` }), undefined);
     }
     return mustGet(phase.id);  }
 
@@ -594,7 +593,7 @@ export function installSteps(tools: StepsTools) {
     // discussion's step arrived after the phase was closed). The next pass, two minutes on, pokes it once it is idle.
     const thread = await orMiss(bb.sdk.threads.get({ threadId: phase.pmThreadId }), null, isNotFound) as { status?: unknown } | null;
     if (thread?.status !== "idle") return;
-    await bestEffort(ctx.log, "phase poke notice", bb.sdk.threads.send({ threadId: phase.pmThreadId, mode: "queue-if-active", input: [{ type: "text", text: `[Lane Pilot phase] ${action.text}`, mentions: [] }] } as never), undefined);
+    await bestEffort(ctx.log, "phase poke notice", sendServiceMessage(bb as never, { threadId: phase.pmThreadId, mode: "queue-if-active", text: `[Lane Pilot phase] ${action.text}` }), undefined);
     notePoked(db, phase.id, action.key, now());
   }
 

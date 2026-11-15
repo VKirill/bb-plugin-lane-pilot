@@ -5,6 +5,7 @@ import { loadPushConfig, readOwnerConfigKey, writeOwnerConfigKey } from "../../o
 import { buildDailyReport, dailyDue } from "./daily";
 import { runOwnerPush, type DigestLike } from "./owner-push";
 import { runSqliteChild, type SqlRun } from "./sql-runner";
+import { coreSnapshotViaSdk, type CoreSnapshotResult } from "./core-snapshot";
 import { createTelegramSender, type TelegramSend } from "./telegram";
 
 export { buildDailyReport, composeDailyReport, dailyDue, localDayHour } from "./daily";
@@ -23,8 +24,8 @@ export type ReportsDeps = {
   /** owner_waiting_digest / owner_waiting_ack of the RPC (ownerWaitingRpc), so the webhook events of a digest stay the same. */
   digest: () => Promise<DigestLike>;
   ack: (keys: string[]) => unknown;
-  /** The BB core database file; the hub's `~/.bb/bb.db` by default. */
-  coreFile: string;
+  /** The core facts of the report window through the SDK (projects, helper threads, lane-pilot metadata); defaults to coreSnapshotViaSdk on the plugin's own bb. */
+  coreSnapshot?: (sinceMs: number) => Promise<CoreSnapshotResult>;
   send?: TelegramSend;
   run?: SqlRun;
 };
@@ -48,7 +49,7 @@ export function mountReports(ctx: ServerCore, deps: ReportsDeps): void {
     const due = dailyDue(now, timezone, readOwnerConfigKey(ctx.db, markKey));
     if (!due.due) return;
     try {
-      const text = await buildDailyReport({ db: ctx.db, dataFile: ctx.db.name, coreFile: deps.coreFile, run: deps.run ?? runSqliteChild, now: () => now });
+      const text = await buildDailyReport({ db: ctx.db, dataFile: ctx.db.name, coreSnapshot: deps.coreSnapshot ?? ((sinceMs) => coreSnapshotViaSdk(ctx.bb, sinceMs)), run: deps.run ?? runSqliteChild, now: () => now });
       if (dryRun()) { ctx.log(`daily report (dry run, not sent):\n${text}`); writeOwnerConfigKey(ctx.db, markKey, due.day, now); return; }
       await send(text);
       writeOwnerConfigKey(ctx.db, markKey, due.day, now);

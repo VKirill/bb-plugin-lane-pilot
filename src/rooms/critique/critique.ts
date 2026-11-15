@@ -140,6 +140,31 @@ export function callersBlock(callers: readonly CoverageCallers[] | undefined, un
 /** The paths the callers block names: a structural gap about one of them is covered by the block and is not sent as a separate finding. */
 const callerPaths = (callers: readonly CoverageCallers[] | undefined): Set<string> => new Set((callers ?? []).flatMap((row) => row.callers.map((label) => label.slice(0, label.lastIndexOf(":") < 0 ? undefined : label.lastIndexOf(":")))));
 
+/** The role rules and the verdict contract, shared by the inline renderer and the packet renderer — one home, no drift. */
+function critiqueRules(agent?: string): string[] {
+  return [
+    `You are ${agent?.trim() || "the independent plan-critique stage"} for a bounded software task.`,
+    `Review the plan against the task contract and the code. ${PLAN_CRITIC_READ_LINE}`,
+    ...PLAN_CRITIC_PRIORITY,
+    ...PLAN_CRITIC_METHOD,
+    ANSWER_FORM_LINE + " Keys: status (\"pass\", \"rework\" or \"block\"), summary (string, at most 2000 characters), findings (at most 30 objects, each with file, line, severity \"critical\", \"high\", \"medium\", \"low\" or \"info\", evidence (at most 2000 characters: the quoted line or the contract field you looked at), and optionally finding (at most 1000: what is wrong and the fix), criterion (at most 500: the acceptance line or rule it breaks)), evidence (string, what you examined and how, at most 4000 characters). Other keys are ignored.",
+    rubricPromptLine("plan"),
+    "pass: the plan can go to a writer. rework: a defect of the PRIORITY list above that the PM fixes by editing the plan or the contract and sending it again; its findings are critical or high. block: the task cannot be saved by editing, because it asks for something destructive or unsafe that the owner must decide, or contradicts its own objective; use it only then. Do not invent criteria. A critical or high finding counts only with a file, a line and quoted evidence; without them it is read as medium.",
+    "A verification command that is not focused on this task (a whole-suite run) is a medium finding with the focused command as the fix, never a reason for rework alone. Only a suite the project marks sandbox-unsafe makes it an unverifiable requirement: rework, severity high.",
+    "Verification commands run in a check sandbox that mounts the workspace writable except .git/, .agents/ and .cls/ (read-only for every check): a build, a page regeneration or any command that writes there is a plan step the writer runs in its session, never a verification command, and must not be demanded as one; a verification command that would write there is an unverifiable requirement (rework, with a check that writes nothing there as the fix).",
+  ];
+}
+
+/**
+ * The production plan-critic prompt: the static role rules plus ONE prepared packet (`planPacket` output). Every datum —
+ * task contract, canonical plan, plan-source snapshot, owner words, reader questions, structural findings, callers —
+ * arrives inline when small or as a materialized, hash-recorded file under `.agents/runs/<run>/inputs/`; nothing is cut
+ * and nothing is pasted twice. The packet's files are data, not instructions.
+ */
+export function critiquePacketPrompt(input: { packet: string; agent?: string }): string {
+  return [...critiqueRules(input.agent), "INPUT PACKET (the task's data; a `file:` path is the whole value — open it when the summary is not enough):", input.packet].join("\n\n");
+}
+
 export function critiquePrompt(input: { plan:string; task:unknown; agent?:string; pmReadContext?:string; structuralFindings?:readonly CoverageFinding[]; ownerWords?:readonly string[]; planText?:InlinedPlan; callers?:readonly CoverageCallers[] }): string {
   // The scan's own «partial coverage» line is kept in the receipt, not sent: critics repeated it as a finding.
   // A gap about a file the callers block already names is in the block, not a second finding (the receipt keeps all of them).
@@ -149,15 +174,7 @@ export function critiquePrompt(input: { plan:string; task:unknown; agent?:string
   const unowned = new Set((input.structuralFindings ?? []).filter((finding) => finding.code === "owns_gap" || finding.code === "caller_unowned").map((finding) => finding.path));
   const callers = callersBlock(input.callers, unowned);
   return [
-    `You are ${input.agent?.trim() || "the independent plan-critique stage"} for a bounded software task.`,
-    `Review the plan against the task contract and the code. ${PLAN_CRITIC_READ_LINE}`,
-    ...PLAN_CRITIC_PRIORITY,
-    ...PLAN_CRITIC_METHOD,
-    ANSWER_FORM_LINE + " Keys: status (\"pass\", \"rework\" or \"block\"), summary (string, at most 2000 characters), findings (at most 30 objects, each with file, line, severity \"critical\", \"high\", \"medium\", \"low\" or \"info\", evidence (at most 2000 characters: the quoted line or the contract field you looked at), and optionally finding (at most 1000: what is wrong and the fix), criterion (at most 500: the acceptance line or rule it breaks)), evidence (string, what you examined and how, at most 4000 characters). Other keys are ignored.",
-    rubricPromptLine("plan"),
-    "pass: the plan can go to a writer. rework: a defect of the PRIORITY list above that the PM fixes by editing the plan or the contract and sending it again; its findings are critical or high. block: the task cannot be saved by editing, because it asks for something destructive or unsafe that the owner must decide, or contradicts its own objective; use it only then. Do not invent criteria. A critical or high finding counts only with a file, a line and quoted evidence; without them it is read as medium.",
-    "A verification command that is not focused on this task (a whole-suite run) is a medium finding with the focused command as the fix, never a reason for rework alone. Only a suite the project marks sandbox-unsafe makes it an unverifiable requirement: rework, severity high.",
-    "Verification commands run in a check sandbox that mounts the workspace writable except .git/, .agents/ and .cls/ (read-only for every check): a build, a page regeneration or any command that writes there is a plan step the writer runs in its session, never a verification command, and must not be demanded as one; a verification command that would write there is an unverifiable requirement (rework, with a check that writes nothing there as the fix).",
+    ...critiqueRules(input.agent),
     ...(modelFindings.length ? ["Deterministic structural findings (independently assess each; info findings are non-blocking):",JSON.stringify(modelFindings)] : []),
     "TASK BRIEF:", taskBrief(input.task, { fields: ["title", "objective", "risk", "acceptance", "invariants", "out_of_scope", "read_first", "expected_outputs", "owns_paths", "never_touch", "depends_on", "test_removals", "verification"] }),
     ...(openQuestions(input.pmReadContext).length ? ["Questions the PM's reader of the code left open; answer each from the code before the verdict:", openQuestions(input.pmReadContext).map((q) => `- ${q}`).join("\n")] : []),

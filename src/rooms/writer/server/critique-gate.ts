@@ -22,6 +22,8 @@ import { recordedWriterSkills } from "./skill-pick";
 import { sendServiceMessage } from "../../relay/server";
 import { waitThreadIdle } from "@lane-pilot/thread-observe";
 import { bestEffort, isNotFound, orMiss, sha256Hex, stringAt } from "@lane-pilot/kit";
+import { runOnHost } from "@lane-pilot/host-calls";
+import { bookkeepingSetting, isOwnershipNoise } from "@lane-pilot/settings-catalog";
 import { writeReplacing } from "../../storage";
 import { acceptanceArtifactDir } from "../../tasks";
 import { resolve } from "node:path";
@@ -39,6 +41,8 @@ export interface CritiqueGateState {
   repeatSkipChecked: boolean;
   lastPatches: Record<string, string> | undefined;
   criticNotes: string;
+  /** The worktree change set the critic approved: what merge's `git add -A` would commit, noise-filtered, plus HEAD. */
+  approvedRevision?: { changeSet: string | null; headSha: string | null; headKnown: boolean };
 }
 
 export interface CritiqueGateDeps {
@@ -59,7 +63,19 @@ export interface CritiqueGateDeps {
 /** The code-critique gate: repair rounds until the critic passes or a block is decided. Returns the finish result, or null when the gate passed. */
 export async function runCodeCritiqueGate(deps: CritiqueGateDeps, g: CritiqueGateState): Promise<Record<string, unknown> | null> {
   const { ctx, services, input, endedByStop, existingCritique, storedLedger, liveCritiquePolicy, projectSettings, taskCriticDefault, yardstick, priorCriticApprovals, baselineHashes } = deps;
-  const { bb, db } = ctx;
+  const { bb, db, host } = ctx;
+      // HEAD of the attempt workspace: a critic commit leaves the dirty set, so the path snapshot alone cannot see it.
+      // No git or an unborn HEAD is a definitive null; a failed probe is unknown and fails the post-approval check closed.
+      const probeHead = async (): Promise<{ headSha: string | null; headKnown: boolean }> => {
+        const ran = await runOnHost(host, {
+          hostId:input.config.hostId, cwd:input.task.project_cwd,
+          command:"git rev-parse --verify HEAD", timeoutSec:15, timeoutMs:20_000,
+        }).catch(() => null);
+        if (!ran) return { headSha:null, headKnown:false };
+        if (ran.exitCode === 0) { const sha = ran.stdout.trim(); return { headSha:sha || null, headKnown:true }; }
+        if (/not a git repository|ambiguous argument|needed a single revision|bad revision/i.test(ran.stderr)) return { headSha:null, headKnown:true };
+        return { headSha:null, headKnown:false };
+      };
       const captureEvidence = async () => {
         const dirt = await services.workspaceDirt(input.config, input.task.project_cwd, input.runId);
         const byPath = new Map((dirt.ok ? dirt.snapshots : []).map((row) => [row.path, row.sha256 || null]));
@@ -94,7 +110,7 @@ export async function runCodeCritiqueGate(deps: CritiqueGateDeps, g: CritiqueGat
         // critic's own re-read in pointer mode needs it (absent base → legacy HEAD advice).
         const gitBase = getTaskGitBase(db as never, input.taskId);
         const diffBase = gitBase?.compare_committed ? gitBase.base_sha ?? undefined : undefined;
-        return buildCandidateEvidence({
+        const evidence = buildCandidateEvidence({
           produced:g.candidate.produced ?? [],
           hashes,
           baselineHashes,
@@ -113,6 +129,14 @@ export async function runCodeCritiqueGate(deps: CritiqueGateDeps, g: CritiqueGat
           workspace:input.task.project_cwd,
           referenceTestEdits:yardstick,
         });
+        // The whole change set merge's `git add -A` commits — every dirty path + content hash, not only
+        // produced ones; ownership noise is filtered like the ownership gates.
+        const noise = bookkeepingSetting(projectSettings);
+        const changeSet = dirt.ok
+          ? dirt.snapshots.filter((row) => !isOwnershipNoise(row.path, noise))
+              .map((row) => `${row.path}\t${row.sha256}`).sort().join("\n")
+          : null;
+        return { evidence, revision:{ changeSet, ...(await probeHead()) } };
       };
       const keepAdvisory = (row: { settings?: { mode?: string }; parsed?: Parameters<typeof advisoryFeedback>[0] } | undefined) => {
         if (row?.settings?.mode !== "advisory" || !row.parsed) return;
@@ -141,7 +165,7 @@ export async function runCodeCritiqueGate(deps: CritiqueGateDeps, g: CritiqueGat
           content:JSON.stringify(body, null, 2), createParents:true }), undefined);
       };
       for (;;) {
-        const evidence = await captureEvidence();
+        const { evidence, revision } = await captureEvidence();
         const ledger = repairLedgerFromResult(listStageReceipts(db, input.runId, input.taskId).find((row) => row.stageId === "code-critique")?.result);
         if (ledger?.policy) g.frozenPolicy = ledger.policy;
         if (ledger?.repairRound) g.repairRound = Math.max(g.repairRound, ledger.repairRound);
@@ -153,7 +177,7 @@ export async function runCodeCritiqueGate(deps: CritiqueGateDeps, g: CritiqueGat
             workflow:pipelineWriterStep(db, input.runId, input.taskId) ?? undefined,
           });
           if (recritique.policy) g.frozenPolicy = recritique.policy;
-          if (recritique.allowed) { keepAdvisory(recritique); g.review = recritique.review; g.approvedArtifact = evidence.artifactRevisionSha256; break; }
+          if (recritique.allowed) { keepAdvisory(recritique); g.review = recritique.review; g.approvedArtifact = evidence.artifactRevisionSha256; g.approvedRevision = revision; break; }
           recordGateEvaluation(db,{attemptId:input.attemptId,projectId:input.projectId,runId:input.runId,taskId:input.taskId,gate:"accept",status:"rejected",
             attempt:countAttempts(db,input.runId,input.taskId),input:JSON.stringify(input.task),summary:{writerStatus:"code_critique_blocked",reason:recritique.reason},
             tree:evidence.artifactRevisionSha256,verdict:recritique.parsed?{status:String(recritique.parsed.status),summary:String(recritique.parsed.summary??"")}:null});
@@ -232,6 +256,7 @@ export async function runCodeCritiqueGate(deps: CritiqueGateDeps, g: CritiqueGat
             });
             await archiveBarrierInput("skipped");
             g.approvedArtifact = evidence.artifactRevisionSha256;
+            g.approvedRevision = revision;
             break;
           }
         }
@@ -241,7 +266,7 @@ export async function runCodeCritiqueGate(deps: CritiqueGateDeps, g: CritiqueGat
           workflow:pipelineWriterStep(db, input.runId, input.taskId) ?? undefined,
         });
         if (critique.policy) g.frozenPolicy = critique.policy;
-        if (critique.allowed) { await archiveBarrierInput("passed"); keepAdvisory(critique); g.review = critique.review; g.approvedArtifact = evidence.artifactRevisionSha256; break; }
+        if (critique.allowed) { await archiveBarrierInput("passed"); keepAdvisory(critique); g.review = critique.review; g.approvedArtifact = evidence.artifactRevisionSha256; g.approvedRevision = revision; break; }
         const parsed = critique.parsed;
         const critiqueSettings = g.frozenPolicy ? settingsFromFrozenPolicy(g.frozenPolicy) : critique.settings;
         if (!parsed || !critiqueSettings || !shouldRequestRepair({ settings:critiqueSettings, result:parsed, round:g.repairRound })) {
@@ -454,11 +479,17 @@ export async function runCodeCritiqueGate(deps: CritiqueGateDeps, g: CritiqueGat
         });
         continue;
       }
-      const confirm = await captureEvidence();
-      // A packet the critic could not read is a skipped receipt (runCodeCritique) and does not stop the writer.
-      // A revision that moved after the critique still does.
-      if (!confirm.truncated && (!g.approvedArtifact || confirm.artifactRevisionSha256 !== g.approvedArtifact)) {
-        const reason = "code_critique_stale_revision";
+      const { evidence: confirm, revision: confirmRevision } = await captureEvidence();
+      // An unreadable packet is a skipped receipt and does not stop the writer; a moved revision does — full
+      // content hashes are checked even when the packet was truncated, and an unreadable confirm is unknown.
+      const approved = g.approvedRevision;
+      const moved = !g.approvedArtifact || confirm.artifactRevisionSha256 !== g.approvedArtifact
+        || (approved?.changeSet != null && confirmRevision.changeSet != null && confirmRevision.changeSet !== approved.changeSet)
+        || (approved?.headKnown === true && confirmRevision.headKnown && confirmRevision.headSha !== approved.headSha);
+      const unknown = (approved?.changeSet != null && confirmRevision.changeSet == null)
+        || (approved?.headKnown === true && !confirmRevision.headKnown);
+      const reason = moved ? "code_critique_stale_revision" : unknown ? "code_critique_revision_unknown" : null;
+      if (reason) {
         recordGateEvaluation(db,{attemptId:input.attemptId,projectId:input.projectId,runId:input.runId,taskId:input.taskId,gate:"accept",status:"rejected",
           attempt:countAttempts(db,input.runId,input.taskId),input:JSON.stringify(input.task),summary:{writerStatus:"code_critique_blocked",reason}});
         transitionAttempt(db, input.attemptId, "blocked", { reason });

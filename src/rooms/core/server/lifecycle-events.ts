@@ -1,4 +1,4 @@
-import { getRun, getRunWriterHost, listOpenAttempts } from "../../storage";
+import { attemptEnvironmentCandidates, getRun, getRunWriterHost, listOpenAttempts } from "../../storage";
 import { threadSignalHub } from "@lane-pilot/thread-observe";
 import { loadBlockedBy, saveBlockedBy, type BlockedBy } from "../../runs/server";
 import { closeAbandonedRuns } from "../../runs/server"
@@ -7,6 +7,7 @@ import type { ServerCore } from "../../contracts/server";
 import { loadFollowUp, markFollowUpCancelled } from "../../writer/server";
 import { valueAt } from "@lane-pilot/kit";
 import { HOST_JOB_KV_PREFIX, hostJobHostId } from "@lane-pilot/host-calls";
+import { sendServiceMessage } from "../../relay/server";
 
 /**
  * What BB announces about threads, queued messages and machines, handled when it happens instead of at the next sweep
@@ -21,7 +22,11 @@ const idOf = (value: unknown, key: string): string | null => {
 
 type Listen = (name: string, handler: (payload: unknown) => Promise<void> | void) => void;
 
-export function mountLifecycleEvents(ctx: ServerCore, extra?: { onQueued?: (name: "message.dispatched" | "message.cancelled", entry: unknown) => Promise<void> | void }) {
+export function mountLifecycleEvents(ctx: ServerCore, extra?: {
+  onQueued?: (name: "message.dispatched" | "message.cancelled", entry: unknown) => Promise<void> | void;
+  /** Open attempt ids bound to a BB environment that was just removed (environment.removed). */
+  onEnvironmentRemoved?: (attemptIds: readonly string[], environmentId: string) => Promise<void> | void;
+}) {
   const { bb, db } = ctx;
   const events = (bb as unknown as { events?: { on?: (name: string, handler: (payload: unknown) => unknown) => void } }).events;
   if (!events || typeof events.on !== "function" || process.env.LANE_PILOT_THREAD_SIGNALS === "0") return;
@@ -69,8 +74,7 @@ export function mountLifecycleEvents(ctx: ServerCore, extra?: { onQueued?: (name
     const pmThreadId = getRun(db, attempt.run_id)?.pm_thread_id;
     bb.log.info(`Lane Pilot: the writer of ${attempt.task_id} (${threadId}) waits for the owner: ${what}`);
     if (pmThreadId) {
-      await bb.sdk.threads.send({ threadId: pmThreadId, mode: "queue-if-active", input: [{ type: "text", mentions: [],
-        text: `Lane Pilot: the writer of task ${attempt.task_id} (@thread:${threadId}) is stopped on a question that needs the owner (${what}). The task stays running and will not go on by itself: tell the owner to open that thread and answer, or cancel the task.` }] } as never);
+      await sendServiceMessage(bb as never, { threadId: pmThreadId, mode: "queue-if-active", text: `Lane Pilot: the writer of task ${attempt.task_id} (@thread:${threadId}) is stopped on a question that needs the owner (${what}). The task stays running and will not go on by itself: tell the owner to open that thread and answer, or cancel the task.` });
     }
   });
 
@@ -93,6 +97,35 @@ export function mountLifecycleEvents(ctx: ServerCore, extra?: { onQueued?: (name
   });
 
   if (extra?.onQueued) listen("message.dispatched", (payload) => extra.onQueued!("message.dispatched", valueAt(payload, "entry")));
+
+  // A BB environment went away (removed by hand or retired): the attempts bound to it are reconciled now
+  // through the same resume path the sweep uses, instead of waiting for it. A lost event changes nothing:
+  // the sweep stays the fallback.
+  listen("experimental_environment.removed", async (payload) => {
+    const removal = valueAt(payload, "removal");
+    const environmentId = valueAt(removal, "environmentId");
+    const removedAt = valueAt(removal, "removedAt");
+    const hostId = valueAt(removal, "hostId");
+    const removedPath = valueAt(removal, "path");
+    const providerOwnedPath = valueAt(removal, "providerOwnedPath");
+    if (typeof environmentId !== "string" || !environmentId || !extra?.onEnvironmentRemoved
+      || typeof removedAt !== "number" || !Number.isFinite(removedAt) || removedAt < 0
+      || !(hostId === null || (typeof hostId === "string" && hostId.length > 0))
+      || !(removedPath === null || typeof removedPath === "string") || typeof providerOwnedPath !== "boolean") return;
+    // providerOwnedPath: BB deleted the worktree too, so a bare workspace_path match is a dead workspace.
+    // Without it the path may still stand; only the environment binding is gone.
+    const gonePath = providerOwnedPath ? removedPath : null;
+    const path = typeof gonePath === "string" && gonePath ? gonePath : null;
+    const candidates = attemptEnvironmentCandidates(db, environmentId, path);
+    const open = new Set(listOpenAttempts(db).map((row) => row.id));
+    // Paths are host-local; the same checkout path on another machine is not the removed workspace.
+    const ids = candidates.filter((row) => open.has(row.id)
+      && (row.environment_id === environmentId || (hostId !== null && getRunWriterHost(db, row.run_id) === hostId)))
+      .map((row) => row.id);
+    if (!ids.length) return;
+    bb.log.info(`Lane Pilot: environment ${environmentId} removed; reconciling ${ids.length} attempt(s) bound to it`);
+    await extra.onEnvironmentRemoved(ids, environmentId);
+  });
 
   // A machine was removed: what Lane Pilot kept for it goes too, or every enable/disable/remove keeps trying it.
   listen("experimental_host.deleted", async (payload) => {

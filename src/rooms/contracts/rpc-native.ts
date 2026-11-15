@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { pickableAgentSchema } from "./rpc-shell";
+import { helperThreadLabelsInput, helperThreadLabelsOutput, listHelperThreadsInput, listHelperThreadsOutput } from "./ui-query-schemas";
 
 /** Activating the PM, the native session, helper threads. */
 export const rpcNative = {
@@ -163,28 +164,12 @@ export const rpcNative = {
     output: z.object({ agentId: z.string().nullable(), description: z.string().nullable() }).strict(),
   },
   list_helper_threads: {
-    input: z.object({ threadId: z.string().min(1) }).strict(),
-    output: z.object({
-      threads: z.array(z.object({
-        id: z.string(),
-        title: z.string(),
-        status: z.string(),
-        role: z.string(),
-        detail: z.string().nullable(),
-        phase: z.string().nullable().optional(),
-      }).strict()),
-      queued: z.array(z.string()).default([]),
-      /** The open run's unfinished tasks and what each waits for (src/rooms/runs/server/task-graph.ts). */
-      graph: z.object({
-        nodes: z.array(z.object({ id: z.string(), title: z.string(), state: z.enum(["running", "waiting", "queued", "blocked"]), threadId: z.string().nullable(), area: z.string().nullable().optional(), attemptId: z.string().nullable().optional(), reason: z.string().nullable().optional() }).strict()),
-        edges: z.array(z.object({ from: z.string(), to: z.string(), kind: z.enum(["depends", "files", "folder", "question"]) }).strict()),
-        objective: z.string().nullable().optional(),
-      }).strict().optional(),
-    }).strict(),
+    input: listHelperThreadsInput,
+    output: listHelperThreadsOutput,
   },
   /** Role labels for sidebar row marks (`experimental_threadRowMetadata`): threadId → its LP role, only for LP threads. */
   helper_thread_labels: {
-    input: z.object({ threadIds: z.array(z.string().min(1)).min(1).max(200) }).strict(),
-    output: z.object({ labels: z.record(z.string(), z.string()) }).strict(),
+    input: helperThreadLabelsInput,
+    output: helperThreadLabelsOutput,
   },
 };

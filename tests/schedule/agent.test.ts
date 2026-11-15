@@ -261,12 +261,12 @@ describe("PhaseIntake.handOver", () => {
     expect(world1.opened).toEqual([]);
   });
 
-  it("on the phase road opens a phase for a heavy goal, unless one is already live, and refuses what is no work", async () => {
+  it("phase.road is ignored: a heavy hand-over always takes the full-lifecycle graph, a live phase still refuses, and no work is refused", async () => {
     const heavy = "Redesign the whole pricing section with a new plan comparison, a calculator and a migration of the old plans. ".repeat(12);
     const open = intake({ settings: { "phase.road": "phase" } });
-    expect(await open.handOver({ ...base, text: heavy })).toEqual({ started: true, via: "phase", id: "ph_1" });
-    expect(open.opened[0]).toMatchObject({ projectId: "p1", pmThreadId: "thr_pm", rails: true });
-    expect(open.opened[0]!.goal).toContain("source: schedule");
+    expect(await open.handOver({ ...base, text: heavy })).toEqual({ started: true, via: "full-lifecycle", id: "wfrun_1" });
+    expect(open.opened).toEqual([]);
+    expect(open.started[0]!.text).toContain("source: schedule");
     const busy = intake({ live: true });
     expect(await busy.handOver({ ...base, text: heavy })).toMatchObject({ started: false, reason: expect.stringContaining("ph_live") });
     expect(busy.opened).toEqual([]);

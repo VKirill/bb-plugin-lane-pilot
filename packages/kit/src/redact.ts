@@ -99,8 +99,23 @@ export function redactKnownDeep<T>(value:T):T {
 export const CREDENTIAL_MASK = "[password hidden: it is in the owner's message; the PM keeps it in Env Catalog]";
 // A value: no spaces, 4+ characters, at least one Latin letter or digit (so «пароль такой же» is left alone), not a link.
 const VALUE = String.raw`(?!https?:\/\/)(?=[^\s]*[A-Za-z0-9])[^\s]{4,}`;
-// The phase intake's own loose form, exactly as it was: it only MASKS (a phase stores the owner's request), it never refuses anything.
-const KEYED = new RegExp(String.raw`((?:парол[ьяюе]|password|passwd|pwd|pass|токен|token|api[ _-]?key|secret|секрет)\s*(?:[:=—–-]\s*|\s+))(` + VALUE + ")", "giu");
+// A value that can only be a credential: besides a letter or digit it carries a digit or ASCII punctuation other than «-»
+// (the hyphen stays out so «self-service» and «well-known» remain prose). Case cannot mark it: KEYED runs under «i»,
+// which folds every letter class — a bare lowercase or uppercase word is prose on both counts.
+const MARKED_VALUE = String.raw`(?!https?:\/\/)(?=[^\s]*[A-Za-z0-9])(?=[^\s]*[0-9!-,./:-@\[-\x60{-~])[^\s]{4,}`;
+// The phase intake's loose form, narrowed where it ate ordinary requirement prose (audit 2026-11-15: «same token
+// across all files» lost «across»). One pass, three alternatives:
+//   any keyword + an explicit assignment — «:», «=», «—», «–», or a dash with a space on one side — takes any value
+//   («password: hunter», «token=abc123», «password - hunter»); «token-based» is a compound, not an assignment;
+//   a clipped keyword (pass/passwd/pwd/secret/секрет) + a bare space or unspaced dash keeps the old loose read and
+//   takes any value («pass hunter», «secret correcthorse», «secret-santa»);
+//   a full keyword (password/пароль/token/токен/api key) + a bare space or unspaced dash takes only a credential-marked
+//   value, so «token across», «password validation», «API key monthly», «password-protected» and «token-based» stay
+//   prose while «token abcd1234» and «password-hunter22» are still masked. It only MASKS — it never refuses anything.
+const KEYED = new RegExp(
+  String.raw`((?:парол[ьяюе]|password|passwd|pwd|pass|токен|token|api[ _-]?key|secret|секрет)\s*(?:[:=—–]\s*|\s+-\s*|-\s+))(` + VALUE + `)` +
+  String.raw`|((?:passwd|pass|pwd|secret|секрет)(?:\s+|-))(` + VALUE + `)` +
+  String.raw`|((?:парол[ьяюе]|password|токен|token|api[ _-]?key)(?:\s+|-))(` + MARKED_VALUE + `)`, "giu");
 const AFTER_EMAIL = new RegExp(String.raw`([\w.+-]+@[\w-]+(?:\.[\w-]+)+)(\s*[:/|,;]?\s*)(?=[^\s]*[A-Za-z])(?=[^\s]*[\d\W_])(` + VALUE.replace("{4,}", "{6,}") + ")", "gu");
 
 /**
@@ -142,7 +157,8 @@ export function maskCredentials(text:string, mask:string = MASK):{ text:string; 
  */
 export function withoutCredentials(text:string):string {
   // Idempotent: a mask already in the text is kept as it is (a phase is cleaned when stored and again when read).
-  return text.split(CREDENTIAL_MASK).map((part) => applyRules(part.replace(KEYED, (_match, lead:string) => `${lead}${CREDENTIAL_MASK}`)
+  // KEYED's alternatives put the lead in group 1, 3 or 5; the value group is dropped either way.
+  return text.split(CREDENTIAL_MASK).map((part) => applyRules(part.replace(KEYED, (...args:unknown[]) => `${[args[1], args[3], args[5]].find((group):group is string => typeof group === "string") ?? ""}${CREDENTIAL_MASK}`)
     .replace(AFTER_EMAIL, (_match, email:string, gap:string) => `${email}${gap || " "}${CREDENTIAL_MASK}`), SHAPE_RULES, CREDENTIAL_MASK).text).join(CREDENTIAL_MASK);
 }
 

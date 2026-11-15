@@ -57,6 +57,7 @@ const DISK_FLOOR_BYTES = 3 * 2 ** 30;
 
 export { taskStem } from "../../tasks";
 import { taskStem } from "../../tasks";
+import { sendServiceMessage } from "../../relay/server";
 
 type Breaker = { fingerprint:string; openedAt:number; version:string; probing:boolean };
 
@@ -138,7 +139,7 @@ export function createStability(ctx:ServerCore, services:Services) {
       for (const [threadId, lines] of pendingNotes) {
         pendingNotes.delete(threadId);
         const text = `Lane Pilot (parked tasks that need you):\n${lines.map((line) => `- ${line}`).join("\n")}`;
-        void bb.sdk.threads.send({ threadId, mode:"queue-if-active", input:[{ type:"text", text, mentions:[] }] } as never)
+        void sendServiceMessage(bb as never, { threadId, mode:"queue-if-active", text })
           .catch((cause) => ctx.log(`Lane Pilot could not tell ${threadId} about parked tasks: ${cause instanceof Error ? cause.message : String(cause)}`));
       }
     }, 60_000);
@@ -283,6 +284,9 @@ export function createStability(ctx:ServerCore, services:Services) {
       // The stages closed failed when the task stopped; without reopening them the restart died on «failed -> running».
       reopenWriterStages(db, row.runId, row.taskId, `restarting after ${row.klass} fault`);
       createAttempt(db, { id:attemptId, runId:row.runId, taskId:row.taskId });
+      // The queued attempt holds its run at work from here, not from the writer's start: the stage cleanup of this pass
+      // may just have refreshed the run to blocked (layers audit F1), which would free the project until the spawn.
+      ctx.refreshRun?.(row.runId);
       const attempt = getAttempt(db, attemptId);
       const ok = attempt ? await services.enqueueResumedWriter(row.projectId, attempt).catch((cause: unknown) => { bb.log.warn(`Lane Pilot could not resume parked task ${row.taskId}: ${cause instanceof Error ? cause.message : String(cause)}`); return false; }) : false;
       if (!ok) { keep.push({ ...row, redrives:row.klass === "limit" ? row.redrives : row.redrives + 1, at:now }); continue; }

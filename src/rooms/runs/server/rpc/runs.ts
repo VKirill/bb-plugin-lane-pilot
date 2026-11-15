@@ -64,6 +64,31 @@ export function runsRpc(ctx: ServerCore, services: Services) {
   const { bb, cancelQueuedAttempt, db, effectiveProjectSettings, nativeInstaller, ownedAgents } = ctx;
   let lastListErrorLogAt = 0;
   const pmTitles = new Map<string, { title: string | null; at: number }>();
+  // threadId → own plugin metadata in ceil(N/200) SDK calls instead of N; absent IDs read as null like a getPluginMetadata miss.
+  const pluginMetadataFor = async (threadIds: readonly string[]): Promise<Map<string, Record<string, unknown> | null>> => {
+    const unique = [...new Set(threadIds)];
+    const out = new Map<string, Record<string, unknown> | null>();
+    const perId = async (id: string) => await orMiss(bb.sdk.threads.getPluginMetadata({ threadId: id }), null, isNotFound);
+    const canBatch = typeof bb.sdk.threads.experimental_listPluginMetadata === "function";
+    if (!canBatch) {
+      await Promise.all(unique.map(async (id) => out.set(id, await perId(id))));
+      return out;
+    }
+    for (let i = 0; i < unique.length; i += 200) {
+      const chunk = unique.slice(i, i + 200);
+      // The call itself can throw synchronously (fake SDK, arg validation): defer it so .catch sees a rejection.
+      const result = await Promise.resolve()
+        .then(() => bb.sdk.threads.experimental_listPluginMetadata({ threadIds: chunk }))
+        .catch(() => null);
+      if (result === null || !Array.isArray(result.threads)) {
+        await Promise.all(chunk.map(async (id) => out.set(id, await perId(id))));
+        continue;
+      }
+      const byId = new Map(result.threads.map((row) => [row.threadId, row.metadata]));
+      for (const id of chunk) out.set(id, byId.get(id) ?? null);
+    }
+    return out;
+  };
   const handlers = {
     finish_run: async ({ projectId, runId }) => {
       await finishRunSafely(bb, db, projectId, runId, "rpc");
@@ -95,11 +120,11 @@ export function runsRpc(ctx: ServerCore, services: Services) {
     // threadId → its LP role from the thread's plugin metadata (the sidebar row mark; empty for threads that are not Lane Pilot's).
     helper_thread_labels: async ({ threadIds }) => {
       const labels: Record<string, string> = {};
-      await Promise.all((threadIds as string[]).map(async (threadId) => {
-        const meta = await orMiss(bb.sdk.threads.getPluginMetadata({ threadId }), null, isNotFound);
+      const metas = await pluginMetadataFor(threadIds as string[]);
+      for (const [threadId, meta] of metas) {
         const role = meta && typeof meta === "object" ? (meta as Record<string, unknown>).role : null;
         if (typeof role === "string" && role) labels[threadId] = role;
-      }));
+      }
       return { labels };
     },
     // The PM chat's helpers that are still working: writers, specialists, the browser check, council seats, critics.
@@ -170,9 +195,10 @@ export function runsRpc(ctx: ServerCore, services: Services) {
         return true;
       });
 
+      const metas = await pluginMetadataFor(working.map((row) => String(row.id)));
       const threads = await Promise.all(working.map(async (row) => {
         const threadIdStr = String(row.id);
-        const metadata = await orMiss(bb.sdk.threads.getPluginMetadata({ threadId: threadIdStr }), null, isNotFound);
+        const metadata = metas.get(threadIdStr) ?? null;
         const statusStr = String(row.status);
 
         let phase: string | null = null;
@@ -321,7 +347,9 @@ export function runsRpc(ctx: ServerCore, services: Services) {
       let compiled = null;
       try { compiled = services.compileEffectiveMainAgent(shortId, stored); } catch { compiled = null; }
       // The thread's Lane Pilot role (pm, writer, …) from its plugin metadata: the composer's boundary line shows for a PM chat only.
-      const metadata = await bb.sdk.threads.getPluginMetadata({ threadId }).catch(() => null) as { role?: unknown } | null;
+      const metadata = await Promise.resolve()
+        .then(() => bb.sdk.threads.getPluginMetadata({ threadId }))
+        .catch(() => null) as { role?: unknown } | null;
       return {
         token: parsed.token,
         agentId: parsed.agentId,

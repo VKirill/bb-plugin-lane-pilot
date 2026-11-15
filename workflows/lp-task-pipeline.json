@@ -53,9 +53,9 @@
     "browserSession": false
   },
   "status": "published",
-  "version": 2,
+  "version": 3,
   "guards": {
-    "maxSteps": 26,
+    "maxSteps": 28,
     "maxFanOut": 1,
     "maxSubworkflowDepth": 3
   },
@@ -103,6 +103,53 @@
           "name": "reason",
           "type": "string",
           "required": false
+        }
+      ]
+    },
+    {
+      "id": "execution-packet",
+      "type": "decision",
+      "label": "Execution packet",
+      "uses": "lp.execution-packet",
+      "proof": {
+        "kind": "gate",
+        "check": "buildExecutionPacket over the task's read_first: a malformed hint, a line window outside the file or a source over 512 KiB blocks the attempt before any paid stage; a missing or unreadable source stays advisory"
+      },
+      "output": [
+        {
+          "name": "ok",
+          "type": "boolean"
+        },
+        {
+          "name": "reason",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "packetSha256",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "selectedLines",
+          "type": "number",
+          "required": false
+        }
+      ]
+    },
+    {
+      "id": "block-execution-packet",
+      "type": "action",
+      "label": "Block: execution packet",
+      "uses": "lp.block-execution-packet",
+      "proof": {
+        "kind": "receipt",
+        "check": "the attempt and the run are stored blocked with the execution_packet_failed reason and the reply to the PM is built from it"
+      },
+      "output": [
+        {
+          "name": "reply",
+          "type": "json"
         }
       ]
     },
@@ -573,12 +620,34 @@
   "edges": [
     {
       "from": "start",
-      "to": "pm-read"
+      "to": "execution-packet"
     },
     {
       "from": "pm-read",
       "to": "quality-mode",
       "label": "passed, skipped or failed (the summary decides nothing)"
+    },
+    {
+      "from": "execution-packet",
+      "to": "pm-read",
+      "label": "packet builds",
+      "with": {
+        "packetSha256": "execution-packet.packetSha256",
+        "selectedLines": "execution-packet.selectedLines"
+      }
+    },
+    {
+      "from": "execution-packet",
+      "to": "block-execution-packet",
+      "label": "packet failed",
+      "when": {
+        "field": "ok",
+        "op": "eq",
+        "value": false
+      },
+      "with": {
+        "reason": "execution-packet.reason"
+      }
     },
     {
       "from": "quality-mode",
@@ -799,6 +868,13 @@
       "to": "end",
       "with": {
         "reply": "block-baseline.reply"
+      }
+    },
+    {
+      "from": "block-execution-packet",
+      "to": "end",
+      "with": {
+        "reply": "block-execution-packet.reply"
       }
     }
   ]

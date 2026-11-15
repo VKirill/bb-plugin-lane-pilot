@@ -218,6 +218,19 @@ describe("writer brief", () => {
     expect(brief).not.toMatch(/drop (it|them)/);
     expect(brief).toContain("undo only your own edits there");
     expect(brief).toContain("do not git checkout/restore the file or make it match git HEAD");
+    // F4 (2026-11-15): in the attempt's own worktree the file outside owns_paths is kept while the writer asks; never_touch is still undone first.
+    expect(bullets.find((line) => line.startsWith("- files outside owns_paths"))).toContain("if it cannot, keep your edits to them");
+    expect(bullets.find((line) => line.startsWith("- files outside owns_paths"))).toContain("`ASK_PM: the task needs src/ui-catalog.ts changed (<why>); add it to owns_paths`");
+    expect(brief).toContain("undo your edits there and answer `ASK_PM: the task needs package.json changed (<why>); add it to owns_paths`");
+    expect(brief).not.toMatch(/undo your edits there and answer `ASK_PM: [^`]*ui-catalog/);
+  });
+
+  it("a live folder still undoes every stray edit before it asks: it is the owner's checkout (F4, 2026-11-15)", () => {
+    const contract = { owns_paths:["src/rooms/writer/server/dispatch.ts", "src/ui/"], never_touch:["docs", "package.json"] };
+    const brief = previousAttemptBrief({
+      status:"validation_failed", reason:"writer changed paths outside owns_paths or inside never_touch: package.json, src/ui-catalog.ts", verification:[],
+    }, contract, undefined, true);
+    expect(brief).not.toContain("keep your edits");
     expect(brief).toContain("`ASK_PM: the task needs package.json, src/ui-catalog.ts changed (<why>); add them to owns_paths`");
   });
 

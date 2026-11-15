@@ -97,9 +97,10 @@ export function createQuestionRules(ctx: ServerCore, services: Services) {
       .filter((field) => JSON.stringify(old[field] ?? []) !== JSON.stringify(valid.task[field] ?? []))
       .map((field) => ({ field, from: old[field] ?? [], to: valid.task[field] ?? [] }));
     const reopened = await reopen.reopenAttempt({ projectId: row.project_id, runId: row.run_id, taskId: row.task_id, pmThreadId: run.pm_thread_id, attempt, threadId: ready.threadId,
-      workspacePath: ready.workspacePath, config, contract: valid.task, reason: "Lane Pilot answered the writer's question by rule",
+      workspacePath: ready.workspacePath, config, contract: valid.task, previousContract: old, reason: "Lane Pilot answered the writer's question by rule",
       turn: `Lane Pilot answers your question by rule: ${summary}\n\n${contractFixTurnPrompt({ question, changes })}`, qaAnswer: summary });
     if (!reopened.ok) { updateTaskContract(db, row.task_id, old); return { ok: false, why: reopened.hint }; }
+    if (reopened.deliveryUnknown) ctx.log(`question rule on ${row.task_id}: the widened contract stays, delivery of its turn is not confirmed`);
     return { ok: true };
   }
 

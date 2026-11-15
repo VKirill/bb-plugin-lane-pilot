@@ -120,10 +120,6 @@ describe("spend book, PM prompt and the rule breaker", () => {
     expect(row!.tokens?.total).toBe(14);
   });
 
-  it("[sma:m_cf_book_usage] mismatches are a diagnostics field, empty without a fallback", () => {
-    expect(true).toBe(true);
-  });
-
   it("[sma:m_cf_prompt] a PM session that resumes gets its run's board", () => {
     const { db } = open();
     createRun(db, "run_b", "proj_b", "bb", "/w");

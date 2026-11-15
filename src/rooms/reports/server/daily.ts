@@ -5,6 +5,7 @@ import { pluginRootFromModule } from "@lane-pilot/kit";
 import { STATS_EPOCH_SETTING, settingValue, statsEpochMs } from "../../storage";
 import { liveStability, renderLiveStability, type LiveAttempt } from "../../bench/server";
 import type { SqlRun } from "./sql-runner";
+import type { CoreSnapshotResult } from "./core-snapshot";
 
 /**
  * The daily Lane Pilot stability report for the owner's Telegram topic, as a plugin schedule (it was ~/.config/lp-metrics/daily.sh from
@@ -40,7 +41,8 @@ export type DailyDeps = {
   /** The plugin database (own connection, used only for the stats epoch) and its file, which the child reads. */
   db: Db;
   dataFile: string;
-  coreFile: string;
+  /** The core facts (projects, helper threads, lane-pilot metadata) fetched through the SDK for the report window; each failed section degrades its own block, never silently. */
+  coreSnapshot?: (sinceMs: number) => Promise<CoreSnapshotResult>;
   run: SqlRun;
   /** The directory with scripts/*.sql; defaults to the plugin's own. */
   scriptsDir?: string;
@@ -54,7 +56,14 @@ export async function buildDailyReport(deps: DailyDeps): Promise<string> {
   const file = (name: string): string => readFileSync(join(dir, name), "utf8");
   const optional = (name: string): string => { try { return file(name); } catch { return ""; } };
   const views = file("lp-metrics-views.sql");
-  const job = (script: string) => deps.run({ file: deps.dataFile, core: deps.coreFile, script });
+  // The core schema the SQL reads (`core.projects`, `core.threads`, `core.thread_plugin_metadata`) comes from the
+  // SDK snapshot, materialized in memory by the child — never the real bb.db. A missing or degraded snapshot empties
+  // the affected blocks and says so in the report.
+  const nowS = Math.floor(now / 1000);
+  const core = deps.coreSnapshot
+    ? await deps.coreSnapshot((nowS - 86_400) * 1000)
+    : { snapshot: { projects: [], threads: [], threadPluginMetadata: [] }, degraded: ["core snapshot not provided"] };
+  const job = (script: string) => deps.run({ file: deps.dataFile, snapshot: core.snapshot, script });
 
   // The script's q(): parameters, the views, then the query; a failing statement fails the report (set -e there).
   const q = async (days: number, sql: string): Promise<string> => {
@@ -93,7 +102,6 @@ export async function buildDailyReport(deps: DailyDeps): Promise<string> {
 
   // The four extra blocks never block the report: a missing file or a failing statement leaves out only itself.
   const lenient = async (script: string): Promise<string> => { try { return joined((await job(script)).lines); } catch { return ""; } };
-  const nowS = Math.floor(now / 1000);
   const sinceDay = (nowS - 86_400) * 1000;
   const morningSql = optional("lp-morning.sql");
   const wallSql = optional("lp-wall-morning.sql");
@@ -102,7 +110,8 @@ export async function buildDailyReport(deps: DailyDeps): Promise<string> {
     live, livew, win, orig, orch, sys, ver, old, sand, usage, dfr,
     morning: morningSql ? await lenient(`create temp table lp_morning(since integer, now integer); insert into lp_morning values (${sinceDay}, ${nowS * 1000});\n${morningSql}`) : "",
     wall: wallSql ? await lenient(`create temp table lp_morning(since integer); insert into lp_morning values (${sinceDay});\n${wallSql}`) : "",
-    cover: coverSql ? await lenient(`create temp table lp_cover(since integer); insert into lp_cover values (${sinceDay});\n${coverSql}`) : "",
+    // A degraded core snapshot is said in the report, not swallowed: the blocks it starves show ids/empty, this line names why.
+    cover: `${core.degraded.length ? `Факты ядра (SDK): ${core.degraded.join("; ")}.\n` : ""}${coverSql ? await lenient(`create temp table lp_cover(since integer); insert into lp_cover values (${sinceDay});\n${coverSql}`) : ""}`,
     outages: await lenient(`select 'Простои Lane Pilot: '||count(*)||' ('||sum(minutes)||' мин, дольше всего '||max(minutes)||' мин).' from lane_pilot_outage where to_at >= ${sinceDay} having count(*) > 0`),
   });
 }

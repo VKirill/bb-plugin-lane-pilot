@@ -274,25 +274,41 @@ async function windowOpen() {
 async function reading() {
   const kv = new Map<string, unknown>();
   const sets: string[] = [];
-  let handler: ((payload: unknown) => Promise<void>) | null = null;
-  const ctx = { isDisposed: () => false, bb: { events: { on: (_name: string, fn: (payload: unknown) => Promise<void>) => { handler = fn; } },
+  const handlers = new Map<string, (payload: unknown) => unknown>();
+  // The real contract (0.1.575): experimental_thread.events is a debounced {thread, sequence} wake; the watch reads the
+  // announced rows back through threads.events.list, so this fixture keeps a per-thread event log and answers list queries.
+  const eventLog: Array<{ threadId: string; seq: number; type: string; createdAt: number; data: unknown }> = [];
+  let eventSeq = 0;
+  const ctx = { isDisposed: () => false, bb: {
+    events: { on: (name: string, fn: (payload: unknown) => unknown) => { handlers.set(name, fn); } },
+    sdk: { threads: { events: { list: async (query: { threadId?: string; types?: string[]; order?: string; limit?: string; afterSeq?: string; beforeSeq?: string }) => {
+      let rows = eventLog.filter((row) => row.threadId === query.threadId && (!query.types?.length || query.types.includes(row.type)));
+      if (query.afterSeq !== undefined) rows = rows.filter((row) => row.seq > Number(query.afterSeq));
+      if (query.beforeSeq !== undefined) rows = rows.filter((row) => row.seq < Number(query.beforeSeq));
+      rows = [...rows].sort((a, b) => query.order === "desc" ? b.seq - a.seq : a.seq - b.seq);
+      return rows.slice(0, Number(query.limit) || 100).map((row) => ({ seq: row.seq, type: row.type, createdAt: row.createdAt, data: row.data }));
+    } } } },
     storage: { kv: { get: async (key: string) => kv.get(key) ?? null, set: async (key: string, value: unknown) => { sets.push(key); kv.set(key, value); } } }, log: { info() {} } } };
   mountRateLimitWatch(ctx as never);
-  const send = (payload: unknown) => handler!(payload);
-  const frame = (rateLimits: Record<string, unknown>) => ({ event: { type: "provider/rateLimits/updated", rateLimits } });
+  const send = async (type: string, data: unknown) => {
+    const row = { threadId: "thr_x", seq: ++eventSeq, type, createdAt: Date.now(), data };
+    eventLog.push(row);
+    await handlers.get("experimental_thread.events")!({ thread: { id: "thr_x", status: "active" }, sequence: row.seq });
+  };
+  const frame = (rateLimits: Record<string, unknown>) => send("provider/rateLimits/updated", { rateLimits });
   const reset = NOW + 2 * 3_600_000;
   const blocked = { kind: "subscription-window", status: "blocked", providerId: "codex", windows: [{ label: "5h", providerKey: "gpt", status: "blocked", resetsAtMs: reset }, { label: 7, status: 5 }] };
-  await send(frame(blocked));
+  await frame(blocked);
   const stored = await readRateLimitSnapshot(ctx.bb.storage.kv, "codex");
-  await send(frame({ ...blocked, providerId: "claude-code", status: "warning" }));
-  await send(frame({ kind: "api-key", status: "blocked", providerId: "openai", windows: [] }));
-  await send({ event: { type: "thread/started", rateLimits: blocked } });
+  await frame({ ...blocked, providerId: "claude-code", status: "warning" });
+  await frame({ kind: "api-key", status: "blocked", providerId: "openai", windows: [] });
+  await send("thread/started", { rateLimits: blocked });
   const keys = [...kv.keys()].sort();
   const warning = (await readRateLimitSnapshot(ctx.bb.storage.kv, "claude-code"))?.status;
   const before = sets.length;
-  await send(frame(blocked));
+  await frame(blocked);
   const repeat = sets.length - before;
-  await send(frame({ ...blocked, status: "allowed" }));
+  await frame({ ...blocked, status: "allowed" });
   const changed = sets.length - before - repeat;
   const board = snapshotAsBoardWindows({ at: NOW, status: "blocked", windows: [{ label: "5h", status: "blocked", resetsAtMs: reset }, { label: "7d", status: "warning", resetsAtMs: reset + 1000 }, { label: "old", status: "blocked", resetsAtMs: NOW - 1 }] }, NOW);
   return { reset, stored: stored ? { status: stored.status, windows: stored.windows, stamped: stored.at > 0 } : null, keys, warning, repeat, changed, board: board.windows };

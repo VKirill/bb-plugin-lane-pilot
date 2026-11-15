@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { pickableAgentSchema } from "./rpc-shell";
 import { runViewSchema, stageSummarySchema, TASK_KINDS } from "@lane-pilot/contracts";
+import { taskBoardInput, taskBoardOutput, threadLiveInput, threadLiveOutput } from "./ui-query-schemas";
 
 /** Run cards, stages, helper access and the screen snapshot. */
 const cardThreadSchema: z.ZodType<{ id: string; role: string; title: string | null; status: string | null; children: unknown[] }> = z.lazy(() =>
@@ -43,24 +44,14 @@ export type AcceptanceCard = z.infer<typeof acceptanceCardSchema>;
 export const rpcRuns = {
   /** The «Tasks» board: tasks and workflow runs of one project or of all, by column (src/rooms/runs/server/task-board.ts). */
   task_board: {
-    input: z.object({ projectId: z.string().min(1).optional(), doneHours: z.number().int().min(1).max(24 * 30).default(24) }).strict(),
-    output: z.object({ items: z.array(z.object({
-      kind: z.enum(["task", "workflow", "phase", "batch"]), key: z.string(), runId: z.string(), taskId: z.string().nullable(), title: z.string(), techTitle: z.string().nullable(),
-      taskKind: z.enum(TASK_KINDS).nullable(), area: z.string().nullable(), objective: z.string().nullable(),
-      projectId: z.string().nullable(), pmThreadId: z.string().nullable(), pmThreadTitle: z.string().nullable(),
-      column: z.enum(["queued", "running", "checking", "blocked", "done"]), state: z.string(),
-      phase: z.enum(["queued", "planning", "waiting", "writing", "checking", "retrying", "blocked", "stuck", "closed", "accepted", "canceled", "chain"]),
-      stage: z.string().nullable(), model: z.string().nullable(), since: z.number().nullable(), waitingFor: z.array(z.string()), detail: z.string().nullable(),
-      attemptNo: z.number().int(), threadId: z.string().nullable(), attemptId: z.string().nullable(), updatedAt: z.number(),
-      held: z.boolean(), gates: z.array(z.object({ name: z.enum(["discussion", "plan", "design"]), ok: z.boolean(), why: z.array(z.string()) }).strict()).nullable(),
-      wave: z.object({ n: z.number().int(), m: z.number().int() }).strict().nullable(),
-    }).strict()) }).strict(),
+    input: taskBoardInput,
+    output: taskBoardOutput,
   },
   /** One board card opened: contract, plan, stages, attempts and the tree of threads that worked on it. */
   /** What Lane Pilot does for a chat (its PM runs' tasks, or the task a writer or helper works on), for the thread's info panel; null for other threads. */
   thread_live: {
-    input: z.object({ threadId: z.string().min(1) }).strict(),
-    output: z.unknown(),
+    input: threadLiveInput,
+    output: threadLiveOutput,
   },
   task_card: {
     input: z.object({ runId: z.string().min(1), taskId: z.string().min(1).nullable() }).strict(),

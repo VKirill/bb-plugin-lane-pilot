@@ -70,7 +70,7 @@ export function installControlMethods(tools: MethodsTools) {
     const wanted = new Set((input.pieces?.length ? input.pieces : Object.keys(issued)).map((id) => taskFamily(issued[id] ?? id)));
     const sent: string[] = [];
     for (const attempt of listOpenAttempts(db).filter((row) => row.run_id === phase.runId && wanted.has(taskFamily(row.task_id)) && row.state === "running" && row.thread_id)) {
-      await bb.sdk.threads.send({ threadId: attempt.thread_id!, mode: "queue-if-active", input: [{ type: "text", text: `[Lane Pilot phase ${phase.id}] Correction from the PM: ${input.note}`, mentions: [] }] } as never).then(() => sent.push(attempt.task_id), () => undefined);
+      await sendServiceMessage(bb as never, { threadId: attempt.thread_id!, mode: "queue-if-active", text: `[Lane Pilot phase ${phase.id}] Correction from the PM: ${input.note}` }).then(() => sent.push(attempt.task_id), () => undefined);
     }
     book(phase, "execution", "correction", `${input.note} → ${sent.join(", ") || "no writer at work"}`);
     return { phase: mustGet(phase.id), sent };

@@ -22,7 +22,7 @@ The `lp.project-life` action after acceptance is not a workflow role. Its stage 
 
 An unknown role, and the default `worker`, runs as `analyst`: no browser and no accounts. Pick the role by what the step must reach before you write its prompt. The owner can widen a role per project in Settings, "Agent access"; do not rely on it.
 
-A step may add `skills`, `plugins` (BB plugin ids) and `mcp` (MCP server names), up to 8 each, on top of its role's. The session is spawned with exactly those added; plugins and MCP names are also checked by the preflight. Add only what the step uses: each one is loaded into the thread's context.
+A step may add `skills`, `plugins` (BB plugin ids) and `mcp` (MCP server names), up to 8 each, on top of its role's. These names extend session access; plugins and MCP names are also checked by preflight. A skill allow-list is not evidence that its instructions were delivered or read. Node `skills` are hints; list indispensable skills in `requires.skills`. That check currently uses the project catalog, not a placed helper's environment. Add only capabilities the step needs. Explicit node skills are also resolved through provider command discovery in the actual helper workspace: Codex receives the resolved native skill mentions; Claude receives a mention only for one requested and resolved skill. Continued sessions use their own project, provider and environment. Unsupported providers, unverified workspaces and unresolved optional selections keep the original task prompt and emit a diagnostic. This requests skill selection; it does not prove that the provider loaded a particular skill body. Workflow-level requirements are not copied into every node.
 
 ## The model of a step
 

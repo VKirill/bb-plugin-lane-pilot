@@ -39,3 +39,6 @@ export { CHECK_HISTORY_MIN_RUNS, p95 } from "./check-history";
 export { readCheckRun } from "./server/check-reading";
 export type { CheckReading, CheckRun, CheckVerdict } from "./server/check-reading";
 export { validateTaskV2 } from "./task-v2";
+export { buildExecutionPacket, packetSelectedLines, renderExecutionPacket } from "./execution-packet";
+export { readFirstIo } from "./read-first-io";
+export { parseReadFirstHints } from "./read-first";

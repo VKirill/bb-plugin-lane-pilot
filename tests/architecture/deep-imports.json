@@ -30,7 +30,6 @@
  "critique > contracts": 5,
  "critique > phase": 1,
  "critique > schedule": 1,
- "critique > tasks": 1,
  "docs > contracts": 4,
  "entry > contracts": 5,
  "entry > core": 6,
@@ -73,7 +72,6 @@
  "pages > runs": 1,
  "pages > workflow": 2,
  "phase > baseline": 2,
- "phase > contracts": 1,
  "phase > docs": 2,
  "phase > rollback": 2,
  "phase > run-goal": 2,
@@ -83,7 +81,6 @@
  "pm-replay > writer": 1,
  "project-life > contracts": 2,
  "qa > contracts": 11,
- "relay > contracts": 2,
  "rollback > contracts": 1,
  "run-goal > baseline": 1,
  "run-goal > contracts": 1,
@@ -160,6 +157,5 @@
  "writer > rule-forms": 3,
  "writer > self-repair": 3,
  "writer > stability": 3,
- "writer > tasks": 4,
  "writer > wall": 3
 }

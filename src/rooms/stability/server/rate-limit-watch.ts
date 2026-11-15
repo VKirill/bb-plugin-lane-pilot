@@ -1,4 +1,5 @@
 import type { ServerCore } from "../../contracts/server";
+import { installThreadEventFeed } from "./thread-event-feed";
 
 /**
  * The live subscription-window facts BB core publishes as `provider/rateLimits/updated` thread events
@@ -45,30 +46,32 @@ export const RATE_LIMIT_REWRITE_MS = 60_000;
 export function mountRateLimitWatch(ctx: ServerCore): void {
   const events = (ctx.bb as unknown as { events?: { on?: (name: string, handler: (payload: unknown) => unknown) => void } }).events;
   if (!events || typeof events.on !== "function") return;
-  try {
-    events.on("experimental_thread.events", async (payload: unknown) => {
-      if (ctx.isDisposed()) return;
-      const event = (payload as { event?: { type?: unknown; rateLimits?: { kind?: unknown; status?: unknown; providerId?: unknown; windows?: Array<{ label?: unknown; providerKey?: unknown; status?: unknown; resetsAtMs?: unknown }> } } })?.event;
-      if (event?.type !== "provider/rateLimits/updated") return;
-      const rl = event.rateLimits;
-      if (rl?.kind !== "subscription-window" || typeof rl.providerId !== "string" || !rl.providerId) return;
-      const snap: RateLimitSnapshot = {
-        at: Date.now(),
-        status: typeof rl.status === "string" ? rl.status : "unknown",
-        windows: (rl.windows ?? []).map((w) => ({
-          label: typeof w?.label === "string" ? w.label : null,
-          providerKey: typeof w?.providerKey === "string" ? w.providerKey : null,
-          status: typeof w?.status === "string" ? w.status : "unknown",
-          resetsAtMs: typeof w?.resetsAtMs === "number" ? w.resetsAtMs : null,
-        })),
-      };
-      const key = `${RATE_LIMIT_PREFIX}${rl.providerId}`;
-      const stored = await readRateLimitSnapshot(ctx.bb.storage.kv as never, rl.providerId);
-      const same = stored && JSON.stringify({ status: stored.status, windows: stored.windows }) === JSON.stringify({ status: snap.status, windows: snap.windows });
-      if (same && snap.at - stored.at < RATE_LIMIT_REWRITE_MS) return;
-      await ctx.bb.storage.kv.set(key, snap as never).catch(() => undefined);
-    });
-  } catch (cause) {
-    ctx.bb.log.info(`Lane Pilot rate-limit watch does not listen: ${cause instanceof Error ? cause.message : String(cause)}`);
-  }
+  // experimental_thread.events carries only {thread, sequence}: the feed reads provider/rateLimits/updated rows
+  // out of the event log (0.1.575 — the payload never held the event itself).
+  const feed = installThreadEventFeed(ctx);
+  feed.add({
+    types: new Set(["provider/rateLimits/updated"]),
+    handle: async (_threadId, rows) => {
+      for (const row of rows) {
+        if (ctx.isDisposed()) return;
+        const rl = (row.data as { rateLimits?: { kind?: unknown; status?: unknown; providerId?: unknown; windows?: Array<{ label?: unknown; providerKey?: unknown; status?: unknown; resetsAtMs?: unknown }> } } | null)?.rateLimits;
+        if (rl?.kind !== "subscription-window" || typeof rl.providerId !== "string" || !rl.providerId) continue;
+        const snap: RateLimitSnapshot = {
+          at: Date.now(),
+          status: typeof rl.status === "string" ? rl.status : "unknown",
+          windows: (rl.windows ?? []).map((w) => ({
+            label: typeof w?.label === "string" ? w.label : null,
+            providerKey: typeof w?.providerKey === "string" ? w.providerKey : null,
+            status: typeof w?.status === "string" ? w.status : "unknown",
+            resetsAtMs: typeof w?.resetsAtMs === "number" ? w.resetsAtMs : null,
+          })),
+        };
+        const key = `${RATE_LIMIT_PREFIX}${rl.providerId}`;
+        const stored = await readRateLimitSnapshot(ctx.bb.storage.kv as never, rl.providerId);
+        const same = stored && JSON.stringify({ status: stored.status, windows: stored.windows }) === JSON.stringify({ status: snap.status, windows: snap.windows });
+        if (same && snap.at - stored.at < RATE_LIMIT_REWRITE_MS) continue;
+        await ctx.bb.storage.kv.set(key, snap as never).catch(() => undefined);
+      }
+    },
+  });
 }

@@ -29,7 +29,8 @@ export function installWiring(tools: WiringTools) {
   const { ctx, services, db, bb, now } = tools;
   const auto = createAutoStages(ctx, services, {
     exhausted: tools.exhaust,
-    api: { context: tools.context, plan: tools.plan, planCheck: tools.planCheck, question: tools.question, waveReview: tools.waveReview, goalAudit: tools.goalAudit, lessons: tools.lessons, drawing: tools.drawing, returnTo: tools.returnTo },
+    api: { context: tools.context, plan: tools.plan, planCheck: tools.planCheck, question: tools.question, waveReview: tools.waveReview, goalAudit: tools.goalAudit, lessons: tools.lessons, drawing: tools.drawing, returnTo: tools.returnTo,
+      admitIfReady: async (phaseId: string) => { await tools.admitIfReady(tools.mustGet(phaseId)); } },
     get: tools.mustGet,
     save: (phaseId, record) => tools.savePhase(phaseId, { record, at: now() }),
     book: (phase, section, kind, text) => tools.book(phase, section as never, kind, text),

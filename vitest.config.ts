@@ -35,9 +35,13 @@ const mocking = [
   "tests/sma/parity-g1-hooks-1.test.ts",
   "tests/sma/parity-c1-have.test.ts",
   "tests/workflow/agent-send-dedup.test.ts",
+  // Same seam as agent-send-dedup: mocks the platform/runs servers to drive workflow-agent run() with a fake host.
+  "tests/workflow/skill-select-run.test.ts",
   // Four-proofs tests of the SMA map regions that replace a module (one line per file; prefer a fake passed in over vi.mock).
   "tests/sma/four-proofs-r13-a.test.ts",
   "tests/sma/four-proofs-r03-a2.test.ts",
+  // Replaces chmod of node:fs/promises to make the OS refuse it for chosen paths (EXT05 owns-barrier failure paths).
+  "tests/owns-barrier-failures.test.ts",
 ];
 const nodeTests = ["tests/**/*.test.ts", "src/rooms/**/tests/**/*.test.ts", "packages/*/tests/**/*.test.ts"];
 // Page tests that fail when the document (an open picker window, a registered settings backend) is shared with the files before them.

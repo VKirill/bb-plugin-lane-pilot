@@ -1,3 +1,4 @@
+import { experimental_PluginRpcCallError } from "@get-bb/plugin-sdk";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it, vi } from "vitest";
 import type { TaskV2 } from "../src/rooms/contracts";
@@ -6,7 +7,7 @@ import type { Services } from "../server";
 import { insertBaseline } from "../src/rooms/baseline/store";
 import { criticLevel, pathsWidenedOf } from "../src/rooms/critique/critic-level";
 import { isTaskSatisfied } from "../src/rooms/runs/server";
-import { countChargedAttempts, createAttempt, createRun, createTask, getAttempt, getTask, openDatabase, savePrototypeConfig, saveTaskPlan, setRunThread } from "../src/rooms/plugin-db";
+import { countChargedAttempts, createAttempt, createRun, createTask, getAttempt, getTask, openDatabase, saveProjectSetting, savePrototypeConfig, saveTaskPlan, setRunThread } from "../src/rooms/plugin-db";
 import { listReturns } from "../src/rooms/stage-return";
 import { createWriterQuestionTimeout } from "../src/rooms/writer/server/question-timeout";
 import { needsHumanQuestion } from "../src/rooms/writer/server/writer-task";
@@ -22,11 +23,23 @@ const task: TaskV2 = {
   verification: [{ command: "npm test", cwd: WORKSPACE }],
 };
 
-function world(question: string, options: { contract?: Partial<TaskV2>; otherTask?: Partial<TaskV2> } = {}) {
-  const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
+type BarrierCall = { method: string; input: { worktreePath: string; ownsPaths: string[]; neverTouch: string[] } };
+
+function world(question: string, options: { contract?: Partial<TaskV2>; otherTask?: Partial<TaskV2>; barrier?: (call: BarrierCall, nth: number) => unknown; sendFails?: "refused" | "unconfirmed" } = {}) {
+  // The machine's answers: the owns barrier as the host gives it (EXT05); every other host call has no stub, as before.
+  const order: string[] = [];
+  const barrierCalls: BarrierCall["input"][] = [];
+  const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot", experimental_callHostRpc: async (call: BarrierCall) => {
+    if (call.method !== "gitOwnsBarrier") throw new Error(`fake plugin host has no experimental_callHostRpc stub for "${call.method}"`);
+    order.push("barrier"); barrierCalls.push(call.input);
+    return options.barrier ? options.barrier(call, barrierCalls.length) : { hostId: "h1", status: "applied", locked: 0, unlocked: 1 };
+  } } as never);
   const sends: Array<{ threadId: string; input: Array<{ text: string }> }> = [];
   harness.sdk.stub("threads.get", async (args: { threadId: string }) => ({ id: args.threadId, status: "idle", updatedAt: 0 }));
-  harness.sdk.stub("threads.send", async (args: unknown) => { sends.push(args as never); return undefined; });
+  harness.sdk.stub("threads.send", async (args: unknown) => { order.push("send");
+    // BB's dispatch hooks refusing the turn before it is queued: ApiError(409, "dispatch_rejected").
+    if (options.sendFails === "refused") throw Object.assign(new Error("dispatch rejected by a plugin hook"), { status: 409, code: "dispatch_rejected", body: { code: "dispatch_rejected", message: "dispatch rejected by a plugin hook", details: { pluginId: "guard" } } });
+    if (options.sendFails === "unconfirmed") throw new Error("socket hang up"); sends.push(args as never); return undefined; });
   harness.sdk.stub("threads.events.list", async () => []);
   harness.sdk.stub("files.read", async () => { throw new Error("file does not exist"); });
   harness.sdk.stub("files.write", async () => undefined);
@@ -48,7 +61,7 @@ function world(question: string, options: { contract?: Partial<TaskV2>; otherTas
   const consult = vi.fn<Consult>(async () => null);
   const timeout = createWriterQuestionTimeout(ctx, services, consult);
   const contract = () => getTask(db, "T1")!.contract as TaskV2;
-  return { bb, db, sends, consult, timeout, contract };
+  return { bb, db, sends, consult, timeout, contract, order, barrierCalls };
 }
 
 describe("a writer's question settled by rule, at once", () => {
@@ -66,6 +79,84 @@ describe("a writer's question settled by rule, at once", () => {
     expect(rows[0]).toMatchObject({ by: "question-rules", state: "restarted" });
     expect(rows[0]!.note).toMatch(/^rule:outside_paths answered/);
     expect(rows[0]!.detail).toContain("owns_paths += tests/x.test.ts");
+    // EXT05: the worktree's barrier lets the writer edit the newly owned file before it is told to.
+    expect(w.barrierCalls).toEqual([{ requestedHostId: "h1", worktreePath: "/ws/worktrees/a1", ownsPaths: ["a.txt", "b/**", "tests/x.test.ts"], neverTouch: ["secrets/**"] }]);
+    expect(w.order.slice(0, 2)).toEqual(["barrier", "send"]);
+  });
+
+  // EXT05 (layers audit 2026-11-15): owns_paths widened in place while the OS still refused the file.
+  it("outside_paths is not applied when the host worker has no barrier update: no turn, the contract and the attempt stay", async () => {
+    const w = world("tests/x.test.ts is outside owns_paths and the task needs it changed", {
+      // The SDK's own error for a method an older host worker does not have.
+      barrier: () => { throw new experimental_PluginRpcCallError({ code: "unknown_method", message: "unknown host method gitOwnsBarrier" }); } });
+    await w.timeout.sweepWriterQuestions(T0 + 1);
+    // The sweep names the rule it tried either way; its receipt says it failed.
+    expect(listReturns(w.db, "run1", "T1").map((row) => row.state)).toEqual(["failed"]);
+    expect(w.contract().owns_paths).toEqual(["a.txt", "b/**"]);
+    expect(getAttempt(w.db, "a1")?.state).toBe("blocked");
+    expect(w.order).not.toContain("send");
+    expect(w.barrierCalls).toHaveLength(1); // nothing ran on the host: nothing to put back
+  });
+
+  it("outside_paths with an unknown barrier answer puts the old contract's barrier back and sends no turn", async () => {
+    const w = world("tests/x.test.ts is outside owns_paths and the task needs it changed", {
+      barrier: (_call, nth) => { if (nth === 1) throw new Error("host call timed out"); return { hostId: "h1", status: "applied", locked: 1, unlocked: 0 }; } });
+    await w.timeout.sweepWriterQuestions(T0 + 1);
+    expect(w.barrierCalls.map((call) => call.ownsPaths)).toEqual([["a.txt", "b/**", "tests/x.test.ts"], ["a.txt", "b/**"]]);
+    expect(w.contract().owns_paths).toEqual(["a.txt", "b/**"]);
+    expect(getAttempt(w.db, "a1")?.state).toBe("blocked");
+    expect(w.order).not.toContain("send");
+  });
+
+  it("outside_paths whose turn the server refused puts the barrier back with the old contract", async () => {
+    const w = world("tests/x.test.ts is outside owns_paths and the task needs it changed", { sendFails: "refused" });
+    await w.timeout.sweepWriterQuestions(T0 + 1);
+    expect(w.barrierCalls.map((call) => call.ownsPaths)).toEqual([["a.txt", "b/**", "tests/x.test.ts"], ["a.txt", "b/**"]]);
+    expect(w.contract().owns_paths).toEqual(["a.txt", "b/**"]);
+    expect(getAttempt(w.db, "a1")?.state).toBe("blocked");
+  });
+
+  it("outside_paths whose turn delivery is not confirmed keeps the widened contract and barrier: nothing is put back blindly", async () => {
+    const w = world("tests/x.test.ts is outside owns_paths and the task needs it changed", { sendFails: "unconfirmed" });
+    expect(await w.timeout.sweepWriterQuestions(T0 + 1)).toEqual([{ taskId: "T1", action: "rule_outside_paths" }]);
+    expect(w.barrierCalls).toHaveLength(1);
+    expect(w.contract().owns_paths).toEqual(["a.txt", "b/**", "tests/x.test.ts"]);
+    expect(getAttempt(w.db, "a1")?.state).toBe("running");
+  });
+
+  it("outside_paths whose attempt can no longer reopen after the barrier moved puts the barrier back", async () => {
+    const w = world("tests/x.test.ts is outside owns_paths and the task needs it changed", {
+      barrier: (_call, nth) => {
+        // The PM canceled the task while the barrier call ran: the attempt is no longer blocked.
+        if (nth === 1) w.db.prepare("UPDATE lane_pilot_attempt SET state='canceled' WHERE id='a1'").run();
+        return { hostId: "h1", status: "applied", locked: 0, unlocked: 1 };
+      } });
+    await w.timeout.sweepWriterQuestions(T0 + 1);
+    expect(w.barrierCalls.map((call) => call.ownsPaths)).toEqual([["a.txt", "b/**", "tests/x.test.ts"], ["a.txt", "b/**"]]);
+    expect(w.contract().owns_paths).toEqual(["a.txt", "b/**"]);
+    expect(w.order).not.toContain("send");
+  });
+
+  it("outside_paths whose reopen is refused by an illegal move (a throw, not false) restores the old contract and its barrier", async () => {
+    const w = world("tests/x.test.ts is outside owns_paths and the task needs it changed", {
+      barrier: (_call, nth) => {
+        // A cancel came in while the barrier call ran: cancel_requested -> running is no legal move, so transitionAttempt throws.
+        if (nth === 1) w.db.prepare("UPDATE lane_pilot_attempt SET state='cancel_requested' WHERE id='a1'").run();
+        return { hostId: "h1", status: "applied", locked: 0, unlocked: 1 };
+      } });
+    await w.timeout.sweepWriterQuestions(T0 + 1);
+    expect(w.barrierCalls.map((call) => call.ownsPaths)).toEqual([["a.txt", "b/**", "tests/x.test.ts"], ["a.txt", "b/**"]]);
+    expect(w.contract().owns_paths).toEqual(["a.txt", "b/**"]);
+    expect(getAttempt(w.db, "a1")?.state).toBe("cancel_requested");
+    expect(w.order).not.toContain("send");
+    expect(listReturns(w.db, "run1", "T1").map((row) => row.state)).toEqual(["failed"]);
+  });
+
+  it("outside_paths leaves the barrier alone when writer.owns_barrier is off", async () => {
+    const w = world("tests/x.test.ts is outside owns_paths and the task needs it changed");
+    saveProjectSetting(w.db, "proj1", "writer.owns_barrier", "off");
+    expect(await w.timeout.sweepWriterQuestions(T0 + 1)).toEqual([{ taskId: "T1", action: "rule_outside_paths" }]);
+    expect(w.barrierCalls).toEqual([]);
   });
 
   it("outside_paths is refused for never_touch, more than five files, a glob, or a live task's files; the second pilot takes it", async () => {

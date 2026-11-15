@@ -8,7 +8,7 @@ import { taskV2Schema } from "../../contracts";
 import type { PrototypeConfig, TaskV2 } from "../../contracts";
 import { recordCheckDuration, recordSecretIssuance, getAttempt, getRun, getReasoningTrace, getRunSettingsScopes, getTaskGitBase, listTasksForRun, loadProjectSettings, saveProjectSetting, taskBasePath, otherAttemptsOfRun, attemptedTaskIdsOfRun } from "../../storage";
 import { checkTimeoutSec, orderChecksForFailFast } from "../check-timing";
-import { parseReadFirstHints } from "../../tasks/read-first";
+import { parseReadFirstHints } from "../../tasks";
 import {cleanCheckOutput, outputHashes, outputText, pollPause} from "@lane-pilot/kit";
 import { writeReplacing } from "../../storage";
 import { bestEffort, fileAllowedByOwns, fileBlockedByNeverTouch, isNotFound, orMiss, redactKnown, redactSecrets, stringAt } from "@lane-pilot/kit";

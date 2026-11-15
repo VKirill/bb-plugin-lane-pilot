@@ -3,6 +3,7 @@ import { taskBasePath } from "../../storage";
 import { failureClass } from "../../contracts";
 import type { StartWriterTaskDeps } from "./start-writer-task";
 import type { WriterTaskInput, WriterTaskState } from "./start-task-state";
+import { sendServiceMessage } from "../../relay/server";
 
 export const dropLiveWriterKey = (deps: StartWriterTaskDeps, state: WriterTaskState) => {
   const { services, admitted } = deps;
@@ -39,6 +40,5 @@ export const rollbackLive = async (deps: StartWriterTaskDeps, state: WriterTaskS
   }
   const why = rolled.ok ? `could not put back ${rolled.failed.join("; ")}` : rolled.reason;
   ctx.log(`writer ${input.taskId}: rollback of ${backupId} incomplete: ${why}`);
-  if (input.pmThreadId) void bestEffort(ctx.log, "writer rollback notice", bb.sdk.threads.send({ threadId:input.pmThreadId, mode:"queue-if-active", input:[{ type:"text", mentions:[],
-    text:`Lane Pilot: task ${input.taskId} was not accepted and its files in ${folder} could not be put back automatically (${why.slice(0, 600)}). The originals are in ~/.lane-pilot/live-backups/${backupId}/files on the folder's machine; tell the owner before another task runs there.` }] } as never), undefined);
+  if (input.pmThreadId) void bestEffort(ctx.log, "writer rollback notice", sendServiceMessage(bb as never, { threadId:input.pmThreadId, mode:"queue-if-active", text:`Lane Pilot: task ${input.taskId} was not accepted and its files in ${folder} could not be put back automatically (${why.slice(0, 600)}). The originals are in ~/.lane-pilot/live-backups/${backupId}/files on the folder's machine; tell the owner before another task runs there.` }), undefined);
 };

@@ -5,6 +5,7 @@ import type { LanePilotDatabase } from "../../storage";
 import type { RunRow } from "../../storage";
 ;
 import { startedBySchedule } from "./workflow-runtime";
+import { sendServiceMessage } from "../../relay/server";
 import type { LeadRoadApi } from "../../contracts";
 import {AFTER_ACCEPT, DOCS_MAINTENANCE, DOCS_NIGHT, LP_TASK_PIPELINE, SELF_REPAIR, WORKTREE_CLEANUP} from "../../contracts";
 
@@ -80,10 +81,7 @@ export async function maybeNotifyWorkflowRun(input: {
   await bestEffort(input.log, "workflow notice record", input.bb.storage.kv.set(key, Date.now() as never), undefined);
   const text = `Lane Pilot: the scheduled run ${run.id} of ${run.workflow_id} finished. Show the owner this result in this chat as it is (no summary, nothing to act on; its helper's own completion may follow: it is the same result, say nothing about it):\n\n${delivered}`;
   try {
-    await input.bb.sdk.threads.send({
-      threadId: input.pmThreadId, mode: "queue-if-active",
-      input: [{ type: "text", text, mentions: [] }],
-    } as never);
+    await sendServiceMessage(input.bb as never, { threadId: input.pmThreadId, mode: "queue-if-active", text });
     return true;
   } catch (cause) {
     input.log(`Lane Pilot workflow ${run.id}: PM notice not sent: ${cause instanceof Error ? cause.message : String(cause)}`);

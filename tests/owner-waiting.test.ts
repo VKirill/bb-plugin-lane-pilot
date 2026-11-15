@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { rpcContract } from "../src/rooms/contracts";
 import { openDatabase } from "../src/rooms/plugin-db";
@@ -6,6 +6,7 @@ import { closeOwnerItem, collectOwnerWaiting, postOwnerItem } from "../src/rooms
 import { runWaitingCli } from "../src/rooms/owner-waiting/cli";
 import { ackDigest, inQuietHours, loadPushConfig, planDigest, savePushConfig } from "../src/rooms/owner-waiting/push";
 import { pendingOwnerLearningItems } from "../src/rooms/learning";
+import { ownerWaitingRpc } from "../src/rooms/owner-waiting/server";
 
 const HOUR = 3_600_000;
 // 2026-10-22 09:00 in Madrid (CEST, UTC+2).
@@ -185,5 +186,18 @@ describe("bb lane-pilot waiting", () => {
 describe("the RPCs", () => {
   it("are in the contract", () => {
     for (const method of ["owner_waiting", "owner_waiting_digest", "owner_waiting_ack", "owner_waiting_config"] as const) expect(rpcContract[method], method).toBeDefined();
+  });
+
+  it("screen mutations invalidate the watched owner_waiting read; reads do not", async () => {
+    const db = openDatabase(createFakePluginHost({ pluginId: "lane-pilot" }).bb);
+    const invalidate = vi.fn();
+    const rpc = ownerWaitingRpc(db, [], undefined, () => undefined, async () => false, invalidate);
+    postOwnerItem(db, { key: "scr:1", source: "test", kind: "proposal", what: "A thing waits", why: "It is the owner's call, stated at length" }, NOW);
+
+    await rpc.owner_waiting();
+    expect(invalidate).not.toHaveBeenCalled();
+
+    await rpc.owner_waiting_close({ key: "scr:1" });
+    expect(invalidate).toHaveBeenCalledTimes(1);
   });
 });

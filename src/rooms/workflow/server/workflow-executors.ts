@@ -15,7 +15,7 @@ import { registerHumanForm } from "./workflow-human-form";
 import { registerDeliverableAction, registerDeliverableNode } from "./workflow-deliverable";
 import { registerLpTask } from "./workflow-lp-task";
 import { registerCheckoutActions } from "./workflow-checkout-actions";
-import { noteRunFiles } from "./workflow-run-home";
+import { deliverRunFile, noteRunFiles } from "./workflow-run-home";
 import { registerProjectActions } from "./workflow-project-actions";
 import { registerTaskBookActions } from "./workflow-task-book";
 import { registerDelegatedActions } from "./workflow-delegated-actions";
@@ -104,21 +104,24 @@ export function registerChainExecutors(engine: WorkflowEngine, ctx: ServerCore, 
           }
         }
       }
-      // The inputs that are too long to repeat stand in the packet as a file and a summary: the files are written first, and if that fails the packet shows them cut.
+      // The inputs that are too long to repeat stand in the packet as files and summaries: they must reach the helper's
+      // workspace whole, so a file that cannot be written stops the step before a helper starts — never a packet that
+      // shows required data cut (the helper would answer from data it never got).
       const plan = stepPacket(c, node);
-      let byReference = true;
-      if (plan?.files.length) {
+      let filesAt: { hostId: string; path: string } | undefined;
+      if (plan.files.length) {
         try {
           const checkout = await pmCheckout(rt);
-          for (const file of plan.files) await bb.sdk.files.write({ hostId: checkout.hostId, rootPath: checkout.path, path: `${checkout.path}/${file.path}`, content: file.text, contentEncoding: "utf8", createParents: true });
+          for (const file of plan.files) await deliverRunFile(bb.sdk.files, checkout, file);
           // The spill stays where the PM chat reads it (.bb/chats/<pm>/artifacts/wf-<run>/); the run's manifest says which step it is the input of.
-          await noteRunFiles(ctx, rt, c, checkout, plan.files.map((file) => ({ repoPath: file.path, content: file.text, kind: "step-input" as const, readers: [node.id] })));
+          // Step inputs are required context: when the manifest cannot record them the step fails before a helper starts.
+          await noteRunFiles(ctx, rt, c, checkout, plan.files.map((file) => ({ repoPath: file.path, content: file.text, kind: "step-input" as const, readers: [node.id] })), { required: true });
+          filesAt = checkout;
         } catch (cause) {
-          byReference = false;
-          bb.log.warn(`Lane Pilot could not write the input files of ${node.id} (${cause instanceof Error ? cause.message : String(cause)}); the packet shows them cut`);
+          throw new Error(`input_delivery_failed: the ${plan.files.length} input file(s) of ${node.id} could not be delivered to the PM checkout (${cause instanceof Error ? cause.message : String(cause)}); the step does not run on cut inputs`);
         }
       }
-      const req = await withResolvedModel(agentRequest(c, node, { byReference }));
+      const req = await withResolvedModel(agentRequest(c, node, { plan, filesAt }));
       const result = await agents.run(req);
       const costUsd = result.usage?.costUsd ?? 0;
       if (costUsd > 0 && rt.projectId) {

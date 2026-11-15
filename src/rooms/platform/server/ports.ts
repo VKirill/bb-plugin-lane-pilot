@@ -86,8 +86,10 @@ export interface AttemptReopenApi {
     projectId: string; runId: string; taskId: string; pmThreadId: string;
     attempt: Attempt; threadId: string; workspacePath: string;
     config: PrototypeConfig; contract: TaskV2;
+    /** The contract before an in-place change: when owns_paths or never_touch differ, the owns barrier follows first. */
+    previousContract?: TaskV2;
     reason: string; turn: string; qaAnswer: string;
-  }): Promise<{ ok: true } | { ok: false; hint: string }>;
+  }): Promise<{ ok: true; deliveryUnknown?: true } | { ok: false; hint: string; sideEffects?: "unknown" }>;
 }
 
 export type ReassignInput = {

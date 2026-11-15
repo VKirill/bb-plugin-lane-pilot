@@ -5,6 +5,7 @@ import { allowedSecretNames, secretProblem, waitingSecretNote, waitingSecretReas
 import { SECRET_WAIT_MS, secretPollMs } from "./start-wait-limits";
 import type { StartWriterTaskDeps } from "./start-writer-task";
 import type { WriterTaskInput, WriterTaskState } from "./start-task-state";
+import { sendServiceMessage } from "../../relay/server";
 
 /**
  * The secrets the task's checks declare must be in Env Catalog and allowed before a writer starts (J6): a writer would
@@ -33,7 +34,7 @@ export const waitForSecrets = async (deps: StartWriterTaskDeps, state: WriterTas
       noted = reason;
       ctx.log(`writer ${input.taskId} waits: ${reason}`);
       recordStage(db, { runId:input.runId, taskId:input.taskId, stageId:"writer-agent", state:"pending", input:input.plan, reason });
-      if (input.pmThreadId) void bestEffort(ctx.log, "writer secret wait notice", bb.sdk.threads.send({ threadId:input.pmThreadId, mode:"queue-if-active", input:[{ type:"text", mentions:[], text:waitingSecretNote(input.taskId, gate) }] } as never), undefined);
+      if (input.pmThreadId) void bestEffort(ctx.log, "writer secret wait notice", sendServiceMessage(bb as never, { threadId:input.pmThreadId, mode:"queue-if-active", text:waitingSecretNote(input.taskId, gate) }), undefined);
     }
     if (Date.now() - since > SECRET_WAIT_MS) return `${reason}: not provided within 12 hours; send the task again once it is saved`;
     await new Promise((wake) => setTimeout(wake, secretPollMs()));

@@ -23,6 +23,7 @@ import { ownerWordsOfRun } from "../../critique/server";
 import { validateTaskV2 } from "../../tasks";
 import { fullAccessSpawn, graphStepMetadata, zcodeBusyPeek } from "../../platform/server";
 import { helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "../../runs/server";
+import { sendServiceMessage } from "../../relay/server";
 
 /** The reason of the contract edition a planner revision writes: `planner_revision:<n>/<max>`. */
 export const plannerRevisionReason = (round: number, max: number): string => `planner_revision:${round}/${max}`;
@@ -116,7 +117,7 @@ export async function runPlanRevise(input: {
   let threadId = input.plannerThreadId;
   const askedAt = Date.now();
   if (threadId) {
-    await bb.sdk.threads.send({ threadId, mode: "queue-if-active", input: [{ type: "text", mentions: [], text: planReviseFollowUp({ edition: editionAtStart, round: input.round, max: input.max, findings: input.findings }) }] } as never);
+    await sendServiceMessage(bb as never, { threadId, mode: "queue-if-active", text: planReviseFollowUp({ edition: editionAtStart, round: input.round, max: input.max, findings: input.findings }) });
   } else {
     const legacy = resolveStageWriterSelection({ settings: input.settings, config: input.config, stageProviderKey: "plan_revise.provider", stageModelKey: "plan_revise.model" });
     const selection = await roleSelection({ zcodeBusy: zcodeBusyPeek(bb), catalog: sdkCriticCatalog(bb, input.config.hostId), settings: input.settings, role: "planner", fallback: { providerId: legacy.providerId, model: legacy.model } });

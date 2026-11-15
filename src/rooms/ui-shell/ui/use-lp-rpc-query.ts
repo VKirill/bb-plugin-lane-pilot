@@ -10,8 +10,9 @@ export type LpRpcQueryState<T = unknown> = { data: T | undefined; error: unknown
  * One Lane Pilot read, replacing a hand-rolled rpc.call + setInterval. On BB 0.6+ it is
  * `experimental_useRpcQuery`: the host watches the read, pauses it while the panel is hidden and refreshes it on
  * server invalidations. An older BB gets the same read on a plain interval — the path every screen had before.
- * `pollMs` is the slow safety poll in both paths (signals and invalidations still refresh faster); `enabled: false`
- * disables the read entirely. For a read that is not one contract call (several calls, local math), pass `fetcher`
+ * `pollMs` is the safety poll: the full cadence on the legacy path, a slower one (quarter, 60s floor) on the
+ * modern path where invalidations and the host's own visibility/reconnect handling do the fast refresh;
+ * `enabled: false` disables the read entirely. For a read that is not one contract call (several calls, local math), pass `fetcher`
  * instead of `method`: the modern path then can't be watched, so it is the same visible-page interval in both paths.
  */
 export function useLpRpcQuery<T = unknown>(
@@ -29,12 +30,25 @@ function useModernRpcQuery<T>(method: Method | null, input: unknown, options?: {
   const enabled = (options?.enabled ?? true) && (!!method || !!options?.fetcher);
   if (!options?.fetcher && !method) throw new Error("useLpRpcQuery: method or fetcher required");
   if (options?.fetcher) return useLegacyRpcPoll<T>(null, input, options);
+  // The host's explicit refetch ignores `enabled` (0.1.575): a disabled read — a null thread id, a hidden panel —
+  // must still answer "no read" to realtime/reconnect callers, so the promise handed out is guarded here.
+  const enabledRef = useRef(enabled);
+  enabledRef.current = enabled;
+  const mountedRef = useRef(true);
+  useEffect(() => { mountedRef.current = true; return () => { mountedRef.current = false; }; }, []);
   // eslint-disable-next-line react-hooks/rules-of-hooks -- presence of the host hook is fixed for the session
   const query = experimental_useRpcQuery({ contract: uiQueryContract, method: method as never, input: (input ?? null) as never, enabled });
-  const refetch = useRef(query.refetch);
-  refetch.current = query.refetch;
-  useInterval(options?.pollMs, enabled, () => { void refetch.current(); });
-  return query as LpRpcQueryState<T>;
+  const inner = useRef(query.refetch);
+  inner.current = query.refetch;
+  const refetch = useCallback((): Promise<void> => {
+    if (!enabledRef.current || !mountedRef.current) return Promise.resolve();
+    return Promise.resolve(inner.current()).then(() => undefined);
+  }, []);
+  // The watched read already re-reads on server invalidations and host visibility/reconnect; the interval
+  // is only a slow safety net for a missed signal, so it runs at a quarter cadence (60s floor), not pollMs.
+  const safetyMs = options?.pollMs === undefined ? undefined : Math.max(options.pollMs * 4, 60_000);
+  useInterval(safetyMs, enabled, () => { void refetch(); });
+  return { ...(query as object), refetch } as LpRpcQueryState<T>;
 }
 
 function useLegacyRpcPoll<T>(method: Method | null, input: unknown, options?: { pollMs?: number; enabled?: boolean; fetcher?: () => Promise<T> }): LpRpcQueryState<T> {
@@ -48,6 +62,9 @@ function useLegacyRpcPoll<T>(method: Method | null, input: unknown, options?: { 
     let live = true;
     const args = (inputKey === "" ? [] : [JSON.parse(inputKey)]) as unknown[];
     const read = async () => {
+      // A disabled or unmounted read must not fire: the effect's cleanup marks this closure dead, so a stale
+      // refetch (realtime signal, reconnect) or a tick in the cleanup gap answers without calling the RPC.
+      if (!live) return;
       try {
         const data = options?.fetcher ? await options.fetcher() : await (rpc.call as (...a: unknown[]) => Promise<unknown>)(method as string, ...args) as T;
         if (live) setState({ data, error: null, loading: false, fetching: false });

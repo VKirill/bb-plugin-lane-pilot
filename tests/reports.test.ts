@@ -5,6 +5,8 @@ import Database from "better-sqlite3";
 import { describe, expect, it, vi } from "vitest";
 import { buildDailyReport, composeDailyReport, dailyDue, mountReports, runOwnerPush, runSqliteChild, splitSql, createTelegramSender, TelegramNotReadyError, TG_CHAT_NAME, TG_TOKEN_NAME, TG_TOPIC_NAME } from "../src/rooms/reports/server";
 import { loadPushConfig, savePushConfig } from "../src/rooms/owner-waiting/push";
+import { coreSnapshotViaSdk } from "../src/rooms/reports/server/core-snapshot";
+import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 
 const digest = { send: true, reason: null, text: "Lane Pilot: ждут владельца, новых — 1.\n• x", keys: ["k1", "k2"] };
 
@@ -100,8 +102,9 @@ function hubFiles() {
     create table lane_pilot_token_cursor(thread_id text primary key, provider_id text not null default '', last_provider text not null default '', total_json text not null default '{}');
     create table lane_pilot_failure_triage(project_id text, attempt_id text, reason text, origin text, failed_at integer);
     create table lane_pilot_project_settings(project_id text, key text, value text);`);
-  const core = new Database(join(dir, "core.db")); core.exec("create table projects(id text primary key, name text); insert into projects values ('proj_real', 'SelfyStudio'), ('proj_sbx', 'LP sandbox 1')"); core.close();
-  return { dir, data, dataFile: join(dir, "data.db"), coreFile: join(dir, "core.db") };
+  // The core facts the report reads, as the SDK snapshot delivers them (projects; no helper threads in this fixture).
+  const coreSnapshot = async () => ({ snapshot: { projects: [{ id: "proj_real", name: "SelfyStudio" }, { id: "proj_sbx", name: "LP sandbox 1" }], threads: [], threadPluginMetadata: [] }, degraded: [] as string[] });
+  return { dir, data, dataFile: join(dir, "data.db"), coreSnapshot };
 }
 
 describe("the daily report (was scripts/lp-metrics-daily.sh)", () => {
@@ -113,7 +116,7 @@ describe("the daily report (was scripts/lp-metrics-daily.sh)", () => {
     insert.run("a1", "r1", "t1", "accepted", null, now - 3_600_000, now - 3_000_000);
     insert.run("a2", "r1", "t2", "blocked", "internal_error: x | y", now - 3_600_000, now - 3_000_000);
     insert.run("a3", "r2", "drill-1", "accepted", null, now - 3_600_000, now - 3_000_000);
-    const text = await buildDailyReport({ db: hub.data, dataFile: hub.dataFile, coreFile: hub.coreFile, run: runSqliteChild, now: () => now });
+    const text = await buildDailyReport({ db: hub.data, dataFile: hub.dataFile, coreSnapshot: hub.coreSnapshot, run: runSqliteChild, now: () => now });
     expect(text.startsWith("📊 Lane Pilot за сутки. ")).toBe(true);
     expect(text).toContain("Окно стабильности: день 1 из 7");
     expect(text).toContain("Песочницы и учения отдельно: 1 попыток, принято 100.0%");
@@ -121,6 +124,22 @@ describe("the daily report (was scripts/lp-metrics-daily.sh)", () => {
     expect(text).toContain("(bb lane-pilot metrics).");
     // No deferral register in this database: that line is left out, the report is not.
     expect(text).not.toContain("Отсрочки: просрочено");
+    // A healthy snapshot leaves no degradation line.
+    expect(text).not.toContain("Факты ядра");
+  });
+
+  it("a degraded core snapshot is named in the report, not silently omitted", async () => {
+    const hub = hubFiles();
+    const now = Date.now();
+    hub.data.exec("insert into lane_pilot_run values ('r1', 'proj_real')");
+    hub.data.prepare("insert into lane_pilot_attempt(id, run_id, task_id, state, created_at, harness_version) values ('a1', 'r1', 't1', 'accepted', ?, '0.1.559')").run(now - 3_600_000);
+    const text = await buildDailyReport({
+      db: hub.data, dataFile: hub.dataFile, run: runSqliteChild, now: () => now,
+      coreSnapshot: async () => ({ snapshot: { projects: [], threads: [], threadPluginMetadata: [] }, degraded: ["projects: sdk down", "graph coverage: no metadata api"] }),
+    });
+    expect(text).toContain("Факты ядра (SDK): projects: sdk down; graph coverage: no metadata api.");
+    // The report still goes out — degraded blocks show ids/empty, the headline is intact.
+    expect(text).toContain("Песочницы и учения отдельно: 0 попыток");
   });
 
   it("appends the morning blocks in the script's order and leaves out an empty one", () => {
@@ -141,6 +160,62 @@ describe("the daily report (was scripts/lp-metrics-daily.sh)", () => {
   });
 });
 
+describe("the SDK core snapshot (what the report's core.* reads become)", () => {
+  const NOW = Date.now();
+  const SINCE = NOW - 86_400_000;
+
+  function host(threads: Array<{ id: string; createdAt: number }>, projects: Array<{ id: string; name: string }>) {
+    const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
+    harness.sdk.stub("projects.list" as never, async () => projects);
+    harness.sdk.stub("threads.list" as never, async (args: { limit?: number; offset?: number }) =>
+      threads.slice(args.offset ?? 0, (args.offset ?? 0) + (args.limit ?? 200)));
+    harness.sdk.stub("threads.experimental_listPluginMetadata" as never, async (args: { pluginId?: string; threadIds: string[] }) => ({
+      threads: args.threadIds.flatMap((id) => {
+        const t = threads.find((x) => x.id === id);
+        return t ? [{ threadId: id, metadata: { role: "writer", lanePilotWorkflowRunId: "w1" } }] : [];
+      }),
+    }));
+    return bb;
+  }
+
+  it("builds projects + window threads + lane-pilot metadata rows for the child's in-memory core schema", async () => {
+    const bb = host(
+      [{ id: "t1", createdAt: NOW - 3_600_000 }, { id: "t2", createdAt: NOW - 40 * 86_400_000 }, { id: "t3", createdAt: (NOW - 3_600_000) / 1000 }],
+      [{ id: "proj_real", name: "SelfyStudio" }],
+    );
+    const { snapshot, degraded } = await coreSnapshotViaSdk(bb as never, SINCE);
+    expect(degraded).toEqual([]);
+    expect(snapshot.projects).toEqual([{ id: "proj_real", name: "SelfyStudio" }]);
+    // t2 is outside the window; t3's seconds epoch is normalised to ms and kept.
+    expect(snapshot.threads.map((row) => row.id).sort()).toEqual(["t1", "t3"]);
+    expect(snapshot.threads.find((row) => row.id === "t3")?.created_at).toBe(NOW - 3_600_000);
+    expect(snapshot.threadPluginMetadata).toHaveLength(2);
+    expect(snapshot.threadPluginMetadata[0]).toMatchObject({ thread_id: expect.any(String), plugin_id: "lane-pilot" });
+    expect(JSON.parse(snapshot.threadPluginMetadata[0]!.metadata_json)).toMatchObject({ role: "writer" });
+  });
+
+  it("a failed section degrades by name and leaves the others intact", async () => {
+    const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
+    harness.sdk.stub("projects.list" as never, async () => { throw new Error("projects down"); });
+    harness.sdk.stub("threads.list" as never, async () => [{ id: "t1", createdAt: NOW - 3_600_000 }]);
+    harness.sdk.stub("threads.experimental_listPluginMetadata" as never, async () => ({ threads: [] }));
+    const { snapshot, degraded } = await coreSnapshotViaSdk(bb as never, SINCE);
+    expect(snapshot.projects).toEqual([]);
+    expect(snapshot.threads).toHaveLength(1);
+    expect(degraded.join(" ")).toContain("projects: projects down");
+  });
+
+  it("an SDK without the batched metadata read degrades the coverage section, not the report", async () => {
+    const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
+    harness.sdk.stub("projects.list" as never, async () => [{ id: "p", name: "P" }]);
+    // no threads.experimental_listPluginMetadata stub at all
+    const { snapshot, degraded } = await coreSnapshotViaSdk(bb as never, SINCE);
+    expect(snapshot.projects).toHaveLength(1);
+    expect(snapshot.threads).toEqual([]);
+    expect(degraded.join(" ")).toContain("graph coverage");
+  });
+});
+
 describe("the schedules", () => {
   function mount(opts: { dryRun?: boolean; send?: () => Promise<void>; now?: number }) {
     const db = new Database(":memory:");
@@ -152,7 +227,7 @@ describe("the schedules", () => {
     const send = vi.fn(opts.send ?? (async () => undefined));
     const run = vi.fn(async () => ({ lines: [] as string[], errors: [] as string[] }));
     if (opts.dryRun) db.prepare("insert into lane_pilot_owner_config values ('dry_run','on',1)").run();
-    return { db, schedules, log, ack, send, run, mount: () => mountReports(ctx as never, { digest: async () => digest, ack, coreFile: "/none", send, run }) };
+    return { db, schedules, log, ack, send, run, mount: () => mountReports(ctx as never, { digest: async () => digest, ack, send, run }) };
   }
 
   it("registers the owner push every 30 minutes and the daily report hourly (a tick sends once a day)", () => {

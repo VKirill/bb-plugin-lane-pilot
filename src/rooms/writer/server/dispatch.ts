@@ -11,17 +11,17 @@ import { reserveAppetite, resolveBestOf } from "../best-of";
 import type { CodeCriticDefault } from "../../contracts/task-enums";
 import { saveCriticCodeDefault } from "./critic-override";
 import { wfLivePipelineRun, wfRunInputsByKey } from "@lane-pilot/workflow-engine";
-import { getRunObjective, setRunObjective, createAttempt, createTask, freeTaskId, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getRunWriterHost, getTask, getTaskPlan, latestTaskAttemptState, getTaskRow, hasFailedStageReceipt, listAttemptsForTask, listAttemptsUpdatedSince, listOpenAttempts, listRunsWithAttempts, listRunTaskRows, listStageReceipts, listTaskKinds, listTaskTerminalStates, loadProjectSettings, saveTaskPlan, setRunState, taskBasePath, transitionAttempt } from "../../storage";
+import { TASK_HOME_EXCLUDE, bbTaskFileIo, getRunObjective, setRunObjective, createAttempt, createTask, freeTaskId, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getRunWriterHost, getTask, getTaskPlan, latestTaskAttemptState, getTaskRow, hasFailedStageReceipt, listAttemptsForTask, listAttemptsUpdatedSince, listOpenAttempts, listRunsWithAttempts, listRunTaskRows, listStageReceipts, listTaskKinds, listTaskTerminalStates, loadProjectSettings, saveTaskPlan, setRunState, taskBasePath, transitionAttempt } from "../../storage";
 import { birthGates, commonTaskFolder, isMainfixTask, isTaskBase, landingWordAsked, leavesSection, ownerSaidNo, ownerWordsMode, parseRepoRoot, parseRepoTop, planWithOutsideReads, planWithRepoScope, repoRootCommand, repoTopCommand, rerootTask, rerootToRepoRoot, sha256 , spendReserve, taskStepEvidence, type BirthKind } from "../../tasks";
 import { liveFolderLockNote, nextStep } from "../../contracts/failure-class"
 import { taskFamily } from "@lane-pilot/contracts";
-import { validateTaskV2 } from "../../tasks/task-v2";
+import { validateTaskV2 } from "../../tasks";
 import { createTaskLinter, lintReply } from "../../tasks/server";
 import type { LintFinding } from "../../tasks/server";
 import { bestEffort, id, parseJsonOr, pollPause, stringAt, valueAt } from "@lane-pilot/kit";
 import { dispatchReply, dispatchRunKey, startDispatchRun, pipelineUnavailable } from "./dispatch-workflow";
 import { appendExcludeCommand, suggestTests, testHintLine } from "../../verification";
-import { bbTaskFileIo, TASK_HOME_EXCLUDE, writeDispatchHome } from "./task-home";
+import { writeDispatchHome } from "./task-home";
 import { gateResolverFor, gateRunVerdict } from "../../verification/server"
 import { latestGateRunForTask } from "../../storage"
 import { parseIntegrationGateSettings } from "../../contracts/integration-gate";

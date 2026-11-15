@@ -19,7 +19,8 @@ import { receiptChain, verifyChain } from "../../src/rooms/tools/server/receipts
 import { registerCli } from "../../src/rooms/tools/server/cli";
 import { referenceTestEdits } from "../../src/rooms/tasks/rails";
 import { renderTaskManifest, resolveTaskFile } from "../../src/rooms/storage";
-import { bbTaskFileIo, placeTaskHomeIn, recordAcceptanceFiles, writeDispatchHome } from "../../src/rooms/writer/server/task-home";
+import { bbTaskFileIo } from "../../src/rooms/storage";
+import { placeTaskHomeIn, recordAcceptanceFiles, writeDispatchHome } from "../../src/rooms/writer/server/task-home";
 import { taskV2Schema } from "../../src/rooms/contracts";
 import { readWires, wiresCommand } from "../../src/rooms/wires";
 

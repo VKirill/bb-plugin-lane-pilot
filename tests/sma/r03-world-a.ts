@@ -23,7 +23,8 @@ import { grantRunFolders } from "../../src/rooms/verification/worker-user";
 import { runSandboxedCommandOnHost } from "../../src/rooms/verification/sandbox";
 import { attemptEnvironment } from "../../src/rooms/critique/server/critique-runs/attempt-diffs";
 import { openTaskHome, renderTaskManifest, resolveTaskFile } from "../../src/rooms/storage";
-import { bbTaskFileIo, placeTaskHomeIn, recordAcceptanceFiles, writeDispatchHome } from "../../src/rooms/writer/server/task-home";
+import { bbTaskFileIo } from "../../src/rooms/storage";
+import { placeTaskHomeIn, recordAcceptanceFiles, writeDispatchHome } from "../../src/rooms/writer/server/task-home";
 import { resolveRoleModel, roleDefaultModel } from "../../packages/models/src/role-models";
 import { creatorBrief, lintDraft } from "../../src/rooms/forge/logic";
 

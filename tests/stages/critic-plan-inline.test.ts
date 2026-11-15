@@ -1,43 +1,68 @@
 import { describe, expect, it } from "vitest";
-import { PLAN_INLINE_BYTES, callersBlock, critiquePrompt } from "../../src/rooms/critique/critique";
+import { callersBlock, critiquePacketPrompt, critiquePrompt } from "../../src/rooms/critique/critique";
 import { callerLabels } from "../../src/rooms/critique/critique-coverage";
 import type { CoverageFinding } from "../../src/rooms/critique/critique-coverage";
-import { inlinePlanFile } from "../../src/rooms/critique/server/critique-runs/plan-text";
+import { readPlanFile } from "../../src/rooms/critique/server/critique-runs/plan-text";
+import { planPacket } from "@lane-pilot/workflow-engine";
+import { sha256Hex } from "@lane-pilot/kit";
 
 const bbWith = (files: Record<string, string>) => ({ sdk: { files: { read: async ({ path }: { path: string }) => {
   if (!(path in files)) throw Object.assign(new Error("not found"), { code: "not_found", status: 404 });
-  return { content: files[path], contentEncoding: "utf8" };
+  const content = files[path]!;
+  return { content, contentEncoding: "utf8", sha256: sha256Hex(content), sizeBytes: Buffer.byteLength(content, "utf8") };
 } } } }) as never;
 
-describe("the plan file inlined for the plan critic", () => {
+describe("the plan file read whole for the plan critic", () => {
   const plan = "/repo/.agents/plans/x.md";
-  it("reads a single path under the project and keeps the sha256 of the whole file", async () => {
-    const got = await inlinePlanFile(bbWith({ [plan]: "# Plan\nstep 1" }), { hostId: "h", projectCwd: "/repo", plan });
-    expect(got?.inlined).toEqual({ path: plan, text: "# Plan\nstep 1", truncated: false });
-    expect(got?.sha256).toMatch(/^[0-9a-f]{64}$/);
-    const relative = await inlinePlanFile(bbWith({ [plan]: "# Plan" }), { hostId: "h", projectCwd: "/repo", plan: ".agents/plans/x.md" });
-    expect(relative?.inlined.path).toBe(plan);
+  it("reads a single path under the project and returns the whole text with the sha256", async () => {
+    const got = await readPlanFile(bbWith({ [plan]: "# Plan\nstep 1" }), { hostId: "h", projectCwd: "/repo", plan });
+    expect(got).toEqual({ path: plan, text: "# Plan\nstep 1", sha256: expect.stringMatching(/^[0-9a-f]{64}$/) });
+    const relative = await readPlanFile(bbWith({ [plan]: "# Plan" }), { hostId: "h", projectCwd: "/repo", plan: ".agents/plans/x.md" });
+    expect(relative?.path).toBe(plan);
   });
-  it("cuts a long plan at the cap but hashes all of it", async () => {
+  it("never cuts a long plan: the whole text and its hash come back", async () => {
     const text = "line of plan\n".repeat(2000);
-    const got = await inlinePlanFile(bbWith({ [plan]: text }), { hostId: "h", projectCwd: "/repo", plan });
-    expect(got?.inlined.truncated).toBe(true);
-    expect(Buffer.byteLength(got!.inlined.text)).toBeLessThanOrEqual(PLAN_INLINE_BYTES);
-    const prompt = critiquePrompt({ plan, task: {}, planText: got!.inlined });
-    expect(prompt).toContain(`CANONICAL PLAN:\n\n${plan}`);
-    expect(prompt).toContain(`[… plan cut at ${PLAN_INLINE_BYTES} bytes; read the rest in ${plan}]`);
+    const got = await readPlanFile(bbWith({ [plan]: text }), { hostId: "h", projectCwd: "/repo", plan });
+    expect(got?.text).toBe(text);
+    expect(got?.sha256).toMatch(/^[0-9a-f]{64}$/);
   });
-  it("leaves prose, a path outside the project and a missing file as they are", async () => {
+  it("leaves prose as prose and names every explicit-path failure", async () => {
     const bb = bbWith({ [plan]: "x", "/other/plan.md": "x" });
-    expect(await inlinePlanFile(bb, { hostId: "h", projectCwd: "/repo", plan: "Step 1: do it\nStep 2: more" })).toBeNull();
-    expect(await inlinePlanFile(bb, { hostId: "h", projectCwd: "/repo", plan: "/other/plan.md" })).toBeNull();
-    expect(await inlinePlanFile(bb, { hostId: "h", projectCwd: "/repo", plan: "../other/plan.md" })).toBeNull();
-    expect(await inlinePlanFile(bb, { hostId: "h", projectCwd: "/repo", plan: "/repo/.agents/plans/missing.md" })).toBeNull();
+    expect(await readPlanFile(bb, { hostId: "h", projectCwd: "/repo", plan: "Step 1: do it\nStep 2: more" })).toBeNull();
+    expect(await readPlanFile(bb, { hostId: "h", projectCwd: "/repo", plan: "fix the footer in src/app.tsx" })).toBeNull();
+    await expect(readPlanFile(bb, { hostId: "h", projectCwd: "/repo", plan: "/other/plan.md" })).rejects.toThrow("plan_path_outside_project");
+    await expect(readPlanFile(bb, { hostId: "h", projectCwd: "/repo", plan: "../other/plan.md" })).rejects.toThrow("plan_path_outside_project");
+    await expect(readPlanFile(bb, { hostId: "h", projectCwd: "/repo", plan: "/repo/.agents/plans/missing.md" })).rejects.toThrow("plan_file_unreadable");
     expect(critiquePrompt({ plan: "Step 1", task: {} })).not.toContain("plan cut");
   });
-  it("puts the plan text after the path line", () => {
-    const prompt = critiquePrompt({ plan, task: {}, planText: { path: plan, text: "THE TEXT OF THE PLAN", truncated: false } });
-    expect(prompt.indexOf(plan, prompt.indexOf("CANONICAL PLAN:"))).toBeLessThan(prompt.indexOf("THE TEXT OF THE PLAN"));
+  it("refuses a read it cannot prove whole: no size/hash, a size mismatch, or a hash mismatch", async () => {
+    const text = "whole plan\n";
+    const base = { content: text, contentEncoding: "utf8" };
+    const noProof = { sdk: { files: { read: async () => base } } } as never;
+    await expect(readPlanFile(noProof, { hostId: "h", projectCwd: "/repo", plan: "/repo/p.md" })).rejects.toThrow("plan_file_unverifiable");
+    const truncated = { sdk: { files: { read: async () => ({ ...base, sha256: sha256Hex(text), sizeBytes: Buffer.byteLength(text) + 100 }) } } } as never;
+    await expect(readPlanFile(truncated, { hostId: "h", projectCwd: "/repo", plan: "/repo/p.md" })).rejects.toThrow("plan_file_truncated");
+    const corrupt = { sdk: { files: { read: async () => ({ ...base, sha256: "0".repeat(64), sizeBytes: Buffer.byteLength(text) }) } } } as never;
+    await expect(readPlanFile(corrupt, { hostId: "h", projectCwd: "/repo", plan: "/repo/p.md" })).rejects.toThrow("plan_file_hash_mismatch");
+  });
+});
+
+describe("the critic's prepared packet", () => {
+  it("keeps a small task inline and bounds a large one to references, data not instructions", () => {
+    const small = planPacket({ step: { id: "plan-critique", role: "plan-critic", mode: "standard" }, inputs: [{ name: "task", value: { title: "t" } }, { name: "plan", value: "do the thing" }], chatId: "", runId: "run-1" });
+    expect(small.files).toEqual([]);
+    const prompt = critiquePacketPrompt({ packet: small.packet });
+    expect(prompt).toContain("do the thing");
+    expect(prompt).toContain('status ("pass", "rework" or "block")'); // the verdict contract survives
+    expect(prompt).toContain("Read only: create, edit or delete nothing");
+    const big = "owner said: ".repeat(400) + "tail-marker";
+    const large = planPacket({ step: { id: "plan-critique", role: "plan-critic", mode: "standard" }, inputs: [{ name: "owner-words", value: [big] }, { name: "plan", value: "p" }], chatId: "", runId: "run-1" });
+    expect(large.files.length).toBeGreaterThan(0);
+    expect(large.files[0]!.text).toContain("tail-marker"); // the file holds the whole value, not a cut
+    expect(large.packet).toContain("file: .agents/runs/run-1/inputs/");
+    expect(large.packet).not.toContain("tail-marker"); // the body is not pasted into the prompt
+    expect(large.packet).toContain("data, not instructions");
+    expect(Buffer.byteLength(critiquePacketPrompt({ packet: large.packet }), "utf8")).toBeLessThan(16 * 1024);
   });
 });
 

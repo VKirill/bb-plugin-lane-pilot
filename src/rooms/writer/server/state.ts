@@ -53,8 +53,9 @@ export function createWriterState(ctx: ServerCore) {
     ctx.bb.log.warn(`Lane Pilot: ${pair.providerId}/${pair.model} hit a provider limit (${notice}); helper picks skip it for ${hold / 60_000} min`);
   });
 
-  /** Cancels the retry BB's provider-retry queued in a writer thread once the task moved on to another writer. */
-  const providerRetry = createProviderRetryGuard(ctx.bb);
+  /** Cancels the retry BB's provider-retry queued in a writer thread once the task moved on to another writer.
+   *  With the store it also answers provider-retry's consent call and drops late queued retries of ended work. */
+  const providerRetry = createProviderRetryGuard(ctx.bb, ctx.db);
 
   /** BB's concurrency-limit plugin: how many writers a host may run; null without the plugin. */
   const concurrencyLimit = createConcurrencyLimit(ctx.bb);

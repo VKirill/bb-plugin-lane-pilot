@@ -1,3 +1,4 @@
+import { MAX_SOURCE_BYTES } from "@lane-pilot/contracts";
 import { lstat, readFile, realpath } from "node:fs/promises";
 import { stripTypeScriptTypes } from "node:module";
 import { isAbsolute, resolve, sep } from "node:path";
@@ -109,7 +110,6 @@ const MAX_WINDOWS = 8;
 
 export type LineWindow = { startLine: number; endLine: number };
 
-const MAX_SOURCE_BYTES = 512 * 1024;
 const OPEN_CODE_ENTRY = "profiles/opencode/opencode-lane.ts";
 const OPEN_CODE_INDEX = "profiles/opencode/opencode-lane/index.ts";
 const OPEN_CODE_V2 = "profiles/opencode/opencode-lane/v2.ts";

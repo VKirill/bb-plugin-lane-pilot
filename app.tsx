@@ -16,6 +16,11 @@ import { bindThreadRowStatus } from "./src/rooms/runs/ui";
 
 /** VK core 0.46.1-vk.5: a section of the thread's info panel (feature-tested; older cores get a panel tab instead). */
 type VkThreadInfoSection = (registration: { id: string; title: string; component: ComponentType<{ threadId: string; projectId: string }> }) => void;
+/** Stock `experimental_threadInfoSection`: the host draws section chrome; the component keeps its own visible title. */
+type StockThreadInfoSection = (registration: {
+  id: string; group: string; order?: number;
+  component: ComponentType<{ threadId: string; projectId: string; environment: unknown }>;
+}) => void;
 /** The thread action tab that replaces `threadPanelAction` (feature-tested; an older BB gets the retired slot instead). */
 type ExperimentalTabSlot = (registration: {
   id: string; title: string; icon: string; layout?: "padded" | "flush";
@@ -78,11 +83,25 @@ export default definePluginApp((app) => {
     component: ({ threadId, params }) => <HelperThreadPanel threadId={threadId} params={params} />,
   });
   // What Lane Pilot does for this chat (tasks now, step by step), in the thread's info panel below the uncommitted files.
-  const infoSection = (app.slots as unknown as { experimental_vkThreadInfoSection?: VkThreadInfoSection }).experimental_vkThreadInfoSection;
-  if (typeof infoSection === "function") {
-    infoSection.call(app.slots, { id: "lane-pilot-live", title: t("liveTitle"), component: ({ threadId }) => <ThreadLive threadId={threadId} locale={detectLocale()} /> });
+  const slots = app.slots as unknown as {
+    experimental_threadInfoSection?: StockThreadInfoSection;
+    experimental_vkThreadInfoSection?: VkThreadInfoSection;
+    experimental_THREAD_INFO_SECTION_GROUPS?: { related: string };
+  };
+  const liveComponent = ({ threadId }: { threadId: string }) => <ThreadLive threadId={threadId} locale={detectLocale()} />;
+  if (typeof slots.experimental_threadInfoSection === "function") {
+    slots.experimental_threadInfoSection.call(app.slots, {
+      id: "lane-pilot-live",
+      group: slots.experimental_THREAD_INFO_SECTION_GROUPS?.related ?? "1_related",
+      component: liveComponent,
+    });
   } else {
-    threadActionTab({ id: "lane-pilot-live", title: t("liveTitle"), component: ({ threadId }) => <ThreadLive threadId={threadId} locale={detectLocale()} /> });
+    const infoSection = slots.experimental_vkThreadInfoSection;
+    if (typeof infoSection === "function") {
+      infoSection.call(app.slots, { id: "lane-pilot-live", title: t("liveTitle"), component: liveComponent });
+    } else {
+      threadActionTab({ id: "lane-pilot-live", title: t("liveTitle"), component: liveComponent });
+    }
   }
   // A short role mark on the sidebar rows of helper threads (newer BB only; the slot is feature-tested).
   const rowMetadata = (app.slots as unknown as { experimental_threadRowMetadata?: (registration: {

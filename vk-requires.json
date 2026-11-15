@@ -18,6 +18,7 @@
     "experimental_vkOnHookTimeout",
     "experimental_vkPluginMetadata",
     "experimental_vkLastTurn",
-    "experimental_vkLaunchTuning"
+    "experimental_vkLaunchTuning",
+    "experimental_vkInspectRequiredSessionPolicies"
   ]
 }

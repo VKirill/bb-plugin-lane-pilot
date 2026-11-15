@@ -88,6 +88,7 @@ import type { ScheduleService } from "../../schedule/server/schedule-service";
 import type { RuleScanApi } from "../../self-repair/server/rule-scan";
 import type { ReconcileApi } from "../../stability/server/reconcile";
 import type { BuildCliInvocation, DispatchWriter, WorkflowEngineApi, WorkflowTriggersApi, WriterHostApi } from "../../platform/server";
+import { invalidateRpcTags } from "../../platform/server";
 import type { WriterStateApi } from "../../writer/server";
 
 import type { StabilityPort } from "../../contracts";
@@ -181,7 +182,8 @@ export function registerRpc(ctx: ServerCore, services: Services, contract: typeo
     ...rollbackRpc(services.rollback),
     ...acceptanceRpc(ctx.db),
     ...benchRpc(services.bench),
-    ...ownerWaitingRpc(ctx.db, ownerSweeps, services.ownerLearningItems, (message) => ctx.log(message), postEvent),
+    ...ownerWaitingRpc(ctx.db, ownerSweeps, services.ownerLearningItems, (message) => ctx.log(message), postEvent,
+      () => invalidateRpcTags(ctx.bb, ["owner_waiting"])),
     ...backlogRpc(services.backlog),
     ...leadRpc(ctx.db, services.lead),
     ...errandsRpc(ctx, services),

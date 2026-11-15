@@ -94,3 +94,4 @@ export { spawnClaimed } from "./spawn-claim";
 export type { IsTaskSatisfied } from "./runs-api";
 export * from "./worktrees";
 export { NATIVE_HOOK_SOURCES } from "./native-hook-sources";
+export * from "./service-notice";

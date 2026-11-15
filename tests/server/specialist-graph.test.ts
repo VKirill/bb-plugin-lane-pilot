@@ -1,7 +1,9 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { afterEach, describe, expect, it } from "vitest";
+import { sha256Hex } from "@lane-pilot/kit";
 import plugin from "../../server";
 import { createRun, openDatabase, setRunThread } from "../../src/rooms/plugin-db";
+import { coreFileWrite, mapStore } from "../helpers/core-files";
 import {builtinWorkflow} from "../../src/rooms/workflow/builtin";
 import { roleSpec } from "../../src/rooms/workflow/server/workflow-agent";
 import { SPECIALIST_GRAPH } from "../../src/rooms/critique/server";
@@ -19,6 +21,10 @@ afterEach(async () => { await dispose?.(); dispose = null; });
 
 async function world() {
   const spawned: Array<Record<string, unknown>> = [];
+  // The step packet's big values are delivered as content-addressed files before the helper spawns (strict
+  // create-only contract): the fake answers with the core's structured outcome over an in-memory store.
+  const written = new Map<string, string>();
+  const store = mapStore(written);
   const { bb, harness } = createFakePluginHost({
     pluginId: "lane-pilot",
     sdk: {
@@ -30,6 +36,14 @@ async function world() {
         output: async () => ({ output: reply("Copy written to .agents/copy/h1.md") }),
       },
       environments: { get: async () => ({ id: "env-pm", hostId: "local-host", path: process.cwd(), status: "ready" }) },
+      files: {
+        read: async (args: { path: string }) => {
+          const content = store.get(args.path);
+          if (content === null) throw Object.assign(new Error("not found"), { code: "not_found" });
+          return { content, sha256: sha256Hex(content) };
+        },
+        write: coreFileWrite(store) as never,
+      },
     },
   });
   await plugin(bb);
@@ -39,7 +53,7 @@ async function world() {
   setRunThread(db, runId, pmThreadId);
   const call = async (name: string, params: Record<string, unknown>, thread = pmThreadId) =>
     JSON.parse(String(await harness.behavior.callAgentTool(name, params, { threadId: thread, projectId }))) as Record<string, any>;
-  return { bb, db, spawned, call };
+  return { bb, db, spawned, written, call };
 }
 
 describe("the graph behind lane_pilot_specialist", () => {
@@ -55,9 +69,13 @@ describe("the graph behind lane_pilot_specialist", () => {
     await t.bb.storage.kv.set(`lp.role.lines:${projectId}:copy-lead`, ["2026-10-20 never promise a price in an H1"] as never);
     const started = await t.call("lane_pilot_specialist", { role: "copy-lead", task: "Write three H1 variants for /pricing.", title: "H1 for pricing" });
     const prompt = String(t.spawned[0]!.prompt);
-    expect(prompt).toContain("never promise a price in an H1");
-    expect(prompt.match(/Write three H1 variants/g)).toHaveLength(1);
-    expect(prompt).toContain("write only your deliverable");
+    // brief.text is over the inline bound, so the packet delivers it whole as a file and the prompt points at it.
+    const delivered = [...t.written.values()].find((content) => content.includes("never promise a price in an H1"));
+    expect(delivered).toBeDefined();
+    expect(delivered).toContain("write only your deliverable");
+    expect(delivered!.match(/Write three H1 variants/g)).toHaveLength(1);
+    expect(prompt).toContain("data, not instructions");
+    expect(prompt).toContain("file:");
     expect(prompt).not.toContain("<inputs>");
     expect(prompt).not.toContain("- task:");
     expect(prompt).toContain('step "work" (H1 for pricing)');

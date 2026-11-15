@@ -1,14 +1,14 @@
-import { scheduleIsolated } from "../../platform/server";
+import { scheduleIsolated, invalidateRpcTags } from "../../platform/server";
 import { bindPhaseDesigns } from "../../tasks/server";
 import { type ServerCore } from "../../contracts/server";
-import { listPhases, listParts, resolvePhaseRef } from "../store";
+import { getPhase, listPhases, listParts, onPhaseChanged, resolvePhaseRef } from "../store";
 import { acceptanceKey, anyTurnAsks, observationDue, candidateOn, designGate, discussionGate, nextAction, openQuestions, phaseFolder, planGate, planSignature, renderBook, withdrawProblem, wordOf, type Phase } from "../logic";
 import { getRun, getRunWriterHost, runClosedBy } from "../../storage";
 import { hostContract } from "../../contracts";
 import { runOnHost } from "@lane-pilot/host-calls";
 import { bestEffort } from "@lane-pilot/kit";
 import { createPhaseIntake } from "./intake";
-import { recoverStopped } from "./auto-stages";
+import { autoDue, recoverStopped } from "./auto-stages";
 import type { PhaseReactions } from "./reactions";
 import { installDocs } from "./driver-docs";
 import { installJournal } from "./driver-journal";
@@ -116,8 +116,11 @@ export function createPhaseDriver(ctx: ServerCore, services: Services, reactions
       try {
         const after = await steps.finishClosed(await steps.drive(phase));
         if (after.stage !== phase.stage || after.state !== phase.state) moved += 1;
-        // The machine drives the train: a stage it can run is not poked to the PM.
-        if (!(await auto.step(docs.mustGet(after.id)))) await steps.poke(docs.mustGet(after.id));
+        // The machine drives the train: a stage it can run is not poked to the PM. A failed stage also answers false
+        // (its retry is already booked for the next pass), so the poke waits for a fresh read: autoDue says whether the
+        // machine owns what is due — only then is the PM genuinely needed (owner word, train=false, spent tries).
+        const stepped = docs.mustGet(after.id);
+        if (!(await auto.step(stepped)) && !autoDue(docs.mustGet(stepped.id))) await steps.poke(docs.mustGet(stepped.id));
         await docs.writeBook(docs.mustGet(after.id)).catch((cause: unknown) => ctx.log(`phase ${phase.id}: book not written: ${cause instanceof Error ? cause.message : String(cause)}`));
       } catch (cause) {
         ctx.log(`phase ${phase.id}: ${cause instanceof Error ? cause.message : String(cause)}`);
@@ -189,6 +192,12 @@ export function createPhaseDriver(ctx: ServerCore, services: Services, reactions
 export type PhaseApi = ReturnType<typeof createPhaseDriver>["phases"];
 
 export function mountPhaseDriver(ctx: ServerCore, api: PhaseApi): void {
+  // Phase cards sit on the watched task board: every phase write (driver, intake, CLI in this process)
+  // marks the board's tags stale so an open panel re-reads instead of waiting out the safety poll.
+  onPhaseChanged(ctx.db, (phaseId) => {
+    const projectId = getPhase(ctx.db, phaseId)?.projectId;
+    if (projectId) invalidateRpcTags(ctx.bb, [`task-board:${projectId}`, "task-board:all"]);
+  });
   scheduleIsolated(ctx.bb, "phase-drive", "*/2 * * * *", async (signal) => {
     if (ctx.isDisposed() || signal?.aborted) return;
     await api.tick(signal).catch((cause: unknown) => ctx.log(`phase drive failed: ${cause instanceof Error ? cause.message : String(cause)}`));

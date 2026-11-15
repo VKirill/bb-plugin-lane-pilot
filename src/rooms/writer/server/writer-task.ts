@@ -218,16 +218,23 @@ export function previousAttemptBrief(last:Record<string, unknown> | null | undef
     const never = task?.never_touch ? files.filter((file) => task.never_touch!.some((pattern) => matchOwnsPath(file, pattern))) : [];
     const outside = task ? files.filter((file) => !never.includes(file)) : [];
     const undo = "→ undo only your own edits there (remove what you added, put back what you changed); do not git checkout/restore the file or make it match git HEAD: it may hold uncommitted work from before your attempt, and Lane Pilot compares it with its state before your attempt";
+    // F4 (layers audit 2026-11-15): in the attempt's own worktree nothing outside owns_paths is merged, so a writer that needs
+    // such a file keeps its edit while it asks, instead of undoing it and redoing it once owns_paths is widened. A live
+    // folder is the owner's checkout, and never_touch is never widened: both are still undone first.
+    const isolated = Boolean(task) && !liveFolder;
     if (never.length) bullets.push(`never_touch files (${never.join(", ")}) ${undo}`);
-    if (outside.length) bullets.push(`files outside owns_paths (${outside.join(", ")}) ${undo}`);
+    if (outside.length) bullets.push(isolated
+      ? `files outside owns_paths (${outside.join(", ")}): if the task can be done without them ${undo}; if it cannot, keep your edits to them (this worktree is your attempt's alone and nothing outside owns_paths is merged), change nothing else outside owns_paths, and answer \`${ASK_PM_MARKER} the task needs ${outside.join(", ")} changed (<why>); add ${outside.length > 1 ? "them" : "it"} to owns_paths\` — if the PM declines, undo them then`
+      : `files outside owns_paths (${outside.join(", ")}) ${undo}`);
     if (!task) bullets.push(`files outside owns_paths or in never_touch (${files.join(", ")}) ${undo}`);
     // A writer told only «undo your own edits» kept a file it had created, unsure what was there before (live sandbox
     // 2026-10-07, lpv-c2d). Lane Pilot knows: a file that was not dirty before the attempt held no one's work.
     const clean = dirtBefore ? files.filter((file) => !dirtBefore.some((row) => row.path === file)) : [];
     if (clean.length) bullets.push(liveFolder
       ? `${clean.join(", ")} did not exist before your attempt → delete ${clean.length > 1 ? "any of them" : "it"} you created`
-      : `${clean.join(", ")} had no uncommitted changes before your attempt → delete ${clean.length > 1 ? "any of them" : "it"} you created, and restore any you changed with \`git checkout -- <file>\``);
-    bullets.push(`if the task cannot be done without changing ${files.length > 1 ? "them" : "it"}, undo your edits there and answer \`${ASK_PM_MARKER} the task needs ${files.join(", ")} changed (<why>); add ${files.length > 1 ? "them" : "it"} to owns_paths\``);
+      : `${isolated && outside.length ? "when you undo them: " : ""}${clean.join(", ")} had no uncommitted changes before your attempt → delete ${clean.length > 1 ? "any of them" : "it"} you created, and restore any you changed with \`git checkout -- <file>\``);
+    const undone = isolated ? never : files;
+    if (undone.length) bullets.push(`if the task cannot be done without changing ${undone.length > 1 ? "them" : "it"}, undo your edits there and answer \`${ASK_PM_MARKER} the task needs ${undone.join(", ")} changed (<why>); add ${undone.length > 1 ? "them" : "it"} to owns_paths\``);
   }
   const unproven = /plan_fact_unproven: acceptance items? ([\d, ]+)/.exec(reason)?.[1]?.trim();
   if (unproven) bullets.push(`acceptance item ${unproven} had no evidence that holds in the diff → finish that item, then give it a plan-fact row whose evidence is a file you changed with the lines (path:first-last) or a verification command (cmd:<command>); if an item cannot be done, say so with status not_done and answer \`${ASK_PM_MARKER} <why>\``);

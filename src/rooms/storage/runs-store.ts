@@ -45,8 +45,10 @@ export function freezeRunBinding(db: LanePilotDatabase, runId: string, binding: 
   return result.changes === 1;
 }
 
+/** A closed run keeps «closed»: nothing reopens a run (closed_at is never cleared), so a late refresh — a task edited
+ * in place after the close, an activation that still names the run — must not write it back to running or blocked. */
 export function setRunState(db: LanePilotDatabase, runId: string, state: string): void {
-  db.prepare("UPDATE lane_pilot_run SET state=?, updated_at=? WHERE id=?").run(state, Date.now(), runId);
+  db.prepare("UPDATE lane_pilot_run SET state=?, updated_at=? WHERE id=? AND closed_at IS NULL").run(state, Date.now(), runId);
 }
 
 export function closeRun(db: LanePilotDatabase, runId: string, closedBy: "rpc" | "cli" | "sweep" | "ttl"): boolean {
@@ -204,14 +206,14 @@ export function hasRunForPmThread(db: LanePilotDatabase, threadId: string): bool
 }
 
 /** The run an attempt belongs to: the project and PM thread a signal about the attempt is for. */
-export function attemptRunRef(db: LanePilotDatabase, attemptId: string): { project_id: string; pm_thread_id: string | null } | undefined {
-  return db.prepare("SELECT r.project_id, r.pm_thread_id FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id WHERE a.id=?")
-    .get(attemptId) as { project_id: string; pm_thread_id: string | null } | undefined;
+export function attemptRunRef(db: LanePilotDatabase, attemptId: string): { project_id: string; pm_thread_id: string | null; thread_id: string | null } | undefined {
+  return db.prepare("SELECT r.project_id, r.pm_thread_id, a.thread_id FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id WHERE a.id=?")
+    .get(attemptId) as { project_id: string; pm_thread_id: string | null; thread_id: string | null } | undefined;
 }
 
 /** The project's open run (pending or running), newest first. */
 export function activeRunForProject(db: LanePilotDatabase, projectId: string): { id: string; pm_thread_id: string | null } | undefined {
-  return db.prepare("SELECT id, pm_thread_id FROM lane_pilot_run WHERE project_id=? AND state IN ('pending','running') ORDER BY created_at DESC LIMIT 1")
+  return db.prepare("SELECT id, pm_thread_id FROM lane_pilot_run WHERE project_id=? AND closed_at IS NULL AND state IN ('pending','running') ORDER BY created_at DESC LIMIT 1")
     .get(projectId) as { id: string; pm_thread_id: string | null } | undefined;
 }
 

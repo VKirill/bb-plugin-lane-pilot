@@ -9,6 +9,7 @@ import { planGate, type Phase, type PhaseRecord } from "../src/rooms/phase/logic
 import { threatGap } from "../src/rooms/phase/stages";
 import { listParts, savePhase } from "../src/rooms/phase/store";
 import { createRun, openDatabase, setRunThread } from "../src/rooms/plugin-db";
+import packageJson from "../package.json";
 
 /**
  * Fable's recheck of 0.1.341 (R1), built from the real data of the drill phase ph_5cd09d1c7a (hub, 2026-10-27 00:06 UTC, Lane Pilot 0.1.336):
@@ -139,5 +140,52 @@ describe("R1: a phase stopped by Lane Pilot's own gap resumes after the release"
     // Not again: a second tick does not book the resume twice.
     await phases.tick();
     expect(listParts(db, phase.id).filter((part) => part.kind === "resume_after_fix")).toHaveLength(1);
+  });
+});
+
+describe("0.1.575: the driver pokes the PM only when the machine has nothing due", () => {
+  const sends: string[] = [];
+  const world = async (record: PhaseRecord) => {
+    const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
+    harness.sdk.stub("threads.send", async (input: { input?: Array<{ text?: string }> }) => { sends.push(input.input?.[0]?.text ?? ""); return {}; });
+    harness.sdk.stub("threads.get", async () => ({ status: "idle" }));
+    harness.sdk.stub("threads.list", async () => []);
+    const db = openDatabase(bb);
+    createRun(db, "run1", "projA");
+    setRunThread(db, "run1", "thr_pm");
+    const services = { rollback: {}, workflowEngine: {
+      start: () => ({ runId: "wfrun_x", created: true, done: new Promise(() => undefined) }),
+      get: (runId: string) => runId === "wfrun_x" ? { runId, status: "blocked", reason: null, error: "budget_exceeded:wall_time", failedNode: null, waiting: [], stopped: false, output: null } : null,
+      resolveWorkflow: () => null,
+    } } as unknown as Services;
+    const phases = createPhaseDriver(createCore(bb, db), services).phases;
+    const phase = await phases.open({ projectId: "projA", pmThreadId: "thr_pm", title: "Drill route", goal: "a drill file" });
+    savePhase(db, phase.id, { stage: "planning", state: "active", record, runId: "run1", at: 1 });
+    return { phases, phase, db };
+  };
+  // autoFailuresVersion must be this release's: an older stamp makes the driver's pass forget the counters before autoDue reads them.
+  const failedPlan = (extra: Record<string, unknown> = {}) => ({ ...STOPPED, closing: undefined, scope: undefined, lessons: undefined, autoFailures: undefined, autoFailuresTotal: undefined, autoFailuresVersion: packageJson.version, auto: { kind: "plan", wfRunId: "wfrun_x", startedAt: 1 }, ...extra }) as unknown as PhaseRecord;
+
+  it("a machine-failed stage with its retry due sends the PM nothing", async () => {
+    sends.length = 0;
+    const { phases, phase } = await world(failedPlan());
+    await phases.tick();
+    const after = phases.list({ limit: 5 }).find((row) => row.id === phase.id)!;
+    expect(after.record.autoMachineFailures?.plan).toBe(1);
+    expect(sends.filter((text) => text.includes("[Lane Pilot phase]")).length).toBe(0);
+  });
+
+  it("a stage whose machine tries are spent still reaches the PM (the manual fallback)", async () => {
+    sends.length = 0;
+    const { phases, phase } = await world(failedPlan({ autoMachineFailures: { plan: 2 } }));
+    await phases.tick();
+    expect(sends.filter((text) => text.includes("[Lane Pilot phase]")).length).toBeGreaterThan(0);
+  });
+
+  it("a phase the machine does not drive (train=false) still reaches the PM", async () => {
+    sends.length = 0;
+    const { phases, phase } = await world(failedPlan({ train: false, auto: undefined }));
+    await phases.tick();
+    expect(sends.filter((text) => text.includes("[Lane Pilot phase]")).length).toBeGreaterThan(0);
   });
 });

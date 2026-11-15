@@ -75,16 +75,64 @@ export function birthFindings(task: Contract, birth?: string | null, redoneBirth
   return { errors, warnings };
 }
 
+/** Programs that only wrap the real command; what follows their own options is still the command. */
+const CHECK_WRAPPERS = new Set(["env", "sudo", "nice", "time", "timeout", "command"]);
+/** Wrapper options that consume the next word (`env -u NAME`, `sudo -u USER`, `timeout -k DUR`). */
+const WRAPPER_ARG_OPTS: Record<string, ReadonlySet<string>> = {
+  env: new Set(["-u", "--unset", "-C", "--chdir", "-S", "--split-string", "-a", "--argv0"]),
+  sudo: new Set(["-u", "-g", "-h", "-p", "-C", "-T", "-U", "-R", "-D", "-r", "-t", "-c", "--user", "--group", "--host", "--prompt", "--chdir", "--close-from", "--command-timeout", "--other-user", "--role", "--type"]),
+  nice: new Set(["-n", "--adjustment"]),
+  time: new Set(["-o", "-f", "--output", "--format"]),
+  timeout: new Set(["-k", "--kill-after", "-s", "--signal"]),
+};
+/** The short options of each wrapper that take a value, for the attached `-uNAME` / `-n5` forms. */
+const WRAPPER_ARG_LETTERS: Record<string, ReadonlySet<string>> = {
+  env: new Set(["u", "C", "S", "a"]),
+  sudo: new Set(["u", "g", "h", "p", "C", "T", "U", "R", "D", "r", "t", "c"]),
+  nice: new Set(["n"]),
+  time: new Set(["o", "f"]),
+  timeout: new Set(["k", "s"]),
+};
+/** Wrapper options that take no value (`env -i`, `timeout --foreground`, `sudo -E`). */
+const WRAPPER_FLAGS: Record<string, ReadonlySet<string>> = {
+  env: new Set(["-i", "--ignore-environment", "-0", "--null", "-v", "--debug"]),
+  sudo: new Set(["-E", "-H", "-n", "-S", "-s", "-i", "-K", "-k", "-l", "-v", "-b", "-A", "-V", "--login", "--shell", "--stdin", "--list", "--validate", "--version", "--help", "--edit", "--background", "--bell", "--preserve-env", "--reset-env", "--set-home", "--askpass"]),
+  nice: new Set(["--help", "--version"]),
+  time: new Set(["-a", "-v", "-p", "-q", "--append", "--verbose", "--portability", "--quiet"]),
+  timeout: new Set(["--preserve-status", "--foreground", "--verbose"]),
+  command: new Set(),
+};
+/** `timeout` takes one duration word between its options and the command. */
+const WRAPPER_DURATION = new Set(["timeout"]);
+/** Shell built-ins, reserved words and control operators are never the checked program: the probe cannot name them. */
+const SHELL_WORDS = new Set(["set", "export", "readonly", "local", "declare", "typeset", "unset", "shift", "eval", "exec", "trap", "umask", "cd", "pwd", "wait", "times", "ulimit", "alias", "unalias", "bg", "fg", "jobs", "let", "read", "return", "break", "continue", "source", ".", ":", "true", "false", "hash", "type", "suspend", "enable", "disable", "caller", "getopts", "logout", "bind", "complete", "compgen", "compopt", "dirs", "disown", "fc", "help", "history", "mapfile", "popd", "pushd", "shopt", "coproc", "select", "function", "if", "then", "else", "elif", "fi", "do", "done", "while", "until", "for", "case", "esac", "in", "!", "{", "}", ")", "(", "[[", "]]", "test"]);
+
 /** The program a check runs first, for «is the check command runnable»: env assignments, sudo and the like skipped; null for shell syntax. */
 export function checkProgram(command: string): string | null {
   const words = command.trim().split(/\s+/);
   let index = 0;
-  while (index < words.length && (/^[A-Za-z_][A-Za-z0-9_]*=/.test(words[index]!) || ["env", "sudo", "nice", "time", "timeout", "command"].includes(words[index]!))) {
-    if (words[index] === "timeout") index += 1;
+  while (index < words.length) {
+    const word = words[index]!;
+    if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(word)) { index += 1; continue; }
+    if (!CHECK_WRAPPERS.has(word)) break;
     index += 1;
+    const argOpts = WRAPPER_ARG_OPTS[word] ?? new Set<string>();
+    const argLetters = WRAPPER_ARG_LETTERS[word] ?? new Set<string>();
+    const flags = WRAPPER_FLAGS[word] ?? new Set<string>();
+    while (index < words.length) {
+      const opt = words[index]!;
+      if (opt === "--") { index += 1; break; }
+      if (argOpts.has(opt)) { index += 2; continue; }
+      if (opt.length > 2 && opt.startsWith("--") && opt.includes("=")) { index += 1; continue; }
+      if (opt.length > 2 && opt[0] === "-" && argLetters.has(opt[1]!)) { index += 1; continue; }
+      if (flags.has(opt)) { index += 1; continue; }
+      if (opt.startsWith("-") && opt !== "-") return null;
+      break;
+    }
+    if (WRAPPER_DURATION.has(word)) index += 1;
   }
   const program = words[index];
-  if (!program || /^[(&|;!{]/.test(program) || program.includes("$")) return null;
+  if (!program || /^[(&|;!{]/.test(program) || program.includes("$") || program.startsWith("-") || SHELL_WORDS.has(program)) return null;
   return program.replace(/^["']|["']$/g, "");
 }
 

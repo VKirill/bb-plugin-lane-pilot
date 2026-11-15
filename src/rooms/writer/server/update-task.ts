@@ -48,7 +48,7 @@ import { sendServiceMessage } from "../../relay/server";
 import { markTaskSatisfied, reopenWriterStages } from "../../runs/server";
 import type { ServerCore } from "../../contracts/server";
 
-import { validateTaskV2 } from "../../tasks/task-v2";
+import { validateTaskV2 } from "../../tasks";
 import { TEST_EDIT_HOLD_ITEM, allowTestEditsOf, applyTrustedTooling, testEditHoldOf } from "../../tasks";
 import { closeOwnerItemsByPrefix } from "../../owner-waiting";
 import { planWithOutsideReads, planWithRepoScope, rerootTask, rerootToRepoRoot } from "../../tasks";
@@ -64,6 +64,7 @@ import { openAttemptWorktree, recordTaskEdition } from "./task-home";
 import { reflexLinesOf, taskFileCards } from "./writer-knowledge";
 import { writerDiffRules } from "../../learning";
 import type { FieldChange } from "./reopen-attempt";
+import { syncOwnsBarrier } from "./owns-barrier-sync";
 
 /** How long an update waits for the stages that go again before it answers «queued». */
 const STAGES_WAIT_MS = 240_000;
@@ -138,6 +139,14 @@ export function createWriterUpdateTask(ctx: ServerCore, services: Services) {
       return {
         ok: false,
         error: { code: "not_pm_thread", retryable: false, sideEffects: "none", hint: "run does not belong to caller PM thread" },
+      };
+    }
+    // A closed run's tasks are history: fixing one in place requeued its attempt and ran pm-read and the critique again
+    // under a run nothing reopens (layers audit 2026-11-15, F8). Refused before anything is read or written.
+    if (run.closed_at) {
+      return {
+        ok: false,
+        error: { code: "run_closed", retryable: false, sideEffects: "none", hint: `run ${input.runId} is closed: its tasks do not change any more. For this work dispatch a new task in the open run.` },
       };
     }
     const row = getTask(db, input.taskId);
@@ -379,6 +388,9 @@ export function createWriterUpdateTask(ctx: ServerCore, services: Services) {
     }
 
     if (running) {
+      // The barrier first (EXT05): a refusal leaves contract, plan and the running writer as they were.
+      const barrier = await syncOwnsBarrier(ctx, { projectId: input.projectId, runId: input.runId, hostId: config.hostId, worktreePath: running.workspace_path, from: oldContract, to: valid.task });
+      if (!barrier.ok) return { ok: false, error: { code: "owns_barrier", retryable: false, sideEffects: barrier.uncertain ? "unknown" : "none", hint: barrier.hint } };
       // Stored first, as for a queued task; then the live writer thread is steered with what changed.
       updateTaskContract(db, input.taskId, valid.task);
       saveTaskPlan(db, input.taskId, canonicalPlan);
@@ -401,7 +413,7 @@ export function createWriterUpdateTask(ctx: ServerCore, services: Services) {
       await persistPlan(config.hostId, taskBase, input.taskId, canonicalPlan, { projectId: input.projectId, task: valid.task });
       const reopened = await reopen.reopenAttempt({
         projectId: input.projectId, runId: input.runId, taskId: input.taskId, pmThreadId: input.pmThreadId,
-        attempt: blocked, threadId: ready.threadId, workspacePath: ready.workspacePath, config, contract: valid.task,
+        attempt: blocked, threadId: ready.threadId, workspacePath: ready.workspacePath, config, contract: valid.task, previousContract: oldContract,
         reason: "the PM fixed the contract in place",
         turn: contractFixTurnPrompt({ question: writerQuestion(blocked.reason), changes }),
         qaAnswer: contractFixRecord(changes),
@@ -411,12 +423,13 @@ export function createWriterUpdateTask(ctx: ServerCore, services: Services) {
         updateTaskContract(db, input.taskId, row.contract);
         saveTaskPlan(db, input.taskId, oldPlan);
         await persistPlan(config.hostId, taskBase, input.taskId, oldPlan, { projectId: input.projectId, task: row.contract as TaskV2 });
-        return { ok: false, error: { code: "not_reopenable", retryable: false, sideEffects: "none", hint: reopened.hint } };
+        return { ok: false, error: { code: "not_reopenable", retryable: false, sideEffects: reopened.sideEffects ?? "none", hint: reopened.hint } };
       }
       log(`writer ${input.taskId}: contract fixed in place (${changes.map((change) => change.field).join(", ")}); attempt ${blocked.id} continues`);
       return { ok: true, runId: input.runId, taskId: input.taskId, attemptId: blocked.id, writerThreadId: ready.threadId, state: "running",
         changed: changes.map((change) => change.field), edition: contractEditions(db, input.taskId).at(-1)?.edition,
-        note: "The writer continues in its own thread and worktree under the fixed contract; no attempt was spent. Poll lane_pilot_wait_writer with the same runId. The change is kept in the task folder's QA.md." };
+        ...(reopened.deliveryUnknown ? { deliveryUnknown: true } : {}),
+        note: `The writer continues in its own thread and worktree under the fixed contract; no attempt was spent. Poll lane_pilot_wait_writer with the same runId. The change is kept in the task folder's QA.md.${reopened.deliveryUnknown ? " Delivery of the turn to the writer was not confirmed: if the writer asks the same question again, it did not get the change." : ""}` };
     }
 
     // The pm-read and the plan critique go again through the task's pipeline run (the graph), so that run must exist and the engine be up.

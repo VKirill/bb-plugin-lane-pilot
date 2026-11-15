@@ -5,6 +5,7 @@ import { NATIVE_MENTION_PROVIDER } from "../../contracts/native-agent-id"
 import { nativeSelectionSchema } from "../../contracts/native-selection";
 import { createClaudeGuardEnv } from "../../native-agent";
 import { attachStreamRetry, droppedStreamDetail } from "../../writer";
+import { retryEligibility } from "../../stability/server";
 import { createPmSkillTraceEnv, createRoleMarkerEnv, mountBbShim } from "../../native-agent/server";
 import { observeOwnerDispatch } from "../../owner-presence/server";
 import { THREAD_WATCH_EVENT_TYPES, listThreadEventsRaw } from "@lane-pilot/thread-observe";
@@ -69,6 +70,13 @@ export function mountNativeWiring(ctx: ServerCore) {
       return listed.ok ? droppedStreamDetail(listed.events) : null;
     },
     owned: async (threadId) => {
+      // The durable retry decision first: ended, superseded or closed work is never retried, whatever the
+      // metadata says; a store failure falls through to the metadata checks below.
+      try {
+        const eligibility = retryEligibility(db, threadId);
+        if (eligibility.kind === "decline") return false;
+        if (eligibility.kind === "allow") return true;
+      } catch { /* advisory: the metadata checks below still answer */ }
       const metadata = await bb.sdk.threads.getPluginMetadata({ threadId }).catch(() => null);
       const role = metadata && typeof metadata === "object" ? Reflect.get(metadata, "role") : null;
       const runId = metadata && typeof metadata === "object" ? Reflect.get(metadata, "lanePilotRunId") : null;

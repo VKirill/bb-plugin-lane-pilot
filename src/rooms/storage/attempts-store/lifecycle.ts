@@ -92,13 +92,29 @@ export function listAttemptsForTask(db: LanePilotDatabase, runId: string, taskId
  * families accepted: the replaced T1.3, T3.2, T5.2… stayed blocked or canceled for good.
  */
 export function listTaskTerminalStates(db: LanePilotDatabase, runId: string): string[] {
+  return listTaskLatestAttempts(db, runId).map((attempt) => attempt.state);
+}
+
+/** The latest-sent task of each family of a run, in send order. */
+function latestFamilyTaskIds(db: LanePilotDatabase, runId: string): string[] {
   const latest = new Map<string, string>();
   for (const row of db.prepare("SELECT id FROM lane_pilot_task WHERE run_id=? ORDER BY created_at, rowid").all(runId) as Array<{id:string}>) latest.set(taskFamily(row.id), row.id);
-  const tasks = [...latest.values()].map((id) => ({ id }));
-  return tasks.map((task) => {
-    const latest = db.prepare("SELECT state FROM lane_pilot_attempt WHERE run_id=? AND task_id=? ORDER BY attempt_no DESC LIMIT 1")
-      .get(runId, task.id) as {state:string}|undefined;
-    return latest?.state ?? "queued";
+  return [...latest.values()];
+}
+
+/**
+ * The same pieces of work as listTaskTerminalStates, each with the evidence its state alone lacks: its task's writer-agent
+ * stage. A retry is a new attempt row, so a failed latest attempt is either the gap
+ * before the writer loop's next attempt (the stage still open) or the task's end (the loop closed the stage); refreshRun
+ * tells the two apart with it. A task with no attempt yet reads as queued, as before.
+ */
+export function listTaskLatestAttempts(db: LanePilotDatabase, runId: string): Array<{ state: string; writerStage: string | null }> {
+  const read = db.prepare(`SELECT a.state, s.state AS writer_stage FROM lane_pilot_attempt a
+    LEFT JOIN lane_pilot_stage_receipt s ON s.run_id=a.run_id AND s.task_id=a.task_id AND s.stage_id='writer-agent'
+    WHERE a.run_id=? AND a.task_id=? ORDER BY a.attempt_no DESC LIMIT 1`);
+  return latestFamilyTaskIds(db, runId).map((taskId) => {
+    const row = read.get(runId, taskId) as { state: string; writer_stage: string | null } | undefined;
+    return row ? { state: row.state, writerStage: row.writer_stage } : { state: "queued", writerStage: null };
   });
 }
 

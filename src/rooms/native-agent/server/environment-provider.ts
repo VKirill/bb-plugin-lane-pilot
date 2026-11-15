@@ -69,7 +69,13 @@ export function registerLaneWorktreeProvider(ctx: ServerCore): boolean {
         try {
           let path = inputs.path ?? null;
           // A made worktree is taken as it is; one that is gone (a retry of a removed environment) is made again at the same path.
-          if (!path || !await isLaneWorktree(hostId, path, inputs.name, context.signal)) {
+          if (path && !await isLaneWorktree(hostId, path, inputs.name, context.signal)) path = null;
+          // An adoptable path is claimed through BB first — the same guard the stock worktree provider puts on its
+          // adopt path — so a parallel BB operation cannot take it between our probe and the environment row.
+          if (path && context.experimental_claimPath && !(await context.experimental_claimPath(path).catch(() => false))) {
+            return { status: "failed", message: `${path} is already in use by another environment.` };
+          }
+          if (!path) {
             context.report.step("Creating the worktree");
             const created = await host.call("gitCreateWorktree", { requestedHostId: hostId, basePath: inputs.basePath, name: inputs.name },
               { hostId, timeoutMs: 120_000, signal: context.signal, worktreeOwner: { kind: "attempt", id: inputs.name } });

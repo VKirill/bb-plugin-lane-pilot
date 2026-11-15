@@ -154,4 +154,42 @@ describe("list_helper_threads RPC", () => {
     const result = await handlers.list_helper_threads({ threadId: "thr_pm" });
     expect(result.threads).toHaveLength(0);
   });
+
+  it("batches helper metadata in chunks of 200; an id the batch omits reads as no metadata, not an error", async () => {
+    const { harness, handlers } = setupHost();
+    const children = Array.from({ length: 201 }, (_, i) => ({
+      id: `thr_m_${i}`, title: `Task ${i}`, status: "active", archivedAt: null,
+    }));
+    harness.sdk.stub("threads.list", async (args: { offset?: number }) => {
+      const offset = args.offset ?? 0;
+      return children.slice(offset, offset + 100);
+    });
+    const batches: number[] = [];
+    harness.sdk.stub("threads.experimental_listPluginMetadata", async (args: { threadIds: string[] }) => {
+      batches.push(args.threadIds.length);
+      // Only the first id of each chunk comes back — the rest are absent, like a real partial answer.
+      return { threads: args.threadIds.slice(0, 1).map((threadId) => ({ threadId, metadata: { role: "writer" } })) };
+    });
+
+    const result = await handlers.list_helper_threads({ threadId: "thr_pm" });
+    expect(batches).toEqual([200, 1]);
+    const byId = new Map(result.threads.map((row) => [row.id, row.role]));
+    expect(byId.get("thr_m_0")).toBe("writer");
+    expect(byId.get("thr_m_200")).toBe("writer");
+    // Absent from the batch answer → null metadata → the plain "helper" fallback, never a fabricated role.
+    expect(byId.get("thr_m_1")).toBe("helper");
+    expect(result.threads).toHaveLength(201);
+  });
+
+  it("a failed metadata batch falls back to per-id reads", async () => {
+    const { harness, handlers } = setupHost();
+    harness.sdk.stub("threads.list", async () => [
+      { id: "thr_f_1", title: "Task", status: "active", archivedAt: null },
+    ]);
+    harness.sdk.stub("threads.experimental_listPluginMetadata", async () => { throw new Error("batch unsupported"); });
+    // setupHost stubs threads.getPluginMetadata → { role: "writer" }.
+
+    const result = await handlers.list_helper_threads({ threadId: "thr_pm" });
+    expect(result.threads.map((row) => row.role)).toEqual(["writer"]);
+  });
 });

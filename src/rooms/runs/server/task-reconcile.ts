@@ -62,8 +62,11 @@ export function createTaskReconcile(ctx:ServerCore, services:Services) {
       if (options.afterResume) await step("start-up sweeps", options.afterResume);
     }
     await step("stage cleanup", () => {
-      const closed = closeOrphanWriterStages(db, services.activeWriterTasks, startup ? 0 : PERIODIC_IDLE_MS, options.now, services.stability.reconcileScanOpen);
+      const touched = new Set<string>();
+      const closed = closeOrphanWriterStages(db, services.activeWriterTasks, startup ? 0 : PERIODIC_IDLE_MS, options.now, services.stability.reconcileScanOpen, touched);
       if (closed) bb.log.info(`Lane Pilot closed ${closed} writer stage(s) left open after their task ended`);
+      // Only the runs this pass ended work in: their state follows the attempts and stages it just closed (layers audit F1).
+      for (const runId of touched) ctx.refreshRun?.(runId);
     });
     if (!startup) {
       // The lease is the live loop (SMA tr_claimed): an attempt whose run:task is not in activeWriterTasks and that has not

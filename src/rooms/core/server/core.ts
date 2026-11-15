@@ -12,7 +12,7 @@ import { TARGET_SHA } from "../../runs";
 import { hostContract } from "./plugin-contracts";
 import type { PrototypeConfig, TaskV2 } from "../../contracts";
 import type { ServerCore } from "../../contracts/server";
-import { getAttempt, getRun, getRunSettingsScopes, declaredWorktreeOwner, registerWorktree, releaseWorktree, getRunWriterHost, getTask, getTaskPlan, listAttemptsForTask, listStageReceipts, listTaskTerminalStates, loadProjectSettings, loadPrototypeConfig, sectionBindingId, setIllegalTransitionLog, setRunSettingsScopes, setRunState, transitionAttempt } from "../../storage";
+import { getAttempt, getRun, getRunSettingsScopes, declaredWorktreeOwner, registerWorktree, releaseWorktree, getRunWriterHost, getTask, getTaskPlan, listAttemptsForTask, listStageReceipts, listTaskLatestAttempts, loadProjectSettings, loadPrototypeConfig, sectionBindingId, setIllegalTransitionLog, setRunSettingsScopes, setRunState, transitionAttempt } from "../../storage";
 import type { CancelCode, WorktreeOwner } from "../../storage";
 import { GLOBAL_SETTINGS_PROJECT_ID, LP_AGENT_OVERRIDES_KEY, LP_DEFAULTS_KEY, inheritProjectValues, parseLanePilotDefaults } from "@lane-pilot/settings-catalog";
 import { createNativeInstaller } from "../../native-install";
@@ -58,6 +58,22 @@ export function createCore(bb: BbPluginApi, db: LanePilotDatabase): ServerCore {
   const hostJobs = createHostJobs({
     call: rawCall, kv: bb.storage.kv, disposed: () => state.disposed, log: (message) => bb.log.info(message),
   });
+  // A crashed plugin worker on a host may have taken its jobs with it: the stored job ids are probed once, read-only.
+  // `lost` keeps its KV entry — run() refuses to resubmit that logical call rather than risk a second mutation;
+  // nothing is replayed here, the durable record and the poll loop's bounded retry stay the authority.
+  const stopWorkerExitWatch = typeof rawHost.experimental_onWorkerExit === "function"
+    ? rawHost.experimental_onWorkerExit(async ({ hostId }) => {
+        if (state.disposed) return;
+        try {
+          const { probed, lost } = await hostJobs.reconcile(hostId);
+          for (const jobId of lost) bb.log.warn(`Lane Pilot: host job ${jobId} on ${hostId} is lost after the worker exit; the next call starts it again`);
+          if (probed) bb.log.info(`Lane Pilot: worker on ${hostId} exited; ${probed} stored host job(s) probed, ${lost.length} lost`);
+        } catch (cause) {
+          bb.log.info(`Lane Pilot: worker-exit reconcile on ${hostId} failed (${cause instanceof Error ? cause.message : String(cause)}); stored jobs stay for the next call`);
+        }
+      })
+    : null;
+  if (stopWorkerExitWatch) bb.onDispose(() => { stopWorkerExitWatch(); });
   const host = {
     ...rawHost,
     call: (async (method: string, input: unknown, options: unknown) => {
@@ -224,14 +240,16 @@ export function createCore(bb: BbPluginApi, db: LanePilotDatabase): ServerCore {
       : {type:"host" as const,hostId,workspace:{type:"unmanaged" as const,path:workspace.path}};
   }
 
+  /** The run's state from the latest attempt of each task with its writer stage: a failed attempt whose loop ended no
+   * longer reads as at work (aggregation.ts), and a gap between two attempts still does. */
   function refreshRun(runId: string): void {
-    const states = listTaskTerminalStates(db, runId) as AttemptState[];
-    if (states.length === 0) {
+    const latest = listTaskLatestAttempts(db, runId);
+    if (latest.length === 0) {
       const run = getRun(db, runId);
       if (run?.state === "pending") setRunState(db, runId, "blocked");
       return;
     }
-    setRunState(db, runId, aggregateRun(states));
+    setRunState(db, runId, aggregateRun(latest));
   }
 
   function markCanceledWriterStages(attempt:NonNullable<ReturnType<typeof getAttempt>>,reason:string):void {

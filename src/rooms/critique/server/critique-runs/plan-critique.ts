@@ -1,17 +1,21 @@
+import { stageTransition } from "@lane-pilot/contracts";
 import { unownedExpectedOutputs } from "../../../tasks";
 import { hostContract, taskV2Schema } from "../../../contracts";
 import type { PrototypeConfig, TaskV2 } from "../../../contracts";
-import { getRun, getTask, getTaskPlan, listLiveTasksForRun, listOpenAttempts, listStageReceipts, openDatabase, resolveTaskFile } from "../../../storage";
+import { getRun, getTask, getTaskPlan, listLiveTasksForRun, listOpenAttempts, listStageReceipts, openDatabase, resolveTaskFile, readTaskFile, taskHomeOf } from "../../../storage";
 import { criticPairCandidates, roleSelection, sdkCriticCatalog, usable } from "../../critic-pair";
 import { bbServiceTier, findModelIn, listedServiceTier, resolveStageWriterSelection, writerExecutionSelection, writerServiceTier } from "@lane-pilot/models";
 import { settingOff } from "@lane-pilot/models";
 import { sha256 } from "../../../tasks";
-import { critiquePrompt, parseCritique, shouldRunPlanCritique } from "../../critique";
+import { callersBlock, critiquePacketPrompt, parseCritique, shouldRunPlanCritique } from "../../critique";
 import { planCriticTier } from "../../critic-level";
 import { ownerWordsOfRun } from "../owner-words";
 import { binaryOutputs, dropIntendedGaps, dropNoisyGaps, findTaskPlaceholderPaths } from "../../critique-coverage";
 import type { CoverageCallers, CoverageFinding } from "../../critique-coverage";
-import { inlinePlanFile } from "./plan-text";
+import { readPlanFile } from "./plan-text";
+import { bbTaskFileIo } from "../../../storage";
+import { prepareCriticPacket, readCanonicalPlan } from "../critique-packet";
+import type { PacketInput } from "@lane-pilot/workflow-engine";
 import { boundedAgentName } from "../../../contracts";
 import { graphStepMetadata, setAsideOnStartFailure, zcodeBusyPeek } from "../../../platform/server";
 import type { StageHelperSettings } from "../../../platform/server";
@@ -45,6 +49,17 @@ export function planCritiqueFindings(result:unknown):PlanCritiqueFinding[] {
   return [...model,...structural].slice(0,30);
 }
 
+/**
+ * An input-read failure is recorded as `failed` only where the receipt graph allows it (no receipt yet, or a running/failed
+ * one). A kept `passed` verdict — or any other state with no legal edge to `failed` — is left untouched: the named reason
+ * still reaches the caller, and the receipt keeps binding the input it actually judged (the pm-read contract).
+ */
+function recordPlanCritiqueInputFailure(db: ReturnType<typeof openDatabase>, runId: string, taskId: string, plan: string, reason: string): void {
+  const prior = listStageReceipts(db, runId, taskId).find((row) => row.stageId === "plan-critique");
+  if (prior && !stageTransition(prior.state, "failed")) return;
+  recordStage(db, { runId, taskId, stageId: "plan-critique", input: plan, state: "failed", reason, result: { error: reason } });
+}
+
 export async function runPlanCritique(input:{bb:BbPluginApi;db:ReturnType<typeof openDatabase>;projectId:string;runId:string;stageHelperSettings:StageHelperSettings;taskId:string;config:PrototypeConfig;task:TaskV2;plan:string;pmReadContext?:string;workflow?:{runId:string;stepKey:string;nodeId:string}})
   : Promise<PlanCritiqueOutcome> {
   const projectSettings = await input.stageHelperSettings(input.bb,input.db,input.projectId,input.runId);
@@ -57,7 +72,7 @@ export async function runPlanCritique(input:{bb:BbPluginApi;db:ReturnType<typeof
   const disabled = settingOff(settings["plan_critique.enabled"]);
   if (qualityMode === "quick" || disabled) {
     const skip = { runId:input.runId, taskId:input.taskId, stageId:"plan-critique" as const, input:`${input.plan}\n\n${JSON.stringify(input.task)}\n\nagent=${agent}\n\npm_read=${input.pmReadContext ?? ""}` };
-    recordStage(input.db, { ...skip, state:"pending", replaceOnNewInput:true, restart:true });
+    recordStage(input.db, { ...skip, state:"pending", replaceOnNewInput:true, restart:true, reopen:true });
     recordStage(input.db, qualityMode === "quick" ? { ...skip, state:"skipped", reason:"quality_mode_quick", result:{ qualityMode } } : { ...skip, state:"skipped", reason:"disabled_by_project_setting" });
     return { allowed:true };
   }
@@ -103,9 +118,45 @@ export async function runPlanCritique(input:{bb:BbPluginApi;db:ReturnType<typeof
   if(coverageStatus==="unavailable") structuralFindings.push({code:"coverage_scan_truncated",path:".",severity:"warning",finding:"Workspace path listing is unavailable; only plan/TaskV2 data was reviewed"});
   // The owner's own words feed the prompt and the input hash: a critique of the same plan without them is not reused.
   const ownerWords = await ownerWordsOfRun({ bb: input.bb, db: input.db, runId: input.runId, taskId: input.taskId });
-  // A plan that is just the path of a file under the project is read here: the critic gets the text, the receipt the sha256 of the version it judged.
-  const planFile = await inlinePlanFile(input.bb,{hostId:input.config.hostId,projectCwd:input.task.project_cwd,plan:input.plan});
-  const source = `${input.plan}\n\n${JSON.stringify(input.task)}\n\nagent=${agent}\n\npm_read=${input.pmReadContext ?? ""}\n\nstructural_coverage=${coverageStatus}\n\nstructural_findings=${JSON.stringify(structuralFindings)}\n\nowner_words=${JSON.stringify(ownerWords)}${planFile?`\n\nplan_file_sha256=${planFile.sha256}`:""}`;
+  // A plan that is just the path of a file under the project is read here WHOLE and verified against the SDK's
+  // sha256/sizeBytes: the critic's packet carries the complete text by reference and the receipt the sha256 of the
+  // version it judged. An explicit path that cannot be read whole is a named failure, not silent plan prose.
+  let planFile: Awaited<ReturnType<typeof readPlanFile>> = null;
+  try {
+    planFile = await readPlanFile(input.bb,{hostId:input.config.hostId,projectCwd:input.task.project_cwd,plan:input.plan});
+  } catch (cause) {
+    const reason = `plan_critique_input_failed:${cause instanceof Error ? cause.message : String(cause)}`;
+    recordPlanCritiqueInputFailure(input.db, input.runId, input.taskId, input.plan, reason);
+    return { allowed:false, reason };
+  }
+  // A home task's cache binding names the manifest hashes of PLAN.md and the plan-source snapshot, so an edited plan
+  // or source invalidates a kept receipt before it can be reused. Legacy tasks keep the source bytes exactly as before.
+  const planHome = taskHomeOf(input.db, input.taskId);
+  const planRowSha = planHome ? resolveTaskFile(input.db, input.taskId, "plan")?.sha256 ?? null : null;
+  const planSourceRow = planHome ? resolveTaskFile(input.db, input.taskId, "plan-source") : null;
+  const planSourceRowSha = planSourceRow?.sha256 ?? null;
+  // Required canonical inputs are read and verified BEFORE any kept receipt can be reused: a PLAN.md or plan-source
+  // snapshot that drifted or cannot be read whole blocks the stage even over a cached pass — the receipt binds the
+  // manifest revision, and an invalid reference is never reused. Verified text is shared with the packet build below.
+  let canonicalPlanText: string;
+  let planSourceText: string | null = null;
+  try {
+    canonicalPlanText = planHome
+      ? (await readCanonicalPlan(input.bb, input.db, { taskId: input.taskId, reader: "plan-critique", legacyPlan: planFile?.text ?? input.plan })).text
+      : (planFile?.text ?? input.plan);
+    if (planSourceRow && planHome) {
+      const sourceIo = bbTaskFileIo(input.bb as never, planHome.host_id, planHome.base_path);
+      const sourceFile = await readTaskFile(input.db, sourceIo, { taskId: input.taskId, kind: "plan-source", reader: "plan-critique" });
+      if (!sourceFile) throw new Error("plan_source_unreadable");
+      if (sourceFile.drift) throw new Error("plan_source_hash_mismatch");
+      planSourceText = sourceFile.text;
+    }
+  } catch (cause) {
+    const reason = `plan_critique_input_failed:${cause instanceof Error ? cause.message : String(cause)}`;
+    recordPlanCritiqueInputFailure(input.db, input.runId, input.taskId, input.plan, reason);
+    return { allowed:false, reason };
+  }
+  const source = `${input.plan}\n\n${JSON.stringify(input.task)}\n\nagent=${agent}\n\npm_read=${input.pmReadContext ?? ""}\n\nstructural_coverage=${coverageStatus}\n\nstructural_findings=${JSON.stringify(structuralFindings)}\n\nowner_words=${JSON.stringify(ownerWords)}${planFile?`\n\nplan_file_sha256=${planFile.sha256}`:""}${planHome?`\n\nplan_sha256=${planRowSha ?? ""}\n\nplan_source_sha256=${planSourceRowSha ?? ""}`:""}`;
   const base = { runId:input.runId, taskId:input.taskId, stageId:"plan-critique" as const, input:source };
   // A resumed dispatch keeps a critique that passed on this very input (resetHelperStages): it is not bought twice.
   const kept = listStageReceipts(input.db,input.runId,input.taskId).find((row) => row.stageId === "plan-critique");
@@ -123,7 +174,7 @@ export async function runPlanCritique(input:{bb:BbPluginApi;db:ReturnType<typeof
     return { allowed:true, critique:kept.result };
   }
   // An updated task runs its critique again over the receipt of the earlier contract (lane_pilot_update_task).
-  recordStage(input.db, { ...base, state:"pending", replaceOnNewInput:true, restart:true });
+  recordStage(input.db, { ...base, state:"pending", replaceOnNewInput:true, restart:true, reopen:true });
   if(structuralBlock) {
     recordStage(input.db,{...base,state:"blocked",reason:"structural_plan_critique_blocked",result:{decision:"changes_requested",mode,
       structuralCoverage:{status:coverageStatus,pathCount:coveragePathCount},structuralFindings}});
@@ -163,6 +214,38 @@ export async function runPlanCritique(input:{bb:BbPluginApi;db:ReturnType<typeof
     return {allowed:true,reason:"plan_critique_threshold_not_met"};
   }
   recordStage(input.db, { ...base, state:"running", providerId, model:modelId });
+  // The critic's whole input goes by reference: task contract, canonical plan (the task home's PLAN.md, hash-checked,
+  // or the path-line file read whole), the plan-source snapshot, the filtered owner words, the reader's report, the
+  // structural findings and the callers block. Materialization is all-or-nothing: a write/read/hash/manifest failure
+  // is a named blocked result and no critic spawns — never an inline cut, never an unreviewed proceed.
+  let prompt: string;
+  try {
+    // canonicalPlanText/planSourceText were read and hash-verified above, before the kept receipt could be reused.
+    const planText = canonicalPlanText;
+    const planSource = planSourceText;
+    const ownsGap = new Set(structuralFindings.filter((finding) => finding.code === "owns_gap" || finding.code === "caller_unowned").map((finding) => finding.path));
+    const callersText = callersBlock(coverageCallers, ownsGap);
+    const packetInputs: PacketInput[] = [
+      { name: "task", value: input.task },
+      { name: "plan", value: planText },
+      ...(planSource ? [{ name: "plan-source", value: planSource }] : []),
+      { name: "owner-words", value: ownerWords },
+      ...(input.pmReadContext?.trim() ? [{ name: "pm-read", value: input.pmReadContext }] : []),
+      { name: "structural-findings", value: structuralFindings },
+      ...(callersText ? [{ name: "callers", value: callersText }] : []),
+      { name: "coverage", value: { status: coverageStatus, pathCount: coveragePathCount } },
+    ];
+    const prepared = await prepareCriticPacket(input.bb, input.db, {
+      runId: input.runId, projectId: input.projectId, hostId: input.config.hostId, checkoutPath: input.task.project_cwd,
+      step: { id: "plan-critique", role: "plan-critic", mode: qualityMode },
+      goal: `Plan critique for task ${input.task.id}: ${input.task.title}`, inputs: packetInputs, readers: ["plan-critique"],
+    });
+    prompt = critiquePacketPrompt({ packet: prepared.packet, agent });
+  } catch (cause) {
+    const reason = `plan_critique_input_failed:${cause instanceof Error ? cause.message : String(cause)}`;
+    recordStage(input.db, { ...base, state:"failed", providerId, model:modelId, reason, result:{ error:reason } });
+    return { allowed:false, reason };
+  }
   let threadId:string|null = null;
   try {
     const savedTier = settings["plan_critique.service_tier"];
@@ -204,7 +287,7 @@ export async function runPlanCritique(input:{bb:BbPluginApi;db:ReturnType<typeof
           ...placement,
           ...requiredPolicyField(input.bb, helperPolicy, providerId, "plan-critic"),
           ...writerExecutionSelection(providerId, modelId, configuredEffort, serviceTier),
-          prompt:critiquePrompt({ plan:input.plan, task:input.task, agent, pmReadContext:input.pmReadContext, structuralFindings, ownerWords, ...(planFile?{planText:planFile.inlined}:{}), ...(coverageCallers?{callers:coverageCallers}:{}) }),
+          prompt,
           environment:{ type:"host", hostId:input.config.hostId,
             workspace:{ type:"unmanaged", path:input.task.project_cwd } },
           pluginMetadata:{ role:"plan-critic", lanePilotRunId:input.runId, lanePilotTaskId:input.taskId,
@@ -247,7 +330,9 @@ export async function runPlanCritique(input:{bb:BbPluginApi;db:ReturnType<typeof
     }
     const infraReason = `failed_infra:${lastError ?? "critic pool exhausted"}`;
     recordStage(input.db, { ...base, state:"failed", providerId, model:modelId, reason:infraReason, result:{ error:infraReason, criticPairs:pairs, critic_tier:criticTier } });
-    return { allowed:true, reason:infraReason };
+    // A gate never passes an unreviewed plan: every critic pair failing is a block the PM sees, not a quiet proceed.
+    // Advisory keeps the old contract — the stage receipt says failed and the task goes on.
+    return { allowed: mode !== "gate", reason:infraReason };
   } catch (cause) {
     const reason = cause instanceof Error ? cause.message : String(cause);
     if (threadId) {

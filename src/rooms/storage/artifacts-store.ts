@@ -344,3 +344,36 @@ export async function writeCasCheckoutFile(
 
   return { ok: false, relPath: cleanRel, sha256: sha256Hex(args.content), outcome: "conflict" };
 }
+
+export type CreateOnlyFilesApi = {
+  write(args: {
+    hostId: string; rootPath: string; path: string; content: string;
+    contentEncoding: "utf8"; createParents: boolean; expectedSha256: string | null;
+  }): Promise<unknown> | unknown;
+};
+
+/**
+ * The ONE create-only contract for content-delivered files (workflow step packets, critic input refs): the path names
+ * the content, so `expectedSha256: null` makes the SDK the check — absent → written; already there with the same bytes
+ * → reused (a retry of the same packet is idempotent); different bytes at that path means the address lies, so it
+ * throws rather than overwrite. This is a required-input delivery, not a legacy write: the SDK's ReplaceFileResult is
+ * structured, so a missing, non-object or unknown outcome is rejected — only "written" and a same-bytes "conflict"
+ * pass. Returns "written" | "reused".
+ */
+export async function writeFileCreateOnly(
+  filesApi: CreateOnlyFilesApi,
+  args: { hostId: string; rootPath: string; path: string; content: string },
+): Promise<"written" | "reused"> {
+  const answer = await filesApi.write({
+    hostId: args.hostId, rootPath: args.rootPath, path: args.path, content: args.content,
+    contentEncoding: "utf8", createParents: true, expectedSha256: null,
+  });
+  const outcome = answer && typeof answer === "object" ? (answer as { outcome?: unknown }).outcome : undefined;
+  if (outcome === "written") return "written";
+  if (outcome === "conflict") {
+    const current = (answer as { currentSha256?: unknown }).currentSha256;
+    if (current === sha256Hex(args.content)) return "reused";
+    throw new Error(`"${args.path}" exists with different bytes: a content-addressed path must not be overwritten`);
+  }
+  throw new Error(`the create-only write of ${args.path} was not applied (${String(outcome)})`);
+}

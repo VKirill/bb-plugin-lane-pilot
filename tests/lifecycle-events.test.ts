@@ -2,7 +2,7 @@ import { createFakePluginHost, makeQueueEntry, makeThreadResponse } from "@get-b
 import { threadSignalHub, waitThreadIdle } from "@lane-pilot/thread-observe";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import plugin from "../server";
-import { createAttempt, createRun, createTask, getRun, openDatabase, setRunThread, transitionAttempt } from "../src/rooms/plugin-db";
+import { createAttempt, createRun, createTask, getRun, openDatabase, setAttemptWorkspace, setRunThread, transitionAttempt } from "../src/rooms/plugin-db";
 import { loadBlockedBy } from "../src/rooms/runs/server/blocked-by";
 import { mountLifecycleEvents } from "../src/rooms/core/server/lifecycle-events";
 import { followUpCancelled, saveFollowUp } from "../src/rooms/writer/server/sticky";
@@ -13,7 +13,7 @@ afterEach(() => { process.env.LANE_PILOT_THREAD_SIGNALS = "0"; });
 type Handler = (payload: unknown) => unknown;
 
 /** The lifecycle module on a fake host, with an events object the test drives itself (the fake host knows only the events of its SDK). */
-function setup(options: { threads?: Record<string, unknown>; unknownEvents?: string[] } = {}) {
+function setup(options: { threads?: Record<string, unknown>; unknownEvents?: string[]; onEnvironmentRemoved?: (ids: readonly string[], environmentId: string) => void } = {}) {
   const sent: Array<{ threadId: string; text: string }> = [];
   const threads = options.threads ?? {};
   const { bb: host, harness } = createFakePluginHost({ pluginId: "lane-pilot", sdk: { threads: {
@@ -28,7 +28,7 @@ function setup(options: { threads?: Record<string, unknown>; unknownEvents?: str
   } } });
   const forgotten: string[] = [];
   const ctx = { bb, db, isDisposed: () => false, nativeInstaller: { forget: async (hostId: string) => { forgotten.push(hostId); } } };
-  mountLifecycleEvents(ctx as never);
+  mountLifecycleEvents(ctx as never, options.onEnvironmentRemoved ? { onEnvironmentRemoved: options.onEnvironmentRemoved } : undefined);
   const emit = async (name: string, payload: unknown) => { await handlers.get(name)?.(payload); };
   return { bb, db, host, harness, sent, handlers, emit, forgotten };
 }
@@ -146,6 +146,43 @@ describe("kill switch", () => {
   it("LANE_PILOT_THREAD_SIGNALS=0 registers no lifecycle handler", () => {
     process.env.LANE_PILOT_THREAD_SIGNALS = "0";
     expect(setup().handlers.size).toBe(0);
+  });
+});
+
+describe("a BB environment removed", () => {
+  const boundAttempt = (db: ReturnType<typeof openDatabase>, runId: string, attemptId: string, environmentId: string | null, path: string | null, hostId: string | null = "h") => {
+    createRun(db, runId, "P", "cli", null, "none", undefined, hostId);
+    createTask(db, { id: `task_${runId}`, runId, kind: "bb", contract: {} });
+    createAttempt(db, { id: attemptId, runId, taskId: `task_${runId}` });
+    transitionAttempt(db, attemptId, "spawn_requested");
+    if (path) expect(setAttemptWorkspace(db, attemptId, { path, environmentId, decision: null })).toBe(true);
+    else if (environmentId) db.prepare("UPDATE lane_pilot_attempt SET environment_id=? WHERE id=?").run(environmentId, attemptId);
+  };
+
+  it("reconciles the open attempts bound to the removed environment, and only those", async () => {
+    const calls: Array<{ ids: readonly string[]; environmentId: string }> = [];
+    const t = setup({ onEnvironmentRemoved: (ids, environmentId) => { calls.push({ ids, environmentId }); } });
+    boundAttempt(t.db, "run_env", "attempt_env", "env_1", "/wt/env1");
+    boundAttempt(t.db, "run_other", "attempt_other", "env_2", "/wt/env2");
+    boundAttempt(t.db, "run_closed", "attempt_closed", "env_1", "/wt/env1b");
+    transitionAttempt(t.db, "attempt_closed", "spawn_rejected", { reason: "done" });
+
+    await t.emit("experimental_environment.removed", { removal: { environmentId: "env_1", removedAt: 1, hostId: "h", path: "/wt/env1", providerOwnedPath: true } });
+    expect(calls).toEqual([{ ids: ["attempt_env"], environmentId: "env_1" }]);
+
+    // A bare workspace path counts only when BB says it deleted the worktree too.
+    boundAttempt(t.db, "run_path", "attempt_path", null, "/wt/shared");
+    boundAttempt(t.db, "run_path_other_host", "attempt_path_other_host", null, "/wt/shared", "other-host");
+    boundAttempt(t.db, "run_path_unknown_host", "attempt_path_unknown_host", null, "/wt/shared", null);
+    await t.emit("experimental_environment.removed", { removal: { environmentId: "env_9", removedAt: 2, hostId: "h", path: "/wt/shared", providerOwnedPath: false } });
+    expect(calls).toHaveLength(1);
+    await t.emit("experimental_environment.removed", { removal: { environmentId: "env_9", removedAt: 3, hostId: "h", path: "/wt/shared", providerOwnedPath: true } });
+    expect(calls[1]).toEqual({ ids: ["attempt_path"], environmentId: "env_9" });
+
+    // Missing or malformed removal records cannot trigger reconciliation.
+    await t.emit("experimental_environment.removed", {});
+    await t.emit("experimental_environment.removed", { removal: { environmentId: "env_1" } });
+    expect(calls).toHaveLength(2);
   });
 });
 

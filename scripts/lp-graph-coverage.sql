@@ -2,7 +2,7 @@
 -- out of all of them. A thread ran inside a graph only when its `lanePilotWorkflowRunId` names a real `lane_pilot_wf_run` row and, when it names a step
 -- (`lanePilotWorkflowStep`), a real `lane_pilot_wf_step` row of that run; a marker that points at nothing (a made-up run id) counts as outside and is
 -- counted again as «с ложной меткой». Model work is meant to run as graphs; this line shows what still does not.
--- Read-only, on the hub: runs in the plugin database (lane_pilot_wf_run, lane_pilot_wf_step) with the core database attached as `core` (thread_plugin_metadata, threads).
+-- Read-only, on the hub: runs in the plugin database (lane_pilot_wf_run, lane_pilot_wf_step) with the core facts present as `core` (thread_plugin_metadata, threads) — an SDK snapshot in the plugin, the attached bb.db in the hub script.
 -- The caller creates the parameter first:  create temp table lp_cover(since integer);  insert into lp_cover values (<ms>);
 -- Left out: the PM chats (conductors, not work units), workspace holders (scaffolds) and the provider probes of a chat start (`helperProbe`: a check, not work). Prints nothing when there is no thread.
 with t as (

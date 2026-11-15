@@ -1,10 +1,12 @@
+import { createHash } from "node:crypto";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { stageHelperSettings } from "../src/rooms/settings/server/stage-settings";
 import { LP_DEFAULTS_KEY } from "@lane-pilot/settings-catalog";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { PrototypeConfig, TaskV2 } from "../src/rooms/contracts";
 import { runPmRead } from "../src/rooms/critique/server/critique-runs";
-import { createAttempt, createRun, createTask, listStageReceipts, openDatabase, saveProjectSetting, setRunThread } from "../src/rooms/plugin-db";
+import { createAttempt, createRun, createTask, listStageReceipts, openDatabase, openTaskHome, recordTaskFile, saveProjectSetting, setRunThread } from "../src/rooms/plugin-db";
+import { bbTaskFileIo } from "../src/rooms/storage";
 import { createWriterSticky } from "../src/rooms/writer/server/sticky";
 
 vi.mock("@lane-pilot/thread-observe", async (importOriginal) => ({
@@ -30,10 +32,40 @@ const model = (id: string) => ({ id, model: id, supportedReasoningEfforts: [{ re
 /** A project whose run is open, with a fake host that records every helper spawn. */
 function pmReadWorld() {
   const spawned: Array<Record<string, unknown>> = [];
+  const reads: string[] = [];
+  const packetFiles = new Map<string, string>();
   const { bb } = createFakePluginHost({
     pluginId: "lane-pilot",
+    // read_first's windowless probe reads a bounded slice through the host contract before the
+    // whole-file SDK read; serve it over the same notes content files.read returns.
+    experimental_callHostRpc: async (call) => {
+      if (call.method !== "readBoundedFile") throw new Error(`unexpected host method ${call.method}`);
+      const input = call.input as { relativePath: string; offset: number; maxLines: number };
+      const lines = notes.split("\n");
+      const selected = lines.slice(input.offset, input.offset + input.maxLines);
+      const content = selected.join("\n");
+      return {
+        schemaVersion: 1, hostId: "h", path: input.relativePath, content, contentEncoding: "utf8",
+        sha256: createHash("sha256").update(notes).digest("hex"),
+        sizeBytes: Buffer.byteLength(notes), totalLines: lines.length,
+        offset: input.offset, maxLines: input.maxLines,
+        lineStart: input.offset + 1,
+        lineEnd: selected.length === 0 ? input.offset : input.offset + selected.length,
+        truncated: input.offset + selected.length < lines.length,
+        returnedBytes: Buffer.byteLength(content),
+      };
+    },
     sdk: {
-      files: { read: async () => ({ content: notes, contentEncoding: "utf8", sha256: "f".repeat(64), sizeBytes: notes.length }) },
+      files: {
+        // The pm-read packet materializes big inputs under .agents/runs/<run>/inputs/ before the spawn: path-aware store.
+        read: async ({ path }: { path?: string }) => {
+          reads.push(String(path));
+          const stored = path ? packetFiles.get(path) : undefined;
+          if (stored !== undefined) return { content: stored, contentEncoding: "utf8" };
+          return { content: notes, contentEncoding: "utf8", sha256: "f".repeat(64), sizeBytes: notes.length };
+        },
+        write: async ({ path, content }: { path: string; content: string }) => { packetFiles.set(path, content); return { outcome: "written" }; },
+      },
       providers: {
         list: async () => [{ id: "codex", available: true, capabilities: { supportsServiceTier: false }, serviceTiers: [] }],
         models: async () => ({ models: [model("model-a"), model("model-b")] }),
@@ -52,8 +84,8 @@ function pmReadWorld() {
   createAttempt(db, { id: "a1", runId: "run", taskId: "t1" });
   saveProjectSetting(db, PROJECT, "pm_read.enabled", true);
   saveProjectSetting(db, PROJECT, "pm_read.min_lines", 50);
-  const run = () => runPmRead({ stageHelperSettings, bb, db, projectId: PROJECT, runId: "run", taskId: "t1", pmThreadId: "pm-thread", config, task });
-  return { bb, db, spawned, run };
+  const run = (over: Record<string, unknown> = {}) => runPmRead({ stageHelperSettings, bb, db, projectId: PROJECT, runId: "run", taskId: "t1", pmThreadId: "pm-thread", config, task, ...over });
+  return { bb, db, spawned, reads, run };
 }
 
 describe("stage helper spawns read the settings in effect at spawn time", () => {
@@ -93,6 +125,38 @@ describe("stage helper spawns read the settings in effect at spawn time", () => 
     expect(quickResult.state).toBe("skipped");
     expect(quick.spawned).toHaveLength(0);
     expect(listStageReceipts(quick.db, "run", "t1").find((row) => row.stageId === "pm-read")?.reason).toBe("quality_mode_quick");
+  });
+
+  it("a homed task's new PLAN.md revision invalidates the cached scout summary", async () => {
+    const w = pmReadWorld();
+    openTaskHome(w.db, { taskId: "t1", projectId: PROJECT, runId: "run", basePath: "/repo", hostId: "h" });
+    const io = bbTaskFileIo(w.bb as never, "h", "/repo");
+    const producer = { node: "dispatch" };
+    await recordTaskFile(w.db, io, { taskId: "t1", kind: "plan", name: "PLAN.md", content: "plan v1\n", producer });
+    const first = await w.run({ plan: "the plan" });
+    expect(first.state).toBe("passed");
+    expect(w.spawned).toHaveLength(1);
+    // Same input: the cached summary is reused — after the canonical plan verifies, no second spawn.
+    const again = await w.run({ plan: "the plan" });
+    expect(again.state).toBe("passed");
+    expect(w.spawned).toHaveLength(1);
+    // A new PLAN.md revision changes the manifest hash bound into the cache key: the scout reads again.
+    await recordTaskFile(w.db, io, { taskId: "t1", kind: "plan", name: "PLAN.md", content: "plan v2 changed\n", producer });
+    const third = await w.run({ plan: "the plan" });
+    expect(third.state).toBe("passed");
+    expect(w.spawned).toHaveLength(2);
+  });
+
+  it("a disabled pm-read pays no file IO even for a homed task", async () => {
+    const w = pmReadWorld();
+    saveProjectSetting(w.db, PROJECT, "pm_read.enabled", false);
+    openTaskHome(w.db, { taskId: "t1", projectId: PROJECT, runId: "run", basePath: "/repo", hostId: "h" });
+    const io = bbTaskFileIo(w.bb as never, "h", "/repo");
+    await recordTaskFile(w.db, io, { taskId: "t1", kind: "plan", name: "PLAN.md", content: "plan v1\n", producer: { node: "dispatch" } });
+    const result = await w.run({ plan: "the plan" });
+    expect(result.state).toBe("skipped");
+    expect(w.spawned).toHaveLength(0);
+    expect(w.reads).toEqual([]); // no read_first count, no canonical plan read, no packet spill
   });
 
   it("pm-read falls back to the run's snapshot when no writer setting exists", async () => {

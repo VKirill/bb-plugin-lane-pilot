@@ -6,6 +6,7 @@ import { RISK_KINDS, anyTurnAsks, checkerIndependence, contextSignature, designD
 import { planText, specText } from "../stages";
 import { insertPhase, listPhases, savePhase } from "../store";
 import { PhaseRefusal } from "./driver-tools";
+import { autoTried } from "./auto-stages";
 import type { MethodsTools } from "./driver-methods";
 import type { ContextDoc, Phase, PhaseRecord, PlanItem, RiskKey } from "../logic";
 
@@ -174,8 +175,10 @@ export function installAdmissionMethods(tools: MethodsTools) {
     const record: PhaseRecord = { ...phase.record };
     const check = planGateOf(record);
     if (!check.ok || !record.plan) return phase;
+    const plan = record.plan;
     // SMA k_v_grill: a plan grilled with open challenges waits — the owner's word on this plan, or a plan that answers
-    // them, lifts it (phase.grill_gate=off switches the hold off). A plan never grilled passes as before.
+    // them, lifts it (phase.grill_gate=off switches the hold off). A plan never grilled passes as before. The grill's
+    // refusal is told before the bounce's silent hold: an open grill is actionable now, the bounce outcome is not.
     const grill = tools.grillBlock(phase);
     // owner.words=sensitive and a plan outside money, data and production deploys (default-path audit §5.4.3): the grill's open challenges
     // do not wait for the owner. The machine plans once more with them as the gaps (lp.plan in gaps mode); a plan still grilled open after
@@ -196,6 +199,13 @@ export function installAdmissionMethods(tools: MethodsTools) {
         "way out 2: set phase.grill_gate=off for the project to admit over an open grill",
       ]);
     }
+    // phase.plan_bounce: an approved plan waits for the external bounce's outcome on this sha — a planning word while
+    // the bounce runs (or before the machine has issued it) holds here and the outcome's own step admits (auto-stages
+    // calls back through AutoApi.admitIfReady). A bounce that failed is recorded «unavailable» and a spent one does not
+    // hold, so no plan waits forever. Its changes_requested holds until the machine's replan lands (the gaps are still
+    // pending and a plan try is left), so the request is not lost.
+    if (record.planBounce === true && plan.critique?.decision === "approve" && plan.bounce?.sha !== plan.sha && !autoTried(record, "bounce")) return phase;
+    if (plan.bounce?.sha === plan.sha && plan.bounce.decision === "changes_requested" && record.replan?.gaps && !autoTried(record, "plan")) return phase;
     // SMA k_v_grill: the pre-push plan is budget-aware — it states the appetite left in the run's token budget and the
     // money hold as they read at admission; no cap set reads «no monthly cap», it does not invent one.
     const snap = phase.runId ? services.runBudgets.get(phase.runId)?.snapshot() : undefined;

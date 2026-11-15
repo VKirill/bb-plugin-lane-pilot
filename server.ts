@@ -470,6 +470,9 @@ export default async function plugin(bb: BbPluginApi) {
   mountLifecycleEvents(ctx, { onQueued: (name, entry) => {
     const id = entry && typeof entry === "object" ? Reflect.get(entry, "id") : undefined;
     if (typeof id === "string") return relayFor(ctx).queueEvent(name, id).then(() => undefined);
+  }, onEnvironmentRemoved: async (attemptIds, environmentId) => {
+    const result = await services.resumeOrphans(undefined, attemptIds);
+    ctx.log(`Lane Pilot: environment ${environmentId} removed — resumeOrphans: ${result.resumed.length} resumed, ${result.skipped.length} skipped, ${result.finished.length} finished`);
   } });
   registerRpc(ctx, services, rpcContract);
   // The Pixel World: tick loop, WebSocket route and listeners; the world starts with the service.
@@ -520,7 +523,7 @@ export default async function plugin(bb: BbPluginApi) {
   mountOwnerBell(ctx, ownerItemSweeps(services), services.ownerLearningItems);
   // The owner's Telegram topic (it was two hub scripts): «Ждут владельца» every 30 minutes, the daily report at 09:00. Bot, chat and topic come from Env Catalog.
   const waiting = ownerWaitingRpc(ctx.db, ownerItemSweeps(services), services.ownerLearningItems, ctx.log, postEvent);
-  mountReports(ctx, { digest: () => waiting.owner_waiting_digest(), ack: (keys) => waiting.owner_waiting_ack({ keys }), coreFile: process.env.LANE_PILOT_CORE_DB ?? `${process.env.HOME ?? "/root"}/.bb/bb.db` });
+  mountReports(ctx, { digest: () => waiting.owner_waiting_digest(), ack: (keys) => waiting.owner_waiting_ack({ keys }) });
   // bench is another field of this bag: each mount below reads it at call time through the thunk.
   // Every Sunday 02:00 UTC the newest bench set runs as this week's arm and is compared with last week's (bench.weekly).
   mountBenchWeekly(ctx, () => services.bench);

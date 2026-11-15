@@ -2,7 +2,7 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { sha256Hex } from "@lane-pilot/kit";
 import { describe, expect, it } from "vitest";
 import type { PrototypeConfig, TaskV2 } from "../src/rooms/contracts";
-import { createAttempt, createRun, createTask, listStageReceipts, openDatabase, saveProjectSetting, saveTaskGitBase, setRunThread, transitionAttempt } from "../src/rooms/plugin-db";
+import { createAttempt, createRun, createTask, listStageReceipts, openDatabase, saveProjectSetting, saveStageReceipt, saveTaskGitBase, setRunThread, transitionAttempt } from "../src/rooms/plugin-db";
 import { createWriterFinish } from "../src/rooms/writer/server/finish";
 import { stageHelperSettings } from "../src/rooms/settings/server/stage-settings";
 
@@ -22,6 +22,8 @@ const SMALL_CONTENT = "# drill\ncommitted body\n";
 const PATCH = "@@ -1,2 +1,2 @@\n # drill\n-old committed line\n+committed body\n";
 const PATCH_BIG = `@@ -1 +1 @@\n${"-old committed line\n+new committed line\n".repeat(400)}`;
 const PATCH_NEW = "diff --git a/drills/out.md b/drills/out.md\nnew file mode 100644\n--- /dev/null\n+++ b/drills/out.md\n@@ -0,0 +1 @@\n+# drill\n";
+// Over MAX_CRITIQUE_PACKET_BYTES (96 KiB): the critic still runs (W33) but the packet is marked truncated.
+const PATCH_HUGE = `@@ -1 +1 @@\n${"-old committed line\n+new committed line\n".repeat(14000)}`;
 
 const config: PrototypeConfig = {
   projectId:"P", hostId:"h", pmWorkspacePath:"/repo", writerWorkspacePath:"/repo",
@@ -35,8 +37,14 @@ const task = (): TaskV2 => ({
 
 function world(opts: {
   snapshots?: Array<{ path:string; sha256:string | null }>;
+  /** workspaceDirt answers in call order (captureEvidence calls it once per loop pass plus the post-approval confirm). */
+  dirtSeq?: Array<{ ok:true; paths:string[]; snapshots:Array<{ path:string; sha256:string | null }> } | { ok:false; reason:string }>;
   dirtOk?: boolean;
   read?: (path:string) => Promise<{ content:string | null }>;
+  /** threads.output answers keyed by thread id ("crit1", "crit2", ... in spawn order). */
+  outputs?: Record<string, string>;
+  /** runCommand answers for the workspace HEAD probe; default is a fixed commit id. */
+  runCommand?: (input:{ command:string; cwd:string }) => { exitCode:number; stdout:string; stderr:string };
   gitBase?: boolean;
   patch?: string;
   content?: string;
@@ -65,7 +73,7 @@ function world(opts: {
         { type:"turn/completed", threadId, seq:2, data:{ status:"completed" } },
       ] },
       get:async ({ threadId }: { threadId?: string } = {}) => ({ id:threadId ?? "pm", projectId:"P", status:"idle" }),
-      output:async () => ({ output:APPROVE }),
+      output:async ({ threadId }: { threadId?: string } = {}) => ({ output:opts.outputs?.[threadId ?? ""] ?? APPROVE }),
       spawn:async (input: Record<string, unknown>) => { spawns.push(input); return { id:`crit${spawns.length}` }; },
       send:async () => ({}),
     },
@@ -93,13 +101,23 @@ function world(opts: {
     state:{ disposed:false },
     bb:{ storage:bb.storage, log:{ warn() {}, error() {}, info() {} }, sdk,
       hosts:{ experimental_client:async () => ({ call:async () => ({}) }) } },
-    db, getThreadBounded:async () => ({ status:"idle" }), host:{ call:async () => ({}) },
+    db, getThreadBounded:async () => ({ status:"idle" }),
+    host:{ call:async (method:string, input?:{ command?:string; cwd?:string }) => method === "runCommand"
+      ? (opts.runCommand?.({ command:String(input?.command ?? ""), cwd:String(input?.cwd ?? "") })
+        ?? { hostId:"h", exitCode:0, stdout:`${"f".repeat(40)}\n`, stderr:"" })
+      : ({}) },
     isDisposed:() => false, log:() => undefined,
   };
+  let dirtCalls = 0;
   const finish = createWriterFinish(ctx as never, {
     validateWriterResult:async () => ({ status:"accepted", output:"done", produced:[PRODUCED], verification:[] }),
     persistWriterAcceptance:async () => ({ state:"passed" }),
-    workspaceDirt:async () => opts.dirtOk === false ? { ok:false, reason:"git status failed" } : { ok:true, snapshots:opts.snapshots ?? [] },
+    workspaceDirt:async () => {
+      const seq = opts.dirtSeq?.[dirtCalls];
+      dirtCalls += 1;
+      if (seq) return seq;
+      return opts.dirtOk === false ? { ok:false, reason:"git status failed" } : { ok:true, snapshots:opts.snapshots ?? [] };
+    },
     stageHelperSettings,
     runBudgetFor:() => ({ snapshot:() => ({ limits:{} }) }),
   } as never);
@@ -188,5 +206,81 @@ describe("code critique evidence covers committed produced files", () => {
     expect(receipt?.state).toBe("skipped");
     expect(receipt?.reason).toContain("code_critique_evidence_unknown");
     expect(w.spawns).toHaveLength(0);
+  });
+
+  it("a truncated packet still catches a produced-file mutation after approval", async () => {
+    // >96 KiB diff: evidence.truncated is set, but artifactRevisionSha256 hashes full contents — the stale check must run anyway.
+    let reads = 0;
+    const w = world({ snapshots:[], gitBase:true, patch:PATCH_HUGE,
+      read:async (path:string) => {
+        if (path !== `/repo/${PRODUCED}`) return { content:null };
+        reads += 1;
+        return { content: reads === 1 ? CONTENT : `${CONTENT}critic edit\n` };
+      } });
+    const result = await w.run();
+    expect(result).toMatchObject({ status:"blocked", reason:"code_critique_stale_revision" });
+    expect(w.spawns).toHaveLength(1);
+  });
+
+  it("an unchanged oversized candidate is accepted — truncation alone is not a block", async () => {
+    const w = world({ snapshots:[], gitBase:true, patch:PATCH_HUGE });
+    const result = await w.run();
+    expect(result).toMatchObject({ state:"passed" });
+    expect(critiqueReceipt(w.db)).toMatchObject({ state:"passed" });
+    expect(w.spawns).toHaveLength(1);
+  });
+
+  it("a new owned file appearing during the critique blocks — merge's git add -A would commit it", async () => {
+    const w = world({ snapshots:[], gitBase:true, dirtSeq:[
+      { ok:true, paths:[], snapshots:[] },
+      { ok:true, paths:["drills/owned-new.ts"], snapshots:[{ path:"drills/owned-new.ts", sha256:sha256Hex("critic wrote this") }] },
+    ] });
+    const result = await w.run();
+    expect(result).toMatchObject({ status:"blocked", reason:"code_critique_stale_revision" });
+    expect(w.spawns).toHaveLength(1);
+  });
+
+  it("transport bookkeeping appearing during the critique does not block", async () => {
+    const w = world({ snapshots:[], gitBase:true, dirtSeq:[
+      { ok:true, paths:[], snapshots:[] },
+      { ok:true, paths:[".agents/runs/run1/artifacts/t1/attempts/a-t1/barrier-input.json"],
+        snapshots:[{ path:".agents/runs/run1/artifacts/t1/attempts/a-t1/barrier-input.json", sha256:sha256Hex("{}") }] },
+    ] });
+    const result = await w.run();
+    expect(result).toMatchObject({ state:"passed" });
+    expect(w.spawns).toHaveLength(1);
+  });
+
+  it("a critic commit moving HEAD after approval blocks even with an unchanged dirty set", async () => {
+    let headCalls = 0;
+    const w = world({ snapshots:[], gitBase:true,
+      runCommand:({ command }) => command === "git rev-parse --verify HEAD"
+        ? { exitCode:0, stdout:`${headCalls++ === 0 ? "a".repeat(40) : "b".repeat(40)}\n`, stderr:"" }
+        : { exitCode:0, stdout:"", stderr:"" } });
+    const result = await w.run();
+    expect(result).toMatchObject({ status:"blocked", reason:"code_critique_stale_revision" });
+    expect(w.spawns).toHaveLength(1);
+  });
+
+  it("a repair round re-anchors the approved revision — the new review's confirm still passes", async () => {
+    let reads = 0;
+    const w = world({ snapshots:[], gitBase:true,
+      read:async (path:string) => {
+        if (path !== `/repo/${PRODUCED}`) return { content:null };
+        reads += 1;
+        return { content: reads === 1 ? CONTENT : `${CONTENT}repaired line\n` };
+      } });
+    // A repair writer was already sent before this finish pass (the way a reload leaves it): the gate waits for
+    // it, re-reads the candidate and re-reviews — the approval must anchor to the post-repair revision.
+    saveStageReceipt(w.db, { runId:"run", taskId:"t1", stageId:"code-critique", contractVersion:1, state:"blocked",
+      inputSha256:"a".repeat(64), outputSha256:null, attempt:0, providerId:"critic", model:"critic-model", threadId:null,
+      reason:"critique_changes_requested", updatedAt:Date.now(),
+      result:{ revisionSha256:"r1", artifactRevisionSha256:"r1", findingsHash:"", repairRound:1, spawnAttempted:true,
+        repairThreadId:"repair-1",
+        policy:{ enabled:true, mode:"gate", autoFix:true, maxRounds:1, agent:"code-critic", providerId:"codex", model:"test-model" } } });
+    const result = await w.run();
+    expect(result).toMatchObject({ state:"passed" });
+    expect(w.spawns).toHaveLength(1);
+    expect(critiqueReceipt(w.db)).toMatchObject({ state:"passed" });
   });
 });

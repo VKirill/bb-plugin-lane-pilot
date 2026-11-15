@@ -1,3 +1,4 @@
+import { taskRedispatchBase } from "@lane-pilot/contracts";
 import type { LanePilotDatabase } from "../database";
 
 /** Tasks of the run whose latest attempt ended (accepted, blocked or canceled). */
@@ -94,6 +95,24 @@ export function listIdleAttemptsInStates(db: LanePilotDatabase, states: readonly
   return db.prepare(`SELECT id, run_id, task_id, state, reason, failure_code, check_name, timeout_sec, updated_at FROM lane_pilot_attempt
     WHERE state IN (${states.map(() => "?").join(",")}) AND updated_at < ?`).all(...states, updatedBefore) as
     Array<{ id: string; run_id: string; task_id: string; state: string; reason: string | null; failure_code: string | null; check_name: string | null; timeout_sec: number | null; updated_at: number }>;
+}
+
+/**
+ * The task family's latest attempt inside one run — the base («T1») and its numeric redispatches («T1.2», «T1.2.2»);
+ * a mainfix is its own task. Run-scoped on purpose: task ids recur across runs, and a same-named task of another run
+ * is unrelated work. Mirrors `latestTaskAttempt`'s member rule (which is project-scoped for depends_on), except the
+ * base name itself is always a member: a redispatch never goes back to it, so including it only widens the family.
+ * `rowid` breaks the same-ms `created_at` tie: `attempt_no` is per-task and meaningless across the family, so two
+ * first attempts of «T1» and «T1.2» created in one tick would otherwise order by insertion luck.
+ */
+export function latestFamilyAttemptInRun(db: LanePilotDatabase, runId: string, taskId: string): { id: string; task_id: string } | null {
+  const base = taskRedispatchBase(taskId);
+  const rows = db.prepare(
+    `SELECT id, task_id FROM lane_pilot_attempt WHERE run_id=? AND (task_id=? OR task_id=? OR task_id LIKE ? ESCAPE '\\')
+     ORDER BY created_at DESC, rowid DESC`,
+  ).all(runId, taskId, base, `${base.replace(/[\\%_]/g, "\\$&")}.%`) as Array<{ id: string; task_id: string }>;
+  const member = (id: string) => id === taskId || id === base || (id.startsWith(`${base}.`) && /^(\.\d+)+$/.test(id.slice(base.length)));
+  return rows.find((row) => member(row.task_id)) ?? null;
 }
 
 /** The task's latest attempt row, or null. */

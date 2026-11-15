@@ -10,6 +10,7 @@ import type { rpcContract } from "../../contracts";
 import { scheduleIsolated } from "../../platform/server";
 import type { ServerCore } from "../../contracts/server";
 import { bestEffort } from "@lane-pilot/kit";
+import { sendServiceMessage } from "../../relay/server";
 
 /**
  * Canary for Lane Pilot's own releases (G7). A new version is watched while its first attempts finish: if too many of
@@ -185,7 +186,7 @@ export function createCanary(ctx: ServerCore, breaker?: () => { snapshot(now?: n
     bb.log.warn(`Lane Pilot canary tripped: ${canaryAlertText(report)}`);
     const text = `Lane Pilot (canary alert):\n${canaryAlertText(report)}`;
     for (const threadId of new Set(report.samples.map((row) => row.pmThreadId).filter((id): id is string => Boolean(id)))) {
-      await bb.sdk.threads.send({ threadId, mode: "queue-if-active", input: [{ type: "text", text, mentions: [] }] } as never)
+      await sendServiceMessage(bb as never, { threadId, mode: "queue-if-active", text })
         .catch((cause) => ctx.log(`Lane Pilot could not send the canary alert to ${threadId}: ${cause instanceof Error ? cause.message : String(cause)}`));
     }
     return true;

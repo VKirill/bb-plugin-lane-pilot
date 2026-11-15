@@ -1,5 +1,12 @@
 import type { LanePilotDatabase } from "../database";
 
+/** Candidates only: the caller still checks open state and host identity before reconciling a removed environment. */
+export function attemptEnvironmentCandidates(db: LanePilotDatabase, environmentId: string, ownedPath: string | null): Array<{ id: string; run_id: string; environment_id: string | null }> {
+  return (ownedPath
+    ? db.prepare("SELECT id, run_id, environment_id FROM lane_pilot_attempt WHERE environment_id=? OR workspace_path=?").all(environmentId, ownedPath)
+    : db.prepare("SELECT id, run_id, environment_id FROM lane_pilot_attempt WHERE environment_id=?").all(environmentId)) as Array<{ id: string; run_id: string; environment_id: string | null }>;
+}
+
 /** Attempt ids that ever ran on a thread (thread-window attribution for usage). */
 export function attemptIdsOfThread(db: LanePilotDatabase, threadId: string): string[] {
   return (db.prepare("SELECT id FROM lane_pilot_attempt WHERE thread_id=?").all(threadId) as Array<{ id: string }>).map((row) => row.id);

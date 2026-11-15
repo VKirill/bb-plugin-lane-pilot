@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { stageHelperSettings } from "../src/rooms/settings/server/stage-settings";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { openDatabase, createRun, createTask, createAttempt, countAttempts, getAttempt, getTask, getTaskGitBase, getTaskPlan, loadPrototypeConfig,
-  savePrototypeConfig, listStageReceipts, saveProjectSetting, transitionAttempt } from "../src/rooms/plugin-db";
+  savePrototypeConfig, listStageReceipts, saveProjectSetting, transitionAttempt, closeRun, getRun } from "../src/rooms/plugin-db";
 import { recordStage } from "../src/rooms/runs/server/stage-records";
 import { createWriterUpdateTask } from "../src/rooms/writer/server/update-task";
 import { gateResolverFor } from "../src/rooms/verification/server";
@@ -404,7 +404,7 @@ describe("lane_pilot_update_task", () => {
       db.prepare("UPDATE lane_pilot_attempt SET state='blocked', reason=?, thread_id='thr-w', workspace_path='/ws/worktrees/att-1' WHERE id='att-1'").run(reason);
     };
 
-    const setup = (options: { failSend?: boolean; busy?: boolean } = {}) => {
+    const setup = (options: { failSend?: boolean | "unconfirmed"; busy?: boolean } = {}) => {
       const sent: Array<{ threadId: string; input: Array<{ text: string }> }> = [];
       const writes: Array<{ path: string; content: string }> = [];
       const started: Array<{ runId: string; taskId: string; firstAttemptId: string; writerThreadId: string; task: TaskV2 }> = [];
@@ -418,7 +418,9 @@ describe("lane_pilot_update_task", () => {
           threads: {
             get: async () => ({ id: "thr-w", environmentId: "env-writer" }),
             send: async (args: { threadId: string; input: Array<{ text: string }> }) => {
-              if (options.failSend) throw new Error("thread gone");
+              // BB's dispatch hooks refusing before the queue (409 dispatch_rejected) prove nothing was delivered; a lost reply does not (EXT05 review).
+              if (options.failSend === "unconfirmed") throw new Error("socket hang up");
+              if (options.failSend) throw Object.assign(new Error("dispatch rejected by a plugin hook"), { status: 409, code: "dispatch_rejected", body: { code: "dispatch_rejected", message: "dispatch rejected by a plugin hook", details: { pluginId: "guard" } } });
               sent.push(args);
             },
           },
@@ -431,8 +433,11 @@ describe("lane_pilot_update_task", () => {
         host: {
           call: async (method: string, input: { paths?: string[] }) => method === "snapshotDryRun"
             ? { entries: (input.paths ?? []).map((path) => ({ path, kind: "missing" })) }
+            // EXT05: the stored contract gains the trusted tooling in never_touch, so the worktree's barrier follows it.
+            : method === "gitOwnsBarrier" ? { hostId: "h1", status: "applied", locked: 0, unlocked: 0 }
             : { exitCode: 0, stdout: "", stderr: "" },
         },
+        effectiveProjectSettings: async () => ({ values: {} }),
         state: { disposed: false },
       configForRun: async (id: string) => loadPrototypeConfig(db, id),
         log: () => {},
@@ -540,6 +545,19 @@ describe("lane_pilot_update_task", () => {
       expect(getTaskPlan(db, taskId)).toBe("Original objective");
       expect(getAttempt(db, "att-1")?.state).toBe("blocked");
       expect(started).toEqual([]);
+    });
+
+    it("a turn whose delivery is not confirmed keeps the fixed contract and the reopened attempt, and says so", async () => {
+      blockedWith(`needs_human: ${question}`);
+      const { updateTask, started } = setup({ failSend: "unconfirmed" });
+
+      const res = await updateTask({ projectId, runId, pmThreadId, taskId, task: { ...baseTask, verification: newVerification } });
+
+      expect(res).toMatchObject({ ok: true, state: "running", deliveryUnknown: true });
+      expect(String(res.note)).toContain("was not confirmed");
+      expect((getTask(db, taskId)?.contract as TaskV2).verification).toEqual(newVerification);
+      expect(getAttempt(db, "att-1")?.state).toBe("running");
+      expect(started).toHaveLength(1);
     });
   });
 });
@@ -653,5 +671,29 @@ describe("a task blocked by the plan critique before any writer", () => {
       resolveIntegrationGate: gateResolverFor(ctx), isTaskSatisfied, activeWriterTasks: new Set<string>(), stability: { loadParked: async () => [] } } as unknown as Services;
     const res = await createWriterUpdateTask(ctx, services).updateTask({ projectId, runId, pmThreadId, taskId, task: { ...refusedTask, title: "Fixed title" }, plan: "Fixed plan" });
     expect(res).toMatchObject({ ok: false, error: { code: "task_started" } });
+  });
+
+  it("is refused once the run is closed: run_closed, before any stage goes again or a writer starts (layers audit 2026-11-15, F8)", async () => {
+    createTask(db, { id: taskId, runId, kind: "bb", contract: refusedTask });
+    createAttempt(db, { id: "att-1", runId, taskId });
+    const ctx = baseCtx();
+    const services = {
+      resolveIntegrationGate: gateResolverFor(ctx), isTaskSatisfied, activeWriterTasks: new Set<string>(), stability: { loadParked: async () => [] } } as unknown as Services;
+    const { started, pipelineRunId } = await blockedByCritique(ctx, services);
+    expect(getAttempt(db, "att-1")).toMatchObject({ state: "blocked", thread_id: null });
+    expect(closeRun(db, runId, "rpc")).toBe(true);
+    const stagesBefore = listStageReceipts(db, runId, taskId);
+    const spawnsBefore = started.length;
+
+    const res = await createWriterUpdateTask(ctx, services).updateTask({ projectId, runId, pmThreadId, taskId, task: { ...refusedTask, title: "Fixed title", expected_outputs: ["src/out.txt"] }, plan: "Fixed plan" });
+
+    expect(res).toMatchObject({ ok: false, error: { code: "run_closed", retryable: false, sideEffects: "none" } });
+    expect((getTask(db, taskId)?.contract as TaskV2).title).toBe("Original title");
+    expect(getAttempt(db, "att-1")).toMatchObject({ state: "blocked" });
+    expect(countAttempts(db, runId, taskId)).toBe(1);
+    expect(listStageReceipts(db, runId, taskId)).toEqual(stagesBefore);
+    expect(started).toHaveLength(spawnsBefore);
+    expect(db.prepare("SELECT count(*) AS n FROM lane_pilot_wf_event WHERE run_id=? AND kind='rerun'").get(pipelineRunId)).toEqual({ n: 0 });
+    expect(getRun(db, runId)).toMatchObject({ state: "closed" });
   });
 });
