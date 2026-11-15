@@ -16,7 +16,7 @@ const MONEY = "src/rooms/money/server.ts";
 const PROBE = "src/rooms/native-agent/server/helper-probe.ts";
 
 export default {
-  n596: { mutation: flip("core:plugins/account-pool/src/operations.ts", "if (input.provider !== \"claude\") {", "if (input.provider === \"claude\") {") },
+  n596: { mutation: flip("core:plugins/account-pool/src/cli.ts", "if (provider !== \"claude\") {", "if (provider === \"claude\") {") },
   n597: { mutation: distort("core:plugins/account-pool/src/server.ts", "const token = await hubTokens.forHost(context.hostId);", "const token = await hubTokens.forHost(\"shared-host\");") },
   n598: { mutation: distort("core:plugins/account-pool/src/store.ts", "await fs.writeFile(temporary, value, { encoding: \"utf8\", mode: 0o600 });\n    await fs.rename(temporary, destination);\n    await fs.chmod(destination, 0o600);", "await fs.writeFile(temporary, value, { encoding: \"utf8\", mode: 0o600 });\n    await fs.rename(temporary, destination);\n    await fs.chmod(destination, 0o644);") },
   n599: { mutation: flip("src/rooms/stability/server/worktree-janitor.ts", "return strictProjects.get(task.projectId) ? task.keys : [];", "return strictProjects.get(task.projectId) ? [] : task.keys;"), reach: entry("the hourly janitor sweep finds a task that ended a day ago in a project with worker.strict_user on", { "worker.strict_user": "on" }), trace: drill("sma_r07") },
