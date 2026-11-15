@@ -61,8 +61,10 @@ export const threadLiveOutput = z.object({
     column: z.enum(["queued", "running", "checking", "blocked", "done"]), phase: z.string(),
     stage: z.string().nullable(), model: z.string().nullable(), since: z.number().nullable(),
     threadId: z.string().nullable(), updatedAt: z.number(), detail: z.string().nullable(), projectId: z.string().nullable().optional(),
+    kind: z.enum(["task", "workflow", "phase", "batch"]).optional(), state: z.string(),
   }).strict()),
   strips: z.record(z.string(), stripSchema),
+  session: z.object({ runId: z.string(), state: z.string(), kind: z.string() }).strict().nullable(),
 }).strict().nullable();
 export const ownerWaitingOutput = z.object({
   generatedAt: z.number(),

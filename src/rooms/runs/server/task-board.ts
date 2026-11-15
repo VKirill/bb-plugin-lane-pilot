@@ -68,7 +68,7 @@ function waitsFor(reason: string | null): string[] {
 /** Drafts already reported as malformed, so the board logs each once. */
 const skippedDrafts = new Set<string>();
 
-export function buildTaskBoard(db: LanePilotDatabase, input: { projectId?: string | null; doneSince: number; limit?: number; runIds?: readonly string[] }, phases: BoardItem[] = []): BoardItem[] {
+export function buildTaskBoard(db: LanePilotDatabase, input: { projectId?: string | null; doneSince: number; limit?: number; runIds?: readonly string[]; linkedRunIds?: readonly string[] }, phases: BoardItem[] = []): BoardItem[] {
   const limit = input.limit ?? 400;
   const rawTasks = listBoardAttemptRows(db, { projectId: input.projectId, runIds: input.runIds, doneSince: input.doneSince, limit });
   // A version the PM replaced is not on the board: the check above finds only `x.3.1`, and PMs number redos `x.4`, so a blocked
@@ -127,7 +127,9 @@ export function buildTaskBoard(db: LanePilotDatabase, input: { projectId?: strin
   });
   // Workflow runs the owner or a PM started (insights, research, reels...); a task's own pipeline run is part of the task above.
   // A board narrowed to some task runs has none.
-  const flows = input.runIds?.length ? [] : wfBoardRuns(db, { projectId: input.projectId, doneSince: input.doneSince, limit });
+  const flows = input.runIds?.length
+    ? (input.linkedRunIds?.length ? wfBoardRuns(db, { projectId: input.projectId, doneSince: input.doneSince, limit, linkRunIds: input.linkedRunIds }) : [])
+    : wfBoardRuns(db, { projectId: input.projectId, doneSince: input.doneSince, limit });
   for (const row of flows) {
     const column: BoardColumn = row.status === "running" ? "running" : row.status === "waiting" ? "queued"
       : row.status === "succeeded" || row.status === "canceled" ? "done" : "blocked";

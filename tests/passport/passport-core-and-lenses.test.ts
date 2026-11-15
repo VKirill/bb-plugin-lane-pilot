@@ -32,6 +32,7 @@ import {
 } from "../../src/rooms/passport/server";
 import { createCore } from "../../src/rooms/core/server/core";
 import { getProjectArtifact, writeCasCheckoutFile } from "../../src/rooms/storage";
+import { nativeSelectionMarker, tokensFrom } from "../../src/rooms/native-agent/native-session";
 
 function makeDb() {
   const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
@@ -40,6 +41,27 @@ function makeDb() {
 }
 
 describe("Living Project Passport — schema, fluff/contradiction detectors, lenses, CLI & live observer", () => {
+  it("delivers historical owner quotes without turning their old selection marker into a helper profile", async () => {
+    const { db, dispose } = makeDb();
+    try {
+      const projectId = "passport-native-selection";
+      const oldToken = "68b66b18-ce7b-4e1b-a2c0-77a6ec14b1e9";
+      const childToken = "efd8ec6a-0e21-4e10-9c54-ffb34a83d69d";
+      const quote = `${nativeSelectionMarker(oldToken)} Создайте демонстрационный сервис Stripe.`;
+      const passport = mergePassportPatch(createEmptyPassport(), { market_rails: { payment_rails: { value: ["Stripe"], status: "confirmed" } } });
+      upsertPassport(db, { projectId, passport, updatedBy: "test" });
+      appendVerbatim(db, { projectId, source: "owner-chat", questionAsked: "", ownerVerbatim: quote, extractedPaths: [] });
+      for (const role of ["analyst", "specialist:tavily"]) {
+        const block = projectPassportBlock(db, { projectId, role });
+        expect(block).toContain("Создайте демонстрационный сервис Stripe.");
+        expect(tokensFrom([{ type: "text", text: block }])).toEqual([]);
+        expect(tokensFrom([{ type: "text", text: `${nativeSelectionMarker(childToken)}\n${block}` }])).toEqual([childToken]);
+      }
+      // The source quotation stays intact; only the context delivered to another agent loses transport metadata.
+      expect(listVerbatim(db, projectId)[0]?.owner_verbatim).toBe(quote);
+    } finally { await dispose(); }
+  });
+
   it("computes epistemic metrics, catches vague fluff, detects contradictions, and skips confirmed questions", () => {
     const empty = createEmptyPassport();
     const coldMetrics = computePassportMetrics(empty);

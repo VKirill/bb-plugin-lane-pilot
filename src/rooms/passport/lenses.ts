@@ -1,4 +1,4 @@
-import { maskCredentials } from "@lane-pilot/kit";
+import { maskCredentials, withoutSelectionMarkers } from "@lane-pilot/kit";
 import type { LanePilotDatabase } from "../storage";
 import { detectPassportContradictions, passportExcludesRu } from "./passport-checks-and-render";
 import {
@@ -230,7 +230,7 @@ export function passportLensFor(
   if ((profile === "content" || profile === "marketing" || profile === "design" || profile === "pm_lead") && verbatim.length > 0) {
     const quotes = verbatim
       .slice(0, 3)
-      .map((v) => `  • "${v.owner_verbatim.replace(/\s+/g, " ").trim().slice(0, 180)}"`);
+      .map((v) => `  • "${withoutSelectionMarkers(v.owner_verbatim).replace(/\s+/g, " ").trim().slice(0, 180)}"`);
     if (quotes.length) {
       lines.push(" [Owner Verbatim Voice]");
       lines.push(...quotes);
@@ -238,7 +238,8 @@ export function passportLensFor(
   }
 
   lines.push("</project_passport>");
-  const full = maskCredentials(lines.join("\n")).text;
+  // Historical passport data may contain a composer's profile token; it must not select a receiving helper's agent.
+  const full = withoutSelectionMarkers(maskCredentials(lines.join("\n")).text);
   if (full.length <= maxChars) return full;
   return `${full.slice(0, maxChars - 26).trimEnd()}\n…\n</project_passport>`;
 }

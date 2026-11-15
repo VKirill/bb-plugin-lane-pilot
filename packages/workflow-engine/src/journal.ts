@@ -278,13 +278,14 @@ export function wfLatestSucceededStep(db: WfReadDb, runId: string, nodeId: strin
 }
 
 /** Top-level workflow runs a board lists: own work (no task link) still live or touched since a time, newest first. */
-export function wfBoardRuns(db: WfReadDb, input: { projectId?: string | null; doneSince: number; limit: number }): Array<{
-  id: string; workflow_id: string; definition_json: string; project_id: string | null; status: string; reason: string | null; created_at: number; updated_at: number;
+export function wfBoardRuns(db: WfReadDb, input: { projectId?: string | null; doneSince: number; limit: number; linkRunIds?: readonly string[] }): Array<{
+  id: string; workflow_id: string; definition_json: string; project_id: string | null; link_run_id: string | null; status: string; reason: string | null; created_at: number; updated_at: number;
 }> {
-  return db.prepare(`SELECT id, workflow_id, definition_json, project_id, status, reason, created_at, updated_at FROM lane_pilot_wf_run
-    WHERE depth=0 AND link_task_id IS NULL AND (status NOT IN ('succeeded','canceled') OR updated_at>=?) ${input.projectId ? "AND project_id=?" : ""}
-    ORDER BY updated_at DESC LIMIT ?`).all(input.doneSince, ...(input.projectId ? [input.projectId] : []), input.limit) as Array<{
-    id: string; workflow_id: string; definition_json: string; project_id: string | null; status: string; reason: string | null; created_at: number; updated_at: number;
+  const linkFilter = input.linkRunIds === undefined ? "" : input.linkRunIds.length ? `AND link_run_id IN (${input.linkRunIds.map(() => "?").join(",")})` : "AND 0";
+  return db.prepare(`SELECT id, workflow_id, definition_json, project_id, link_run_id, status, reason, created_at, updated_at FROM lane_pilot_wf_run
+    WHERE depth=0 AND link_task_id IS NULL AND (status NOT IN ('succeeded','canceled') OR updated_at>=?) ${input.projectId ? "AND project_id=?" : ""} ${linkFilter}
+    ORDER BY updated_at DESC LIMIT ?`).all(input.doneSince, ...(input.projectId ? [input.projectId] : []), ...(input.linkRunIds ?? []), input.limit) as Array<{
+    id: string; workflow_id: string; definition_json: string; project_id: string | null; link_run_id: string | null; status: string; reason: string | null; created_at: number; updated_at: number;
   }>;
 }
 

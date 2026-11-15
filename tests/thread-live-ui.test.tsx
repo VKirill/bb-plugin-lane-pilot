@@ -37,4 +37,53 @@ describe("Lane Pilot in the thread's info panel", () => {
     await waitFor(() => expect(empty.rpcCalls.some((call) => call.method === "thread_live")).toBe(true));
     expect(empty.queryByTestId("thread-live")).toBeNull();
   });
+
+  it("shows the open session and a linked workflow's real steps even with zero task attempts", async () => {
+    await loadPluginApp(() => import("../app"));
+    const { ThreadLive } = await import("../src/rooms/runs/ui");
+    const live = {
+      role: "pm", pmThreadId: "thr_pm",
+      items: [{ key: "workflow:wfrun_1", runId: "wfrun_1", taskId: null, title: "Research", kind: "workflow", column: "running", phase: "chain", state: "running", stage: "collect", model: null, since: null, threadId: null, updatedAt: 1, detail: null }],
+      strips: {},
+      session: { runId: "lprun_1", state: "running", kind: "cli" },
+    };
+    const snapshot = {
+      graph: { nodes: [{ id: "collect", title: { ru: "Сбор", en: "Collect" }, label: "collect" }] },
+      steps: [{ key: "s1", nodeId: "collect", visit: 1, attempt: 1, state: "running", startedAt: null, endedAt: null, handoff: null, error: null, output: null, threadId: "thr_step" }],
+    };
+    const view = renderSlot({ component: () => <ThreadLive threadId="thr_pm" locale="ru" /> }, {}, { context: { projectId: null, threadId: null }, rpc: { thread_live: () => live, workflow_run_snapshot: () => ({ snapshot }) } as never });
+    await view.findByTestId("live-session");
+    expect(view.getByTestId("live-session").textContent).toContain("Сессия открыта");
+    expect(view.getByTestId("live-session").textContent).toContain("lprun_1");
+    expect(view.getByTestId("live-session").textContent).not.toMatch(/running|cli|Идёт/);
+    expect(view.getByTestId("thread-live").textContent).toContain("Идёт");
+    fireEvent.click(view.getByText("Research"));
+    fireEvent.click(await view.findByText("Результаты шагов"));
+    await view.findByTestId("wf-run-step-details");
+    expect(view.getByTestId("wf-run-step-details").textContent).toContain("Сбор");
+    expect(view.rpcCalls.some((call) => call.method === "workflow_run_snapshot" && (call.input as { runId?: string }).runId === "wfrun_1")).toBe(true);
+  });
+
+  it("shows each workflow's real status — canceled gets the muted icon, not a green check — and no task summary with zero tasks", async () => {
+    await loadPluginApp(() => import("../app"));
+    const { ThreadLive } = await import("../src/rooms/runs/ui");
+    const wf = (runId: string, column: string, state: string) => ({ key: `workflow:${runId}`, runId, taskId: null, title: `Wf ${runId}`, kind: "workflow", column, phase: "chain", state, stage: null, model: null, since: null, threadId: null, updatedAt: 1, detail: null });
+    const live = {
+      role: "pm", pmThreadId: "thr_pm",
+      items: [wf("wfrun_ok", "done", "succeeded"), wf("wfrun_cx", "done", "canceled"), wf("wfrun_bad", "blocked", "failed")],
+      strips: {},
+      session: { runId: "lprun_1", state: "running", kind: "cli" },
+    };
+    const view = renderSlot({ component: () => <ThreadLive threadId="thr_pm" locale="ru" /> }, {}, { context: { projectId: null, threadId: null }, rpc: { thread_live: () => live } as never });
+    await view.findByTestId("thread-live");
+    expect(view.queryByText(/в работе \d+ · готово/)).toBeNull();
+    const iconOf = (label: string) => view.getByText(label).closest("[data-testid^='live-task-']")!.querySelector("svg")!.getAttribute("class")!;
+    expect(view.getByText("Успешно")).toBeTruthy();
+    expect(view.getByText("Отменён")).toBeTruthy();
+    expect(view.getByText("Ошибка")).toBeTruthy();
+    expect(iconOf("Успешно")).toContain("success");
+    expect(iconOf("Отменён")).toContain("text-muted-foreground");
+    expect(iconOf("Отменён")).not.toContain("success");
+    expect(iconOf("Ошибка")).toContain("text-destructive");
+  });
 });
