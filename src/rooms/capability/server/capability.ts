@@ -26,7 +26,7 @@ interface Services {
  * the adapter answers again; a passed one is the receipt that the version works. The documentary gate (`bindDocumentaryGate`) reads the
  * same table before a documentary stage spawns: an unproved provider is refused, not started.
  */
-export const BASE_PROVIDERS: Readonly<Record<string, string>> = { "claude-code": "claude-sonnet-5-5", codex: "gpt-6-luna", opencode2: "zai-coding-plan/glm-5.3-flash" };
+export const BASE_PROVIDERS: Readonly<Record<string, string>> = { "claude-code": "claude-sonnet-5-5", codex: "gpt-6-luna", opencode2: "longcat/LongCat-2.5" };
 type Listed = Array<{ id?: unknown; pluginId?: unknown; version?: unknown }>;
 const rowsOf = (value: unknown, key: string): Listed => (Array.isArray(value) ? value : ((value as Record<string, unknown> | null)?.[key] as unknown[] | undefined) ?? []) as Listed;
 

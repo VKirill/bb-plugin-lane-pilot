@@ -10,7 +10,7 @@ describe("the capability table", () => {
       { key: "writer.provider", value: "acp-cursor" }, { key: "writer.model", value: "composer-2.5" },
       { key: "pmProviderId", value: "claude-code" }, { key: "pmModel", value: "claude-opus-5-5" },
     ], BASE_PROVIDERS);
-    expect([...inUse]).toEqual([["acp-cursor", "composer-2.5"], ["claude-code", "claude-opus-5-5"], ["codex", "gpt-6-luna"], ["opencode2", "zai-coding-plan/glm-5.3-flash"]]);
+    expect([...inUse]).toEqual([["acp-cursor", "composer-2.5"], ["claude-code", "claude-opus-5-5"], ["codex", "gpt-6-luna"], ["opencode2", "longcat/LongCat-2.5"]]);
     const versions = adapterVersions([{ id: "codex", pluginId: "provider-codex" }, { id: "opencode2", pluginId: "opencode2" }, { id: "x" }], [{ id: "provider-codex", version: "0.1.0" }, { id: "opencode2", version: "1.1.0" }]);
     expect([...versions]).toEqual([["codex", "0.1.0"], ["opencode2", "1.1.0"], ["x", null]]);
   });
@@ -39,9 +39,9 @@ describe("the sweep", () => {
     createRun(db, "run_s", "proj_3tb652jpsi", "bb", "/s");
     setRunThread(db, "run_s", "thr_pm");
     harness.sdk.stub("threads.get", async () => ({ id: "thr_pm", status: "idle", archivedAt: null }));
-    const probes: string[] = [], tripped: string[] = [];
+    const probes: string[] = [], models: string[] = [], tripped: string[] = [];
     const services = {
-      startHelperProbe: async (_project: string, _run: string, provider: string, _model: string, kind = "answers") => { probes.push(`${provider}:${kind}`); return provider === "opencode2" ? { ok: false, reason: "did not answer" } : { ok: true, reason: null }; },
+      startHelperProbe: async (_project: string, _run: string, provider: string, _model: string, kind = "answers") => { probes.push(`${provider}:${kind}`); models.push(`${provider}/${_model}`); return provider === "opencode2" ? { ok: false, reason: "did not answer" } : { ok: true, reason: null }; },
       providerBreaker: { record: (key: string) => { tripped.push(key); } },
     };
     const api = createCapabilities({ db, bb, log: () => undefined, isDisposed: () => false } as never, services as never).capabilities;
@@ -53,6 +53,7 @@ describe("the sweep", () => {
       ["opencode2", "answers:not_supported"],
     ];
     expect(first.map((row) => [row.providerId, row.state])).toEqual(expected);
+    expect(models.filter((model) => model.startsWith("opencode2/"))).toEqual(["opencode2/longcat/LongCat-2.5"]);
     expect(tripped).toEqual([expect.stringContaining("opencode2")]);
     // A version that does not answer is not probed for the rest until a new version comes.
     expect(await api.sweep()).toEqual([]);

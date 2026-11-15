@@ -149,7 +149,7 @@ it("after a repeated red check, the next attempt goes to the next writer in the 
   // One feedback turn in the writer's own thread, then a different writer. Not another spawn of p/wm.
   expect(env.sends.filter((send) => send.threadId === "thr_w")).toHaveLength(1);
   expect(spawned).toHaveLength(2);
-  expect(emergencies).toEqual([{ providerId:"opencode2", model:"zai-coding-plan/glm-5.3-flash" }]);
+  expect(emergencies).toEqual([{ providerId:"opencode2", model:"longcat/LongCat-2.5" }]);
   await env.harness.lifecycle.dispose();
 });
 
@@ -162,7 +162,7 @@ it("with writer.retry_escalate on, the first red check goes to the next writer i
   start(env, all);
   await vi.waitFor(() => expect(writerStage(env.db).state).toBe("failed"));
   expect(spawned).toHaveLength(2);
-  expect(emergencies).toEqual([{ providerId:"opencode2", model:"zai-coding-plan/glm-5.3-flash" }]);
+  expect(emergencies).toEqual([{ providerId:"opencode2", model:"longcat/LongCat-2.5" }]);
   await env.harness.lifecycle.dispose();
 });
 

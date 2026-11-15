@@ -423,7 +423,7 @@ describe("parity g6 rest a", () => {
       const { sweepWriterWakes } = await import("../../src/rooms/writer/server/writer-wake");
       Object.assign(services, createWriterStart(ctx, services));
       saveProjectSetting(db, "proj1", "writer.pick", "off");          // the project's own writer, no Jev pick
-      saveProjectSetting(db, "proj1", "writer.models_off", ["p/wm", "pm", "zai-coding-plan/glm-5.3-flash", "opencode2/router9/ag/gemini-3.8-flash-high"]);   // the writer, its two default fallbacks and the PM
+      saveProjectSetting(db, "proj1", "writer.models_off", ["p/wm", "pm", "opencode2/longcat/LongCat-2.5", "codex/gpt-6.1-sol"]);   // the writer, its two default fallbacks and the PM
       services.startWriterTask({ projectId: "proj1", runId: "run1", taskId: "T1", firstAttemptId: "T1-a1", pmThreadId: "thr_pm", config, task, plan: "Plan for T1" });
       await vi.waitFor(() => expect(getAttempt(db, "T1-a1")?.reason ?? "").toContain("waiting_writer:"), { timeout: 5000 });
       const parked = getAttempt(db, "T1-a1")!;

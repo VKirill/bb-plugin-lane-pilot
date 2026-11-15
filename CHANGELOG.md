@@ -2,7 +2,7 @@
 
 ## 0.1.577
 
-- **Model defaults no longer select GLM automatically.** Writer fallbacks now default to LongCat-2.5 through OpenCode, then GPT-6.1 Sol through Codex. Background ZCode selection requires explicit `zcode.background=true` or `on`; an unset setting keeps the role's own model. Explicit model configuration remains supported. Verified by the model-selection, writer fallback/rotation, gating and UI suites (233 tests) plus typecheck; the default-chain UI expectations were updated after the first run exposed the old labels. Runtime model exclusions are deployment settings, not an assertion that every historical thread used these defaults.
+- **Model defaults no longer select GLM automatically.** Writer fallbacks now default to LongCat-2.5 through OpenCode, then GPT-6.1 Sol through Codex. The base OpenCode capability probe also uses LongCat-2.5; its sweep test checks the model passed to the helper. Background ZCode selection requires explicit `zcode.background=true` or `on`; an unset setting keeps the role's own model. Explicit model configuration remains supported. Verified by the model-selection, writer fallback/rotation, gating and UI suites (233 tests) plus typecheck; the default-chain UI expectations were updated after the first run exposed the old labels. Runtime model exclusions are deployment settings, not an assertion that every historical thread used these defaults.
 
 ## 0.1.576
 
