@@ -66,6 +66,7 @@ Before an attempt exists, `writerHold` asks whether the writer's provider can wo
 - `harness`, `infra` and `dirty_base` failures park the task in `stability:parked` instead of leaving it blocked. A harness-parked task restarts from its writer stage once a newer Lane Pilot version runs. An infra or dirty-base task restarts after a backoff of 10 minutes doubled per try, up to 3 tries. At most 3 tasks per project restart per sweep. A task that a sibling already took over or accepted is not restarted. A task waiting for a secret restarts when the secret is saved, and is dropped after 24 hours.
 - Project breaker: the same harness fingerprint 3 times in 15 minutes opens the project's breaker and holds new writers. After 30 minutes one task is let through to probe. A breaker from another version is discarded, since the fix may have shipped.
 - The PM is told once a minute at most, in one message, only about parked tasks that need it. The PM must not diagnose Lane Pilot or redispatch a parked task.
+- Automatic retries stop when an assigned PM has been deleted or archived. A temporary error reading the PM preserves the parked ticket for the next sweep; a run without an assigned PM keeps its existing retry behavior.
 - Disk guard: writers wait with `disk_low` while a machine has less than max(3 GB, min(5 GB, 5% of the disk)) free. Lock guard: a stale `index.lock` or an unwritable index is `infra`; merges queue behind the checkout lock.
 
 ## Self-repair, wall and the night loop

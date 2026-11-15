@@ -33,6 +33,7 @@ describe("failure class of real reasons", () => {
 function setup() {
   const sent:string[] = [];
   const { bb } = createFakePluginHost({ pluginId:"lane-pilot", sdk:{ threads:{
+    get:async () => ({ id:"pm", projectId:"proj", archivedAt:null }),
     send:async (args:{ threadId:string }) => { sent.push(args.threadId); return {}; },
   } } as never });
   const db = openDatabase(bb);

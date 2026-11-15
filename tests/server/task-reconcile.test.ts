@@ -9,7 +9,7 @@ import { createTaskReconcile } from "../../src/rooms/runs/server/task-reconcile"
 
 /** A run with one task whose failed attempt waits for a retry that died with a reload (live: bot-preset-catalog-style-fallback-r3). */
 function setup() {
-  const { bb } = createFakePluginHost({ pluginId:"lane-pilot", sdk:{ threads:{ send:async () => ({}) } } as never });
+  const { bb } = createFakePluginHost({ pluginId:"lane-pilot", sdk:{ threads:{ get:async () => ({ id:"pm", projectId:"proj", archivedAt:null }), send:async () => ({}) } } as never });
   const db = openDatabase(bb);
   createRun(db, "run", "proj", "cli", "/repo");
   db.prepare("UPDATE lane_pilot_run SET pm_thread_id='pm' WHERE id='run'").run();

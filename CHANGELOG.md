@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.582
+
+- **Parked tasks stop restarting after their assigned PM is deleted or archived.** A captured deleted-project incident repeatedly created another attempt on each plugin update and failed before a writer existed. Parking adoption and the retry sweep now check the assigned PM; a temporary read failure preserves the ticket, and a run without an assigned PM keeps its existing retry behavior. `tests/stability-deleted-pm.test.ts` covers missing, soft-deleted and archived PMs, recovery after HTTP 503, unchanged failed stages and retry of a PM-less run without a thread lookup. The r04 `autoretry` probe supplies a live PM fixture while retaining its original n424 predicate. This prevents new automatic retries; it does not delete historical attempts. Post-deployment observation of the captured run remains a separate acceptance check.
+
 ## 0.1.581
 
 - **Completed workflow audits remain readable in the run panel.** The snapshot response now projects goal-audit fields into its existing strict RPC contract; internal `sha` and `outputSha` keys no longer cause HTTP 500 after an audit is recorded. `tests/workflow/library.test.ts` reproduces the rejection and parses both the empty-audit and recorded-audit responses.
@@ -19,7 +23,6 @@
 
 - **Native helper profiles no longer inherit a passport quote’s selection token.** Passport lenses remove composer transport markers before delivering context to agents, while preserving the stored owner quotation. A live research run exposed the conflict: the analyst inherited the PM profile, then specialist children received two profile tokens and were refused. The regression test in `tests/passport/passport-core-and-lenses.test.ts` exercises stored passport data and the real token reader; profile-selection checks remain intact.
 - **The chat info panel includes native sessions and their linked workflow runs.** The strict `thread_live` response projects board items into its declared fields, fixing the invalid-output failure. An open session is visible before its first writer task; workflow rows expose actual status, current step, errors and expandable step results. Runs from another PM chat are excluded. An open session does not imply running work or successful graph acceptance.
-
 ## 0.1.577
 
 - **Model defaults no longer select GLM automatically.** Writer fallbacks now default to LongCat-2.5 through OpenCode, then GPT-6.1 Sol through Codex. The base OpenCode capability probe also uses LongCat-2.5; its sweep test checks the model passed to the helper. Background ZCode selection requires explicit `zcode.background=true` or `on`; an unset setting keeps the role's own model. Explicit model configuration remains supported. Verified by the model-selection, writer fallback/rotation, gating and UI suites (233 tests) plus typecheck; the default-chain UI expectations were updated after the first run exposed the old labels. Runtime model exclusions are deployment settings, not an assertion that every historical thread used these defaults.

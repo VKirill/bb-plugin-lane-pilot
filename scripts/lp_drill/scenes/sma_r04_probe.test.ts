@@ -266,7 +266,7 @@ await section("reconcile", async () => {
 });
 
 await section("autoretry", async () => {
-  const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
+  const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot", sdk: { threads: { get: async () => ({ id: "pm", projectId: "proj", archivedAt: null, deletedAt: null }) } } as never });
   const db = openDatabase(bb);
   createRun(db, "run", "proj", "cli", "/repo");
   db.prepare("UPDATE lane_pilot_run SET pm_thread_id='pm', writer_workspace_path='/repo', state='running' WHERE id='run'").run();

@@ -37,7 +37,7 @@ describe("parked for a secret", () => {
   function setup(catalog:() => Array<{ name:string; kind:"secret" }>) {
     const sent:string[] = [];
     const { bb } = createFakePluginHost({ pluginId:"lane-pilot", sdk:{
-      threads:{ send:async (args:{ input:Array<{ text:string }> }) => { sent.push(args.input[0]!.text); return {}; } },
+      threads:{ get:async () => ({ id:"pm", projectId:"proj", archivedAt:null, deletedAt:null }), send:async (args:{ input:Array<{ text:string }> }) => { sent.push(args.input[0]!.text); return {}; } },
       plugins:{ callRpc:async () => ({ variables:catalog() }) },
     } as never });
     const db = openDatabase(bb);

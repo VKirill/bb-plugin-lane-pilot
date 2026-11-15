@@ -5,7 +5,7 @@ import type { ParkedTask } from "../../contracts";
 import packageJson from "../../../../package.json";
 import { PARKED_CLASSES, failureClass, failureFingerprint, isCapacitySaturated, isWaitingSecret, type FailureClass } from "../../contracts/failure-class";
 import { allowedSecretNames, secretProblem, waitingSecretNote, WAITING_SECRET_PREFIX } from "../../secrets/server";
-import { bestEffort, id } from "@lane-pilot/kit";
+import { bestEffort, id, isNotFound, valueAt } from "@lane-pilot/kit";
 import { reopenWriterStages } from "../../runs/server/stage-records";
 import { isRunHalted, isRunPaused } from "../../runs/server/runs-halt";
 import { conveyorState } from "../../runs";
@@ -244,6 +244,19 @@ export function createStability(ctx:ServerCore, services:Services) {
     return (Number.isFinite(maxMin) && maxMin > 0 ? maxMin : CAPACITY_WAIT_DEFAULT_MIN) * 60_000;
   }
 
+  /** A deleted or archived PM ends automatic retries; an unreadable PM leaves its ticket for the next pass. */
+  async function pmAvailable(threadId:string | null):Promise<boolean | null> {
+    if (!threadId) return true;
+    try {
+      const thread = await bb.sdk.threads.get({ threadId });
+      return !!thread && valueAt(thread, "archivedAt") == null && valueAt(thread, "deletedAt") == null;
+    } catch (cause) {
+      if (isNotFound(cause)) return false;
+      bb.log.warn(`Lane Pilot parked-task PM ${threadId} could not be read; retry deferred: ${cause instanceof Error ? cause.message : String(cause)}`);
+      return null;
+    }
+  }
+
   /** Restarts parked tasks whose fault is fixed (harness) or whose backoff is over (infra), a few per project per pass. */
   async function sweep(now = Date.now(), signal?:AbortSignal):Promise<string[]> {
     const list = await loadParked();
@@ -260,6 +273,9 @@ export function createStability(ctx:ServerCore, services:Services) {
       if (!run || run.closed_at || superseded(row) || services.activeWriterTasks.has(`${row.runId}:${row.taskId}`) || await isRunHalted(bb.storage.kv as never, row.runId)
         // A paused run restarts nothing: its parked tasks stay parked until it is resumed.
         || await isRunPaused(bb.storage.kv as never, row.runId)) continue;
+      const available = await pmAvailable(run.pm_thread_id);
+      if (available === false) continue;
+      if (available === null) { keep.push(row); continue; }
       const count = perProject.get(row.projectId) ?? 0;
       // A task waiting for a secret is not a fault: no breaker, no backoff, only the secret itself.
       const waiting = isWaitingSecret(row.reason);
@@ -329,6 +345,7 @@ export function createStability(ctx:ServerCore, services:Services) {
       const klass = failureClass(row.state, row.reason);
       if (!(PARKED_CLASSES.has(klass) || isCapacitySaturated(row.reason)) || !row.pm_thread_id || list.some((entry) => entry.runId === row.run_id && entry.taskId === row.task_id)) continue;
       if (await isRunHalted(bb.storage.kv as never, row.run_id)) continue;
+      if (await pmAvailable(row.pm_thread_id) !== true) continue;
       // The build the attempt ran under (harness_version) is the build whose fault it is: the task restarts when another build
       // runs, not at once under the same one. A retry lost in a reload is no fault of the build, and an attempt from before the
       // column has no build to name: both restart at once.
