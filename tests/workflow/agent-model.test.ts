@@ -305,7 +305,7 @@ const rtFor = (settings: Record<string, unknown>, pair: typeof pm | null) => ({
 const requestFor = (flow: ReturnType<typeof parseWorkflow>, node: Extract<GraphNode, { type: "agent" }>, rt: ReturnType<typeof rtFor>): HelperRequest => {
   const ctx = {
     runtime: rt, workflow: flow, node, nodeId: node.id, runId: "wfrun", stepKey: `${node.id}#1`, spawnKey: "k", mode: "standard", signal: new AbortController().signal,
-    input: { with: {}, via: { mode: "artifact", fromStep: null } }, goals: [], reground: false, render: (text: string) => text, template: (value: unknown) => value,
+    input: { with: {}, via: { mode: "artifact", fromStep: null } }, goals: [], reground: false, resolve: () => "", render: (text: string) => text, template: (value: unknown) => value,
   } as unknown as StepContext<never>;
   return agentRequest(ctx as never, node);
 };

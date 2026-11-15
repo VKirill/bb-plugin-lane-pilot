@@ -421,6 +421,7 @@ describe("review fix 3: launch parity", () => {
     const stopped: string[] = [];
     const ctx = {
       bb: { storage: bb.storage, log: { info() {}, warn: (line: string) => warns.push(line) },
+        hosts: { experimental_client: () => ({ call: async (method: string) => { throw new Error(`unexpected host call ${method}`); } }) },
         sdk: { projects: { get: async () => ({ sources: [] }) },
           providers: { list: async () => [{ id: "codex", available: true, serviceTiers: [{ id: "default" }] }],
             models: async () => ({ models: [{ id: "codex-test", model: "codex-test", supportedReasoningEfforts: [{ reasoningEffort: "medium" }] }] }) },

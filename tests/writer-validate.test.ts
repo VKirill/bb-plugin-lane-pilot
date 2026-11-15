@@ -1,4 +1,5 @@
 import { coreFileWrite, mapStore } from "./helpers/core-files";
+import { boundedReadCall } from "./helpers/bounded-read";
 import { countAttempts } from "../src/rooms/plugin-db";
 import { createHash } from "node:crypto";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
@@ -160,6 +161,7 @@ describe("BB writer validation on the server path", () => {
             planSha256:createHash("sha256").update(plan, "utf8").digest("hex"), sentPlanSha256:createHash("sha256").update(plan, "utf8").digest("hex"),
             sourceLength:Buffer.byteLength(plan), sentLength:Buffer.byteLength(plan) };
         }
+        if (call.method === "readBoundedFile") return boundedReadCall(call, "host-test", (path) => path.endsWith("README.md") ? "task read-first fixture\n" : path.endsWith("hello.txt") ? "hello\n" : null);
         if (call.method !== "runCommand") throw new Error(`unexpected ${call.method}`);
         cwdCalls.push(String((call.input as { cwd?:string }).cwd ?? ""));
         const command = String((call.input as { command?:string }).command ?? "");
@@ -242,6 +244,7 @@ describe("BB writer validation on the server path", () => {
       experimental_callHostRpc:(call) => {
         const gitBase=noGitOwnershipBase(call.method); if(gitBase) return gitBase;
         if (call.method === "classifyPlan") throw new Error("RPC transport failed");
+        if (call.method === "readBoundedFile") return boundedReadCall(call, "host-test", (path) => path.endsWith("README.md") ? "task read-first fixture\n" : path.endsWith("hello.txt") ? "hello\n" : null);
         const command = String((call.input as { command?:string }).command ?? "");
         if (command.includes("porcelain")) {
           snapshots += 1;
@@ -333,6 +336,7 @@ describe("BB writer validation on the server path", () => {
       experimental_callHostRpc:(call) => {
         const gitBase=noGitOwnershipBase(call.method); if(gitBase) return gitBase;
         if (call.method === "classifyPlan") throw new Error("RPC transport failed");
+        if (call.method === "readBoundedFile") return boundedReadCall(call, "host-test", (path) => path.endsWith("README.md") ? "task read-first fixture\n" : null);
         if (call.method !== "runCommand") throw new Error(`unexpected host method ${call.method}`);
         const command = String((call.input as { command?:string }).command ?? "");
         if (command.includes("porcelain")) return { hostId:"host-test", exitCode:0, stdout:"[]", stderr:"" };
@@ -383,6 +387,7 @@ describe("BB writer validation on the server path", () => {
       experimental_callHostRpc:(call) => {
         const gitBase=noGitOwnershipBase(call.method); if(gitBase) return gitBase;
         if (call.method === "classifyPlan") throw new Error("RPC transport failed");
+        if (call.method === "readBoundedFile") return boundedReadCall(call, "host-test", (path) => path.endsWith("README.md") ? "fixture\n" : null);
         if (call.method !== "runCommand") throw new Error(`unexpected host method ${call.method}`);
         const command = String((call.input as { command?:string }).command ?? "");
         if (command.includes("porcelain")) return { hostId:"host-test", exitCode:0, stdout:"[]", stderr:"" };
@@ -456,6 +461,7 @@ describe("BB writer validation on the server path", () => {
           return {hostId:"host-test",status:"ok",effort:"medium",reason:null,planSha256:sha,sentPlanSha256:sha,
             sourceLength:Buffer.byteLength(plan),sentLength:Buffer.byteLength(plan)};
         }
+        if(call.method==="readBoundedFile") return boundedReadCall(call, "host-test", (path) => path.endsWith("README.md") ? "retry fixture\n" : path.endsWith("hello.txt") ? "hello\n" : null);
         if(call.method!=="runCommand") throw new Error(`unexpected ${call.method}`);
         const command=String((call.input as {command?:string}).command??"");
         return {hostId:"host-test",exitCode:0,stdout:command.includes("porcelain")
@@ -510,6 +516,7 @@ describe("BB writer validation on the server path", () => {
           return {hostId:"host-test",status:"ok",effort:"low",reason:null,planSha256:sha,sentPlanSha256:sha,
             sourceLength:Buffer.byteLength(plan),sentLength:Buffer.byteLength(plan)};
         }
+        if(call.method==="readBoundedFile") return boundedReadCall(call, "host-test", (path) => path.endsWith("README.md") ? "manual high fixture\n" : path.endsWith("hello.txt") ? "hello\n" : null);
         if(call.method!=="runCommand") throw new Error(`unexpected ${call.method}`);
         const command=String((call.input as {command?:string}).command??"");
         return {hostId:"host-test",exitCode:0,stdout:command.includes("porcelain")
@@ -564,6 +571,7 @@ describe("BB writer validation on the server path", () => {
       },
       experimental_callHostRpc: (call) => {
         const gitBase=noGitOwnershipBase(call.method); if(gitBase) return gitBase;
+        if (call.method === "readBoundedFile") return boundedReadCall(call, "host-test", (path) => path.endsWith("README.md") ? "task read-first fixture\n" : path.endsWith("hello.txt") ? "hello\n" : null);
         if (call.method !== "runCommand") throw new Error(`unexpected ${call.method}`);
         const command = String((call.input as { command?:string }).command ?? "");
         if (command.includes("porcelain")) {
@@ -660,6 +668,7 @@ describe("BB writer validation on the server path", () => {
           return {hostId:"host-test",backend:"macos-seatbelt",workspacePath:task.project_cwd,cwd:task.project_cwd,
             exitCode:command === "false" ? 1 : 0,policySha256:"d".repeat(64),stdout:"",stderr:command === "false" ? "boom" : ""};
         }
+        if (call.method === "readBoundedFile") return boundedReadCall(call, "host-test", (path) => path.endsWith("README.md") ? "task read-first fixture\n" : path.endsWith("hello.txt") ? "hello\n" : null);
         if (call.method !== "runCommand") throw new Error(`unexpected ${call.method}`);
         const command = String((call.input as { command?:string }).command ?? "");
         ran.push(command);
@@ -743,6 +752,7 @@ describe("BB writer validation on the server path", () => {
             policySha256:"e".repeat(64), commandLine:`exec sandbox '${command}'`, cleanup:{ tempPath:`/tmp/lane-pilot-sandbox-${command}`, created:[] } };
         }
         if (call.method === "sandboxRelease") { released.push(String((call.input as { tempPath:string }).tempPath)); return { hostId:"host-test", released:true }; }
+        if (call.method === "readBoundedFile") return boundedReadCall(call, "host-test", (path) => path.endsWith("README.md") ? "task read-first fixture\n" : path.endsWith("hello.txt") ? "hello\n" : null);
         if (call.method !== "runCommand") throw new Error(`unexpected ${call.method}`);
         const command = String((call.input as { command?:string }).command ?? "");
         if (command.includes("porcelain")) {
@@ -806,6 +816,7 @@ describe("BB writer validation on the server path", () => {
       },
       experimental_callHostRpc: (call) => {
         const gitBase=noGitOwnershipBase(call.method); if(gitBase) return gitBase;
+        if (call.method === "readBoundedFile") return boundedReadCall(call, "host-test", (path) => path.endsWith("README.md") ? "task read-first fixture\n" : null);
         if (call.method === "runCommand") {
           return { hostId:"host-test", exitCode:0, stdout:"[]", stderr:"" };
         }
@@ -860,6 +871,7 @@ describe("BB writer validation on the server path", () => {
       files:{ read:async ({path})=>path.endsWith("README.md")?{content:"task read-first fixture\n"}:{content:null}, write:async () => ({ ok:true }) } },
       experimental_callHostRpc: (call) => {
         const gitBase=noGitOwnershipBase(call.method); if(gitBase) return gitBase;
+        if (call.method === "readBoundedFile") return boundedReadCall(call, "host-test", (path) => path.endsWith("README.md") ? "task read-first fixture\n" : null);
         if (call.method !== "runCommand") throw new Error(`unexpected ${call.method}`);
         return { hostId:"host-test", exitCode:0, stdout:"[]", stderr:"" };
       },

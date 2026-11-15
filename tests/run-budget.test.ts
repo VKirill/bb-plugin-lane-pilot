@@ -101,6 +101,7 @@ describe("run-bound helper spawn", () => {
       bb: {
         storage: bb.storage,
         log: { info() {}, warn() {} },
+        hosts: { experimental_client: () => ({ call: async (method: string) => { throw new Error(`unexpected host call ${method}`); } }) },
         sdk: {
           projects: { get: async () => ({ sources: [] }) },
           providers: {
@@ -148,7 +149,7 @@ describe("the owner at the keyboard (SMA D2-6)", () => {
     createAttempt(db, { id: "a1", runId: "run", taskId: "t1" });
     let spawned = 0;
     const ctx = {
-      bb: { storage: bb.storage, log: { info() {}, warn() {} }, sdk: { projects: { get: async () => ({ sources: [] }) }, files: { read: async () => ({ content: null }) },
+      bb: { storage: bb.storage, log: { info() {}, warn() {} }, hosts: { experimental_client: () => ({ call: async (method: string) => { throw new Error(`unexpected host call ${method}`); } }) }, sdk: { projects: { get: async () => ({ sources: [] }) }, files: { read: async () => ({ content: null }) },
         threads: { get: async () => ({ id: "pm", projectId: "P", status: "idle" }), spawn: async () => { spawned += 1; return { id: "writer-1" }; } } } },
       db,
       host: { call: async (method: string) => (method === "runCommand" ? { hostId: "h", exitCode: 0, stdout: "[]", stderr: "" } : method === "gitCreateWorktree" ? { status: "ready", path: "/wt/a1/repo", branch: "lane/a1", reason: null } : {}) },

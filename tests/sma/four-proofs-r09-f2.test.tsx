@@ -32,6 +32,7 @@ async function cockpit(table: Table, subPath: string) {
 const DOOR_SILENT = "The hub does not answer — the screens show what they saw last.";
 describe("region 9 · the hub strip", () => {
   it("[sma:m_ws_hub_banner] when the hub does not answer the window says so in one strip, and says nothing while it answers; when the hub answers again the strip goes", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
     let down = false;
     const view = await cockpit({ world_version: () => { if (down) throw new Error("hub down"); return { version: "1" }; } }, "phases");
     await view.slot.findByTestId("ck-phases");
@@ -39,11 +40,14 @@ describe("region 9 · the hub strip", () => {
     const whileUp = view.slot.queryByTestId("ck-door-silent");
     expect(whileUp).toBeNull();
     down = true;
-    // The pulse is read every 15 s: the strip appears on the next beat.
+    // The pulse's only timed re-read is the 60 s safety poll (a live host's invalidations are the fast path):
+    // the strip appears on the next fallback beat — detection residual up to ~60 s.
+    await vi.advanceTimersByTimeAsync(61_000);
     const strip = await view.slot.findByTestId("ck-door-silent", {}, { timeout: 25_000 });
     expect(text(strip)).toBe(DOOR_SILENT);
     expect(view.slot.queryAllByTestId("ck-door-silent")).toHaveLength(1);
     down = false;
+    await vi.advanceTimersByTimeAsync(61_000);
     await waitFor(() => expect(view.slot.queryByTestId("ck-door-silent")).toBeNull(), { timeout: 25_000 });
     observe("n927", { whileUp: whileUp === null ? null : "shown", said: text(strip), afterAnswer: view.slot.queryByTestId("ck-door-silent") === null ? "gone" : "shown" });
   }, 70_000);

@@ -3,6 +3,8 @@ import { createHash } from "node:crypto";
 import { resolve } from "node:path";
 import { THREAD_WATCH_EVENT_TYPES } from "@lane-pilot/thread-observe";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
+import { boundedReadCall } from "../../helpers/bounded-read";
+import { coreFileWrite, type FileStore } from "../../helpers/core-files";
 import { afterEach, describe, expect, it as vitestIt } from "vitest";
 import plugin from "../../../server";
 import { runBrowserQaOnHost, type BrowserQaInput } from "../../../src/rooms/qa/browser-qa";
@@ -143,6 +145,24 @@ export async function setup(critiqueOutput:string, browserQaResult?:Record<strin
   const waitCalls:Array<{threadId:string;status?:string}>=[];
   const qaHostId="host-qa-mini";
   const hostRpcCalls:Array<{method:string;hostId:string;input:unknown}>=[];
+  // files.write/files.read share one store: packet inputs written create-only must read back byte-identical
+  // (prepareCriticPacket verifies sha256), and CAS writes see fixture content as the current bytes.
+  const writtenFiles = new Map<string,string>();
+  const fixtureContent = (path:string): string|null => {
+    if (path.endsWith("README.md")) return readFirstUnavailable ? null : readmeFixture;
+    if (path.endsWith("docs/fixture.md")) return docsContent;
+    if (path.endsWith("docs/second.md")) return docsSecondContent;
+    if (path.endsWith(".txt")) {
+      const sha = lastDirt.find((row)=>path.endsWith(row.path))?.sha256;
+      return (sha && noteBySha[sha]) || noteContent;
+    }
+    return null;
+  };
+  const fileStore: FileStore = {
+    get: (path) => writtenFiles.get(path) ?? fixtureContent(path),
+    set: (path, content) => { writtenFiles.set(path, content); },
+  };
+  const coreWrite = coreFileWrite(fileStore);
   const { bb, harness } = createFakePluginHost({
     pluginId:"lane-pilot",
     sdk:{
@@ -329,16 +349,25 @@ export async function setup(critiqueOutput:string, browserQaResult?:Record<strin
         listPaths:async()=>({truncated:false,paths:[...defaultListPaths,...extraListPaths]}) as never,
         read:async ({ path, rootPath }) => {
           fileReads.push({ rootPath, path });
-          return path.endsWith("README.md") ? readFirstUnavailable ? { content:null } : { content:readmeFixture }
-          : path.endsWith("docs/fixture.md") ? {content:docsContent}
-          : path.endsWith("docs/second.md") ? {content:docsSecondContent}
-          : path.endsWith(".txt") ? (() => {
-            const sha = lastDirt.find((row)=>path.endsWith(row.path))?.sha256;
-            const content = (sha && noteBySha[sha]) || noteContent;
-            return { content, sha256:createHash("sha256").update(content,"utf8").digest("hex") };
-          })() : { content:null };
+          const stored = writtenFiles.get(path);
+          if (stored !== undefined) return { content:stored };
+          const content = fixtureContent(path);
+          if (content === null) return { content:null };
+          return path.endsWith(".txt") ? { content, sha256:createHash("sha256").update(content,"utf8").digest("hex") } : { content };
         },
-        write:async (args) => {const path=String((args as {path?:unknown}).path??"");if(path.includes("/docs/")){docsWrites.push(args as unknown as Record<string,unknown>);if(path.endsWith("docs/fixture.md"))docsContent=String((args as {content?:unknown}).content??"");if(path.endsWith("docs/second.md"))docsSecondContent=String((args as {content?:unknown}).content??"");}return {ok:true};},
+        write: (async (args: { path?: unknown; content?: unknown }) => {
+          const result = await coreWrite(args);
+          if ((result as {outcome?:unknown}).outcome === "written") {
+            const path = String(args.path ?? "");
+            const content = String(args.content ?? "");
+            if (path.includes("/docs/")) {
+              docsWrites.push(args as unknown as Record<string,unknown>);
+              if (path.endsWith("docs/fixture.md")) docsContent = content;
+              if (path.endsWith("docs/second.md")) docsSecondContent = content;
+            }
+          }
+          return result;
+        }) as never,
       },
     },
     experimental_callHostRpc:async (call) => {
@@ -421,6 +450,18 @@ export async function setup(critiqueOutput:string, browserQaResult?:Record<strin
         hostId:config.hostId,backend:"macos-seatbelt",workspacePath:String((call.input as {workspacePath?:string}).workspacePath ?? config.writerWorkspacePath),
         cwd:String((call.input as {workspacePath?:string}).workspacePath ?? config.writerWorkspacePath),exitCode:0,policySha256:"c".repeat(64),stdout:"",stderr:"",
         };
+      }
+      if (call.method === "readBoundedFile") {
+        return boundedReadCall(call, config.hostId, (path) => {
+          if (path.endsWith("README.md")) return readFirstUnavailable ? null : readmeFixture;
+          if (path.endsWith("docs/fixture.md")) return docsContent;
+          if (path.endsWith("docs/second.md")) return docsSecondContent;
+          if (path.endsWith(".txt")) {
+            const sha = lastDirt.find((row)=>path.endsWith(row.path))?.sha256;
+            return (sha && noteBySha[sha]) || noteContent;
+          }
+          return null;
+        });
       }
       if (call.method !== "runCommand") throw new Error(`unexpected host method ${call.method}`);
       const command = String((call.input as { command?:string }).command ?? "");
@@ -691,8 +732,9 @@ describe("stage → native writer → receipt", () => {
     },{threadId:pmThreadId,projectId});
     await harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"stage-run",timeoutSec:3},{threadId:pmThreadId,projectId});
     const critique=spawned.find((row)=>((row.pluginMetadata as Record<string,unknown>).stageId)==="plan-critique");
-    expect(critique?.prompt).toContain('"path":"src/unowned.ts"');
-    expect(critique?.prompt).toContain('"path":"docs/guide.md","severity":"info"');
+    // The packet inlines small inputs whole (JSON.stringify(value, null, 1) collapsed to one line): the findings keep their path and severity binding.
+    expect(critique?.prompt).toContain('"path": "src/unowned.ts"');
+    expect(critique?.prompt).toContain('"path": "docs/guide.md", "severity": "info"');
     const receipt=listStageReceipts(db,"stage-run",task.id).find((row)=>row.stageId==="plan-critique");
     expect(receipt?.inputSha256).toMatch(/^[a-f0-9]{64}$/);
     expect(receipt?.result).toMatchObject({structuralFindings:[
@@ -1346,14 +1388,13 @@ describe("stage → native writer → receipt", () => {
     await harness.lifecycle.dispose();
   });
   it("puts host-read line-window content in the actual writer packet before spawning",async()=>{
-    const {db,harness,spawned,fileReads}=await setup('{"decision":"approve","summary":"Checked","findings":[]}');
+    const {db,harness,spawned,hostRpcCalls}=await setup('{"decision":"approve","summary":"Checked","findings":[]}');
     await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,objective:"Проверка диспетча",plan:"Write a verified fixture",task},{threadId:pmThreadId,projectId});
     await harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"stage-run",timeoutSec:3},{threadId:pmThreadId,projectId});
     const writer=spawned.find((row)=>((row.pluginMetadata as Record<string,unknown>).role)==="writer");
-    expect(fileReads).toContainEqual({
-      rootPath:attemptWorktree,
-      path:resolve(attemptWorktree,"README.md"),
-    });
+    // The line window is read through the bounded host contract, not files.read: L1-L2 of README.md in the attempt's worktree.
+    const boundedReads=hostRpcCalls.filter((call)=>call.method==="readBoundedFile").map((call)=>call.input as Record<string,unknown>);
+    expect(boundedReads.some((input)=>input.requestedHostId===config.hostId && input.projectCwd===attemptWorktree && input.relativePath==="README.md" && input.offset===0 && input.maxLines===2)).toBe(true);
     // The packet names the file, the line window and the hash prefix; the writer reads the content itself (f5e1ec5).
     expect(String(writer?.prompt)).toContain("Read these before editing; they are the context for this task:");
     expect(String(writer?.prompt)).toContain(readFirstLine);
@@ -2382,9 +2423,9 @@ describe("stage → native writer → receipt", () => {
     await harness.lifecycle.dispose();
   },20_000);
 
-  it("lets the task go on when the independent critic times out: the critic's crash, marked failed_infra",async()=>{
+  it("lets the task go on when the independent critic times out: the role's next pair takes over",async()=>{
     const {db,harness}=await setupCode([
-      [],[],[{path:"note.txt",sha256:noteSha}],[{path:"note.txt",sha256:noteSha}],
+      [],[],[{path:"note.txt",sha256:noteSha}],[{path:"note.txt",sha256:noteSha}],[{path:"note.txt",sha256:noteSha}],
     ],{idleWait:"code-critic-thread-1"});
     await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,objective:"Проверка диспетча",plan:"Write a verified fixture",task},{threadId:pmThreadId,projectId});
     const waited=JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"stage-run",timeoutSec:5},{threadId:pmThreadId,projectId})));

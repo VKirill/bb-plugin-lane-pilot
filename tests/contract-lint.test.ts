@@ -1,4 +1,5 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
+import { boundedReadCall } from "./helpers/bounded-read";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import plugin from "../server";
 import type { TaskV2 } from "../src/rooms/contracts";
@@ -498,6 +499,7 @@ async function setup(kinds:Record<string, PathKind> | null, targets:Record<strin
         return { hostId:"host-test", entries:paths.map((path) => ({ path, names:folders[path.slice(root.length + 1)] ?? [], truncated:false })) };
       }
       if (call.method === "gitOwnershipBase") return new Promise(() => undefined);
+      if (call.method === "readBoundedFile") return boundedReadCall(call, "host-test", "fixture\n");
       if (call.method === "runCommand" && String((call.input as { command?:string }).command ?? "").includes("@@package.json")) return { hostId:"host-test", exitCode:0, stdout:probeOutput, stderr:"" };
       return { hostId:"host-test", exitCode:0, stdout:String((call.input as { command?:string }).command ?? "").includes("porcelain") ? "[]" : "", stderr:"" };
     },

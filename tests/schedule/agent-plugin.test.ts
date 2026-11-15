@@ -1,10 +1,12 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { afterEach, describe, expect, it } from "vitest";
+import { sha256Hex } from "@lane-pilot/kit";
 import plugin from "../../server";
 import { runCommand } from "../../src/rooms/host-worker/host-handlers";
 import { normalizeSchedule } from "../../src/rooms/schedule/model";
 import { createScheduleStore, scheduleAgentMigrations } from "../../src/rooms/schedule/store";
 import { createRun, migrations, openDatabase, setRunThread } from "../../src/rooms/plugin-db";
+import { coreFileWrite, mapStore } from "../helpers/core-files";
 
 /**
  * A scheduled agent through the whole plugin: the schedule is made through the PM tool, the tick starts the agent's own profile in a
@@ -21,6 +23,8 @@ async function setup(options: { pm?: boolean } = {}) {
   const spawned: Array<Record<string, any>> = [];
   const registered = new Map<string, (context: { signal: AbortSignal }) => unknown>();
   const state = { report: OUTCOME("first look") };
+  const written = new Map<string, string>();
+  const filesStore = mapStore(written);
   const { bb, harness } = createFakePluginHost({
     pluginId: "lane-pilot",
     experimental_callHostRpc: (async (call: { method: string; input: { requestedHostId: string; cwd: string } }) => {
@@ -42,6 +46,14 @@ async function setup(options: { pm?: boolean } = {}) {
       },
       environments: { get: async () => ({ id: "env-pm", hostId: "local-host", path: process.cwd(), status: "ready" }) },
       projects: { get: async () => ({ id: projectId, name: "Site", sources: [{ hostId: "local-host", path: process.cwd() }] }) },
+      files: {
+        read: async (args: { path: string }) => {
+          const content = filesStore.get(args.path);
+          if (content === null) throw Object.assign(new Error("not found"), { code: "not_found" });
+          return { content, sha256: sha256Hex(content) };
+        },
+        write: coreFileWrite(filesStore) as never,
+      },
     } as never,
   });
   (bb.background as unknown as Record<string, unknown>).experimental_vkSchedule = (name: string, _cron: string, fn: (context: { signal: AbortSignal }) => unknown) => { registered.set(name, fn); };
@@ -56,8 +68,12 @@ async function setup(options: { pm?: boolean } = {}) {
   const tool = async (params: Record<string, unknown>, threadId = "thr_pm") => JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_schedule", params, { threadId, projectId }))) as Record<string, any>;
   const tick = async () => { await registered.get("schedule-board-tick")!({ signal: new AbortController().signal }); };
   const kv = async (key: string) => await bb.storage.kv.get<Record<string, any>>(key);
-  return { rpc, tool, tick, db, spawned, state, kv, bb };
+  return { rpc, tool, tick, db, spawned, state, kv, bb, written };
 }
+
+/** The text of every packet file a prompt references (`file: <path>`), joined — what the helper actually reads. */
+const deliveredText = (written: Map<string, string>, prompt: string) =>
+  [...prompt.matchAll(/file: (\S+)/g)].map((match) => written.get(`${process.cwd()}/${match[1]}`) ?? "").join("\n");
 
 const definition = (extra: Record<string, unknown> = {}) => ({
   name: "SEO positions", description: "weekly",
@@ -79,7 +95,7 @@ describe("a scheduled agent", () => {
   });
 
   it("starts the agent's own profile in a hidden parentless thread marked by the schedule, with the history of its earlier runs", async () => {
-    const { tool, rpc, tick, spawned, state, db, kv } = await setup();
+    const { tool, rpc, tick, spawned, state, db, kv, written } = await setup();
     const made = await tool({ action: "create", definition: definition() });
     const id = made.schedule.id as string;
 
@@ -91,8 +107,11 @@ describe("a scheduled agent", () => {
     expect(first.parentThreadId).toBeUndefined();
     expect(first.pluginMetadata).toMatchObject({ role: "specialist", specialist: "seo-specialist", origin: "schedule", lanePilotRunId: "lprun_a", lanePilotWorkflowNode: "work", lanePilotWorkflowRunId: expect.stringMatching(/^wfrun_/) });
     expect(first.prompt).toMatch(/^.*lane-pilot.*\nNative Lane profile seo-specialist/s);
-    expect(first.prompt).toContain("Check the positions of the main queries in Yandex");
-    expect(first.prompt).toContain("no previous runs to read");
+    expect(first.prompt).toContain("file: ");
+    const firstDelivered = deliveredText(written, first.prompt);
+    expect(firstDelivered).toContain("Check the positions of the main queries in Yandex");
+    expect(firstDelivered).toContain("no previous runs to read");
+    expect(first.prompt).not.toContain("no previous runs to read");
     const marker = /native-selection[^\s]*|([0-9a-f]{8}-[0-9a-f-]{27})/u.exec(first.prompt)?.[1] ?? "";
     expect(marker).not.toBe("");
     // The profile is the one a chat started with that agent from the composer gets, and it belongs to the PM's run (it opens none of its own).
@@ -107,16 +126,17 @@ describe("a scheduled agent", () => {
     await rpc("schedule_run_now", { id, key: "two" });
     await tick();
     expect(spawned).toHaveLength(2);
-    expect(spawned[1]!.prompt).toContain("<previous_runs>");
-    expect(spawned[1]!.prompt).toContain("summary: first look");
-    expect(spawned[1]!.prompt).toContain("follow-ups: re-check next Monday");
+    const secondDelivered = deliveredText(written, spawned[1]!.prompt);
+    expect(secondDelivered).toContain("<previous_runs>");
+    expect(secondDelivered).toContain("summary: first look");
+    expect(secondDelivered).toContain("follow-ups: re-check next Monday");
     runs = (await rpc("schedule_runs", { id })).runs;
     expect(runs.map((run) => run.status)).toEqual(["succeeded", "succeeded"]);
     expect(db.prepare("SELECT count(*) AS n FROM lane_pilot_owner_item").get()).toEqual({ n: 2 });
   });
 
   it("runs in a project without Lane Pilot: a hidden thread of the project in its own folder, no Lane Pilot run behind it, the report kept and one line on the owner's list", async () => {
-    const { tool, rpc, tick, spawned, state, db } = await setup({ pm: false });
+    const { tool, rpc, tick, spawned, state, db, written } = await setup({ pm: false });
     state.report = OUTCOME("first look", { code_change: "Add the canonical tag to /pricing: the template omits it." });
     const made = await tool({ action: "create", definition: definition() });
     expect(made.warnings ?? []).not.toContainEqual(expect.stringContaining("PM chat"));
@@ -129,7 +149,7 @@ describe("a scheduled agent", () => {
     expect(first.parentThreadId).toBeUndefined();
     expect(first.pluginMetadata).toMatchObject({ role: "specialist", specialist: "seo-specialist", origin: "schedule" });
     expect(first.pluginMetadata).not.toHaveProperty("lanePilotRunId");
-    expect(first.prompt).toContain("This project does not use Lane Pilot");
+    expect(deliveredText(written, first.prompt)).toContain("This project does not use Lane Pilot");
     const runs = (await rpc("schedule_runs", { id })).runs as Array<Record<string, any>>;
     expect(runs[0]).toMatchObject({ status: "succeeded", output: expect.stringContaining("summary: first look") });
     const items = db.prepare("SELECT source,kind,what,why,wake FROM lane_pilot_owner_item").all() as Array<Record<string, any>>;

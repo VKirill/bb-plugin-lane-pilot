@@ -5,7 +5,7 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import plugin from "../server";
 import { runCommandOnHost } from "../src/rooms/writer/cli-run";
-import { snapshotDryRun } from "../src/rooms/host-worker/host-handlers";
+import { readBoundedFile, snapshotDryRun } from "../src/rooms/host-worker/host-handlers";
 import type { TaskV2 } from "../src/rooms/contracts";
 import { coreFileWrite, mapStore } from "./helpers/core-files";
 import { appendTaskQaHome, recordCheckFiles } from "../src/rooms/writer/server/task-home";
@@ -109,6 +109,8 @@ async function setup(writerEdits: (folder: string) => string, feedback: (folder:
       }
       // The contract lint asks the machine about read_first files; that is the host's own file check, no git.
       if (call.method === "snapshotDryRun") return snapshotDryRun(call.input as never, {} as never);
+      // The execution packet reads read_first through the machine's bounded file read: a file read on the real folder, no git.
+      if (call.method === "readBoundedFile") return readBoundedFile(call.input as never, {} as never);
       if (call.method !== "runCommand") throw new Error(`a folder without git must not call ${call.method}`);
       const input = call.input as { requestedHostId: string; command: string; cwd: string; timeoutSec?: number };
       commands.push(input.command);

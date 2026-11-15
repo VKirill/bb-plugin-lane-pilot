@@ -27,7 +27,7 @@ describe("built-in workflows", () => {
     const workflow = builtinWorkflow(LP_TASK_PIPELINE)!;
     expect(workflow).toMatchObject({ status: "published", scope: { level: "builtin" } });
     const next = (from: string, matching?: (edge: (typeof workflow.edges)[number]) => boolean) => workflow.edges.filter((edge) => edge.from === from && (!matching || matching(edge))).map((edge) => edge.to);
-    const happy = ["pm-read", "quality-mode", "plan-critique", "specialist-review", "ownership-base", "task-folder", "baseline", "writer", "qa-gate", "browser-qa"];
+    const happy = ["execution-packet", "pm-read", "quality-mode", "plan-critique", "specialist-review", "ownership-base", "task-folder", "baseline", "writer", "qa-gate", "browser-qa"];
     let at: string = START;
     const walked: string[] = [];
     while (at !== END) {
@@ -38,11 +38,13 @@ describe("built-in workflows", () => {
       at = edge.to;
     }
     expect(walked).toEqual(happy);
+    expect(next("execution-packet")).toEqual(["pm-read", "block-execution-packet"]);
+    expect(workflow.edges.find((edge) => edge.from === "execution-packet" && edge.to === "block-execution-packet")?.when).toEqual({ field: "ok", op: "eq", value: false });
     expect(next("quality-mode")).toEqual(["plan-critique-quick", "plan-critique"]);
     const quick = workflow.edges.find((edge) => edge.from === "quality-mode" && edge.to === "plan-critique-quick");
     expect(quick?.when).toEqual({ field: "mode", op: "eq", value: "quick" });
     // Every blocking branch ends at the exit with a reply, and the writer owns the stages that stay inside it.
-    for (const block of ["block-plan-critique", "block-specialist", "block-ownership", "block-baseline"]) expect(next(block)).toEqual([END]);
+    for (const block of ["block-execution-packet", "block-plan-critique", "block-specialist", "block-ownership", "block-baseline"]) expect(next(block)).toEqual([END]);
     // After the code task a gate decides whether the task's own graph runs the browser check: only a task with qa_cases and qa_url does, the others go straight to the exit.
     expect(next("writer")).toEqual(["qa-gate"]);
     expect(workflow.edges.find((edge) => edge.from === "qa-gate" && edge.to === END)?.when).toEqual({ field: "run", op: "eq", value: false });

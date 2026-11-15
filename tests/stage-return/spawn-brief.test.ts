@@ -29,6 +29,7 @@ describe("the writer brief of a returned task", () => {
     const ctx = {
       bb: {
         storage: bb.storage, log: { info() {}, warn() {} },
+        hosts: { experimental_client: () => ({ call: async (method: string) => { throw new Error(`unexpected host call ${method}`); } }) },
         sdk: {
           projects: { get: async () => ({ sources: [] }) },
           providers: {

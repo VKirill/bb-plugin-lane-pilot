@@ -29,6 +29,7 @@ const SANDBOX_OFF = "the sandbox project the drill runs in has this stage off, s
 
 export const COVERAGE: readonly CoverageEntry[] = [
   // ── stages (STAGE_IDS) ───────────────────────────────────────────────────────────────────────────────────────────────────────────
+  { kind: "stage", ids: ["execution-packet"], tests: ["tests/execution-packet-gate.test.ts", ...STAGE_SUITE], reason: "no dedicated live drill receipt yet; the deterministic read_first input gate is covered by the named tests" },
   { kind: "stage", ids: ["writer-agent"], live: ["parallel3", "conflict", "main_moved", "provider", "provider_limit", "reload", "nogit", "nogit_repo"], via: "every drill task is written by a real writer and passes the owns-paths and validate gates", tests: ["tests/dispatch-idempotent.test.ts", "tests/parallel-writers-own-worktree.test.ts"] },
   { kind: "stage", ids: ["acceptance-receipt"], live: ["parallel3"], via: "each accepted drill task ends with an acceptance-v2 receipt that validates against the schema", tests: ["tests/acceptance-v2.test.ts"] },
   { kind: "stage", ids: ["plan-fact"], live: ["parallel3"], via: "the writer closes its answer with the plan-fact table and the blind check passes (3 of 3 in the 2026-10-22 quick drill)", tests: ["tests/plan-fact.test.ts"] },

@@ -45,9 +45,11 @@ describe("from a correction to a rule the next PM follows", () => {
       { id: "thr_pm:2:0", state: "candidate", why: null },
       { id: "thr_pm:3:0", state: "skipped", why: "short" },
       { id: "thr_pm:4:0", state: "skipped", why: "machine" },
-      { id: "thr_pm:6:0", state: "skipped", why: "machine" },
       { id: "thr_pm:7:0", state: "candidate", why: null },
     ]);
+    // Lane Pilot's own notice (message 6) and another thread's message (5) never reach the observer: the owner-message
+    // hub drops them as not the owner's words (contracts/service-notice.ts), so they leave no observation row at all.
+    for (const seq of [5, 6]) expect(db.prepare("SELECT 1 FROM lane_pilot_learning_obs WHERE id LIKE ?").get(`thr_pm:${seq}:%`)).toBeUndefined();
 
     const rules = lpRulesPort(db, insightsStub, memorySettingsFor), notes = lpNotesPort(db, insightsStub, memorySettingsFor);
     const prompts: string[] = [];

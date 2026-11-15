@@ -10,6 +10,7 @@ import { failureClass, isWaitingSecret, nextStep } from "../src/rooms/contracts/
 import { forgetSecrets } from "@lane-pilot/kit";
 import { createSecrets } from "../src/rooms/secrets/server/secrets";
 import { createStability } from "../src/rooms/stability/server/stability";
+import { boundedReadCall } from "./helpers/bounded-read";
 
 // Test values only: none of them is a real credential.
 const KEY = "test-wait-key-Qw83LmZx1p";
@@ -141,6 +142,8 @@ describe("dispatch of a task whose check needs a secret", () => {
           sandboxCalls.push(call.input as Record<string, unknown>);
           return { hostId:"host-test", backend:"macos-seatbelt", workspacePath:config.writerWorkspacePath, cwd:config.writerWorkspacePath, exitCode:0, policySha256:"d".repeat(64), stdout:`using ${KEY}\n`, stderr:"" };
         }
+        // The execution packet reads read_first through the bounded file read: the same README.md files.read serves.
+        if (call.method === "readBoundedFile") return boundedReadCall(call, "host-test", (path) => path === "README.md" ? "fixture\n" : null);
         if (call.method !== "runCommand") throw new Error(`unexpected ${call.method}`);
         const command = String((call.input as { command?:string }).command ?? "");
         if (command.includes("porcelain")) { snapshots += 1; return { hostId:"host-test", exitCode:0, stdout:JSON.stringify(snapshots % 2 === 1 ? [] : [{ path:"hello.txt", sha256:"new-content" }]), stderr:"" }; }

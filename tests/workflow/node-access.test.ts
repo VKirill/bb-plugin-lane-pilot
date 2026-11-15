@@ -65,7 +65,7 @@ describe("what the helper's session loads", () => {
     const node = flow.nodes[0] as Extract<GraphNode, { type: "agent" }>;
     const ctx = {
       runtime: { pmThreadId: "t", projectId: "p", runId: "r", ctx: {}, services: {} }, workflow: flow, node, nodeId: "look", runId: "wfrun_1", stepKey: "look#1", spawnKey: "k", mode: "standard", signal: new AbortController().signal,
-      input: { with: { query: "cats" }, via: { mode: "artifact", fromStep: null } }, goals: [], reground: false, render: (text: string) => text.replace("{{input.query}}", "cats"),
+      input: { with: { query: "cats" }, via: { mode: "artifact", fromStep: null } }, goals: [], reground: false, resolve: (ref: string) => ref === "input.query" ? "cats" : undefined, render: (text: string) => text.replace("{{input.query}}", "cats"),
     } as unknown as StepContext<never>;
     const request = agentRequest(ctx as never, node);
     expect(request).toMatchObject({ plugins: ["browser-automation"], mcp: ["tavily"], skills: ["tavily"] });

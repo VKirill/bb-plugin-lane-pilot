@@ -6,6 +6,10 @@
 
 ## 0.1.575
 
+- **Plan critics receive the PM reader’s open questions without its conclusions.** Both inline and file-delivered packets retain the questions and omit the scout summary and key facts, preserving independent code review. Empty or malformed scout context adds no questions input; canonical-plan validation and CAS delivery remain unchanged. Regression coverage: `tests/plan-critique-packet.test.ts` and the server-stage pipeline.
+
+- **A phase without a run can still ask its PM for the next step.** The tick no longer waits for an automatic stage that has no run to execute in. A failed automatic start on a phase with a run keeps its retry and does not send a duplicate PM step. Regression coverage: `tests/phase-poke.test.ts` and the existing `dt_timer` / `m_cd_phase_disc` SMA cases.
+
 - **Native skill selection follows the actual helper target.** Explicit node skills use provider command discovery and native skill mentions for Codex or one Claude selection; unsupported or unresolved optional selections retain the original task prompt with a diagnostic. Continued sessions use their own project, provider and environment; fallback providers resolve again. Tested in `skill-select` and `skill-select-run` (13 cases). A selected reference is not proof that the provider loaded a particular skill body.
 
 - **Graph context uses the shared packet contract.** Required input files are delivered by create-only CAS, verified against their revision and recorded in run manifests; failed delivery blocks the helper instead of silently cutting its input. Workflow interpolation and contract-less agent nodes use the same packet path. Plan critics and PM readers validate canonical plan inputs before reusing cached answers; service notices no longer become owner quotations. Context sufficiency and provenance are the criteria, not minimum prompt length.

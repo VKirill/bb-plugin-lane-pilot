@@ -1,4 +1,5 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
+import { boundedReadCall } from "./helpers/bounded-read";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import plugin from "../server";
 import type { TaskV2 } from "../src/rooms/contracts";
@@ -39,6 +40,7 @@ async function setup() {
       // The git base is never answered: the dispatch stays in its stages and answers «queued» early.
       if (call.method === "gitOwnershipBase") return new Promise(() => undefined);
       if (call.method === "classifyPlan") return { hostId: "host-test", status: "ok", effort: "xhigh", reason: null, planSha256: "a", sentPlanSha256: "a", sourceLength: 1, sentLength: 1 };
+      if (call.method === "readBoundedFile") return boundedReadCall(call, "host-test", "fixture\n");
       if (call.method !== "runCommand") throw new Error(`unexpected ${call.method}`);
       return { hostId: "host-test", exitCode: 0, stdout: String((call.input as { command?: string }).command ?? "").includes("porcelain") ? "[]" : "", stderr: "" };
     },

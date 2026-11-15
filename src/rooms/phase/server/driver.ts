@@ -119,8 +119,13 @@ export function createPhaseDriver(ctx: ServerCore, services: Services, reactions
         // The machine drives the train: a stage it can run is not poked to the PM. A failed stage also answers false
         // (its retry is already booked for the next pass), so the poke waits for a fresh read: autoDue says whether the
         // machine owns what is due — only then is the PM genuinely needed (owner word, train=false, spent tries).
+        // A phase without a run is not the machine's either: auto.step cannot start a stage for it and books no try
+        // (auto-stages.ts, no runtime), so waiting on autoDue would leave its PM untold for good.
         const stepped = docs.mustGet(after.id);
-        if (!(await auto.step(stepped)) && !autoDue(docs.mustGet(stepped.id))) await steps.poke(docs.mustGet(stepped.id));
+        if (!(await auto.step(stepped))) {
+          const fresh = docs.mustGet(stepped.id);
+          if (!autoDue(fresh) || !fresh.runId) await steps.poke(fresh);
+        }
         await docs.writeBook(docs.mustGet(after.id)).catch((cause: unknown) => ctx.log(`phase ${phase.id}: book not written: ${cause instanceof Error ? cause.message : String(cause)}`));
       } catch (cause) {
         ctx.log(`phase ${phase.id}: ${cause instanceof Error ? cause.message : String(cause)}`);

@@ -168,11 +168,14 @@ describe("region 9 · the live timer", () => {
   });
 
   it("[sma:m_ws_live_timer] the timer ticks on its own: the same work, read again by the window's poll a few minutes later, says the longer time", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
     const start = Date.now();
     const view = await live(start - 10 * MIN, "en");
     expect(line(view)).toBe("writing · 10 min");
-    // Three minutes go by; the window's own poll (every 8 s) reads the thread again and the line moves without a press.
-    vi.spyOn(Date, "now").mockReturnValue(start + 3 * MIN);
+    // Three minutes go by on the fake clock; the read's 60 s safety poll (the fallback — a live host's
+    // invalidations are the fast path) re-reads and the line moves without a press. Detection residual
+    // up to ~60 s when no invalidation arrives.
+    await vi.advanceTimersByTimeAsync(3 * MIN + 1_000);
     await waitFor(() => expect(line(view)).toBe("writing · 13 min"), { timeout: 20_000 });
     observe("n920tick", { before: "writing · 10 min", after: line(view) });
   }, 40_000);

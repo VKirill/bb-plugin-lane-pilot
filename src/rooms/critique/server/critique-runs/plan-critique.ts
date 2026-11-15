@@ -7,7 +7,7 @@ import { criticPairCandidates, roleSelection, sdkCriticCatalog, usable } from ".
 import { bbServiceTier, findModelIn, listedServiceTier, resolveStageWriterSelection, writerExecutionSelection, writerServiceTier } from "@lane-pilot/models";
 import { settingOff } from "@lane-pilot/models";
 import { sha256 } from "../../../tasks";
-import { callersBlock, critiquePacketPrompt, parseCritique, shouldRunPlanCritique } from "../../critique";
+import { callersBlock, critiquePacketPrompt, openQuestions, parseCritique, shouldRunPlanCritique } from "../../critique";
 import { planCriticTier } from "../../critic-level";
 import { ownerWordsOfRun } from "../owner-words";
 import { binaryOutputs, dropIntendedGaps, dropNoisyGaps, findTaskPlaceholderPaths } from "../../critique-coverage";
@@ -225,12 +225,13 @@ export async function runPlanCritique(input:{bb:BbPluginApi;db:ReturnType<typeof
     const planSource = planSourceText;
     const ownsGap = new Set(structuralFindings.filter((finding) => finding.code === "owns_gap" || finding.code === "caller_unowned").map((finding) => finding.path));
     const callersText = callersBlock(coverageCallers, ownsGap);
+    const pmReadQuestions = openQuestions(input.pmReadContext);
     const packetInputs: PacketInput[] = [
       { name: "task", value: input.task },
       { name: "plan", value: planText },
       ...(planSource ? [{ name: "plan-source", value: planSource }] : []),
       { name: "owner-words", value: ownerWords },
-      ...(input.pmReadContext?.trim() ? [{ name: "pm-read", value: input.pmReadContext }] : []),
+      ...(pmReadQuestions.length ? [{ name: "pm-read-open-questions", value: pmReadQuestions }] : []),
       { name: "structural-findings", value: structuralFindings },
       ...(callersText ? [{ name: "callers", value: callersText }] : []),
       { name: "coverage", value: { status: coverageStatus, pathCount: coveragePathCount } },

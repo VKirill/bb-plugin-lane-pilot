@@ -88,7 +88,7 @@ function policyBoolean(value: unknown, fallback: boolean, key: string): boolean 
 export const PLAN_CRITIC_READ_LINE = `You are running in the project checkout. Before the verdict, open the files the plan changes and the files in read_first, and grep for the names the plan relies on (functions, types, settings, commands), so you judge the plan against the code as it is, not as the plan describes it. ${REVIEW_READ_ONLY_LINE}`;
 
 /** The PM reader's open questions (its JSON `openQuestions`); its summary of the code is not sent, the critic reads the code. */
-function openQuestions(pmReadContext: string | undefined): string[] {
+export function openQuestions(pmReadContext: string | undefined): string[] {
   try {
     const parsed = JSON.parse(pmReadContext ?? "") as { openQuestions?: unknown };
     return Array.isArray(parsed.openQuestions) ? parsed.openQuestions.filter((q): q is string => typeof q === "string" && !!q.trim()).slice(0, 8) : [];

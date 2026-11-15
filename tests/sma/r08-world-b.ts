@@ -85,6 +85,7 @@ export function peerList() {
   const names = Object.keys(hostMethods).sort();
   const words = Object.keys(rpcContract).filter((name) => /(^|_)(word|answer)(_|$)/.test(name));
   return { count: names.length, hasJobs: ["jobCancel", "jobStart", "jobStatus"].every((name) => names.includes(name)), hasRun: names.includes("runCommand"),
+    hasOwnsBarrier: names.includes("gitOwnsBarrier"),
     wordsOnPeers: words.filter((name) => names.includes(name)), sample: names.slice(0, 3) };
 }
 

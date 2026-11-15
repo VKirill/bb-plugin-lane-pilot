@@ -1,9 +1,11 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { afterEach, describe, expect, it } from "vitest";
+import { sha256Hex } from "@lane-pilot/kit";
 import plugin from "../../server";
 import { createRun, openDatabase, setRunThread } from "../../src/rooms/plugin-db";
 import { tokensFrom } from "../../src/rooms/native-agent/native-session";
 import { insertPhase, savePhase } from "../../src/rooms/phase/store";
+import { coreFileWrite, mapStore } from "../helpers/core-files";
 
 const projectId = "spec-project";
 const pmThreadId = "spec-pm";
@@ -11,6 +13,20 @@ const runId = "spec-run";
 
 /** A helper's final message in a graph step: its answer, then the JSON block the step asks for. */
 const reply = (report: string) => `Done.\n\n\`\`\`json\n${JSON.stringify({ report, handoff: "done" })}\n\`\`\``;
+
+/** The step packet's big values are delivered as content-addressed files before the helper spawns (strict create-only contract). */
+const deliveryFiles = () => {
+  const written = new Map<string, string>();
+  const store = mapStore(written);
+  return {
+    read: async (args: { path: string }) => {
+      const content = store.get(args.path);
+      if (content === null) throw Object.assign(new Error("not found"), { code: "not_found" });
+      return { content, sha256: sha256Hex(content) };
+    },
+    write: coreFileWrite(store) as never,
+  };
+};
 
 let dispose: (() => Promise<void> | void) | null = null;
 afterEach(async () => { await dispose?.(); dispose = null; });
@@ -31,6 +47,7 @@ describe("specialist threads", () => {
         environments: {
           get: async () => ({ id: "env-pm", hostId: "local-host", path: process.cwd(), status: "ready" }),
         },
+        files: deliveryFiles(),
       },
     });
     await plugin(bb);
@@ -68,6 +85,7 @@ describe("specialist threads", () => {
           get: async ({ threadId }) => ({ id: threadId, status: "idle", projectId, environmentId: "env-pm", sourceThreadId: pmThreadId, lifecycleOwnerThreadId: pmThreadId }),
         },
         environments: { get: async () => ({ id: "env-pm", hostId: "local-host", path: process.cwd(), status: "ready" }) },
+        files: deliveryFiles(),
       },
     });
     await plugin(bb);
@@ -114,6 +132,7 @@ describe("specialist threads", () => {
           get: async ({ threadId }) => ({ id: threadId, status: "idle", projectId, environmentId: "env-pm", sourceThreadId: pmThreadId, lifecycleOwnerThreadId: pmThreadId }),
         },
         environments: { get: async () => ({ id: "env-pm", hostId: "local-host", path: process.cwd(), status: "ready" }) },
+        files: deliveryFiles(),
       },
     });
     await plugin(bb);

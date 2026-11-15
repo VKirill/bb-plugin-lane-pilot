@@ -7,6 +7,7 @@ import { cockpitRpc } from "../../src/rooms/cockpit";
 import { runsRpc } from "../../src/rooms/runs/server/rpc/runs";
 import { createCore } from "../../src/rooms/core/server/core";
 import { createFakeWorktreeHost } from "../own-worktree-host";
+import { boundedReadCall } from "../helpers/bounded-read";
 import { buildTaskBoard } from "../../src/rooms/runs/server/task-board";
 import { workFilePathError, workFileRead } from "../../src/rooms/runs/server/work-file";
 import { conveyorState } from "../../src/rooms/runs/conveyor";
@@ -273,6 +274,7 @@ describe("[sma:ar_stamp] the writer spawn path stamps the trace it saves", () =>
       },
       experimental_callHostRpc: (call: { method: string; input: unknown }) => {
         if (call.method === "gitOwnershipBase") return { hostId: "host-test", status: "not-git", branch: null, headSha: null, baseRef: null, baseSha: null, compareCommitted: false, reason: "fixture" };
+        if (call.method === "readBoundedFile") return boundedReadCall(call, "host-test", "fixture\n");
         if (call.method !== "runCommand") throw new Error(`unexpected ${call.method}`);
         const command = String((call.input as { command?: string }).command ?? "");
         return { hostId: "host-test", exitCode: 0, stdout: command.includes("porcelain") ? JSON.stringify(++snapshots <= 2 ? [] : [{ path: "hello.txt", sha256: "created" }]) : "", stderr: "" };

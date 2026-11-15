@@ -144,7 +144,7 @@ describe("continuing a writer thread", () => {
       writer: hot, prompt: "next", kind: "next-task" });
     expect(turn).toMatchObject({ ok: true, workspacePath: worktree });
     expect(env.calls.slice(0, 2)).toEqual(["gitSyncWorktree", "gitPrepareWorktree"]);
-    expect(env.sent).toEqual([{ threadId: "thr_w", text: "next" }]);
+    expect(env.sent).toEqual([{ threadId: "thr_w", text: "[Lane Pilot service] next" }]);
     const attempt = getAttempt(env.db, "a2")!;
     expect(attempt).toMatchObject({ state: "running", thread_id: "thr_w", workspace_path: worktree, environment_id: "env_a" });
     expect(getReasoningTrace(env.db, "a2")).toMatchObject({ attemptId: "a2", threadId: "thr_w", model: "opus" });

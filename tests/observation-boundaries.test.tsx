@@ -123,14 +123,16 @@ it("shows a board read error, recovers, marks stale data and recovers again", as
   expect((await slot.findByTestId("board-offline")).textContent).toContain("Could not load tasks");
   expect(slot.getByTestId("task-board").textContent).not.toContain("Loading…");
   fail = false;
-  await vi.advanceTimersByTimeAsync(8_100);
+  // The modern read's only timed re-read is the 60 s safety poll (server invalidations are the fast path on a
+  // live host), so recovery lands on the next fallback beat — detection residual up to ~60 s.
+  await vi.advanceTimersByTimeAsync(61_000);
   await waitFor(() => expect(slot.queryByTestId("board-offline")).toBeNull());
   expect(slot.getByTestId("board-columns")).toBeTruthy();
   fail = true;
-  await vi.advanceTimersByTimeAsync(8_100);
+  await vi.advanceTimersByTimeAsync(61_000);
   await waitFor(() => expect(slot.getByTestId("board-offline").textContent).toContain("last known states"));
   fail = false;
-  await vi.advanceTimersByTimeAsync(8_100);
+  await vi.advanceTimersByTimeAsync(61_000);
   await waitFor(() => expect(slot.queryByTestId("board-offline")).toBeNull());
 });
 

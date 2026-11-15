@@ -14,9 +14,13 @@ import { builtinWorkflow } from "../src/rooms/workflow/builtin";
 import { createWriterDispatch } from "../src/rooms/writer/server/dispatch";
 import { registerDispatchExecutors } from "../src/rooms/writer/server/dispatch-workflow";
 import incident from "./fixtures/dispatch-ownership-reload-2026-11-08.json";
+import { boundedReadCall } from "./helpers/bounded-read";
 
 async function world(stop: string | null = null) {
-  const { bb, harness } = createFakePluginHost({ pluginId:"lane-pilot", sdk:{ files:{ write:async () => ({ ok:true }) } } });
+  // The execution packet reads read_first through the machine (bb.hosts, not ctx.host): the incident's sources are not in
+  // this virtual workspace, so they read as absent — advisory in the packet, never a block.
+  const { bb, harness } = createFakePluginHost({ pluginId:"lane-pilot", sdk:{ files:{ write:async () => ({ ok:true }) } },
+    experimental_callHostRpc:async (call) => { if (call.method === "readBoundedFile") return boundedReadCall(call, "fixture-host", null); throw new Error(`unexpected ${call.method}`); } });
   const db = openDatabase(bb);
   const { projectId, pmThreadId, plan } = incident;
   const { run_id:runId, task_id:taskId, id:attemptId } = incident.attempt;

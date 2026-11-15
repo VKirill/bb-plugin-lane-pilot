@@ -338,7 +338,7 @@ function world(options: World = {}) {
   };
   if (options.providers === "no-api") delete sdk.environments;
   const ctx = {
-    bb: { storage: bb.storage, log: { info: (line: string) => infos.push(line), warn: (line: string) => warns.push(line) }, sdk },
+    bb: { storage: bb.storage, log: { info: (line: string) => infos.push(line), warn: (line: string) => warns.push(line) }, hosts: { experimental_client: () => ({ call: async (method: string) => { throw new Error(`unexpected host call ${method}`); } }) }, sdk },
     db,
     serializedKv: <T>(work: () => Promise<T>) => work(),
     host: {

@@ -10,6 +10,7 @@ import { recordStage } from "../../src/rooms/runs/server/stage-records";
 import { buildAcceptanceCard } from "../../src/rooms/acceptance/card";
 import { postOwnerItem } from "../../src/rooms/owner-waiting";
 import { taskWordItemPrefix, type TaskV2 } from "../../src/rooms/contracts";
+import { boundedReadCall } from "../helpers/bounded-read";
 import { createCore } from "../../src/rooms/core/server/core";
 import { createPhaseDriver } from "../phase-driver";
 import type { Services } from "../../server";
@@ -40,6 +41,7 @@ export async function observeIdempotent() {
   experimental_callHostRpc: async (call: { method: string; input?: unknown }) => {
     if (call.method === "gitOwnershipBase") { await baseHeld; return { hostId: "host-test", status: "not-git" as const, branch: null, headSha: null, baseRef: null, baseSha: null, compareCommitted: false, reason: "fixture" }; }
     if (call.method === "classifyPlan") return { hostId: "host-test", status: "ok", effort: "xhigh", reason: null, planSha256: "a", sentPlanSha256: "a", sourceLength: 1, sentLength: 1 };
+    if (call.method === "readBoundedFile" && call.input !== undefined) return boundedReadCall({ input: call.input }, "host-test", "fixture\n");
     if (call.method !== "runCommand") throw new Error(`unexpected ${call.method}`);
     return { hostId: "host-test", exitCode: 0, stdout: String((call.input as { command?: string }).command ?? "").includes("porcelain") ? "[]" : "", stderr: "" };
   } } as never);

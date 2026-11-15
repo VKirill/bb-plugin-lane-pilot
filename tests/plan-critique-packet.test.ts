@@ -194,3 +194,49 @@ it("prepareCriticPacket keeps a small input fully inline with no files and no ru
   expect(Object.keys(got.refs)).toEqual([]);
   expect(runHomeOf(db, "r2")).toBeNull(); // nothing spilled -> no empty run folder
 });
+
+// The PM reader's report reaches the critic only as its openQuestions (critique.ts boundary): summary/keyFacts
+// stay out of the prompt and every packet file, a short set stays inline, a long one goes by reference, and a
+// malformed or empty context contributes no questions input at all.
+const pmReadWith = (openQuestions: string[]) =>
+  JSON.stringify({ summary: "PM-SUMMARY-SECRET", keyFacts: ["PM-FACT-SECRET"], openQuestions });
+
+it("the packet carries only the reader's open questions: short inline, long by reference, secrets nowhere", async () => {
+  const short = rig();
+  const outShort = await runPlanCritique({ ...short.input, pmReadContext: pmReadWith(["Does the plan cover the retry path?"]) } as never);
+  expect(outShort.allowed).toBe(true);
+  const promptShort = String(short.spawns[0]!.prompt);
+  expect(promptShort).toContain("Does the plan cover the retry path?");
+  expect(promptShort).not.toContain("PM-SUMMARY-SECRET");
+  expect([...short.files.values()].join("\n")).not.toContain("PM-SUMMARY-SECRET");
+  expect(promptShort).not.toContain("PM-FACT-SECRET");
+  expect([...short.files.values()].join("\n")).not.toContain("PM-FACT-SECRET");
+
+  const long = rig();
+  const questions = Array.from({ length: 8 }, (_, i) => `Question ${i}? ${"detail ".repeat(60)}`);
+  const outLong = await runPlanCritique({ ...long.input, pmReadContext: pmReadWith(questions) } as never);
+  expect(outLong.allowed).toBe(true);
+  const promptLong = String(long.spawns[0]!.prompt);
+  const questionPath = [...long.files.keys()].find((key) => long.files.get(key)!.includes("Question 0?"))!;
+  expect(questionPath).toContain("/.agents/runs/r/inputs/");
+  expect(promptLong).toContain(`file: ${questionPath.replace(/^\/repo\//, "")}`);
+  expect(promptLong).not.toContain(questions[7]!);
+  const questionFile = long.files.get(questionPath)!;
+  for (const question of questions) expect(questionFile).toContain(question);
+  const deliveredLong = [...long.files.values()].join("\n");
+  expect(promptLong).not.toContain("PM-SUMMARY-SECRET");
+  expect(deliveredLong).not.toContain("PM-SUMMARY-SECRET");
+  expect(promptLong).not.toContain("PM-FACT-SECRET");
+  expect(deliveredLong).not.toContain("PM-FACT-SECRET");
+});
+
+it("malformed, empty or questionless pm-read context yields no questions input", async () => {
+  for (const pmReadContext of ["not json{", "", JSON.stringify({ summary: "PM-SUMMARY-SECRET" }), undefined]) {
+    const { spawns, files, input } = rig();
+    const out = await runPlanCritique({ ...input, pmReadContext } as never);
+    expect(out.allowed).toBe(true);
+    const all = String(spawns[0]!.prompt) + "\n" + [...files.values()].join("\n");
+    expect(all).not.toContain("pm-read-open-questions");
+    expect(all).not.toContain("PM-SUMMARY-SECRET");
+  }
+});

@@ -1,4 +1,6 @@
 import { createHash } from "node:crypto";
+import { boundedReadCall } from "../helpers/bounded-read";
+import { coreFileWrite, type FileStore } from "../helpers/core-files";
 import { createFakeWorktreeHost } from "../own-worktree-host";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { WorkflowEngine } from "@lane-pilot/workflow-engine";
@@ -55,6 +57,16 @@ async function runScenario(scenario: Scenario) {
   let nextWriter = 0, porcelain = 0;
   let runAfterCancel: string | null = null;
   // Every writer attempt of a git project works in its own worktree: the fake host makes, checks and merges them.
+  // files.write/files.read share one store: packet inputs written create-only must read back byte-identical
+  // (prepareCriticPacket verifies sha256), and CAS writes see fixture content as the current bytes.
+  const writtenFiles = new Map<string, string>();
+  const fixtureContent = (path: string): string | null =>
+    path.endsWith("README.md") ? readme : path.endsWith(".txt") ? "reviewed output\n" : null;
+  const fileStore: FileStore = {
+    get: (path) => writtenFiles.get(path) ?? fixtureContent(path),
+    set: (path, content) => { writtenFiles.set(path, content); },
+  };
+  const coreWrite = coreFileWrite(fileStore);
   const { bb, harness } = createFakeWorktreeHost({
     pluginId: "lane-pilot",
     sdk: {
@@ -115,8 +127,14 @@ async function runScenario(scenario: Scenario) {
       },
       files: {
         listPaths: async () => ({ truncated: false, paths: [{ kind: "file", name: "README.md", path: "README.md", positions: [], score: 1 }] }) as never,
-        read: async ({ path }) => path.endsWith("README.md") ? { content: readme } : path.endsWith(".txt") ? { content: "reviewed output\n", sha256: noteSha } : { content: null },
-        write: async () => ({ ok: true }) as never,
+        read: async ({ path }) => {
+          const stored = writtenFiles.get(path);
+          if (stored !== undefined) return { content: stored };
+          const content = fixtureContent(path);
+          if (content === null) return { content: null };
+          return path.endsWith(".txt") ? { content, sha256: noteSha } : { content };
+        },
+        write: coreWrite as never,
       },
     },
     experimental_callHostRpc: async (call) => {
@@ -131,6 +149,8 @@ async function runScenario(scenario: Scenario) {
       if (call.method === "gitOwnershipChanges") return { hostId: config.hostId, status: "ready", headSha: "a".repeat(40), paths: [], reason: null };
       if (call.method === "gitIntegrate") return { hostId: config.hostId, status: "merged", commit: "d".repeat(40), conflicts: [], reason: null };
       if (call.method === "runSandboxedCommand") return { hostId: config.hostId, backend: "macos-seatbelt", workspacePath: config.writerWorkspacePath, cwd: config.writerWorkspacePath, exitCode: 0, policySha256: "c".repeat(64), stdout: "", stderr: "" };
+      if (call.method === "readBoundedFile") return boundedReadCall(call, config.hostId, (path) =>
+        path.endsWith("README.md") ? readme : path.endsWith(".txt") ? "reviewed output\n" : null);
       if (call.method !== "runCommand") throw new Error(`unexpected host method ${call.method}`);
       const command = String(input.command ?? "");
       if (command.includes("porcelain")) { porcelain += 1; return { hostId: config.hostId, exitCode: 0, stdout: JSON.stringify(porcelain === 1 ? [] : [{ path: "note.txt", sha256: noteSha }]), stderr: "" }; }
@@ -358,7 +378,7 @@ describe("the dispatch runs on the workflow engine", () => {
 
   it("records the journal of a finished dispatch: one step per stage, the writer step settled when the task ends", async () => {
     const { engineRuns, engineSteps } = await runScenario({ name: "journal", settings: { "plan_critique.enabled": false }, finish: true });
-    expect(engineSteps.map((step) => step.node_id)).toEqual(["pm-read", "quality-mode", "plan-critique", "specialist-review", "ownership-base", "task-folder", "baseline", "writer", "qa-gate"]);
+    expect(engineSteps.map((step) => step.node_id)).toEqual(["execution-packet", "pm-read", "quality-mode", "plan-critique", "specialist-review", "ownership-base", "task-folder", "baseline", "writer", "qa-gate"]);
     expect(engineSteps.slice(0, -1).every((step) => step.state === "succeeded")).toBe(true);
     expect(["waiting", "succeeded"]).toContain(engineRuns[0]!.status);
   }, 30_000);

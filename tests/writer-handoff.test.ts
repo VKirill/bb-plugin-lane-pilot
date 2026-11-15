@@ -91,6 +91,7 @@ describe("fallback spawn with a continuation", () => {
       bb: {
         storage: bb.storage,
         log: { info() {}, warn() {} },
+        hosts: { experimental_client: () => ({ call: async (method: string) => { throw new Error(`unexpected host call ${method}`); } }) },
         sdk: {
           projects: { get: async () => ({ sources: [] }) },
           providers: {

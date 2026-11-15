@@ -73,7 +73,7 @@ describe("[sma:ac_intent] the launch intent is on the row before the process", (
     seedAttempt(db, "t1");
     const seen: Array<[string, string, string | null]> = [];
     const ctx = {
-      bb: { storage: bb.storage, log: { info() {}, warn() {} }, sdk: {
+      bb: { storage: bb.storage, log: { info() {}, warn() {} }, hosts: { experimental_client: () => ({ call: async (method: string) => { throw new Error(`unexpected host call ${method}`); } }) }, sdk: {
         projects: { get: async () => ({ sources: [] }) },
         providers: { list: async () => [{ id: "codex", available: true, serviceTiers: [{ id: "default" }] }], models: async () => ({ models: [{ id: "codex-test", model: "codex-test", supportedReasoningEfforts: [{ reasoningEffort: "medium" }] }] }) },
         files: { read: async () => ({ content: null }) },

@@ -39,6 +39,7 @@ function spawnEnv(options: { bound?: boolean; createReason?: string; kind?: "bb"
     bb: {
       storage: bb.storage,
       log: { info() {}, warn() {} },
+      hosts: { experimental_client: () => ({ call: async (method: string) => { throw new Error(`unexpected host call ${method}`); } }) },
       sdk: {
         projects: { get: async () => ({ sources: options.otherRoot ? [{ hostId: "h", path: options.otherRoot }] : options.projectRoot ? [{ hostId: "h", path: folder }] : [] }) },
         providers: {

@@ -15,6 +15,7 @@ import {
 } from "../src/rooms/plugin-db";
 import { TARGET_SHA } from "../src/rooms/runs/constants";
 import { buildTask } from "./fixtures/hello-task";
+import { boundedReadCall } from "./helpers/bounded-read";
 
 const projectId = "project-test";
 const pmThreadId = "pm-thread";
@@ -223,6 +224,7 @@ describe("production spawn_unknown reconciliation", () => {
       },
       experimental_callHostRpc: (call) => {
         if(call.method==="gitOwnershipBase") return {hostId:"host-test",status:"not-git",branch:null,headSha:null,baseRef:null,baseSha:null,compareCommitted:false,reason:"synthetic fixture is not a git worktree"};
+        if (call.method === "readBoundedFile") return boundedReadCall(call, "host-test", (path) => path.endsWith("README.md") ? "reconciliation task fixture\n" : null);
         if (call.method === "runCommand") {
           return { hostId:"host-test", exitCode:0, stdout:"[]", stderr:"" };
         }

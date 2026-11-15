@@ -37,9 +37,10 @@ describe("machines: what the hub sees of its peers (n704, n715, n713, n714)", ()
 
   it("[sma:m_mc_proxy_list] what the hub can send to a machine is a closed list of named methods (jobs, commands, worktrees...), and none of the owner's word calls is on it", () => {
     const list = peerList();
-    expect(list.count).toBe(74);
+    expect(list.count).toBe(75);
     expect(list.hasJobs).toBe(true);
     expect(list.hasRun).toBe(true);
+    expect(list.hasOwnsBarrier).toBe(true);
     expect(list.wordsOnPeers).toEqual([]);
     expect(list.sample).toEqual(["answerPermit", "applyOnboardingPages", "closeBacklogItem"]);
   });
