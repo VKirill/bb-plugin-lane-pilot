@@ -7,6 +7,7 @@ import { BACKLINKS_MARK, blockingDocsFindings, parseFrontmatter, buildBacklinks,
 import { commitDocs } from "../../src/rooms/docs/git-docs";
 import citationLineEvidence from "../fixtures/docs-citation-line-evidence.json";
 import citationPathEvidence from "../fixtures/docs-citation-path-evidence.json";
+import citationInlineCodeEvidence from "../fixtures/docs-citation-inline-code-evidence.json";
 
 const page = (fields: Record<string, string>, body: string) => [
   "---",
@@ -376,6 +377,19 @@ it("checks a claim's cited ranges together, without borrowing support from anoth
   for (const abbreviation of ["e.g.", "i.e."]) {
     const content = `\`resolveAgentModel\` builds candidates (${abbreviation} \`fallback\`) (packages/models/src/agent-model.ts:104).`;
     expect(await lintCitationClaims([{ path:"docs/features/checks.md", content }], read)).toEqual([]);
+  }
+});
+
+it("keeps punctuation inside inline code in the same citation claim", async () => {
+  const { lintCitationClaims } = await import("../../src/rooms/docs/docs-lint");
+  const ranges: Record<string, string> = citationInlineCodeEvidence.ranges;
+  const read = async (file: string, start: number, end: number) => ranges[`${file}:${start}-${end}`] ?? null;
+  expect(await lintCitationClaims(citationInlineCodeEvidence.pages, read)).toEqual([]);
+
+  for (const code of ["`SELECT ... FOR UPDATE`", "`Ready! Continue? Yes.`", "``SELECT `value` ... FOR UPDATE``"]) {
+    const content = `\`saveRecord\` runs ${code} (src/store.ts:10). \`missingRecord\` runs (src/other.ts:20).`;
+    expect(await lintCitationClaims([{ path:"docs/features/store.md", content }], async () => "function saveRecord() {}"))
+      .toEqual([expect.objectContaining({ rule:"evidence", detail:expect.stringContaining("missingRecord") })]);
   }
 });
 
