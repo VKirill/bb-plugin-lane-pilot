@@ -2,7 +2,7 @@
 title: Memory core gotchas
 type: gotchas
 created: 2026-11-07
-updated: 2026-11-07
+updated: 2026-11-15
 status: active
 confidence: medium
 tags: [memory, gotchas, pitfalls, sqlite, budgets, concurrency]
@@ -26,59 +26,59 @@ TL;DR: Pitfalls in memory core include raw store core budget throws, lazy trigra
 
 ## Raw `storeMemoryRecords` throws on core budget overflow
 
-When calling `storeMemoryRecords` directly, if the combined token count of new and existing active core records exceeds `coreBudget`, the function throws `memory core budget exceeded: <core>/<budget> tokens` (`packages/memory-core/src/store.ts:194`).
+When calling `storeMemoryRecords` directly, if the combined token count of new and existing active core records exceeds `coreBudget`, the function throws `memory core budget exceeded: <core>/<budget> tokens` (`packages/memory-core/src/store.ts:212`).
 
-Because core records are never evicted, this throws out the entire database transaction and discards all candidate notes in the same batch. Maintainer ingestion calls `storeMemoryRecordsKeepingOverflow`, which demotes excess core records to note kind until the batch fits (`packages/memory-core/src/store.ts:262-274`).
+Because core records are never evicted, this throws out the entire database transaction and discards all candidate notes in the same batch. Maintainer ingestion calls `storeMemoryRecordsKeepingOverflow`, which demotes excess core records to note kind until the batch fits (`packages/memory-core/src/store.ts:294-306`).
 
 ## Trigram virtual tables rely on lazy initialization
 
-The trigram search index `lane_pilot_memory_trgm` is not created by database migrations; `trigramReady` attempts to create it upon first use inside a `WeakMap` cache (`packages/memory-core/src/store.ts:60-75`).
+The trigram search index `lane_pilot_memory_trgm` is not created by database migrations; `trigramReady` attempts to create it upon first use and caches the result in a `WeakMap` (`trigramState`), writing to the cache only when `db.inTransaction` is falsy (`packages/memory-core/src/store.ts:57, 64-80`). Calls inside an active outer transaction (such as a dry-run import on a fresh database that later rolls back and removes the created table) are not remembered, so subsequent calls re-check and recreate the index instead of assuming it stayed ready (`packages/memory-core/src/store.ts:77-78`).
 
-If the host SQLite installation lacks the FTS5 trigram tokenizer (SQLite versions prior to 3.34), the table creation throws internally, `trigramReady` (`packages/memory-core/src/store.ts:60-75`) marks the database as unsupported, and search falls back to in-memory substring scanning via `scanRows` (`packages/memory-core/src/store.ts:340`, `packages/memory-core/src/store.ts:388-392`). In large databases, this fallback loads every active row into JavaScript memory on each search.
+If the host SQLite installation lacks the FTS5 trigram tokenizer (SQLite versions prior to 3.34), the table creation throws internally, `trigramReady` (`packages/memory-core/src/store.ts:64-80`) marks the database as unsupported when outside a transaction, and search falls back to in-memory substring scanning via `scanRows` (`packages/memory-core/src/store.ts:445-450`, `packages/memory-core/src/store.ts:532-536`). In large databases, this fallback loads every active row into JavaScript memory on each search.
 
 ## Vector search requires pre-synchronization of query vectors
 
-Search execution is synchronous, but model embedding calls are asynchronous (`packages/memory-core/src/vectors.ts:99-103`).
+Search execution is synchronous, but model embedding calls are asynchronous (`packages/memory-core/src/vectors.ts:174-186`).
 
-Callers must await external vector generation and invoke `rememberQueryVector` (`packages/memory-core/src/vectors.ts:105-109`) before invoking `searchMemoryRecords` (`packages/memory-core/src/store.ts:323-326`), which calls `denseRows` (`packages/memory-core/src/store.ts:360-363`). If `rememberQueryVector` is not called, search silently skips vector cosine ranking and returns fused lexical/trigram results without throwing an error.
+Callers must await external vector generation and invoke `rememberQueryVector` (`packages/memory-core/src/vectors.ts:181-185`) before invoking `searchMemoryRecords` (`packages/memory-core/src/store.ts:409-420`), which calls `denseRows` (`packages/memory-core/src/store.ts:503-506`). If `rememberQueryVector` is not called, search silently skips vector cosine ranking and returns fused lexical/trigram results without throwing an error.
 
-Additionally, `rememberQueryVector` stores vectors in a process-local `Map` capped at 256 entries (`packages/memory-core/src/vectors.ts:104-109`). Query vectors do not persist across process restarts or worker boundaries.
+Additionally, `rememberQueryVector` stores vectors in a process-local `Map` capped at 256 entries (`packages/memory-core/src/vectors.ts:180-185`). Query vectors do not persist across process restarts or worker boundaries.
 
 ## Held conflicts silently suppress notes from all readers
 
-When two active notes contradict each other and are registered in `lane_pilot_memory_conflict` with `state = 'held'`, `heldClause` appends a SQL `NOT EXISTS` condition to all search queries (`packages/memory-core/src/conflict-store.ts:62-65`, `packages/memory-core/src/store.ts:309`).
+When two active notes contradict each other and are registered in `lane_pilot_memory_conflict` with `state = 'held'`, `heldClause` appends a SQL `NOT EXISTS` condition to all search queries (`packages/memory-core/src/conflict-store.ts:62-65`, `packages/memory-core/src/store.ts:352`).
 
 Neither note is returned to searchers, PM tools, or context packers, and no warning is surfaced indicating that information was suppressed. The facts become invisible until a human operator settles the conflict (`packages/memory-core/src/conflict-store.ts:7-13`, `packages/memory-core/src/conflict-store.ts:94-96`).
 
 ## Hedged statements are demoted to observed quarantine
 
-Any maintainer note containing hedging words ("maybe", "perhaps", "might", "seems", "appears", "possibly", "кажется", "возможно", "похоже") is automatically demoted to `trust = 'observed'`, even if the write request specified `trust = 'confirmed'` (`packages/memory-core/src/store.ts:114-119`, `packages/memory-core/src/store.ts:125`).
+Any maintainer note containing hedging words ("maybe", "perhaps", "might", "seems", "appears", "possibly", "кажется", "возможно", "похоже") is automatically demoted to `trust = 'observed'`, even if the write request specified `trust = 'confirmed'` (`packages/memory-core/src/store.ts:123-128`, `packages/memory-core/src/store.ts:134`).
 
-As an observed note, it is quarantined and hidden from working readers for 24 hours (`OBSERVED_QUARANTINE_MS = 24 * 3_600_000`) unless corroborated by an independent second source (`packages/memory-core/src/lifecycle.ts:5`, `packages/memory-core/src/store.ts:309`).
+As an observed note, it is quarantined and hidden from working readers for 24 hours (`OBSERVED_QUARANTINE_MS = 24 * 3_600_000`) unless corroborated by an independent second source (`packages/memory-core/src/lifecycle.ts:6`, `packages/memory-core/src/store.ts:352`).
 
 ## Required candidates in context packs throw when oversized
 
-In `buildContextPack` (`packages/memory-core/src/context-pack.ts:26-31`), candidates marked with `required` in `PackCandidate` (`packages/memory-core/src/context-pack.ts:8-10`, `packages/memory-core/src/context-pack.ts:45-53`) are never truncated or omitted.
+In `buildContextPack` (`packages/memory-core/src/context-pack.ts:26-33`), candidates marked with `required` in `PackCandidate` (`packages/memory-core/src/context-pack.ts:9-10`, `packages/memory-core/src/context-pack.ts:47-55`) are never truncated or omitted.
 
-If the combined size of required candidates exceeds the role budget (`roleContextBudget`), `buildContextPack` throws `context_pack_oversized:<kind>:<id>` naming the largest candidate (`packages/memory-core/src/context-pack.ts:47-50`). Senders must ensure required policies fit inside role ceilings (e.g., PM: 1,600 tokens; Helper: 600 tokens) (`packages/memory-core/src/context.ts:48-53`).
+If the combined size of required candidates exceeds the role budget (`roleContextBudget`), `buildContextPack` throws `context_pack_oversized:<kind>:<id>` naming the largest candidate (`packages/memory-core/src/context-pack.ts:49-52`). Senders must ensure required policies fit inside role ceilings (e.g., PM: 1,600 tokens; Helper: 600 tokens) (`packages/memory-core/src/context.ts:50-55`).
 
 ## Unassigned scopes in umbrella projects are inaccessible
 
-In an umbrella project where `resolveProjectKind` (`packages/memory-core/src/sections.ts:6-12`) or `projectUsesSections` (`packages/memory-core/src/store.ts:299-302`) resolves an umbrella, records written without a section scope are assigned to `UNASSIGNED_SCOPE` (`packages/memory-core/src/sections.ts:19-20`).
+In an umbrella project where `resolveProjectKind` (`packages/memory-core/src/sections.ts:9-12`) or `projectUsesSections` (`packages/memory-core/src/store.ts:340-343`) resolves an umbrella, records written without a section scope are assigned to `UNASSIGNED_SCOPE` (`packages/memory-core/src/sections.ts:19-20`).
 
-Standard working reader searches filter visibility by prefix matching the reader's section chain (`packages/memory-core/src/store.ts:292-296`, `packages/memory-core/src/store.ts:310`). Notes in the unassigned scope will not match any normal reader chain and remain inaccessible until explicitly rebound to a section.
+Standard working reader searches filter visibility by prefix matching the reader's section chain (`packages/memory-core/src/store.ts:333-337`, `packages/memory-core/src/store.ts:353`). Notes in the unassigned scope will not match any normal reader chain and remain inaccessible until explicitly rebound to a section.
 
 ## Omitting section chain defaults to project root only
 
-When invoking `searchMemoryRecords` or `listMemory`, omitting `options.chain` defaults the reader's scope to `[]` (the project root) (`packages/memory-core/src/store.ts:285-288`, `packages/memory-core/src/store.ts:310`).
+When invoking `searchMemoryRecords` or `listMemory`, omitting `options.chain` defaults the reader's scope to `[]` (the project root) (`packages/memory-core/src/store.ts:316-320`, `packages/memory-core/src/store.ts:353`).
 
 The reader will see only root-level and project-wide records, completely excluding notes belonging to child sections or subcomponents. Working sessions must explicitly supply their section chain.
 
 ## Updating record status directly corrupts search indexes
 
-Setting `status = 'superseded'` or `status = 'expired'` via raw SQL without calling `dropMemoryIndexes` (`packages/memory-core/src/store.ts:78-81`) leaves dead records inside `lane_pilot_memory_fts` and `lane_pilot_memory_trgm`; `hideRecord` (`packages/memory-core/src/lifecycle.ts:30-34`) requires an `unindex` callback to purge them.
+Setting `status = 'superseded'` or `status = 'expired'` via raw SQL without calling `dropMemoryIndexes` (`packages/memory-core/src/store.ts:83-86`) leaves dead records inside `lane_pilot_memory_fts` and `lane_pilot_memory_trgm`; `hideRecord` (`packages/memory-core/src/lifecycle.ts:32-36`) requires an `unindex` callback to purge them.
 
-Conversely, updating an expired record to `'active'` without invoking `addToIndexes` leaves the revived record invisible to full-text and trigram queries (`packages/memory-core/src/store.ts:84-87, 216, 222`). Always use `hideRecord` or `storeMemoryRecords` to mutate statuses.
+Conversely, updating an expired record to `'active'` without invoking `addToIndexes` leaves the revived record invisible to full-text and trigram queries (`packages/memory-core/src/store.ts:89-92, 243, 254`). Always use `hideRecord` or `storeMemoryRecords` to mutate statuses.
 
 <!-- lane-pilot:backlinks -->
 ## Referenced by
