@@ -2,7 +2,7 @@
 
 ## 0.1.578
 
-- **Native helper profiles no longer inherit a passport quote’s selection token.** Passport lenses remove composer transport markers before delivering context to agents, while preserving the stored owner quotation. A live research run exposed the conflict: the analyst inherited the PM profile, then specialist children received two profile tokens and were refused. The regression exercises stored passport data and the real token reader; profile-selection checks remain intact.
+- **Native helper profiles no longer inherit a passport quote’s selection token.** Passport lenses remove composer transport markers before delivering context to agents, while preserving the stored owner quotation. A live research run exposed the conflict: the analyst inherited the PM profile, then specialist children received two profile tokens and were refused. The regression test in `tests/passport/passport-core-and-lenses.test.ts` exercises stored passport data and the real token reader; profile-selection checks remain intact.
 - **The chat info panel includes native sessions and their linked workflow runs.** The strict `thread_live` response projects board items into its declared fields, fixing the invalid-output failure. An open session is visible before its first writer task; workflow rows expose actual status, current step, errors and expandable step results. Runs from another PM chat are excluded. An open session does not imply running work or successful graph acceptance.
 
 ## 0.1.577
