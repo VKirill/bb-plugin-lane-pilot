@@ -528,7 +528,10 @@ describe("parity d5-phase-2", () => {
     const spec = d.texts.get(`.agents/phases/${opened.id}/SPEC.md`)!;
     expect(spec.startsWith(`${GENERATED}\n# Spec`)).toBe(true);
     expect(spec).toContain("Ambiguity: 0");
-    savePhase(d.db, opened.id, { record: { ...live(d, opened.id).record, plan: planOn(live(d, opened.id), [item("p1")]), ownerWords: true }, at: 3 });
+    const planned = planOn(live(d, opened.id), [item("p1")]);
+    // The bounce is a default-on stage of an install that sets nothing: its approve for this sha is what the machine
+    // records after the external run, so admission proceeds on the real default path rather than on a switched-off switch.
+    savePhase(d.db, opened.id, { record: { ...live(d, opened.id).record, plan: { ...planned, bounce: { sha: planned.sha, decision: "approve", at: 1 } }, ownerWords: true }, at: 3 });
     await d.phases.word({ phaseId: opened.id, turn: "planning", decision: "yes", text: "yes", by: "owner via screen" });
     await d.phases.stateDone();
     expect(d.texts.get(`.agents/phases/${opened.id}/PLAN.md`)).toContain("then-p1");
