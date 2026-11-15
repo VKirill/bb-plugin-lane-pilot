@@ -16,7 +16,7 @@ import subprocess
 
 from lp_drill.env import ROOT
 from lp_drill.prove import Proofs
-from lp_drill.scenes.sma_r08_b import NODES_B, prove_b
+from lp_drill.scenes.sma_r08_b import NODES_B, held_b, prove_b
 from lp_drill.scenes.sma_r08_core_b import NODES_CORE_B, prove_core_b
 
 NODES = ["n674", "n675", "n678", "n682", "n683", "n684", "n685", "n686", "n687", "n688", "n689", "n690", "n691", "n692", "n695", "n696", "n697", "n698",
@@ -137,4 +137,6 @@ def scenario_sma_r08(tmp) -> dict:
     proofs.prove("n702", ok, f"slugs {sl['slugs']}; first {sl['first']}, clash {sl['second']}, failure {sl['third']}")
     prove_b(proofs, tmp)
     prove_core_b(proofs, tmp)
-    return proofs.verdict("sma_r08", checked=len(NODES))
+    held = held_b()
+    extra = {"notProved": held, "primaryOnly": True} if held else {}
+    return proofs.verdict("sma_r08", checked=len(NODES) - len(held), **extra)

@@ -191,7 +191,8 @@ const run = async (w: ReturnType<typeof world>, ...args: string[]) => w.harness.
 }
 
 // ---- git copies: n1532 n1544 n1542 ----
-{
+// LP_DRILL_SMA_PRIMARY_ONLY=1 (the owner's PRIMARY-only rule): this block runs real `git worktree add`, so it is never entered; the scene holds its nodes.
+if (process.env.LP_DRILL_SMA_PRIMARY_ONLY !== "1") {
   const root = mkdtempSync(join(tmpdir(), "sma-r20-git-"));
   const base = join(root, "main");
   execFileSync("git", ["init", "-q", "-b", "main", base]);

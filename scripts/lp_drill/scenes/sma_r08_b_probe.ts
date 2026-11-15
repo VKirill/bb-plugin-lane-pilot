@@ -5,7 +5,10 @@
 import * as w from "../../../tests/sma/r08-world-b";
 
 const out: Record<string, unknown> = {};
+// LP_DRILL_SMA_PRIMARY_ONLY=1 (the owner's PRIMARY-only rule): a held world is never called — "worktree" (codeTreeWorktree) makes real scratch git worktrees.
+const PRIMARY_ONLY_HELD = process.env.LP_DRILL_SMA_PRIMARY_ONLY === "1" ? new Set(["worktree"]) : new Set<string>();
 const run = async (name: string, fn: () => unknown) => {
+  if (PRIMARY_ONLY_HELD.has(name)) return;
   try { out[name] = await fn(); } catch (cause) { out[name] = { error: cause instanceof Error ? cause.message : String(cause) }; }
 };
 

@@ -431,21 +431,36 @@
     {
       "from": "ready_check",
       "to": "partial",
-      "pass": "artifact",
-      "when": "!ready_check.ok"
+      "pass": "artifact"
     },
     {
       "from": "ready_check",
       "to": "draft_post",
-      "pass": "artifact"
+      "pass": "artifact",
+      "when": "ready_check.ok && $inputs.draft"
+    },
+    {
+      "from": "ready_check",
+      "to": "goal_check",
+      "pass": "artifact",
+      "when": "ready_check.ok && !$inputs.draft",
+      "with": {
+        "path": "enrich.writing_pack_path"
+      }
     },
     {
       "from": "draft_post",
       "to": "goal_check",
       "pass": "artifact",
+      "when": "$inputs.draft",
       "with": {
         "path": "draft_post.draft_path"
       }
+    },
+    {
+      "from": "draft_post",
+      "to": "partial",
+      "pass": "artifact"
     },
     {
       "from": "goal_check",
@@ -491,15 +506,13 @@
         "aggregate",
         "enrich",
         "ready_check",
-        "draft_post",
         "goal_check",
         "done"
       ],
       "expect_outputs": [
         "status == 'done'",
         "posts.length == 2",
-        "writing_pack_path != ''",
-        "draft_path == ''"
+        "writing_pack_path != ''"
       ]
     },
     "live": "один живой пост в Threads (post_urls), 40-80 комментариев; validate_artifacts.py проходит; в summary.md цитаты с id и ни одной выдуманной (проверка: цитата - подстрока comments.jsonl)",

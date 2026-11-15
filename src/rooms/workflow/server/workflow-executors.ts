@@ -156,7 +156,7 @@ export function registerChainExecutors(engine: WorkflowEngine, ctx: ServerCore, 
 
   registerCheckoutActions(engine, ctx, { action, planHome, flagOf });
   registerProjectActions(engine, ctx, { action, planHome, flagOf });
-  registerDeliverableAction(action, { planHome, services });
+  registerDeliverableAction(action, { planHome, services, engine });
   registerTaskBookActions(engine, ctx, { action, planHome, lintTask });
   registerSpExecutors(engine, ctx, {
     action,

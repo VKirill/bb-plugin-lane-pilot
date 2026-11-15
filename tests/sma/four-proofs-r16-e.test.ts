@@ -124,7 +124,7 @@ describe("review, security and audit commands (n1276 … n1297)", () => {
   it("[sma:k_c_uireview] /sma-ui-review captures, scores and writes the review file unless switched off; a low score offers the fix workflow, an unscored one does not, and a capture that is blocked ends blocked", async () => {
     const seen = await observeE.k_c_uireview();
     expect(seen.ok).toEqual(["capture audit review_doc goal_check done", "done", 30, ["s375.png", "s1280.png"]]);
-    expect(seen.noFile).toBe("capture audit goal_check done");
+    expect(seen.noFile).toBe("capture audit done");
     expect(seen.low).toEqual(["capture audit review_doc goal_check offer done_offer", "review-fix"]);
     expect(seen.zero).toBe("capture audit review_doc goal_check done");
     expect(seen.blocked).toEqual(["capture blocked", "blocked"]);

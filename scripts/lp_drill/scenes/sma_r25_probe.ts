@@ -27,7 +27,9 @@ import { gateResolverFor } from "../../../src/rooms/verification/server";
 
 const out: Record<string, unknown> = {};
 const open = () => { const { bb } = createFakePluginHost({ pluginId: "lane-pilot" }); return openDatabase(bb); };
-const section = async (name: string, run: () => unknown | Promise<unknown>) => { try { out[name] = await run(); } catch (cause) { out[name] = { error: cause instanceof Error ? cause.message : String(cause) }; } };
+// LP_DRILL_SMA_PRIMARY_ONLY=1 (the owner's PRIMARY-only rule): a held section's callback is never called — "rollback" makes real scratch git worktrees.
+const PRIMARY_ONLY_HELD = process.env.LP_DRILL_SMA_PRIMARY_ONLY === "1" ? new Set(["rollback"]) : new Set<string>();
+const section = async (name: string, run: () => unknown | Promise<unknown>) => { if (PRIMARY_ONLY_HELD.has(name)) return; try { out[name] = await run(); } catch (cause) { out[name] = { error: cause instanceof Error ? cause.message : String(cause) }; } };
 const git = (cwd: string, ...args: string[]) => spawnSync("git", args, { cwd, encoding: "utf8", env: { ...process.env, GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@t", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@t" } });
 
 const forecastContract = (id: string, files: number, model?: string) => ({

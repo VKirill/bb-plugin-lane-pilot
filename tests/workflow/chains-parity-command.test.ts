@@ -189,7 +189,7 @@ describe("on-map command graph parity", () => {
     const blocked = await runSim("ui-audit", { input: { url: "http://localhost:1" }, stubs: { capture: { status: "block" } } });
     expect(pathOf(blocked)).toBe("capture blocked");
     expect(out(blocked)).toMatchObject({ status: "blocked" });
-    const failedGoal = await runSim("ui-audit", { input: { url: "http://localhost:4173", review_file: false }, stubs: { capture: { status: "pass", screenshots: ["a.png"] }, audit: { score_40: 30, score_20: 14, findings: [] }, goal_check: { ok: false, verdict: "fail" } } });
+    const failedGoal = await runSim("ui-audit", { input: { url: "http://localhost:4173", review_file: true }, stubs: { capture: { status: "pass", screenshots: ["a.png"] }, audit: { score_40: 30, score_20: 14, findings: [] }, review_doc: { review_path: "" }, goal_check: { ok: false, verdict: "fail" } } });
     expect(pathOf(failedGoal)).toBe("capture audit review_doc goal_check blocked");
     expect(out(failedGoal)).toMatchObject({ status: "blocked" });
   });

@@ -19,6 +19,7 @@ export * from "./reducers";
 export * from "./router";
 export * from "./run-stats";
 export * from "./schema";
+export { nodeRefStep } from "./step-read";
 export * from "./prompt-coverage";
 export * from "./path-class";
 export * from "./quality-mode";

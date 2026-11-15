@@ -14,6 +14,10 @@ export const scopeChain = (scope: string): string[] => {
 };
 export const asObject = (text: string | null): Record<string, unknown> => (text ? JSON.parse(text) as Record<string, unknown> : {});
 export const STARTED = ["succeeded", "failed", "running", "waiting", "interrupted"];
+/** The latest settled step of `node` visible from `scopes`; `beforeRowid` bounds the read to steps that already existed. */
+const latestNodeStep = (engine: WorkflowEngine, run: RunRow, scopes: string[], node: string | undefined, beforeRowid?: number): StepRow | undefined =>
+  engine.journal.db.prepare(`SELECT * FROM lane_pilot_wf_step WHERE run_id=? AND node_id=? AND state IN ('succeeded','skipped') AND scope IN (${scopes.map(() => "?").join(",")})${beforeRowid === undefined ? "" : " AND rowid<?"} ORDER BY rowid DESC LIMIT 1`)
+    .get(...(beforeRowid === undefined ? [run.id, node, ...scopes] : [run.id, node, ...scopes, beforeRowid])) as StepRow | undefined;
 /** In a value position (`emit.map`, `skip_out`, a node's `with`) a node that has not run gives nothing, where a condition on it would fail the run. */
 export const lenient = (env: EvalEnv): EvalEnv => ({ ...env, read: (ref) => { const found = env.read(ref); return found.ran ? found : { ran: true, value: undefined }; } });
 
@@ -49,8 +53,7 @@ export function env(engine: WorkflowEngine, run: RunRow, step: StepRow | null, i
         }
         case "index": return { ran: true, value: item ? item.index : stepInput.index };
         default: {
-          const row = engine.journal.db.prepare(`SELECT output_json FROM lane_pilot_wf_step WHERE run_id=? AND node_id=? AND state IN ('succeeded','skipped') AND scope IN (${scopes.map(() => "?").join(",")}) ORDER BY rowid DESC LIMIT 1`)
-            .get(run.id, ref.node, ...scopes) as { output_json: string | null } | undefined;
+          const row = latestNodeStep(engine, run, scopes, ref.node);
           if (!row) return { ran: false, value: undefined };
           const output = asObject(row.output_json);
           return { ran: true, value: ref.path.length ? valueAtPath(output, ref.path) : output };
@@ -76,6 +79,25 @@ export function refRequired(c: Compiled, text: string): boolean {
   if (fields === "unknown") return false;
   const field = fields.find((candidate) => candidate.name === ref.path[0]);
   return Boolean(field?.required) && ref.path.length === 1;
+}
+
+/**
+ * The step a node reference resolved to for a consumer delivered as `consumerKey`: the latest settled producer in the
+ * delivering step's scope chain among the steps that already existed when the consumer was inserted (rowid ceiling).
+ * Read-side provenance for actions that must know WHERE the referenced value was produced; `env` itself stays
+ * ceiling-free. Undefined for non-node refs, a missing consumer row, or no matching producer. `ceilingBound` false
+ * drops the rowid bound for execution-time reads (a `{{ref}}` template resolves the latest value, like `env`).
+ */
+export function nodeRefStep(engine: WorkflowEngine, run: RunRow, from: StepRow | null, consumerKey: string, ref: Ref, ceilingBound = true): { step: StepRow; value: unknown } | undefined {
+  if (ref.kind !== "node" || !ref.node) return undefined;
+  const ceiling = ceilingBound
+    ? (engine.journal.db.prepare("SELECT rowid AS r FROM lane_pilot_wf_step WHERE run_id=? AND step_key=?").get(run.id, consumerKey) as { r: number } | undefined)?.r
+    : undefined;
+  if (ceilingBound && ceiling === undefined) return undefined;
+  const step = latestNodeStep(engine, run, scopeChain(from?.scope ?? ""), ref.node, ceiling);
+  if (!step) return undefined;
+  const output = asObject(step.output_json);
+  return { step, value: ref.path.length ? valueAtPath(output, ref.path) : output };
 }
 
 export function mapWith(engine: WorkflowEngine, run: RunRow, c: Compiled, from: StepRow | null, edge: WorkflowEdge): Record<string, unknown> {

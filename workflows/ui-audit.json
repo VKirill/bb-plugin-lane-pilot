@@ -240,9 +240,24 @@
       "from": "review_doc",
       "to": "goal_check",
       "pass": "artifact",
+      "when": "$inputs.review_file",
       "with": {
         "path": "review_doc.review_path"
       }
+    },
+    {
+      "from": "review_doc",
+      "to": "offer",
+      "when": "!$inputs.review_file && audit.score_40 > 0 && audit.score_40 < 24"
+    },
+    {
+      "from": "review_doc",
+      "to": "done",
+      "when": "!$inputs.review_file"
+    },
+    {
+      "from": "review_doc",
+      "to": "blocked"
     },
     {
       "from": "goal_check",

@@ -29,8 +29,9 @@ describe("insights-post", () => {
 
   it("the spec's case: given links skip the search; every post runs ins.post; the dossier is validated; no draft unless asked", async () => {
     const r = await runSim("insights-post", { input, stubs: base() });
-    expect(pathOf(r)).toBe("discover pick posts aggregate enrich ready_check draft_post goal_check done");
-    expect(r.skipped).toEqual(["discover", "draft_post"]);
+    expect(pathOf(r)).toBe("discover pick posts aggregate enrich ready_check goal_check done");
+    expect(r.skipped).toEqual(["discover"]);
+    expect(r.called("goal_check")[0]!.input).toMatchObject({ path: "pack.md" });
     expect(out(r)).toMatchObject({ status: "done", posts: ["p", "p"], summary_paths: ["fixtures/summary.md", "fixtures/summary.md"], writing_pack_path: "pack.md" });
     expect(out(r)!.draft_path ?? "").toBe("");
     expect(r.called("posts:child").map((call) => call.input)).toEqual([expect.objectContaining({ post_url: "fixtures/post-a", topic: "выгорание" }), expect.objectContaining({ post_url: "fixtures/post-b" })]);
@@ -40,7 +41,7 @@ describe("insights-post", () => {
     const stubs = () => ({ ...base(), discover: { candidates: [], count: 0, status: "done" } });
     const noLinks = { ...input, post_urls: [] };
     const retry = await runSim("insights-post", { input: noLinks, stubs: stubs(), humans: { ask_none: { answer_kind: "retry" } } });
-    expect(pathOf(retry)).toBe("discover ask_none pick posts aggregate enrich ready_check draft_post goal_check done");
+    expect(pathOf(retry)).toBe("discover ask_none pick posts aggregate enrich ready_check goal_check done");
     expect(pathOf(await runSim("insights-post", { input: noLinks, stubs: stubs(), humans: { ask_none: { answer_kind: "abort" } } }))).toBe("discover ask_none blocked");
   });
 
@@ -67,7 +68,31 @@ describe("insights-post", () => {
   it("with draft=true the copy lead writes a draft from the allowed claims", async () => {
     const r = await runSim("insights-post", { input: { ...input, draft: true }, stubs: { ...base(), draft_post: { draft_path: "draft.md", claims_used: 4 } } });
     expect(r.skipped).toEqual(["discover"]);
+    expect(r.called("goal_check")[0]!.input).toMatchObject({ path: "draft.md" });
     expect(out(r)).toMatchObject({ draft_path: "draft.md" });
+  });
+
+  it("draft=false hands goal_check the writing pack; a stubbed rework routes to partial (the file check itself is chain-executors' real deliverable.validate)", async () => {
+    const r = await runSim("insights-post", { input, stubs: { ...base(), goal_check: { ok: false, verdict: "rework" } } });
+    expect(r.called("goal_check")[0]!.input).toMatchObject({ path: "pack.md" });
+    expect(pathOf(r)).toBe("discover pick posts aggregate enrich ready_check goal_check partial");
+    expect(out(r)).toMatchObject({ status: "partial" });
+  });
+
+  it("draft=true with a missing draft file hands goal_check that path; a stubbed rework routes to partial (the file check itself is chain-executors' real deliverable.validate)", async () => {
+    const r = await runSim("insights-post", { input: { ...input, draft: true }, stubs: { ...base(), draft_post: { draft_path: "missing/draft.md", claims_used: 0 }, goal_check: { ok: false, verdict: "rework" } } });
+    expect(r.called("goal_check")[0]!.input).toMatchObject({ path: "missing/draft.md" });
+    expect(pathOf(r)).toBe("discover pick posts aggregate enrich ready_check draft_post goal_check partial");
+    expect(out(r)).toMatchObject({ status: "partial" });
+  });
+
+  it("draft=true with an empty draft_path is refused at the producer's artifact contract: draft_post fails and goal_check never runs", async () => {
+    const r = await runSim("insights-post", { input: { ...input, draft: true }, stubs: { ...base(), draft_post: { draft_path: "", claims_used: 0 } } });
+    expect(r.called("goal_check")).toHaveLength(0);
+    expect(pathOf(r)).toBe("discover pick posts aggregate enrich ready_check");
+    expect(r.summary.status).toBe("failed");
+    expect(r.summary.reason).toContain("artifact_invalid");
+    expect(r.summary.error).toContain("draft_path");
   });
 });
 

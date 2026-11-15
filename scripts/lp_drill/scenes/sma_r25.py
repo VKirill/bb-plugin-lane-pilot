@@ -9,6 +9,7 @@ in evidence/r25.ts instead. Run: scripts/lp-drill.sh --scenario sma_r25   (add -
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 
 from lp_drill.env import ROOT
@@ -16,6 +17,10 @@ from lp_drill.prove import Proofs
 
 NODES = [f"n{n}" for n in (1681, 1682, 1683, 1685, 1686, 1687, 1688, 1690, 1692, 1693, 1694, 1695, 1696, 1697, 1698, 1699, 1700, 1701, 1702, 1703, 1704, 1705, 1707, 1709)]
 PROBE = ROOT / "scripts/lp_drill/scenes/sma_r25_probe.ts"
+# Held under LP_DRILL_SMA_PRIMARY_ONLY=1: the probe never runs section "rollback" (real scratch git worktrees: createWorktree/integrateWorktree);
+# its nodes are never proved and land in notProved.
+PRIMARY_ONLY_HELD = dict.fromkeys(("n1681", "n1694", "n1709"),
+                                  "PRIMARY-only hold: section rollback creates real scratch git worktrees (createWorktree, sma_r25_probe.ts)")
 
 
 def _sec(seen: dict, name: str) -> dict:
@@ -38,7 +43,11 @@ def scenario_sma_r25(tmp) -> dict:
     except (ValueError, IndexError):
         return proofs.verdict("sma_r25", [f"the probe printed no result (exit {done.returncode}): {(done.stderr or done.stdout).strip()[-300:]}"])
 
+    held = PRIMARY_ONLY_HELD if os.environ.get("LP_DRILL_SMA_PRIMARY_ONLY") == "1" else {}
+
     def prove(node: str, name: str, check, detail) -> None:
+        if node in held:
+            return
         data = _sec(seen, name)
         if not data:
             proofs.prove(node, False, _why(seen, name))
@@ -117,4 +126,5 @@ def scenario_sma_r25(tmp) -> dict:
     # n1709 Rollback mark: the cause a person stated is what the status names; without one it says «cause unknown»; skipping the gate needs a stated cause.
     prove("n1709", "rollback", lambda d: d["before"] is None and d["after"] == {"cause": "broke checkout", "hasCommit": True} and d["silentRefused"] == "refused" and "--why" in d["refusedSummary"] and _sec(seen, "mark").get("silent", {}).get("cause") == "rolled back, cause unknown",
           lambda d: f"before {d['before']}, after a revert with --why {d['after']}, no cause: {_sec(seen, 'mark').get('silent')}, gate skipped without why: {d['refusedSummary']!r}")
-    return proofs.verdict("sma_r25", checked=len(NODES))
+    extra = {"notProved": dict(held), "primaryOnly": True} if held else {}
+    return proofs.verdict("sma_r25", checked=len(NODES) - len(held), **extra)

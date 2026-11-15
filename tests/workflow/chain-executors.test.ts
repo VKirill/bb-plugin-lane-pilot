@@ -17,7 +17,7 @@ import { answerWorkflowQuestion } from "../../src/rooms/workflow/server/workflow
 import { reportEndToOwner } from "../../src/rooms/workflow/server/pm-notice";
 import { graphDependsOn, graphTaskId, graphTaskStem } from "../../src/rooms/workflow/server/workflow-task-contract";
 import type { ChainRuntime } from "../../src/rooms/contracts/server";
-import { registerPureActions } from "@lane-pilot/workflow-engine";
+import { nodeRefStep, refOf, registerPureActions } from "@lane-pilot/workflow-engine";
 import { WorkflowEngine } from "@lane-pilot/workflow-engine";
 import { registerReducers } from "@lane-pilot/workflow-engine";
 import { parseWorkflow } from "@lane-pilot/workflow-engine";
@@ -36,7 +36,7 @@ const reply = (body: Row, lead = "Done.") => `${lead}\n\n\`\`\`json\n${JSON.stri
 
 /** What a helper thread of a node spent, as BB reports it: one token-usage event of one turn, on this model. */
 type Spent = { input: number; output: number; model?: string };
-async function setup(script: Script, options: { pmEvents?: () => Row[]; firstTurnError?: string; firstTurnRetries?: boolean; dirty?: boolean; spent?: Record<string, Spent>; failWrites?: boolean; noPm?: boolean; noCheckout?: boolean; invalidParent?: boolean; offers?: Array<{ providerId: string; model: string; host?: string }>; hosts?: Array<{ id: string; name: string; status?: string }>; sources?: Array<{ hostId: string; path: string }>; failManifest?: boolean } = {}) {
+async function setup(script: Script, options: { pmEvents?: () => Row[]; firstTurnError?: string; firstTurnRetries?: boolean; dirty?: boolean; spent?: Record<string, Spent>; failWrites?: boolean; noPm?: boolean; noCheckout?: boolean; invalidParent?: boolean; offers?: Array<{ providerId: string; model: string; host?: string }>; hosts?: Array<{ id: string; name: string; status?: string }>; sources?: Array<{ hostId: string; path: string }>; failManifest?: boolean; envs?: Record<string, { hostId: string; path: string } | null> } = {}) {
   const checkout = mkdtempSync(join(tmpdir(), "lp-chain-"));
   execFileSync("git", ["init", "-q"], { cwd: checkout });
   writeFileSync(join(checkout, "README.md"), "hello\n");
@@ -61,7 +61,11 @@ async function setup(script: Script, options: { pmEvents?: () => Row[]; firstTur
           nodeOf.set(id, String((request.pluginMetadata as Row).lanePilotWorkflowNode ?? (request.pluginMetadata as Row).role));
           return { id };
         },
-        get: async ({ threadId }) => ({ id: threadId, status: "idle", projectId: PROJECT, environmentId: "env-pm", sourceThreadId: PM, lifecycleOwnerThreadId: PM }),
+        get: async ({ threadId }) => {
+          const envNode = nodeOf.get(threadId) ?? "";
+          const envKey = `env-${envNode}`;
+          return { id: threadId, status: "idle", projectId: PROJECT, environmentId: envNode && options.envs && envKey in options.envs ? envKey : "env-pm", sourceThreadId: PM, lifecycleOwnerThreadId: PM };
+        },
         // A follow-up sent to a thread shows up as a new requested turn that starts and completes.
         // firstTurnError: the first helper's provider ends its turn with this error and no answer; with firstTurnRetries it only announces
         // a retry with it, three times over four minutes, and never ends the turn.
@@ -87,7 +91,7 @@ async function setup(script: Script, options: { pmEvents?: () => Row[]; firstTur
       },
       // The machine's catalog, when a test says which models it offers (otherwise the catalog is cold and every model counts as offered).
       ...(options.offers || options.hosts ? {
-        hosts: { list: async () => options.hosts ?? [...new Set(options.offers!.map((row) => row.host ?? "local"))].map((id) => ({ id, name: id, status: "connected" })) },
+        hosts: { list: async () => options.hosts ?? [...new Set(options.offers!.map((row) => row.host ?? "local"))].map((id) => ({ id, name: id, status: "connected" })), directory: async () => ({ directory: checkout }) },
         ...(options.offers ? {
           providers: {
             list: async (args?: { hostId?: string }) => [...new Set(options.offers!.filter((row) => (row.host ?? "local") === args?.hostId).map((row) => row.providerId))].map((id) => ({ id, displayName: id, available: true, capabilities: {}, serviceTiers: [] })),
@@ -95,7 +99,10 @@ async function setup(script: Script, options: { pmEvents?: () => Row[]; firstTur
           },
         } : {}),
       } : {}),
-      environments: { get: async () => (options.noCheckout ? {} : { id: "env-pm", hostId: "local", path: checkout, status: "ready" }) as never },
+      environments: { get: async ({ environmentId }: { environmentId?: string } = {}) => {
+        const custom = environmentId ? options.envs?.[environmentId] : undefined;
+        return (custom === null ? {} : custom ? { id: environmentId, ...custom, status: "ready" } : options.noCheckout ? {} : { id: "env-pm", hostId: "local", path: checkout, status: "ready" }) as never;
+      } },
       projects: { get: async () => ({ id: PROJECT, name: "Project", sources: options.sources ?? [{ hostId: "local", path: checkout }] }) },
       files: {
         write: async (args: unknown) => {
@@ -772,8 +779,8 @@ describe("the deliverable goal check of a shipped graph", () => {
     report: [reply({ report_md: "# Findings\n\nThe answer is [1].\n\n## Sources\n\n1. Example — https://example.com/a", cited_ids: ["1"], handoff: "reported" })],
   };
   const shipped = () => structuredClone(builtinWorkflow("web-research")!);
-  const goalCheckOutput = async (t: Awaited<ReturnType<typeof setup>>, runId: string) =>
-    JSON.parse(t.engine.snapshot(runId)!.steps.find((step) => step.node_id === "goal_check")!.output_json ?? "{}");
+  const goalCheckOutput = async (t: Awaited<ReturnType<typeof setup>>, runId: string, nodeId = "goal_check") =>
+    JSON.parse(t.engine.snapshot(runId)!.steps.find((step) => step.node_id === nodeId)!.output_json ?? "{}");
 
   it("goal_check validates the artifact deliver wrote: the shipped web-research graph reaches done", async () => {
     const t = await setup(researchScript);
@@ -918,6 +925,196 @@ describe("the deliverable goal check of a shipped graph", () => {
     const read = t.hostCalls.map((call) => call.input as Row).find((input) => String(input.command ?? "").includes("declared-artifact.md"));
     expect(read).toMatchObject({ requestedHostId: "local", cwd: "/" });
     expect(String(read!.command)).toContain(abs);
+  });
+
+  it("goal_check resolves an agent producer's artifact on the thread environment's own host and root", async () => {
+    const envDir = mkdtempSync(join(tmpdir(), "lp-env-"));
+    try {
+      const t = await setup({
+        make: [reply({ artifact_path: ".agents/thing/artifact.md", handoff: "made" })],
+        mid: [reply({ note: "passed", handoff: "mid" })],
+      }, { envs: { "env-make": { hostId: "other", path: envDir } } });
+      dispose = t.dispose;
+      mkdirSync(join(envDir, ".agents/thing"), { recursive: true });
+      writeFileSync(join(envDir, ".agents/thing/artifact.md"), "made on the other host\n");
+      const summary = await t.start(chain({
+        nodes: [
+          { id: "make", type: "agent", role: "analyst", prompt: "Make the artifact.", output: [{ name: "artifact_path", type: "string" }] },
+          { id: "mid", type: "agent", role: "analyst", prompt: "Pass it on.", output: [{ name: "note", type: "string" }] },
+          { id: "check", type: "action", action: "deliverable.validate", out: { ok: "bool", verdict: "string", reason: "string", details: "object" } },
+          { id: "done", type: "action", action: "emit", map: { ok: "check.ok" } },
+        ],
+        edges: [
+          { from: "start", to: "make" }, { from: "make", to: "mid" },
+          { from: "mid", to: "check", with: { path: "make.artifact_path" } }, { from: "check", to: "done" },
+        ],
+      })).done;
+      expect(summary.status).toBe("succeeded");
+      expect(await goalCheckOutput(t, summary.runId, "check")).toMatchObject({ ok: true, verdict: "pass" });
+      const read = t.hostCalls.map((call) => call.input as Row).find((input) => String(input.command ?? "").includes("artifact.md"));
+      expect(read).toMatchObject({ requestedHostId: "other", cwd: "/" });
+      expect(String(read!.command)).toContain(join(envDir, ".agents/thing/artifact.md"));
+    } finally { rmSync(envDir, { recursive: true, force: true }); }
+  });
+
+  it("goal_check names unverified provenance for a multi-vote producer", async () => {
+    const t = await setup({ voted: [reply({ artifact_path: "README.md", handoff: "voted" })] });
+    dispose = t.dispose;
+    const summary = await t.start(chain({
+      nodes: [
+        { id: "voted", type: "agent", role: "analyst", prompt: "Vote on the path.", votes: 2, output: [{ name: "artifact_path", type: "string" }] },
+        { id: "check", type: "action", action: "deliverable.validate", out: { ok: "bool", verdict: "string", reason: "string", details: "object" } },
+        { id: "done", type: "action", action: "emit", map: { ok: "check.ok" } },
+      ],
+      edges: [
+        { from: "start", to: "voted" },
+        { from: "voted", to: "check", with: { path: "voted.artifact_path" } },
+        { from: "check", to: "done" },
+      ],
+    })).done;
+    expect(summary.status).toBe("succeeded");
+    expect(await goalCheckOutput(t, summary.runId, "check")).toMatchObject({ ok: false, reason: expect.stringContaining("producer provenance unverified") });
+  });
+
+  it("goal_check refuses when the producer thread's environment cannot be read", async () => {
+    const t = await setup({ make: [reply({ artifact_path: ".agents/thing/artifact.md", handoff: "made" })] }, { envs: { "env-make": null } });
+    dispose = t.dispose;
+    const summary = await t.start(chain({
+      nodes: [
+        { id: "make", type: "agent", role: "analyst", prompt: "Make the artifact.", output: [{ name: "artifact_path", type: "string" }] },
+        { id: "check", type: "action", action: "deliverable.validate", out: { ok: "bool", verdict: "string", reason: "string", details: "object" } },
+        { id: "done", type: "action", action: "emit", map: { ok: "check.ok" } },
+      ],
+      edges: [
+        { from: "start", to: "make" },
+        { from: "make", to: "check", with: { path: "make.artifact_path" } },
+        { from: "check", to: "done" },
+      ],
+    })).done;
+    expect(summary.status).toBe("succeeded");
+    expect(await goalCheckOutput(t, summary.runId, "check")).toMatchObject({ ok: false, reason: expect.stringContaining("environment unreadable") });
+  });
+
+  it("goal_check resolves ~ on the declared host's own home", async () => {
+    const t = await setup({}, { hosts: [{ id: "local", name: "local" }] });
+    dispose = t.dispose;
+    writeFileSync(join(t.checkout, "home-artifact.md"), "home\n");
+    const summary = await t.start(chain({
+      nodes: [
+        { id: "check", type: "action", action: "deliverable.validate", params: { path: "~/home-artifact.md", host: "local" },
+          out: { ok: "bool", verdict: "string", reason: "string", details: "object" } },
+        { id: "done", type: "action", action: "emit", map: { ok: "check.ok" } },
+      ],
+      edges: [{ from: "start", to: "check" }, { from: "check", to: "done" }],
+    })).done;
+    expect(summary.status).toBe("succeeded");
+    expect(await goalCheckOutput(t, summary.runId, "check")).toMatchObject({ ok: true, verdict: "pass" });
+  });
+
+  it("goal_check refuses a with-source target the edge did not map", async () => {
+    const t = await setup({});
+    dispose = t.dispose;
+    const summary = await t.start(chain({
+      nodes: [
+        { id: "check", type: "action", action: "deliverable.validate", with: { path: "README.md" },
+          out: { ok: "bool", verdict: "string", reason: "string", details: "object" } },
+        { id: "done", type: "action", action: "emit", map: { ok: "check.ok" } },
+      ],
+      edges: [{ from: "start", to: "check" }, { from: "check", to: "done" }],
+    })).done;
+    expect(summary.status).toBe("succeeded");
+    expect(await goalCheckOutput(t, summary.runId, "check")).toMatchObject({ ok: false, reason: expect.stringContaining("node.with") });
+  });
+
+  it("goal_check refuses an embedded params template that names a producer", async () => {
+    const t = await setup({ make: [reply({ artifact_path: "artifact.md", handoff: "made" })] });
+    dispose = t.dispose;
+    const summary = await t.start(chain({
+      nodes: [
+        { id: "make", type: "agent", role: "analyst", prompt: "Make the artifact.", output: [{ name: "artifact_path", type: "string" }] },
+        { id: "check", type: "action", action: "deliverable.validate", params: { path: "pre-{{make.artifact_path}}" },
+          out: { ok: "bool", verdict: "string", reason: "string", details: "object" } },
+        { id: "done", type: "action", action: "emit", map: { ok: "check.ok" } },
+      ],
+      edges: [
+        { from: "start", to: "make" },
+        { from: "make", to: "check" },
+        { from: "check", to: "done" },
+      ],
+    })).done;
+    expect(summary.status).toBe("succeeded");
+    expect(await goalCheckOutput(t, summary.runId, "check")).toMatchObject({ ok: false, reason: expect.stringContaining("embedded params template") });
+  });
+
+  it("goal_check's producer lookup is bounded by the consumer's delivery row", async () => {
+    const t = await setup({ make: [reply({ artifact_path: ".agents/thing/artifact.md", handoff: "made" })] });
+    dispose = t.dispose;
+    const summary = await t.start(chain({
+      nodes: [
+        { id: "make", type: "agent", role: "analyst", prompt: "Make the artifact.", output: [{ name: "artifact_path", type: "string" }] },
+        { id: "check", type: "action", action: "deliverable.validate", out: { ok: "bool", verdict: "string", reason: "string", details: "object" } },
+        { id: "done", type: "action", action: "emit", map: { ok: "check.ok" } },
+      ],
+      edges: [
+        { from: "start", to: "make" },
+        { from: "make", to: "check", with: { path: "make.artifact_path" } },
+        { from: "check", to: "done" },
+      ],
+    })).done;
+    const run = t.engine.journal.getRun(summary.runId);
+    const consumer = t.db.prepare("SELECT step_key, parent_key FROM lane_pilot_wf_step WHERE run_id=? AND node_id='check'").get(summary.runId) as Row;
+    const producer = t.db.prepare("SELECT step_key, scope FROM lane_pilot_wf_step WHERE run_id=? AND node_id='make'").get(summary.runId) as Row;
+    expect(run).toBeTruthy();
+    t.db.prepare("INSERT INTO lane_pilot_wf_step(run_id,step_key,origin,node_id,visit,scope,parent_key,edge_index,state,input_json,output_json,routed,ended_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)")
+      .run(summary.runId, "make#9@late", "visit-late", "make", 9, producer.scope, null, null, "succeeded", "{}", JSON.stringify({ artifact_path: "later.md" }), 0, Date.now(), Date.now());
+    const from = t.engine.journal.getStep(summary.runId, String(consumer.parent_key));
+    const ref = refOf("make.artifact_path");
+    expect(nodeRefStep(t.engine, run!, from ?? null, String(consumer.step_key), ref)?.step.step_key).toBe(producer.step_key);
+    expect(nodeRefStep(t.engine, run!, from ?? null, String(consumer.step_key), ref, false)?.step.step_key).toBe("make#9@late");
+  });
+
+  it("goal_check refuses an edge-mapped target that node.with re-declares, even when the value is equal", async () => {
+    const t = await setup({ make: [reply({ artifact_path: "report.md", handoff: "made" })] });
+    dispose = t.dispose;
+    const summary = await t.start(chain({
+      nodes: [
+        { id: "make", type: "agent", role: "analyst", prompt: "Make the artifact.", output: [{ name: "artifact_path", type: "string" }] },
+        { id: "check", type: "action", action: "deliverable.validate", with: { path: "{{make.artifact_path}}" },
+          out: { ok: "bool", verdict: "string", reason: "string", details: "object" } },
+        { id: "done", type: "action", action: "emit", map: { ok: "check.ok" } },
+      ],
+      edges: [
+        { from: "start", to: "make" },
+        { from: "make", to: "check", with: { path: "make.artifact_path" } },
+        { from: "check", to: "done" },
+      ],
+    })).done;
+    expect(summary.status).toBe("succeeded");
+    expect(await goalCheckOutput(t, summary.runId, "check")).toMatchObject({ ok: false, reason: expect.stringContaining("node.with") });
+  });
+
+  it("goal_check refuses edge-mapped provenance after a rerun patched the delivered inputs", async () => {
+    const t = await setup({ make: [reply({ artifact_path: "report.md", handoff: "made" })] });
+    dispose = t.dispose;
+    writeFileSync(join(t.checkout, "report.md"), "patched delivery\n");
+    const workflow = chain({
+      nodes: [
+        { id: "make", type: "agent", role: "analyst", prompt: "Make the artifact.", output: [{ name: "artifact_path", type: "string" }] },
+        { id: "check", type: "action", action: "deliverable.validate", out: { ok: "bool", verdict: "string", reason: "string", details: "object" } },
+        { id: "done", type: "action", action: "emit", map: { ok: "check.ok" } },
+      ],
+      edges: [
+        { from: "start", to: "make" },
+        { from: "make", to: "check", with: { path: "make.artifact_path" } },
+        { from: "check", to: "done" },
+      ],
+    });
+    const summary = await t.start(workflow).done;
+    expect(summary.status).toBe("succeeded");
+    expect(await goalCheckOutput(t, summary.runId, "check")).toMatchObject({ ok: true, verdict: "pass" });
+    expect(await t.engine.rerunNode(summary.runId, "check", undefined, { path: "report.md" })).toMatchObject({ ok: true });
+    await t.engine.idle();
+    expect(await goalCheckOutput(t, summary.runId, "check")).toMatchObject({ ok: false, reason: expect.stringContaining("rerun") });
   });
 });
 

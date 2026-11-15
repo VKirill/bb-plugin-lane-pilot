@@ -45,7 +45,8 @@ const skillsOf = (agentId: string): string[] => {
 const git = (cwd: string, ...args: string[]) => execFileSync("git", args, { cwd, encoding: "utf8" }).trim();
 
 // ---- n1627: a landing refuses when main moved after the candidate took it in, and lands when it did not ----
-{
+// LP_DRILL_SMA_PRIMARY_ONLY=1 (the owner's PRIMARY-only rule): this block runs real `git worktree add`, so it is never entered; the scene holds n1627.
+if (process.env.LP_DRILL_SMA_PRIMARY_ONLY !== "1") {
   const root = mkdtempSync(join(tmpdir(), "r23-land-")), base = join(root, "main"), tree = join(root, "cand");
   mkdirSync(base);
   git(base, "init", "-q", "-b", "main"); git(base, "config", "user.name", "T"); git(base, "config", "user.email", "t@example.com");

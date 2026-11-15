@@ -152,4 +152,24 @@ describe("ui-audit", () => {
     const r = await runSim("ui-audit", { input: { url: "http://localhost:1/" }, stubs: { capture: { status: "block" } } });
     expect(pathOf(r)).toBe("capture blocked");
   });
+
+  it("review_file=false writes no review file and still ends on the assessment: goal_check never runs", async () => {
+    const r = await runSim("ui-audit", { input: { url: "http://localhost:4173/pricing", review_file: false }, stubs: { capture: { status: "pass", screenshots: ["s375.png"] }, audit } });
+    expect(pathOf(r)).toBe("capture audit review_doc done");
+    expect(r.skipped).toContain("review_doc");
+    expect(r.called("goal_check")).toHaveLength(0);
+    expect(out(r)).toMatchObject({ status: "done", score_40: 30, score_20: 14 });
+  });
+
+  it("review_file=false with a low score offers the follow-up workflow, still without a file check", async () => {
+    const r = await runSim("ui-audit", { input: { url: "http://localhost:4173/pricing", review_file: false }, stubs: { capture: { status: "pass" }, audit: { ...audit, score_40: 20 } } });
+    expect(pathOf(r)).toBe("capture audit review_doc offer done_offer");
+    expect(r.called("goal_check")).toHaveLength(0);
+  });
+
+  it("review_file=true hands goal_check the review path; an empty one is the target the validator refuses (stub rework -> blocked here, real check in chain-executors)", async () => {
+    const r = await runSim("ui-audit", { input: { url: "http://localhost:4173/pricing" }, stubs: { capture: { status: "pass" }, audit, review_doc: { review_path: "" }, goal_check: { ok: false, verdict: "rework" } } });
+    expect(r.called("goal_check")[0]!.input).toMatchObject({ path: "" });
+    expect(pathOf(r)).toBe("capture audit review_doc goal_check blocked");
+  });
 });

@@ -9,6 +9,7 @@ they are not here. Run: scripts/lp-drill.sh --scenario sma_r08 (this module adds
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 
 from lp_drill.env import ROOT
@@ -17,6 +18,14 @@ from lp_drill.prove import Proofs
 NODES_B = ["n704", "n705", "n706", "n713", "n714", "n715", "n716", "n717", "n718", "n719", "n720", "n721", "n722", "n726", "n727", "n729", "n730", "n731", "n732",
            "n733", "n734", "n735", "n736", "n737", "n738", "n739", "n740", "n741", "n742", "n743", "n747", "n748", "n749", "n750", "n753", "n754"]
 PROBE_B = ROOT / "scripts/lp_drill/scenes/sma_r08_b_probe.ts"
+# Held under LP_DRILL_SMA_PRIMARY_ONLY=1: the probe never calls the «worktree» world (codeTreeWorktree: real gitCreateWorktree/integrateWorktree);
+# its node is never proved. sma_r08.py takes the same dict for notProved and the checked count.
+PRIMARY_ONLY_HELD_B = {"n729": "PRIMARY-only hold: world codeTreeWorktree creates real scratch git worktrees (tests/sma/r08-world-b.ts)"}
+
+
+def held_b() -> dict[str, str]:
+    """The batch-b nodes held in this run: PRIMARY_ONLY_HELD_B under LP_DRILL_SMA_PRIMARY_ONLY=1, none otherwise."""
+    return dict(PRIMARY_ONLY_HELD_B) if os.environ.get("LP_DRILL_SMA_PRIMARY_ONLY") == "1" else {}
 
 
 def _bad(s: dict, *names: str) -> str | None:
@@ -29,11 +38,15 @@ def prove_b(proofs: Proofs, tmp) -> None:
     try:
         s = json.loads(done.stdout.strip().splitlines()[-1])
     except (ValueError, IndexError):
-        for node in NODES_B:
+        for node in (n for n in NODES_B if n not in held_b()):
             proofs.prove(node, False, f"the probe printed no result (exit {done.returncode}): {(done.stderr or done.stdout).strip()[-300:]}")
         return
 
+    held = held_b()
+
     def check(node: str, names: tuple[str, ...], ok, detail) -> None:
+        if node in held:
+            return
         error = _bad(s, *names)
         if error:
             proofs.prove(node, False, f"the probe's world threw: {error}")
