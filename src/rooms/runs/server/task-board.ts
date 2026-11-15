@@ -177,7 +177,7 @@ export type TaskCard = {
   pmThreadId: string | null; id: string; projectId: string | null; state: string; reason: string | null;
   contract: { objective: string | null; acceptance: string[]; ownsPaths: string[]; expectedOutputs: string[]; dependsOn: string[]; checks: string[] } | null;
   plan: string | null;
-  stages: Array<{ id: string; state: string; reason: string | null; threadId: string | null; model: string | null; updatedAt: number }>;
+  stages: Array<{ id: string; title: string | null; state: string; reason: string | null; threadId: string | null; model: string | null; updatedAt: number }>;
   attempts: Array<{ id: string; no: number; state: string; reason: string | null; threadId: string | null; createdAt: number; updatedAt: number }>;
   threads: CardThread | null;
 };
@@ -190,9 +190,22 @@ export function readTaskCard(db: LanePilotDatabase, input: { runId: string; task
     const journal = createJournal(db);
     const run = journal.getRun(input.runId);
     if (!run) return null;
-    const stageRows = journal.steps(run.id).map((step) => ({ id: step.node_id, state: step.state, reason: clip(step.error), threadId: receiptThreadId(step.receipt_json), model: null, updatedAt: 0 }));
+    const definition = parse(run.definition_json);
+    // Step names come from the run's frozen definition, not the task-stage vocabulary: node ids like `research` have no stage_* key.
+    const nodeTitles = new Map<string, string>();
+    const nodes = (definition as { nodes?: unknown }).nodes;
+    for (const node of Array.isArray(nodes) ? nodes : []) {
+      const entry = node as { id?: unknown; title?: unknown; label?: unknown };
+      if (typeof entry.id !== "string") continue;
+      const title = (entry.title ? nameOf(entry.title, "") : "") || text(entry.label) || "";
+      if (title) nodeTitles.set(entry.id, title);
+    }
+    const stageRows = journal.steps(run.id).map((step) => ({
+      id: step.node_id, title: nodeTitles.get(step.node_id) ?? null, state: step.state, reason: clip(step.error),
+      threadId: receiptThreadId(step.receipt_json), model: null, updatedAt: step.ended_at ?? step.updated_at,
+    }));
     return {
-      kind: "workflow", title: nameOf(parse(run.definition_json).name, run.workflow_id), techTitle: run.workflow_id, taskKind: null, area: null, objective: null,
+      kind: "workflow", title: nameOf(definition.name, run.workflow_id), techTitle: run.workflow_id, taskKind: null, area: null, objective: null,
       id: run.workflow_id, projectId: run.project_id, state: run.status, reason: clip(run.reason, 1000),
       contract: null, plan: null, stages: stageRows, attempts: [], threads: null, pmThreadId: null,
       roots: stageRows.filter((row) => row.threadId).map((row) => ({ id: row.threadId!, role: row.id })),
@@ -206,7 +219,7 @@ export function readTaskCard(db: LanePilotDatabase, input: { runId: string; task
   const plan = getTaskPlan(db, input.taskId);
   const stages = listStageReceipts(db, input.runId, input.taskId)
     .map((row) => ({ stage_id: row.stageId, state: row.state, reason: row.reason, thread_id: row.threadId, model: row.model, updated_at: row.updatedAt }))
-    .map((row) => ({ id: row.stage_id, state: row.state, reason: clip(row.reason, 600), threadId: row.thread_id, model: row.model, updatedAt: row.updated_at }))
+    .map((row) => ({ id: row.stage_id, title: null, state: row.state, reason: clip(row.reason, 600), threadId: row.thread_id, model: row.model, updatedAt: row.updated_at }))
     // The pipeline's order (pm-read … acceptance-receipt), not the order of their last change: a reopened check is not «after» the writer.
     .sort((a, b) => stageOrder(a.id) - stageOrder(b.id));
   const attempts = listAttemptHistory(db, input.runId, input.taskId)

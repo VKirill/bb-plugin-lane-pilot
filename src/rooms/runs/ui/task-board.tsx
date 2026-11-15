@@ -14,6 +14,7 @@ export type AcceptanceCardView = (props: {
 import { StageModelStats, StageStrip, WorkBreakdown, useStageStrips } from "../../work-graph/ui";
 import { useLpRpcQuery } from "../../ui-shell/ui";
 import { RunStages } from "./run-parts";
+import { WorkflowRunSteps } from "./workflow-run-steps";
 type Board = z.infer<(typeof rpcContract)["task_board"]["output"]>;
 type Card = NonNullable<z.infer<(typeof rpcContract)["task_card"]["output"]>>;
 type Item = Board["items"][number];
@@ -36,9 +37,12 @@ const KIND_COLOR: Record<NonNullable<Item["taskKind"]>, string> = {
   feature: "#8b5cf6", fix: "#ef4444", check: "#0ea5e9", docs: "#64748b", refactor: "#f59e0b", research: "#10b981", chore: "#94a3b8",
 };
 const fill = (key: I18nKey, values: Record<string, string | number>) => Object.entries(values).reduce((text, [name, value]) => text.replace(`{${name}}`, String(value)), t(key));
-const stageName = (id: string) => { const key = `stage_${id.replace(/-/g, "_")}` as I18nKey; const text = t(key); return text === key ? id : text; };
-const stageState = (state: string) => { const key = `stage_state_${state}` as I18nKey; const text = t(key); return text === key ? state : text; };
-const attemptState = (state: string) => { const key = `attempt_${state}` as I18nKey; const text = t(key); return text === key ? state : text; };
+// t() answers undefined for a key the locale does not have, so a miss must fall back on empty too, not only on the key itself.
+const stageName = (id: string) => { const key = `stage_${id.replace(/-/g, "_")}` as I18nKey; const text = t(key); return !text || text === key ? id : text; };
+const stageState = (state: string) => { const key = `stage_state_${state}` as I18nKey; const text = t(key); return !text || text === key ? state : text; };
+const attemptState = (state: string) => { const key = `attempt_${state}` as I18nKey; const text = t(key); return !text || text === key ? state : text; };
+// A workflow run's own status reads through the wfRunStatus_* keys directly — the runs room must not import the workflow room's UI for its label map.
+const runState = (state: string) => { const key = `wfRunStatus_${state}` as I18nKey; const text = t(key); return !text || text === key ? state : text; };
 /** Reasons Lane Pilot writes as codes read as words; anything else (a check's output, a writer's question) stays as written. */
 const reasonText = (reason: string | null) => reason === "disabled_by_project_setting" ? t("reason_disabled_by_setting") : reason;
 const roleName = (role: string) => role === "PM" ? t("role_pm") : role === "sub-agent" ? t("role_subagent")
@@ -320,17 +324,18 @@ function ThreadRow({ node, depth }: { node: Thread; depth: number }) {
   return (
     <>
       {node.id ? (
-        <div className="mb-2 flex items-center gap-3 rounded-md border border-border bg-card px-3 py-2 shadow-2xs" style={{ marginLeft: depth * 16 }} data-testid={`board-thread-${node.id}`}>
+        <div className="mb-2 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md border border-border bg-card px-3 py-2 shadow-2xs" style={{ marginLeft: depth * 16 }} data-testid={`board-thread-${node.id}`}>
           <span className={`flex w-24 shrink-0 items-center gap-1.5 text-xs font-medium ${live ? "text-[var(--color-success,#16a34a)]" : "text-muted-foreground"}`}>
             <span aria-hidden className={`size-1.5 rounded-full ${live ? "animate-pulse bg-[var(--color-success,#16a34a)]" : "bg-muted-foreground/50"}`} />
             <span className="truncate">{node.status ?? "—"}</span>
           </span>
-          <div className="min-w-0 flex-1">
-            <div className="truncate text-sm font-medium">{node.title ?? node.id}</div>
+          {/* basis-56: below ~224px of room the button wraps to the status row instead of squeezing the title into a 1-2 letter column (390px phones). */}
+          <div className="min-w-0 flex-1 basis-56">
+            <div className="break-words text-sm font-medium" title={node.title ?? node.id}>{node.title ?? node.id}</div>
             <div className="truncate text-xs text-muted-foreground">{roleName(node.role)}</div>
           </div>
           <button type="button" onClick={() => navigate.toThread(node.id)}
-            className="flex shrink-0 items-center gap-1 text-xs font-medium underline decoration-input underline-offset-2 hover:decoration-current">
+            className="ml-auto flex shrink-0 items-center gap-1 text-xs font-medium underline decoration-input underline-offset-2 hover:decoration-current">
             {t("boardOpenThread")}<Icon name="ArrowUpRight" className="size-3" />
           </button>
         </div>
@@ -377,7 +382,7 @@ function TaskPage({ item, locale, projectName, onBack, AcceptanceCard }: { item:
   const finished = (state: string) => state === "accepted" || state === "succeeded";
   const rail = (className: string) => card && card !== "gone" ? (
     <aside className={className} data-testid="task-rail">
-      <RailRow label={t("boardStatus")}><span className="inline-flex items-center gap-1.5"><StatusIcon column={item.column} phase={item.phase} />{t(`phase_${item.phase}` as I18nKey)}</span></RailRow>
+      <RailRow label={t("boardStatus")}><span className="inline-flex items-center gap-1.5"><StatusIcon column={item.column} phase={item.phase} />{item.kind === "workflow" && card ? runState(card.state) : t(`phase_${item.phase}` as I18nKey)}</span></RailRow>
       <RailRow label={t("boardKind")}><KindChip kind={card.taskKind} /></RailRow>
       {card.area ? <RailRow label={t("boardArea")}>{areaLabel(card.area)}</RailRow> : null}
       <RailRow label={t("boardProject")}>{projectName}</RailRow>
@@ -428,7 +433,7 @@ function TaskPage({ item, locale, projectName, onBack, AcceptanceCard }: { item:
               {card.kind === "task" && item.taskId ? (
                 <Section title={t("graphTitle")}><WorkBreakdown runId={item.runId} taskId={item.taskId} locale={locale} /></Section>
               ) : null}
-              {card.stages.length ? <div className="mt-3"><RunStages runId={item.runId} count={card.stages.length} /></div> : null}
+              {card.kind !== "workflow" && card.stages.length ? <div className="mt-3"><RunStages runId={item.runId} count={card.stages.length} /></div> : null}
               {card.kind === "task" && item.taskId ? null : card.stages.length ? (
                 <Section title={card.kind === "workflow" ? t("boardSteps") : t("boardProgress")}>
                   <ol className="relative space-y-0 border-l border-border pl-4" data-testid="task-card-stages">
@@ -436,7 +441,7 @@ function TaskPage({ item, locale, projectName, onBack, AcceptanceCard }: { item:
                       <li key={`${stage.id}:${index}`} className="relative pb-2.5">
                         <span aria-hidden className={`absolute -left-[21px] top-1.5 size-2.5 rounded-full border-2 border-card ${stage.state === "passed" || stage.state === "succeeded" ? "bg-[var(--color-success,#16a34a)]" : stage.state === "running" ? "animate-pulse bg-[var(--color-attention,#d97706)]" : stage.state === "failed" || stage.state === "blocked" ? "bg-destructive" : "bg-muted-foreground/40"}`} />
                         <div className="flex flex-wrap items-baseline gap-x-2 text-sm">
-                          <span className="font-medium">{stageName(stage.id)}</span>
+                          <span className="font-medium">{stage.title ?? stageName(stage.id)}</span>
                           <span className="text-xs text-muted-foreground">{stageState(stage.state)}</span>
                           {stage.model ? <span className="text-xs text-muted-foreground">{shortModel(stage.model)}</span> : null}
                           {stage.updatedAt ? <span className="text-xs text-muted-foreground">{ago(stage.updatedAt, locale)}</span> : null}
@@ -445,6 +450,7 @@ function TaskPage({ item, locale, projectName, onBack, AcceptanceCard }: { item:
                       </li>
                     ))}
                   </ol>
+                  {card.kind === "workflow" ? <WorkflowRunSteps runId={item.runId} locale={locale} /> : null}
                 </Section>
               ) : null}
               {card.attempts.length > 1 ? (

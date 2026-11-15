@@ -71,7 +71,7 @@ export const rpcRuns = {
       contract: z.object({ objective: z.string().nullable(), acceptance: z.array(z.string()), ownsPaths: z.array(z.string()), expectedOutputs: z.array(z.string()),
         dependsOn: z.array(z.string()), checks: z.array(z.string()) }).strict().nullable(),
       plan: z.string().nullable(),
-      stages: z.array(z.object({ id: z.string(), state: z.string(), reason: z.string().nullable(), threadId: z.string().nullable(), model: z.string().nullable(), updatedAt: z.number() }).strict()),
+      stages: z.array(z.object({ id: z.string(), title: z.string().nullable(), state: z.string(), reason: z.string().nullable(), threadId: z.string().nullable(), model: z.string().nullable(), updatedAt: z.number() }).strict()),
       attempts: z.array(z.object({ id: z.string(), no: z.number().int(), state: z.string(), reason: z.string().nullable(), threadId: z.string().nullable(), createdAt: z.number(), updatedAt: z.number() }).strict()),
       threads: cardThreadSchema.nullable(),
     }).strict().nullable(),

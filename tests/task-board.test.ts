@@ -115,4 +115,26 @@ describe("buildTaskBoard", () => {
     expect(inferTaskKind("ck-27-ui-canon-check", "UI unification gate: screenshots, e2e")).toBe("check");
     expect(inferTaskKind("x-mainfix", "Make main green")).toBe("fix");
   });
+
+  it("opens a workflow card with the frozen definition's step names and real timestamps", () => {
+    const w = world();
+    const definition = JSON.stringify({ name: { ru: "Лента", en: "Feed" }, nodes: [
+      { id: "research", title: { ru: "Исследование", en: "Research" } },
+      { id: "lint", label: "Lint" },
+    ] });
+    w.db.prepare("INSERT INTO lane_pilot_wf_run(id,workflow_id,workflow_version,workflow_sha256,definition_json,project_id,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?)")
+      .run("wfrun_1", "lp.plan", 1, "sha", definition, "proj_a", "blocked", 1, 2);
+    const step = (key: string, node: string, state: string, started: number | null, ended: number | null, updated: number, receipt: string | null = null) =>
+      w.db.prepare("INSERT INTO lane_pilot_wf_step(run_id,step_key,origin,node_id,visit,state,input_json,receipt_json,started_at,ended_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)")
+        .run("wfrun_1", key, key, node, 1, state, "{}", receipt, started, ended, updated);
+    step("research#1", "research", "succeeded", 10, 20, 20, JSON.stringify({ threadId: "thr_research" }));
+    step("lint#1", "lint", "canceled", null, null, 30);
+    const card = readTaskCard(w.db, { runId: "wfrun_1", taskId: null })!;
+    expect(card).toMatchObject({ kind: "workflow", title: "Лента", state: "blocked" });
+    expect(card.stages).toEqual([
+      expect.objectContaining({ id: "research", title: "Исследование", state: "succeeded", threadId: "thr_research", updatedAt: 20 }),
+      expect.objectContaining({ id: "lint", title: "Lint", state: "canceled", threadId: null, updatedAt: 30 }),
+    ]);
+    expect(card.roots).toEqual([{ id: "thr_research", role: "research" }]);
+  });
 });
