@@ -123,7 +123,10 @@
     {
       "from": "audit",
       "to": "goal_check",
-      "pass": "artifact"
+      "pass": "artifact",
+      "with": {
+        "path": "audit.validation_path"
+      }
     },
     {
       "from": "goal_check",

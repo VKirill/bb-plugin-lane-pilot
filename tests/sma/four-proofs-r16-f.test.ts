@@ -122,7 +122,7 @@ describe("the profile, discussion and spec commands (n1306 … n1314)", () => {
 
   it("[sma:k_c_listassume] the phase's assumptions are listed with their evidence and confidence before planning, and nothing is written or asked", async () => {
     const seen = await observeF.k_c_listassume();
-    expect(seen.path).toBe("assumptions goal_check done");
+    expect(seen.path).toBe("assumptions done");
     expect(seen.out).toEqual({ status: "done", assumptions: [{ statement: "users table exists", evidence: "db.ts:4", confidence: 80 }, { statement: "tokens expire in a day", evidence: "none", confidence: 30 }] });
     expect(seen.asked).toBe(1);
     expect(seen.writes).toBe(0);
@@ -156,8 +156,8 @@ describe("the profile, discussion and spec commands (n1306 … n1314)", () => {
 
   it("[sma:k_c_mvp] a story names who, what and why with an MVP cut; the splitting check sends a story that is not vertical back once and a second rework goes on to planning", async () => {
     const seen = await observeF.k_c_mvp();
-    expect(seen.once).toEqual(["story split_check story split_check goal_check done", { status: "done", who: "the owner", what: "sees the stats", why: "to decide", slice: "one report page", outOfScope: ["pdf"], goal: "export stats" }]);
-    expect(seen.clean).toBe("story split_check goal_check done");
-    expect(seen.stuck).toEqual(["story split_check story split_check goal_check done", 2]);
+    expect(seen.once).toEqual(["story split_check story split_check done", { status: "done", who: "the owner", what: "sees the stats", why: "to decide", slice: "one report page", outOfScope: ["pdf"], goal: "export stats" }]);
+    expect(seen.clean).toBe("story split_check done");
+    expect(seen.stuck).toEqual(["story split_check story split_check blocked", 2]);
   });
 });

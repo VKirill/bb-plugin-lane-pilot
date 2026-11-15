@@ -442,7 +442,10 @@
     {
       "from": "draft_post",
       "to": "goal_check",
-      "pass": "artifact"
+      "pass": "artifact",
+      "with": {
+        "path": "draft_post.draft_path"
+      }
     },
     {
       "from": "goal_check",

@@ -1,6 +1,6 @@
 import { coreFileWrite, diskStore } from "../helpers/core-files";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
@@ -22,6 +22,7 @@ import { WorkflowEngine } from "@lane-pilot/workflow-engine";
 import { registerReducers } from "@lane-pilot/workflow-engine";
 import { parseWorkflow } from "@lane-pilot/workflow-engine";
 import type { Workflow } from "@lane-pilot/workflow-engine";
+import { builtinWorkflow } from "../../src/rooms/workflow/builtin";
 
 /**
  * The executors of a chain on the host, against a fake BB: a helper thread is a scripted answer, the PM's checkout is a real git
@@ -35,16 +36,17 @@ const reply = (body: Row, lead = "Done.") => `${lead}\n\n\`\`\`json\n${JSON.stri
 
 /** What a helper thread of a node spent, as BB reports it: one token-usage event of one turn, on this model. */
 type Spent = { input: number; output: number; model?: string };
-async function setup(script: Script, options: { pmEvents?: () => Row[]; firstTurnError?: string; firstTurnRetries?: boolean; dirty?: boolean; spent?: Record<string, Spent>; failWrites?: boolean; noPm?: boolean; invalidParent?: boolean; offers?: Array<{ providerId: string; model: string; host?: string }>; hosts?: Array<{ id: string; name: string; status?: string }>; sources?: Array<{ hostId: string; path: string }>; failManifest?: boolean } = {}) {
+async function setup(script: Script, options: { pmEvents?: () => Row[]; firstTurnError?: string; firstTurnRetries?: boolean; dirty?: boolean; spent?: Record<string, Spent>; failWrites?: boolean; noPm?: boolean; noCheckout?: boolean; invalidParent?: boolean; offers?: Array<{ providerId: string; model: string; host?: string }>; hosts?: Array<{ id: string; name: string; status?: string }>; sources?: Array<{ hostId: string; path: string }>; failManifest?: boolean } = {}) {
   const checkout = mkdtempSync(join(tmpdir(), "lp-chain-"));
   execFileSync("git", ["init", "-q"], { cwd: checkout });
   writeFileSync(join(checkout, "README.md"), "hello\n");
-  const spawned: Array<Row> = [], sent: Array<{ threadId: string; text: string }> = [], writes: Array<{ path: string; content: string }> = [];
+  const spawned: Array<Row> = [], sent: Array<{ threadId: string; text: string }> = [], writes: Array<{ path: string; content: string }> = [], hostCalls: Array<Row> = [];
   const nodeOf = new Map<string, string>(), counts = new Map<string, number>();
   let next = 0;
   const { bb, harness } = createFakePluginHost({
     pluginId: "lane-pilot",
     experimental_callHostRpc: (async (call: { method: string; input: Row }) => {
+      hostCalls.push(call);
       if (call.method === "runCommand") return runCommand(call.input as never, undefined as never);
       throw new Error(`unexpected host method ${call.method}`);
     }) as never,
@@ -93,7 +95,7 @@ async function setup(script: Script, options: { pmEvents?: () => Row[]; firstTur
           },
         } : {}),
       } : {}),
-      environments: { get: async () => ({ id: "env-pm", hostId: "local", path: checkout, status: "ready" }) },
+      environments: { get: async () => (options.noCheckout ? {} : { id: "env-pm", hostId: "local", path: checkout, status: "ready" }) as never },
       projects: { get: async () => ({ id: PROJECT, name: "Project", sources: options.sources ?? [{ hostId: "local", path: checkout }] }) },
       files: {
         write: async (args: unknown) => {
@@ -124,7 +126,7 @@ async function setup(script: Script, options: { pmEvents?: () => Row[]; firstTur
   const rt: ChainRuntime = { ctx, services, pmThreadId: options.noPm ? null : PM, projectId: PROJECT, runId: options.noPm ? null : RUN };
   const start = (workflow: Workflow, inputs: Row = {}) => engine.start({ workflow, inputs, runtime: rt, link: options.noPm ? { projectId: PROJECT } : { projectId: PROJECT, runId: RUN } });
   void options;
-  return { bb, harness, db, engine, checkout, spawned, sent, writes, dispatched, services, start, rt, dispose: () => harness.lifecycle.dispose() };
+  return { bb, harness, db, engine, checkout, spawned, sent, writes, hostCalls, dispatched, services, start, rt, dispose: () => harness.lifecycle.dispose() };
 }
 
 let dispose: (() => Promise<void> | void) | null = null;
@@ -759,6 +761,163 @@ describe("files, diffs and the plugin's own state", () => {
     };
     expect(await lintOf(true)).toBe(true);
     expect(await lintOf(false)).toBe(false);
+  });
+});
+
+describe("the deliverable goal check of a shipped graph", () => {
+  const researchScript = {
+    frame: [reply({ subquestions: ["q1"], sub_count: 1, needs_clarification: false, clarification: "", handoff: "framed" })],
+    "search:child": [reply({ subquestion: "q1", sources: [{ url: "https://example.com/a", title: "Example", date: "2026-01-01", snippet: "s", access: "full_text" }], handoff: "searched" })],
+    claims: [reply({ claims: [{ text: "c1", sources: [1] }], unverified: [], counter: [], claim_count: 1, handoff: "claims" })],
+    report: [reply({ report_md: "# Findings\n\nThe answer is [1].\n\n## Sources\n\n1. Example — https://example.com/a", cited_ids: ["1"], handoff: "reported" })],
+  };
+  const shipped = () => structuredClone(builtinWorkflow("web-research")!);
+  const goalCheckOutput = async (t: Awaited<ReturnType<typeof setup>>, runId: string) =>
+    JSON.parse(t.engine.snapshot(runId)!.steps.find((step) => step.node_id === "goal_check")!.output_json ?? "{}");
+
+  it("goal_check validates the artifact deliver wrote: the shipped web-research graph reaches done", async () => {
+    const t = await setup(researchScript);
+    dispose = t.dispose;
+    const summary = await t.start(shipped(), { question: "what is the answer" }).done;
+    expect(summary.status).toBe("succeeded");
+    expect(await goalCheckOutput(t, summary.runId)).toMatchObject({ ok: true, verdict: "pass" });
+    expect(summary.output).toMatchObject({ status: "done", citation_ok: true });
+    expect(existsSync(join(t.checkout, String(summary.output!.report_path)))).toBe(true);
+  });
+
+  it("goal_check honours a declared params.path template when no edge mapping names the target", async () => {
+    const t = await setup(researchScript);
+    dispose = t.dispose;
+    const workflow = shipped();
+    const edge = workflow.edges.find((candidate) => candidate.from === "deliver" && candidate.to === "goal_check")!;
+    delete edge.with;
+    const node = workflow.nodes.find((candidate) => candidate.id === "goal_check")!;
+    (node as unknown as Row).params = { path: "{{deliver.report_path}}" };
+    const summary = await t.start(workflow, { question: "what is the answer" }).done;
+    expect(summary.output).toMatchObject({ status: "done" });
+    expect(await goalCheckOutput(t, summary.runId)).toMatchObject({ ok: true });
+  });
+
+  it("goal_check refuses a declared target that is not there: relative miss inside the checkout, absolute miss on a foreign host", async () => {
+    for (const params of [{ path: "missing/target.md" }, { path: "/definitely/missing/artifact.md", host: "foreign-host" }]) {
+      const t = await setup(researchScript);
+      dispose = t.dispose;
+      const workflow = shipped();
+      const node = workflow.nodes.find((candidate) => candidate.id === "goal_check")!;
+      (node as unknown as Row).params = params;
+      const summary = await t.start(workflow, { question: "what is the answer" }).done;
+      const check = await goalCheckOutput(t, summary.runId);
+      await t.dispose();
+      dispose = null;
+      expect(summary.output).toMatchObject({ status: "partial" });
+      expect(check).toMatchObject({ ok: false });
+    }
+  });
+
+  it("goal_check names the host mismatch for a relative target on a foreign host instead of reading it on the PM root", async () => {
+    const t = await setup(researchScript);
+    dispose = t.dispose;
+    const workflow = shipped();
+    const node = workflow.nodes.find((candidate) => candidate.id === "goal_check")!;
+    (node as unknown as Row).params = { path: "missing/target.md", host: "foreign-host" };
+    const summary = await t.start(workflow, { question: "what is the answer" }).done;
+    expect(summary.output).toMatchObject({ status: "partial" });
+    expect(await goalCheckOutput(t, summary.runId)).toMatchObject({ ok: false, reason: expect.stringContaining("checkout-relative but host") });
+  });
+
+  it("goal_check validates the params target, not a with alias that would pass", async () => {
+    const t = await setup(researchScript);
+    dispose = t.dispose;
+    const workflow = shipped();
+    const edge = workflow.edges.find((candidate) => candidate.from === "deliver" && candidate.to === "goal_check")!;
+    edge.with = { deliverable: "deliver.report_path" };
+    const node = workflow.nodes.find((candidate) => candidate.id === "goal_check")!;
+    (node as unknown as Row).params = { path: "missing/declared-target.md" };
+    const summary = await t.start(workflow, { question: "what is the answer" }).done;
+    expect(summary.output).toMatchObject({ status: "partial" });
+    expect(await goalCheckOutput(t, summary.runId)).toMatchObject({ ok: false, reason: expect.stringContaining("artifact missing or empty") });
+  });
+
+  it("goal_check refuses an edge-declared target whose optional mapping resolved to nothing, ignoring run inputs", async () => {
+    const t = await setup(researchScript);
+    dispose = t.dispose;
+    const workflow = shipped();
+    workflow.inputs.push({ name: "artifactPath", type: "string", required: false }, { name: "deliverable", type: "string", required: false });
+    const edge = workflow.edges.find((candidate) => candidate.from === "deliver" && candidate.to === "goal_check")!;
+    edge.with = { path: "$inputs.artifactPath" };
+    const summary = await t.start(workflow, { question: "what is the answer", deliverable: "README.md" }).done;
+    expect(summary.output).toMatchObject({ status: "partial" });
+    expect(await goalCheckOutput(t, summary.runId)).toMatchObject({ ok: false, reason: expect.stringContaining("no artifact target") });
+  });
+
+  it("goal_check rejects an empty declared target: no checkout-dir pass, no run-input fallback", async () => {
+    const t = await setup(researchScript);
+    dispose = t.dispose;
+    const workflow = shipped();
+    workflow.inputs.push({ name: "deliverable", type: "string", required: false });
+    const node = workflow.nodes.find((candidate) => candidate.id === "goal_check")!;
+    (node as unknown as Row).params = { path: "" };
+    const summary = await t.start(workflow, { question: "what is the answer", deliverable: "README.md" }).done;
+    expect(summary.output).toMatchObject({ status: "partial" });
+    expect(await goalCheckOutput(t, summary.runId)).toMatchObject({ ok: false, verdict: "rework" });
+  });
+
+  it("goal_check reads a planning-home artifact where fs.write put it", async () => {
+    const planning = mkdtempSync(join(tmpdir(), "lp-planning-"));
+    execFileSync("git", ["init", "-q"], { cwd: planning });
+    try {
+      const t = await setup(researchScript);
+      dispose = t.dispose;
+      saveProjectSetting(t.db, PROJECT, "project.planning_home", planning);
+      const workflow = shipped();
+      const deliver = workflow.nodes.find((candidate) => candidate.id === "deliver")!;
+      (deliver as unknown as Row).params = { path: ".agents/planning/audit-{{run_id}}.md", contents: { content: "{{report.report_md}}" } };
+      const summary = await t.start(workflow, { question: "what is the answer" }).done;
+      expect(summary.status).toBe("succeeded");
+      expect(await goalCheckOutput(t, summary.runId)).toMatchObject({ ok: true, verdict: "pass" });
+      expect(summary.output).toMatchObject({ status: "done" });
+      const rel = String(summary.output!.report_path);
+      expect(existsSync(join(planning, rel))).toBe(true);
+      expect(existsSync(join(t.checkout, rel))).toBe(false);
+    } finally {
+      rmSync(planning, { recursive: true, force: true });
+    }
+  });
+
+  it("goal_check refuses an entry-edge declared target whose optional mapping resolved to nothing, ignoring run inputs", async () => {
+    const t = await setup({});
+    dispose = t.dispose;
+    const summary = await t.start(chain({
+      inputs: [{ name: "artifactPath", type: "string", required: false }, { name: "deliverable", type: "string", required: false }],
+      nodes: [
+        { id: "check", type: "action", action: "deliverable.validate",
+          out: { ok: "bool", verdict: "string", reason: "string", details: "object" } },
+        { id: "done", type: "action", action: "emit", map: { ok: "check.ok" } },
+      ],
+      edges: [{ from: "start", to: "check", with: { path: "$inputs.artifactPath" } }, { from: "check", to: "done" }],
+    }), { deliverable: "README.md" }).done;
+    expect(summary.status).toBe("succeeded");
+    expect(JSON.parse(t.engine.snapshot(summary.runId)!.steps.find((step) => step.node_id === "check")!.output_json!)).toMatchObject({ ok: false, reason: expect.stringContaining("no artifact target") });
+  });
+
+  it("goal_check takes an absolute path on a declared host without needing the PM checkout", async () => {
+    const t = await setup({}, { noCheckout: true });
+    dispose = t.dispose;
+    writeFileSync(join(t.checkout, "declared-artifact.md"), "declared\n");
+    const abs = join(t.checkout, "declared-artifact.md");
+    const summary = await t.start(chain({
+      nodes: [
+        { id: "check", type: "action", action: "deliverable.validate", params: { path: abs, host: "local" },
+          out: { ok: "bool", verdict: "string", reason: "string", details: "object" } },
+        { id: "done", type: "action", action: "emit", map: { ok: "check.ok" } },
+      ],
+      edges: [{ from: "start", to: "check" }, { from: "check", to: "done" }],
+    })).done;
+    expect(summary.status).toBe("succeeded");
+    expect(JSON.parse(t.engine.snapshot(summary.runId)!.steps.find((step) => step.node_id === "check")!.output_json!)).toMatchObject({ ok: true, verdict: "pass" });
+    const read = t.hostCalls.map((call) => call.input as Row).find((input) => String(input.command ?? "").includes("declared-artifact.md"));
+    expect(read).toMatchObject({ requestedHostId: "local", cwd: "/" });
+    expect(String(read!.command)).toContain(abs);
   });
 });
 

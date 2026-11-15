@@ -706,7 +706,10 @@
     {
       "from": "deliver",
       "to": "goal_check",
-      "pass": "artifact"
+      "pass": "artifact",
+      "with": {
+        "path": "deliver.folder"
+      }
     },
     {
       "from": "goal_check",

@@ -104,7 +104,10 @@
     {
       "from": "summary",
       "to": "goal_check",
-      "pass": "artifact"
+      "pass": "artifact",
+      "with": {
+        "path": "summary.summary_path"
+      }
     },
     {
       "from": "goal_check",

@@ -369,7 +369,10 @@
       "from": "export",
       "to": "goal_check",
       "pass": "artifact",
-      "when": "export.ok"
+      "when": "export.ok",
+      "with": {
+        "path": "export.asset_path"
+      }
     },
     {
       "from": "export",

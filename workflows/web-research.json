@@ -376,7 +376,10 @@
       "from": "deliver",
       "to": "goal_check",
       "pass": "artifact",
-      "when": "check.citation_ok"
+      "when": "check.citation_ok",
+      "with": {
+        "path": "deliver.report_path"
+      }
     },
     {
       "from": "deliver",

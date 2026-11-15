@@ -129,7 +129,10 @@
       "from": "experiment",
       "to": "goal_check",
       "pass": "artifact",
-      "when": "experiment.answered"
+      "when": "experiment.answered",
+      "with": {
+        "path": "experiment.spike_path"
+      }
     },
     {
       "from": "experiment",

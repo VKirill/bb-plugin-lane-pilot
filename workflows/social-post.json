@@ -233,6 +233,7 @@
       "id": "goal_check",
       "type": "action",
       "action": "deliverable.validate",
+      "validator": "text",
       "title": {
         "en": "Check the goal was met",
         "ru": "Проверить, что цель достигнута"
@@ -291,7 +292,10 @@
       "from": "preview",
       "to": "goal_check",
       "pass": "artifact",
-      "when": "preview.answer_kind == 'approve'"
+      "when": "preview.answer_kind == 'approve'",
+      "with": {
+        "path": "write_post.draft_path"
+      }
     },
     {
       "from": "preview",

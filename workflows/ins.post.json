@@ -308,7 +308,10 @@
     {
       "from": "digest",
       "to": "goal_check",
-      "pass": "artifact"
+      "pass": "artifact",
+      "with": {
+        "path": "digest.summary_path"
+      }
     },
     {
       "from": "goal_check",

@@ -254,12 +254,19 @@ def series_preparation(names: list[str] | None = None) -> dict:
     checks, problems = [], []
     try:
         hubsql("select 1 as ok;")
-        served = None
         rc, out, _ = run([BB, "plugin", "list", "--json"], timeout=60, env={**os.environ, "BB_CLI": ""})
-        if rc == 0:
-            served = next((p.get("version") for p in json.loads(out) if p.get("id") == "lane-pilot"), None)
-        checks.append({"name": "database", "ok": served in (None, version), "detail": f"hub answers; plugin {served or '?'} vs {version}"})
-        if served is not None and served != version:
+        if rc != 0:
+            raise RuntimeError(f"bb plugin list exited {rc}")
+        listed = json.loads(out)
+        rows = listed.get("plugins", listed.get("results")) if isinstance(listed, dict) else listed
+        if not isinstance(rows, list):
+            raise RuntimeError("`bb plugin list --json` did not answer a plugin list")
+        row = next((p for p in rows if isinstance(p, dict) and p.get("id") == "lane-pilot"), None)
+        served = row.get("version") if isinstance(row, dict) else None
+        if not isinstance(served, str) or not served:
+            raise RuntimeError("`bb plugin list` has no lane-pilot row with a version")
+        checks.append({"name": "database", "ok": served == version, "detail": f"hub answers; plugin {served} vs {version}"})
+        if served != version:
             problems.append(f"database: the hub runs lane-pilot {served}, this checkout is {version}")
     except Exception as cause:
         checks.append({"name": "database", "ok": False, "detail": str(cause)[:200]})

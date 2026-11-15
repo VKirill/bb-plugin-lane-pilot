@@ -643,7 +643,10 @@
       "from": "indexability_gate",
       "to": "goal_check",
       "pass": "artifact",
-      "when": "indexability_gate.status == 'pass'"
+      "when": "indexability_gate.status == 'pass'",
+      "with": {
+        "path": "indexability_gate.gate_path"
+      }
     },
     {
       "from": "indexability_gate",

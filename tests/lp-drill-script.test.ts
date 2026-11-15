@@ -180,6 +180,52 @@ print(json.dumps([
     expect(fine).toEqual([]);
     expect(missing).toEqual(["the system schedule system:worktree-cleanup-daily is not on the board"]);
   });
+
+  it("series_preparation: the wrapped `plugin list` answer is unwrapped; an unreadable answer or a missing lane-pilot row is a named database problem", () => {
+    const code = String.raw`
+import importlib.util, json, os, sys, tempfile
+spec = importlib.util.spec_from_file_location("drill", sys.argv[1]); d = importlib.util.module_from_spec(spec); spec.loader.exec_module(d)
+version = json.loads((d.ROOT / "package.json").read_text())["version"]
+d.git = lambda *a, **k: ""
+d.hubsql = lambda sql: []
+d.scout = lambda: {}
+d.bb = lambda *a, **k: (0, '{"gaps": []}', "")
+for name in ("_browser_probe", "_accounts_probe", "_limits_probe", "_window_probe", "_person_probe"):
+    setattr(d, name, lambda *a, **k: (True, "stubbed"))
+receipt_dir = tempfile.TemporaryDirectory()
+os.environ["LP_DRILL_RECEIPT_DIR"] = receipt_dir.name
+def prep(rc, out):
+    d.run = lambda args, **k: (rc, out, "")
+    p = d.series_preparation()
+    return {"database": next(c for c in p["checks"] if c["name"] == "database"), "problems": p["problems"]}
+lp = {"id": "lane-pilot", "version": version}
+print(json.dumps([
+    prep(0, json.dumps({"plugins": [lp]})),
+    prep(0, json.dumps([lp])),
+    prep(1, ""),
+    prep(0, "not json"),
+    prep(0, json.dumps({"plugins": [{"id": "other", "version": "1"}]})),
+    prep(0, json.dumps({"plugins": [{"id": "lane-pilot", "version": "0.0.0-old"}]})),
+]))
+receipt_dir.cleanup()
+`;
+    const run = spawnSync("python3", ["-I", "-c", code, fileURLToPath(new URL("../scripts/lp-drill.py", import.meta.url))], { encoding: "utf8", timeout: 30_000, env: { ...ownEnv, BB_CLI: "/nonexistent/bb" } });
+    expect(run.status, run.stderr).toBe(0);
+    const [wrapped, legacy, badRc, badJson, missing, old] = JSON.parse(run.stdout.trim().split("\n").at(-1)!) as Array<{ database: { ok: boolean }; problems: string[] }>;
+    const dbProblems = (row: { problems: string[] }) => row.problems.filter((problem) => problem.startsWith("database:"));
+    expect(wrapped.database.ok).toBe(true);
+    expect(dbProblems(wrapped)).toEqual([]);
+    expect(legacy.database.ok).toBe(true);
+    expect(dbProblems(legacy)).toEqual([]);
+    expect(badRc.database.ok).toBe(false);
+    expect(dbProblems(badRc)).toEqual(["database: bb plugin list exited 1"]);
+    expect(badJson.database.ok).toBe(false);
+    expect(dbProblems(badJson)[0]).toMatch(/^database: /);
+    expect(missing.database.ok).toBe(false);
+    expect(dbProblems(missing)).toEqual(["database: `bb plugin list` has no lane-pilot row with a version"]);
+    expect(old.database.ok).toBe(false);
+    expect(dbProblems(old)).toEqual([expect.stringContaining("the hub runs lane-pilot 0.0.0-old")]);
+  });
 });
 
 describe("region scenes sma_rNN (docs/sma-evidence.md)", () => {
@@ -252,5 +298,81 @@ print(json.dumps(res))`;
     expect(out.call[0].at(-1)).toContain("bb-plugin-lane-pilot/.agents/runs/drills");
     expect(out.call[0].at(-1)).toContain("2026-11-14-sma1.json");
     expect(out.call[1]).toBe('{"a": 1}');
+  });
+
+  it("LP_DRILL_SMA_PRIMARY_ONLY holds the worktree batches: their prove_* never run, held nodes land in notProved only, checked counts what ran; unset runs all", () => {
+    const code = `import importlib, json, os, sys, tempfile, types
+from pathlib import Path
+scripts = Path(sys.argv[1]).resolve().parent
+sys.path.insert(0, str(scripts))
+pkg = types.ModuleType("lp_drill.scenes")
+pkg.__path__ = [str(scripts / "lp_drill" / "scenes")]
+sys.modules["lp_drill.scenes"] = pkg
+calls = []
+def stub(prefix, tag, node):
+    name = "lp_drill.scenes." + prefix + "_" + tag
+    m = types.ModuleType(name)
+    setattr(m, "NODES_" + tag.upper(), [node])
+    def prove(proofs, tmp, _t=prefix + ":" + tag, _n=node):
+        calls.append(_t)
+        proofs.prove(_n, True, "stub " + _t)
+    setattr(m, "prove_" + tag, prove)
+    sys.modules[name] = m
+for tag, node in (("a","n901"),("b","n902"),("c","n903"),("d","n904"),("e","n905"),("f","n906"),("g","n907"),("h","n908")):
+    stub("sma_r01", tag, node)
+for tag, node in (("b","n911"),("c","n912"),("d","n913"),("g","n914"),("h","n915"),("e","n916"),("f","n917")):
+    stub("sma_r16", tag, node)
+import subprocess
+class Done:
+    stdout = "{}"
+    stderr = ""
+    returncode = 0
+subprocess.run = lambda *a, **k: Done()
+r01m = importlib.import_module("lp_drill.scenes.sma_r01")
+r16m = importlib.import_module("lp_drill.scenes.sma_r16")
+def brief(v, c):
+    return {"result": v["result"], "checked": v.get("checked"), "proved": sorted(p["node"] for p in v["proved"]),
+            "notProved": v.get("notProved"), "hasNotProved": "notProved" in v, "hasPrimaryOnly": "primaryOnly" in v,
+            "primaryOnly": v.get("primaryOnly"), "calls": c}
+out = {}
+with tempfile.TemporaryDirectory() as td:
+    tmp = Path(td)
+    for mode in ("on", "off"):
+        if mode == "on":
+            os.environ["LP_DRILL_SMA_PRIMARY_ONLY"] = "1"
+        else:
+            os.environ.pop("LP_DRILL_SMA_PRIMARY_ONLY", None)
+        calls.clear(); v = r01m.scenario_sma_r01(tmp); c1 = list(calls)
+        calls.clear(); w = r16m.scenario_sma_r16(tmp); c2 = list(calls)
+        out[mode] = {"r01": brief(v, c1), "r16": brief(w, c2)}
+print(json.dumps(out))`;
+    const run = spawnSync("python3", ["-I", "-c", code, door], { encoding: "utf8", timeout: 30_000, env: quiet });
+    expect(run.status, run.stderr).toBe(0);
+    const out = JSON.parse(run.stdout.trim().split("\n").at(-1)!);
+    expect(out.on.r01.calls).toEqual(["sma_r01:b", "sma_r01:f", "sma_r01:g", "sma_r01:h"]);
+    expect(out.on.r01.checked).toBe(4);
+    expect(out.on.r01.proved).toEqual(["n902", "n906", "n907", "n908"]);
+    expect(Object.keys(out.on.r01.notProved).sort()).toEqual(["n901", "n903", "n904", "n905"]);
+    for (const id of ["n901", "n903", "n904", "n905"]) {
+      expect(out.on.r01.notProved[id]).toContain("PRIMARY-only hold");
+      expect(out.on.r01.proved).not.toContain(id);
+    }
+    expect(out.on.r01.primaryOnly).toBe(true);
+    expect(out.on.r16.calls).toEqual(["sma_r16:b", "sma_r16:d", "sma_r16:g", "sma_r16:e", "sma_r16:f"]);
+    expect(out.on.r16.checked).toBe(35);
+    for (const id of ["n912", "n915"]) {
+      expect(out.on.r16.notProved[id]).toContain("PRIMARY-only hold");
+      expect(out.on.r16.proved).not.toContain(id);
+    }
+    for (const id of ["n911", "n913", "n914", "n916", "n917"]) expect(out.on.r16.proved).toContain(id);
+    expect(out.on.r16.primaryOnly).toBe(true);
+    expect(out.off.r01.calls).toEqual(["sma_r01:a", "sma_r01:b", "sma_r01:c", "sma_r01:d", "sma_r01:e", "sma_r01:f", "sma_r01:g", "sma_r01:h"]);
+    expect(out.off.r01.checked).toBe(8);
+    expect(out.off.r01.hasNotProved).toBe(false);
+    expect(out.off.r01.hasPrimaryOnly).toBe(false);
+    expect(out.off.r16.calls).toEqual(["sma_r16:b", "sma_r16:c", "sma_r16:d", "sma_r16:g", "sma_r16:h", "sma_r16:e", "sma_r16:f"]);
+    expect(out.off.r16.checked).toBe(37);
+    expect(out.off.r16.hasNotProved).toBe(false);
+    expect(out.off.r16.hasPrimaryOnly).toBe(false);
   });
 });

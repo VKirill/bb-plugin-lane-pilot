@@ -134,7 +134,10 @@
     {
       "from": "write",
       "to": "goal_check",
-      "pass": "artifact"
+      "pass": "artifact",
+      "with": {
+        "path": "write.audit_path"
+      }
     },
     {
       "from": "goal_check",

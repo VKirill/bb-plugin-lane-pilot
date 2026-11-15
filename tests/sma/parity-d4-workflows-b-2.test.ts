@@ -163,7 +163,7 @@ describe("parity d4 workflows b-2", () => {
   it("[sma:k_c_mvp] mvp-phase: a rework verdict loops once to story, a pass emits a story with who, what and why", async () => {
     const story = { who: "owner", what: "sees stats", why: "to decide", slice: "report page", out_of_scope: ["pdf"] };
     const r = await runSim("mvp-phase", { input: { goal: "export stats" }, stubs: { story, split_check: [{ verdict: "rework", notes: "not vertical" }, { verdict: "pass", notes: "ok" }] } });
-    expect(pathOf(r)).toBe("story split_check story split_check goal_check done");
+    expect(pathOf(r)).toBe("story split_check story split_check done");
     expect(emitted(r)!.story as Row).toMatchObject({ who: "owner", what: "sees stats", why: "to decide" });
     expect(emitted(r)).toMatchObject({ status: "done", goal: "export stats" });
   });
@@ -183,9 +183,13 @@ describe("parity d4 workflows b-2", () => {
 
   it("[sma:k_c_listassume] phase-assumptions returns an assumptions array and the graph has no write", async () => {
     const r = await runSim("phase-assumptions", { input: { phase_id: "ph_a" }, stubs: { assumptions: { assumptions: [{ statement: "users table exists", evidence: "db.ts:4", confidence: 80 }] } } });
-    expect(pathOf(r)).toBe("assumptions goal_check done");
+    expect(pathOf(r)).toBe("assumptions done");
     expect(emitted(r)).toMatchObject({ status: "done" });
     expect(emitted(r)!.assumptions).toHaveLength(1);
+    // A phase may rest on no assumptions: an empty list is a valid answer, not a failed goal (the graph is goal_audit:exempt, no gate is invented).
+    const none = await runSim("phase-assumptions", { input: { phase_id: "ph_a" }, stubs: { assumptions: { assumptions: [] } } });
+    expect(pathOf(none)).toBe("assumptions done");
+    expect(emitted(none)).toMatchObject({ status: "done", assumptions: [] });
     expect(src("phase-assumptions.json").nodes.every((n) => n.action !== "fs.write")).toBe(true);
   });
 

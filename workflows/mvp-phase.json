@@ -41,9 +41,10 @@
     }
   },
   "outputs": {
-    "status": "done",
+    "status": "done|blocked",
     "story": "any",
-    "goal": "string"
+    "goal": "string",
+    "reason": "string?"
   },
   "entry": "story",
   "nodes": [
@@ -116,19 +117,14 @@
       }
     },
     {
-      "id": "goal_check",
+      "id": "blocked",
       "type": "action",
-      "action": "deliverable.validate",
-      "title": {
-        "en": "Check the goal was met",
-        "ru": "Проверить, что цель достигнута"
-      },
-      "rule": "validateDeliverable on the artifact the run produced: the deliverable/validator/brief inputs name what to check; a fail means the goal is not met",
-      "out": {
-        "ok": "bool",
-        "verdict": "pass|rework|fail",
-        "reason": "string",
-        "details": "object"
+      "action": "emit",
+      "map": {
+        "status": "blocked",
+        "story": "{{story}}",
+        "goal": "$inputs.goal",
+        "reason": "split_check.notes"
       }
     }
   ],
@@ -145,12 +141,14 @@
     },
     {
       "from": "split_check",
-      "to": "goal_check",
-      "pass": "artifact"
+      "to": "done",
+      "pass": "artifact",
+      "when": "split_check.verdict == 'pass'"
     },
     {
-      "from": "goal_check",
-      "to": "done"
+      "from": "split_check",
+      "to": "blocked",
+      "pass": "artifact"
     }
   ],
   "test": {
@@ -177,7 +175,6 @@
       "expect_path": [
         "story",
         "split_check",
-        "goal_check",
         "done"
       ],
       "expect_outputs": [
@@ -185,5 +182,5 @@
       ]
     }
   },
-  "goal_check": "validate"
+  "goal_check": "gate"
 }

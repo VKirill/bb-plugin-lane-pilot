@@ -290,7 +290,10 @@
     {
       "from": "report",
       "to": "goal_check",
-      "pass": "artifact"
+      "pass": "artifact",
+      "with": {
+        "path": "report.report_path"
+      }
     },
     {
       "from": "offer",

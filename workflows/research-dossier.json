@@ -257,7 +257,10 @@
       "from": "synthesize",
       "to": "goal_check",
       "pass": "artifact",
-      "when": "synthesize.status == 'done'"
+      "when": "synthesize.status == 'done'",
+      "with": {
+        "path": "synthesize.dossier_path"
+      }
     },
     {
       "from": "synthesize",

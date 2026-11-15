@@ -255,7 +255,10 @@
     },
     {
       "from": "deliver",
-      "to": "goal_check"
+      "to": "goal_check",
+      "with": {
+        "path": "deliver.site_path"
+      }
     },
     {
       "from": "goal_check",

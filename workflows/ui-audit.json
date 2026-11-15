@@ -239,7 +239,10 @@
     {
       "from": "review_doc",
       "to": "goal_check",
-      "pass": "artifact"
+      "pass": "artifact",
+      "with": {
+        "path": "review_doc.review_path"
+      }
     },
     {
       "from": "goal_check",

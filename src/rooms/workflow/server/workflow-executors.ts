@@ -12,7 +12,7 @@ import type { ServerCore } from "../../contracts/server";
 import { chainRuntimeFor, need, pmCheckout } from "./workflow-chain-runtime";
 import type { Row, Services } from "./workflow-chain-runtime";
 import { registerHumanForm } from "./workflow-human-form";
-import { registerDeliverableAction, registerDeliverableNode } from "./workflow-deliverable";
+import { registerDeliverableAction } from "./workflow-deliverable";
 import { registerLpTask } from "./workflow-lp-task";
 import { registerCheckoutActions } from "./workflow-checkout-actions";
 import { deliverRunFile, noteRunFiles } from "./workflow-run-home";
@@ -49,8 +49,6 @@ export function registerChainExecutors(engine: WorkflowEngine, ctx: ServerCore, 
   const flagOf = (rt: ChainRuntime, key: string): boolean => switchOn(loadProjectSettings(db, rt.projectId, rt.runId ? getRunSettingsScopes(db, rt.runId) : []), key);
 
   // The Jev steps: the native `jev` node.
-  // `deliverable.validate` — the three-layer acceptance of a non-code artifact.
-  registerDeliverableNode(engine, ctx, services, { runtimeOf });
   // The failure classification step of `quality-loop`.
   registerQualityLoopClassifyExecutor(engine, ctx, agents);
 
@@ -158,7 +156,7 @@ export function registerChainExecutors(engine: WorkflowEngine, ctx: ServerCore, 
 
   registerCheckoutActions(engine, ctx, { action, planHome, flagOf });
   registerProjectActions(engine, ctx, { action, planHome, flagOf });
-  registerDeliverableAction(action);
+  registerDeliverableAction(action, { planHome, services });
   registerTaskBookActions(engine, ctx, { action, planHome, lintTask });
   registerSpExecutors(engine, ctx, {
     action,

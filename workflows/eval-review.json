@@ -142,7 +142,10 @@
     {
       "from": "review",
       "to": "goal_check",
-      "pass": "artifact"
+      "pass": "artifact",
+      "with": {
+        "path": "review.review_path"
+      }
     },
     {
       "from": "goal_check",

@@ -5,12 +5,16 @@ row of their own, so the node-level trace is this scene. It runs the REAL code o
 driver on a scratch database and a fake host, the real workflow engine with fake executors on the real graph files (lp.draw, lp.build, lp.browser-qa)
 — with no model, no hub write and nothing outside the machine, and prove()s each node with the result its card expects. Run: scripts/lp-drill.sh --scenario sma_r16.
 
+LP_DRILL_SMA_PRIMARY_ONLY=1 (the owner's PRIMARY-only rule: no scratch `git worktree add`): the batches whose probes create real worktrees are
+held — never invoked — and their nodes are receipted as notProved with the seam named. Unset runs every batch as before.
+
 Batches of the region add their nodes here: append the ids to NODES, put the observation in tests/sma/r16-world.ts (`observe.<smaId>`), a prove() under the
 batch's heading below, and `trace: drill("sma_r16")` on the node's line in evidence/r16.ts. Batch a: n1144 … n1173 (the design phase and the execute phase).
 """
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 
 from lp_drill.env import ROOT
@@ -35,6 +39,18 @@ NODES = NODES + NODES_G
 NODES = NODES + NODES_H
 NODES = NODES + NODES_E
 NODES = NODES + NODES_F
+
+# Batches held under LP_DRILL_SMA_PRIMARY_ONLY=1: their probes run every observe key including the one that creates real `git worktree add`
+# worktrees (the PRIMARY-only rule bans scratch worktrees), and prove_* passes no per-key filter. A held batch is never invoked; its nodes go
+# to notProved — never proved, never silently dropped.
+PRIMARY_ONLY_HELD = {
+    "c": "PRIMARY-only hold: prove_c's probe runs every observeC key including k_c_undo, which creates real worktrees (r16-world-c.ts → n1217); no per-key filter is passed",
+    "h": "PRIMARY-only hold: prove_h's probe runs every observeH key including k_c_rmws, whose fixture runs git worktree add (r16-world-h.ts → n1353); no per-key filter is passed",
+}
+BATCHES = (
+    ("b", NODES_B, prove_b), ("c", NODES_C, prove_c), ("d", NODES_D, prove_d), ("g", NODES_G, prove_g),
+    ("h", NODES_H, prove_h), ("e", NODES_E, prove_e), ("f", NODES_F, prove_f),
+)
 PROBE = ROOT / "scripts/lp_drill/scenes/sma_r16_probe.ts"
 AWAITS = "the drawing awaits the owner's word for this drawing"
 NO_CONTRACT = "the drawing has no contract: add UI-SPEC.md with the checkable points (screens, states, breakpoints) to the drawing's paths"
@@ -121,11 +137,16 @@ def scenario_sma_r16(tmp) -> dict:
     proofs.prove("n1172", (d.get("on") or "").startswith("Motion (the animator's law): motion rows: animate transform and opacity only") and d.get("onPlain") is None and d.get("off") is None, f"inline law {str(d.get('on'))[:90]}; plain {d.get('onPlain')}; off {d.get('off')}")
     d = seen("k_we_crossai")
     proofs.prove("n1173", d.get("named", {}).get("providerId") == "codex" and d["named"].get("model") == "gpt-x" and d.get("request", {}).get("selection") == {"providerId": "codex", "model": "gpt-x"} and d.get("stops") == ["thr_w"], f"reassign {d}")
-    prove_b(proofs, tmp)
-    prove_c(proofs, tmp)
-    prove_d(proofs, tmp)
-    prove_g(proofs, tmp)
-    prove_h(proofs, tmp)
-    prove_e(proofs, tmp)
-    prove_f(proofs, tmp)
-    return proofs.verdict("sma_r16", checked=len(NODES))
+    primary_only = os.environ.get("LP_DRILL_SMA_PRIMARY_ONLY") == "1"
+    held: dict[str, str] = {}
+    for name, nodes, prove in BATCHES:
+        reason = PRIMARY_ONLY_HELD.get(name) if primary_only else None
+        if reason is None:
+            prove(proofs, tmp)
+        else:
+            held.update(dict.fromkeys(nodes, reason))
+    details: dict = {"checked": len(NODES) - len(held)}
+    if primary_only:
+        details["notProved"] = held
+        details["primaryOnly"] = True
+    return proofs.verdict("sma_r16", **details)

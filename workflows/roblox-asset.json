@@ -285,7 +285,10 @@
       "from": "deploy_asset",
       "to": "goal_check",
       "pass": "artifact",
-      "when": "deploy_asset.ok"
+      "when": "deploy_asset.ok",
+      "with": {
+        "path": "deploy_asset.deployed_path"
+      }
     },
     {
       "from": "deploy_asset",

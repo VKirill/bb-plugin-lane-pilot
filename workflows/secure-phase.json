@@ -117,7 +117,10 @@
     {
       "from": "audit",
       "to": "goal_check",
-      "pass": "artifact"
+      "pass": "artifact",
+      "with": {
+        "path": "audit.security_path"
+      }
     },
     {
       "from": "goal_check",

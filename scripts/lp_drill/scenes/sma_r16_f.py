@@ -68,7 +68,7 @@ def prove_f(proofs, tmp) -> None:
     d = seen("k_c_discuss_power")
     proofs.prove("n1309", len(d.get("listed", [])) == 7 and d["listed"][6].endswith("— deferred by the owner") and d.get("inFile") == 7 and d.get("askedInChat") == 5, f"questions in the file {len(d.get('listed', []))}, asked in chat {d.get('askedInChat')}")
     d = seen("k_c_listassume")
-    proofs.prove("n1310", d.get("path") == "assumptions goal_check done" and d.get("out", {}).get("status") == "done" and len(d["out"].get("assumptions", [])) == 2 and d["out"]["assumptions"][0].get("evidence") == "db.ts:4" and d.get("writes") == 0, f"assumptions listed {len(d.get('out', {}).get('assumptions', []))}, writes {d.get('writes')}")
+    proofs.prove("n1310", d.get("path") == "assumptions done" and d.get("out", {}).get("status") == "done" and len(d["out"].get("assumptions", [])) == 2 and d["out"]["assumptions"][0].get("evidence") == "db.ts:4" and d.get("writes") == 0, f"assumptions listed {len(d.get('out', {}).get('assumptions', []))}, writes {d.get('writes')}")
     d = seen("k_c_spec")
     proofs.prove("n1311", d.get("asked", [""])[0] == "score ask score spec done" and d["asked"][1].get("ambiguity") == 0.15 and d.get("clear") == "score spec done" and d.get("doubt", [""])[0] == "score ask score ask score spec low_confidence" and d["doubt"][1].get("status") == "low_confidence", f"spec: {d.get('asked', [''])[0]}; under doubt {d.get('doubt', [''])[0]}")
     d = seen("k_c_uiphase")
@@ -76,7 +76,7 @@ def prove_f(proofs, tmp) -> None:
     d = seen("k_c_aiphase")
     proofs.prove("n1313", d.get("clean", [""])[0] == "select research eval_plan spec check done" and d.get("rework", [""])[0] == "select research eval_plan spec check spec check done" and d.get("blocked", ["", {}])[1].get("status") == "blocked" and d.get("clean", ["", {}])[1].get("framework") == "langchain", f"AI-SPEC: clean {d.get('clean', [''])[0]}; short spec {d.get('blocked', ['', {}])[1].get('status')}")
     d = seen("k_c_mvp")
-    proofs.prove("n1314", d.get("once", [""])[0] == "story split_check story split_check goal_check done" and d["once"][1].get("who") == "the owner" and d["once"][1].get("why") == "to decide" and d.get("clean") == "story split_check goal_check done", f"story path {d.get('once', [''])[0]}, who/what/why {[d.get('once', ['', {}])[1].get(k) for k in ('who', 'what', 'why')]}")
+    proofs.prove("n1314", d.get("once", [""])[0] == "story split_check story split_check done" and d["once"][1].get("who") == "the owner" and d["once"][1].get("why") == "to decide" and d.get("clean") == "story split_check done" and d.get("stuck", [""])[0] == "story split_check story split_check blocked", f"story path {d.get('once', [''])[0]}, who/what/why {[d.get('once', ['', {}])[1].get(k) for k in ('who', 'what', 'why')]}")
     # ---- the discussion stage
     d = seen("k_wdi_rubric")
     proofs.prove("n1315", d.get("order") == ORDER and d.get("same") is True and d.get("stages") == d.get("phaseStages") and len(d.get("stages", [])) == 7, f"discussion order {d.get('order')}")

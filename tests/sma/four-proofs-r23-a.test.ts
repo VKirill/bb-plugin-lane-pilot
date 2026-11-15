@@ -180,10 +180,11 @@ describe("region 23 · rules and references: who is handed them, and what the co
     expect(check.spec.readOnly).toBe(true);
     const cut = { who: "w", what: "x", why: "y", slice: "one vertical slice", out_of_scope: [] };
     const once = await runSim("mvp-phase", { input: { goal: "g" }, stubs: { story: cut, split_check: [{ verdict: "rework", notes: "not vertical" }, { verdict: "pass", notes: "" }] } });
-    expect(pathOf(once)).toBe("story split_check story split_check goal_check done");
+    expect(pathOf(once)).toBe("story split_check story split_check done");
     const always = await runSim("mvp-phase", { input: { goal: "g" }, stubs: { story: cut, split_check: { verdict: "rework", notes: "still not" } } });
     expect(always.called("story")).toHaveLength(2);
-    expect(pathOf(always)).toBe("story split_check story split_check goal_check done");
+    expect(pathOf(always)).toBe("story split_check story split_check blocked");
+    expect(out(always)).toMatchObject({ status: "blocked", reason: "still not" });
     const passed = await runSim("mvp-phase", { input: { goal: "g" }, stubs: { story: cut, split_check: { verdict: "pass", notes: "" } } });
     expect(passed.called("story")).toHaveLength(1);
   });

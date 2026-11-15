@@ -510,7 +510,10 @@
     {
       "from": "package",
       "to": "goal_check",
-      "pass": "artifact"
+      "pass": "artifact",
+      "with": {
+        "path": "package.package_path"
+      }
     },
     {
       "from": "goal_check",

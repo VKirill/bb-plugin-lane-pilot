@@ -58,7 +58,8 @@ def scenario_sma_r23(tmp) -> dict:
     proofs.prove("n1635", w["worktreeHasRule"] and not w["worktreeHasLive"] and w["liveHasLive"] and not w["liveHasRule"], f"worktree brief: rule {w['worktreeHasRule']}, live line {w['worktreeHasLive']}; live brief: live line {w['liveHasLive']}, rule {w['liveHasRule']}")
     # n1636 MVP and story concepts: a planner's story, judged by a plan critic; one rework goes back once, a second ends the run.
     mv = s["mvp"]
-    proofs.prove("n1636", mv["roles"] == ["planner", "plan-critic"] and mv["checkReadOnly"] and mv["once"] == "story split_check story split_check goal_check done" and mv["alwaysStory"] == 2,
+    proofs.prove("n1636", mv["roles"] == ["planner", "plan-critic"] and mv["checkReadOnly"] and mv["once"] == "story split_check story split_check done" and mv["alwaysStory"] == 2
+                 and mv["alwaysPath"] == "story split_check story split_check blocked",
                  f"roles {mv['roles']}, one rework path {mv['once']}, always rework: story called {mv['alwaysStory']} times")
     # n1637 Design training and brand: the drawing rules go to the author and to a checker of another role, and sit in the design stage's order and no other's.
     d = s["drawing"]

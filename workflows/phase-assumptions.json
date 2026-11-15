@@ -77,33 +77,13 @@
         "status": "done",
         "assumptions": "assumptions.assumptions"
       }
-    },
-    {
-      "id": "goal_check",
-      "type": "action",
-      "action": "deliverable.validate",
-      "title": {
-        "en": "Check the goal was met",
-        "ru": "Проверить, что цель достигнута"
-      },
-      "rule": "validateDeliverable on the artifact the run produced: the deliverable/validator/brief inputs name what to check; a fail means the goal is not met",
-      "out": {
-        "ok": "bool",
-        "verdict": "pass|rework|fail",
-        "reason": "string",
-        "details": "object"
-      }
     }
   ],
   "edges": [
     {
       "from": "assumptions",
-      "to": "goal_check",
+      "to": "done",
       "pass": "artifact"
-    },
-    {
-      "from": "goal_check",
-      "to": "done"
     }
   ],
   "test": {
@@ -124,7 +104,6 @@
       },
       "expect_path": [
         "assumptions",
-        "goal_check",
         "done"
       ],
       "expect_outputs": [
@@ -132,5 +111,5 @@
       ]
     }
   },
-  "goal_check": "validate"
+  "goal_audit": "exempt"
 }

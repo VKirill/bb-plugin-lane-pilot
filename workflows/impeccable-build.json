@@ -500,7 +500,10 @@
       "from": "close",
       "to": "goal_check",
       "pass": "artifact",
-      "when": "close.status == 'closed'"
+      "when": "close.status == 'closed'",
+      "with": {
+        "path": "close.report_path"
+      }
     },
     {
       "from": "close",
