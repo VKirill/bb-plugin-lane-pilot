@@ -1,8 +1,8 @@
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, unlinkSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmdirSync, rmSync, symlinkSync, unlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
-import { describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it } from "vitest";
 import { NO_UPSTREAM, upstreamPath } from "./upstream-fixture";
 import { hookEnv } from "./hook-env";
 import { useGuardSync } from "./guard-pool";
@@ -14,6 +14,7 @@ const pythonProbe = spawnSync("python3", ["-c", "import sys; print(sys.executabl
 const python = pythonProbe.status === 0 && pythonProbe.stdout.trim() ? pythonProbe.stdout.trim() : "python3";
 const cwd = join(process.cwd(), "tests/guard-fixture");
 mkdirSync(cwd, {recursive:true});
+afterAll(() => rmdirSync(cwd));
 
 type Case = { name:string; tool:string; input:Record<string,unknown>; allowed:boolean };
 const bash = (name:string, command:string, allowed:boolean): Case => ({name,tool:"Bash",input:{command},allowed});
