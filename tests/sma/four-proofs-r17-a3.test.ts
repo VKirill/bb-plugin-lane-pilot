@@ -116,7 +116,7 @@ describe("region 17 · audit and research graphs", () => {
       frame: { subquestions: ["a", "b"], sub_count: 2, needs_clarification: false },
       "search:child": { subquestion: "a", sources: [{ url: "https://x.test/a", title: "A" }] },
       claims: { claims: [{ id: 1 }], unverified: ["the date"], counter: [], claim_count: 1 },
-      report: { report_md: "Short answer [1]", cited_ids: ["1"] }, check: { citation_ok: true, broken: [], unresolved: [] },
+      report: { report_md: "Short answer [1]", cited_ids: ["1"], sources: [{ url: "https://x.test/a", title: "A" }] }, check: { citation_ok: true, broken: [], unresolved: [] },
       deliver: { report_path: ".agents/research/research-1.md" }, goal_check: { ok: true, verdict: "pass" },
     } });
     expect(out(r)).toMatchObject({ status: "done", report_md: "Short answer [1]", unverified: ["the date"], report_path: ".agents/research/research-1.md", citation_ok: true });
