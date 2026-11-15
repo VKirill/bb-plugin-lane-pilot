@@ -114,7 +114,7 @@ describe("parity b5 intake", () => {
     expect(named.join("\n")).toContain("не уложился в 4 минут");
     // An empty answer is named.
     await watch.turnStarted("thr_pm");
-    await watch.itemCompleted("thr_pm", "tool/call");
+    await watch.itemCompleted("thr_pm", "toolCall");
     await watch.turnCompleted("thr_pm");
     expect(named.join("\n")).toContain("пустой ответ");
     // A vendor refusal is named with its message.
@@ -143,16 +143,16 @@ describe("parity b5 intake", () => {
       log: () => undefined,
     });
     await watch.turnStarted("thr_pm");
-    for (let i = 0; i < 12; i++) await watch.itemCompleted("thr_pm", "tool/call");
+    for (let i = 0; i < 12; i++) await watch.itemCompleted("thr_pm", "toolCall");
     expect(stopped).toEqual([]);
     maxTurns = 20; // a change mid-turn is not this turn's cap
-    await watch.itemCompleted("thr_pm", "tool/call");
+    await watch.itemCompleted("thr_pm", "toolCall");
     expect(stopped).toEqual(["thr_pm"]);
     expect(named.join("\n")).toContain("предел ходов: 12");
     await watch.turnStarted("thr_pm");
-    for (let i = 0; i < 20; i++) await watch.itemCompleted("thr_pm", "tool/call");
+    for (let i = 0; i < 20; i++) await watch.itemCompleted("thr_pm", "toolCall");
     expect(stopped).toEqual(["thr_pm"]);
-    await watch.itemCompleted("thr_pm", "tool/call");
+    await watch.itemCompleted("thr_pm", "toolCall");
     expect(stopped).toEqual(["thr_pm", "thr_pm"]);
     expect(named.join("\n")).toContain("предел ходов: 20");
   });

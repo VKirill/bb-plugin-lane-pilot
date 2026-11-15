@@ -416,7 +416,7 @@ export async function observeTurnWatch() {
   clock += 2 * 60_000;
   const at5 = await timed.sweep(clock);
   await timed.turnStarted("thr_pm");
-  await timed.itemCompleted("thr_pm", "tool/call");
+  await timed.itemCompleted("thr_pm", "toolCall");
   await timed.turnCompleted("thr_pm");
   await timed.turnStarted("thr_pm");
   await timed.turnCompleted("thr_pm", { providerError: "quota exceeded" });

@@ -83,6 +83,7 @@ describe("stream i2 graphs", () => {
     const db = openDatabase(bb);
     createRun(db, "run1", "projA", "bb", "/repo");
     db.prepare("UPDATE lane_pilot_run SET writer_host_id='h', pm_thread_id='thr_pm' WHERE id='run1'").run();
+    saveProjectSetting(db, "projA", "phase.plan_bounce", "off");
     const services = {
       runBudgets: { get: () => undefined },
       dispatchWriter: async () => ({}),
@@ -302,6 +303,7 @@ describe("stream i2 graphs: the grill gate matches this plan and tells the calle
     const db = openDatabase(bb);
     createRun(db, "run1", "projA", "bb", "/repo");
     db.prepare("UPDATE lane_pilot_run SET writer_host_id='h', pm_thread_id='thr_pm' WHERE id='run1'").run();
+    saveProjectSetting(db, "projA", "phase.plan_bounce", "off");
     const services = { runBudgets: { get: () => undefined }, dispatchWriter: async () => ({}), regression: { run: async () => ({}) }, runGoal: { check: async () => ({}) },
       readWriterWorkspaceFile: async () => null, money: { status: () => ({ capSet: false, cap: null, left: null, monthUsd: 0 }) } } as unknown as Services;
     const phases = createPhaseDriver(createCore(bb, db), services).phases;

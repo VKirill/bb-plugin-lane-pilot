@@ -54,6 +54,7 @@ describe("daemon tick", () => {
     vi.useFakeTimers({ toFake: ["Date"] });
     try {
       const { phases, db } = driver();
+      saveProjectSetting(db, "projA", "phase.train", "off");
       const phase = await phases.open({ projectId: "projA", pmThreadId: "thr_pm", title: "Stats", goal: "stats module" });
       await phases.tick();
       vi.setSystemTime(Date.now() + 4 * 86_400_000);

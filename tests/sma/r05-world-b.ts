@@ -210,6 +210,7 @@ export const observeB = {
     Date.now = () => clock;
     try {
       const { phases, db } = phaseDriver();
+      saveProjectSetting(db, "projA", "phase.train", "off");
       const phase = await phases.open({ projectId: "projA", pmThreadId: "thr_pm", title: "Stats", goal: "stats module" });
       const notes = () => listParts(db, phase.id).filter((part) => part.kind === "aging").map((part) => part.text);
       await phases.tick();

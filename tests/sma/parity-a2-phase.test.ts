@@ -10,7 +10,7 @@ import {
 import { uiContractGap, uatText } from "../../src/rooms/phase/stages";
 import { autoDue, autoInputs, createAutoStages } from "../../src/rooms/phase/server/auto-stages";
 import { appendPart, getPhase, insertPhase, listParts, savePhase } from "../../src/rooms/phase/store";
-import { createAttempt, createRun, createTask, openDatabase, transitionAttempt } from "../../src/rooms/plugin-db";
+import { createAttempt, createRun, createTask, openDatabase, saveProjectSetting, transitionAttempt } from "../../src/rooms/plugin-db";
 
 const phase = (record: PhaseRecord, stage: Phase["stage"] = "design", over: Partial<Phase> = {}): Phase => ({
   id: "ph_sma", projectId: "p", pmThreadId: "t", runId: "r", title: "Sum", goal: "sums", stage, state: "active", record, edition: 1, createdAt: 0, updatedAt: 0, ...over,
@@ -200,6 +200,7 @@ describe("phase control and daemon", () => {
     vi.useFakeTimers({ toFake: ["Date"] });
     try {
       const { phases, db } = driver();
+      saveProjectSetting(db, "projA", "phase.train", "off");
       const ph = await phases.open({ projectId: "projA", pmThreadId: "thr_pm", title: "Stats", goal: "stats" });
       await phases.tick();
       vi.setSystemTime(Date.now() + 4 * 86_400_000);

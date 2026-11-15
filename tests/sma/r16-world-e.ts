@@ -8,7 +8,7 @@ import { sha256Hex } from "@lane-pilot/kit";
 import { createCore } from "../../src/rooms/core/server/core";
 import type { Services } from "../../server";
 import { createPhaseDriver } from "../phase-driver";
-import { createRun, createTask, openDatabase } from "../../src/rooms/plugin-db";
+import { createRun, createTask, openDatabase, saveProjectSetting } from "../../src/rooms/plugin-db";
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
@@ -141,6 +141,7 @@ export const observeE = {
     const items = [item("p1"), item("p2", { wave: 2 })];
     const run = async (record: Record<string, unknown>) => {
       const w = phaseWorld();
+      saveProjectSetting(w.db, "projA", "phase.plan_bounce", "off");
       const made = await w.phases.open({ projectId: "projA", pmThreadId: "thr_pm", title: "Hud", goal: "hud" });
       savePhase(w.db, made.id, { stage: "planning", state: "active", runId: "run1", record: { ...made.record, context: ctxReady(), plan: planRec(items), ...record } as never, at: 2 });
       await w.phases.drive(getPhase(w.db, made.id)!);
@@ -153,6 +154,7 @@ export const observeE = {
   async k_wp_advance() {
     const run = async (items: PlanItem[], over: Record<string, unknown> = {}, planOver: Record<string, unknown> = {}) => {
       const w = phaseWorld();
+      saveProjectSetting(w.db, "projA", "phase.plan_bounce", "off");
       const made = await w.phases.open({ projectId: "projA", pmThreadId: "thr_pm", title: "Hud", goal: "hud" });
       savePhase(w.db, made.id, { stage: "planning", state: "active", runId: "run1", record: { ...made.record, context: ctxReady(), plan: planRec(items, planOver), ...over } as never, at: 2 });
       await w.phases.drive(getPhase(w.db, made.id)!);

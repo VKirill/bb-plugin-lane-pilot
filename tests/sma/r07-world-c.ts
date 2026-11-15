@@ -79,7 +79,9 @@ async function launchSpec() {
   createAttempt(db, { id: "a1", runId: "run", taskId: "t1" });
   const spawned: Array<Record<string, unknown>> = [];
   const ctx = {
-    bb: { storage: bb.storage, log: { info() {}, warn() {} }, sdk: { projects: { get: async () => ({ sources: [] }) },
+    bb: { storage: bb.storage, log: { info() {}, warn() {} },
+      hosts: { experimental_client: () => ({ call: async (method: string) => { throw new Error(`unexpected host call ${method}`); } }) },
+      sdk: { projects: { get: async () => ({ sources: [] }) },
       providers: { list: async () => [{ id: "codex", available: true, serviceTiers: [{ id: "default" }] }], models: async () => ({ models: [{ id: "codex-test", model: "codex-test", supportedReasoningEfforts: [{ reasoningEffort: "medium" }] }] }) },
       files: { read: async () => ({ content: null }) },
       threads: { get: async () => ({ id: "pm-thread", projectId: "P", status: "idle" }), spawn: async (args: Record<string, unknown>) => { spawned.push(args); return { id: "writer-1" }; } } } },

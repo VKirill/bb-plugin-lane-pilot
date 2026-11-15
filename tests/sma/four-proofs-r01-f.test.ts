@@ -9,6 +9,7 @@ import { failureClass } from "../../src/rooms/contracts/failure-class";
 import { cancelAttemptById } from "../../src/rooms/runs/server/cancel";
 import { markCancelCode, CANCEL_CODES } from "../../src/rooms/storage/cancel-code";
 import { createAttempt, createRun, createTask, getAttempt, getTask, listAttemptsForTask, listStageReceipts, openDatabase, saveProjectSetting, savePrototypeConfig, saveTaskPlan, setAttemptWorkspace, setRunThread, setTaskClosedWords, transitionAttempt } from "../../src/rooms/plugin-db";
+import { sha256Hex } from "@lane-pilot/kit";
 import { ownerItemOutcome, postOwnerItem } from "../../src/rooms/owner-waiting/items";
 import { deadLetters, laneQueueOf } from "../../src/rooms/tasks/rails";
 import { recordStage } from "../../src/rooms/runs/server/stage-records";
@@ -235,6 +236,18 @@ describe("a repeated enqueue", () => {
           return { hostId: "host-test", status: "not-git" as const, branch: null, headSha: null, baseRef: null, baseSha: null, compareCommitted: false, reason: "fixture" };
         }
         if (call.method === "classifyPlan") return { hostId: "host-test", status: "ok", effort: "xhigh", reason: null, planSha256: "a", sentPlanSha256: "a", sourceLength: 1, sentLength: 1 };
+        if (call.method === "readBoundedFile") {
+          const input = call.input as { relativePath?: string; offset?: number; maxLines?: number };
+          const body = "fixture\n";
+          const lines = body.replace(/\r\n?/g, "\n").split("\n");
+          const offset = input.offset ?? 0, maxLines = input.maxLines ?? 2000;
+          const selected = lines.slice(offset, offset + maxLines);
+          const content = selected.join("\n");
+          return { schemaVersion: 1, hostId: "host-test", path: input.relativePath, content, contentEncoding: "utf8",
+            sha256: sha256Hex(body), sizeBytes: Buffer.byteLength(body), totalLines: lines.length,
+            offset, maxLines, lineStart: offset + 1, lineEnd: selected.length === 0 ? offset : offset + selected.length,
+            truncated: offset + selected.length < lines.length, returnedBytes: Buffer.byteLength(content) };
+        }
         if (call.method !== "runCommand") throw new Error(`unexpected ${call.method}`);
         return { hostId: "host-test", exitCode: 0, stdout: String((call.input as { command?: string }).command ?? "").includes("porcelain") ? "[]" : "", stderr: "" };
       },
