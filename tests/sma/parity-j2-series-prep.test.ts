@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -32,7 +32,7 @@ m.log = lambda *a, **k: None
 m.git = lambda *a, **k: "deadbeef"
 def fake_run(args, stdin=None, timeout=180, env=None):
     if args[1:3] == ["plugin", "list"]:
-        return 0, "[]", ""
+        return 0, json.dumps({"plugins": [{"id": "lane-pilot", "version": ${JSON.stringify(JSON.parse(readFileSync(new URL("../../package.json", import.meta.url), "utf8")).version)}}]}), ""
     return 0, "{}", ""
 m.run = fake_run
 m.hubsql = lambda sql: []
