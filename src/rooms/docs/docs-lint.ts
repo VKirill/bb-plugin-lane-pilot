@@ -230,7 +230,16 @@ export function citationClaims(body:string): Array<{ file:string; start:number; 
   const claims:Array<{ file:string; start:number; end:number; identifiers:string[]; claimIndex:number }> = [];
   // Like pageClaims in docs-anchors: independent sentences on one physical line must not borrow
   // each other's evidence. Examples introduced by e.g./i.e. stay part of their sentence.
-  const blocks = expanded.split(/\n(?=\s*[-*|]|\s*\n)|(?<=[.!?])(?<!\be\.g\.)(?<!\bi\.e\.)\s+/);
+  // Inline code can contain sentence punctuation (SQL `SELECT ... FOR UPDATE`).
+  // Consume code spans first so a separator inside one cannot detach its citation.
+  const blocks:string[] = [];
+  let from = 0;
+  for (const match of expanded.matchAll(/(`+)[\s\S]*?\1(?!`)|\n(?=\s*[-*|]|\s*\n)|(?<=[.!?])(?<!\be\.g\.)(?<!\bi\.e\.)\s+/g)) {
+    if (match[1]) continue;
+    blocks.push(expanded.slice(from, match.index));
+    from = match.index + match[0].length;
+  }
+  blocks.push(expanded.slice(from));
   for (const [claimIndex, block] of blocks.entries()) {
     // Paths locate evidence; their directory and component names are not code claims.
     const text = block.replace(CITATION, "").replace(new RegExp(CITATION_PATH, "g"), (path) => path.includes("/") ? "" : path);

@@ -1,0 +1,17 @@
+{
+  "incident": {
+    "threadId": "thr_9kj7u8ww9x",
+    "logTs": 1794721669700,
+    "pageBytes": 22993,
+    "source": "Replayed fileChange events plus the commandExecution transformation at seq 466; exact byte count matches seq 484."
+  },
+  "pages": [
+    {
+      "path": "docs/flows/user/account-self-service-and-admin.md",
+      "content": "   - Language mutations run inside `PrismaUserRepository.update` with `SELECT ... FOR UPDATE OF u` (`packages/infrastructure/persistence-prisma/src/user/prisma-user-repository.ts:122-147`), validating against `USER_LANGUAGES`."
+    }
+  ],
+  "ranges": {
+    "packages/infrastructure/persistence-prisma/src/user/prisma-user-repository.ts:122-147": "  async update(\n    id: UserId,\n    mutator: (u: User) => Result<User, UserError>,\n  ): Promise<Result<User, RepositoryError | UserError>> {\n    try {\n      return await this.prisma.$transaction<Result<User, RepositoryError | UserError>>(async (tx) => {\n        const locked = await tx.$queryRaw<RawUserRow[]>`\n          SELECT u.id, COALESCE(w.balance_tokens, 0)::int AS token_balance, u.language\n          FROM users u LEFT JOIN wallets w ON w.user_id = u.id WHERE u.id = ${id}::uuid FOR UPDATE OF u\n        `;\n        if (locked.length === 0) return Err({ type: 'not_found', id });\n        const row = locked[0]!;\n        const hydrated = this.hydrateRow(row.id as UserId, row.token_balance, row.language);\n        if (!hydrated.ok) return hydrated;\n        const mutated = mutator(hydrated.value);\n        if (!mutated.ok) return Err(mutated.error);\n        await tx.user.update({ where: { id }, data: { language: mutated.value.language } });\n        return Ok(mutated.value);\n      });\n    } catch (e) {\n      if ((e as { code?: string })?.code === 'P2034') {\n        return Err({ type: 'concurrent_modification', id, detail: extractMessage(e) });\n      }\n      return Err({ type: 'db_error', detail: extractMessage(e), cause: e });\n    }\n  }"
+  }
+}

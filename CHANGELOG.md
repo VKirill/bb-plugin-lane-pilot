@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- **Docs citation claims keep inline code together.** The SelfyStudio user-flow pass on 2026-11-15 left seven evidence findings; one was a false failure because sentence splitting treated the ellipsis in `SELECT ... FOR UPDATE OF u` as prose punctuation and detached `PrismaUserRepository.update` from its citation. The splitter now consumes backtick spans before looking for sentence boundaries. A captured claim and source range reproduce the failure; independent sentences still cannot borrow evidence. Replaying both final pages removes that finding and preserves the six remaining `save_email` findings. After deployment, run `scripts/lp-drill.sh` and check the next SelfyStudio user-flow pass; its docs maintainer still needs to cite the actual `save_email` dispatch range.
+
 ## 0.1.575
 
 - **Native skill selection follows the actual helper target.** Explicit node skills use provider command discovery and native skill mentions for Codex or one Claude selection; unsupported or unresolved optional selections retain the original task prompt with a diagnostic. Continued sessions use their own project, provider and environment; fallback providers resolve again. Tested in `skill-select` and `skill-select-run` (13 cases). A selected reference is not proof that the provider loaded a particular skill body.
