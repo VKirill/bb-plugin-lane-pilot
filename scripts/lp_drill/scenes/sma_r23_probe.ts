@@ -113,8 +113,9 @@ s.strategy = { role: strategy.role, readOnly: strategy.readOnly, onCalls: vOn.ca
   const found = ((ctx: { input: { item?: unknown } }) => ({ subquestion: String(ctx.input.item), sources: [source(1), source(2), source(3)] })) as never;
   const base = { frame: { subquestions: ["q1"], sub_count: 1, needs_clarification: false }, "search:child": found, claims: { claim_count: 4, unverified: ["benchmark numbers"], claims: [], counter: [] }, deliver: { report_path: "r.md" } };
   const none = await runSim("web-research", { input, stubs: { ...base, "search:child": ((ctx: { input: { item?: unknown } }) => ({ subquestion: String(ctx.input.item), sources: [] })) as never } });
-  const fixed = await runSim("web-research", { input, stubs: { ...base, report: [{ report_md: "A [1]. B [9]." }, { report_md: "A [1]. B [2]. C [3]." }] } });
-  const still = await runSim("web-research", { input, stubs: { ...base, report: { report_md: "A [1]. B [9]." } } });
+  const bad = { report_md: "A [1]. B [9].", sources: [source(1), source(2), source(3)] };
+  const fixed = await runSim("web-research", { input, stubs: { ...base, report: [bad, { ...bad, report_md: "A [1]. B [2]. C [3]." }] } });
+  const still = await runSim("web-research", { input, stubs: { ...base, report: bad } });
   s.research = { role: claims.role, readOnly: claims.readOnly, rule: claims.prompt.includes("two independent sources"), none: ran(none), fixed: ran(fixed), fixedOut: outOf(fixed).status, stillOut: outOf(still).status, stillOk: outOf(still).citation_ok };
 }
 
