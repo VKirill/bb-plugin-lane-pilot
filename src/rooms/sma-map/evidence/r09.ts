@@ -1,7 +1,7 @@
 // Region 9 · Person and window — per-node evidence of the four proofs (docs/sma-evidence.md).
 // One line per node, sorted by node number; a batch agent edits only its nodes' lines. Lines with seedEntry or a lone
 // wfRun/wfStep trace were derived mechanically by scripts/sma-seed-evidence.ts (2026-11-14), not authored.
-import { distort, drill, entry, flip, type RegionEvidence, seedEntry, voidIsHave, wrongTarget } from "./types";
+import { distort, drill, entry, flip, outside, type RegionEvidence, seedEntry, voidIsHave, wrongTarget } from "./types";
 
 const SCENE = drill("sma_r09");
 const AC = "src/rooms/acceptance/ui/acceptance-card.tsx";
@@ -50,7 +50,7 @@ export default {
   n789: { mutation: distort("src/rooms/pages/service-segment.tsx", '{data.lastWriterTrace.serviceTier ?? "default"}', '{data.lastWriterTrace.serviceTier ?? "fast"}'), reach: entry("the owner opens the technical details on the Service tab of the Lane Pilot page"), trace: SCENE },
   n790: { mutation: flip("src/rooms/pages/project-nav.tsx", 'const current = activeScope === "projects" && project.id === projectId;', 'const current = activeScope === "projects" && project.id !== projectId;'), reach: entry("the owner opens the Lane Pilot page and reads the project list in its rail"), trace: SCENE },
   n791: { mutation: flip("core:apps/app/src/hooks/useQuickCreateProject.tsx", "if (target.kind !== \"create\") return;", "if (target.kind === \"create\") return;"), reach: seedEntry("the owner presses the door in the window") },
-  n792: { mutation: distort("core:apps/app/src/components/project/ProjectActionsProvider.tsx", "{ id: projectId, name },", "{ id: projectId, name: projectId },"), reach: seedEntry("the owner presses the door in the window"), trace: SCENE },
+  n792: { mutation: distort("core:apps/app/src/components/project/ProjectActionsProvider.tsx", "{ id: projectId, name },", "{ id: projectId, name: projectId },"), reach: seedEntry("the owner presses the door in the window"), trace: outside("the window's ProjectActionsProvider runs only in the BB window; the `bb project update --name` rename the scene used to run reaches the server directly and bypasses it") },
   n793: { mutation: distort("src/rooms/cockpit/ui/cockpit-page.tsx", ".then(() => { setProjectId(id); setError(null); }", ".then(() => { setProjectId(projectId); setError(null); }"), reach: entry("the owner picks another project in the cockpit's project list"), trace: SCENE },
   n794: { mutation: flip("src/rooms/contracts/planning-root.ts", "return planningHomeOf(settings, check, log) ?? run?.writer_workspace_path ?? null;", "return run?.writer_workspace_path ?? planningHomeOf(settings, check, log) ?? null;"), reach: entry("a project has a planning home set and the PM, the phase driver or the backlog scan reads or writes a planning file"), trace: SCENE },
   n795: { mutation: flip(SO, 'row.online ? "bg-emerald-500" : "bg-muted-foreground"', 'row.online ? "bg-muted-foreground" : "bg-emerald-500"'), reach: entry("the owner opens the System screen of the window and reads the machines"), trace: SCENE },
@@ -61,7 +61,7 @@ export default {
   n800: { mutation: distort("core:apps/app/src/views/thread-detail/ThreadDetailPromptArea.tsx", "stopThread.mutate(thread.id);", "stopThread.mutate(`${thread.id}-x`);"), reach: seedEntry("the owner presses the door in the window") },
   n801: { mutation: flip("core:apps/app/src/components/thread/timeline/ThreadTimelineSurface.tsx", "    onLoadOlderRows !== undefined &&", "    onLoadOlderRows === undefined &&"), reach: seedEntry("the owner presses the door in the window") },
   n802: { mutation: flip("core:plugins/thread-list/app/model/project-thread-groups.ts", "return leftIsActive ? -1 : 1;", "return leftIsActive ? 1 : -1;"), reach: seedEntry("the owner presses the door in the window") },
-  n803: { mutation: distort("core:apps/app/src/components/thread/ThreadActionsProvider.tsx", "{ id: threadId, title }", "{ id: `${threadId}-x`, title }"), reach: seedEntry("the owner presses the door in the window"), trace: SCENE },
+  n803: { mutation: distort("core:apps/app/src/components/thread/ThreadActionsProvider.tsx", "{ id: threadId, title }", "{ id: `${threadId}-x`, title }"), reach: seedEntry("the owner presses the door in the window"), trace: outside("the window's ThreadActionsProvider runs only in the BB window; the `bb thread update --title` rename the scene used to run reaches the server directly and bypasses it") },
   n804: { mutation: distort("src/rooms/front/server/index.ts", "roots: [...HELPER_ROOTS], skipOversized: true", "roots: [...HELPER_ROOTS].slice(1), skipOversized: true"), reach: entry("the owner opens the Forge screen of a project that has a run"), trace: SCENE },
   n805: { mutation: distort(SO, "/applied|kept/.test(row.status)", "/written|kept/.test(row.status)"), reach: entry("the owner ticks found helpers on the Forge screen and presses «Take as drafts»"), trace: SCENE },
   n806: { mutation: distort(SO, "{s.steps.indexOf(step) + 1}/4", "{s.steps.indexOf(step) + 2}/4"), reach: entry("the owner opens a project never set up (the cockpit stands the first run in front once) or the First run screen"), trace: SCENE },

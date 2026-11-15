@@ -162,13 +162,51 @@ def scenario_sma_r15(tmp: Path) -> dict:
                  f"manifest kind {wm and wm['kind']}, head {((wm or {}).get('preparation') or {}).get('commit', '')[:8]}, stamp {wm and wm['stamp']}, selected units {selected}")
 
     # n1130 Series preparation: the real preparation names its seven parts and refuses with a named part (or passes) on this machine.
+    # Its accounts probe pays one `capabilities --probe` provider call per provider in use without a measured answers receipt, so the
+    # scene first reads the same measured inputs and, at the door.bb seam, refuses ONLY that paid command (named error, never a faked
+    # answer) for the duration of the check — a mid-run change that would pay lands in notProved instead of a silent substitute.
+    paid_probe: list = []
+    real_bb = door.bb
+
+    def guarded_bb(*args, **kwargs):
+        if tuple(args[:3]) == ("lane-pilot", "capabilities", "--probe"):
+            paid_probe.append(args)
+            raise RuntimeError("sma_r15: `capabilities --probe` is a paid provider call; the drill refuses it")
+        return real_bb(*args, **kwargs)
+
+    door.bb = guarded_bb
     try:
-        prep = door.series_preparation()
-        names = [row["name"] for row in prep["checks"]]
-        named_problems = all(any(problem.startswith(f"{part}:") for part in PREP_PARTS) for problem in prep["problems"])
-        proofs.prove("n1130", names == PREP_PARTS and named_problems and isinstance(prep["coverageGaps"], list), f"checks {names}, {len(prep['problems'])} problem(s) {[p[:60] for p in prep['problems']]}, coverage gaps {len(prep['coverageGaps'])}")
+        try:
+            pairs = door.providers_in_use(door.SANDBOX["project"])
+            table = door._capability_table()
+            answers = lambda provider: ((table.get(provider) or {}).get("capabilities") or {}).get("answers")
+            unproven = sorted(provider for provider in pairs if answers(provider) in (None, "unproven"))
+        except Exception as cause:
+            not_proved["n1130"] = f"the measured capability answers are unreadable, the preparation was not run: {str(cause)[:140]}"
+        else:
+            if unproven:
+                not_proved["n1130"] = f"provider(s) {', '.join(unproven)} in use have no measured answers receipt; the accounts probe would pay one capabilities --probe per provider"
+            else:
+                prep = door.series_preparation()
+                if paid_probe:
+                    not_proved["n1130"] = "the accounts probe attempted a paid `capabilities --probe` during preparation (answers changed mid-run); refused"
+                else:
+                    names = [row["name"] for row in prep["checks"]]
+                    named_problems = all(any(problem.startswith(f"{part}:") for part in PREP_PARTS) for problem in prep["problems"])
+                    structure_ok = names == PREP_PARTS and named_problems and isinstance(prep["coverageGaps"], list)
+                    # R15-01: the card's gate is the series refusing to start — the real main() with a named preparation
+                    # problem in a fresh receipt dir: exit 2, no scene process (the fake receipt writer included), no manifest.
+                    refused_dir = tmp / "n1130-refusal"
+                    refused_dir.mkdir()
+                    refused = _series(door, ["--series"], refused_dir, _receipt_run(refused_dir), problems=["database: n1130 drill-injected refusal"])
+                    refusal_ok = refused["rc"] == 2 and refused["calls"] == [] and refused["manifest"] is None
+                    proofs.prove("n1130", structure_ok and refusal_ok,
+                                 f"checks {names}, {len(prep['problems'])} problem(s) {[p[:60] for p in prep['problems']]}, gaps {len(prep['coverageGaps'])}; "
+                                 f"injected problem -> rc {refused['rc']}, launches {len(refused['calls'])}, manifest {refused['manifest'] is not None}")
     except Exception as cause:
         not_proved["n1130"] = f"the preparation needs the hub and its bb command: {str(cause)[:160]}"
+    finally:
+        door.bb = real_bb
 
     # n1136–n1138 the registry of this commit: live scenarios of the three graph suites, reasons of the uncovered, the strict verdict.
     cov = seen["coverage"]
@@ -214,14 +252,16 @@ def scenario_sma_r15(tmp: Path) -> dict:
     proofs.prove("n1143", clean_m["verdict"] == "pass" and red_m["problems"] == ["scene s0 exited 3"] and floor_m["verdict"] == "fail" and "floor" in " ".join(floor_m["problems"]),
                  f"clean archive {clean_m['verdict']}; exit 3 -> {red_m['problems']}; one green of three -> {floor_m['problems'][:1]}")
 
-    # n1142 Run evidence: what the newest sandbox run left on the hub, read back nested (only where the hub answers).
+    # n1142 Run evidence: what the newest SANDBOX run left on the hub, read back nested (only where the hub answers) — the receipt
+    # lookup is scoped to the authorized sandbox project, not the newest receipt of the whole hub.
     try:
-        row = door.hubsql("select run_id as id from lane_pilot_stage_receipt order by updated_at desc limit 1;")
+        row = door.hubsql("select r.run_id as id from lane_pilot_stage_receipt r join lane_pilot_run run on run.id=r.run_id "
+                          f"where run.project_id='{door.SANDBOX['project']}' order by r.updated_at desc limit 1;")
         evidence = door.evidence_seen(row[0]["id"]) if row else None
         if evidence is None:
             raise RuntimeError("the hub gave no run")
         proofs.prove("n1142", set(evidence) == {"stages", "gates", "moves"} and bool(evidence["stages"]) and all(isinstance(v, dict) and all(isinstance(states, dict) for states in v.values()) for v in evidence.values()),
-                     f"run {row[0]['id']}: {len(evidence['stages'])} stages, {len(evidence['gates'])} gates, {len(evidence['moves'])} moves")
+                     f"run {row[0]['id']} (sandbox {door.SANDBOX['project']}): {len(evidence['stages'])} stages, {len(evidence['gates'])} gates, {len(evidence['moves'])} moves")
     except Exception as cause:
         not_proved["n1142"] = f"needs the hub: {str(cause)[:160]}"
     return proofs.verdict("sma_r15", checked=len(NODES) - len(not_proved), notProved=not_proved)

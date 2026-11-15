@@ -44,7 +44,6 @@ UNAUTHORIZED = {"code": "unauthorized", "message": "Unauthorized"}
 NOT_PROVED = {
     # internal: a pure function or a type whose only door is its own test; a live read cannot reach it
     "n533": "the persisted lifecycle wrapper is observed locally by sma_r06 on sibling PRIMARY; this HTTP scene does not prove a deployed process stop",
-    "n1748": "internal: buildPluginApp runs when a plugin is built or installed; an installed plugin's dist shows a result, not this function, and the hub builds nothing on request",
     "n615": "internal: resolveClaudeCodeExecutable runs when a Claude Code session starts on a machine (the maintenance status uses resolveExecutablePath, n616); needs a session start on the Windows machine",
     "n1305": "internal: stageInjectedSkillSources runs inside the host daemon when a session starts; its catalog is not readable from outside",
     # the window components: drawn in the browser, not through bb or a route
