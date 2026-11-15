@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.577
+
+- **Model defaults no longer select GLM automatically.** Writer fallbacks now default to LongCat-2.5 through OpenCode, then GPT-6.1 Sol through Codex. Background ZCode selection requires explicit `zcode.background=true` or `on`; an unset setting keeps the role's own model. Explicit model configuration remains supported. Verified by the model-selection, writer fallback/rotation, gating and UI suites (233 tests) plus typecheck; the default-chain UI expectations were updated after the first run exposed the old labels. Runtime model exclusions are deployment settings, not an assertion that every historical thread used these defaults.
+
 ## 0.1.576
 
 - **Reels checks media files before reporting completion.** The existing verification reducer binds each verdict to its branch item, retains failed and empty paths, and feeds real `deliverable.validate` video checks. Incomplete rendering cannot report `done`; clip and film delivery indexes refer only to their own mode's outputs. `tests/workflow/chains-own.test.ts` covers routing and partial results; `chain-executors.test.ts` executes the real parallel validator with explicitly stubbed ffprobe/ffmpeg transport, not live media processing.

@@ -1,8 +1,8 @@
 /**
  * Writer models taken in turn when the writer's own model fails for reasons outside the task — a spent limit, a
  * provider error, a model gone from the catalog: the writer's model, then fallback 1, fallback 2, fallback 3, then
- * the PM's model (the emergency writer). Owner's defaults of 2026-10-03: GLM 5.3 Flash, then Gemini 3.8 high (Antigravity
- * through router9); both are in the opencode catalogs of the OVH server and the Mac mini. Fallback 3 is off by default.
+ * the PM's model (the emergency writer). Owner's defaults of 2026-11-15: LongCat-2.5 (opencode2) then GPT-6.1 Sol (Codex);
+ * GLM and Gemini stay usable only as explicit `writer.fallback<slot>.*` picks. Fallback 3 is off by default.
  */
 import { WRITER_FALLBACK_SLOTS } from "./role-specs";
 
@@ -10,8 +10,8 @@ export type WriterFallback = { providerId:string; model:string; reasoningLevel:s
 
 /** A slot without a default (fallback 3) is off until the owner turns it on and picks a model. */
 export const WRITER_FALLBACK_DEFAULTS: ReadonlyArray<WriterFallback | null> = [
-  { providerId:"opencode2", model:"zai-coding-plan/glm-5.3-flash", reasoningLevel:"high" },
-  { providerId:"opencode2", model:"router9/ag/gemini-3.8-flash-high", reasoningLevel:"medium" },
+  { providerId:"opencode2", model:"longcat/LongCat-2.5", reasoningLevel:"high" },
+  { providerId:"codex", model:"gpt-6.1-sol", reasoningLevel:"high" },
   null,
 ];
 

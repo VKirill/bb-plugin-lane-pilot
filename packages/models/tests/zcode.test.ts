@@ -105,16 +105,20 @@ describe("background rows on ZCode's free tokens", () => {
   const run = (role: string, settings: Record<string, unknown>, offered?: (providerId: string) => boolean | null) =>
     resolveAgentModel({ role, settings, pm: null, ...(offered ? { offered } : {}) });
 
-  it("a background row left on its default tries ZCode-Free first where ZCode can work now", () => {
-    for (const role of ZCODE_FREE_ROWS) expect(run(role, {}, offeredZ(true)), role).toMatchObject({ providerId: "zcode", model: "glm-5.3-flash-free", reasoningEffort: "high" });
+  it("a background row left on its default tries ZCode-Free first where ZCode can work now and the owner opted in", () => {
+    for (const role of ZCODE_FREE_ROWS) expect(run(role, { [ZCODE_BACKGROUND_KEY]: true }, offeredZ(true)), role).toMatchObject({ providerId: "zcode", model: "glm-5.3-flash-free", reasoningEffort: "high" });
+    expect(run("memory", { [ZCODE_BACKGROUND_KEY]: "on" }, offeredZ(true))).toMatchObject({ providerId: "zcode", model: "glm-5.3-flash-free" });
   });
 
   it("keeps the row's own model when ZCode cannot work, the caller cannot tell, the owner picked a model, or the setting is off", () => {
+    for (const role of ZCODE_FREE_ROWS) expect(run(role, {}, offeredZ(true)).providerId, role).not.toBe("zcode");
+    expect(run("memory", {}, offeredZ(true))).toMatchObject({ providerId: "claude-code", model: "claude-haiku-5-5" });
     expect(run("memory", {}, offeredZ(false))).toMatchObject({ providerId: "claude-code", model: "claude-haiku-5-5" });
     expect(run("memory", {}, offeredZ(null))).toMatchObject({ providerId: "claude-code", model: "claude-haiku-5-5" });
     expect(run("memory", {})).toMatchObject({ providerId: "claude-code", model: "claude-haiku-5-5" });
     expect(run("memory", { [roleModelKey("memory")]: { model: "gpt-6-luna" } }, offeredZ(true))).toMatchObject({ providerId: "codex", model: "gpt-6-luna" });
     expect(run("memory", { [ZCODE_BACKGROUND_KEY]: false }, offeredZ(true))).toMatchObject({ providerId: "claude-code", model: "claude-haiku-5-5" });
+    expect(run("memory", { [ZCODE_BACKGROUND_KEY]: "off" }, offeredZ(true))).toMatchObject({ providerId: "claude-code", model: "claude-haiku-5-5" });
   });
 
   it("does not touch the authors and judges", () => {

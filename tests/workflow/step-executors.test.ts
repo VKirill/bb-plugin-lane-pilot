@@ -61,8 +61,8 @@ describe("step executors by node type", () => {
     const task = one({ id: "w", type: "lp-task", stages: ["writer-agent", "verification", "code-critique"] }, writer);
     expect(task).toMatchObject({ mode: "chain", providerId: "codex", model: "gpt-6-luna", reasoningEffort: "high", serviceTier: "fast", source: "writer", settingsKey: "writer", costTier: "low" });
     expect(task.fallbacks).toEqual([
-      { providerId: "opencode2", model: "zai-coding-plan/glm-5.3-flash", reasoningEffort: "high", pm: false },
-      { providerId: "opencode2", model: "router9/ag/gemini-3.8-flash-high", reasoningEffort: "medium", pm: false },
+      { providerId: "opencode2", model: "longcat/LongCat-2.5", reasoningEffort: "high", pm: false },
+      { providerId: "codex", model: "gpt-6.1-sol", reasoningEffort: "high", pm: false },
       { providerId: "claude-code", model: "claude-opus-5-5", reasoningEffort: null, pm: true },
     ]);
     expect(task.parts).toEqual([{ stage: "code-critique", providerId: "opencode2", model: "router9/ag/gemini-3.8-flash-high", reasoningEffort: "medium", serviceTier: "fast", source: "role-default", sourceKey: null }]);

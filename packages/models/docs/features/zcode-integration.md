@@ -56,7 +56,7 @@ Because ZCode relies on a desktop application with free promo quota, host restri
 - Setting validation: `zcode.window` accepts only `"promo"` or `"always"` (packages/models/src/zcode.ts:14, :26-29).
 - Single-machine constraint: The `zcode` provider exists exclusively on the Mac mini; an unknown host or missing catalog resolves to blocked (packages/models/src/zcode.ts:5-7, :56-57).
 - Plan charge prevention: The free model `glm-5.3-flash-free` is programmed never to bill the account; without free tokens the plugin returns `promo_unavailable` rather than incurring plan fees (packages/models/src/zcode.ts:71-72).
-- Free background candidate injection: Background roles `ZCODE_FREE_ROWS` (`docs-maintainer`, `rules-analyzer`, `memory`, `project-life`) attempt ZCode free tokens when on default model and `zcodeBackgroundOn` permits (`zcode.background !== false && zcode.background !== "off"`) (packages/models/src/zcode.ts:78-80; packages/models/src/agent-model.ts:139-141).
+- Free background candidate injection: Background roles `ZCODE_FREE_ROWS` (`docs-maintainer`, `rules-analyzer`, `memory`, `project-life`) attempt ZCode free tokens when on default model and `zcodeBackgroundOn` permits (`zcode.background` = true/`on`; opt-in, off by default since 2026-11-15) (packages/models/src/zcode.ts:78-80; packages/models/src/agent-model.ts:139-141).
 - Uncharged environment retry: Output matching `zcodeEnvironmentError` triggers an uncharged retry on the next candidate model in the chain (packages/models/src/zcode.ts:64-68).
 
 ## Public API

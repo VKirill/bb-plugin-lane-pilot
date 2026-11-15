@@ -169,7 +169,7 @@ describe("the Models table of a draft", () => {
     ] } as never);
     const card = await slot.findByTestId("wf-model-build", {}, { timeout: 10_000 });
     expect(card.textContent).toContain("codex · gpt-6-luna · high");
-    expect((await slot.findByTestId("wf-chain-build")).textContent).toBe("→ glm-5.3-flash → gemini-3.8-flash-high → PM model");
+    expect((await slot.findByTestId("wf-chain-build")).textContent).toBe("→ LongCat-2.5 → gpt-6.1-sol → PM model");
     const chain = slot.getByTestId("wf-model-chain-build").textContent!;
     expect(chain).toContain("opencode2 · gemini-3.8-flash-high · medium");
     // The code critic is the code-critic row: GPT-6.1 Sol (the pipeline swaps it for Opus when the writer is a GPT model).
@@ -226,9 +226,9 @@ describe("the Models table of a library workflow", () => {
   it("the built-in task pipeline shows its stages and the writer chain on the cards, read-only", async () => {
     const { slot, calls } = await openLibrary("lp-task-pipeline");
     const writer = await slot.findByTestId("wf-model-writer");
-    expect(writer.textContent).toBe("codex · gpt-6-luna · high · fast→ glm-5.3-flash → gemini-3.8-flash-high → PM model");
+    expect(writer.textContent).toBe("codex · gpt-6-luna · high · fast→ LongCat-2.5 → gpt-6.1-sol → PM model");
     expect(writer.getAttribute("data-mode")).toBe("chain");
-    expect(slot.getByTestId("wf-chain-writer").textContent).toBe("→ glm-5.3-flash → gemini-3.8-flash-high → PM model");
+    expect(slot.getByTestId("wf-chain-writer").textContent).toBe("→ LongCat-2.5 → gpt-6.1-sol → PM model");
     // The stages are the rows of their roles; the writer is the writer settings' (Jev's pick per task).
     expect(slot.getByTestId("wf-model-pm-read").getAttribute("title")).toContain("from: role default");
     expect(slot.getByTestId("wf-model-pm-read").textContent).toContain("claude-haiku-5-5");

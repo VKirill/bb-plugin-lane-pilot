@@ -73,11 +73,11 @@ export const ZCODE_FREE_MODEL = "glm-5.3-flash-free";
 /**
  * Background rows that try ZCode first in its free hours (the owner's ask of 2026-10-28: spend the free tokens on background work), unless the
  * owner picked a model for the row: cheap text jobs with a checker or a reader behind them. Outside the hours, off the Mac mini, with every
- * slot taken or the free tokens gone, the row's own model runs. `zcode.background` = false turns it off.
+ * slot taken or the free tokens gone, the row's own model runs. Opt-in since 2026-11-15: only `zcode.background` = true/`on` turns it on.
  */
 export const ZCODE_FREE_ROWS: readonly string[] = ["docs-maintainer", "rules-analyzer", "memory", "project-life"];
 export const ZCODE_BACKGROUND_KEY = "zcode.background";
-export const zcodeBackgroundOn = (settings: Record<string, unknown>): boolean => settings[ZCODE_BACKGROUND_KEY] !== false && settings[ZCODE_BACKGROUND_KEY] !== "off";
+export const zcodeBackgroundOn = (settings: Record<string, unknown>): boolean => settings[ZCODE_BACKGROUND_KEY] === true || settings[ZCODE_BACKGROUND_KEY] === "on";
 export function zcodeEnvironmentError(text: string | null | undefined): string | null {
   const match = ZCODE_ENVIRONMENT.exec(text ?? "");
   return match ? (text ?? "").slice(match.index).replace(/\s+/g, " ").trim().slice(0, 200) : null;
