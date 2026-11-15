@@ -76,7 +76,7 @@ def prove_b(proofs: Proofs, tmp) -> None:
           lambda: f"answer {r.get('answer')} via {r.get('route')}, refusal {r.get('thrown')!r}")
     # n714 Three proxyable paths: a closed list of host methods, no owner word among them.
     pl = s.get("peerList", {})
-    check("n714", ("peerList",), lambda: pl["count"] == 74 and pl["hasJobs"] and pl["hasRun"] and pl["wordsOnPeers"] == [], lambda: f"{pl.get('count')} peer methods, owner's word calls among them: {pl.get('wordsOnPeers')}")
+    check("n714", ("peerList",), lambda: pl["count"] == 75 and pl["hasJobs"] and pl["hasRun"] and pl["hasOwnsBarrier"] and pl["wordsOnPeers"] == [], lambda: f"{pl.get('count')} peer methods, owns barrier: {pl.get('hasOwnsBarrier')}, owner's word calls among them: {pl.get('wordsOnPeers')}")
     # n715 Machines: presence only — the lines say who, on or off, the board; no address or token.
     def read():
         lines = {row["hostId"]: row["line"] for row in s["peers"]["listed"]}
