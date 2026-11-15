@@ -1,11 +1,11 @@
 """Region 10 · Telegram — the region scene of the SMA map (docs/sma-evidence.md, «Trace choice»); it also proves n818 of region 9, the window's door to the bot.
 
-The code of these nodes is the Telegram plugin (bb-plugin-telegram-projects, version 0.12.0 in its source; the hub runs 0.5.2 and it is disabled
-there), a sibling repository. sma_r10_probe.ts runs the REAL plugin code of the sibling worktree (SMA_SIBLING_TELEGRAM, else the proofs worktree) on
-the SDK's fake plugin host against a STAND-IN Bot API: a fake fetch, so no request leaves the machine, no real Telegram, no hub, no model, no
-BB CLI. Every line below compares what the plugin did with the node's card and says in its detail that the API was a stand-in.
-What a stand-in cannot show is listed under NOT_PROVED: that the real Telegram accepts the requests, and anything that needs the plugin enabled
-on the hub with the owner's bot. Run: scripts/lp-drill.sh --scenario sma_r10.
+The code of these nodes is the Telegram plugin (bb-plugin-telegram-projects), a sibling repository; the probe runs its PRIMARY checkout
+(SMA_SIBLING_TELEGRAM override, else the default location) on the SDK's fake plugin host against a STAND-IN Bot API and a stand-in BB SDK:
+fake fetch and recording transports, so no request leaves the machine, no real Telegram, no hub, no model, no real BB CLI. Every line below
+compares what the plugin did with the node's card and says in its detail that the transports were stand-ins. What a stand-in cannot show is
+listed under NOT_PROVED: that the real Telegram accepts the requests, and whether the plugin is deployed and enabled on the hub with the
+owner's bot — deployment availability is unproved here. Run: scripts/lp-drill.sh --scenario sma_r10.
 """
 from __future__ import annotations
 
@@ -15,12 +15,12 @@ import subprocess
 from lp_drill.env import ROOT
 from lp_drill.prove import Proofs
 
-NODES = ["n818", "n960", "n961", "n962", "n963", "n964", "n965", "n966", "n967", "n968", "n969", "n970", "n972", "n973", "n974", "n975", "n976", "n977", "n978", "n979", "n980", "n981", "n982"]
+NODES = ["n818", "n960", "n961", "n962", "n963", "n964", "n965", "n966", "n967", "n968", "n969", "n970", "n971", "n972", "n973", "n974", "n975", "n976", "n977", "n978", "n979", "n980", "n981", "n982"]
 PROBE = ROOT / "scripts/lp_drill/scenes/sma_r10_probe.ts"
 STAND_IN = "stand-in Bot API"
 CODE = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
-NOT_PROVED = ("whether the real Telegram accepts these requests and shows the typing sign, and how the plugin behaves enabled on the hub with the owner's bot: "
-              "the hub's plugin is 0.5.2 and disabled, the source is 0.12.0")
+NOT_PROVED = ("whether the real Telegram accepts these requests and shows the typing sign, and how the plugin behaves where it is deployed "
+              "on the hub with the owner's bot: deployment availability is unproved by this stand-in scene")
 
 
 def scenario_sma_r10(tmp) -> dict:
@@ -33,6 +33,7 @@ def scenario_sma_r10(tmp) -> dict:
     if "absent" in s:
         return proofs.verdict("sma_r10", [f"{s['absent']}: nothing of region 10 could be run"], notProved={n: s["absent"] for n in NODES})
     link, null, poll, route, bridge, wake, client, chat = s["link"], s["null"], s["poll"], s["route"], s["bridge"], s["wake"], s["client"], s["chat"]
+    rev = s.get("rev", "?")
 
     # n818 The window's door «Telegram bot»: the plugin's pairing call hands out a code while nobody is paired and nothing once someone is.
     o = link["offer"]
@@ -90,6 +91,40 @@ def scenario_sma_r10(tmp) -> dict:
     # n970 The typing sign: none while idle, one while the chat works, renewed after 5 s and not after 4 s (the card says every 4 s; the plugin renews after more than 4.5 s).
     ok = chat["signs"] == [0, 1, 1, 2]
     proofs.prove("n970", ok, f"stand-in BB, recording Telegram: signs idle / working / +4 s / +5 s = {chat['signs']}")
+
+    # n971 A long answer in parts: the real ChatBridge.flush() of the sibling plugin sends a long outbox text as ordered parts,
+    # each with a durable receipt; a second flush sends nothing again and an already-receipted part is not replayed.
+    # Stand-in BB SDK and a recording Bot API on the sibling PRIMARY checkout (local drill): no Telegram delivery, no hub,
+    # deployment availability unproved.
+    fl = chat["flush"]
+    want_lines = [f"{i:02d} {'w' * 94}" for i in range(70)]
+    long_text = "\n".join(want_lines)
+    sent, receipts, edge = fl["sent"], fl["receipts"], fl["edge"]
+    pair = "x" * 3499 + "\U0001F600" + "y" * 2000
+    want_receipts = {"chat:receipt:chat:out:answer:long:0", "chat:receipt:chat:out:answer:long:1", "chat:receipt:chat:out:answer:marker:0"}
+    receipts_ok = set(receipts) == want_receipts and all(isinstance(v, int) and v > 0 for v in receipts.values())
+    sent_ok = isinstance(fl["sentId"], int) and fl["sentId"] > 0 and fl["sentId"] == receipts.get("chat:receipt:chat:out:answer:long:1")
+
+    def whole_units(t: str) -> bool:
+        return not (t and 0xDC00 <= ord(t[0]) <= 0xDFFF) and not (t and 0xD800 <= ord(t[-1]) <= 0xDBFF)
+
+    ok = (len(sent) == 3 and sent[2] == "SECOND-ENTRY" and "\n".join(sent[:2]) == long_text
+          and all(0 < len(c) <= 3500 for c in sent[:2]) and len(sent[:2]) == -(-len(long_text) // 3500)
+          and sent[0].split("\n")[-1] == want_lines[34] and sent[1].split("\n")[0] == want_lines[35]
+          and all(len(c) > 3000 for c in sent[:2])
+          and receipts_ok and sent_ok and fl["cleared"] is True and fl["replayed"] == 0)
+    want_edge = {"chat:receipt:chat:out:answer:pair:0", "chat:receipt:chat:out:answer:pair:1",
+                 "chat:receipt:chat:out:answer:dedup:0", "chat:receipt:chat:out:answer:dedup:1"}
+    edge_receipts_ok = (set(edge["receipts"]) == want_edge
+                        and all(isinstance(v, int) and v > 0 for v in edge["receipts"].values())
+                        and edge["receipt0"] == 777 and edge["receipts"]["chat:receipt:chat:out:answer:dedup:1"] != 777)
+    edge_ok = (edge["sent"] == ["x" * 3499, "\U0001F600" + "y" * 2000, "B" * 3400]
+               and edge["sent"][0] + edge["sent"][1] == pair
+               and edge_receipts_ok
+               and all(whole_units(t) for t in edge["sent"]))
+    proofs.prove("n971", ok and edge_ok, f"{STAND_IN}, stand-in BB SDK, sibling {rev}: sends {len(sent)} chunks {[len(c) for c in sent[:2]]}, "
+                                         f"sentId {fl['sentId']}, receipts {len(receipts)}, replay {fl['replayed']}; edge_ok {edge_ok}, "
+                                         f"edge chunks {[len(c) for c in edge['sent']]}, kept receipt {edge['receipt0']}")
 
     # n972 A draft waits for «yes» (setting confirmNewChat): kept, replaced by other words, started by a whole «да» with the draft's words.
     d = chat["draft"]

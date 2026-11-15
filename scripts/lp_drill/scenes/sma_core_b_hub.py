@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import re
+import time
 
 from lp_drill.env import SANDBOX
 from lp_drill.hub import bb
@@ -55,7 +56,9 @@ def sandbox_threads() -> tuple[list[dict], str]:
             _CACHE["threads"] = ([], why or "the thread list is not an array")
         else:
             threads: list[dict] = []
-            for row in listed[:THREADS_LOOKED_AT]:
+            for index, row in enumerate(listed[:THREADS_LOOKED_AT]):
+                if index:
+                    time.sleep(15)  # Keep bounded history reads spaced while the shared hub serves live work.
                 events, why_log = _json(("thread", "log", str(row.get("id")), "--json", "--limit", str(EVENTS_PER_THREAD)))
                 if isinstance(events, list):
                     threads.append({"id": str(row.get("id")), "events": [e for e in events if isinstance(e, dict)]})

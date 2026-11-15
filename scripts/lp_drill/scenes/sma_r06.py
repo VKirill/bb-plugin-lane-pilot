@@ -18,7 +18,7 @@ from lp_drill.prove import Proofs
 from lp_drill.scenes.sma_r06_b import NODES_B, prove_b
 from lp_drill.scenes.sma_r06_core_b import NODES_CORE_B, prove_core_b
 
-NODES = ["n530", "n534", "n535", "n536", "n537", "n538", "n539", "n541", "n542", "n543", "n544", "n545", "n547", "n548", "n550", "n551", "n552",
+NODES = ["n530", "n533", "n534", "n535", "n536", "n537", "n538", "n539", "n541", "n542", "n543", "n544", "n545", "n547", "n548", "n550", "n551", "n552",
          "n553", "n554", "n555", "n556", "n558"]
 NODES = NODES + NODES_B
 NODES = NODES + NODES_CORE_B
@@ -130,6 +130,27 @@ def scenario_sma_r06(tmp) -> dict:
     ok = (pr["hashShape"] and pr["same"] and pr["fewer"] and pr["otherContext"] and "changed since it was shown" in pr["wrongKey"] and pr["wordsAfterWrong"] == 0
           and "stale" in pr["staleRefusal"] and pr["signed"] == ["yes:true"] and pr["planKey"])
     proofs.prove("n558", ok, f"plan hash {pr['sha'][:12]}…; another key -> {pr['wrongKey'][:40]!r}, a 25 h old proposal with a 24 h term -> {pr['staleRefusal'][:40]!r}, the keyed yes signed {pr['signed']}")
+    # n533 Stop before the start is remembered through the persisted DB wrapper: stop.requested on «starting» ->
+    # «stopping»; a late run.started leaves the row untouched; stop.settled -> «idle». LOCAL observation: the sibling
+    # core's own migrated disposable database via src imports under vite-node (core @{rev}) — not the deployed build,
+    # and no live process stop/cancel/drain is claimed.
+    n533 = s.get("n533") or {}
+    if n533.get("absent") or n533.get("threw"):
+        proofs.prove("n533", False, f"core lifecycle probe unavailable: {n533.get('absent') or n533.get('threw')}")
+    else:
+        steps = {row.get("event"): row for row in n533.get("steps") or []}
+        first, late, settled = steps.get("stop.requested") or {}, steps.get("run.started") or {}, steps.get("stop.settled") or {}
+        p1, p2, p3 = first.get("persisted") or {}, late.get("persisted") or {}, settled.get("persisted") or {}
+        t1, t3 = p1.get("statusChangedAt"), p3.get("statusChangedAt")
+        u1, u2, u3 = p1.get("updatedAt"), p2.get("updatedAt"), p3.get("updatedAt")
+        pos = lambda v: isinstance(v, int) and v > 0
+        ok = (first.get("applied") is True and p1.get("status") == "stopping" and pos(t1) and u1 == t1 and pos(u1)
+              and late.get("applied") is False and late.get("reason") == "illegal-transition"
+              and p2.get("status") == "stopping" and p2.get("statusChangedAt") == t1 and u2 == u1 and pos(u2)
+              and settled.get("applied") is True and p3.get("status") == "idle" and u3 == t3 and pos(u3) and pos(t3) and t3 > t1)
+        proofs.prove("n533", ok, f"local migrated core DB @{n533.get('coreRev')}: «starting» --stop.requested--> {p1.get('status')}@{t1}; "
+                                f"late run.started applied={late.get('applied')}, row still {p2.get('status')}; stop.settled -> {p3.get('status')}@{t3}")
+
     prove_b(proofs, tmp)
     prove_core_b(proofs, tmp)
     return proofs.verdict("sma_r06", checked=len(NODES))

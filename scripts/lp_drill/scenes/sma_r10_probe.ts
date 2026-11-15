@@ -1,9 +1,11 @@
-// Probe of scenes/sma_r10.py (region 10, the Telegram bridge; also n818 of region 9): runs the REAL code of the Telegram plugin
-// (bb-plugin-telegram-projects, the sibling worktree SMA_SIBLING_TELEGRAM or the proofs worktree) on the SDK's fake plugin host against a
-// STAND-IN Bot API (a fake fetch; no request leaves the machine, no real Telegram, no hub, no model, no real BB CLI) and prints what it saw as
-// one JSON line. It judges nothing: the scene compares every value with the node card and prove()s it.
-// What this cannot show: that the real Telegram accepts the requests, and anything that needs the plugin enabled on the hub.
+// Probe of scenes/sma_r10.py (region 10, the Telegram bridge; also n818 of region 9): runs the REAL code of the Telegram plugin's
+// sibling PRIMARY checkout (SMA_SIBLING_TELEGRAM override, else the default location) on the SDK's fake plugin host against a
+// STAND-IN Bot API and a stand-in BB SDK (fake fetch and recording transports; no request leaves the machine, no real Telegram,
+// no hub, no model, no real BB CLI) and prints what it saw as one JSON line. It judges nothing: the scene compares every value
+// with the node card and prove()s it. What this cannot show: that the real Telegram accepts the requests, and whether the plugin
+// is deployed and enabled on the hub — deployment availability is unproved.
 import { mkdtempSync, readFileSync, rmSync, existsSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { resolveSibling } from "../../../src/rooms/sma-map/siblings";
@@ -14,6 +16,7 @@ if (found.root === null) {
   process.exit(0);
 }
 const root = found.root;
+const rev = execFileSync("git", ["-C", root, "rev-parse", "--short", "HEAD"], { encoding: "utf8" }).trim();
 const sup = await import(`${root}/test/sma-support.ts`);
 const bridgeSup = await import(`${root}/test/sma-bridge-support.ts`);
 const { telegram } = await import(`${root}/adapters.ts`);
@@ -50,7 +53,7 @@ const paired = async (settings = {}) => {
   host.store.put("owner:id", OWNER);
   return host;
 };
-const out: Record<string, unknown> = {};
+const out: Record<string, unknown> = { rev };
 
 // Door and link: n818, n975-n978, n980-n982.
 out.link = await world(async (tg) => {
@@ -298,8 +301,32 @@ out.chat = await (async () => {
     await d.bridge.handle(d.input("да"));
     const draft = { waiting, started: d.calls.map((c: [string, { prompt?: string }]) => [c[0], c[1].prompt]), left: d.data.has("chat:draft:100") };
     d.cleanup();
+    // n971: a long answer in parts — the real ChatBridge.flush() on a stand-in BB; sends recorded by the stand-in Bot API.
+    await f.bridge.flush(); // drain what the steps above left pending
+    const base = f.sent.length;
+    const longText = Array.from({ length: 70 }, (_, i) => `${String(i).padStart(2, "0")} ${"w".repeat(94)}`).join("\n");
+    f.data.set("chat:out:answer:long", { topicId: 100, text: longText, retryAt: 0, at: 1000 });
+    f.data.set("chat:out:answer:marker", { topicId: 100, text: "SECOND-ENTRY", retryAt: 0, at: 2000 });
+    await f.bridge.flush();
+    const sentParts = f.sent.slice(base).filter((c: { method: string }) => c.method === "sendMessage").map((c: { text: string }) => c.text);
+    const receipts = Object.fromEntries([...f.data.keys()].filter((k) => k.startsWith("chat:receipt:chat:out:answer:")).map((k) => [k, f.data.get(k)]));
+    const done = f.data.get("chat:out:answer:long") as { sentId?: number; text?: string } | undefined;
+    await f.bridge.flush();
+    const replayed = f.sent.length - base - sentParts.length;
+    const h = bridgeSup.bridgeFixture();
+    h.data.set("chat:out:answer:pair", { topicId: 100, text: "x".repeat(3499) + "\u{1F600}" + "y".repeat(2000), retryAt: 0, at: 1000 });
+    h.data.set("chat:out:answer:dedup", { topicId: 100, text: "A".repeat(3400) + "\n" + "B".repeat(3400), retryAt: 0, at: 2000 });
+    h.data.set("chat:receipt:chat:out:answer:dedup:0", 777); // a confirmed first part, as a crash after it would leave
+    await h.bridge.flush();
+    const edge = {
+      sent: h.sent.filter((c: { method: string }) => c.method === "sendMessage").map((c: { text: string }) => c.text),
+      receipts: Object.fromEntries([...h.data.keys()].filter((k) => k.startsWith("chat:receipt:")).map((k) => [k, h.data.get(k)])),
+      receipt0: h.data.get("chat:receipt:chat:out:answer:dedup:0"),
+    };
+    h.cleanup();
+    const flush = { sent: sentParts, receipts, sentId: done?.sentId ?? null, cleared: done?.text === "", replayed, edge };
     f.cleanup();
-    return { brain, signs, attachment, sticker, draft };
+    return { brain, signs, attachment, sticker, draft, flush };
   } finally {
     Date.now = realNow;
   }

@@ -4,8 +4,8 @@
 import { distort, drill, entry, flip, type RegionEvidence, skipWrite } from "./types";
 
 export default {
-  // Nodes 960-982 (and n818 of region 9): tests in bb-plugin-telegram-projects on sma/proofs-telegram; the trace is the stand-in scene
-  // sma_r10 (a fake Bot API), the plugin on the hub is 0.5.2 and disabled.
+  // Nodes 960-982 (and n818 of region 9): tests in the sibling telegram plugin's PRIMARY checkout; the trace is the stand-in scene
+  // sma_r10 (a fake Bot API and stand-in BB SDK, local recording transport); deployment of the plugin on the hub is unproved.
   n960: { mutation: flip("telegram:server.ts", "if (cfg.enabled && cfg.chatEnabled) {", "if (cfg.enabled) {"), trace: drill("sma_r10") },
   n961: { mutation: flip("telegram:server.ts", "if (!cfg.enabled || (cfg.chatEnabled && ownerId() && !bridge)) {", "if (cfg.enabled || (cfg.chatEnabled && ownerId() && !bridge)) {"), trace: drill("sma_r10") },
   n962: { mutation: distort("telegram:server.ts", "timeout: 25,", "timeout: 5,"), trace: drill("sma_r10") },
@@ -18,8 +18,9 @@ export default {
   n969: { mutation: flip("telegram:server.ts", "(store.get<number>(\"chatOffSaidAt\") ?? 0) > 3_600_000", "(store.get<number>(\"chatOffSaidAt\") ?? 0) > -1"), trace: drill("sma_r10") },
   n970: { mutation: distort("telegram:chat.ts", "Date.now() - (b.typedAt ?? 0) > 4500", "Date.now() - (b.typedAt ?? 0) > 450000"), trace: drill("sma_r10") },
   // The worked example of a proof in the Telegram plugin (docs/sma-evidence.md «Proofs in a sibling repository»): the [sma:m_tg_split]
-  // test is in bb-plugin-telegram-projects on sma/proofs; reach and trace stay open while the plugin is disabled on the hub.
-  n971: { mutation: distort("telegram:chat.ts", 'let n = rest.length > limit ? rest.lastIndexOf("\\n", limit) : rest.length;', 'let n = rest.length > limit ? rest.lastIndexOf("\\n", limit / 2) : rest.length;') },
+  // unit test lives in the sibling PRIMARY checkout; the trace is the stand-in scene sma_r10 on a local recording transport,
+  // and whether the plugin is deployed on the hub is unproved.
+  n971: { mutation: distort("telegram:chat.ts", 'let n = rest.length > limit ? rest.lastIndexOf("\\n", limit) : rest.length;', 'let n = rest.length > limit ? rest.lastIndexOf("\\n", limit / 2) : rest.length;'), trace: drill("sma_r10") },
   n972: { mutation: flip("telegram:chat.ts", "if (this.d.confirmNewChat?.()) {", "if (!this.d.confirmNewChat?.()) {"), trace: drill("sma_r10") },
   n973: { mutation: distort("telegram:adapters.ts", "signal: AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)]),", "signal: AbortSignal.any([signal, AbortSignal.timeout(timeoutMs + 1)]),"), trace: drill("sma_r10") },
   n974: { mutation: distort("telegram:adapters.ts", "throw new TelegramFailure(\"telegram_network\", 30, true);", "throw new TelegramFailure(\"telegram_network:\" + secret, 30, true);"), reach: entry("the plugin makes a call to the Bot API (a poll, a send, a check) and it fails"), trace: drill("sma_r10") },

@@ -15,7 +15,7 @@ export default {
   n530: { mutation: flip(INTAKE, "MACHINE_TEXT.some((pattern) => pattern.test(text))", "!MACHINE_TEXT.some((pattern) => pattern.test(text))"), trace: drill("sma_r06") },
   n531: { mutation: flip("core:packages/server-contract/src/api/threads.ts", "ids.length <= THREAD_LIST_MAX_IDS &&", "ids.length < THREAD_LIST_MAX_IDS &&"), trace: drill("sma_core") },
   n532: { mutation: flip("core:packages/server-contract/src/api/threads.ts", "value.title !== undefined ||", "value.title === undefined ||"), trace: drill("sma_core") },
-  n533: { mutation: flip("core:packages/domain/src/thread-lifecycle.ts", "  stopping: {\n    \"stop.settled\": \"idle\",", "  stopping: {\n    \"stop.settled\": \"error\",") },
+  n533: { mutation: flip("core:packages/domain/src/thread-lifecycle.ts", "  stopping: {\n    \"stop.settled\": \"idle\",", "  stopping: {\n    \"stop.settled\": \"error\","), trace: drill("sma_r06") },
   n534: { mutation: distort(RAILS, 'return "browser";', 'return "full";'), trace: drill("sma_r06") },
   n535: { mutation: distort(RAILS, 'return "full";', 'return "quick";'), trace: drill("sma_r06"), voidReview: voidIsHave("три рецепта проверки quick/full/browser выбираются по всему запросу, ни один байт запроса не становится командой (текущий ours-текст устарел)") },
   n536: { mutation: flip(TOOLS, "if (stored && (live ||", "if (stored && !(live ||"), trace: drill("sma_r06") },

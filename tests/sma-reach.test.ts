@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { unlistedSnapshot } from "../scripts/sma-settings-snapshot";
 import { DRILL_SANDBOX_PROJECT_IDS } from "../src/rooms/contracts/project-scope";
+import { SMA_EVIDENCE } from "../src/rooms/sma-map/evidence";
 import { entry, isSet, not, type ReachSpec, via } from "../src/rooms/sma-map/evidence/types";
 import { SMA_LINKS, SMA_NODES } from "../src/rooms/sma-map/graph";
 import { evaluateReach, needHolds, settingReads, undeclaredGates } from "../src/rooms/sma-map/reach";
@@ -90,5 +91,26 @@ describe("reachability under the effective settings (sma-parity-tz.md §4.3)", (
     const seeded = evaluateReach(SMA_NODES, SMA_LINKS, (id) => (id === "n300" ? entry("a task is enqueued") : undefined), defaultSettings());
     expect(seeded.get("n300")!.reachable).toBe(true);
     expect([...seeded.values()].filter((result) => result.reachable).length).toBeGreaterThan(1);
+  });
+
+  it("UR-01/UR-02: paid-cap and post-optional plan/draw nodes stay reachable while their own dormant gates stay closed", () => {
+    const dormant = overlay(defaultSettings(), ["money.strict", "money.task_ceiling", "phase.research", "phase.validation", "phase.pattern_map", "phase.draw_material", "phase.plan_bounce", "phase.doc_files", "phase.commit_docs"].map((key) => ({ key, value: "off" })));
+    const reach = (settings: ReturnType<typeof overlay>) => evaluateReach(SMA_NODES, SMA_LINKS, (id) => SMA_EVIDENCE[id]?.reach, settings);
+    const out = reach(dormant);
+    for (const id of ["n635", "n636", "n638", "n639", "n640", "n643", "n1158", "n1159", "n1263", "n1264", "n1265", "n1267", "n1268", "n1269", "n1271", "n1272", "n1273", "n1275", "n1400", "n1401"])
+      expect(out.get(id), id).toMatchObject({ reachable: true });
+    for (const id of ["n633", "n641", "n1157", "n1261", "n1262", "n1266", "n1641", "n1270", "n1274"])
+      expect(out.get(id), id).toMatchObject({ reachable: false });
+    const strict = overlay(dormant, [{ key: "money.strict", value: "on" }]);
+    expect(reach(strict).get("n633")).toMatchObject({ reachable: true });
+    const gated = ["phase.plan_bounce", "phase.doc_files", "phase.commit_docs"].map((key) => ({ key, value: "on" }));
+    const allOn = overlay(dormant, gated);
+    expect(reach(allOn).get("n1270")).toMatchObject({ reachable: true });
+    expect(reach(allOn).get("n1274")).toMatchObject({ reachable: true });
+    for (const off of ["phase.plan_bounce", "phase.doc_files", "phase.commit_docs"]) {
+      const settings = overlay(allOn, [{ key: off, value: "off" }]);
+      expect(reach(settings).get(off === "phase.plan_bounce" ? "n1270" : "n1274"), off).toMatchObject({ reachable: false });
+      if (off !== "phase.plan_bounce") expect(reach(settings).get("n1270"), off).toMatchObject({ reachable: true });
+    }
   });
 });
