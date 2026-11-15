@@ -1,5 +1,5 @@
 import { getRun } from "../../storage";
-import { bestEffort } from "@lane-pilot/kit";
+import { bestEffort, maskCredentials, withoutSelectionMarkers } from "@lane-pilot/kit";
 import { postOwnerItem } from "../../owner-waiting";
 import type { LanePilotDatabase } from "../../storage";
 import type { RunRow } from "../../storage";
@@ -48,7 +48,7 @@ const PM_WAITS_FOR = new Set(["browser-step", "lp.browser-qa"]);
 const isNoticeStatus =(status: string): status is WorkflowNoticeStatus =>
   (WORKFLOW_NOTICE_STATUSES as readonly string[]).includes(status);
 
-/** Send the deliverable report of a schedule-started run to the PM chat, or skip (not scheduled, no report, no chat, already sent, not a PM workflow). */
+/** Tell the linked PM an asynchronous run's outcome, or deliver the report a scheduled run was for. */
 export async function maybeNotifyWorkflowRun(input: {
   bb: WorkflowNoticeSend;
   log: (message: string) => void;
@@ -67,19 +67,23 @@ export async function maybeNotifyWorkflowRun(input: {
   if (run.idem_key?.startsWith("phase:")) return false;
   // The browser tools wait for their graph and answer with its result: a notice would wake the PM a second time.
   if (PM_WAITS_FOR.has(run.workflow_id)) return false;
-  // A council that decided has already told the PM through the council's own notice (the decision page and next tasks); a failed run creates no service message here.
+  // A council that decided has already told the PM through the council's own notice (the decision page and next tasks).
   if (run.workflow_id === "council" && run.status === "succeeded") return false;
   if (!input.pmThreadId) return false;
-  // A run a chat started learns its end from the run's status card and tool route, and its data through the
-  // graph's own handoff; the generic «is succeeded, call lane_pilot_workflow_status» line only woke the PM
-  // for nothing (owner 0.1.573). What a schedule was for — its report — is still delivered below.
-  if (!input.startedBySchedule) return false;
+  if (!input.startedBySchedule && !run.link_run_id) return false;
   const delivered = run.status === "succeeded" ? deliverable(run.output_json ?? null) : null;
-  if (!delivered) return false;
+  // A scheduled run delivers the report it was for; anything else scheduled stays silent (its schedule board carries it).
+  if (input.startedBySchedule && !delivered) return false;
+  // A chat-started run is awaited asynchronously — its tool answered with the run id and the chat went idle, so its end
+  // must reach it once with the actual outcome: a bare «succeeded» is not the business result, and a failed run has no
+  // graph report left to carry it (the 0.1.573 status card covers only the synchronous PM_WAITS_FOR tools).
+  const body = input.startedBySchedule ? delivered! : chatOutcome(run, input.unmetGoalIds);
+  const text = input.startedBySchedule
+    ? `Lane Pilot: the scheduled run ${run.id} of ${run.workflow_id} finished. Show the owner this result in this chat as it is (no summary, nothing to act on; its helper's own completion may follow: it is the same result, say nothing about it):\n\n${body}`
+    : `Lane Pilot: the run ${run.id} of ${run.workflow_id} ended ${run.status} (engine status).\n\n${body}`;
   const key = workflowNoticeKey(run.id, run.status);
   if (await input.bb.storage.kv.get(key)) return false;
   await bestEffort(input.log, "workflow notice record", input.bb.storage.kv.set(key, Date.now() as never), undefined);
-  const text = `Lane Pilot: the scheduled run ${run.id} of ${run.workflow_id} finished. Show the owner this result in this chat as it is (no summary, nothing to act on; its helper's own completion may follow: it is the same result, say nothing about it):\n\n${delivered}`;
   try {
     await sendServiceMessage(input.bb as never, { threadId: input.pmThreadId, mode: "queue-if-active", text });
     return true;
@@ -87,6 +91,28 @@ export async function maybeNotifyWorkflowRun(input: {
     input.log(`Lane Pilot workflow ${run.id}: PM notice not sent: ${cause instanceof Error ? cause.message : String(cause)}`);
     return false;
   }
+}
+
+/** What a chat-started run's end tells its PM: the bounded actual output (engine success is not the business result),
+ * or the failure's reason and unmet goals. Marker and
+ * credential hygiene is applied to whatever engine output is embedded. */
+function chatOutcome(
+  run: { status: string; reason: string | null; output_json?: string | null },
+  unmetGoalIds?: string[],
+): string {
+  const clean = (text: string): string => maskCredentials(withoutSelectionMarkers(text)).text.slice(0, 12_000).trim();
+  if (run.status === "succeeded") {
+    const raw = run.output_json ?? "";
+    let status = "";
+    try {
+      const output = JSON.parse(raw) as { status?: unknown } | null;
+      if (typeof output?.status === "string") status = `Output status: ${output.status}\n`;
+    } catch { /* Keep malformed output visible as recorded, without inventing an outcome. */ }
+    // Put the recorded business status first so a long report cannot truncate it away.
+    return clean(status + raw) || "succeeded; the run recorded no output.";
+  }
+  const unmet = run.status === "blocked" && unmetGoalIds?.length ? ` Unmet goals: ${unmetGoalIds.join(", ")}.` : "";
+  return clean(`Reason: ${run.reason ?? "not recorded"}.${unmet}`);
 }
 
 /** A run's end status in the owner's words. */

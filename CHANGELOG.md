@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.579
+
+- **Asynchronous workflow results return to the PM chat.** A linked, chat-started workflow reports its terminal result or failure through the existing service-message path. The notification includes the engine status and bounded output or reason; engine success is not a claim of business acceptance. Scheduled reports and exclusions for internal upkeep, task pipelines and synchronously awaited browser tools retain their existing behavior. Regression tests in `tests/server/pm-notices.test.ts` cover the linked-run route and duplicate terminal events; a fresh live continuation remains to be verified.
+
 ## 0.1.578
 
 - **Native helper profiles no longer inherit a passport quote’s selection token.** Passport lenses remove composer transport markers before delivering context to agents, while preserving the stored owner quotation. A live research run exposed the conflict: the analyst inherited the PM profile, then specialist children received two profile tokens and were refused. The regression test in `tests/passport/passport-core-and-lenses.test.ts` exercises stored passport data and the real token reader; profile-selection checks remain intact.

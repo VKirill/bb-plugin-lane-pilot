@@ -5,6 +5,7 @@ import { createRun, openDatabase, savePrototypeConfig, setRunThread } from "../.
 import { councilDecisionText, councilEndedText, sendCouncilNotice } from "../../src/rooms/council/server/pm-notice";
 import { maybeNotifyWorkflowRun, notifyWorkflowIfEnded } from "../../src/rooms/workflow/server/pm-notice";
 import { SCHEDULE_RUN_KEY_PREFIX } from "../../src/rooms/contracts";
+import { forgetSecrets, registerSecrets } from "@lane-pilot/kit";
 import type { RunRow } from "../../src/rooms/plugin-db";
 import { engineOn, ok, wf } from "../workflow/engine-helpers";
 
@@ -12,6 +13,7 @@ const projectId = "notice-project";
 const pmThreadId = "notice-pm";
 const runId = "notice-run";
 const workspace = "/tmp/notice-workspace";
+afterEach(() => forgetSecrets());
 
 function noticeBb() {
   const sends: Array<{ threadId: string; mode: string; text: string }> = [];
@@ -72,17 +74,42 @@ describe("council PM notices", () => {
 });
 
 describe("workflow PM notices", () => {
-  it("sends nothing to the PM chat for a chat-started run's end: the status card and tool route carry it", async () => {
-    const { bb, sends } = noticeBb();
-    for (const status of ["succeeded", "failed", "blocked", "canceled"] as const) {
+  it("tells the PM once how a chat-started run ended: the report on success, the actual output or reason otherwise", async () => {
+    const { bb, sends, kv } = noticeBb();
+    const report = runRow({ id: "wfrun_report", output_json: JSON.stringify({ report_md: "weekly digest" }) });
+    expect(await maybeNotifyWorkflowRun({ bb, log: () => undefined, pmThreadId, startedBySchedule: false, run: report })).toBe(true);
+    expect(sends[0]!.text).toContain("weekly digest");
+    expect(sends[0]!.text).toContain("wfrun_report");
+    // Preserve business status even after a long report; mask a remembered secret with no recognizable key shape.
+    const secret = "opaque-notice-credential-37";
+    registerSecrets([secret]);
+    const partial = runRow({ id: "wfrun_partial", output_json: JSON.stringify({ opaque: secret, report_md: "half an answer [lane-pilot-selection:68b66b18-ce7b-4e1b-a2c0-77a6ec14b1e9] " + "x".repeat(13_000), status: "partial" }) });
+    expect(await maybeNotifyWorkflowRun({ bb, log: () => undefined, pmThreadId, startedBySchedule: false, run: partial })).toBe(true);
+    expect(sends[1]!.text).toContain("half an answer");
+    expect(sends[1]!.text).not.toContain("lane-pilot-selection");
+    expect(sends[1]!.text).not.toContain(secret);
+    expect(sends[1]!.text).toContain("Output status: partial");
+    expect(sends[1]!.text.length).toBeLessThan(12_300);
+    const bare = runRow({ id: "wfrun_bare" });
+    expect(await maybeNotifyWorkflowRun({ bb, log: () => undefined, pmThreadId, startedBySchedule: false, run: bare })).toBe(true);
+    expect(sends[2]!.text).toContain("no output");
+    for (const [status, reason] of [["failed", "boom"], ["blocked", "goal_audit: not met: g2"], ["canceled", "owner stop"], ["interrupted", "host lost"]] as const) {
       const told = await maybeNotifyWorkflowRun({
         bb, log: () => undefined, pmThreadId, startedBySchedule: false,
-        run: runRow({ id: `wfrun_${status}`, status, reason: status === "blocked" ? "goal_audit: not met: g2" : "boom" }),
+        run: runRow({ id: `wfrun_${status}`, status, reason }),
         unmetGoalIds: status === "blocked" ? ["g2"] : undefined,
       });
-      expect(told).toBe(false);
+      expect(told).toBe(true);
     }
-    expect(sends).toEqual([]);
+    const texts = sends.map((s) => s.text);
+    expect(texts.join("\n")).toContain("ended failed");
+    expect(texts.join("\n")).toContain("Reason: boom");
+    expect(sends.find((s) => s.text.includes("wfrun_blocked"))!.text).toContain("Unmet goals: g2");
+    // The notice is once per end state: a repeated terminal event for the same run sends nothing more.
+    expect(await maybeNotifyWorkflowRun({ bb, log: () => undefined, pmThreadId, startedBySchedule: false, run: report })).toBe(false);
+    expect(await maybeNotifyWorkflowRun({ bb, log: () => undefined, pmThreadId, startedBySchedule: false, run: runRow({ id: "wfrun_unlinked", link_run_id: null }) })).toBe(false);
+    expect(sends).toHaveLength(7);
+    expect(kv.size).toBe(7);
   });
 
   it("hands the PM the report a scheduled run was for, to show the owner as it is; nothing for a scheduled run without one", async () => {
@@ -129,19 +156,21 @@ describe("workflow PM notices", () => {
     const row = db.prepare("SELECT * FROM lane_pilot_wf_run WHERE id=?").get(linked.runId) as RunRow;
     const sends: string[] = [];
     harness.sdk.stub("threads.send", async (args: unknown) => { sends.push((args as { input: Array<{ text: string }> }).input[0]!.text); });
-    // The engine's terminal event reaches the notify boundary, but a chat-started run's end sends the PM nothing.
-    expect(await notifyWorkflowIfEnded({ bb, db, log: () => undefined, run: row })).toBe(false);
-    expect(sends).toEqual([]);
+    // The engine's terminal event reaches the notify boundary: a chat-started linked run's end tells the PM once per state.
+    expect(await notifyWorkflowIfEnded({ bb, db, log: () => undefined, run: row })).toBe(true);
+    expect(sends).toHaveLength(1);
     for (const status of ["canceled", "blocked", "failed"] as const) {
       db.prepare("UPDATE lane_pilot_wf_run SET status=?, reason=? WHERE id=?").run(status, "test end", linked.runId);
       const ended = db.prepare("SELECT * FROM lane_pilot_wf_run WHERE id=?").get(linked.runId) as RunRow;
-      expect(await notifyWorkflowIfEnded({ bb, db, log: () => undefined, run: ended, unmetGoalIds: status === "blocked" ? ["g1"] : undefined })).toBe(false);
+      expect(await notifyWorkflowIfEnded({ bb, db, log: () => undefined, run: ended, unmetGoalIds: status === "blocked" ? ["g1"] : undefined })).toBe(true);
     }
-    expect(sends).toEqual([]);
+    expect(sends).toHaveLength(4);
+    expect(sends.join("\n")).toContain("ended failed");
+    // A schedule-started run still delivers only its report: a failed one with none sends nothing.
     db.prepare("UPDATE lane_pilot_wf_run SET status='succeeded', idem_key=? WHERE id=?").run(`${SCHEDULE_RUN_KEY_PREFIX}job`, linked.runId);
     const scheduled = db.prepare("SELECT * FROM lane_pilot_wf_run WHERE id=?").get(linked.runId) as RunRow;
     expect(await notifyWorkflowIfEnded({ bb, db, log: () => undefined, run: { ...scheduled, status: "failed", reason: "boom" } })).toBe(false);
-    expect(sends).toEqual([]);
+    expect(sends).toHaveLength(4);
     await harness.lifecycle.dispose();
   });
 });
