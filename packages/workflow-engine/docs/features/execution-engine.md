@@ -2,7 +2,7 @@
 title: Workflow Execution Engine
 type: component
 created: 2026-10-10
-updated: 2026-11-14
+updated: 2026-11-15
 status: active
 confidence: high
 tags: [workflow-engine, execution, journal]
@@ -86,6 +86,7 @@ The engine runs a workflow against caller-provided node executors and persists r
 - A built-in `emit` step or a node skipped by quality mode/`skip_when` can pass after a budget limit (`packages/workflow-engine/src/engine-step.ts:131-134`); the engine records `budget_overrun` once per run (`packages/workflow-engine/src/engine-step.ts:132`). A node whose `skip_when` expression errors is not treated as free (`packages/workflow-engine/src/engine-step.ts:89-100`).
 - Compatibility is distinct from package release version; `ENGINE_COMPAT_VERSION` is the stamp compared when deciding whether an in-flight step can resume (`packages/workflow-engine/src/engine-types.ts:21-23`).
 - Agent prompt coverage validation warns when produced-artifact schema enums are absent from both the prompt and generated output contract; it does not block preflight because it is a warning (`packages/workflow-engine/src/prompt-coverage.ts:17-31`, `packages/workflow-engine/src/validate.ts:409`).
+- Under `on_child_fail: "block_dependents"`, `gates` cancels `depends_on` dependents of a failed branch or non-`accepted` `lp-task` arrival as `upstream_blocked` (`packages/workflow-engine/src/engine-branches.ts:42-65`).
 
 ## Public API
 

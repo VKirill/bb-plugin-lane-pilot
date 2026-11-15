@@ -2,7 +2,7 @@
 title: Workflow Run Journal Data
 type: data-model
 created: 2026-10-10
-updated: 2026-11-14
+updated: 2026-11-15
 status: active
 confidence: high
 tags: [workflow-engine, data-model, journal]
@@ -84,7 +84,7 @@ Status lifecycle:
 
 Invariants: `id` is primary key; `idem_key` is unique when present; child runs are unique by `(parent_run_id,parent_step_key)`; `status` is constrained to the listed values. The original CREATE constrains the first seven values (`packages/workflow-engine/src/journal.ts:11-42`); a later rebuild migration re-creates the table with `not_verified` added to the CHECK and the same three indexes (`packages/workflow-engine/src/ops-store.ts:45-84`).
 
-Writers/readers: `WorkflowEngine` creates and updates runs. The workflow library and `createStatusResolver` read runs to list execution state and determine live success (`packages/workflow-engine/src/engine.ts:39-68`, `packages/workflow-engine/src/ops-store.ts:94-114`); `journal.ts` also exposes room-facing query helpers (such as `wfRunRow`, `wfRunStatus`, `wfRecentRuns`, `wfBoardRuns`, `wfFinishedRuns`) for direct lookup across rooms (`packages/workflow-engine/src/journal.ts:198-341`). No general run-retention job is defined in this workspace; reroute cleanup deletes the `dropped` child/step/arrival/effect records (`packages/workflow-engine/src/engine-rerun.ts:53-71`), while `lane_pilot_wf_event` rows cannot be updated or deleted (`packages/workflow-engine/src/journal.ts:102-104`).
+Writers/readers: `WorkflowEngine` creates and updates runs. The workflow library and `createStatusResolver` read runs to list execution state and determine live success (`packages/workflow-engine/src/engine.ts:39-68`, `packages/workflow-engine/src/ops-store.ts:94-114`); `journal.ts` also exposes room-facing query helpers (such as `wfRunRow`, `wfLiveRunHasStep`, `wfRunStatus`, `wfRecentRuns`, `wfBoardRuns`, `wfFinishedRuns`) for direct lookup across rooms (`packages/workflow-engine/src/journal.ts:199-361`). No general run-retention job is defined in this workspace; reroute cleanup deletes the `dropped` child/step/arrival/effect records (`packages/workflow-engine/src/engine-rerun.ts:53-71`), while `lane_pilot_wf_event` rows cannot be updated or deleted (`packages/workflow-engine/src/journal.ts:102-104`).
 
 ### Business outcome of a finished run
 
