@@ -16,7 +16,7 @@ import { autoDue, autoInputs, createAutoStages } from "../../src/rooms/phase/ser
 import { phaseToolParams } from "../../src/rooms/phase/server/tool";
 import { designScore, type Measurement } from "../../src/rooms/design-eval/logic";
 import { getPhase, listParts, savePhase } from "../../src/rooms/phase/store";
-import { createRun, createTask, openDatabase, saveTaskGitBase } from "../../src/rooms/plugin-db";
+import { createRun, createTask, openDatabase, saveProjectSetting, saveTaskGitBase } from "../../src/rooms/plugin-db";
 
 const DOCS = [{ path: "docs/CONTEXT.md", sha256: sha256Hex("docs/CONTEXT.md"), bytes: 120 }];
 export const signed = (): PhaseRecord => ({ context: { docs: DOCS, sha: contextSignature(DOCS), signedAt: 1, risks: { value: "none", usability: "none", feasibility: "none", viability: "none" }, appetite: "one day", noGos: ["none"] } });
@@ -46,6 +46,7 @@ export async function host(o: { words?: "on" | "off"; dispatchRun?: string } = {
   const db = openDatabase(bb);
   createRun(db, "run1", "projA");
   db.prepare("UPDATE lane_pilot_run SET pm_thread_id=? WHERE id=?").run("thr_pm", "run1");
+  saveProjectSetting(db, "projA", "phase.plan_bounce", "off");
   if (o.dispatchRun) createRun(db, o.dispatchRun, "projA");
   const files = new Map<string, { sha256: string; sizeBytes: number }>();
   const dispatched: Array<{ task: Record<string, unknown>; plan: string }> = [];

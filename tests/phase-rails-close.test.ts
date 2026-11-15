@@ -8,7 +8,7 @@ import { contextSignature, acceptanceLines, planSignature, type PlanItem } from 
 import { recordStage } from "../src/rooms/runs/server";
 import { recheckPlanFact } from "../src/rooms/writer/server/plan-fact";
 import { listParts, savePhase } from "../src/rooms/phase/store";
-import { createAttempt, createRun, createTask, openDatabase } from "../src/rooms/plugin-db";
+import { createAttempt, createRun, createTask, openDatabase, saveProjectSetting } from "../src/rooms/plugin-db";
 
 function driver(status = "idle") {
   const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
@@ -78,10 +78,12 @@ describe("a rails phase whose pieces are all in", () => {
 describe("the driver's poke", () => {
   it("goes to an idle PM once, and waits while the PM is busy", async () => {
     const busy = driver("active");
+    saveProjectSetting(busy.db, "projA", "phase.train", "off");
     await busy.open({ projectId: "projA", pmThreadId: "thr_pm", title: "Stats", goal: "stats module", rails: true });
     await busy.tick();
     expect(busy.sent.filter((text) => text.startsWith("[Lane Pilot phase]"))).toEqual([]);
     const idle = driver("idle");
+    saveProjectSetting(idle.db, "projA", "phase.train", "off");
     await idle.open({ projectId: "projA", pmThreadId: "thr_pm", title: "Stats", goal: "stats module", rails: true });
     await idle.tick();
     await idle.tick();
@@ -91,6 +93,7 @@ describe("the driver's poke", () => {
     vi.useFakeTimers({ toFake: ["Date"] });
     try {
       const phases = driver("idle");
+      saveProjectSetting(phases.db, "projA", "phase.train", "off");
       const phase = await phases.open({ projectId: "projA", pmThreadId: "thr_pm", title: "Stats", goal: "stats module", rails: true });
       await phases.tick();
       vi.setSystemTime(Date.now() + 4 * 86_400_000);

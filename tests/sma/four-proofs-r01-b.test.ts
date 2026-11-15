@@ -87,7 +87,7 @@ describe("baseline: nothing to prove, and an already built answer", () => {
     expect(done.stop).toMatch(/^verdict_block: no_red_on_base: /);
     expect(w.send).toHaveBeenCalledTimes(1);
     const text = told(w)[0]!;
-    expect(text.startsWith("Lane Pilot: задача fix2 не запущена: все 2 проверок(и) задачи fix2 (риск low) уже проходят на базе")).toBe(true);
+    expect(text.startsWith("[Lane Pilot service] Lane Pilot: задача fix2 не запущена: все 2 проверок(и) задачи fix2 (риск low) уже проходят на базе")).toBe(true);
     expect(text).toContain("- test -f keep.txt\n- test -f feature.txt\n");
     expect(w.ran).toEqual(expect.arrayContaining(["test -f keep.txt", "test -f feature.txt"]));
     await w.dispose();

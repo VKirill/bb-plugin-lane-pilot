@@ -140,6 +140,19 @@ async function runScenario(scenario: Scenario) {
       if (call.method === "gitOwnershipChanges") return { hostId: config.hostId, status: "ready", headSha: "a".repeat(40), paths: [], reason: null };
       if (call.method === "gitIntegrate") return { hostId: config.hostId, status: "merged", commit: "d".repeat(40), conflicts: [], reason: null };
       if (call.method === "runSandboxedCommand") return { hostId: config.hostId, backend: "macos-seatbelt", workspacePath: config.writerWorkspacePath, cwd: config.writerWorkspacePath, exitCode: 0, policySha256: "c".repeat(64), stdout: "", stderr: "" };
+      if (call.method === "readBoundedFile") {
+        const input = call.input as { relativePath?: string; offset?: number; maxLines?: number };
+        const body = input.relativePath === "README.md" ? "readme\n" : null;
+        if (body === null) { const error = new Error(`ENOENT: no such file or directory, open '${input.relativePath}'`) as NodeJS.ErrnoException; error.code = "ENOENT"; throw error; }
+        const lines = body.replace(/\r\n?/g, "\n").split("\n");
+        const offset = input.offset ?? 0, maxLines = input.maxLines ?? 2000;
+        const selected = lines.slice(offset, offset + maxLines);
+        const content = selected.join("\n");
+        return { schemaVersion: 1, hostId: config.hostId, path: input.relativePath, content, contentEncoding: "utf8",
+          sha256: createHash("sha256").update(body).digest("hex"), sizeBytes: Buffer.byteLength(body), totalLines: lines.length,
+          offset, maxLines, lineStart: offset + 1, lineEnd: selected.length === 0 ? offset : offset + selected.length,
+          truncated: offset + selected.length < lines.length, returnedBytes: Buffer.byteLength(content) };
+      }
       if (call.method !== "runCommand") throw new Error(`unexpected host method ${call.method}`);
       const command = String(input.command ?? "");
       if (command.includes("porcelain")) { porcelain += 1; return { hostId: config.hostId, exitCode: 0, stdout: JSON.stringify(porcelain === 1 ? [] : [{ path: "note.txt", sha256: noteSha }]), stderr: "" }; }
@@ -206,7 +219,7 @@ describe("the planner revises a plan the critic returned", () => {
     expect(run.spawned.filter((row) => row.role === "planner").map((row) => row.stageId)).toEqual(["plan-revise"]);
     expect(run.criticThreads).toBe(2);
     expect(run.stages["plan-critique"]!.state).toBe("passed");
-    expect(run.steps.map((row) => row.node_id).slice(0, 6)).toEqual(["pm-read", "quality-mode", "plan-critique", "plan-revise", "plan-critique", "specialist-review"]);
+    expect(run.steps.map((row) => row.node_id).slice(0, 7)).toEqual(["execution-packet", "pm-read", "quality-mode", "plan-critique", "plan-revise", "plan-critique", "specialist-review"]);
     // The planner's brief names the edition it reads and carries the critic's finding.
     const brief = run.spawned.find((row) => row.role === "planner")!.prompt;
     expect(brief).toContain("CONTRACT EDITION 1");
@@ -231,7 +244,8 @@ describe("the planner revises a plan the critic returned", () => {
     expect(run.written.get(`${config.writerWorkspacePath}/.agents/tasks/${task.id}/PLAN.v2.md`)).toBe(`${revised}\n`);
     // The second critic's read is recorded on the revised PLAN.md, with the revised text's hash; the first critic read the dispatch's plan.
     const reads = run.manifest!.files.flatMap((row) => row.read_by.filter((read) => read.node === "plan-critique").map((read) => read.sha256));
-    expect(reads).toEqual([createHash("sha256").update(`${PLAN}\n`).digest("hex"), current.sha256]);
+    // Each critique visit resolves PLAN.md twice — once for the stage's plan text, once for the agent's data packet — so every edition's sha appears twice.
+    expect(reads).toEqual([createHash("sha256").update(`${PLAN}\n`).digest("hex"), createHash("sha256").update(`${PLAN}\n`).digest("hex"), current.sha256, current.sha256]);
     expect(current.sha256).toBe(createHash("sha256").update(`${revised}\n`).digest("hex"));
     expect((run.waited as { state: string }).state).toBe("accepted");
   }, 60_000);

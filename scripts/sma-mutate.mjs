@@ -3,23 +3,31 @@
 // contract tests ([sma:<card id>] in the title, src/rooms/sma-map/contracts.ts) are green, applies the node's mutation
 // spec (evidence `mutation`: find → replace, exactly once), runs exactly those tests again and requires them to FAIL BY
 // AN ASSERTION — a TypeError/ReferenceError/SyntaxError, an import or transform error or a timeout is a `crash`, not a
-// kill. The file is restored byte for byte in every case (finally, SIGINT/SIGTERM/SIGHUP, exit, and a journal in the
-// temp folder that the next run restores after a kill -9). Each node's result is attested in
-// src/rooms/sma-map/attest/rNN.json. Runs are sequential (so are mutations of one file); each checkout has its own
-// lock and journal, so several worktrees can run at once.
+// kill. Each node's result is attested in src/rooms/sma-map/attest/rNN.json. Runs are sequential.
 //
-// A spec whose file is `core:<path>` or `telegram:<path>` mutates that file in the sibling's checkout (siblings.ts:
-// SMA_SIBLING_CORE / SMA_SIBLING_TELEGRAM, else the proofs worktree) and runs the sibling's own runner from there (vitest
-// from the package that holds the test for the core, `tsx --test` from the root for the Telegram plugin), filtered to the
-// [sma:<id>] title. It refuses any checkout that is not a linked worktree under ~/.lane-pilot/worktrees/<repo>/ — the shared
-// checkouts (the core is built and deployed from one) are never written. The sibling checkout has its own lock and journal.
+// Where it writes (owner, 2026-11-15: PRIMARY only): the canonical PRIMARY checkout of the repository the spec names —
+// this plugin on main, the core (`core:<path>`) on vk/experimental, the Telegram plugin (`telegram:<path>`) on main — and
+// nowhere else: a linked worktree, another clone (an SMA_SIBLING_* override is read, never written), `..` and a symbolic
+// link out of the checkout are refused (siblings.ts refuseMutation). The coordinator owns the exclusive window (no edit,
+// build or deploy in that checkout while it runs); this runner does not enforce it, it checks the checkout's identity:
+//   - one lock and one journal per repository, in its git-common-dir (`sma-mutate/`), so they survive a reboot and do not
+//     depend on how the path is spelled; a checkout's journal is recovered only when a run touches that checkout;
+//   - the journal holds the original's and the mutant's hashes: a file is restored only while it still holds the mutant
+//     (and is left alone when it is the original). Anything else is somebody's edit: it is never overwritten, the journal and
+//     the backup are kept, and the checkout is refused until a person settles it;
+//   - before the first mutation in a checkout its HEAD, tree and every changed or untracked file (with a hash of its bytes)
+//     are recorded, and it must be clean then (in this plugin only contracts.ts as regenerated may differ); the file a node
+//     mutates and its tests must be byte for byte HEAD's blobs. Before any attested outcome (a verdict, baseline-red,
+//     no-tests, error) the checkout must be identical and those files still HEAD's bytes — except this runner's own outputs in this plugin: contracts.ts as
+//     regenerated at the start, and in attest/rNN.json the entries of nodes attested by this run. Otherwise `refused`.
+// The test runners: vitest from the package that holds the test for the core, `tsx --test` from the root for the Telegram
+// plugin, filtered to the [sma:<id>] title.
 //
 //   npm run sma:mutate -- --node n161,n162 | --region 1 | --stale | --all   [--dry]
 //   npm run sma:mutate -- --fixture <specs.json> [--json]   (fixture specs; prints, attests nothing)
 import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { closeSync, existsSync, lstatSync, mkdirSync, openSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -33,18 +41,20 @@ if (!process.env.SMA_MUTATE_TSX) {
   process.exit(run.status ?? 1);
 }
 
-const sha12 = (text) => createHash("sha256").update(text).digest("hex").slice(0, 12);
 const flag = (name) => { const at = argv.indexOf(name); return at >= 0 ? argv[at + 1] : undefined; };
 const say = (line) => process.stdout.write(`${line}\n`);
 
-// ---- one lock and one journal per checkout; a journal restores a file a killed run left mutated ----
-const STATE_BASE = join(tmpdir(), "sma-mutate");
-mkdirSync(STATE_BASE, { recursive: true });
-const stateOf = (checkout) => {
-  const dir = join(STATE_BASE, sha12(checkout));
+// ---- one lock and one journal per repository, in its git-common-dir ----
+const sha = (bytes) => createHash("sha256").update(bytes).digest("hex");
+const gitOut = (cwd, ...args) => { const run = spawnSync("git", ["-C", cwd, ...args], { encoding: "utf8" }); return run.status === 0 ? run.stdout.trim() : null; };
+/** The runner's state for a checkout: <git-common-dir>/sma-mutate/{lock,journal.json,backup}; null when git cannot say where. */
+function stateOf(checkout) {
+  const common = gitOut(checkout, "rev-parse", "--path-format=absolute", "--git-common-dir");
+  if (!common) return null;
+  const dir = join(realpathSync(common), "sma-mutate");
   mkdirSync(dir, { recursive: true });
-  return { checkout, dir, lock: join(dir, "lock"), journal: join(dir, "journal.json"), backup: join(dir, "backup") };
-};
+  return { checkout: realpathSync(checkout), dir, lock: join(dir, "lock"), journal: join(dir, "journal.json"), backup: join(dir, "backup") };
+}
 const held = new Map(); // dir -> state
 function holderAlive(state) {
   let pid;
@@ -61,47 +71,65 @@ function tryLock(state) {
   return true;
 }
 function unlock(state) { held.delete(state.dir); rmSync(state.lock, { force: true }); }
-/** Restores the file an interrupted run of this checkout left mutated (the caller holds the lock). */
-function recover(state) {
-  if (!existsSync(state.journal)) return;
-  const { file } = JSON.parse(readFileSync(state.journal, "utf8"));
-  const original = readFileSync(state.backup);
-  if (!existsSync(file) || !readFileSync(file).equals(original)) { writeFileSync(file, original); say(`restored ${file} from the journal of an interrupted run`); }
-  rmSync(state.journal, { force: true });
-}
-/** Every checkout's journal whose runner is gone (a kill -9, a crash) is restored now, whichever checkout this run is for. */
-function sweepOrphans() {
-  for (const name of readdirSync(STATE_BASE)) {
-    const dir = join(STATE_BASE, name);
-    const state = { dir, lock: join(dir, "lock"), journal: join(dir, "journal.json"), backup: join(dir, "backup") };
-    if (!existsSync(state.journal) || held.has(dir) || !tryLock(state)) continue;
-    try { recover(state); } finally { unlock(state); }
+const writeAtomic = (path, bytes) => { const tmp = `${path}.${process.pid}.tmp`; writeFileSync(tmp, bytes); renameSync(tmp, path); };
+/**
+ * Settles the checkout's journal (the caller holds the lock): the file still holds the mutant → the original is written
+ * back; it is the original → nothing to do. Anything else, or a journal or backup that does not add up, is returned as the
+ * reason to refuse — nothing is overwritten and the journal and the backup stay. Null when the checkout is settled.
+ */
+function recover(state, sibling = null) {
+  if (!existsSync(state.journal)) return null;
+  let entry;
+  try { entry = JSON.parse(readFileSync(state.journal, "utf8")); } catch { return `the journal ${state.journal} cannot be read: nothing restored, it is left in place`; }
+  if (typeof entry?.file !== "string" || typeof entry.original !== "string" || typeof entry.mutant !== "string") return `the journal ${state.journal} names no file with its original and mutant hashes: nothing restored, it is left in place`;
+  let backup;
+  try { backup = readFileSync(state.backup); } catch { return `the backup of ${entry.file} (${state.backup}) is missing: nothing restored, the journal is kept`; }
+  if (sha(backup) !== entry.original) return `the backup ${state.backup} is not the original the journal names: nothing restored, both are kept`;
+  const outside = targetRefusal(sibling, state.checkout, relative(state.checkout, entry.file));
+  if (outside) return `the journal names ${entry.file}, which may not be written (${outside}): nothing restored, the journal and the backup are kept in ${state.dir}`;
+  const current = existsSync(entry.file) ? sha(readFileSync(entry.file)) : null;
+  if (current === entry.mutant) {
+    writeFileSync(entry.file, backup);
+    if (sha(readFileSync(entry.file)) !== entry.original) return `could not write the original back to ${entry.file}: the journal and the backup are kept`;
+    say(`restored ${entry.file} from the journal`);
+  } else if (current !== entry.original) {
+    return `${entry.file} is neither the original nor the mutant the journal names (${current ? "edited" : "deleted"} since): nothing overwritten; the journal and the original's backup are kept in ${state.dir}`;
   }
+  rmSync(state.journal, { force: true });
+  rmSync(state.backup, { force: true });
+  return null;
 }
-const mine = stateOf(root);
-if (!tryLock(mine)) { process.stderr.write(`another sma-mutate (pid ${readFileSync(mine.lock, "utf8")}) runs in this checkout\n`); process.exit(2); }
-recover(mine); // first: a journal belongs to whoever holds the lock, and a live run's journal is not an interrupted one
-sweepOrphans();
 
-let pending = null; // { path, original, state }
-function restore() {
-  if (!pending) return;
-  writeFileSync(pending.path, pending.original);
-  if (!readFileSync(pending.path).equals(pending.original)) throw new Error(`could not restore ${pending.path}`);
-  rmSync(pending.state.journal, { force: true });
-  pending = null;
+/**
+ * Why `path` (relative to `checkout`) may not be written: the same rule as placing a mutation (siblings.ts refuseMutation:
+ * canonical PRIMARY, main checkout, branch, inside after symbolic links), and it must be a regular file, not a link — or null.
+ */
+function targetRefusal(sibling, checkout, path) {
+  const refused = refuseMutation(sibling, checkout, path, root);
+  if (refused) return refused;
+  const file = join(checkout, path);
+  let folder;
+  try { folder = realpathSync(dirname(file)); } catch { return `refused: the folder of ${path} is gone`; }
+  if (folder !== join(checkout, dirname(path))) return `refused: a folder on the way to ${path} is a symbolic link`;
+  try { if (!lstatSync(file).isFile()) return `refused: ${path} is not a regular file`; } catch { /* deleted: the caller sees it */ }
+  return null;
 }
+let pending = null; // { state, sibling } whose journal names the file mutated right now
+/** Restores the file mutated right now; the reason it could not, or null. */
+function restore() { if (!pending) return null; const { state, sibling } = pending; pending = null; return recover(state, sibling); }
 let child = null; // the running test process: a signal stops it before the file is restored
 function stopChild() { if (child?.pid) { try { process.kill(-child.pid, "SIGKILL"); } catch { /* gone */ } } }
-function release() { stopChild(); try { restore(); } finally { for (const state of [...held.values()]) unlock(state); } }
-for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"]) process.on(signal, () => { release(); say(`\n${signal}: file restored, stopped`); process.exit(130); });
+function release() {
+  stopChild();
+  try { const why = restore(); if (why) process.stderr.write(`${why}\n`); } finally { for (const state of [...held.values()]) unlock(state); }
+}
+for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"]) process.on(signal, () => { release(); say(`\n${signal}: stopped`); process.exit(130); });
 process.on("exit", () => { try { release(); } catch { /* best effort on exit */ } });
 process.on("uncaughtException", (error) => { release(); process.stderr.write(`${error.stack ?? error}\n`); process.exit(1); });
 
-// The TypeScript modules load after the lock: a second runner must say «another sma-mutate» before anything else.
 const { readJunitReport, readVitestReport, mergeRuns, verdictOf, testCommands, emptyRun } = await import("../src/rooms/sma-map/mutation-run.ts");
 const { refuseMutation, resolveSibling, siblingRoots, splitSiblingPath, SIBLINGS } = await import("../src/rooms/sma-map/siblings.ts");
-const { headOf, isDirty } = await import("../src/rooms/sma-map/sibling-git.ts");
+const { headOf, isDirty, snapshotOf, frozenChanges, onlyKeysChanged, differFromCommit } = await import("../src/rooms/sma-map/sibling-git.ts");
 
 // ---- running tests ----
 /** Runs one command and reads its report. Async, so a signal handler runs at once (a spawnSync would hold it until the tests end). */
@@ -132,46 +160,87 @@ async function runTests(job) {
 const escapeRe = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const occurrences = (text, find) => { let n = 0; for (let at = text.indexOf(find); at >= 0; at = text.indexOf(find, at + 1)) n++; return n; };
 
-/** Where a spec's file lives: this checkout, or a sibling's (refused unless it is a worktree under the worktree root). */
+/** Where a spec's file lives: this plugin's PRIMARY checkout or a sibling's (refused anywhere else, siblings.ts refuseMutation). */
 function placeOf(spec, tests) {
   const { sibling, path } = splitSiblingPath(spec.file);
   const files = tests.map((file) => splitSiblingPath(file)).filter((at) => at.sibling === sibling).map((at) => at.path);
-  if (!sibling) return { sibling: null, base: root, path, files, state: mine };
-  const at = resolveSibling(sibling, root);
-  if (at.root === null) return { error: "absent", detail: at.why };
-  const refused = refuseMutation(sibling, at.root, path, root);
+  let base = root;
+  if (sibling) {
+    const at = resolveSibling(sibling, root);
+    if (at.root === null) return { error: "absent", detail: at.why };
+    base = at.root;
+  }
+  // Checked before stateOf, which creates the runner's folder in the checkout's git directory.
+  const refused = targetRefusal(sibling, realpathSync(base), path);
   if (refused) return { error: "refused", detail: refused };
-  return { sibling, base: at.root, path, files, state: stateOf(at.root) };
+  const state = stateOf(base);
+  if (!state) return { error: "refused", detail: `refused: git cannot say where the git directory of ${base} is` };
+  return { sibling, base: state.checkout, path, files, state };
 }
+
+// The identity each checkout is held to: recorded before its first mutation in this run (map mode records this plugin's after
+// the contract index is regenerated). `allowOf(state)` names the outputs of this runner that may change in that checkout.
+const ATTEST_FILE = /^src\/rooms\/sma-map\/attest\/r\d+\.json$/;
+const starts = new Map(); // state dir -> snapshot
+const startOf = (state) => { if (!starts.has(state.dir)) starts.set(state.dir, snapshotOf(state.checkout, (path) => ATTEST_FILE.test(path))); return starts.get(state.dir); };
+let allowOf = () => undefined;
+
+// What may already differ from HEAD when a checkout's identity is recorded: nothing in a sibling; in this plugin only the
+// contract index the run has just regenerated (attestations of earlier runs are committed before a run).
+const CONTRACTS_FILE = "src/rooms/sma-map/contracts.ts";
+const dirtyAtStart = (place, start) => Object.keys(start.entries).filter((path) => place.sibling || path !== CONTRACTS_FILE);
 
 /** One mutation, end to end. `job`: { id, spec, tests, pattern, config? }. */
 async function mutateOne(job, baselines) {
   const place = placeOf(job.spec, job.tests);
   if (place.error) return { result: place.error, detail: place.detail };
-  if (!place.files.length) return { result: "no-tests", detail: `no contract test in ${place.sibling ? SIBLINGS[place.sibling].repo : "this repository"} for ${job.pattern}`, place };
   if (!tryLock(place.state)) return { result: "locked", detail: `another sma-mutate runs in ${place.base}` };
-  recover(place.state);
+  const unsettled = recover(place.state, place.sibling);
+  if (unsettled) return { result: "refused", detail: unsettled, place };
+  const start = startOf(place.state);
+  if (!start) return { result: "refused", detail: `git cannot read the state of ${place.base}: nothing is mutated there`, place };
+  // The whole checkout is the commit the verdict names: a dirty dependency the subject imports would be judged as HEAD.
+  const dirty = dirtyAtStart(place, start);
+  if (dirty.length) return { result: "refused", detail: `not committed in ${place.base}: ${dirty.slice(0, 6).join(", ")} (a mutation is judged against HEAD; commit or remove them first)`, place };
+  // The subject and its tests byte for byte at HEAD (git status does not show an assume-unchanged or skip-worktree file).
+  const inputs = [place.path, ...place.files];
+  const off = differFromCommit(place.base, start.head, inputs);
+  if (off === null || off.length) return { result: "refused", detail: off === null ? `git cannot hash ${inputs.join(", ")} in ${place.base}` : `not the bytes HEAD has in ${place.base}: ${off.join(", ")}`, place };
+  // Every outcome from here on is attested: it holds only when the checkout is still the recorded one at the end.
+  const held = (outcome) => {
+    const end = snapshotOf(place.state.checkout, (file) => ATTEST_FILE.test(file));
+    const changed = end ? frozenChanges(start, end, allowOf(place.state)) : ["git cannot read the checkout"];
+    const moved = end ? differFromCommit(place.base, start.head, inputs) : null;
+    if (moved === null) changed.push(`git cannot hash ${inputs.join(", ")}`);
+    else changed.push(...moved.filter((path) => !changed.includes(path)));
+    if (changed.length) return { result: "refused", detail: `${place.base} changed while this node ran, so the verdict is not about the recorded commit: ${changed.slice(0, 6).join(", ")}`, place };
+    return { ...outcome, place };
+  };
+  if (!place.files.length) return held({ result: "no-tests", detail: `no contract test in ${place.sibling ? SIBLINGS[place.sibling].repo : "this repository"} for ${job.pattern}` });
   const run = { ...place, pattern: job.pattern, config: job.config };
   const key = `${place.base}|${place.files.join(",")}|${job.pattern}|${job.config ?? ""}`;
   const base = baselines.get(key) ?? await runTests(run);
   baselines.set(key, base);
-  if (base.ran === 0) return { result: "no-tests", detail: `no test matches ${job.pattern} in ${place.files.join(", ")}${base.crash.length ? ` — ${base.crash[0]}` : ""}`, place };
-  if (base.passed !== base.ran || base.crash.length) return { result: "baseline-red", detail: [...base.assertion, ...base.crash].slice(0, 3).join(" | "), place };
+  if (base.ran === 0) return held({ result: "no-tests", detail: `no test matches ${job.pattern} in ${place.files.join(", ")}${base.crash.length ? ` — ${base.crash[0]}` : ""}` });
+  if (base.passed !== base.ran || base.crash.length) return held({ result: "baseline-red", detail: [...base.assertion, ...base.crash].slice(0, 3).join(" | ") });
   const path = join(place.base, place.path);
   const original = readFileSync(path);
   const text = original.toString("utf8");
-  if (occurrences(text, job.spec.find) !== 1) return { result: "error", detail: `find occurs ${occurrences(text, job.spec.find)} times in ${job.spec.file}`, place };
-  writeFileSync(place.state.backup, original);
-  writeFileSync(place.state.journal, JSON.stringify({ file: path, at: new Date().toISOString() }));
-  pending = { path, original, state: place.state };
+  if (occurrences(text, job.spec.find) !== 1) return held({ result: "error", detail: `find occurs ${occurrences(text, job.spec.find)} times in ${job.spec.file}` });
+  const mutant = Buffer.from(text.replace(job.spec.find, () => job.spec.replace), "utf8");
+  writeAtomic(place.state.backup, original);
+  writeAtomic(place.state.journal, JSON.stringify({ file: path, original: sha(original), mutant: sha(mutant), pid: process.pid, at: new Date().toISOString() }));
+  pending = { state: place.state, sibling: place.sibling };
   let after;
+  let unrestored;
   try {
-    writeFileSync(path, text.replace(job.spec.find, () => job.spec.replace));
+    writeFileSync(path, mutant);
     after = await runTests(run);
   } finally {
-    restore();
+    unrestored = restore();
   }
-  return { ...verdictOf(after), place };
+  if (unrestored) return { result: "refused", detail: unrestored, place };
+  return held(verdictOf(after));
 }
 
 // ---- fixture mode: specs from a JSON file, nothing attested ----
@@ -191,6 +260,12 @@ if (fixture) {
 }
 
 // ---- map mode ----
+// This plugin's checkout: the attestations and the contract index are written here, and local nodes are mutated here.
+const mine = stateOf(root);
+if (!mine) { process.stderr.write(`git cannot say where the git directory of ${root} is\n`); process.exit(2); }
+if (!tryLock(mine)) { process.stderr.write(`another sma-mutate (pid ${readFileSync(mine.lock, "utf8")}) runs in this checkout\n`); process.exit(2); }
+const unsettledHere = recover(mine);
+if (unsettledHere) { process.stderr.write(`${unsettledHere}\n`); process.exit(2); }
 const { SMA_EVIDENCE } = await import("../src/rooms/sma-map/evidence/index.ts");
 const { SMA_NODES, SMA_CARDS } = await import("../src/rooms/sma-map/graph.ts");
 // The contract index is read from contracts.ts: a test titled [sma:<id>] written since the last `node scripts/sma-contracts.mjs` is invisible to it
@@ -201,6 +276,11 @@ say(`contract index regenerated: ${indexRun.stdout.trim()}${indexRun.stderr.trim
 const { SMA_CONTRACT_TESTS } = await import("../src/rooms/sma-map/contracts.ts");
 const { SMA_ATTEST, lintMutation, mutationState, specHash, contentHash } = await import("../src/rooms/sma-map/mutation.ts");
 const { testFiles } = await import("../src/rooms/sma-map/states.ts");
+// The identity of this checkout from here on: contracts.ts as just regenerated, and only the entries this run attests may
+// change in attest/rNN.json.
+startOf(mine);
+const attested = new Set();
+allowOf = (state) => (state.dir === mine.dir ? (path, before, after) => ATTEST_FILE.test(path) && onlyKeysChanged(before, after, attested) : undefined);
 
 const siblings = siblingRoots(root);
 const regionOf = new Map(SMA_NODES.map(([id, region]) => [id, region]));
@@ -253,6 +333,7 @@ for (const id of selected) {
     commit: `${commit}${dirty}`, result: outcome.result, at: new Date().toISOString(), ...(outcome.detail ? { detail: outcome.detail.slice(0, 300) } : {}),
     ...(place.sibling ? { sibling: place.sibling, siblingCommit: `${headOf(place.base)}${isDirty(place.base) ? "+dirty" : ""}` } : {}),
   });
+  attested.add(id);
 }
 say(`\n${selected.length} node(s): ${Object.entries(tally).map(([result, n]) => `${result} ${n}`).join(", ") || "nothing run"}`);
 process.exitCode = Object.keys(tally).some((result) => result !== "killed") ? 1 : 0;

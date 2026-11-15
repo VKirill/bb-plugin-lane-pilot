@@ -13,7 +13,7 @@ import {
 } from "../../src/rooms/phase/logic";
 import { contextDoc } from "../../src/rooms/phase/server/auto-stages";
 import { getPhase, listParts, savePhase } from "../../src/rooms/phase/store";
-import { createRun, openDatabase } from "../../src/rooms/plugin-db";
+import { createRun, openDatabase, saveProjectSetting } from "../../src/rooms/plugin-db";
 import { runSim } from "../workflow/chain-harness";
 
 const why = (check: GateResult): string[] => (check.ok ? [] : check.why);
@@ -70,6 +70,7 @@ export function world(ownerWords: "on" | "off" = "off", engine?: Engine) {
   const db = openDatabase(bb);
   createRun(db, "run1", "projA", "bb", "/repo");
   db.prepare("UPDATE lane_pilot_run SET writer_host_id='h', writer_workspace_path='/repo', pm_thread_id='thr_pm' WHERE id='run1'").run();
+  saveProjectSetting(db, "projA", "phase.plan_bounce", "off");
   const services = {
     runBudgets: { get: () => undefined },
     readWriterWorkspaceFile: async (i: { path: string }) => { if (!texts.has(i.path)) throw new Error("no such file"); const c = texts.get(i.path)!; return { content: c, sha256: sha256Hex(c), sizeBytes: Buffer.byteLength(c) }; },

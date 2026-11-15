@@ -6,7 +6,7 @@ import { createPhaseDriver } from "../phase-driver";
 import { sha256Hex } from "@lane-pilot/kit";
 import { contextSignature, nextAction, phaseFolder, planSignature, type PlanItem } from "../../src/rooms/phase/logic";
 import { listParts, savePhase } from "../../src/rooms/phase/store";
-import { createAttempt, createRun, createTask, openDatabase } from "../../src/rooms/plugin-db";
+import { createAttempt, createRun, createTask, openDatabase, saveProjectSetting } from "../../src/rooms/plugin-db";
 
 const piece = (id: string, owns: string[]): PlanItem => ({
   id, title: id, wave: 1, promise: { given: "g", when: "w", then: `then ${id}` },
@@ -26,6 +26,7 @@ async function host(ownerWords: "on" | "off" = "off") {
   const db = openDatabase(bb);
   createRun(db, "run1", "projA");
   db.prepare("UPDATE lane_pilot_run SET pm_thread_id=? WHERE id=?").run("thr_pm", "run1");
+  saveProjectSetting(db, "projA", "phase.plan_bounce", "off");
   const files = new Map<string, { sha256: string; sizeBytes: number }>();
   const phases = createPhaseDriver(createCore(bb, db), {
     runBudgets: { get: () => undefined },
