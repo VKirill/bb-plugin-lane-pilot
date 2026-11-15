@@ -1,5 +1,7 @@
 import { spawnSync } from "node:child_process";
-import { readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { taskV2Schema } from "../src/rooms/contracts";
@@ -234,9 +236,14 @@ describe("region scenes sma_rNN (docs/sma-evidence.md)", () => {
   const quiet = { ...ownEnv, BB_CLI: "/nonexistent/bb" };
 
   it("a file scenes/sma_rNN.py is found by its name: --scenario and --suite sma run it, --quick, the default list and ALL stay as they were", () => {
-    const file = `${scenes}sma_r98.py`;
-    writeFileSync(file, 'from lp_drill.prove import Proofs\nNODES = ["n1"]\ndef scenario_sma_r98(tmp):\n    p = Proofs()\n    p.prove("n1", True, "seen 1")\n    return p.verdict("sma_r98")\n');
+    // Discovery runs concurrently in other tests; add the temporary scene only to a private copy.
+    const home = mkdtempSync(join(tmpdir(), "lp-scene-discovery-"));
     try {
+      const scripts = join(home, "scripts");
+      cpSync(fileURLToPath(new URL("../scripts/", import.meta.url)), scripts, { recursive: true });
+      const script = join(scripts, "lp-drill.sh"), door = join(scripts, "lp-drill.py"), scenes = join(scripts, "lp_drill", "scenes");
+      const file = join(scenes, "sma_r98.py");
+      writeFileSync(file, 'from lp_drill.prove import Proofs\nNODES = ["n1"]\ndef scenario_sma_r98(tmp):\n    p = Proofs()\n    p.prove("n1", True, "seen 1")\n    return p.verdict("sma_r98")\n');
       const one = spawnSync("bash", [script, "--scenario", "sma_r98", "--dry-run"], { encoding: "utf8", timeout: 30_000, env: quiet });
       expect(one.status).toBe(0);
       expect(one.stdout).toContain("scenarios: sma_r98");
@@ -251,7 +258,7 @@ describe("region scenes sma_rNN (docs/sma-evidence.md)", () => {
       const code = `import importlib.util, json, sys\nspec = importlib.util.spec_from_file_location("drill", sys.argv[1]); d = importlib.util.module_from_spec(spec); spec.loader.exec_module(d)\nprint(json.dumps({"sma": sorted(d.SMA_SCENES), "all": [n for n in d.ALL + d.EXTRA + d.BY_NAME if n.startswith("sma")], "scout": d.scout()["unlisted"]}))`;
       const seen = JSON.parse(spawnSync("python3", ["-I", "-c", code, door], { encoding: "utf8", env: quiet }).stdout.trim().split("\n").at(-1)!);
       expect(seen).toEqual({ sma: present, all: [], scout: [] });
-    } finally { rmSync(file, { force: true }); }
+    } finally { rmSync(home, { recursive: true, force: true }); }
   });
 
   it("prove(): a false ok fails the scene with a problem line naming the node; a scene that proved nothing fails; the entry lists what was proved", () => {
