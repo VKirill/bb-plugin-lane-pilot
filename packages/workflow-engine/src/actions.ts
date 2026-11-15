@@ -127,18 +127,45 @@ const digestCheck: PureAction = ({ read }) => {
   return { output: { ok: violations.length === 0, violations: [...new Set(violations)], parts } };
 };
 
-/** citations.check: every [n] names a listed source and every listed source is cited. (The HTTP status of the links is a separate step: it needs the network.) */
+/** A source's url: the `url` field of a source record, or the entry itself when it is a bare string. */
+const sourceUrl = (source: unknown): string => str(rec(source).url) || (typeof source === "string" ? source : "");
+/** The citation identity of a url: the std href with the fragment dropped; the query stays (it can name a different page). */
+const canonicalHref = (url: string): string | null => {
+  try { const parsed = new URL(url); parsed.hash = ""; return parsed.href; } catch { return null; }
+};
+
+/**
+ * citations.check: every [n] names a source of the report's own bibliography (its numbered source list, read second) and
+ * every listed source is cited. When the discovered candidates are read third, each bibliography url must be one of them —
+ * an unknown, missing or invalid url fails. Candidates nobody selected are not required to be cited. (The HTTP status of
+ * the links is a separate step: it needs the network.)
+ */
 const citationsCheck: PureAction = ({ read }) => {
   const text = str(read(0));
-  const sources = list(read(1)).map(rec);
+  const bibliography = list(read(1));
+  const discovered = read(2);
+  const pool = discovered === undefined ? null : new Set(list(discovered).map(sourceUrl).map(canonicalHref).filter((url): url is string => url !== null));
   const cited = new Set<number>();
   const broken: string[] = [];
+  // With the discovered pool read, an empty bibliography is a failure the writer must see, not a silent pass.
+  if (pool && bibliography.length === 0) broken.push("(empty bibliography)");
   for (const match of text.matchAll(/\[(\d{1,3})\](?!\()/g)) {
     const at = Number(match[1]);
-    if (at < 1 || at > sources.length) { if (!broken.includes(`[${at}]`)) broken.push(`[${at}]`); } else cited.add(at);
+    if (at < 1 || at > bibliography.length) { if (!broken.includes(`[${at}]`)) broken.push(`[${at}]`); } else cited.add(at);
   }
-  const unresolved = sources.map((source, index) => [index + 1, source] as const).filter(([at]) => !cited.has(at)).map(([at, source]) => `[${at}] ${str(source.url) || str(source.title)}`.trim());
-  return { output: { citation_ok: broken.length === 0 && unresolved.length === 0 && (sources.length === 0 || cited.size > 0), broken, unresolved } };
+  const unresolved: string[] = [];
+  bibliography.forEach((source, index) => {
+    const at = index + 1;
+    const url = sourceUrl(source);
+    if (pool) {
+      const canonical = url ? canonicalHref(url) : null;
+      if (!url) broken.push(`[${at}] ${str(rec(source).title) || "(no url)"}: missing url`);
+      else if (canonical === null) broken.push(`[${at}] ${url}: invalid url`);
+      else if (!pool.has(canonical)) broken.push(`[${at}] ${url}: not among discovered sources`);
+    }
+    if (!cited.has(at)) unresolved.push(`[${at}] ${url || str(rec(source).title)}`.trim());
+  });
+  return { output: { citation_ok: broken.length === 0 && unresolved.length === 0 && (bibliography.length === 0 || cited.size > 0), broken, unresolved } };
 };
 
 /**

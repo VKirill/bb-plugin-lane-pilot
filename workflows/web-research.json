@@ -228,10 +228,11 @@
         "en": "Write the cited report",
         "ru": "Написать отчёт с источниками"
       },
-      "prompt": "Short answer first, then findings with numbered citations [n] after every sentence that states a fact, then limits (what is unverified, unavailable or contested), then the numbered source list (title, publisher, date, URL, access status). No claim without a source number.",
+      "prompt": "Short answer first, then findings with numbered citations [n] after every sentence that states a fact, then limits (what is unverified, unavailable or contested), then the numbered source list (title, publisher, date, URL, access status). No claim without a source number. Return the same numbered list as `sources`: at most {{$inputs.max_sources}} entries in citation order, each keeping the `url` of the candidate it cites copied exactly; every source you list must be cited.",
       "out": {
         "report_md": "string",
-        "cited_ids": "string[]"
+        "cited_ids": "string[]",
+        "sources": "Source[]"
       },
       "guards": {
         "maxVisits": 2,
@@ -244,9 +245,10 @@
       "action": "citations.check",
       "reads": [
         "report.report_md",
+        "report.sources",
         "search.sources"
       ],
-      "rule": "every [n] resolves to a source; every source listed is used; links.verify returns a 2xx/3xx for at least 80% of full_text sources (paywalls and bot blocks are marked, not failed)",
+      "rule": "every [n] resolves to a source of the report's own list; every listed source is cited and its url is one of the discovered candidates; links.verify returns a 2xx/3xx for at least 80% of full_text sources (paywalls and bot blocks are marked, not failed)",
       "out": {
         "citation_ok": "bool",
         "broken": "string[]",
@@ -272,7 +274,7 @@
       "map": {
         "status": "done",
         "report_md": "report.report_md",
-        "sources": "search.sources",
+        "sources": "report.sources",
         "unverified": "claims.unverified",
         "report_path": "deliver.report_path",
         "citation_ok": "check.citation_ok"
@@ -285,7 +287,7 @@
       "map": {
         "status": "partial",
         "report_md": "report.report_md",
-        "sources": "search.sources",
+        "sources": "report.sources",
         "unverified": "claims.unverified",
         "report_path": "deliver.report_path",
         "citation_ok": false
@@ -353,7 +355,10 @@
     {
       "from": "claims",
       "to": "report",
-      "pass": "artifact"
+      "pass": "artifact",
+      "with": {
+        "candidates": "search.sources"
+      }
     },
     {
       "from": "report",
@@ -365,7 +370,12 @@
       "to": "report",
       "pass": "same-session",
       "when": "!check.citation_ok && visits('report') < 2",
-      "label": "fix citations"
+      "label": "fix citations",
+      "with": {
+        "citation_ok": "check.citation_ok",
+        "broken": "check.broken",
+        "unresolved": "check.unresolved"
+      }
     },
     {
       "from": "check",
@@ -444,6 +454,20 @@
             "1",
             "2",
             "3"
+          ],
+          "sources": [
+            {
+              "url": "https://s1.example",
+              "title": "Source 1"
+            },
+            {
+              "url": "https://s2.example",
+              "title": "Source 2"
+            },
+            {
+              "url": "https://s3.example",
+              "title": "Source 3"
+            }
           ]
         },
         "deliver": {
@@ -463,7 +487,7 @@
       "expect_outputs": [
         "status == 'done'",
         "citation_ok == true",
-        "sources.length >= 5",
+        "sources are the report bibliography (3 entries)",
         "every sentence with a number has [n]"
       ]
     },

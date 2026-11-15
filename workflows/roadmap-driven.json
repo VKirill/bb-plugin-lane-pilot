@@ -282,6 +282,10 @@
       "to": "roadmap",
       "pass": "same-session",
       "when": "!validate.ok && visits('validate') < 3",
+      "with": {
+        "errors": "validate.errors",
+        "cycles": "validate.cycles"
+      },
       "label": "fix DAG"
     },
     {
@@ -305,7 +309,10 @@
       "from": "approve",
       "to": "roadmap",
       "pass": "same-session",
-      "when": "approve.answer_kind == 'modify'"
+      "when": "approve.answer_kind == 'modify'",
+      "with": {
+        "answer": "approve.answer"
+      }
     },
     {
       "from": "approve",

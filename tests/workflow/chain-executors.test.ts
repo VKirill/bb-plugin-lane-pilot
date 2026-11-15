@@ -780,7 +780,7 @@ describe("the deliverable goal check of a shipped graph", () => {
     frame: [reply({ subquestions: ["q1"], sub_count: 1, needs_clarification: false, clarification: "", handoff: "framed" })],
     "search:child": [reply({ subquestion: "q1", sources: [{ url: "https://example.com/a", title: "Example", date: "2026-01-01", snippet: "s", access: "full_text" }], handoff: "searched" })],
     claims: [reply({ claims: [{ text: "c1", sources: [1] }], unverified: [], counter: [], claim_count: 1, handoff: "claims" })],
-    report: [reply({ report_md: "# Findings\n\nThe answer is [1].\n\n## Sources\n\n1. Example — https://example.com/a", cited_ids: ["1"], handoff: "reported" })],
+    report: [reply({ report_md: "# Findings\n\nThe answer is [1].\n\n## Sources\n\n1. Example — https://example.com/a", cited_ids: ["1"], sources: [{ url: "https://example.com/a", title: "Example", date: "2026-01-01", snippet: "s", access: "full_text" }], handoff: "reported" })],
   };
   const shipped = () => structuredClone(builtinWorkflow("web-research")!);
   const goalCheckOutput = async (t: Awaited<ReturnType<typeof setup>>, runId: string, nodeId = "goal_check") =>

@@ -76,6 +76,27 @@ describe("citations.check", () => {
     expect((await act("citations.check", ["report.report_md", "search.sources"], { "report.report_md": "Claim [1] and [3].", "search.sources": sources })).output)
       .toEqual({ citation_ok: false, broken: ["[3]"], unresolved: ["[2] https://b.example"] });
   });
+
+  it("with the discovered candidates read too, the bibliography is the universe: uncited candidates pass, an unknown url fails", async () => {
+    const reads = ["report.report_md", "report.sources", "search.sources"];
+    const bib = [{ url: "https://a.example/x" }, { url: "https://b.example/y?utm=1#frag" }];
+    const pool = [{ url: "https://a.example/x" }, { url: "https://b.example/y?utm=1" }, { url: "https://c.example/never-selected" }];
+    const values = { "report.report_md": "Claim [1] and [2].", "report.sources": bib, "search.sources": pool };
+    // The fragment is dropped, the query stays; the pool member nobody selected is not required to be cited.
+    expect((await act("citations.check", reads, values)).output).toEqual({ citation_ok: true, broken: [], unresolved: [] });
+    const unknown = await act("citations.check", reads, { ...values, "report.report_md": "Claim [1] [2] [3].", "report.sources": [...bib, { url: "https://ghost.example/z" }] });
+    expect(unknown.output).toEqual({ citation_ok: false, broken: ["[3] https://ghost.example/z: not among discovered sources"], unresolved: [] });
+    // The query is part of the identity: the same path without it is a different source.
+    const queryless = await act("citations.check", reads, { ...values, "report.sources": [{ url: "https://b.example/y" }, bib[0]!] });
+    expect(queryless.output).toMatchObject({ citation_ok: false, broken: ["[1] https://b.example/y: not among discovered sources"] });
+    const invalid = await act("citations.check", reads, { ...values, "report.sources": [{ url: "not a url" }, { title: "No link" }] });
+    expect(invalid.output).toMatchObject({ citation_ok: false, broken: ["[1] not a url: invalid url", "[2] No link: missing url"] });
+    // An empty bibliography after a nonempty search fails with a reason the writer can act on; the legacy 2-read mode keeps its empty-pass.
+    const empty = await act("citations.check", reads, { "report.report_md": "No citations here.", "report.sources": [], "search.sources": pool });
+    expect(empty.output).toEqual({ citation_ok: false, broken: ["(empty bibliography)"], unresolved: [] });
+    expect((await act("citations.check", ["report.report_md", "search.sources"], { "report.report_md": "No citations here.", "search.sources": [] })).output)
+      .toEqual({ citation_ok: true, broken: [], unresolved: [] });
+  });
 });
 
 describe("verdict.aggregate", () => {

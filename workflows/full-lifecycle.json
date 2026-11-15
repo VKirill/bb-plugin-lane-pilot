@@ -267,8 +267,7 @@
       "workflow": "lp.plan",
       "with": {
         "goal": "{{$inputs.goal}}",
-        "mode": "gaps",
-        "gaps": "{{review.findings}}"
+        "mode": "gaps"
       },
       "guards": {
         "maxVisits": 2
@@ -398,6 +397,9 @@
       "to": "replan",
       "pass": "artifact",
       "when": "review.status == 'rework' && visits('replan') < 2",
+      "with": {
+        "gaps": "review.findings"
+      },
       "label": "fix findings"
     },
     {
@@ -415,7 +417,10 @@
       "from": "qa",
       "to": "replan",
       "pass": "artifact",
-      "when": "qa.status == 'rework' && visits('replan') < 2"
+      "when": "qa.status == 'rework' && visits('replan') < 2",
+      "with": {
+        "gaps": "qa.findings"
+      }
     },
     {
       "from": "qa",
@@ -432,7 +437,10 @@
       "from": "uat",
       "to": "replan",
       "pass": "artifact",
-      "when": "uat.answer_kind == 'issues' && visits('replan') < 2"
+      "when": "uat.answer_kind == 'issues' && visits('replan') < 2",
+      "with": {
+        "gaps": "uat.issues"
+      }
     },
     {
       "from": "uat",

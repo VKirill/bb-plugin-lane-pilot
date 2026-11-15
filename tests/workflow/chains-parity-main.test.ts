@@ -159,7 +159,7 @@ describe("hollow sign-2 workflow branches: fragments", () => {
         frame: { subquestions: ["compiler one"], sub_count: 1, needs_clarification: false },
         "search:child": { subquestion: "compiler one", sources: [{ url: "https://example.com/one", title: "One", snippet: "source" }] },
         claims: { claim_count: 1, claims: [], unverified: [], counter: [] },
-        report: { report_md: "A [1].", cited_ids: ["1"] },
+        report: { report_md: "A [1].", cited_ids: ["1"], sources: [{ url: "https://example.com/one", title: "One", snippet: "source" }] },
         deliver: { report_path: "reports/compiler.md" },
         goal_check: { ok: false, verdict: "fail", reason: "missing comparison", details: {} },
       },

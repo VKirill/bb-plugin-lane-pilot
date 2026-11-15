@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { parseLpSignal } from "@lane-pilot/ui-kit/realtime-channel";
 import { createWorkflowLibrary, clipJson } from "../../src/rooms/workflow/server/workflow-library";
+import { rpcContract } from "../../src/rooms/contracts";
 import type { ServerCore } from "../../src/rooms/contracts/server";
 import type { Services } from "../../server";
 import { parseWorkflow } from "@lane-pilot/workflow-engine";
@@ -163,6 +164,23 @@ describe("workflow run snapshot", () => {
     expect(snapshot!.steps.find((step) => step.nodeId === "ship")!.input).toMatchObject({ with: {}, via: { mode: "artifact" } });
     expect(snapshot!.events.length).toBeGreaterThan(3);
     expect(lib.runSnapshot({ runId: "missing" }).snapshot).toBeNull();
+  });
+
+  it("parses the strict RPC output with and without a goal audit; sha/outputSha stay server-side", async () => {
+    const { lib, engine, db } = await library();
+    const definition = wf(JSON.parse(JSON.stringify(reviewFix("snap-audit"))) as never);
+    const started = engine.start({ workflow: definition, inputs: { query: "q" }, link: { projectId: "proj_1" } });
+    await started.done;
+    const out = () => lib.runSnapshot({ runId: started.runId });
+    // No goal_audit event yet: the field is null and the strict output parses.
+    expect(rpcContract.workflow_run_snapshot.output.parse(out()).snapshot!.goalAudit).toBeNull();
+    // A terminal audit journals sha/outputSha for the engine's own dedup — the contract must not see them.
+    db.prepare("INSERT INTO lane_pilot_wf_event(run_id,step_key,kind,from_state,to_state,detail,at) VALUES (?,?,?,?,?,?,?)")
+      .run(started.runId, null, "goal_audit", null, "gaps", JSON.stringify({ sha: "sha1", outputSha: "out1", verdict: "gaps", by: "code", met: [], unmet: [{ id: "g1", why: "not done" }] }), Date.now());
+    const audit = rpcContract.workflow_run_snapshot.output.parse(out()).snapshot!.goalAudit!;
+    expect(audit).toMatchObject({ verdict: "gaps", met: [], unmet: [{ id: "g1", why: "not done" }] });
+    expect(audit).not.toHaveProperty("sha");
+    expect(audit).not.toHaveProperty("outputSha");
   });
 
   it("clips a large output to a preview", () => {

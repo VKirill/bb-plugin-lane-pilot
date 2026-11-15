@@ -487,7 +487,10 @@
       "from": "ask_more",
       "to": "investigate",
       "pass": "same-session",
-      "when": "ask_more.answer_kind in ['provide','continue']"
+      "when": "ask_more.answer_kind in ['provide','continue']",
+      "with": {
+        "answer": "ask_more.answer"
+      }
     },
     {
       "from": "ask_more",

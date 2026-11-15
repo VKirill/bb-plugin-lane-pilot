@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.581
+
+- **Completed workflow audits remain readable in the run panel.** The snapshot response now projects goal-audit fields into its existing strict RPC contract; internal `sha` and `outputSha` keys no longer cause HTTP 500 after an audit is recorded. `tests/workflow/library.test.ts` reproduces the rejection and parses both the empty-audit and recorded-audit responses.
+- **Research citations use the report bibliography and return concrete repair feedback.** `web-research` passes discovered candidates to the report writer, checks the numbered bibliography against those candidates, and sends citation errors into the same-session repair step. The three-read checker rejects unknown, malformed and empty bibliographies, preserves URL query strings, and ignores fragments when matching; unused search candidates do not require citations. Legacy two-read behavior remains available. `tests/workflow/actions.test.ts`, `tests/workflow/chains-own.test.ts` and the shipped graph fixture cover these paths. These checks establish citation structure and source membership, not HTTP availability or support for every claim; the separate goal audit remains in place, and `max_sources` remains a prompt-level limit.
+- **Programming rework receives the findings from the step that requested it.** `full-lifecycle` maps review, QA and UAT findings separately instead of overwriting them with the review result. `debug` forwards the owner's answer; `roadmap-driven` forwards validation errors and the owner's requested changes. The six real-engine routing cases in `tests/workflow/programming-feedback.test.ts` inspect the actual received inputs. Model work and cross-host execution still require live acceptance.
+
 ## 0.1.580
 
 - **Native skill mentions keep the required nullable hint.** A workflow agent selecting `ru-text` received HTTP 400 before its thread was created because Lane Pilot omitted `argumentHint` when the catalog returned null. The shared skill-selection path now emits the required string-or-null field for both fresh and continued agents. `tests/workflow/skill-select.test.ts` covers null, missing, empty and nonempty catalog hints; a check against the actual BB prompt-input schema rejects the old payload and accepts the corrected one. Live rerun acceptance is tracked separately.

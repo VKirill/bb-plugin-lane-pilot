@@ -231,20 +231,38 @@ describe("seo-cocoon", () => {
 describe("web-research", () => {
   const input = { question: "What changed in the React 19 compiler?", depth: "quick", language: "en" };
   const source = (n: number) => ({ url: `https://s${n}.example`, title: `Source ${n}` });
+  const bib = () => [source(1), source(2), source(3)];
+  const reportOk = () => ({ report_md: "A [1]. B [2]. C [3].", cited_ids: ["1", "2", "3"], sources: bib() });
   const found = ((ctx: { input: { item?: unknown } }) => ({ subquestion: String(ctx.input.item), sources: ctx.input.item === "q2" ? [] : [source(1), source(2), source(3)] })) as never;
   const base = () => ({ frame: { subquestions: ["q1", "q2"], sub_count: 2, needs_clarification: false }, "search:child": found, claims: { claim_count: 4, unverified: ["benchmark numbers"], claims: [], counter: [] }, deliver: { report_path: "reports/research-1.md" } });
 
   it("the spec's case: frame, parallel search, claims, report, the citation check is code, delivery", async () => {
-    const r = await runSim("web-research", { input, stubs: { ...base(), report: { report_md: "A [1]. B [2]. C [3].", cited_ids: ["1", "2", "3"] } } });
+    const r = await runSim("web-research", { input, stubs: { ...base(), report: reportOk() } });
     expect(pathOf(r)).toBe("frame search claims report check deliver goal_check done");
     expect(out(r)).toMatchObject({ status: "done", citation_ok: true, unverified: ["benchmark numbers"], report_path: "reports/research-1.md" });
     expect((out(r)!.sources as unknown[]).length).toBe(3);
     expect(firstInput(r, "claims")).toBeDefined();
   });
 
+  it("the writer is handed the discovered candidates; a failed check feeds back exactly what broke", async () => {
+    const bad = { report_md: "A [1]. B [9].", sources: bib() };
+    const r = await runSim("web-research", { input, stubs: { ...base(), report: [bad, reportOk()] } });
+    expect(pathOf(r)).toBe("frame search claims report check report check deliver goal_check done");
+    const [first, second] = r.called("report");
+    expect(first!.input).toEqual({ candidates: bib() });
+    expect(second!.input).toEqual({ citation_ok: false, broken: ["[9]"], unresolved: ["[2] https://s2.example", "[3] https://s3.example"] });
+  });
+
+  it("a bibliography url that was never discovered fails the check even when it is cited", async () => {
+    const ghost = { report_md: "A [1]. B [2]. C [3].", sources: [source(1), source(2), { url: "https://ghost.example/z", title: "Ghost" }] };
+    const r = await runSim("web-research", { input, stubs: { ...base(), report: [ghost, reportOk()] } });
+    expect(pathOf(r)).toBe("frame search claims report check report check deliver goal_check done");
+    expect(r.called("report")[1]!.input).toMatchObject({ citation_ok: false, broken: ["[3] https://ghost.example/z: not among discovered sources"], unresolved: [] });
+  });
+
   it("a report that cites a source that does not exist goes back to the writer once; still wrong, the run is partial", async () => {
-    const bad = { report_md: "A [1]. B [9]." };
-    const fixed = await runSim("web-research", { input, stubs: { ...base(), report: [bad, { report_md: "A [1]. B [2]. C [3]." }] } });
+    const bad = { report_md: "A [1]. B [9].", sources: bib() };
+    const fixed = await runSim("web-research", { input, stubs: { ...base(), report: [bad, reportOk()] } });
     expect(pathOf(fixed)).toBe("frame search claims report check report check deliver goal_check done");
     const still = await runSim("web-research", { input, stubs: { ...base(), report: bad } });
     expect(pathOf(still)).toBe("frame search claims report check report check deliver partial");
@@ -252,7 +270,7 @@ describe("web-research", () => {
   });
 
   it("an unclear question is asked back; no sources at all is blocked", async () => {
-    const asked = await runSim("web-research", { input, stubs: { ...base(), frame: [{ needs_clarification: true, clarification: "which compiler?", subquestions: [] }, { needs_clarification: false, subquestions: ["q1"] }], report: { report_md: "A [1]. B [2]. C [3]." } }, humans: { ask: { answer_kind: "answered", answer: "the React one" } } });
+    const asked = await runSim("web-research", { input, stubs: { ...base(), frame: [{ needs_clarification: true, clarification: "which compiler?", subquestions: [] }, { needs_clarification: false, subquestions: ["q1"] }], report: reportOk() }, humans: { ask: { answer_kind: "answered", answer: "the React one" } } });
     expect(pathOf(asked)).toBe("frame ask frame search claims report check deliver goal_check done");
     const none = await runSim("web-research", { input, stubs: { ...base(), "search:child": ((ctx: { input: { item?: unknown } }) => ({ subquestion: String(ctx.input.item), sources: [] })) as never } });
     expect(pathOf(none)).toBe("frame search blocked");

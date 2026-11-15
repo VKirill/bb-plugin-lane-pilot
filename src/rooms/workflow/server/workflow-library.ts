@@ -154,6 +154,8 @@ export function createWorkflowLibrary(ctx: ServerCore, services: Pick<Services, 
       const { run } = snapshot;
       const children = wfChildRuns(db, run.id);
       const events = (snapshot.events as Array<{ seq: number; step_key: string | null; kind: string; from_state: string | null; to_state: string | null; detail: string | null; at: number }>).slice(-EVENT_TAIL);
+      // The audit row also carries the engine's dedup keys (sha/outputSha); the contract sees only the verdict.
+      const audit = services.workflowEngine.lastAudit(run.id);
       return {
         snapshot: {
           run: { id: run.id, workflowId: run.workflow_id, version: run.workflow_version, status: run.status, reason: run.reason, mode: run.mode, projectId: run.project_id,
@@ -170,7 +172,8 @@ export function createWorkflowLibrary(ctx: ServerCore, services: Pick<Services, 
           }),
           children: children.map((row) => ({ runId: row.id, stepKey: row.parent_step_key, workflowId: row.workflow_id, status: row.status })),
           goals: parseGoals(run.goals_json),
-          goalAudit: services.workflowEngine.lastAudit(run.id),
+          goalAudit: audit ? { verdict: audit.verdict, met: audit.met, unmet: audit.unmet.map((entry) => ({ id: entry.id, why: entry.why })),
+            ...(audit.notes !== undefined ? { notes: audit.notes } : {}), ...(audit.error !== undefined ? { error: audit.error } : {}), at: audit.at } : null,
           goalChanges: services.workflowEngine.goalJournal(run.id).map((entry) => ({ at: entry.at, by: entry.by, reason: entry.reason, goals: entry.goals.length })),
           events: events.map((row) => ({ seq: row.seq, stepKey: row.step_key, kind: row.kind, from: row.from_state, to: row.to_state, detail: row.detail, at: row.at })),
         },
