@@ -171,6 +171,11 @@
       "session": "new",
       "src": "maestro-flow:agents/cross-role-reviewer",
       "prompt": "Compare the Decision Digests only (not the full analyses). Return conflicts (two roles decide differently), gaps (nobody covers), synergies, need_deeper_context. Write nothing.",
+      "with": {
+        "digests": "{{designs.digests}}",
+        "terminology": "{{terms.terminology}}",
+        "non_goals": "{{terms.non_goals}}"
+      },
       "out": {
         "conflicts": "Conflict[]",
         "gaps": "string[]",
@@ -236,6 +241,7 @@
         "digests": "{{designs.digests}}",
         "conflicts": "{{cross_review.conflicts}}",
         "gaps": "{{cross_review.gaps}}",
+        "resolutions": "{{resolve.resolutions}}",
         "non_goals": "{{terms.non_goals}}"
       }
     },
@@ -300,7 +306,7 @@
     {
       "from": "designs",
       "to": "cross_review",
-      "pass": "read-prior-session"
+      "pass": "artifact"
     },
     {
       "from": "cross_review",

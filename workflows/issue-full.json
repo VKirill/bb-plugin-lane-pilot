@@ -221,9 +221,20 @@
     },
     {
       "id": "memory",
+      "consumes": [
+        {
+          "kind": "diagnosis",
+          "version": 1,
+          "from": "root_cause"
+        }
+      ],
       "produces": [{"kind": "report", "version": 1}],
       "type": "agent",
       "role": "memory",
+      "with": {
+        "review_findings": "{{review.findings}}",
+        "merged_commits": "{{ctx.merged_commits}}"
+      },
       "prompt": "Stage the lesson (root cause + fix pattern) as a candidate; no direct publication.",
       "out": {
         "staged": "int",
