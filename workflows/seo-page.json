@@ -99,6 +99,7 @@
     "site_page_path": "string",
     "clean_page_path": "string",
     "cocoon_folder": "string",
+    "briefs_dir": "string",
     "ru_score": "int"
   },
   "requires": {
@@ -506,6 +507,7 @@
         "site_page_path": "export.site_page_path",
         "clean_page_path": "edit.clean_page_path",
         "cocoon_folder": "cocoon.folder",
+        "briefs_dir": "cocoon.briefs_dir",
         "ru_score": "edit.ru_score"
       }
     },
@@ -517,6 +519,7 @@
         "status": "partial",
         "clean_page_path": "edit.clean_page_path",
         "cocoon_folder": "cocoon.folder",
+        "briefs_dir": "cocoon.briefs_dir",
         "ru_score": "edit.ru_score"
       }
     },

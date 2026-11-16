@@ -56,13 +56,14 @@ describe("seo-brief", () => {
     link_rows: { links_path: "links.json" },
     evidence: { evidence_path: "evidence.json", cards: 6 },
     utility_gate: { gate: "pass", notes: "" },
-    package: { brief_path: "briefs/vybor-kofemashiny.md", evidence_path: "evidence-cards/vybor-kofemashiny.json" },
+    package_brief: { brief_path: "briefs/vybor-kofemashiny.md" },
+    package_evidence: { evidence_path: "evidence-cards/vybor-kofemashiny.json" },
   });
 
   it("happy path: passport -> serp gap -> gist -> links -> evidence -> gate -> package -> done", async () => {
     const r = await runSim("seo-brief", { input, stubs: base() });
     expect(r.summary.status).toBe("succeeded");
-    expect(pathOf(r)).toBe("passport serp_gap gist_core link_rows evidence utility_gate package done");
+    expect(pathOf(r)).toBe("passport serp_gap gist_core link_rows evidence utility_gate package_brief package_evidence done");
     expect(out(r)).toMatchObject({ status: "done", brief_path: "briefs/vybor-kofemashiny.md", gate: "pass" });
   });
 
@@ -71,7 +72,7 @@ describe("seo-brief", () => {
       input,
       stubs: { ...base(), utility_gate: [{ gate: "rebuild", notes: "thin" }, { gate: "pass", notes: "" }] },
     });
-    expect(pathOf(r)).toBe("passport serp_gap gist_core link_rows evidence utility_gate gist_core link_rows evidence utility_gate package done");
+    expect(pathOf(r)).toBe("passport serp_gap gist_core link_rows evidence utility_gate gist_core link_rows evidence utility_gate package_brief package_evidence done");
     expect(out(r)).toMatchObject({ status: "done" });
   });
 });
@@ -102,7 +103,7 @@ describe("seo-cocoon v2", () => {
       status: "done",
       clusters: [{ name: "выбор" }, { name: "уход" }],
       page_count: 10,
-      briefs_dir: ".agents/seo/kofemashiny",
+      briefs_dir: ".agents/seo/briefs",
       audit_status: "pass",
       folder: ".agents/seo/kofemashiny",
       handoff_path: ".agents/seo/kofemashiny/handoff.md",

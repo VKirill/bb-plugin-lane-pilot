@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { readFile } from "node:fs/promises";
 import { firstInput, out, pathOf } from "./chain-helpers";
-import { runSim } from "./chain-harness";
+import { chainStore, runSim } from "./chain-harness";
+import { reply, runHomeWorld } from "./run-home-world";
 
 const input = { topic: "кофемашины для дома", geo: "", language: "ru", site_goal: "", use_seo_tools: false, max_pages: 12 };
 const initialBatch = [
@@ -112,10 +113,45 @@ describe("seo-cocoon contracts", () => {
     };
     const packageNode = workflow.nodes.find((node) => node.id === "package")!;
     expect(packageNode.files).toBeUndefined();
-    expect(packageNode.contents).toMatchObject({
-      "manifest.json": expect.objectContaining({ brief_paths: "{{briefs.brief_paths}}" }),
-      "handoff.md": expect.stringContaining("exact producer paths"),
+    const contents = packageNode.contents!;
+    expect(contents).toMatchObject({
+      "manifest.json": expect.objectContaining({ briefs_dir: "{{$inputs.briefs_dir}}", brief_paths: "{{briefs.brief_paths}}" }),
+      "handoff.md": expect.stringContaining("exact file-specific paths"),
     });
+    expect(contents["manifest.json"]).not.toHaveProperty("architecture_path");
+    expect(contents["manifest.json"]).not.toHaveProperty("page_map_path");
     expect(JSON.stringify(packageNode)).not.toContain("*.md");
+  });
+
+  it("threads the actual brief root through seo-page's public result", async () => {
+    const page = JSON.parse(await readFile(new URL("../../workflows/seo-page.json", import.meta.url), "utf8")) as {
+      outputs: Record<string, string>;
+      nodes: Array<{ id: string; map?: Record<string, string> }>;
+    };
+    expect(page.outputs.briefs_dir).toBe("string");
+    expect(page.nodes.find((node) => node.id === "done")?.map?.briefs_dir).toBe("cocoon.briefs_dir");
+  });
+
+  it("returns file-specific paths from the real seo-brief fs.write nodes and preserves their bytes", async () => {
+    const store = await chainStore();
+    const world = await runHomeWorld({
+      passport: [reply({ passport_path: "passport.json", focus: "coffee choice", handoff: "passport" })],
+      serp_gap: [reply({ gap_path: "gap.json", wireframe_path: "wireframe.md", handoff: "gap" })],
+      gist_core: [reply({ core_path: "core.md", job: "choose", decision_nodes: 2, handoff: "gist" })],
+      link_rows: [reply({ links_path: "links.json", handoff: "links" })],
+      evidence: [reply({ evidence_path: "evidence.json", cards: 2, handoff: "evidence" })],
+      utility_gate: [reply({ gate: "pass", notes: "ready", handoff: "gate" })],
+    });
+    try {
+      const result = await world.start(store.get("seo-brief")!.workflow, { slug: "real-page", intent: "comparison" }).done;
+      expect(result.status).toBe("succeeded");
+      expect(result.output?.brief_path).toMatch(/^\.agents\/seo\/briefs\/real-page\/[^/]+\/brief\.md$/);
+      expect(result.output?.evidence_path).toMatch(/^\.agents\/seo\/briefs\/real-page\/[^/]+\/evidence-cards\.json$/);
+      const briefPath = String(result.output?.brief_path), evidencePath = String(result.output?.evidence_path);
+      expect(await readFile(`${world.checkout}/${briefPath}`, "utf8")).toContain("# GIST brief");
+      expect(await readFile(`${world.checkout}/${evidencePath}`, "utf8")).toContain("utility_gate");
+    } finally {
+      await world.dispose();
+    }
   });
 });

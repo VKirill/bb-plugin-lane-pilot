@@ -81,6 +81,11 @@
       "default": "",
       "note": "готовый пакет seo-research; без него исследование запускается"
     },
+    "briefs_dir": {
+      "type": "string",
+      "default": ".agents/seo/briefs",
+      "note": "common root of the file-specific seo-brief producer artifacts"
+    },
     "slug": {
       "type": "string"
     },
@@ -412,16 +417,12 @@
       "path": ".agents/seo/{{slug}}/{{run_id}}/",
       "contents": {
         "manifest.json": {
-          "research_package_path": "{{research.package_path}}",
-          "architecture_path": "{{architecture.architecture_path}}",
-          "page_map_path": "{{page_map.page_map_path}}",
-          "fact_registry_path": "{{architecture.fact_registry_path}}",
-          "acceptors_path": "{{architecture.acceptors_path}}",
+          "briefs_dir": "{{$inputs.briefs_dir}}",
           "brief_paths": "{{briefs.brief_paths}}",
           "audit_status": "{{audit.status}}",
           "audit_findings": "{{audit.findings}}"
         },
-        "handoff.md": "Cocoon package manifest: see manifest.json for the exact producer paths. The package does not copy or synthesize child brief contents; briefs remain at the paths returned by each seo-brief producer. Audit status: {{audit.status}}."
+        "handoff.md": "Cocoon package manifest: see manifest.json for the exact file-specific paths returned by each seo-brief producer. The package does not copy or synthesize child brief contents. Audit status: {{audit.status}}."
       },
       "note": "Freeze a truthful manifest of producer artifacts, run the readiness gates and export by tier; handoff.md separates actual evidence, hypotheses, proposed changes and publication readiness; code changes for the site go in a block 'для PM'",
       "out": {
@@ -437,7 +438,7 @@
         "status": "done",
         "clusters": "architecture.clusters",
         "page_count": "architecture.page_count",
-        "briefs_dir": "package.folder",
+        "briefs_dir": "$inputs.briefs_dir",
         "audit_status": "audit.status",
         "folder": "package.folder",
         "handoff_path": "package.handoff_path"
@@ -451,6 +452,7 @@
         "status": "partial",
         "clusters": "architecture.clusters",
         "page_count": "architecture.page_count",
+        "briefs_dir": "$inputs.briefs_dir",
         "audit_status": "audit.status",
         "folder": "package.folder",
         "handoff_path": "package.handoff_path"

@@ -259,17 +259,22 @@
       ]
     },
     {
-      "id": "package",
+      "id": "package_brief",
       "type": "action",
       "action": "fs.write",
-      "path": ".agents/seo/briefs/{{$inputs.slug}}/{{run_id}}/",
-      "files": [
-        "brief.md",
-        "evidence-cards.json"
-      ],
-      "note": "fs.write briefs/<slug>.md + evidence-cards/<slug>.json",
+      "path": ".agents/seo/briefs/{{$inputs.slug}}/{{run_id}}/brief.md",
+      "note": "fs.write one file so brief_path is the readable brief.md artifact",
       "out": {
-        "brief_path": "string",
+        "brief_path": "string"
+      }
+    },
+    {
+      "id": "package_evidence",
+      "type": "action",
+      "action": "fs.write",
+      "path": ".agents/seo/briefs/{{$inputs.slug}}/{{run_id}}/evidence-cards.json",
+      "note": "fs.write one file so evidence_path is the readable evidence-cards.json artifact",
+      "out": {
         "evidence_path": "string"
       }
     },
@@ -279,8 +284,8 @@
       "action": "emit",
       "map": {
         "status": "done",
-        "brief_path": "package.brief_path",
-        "evidence_path": "package.evidence_path",
+        "brief_path": "package_brief.brief_path",
+        "evidence_path": "package_evidence.evidence_path",
         "gate": "utility_gate.gate"
       }
     },
@@ -290,8 +295,8 @@
       "action": "emit",
       "map": {
         "status": "partial",
-        "brief_path": "package.brief_path",
-        "evidence_path": "package.evidence_path",
+        "brief_path": "package_brief.brief_path",
+        "evidence_path": "package_evidence.evidence_path",
         "gate": "utility_gate.gate"
       }
     },
@@ -340,7 +345,7 @@
     },
     {
       "from": "utility_gate",
-      "to": "package",
+      "to": "package_brief",
       "pass": "artifact",
       "when": "utility_gate.gate != 'block'"
     },
@@ -350,13 +355,18 @@
       "pass": "artifact"
     },
     {
-      "from": "package",
+      "from": "package_brief",
+      "to": "package_evidence",
+      "pass": "artifact"
+    },
+    {
+      "from": "package_evidence",
       "to": "done",
       "pass": "artifact",
       "when": "utility_gate.gate == 'pass'"
     },
     {
-      "from": "package",
+      "from": "package_evidence",
       "to": "partial",
       "pass": "artifact"
     }
@@ -406,7 +416,8 @@
         "link_rows",
         "evidence",
         "utility_gate",
-        "package",
+        "package_brief",
+        "package_evidence",
         "done"
       ],
       "expect_outputs": [
