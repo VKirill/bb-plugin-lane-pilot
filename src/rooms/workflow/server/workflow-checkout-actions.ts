@@ -17,7 +17,7 @@ import { list, rec, str, pmCheckout, quote, PRUNE } from "./workflow-chain-runti
 import { measureTestInventory, diffTestInventory, type InventoryReceipt } from "./test-inventory";
 import { noteRunFiles } from "./workflow-run-home";
 import type { Row } from "./workflow-chain-runtime";
-import type { GraphNode, StepContext, WorkflowEngine } from "@lane-pilot/workflow-engine";
+import { wfInventoryRows, wfInventoryBaselineSucceeded, wfClaimInventoryBaseline, type InventoryStep, type GraphNode, type StepContext, type WorkflowEngine } from "@lane-pilot/workflow-engine";
 import { runOnHost } from "@lane-pilot/host-calls";
 import { oneLine, ownsPathProblems, parkRoadmapRow } from "../../phase";
 import type { ChainRuntime } from "../../contracts/server";
@@ -45,9 +45,8 @@ export function registerCheckoutActions(engine: WorkflowEngine, ctx: ServerCore,
       if (!rt.runId) return unavailable("no bound Lane Pilot run");
       const run = getRun(db, rt.runId), checkout = await pmCheckout(rt), hostId = getRunWriterHost(db, rt.runId);
       if (!run || run.project_id !== rt.projectId || !hostId || !run.writer_workspace_path || checkout.hostId !== hostId || checkout.path !== run.writer_workspace_path) return unavailable("writer checkout binding mismatch");
-      type Step = { node_id: string; output_json: string; receipt_json: string; rowid: number };
-      const rows = db.prepare("SELECT rowid, node_id, output_json, receipt_json FROM lane_pilot_wf_step WHERE run_id=? AND state='succeeded' AND node_id IN ('baseline','write_tests','fix_tests') ORDER BY rowid").all(c.runId) as Step[];
-      const decode = (row: Step, executor: string): Row => {
+      const rows = wfInventoryRows(db, c.runId);
+      const decode = (row: InventoryStep, executor: string): Row => {
         const receipt = JSON.parse(row.receipt_json), output = JSON.parse(row.output_json);
         if (receipt.executor !== executor || receipt.outputSha256 !== sha256Hex(row.output_json) || !output || typeof output !== "object") throw Error("untrusted journal receipt");
         return output as Row;
@@ -55,28 +54,9 @@ export function registerCheckoutActions(engine: WorkflowEngine, ctx: ServerCore,
       const baselines = rows.filter(r => r.node_id === "baseline");
       if (mode === "baseline") {
         // rerunNode removes descendant steps and clears their outputs, but the append-only event journal survives.
-        const previous = db.prepare("SELECT 1 FROM lane_pilot_wf_event WHERE run_id=? AND kind='step' AND step_key GLOB 'baseline#*' AND to_state='succeeded' LIMIT 1").get(c.runId);
+        const previous = wfInventoryBaselineSucceeded(db, c.runId);
         if (previous || baselines.length || rows.some(r => r.node_id === "write_tests")) return unavailable("original baseline already exists or was invalidated by rerun");
-        // Child runs can be deleted and recreated by a parent rerun. Claim the logical step once on the surviving root run.
-        // Collapse visits and scope suffixes conservatively: an ambiguous second visit must not reset the baseline.
-        const logicalNode = (key: string) => key.replace(/#\d+(?:@[a-f0-9]+)?$/, "");
-        const ancestry: string[] = [c.workflow.id, logicalNode(c.stepKey)];
-        let owner = c.runId;
-        for (let depth = 0; ; depth++) {
-          if (depth > 16) throw Error("inventory run ancestry too deep");
-          const parent = db.prepare("SELECT parent_run_id, parent_step_key FROM lane_pilot_wf_run WHERE id=?").get(owner) as { parent_run_id: string | null; parent_step_key: string | null } | undefined;
-          if (!parent) throw Error("inventory run ancestry missing");
-          if (!parent.parent_run_id) break;
-          if (!parent.parent_step_key) throw Error("inventory parent step missing");
-          ancestry.unshift(logicalNode(parent.parent_step_key));
-          owner = parent.parent_run_id;
-        }
-        const claim = JSON.stringify(ancestry);
-        const claimed = db.transaction(() => {
-          if (db.prepare("SELECT 1 FROM lane_pilot_wf_event WHERE run_id=? AND kind='inventory_baseline_claim' AND detail=? LIMIT 1").get(owner, claim)) return false;
-          engine.journal.event(owner, null, "inventory_baseline_claim", null, null, claim);
-          return true;
-        })();
+        const claimed = wfClaimInventoryBaseline(db, engine.journal, c.runId, c.workflow.id, c.stepKey);
         if (!claimed) return unavailable("original baseline already exists or was invalidated by rerun");
         const result = await measureTestInventory(ctx.host, hostId, checkout.path);
         return result.status === "measured" ? { status: "measured", reason: "", receipt: result.receipt } : { status: result.status, reason: result.reason };
