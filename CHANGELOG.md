@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.583
+
+- **Browser QA thread verdicts must cover the requested matrix.** A report containing only one of four requested case/viewport pairs could previously pass. The thread path now freezes positional case IDs and validated CSS widths at dispatch, checks every pair exactly once, and blocks missing, duplicate, unknown or malformed rows. Explicit IDs must agree with any echoed label; ambiguous text labels require the case ID. Reload adoption reads the saved expectation and blocks old or invalid receipts with `browser_qa_expectation_unavailable`. `tests/stages/qa-thread.test.ts`, `tests/stages/qa-resume.test.ts` and `tests/spawn-service-tier.test.ts` cover parser counterexamples, fresh dispatch and resumed checks; the combined targeted run including `tests/qa-browser-graphs.test.ts` passed 59 tests. The legacy one-argument parser and old runner backend retain their behavior. This establishes report completeness, not proof that browser actions occurred or screenshots were preserved; live graph acceptance remains separate.
+
 ## 0.1.582
 
 - **Parked tasks stop restarting after their assigned PM is deleted or archived.** A captured deleted-project incident repeatedly created another attempt on each plugin update and failed before a writer existed. Parking adoption and the retry sweep now check the assigned PM; a temporary read failure preserves the ticket, and a run without an assigned PM keeps its existing retry behavior. `tests/stability-deleted-pm.test.ts` covers missing, soft-deleted and archived PMs, recovery after HTTP 503, unchanged failed stages and retry of a PM-less run without a thread lookup. The r04 `autoretry` probe supplies a live PM fixture while retaining its original n424 predicate. This prevents new automatic retries; it does not delete historical attempts. Post-deployment observation of the captured run remains a separate acceptance check.

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseQaVerdict, qaThreadPrompt } from "../../src/rooms/qa/server/qa-thread";
+import { parseQaVerdict, qaExpectFromRequest, qaThreadPrompt } from "../../src/rooms/qa/server/qa-thread";
 
 describe("browser check thread", () => {
   it("reads the last verdict block and never turns a bare pass into a pass", () => {
@@ -51,7 +51,7 @@ describe("browser check thread", () => {
     expect(prompt).not.toContain("bb connect expose");
     expect(prompt).toContain("no VPN address for the browser machine");
     expect(prompt).toContain("do not guess an address");
-    expect(prompt).toContain("1. Wizard has no captcha");
+    expect(prompt).toContain("c1. Wizard has no captcha");
     expect(prompt).toContain("do not submit, pay, delete or send");
     expect(prompt).not.toContain("Dev server");
   });
@@ -70,5 +70,76 @@ describe("browser check thread", () => {
     expect(prompt).toContain('bb terminal create --thread "$BB_THREAD_ID" --title "Dev server" --json -- npm run dev -- --port 5173');
     expect(prompt).toContain("bb terminal close <id>");
     expect(prompt.indexOf("0. The target")).toBeLessThan(prompt.indexOf("1. Load the browser-automation skill"));
+  });
+});
+
+describe("browser check verdict coverage", () => {
+  const matrix = qaExpectFromRequest(["Wizard has no captcha", "login: SHOP — open orders"], "375,1280")!;
+  const fenced = (json: unknown) => `Done.\n\`\`\`json\n${JSON.stringify(json)}\n\`\`\``;
+  const row = (id: string, viewport: string, result = "passed") => ({ case: id, viewport, result });
+  const full = () => [row("c1", "375"), row("c1", "1280"), row("c2", "375"), row("c2", "1280")];
+  const verdict = (cases: unknown[], v: "passed" | "failed" | "blocked" = "passed") =>
+    parseQaVerdict(fenced({ verdict: v, summary: "s", cases }), matrix);
+
+  it("passes only when every requested case×viewport pair is reported exactly once and passed", () => {
+    expect(verdict(full())).toMatchObject({ verdict: "passed" });
+    expect(verdict(full().slice(0, 3)).summary).toContain("missing:c2@1280");
+    expect(verdict(full().slice(0, 3)).verdict).toBe("blocked");
+    const dup = [...full(), row("c1", "375")];
+    expect(verdict(dup).summary).toContain("duplicate:c1@375");
+    expect(verdict([...full().slice(1), row("c9", "375")]).summary).toContain("unknown_case:c9");
+    expect(verdict([...full().slice(1), row("c1", "0815")]).summary).toContain("unknown_viewport:c1:0815");
+    expect(verdict(full().slice(0, 3), "blocked").summary).toContain("browser_qa_coverage_failed");
+  });
+
+  it("accepts the legacy full case text and maps ids back to the human label", () => {
+    const rows = [
+      { case: "Wizard has no captcha", viewport: "375", result: "passed" },
+      row("c1", "1280"), row("c2", "375"), row("c2", "1280"),
+    ];
+    const parsed = verdict(rows);
+    expect(parsed.verdict).toBe("passed");
+    expect(parsed.cases.map((item) => item.case)).toEqual(["Wizard has no captcha", "Wizard has no captcha", "open orders", "open orders"]);
+  });
+
+  it("rejects malformed raw rows instead of erasing them before coverage", () => {
+    const extra = [...full(), { case: 7, viewport: "375", result: "failed" }, null, { case: "c1", viewport: "375" }];
+    expect(verdict(extra).summary).toContain("malformed_case_rows:3");
+    expect(verdict(extra).verdict).toBe("blocked");
+  });
+
+  it("treats explicit cN ids as authoritative and never strips an unknown or mismatched id into a label", () => {
+    const unknownId = [...full().slice(1), { case: "c9. Wizard has no captcha", viewport: "375", result: "passed" }];
+    expect(verdict(unknownId).summary).toContain("unknown_case:c9. Wizard has no captcha");
+    const mismatched = [...full().slice(1), { case: "c1. open orders", viewport: "375", result: "passed" }];
+    expect(verdict(mismatched).summary).toContain("mismatched_case:c1. open orders");
+    const echoed = [...full().slice(1), { case: "c1. Wizard has no captcha", viewport: "375", result: "passed" }];
+    expect(verdict(echoed).verdict).toBe("passed");
+  });
+
+  it("requires cN ids when requested labels collide after login stripping", () => {
+    const colliding = qaExpectFromRequest(["login: ALICE — open orders", "login: BOB — open orders"], "375")!;
+    const ambiguous = parseQaVerdict(fenced({ verdict: "passed", summary: "s",
+      cases: [{ case: "open orders", viewport: "375", result: "passed" }] }), colliding);
+    expect(ambiguous.summary).toContain("ambiguous_case:open orders");
+    const distinct = parseQaVerdict(fenced({ verdict: "passed", summary: "s", cases: [
+      { case: "c1", viewport: "375", result: "passed" }, { case: "c2", viewport: "375", result: "passed" }] }), colliding);
+    expect(distinct.verdict).toBe("passed");
+    expect(distinct.cases.map((item) => item.case)).toEqual(["open orders", "open orders"]);
+  });
+
+  it("rejects requests whose viewports are not positive CSS widths", () => {
+    expect(qaExpectFromRequest(["x"], "banana")).toBeNull();
+    expect(qaExpectFromRequest(["x"], "0")).toBeNull();
+    expect(qaExpectFromRequest(["x"], "375,768,1280,1440")).toBeNull();
+    expect(qaExpectFromRequest(["x"], "375,375")?.viewports).toEqual(["375"]);
+    expect(qaExpectFromRequest(["x"], "375,1280")?.viewports).toEqual(["375", "1280"]);
+  });
+
+  it("keeps a complete failed matrix failed and leaves one-arg parsing untouched", () => {
+    const failed = full().map((item, index) => index === 0 ? { ...item, result: "failed" } : item);
+    expect(verdict(failed, "failed")).toMatchObject({ verdict: "failed" });
+    const sparse = "```json\n{\"verdict\":\"passed\",\"cases\":[{\"case\":\"a\",\"viewport\":\"375\",\"result\":\"passed\"}]}\n```";
+    expect(parseQaVerdict(sparse)).toMatchObject({ verdict: "passed" });
   });
 });

@@ -7,14 +7,14 @@ import type { ServerCore } from "../../src/rooms/contracts/server";
 
 const verdict = "Итог: провалено.\n```json\n{\"verdict\":\"failed\",\"summary\":\"«Выбрать» does nothing\",\"cases\":[{\"case\":\"3\",\"viewport\":\"375\",\"result\":\"failed\"}]}\n```";
 
-function setup(threadStatus: () => string) {
+function setup(threadStatus: () => string, verdictText = verdict) {
   const stopped: string[] = [];
   const { bb } = createFakePluginHost({ pluginId:"lane-pilot", sdk:{ threads:{
     get: async ({ threadId }) => ({ id:threadId, status:threadStatus() }) as never,
     events: { list: async ({ threadId }) => (threadStatus() === "idle"
       ? [{ type:"turn/started", threadId, seq:1 }, { type:"turn/completed", threadId, seq:2, data:{ status:"completed" } }]
       : [{ type:"turn/started", threadId, seq:1 }]) as never },
-    output: async () => ({ output:verdict }) as never,
+    output: async () => ({ output:verdictText }) as never,
     stop: async ({ threadId }) => { stopped.push(threadId); return {} as never; },
   } } });
   const db = openDatabase(bb);
@@ -36,7 +36,8 @@ const qaState = (db: ReturnType<typeof openDatabase>, taskId: string) => listSta
 describe("browser checks left running by a reload (live: gc-qa-free-session.5)", () => {
   it("stores the verdict of a check thread that finished while the plugin was reloading", async () => {
     const { db, ctx } = setup(() => "idle");
-    runningQa(db, "qa", { configuredHostId:"host_mini", spawnAttempted:true, threadId:"thr_qa", link:"@thread:thr_qa" });
+    runningQa(db, "qa", { configuredHostId:"host_mini", spawnAttempted:true, threadId:"thr_qa", link:"@thread:thr_qa",
+      expect:{ cases:[{ id:"c1", text:"3", login:null }], viewports:["375"] } });
     runningQa(db, "lost", { configuredHostId:"host_mini", spawnAttempted:true });
     const qa = createQaStages(ctx);
     expect(qa.resumeBrowserQaThreads()).toBe(2);
@@ -48,7 +49,8 @@ describe("browser checks left running by a reload (live: gc-qa-free-session.5)",
 
   it("stops a check still working past its deadline, and leaves a check started by this process alone", async () => {
     const { db, ctx, stopped } = setup(() => "active");
-    runningQa(db, "qa", { spawnAttempted:true, threadId:"thr_slow", deadline:Date.now() - 1000, timeoutSec:900 });
+    runningQa(db, "qa", { spawnAttempted:true, threadId:"thr_slow", deadline:Date.now() - 1000, timeoutSec:900,
+      expect:{ cases:[{ id:"c1", text:"3", login:null }], viewports:["375"] } });
     const qa = createQaStages(ctx);
     runningQa(db, "lost", { spawnAttempted:true });
     db.prepare("UPDATE lane_pilot_stage_receipt SET updated_at=? WHERE task_id='lost'").run(Date.now() + 1000);
@@ -61,11 +63,53 @@ describe("browser checks left running by a reload (live: gc-qa-free-session.5)",
 
   it("an unload during the wait leaves the stage running for the next load", async () => {
     const { db, ctx, dispose } = setup(() => "active");
-    runningQa(db, "qa", { spawnAttempted:true, threadId:"thr_qa", deadline:Date.now() + 60_000, timeoutSec:900 });
+    runningQa(db, "qa", { spawnAttempted:true, threadId:"thr_qa", deadline:Date.now() + 60_000, timeoutSec:900,
+      expect:{ cases:[{ id:"c1", text:"3", login:null }], viewports:["375"] } });
     const qa = createQaStages(ctx);
     qa.resumeBrowserQaThreads();
     dispose();
     await new Promise((wake) => setTimeout(wake, 1500));
     expect(qaState(db, "qa")?.state).toBe("running");
+  });
+
+  it("adopts a verdict only against the case×viewport matrix frozen at dispatch", async () => {
+    const sparse = "```json\n{\"verdict\":\"passed\",\"summary\":\"ok\",\"cases\":[{\"case\":\"c1\",\"viewport\":\"375\",\"result\":\"passed\"}]}\n```";
+    const { db, ctx } = setup(() => "idle", sparse);
+    runningQa(db, "qa", { spawnAttempted:true, threadId:"thr_qa",
+      expect:{ cases:[{ id:"c1", text:"one", login:null }, { id:"c2", text:"two", login:null }], viewports:["375","1280"] } });
+    const qa = createQaStages(ctx);
+    qa.resumeBrowserQaThreads();
+    await expect.poll(() => qaState(db, "qa")?.state).toBe("blocked");
+    expect(qaState(db, "qa")?.reason).toContain("browser_qa_coverage_failed");
+    expect(qaState(db, "qa")?.reason).toContain("missing:c2@375");
+  });
+
+  it("blocks adoption when the stored check carries no expected matrix", async () => {
+    const { db, ctx } = setup(() => "idle");
+    runningQa(db, "qa", { spawnAttempted:true, threadId:"thr_qa" });
+    const qa = createQaStages(ctx);
+    qa.resumeBrowserQaThreads();
+    await expect.poll(() => qaState(db, "qa")?.state).toBe("blocked");
+    expect(qaState(db, "qa")?.reason).toBe("browser_qa_expectation_unavailable");
+  });
+
+  it("blocks adoption when the stored matrix carries an invalid viewport", async () => {
+    const { db, ctx } = setup(() => "idle");
+    runningQa(db, "qa", { spawnAttempted:true, threadId:"thr_qa",
+      expect:{ cases:[{ id:"c1", text:"one", login:null }], viewports:["banana"] } });
+    const qa = createQaStages(ctx);
+    qa.resumeBrowserQaThreads();
+    await expect.poll(() => qaState(db, "qa")?.state).toBe("blocked");
+    expect(qaState(db, "qa")?.reason).toBe("browser_qa_expectation_unavailable");
+  });
+
+  it("adopts a passed verdict when the stored matrix is covered exactly once", async () => {
+    const pass = "```json\n{\"verdict\":\"passed\",\"summary\":\"ok\",\"cases\":[{\"case\":\"c1\",\"viewport\":\"375\",\"result\":\"passed\"},{\"case\":\"c1\",\"viewport\":\"1280\",\"result\":\"passed\"}]}\n```";
+    const { db, ctx } = setup(() => "idle", pass);
+    runningQa(db, "qa", { spawnAttempted:true, threadId:"thr_qa",
+      expect:{ cases:[{ id:"c1", text:"one", login:null }], viewports:["375","1280"] } });
+    const qa = createQaStages(ctx);
+    qa.resumeBrowserQaThreads();
+    await expect.poll(() => qaState(db, "qa")?.state).toBe("passed");
   });
 });

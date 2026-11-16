@@ -358,7 +358,7 @@ describe("spawn service tier", () => {
   });
 
   describe("browser-qa helper spawn inputs", () => {
-    function setupBrowserQaHost(providersList: Array<Record<string, unknown>>) {
+    function setupBrowserQaHost(providersList: Array<Record<string, unknown>>, verdictText?: string) {
       const spawned: Record<string, unknown>[] = [];
       const { bb } = createFakePluginHost({
         pluginId: "lane-pilot",
@@ -373,8 +373,12 @@ describe("spawn service tier", () => {
               return { id: "qa-thr-1" };
             },
             output: async () => ({
-              output: 'Done.\n```json\n{"status":"pass","summary":"ok","cases":[{"case":"c1","viewport":"375","result":"passed"}]}\n```',
+              output: verdictText ?? 'Done.\n```json\n{"status":"pass","summary":"ok","cases":[{"case":"c1","viewport":"375","result":"passed"}]}\n```',
             }),
+            events: { list: async ({ threadId }: { threadId?: string }) => [
+              { type: "turn/started", threadId, seq: 1 },
+              { type: "turn/completed", threadId, seq: 2, data: { status: "completed" } },
+            ] as never },
           },
         } as never,
       });
@@ -458,6 +462,31 @@ describe("spawn service tier", () => {
       expect(spawned).toHaveLength(1);
       expect(spawned[0]?.serviceTier).toBeUndefined();
       expect((spawned[0]?.executionInputSources as Record<string, unknown>)?.serviceTier).toBeUndefined();
+    });
+
+    it("cannot pass on a verdict that misses requested case×viewport pairs", async () => {
+      const { ctx } = setupBrowserQaHost([
+        { id: "claude-code", capabilities: { supportsServiceTier: true }, serviceTiers: [{ id: "fast" }] },
+      ], 'Done.\n```json\n{"status":"pass","summary":"ok","cases":[]}\n```');
+
+      const verdict = await runQaThread(ctx, {
+        projectId: "proj-1",
+        runId: "run-1",
+        pmThreadId: "pm-1",
+        taskTitle: "Check UI",
+        qaHostId: "host-1",
+        timeoutSec: 10,
+        url: "http://localhost:3000",
+        cases: ["wizard"],
+        viewports: "375,1280",
+        envClass: "local",
+        authorized: false,
+        agent: { providerId: "claude-code", model: "claude-sonnet-4-6", effort: "high" },
+      });
+
+      expect(verdict.verdict).toBe("blocked");
+      expect(verdict.summary).toContain("browser_qa_coverage_failed");
+      expect(verdict.summary).toContain("missing:c1@1280");
     });
   });
 

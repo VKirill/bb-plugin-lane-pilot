@@ -27,13 +27,26 @@ export type QaVerdict = {
  * verdict (`status` pass, rework or block, with findings and evidence) plus the cases; the old `verdict` (passed, failed,
  * blocked) is still read.
  */
-export function parseQaVerdict(text: string): QaVerdict {
+export function parseQaVerdict(text: string, expect?: QaExpect | null): QaVerdict {
   const blocks = [...text.matchAll(/```(?:json)?\s*\n([\s\S]*?)\n```/g)].map((match) => match[1]!).reverse();
   for (const block of blocks) {
     try {
       const parsed = JSON.parse(block) as Partial<QaVerdict> & { status?: unknown };
       const rawCases = (parsed as { cases?: unknown }).cases;
-      const cases = Array.isArray(rawCases) ? rawCases.filter((row): row is QaVerdict["cases"][number] => Boolean(row) && typeof row.case === "string") : [];
+      const rawRows = Array.isArray(rawCases) ? rawCases : [];
+      let cases = rawRows.filter((row): row is QaVerdict["cases"][number] => Boolean(row) && typeof row.case === "string");
+      // With the requested matrix known, a verdict is trusted only when it covers every case×viewport exactly once.
+      const isVerdict = parsed.status !== undefined
+        || parsed.verdict === "passed" || parsed.verdict === "failed" || parsed.verdict === "blocked";
+      if (expect && isVerdict) {
+        const strictRows = rawRows.filter(isQaVerdictCaseRow);
+        const coverage = qaCoverageRows(expect, strictRows, rawRows.length - strictRows.length);
+        cases = coverage.rows;
+        if (coverage.problems.length) {
+          return { verdict: "blocked", status: "block",
+            summary: `browser_qa_coverage_failed:${coverage.problems.slice(0, 8).join(";")}`, cases };
+        }
+      }
       // A pass needs every case passed on record; a bare «passed» proves nothing.
       const allPassed = cases.length > 0 && cases.every((row) => row.result === "passed");
       if (parsed.status !== undefined) {
@@ -66,6 +79,87 @@ export function parseQaCases(cases: readonly string[]): { cases: Array<{ text: s
   return { cases: parsed, logins: [...new Set(parsed.flatMap((row) => row.login ? [row.login] : []))] };
 }
 
+/** The case×viewport matrix a thread verdict must cover; ids are positional so a resumed check rebuilds the same one. */
+export type QaExpect = {
+  cases: Array<{ id: string; text: string; login: string | null }>;
+  viewports: string[];
+};
+
+export function qaExpectCases(cases: readonly string[]): QaExpect["cases"] | null {
+  const parsed = parseQaCases(cases);
+  return parsed.cases.length ? parsed.cases.map((item, index) => ({ id: `c${index + 1}`, ...item })) : null;
+}
+
+const QA_VIEWPORTS_RE = /^\d{2,4}(,\d{2,4}){0,2}$/;
+
+/** The host schemas' width list: comma-separated positive 2-4 digit CSS widths, at most three. */
+export function qaViewportsValid(viewports: string): boolean {
+  return QA_VIEWPORTS_RE.test(viewports.trim()) && viewports.split(",").every((item) => Number(item) > 0);
+}
+
+export function qaExpectViewports(viewports: string): string[] {
+  return [...new Set(viewports.split(",").map((item) => item.trim()).filter(Boolean))];
+}
+
+/** Null when the request cannot form a matrix (no cases or no valid viewports): callers fail closed, never skip validation. */
+export function qaExpectFromRequest(cases: readonly string[], viewports: string): QaExpect | null {
+  const expectCases = qaExpectCases(cases);
+  return expectCases && qaViewportsValid(viewports) ? { cases: expectCases, viewports: qaExpectViewports(viewports) } : null;
+}
+
+const qaCaseKey = (text: string) => text.trim().replace(/\s+/g, " ").toLowerCase();
+
+const isQaVerdictCaseRow = (row: unknown): row is QaVerdict["cases"][number] => {
+  if (!row || typeof row !== "object" || Array.isArray(row)) return false;
+  const item = row as Record<string, unknown>;
+  return typeof item.case === "string" && typeof item.viewport === "string"
+    && (item.result === "passed" || item.result === "failed" || item.result === "blocked");
+};
+
+function qaCoverageRows(expect: QaExpect, rows: QaVerdict["cases"], malformed = 0): { rows: QaVerdict["cases"]; problems: string[] } {
+  const byId = new Map(expect.cases.map((item) => [item.id, item]));
+  // A bare label resolves only when it names exactly one requested case; duplicates need the cN id.
+  const labelCount = new Map<string, number>();
+  for (const item of expect.cases) {
+    const key = qaCaseKey(item.text);
+    labelCount.set(key, (labelCount.get(key) ?? 0) + 1);
+  }
+  const byText = new Map(expect.cases.filter((item) => labelCount.get(qaCaseKey(item.text)) === 1).map((item) => [qaCaseKey(item.text), item]));
+  // An explicit cN id is authoritative: an unknown id never falls back to a label, and an id+label pair must agree.
+  const resolve = (raw: string): { hit: QaExpect["cases"][number] } | { problem: string } => {
+    const trimmed = raw.trim();
+    const idMatch = /^c(\d+)(?=$|[.)\]:;\-–—]|\s)/i.exec(trimmed);
+    if (idMatch) {
+      const hit = byId.get(`c${Number(idMatch[1])}`);
+      if (!hit) return { problem: `unknown_case:${trimmed.slice(0, 60)}` };
+      const rest = trimmed.slice(idMatch[0].length).replace(/^[.)\]:;\-–—]+\s*/, "").trim();
+      return !rest || qaCaseKey(rest) === qaCaseKey(hit.text) ? { hit } : { problem: `mismatched_case:${trimmed.slice(0, 60)}` };
+    }
+    const key = qaCaseKey(trimmed);
+    const hit = byText.get(key);
+    if (hit) return { hit };
+    return { problem: labelCount.get(key) ? `ambiguous_case:${key.slice(0, 60)}` : `unknown_case:${trimmed.slice(0, 60)}` };
+  };
+  const seen = new Set<string>();
+  const resolved: QaVerdict["cases"] = [];
+  const problems: string[] = malformed ? [`malformed_case_rows:${malformed}`] : [];
+  for (const row of rows) {
+    const outcome = resolve(row.case);
+    if ("problem" in outcome) { problems.push(outcome.problem); continue; }
+    const hit = outcome.hit;
+    const viewport = typeof row.viewport === "string" ? row.viewport.trim() : "";
+    if (!expect.viewports.includes(viewport)) { problems.push(`unknown_viewport:${hit.id}:${viewport.slice(0, 24) || "?"}`); continue; }
+    const key = `${hit.id}@${viewport}`;
+    if (seen.has(key)) { problems.push(`duplicate:${key}`); continue; }
+    seen.add(key);
+    resolved.push({ ...row, case: hit.text, viewport });
+  }
+  for (const item of expect.cases) for (const port of expect.viewports) {
+    if (!seen.has(`${item.id}@${port}`)) problems.push(`missing:${item.id}@${port}`);
+  }
+  return { rows: resolved, problems };
+}
+
 export function qaThreadPrompt(input: { url: string; cases: string[]; viewports: string; envClass: string; authorized: boolean; qaHostId: string; devServer?: string; vpnAddress?: string | null }): string {
   const reach = input.vpnAddress
     ? `   The browser runs on ${input.qaHostId}, which may not be the machine you run on. If the target is localhost or 127.0.0.1 and your machine (\`bb status\`) is not ${input.qaHostId}, open it at this machine's private VPN address instead: replace the host with ${input.vpnAddress} (for example http://${input.vpnAddress}:<port>/). The server must listen on all interfaces (0.0.0.0, e.g. vite --host 0.0.0.0). Do not use bb connect.`
@@ -75,6 +169,7 @@ export function qaThreadPrompt(input: { url: string; cases: string[]; viewports:
     ...(input.url ? [] : [`   No address was given and nothing answered on the default ports. After starting it, wait up to 30 seconds for one of these addresses to answer with a page (${QA_DEFAULT_PORTS.map((port) => `http://127.0.0.1:${port}/`).join(", ")}) and use that address as the target. If none answers, mark every case blocked with the reason "no app answered after the dev server start".`])
   ] : [];
   const parsed = parseQaCases(input.cases);
+  const expectCases = qaExpectCases(input.cases) ?? [];
   const brief = renderBrief({
     role: "browser-qa",
     instructions: [
@@ -98,15 +193,15 @@ export function qaThreadPrompt(input: { url: string; cases: string[]; viewports:
       `Target: ${input.url || "not known yet, see step 0"} (environment: ${input.envClass}${input.authorized ? ", side effects authorized" : ", no stateful side effects: do not submit, pay, delete or send"}).`,
       `Viewports (CSS width): ${input.viewports}.`,
       "Cases:",
-      ...parsed.cases.map((item, index) => `${index + 1}. ${item.text}${item.login ? ` (sign in first with the login ${item.login})` : ""}`),
+      ...expectCases.map((item) => `${item.id}. ${item.text}${item.login ? ` (sign in first with the login ${item.login})` : ""}`),
     ].join("\n"),
     boundaries: "Do not change any file: your thread has full access to the checkout, and a changed file would count as part of the task's changes. Do not guess: a case you could not check is blocked, with the reason.",
     output: [
       "End with one fenced json block and nothing after it:",
       "```json",
-      '{"status":"pass|rework|block","summary":"one paragraph","findings":[{"file":"<the page path, or the source file when you can name it>","severity":"critical|high|medium|low|info","evidence":"what you saw: the element, the request, the text"}],"evidence":"what you examined: viewports, the layers you asserted","cases":[{"case":"…","viewport":"375","result":"passed|failed|blocked","note":"what you saw"}]}',
+      '{"status":"pass|rework|block","summary":"one paragraph","findings":[{"file":"<the page path, or the source file when you can name it>","severity":"critical|high|medium|low|info","evidence":"what you saw: the element, the request, the text"}],"evidence":"what you examined: viewports, the layers you asserted","cases":[{"case":"c1","viewport":"375","result":"passed|failed|blocked","note":"what you saw"}]}',
       "```",
-      "status is pass only when every case passed on every viewport; rework when a case failed; block when you could not check (no access, no address for the page, a layer you could not observe). A failed case is a finding with severity high or critical, and a pass carries none.",
+      "status is pass only when every case passed on every viewport; rework when a case failed; block when you could not check (no access, no address for the page, a layer you could not observe). Report every case×viewport pair exactly once: `case` is the cN id shown before each case and `viewport` is the width exactly as listed. A failed case is a finding with severity high or critical, and a pass carries none.",
     ].join("\n"),
   });
   checkBrief("browser-qa", brief.text, { instructionsLength: brief.instructionsLength });
@@ -125,6 +220,8 @@ export async function runQaThread(ctx: Pick<ServerCore, "bb" | "db" | "isDispose
   onSpawned?: (threadId: string, deadline: number) => void;
 }): Promise<QaVerdict & { threadId: string; link: string }> {
   const { bb, db } = ctx;
+  const expect = qaExpectFromRequest(input.cases, input.viewports);
+  if (!expect) throw new Error("browser_qa_expectation_invalid");
   const pm = await bb.sdk.threads.get({ threadId: input.pmThreadId });
   const environmentId = stringAt(pm, "environmentId");
   if (!environmentId) throw new Error("browser_qa_thread_needs_pm_environment");
@@ -143,7 +240,7 @@ export async function runQaThread(ctx: Pick<ServerCore, "bb" | "db" | "isDispose
   if (!threadId) throw new Error("browser_qa_thread_id_missing");
   const deadline = Date.now() + input.timeoutSec * 1000;
   input.onSpawned?.(threadId, deadline);
-  const verdict = await awaitQaVerdict(ctx, threadId, deadline, input.timeoutSec, { projectId: input.projectId, runId: input.runId });
+  const verdict = await awaitQaVerdict(ctx, threadId, deadline, input.timeoutSec, { projectId: input.projectId, runId: input.runId }, expect);
   // A reload stopped the wait, not the thread: the next load picks its verdict up (resumeBrowserQaThreads).
   if (!verdict) throw new Error("browser_qa_wait_interrupted_by_reload");
   return verdict;
@@ -153,7 +250,7 @@ export async function runQaThread(ctx: Pick<ServerCore, "bb" | "db" | "isDispose
  * Waits for a check thread's verdict until the deadline; a thread still working then is stopped and the check is
  * blocked. Null when the plugin is unloaded meanwhile: the thread goes on and its verdict is still to be read.
  */
-export async function awaitQaVerdict(ctx: Pick<ServerCore, "bb" | "isDisposed">, threadId: string, deadline: number, timeoutSec: number, scope?: { projectId: string; runId: string })
+export async function awaitQaVerdict(ctx: Pick<ServerCore, "bb" | "isDisposed">, threadId: string, deadline: number, timeoutSec: number, scope?: { projectId: string; runId: string }, expect?: QaExpect | null)
   : Promise<(QaVerdict & { threadId: string; link: string }) | null> {
   const { bb } = ctx;
   const link = `@thread:${threadId}`;
@@ -161,7 +258,7 @@ export async function awaitQaVerdict(ctx: Pick<ServerCore, "bb" | "isDisposed">,
   const read = async (): Promise<QaVerdict & { threadId: string; link: string }> => {
     const raw = (await bb.sdk.threads.output({ threadId })).output;
     const text = typeof raw === "string" ? raw : outputText(raw);
-    return { ...redactKnownDeep(parseQaVerdict(scope ? redactKnown(text) : text)), threadId, link };
+    return { ...redactKnownDeep(parseQaVerdict(scope ? redactKnown(text) : text, expect)), threadId, link };
   };
   while (Date.now() < deadline) {
     if (ctx.isDisposed()) return null;

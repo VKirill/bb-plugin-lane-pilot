@@ -10,7 +10,7 @@ import { configuredSetting } from "../../contracts/server";
 import { freezeRunRouting, inheritedProjectSettings, recordStage } from "../../runs/server";
 import { qaStateToStatus } from "@lane-pilot/workflow-engine";
 import { allowedSecretNames, secretFixLines, secretProblem, waitingSecretReason } from "../../secrets/server";
-import { awaitQaVerdict, parseQaCases, runQaThread } from "./qa-thread";
+import { awaitQaVerdict, parseQaCases, qaExpectFromRequest, qaViewportsValid, runQaThread, type QaExpect } from "./qa-thread";
 import { bestEffort, stringAt, valueAt } from "@lane-pilot/kit";
 import type { ServerCore } from "../../contracts/server";
 
@@ -241,7 +241,7 @@ export function createQaStages(ctx: ServerCore) {
           url:args.url, cases:args.cases, viewports:args.viewports, envClass:args.envClass, authorized:args.authorized, devServer:args.devServer, vpnAddress:vpn?.address ?? null, agent,
           // spawnAttempted stays: without it a second call would claim the stage again and start another check.
           onSpawned:(threadId, deadline) => recordStage(db,{...dispatchedBase,state:"running",
-            result:{...targetSnapshot,spawnAttempted:true,threadId,link:`@thread:${threadId}`,deadline,timeoutSec,...(logins.length ? { logins } : {})}}),
+            result:{...targetSnapshot,spawnAttempted:true,threadId,link:`@thread:${threadId}`,deadline,timeoutSec,expect:qaExpectFromRequest(args.cases,args.viewports) ?? undefined,...(logins.length ? { logins } : {})}}),
         });
         const state = verdict.verdict;
         const snapshot = { ...targetSnapshot, url:args.url || null, backend:"bb-browser", agent, ...verdict };
@@ -323,7 +323,20 @@ export function createQaStages(ctx: ServerCore) {
       // After a reload the remembered values are gone: fetch the logins again so the verdict is masked as it would have been.
       const logins = Array.isArray(frozen.logins) ? frozen.logins.filter((name): name is string => typeof name === "string") : [];
       const deadline = typeof frozen.deadline === "number" ? frozen.deadline : stage.updatedAt + timeoutSec * 1000;
-      void Promise.all(logins.map((name) => ctx.secrets.record(name))).then(() => awaitQaVerdict(ctx, threadId, deadline, timeoutSec, { projectId: getRun(db, row.run_id)?.project_id ?? "-", runId: row.run_id })).then((verdict) => {
+      // The matrix was frozen into the stage result at dispatch; a receipt without it cannot validate a verdict.
+      const stored = frozen.expect;
+      const expect = stored && typeof stored === "object"
+        && Array.isArray((stored as QaExpect).cases) && (stored as QaExpect).cases.length > 0
+        && (stored as QaExpect).cases.every((item) => item && typeof item.id === "string" && typeof item.text === "string")
+        && new Set((stored as QaExpect).cases.map((item) => item.id)).size === (stored as QaExpect).cases.length
+        && Array.isArray((stored as QaExpect).viewports) && (stored as QaExpect).viewports.length > 0
+        && qaViewportsValid((stored as QaExpect).viewports.join(","))
+        ? stored as QaExpect : null;
+      if (!expect) {
+        recordStage(db, { ...base, state:"blocked", result:frozen, reason:"browser_qa_expectation_unavailable" });
+        continue;
+      }
+      void Promise.all(logins.map((name) => ctx.secrets.record(name))).then(() => awaitQaVerdict(ctx, threadId, deadline, timeoutSec, { projectId: getRun(db, row.run_id)?.project_id ?? "-", runId: row.run_id }, expect)).then((verdict) => {
         if (!verdict) return;
         const reason = verdict.verdict === "passed" ? undefined : verdict.summary || undefined;
         recordStage(db, { ...base, state:verdict.verdict, result:{ ...frozen, backend:"bb-browser", ...verdict }, ...(reason ? { reason } : {}) });
