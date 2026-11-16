@@ -1,9 +1,10 @@
 import { noteEngineWrite, gateRunVerdict } from "../../verification/server";
 import { parseIntegrationGateSettings } from "./workflow-chain-runtime";
+import { CAS_READ_CAP_BYTES, isMissingCasFile } from "./workflow-file-cas";
 import { getRun, getRunSettingsScopes, latestGateRun, listOpenAttempts, listOpenWorktrees, listTaskIdsForRun, listAttemptsForTask, loadProjectSettings, fullGateVerdict, saveProjectSetting } from "../../storage";
 import { getPhase, listPhases, oneLine, stateBlockText, stateHasHeader } from "../../phase";
 import { profilePairProblem, unsafeReason } from "../../anamnesis";
-import { bestEffort, isFsAbsent, sha256Hex } from "@lane-pilot/kit";
+import { bestEffort, sha256Hex } from "@lane-pilot/kit";
 import { writeReplacing } from "../../storage";
 import { list, rec, str, pmCheckout, quote, needLanePilot } from "./workflow-chain-runtime";
 import type { Row } from "./workflow-chain-runtime";
@@ -295,19 +296,9 @@ export function registerProjectActions(engine: WorkflowEngine, ctx: ServerCore, 
     if (typeof existing.sha256 !== "string" || !/^[a-f0-9]{64}$/i.test(existing.sha256)) throw new Error(`the existing ${rel} read returned an invalid hash`);
     const sizeBytes = existing.sizeBytes, actualSize = Buffer.byteLength(existing.content, "utf8");
     if (typeof sizeBytes !== "number" || !Number.isSafeInteger(sizeBytes) || sizeBytes !== actualSize) throw new Error(`the existing ${rel} read returned an invalid size`);
-    if (sizeBytes > 2_000_000) throw new Error(`the existing ${rel} exceeds the 2000000-byte read limit`);
+    if (sizeBytes > CAS_READ_CAP_BYTES) throw new Error(`the existing ${rel} exceeds the ${CAS_READ_CAP_BYTES}-byte read limit`);
     if (existing.sha256.toLowerCase() !== sha256Hex(existing.content)) throw new Error(`the existing ${rel} read does not match its hash`);
     return { content: existing.content, sha256: existing.sha256 };
-  };
-  // File absence, and only file absence: a raw ENOENT, or the SDK's `not_found` / `unknown_error` code carrying a
-  // file-scoped serverCode. `project_not_found`, `thread_not_found`, 500s and transport failures still refuse.
-  const FILE_ABSENT = new Set(["file_not_found", "host_file_not_found", "path_not_found"]);
-  const isMissing = (cause: unknown): boolean => {
-    if (isFsAbsent(cause)) return true;
-    if (!cause || typeof cause !== "object") return false;
-    const error = cause as { code?: unknown; serverCode?: unknown };
-    if (FILE_ABSENT.has(String(error.code ?? ""))) return true;
-    return (error.code === "not_found" || error.code === "unknown_error") && FILE_ABSENT.has(String(error.serverCode ?? ""));
   };
   const writtenOutcome = (result: unknown): string =>
     result && typeof result === "object" ? String((result as { outcome?: unknown }).outcome ?? "") : "";
@@ -369,7 +360,7 @@ export function registerProjectActions(engine: WorkflowEngine, ctx: ServerCore, 
       prev = current.content;
       expectedSha256 = current.sha256;
     } catch (cause) {
-      if (!isMissing(cause)) throw cause;
+      if (!isMissingCasFile(cause)) throw cause;
     }
     const eol = prev.includes("\r\n") ? "\r\n" : "\n";
     const rows = phases.map((name) => `- [ ] ${name}${goal ? ` — ${goal}` : ""}`);

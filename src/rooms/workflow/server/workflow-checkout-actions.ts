@@ -14,6 +14,7 @@ import { PROFILE_KEYS } from "../../anamnesis";
 import { hasPassportRecord } from "../../passport";
 import { bestEffort, isFsAbsent, sha256Hex } from "@lane-pilot/kit";
 import { list, rec, str, pmCheckout, quote, PRUNE } from "./workflow-chain-runtime";
+import { CAS_READ_CAP_BYTES, isMissingCasFile } from "./workflow-file-cas";
 import { measureTestInventory, diffTestInventory, type InventoryReceipt } from "./test-inventory";
 import { noteRunFiles } from "./workflow-run-home";
 import type { Row } from "./workflow-chain-runtime";
@@ -23,19 +24,7 @@ import { oneLine, ownsPathProblems, parkRoadmapRow } from "../../phase";
 import type { ChainRuntime } from "../../contracts/server";
 import type { ServerCore } from "../../contracts/server";
 
-const CAS_READ_CAP_BYTES = 2_000_000;
 
-const FILE_ABSENT_CODES = new Set(["file_not_found", "host_file_not_found", "path_not_found"]);
-
-/** File absence, and only file absence: a raw ENOENT, or the SDK's `not_found` / `unknown_error` code carrying a
- *  file-scoped serverCode. `project_not_found`, `thread_not_found`, 500s and transport failures still refuse. */
-function isMissingCasFile(cause: unknown): boolean {
-  if (isFsAbsent(cause)) return true;
-  if (!cause || typeof cause !== "object") return false;
-  const error = cause as { code?: unknown; serverCode?: unknown };
-  if (FILE_ABSENT_CODES.has(String(error.code ?? ""))) return true;
-  return (error.code === "not_found" || error.code === "unknown_error") && FILE_ABSENT_CODES.has(String(error.serverCode ?? ""));
-}
 
 type Action = (key: string, run: (c: StepContext<ChainRuntime>, rt: ChainRuntime) => Promise<Row>) => void;
 type PlanHome = (projectId: string, checkout: { hostId: string; path: string }) => Promise<string | null>;
