@@ -307,7 +307,7 @@ print(json.dumps(res))`;
     expect(out.call[1]).toBe('{"a": 1}');
   });
 
-  it("LP_DRILL_SMA_PRIMARY_ONLY holds the worktree batches: their prove_* never run, held nodes land in notProved only, checked counts what ran; unset runs all", () => {
+  it("an inherited LP_DRILL_SMA_PRIMARY_ONLY flag does not skip r01/r16 fixture prove seams", () => {
     const code = `import importlib, json, os, sys, tempfile, types
 from pathlib import Path
 scripts = Path(sys.argv[1]).resolve().parent
@@ -338,9 +338,7 @@ subprocess.run = lambda *a, **k: Done()
 r01m = importlib.import_module("lp_drill.scenes.sma_r01")
 r16m = importlib.import_module("lp_drill.scenes.sma_r16")
 def brief(v, c):
-    return {"result": v["result"], "checked": v.get("checked"), "proved": sorted(p["node"] for p in v["proved"]),
-            "notProved": v.get("notProved"), "hasNotProved": "notProved" in v, "hasPrimaryOnly": "primaryOnly" in v,
-            "primaryOnly": v.get("primaryOnly"), "calls": c}
+    return {"result": v["result"], "checked": v.get("checked"), "proved": sorted(p["node"] for p in v["proved"]), "calls": c}
 out = {}
 with tempfile.TemporaryDirectory() as td:
     tmp = Path(td)
@@ -356,55 +354,25 @@ print(json.dumps(out))`;
     const run = spawnSync("python3", ["-I", "-c", code, door], { encoding: "utf8", timeout: 30_000, env: quiet });
     expect(run.status, run.stderr).toBe(0);
     const out = JSON.parse(run.stdout.trim().split("\n").at(-1)!);
-    expect(out.on.r01.calls).toEqual(["sma_r01:b", "sma_r01:f", "sma_r01:g", "sma_r01:h"]);
-    expect(out.on.r01.checked).toBe(4);
-    expect(out.on.r01.proved).toEqual(["n902", "n906", "n907", "n908"]);
-    expect(Object.keys(out.on.r01.notProved).sort()).toEqual(["n901", "n903", "n904", "n905"]);
-    for (const id of ["n901", "n903", "n904", "n905"]) {
-      expect(out.on.r01.notProved[id]).toContain("PRIMARY-only hold");
-      expect(out.on.r01.proved).not.toContain(id);
-    }
-    expect(out.on.r01.primaryOnly).toBe(true);
-    expect(out.on.r16.calls).toEqual(["sma_r16:b", "sma_r16:d", "sma_r16:g", "sma_r16:e", "sma_r16:f"]);
-    expect(out.on.r16.checked).toBe(35);
-    for (const id of ["n912", "n915"]) {
-      expect(out.on.r16.notProved[id]).toContain("PRIMARY-only hold");
-      expect(out.on.r16.proved).not.toContain(id);
-    }
-    for (const id of ["n911", "n913", "n914", "n916", "n917"]) expect(out.on.r16.proved).toContain(id);
-    expect(out.on.r16.primaryOnly).toBe(true);
-    expect(out.off.r01.calls).toEqual(["sma_r01:a", "sma_r01:b", "sma_r01:c", "sma_r01:d", "sma_r01:e", "sma_r01:f", "sma_r01:g", "sma_r01:h"]);
-    expect(out.off.r01.checked).toBe(8);
-    expect(out.off.r01.hasNotProved).toBe(false);
-    expect(out.off.r01.hasPrimaryOnly).toBe(false);
-    expect(out.off.r16.calls).toEqual(["sma_r16:b", "sma_r16:c", "sma_r16:d", "sma_r16:g", "sma_r16:h", "sma_r16:e", "sma_r16:f"]);
-    expect(out.off.r16.checked).toBe(37);
-    expect(out.off.r16.hasNotProved).toBe(false);
-    expect(out.off.r16.hasPrimaryOnly).toBe(false);
+    expect(out.on.r01.calls).toEqual(["sma_r01:a", "sma_r01:b", "sma_r01:c", "sma_r01:d", "sma_r01:e", "sma_r01:f", "sma_r01:g", "sma_r01:h"]);
+    expect(out.on.r01.checked).toBe(8);
+    expect(out.on.r01.proved).toEqual(["n901", "n902", "n903", "n904", "n905", "n906", "n907", "n908"]);
+    expect(out.on.r16.calls).toEqual(["sma_r16:b", "sma_r16:c", "sma_r16:d", "sma_r16:g", "sma_r16:h", "sma_r16:e", "sma_r16:f"]);
+    expect(out.on.r16.checked).toBe(37);
+    expect(out.on.r16.proved).toHaveLength(37);
+    for (const id of ["n911", "n912", "n913", "n914", "n915", "n916", "n917"]) expect(out.on.r16.proved).toContain(id);
+    expect(out.off).toEqual(out.on);
   });
 
-  it("LP_DRILL_SMA_PRIMARY_ONLY holds exactly the 10 worktree nodes of r04 r08 r20 r23 r24 r25: their probe units are guarded, never proved, notProved only; unset runs all", () => {
-    // Static half: each probe skips exactly its worktree unit before calling it (running the probes would run git, so they are not run here).
+  it("an inherited LP_DRILL_SMA_PRIMARY_ONLY flag does not skip r04/r08/r20/r23/r24/r25 fixture seams", () => {
+    // Static half: authorized scratch-git fixture units have no environment gate.
     const probe = (name: string) => readFileSync(`${scenes}${name}`, "utf8");
-    for (const [file, unit, guard] of [
-      ["sma_r24_probe.ts", 'new Set(["n1653"])', "if (PRIMARY_ONLY_HELD.has(id)) return;"],
-      ["sma_r25_probe.ts", 'new Set(["rollback"])', "if (PRIMARY_ONLY_HELD.has(name)) return;"],
-      ["sma_r04_probe.test.ts", 'new Set(["copies"])', "if (!PRIMARY_ONLY_HELD.has(name)) try {"],
-      ["sma_r08_b_probe.ts", 'new Set(["worktree"])', "if (PRIMARY_ONLY_HELD.has(name)) return;"],
-    ] as const) {
+    for (const file of ["sma_r04_probe.test.ts", "sma_r08_b_probe.ts", "sma_r20_probe.ts", "sma_r23_probe.ts", "sma_r24_probe.ts", "sma_r25_probe.ts"] as const) {
       const text = probe(file);
-      expect(text, file).toContain(`process.env.LP_DRILL_SMA_PRIMARY_ONLY === "1" ? ${unit}`);
-      expect(text.split(guard).length - 1, file).toBe(1);
+      expect(text, file).not.toContain("LP_DRILL_SMA_PRIMARY_ONLY");
+      expect(text, file).not.toContain("PRIMARY_ONLY_HELD");
     }
-    for (const [file, next] of [["sma_r20_probe.ts", "// ---- STATE.md"], ["sma_r23_probe.ts", "// ---- n1629"]] as const) {
-      const text = probe(file), open = 'if (process.env.LP_DRILL_SMA_PRIMARY_ONLY !== "1") {';
-      expect(text.split(open).length - 1, file).toBe(1);
-      const from = text.indexOf(open), to = text.indexOf(next, from);
-      const adds = [...text.matchAll(/"worktree", "add"/g)].map((m) => m.index!);
-      expect(adds.length, file).toBeGreaterThan(0);
-      for (const at of adds) expect(at > from && at < to, `${file}: every worktree add sits inside the guarded block`).toBe(true);
-    }
-    // Functional half: the scenes with a stubbed probe call — held nodes are never proved, land in notProved, checked counts only what ran.
+    // Functional half: mocked probe output still lets every scene account for every node under the inherited flag.
     const code = `import importlib, json, os, subprocess, sys, tempfile, types
 from pathlib import Path
 scripts = Path(sys.argv[1]).resolve().parent
@@ -428,47 +396,27 @@ subprocess.run = fake
 mods = {n: importlib.import_module("lp_drill.scenes.sma_" + n) for n in ("r04", "r08", "r08_b", "r20", "r23", "r24", "r25")}
 out = {"nodes": {n: len(mods[n].NODES) for n in ("r04", "r08", "r20", "r23", "r24", "r25")}}
 with tempfile.TemporaryDirectory() as td:
-    for mode in ("on", "off"):
-        if mode == "on":
-            os.environ["LP_DRILL_SMA_PRIMARY_ONLY"] = "1"
-        else:
-            os.environ.pop("LP_DRILL_SMA_PRIMARY_ONLY", None)
-        envs.clear()
-        row = {"held": sorted([*mods["r04"].PRIMARY_ONLY_HELD, *mods["r08_b"].held_b(), *mods["r20"].PRIMARY_ONLY_HELD,
-                               *mods["r23"].PRIMARY_ONLY_HELD, *mods["r24"].PRIMARY_ONLY_HELD, *mods["r25"].PRIMARY_ONLY_HELD]),
-               "heldB": sorted(mods["r08_b"].held_b())}
-        for n in ("r04", "r24", "r25"):
-            sub = Path(td) / (mode + n)
-            sub.mkdir()
-            v = getattr(mods[n], "scenario_sma_" + n)(sub)
-            row[n] = {"checked": v.get("checked"), "proved": sorted(p["node"] for p in v["proved"]), "notProved": sorted(v.get("notProved") or {}),
-                      "primaryOnly": v.get("primaryOnly"), "reasons": sorted(set((v.get("notProved") or {}).values())),
-                      "hasPrimaryOnly": "primaryOnly" in v, "hasNotProved": "notProved" in v}
-        row["envs"] = list(envs)
-        out[mode] = row
+    os.environ["LP_DRILL_SMA_PRIMARY_ONLY"] = "1"
+    envs.clear()
+    row = {}
+    for n in ("r04", "r24", "r25"):
+        sub = Path(td) / n
+        sub.mkdir()
+        v = getattr(mods[n], "scenario_sma_" + n)(sub)
+        row[n] = {"checked": v.get("checked"), "proved": len(v["proved"]), "hasPrimaryOnly": "primaryOnly" in v, "hasNotProved": "notProved" in v}
+    row["envs"] = list(envs)
+    out["on"] = row
 print(json.dumps(out))`;
     const run = spawnSync("python3", ["-I", "-c", code, door], { encoding: "utf8", timeout: 30_000, env: quiet });
     expect(run.status, run.stderr).toBe(0);
     const out = JSON.parse(run.stdout.trim().split("\n").at(-1)!);
     expect(out.nodes).toEqual({ r04: 25, r08: 59, r20: 32, r23: 22, r24: 23, r25: 24 });
-    const held = ["n1532", "n1542", "n1544", "n1627", "n1653", "n1681", "n1694", "n1709", "n421", "n729"];
-    expect(out.on.held).toEqual(held);
-    expect(out.on.heldB).toEqual(["n729"]);
-    expect(out.off.heldB).toEqual([]);
     expect(out.on.envs).toEqual(["1", "1", "1"]);
-    for (const [scene, ids, checked] of [["r04", ["n421"], 24], ["r24", ["n1653"], 22], ["r25", ["n1681", "n1694", "n1709"], 21]] as const) {
-      expect(out.on[scene].notProved, scene).toEqual([...ids]);
+    for (const [scene, checked] of [["r04", 25], ["r24", 23], ["r25", 24]] as const) {
       expect(out.on[scene].checked, scene).toBe(checked);
-      expect(out.on[scene].primaryOnly, scene).toBe(true);
-      for (const reason of out.on[scene].reasons) expect(reason, scene).toContain("PRIMARY-only hold");
-      for (const id of ids) {
-        expect(out.on[scene].proved, scene).not.toContain(id);
-        expect(out.off[scene].proved, scene).toContain(id);
-      }
-      expect(out.off[scene].checked, scene).toBe(checked + ids.length);
-      expect(out.off[scene].notProved, scene).toEqual([]);
-      expect(out.off[scene].hasPrimaryOnly, scene).toBe(false);
-      expect(out.off[scene].hasNotProved, scene).toBe(false);
+      expect(out.on[scene].proved, scene).toBe(checked);
+      expect(out.on[scene].hasPrimaryOnly, scene).toBe(false);
+      expect(out.on[scene].hasNotProved, scene).toBe(false);
     }
   });
 });

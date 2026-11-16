@@ -44,10 +44,8 @@ process.env.LANE_PILOT_POLL_SCALE = "0.0005";
 type Fire = (context: { signal: AbortSignal }) => unknown;
 type Obj = Record<string, unknown>;
 const out: Obj = {};
-// LP_DRILL_SMA_PRIMARY_ONLY=1 (the owner's PRIMARY-only rule): a held section's callback is never called — "copies" runs real `git worktree add`.
-const PRIMARY_ONLY_HELD = process.env.LP_DRILL_SMA_PRIMARY_ONLY === "1" ? new Set(["copies"]) : new Set<string>();
 const section = async (name: string, work: () => Promise<unknown>) => {
-  if (!PRIMARY_ONLY_HELD.has(name)) try { out[name] = await work(); } catch (cause) { out[name] = { error: cause instanceof Error ? `${cause.message}`.slice(0, 300) : String(cause) }; }
+  try { out[name] = await work(); } catch (cause) { out[name] = { error: cause instanceof Error ? `${cause.message}`.slice(0, 300) : String(cause) }; }
   skew = 0;
 };
 

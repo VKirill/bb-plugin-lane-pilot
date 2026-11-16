@@ -14,7 +14,6 @@ n1533 (sma open) and n1550 (fleet window entry link) are core-resident (core:app
 from __future__ import annotations
 
 import json
-import os
 import re
 import subprocess
 from pathlib import Path
@@ -22,9 +21,6 @@ from pathlib import Path
 from lp_drill.env import ROOT
 from lp_drill.prove import Proofs
 
-# Held under LP_DRILL_SMA_PRIMARY_ONLY=1: the probe never enters the «git copies» block (real `git worktree add`); its nodes are never proved.
-PRIMARY_ONLY_HELD = dict.fromkeys(("n1532", "n1542", "n1544"),
-                                  "PRIMARY-only hold: the git copies block runs real `git worktree add` (sma_r20_probe.ts)")
 NODES = ["n1517", "n1518", "n1519", "n1520", "n1523", "n1524", "n1525", "n1526", "n1528", "n1529", "n1532", "n1534", "n1535", "n1536", "n1537",
          "n1538", "n1539", "n1540", "n1542", "n1544", "n1545", "n1547", "n1548", "n1549", "n1551", "n1552", "n1553", "n1554", "n1555", "n1556", "n1558", "n1559"]
 PROBE = ROOT / "scripts/lp_drill/scenes/sma_r20_probe.ts"
@@ -33,8 +29,6 @@ NINE = ["event", "projectId", "runId", "taskId", "title", "kind", "state", "atte
 
 def scenario_sma_r20(tmp: Path) -> dict:
     proofs = Proofs()
-    held = PRIMARY_ONLY_HELD if os.environ.get("LP_DRILL_SMA_PRIMARY_ONLY") == "1" else {}
-    git_held = bool(held)
     done = subprocess.run(["npx", "tsx", str(PROBE)], cwd=ROOT, capture_output=True, text=True, timeout=600)
     try:
         s = json.loads(done.stdout.strip().splitlines()[-1])
@@ -77,11 +71,10 @@ def scenario_sma_r20(tmp: Path) -> dict:
     p = s["post"]
     ok = p["http"] is False and p["https"] is True and p["other"] is False and p["posts"] == 1 and p["keys"] == NINE and p["projectId"] == "P" and p["leak"] is False
     proofs.prove("n1529", ok, f"http -> {p['http']}, https -> {p['https']}, other project -> {p['other']}, {p['posts']} post with keys {p['keys']}, leak {p['leak']}")
-    if not git_held:
-        # n1532 sma sync-branch: main with another writer's work comes into a merged writer's copy; a dirty copy is refused; a clash is undone and names the file.
-        y = s["sync"]
-        ok = y["merged"] == ["merged", "merged"] and y["status"] == "synced" and y["head"] and y["sawOther"] and y["again"] == "up-to-date" and y["dirty"] == "dirty" and y["clash"] == ["conflict", True, True, True]
-        proofs.prove("n1532", ok, f"sync {y['status']} (saw the other writer's file {y['sawOther']}), again {y['again']}, dirty copy {y['dirty']}, clash {y['clash']}")
+    # n1532 sma sync-branch: main with another writer's work comes into a merged writer's copy; a dirty copy is refused; a clash is undone and names the file.
+    y = s["sync"]
+    ok = y["merged"] == ["merged", "merged"] and y["status"] == "synced" and y["head"] and y["sawOther"] and y["again"] == "up-to-date" and y["dirty"] == "dirty" and y["clash"] == ["conflict", True, True, True]
+    proofs.prove("n1532", ok, f"sync {y['status']} (saw the other writer's file {y['sawOther']}), again {y['again']}, dirty copy {y['dirty']}, clash {y['clash']}")
     # n1534 Session lease registry: both terminals are live with their provider, none after the lease runs out.
     g = s["registry"]
     proofs.prove("n1534", g["live"] == ["thr_a", "thr_b"] and g["provider"] == "claude-code" and g["afterTtl"] == 0, f"live {g['live']}, provider {g['provider']}, live after 7 h {g['afterTtl']}")
@@ -103,12 +96,11 @@ def scenario_sma_r20(tmp: Path) -> dict:
     # n1540 Attempt trail of a person window: each release leaves its own record with the base, the files and the outcome told apart.
     ok = r["outcomeUi"] == [False, "abandoned"] and r["outcomeDocs"] == [True, "handed_off"] and r["filesUi"] == "src/app.ts" and r["baseUi"] == "ba5e123"
     proofs.prove("n1540", ok, f"ui: outcome {r['outcomeUi']}, files {r['filesUi']}, base {r['baseUi']}; docs: outcome {r['outcomeDocs']}")
-    if not git_held:
-        # n1542 Merge gate: a candidate that did not take main in is refused with «base moved» and main stays; after taking main in it merges.
-        gt = s["gate"]
-        proofs.prove("n1542", gt["stale"] == ["failed", True, True] and gt["fresh"] == "merged" and gt["landed"], f"stale candidate {gt['stale']}, after taking main in {gt['fresh']}")
-        # n1544 Branch sync with the trunk: a dirty copy is refused, a clash is undone (copy as it was) and names the file.
-        proofs.prove("n1544", y["dirty"] == "dirty" and y["clash"] == ["conflict", True, True, True], f"dirty copy {y['dirty']}, clash {y['clash']} (status, names page.vue, head unchanged, tree clean)")
+    # n1542 Merge gate: a candidate that did not take main in is refused with «base moved» and main stays; after taking main in it merges.
+    gt = s["gate"]
+    proofs.prove("n1542", gt["stale"] == ["failed", True, True] and gt["fresh"] == "merged" and gt["landed"], f"stale candidate {gt['stale']}, after taking main in {gt['fresh']}")
+    # n1544 Branch sync with the trunk: a dirty copy is refused, a clash is undone (copy as it was) and names the file.
+    proofs.prove("n1544", y["dirty"] == "dirty" and y["clash"] == ["conflict", True, True, True], f"dirty copy {y['dirty']}, clash {y['clash']} (status, names page.vue, head unchanged, tree clean)")
     # n1545 Fenced STATE.md section: the command's block is rewritten, the person's text stays byte for byte, a block without its end is not guessed at.
     proofs.prove("n1545", st["keepsHand"] and st["outsideSame"] and st["personalHeading"] and st["broken"], f"person's text kept {st['outsideSame']}, own heading marked {st['personalHeading']}, broken block refused {st['broken']}")
     # n1547 Pre-compaction flight recorder: the last 5 asks cut to 300 characters, 30 files and 30 claims.
@@ -146,5 +138,4 @@ def scenario_sma_r20(tmp: Path) -> dict:
     # n1559 Capsules: 30 files and 30 claims survive, the restore text names the task and stays within its budget.
     fl = s["flight"]
     proofs.prove("n1559", fl["files"] == 30 and fl["last"] == "src/f29.ts" and fl["claims"] == 30 and fl["restoredHead"] == "Capsule restored after compaction:" and fl["task"] and fl["capped"], f"capsule {fl}")
-    extra = {"notProved": dict(held), "primaryOnly": True} if held else {}
-    return proofs.verdict("sma_r20", checked=len(NODES) - len(held), **extra)
+    return proofs.verdict("sma_r20", checked=len(NODES))

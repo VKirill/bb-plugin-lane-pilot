@@ -19,10 +19,6 @@ from lp_drill.prove import Proofs
 
 NODES = [f"n{n}" for n in range(415, 440)]
 CONFIG = "scripts/lp_drill/scenes/sma_r04.vitest.config.ts"
-# Held under LP_DRILL_SMA_PRIMARY_ONLY=1: the probe never runs section "copies" (real `git worktree add`); its node is never proved.
-PRIMARY_ONLY_HELD = {"n421": "PRIMARY-only hold: section copies runs real `git worktree add` (sma_r04_probe.test.ts)"}
-
-
 def _get(seen: dict, section: str) -> dict:
     """One probe section; an errored or missing one is returned as {} so every node of it fails with the section's error in its detail."""
     value = seen.get(section)
@@ -43,11 +39,7 @@ def scenario_sma_r04(tmp: Path) -> dict:
     except (OSError, ValueError):
         return proofs.verdict("sma_r04", [f"the probe wrote no result (exit {done.returncode}): {(done.stderr or done.stdout).strip()[-400:]}"])
 
-    held = PRIMARY_ONLY_HELD if os.environ.get("LP_DRILL_SMA_PRIMARY_ONLY") == "1" else {}
-
     def prove(node: str, section: str, check, detail) -> None:
-        if node in held:
-            return
         data = _get(seen, section)
         if not data:
             proofs.prove(node, False, _why(seen, section))
@@ -115,5 +107,4 @@ def scenario_sma_r04(tmp: Path) -> dict:
     prove("n438", "lease", lambda d: d["young"] == {"settled": False, "state": "spawn_requested"} and d["status"] == "spawn_rejected" and "writer_start_stalled" in (d["reason"] or ""), lambda d: f"at 14 min {d['young']}; at 16 min {d['status']}: {str(d['reason'])[:60]}")
     # n439 Seat and lease released: a start whose spawn throws leaves the attempt blocked and the seat free.
     prove("n439", "finally", lambda d: d["blocked"] and d["seat"] == "free", lambda d: f"attempt blocked {d['blocked']}, pool seat {d['seat']}")
-    extra = {"notProved": dict(held), "primaryOnly": True} if held else {}
-    return proofs.verdict("sma_r04", checked=len(NODES) - len(held), **extra)
+    return proofs.verdict("sma_r04", checked=len(NODES))

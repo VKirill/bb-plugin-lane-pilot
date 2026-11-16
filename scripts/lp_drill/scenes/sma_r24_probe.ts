@@ -60,10 +60,7 @@ const cliHost = (services: unknown = {}) => {
   registerCli(createCore(bb, db), services as Services, migrations);
   return { bb, harness, db };
 };
-// LP_DRILL_SMA_PRIMARY_ONLY=1 (the owner's PRIMARY-only rule): a held node's callback is never called — n1653 makes a real scratch git worktree.
-const PRIMARY_ONLY_HELD = process.env.LP_DRILL_SMA_PRIMARY_ONLY === "1" ? new Set(["n1653"]) : new Set<string>();
 async function node(id: string, run: () => Promise<Seen> | Seen): Promise<void> {
-  if (PRIMARY_ONLY_HELD.has(id)) return;
   try { seen[id] = await run(); } catch (error) { seen[id] = { ok: false, detail: `the probe threw: ${String((error as Error)?.stack ?? error).slice(0, 300)}` }; }
 }
 

@@ -8,7 +8,6 @@ node with the result its card expects. No model, no hub write, nothing leaves th
 from __future__ import annotations
 
 import json
-import os
 import subprocess
 
 from lp_drill.env import ROOT
@@ -16,13 +15,8 @@ from lp_drill.prove import Proofs
 
 NODES = [f"n{n}" for n in range(1627, 1653) if n in (1627, 1629, 1630, 1631, 1632, 1633, 1634, 1635, 1636, 1637, 1638, 1639, 1640, 1641, 1642, 1643, 1644, 1645, 1646, 1650, 1651, 1652)]
 PROBE = ROOT / "scripts/lp_drill/scenes/sma_r23_probe.ts"
-# Held under LP_DRILL_SMA_PRIMARY_ONLY=1: the probe never enters the n1627 landing block (real `git worktree add`); n1627 is never proved.
-PRIMARY_ONLY_HELD = {"n1627": "PRIMARY-only hold: the landing block runs real `git worktree add` (sma_r23_probe.ts)"}
-
-
 def scenario_sma_r23(tmp) -> dict:
     proofs = Proofs()
-    held = PRIMARY_ONLY_HELD if os.environ.get("LP_DRILL_SMA_PRIMARY_ONLY") == "1" else {}
     # vite-node, not tsx: the probe loads the plugin's rooms, whose barrel files tsx cannot link.
     done = subprocess.run(["npx", "--yes", "vite-node", str(PROBE)], cwd=ROOT, capture_output=True, text=True, timeout=420)
     try:
@@ -30,11 +24,10 @@ def scenario_sma_r23(tmp) -> dict:
     except (ValueError, IndexError):
         return proofs.verdict("sma_r23", [f"the probe printed no result (exit {done.returncode}): {(done.stderr or done.stdout).strip()[-300:]}"])
 
-    if not held:
-        # n1627 Execution step gates: a candidate lands on main when main is in it, and a landing after main moved is refused (BASE_MOVED) with main untouched.
-        lc, lm = s["landClean"], s["landMoved"]
-        proofs.prove("n1627", lc["status"] == "merged" and lc["onMain"] and lm["status"] == "failed" and lm["reason"].startswith("base moved since the candidate") and lm["mainUnchanged"],
-                     f"main in the candidate -> {lc['status']} (file on main {lc['onMain']}); main moved after -> {lm['status']} «{lm['reason']}», main unchanged {lm['mainUnchanged']}")
+    # n1627 Execution step gates: a candidate lands on main when main is in it, and a landing after main moved is refused (BASE_MOVED) with main untouched.
+    lc, lm = s["landClean"], s["landMoved"]
+    proofs.prove("n1627", lc["status"] == "merged" and lc["onMain"] and lm["status"] == "failed" and lm["reason"].startswith("base moved since the candidate") and lm["mainUnchanged"],
+                 f"main in the candidate -> {lc['status']} (file on main {lc['onMain']}); main moved after -> {lm['status']} «{lm['reason']}», main unchanged {lm['mainUnchanged']}")
     # n1629 Gate and revision rules: the third change-requesting round stops the revising, the second and an approval do not.
     r = s["rounds"]
     proofs.prove("n1629", r["max"] == 3 and r["atMax"] == 1 and r["before"] == 0 and r["approved"] == 0, f"max {r['max']}; stop-revising gap at round {r['max']}: {r['atMax']}, one round earlier: {r['before']}, approved: {r['approved']}")
@@ -112,5 +105,4 @@ def scenario_sma_r23(tmp) -> dict:
     # n1652 Milestone and retrospective forms: with retro.living on the close keeps the living retro and writes the record; off, neither runs.
     ms = s["milestone"]
     proofs.prove("n1652", "living close record snapshot" in ms["on"] and "living" not in ms["off"].split(" ") and "record" not in ms["off"].split(" "), f"retro on: {ms['on']}; retro off: {ms['off']}")
-    extra = {"notProved": dict(held), "primaryOnly": True} if held else {}
-    return proofs.verdict("sma_r23", checked=len(NODES) - len(held), **extra)
+    return proofs.verdict("sma_r23", checked=len(NODES))

@@ -24,10 +24,6 @@ from lp_drill.prove import Proofs
 NODES = ["n1653", "n1654", "n1655", "n1656", "n1657", "n1658", "n1659", "n1660", "n1663", "n1664", "n1665", "n1666", "n1667", "n1668",
          "n1669", "n1670", "n1671", "n1672", "n1673", "n1674", "n1676", "n1678", "n1679"]
 PROBE = ROOT / "scripts/lp_drill/scenes/sma_r24_probe.ts"
-# Held under LP_DRILL_SMA_PRIMARY_ONLY=1: the probe never calls these nodes' callbacks (they make real scratch git worktrees); never proved.
-PRIMARY_ONLY_HELD = {"n1653": "PRIMARY-only hold: the undo probe creates a real scratch git worktree (createWorktree, sma_r24_probe.ts node n1653)"}
-
-
 def scenario_sma_r24(tmp: Path) -> dict:
     proofs = Proofs()
     home = tmp / "home"
@@ -39,14 +35,10 @@ def scenario_sma_r24(tmp: Path) -> dict:
     except (ValueError, IndexError):
         return proofs.verdict("sma_r24", [f"the probe printed no result (exit {done.returncode}): {(done.stderr or done.stdout).strip()[-300:]}"])
     nodes = seen["nodes"]
-    held = PRIMARY_ONLY_HELD if os.environ.get("LP_DRILL_SMA_PRIMARY_ONLY") == "1" else {}
     for node in NODES:
-        if node in held:
-            continue
         row = nodes.get(node)
         if row is None:
             proofs.prove(node, False, "the probe did not observe this node")
             continue
         proofs.prove(node, bool(row["ok"]), row["detail"])
-    extra = {"notProved": dict(held), "primaryOnly": True} if held else {}
-    return proofs.verdict("sma_r24", checked=len(NODES) - len(held), scratch_home=seen["home"], **extra)
+    return proofs.verdict("sma_r24", checked=len(NODES), scratch_home=seen["home"])
