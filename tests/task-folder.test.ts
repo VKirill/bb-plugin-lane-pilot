@@ -37,7 +37,7 @@ it("keeps the compact contract inline and only adds the folder block when the fo
   expect(withFolder).toContain('objective: do x');
   expect(sticky).toContain(".agents/plans/items/t1/");
   expect(sticky).toContain("- PLAN.md");
-  expect(sticky).toContain('objective: do x');
+  expect(sticky).toContain('**objective:** do x');
 });
 
 it("does not treat task-folder files as produced, stray, or owns_paths violations", () => {

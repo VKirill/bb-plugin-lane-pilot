@@ -7,7 +7,7 @@ import type { RunRow } from "../../storage";
 ;
 import { startedBySchedule } from "./workflow-runtime";
 import { sendServiceMessage } from "../../relay/server";
-import { chatCode } from "../../brief/chat-markdown";
+import { chatCode } from "../../brief";
 import type { LeadRoadApi } from "../../contracts";
 import {AFTER_ACCEPT, DOCS_MAINTENANCE, DOCS_NIGHT, LP_TASK_PIPELINE, SELF_REPAIR, WORKTREE_CLEANUP} from "../../contracts";
 

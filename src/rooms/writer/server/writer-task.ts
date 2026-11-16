@@ -1,6 +1,6 @@
 import type { TaskV2 } from "../../contracts";
 import { providerForwardsAgentOnly } from "@lane-pilot/models";
-import { chatBriefSection } from "../../brief/chat-markdown";
+import { chatBriefSection } from "../../brief";
 import { outputText, valueAt } from "@lane-pilot/kit";
 import { compactContract, pmReadBrief } from "../writer-brief";
 import { summarizeThreadEvents, type ThreadEventLike } from "@lane-pilot/harness-core";

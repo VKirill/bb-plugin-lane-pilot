@@ -17,6 +17,8 @@
  * `Task contract:` JSON dump, a context7 reference a narrowed role does not have.
  */
 
+export { chatBriefSection, chatCode } from "./chat-markdown";
+
 export const INSTRUCTIONS_BUDGET = 4_000;
 export const WRITER_BUDGET = 30_000;
 /** A data tail longer than this gets the answer format repeated after it. */

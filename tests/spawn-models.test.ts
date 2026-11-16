@@ -37,6 +37,7 @@ const WRAPPERS: Record<string, Wrapper> = {
   "src/rooms/writer/server/spawn-brief.ts": { via: "exception", note: "the writer is Jev's pick from the writers' anamnesis, not a row of the table" },
   "src/rooms/writer/server/spawn-worktree.ts": { via: "exception", note: "the short-lived holder that makes BB provision the writer's worktree: it runs on the writer's own pick" },
   "src/rooms/writer/server/critique-gate.ts": { via: "exception", note: "a code-repair turn goes back to the writer's own recorded provider/model" },
+  "src/rooms/native-agent/server/child-pm.ts": { via: "exception", note: "a child native PM keeps the parent Claude model, otherwise uses the destination host default" },
   "src/rooms/native-agent/server/activation.ts": { via: "exception", note: "the PM chat runs on the owner's chosen model" },
   "src/rooms/native-agent/server/helper-probe.ts": { via: "exception", note: "a probe asks about exactly the provider/model it checks" },
   "src/rooms/stability/server/probes.ts": { via: "exception", note: "fixed probe threads of the stability drills" },
