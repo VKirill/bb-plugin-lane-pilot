@@ -202,6 +202,18 @@ const pathClass: PureAction = ({ ctx }) => {
   return { output: { size: result.size, risk: result.risk, severity: result.severity } };
 };
 
+/**
+ * debug.failures: the fan-out list of debug's mode=from_failures — the typed `failures` input when given, else a legacy
+ * `symptom` that is itself a list (the public `string|Finding[]` contract); a text symptom yields an empty list, so it
+ * stays on the investigate path and never reaches for_each.
+ */
+const debugFailures: PureAction = ({ ctx }) => {
+  const failures = ctx.resolve("$inputs.failures");
+  const symptom = ctx.resolve("$inputs.symptom");
+  const source = Array.isArray(failures) ? failures : symptom;
+  return { output: { failures: Array.isArray(source) ? source : [] } };
+};
+
 /** lp.propose_workflow: the terminal «offer to start workflow X with inputs Y». The decision to run it is the policy's and the owner's; the offer is in the receipt and the run output. */
 const propose: PureAction = ({ node, ctx }) => {
   const params = (node as { params?: Row }).params ?? {};
@@ -212,6 +224,7 @@ const propose: PureAction = ({ node, ctx }) => {
 const ACTIONS: Record<string, { run: PureAction }> = {
   "items.dedupe": { run: dedupe }, "dag.validate": { run: dagValidate }, "digest.check": { run: digestCheck }, "citations.check": { run: citationsCheck },
   "verdict.aggregate": { run: aggregate }, "lp.path_class": { run: pathClass }, "lp.propose_workflow": { run: propose },
+  "debug.failures": { run: debugFailures },
 };
 /** The inputs verdict.aggregate reads, whatever the node lists. */
 const AGGREGATE_READS = ["dims.findings", "confirm.dropped_ids", "dims.unchecked", "spec_check.unmet_count", "prepass.findings"];

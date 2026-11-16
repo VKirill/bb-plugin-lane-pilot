@@ -150,7 +150,7 @@ export function autoInputs(phase: Phase, due: { kind: AutoKind; wave?: number },
     case "diagnose": {
       const verdict = r.verification!.verdict!;
       const gaps = [verdict.detail, ...(r.acceptance?.lines ?? []).filter((line) => !line.ok).map((line) => `acceptance ${line.id}`)].filter(Boolean);
-      return { mode: "from_failures", symptom: gaps, session: `verdict-${verdict.inputSha.slice(0, 12)}`, auto_fix: false };
+      return { mode: "from_failures", failures: gaps, symptom: gaps, session: `verdict-${verdict.inputSha.slice(0, 12)}`, auto_fix: false };
     }
     case "plan": {
       const gateGaps = r.plan ? planGaps(r) : [];

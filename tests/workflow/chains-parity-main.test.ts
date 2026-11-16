@@ -21,20 +21,20 @@ describe("hollow sign-2 workflow branches: debug", () => {
     const r = await runSim("debug", {
       input: { failures: [{ file: "src/parser.ts", severity: "high", evidence: "empty row" }, { file: "src/import.ts", severity: "high", evidence: "undefined" }], mode: "from_failures" },
     });
-    expect(pathOf(r)).toBe("ask_symptoms diagnose diagnosed");
+    expect(pathOf(r)).toBe("ask_symptoms normalize diagnose diagnosed");
     expect(r.called("diagnose:child")).toHaveLength(2);
 
     const resumed = await runSim("debug", {
       input: { failures: [{ file: "src/parser.ts", severity: "high", evidence: "empty row" }, { file: "src/import.ts", severity: "high", evidence: "undefined" }], mode: "from_failures", session: "failure-session" },
       stubs: { session: { found: true, path: ".agents/planning/debug/failure-session.md" } },
     });
-    expect(pathOf(resumed)).toBe("ask_symptoms session diagnose diagnosed");
+    expect(pathOf(resumed)).toBe("ask_symptoms session normalize diagnose diagnosed");
 
     const fallback = await runSim("debug", {
       input: { failures: [{ file: "src/parser.ts", severity: "high", evidence: "empty row" }, { file: "src/import.ts", severity: "high", evidence: "undefined" }], mode: "from_failures", session: "missing-failure-session" },
       stubs: { session: { found: false, path: ".agents/planning/debug/missing-failure-session.md" } },
     });
-    expect(pathOf(fallback)).toBe("ask_symptoms session diagnose diagnosed");
+    expect(pathOf(fallback)).toBe("ask_symptoms session normalize diagnose diagnosed");
   });
 
   it("returns inconclusive after repeated failed confirmation, and preserves the investigation fallback", async () => {

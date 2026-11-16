@@ -435,7 +435,7 @@ export const observeB = {
   async k_c_diagnose() {
     const verdict = { state: "failed" as const, detail: "check p1 red", mainSha: "h", at: 1, inputSha: "sha1" };
     const failed = phase({ diagnose: true, verification: { verdict } } as never, "verification");
-    const run = async (n: number) => runSim("debug", { input: { mode: "from_failures", symptom: Array.from({ length: n }, (_, i) => `check c${i} red`) }, stubs: { diagnose: { status: "confirmed", root_cause: "c", confidence: 80, fix_direction: "f" } } });
+    const run = async (n: number) => runSim("debug", { input: { mode: "from_failures", failures: Array.from({ length: n }, (_, i) => `check c${i} red`) }, stubs: { diagnose: { status: "confirmed", root_cause: "c", confidence: 80, fix_direction: "f" } } });
     const two = await run(2), seven = await run(7);
     const count = (r: Awaited<ReturnType<typeof run>>) => ((r.summary.output as { diagnoses: unknown[] }).diagnoses ?? []).length;
     return { due: autoDue(failed)?.kind ?? null, off: autoDue(phase({ verification: { verdict } } as never, "verification"))?.kind ?? null, two: [r2path(two), count(two)], seven: [r2path(seven), count(seven)] };

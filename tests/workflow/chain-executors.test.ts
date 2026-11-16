@@ -2306,3 +2306,24 @@ describe("code-review carries the spec_check criteria through to the report and 
     expect(prompts[0]).toContain("MET");
   });
 });
+
+describe("cleanup writes its report for real (review591 GS591-02)", () => {
+  it("the shipped save node's fs.write lands a JSON report in the checkout and goal_check validates that same path", async () => {
+    const t = await setup({ plan: [reply({ moved: ["ph_a", "spike_old"], applied: true, handoff: "planned" })] });
+    dispose = t.dispose;
+    const summary = await t.start(builtinWorkflow("cleanup")!, { dry_run: false }).done;
+    expect(summary.status).toBe("succeeded");
+    expect(summary.output).toMatchObject({ status: "done", moved: ["ph_a", "spike_old"] });
+
+    const steps = t.engine.snapshot(summary.runId)!.steps;
+    const saveOut = JSON.parse(steps.find((step) => step.node_id === "save")!.output_json!);
+    const rel = String(saveOut.cleanup_path);
+    expect(rel).toMatch(/^plans\/cleanup-.+\.json$/);
+    const onDisk = JSON.parse(readFileSync(join(t.checkout, rel), "utf8"));
+    expect(onDisk).toMatchObject({ moved: ["ph_a", "spike_old"], applied: true });
+
+    const checkIn = JSON.parse(steps.find((step) => step.node_id === "goal_check")!.input_json!).with as Row;
+    expect(checkIn.path).toBe(rel);
+    expect(JSON.parse(steps.find((step) => step.node_id === "goal_check")!.output_json!)).toMatchObject({ ok: true });
+  });
+});

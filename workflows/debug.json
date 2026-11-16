@@ -207,9 +207,21 @@
       }
     },
     {
+      "id": "normalize",
+      "type": "action",
+      "action": "debug.failures",
+      "title": {
+        "en": "Failure list",
+        "ru": "Список провалов"
+      },
+      "out": {
+        "failures": "Finding[]"
+      }
+    },
+    {
       "id": "diagnose",
       "type": "parallel",
-      "for_each": "$inputs.failures",
+      "for_each": "normalize.failures",
       "max_fan_out": 6,
       "onOverflow": "truncate",
       "title": {
@@ -385,9 +397,9 @@
     },
     {
       "from": "ask_symptoms",
-      "to": "diagnose",
+      "to": "normalize",
       "pass": "artifact",
-      "when": "$inputs.mode == 'from_failures' && $inputs.failures.length > 0"
+      "when": "$inputs.mode == 'from_failures'"
     },
     {
       "from": "ask_symptoms",
@@ -396,9 +408,9 @@
     },
     {
       "from": "session",
-      "to": "diagnose",
+      "to": "normalize",
       "pass": "artifact",
-      "when": "session.found && $inputs.mode == 'from_failures' && $inputs.failures.length > 0"
+      "when": "$inputs.mode == 'from_failures'"
     },
     {
       "from": "session",
@@ -413,10 +425,15 @@
       "when": "$inputs.mode != 'from_failures' && (!$inputs.symptom || $inputs.symptom.length < 40)"
     },
     {
-      "from": "session",
+      "from": "normalize",
       "to": "diagnose",
       "pass": "artifact",
-      "when": "$inputs.mode == 'from_failures' && $inputs.failures.length > 0"
+      "when": "normalize.failures.length > 0"
+    },
+    {
+      "from": "normalize",
+      "to": "investigate",
+      "pass": "artifact"
     },
     {
       "from": "session",
@@ -563,6 +580,7 @@
         },
         "expect_path": [
           "ask_symptoms",
+          "normalize",
           "diagnose",
           "diagnosed"
         ]

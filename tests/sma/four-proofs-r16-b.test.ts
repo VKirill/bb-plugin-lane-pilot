@@ -180,8 +180,8 @@ describe("verify-work and the verification stage (n1192 … n1194, n1201 … n12
     const seen = await observeB.k_c_diagnose();
     expect(seen.due).toBe("diagnose");
     expect(seen.off).toBe("replan");
-    expect(seen.two).toEqual(["ask_symptoms diagnose diagnosed", 2]);
-    expect(seen.seven).toEqual(["ask_symptoms diagnose diagnosed", 6]);
+    expect(seen.two).toEqual(["ask_symptoms normalize diagnose diagnosed", 2]);
+    expect(seen.seven).toEqual(["ask_symptoms normalize diagnose diagnosed", 6]);
   });
 
   it("[sma:k_wv_rubric] the verification rubric names its order and its blocking antipatterns; a writer's own report is not read, only receipts", () => {

@@ -325,7 +325,7 @@ export const observeC = {
   async k_wv_diagnose() {
     const gaps = ["check p1 red: lint fails", "check p2 red: the total is wrong", "check p3 red: timeout"];
     const causes = gaps.map((gap, index) => ({ status: "confirmed", root_cause: `cause ${index + 1}`, confidence: 70 + index, fix_direction: `fix ${index + 1}`, affected_files: [`src/f${index + 1}.ts`] }));
-    const many = await runSim("debug", { input: { mode: "from_failures", symptom: gaps, session: "" }, stubs: { diagnose: causes } });
+    const many = await runSim("debug", { input: { mode: "from_failures", failures: gaps, session: "" }, stubs: { diagnose: causes } });
     const one = await runSim("debug", { input: { mode: "from_failures", symptom: ["check p1 red: lint fails"], session: "" }, stubs: { investigate: { status: "inconclusive", refuted: 0 } } });
     const list = (output(many).diagnoses ?? []) as Array<Row>;
     return { path: many.path, skipped: many.skipped, status: output(many).status, count: list.length, causes: list.map((row) => row.root_cause), gaps: list.map((row) => row.gap ?? null), single: one.path };
@@ -367,7 +367,7 @@ export const observeC = {
       const form = { answer: "expected: a total; got: NaN; error: none; since v2.3; steps: import a file with an empty row", answer_kind: "given" };
       const short = await w.run("debug.json", { symptom: "it crashes", session: "" }, agents, { ask_symptoms: form });
       const long = await w.run("debug.json", { symptom: "the import crashes on files with an empty last line, since v2.3, error: cannot read split", session: "" }, agents);
-      const failures = await w.run("debug.json", { symptom: ["check p1 red", "check p2 red"], mode: "from_failures", session: "" }, { ...agents, diagnose: { status: "confirmed", root_cause: "c", confidence: 80, fix_direction: "f" } });
+      const failures = await w.run("debug.json", { failures: ["check p1 red", "check p2 red"], mode: "from_failures", session: "" }, { ...agents, diagnose: { status: "confirmed", root_cause: "c", confidence: 80, fix_direction: "f" } });
       const asked = (await w.run("debug.json", { symptom: "x", session: "" }, agents, { ask_symptoms: form })).input("investigate");
       return { short: { path: short.path, status: short.out.status }, long: { path: long.path, skipped: long.skipped.includes("ask_symptoms") }, failures: failures.path, handed: asked.via?.fromStep ?? null };
     } finally { w.dispose(); }
@@ -392,7 +392,7 @@ export const observeC = {
     try {
       const strong = { status: "confirmed", confidence: 82, pressure_pass: true, contradictions: 0, affected_files: ["a.ts:1"], refuted: 1, root_cause: "rc", fix_direction: "fd", mechanism: "mech", evidence_path: "ev.ndjson", regression_tests: ["t"], risks: ["r"], hypotheses_log: "twenty pages of working" };
       const one = await w.run("debug.json", { symptom: "the import crashes on files with an empty last line, since v2.3", session: "" }, { investigate: strong, verify_cause: { confirmed: true } });
-      const many = await w.run("debug.json", { mode: "from_failures", symptom: ["gap one", "gap two"], session: "" }, { diagnose: { status: "confirmed", root_cause: "c", confidence: 80, fix_direction: "f" } });
+      const many = await w.run("debug.json", { mode: "from_failures", failures: ["gap one", "gap two"], session: "" }, { diagnose: { status: "confirmed", root_cause: "c", confidence: 80, fix_direction: "f" } });
       return { keys: Object.keys(one.out).sort(), out: one.out, sessions: one.calls.map((call) => [call.node, call.session ?? null]), fanout: many.calls.map((call) => [call.node, call.session ?? null]), manyKeys: Object.keys(many.out).sort() };
     } finally { w.dispose(); }
   },

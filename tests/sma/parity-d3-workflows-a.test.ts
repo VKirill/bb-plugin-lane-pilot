@@ -83,9 +83,9 @@ describe("parity d3 workflows a", () => {
     const verdict = { state: "failed", detail: "check p1 red; check p2 red", inputSha: "sha1", at: 1 };
     const failed = phase({ diagnose: true, verification: { verdict } });
     expect(autoDue(failed)).toEqual({ kind: "diagnose" });
-    const inputs = autoInputs(failed, { kind: "diagnose" }) as { mode: string; symptom: string[]; session: string };
+    const inputs = autoInputs(failed, { kind: "diagnose" }) as { mode: string; failures: string[]; session: string };
     expect(inputs.mode).toBe("from_failures");
-    expect(inputs.symptom.length).toBeGreaterThan(0);
+    expect(inputs.failures.length).toBeGreaterThan(0);
     expect(inputs.session).toContain("verdict-");
     // Default: no phase.diagnose (an older record has no field) goes straight to the replan, as on main.
     expect(autoDue(phase({ verification: { verdict } }))).toEqual({ kind: "replan" });
@@ -95,12 +95,12 @@ describe("parity d3 workflows a", () => {
     // With a diagnosis already stored for this verdict's inputSha the machine replans instead of diagnosing again.
     const diagnosed = phase({ diagnose: true, verification: { verdict, diagnosis: { inputSha: "sha1", diagnoses: [], diagnosis: "cause", at: 2 } } });
     expect(autoDue(diagnosed)).toEqual({ kind: "replan" });
-    const r = await runSim("debug", { input: { mode: "from_failures", symptom: ["check p1 red", "check p2 red"] },
+    const r = await runSim("debug", { input: { mode: "from_failures", failures: ["check p1 red", "check p2 red"] },
       stubs: { diagnose: [{ status: "confirmed", root_cause: "c1", confidence: 80, fix_direction: "f" }, { status: "partial", root_cause: "c2", confidence: 40, fix_direction: "f2" }] } });
-    expect(pathOf(r)).toBe("ask_symptoms diagnose diagnosed");
+    expect(pathOf(r)).toBe("ask_symptoms normalize diagnose diagnosed");
     expect((out(r) as { diagnoses: unknown[] }).diagnoses.length).toBe(2);
     // Seven failures no longer end the run with guard:maxFanOut: the first six are diagnosed.
-    const many = await runSim("debug", { input: { mode: "from_failures", symptom: Array.from({ length: 7 }, (_, i) => `check c${i} red`) },
+    const many = await runSim("debug", { input: { mode: "from_failures", failures: Array.from({ length: 7 }, (_, i) => `check c${i} red`) },
       stubs: { diagnose: { status: "confirmed", root_cause: "c", confidence: 80, fix_direction: "f" } } });
     expect((out(many) as { diagnoses: unknown[] }).diagnoses.length).toBe(6);
     // A debug run started the old way (one symptom, no failures list, no session) takes the same path as on main.

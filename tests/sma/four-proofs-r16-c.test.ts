@@ -60,13 +60,13 @@ describe("verify-work (n1205 … n1213)", () => {
 
   it("[sma:k_wv_diagnose] a failed verification is diagnosed first: one debugger per gap, and the causes come back together, each with its gap, before anything is planned", async () => {
     const seen = await observeC.k_wv_diagnose();
-    expect(seen.path).toEqual(["ask_symptoms", "diagnose", "diagnosed"]);
+    expect(seen.path).toEqual(["ask_symptoms", "normalize", "diagnose", "diagnosed"]);
     expect(seen.skipped).toEqual(["ask_symptoms"]);
     expect(seen.status).toBe("confirmed");
     expect(seen.count).toBe(3);
     expect(seen.causes).toEqual(["cause 1", "cause 2", "cause 3"]);
     expect(seen.gaps).toEqual(["check p1 red: lint fails", "check p2 red: the total is wrong", "check p3 red: timeout"]);
-    expect(seen.single).toEqual(["ask_symptoms", "investigate", "inconclusive"]);
+    expect(seen.single).toEqual(["ask_symptoms", "normalize", "diagnose", "diagnosed"]);
   });
 
   it("[sma:k_wv_gapplan] the findings of a review go to the planner in its gap mode as the gaps, the goal unchanged, and its plan goes to the build; a second review's findings go the same way", async () => {
@@ -130,7 +130,7 @@ describe("debugging (n1214, n1218 … n1222)", () => {
     expect(seen.short).toEqual({ path: ["ask_symptoms", "investigate", "confirmed"], status: "confirmed" });
     expect(seen.handed).toBe("ask_symptoms#1");
     expect(seen.long).toEqual({ path: ["investigate", "confirmed"], skipped: true });
-    expect(seen.failures).toEqual(["diagnose", "diagnosed"]);
+    expect(seen.failures).toEqual(["normalize", "diagnose", "diagnosed"]);
   });
 
   it("[sma:k_wdb_setup] a new session is a file under .agents/planning/debug named by a safe slug, started with the symptom and the status open; a hostile name stays inside that folder; no name, no file", async () => {

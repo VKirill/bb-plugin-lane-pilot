@@ -66,7 +66,7 @@ describe("graph corrections 591", () => {
       stubs: { investigate: found, verify_cause: { confirmed: true } },
     });
     expect(r.summary.status).toBe("succeeded");
-    expect(pathOf(r)).toBe("ask_symptoms investigate verify_cause confirmed");
+    expect(pathOf(r)).toBe("ask_symptoms normalize investigate verify_cause confirmed");
     expect(r.called("diagnose:child")).toHaveLength(0);
   });
 
@@ -74,8 +74,24 @@ describe("graph corrections 591", () => {
     const r = await runSim("debug", {
       input: { mode: "from_failures", failures: [{ file: "a.ts", severity: "high" }, { file: "b.ts", severity: "medium" }] },
     });
-    expect(pathOf(r)).toBe("ask_symptoms diagnose diagnosed");
+    expect(pathOf(r)).toBe("ask_symptoms normalize diagnose diagnosed");
     expect(r.called("diagnose:child")).toHaveLength(2);
+  });
+
+  it("debug from_failures still fans out a legacy symptom array (public string|Finding[] contract)", async () => {
+    const r = await runSim("debug", {
+      input: { mode: "from_failures", symptom: ["check p1 red", "check p2 red", "check p3 red"] },
+    });
+    expect(pathOf(r)).toBe("ask_symptoms normalize diagnose diagnosed");
+    expect(r.called("diagnose:child")).toHaveLength(3);
+  });
+
+  it("debug typed failures win over a legacy symptom array", async () => {
+    const r = await runSim("debug", {
+      input: { mode: "from_failures", failures: ["typed one"], symptom: ["legacy one", "legacy two"] },
+    });
+    expect(pathOf(r)).toBe("ask_symptoms normalize diagnose diagnosed");
+    expect(r.called("diagnose:child")).toHaveLength(1);
   });
 
   it("debug rejects a non-array failures input instead of crashing in for_each", async () => {
