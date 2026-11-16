@@ -61,6 +61,7 @@ export interface Services {
   harness: HarnessApi;
   isLiveFolder: WriterSpawnApi["isLiveFolder"];
   probeLiveFolder?: WriterSpawnApi["probeLiveFolder"];
+  invalidateLiveFolder?: WriterSpawnApi["invalidateLiveFolder"];
   money: MoneyApi;
   ownerPresence: OwnerPresenceApi;
   providerBreaker: WriterStateApi["providerBreaker"];

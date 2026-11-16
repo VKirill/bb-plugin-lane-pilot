@@ -124,11 +124,20 @@ export const writerPermit = (deps: StartWriterTaskDeps, state: WriterTaskState, 
       : (noteBusy(input.runId, state.policy.pools.provider, "run"), await services.runWriterPool.acquire(input.runId,state.policy.pools.provider,rank));
     // A queued live attempt may have waited while private Git converted the folder. Re-probe after the shared claim;
     // cached no-git state must never let this writer mutate a repository as if it were still live-folder mode.
-    if (state.liveFolder) await bb.storage.kv.delete(`live-folder:${input.runId}`).catch(() => undefined);
     if (state.liveFolder) {
+      if (!services.invalidateLiveFolder || !services.probeLiveFolder) {
+        state.releaseWriterSlot?.();
+        state.releaseWriterSlot=undefined;
+        throw new Error("live-folder fresh admission is unavailable; refusing to start without an authoritative host probe");
+      }
+      await services.invalidateLiveFolder(input.runId).catch((cause:unknown) => {
+        state.releaseWriterSlot?.();
+        state.releaseWriterSlot=undefined;
+        throw new Error(`live-folder cache invalidation failed: ${cause instanceof Error ? cause.message : String(cause)}`);
+      });
       const freshKind=services.probeLiveFolder
         ? await services.probeLiveFolder(input.runId,input.config.hostId,state.runFolder)
-        : (await services.isLiveFolder(input.runId,input.config.hostId,state.runFolder,{fresh:true}) ? "no-git" : "git");
+        : "unknown";
       if (freshKind === "unknown") { state.releaseWriterSlot?.(); state.releaseWriterSlot=undefined; throw new Error("live-folder re-probe was unknown after folder admission"); }
       if (freshKind !== "no-git") {
         state.releaseWriterSlot?.();

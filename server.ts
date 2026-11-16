@@ -360,6 +360,8 @@ export default async function plugin(bb: BbPluginApi) {
   services.tokenCursorRow = tokenCursorRow;
   // The writer pool must exist before project-git and dispatch are composed: the Git guard and live admission share it.
   Object.assign(services, createWriterState(ctx) satisfies WriterStatePort);
+  // Build the live-folder service once so Git bootstrap and writer admission share its generation-safe invalidation.
+  const writerSpawn = createWriterSpawn(ctx, services);
   const projectGit = createProjectGit({
     host: ctx.host,
     kv: ctx.bb.storage.kv,
@@ -373,6 +375,7 @@ export default async function plugin(bb: BbPluginApi) {
     bb: ctx.bb,
     projectGit,
     runWriterPool: services.runWriterPool,
+    invalidateLiveFolder: writerSpawn.invalidateLiveFolder,
     raw: rawWriterDispatch.dispatchWriter as never,
     isDisposed: ctx.isDisposed,
   });
@@ -392,7 +395,7 @@ export default async function plugin(bb: BbPluginApi) {
     { isTaskSatisfied } satisfies { isTaskSatisfied: IsTaskSatisfied },
     createWorkflowEngine(ctx, services) satisfies WorkflowEngineApi,
     createWorkflowTriggersService(ctx, services) satisfies WorkflowTriggersPort,
-    createWriterSpawn(ctx, services),
+    writerSpawn,
     createWriterVerify(ctx, services) satisfies { runVerification: RunVerification },
     createWriterFinish(ctx, services),
     createWriterStart(ctx, services) satisfies WriterStartPort,

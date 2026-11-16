@@ -28,20 +28,41 @@ export function createLiveFolder(ctx: ServerCore) {
   // "one git command on a plain folder" contract of live-folder.
   const probing = new Map<string, Promise<"git" | "no-git" | "unknown">>();
   const probeGeneration = new Map<string, number>();
+  const cacheWrites = new Map<string, Promise<void>>();
+
+  const generationFor = (generationKey:string):number => {
+    if (!probeGeneration.has(generationKey)) probeGeneration.set(generationKey, 0);
+    return probeGeneration.get(generationKey)!;
+  };
+
+  /** Invalidate every folder identity observed for a run, draining old cache writes before deleting its KV answer. */
+  async function invalidateLiveFolder(runId:string):Promise<void> {
+    const key=`live-folder:${runId}`;
+    probeGeneration.set(key, generationFor(key)+1);
+    await cacheWrites.get(key)?.catch(() => undefined);
+    await bb.storage?.kv?.delete(key).catch(() => undefined);
+  }
+
   async function probeFolder(runId: string | undefined, hostId: string, folder: string, options?: { fresh?: boolean }): Promise<"git"|"no-git"|"unknown"> {
     const bound = runId ? getRun(db, runId)?.writer_workspace_path : null;
     if (bound && resolve(bound) !== resolve(folder)) return "unknown";
     const key = runId ? `live-folder:${runId}` : null;
     const kv = bb.storage?.kv;
-    const generationKey = `${hostId}:${folder}:${key ?? ""}`;
-    if (!probeGeneration.has(generationKey)) probeGeneration.set(generationKey, 0);
-    const generation = options?.fresh ? (probeGeneration.set(generationKey, (probeGeneration.get(generationKey) ?? 0) + 1), probeGeneration.get(generationKey)!) : (probeGeneration.get(generationKey) ?? 0);
+    // A persisted answer is per run, not per path string: the epoch must invalidate every caller of that cache key.
+    const generationKey = key ?? `${hostId}:${folder}`;
+    if (options?.fresh && runId) await invalidateLiveFolder(runId);
+    else if (options?.fresh) probeGeneration.set(generationKey, generationFor(generationKey)+1);
+    const generation = generationFor(generationKey);
     if (!options?.fresh && key && kv) {
+      const readGeneration=generation;
       const saved = await kv.get(key);
-      if (saved === "no-git") return "no-git";
-      if (saved === "git") return "git";
+      // A fresh invalidation may have happened while KV was in flight. Never return the old answer in that epoch.
+      if (probeGeneration.get(generationKey) === readGeneration) {
+        if (saved === "no-git") return "no-git";
+        if (saved === "git") return "git";
+      }
     }
-    const probeKey = `${hostId}:${folder}:${key ?? ""}${options?.fresh ? `:fresh:${generation}` : ""}`;
+    const probeKey = `${hostId}:${folder}:${key ?? ""}:probe:${generation}`;
     let pending = probing.get(probeKey);
     if (!pending) {
       pending = runOnHost(host, { hostId, cwd: folder, command: LIVE_FOLDER_PROBE_COMMAND, timeoutSec: 15 })
@@ -51,7 +72,16 @@ export function createLiveFolder(ctx: ServerCore) {
       probing.set(probeKey, pending);
     }
     const kind = await pending;
-    if (!options?.fresh && key && kv && kind !== "unknown" && probeGeneration.get(generationKey) === generation) await bestEffort(ctx.log, "writer live folder record", kv.set(key, kind as never), undefined);
+    if (!options?.fresh && key && kv && kind !== "unknown") {
+      const previous=cacheWrites.get(key) ?? Promise.resolve();
+      const write=previous.catch(() => undefined).then(async () => {
+        if (probeGeneration.get(generationKey) !== generation) return;
+        await bestEffort(ctx.log, "writer live folder record", kv.set(key, kind as never), undefined);
+      });
+      cacheWrites.set(key,write);
+      await write;
+      if (cacheWrites.get(key)===write) cacheWrites.delete(key);
+    }
     return kind;
   }
 
@@ -117,5 +147,5 @@ export function createLiveFolder(ctx: ServerCore) {
     return { ok: true, restored: restored.restored, removed, failed: restored.failed };
   }
 
-  return { isLiveFolder, probeLiveFolder, liveSnapshot, liveOwnedList, backupLiveFolder, restoreLiveFolder };
+  return { isLiveFolder, probeLiveFolder, invalidateLiveFolder, liveSnapshot, liveOwnedList, backupLiveFolder, restoreLiveFolder };
 }

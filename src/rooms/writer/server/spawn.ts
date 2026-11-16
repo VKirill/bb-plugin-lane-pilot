@@ -330,7 +330,7 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
     return spawnWriterAttemptWatched({ db, log:(message) => bb.log.warn(message) }, input, spawnWriterAttemptOnce);
   }
 
-  return { spawnWriterAttempt, workspaceDirt:worktree.workspaceDirt, isLiveFolder:liveFolder.isLiveFolder, probeLiveFolder:liveFolder.probeLiveFolder, backupLiveFolder:liveFolder.backupLiveFolder, restoreLiveFolder:liveFolder.restoreLiveFolder };
+  return { spawnWriterAttempt, workspaceDirt:worktree.workspaceDirt, isLiveFolder:liveFolder.isLiveFolder, probeLiveFolder:liveFolder.probeLiveFolder, invalidateLiveFolder:liveFolder.invalidateLiveFolder, backupLiveFolder:liveFolder.backupLiveFolder, restoreLiveFolder:liveFolder.restoreLiveFolder };
 }
 
 export type WriterSpawnApi = ReturnType<typeof createWriterSpawn>;

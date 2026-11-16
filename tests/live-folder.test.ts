@@ -3,7 +3,7 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, sy
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { runCommandOnHost } from "../src/rooms/writer/cli-run";
 import { attemptProduced } from "../src/rooms/writer/cli-outcome";
 import { createRun, openDatabase } from "../src/rooms/plugin-db";
@@ -91,6 +91,66 @@ describe("detection", () => {
     expect(await live.isLiveFolder("r", "h", join(plain, "elsewhere"))).toBe(false);
     expect(calls).toEqual([]);
     expect(await live.isLiveFolder("r", "h", join(tmpdir(), "lane-pilot-folder-that-does-not-exist"))).toBe(false);
+  });
+
+  it("invalidates a delayed stale KV write before the next cached read", async () => {
+    const { bb } = createFakePluginHost({ pluginId: "lane-pilot" });
+    const db = openDatabase(bb);
+    const folder = temp("invalidate");
+    createRun(db, "r-invalidate", "P", "bb", folder);
+    const values = new Map<string, unknown>();
+    let releaseSet!: () => void;
+    let setEntered!: () => void;
+    const entered = new Promise<void>((resolve) => { setEntered = resolve; });
+    const setGate = new Promise<void>((resolve) => { releaseSet = resolve; });
+    let delayed = true;
+    const realKv = bb.storage.kv;
+    (bb.storage as { kv: unknown }).kv = {
+      ...realKv,
+      get: async (key: string) => values.get(key),
+      set: async (key: string, value: unknown) => { if (delayed) { delayed = false; setEntered(); await setGate; } values.set(key, value); },
+      delete: async (key: string) => { values.delete(key); },
+    };
+    const host = { call: async (method: string, input: { requestedHostId: string; command: string; cwd: string; timeoutSec?: number }) => {
+      if (method !== "runCommand") throw new Error(`unexpected host call ${method}`);
+      return runCommandOnHost(input);
+    } };
+    const live = createLiveFolder({ bb, db, host } as never);
+    const oldProbe = live.isLiveFolder("r-invalidate", "h", folder);
+    await setEntered;
+    spawnSync("git", ["init", "-q"], { cwd: folder });
+    const invalidation = live.invalidateLiveFolder("r-invalidate");
+    releaseSet();
+    await Promise.all([oldProbe, invalidation]);
+    expect(await live.isLiveFolder("r-invalidate", "h", folder)).toBe(false);
+    expect(values.get("live-folder:r-invalidate")).toBe("git");
+  });
+
+  it("does not let a new caller join an older in-flight probe epoch", async () => {
+    const { bb } = createFakePluginHost({ pluginId: "lane-pilot" });
+    const db = openDatabase(bb);
+    const folder = temp("probe-epoch");
+    createRun(db, "r-epoch", "P", "bb", folder);
+    let calls = 0;
+    let releaseFirst!: () => void;
+    let firstEntered!: () => void;
+    const firstGate = new Promise<void>((resolve) => { releaseFirst = resolve; });
+    const entered = new Promise<void>((resolve) => { firstEntered = resolve; });
+    const host = { call: async (method: string, input: { requestedHostId: string; command: string; cwd: string; timeoutSec?: number }) => {
+      if (method !== "runCommand") throw new Error(`unexpected host call ${method}`);
+      calls += 1;
+      if (calls === 1) { firstEntered(); await firstGate; }
+      return runCommandOnHost(input);
+    } };
+    const live = createLiveFolder({ bb, db, host } as never);
+    const oldProbe = live.isLiveFolder("r-epoch", "h", folder);
+    await entered;
+    await live.invalidateLiveFolder("r-epoch");
+    const newProbe = live.isLiveFolder("r-epoch", "h", folder);
+    await vi.waitFor(() => expect(calls).toBe(2));
+    releaseFirst();
+    await Promise.all([oldProbe, newProbe]);
+    expect(calls).toBe(2);
   });
 });
 

@@ -55,9 +55,10 @@ export function overlappingLiveRuns(db:LanePilotDatabase,hostId:string,root:stri
 
 type GuardDeps = {
   db:LanePilotDatabase;
-  bb:{ sdk:{ threads:{ getPluginMetadata(input:{threadId:string}):Promise<unknown> }; projects:{ get(input:{projectId:string}):Promise<unknown> } }; storage:{ kv:{ delete(key:string):Promise<unknown> } } };
+  bb:{ sdk:{ threads:{ getPluginMetadata(input:{threadId:string}):Promise<unknown> }; projects:{ get(input:{projectId:string}):Promise<unknown> } } };
   projectGit:ProjectGit;
   runWriterPool:FolderPool;
+  invalidateLiveFolder:(runId:string)=>Promise<void>;
   raw:ProjectGitDispatch;
   isDisposed?:()=>boolean;
 };
@@ -93,7 +94,9 @@ export function createProjectGitDispatch(deps:GuardDeps):ProjectGitDispatch {
       // Let raw dispatch own the existing validation/error contract; never ask the owner for an incomplete request.
       if (!args.task || typeof args.task.project_cwd!=="string") return await deps.raw(args);
       if (!within(args.task.project_cwd,run.writer_workspace_path)) {
-        return refusal(runId,{ kind:"scope_invalid" },`task.project_cwd is outside the frozen writer workspace ${run.writer_workspace_path}; no Git question or mutation was started`);
+        // placeTask proves nearest-repository ownership for root/sibling paths. Do not replace that contract with a
+        // frozen-run-folder check; this guard has not selected a Git scope and must not bootstrap one here.
+        return await deps.raw(args);
       }
       let project:unknown;
       try { project=await deps.bb.sdk.projects.get({projectId:args.projectId}); }
@@ -133,10 +136,15 @@ export function createProjectGitDispatch(deps:GuardDeps):ProjectGitDispatch {
         try { result=await deps.projectGit.bootstrap({ hostId, root, account:scope.kind==="chosen"||scope.kind==="resume"?scope.account:"" }); }
         catch (cause) { return refusal(runId,{ kind:"bootstrapped", result:{ ok:false, stage:"unknown", code:"bootstrap_exception", detail:String(cause) } },`private Git bootstrap failed unexpectedly: ${cause instanceof Error?cause.message:String(cause)}; no task or attempt was admitted, but Git side effects may exist`); }
         if (!result.ok) return refusal(runId,{ kind:"bootstrapped", result },`private Git did not complete (${result.stage}:${result.code}): ${result.detail}; no task or attempt was admitted, but Git side effects may exist`);
-        // isLiveFolder caches by run id; the next writer probe must observe the new repository.
-        try { await deps.bb.storage.kv.delete(`live-folder:${runId}`); }
+        // The live-folder service owns its generation and pending-write drain. A raw KV delete would race an older
+        // probe's delayed set and could restore a stale no-git answer after this bootstrap.
+        try { await deps.invalidateLiveFolder(runId); }
         catch (cause) { return refusal(runId,{ kind:"bootstrapped", result },`private Git succeeded but live-folder cache invalidation failed: ${cause instanceof Error?cause.message:String(cause)}; no task or attempt was admitted, but Git side effects may exist`); }
         if (deps.isDisposed?.()) return refusal(runId,{ kind:"bootstrapped", result },"Lane Pilot stopped after Git bootstrap; no task or attempt was admitted and Git side effects may exist");
+        // The Git mutation and cache invalidation are complete. Release the folder claim before dispatch because raw
+        // start/admission may need that same claim; the per-run admission remains held through raw's settled result.
+        releaseFolder();
+        releaseFolder=()=>undefined;
         return await deps.raw(args);
       } finally { releaseFolder(); }
     } finally { releaseAdmission(); }

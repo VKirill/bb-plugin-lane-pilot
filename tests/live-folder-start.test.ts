@@ -61,6 +61,8 @@ function services(env: ReturnType<typeof setup>, script: Step[], live: boolean) 
     stability: { breakerHolds: () => null, diskHolds: async () => null, onTaskFailed: async () => false, loadParked: async () => [] },
     startAfterAcceptance: () => undefined,
     isLiveFolder: async () => live,
+    probeLiveFolder: async () => live ? "no-git" : "git",
+    invalidateLiveFolder: async () => undefined,
     workspaceDirt: async () => ({ ok: true, paths: [], snapshots: [] }),
     restoreLiveFolder: async (input: { backupId: string; folder: string; task: { owns_paths: string[] } }) => {
       env.events.push(`restore:${input.backupId}`);

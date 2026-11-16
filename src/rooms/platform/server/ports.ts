@@ -51,6 +51,7 @@ export type ResumeDispatch = (attemptId: string) => Promise<{ resumed: true; liv
 /** writer/server/live-folder.ts */
 export type IsLiveFolder = (runId: string | undefined, hostId: string, folder: string, options?: { fresh?: boolean }) => Promise<boolean>;
 export type ProbeLiveFolder = (runId: string | undefined, hostId: string, folder: string) => Promise<"git"|"no-git"|"unknown">;
+export type InvalidateLiveFolder = (runId: string) => Promise<void>;
 
 /** writer/server/state.ts — the shared writer state. */
 export interface WriterStateApi {

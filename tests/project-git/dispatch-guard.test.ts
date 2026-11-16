@@ -16,8 +16,8 @@ function fixture(workspace="/repo/section") {
   const bb={...fake.bb,sdk:{...fake.bb.sdk,threads:{...fake.bb.sdk.threads,getPluginMetadata:async()=>({role:"pm",lanePilotRunId:"run"})},projects:{...fake.bb.sdk.projects,get:async()=>({sources:[{hostId:"h1",path:"/repo"}]})}}};
   const raw=vi.fn(async()=>({ok:true,state:"queued"}));
   const projectGit={resolveScope:vi.fn(async()=>({kind:"repo",state:"origin",root:"/repo"})),bootstrap:vi.fn(async()=>({ok:true,root:"/repo",fullName:"octo/repo",url:"https://github.invalid/octo/repo",commit:"abc",branch:"main"}))};
-  const pool={acquire:vi.fn(async()=>()=>undefined),acquireFolder:vi.fn(async()=>()=>undefined)};
-  const dispatch=createProjectGitDispatch({db,bb:bb as never,projectGit:projectGit as never,runWriterPool:pool,raw,isDisposed:()=>false});
+  const pool={acquire:vi.fn(async()=>()=>undefined),acquireFolder:vi.fn(async(_hostId:string,_path:string)=>()=>undefined)};
+  const dispatch=createProjectGitDispatch({db,bb:bb as never,projectGit:projectGit as never,runWriterPool:pool,invalidateLiveFolder:async()=>undefined,raw,isDisposed:()=>false});
   const task={id:"T1",project_cwd:workspace};
   return {db,bb,raw,projectGit,pool,dispatch,task};
 }
@@ -33,6 +33,35 @@ it("uses the frozen project source for section scope and holds run admission thr
   finish();
   await pending;
   expect(hasRunAdmission(f.db,"pm-thread")).toBe(false);
+});
+
+it("delegates root and nested-repository paths outside the frozen section to raw placeTask", async()=>{
+  for (const project_cwd of ["/repo", "/repo/plugins/p"]) {
+    const f=fixture("/repo/section");
+    const result=await f.dispatch({threadId:"pm-thread",projectId:"project",task:{...f.task,project_cwd}});
+    expect(result).toMatchObject({ok:true,state:"queued"});
+    expect(f.raw).toHaveBeenCalledWith(expect.objectContaining({task:expect.objectContaining({project_cwd})}));
+    expect(f.projectGit.resolveScope).not.toHaveBeenCalled();
+  }
+});
+
+it("releases the bootstrap folder claim before raw dispatch reacquires it", async()=>{
+  const f=fixture("/repo");
+  f.projectGit.resolveScope.mockResolvedValue({kind:"chosen",choice:{scope:"project",root:"/repo"},account:"octo"} as never);
+  let held=false;
+  const releases=vi.fn();
+  f.pool.acquireFolder.mockImplementation(async()=>{
+    if (held) throw new Error("folder claim was still held by dispatch");
+    held=true;
+    return ()=>{held=false; releases();};
+  });
+  f.raw.mockImplementationOnce(async()=>{
+    const release=await f.pool.acquireFolder!("h1","/repo");
+    release();
+    return {ok:true,state:"queued"};
+  });
+  await expect(f.dispatch({threadId:"pm-thread",projectId:"project",task:f.task})).resolves.toMatchObject({ok:true});
+  expect(releases).toHaveBeenCalledTimes(2);
 });
 
 it("does not dispatch after a failed bootstrap and reports uncertain side effects", async()=>{
