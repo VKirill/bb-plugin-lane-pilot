@@ -299,11 +299,15 @@ export function registerProjectActions(engine: WorkflowEngine, ctx: ServerCore, 
     if (existing.sha256.toLowerCase() !== sha256Hex(existing.content)) throw new Error(`the existing ${rel} read does not match its hash`);
     return { content: existing.content, sha256: existing.sha256 };
   };
+  // File absence, and only file absence: a raw ENOENT, or the SDK's `not_found` / `unknown_error` code carrying a
+  // file-scoped serverCode. `project_not_found`, `thread_not_found`, 500s and transport failures still refuse.
+  const FILE_ABSENT = new Set(["file_not_found", "host_file_not_found", "path_not_found"]);
   const isMissing = (cause: unknown): boolean => {
     if (isFsAbsent(cause)) return true;
     if (!cause || typeof cause !== "object") return false;
     const error = cause as { code?: unknown; serverCode?: unknown };
-    return error.code === "not_found" && ["file_not_found", "path_not_found", "host_file_not_found"].includes(String(error.serverCode ?? ""));
+    if (FILE_ABSENT.has(String(error.code ?? ""))) return true;
+    return (error.code === "not_found" || error.code === "unknown_error") && FILE_ABSENT.has(String(error.serverCode ?? ""));
   };
   const writtenOutcome = (result: unknown): string =>
     result && typeof result === "object" ? String((result as { outcome?: unknown }).outcome ?? "") : "";
@@ -334,10 +338,10 @@ export function registerProjectActions(engine: WorkflowEngine, ctx: ServerCore, 
       const activity = `activity ${new Date().toISOString()} — shipped ${phase || "phase"}${pr ? ` ${pr}` : ""}`;
       const next = stateBlockText(prev, { phase, status: "shipped" }, { Session: [activity] }, true);
       if ("refused" in next) return { marked: false, path: "", refused: next.refused };
-      if (root === checkout.path) noteEngineWrite(checkout.path, path);
       const written = await bb.sdk.files.write({ hostId: checkout.hostId, rootPath: root, path: `${root}/${path}`, content: next.text, contentEncoding: "utf8", createParents: true, expectedSha256: current.sha256 });
       const outcome = writtenOutcome(written);
       if (outcome !== "written") return { marked: false, path: "", failed: outcome || "no write receipt" };
+      if (root === checkout.path) noteEngineWrite(checkout.path, path);
       return { marked: true, path };
     } catch (cause) {
       ctx.log(`ship state mark failed, the ship goes on: ${cause instanceof Error ? cause.message : String(cause)}`);
@@ -373,10 +377,10 @@ export function registerProjectActions(engine: WorkflowEngine, ctx: ServerCore, 
     let at = lines.findIndex((line) => line.trim() === "## Backlog");
     if (at >= 0) { while (at > 0 && !lines[at - 1]!.trim()) at -= 1; lines.splice(at, 0, ...rows, ""); }
     else lines.push(...(lines.length && lines[lines.length - 1]!.trim() ? [""] : []), ...rows);
-    if (root === checkout.path) noteEngineWrite(checkout.path, path);
     const written = await bb.sdk.files.write({ hostId: checkout.hostId, rootPath: root, path: `${root}/${path}`, content: `${lines.join("\n").replace(/\s+$/, "")}${eol}`, contentEncoding: "utf8", createParents: true, expectedSha256 });
     const outcome = writtenOutcome(written);
     if (outcome !== "written") throw new Error(`lp.phase_add: the write of ${path} was not applied (${outcome || "no write receipt"})`);
+    if (root === checkout.path) noteEngineWrite(checkout.path, path);
     return { added: rows, count: rows.length };
   });
 
@@ -391,12 +395,12 @@ export function registerProjectActions(engine: WorkflowEngine, ctx: ServerCore, 
     const slug = question.toLowerCase().replace(/[^a-z0-9_-]+/g, "-").replace(/^[-_]+|[-_]+$/g, "").slice(0, 50).replace(/-+$/, "") || "spike";
     const path = `.agents/planning/spikes/${slug}-${new Date().toISOString().slice(0, 10)}.md`;
     const content = `# Spike — ${question.replace(/\r?\n/g, " ")}\n\n`;
-    if (root === checkout.path) noteEngineWrite(checkout.path, path);
     // Create-only: `expectedSha256: null` answers conflict over an existing file, so a repeated question the same day fails
     // instead of replacing a spike that is already there.
     const written = await bb.sdk.files.write({ hostId: checkout.hostId, rootPath: root, path: `${root}/${path}`, content, contentEncoding: "utf8", createParents: true, expectedSha256: null });
-    const outcome = written && typeof written === "object" ? (written as { outcome?: unknown }).outcome : undefined;
+    const outcome = writtenOutcome(written);
     if (outcome !== "written") throw new Error(`lp.spike_new: ${path} already exists — name a new question or remove the old spike first`);
+    if (root === checkout.path) noteEngineWrite(checkout.path, path);
     return { spike_path: path };
   });
 

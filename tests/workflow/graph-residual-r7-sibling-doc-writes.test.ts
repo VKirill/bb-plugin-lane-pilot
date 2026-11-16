@@ -1,4 +1,5 @@
 import { coreFileWrite, diskStore } from "../helpers/core-files";
+import { writtenByEngineSince } from "../../src/rooms/verification/server";
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -45,7 +46,7 @@ afterEach(() => { dispose?.(); dispose = undefined; });
 
 /** The executor fixture of a chain run: same composition as production (registerChainExecutors registers fs.write,
  *  deliverable.validate and the lp.* actions), minus the parts this packet does not exercise. */
-async function setup(script: Script, options: { resolveWorkflow?: (id: string, version?: number) => Workflow | null; human?: (node: Row) => Row; truncateReads?: boolean } = {}) {
+async function setup(script: Script, options: { resolveWorkflow?: (id: string, version?: number) => Workflow | null; human?: (node: Row) => Row; truncateReads?: boolean; readError?: { code: string; serverCode: string }; writeOutcome?: string } = {}) {
   const checkout = mkdtempSync(join(tmpdir(), "lp-r7-"));
   execFileSync("git", ["init", "-q"], { cwd: checkout });
   writeFileSync(join(checkout, "README.md"), "hello\n");
@@ -90,12 +91,14 @@ async function setup(script: Script, options: { resolveWorkflow?: (id: string, v
       files: {
         write: async (args: unknown) => {
           const filePath = String((args as { path?: unknown }).path ?? "");
+          if (options.writeOutcome && !/manifest\.json$/.test(filePath)) return { outcome: options.writeOutcome };
           return coreFileWrite(diskStore(), (path, content) => {
             if (!/\/\.agents\/runs\/[^/]+\/manifest\.json$/.test(path)) writes.push({ path, content });
           })(args) as never;
         },
         read: async (args: unknown) => {
           const filePath = String((args as { path?: unknown }).path ?? "");
+          if (options.readError) throw Object.assign(new Error(`${options.readError.serverCode}: ${filePath}`), options.readError);
           if (!existsSync(filePath)) throw Object.assign(new Error(`file not found: ${filePath}`), { code: "not_found", serverCode: "file_not_found" });
           const content = readFileSync(filePath, "utf8");
           // The broken shape the data-loss review named: a sliced body under the whole-file hash.
@@ -399,6 +402,44 @@ describe("P04-R7 sibling document writes through the real fs.write action", () =
       const summary = await t.start(phaseAdd, { phases: ["1 coverage"] }).done;
       expect(summary.status).toBe("failed");
       expect(file(t.checkout, ".agents/planning/ROADMAP.md")).toBe(bigRoadmap);
+    }
+  });
+
+  it("lp.phase_add treats only file-shaped absence as create-only, and marks engine writes solely after a written receipt", async () => {
+    const phaseAdd = wf({
+      id: "t-phase-add-miss",
+      inputs: [{ name: "phases", type: "any" }],
+      outputs: [],
+      nodes: [{ id: "add", type: "action", action: "lp.phase_add", params: { goal: "grow" }, output: [{ name: "added", type: "array" }, { name: "count", type: "number" }] }],
+      edges: [{ from: "start", to: "add" }, { from: "add", to: "end" }],
+    });
+    {
+      // The SDK's real absent shape — code unknown_error carrying a file-scoped serverCode — is absence:
+      // the create-only write lands and the path is marked engine-written after the receipt.
+      const t = await setup({}, { readError: { code: "unknown_error", serverCode: "file_not_found" } });
+      dispose = t.dispose;
+      const summary = await t.start(phaseAdd, { phases: ["1 coverage"] }).done;
+      expect(summary.status, summary.error ?? undefined).toBe("succeeded");
+      expect(file(t.checkout, ".agents/planning/ROADMAP.md")).toContain("- [ ] 1 coverage — grow");
+      expect(writtenByEngineSince(t.checkout, 0).has(".agents/planning/ROADMAP.md".replace(/^\.?\/+/, ""))).toBe(true);
+    }
+    {
+      // `project_not_found` is not file absence: the run refuses and nothing is written or marked.
+      const t = await setup({}, { readError: { code: "unknown_error", serverCode: "project_not_found" } });
+      dispose = t.dispose;
+      const summary = await t.start(phaseAdd, { phases: ["1 coverage"] }).done;
+      expect(summary.status, JSON.stringify((t.db as never as { prepare(q: string): { all(...a: unknown[]): Row[] } }).prepare("SELECT node_id,state,substr(error,1,200) e FROM lane_pilot_wf_step WHERE run_id=?").all(summary.runId))).toBe("failed");
+      expect(file(t.checkout, ".agents/planning/ROADMAP.md")).toBeNull();
+      expect(writtenByEngineSince(t.checkout, 0).size).toBe(0);
+    }
+    {
+      // A CAS conflict throws before the receipt: no bytes land and the engine-write mark stays empty.
+      const t = await setup({}, { writeOutcome: "conflict" });
+      dispose = t.dispose;
+      const summary = await t.start(phaseAdd, { phases: ["1 coverage"] }).done;
+      expect(summary.status).toBe("failed");
+      expect(file(t.checkout, ".agents/planning/ROADMAP.md")).toBeNull();
+      expect(writtenByEngineSince(t.checkout, 0).size).toBe(0);
     }
   });
 });
