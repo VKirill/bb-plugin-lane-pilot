@@ -1,4 +1,8 @@
-import { BASELINE_LIMITS, baselineMessage, IGNORE_BLOCK, IGNORE_MARKER, SECRET_CONTENT_PATTERNS, type GitProbe } from "./logic";
+import { SECRET_TOKEN_PATTERNS } from "../tasks";
+import { BASELINE_LIMITS, baselineMessage, IGNORE_BLOCK, IGNORE_MARKER, pythonSecretSources, type GitProbe } from "./logic";
+
+/** The shared credential families as Python sources, or why they cannot be (then no baseline runs). */
+export const SECRET_SCAN = pythonSecretSources(SECRET_TOKEN_PATTERNS);
 
 /** A python script and its JSON payload as one shell command (base64 payload: no quoting, no heredoc clash). */
 function pythonCommand(script: string, payload: unknown): string {
@@ -175,8 +179,8 @@ if moved.returncode != 0: say(ok=False, code="commit_failed", detail=moved.stder
 say(ok=True, commit=commit, tree=tree, branch=out(git("symbolic-ref", "--short", "HEAD")), files=len(paths), reused=False)
 `;
 
-export const baselineCommand = (input: { root: string; opId: string }): string => pythonCommand(BASELINE_SCRIPT, {
-  root: input.root, opId: input.opId, marker: IGNORE_MARKER, block: IGNORE_BLOCK, secrets: SECRET_CONTENT_PATTERNS, message: baselineMessage(input.opId), ...BASELINE_LIMITS,
+export const baselineCommand = (input: { root: string; opId: string; secrets: readonly string[] }): string => pythonCommand(BASELINE_SCRIPT, {
+  root: input.root, opId: input.opId, marker: IGNORE_MARKER, block: IGNORE_BLOCK, secrets: input.secrets, message: baselineMessage(input.opId), ...BASELINE_LIMITS,
 });
 
 export type BaselineAnswer =

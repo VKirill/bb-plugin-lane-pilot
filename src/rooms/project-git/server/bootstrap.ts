@@ -5,7 +5,7 @@ import {
   bootstrapKey, declinedKey, isWithin, namesOperation, repoDescription, repoNameFor, sameRemote, scopeKey, scopeQuestion, verifyReadback,
   PERMANENT_STOPS, type BootstrapRecord, type BootstrapStage, type GitProbe, type SavedScope, type ScopeChoice,
 } from "../logic";
-import { baselineCommand, parseBaseline, parseProbe, probeCommand } from "../scripts";
+import { baselineCommand, parseBaseline, parseProbe, probeCommand, SECRET_SCAN } from "../scripts";
 
 type Ran = { exitCode: number; stdout: string; stderr: string };
 type Kv = { get<T>(key: string): Promise<T | null | undefined>; set(key: string, value: never): Promise<unknown> };
@@ -189,8 +189,9 @@ export function createProjectGit(deps: ProjectGitDeps) {
     if (!rec.baseline) {
       // Only a folder without Git, or the repository this operation started, gets a first commit; any other history is never published.
       if (found.state !== "noGit" && !rec.opId) return fail("baseline", "existing_history", "a repository Lane Pilot did not start: its history was never scanned and is not published");
+      if (!SECRET_SCAN.ok) return fail("baseline", "secret_patterns_untranslatable", SECRET_SCAN.reason);
       if (!rec.opId) { rec.opId = randomUUID(); rec.account = expectedAccount; rec.baselineStartedAt = now(); await save(); }
-      const made = parseBaseline(await run(hostId, root, baselineCommand({ root, opId: rec.opId }), 600));
+      const made = parseBaseline(await run(hostId, root, baselineCommand({ root, opId: rec.opId, secrets: SECRET_SCAN.sources }), 600));
       if (!made.ok) return fail("baseline", made.code, made.detail, made.blocked);
       rec.baseline = { commit: made.commit, tree: made.tree, branch: made.branch, files: made.files, reused: made.reused, at: now() };
       await save();

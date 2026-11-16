@@ -307,8 +307,27 @@ export function questionKind(question: string): QuestionKind {
   return "clarification";
 }
 
+/**
+ * The recognizable credential families, one list for every place that looks for them: the answer rail below and the
+ * private Git bootstrap's file scan (project-git hands each `.source` to Python `re`, so a pattern here stays in the
+ * shared subset: ASCII classes, `\b`, `\d`, `{n,}`, `(?:…)`, no flags).
+ */
+export const SECRET_TOKEN_PATTERNS: ReadonlyArray<{ name: string; pattern: RegExp }> = [
+  { name: "sk- API key", pattern: /\bsk-[A-Za-z0-9_-]{16,}/ },
+  { name: "GitHub token", pattern: /\bgh[pousr]_[A-Za-z0-9]{20,}/ },
+  { name: "Slack token", pattern: /\bxox[abpr]-[A-Za-z0-9-]{10,}/ },
+  { name: "AWS access key id", pattern: /\bAKIA[0-9A-Z]{16}\b/ },
+  { name: "private key", pattern: /-----BEGIN [A-Z ]*PRIVATE KEY-----/ },
+  { name: "Telegram bot token", pattern: /\b\d{8,10}:[A-Za-z0-9_-]{30,}\b/ },
+  { name: "GitHub fine-grained token", pattern: /\bgithub_pat_[A-Za-z0-9_]{40,}/ },
+  { name: "Stripe live key", pattern: /\b[sr]k_live_[A-Za-z0-9]{20,}/ },
+  { name: "PGP private key", pattern: /-----BEGIN PGP PRIVATE KEY BLOCK-----/ },
+  { name: "Google API key", pattern: /\bAIza[0-9A-Za-z_-]{35}/ },
+];
+/** Not a family but a guess: a long base64 run. Answers only; in files it matches every lockfile integrity hash. */
+const BASE64_RUN = /\b[A-Za-z0-9+/]{40,}={0,2}\b/;
+const SECRET_SHAPES = [...SECRET_TOKEN_PATTERNS.map((family) => family.pattern), BASE64_RUN];
 /** Secret-shaped answer refused (SMA): an answer that carries what looks like a key or a password never goes into a writer's thread. */
-const SECRET_SHAPES = [/\bsk-[A-Za-z0-9_-]{16,}/, /\bgh[pousr]_[A-Za-z0-9]{20,}/, /\bxox[abpr]-[A-Za-z0-9-]{10,}/, /\bAKIA[0-9A-Z]{16}\b/, /-----BEGIN [A-Z ]*PRIVATE KEY-----/, /\b[A-Za-z0-9+/]{40,}={0,2}\b/, /\b\d{8,10}:[A-Za-z0-9_-]{30,}\b/];
 export const secretShaped = (text: string) => SECRET_SHAPES.some((pattern) => pattern.test(text));
 
 /** Consent is the whole message (SMA): only yes-words, like «да», «ок» or a form button «Да, запускай», are consent to the last proposal; a «да, но …» is a new word, not consent. */

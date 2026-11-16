@@ -39,23 +39,22 @@ export const IGNORE_PATTERNS = [
 
 export const IGNORE_BLOCK = `${IGNORE_MARKER}\n${IGNORE_PATTERNS.join("\n")}\n`;
 
+/** JS regex syntax that Python `re` reads differently or not at all: lookbehind and named groups, `\p`/`\u`/`\k`/`\c` escapes, `[^]`. */
+const NOT_PYTHON = /\(\?<|\\[pPukc]|\[\^\]/;
+
 /**
- * Python `re` sources of content that is a credential wherever it sits; a hit stops the baseline (the file is named,
- * never shown). The token families follow tasks/rails SECRET_SHAPES (private keys, GitHub, Slack, AWS, `sk-`, Telegram
- * bot tokens); its catch-all «40+ base64 characters» is left out on purpose: lockfile integrity hashes match it.
- * A heuristic, not a guarantee: a password in plain words or an unknown token format passes.
+ * The shared credential families (tasks SECRET_TOKEN_PATTERNS) as Python `re` sources for the file scan. A pattern with
+ * flags or syntax outside the shared subset is not translated silently: the whole list is refused with the reason, and
+ * the bootstrap stops before it writes anything. The scan is a heuristic: a password in plain words or an unknown token
+ * format passes.
  */
-export const SECRET_CONTENT_PATTERNS = [
-  "-----BEGIN [A-Z ]*PRIVATE KEY(?: BLOCK)?-----",
-  "\\bgh[pousr]_[A-Za-z0-9]{20,}",
-  "\\bgithub_pat_[A-Za-z0-9_]{40,}",
-  "\\bAKIA[0-9A-Z]{16}\\b",
-  "\\bxox[abprs]-[A-Za-z0-9-]{10,}",
-  "\\bsk-(?:ant-|proj-)?[A-Za-z0-9_-]{20,}",
-  "\\b[sr]k_live_[A-Za-z0-9]{20,}",
-  "\\b\\d{8,10}:[A-Za-z0-9_-]{35}\\b",
-  "\\bAIza[0-9A-Za-z_-]{35}",
-] as const;
+export function pythonSecretSources(families: ReadonlyArray<{ name: string; pattern: RegExp }>): { ok: true; sources: string[] } | { ok: false; reason: string } {
+  for (const { name, pattern } of families) {
+    if (pattern.flags) return { ok: false, reason: `secret pattern «${name}» has flags ${pattern.flags}, which Python re would read differently` };
+    if (NOT_PYTHON.test(pattern.source)) return { ok: false, reason: `secret pattern «${name}» uses syntax Python re does not share: ${pattern.source}` };
+  }
+  return families.length ? { ok: true, sources: families.map(({ pattern }) => pattern.source) } : { ok: false, reason: "no secret patterns to scan with" };
+}
 
 /** Every file that may be committed is scanned whole: the size limit is the scan limit. */
 export const BASELINE_LIMITS = { maxFileBytes: 5 * 1024 * 1024, maxFiles: 20_000 } as const;
