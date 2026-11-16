@@ -526,7 +526,14 @@ export const observeC = {
         case "gitRevertCommits": return { hostId: HOST, ...await revertCommitsInWorktree({ worktreePath: input.worktreePath, commits: input.commits }) };
         case "gitWorktreeState": return { hostId: HOST, ...await worktreeState({ basePath: input.basePath, worktreePath: input.worktreePath }) };
         case "gitOwnershipBase": return { hostId: HOST, ...await resolveGitOwnershipBase({ projectCwd: input.projectCwd }) };
-        case "gitIntegrate": return { hostId: HOST, ...await integrateWorktree({ basePath: input.basePath, worktreePath: input.worktreePath, message: input.message, removeWorktree: input.removeWorktree }) };
+        case "gitIntegrate": return { hostId: HOST, ...await integrateWorktree({ basePath: input.basePath, worktreePath: input.worktreePath, message: input.message,
+          removeWorktree: input.removeWorktree, expectedHead: input.expectedHead, baseInHead: input.baseInHead, committedOnly: input.committedOnly,
+          bookkeeping: input.bookkeeping, ownsPaths: input.ownsPaths, lockWaitMs: input.indexLockWaitMs }) };
+        case "runCommand": {
+          const timeout = Math.max(1_000, Math.min(45_000, Number(input.timeoutSec ?? 30) * 1_000));
+          const ran = spawnSync("bash", ["-lc", input.command], { cwd: input.cwd, encoding: "utf8", timeout });
+          return { hostId: HOST, exitCode: ran.status ?? 124, stdout: ran.stdout ?? "", stderr: ran.stderr ?? (ran.error ? String(ran.error) : "") };
+        }
         case "gateRun": return { hostId: HOST, ...await runGateOnHost({ basePath: input.basePath, command: input.command, timeoutSec: input.timeoutSec }) };
         default: throw new Error(`unexpected host call ${method}`);
       }

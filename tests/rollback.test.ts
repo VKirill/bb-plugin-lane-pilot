@@ -6,6 +6,7 @@ import { basename, join } from "node:path";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it, vi } from "vitest";
 import { createRollback, runRollbackCli } from "../src/rooms/rollback/server";
+import { createRollbackChanges } from "../src/rooms/rollback/server/changes";
 import { getAttemptChange, listTaskReceipts } from "../src/rooms/rollback/store";
 import { createAttempt, createRun, createTask, openDatabase, saveProjectSetting } from "../src/rooms/plugin-db";
 import { createWorktree, integrateWorktree, removeLaneWorktree } from "../src/rooms/verification/git-integrate";
@@ -46,7 +47,14 @@ async function world(options: { gate?: string } = {}) {
         case "gitRevertCommits": return { hostId, ...await revertCommitsInWorktree({ worktreePath: input.worktreePath, commits: input.commits }) };
         case "gitWorktreeState": return { hostId, ...await worktreeState({ basePath: input.basePath, worktreePath: input.worktreePath }) };
         case "gitOwnershipBase": return { hostId, ...await resolveGitOwnershipBase({ projectCwd: input.projectCwd }) };
-        case "gitIntegrate": return { hostId, ...await integrateWorktree({ basePath: input.basePath, worktreePath: input.worktreePath, message: input.message, removeWorktree: input.removeWorktree }) };
+        case "gitIntegrate": return { hostId, ...await integrateWorktree({ basePath: input.basePath, worktreePath: input.worktreePath,
+          message: input.message, removeWorktree: input.removeWorktree, expectedHead: input.expectedHead, baseInHead: input.baseInHead,
+          committedOnly: input.committedOnly, bookkeeping: input.bookkeeping, ownsPaths: input.ownsPaths, lockWaitMs: input.indexLockWaitMs }) };
+        case "runCommand": {
+          const timeout = Math.max(1_000, Math.min(45_000, Number(input.timeoutSec ?? 30) * 1_000));
+          const ran = spawnSync("bash", ["-lc", input.command], { cwd: input.cwd, encoding: "utf8", timeout });
+          return { hostId, exitCode: ran.status ?? 124, stdout: ran.stdout ?? "", stderr: ran.stderr ?? (ran.error ? String(ran.error) : "") };
+        }
         case "gateRun": return { hostId, ...await runGateOnHost({ basePath: input.basePath, command: input.command, timeoutSec: input.timeoutSec }) };
         default: throw new Error(`unexpected host call ${method}`);
       }
@@ -85,7 +93,7 @@ async function world(options: { gate?: string } = {}) {
     return { attemptId, merged };
   }
   const worktrees = () => git(base, "worktree", "list").trim().split("\n").length;
-  return { root, base, db, calls, rollback, acceptedTask, worktrees, dispose: async () => { await harness.lifecycle.dispose(); await rm(root, { recursive: true, force: true }); } };
+  return { root, base, db, host, calls, rollback, acceptedTask, worktrees, dispose: async () => { await harness.lifecycle.dispose(); await rm(root, { recursive: true, force: true }); } };
 }
 
 describe("the record of an attempt's base and change (SMA wall 4)", () => {
@@ -188,6 +196,11 @@ describe("bb lane-pilot revert", () => {
     const result = await w.rollback.revert("t1");
     expect(result).toMatchObject({ ok: true, state: "merged" });
     expect(existsSync(join(w.base, "lib.ts"))).toBe(false);
+    const target = await w.rollback.kit.targetOf("t1");
+    expect("target" in target).toBe(true);
+    if (!("target" in target)) throw new Error(target.error);
+    expect(await createRollbackChanges(w.db, w.host).changeOf(target.target, "att_t1")).toMatchObject({ refused: expect.stringContaining("mismatched accepted-change provenance") });
+    expect(await w.rollback.kit.changeOf(target.target, "att_t1")).toMatchObject({ refused: expect.stringContaining("mismatched accepted-change provenance") });
     // history grew, nothing was reset: the task's own merge is still an ancestor
     expect(git(w.base, "merge-base", "--is-ancestor", merged.commit!, "HEAD")).toBe("");
     expect(git(w.base, "log", "-1", "--format=%s%n%b")).toContain("Revert t1");
@@ -202,6 +215,9 @@ describe("bb lane-pilot revert", () => {
     const checked = await w.rollback.reverify("t1");
     expect(checked).toMatchObject({ state: "passed", revertedIn: result.commit });
     expect(checked.summary).toContain("was reverted in");
+    const historicalDiff = await w.rollback.diff("att_t1");
+    expect(historicalDiff).toMatchObject({ truncated: false });
+    expect((historicalDiff as { patch: string }).patch).toContain("lib.ts");
     await w.dispose();
   });
 

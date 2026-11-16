@@ -366,6 +366,7 @@ describe("pool readiness and the green word (parity d10-rest-1)", () => {
       expected_outputs: ["x"], owns_paths: ["**"], never_touch: [], depends_on: [], objective: "t1", acceptance: ["done"], verify: "tests", verification: [],
     } });
     createAttempt(db, { id: "att-1", runId: "run", taskId: "t1" });
+    db.prepare("UPDATE lane_pilot_attempt SET state='accepted' WHERE id='att-1'").run();
     upsertAttemptChange(db, { attemptId: "att-1", runId: "run", taskId: "t1" }, { outcome: "merged", mergeCommit: "a".repeat(40), mergeParent: "b".repeat(40), changed: [] });
     const commands: string[] = [];
     const rollback = createRollback({
@@ -379,6 +380,7 @@ describe("pool readiness and the green word (parity d10-rest-1)", () => {
     expect(answer.patch).toContain("показано начало");
     expect(answer.patch.length).toBeLessThan(70_000);
     createAttempt(db, { id: "att-2", runId: "run", taskId: "t1" });
+    db.prepare("UPDATE lane_pilot_attempt SET state='accepted' WHERE id='att-2'").run();
     const none = await rollback.rollback.diff("att-2") as { reason: string };
     expect(none.reason).toContain("no merge commit");
   });

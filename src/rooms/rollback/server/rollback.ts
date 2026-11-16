@@ -241,7 +241,7 @@ export function createRollback(ctx: ServerCore, services: Services) {
     if (!attemptId) return refuse(t, "reverify", ref, `task ${t.taskId} has no accepted attempt, so there is no accepted change to check`, `redispatch the task, or pass an attempt that was accepted`);
     if (getAttempt(db, attemptId)?.state !== "accepted") return refuse(t, "reverify", ref, `attempt ${attemptId} is ${getAttempt(db, attemptId)?.state}, not accepted: its work is not in main`, `reverify the task's accepted attempt${accepted[0] ? ` (${accepted[0].id})` : ""}`, { attemptId });
     if (!t.task.verification.length) return refuse(t, "reverify", ref, `task ${t.taskId} has no verification[] to run`, `nothing to do; the contract named no checks`, { attemptId });
-    const change = await changeOf(t, attemptId);
+    const change = await changeOf(t, attemptId, { allowReverted: true });
     if ("refused" in change) return refuse(t, "reverify", ref, change.refused, `check the task's result with \`bb lane-pilot state\`; a task accepted in place has no commit to check out`, { attemptId });
     const made = await makeWorktree(t, `reverify-${safeName(t.taskId)}-${nonce()}`, change.mergeCommit, "rollback");
     if ("error" in made) {
@@ -295,6 +295,11 @@ export function createRollback(ctx: ServerCore, services: Services) {
     const { target: t } = found;
     const attempts = found.attemptId ? [{ id: found.attemptId, updatedAt: 0 }] : acceptedAttempts(t.taskId);
     if (!attempts.length) return refuse(t, "revert", ref, `task ${t.taskId} has no accepted attempt: nothing of it is in main to revert`, `a task that did not land needs no revert; cancel or redispatch it`);
+    const priorCommits = attempts.map(({ id }) => getAttemptChange(db, id)?.mergeCommit);
+    const previous = priorCommits.every((commit): commit is string => Boolean(commit))
+      ? listTaskReceipts(db, t.taskId, "revert").find((row) => row.state === "merged" && row.runId === t.runId && row.projectId === t.projectId && row.changeSha === priorCommits.join(","))
+      : undefined;
+    if (previous) return refuse(t, "revert", ref, `task ${t.taskId} was already reverted in ${previous.resultCommit?.slice(0, 12) ?? "main"}`, `nothing to do`, { attemptId: attempts[0]!.id });
     const changes: RollbackChange[] = [];
     for (const attempt of attempts) {
       if (getAttempt(db, attempt.id)?.state !== "accepted") return refuse(t, "revert", ref, `attempt ${attempt.id} is ${getAttempt(db, attempt.id)?.state}, not accepted: its work is not in main`, `revert the task by its id to take every accepted attempt`, { attemptId: attempt.id });
@@ -303,14 +308,14 @@ export function createRollback(ctx: ServerCore, services: Services) {
       if (recorded && effectState(recorded) === "uncertain") {
         return refuse(t, "revert", ref, `the worktree of attempt ${attempt.id} was never read (${recorded.worktree?.readError ?? "the read failed"}), so its effects are unknown — it is not recorded as changing nothing`, `read the worktree again on the project's host, then run the revert`, { attemptId: attempt.id });
       }
-      const change = await changeOf(t, attempt.id);
+      const change = await changeOf(t, attempt.id, { allowReverted: false });
       if ("refused" in change) return refuse(t, "revert", ref, change.refused, `without a merge commit there is nothing for git revert to undo; restore the files by hand or dispatch a task that removes the work`, { attemptId: attempt.id });
       changes.push(change);
     }
     const commits = changes.map((change) => change.mergeCommit);
     const changeSha = commits.join(",");
-    const previous = listTaskReceipts(db, t.taskId, "revert").find((row) => row.state === "merged" && row.changeSha === changeSha);
-    if (previous) return refuse(t, "revert", ref, `task ${t.taskId} was already reverted in ${previous.resultCommit?.slice(0, 12) ?? "main"}`, `nothing to do`, { attemptId: changes[0]!.attemptId });
+    const previousAfterLookup = listTaskReceipts(db, t.taskId, "revert").find((row) => row.state === "merged" && row.runId === t.runId && row.projectId === t.projectId && row.changeSha === changeSha);
+    if (previousAfterLookup) return refuse(t, "revert", ref, `task ${t.taskId} was already reverted in ${previousAfterLookup.resultCommit?.slice(0, 12) ?? "main"}`, `nothing to do`, { attemptId: changes[0]!.attemptId });
     const oldest = changes[changes.length - 1]!;
     const files = [...new Map(changes.flatMap((change) => change.changed).map((file) => [file.path, file])).values()];
     const attemptId = changes[0]!.attemptId;
@@ -469,7 +474,7 @@ export function createRollback(ctx: ServerCore, services: Services) {
     const found = await targetOf(ref);
     if ("error" in found) return { reason: found.error };
     if (!found.attemptId) return { reason: `${ref} is a task, not an attempt; name the attempt to see its patch` };
-    const change = await changeOf(found.target, found.attemptId);
+    const change = await changeOf(found.target, found.attemptId, { allowReverted: true });
     if ("refused" in change) return { reason: change.refused };
     const out = await host.call("runCommand", { requestedHostId: found.target.hostId, command: `git show --patch --stat --format= ${change.mergeCommit} | head -c ${DIFF_LIMIT + 1}`, cwd: found.target.basePath, timeoutSec: 60 }, { hostId: found.target.hostId, timeoutMs: 65_000 });
     // The read itself is bounded: `head -c` stops the host from collecting more than the limit (+1 byte to know it was cut).

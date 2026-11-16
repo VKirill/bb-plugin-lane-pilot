@@ -88,7 +88,14 @@ await node("n1653", async () => {
         case "gitRevertCommits": return { hostId, ...await revertCommitsInWorktree({ worktreePath: input.worktreePath, commits: input.commits }) };
         case "gitWorktreeState": return { hostId, ...await worktreeState({ basePath: input.basePath, worktreePath: input.worktreePath }) };
         case "gitOwnershipBase": return { hostId, ...await resolveGitOwnershipBase({ projectCwd: input.projectCwd }) };
-        case "gitIntegrate": return { hostId, ...await integrateWorktree({ basePath: input.basePath, worktreePath: input.worktreePath, message: input.message, removeWorktree: input.removeWorktree }) };
+        case "gitIntegrate": return { hostId, ...await integrateWorktree({ basePath: input.basePath, worktreePath: input.worktreePath, message: input.message,
+          removeWorktree: input.removeWorktree, expectedHead: input.expectedHead, baseInHead: input.baseInHead, committedOnly: input.committedOnly,
+          bookkeeping: input.bookkeeping, ownsPaths: input.ownsPaths, lockWaitMs: input.indexLockWaitMs }) };
+        case "runCommand": {
+          const timeout = Math.max(1_000, Math.min(45_000, Number(input.timeoutSec ?? 30) * 1_000));
+          const ran = spawnSync("bash", ["-lc", input.command], { cwd: input.cwd, encoding: "utf8", timeout });
+          return { hostId, exitCode: ran.status ?? 124, stdout: ran.stdout ?? "", stderr: ran.stderr ?? (ran.error ? String(ran.error) : "") };
+        }
         default: throw new Error(`unexpected host call ${method}`);
       }
     },
@@ -133,7 +140,8 @@ await node("n1654", async () => {
     pluginId: "lane-pilot",
     experimental_callHostRpc: ((call: { method: string; input: { cwd?: string; command?: string } }) => {
       if (call.method !== "runCommand") throw new Error(`unexpected ${call.method}`);
-      const ran = spawnSync("bash", ["-c", call.input.command ?? ""], { cwd: call.input.cwd, encoding: "utf8" });
+      const timeout = Math.max(1_000, Math.min(45_000, Number((call.input as { timeoutSec?: unknown }).timeoutSec ?? 30) * 1_000));
+      const ran = spawnSync("bash", ["-lc", call.input.command ?? ""], { cwd: call.input.cwd, encoding: "utf8", timeout });
       return { hostId: "host-test", exitCode: ran.status ?? 1, stdout: ran.stdout ?? "", stderr: ran.stderr ?? "" };
     }) as never,
   });
