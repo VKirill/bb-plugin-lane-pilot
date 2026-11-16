@@ -44,6 +44,7 @@ const task = (path = PRODUCED, cwd = "/repo"): TaskV2 => ({
 function world(opts: {
   live?: { folder:string; path:string; content:string };
   criticEnabled?: boolean;
+  liveRead?: (call:number, actual:Awaited<ReturnType<typeof runCommandOnHost>>) => Awaited<ReturnType<typeof runCommandOnHost>>;
   snapshots?: Array<{ path:string; sha256:string | null }>;
   /** workspaceDirt answers in call order (captureEvidence calls it once per loop pass plus the post-approval confirm). */
   dirtSeq?: Array<{ ok:true; paths:string[]; snapshots:Array<{ path:string; sha256:string | null }> } | { ok:false; reason:string }>;
@@ -118,6 +119,7 @@ function world(opts: {
       models:async () => ({ models:CRITIC_MODELS.map((id) => ({ id, model:id, supportedReasoningEfforts:EFFORTS })) }),
     },
   };
+  let liveReads = 0;
   const ctx = {
     state:{ disposed:false },
     bb:{ storage:bb.storage, log:{ warn() {}, error() {}, info() {} }, sdk,
@@ -126,7 +128,7 @@ function world(opts: {
     host:{ call:async (method:string, input?:{ command?:string; cwd?:string; relativePath?:string }) => method === "readBoundedFile" && opts.live
       ? { content:opts.live.content, sha256:sha256Hex(opts.live.content), lineEnd:1, truncated:false }
       : method === "runCommand"
-      ? (opts.live && String(input?.command).includes("import base64, json, os, re, sys, time, zlib") ? await runCommandOnHost({ requestedHostId:"h", command:String(input?.command), cwd:String(input?.cwd) }) : opts.runCommand?.({ command:String(input?.command ?? ""), cwd:String(input?.cwd ?? "") })
+      ? (opts.live && String(input?.command).includes("import base64, json, os, re, sys, time, zlib") ? (async () => { const actual = await runCommandOnHost({ requestedHostId:"h", command:String(input?.command), cwd:String(input?.cwd) }); return opts.liveRead?.(++liveReads, actual) ?? actual; })() : opts.runCommand?.({ command:String(input?.command ?? ""), cwd:String(input?.cwd ?? "") })
         ?? { hostId:"h", exitCode:0, stdout:`${"f".repeat(40)}\n`, stderr:"" })
       : ({}) },
     isDisposed:() => false, log:() => undefined,
@@ -161,7 +163,7 @@ function world(opts: {
   } as never);
   const run = () => finish.finishWriterAttempt({ projectId:"P", config:localConfig, task:task(path, cwd), runId:"run", taskId:"t1",
     attemptId:"a-t1", pmThreadId:"pm", writerThreadId:"writer-t1", dirtBefore:[] });
-  return { db, run, spawns, rpcTargets, sends, get parentMisses() { return parentMisses; }, get validations() { return validations; } };
+  return { db, run, spawns, rpcTargets, sends, get liveReads() { return liveReads; }, get parentMisses() { return parentMisses; }, get validations() { return validations; } };
 }
 
 const critiqueReceipt = (db: ReturnType<typeof openDatabase>) =>
@@ -368,18 +370,56 @@ describe("live backup evidence in the finish gate", () => {
       const after = "test('old', () => {\n});\n";
       writeFileSync(join(folder, path), before);
       const { bb } = createFakePluginHost({ pluginId:"lane-pilot" });
-      const live = createLiveFolder({ bb, db:openDatabase(bb), host:{ call:async (_method:string, input:Parameters<typeof runCommandOnHost>[0]) => runCommandOnHost(input) } } as never);
-      expect(await live.backupLiveFolder({ hostId:"h", folder, backupId:"a-t1", files:[path] })).toMatchObject({ ok:true });
+      const backupDb = openDatabase(bb);
+      const live = createLiveFolder({ bb, db:backupDb, host:{ call:async (_method:string, input:Parameters<typeof runCommandOnHost>[0]) => runCommandOnHost(input) } } as never);
+      try { expect(await live.backupLiveFolder({ hostId:"h", folder, backupId:"a-t1", files:[path] })).toMatchObject({ ok:true }); } finally { backupDb.close(); }
       writeFileSync(join(folder, path), after);
       const w = world({ live:{ folder, path, content:after }, gitBase:false });
-      const result = await w.run();
-      expect(result).toMatchObject({ status:"validation_failed", reason:expect.stringContaining("test_fit:") });
-      expect(w.spawns).toHaveLength(1);
-      const prompt = String(w.spawns[0]!.prompt);
-      expect(prompt).toContain("-  expect(1).toBe(1)");
-      expect(prompt).toContain("+test('old'");
-      expect(prompt).toContain(path);
-      expect(prompt).toMatch(/reference|yardstick/i);
+      try {
+        const result = await w.run();
+        expect(result).toMatchObject({ status:"validation_failed", reason:expect.stringContaining("test_fit:") });
+        expect(w.spawns).toHaveLength(1);
+        const prompt = String(w.spawns[0]!.prompt);
+        expect(prompt).toContain("-  expect(1).toBe(1)");
+        expect(prompt).toContain("+test('old'");
+        expect(prompt).toContain(path);
+        expect(prompt).toMatch(/reference|yardstick/i);
+      } finally { w.db.close(); }
+    } finally { process.env.HOME = oldHome; rmSync(root, { recursive:true, force:true }); }
+  });
+
+  it.each([
+    { path:"tests/example.test.ts", before:"test('x', () => {\n  expect(1).toBe(1);\n});\n", after:"test('x', () => {\n});\n", firstUnknown:true },
+    { path:"package.json", before:'{"scripts":{"test":"vitest"}}\n', after:'{"scripts":{"test":"vitest --test-name-pattern x"}}\n', firstUnknown:false },
+  ])("keeps one baseline observation for $path", async ({ path, before, after, firstUnknown }) => {
+    const root = mkdtempSync(join(tmpdir(), "lp-finish-transient-"));
+    const oldHome = process.env.HOME;
+    try {
+      process.env.HOME = root;
+      const folder = join(root, "work");
+      mkdirSync(join(folder, path, ".."), { recursive:true });
+      writeFileSync(join(folder, path), before);
+      const { bb } = createFakePluginHost({ pluginId:"lane-pilot" });
+      const backupDb = openDatabase(bb);
+      try {
+        const live = createLiveFolder({ bb, db:backupDb, host:{ call:async (_method:string, input:Parameters<typeof runCommandOnHost>[0]) => runCommandOnHost(input) } } as never);
+        expect(await live.backupLiveFolder({ hostId:"h", folder, backupId:"a-t1", files:[path] })).toMatchObject({ ok:true });
+      } finally { backupDb.close(); }
+      writeFileSync(join(folder, path), after);
+      const w = world({ live:{ folder, path, content:after }, gitBase:false,
+        liveRead:(call, actual) => (call === 1) === firstUnknown
+          ? { ...actual, stdout:JSON.stringify({ state:"unknown", reason:"transient" }) } : actual });
+      try {
+        const result = await w.run();
+        if (firstUnknown) {
+          expect(result).toMatchObject({ status:"blocked", reason:expect.stringContaining("transient") });
+          expect(w.spawns).toHaveLength(0);
+        } else {
+          expect(result).toMatchObject({ status:"validation_failed", reason:expect.stringContaining("test_fit:") });
+          expect(w.spawns).toHaveLength(1);
+        }
+        expect(w.liveReads).toBe(1);
+      } finally { w.db.close(); }
     } finally { process.env.HOME = oldHome; rmSync(root, { recursive:true, force:true }); }
   });
 
@@ -391,10 +431,12 @@ describe("live backup evidence in the finish gate", () => {
       const folder = join(root, "work"); mkdirSync(folder);
       const path = "tests/example.test.ts", content = "test('new', () => {});\n";
       const w = world({ live:{ folder, path, content }, gitBase:false, criticEnabled:false });
-      const result = await w.run();
-      expect(result).toMatchObject({ status:"blocked", reason:expect.stringContaining("live_backup_before_unknown") });
-      expect(String(result.reason)).toContain("no_backup");
-      expect(w.spawns).toHaveLength(0);
+      try {
+        const result = await w.run();
+        expect(result).toMatchObject({ status:"blocked", reason:expect.stringContaining("live_backup_before_unknown") });
+        expect(String(result.reason)).toContain("no_backup");
+        expect(w.spawns).toHaveLength(0);
+      } finally { w.db.close(); }
     } finally { process.env.HOME = oldHome; rmSync(root, { recursive:true, force:true }); }
   });
 
@@ -406,10 +448,12 @@ describe("live backup evidence in the finish gate", () => {
       const folder = join(root, "work"); mkdirSync(folder);
       const path = "docs/example.md", content = "new\n";
       const w = world({ live:{ folder, path, content }, gitBase:false, criticEnabled:false });
-      const result = await w.run();
-      expect(result).toMatchObject({ status:"blocked", reason:expect.stringContaining("live_backup_before_unknown") });
-      expect(String(result.reason)).toContain("no_backup");
-      expect(w.spawns).toHaveLength(0);
+      try {
+        const result = await w.run();
+        expect(result).toMatchObject({ status:"blocked", reason:expect.stringContaining("live_backup_before_unknown") });
+        expect(String(result.reason)).toContain("no_backup");
+        expect(w.spawns).toHaveLength(0);
+      } finally { w.db.close(); }
     } finally { process.env.HOME = oldHome; rmSync(root, { recursive:true, force:true }); }
   });
 });

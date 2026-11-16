@@ -190,7 +190,16 @@ export async function finishWriterAttemptBody(ctx: ServerCore, services: Service
       const workedAt = fitAttempt?.workspace_path;
       const inPlace = !!workedAt && [basePathForTests, getRun(db, input.runId)?.writer_workspace_path].some((path) => !!path && resolve(path) === resolve(workedAt));
       const liveFolder = isLiveDecision(fitAttempt?.workspace_decision);
-      const liveBefore = liveFolder && workedAt ? (path:string) => readLiveBefore(host, input.config.hostId, workedAt, input.attemptId, path) : undefined;
+      // One observation per path: a transient failure cannot disappear between the yardstick, critic and test_fit.
+      const liveBaselines = new Map<string, ReturnType<typeof readLiveBefore>>();
+      const liveBefore = liveFolder && workedAt ? (path:string) => {
+        let saved = liveBaselines.get(path);
+        if (!saved) {
+          saved = readLiveBefore(host, input.config.hostId, workedAt, input.attemptId, path);
+          liveBaselines.set(path, saved);
+        }
+        return saved;
+      } : undefined;
       const atHead = inPlace && !liveFolder
         ? await headSides(bb, db, { runId:input.runId, taskId:input.taskId, hostId:input.config.hostId, cwd:workedAt, paths:[...new Set([...editedTests, ...editedScripts, ...fitConfigs])] })
         : new Map<string, string | null>();
