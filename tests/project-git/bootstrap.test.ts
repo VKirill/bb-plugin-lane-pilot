@@ -2,6 +2,7 @@ import { existsSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { makeFixture } from "./fixture";
+import { baselineCommand } from "../../src/rooms/project-git/scripts";
 
 const KEY_LINE = ["-----BEGIN", "PRIVATE KEY-----"].join(" ");
 type Fixture = ReturnType<typeof makeFixture>;
@@ -109,7 +110,7 @@ describe("project git retries through the public ensure (P03.08)", () => {
     expect(await ensure(f, root)).toMatchObject({ kind: "bootstrapped", result: { ok: false, stage: "auth", code: "no_provider_auth" } });
     restore();
     f.gh({ authed: true });
-    const unpush = intercept(f, async (command, run) => { if (/ push origin /.test(command)) throw new Error("host offline"); return run(); });
+    const unpush = intercept(f, async (command, run) => { if (/ push '/.test(command)) throw new Error("host offline"); return run(); });
     expect(await ensure(f, root)).toMatchObject({ kind: "bootstrapped", result: { ok: false, stage: "push", code: "push_failed" } });
     expect(f.sh(root, "git remote").stdout.trim()).toBe("origin");
     unpush();
@@ -156,7 +157,7 @@ describe("project git retries through the public ensure (P03.08)", () => {
     const before = f.commands.length;
     expect(await ensure(f, root)).toMatchObject({ kind: "stopped", root, stage: "baseline", code: "head_moved" });
     const later = f.commands.slice(before);
-    expect(later.some((c) => isBaseline(c) || c.includes("repo create") || / push origin /.test(c) || c.includes(" api "))).toBe(false);
+    expect(later.some((c) => isBaseline(c) || c.includes("repo create") || / push '/.test(c) || c.includes(" api "))).toBe(false);
     expect(f.asks).toHaveLength(1);
     expect(await f.projectGit.bootstrap({ hostId: "h1", root, account: "octo" })).toMatchObject({ ok: false, code: "head_moved", stopped: true });
     f.sh(root, "git reset -q --hard HEAD~1");
@@ -177,11 +178,112 @@ describe("project git retries through the public ensure (P03.08)", () => {
     expect(f.asks[1]!.detail).toContain("аккаунте other");
   });
 
+  it("refuses to publish after a failed push once origin points elsewhere, and keeps that refusal", async () => {
+    const f = makeFixture();
+    const root = f.folder("app", files);
+    f.setAnswer(picked("1"));
+    const unpush = intercept(f, async (command, run) => { if (/ push '/.test(command)) throw new Error("host offline"); return run(); });
+    expect(await ensure(f, root)).toMatchObject({ kind: "bootstrapped", result: { ok: false, code: "push_failed" } });
+    unpush();
+    f.sh(f.base, "git init -q --bare elsewhere.git");
+    f.sh(root, `git remote set-url origin file://${join(f.base, "elsewhere.git")}`);
+    expect(await ensure(f, root)).toMatchObject({ kind: "bootstrapped", result: { ok: false, code: "origin_conflict" } });
+    expect(await ensure(f, root)).toMatchObject({ kind: "stopped", code: "origin_conflict" });
+    const refs = (bare: string) => f.sh(bare, "git for-each-ref").stdout.trim();
+    expect(refs(join(f.base, "elsewhere.git"))).toBe("");
+    expect(refs(f.gh().repos["octo/app"]!.bare)).toBe("");
+    expect(f.sh(root, "git remote get-url origin").stdout.trim()).toBe(`file://${join(f.base, "elsewhere.git")}`);
+  });
+
+  it("refuses an origin changed between the probe and the push without pushing anywhere", async () => {
+    const f = makeFixture();
+    const root = f.folder("app", files);
+    f.setAnswer(picked("1"));
+    const unpush = intercept(f, async (command, run) => { if (/ push '/.test(command)) throw new Error("host offline"); return run(); });
+    await ensure(f, root);
+    unpush();
+    intercept(f, async (command, run) => {
+      if (command.includes("api --hostname github.com 'repos/")) f.sh(root, "git remote set-url origin https://github.com/someone/else.git");
+      return run();
+    });
+    const before = f.commands.length;
+    expect(await ensure(f, root)).toMatchObject({ kind: "bootstrapped", result: { ok: false, stage: "push", code: "origin_conflict" } });
+    expect(f.commands.slice(before).some((c) => / push '/.test(c))).toBe(false);
+    expect(f.sh(f.gh().repos["octo/app"]!.bare, "git for-each-ref").stdout.trim()).toBe("");
+  });
+
+  it("refuses an origin changed while the push ran, before verifying or finishing", async () => {
+    const f = makeFixture();
+    const root = f.folder("app", files);
+    f.setAnswer(picked("1"));
+    intercept(f, async (command, run) => {
+      const ran = await run();
+      if (/ push '/.test(command)) f.sh(root, "git remote set-url origin https://github.com/someone/else.git");
+      return ran;
+    });
+    expect(await ensure(f, root)).toMatchObject({ kind: "bootstrapped", result: { ok: false, stage: "push", code: "origin_conflict" } });
+    expect(f.commands.some((c) => c.includes("ls-remote") && c.includes("refs/heads/"))).toBe(false);
+    expect(record(f) as { doneAt?: number }).not.toHaveProperty("doneAt");
+  });
+
+  it("sets no upstream when origin changes while the published commit is verified", async () => {
+    const f = makeFixture();
+    const root = f.folder("app", files);
+    f.setAnswer(picked("1"));
+    intercept(f, async (command, run) => {
+      const ran = await run();
+      if (command.includes("ls-remote") && command.includes("refs/heads/")) f.sh(root, "git remote set-url origin https://github.com/someone/else.git");
+      return ran;
+    });
+    expect(await ensure(f, root)).toMatchObject({ kind: "bootstrapped", result: { ok: false, stage: "push", code: "origin_conflict" } });
+    expect(f.sh(root, "git config --get branch.main.remote").stdout.trim()).toBe("");
+    expect(f.sh(root, "git remote get-url origin").stdout.trim()).toBe("https://github.com/someone/else.git");
+  });
+
+  it("does not finish on a failing ls-remote even when its output names the commit", async () => {
+    const f = makeFixture();
+    const root = f.folder("app", files);
+    f.setAnswer(picked("1"));
+    const restore = intercept(f, async (command, run) => {
+      const ran = await run();
+      return command.includes("ls-remote") && command.includes("refs/heads/") ? { ...ran, exitCode: 128 } : ran;
+    });
+    expect(await ensure(f, root)).toMatchObject({ kind: "bootstrapped", result: { ok: false, stage: "push", code: "push_unverified" } });
+    expect(record(f) as { doneAt?: number; push?: unknown }).not.toHaveProperty("doneAt");
+    expect(record(f) as { push?: unknown }).not.toHaveProperty("push");
+    restore();
+    expect(await ensure(f, root)).toMatchObject({ kind: "bootstrapped", result: { ok: true } });
+    expect(f.asks).toHaveLength(1);
+    expect(f.gh().creates).toBe(1);
+  });
+
+  it("does not pin a refusal from before the operation: a repository made during the question, once removed, goes on", async () => {
+    const f = makeFixture();
+    const root = f.folder("app", files);
+    f.setAnswer(() => { f.sh(root, "git init -q && git add . && git commit -qm race"); return picked("1")(); });
+    expect(await ensure(f, root)).toMatchObject({ kind: "bootstrapped", result: { ok: false, code: "existing_history" } });
+    expect(record(f) as { stopped?: unknown }).not.toHaveProperty("stopped");
+    f.sh(root, "rm -rf .git");
+    f.setAnswer(picked("1"));
+    expect(await ensure(f, root)).toMatchObject({ kind: "bootstrapped", result: { ok: true } });
+    expect(f.asks).toHaveLength(1);
+  });
+
+  it("compiles the secret patterns before it writes anything: a pattern Python rejects leaves no .git or .gitignore", () => {
+    const f = makeFixture();
+    const root = f.folder("app", files);
+    const ran = f.sh(root, baselineCommand({ root, opId: "op-bad", secrets: ["\\e"] }));
+    expect(JSON.parse(ran.stdout)).toMatchObject({ ok: false, code: "secret_patterns_untranslatable" });
+    expect(existsSync(join(root, ".git"))).toBe(false);
+    expect(existsSync(join(root, ".git-lp-op-bad"))).toBe(false);
+    expect(existsSync(join(root, ".gitignore"))).toBe(false);
+  });
+
   it("keeps the account the owner was shown: another sign-in stops the continuation", async () => {
     const f = makeFixture();
     const root = f.folder("app", files);
     f.setAnswer(picked("1"));
-    const unpush = intercept(f, async (command, run) => { if (/ push origin /.test(command)) throw new Error("host offline"); return run(); });
+    const unpush = intercept(f, async (command, run) => { if (/ push '/.test(command)) throw new Error("host offline"); return run(); });
     expect((await ensure(f, root)).kind).toBe("bootstrapped");
     unpush();
     f.gh({ login: "other" });
@@ -360,7 +462,7 @@ describe("project git bootstrap (P03.06–08)", () => {
 
     const g = makeFixture();
     const repo = project(g);
-    const unpush = intercept(g, async (command, run) => { if (/ push origin /.test(command)) throw new Error("host offline"); return run(); });
+    const unpush = intercept(g, async (command, run) => { if (/ push '/.test(command)) throw new Error("host offline"); return run(); });
     await boot(g, repo);
     unpush();
     delete (record(g) as { account?: string }).account; // a record from before the account was kept
@@ -382,7 +484,7 @@ describe("project git bootstrap (P03.06–08)", () => {
   it("resumes at the push after a host outage, with one repository and one commit", async () => {
     const f = makeFixture();
     const root = project(f);
-    const restore = intercept(f, async (command, run) => { if (/ push origin /.test(command)) throw new Error("host offline"); return run(); });
+    const restore = intercept(f, async (command, run) => { if (/ push '/.test(command)) throw new Error("host offline"); return run(); });
     expect(await boot(f, root)).toMatchObject({ ok: false, stage: "push", code: "push_failed" });
     restore();
     expect((await boot(f, root)).ok).toBe(true);

@@ -157,7 +157,7 @@ export type BootstrapRecord = {
 export type BootstrapStage = "guard" | "probe" | "baseline" | "auth" | "repo" | "origin" | "push" | "invalidate";
 
 /** Refusals that repeat on every run until someone changes the folder or the account: never retried automatically. */
-export const PERMANENT_STOPS: ReadonlySet<string> = new Set(["existing_repo", "existing_history", "remote_name_taken", "already_has_origin", "head_moved"]);
+export const PERMANENT_STOPS: ReadonlySet<string> = new Set(["existing_repo", "existing_history", "remote_name_taken", "already_has_origin", "origin_conflict", "head_moved"]);
 
 export const bootstrapKey = (hostId: string, root: string) => `project-git:bootstrap:${hostId}:${root}`;
 export const scopeKey = (hostId: string, projectRoot: string, sectionPath: string | null) => `project-git:scope:${hostId}:${projectRoot}:${sectionPath ?? ""}`;

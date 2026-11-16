@@ -73,6 +73,12 @@ def git(*args):
 def out(ran):
     return ran.stdout.decode("utf-8", "replace").strip()
 if os.path.realpath(os.getcwd()) != P["root"]: say(ok=False, code="not_canonical", detail="the folder resolves to " + os.path.realpath(os.getcwd()) + ", not " + P["root"])
+# The patterns compile before anything is written: a bad one leaves the folder as it was.
+try:
+    secrets = [re.compile(s.encode()) for s in P["secrets"]]
+except re.error as e:
+    say(ok=False, code="secret_patterns_untranslatable", detail="Python re cannot read a secret pattern: " + str(e)[:200])
+if not secrets: say(ok=False, code="secret_patterns_untranslatable", detail="no secret patterns to scan with")
 if os.path.lexists(".gitignore") and (os.path.islink(".gitignore") or not os.path.isfile(".gitignore")):
     say(ok=False, code="gitignore_not_plain", detail=".gitignore is a link or not a file; it is never written through")
 MARK = os.path.join(".git", "lane-pilot-bootstrap")
@@ -128,7 +134,6 @@ listed = git("ls-files", "-z", "--others", "--exclude-standard")
 if listed.returncode != 0: say(ok=False, code="list_failed", detail=listed.stderr.decode("utf-8", "replace").strip()[:300])
 paths = [p.decode("utf-8", "surrogateescape") for p in listed.stdout.split(b"\0") if p]
 if len(paths) > P["maxFiles"]: say(ok=False, code="too_many_files", detail=str(len(paths)) + " files to commit, the limit is " + str(P["maxFiles"]))
-secrets = [re.compile(s.encode()) for s in P["secrets"]]
 fmt = out(git("rev-parse", "--show-object-format")) or "sha1"
 blobs = {}
 blocked = []

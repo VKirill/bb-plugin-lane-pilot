@@ -159,7 +159,8 @@ export function createProjectGit(deps: ProjectGitDeps) {
     const save = () => deps.kv.set(key, rec as never);
     const fail = async (stage: BootstrapStage, code: string, detail: string, blocked?: Array<{ path: string; why: string }>): Promise<BootstrapResult> => {
       rec.lastError = { stage, code, detail, at: now() };
-      if (PERMANENT_STOPS.has(code)) rec.stopped = rec.lastError;
+      // Kept only once this operation exists: a refusal before it began (someone's repository there) does not pin the folder.
+      if (PERMANENT_STOPS.has(code) && rec.opId) rec.stopped = rec.lastError;
       await save();
       deps.log(`project git ${hostId}:${root}: ${stage} stopped: ${code} ${detail}`);
       return { ok: false, stage, code, detail, ...(blocked ? { blocked } : {}) };
@@ -182,9 +183,10 @@ export function createProjectGit(deps: ProjectGitDeps) {
     if (found.state === "unknown") return fail("probe", "probe_unknown", found.reason ?? "the folder could not be probed");
     if (found.cwd && found.cwd !== root) return fail("probe", "not_canonical", `the host resolves ${root} to ${found.cwd}; pass the host's own path`);
     if (found.root && found.root !== root) return fail("probe", "inside_other_repo", `the folder belongs to the repository at ${found.root}`);
-    if (found.state === "origin" && !(rec.origin && sameRemote(found.origin!, rec.origin.url))) {
-      return fail("probe", "already_has_origin", `the repository already has origin ${found.origin}`);
+    if (found.state === "origin" && rec.origin && !sameRemote(found.origin!, rec.origin.url)) {
+      return fail("probe", "origin_conflict", `origin is now ${found.origin}, not the verified ${rec.origin.url}`);
     }
+    if (found.state === "origin" && !rec.origin) return fail("probe", "already_has_origin", `the repository already has origin ${found.origin}`);
 
     if (!rec.baseline) {
       // Only a folder without Git, or the repository this operation started, gets a first commit; any other history is never published.
@@ -265,15 +267,30 @@ export function createProjectGit(deps: ProjectGitDeps) {
       await save();
     }
 
+    /** origin must still be the verified repository right before each remote call; another one is never written to. */
+    const originMoved = async (): Promise<string | null> => {
+      const current = await git("remote get-url origin");
+      const at = current.stdout.trim();
+      return current.exitCode === 0 && at && sameRemote(at, url) ? null : `origin is ${at || `unreadable (${clip(current.stderr) || `exit ${current.exitCode}`})`}, not the verified ${url}`;
+    };
     if (rec.push?.sha !== baseline.commit) {
       const late = await drift();
       if (late) return fail("push", "head_moved", late);
-      // The recorded commit by its id, never whatever HEAD is by the time the push runs.
-      const pushed = await run(hostId, root, `${GH_GIT} push origin ${q(`${baseline.commit}:refs/heads/${baseline.branch}`)}`, 600);
+      const before = await originMoved();
+      if (before) return fail("push", "origin_conflict", before);
+      // The recorded commit by its id to the verified url, never whatever HEAD or origin is by the time the push runs.
+      const pushed = await run(hostId, root, `${GH_GIT} push ${q(url)} ${q(`${baseline.commit}:refs/heads/${baseline.branch}`)}`, 600);
       if (pushed.exitCode !== 0) return fail("push", "push_failed", clip(pushed.stderr) || `exit ${pushed.exitCode}`);
-      const remote = await run(hostId, root, `${GH_GIT} ls-remote origin ${q(`refs/heads/${baseline.branch}`)}`);
-      if (remote.stdout.trim().split(/\s+/)[0] !== baseline.commit) return fail("push", "push_unverified", `origin ${baseline.branch} does not point at ${baseline.commit}`);
-      await git(`branch --set-upstream-to=${q(`origin/${baseline.branch}`)} ${q(baseline.branch)}`);
+      const after = await originMoved();
+      if (after) return fail("push", "origin_conflict", after);
+      const remote = await run(hostId, root, `${GH_GIT} ls-remote ${q(url)} ${q(`refs/heads/${baseline.branch}`)}`);
+      if (remote.exitCode !== 0) return fail("push", "push_unverified", `cannot list the verified repository: ${clip(remote.stderr) || `exit ${remote.exitCode}`}`);
+      if (remote.stdout.trim().split(/\s+/)[0] !== baseline.commit) return fail("push", "push_unverified", `${baseline.branch} on the verified repository does not point at ${baseline.commit}`);
+      // The branch tracks origin only while origin is still the verified repository.
+      const tracking = await originMoved();
+      if (tracking) return fail("push", "origin_conflict", tracking);
+      await git(`config ${q(`branch.${baseline.branch}.remote`)} origin`);
+      await git(`config ${q(`branch.${baseline.branch}.merge`)} ${q(`refs/heads/${baseline.branch}`)}`);
       rec.push = { branch: baseline.branch, sha: baseline.commit, at: now() };
       await save();
     }
