@@ -289,8 +289,7 @@
       "prompt": "Procedure signalforge-page-experiment: one change, the primary and control metrics, the day-28 verdict date written to the SEO Change Log. The incoming release_items or rewrite_items are code-collected branch outputs; use them only as experiment inputs. Return experiment_path and due_date. Do not create, replace, or select release or rewrite items.",
       "out": {
         "experiment_path": "string",
-        "due_date": "string",
-        "release_items": "string[]"
+        "due_date": "string"
       },
       "guards": {
         "maxVisits": 1,
@@ -320,15 +319,13 @@
       "type": "action",
       "action": "fs.write",
       "path": ".agents/seo/page-refresh/{{date}}-{{run_id}}/",
-      "files": [
-        "diagnosis.md",
-        "fix-package.md",
-        "experiment.md",
-        "release-items.json",
-        "rewrite-items.json"
-      ],
-      "release-items.json": "{{ctr_fix.release_items}}",
-      "rewrite-items.json": [],
+      "contents": {
+        "diagnosis.md": "# Diagnosis\n\nArtifact: {{diagnose.diagnosis_path}}",
+        "fix-package.md": "# Fix package\n\nCTR fix: {{ctr_fix.fix_path}}",
+        "experiment.md": "# Experiment\n\nArtifact: {{experiment.experiment_path}}",
+        "release-items.json": "{{ctr_fix.release_items}}",
+        "rewrite-items.json": []
+      },
       "note": "diagnosis per URL, the fix package, and code-owned CTR release item list; rewrite items stay empty for this branch",
       "out": {
         "package_path": "string"
@@ -339,15 +336,13 @@
       "type": "action",
       "action": "fs.write",
       "path": ".agents/seo/page-refresh/{{date}}-{{run_id}}/",
-      "files": [
-        "diagnosis.md",
-        "fix-package.md",
-        "experiment.md",
-        "release-items.json",
-        "rewrite-items.json"
-      ],
-      "release-items.json": "{{fact_update.release_items}}",
-      "rewrite-items.json": [],
+      "contents": {
+        "diagnosis.md": "# Diagnosis\n\nArtifact: {{diagnose.diagnosis_path}}",
+        "fix-package.md": "# Fix package\n\nFact update: {{fact_update.fix_path}}",
+        "experiment.md": "# Experiment\n\nArtifact: {{experiment.experiment_path}}",
+        "release-items.json": "{{fact_update.release_items}}",
+        "rewrite-items.json": []
+      },
       "note": "diagnosis per URL, the fix package, and code-owned fact-update release item list; rewrite items stay empty for this branch",
       "out": {
         "package_path": "string"
@@ -358,15 +353,13 @@
       "type": "action",
       "action": "fs.write",
       "path": ".agents/seo/page-refresh/{{date}}-{{run_id}}/",
-      "files": [
-        "diagnosis.md",
-        "fix-package.md",
-        "experiment.md",
-        "release-items.json",
-        "rewrite-items.json"
-      ],
-      "release-items.json": [],
-      "rewrite-items.json": "{{spec.rewrite_items}}",
+      "contents": {
+        "diagnosis.md": "# Diagnosis\n\nArtifact: {{diagnose.diagnosis_path}}",
+        "fix-package.md": "# Rewrite specification\n\nArtifact: {{spec.spec_path}}",
+        "experiment.md": "# Experiment\n\nArtifact: {{experiment.experiment_path}}",
+        "release-items.json": [],
+        "rewrite-items.json": "{{spec.rewrite_items}}"
+      },
       "note": "diagnosis per URL, the fix package, and code-owned upgrade rewrite specification list; release items stay empty for this branch",
       "out": {
         "package_path": "string"
@@ -377,15 +370,13 @@
       "type": "action",
       "action": "fs.write",
       "path": ".agents/seo/page-refresh/{{date}}-{{run_id}}/",
-      "files": [
-        "diagnosis.md",
-        "fix-package.md",
-        "experiment.md",
-        "release-items.json",
-        "rewrite-items.json"
-      ],
-      "release-items.json": [],
-      "rewrite-items.json": "{{spec.rewrite_items}}",
+      "contents": {
+        "diagnosis.md": "# Diagnosis\n\nArtifact: {{diagnose.diagnosis_path}}",
+        "fix-package.md": "# Rewrite specification\n\nArtifact: {{spec.spec_path}}",
+        "experiment.md": "# Experiment\n\nArtifact: {{experiment.experiment_path}}",
+        "release-items.json": [],
+        "rewrite-items.json": "{{spec.rewrite_items}}"
+      },
       "note": "diagnosis per URL, the fix package, and code-owned split rewrite specification list; release items stay empty for this branch",
       "out": {
         "package_path": "string"
