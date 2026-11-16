@@ -41,6 +41,6 @@ export type { CheckReading, CheckRun, CheckVerdict } from "./server/check-readin
 export { validateTaskV2 } from "./task-v2";
 export { buildExecutionPacket, packetSelectedLines, renderExecutionPacket } from "./execution-packet";
 export { readFirstIo } from "./read-first-io";
-export { parseReadFirstHints } from "./read-first";
+export { parseReadFirstHints, parseReadFirstSelector } from "./read-first";
 
 export { repoReadRoot } from "./repo-read";

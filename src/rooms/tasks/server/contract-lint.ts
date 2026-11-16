@@ -4,7 +4,8 @@ import { TASK_KINDS, type TaskV2 } from "../../contracts";
 import { fileAllowedByOwns, fileBlockedByNeverTouch, matchOwnsPath, ownsPathsOverlap } from "@lane-pilot/kit";
 import { findSandboxUnsafeMissingExcludes, runnerFilterArgs, runsWholeSuite } from "../../contracts/check-commands";
 import { NO_RED_KINDS } from "../../contracts";
-import { parseReadFirstHints, parseReadFirstSelector } from "../read-first";
+import { parseReadFirstHints } from "../read-first";
+import { readFirstFindings, readFirstProbePaths } from "./read-first-lint";
 import { maskedExitReason, needsCommitReason, passWithNoTestsReason } from "./lint-exit-status";
 import { SUBJECTIVE_WORDS } from "../../contracts/review-vocabulary"
 import { browserQaRequired } from "../../contracts/quality-mode";
@@ -276,11 +277,7 @@ function taskCreatesFile(task:Pick<TaskV2, "expected_outputs" | "files">, path:s
 
 /** Absolute paths whose kind the workspace's machine must report: the read_first files, the bare words of check filters, the tests next to owned files, and the concrete files the contract names. */
 export function lintProbePaths(task:TaskV2, workspacePath:string, repoRootPath?:string|null):string[] {
-  let hints:string[] = [];
-  try { hints = parseReadFirstHints(task.read_first).flatMap((hint) => {
-    const selected=parseReadFirstSelector(hint.path), root=selected.scope==="repo"?repoRootPath:workspacePath;
-    return root?[resolve(root,selected.path)]:[];
-  }); } catch { /* reported by lintContract */ }
+  const hints = readFirstProbePaths(task, workspacePath, repoRootPath);
   const tests = siblingTestCandidates(task).map((candidate) => resolve(workspacePath, candidate.folder ?? candidate.test));
   const named = [...task.owns_paths, ...task.expected_outputs, ...(task.files ?? []).map((file) => file.path)]
     .map(concreteFile).filter((path):path is string => !!path)
@@ -354,21 +351,7 @@ export function lintContract(input:LintInput):{ errors:LintFinding[]; warnings:L
     }
   }
 
-  // read_first: a project-relative path that exists on the writer's machine and is a file.
-  try {
-    for (const hint of parseReadFirstHints(task.read_first)) {
-      const selected=parseReadFirstSelector(hint.path), root=selected.scope==="repo"?input.repoRootPath:input.workspacePath;
-      if(!root) { errors.push({code:"read_first_repo_unknown",message:`read_first repository root is unverified on the workspace host: ${hint.path}`}); continue; }
-      const kind = kindOf(resolve(root, selected.path));
-      if (kind === "directory") errors.push({ code:"read_first_folder", message:`read_first is a directory, not a file: ${hint.path}/ is a folder; name the files inside it (read_first takes files, optionally with line windows), or put the folder in owns_paths` });
-      else if (kind === "symlink" || kind === "other") errors.push({ code:"read_first_not_file", message:`read_first is not a regular file (${kind}): ${hint.path}; point it at the real file` });
-      else if (kind === "missing" && !task.depends_on.length && !task.expected_outputs.some((entry) => entry.replace(/^\.\//, "") === hint.path)) {
-        errors.push({ code:"read_first_missing", message:`read_first source is missing: ${hint.path} does not exist on the writer's machine (${input.hostId}); correct the path, or drop it when the task creates that file` });
-      }
-    }
-  } catch (cause) {
-    errors.push({ code:"read_first_path", message:cause instanceof Error ? cause.message : String(cause) });
-  }
+  errors.push(...readFirstFindings(input));
 
   // owns_paths and never_touch stay inside the project root, and a path is not both owned and forbidden.
   const unsafe = [["owns_paths", task.owns_paths], ["never_touch", task.never_touch]] as const;

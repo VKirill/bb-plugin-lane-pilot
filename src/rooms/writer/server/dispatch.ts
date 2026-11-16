@@ -12,7 +12,7 @@ import type { CodeCriticDefault } from "../../contracts/task-enums";
 import { saveCriticCodeDefault } from "./critic-override";
 import { wfLivePipelineRun, wfRunInputsByKey } from "@lane-pilot/workflow-engine";
 import { TASK_HOME_EXCLUDE, bbTaskFileIo, getRunObjective, setRunObjective, createAttempt, createTask, freeTaskId, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getRunWriterHost, getTask, getTaskPlan, latestTaskAttemptState, getTaskRow, hasFailedStageReceipt, listAttemptsForTask, listAttemptsUpdatedSince, listOpenAttempts, listRunsWithAttempts, listRunTaskRows, listStageReceipts, listTaskKinds, listTaskTerminalStates, loadProjectSettings, saveTaskPlan, setRunState, taskBasePath, transitionAttempt } from "../../storage";
-import { birthGates, commonTaskFolder, isMainfixTask, isTaskBase, landingWordAsked, leavesSection, normalizeRepoReads, repoReadRoot, ownerSaidNo, ownerWordsMode, parseRepoTop, planWithOutsideReads, planWithRepoScope, repoTopCommand, rerootTask, rerootToRepoRoot, sha256 , spendReserve, taskStepEvidence, type BirthKind } from "../../tasks";
+import { birthGates, commonTaskFolder, isMainfixTask, isTaskBase, landingWordAsked, leavesSection, normalizeRepoReads, repoReadRoot, ownerSaidNo, ownerWordsMode, parseReadFirstHints, parseReadFirstSelector, parseRepoTop, planWithOutsideReads, planWithRepoScope, repoTopCommand, rerootTask, rerootToRepoRoot, sha256 , spendReserve, taskStepEvidence, type BirthKind } from "../../tasks";
 import { liveFolderLockNote, nextStep } from "../../contracts/failure-class"
 import { taskFamily } from "@lane-pilot/contracts";
 import { validateTaskV2 } from "../../tasks";
@@ -34,7 +34,6 @@ import { isAbsolute, relative, resolve } from "node:path";
 import type { ServerCore } from "../../contracts/server";
 
 import { runOnHost } from "@lane-pilot/host-calls";
-import { parseReadFirstHints, parseReadFirstSelector } from "../../tasks/read-first";
 import { pmRulesOf } from "../../learning";
 import { logRulesShown } from "@lane-pilot/run-insights";
 
