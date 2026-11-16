@@ -72,7 +72,7 @@ def prove_e(proofs, tmp) -> None:
     # ---- audit-fix, add-tests and the live check
     rounds = "first_review plan_fix build_fix re_review plan_fix2 build_fix2 re_review"
     d = seen("k_c_auditfix")
-    proofs.prove("n1283", d.get("audited", [None, None, None])[0] == rounds + " done" and d.get("audited", [None, None])[1] == [{"severity": "high", "file": "src/a.ts", "line": 12, "evidence": "return value of save() ignored"}] and d.get("clean") == ["first_review done", "done"] and d.get("stuck", [None, None])[0] == rounds + " classify ask partial" and d.get("stuck", [None, None, None])[1] == "partial", f"audit-fix: audited {d.get('audited', [''])[0]}, clean {d.get('clean')}, stuck {d.get('stuck', ['', ''])[1]}")
+    proofs.prove("n1283", d.get("audited", [None, None, None])[0] == rounds + " done" and d.get("audited", [None, None])[1] == [{"severity": "high", "file": "src/a.ts", "line": 12, "evidence": "return value of save() ignored"}] and d.get("clean") == ["first_review done_first", "done"] and d.get("stuck", [None, None])[0] == rounds + " classify ask partial" and d.get("stuck", [None, None, None])[1] == "partial", f"audit-fix: audited {d.get('audited', [''])[0]}, clean {d.get('clean')}, stuck {d.get('stuck', ['', ''])[1]}")
     d = seen("k_c_addtests")
     proofs.prove("n1284", d.get("given") == ["write_tests run done", "done", 5] and d.get("derived") == ["derive confirm write_tests run done", "done"] and d.get("timeout") == ["derive confirm blocked", "blocked"] and d.get("fixing") == ["write_tests run classify fix_tests run classify done", "done"] and d.get("noWrite") == ["write_tests blocked", "blocked"], f"add-tests: given {d.get('given')}, derived {d.get('derived')}, timeout {d.get('timeout')}")
     d = seen("k_c_qa")
