@@ -107,25 +107,48 @@
       }
     },
     {
+      "id": "doc_path",
+      "type": "action",
+      "action": "lp.doc_path",
+      "title": {
+        "en": "Resolve the document path",
+        "ru": "Путь документа"
+      },
+      "params": {
+        "phase_id": "{{$inputs.phase_id}}",
+        "doc": "SECURITY.md"
+      },
+      "out": {
+        "path": "string"
+      }
+    },
+    {
       "id": "write_security",
       "type": "action",
       "action": "fs.write",
-      "path": ".agents/phases/{{$inputs.phase_id}}/SECURITY.md",
-      "contents": "{{audit.status_table}}",
       "out": {
         "security_path": "string"
       },
-      "mode": "append",
       "title": {
         "en": "Append the threat register status",
         "ru": "Дописать статус реестра угроз"
+      },
+      "params": {
+        "path": "{{doc_path.path}}",
+        "contents": "{{audit.status_table}}",
+        "mode": "append"
       }
     }
   ],
   "edges": [
     {
-      "from": "audit",
+      "from": "doc_path",
       "to": "write_security",
+      "pass": "artifact"
+    },
+    {
+      "from": "audit",
+      "to": "doc_path",
       "pass": "artifact"
     },
     {
@@ -161,11 +184,16 @@
       "stubs": {
         "audit": {
           "open": [],
-          "security_path": ".agents/phases/ph_a/SECURITY.md"
+          "status_table": "## Threat register status\n"
+        },
+        "doc_path": {
+          "path": ".agents/phases/ph_sample01/SECURITY.md"
         }
       },
       "expect_path": [
         "audit",
+        "doc_path",
+        "write_security",
         "goal_check",
         "done"
       ],

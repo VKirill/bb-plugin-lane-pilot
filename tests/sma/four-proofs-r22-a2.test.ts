@@ -192,16 +192,16 @@ describe("[region 22] the audit graphs report where their document is", () => {
   });
 
   it("[sma:k_pl_evalreview] a flawed evaluation is reported with the EVAL-REVIEW.md path and a todo is offered; a sound one is reported sound with no offer", async () => {
-    const flawed = await runSim("eval-review", { input: { phase_id: "ph_a" }, stubs: { review: { findings: [{ file: "AI-SPEC.md", line: 3, severity: "high", evidence: "no eval for the empty reply", dimension: "coverage" }], review_path: ".agents/phases/ph_a/EVAL-REVIEW.md", flawed: true } } });
+    const flawed = await runSim("eval-review", { input: { phase_id: "ph_a" }, stubs: { review: { findings: [{ file: "AI-SPEC.md", line: 3, severity: "high", evidence: "no eval for the empty reply", dimension: "coverage" }], document: "# eval review\n", flawed: true }, write_review: { review_path: ".agents/phases/ph_a/EVAL-REVIEW.md" } } });
     expect(out(flawed)).toMatchObject({ status: "flawed", review_path: ".agents/phases/ph_a/EVAL-REVIEW.md", proposed_workflow: "todo-add" });
-    expect(pathOf(flawed)).toBe("review offer flawed");
-    const sound = await runSim("eval-review", { input: { phase_id: "ph_a" }, stubs: { review: { findings: [], review_path: ".agents/phases/ph_a/EVAL-REVIEW.md", flawed: false } } });
+    expect(pathOf(flawed)).toBe("review doc_path write_review offer flawed");
+    const sound = await runSim("eval-review", { input: { phase_id: "ph_a" }, stubs: { review: { findings: [], document: "", flawed: false }, write_review: { review_path: ".agents/phases/ph_a/EVAL-REVIEW.md" } } });
     expect(out(sound)).toMatchObject({ status: "sound", review_path: ".agents/phases/ph_a/EVAL-REVIEW.md" });
     expect((out(sound) as Record<string, unknown>).proposed_workflow).toBeUndefined();
   });
 
   it("[sma:k_pl_aispec] the AI-SPEC is checked up to twice: a pass ends done with the spec path; a spec the checker refuses twice ends blocked, still naming the path", async () => {
-    const base = { select: { framework: "langchain", options: [] }, research: { notes: "ok" }, spec: { spec_path: ".agents/phases/ph_a/AI-SPEC.md" } };
+    const base = { select: { framework: "langchain", options: [] }, research: { notes: "ok" }, spec: { document: "# spec\n" }, write_spec: { spec_path: ".agents/phases/ph_a/AI-SPEC.md" } };
     const ok = await runSim("ai-integration-phase", { input: { goal: "rank photos" }, stubs: { ...base, check: { ok: true, gaps: [] } } });
     expect(out(ok)).toMatchObject({ status: "done", framework: "langchain", spec_path: ".agents/phases/ph_a/AI-SPEC.md" });
     const once = await runSim("ai-integration-phase", { input: { goal: "rank photos" }, stubs: { ...base, check: [{ ok: false, gaps: ["no guardrails"] }, { ok: true, gaps: [] }] } });

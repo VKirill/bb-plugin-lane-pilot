@@ -5,32 +5,32 @@
 import { describe, expect, it } from "vitest";
 import { observeG } from "./r16-world-g";
 
-const FULL_CLOSE = ["status", "retro", "living", "close", "summary", "approve_knowledge", "record", "snapshot", "archive", "closed"];
-const SHIPPED = ["gate", "preflight", "open_pr", "hooks", "goal_check", "shipped"];
+const FULL_CLOSE = ["status", "retro", "write_project", "write_retro", "living", "close", "summary", "approve_knowledge", "record", "snapshot", "archive", "closed"];
+const SHIPPED = ["gate", "preflight", "review_range", "open_pr", "write_deploy_log", "state_mark", "hooks", "goal_check", "shipped"];
 
 describe("milestone close, summary, audit, new milestone, cleanup (n1330 … n1334, n1346)", () => {
   it("[sma:k_c_completems] closing a milestone writes its record, snapshots the roadmap and refreshes PROJECT.md only when it exists; with the switches off none of the three happens", async () => {
     const seen = await observeG.k_c_completems();
     expect(seen.onPath).toEqual(FULL_CLOSE);
-    expect(seen.offPath).toEqual(["status", "retro", "close", "approve_knowledge", "archive", "closed"]);
+    expect(seen.offPath).toEqual(["status", "retro", "write_project", "write_retro", "close", "approve_knowledge", "archive", "closed"]);
     expect([seen.onRecordCalled, seen.onSnapshotCalled, seen.offRecordCalled, seen.offSnapshotCalled]).toEqual([1, 1, 0, 0]);
     expect(seen.recordPath).toBe(".agents/milestones/{{status.effective_run_id}}.md");
     expect(seen.recordReads).toEqual(["status", "retro.insights", "close.staged", "close.report_path", "$inputs.goal", "$inputs.goals"]);
     expect(seen.snapshotName).toBe("{{$inputs.goal}}");
-    expect(seen.retroPrompt).toMatch(/If \.agents\/planning\/PROJECT\.md already exists, append this milestone's changed limits to it/);
-    expect(seen.retroPrompt).toMatch(/only if the file already exists; never create it/);
+    expect(seen.retroPrompt).toMatch(/If \.agents\/planning\/PROJECT\.md already exists, return this milestone's changed limits/);
+    expect(seen.retroPrompt).toMatch(/appends it to the existing file only and never creates it/);
     expect(seen.onOut).toMatchObject({ status: "closed", candidates_staged: 2, candidates_approved: 1, deferred: false, report_path: "reports/close.md" });
   });
 
   it("[sma:k_c_mssummary] the summary is its own graph (summary, goal check, done) and the close runs it after a successful close only with milestone.summary on", async () => {
     const seen = await observeG.k_c_mssummary();
-    expect(seen.alonePath).toEqual(["summary", "goal_check", "done"]);
+    expect(seen.alonePath).toEqual(["summary", "write_summary", "goal_check", "done"]);
     expect(seen.aloneOut).toEqual({ status: "done", summary_path: ".agents/planning/MILESTONE-SUMMARY.md", open_items: ["docs"] });
     expect(seen.sources).toBe(true);
     expect(seen.keepsEarlier).toBe(true);
     expect(seen.onPath).toEqual(FULL_CLOSE);
-    expect(seen.offPath).toEqual(["status", "retro", "living", "close", "approve_knowledge", "record", "snapshot", "archive", "closed"]);
-    expect(seen.haltedPath).toEqual(["status", "retro", "living", "close", "halted"]);
+    expect(seen.offPath).toEqual(["status", "retro", "write_project", "write_retro", "living", "close", "approve_knowledge", "record", "snapshot", "archive", "closed"]);
+    expect(seen.haltedPath).toEqual(["status", "retro", "write_project", "write_retro", "living", "close", "halted"]);
     expect(seen.haltedStatus).toBe("halted");
     expect(seen.summaryCalls).toEqual([1, 0, 0]);
   });
@@ -54,18 +54,18 @@ describe("milestone close, summary, audit, new milestone, cleanup (n1330 … n13
 
   it("[sma:k_c_msgaps] a new milestone started from the audit's gaps archives the old one, then frames its phases; what the run emits is the phases the frame wrote", async () => {
     const seen = await observeG.k_c_msgaps();
-    expect(seen.path).toEqual(["archive", "frame", "done"]);
+    expect(seen.path).toEqual(["archive", "frame", "write_requirements", "add_phases", "done"]);
     expect(seen.out).toEqual({ status: "done", phases: ["1 coverage of REQ-2", "2 the gate"] });
     expect(seen.frameGoal).toBe(1);
-    expect(seen.framePrompt).toContain("phases in order (lane-plan phase add <name> --goal …)");
+    expect(seen.framePrompt).toContain("lane-plan phase add <name> --goal …");
   });
 
   it("[sma:k_c_cleanup] cleanup only lists while the plan is not applied (planned), moves the folders and checks the goal when applied (done), and blocks when the goal check fails; dry run is the default", async () => {
     const seen = await observeG.k_c_cleanup();
     expect(seen.dryRun).toBe(true);
     expect(seen.dry).toEqual({ path: ["plan", "planned"], out: { status: "planned", moved: ["phases/ph_old"] } });
-    expect(seen.applied).toEqual({ path: ["plan", "goal_check", "done"], out: { status: "done", moved: ["phases/ph_old"] } });
-    expect(seen.failed).toEqual({ path: ["plan", "goal_check", "blocked"], out: { status: "blocked" } });
+    expect(seen.applied).toEqual({ path: ["plan", "save", "goal_check", "done"], out: { status: "done", moved: ["phases/ph_old"] } });
+    expect(seen.failed).toEqual({ path: ["plan", "save", "goal_check", "blocked"], out: { status: "blocked" } });
     expect(seen.prompt).toContain("With dry_run false, archive the phase folders under .agents/planning/milestones/archive/");
     expect(seen.prompt).toContain("never touch an open phase");
   });
@@ -73,11 +73,11 @@ describe("milestone close, summary, audit, new milestone, cleanup (n1330 … n13
   it("[sma:k_c_newmilestone] a new milestone archives the previous one first, then frames goals, requirements and phases; the run ends done with the phases", async () => {
     const seen = await observeG.k_c_newmilestone();
     expect(seen.entry).toBe("archive");
-    expect(seen.path).toEqual(["archive", "frame", "done"]);
+    expect(seen.path).toEqual(["archive", "frame", "write_requirements", "add_phases", "done"]);
     expect(seen.archiveFirst).toBe(true);
     expect([seen.archiveCalls, seen.frameCalls]).toEqual([1, 1]);
     expect(seen.out).toEqual({ status: "done", phases: ["1 coverage of REQ-2", "2 the gate"] });
-    expect(seen.framePrompt).toContain("3–7 requirements with ids into REQUIREMENTS.md");
+    expect(seen.framePrompt).toContain("3-7 requirements with ids");
   });
 });
 
@@ -159,10 +159,10 @@ describe("ship (n1335 … n1343)", () => {
     expect(seen.off.path).toEqual(SHIPPED);
     expect(seen.off.skipped).toEqual(["review", "post_ship"]);
     expect(seen.off.reviewCalls).toBe(0);
-    expect(seen.pass.path).toEqual(["gate", "preflight", "review", "open_pr", "hooks", "goal_check", "shipped"]);
+    expect(seen.pass.path).toEqual(["gate", "preflight", "review_range", "review", "open_pr", "write_deploy_log", "state_mark", "hooks", "goal_check", "shipped"]);
     expect(seen.pass.reviewCalls).toBe(1);
     for (const verdict of [seen.rework, seen.block]) {
-      expect(verdict.path).toEqual(["gate", "preflight", "review", "held_review"]);
+      expect(verdict.path).toEqual(["gate", "preflight", "review_range", "review", "held_review"]);
       expect(verdict.out).toEqual({ status: "held", pr_url: "", held_by: ["external review asked for rework or blocked the ship"], hooks_failed: [] });
       expect(verdict.prCalls).toBe(0);
     }
@@ -173,7 +173,7 @@ describe("ship (n1335 … n1343)", () => {
     const seen = await observeG.k_ws_track();
     expect(seen.path).toEqual(SHIPPED);
     expect(seen.status).toBe("shipped");
-    expect(seen.prompt).toContain("record the shipment in .agents/deploys.log and set the phase's status and last activity in .agents/planning/STATE.md.");
+    expect(seen.prompt).toContain("deploys.log record (date, phase, PR url) the code-owned writer appends; the same code also sets the phase's status and last activity in .agents/planning/STATE.md.");
     // the record comes after the PR is opened
     expect(seen.prompt.indexOf("gh pr create")).toBeLessThan(seen.prompt.indexOf(".agents/deploys.log"));
     expect(seen.prompt.indexOf(".agents/deploys.log")).toBeLessThan(seen.prompt.indexOf("STATE.md"));
@@ -182,7 +182,7 @@ describe("ship (n1335 … n1343)", () => {
   it("[sma:k_ws_post] post-ship hooks run only when hook files exist, once, and a failed hook is listed without holding the ship", async () => {
     const seen = await observeG.k_ws_post();
     expect(seen.none).toEqual({ path: SHIPPED, calls: 0, failed: [], status: "shipped" });
-    expect(seen.some).toEqual({ path: ["gate", "preflight", "open_pr", "hooks", "post_ship", "goal_check", "shipped"], calls: 1, failed: ["h2"], status: "shipped" });
+    expect(seen.some).toEqual({ path: ["gate", "preflight", "review_range", "open_pr", "write_deploy_log", "state_mark", "hooks", "post_ship", "goal_check", "shipped"], calls: 1, failed: ["h2"], status: "shipped" });
     expect(seen.renders).toBe(true);
     expect(seen.notUndone).toBe(true);
   });
@@ -191,25 +191,25 @@ describe("ship (n1335 … n1343)", () => {
 describe("project start, new project, code analysis (n1344, n1345, n1347, n1348)", () => {
   it("[sma:k_c_start] the first run builds the value map before any question, then the preview, the profile writer, the owner's gaps, research, requirements and the recap; a started project resumes", async () => {
     const seen = await observeG.k_c_start();
-    expect(seen.first).toEqual(["tree", "probe", "value_map", "preview", "profile_write", "ask", "research", "requirements", "recap", "done"]);
+    expect(seen.first).toEqual(["tree", "probe", "value_map", "write_value_map", "preview", "profile_write", "ask", "research", "write_research_stack", "write_research_features", "write_research_architecture", "write_research_pitfalls", "requirements", "write_requirements", "recap", "write_roadmap", "write_project", "add_phases", "done"]);
     expect(seen.valueMapBeforeAsk).toBe(true);
     expect(seen.out).toEqual({ status: "done", value_map: "v", next_steps: ["a", "b", "c"], refused: [] });
     expect(seen.valuePrompt).toMatch(/^Value map builder, before asking anything:/);
     expect(seen.resumed).toEqual({ path: ["tree", "probe", "resumed"], out: { status: "resumed", value_map: "", next_steps: ["the project is already started — continue with project-resume"], refused: [] } });
     // a profile alone is not a started project: the map and the roadmap are still missing
-    expect(seen.profileOnly).toEqual(["tree", "probe", "value_map", "preview", "profile_write", "research", "requirements", "recap", "done"]);
-    expect(seen.noRoadmap).toEqual(["tree", "probe", "preview", "profile_write", "research", "requirements", "recap", "done"]);
+    expect(seen.profileOnly).toEqual(["tree", "probe", "value_map", "write_value_map", "preview", "profile_write", "research", "write_research_stack", "write_research_features", "write_research_architecture", "write_research_pitfalls", "requirements", "write_requirements", "recap", "write_roadmap", "write_project", "add_phases", "done"]);
+    expect(seen.noRoadmap).toEqual(["tree", "probe", "preview", "profile_write", "research", "write_research_stack", "write_research_features", "write_research_architecture", "write_research_pitfalls", "requirements", "write_requirements", "recap", "write_roadmap", "write_project", "add_phases", "done"]);
     expect(seen.profileWrites).toBe(1);
   });
 
   it("[sma:k_c_newproject] with the start research on the start researches and writes requirements in one flow, ending in the recap; quick mode has neither, and with the research off nothing but the map, the preview and the recap runs", async () => {
     const seen = await observeG.k_c_newproject();
-    expect(seen.full).toEqual(["tree", "probe", "value_map", "preview", "profile_write", "ask", "research", "requirements", "recap", "done"]);
+    expect(seen.full).toEqual(["tree", "probe", "value_map", "write_value_map", "preview", "profile_write", "ask", "research", "write_research_stack", "write_research_features", "write_research_architecture", "write_research_pitfalls", "requirements", "write_requirements", "recap", "write_roadmap", "write_project", "add_phases", "done"]);
     expect(seen.recapOut).toEqual(["a", "b", "c"]);
-    expect(seen.quick).toEqual(["tree", "probe", "value_map", "preview", "profile_write", "ask", "recap", "done"]);
-    expect(seen.quickSkipped).toEqual(["research", "requirements"]);
-    expect(seen.off).toEqual(["tree", "value_map", "preview", "recap", "done"]);
-    expect(seen.offSkipped).toEqual(["probe", "profile_write", "ask", "research", "requirements"]);
+    expect(seen.quick).toEqual(["tree", "probe", "value_map", "write_value_map", "preview", "profile_write", "ask", "recap", "write_roadmap", "write_project", "add_phases", "done"]);
+    expect(seen.quickSkipped).toEqual(["research", "write_research_stack", "write_research_features", "write_research_architecture", "write_research_pitfalls", "requirements", "write_requirements"]);
+    expect(seen.off).toEqual(["tree", "value_map", "write_value_map", "preview", "recap", "write_roadmap", "write_project", "add_phases", "done"]);
+    expect(seen.offSkipped).toEqual(["probe", "profile_write", "ask", "research", "write_research_stack", "write_research_features", "write_research_architecture", "write_research_pitfalls", "requirements", "write_requirements"]);
     expect(seen.requirementsCalls).toEqual([1, 0, 0]);
     expect(seen.researchCalls).toEqual([1, 0, 0]);
   });

@@ -61,13 +61,13 @@ describe("region 17 · audit and research graphs", () => {
   it("[sma:k_ag_evalauditor] the eval review marks a flawed evaluation and offers the fix, a sound one is closed as sound with the review path", async () => {
     const review = await spawnOf("eval-review", "review");
     expect(review.spec).toMatchObject({ helper: "auditor", readOnly: true });
-    expect(review.fields).toMatchObject({ findings: "array", review_path: "string", flawed: "boolean" });
-    const flawed = await runSim("eval-review", { input: { phase_id: "ph_1" }, stubs: { review: { flawed: true, findings: [{ file: "evals/gold.json", line: 1, severity: "high", evidence: "gold set written after tuning" }], review_path: ".agents/phases/ph_1/EVAL-REVIEW.md", coverage: { latency: "missing" } } } });
-    expect(pathOf(flawed)).toBe("review offer flawed");
+    expect(review.fields).toMatchObject({ findings: "array", document: "string", flawed: "boolean" });
+    const flawed = await runSim("eval-review", { input: { phase_id: "ph_1" }, stubs: { review: { flawed: true, findings: [{ file: "evals/gold.json", line: 1, severity: "high", evidence: "gold set written after tuning" }], document: "# review\n", coverage: { latency: "missing" } }, write_review: { review_path: ".agents/phases/ph_1/EVAL-REVIEW.md" } } });
+    expect(pathOf(flawed)).toBe("review doc_path write_review offer flawed");
     expect(out(flawed)).toMatchObject({ status: "flawed", review_path: ".agents/phases/ph_1/EVAL-REVIEW.md", proposed_workflow: "todo-add" });
-    const sound = await runSim("eval-review", { input: { phase_id: "ph_1" }, stubs: { review: { flawed: false, findings: [], review_path: ".agents/phases/ph_1/EVAL-REVIEW.md" }, goal_check: { ok: true, verdict: "pass" } } });
+    const sound = await runSim("eval-review", { input: { phase_id: "ph_1" }, stubs: { review: { flawed: false, findings: [], document: "# review\n" }, write_review: { review_path: ".agents/phases/ph_1/EVAL-REVIEW.md" }, goal_check: { ok: true, verdict: "pass" } } });
     expect(out(sound)).toMatchObject({ status: "sound", review_path: ".agents/phases/ph_1/EVAL-REVIEW.md" });
-    expect(pathOf(sound)).toBe("review goal_check sound");
+    expect(pathOf(sound)).toBe("review doc_path write_review goal_check sound");
   });
 
   it("[sma:k_ag_mapper] the analyze-code graph hands one scope to the analysis at the depth its mode asks for, and its recommendation is the summary of the report", async () => {

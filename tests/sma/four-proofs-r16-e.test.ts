@@ -108,17 +108,17 @@ describe("review, security and audit commands (n1276 … n1297)", () => {
   it("[sma:k_c_secure] /sma-secure-phase ends in gaps naming the open threats and the register path, or in done when every threat is closed and the goal check holds", async () => {
     const seen = await observeE.k_c_secure();
     const path = ".agents/phases/ph_a/SECURITY.md";
-    expect(seen.open).toEqual(["audit gaps", { status: "gaps", open: ["T1", "T2"], security_path: path }]);
-    expect(seen.clean).toEqual(["audit goal_check done", { status: "done", open: [], security_path: path }]);
-    expect(seen.unmet).toEqual(["audit goal_check gaps", "gaps"]);
+    expect(seen.open).toEqual(["audit doc_path write_security gaps", { status: "gaps", open: ["T1", "T2"], security_path: path }]);
+    expect(seen.clean).toEqual(["audit doc_path write_security goal_check done", { status: "done", open: [], security_path: path }]);
+    expect(seen.unmet).toEqual(["audit doc_path write_security goal_check gaps", "gaps"]);
   });
 
   it("[sma:k_c_validate] /sma-validate-phase ends in gaps naming the promises without a real check and the VALIDATION.md path, or in done", async () => {
     const seen = await observeE.k_c_validate();
     const path = ".agents/phases/ph_a/VALIDATION.md";
-    expect(seen.gaps).toEqual(["audit gaps", { status: "gaps", gaps: ["p2: existence-only check"], validation_path: path }]);
-    expect(seen.clean).toEqual(["audit goal_check done", { status: "done", gaps: [], validation_path: path }]);
-    expect(seen.unmet).toEqual(["audit goal_check gaps", "gaps"]);
+    expect(seen.gaps).toEqual(["audit doc_path write_validation gaps", { status: "gaps", gaps: ["p2: existence-only check"], validation_path: path }]);
+    expect(seen.clean).toEqual(["audit doc_path write_validation goal_check done", { status: "done", gaps: [], validation_path: path }]);
+    expect(seen.unmet).toEqual(["audit doc_path write_validation goal_check gaps", "gaps"]);
   });
 
   it("[sma:k_c_uireview] /sma-ui-review captures, scores and writes the review file unless switched off; a low score offers the fix workflow, an unscored one does not, and a capture that is blocked ends blocked", async () => {
@@ -132,9 +132,9 @@ describe("review, security and audit commands (n1276 … n1297)", () => {
 
   it("[sma:k_c_evalreview] /sma-eval-review ends flawed with a todo offered when the evaluation has a flaw, sound with no offer otherwise, and flawed when the goal check fails", async () => {
     const seen = await observeE.k_c_evalreview();
-    expect(seen.sound).toEqual(["review goal_check sound", "sound", null]);
-    expect(seen.flawed).toEqual(["review offer flawed", "flawed", "todo-add", 1]);
-    expect(seen.unmet).toEqual(["review goal_check flawed", "flawed"]);
+    expect(seen.sound).toEqual(["review doc_path write_review goal_check sound", "sound", null]);
+    expect(seen.flawed).toEqual(["review doc_path write_review offer flawed", "flawed", "todo-add", 1]);
+    expect(seen.unmet).toEqual(["review doc_path write_review goal_check flawed", "flawed"]);
   });
 
   it("[sma:k_c_audituat] /sma-audit-uat lists the open and failed acceptance lines of every phase from its UAT.md, writes the audit and offers a follow-up only when asked and something is open", async () => {

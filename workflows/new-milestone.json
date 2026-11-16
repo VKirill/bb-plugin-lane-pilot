@@ -72,7 +72,7 @@
         "en": "Milestone frame",
         "ru": "Рамка этапа"
       },
-      "prompt": "From the goal: 3-7 requirements with ids — return the raw Markdown requirements block in document (the code-owned writer appends it to .agents/planning/REQUIREMENTS.md) and the phases in order in phases, each a vertical slice (see templates/planning/references/mvp-stories.md). This read-only helper does not write files and runs no lane-plan commands.",
+      "prompt": "From the goal: 3-7 requirements with ids — return the raw Markdown requirements block in document (the code-owned writer appends it to .agents/planning/REQUIREMENTS.md) and the phases in order in phases, each a vertical slice (see templates/planning/references/mvp-stories.md); the code-owned writer registers them as roadmap rows (lane-plan phase add <name> --goal …). This read-only helper does not write files and runs no lane-plan commands.",
       "out": {
         "phases": "string[]",
         "document": "string"
@@ -115,6 +115,26 @@
       "skip_out": {
         "requirements_path": ""
       }
+    },
+    {
+      "id": "add_phases",
+      "type": "action",
+      "action": "lp.phase_add",
+      "title": {
+        "en": "Register the milestone phases",
+        "ru": "Зарегистрировать фазы этапа"
+      },
+      "params": {
+        "goal": "{{$inputs.goal}}"
+      },
+      "reads": [
+        "frame.phases"
+      ],
+      "out": {
+        "added": "string[]",
+        "count": "int"
+      },
+      "skip_when": "!frame.phases.length"
     }
   ],
   "edges": [
@@ -130,8 +150,12 @@
     },
     {
       "from": "write_requirements",
-      "to": "done",
+      "to": "add_phases",
       "pass": "artifact"
+    },
+    {
+      "from": "add_phases",
+      "to": "done"
     }
   ],
   "test": {
@@ -145,12 +169,19 @@
           "phases": [
             "1 billing",
             "2 invoices"
-          ]
+          ],
+          "document": "- REQ-a\n"
+        },
+        "add_phases": {
+          "added": [],
+          "count": 2
         }
       },
       "expect_path": [
         "archive",
         "frame",
+        "write_requirements",
+        "add_phases",
         "done"
       ],
       "expect_outputs": [

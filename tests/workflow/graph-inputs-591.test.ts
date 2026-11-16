@@ -204,17 +204,19 @@ describe("project-start: the ask answer reaches downstream consumers", () => {
   it("research, requirements and recap each receive ctx.answers.ask with the actual answer", async () => {
     const store = await load();
     const { agent, calls } = agents({
-      "project-start:value_map": () => ({ value_map: "v" }),
-      "project-start:preview": () => ({ stack: {}, memory: {} }),
-      "project-start:research": () => ({ research_notes: "notes" }),
-      "project-start:requirements": () => ({ requirements: ["r1"] }),
-      "project-start:recap": () => ({ next_steps: ["n1"] }),
+      "project-start:value_map": () => ({ document: "v" }),
+      "project-start:preview": () => ({ stack: {}, memory: {}, profile: {} }),
+      "project-start:research": () => ({ research_notes: "notes", stack: "", features: "", architecture: "", pitfalls: "" }),
+      "project-start:requirements": () => ({ requirements: ["r1"], document: "# req\n" }),
+      "project-start:recap": () => ({ next_steps: ["n1"], roadmap_draft: "# road\n", project_document: "# proj\n", phases: ["1 p"] }),
     });
     const engine = engineOn(journalDb(), {
       agent,
       "lp.tree_counts": ok(() => ({ enabled: "on", sources: 1, tests: 1, docs: 1, planning: 1, commits: 1, counts_note: "", profile_note: "", recap_note: "" })),
       "lp.state_probe": ok(() => ({ has_passport: false, open_tasks: 0, plan_exists: false, has_ui: false, has_value_map: false, has_roadmap: false, has_profile: false })),
       "lp.profile_write": ok(() => ({ refused: [], set: [], reasons: [] })),
+      "fs.write": ok(() => ({ value_map_path: "w.md", requirements_path: "w.md", roadmap_path: "w.md", research_path: "w.md", project_path: "w.md" })),
+      "lp.phase_add": ok(() => ({ added: [], count: 0 })),
     });
     const started = engine.start({ workflow: store.get("project-start")!.workflow, inputs: { goal: "g" } });
     const first = await started.done;
@@ -234,7 +236,7 @@ describe("milestone-close: record path uses the effective run id", () => {
     const store = await load();
     const paths: string[] = [];
     const { agent } = agents({
-      "milestone-close:retro": () => ({ insights: [], retro_path: "r.md", metrics: {} }),
+      "milestone-close:retro": () => ({ insights: [], metrics: {}, project_update: "", document: "" }),
       "lp.close": () => ({ status: "closed", report_path: "r.md", staged: 0 }),
       "milestone-summary": () => ({ summary_path: "s.md" }),
     });
@@ -244,8 +246,9 @@ describe("milestone-close: record path uses the effective run id", () => {
       "lp.retro_living": ok(() => ({ updated: 0, total: 0, path: "" })),
       "fs.write": ok((ctx: StepContext) => {
         if (ctx.node.type !== "action") throw new Error("fs.write requires an action node");
-        paths.push(ctx.render(String(ctx.node.params.path)));
-        return { record_path: paths.at(-1)! };
+        const path = ctx.render(String(ctx.node.params.path));
+        if (path.startsWith(".agents/milestones/")) paths.push(path);
+        return { record_path: path, retro_path: path, project_path: path };
       }),
       "lp.milestone_archive": ok(() => ({ folder: "f", files: [], kept: true })),
       "lp.run_close": ok(() => ({ archived: true })),

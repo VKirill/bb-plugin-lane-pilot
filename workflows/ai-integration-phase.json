@@ -190,7 +190,7 @@
         "en": "Check the AI-SPEC",
         "ru": "Проверка AI-SPEC"
       },
-      "prompt": "Read .agents/phases/<id>/AI-SPEC.md. ok=true only when every section is present (framework and model, typed inputs and outputs, guards, '## Evaluation' with dimensions, rubrics, guardrails and monitoring, '## Quick reference', '## Implementation guidance', cost), the numbers are consistent and no secret is in it. Otherwise name the gaps.",
+      "prompt": "Read {{write_spec.spec_path}}. ok=true only when every section is present (framework and model, typed inputs and outputs, guards, '## Evaluation' with dimensions, rubrics, guardrails and monitoring, '## Quick reference', '## Implementation guidance', cost), the numbers are consistent and no secret is in it. Otherwise name the gaps.",
       "out": {
         "ok": "bool",
         "gaps": "string[]"
@@ -237,7 +237,7 @@
       "id": "write_model",
       "type": "action",
       "action": "fs.write",
-      "path": ".agents/research/model-{{slug}}.md",
+      "path": ".agents/research/model-{{date}}-{{run_id}}.md",
       "contents": "{{select.document}}",
       "out": {
         "model_path": "string"
@@ -248,17 +248,35 @@
       }
     },
     {
+      "id": "spec_path",
+      "type": "action",
+      "action": "lp.doc_path",
+      "title": {
+        "en": "Resolve the document path",
+        "ru": "Путь документа"
+      },
+      "params": {
+        "phase_id": "{{$inputs.phase_id}}",
+        "doc": "AI-SPEC.md"
+      },
+      "out": {
+        "path": "string"
+      }
+    },
+    {
       "id": "write_spec",
       "type": "action",
       "action": "fs.write",
-      "path": ".agents/phases/{{$inputs.phase_id}}/AI-SPEC.md",
-      "contents": "{{spec.document}}",
       "out": {
         "spec_path": "string"
       },
       "title": {
         "en": "Write the AI spec",
         "ru": "Записать AI-SPEC"
+      },
+      "params": {
+        "path": "{{spec_path.path}}",
+        "contents": "{{spec.document}}"
       }
     }
   ],
@@ -284,8 +302,12 @@
       "pass": "artifact"
     },
     {
+      "from": "spec_path",
+      "to": "write_spec"
+    },
+    {
       "from": "spec",
-      "to": "write_spec",
+      "to": "spec_path",
       "pass": "artifact"
     },
     {
@@ -319,32 +341,44 @@
     "id": "ai-1",
     "sim": {
       "input": {
-        "goal": "rank photos"
+        "goal": "rank photos",
+        "phase_id": "ph_ai1"
       },
       "stubs": {
         "select": {
           "framework": "langchain",
-          "options": []
+          "options": [],
+          "scores": {},
+          "document": "# m\n"
         },
         "research": {
-          "notes": "ok"
-        },
-        "spec": {
-          "spec_path": "x/AI-SPEC.md"
+          "notes": "ok",
+          "quick_reference": "qr",
+          "implementation_notes": "in",
+          "domain_notes": "dn"
         },
         "eval_plan": {
           "eval_plan": "dims, metric"
         },
+        "spec": {
+          "document": "# AI-SPEC\n"
+        },
         "check": {
           "ok": true,
           "gaps": []
+        },
+        "spec_path": {
+          "path": ".agents/phases/ph_ai1/AI-SPEC.md"
         }
       },
       "expect_path": [
         "select",
+        "write_model",
         "research",
         "eval_plan",
         "spec",
+        "spec_path",
+        "write_spec",
         "check",
         "done"
       ],

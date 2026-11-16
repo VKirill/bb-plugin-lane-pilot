@@ -190,17 +190,19 @@ export const observeE = {
   /** n1278: /sma-secure-phase ends in gaps naming the open threats, or in done when every threat is closed and the goal check holds. */
   async k_c_secure() {
     const path = ".agents/phases/ph_a/SECURITY.md";
-    const open = await runSim("secure-phase", { input: { phase_id: "ph_a" }, stubs: { audit: { open: ["T1", "T2"], security_path: path } } });
-    const clean = await runSim("secure-phase", { input: { phase_id: "ph_a" }, stubs: { audit: { open: [], security_path: path } } });
-    const unmet = await runSim("secure-phase", { input: { phase_id: "ph_a" }, stubs: { audit: { open: [], security_path: path }, goal_check: { ok: false, verdict: "fail", reason: "no table" } } });
+    const write = { security_path: path };
+    const open = await runSim("secure-phase", { input: { phase_id: "ph_a" }, stubs: { audit: { open: ["T1", "T2"], status_table: "## status\n" }, write_security: write } });
+    const clean = await runSim("secure-phase", { input: { phase_id: "ph_a" }, stubs: { audit: { open: [], status_table: "## status\n" }, write_security: write } });
+    const unmet = await runSim("secure-phase", { input: { phase_id: "ph_a" }, stubs: { audit: { open: [], status_table: "## status\n" }, write_security: write, goal_check: { ok: false, verdict: "fail", reason: "no table" } } });
     return { open: [pathOf(open), outOf(open)], clean: [pathOf(clean), outOf(clean)], unmet: [pathOf(unmet), outOf(unmet).status] };
   },
   /** n1279: /sma-validate-phase ends in gaps naming the promises without a real check, or in done. */
   async k_c_validate() {
     const path = ".agents/phases/ph_a/VALIDATION.md";
-    const gaps = await runSim("validate-phase", { input: { phase_id: "ph_a" }, stubs: { audit: { gaps: ["p2: existence-only check"], validation_path: path, sampled: 3 } } });
-    const clean = await runSim("validate-phase", { input: { phase_id: "ph_a" }, stubs: { audit: { gaps: [], validation_path: path, sampled: 3 } } });
-    const unmet = await runSim("validate-phase", { input: { phase_id: "ph_a" }, stubs: { audit: { gaps: [], validation_path: path, sampled: 3 }, goal_check: { ok: false, verdict: "fail", reason: "x" } } });
+    const write = { validation_path: path };
+    const gaps = await runSim("validate-phase", { input: { phase_id: "ph_a" }, stubs: { audit: { gaps: ["p2: existence-only check"], document: "# VALIDATION\n", sampled: 3 }, write_validation: write } });
+    const clean = await runSim("validate-phase", { input: { phase_id: "ph_a" }, stubs: { audit: { gaps: [], document: "# VALIDATION\n", sampled: 3 }, write_validation: write } });
+    const unmet = await runSim("validate-phase", { input: { phase_id: "ph_a" }, stubs: { audit: { gaps: [], document: "# VALIDATION\n", sampled: 3 }, write_validation: write, goal_check: { ok: false, verdict: "fail", reason: "x" } } });
     return { gaps: [pathOf(gaps), outOf(gaps)], clean: [pathOf(clean), outOf(clean)], unmet: [pathOf(unmet), outOf(unmet).status] };
   },
   /** n1280: /sma-ui-review: capture at the listed viewports, score from the evidence, write the review file unless switched off, offer the fix workflow on a low score, blocked when nothing could be captured. */
@@ -216,7 +218,7 @@ export const observeE = {
   },
   /** n1281: /sma-eval-review: a flawed evaluation is reported flawed and a todo is offered; a sound one ends sound with no offer. */
   async k_c_evalreview() {
-    const base = { findings: [] as unknown[], review_path: "x/EVAL-REVIEW.md" };
+    const base = { findings: [] as unknown[], document: "# EVAL-REVIEW\n" };
     const sound = await runSim("eval-review", { input: { phase_id: "ph_1" }, stubs: { review: { ...base, flawed: false } } });
     const flawed = await runSim("eval-review", { input: { phase_id: "ph_1" }, stubs: { review: { ...base, findings: [{ severity: "high", evidence: "no gold set" }], flawed: true } } });
     const unmet = await runSim("eval-review", { input: { phase_id: "ph_1" }, stubs: { review: { ...base, flawed: false }, goal_check: { ok: false, verdict: "fail", reason: "x" } } });

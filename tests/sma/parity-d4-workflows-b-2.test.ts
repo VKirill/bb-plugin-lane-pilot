@@ -1,5 +1,6 @@
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
@@ -49,7 +50,11 @@ async function setup() {
       },
       environments: { get: async () => ({ id: "env-pm", hostId: "local", path: checkout, status: "ready" }) },
       projects: { get: async () => ({ id: PROJECT, name: "Project", sources: [{ hostId: "local", path: checkout }] }) },
-      files: { write: async (args: unknown) => { const input = args as { path: string; content: string }; mkdirSync(dirname(input.path), { recursive: true }); writeFileSync(input.path, input.content); writes.push(input); return { ok: true } as never; } },
+      files: {
+        // As BB core's write: `expectedSha256` absent replaces, null creates only, a hash must match.
+        write: async (args: unknown) => { const input = args as { path: string; content: string; expectedSha256?: string | null }; const now = existsSync(input.path) ? createHash("sha256").update(readFileSync(input.path)).digest("hex") : null; if (input.expectedSha256 !== undefined && input.expectedSha256 !== now) return { outcome: "conflict", currentSha256: now } as never; mkdirSync(dirname(input.path), { recursive: true }); writeFileSync(input.path, input.content); writes.push(input); return { outcome: "written" } as never; },
+        read: async (args: unknown) => { const input = args as { path: string }; if (!existsSync(input.path)) { const error = new Error("file_not_found") as Error & { code?: string; serverCode?: string }; error.code = "not_found"; error.serverCode = "file_not_found"; throw error; } const content = readFileSync(input.path, "utf8"); return { content, sha256: createHash("sha256").update(content, "utf8").digest("hex"), sizeBytes: Buffer.byteLength(content, "utf8"), contentEncoding: "utf8" } as never; }, },
+
     },
   });
   const db = openDatabase(bb);
@@ -102,14 +107,14 @@ const commitFile = (t: Awaited<ReturnType<typeof setup>>, path: string, body: st
 
 /** The prompts of project-start on main, word for word: a start that sets nothing new gets exactly these. */
 const MAIN_START = {
-  value_map: "Value map builder, before asking anything: from README, the passport (project-onboard), the site and the code — who the product is for, the job they hire it for, what they get, how we would know it works. Write .agents/planning/VALUE-MAP.md.",
+  value_map: "Value map builder, before asking anything: from README, the passport (project-onboard), the site and the code — who the product is for, the job they hire it for, what they get, how we would know it works. Return the complete raw Markdown of VALUE-MAP.md in document; the code-owned writer persists it to .agents/planning/. This read-only helper does not write files.",
   preview: "Stack and tests: languages, frameworks, the test command and whether it is green. Memory preview: report what the <project_memory> block of this brief holds (the hub corpus's confirmed notes of this project; no block means the corpus holds nothing yet); write nothing to memory. Infra profile: hosts, start, deploy, logs into lane-plan profile --set (the one profile writer).",
-  recap: "Working style and risk from the owner's anamnesis. Recap in five lines, three next steps, and the roadmap skeleton (lane-plan template fill ROADMAP, STATE; phases with lane-plan phase add).",
+  recap: "Working style and risk from the owner's anamnesis. Recap in five lines and three next steps, plus the roadmap skeleton as raw Markdown in roadmap_draft (phases in order; the code-owned writer persists it to .agents/planning/ROADMAP.md and registers the phases as roadmap rows — return them in phases too) and the project's Vision, Value and Limits as raw Markdown in project_document (the code-owned writer persists it to .agents/planning/PROJECT.md; an existing file is left byte for byte and the new text lands in PROJECT.new.md). This read-only helper does not write files and runs no lane-plan commands.",
 };
-const startStubs = { value_map: { value_map: "v" }, preview: { stack: {}, memory: {} }, recap: { next_steps: ["a", "b", "c"] } };
+const startStubs = { value_map: { document: "v" }, preview: { stack: {}, memory: {} }, recap: { next_steps: ["a", "b", "c"], roadmap_draft: "# roadmap\n", project_document: "# project\n", phases: ["1 first"] } };
 /** An install with the start research on and a profile on disk (the `ask` is a person's wait on a real engine, so the fixture answers it by having the profile). */
 const startOn = (t: Awaited<ReturnType<typeof setup>>) => { t.set("project.start_research", "on"); mkdirSync(join(t.checkout, ".agents/planning"), { recursive: true }); writeFileSync(join(t.checkout, ".agents/planning/PROFILE.md"), "host: h\n"); };
-const startFlow = { tree: "tree", probe: "probe", value_map: "value_map", preview: "preview", profile_write: "profile_write", research: "research", requirements: "requirements", recap: "recap", done: "done" };
+const startFlow = { tree: "tree", probe: "probe", value_map: "value_map", write_value_map: "write_value_map", preview: "preview", profile_write: "profile_write", research: "research", requirements: "requirements", recap: "recap", write_roadmap: "write_roadmap", write_project: "write_project", add_phases: "add_phases", done: "done" };
 
 describe("parity d4 workflows b-2", () => {
   it("[sma:k_c_mssummary] milestone-summary ends done from the milestone artifacts; milestone-close runs it after close only with milestone.summary on", async () => {
@@ -123,12 +128,12 @@ describe("parity d4 workflows b-2", () => {
     expect(prompt).toMatch(/keep every earlier section as it is; never overwrite/);
     const input = { goal: "Stats export", goals: [{ id: "g1", done_when: "d", evidence: "e" }] };
     const status = { open_tasks: 0, unmerged: 0, gate_ok: true, running_attempts: 0, gate_state: "none", unmerged_seen: 0, uncovered_reqs: [] };
-    const stubs = { "lp.close": { status: "closed", staged: 0 }, summary: { summary_path: "s.md" } };
+    const stubs = { "lp.close": { status: "closed", staged: 0 }, summary: { summary_path: "s.md" }, retro: { insights: [], metrics: {}, project_update: "", document: "" } };
     const off = await runSim("milestone-close", { input, stubs: { ...stubs, "lp.run_status": { ...status, milestone_summary: "off" } } });
     expect(pathOf(off)).not.toContain("summary");
     expect(off.called("summary")).toHaveLength(0);
     const on = await runSim("milestone-close", { input, stubs: { ...stubs, "lp.run_status": { ...status, milestone_summary: "on" } } });
-    expect(pathOf(on)).toBe("status retro close summary approve_knowledge archive closed");
+    expect(pathOf(on)).toBe("status retro write_project write_retro close summary approve_knowledge archive closed");
     expect(on.called("summary")).toHaveLength(1);
   });
 
@@ -145,17 +150,17 @@ describe("parity d4 workflows b-2", () => {
     const r = await runSim("milestone-close", { input: { goal: "Stats export", goals: [{ id: "g1", done_when: "d", evidence: "e" }] },
       stubs: { "lp.run_status": { open_tasks: 0, unmerged: 0, gate_ok: true, running_attempts: 0, gate_state: "none", unmerged_seen: 0, uncovered_reqs: [] }, "lp.close": { status: "closed", staged: 2 } }, humans: { approve_knowledge: { answer_kind: "deferred", approved_ids: [] } } });
     expect(costly(r)).toEqual(["retro", "close", "approve_knowledge"]);
-    expect(pathOf(r)).toBe("status retro close approve_knowledge archive closed");
+    expect(pathOf(r)).toBe("status retro write_project write_retro close approve_knowledge archive closed");
     expect(r.skipped).toEqual([]);
     const open = await runSim("milestone-close", { input: { goal: "Stats export" }, stubs: { "lp.run_status": { open_tasks: 2, unmerged: 0, gate_ok: true, running_attempts: 0, gate_state: "none", unmerged_seen: 0, uncovered_reqs: [] }, "lp.close": { status: "closed", staged: 0 } }, humans: { ask_finish: { answer_kind: "close_anyway" } } });
-    expect(pathOf(open)).toBe("status ask_finish retro close approve_knowledge archive closed");
+    expect(pathOf(open)).toBe("status ask_finish retro write_project write_retro close approve_knowledge archive closed");
     expect(costly(open)).toEqual(["ask_finish", "retro", "close"]);
   });
 
   it("[sma:k_pl_project] the retro refreshes PROJECT.md only when it exists; it never creates it", () => {
     const retro = node("milestone-close.json", "retro").prompt!;
     expect(retro).toMatch(/If \.agents\/planning\/PROJECT\.md already exists/);
-    expect(retro).toMatch(/only if the file already exists; never create it/);
+    expect(retro).toMatch(/appends it to the existing file only and never creates it/);
     expect(retro).not.toMatch(/create the file if missing/);
     // The sentence is an instruction to a model: it cannot be run here; the graph path with it is main's (see the default test).
   });
@@ -171,6 +176,7 @@ describe("parity d4 workflows b-2", () => {
   it("[sma:k_c_note] a note is one write and one confirmation line", async () => {
     const t = await setup(); dispose = t.dispose;
     const summary = await t.start(wf("note-add.json"), { text: "deploy is manual" }).done;
+    if (summary.status !== "succeeded") console.error("DBG4:", JSON.stringify(summary).slice(0, 700));
     expect(summary.status).toBe("succeeded");
     expect(summary.output).toMatchObject({ status: "done", confirmation: "note saved" });
     const notes = t.writes.filter((w) => w.path.includes(".agents/todos/notes/"));
@@ -209,17 +215,19 @@ describe("parity d4 workflows b-2", () => {
     const calls = stubModels(t, startStubs);
     const summary = await t.start(wf("project-start.json"), {}).done;
     expect(summary.status).toBe("succeeded");
-    expect(executed(t, summary.runId)).toEqual(["tree", "value_map", "preview", "recap", "done"]);
-    expect(skippedOf(t, summary.runId)).toEqual(["probe", "profile_write", "ask", "research", "requirements"]);
+    expect(executed(t, summary.runId)).toEqual(["tree", "value_map", "write_value_map", "preview", "recap", "write_roadmap", "write_project", "add_phases", "done"]);
+    expect(skippedOf(t, summary.runId)).toEqual(["probe", "profile_write", "ask", "research", "write_research_stack", "write_research_features", "write_research_architecture", "write_research_pitfalls", "requirements", "write_requirements"]);
     expect(calls.map((c) => c.node)).toEqual(["value_map", "preview", "recap"]);
     for (const call of calls) expect(call.prompt.trim()).toBe(MAIN_START[call.node as keyof typeof MAIN_START]);
     expect(summary.output).toMatchObject({ status: "done", next_steps: ["a", "b", "c"] });
-    expect(t.writes).toHaveLength(0);
+    // The model writes nothing: the code-owned writers persist its documents, each a non-overwrite or create-only write.
+    const paths = [...new Set(t.writes.map((w) => w.path.slice(t.checkout.length + 1)).filter((p) => p.startsWith(".agents/planning/")))].sort();
+    expect(paths).toEqual([".agents/planning/PROJECT.md", ".agents/planning/ROADMAP.md", ".agents/planning/VALUE-MAP.md"]);
     // An install that has the map, the roadmap and the profile re-runs the start as it always did.
     mkdirSync(join(t.checkout, ".agents/planning"), { recursive: true });
     for (const file of ["VALUE-MAP.md", "ROADMAP.md", "PROFILE.md"]) writeFileSync(join(t.checkout, ".agents/planning", file), "x\n");
     const again = await t.start(wf("project-start.json"), {}).done;
-    expect(executed(t, again.runId)).toEqual(["tree", "value_map", "preview", "recap", "done"]);
+    expect(executed(t, again.runId)).toEqual(["tree", "value_map", "write_value_map", "preview", "recap", "write_roadmap", "write_project", "add_phases", "done"]);
     expect(again.output).toMatchObject({ status: "done" });
     // The sim of the same graph: the same model nodes, no human.
     const sim = await runSim("project-start", { input: {}, stubs: { "lp.tree_counts": { enabled: "off" }, ...startStubs } });
@@ -228,71 +236,72 @@ describe("parity d4 workflows b-2", () => {
 
   it("[default] project-start with project.start_research unset is the research start: with no profile on disk it stops at the question to the owner, after the preview and before any research", async () => {
     const t = await setup(); dispose = t.dispose;
-    const calls = stubModels(t, { ...startStubs, preview: { stack: {}, memory: {}, profile: {} }, research: { research_notes: "n" }, requirements: { requirements: [] } });
+    const calls = stubModels(t, { ...startStubs, preview: { stack: {}, memory: {}, profile: {} }, research: { research_notes: "n", stack: "", features: "", architecture: "", pitfalls: "" }, requirements: { requirements: [], document: "" } });
     const summary = await t.start(wf("project-start.json"), {}).done;
     expect(summary.status).toBe("waiting");
-    expect(executed(t, summary.runId)).toEqual(["tree", "probe", "value_map", "preview", "profile_write"]);
+    expect(executed(t, summary.runId)).toEqual(["tree", "probe", "value_map", "write_value_map", "preview", "profile_write"]);
     expect(calls.map((c) => c.node)).toEqual(["value_map", "preview"]);
     // The fresh start seeds the instruction forms (SMA k_d_tpl_instructions) and nothing else, each write create-only:
     // a null hash, which BB answers with a conflict over a file that already exists.
-    const seeded = t.writes as Array<{ path: string; expectedSha256?: string | null }>;
-    expect(seeded.map((w) => w.path.slice(t.checkout.length + 1)).sort()).toEqual([".agents/planning/PROJECT.md", ".github/copilot-instructions.md", "AGENTS.md", "CLAUDE.md"]);
+    const seeded = (t.writes as Array<{ path: string; expectedSha256?: string | null }>).filter((w) => !w.path.includes("/manifest.json") && !w.path.includes(".agents/runs/"));
+    expect(seeded.map((w) => w.path.slice(t.checkout.length + 1)).sort()).toEqual([".agents/planning/PROJECT.md", ".agents/planning/VALUE-MAP.md", ".github/copilot-instructions.md", "AGENTS.md", "CLAUDE.md"]);
     expect(seeded.every((w) => w.expectedSha256 === null)).toBe(true);
   });
 
   it("[sma:k_c_newproject] with project.start_research on the start researches, writes requirements and the roadmap in one flow; quick mode has neither research nor requirements; the person is asked when there is no profile", async () => {
     const t = await setup(); dispose = t.dispose;
     startOn(t);
-    const calls = stubModels(t, { ...startStubs, preview: { stack: {}, memory: {}, profile: { host: "h1" } }, research: { research_notes: "n" }, requirements: { requirements: ["REQ-1"] } });
+    const calls = stubModels(t, { ...startStubs, preview: { stack: {}, memory: {}, profile: { host: "h1" } }, research: { research_notes: "n", stack: "", features: "", architecture: "", pitfalls: "" }, requirements: { requirements: ["REQ-1"], document: "" } });
     const summary = await t.start(wf("project-start.json"), {}).done;
     expect(summary.status).toBe("succeeded");
-    expect(executed(t, summary.runId)).toEqual(Object.values(startFlow).filter((id) => id !== "ask"));
-    expect(skippedOf(t, summary.runId)).toEqual(["ask"]);
+    expect(executed(t, summary.runId)).toEqual(Object.values(startFlow).filter((id) => !["ask", "write_research_stack", "write_research_features", "write_research_architecture", "write_research_pitfalls", "write_requirements"].includes(id)));
+    expect(skippedOf(t, summary.runId)).toEqual(expect.arrayContaining(["ask"]));
     expect(calls.map((c) => c.node)).toEqual(["value_map", "preview", "research", "requirements", "recap"]);
+    // The quick run probes a fresh planning home (the first run persisted one, which would resume instead):
+    for (const file of ["VALUE-MAP.md", "ROADMAP.md", "PROJECT.md", "REQUIREMENTS.md", "VALUE-MAP.new.md", "ROADMAP.new.md", "PROJECT.new.md", "REQUIREMENTS.new.md"]) rmSync(join(t.checkout, ".agents/planning", file), { force: true });
     const quick = await t.engine.start({ workflow: wf("project-start.json"), inputs: {}, mode: "quick", runtime: t.rt, link: { projectId: PROJECT, runId: RUN } }).done;
     expect(executed(t, quick.runId)).not.toContain("requirements");
     expect(executed(t, quick.runId)).not.toContain("research");
     expect(skippedOf(t, quick.runId)).toEqual(expect.arrayContaining(["requirements", "research"]));
     // Without a profile the ask is a human node: the sim puts the question to the owner.
-    const asked = await runSim("project-start", { input: {}, stubs: { "lp.tree_counts": { enabled: "on" }, "lp.state_probe": { has_value_map: false, has_roadmap: false, has_profile: false }, "lp.profile_write": { refused: [], set: [] }, ...startStubs, research: { research_notes: "n" }, requirements: { requirements: [] } }, humans: { ask: { answer_kind: "answered" } } });
+    const asked = await runSim("project-start", { input: {}, stubs: { "lp.tree_counts": { enabled: "on" }, "lp.state_probe": { has_value_map: false, has_roadmap: false, has_profile: false }, "lp.profile_write": { refused: [], set: [] }, ...startStubs, research: { research_notes: "n", stack: "", features: "", architecture: "", pitfalls: "" }, requirements: { requirements: [], document: "" } }, humans: { ask: { answer_kind: "answered" } } });
     expect(costly(asked)).toEqual(["value_map", "preview", "ask", "research", "requirements", "recap"]);
   });
 
   it("[sma:k_pl_project] with the switch on the recap writes PROJECT.md (Vision, Value, Limits) and keeps what exists; off it is main's prompt", async () => {
     const t = await setup(); dispose = t.dispose;
     startOn(t);
-    const calls = stubModels(t, { ...startStubs, preview: { stack: {}, memory: {}, profile: {} }, research: { research_notes: "n" }, requirements: { requirements: [] } });
+    const calls = stubModels(t, { ...startStubs, preview: { stack: {}, memory: {}, profile: {} }, research: { research_notes: "n", stack: "", features: "", architecture: "", pitfalls: "" }, requirements: { requirements: [], document: "" } });
     const s0 = await t.start(wf("project-start.json"), {}).done;
     expect(s0, JSON.stringify(s0)).toMatchObject({ status: "succeeded" });
     const recap = calls.find((c) => c.node === "recap")!.prompt;
     expect(recap).toContain(MAIN_START.recap);
     expect(recap).toContain(".agents/planning/PROJECT.md");
     expect(recap).toMatch(/Vision, Value and Limits/);
-    expect(recap).toMatch(/never overwritten: merge the new text into it keeping what is there, or leave it and write the new text to <name>\.new\.md next to it/);
-    expect(recap).toContain("the new text is in <name>.new.md next to it");
+    expect(recap).toMatch(/an existing file is left byte for byte and the new text lands in PROJECT\.new\.md/);
     // An agent writes the file: the prompt is what can be checked here; the default run's recap prompt equals main's (the default test).
   });
 
   it("[sma:k_pl_researchdir] the research node runs before requirements and the recap, names the four files and the recap reads them; its writes never overwrite", async () => {
     const t = await setup(); dispose = t.dispose;
     startOn(t);
-    const calls = stubModels(t, { ...startStubs, preview: { stack: {}, memory: {}, profile: {} }, research: { research_notes: "n" }, requirements: { requirements: [] } });
+    const calls = stubModels(t, { ...startStubs, preview: { stack: {}, memory: {}, profile: {} }, research: { research_notes: "n", stack: "", features: "", architecture: "", pitfalls: "" }, requirements: { requirements: [], document: "" } });
     const summary = await t.start(wf("project-start.json"), {}).done;
     const order = executed(t, summary.runId);
     expect(order.indexOf("research")).toBeLessThan(order.indexOf("requirements"));
     expect(order.indexOf("requirements")).toBeLessThan(order.indexOf("recap"));
     const research = calls.find((c) => c.node === "research")!.prompt, recap = calls.find((c) => c.node === "recap")!.prompt;
     for (const file of ["STACK.md", "FEATURES.md", "ARCHITECTURE.md", "PITFALLS.md"]) { expect(research).toContain(file); expect(recap).toContain(file); }
-    expect(research).toMatch(/never overwritten: merge .*<name>\.new\.md/);
-    expect(calls.find((c) => c.node === "requirements")!.prompt).toMatch(/never overwritten: merge .*<name>\.new\.md/);
+    expect(research).toMatch(/never overwritten: the writer leaves it byte for byte and puts the new text in <name>\.new\.md next to it/);
+    expect(calls.find((c) => c.node === "requirements")!.prompt).toMatch(/code-owned writer appends it to \.agents\/planning\/REQUIREMENTS\.md, keeping what is already there/);
     // The files are written by the agent, so the merge-or-.new.md rule is a prompt and cannot be run here.
   });
 
   it("[sma:k_c_secure] secure-phase: an open threat ends in gaps, all mitigated ends in done", async () => {
-    const open = await runSim("secure-phase", { input: { phase_id: "ph_a" }, stubs: { audit: { open: ["T1"], security_path: ".agents/phases/ph_a/SECURITY.md" } } });
+    const open = await runSim("secure-phase", { input: { phase_id: "ph_a" }, stubs: { audit: { open: ["T1"], status_table: "## Threat register status\n" } } });
     expect(emitted(open)).toMatchObject({ status: "gaps", open: ["T1"] });
-    const clean = await runSim("secure-phase", { input: { phase_id: "ph_a" }, stubs: { audit: { open: [], security_path: ".agents/phases/ph_a/SECURITY.md" } } });
-    expect(pathOf(clean)).toBe("audit goal_check done");
+    const clean = await runSim("secure-phase", { input: { phase_id: "ph_a" }, stubs: { audit: { open: [], status_table: "## Threat register status\n" } } });
+    expect(pathOf(clean)).toBe("audit doc_path write_security goal_check done");
     expect(emitted(clean)).toMatchObject({ status: "done" });
   });
 
@@ -354,7 +363,7 @@ describe("parity d4 workflows b-2", () => {
     const r = await runSim("ship", { input: { phase_id: "ph_a" }, stubs: { preflight: { ready: true, held_by: [] }, open_pr: { pr_url: "u" }, "lp.post_ship_hooks": { count: 2, files: ["a", "b"] }, post_ship: { hooks_run: ["h1"], hooks_failed: ["h2"] } } });
     expect(r.called("post_ship")).toHaveLength(1);
     expect(r.called("open_pr")).toHaveLength(1);
-    expect(pathOf(r)).toBe("gate preflight review open_pr hooks post_ship goal_check shipped");
+    expect(pathOf(r)).toBe("gate preflight review_range review open_pr write_deploy_log state_mark hooks post_ship goal_check shipped");
     expect(emitted(r)).toMatchObject({ status: "shipped", hooks_failed: ["h2"] });
     // What the hook session does with a failed hook is its prompt: listed, never retried blindly.
     expect(node("ship.json", "post_ship").prompt).toMatch(/does not undo the ship/);
@@ -432,7 +441,7 @@ describe("parity d4 workflows b-2", () => {
     expect(on.commits).toBeGreaterThanOrEqual(6);
     expect(on.counts_note).toBe(`${params.counts_note} sources 3, tests 2, docs 2, planning artifacts 1, commits ${on.commits}.`);
     // Through the graph: the value map prompt carries the five counts.
-    const calls = stubModels(t, { ...startStubs, preview: { stack: {}, memory: {}, profile: {} }, research: { research_notes: "n" }, requirements: { requirements: [] } });
+    const calls = stubModels(t, { ...startStubs, preview: { stack: {}, memory: {}, profile: {} }, research: { research_notes: "n", stack: "", features: "", architecture: "", pitfalls: "" }, requirements: { requirements: [], document: "" } });
     mkdirSync(join(t.checkout, ".agents/planning"), { recursive: true }); writeFileSync(join(t.checkout, ".agents/planning/PROFILE.md"), "host: h\n");
     await t.start(wf("project-start.json"), {}).done;
     expect(calls.find((c) => c.node === "value_map")!.prompt).toMatch(/verbatim: sources 3, tests 2, docs 2, planning artifacts 2, commits \d+\./);
@@ -448,7 +457,7 @@ describe("parity d4 workflows b-2", () => {
     expect(executed(t, resumed.runId)).toEqual(["tree", "probe", "resumed"]);
     expect((resumed.output!.next_steps as string[])[0]).toMatch(/project-resume/);
     expect(calls).toHaveLength(0);
-    const missing = await runSim("project-start", { input: {}, stubs: { "lp.tree_counts": { enabled: "on" }, "lp.state_probe": { has_value_map: true, has_roadmap: false, has_profile: true }, "lp.profile_write": { refused: [], set: [] }, research: { research_notes: "n" }, requirements: { requirements: [] }, recap: { next_steps: ["a"] } } });
+    const missing = await runSim("project-start", { input: {}, stubs: { "lp.tree_counts": { enabled: "on" }, "lp.state_probe": { has_value_map: true, has_roadmap: false, has_profile: true }, "lp.profile_write": { refused: [], set: [] }, research: { research_notes: "n", stack: "", features: "", architecture: "", pitfalls: "" }, requirements: { requirements: [], document: "" }, recap: { next_steps: ["a"] } } });
     expect(missing.skipped).toEqual(expect.arrayContaining(["value_map", "ask"]));
     expect(costly(missing)).toEqual(["preview", "research", "requirements", "recap"]);
   });
@@ -473,10 +482,10 @@ describe("parity d4 workflows b-2", () => {
     expect(none).toMatchObject({ refused: ["token"], set: [] });
     // Through project-start: the start does not end, it names the key in its output and goes on to the roadmap.
     startOn(t);
-    stubModels(t, { ...startStubs, preview: { stack: {}, memory: {}, profile: { host: "h1", db_password: "hunter2" } }, research: { research_notes: "n" }, requirements: { requirements: [] } });
+    stubModels(t, { ...startStubs, preview: { stack: {}, memory: {}, profile: { host: "h1", db_password: "hunter2" } }, research: { research_notes: "n", stack: "", features: "", architecture: "", pitfalls: "" }, requirements: { requirements: [], document: "" } });
     const summary = await t.start(wf("project-start.json"), {}).done;
     expect(summary.status).toBe("succeeded");
-    expect(executed(t, summary.runId)).toEqual(Object.values(startFlow).filter((id) => id !== "ask"));
+    expect(executed(t, summary.runId)).toEqual(Object.values(startFlow).filter((id) => !["ask", "write_research_stack", "write_research_features", "write_research_architecture", "write_research_pitfalls", "write_requirements"].includes(id)));
     expect(summary.output).toMatchObject({ status: "done", refused: ["host", "db_password"] });
     expect(JSON.stringify(summary.output)).not.toContain("hunter2");
   });

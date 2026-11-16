@@ -9,7 +9,7 @@ import { observeH } from "./r16-world-h";
 vi.setConfig({ testTimeout: 180_000 });
 type Row = Record<string, unknown>;
 const KEYS = [...PROFILE_KEYS];
-const MAIN_VALUE_MAP = "Value map builder, before asking anything: from README, the passport (project-onboard), the site and the code — who the product is for, the job they hire it for, what they get, how we would know it works. Write .agents/planning/VALUE-MAP.md.";
+const MAIN_VALUE_MAP = "Value map builder, before asking anything: from README, the passport (project-onboard), the site and the code — who the product is for, the job they hire it for, what they get, how we would know it works. Return the complete raw Markdown of VALUE-MAP.md in document; the code-owned writer persists it to .agents/planning/.";
 const PIECES = [{ id: "p1", task: { owns_paths: ["src/**"] } }];
 
 describe("region 16 batch h: project start, workspaces and the profile", () => {
@@ -45,7 +45,7 @@ describe("region 16 batch h: project start, workspaces and the profile", () => {
     expect(w.prompt.startsWith(MAIN_VALUE_MAP)).toBe(true);
     expect(w.prompt.endsWith("Open VALUE-MAP.md with these five lines counted from the tree itself, verbatim: sources 3, tests 2, docs 2, planning artifacts 2, commits 7.")).toBe(true);
     expect(w.commits).toBe(7);
-    expect(w.askPath).toBe("tree probe value_map preview profile_write ask research requirements recap done");
+    expect(w.askPath).toBe("tree probe value_map write_value_map preview profile_write ask research write_research_stack write_research_features write_research_architecture write_research_pitfalls requirements write_requirements recap write_roadmap write_project add_phases done");
     expect(w.askOrder.indexOf("value_map")).toBeLessThan(w.askOrder.indexOf("ask"));
   });
 
@@ -61,20 +61,19 @@ describe("region 16 batch h: project start, workspaces and the profile", () => {
     expect(w.resumed.executed).toEqual(["tree", "probe", "resumed"]);
     expect(w.resumed.modelCalls).toBe(0);
     expect(w.resumed.output).toEqual({ status: "resumed", value_map: "", next_steps: ["the project is already started — continue with project-resume"], refused: [] });
-    expect(w.roadmapMissing).toEqual({ costly: ["preview", "research", "requirements", "recap"], skipped: ["value_map", "ask"] });
-    expect(w.profileMissing).toEqual({ costly: ["preview", "ask", "research", "requirements"], skipped: ["value_map", "recap"] });
+    expect(w.roadmapMissing).toEqual({ costly: ["preview", "research", "requirements", "recap"], skipped: ["value_map", "write_value_map", "ask", "write_research_stack", "write_research_features", "write_research_architecture", "write_research_pitfalls", "write_requirements"] });
+    expect(w.profileMissing).toEqual({ costly: ["preview", "ask", "research", "requirements"], skipped: ["value_map", "write_value_map", "write_research_stack", "write_research_features", "write_research_architecture", "write_research_pitfalls", "write_requirements", "recap", "write_roadmap", "write_project", "add_phases"] });
     expect(w.nothing.costly).toEqual(["value_map", "preview", "ask", "research", "requirements", "recap"]);
   });
 
   it("[sma:k_wst_project] the recap writes the first planning files only where there is no roadmap yet: it runs on a fresh start with the PROJECT.md and roadmap instructions, and is skipped when a roadmap exists", async () => {
     const w = await observeH.k_wst_project();
-    expect(w.fresh.executed).toEqual(["tree", "probe", "value_map", "preview", "profile_write", "research", "requirements", "recap", "done"]);
+    expect(w.fresh.executed).toEqual(["tree", "probe", "value_map", "write_value_map", "preview", "profile_write", "research", "requirements", "recap", "write_roadmap", "write_project", "add_phases", "done"]);
     expect(w.fresh.nextSteps).toEqual(["a", "b", "c"]);
-    expect(w.fresh.prompt).toContain("Also write .agents/planning/PROJECT.md from VALUE-MAP.md: Vision, Value and Limits");
-    expect(w.fresh.prompt).toContain("build the roadmap skeleton from the requirements");
-    expect(w.withRoadmap.executed).not.toContain("recap");
-    expect(w.withRoadmap.skipped).toEqual(["ask", "recap"]);
-    expect(w.withRoadmap.nextSteps).toEqual([]);
+    expect(w.fresh.prompt).toContain("the project's Vision, Value and Limits as raw Markdown in project_document");
+    expect(w.fresh.prompt).toContain("the roadmap skeleton as raw Markdown in roadmap_draft");
+    expect(w.withRoadmap.executed).toEqual(["tree", "probe", "resumed"]);
+    expect(w.withRoadmap.nextSteps).toEqual(["the project is already started — continue with project-resume"]);
   });
 
   it("[sma:k_wst_stack] the stack and test command the preview answers become the project's profile, written after the preview and the value map; nothing else is stored", async () => {
@@ -107,7 +106,7 @@ describe("region 16 batch h: project start, workspaces and the profile", () => {
   it("[sma:k_wst_close] the start ends with the recap's next steps and the value map in its result; the recap is given the recap instructions and not the profile ones", async () => {
     const w = await observeH.k_wst_close();
     expect(w.output).toEqual({ status: "done", value_map: "for shop owners", next_steps: ["a", "b", "c"], refused: [] });
-    expect(w.order.slice(-2)).toEqual(["recap", "done"]);
+    expect(w.order.slice(-2)).toEqual(["add_phases", "done"]);
     expect(w.recapNote.length).toBeGreaterThan(100);
     expect(w.prompt.endsWith(w.recapNote)).toBe(true);
     expect(w.prompt).not.toContain(w.profileNote);

@@ -9,4 +9,4 @@ export { getPhase, listParts, listPhases, hasResumablePhaseForThread, listPhaseP
 export { phaseBoardCards } from "./board-cards";
 export type { PhaseBoardItem } from "./board-cards";
 export { isMachineMessage } from "./intake";
-export { coverageGaps, oneLine, ownsPathProblems, parkRoadmapRow, quickRow, rubricLine } from "./stages";
+export { coverageGaps, oneLine, ownsPathProblems, parkRoadmapRow, quickRow, rubricLine, stateBlockText, stateHasHeader } from "./stages";

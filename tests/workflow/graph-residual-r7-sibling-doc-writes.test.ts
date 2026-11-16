@@ -1,6 +1,6 @@
 import { coreFileWrite, diskStore } from "../helpers/core-files";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
@@ -96,9 +96,9 @@ async function setup(script: Script, options: { resolveWorkflow?: (id: string, v
         },
         read: async (args: unknown) => {
           const filePath = String((args as { path?: unknown }).path ?? "");
-          if (!existsSync(filePath)) return { content: null, sha256: null };
+          if (!existsSync(filePath)) throw Object.assign(new Error(`file not found: ${filePath}`), { code: "not_found", serverCode: "file_not_found" });
           const content = readFileSync(filePath, "utf8");
-          return { content, sha256: sha256Hex(content), truncated: false };
+          return { content, sha256: sha256Hex(content), sizeBytes: Buffer.byteLength(content, "utf8"), contentEncoding: "utf8", truncated: false };
         },
       },
       hosts: { directory: async () => ({ directory: checkout }) },
@@ -195,7 +195,9 @@ describe("P04-R7 sibling document writes through the real fs.write action", () =
     expect(summary.status, summary.error ?? undefined).toBe("succeeded");
     expect(summary.output).toMatchObject({ status: "done", framework: "jev", spec_path: ".agents/phases/ph_r7e/AI-SPEC.md" });
     expect(file(t.checkout, ".agents/phases/ph_r7e/AI-SPEC.md")).toBe("# AI-SPEC v2\n\nAll sections present.\n");
-    expect(file(t.checkout, ".agents/research/model-add-a-typed-judgment.md")).toBe("# Model notes\n\n- jev\n");
+    const modelNote = readdirSync(join(t.checkout, ".agents/research")).find((name) => name.startsWith("model-") && name.endsWith(".md"));
+    expect(modelNote).toBeTruthy();
+    expect(file(t.checkout, `.agents/research/${modelNote}`)).toBe("# Model notes\n\n- jev\n");
     expect(specPrompts).toHaveLength(2);
     // The rework visit reuses the spec thread, so its prompt goes out as a follow-up send: the check.gaps edge mapping must land in it.
     const followUp = JSON.stringify(t.sends.map((send) => send.input));
@@ -210,17 +212,21 @@ describe("P04-R7 sibling document writes through the real fs.write action", () =
     dispose = t.dispose;
     const summary = await t.start(await builtin("spike"), { question: "which journal mode" }).done;
     expect(summary.status, summary.error ?? undefined).toBe("succeeded");
-    expect(summary.output).toMatchObject({ status: "answered", spike_path: ".agents/planning/spikes/which-journal-mode.md" });
-    expect(file(t.checkout, ".agents/planning/spikes/which-journal-mode.md")).toContain("WAL wins");
+    const spikePath = String((summary.output as Row).spike_path);
+    expect(summary.output).toMatchObject({ status: "answered" });
+    expect(spikePath).toMatch(/^\.agents\/planning\/spikes\/which-journal-mode-\d{4}-\d{2}-\d{2}\.md$/);
+    const spike = file(t.checkout, spikePath)!;
+    expect(spike).toContain("# Spike — which journal mode");
+    expect(spike).toContain("WAL wins");
   });
 
-  it("project-start persists the value map, appends REQUIREMENTS.md and writes the roadmap skeleton", async () => {
+  it("project-start persists the value map, never overwrites existing REQUIREMENTS.md (.new.md) and writes the roadmap skeleton", async () => {
     const t = await setup({
       value_map: [reply({ document: "# Value map\n\nFor the maker.\n", handoff: "mapped" })],
       preview: [reply({ stack: { lang: "ts" }, memory: {}, handoff: "previewed" })],
       research: [reply({ research_notes: "three competitors", stack: "# Stack\n\n- vite\n", features: "", architecture: "# Arch\n\n- rooms\n", pitfalls: "", handoff: "researched" })],
       requirements: [reply({ requirements: ["REQ-1", "REQ-2"], document: "\n## Requirements\n\n- REQ-1: first\n- REQ-2: second\n", handoff: "required" })],
-      recap: [reply({ next_steps: ["step one"], roadmap_draft: "# Roadmap\n\n- phase one\n", handoff: "recapped" })],
+      recap: [reply({ next_steps: ["step one"], roadmap_draft: "# Roadmap\n\n- phase one\n", project_document: "# Project\n\n## Vision\n\nFor makers.\n", phases: ["1 the first phase"], handoff: "recapped" })],
     });
     dispose = t.dispose;
     mkdirSync(join(t.checkout, ".agents/planning"), { recursive: true });
@@ -229,12 +235,16 @@ describe("P04-R7 sibling document writes through the real fs.write action", () =
     expect(summary.status, summary.error ?? undefined).toBe("succeeded");
     expect(summary.output).toMatchObject({ status: "done" });
     expect(file(t.checkout, ".agents/planning/VALUE-MAP.md")).toBe("# Value map\n\nFor the maker.\n");
-    const reqs = file(t.checkout, ".agents/planning/REQUIREMENTS.md")!;
-    expect(reqs).toContain("REQ-0: existing");
-    expect(reqs).toContain("REQ-2: second");
-    expect(file(t.checkout, ".agents/planning/ROADMAP.md")).toBe("# Roadmap\n\n- phase one\n");
+    expect(file(t.checkout, ".agents/planning/REQUIREMENTS.md")).toBe("# Requirements\n\n- REQ-0: existing\n");
+    expect(file(t.checkout, ".agents/planning/REQUIREMENTS.new.md")).toContain("REQ-2: second");
+    const roadmap = file(t.checkout, ".agents/planning/ROADMAP.md")!;
+    expect(roadmap).toContain("# Roadmap\n\n- phase one");
+    expect(roadmap).toContain("- [ ] 1 the first phase");
     expect(file(t.checkout, ".agents/planning/research/STACK.md")).toBe("# Stack\n\n- vite\n");
     expect(file(t.checkout, ".agents/planning/research/FEATURES.md")).toBeNull();
+    // profile_write already seeded PROJECT.md, so the recap document lands in the non-overwrite sibling, the existing file untouched
+    expect(file(t.checkout, ".agents/planning/PROJECT.new.md")).toBe("# Project\n\n## Vision\n\nFor makers.\n");
+    expect(file(t.checkout, ".agents/planning/PROJECT.md")).toContain("Developer preferences");
   });
 
   it("new-milestone appends the requirements block, keeping the existing file", async () => {
@@ -250,6 +260,9 @@ describe("P04-R7 sibling document writes through the real fs.write action", () =
     const reqs = file(t.checkout, ".agents/planning/REQUIREMENTS.md")!;
     expect(reqs).toContain("REQ-OLD: kept");
     expect(reqs).toContain("REQ-B: beta");
+    const roadmap = file(t.checkout, ".agents/planning/ROADMAP.md")!;
+    expect(roadmap).toContain("- [ ] phase-a — second milestone");
+    expect(roadmap).toContain("- [ ] phase-b — second milestone");
   });
 
   it("ship appends the deploy record, goal_check validates that path, and review range honors $inputs.head", async () => {
@@ -291,7 +304,7 @@ describe("P04-R7 sibling document writes through the real fs.write action", () =
     dispose = t.dispose;
     const summary = await t.start(await builtin("ship"), { phase_id: "ph_r7s2", base: "release/1.0", review: true }).done;
     expect(summary.status, summary.error ?? undefined).toBe("succeeded");
-    expect(childInputs(t.db as never, summary.runId)["code-review"]).toMatchObject({ range: "release/1.0.." });
+    expect(childInputs(t.db as never, summary.runId)["code-review"]).toMatchObject({ range: "release/1.0..HEAD" });
   });
 
   it("milestone-close's retro appends changed limits to an existing PROJECT.md and creates none when absent", async () => {
@@ -306,7 +319,7 @@ describe("P04-R7 sibling document writes through the real fs.write action", () =
       edges: [{ from: "start", to: "do" }],
     });
     const t = await setup({
-      retro: [reply({ insights: [], retro_path: "", metrics: {}, project_update: "\n## Limits (milestone 2)\n\n- context budget kept under 80%\n", project_exists: true, handoff: "retro done" })],
+      retro: [reply({ insights: [], metrics: {}, document: "# Retro — milestone 2\n\n- INS-00000001 pacing\n", project_update: "\n## Limits (milestone 2)\n\n- context budget kept under 80%\n", handoff: "retro done" })],
       summary: [reply({ section: "# Milestone 2 summary\n", open_items: [], handoff: "summarized" })],
     }, {
       resolveWorkflow: (id) => (id === "lp.close" ? lpClose : builtinWorkflow(id)),
@@ -336,7 +349,7 @@ describe("P04-R7 sibling document writes through the real fs.write action", () =
       edges: [{ from: "start", to: "do" }],
     });
     const t = await setup({
-      retro: [reply({ insights: [], retro_path: "", metrics: {}, project_update: "\n## Limits\n\n- should never land\n", project_exists: false, handoff: "retro done" })],
+      retro: [reply({ insights: [], metrics: {}, document: "# Retro — milestone 3\n", project_update: "\n## Limits\n\n- should never land\n", handoff: "retro done" })],
       summary: [reply({ section: "# Milestone 3 summary\n", open_items: [], handoff: "summarized" })],
     }, {
       resolveWorkflow: (id) => (id === "lp.close" ? lpClose : builtinWorkflow(id)),

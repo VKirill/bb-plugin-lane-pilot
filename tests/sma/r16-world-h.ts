@@ -4,7 +4,7 @@
 // worktree removal on a temp repository) and returns plain data. No vitest import: the probe loads this file under vite-node. No model (agent nodes answer from a table and
 // keep the prompt as rendered), no hub, nothing outside the machine. Batches a to d keep their observations in r16-world*.ts (not edited here).
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -46,7 +46,7 @@ const bbWrite = (writes: Array<{ path: string; content: string; expectedSha256?:
   const now = existsSync(input.path) ? createHash("sha256").update(readFileSync(input.path)).digest("hex") : null;
   if (input.expectedSha256 !== undefined && input.expectedSha256 !== now) return { outcome: "conflict", currentSha256: now } as never;
   mkdirSync(dirname(input.path), { recursive: true }); writeFileSync(input.path, input.content); writes.push(input);
-  return { ok: true } as never;
+  return { outcome: "written", currentSha256: createHash("sha256").update(input.content).digest("hex") } as never;
 };
 
 async function startRig() {
@@ -71,7 +71,16 @@ async function startRig() {
       },
       environments: { get: async () => ({ id: "env-pm", hostId: "local", path: checkout, status: "ready" }) },
       projects: { get: async () => ({ id: PROJECT, name: "Project", sources: [{ hostId: "local", path: checkout }] }) },
-      files: { write: bbWrite(writes) },
+      files: {
+        write: bbWrite(writes),
+        // As BB core's read: a missing path throws file_not_found; a present one answers exact utf8 bytes and hash.
+        read: async (args: unknown) => {
+          const input = args as { path: string };
+          if (!existsSync(input.path)) { const error = new Error("file_not_found") as Error & { code?: string; serverCode?: string }; error.code = "not_found"; error.serverCode = "file_not_found"; throw error; }
+          const content = readFileSync(input.path, "utf8");
+          return { content, sha256: createHash("sha256").update(content, "utf8").digest("hex"), sizeBytes: Buffer.byteLength(content, "utf8"), contentEncoding: "utf8" } as never;
+        },
+      },
     },
   });
   const db = openDatabase(bb);
@@ -108,7 +117,7 @@ const actionChain = (action: string, outs: Record<string, string>, params?: Row)
     { id: "done", type: "action", action: "emit", map: Object.fromEntries(Object.keys(outs).map((k) => [k, `go.${k}`])) }],
   edges: [{ from: "start", to: "go" }, { from: "go", to: "done" }],
 });
-const STUBS = { value_map: { value_map: "for shop owners" }, preview: { stack: {}, memory: {}, profile: {} }, research: { research_notes: "n" }, requirements: { requirements: [] }, recap: { next_steps: ["a", "b", "c"] } };
+const STUBS = { value_map: { document: "for shop owners" }, preview: { stack: {}, memory: {}, profile: {} }, research: { research_notes: "n", stack: "", features: "", architecture: "", pitfalls: "" }, requirements: { requirements: [], document: "" }, recap: { next_steps: ["a", "b", "c"], roadmap_draft: "# roadmap\n", project_document: "# project\n", phases: ["1 first"] } };
 const planning = (t: StartRig, ...files: string[]) => { for (const file of files) t.put(`.agents/planning/${file}`, "x\n"); };
 
 // ---------------------------------------------------------------- the real `bb lane-pilot profile` verb on the plugin
@@ -306,6 +315,9 @@ export const observeH = {
       const calls = stubModels(t, STUBS);
       const fresh = await t.start(wfFile("project-start.json"), {}).done;
       planning(t, "VALUE-MAP.md");
+      // Only the map is present: the first run's ROADMAP.md/PROJECT.md/PROFILE.md go away, so this start is not resumed
+      // and the value-map skip is what shows (an all-present install is the resumed case of k_wst_quick).
+      for (const file of ["ROADMAP.md", "PROJECT.md", "REQUIREMENTS.md", "ROADMAP.new.md", "PROJECT.new.md", "REQUIREMENTS.new.md", "profile.json"]) rmSync(join(t.checkout, ".agents/planning", file), { force: true });
       const had = await t.start(wfFile("project-start.json"), {}).done;
       return { fresh: { executed: executed(t, fresh.runId), valueMap: (fresh.output as Row).value_map, prompt: calls.find((call) => call.node === "value_map")?.prompt ?? "" },
         had: { skipped: skippedOf(t, had.runId), valueMap: (had.output as Row).value_map }, valueMapCalls: calls.filter((call) => call.node === "value_map").length };

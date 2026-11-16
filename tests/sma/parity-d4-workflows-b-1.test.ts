@@ -73,7 +73,11 @@ async function setup(script: Script = {}, options: SetupOptions = {}) {
         return registered ? { id: String(environmentId), ...registered, status: "ready" } : { id: "env-pm", hostId: "local", path: checkout, status: "ready" };
       } },
       projects: { get: async () => ({ id: PROJECT, name: "Project", sources: [{ hostId: "local", path: checkout }] }) },
-      files: { write: async (args: unknown) => { if (state.failWrites) throw new Error("disk full"); const input = args as { path: string; content: string }; mkdirSync(dirname(input.path), { recursive: true }); writeFileSync(input.path, input.content); writes.push(input); return { ok: true } as never; } },
+      files: {
+        // As BB core's write: `expectedSha256` absent replaces, null creates only, a hash must match.
+        write: async (args: unknown) => { if (state.failWrites) throw new Error("disk full"); const input = args as { path: string; content: string; expectedSha256?: string | null }; const now = existsSync(input.path) ? createHash("sha256").update(readFileSync(input.path)).digest("hex") : null; if (input.expectedSha256 !== undefined && input.expectedSha256 !== now) return { outcome: "conflict", currentSha256: now } as never; mkdirSync(dirname(input.path), { recursive: true }); writeFileSync(input.path, input.content); writes.push(input); return { outcome: "written" } as never; },
+        read: async (args: unknown) => { const input = args as { path: string }; if (!existsSync(input.path)) { const error = new Error("file_not_found") as Error & { code?: string; serverCode?: string }; error.code = "not_found"; error.serverCode = "file_not_found"; throw error; } const content = readFileSync(input.path, "utf8"); return { content, sha256: createHash("sha256").update(content, "utf8").digest("hex"), sizeBytes: Buffer.byteLength(content, "utf8"), contentEncoding: "utf8" } as never; }, },
+
     },
   });
   const db = openDatabase(bb);
@@ -317,7 +321,7 @@ describe("parity d4 workflows b1", () => {
     const t = await setup({});
     dispose = t.dispose;
     for (const key of ["milestone.summary", "milestone.archive", "retro.living"]) t.set(key, "off");
-    stubModels(t, { retro: { insights: [], retro_path: "retro/r.md", metrics: {} } });
+    stubModels(t, { retro: { insights: [], metrics: {}, project_update: "", document: "# retro\n" } });
     // The owner answers the question once, closing anyway.
     t.engine.register("builtin:human", { reentrant: true, run: async () => ({ output: { answer: "close anyway", answer_kind: "close_anyway" } }) } as never);
     commitFile(t, "README.md", "one\n", "one");
@@ -330,7 +334,7 @@ describe("parity d4 workflows b1", () => {
     const summary = await t.start(wf("milestone-close.json"), { run_id: RUN, goal: "Stats export", goals: [] }).done;
     expect(JSON.stringify(summary).slice(0, 600)).toContain('"status":"succeeded"');
     // The real readings now stop the close for the owner's word (SMA k_c_auditms); close_anyway keeps main's tail.
-    expect(executed(t, summary.runId)).toEqual(["status", "ask_finish", "retro", "close", "archive", "closed"]);
+    expect(executed(t, summary.runId)).toEqual(["status", "ask_finish", "retro", "write_retro", "close", "archive", "closed"]);
     expect(summary.output).toMatchObject({ status: "closed", gate_state: "red", unmerged_seen: 0, uncovered_requirements: ["REQ-9"] });
     expect(existsSync(join(t.checkout, ".agents/planning/milestones"))).toBe(false);
     expect(existsSync(join(t.checkout, ".agents/retro/LIVING.md"))).toBe(false);
@@ -367,7 +371,7 @@ describe("parity d4 workflows b1", () => {
     const t = await setup({});
     dispose = t.dispose;
     t.set("milestone.archive", "on"); t.set("retro.living", "on"); // as unset: both are on by default
-    stubModels(t, { summary: { summary_path: ".agents/planning/MILESTONE-SUMMARY.md", open_items: [] }, retro: { insights: [{ id: "INS-aaa11111", title: "one", lens: "technical" }], retro_path: "retro/r.md", metrics: {} } });
+    stubModels(t, { summary: { section: "## Stats export\n", open_items: [] }, retro: { insights: [{ id: "INS-aaa11111", title: "one", lens: "technical" }], metrics: {}, project_update: "## Limits\n\n- none\n", document: "# retro\n" } });
     // The uncovered REQ-1 stops the close for the owner's word (SMA k_c_auditms): answered close_anyway.
     t.engine.register("builtin:human", { reentrant: true, run: async () => ({ output: { answer: "close anyway", answer_kind: "close_anyway" } }) } as never);
     commitFile(t, "README.md", "one\n", "one");
@@ -376,7 +380,7 @@ describe("parity d4 workflows b1", () => {
     writeFileSync(join(t.checkout, ".agents/planning/REQUIREMENTS.md"), "- REQ-1 export\n");
     const summary = await t.start(wf("milestone-close.json"), { run_id: RUN, goal: "Stats export", goals: [] }).done;
     expect(summary.status).toBe("succeeded");
-    expect(executed(t, summary.runId)).toEqual(["status", "ask_finish", "retro", "living", "close", "summary", "record", "snapshot", "archive", "closed"]);
+    expect(executed(t, summary.runId)).toEqual(["status", "ask_finish", "retro", "write_project", "write_retro", "living", "close", "summary", "record", "snapshot", "archive", "closed"]);
     const folder = readdirSync(join(t.checkout, ".agents/planning/milestones")).find((name) => name !== "INDEX.md")!;
     expect(folder).toMatch(/^stats-export-[0-9a-f]{8}$/);
     expect(readFileSync(join(t.checkout, ".agents/planning/milestones", folder, "ROADMAP.md"), "utf8")).toContain("- [x] 1 one");

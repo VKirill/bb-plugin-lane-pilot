@@ -4,7 +4,7 @@
 // scratch database and a fake host, a scratch git repository) and returns plain data. No vitest import: the probe loads this file under vite-node. No model, no hub,
 // nothing outside the machine. Batches a and b's observations are in r16-world.ts and r16-world-b.ts (not edited here).
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import Database from "better-sqlite3";
@@ -95,7 +95,15 @@ async function engineWorld() {
       },
       environments: { get: async () => ({ id: "env-pm", hostId: "local", path: checkout, status: "ready" }) },
       projects: { get: async () => ({ id: PROJECT, name: "Project", sources: [{ hostId: "local", path: checkout }] }) },
-      files: { write: async (args: unknown) => { const input = args as { path: string; content: string }; mkdirSync(dirname(input.path), { recursive: true }); writeFileSync(input.path, input.content); return { ok: true }; } },
+      files: {
+        write: async (args: unknown) => { const input = args as { path: string; content: string }; mkdirSync(dirname(input.path), { recursive: true }); writeFileSync(input.path, input.content); return { ok: true, outcome: "written" }; },
+        read: async (args: unknown) => {
+          const filePath = String((args as { path?: unknown }).path ?? "");
+          if (!existsSync(filePath)) throw Object.assign(new Error(`file not found: ${filePath}`), { code: "not_found", serverCode: "file_not_found" });
+          const content = readFileSync(filePath, "utf8");
+          return { content, sha256: sha256Hex(content), sizeBytes: Buffer.byteLength(content, "utf8"), contentEncoding: "utf8", truncated: false };
+        },
+      },
     } as never,
   });
   const db = openDatabase(bb);
@@ -333,7 +341,7 @@ export const observeC = {
 
   /** n1214: a debugging run keeps its session file, tests hypotheses, has a fresh agent re-check the cause and only then reports it confirmed; a weak cause is looked at once more and then reported inconclusive. */
   async k_c_debug() {
-    const strong = { status: "confirmed", confidence: 82, pressure_pass: true, contradictions: 0, affected_files: ["src/import/csv.ts:48"], refuted: 1, root_cause: "the last empty line yields an undefined row", fix_direction: "skip empty trailing rows in parseCsv", mechanism: "split on undefined" };
+    const strong = { status: "confirmed", confidence: 82, pressure_pass: true, contradictions: 0, affected_files: ["src/import/csv.ts:48"], refuted: 1, root_cause: "the last empty line yields an undefined row", fix_direction: "skip empty trailing rows in parseCsv", mechanism: "split on undefined", session_entry: "- h2: trailing empty row — confirmed\n", evidence_entry: "{\"line\":\"csv:48\"}" };
     const symptom = "CSV import crashes with 'Cannot read properties of undefined (reading split)' on files with an empty last line";
     const w = await engineWorld();
     try {
@@ -352,9 +360,10 @@ export const observeC = {
     try {
       const old = "# Debug session — flaky\n\nStatus: open\n\n## Symptom\n\nthe suite flakes on CI only\n\n## Hypotheses\n\n- h1: a race in setup — refuted\n";
       w.put(".agents/planning/debug/flaky.md", old);
-      const strong = { status: "confirmed", confidence: 80, pressure_pass: true, contradictions: 0, affected_files: ["a.ts:1"], refuted: 1 };
+      const strong = { status: "confirmed", confidence: 80, pressure_pass: true, contradictions: 0, affected_files: ["a.ts:1"], refuted: 1, session_entry: "- h2: resumed — confirmed\n", evidence_entry: "{\"line\":\"a:1\"}" };
       const resumed = await w.run("debug.json", { symptom: "", session: "flaky" }, { investigate: strong, verify_cause: { confirmed: true } });
-      return { status0: resumed.status, reason: resumed.reason, path: resumed.path, skipped: resumed.skipped, asked: resumed.calls.filter((call) => call.node.startsWith("ask_")).length, status: resumed.out.status, kept: w.file(".agents/planning/debug/flaky.md") === old };
+      const after = w.file(".agents/planning/debug/flaky.md") ?? "";
+      return { status0: resumed.status, reason: resumed.reason, path: resumed.path, skipped: resumed.skipped, asked: resumed.calls.filter((call) => call.node.startsWith("ask_")).length, status: resumed.out.status, kept: after.startsWith(old), appended: after === old + "- h2: resumed — confirmed\n" };
     } finally { w.dispose(); }
   },
 
@@ -362,7 +371,7 @@ export const observeC = {
   async k_wdb_symptoms() {
     const w = await engineWorld();
     try {
-      const strong = { status: "confirmed", confidence: 80, pressure_pass: true, contradictions: 0, affected_files: ["a.ts:1"], refuted: 1 };
+      const strong = { status: "confirmed", confidence: 80, pressure_pass: true, contradictions: 0, affected_files: ["a.ts:1"], refuted: 1, session_entry: "- h1: entry\n", evidence_entry: "{}" };
       const agents = { investigate: strong, verify_cause: { confirmed: true } };
       const form = { answer: "expected: a total; got: NaN; error: none; since v2.3; steps: import a file with an empty row", answer_kind: "given" };
       const short = await w.run("debug.json", { symptom: "it crashes", session: "" }, agents, { ask_symptoms: form });
@@ -378,7 +387,7 @@ export const observeC = {
     const w = await engineWorld();
     try {
       const symptom = "the import crashes on files with an empty last line, since v2.3";
-      const strong = { status: "confirmed", confidence: 80, pressure_pass: true, contradictions: 0, affected_files: ["a.ts:1"], refuted: 1 };
+      const strong = { status: "confirmed", confidence: 80, pressure_pass: true, contradictions: 0, affected_files: ["a.ts:1"], refuted: 1, session_entry: "- h1: fresh entry\n", evidence_entry: "{\"line\":\"a:1\"}" };
       const fresh = await w.run("debug.json", { symptom, session: "csv crash!" }, { investigate: strong, verify_cause: { confirmed: true } });
       const hostile = await w.run("debug.json", { symptom, session: "../../etc/passwd" }, { investigate: strong, verify_cause: { confirmed: true } });
       return { path: fresh.path, file: w.file(".agents/planning/debug/csv-crash.md"), hostile: { path: hostile.path, escaped: w.file("../etc/passwd") !== null, kept: w.file(".agents/planning/debug/etc-passwd.md") !== null },
@@ -390,7 +399,7 @@ export const observeC = {
   async k_wdb_manager() {
     const w = await engineWorld();
     try {
-      const strong = { status: "confirmed", confidence: 82, pressure_pass: true, contradictions: 0, affected_files: ["a.ts:1"], refuted: 1, root_cause: "rc", fix_direction: "fd", mechanism: "mech", evidence_path: "ev.ndjson", regression_tests: ["t"], risks: ["r"], hypotheses_log: "twenty pages of working" };
+      const strong = { status: "confirmed", confidence: 82, pressure_pass: true, contradictions: 0, affected_files: ["a.ts:1"], refuted: 1, root_cause: "rc", fix_direction: "fd", mechanism: "mech", evidence_path: "ev.ndjson", regression_tests: ["t"], risks: ["r"], hypotheses_log: "twenty pages of working", session_entry: "- h1: entry\n", evidence_entry: "{}" };
       const one = await w.run("debug.json", { symptom: "the import crashes on files with an empty last line, since v2.3", session: "" }, { investigate: strong, verify_cause: { confirmed: true } });
       const many = await w.run("debug.json", { mode: "from_failures", failures: ["gap one", "gap two"], session: "" }, { diagnose: { status: "confirmed", root_cause: "c", confidence: 80, fix_direction: "f" } });
       return { keys: Object.keys(one.out).sort(), out: one.out, sessions: one.calls.map((call) => [call.node, call.session ?? null]), fanout: many.calls.map((call) => [call.node, call.session ?? null]), manyKeys: Object.keys(many.out).sort() };
@@ -444,10 +453,11 @@ export const observeC = {
 
   /** n1228: a spike answers its question in a box of time: an answered experiment whose result passes the check is reported answered with its decision and file; an experiment that did not answer, or a result that fails the check, is reported inconclusive and keeps no skill draft. */
   async k_c_spike() {
-    const answered = { answered: true, decision: "yes, fts5 handles 1M rows", spike_path: "spikes/fts.md", skill_draft: "draft.md" };
-    const ok = await runSim("spike", { input: { question: "can sqlite fts handle 1M rows" }, stubs: { experiment: answered, goal_check: { ok: true, verdict: "pass" } } });
-    const failed = await runSim("spike", { input: { question: "can sqlite fts handle 1M rows" }, stubs: { experiment: answered, goal_check: { ok: false, verdict: "fail", reason: "no spike file" } } });
-    const none = await runSim("spike", { input: { question: "can sqlite fts handle 1M rows" }, stubs: { experiment: { answered: false, decision: "unclear", spike_path: "spikes/fts.md", skill_draft: "draft.md" } } });
+    const answered = { answered: true, decision: "yes, fts5 handles 1M rows", document: "# spike\n", skill_draft: "draft.md" };
+    const opened = { spike_path: "spikes/fts.md" };
+    const ok = await runSim("spike", { input: { question: "can sqlite fts handle 1M rows" }, stubs: { spike_new: opened, experiment: answered, write_spike: { spike_path: "spikes/fts.md" }, goal_check: { ok: true, verdict: "pass" } } });
+    const failed = await runSim("spike", { input: { question: "can sqlite fts handle 1M rows" }, stubs: { spike_new: opened, experiment: answered, write_spike: { spike_path: "spikes/fts.md" }, goal_check: { ok: false, verdict: "fail", reason: "no spike file" } } });
+    const none = await runSim("spike", { input: { question: "can sqlite fts handle 1M rows" }, stubs: { spike_new: opened, experiment: { answered: false, decision: "unclear", document: "# spike\n", skill_draft: "draft.md" }, write_spike: { spike_path: "spikes/fts.md" } } });
     return { ok: { path: ok.path, out: output(ok) }, failed: { path: failed.path, status: output(failed).status, draft: output(failed).skill_draft }, none: { path: none.path, status: output(none).status, draft: output(none).skill_draft } };
   },
 

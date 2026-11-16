@@ -134,19 +134,17 @@
       ],
       "skip_out": {
         "insights": "[]",
-        "retro_path": "",
         "metrics": "{}",
         "project_update": "",
-        "project_exists": false
+        "document": ""
       },
       "src": "maestro-flow:workflows/retrospective.md",
-      "prompt": "Read the run metrics - tasks planned/accepted/failed, rework iterations per task, severity distribution of findings, failure classes, merge conflicts. Four lenses: technical (patterns, debt), process (stalls, retries), quality (defects that slipped), decision (choices to revisit).\nDistill insights with a stable id INS-{8hex} (hash of lens + title) so a repeat run is idempotent; each insight routes as a rule candidate, a note or a task, as a candidate only. Read-only on sources; never overwrite history.\n\nIf .agents/planning/PROJECT.md already exists, return this milestone's changed limits (Vision, Value, Limits — refresh the Limits from what the run taught) as raw Markdown in project_update; the code-owned writer appends it. Empty project_update when the file does not exist — never create it.\n Read .agents/planning/PROJECT.md first and report whether it exists in project_exists; the limits update goes in project_update only when the file is there.",
+      "prompt": "Read the run metrics - tasks planned/accepted/failed, rework iterations per task, severity distribution of findings, failure classes, merge conflicts. Four lenses: technical (patterns, debt), process (stalls, retries), quality (defects that slipped), decision (choices to revisit).\nDistill insights with a stable id INS-{8hex} (hash of lens + title) so a repeat run is idempotent; each insight routes as a rule candidate, a note or a task, as a candidate only. Read-only on sources; never overwrite history.\nIf .agents/planning/PROJECT.md already exists, return this milestone's changed limits (Vision, Value, Limits — refresh the Limits from what the run taught) as raw Markdown in project_update; the code-owned writer appends it to the existing file only and never creates it. Empty project_update when the file does not exist.\nReturn the full retrospective report as raw Markdown in document — the code-owned writer persists it as the retro report; report_path in the close output is that written path.",
       "out": {
         "insights": "Insight[]",
-        "retro_path": "string",
         "metrics": "any",
         "project_update": "string",
-        "project_exists": "bool"
+        "document": "string"
       },
       "guards": {
         "maxVisits": 1,
@@ -286,7 +284,7 @@
         "candidates_approved": "approve_knowledge.approved_ids.length",
         "deferred": "close.staged > 0 && approve_knowledge.answer_kind != 'approved'",
         "report_path": "close.report_path",
-        "retro_path": "retro.retro_path",
+        "retro_path": "write_retro.retro_path",
         "gate_state": "status.gate_state",
         "unmerged_seen": "status.unmerged_seen",
         "uncovered_requirements": "status.uncovered_reqs"
@@ -316,19 +314,42 @@
       "id": "write_project",
       "type": "action",
       "action": "fs.write",
-      "path": ".agents/planning/PROJECT.md",
-      "contents": "{{retro.project_update}}",
+      "params": {
+        "path": ".agents/planning/PROJECT.md",
+        "contents": "{{retro.project_update}}",
+        "mode": "append",
+        "if_exists": true
+      },
       "out": {
         "project_path": "string"
       },
-      "mode": "append",
       "title": {
         "en": "Append the project limits",
         "ru": "Дописать пределы проекта"
       },
-      "skip_when": "!retro.project_exists || !retro.project_update",
+      "skip_when": "!retro.project_update",
       "skip_out": {
         "project_path": ""
+      }
+    },
+    {
+      "id": "write_retro",
+      "type": "action",
+      "action": "fs.write",
+      "title": {
+        "en": "Persist the retro report",
+        "ru": "Сохранить отчёт ретро"
+      },
+      "params": {
+        "path": ".agents/milestones/{{status.effective_run_id}}.retro.md",
+        "contents": "{{retro.document}}"
+      },
+      "out": {
+        "retro_path": "string"
+      },
+      "skip_when": "!retro.document",
+      "skip_out": {
+        "retro_path": ""
       }
     }
   ],
@@ -361,13 +382,13 @@
       "pass": "artifact"
     },
     {
-      "from": "write_project",
+      "from": "write_retro",
       "to": "living",
       "pass": "artifact",
       "when": "status.retro_living == 'on'"
     },
     {
-      "from": "write_project",
+      "from": "write_retro",
       "to": "close",
       "pass": "artifact"
     },
@@ -440,6 +461,10 @@
       "from": "retro",
       "to": "write_project",
       "pass": "artifact"
+    },
+    {
+      "from": "write_project",
+      "to": "write_retro"
     }
   ],
   "test": {
@@ -478,11 +503,23 @@
         "approve_knowledge": {
           "answer_kind": "deferred",
           "approved_ids": []
+        },
+        "retro": {
+          "insights": [],
+          "retro_path": "",
+          "metrics": {},
+          "project_update": "",
+          "project_exists": false
+        },
+        "write_retro": {
+          "retro_path": ".agents/milestones/run-1.retro.md"
         }
       },
       "expect_path": [
         "status",
         "retro",
+        "write_project",
+        "write_retro",
         "close",
         "approve_knowledge",
         "archive",

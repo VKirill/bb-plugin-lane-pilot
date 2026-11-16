@@ -36,7 +36,7 @@ async function k_c_completems() {
 }
 
 async function k_c_mssummary() {
-  const alone = await runSim("milestone-summary", { input: { milestone: "Stats export" }, stubs: { summary: { summary_path: ".agents/planning/MILESTONE-SUMMARY.md", open_items: ["docs"] } } });
+  const alone = await runSim("milestone-summary", { input: { milestone: "Stats export" }, stubs: { summary: { section: "## Stats export\n", open_items: ["docs"] }, write_summary: { summary_path: ".agents/planning/MILESTONE-SUMMARY.md" } } });
   const on = await closeRun({});
   const off = await closeRun({ milestone_summary: "off" });
   const halted = await closeRun({}, {}, { "lp.close": { status: "unmet", staged: 0, report_path: "r.md" } });
@@ -77,7 +77,7 @@ async function k_c_cleanup() {
 }
 
 // ---------------------------------------------------------------- ship
-const SHIP_STUBS = { gate: { ok: true, failing: [] as string[] }, preflight: { ready: true, held_by: [] as string[] }, open_pr: { pr_url: "https://git.example/pr/7" }, "lp.post_ship_hooks": { count: 0, files: [] as string[] } };
+const SHIP_STUBS = { gate: { ok: true, failing: [] as string[] }, preflight: { ready: true, held_by: [] as string[] }, review_range: { range: "main..HEAD" }, open_pr: { pr_url: "https://git.example/pr/7" }, "lp.post_ship_hooks": { count: 0, files: [] as string[] } };
 const ship = (stubs: Row = {}, input: Row = {}) => runSim("ship", { input: { phase_id: "ph_a", ...input }, stubs: { ...SHIP_STUBS, ...stubs } as never });
 const shipView = (sim: Sim) => ({ path: ran(sim), skipped: sim.skipped, out: out(sim), preflightCalls: sim.called("preflight").length, prCalls: sim.called("open_pr").length, reviewCalls: sim.called("review").length });
 
@@ -146,7 +146,7 @@ async function k_ws_post() {
 
 // ---------------------------------------------------------------- project start
 const START_STUBS = { tree: { enabled: "on", sources: 3, tests: 2, docs: 1, planning: 0, commits: 9, counts_note: "n", profile_note: "p", recap_note: "r" }, probe: { has_passport: false, open_tasks: 0, plan_exists: false, has_ui: false, has_value_map: false, has_roadmap: false, has_profile: false },
-  value_map: { value_map: "v" }, preview: { stack: {}, memory: {}, profile: { stack: "ts" } }, profile_write: { refused: [], set: ["stack"], reasons: [] }, research: { research_notes: "r" }, requirements: { requirements: ["REQ-1"] }, recap: { next_steps: ["a", "b", "c"] } };
+  value_map: { document: "v" }, preview: { stack: {}, memory: {}, profile: { stack: "ts" } }, profile_write: { refused: [], set: ["stack"], reasons: [] }, research: { research_notes: "r" }, requirements: { requirements: ["REQ-1"], document: "# req\n" }, recap: { next_steps: ["a", "b", "c"], roadmap_draft: "# roadmap\n", project_document: "# project\n", phases: ["1 first"] } };
 const start = (stubs: Row = {}, humans: Row = {}, mode?: "quick" | "standard" | "full") => runSim("project-start", { input: { goal: "g" }, stubs: { ...START_STUBS, ...stubs } as never, humans: { ask: { answer_kind: "answered" }, ...humans } as never, ...(mode ? { mode } : {}) });
 async function k_c_start() {
   const first = await start();

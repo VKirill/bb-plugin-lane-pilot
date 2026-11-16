@@ -148,9 +148,9 @@ describe("the profile, discussion and spec commands (n1306 … n1314)", () => {
 
   it("[sma:k_c_aiphase] four roles write the AI-SPEC in order and a check gate stands before done: gaps send the spec back once, a spec still short is blocked", async () => {
     const seen = await observeF.k_c_aiphase();
-    expect(seen.clean).toEqual(["select research eval_plan spec check done", { status: "done", framework: "langchain", spec_path: "x/AI-SPEC.md" }]);
-    expect(seen.rework).toEqual(["select research eval_plan spec check spec check done", "done", 2]);
-    expect(seen.blocked).toEqual(["select research eval_plan spec check spec check blocked", { status: "blocked", framework: "langchain", spec_path: "x/AI-SPEC.md" }]);
+    expect(seen.clean).toEqual(["select write_model research eval_plan spec spec_path write_spec check done", { status: "done", framework: "langchain", spec_path: "x/AI-SPEC.md" }]);
+    expect(seen.rework).toEqual(["select write_model research eval_plan spec spec_path write_spec check spec spec_path write_spec check done", "done", 2]);
+    expect(seen.blocked).toEqual(["select write_model research eval_plan spec spec_path write_spec check spec spec_path write_spec check blocked", { status: "blocked", framework: "langchain", spec_path: "x/AI-SPEC.md" }]);
     expect(seen.roles).toEqual(["analyst", "specialist:tavily", "planner", "planner", "auditor"]);
   });
 

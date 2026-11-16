@@ -214,14 +214,14 @@ describe("region 23 · rules and references: who is handed them, and what the co
   });
 
   it("[sma:k_d_ref_ai] the evaluation plan is made before the spec and carried into it, a spec the checker finds gaps in is rewritten once, a second failure ends blocked", async () => {
-    const stubs = { select: { framework: "langchain", options: [{ name: "langchain" }] }, research: { domain_notes: "expert criteria" }, spec: { spec_path: "x/AI-SPEC.md" } };
+    const stubs = { select: { framework: "langchain", options: [{ name: "langchain" }], document: "# model\n" }, research: { domain_notes: "expert criteria" }, spec: { document: "# spec\n" } };
     const ok = await runSim("ai-integration-phase", { input: { goal: "rank" }, stubs: { ...stubs, check: { ok: true, gaps: [] } } });
-    expect(pathOf(ok)).toBe("select research eval_plan spec check done");
+    expect(pathOf(ok)).toBe("select write_model research eval_plan spec spec_path write_spec check done");
     const once = await runSim("ai-integration-phase", { input: { goal: "rank" }, stubs: { ...stubs, check: [{ ok: false, gaps: ["no guardrails"] }, { ok: true, gaps: [] }] } });
-    expect(pathOf(once)).toBe("select research eval_plan spec check spec check done");
+    expect(pathOf(once)).toBe("select write_model research eval_plan spec spec_path write_spec check spec spec_path write_spec check done");
     expect(once.called("eval_plan")).toHaveLength(1);
     const twice = await runSim("ai-integration-phase", { input: { goal: "rank" }, stubs: { ...stubs, check: { ok: false, gaps: ["no guardrails"] } } });
-    expect(pathOf(twice)).toBe("select research eval_plan spec check spec check blocked");
+    expect(pathOf(twice)).toBe("select write_model research eval_plan spec spec_path write_spec check spec spec_path write_spec check blocked");
     expect((await spawnOf("ai-integration-phase", "spec")).node.consumes?.map((use) => use.from)).toEqual(["select", "research", "eval_plan"]);
   });
 

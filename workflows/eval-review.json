@@ -127,24 +127,47 @@
       }
     },
     {
+      "id": "doc_path",
+      "type": "action",
+      "action": "lp.doc_path",
+      "title": {
+        "en": "Resolve the document path",
+        "ru": "Путь документа"
+      },
+      "params": {
+        "phase_id": "{{$inputs.phase_id}}",
+        "doc": "EVAL-REVIEW.md"
+      },
+      "out": {
+        "path": "string"
+      }
+    },
+    {
       "id": "write_review",
       "type": "action",
       "action": "fs.write",
-      "path": ".agents/phases/{{$inputs.phase_id}}/EVAL-REVIEW.md",
-      "contents": "{{review.document}}",
       "out": {
         "review_path": "string"
       },
       "title": {
         "en": "Write the eval review",
         "ru": "Записать ревью оценки"
+      },
+      "params": {
+        "path": "{{doc_path.path}}",
+        "contents": "{{review.document}}"
       }
     }
   ],
   "edges": [
     {
-      "from": "review",
+      "from": "doc_path",
       "to": "write_review",
+      "pass": "artifact"
+    },
+    {
+      "from": "review",
+      "to": "doc_path",
       "pass": "artifact"
     },
     {
@@ -185,12 +208,18 @@
       "stubs": {
         "review": {
           "findings": [],
-          "review_path": "x/EVAL-REVIEW.md",
-          "flawed": false
+          "coverage": {},
+          "flawed": false,
+          "document": "# EVAL\n"
+        },
+        "doc_path": {
+          "path": ".agents/phases/ph_sample01/EVAL-REVIEW.md"
         }
       },
       "expect_path": [
         "review",
+        "doc_path",
+        "write_review",
         "goal_check",
         "sound"
       ],

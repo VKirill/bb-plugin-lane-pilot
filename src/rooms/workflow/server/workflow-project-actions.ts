@@ -1,7 +1,7 @@
 import { noteEngineWrite, gateRunVerdict } from "../../verification/server";
 import { parseIntegrationGateSettings } from "./workflow-chain-runtime";
 import { getRun, getRunSettingsScopes, latestGateRun, listOpenAttempts, listOpenWorktrees, listTaskIdsForRun, listAttemptsForTask, loadProjectSettings, fullGateVerdict, saveProjectSetting } from "../../storage";
-import { getPhase, listPhases } from "../../phase";
+import { getPhase, listPhases, oneLine, stateBlockText, stateHasHeader } from "../../phase";
 import { profilePairProblem, unsafeReason } from "../../anamnesis";
 import { bestEffort, sha256Hex } from "@lane-pilot/kit";
 import { writeReplacing } from "../../storage";
@@ -279,5 +279,113 @@ export function registerProjectActions(engine: WorkflowEngine, ctx: ServerCore, 
     const critical = found.filter((finding) => finding.severity === "critical").length;
     if (strict) return { findings: found, notes: "", critical_count: critical, rework: critical > 0 && c.resolve("scope.level") === "quick" };
     return { findings: [] as Row[], notes: found.slice(0, 20).map((finding) => `${finding.file} ${finding.severity}: ${finding.evidence}`).join("\n"), critical_count: critical, rework: false };
+  });
+
+  // The review range of a ship or phase review (SMA k_ws_range): `<base>..<head>`, `HEAD` standing in when the run ships the
+  // checkout tip (empty head). Computing it here keeps the `..HEAD` fallback out of the graph's template language.
+  action("lp.review_range", async (c, _rt) => {
+    const params = rec(rec(c.node).params);
+    const base = c.render(str(params.base)).trim();
+    const head = c.render(str(params.head)).trim();
+    return { range: `${base || "HEAD"}..${head || "HEAD"}` };
+  });
+
+  // The shipment mark in STATE.md (SMA k_ws_track): the phase's status and the activity line land in the command's own block —
+  // the text outside the markers stays a person's. A project without STATE.md front matter gets no file created, only marked:false.
+  action("lp.ship_state_mark", async (c, rt) => {
+    const path = ".agents/planning/STATE.md";
+    const params = rec(rec(c.node).params);
+    const phase = oneLine(c.render(str(params.phase_id)), 60);
+    const pr = oneLine(c.render(str(params.pr_url)), 200);
+    try {
+      const checkout = await pmCheckout(rt);
+      const root = (await planHome(rt.projectId, checkout)) ?? checkout.path;
+      const host = ctx.host as never as { call(m: string, i: unknown, o?: unknown): Promise<Record<string, unknown>> };
+      const current = await host.call("readBoundedFile", { requestedHostId: checkout.hostId, projectCwd: root, relativePath: path, offset: 0, maxLines: 4000 }, { hostId: checkout.hostId, timeoutMs: 20_000 });
+      const prev = typeof current.content === "string" ? current.content : "";
+      if (!stateHasHeader(prev) || typeof current.sha256 !== "string" || current.truncated === true) return { marked: false, path: "" };
+      const activity = `activity ${new Date().toISOString()} — shipped ${phase || "phase"}${pr ? ` ${pr}` : ""}`;
+      const next = stateBlockText(prev, { phase, status: "shipped" }, { Session: [activity] }, true);
+      if ("refused" in next) return { marked: false, path: "", refused: next.refused };
+      if (root === checkout.path) noteEngineWrite(checkout.path, path);
+      const written = await bb.sdk.files.write({ hostId: checkout.hostId, rootPath: root, path: `${root}/${path}`, content: next.text, contentEncoding: "utf8", createParents: true, expectedSha256: current.sha256 });
+      const outcome = written && typeof written === "object" ? (written as { outcome?: unknown }).outcome : undefined;
+      if (outcome !== undefined && outcome !== "written") return { marked: false, path: "", failed: String(outcome) };
+      return { marked: true, path };
+    } catch (cause) {
+      ctx.log(`ship state mark failed, the ship goes on: ${cause instanceof Error ? cause.message : String(cause)}`);
+      return { marked: false, path: "", failed: cause instanceof Error ? cause.message : String(cause) };
+    }
+  });
+
+  // The roadmap rows a milestone or project start frames (SMA k_c_newmilestone): `lane-plan phase add <name> --goal ...` —
+  // each phase line becomes one `- [ ] <name> — <goal>` row appended at the end of ROADMAP.md (before the Backlog section when
+  // it has one). Names carry their own number; whitespace and leading list/heading marks are collapsed so a row is one line.
+  action("lp.phase_add", async (c, rt) => {
+    const path = ".agents/planning/ROADMAP.md";
+    const params = rec(rec(c.node).params);
+    const goal = oneLine(c.render(str(params.goal)), 600);
+    const phases = list(c.resolve("frame.phases") ?? c.resolve("recap.phases") ?? c.resolve("$inputs.phases")).map((value) => oneLine(str(value), 200)).filter(Boolean).slice(0, 50);
+    if (!phases.length) return { added: [] as string[], count: 0 };
+    const checkout = await pmCheckout(rt);
+    const root = (await planHome(rt.projectId, checkout)) ?? checkout.path;
+    const host = ctx.host as never as { call(m: string, i: unknown, o?: unknown): Promise<Record<string, unknown>> };
+    // A missing ROADMAP.md reads as empty and the create-only write below wins against a real file that could not be
+    // read: `expectedSha256: null` answers conflict on an existing file, so an unreadable one is never clobbered.
+    let current = await bestEffort(ctx.log, "roadmap read", host.call("readBoundedFile", { requestedHostId: checkout.hostId, projectCwd: root, relativePath: path, offset: 0, maxLines: 4000 }, { hostId: checkout.hostId, timeoutMs: 20_000 }), null);
+    if (!current || typeof current.content !== "string") {
+      // The bounded read RPC is absent on this host: probe the file over the command channel instead — present → the
+      // bytes plus our own hash feed the CAS write below; absent → the create-only write wins. Either way an
+      // unreadable-but-real ROADMAP.md answers conflict and is never clobbered.
+      const exists = await bestEffort(ctx.log, "roadmap probe", runOnHost(ctx.host, { hostId: checkout.hostId, cwd: root, command: `test -f ${quote(path)} && echo yes`, timeoutSec: 15, timeoutMs: 20_000 }).then((ran) => ran.stdout.trim() === "yes", () => false), false);
+      const text = exists ? (await bestEffort(ctx.log, "roadmap cat", runOnHost(ctx.host, { hostId: checkout.hostId, cwd: root, command: `cat ${quote(path)}`, timeoutSec: 15, timeoutMs: 20_000 }), null))?.stdout ?? null : null;
+      current = text === null ? null : { content: text, sha256: sha256Hex(text) };
+    }
+    const prev = typeof current?.content === "string" ? current.content : "";
+    const expectedSha256 = typeof current?.sha256 === "string" ? current.sha256 : null;
+    const eol = prev.includes("\r\n") ? "\r\n" : "\n";
+    const rows = phases.map((name) => `- [ ] ${name}${goal ? ` — ${goal}` : ""}`);
+    const lines = prev.split("\n").filter((line, at, all) => !(at === all.length - 1 && line === ""));
+    let at = lines.findIndex((line) => line.trim() === "## Backlog");
+    if (at >= 0) { while (at > 0 && !lines[at - 1]!.trim()) at -= 1; lines.splice(at, 0, ...rows, ""); }
+    else lines.push(...(lines.length && lines[lines.length - 1]!.trim() ? [""] : []), ...rows);
+    if (root === checkout.path) noteEngineWrite(checkout.path, path);
+    const written = await bb.sdk.files.write({ hostId: checkout.hostId, rootPath: root, path: `${root}/${path}`, content: `${lines.join("\n").replace(/\s+$/, "")}${eol}`, contentEncoding: "utf8", createParents: true, expectedSha256 });
+    const outcome = written && typeof written === "object" ? (written as { outcome?: unknown }).outcome : undefined;
+    if (outcome !== undefined && outcome !== "written") throw new Error(`lp.phase_add: the write of ${path} was not applied (${String(outcome)})`);
+    return { added: rows, count: rows.length };
+  });
+
+  // `lane-plan spike new "<question>"` (SMA k_pl_spikes): creates .agents/planning/spikes/<slug>.md with the question as the
+  // header and returns its path; the experiment's document is appended to it by the fs.write sibling. An existing file of the
+  // same name is not touched — the date is folded into the slug so a repeated question gets its own file.
+  action("lp.spike_new", async (c, rt) => {
+    const params = rec(rec(c.node).params);
+    const question = c.render(str(params.question)).trim().slice(0, 400);
+    const checkout = await pmCheckout(rt);
+    const root = (await planHome(rt.projectId, checkout)) ?? checkout.path;
+    const slug = question.toLowerCase().replace(/[^a-z0-9_-]+/g, "-").replace(/^[-_]+|[-_]+$/g, "").slice(0, 50).replace(/-+$/, "") || "spike";
+    const path = `.agents/planning/spikes/${slug}-${new Date().toISOString().slice(0, 10)}.md`;
+    const content = `# Spike — ${question.replace(/\r?\n/g, " ")}\n\n`;
+    if (root === checkout.path) noteEngineWrite(checkout.path, path);
+    // Create-only: `expectedSha256: null` answers conflict over an existing file, so a repeated question the same day fails
+    // instead of replacing a spike that is already there.
+    const written = await bb.sdk.files.write({ hostId: checkout.hostId, rootPath: root, path: `${root}/${path}`, content, contentEncoding: "utf8", createParents: true, expectedSha256: null });
+    const outcome = written && typeof written === "object" ? (written as { outcome?: unknown }).outcome : undefined;
+    if (outcome !== "written") throw new Error(`lp.spike_new: ${path} already exists — name a new question or remove the old spike first`);
+    return { spike_path: path };
+  });
+
+
+  // The one place a workflow's document path is derived from phase_id (SMA k_pl_phases): `<phase>/<doc>` under .agents/phases,
+  // .agents/research/<doc> when the run names no phase, and a refusal when the id would leave its folder (/, .., empty segment).
+  action("lp.doc_path", async (c, _rt) => {
+    const params = rec(rec(c.node).params);
+    const phase = c.render(str(params.phase_id)).trim();
+    const doc = oneLine(c.render(str(params.doc)), 120) || "DOC.md";
+    if (doc.includes("/") || doc.includes("\\") || doc.includes("..") || doc.includes("\0") || doc.startsWith(".")) throw new Error(`lp.doc_path: unsafe doc name "${doc}"`);
+    if (!phase) return { path: `.agents/research/${doc}` };
+    if (phase.includes("/") || phase.includes("\\") || phase.includes("..") || phase.includes("\0") || phase.startsWith(".") || phase.startsWith("~")) throw new Error(`lp.doc_path: the phase id "${phase}" is not a single path segment`);
+    return { path: `.agents/phases/${phase}/${doc}` };
   });
 }

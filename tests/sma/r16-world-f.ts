@@ -352,7 +352,7 @@ export const observeF = {
 
   /** n1313: the AI-SPEC: four roles in order, a check gate: gaps send the spec back once, a spec still short is blocked; the result names the framework and the spec path. */
   async k_c_aiphase() {
-    const stubs = { select: { framework: "langchain", options: [] }, research: { notes: "n", quick_reference: "q", implementation_notes: "i", domain_notes: "d" }, eval_plan: { eval_plan: "e" }, spec: { spec_path: "x/AI-SPEC.md" } };
+    const stubs = { select: { framework: "langchain", options: [], document: "# model\n" }, research: { notes: "n", quick_reference: "q", implementation_notes: "i", domain_notes: "d" }, eval_plan: { eval_plan: "e" }, spec: { document: "# AI-SPEC\n" }, write_spec: { spec_path: "x/AI-SPEC.md" } };
     const run = (check: Row | Row[]) => runSim("ai-integration-phase", { input: { goal: "rank photos" }, stubs: { ...stubs, check } as never });
     const clean = await run({ ok: true, gaps: [] });
     const rework = await run([{ ok: false, gaps: ["no eval"] }, { ok: true, gaps: [] }]);

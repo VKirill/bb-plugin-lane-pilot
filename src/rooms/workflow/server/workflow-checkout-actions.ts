@@ -94,22 +94,33 @@ export function registerCheckoutActions(engine: WorkflowEngine, ctx: ServerCore,
     const params = node.params as Row;
     const checkout = await pmCheckout(rt);
     const rel = c.render(str(params.path)).replace(/^\/+/, "");
-    if (!rel || rel.split("/").includes("..") || rel.includes("\0")) throw new Error(`fs.write: the path "${rel}" is not inside the checkout`);
+    const interiorEmpty = rel.replace(/\/+$/, "").split("/").includes("");
+    if (!rel || rel.split("/").includes("..") || rel.includes("\0") || interiorEmpty) throw new Error(`fs.write: the path "${rel}" is not inside the checkout`);
     const rawKind = str(params.kind ?? rec(c.node).kind).trim().toLowerCase();
     const isFolder = rawKind === "folder" || rawKind === "dir" || rawKind === "directory" || rel.endsWith("/");
     const folderPrefix = isFolder ? (rel.endsWith("/") ? rel : `${rel}/`) : "";
     // A planning file (.agents/phases|planning|todos|plans, not a task's own folder) goes to the planning home when the project set one (SMA d_project_planning); unset, the checkout.
     const home = isPlanningPath(isFolder ? folderPrefix : rel) ? await planHome(rt.projectId, checkout) : null;
     const mode = str(params.mode).trim().toLowerCase();
-    if (mode && mode !== "append" && mode !== "prepend") throw new Error(`fs.write: unsupported mode "${mode}"`);
-    if (mode && isFolder) throw new Error("fs.write: append/prepend mode requires a single file path");
+    const ifExists = params.if_exists === true || String(params.if_exists ?? "") === "true";
+    if (mode && mode !== "append" && mode !== "prepend" && mode !== "non_overwrite") throw new Error(`fs.write: unsupported mode "${mode}"`);
+    if ((mode === "append" || mode === "prepend") && isFolder) throw new Error("fs.write: append/prepend mode requires a single file path");
+    if (mode === "non_overwrite" && isFolder) throw new Error("fs.write: non_overwrite mode requires a single file path");
+    if (ifExists && !mode) throw new Error("fs.write: if_exists requires a mode (append, prepend or non_overwrite)");
     const writtenCheckoutPaths: Array<{ path: string; content: string; sha256: string }> = [];
     // Every file this node wrote, for the run's manifest (.agents/runs/<run>/manifest.json): the checkout's and the planning home's alike.
     const writtenForRun: Array<{ repoPath: string; content: string; kind: "output"; root: "checkout" | "planning-home" }> = [];
     let writtenFileCount = 0;
-    const write = async (path: string, content: string) => {
+    let ifExistsSkipped = false;
+    /** The `<name>.new.<ext>` sibling a non_overwrite write lands in when the file is already there (SMA k_pl_researchdir). */
+    const newSiblingPath = (cleanPath: string): string => {
+      const slash = cleanPath.lastIndexOf("/"), dir = slash < 0 ? "" : `${cleanPath.slice(0, slash + 1)}`, base = cleanPath.slice(slash + 1);
+      const dot = base.lastIndexOf(".");
+      return dot <= 0 ? `${dir}${base}.new.md` : `${dir}${base.slice(0, dot)}.new${base.slice(dot)}`;
+    };
+    const write = async (path: string, content: string): Promise<string | null> => {
       const cleanPath = path.replace(/^\/+/, "");
-      if (!cleanPath || cleanPath.endsWith("/") || cleanPath.split("/").includes("..") || cleanPath.includes("\0")) {
+      if (!cleanPath || cleanPath.endsWith("/") || cleanPath.split("/").includes("..") || cleanPath.includes("\0") || cleanPath.replace(/\/+$/, "").split("/").includes("")) {
         throw new Error(`fs.write: invalid target file path "${cleanPath}"`);
       }
       if (mode) {
@@ -119,28 +130,58 @@ export function registerCheckoutActions(engine: WorkflowEngine, ctx: ServerCore,
         };
         if (typeof files.read !== "function") throw new Error(`fs.write: cannot ${mode} "${cleanPath}" because the existing file is unreadable`);
         const rootPath = home ?? checkout.path;
-        const fullPath = `${rootPath}/${cleanPath}`;
-        for (let attempt = 0; attempt < 2; attempt += 1) {
-          let previous = "", expectedSha256: string | null = null;
+        const casRead = async (relPath: string): Promise<{ content: string; sha256: string } | null> => {
+          const raw = await files.read!({ hostId: checkout.hostId, rootPath, path: `${rootPath}/${relPath}` });
+          if (raw === null || raw === undefined) throw new Error("the existing file read returned no result");
+          if (typeof raw !== "object") throw new Error("the existing file read returned an invalid result");
+          const existing = raw as { content?: unknown; sha256?: unknown; sizeBytes?: unknown };
+          if (typeof existing.content !== "string") throw new Error("the existing file read returned no text");
+          if (typeof existing.sha256 !== "string" || !/^[a-f0-9]{64}$/i.test(existing.sha256)) throw new Error("the existing file read returned an invalid hash");
+          const sizeBytes = existing.sizeBytes;
+          const actualSize = Buffer.byteLength(existing.content, "utf8");
+          if (typeof sizeBytes !== "number" || !Number.isSafeInteger(sizeBytes) || sizeBytes !== actualSize) throw new Error("the existing file read returned an invalid size");
+          if (sizeBytes > CAS_READ_CAP_BYTES) throw new Error(`the existing file exceeds the ${CAS_READ_CAP_BYTES}-byte read limit`);
+          if (existing.sha256.toLowerCase() !== sha256Hex(existing.content)) throw new Error("the existing file read does not match its hash");
+          return { content: existing.content, sha256: existing.sha256 };
+        };
+        // Never-overwrite (SMA k_pl_researchdir): an existing file is left byte for byte and the new text lands in <name>.new.<ext>;
+        // an occupied sibling refuses instead of clobbering either. Both writes are create-only (expectedSha256 null).
+        if (mode === "non_overwrite") {
+          let target = cleanPath;
           try {
-            const raw = await files.read({ hostId: checkout.hostId, rootPath, path: fullPath });
-            if (raw === null || raw === undefined) throw new Error("the existing file read returned no result");
-            if (typeof raw !== "object") throw new Error("the existing file read returned an invalid result");
-            const existing = raw as { content?: unknown; sha256?: unknown; sizeBytes?: unknown };
-            if (typeof existing.content !== "string") throw new Error("the existing file read returned no text");
-            if (typeof existing.sha256 !== "string" || !/^[a-f0-9]{64}$/i.test(existing.sha256)) throw new Error("the existing file read returned an invalid hash");
-            const sizeBytes = existing.sizeBytes;
-            const actualSize = Buffer.byteLength(existing.content, "utf8");
-            if (typeof sizeBytes !== "number" || !Number.isSafeInteger(sizeBytes) || sizeBytes !== actualSize) throw new Error("the existing file read returned an invalid size");
-            if (sizeBytes > CAS_READ_CAP_BYTES) throw new Error(`the existing file exceeds the ${CAS_READ_CAP_BYTES}-byte append limit`);
-            previous = existing.content;
-            expectedSha256 = existing.sha256;
-            if (expectedSha256.toLowerCase() !== sha256Hex(previous)) throw new Error("the existing file read does not match its hash");
+            await casRead(target);
+            target = newSiblingPath(target);
+            try { await casRead(target); throw new Error(`fs.write: "${target}" already exists — neither the file nor its .new sibling is touched`); }
+            catch (cause) { if (!isMissingCasFile(cause)) throw cause; }
           } catch (cause) {
             if (!isMissingCasFile(cause)) {
               const why = cause instanceof Error ? cause.message : String(cause);
               throw new Error(`cannot ${mode} "${cleanPath}": ${why}`);
             }
+          }
+          const fullTarget = `${rootPath}/${target}`;
+          const result = await files.write({ hostId: checkout.hostId, rootPath, path: fullTarget, content, contentEncoding: "utf8", createParents: true, expectedSha256: null });
+          const outcome = result && typeof result === "object" ? String((result as { outcome?: unknown }).outcome ?? "") : "";
+          if (outcome !== "written") throw new Error(`fs.write: CAS write rejected for "${target}" (${outcome || "unknown"})`);
+          writtenFileCount += 1;
+          writtenForRun.push({ repoPath: target, content, kind: "output", root: home ? "planning-home" : "checkout" });
+          if (!home) { writtenCheckoutPaths.push({ path: target, content, sha256: sha256Hex(content) }); noteEngineWrite(checkout.path, target); }
+          return target;
+        }
+        const fullPath = `${rootPath}/${cleanPath}`;
+        for (let attempt = 0; attempt < 2; attempt += 1) {
+          let previous = "", expectedSha256: string | null = null;
+          try {
+            const existing = await casRead(cleanPath);
+            previous = existing!.content;
+            expectedSha256 = existing!.sha256;
+          } catch (cause) {
+            if (!isMissingCasFile(cause)) {
+              const why = cause instanceof Error ? cause.message : String(cause);
+              throw new Error(`cannot ${mode} "${cleanPath}": ${why}`);
+            }
+            // append/prepend with if_exists: a missing file is a skip, never a create (SMA k_pl_project — PROJECT.md is only ever appended to).
+            if (ifExists) { ifExistsSkipped = true; return null; }
             previous = "";
             expectedSha256 = null;
           }
@@ -152,7 +193,7 @@ export function registerCheckoutActions(engine: WorkflowEngine, ctx: ServerCore,
             writtenForRun.push({ repoPath: cleanPath, content: next, kind: "output", root: home ? "planning-home" : "checkout" });
             if (!home) writtenCheckoutPaths.push({ path: cleanPath, content: next, sha256: sha256Hex(next) });
             if (!home) noteEngineWrite(checkout.path, cleanPath);
-            return;
+            return cleanPath;
           }
           if (outcome === "conflict" && attempt === 0) continue;
           throw new Error(`fs.write: CAS write rejected for "${cleanPath}" (${outcome || "unknown"})`);
@@ -171,7 +212,7 @@ export function registerCheckoutActions(engine: WorkflowEngine, ctx: ServerCore,
         }
         writtenFileCount += 1;
         writtenForRun.push({ repoPath: cleanPath, content, kind: "output", root: "planning-home" });
-        return;
+        return cleanPath;
       }
       // Noted before the write lands, so a helper's status read right after it already sees it as the engine's.
       noteEngineWrite(checkout.path, cleanPath);
@@ -187,6 +228,7 @@ export function registerCheckoutActions(engine: WorkflowEngine, ctx: ServerCore,
       writtenFileCount += 1;
       writtenCheckoutPaths.push({ path: cleanPath, content, sha256: casRes.sha256 });
       writtenForRun.push({ repoPath: cleanPath, content, kind: "output", root: "checkout" });
+      return cleanPath;
     };
     const asText = (value: unknown) => (typeof value === "string" ? value : JSON.stringify(value, null, 2));
     const resolveTargetPath = (entryName: string): string => {
@@ -201,9 +243,9 @@ export function registerCheckoutActions(engine: WorkflowEngine, ctx: ServerCore,
       for (const [name, template] of Object.entries(params.contents as Row)) {
         const value = c.template(template);
         const target = resolveTargetPath(name);
-        await write(target, asText(value ?? ""));
+        const landed = await write(target, asText(value ?? ""));
         if (target.endsWith("/handoff.md") || target === "handoff.md") wroteHandoff = true;
-        first = first === (isFolder ? folderPrefix : rel) ? target : first;
+        first = first === (isFolder ? folderPrefix : rel) ? (landed ?? target) : first;
       }
     } else if (params.files !== undefined && params.files !== null) {
       const resolvedFiles = c.template(params.files);
@@ -221,35 +263,36 @@ export function registerCheckoutActions(engine: WorkflowEngine, ctx: ServerCore,
               (c.inputs as Row | undefined)?.[stem] ??
               reportBody(c, params);
             const target = resolveTargetPath(name);
-            await write(target, asText(candidate ?? ""));
+            const landed = await write(target, asText(candidate ?? ""));
             if (target.endsWith("/handoff.md") || target === "handoff.md") wroteHandoff = true;
-            first = first === (isFolder ? folderPrefix : rel) ? target : first;
+            first = first === (isFolder ? folderPrefix : rel) ? (landed ?? target) : first;
           } else if (item && typeof item === "object") {
             const recItem = item as Row;
             const rawName = String(recItem.path ?? recItem.name ?? recItem.file ?? "").trim();
             if (!rawName) continue;
             const body = recItem.content ?? recItem.body ?? recItem.text ?? recItem.value ?? reportBody(c, params);
             const target = resolveTargetPath(rawName);
-            await write(target, asText(body ?? ""));
+            const landed = await write(target, asText(body ?? ""));
             if (target.endsWith("/handoff.md") || target === "handoff.md") wroteHandoff = true;
-            first = first === (isFolder ? folderPrefix : rel) ? target : first;
+            first = first === (isFolder ? folderPrefix : rel) ? (landed ?? target) : first;
           }
         }
       } else if (typeof resolvedFiles === "object") {
         for (const [name, body] of Object.entries(resolvedFiles as Row)) {
           const target = resolveTargetPath(name);
-          await write(target, asText(body ?? ""));
+          const landed = await write(target, asText(body ?? ""));
           if (target.endsWith("/handoff.md") || target === "handoff.md") wroteHandoff = true;
-          first = first === (isFolder ? folderPrefix : rel) ? target : first;
+          first = first === (isFolder ? folderPrefix : rel) ? (landed ?? target) : first;
         }
       }
     } else if (!isFolder) {
       if (typeof params.contents === "string") {
-        await write(rel, asText(c.template(params.contents)));
-        first = rel;
+        const landed = await write(rel, asText(c.template(params.contents)));
+        first = landed ?? "";
         return await finishWrite();
       }
-      await write(rel, asText(reportBody(c, params)));
+      const landedSingle = await write(rel, asText(reportBody(c, params)));
+      first = landedSingle ?? (first === rel ? "" : first);
     }
     if (
       isFolder &&
@@ -258,8 +301,8 @@ export function registerCheckoutActions(engine: WorkflowEngine, ctx: ServerCore,
       c.node.out.some((f) => f.name === "handoff_path" || f.name.endsWith("_path"))
     ) {
       const handoffTarget = `${folderPrefix}handoff.md`;
-      await write(handoffTarget, asText(reportBody(c, params)));
-      first = first === folderPrefix ? handoffTarget : first;
+      const landed = await write(handoffTarget, asText(reportBody(c, params)));
+      first = first === folderPrefix ? (landed ?? handoffTarget) : first;
     }
     return await finishWrite();
 
@@ -304,7 +347,7 @@ export function registerCheckoutActions(engine: WorkflowEngine, ctx: ServerCore,
     for (const field of c.node.out) {
       if (field.name === "folder") out.folder = isFolder ? folderPrefix : rel.slice(0, rel.lastIndexOf("/") + 1) || "./";
       else if (field.name === "handoff_path") out.handoff_path = isFolder ? `${folderPrefix}handoff.md` : rel;
-      else if (field.name.endsWith("_path")) out[field.name] = isFolder ? (writtenFileCount === 1 ? first : folderPrefix) : first;
+      else if (field.name.endsWith("_path")) out[field.name] = writtenFileCount === 0 && ifExistsSkipped ? "" : isFolder ? (writtenFileCount === 1 ? first : folderPrefix) : first;
     }
     return out;
     }

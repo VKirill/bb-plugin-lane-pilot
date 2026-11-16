@@ -260,13 +260,13 @@ describe("parity d3 workflows a", () => {
 
   it("[sma:k_c_aiphase] four roles write AI-SPEC.md and a check gate stands before done", async () => {
     const clean = await runSim("ai-integration-phase", { input: { goal: "rank" },
-      stubs: { select: { framework: "langchain", options: [] }, research: { notes: "", quick_reference: "q", implementation_notes: "i", domain_notes: "d" }, eval_plan: { eval_plan: "e" }, spec: { spec_path: "x/AI-SPEC.md" }, check: { ok: true, gaps: [] } } });
-    expect(pathOf(clean)).toBe("select research eval_plan spec check done");
+      stubs: { select: { framework: "langchain", options: [] }, research: { notes: "", quick_reference: "q", implementation_notes: "i", domain_notes: "d" }, eval_plan: { eval_plan: "e" }, spec: { document: "# spec\n" }, check: { ok: true, gaps: [] } } });
+    expect(pathOf(clean)).toBe("select write_model research eval_plan spec spec_path write_spec check done");
     const rework = await runSim("ai-integration-phase", { input: { goal: "rank" },
-      stubs: { select: { framework: "t", options: [] }, research: { notes: "" }, eval_plan: { eval_plan: "e" }, spec: { spec_path: "x" }, check: [{ ok: false, gaps: ["no eval"] }, { ok: true, gaps: [] }] } });
-    expect(pathOf(rework)).toBe("select research eval_plan spec check spec check done");
+      stubs: { select: { framework: "t", options: [] }, research: { notes: "" }, eval_plan: { eval_plan: "e" }, spec: { document: "# spec\n" }, check: [{ ok: false, gaps: ["no eval"] }, { ok: true, gaps: [] }] } });
+    expect(pathOf(rework)).toBe("select write_model research eval_plan spec spec_path write_spec check spec spec_path write_spec check done");
     const blocked = await runSim("ai-integration-phase", { input: { goal: "rank" }, status: "succeeded",
-      stubs: { select: { framework: "t", options: [] }, research: { notes: "" }, eval_plan: { eval_plan: "e" }, spec: { spec_path: "x" }, check: { ok: false, gaps: ["g"] } } });
+      stubs: { select: { framework: "t", options: [] }, research: { notes: "" }, eval_plan: { eval_plan: "e" }, spec: { document: "# spec\n" }, check: { ok: false, gaps: ["g"] } } });
     expect(pathOf(blocked)).toContain("blocked");
   });
 

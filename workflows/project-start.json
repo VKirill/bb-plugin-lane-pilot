@@ -73,7 +73,7 @@
       "params": {
         "counts_note": "Open VALUE-MAP.md with these five lines counted from the tree itself, verbatim:",
         "profile_note": "Exception for this run: do not run the writer yourself, and ignore any instruction above that names `lane-plan profile --set` (there is no lane-plan here). Return the infra profile as the JSON object `profile` (key: value) with only these keys: stack, test_command, release, hosts, start, deploy, logs, style; the next step stores it as the project's profile settings with the one profile writer, which refuses secrets and any other key (the same settings `bb lane-pilot profile` reads and sets).",
-        "recap_note": "Also write .agents/planning/PROJECT.md from VALUE-MAP.md: Vision, Value and Limits (the no-gos and the risks the anamnesis names). Read .agents/planning/research/STACK.md, FEATURES.md, ARCHITECTURE.md and PITFALLS.md and the requirements before the roadmap, and build the roadmap skeleton from the requirements. A file that already exists is never overwritten: merge the new text into it keeping what is there, or leave it and write the new text to <name>.new.md next to it (it already exists and was changed by hand, or was not written by the machine: the new text is in <name>.new.md next to it)."
+        "recap_note": "Read .agents/planning/research/STACK.md, FEATURES.md, ARCHITECTURE.md and PITFALLS.md and the requirements before the roadmap, and build the roadmap skeleton from the requirements. In project_document return the PROJECT.md text built from VALUE-MAP.md: Vision, Value and Limits (the no-gos and the risks the anamnesis names); the code-owned writer persists it — a file that already exists is never overwritten, the new text lands in PROJECT.new.md next to it."
       }
     },
     {
@@ -228,7 +228,7 @@
         "architecture": "",
         "pitfalls": ""
       },
-      "prompt": "Research competitors and conventions for what the project is, from the value map and the owner's answers. Return four raw Markdown documents: stack for .agents/planning/research/STACK.md, features for FEATURES.md, architecture for ARCHITECTURE.md and pitfalls for PITFALLS.md — each with its sources and what the roadmap should take from it, and research_notes with the gist. The code-owned writers append each document to its file, keeping what is already there. This read-only helper does not write files.",
+      "prompt": "Research competitors and conventions for what the project is, from the value map and the owner's answers. Return four documents in stack, features, architecture and pitfalls — each with its sources and what the roadmap should take from it; the code-owned writers persist them as .agents/planning/research/STACK.md, FEATURES.md, ARCHITECTURE.md and PITFALLS.md. A file that already exists is never overwritten: the writer leaves it byte for byte and puts the new text in <name>.new.md next to it.",
       "out": {
         "research_notes": "string",
         "stack": "string",
@@ -246,7 +246,7 @@
           "version": 1
         }
       ],
-      "skip_when": "tree.enabled != 'on'"
+      "skip_when": "tree.enabled != 'on' || $mode == 'quick'"
     },
     {
       "id": "requirements",
@@ -285,10 +285,12 @@
         "en": "Recap and next steps",
         "ru": "Итог и шаги"
       },
-      "prompt": "Working style and risk from the owner's anamnesis. Recap in five lines and three next steps, plus the roadmap skeleton as raw Markdown in roadmap_draft (phases in order; the code-owned writer persists it to .agents/planning/ROADMAP.md). This read-only helper does not write files and runs no lane-plan commands. {{tree.recap_note}}",
+      "prompt": "Working style and risk from the owner's anamnesis. Recap in five lines and three next steps, plus the roadmap skeleton as raw Markdown in roadmap_draft (phases in order; the code-owned writer persists it to .agents/planning/ROADMAP.md and registers the phases as roadmap rows — return them in phases too) and the project's Vision, Value and Limits as raw Markdown in project_document (the code-owned writer persists it to .agents/planning/PROJECT.md; an existing file is left byte for byte and the new text lands in PROJECT.new.md). This read-only helper does not write files and runs no lane-plan commands. {{tree.recap_note}}",
       "out": {
         "next_steps": "string[]",
-        "roadmap_draft": "string"
+        "roadmap_draft": "string",
+        "project_document": "string",
+        "phases": "string[]"
       },
       "guards": {
         "maxVisits": 1,
@@ -321,7 +323,9 @@
       "skip_when": "probe.has_roadmap",
       "skip_out": {
         "next_steps": [],
-        "roadmap_draft": ""
+        "roadmap_draft": "",
+        "project_document": "",
+        "phases": "[]"
       }
     },
     {
@@ -350,8 +354,6 @@
       "id": "write_value_map",
       "type": "action",
       "action": "fs.write",
-      "path": ".agents/planning/VALUE-MAP.md",
-      "contents": "{{value_map.document}}",
       "out": {
         "value_map_path": "string"
       },
@@ -362,18 +364,22 @@
       "skip_when": "!value_map.document",
       "skip_out": {
         "value_map_path": ""
+      },
+      "mode": "non_overwrite",
+      "params": {
+        "path": ".agents/planning/VALUE-MAP.md",
+        "contents": "{{value_map.document}}",
+        "mode": "non_overwrite"
       }
     },
     {
       "id": "write_requirements",
       "type": "action",
       "action": "fs.write",
-      "path": ".agents/planning/REQUIREMENTS.md",
-      "contents": "{{requirements.document}}",
       "out": {
         "requirements_path": "string"
       },
-      "mode": "append",
+      "mode": "non_overwrite",
       "title": {
         "en": "Append the requirements",
         "ru": "Дописать требования"
@@ -381,14 +387,17 @@
       "skip_when": "!requirements.document",
       "skip_out": {
         "requirements_path": ""
+      },
+      "params": {
+        "path": ".agents/planning/REQUIREMENTS.md",
+        "contents": "{{requirements.document}}",
+        "mode": "non_overwrite"
       }
     },
     {
       "id": "write_roadmap",
       "type": "action",
       "action": "fs.write",
-      "path": ".agents/planning/ROADMAP.md",
-      "contents": "{{recap.roadmap_draft}}",
       "out": {
         "roadmap_path": "string"
       },
@@ -399,15 +408,19 @@
       "skip_when": "!recap.roadmap_draft",
       "skip_out": {
         "roadmap_path": ""
+      },
+      "mode": "non_overwrite",
+      "params": {
+        "path": ".agents/planning/ROADMAP.md",
+        "contents": "{{recap.roadmap_draft}}",
+        "mode": "non_overwrite"
       }
     },
     {
       "id": "write_research_stack",
       "type": "action",
       "action": "fs.write",
-      "path": ".agents/planning/research/STACK.md",
-      "contents": "{{research.stack}}",
-      "mode": "append",
+      "mode": "non_overwrite",
       "out": {
         "research_path": "string"
       },
@@ -418,15 +431,18 @@
       "title": {
         "en": "Write research STACK.md",
         "ru": "Записать исследование STACK.md"
+      },
+      "params": {
+        "path": ".agents/planning/research/STACK.md",
+        "contents": "{{research.stack}}",
+        "mode": "non_overwrite"
       }
     },
     {
       "id": "write_research_features",
       "type": "action",
       "action": "fs.write",
-      "path": ".agents/planning/research/FEATURES.md",
-      "contents": "{{research.features}}",
-      "mode": "append",
+      "mode": "non_overwrite",
       "out": {
         "research_path": "string"
       },
@@ -437,15 +453,18 @@
       "title": {
         "en": "Write research FEATURES.md",
         "ru": "Записать исследование FEATURES.md"
+      },
+      "params": {
+        "path": ".agents/planning/research/FEATURES.md",
+        "contents": "{{research.features}}",
+        "mode": "non_overwrite"
       }
     },
     {
       "id": "write_research_architecture",
       "type": "action",
       "action": "fs.write",
-      "path": ".agents/planning/research/ARCHITECTURE.md",
-      "contents": "{{research.architecture}}",
-      "mode": "append",
+      "mode": "non_overwrite",
       "out": {
         "research_path": "string"
       },
@@ -456,15 +475,18 @@
       "title": {
         "en": "Write research ARCHITECTURE.md",
         "ru": "Записать исследование ARCHITECTURE.md"
+      },
+      "params": {
+        "path": ".agents/planning/research/ARCHITECTURE.md",
+        "contents": "{{research.architecture}}",
+        "mode": "non_overwrite"
       }
     },
     {
       "id": "write_research_pitfalls",
       "type": "action",
       "action": "fs.write",
-      "path": ".agents/planning/research/PITFALLS.md",
-      "contents": "{{research.pitfalls}}",
-      "mode": "append",
+      "mode": "non_overwrite",
       "out": {
         "research_path": "string"
       },
@@ -475,7 +497,50 @@
       "title": {
         "en": "Write research PITFALLS.md",
         "ru": "Записать исследование PITFALLS.md"
+      },
+      "params": {
+        "path": ".agents/planning/research/PITFALLS.md",
+        "contents": "{{research.pitfalls}}",
+        "mode": "non_overwrite"
       }
+    },
+    {
+      "id": "write_project",
+      "type": "action",
+      "action": "fs.write",
+      "title": {
+        "en": "Persist PROJECT.md",
+        "ru": "Сохранить PROJECT.md"
+      },
+      "params": {
+        "path": ".agents/planning/PROJECT.md",
+        "contents": "{{recap.project_document}}",
+        "mode": "non_overwrite"
+      },
+      "out": {
+        "project_path": "string"
+      },
+      "skip_when": "!recap.project_document",
+      "skip_out": {
+        "project_path": ""
+      }
+    },
+    {
+      "id": "add_phases",
+      "type": "action",
+      "action": "lp.phase_add",
+      "title": {
+        "en": "Register the roadmap phases",
+        "ru": "Зарегистрировать фазы роадмапа"
+      },
+      "reads": [
+        "recap.phases"
+      ],
+      "out": {
+        "added": "string[]",
+        "count": "int"
+      },
+      "skip_when": "!recap.phases.length"
     }
   ],
   "edges": [
@@ -549,7 +614,7 @@
     },
     {
       "from": "write_roadmap",
-      "to": "done",
+      "to": "write_project",
       "pass": "artifact"
     },
     {
@@ -570,6 +635,14 @@
       "with": {
         "owner_answers": "ctx.answers.ask"
       }
+    },
+    {
+      "from": "write_project",
+      "to": "add_phases"
+    },
+    {
+      "from": "add_phases",
+      "to": "done"
     }
   ],
   "test": {
@@ -581,7 +654,7 @@
           "enabled": "off"
         },
         "value_map": {
-          "value_map": "v"
+          "document": "# VM\n"
         },
         "preview": {
           "stack": {},
@@ -592,19 +665,41 @@
             "a",
             "b",
             "c"
+          ],
+          "roadmap_draft": "# R\n",
+          "project_document": "# P\n",
+          "phases": [
+            "1 a",
+            "2 b"
           ]
+        },
+        "write_project": {
+          "project_path": ".agents/planning/PROJECT.md"
+        },
+        "add_phases": {
+          "added": [],
+          "count": 2
         }
       },
       "expect_path": [
         "tree",
         "probe",
         "value_map",
+        "write_value_map",
         "preview",
         "profile_write",
         "ask",
         "research",
+        "write_research_stack",
+        "write_research_features",
+        "write_research_architecture",
+        "write_research_pitfalls",
         "requirements",
+        "write_requirements",
         "recap",
+        "write_roadmap",
+        "write_project",
+        "add_phases",
         "done"
       ],
       "expect_outputs": [

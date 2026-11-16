@@ -113,24 +113,47 @@
       }
     },
     {
+      "id": "doc_path",
+      "type": "action",
+      "action": "lp.doc_path",
+      "title": {
+        "en": "Resolve the document path",
+        "ru": "Путь документа"
+      },
+      "params": {
+        "phase_id": "{{$inputs.phase_id}}",
+        "doc": "VALIDATION.md"
+      },
+      "out": {
+        "path": "string"
+      }
+    },
+    {
       "id": "write_validation",
       "type": "action",
       "action": "fs.write",
-      "path": ".agents/phases/{{$inputs.phase_id}}/VALIDATION.md",
-      "contents": "{{audit.document}}",
       "out": {
         "validation_path": "string"
       },
       "title": {
         "en": "Write the validation report",
         "ru": "Записать отчёт валидации"
+      },
+      "params": {
+        "path": "{{doc_path.path}}",
+        "contents": "{{audit.document}}"
       }
     }
   ],
   "edges": [
     {
-      "from": "audit",
+      "from": "doc_path",
       "to": "write_validation",
+      "pass": "artifact"
+    },
+    {
+      "from": "audit",
+      "to": "doc_path",
       "pass": "artifact"
     },
     {
@@ -166,12 +189,17 @@
       "stubs": {
         "audit": {
           "gaps": [],
-          "validation_path": ".agents/phases/ph_sample01/VALIDATION.md",
+          "document": "# VALIDATION\n",
           "sampled": 3
+        },
+        "doc_path": {
+          "path": ".agents/phases/ph_sample01/VALIDATION.md"
         }
       },
       "expect_path": [
         "audit",
+        "doc_path",
+        "write_validation",
         "goal_check",
         "done"
       ],

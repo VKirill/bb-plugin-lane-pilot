@@ -44,7 +44,8 @@
     "status": "answered|inconclusive",
     "decision": "string",
     "spike_path": "string",
-    "skill_draft": "string"
+    "skill_draft": "string",
+    "skill_path": "string"
   },
   "quality_mode": {
     "default": "standard"
@@ -57,8 +58,23 @@
   "budget": {
     "max_minutes": 120
   },
-  "entry": "experiment",
+  "entry": "spike_new",
   "nodes": [
+    {
+      "id": "spike_new",
+      "type": "action",
+      "action": "lp.spike_new",
+      "title": {
+        "en": "Open the spike file",
+        "ru": "Открыть файл спайка"
+      },
+      "params": {
+        "question": "{{$inputs.question}}"
+      },
+      "out": {
+        "spike_path": "string"
+      }
+    },
     {
       "id": "experiment",
       "type": "agent",
@@ -67,7 +83,7 @@
         "en": "Experiment",
         "ru": "Эксперимент"
       },
-      "prompt": "Inside the time box: the smallest experiment that answers the question, in a throwaway copy (never the project's main code). Return the result and the decision in document — the raw Markdown the code-owned writer persists as the spike file under .agents/planning/spikes/. If wrap_skill is given and the decision is made, return skill_draft too. This read-only helper does not write files and runs no lane-plan commands.",
+      "prompt": "Inside the time box: the smallest experiment that answers the question, in a throwaway copy (never the project's main code). The spike file {{spike_new.spike_path}} is already open with the question — return the result and the decision in document; the code-owned writer appends it to that file. If wrap_skill is given and the decision is made, return skill_draft too — the raw SKILL.md the code-owned writer persists under .agents/forge/skills/. This read-only helper does not write files and runs no lane-plan commands.",
       "out": {
         "answered": "bool",
         "decision": "string",
@@ -93,7 +109,8 @@
         "status": "answered",
         "decision": "experiment.decision",
         "spike_path": "write_spike.spike_path",
-        "skill_draft": "experiment.skill_draft"
+        "skill_draft": "experiment.skill_draft",
+        "skill_path": "write_skill.skill_path"
       }
     },
     {
@@ -104,7 +121,8 @@
         "status": "inconclusive",
         "decision": "experiment.decision",
         "spike_path": "write_spike.spike_path",
-        "skill_draft": "''"
+        "skill_draft": "''",
+        "skill_path": "''"
       }
     },
     {
@@ -127,8 +145,11 @@
       "id": "write_spike",
       "type": "action",
       "action": "fs.write",
-      "path": ".agents/planning/spikes/{{slug}}.md",
-      "contents": "{{experiment.document}}",
+      "params": {
+        "path": "{{spike_new.spike_path}}",
+        "contents": "{{experiment.document}}",
+        "mode": "append"
+      },
       "out": {
         "spike_path": "string"
       },
@@ -136,13 +157,38 @@
         "en": "Write the spike file",
         "ru": "Записать файл спайка"
       },
-      "skip_when": "!experiment.answered || !experiment.document",
+      "skip_when": "!experiment.document",
       "skip_out": {
-        "spike_path": ""
+        "spike_path": "{{spike_new.spike_path}}"
+      }
+    },
+    {
+      "id": "write_skill",
+      "type": "action",
+      "action": "fs.write",
+      "title": {
+        "en": "Persist the skill draft",
+        "ru": "Сохранить черновик скилла"
+      },
+      "params": {
+        "path": ".agents/forge/skills/{{$inputs.wrap_skill}}/SKILL.md",
+        "contents": "{{experiment.skill_draft}}",
+        "mode": "non_overwrite"
+      },
+      "out": {
+        "skill_path": "string"
+      },
+      "skip_when": "!experiment.answered || !experiment.skill_draft || !$inputs.wrap_skill",
+      "skip_out": {
+        "skill_path": ""
       }
     }
   ],
   "edges": [
+    {
+      "from": "spike_new",
+      "to": "experiment"
+    },
     {
       "from": "experiment",
       "to": "write_spike",
@@ -150,6 +196,10 @@
     },
     {
       "from": "write_spike",
+      "to": "write_skill"
+    },
+    {
+      "from": "write_skill",
       "to": "goal_check",
       "pass": "artifact",
       "when": "experiment.answered",
@@ -158,7 +208,7 @@
       }
     },
     {
-      "from": "write_spike",
+      "from": "write_skill",
       "to": "inconclusive",
       "pass": "artifact"
     },
@@ -182,12 +232,21 @@
         "experiment": {
           "answered": true,
           "decision": "yes",
-          "spike_path": "s.md",
+          "document": "# SPIKE\n",
           "skill_draft": ""
+        },
+        "spike_new": {
+          "spike_path": ".agents/planning/spikes/can-sqlite-fts-handle-1m-rows-2026-01-01.md"
+        },
+        "write_skill": {
+          "skill_path": ""
         }
       },
       "expect_path": [
+        "spike_new",
         "experiment",
+        "write_spike",
+        "write_skill",
         "goal_check",
         "answered"
       ],

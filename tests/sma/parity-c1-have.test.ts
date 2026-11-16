@@ -411,16 +411,21 @@ describe("phase gates and agent roles", () => {
   it("[sma:k_ag_debugger] the investigate node of debug.json records {hypothesis, prediction, observation, verdict} in evidence.ndjson and returns evidence_path", () => {
     const investigate = node("debug", "investigate");
     expect(investigate.prompt).toContain("evidence.ndjson");
-    for (const field of ["hypothesis", "prediction", "observation", "verdict"]) expect(investigate.prompt).toContain(field);
+    expect(investigate.prompt).toContain("evidence_entry");
+    // the JSON line the helper returns still carries the four fields; the code-owned writer appends it
+    expect(investigate.out.evidence_entry).toBe("string");
     expect(investigate.out.evidence_path).toBe("string");
+    expect(node("debug", "write_investigation_evidence").action).toBe("fs.write");
   });
 
   it("[sma:k_ag_debugmgr] verify_cause spawns a fresh debug session, an objection loops back to investigate while visits < 3, and the confirmed emit is the compact result", () => {
     expect(node("debug", "verify_cause").session).toBe("new");
     const edges = workflow("debug").edges!;
-    expect(edges.some((edge) => edge.from === "verify_cause" && edge.to === "investigate" && /visits\('investigate'\) < 3/.test(edge.when ?? ""))).toBe(true);
+    expect(edges.some((edge) => edge.from === "verify_cause" && edge.to === "write_verification_session")).toBe(true);
+    expect(edges.some((edge) => edge.from === "write_verification_evidence" && edge.to === "investigate" && /visits\('investigate'\) < 3/.test(edge.when ?? ""))).toBe(true);
     const map = node("debug", "confirmed").map as Record<string, string>;
-    for (const key of ["root_cause", "confidence", "affected_files", "fix_direction", "evidence_path"]) expect(map[key]).toBe(`investigate.${key}`);
+    for (const key of ["root_cause", "confidence", "affected_files", "fix_direction"]) expect(map[key]).toBe(`investigate.${key}`);
+    expect(map.evidence_path).toBe("write_investigation_evidence.evidence_path");
     expect(map.status).toBe("confirmed");
   });
 

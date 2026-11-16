@@ -98,12 +98,12 @@ describe("verify-work (n1205 … n1213)", () => {
 describe("debugging (n1214, n1218 … n1222)", () => {
   it("[sma:k_c_debug] a debugging run keeps its session file, reports a cause only when the evidence gate holds (a weak cause is looked at once more, then reported inconclusive), and in the full mode a fresh agent re-checks the cause and an objection sends it back", async () => {
     const seen = await observeC.k_c_debug();
-    expect(seen.sure.path).toEqual(["session", "investigate", "confirmed"]);
+    expect(seen.sure.path).toEqual(["session", "investigate", "write_investigation_session", "write_investigation_evidence", "confirmed"]);
     expect(seen.sure).toMatchObject({ status: "confirmed", root: "the last empty line yields an undefined row", files: ["src/import/csv.ts:48"], confidence: 82 });
     expect(seen.sure.session).toEqual(["# Debug session — csv-crash", "", "Status: open", ""]);
-    expect(seen.second).toEqual({ path: ["session", "investigate", "verify_cause", "confirmed"], status: "confirmed" });
-    expect(seen.weak).toEqual({ path: ["session", "investigate", "investigate", "inconclusive"], status: "inconclusive" });
-    expect(seen.objection).toEqual({ path: ["session", "investigate", "verify_cause", "investigate", "verify_cause", "confirmed"], status: "confirmed" });
+    expect(seen.second).toEqual({ path: ["session", "investigate", "write_investigation_session", "write_investigation_evidence", "verify_cause", "write_verification_session", "write_verification_evidence", "confirmed"], status: "confirmed" });
+    expect(seen.weak).toEqual({ path: ["session", "investigate", "write_investigation_session", "write_investigation_evidence", "investigate", "write_investigation_session", "write_investigation_evidence", "inconclusive"], status: "inconclusive" });
+    expect(seen.objection).toEqual({ path: ["session", "investigate", "write_investigation_session", "write_investigation_evidence", "verify_cause", "write_verification_session", "write_verification_evidence", "investigate", "write_investigation_session", "write_investigation_evidence", "verify_cause", "write_verification_session", "write_verification_evidence", "confirmed"], status: "confirmed" });
   });
 
   it("[sma:k_wdb_list] the runs of a workflow are listed newest first with each run's status, one page at a time (the page says whether more follow), only for the project asked", async () => {
@@ -118,11 +118,13 @@ describe("debugging (n1214, n1218 … n1222)", () => {
 
   it("[sma:k_wdb_continue] with a session named and no symptom the investigation resumes from the file the earlier run left: nobody is asked the symptoms again and the file is not overwritten", async () => {
     const seen = await observeC.k_wdb_continue();
-    expect(seen.path).toEqual(["session", "investigate", "confirmed"]);
+    expect(seen.path).toEqual(["session", "investigate", "write_investigation_session", "write_investigation_evidence", "confirmed"]);
     expect(seen.skipped).toContain("ask_symptoms");
     expect(seen.asked).toBe(0);
     expect(seen.status).toBe("confirmed");
     expect(seen.kept).toBe(true);
+    // startsWith alone is not proof: the session file must be the old bytes plus exactly the appended session entry.
+    expect(seen.appended).toBe(true);
   });
 
   it("[sma:k_wdb_symptoms] a problem described in a few words is asked for the five things and the answer goes on to the investigator; an already full description, a list of failures and a resumed session are not asked", async () => {
@@ -135,16 +137,16 @@ describe("debugging (n1214, n1218 … n1222)", () => {
 
   it("[sma:k_wdb_setup] a new session is a file under .agents/planning/debug named by a safe slug, started with the symptom and the status open; a hostile name stays inside that folder; no name, no file", async () => {
     const seen = await observeC.k_wdb_setup();
-    expect(seen.path).toEqual(["session", "investigate", "confirmed"]);
-    expect(seen.file).toBe("# Debug session — csv-crash\n\nStatus: open\n\n## Symptom\n\nthe import crashes on files with an empty last line, since v2.3\n\n## Hypotheses\n\n## Evidence\n\n## Root cause\n\n## Fix directions\n");
-    expect(seen.hostile).toEqual({ path: ["session", "investigate", "confirmed"], escaped: false, kept: true });
+    expect(seen.path).toEqual(["session", "investigate", "write_investigation_session", "write_investigation_evidence", "confirmed"]);
+    expect(seen.file).toBe("# Debug session — csv-crash\n\nStatus: open\n\n## Symptom\n\nthe import crashes on files with an empty last line, since v2.3\n\n## Hypotheses\n\n## Evidence\n\n## Root cause\n\n## Fix directions\n- h1: fresh entry\n");
+    expect(seen.hostile).toEqual({ path: ["session", "investigate", "write_investigation_session", "write_investigation_evidence", "confirmed"], escaped: false, kept: true });
     expect(seen.none).toEqual(["investigate", "confirmed"]);
   });
 
   it("[sma:k_wdb_manager] the debuggers of each failure and the re-check run in sessions of their own and the calling chat receives only the summary: status, cause, confidence, files, direction, tests, risks, evidence path", async () => {
     const seen = await observeC.k_wdb_manager();
     expect(seen.keys).toEqual(["affected_files", "confidence", "diagnosis", "evidence_path", "fix_direction", "fix_directions", "regression_tests", "risks", "root_cause", "status"]);
-    expect(seen.out).toEqual({ status: "confirmed", root_cause: "rc", confidence: 82, affected_files: ["a.ts:1"], fix_direction: "fd", regression_tests: ["t"], risks: ["r"], evidence_path: "ev.ndjson", fix_directions: ["fd"], diagnosis: "mech" });
+    expect(seen.out).toEqual({ status: "confirmed", root_cause: "rc", confidence: 82, affected_files: ["a.ts:1"], fix_direction: "fd", regression_tests: ["t"], risks: ["r"], evidence_path: "", fix_directions: ["fd"], diagnosis: "mech" });
     expect(seen.fanout).toEqual([["diagnose:child", "new"], ["diagnose:child", "new"]]);
     expect(seen.manyKeys).toEqual(["diagnoses", "status"]);
   });
@@ -235,9 +237,9 @@ describe("the stand-alone commands (n1215 … n1236)", () => {
 
   it("[sma:k_c_spike] a spike that answered its question and passed the check is reported answered with its decision and file; an experiment that did not answer, or a result that fails the check, is inconclusive and keeps no skill draft", async () => {
     const seen = await observeC.k_c_spike();
-    expect(seen.ok).toEqual({ path: ["experiment", "goal_check", "answered"], out: { status: "answered", decision: "yes, fts5 handles 1M rows", spike_path: "spikes/fts.md", skill_draft: "draft.md" } });
-    expect(seen.failed).toEqual({ path: ["experiment", "goal_check", "inconclusive"], status: "inconclusive", draft: "" });
-    expect(seen.none).toEqual({ path: ["experiment", "inconclusive"], status: "inconclusive", draft: "" });
+    expect(seen.ok).toEqual({ path: ["spike_new", "experiment", "write_spike", "write_skill", "goal_check", "answered"], out: { status: "answered", decision: "yes, fts5 handles 1M rows", spike_path: "spikes/fts.md", skill_draft: "draft.md", skill_path: "" } });
+    expect(seen.failed).toEqual({ path: ["spike_new", "experiment", "write_spike", "write_skill", "goal_check", "inconclusive"], status: "inconclusive", draft: "" });
+    expect(seen.none).toEqual({ path: ["spike_new", "experiment", "write_spike", "write_skill", "inconclusive"], status: "inconclusive", draft: "" });
   });
 
   it("[sma:k_c_quick] a small issue goes the short way — class, one task from the planner, the writer, a row in STATE, closed; a plan of several tasks or a high risk is proposed to the full chain and writes nothing; a failed writer ends it partial", async () => {

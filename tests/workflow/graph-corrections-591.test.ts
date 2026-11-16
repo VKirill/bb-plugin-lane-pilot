@@ -44,7 +44,7 @@ describe("graph corrections 591", () => {
         goal_check: { ok: false, verdict: "fail", reason: "deliverable missing" },
       },
     });
-    expect(pathOf(r)).toBe("gate preflight review open_pr hooks post_ship goal_check held_validate");
+    expect(pathOf(r)).toBe("gate preflight review_range review open_pr write_deploy_log state_mark hooks post_ship goal_check held_validate");
     expect(out(r)).toMatchObject({
       status: "held",
       pr_url: "https://x/pr/9",

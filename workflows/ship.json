@@ -104,6 +104,22 @@
       ]
     },
     {
+      "id": "review_range",
+      "type": "action",
+      "action": "lp.review_range",
+      "title": {
+        "en": "Resolve the review range",
+        "ru": "Диапазон ревью"
+      },
+      "params": {
+        "base": "{{$inputs.base}}",
+        "head": "{{$inputs.head}}"
+      },
+      "out": {
+        "range": "string"
+      }
+    },
+    {
       "id": "review",
       "type": "subworkflow",
       "workflow": "code-review",
@@ -116,7 +132,7 @@
         "status": "pass"
       },
       "with": {
-        "range": "{{$inputs.base}}..{{$inputs.head}}"
+        "range": "{{review_range.range}}"
       },
       "guards": {
         "maxVisits": 1
@@ -130,7 +146,7 @@
         "en": "Push and open the PR",
         "ru": "Пуш и PR"
       },
-      "prompt": "Push the phase branch (git push -u origin HEAD), write the PR body from the phase's SUMMARY.md and BOOK.md (what, why, how it was verified, receipts) into a temp file made with mktemp outside every repository, open it with gh pr create --body-file <that file> and delete the file. Return pr_url and deploy_entry — the one-line .agents/deploys.log record (date, phase, PR url) the code-owned writer appends. This read-only helper does not write files.",
+      "prompt": "Push the phase branch (git push -u origin HEAD), write the PR body from the phase's SUMMARY.md and BOOK.md (what, why, how it was verified, receipts) into a temp file made with mktemp outside every repository, open it with gh pr create --body-file <that file> and delete the file. Return pr_url and deploy_entry — the one-line .agents/deploys.log record (date, phase, PR url) the code-owned writer appends; the same code also sets the phase's status and last activity in .agents/planning/STATE.md. This read-only helper does not write files.",
       "out": {
         "pr_url": "string",
         "deploy_entry": "string"
@@ -291,6 +307,23 @@
       "skip_out": {
         "deploy_path": ""
       }
+    },
+    {
+      "id": "state_mark",
+      "type": "action",
+      "action": "lp.ship_state_mark",
+      "title": {
+        "en": "Mark the phase shipped in STATE.md",
+        "ru": "Отметить фазу отгруженной в STATE.md"
+      },
+      "params": {
+        "phase_id": "{{$inputs.phase_id}}",
+        "pr_url": "{{open_pr.pr_url}}"
+      },
+      "out": {
+        "marked": "bool",
+        "path": "string"
+      }
     }
   ],
   "edges": [
@@ -311,8 +344,12 @@
       "when": "!preflight.ready"
     },
     {
+      "from": "review_range",
+      "to": "review"
+    },
+    {
       "from": "preflight",
-      "to": "review",
+      "to": "review_range",
       "pass": "artifact"
     },
     {
@@ -333,13 +370,17 @@
     },
     {
       "from": "write_deploy_log",
-      "to": "hooks",
+      "to": "state_mark",
       "pass": "artifact"
     },
     {
       "from": "hooks",
       "to": "post_ship",
       "pass": "artifact"
+    },
+    {
+      "from": "state_mark",
+      "to": "hooks"
     },
     {
       "from": "post_ship",
@@ -371,7 +412,8 @@
           "held_by": []
         },
         "open_pr": {
-          "pr_url": "https://example/pr/1"
+          "pr_url": "https://example/pr/1",
+          "deploy_entry": "- 2026-11-16 ph x\n"
         },
         "lp.post_ship_hooks": {
           "count": 1,
@@ -382,13 +424,23 @@
         "post_ship": {
           "hooks_run": [],
           "hooks_failed": []
+        },
+        "review_range": {
+          "range": "main..HEAD"
+        },
+        "state_mark": {
+          "marked": false,
+          "path": ""
         }
       },
       "expect_path": [
         "gate",
         "preflight",
+        "review_range",
         "review",
         "open_pr",
+        "write_deploy_log",
+        "state_mark",
         "hooks",
         "post_ship",
         "goal_check",

@@ -9,13 +9,13 @@ import { runSim } from "./chain-harness";
  */
 describe("on-map command graph parity", () => {
   it("ai-integration-phase walks eval planning and both check exits", async () => {
-    const base = { select: { framework: "langchain", options: [] }, research: { notes: "criteria" }, eval_plan: { plan_path: "evals/PLAN.md" }, spec: { spec_path: "AI-SPEC.md" } };
+    const base = { select: { framework: "langchain", options: [], document: "# model notes\n" }, research: { notes: "criteria" }, eval_plan: { eval_plan: "evals/PLAN.md" }, spec: { document: "# AI-SPEC\n" } };
     const done = await runSim("ai-integration-phase", { input: { goal: "rank photos" }, stubs: { ...base, check: { ok: true, gaps: [] } } });
-    expect(pathOf(done)).toBe("select research eval_plan spec check done");
+    expect(pathOf(done)).toBe("select write_model research eval_plan spec spec_path write_spec check done");
     expect(done.called("eval_plan")).toHaveLength(1);
-    expect(out(done)).toMatchObject({ status: "done", spec_path: "AI-SPEC.md" });
+    expect(out(done)).toMatchObject({ status: "done" });
     const blocked = await runSim("ai-integration-phase", { input: { goal: "rank photos" }, stubs: { ...base, check: [{ ok: false, gaps: ["no guardrails"] }, { ok: false, gaps: ["still no guardrails"] }] } });
-    expect(pathOf(blocked)).toBe("select research eval_plan spec check spec check blocked");
+    expect(pathOf(blocked)).toBe("select write_model research eval_plan spec spec_path write_spec check spec spec_path write_spec check blocked");
     expect(out(blocked)).toMatchObject({ status: "blocked" });
   });
 
@@ -32,14 +32,14 @@ describe("on-map command graph parity", () => {
   });
 
   it("eval-review offers a fix for a flawed review and closes a sound one", async () => {
-    const flawed = await runSim("eval-review", { input: { phase_id: "ph_a" }, stubs: { review: { flawed: true, findings: [{ file: "AI-SPEC.md", severity: "high" }], review_path: ".agents/phases/ph_a/EVAL-REVIEW.md" } } });
-    expect(pathOf(flawed)).toBe("review offer flawed");
+    const flawed = await runSim("eval-review", { input: { phase_id: "ph_a" }, stubs: { review: { flawed: true, findings: [{ file: "AI-SPEC.md", severity: "high" }], document: "# EVAL-REVIEW\n" } } });
+    expect(pathOf(flawed)).toBe("review doc_path write_review offer flawed");
     expect(out(flawed)).toMatchObject({ status: "flawed", findings: [{ file: "AI-SPEC.md" }] });
-    const sound = await runSim("eval-review", { input: { phase_id: "ph_a" }, stubs: { review: { flawed: false, findings: [], review_path: ".agents/phases/ph_a/EVAL-REVIEW.md" }, goal_check: { ok: true, verdict: "pass" } } });
-    expect(pathOf(sound)).toBe("review goal_check sound");
+    const sound = await runSim("eval-review", { input: { phase_id: "ph_a" }, stubs: { review: { flawed: false, findings: [], document: "# EVAL-REVIEW\n" }, goal_check: { ok: true, verdict: "pass" } } });
+    expect(pathOf(sound)).toBe("review doc_path write_review goal_check sound");
     expect(out(sound)).toMatchObject({ status: "sound" });
-    const invalid = await runSim("eval-review", { input: { phase_id: "ph_a" }, stubs: { review: { flawed: false, findings: [], review_path: ".agents/phases/ph_a/EVAL-REVIEW.md" }, goal_check: { ok: false, verdict: "fail" } } });
-    expect(pathOf(invalid)).toBe("review goal_check flawed");
+    const invalid = await runSim("eval-review", { input: { phase_id: "ph_a" }, stubs: { review: { flawed: false, findings: [], document: "# EVAL-REVIEW\n" }, goal_check: { ok: false, verdict: "fail" } } });
+    expect(pathOf(invalid)).toBe("review doc_path write_review goal_check flawed");
     expect(out(invalid)).toMatchObject({ status: "flawed" });
   });
 
@@ -54,24 +54,24 @@ describe("on-map command graph parity", () => {
     const input = { goal: "Stats export", goals: [{ id: "g1", done_when: "export works", evidence: "tests pass" }] };
     const ready = { open_tasks: 0, unmerged: 0, gate_ok: true, running_attempts: 0, merged_commits: ["m1"], gate_state: "none", unmerged_seen: 0, uncovered_reqs: [], retro_living: "on", milestone_summary: "on", milestone_archive: "on" };
     const closed = await runSim("milestone-close", { input, stubs: { "lp.run_status": ready, retro: { status: "done" }, "lp.retro_living": { status: "written" }, "lp.close": { status: "closed", staged: 1 }, summary: { status: "done" }, "fs.write": { record_path: ".agents/milestones/run.md" }, "lp.milestone_archive": { folder: ".agents/milestones/stats", files: ["SUMMARY.md"], kept: true }, "lp.run_close": { archived: true } }, humans: { approve_knowledge: { answer_kind: "approved", approved_ids: ["k1"] } } });
-    expect(pathOf(closed)).toBe("status retro living close summary approve_knowledge record snapshot archive closed");
+    expect(pathOf(closed)).toBe("status retro write_project write_retro living close summary approve_knowledge record snapshot archive closed");
     expect(out(closed)).toMatchObject({ status: "closed", candidates_approved: 1 });
     for (const node of ["retro", "living", "close", "summary", "approve_knowledge", "record", "snapshot", "archive"]) expect(closed.called(node)).toHaveLength(1);
     const stop = await runSim("milestone-close", { input, stubs: { "lp.run_status": { ...ready, gate_ok: false } }, humans: { ask_finish: { answer_kind: "finish_first" } } });
     expect(pathOf(stop)).toBe("status ask_finish not_ready");
     expect(out(stop)).toMatchObject({ status: "not_ready" });
     const snapshotOnly = await runSim("milestone-close", { input, stubs: { "lp.run_status": { ...ready, retro_living: "off", milestone_summary: "off", milestone_archive: "on" }, "lp.close": { status: "closed", staged: 1 } }, humans: { approve_knowledge: { answer_kind: "approved", approved_ids: ["k1"] } } });
-    expect(pathOf(snapshotOnly)).toBe("status retro close approve_knowledge snapshot archive closed");
+    expect(pathOf(snapshotOnly)).toBe("status retro write_project write_retro close approve_knowledge snapshot archive closed");
     const recordOnly = await runSim("milestone-close", { input, stubs: { "lp.run_status": { ...ready, retro_living: "on", milestone_summary: "off", milestone_archive: "off" }, "lp.close": { status: "closed", staged: 1 } }, humans: { approve_knowledge: { answer_kind: "approved", approved_ids: ["k1"] } } });
-    expect(pathOf(recordOnly)).toBe("status retro living close approve_knowledge record archive closed");
+    expect(pathOf(recordOnly)).toBe("status retro write_project write_retro living close approve_knowledge record archive closed");
     const halted = await runSim("milestone-close", { input, stubs: { "lp.run_status": { ...ready, retro_living: "off" }, "lp.close": { status: "unmet", report_path: "reports/h.md" } } });
-    expect(pathOf(halted)).toBe("status retro close halted");
+    expect(pathOf(halted)).toBe("status retro write_project write_retro close halted");
     expect(out(halted)).toMatchObject({ status: "halted" });
   });
 
   it("new-milestone archives first, then frames the phases", async () => {
     const result = await runSim("new-milestone", { input: { goal: "v2 billing" }, stubs: { archive: { folder: ".agents/planning/milestones/v1", files: ["ROADMAP.md"], kept: false }, frame: { phases: ["1 billing", "2 invoices"] } } });
-    expect(pathOf(result)).toBe("archive frame done");
+    expect(pathOf(result)).toBe("archive frame write_requirements add_phases done");
     expect(out(result)).toMatchObject({ status: "done", phases: ["1 billing", "2 invoices"] });
   });
 
@@ -96,8 +96,8 @@ describe("on-map command graph parity", () => {
   });
 
   it("project-start follows the full first-start route and can resume an existing tree", async () => {
-    const first = await runSim("project-start", { input: {}, stubs: { "lp.tree_counts": { enabled: "on" }, "lp.state_probe": { has_value_map: false, has_roadmap: false, has_profile: false }, value_map: { value_map: "for shop owners" }, preview: { stack: {}, memory: {}, profile: {} }, "lp.profile_write": { refused: [], set: ["stack"], reasons: [] }, research: { research_notes: "notes" }, requirements: { requirements: ["R1"] }, recap: { next_steps: ["a", "b"] } }, humans: { ask: { answer_kind: "answered", answer: "owner details" } } });
-    expect(pathOf(first)).toBe("tree probe value_map preview profile_write ask research requirements recap done");
+    const first = await runSim("project-start", { input: {}, stubs: { "lp.tree_counts": { enabled: "on" }, "lp.state_probe": { has_value_map: false, has_roadmap: false, has_profile: false }, value_map: { document: "# for shop owners\n" }, preview: { stack: {}, memory: {}, profile: {} }, "lp.profile_write": { refused: [], set: ["stack"], reasons: [] }, research: { research_notes: "notes" }, requirements: { requirements: ["R1"], document: "# req\n" }, recap: { next_steps: ["a", "b"], roadmap_draft: "# roadmap\n", project_document: "# project\n", phases: ["1 first"] } }, humans: { ask: { answer_kind: "answered", answer: "owner details" } } });
+    expect(pathOf(first)).toBe("tree probe value_map write_value_map preview profile_write ask research write_research_stack write_research_features write_research_architecture write_research_pitfalls requirements write_requirements recap write_roadmap write_project add_phases done");
     expect(out(first)).toMatchObject({ status: "done", next_steps: ["a", "b"] });
     for (const node of ["probe", "value_map", "preview", "profile_write", "ask", "research", "requirements", "recap"]) expect(first.called(node)).toHaveLength(1);
     const resumed = await runSim("project-start", { input: {}, stubs: { "lp.tree_counts": { enabled: "on" }, "lp.state_probe": { has_value_map: true, has_roadmap: true, has_profile: true } } });
@@ -149,8 +149,8 @@ describe("on-map command graph parity", () => {
   });
 
   it("ship covers review-enabled publication and the integration gate hold", async () => {
-    const shipped = await runSim("ship", { input: { phase_id: "ph_a", review: true }, stubs: { gate: { ok: true, failing: [] }, preflight: { ready: true, held_by: [] }, "code-review": { status: "pass", findings: [] }, open_pr: { pr_url: "https://x/pr/1" }, "lp.post_ship_hooks": { count: 1, files: ["deploys.log"] }, post_ship: { status: "written" }, goal_check: { ok: true, verdict: "pass" } } });
-    expect(pathOf(shipped)).toBe("gate preflight review open_pr hooks post_ship goal_check shipped");
+    const shipped = await runSim("ship", { input: { phase_id: "ph_a", review: true }, stubs: { gate: { ok: true, failing: [] }, preflight: { ready: true, held_by: [] }, "code-review": { status: "pass", findings: [] }, open_pr: { pr_url: "https://x/pr/1", deploy_entry: "- 2026-11-16 ph_a https://x/pr/1\n" }, "lp.post_ship_hooks": { count: 1, files: ["deploys.log"] }, post_ship: { status: "written" }, goal_check: { ok: true, verdict: "pass" } } });
+    expect(pathOf(shipped)).toBe("gate preflight review_range review open_pr write_deploy_log state_mark hooks post_ship goal_check shipped");
     expect(out(shipped)).toMatchObject({ status: "shipped", pr_url: "https://x/pr/1" });
     expect(shipped.called("review")).toHaveLength(1);
     expect(shipped.called("post_ship")).toHaveLength(1);
@@ -158,22 +158,22 @@ describe("on-map command graph parity", () => {
     expect(pathOf(held)).toBe("gate held_gate");
     expect(out(held)).toMatchObject({ status: "held" });
     const reviewHeld = await runSim("ship", { input: { phase_id: "ph_a", review: true }, stubs: { gate: { ok: true, failing: [] }, preflight: { ready: true, held_by: [] }, "code-review": { status: "rework", findings: [{ file: "src/a.ts" }] } } });
-    expect(pathOf(reviewHeld)).toBe("gate preflight review held_review");
+    expect(pathOf(reviewHeld)).toBe("gate preflight review_range review held_review");
     expect(out(reviewHeld)).toMatchObject({ status: "held" });
-    const goalHeld = await runSim("ship", { input: { phase_id: "ph_a", review: false }, stubs: { gate: { ok: true, failing: [] }, preflight: { ready: true, held_by: [] }, open_pr: { pr_url: "https://x/pr/2" }, "lp.post_ship_hooks": { count: 0, files: [] }, goal_check: { ok: false, verdict: "fail" } } });
-    expect(pathOf(goalHeld)).toBe("gate preflight review open_pr hooks post_ship goal_check held_validate");
+    const goalHeld = await runSim("ship", { input: { phase_id: "ph_a", review: false }, stubs: { gate: { ok: true, failing: [] }, preflight: { ready: true, held_by: [] }, open_pr: { pr_url: "https://x/pr/2", deploy_entry: "- 2026-11-16 ph_a https://x/pr/2\n" }, "lp.post_ship_hooks": { count: 0, files: [] }, goal_check: { ok: false, verdict: "fail" } } });
+    expect(pathOf(goalHeld)).toBe("gate preflight review_range review open_pr write_deploy_log state_mark hooks post_ship goal_check held_validate");
     expect(out(goalHeld)).toMatchObject({ status: "held", pr_url: "https://x/pr/2" });
   });
 
   it("spike distinguishes an answered experiment from an inconclusive one", async () => {
-    const answered = await runSim("spike", { input: { question: "can FTS hold 1M rows" }, stubs: { experiment: { answered: true, decision: "yes", spike_path: "spikes/fts.md", skill_draft: "" }, goal_check: { ok: true, verdict: "pass" } } });
-    expect(pathOf(answered)).toBe("experiment goal_check answered");
+    const answered = await runSim("spike", { input: { question: "can FTS hold 1M rows" }, stubs: { experiment: { answered: true, decision: "yes", document: "# spike\n", skill_draft: "" }, goal_check: { ok: true, verdict: "pass" } } });
+    expect(pathOf(answered)).toBe("spike_new experiment write_spike write_skill goal_check answered");
     expect(out(answered)).toMatchObject({ status: "answered", decision: "yes" });
-    const unclear = await runSim("spike", { input: { question: "can FTS hold 1M rows" }, stubs: { experiment: { answered: false, decision: "unclear", spike_path: "spikes/fts.md", skill_draft: "draft.md" } } });
-    expect(pathOf(unclear)).toBe("experiment inconclusive");
+    const unclear = await runSim("spike", { input: { question: "can FTS hold 1M rows" }, stubs: { experiment: { answered: false, decision: "unclear", document: "# spike\n", skill_draft: "draft.md" } } });
+    expect(pathOf(unclear)).toBe("spike_new experiment write_spike write_skill inconclusive");
     expect(out(unclear)).toMatchObject({ status: "inconclusive" });
-    const failedCheck = await runSim("spike", { input: { question: "can FTS hold 1M rows" }, stubs: { experiment: { answered: true, decision: "yes", spike_path: "spikes/fts.md", skill_draft: "" }, goal_check: { ok: false, verdict: "fail" } } });
-    expect(pathOf(failedCheck)).toBe("experiment goal_check inconclusive");
+    const failedCheck = await runSim("spike", { input: { question: "can FTS hold 1M rows" }, stubs: { experiment: { answered: true, decision: "yes", document: "# spike\n", skill_draft: "" }, goal_check: { ok: false, verdict: "fail" } } });
+    expect(pathOf(failedCheck)).toBe("spike_new experiment write_spike write_skill goal_check inconclusive");
     expect(out(failedCheck)).toMatchObject({ status: "inconclusive" });
   });
 
@@ -205,14 +205,14 @@ describe("on-map command graph parity", () => {
   });
 
   it("validate-phase reports gaps and closes a clean audit", async () => {
-    const clean = await runSim("validate-phase", { input: { phase_id: "ph_a1b2c3" }, stubs: { audit: { gaps: [], validation_path: "VALIDATION.md", sampled: 3 }, goal_check: { ok: true, verdict: "pass" } } });
-    expect(pathOf(clean)).toBe("audit goal_check done");
+    const clean = await runSim("validate-phase", { input: { phase_id: "ph_a1b2c3" }, stubs: { audit: { gaps: [], document: "# VALIDATION\n", sampled: 3 }, goal_check: { ok: true, verdict: "pass" } } });
+    expect(pathOf(clean)).toBe("audit doc_path write_validation goal_check done");
     expect(out(clean)).toMatchObject({ status: "done", gaps: [] });
-    const gaps = await runSim("validate-phase", { input: { phase_id: "ph_a1b2c3" }, stubs: { audit: { gaps: ["p1: existence-only"], validation_path: "VALIDATION.md", sampled: 1 } } });
-    expect(pathOf(gaps)).toBe("audit gaps");
+    const gaps = await runSim("validate-phase", { input: { phase_id: "ph_a1b2c3" }, stubs: { audit: { gaps: ["p1: existence-only"], document: "# VALIDATION\n", sampled: 1 } } });
+    expect(pathOf(gaps)).toBe("audit doc_path write_validation gaps");
     expect(out(gaps)).toMatchObject({ status: "gaps", gaps: ["p1: existence-only"] });
-    const failedGoal = await runSim("validate-phase", { input: { phase_id: "ph_a1b2c3" }, stubs: { audit: { gaps: [], validation_path: "VALIDATION.md", sampled: 3 }, goal_check: { ok: false, verdict: "fail" } } });
-    expect(pathOf(failedGoal)).toBe("audit goal_check gaps");
+    const failedGoal = await runSim("validate-phase", { input: { phase_id: "ph_a1b2c3" }, stubs: { audit: { gaps: [], document: "# VALIDATION\n", sampled: 3 }, goal_check: { ok: false, verdict: "fail" } } });
+    expect(pathOf(failedGoal)).toBe("audit doc_path write_validation goal_check gaps");
     expect(out(failedGoal)).toMatchObject({ status: "gaps" });
   });
 });
