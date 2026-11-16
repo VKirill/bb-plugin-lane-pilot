@@ -1,13 +1,18 @@
 import { createHash } from "node:crypto";
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, rmSync } from "node:fs";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 import { boundedReadCall } from "../helpers/bounded-read";
 import { coreFileWrite, type FileStore } from "../helpers/core-files";
 import { createFakeWorktreeHost } from "../own-worktree-host";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import { WorkflowEngine } from "@lane-pilot/workflow-engine";
 import plugin from "../../server";
 import { QA_HOST_KEY } from "@lane-pilot/settings-catalog";
 import type { TaskV2 } from "../../src/rooms/contracts";
 import { createRun, getAttempt, getRun, listStageReceipts, openDatabase, saveProjectSetting, savePrototypeConfig, setRunThread } from "../../src/rooms/plugin-db";
+import { runCommand } from "../../src/rooms/host-worker/host-handlers";
 
 /**
  * The dispatch pipeline runs on the workflow engine and nowhere else. Each scenario states what the dispatch must answer, which
@@ -17,7 +22,9 @@ import { createRun, getAttempt, getRun, listStageReceipts, openDatabase, savePro
 const projectId = "eq-project";
 const pmThreadId = "eq-pm";
 const runId = "eq-run";
-const config = { projectId, hostId: "eq-host", pmWorkspacePath: "/tmp/eq-pm", writerWorkspacePath: "/tmp/eq-writer", pmProviderId: "codex", pmModel: "gpt-6-luna", writerProviderId: "codex", writerModel: "gpt-6-luna" };
+const writerWorkspacePath = mkdtempSync(join(tmpdir(), "lp-equivalence-writer-"));
+execFileSync("git", ["init", "-q"], { cwd: writerWorkspacePath });
+const config = { projectId, hostId: "eq-host", pmWorkspacePath: "/tmp/eq-pm", writerWorkspacePath, pmProviderId: "codex", pmModel: "gpt-6-luna", writerProviderId: "codex", writerModel: "gpt-6-luna" };
 const task: TaskV2 = {
   schema_version: 2, display_title: "Тестовая задача", kind: "feature", area: "feature:eq-task", id: "eq-task", title: "Write a fixture", risk: "low", lane: "writer", project_cwd: config.writerWorkspacePath, read_first: ["README.md L1-L2"],
   interfaces: ["note.txt exists"], invariants: ["Only write note.txt"], out_of_scope: ["Plugin source"], expected_outputs: ["note.txt"], owns_paths: ["note.txt"],
@@ -79,13 +86,14 @@ async function runScenario(scenario: Scenario) {
           if (request.prompt === undefined && Array.isArray(request.input)) request.prompt = (request.input as Array<{ text?: string }>).map((part) => part.text ?? "").join("\n\n");
           spawned.push(request);
           const metadata = request.pluginMetadata as Record<string, unknown>;
-          const id = metadata.role === "writer" ? `writer-thread-${++nextWriter}` : metadata.stageId === "pm-read" ? "pm-read-thread" : metadata.stageId === "plan-critique" ? "critic-thread"
+          const id = metadata.role === "workspace-provisioner" ? "workspace-provisioner-thread" : metadata.role === "writer" ? `writer-thread-${++nextWriter}` : metadata.stageId === "pm-read" ? "pm-read-thread" : metadata.stageId === "plan-critique" ? "critic-thread"
             : metadata.stageId === "specialist-review" ? "specialist-thread" : `${String(metadata.stageId ?? metadata.role)}-thread`;
           meta.set(id, metadata);
-          return { id };
+          return metadata.role === "workspace-provisioner" ? { id, environmentId: "eq-writer-env" } : { id };
         },
         wait: async () => ({ matched: true, thread: { status: "idle" } }),
-        get: async ({ threadId }) => ({ id: threadId, status: "idle", projectId, sourceThreadId: pmThreadId, lifecycleOwnerThreadId: pmThreadId, ...(threadId === pmThreadId ? { environmentId: "eq-pm-env" } : {}) }) as never,
+        get: async ({ threadId }) => ({ id: threadId, status: "idle", projectId, sourceThreadId: pmThreadId, lifecycleOwnerThreadId: pmThreadId,
+          ...((threadId === pmThreadId || threadId === "workspace-provisioner-thread") ? { environmentId: threadId === pmThreadId ? "eq-pm-env" : "eq-writer-env" } : {}) }) as never,
         events: { list: async ({ threadId }) => [{ type: "turn/started", threadId, seq: 1 }, { type: "turn/completed", threadId, seq: 2, data: { status: "completed" } },
           ...(scenario.usage ? [{ type: "thread/tokenUsage/updated", threadId, seq: 3, createdAt: 2, data: { turnId: "t1", tokenUsage: { last: { inputTokens: 600, outputTokens: 400, totalTokens: 1000 }, total: { inputTokens: 600, outputTokens: 400, totalTokens: 1000 } } } }] : []),
           ...(asked.has(threadId) ? [{ type: "client/turn/requested", threadId, seq: 10, createdAt: asked.get(threadId) }, { type: "turn/started", threadId, seq: 11 }, { type: "turn/completed", threadId, seq: 12, data: { status: "completed" } }] : [])] },
@@ -102,6 +110,13 @@ async function runScenario(scenario: Scenario) {
         list: async () => [...meta.keys()].map((id) => ({ id })) as never,
         queue: { list: async () => [] },
         queuedMessages: { delete: async () => ({ ok: true }) },
+      },
+      projects: {
+        get: async ({ projectId: id }: { projectId: string }) => ({
+          id,
+          name: "Equivalence fixture",
+          sources: [{ hostId: config.hostId, path: config.writerWorkspacePath, isDefault: true }],
+        }),
       },
       plugins: {
         experimental_discoverRpc: async ({ method }: { method: string }) => { throw new Error(`no plugin publishes ${method}`); },
@@ -161,7 +176,13 @@ async function runScenario(scenario: Scenario) {
         path.endsWith("README.md") ? readme : path.endsWith(".txt") ? "reviewed output\n" : null);
       if (call.method !== "runCommand") throw new Error(`unexpected host method ${call.method}`);
       const command = String(input.command ?? "");
-      if (command.includes("porcelain")) { porcelain += 1; return { hostId: config.hostId, exitCode: 0, stdout: JSON.stringify(porcelain === 1 ? [] : [{ path: "note.txt", sha256: noteSha }]), stderr: "" }; }
+      // Project-Git preflight uses the host's real probe command. Keep the fixture on that contract;
+      // only the later writer porcelain is synthetic.
+      if (command.includes("PAYLOAD =")) return runCommand(input as never, undefined as never);
+      if (command.includes("porcelain")) {
+        porcelain += 1;
+        return { hostId: config.hostId, exitCode: 0, stdout: JSON.stringify(porcelain <= 2 ? [] : [{ path: "note.txt", sha256: noteSha }]), stderr: "" };
+      }
       return { hostId: config.hostId, exitCode: 0, stdout: "", stderr: "" };
     },
   }, config.hostId);
@@ -170,7 +191,7 @@ async function runScenario(scenario: Scenario) {
   savePrototypeConfig(db, config);
   const settings = { "plan_critique.min_score": 0, "plan_critique.min_write_tasks": 1, "memory.enabled": false, "project_life.enabled": false, "docs.enabled": false, ...scenario.settings };
   for (const [key, value] of Object.entries(settings)) saveProjectSetting(db, projectId, key, value);
-  createRun(db, runId, projectId, "bb", config.writerWorkspacePath, scenario.runGate ?? "none");
+  createRun(db, runId, projectId, "bb", config.writerWorkspacePath, scenario.runGate ?? "none", undefined, config.hostId);
   setRunThread(db, runId, pmThreadId);
   await plugin(bb);
   const reply = JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",
@@ -231,6 +252,7 @@ const scenarios: Scenario[] = [
 ];
 
 afterEach(() => { vi.restoreAllMocks(); });
+afterAll(() => rmSync(writerWorkspacePath, { recursive: true, force: true }));
 
 /** The stage receipts each scenario leaves (`stageId:state`, sorted by stage id). The after-acceptance stages are skipped here because memory and project life are off in the fixture. */
 const STAGES: Record<string, string[]> = {
@@ -261,7 +283,7 @@ describe("the dispatch runs on the workflow engine", () => {
         expect(run.reply.state, JSON.stringify(run.reply).slice(0, 600)).toBe(scenario.expect.state);
         if (scenario.expect.reason) expect(String(run.reply.reason)).toMatch(scenario.expect.reason);
       }
-      if (scenario.finish) expect((run.waited as { state: string }).state).toBe("accepted");
+      if (scenario.finish) expect((run.waited as { state: string }).state, JSON.stringify(run.waited)).toBe("accepted");
       expect(stageStates(run)).toEqual(STAGES[scenario.name]);
       if (scenario.cancelDuringPmRead) {
         // The stage verdict that came after the cancel neither blocks the run nor rewrites the writer stages the cancel closed.
