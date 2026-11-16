@@ -176,7 +176,7 @@
         "en": "Persist browser capture",
         "ru": "Сохранить снимок браузера"
       },
-      "path": ".agents/marketing/cro/{{slug}}/",
+      "path": ".agents/marketing/cro/{{slug}}/{{run_id}}/",
       "contents": {
         "capture.json": {
           "data": "{{capture.capture_data}}",

@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { roleSpec } from "../../src/rooms/workflow/server/workflow-agent";
 import { chain, reply, runHomeWorld } from "./run-home-world";
 
-const captureGraph = (path = ".agents/marketing/cro/{{slug}}/") => chain({
+const captureGraph = (path = ".agents/marketing/cro/{{slug}}/{{run_id}}/") => chain({
   inputs: [{ name: "landing_url", type: "string", required: true }],
   outputs: [{ name: "capture_path", type: "string", required: false }],
   nodes: [
@@ -133,7 +133,7 @@ describe("mkt landing CRO capture contract", () => {
       const summary = await world.start(captureGraph(), { landing_url: "https://example.test/restore" }).done;
       expect(summary.status).toBe("succeeded");
       const capturePath = String(summary.output?.capture_path);
-      expect(capturePath).toMatch(/^\.agents\/marketing\/cro\/run\/capture\.json$/);
+      expect(capturePath).toBe(`.agents/marketing/cro/run/${summary.runId}/capture.json`);
       expect(existsSync(join(world.checkout, capturePath))).toBe(true);
       expect(JSON.parse(readFileSync(join(world.checkout, capturePath), "utf8"))).toEqual({
         data: {
@@ -175,7 +175,7 @@ describe("mkt landing CRO capture contract", () => {
 
       // The capture agent's adversarial screens_path is stale and unreadable. The real
       // consumer still succeeds from the fs.write receipt's capture.json bytes.
-      const persisted = JSON.parse(readFileSync(join(world.checkout, ".agents/marketing/cro/run/capture.json"), "utf8"));
+      const persisted = JSON.parse(readFileSync(join(world.checkout, `.agents/marketing/cro/run/${summary.runId}/capture.json`), "utf8"));
       expect(persisted.data).toEqual(browserCapture);
       expect(summary.output).toMatchObject({ mismatches: 0, price_mismatch: false });
     } finally {
