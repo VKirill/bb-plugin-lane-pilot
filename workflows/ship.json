@@ -260,6 +260,17 @@
         "held_by": "['external review asked for rework or blocked the ship']",
         "hooks_failed": "[]"
       }
+    },
+    {
+      "id": "held_validate",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "held",
+        "pr_url": "open_pr.pr_url",
+        "held_by": "['deliverable validation failed after the PR was opened', goal_check.reason]",
+        "hooks_failed": "post_ship.hooks_failed"
+      }
     }
   ],
   "edges": [
@@ -317,7 +328,7 @@
     },
     {
       "from": "goal_check",
-      "to": "held"
+      "to": "held_validate"
     }
   ],
   "test": {

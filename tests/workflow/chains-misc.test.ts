@@ -50,8 +50,8 @@ describe("debug", () => {
   it("a partial result is returned as partial; from_failures takes the failures of another chain without asking", async () => {
     const partial = await runSim("debug", { input: { symptom }, stubs: { investigate: { status: "partial", root_cause: "maybe the parser", confidence: 50 } } });
     expect(pathOf(partial)).toBe("ask_symptoms investigate partial");
-    const fromFailures = await runSim("debug", { input: { symptom: [{ file: "a.ts", severity: "high", evidence: "x" }], mode: "from_failures" }, stubs: { investigate: found, verify_cause: { confirmed: true } } });
-    expect(fromFailures.skipped).toEqual(["ask_symptoms", "verify_cause"]);
+    const fromFailures = await runSim("debug", { input: { failures: [{ file: "a.ts", severity: "high", evidence: "x" }], mode: "from_failures" } });
+    expect(fromFailures.skipped).toEqual(["ask_symptoms"]);
     expect(out(fromFailures)).toMatchObject({ status: "confirmed" });
   });
 });

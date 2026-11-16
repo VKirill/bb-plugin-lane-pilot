@@ -19,19 +19,19 @@ describe("hollow sign-2 workflow branches: debug", () => {
 
   it("takes failure reports to the real per-failure diagnosis join and records diagnosed", async () => {
     const r = await runSim("debug", {
-      input: { symptom: [{ file: "src/parser.ts", severity: "high", evidence: "empty row" }, { file: "src/import.ts", severity: "high", evidence: "undefined" }], mode: "from_failures" },
+      input: { failures: [{ file: "src/parser.ts", severity: "high", evidence: "empty row" }, { file: "src/import.ts", severity: "high", evidence: "undefined" }], mode: "from_failures" },
     });
     expect(pathOf(r)).toBe("ask_symptoms diagnose diagnosed");
     expect(r.called("diagnose:child")).toHaveLength(2);
 
     const resumed = await runSim("debug", {
-      input: { symptom: [{ file: "src/parser.ts", severity: "high", evidence: "empty row" }, { file: "src/import.ts", severity: "high", evidence: "undefined" }], mode: "from_failures", session: "failure-session" },
+      input: { failures: [{ file: "src/parser.ts", severity: "high", evidence: "empty row" }, { file: "src/import.ts", severity: "high", evidence: "undefined" }], mode: "from_failures", session: "failure-session" },
       stubs: { session: { found: true, path: ".agents/planning/debug/failure-session.md" } },
     });
     expect(pathOf(resumed)).toBe("ask_symptoms session diagnose diagnosed");
 
     const fallback = await runSim("debug", {
-      input: { symptom: [{ file: "src/parser.ts", severity: "high", evidence: "empty row" }, { file: "src/import.ts", severity: "high", evidence: "undefined" }], mode: "from_failures", session: "missing-failure-session" },
+      input: { failures: [{ file: "src/parser.ts", severity: "high", evidence: "empty row" }, { file: "src/import.ts", severity: "high", evidence: "undefined" }], mode: "from_failures", session: "missing-failure-session" },
       stubs: { session: { found: false, path: ".agents/planning/debug/missing-failure-session.md" } },
     });
     expect(pathOf(fallback)).toBe("ask_symptoms session diagnose diagnosed");

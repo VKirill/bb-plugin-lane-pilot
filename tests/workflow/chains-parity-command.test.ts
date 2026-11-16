@@ -24,10 +24,10 @@ describe("on-map command graph parity", () => {
     expect(pathOf(planned)).toBe("plan planned");
     expect(out(planned)).toMatchObject({ status: "planned", moved: ["ph_a"] });
     const applied = await runSim("cleanup", { input: { dry_run: false }, stubs: { plan: { moved: ["ph_a"], applied: true }, goal_check: { ok: true, verdict: "pass" } } });
-    expect(pathOf(applied)).toBe("plan goal_check done");
+    expect(pathOf(applied)).toBe("plan save goal_check done");
     expect(out(applied)).toMatchObject({ status: "done", moved: ["ph_a"] });
     const blocked = await runSim("cleanup", { input: { dry_run: false }, stubs: { plan: { moved: ["ph_a"], applied: true }, goal_check: { ok: false, verdict: "fail", reason: "not clean" } } });
-    expect(pathOf(blocked)).toBe("plan goal_check blocked");
+    expect(pathOf(blocked)).toBe("plan save goal_check blocked");
     expect(out(blocked)).toMatchObject({ status: "blocked" });
   });
 
@@ -151,8 +151,8 @@ describe("on-map command graph parity", () => {
     expect(pathOf(reviewHeld)).toBe("gate preflight review held_review");
     expect(out(reviewHeld)).toMatchObject({ status: "held" });
     const goalHeld = await runSim("ship", { input: { phase_id: "ph_a", review: false }, stubs: { gate: { ok: true, failing: [] }, preflight: { ready: true, held_by: [] }, open_pr: { pr_url: "https://x/pr/2" }, "lp.post_ship_hooks": { count: 0, files: [] }, goal_check: { ok: false, verdict: "fail" } } });
-    expect(pathOf(goalHeld)).toBe("gate preflight review open_pr hooks post_ship goal_check held");
-    expect(out(goalHeld)).toMatchObject({ status: "held" });
+    expect(pathOf(goalHeld)).toBe("gate preflight review open_pr hooks post_ship goal_check held_validate");
+    expect(out(goalHeld)).toMatchObject({ status: "held", pr_url: "https://x/pr/2" });
   });
 
   it("spike distinguishes an answered experiment from an inconclusive one", async () => {

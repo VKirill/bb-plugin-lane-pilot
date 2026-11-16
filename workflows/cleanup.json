@@ -74,6 +74,23 @@
       ]
     },
     {
+      "id": "save",
+      "type": "action",
+      "action": "fs.write",
+      "title": {
+        "en": "Write the cleanup report",
+        "ru": "Записать отчёт об уборке"
+      },
+      "path": "plans/cleanup-{{run_id}}.json",
+      "reads": [
+        "plan.moved",
+        "plan.applied"
+      ],
+      "out": {
+        "cleanup_path": "string"
+      }
+    },
+    {
       "id": "done",
       "type": "action",
       "action": "emit",
@@ -119,7 +136,7 @@
   "edges": [
     {
       "from": "plan",
-      "to": "goal_check",
+      "to": "save",
       "pass": "artifact",
       "when": "plan.applied"
     },
@@ -127,6 +144,14 @@
       "from": "plan",
       "to": "planned",
       "pass": "artifact"
+    },
+    {
+      "from": "save",
+      "to": "goal_check",
+      "pass": "artifact",
+      "with": {
+        "path": "save.cleanup_path"
+      }
     },
     {
       "from": "goal_check",

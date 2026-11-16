@@ -194,7 +194,7 @@
         "diagnosis": ""
       },
       "with": {
-        "symptom": "{{classify.code_defects}}",
+        "failures": "{{classify.code_defects}}",
         "mode": "from_failures"
       },
       "guards": {

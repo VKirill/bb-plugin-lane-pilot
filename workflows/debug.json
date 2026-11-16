@@ -39,7 +39,11 @@
   "inputs": {
     "symptom": {
       "type": "string|Finding[]",
-      "note": "что ожидалось / что случилось / ошибка / с какого момента / как воспроизвести; при mode=from_failures - список провалов"
+      "note": "что ожидалось / что случилось / ошибка / с какого момента / как воспроизвести; текстовый симптом - список провалов для mode=from_failures передаётся в `failures`"
+    },
+    "failures": {
+      "type": "Finding[]",
+      "note": "mode=from_failures: список провалов/пробелов, по одному отладчику на каждый; текстовый симптом остаётся на пути investigate"
     },
     "mode": {
       "type": "standalone|from_failures",
@@ -205,7 +209,7 @@
     {
       "id": "diagnose",
       "type": "parallel",
-      "for_each": "$inputs.symptom",
+      "for_each": "$inputs.failures",
       "max_fan_out": 6,
       "onOverflow": "truncate",
       "title": {
@@ -383,7 +387,7 @@
       "from": "ask_symptoms",
       "to": "diagnose",
       "pass": "artifact",
-      "when": "$inputs.mode == 'from_failures' && $inputs.symptom.length > 1"
+      "when": "$inputs.mode == 'from_failures' && $inputs.failures.length > 0"
     },
     {
       "from": "ask_symptoms",
@@ -394,7 +398,7 @@
       "from": "session",
       "to": "diagnose",
       "pass": "artifact",
-      "when": "session.found && $inputs.mode == 'from_failures' && $inputs.symptom.length > 1"
+      "when": "session.found && $inputs.mode == 'from_failures' && $inputs.failures.length > 0"
     },
     {
       "from": "session",
@@ -412,7 +416,7 @@
       "from": "session",
       "to": "diagnose",
       "pass": "artifact",
-      "when": "$inputs.mode == 'from_failures' && $inputs.symptom.length > 1"
+      "when": "$inputs.mode == 'from_failures' && $inputs.failures.length > 0"
     },
     {
       "from": "session",
@@ -543,7 +547,7 @@
       "variant_from_failures": {
         "input": {
           "mode": "from_failures",
-          "symptom": [
+          "failures": [
             "check p1 red: lint fails",
             "check p2 red: test fails"
           ],

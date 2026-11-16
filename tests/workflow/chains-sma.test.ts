@@ -50,7 +50,7 @@ describe("SMA command workflows", () => {
 
   it("cleanup: a dry run plans, an applied one is done", async () => {
     expect(pathOf(await runSim("cleanup", { input: { dry_run: true }, stubs: { plan: { moved: ["ph_a"], applied: false } } }))).toBe("plan planned");
-    expect(pathOf(await runSim("cleanup", { input: { dry_run: false }, stubs: { plan: { moved: ["ph_a"], applied: true } } }))).toBe("plan goal_check done");
+    expect(pathOf(await runSim("cleanup", { input: { dry_run: false }, stubs: { plan: { moved: ["ph_a"], applied: true } } }))).toBe("plan save goal_check done");
   });
 
   it("new-milestone: the frame and its phases", async () => {
