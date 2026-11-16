@@ -6,7 +6,7 @@ import { sha256 } from "../../tasks";
 import { projectRoleField } from "../../runs/server";
 import { loadProjectSettings } from "../../storage";
 import { configuredSetting } from "../../contracts/server";
-import { modelCatalogOf, resolveSpawnModel, spawnUsageOf, graphStepMetadata } from "../../platform/server";
+import { documentaryGateOf, modelCatalogOf, resolveSpawnModel, spawnUsageOf, graphStepMetadata } from "../../platform/server";
 import { docsRepairPrompt, docsSelection, docsSinceEpoch, flowDocsWritable, nightlyDocsPrompt, nightlyDocsWritable, parseDocsSettings } from "../docs";
 import type { DocsUnit } from "../docs";
 import { blockingDocsFindings, buildBacklinks, buildDocsIndex, citedFiles, docsCompletenessGaps, isDesignCanon, isDocsIndex, lintCitationClaims, lintDocsPages, oversizedPageFindings, pagesToRefresh, uncataloguedPages, withCitedSources, withVerifiedConfidence } from "../docs-lint";
@@ -132,7 +132,10 @@ runId:string;stepKey:string;nodeId:string},stop:()=>string|null,retry=""):Promis
     if(!record){
       if(!plan) throw new Error("docs unit has neither a plan nor saved progress");
       const {settings,docs}=docsSettingsOf(n,i.projectId,i.scopes);
-      const selection=docsSelection(settings,resolveSpawnModel({role:"docs-maintainer",settings,catalog:modelCatalogOf(ctx).peek(),hostId:place.hostId,usage:spawnUsageOf(ctx)}));
+      const docProved=await bestEffort(bb.log,"docs capability gate",Promise.resolve().then(()=>documentaryGateOf(bb)?.proved(i.projectId)),undefined);
+      const docsRole=resolveSpawnModel({role:"docs-maintainer",settings,catalog:modelCatalogOf(ctx).peek(),hostId:place.hostId,usage:spawnUsageOf(ctx),...(docProved?{capability:{proved:(providerId:string)=>docProved.has(providerId)}}:{})});
+      if(docProved&&!docProved.has(docsRole.providerId)) throw new Error(`capability_unproven:${docsRole.providerId}:documentary: no provider in the stage's chain proved the documentary cells`);
+      const selection=docsSelection(settings,docsRole);
       const [providers,catalog]=await Promise.all([bb.sdk.providers.list({hostId:place.hostId}),bb.sdk.providers.models({providerId:selection.providerId,hostId:place.hostId})]);
       const provider=providers.find((item)=>item.id===selection.providerId&&item.available);
       const model=catalog.models.find((item)=>item.id===selection.model||item.model===selection.model);

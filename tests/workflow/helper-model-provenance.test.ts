@@ -80,11 +80,12 @@ describe("generic workflow helper model provenance", () => {
       .mockRejectedValueOnce(new Error("vk_required_session_policy_unenforceable"))
       .mockResolvedValueOnce({ id: "thr-fallback" } as never);
     const { rt } = world({ "role_model.analyst": { model: "gpt-6.1-sol" } });
-    await createWorkflowAgents().run(base(rt, { provider: "codex", model: "gpt-6.1-sol", reasoning: "medium" })).catch(() => undefined);
-    const args = vi.mocked(fullAccessSpawn).mock.calls.at(-1)?.[1] as { pluginMetadata?: Record<string, unknown> } | undefined;
+    await createWorkflowAgents().run(base(rt, { provider: "codex", model: "gpt-6.1-sol", reasoning: "medium", serviceTier: "fast" })).catch(() => undefined);
+    const args = vi.mocked(fullAccessSpawn).mock.calls.at(-1)?.[1] as { serviceTier?: string; pluginMetadata?: Record<string, unknown> } | undefined;
+    expect(args?.serviceTier).toBe("fast");
     expect(args?.pluginMetadata?.modelResolution).toMatchObject({
       role: "analyst",
-      requested: { providerId: "codex", model: "gpt-6.1-sol", reasoningEffort: "medium" },
+      requested: { providerId: "codex", model: "gpt-6.1-sol", reasoningEffort: "medium", serviceTier: "fast" },
       reason: "provider_start_failure",
       resolved: { providerId: "claude-code", model: "claude-opus-5-5", hostId: "host-a" },
     });
@@ -102,11 +103,12 @@ describe("generic workflow helper model provenance", () => {
     bb.sdk.threads.output = vi.fn()
       .mockResolvedValueOnce({ output: "Upgrade your plan to continue" })
       .mockResolvedValueOnce({ output: "```json\n{}\n```" });
-    await createWorkflowAgents().run(base(rt, { provider: "codex", model: "gpt-6.1-sol", reasoning: "medium" })).catch(() => undefined);
-    const args = vi.mocked(fullAccessSpawn).mock.calls.at(-1)?.[1] as { pluginMetadata?: Record<string, unknown> } | undefined;
+    await createWorkflowAgents().run(base(rt, { provider: "codex", model: "gpt-6.1-sol", reasoning: "medium", serviceTier: "fast" })).catch(() => undefined);
+    const args = vi.mocked(fullAccessSpawn).mock.calls.at(-1)?.[1] as { serviceTier?: string; pluginMetadata?: Record<string, unknown> } | undefined;
+    expect(args?.serviceTier).toBe("fast");
     expect(args?.pluginMetadata?.modelResolution).toMatchObject({
       role: "analyst",
-      requested: { providerId: "codex", model: "gpt-6.1-sol", reasoningEffort: "medium" },
+      requested: { providerId: "codex", model: "gpt-6.1-sol", reasoningEffort: "medium", serviceTier: "fast" },
       reason: "provider_limit",
       resolved: { providerId: "claude-code", model: "claude-opus-5-5", hostId: "host-a" },
     });

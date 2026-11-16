@@ -78,10 +78,13 @@ describe("capability cells, keys and the documentary gate", () => {
     const { bindDocumentaryGate } = await import("../../src/rooms/platform/server/pm-spawn");
     bindDocumentaryGate(bb, { deny: async (p) => proved.has(p) ? null : `capability_unproven:${p}:documentary.nested`, proved: async () => proved });
     harness.sdk.stub("threads.spawn", async () => { throw new Error("spawn must not run for an unproved provider"); });
-    const args = { providerId: "claude-code", model: "opus", prompt: "x", pluginMetadata: { role: "docs-maintainer" } } as never;
-    await expect(fullAccessSpawn(bb, args)).rejects.toThrow(CapabilityUnproven);
-    await expect(fullAccessSpawn(bb, args)).rejects.toThrow("capability_unproven:claude-code:documentary.nested");
+    for (const role of ["docs-maintainer", "docs-nightly"]) {
+      const args = { providerId: "claude-code", model: "opus", prompt: "x", pluginMetadata: { role } } as never;
+      await expect(fullAccessSpawn(bb, args)).rejects.toThrow(CapabilityUnproven);
+      await expect(fullAccessSpawn(bb, args)).rejects.toThrow("capability_unproven:claude-code:documentary.nested");
+    }
     expect(isDocumentaryRole("docs-maintainer")).toBe(true);
+    expect(isDocumentaryRole("docs-nightly")).toBe(true);
     expect(isDocumentaryRole("writer")).toBe(false);
     await harness.lifecycle.dispose();
   });

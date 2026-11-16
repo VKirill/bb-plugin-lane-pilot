@@ -9,6 +9,7 @@ import { claimActivation, createAttempt, createRun, openDatabase, saveProjectSet
 import { recordStage } from "../../src/rooms/runs/server";
 import { maybeNotifyWorkflowRun } from "../../src/rooms/workflow/server/pm-notice";
 import { collectEntries } from "../../src/rooms/wall/journal";
+import { bindDocumentaryGate } from "../../src/rooms/platform/server/pm-spawn";
 
 let dispose: (() => Promise<void> | void) | null = null;
 afterEach(async () => { await dispose?.(); dispose = null; });
@@ -114,8 +115,10 @@ describe("the nightly docs of a unit is the graph lp.docs-night", () => {
         files: { read: async () => { throw new Error("no such file"); } } as never,
         projects: { get: async () => ({ id: projectId, name: "P", sources: [{ hostId: "ovh", path: "/work/p", isDefault: true }] }) as never, list: async () => [{ id: projectId }] as never },
         providers: {
-          list: async () => [{ id: "codex", available: true, capabilities: { supportsServiceTier: false }, serviceTiers: [] }] as never,
-          models: async () => ({ models: [{ id: "gpt-6-luna", model: "gpt-6-luna", supportedReasoningEfforts: [{ reasoningEffort: "high" }] }] }) as never,
+          list: async () => [{ id: "claude-code", available: true, capabilities: { supportsServiceTier: false }, serviceTiers: [] }, { id: "codex", available: true, capabilities: { supportsServiceTier: false }, serviceTiers: [] }] as never,
+          models: async ({ providerId }: { providerId: string }) => ({ models: providerId === "claude-code"
+            ? [{ id: "claude-opus-5-5", model: "claude-opus-5-5", supportedReasoningEfforts: [{ reasoningEffort: "high" }] }]
+            : [{ id: "gpt-6-luna", model: "gpt-6-luna", supportedReasoningEfforts: [{ reasoningEffort: "high" }] }] }) as never,
         } as never,
         threads: {
           spawn: async (args: Record<string, any>) => { spawned.push(args); return { id: "thr_docs" } as never; },
@@ -139,13 +142,18 @@ describe("the nightly docs of a unit is the graph lp.docs-night", () => {
     });
     await plugin(bb);
     dispose = () => harness.lifecycle.dispose();
+    bindDocumentaryGate(bb, { deny: async (providerId) => providerId === "claude-code" ? "capability_unproven:claude-code:documentary.nested" : null, proved: async () => ({ has: (providerId: string) => providerId === "codex" }) });
     const db = openDatabase(bb);
     savePrototypeConfig(db, { projectId, hostId: "ovh", pmWorkspacePath: "/work/p", writerWorkspacePath: "/work/p", pmProviderId: "codex", pmModel: "m", writerProviderId: "codex", writerModel: "m" });
     saveProjectSetting(db, projectId, "docs.enabled", true);
+    saveProjectSetting(db, projectId, "role_model.docs-maintainer", { provider: "claude-code", model: "claude-opus-5-5" });
     const result = await harness.behavior.runCli(["docs-nightly", projectId]) as { stdout: string };
     const rows = JSON.parse(result.stdout) as Array<Record<string, unknown>>;
     expect(rows).toEqual([expect.objectContaining({ projectId, state: "passed", docsDir: "docs", onboarding: true, commit: "abc123", threadId: "thr_docs" })]);
     expect(spawned).toHaveLength(1);
+    expect(spawned[0]!.providerId).toBe("codex");
+    expect(spawned[0]!.permissionMode).toBe("full");
+    expect(spawned[0]!.executionInputSources).toMatchObject({ permissionMode: "explicit" });
     const run = db.prepare("SELECT id, idem_key FROM lane_pilot_wf_run WHERE workflow_id=?").get(DOCS_NIGHT) as { id: string; idem_key: string };
     expect(spawned[0]!.pluginMetadata).toMatchObject({ role: "docs-nightly", stageId: "docs-nightly", lanePilotWorkflowRunId: run.id, lanePilotWorkflowNode: "write" });
     expect(spawned[0]!.visibility).toBe("hidden");

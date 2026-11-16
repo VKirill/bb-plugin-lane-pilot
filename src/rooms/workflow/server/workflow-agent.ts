@@ -449,7 +449,7 @@ export function createWorkflowAgents() {
         const again = await bestEffort(bb.log, "workflow helper model resolve", withResolvedModel({ ...request, provider: undefined as never, model: undefined as never, reasoning: undefined as never, serviceTier: undefined as never, resolved: undefined as never }, { avoidProvider: failed, reason: "provider_start_failure" }), null);
         if (!again || again.provider === failed) throw cause;
         bb.log.warn(`workflow step ${request.stepKey}: ${failed} could not start (${cause instanceof Error ? cause.message.slice(0, 160) : String(cause)}); rerunning on ${again.provider}/${again.model}`);
-        const fallback = { ...request, ...again, provider: again.provider, model: again.model, reasoning: again.reasoning, serviceTier: undefined, spawnKey: `${request.spawnKey}:start` };
+        const fallback = { ...request, ...again, provider: again.provider, model: again.model, reasoning: again.reasoning, serviceTier: request.serviceTier, spawnKey: `${request.spawnKey}:start` };
         threadId = await findOrSpawn(fallback);
         await noteProviderStartSuccess(blockStore, startFolder?.hostId ?? null, fallback.provider ?? "", startFolder?.path ?? null);
         request = { ...request, provider: fallback.provider, model: fallback.model };
@@ -497,7 +497,7 @@ export function createWorkflowAgents() {
       const again = await bestEffort(bb.log, "workflow helper model resolve", withResolvedModel({ ...request, provider: undefined as never, model: undefined as never, reasoning: undefined as never, serviceTier: undefined as never, resolved: undefined as never }, { avoidProvider: failed, reason: "provider_limit" }), null);
       // Nothing else on offer (the answer is the failed provider again): the step fails with the limit notice, it does not run the same pair twice.
       if (!again || again.provider === failed) throw new HelperFailure("provider_limit", `${failed}/${request.model ?? ""} hit a provider limit (${limit}) and no other model family is on offer on this machine`);
-      const fallback = { ...request, ...again, provider: again.provider, model: again.model, reasoning: again.reasoning, serviceTier: undefined, spawnKey: `${request.spawnKey}:limit` };
+      const fallback = { ...request, ...again, provider: again.provider, model: again.model, reasoning: again.reasoning, serviceTier: request.serviceTier, spawnKey: `${request.spawnKey}:limit` };
       rt.ctx.bb.log.warn(`workflow step ${request.stepKey}: ${request.provider}/${request.model} hit a provider limit (${limit}); rerunning on ${fallback.provider}/${fallback.model}`);
       // A fresh thread starts with the prompt: its first turn is the one to wait for, as for the first spawn.
       sentAt = undefined;
