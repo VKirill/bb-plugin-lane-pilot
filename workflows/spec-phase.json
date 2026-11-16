@@ -102,9 +102,9 @@
         "en": "SPEC.md",
         "ru": "SPEC.md"
       },
-      "prompt": "Write .agents/phases/<phase_id>/SPEC.md for the phase: the requirement ids and the Given/When/Then promises (the Promise3 shape) from the goal, the complete ordered reply records in inputs.answers and the last assessment in inputs.ambiguity, inputs.weakest and inputs.questions. Preserve every answered record's output.answer; output.answer_kind=timeout means unanswered, not owner consent. An empty answers list means no interview replies were collected.",
+      "prompt": "Produce the complete raw Markdown for .agents/phases/<phase_id>/SPEC.md: requirement ids and Given/When/Then promises (the Promise3 shape) from the goal, the complete ordered reply records in inputs.answers and the last assessment in inputs.ambiguity, inputs.weakest and inputs.questions. Preserve every answered record's output.answer; output.answer_kind=timeout means unanswered, not owner consent. An empty answers list means no interview replies were collected. Return the document text only; this read-only helper does not write files.",
       "out": {
-        "spec_path": "string"
+        "content": "string"
       },
       "guards": {
         "maxVisits": 1,
@@ -118,12 +118,26 @@
       ]
     },
     {
+      "id": "write_spec",
+      "type": "action",
+      "action": "fs.write",
+      "skip_when": "score.ambiguity > 0.2",
+      "skip_out": {
+        "spec_path": ""
+      },
+      "path": ".agents/phases/{{$inputs.phase_id}}/SPEC.md",
+      "contents": "{{spec.content}}",
+      "out": {
+        "spec_path": "string"
+      }
+    },
+    {
       "id": "done",
       "type": "action",
       "action": "emit",
       "map": {
         "status": "done",
-        "spec_path": "spec.spec_path",
+        "spec_path": "write_spec.spec_path",
         "ambiguity": "score.ambiguity"
       }
     },
@@ -133,7 +147,7 @@
       "action": "emit",
       "map": {
         "status": "low_confidence",
-        "spec_path": "spec.spec_path",
+        "spec_path": "write_spec.spec_path",
         "ambiguity": "score.ambiguity"
       }
     }
@@ -165,11 +179,15 @@
     },
     {
       "from": "spec",
+      "to": "write_spec"
+    },
+    {
+      "from": "write_spec",
       "to": "done",
       "when": "score.ambiguity <= 0.2"
     },
     {
-      "from": "spec",
+      "from": "write_spec",
       "to": "low_confidence"
     }
   ],

@@ -8,13 +8,13 @@ describe("hollow sign-2 workflow branches: debug", () => {
       input: { symptom: "it crashes", mode: "standalone", session: "short-session" },
       stubs: { session: { found: false, path: ".agents/planning/debug/short-session.md" }, investigate: { status: "partial", confidence: 40 } },
     });
-    expect(pathOf(resumed)).toBe("ask_symptoms session ask_symptoms_new investigate partial");
+    expect(pathOf(resumed)).toBe("ask_symptoms session ask_symptoms_new investigate write_investigation_session write_investigation_evidence partial");
 
     const long = await runSim("debug", {
       input: { symptom: "The import crashes after the last release when an empty row reaches the parser.", session: "long-session" },
       stubs: { session: { found: true, path: ".agents/planning/debug/long-session.md" }, investigate: { status: "partial", confidence: 40 } },
     });
-    expect(pathOf(long)).toBe("ask_symptoms session investigate partial");
+    expect(pathOf(long)).toBe("ask_symptoms session investigate write_investigation_session write_investigation_evidence partial");
   });
 
   it("takes failure reports to the real per-failure diagnosis join and records diagnosed", async () => {
@@ -43,14 +43,14 @@ describe("hollow sign-2 workflow branches: debug", () => {
       mode: "full",
       stubs: { investigate: { status: "inconclusive", refuted: 1, confidence: 20 } },
     });
-    expect(pathOf(inconclusive)).toBe("ask_symptoms investigate inconclusive");
+    expect(pathOf(inconclusive)).toBe("ask_symptoms investigate write_investigation_session write_investigation_evidence inconclusive");
 
     const confirmationPartial = await runSim("debug", {
       input: { symptom: "The import crashes after the last release when an empty row reaches the parser." },
       mode: "full",
       stubs: { investigate: { status: "confirmed", confidence: 80, pressure_pass: true, contradictions: 0, affected_files: ["src/parser.ts"] }, verify_cause: { confirmed: false, objections: ["another cause"] } },
     });
-    expect(pathOf(confirmationPartial)).toBe("ask_symptoms investigate verify_cause investigate verify_cause investigate verify_cause partial");
+    expect(pathOf(confirmationPartial)).toBe("ask_symptoms investigate write_investigation_session write_investigation_evidence verify_cause write_verification_session write_verification_evidence investigate write_investigation_session write_investigation_evidence verify_cause write_verification_session write_verification_evidence investigate write_investigation_session write_investigation_evidence verify_cause write_verification_session write_verification_evidence partial");
     expect(confirmationPartial.called("verify_cause")).toHaveLength(3);
   });
 });

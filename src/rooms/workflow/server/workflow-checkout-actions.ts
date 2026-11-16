@@ -12,7 +12,7 @@ import {
 import { isPlanningPath } from "../../contracts";
 import { PROFILE_KEYS } from "../../anamnesis";
 import { hasPassportRecord } from "../../passport";
-import { bestEffort, sha256Hex } from "@lane-pilot/kit";
+import { bestEffort, isFsAbsent, isNotFound, sha256Hex } from "@lane-pilot/kit";
 import { list, rec, str, pmCheckout, quote, PRUNE } from "./workflow-chain-runtime";
 import { measureTestInventory, diffTestInventory, type InventoryReceipt } from "./test-inventory";
 import { noteRunFiles } from "./workflow-run-home";
@@ -91,6 +91,9 @@ export function registerCheckoutActions(engine: WorkflowEngine, ctx: ServerCore,
     const folderPrefix = isFolder ? (rel.endsWith("/") ? rel : `${rel}/`) : "";
     // A planning file (.agents/phases|planning|todos|plans, not a task's own folder) goes to the planning home when the project set one (SMA d_project_planning); unset, the checkout.
     const home = isPlanningPath(isFolder ? folderPrefix : rel) ? await planHome(rt.projectId, checkout) : null;
+    const mode = str(params.mode).trim().toLowerCase();
+    if (mode && mode !== "append" && mode !== "prepend") throw new Error(`fs.write: unsupported mode "${mode}"`);
+    if (mode && isFolder) throw new Error("fs.write: append/prepend mode requires a single file path");
     const writtenCheckoutPaths: Array<{ path: string; content: string; sha256: string }> = [];
     // Every file this node wrote, for the run's manifest (.agents/runs/<run>/manifest.json): the checkout's and the planning home's alike.
     const writtenForRun: Array<{ repoPath: string; content: string; kind: "output"; root: "checkout" | "planning-home" }> = [];
@@ -99,6 +102,54 @@ export function registerCheckoutActions(engine: WorkflowEngine, ctx: ServerCore,
       const cleanPath = path.replace(/^\/+/, "");
       if (!cleanPath || cleanPath.endsWith("/") || cleanPath.split("/").includes("..") || cleanPath.includes("\0")) {
         throw new Error(`fs.write: invalid target file path "${cleanPath}"`);
+      }
+      if (mode) {
+        const files = bb.sdk.files as unknown as {
+          read?: (args: { hostId: string; rootPath: string; path: string; maxBytes?: number }) => Promise<unknown>;
+          write: (args: { hostId: string; rootPath: string; path: string; content: string; contentEncoding: "utf8"; createParents: boolean; expectedSha256: string | null }) => Promise<unknown>;
+        };
+        if (typeof files.read !== "function") throw new Error(`fs.write: cannot ${mode} "${cleanPath}" because the existing file is unreadable`);
+        const rootPath = home ?? checkout.path;
+        const fullPath = `${rootPath}/${cleanPath}`;
+        if (!home) noteEngineWrite(checkout.path, cleanPath);
+        for (let attempt = 0; attempt < 2; attempt += 1) {
+          let previous = "", expectedSha256: string | null = null;
+          try {
+            const raw = await files.read({ hostId: checkout.hostId, rootPath, path: fullPath, maxBytes: 2_000_000 });
+            if (raw === null || raw === undefined) throw new Error("the existing file read returned no result");
+            if (typeof raw !== "object") throw new Error("the existing file read returned an invalid result");
+            const existing = raw as { content?: unknown; sha256?: unknown; truncated?: unknown; oversized?: unknown };
+            if (existing.truncated === true || existing.oversized === true) throw new Error("the existing file read was truncated");
+            if (existing.content === null) {
+              previous = "";
+            } else if (typeof existing.content === "string") {
+              previous = existing.content;
+              expectedSha256 = typeof existing.sha256 === "string" ? existing.sha256 : sha256Hex(previous);
+              if (expectedSha256 !== sha256Hex(previous)) throw new Error("the existing file read does not match its hash");
+            } else {
+              throw new Error("the existing file read returned no text");
+            }
+          } catch (cause) {
+            if (!isFsAbsent(cause) && !isNotFound(cause)) {
+              const why = cause instanceof Error ? cause.message : String(cause);
+              throw new Error(`cannot ${mode} "${cleanPath}": ${why}`);
+            }
+            previous = "";
+            expectedSha256 = null;
+          }
+          const next = mode === "prepend" ? `${content}${previous}` : `${previous}${content}`;
+          const result = await files.write({ hostId: checkout.hostId, rootPath, path: fullPath, content: next, contentEncoding: "utf8", createParents: true, expectedSha256 });
+          const outcome = result && typeof result === "object" ? String((result as { outcome?: unknown }).outcome ?? "") : "";
+          if (outcome === "written") {
+            writtenFileCount += 1;
+            writtenForRun.push({ repoPath: cleanPath, content: next, kind: "output", root: home ? "planning-home" : "checkout" });
+            if (!home) writtenCheckoutPaths.push({ path: cleanPath, content: next, sha256: sha256Hex(next) });
+            return;
+          }
+          if (outcome === "conflict" && attempt === 0) continue;
+          throw new Error(`fs.write: CAS write rejected for "${cleanPath}" (${outcome || "unknown"})`);
+        }
+        throw new Error(`fs.write: CAS write rejected for "${cleanPath}" (conflict)`);
       }
       if (home) {
         const homeRes = await writeCasCheckoutFile(bb.sdk.files as never, {
@@ -185,6 +236,11 @@ export function registerCheckoutActions(engine: WorkflowEngine, ctx: ServerCore,
         }
       }
     } else if (!isFolder) {
+      if (typeof params.contents === "string") {
+        await write(rel, asText(c.template(params.contents)));
+        first = rel;
+        return await finishWrite();
+      }
       await write(rel, asText(reportBody(c, params)));
     }
     if (
@@ -197,6 +253,9 @@ export function registerCheckoutActions(engine: WorkflowEngine, ctx: ServerCore,
       await write(handoffTarget, asText(reportBody(c, params)));
       first = first === folderPrefix ? handoffTarget : first;
     }
+    return await finishWrite();
+
+    async function finishWrite(): Promise<Row> {
     if (!home && rt?.projectId && writtenCheckoutPaths.length > 0) {
       let touchedAgentsArtifact = false;
       for (const item of writtenCheckoutPaths) {
@@ -240,6 +299,7 @@ export function registerCheckoutActions(engine: WorkflowEngine, ctx: ServerCore,
       else if (field.name.endsWith("_path")) out[field.name] = isFolder ? (writtenFileCount === 1 ? first : folderPrefix) : first;
     }
     return out;
+    }
   });
 
   /** A file the chain writes: JSON of what it `reads`, else a Markdown report of the run so far. */

@@ -66,7 +66,7 @@ describe("graph corrections 591", () => {
       stubs: { investigate: found, verify_cause: { confirmed: true } },
     });
     expect(r.summary.status).toBe("succeeded");
-    expect(pathOf(r)).toBe("ask_symptoms normalize investigate verify_cause confirmed");
+    expect(pathOf(r)).toBe("ask_symptoms normalize investigate write_investigation_session write_investigation_evidence verify_cause write_verification_session write_verification_evidence confirmed");
     expect(r.called("diagnose:child")).toHaveLength(0);
   });
 

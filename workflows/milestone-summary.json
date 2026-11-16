@@ -57,9 +57,9 @@
         "en": "Readable milestone summary",
         "ru": "Читаемый итог этапа"
       },
-      "prompt": "Read the milestone's artifacts: .agents/planning/ROADMAP.md, STATE.md, .agents/phases/*/SUMMARY.md, UAT.md and REVIEW.md. Add a section headed `## <milestone> — <date>` at the top of .agents/planning/MILESTONE-SUMMARY.md (create the file if missing) and keep every earlier section as it is; never overwrite an earlier milestone's summary. The section, in plain words: what shipped per phase, the decisions that were taken, the lessons, the open items and how to try it.",
+      "prompt": "Read the milestone's artifacts: .agents/planning/ROADMAP.md, STATE.md, .agents/phases/*/SUMMARY.md, UAT.md and REVIEW.md. Produce one complete Markdown section headed `## <milestone> — <date>` for the top of .agents/planning/MILESTONE-SUMMARY.md (the code-owned writer creates the file if missing) and keep every earlier section as it is; never overwrite an earlier milestone's summary. The section, in plain words: what shipped per phase, the decisions that were taken, the lessons, the open items and how to try it. Return the new section text only; this read-only helper does not write files.",
       "out": {
-        "summary_path": "string",
+        "section": "string",
         "open_items": "string[]"
       },
       "guards": {
@@ -74,12 +74,23 @@
       ]
     },
     {
+      "id": "write_summary",
+      "type": "action",
+      "action": "fs.write",
+      "path": ".agents/planning/MILESTONE-SUMMARY.md",
+      "mode": "prepend",
+      "contents": "{{summary.section}}",
+      "out": {
+        "summary_path": "string"
+      }
+    },
+    {
       "id": "done",
       "type": "action",
       "action": "emit",
       "map": {
         "status": "done",
-        "summary_path": "summary.summary_path",
+        "summary_path": "write_summary.summary_path",
         "open_items": "summary.open_items"
       }
     },
@@ -89,7 +100,7 @@
       "action": "emit",
       "map": {
         "status": "blocked",
-        "summary_path": "summary.summary_path",
+        "summary_path": "write_summary.summary_path",
         "open_items": "summary.open_items"
       }
     },
@@ -113,10 +124,15 @@
   "edges": [
     {
       "from": "summary",
+      "to": "write_summary",
+      "pass": "artifact"
+    },
+    {
+      "from": "write_summary",
       "to": "goal_check",
       "pass": "artifact",
       "with": {
-        "path": "summary.summary_path"
+        "path": "write_summary.summary_path"
       }
     },
     {

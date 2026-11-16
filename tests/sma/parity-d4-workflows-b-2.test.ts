@@ -114,8 +114,8 @@ const startFlow = { tree: "tree", probe: "probe", value_map: "value_map", previe
 describe("parity d4 workflows b-2", () => {
   it("[sma:k_c_mssummary] milestone-summary ends done from the milestone artifacts; milestone-close runs it after close only with milestone.summary on", async () => {
     const sim = await runSim("milestone-summary", { input: { milestone: "Stats export" }, stubs: { summary: { summary_path: ".agents/planning/MILESTONE-SUMMARY.md", open_items: [] } } });
-    expect(pathOf(sim)).toBe("summary goal_check done");
-    expect(emitted(sim)).toMatchObject({ status: "done", summary_path: ".agents/planning/MILESTONE-SUMMARY.md" });
+    expect(pathOf(sim)).toBe("summary write_summary goal_check done");
+    expect(emitted(sim)).toMatchObject({ status: "done", summary_path: "stub" });
     const prompt = node("milestone-summary.json", "summary").prompt!;
     expect(prompt).toMatch(/ROADMAP\.md.*STATE\.md.*SUMMARY\.md.*UAT\.md.*REVIEW\.md/s);
     // An earlier milestone's summary is never lost: a dated section is added, nothing is overwritten (an agent prompt: it cannot be run here).
@@ -301,7 +301,7 @@ describe("parity d4 workflows b-2", () => {
     for (const [tier, count] of [["quick", 2], ["standard", 4], ["deep", 6]] as const) {
       const plain = await runSim("security-audit", { input: { tier }, stubs });
       expect(plain.called("scan:child")).toHaveLength(count);
-      expect(plain.skipped).toEqual(["threat_model"]);
+      expect(plain.skipped).toEqual(["threat_model", "write_threat_model"]);
       expect(plain.called("threat_model")).toHaveLength(0);
       expect(costly(plain)).toEqual(["recon", "scan", "report"]);
     }
@@ -309,7 +309,7 @@ describe("parity d4 workflows b-2", () => {
     expect(phase.called("scan:child")).toHaveLength(4);
     expect(phase.called("threat_model")).toHaveLength(1);
     expect(phase.skipped).toEqual([]);
-    expect(pathOf(phase)).toBe("recon scan threat_model report goal_check done");
+    expect(pathOf(phase)).toBe("recon scan threat_model write_threat_model report write_report goal_check done");
     const prompt = node("security-audit.json", "threat_model").prompt!;
     expect(prompt).toContain("mitigated|partial|missing");
     expect(prompt).toContain("## Verified against the code");
@@ -362,10 +362,10 @@ describe("parity d4 workflows b-2", () => {
 
   it("[sma:k_c_spec] spec-phase: ambiguity 0.6 then 0.15 is score, ask, score, spec; always 0.6 ends low_confidence", async () => {
     const ok = await runSim("spec-phase", { input: { phase_id: "ph_a", goal: "export" }, stubs: { score: [{ ambiguity: 0.6, weakest: "goal", questions: ["q"] }, { ambiguity: 0.15, weakest: "", questions: [] }], spec: { spec_path: ".agents/phases/ph_a/SPEC.md" } }, humans: { ask: { answer_kind: "answered" } } });
-    expect(pathOf(ok)).toBe("score ask score spec done");
-    expect(emitted(ok)).toMatchObject({ status: "done", spec_path: ".agents/phases/ph_a/SPEC.md" });
+    expect(pathOf(ok)).toBe("score ask score spec write_spec done");
+    expect(emitted(ok)).toMatchObject({ status: "done", spec_path: "stub" });
     const low = await runSim("spec-phase", { input: { phase_id: "ph_a", goal: "export" }, stubs: { score: { ambiguity: 0.6, weakest: "goal", questions: ["q"] }, spec: { spec_path: "s.md" } }, humans: { ask: { answer_kind: "answered" } } });
-    expect(pathOf(low)).toBe("score ask score ask score spec low_confidence");
+    expect(pathOf(low)).toBe("score ask score ask score spec write_spec low_confidence");
     expect(emitted(low)).toMatchObject({ status: "low_confidence" });
   });
 

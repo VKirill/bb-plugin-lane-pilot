@@ -157,7 +157,8 @@
       },
       "skip_when": "!$inputs.phase_id",
       "skip_out": {
-        "findings": []
+        "findings": [],
+        "verification": ""
       },
       "produces": [
         {
@@ -165,9 +166,10 @@
           "version": 1
         }
       ],
-      "prompt": "Read .agents/phases/{{$inputs.phase_id}}/SECURITY.md. No threat register there means an empty findings list. Check each named threat against the code: verdict mitigated|partial|missing with file:line; a missing threat is a finding of severity high; every finding has file:line, severity (critical|high|medium|low|info) and remediation. Append the per-threat table under '## Verified against the code' of that SECURITY.md.",
+      "prompt": "Read .agents/phases/{{$inputs.phase_id}}/SECURITY.md. No threat register there means an empty findings list. Check each named threat against the code: verdict mitigated|partial|missing with file:line; a missing threat is a finding of severity high; every finding has file:line, severity (critical|high|medium|low|info) and remediation. Return the per-threat table under '## Verified against the code' as raw Markdown in verification; the code-owned writer appends it to SECURITY.md. This read-only helper does not write files.",
       "out": {
-        "findings": "Finding[]"
+        "findings": "Finding[]",
+        "verification": "string"
       },
       "guards": {
         "maxVisits": 1,
@@ -184,9 +186,9 @@
       ],
       "type": "agent",
       "role": "analyst",
-      "prompt": "Build the severity matrix CRITICAL/HIGH/MEDIUM/LOW from inputs.scan_findings and the findings in the consumed threat_model output. Include file:line, impact and remediation per finding; group by root cause across both sources. Use inputs.scan_critical_count and inputs.scan_high_count as the scan totals, not totals for the threat register. Preserve inputs.scan_warnings and identify scan phases or checks that could not run; an unavailable check is not a clean result. Secrets remain locations only, never values.",
+      "prompt": "Build the severity matrix CRITICAL/HIGH/MEDIUM/LOW from inputs.scan_findings and the findings in the consumed threat_model output. Include file:line, impact and remediation per finding; group by root cause across both sources. Use inputs.scan_critical_count and inputs.scan_high_count as the scan totals, not totals for the threat register. Preserve inputs.scan_warnings and identify scan phases or checks that could not run; an unavailable check is not a clean result. Secrets remain locations only, never values. Return the complete raw Markdown report text in document; the code-owned writer persists it. This read-only helper does not write files.",
       "out": {
-        "report_path": "string",
+        "document": "string",
         "severity_distribution": "any"
       },
       "guards": {
@@ -199,6 +201,31 @@
           "from": "threat_model"
         }
       ]
+    },
+    {
+      "id": "write_threat_model",
+      "type": "action",
+      "action": "fs.write",
+      "skip_when": "!$inputs.phase_id || !threat_model.verification",
+      "skip_out": {
+        "security_path": ""
+      },
+      "path": ".agents/phases/{{$inputs.phase_id}}/SECURITY.md",
+      "mode": "append",
+      "contents": "{{threat_model.verification}}",
+      "out": {
+        "security_path": "string"
+      }
+    },
+    {
+      "id": "write_report",
+      "type": "action",
+      "action": "fs.write",
+      "path": ".agents/planning/SECURITY-AUDIT.md",
+      "contents": "{{report.document}}",
+      "out": {
+        "report_path": "string"
+      }
     },
     {
       "id": "offer",
@@ -218,7 +245,7 @@
         "findings": "scan.findings",
         "severity_distribution": "report.severity_distribution",
         "tier": "$inputs.tier",
-        "report_path": "report.report_path"
+        "report_path": "write_report.report_path"
       }
     },
     {
@@ -230,7 +257,7 @@
         "findings": "scan.findings",
         "severity_distribution": "report.severity_distribution",
         "tier": "$inputs.tier",
-        "report_path": "report.report_path",
+        "report_path": "write_report.report_path",
         "proposed_workflow": "review-fix"
       }
     },
@@ -278,6 +305,12 @@
     },
     {
       "from": "threat_model",
+      "to": "write_threat_model",
+      "pass": "artifact",
+      "with": {}
+    },
+    {
+      "from": "write_threat_model",
       "to": "report",
       "pass": "artifact",
       "with": {
@@ -289,16 +322,23 @@
     },
     {
       "from": "report",
+      "to": "write_report",
+      "pass": "artifact",
+      "with": {}
+    },
+    {
+      "from": "write_report",
       "to": "offer",
       "pass": "artifact",
       "when": "scan.critical_count + scan.high_count > 0"
     },
     {
-      "from": "report",
+      "from": "write_report",
       "to": "goal_check",
       "pass": "artifact",
+      "when": "scan.critical_count + scan.high_count == 0",
       "with": {
-        "path": "report.report_path"
+        "path": "write_report.report_path"
       }
     },
     {

@@ -233,10 +233,10 @@ describe("region 23 · rules and references: who is handed them, and what the co
     const backed = { status: "confirmed", root_cause: "list[0] on empty", mechanism: "m", confidence: 80, evidence_path: "e.md", affected_files: ["src/save.ts"], fix_direction: "guard", pressure_pass: true, contradictions: 0 };
     const input = { symptom: "x".repeat(60) };
     const run = (first: Record<string, unknown>) => runSim("debug", { input, mode: "full", stubs: { investigate: [first, backed], verify_cause: { confirmed: true, objections: [] } } });
-    expect(pathOf(await run(backed))).toContain("investigate verify_cause confirmed");
+    expect(pathOf(await run(backed))).toContain("investigate write_investigation_session write_investigation_evidence verify_cause write_verification_session write_verification_evidence confirmed");
     for (const weak of [{ ...backed, confidence: 30 }, { ...backed, pressure_pass: false }, { ...backed, affected_files: [] }]) {
       const r = await run(weak);
-      expect(pathOf(r)).toContain("investigate investigate verify_cause confirmed");
+      expect(pathOf(r)).toContain("investigate write_investigation_session write_investigation_evidence investigate write_investigation_session write_investigation_evidence verify_cause write_verification_session write_verification_evidence confirmed");
       expect(r.called("verify_cause")).toHaveLength(1);
     }
   });

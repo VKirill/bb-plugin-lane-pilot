@@ -130,10 +130,10 @@ describe("the profile, discussion and spec commands (n1306 … n1314)", () => {
 
   it("[sma:k_c_spec] the spec is scored for ambiguity: above 0.2 a person answers (three scores at most), at 0.2 or below SPEC.md is written; a spec written under doubt ends low_confidence", async () => {
     const seen = await observeF.k_c_spec();
-    expect(seen.asked).toEqual(["score ask score spec done", { status: "done", spec_path: ".agents/phases/ph_a/SPEC.md", ambiguity: 0.15 }]);
-    expect(seen.clear).toBe("score spec done");
-    expect(seen.edge).toEqual(["score spec done", "done"]);
-    expect(seen.doubt).toEqual(["score ask score ask score spec low_confidence", { status: "low_confidence", spec_path: ".agents/phases/ph_a/SPEC.md", ambiguity: 0.6 }]);
+    expect(seen.asked).toEqual(["score ask score spec write_spec done", { status: "done", spec_path: ".agents/phases/ph_a/SPEC.md", ambiguity: 0.15 }]);
+    expect(seen.clear).toBe("score spec write_spec done");
+    expect(seen.edge).toEqual(["score spec write_spec done", "done"]);
+    expect(seen.doubt).toEqual(["score ask score ask score spec write_spec low_confidence", { status: "low_confidence", spec_path: ".agents/phases/ph_a/SPEC.md", ambiguity: 0.6 }]);
     expect(seen.role).toBe("planner");
   });
 

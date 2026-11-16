@@ -82,7 +82,7 @@ describe("region 17 · fixing and debugging roles", () => {
     const planner = await spawnOf("ai-integration-phase", "eval_plan");
     expect(planner.request.prompt).not.toContain("at most 3 hypotheses");
     const r = await runSim("debug", { input: { symptom: "the save button does nothing when the list is empty, since Tuesday, error TypeError" }, stubs: { investigate: { status: "confirmed", root_cause: "list[0] read on empty", mechanism: "m", confidence: 80, evidence_path: ".agents/planning/debug/s.md", affected_files: ["src/save.ts"], fix_direction: "guard the empty list", pressure_pass: true, contradictions: 0, refuted: 1 } } });
-    expect(out(r)).toMatchObject({ status: "confirmed", root_cause: "list[0] read on empty", evidence_path: ".agents/planning/debug/s.md" });
+    expect(out(r)).toMatchObject({ status: "confirmed", root_cause: "list[0] read on empty", evidence_path: "" });
   });
 
   it("[sma:k_ag_debugmgr] a fresh session re-checks the cause, an objection sends the debugger back while it has visits left, and a cause that stands is answered compactly", async () => {
@@ -91,8 +91,8 @@ describe("region 17 · fixing and debugging roles", () => {
     const stand = { status: "confirmed", root_cause: "list[0] on empty", mechanism: "m", confidence: 80, evidence_path: "e.md", affected_files: ["src/save.ts"], fix_direction: "guard", pressure_pass: true, contradictions: 0 };
     const input = { symptom: "x".repeat(60) };
     const ok = await runSim("debug", { input, mode: "full", stubs: { investigate: stand, verify_cause: [{ confirmed: false, objections: ["a cheaper cause at src/a.ts:3"] }, { confirmed: true, objections: [] }] } });
-    expect(pathOf(ok)).toContain("investigate verify_cause investigate verify_cause confirmed");
-    expect(out(ok)).toMatchObject({ status: "confirmed", root_cause: "list[0] on empty", confidence: 80, affected_files: ["src/save.ts"], fix_direction: "guard", evidence_path: "e.md" });
+    expect(pathOf(ok)).toContain("investigate write_investigation_session write_investigation_evidence verify_cause write_verification_session write_verification_evidence investigate write_investigation_session write_investigation_evidence verify_cause write_verification_session write_verification_evidence confirmed");
+    expect(out(ok)).toMatchObject({ status: "confirmed", root_cause: "list[0] on empty", confidence: 80, affected_files: ["src/save.ts"], fix_direction: "guard", evidence_path: "" });
     // An objection that is never answered is not looped on forever: the third round ends as partial.
     const stuck = await runSim("debug", { input, mode: "full", stubs: { investigate: stand, verify_cause: { confirmed: false, objections: ["still a cheaper cause"] } } });
     expect(stuck.called("investigate")).toHaveLength(3);

@@ -331,7 +331,7 @@ export const observeF = {
 
   /** n1311: what the phase delivers: ambiguity is scored, a person answers while it is above 0.2 (three scores at most), then SPEC.md; a spec written under doubt says low confidence. */
   async k_c_spec() {
-    const run = (score: Row | Row[], humans?: Record<string, Row>) => runSim("spec-phase", { input: { phase_id: "ph_a", goal: "export" }, stubs: { score: score as never, spec: { spec_path: ".agents/phases/ph_a/SPEC.md" } }, ...(humans ? { humans } : {}) });
+    const run = (score: Row | Row[], humans?: Record<string, Row>) => runSim("spec-phase", { input: { phase_id: "ph_a", goal: "export" }, stubs: { score: score as never, spec: { content: "# SPEC\n" }, "fs.write": { spec_path: ".agents/phases/ph_a/SPEC.md" } }, ...(humans ? { humans } : {}) });
     const asked = await run([{ ambiguity: 0.6, weakest: "goal", questions: ["which stats?"] }, { ambiguity: 0.15, weakest: "", questions: [] }], { ask: { answer_kind: "answered" } });
     const clear = await run({ ambiguity: 0.1, weakest: "", questions: [] });
     const edge = await run({ ambiguity: 0.2, weakest: "", questions: [] });

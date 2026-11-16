@@ -185,7 +185,7 @@
         "ru": "Расследовать"
       },
       "src": "maestro-flow:ref/scientific-debug.md, workflows/debug.md",
-      "prompt": "SCIENTIFIC_DEBUG_METHOD. Read-only on the repository; reproduction only in a throwaway copy. Loop: FORM a hypothesis, PREDICT what you would observe, TEST it (change one variable at a time), RECORD {hypothesis, prediction, observation, verdict} in evidence.ndjson (append-only), DECIDE.\nRoot cause is confirmed only with a reproduction or file:line plus the mechanism. Red flags: \"probably\", \"let me just try changing this\", \"works on my machine\". Trace backward from the symptom to the first bad state, following data, not control flow.\nAfter 3 refuted hypotheses on one surface re-read the module boundaries and doubt the \"unchanged\" assumptions; do not raise a 4th hypothesis on your own - return inconclusive with what you learned.\nconfidence from reproduction reliability, directness of the evidence chain, whether the predicted fix was tested. Before declaring a cause: evidence_completeness >= 40%, a pressure pass done (strongest counter-argument answered), no contradicting evidence, fix_direction names concrete files.\n\nSession file: when input `session` is set, work in .agents/planning/debug/<session>.md — an existing file is where you resume (skip asking the symptoms again); append each hypothesis with its verdict, the evidence lines, the root cause and the fix directions there and set its Status to open or resolved.\n",
+      "prompt": "SCIENTIFIC_DEBUG_METHOD. Read-only on the repository; reproduction only in a throwaway copy. Loop: FORM a hypothesis, PREDICT what you would observe, TEST it (change one variable at a time), DECIDE. Return session_entry as one Markdown block for the session file and evidence_entry as one JSON object line for evidence.ndjson; the code-owned fs.write nodes append them, so this helper never writes files.\nRoot cause is confirmed only with a reproduction or file:line plus the mechanism. Red flags: \"probably\", \"let me just try changing this\", \"works on my machine\". Trace backward from the symptom to the first bad state, following data, not control flow.\nAfter 3 refuted hypotheses on one surface re-read the module boundaries and doubt the \"unchanged\" assumptions; do not raise a 4th hypothesis on your own - return inconclusive with what you learned.\nconfidence from reproduction reliability, directness of the evidence chain, whether the predicted fix was tested. Before declaring a cause: evidence_completeness >= 40%, a pressure pass done (strongest counter-argument answered), no contradicting evidence, fix_direction names concrete files.\n\nSession file: when input `session` is set, read .agents/planning/debug/<session>.md — an existing file is where you resume (skip asking the symptoms again); describe the append block in session_entry and the evidence line in evidence_entry.\n",
       "out": {
         "status": "confirmed|partial|inconclusive",
         "root_cause": "string",
@@ -199,7 +199,9 @@
         "regression_tests": "string[]",
         "risks": "string[]",
         "pressure_pass": "bool",
-        "contradictions": "int"
+        "contradictions": "int",
+        "session_entry": "string",
+        "evidence_entry": "string"
       },
       "guards": {
         "maxVisits": 3,
@@ -282,16 +284,80 @@
       ],
       "skip_out": {
         "confirmed": true,
-        "objections": "[]"
+        "objections": "[]",
+        "session_entry": "",
+        "evidence_entry": ""
       },
-      "prompt": "Fresh agent re-checks the claimed cause from the evidence log and the code only; try to refute it with one cheaper explanation; report confirmed or the objection with file:line.\nSession file: when input `session` is set, work in .agents/planning/debug/<session>.md — an existing file is where you resume (skip asking the symptoms again); append each hypothesis with its verdict, the evidence lines, the root cause and the fix directions there and set its Status to open or resolved.\n",
+      "prompt": "Fresh agent re-checks the claimed cause from the evidence log and the code only; try to refute it with one cheaper explanation; report confirmed or the objection with file:line. Return session_entry as one Markdown block and evidence_entry as one JSON object line; the code-owned fs.write nodes append them, so this read-only helper never writes files.\nSession file: when input `session` is set, read .agents/planning/debug/<session>.md — describe the append block in session_entry and the evidence line in evidence_entry.\n",
       "out": {
         "confirmed": "bool",
-        "objections": "string[]"
+        "objections": "string[]",
+        "session_entry": "string",
+        "evidence_entry": "string"
       },
       "guards": {
         "maxVisits": 3,
         "timeoutMin": 25
+      }
+    },
+    {
+      "id": "write_investigation_session",
+      "type": "action",
+      "action": "fs.write",
+      "skip_when": "!$inputs.session || !investigate.session_entry",
+      "skip_out": {
+        "session_path": ""
+      },
+      "path": ".agents/planning/debug/{{$inputs.session}}.md",
+      "mode": "append",
+      "contents": "{{investigate.session_entry}}",
+      "out": {
+        "session_path": "string"
+      }
+    },
+    {
+      "id": "write_investigation_evidence",
+      "type": "action",
+      "action": "fs.write",
+      "skip_when": "!$inputs.session || !investigate.evidence_entry",
+      "skip_out": {
+        "evidence_path": ""
+      },
+      "path": ".agents/planning/debug/{{$inputs.session}}.evidence.ndjson",
+      "mode": "append",
+      "contents": "{{investigate.evidence_entry}}\n",
+      "out": {
+        "evidence_path": "string"
+      }
+    },
+    {
+      "id": "write_verification_session",
+      "type": "action",
+      "action": "fs.write",
+      "skip_when": "!$inputs.session || !verify_cause.session_entry",
+      "skip_out": {
+        "session_path": ""
+      },
+      "path": ".agents/planning/debug/{{$inputs.session}}.md",
+      "mode": "append",
+      "contents": "{{verify_cause.session_entry}}",
+      "out": {
+        "session_path": "string"
+      }
+    },
+    {
+      "id": "write_verification_evidence",
+      "type": "action",
+      "action": "fs.write",
+      "skip_when": "!$inputs.session || !verify_cause.evidence_entry",
+      "skip_out": {
+        "evidence_path": ""
+      },
+      "path": ".agents/planning/debug/{{$inputs.session}}.evidence.ndjson",
+      "mode": "append",
+      "contents": "{{verify_cause.evidence_entry}}\n",
+      "out": {
+        "evidence_path": "string"
       }
     },
     {
@@ -334,7 +400,7 @@
         "fix_direction": "investigate.fix_direction",
         "regression_tests": "investigate.regression_tests",
         "risks": "investigate.risks",
-        "evidence_path": "investigate.evidence_path",
+        "evidence_path": "write_investigation_evidence.evidence_path",
         "fix_directions": "[investigate.fix_direction]",
         "diagnosis": "investigate.mechanism"
       }
@@ -351,7 +417,7 @@
         "fix_direction": "investigate.fix_direction",
         "regression_tests": "investigate.regression_tests",
         "risks": "investigate.risks",
-        "evidence_path": "investigate.evidence_path",
+        "evidence_path": "write_investigation_evidence.evidence_path",
         "diagnosis": "investigate.mechanism"
       }
     },
@@ -363,7 +429,7 @@
         "status": "partial",
         "root_cause": "investigate.root_cause",
         "confidence": "investigate.confidence",
-        "evidence_path": "investigate.evidence_path",
+        "evidence_path": "write_investigation_evidence.evidence_path",
         "diagnosis": "investigate.mechanism"
       }
     },
@@ -373,7 +439,7 @@
       "action": "emit",
       "map": {
         "status": "inconclusive",
-        "evidence_path": "investigate.evidence_path",
+        "evidence_path": "write_investigation_evidence.evidence_path",
         "diagnosis": "investigate.mechanism",
         "confidence": "investigate.confidence"
       }
@@ -452,55 +518,75 @@
     },
     {
       "from": "investigate",
+      "to": "write_investigation_session",
+      "pass": "artifact"
+    },
+    {
+      "from": "write_investigation_session",
+      "to": "write_investigation_evidence",
+      "pass": "artifact"
+    },
+    {
+      "from": "write_investigation_evidence",
       "to": "verify_cause",
       "pass": "read-prior-session",
       "when": "investigate.status == 'confirmed' && investigate.confidence >= 40 && investigate.pressure_pass && investigate.contradictions == 0 && investigate.affected_files.length > 0"
     },
     {
-      "from": "investigate",
+      "from": "write_investigation_evidence",
       "to": "investigate",
       "pass": "same-session",
       "when": "investigate.status == 'confirmed' && visits('investigate') < 2",
       "label": "gate not met - gather more evidence"
     },
     {
-      "from": "investigate",
+      "from": "write_investigation_evidence",
       "to": "ask_more",
       "pass": "artifact",
       "when": "investigate.status == 'inconclusive' && investigate.refuted >= 3 && visits('ask_more') == 0"
     },
     {
-      "from": "investigate",
+      "from": "write_investigation_evidence",
       "to": "partial",
       "pass": "artifact",
       "when": "investigate.status == 'partial'"
     },
     {
-      "from": "investigate",
+      "from": "write_investigation_evidence",
       "to": "inconclusive",
       "pass": "artifact"
     },
     {
       "from": "verify_cause",
+      "to": "write_verification_session",
+      "pass": "artifact"
+    },
+    {
+      "from": "write_verification_session",
+      "to": "write_verification_evidence",
+      "pass": "artifact"
+    },
+    {
+      "from": "write_verification_evidence",
       "to": "propose_fix",
       "pass": "artifact",
       "when": "verify_cause.confirmed && $inputs.auto_fix"
     },
     {
-      "from": "verify_cause",
+      "from": "write_verification_evidence",
       "to": "confirmed",
       "pass": "artifact",
       "when": "verify_cause.confirmed"
     },
     {
-      "from": "verify_cause",
+      "from": "write_verification_evidence",
       "to": "investigate",
       "pass": "same-session",
       "when": "visits('investigate') < 3",
       "label": "objection"
     },
     {
-      "from": "verify_cause",
+      "from": "write_verification_evidence",
       "to": "partial",
       "pass": "artifact"
     },

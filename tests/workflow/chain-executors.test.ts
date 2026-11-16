@@ -25,6 +25,7 @@ import type { Workflow } from "@lane-pilot/workflow-engine";
 import { builtinWorkflow } from "../../src/rooms/workflow/builtin";
 import { createGoalAuditor } from "../../src/rooms/workflow/server/workflow-goal-audit";
 import { workflowAuditEvidence } from "../../src/rooms/workflow/server/workflow-audit-evidence";
+import { sha256Hex } from "@lane-pilot/kit";
 
 /**
  * The executors of a chain on the host, against a fake BB: a helper thread is a scripted answer, the PM's checkout is a real git
@@ -38,7 +39,7 @@ const reply = (body: Row, lead = "Done.") => `${lead}\n\n\`\`\`json\n${JSON.stri
 
 /** What a helper thread of a node spent, as BB reports it: one token-usage event of one turn, on this model. */
 type Spent = { input: number; output: number; model?: string };
-async function setup(script: Script, options: { pmEvents?: () => Row[]; firstTurnError?: string; firstTurnRetries?: boolean; dirty?: boolean; spent?: Record<string, Spent>; failWrites?: boolean; noPm?: boolean; noCheckout?: boolean; invalidParent?: boolean; offers?: Array<{ providerId: string; model: string; host?: string }>; hosts?: Array<{ id: string; name: string; status?: string }>; sources?: Array<{ hostId: string; path: string }>; failManifest?: boolean; envs?: Record<string, { hostId: string; path: string } | null>; resolveWorkflow?: (id: string, version?: number) => Workflow | null; runCommandStub?: (input: Row) => Row | null; vkMetadata?: boolean } = {}) {
+async function setup(script: Script, options: { pmEvents?: () => Row[]; firstTurnError?: string; firstTurnRetries?: boolean; dirty?: boolean; spent?: Record<string, Spent>; failWrites?: boolean; noPm?: boolean; noCheckout?: boolean; invalidParent?: boolean; offers?: Array<{ providerId: string; model: string; host?: string }>; hosts?: Array<{ id: string; name: string; status?: string }>; sources?: Array<{ hostId: string; path: string }>; failManifest?: boolean; failReads?: boolean; enableFileReads?: boolean; envs?: Record<string, { hostId: string; path: string } | null>; resolveWorkflow?: (id: string, version?: number) => Workflow | null; runCommandStub?: (input: Row) => Row | null; vkMetadata?: boolean } = {}) {
   const checkout = mkdtempSync(join(tmpdir(), "lp-chain-"));
   execFileSync("git", ["init", "-q"], { cwd: checkout });
   writeFileSync(join(checkout, "README.md"), "hello\n");
@@ -122,6 +123,15 @@ async function setup(script: Script, options: { pmEvents?: () => Row[]; firstTur
       },
     },
   });
+  if (options.enableFileReads) {
+    harness.sdk.stub("files.read", async (args: unknown) => {
+      if (options.failReads) throw new Error("permission denied");
+      const filePath = String((args as { path?: unknown }).path ?? "");
+      if (!existsSync(filePath)) return { content: null, sha256: null };
+      const content = readFileSync(filePath, "utf8");
+      return { content, sha256: sha256Hex(content), truncated: false };
+    });
+  }
   // The VK thread-key functions are gated on `bb.vk` existing (thread-keys.ts vkBuild): only a test that asks for the
   // metadata lookup sees the fake's experimental_vkFindByPluginMetadata; every other test keeps the plain-spawn path.
   // With `bb.vk` set the keyed-spawn path (fullAccessSpawn -> spawnKeyed) goes live too, and the fake host answers every
@@ -153,7 +163,7 @@ async function setup(script: Script, options: { pmEvents?: () => Row[]; firstTur
   registerChainExecutors(engine, ctx, services, createWorkflowAgents());
   registerDispatchExecutors(engine, ctx.bb);
   const rt: ChainRuntime = { ctx, services, pmThreadId: options.noPm ? null : PM, projectId: PROJECT, runId: options.noPm ? null : RUN };
-  const start = (workflow: Workflow, inputs: Row = {}) => engine.start({ workflow, inputs, runtime: rt, link: options.noPm ? { projectId: PROJECT } : { projectId: PROJECT, runId: RUN } });
+  const start = (workflow: Workflow, inputs: Row = {}, mode?: "quick" | "standard" | "full") => engine.start({ workflow, inputs, ...(mode ? { mode } : {}), runtime: rt, link: options.noPm ? { projectId: PROJECT } : { projectId: PROJECT, runId: RUN } });
   void options;
   return { bb, harness, db, engine, checkout, spawned, sent, writes, hostCalls, dispatched, services, start, rt, dispose: () => harness.lifecycle.dispose() };
 }
@@ -692,7 +702,7 @@ describe("security audit report inputs", () => {
     const t = await setup({
       recon: [reply({ entry_points: ["src/auth.ts"], stack: ["node"], auth: "session", found_entry_points: true, handoff: "Recon ready." })],
       "scan:child": [reply({ phase: "fixture-scan", findings: [finding], warnings: [warning], handoff: "Scan complete; consult structured findings." })],
-      threat_model: [reply({ findings: [threat], handoff: "Threat verification ready." })],
+      threat_model: [reply({ findings: [threat], verification: "## Verified against the code\n\n| Threat | Verdict |\n| --- | --- |\n| T1 | missing |\n", handoff: "Threat verification ready." })],
       report: [() => {
         reportPrompt = String(t.spawned.at(-1)!.prompt);
         for (const name of ["scan_findings", "scan_warnings", "consumes-threat_model"]) {
@@ -700,9 +710,9 @@ describe("security audit report inputs", () => {
             && reportPrompt.includes(write.path.slice(t.checkout.length + 1)));
           delivered[name] = file ? JSON.parse(readFileSync(file.path, "utf8")) : null;
         }
-        return reply({ report_path: "security-report.md", severity_distribution: { high: phase ? 3 : 2 }, handoff: "Report fixture ready." });
+        return reply({ document: "# Security audit\n\n| Severity | Count |\n| --- | --- |\n| HIGH | 2 |\n", severity_distribution: { high: phase ? 3 : 2 }, handoff: "Report fixture ready." });
       }],
-    }, { resolveWorkflow: (id) => builtinWorkflow(id) });
+    }, { enableFileReads: true, resolveWorkflow: (id) => builtinWorkflow(id) });
     dispose = t.dispose;
     const result = await t.start(builtinWorkflow("security-audit")!, { scope: "src", tier: "quick", phase_id: phase }).done;
     expect(result.status, result.error ?? undefined).toBe("succeeded");
@@ -712,7 +722,7 @@ describe("security audit report inputs", () => {
     expect(reportPrompt).toContain("- scan_critical_count: 0");
     expect(reportPrompt).toContain("- scan_high_count: 2");
     expect(reportPrompt).not.toContain("SCAN_TAIL_590F");
-    if (phase) expect(delivered["consumes-threat_model"]).toEqual({ findings: [threat], handoff: "Threat verification ready." });
+    if (phase) expect(delivered["consumes-threat_model"]).toMatchObject({ findings: [threat], verification: expect.stringContaining("## Verified against the code"), handoff: "Threat verification ready." });
     else expect(t.spawned.some((request) => (request.pluginMetadata as Row).lanePilotWorkflowNode === "threat_model")).toBe(false);
   });
 });
@@ -736,7 +746,7 @@ describe("the owner's question", () => {
       spec: [() => {
         specPrompt = String(t.spawned.at(-1)!.prompt);
         specHistory = inputFile("answers", specPrompt);
-        return reply({ spec_path: ".agents/phases/ph_590e/SPEC.md", handoff: "Specification ready." });
+        return reply({ content: "# SPEC\n\n- REQ-1: Given/When/Then\n", handoff: "Specification ready." });
       }],
     });
     dispose = t.dispose;
@@ -898,6 +908,63 @@ describe("files, diffs and the plugin's own state", () => {
     const summary = await t.start(folder).done;
     expect(summary.status).toBe("succeeded");
     expect(t.writes.map((write) => write.path.replace(t.checkout, "").replace(/\d{4}-\d\d-\d\d/, "D"))).toEqual(["/archive/D/items.json", "/archive/D/summary.md"]);
+  });
+
+  it("fs.write append/prepend reads the current bytes, preserves them, and reports the real writer path", async () => {
+    const t = await setup({}, { enableFileReads: true });
+    dispose = t.dispose;
+    mkdirSync(join(t.checkout, "docs"), { recursive: true });
+    writeFileSync(join(t.checkout, "docs/history.md"), "old section\n");
+    const workflow = chain({
+      inputs: [{ name: "fragment", type: "string", required: true }],
+      outputs: [{ name: "path", type: "string", required: false }],
+      nodes: [
+        { id: "append", type: "action", action: "fs.write", path: "docs/history.md", mode: "append", contents: "{{$inputs.fragment}}", out: { history_path: "string" } },
+        { id: "prepend", type: "action", action: "fs.write", path: "docs/history.md", mode: "prepend", contents: "new section\n", out: { history_path: "string" } },
+        { id: "done", type: "action", action: "emit", map: { path: "prepend.history_path" } },
+      ],
+      edges: [{ from: "start", to: "append" }, { from: "append", to: "prepend" }, { from: "prepend", to: "done" }],
+    });
+    const summary = await t.start(workflow, { fragment: "added section\n" }).done;
+    expect(summary).toMatchObject({ status: "succeeded", output: { path: "docs/history.md" } });
+    expect(readFileSync(join(t.checkout, "docs/history.md"), "utf8")).toBe("new section\nold section\nadded section\n");
+    expect(t.writes.filter((write) => write.path.endsWith("/docs/history.md")).map((write) => write.content)).toEqual([
+      "old section\nadded section\n",
+      "new section\nold section\nadded section\n",
+    ]);
+  });
+
+  it("fs.write fails closed when append persistence is rejected and never emits done", async () => {
+    const t = await setup({}, { failWrites: true, enableFileReads: true });
+    dispose = t.dispose;
+    writeFileSync(join(t.checkout, "history.md"), "keep me\n");
+    const workflow = chain({
+      outputs: [{ name: "path", type: "string", required: false }],
+      nodes: [
+        { id: "append", type: "action", action: "fs.write", path: "history.md", mode: "append", contents: "new\n", out: { history_path: "string" } },
+        { id: "done", type: "action", action: "emit", map: { path: "append.history_path" } },
+      ],
+      edges: [{ from: "start", to: "append" }, { from: "append", to: "done" }],
+    });
+    const summary = await t.start(workflow).done;
+    expect(summary.status).toBe("failed");
+    expect(readFileSync(join(t.checkout, "history.md"), "utf8")).toBe("keep me\n");
+    expect(t.engine.snapshot(summary.runId)!.steps.some((step) => step.node_id === "done")).toBe(false);
+  });
+
+  it("debug's real registered handlers append structured session/evidence output without losing the initial session", async () => {
+    const t = await setup({
+      investigate: [reply({ status: "confirmed", confidence: 82, pressure_pass: true, contradictions: 0, affected_files: ["src/a.ts:4"], refuted: 1, hypotheses_total: 2, evidence_path: "", root_cause: "bad state", mechanism: "state enters empty", fix_direction: "guard the state", regression_tests: [], risks: [], session_entry: "\n### Hypothesis 1\n\nResolved.\n", evidence_entry: '{"hypothesis":"bad state","verdict":"confirmed"}', handoff: "diagnosis ready" })],
+      verify_cause: [reply({ confirmed: true, objections: [], session_entry: "\n### Independent check\n\nConfirmed.\n", evidence_entry: '{"hypothesis":"cheaper cause","verdict":"refuted"}', handoff: "check ready" })],
+    }, { enableFileReads: true, resolveWorkflow: (id) => builtinWorkflow(id) });
+    dispose = t.dispose;
+    const result = await t.start(builtinWorkflow("debug")!, { symptom: "A sufficiently detailed failure symptom for this session.", session: "debug-append", mode: "standalone", auto_fix: false }, "full").done;
+    expect(result).toMatchObject({ status: "succeeded", output: { status: "confirmed", evidence_path: ".agents/planning/debug/debug-append.evidence.ndjson" } });
+    const session = readFileSync(join(t.checkout, ".agents/planning/debug/debug-append.md"), "utf8");
+    expect(session).toContain("# Debug session — debug-append");
+    expect(session).toContain("### Hypothesis 1");
+    expect(session).toContain("### Independent check");
+    expect(readFileSync(join(t.checkout, ".agents/planning/debug/debug-append.evidence.ndjson"), "utf8")).toBe('{"hypothesis":"bad state","verdict":"confirmed"}\n{"hypothesis":"cheaper cause","verdict":"refuted"}\n');
   });
 
   it("git.diff_files lists the changed files of a range minus lock and vendor files, and sizes the review", async () => {

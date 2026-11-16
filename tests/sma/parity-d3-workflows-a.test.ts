@@ -106,8 +106,8 @@ describe("parity d3 workflows a", () => {
     // A debug run started the old way (one symptom, no failures list, no session) takes the same path as on main.
     const old = await runSim("debug", { input: { symptom: "CSV import crashes with 'Cannot read properties of undefined' on files with an empty last line" },
       stubs: { investigate: { status: "confirmed", confidence: 82, pressure_pass: true, contradictions: 0, affected_files: ["a.ts:1"], refuted: 1, root_cause: "c", fix_direction: "f" }, verify_cause: { confirmed: true } } });
-    expect(pathOf(old)).toBe("ask_symptoms investigate verify_cause confirmed");
-    expect(old.skipped).toEqual(["ask_symptoms", "verify_cause"]);
+    expect(pathOf(old)).toBe("ask_symptoms investigate write_investigation_session write_investigation_evidence verify_cause write_verification_session write_verification_evidence confirmed");
+    expect(old.skipped).toEqual(["ask_symptoms", "write_investigation_session", "write_investigation_evidence", "verify_cause", "write_verification_session", "write_verification_evidence"]);
     expect(old.called("session")).toEqual([]);
     expect(old.called("diagnose")).toEqual([]);
   });
@@ -205,11 +205,11 @@ describe("parity d3 workflows a", () => {
   it("[sma:k_pl_debug] an existing debug session file resumes the run, a new one starts open", async () => {
     // With a session set the file decides the path: found resumes without asking the symptoms, new asks them once.
     const resumed = await runSim("debug", { input: { session: "csv-crash" }, stubs: { session: { found: true, path: ".agents/planning/debug/csv-crash.md" }, investigate: { status: "confirmed", confidence: 80, pressure_pass: true, contradictions: 0, affected_files: ["a.ts:1"], refuted: 0, root_cause: "c", fix_direction: "f" }, verify_cause: { confirmed: true } } });
-    expect(pathOf(resumed)).toBe("ask_symptoms session investigate verify_cause confirmed");
+    expect(pathOf(resumed)).toBe("ask_symptoms session investigate write_investigation_session write_investigation_evidence verify_cause write_verification_session write_verification_evidence confirmed");
     expect(node("debug", "investigate").prompt).toContain(".agents/planning/debug/");
     const fresh = await runSim("debug", { input: { session: "new-one" }, stubs: { session: { found: false, path: ".agents/planning/debug/new-one.md" }, investigate: { status: "inconclusive", confidence: 10, refuted: 0, pressure_pass: true, contradictions: 0, affected_files: [], root_cause: "unknown", fix_direction: "none" } }, humans: { ask_symptoms_new: { answer: "s", answer_kind: "answered" } } });
     expect(fresh.summary.error ?? "").toBe("");
-    expect(pathOf(fresh)).toBe("ask_symptoms session ask_symptoms_new investigate inconclusive");
+    expect(pathOf(fresh)).toBe("ask_symptoms session ask_symptoms_new investigate write_investigation_session write_investigation_evidence inconclusive");
     // The file lp.debug_session writes: the gaps from a phase (an array) one per line, never «—»; the name stays inside .agents/planning/debug/.
     const doc = debugSessionDoc("verdict-ab12", ["check p1 red", "acceptance a2"]);
     expect(doc).toContain("Status: open");

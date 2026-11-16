@@ -108,7 +108,7 @@ describe("security-audit", () => {
   const rows = (...found: unknown[][]) => { let at = -1; return (() => { at += 1; return { phase: "p", findings: found[at] ?? [], warnings: [] }; }) as never; };
   it("the spec's case: a quick tier scans two phases, a high finding is reported and review-fix offered", async () => {
     const r = await runSim("security-audit", { input: { scope: ".", tier: "quick" }, stubs: { recon: { found_entry_points: true }, "scan:child": rows([finding("high", { file: "src/auth.ts", line: 9, evidence: "token compared with ==" })], []), report: { severity_distribution: { high: 1 } } } });
-    expect(pathOf(r)).toBe("recon scan threat_model report offer done_offer");
+    expect(pathOf(r)).toBe("recon scan threat_model write_threat_model report write_report offer done_offer");
     expect(out(r)).toMatchObject({ status: "done", tier: "quick", proposed_workflow: "review-fix", severity_distribution: { high: 1 } });
     expect((out(r)!.findings as unknown[]).length).toBe(1);
     expect(r.called("scan:child")).toHaveLength(2);
@@ -117,7 +117,7 @@ describe("security-audit", () => {
   it("the tier decides the phases: standard 4, deep 6; no findings means no offer", async () => {
     const standard = await runSim("security-audit", { input: { tier: "standard" }, stubs: { recon: { found_entry_points: true } } });
     expect(standard.called("scan:child")).toHaveLength(4);
-    expect(pathOf(standard)).toBe("recon scan threat_model report goal_check done");
+    expect(pathOf(standard)).toBe("recon scan threat_model write_threat_model report write_report goal_check done");
     const deep = await runSim("security-audit", { input: { tier: "deep" }, stubs: { recon: { found_entry_points: true } } });
     expect(deep.called("scan:child")).toHaveLength(6);
   });
