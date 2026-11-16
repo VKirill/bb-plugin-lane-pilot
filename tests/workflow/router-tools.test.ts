@@ -253,6 +253,7 @@ describe("lane_pilot_route", () => {
     expect(answer.next).toContain("owner or a BB agent");
     expect(answer.next).toContain("an agent assignment needs no extra owner message");
     expect(answer.warnings.join(" ")).toContain("has not run for real yet");
+    expect(answer.warnings.join(" ")).toContain("assignment from the owner or a BB agent");
   });
 
   it("reads the library of the PM's project: a project's own chain is routed and started like a global one (audit item 11)", async () => {
@@ -277,7 +278,7 @@ describe("lane_pilot_route", () => {
     expect(answer.next).toContain("Start no workflow");
   });
 
-  it("names the fallback graphs while nothing is published", async () => {
+  it("names fallback families for clarification without authorizing a launch while nothing is published", async () => {
     const { db } = setup();
     const answer = parse(await routeTool(depsOf(db, draftStore, fakeEngine().engine), { intent: "Add pagination to the orders list and cover it with tests" }, ctx));
     expect(answer.workflowId).toBeNull();
@@ -285,8 +286,10 @@ describe("lane_pilot_route", () => {
     expect(answer.next).toContain("graph errand");
     expect(answer.next).toContain("graph specialist");
     expect(answer.next).not.toContain("usual way");
-    // Research: the PM starts web-research, not a bare tavily specialist.
-    expect(answer.next).toContain("start `web-research`");
+    expect(answer.decision).toBe("clarify");
+    expect(answer.next).toContain("Start no workflow now");
+    expect(answer.next).toContain("do not bypass clarify");
+    expect(answer.next).toContain("web-research");
     expect(answer.next).toContain("not a bare tavily specialist");
   });
 
@@ -302,6 +305,40 @@ describe("lane_pilot_route", () => {
 describe("the tools in the plugin", () => {
   let dispose: (() => Promise<void> | void) | null = null;
   afterEach(async () => { await dispose?.(); dispose = null; });
+
+  it("keeps a conflicting assignment at clarify through the registered tool, with no fallback launch instruction", async () => {
+    const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
+    await plugin(bb);
+    dispose = () => harness.lifecycle.dispose();
+    const db = openDatabase(bb);
+    createRun(db, RUN, PROJECT, "cli");
+    setRunThread(db, RUN, PM);
+    const answer = parse(String(await harness.behavior.callAgentTool("lane_pilot_route", {
+      intent: "Deploy to production", request: "Review src/server.ts; do not change anything.",
+    }, { threadId: PM, projectId: PROJECT })));
+    expect(answer).toMatchObject({ decision: "clarify", workflowId: null });
+    expect(answer.goals ?? []).toEqual([]);
+    expect(answer.candidates.some((candidate: { id: string }) => candidate.id === "deploy")).toBe(true);
+    expect(answer.next).toContain("Start no workflow now");
+    expect(answer.next).toContain("Candidates, liveTrial and fallback tools do not bypass clarify");
+  });
+
+  it("accepts the full request through the registered route tool and preserves it for the run schema", async () => {
+    const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
+    await plugin(bb);
+    dispose = () => harness.lifecycle.dispose();
+    const db = openDatabase(bb);
+    createRun(db, RUN, PROJECT, "cli");
+    setRunThread(db, RUN, PM);
+    const request = `Review src/cancel.ts without changing it. ${"Verify the cancellation handler and its tests. ".repeat(20)}Do not change anything or deploy.`;
+    const result = parse(String(await harness.behavior.callAgentTool("lane_pilot_route", { intent: "Code review; do not change anything", request }, { threadId: PM, projectId: PROJECT })));
+    expect(result).toMatchObject({ decision: "route", workflowId: "code-review", inputs: { files: ["src/cancel.ts"] } });
+    expect(result.goals[0].request).toBe(request);
+    // A fragment refuses before starting an engine, but only after the real tool schema accepts these goals.
+    const refused = parse(String(await harness.behavior.callAgentTool("lane_pilot_run_workflow", { workflowId: "lp.build", inputs: {}, goals: result.goals }, { threadId: PM, projectId: PROJECT })));
+    expect(refused).toMatchObject({ status: "refused", workflow: "lp.build" });
+    expect(refused.reason).toContain("fragment");
+  });
 
   it("are registered, and a PM chat gets a clear refusal for a fragment of the real catalog", async () => {
     const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });

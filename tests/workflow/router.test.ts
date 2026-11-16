@@ -6,6 +6,34 @@ import type { RouterModel, RouterState } from "@lane-pilot/workflow-engine";
 import { publishedCatalog } from "./router-catalog";
 
 const catalog = publishedCatalog();
+
+describe("separate routing intent and full request", () => {
+  const request = "Проведи независимое ревью существующей public/how-it-works.html и связанных обработчиков оплаты и отмены без исправлений продукта. Сопоставь каждое утверждение с кодом и file:line. Шесть продуктовых критериев: K1 отмена только после подтверждения Stripe; K2 повтор отмены при повторном открытии той же ссылки; K3 кнопка “Повторить” лишь проверяет статус; K4 отмена и отказ не делают заказ оплаченным; K5 описание оплаты соответствует реализации в пределах приложения; K6 опрос каждые две секунды и минутное ограничение соответствуют реализации, включая зависшие запросы и восстановление после failed. Итог должен содержать отдельный вердикт по каждому критерию, подтверждённые находки и сохранённый отчёт. Успех ревью означает полноту и достоверность проверки, а не отсутствие дефектов продукта: partial и замечания сохраняются. Исходники продукта, коммиты, Stripe-сессии, платежи, письма и deploy не менять. Разрешены локальные тесты с заглушками и служебные файлы, создаваемые самим графом. Ограничение “без исправлений продукта” оценивай по фактическим доступным наблюдениям репозитория до и после исполнения и по окнам исполнителей, сохраняя ограничения: endpoints не доказывают отсутствия временной правки с откатом, изменений игнорируемых/неотслеживаемых байтов или внешних эффектов. Не выдавай эти неизмеренные свойства за установленный факт.";
+  it("preserves the full assignment and its files without scoring its prohibited actions", async () => {
+    const result = await route("Code review; do not change anything", { request });
+    expect(result).toMatchObject({ decision: "route", workflowId: "code-review" });
+    expect(result.goals[0]?.request).toBe(request);
+    expect(result.inputs.files).toContain("public/how-it-works.html");
+    expect(result.boundary_contract?.out_of_scope.join(" ")).toContain("без исправлений");
+    expect(result.evidence.rules.map((r) => r.id)).not.toContain("deploy");
+  });
+  it("clarifies a write choice contradicted by the full read-only request before returning runnable goals", async () => {
+    const result = await route("Deploy to production", { request: "Review src/server.ts; do not change anything." });
+    expect(result).toMatchObject({ decision: "clarify", workflowId: null, goals: [] });
+    expect(result.questions.join(" ")).toContain("read-only");
+  });
+  it.each(["", "   ", "x".repeat(4001)])("does not silently replace an invalid explicit request", async (request) => {
+    expect(await route("Code review", { request })).toMatchObject({ decision: "clarify", workflowId: null, goals: [] });
+  });
+  it("uses the full assignment for task text while allowing an explicit write request", async () => {
+    const request = "Implement dark mode in src/settings.ts and cover it with tests.";
+    const result = await route("Implement dark mode toggle in the settings screen", { request });
+    expect(result).toMatchObject({ decision: "route", workflowId: "analyze-plan-execute" });
+    expect(result.goals[0]?.request).toBe(request);
+    expect(result.inputs.goal).toBe(request);
+  });
+});
+
 const route = (intent: string, extra: Partial<Parameters<typeof routeIntent>[0]> = {}) => routeIntent({ intent, workflows: catalog, ...extra });
 afterEach(() => setRouterModel(null));
 

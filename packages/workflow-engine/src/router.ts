@@ -8,7 +8,7 @@ import type { Workflow } from "./schema";
  * candidates (a deterministic scorer is the default; a live model is plugged through the port), and either returns the
  * chosen workflow with the recorded evidence, a boundary contract and goals, or up to three clarifying questions.
  * `published` and `tested` workflows that are not `internal` are offered; a `tested` one (it passed its stub tests, never ran for
- * real) comes with `liveTrial: true` and a warning, so the PM asks the owner for a first real run instead of the router hiding it.
+ * real) comes with `liveTrial: true` and a warning, so the PM explicitly starts an assigned real outcome instead of the router hiding it.
  * The router sees cards, not graphs.
  */
 
@@ -399,7 +399,7 @@ export type RouteDecision = {
     modelFallback?: string;
   };
   candidates: Array<{ id: string; name: string; purpose: string; needs: string[]; score: number; base: number; boost: number; penalty: number; rules: string[]; stat?: number; liveTrial?: true }>;
-  /** The chosen workflow passed its stub tests but never ran for real: ask the owner for a first real run (`liveTrial: true`) before starting it. */
+  /** The chosen workflow passed its stub tests but never ran for real: start only for an assigned real outcome with explicit `liveTrial: true`. */
   liveTrial: boolean;
   questions: string[];
   boundary_contract: BoundaryContract | null;
@@ -511,7 +511,7 @@ function goalsFor(workflow: Workflow, intent: string): RouteGoal[] {
  * `succeeded` is completed work. A correct refusal counts as not completed. An escalation is recorded apart and moves neither side.
  */
 export type RunRecord = { succeeded: number; failed: number; lastRunAt: number | null; executed: number; workDone: number; refused: number; escalated: number };
-export type RouteInput = { intent: string; context?: string; workflows: ReadonlyArray<Workflow>; state?: RouterState; model?: RouterModel | null;
+export type RouteInput = { intent: string; request?: string; context?: string; workflows: ReadonlyArray<Workflow>; state?: RouterState; model?: RouterModel | null;
   /** Run statistics by workflow id: between candidates the text search scores (nearly) alike, the one that has run well and lately comes first. Never lets a worse text match win. */
   stats?: ReadonlyMap<string, RunRecord>; now?: number };
 
@@ -528,6 +528,7 @@ export function trackRecord(record: RunRecord | undefined, now: number): number 
 
 export async function routeIntent(input: RouteInput): Promise<RouteDecision> {
   const intent = input.intent.trim();
+  const request = input.request === undefined ? intent : input.request.trim();
   let s = signalsOf(intent);
   const empty = (partial: Partial<RouteDecision>): RouteDecision => ({
     decision: "clarify", workflowId: null, suggested: null, confidence: 0,
@@ -536,7 +537,8 @@ export async function routeIntent(input: RouteInput): Promise<RouteDecision> {
   });
   const lang = s.ru ? "ru" : "en";
   // A goal carries the request verbatim only up to GOAL_REQUEST_MAX; past it a routed run could not be audited against the whole ask, so it is clarified, never cut.
-  if (intent.length > GOAL_REQUEST_MAX) {
+  if (input.request !== undefined && !request) return empty({ questions: ["Give the complete non-empty request; the routing intent cannot replace an explicitly empty assignment."] });
+  if (intent.length > GOAL_REQUEST_MAX || request.length > GOAL_REQUEST_MAX) {
     return empty({ questions: [lang === "ru"
       ? `Запрос длиннее ${GOAL_REQUEST_MAX} символов: цель прогона не может нести его целиком, и «цель достигнута» было бы нечем проверить. Сократите его или разбейте на части.`
       : `The request is longer than ${GOAL_REQUEST_MAX} characters: a run goal cannot carry it whole, so "the goal is met" could not be verified. Shorten it or split it into parts.`] });
@@ -557,6 +559,9 @@ export async function routeIntent(input: RouteInput): Promise<RouteDecision> {
   }
 
   const hits = applyRules(s);
+  // Assignment constraints and inputs remain separate from lexical ranking signals.
+  const assignmentSignals = input.request === undefined ? s : signalsOf(request);
+  const assignmentHits = input.request === undefined ? hits : applyRules(assignmentSignals);
   const boost = new Map<string, number>();
   for (const hit of hits) for (const [id, value] of Object.entries(hit.boosts)) boost.set(id, (boost.get(id) ?? 0) + value);
 
@@ -610,6 +615,11 @@ export async function routeIntent(input: RouteInput): Promise<RouteDecision> {
     needs: item.workflow.inputs.filter((field) => field.required && field.default === undefined).map((field) => field.name), score: cards[i]!.score, base: round3(item.base), boost: round3(item.boost), penalty: round3(item.penalty), rules: item.rules,
     ...(input.stats ? { stat: round3(trackRecord(input.stats.get(item.workflow.id), input.now ?? Date.now())) } : {}), ...(needsLiveTrial(item.workflow) ? { liveTrial: true as const } : {}) }));
   const chosen = output.choice ? top.find((item) => item.workflow.id === output!.choice)?.workflow ?? null : null;
+  if (input.request !== undefined && chosen && WRITES.includes(chosen.id) && assignmentHits.some((hit) => hit.flag === "readonly")) {
+    return empty({ confidence: Math.min(output.confidence, MIN_CONFIDENCE - 1), candidates, warnings,
+      evidence: record("the routing intent conflicts with the full read-only request", output.rejected),
+      questions: [lang === "ru" ? "Полный запрос распознан как read-only, но выбранный граф изменяет продукт. Уточните допустимые действия до запуска." : "The full request is read-only, but the selected workflow makes changes. Clarify the allowed actions before starting."] });
+  }
 
   // A rule that names a workflow the owner cannot have now (a draft, a fragment's sibling, a missing plugin or secret) and points there more strongly than at
   // anything offered means the best match is not on the list: the pick among the rest is a neighbour's, so it is asked about, never trusted.
@@ -625,18 +635,18 @@ export async function routeIntent(input: RouteInput): Promise<RouteDecision> {
   if (unbacked) warnings.push(`a ${s.wordCount}-word brief: ${chosen!.id} is not backed by both its own rule and its text, so it is a suggestion, not a route`);
   if (!chosen || output.confidence < MIN_CONFIDENCE || (broad && !strongRule) || (top[0]?.score ?? 0) < 0.12 || missedBest || unbacked) {
     const modelQuestions = output.questions.filter((question) => question.trim());
-    const filled = chosen ? fillInputs(chosen, s, intent) : null;
+    const filled = chosen ? fillInputs(chosen, assignmentSignals, request) : null;
     const questions = modelQuestions.length ? modelQuestions.slice(0, MAX_QUESTIONS)
       : questionsFor({ ru: s.ru, broad: broad || (top[0]?.score ?? 0) < 0.12, top: top.slice(0, 2).map((item) => item.workflow), missing: filled?.missing ?? [] });
     return empty({ confidence: Math.min(output.confidence, MIN_CONFIDENCE - 1), suggested: chosen?.id ?? null, evidence: record(output.pattern, output.rejected), candidates, questions, warnings });
   }
 
-  const filled = fillInputs(chosen, s, intent, output.inputs);
-  if (needsLiveTrial(chosen)) warnings.push(`${chosen.id} passed its tests on stubs but has not run for real yet: ask the owner for a first real run (it will really send, post and spend) and start it with liveTrial: true`);
+  const filled = fillInputs(chosen, assignmentSignals, request, output.inputs);
+  if (needsLiveTrial(chosen)) warnings.push(`${chosen.id} passed its tests on stubs but has not run for real yet: when the assignment from the owner or a BB agent requests this outcome, start it with liveTrial: true; its human confirmations still apply before irreversible steps`);
   if (chosen.id === "milestone-close" && (input.state?.openTasks?.() ?? 0) > 0) warnings.push(`${input.state!.openTasks!()} tasks of this run are still open: close the milestone only after they finish`);
   return empty({
     decision: "route", workflowId: chosen.id, liveTrial: needsLiveTrial(chosen), confidence: output.confidence, evidence: record(output.pattern, output.rejected), candidates, warnings,
-    boundary_contract: boundaryFor({ workflow: chosen, s, intent, context: input.context, hits }), goals: goalsFor(chosen, intent),
+    boundary_contract: boundaryFor({ workflow: chosen, s: assignmentSignals, intent: request, context: input.context, hits: assignmentHits }), goals: goalsFor(chosen, request),
     inputs: filled.inputs, missingInputs: filled.missing, guessedInputs: filled.guessed,
   });
 }

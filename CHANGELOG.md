@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.589
+
+- **Routing separates a concise intent from the complete assignment.** Optional `request` supplies goals, task inputs and constraints without adding prohibited-action words to lexical ranking. Recognized read-only assignments conflicting with a writing graph return clarification; PM guidance forbids candidate/live-trial/fallback launches after that response. Existing callers retain the intent-only path. Tests in `tests/workflow/router.test.ts` and `tests/workflow/router-tools.test.ts` cover the saved long review request, conflicting deployment intent, legacy behavior and registered tool schemas. This is a conservative routing guard, not universal semantic authorization; live acceptance remains separate.
+
 ## 0.1.588
 
 - **Root workflow observations cover the execution interval before goal auditing.** Initial and final repository snapshots are retained in the journal, including explicit unavailable/error outcomes. Reloads preserve the historical initial observation; a rerun invalidates final observations and cached positive audits even when the output is unchanged. The collector retains child windows, verifies host/checkout alignment and exposes unknown fingerprints. Repeated filename lists are compacted for the auditor while complete measurements remain available through a hash-bound reference. These are endpoint observations, not proof of temporary write-and-revert, untracked contents or external effects. Live graph acceptance remains separate.
