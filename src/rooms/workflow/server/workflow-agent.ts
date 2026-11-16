@@ -1,5 +1,5 @@
 import { MACHINE_AFFINITY_ANY } from "@lane-pilot/contracts";
-import { THREAD_WATCH_EVENT_TYPES, listThreadEventsPaged, listThreadEventsRaw, waitThreadIdle } from "@lane-pilot/thread-observe";
+import { THREAD_WATCH_EVENT_TYPES, listThreadEventsRaw, waitThreadIdle } from "@lane-pilot/thread-observe";
 import { getRunSettingsScopes, planningHomeInputs } from "../../storage";
 import {findModelIn, isZcodeProvider, providerLimitNotice, writerExecutionSelection, zcodeEnvironmentError} from "@lane-pilot/models";
 ;
@@ -22,7 +22,9 @@ import { phaseFolder } from "../../phase";
 import type { LanePilotDatabase } from "../../storage";
 import { PROVIDER_FOLDER_BLOCK_TTL_MS, findThreadsByMetadata, folderEnvironment, fullAccessSpawn, documentaryGateOf, hiddenPlacement, keyedSpawnSupported, modelCatalogOf, noteProviderLimit, noteProviderStartFailure, noteProviderStartSuccess, pmHostOf, projectFolder, projectSources, providerBlockedForFolder, readProviderFolderBlock, resolveSpawnModel, spawnUsageOf, warmSpawnUsage } from "../../platform/server";
 import { helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "../../runs/server";
-import { detectRepoEdits, gitRepoSnapshot, gitRepoStatus, namedByChat, writtenByEngineSince, type RepoSnapshot } from "../../verification/server";
+import { createRepoGuard } from "./workflow-repo-guard";
+import type { RepoGuardDetail, RepoGuardPoint } from "./workflow-repo-guard";
+export type { RepoGuardDetail } from "./workflow-repo-guard";
 import { SPECIALIST_GRAPH, SPECIALIST_ROLES, rememberSpecialistThread } from "../../critique/server";
 import { modelTier, ROLE_IDS, ROLE_MODEL_OPTIONS, roleRowOf } from "@lane-pilot/models";
 import { isDocumentaryRole } from "../../contracts";
@@ -175,22 +177,6 @@ export type HelperRequest = {
   signal?: AbortSignal;
 };
 /** What the step spent: tokens and the price of them, from the thread's own usage events (the budget of the run counts these). */
-/** The checkout's measured state at the edges of a read-only helper's window: endpoint observations, not proof the run left no other effect. `changed`/`pmOwn`/`engineOwn`/`edited` are null when the guard could not compare (the before snapshot was unknown). */
-export type RepoGuardDetail = {
-  checkout: { hostId: string; path: string };
-  /** Observation interval: `before.at` … `after.at` (hub clock); `watchedFrom` is when the window opened. */
-  watchedFrom: number;
-  /** True when the thread or its pending turn predates this window (reload re-run, deduped follow-up): the snapshots may not cover the whole execution. */
-  reusedThread: boolean;
-  /** "unverified" when the helper's thread was not freshly spawned into the resolved checkout — a continued (`intoThread`) thread, or one a reload re-run restored by spawn key (`reusedThread`): its environment was never compared to the snapshotted checkout, so the snapshots are interval data on the PM checkout, not a measurement of where the helper worked. */
-  checkoutBinding: "verified" | "unverified";
-  before: RepoSnapshot | null;
-  after: RepoSnapshot | null;
-  changed: string[] | null;
-  pmOwn: string[] | null;
-  engineOwn: string[] | null;
-  edited: string[] | null;
-};
 export type HelperResult = { threadId: string; output: Record<string, unknown>; text: string; usage?: { tokens: number; costUsd: number; unknown?: true };
   /** Read-only helpers only: `repoGuard` lands in the step's `receipt_json.detail` for the goal audit. */
   detail?: { repoGuard?: RepoGuardDetail } };
@@ -365,17 +351,9 @@ export function createWorkflowAgents() {
       }
     }
     const watchedFrom = Date.now();
-    // A read-only helper's window is measured by the fuller snapshot (HEAD + work/index diff hashes + porcelain files) in
-    // the same two host calls the plain status read always cost; other roles keep `gitRepoStatus`.
-    const guardPoint = async (): Promise<{ files: Set<string> | null; snap: RepoSnapshot | null }> => {
-      if (!checkoutPath || !checkoutHostId) return { files: null, snap: null };
-      if (!spec.readOnly) return { files: await gitRepoStatus(host, checkoutHostId, checkoutPath), snap: null };
-      const snap = await gitRepoSnapshot(host, checkoutHostId, checkoutPath);
-      // The snapshot command needs mktemp and git plumbing a host may lack: the edit guard keeps its plain status read
-      // and repoGuard records the unmeasured endpoints as null rather than losing the guard with the snapshot.
-      if (snap) return { files: new Set(snap.files), snap };
-      return { files: await gitRepoStatus(host, checkoutHostId, checkoutPath), snap: null };
-    };
+    const repoWatcher = createRepoGuard({ bb, host, hostId: checkoutHostId, path: checkoutPath,
+      readOnly: spec.readOnly, pmThreadId: rt.pmThreadId, watchedFrom, role: request.role, stepKey: request.stepKey });
+    const guardPoint = repoWatcher.point;
     const beforePoint = await guardPoint();
 
     // Optional node-local skill selection resolves against the actual spawn target once per run (provider fallback recomputes per attempt).
@@ -551,23 +529,13 @@ export function createWorkflowAgents() {
         text = await read();
       }
     }
-    let afterPoint: { files: Set<string> | null; snap: RepoSnapshot | null } = { files: null, snap: null };
+    let afterPoint: RepoGuardPoint = { files: null, snap: null };
     let guard = { changed: null as string[] | null, pmOwn: null as string[] | null, engineOwn: null as string[] | null, edited: null as string[] | null };
     if (checkoutPath && checkoutHostId && beforePoint.files) {
       afterPoint = await guardPoint();
       const editable = phaseId ? (file: string) => spec.editable(file) || phaseWritable(phaseId, spec.helper)(file) : spec.editable;
-      // A missing after snapshot means "not compared", never "nothing changed": the comparison fields stay null.
-      const changed = afterPoint.files ? detectRepoEdits(beforePoint.files, afterPoint.files, editable) : null;
-      if (changed) {
-        // What the PM's chat named while the helper ran is the PM's own edit in the shared checkout, not the helper's.
-        const pmOwn = changed.length && rt.pmThreadId ? namedByChat(await chatTextSince(bb, rt.pmThreadId, watchedFrom), changed) : new Set<string>();
-        if (pmOwn.size) bb.log.warn(`workflow step ${request.stepKey}: ${[...pmOwn].join(", ")} changed during the ${request.role} helper's run, named by the PM chat: its own edit, not the helper's`);
-        // What a graph action of Lane Pilot itself wrote meanwhile (another run's fs.write in the same checkout) is not the helper's either.
-        const engineOwn = changed.length ? writtenByEngineSince(checkoutPath, watchedFrom) : new Set<string>();
-        const edited = changed.filter((file) => !pmOwn.has(file) && !engineOwn.has(file));
-        guard = { changed, pmOwn: [...pmOwn], engineOwn: [...engineOwn], edited };
-        if (edited.length) throw new HelperFailure("repo_edited", `the ${request.role} helper edited repository files it may not touch: ${edited.slice(0, 8).join(", ")}`);
-      }
+      guard = await repoWatcher.compare(beforePoint.files, afterPoint.files, editable);
+      if (guard.edited?.length) throw new HelperFailure("repo_edited", `the ${request.role} helper edited repository files it may not touch: ${guard.edited.slice(0, 8).join(", ")}`);
     }
     if (!output) throw new HelperFailure(broken ? "artifact_invalid" : "output_invalid", broken ? `the ${request.role} helper's answer breaks the step's contract: ${problem}` : `the ${request.role} helper's final message could not be read: ${problem}`);
     // Read last, so the repair turn counts too. A thread whose usage cannot be read, or has no usage events, reports `unknown`:
@@ -729,13 +697,3 @@ export async function withResolvedModel(request: HelperRequest, options: { avoid
 
 export const agentUsesKeyedSpawn = (rt: ChainRuntime | undefined) => Boolean(rt && keyedSpawnSupported(rt.ctx.bb));
 export { ROLE_PROFILES };
-
-/** The PM chat's events since `since`, as text (the newest 200; none when they cannot be read or carry no time, so nothing is excused). */
-async function chatTextSince(bb: ChainRuntime["ctx"]["bb"], threadId: string, since: number): Promise<string[]> {
-  const listed = await bestEffort(bb.log, "workflow helper chat events", listThreadEventsPaged(bb as never, { threadId, order: "desc", limit: "200" }), []) as unknown[];
-  const at = (event: unknown): number => {
-    const raw = (event as { createdAt?: unknown })?.createdAt;
-    return typeof raw === "number" ? raw : typeof raw === "string" ? Date.parse(raw) : NaN;
-  };
-  return (Array.isArray(listed) ? listed : []).filter((event) => at(event) >= since).map((event) => JSON.stringify(event));
-}
