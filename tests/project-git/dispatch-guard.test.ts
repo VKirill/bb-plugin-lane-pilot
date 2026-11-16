@@ -18,9 +18,13 @@ function fixture(workspace="/repo/section") {
   const projectGit={resolveScope:vi.fn(async()=>({kind:"repo",state:"origin",root:"/repo"})),bootstrap:vi.fn(async()=>({ok:true,root:"/repo",fullName:"octo/repo",url:"https://github.invalid/octo/repo",commit:"abc",branch:"main"}))};
   const pool={acquire:vi.fn(async()=>()=>undefined),acquireFolder:vi.fn(async(_hostId:string,_path:string)=>()=>undefined)};
   const invalidateLiveFolder=vi.fn(async()=>undefined);
-  const dispatch=createProjectGitDispatch({db,bb:bb as never,projectGit:projectGit as never,runWriterPool:pool,invalidateLiveFolder,raw,isDisposed:()=>false});
-  const task={id:"T1",project_cwd:workspace};
-  return {db,bb,raw,projectGit,pool,dispatch,task,invalidateLiveFolder};
+  const preparePlacement=vi.fn(async(input:{runId:string;hostId:string;runFolder:string;task:unknown;plan:string})=>({
+    placement:{ task:{ ...(input.task as {id:string;project_cwd:string}), project_cwd:input.runFolder }, plan:input.plan },
+    binding:{ runId:input.runId, hostId:input.hostId, runFolder:input.runFolder, taskId:(input.task as {id:string}).id, taskJson:"", plan:input.plan },
+  }));
+  const dispatch=createProjectGitDispatch({db,bb:bb as never,projectGit:projectGit as never,runWriterPool:pool,invalidateLiveFolder,preparePlacement,raw,isDisposed:()=>false});
+  const task={id:"T1",project_cwd:workspace,objective:"task"};
+  return {db,bb,raw,projectGit,pool,dispatch,task,invalidateLiveFolder,preparePlacement};
 }
 
 it("uses the frozen project source for section scope and holds run admission through raw dispatch", async()=>{
@@ -31,9 +35,23 @@ it("uses the frozen project source for section scope and holds run admission thr
   await vi.waitFor(()=>expect(f.raw).toHaveBeenCalled());
   expect(hasRunAdmission(f.db,"pm-thread")).toBe(true);
   expect(f.projectGit.resolveScope).toHaveBeenCalledWith(expect.objectContaining({projectRoot:"/repo",sectionPath:"/repo/section"}));
+  expect(f.raw).toHaveBeenCalledWith(expect.objectContaining({task:f.task}), expect.objectContaining({placement:expect.objectContaining({task:expect.objectContaining({project_cwd:"/repo/section"})})}));
   finish();
   await pending;
   expect(hasRunAdmission(f.db,"pm-thread")).toBe(false);
+});
+
+it("preflights the placed nested repository and passes that placement through raw dispatch", async()=>{
+  const f=fixture("/repo");
+  f.preparePlacement.mockResolvedValue({
+    placement:{ task:{...f.task,project_cwd:"/repo/plugins/p"}, plan:"placed" },
+    binding:{ runId:"run", hostId:"h1", runFolder:"/repo", taskId:"T1", taskJson:"", plan:"task" },
+  } as never);
+  f.projectGit.resolveScope.mockResolvedValue({kind:"repo",state:"origin",root:"/repo/plugins/p"} as never);
+  await expect(f.dispatch({threadId:"pm-thread",projectId:"project",task:f.task})).resolves.toMatchObject({ok:true,state:"queued"});
+  expect(f.projectGit.resolveScope).toHaveBeenCalledWith(expect.objectContaining({projectRoot:"/repo",sectionPath:"/repo/plugins/p"}));
+  expect(f.raw).toHaveBeenCalledWith(expect.objectContaining({task:f.task}), expect.objectContaining({placement:expect.objectContaining({task:expect.objectContaining({project_cwd:"/repo/plugins/p"}),plan:"placed"})}));
+  expect(f.projectGit.bootstrap).not.toHaveBeenCalled();
 });
 
 it("delegates root and nested-repository paths outside the frozen section to raw placeTask", async()=>{

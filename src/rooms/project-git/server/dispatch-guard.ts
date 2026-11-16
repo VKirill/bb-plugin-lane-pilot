@@ -8,7 +8,13 @@ export type ProjectGitDispatchArgs = {
   threadId:string; projectId:string; task?: { id:string; project_cwd?: string; repo_scope?: boolean; [key:string]:unknown };
   [key:string]:unknown;
 };
-export type ProjectGitDispatch = (args:ProjectGitDispatchArgs)=>Promise<Record<string,unknown>>;
+type PreparedTaskPlacement =
+  { placement:
+      | { task:{ id:string; project_cwd:string }; plan:string; movedInto?:string; repoScope?:{ root:string; section:string; outside:string[] } }
+      | { rejected:string };
+    binding:{ runId:string; hostId:string; runFolder:string; taskId:string; taskJson:string; plan:string } };
+type PlacementReader = (input:{ runId:string; hostId:string; runFolder:string; task:unknown; plan:string })=>Promise<PreparedTaskPlacement|null>;
+export type ProjectGitDispatch = (args:ProjectGitDispatchArgs, placement?:PreparedTaskPlacement)=>Promise<Record<string,unknown>>;
 export type FolderPool = {
   acquire(key:string,limit:number,rank?:number):Promise<()=>void>;
   acquireFolder?(hostId:string,path:string,rank?:number,signal?:AbortSignal):Promise<()=>void>;
@@ -59,6 +65,7 @@ type GuardDeps = {
   projectGit:ProjectGit;
   runWriterPool:FolderPool;
   invalidateLiveFolder:(runId:string)=>Promise<void>;
+  preparePlacement:PlacementReader;
   raw:ProjectGitDispatch;
   isDisposed?:()=>boolean;
 };
@@ -98,6 +105,17 @@ export function createProjectGitDispatch(deps:GuardDeps):ProjectGitDispatch {
         // frozen-run-folder check; this guard has not selected a Git scope and must not bootstrap one here.
         return await deps.raw(args);
       }
+      const task=args.task;
+      const suppliedPlan=args.plan;
+      const plan=suppliedPlan===undefined||suppliedPlan===null
+        ? typeof task.objective==="string" ? task.objective : null
+        : typeof suppliedPlan==="string" ? suppliedPlan : null;
+      if (plan===null) return await deps.raw(args);
+      let placement:PreparedTaskPlacement|null;
+      try { placement=await deps.preparePlacement({ runId, hostId, runFolder:run.writer_workspace_path, task, plan }); }
+      catch (cause) { return refusal(runId,{ kind:"placement_error" },`writer placement preflight failed: ${cause instanceof Error?cause.message:String(cause)}; no Git bootstrap or task dispatch was started`); }
+      if (!placement) return await deps.raw(args);
+      if ("rejected" in placement.placement) return await deps.raw(args,placement);
       let project:unknown;
       try { project=await deps.bb.sdk.projects.get({projectId:args.projectId}); }
       catch (cause) { return refusal(runId,{ kind:"project_root_unresolved" },`project sources could not be read: ${cause instanceof Error?cause.message:String(cause)}; Git bootstrap was not started`); }
@@ -110,11 +128,11 @@ export function createProjectGitDispatch(deps:GuardDeps):ProjectGitDispatch {
       let scope:ScopeResult;
       try {
         scope=await deps.projectGit.resolveScope({
-          threadId:args.threadId, hostId, projectRoot, sectionPath:args.task.project_cwd,
+          threadId:args.threadId, hostId, projectRoot, sectionPath:placement.placement.task.project_cwd,
           taskKey:args.task.id,
         });
       } catch (cause) { return refusal(runId,{ kind:"scope_error" },`private Git preflight failed: ${cause instanceof Error?cause.message:String(cause)}; no task or attempt was admitted`); }
-      if (scope.kind==="repo") return await deps.raw(args);
+      if (scope.kind==="repo") return await deps.raw(args,placement);
       if (scope.kind==="stopped") return refusal(runId,scope,`private Git bootstrap is stopped (${scope.stage}:${scope.code}): ${scope.detail}`);
       if (deps.isDisposed?.()) return refusal(runId,scope,"Lane Pilot stopped while the owner form was open; no Git bootstrap or task dispatch was started");
       const root=scopeRoot(scope);
@@ -145,7 +163,7 @@ export function createProjectGitDispatch(deps:GuardDeps):ProjectGitDispatch {
         // start/admission may need that same claim; the per-run admission remains held through raw's settled result.
         releaseFolder();
         releaseFolder=()=>undefined;
-        return await deps.raw(args);
+        return await deps.raw(args,placement);
       } finally { releaseFolder(); }
     } finally { releaseAdmission(); }
   };

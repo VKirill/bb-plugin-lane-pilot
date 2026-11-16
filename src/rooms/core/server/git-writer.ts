@@ -21,6 +21,7 @@ export function createGitWriter(
     projectGit,
     runWriterPool: services.runWriterPool,
     invalidateLiveFolder: writerSpawn.invalidateLiveFolder,
+    preparePlacement: rawWriterDispatch.preparePlacement as never,
     raw: rawWriterDispatch.dispatchWriter as never,
     isDisposed: ctx.isDisposed,
   });

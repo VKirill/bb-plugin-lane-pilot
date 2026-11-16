@@ -86,7 +86,7 @@ async function setup(writerEdits: (workspace: string) => string) {
       listPaths: async () => ({ paths: [] }) as never,
       write: coreFileWrite(diskStore()) as never,
     }, projects: {
-      get: async () => ({ id: projectId, name: projectId, sources: [{ hostId: "host-umbrella", path: folder }] }) as never,
+      get: async () => ({ id: projectId, name: projectId, sources: [{ hostId: "host-umbrella", path: folder, isDefault: true }] }) as never,
       list: async () => [] as never,
     } },
     experimental_callHostRpc: async (call) => {
@@ -98,6 +98,13 @@ async function setup(writerEdits: (workspace: string) => string) {
       if (call.method === "diskFree") return { hostId: "host-umbrella", status: "ok", freeBytes: 500 * 1024 ** 3, totalBytes: 1000 * 1024 ** 3 };
       const handler = (handlers as Record<string, unknown>)[call.method];
       if (typeof handler !== "function") throw new Error(`unexpected host call ${call.method}`);
+      if (call.method === "runCommand") {
+        const command = String(input.command ?? "");
+        // Project-Git preflight executes its real PAYLOAD probe against this temp filesystem. Provider account checks
+        // stay offline and deterministic; this fixture intentionally exercises the no-Git provider-gate path.
+        if (command.includes("PAYLOAD =")) return (handler as (input: unknown) => unknown)(input);
+        if (command.includes("gh auth status") || command.includes("gh api")) return { hostId: "host-umbrella", exitCode: 127, stdout: "", stderr: "gh is not installed on this fixture host" };
+      }
       return (handler as (input: unknown) => unknown)(input);
     },
   });
@@ -105,7 +112,7 @@ async function setup(writerEdits: (workspace: string) => string) {
   savePrototypeConfig(db, config);
   for (const [key, value] of [["plan_critique.enabled", false], ["memory.enabled", false], ["workspace.provider", false],
     ["integration.gate", "off"], ["docs.enabled", false], ["project_life.enabled", false]] as const) saveProjectSetting(db, projectId, key, value);
-  createRun(db, runId, projectId, "bb", folder);
+  createRun(db, runId, projectId, "bb", folder, undefined, undefined, config.hostId);
   setRunThread(db, runId, pmThreadId);
   await plugin(bb);
   const dispatch = async (patch: Partial<TaskV2> = {}) => JSON.parse(String(await harness.behavior.callAgentTool(
@@ -163,17 +170,15 @@ describe("a task over one repository of a run folder without git (BB-серви�
     await env.harness.lifecycle.dispose();
   });
 
-  it("keeps a task over two repositories in the live folder, as before", async () => {
+  it("fails closed for a task over two repositories when the umbrella has no Git provider", async () => {
     const env = await setup((workspace) => {
       put(workspace, "plugins/p/src/hello.ts", "export const hello = \"hello\";\n");
       return "Changed plugins/p/src/hello.ts";
     });
     const sent = await env.dispatch({ owns_paths: ["plugins/p/src/", "plugins/q/src/"], never_touch: [], read_first: [] });
-    expect(JSON.stringify(sent.warnings ?? [])).toContain("mode live-folder");
-    expect((getTask(env.db, "p-hello")!.contract as TaskV2).project_cwd).toBe(env.folder);
-    const attempt = await env.finished();
-    expect(attempt.state).toBe("accepted");
-    expect(env.spawnedAt).toEqual([env.folder]);
+    expect(sent).toMatchObject({ state: "rejected", error: { code: "project_git_required" }, projectGit: { kind: "noProvider" } });
+    expect(getTask(env.db, "p-hello")).toBeUndefined();
+    expect(env.spawnedAt).toEqual([]);
     await env.harness.lifecycle.dispose();
   });
 
