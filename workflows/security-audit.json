@@ -336,7 +336,6 @@
       "from": "write_report",
       "to": "goal_check",
       "pass": "artifact",
-      "when": "scan.critical_count + scan.high_count == 0",
       "with": {
         "path": "write_report.report_path"
       }
@@ -384,7 +383,9 @@
         "recon",
         "scan",
         "threat_model",
+        "write_threat_model",
         "report",
+        "write_report",
         "offer",
         "done_offer"
       ],

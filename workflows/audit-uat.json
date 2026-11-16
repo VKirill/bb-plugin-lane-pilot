@@ -180,8 +180,7 @@
     {
       "from": "goal_check",
       "to": "blocked",
-      "pass": "artifact",
-      "when": "goal_check.ok == false"
+      "pass": "artifact"
     }
   ],
   "test": {

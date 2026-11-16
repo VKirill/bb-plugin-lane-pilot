@@ -639,7 +639,11 @@
       "expect_path": [
         "ask_symptoms",
         "investigate",
+        "write_investigation_session",
+        "write_investigation_evidence",
         "verify_cause",
+        "write_verification_session",
+        "write_verification_evidence",
         "confirmed"
       ],
       "expect_outputs": [

@@ -214,7 +214,7 @@
           }
         ],
         "spec": {
-          "spec_path": ".agents/phases/ph_a/SPEC.md"
+          "content": "# Stats export\nExport the selected statistics."
         }
       },
       "expect_path": [
@@ -222,6 +222,7 @@
         "ask",
         "score",
         "spec",
+        "write_spec",
         "done"
       ],
       "expect_outputs": [

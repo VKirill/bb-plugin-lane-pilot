@@ -153,7 +153,7 @@
       },
       "stubs": {
         "summary": {
-          "summary_path": ".agents/planning/MILESTONE-SUMMARY.md",
+          "section": "## Stats export\nDelivered and verified.",
           "open_items": []
         },
         "goal_check": {
@@ -165,6 +165,7 @@
       },
       "expect_path": [
         "summary",
+        "write_summary",
         "goal_check",
         "done"
       ],
