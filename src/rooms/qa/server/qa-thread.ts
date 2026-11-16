@@ -11,15 +11,22 @@ import { qaStateToStatus, settleVerdict, verdictSchema, verdictSummary } from "@
 import { checkBrief, renderBrief } from "../../brief";
 import type { VerdictFinding, VerdictStatus } from "@lane-pilot/workflow-engine";
 import type { ServerCore } from "../../contracts/server";
+import { collectQaArtifacts, type QaArtifactRef } from "./qa-artifacts";
 
 export type QaVerdict = {
   verdict: "passed" | "failed" | "blocked";
   /** The same outcome as the unified verdict: passed is pass, failed is rework, blocked is block. */
   status: VerdictStatus;
   summary: string;
-  cases: Array<{ case: string; viewport: string; result: "passed" | "failed" | "blocked"; note?: string }>;
+  cases: Array<{ case: string; viewport: string; result: "passed" | "failed" | "blocked"; note?: string; id?: string }>;
   findings?: VerdictFinding[];
   evidence?: string;
+  /** Screenshot refs the host verified inside the check thread's own storage; only the thread path fills them. */
+  artifacts?: QaArtifactRef[];
+  /** Evidence problems the collector named; kept on failed/blocked verdicts so a missing screenshot stays visible. */
+  artifactProblems?: string[];
+  /** Raw artifact claims from the verdict JSON; awaitQaVerdict replaces them with verified refs before returning. */
+  artifactClaims?: unknown[];
 };
 
 /**
@@ -33,8 +40,10 @@ export function parseQaVerdict(text: string, expect?: QaExpect | null): QaVerdic
     try {
       const parsed = JSON.parse(block) as Partial<QaVerdict> & { status?: unknown };
       const rawCases = (parsed as { cases?: unknown }).cases;
+      const rawArtifacts = (parsed as { artifacts?: unknown }).artifacts;
       const rawRows = Array.isArray(rawCases) ? rawCases : [];
       let cases = rawRows.filter((row): row is QaVerdict["cases"][number] => Boolean(row) && typeof row.case === "string");
+      let artifactClaims: unknown[] | undefined;
       // With the requested matrix known, a verdict is trusted only when it covers every case×viewport exactly once.
       const isVerdict = parsed.status !== undefined
         || parsed.verdict === "passed" || parsed.verdict === "failed" || parsed.verdict === "blocked";
@@ -42,26 +51,30 @@ export function parseQaVerdict(text: string, expect?: QaExpect | null): QaVerdic
         const strictRows = rawRows.filter(isQaVerdictCaseRow);
         const coverage = qaCoverageRows(expect, strictRows, rawRows.length - strictRows.length);
         cases = coverage.rows;
+        // Claims ride every strict verdict, coverage refusal included: the await collector still verifies the
+        // bound rows' screenshots and names missing/unreadable evidence while the coverage reason stands.
+        artifactClaims = Array.isArray(rawArtifacts) ? rawArtifacts : rawArtifacts === undefined ? [] : [rawArtifacts];
         if (coverage.problems.length) {
           return { verdict: "blocked", status: "block",
-            summary: `browser_qa_coverage_failed:${coverage.problems.slice(0, 8).join(";")}`, cases };
+            summary: `browser_qa_coverage_failed:${coverage.problems.slice(0, 8).join(";")}`, cases, artifactClaims };
         }
       }
+      const claims = artifactClaims !== undefined ? { artifactClaims } : {};
       // A pass needs every case passed on record; a bare «passed» proves nothing.
       const allPassed = cases.length > 0 && cases.every((row) => row.result === "passed");
       if (parsed.status !== undefined) {
-        const { cases: _cases, ...rest } = parsed as Record<string, unknown>;
+        const { cases: _cases, artifacts: _artifacts, ...rest } = parsed as Record<string, unknown>;
         const unified = verdictSchema.safeParse(rest);
         if (!unified.success) continue;
         // A finding about a page names the page, not a line: the file is enough.
         const { verdict: settled } = settleVerdict(unified.data, "specialist");
         let verdict: QaVerdict["verdict"] = settled.status === "pass" ? "passed" : settled.status === "rework" ? "failed" : "blocked";
         if (verdict === "passed" && !allPassed) verdict = "blocked";
-        return { verdict, status: qaStateToStatus(verdict), summary: verdictSummary(settled), cases, findings: settled.findings, evidence: settled.evidence };
+        return { verdict, status: qaStateToStatus(verdict), summary: verdictSummary(settled), cases, findings: settled.findings, evidence: settled.evidence, ...claims };
       }
       if (parsed.verdict !== "passed" && parsed.verdict !== "failed" && parsed.verdict !== "blocked") continue;
       const verdict = parsed.verdict === "passed" && !allPassed ? "blocked" : parsed.verdict;
-      return { verdict, status: qaStateToStatus(verdict), summary: typeof parsed.summary === "string" ? parsed.summary : "", cases };
+      return { verdict, status: qaStateToStatus(verdict), summary: typeof parsed.summary === "string" ? parsed.summary : "", cases, ...claims };
     } catch { continue; }
   }
   return { verdict: "blocked", status: "block", summary: "browser_qa_thread_returned_no_verdict", cases: [] };
@@ -152,7 +165,7 @@ function qaCoverageRows(expect: QaExpect, rows: QaVerdict["cases"], malformed = 
     const key = `${hit.id}@${viewport}`;
     if (seen.has(key)) { problems.push(`duplicate:${key}`); continue; }
     seen.add(key);
-    resolved.push({ ...row, case: hit.text, viewport });
+    resolved.push({ ...row, case: hit.text, viewport, id: hit.id });
   }
   for (const item of expect.cases) for (const port of expect.viewports) {
     if (!seen.has(`${item.id}@${port}`)) problems.push(`missing:${item.id}@${port}`);
@@ -182,7 +195,7 @@ export function qaThreadPrompt(input: { url: string; cases: string[]; viewports:
         "1. Load the browser-automation skill.",
         `2. Run \`bb browser instances --host ${input.qaHostId} --json\`. If it lists an instance, open \`bb browser-automation open --backend desktop --machine ${input.qaHostId} --desktop <instance-id> --json\` (a visible BB tab); otherwise \`bb browser-automation open --backend local --headless --machine ${input.qaHostId} --json\` and copy its previewDirective into your message once, so the owner can watch.`,
         reach,
-        "3. For every viewport set the page width, open the target and go through every case. Take a fresh snapshot before using refs; take a screenshot as proof for each case and look at it.",
+        `3. For every viewport set the page width, open the target and go through every case. Take a fresh snapshot before using refs; take a screenshot as proof for each case and look at it, then copy it into your own thread storage BEFORE step 4: \`bb file read <screenshot path> --host ${input.qaHostId} --json\` returns base64; decode it locally (node or python) into \`$BB_THREAD_STORAGE/artifacts/browser-qa/cN-<width>.png\` or \`.jpg\` — the cN id and width exactly as listed. Never print the base64.`,
         "4. Close the session.",
         parsed.logins.length
           ? `The only account you may use is the Env Catalog login ${parsed.logins.join(", ")}, and only in the cases that name it. Read it with env_get (the exact name); it returns the username, password and URL: type them into the sign-in form and nowhere else. Never call env_list, never read another name, and never print the password, a cookie or a token in your answer, a file or a screenshot note. A case that names no login is not signed in; if a login does not work, that case is blocked with the reason.`
@@ -195,13 +208,13 @@ export function qaThreadPrompt(input: { url: string; cases: string[]; viewports:
       "Cases:",
       ...expectCases.map((item) => `${item.id}. ${item.text}${item.login ? ` (sign in first with the login ${item.login})` : ""}`),
     ].join("\n"),
-    boundaries: "Do not change any file: your thread has full access to the checkout, and a changed file would count as part of the task's changes. Do not guess: a case you could not check is blocked, with the reason.",
+    boundaries: "Do not change any file: your thread has full access to the checkout, and a changed file would count as part of the task's changes. The only exception is your own thread storage: the screenshots under $BB_THREAD_STORAGE/artifacts/browser-qa/. Do not guess: a case you could not check is blocked, with the reason.",
     output: [
       "End with one fenced json block and nothing after it:",
       "```json",
-      '{"status":"pass|rework|block","summary":"one paragraph","findings":[{"file":"<the page path, or the source file when you can name it>","severity":"critical|high|medium|low|info","evidence":"what you saw: the element, the request, the text"}],"evidence":"what you examined: viewports, the layers you asserted","cases":[{"case":"c1","viewport":"375","result":"passed|failed|blocked","note":"what you saw"}]}',
+      '{"status":"pass|rework|block","summary":"one paragraph","findings":[{"file":"<the page path, or the source file when you can name it>","severity":"critical|high|medium|low|info","evidence":"what you saw: the element, the request, the text"}],"evidence":"what you examined: viewports, the layers you asserted","cases":[{"case":"c1","viewport":"375","result":"passed|failed|blocked","note":"what you saw"}],"artifacts":[{"case":"c1","viewport":"375","path":"artifacts/browser-qa/c1-375.png"}]}',
       "```",
-      "status is pass only when every case passed on every viewport; rework when a case failed; block when you could not check (no access, no address for the page, a layer you could not observe). Report every case×viewport pair exactly once: `case` is the cN id shown before each case and `viewport` is the width exactly as listed. A failed case is a finding with severity high or critical, and a pass carries none.",
+      "status is pass only when every case passed on every viewport; rework when a case failed; block when you could not check (no access, no address for the page, a layer you could not observe). Report every case×viewport pair exactly once: `case` is the cN id shown before each case and `viewport` is the width exactly as listed. A failed case is a finding with severity high or critical, and a pass carries none. `artifacts` lists the screenshot you copied for each passed or failed pair — path is the file under artifacts/browser-qa/ named cN-<width>.png|.jpg|.jpeg; blocked pairs may have no screenshot and need none. A pass without them is blocked.",
     ].join("\n"),
   });
   checkBrief("browser-qa", brief.text, { instructionsLength: brief.instructionsLength });
@@ -254,11 +267,24 @@ export async function awaitQaVerdict(ctx: Pick<ServerCore, "bb" | "isDisposed">,
   : Promise<(QaVerdict & { threadId: string; link: string }) | null> {
   const { bb } = ctx;
   const link = `@thread:${threadId}`;
-  /** The verdict as read from the thread's output, redacted. */
+  /** The verdict as read from the thread's output, redacted; artifact claims are verified against thread storage. */
   const read = async (): Promise<QaVerdict & { threadId: string; link: string }> => {
     const raw = (await bb.sdk.threads.output({ threadId })).output;
     const text = typeof raw === "string" ? raw : outputText(raw);
-    return { ...redactKnownDeep(parseQaVerdict(scope ? redactKnown(text) : text, expect)), threadId, link };
+    const parsed = redactKnownDeep(parseQaVerdict(scope ? redactKnown(text) : text, expect));
+    if (!expect || parsed.artifactClaims === undefined) return { ...parsed, threadId, link };
+    const { artifactClaims, ...rest } = parsed;
+    const evidence = await collectQaArtifacts(bb.sdk, threadId, expect, parsed.cases, artifactClaims);
+    const notes = evidence.problems.length ? { artifactProblems: evidence.problems } : {};
+    const verdict: QaVerdict = { ...rest, artifacts: evidence.refs, ...notes };
+    // A pass is only as good as its screenshots: any unverified or missing evidence refuses it, findings kept.
+    if (verdict.verdict === "passed" && evidence.problems.length) {
+      return { verdict: "blocked", status: "block",
+        summary: `browser_qa_evidence_failed:${evidence.problems.slice(0, 8).join(";")}`,
+        cases: verdict.cases, findings: verdict.findings, evidence: verdict.evidence, artifacts: verdict.artifacts,
+        artifactProblems: verdict.artifactProblems, threadId, link };
+    }
+    return { ...verdict, threadId, link };
   };
   while (Date.now() < deadline) {
     if (ctx.isDisposed()) return null;

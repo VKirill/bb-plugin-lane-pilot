@@ -60,6 +60,7 @@ async function runScenario(scenario: Scenario) {
   // files.write/files.read share one store: packet inputs written create-only must read back byte-identical
   // (prepareCriticPacket verifies sha256), and CAS writes see fixture content as the current bytes.
   const writtenFiles = new Map<string, string>();
+  const qaImage = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=", "base64");
   const fixtureContent = (path: string): string | null =>
     path.endsWith("README.md") ? readme : path.endsWith(".txt") ? "reviewed output\n" : null;
   const fileStore: FileStore = {
@@ -71,6 +72,7 @@ async function runScenario(scenario: Scenario) {
     pluginId: "lane-pilot",
     sdk: {
       threads: {
+        storageLocation: async ({ threadId }) => ({ hostId: "qa-storage-host", storageRootPath: `/thread-storage/${threadId}` }),
         getPluginMetadata: async ({ threadId }) => threadId === pmThreadId ? { role: "pm", lanePilotRunId: runId } : meta.get(threadId) ?? { role: "writer" },
         spawn: async (args) => {
           const request = args as unknown as Record<string, unknown>;
@@ -127,7 +129,13 @@ async function runScenario(scenario: Scenario) {
       },
       files: {
         listPaths: async () => ({ truncated: false, paths: [{ kind: "file", name: "README.md", path: "README.md", positions: [], score: 1 }] }) as never,
-        read: async ({ path }) => {
+        read: async ({ path, hostId, rootPath }) => {
+          if (/^\/thread-storage\/browser-qa-thread\/artifacts\/browser-qa\/c1-(375|768|1280)\.png$/.test(path)) {
+            expect(hostId).toBe("qa-storage-host");
+            expect(rootPath).toBe("/thread-storage/browser-qa-thread");
+            return { content: qaImage.toString("base64"), contentEncoding: "base64", sizeBytes: qaImage.length,
+              sha256: createHash("sha256").update(qaImage).digest("hex") };
+          }
           const stored = writtenFiles.get(path);
           if (stored !== undefined) return { content: stored };
           const content = fixtureContent(path);
@@ -273,10 +281,11 @@ describe("the dispatch runs on the workflow engine", () => {
 
   describe("the browser check of a task is a step of its own graph", () => {
     const qaTask = { qa_cases: ["the note page opens at 375"], qa_url: "http://127.0.0.1:5173/note" };
-    const pass = '```json\n' + JSON.stringify({ status: "pass", summary: "all cases pass", findings: [], evidence: "shots in .agents/qa",
-      cases: ["375", "768", "1280"].map((viewport) => ({ case: "c1", viewport, result: "passed" })) }) + '\n```';
+    const artifacts = ["375", "768", "1280"].map((viewport) => ({ case: "c1", viewport, path: `artifacts/browser-qa/c1-${viewport}.png` }));
+    const pass = '```json\n' + JSON.stringify({ status: "pass", summary: "all cases pass", findings: [], evidence: "shots in thread storage",
+      cases: ["375", "768", "1280"].map((viewport) => ({ case: "c1", viewport, result: "passed" })), artifacts }) + '\n```';
     const rework = '```json\n' + JSON.stringify({ status: "rework", summary: "the note page is blank", findings: [{ file: "/note", severity: "high", evidence: "the page body is empty at 375" }], evidence: "shot",
-      cases: ["375", "768", "1280"].map((viewport) => ({ case: "c1", viewport, result: viewport === "375" ? "failed" : "passed" })) }) + '\n```';
+      cases: ["375", "768", "1280"].map((viewport) => ({ case: "c1", viewport, result: viewport === "375" ? "failed" : "passed" })), artifacts }) + '\n```';
     const base = { finish: true, settings: { "plan_critique.enabled": false, quality_mode: "full", [QA_HOST_KEY]: config.hostId }, task: qaTask } as const;
 
     it("runs lp.browser-qa after acceptance, records its receipt, and the PM has nothing left to do by hand", async () => {
@@ -284,6 +293,9 @@ describe("the dispatch runs on the workflow engine", () => {
       const states = Object.fromEntries(run.stages.map((row) => [row.stageId, row.state]));
       expect(states["acceptance-receipt"]).toBe("passed");
       expect(states["browser-qa"]).toBe("passed");
+      expect(run.stages.find((row) => row.stageId === "browser-qa")?.result).toMatchObject({ artifacts:
+        ["375", "768", "1280"].map((viewport) => ({ case: "c1", viewport, hostId: "qa-storage-host",
+          path: `/thread-storage/browser-qa-thread/artifacts/browser-qa/c1-${viewport}.png` })) });
       const waited = run.waited as Record<string, unknown>;
       expect(waited.state).toBe("accepted");
       expect(waited.next).toBeUndefined();

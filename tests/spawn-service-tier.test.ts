@@ -358,6 +358,8 @@ describe("spawn service tier", () => {
   });
 
   describe("browser-qa helper spawn inputs", () => {
+    const QA_PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3, 4]);
+    const QA_FILE = { content: QA_PNG.toString("base64"), contentEncoding: "base64", sha256: "a".repeat(64), sizeBytes: QA_PNG.length };
     function setupBrowserQaHost(providersList: Array<Record<string, unknown>>, verdictText?: string) {
       const spawned: Record<string, unknown>[] = [];
       const { bb } = createFakePluginHost({
@@ -373,12 +375,16 @@ describe("spawn service tier", () => {
               return { id: "qa-thr-1" };
             },
             output: async () => ({
-              output: verdictText ?? 'Done.\n```json\n{"status":"pass","summary":"ok","cases":[{"case":"c1","viewport":"375","result":"passed"}]}\n```',
+              output: verdictText ?? 'Done.\n```json\n{"status":"pass","summary":"ok","findings":[],"evidence":"viewed","cases":[{"case":"c1","viewport":"375","result":"passed"}],"artifacts":[{"case":"c1","viewport":"375","path":"artifacts/browser-qa/c1-375.png"}]}\n```',
             }),
+            storageLocation: async () => ({ hostId: "qa-host", storageRootPath: "/thread-store/qa-thr-1" }),
             events: { list: async ({ threadId }: { threadId?: string }) => [
               { type: "turn/started", threadId, seq: 1 },
               { type: "turn/completed", threadId, seq: 2, data: { status: "completed" } },
             ] as never },
+          },
+          files: {
+            read: async ({ path }: { path?: string }) => path?.endsWith("c1-375.png") ? QA_FILE : Promise.reject(new Error("ENOENT")),
           },
         } as never,
       });
@@ -487,6 +493,31 @@ describe("spawn service tier", () => {
       expect(verdict.verdict).toBe("blocked");
       expect(verdict.summary).toContain("browser_qa_coverage_failed");
       expect(verdict.summary).toContain("missing:c1@1280");
+    });
+
+    it("cannot pass a verdict that carries no durable screenshot evidence", async () => {
+      const { ctx } = setupBrowserQaHost([
+        { id: "claude-code", capabilities: { supportsServiceTier: true }, serviceTiers: [{ id: "fast" }] },
+      ], 'Done.\n```json\n{"status":"pass","summary":"ok","findings":[],"evidence":"viewed","cases":[{"case":"c1","viewport":"375","result":"passed"}]}\n```');
+
+      const verdict = await runQaThread(ctx, {
+        projectId: "proj-1",
+        runId: "run-1",
+        pmThreadId: "pm-1",
+        taskTitle: "Check UI",
+        qaHostId: "host-1",
+        timeoutSec: 10,
+        url: "http://localhost:3000",
+        cases: ["wizard"],
+        viewports: "375",
+        envClass: "local",
+        authorized: false,
+        agent: { providerId: "claude-code", model: "claude-sonnet-4-6", effort: "high" },
+      });
+
+      expect(verdict.verdict).toBe("blocked");
+      expect(verdict.summary).toContain("browser_qa_evidence_failed");
+      expect(verdict.summary).toContain("missing_evidence:c1@375");
     });
   });
 
