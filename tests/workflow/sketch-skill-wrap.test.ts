@@ -81,7 +81,7 @@ describe("sketch-wrap-up", () => {
     expect(results.map((result) => result.output?.status)).toEqual(["written", "blocked"]);
   });
 
-  it("uses the registered writer for exact bytes and a non-overwriting sibling", async () => {
+  it("[sma:k_c_sketchwrap] uses the registered writer for exact bytes and a non-overwriting sibling", async () => {
     const t = await setup();
     const first = await t.start({ findings: "Winning compact filter direction", skill_slug: "compact-filter-bar" }).done;
     expect(first.status, first.error ?? undefined).toBe("succeeded");

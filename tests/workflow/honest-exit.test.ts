@@ -26,7 +26,7 @@ describe("the agent's own outcome", () => {
     expect(names(flow([{ name: "status", type: "enum", values: ["pass", "rework", "block"] }]))).toEqual(["status", "handoff", "outcome", "blocker"]);
   });
 
-  it("the shipped graphs: 25 agent nodes route on a blocked status of their own, every other one gets the engine's outcome", () => {
+  it("the shipped graphs preserve graph-owned and engine-owned outcome contracts", () => {
     let own = 0, engine = 0;
     for (const file of readdirSync(join(__dirname, "../../workflows")).filter((name) => name.endsWith(".json"))) {
       const workflow = parseWorkflow(JSON.parse(readFileSync(join(__dirname, "../../workflows", file), "utf8")));
@@ -35,7 +35,7 @@ describe("the agent's own outcome", () => {
         if ((outputFields(workflow, node) as Array<{ name: string }>).some((field) => field.name === "outcome" && engineOwnsOutcome(node))) engine += 1; else own += 1;
       }
     }
-    expect({ own, engine }).toEqual({ own: 26, engine: 285 }); // lp-task-pipeline plan-revise: +1; plan-review-convergence-proof: +1
+    expect({ own, engine }).toEqual({ own: 27, engine: 285 }); // pr-branch owns its outcome; sketch-wrap-up uses the engine's outcome.
   });
 
   it("done, partial and no outcome at all (an executor that builds its output in code) leave the step succeeded", async () => {

@@ -1242,7 +1242,7 @@ export const SMA_ENTRIES: Readonly<Record<string, SmaEntry>> = {
   n1228: ["have", "/sma-spike", "workflows/spike.json#\"entry\""],
   n1229: ["have", "spike упаковывает находки в SKILL.md проекта через code-owned writer; существующий навык сохраняется, новый черновик получает отдельный путь; установка навыка не заявляется", "workflows/spike.json#\"write_skill\""],
   n1230: ["have", "серый кликабельный набросок — скилл page-prototype у design-lead", "src/rooms/contracts/native-agent-static.ts#EMPLOYEES"],
-  n1231: ["missing", "упаковка находок эскиза в постоянный навык проекта не реализована; сохранение DESIGN.md и упаковка технического spike не заменяют этот контракт"],
+  n1231: ["have", "sketch-wrap-up упаковывает переданные находки эскиза в SKILL.md проекта через code-owned writer; существующий навык сохраняется, установка навыка не заявляется", "workflows/sketch-wrap-up.json#\"write_skill\""],
   n1232: ["have", "/sma-quick", "workflows/issue-quick.json#\"entry\""],
   n1233: ["have", "/sma-fast", "workflows/companion.json#\"entry\""],
   n1234: ["have", "do: маршрутизатор намерений", "packages/workflow-engine/src/router.ts#routeIntent"],
