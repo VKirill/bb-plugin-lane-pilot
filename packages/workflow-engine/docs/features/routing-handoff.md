@@ -2,7 +2,7 @@
 title: Workflow Routing and Handoff
 type: component
 created: 2026-10-10
-updated: 2026-11-15
+updated: 2026-11-16
 status: active
 confidence: medium
 tags: [workflow-engine, routing, handoff]
@@ -24,7 +24,7 @@ TL;DR: The router selects or asks about a workflow from the eligible catalog, wh
 
 ## Purpose
 
-Routing scores eligible workflow cards against a request, filters candidates against known machine and project state, optionally asks a model to choose among those candidates, and returns a decision with evidence, candidate summaries (`purpose` and `needs`), missing inputs, questions, and goals (`packages/workflow-engine/src/router.ts:386-413`, `packages/workflow-engine/src/router.ts:523-630`). Handoff helpers render bounded packets and references for passing context to a later stage (`packages/workflow-engine/src/handoff.ts:66-158`).
+Routing scores eligible workflow cards against a request, filters candidates against known machine and project state, optionally asks a model to choose among those candidates, and returns a decision with evidence, candidate summaries (`purpose` and `needs`), missing inputs, questions, and goals (`packages/workflow-engine/src/router.ts:386-413`, `packages/workflow-engine/src/router.ts:523-630`). Handoff helpers render bounded packets and references for passing context to a later stage (`packages/workflow-engine/src/handoff.ts:43-169`).
 
 ## How it works
 
@@ -34,7 +34,7 @@ Routing scores eligible workflow cards against a request, filters candidates aga
 4. A model response is bounded and checked against the candidate list; model failure or an off-list choice falls back to `deterministicRouterModel` (`packages/workflow-engine/src/router.ts:580-591`).
 5. The decision builder returns a route or clarification result with confidence, candidate list (including each candidate's `purpose` and `needs`), evidence, questions, boundary contract, goals, inferred inputs, warnings, and live-trial state (`packages/workflow-engine/src/router.ts:386-413`, `packages/workflow-engine/src/router.ts:592-630`).
 6. Callers can run `checkRequires` for detailed preflight against installed skills/plugins/MCP servers, secrets, tools, and platform sessions. Missing requirements produce refusal text and secret requests; unavailable checks are reported as unverified (`packages/workflow-engine/src/preflight.ts:73-127`, `packages/workflow-engine/src/preflight.ts:73`).
-7. `planPacket` converts large or structured input into inline content or references according to packet constraints (`packages/workflow-engine/src/handoff.ts:132-158`).
+7. `planPacket` converts large or structured input into inline content or references according to packet constraints (`packages/workflow-engine/src/handoff.ts:138-169`).
 
 ## Modes and states
 
@@ -46,7 +46,7 @@ Routing scores eligible workflow cards against a request, filters candidates aga
 | Clarify | No candidates, broad request, low confidence, missing required inputs, or model abstention | Route decision includes questions and/or missing inputs; the precise branches are set in decision assembly (`packages/workflow-engine/src/router.ts:523-630`). |
 | Preflight missing | A required capability is confirmed absent | `ok` is false; issues describe the missing item, and required missing secrets add an `envRequests` entry (`packages/workflow-engine/src/preflight.ts:92-103`, `packages/workflow-engine/src/preflight.ts:127-134`). |
 | Preflight unverified | A port cannot be read or a check is unsupported | Issue level is `unverified`; this alone does not make `ok` false (`packages/workflow-engine/src/preflight.ts:79-90`, `packages/workflow-engine/src/preflight.ts:116-127`). |
-| Handoff inline/reference | Payload fits the inline limits or exceeds them / is referenced | Packet plan contains text, refs, or both (`packages/workflow-engine/src/handoff.ts:16-64`, `packages/workflow-engine/src/handoff.ts:132-158`). |
+| Handoff inline/reference | Payload fits the inline limits or exceeds them / is referenced | Packet plan contains text, refs, or both (`packages/workflow-engine/src/handoff.ts:16-61`, `packages/workflow-engine/src/handoff.ts:138-169`). |
 
 ## Business rules
 
@@ -65,7 +65,7 @@ Routing scores eligible workflow cards against a request, filters candidates aga
 |---|---|
 | `routeIntent`, `RouterModel`, `RouteDecision`, `isOffered`, `isPipeline`, `stateProblem` | Select and explain a workflow route; `isPipeline` identifies workflows with `startedBy` (`packages/workflow-engine/src/router.ts:300`, `packages/workflow-engine/src/router.ts:303`, `packages/workflow-engine/src/router.ts:386-413`, `packages/workflow-engine/src/router.ts:523-630`). |
 | `checkRequires`, `effectiveRequires`, `preflightRefusal` | Check declared requirements against host ports (`packages/workflow-engine/src/preflight.ts:63-72`, `packages/workflow-engine/src/preflight.ts:73-134`). |
-| `planPacket`, `startPacket`, `INLINE_CHARS`, `PACKET_BYTES` | Build bounded handoff packets (`packages/workflow-engine/src/handoff.ts:12-15`, `packages/workflow-engine/src/handoff.ts:101-117`, `packages/workflow-engine/src/handoff.ts:132-158`). |
+| `planPacket`, `startPacket`, `INLINE_CHARS`, `PACKET_BYTES` | Build bounded handoff packets (`packages/workflow-engine/src/handoff.ts:12-15`, `packages/workflow-engine/src/handoff.ts:106-122`, `packages/workflow-engine/src/handoff.ts:138-169`). |
 | `collectCapabilities`, `WORKFLOW_REFERENCE` | Build workflow capability reference text for model prompts (`packages/workflow-engine/src/capabilities.ts:70-178`). |
 | `goalSchema`, `parseGoals`, `regroundDue`, `goalsBlock` | Parse, render, and time run goals (`packages/workflow-engine/src/goals.ts:9-15`, `packages/workflow-engine/src/goals.ts:23`). |
 
@@ -150,28 +150,28 @@ The action reference lists pure code actions, plugin state/checkout actions, spe
 
 ### `planPacket`
 
-The planner defaults to references enabled and a 3,072-byte packet budget. It references every input whose rendered text exceeds 400 characters, using a deterministic path with sanitized input name and an eight-character content hash: under `.bb/chats/<chatId>/artifacts/wf-<runId prefix>/` when `chatId` is non-empty, or `.agents/runs/<runId>/inputs/` when `chatId` is empty (`packages/workflow-engine/src/handoff.ts:12-32`, `packages/workflow-engine/src/handoff.ts:132-137`).
+The planner defaults to references enabled and a 3,072-byte packet budget. It references every input whose rendered text exceeds 400 characters, using a deterministic path with sanitized input name and an eight-character content hash: under `.bb/chats/<chatId>/artifacts/wf-<runId prefix>/` when `chatId` is non-empty, or `.agents/runs/<runId>/inputs/` when `chatId` is empty (`packages/workflow-engine/src/handoff.ts:12-32`, `packages/workflow-engine/src/handoff.ts:138-146`). Optional `data` values (`PacketOptions.data`, for prompt-substituted `{{…}}` values too long to repeat inline) exceeding `INLINE_CHARS` also receive references when their names do not collide with `inputs`, while staying omitted from the packet's `Inputs` list (`packages/workflow-engine/src/handoff.ts:55-59`, `packages/workflow-engine/src/handoff.ts:141-147`).
 
-If that packet still exceeds budget at the no-example level, it sorts remaining inputs largest-first and changes them to references until the rendered packet fits or the next value is 60 characters or shorter. If it still cannot fit, it bundles all inputs except a short goal input into one `inputs` reference, clears individual references, and returns that bundle's file content. It always returns packet text, reference metadata, and file payloads together; it performs no file I/O (`packages/workflow-engine/src/handoff.ts:138-157`).
+If that packet still exceeds budget at the no-example level, it sorts remaining inputs largest-first and changes them to references until the rendered packet fits or the next value is 60 characters or shorter. If it still cannot fit, it bundles all inputs except a short goal input into one `inputs` reference, clears individual input references while keeping `data` references, and returns every referenced file's content. It always returns packet text, reference metadata, and file payloads together; it performs no file I/O (`packages/workflow-engine/src/handoff.ts:148-168`).
 
-With `byReference: false`, it skips reference creation and hands all input values to `startPacket`, which progressively removes examples, clips values/summaries/goals, and finally keeps the initial lines that fit before `[more cut]` if the packet remains oversized (`packages/workflow-engine/src/handoff.ts:101-117`, `packages/workflow-engine/src/handoff.ts:132-158`). Serialization errors from `textOf`/JSON encoding propagate; packet planning has no catch (`packages/workflow-engine/src/handoff.ts:19-20`, `packages/workflow-engine/src/handoff.ts:132-158`).
+With `byReference: false`, it skips reference creation for both `inputs` and `data` and hands all input values to `startPacket`, which progressively removes examples, clips values/summaries/goals, and finally keeps the initial lines that fit before `[more cut]` if the packet remains oversized (`packages/workflow-engine/src/handoff.ts:106-122`, `packages/workflow-engine/src/handoff.ts:138-169`). Serialization errors from `textOf`/JSON encoding propagate; packet planning has no catch (`packages/workflow-engine/src/handoff.ts:19-20`, `packages/workflow-engine/src/handoff.ts:138-169`).
 
 The planner's branch sequence is:
 
-1. Use the caller's budget or `PACKET_BYTES` and start with an empty reference map. With references enabled, turn every input whose rendered text exceeds `INLINE_CHARS` into an `InputRef` (`packages/workflow-engine/src/handoff.ts:132-137`).
-2. Render without examples and compare UTF-8 byte length to the budget. If oversized, sort remaining inline inputs largest-first; convert each input longer than 60 characters to a reference until it fits or the next value is at most 60 characters (`packages/workflow-engine/src/handoff.ts:138-144`).
-3. If still oversized, keep only a short goal input inline and bundle every other input into one `inputs` object reference. Delete the individual references and replace them with the bundle reference (`packages/workflow-engine/src/handoff.ts:147-155`).
-4. Build `files` from the final reference map by pairing each path with the original input's rendered text, then render `packet` with `startPacket`. Return packet, file payloads, and refs together; writing those files is the caller's responsibility (`packages/workflow-engine/src/handoff.ts:156-157`).
+1. Use the caller's budget or `PACKET_BYTES` and start with an empty reference map. With references enabled, turn every input whose rendered text exceeds `INLINE_CHARS` into an `InputRef`, and do the same for `data` entries whose names are not already in `inputs` (`packages/workflow-engine/src/handoff.ts:138-147`).
+2. Render without examples and compare UTF-8 byte length to the budget. If oversized, sort remaining inline inputs largest-first; convert each input longer than 60 characters to a reference until it fits or the next value is at most 60 characters (`packages/workflow-engine/src/handoff.ts:148-154`).
+3. If still oversized, keep only a short goal input inline and bundle every other input into one `inputs` object reference. Delete the individual input references (leaving `data` references intact) and add the bundle reference (`packages/workflow-engine/src/handoff.ts:157-165`).
+4. Build `files` from the final reference map over `data` and the resulting `inputs`, then render `packet` with `startPacket`. Return packet, file payloads, and refs together; writing those files is the caller's responsibility (`packages/workflow-engine/src/handoff.ts:166-168`).
 
 | Mode or outcome | Behavior |
 |---|---|
 | Non-empty `chatId` | Reference files are addressed under `.bb/chats/<chatId>/artifacts/wf-<runId prefix>/` (`packages/workflow-engine/src/handoff.ts:28-32`). |
 | Empty `chatId` | Reference files are addressed under `.agents/runs/<runId>/inputs/` so runs without a PM chat do not write to an unowned chat folder (`packages/workflow-engine/src/handoff.ts:25-32`). |
-| `byReference: true` (default) | Big values become individual references first; budget pressure can cause more references or a single bundled file (`packages/workflow-engine/src/handoff.ts:132-155`). |
-| `byReference: false` | No files or refs are created; `startPacket` uses its clipping levels and may finish with `[more cut]` (`packages/workflow-engine/src/handoff.ts:101-117`, `packages/workflow-engine/src/handoff.ts:132-158`). |
-| Rendered packet fits budget at a level | Return that level's text; later, more aggressive clipping levels are not used (`packages/workflow-engine/src/handoff.ts:101-106`). |
-| Even the final clipped level exceeds budget | Keep initial lines only while they fit, add `[more cut]`, and preserve the closing line (`packages/workflow-engine/src/handoff.ts:107-116`). |
-| Value serialization fails | JSON serialization errors propagate from `textOf`/`render`; no packet plan is returned (`packages/workflow-engine/src/handoff.ts:19-20`, `packages/workflow-engine/src/handoff.ts:66-94`, `packages/workflow-engine/src/handoff.ts:132-158`). |
+| `byReference: true` (default) | Big values become individual references first; budget pressure can cause more references or a single bundled file, while big `data` entries stay referenced and unbundled (`packages/workflow-engine/src/handoff.ts:138-165`). |
+| `byReference: false` | No files or refs are created; `startPacket` uses its clipping levels and may finish with `[more cut]` (`packages/workflow-engine/src/handoff.ts:106-122`, `packages/workflow-engine/src/handoff.ts:138-169`). |
+| Rendered packet fits budget at a level | Return that level's text; later, more aggressive clipping levels are not used (`packages/workflow-engine/src/handoff.ts:106-111`). |
+| Even the final clipped level exceeds budget | Keep initial lines only while they fit, add `[more cut]`, and preserve the closing line (`packages/workflow-engine/src/handoff.ts:112-121`). |
+| Value serialization fails | JSON serialization errors propagate from `textOf`/`render`; no packet plan is returned (`packages/workflow-engine/src/handoff.ts:19-20`, `packages/workflow-engine/src/handoff.ts:71-99`, `packages/workflow-engine/src/handoff.ts:138-169`). |
 
 <!-- lane-pilot:backlinks -->
 ## Referenced by
