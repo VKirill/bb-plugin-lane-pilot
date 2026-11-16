@@ -459,12 +459,14 @@ export async function nativeContributedEnv(
   // BB's model catalog asks with threadId null (helper-bb-shim.ts ProviderEnvContext): no thread, no native session.
   const threadId = ctx.threadId;
   if (!threadId) return [];
-  let selected: NativeSelection | null = null;
+  // A failed selection lookup is not the same as a verified ordinary thread. Let the storage
+  // error reach the composed resolver; otherwise a successful guard lookup can make a native
+  // helper start without its required launcher.
+  const selected = await bb.storage.kv.get<NativeSelection>(nativeThreadKey(threadId));
+  if (!selected) return [];
   let cached: ExperimentalPluginProviderEnvEntry[] | undefined;
   let cacheUsable = false;
   try {
-    selected = (await bb.storage.kv.get<NativeSelection>(nativeThreadKey(threadId))) ?? null;
-    if (!selected) return [];
     cached = await bb.storage.kv.get<ExperimentalPluginProviderEnvEntry[]>(nativeEnvKey(threadId));
     const generation = await bb.storage.kv.get<unknown>(nativeEnvGenerationKey(threadId));
     const thread = await bestEffort(bb.log, "native dispatch thread read", bb.sdk.threads.get({ threadId }), null);

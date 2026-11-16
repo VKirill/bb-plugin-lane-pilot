@@ -154,6 +154,24 @@ describe("claude threads Lane Pilot starts get the bundled guard", () => {
     }
   });
 
+  it("rejects composed Claude env when the native selection lookup fails before the guard lookup", async () => {
+    let nativeThreadLookups = 0;
+    const { resolve } = wiring({
+      dataDir: "/unused",
+      roleOf: () => "errand",
+      kvGet: (key) => {
+        if (key !== "native-thread:thr_helper") return null;
+        nativeThreadLookups += 1;
+        if (nativeThreadLookups === 1) throw new Error("transient native selection lookup");
+        return { token: "helper-selection" };
+      },
+    });
+
+    await expect(resolve({ threadId: "thr_helper", hostId: "local", projectId: "p" }))
+      .rejects.toThrow("transient native selection lookup");
+    expect(nativeThreadLookups).toBe(2);
+  });
+
   it("refuses to start a lane thread when the host cannot write the guard", async () => {
     const resolvers = new Map<string, (thread: { threadId: string; hostId: string }) => Promise<unknown>>();
     const bb = {
