@@ -49,6 +49,7 @@
   "outputs": {
     "status": "pass|rework|block",
     "warn": "bool",
+    "criteria": "Criterion[]",
     "findings": "Finding[]",
     "critical_count": "int",
     "high_count": "int",
@@ -136,6 +137,7 @@
       "map": {
         "status": "review.status",
         "warn": "review.warn",
+        "criteria": "review.criteria",
         "findings": "review.findings",
         "critical_count": "review.critical_count",
         "high_count": "review.high_count",
@@ -149,6 +151,7 @@
       "map": {
         "status": "review.status",
         "warn": "review.warn",
+        "criteria": "review.criteria",
         "findings": "review.findings",
         "critical_count": "review.critical_count",
         "high_count": "review.high_count",

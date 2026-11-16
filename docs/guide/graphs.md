@@ -69,7 +69,7 @@ A workflow is a JSON file (`workflows/*.json`): inputs, outputs, `requires` (ski
 | Graph | What it does |
 |---|---|
 | `analyze-code` | Understand or evaluate a module or change; reports decisions, risks and confidence. |
-| `code-review` | Independent review of a branch, PR, commit range or file set with file:line findings. |
+| `code-review` | Independent review of a branch, PR, commit range or file set with file:line findings. Exports the criterion checks from `lp.review` alongside findings, so the report and goal auditor can see checks that produced no finding. |
 | `debug` | Scientific-method diagnosis (hypotheses, evidence log, at most 3 refuted); returns the diagnosis, touches no code. |
 | `security-audit` | Tiered audit (OWASP Top 10, dependencies, secrets, CI/CD, STRIDE on the deep tier); secrets reported by location only. |
 | `ui-audit` | Live UI audit in the browser on six dimensions with scored findings and screenshots. |

@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.586
+
+- **Code-review results retain criterion evidence.** `lp.review` now exports its criterion checks; both `code-review` endings forward them before findings. The report and goal auditor can therefore inspect successful checks as well as defects. Empty-scope reviews export an empty list, and review thresholds and goal acceptance remain unchanged. The regression in `tests/workflow/chain-executors.test.ts` exercises the real nested graphs, report writer and audit prompt with a scripted cancellation check; live acceptance is verified separately.
+
 ## 0.1.585
 
 - **PMs accept task assignments from other BB agents.** Removed the work-start owner-turn restriction and its duplicate draft-creation check. Direct tools and multiplexed tool handlers retain their own PM/project checks. The canonical PM prompt, startup instructions and routing/live-trial guidance accept agent assignments without demanding another owner message, preserve the actual sender, and distinguish assignments from reports and service notices. Explicit proposals, workflow human confirmations and owner-word provenance remain unchanged. `tests/agent-task-delegation.test.ts` reproduces the former rejection through the real plugin and checks both registered handler paths; `tests/workflow/router-tools.test.ts` covers first-live-run recovery for tested workflows and subworkflows. Targeted checks and typecheck pass; live delegated execution is a separate post-deployment acceptance step.

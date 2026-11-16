@@ -23,6 +23,7 @@ import { registerReducers } from "@lane-pilot/workflow-engine";
 import { parseWorkflow } from "@lane-pilot/workflow-engine";
 import type { Workflow } from "@lane-pilot/workflow-engine";
 import { builtinWorkflow } from "../../src/rooms/workflow/builtin";
+import { createGoalAuditor } from "../../src/rooms/workflow/server/workflow-goal-audit";
 
 /**
  * The executors of a chain on the host, against a fake BB: a helper thread is a scripted answer, the PM's checkout is a real git
@@ -1754,5 +1755,38 @@ describe("a run in a project that has no PM chat", () => {
     expect(reportEndToOwner(t.db, { ...own, id: `${own.id}-tick`, workflow_id: "lead-tick", status: "succeeded", output_json: JSON.stringify({ report: "4 proposals" }) } as never, false)).toBe(false);
     expect(reportEndToOwner(t.db, { ...own, id: `${own.id}-sched`, workflow_id: "lp.analyze", status: "succeeded", output_json: JSON.stringify({ report_md: "the weekly report" }) } as never, true)).toBe(true);
     expect(t.db.prepare("SELECT COUNT(*) AS n FROM lane_pilot_owner_item WHERE key LIKE 'workflow-end:%'").get()).toEqual({ n: 2 });
+  });
+});
+
+describe("code-review carries the spec_check criteria through to the report and the goal audit", () => {
+  it("a MET cancel criterion with file:line reaches the child output, the parent output, the fs.write report and the audit prompt", async () => {
+    const criterion = "Cancel: each cancellation statement on public/how-it-works.html lines 75-110 is honored by src/server.js";
+    const evidence = "public/how-it-works.html:80 honored by src/server.js:200-210";
+    const t = await setup({
+      spec_check: [reply({ unmet_count: 0, partial_count: 0, criteria: [{ criterion, status: "MET", evidence }], handoff: "checked" })],
+      "dims:child": [reply({ dimension: "correctness", findings: [], handoff: "no findings" })],
+    }, { resolveWorkflow: (id) => builtinWorkflow(id) });
+    dispose = t.dispose;
+    const summary = await t.start(builtinWorkflow("code-review")!, { files: ["public/how-it-works.html", "src/server.js"], criteria: [criterion], quality_mode: "standard" }).done;
+    expect(summary.status).toBe("succeeded");
+
+    const childId = String((t.db.prepare("SELECT id FROM lane_pilot_wf_run WHERE parent_run_id=?").get(summary.runId) as Row).id);
+    const childOutput = JSON.parse(String(t.engine.snapshot(childId)!.run.output_json));
+    expect(childOutput.criteria).toEqual([expect.objectContaining({ criterion, status: "MET", evidence })]);
+    expect((summary.output as Row).criteria).toEqual([expect.objectContaining({ status: "MET", evidence })]);
+
+    const report = readFileSync(join(t.checkout, String(summary.output!.report_path)), "utf8");
+    expect(report).toContain(evidence);
+
+    const snapshot = t.engine.snapshot(summary.runId)!;
+    const prompts: string[] = [];
+    const agents = { run: async (request: { prompt: string }) => { prompts.push(request.prompt); return { threadId: "thr_audit", output: { verdicts: [{ id: "request", met: true, evidence }], handoff: "checked" }, text: "" }; } };
+    const audit = createGoalAuditor(t.rt.ctx, t.services, agents as never);
+    const verdict = await audit({ run: snapshot.run, goals: [{ id: "request", done_when: "the cancellation statements are verified", evidence: "the criteria verdicts in the run output", guess: true }], output: JSON.parse(String(snapshot.run.output_json)), steps: snapshot.steps, signal: new AbortController().signal });
+    expect(verdict.unmet).toEqual([]);
+    expect(prompts).toHaveLength(1);
+    expect(prompts[0]).toContain("<run-output>");
+    expect(prompts[0]).toContain(evidence);
+    expect(prompts[0]).toContain("MET");
   });
 });

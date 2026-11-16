@@ -35,6 +35,7 @@
     "critical_count": "int",
     "high_count": "int",
     "remaining_actionable": "int",
+    "criteria": "Criterion[]",
     "findings": "Finding[]",
     "verdict": "Verdict"
   },
@@ -210,6 +211,7 @@
         "critical_count": "aggregate.critical_count",
         "high_count": "aggregate.high_count",
         "remaining_actionable": "aggregate.remaining_actionable",
+        "criteria": "spec_check.criteria",
         "findings": "aggregate.findings",
         "verdict": "aggregate.verdict"
       }
@@ -224,6 +226,7 @@
         "critical_count": 0,
         "high_count": 0,
         "remaining_actionable": 0,
+        "criteria": "[]",
         "findings": "[]"
       }
     }
