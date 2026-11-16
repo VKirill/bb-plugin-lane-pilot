@@ -1,0 +1,188 @@
+{
+  "id": "sketch-wrap-up",
+  "name": {
+    "en": "Wrap sketch findings into a skill",
+    "ru": "Свернуть находки эскиза в скилл"
+  },
+  "description": {
+    "en": "Turns the winning findings from a sketch into a project skill draft and persists it without overwriting an existing skill.",
+    "ru": "Превращает победившие находки эскиза в черновик проектного скилла и сохраняет его, не перезаписывая существующий."
+  },
+  "status": "published",
+  "inputs": {
+    "findings": {
+      "type": "string",
+      "required": true,
+      "note": "The bounded findings from the winning sketch only; do not pass the mock-up or unrelated project context."
+    },
+    "skill_slug": {
+      "type": "string",
+      "required": true,
+      "note": "A single safe skill slug; lp.doc_path rejects path separators and traversal before any write."
+    }
+  },
+  "outputs": {
+    "status": "written|blocked",
+    "skill_draft": "string",
+    "skill_path": "string"
+  },
+  "quality_mode": {
+    "default": "standard"
+  },
+  "requires": {
+    "plugins": [
+      "lane-pilot"
+    ]
+  },
+  "budget": {
+    "max_minutes": 60
+  },
+  "entry": "draft",
+  "nodes": [
+    {
+      "id": "draft",
+      "type": "agent",
+      "role": "analyst",
+      "title": {
+        "en": "Draft the skill",
+        "ru": "Подготовить черновик скилла"
+      },
+      "prompt": "Read only the bounded winning sketch findings below and turn their reusable design decisions into raw SKILL.md Markdown. Do not inspect or change mock-ups, DESIGN.md, or other project files, do not run commands, and do not write files. Preserve the findings' constraints and evidence; do not invent decisions. Return only the complete draft in skill_draft.\n\n<winning_sketch_findings>\n{{$inputs.findings}}\n</winning_sketch_findings>",
+      "out": {
+        "skill_draft": "string",
+        "handoff": "string"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 20
+      },
+      "skip_when": "$inputs.findings == ''",
+      "skip_out": {
+        "skill_draft": "",
+        "handoff": "'no findings to package'"
+      },
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ]
+    },
+    {
+      "id": "skill_dir",
+      "type": "action",
+      "action": "lp.doc_path",
+      "params": {
+        "dir": ".agents/forge/skills",
+        "doc": "{{$inputs.skill_slug}}"
+      },
+      "out": {
+        "path": "string"
+      },
+      "title": {
+        "en": "Validate the skill folder",
+        "ru": "Проверить папку скилла"
+      }
+    },
+    {
+      "id": "write_skill",
+      "type": "action",
+      "action": "fs.write",
+      "title": {
+        "en": "Persist the skill draft",
+        "ru": "Сохранить черновик скилла"
+      },
+      "params": {
+        "path": "{{skill_dir.path}}/SKILL.md",
+        "contents": "{{draft.skill_draft}}",
+        "mode": "non_overwrite"
+      },
+      "out": {
+        "skill_path": "string"
+      }
+    },
+    {
+      "id": "written",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "written",
+        "skill_draft": "draft.skill_draft",
+        "skill_path": "write_skill.skill_path"
+      }
+    },
+    {
+      "id": "blocked",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "blocked",
+        "skill_draft": "''",
+        "skill_path": "''"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "draft",
+      "to": "skill_dir",
+      "pass": "artifact",
+      "when": "draft.skill_draft != ''"
+    },
+    {
+      "from": "draft",
+      "to": "blocked",
+      "when": "draft.skill_draft == ''"
+    },
+    {
+      "from": "skill_dir",
+      "to": "write_skill",
+      "pass": "artifact"
+    },
+    {
+      "from": "write_skill",
+      "to": "written",
+      "pass": "artifact"
+    }
+  ],
+  "test": {
+    "id": "sketch-wrap-1",
+    "sim": {
+      "input": {
+        "findings": "## Winning direction\n- Keep the compact filter bar visible.\n",
+        "skill_slug": "compact-filter-bar"
+      },
+      "stubs": {
+        "draft": {
+          "skill_draft": "# Compact filter bar\n\nKeep the compact filter bar visible.\n",
+          "handoff": "draft ready"
+        }
+      },
+      "expect_path": [
+        "draft",
+        "skill_dir",
+        "write_skill",
+        "written"
+      ],
+      "expect_outputs": [
+        "status == 'written'",
+        "skill_path != ''"
+      ],
+      "variant_empty_findings": {
+        "input": {
+          "findings": "",
+          "skill_slug": "compact-filter-bar"
+        },
+        "expect_path": [
+          "draft",
+          "blocked"
+        ],
+        "expect_outputs": [
+          "status == 'blocked'",
+          "skill_path == ''"
+        ]
+      }
+    }
+  },
+  "goal_audit": "exempt"
+}

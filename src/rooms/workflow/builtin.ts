@@ -113,6 +113,7 @@ import evalReview from "../../../workflows/eval-review.json";
 import auditUat from "../../../workflows/audit-uat.json";
 import aiIntegrationPhase from "../../../workflows/ai-integration-phase.json";
 import spike from "../../../workflows/spike.json";
+import sketchWrapUp from "../../../workflows/sketch-wrap-up.json";
 import specialist from "../../../workflows/specialist.json";
 import ship from "../../../workflows/ship.json";
 import prBranch from "../../../workflows/pr-branch.json";
@@ -249,6 +250,7 @@ export const BUILTIN_SOURCES: ReadonlyArray<{ name: string; value: unknown }> = 
   { name: "audit-uat.json", value: auditUat },
   { name: "ai-integration-phase.json", value: aiIntegrationPhase },
   { name: "spike.json", value: spike },
+  { name: "sketch-wrap-up.json", value: sketchWrapUp },
   { name: "specialist.json", value: specialist },
   { name: "ship.json", value: ship },
   { name: "pr-branch.json", value: prBranch },
