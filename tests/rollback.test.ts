@@ -199,7 +199,7 @@ describe("bb lane-pilot revert", () => {
     const target = await w.rollback.kit.targetOf("t1");
     expect("target" in target).toBe(true);
     if (!("target" in target)) throw new Error(target.error);
-    expect(await createRollbackChanges(w.db, w.host).changeOf(target.target, "att_t1")).toMatchObject({ refused: expect.stringContaining("mismatched accepted-change provenance") });
+    expect(await createRollbackChanges(w.db, w.host as never).changeOf(target.target, "att_t1")).toMatchObject({ refused: expect.stringContaining("mismatched accepted-change provenance") });
     expect(await w.rollback.kit.changeOf(target.target, "att_t1")).toMatchObject({ refused: expect.stringContaining("mismatched accepted-change provenance") });
     // history grew, nothing was reset: the task's own merge is still an ancestor
     expect(git(w.base, "merge-base", "--is-ancestor", merged.commit!, "HEAD")).toBe("");
