@@ -273,8 +273,10 @@ describe("the dispatch runs on the workflow engine", () => {
 
   describe("the browser check of a task is a step of its own graph", () => {
     const qaTask = { qa_cases: ["the note page opens at 375"], qa_url: "http://127.0.0.1:5173/note" };
-    const pass = '```json\n{"status":"pass","summary":"all cases pass","findings":[],"evidence":"shots in .agents/qa","cases":[{"case":"the note page opens at 375","result":"passed"}]}\n```';
-    const rework = '```json\n{"status":"rework","summary":"the note page is blank","findings":[{"file":"/note","severity":"high","evidence":"the page body is empty at 375"}],"evidence":"shot","cases":[{"case":"the note page opens at 375","result":"failed"}]}\n```';
+    const pass = '```json\n' + JSON.stringify({ status: "pass", summary: "all cases pass", findings: [], evidence: "shots in .agents/qa",
+      cases: ["375", "768", "1280"].map((viewport) => ({ case: "c1", viewport, result: "passed" })) }) + '\n```';
+    const rework = '```json\n' + JSON.stringify({ status: "rework", summary: "the note page is blank", findings: [{ file: "/note", severity: "high", evidence: "the page body is empty at 375" }], evidence: "shot",
+      cases: ["375", "768", "1280"].map((viewport) => ({ case: "c1", viewport, result: viewport === "375" ? "failed" : "passed" })) }) + '\n```';
     const base = { finish: true, settings: { "plan_critique.enabled": false, quality_mode: "full", [QA_HOST_KEY]: config.hostId }, task: qaTask } as const;
 
     it("runs lp.browser-qa after acceptance, records its receipt, and the PM has nothing left to do by hand", async () => {
