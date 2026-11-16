@@ -38,6 +38,8 @@ it("exposes PM tools for a user-origin native chat with a matching cli run and u
     workspacePath: "/checkout/actual",
     environmentId: "environment-test",
   })).toBe(true);
+  expect(() => finalizeNativeLaneBinding({ db: fake.db, runId: "lprun_native", hostId: "host-test", workspacePath: "/other", environmentId: "env-other" }))
+    .toThrow(/native environment changed after the Lane Pilot run was bound.*lane_pilot_relay action handoff/);
   for (const origin of [
     { kind: null, pluginId: null },
     { kind: null, pluginId: "user" },
@@ -51,6 +53,7 @@ it("exposes PM tools for a user-origin native chat with a matching cli run and u
     );
     expect(configured.tools.map((tool) => tool.name)).toContain("lane_pilot_dispatch_writer");
     expect(configured.instructions).toContain("writer workspace=/checkout/actual");
+    expect(configured.instructions).toContain("targetProjectId, targetHostId and targetPath");
     expect(configured.instructions).not.toContain("/tmp/writer-stale");
   }
 });

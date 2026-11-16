@@ -82,6 +82,7 @@ PM_BB_SETTINGS_READ = {("settings", "show"), ("settings", "usage"), ("settings",
 # A Lane Pilot PM is the owner's own chat and ships too (owner, 2026-10-03): it may read BB state and reload or
 # install plugins.
 LANE_PILOT_BB_COMMANDS = PM_BB_READ_COMMANDS | PM_BB_MESSAGE_COMMANDS | PM_BB_THREAD_CONTROL | PM_BB_SETTINGS_READ | {
+    ("thread", "section", "list"),
     ("version",), ("memory", "catalog"), ("project", "get"),
     ("plugin", "list"), ("plugin", "logs"), ("plugin", "info"), ("plugin", "show"), ("plugin", "status"),
     ("plugin", "source"), ("plugin", "outdated"), ("plugin", "install-jobs"), ("plugin", "update-jobs"),
@@ -1321,6 +1322,8 @@ def _lane_pilot_bb_command_error(args: list[str], cwd: object = None) -> str | N
         return None
     if any(tuple(words[:size]) in LANE_PILOT_BB_COMMANDS for size in (1, 2, 3)) or _pm_plugin_call_open(words):
         return None
+    if words[:2] == ["thread", "section"]:
+        return "bb thread section permits list only; Project Folders has separate IDs: use bb project-folders list and place-chat for sidebar filing."
     if any(tuple(words[:size]) in PM_BB_HANDOFF_COMMANDS for size in (2, 3)):
         return PM_BB_HANDOFF_DENIAL
     if tuple(words[:2]) in LANE_PILOT_BB_PLUGIN_REMOVE:

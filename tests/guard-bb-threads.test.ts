@@ -195,6 +195,14 @@ describe("the Lane Pilot PM stops, archives and cancels threads and reads settin
 
 
 describe("native PM Project Folders integration", () => {
+  it("allows core section discovery without permitting section mutations or raw thread creation", () => {
+    expect(allowedNative("bb thread section list --project proj --json")).toBe(0);
+    for (const command of ["bb thread section create --project proj --name x", "bb thread section delete sec", "bb thread section list && bb thread spawn --prompt x"]) {
+      expect(allowedNative(command), command).toBe(2);
+    }
+    const result = runGuard({ input: JSON.stringify({ agent_type: "dev-orchestrator", tool_name: "Bash", tool_input: { command: "bb thread section create --name x" }, cwd: process.cwd() }), env: hookEnv({ AGENT_HOOK_CLIENT: "claude", LANE_PILOT_AGENT_TYPE: "dev-orchestrator" }) });
+    expect(result.stdout).toContain("Project Folders has separate IDs");
+  });
   it("uses the plugin for discovery, creation, rules and filing without owner setup", () => {
     for (const command of [
       "bb project create --name Analytics --root /srv/analytics --host ovh --json",

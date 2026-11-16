@@ -144,7 +144,7 @@ export function finalizeNativeLaneBinding(input: {
   if (!run) throw new Error("native run disappeared before environment attach");
   if (run.writer_environment_id) {
     if (run.writer_environment_id !== input.environmentId) {
-      throw new Error("native environment changed after the Lane Pilot run was bound");
+      throw new Error("native environment changed after the Lane Pilot run was bound; the active run cannot move. Use lane_pilot_relay action handoff with targetProjectId, targetHostId and targetPath to start a new child Pilot in the desired checkout.");
     }
     return true;
   }

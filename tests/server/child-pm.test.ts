@@ -6,6 +6,7 @@ import { listHandoffs } from "@lane-pilot/handoff";
 import { tokensFrom } from "../../src/rooms/native-agent/native-session";
 import { createRecipientResolver } from "../../src/rooms/native-agent/server/recipient";
 import { relayFor } from "../../src/rooms/relay/server/relay";
+import { finalizeNativeLaneBinding } from "../../src/rooms/native-agent/native-run";
 
 const projectId = "source", threadId = "parent", runId = "run-parent";
 let dispose: (() => Promise<void> | void) | undefined;
@@ -60,6 +61,14 @@ async function setup(options: { sources?: Array<{ hostId: string; path: string }
 }
 
 describe("native child Pilot through the registered relay", () => {
+  it("opens a same-project root child without changing the parent's historical binding", async () => {
+    const { db, spawned, placed, call } = await setup({ sources: [{ hostId: "root-host", path: "/root" }] });
+    expect(finalizeNativeLaneBinding({ db, runId, hostId: "section-host", workspacePath: "/analytics", environmentId: "env-parent" })).toBe(true);
+    expect((await call({ targetProjectId: projectId, targetHostId: "root-host", targetPath: "/root" })).deliveredTo).toBe("child");
+    expect(spawned[0]).toMatchObject({ projectId, parentThreadId: threadId, environment: { hostId: "root-host", workspace: { path: "/root" } } });
+    expect(placed).toEqual([]);
+    expect(getRun(db, runId)).toMatchObject({ writer_environment_id: "env-parent", writer_workspace_path: "/analytics" });
+  });
   it.each(["other", projectId])("starts in %s without setup, preserves parent/sender and owns its native profile", async (target) => {
     const { bb, db, harness, spawned, sent, placed, events, call } = await setup();
     const result = await call({ targetProjectId: target, targetSectionId: "folder" });
