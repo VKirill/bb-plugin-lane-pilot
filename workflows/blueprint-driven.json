@@ -345,7 +345,7 @@
       "map": {
         "status": "done",
         "readiness_score": "readiness.score",
-        "spec_path": "'docs/specs/{{slug}}'",
+        "spec_path": "docs/specs/{{slug}}",
         "epics": "epics.epics",
         "merged_commits": "ctx.merged_commits",
         "report_path": "close.report_path"
@@ -358,7 +358,7 @@
       "map": {
         "status": "partial",
         "readiness_score": "readiness.score",
-        "spec_path": "'docs/specs/{{slug}}'",
+        "spec_path": "docs/specs/{{slug}}",
         "merged_commits": "ctx.merged_commits",
         "report_path": "close.report_path"
       }

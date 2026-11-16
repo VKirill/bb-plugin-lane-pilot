@@ -9,6 +9,7 @@ const world = (nodes: Record<string, Record<string, unknown>>, extra: { inputs?:
     if (ref.kind === "node") { const output = nodes[ref.node!]; if (!output) return { ran: false, value: undefined }; return { ran: true, value: ref.path.reduce<unknown>((value, key) => (key === "length" && Array.isArray(value) ? value.length : (value as Record<string, unknown> | undefined)?.[key]), output) }; }
     if (ref.kind === "input") return { ran: true, value: ref.path.reduce<unknown>((value, key) => (key === "length" && Array.isArray(value) ? value.length : (value as Record<string, unknown> | undefined)?.[key]), extra.inputs ?? {}) };
     if (ref.kind === "mode") return { ran: true, value: extra.mode ?? "standard" };
+    if (ref.kind === "var") return { ran: true, value: ref.path[0] === "slug" ? "ship-it" : "2026-01-01" };
     if (ref.kind === "item") return { ran: true, value: ref.path.reduce<unknown>((value, key) => (value as Record<string, unknown> | undefined)?.[key], extra.item) };
     return { ran: false, value: undefined };
   },
@@ -89,6 +90,11 @@ describe("values", () => {
     expect(value("build.merged_commits.length + 1")).toBe(3);
     expect(value("docs/specs/spec.md")).toBe("docs/specs/spec.md");
     expect(value("$inputs.goal")).toBe("ship it");
+    expect(value("docs/specs/{{slug}}")).toBe("docs/specs/ship-it");
+    expect(value("'docs/specs/{{slug}}'")).toBe("docs/specs/{{slug}}");
+    expect(value("{{build.merged_commits}}")).toEqual(["a1", "b2"]);
+    expect(value("reports/{{missing.path}}")).toBe("reports/");
+    expect(() => value("{{missing.path}}")).toThrow(MissingValueError);
   });
 
   it("writes {{refs}} into a text, keeps the type of a lone one, and picks by_mode", () => {

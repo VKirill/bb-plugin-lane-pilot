@@ -326,7 +326,7 @@ const PLACEHOLDER = /\{\{\s*([^{}]+?)\s*\}\}/g;
 export const placeholdersIn = (text: string): string[] => [...text.matchAll(PLACEHOLDER)].map((match) => match[1]!);
 
 /** A string in an expression-valued position (`emit.map`, `skip_out`): literal or expression, by the rules of spec section 0.3. */
-export type ValueSpec = { literal: unknown } | { expr: Expr };
+export type ValueSpec = { literal: unknown } | { expr: Expr } | { template: string };
 export function valueSpecOf(value: unknown): ValueSpec {
   if (typeof value !== "string") return { literal: value };
   const text = value.trim();
@@ -335,6 +335,7 @@ export function valueSpecOf(value: unknown): ValueSpec {
   const whole = /^\{\{\s*([^{}]+?)\s*\}\}$/.exec(text);
   if (whole) return { expr: { t: "ref", ref: refOf(whole[1]!) } };
   if (/^'.*'$/s.test(text) || /^".*"$/s.test(text)) return { literal: text.slice(1, -1) };
+  if (placeholdersIn(text).length) return { template: text };
   if (/^[[{]/.test(text)) { try { return { literal: JSON.parse(text) as unknown }; } catch { /* an expression with a list in it */ } }
   if (/^(true|false|null)$/.test(text)) return { literal: text === "true" ? true : text === "false" ? false : null };
   if (/^-?\d+(\.\d+)?$/.test(text)) return { literal: Number(text) };
@@ -344,7 +345,10 @@ export function valueSpecOf(value: unknown): ValueSpec {
   return { expr: parseExpr(text) };
 }
 
-export const evalSpec = (spec: ValueSpec, env: EvalEnv, at?: string): unknown => ("literal" in spec ? spec.literal : evalExpr(spec.expr, env, at));
+export const evalSpec = (spec: ValueSpec, env: EvalEnv, at?: string): unknown =>
+  "literal" in spec ? spec.literal : "template" in spec
+    ? renderValue(spec.template, (ref) => env.read(ref).value, null)
+    : evalExpr(spec.expr, env, at);
 
 /** A `{{ref}}` template: a string that is one placeholder keeps the value's type; otherwise the values are written into the text. */
 export function renderValue(value: unknown, read: (ref: Ref, text: string) => unknown, mode: string | null): unknown {

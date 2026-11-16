@@ -60,6 +60,20 @@ const issueChildren: Record<string, Workflow> = {
   ]),
 };
 
+const blueprintChildren: Record<string, Workflow> = {
+  "lp.plan": child("lp.plan", ["goal", "findings", "boundary", "mode"], [
+    { name: "status", type: "enum", values: ["ok", "low_confidence", "blocked"] },
+    { name: "tasks", type: "array" }, { name: "waves", type: "array" },
+  ]),
+  "lp.build": child("lp.build", ["tasks", "waves"], [
+    { name: "status", type: "enum", values: ["done", "partial", "blocked"] },
+    { name: "merged_commits", type: "array" }, { name: "failed_findings", type: "array" },
+  ]),
+  "lp.close": child("lp.close", ["goals", "boundary", "goal", "merged_commits"], [
+    { name: "status", type: "enum", values: ["closed", "unmet"] }, { name: "report_path", type: "string" },
+  ]),
+};
+
 function agents(calls: Calls, special: (ctx: StepContext) => Record<string, unknown> = () => ({})): NodeExecutor {
   return {
     reentrant: true,
@@ -171,5 +185,47 @@ describe("P04-R4 blueprint-driven packets and output contract", () => {
     expect(taskInput).toMatchObject({ brief: "brief text", prd: "prd text", architecture: "architecture text", epics: [{ id: "EPIC-1" }], readiness_score: 90, readiness_findings: [] });
     expect(workflow.outputs.find((field) => field.name === "epics")?.type).toBe("array");
     expect(() => checkOutput(workflow.outputs, summary.output)).not.toThrow();
+  });
+
+  it("renders the concrete slug in both done and partial terminal paths", async () => {
+    const store = await storeOf();
+    const run = async (buildStatus: "done" | "partial") => {
+      const calls: Calls = {};
+      const agent = agents(calls, (ctx) => {
+        if (ctx.workflow.id !== "blueprint-driven") {
+          if (ctx.workflow.id === "lp.plan") return { status: "ok", tasks: [], waves: [] };
+          if (ctx.workflow.id === "lp.build") return { status: buildStatus, merged_commits: [], failed_findings: [] };
+          if (ctx.workflow.id === "lp.close") return { status: "closed", report_path: "reports/close.md" };
+          return {};
+        }
+        switch (ctx.nodeId) {
+          case "discovery": return { seed: "seed", spec_type: "service", glossary: [], glossary_count: 0, gaps: [] };
+          case "brief": return { brief: "brief text", term_count: 5 };
+          case "prd": return { prd: "prd text", req_count: 3, has_moscow: true };
+          case "architecture": return { architecture: "architecture text", adr_count: 1 };
+          case "epics": return { epics: [{ id: "EPIC-1" }], epic_count: 1, uncovered_reqs: [] };
+          case "readiness": return { score: 90, completeness: 25, consistency: 25, traceability: 25, depth: 15, verdict: "pass", fix_phases: [], findings: [] };
+          default: return {};
+        }
+      });
+      const engine = engineOn(journalDb(), {
+        agent,
+        "lp-task": { reentrant: true, run: async () => ({ output: { state: "accepted", merge_commit: "", files: [] } }) },
+      }, { resolveWorkflow: (id) => blueprintChildren[id] ?? store.resolve(id) });
+      registerReducers(engine);
+      const workflow = store.get("blueprint-driven")!.workflow;
+      const summary = await engine.start({ workflow, inputs: { goal: "Build a packet test", idea: "A packet test service" } }).done;
+      return { summary, workflow };
+    };
+
+    const done = await run("done");
+    expect(done.summary.status).toBe("succeeded");
+    expect(done.summary.output).toMatchObject({ status: "done", spec_path: "docs/specs/build-a-packet-test" });
+    expect(() => checkOutput(done.workflow.outputs, done.summary.output)).not.toThrow();
+
+    const partial = await run("partial");
+    expect(partial.summary.status).toBe("succeeded");
+    expect(partial.summary.output).toMatchObject({ status: "partial", spec_path: "docs/specs/build-a-packet-test" });
+    expect(() => checkOutput(partial.workflow.outputs, partial.summary.output)).not.toThrow();
   });
 });
