@@ -6,6 +6,7 @@ import type { ResumeOrphansPort } from "../../contracts/stability-api";
 import type { StabilityPort } from "../../contracts/stability-api";
 import type { WorkflowEngineApi } from "../../platform/server";
 import type { WriterStateApi } from "../../platform/server";
+import type { RollbackApi } from "../../rollback/server";
 
 import type { DocsNightlyPort } from "../../contracts/docs-nightly-api";
 import type { MergeIntentsApi } from "../../contracts/merge-intents";
@@ -18,6 +19,7 @@ interface Services {
   recheckCancels: ResumeOrphansPort["recheckCancels"];
   stability: StabilityPort;
   recoverMergeIntents: MergeIntentsApi["recoverMergeIntents"];
+  recoverRevertIntents?: RollbackApi["recoverRevertIntents"];
   startAfterAcceptance: WorkflowEngineApi["startAfterAcceptance"];
   workflowEngine: WorkflowEngineApi["workflowEngine"];
 }
@@ -57,6 +59,7 @@ export function createTaskReconcile(ctx:ServerCore, services:Services) {
       try { await work(); } catch (cause) { bb.log.warn(`Lane Pilot ${name} skipped: ${cause instanceof Error ? cause.message : String(cause)}`); }
     });
     await step("merge intents", () => services.recoverMergeIntents({ now:options.now, graceMs:startup ? 0 : PERIODIC_INTENT_GRACE_MS }));
+    if (services.recoverRevertIntents) await step("rollback intents", () => services.recoverRevertIntents!());
     if (startup) {
       await step("resume on start", () => services.resumeOrphans());
       if (options.afterResume) await step("start-up sweeps", options.afterResume);

@@ -224,6 +224,7 @@ export interface Services {
   resolveIntegrationGate: VerificationGatePort;
   isTaskSatisfied: IsTaskSatisfied;
   recoverMergeIntents: MergeIntentsApi["recoverMergeIntents"];
+  recoverRevertIntents: RollbackApi["recoverRevertIntents"];
   activeWriterTasks: WriterStateApi["activeWriterTasks"];
   providerBreaker: WriterStateApi["providerBreaker"];
   providerUsage: WriterStateApi["providerUsage"];
@@ -338,6 +339,7 @@ export default async function plugin(bb: BbPluginApi) {
   // A failing seed must not keep the plugin from starting: the register only adds the morning list.
   try { deferrals.seed(); } catch (cause) { bb.log.warn(`Lane Pilot: deferral seed skipped: ${cause instanceof Error ? cause.message : String(cause)}`); }
   const services = {} as Services;
+  const rollback = createRollback(ctx, services);
   Object.assign(services, {
     skillSwitchMorningLine,
     buildCliInvocation: (input) => buildCliInvocation({ ...input, validate: argvValidationMap }),
@@ -415,7 +417,8 @@ export default async function plugin(bb: BbPluginApi) {
     { deferrals },
     // deferrals is another field of this bag: memoryConflicts reads it at call time through the thunk.
     { memoryConflicts: createMemoryConflicts({ db, deferrals: () => services.deferrals, log: ctx.log }) },
-    createRollback(ctx, services),
+    rollback,
+    { recoverRevertIntents: rollback.rollback.recoverRevertIntents },
     createBaselineRoom(ctx, services),
     { architect: architectStarter(ctx, services) satisfies ArchitectApi },
     { workflowLibrary: createWorkflowLibrary(ctx, services) satisfies WorkflowLibraryApi },

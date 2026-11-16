@@ -1,6 +1,6 @@
 import { runOnHost } from "@lane-pilot/host-calls";
 import { bestEffort } from "@lane-pilot/kit";
-import { acceptedChangeProofRows } from "../../rollback/server";
+import { dependencyChangeProofRows, readRevertIntents } from "../../rollback/server";
 import { dependsOnTask } from "../../tasks";
 import type { ServerCore } from "../../contracts/server";
 
@@ -12,12 +12,15 @@ export type DependencyMerge = { dep: string; taskId: string; commit: string };
  * has nothing to prove and is left out.
  */
 export function dependencyMerges(db: ServerCore["db"], runId: string, dependsOn: readonly string[]): DependencyMerge[] {
-  const rows = acceptedChangeProofRows(db as never, runId);
+  const rows = dependencyChangeProofRows(db as never, runId);
   const merges: DependencyMerge[] = [];
   const selectedTasks = new Set<string>();
   for (const dep of new Set(dependsOn)) {
     const row = rows.filter((candidate) => dependsOnTask([dep], candidate.task_id)).at(-1);
     if (!row) continue;
+    if (row.run_id !== runId || row.attempt_run_id !== runId || row.attempt_task_id !== row.task_id) {
+      throw new Error(`accepted dependency ${row.task_id} has mismatched attempt provenance`);
+    }
     if (row.outcome === "reverted") {
       // The historical accepted row remains visible for rollback/status, but it cannot satisfy a
       // new dependent: the original merge is still an ancestor after `git revert` while its tree is gone.
@@ -43,11 +46,22 @@ export function dependencyMerges(db: ServerCore["db"], runId: string, dependsOn:
  * worktree itself — every dependency's merge commit must be an ancestor of the workspace's HEAD. `missing` lists the ones that are not;
  * null when git could not be asked or returned an untrusted answer.
  */
-export async function checkDependencyBase(core: Pick<ServerCore, "db" | "host">, input: { runId: string; hostId: string; workspacePath: string; dependsOn: readonly string[] },
+export async function checkDependencyBase(core: Pick<ServerCore, "bb" | "db" | "host">, input: { runId: string; hostId: string; workspacePath: string; dependsOn: readonly string[] },
   log: (line: string) => void): Promise<{ head: string; checked: DependencyMerge[]; missing: DependencyMerge[] } | null> {
   let merges: DependencyMerge[];
   try {
     merges = dependencyMerges(core.db, input.runId, input.dependsOn);
+    // Query the declared family even when its accepted row has no merge commit: a rollback intent is an unresolved
+    // effect, not the intentional no-merge exception. Alias rows are added below so dep.2 also sees an intent keyed by dep.
+    const proofRows = dependencyChangeProofRows(core.db as never, input.runId);
+    const intentTaskIds = new Set(input.dependsOn);
+    for (const row of proofRows) if (input.dependsOn.some((dep) => dependsOnTask([dep], row.task_id))) intentTaskIds.add(row.task_id);
+    for (const taskId of intentTaskIds) {
+      const intent = await readRevertIntents(core.bb.storage.kv as never, input.runId, taskId);
+      if (intent.state !== "none") throw new Error(intent.state === "pending"
+        ? `accepted dependency ${taskId} has a pending rollback intent (${intent.intent.opId})`
+        : `accepted dependency ${taskId} rollback intent is unknown: ${intent.reason}`);
+    }
   } catch {
     return null;
   }

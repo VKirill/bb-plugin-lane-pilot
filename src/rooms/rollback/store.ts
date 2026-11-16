@@ -6,6 +6,96 @@ import { failureClass } from "../contracts";
 
 export type RollbackDb = Pick<Database.Database, "prepare">;
 
+/** Durable write-ahead records for a rollback's host-side merge. These live in KV, not task receipts: a receipt has no
+ * intent state and its append helper is deliberately best-effort. */
+export const REVERT_INTENT_PREFIX = "rollback-revert-intent:";
+export type RevertIntent = {
+  opId: string; runId: string; taskId: string; projectId: string; hostId: string; basePath: string;
+  attemptIds: string[]; changeSha: string; baseHead: string; expectedCommit: string; expectedTree: string;
+  trailer: string; createdAt: number;
+};
+export type RevertIntentKv = {
+  get(key: string): Promise<unknown>;
+  set(key: string, value: unknown): Promise<unknown>;
+  delete(key: string): Promise<unknown>;
+  list(prefix?: string): Promise<string[]>;
+};
+
+const keyPart = (value: string) => encodeURIComponent(value);
+export const revertIntentKey = (intent: Pick<RevertIntent, "runId" | "taskId" | "opId">) =>
+  `${REVERT_INTENT_PREFIX}${keyPart(intent.runId)}:${keyPart(intent.taskId)}:${keyPart(intent.opId)}`;
+
+const sha = (value: unknown): value is string => typeof value === "string" && /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/i.test(value);
+const commitList = (value: unknown): value is string => typeof value === "string" && value.length > 0 && value.split(",").every((commit) => sha(commit));
+const validIntent = (value: unknown): value is RevertIntent => {
+  if (!value || typeof value !== "object") return false;
+  const row = value as Partial<RevertIntent>;
+  return typeof row.opId === "string" && typeof row.runId === "string" && typeof row.taskId === "string" && typeof row.projectId === "string"
+    && typeof row.hostId === "string" && typeof row.basePath === "string" && Array.isArray(row.attemptIds) && row.attemptIds.length > 0 && row.attemptIds.every((id) => typeof id === "string" && id.length > 0)
+    && commitList(row.changeSha) && sha(row.baseHead) && sha(row.expectedCommit) && sha(row.expectedTree) && typeof row.trailer === "string"
+    && typeof row.createdAt === "number" && Number.isFinite(row.createdAt);
+};
+
+/** Strictly persists an intent before a rollback can call the host. */
+export async function writeRevertIntent(kv: RevertIntentKv, intent: RevertIntent): Promise<void> {
+  if (!validIntent(intent)) throw new Error("invalid revert intent");
+  await kv.set(revertIntentKey(intent), intent);
+}
+
+export type RevertIntentRead = { state: "pending"; intent: RevertIntent } | { state: "none" } | { state: "unknown"; reason: string };
+
+/** Reads only one task's operation family. Malformed matching KV is an unknown effect, never an empty result. */
+export async function readRevertIntents(kv: RevertIntentKv, runId: string, taskId: string): Promise<RevertIntentRead> {
+  const prefix = `${REVERT_INTENT_PREFIX}${keyPart(runId)}:${keyPart(taskId)}:`;
+  let keys: string[];
+  try { keys = await kv.list(prefix); }
+  catch (cause) { return { state: "unknown", reason: `revert intent list failed: ${cause instanceof Error ? cause.message : String(cause)}` }; }
+  const intents: RevertIntent[] = [];
+  for (const key of keys) {
+    let value: unknown;
+    try { value = await kv.get(key); }
+    catch (cause) { return { state: "unknown", reason: `revert intent ${key} unreadable: ${cause instanceof Error ? cause.message : String(cause)}` }; }
+    if (!validIntent(value) || revertIntentKey(value) !== key || value.runId !== runId || value.taskId !== taskId) {
+      return { state: "unknown", reason: `malformed revert intent ${key}` };
+    }
+    intents.push(value);
+  }
+  return intents.length ? { state: "pending", intent: intents.sort((a, b) => b.createdAt - a.createdAt)[0]! } : { state: "none" };
+}
+
+/** Deletes only the exact operation record that was read; operation ids are part of the key so a later rollback cannot be cleared. */
+export async function clearRevertIntent(kv: RevertIntentKv, intent: RevertIntent): Promise<void> {
+  const key = revertIntentKey(intent);
+  const current = await kv.get(key);
+  if (!validIntent(current) || current.opId !== intent.opId || current.runId !== intent.runId || current.taskId !== intent.taskId) {
+    throw new Error(`revert intent ${intent.opId} changed before clear`);
+  }
+  await kv.delete(key);
+}
+
+export type RevertSettlement = {
+  projectId: string; runId: string; taskId: string; attemptIds: string[]; baseSha: string; changeSha: string; resultCommit: string | null;
+  summary: string; detail: unknown;
+};
+
+/** The receipt and all compensation outcomes become one SQLite commit. The intent is cleared only after this returns. */
+export function settleRevert(db: RollbackDb, input: RevertSettlement): number {
+  const settle = (db as Database.Database).transaction(() => {
+    for (const attemptId of input.attemptIds) {
+      const attempt = getAttemptChange(db, attemptId);
+      if (!attempt || attempt.runId !== input.runId || attempt.taskId !== input.taskId) throw new Error(`revert attempt ${attemptId} no longer matches its intent`);
+    }
+    const id = appendTaskReceipt(db, { kind: "revert", projectId: input.projectId, runId: input.runId, taskId: input.taskId, state: "merged",
+      summary: input.summary, attemptId: input.attemptIds[0] ?? null, baseSha: input.baseSha, changeSha: input.changeSha, resultCommit: input.resultCommit, detail: input.detail });
+    for (const attemptId of input.attemptIds) {
+      const row = getAttemptChange(db, attemptId)!;
+      upsertAttemptChange(db, { attemptId, runId: row.runId, taskId: row.taskId }, { outcome: "reverted" });
+    }
+    return id;
+  });
+  return settle();
+}
+
 /** One file an attempt changed: A added, M modified, D deleted, T type changed. */
 export type ChangedFile = { path: string; status: string };
 
@@ -178,6 +268,15 @@ export function acceptedChangeProofRows(db: RollbackDb, runId: string): Array<{ 
   return db.prepare(`SELECT c.task_id AS task_id, c.merge_commit AS merge_commit, c.changed_json AS changed_json, c.outcome AS outcome FROM lane_pilot_attempt_change c
     JOIN ${ATTEMPT_TABLE} a ON a.id=c.attempt_id WHERE c.run_id=? AND a.state='accepted' AND c.merge_commit IS NOT NULL ORDER BY a.updated_at, a.rowid`)
     .all(runId) as Array<{ task_id: string; merge_commit: string; changed_json: string; outcome: string | null }>;
+}
+
+/** Dependency admission's provenance-preserving view. It includes rows whose change and attempt ledgers disagree so callers can
+ * refuse them; filtering those rows here would make the intentional no-merge exception fail open. */
+export function dependencyChangeProofRows(db: RollbackDb, runId: string): Array<{ run_id: string; task_id: string; merge_commit: string; changed_json: string; outcome: string | null; attempt_run_id: string; attempt_task_id: string }> {
+  return db.prepare(`SELECT c.run_id AS run_id, c.task_id AS task_id, c.merge_commit AS merge_commit, c.changed_json AS changed_json, c.outcome AS outcome,
+    a.run_id AS attempt_run_id, a.task_id AS attempt_task_id FROM lane_pilot_attempt_change c
+    JOIN ${ATTEMPT_TABLE} a ON a.id=c.attempt_id WHERE (c.run_id=? OR a.run_id=?) AND a.state='accepted' AND c.merge_commit IS NOT NULL ORDER BY a.updated_at, a.rowid`)
+    .all(runId, runId) as Array<{ run_id: string; task_id: string; merge_commit: string; changed_json: string; outcome: string | null; attempt_run_id: string; attempt_task_id: string }>;
 }
 
 /** Accepted attempts' size evidence (created, finished, changed files, attempt count) for the median task size. */

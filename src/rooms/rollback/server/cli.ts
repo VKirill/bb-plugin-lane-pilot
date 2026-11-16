@@ -20,7 +20,11 @@ export async function runRollbackCli(api: RollbackApi, command: "reverify" | "re
     const unknown = flags.filter((flag) => !known.includes(flag));
     if (unknown.length || positional.length !== 1) throw new Error(`usage:\n${ROLLBACK_USAGE}`);
     const ref = positional[0]!;
-    if (command === "changes") return { exitCode: 0, stdout: JSON.stringify(api.status(ref), null, 2) };
+    if (command === "changes") {
+      const record = api.status(ref);
+      const pendingRevertIntent = await api.pendingRevertIntent(ref);
+      return { exitCode: 0, stdout: JSON.stringify({ ...record, ...(pendingRevertIntent ? { pendingRevertIntent } : {}) }, null, 2) };
+    }
     const result = command === "reverify" ? await api.reverify(ref) : await api.revert(ref, { dryRun: flags.includes("--dry-run"), skipGate: flags.includes("--no-gate"), ...(why ? { why, by: "cli" } : {}) });
     return { exitCode: result.ok ? 0 : 1, stdout: JSON.stringify(result, null, 2) };
   } catch (cause) {

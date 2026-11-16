@@ -6,7 +6,7 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { expect, it } from "vitest";
 import type { PrototypeConfig, TaskV2 } from "../src/rooms/contracts";
 import { createAttempt, createRun, createTask, openDatabase, setRunThread, transitionAttempt } from "../src/rooms/plugin-db";
-import { upsertAttemptChange } from "../src/rooms/rollback/store";
+import { upsertAttemptChange, writeRevertIntent } from "../src/rooms/rollback/store";
 import { createWriterSpawn } from "../src/rooms/writer/server/spawn";
 import { runCommandOnHost } from "../src/rooms/writer/cli-run";
 
@@ -18,7 +18,7 @@ const taskOf = (workspace: string, id: string, dependsOn: string[] = []): TaskV2
   objective: id, acceptance: ["done"], verify: "none", verification: [],
 });
 
-const makeWorld = (probe: "valid-alias" | "no-deps" | "no-merge" | "reverted" | "stale" | "host-failure" | "malformed" | "invalid-row") => {
+const makeWorld = (probe: "valid-alias" | "no-deps" | "no-merge" | "reverted" | "pending" | "stale" | "host-failure" | "malformed" | "invalid-row") => {
   const repo = mkdtempSync(join(tmpdir(), "lp-dependency-proof-"));
   git(repo, "init", "-q", "-b", "main");
   writeFileSync(join(repo, "README.md"), "base\n");
@@ -47,7 +47,7 @@ const makeWorld = (probe: "valid-alias" | "no-deps" | "no-merge" | "reverted" | 
   if (probe !== "no-merge") upsertAttemptChange(db as never, { attemptId: "dep-attempt", runId: "run", taskId: dependencyId }, { outcome: "merged", mergeCommit: probe === "invalid-row" ? "not-a-sha" : dependencyCommit });
   transitionAttempt(db, "dep-attempt", "accepted");
   createAttempt(db, { id: "child-attempt", runId: "run", taskId: "child" });
-  if (probe === "valid-alias" || probe === "no-deps" || probe === "no-merge" || probe === "reverted") git(stale, "merge", "-q", "--ff-only", "main");
+  if (probe === "valid-alias" || probe === "no-deps" || probe === "no-merge" || probe === "reverted" || probe === "pending") git(stale, "merge", "-q", "--ff-only", "main");
   if (probe === "reverted") {
     git(stale, "revert", "--no-edit", dependencyCommit);
     upsertAttemptChange(db as never, { attemptId: "dep-attempt", runId: "run", taskId: dependencyId }, { outcome: "reverted" });
@@ -93,7 +93,7 @@ const makeWorld = (probe: "valid-alias" | "no-deps" | "no-merge" | "reverted" | 
     projectId: "P", hostId: "h", pmWorkspacePath: stale, writerWorkspacePath: stale,
     pmProviderId: "codex", pmModel: "codex-test", writerProviderId: "codex", writerModel: "codex-test",
   };
-  return { writer, config, task, spawned, db, stale, dependencyCommit, before };
+  return { writer, config, task, spawned, db, bb, stale, dependencyCommit, before };
 };
 
 it("accepts a valid ancestor once for base and redispatch aliases", async () => {
@@ -127,8 +127,43 @@ it("refuses a reverted accepted dependency even while its original merge remains
   expect(world.spawned).toHaveLength(0);
 });
 
+it("refuses a dependency with a durable pending rollback intent before provider launch", async () => {
+  const world = makeWorld("pending");
+  await writeRevertIntent(world.bb.storage.kv as never, {
+    opId: "run/dep/dep-attempt/pending", runId: "run", taskId: "dep", projectId: "P", hostId: "h", basePath: world.stale,
+    attemptIds: ["dep-attempt"], changeSha: world.dependencyCommit, baseHead: world.before,
+    expectedCommit: world.dependencyCommit, expectedTree: git(world.stale, "rev-parse", "HEAD^{tree}"), trailer: "Lane-Pilot-Revert: dep", createdAt: Date.now(),
+  });
+  const result = await world.writer.spawnWriterAttempt({ projectId: "P", runId: "run", taskId: "child", attemptId: "child-attempt", config: world.config, task: world.task, plan: "child", pmThreadId: "pm" });
+  expect(result).toMatchObject({ ok: false, status: "spawn_rejected" });
+  expect((result as { reason: string }).reason).toContain("attempt_worktree_base_unproven");
+  expect(world.spawned).toHaveLength(0);
+});
+
+it("does not turn a pending rollback intent into the intentional no-merge exception", async () => {
+  const world = makeWorld("no-merge");
+  await writeRevertIntent(world.bb.storage.kv as never, {
+    opId: "run/dep/dep-attempt/pending-no-merge", runId: "run", taskId: "dep", projectId: "P", hostId: "h", basePath: world.stale,
+    attemptIds: ["dep-attempt"], changeSha: world.dependencyCommit, baseHead: world.before,
+    expectedCommit: world.dependencyCommit, expectedTree: git(world.stale, "rev-parse", "HEAD^{tree}"), trailer: "Lane-Pilot-Revert: dep", createdAt: Date.now(),
+  });
+  const result = await world.writer.spawnWriterAttempt({ projectId: "P", runId: "run", taskId: "child", attemptId: "child-attempt", config: world.config, task: world.task, plan: "child", pmThreadId: "pm" });
+  expect(result).toMatchObject({ ok: false, status: "spawn_rejected" });
+  expect((result as { reason: string }).reason).toContain("attempt_worktree_base_unproven");
+  expect(world.spawned).toHaveLength(0);
+});
+
 it.each(["host-failure", "malformed", "invalid-row"] as const)("refuses a %s dependency proof before calling threads.spawn", async (probe) => {
   const world = makeWorld(probe);
+  const result = await world.writer.spawnWriterAttempt({ projectId: "P", runId: "run", taskId: "child", attemptId: "child-attempt", config: world.config, task: world.task, plan: "child", pmThreadId: "pm" });
+  expect(result).toMatchObject({ ok: false, status: "spawn_rejected" });
+  expect((result as { reason: string }).reason).toContain("attempt_worktree_base_unproven");
+  expect(world.spawned).toHaveLength(0);
+});
+
+it("refuses a change row whose run provenance disagrees instead of treating it as no merge", async () => {
+  const world = makeWorld("valid-alias");
+  world.db.prepare("UPDATE lane_pilot_attempt_change SET run_id='other-run' WHERE attempt_id='dep-attempt'").run();
   const result = await world.writer.spawnWriterAttempt({ projectId: "P", runId: "run", taskId: "child", attemptId: "child-attempt", config: world.config, task: world.task, plan: "child", pmThreadId: "pm" });
   expect(result).toMatchObject({ ok: false, status: "spawn_rejected" });
   expect((result as { reason: string }).reason).toContain("attempt_worktree_base_unproven");

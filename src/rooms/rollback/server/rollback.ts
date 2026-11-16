@@ -10,7 +10,8 @@ import { parseIntegrationGateSettings, type VerificationGatePort } from "../../c
 
 import type { ServerCore } from "../../contracts/server";
 import {
-  appendTaskReceipt, claimLandingSuite, effectState, getAttemptChange, LANDING_SUITE_TRIES, listLandingSuitePending, listTaskReceipts, noteLandingSuite, recoveryState, upsertAttemptChange,
+  appendTaskReceipt, claimLandingSuite, clearRevertIntent, effectState, getAttemptChange, LANDING_SUITE_TRIES, listLandingSuitePending, listTaskReceipts, noteLandingSuite, readRevertIntents, recoveryState, revertIntentKey, settleRevert, upsertAttemptChange, writeRevertIntent,
+  type RevertIntent, type RevertIntentKv,
   type ChangedFile, type LandingSuite, type TaskReceipt, type TaskReceiptKind, type TaskReceiptState,
 } from "../store";
 import { postOwnerItem } from "../../owner-waiting";
@@ -67,10 +68,51 @@ export type RollbackTarget = {
 const safeName = (text: string) => text.replace(/[^A-Za-z0-9._-]/g, "-").slice(0, 50);
 const nonce = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
 const tail = (text: string) => text.trim().slice(-TAIL);
+const shellQuote = (text: string) => `'${text.replace(/'/g, "'\\''")}'`;
+const SHA = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/i;
 
 export function createRollback(ctx: ServerCore, services: Services) {
   const { db, host } = ctx;
   const log = (line: string) => ctx.log(line);
+  const intentKv = () => ctx.bb.storage.kv as unknown as RevertIntentKv;
+
+  async function gitIdentity(t: RollbackTarget, cwd: string): Promise<{ commit: string; tree: string } | null> {
+    const ran = await host.call("runCommand", { requestedHostId: t.hostId, cwd, timeoutSec: 30,
+      command: "commit=\"$(git rev-parse --verify HEAD)\" || exit $?; tree=\"$(git rev-parse --verify HEAD^{tree})\" || exit $?; printf 'COMMIT %s\\nTREE %s\\n' \"$commit\" \"$tree\"" },
+      { hostId: t.hostId, timeoutMs: 45_000 }).catch(() => null) as { exitCode?: number; stdout?: string } | null;
+    if (!ran || ran.exitCode !== 0) return null;
+    const lines = String(ran.stdout ?? "").split("\n").map((line) => line.trim()).filter(Boolean);
+    const commit = lines.find((line) => line.startsWith("COMMIT "))?.slice(7);
+    const tree = lines.find((line) => line.startsWith("TREE "))?.slice(5);
+    return commit && tree && SHA.test(commit) && SHA.test(tree) && lines.length === 2 ? { commit, tree } : null;
+  }
+
+  function revertOpId(t: RollbackTarget, attempts: readonly string[], changeSha: string, expectedCommit: string): string {
+    return `${t.runId}/${t.taskId}/${attempts.join(",")}/${changeSha}/${expectedCommit}`;
+  }
+
+  async function landedRevert(intent: RevertIntent): Promise<{ landed: true; head: string } | { landed: false }> {
+    // Every positive witness is checked in one host command. A negative answer is intentionally not a verdict: the host may
+    // have dropped the RPC while gitIntegrate still owns the checkout, so the intent remains pending for the next pass.
+    const q = shellQuote;
+    const command = [
+      `base=\"$(git rev-parse --verify HEAD)\" || exit $?`,
+      `git cat-file -e ${q(`${intent.baseHead}^{commit}`)} || exit $?`,
+      `git cat-file -e ${q(`${intent.expectedCommit}^{commit}`)} || exit $?`,
+      `git merge-base --is-ancestor ${q(intent.baseHead)} \"$base\" || exit 20`,
+      `if git merge-base --is-ancestor ${q(intent.expectedCommit)} ${q(intent.baseHead)}; then exit 21; fi`,
+      `tree=\"$(git rev-parse --verify ${q(`${intent.expectedCommit}^{tree}`)})\" || exit $?`,
+      `[ \"$tree\" = ${q(intent.expectedTree)} ] || exit 22`,
+      `printf 'BASE %s\\nTREE %s\\n' \"$base\" \"$tree\"`,
+    ].join("; ");
+    const ran = await host.call("runCommand", { requestedHostId: intent.hostId, cwd: intent.basePath, timeoutSec: 30, command },
+      { hostId: intent.hostId, timeoutMs: 45_000 }).catch(() => null) as { exitCode?: number; stdout?: string } | null;
+    if (!ran || ran.exitCode !== 0) return { landed: false };
+    const lines = String(ran.stdout ?? "").split("\n").map((line) => line.trim()).filter(Boolean);
+    const head = lines.find((line) => line.startsWith("BASE "))?.slice(5);
+    const tree = lines.find((line) => line.startsWith("TREE "))?.slice(5);
+    return head && tree && SHA.test(head) && tree.toLowerCase() === intent.expectedTree.toLowerCase() && lines.length === 2 ? { landed: true, head } : { landed: false };
+  }
 
   // ---- the record ----
 
@@ -296,9 +338,9 @@ export function createRollback(ctx: ServerCore, services: Services) {
   // ---- revert ----
 
   /** Merges the revert through the base-checkout lock, waiting in the queue like every writer merge. */
-  async function mergeRevert(t: RollbackTarget, worktreePath: string, message: string): Promise<{ status: string; commit: string | null; reason: string | null; conflicts: string[] }> {
+  async function mergeRevert(t: RollbackTarget, worktreePath: string, message: string, expectedHead: string): Promise<{ status: string; commit: string | null; reason: string | null; conflicts: string[] }> {
     const settings = loadProjectSettings(db, t.projectId, getRunSettingsScopes(db, t.runId));
-    const integrate = () => host.call("gitIntegrate", { requestedHostId: t.hostId, basePath: t.basePath, worktreePath, message, removeWorktree: true, bookkeeping: bookkeepingSetting(settings) },
+    const integrate = () => host.call("gitIntegrate", { requestedHostId: t.hostId, basePath: t.basePath, worktreePath, message, expectedHead, removeWorktree: true, bookkeeping: bookkeepingSetting(settings) },
       { hostId: t.hostId, timeoutMs: 180_000 });
     let merged = await integrate();
     const since = Date.now();
@@ -427,14 +469,49 @@ export function createRollback(ctx: ServerCore, services: Services) {
         return { ok: true, state: "dry_run", taskId: t.taskId, attemptId, base: oldest.mergeParent, change: changeSha, summary, receiptId: id, files, checks: verification, gate };
       }
 
-      const merged = await mergeRevert(t, scratch.path, `Revert ${t.taskId}\n\nReverts ${commits.join(", ")}\nLane-Pilot-Revert: ${t.taskId}`);
+      const revertMessage = `Revert ${t.taskId}\n\nReverts ${commits.join(", ")}\nLane-Pilot-Revert: ${t.taskId}`;
+      // The host call is the effect boundary. Record the exact checked scratch commit/tree and the current base first;
+      // a detached reply can then be settled only by positive Git proof, never by a timeout or a negative probe.
+      const expected = await gitIdentity(t, scratch.path);
+      const baseBefore = await gitIdentity(t, t.basePath);
+      if (!expected || !baseBefore) {
+        const reason = "could not record the exact revert commit/tree and current base before the host merge";
+        return refuse(t, "revert", ref, reason, "inspect the host checkout and run the revert again", { attemptId, detail: { rollbackIntent: "not_written" } });
+      }
+      const intent: RevertIntent = {
+        opId: revertOpId(t, changes.map((change) => change.attemptId), changeSha, expected.commit), runId: t.runId, taskId: t.taskId,
+        projectId: t.projectId, hostId: t.hostId, basePath: t.basePath, attemptIds: changes.map((change) => change.attemptId),
+        changeSha, baseHead: baseBefore.commit, expectedCommit: expected.commit, expectedTree: expected.tree,
+        trailer: `Lane-Pilot-Revert: ${t.taskId}`, createdAt: Date.now(),
+      };
+      const existing = await readRevertIntents(intentKv(), t.runId, t.taskId);
+      if (existing.state !== "none") {
+        const reason = existing.state === "pending" ? `rollback operation ${existing.intent.opId} is still pending on the host` : `rollback operation state is unknown: ${existing.reason}`;
+        return refuse(t, "revert", ref, reason, "inspect the host checkout and wait for the pending rollback proof before retrying", { attemptId, detail: { rollbackIntent: existing.state } });
+      }
+      try { await writeRevertIntent(intentKv(), intent); }
+      catch (cause) {
+        const reason = `could not durably record the rollback intent: ${cause instanceof Error ? cause.message : String(cause)}`;
+        return refuse(t, "revert", ref, reason, "repair Lane Pilot storage before retrying; no host merge was attempted", { attemptId, detail: { rollbackIntent: "write_failed" } });
+      }
+      let merged: Awaited<ReturnType<typeof mergeRevert>>;
+      try { merged = await mergeRevert(t, scratch.path, revertMessage, expected.commit); }
+      catch (cause) {
+        const reason = `rollback host outcome is unknown (${cause instanceof Error ? cause.message : String(cause)}); intent ${intent.opId} remains pending`;
+        const id = receipt(t, "revert", "error", reason, { attemptId, baseSha: oldest.mergeParent, changeSha, detail: { rollbackIntent: "unknown", opId: intent.opId } });
+        return { ok: false, state: "error", taskId: t.taskId, attemptId, base: oldest.mergeParent, change: changeSha, summary: reason, next: "inspect the host checkout; retry only after the rollback intent is settled", receiptId: id };
+      }
       if (merged.status !== "merged" && merged.status !== "up-to-date") {
         const reason = merged.status === "conflict" ? `main moved while the revert was checked and the merge conflicts in ${merged.conflicts.join(", ") || "its files"}` : `the merge did not land: ${merged.status}${merged.reason ? ` (${merged.reason})` : ""}`;
+        try { await clearRevertIntent(intentKv(), intent); }
+        catch (cause) { log(`rollback intent ${intent.opId} retained after confirmed ${merged.status}: ${cause instanceof Error ? cause.message : String(cause)}`); }
         return refuse(t, "revert", ref, reason, merged.status === "busy" ? "another merge held the base checkout for 15 minutes; run the revert again" : "run the revert again on the new main", { attemptId, detail });
       }
       handedOver = true;
-      const id = receipt(t, "revert", "merged", summary, { attemptId, baseSha: oldest.mergeParent, changeSha, resultCommit: merged.commit, detail });
-      for (const change of changes) upsertAttemptChange(db, { attemptId: change.attemptId, runId: t.runId, taskId: t.taskId }, { outcome: "reverted" });
+      const id = settleRevert(db, { projectId: t.projectId, runId: t.runId, taskId: t.taskId, attemptIds: changes.map((change) => change.attemptId),
+        baseSha: oldest.mergeParent ?? baseBefore.commit, changeSha, resultCommit: merged.commit, summary, detail: { ...detail, rollbackIntent: "settled", opId: intent.opId } });
+      try { await clearRevertIntent(intentKv(), intent); }
+      catch (cause) { log(`rollback intent ${intent.opId} remains after durable settlement: ${cause instanceof Error ? cause.message : String(cause)}`); }
       log(`rollback: ${t.taskId} reverted in ${merged.commit?.slice(0, 12) ?? "main"}`);
       return { ok: true, state: "merged", taskId: t.taskId, attemptId, base: oldest.mergeParent, change: changeSha, summary, receiptId: id, commit: merged.commit, files, checks: verification, gate };
     } finally {
@@ -442,6 +519,45 @@ export function createRollback(ctx: ServerCore, services: Services) {
       if (!handedOver) await dropWorktree(t, scratch.path);
       await dropWorktree(t, baseline?.path ?? null);
     }
+  }
+
+  /** Settles only rollback intents with positive Git proof; unknown host outcomes stay in KV and block dependents. */
+  async function recoverRevertIntents(): Promise<string[]> {
+    const kv = intentKv();
+    let keys: string[];
+    try { keys = await kv.list("rollback-revert-intent:"); }
+    catch (cause) { log(`rollback intents not listed: ${cause instanceof Error ? cause.message : String(cause)}`); return []; }
+    const settled: string[] = [];
+    for (const key of keys) {
+      const parts = key.slice("rollback-revert-intent:".length).split(":");
+      if (parts.length !== 3) { log(`rollback intent ${key} has an untrusted key; it remains pending`); continue; }
+      let runId: string, taskId: string;
+      try { runId = decodeURIComponent(parts[0]!); taskId = decodeURIComponent(parts[1]!); }
+      catch { log(`rollback intent ${key} has an invalid identity; it remains pending`); continue; }
+      const read = await readRevertIntents(kv, runId, taskId);
+      if (read.state !== "pending" || revertIntentKey(read.intent) !== key) { if (read.state === "unknown") log(read.reason); continue; }
+      const intent = read.intent;
+      const rows = intent.attemptIds.map((attemptId) => getAttemptChange(db, attemptId));
+      if (rows.some((row) => !row || row.runId !== intent.runId || row.taskId !== intent.taskId)) {
+        log(`rollback intent ${intent.opId} has mismatched attempt provenance; it remains pending`);
+        continue;
+      }
+      if (rows.every((row) => row!.outcome === "reverted")) {
+        try { await clearRevertIntent(kv, intent); } catch (cause) { log(`rollback intent ${intent.opId} could not clear after settlement: ${cause instanceof Error ? cause.message : String(cause)}`); }
+        continue;
+      }
+      const verdict = await landedRevert(intent);
+      if (!verdict.landed) continue;
+      try {
+        settleRevert(db, { projectId: intent.projectId, runId: intent.runId, taskId: intent.taskId, attemptIds: intent.attemptIds,
+          baseSha: intent.baseHead, changeSha: intent.changeSha, resultCommit: verdict.head,
+          summary: `recovered rollback of ${intent.taskId} from durable intent; Git proves ${intent.expectedCommit.slice(0, 12)} is in main`,
+          detail: { recoveredFromRevertIntent: true, opId: intent.opId, expectedCommit: intent.expectedCommit, expectedTree: intent.expectedTree } });
+        await clearRevertIntent(kv, intent);
+        settled.push(intent.taskId);
+      } catch (cause) { log(`rollback intent ${intent.opId} landed but could not settle: ${cause instanceof Error ? cause.message : String(cause)}`); }
+    }
+    return settled;
   }
 
   /** What is on record for a task or an attempt: its attempts' bases, merges and changed files, and the receipts. */
@@ -455,6 +571,17 @@ export function createRollback(ctx: ServerCore, services: Services) {
     const mark = (reverted?.detail as { rollbackMark?: { cause?: string | null } } | undefined)?.rollbackMark;
     const rollback = reverted ? { commit: reverted.resultCommit, cause: mark?.cause ?? "rolled back, cause unknown" } : undefined;
     return { taskId, attempts, receipts, ...(rollback ? { rollback } : {}) };
+  }
+
+  async function pendingRevertIntent(ref: string) {
+    const attempt = getAttempt(db, ref);
+    const taskId = attempt ? attempt.task_id : ref;
+    const task = getTask(db, taskId);
+    const intent = task ? await readRevertIntents(intentKv(), task.run_id, taskId) : { state: "none" as const };
+    if (intent.state === "pending") return { state: "pending" as const, opId: intent.intent.opId, expectedCommit: intent.intent.expectedCommit, createdAt: intent.intent.createdAt,
+      next: "inspect the host checkout; dependency starts remain refused until this intent has positive Git proof" };
+    if (intent.state === "unknown") return { state: "unknown" as const, reason: intent.reason, next: "repair/read Lane Pilot storage; dependency starts remain refused" };
+    return undefined;
   }
 
   /**
@@ -583,7 +710,7 @@ export function createRollback(ctx: ServerCore, services: Services) {
     if (result.created) await kv().set(dayKey, posted + 1).catch(() => undefined);
   }
 
-  return { rollback: { noteBase, ensureBase, noteMerge, noteWorktree, noteSaved, noteStopped, reverify, revert, status, diff, kit, landingSuite: landingSuiteSweep } };
+  return { rollback: { noteBase, ensureBase, noteMerge, noteWorktree, noteSaved, noteStopped, reverify, revert, recoverRevertIntents, status, pendingRevertIntent, diff, kit, landingSuite: landingSuiteSweep } };
 }
 
 export type RollbackApi = ReturnType<typeof createRollback>["rollback"];
