@@ -133,7 +133,20 @@ export const REDUCERS: Record<string, Reducer> = {
       skipped_branches: [...done(input).filter((row) => row.data.skipped === true).map((row) => str(row.data.branch) || str(row.item)), ...lost(input).map((row) => str(row.item))].filter(Boolean),
     };
   },
-  "reduce.seo-cocoon.briefs": (input) => { const ok = done(input).filter((row) => str(row.data.brief_path)); return { brief_paths: ok.map((row) => str(row.data.brief_path)), ok_count: ok.length }; },
+  "reduce.seo-cocoon.briefs": (input) => {
+    // Publish only complete producer pairs. Both paths originate at the child fs.write outputs;
+    // consumers never need to reconstruct evidence-cards.json beside a brief path.
+    const ok = done(input).filter((row) => row.data.status === "done").map((row) => ({
+      brief_path: str(row.data.brief_path),
+      evidence_path: str(row.data.evidence_path),
+    })).filter((row) => row.brief_path && row.evidence_path);
+    return {
+      brief_paths: ok.map((row) => row.brief_path),
+      evidence_paths: ok.map((row) => row.evidence_path),
+      ok_count: ok.length,
+      all_complete: ok.length === input.items.length,
+    };
+  },
   "reduce.web-research.search": (input) => {
     const seen = new Set<string>(), sources: unknown[] = [];
     for (const source of flat(input.results, "sources")) { const url = str(rec(source).url); if (url && seen.has(url)) continue; if (url) seen.add(url); sources.push(source); }

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { readFile } from "node:fs/promises";
 import { firstInput, out, pathOf } from "./chain-helpers";
 import { chainStore, runSim } from "./chain-harness";
-import { reply, runHomeWorld } from "./run-home-world";
+import { chain, reply, runHomeWorld } from "./run-home-world";
 
 const input = { topic: "кофемашины для дома", geo: "", language: "ru", site_goal: "", use_seo_tools: false, max_pages: 12 };
 const initialBatch = [
@@ -27,6 +27,7 @@ const base = (pageMapBatch = initialBatch) => ({
   "seo-brief": ((ctx: { input: { item?: unknown } }) => ({
     status: "done",
     brief_path: `briefs/${(ctx.input.item as { slug: string }).slug}.md`,
+    evidence_path: "evidence-cards/" + (ctx.input.item as { slug: string }).slug + ".json",
   })) as never,
   audit: { status: "pass", findings: [], orphan_count: 0, cannibal_count: 0 },
   package: { folder: ".agents/seo/kofemashiny", handoff_path: ".agents/seo/kofemashiny/handoff.md" },
@@ -49,6 +50,7 @@ describe("seo-cocoon contracts", () => {
       brief_answer_kind: "answered",
     });
     expect(pathOf(r)).toContain("chainsmith");
+    expect(r.called("audit")).toHaveLength(1);
   });
 
   it("reconciles an edited batch before fanout and requires explicit approval", async () => {
@@ -109,13 +111,19 @@ describe("seo-cocoon contracts", () => {
 
   it("uses an explicit producer manifest instead of a literal glob", async () => {
     const workflow = JSON.parse(await readFile(new URL("../../workflows/seo-cocoon.json", import.meta.url), "utf8")) as {
+      inputs: Record<string, unknown>;
       nodes: Array<{ id: string; files?: unknown; contents?: Record<string, unknown> }>;
     };
+    expect(workflow.inputs).not.toHaveProperty("briefs_dir");
     const packageNode = workflow.nodes.find((node) => node.id === "package")!;
     expect(packageNode.files).toBeUndefined();
     const contents = packageNode.contents!;
     expect(contents).toMatchObject({
-      "manifest.json": expect.objectContaining({ briefs_dir: "{{$inputs.briefs_dir}}", brief_paths: "{{briefs.brief_paths}}" }),
+      "manifest.json": expect.objectContaining({
+        briefs_dir: ".agents/seo/briefs",
+        brief_paths: "{{briefs.brief_paths}}",
+        evidence_paths: "{{briefs.evidence_paths}}",
+      }),
       "handoff.md": expect.stringContaining("exact file-specific paths"),
     });
     expect(contents["manifest.json"]).not.toHaveProperty("architecture_path");
@@ -130,6 +138,88 @@ describe("seo-cocoon contracts", () => {
     };
     expect(page.outputs.briefs_dir).toBe("string");
     expect(page.nodes.find((node) => node.id === "done")?.map?.briefs_dir).toBe("cocoon.briefs_dir");
+  });
+
+  it("persists both paths from one real child in the cocoon manifest", async () => {
+    const store = await chainStore();
+    const fixture = chain({
+      id: "seo-cocoon-artifact-fixture",
+      name: { en: "SEO cocoon artifact fixture", ru: "SEO cocoon artifact fixture" },
+      description: { en: "fixture", ru: "fixture" },
+      inputs: [{ name: "pages", type: "object[]" }],
+      outputs: [],
+      nodes: [
+        {
+          id: "briefs",
+          type: "parallel",
+          for_each: "$inputs.pages",
+          child: {
+            type: "subworkflow",
+            workflow: "seo-brief",
+            with: { slug: "{{item.slug}}", intent: "{{item.intent}}" },
+            out: { status: "string", brief_path: "string", evidence_path: "string" },
+          },
+          join: {
+            policy: "all",
+            out: { brief_paths: "string[]", evidence_paths: "string[]", ok_count: "int" },
+            uses: "reduce.seo-cocoon.briefs",
+          },
+          concurrency: 1,
+        },
+        {
+          id: "package",
+          type: "action",
+          action: "fs.write",
+          path: ".agents/seo/fixture/{{run_id}}/",
+          contents: {
+            "manifest.json": {
+              briefs_dir: ".agents/seo/briefs",
+              brief_paths: "{{briefs.brief_paths}}",
+              evidence_paths: "{{briefs.evidence_paths}}",
+            },
+          },
+          out: { folder: "string" },
+        },
+        { id: "done", type: "action", action: "emit", map: { status: "done", folder: "package.folder" } },
+      ],
+      edges: [
+        { from: "start", to: "briefs" },
+        { from: "briefs", to: "package" },
+        { from: "package", to: "done" },
+      ],
+    });
+    const world = await runHomeWorld({
+      passport: [reply({ passport_path: "passport.json", focus: "coffee choice", handoff: "passport" })],
+      serp_gap: [reply({ gap_path: "gap.json", wireframe_path: "wireframe.md", handoff: "gap" })],
+      gist_core: [reply({ core_path: "core.md", job: "choose", decision_nodes: 2, handoff: "gist" })],
+      link_rows: [reply({ links_path: "links.json", handoff: "links" })],
+      evidence: [reply({ evidence_path: "evidence.json", cards: 2, handoff: "evidence" })],
+      utility_gate: [reply({ gate: "pass", notes: "ready", handoff: "gate" })],
+    });
+    try {
+      world.engine.options.resolveWorkflow = store.resolve;
+      const result = await world.engine.start({
+        workflow: fixture,
+        inputs: { pages: [{ slug: "fixture-page", intent: "comparison" }] },
+        runtime: world.rt,
+        link: { projectId: "run-home-project" },
+        resolve: store.resolve,
+      }).done;
+      expect(result.status).toBe("succeeded");
+      const folder = String(result.output?.folder);
+      const manifest = JSON.parse(await readFile(`${world.checkout}/${folder}manifest.json`, "utf8")) as {
+        briefs_dir: string;
+        brief_paths: string[];
+        evidence_paths: string[];
+      };
+      expect(manifest.briefs_dir).toBe(".agents/seo/briefs");
+      expect(manifest.brief_paths).toHaveLength(1);
+      expect(manifest.evidence_paths).toHaveLength(1);
+      expect(await readFile(`${world.checkout}/${manifest.brief_paths[0]}`, "utf8")).toContain("# GIST brief");
+      expect(await readFile(`${world.checkout}/${manifest.evidence_paths[0]}`, "utf8")).toContain("utility_gate");
+    } finally {
+      await world.dispose();
+    }
   });
 
   it("returns file-specific paths from the real seo-brief fs.write nodes and preserves their bytes", async () => {
@@ -153,5 +243,26 @@ describe("seo-cocoon contracts", () => {
     } finally {
       await world.dispose();
     }
+  });
+
+  it("blocks before audit and package when a brief child is business-blocked", async () => {
+    const r = await runSim("seo-cocoon", {
+      input,
+      stubs: {
+        ...base(),
+        "seo-brief": { status: "blocked", brief_path: "", evidence_path: "" },
+      },
+      humans: {
+        ask_brief: { answer_kind: "answered", answer: "RU / shop" },
+        scope_freeze: { answer_kind: "approved", answer: "approve" },
+      },
+    });
+
+    expect(r.summary.status).toBe("succeeded");
+    expect(out(r)).toMatchObject({ status: "blocked" });
+    expect(pathOf(r)).toMatch(/briefs blocked$/);
+    expect(r.called("audit")).toHaveLength(0);
+    expect(r.called("package")).toHaveLength(0);
+    expect(r.called("done")).toHaveLength(0);
   });
 });

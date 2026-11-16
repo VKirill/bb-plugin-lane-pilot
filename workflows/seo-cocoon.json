@@ -81,11 +81,6 @@
       "default": "",
       "note": "готовый пакет seo-research; без него исследование запускается"
     },
-    "briefs_dir": {
-      "type": "string",
-      "default": ".agents/seo/briefs",
-      "note": "common root of the file-specific seo-brief producer artifacts"
-    },
     "slug": {
       "type": "string"
     },
@@ -360,14 +355,17 @@
         },
         "out": {
           "status": "string",
-          "brief_path": "string"
+          "brief_path": "string",
+          "evidence_path": "string"
         }
       },
       "join": {
         "policy": "all",
         "out": {
           "brief_paths": "string[]",
-          "ok_count": "int"
+          "evidence_paths": "string[]",
+          "ok_count": "int",
+          "all_complete": "boolean"
         },
         "uses": "reduce.seo-cocoon.briefs"
       },
@@ -417,8 +415,9 @@
       "path": ".agents/seo/{{slug}}/{{run_id}}/",
       "contents": {
         "manifest.json": {
-          "briefs_dir": "{{$inputs.briefs_dir}}",
+          "briefs_dir": ".agents/seo/briefs",
           "brief_paths": "{{briefs.brief_paths}}",
+          "evidence_paths": "{{briefs.evidence_paths}}",
           "audit_status": "{{audit.status}}",
           "audit_findings": "{{audit.findings}}"
         },
@@ -438,7 +437,7 @@
         "status": "done",
         "clusters": "architecture.clusters",
         "page_count": "architecture.page_count",
-        "briefs_dir": "$inputs.briefs_dir",
+        "briefs_dir": ".agents/seo/briefs",
         "audit_status": "audit.status",
         "folder": "package.folder",
         "handoff_path": "package.handoff_path"
@@ -452,7 +451,7 @@
         "status": "partial",
         "clusters": "architecture.clusters",
         "page_count": "architecture.page_count",
-        "briefs_dir": "$inputs.briefs_dir",
+        "briefs_dir": ".agents/seo/briefs",
         "audit_status": "audit.status",
         "folder": "package.folder",
         "handoff_path": "package.handoff_path"
@@ -535,7 +534,15 @@
     {
       "from": "briefs",
       "to": "audit",
-      "pass": "artifact"
+      "pass": "artifact",
+      "when": "briefs.all_complete == true"
+    },
+    {
+      "from": "briefs",
+      "to": "blocked",
+      "pass": "artifact",
+      "when": "briefs.all_complete != true",
+      "label": "incomplete brief batch"
     },
     {
       "from": "audit",
