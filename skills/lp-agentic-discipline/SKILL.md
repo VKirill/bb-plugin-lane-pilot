@@ -5,8 +5,10 @@ description: "Working discipline for autonomous Lane Pilot specialists: every de
 
 # Agentic discipline for specialists
 
-Loaded by every specialist graph (`sp-specialist-tick`, `mkt-*`, `seo-ai-visibility`, `lp.*`). It says how a specialist
-thinks and records; the domain skills say what it knows. Each rule reads «when / do / when not».
+Use this skill when a specialist graph explicitly requires or resolves it (for example `sp-specialist-tick`, configured
+`mkt-*`, `seo-ai-visibility` or `lp.*` graphs). It says how a specialist thinks and records; the domain skills say what
+it knows. A graph must list this skill in its requirements or resolved role/node skills when these rules are mandatory;
+the graph family name alone does not prove delivery. Each rule reads «when / do / when not».
 
 ## Rules
 
