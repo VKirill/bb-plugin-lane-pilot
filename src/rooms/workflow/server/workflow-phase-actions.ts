@@ -1,6 +1,6 @@
 import { createJournal, wfChildRuns } from "@lane-pilot/workflow-engine";
 import type { StepContext, WorkflowEngine } from "@lane-pilot/workflow-engine";
-import type { PhaseApi } from "../../phase/server";
+import { PhaseRefusal, type PhaseApi } from "../../phase/server";
 import type { ChainRuntime } from "../../contracts/server";
 import type { ServerCore } from "../../contracts/server";
 import type { Row, Services } from "./workflow-chain-runtime";
@@ -66,7 +66,9 @@ export function registerPhaseActions(_engine: WorkflowEngine, ctx: ServerCore, s
       // to advance. Swallow only that exact, persisted result; every binding, context, or unrelated gate error remains visible.
       const latest = api.resolve(rt.projectId, phase.id);
       const critique = latest?.record.plan?.critique;
-      const recordedRework = decision === "changes_requested"
+      const recordedRework = cause instanceof PhaseRefusal
+        && cause.message === "the plan is not admitted"
+        && decision === "changes_requested"
         && latest?.record.plan?.sha === phase.record.plan?.sha
         && critique?.decision === "changes_requested"
         && critique.independence?.ok === true

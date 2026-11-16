@@ -14,6 +14,7 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { createCore } from "../../src/rooms/core/server/core";
 import { createRun, openDatabase } from "../../src/rooms/plugin-db";
 import { createPhaseDriver } from "../phase-driver";
+import { PhaseRefusal } from "../../src/rooms/phase/server";
 import { registerPhaseActions } from "../../src/rooms/workflow/server/workflow-phase-actions";
 import { sha256Hex } from "@lane-pilot/kit";
 
@@ -40,9 +41,10 @@ async function realPhaseAction(decision: "approve" | "changes_requested") {
   createRun(db, "run-phase", "projA");
   db.prepare("UPDATE lane_pilot_run SET pm_thread_id=? WHERE id=?").run("thr_pm", "run-phase");
   const ctx = createCore(bb, db);
+  let contextVersion = 0;
   const phases = createPhaseDriver(ctx, {
     runBudgets: { get: () => undefined },
-    readWriterWorkspaceFile: async ({ path }: { path: string }) => ({ sha256: sha256Hex(path), sizeBytes: 40, content: `# ${path}` }),
+    readWriterWorkspaceFile: async ({ path }: { path: string }) => ({ sha256: sha256Hex(`${path}:${contextVersion}`), sizeBytes: 40, content: `# ${path}` }),
   } as never).phases;
   let phase = await phases.open({ projectId: "projA", pmThreadId: "thr_pm", title: "Plan", goal: "prove plan" });
   phase = await phases.context({ phaseId: phase.id, docs: ["docs/CONTEXT.md"], risks: phaseRisks, requirements: ["R1"], appetite: "one day", noGos: ["none"] });
@@ -80,7 +82,7 @@ async function realPhaseAction(decision: "approve" | "changes_requested") {
     resolve: (ref: string) => ref === "$inputs.phase_id" ? phase.id : ref === "proof.decision" ? decision : ref === "proof.findings" ? [] : ref === "proof.rounds" ? 1 : undefined,
   } as unknown as StepContext<ChainRuntime>;
   const output = await actions.get("lp.phase_plan_check")!(actionContext, runtime);
-  return { output, phases, phaseId: phase.id, childRunId, db };
+  return { output, phases, phaseId: phase.id, childRunId, db, changeContext: () => { contextVersion += 1; }, repeat: () => actions.get("lp.phase_plan_check")!(actionContext, runtime) };
 }
 
 describe("P04-R2 optional modes and human remarks", () => {
@@ -180,12 +182,35 @@ describe("P04-R2 optional modes and human remarks", () => {
     expect(status.phase.record.plan?.critique).toMatchObject({ decision: "approve", independence: { ok: true, wfRunId: result.childRunId } });
   });
 
-  it("records real changes_requested rework without hiding an unrelated PhaseApi refusal", async () => {
+  it("records real changes_requested rework", async () => {
     const result = await realPhaseAction("changes_requested");
     expect(result.output).toMatchObject({ status: "recorded", decision: "changes_requested", checker_run_id: result.childRunId });
     const phase = result.phases.status(result.phaseId).phase;
     expect(phase.stage).toBe("planning");
     expect(phase.record.plan?.critique).toMatchObject({ decision: "changes_requested", independence: { ok: true, wfRunId: result.childRunId } });
+  });
+
+  it.each([
+    new Error("the plan is not admitted"),
+    new PhaseRefusal("the context changed"),
+  ])("does not hide a later unrelated error behind an earlier rework receipt: %s", async (failure) => {
+    const result = await realPhaseAction("changes_requested");
+    try {
+      result.phases.planCheck = async () => { throw failure; };
+      await expect(result.repeat()).rejects.toBe(failure);
+    } finally {
+      result.db.close();
+    }
+  });
+
+  it("rejects signed-context drift after the same child already recorded rework", async () => {
+    const result = await realPhaseAction("changes_requested");
+    try {
+      result.changeContext();
+      await expect(result.repeat()).rejects.toThrow("changed after the context was signed");
+    } finally {
+      result.db.close();
+    }
   });
 
   it("persists a report when living is off and when there are no insights", async () => {
