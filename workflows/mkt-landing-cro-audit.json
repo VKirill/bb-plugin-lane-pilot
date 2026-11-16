@@ -153,17 +153,38 @@
         "en": "First-screen captures and DOM text",
         "ru": "Снимки первого экрана и текст DOM"
       },
-      "prompt": "Open {{$inputs.landing_url}} at 375x812 and 1280x800. Save full and first-screen screenshots, the visible first-screen text, H1, title, the offer and price strings, every CTA with its target, forms and their fields, and the trust elements (reviews, guarantees, requisites). Do not submit forms. Write .agents/marketing/cro/<slug>/capture.json. Return screens_path, h1, offer_text, price_text, cta_count.",
+      "prompt": "Open {{$inputs.landing_url}} at 375x812 and 1280x800. Collect full and first-screen screenshots, visible first-screen text, H1, title, offer and price strings, every CTA with its target, forms and fields, and trust elements (reviews, guarantees, requisites). Do not submit forms or write repository files. Return the structured capture_data and visible capture_text plus screens_path, h1, offer_text, price_text and cta_count; the workflow persists the returned data.",
       "out": {
         "screens_path": "string",
         "h1": "string",
         "offer_text": "string",
         "price_text": "string",
-        "cta_count": "int"
+        "cta_count": "int",
+        "capture_data": "object",
+        "capture_text": "string"
       },
       "guards": {
         "maxVisits": 1,
         "timeoutMin": 20
+      }
+    },
+    {
+      "id": "persist_capture",
+      "type": "action",
+      "action": "fs.write",
+      "title": {
+        "en": "Persist browser capture",
+        "ru": "Сохранить снимок браузера"
+      },
+      "path": ".agents/marketing/cro/{{slug}}/",
+      "contents": {
+        "capture.json": {
+          "data": "{{capture.capture_data}}",
+          "text": "{{capture.capture_text}}"
+        }
+      },
+      "out": {
+        "capture_path": "string"
       }
     },
     {
@@ -184,7 +205,7 @@
       "ads": "{{$inputs.ad_copy_path}}",
       "adsSource": "{{$inputs.traffic_source}}",
       "target": "{{$inputs.landing_url}}",
-      "capture": "{{capture.screens_path}}",
+      "capture": "{{persist_capture.capture_path}}",
       "viewport": "375x812",
       "minLemmaOverlap": 0.5,
       "minJevP": 0.75,
@@ -320,7 +341,7 @@
       "ownerAnswer": "{{owner_go.answer_kind}}",
       "artifacts": [
         "{{analyze.cro_path}}",
-        "{{capture.screens_path}}",
+        "{{persist_capture.capture_path}}",
         "{{message_match.report_path}}"
       ],
       "out": {
@@ -378,6 +399,10 @@
     },
     {
       "from": "capture",
+      "to": "persist_capture"
+    },
+    {
+      "from": "persist_capture",
       "to": "message_match"
     },
     {
@@ -518,6 +543,7 @@
         "load_state",
         "speed",
         "capture",
+        "persist_capture",
         "message_match",
         "analyze",
         "audit",
@@ -584,6 +610,7 @@
           "load_state",
           "speed",
           "capture",
+          "persist_capture",
           "message_match",
           "analyze",
           "audit",
@@ -622,6 +649,7 @@
           "load_state",
           "speed",
           "capture",
+          "persist_capture",
           "message_match",
           "analyze",
           "audit",
