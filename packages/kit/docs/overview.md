@@ -2,7 +2,7 @@
 title: Kit workspace overview
 type: overview
 created: 2026-11-08
-updated: 2026-11-13
+updated: 2026-11-16
 status: active
 confidence: high
 tags: [kit, utilities, foundation, workspace]
@@ -59,7 +59,7 @@ Environment configuration:
 The package root aggregates sixteen core utility modules (`packages/kit/src/index.ts:1-16`):
 
 - **[Bounded workspace file reads](features/bounded-reads.md):** Implements the `lane_pilot_read` protocol with workspace boundary enforcement, segment-by-segment symlink blocking, binary null-byte rejection, UTF-8 validation, and file/slice size bounds (`packages/kit/src/bounded-read.ts:6-28`).
-- **[Secret redaction and credential protection](features/redaction.md):** Generates multi-format search needles, remembers fetched secrets, masks selected credential shapes and registered values, and identifies secret-looking repository paths (`packages/kit/src/redact.ts:15-32`, `packages/kit/src/redact.ts:60-85`, `packages/kit/src/redact.ts:106-130`, `packages/kit/src/secret-files.ts:6-16`).
+- **[Secret redaction and credential protection](features/redaction.md):** Generates multi-format search needles, remembers fetched secrets, masks selected credential shapes and registered values, and identifies secret-looking repository paths (`packages/kit/src/redact.ts:15-33`, `packages/kit/src/redact.ts:60-85`, `packages/kit/src/redact.ts:128-150`, `packages/kit/src/secret-files.ts:6-16`).
 - **[Async process spawning and output handling](features/process-spawning.md):** Executes child processes asynchronously with timeout, buffer and optional process-group controls (`packages/kit/src/spawn-async.ts:20-59`), and cleans check output and extracts failure summaries (`packages/kit/src/output-excerpt.ts:20-42`).
 - **[Path ownership and task overlap matching](features/path-ownership.md):** Tests if a file path falls under an ownership or exclusion pattern via `matchOwnsPath` (`packages/kit/src/owns-paths.ts:51-65`), and detects task conflict overlaps via `ownsPathsOverlap` (`packages/kit/src/owns-paths.ts:88-93`).
 - **[Resilience, absence detection, and best effort](features/resilience-and-absence.md):** Distinguishes expected file or RPC entity absence via `isNotFound` (`packages/kit/src/miss.ts:11-100`), and isolates non-critical side effects with warning logging via `bestEffort` (`packages/kit/src/best-effort.ts:8-24`).
