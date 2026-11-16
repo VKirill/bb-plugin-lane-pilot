@@ -1,4 +1,4 @@
-import { wfRunRow, type WorkflowEngine } from "@lane-pilot/workflow-engine";
+import { wfRunRow, type NodeExecutor, type WorkflowEngine } from "@lane-pilot/workflow-engine";
 import { assertRunAdmission, beginRunAdmission, trackWorkflowAdmissions, type LanePilotDatabase } from "../../storage";
 
 /** Protect both admission and actual callbacks: cancel/timeout can publish a terminal graph before its executor settles. */
@@ -17,10 +17,13 @@ export function installWorkflowAdmission(db: LanePilotDatabase, engine: Workflow
   const rerun = engine.rerunNode.bind(engine);
   engine.rerunNode = (runId, ...args) => protectedWork(runId, () => rerun(runId, ...args));
   const register = engine.register.bind(engine);
-  engine.register = (key, executor) => register(key, {
-    ...executor,
-    run: (context) => protectedWork(context.runId, () => executor.run(context)),
-    ...(executor.poll ? { poll: (...args) => protectedWork(args[0].runId, () => executor.poll!(...args)) } : {}),
-  });
+  engine.register = <R>(key: string, executor: NodeExecutor<R>) => {
+    const wrapped: NodeExecutor<R> = {
+      ...executor,
+      run: (context) => protectedWork(context.runId, () => executor.run(context)),
+      ...(executor.poll ? { poll: (...args) => protectedWork(args[0].runId, () => executor.poll!(...args)) } : {}),
+    };
+    return register(key, wrapped);
+  };
   return trackWorkflowAdmissions(db, () => engine.inFlight());
 }

@@ -244,7 +244,9 @@ it("keeps a timed-out executor fenced even after the workflow drive has ended", 
   engine.register("search", ok(async () => { await pending; return { items: [], count: 0, kind: "fresh" }; }));
   engine.register("write", ok(() => ({ text: "done" })));
   const workflow = wf();
-  workflow.nodes.find((node) => node.id === "search")!.timeoutSec = 1;
+  const search = workflow.nodes.find((node) => node.id === "search");
+  if (search?.type !== "action") throw new Error("search action is missing");
+  search.timeoutSec = 1;
   try {
     const run = engine.start({ workflow, inputs: { query: "q" }, link: { runId: "old", projectId: "project" } });
     expect((await run.done).status).toBe("failed");
