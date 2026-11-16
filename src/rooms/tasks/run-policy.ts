@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { resolve } from "node:path";
 
 const runPolicySchema=z.object({
   schemaVersion:z.literal(1),
@@ -106,6 +107,9 @@ export class RunWriterPool {
   private readonly active=new Map<string,number>();
   /** Waiters per pool, each with its queue priority (SMA: Queue priority): a higher one is served first, equal ones in arrival order. */
   private readonly waiting=new Map<string,Array<{ wake:()=>void; rank:number; seq:number }>>();
+  /** Folder claims are deliberately separate from keyed seats: parent/child paths overlap even when their keys differ. */
+  private readonly folders: Array<{ hostId:string; path:string; release:()=>void }> = [];
+  private readonly folderWaiting: Array<{ hostId:string; path:string; wake:(release:()=>void)=>void; rank:number; seq:number }> = [];
   private seq=0;
 
   /** Idle pass (SMA dt_idle): every seat of one pool taken, so an acquire would wait. */
@@ -136,4 +140,51 @@ export class RunWriterPool {
       }
     };
   }
+
+  /**
+   * One same-host folder claim.  A claim conflicts when either path contains the other, so sibling runs cannot
+   * bootstrap Git while a live writer owns their parent/child folder.  Unrelated hosts/folders remain parallel.
+   */
+  async acquireFolder(hostId:string,path:string,rank=1):Promise<()=>void> {
+    const normalized=resolve(path).replace(/\\/g,"/").replace(/\/+$/g,"") || "/";
+    if (this.folderAvailable(hostId,normalized)) return this.claimFolder(hostId,normalized);
+    return await new Promise<() => void>((resolve) => {
+      this.folderWaiting.push({ hostId, path:normalized, wake:resolve, rank, seq:this.seq++ });
+      this.folderWaiting.sort((a,b)=>b.rank-a.rank||a.seq-b.seq);
+      this.drainFolderWaiters();
+    });
+  }
+
+  private folderAvailable(hostId:string,path:string):boolean {
+    return !this.folders.some((claim) => claim.hostId===hostId && folderOverlap(claim.path,path));
+  }
+
+  private claimFolder(hostId:string,path:string):()=>void {
+    let released=false;
+    const release=()=>{
+      if (released) return;
+      released=true;
+      const index=this.folders.findIndex((claim)=>claim.release===release);
+      if (index>=0) this.folders.splice(index,1);
+      this.drainFolderWaiters();
+    };
+    this.folders.push({ hostId, path, release });
+    return release;
+  }
+
+  private drainFolderWaiters():void {
+    let granted=true;
+    while (granted) {
+      granted=false;
+      const index=this.folderWaiting.findIndex((waiter)=>this.folderAvailable(waiter.hostId,waiter.path));
+      if (index<0) return;
+      const waiter=this.folderWaiting.splice(index,1)[0]!;
+      waiter.wake(this.claimFolder(waiter.hostId,waiter.path));
+      granted=true;
+    }
+  }
+}
+
+function folderOverlap(left:string,right:string):boolean {
+  return left===right || left.startsWith(`${right}/`) || right.startsWith(`${left}/`);
 }

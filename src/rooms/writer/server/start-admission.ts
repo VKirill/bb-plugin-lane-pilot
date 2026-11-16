@@ -119,8 +119,18 @@ export const writerPermit = (deps: StartWriterTaskDeps, state: WriterTaskState, 
         reason:`waiting: all ${limit} writer seats of the ${seats} are busy; starts by itself when one frees` });
     };
     state.releaseWriterSlot=state.liveFolder
-      ? (noteBusy(`live-folder:${input.config.hostId}:${resolve(state.runFolder)}`, 1, "host"), await services.runWriterPool.acquire(`live-folder:${input.config.hostId}:${resolve(state.runFolder)}`,1))
+      ? (noteBusy(`live-folder:${input.config.hostId}:${resolve(state.runFolder)}`, 1, "host"), await (services.runWriterPool.acquireFolder
+        ? services.runWriterPool.acquireFolder(input.config.hostId, resolve(state.runFolder))
+        : services.runWriterPool.acquire(`live-folder:${input.config.hostId}:${resolve(state.runFolder)}`,1)))
       : (noteBusy(input.runId, state.policy.pools.provider, "run"), await services.runWriterPool.acquire(input.runId,state.policy.pools.provider,rank));
+    // A queued live attempt may have waited while private Git converted the folder. Re-probe after the shared claim;
+    // cached no-git state must never let this writer mutate a repository as if it were still live-folder mode.
+    if (state.liveFolder && !await services.isLiveFolder(input.runId, input.config.hostId, state.runFolder)) {
+      state.releaseWriterSlot?.();
+      state.liveFolder=false;
+      noteBusy(input.runId, state.policy.pools.provider, "run");
+      state.releaseWriterSlot=await services.runWriterPool.acquire(input.runId,state.policy.pools.provider,rank);
+    }
     // BB's concurrency-limit plugin caps the threads a host runs at once: writers beyond it would only wait in BB's queue,
     // so they wait here, before their attempt starts (no pool slot is held by a writer that cannot run). No plugin, no cap.
     const hostCap = await services.concurrencyLimit.hostCap(input.config.hostId);

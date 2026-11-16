@@ -90,6 +90,8 @@ import { createWriterVerify } from "./src/rooms/writer/server";
 import { createWriterFinish } from "./src/rooms/writer/server";
 import { createWriterStart } from "./src/rooms/writer/server";
 import { createWriterDispatch } from "./src/rooms/writer/server";
+import { createProjectGit } from "./src/rooms/project-git/server";
+import { createProjectGitDispatch, overlappingLiveRuns } from "./src/rooms/project-git/server/dispatch-guard";
 import { createAttemptReopen, createWriterReassign, recheckPlanFact, registerDispatchExecutors, taskUsage } from "./src/rooms/writer/server";
 import { stageHelperSettings } from "./src/rooms/settings/server";
 import { createWorkflowEngine } from "./src/rooms/workflow/server";
@@ -357,6 +359,24 @@ export default async function plugin(bb: BbPluginApi) {
   } satisfies Pick<Services, "skillSwitchMorningLine" | "buildCliInvocation" | "taskWords" | "laneProject" | "leadRoad" | "insights" | "memorySettings" | "errandEpisodes" | "scheduleAgents" | "memoryEval" | "wallThreadReader" | "ownerLearningItems" | "onAttemptFinished">);
   mountNativeWiring(ctx);
   services.tokenCursorRow = tokenCursorRow;
+  // The writer pool must exist before project-git and dispatch are composed: the Git guard and live admission share it.
+  Object.assign(services, createWriterState(ctx) satisfies WriterStatePort);
+  const projectGit = createProjectGit({
+    host: ctx.host,
+    kv: ctx.bb.storage.kv,
+    ownerAsk: ctx.ownerAsk,
+    log: ctx.log,
+    activeLiveRun: async ({ hostId, root }) => overlappingLiveRuns(db, hostId, root)[0] ?? null,
+  });
+  const rawWriterDispatch = createWriterDispatch(ctx, services);
+  const guardedDispatch = createProjectGitDispatch({
+    db,
+    bb: ctx.bb,
+    projectGit,
+    runWriterPool: services.runWriterPool,
+    raw: rawWriterDispatch.dispatchWriter as never,
+    isDisposed: ctx.isDisposed,
+  });
   Object.assign(
     services,
     createReconcile(ctx, services) satisfies ReconcileApi,
@@ -371,14 +391,13 @@ export default async function plugin(bb: BbPluginApi) {
       pendingSwitch: (threadId: string) => pendingSwitch(ctx.bb.storage.kv, threadId),
     } satisfies AgentOpsApi & { resolveIntegrationGate: VerificationGatePort },
     { isTaskSatisfied } satisfies { isTaskSatisfied: IsTaskSatisfied },
-    createWriterState(ctx) satisfies WriterStatePort,
     createWorkflowEngine(ctx, services) satisfies WorkflowEngineApi,
     createWorkflowTriggersService(ctx, services) satisfies WorkflowTriggersPort,
     createWriterSpawn(ctx, services),
     createWriterVerify(ctx, services) satisfies { runVerification: RunVerification },
     createWriterFinish(ctx, services),
     createWriterStart(ctx, services) satisfies WriterStartPort,
-    createWriterDispatch(ctx, services) satisfies WriterDispatchPort,
+    { ...rawWriterDispatch, dispatchWriter: guardedDispatch as never } satisfies WriterDispatchPort,
     createQaStages(ctx),
     createStageChildren(ctx),
     createDocsStage(ctx, services),
