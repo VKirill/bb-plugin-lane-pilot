@@ -95,6 +95,7 @@ describe("self-repair", () => {
     expect(spawns).toHaveLength(1);
     expect(spawns[0]).toMatchObject({
       projectId: "proj_ejbam66722",
+      title: expect.stringMatching(/^Lane Pilot self-repair \[[0-9a-f]{8}-[a-z0-9]+\]: /),
       environment: { type: "host", hostId: "host_mac", workspace: { type: "unmanaged", path: expect.stringMatching(/^\/wt\/self-repair-[0-9a-f]{8}-[a-z0-9]+\/lane-pilot$/) } },
       providerId: "codex", model: "gpt-6.1-sol", reasoningLevel: "high", serviceTier: "default", permissionMode: "full",
     });
@@ -878,6 +879,11 @@ describe("self-repair", () => {
       // The day-old kind is due again, so a new repair follows the release.
       expect(env.hostCalls.map((call) => call.method).slice(0, 2)).toEqual(["gitWorktreeSnapshot", "gitRemoveWorktree"]);
       expect(env.spawns).toHaveLength(2);
+      expect(env.spawns[0]!.title).not.toBe(env.spawns[1]!.title);
+      for (const spawn of env.spawns) {
+        const branch = (spawn.pluginMetadata as { repairBranch: string }).repairBranch;
+        expect(spawn.title).toContain(`[${branch.replace(/^lane\/self-repair-/, "")}]`);
+      }
     });
 
     it("a dry run touches no worktree", async () => {

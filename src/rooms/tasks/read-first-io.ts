@@ -1,5 +1,6 @@
 import { resolve } from "node:path";
 import type { ReadFirstFile, ReadFirstIo, SliceOutcome } from "./execution-packet";
+import { parseReadFirstSelector } from "./read-first";
 
 /**
  * The one production transport for read_first sources: whole files through the SDK
@@ -68,13 +69,22 @@ function sliceError(cause: unknown): SliceOutcome {
 
 export function readFirstIo(
   deps: { files: FilesReader; host: BoundedHost },
-  opts: { hostId: string; rootPath: string },
+  opts: { hostId: string; rootPath: string; repoRootPath?: string | null },
 ): ReadFirstIo {
   const { files, host } = deps;
-  const { hostId, rootPath } = opts;
+  const { hostId, rootPath, repoRootPath = null } = opts;
+  const sourceRoot = (path: string): { root: string; relative: string } => {
+    const selected = parseReadFirstSelector(path);
+    if (selected.scope === "workspace") return { root: rootPath, relative: selected.path };
+    if (!repoRootPath) {
+      throw new Error(`read_first repo: source needs the repository root, which this workspace does not have: ${path}`);
+    }
+    return { root: repoRootPath, relative: selected.path };
+  };
   return {
     readWhole: async (path) => {
-      const file = await files.read({ hostId, rootPath, path: resolve(rootPath, path) }).then(
+      const source = sourceRoot(path);
+      const file = await files.read({ hostId, rootPath: source.root, path: resolve(source.root, source.relative) }).then(
         (result) => result as ReadFirstFile | null,
         (cause: unknown) => readWholeError(cause),
       );
@@ -87,11 +97,12 @@ export function readFirstIo(
       return file;
     },
     readSlice: async (path, offset, maxLines) => {
+      const source = sourceRoot(path);
       try {
         const reply = await host.call("readBoundedFile", {
           requestedHostId: hostId,
-          projectCwd: rootPath,
-          relativePath: path,
+          projectCwd: source.root,
+          relativePath: source.relative,
           offset,
           maxLines,
         }, { hostId, timeoutMs: READ_WHOLE_TIMEOUT_MS });

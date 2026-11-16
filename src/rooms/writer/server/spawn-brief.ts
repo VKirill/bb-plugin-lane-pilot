@@ -5,7 +5,7 @@ import { briefMode, briefParts, hostContract, STATE_MACHINE_VERSION } from "../.
 import type { TaskV2 } from "../../contracts";
 import type { ServerCore } from "../../contracts/server";
 import { getReasoningTrace, saveReasoningTrace, TRANSITION_KEY, HARNESS_VERSION } from "../../storage";
-import { buildExecutionPacket, renderExecutionPacket, readFirstIo } from "../../tasks";
+import { buildExecutionPacket, renderExecutionPacket, readFirstIo, repoReadRoot } from "../../tasks";
 import { boundedAgentName } from "../../contracts/review-vocabulary";
 import { listReturns, renderReturnNotes } from "../../stage-return";
 import { HELPER_DISALLOWED_TOOLS, permissionEntries, WRITER_DISALLOWED_TOOLS } from "../../native-agent";
@@ -47,11 +47,13 @@ export async function buildWriterLaunch(deps:{
   let executionPacket:string;
   let executionPacketSha256:string;
   try {
+    const host=bb.hosts.experimental_client({ contract: hostContract });
+    const repoRootPath=(await repoReadRoot(host,input.config.hostId,workspacePath,attemptTask.read_first))?.root;
     const packet = await buildExecutionPacket(attemptTask.read_first, readFirstIo(
-      { files: bb.sdk.files, host: bb.hosts.experimental_client({ contract: hostContract }) },
-      { hostId: input.config.hostId, rootPath: workspacePath },
+      { files: bb.sdk.files, host },
+      { hostId: input.config.hostId, rootPath: workspacePath, repoRootPath },
     ));
-    executionPacket = renderExecutionPacket(packet);
+    executionPacket = [repoRootPath ? `Read-first paths prefixed repo: are relative to this checkout repository root (${repoRootPath}), not the live source checkout. Read deferred files there; write ownership stays relative to your section cwd.` : "", renderExecutionPacket(packet)].filter(Boolean).join("\n");
     executionPacketSha256 = packet.sha256;
   } catch (cause) {
     throw new WriterSelectionError(`execution_packet_failed:${cause instanceof Error ? cause.message : String(cause)}`);

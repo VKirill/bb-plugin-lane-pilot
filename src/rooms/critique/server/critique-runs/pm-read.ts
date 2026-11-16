@@ -2,7 +2,7 @@ import { countAttempts, listStageReceipts, openDatabase, resolveTaskFile, taskHo
 import { roleSelection, sdkCriticCatalog } from "../../critic-pair";
 import { bbServiceTier, listedServiceTier, resolveStageWriterSelection, writerExecutionSelection } from "@lane-pilot/models";
 import { settingOff, settingOn } from "@lane-pilot/models";
-import { buildExecutionPacket, packetSelectedLines, readFirstIo, sha256 } from "../../../tasks";
+import { buildExecutionPacket, packetSelectedLines, readFirstIo, repoReadRoot, sha256 } from "../../../tasks";
 import { graphStepMetadata, setAsideOnStartFailure, zcodeBusyPeek } from "../../../platform/server";
 import { configuredSetting } from "../../../contracts/server";
 import { CODE_CRITIC_DEFAULT_SETTING, QUALITY_MODE_SETTING, applyCodeCriticDefault, applyQualityMode, resolveCodeCriticDefault, resolveQualityMode } from "../../../contracts/quality-mode";
@@ -86,10 +86,12 @@ export async function runPmRead(input:{bb:BbPluginApi;db:ReturnType<typeof openD
     // only a direct caller without it pays the read here.
     let packetSha256=input.packetSha256;
     let selectedLines=input.selectedLines;
+    const host=input.bb.hosts.experimental_client({contract:hostContract});
+    const repoRootPath=(await repoReadRoot(host,input.config.hostId,input.task.project_cwd,input.task.read_first))?.root;
     if(packetSha256===undefined||selectedLines===undefined) {
       const packet=await buildExecutionPacket(input.task.read_first,readFirstIo(
-        {files:input.bb.sdk.files,host:input.bb.hosts.experimental_client({contract:hostContract})},
-        {hostId:input.config.hostId,rootPath:input.task.project_cwd},
+        {files:input.bb.sdk.files,host},
+        {hostId:input.config.hostId,rootPath:input.task.project_cwd,repoRootPath},
       ));
       packetSha256=packet.sha256;
       selectedLines=packetSelectedLines(packet);
@@ -108,6 +110,7 @@ export async function runPmRead(input:{bb:BbPluginApi;db:ReturnType<typeof openD
       const planText=input.plan?.trim()?(await readCanonicalPlan(input.bb,input.db,{taskId:input.taskId,reader:"pm-read",legacyPlan:input.plan})).text:null;
       const packetInputs:PacketInput[]=[
         {name:"task",value:input.task},
+        ...(repoRootPath?[{name:"read_first_repository",value:{selector:"repo:",root:repoRootPath,access:"read-only"}}]:[]),
         ...(planText?[{name:"plan",value:planText}]:[]),
       ];
       const prepared=await prepareCriticPacket(input.bb,input.db,{

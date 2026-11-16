@@ -38,3 +38,8 @@ export type ChildPmRequest = {
   projectId: string; parentThreadId: string; sectionId?: string;
   hostId?: string; path?: string; title: string; handoffId: string;
 };
+
+/** Resolve a destination before a new assignment/question, never before a reply or reminder. */
+export type PrepareRecipient = (input: {
+  projectId: string; fromThreadId: string; toThreadId: string;
+}) => Promise<string>;

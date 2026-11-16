@@ -11,7 +11,7 @@ export { taskStem } from "./task-stem";
 export { mapVerificationCwd, retargetTask } from "./verification-cwd";
 export { classifyWriterOutput, isMainfixTask, isOutputFolder, isOutputPath, unownedExpectedOutputs } from "./validate-output";
 export type { VerifyResult } from "./validate-output";
-export { checkoutOwnsOverlap, commonTaskFolder, isTaskBase, leavesSection, ownsFromOuterBase, parseRepoRoot, parseRepoTop, planWithOutsideReads, planWithRepoScope, repoRootCommand, repoTopCommand, rerootTask, rerootToRepoRoot, taskInRunScope } from "./task-base";
+export { checkoutOwnsOverlap, commonTaskFolder, isTaskBase, leavesSection, normalizeRepoReads, ownsFromOuterBase, parseRepoRoot, parseRepoTop, planWithOutsideReads, planWithRepoScope, repoRootCommand, repoTopCommand, rerootTask, rerootToRepoRoot, taskInRunScope } from "./task-base";
 export { TRUSTED_TOOLING_PATTERNS, applyTrustedTooling, trustedToolingFor, trustedToolingHint, trustedToolingHits, verificationScriptPaths } from "./trusted-tooling";
 export { dependsOnTask } from "./depends";
 export { cycleText, findCycle, planGraph, readyNow } from "./dep-graph";
@@ -42,3 +42,5 @@ export { validateTaskV2 } from "./task-v2";
 export { buildExecutionPacket, packetSelectedLines, renderExecutionPacket } from "./execution-packet";
 export { readFirstIo } from "./read-first-io";
 export { parseReadFirstHints } from "./read-first";
+
+export { repoReadRoot } from "./repo-read";

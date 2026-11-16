@@ -2,8 +2,9 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { sha256Hex } from "@lane-pilot/kit";
 import { describe, expect, it } from "vitest";
 import type { PrototypeConfig, TaskV2 } from "../src/rooms/contracts";
-import { createAttempt, createRun, createTask, listStageReceipts, openDatabase, saveProjectSetting, saveStageReceipt, saveTaskGitBase, setRunThread, transitionAttempt } from "../src/rooms/plugin-db";
+import { createAttempt, createRun, createTask, listStageReceipts, openDatabase, saveProjectSetting, saveReasoningTrace, saveStageReceipt, saveTaskGitBase, setRunThread, transitionAttempt } from "../src/rooms/plugin-db";
 import { createWriterFinish } from "../src/rooms/writer/server/finish";
+import { requireHelperSpawn } from "../src/rooms/runs/server/run-routing";
 import { stageHelperSettings } from "../src/rooms/settings/server/stage-settings";
 
 // 0.1.571 live phase drill (ph_e7a06c6925): the plan made the writer commit its produced files, the attempt
@@ -45,6 +46,7 @@ function world(opts: {
   outputs?: Record<string, string>;
   /** runCommand answers for the workspace HEAD probe; default is a fixed commit id. */
   runCommand?: (input:{ command:string; cwd:string }) => { exitCode:number; stdout:string; stderr:string };
+  repair?: { writerBusy:boolean };
   gitBase?: boolean;
   patch?: string;
   content?: string;
@@ -65,17 +67,25 @@ function world(opts: {
   const files = new Map<string, string>([[`/repo/${PRODUCED}`, opts.content ?? CONTENT]]);
   const spawns: Array<Record<string, unknown>> = [];
   const rpcTargets: unknown[] = [];
+  const sends: Array<Record<string, unknown>> = [];
+  let parentMisses = 0;
+  let validations = 0;
+  let repairSentAt = 0;
   const sdk = {
     threads:{
       stop:async () => undefined,
       events:{ list:async ({ threadId }: { threadId?: string }) => [
+        ...(threadId === "writer-t1" && repairSentAt ? [{ type:"client/turn/requested", threadId, seq:0, createdAt:repairSentAt }] : []),
         { type:"turn/started", threadId, seq:1 },
         { type:"turn/completed", threadId, seq:2, data:{ status:"completed" } },
       ] },
-      get:async ({ threadId }: { threadId?: string } = {}) => ({ id:threadId ?? "pm", projectId:"P", status:"idle" }),
+      get:async ({ threadId }: { threadId?: string } = {}) => {
+        if (opts.repair && threadId === "pm" && spawns.length) { parentMisses++; return null; }
+        return { id:threadId ?? "pm", projectId:"P", status:opts.repair?.writerBusy && threadId === "writer-t1" ? "active" : "idle" };
+      },
       output:async ({ threadId }: { threadId?: string } = {}) => ({ output:opts.outputs?.[threadId ?? ""] ?? APPROVE }),
       spawn:async (input: Record<string, unknown>) => { spawns.push(input); return { id:`crit${spawns.length}` }; },
-      send:async () => ({}),
+      send:async (input:Record<string, unknown>) => { sends.push(input); repairSentAt = Date.now(); return {}; },
     },
     files:{
       read:async ({ path }: { path:string }) => {
@@ -108,9 +118,24 @@ function world(opts: {
       : ({}) },
     isDisposed:() => false, log:() => undefined,
   };
+  if (opts.repair) {
+    const policy = requireHelperSpawn({ bb:ctx.bb as never, db, projectId:"P", runId:"run" });
+    saveReasoningTrace(db, {
+      attemptId:"a-t1", runId:"run", threadId:"writer-t1", providerId:"codex", model:"test-model",
+      effectiveReasoningLevel:"high", requestedReasoningLevel:"high", serviceTier:null, requestedServiceTier:"default",
+      planSha256:"fixture", sourceLength:1, fallbackReason:null,
+      dispatchContext:{ memoryText:"", executionPacket:"", executionPacketSha256:"", pmReadContext:"", agent:"writer",
+        helperMode:policy.mode, helperRequired:policy.policy?.required === true },
+    });
+  }
   let dirtCalls = 0;
   const finish = createWriterFinish(ctx as never, {
-    validateWriterResult:async () => ({ status:"accepted", output:"done", produced:[PRODUCED], verification:[] }),
+    validateWriterResult:async () => {
+      validations++;
+      // Stop after observing the repair: this fixture proves routing, not a real writer's acceptance.
+      if (opts.repair && validations > 1) return { status:"blocked", reason:"fixture_repair_checked" };
+      return { status:"accepted", output:"done", produced:[PRODUCED], verification:[] };
+    },
     persistWriterAcceptance:async () => ({ state:"passed" }),
     workspaceDirt:async () => {
       const seq = opts.dirtSeq?.[dirtCalls];
@@ -123,7 +148,7 @@ function world(opts: {
   } as never);
   const run = () => finish.finishWriterAttempt({ projectId:"P", config, task:task(), runId:"run", taskId:"t1",
     attemptId:"a-t1", pmThreadId:"pm", writerThreadId:"writer-t1", dirtBefore:[] });
-  return { db, run, spawns, rpcTargets };
+  return { db, run, spawns, rpcTargets, sends, get parentMisses() { return parentMisses; }, get validations() { return validations; } };
 }
 
 const critiqueReceipt = (db: ReturnType<typeof openDatabase>) =>
@@ -282,5 +307,36 @@ describe("code critique evidence covers committed produced files", () => {
     expect(result).toMatchObject({ state:"passed" });
     expect(w.spawns).toHaveLength(1);
     expect(critiqueReceipt(w.db)).toMatchObject({ state:"passed" });
+  });
+});
+
+
+describe("code critique repair placement", () => {
+  const changes = JSON.stringify({ decision:"changes_requested", summary:"gap", findings:[
+    { id:"f1", severity:"blocking", finding:"missing test", criterion:"verify" },
+  ] });
+
+  it("continues an idle writer without resolving a new child's unavailable parent", async () => {
+    const w = world({ repair:{ writerBusy:false }, outputs:{ crit1:changes } });
+    try {
+      expect(await w.run()).toMatchObject({ status:"blocked", reason:"fixture_repair_checked" });
+      expect(w.validations).toBe(2);
+      expect(w.spawns).toHaveLength(1); // Only the critic, never a replacement writer.
+      expect(w.parentMisses).toBe(0);
+      expect(w.sends).toHaveLength(1);
+      expect(w.sends[0]).toMatchObject({ threadId:"writer-t1", senderThreadId:"pm" });
+      expect(JSON.stringify(w.sends[0])).toContain("missing test");
+    } finally { w.db.close(); }
+  });
+
+  it("still refuses a new repair child when the writer is busy and its parent is unresolved", async () => {
+    const w = world({ repair:{ writerBusy:true }, outputs:{ crit1:changes } });
+    try {
+      await expect(w.run()).rejects.toThrow("helper_parent_thread_unresolved");
+      expect(w.spawns).toHaveLength(1);
+      expect(w.sends).toHaveLength(0);
+      expect(w.parentMisses).toBe(1);
+      expect(w.validations).toBe(1);
+    } finally { w.db.close(); }
   });
 });

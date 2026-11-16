@@ -17,7 +17,7 @@ import { NATIVE_LP_BRIDGE_PM_TOOLS } from "../../native-agent";
 import { readGateReport } from "../../tasks/gate-report";
 import { historySearch } from "../../memory-tiers/server";
 import { mountHandoff } from "../../relay/server";
-import { startChildPm } from "../../native-agent/server";
+import { startChildPm, createRecipientResolver } from "../../native-agent/server";
 import { mountInsights } from "../../self-repair/server";
 import { mountHealth } from "../../stability/server";
 import { mountCouncilTools } from "../../council/server";
@@ -440,7 +440,8 @@ export function registerTools(ctx: ServerCore, services: Services, familyContrib
   });
 
   // Modules register their tools after the core ones so the PM tool order follows NATIVE_LP_BRIDGE_TOOLS.
-  mountHandoff(ctx, { startChild: (input) => startChildPm(ctx, input) });
+  const prepareRecipient = createRecipientResolver(ctx);
+  mountHandoff(ctx, { startChild: (input) => startChildPm(ctx, input), prepareRecipient });
   mountInsights(ctx, selfRepairDeps());
   mountHealth(ctx, services);
   mountCouncilTools(ctx, services.council, (threadId) => services.phaseIntake.launchRefusal(threadId));
@@ -450,7 +451,7 @@ export function registerTools(ctx: ServerCore, services: Services, familyContrib
   // The browser step and the browser check of an accepted task (graphs browser-step and lp.browser-qa), next to the errand graph:
   // registered from the qa side so the workflow room does not import qa (an import cycle through the errand graph).
   registerBrowserExecutors(services.workflowEngine, ctx, services);
-  mountRelay(ctx);
+  mountRelay(ctx, prepareRecipient);
   mountWorkflowTools(ctx, services);
   mountSelfRepair(ctx, services, selfRepairDeps());
   mountHookTimeoutWatch(ctx);

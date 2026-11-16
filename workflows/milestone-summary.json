@@ -32,7 +32,7 @@
     }
   },
   "outputs": {
-    "status": "done",
+    "status": "done|blocked",
     "summary_path": "string",
     "open_items": "string[]"
   },
@@ -84,6 +84,16 @@
       }
     },
     {
+      "id": "blocked",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "blocked",
+        "summary_path": "summary.summary_path",
+        "open_items": "summary.open_items"
+      }
+    },
+    {
       "id": "goal_check",
       "type": "action",
       "action": "deliverable.validate",
@@ -111,7 +121,12 @@
     },
     {
       "from": "goal_check",
-      "to": "done"
+      "to": "done",
+      "when": "goal_check.ok != false"
+    },
+    {
+      "from": "goal_check",
+      "to": "blocked"
     }
   ],
   "test": {
@@ -124,6 +139,12 @@
         "summary": {
           "summary_path": ".agents/planning/MILESTONE-SUMMARY.md",
           "open_items": []
+        },
+        "goal_check": {
+          "ok": true,
+          "verdict": "pass",
+          "reason": "",
+          "details": {}
         }
       },
       "expect_path": [

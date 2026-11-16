@@ -3,7 +3,7 @@ import type { DispatchRuntime } from "./dispatch-workflow";
 import { hostContract } from "../../contracts";
 import { stringAt } from "@lane-pilot/kit";
 import { setRunState, transitionAttempt } from "../../storage";
-import { buildExecutionPacket, packetSelectedLines, readFirstIo } from "../../tasks";
+import { buildExecutionPacket, packetSelectedLines, readFirstIo, repoReadRoot } from "../../tasks";
 import { recordStage } from "../../runs/server";
 
 /**
@@ -23,9 +23,11 @@ export function registerExecutionPacketGate(
 ): void {
   exec("lp.execution-packet", async (r) => {
     try {
+      const host=r.ctx.bb.hosts.experimental_client({ contract: hostContract });
+      const repoRootPath=(await repoReadRoot(host,r.runConfig.hostId,r.task.project_cwd,r.task.read_first??[]))?.root;
       const packet = await buildExecutionPacket(r.task.read_first ?? [], readFirstIo(
-        { files: r.ctx.bb.sdk.files, host: r.ctx.bb.hosts.experimental_client({ contract: hostContract }) },
-        { hostId: r.runConfig.hostId, rootPath: r.task.project_cwd },
+        { files: r.ctx.bb.sdk.files, host },
+        { hostId: r.runConfig.hostId, rootPath: r.task.project_cwd, repoRootPath },
       ));
       // The outcome rides the edge into pm-read: the scout reuses the sha and line count instead of reading every source twice.
       return { ok: true, packetSha256: packet.sha256, selectedLines: packetSelectedLines(packet) };

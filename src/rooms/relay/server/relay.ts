@@ -7,6 +7,8 @@ import { forecastReport } from "../../forecast/server";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import type { ServerContext } from "../../platform/server";
+import type { PrepareRecipient } from "../../contracts";
+import { ToolError } from "../../contracts/server";
 import { sendServiceMessage } from "./service-message";
 import { registerObservedTool } from "../../platform/server";
 import { gateRunVerdict } from "../../verification/server"
@@ -22,6 +24,9 @@ import { latestGateRun, latestGateRunForTask } from "../../storage"
 export type RelayAsk = {
   kind:"ask"; id:string; projectId:string; fromThreadId:string; toThreadId:string; question:string;
   createdAt:number; answeredAt:number|null;
+  requestedThreadId?:string;
+  /** Persisted before sending. A lost acknowledgement must not trigger a duplicate question or a bootstrap-output answer. */
+  deliveryUnknown?:true;
 };
 export type RelayReminder = {
   kind:"remind"; id:string; projectId:string; threadId:string; note:string; dueAt:number;
@@ -209,28 +214,40 @@ export function createRelay(deps:RelayDeps) {
     return dropped === "gone";
   }
 
-  async function ask(input:{projectId:string; fromThreadId:string; toThreadId:string; question:string}):Promise<RelayAsk & { alreadyWaiting?:true }> {
+  async function ask(input:{projectId:string; fromThreadId:string; toThreadId:string; question:string}, prepareRecipient?:PrepareRecipient):Promise<RelayAsk & { alreadyWaiting?:true }> {
     if (input.fromThreadId === input.toThreadId) throw new Error("a thread cannot ask itself");
     return update(async (items) => {
       // Asking again while the first question waits in that thread's queue only queues a stale copy behind it.
       const open = items.find((item):item is RelayAsk => item.kind === "ask" && !item.answeredAt
-        && item.fromThreadId === input.fromThreadId && item.toThreadId === input.toThreadId);
+        && item.fromThreadId === input.fromThreadId && (item.toThreadId === input.toThreadId || item.requestedThreadId === input.toThreadId));
       if (open) return { ...open, alreadyWaiting:true as const };
       const hourAgo = deps.now() - 3_600_000;
       const recent = items.filter((item) => item.kind === "ask" && item.createdAt > hourAgo
-        && [item.fromThreadId, item.toThreadId].sort().join() === [input.fromThreadId, input.toThreadId].sort().join());
+        && [item.fromThreadId, item.requestedThreadId ?? item.toThreadId].sort().join() === [input.fromThreadId, input.toThreadId].sort().join());
       if (recent.length >= RELAY_LIMITS.asksPerPairPerHour) {
         throw new Error(`relay limit: ${RELAY_LIMITS.asksPerPairPerHour} questions an hour between these two threads; escalate to the owner`);
       }
-      const item:RelayAsk = { kind:"ask", id:id("ask"), ...input, createdAt:deps.now(), answeredAt:null };
-      await deps.send(input.toThreadId, [
+      const toThreadId = prepareRecipient ? await prepareRecipient(input) : input.toThreadId;
+      const item:RelayAsk = { kind:"ask", id:id("ask"), ...input, toThreadId, ...(toThreadId !== input.toThreadId ? { requestedThreadId: input.toThreadId } : {}), createdAt:deps.now(), answeredAt:null };
+      if (prepareRecipient) {
+        item.deliveryUnknown = true;
+        await deps.save(boundItemsSize([...items, item], RELAY_LIMITS.maxStoredBytes));
+      }
+      try { await deps.send(toThreadId, [
         `Lane Pilot: question from @thread:${input.fromThreadId} (${item.id}):`,
+        ...(toThreadId !== input.toThreadId ? [`Fresh chat replacing @thread:${input.toThreadId}; consult its history if needed.`] : []),
         "",
         input.question,
         "",
         `Answer briefly with the lane_pilot_relay tool, action \`reply\`, using askId "${item.id}": what you are doing, what you are holding and when it frees. Keep working on your task.`,
         "If you cannot call that tool, end your turn with the answer; it is passed back.",
-      ].join("\n"), input.fromThreadId);
+      ].join("\n"), input.fromThreadId); } catch (cause) {
+        if (!prepareRecipient) throw cause;
+        throw new ToolError(`question ${item.id} delivery to @thread:${toThreadId} is unconfirmed: ${cause instanceof Error ? cause.message : String(cause)}`, {
+          code: "relay_delivery_unknown", retryable: false, sideEffects: "unknown", next: "Inspect the recipient and question; do not resend or create another child.",
+        });
+      }
+      delete item.deliveryUnknown;
       items.push(item);
       return item;
     });
@@ -244,6 +261,7 @@ export function createRelay(deps:RelayDeps) {
       if (item.answeredAt) return item;
       await deps.send(item.fromThreadId, `Lane Pilot: reply from @thread:${item.toThreadId} to ${item.id}:\n\n${input.answer}`, item.toThreadId);
       item.answeredAt = deps.now();
+      delete item.deliveryUnknown;
       await closeAnsweredWaits(items, item.fromThreadId, item.toThreadId);
       return item;
     });
@@ -372,12 +390,12 @@ export function createRelay(deps:RelayDeps) {
   async function threadSettled(threadId:string) {
     return update(async (items) => {
       const waiting = items.some((row) => (row.kind === "remind" && !row.firedAt && row.watchThreadId === threadId)
-        || (row.kind === "ask" && !row.answeredAt && row.toThreadId === threadId));
+        || (row.kind === "ask" && !row.answeredAt && !row.deliveryUnknown && row.toThreadId === threadId));
       if (!waiting || !await deps.settled(threadId).catch((cause: unknown) => { deps.log(`relay: settled check unreadable, wake skipped: ${cause instanceof Error ? cause.message : String(cause)}`); return false; })) return 0;
       let woken = 0;
       // Answers first: whoever gets one now does not also need the reminder that waited on this thread.
       for (const item of items) {
-        if (item.kind === "ask" && !item.answeredAt && item.toThreadId === threadId) {
+        if (item.kind === "ask" && !item.answeredAt && !item.deliveryUnknown && item.toThreadId === threadId) {
           const text = (await deps.output(threadId).catch((cause: unknown) => { deps.log(`relay: thread output unreadable: ${cause instanceof Error ? cause.message : String(cause)}`); return ""; })).trim().slice(-4000);
           await deliver(item.fromThreadId, `Lane Pilot: @thread:${threadId} finished its turn without answering ${item.id}. Its last message:\n\n${text || "(empty)"}`, threadId);
           item.answeredAt = deps.now();
@@ -542,7 +560,7 @@ export function createRelay(deps:RelayDeps) {
         }
         else if (item.watchThreadId) watched.add(item.watchThreadId);
       }
-      for (const item of items) if (item.kind === "ask" && !item.answeredAt) watched.add(item.toThreadId);
+      for (const item of items) if (item.kind === "ask" && !item.answeredAt && !item.deliveryUnknown) watched.add(item.toThreadId);
       return fired;
     });
     let settled = 0;
@@ -560,7 +578,7 @@ export function createRelay(deps:RelayDeps) {
   async function watchedThreads():Promise<Set<string>> {
     const items = await deps.load();
     return new Set(items.flatMap((item) => item.kind === "remind" ? (!item.firedAt && item.watchThreadId ? [item.watchThreadId] : [])
-      : !item.answeredAt ? [item.toThreadId] : []));
+      : !item.answeredAt && !item.deliveryUnknown ? [item.toThreadId] : []));
   }
 
   return { ask, reply, remind, cancel, threadSettled, sweep, list, watchedThreads, queueEvent };
@@ -684,7 +702,7 @@ export function relayFor(ctx:ServerContext):Relay {
 }
 
 /** Wires the relay to BB: realtime events, a sweep service and the agent tools. */
-export function mountRelay(ctx:ServerContext):Relay {
+export function mountRelay(ctx:ServerContext, prepareRecipient?:PrepareRecipient):Relay {
   const { bb } = ctx;
   const sdk = bb.sdk as unknown as {
     subscribe?:(args:{ event:"thread:changed"; callback:(event:{ id?:string; metadata?:{ statusChange?:{ activity?:{ activeBackgroundCommandCount?:number } } } }) => void }) => () => void;
@@ -731,6 +749,7 @@ export function mountRelay(ctx:ServerContext):Relay {
     instructions:[
       "Use when you wait on another thread: the holder of a blocked task (blockedBy.holderThreadId), a writer, a specialist.",
       "The question is queued into that thread without interrupting its work. Its answer, or its last message if it ends the turn without answering, arrives in this chat.",
+      "An active Pilot asking an unopened (>5h) or cache-expired chat opens a replacement in the same project/section; use the returned toThreadId. Freshness is checked before sending, never for replies.",
       "Then end your turn; do not ask the owner to tell you when it is free.",
       "If the result has alreadyWaiting, your earlier question is still queued there: do not ask again, the answer comes when that thread finishes its turn.",
       `At most ${RELAY_LIMITS.asksPerPairPerHour} questions an hour between two threads.`,
@@ -738,7 +757,7 @@ export function mountRelay(ctx:ServerContext):Relay {
     parameters:z.object({ threadId:z.string().min(1), question:z.string().trim().min(1).max(4000) }).strict(),
     execute:async (params, context) => JSON.stringify(refreshAfter(await relay.ask({
       projectId:context.projectId, fromThreadId:context.threadId, toThreadId:params.threadId, question:params.question,
-    })), null, 2),
+    }, prepareRecipient)), null, 2),
   });
 
   registerObservedTool(bb.agents, {

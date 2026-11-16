@@ -1,4 +1,8 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import plugin from "../../server";
 import { runCommand } from "../../src/rooms/host-worker/host-handlers";
@@ -12,7 +16,14 @@ import { createRun, openDatabase, setRunThread } from "../../src/rooms/plugin-db
  */
 const projectId = "proj_clarify";
 let dispose: (() => Promise<void> | void) | null = null;
-afterEach(async () => { await dispose?.(); dispose = null; });
+let fixturePath: string | null = null;
+afterEach(async () => {
+  try { await dispose?.(); } finally {
+    dispose = null;
+    if (fixturePath) rmSync(fixturePath, { recursive: true, force: true });
+    fixturePath = null;
+  }
+});
 
 const CLARIFY_ANSWER = `Read the task tree.\n\n\`\`\`json\n${JSON.stringify({
   questions: [
@@ -22,12 +33,19 @@ const CLARIFY_ANSWER = `Read the task tree.\n\n\`\`\`json\n${JSON.stringify({
   handoff: "two questions proposed",
 })}\n\`\`\``;
 
-async function setup() {
+async function setup(editDuringHelper = false) {
+  // The real read-only guard must observe this test's checkout, not concurrent tests or the developer's tree.
+  const cwd = fixturePath = mkdtempSync(join(tmpdir(), "lp-clarify-"));
+  execFileSync("git", ["init", "-q"], { cwd });
+  execFileSync("git", ["-c", "user.name=Test", "-c", "user.email=test@example.test", "commit", "--allow-empty", "-qm", "fixture"], { cwd });
   const spawned: Array<Record<string, any>> = [];
   const { bb, harness } = createFakePluginHost({
     pluginId: "lane-pilot",
     experimental_callHostRpc: (async (call: { method: string; input: { requestedHostId: string; cwd: string } }) => {
-      if (call.method === "runCommand") return runCommand(call.input as never, undefined as never);
+      if (call.method === "runCommand") {
+        expect(call.input.cwd).toBe(cwd);
+        return runCommand(call.input as never, undefined as never);
+      }
       throw new Error(`unexpected host call ${call.method}`);
     }) as never,
     sdk: {
@@ -38,7 +56,11 @@ async function setup() {
         list: async () => [],
         updatePluginMetadata: async () => ({}),
         queue: { list: async () => [] },
-        spawn: async (args: Record<string, any>) => { spawned.push(args); return { id: `thr_agent_${spawned.length}` }; },
+        spawn: async (args: Record<string, any>) => {
+          spawned.push(args);
+          if (editDuringHelper) writeFileSync(join(cwd, "unexpected-write.txt"), "changed during the helper window\n");
+          return { id: `thr_agent_${spawned.length}` };
+        },
         get: async ({ threadId }: { threadId: string }) => ({ id: threadId, status: "idle", projectId, environmentId: "env-pm", sectionId: "sec_1", sourceThreadId: "thr_pm", lifecycleOwnerThreadId: "thr_pm" }),
         events: { list: async ({ threadId }: { threadId: string }) => [{ type: "turn/started", threadId, seq: 1 }, { type: "turn/completed", threadId, seq: 2, data: { status: "completed" } }] },
         output: async () => ({ output: CLARIFY_ANSWER }),
@@ -46,8 +68,8 @@ async function setup() {
         stop: async () => ({}),
         send: async () => ({}),
       },
-      environments: { get: async () => ({ id: "env-pm", hostId: "local-host", path: process.cwd(), status: "ready" }) },
-      projects: { get: async () => ({ id: projectId, name: "Site", sources: [{ hostId: "local-host", path: process.cwd() }] }) },
+      environments: { get: async () => ({ id: "env-pm", hostId: "local-host", path: cwd, status: "ready" }) },
+      projects: { get: async () => ({ id: projectId, name: "Site", sources: [{ hostId: "local-host", path: cwd }] }) },
     } as never,
   });
   await plugin(bb);
@@ -60,8 +82,8 @@ async function setup() {
 }
 
 describe("starter graphs at the workflow_run boundary", () => {
-  it("lp.clarify starts for real and returns task-named questions", async () => {
-    const { rpc, spawned } = await setup();
+  it.each([false, true])("lp.clarify starts for real and enforces read-only (write during helper: %s)", async (editDuringHelper) => {
+    const { rpc, spawned } = await setup(editDuringHelper);
     const started = await rpc("workflow_run", { id: "lp.clarify", projectId, inputs: { goal: "export the monthly reports" }, source: "manual" });
     expect(started, JSON.stringify(started)).toMatchObject({ ok: true, created: true, runId: expect.stringMatching(/^wfrun_/) });
 
@@ -72,7 +94,14 @@ describe("starter graphs at the workflow_run boundary", () => {
       if (snap?.run.status === "succeeded" || snap?.run.status === "failed") break;
       await new Promise((resolve) => setTimeout(resolve, 50));
     }
-    expect(snap?.run.status).toBe("succeeded");
+    if (editDuringHelper) {
+      expect(snap?.run.status, JSON.stringify(snap)).toBe("failed");
+      expect(JSON.stringify(snap)).toContain("repo_edited");
+      expect(JSON.stringify(snap)).toContain("unexpected-write.txt");
+      expect(spawned).toHaveLength(1);
+      return;
+    }
+    expect(snap?.run.status, JSON.stringify(snap)).toBe("succeeded");
     expect(snap!.run.output).toMatchObject({
       questions: [
         { task: "reports", question: expect.any(String) },

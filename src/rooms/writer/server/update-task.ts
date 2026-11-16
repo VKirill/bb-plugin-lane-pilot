@@ -1,3 +1,4 @@
+import { normalizeRepoReads, repoReadRoot } from "../../tasks";
 import { relative, resolve } from "node:path";
 import type { VerificationGatePort } from "../../contracts/integration-gate";
 import type { IsTaskSatisfied } from "../../contracts";
@@ -354,6 +355,8 @@ export function createWriterUpdateTask(ctx: ServerCore, services: Services) {
       valid.task = moved.task;
       canonicalPlan = up ? planWithRepoScope(canonicalPlan, taskBase, section, up.outside) : planWithOutsideReads(canonicalPlan, moved.outsideReads);
     }
+    const readRoot = await repoReadRoot(ctx.host, config.hostId, taskBase, [...valid.task.read_first, ...valid.task.never_touch]);
+    if (readRoot) valid.task = normalizeRepoReads(valid.task, readRoot.prefix);
     const taskConfig = { ...runConfig, writerWorkspacePath: taskBase };
 
     // A task stored before the trusted tooling joined never_touch (P2-4) is compared as it would be stored now, so no change is invented.

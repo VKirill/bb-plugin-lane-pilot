@@ -16,6 +16,8 @@ async function setup() {
     pluginId: "lane-pilot",
     sdk: {
       threads: {
+        get: async ({ threadId }: { threadId: string }) => ({ id: threadId, projectId, createdAt: Date.now(), lastReadAt: Date.now() }) as never,
+        events: { list: async () => [] },
         send: async (args: { threadId: string; input: Array<{ type: string; text?: string }> }) => {
           sent.push({ threadId: args.threadId, text: args.input.map((item) => item.text ?? "").join("") });
           return { ok: true } as never;

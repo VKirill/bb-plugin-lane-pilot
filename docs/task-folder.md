@@ -144,6 +144,13 @@ the thread metadata. With no list, every chat folder is refused.
 
 ## read_first rules
 
+In a section inside a Git repository, `repo:sdk/src/index.ts:1-20` reads the sibling SDK from that repository. Dispatch also normalizes
+an in-repository sibling reference such as `../sdk/src/index.ts:1-20` to this selector. The root is discovered on the workspace's host;
+the writer uses its own checkout's root. Chat placement, section cwd and write ownership stay unchanged. An unknown root blocks the
+read. Repository selectors cannot cross `.git`, `.agents` or `.bb` components, and bounded reads still refuse symlink traversal.
+The selector remains visible in execution packets and deferred reads. Moving a task into a different repository refuses these
+selectors instead of silently binding them to different files.
+
 `readFirstScopeFindings` (contract-lint) refuses a `read_first` entry that points:
 
 - into another task's home (`.agents/tasks/<other>/`), with code `read_first_foreign_task`;

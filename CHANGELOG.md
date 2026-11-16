@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+- Section tasks can read sibling SDK files with host-verified `repo:` references, including normalized in-repository `../` references, while preserving section cwd and write ownership. Packets retain the selector; unknown roots and protected metadata are refused.
+- Section integration refuses sibling changes before autocommit and checks again before merging, including changes already committed on the writer branch. Candidate files remain available after refusal.
+
+- Section workspaces prepare shared dependencies from the containing Git repository while retaining the section cwd and the original ownership barrier. Mismatched source/destination section paths are refused.
+- Milestone summaries emit a blocked result when deliverable validation rejects the artifact, retaining its path and open items instead of reporting done.
+
+- Code-critique repairs can continue an idle writer without resolving placement for an unused replacement thread. A new repair thread still requires its parent to resolve.
+
+- Automatic repair chat titles include the existing repair branch identifier so repeated incidents can be distinguished. Thread IDs and spawn deduplication remain unchanged.
+
+- **Pilot checks recipients before assignments and questions.** Chats unopened for over five hours, archived chats and chats with a reported expired provider cache get a fresh child in the same project/Project Folders section. Missing cache TTL stays unknown; failed observations prevent delivery. Replacement IDs survive resolver reloads; uncertain setup/delivery is retained for inspection instead of a blind retry. Replies still return to their actual requester. Native-session acceptance and deployment remain pending.
+
 ## 0.1.590
 
 - **Native PMs organize projects and sections through Project Folders.** The guard allows named discovery, creation, rules and chat-filing commands and RPC methods; direct spawns, physical relocation and destructive operations remain outside this access. PM instructions route organization directly to the plugin and delegate child work through authenticated relay. Registered child-PM, emitted-launcher guard and command-policy tests cover the bounded behavior; deployment and actual session acceptance remain separate.

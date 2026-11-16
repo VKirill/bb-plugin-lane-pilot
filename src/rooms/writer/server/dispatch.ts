@@ -12,7 +12,7 @@ import type { CodeCriticDefault } from "../../contracts/task-enums";
 import { saveCriticCodeDefault } from "./critic-override";
 import { wfLivePipelineRun, wfRunInputsByKey } from "@lane-pilot/workflow-engine";
 import { TASK_HOME_EXCLUDE, bbTaskFileIo, getRunObjective, setRunObjective, createAttempt, createTask, freeTaskId, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getRunWriterHost, getTask, getTaskPlan, latestTaskAttemptState, getTaskRow, hasFailedStageReceipt, listAttemptsForTask, listAttemptsUpdatedSince, listOpenAttempts, listRunsWithAttempts, listRunTaskRows, listStageReceipts, listTaskKinds, listTaskTerminalStates, loadProjectSettings, saveTaskPlan, setRunState, taskBasePath, transitionAttempt } from "../../storage";
-import { birthGates, commonTaskFolder, isMainfixTask, isTaskBase, landingWordAsked, leavesSection, ownerSaidNo, ownerWordsMode, parseRepoRoot, parseRepoTop, planWithOutsideReads, planWithRepoScope, repoRootCommand, repoTopCommand, rerootTask, rerootToRepoRoot, sha256 , spendReserve, taskStepEvidence, type BirthKind } from "../../tasks";
+import { birthGates, commonTaskFolder, isMainfixTask, isTaskBase, landingWordAsked, leavesSection, normalizeRepoReads, repoReadRoot, ownerSaidNo, ownerWordsMode, parseRepoRoot, parseRepoTop, planWithOutsideReads, planWithRepoScope, repoRootCommand, repoTopCommand, rerootTask, rerootToRepoRoot, sha256 , spendReserve, taskStepEvidence, type BirthKind } from "../../tasks";
 import { liveFolderLockNote, nextStep } from "../../contracts/failure-class"
 import { taskFamily } from "@lane-pilot/contracts";
 import { validateTaskV2 } from "../../tasks";
@@ -202,7 +202,8 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
       if (isTaskBase(runFolder, task.project_cwd) && await repoOf(task.project_cwd) === named) return { task:{ ...task, project_cwd:resolve(task.project_cwd) }, plan };
       return { rejected:`task.project_cwd must equal the configured writerWorkspacePath (${runFolder}) or a git repository inside it` };
     }
-    const fixed = { ...task, project_cwd:runFolder };
+    const readRoot = await repoReadRoot(host, hostId, runFolder, [...task.read_first, ...task.never_touch]);
+    const fixed = readRoot ? normalizeRepoReads({ ...task, project_cwd:runFolder }, readRoot.prefix) : { ...task, project_cwd:runFolder };
     // The folder of the task's files alone: a check run elsewhere must not hide the repository (drill nogit_repo 2026-10-27).
     const folder = commonTaskFolder({ ...fixed, verification:[] });
     if (!folder || !await services.isLiveFolder(runId, hostId, runFolder)) return { task:fixed, plan };

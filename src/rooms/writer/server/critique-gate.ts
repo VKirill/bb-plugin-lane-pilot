@@ -387,9 +387,6 @@ export async function runCodeCritiqueGate(deps: CritiqueGateDeps, g: CritiqueGat
           const environment = bound.environment_id
             ? { type:"reuse" as const, environmentId:bound.environment_id }
             : { type:"host" as const, hostId:input.config.hostId, workspace:{ type:"unmanaged" as const, path:writerSnapshot.workspacePath } };
-          const placement = await helperChildPlacement({
-            bb, db, projectId:input.projectId, runId:input.runId, role:"writer", taskTitle:input.task.title,
-          });
           // The writer that wrote the code fixes the findings in its own thread, with its context; a new thread only
           // when that one is gone or busy.
           const writerIdle = stringAt(await orMiss(bb.sdk.threads.get({ threadId:g.writerThreadId }), null, isNotFound), "status") === "idle";
@@ -405,36 +402,41 @@ export async function runCodeCritiqueGate(deps: CritiqueGateDeps, g: CritiqueGat
             if (sent) { repairThreadId = g.writerThreadId; repairSentAt = sentAt; }
           }
           let spawned: unknown;
-          if (!repairThreadId) try {
-            spawned = await fullAccessSpawn(bb, {
-              ...placement,
-              ...requiredPolicyField(bb, helperPolicy, writerSnapshot.providerId, "code-repair", { skills:recordedWriterSkills(dispatch) }),
-              ...writerExecutionSelection(
-                writerSnapshot.providerId,
-                writerSnapshot.model,
-                writerSnapshot.reasoningLevel,
-                writerSnapshot.serviceTier,
-              ),
-              prompt:repairPrompt,
-              environment,
-              pluginMetadata:{
-                role:"writer", lanePilotRunId:input.runId, lanePilotTaskId:input.taskId,
-                attemptId:input.attemptId, repairRound:nextRound,
-                revisionSha256:evidence.revisionSha256, findingsHash:frozenHash, stageId:"writer-agent",
-                writer:writerSnapshot,
-                ...pipelineWriterTag(db, input.runId, input.taskId),
-              },
+          if (!repairThreadId) {
+            const placement = await helperChildPlacement({
+              bb, db, projectId:input.projectId, runId:input.runId, role:"writer", taskTitle:input.task.title,
             });
-          } catch {
-            const reason = "code_critique_repair_unknown";
-            recordStage(db, {
-              runId:input.runId, taskId:input.taskId, stageId:"code-critique",
-              state:"blocked", input:critiqueInput,
-              result:{ ...ledgerBase, spawnAttempted:true },
-              reason,
-            });
-            transitionAttempt(db, input.attemptId, "blocked", { reason });
-            return { status:"blocked", reason, attemptId:input.attemptId, writerThreadId:g.writerThreadId };
+            try {
+              spawned = await fullAccessSpawn(bb, {
+                ...placement,
+                ...requiredPolicyField(bb, helperPolicy, writerSnapshot.providerId, "code-repair", { skills:recordedWriterSkills(dispatch) }),
+                ...writerExecutionSelection(
+                  writerSnapshot.providerId,
+                  writerSnapshot.model,
+                  writerSnapshot.reasoningLevel,
+                  writerSnapshot.serviceTier,
+                ),
+                prompt:repairPrompt,
+                environment,
+                pluginMetadata:{
+                  role:"writer", lanePilotRunId:input.runId, lanePilotTaskId:input.taskId,
+                  attemptId:input.attemptId, repairRound:nextRound,
+                  revisionSha256:evidence.revisionSha256, findingsHash:frozenHash, stageId:"writer-agent",
+                  writer:writerSnapshot,
+                  ...pipelineWriterTag(db, input.runId, input.taskId),
+                },
+              });
+            } catch {
+              const reason = "code_critique_repair_unknown";
+              recordStage(db, {
+                runId:input.runId, taskId:input.taskId, stageId:"code-critique",
+                state:"blocked", input:critiqueInput,
+                result:{ ...ledgerBase, spawnAttempted:true },
+                reason,
+              });
+              transitionAttempt(db, input.attemptId, "blocked", { reason });
+              return { status:"blocked", reason, attemptId:input.attemptId, writerThreadId:g.writerThreadId };
+            }
           }
           if (!repairThreadId) repairThreadId = stringAt(spawned, "id") ?? undefined;
           if (!repairThreadId) {

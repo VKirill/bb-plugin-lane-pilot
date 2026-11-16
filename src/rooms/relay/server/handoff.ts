@@ -25,9 +25,8 @@ import { BB_AGENT_SUMMARIES } from "../../contracts/server";
 import { requirePmRun, type ServerContext } from "../../platform/server";
 import { registerObservedTool } from "../../platform/server";
 import { scheduleIsolated } from "../../platform/server";
-import type { ChildPmRequest } from "../../contracts";
+import type { ChildPmRequest, PrepareRecipient } from "../../contracts";
 import { ToolError } from "../../contracts/server";
-import { sendServiceMessage } from "./service-message";
 
 type BundledAgent = { displayName?: string; prompt?: string; skills?: string[]; tools?: string[] };
 
@@ -69,7 +68,7 @@ const createParams = z.object({
  * caller names one; otherwise the caller carries the card text to its own subagent and reports the
  * receipt itself.
  */
-export function mountHandoff(ctx: ServerContext, options: { agents?: AgentDefinition[]; startChild?: (input: ChildPmRequest) => Promise<{ threadId: string }> } = {}): void {
+export function mountHandoff(ctx: ServerContext, options: { agents?: AgentDefinition[]; startChild?: (input: ChildPmRequest) => Promise<{ threadId: string }>; prepareRecipient?: PrepareRecipient } = {}): void {
   const { bb, db } = ctx;
   const registry = buildCapabilityRegistry(options.agents ?? bundledAgentDefinitions());
 
@@ -78,7 +77,7 @@ export function mountHandoff(ctx: ServerContext, options: { agents?: AgentDefini
     description: "Assign a card with objective, acceptance, inputs, budget and deadline. targetProjectId opens a child Pilot in any project; targetSectionId selects its section. Returns card and thread ids.",
     instructions: [
       "Active PM only. Name toAgent, or request describes the agent to select.",
-      "recipientThreadId sends to an existing thread. Without a destination, carry the returned message to your subagent and record lane_pilot_handoff_receipt.",
+      "recipientThreadId checks freshness first: unopened over 5 hours or reported cache expiry opens a replacement in the same project/section. Use deliveredTo for followups. Without a destination, carry the returned message to your subagent and record lane_pilot_handoff_receipt.",
       "targetProjectId opens an independent child Pilot without setup. targetSectionId selects its folder. For ambiguous folders, pass a listed targetHostId/targetPath pair. Use recipientThreadId for subsequent assignments to the same child; use relay ask/reply for questions. Keep the actual sender; human approvals remain human-only. Never substitute another project or folder after refusal.",
       `Known agents (ids; with only \`request\` the closest one is chosen): ${registry.map((agent) => agent.agentId).join(", ")}.`,
     ].join("\n"),
@@ -133,7 +132,23 @@ export function mountHandoff(ctx: ServerContext, options: { agents?: AgentDefini
           });
         }
       } else if (params.recipientThreadId) {
-        await sendServiceMessage(bb, { threadId: params.recipientThreadId, text: message, senderThreadId: context.threadId });
+        try {
+          recipientThreadId = options.prepareRecipient ? await options.prepareRecipient({ projectId: context.projectId, fromThreadId: context.threadId, toThreadId: params.recipientThreadId }) : params.recipientThreadId;
+        } catch (cause) {
+          // No assignment has been sent yet. An inert child may exist, so preserve the setup error and forbid blind retries.
+          transitionHandoff(db, { id: stored.card.id, to: "canceled", actor: "lane-pilot", note: `recipient setup failed: ${String(cause)}`, now: Date.now() });
+          throw new ToolError(`handoff ${stored.card.id} canceled before delivery: ${cause instanceof Error ? cause.message : String(cause)}`, {
+            code: "recipient_setup_failed", retryable: false, sideEffects: "unknown", next: "Inspect recipient setup before retrying; no assignment was sent.",
+          });
+        }
+        if (recipientThreadId !== params.recipientThreadId) message = `Continuation of @thread:${params.recipientThreadId}. This is a fresh Pilot chat; consult that history if needed.\n\n${message}`;
+        try {
+          await bb.sdk.threads.send({ threadId: recipientThreadId, senderThreadId: context.threadId, mode: "queue-if-active", input: [{ type: "text", text: message, mentions: [] }] });
+        } catch (cause) {
+          throw new ToolError(`handoff ${stored.card.id} delivery to @thread:${recipientThreadId} is unconfirmed: ${cause instanceof Error ? cause.message : String(cause)}`, {
+            code: "handoff_delivery_unknown", retryable: false, sideEffects: "unknown", next: "Inspect the recipient and handoff before retrying; do not create another child.",
+          });
+        }
       }
       const delivered = transitionHandoff(db, { id: stored.card.id, to: "delivered", actor: "lane-pilot", recipientThreadId, now: Date.now() });
       if (!delivered.ok) throw new Error(`handoff ${stored.card.id} could not be marked delivered: ${delivered.reason}`);

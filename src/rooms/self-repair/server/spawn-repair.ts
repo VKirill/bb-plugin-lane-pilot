@@ -35,7 +35,7 @@ export function createRepairSpawner(env: { bb: BbPluginApi; db: LanePilotDatabas
     const result = await fullAccessSpawn(bb, {
       projectId: cfg.projectId,
       environment: { type: "host", hostId: worktree.hostId, workspace: { type: "unmanaged", path: worktree.path } },
-      title: `Lane Pilot self-repair: ${signature.split(":").slice(2).join(":").slice(0, 70)}`,
+      title: `Lane Pilot self-repair [${worktree.branch.replace(/^lane\/self-repair-/, "")}]: ${signature.split(":").slice(2).join(":").slice(0, 70)}`,
       prompt: repairPrompt(samples, signature, worktree, cfg, { now, lastOwnerAt, ...(night ? { brief: night.brief } : {}) }),
       ...writerExecutionSelection(repairer.providerId, repairer.model, repairer.reasoningEffort, "default"),
       // The code-repair profile (writer skills, gitnexus): without it the repair carried every plugin's instructions and the whole skill list.

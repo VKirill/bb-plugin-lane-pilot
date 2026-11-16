@@ -48,6 +48,16 @@ commits merged nowhere is never deleted. This page says where each part of that 
 repository (`laneWorktreeTargetFor`). Every creator goes through the host method `gitCreateWorktree`, which builds the path; no creator
 names a folder itself. The registry row (`lane_pilot_worktree`) is written in one place, the host-call hook in `core/server/core.ts`.
 
+For a chat in a repository subfolder, the writer keeps that subfolder as its working directory. Dependency preparation uses the
+containing repository roots, so root tools and sibling workspace packages are available in the destination checkout. It also prepares
+the selected subfolder's own dependencies, even for a standalone package deeper than discovery scans. Integration gates may prepare a
+root scratch checkout from a section source; writer preparation with an ownership barrier requires matching section paths. This does
+not change the chat's placement, task ownership paths, or the separate `read_first` path contract.
+
+Section-scoped writer integration rejects changes outside the section before autocommitting and checks the branch again under the
+base lock before merging. This includes sibling edits already committed by the writer. Rejection preserves candidate files; it does
+not silently omit them. Root-scoped tasks and machine-selected committed packages retain their existing scope.
+
 **Old layout, read for one version.** Until 0.1.561 the path was `<root>/<id>/<repository>` and the gate used `lp-gate-*` folders under the
 system tmp. Both layouts are two levels deep, so the hourly sweep, the daily pass and `removeLaneWorktree` find and remove either; an
 attempt that started before the deploy finishes and is removed where it stands. The tmp prefixes stay in `JANITOR_TMP_PREFIXES`.

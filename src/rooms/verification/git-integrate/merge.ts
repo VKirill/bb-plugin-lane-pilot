@@ -10,6 +10,7 @@ import { removeEmptyWorktreeParent, worktreeTop } from "./worktree-hygiene";
 import { resolveBookkeepingToMain, settleStagedBookkeeping, stageOwnedBookkeeping, stagedPaths } from "./bookkeeping";
 import { rebuildChangedPackages } from "./deps-install";
 import { liftOwnsBarrier } from "./owns-barrier";
+import { sectionMergeViolation } from "./section-scope";
 
 /**
  * Replays the attempt's commits on the base checkout's current HEAD, in the attempt's own worktree. Returns the new tip,
@@ -48,6 +49,8 @@ export async function integrateWorktree(input:{basePath:string;worktreePath:stri
   /** How long machine-written files staged in the base's index (a stage between `git add` and `git commit`) get to be committed by their stager; then they are committed here. */
   stagedWaitMs?:number}):Promise<GitIntegration> {
   const fail=(reason:string):GitIntegration=>({status:"failed",commit:null,conflicts:[],reason});
+  const outside=await sectionMergeViolation(input);
+  if(outside) return fail(outside);
   // The owns-paths barrier comes down before the merge: the integration writes where the writer could not (F-01).
   await bestEffort(console.warn, `owns barrier lift ${input.worktreePath}`, liftOwnsBarrier(input.worktreePath), {restored:0});
   await recoverStaleGitLock(input.worktreePath);
@@ -104,6 +107,8 @@ export async function integrateWorktree(input:{basePath:string;worktreePath:stri
           return {status:"conflict",commit:null,conflicts:[],reason:`${REPLAY_CHECK_FAILED}: verification failed (${failed.map((check)=>check.command).join(", ")})${replay.environment?`: ${ENVIRONMENT_REASON}the check did not run`:""}`,checks:failed,failureCode:failed.some((check)=>check.exitCode===124)?"verification_timeout":"verification_failed",checkName:failed[0]?.command};
         }
       }
+      const outside=await sectionMergeViolation(input);
+      if(outside) return fail(outside);
       const merged=await merge(input.basePath,rebased??input.expectedHead??sha,input.message,input.bookkeeping,input.ownsPaths,input.indexLockWaitMs);
       if(rebased&&merged.status==="merged") merged.rebased=true;
       // What main was and what the merge changed in it, so the record can say «roll back to what» without the checkout.

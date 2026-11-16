@@ -3,6 +3,7 @@ import type { TaskV2 } from "../../contracts";
 import { checkoutBase, getRun, getRunSettingsScopes, getTask, taskBasePath, latestRunTaskAttemptState, listCheckDurations, listCheckTimeouts, listOpenAttempts, listRunTaskRows, loadProjectSettings } from "../../storage";
 import { taskFamily } from "@lane-pilot/contracts";
 import { checkoutOwnsOverlap } from "../task-base";
+import { repoReadRoot } from "../repo-read";
 import { QUALITY_MODE_SETTING, resolveQualityMode } from "../../contracts/quality-mode"
 import { parseSandboxUnsafePatterns } from "../../contracts/check-commands";
 import { lintContract, lintProbePaths, siblingTestFolders } from "./contract-lint";
@@ -45,7 +46,8 @@ export function createTaskLinter(ctx: ServerCore, services: Services) {
   /** The machine's view of the paths, the project's open tasks, and the tasks depends_on names that cannot finish. */
   return async function lintTask(projectId:string, runId:string, task:TaskV2, workspacePath:string, hostId:string, birth?:BirthKind): Promise<ReturnType<typeof lintContract>> {
     let kinds:Map<string, PathKind> | null = null;
-    const probes = lintProbePaths(task, workspacePath);
+    const repoRootPath=(await repoReadRoot(host,hostId,workspacePath,task.read_first))?.root;
+    const probes = lintProbePaths(task, workspacePath, repoRootPath);
     if (probes.length) {
       try {
         const snapshot = await host.call("snapshotDryRun", { requestedHostId:hostId, paths:probes }, { hostId, timeoutMs:15_000 });
@@ -135,7 +137,7 @@ export function createTaskLinter(ctx: ServerCore, services: Services) {
         confirmedDrawings.push({ paths: drawing.paths, sha256: drawing.sha256, changed });
       }
     }
-    const linted = lintContract({ task, workspacePath, hostId, kinds, listings, sandboxUnsafe, gate, openTasks, runTasks, deadDependencies, programs, ownerWords, qualityMode, checkHistory, birth, redoneBirth, confirmedDrawings,...(secrets ? { secrets } : {}) });
+    const linted = lintContract({ task, workspacePath, repoRootPath, hostId, kinds, listings, sandboxUnsafe, gate, openTasks, runTasks, deadDependencies, programs, ownerWords, qualityMode, checkHistory, birth, redoneBirth, confirmedDrawings,...(secrets ? { secrets } : {}) });
     // read_first stays inside the task's own world (docs/task-folder.md): no other task's home, no shared .agents/plans/, no other chat's folder.
     return { ...linted, errors: [...readFirstScopeFindings(task, getRun(db, runId)?.pm_thread_id ?? null), ...linted.errors] };
   };

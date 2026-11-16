@@ -1,8 +1,9 @@
 import { isAbsolute, posix, relative, resolve } from "node:path";
 import { ownsPathsOverlap } from "@lane-pilot/kit";
-import type { TaskV2 } from "../contracts";
+import { parseExecutionLineWindows, type TaskV2 } from "../contracts";
 import { isOutputPath } from "./validate-output";
 import { applyTrustedTooling } from "./trusted-tooling";
+import { parseReadFirstHints, parseReadFirstSelector } from "./read-first";
 
 /**
  * A task's base is the checkout it works in: the run's folder, or a git repository inside it. A run folder without git that
@@ -82,6 +83,8 @@ export function rerootTask(task: TaskV2, prefix: string): { task: TaskV2; outsid
   const reads: string[] = [];
   const outsideReads: string[] = [];
   for (const hint of task.read_first) {
+    // Moving into a different repository cannot reinterpret a selector bound to the old repository.
+    if (parseReadFirstSelector(hint).scope==="repo") return null;
     const rest = under(hint, prefix);
     if (rest) reads.push(rest);
     else outsideReads.push(resolve(task.project_cwd, hint.replace(/^\.\//, "")));
@@ -190,6 +193,23 @@ export function leavesSection(path: string): boolean {
   return normalized === ".." || normalized.startsWith("../");
 }
 
+/** The host verified this section's repository prefix. Only read references climb; write ownership stays section-relative. */
+export function normalizeRepoReads(task:TaskV2, prefix:string):TaskV2 {
+  return { ...task,
+    read_first:task.read_first.map((raw)=>{
+      const hint=parseExecutionLineWindows(raw);
+      if(!leavesSection(hint.path)) return raw;
+      const path=rootRelative(hint.path,prefix);
+      return path===null?raw:`repo:${path}${hint.windows.length?`:${hint.windows.map((w)=>`${w.startLine}-${w.endLine}`).join(",")}`:""}`;
+    }),
+    never_touch:task.never_touch.filter((path)=>{
+      if(!leavesSection(path)) return true;
+      const rooted=rootRelative(path,prefix);
+      return rooted===null||rooted===prefix||rooted.startsWith(`${prefix}/`);
+    }),
+  };
+}
+
 /**
  * The task moved up to the root of the repository holding its section: every path relative to the section becomes a path
  * relative to the root (`../sdk/x.ts` -> `sdk/x.ts`, `src/a.ts` -> `aiphoto_bot/src/a.ts`), so ownership, dirt, the diff, test_fit
@@ -205,7 +225,19 @@ export function rerootToRepoRoot(task: TaskV2, root: string, prefix: string): { 
   };
   const owns = map(task.owns_paths);
   const never = map(task.never_touch);
-  const reads = map(task.read_first);
+  const reads:string[]=[];
+  for(const raw of task.read_first) {
+    const selected=parseReadFirstSelector(raw);
+    if(selected.scope==="repo") {
+      // Validate protected paths before dropping the selector at the same repository's root.
+      try { parseReadFirstHints([raw]); } catch { return null; }
+      reads.push(selected.path);
+    } else {
+      const rooted=rootRelative(raw,prefix);
+      if(rooted===null) return null;
+      reads.push(rooted);
+    }
+  }
   const removals = map(task.test_removals ?? []);
   const drawing = map(task.drawing ?? []);
   if (!owns || !never || !reads || !removals || !drawing) return null;

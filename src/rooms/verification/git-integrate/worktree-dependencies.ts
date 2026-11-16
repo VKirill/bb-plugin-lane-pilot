@@ -133,12 +133,20 @@ async function ensureInfoExclude(checkoutPath:string, extraLines:string[]):Promi
 async function copyTaskItems(_basePath:string, worktreePath:string):Promise<void> {
   await ensureInfoExclude(worktreePath, ["**/.agents/tasks/"]);
 }
-export async function linkWorktreeDependencies(input:{basePath:string;worktreePath:string}):Promise<{linked:string[]}> {
+export async function linkWorktreeDependencies(input:{basePath:string;worktreePath:string;selectedSubdir?:string}):Promise<{linked:string[]}> {
+  const selected=input.selectedSubdir;
+  if(selected&&(isAbsolute(selected)||selected.split(/[\\/]/).some((part)=>!part||part==="."||part===".."))) throw new Error("invalid_selected_dependency_directory");
   await ensureInfoExclude(input.worktreePath, [TASK_FOLDER_EXCLUDE]);
   await copyTaskItems(input.basePath, input.worktreePath);
   await installBaseDependencies(input.basePath,input.worktreePath);
   const baseReal=await orMiss(realpath(input.basePath),input.basePath,isFsAbsent);
   const workspaces=await workspaceDirs(baseReal);
+  // The explicitly selected package may be uninstalled or deeper than the discovery scanner's limit.
+  // Keep repository-root context when mirroring it, so sibling SDK links target this checkout.
+  if(selected) {
+    await installBaseDependencies(join(baseReal,selected),input.worktreePath);
+    if(!workspaces.includes(selected)) workspaces.push(selected);
+  }
   const nested=await nestedPackageDirs(baseReal,input.worktreePath,workspaces);
   for(const dir of nested) {
     const path=join(baseReal,dir);
@@ -152,7 +160,7 @@ export async function linkWorktreeDependencies(input:{basePath:string;worktreePa
     }
     return {linked:[]};
   }
-  if(!rootModules&&!nested.length) return {linked:[]};
+  if(!rootModules&&!nested.length&&!workspaces.length) return {linked:[]};
   const exclude=await infoExcludePath(input.worktreePath);
   if(!exclude) return {linked:[]};
   const current=await readTextOrNull(exclude) ?? "";

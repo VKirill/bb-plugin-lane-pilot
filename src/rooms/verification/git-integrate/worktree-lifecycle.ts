@@ -129,7 +129,15 @@ export async function createWorktree(input:{basePath:string;targetPath:string;na
 export async function prepareWorktree(input:{basePath:string;worktreePath:string;
   /** F-01: with the contract, make tracked files outside owns_paths read-only for the attempt. */
   ownsBarrier?:boolean;ownsPaths?:string[];neverTouch?:string[]}):Promise<{linked:string[];locked?:number}> {
-  const out=await linkWorktreeDependencies(input);
+  const base=await workspaceGitLayout(input.basePath);
+  let dependencies:Parameters<typeof linkWorktreeDependencies>[0]=input;
+  if(base.ok&&base.nested) {
+    const target=await workspaceGitLayout(input.worktreePath);
+    if(!target.ok||(target.prefix!==base.prefix&&(target.nested||input.ownsBarrier))) throw new Error("worktree_workspace_mismatch: section paths differ between checkouts");
+    // Gates use root scratch checkouts; writers retain their section cwd and ownership barrier.
+    dependencies={...input,basePath:base.repoTop,worktreePath:target.repoTop,selectedSubdir:base.prefix};
+  }
+  const out=await linkWorktreeDependencies(dependencies);
   const locked=input.ownsBarrier&&input.ownsPaths?.length
     ?(await applyOwnsBarrier({worktreePath:input.worktreePath,ownsPaths:input.ownsPaths,neverTouch:input.neverTouch??[]})).locked
     :undefined;
