@@ -58,10 +58,19 @@ describe("SMA command workflows", () => {
   });
 
   it("plan-review-convergence: both approve, or the merged findings go back", async () => {
-    const approve = await runSim("plan-review-convergence", { input: { phase_id: "ph_a" }, stubs: { critic_a: { decision: "approve", findings: [] }, critic_b: { decision: "approve", findings: [] }, converge: { decision: "approve", findings: [], rounds: 1 } } });
-    expect(pathOf(approve)).toBe("critic_a critic_b converge approve");
-    const changes = await runSim("plan-review-convergence", { input: { phase_id: "ph_a" }, stubs: { critic_a: { decision: "approve", findings: [] }, critic_b: { decision: "changes_requested", findings: [] }, converge: { decision: "changes_requested", findings: [], rounds: 2 } } });
+    const phaseStatus = { status: { plan: { sha: "plan-sha" } } };
+    const phaseCheck = { status: "recorded", phase_id: "ph_a", decision: "approve" };
+    const approve = await runSim("plan-review-convergence", { input: { phase_id: "ph_a" }, stubs: { phase_status: phaseStatus, proof: { decision: "approve", findings: [], rounds: 1 }, "lp.phase_plan_check": phaseCheck } });
+    expect(pathOf(approve)).toBe("phase_status proof phase_check approve");
+    const changes = await runSim("plan-review-convergence", { input: { phase_id: "ph_a" }, stubs: { phase_status: phaseStatus, proof: { decision: "changes_requested", findings: [], rounds: 2 }, "lp.phase_plan_check": { ...phaseCheck, decision: "changes_requested" } } });
+    expect(pathOf(changes)).toBe("phase_status proof phase_check changes");
     expect(out(changes)).toMatchObject({ status: "changes_requested", rounds: 2 });
+  });
+
+  it("plan-review-convergence-proof: both critics approve independently", async () => {
+    const proof = await runSim("plan-review-convergence-proof", { input: { phase_id: "ph_a", plan_sha: "plan-sha", phase_status: {} }, stubs: { critic_a: { decision: "approve", findings: [] }, critic_b: { decision: "approve", findings: [] }, converge: { decision: "approve", findings: [], rounds: 1 } } });
+    expect(pathOf(proof)).toBe("critic_a critic_b converge approve");
+    expect(out(proof)).toMatchObject({ status: "ok", decision: "approve", plan_verdict: "pass" });
   });
 
   it("project-start: value map, preview, recap", async () => {

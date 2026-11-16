@@ -1,6 +1,7 @@
 {
   "id": "plan-review-convergence-proof",
   "internal": true,
+  "status": "published",
   "name": {
     "en": "Plan review convergence proof",
     "ru": "Доказательство сходимости ревью плана"

@@ -77,12 +77,20 @@ describe("on-map command graph parity", () => {
 
   it("plan-review-convergence records both approval and requested changes", async () => {
     const base = { critic_a: { decision: "approve", findings: [] }, critic_b: { decision: "approve", findings: [] } };
-    const approve = await runSim("plan-review-convergence", { input: { phase_id: "ph_a" }, stubs: { ...base, converge: { decision: "approve", findings: [], rounds: 1 } } });
-    expect(pathOf(approve)).toBe("critic_a critic_b converge approve");
+    const phaseStatus = { status: { plan: { sha: "plan-sha" } } };
+    const phaseCheck = { status: "recorded", phase_id: "ph_a", decision: "approve" };
+    const approve = await runSim("plan-review-convergence", { input: { phase_id: "ph_a" }, stubs: { ...base, phase_status: phaseStatus, proof: { decision: "approve", findings: [], rounds: 1 }, "lp.phase_plan_check": phaseCheck } });
+    expect(pathOf(approve)).toBe("phase_status proof phase_check approve");
     expect(out(approve)).toMatchObject({ status: "approve", rounds: 1 });
-    const changes = await runSim("plan-review-convergence", { input: { phase_id: "ph_a" }, stubs: { ...base, critic_b: { decision: "changes_requested", findings: [{ file: "PLAN.md" }] }, converge: { decision: "changes_requested", findings: [{ file: "PLAN.md" }], rounds: 2 } } });
-    expect(pathOf(changes)).toBe("critic_a critic_b converge changes");
+    const changes = await runSim("plan-review-convergence", { input: { phase_id: "ph_a" }, stubs: { ...base, phase_status: phaseStatus, proof: { decision: "changes_requested", findings: [{ file: "PLAN.md" }], rounds: 2 }, "lp.phase_plan_check": { ...phaseCheck, decision: "changes_requested" } } });
+    expect(pathOf(changes)).toBe("phase_status proof phase_check changes");
     expect(out(changes)).toMatchObject({ status: "changes_requested", rounds: 2 });
+  });
+
+  it("plan-review-convergence-proof runs its critics and emits approval independently", async () => {
+    const proof = await runSim("plan-review-convergence-proof", { input: { phase_id: "ph_a", plan_sha: "plan-sha", phase_status: {} }, stubs: { critic_a: { decision: "approve", findings: [] }, critic_b: { decision: "approve", findings: [] }, converge: { decision: "approve", findings: [], rounds: 1 } } });
+    expect(pathOf(proof)).toBe("critic_a critic_b converge approve");
+    expect(out(proof)).toMatchObject({ status: "ok", decision: "approve", plan_verdict: "pass" });
   });
 
   it("project-start follows the full first-start route and can resume an existing tree", async () => {
