@@ -75,5 +75,5 @@ export function start<R>(engine: WorkflowEngine, input: {
   })();
   // A child run is started without a runtime: it is built from the run row (`runtimeFor`), as after a reload, not recorded as «none».
   if (input.runtime !== undefined) engine.runtimes.set(runId, input.runtime);
-  return { runId, created: true, done: drive(engine, runId) };
+  return { runId, created: true, done: drive(engine, runId, true) };
 }

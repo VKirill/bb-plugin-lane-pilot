@@ -2,10 +2,10 @@ import { describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { openDatabase, createRun, setRunThread } from "../../src/rooms/plugin-db";
 import { openRunHome, recordRunFileRow } from "../../src/rooms/storage";
-import { workflowAuditEvidence } from "../../src/rooms/workflow/server/workflow-audit-evidence";
+import { compactRepositoryEvidence, workflowAuditEvidence } from "../../src/rooms/workflow/server/workflow-audit-evidence";
 import { createGoalAuditor } from "../../src/rooms/workflow/server/workflow-goal-audit";
 import type { ServerCore } from "../../src/rooms/contracts/server";
-import type { StepRow } from "@lane-pilot/workflow-engine";
+import { createJournal, readRootObservations, type StepRow } from "@lane-pilot/workflow-engine";
 import { sha256Hex } from "@lane-pilot/kit";
 
 function world() {
@@ -26,6 +26,56 @@ function world() {
 }
 
 describe("goal audit evidence transport", () => {
+  it("compacts repeated names without hiding unknown endpoints or omitted differences", () => {
+    const names = Array.from({ length: 100 }, (_, index) => `untracked/${index}.txt`);
+    const summaries = compactRepositoryEvidence([{ window: { before: { files: [], head: null, hostId: "h", root: "/r" }, after: { files: names, head: null, hostId: "h", root: "/r" }, edited: null, checkoutBinding: "unverified", reusedThread: true } }, { window: { before: null, after: null } }]);
+    expect(summaries[0]).toMatchObject({ detailIndex: 0, window: { before: { head: null }, after: { files: { count: 100, sha256: sha256Hex(JSON.stringify(names)) } }, edited: null, checkoutBinding: "unverified", reusedThread: true }, filenameDelta: { added: names.slice(0, 80), omittedAdded: 20, removed: [], omittedRemoved: 0 } });
+    expect(summaries[1]).toMatchObject({ window: { before: null, after: null }, filenameDelta: null });
+  });
+
+  it("delivers compact observations plus complete hash-bound detail through the real audit packet", async () => {
+    const t = world();
+    try {
+      createRun(t.db, "lp", "p", "cli"); setRunThread(t.db, "lp", "pm");
+      const files = Array.from({ length: 450 }, (_, index) => `long-artifact-name/${index}/original-receipt.json`);
+      const window = { before: { files, head: "a", hostId: "h", root: "/r" }, after: { files: [...files, "reports/new.md"], head: "a", hostId: "h", root: "/r" }, edited: [], checkoutBinding: "verified" };
+      t.steps[0]!.receipt_json = JSON.stringify({ detail: { repoGuard: window } });
+      const requests: Array<{ prompt: string; packetFiles?: Array<{ path: string; text: string }> }> = [];
+      const agents = { run: async (request: typeof requests[number]) => { requests.push(request); return { threadId: "audit", output: { verdicts: [], handoff: "not evaluated" }, text: "" }; } };
+      await createGoalAuditor(t.ctx, {} as never, agents as never)({ run: { id: "wfrun_audit", workflow_id: "code-review", link_run_id: "lp", project_id: "p", mode: "standard" } as never,
+        goals: [], output: {}, steps: t.steps, signal: new AbortController().signal });
+      const req = requests[0]!, detail = req.packetFiles!.find((file) => file.path.includes("audit-repository-details"))!;
+      expect(JSON.parse(detail.text)[1].window).toEqual(window);
+      expect(req.prompt).toContain(detail.path);
+      expect(req.prompt).toContain(sha256Hex(detail.text));
+      expect(req.prompt).toContain("reports/new.md");
+      expect(req.prompt).not.toContain(files[440]);
+      expect(req.prompt.length).toBeLessThan(8000);
+    } finally { t.db.close(); }
+  });
+
+  it("binds root endpoints to the current execution and refuses stale or different-checkout comparisons", async () => {
+    const t = world(), journal = createJournal(t.db);
+    const snapshot = { at: 1, hostId: "h", root: "/repo", files: [], head: "a".repeat(40), workDiffHash: "b".repeat(40), indexDiffHash: null, hashAlgorithm: "git-object" };
+    try {
+      journal.event("wfrun_audit", null, "repo_guard", null, "before", { revision: 0, at: 1, initialDrive: true, snapshot, reason: null });
+      journal.event("wfrun_audit", "report", "step", "running", "succeeded");
+      const revision = readRootObservations(t.db, "wfrun_audit").revision;
+      journal.event("wfrun_audit", null, "repo_guard", null, "afterExecution", { revision, at: 2, initialDrive: false, snapshot: { ...snapshot, at: 2 }, reason: null });
+      expect((await workflowAuditEvidence(t.ctx, "wfrun_audit", t.steps)).repository[0]).toMatchObject({ role: "root", revision,
+        window: { checkoutBinding: "verified" }, endpointComparison: { sameHead: true, sameWorkDiff: true, sameIndexDiff: null } });
+      journal.event("wfrun_audit", "report", "rerun", "succeeded", "pending");
+      const stale = await workflowAuditEvidence(t.ctx, "wfrun_audit", t.steps);
+      expect(stale.repository[0]).toMatchObject({ afterEvent: null, window: { before: snapshot, after: null }, endpointComparison: { sameHead: null } });
+      expect(stale.omissions.join(" ")).toContain("root final observation unavailable");
+      const next = readRootObservations(t.db, "wfrun_audit").revision;
+      journal.event("wfrun_audit", null, "repo_guard", null, "afterExecution", { revision: next, at: 3, initialDrive: false, snapshot: { ...snapshot, hostId: "other" }, reason: null });
+      const moved = await workflowAuditEvidence(t.ctx, "wfrun_audit", t.steps);
+      expect(moved.repository[0]).toMatchObject({ window: { checkoutBinding: "unverified" }, endpointComparison: { sameHead: null, sameWorkDiff: null } });
+      expect(moved.omissions.join(" ")).toContain("different or unknown host/checkouts");
+    } finally { t.db.close(); }
+  });
+
   it("reads only bound engine output files and refuses changed bytes or an unresolved planning home", async () => {
     const t = world();
     try {
@@ -48,7 +98,8 @@ describe("goal audit evidence transport", () => {
       t.steps[0]!.receipt_json = JSON.stringify({ detail: { votes: [{ detail: { repoGuard: measured } }] } });
       t.steps[0]!.output_json = JSON.stringify({ repoGuard: { forged: true } });
       const evidence = await workflowAuditEvidence(t.ctx, "wfrun_audit", t.steps);
-      expect(evidence.repository).toEqual([{ runId: "wfrun_audit", step: "report", state: "succeeded", window: measured }]);
+      expect(evidence.repository).toHaveLength(2);
+      expect(evidence.repository[1]).toEqual({ runId: "wfrun_audit", step: "report", state: "succeeded", window: measured });
       expect(evidence.scope).toContain("endpoint");
     } finally { t.db.close(); }
   });

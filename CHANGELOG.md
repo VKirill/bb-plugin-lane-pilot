@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.588
+
+- **Root workflow observations cover the execution interval before goal auditing.** Initial and final repository snapshots are retained in the journal, including explicit unavailable/error outcomes. Reloads preserve the historical initial observation; a rerun invalidates final observations and cached positive audits even when the output is unchanged. The collector retains child windows, verifies host/checkout alignment and exposes unknown fingerprints. Repeated filename lists are compacted for the auditor while complete measurements remain available through a hash-bound reference. These are endpoint observations, not proof of temporary write-and-revert, untracked contents or external effects. Live graph acceptance remains separate.
+
 ## 0.1.587
 
 - **Workflow goal audits receive complete assignments and recorded evidence.** Routing preserves the request in the goal contract; requests beyond its supported limit are refused or returned for clarification instead of becoming a truncated goal. Audit cache identities include the request, and PM status and regrounding retain it. Large audit values travel through existing file references, while durable reports keep complete JSON. The auditor receives hash-checked engine output files and measured helper repository endpoints, including child runs and votes. These observations do not prove temporary write-and-revert or external effects; missing evidence remains unverified. Regressions in `tests/workflow/router.test.ts`, `tests/workflow/goals.test.ts`, `tests/workflow/goal-audit-evidence.test.ts`, `tests/workflow/chain-executors.test.ts` and `tests/server/repo-snapshot.test.ts` cover the boundaries. Live graph acceptance is separate.

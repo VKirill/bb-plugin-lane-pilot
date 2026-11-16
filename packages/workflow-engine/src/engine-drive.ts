@@ -5,15 +5,16 @@ import { routeAll } from "./engine-routing";
 import { gates } from "./engine-branches";
 import { checkLimits, execStep } from "./engine-step";
 import { closeAfterAudit } from "./engine-goal-audit";
+import { observeRunPhase } from "./engine-observation";
 import type { WorkflowEngine } from "./engine";
 
 /** How many finished runs keep their compiled graph and runtime in memory. */
 const RETAINED_RUNS = 64;
 
-export function drive(engine: WorkflowEngine, runId: string): Promise<RunSummary> {
+export function drive(engine: WorkflowEngine, runId: string, initialDrive = false): Promise<RunSummary> {
   const running = engine.drives.get(runId);
   if (running) return running;
-  const promise = driveLoop(engine, runId).finally(() => { engine.drives.delete(runId); retire(engine, runId); });
+  const promise = driveLoop(engine, runId, initialDrive).finally(() => { engine.drives.delete(runId); retire(engine, runId); });
   engine.drives.set(runId, promise);
   return promise;
 }
@@ -70,16 +71,28 @@ export function beat(engine: WorkflowEngine, runId: string): void {
 
 export function unbeat(engine: WorkflowEngine, runId: string): void { const timer = engine.beats.get(runId); if (timer) clearInterval(timer); engine.beats.delete(runId); }
 
-export async function driveLoop(engine: WorkflowEngine, runId: string): Promise<RunSummary> {
+export async function driveLoop(engine: WorkflowEngine, runId: string, initialDrive = false): Promise<RunSummary> {
   const j = engine.journal;
   if (!claim(engine, runId)) return summary(engine, runId);
   beat(engine, runId);
   engine.stoppedRuns.delete(runId);
+  let observedBefore = false;
   try {
     for (;;) {
       if (engine.stopped()) { engine.stoppedRuns.add(runId); break; }
-      const run = j.getRun(runId);
+      let run = j.getRun(runId);
       if (!run || TERMINAL_RUN.includes(run.status)) break;
+      if (!observedBefore) {
+        observedBefore = true;
+        if (!run.parent_run_id && engine.options.observeRun) {
+          await observeRunPhase(engine, run, "before", initialDrive);
+          // The awaited snapshot is a window: a cancel lands as a terminal row, a dispose as stopped().
+          if (engine.stopped()) { engine.stoppedRuns.add(runId); break; }
+          const fresh = j.getRun(runId);
+          if (!fresh || TERMINAL_RUN.includes(fresh.status)) break;
+          run = fresh;
+        }
+      }
       engine.fault("loop");
       routeAll(engine, run, engine.compiled(run));
       const routed = j.getRun(runId)!;
@@ -102,7 +115,18 @@ export async function driveLoop(engine: WorkflowEngine, runId: string): Promise<
       }
       if (steps.some((step) => step.state === "waiting")) { j.setRunStatus(runId, ["running"], "waiting", null); break; }
       if (steps.some((step) => step.state === "running")) break;
-      if (routed.output_json !== null) { if (await closeAfterAudit(engine, routed) === "stop") engine.stoppedRuns.add(runId); }
+      if (routed.output_json !== null) {
+        let auditRun = routed;
+        if (!routed.parent_run_id && engine.options.observeRun) {
+          await observeRunPhase(engine, routed, "afterExecution", initialDrive);
+          // amendGoals may have replaced the goals and cancel/dispose may have landed during the snapshot.
+          if (engine.stopped()) { engine.stoppedRuns.add(runId); break; }
+          const fresh = j.getRun(runId);
+          if (!fresh || TERMINAL_RUN.includes(fresh.status)) break;
+          auditRun = fresh;
+        }
+        if (await closeAfterAudit(engine, auditRun) === "stop") engine.stoppedRuns.add(runId);
+      }
       else j.setRunStatus(runId, ["running", "waiting"], "failed", "dead_end: no step is left and the exit was not reached");
       break;
     }

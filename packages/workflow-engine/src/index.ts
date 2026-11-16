@@ -34,3 +34,4 @@ export * from "./store";
 export * from "./verdict";
 export * from "./model-json";
 export * from "./require-green";
+export * from "./engine-observation";

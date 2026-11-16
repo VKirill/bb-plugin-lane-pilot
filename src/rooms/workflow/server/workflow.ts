@@ -11,6 +11,7 @@ import { SPECIALIST_ROLES } from "../../critique/server";
 import { isEmployeeSpecialist } from "../../contracts/employee-manifest";
 import { createGoalAuditor } from "./workflow-goal-audit";
 import { chainRuntimeFor, registerChainExecutors } from "./workflow-executors";
+import { createRootObserver } from "./workflow-root-observation";
 import { notifyWorkflowIfEnded } from "./pm-notice";
 import { ERRAND_EPISODE_TRACE_EVENTS, type ErrandEpisodesApi } from "../../contracts/server";
 import type { LeadRoadApi } from "../../contracts";
@@ -120,6 +121,8 @@ export function createWorkflowEngine(ctx: ServerCore, services: Services) {
     auditGoals: (input) => createGoalAuditor(ctx, services, workflowAgents)(input),
     // A chain run that outlives a reload gets its runtime again from its row (the PM chat, the project and the Lane Pilot run are in it).
     runtimeFor: chainRuntimeFor(ctx, services),
+    // Root runs journal a measured checkout snapshot before the first step and before the goal audit (review588).
+    observeRun: createRootObserver(ctx, services),
     // A reload ends a dispatch that was between its stages, as it always did: the attempt is blocked and the PM sends the task again.
     resumePolicy: (run) => (run.workflow_id === LP_TASK_PIPELINE || run.idem_key?.startsWith("lp-task:") ? "interrupt" : "continue"),
   });

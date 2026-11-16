@@ -5,6 +5,7 @@ import type { GoalAudit } from "./goals";
 import { asObject } from "./step-read";
 import { isEngineBug } from "./engine-errors";
 import type { WorkflowEngine } from "./engine";
+import { executionRevision, latestRepoGuardSeq } from "./engine-observation";
 
 /** Size from the `class` step, and whether a writer was accepted or the plan already met the goal. */
 export function shortPathFacts(engine: WorkflowEngine, run: RunRow): { size: unknown; accepted: boolean; acceptance: unknown; alreadyMet: boolean } {
@@ -50,16 +51,21 @@ export async function closeAfterAudit(engine: WorkflowEngine, run: RunRow): Prom
   try { required = (JSON.parse(run.definition_json) as { goal_audit?: string }).goal_audit === "required"; } catch { required = false; }
   if (!goals.length) return required ? unverified("not_verified: a user workflow closed with no goals", { error: "no goals" }) : close(null);
   const output = asObject(run.output_json);
+  // An instrumented run's verdict is bound to its execution: same goals and output are not enough when a re-run produced fresh observations.
+  const execution = engine.options.observeRun !== undefined
+    ? { revision: executionRevision(j.db, run.id), guardSeq: latestRepoGuardSeq(j.db, run.id, "afterExecution") }
+    : null;
+  const execDetail = execution ? { revision: execution.revision, guardSeq: execution.guardSeq } : {};
   const code = tinyGoalByCode({ ...shortPathFacts(engine, run), status: output.status });
   if (code !== "skip") {
     const sha = goalsSha(goals);
     const outputSha = sha256(run.output_json ?? "");
     if (code === "met") {
-      j.event(run.id, null, "goal_audit", null, "pass", JSON.stringify({ sha, outputSha, verdict: "pass", by: "code", met: goals.map((goal) => goal.id), unmet: [] }));
+      j.event(run.id, null, "goal_audit", null, "pass", JSON.stringify({ sha, outputSha, verdict: "pass", by: "code", met: goals.map((goal) => goal.id), unmet: [], ...execDetail }));
       return close(null);
     }
     const unmet = goals.map((goal) => ({ id: goal.id, why: "a tiny run closes only when the checks are green and the task names its acceptance" }));
-    j.event(run.id, null, "goal_audit", null, "gaps", JSON.stringify({ sha, outputSha, verdict: "gaps", by: "code", met: [], unmet }));
+    j.event(run.id, null, "goal_audit", null, "gaps", JSON.stringify({ sha, outputSha, verdict: "gaps", by: "code", met: [], unmet, ...execDetail }));
     j.setRunStatus(run.id, ["running", "waiting"], "blocked", `goal_audit: not met: ${unmet.map((entry) => entry.id).join(", ")}`);
     return "blocked";
   }
@@ -68,7 +74,8 @@ export async function closeAfterAudit(engine: WorkflowEngine, run: RunRow): Prom
   // A pass is a verdict on this output: a re-run node that changed the result is audited again (2026-10-29 audit A-001).
   const outputSha = sha256(run.output_json ?? "");
   const last = lastAudit(engine, run.id);
-  if (last?.sha === sha && last.outputSha === outputSha && last.verdict === "pass") return close(null);
+  if (last?.sha === sha && last.outputSha === outputSha && last.verdict === "pass" &&
+      (!execution || (last.revision === execution.revision && last.guardSeq === execution.guardSeq))) return close(null);
   const abort = engine.aborts.get(run.id) ?? new AbortController();
   engine.aborts.set(run.id, abort);
   let result: GoalAudit;
@@ -83,15 +90,15 @@ export async function closeAfterAudit(engine: WorkflowEngine, run: RunRow): Prom
   // A goal the auditor did not mention at all is not met: silence is not evidence.
   for (const goal of goals) if (!result.met.includes(goal.id) && !unmet.some((entry) => entry.id === goal.id)) unmet.push({ id: goal.id, why: "the audit gave no verdict on this goal" });
   const verdict = unmet.length ? "gaps" : "pass";
-  j.event(run.id, null, "goal_audit", null, verdict, JSON.stringify({ sha, outputSha, verdict, met: result.met.filter((id) => goals.some((goal) => goal.id === id) && !unmet.some((entry) => entry.id === id)), unmet, ...(result.notes ? { notes: result.notes.slice(0, 1000) } : {}) }));
+  j.event(run.id, null, "goal_audit", null, verdict, JSON.stringify({ sha, outputSha, verdict, met: result.met.filter((id) => goals.some((goal) => goal.id === id) && !unmet.some((entry) => entry.id === id)), unmet, ...(result.notes ? { notes: result.notes.slice(0, 1000) } : {}), ...execDetail }));
   if (!unmet.length) return close(null);
   j.setRunStatus(run.id, ["running", "waiting"], "blocked", `goal_audit: not met: ${unmet.map((entry) => entry.id).join(", ")}`);
   return "blocked";
 }
 
 /** The last goal audit of a run, as the journal has it. */
-export function lastAudit(engine: WorkflowEngine, runId: string): { sha: string; outputSha?: string; verdict: "pass" | "gaps" | "unavailable" | "not_verified"; met: string[]; unmet: Array<{ id: string; why: string }>; notes?: string; error?: string; at: number } | null {
+export function lastAudit(engine: WorkflowEngine, runId: string): { sha: string; outputSha?: string; verdict: "pass" | "gaps" | "unavailable" | "not_verified"; met: string[]; unmet: Array<{ id: string; why: string }>; notes?: string; error?: string; at: number; revision?: number; guardSeq?: number | null } | null {
   const row = engine.journal.db.prepare("SELECT detail, at FROM lane_pilot_wf_event WHERE run_id=? AND kind='goal_audit' ORDER BY seq DESC LIMIT 1").get(runId) as { detail: string | null; at: number } | undefined;
   if (!row?.detail) return null;
-  try { const detail = JSON.parse(row.detail) as Record<string, unknown>; return { sha: String(detail.sha ?? ""), ...(typeof detail.outputSha === "string" ? { outputSha: detail.outputSha } : {}), verdict: detail.verdict as "pass", met: (detail.met as string[] | undefined) ?? [], unmet: (detail.unmet as Array<{ id: string; why: string }> | undefined) ?? [], ...(typeof detail.notes === "string" ? { notes: detail.notes } : {}), ...(typeof detail.error === "string" ? { error: detail.error } : {}), at: row.at }; } catch { return null; }
+  try { const detail = JSON.parse(row.detail) as Record<string, unknown>; return { sha: String(detail.sha ?? ""), ...(typeof detail.outputSha === "string" ? { outputSha: detail.outputSha } : {}), verdict: detail.verdict as "pass", met: (detail.met as string[] | undefined) ?? [], unmet: (detail.unmet as Array<{ id: string; why: string }> | undefined) ?? [], ...(typeof detail.notes === "string" ? { notes: detail.notes } : {}), ...(typeof detail.error === "string" ? { error: detail.error } : {}), ...(typeof detail.revision === "number" ? { revision: detail.revision } : {}), ...(typeof detail.guardSeq === "number" || detail.guardSeq === null ? { guardSeq: detail.guardSeq as number | null } : {}), at: row.at }; } catch { return null; }
 }

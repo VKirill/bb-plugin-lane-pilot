@@ -44,6 +44,8 @@ export type EngineOptions = {
   leaseMs?: number;
   /** K7: judges the run's output against its goals before the run closes. A throw means the audit could not be made: the run closes and says so. */
   auditGoals?: (input: { run: RunRow; goals: RunGoal[]; output: Record<string, unknown>; steps: StepRow[]; signal: AbortSignal }) => Promise<GoalAudit>;
+  /** Root runs only, awaited inside the drive loop: `before` once before the first execution, `afterExecution` before the goal audit of each execution. The result is journaled as a `repo_guard` event; a throw becomes an explicit null/reason row, never a clean snapshot. */
+  observeRun?: (input: { run: RunRow; phase: "before" | "afterExecution" }) => Promise<unknown>;
   /** Called after every journal event of a run (a step moved, the run changed): the hook for live screens. */
   onEvent?: (runId: string) => void;
   /** Test hook: called at named points of the driver; throwing simulates the process dying there. */
