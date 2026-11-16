@@ -1,8 +1,13 @@
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { runCommandOnHost } from "../src/rooms/writer/cli-run";
+import { createLiveFolder } from "../src/rooms/writer/server/live-folder";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { sha256Hex } from "@lane-pilot/kit";
 import { describe, expect, it } from "vitest";
 import type { PrototypeConfig, TaskV2 } from "../src/rooms/contracts";
-import { createAttempt, createRun, createTask, listStageReceipts, openDatabase, saveProjectSetting, saveReasoningTrace, saveStageReceipt, saveTaskGitBase, setRunThread, transitionAttempt } from "../src/rooms/plugin-db";
+import { createAttempt, createRun, createTask, listStageReceipts, openDatabase, saveProjectSetting, saveReasoningTrace, saveStageReceipt, saveTaskGitBase, setAttemptWorkspace, setRunThread, transitionAttempt } from "../src/rooms/plugin-db";
 import { createWriterFinish } from "../src/rooms/writer/server/finish";
 import { requireHelperSpawn } from "../src/rooms/runs/server/run-routing";
 import { stageHelperSettings } from "../src/rooms/settings/server/stage-settings";
@@ -30,13 +35,15 @@ const config: PrototypeConfig = {
   projectId:"P", hostId:"h", pmWorkspacePath:"/repo", writerWorkspacePath:"/repo",
   pmProviderId:"codex", pmModel:"codex-test", writerProviderId:"codex", writerModel:"codex-test",
 };
-const task = (): TaskV2 => ({
-  schema_version:2, id:"t1", title:"Write", risk:"medium", lane:"writer", project_cwd:"/repo", read_first:[], interfaces:[], invariants:[],
-  out_of_scope:[], expected_outputs:[PRODUCED], owns_paths:[PRODUCED], never_touch:[], depends_on:[],
+const task = (path = PRODUCED, cwd = "/repo"): TaskV2 => ({
+  schema_version:2, id:"t1", title:"Write", risk:"medium", lane:"writer", project_cwd:cwd, read_first:[], interfaces:[], invariants:[],
+  out_of_scope:[], expected_outputs:[path], owns_paths:[path], never_touch:[], depends_on:[],
   objective:"write", acceptance:["file exists"], verify:"none", verification:[],
 });
 
 function world(opts: {
+  live?: { folder:string; path:string; content:string };
+  criticEnabled?: boolean;
   snapshots?: Array<{ path:string; sha256:string | null }>;
   /** workspaceDirt answers in call order (captureEvidence calls it once per loop pass plus the post-approval confirm). */
   dirtSeq?: Array<{ ok:true; paths:string[]; snapshots:Array<{ path:string; sha256:string | null }> } | { ok:false; reason:string }>;
@@ -51,20 +58,24 @@ function world(opts: {
   patch?: string;
   content?: string;
 }) {
+  const path = opts.live?.path ?? PRODUCED;
+  const cwd = opts.live?.folder ?? "/repo";
+  const localConfig = { ...config, writerWorkspacePath:cwd, pmWorkspacePath:cwd };
   const { bb } = createFakePluginHost({ pluginId:"lane-pilot" });
   const db = openDatabase(bb);
-  createRun(db, "run", "P", "cli", "/repo");
+  createRun(db, "run", "P", "cli", cwd);
   setRunThread(db, "run", "pm");
-  createTask(db, { id:"t1", runId:"run", kind:"bb", contract:task() });
+  createTask(db, { id:"t1", runId:"run", kind:"bb", contract:task(path, cwd) });
   createAttempt(db, { id:"a-t1", runId:"run", taskId:"t1" });
   transitionAttempt(db, "a-t1", "spawn_requested");
+  if (opts.live) setAttemptWorkspace(db, "a-t1", { path:cwd, environmentId:null, decision:{ reason:"live_folder" } });
   transitionAttempt(db, "a-t1", "running", { threadId:"writer-t1" });
   if (opts.gitBase !== false) {
     saveTaskGitBase(db, "t1", { baseRef:"main", baseSha:BASE_SHA, initialHeadSha:BASE_SHA, branch:"lp/t1", compareCommitted:true });
   }
-  saveProjectSetting(db, "P", "code_critique.enabled", true);
+  saveProjectSetting(db, "P", "code_critique.enabled", opts.criticEnabled ?? true);
   saveProjectSetting(db, "P", "code_critique.mode", "gate");
-  const files = new Map<string, string>([[`/repo/${PRODUCED}`, opts.content ?? CONTENT]]);
+  const files = new Map<string, string>([[`${cwd}/${path}`, opts.live?.content ?? opts.content ?? CONTENT]]);
   const spawns: Array<Record<string, unknown>> = [];
   const rpcTargets: unknown[] = [];
   const sends: Array<Record<string, unknown>> = [];
@@ -112,8 +123,10 @@ function world(opts: {
     bb:{ storage:bb.storage, log:{ warn() {}, error() {}, info() {} }, sdk,
       hosts:{ experimental_client:async () => ({ call:async () => ({}) }) } },
     db, getThreadBounded:async () => ({ status:"idle" }),
-    host:{ call:async (method:string, input?:{ command?:string; cwd?:string }) => method === "runCommand"
-      ? (opts.runCommand?.({ command:String(input?.command ?? ""), cwd:String(input?.cwd ?? "") })
+    host:{ call:async (method:string, input?:{ command?:string; cwd?:string; relativePath?:string }) => method === "readBoundedFile" && opts.live
+      ? { content:opts.live.content, sha256:sha256Hex(opts.live.content), lineEnd:1, truncated:false }
+      : method === "runCommand"
+      ? (opts.live && String(input?.command).includes("import base64, json, os, re, sys, time, zlib") ? await runCommandOnHost({ requestedHostId:"h", command:String(input?.command), cwd:String(input?.cwd) }) : opts.runCommand?.({ command:String(input?.command ?? ""), cwd:String(input?.cwd ?? "") })
         ?? { hostId:"h", exitCode:0, stdout:`${"f".repeat(40)}\n`, stderr:"" })
       : ({}) },
     isDisposed:() => false, log:() => undefined,
@@ -134,7 +147,7 @@ function world(opts: {
       validations++;
       // Stop after observing the repair: this fixture proves routing, not a real writer's acceptance.
       if (opts.repair && validations > 1) return { status:"blocked", reason:"fixture_repair_checked" };
-      return { status:"accepted", output:"done", produced:[PRODUCED], verification:[] };
+      return { status:"accepted", output:"done", produced:[path], verification:[] };
     },
     persistWriterAcceptance:async () => ({ state:"passed" }),
     workspaceDirt:async () => {
@@ -146,7 +159,7 @@ function world(opts: {
     stageHelperSettings,
     runBudgetFor:() => ({ snapshot:() => ({ limits:{} }) }),
   } as never);
-  const run = () => finish.finishWriterAttempt({ projectId:"P", config, task:task(), runId:"run", taskId:"t1",
+  const run = () => finish.finishWriterAttempt({ projectId:"P", config:localConfig, task:task(path, cwd), runId:"run", taskId:"t1",
     attemptId:"a-t1", pmThreadId:"pm", writerThreadId:"writer-t1", dirtBefore:[] });
   return { db, run, spawns, rpcTargets, sends, get parentMisses() { return parentMisses; }, get validations() { return validations; } };
 }
@@ -338,5 +351,65 @@ describe("code critique repair placement", () => {
       expect(w.parentMisses).toBe(1);
       expect(w.validations).toBe(1);
     } finally { w.db.close(); }
+  });
+});
+
+
+describe("live backup evidence in the finish gate", () => {
+  it("sends the original-to-current diff and preserves a reference test", async () => {
+    const root = mkdtempSync(join(tmpdir(), "lp-finish-evidence-"));
+    const oldHome = process.env.HOME;
+    try {
+      process.env.HOME = root;
+      const folder = join(root, "work");
+      mkdirSync(join(folder, "tests"), { recursive:true });
+      const path = "tests/example.test.ts";
+      const before = "test('old', () => {\n  expect(1).toBe(1);\n});\n";
+      const after = "test('old', () => {\n});\n";
+      writeFileSync(join(folder, path), before);
+      const { bb } = createFakePluginHost({ pluginId:"lane-pilot" });
+      const live = createLiveFolder({ bb, db:openDatabase(bb), host:{ call:async (_method:string, input:Parameters<typeof runCommandOnHost>[0]) => runCommandOnHost(input) } } as never);
+      expect(await live.backupLiveFolder({ hostId:"h", folder, backupId:"a-t1", files:[path] })).toMatchObject({ ok:true });
+      writeFileSync(join(folder, path), after);
+      const w = world({ live:{ folder, path, content:after }, gitBase:false });
+      const result = await w.run();
+      expect(result).toMatchObject({ status:"validation_failed", reason:expect.stringContaining("test_fit:") });
+      expect(w.spawns).toHaveLength(1);
+      const prompt = String(w.spawns[0]!.prompt);
+      expect(prompt).toContain("-  expect(1).toBe(1)");
+      expect(prompt).toContain("+test('old'");
+      expect(prompt).toContain(path);
+      expect(prompt).toMatch(/reference|yardstick/i);
+    } finally { process.env.HOME = oldHome; rmSync(root, { recursive:true, force:true }); }
+  });
+
+  it("blocks an unmeasured reference test instead of treating it as new", async () => {
+    const root = mkdtempSync(join(tmpdir(), "lp-finish-unknown-test-"));
+    const oldHome = process.env.HOME;
+    try {
+      process.env.HOME = root;
+      const folder = join(root, "work"); mkdirSync(folder);
+      const path = "tests/example.test.ts", content = "test('new', () => {});\n";
+      const w = world({ live:{ folder, path, content }, gitBase:false, criticEnabled:false });
+      const result = await w.run();
+      expect(result).toMatchObject({ status:"blocked", reason:expect.stringContaining("live_backup_before_unknown") });
+      expect(String(result.reason)).toContain("no_backup");
+      expect(w.spawns).toHaveLength(0);
+    } finally { process.env.HOME = oldHome; rmSync(root, { recursive:true, force:true }); }
+  });
+
+  it("blocks a missing backup even if the critic is disabled", async () => {
+    const root = mkdtempSync(join(tmpdir(), "lp-finish-unknown-"));
+    const oldHome = process.env.HOME;
+    try {
+      process.env.HOME = root;
+      const folder = join(root, "work"); mkdirSync(folder);
+      const path = "docs/example.md", content = "new\n";
+      const w = world({ live:{ folder, path, content }, gitBase:false, criticEnabled:false });
+      const result = await w.run();
+      expect(result).toMatchObject({ status:"blocked", reason:expect.stringContaining("live_backup_before_unknown") });
+      expect(String(result.reason)).toContain("no_backup");
+      expect(w.spawns).toHaveLength(0);
+    } finally { process.env.HOME = oldHome; rmSync(root, { recursive:true, force:true }); }
   });
 });

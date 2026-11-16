@@ -27,6 +27,8 @@ import { bookkeepingSetting, isOwnershipNoise } from "@lane-pilot/settings-catal
 import { writeReplacing } from "../../storage";
 import { acceptanceArtifactDir } from "../../tasks";
 import { resolve } from "node:path";
+import { liveBackupPatch } from "./live-backup-evidence";
+import type { LiveBackupRead } from "../live-backup-read";
 
 /** The shared locals the critique gate reads and writes; owned by the finish body. */
 export interface CritiqueGateState {
@@ -58,11 +60,12 @@ export interface CritiqueGateDeps {
   yardstick: string[];
   priorCriticApprovals: Parameters<typeof critiqueRepeatSkip>[0]["priorApprovals"];
   baselineHashes: Record<string, string | null>;
+  liveBefore?: (path:string) => Promise<LiveBackupRead>;
 }
 
 /** The code-critique gate: repair rounds until the critic passes or a block is decided. Returns the finish result, or null when the gate passed. */
 export async function runCodeCritiqueGate(deps: CritiqueGateDeps, g: CritiqueGateState): Promise<Record<string, unknown> | null> {
-  const { ctx, services, input, endedByStop, existingCritique, storedLedger, liveCritiquePolicy, projectSettings, taskCriticDefault, yardstick, priorCriticApprovals, baselineHashes } = deps;
+  const { ctx, services, input, endedByStop, existingCritique, storedLedger, liveCritiquePolicy, projectSettings, taskCriticDefault, yardstick, priorCriticApprovals, baselineHashes, liveBefore } = deps;
   const { bb, db, host } = ctx;
       // HEAD of the attempt workspace: a critic commit leaves the dirty set, so the path snapshot alone cannot see it.
       // No git or an unborn HEAD is a definitive null; a failed probe is unknown and fails the post-approval check closed.
@@ -105,7 +108,18 @@ export async function runCodeCritiqueGate(deps: CritiqueGateDeps, g: CritiqueGat
           const content = contentByPath.get(path);
           return [path, typeof content === "string" ? sha256Hex(content) : null];
         }));
-        g.lastPatches = await candidatePatches(bb, db, { runId:input.runId, taskId:input.taskId, hostId:input.config.hostId, cwd:input.task.project_cwd, paths:g.candidate.produced ?? [] });
+        let beforeUnknown: string | undefined;
+        if (liveBefore) {
+          g.lastPatches = {};
+          for (const { path, content } of files) {
+            const saved = await liveBefore(path);
+            const patch = saved.state === "bytes" && typeof content === "string" ? liveBackupPatch(path, saved.content, content) : null;
+            if (patch === null) {
+              beforeUnknown ??= `${path}: ${saved.state === "unknown" ? saved.reason : typeof content !== "string" ? "current_unreadable" : "diff_too_large"}`;
+              g.lastPatches[path] = "before unknown: live backup evidence unavailable";
+            } else g.lastPatches[path] = patch;
+          }
+        } else g.lastPatches = await candidatePatches(bb, db, { runId:input.runId, taskId:input.taskId, hostId:input.config.hostId, cwd:input.task.project_cwd, paths:g.candidate.produced ?? [] });
         // The same frozen base candidatePatches diffs against: committed work has no `git diff HEAD`, so the
         // critic's own re-read in pointer mode needs it (absent base → legacy HEAD advice).
         const gitBase = getTaskGitBase(db as never, input.taskId);
@@ -129,6 +143,10 @@ export async function runCodeCritiqueGate(deps: CritiqueGateDeps, g: CritiqueGat
           workspace:input.task.project_cwd,
           referenceTestEdits:yardstick,
         });
+        if (beforeUnknown) {
+          evidence.truncated = true;
+          evidence.truncateReason = `live_backup_before_unknown:${beforeUnknown}`;
+        }
         // The whole change set merge's `git add -A` commits — every dirty path + content hash, not only
         // produced ones; ownership noise is filtered like the ownership gates.
         const noise = bookkeepingSetting(projectSettings);
@@ -166,6 +184,11 @@ export async function runCodeCritiqueGate(deps: CritiqueGateDeps, g: CritiqueGat
       };
       for (;;) {
         const { evidence, revision } = await captureEvidence();
+        if (evidence.truncateReason?.startsWith("live_backup_before_unknown:")) {
+          const reason = evidence.truncateReason.slice(0, 500);
+          transitionAttempt(db, input.attemptId, "blocked", { reason });
+          return { status:"blocked", reason, attemptId:input.attemptId, writerThreadId:g.writerThreadId };
+        }
         const ledger = repairLedgerFromResult(listStageReceipts(db, input.runId, input.taskId).find((row) => row.stageId === "code-critique")?.result);
         if (ledger?.policy) g.frozenPolicy = ledger.policy;
         if (ledger?.repairRound) g.repairRound = Math.max(g.repairRound, ledger.repairRound);

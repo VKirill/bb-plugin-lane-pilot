@@ -31,6 +31,8 @@ import type { AttemptFinished } from "./attempt-finished";
 import { progressJournal } from "../progress-journal";
 import { mountVerificationAttemptFinished } from "./verification";
 import { executionChecklist } from "./execution-checklist";
+import { isLiveDecision } from "../live-folder";
+import { readLiveBefore } from "./live-backup-evidence";
 
 import type { FinishInput, Services } from "./finish-types";
 import { runCodeCritiqueGate } from "./critique-gate";
@@ -187,22 +189,29 @@ export async function finishWriterAttemptBody(ctx: ServerCore, services: Service
       // An attempt that worked in the project folder itself has no base copy: the «before» is git's, see headSides.
       const workedAt = fitAttempt?.workspace_path;
       const inPlace = !!workedAt && [basePathForTests, getRun(db, input.runId)?.writer_workspace_path].some((path) => !!path && resolve(path) === resolve(workedAt));
-      const atHead = inPlace
+      const liveFolder = isLiveDecision(fitAttempt?.workspace_decision);
+      const liveBefore = liveFolder && workedAt ? (path:string) => readLiveBefore(host, input.config.hostId, workedAt, input.attemptId, path) : undefined;
+      const atHead = inPlace && !liveFolder
         ? await headSides(bb, db, { runId:input.runId, taskId:input.taskId, hostId:input.config.hostId, cwd:workedAt, paths:[...new Set([...editedTests, ...editedScripts, ...fitConfigs])] })
         : new Map<string, string | null>();
-      const readBefore = (path:string) => {
+      const readBefore = async (path:string):Promise<string | null | undefined> => {
+        if (liveFolder) {
+          const saved = await liveBefore?.(path);
+          return saved?.state === "bytes" ? saved.content : undefined;
+        }
         const head = atHead.get(path);
         if (head !== undefined && head !== null && (Buffer.byteLength(head, "utf8") > BOUNDED_READ_MAX_FILE_BYTES || head.split("\n").length > 100000)) {
           throw new Error(`test_fit_read: ${path} HEAD exceeds the complete-read limit`);
         }
-        return head === undefined ? readFit(basePathForTests, path) : Promise.resolve(head);
+        return head === undefined ? readFit(basePathForTests, path) : head;
       };
       const referenceBefore = new Map<string, string>();
+      const referenceTests: string[] = [];
       for (const path of editedTests) {
         const before = await readBefore(path);
-        if (before !== null) referenceBefore.set(path, before);
+        if (before !== null) referenceTests.push(path);
+        if (typeof before === "string") referenceBefore.set(path, before);
       }
-      const referenceTests = [...referenceBefore.keys()];
       const checkScripts: string[] = [];
       for (const path of editedScripts) {
         if (await readBefore(path) !== null) checkScripts.push(path);
@@ -227,8 +236,18 @@ export async function finishWriterAttemptBody(ctx: ServerCore, services: Service
         frozenPolicy, repeatSkipChecked:false, lastPatches, criticNotes,
       };
       const gateEnd = await runCodeCritiqueGate({ ctx, services, input, endedByStop, existingCritique, storedLedger,
-        liveCritiquePolicy, projectSettings, taskCriticDefault, yardstick, priorCriticApprovals, baselineHashes }, g);
+        liveCritiquePolicy, projectSettings, taskCriticDefault, yardstick, priorCriticApprovals, baselineHashes, liveBefore }, g);
       if (gateEnd) return gateEnd;
+      if (liveFolder) {
+        for (const path of g.candidate.produced ?? []) {
+          const saved = await liveBefore?.(path);
+          if (!saved || saved.state === "unknown") {
+            const reason = `live_backup_before_unknown: ${path}: ${saved?.reason ?? "workspace_unavailable"}`.slice(0, 500);
+            transitionAttempt(db, input.attemptId, "blocked", { reason });
+            return { status:"blocked", reason, attemptId:input.attemptId, writerThreadId:g.writerThreadId };
+          }
+        }
+      }
       candidate = g.candidate; writerThreadId = g.writerThreadId; review = g.review; lastPatches = g.lastPatches; criticNotes = g.criticNotes;
       { const stopped = stoppedMeanwhile("the code critique", writerThreadId); if (stopped) return stopped; }
       // The plan against the fact: code checks the writer's evidence per acceptance item against the diff, never its prose. It records
@@ -266,7 +285,8 @@ export async function finishWriterAttemptBody(ctx: ServerCore, services: Service
       const fitFiles: Array<{ path:string; before:string | null; after:string | null }> = [];
       for (const [path, before] of referenceBefore) fitFiles.push({ path, before, after: await readFit(fitAttempt?.workspace_path, path) });
       for (const path of fitConfigs) {
-        fitFiles.push({ path, before: await readBefore(path), after: await readFit(fitAttempt?.workspace_path, path) });
+        const before = await readBefore(path);
+        if (before !== undefined) fitFiles.push({ path, before, after: await readFit(fitAttempt?.workspace_path, path) });
       }
       const fitHits = testFitFindings(fitFiles, input.task.test_removals ?? []);
       // A hit a person already allowed for this very content passes (sma av_test_edit_hold). The rest: where the owner's
