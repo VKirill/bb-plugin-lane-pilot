@@ -6,8 +6,8 @@ import { describe, expect, it } from "vitest";
 import { gitRepoSnapshot } from "../../src/rooms/verification/server";
 
 // gitRepoSnapshot issues one runCommand and parses sentinel-delimited sections; the host is faked at that boundary.
-const host = (result: { exitCode?: number; stdout?: string }) => ({
-  call: async () => ({ hostId: "local", exitCode: result.exitCode ?? 0, stdout: result.stdout ?? "", stderr: "" }),
+const host = (result: { hostId?: string; exitCode?: number; stdout?: string }) => ({
+  call: async () => ({ hostId: result.hostId ?? "local", exitCode: result.exitCode ?? 0, stdout: result.stdout ?? "", stderr: "" }),
 }) as never;
 
 const HEAD = "a".repeat(40), WORK = "b".repeat(40), INDEX = "c".repeat(40);
@@ -29,6 +29,7 @@ describe("gitRepoSnapshot", () => {
 
   it("markers must be whole lines and the end sentinel must be last: truncated, reordered or failed answers are null", async () => {
     expect(await gitRepoSnapshot(host({ exitCode: 1, stdout: OK }), "local", "/repo")).toBeNull();
+    expect(await gitRepoSnapshot(host({ hostId: "other", stdout: OK }), "local", "/repo")).toBeNull();
     expect(await gitRepoSnapshot(host({ stdout: "SNAPSHOT_FAIL status\n" }), "local", "/repo")).toBeNull();
     expect(await gitRepoSnapshot(host({ stdout: OK.slice(0, -"===END===\n".length) }), "local", "/repo")).toBeNull();
     // A filename containing marker text inside the status section does not end it early.

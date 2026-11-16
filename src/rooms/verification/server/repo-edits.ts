@@ -70,7 +70,7 @@ const GIT_HASH = /^[0-9a-f]{40}$|^[0-9a-f]{64}$/;
 export async function gitRepoSnapshot(host: ServerCore["host"], hostId: string, cwd: string): Promise<RepoSnapshot | null> {
   const at = Date.now();
   const ran = await bestEffort(console.warn, `repo snapshot ${hostId} ${cwd}`, runOnHost(host, { hostId, cwd, command: REPO_SNAPSHOT_COMMAND, timeoutSec: 30, timeoutMs: 45_000 }), null);
-  if (!ran || ran.exitCode !== 0) return null;
+  if (!ran || ran.hostId !== hostId || ran.exitCode !== 0) return null;
   // Markers count only as whole lines: a porcelain filename may contain the marker text without being one.
   const lines = ran.stdout.split("\n");
   if (lines.some((line) => line.startsWith("SNAPSHOT_FAIL "))) return null;

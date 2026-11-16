@@ -40,6 +40,8 @@ describe("node runner inventory", () => {
     try {
       writeFileSync(join(dir, "package.json"), JSON.stringify({ scripts: { test: "vitest run" } })); commit(dir);
       expect((await measureTestInventory(host, "local", dir)).status).toBe("unsupported");
+      writeFileSync(join(dir, "package.json"), JSON.stringify({ scripts: { test: "node --test test/*.test.js test/missing*.js" } })); commit(dir);
+      expect((await measureTestInventory(host, "local", dir)).status).toBe("unavailable");
       writeFileSync(join(dir, "package.json"), JSON.stringify({ scripts: { test: "node --test test/*.test.js" } }));
       writeFileSync(join(dir, "test/a.test.js"), "const {test}=require('node:test'); test('same',()=>{}); test('same',()=>{});"); commit(dir);
       expect((await measureTestInventory(host, "local", dir)).status).toBe("unavailable");

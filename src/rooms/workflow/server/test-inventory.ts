@@ -27,7 +27,9 @@ try {
  if (version !== '${RUNNER_VERSION}' || typeof command !== 'string' || !/^node --test(?: +[A-Za-z0-9_./*?-]+)+ *$/.test(command)) { emit({type:'lp:unsupported',version,command}); process.exit(0); }
  const args = command.trim().split(/ +/).slice(2), root = fs.realpathSync('.');
  if (args.some(x => x.startsWith('/') || x.split('/').includes('..'))) throw Error('unsafe test path');
- const files = [...new Set(args.flatMap(x => fs.globSync(x)))].sort().map(x => fs.realpathSync(x));
+ const selections = args.map(x => fs.globSync(x));
+ if (selections.some(x => x.length === 0)) throw Error('unmatched test selector');
+ const files = [...new Set(selections.flat())].sort().map(x => fs.realpathSync(x));
  if (!files.length || files.some(x => !x.startsWith(root + path.sep) || !fs.statSync(x).isFile())) throw Error('empty or unsafe file selection');
  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'lp-inventory-'));
  try {
