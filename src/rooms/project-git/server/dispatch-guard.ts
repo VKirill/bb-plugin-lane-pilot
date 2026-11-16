@@ -1,6 +1,6 @@
 import { isAbsolute, relative, resolve } from "node:path";
 import { stringAt, valueAt } from "@lane-pilot/kit";
-import { beginRunAdmission, getAttempt, getRun, getRunWriterHost, latestRunForPmThread, listOpenAttempts, taskBasePath, type LanePilotDatabase } from "../../storage";
+import { beginRunAdmission, getAttempt, getRun, getRunWriterHost, latestRunForPmThread, listLatestBlockedAttemptRefs, listOpenAttempts, taskBasePath, type LanePilotDatabase } from "../../storage";
 import { isLiveDecision } from "../../writer/live-folder";
 import type { ProjectGit, ScopeResult } from "./bootstrap";
 
@@ -42,16 +42,13 @@ export function overlappingLiveRuns(db:LanePilotDatabase,hostId:string,root:stri
   // A blocked live-folder writer can be reopened by owner answer/update, and parked live work retains its files. It is
   // not in listOpenAttempts, so include only the latest blocked attempt of each still-open run/task; old superseded rows
   // and accepted/canceled terminal rows do not pin a folder forever.
-  const blocked=db.prepare(`SELECT a.id,a.run_id,a.task_id,a.workspace_path,a.workspace_decision_json
-    FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id
-    WHERE a.state='blocked' AND r.closed_at IS NULL
-      AND a.created_at=(SELECT MAX(b.created_at) FROM lane_pilot_attempt b WHERE b.run_id=a.run_id AND b.task_id=a.task_id)`).all() as Array<{id:string;run_id:string;task_id:string;workspace_path:string|null;workspace_decision_json:string|null}>;
+  const blocked=listLatestBlockedAttemptRefs(db);
   for (const row of blocked) {
     const run=getRun(db,row.run_id);
     if (!run || getRunWriterHost(db,row.run_id)!==hostId) continue;
     let decision:unknown=null;
     if (row.workspace_decision_json) { try { decision=JSON.parse(row.workspace_decision_json); } catch { decision={ invalidStoredDecision:true }; } }
-    consider(row.run_id,row.workspace_path,decision);
+    consider(row.run_id,row.workspace_path ?? taskBasePath(db,row.run_id,row.task_id) ?? run.writer_workspace_path,decision);
   }
   return [...new Set(found)];
 }
@@ -67,7 +64,7 @@ type GuardDeps = {
 
 const refusal=(runId:string,result:unknown,detail:string):Record<string,unknown>=>({
   ok:false, runId, state:"rejected",
-  error:{ code:"project_git_required", retryable:true, sideEffects:typeof result==="object"&&result!==null&&"kind" in result&&((result as {kind?:unknown}).kind==="bootstrapped")?"unknown":"none", hint:detail },
+  error:{ code:"project_git_required", retryable:true, sideEffects:typeof result==="object"&&result!==null&&"kind" in result&&(["bootstrapped","stopped"].includes(String((result as {kind?:unknown}).kind)))?"unknown":"none", hint:detail },
   projectGit:result,
 });
 

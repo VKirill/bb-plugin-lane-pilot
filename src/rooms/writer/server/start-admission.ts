@@ -125,11 +125,16 @@ export const writerPermit = (deps: StartWriterTaskDeps, state: WriterTaskState, 
     // A queued live attempt may have waited while private Git converted the folder. Re-probe after the shared claim;
     // cached no-git state must never let this writer mutate a repository as if it were still live-folder mode.
     if (state.liveFolder) await bb.storage.kv.delete(`live-folder:${input.runId}`).catch(() => undefined);
-    if (state.liveFolder && !await services.isLiveFolder(input.runId, input.config.hostId, state.runFolder, { fresh:true })) {
-      state.releaseWriterSlot?.();
-      state.liveFolder=false;
-      noteBusy(input.runId, state.policy.pools.provider, "run");
-      state.releaseWriterSlot=await services.runWriterPool.acquire(input.runId,state.policy.pools.provider,rank);
+    if (state.liveFolder) {
+      const freshKind=services.probeLiveFolder
+        ? await services.probeLiveFolder(input.runId,input.config.hostId,state.runFolder)
+        : (await services.isLiveFolder(input.runId,input.config.hostId,state.runFolder,{fresh:true}) ? "no-git" : "git");
+      if (freshKind === "unknown") { state.releaseWriterSlot?.(); state.releaseWriterSlot=undefined; throw new Error("live-folder re-probe was unknown after folder admission"); }
+      if (freshKind !== "no-git") {
+        state.releaseWriterSlot?.();
+        state.releaseWriterSlot=undefined;
+        throw new Error("workspace_changed: live-folder attempt was prepared for no-git, but the folder is now git; redispatch the task");
+      }
     }
     // BB's concurrency-limit plugin caps the threads a host runs at once: writers beyond it would only wait in BB's queue,
     // so they wait here, before their attempt starts (no pool slot is held by a writer that cannot run). No plugin, no cap.

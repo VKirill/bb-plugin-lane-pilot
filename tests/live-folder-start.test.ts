@@ -57,7 +57,7 @@ function services(env: ReturnType<typeof setup>, script: Step[], live: boolean) 
     providerBreaker: { record: () => undefined },
     ...noOptionalPlugins,
     runBudgetFor: () => ({ check: () => ({ ok: true }), noteAttempt: () => undefined, noteTokens: () => undefined, snapshot: () => ({ limits: {} }) }),
-    runWriterPool: { acquire: async (key: string, limit: number) => { acquired.push({ key, limit }); return () => undefined; } },
+    runWriterPool: { acquire: async (key: string, limit: number) => { acquired.push({ key, limit }); return () => undefined; }, acquireFolder: async (hostId: string, path: string) => { acquired.push({ key: `live-folder:${hostId}:${path}`, limit: 1 }); return () => undefined; } },
     stability: { breakerHolds: () => null, diskHolds: async () => null, onTaskFailed: async () => false, loadParked: async () => [] },
     startAfterAcceptance: () => undefined,
     isLiveFolder: async () => live,

@@ -60,6 +60,7 @@ export interface Services {
   finishWriterAttempt: WriterFinishApi["finishWriterAttempt"];
   harness: HarnessApi;
   isLiveFolder: WriterSpawnApi["isLiveFolder"];
+  probeLiveFolder?: WriterSpawnApi["probeLiveFolder"];
   money: MoneyApi;
   ownerPresence: OwnerPresenceApi;
   providerBreaker: WriterStateApi["providerBreaker"];

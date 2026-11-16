@@ -1,6 +1,7 @@
 export { blockedReasonCount, claimAttemptWake, clearAttemptWake, listDueWakes, noteCleanAdmission, parkAttemptWake, trailingQueuedParks } from "./attempts-store/wake";
 export { ATTEMPT_TABLE, DEPENDENCY_REDO_WAIT_MS, countAttempts, countChargedAttempts, countThreadTurns, createAttempt, latestAttemptHarnessVersion, latestRunTaskAttempt, latestRunTaskAttemptState, latestTaskAttempt, latestTaskAttemptState, listAttemptsForTask, listTaskTerminalStates, listTaskLatestAttempts, reviveCanceledAttempt, setAttemptEnvironment, setAttemptHolderThread, setAttemptWorkspace } from "./attempts-store/lifecycle";
 export { listUnreportedTaskOutcomes, markTaskOutcomesReported, noteToldPmDirectly, pmBookkeepingPending, pmHasTasksAtWork, pmTasksWaiting, toldPmDirectly, type TaskOutcome } from "./attempts-store/pm-outcomes";
+export { listLatestBlockedAttemptRefs } from "./attempts-store/project-git-reads";
 export { TRANSITION_KEY, endSpawnFailure, failureFieldsOf, onAttemptChanged, recordFinishedAttempt, setIllegalTransitionLog, transitionAttempt, type AttemptFailureFields } from "./attempts-store/transition";
 export { DOSSIER_LIST_LIMIT, STATE_REASON_CHARS, STATE_REASON_PAGE_CHARS, getAttempt, inspectAttempt, inspectState } from "./attempts-store/inspect";
 export { ATTEMPT_STREAM_EXCERPT_CHARS, getReasoningTrace, noteAttemptStream, saveReasoningTrace, setAttemptDirtBefore, setReasoningThread, type ReasoningTrace } from "./attempts-store/reasoning";

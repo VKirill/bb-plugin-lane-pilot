@@ -1,4 +1,5 @@
 // Public API of storage: what other rooms import. Everything else in this room is private.
+export { listLatestBlockedAttemptRefs } from "./attempts-store";
 // Add a name here to make it public; scripts/refactor/barrels.ts wrote the first version from the existing imports.
 export { HARNESS_VERSION, openDatabase } from "./database";
 export type { LanePilotDatabase } from "./database";

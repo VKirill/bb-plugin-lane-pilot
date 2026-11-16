@@ -28,9 +28,9 @@ export function createLiveFolder(ctx: ServerCore) {
   // "one git command on a plain folder" contract of live-folder.
   const probing = new Map<string, Promise<"git" | "no-git" | "unknown">>();
   const probeGeneration = new Map<string, number>();
-  async function isLiveFolder(runId: string | undefined, hostId: string, folder: string, options?: { fresh?: boolean }): Promise<boolean> {
+  async function probeFolder(runId: string | undefined, hostId: string, folder: string, options?: { fresh?: boolean }): Promise<"git"|"no-git"|"unknown"> {
     const bound = runId ? getRun(db, runId)?.writer_workspace_path : null;
-    if (bound && resolve(bound) !== resolve(folder)) return false;
+    if (bound && resolve(bound) !== resolve(folder)) return "unknown";
     const key = runId ? `live-folder:${runId}` : null;
     const kv = bb.storage?.kv;
     const generationKey = `${hostId}:${folder}:${key ?? ""}`;
@@ -38,8 +38,8 @@ export function createLiveFolder(ctx: ServerCore) {
     const generation = options?.fresh ? (probeGeneration.set(generationKey, (probeGeneration.get(generationKey) ?? 0) + 1), probeGeneration.get(generationKey)!) : (probeGeneration.get(generationKey) ?? 0);
     if (!options?.fresh && key && kv) {
       const saved = await kv.get(key);
-      if (saved === "no-git") return true;
-      if (saved === "git") return false;
+      if (saved === "no-git") return "no-git";
+      if (saved === "git") return "git";
     }
     const probeKey = `${hostId}:${folder}:${key ?? ""}${options?.fresh ? `:fresh:${generation}` : ""}`;
     let pending = probing.get(probeKey);
@@ -51,8 +51,16 @@ export function createLiveFolder(ctx: ServerCore) {
       probing.set(probeKey, pending);
     }
     const kind = await pending;
-    if (key && kv && kind !== "unknown" && probeGeneration.get(generationKey) === generation) await bestEffort(ctx.log, "writer live folder record", kv.set(key, kind as never), undefined);
-    return kind === "no-git";
+    if (!options?.fresh && key && kv && kind !== "unknown" && probeGeneration.get(generationKey) === generation) await bestEffort(ctx.log, "writer live folder record", kv.set(key, kind as never), undefined);
+    return kind;
+  }
+
+  async function isLiveFolder(runId: string | undefined, hostId: string, folder: string, options?: { fresh?: boolean }): Promise<boolean> {
+    return (await probeFolder(runId,hostId,folder,options)) === "no-git";
+  }
+
+  async function probeLiveFolder(runId: string | undefined, hostId: string, folder: string): Promise<"git"|"no-git"|"unknown"> {
+    return probeFolder(runId,hostId,folder,{ fresh:true });
   }
 
   async function liveSnapshot(hostId: string, folder: string): Promise<{ ok: true; paths: string[]; snapshots: DirtSnapshot[] } | { ok: false; reason: string }> {
@@ -109,5 +117,5 @@ export function createLiveFolder(ctx: ServerCore) {
     return { ok: true, restored: restored.restored, removed, failed: restored.failed };
   }
 
-  return { isLiveFolder, liveSnapshot, liveOwnedList, backupLiveFolder, restoreLiveFolder };
+  return { isLiveFolder, probeLiveFolder, liveSnapshot, liveOwnedList, backupLiveFolder, restoreLiveFolder };
 }
