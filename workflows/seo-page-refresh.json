@@ -285,10 +285,11 @@
         "en": "Experiment contract",
         "ru": "Контракт эксперимента"
       },
-      "prompt": "Procedure signalforge-page-experiment: one change, the primary and control metrics, the day-28 verdict date written to the SEO Change Log. Return experiment_path and due_date.",
+      "prompt": "Procedure signalforge-page-experiment: one change, the primary and control metrics, the day-28 verdict date written to the SEO Change Log. The incoming release_item is the only changed item from the selected branch; return it in release_items unchanged, or return an empty release_items array when no item was produced. Return experiment_path and due_date.",
       "out": {
         "experiment_path": "string",
-        "due_date": "string"
+        "due_date": "string",
+        "release_items": "string[]"
       },
       "guards": {
         "maxVisits": 1,
@@ -337,7 +338,8 @@
       "map": {
         "status": "done",
         "diagnosis_path": "diagnose.diagnosis_path",
-        "experiment_path": "experiment.experiment_path"
+        "experiment_path": "experiment.experiment_path",
+        "release_items": "experiment.release_items"
       }
     },
     {
@@ -346,7 +348,8 @@
       "action": "emit",
       "map": {
         "status": "partial",
-        "diagnosis_path": "diagnose.diagnosis_path"
+        "diagnosis_path": "diagnose.diagnosis_path",
+        "release_items": []
       }
     },
     {
@@ -354,7 +357,8 @@
       "type": "action",
       "action": "emit",
       "map": {
-        "status": "blocked"
+        "status": "blocked",
+        "release_items": []
       }
     }
   ],
@@ -401,17 +405,26 @@
     {
       "from": "ctr_fix",
       "to": "experiment",
-      "pass": "artifact"
+      "pass": "artifact",
+      "with": {
+        "release_item": "ctr_fix.release_item"
+      }
     },
     {
       "from": "fact_update",
       "to": "experiment",
-      "pass": "artifact"
+      "pass": "artifact",
+      "with": {
+        "release_item": "fact_update.release_item"
+      }
     },
     {
       "from": "spec",
       "to": "experiment",
-      "pass": "artifact"
+      "pass": "artifact",
+      "with": {
+        "release_item": "spec.rewrite_item"
+      }
     },
     {
       "from": "experiment",

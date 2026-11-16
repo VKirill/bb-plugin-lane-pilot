@@ -609,6 +609,12 @@
     },
     {
       "from": "owner_go",
+      "to": "blocked",
+      "pass": "artifact",
+      "when": "$inputs.mode != 'index_check' && owner_go.answer_kind == 'timeout'"
+    },
+    {
+      "from": "owner_go",
       "to": "index_check_only",
       "pass": "artifact"
     }
