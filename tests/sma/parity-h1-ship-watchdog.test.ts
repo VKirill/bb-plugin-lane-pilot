@@ -207,23 +207,26 @@ describe("hub watchdog + ship gate parity H1", () => {
     const pkg = JSON.parse(readFileSync(join(repoRoot, "package.json"), "utf8")) as { scripts?: Record<string, string> };
     expect(pkg.scripts?.prepublishOnly).toBe("npm run gate");
     expect(pkg.scripts?.gate).toContain("lp-ship.ts gate");
-    const { dir } = tmp();
-    // a bb that cannot build: the gate stops first, nothing else runs
-    const bbFail = stub(dir, "bb", "exit 1");
-    // An empty built tree of its own: the stubbed build builds nothing, so whatever build the checkout happens to hold must not decide the result.
-    const dist = join(dir, "dist-empty");
-    mkdirSync(dist, { recursive: true });
-    const failed = spawnSync("npx", ["tsx", ship, "gate"], { encoding: "utf8", timeout: 240_000, cwd: repoRoot, env: { ...process.env, BB_CLI: bbFail, LP_SHIP_DIST: dist } });
-    expect(failed.status).toBe(1);
-    expect(failed.stdout).toContain("bb plugin build failed");
-    // a bb that builds but whose hub cannot be asked for the served version: freshness warns, never fails
-    const version = (pkg as { version: string }).version;
-    const bbOk = stub(dir, "bb2", `case "$1 $2" in "plugin build") exit 0 ;; "plugin list") echo '[{"id":"lane-pilot","version":"${version}"}]' ;; esac\nexit 0`);
-    const gated = spawnSync("npx", ["tsx", ship, "gate"], { encoding: "utf8", timeout: 240_000, cwd: repoRoot, env: { ...process.env, BB_CLI: bbOk, LP_SHIP_DIST: dist } });
-    expect(gated.status).toBe(1); // publishable --strict fails in a development tree: no dist build, no test receipt
-    expect(gated.stdout).toContain("windowBundle");
-    expect(gated.stdout).toContain("gate: publishable failed");
-    expect(gated.stdout).not.toContain("gate: freshness failed");
+    const tree = releaseTree();
+    try {
+      const { dir } = tmp();
+      // a bb that cannot build: the gate stops first, nothing else runs
+      const bbFail = stub(dir, "bb", "exit 1");
+      // An empty built tree of its own: the stubbed build builds nothing, so whatever build the checkout happens to hold must not decide the result.
+      const dist = join(dir, "dist-empty");
+      mkdirSync(dist, { recursive: true });
+      const failed = shipFixture(tree, ["gate"], { BB_CLI: bbFail, LP_SHIP_DIST: dist });
+      expect(failed.status).toBe(1);
+      expect(failed.out).toContain("bb plugin build failed");
+      // The build stub succeeds; freshness clears BB_CLI and uses the fixture's PATH stub (SERVED unset), so it warns about the unreachable hub.
+      const version = (JSON.parse(readFileSync(join(tree.root, "package.json"), "utf8")) as { version: string }).version;
+      const bbOk = stub(dir, "bb2", `case "$1 $2" in "plugin build") exit 0 ;; "plugin list") echo '[{"id":"lane-pilot","version":"${version}"}]' ;; esac\nexit 0`);
+      const gated = shipFixture(tree, ["gate"], { BB_CLI: bbOk, LP_SHIP_DIST: dist });
+      expect(gated.status).toBe(1); // publishable --strict refuses the empty build even though the fixture has a test receipt
+      expect(gated.out).toContain("windowBundle");
+      expect(gated.out).toContain("gate: publishable failed");
+      expect(gated.out).not.toContain("gate: freshness failed");
+    } finally { rmSync(tree.root, { recursive: true, force: true }); }
   }, 300000);
 
   it("[sma:k_lib_docaudit] doc-audit --strict writes no baseline file; only the explicit --write-baseline flag does", () => {
