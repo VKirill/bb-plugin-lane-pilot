@@ -169,11 +169,11 @@ describe("on-map command graph parity", () => {
 
   it("test-gen covers direct gaps, a framework refusal, and a converged classification", async () => {
     const input = { scope: "src/discount.ts", gaps: [{ file: "src/discount.ts", layer: "L1", priority: "high" }] };
-    const done = await runSim("test-gen", { input, stubs: { write_tests: { state: "accepted", tests_added: 5 }, run: { ok: false, failures: [{ id: "F1" }], pass_rate: 80 }, classify: { converged: true, test_defects: [], code_defects: [finding("high", { file: "src/discount.ts", line: 14 })] } } });
-    expect(pathOf(done)).toBe("derive confirm write_tests run classify done");
+    const done = await runSim("test-gen", { input, stubs: { write_tests: { state: "accepted" }, inventory: { status: "measured", tests_added: 5, runner_ok: true }, run: { ok: false, failures: [{ id: "F1" }], pass_rate: 80 }, classify: { converged: true, test_defects: [], code_defects: [finding("high", { file: "src/discount.ts", line: 14 })] } } });
+    expect(pathOf(done)).toBe("derive confirm baseline write_tests run inventory classify done");
     expect(out(done)).toMatchObject({ status: "done", tests_added: 5 });
     const noFramework = await runSim("test-gen", { input, stubs: { write_tests: { state: "accepted" }, run: { ok: false, no_framework: true } } });
-    expect(pathOf(noFramework)).toBe("derive confirm write_tests run blocked");
+    expect(pathOf(noFramework)).toBe("derive confirm baseline write_tests run inventory blocked");
     expect(out(noFramework)).toMatchObject({ status: "blocked" });
     const timeout = await runSim("test-gen", { input: { scope: "src/discount.ts", phase_id: "ph_a" }, stubs: { derive: { gaps: [{ file: "src/discount.ts" }] } }, humans: { confirm: { answer_kind: "timeout" } } });
     expect(pathOf(timeout)).toBe("derive confirm blocked");

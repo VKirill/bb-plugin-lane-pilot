@@ -54,7 +54,8 @@
   "outputs": {
     "status": "done|partial|blocked",
     "rounds": "int",
-    "tests_added": "int",
+    "tests_added": "int?",
+    "measurement_reason": "string?",
     "defects_fixed": "int",
     "env_issues": "string[]",
     "remaining": "Finding[]"
@@ -150,6 +151,7 @@
       "skip_out": {
         "status": "done",
         "tests_added": 0,
+        "measurement_reason": "",
         "failures": "[]"
       },
       "with": {
@@ -291,6 +293,12 @@
         "env_issues": "classify.env_issues",
         "remaining": "review.findings"
       }
+    },
+    {
+      "id": "test_gen_blocked",
+      "type": "action",
+      "action": "emit",
+      "map": { "status": "blocked", "measurement_reason": "test_gen.measurement_reason" }
     }
   ],
   "edges": [
@@ -303,6 +311,11 @@
       "from": "coverage",
       "to": "test_gen",
       "pass": "artifact"
+    },
+    {
+      "from": "test_gen",
+      "to": "test_gen_blocked",
+      "when": "test_gen.status == 'blocked'"
     },
     {
       "from": "test_gen",

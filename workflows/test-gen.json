@@ -55,11 +55,12 @@
   },
   "outputs": {
     "status": "done|partial|blocked",
-    "tests_added": "int",
+    "tests_added": "int?",
     "pass_rate": "int",
     "failures": "Failure[]",
     "code_defects": "Finding[]",
-    "env_issues": "string[]"
+    "env_issues": "string[]",
+    "measurement_reason": "string?"
   },
   "quality_mode": {
     "default": "standard",
@@ -134,6 +135,19 @@
       }
     },
     {
+      "id": "baseline",
+      "type": "action",
+      "action": "lp.test_inventory_baseline",
+      "out": {
+        "status": "measured|unavailable|unsupported",
+        "reason": "string",
+        "receipt": "object?"
+      },
+      "guards": {
+        "maxVisits": 1
+      }
+    },
+    {
       "id": "write_tests",
       "produces": [
         {
@@ -151,7 +165,6 @@
       "out": {
         "state": "accepted|failed|blocked|needs_human|cancelled",
         "files": "string[]",
-        "tests_added": "int",
         "merge_commit": "string"
       },
       "guards": {
@@ -179,6 +192,18 @@
         "pass_rate": "int",
         "failures": "Failure[]",
         "no_framework": "bool"
+      }
+    },
+    {
+      "id": "inventory",
+      "type": "action",
+      "action": "lp.test_inventory_after",
+      "out": {
+        "status": "measured|unavailable|unsupported",
+        "reason": "string",
+        "tests_added": "int?",
+        "receipt": "object?",
+        "runner_ok": "bool?"
       }
     },
     {
@@ -247,7 +272,7 @@
       "action": "emit",
       "map": {
         "status": "done",
-        "tests_added": "write_tests.tests_added",
+        "tests_added": "inventory.tests_added",
         "pass_rate": "run.pass_rate",
         "failures": "run.failures",
         "code_defects": "classify.code_defects",
@@ -260,7 +285,7 @@
       "action": "emit",
       "map": {
         "status": "partial",
-        "tests_added": "write_tests.tests_added",
+        "tests_added": "inventory.tests_added",
         "pass_rate": "run.pass_rate",
         "failures": "run.failures",
         "code_defects": "classify.code_defects",
@@ -273,6 +298,24 @@
       "action": "emit",
       "map": {
         "status": "blocked"
+      }
+    },
+    {
+      "id": "baseline_blocked",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "blocked",
+        "measurement_reason": "baseline.reason"
+      }
+    },
+    {
+      "id": "inventory_blocked",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "blocked",
+        "measurement_reason": "inventory.reason"
       }
     }
   ],
@@ -289,6 +332,16 @@
     },
     {
       "from": "confirm",
+      "to": "baseline",
+      "pass": "artifact"
+    },
+    {
+      "from": "baseline",
+      "to": "baseline_blocked",
+      "when": "baseline.status != 'measured'"
+    },
+    {
+      "from": "baseline",
       "to": "write_tests",
       "pass": "artifact",
       "with": {
@@ -310,18 +363,33 @@
     },
     {
       "from": "run",
+      "to": "inventory",
+      "pass": "artifact"
+    },
+    {
+      "from": "inventory",
+      "to": "inventory_blocked",
+      "when": "inventory.status != 'measured'"
+    },
+    {
+      "from": "inventory",
+      "to": "inventory_blocked",
+      "when": "run.ok && !inventory.runner_ok"
+    },
+    {
+      "from": "inventory",
       "to": "blocked",
       "pass": "artifact",
       "when": "run.no_framework"
     },
     {
-      "from": "run",
+      "from": "inventory",
       "to": "done",
       "pass": "artifact",
       "when": "run.ok"
     },
     {
-      "from": "run",
+      "from": "inventory",
       "to": "classify",
       "pass": "artifact",
       "with": {
@@ -355,6 +423,12 @@
     {
       "from": "fix_tests",
       "to": "run",
+      "pass": "artifact",
+      "when": "fix_tests.state == 'accepted'"
+    },
+    {
+      "from": "fix_tests",
+      "to": "blocked",
       "pass": "artifact"
     }
   ],
@@ -373,8 +447,7 @@
       },
       "stubs": {
         "write_tests": {
-          "state": "accepted",
-          "tests_added": 5
+          "state": "accepted"
         },
         "run": {
           "ok": false,
@@ -398,13 +471,25 @@
         },
         "derive": {
           "gaps": []
+        },
+        "baseline": {
+          "status": "measured",
+          "reason": ""
+        },
+        "inventory": {
+          "status": "measured",
+          "reason": "",
+          "tests_added": 5,
+          "runner_ok": true
         }
       },
       "expect_path": [
         "derive",
         "confirm",
+        "baseline",
         "write_tests",
         "run",
+        "inventory",
         "classify",
         "done"
       ],

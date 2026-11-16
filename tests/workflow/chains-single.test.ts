@@ -69,23 +69,37 @@ describe("grill-plan", () => {
 describe("test-gen", () => {
   const input = { scope: "src/discount.ts", gaps: [{ file: "src/discount.ts", layer: "L1", priority: "high" }] };
   it("the spec's case: tests written, run, a code defect found by the triager, done", async () => {
-    const r = await runSim("test-gen", { input, stubs: { write_tests: { state: "accepted", tests_added: 5 }, run: { ok: false, failures: [{ id: "AF-1" }], pass_rate: 80 }, classify: { converged: true, test_defects: [], code_defects: [finding("high", { file: "src/discount.ts", line: 14 })] } } });
-    expect(pathOf(r)).toBe("derive confirm write_tests run classify done");
+    const r = await runSim("test-gen", { input, stubs: { write_tests: { state: "accepted" }, inventory: { status: "measured", tests_added: 5, runner_ok: true }, run: { ok: false, failures: [{ id: "AF-1" }], pass_rate: 80 }, classify: { converged: true, test_defects: [], code_defects: [finding("high", { file: "src/discount.ts", line: 14 })] } } });
+    expect(pathOf(r)).toBe("derive confirm baseline write_tests run inventory classify done");
     expect(out(r)).toMatchObject({ status: "done", tests_added: 5, pass_rate: 80, code_defects: [expect.objectContaining({ line: 14 })] });
   });
 
   it("green tests end at once; no test framework blocks", async () => {
-    expect(pathOf(await runSim("test-gen", { input, stubs: { write_tests: { state: "accepted" }, run: { ok: true } } }))).toBe("derive confirm write_tests run done");
-    expect(pathOf(await runSim("test-gen", { input, stubs: { write_tests: { state: "accepted" }, run: { ok: false, no_framework: true } } }))).toBe("derive confirm write_tests run blocked");
-    expect(pathOf(await runSim("test-gen", { input, stubs: { write_tests: { state: "failed" } } }))).toBe("derive confirm write_tests blocked");
+    expect(pathOf(await runSim("test-gen", { input, stubs: { write_tests: { state: "accepted" }, run: { ok: true } } }))).toBe("derive confirm baseline write_tests run inventory done");
+    expect(pathOf(await runSim("test-gen", { input, stubs: { write_tests: { state: "accepted" }, run: { ok: false, no_framework: true } } }))).toBe("derive confirm baseline write_tests run inventory blocked");
+    expect(pathOf(await runSim("test-gen", { input, stubs: { write_tests: { state: "failed" } } }))).toBe("derive confirm baseline write_tests blocked");
+  });
+
+  it("measurement failures block with a reason and no fabricated count", async () => {
+    const baseline = await runSim("test-gen", { input, stubs: { baseline: { status: "unsupported", reason: "unsupported runner" } } });
+    expect(pathOf(baseline)).toBe("derive confirm baseline baseline_blocked");
+    expect(out(baseline)).toMatchObject({ status: "blocked", measurement_reason: "unsupported runner" });
+    expect(out(baseline)).not.toHaveProperty("tests_added");
+    const after = await runSim("test-gen", { input, stubs: { write_tests: { state: "accepted" }, run: { ok: true }, inventory: { status: "unavailable", reason: "missing receipt" } } });
+    expect(pathOf(after)).toBe("derive confirm baseline write_tests run inventory inventory_blocked");
+    expect(out(after)).toMatchObject({ status: "blocked", measurement_reason: "missing receipt" });
+    expect(out(after)).not.toHaveProperty("tests_added");
+    const mismatch = await runSim("test-gen", { input, stubs: { write_tests: { state: "accepted" }, run: { ok: true }, inventory: { status: "measured", tests_added: 1, runner_ok: false, reason: "node test runner reported failures" } } });
+    expect(pathOf(mismatch)).toBe("derive confirm baseline write_tests run inventory inventory_blocked");
+    expect(out(mismatch)).toMatchObject({ status: "blocked", measurement_reason: "node test runner reported failures" });
   });
 
   it("test defects are fixed and the tests run again, at most 3 classifications; then partial", async () => {
     const bad = { converged: false, test_defects: [{ id: "T1" }], test_defect_count: 1, code_defects: [] };
     const fixed = await runSim("test-gen", { input, stubs: { write_tests: { state: "accepted" }, run: [{ ok: false }, { ok: true }], classify: bad, fix_tests: { state: "accepted" } } });
-    expect(pathOf(fixed)).toBe("derive confirm write_tests run classify fix_tests run done");
+    expect(pathOf(fixed)).toBe("derive confirm baseline write_tests run inventory classify fix_tests run inventory done");
     const stuck = await runSim("test-gen", { input, stubs: { write_tests: { state: "accepted" }, run: { ok: false }, classify: bad, fix_tests: { state: "accepted" } } });
-    expect(pathOf(stuck)).toBe("derive confirm write_tests run classify fix_tests run classify fix_tests run classify partial");
+    expect(pathOf(stuck)).toBe("derive confirm baseline write_tests run inventory classify fix_tests run inventory classify fix_tests run inventory classify partial");
     expect(out(stuck)).toMatchObject({ status: "partial" });
   });
 });

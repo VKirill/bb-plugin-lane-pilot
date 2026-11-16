@@ -2,6 +2,8 @@ import { describe, it, expect } from "vitest";
 import { mkdtempSync, writeFileSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { createHash } from "node:crypto";
+import { registerCheckoutActions } from "../../src/rooms/workflow/server/workflow-checkout-actions";
 import { execFileSync, spawnSync } from "node:child_process";
 import { measureTestInventory, diffTestInventory, parseInventory } from "../../src/rooms/workflow/server/test-inventory";
 import type { ServerCore } from "../../src/rooms/contracts/server";
@@ -42,6 +44,12 @@ describe("node runner inventory", () => {
       expect((await measureTestInventory(host, "local", dir)).status).toBe("unsupported");
       writeFileSync(join(dir, "package.json"), JSON.stringify({ scripts: { test: "node --test test/*.test.js test/missing*.js" } })); commit(dir);
       expect((await measureTestInventory(host, "local", dir)).status).toBe("unavailable");
+      writeFileSync(join(dir, "package.json"), JSON.stringify({ scripts: { test: "node --test test/a.test.js test/missing.test.js" } })); commit(dir);
+      expect((await measureTestInventory(host, "local", dir)).status).toBe("unavailable");
+      writeFileSync(join(dir, "package.json"), JSON.stringify({ scripts: { test: "node --test test/*.test.js test/a.test.js" } })); commit(dir);
+      const overlap = await measureTestInventory(host, "local", dir);
+      expect(overlap.status).toBe("measured");
+      if (overlap.status === "measured") expect(overlap.receipt.cases).toHaveLength(2);
       writeFileSync(join(dir, "package.json"), JSON.stringify({ scripts: { test: "node --test test/*.test.js" } }));
       writeFileSync(join(dir, "test/a.test.js"), "const {test}=require('node:test'); test('same',()=>{}); test('same',()=>{});"); commit(dir);
       expect((await measureTestInventory(host, "local", dir)).status).toBe("unavailable");
@@ -65,8 +73,45 @@ describe("node runner inventory", () => {
       const malicious = { ...base.receipt, after: { ...base.receipt.after, head: "'; touch injected; echo '" } };
       expect((await diffTestInventory(unsafeHost, malicious, after.receipt, merge, ["test/b.test.js"])).status).toBe("unavailable");
       expect(called).toBe(false);
+      const maliciousAfter = { ...after.receipt, after: { ...after.receipt.after, head: "'; touch injected; echo '" } };
+      expect((await diffTestInventory(unsafeHost, base.receipt, maliciousAfter, merge, ["test/b.test.js"])).status).toBe("unavailable");
+      expect(called).toBe(false);
       writeFileSync(join(dir, "test/b.test.js"), "// dirty after receipt");
       expect((await diffTestInventory(host, base.receipt, after.receipt, merge, ["test/b.test.js"])).status).toBe("unavailable");
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it("registered actions retain the original journal baseline and block a failed fix", async () => {
+    const dir = fixture();
+    try {
+      type Saved = { rowid: number; node_id: string; output_json: string; receipt_json: string };
+      const rows: Saved[] = [];
+      const db = { prepare(sql: string) { return {
+        get() { if (sql.includes("writer_host_id")) return { writer_host_id: "local" }; if (sql.includes("lane_pilot_run")) return { id: "lp-run", project_id: "project", writer_workspace_path: dir }; return undefined; },
+        all() { return rows; },
+      }; } };
+      const ctx = { db, host, bb: { sdk: { threads: { get: async () => ({ environmentId: "env" }) }, environments: { get: async () => ({ hostId: "local", path: dir }) } } } };
+      const rt = { ctx, runId: "lp-run", projectId: "project", pmThreadId: "pm" };
+      const actions = new Map<string, (c: never, rt: never) => Promise<Record<string, unknown>>>();
+      registerCheckoutActions({} as never, ctx as never, { action: (key, fn) => { actions.set(key, fn as never); }, planHome: async () => null, flagOf: () => false });
+      const step = { runId: "graph-run", nodeId: "baseline", workflow: { id: "test-gen" } } as never;
+      const save = (node_id: string, executor: string, output: Record<string, unknown>) => {
+        const output_json = JSON.stringify(output), outputSha256 = createHash("sha256").update(output_json).digest("hex");
+        rows.push({ rowid: rows.length + 1, node_id, output_json, receipt_json: JSON.stringify({ executor, outputSha256 }) });
+      };
+      const baseline = await actions.get("lp.test_inventory_baseline")!(step, rt as never);
+      expect(baseline.status).toBe("measured"); save("baseline", "lp.test_inventory_baseline", baseline);
+      writeFileSync(join(dir, "test/b.test.js"), "const {test}=require('node:test'); test('one new case',()=>{});");
+      const merge = commit(dir);
+      save("write_tests", "lp-task", { state: "accepted", files: ["test/b.test.js"], merge_commit: merge });
+      expect(await actions.get("lp.test_inventory_after")!(step, rt as never)).toMatchObject({ status: "measured", tests_added: 1 });
+      expect(await actions.get("lp.test_inventory_baseline")!(step, rt as never)).toMatchObject({ status: "unavailable" });
+      writeFileSync(join(dir, "test/b.test.js"), "const {test}=require('node:test'); test('one new case',()=>{}); test('second new case',()=>{});");
+      const fixMerge = commit(dir);
+      save("fix_tests", "lp-task", { state: "accepted", merge_commit: fixMerge });
+      expect(await actions.get("lp.test_inventory_after")!(step, rt as never)).toMatchObject({ status: "measured", tests_added: 2 });
+      save("fix_tests", "lp-task", { state: "blocked", merge_commit: "" });
+      expect(await actions.get("lp.test_inventory_after")!(step, rt as never)).toMatchObject({ status: "unavailable" });
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 

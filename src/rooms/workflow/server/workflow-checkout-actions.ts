@@ -1,5 +1,7 @@
 import { noteEngineWrite } from "../../verification/server";
 import {
+  getRun,
+  getRunWriterHost,
   inferArtifactMetaFromRelPath,
   listOpenAttempts,
   loadProjectSettings,
@@ -12,6 +14,7 @@ import { PROFILE_KEYS } from "../../anamnesis";
 import { hasPassportRecord } from "../../passport";
 import { bestEffort, sha256Hex } from "@lane-pilot/kit";
 import { list, rec, str, pmCheckout, quote, PRUNE } from "./workflow-chain-runtime";
+import { measureTestInventory, diffTestInventory, type InventoryReceipt } from "./test-inventory";
 import { noteRunFiles } from "./workflow-run-home";
 import type { Row } from "./workflow-chain-runtime";
 import type { GraphNode, StepContext, WorkflowEngine } from "@lane-pilot/workflow-engine";
@@ -34,6 +37,45 @@ export function registerCheckoutActions(engine: WorkflowEngine, ctx: ServerCore,
 }): void {
   const { bb, db } = ctx;
   const { action, planHome, flagOf } = deps;
+
+  // Receipts live in the engine journal: the action output is persisted with the engine's output hash before routing.
+  const inventory = (mode: "baseline" | "after") => async (c: StepContext<ChainRuntime>, rt: ChainRuntime): Promise<Row> => {
+    const unavailable = (reason: string): Row => ({ status: "unavailable", reason });
+    try {
+      if (!rt.runId) return unavailable("no bound Lane Pilot run");
+      const run = getRun(db, rt.runId), checkout = await pmCheckout(rt), hostId = getRunWriterHost(db, rt.runId);
+      if (!run || run.project_id !== rt.projectId || !hostId || !run.writer_workspace_path || checkout.hostId !== hostId || checkout.path !== run.writer_workspace_path) return unavailable("writer checkout binding mismatch");
+      type Step = { node_id: string; output_json: string; receipt_json: string; rowid: number };
+      const rows = db.prepare("SELECT rowid, node_id, output_json, receipt_json FROM lane_pilot_wf_step WHERE run_id=? AND state='succeeded' AND node_id IN ('baseline','write_tests','fix_tests') ORDER BY rowid").all(c.runId) as Step[];
+      const decode = (row: Step, executor: string): Row => {
+        const receipt = JSON.parse(row.receipt_json), output = JSON.parse(row.output_json);
+        if (receipt.executor !== executor || receipt.outputSha256 !== sha256Hex(row.output_json) || !output || typeof output !== "object") throw Error("untrusted journal receipt");
+        return output as Row;
+      };
+      const baselines = rows.filter(r => r.node_id === "baseline");
+      if (mode === "baseline") {
+        if (baselines.length || rows.some(r => r.node_id === "write_tests")) return unavailable("original baseline already exists or writer already ran");
+        const result = await measureTestInventory(ctx.host, hostId, checkout.path);
+        return result.status === "measured" ? { status: "measured", reason: "", receipt: result.receipt } : { status: result.status, reason: result.reason };
+      }
+      const writers = rows.filter(r => r.node_id === "write_tests"), fixes = rows.filter(r => r.node_id === "fix_tests");
+      if (baselines.length !== 1 || writers.length !== 1 || baselines[0]!.rowid >= writers[0]!.rowid) return unavailable("original baseline or writer result missing");
+      const base = decode(baselines[0]!, "lp.test_inventory_baseline"), writer = decode(writers[0]!, "lp-task");
+      if (base.status !== "measured" || writer.state !== "accepted" || !base.receipt || !Array.isArray(writer.files) || !writer.files.every(x => typeof x === "string")) return unavailable("baseline or writer acceptance unavailable");
+      let merge = str(writer.merge_commit);
+      if (fixes.length) {
+        const fix = decode(fixes[fixes.length - 1]!, "lp-task");
+        if (fix.state !== "accepted") return unavailable("latest fix was not accepted");
+        merge = str(fix.merge_commit);
+      }
+      const result = await measureTestInventory(ctx.host, hostId, checkout.path);
+      if (result.status !== "measured") return { status: result.status, reason: result.reason };
+      const diff = await diffTestInventory(ctx.host, base.receipt as InventoryReceipt, result.receipt, merge, writer.files as string[]);
+      return diff.status === "measured" ? { status: "measured", reason: result.receipt.exit === 0 ? "" : "node test runner reported failures", runner_ok: result.receipt.exit === 0, tests_added: diff.testsAdded, receipt: result.receipt } : { status: "unavailable", reason: diff.reason, receipt: result.receipt };
+    } catch (e) { return unavailable(e instanceof Error ? e.message : String(e)); }
+  };
+  action("lp.test_inventory_baseline", inventory("baseline"));
+  action("lp.test_inventory_after", inventory("after"));
 
   action("fs.write", async (c, rt) => {
     const node = c.node as Extract<GraphNode, { type: "action" }>;

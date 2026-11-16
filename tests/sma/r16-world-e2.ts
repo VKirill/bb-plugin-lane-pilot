@@ -149,13 +149,13 @@ export const observeE2 = {
   },
   /** n1284: /sma-add-tests with gaps given writes the tests at once; with a phase and no gaps it derives the gaps and the owner confirms (a timeout blocks); failing tests go to a fixer up to three rounds. */
   async k_c_addtests() {
-    const stubs = (over: Row = {}) => ({ write_tests: { state: "accepted", tests_added: 5 }, run: { ok: true, pass_rate: 100, failures: [], no_framework: false }, derive: { gaps: [{ file: "a.ts", layer: "L1", priority: "high" }] }, ...over });
+    const stubs = (over: Row = {}) => ({ write_tests: { state: "accepted" }, inventory: { status: "measured", tests_added: 5, runner_ok: true }, run: { ok: true, pass_rate: 100, failures: [], no_framework: false }, derive: { gaps: [{ file: "a.ts", layer: "L1", priority: "high" }] }, ...over });
     const gap = [{ file: "src/a.ts", layer: "L1", priority: "high" }];
     const given = await runSim("test-gen", { input: { scope: "src", gaps: gap }, stubs: stubs() });
     const derived = await runSim("test-gen", { input: { scope: "src", phase_id: "ph_a" }, stubs: stubs(), humans: { confirm: { answer: "all", answer_kind: "agree" } } });
     const timeout = await runSim("test-gen", { input: { scope: "src", phase_id: "ph_a" }, stubs: stubs(), humans: { confirm: { answer: "", answer_kind: "timeout" } } });
     const fixing = await runSim("test-gen", { input: { scope: "src", gaps: gap }, stubs: stubs({ run: { ok: false, pass_rate: 60, failures: [{ id: "F1" }], no_framework: false }, classify: [{ converged: false, test_defects: [{ id: "F1" }], code_defects: [], env_issues: [] }, { converged: true, test_defects: [], code_defects: [], env_issues: [] }], fix_tests: { state: "accepted", merge_commit: "c1" } }) });
-    const noWrite = await runSim("test-gen", { input: { scope: "src", gaps: gap }, stubs: stubs({ write_tests: { state: "failed", tests_added: 0 } }) });
+    const noWrite = await runSim("test-gen", { input: { scope: "src", gaps: gap }, stubs: stubs({ write_tests: { state: "failed" } }) });
     const pick = (r: Awaited<ReturnType<typeof runSim>>) => [ranOf(r), outOf(r).status];
     return { given: [...pick(given), outOf(given).tests_added], derived: pick(derived), timeout: pick(timeout), fixing: pick(fixing), noWrite: pick(noWrite) };
   },

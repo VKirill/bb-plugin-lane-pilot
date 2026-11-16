@@ -23,9 +23,9 @@ describe("verify-work (n1205 … n1213)", () => {
 
   it("[sma:k_wv_extract] tests are derived from a finished phase, the owner agrees (a timeout blocks the run) and the writer works after his answer; a list of gaps given by hand skips both", async () => {
     const seen = await observeC.k_wv_extract();
-    expect(seen.agreed).toEqual({ path: ["derive", "confirm", "write_tests", "run", "done"], status: "done", added: 3, fromDerive: "confirm#1" });
+    expect(seen.agreed).toEqual({ path: ["derive", "confirm", "baseline", "write_tests", "run", "inventory", "done"], status: "done", added: 3, fromDerive: "baseline#1" });
     expect(seen.timeout).toEqual({ path: ["derive", "confirm", "blocked"], status: "blocked" });
-    expect(seen.given).toEqual({ path: ["derive", "confirm", "write_tests", "run", "done"], skipped: ["derive", "confirm"], status: "done" });
+    expect(seen.given).toEqual({ path: ["derive", "confirm", "baseline", "write_tests", "run", "inventory", "done"], skipped: ["derive", "confirm"], status: "done" });
   });
 
   it("[sma:k_wv_uatfile] the acceptance file marks each test open, passed or failed with the person's note, and a fresh read of the text gives back the same state", () => {

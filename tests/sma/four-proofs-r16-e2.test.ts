@@ -16,11 +16,11 @@ describe("audit-fix, add-tests and the live check (n1283 … n1290)", () => {
 
   it("[sma:k_c_addtests] /sma-add-tests with gaps given writes the tests at once; with a phase and no gaps it derives them and the owner confirms (a timeout blocks); failing tests go to the fixer and are run again; a failed write blocks", async () => {
     const seen = await observeE2.k_c_addtests();
-    expect(seen.given).toEqual(["write_tests run done", "done", 5]);
-    expect(seen.derived).toEqual(["derive confirm write_tests run done", "done"]);
+    expect(seen.given).toEqual(["baseline write_tests run inventory done", "done", 5]);
+    expect(seen.derived).toEqual(["derive confirm baseline write_tests run inventory done", "done"]);
     expect(seen.timeout).toEqual(["derive confirm blocked", "blocked"]);
-    expect(seen.fixing).toEqual(["write_tests run classify fix_tests run classify done", "done"]);
-    expect(seen.noWrite).toEqual(["write_tests blocked", "blocked"]);
+    expect(seen.fixing).toEqual(["baseline write_tests run inventory classify fix_tests run inventory classify done", "done"]);
+    expect(seen.noWrite).toEqual(["baseline write_tests blocked", "blocked"]);
   });
 
   it("[sma:k_c_qa] /sma-qa runs the live check of the accepted task through lp.browser-qa: the arguments reach the check as given, its reply comes back untouched, and a red check leaves the run failed", async () => {

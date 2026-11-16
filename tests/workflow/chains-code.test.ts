@@ -152,6 +152,13 @@ describe("quality-loop", () => {
     expect(out(r)).toMatchObject({ status: "done" });
   });
 
+  it("blocks when test generation could not measure its count", async () => {
+    const r = await runSim("quality-loop", { input, stubs: { review: { status: "pass" }, coverage: { gap_count: 1, framework_found: true }, "test-gen": { status: "blocked", measurement_reason: "unsupported runner" } } });
+    expect(pathOf(r)).toBe("review coverage test_gen test_gen_blocked");
+    expect(out(r)).toMatchObject({ status: "blocked", measurement_reason: "unsupported runner" });
+    expect(out(r)).not.toHaveProperty("tests_added");
+  });
+
   it("a failed fix plan or build asks the owner and ends partial with what remains", async () => {
     const r = await runSim("quality-loop", { input, stubs: { review: rework, coverage: { gap_count: 0 }, classify: { code_defect_count: 0 }, replan: { status: "failed" } }, humans: { ask: { answer_kind: "abort" } } });
     expect(pathOf(r)).toBe("review coverage test_gen classify replan ask partial");

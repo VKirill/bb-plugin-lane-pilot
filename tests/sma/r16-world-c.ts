@@ -196,7 +196,7 @@ export const observeC = {
   /** n1206: tests are derived from a finished phase's summaries, the owner agrees or strikes lines (a timeout blocks the run), and the writer gets the agreed list; gaps given by hand skip both. */
   async k_wv_extract() {
     const gaps = [{ file: "src/sum.ts", layer: "L1", priority: "high" }, { file: "src/avg.ts", layer: "L1", priority: "low" }];
-    const stubs = { derive: { gaps }, write_tests: { state: "accepted", tests_added: 3 }, run: { ok: true, pass_rate: 100 } };
+    const stubs = { derive: { gaps }, write_tests: { state: "accepted" }, inventory: { status: "measured", tests_added: 3, runner_ok: true }, run: { ok: true, pass_rate: 100 } };
     const agreed = await runSim("test-gen", { input: { scope: "src", phase_id: "ph_1" }, stubs, humans: { confirm: { answer: "agree", answer_kind: "agree" } } });
     const timeout = await runSim("test-gen", { input: { scope: "src", phase_id: "ph_1" }, stubs, humans: { confirm: { answer: "", answer_kind: "timeout" } } });
     const given = await runSim("test-gen", { input: { scope: "src", gaps }, stubs });

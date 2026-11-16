@@ -372,7 +372,7 @@ describe("parity d4 workflows b-2", () => {
   it("[sma:k_c_addtests] test-gen with gaps given runs main's path (no derive, no confirm, no person asked); with a phase and no gaps it derives and the owner confirms, a timeout blocks", async () => {
     const stubs = { write_tests: { state: "accepted" }, run: { ok: true } };
     const given = await runSim("test-gen", { input: { gaps: [{ file: "a.ts" }] }, stubs, humans: { confirm: { answer_kind: "timeout" } } });
-    expect(pathOf(given)).toBe("derive confirm write_tests run done");
+    expect(pathOf(given)).toBe("derive confirm baseline write_tests run inventory done");
     expect(given.skipped).toEqual(["derive", "confirm"]);
     expect(given.called("derive")).toHaveLength(0);
     expect(given.called("confirm")).toHaveLength(0);
