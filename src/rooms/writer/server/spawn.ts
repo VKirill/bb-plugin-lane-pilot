@@ -213,7 +213,7 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
       // turn, as the machine's fault (attempt_worktree_: free, retried), never started on a base without the code it builds on.
       if(!live) {
         const proof = await checkDependencyBase({ db, host }, { runId:input.runId, hostId:input.config.hostId, workspacePath, dependsOn:storedDependsOn(db, input.taskId, input.task.depends_on) }, (line) => bb.log.warn(line));
-        if (proof === null) bb.log.warn(`Lane Pilot writer ${input.attemptId}: the dependencies' merges in its worktree could not be proven (git did not answer); it starts unproven`);
+        if (proof === null) throw new WriterSelectionError("attempt_worktree_base_unproven: could not verify the dependencies' merges in its worktree");
         else if (proof.missing.length) throw new WriterSelectionError(`attempt_worktree_base_missing_dependency: the worktree (HEAD ${proof.head.slice(0, 12)}) lacks the merge of ${proof.missing.map((merge) => `${merge.taskId} ${merge.commit.slice(0, 12)}`).join(", ")}`);
         else if (proof.checked.length) bb.log.info(`Lane Pilot writer ${input.attemptId}: worktree HEAD ${proof.head.slice(0, 12)} holds the merges of ${proof.checked.map((merge) => `${merge.taskId} ${merge.commit.slice(0, 12)}`).join(", ")}`);
       }
