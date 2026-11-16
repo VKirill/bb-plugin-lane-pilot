@@ -230,7 +230,7 @@ describe("P04-R7 sibling document writes through the real fs.write action", () =
       });
       const summary = await t.start(await builtin("spike"), { question: "which journal mode " + unsafe, wrap_skill: unsafe }).done;
       expect(summary.status, `${unsafe} was not refused`).toBe("failed");
-      expect(readdirSync(join(t.checkout, ".agents"), { withFileTypes: false }).includes("forge")).toBe(false);
+      expect(existsSync(join(t.checkout, ".agents/forge"))).toBe(false);
     }
   });
 
