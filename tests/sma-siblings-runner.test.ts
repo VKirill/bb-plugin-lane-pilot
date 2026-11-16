@@ -4,11 +4,12 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, 
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { GIT_IDENTITY_ENV } from "../src/rooms/sma-map/sibling-git";
 
 // The mutation runner across repositories (scripts/sma-mutate.mjs, src/rooms/sma-map/siblings.ts) on fixture siblings in a
-// temp folder, each a PRIMARY checkout where the runner looks for it (a fake home's ~/BB-service/…): a strong test is killed,
+// temp folder, each a selected checkout where the runner looks for it (a fake home's ~/BB-service/…): a strong test is killed,
 // a hollow one survives, a crashing mutation is a crash (vitest for the core, node:test through tsx for the Telegram plugin),
-// an absent sibling is reported absent, another clone is refused, a second runner is locked out, a journal a killed run left
+// an absent sibling is reported absent, another selected clone without dependencies stops before writing, a second runner is locked out, a journal a killed run left
 // is settled by the next run that touches that checkout — and a foreign edit is never overwritten — an uncommitted subject is
 // refused, a HEAD that moves during the run voids the verdict. After every run no fixture file is left mutated.
 const ROOT = resolve(__dirname, "..");
@@ -26,7 +27,7 @@ const write = (path: string, text: string) => { mkdirSync(dirname(path), { recur
 const hash = (bytes: string | Buffer) => createHash("sha256").update(bytes).digest("hex");
 const sha = (path: string) => hash(readFileSync(path));
 
-/** A sibling's PRIMARY checkout at its default place under the fake home, on `branch`. */
+/** A sibling's default checkout at its default place under the fake home, on `branch`. */
 function sibling(folder: string, branch: string, files: Record<string, string>): string {
   const at = join(home, "BB-service", ...folder.split("/"));
   for (const [path, text] of Object.entries({ ".gitignore": "node_modules\n", ...files })) write(join(at, path), text);
@@ -40,7 +41,7 @@ function sibling(folder: string, branch: string, files: Record<string, string>):
 
 let core = "";
 let telegram = "";
-const env = (extra: Record<string, string> = {}) => ({ ...process.env, HOME: home, TMPDIR: join(tmp, "tmp"), SMA_MUTATE_TSX: "1", SMA_SIBLING_CORE: core, SMA_SIBLING_TELEGRAM: telegram, ...extra });
+const env = (extra: Record<string, string> = {}) => ({ ...Object.fromEntries(Object.entries(process.env).filter(([key]) => !GIT_IDENTITY_ENV.test(key))), HOME: home, TMPDIR: join(tmp, "tmp"), SMA_MUTATE_TSX: "1", SMA_SIBLING_CORE: core, SMA_SIBLING_TELEGRAM: telegram, ...extra });
 function runSpecs(specs: unknown[], extra: Record<string, string> = {}): Array<{ id: string; result: string; detail?: string }> {
   const file = join(tmp, `specs-${Math.random().toString(36).slice(2)}.json`);
   writeFileSync(file, JSON.stringify(specs));
@@ -87,7 +88,7 @@ beforeAll(() => {
 });
 afterAll(() => { if (tmp) rmSync(tmp, { recursive: true, force: true }); });
 
-describe("sma-mutate across repositories (fixture PRIMARY checkouts)", () => {
+describe("sma-mutate across repositories (fixture selected checkouts)", () => {
   it("core (vitest from the package): a strong test kills, a hollow one survives, a crash is a crash; nothing is left mutated", () => {
     const subject = join(core, "packages/fx/src/subject.ts");
     const before = sha(subject);
@@ -122,15 +123,35 @@ describe("sma-mutate across repositories (fixture PRIMARY checkouts)", () => {
     expect(results[0]!.detail).toContain("sibling repository bb-core is not on this machine");
   }, 120_000);
 
-  it("an override pointing at another clone is read but refused for mutation; that clone's file is untouched", () => {
+  it("an override pointing at another clone is selected for mutation; missing dependencies stop before writing and the clone's file stays untouched", () => {
     const elsewhere = join(tmp, "elsewhere", "bb-core");
     execFileSync("git", ["clone", "-q", "-b", "vk/experimental", core, elsewhere]);
     const file = join(elsewhere, "packages/fx/src/subject.ts");
     const before = sha(file);
     const results = runSpecs([strongCore()], { SMA_SIBLING_CORE: elsewhere });
-    expect(results[0]!.result).toBe("refused");
-    expect(results[0]!.detail).toMatch(/not the PRIMARY checkout of bb-core/);
+    expect(results[0]!.result).toBe("no-tests");
+    expect(results[0]!.detail).toMatch(/pnpm install/);
     expect(sha(file)).toBe(before);
+  }, 120_000);
+
+  it("refuses an ambient Git directory before state, journal or contract-index writes", () => {
+    const contracts = join(ROOT, "src/rooms/sma-map/contracts.ts");
+    const before = sha(contracts);
+    rmSync(coreState(), { recursive: true, force: true });
+    const run = spawnSync(TSX, [join(ROOT, "scripts/sma-mutate.mjs"), "--node", "n560", "--json"], {
+      cwd: ROOT, encoding: "utf8", env: env({ GIT_DIR: join(core, ".git") }), timeout: 120_000,
+    });
+    expect(run.status).toBe(2);
+    expect(run.stderr).toMatch(/active Git identity override GIT_DIR/);
+    expect(sha(contracts)).toBe(before);
+    expect(existsSync(coreState())).toBe(false);
+    const help = spawnSync(TSX, [join(ROOT, "scripts/sma-mutate.mjs"), "--help"], {
+      cwd: ROOT, encoding: "utf8", env: env({ GIT_DIR: join(core, ".git") }), timeout: 120_000,
+    });
+    expect(help.status).toBe(2);
+    expect(help.stderr).toMatch(/active Git identity override GIT_DIR/);
+    expect(sha(contracts)).toBe(before);
+    expect(existsSync(coreState())).toBe(false);
   }, 120_000);
 
   it("a dirty file the subject does not name (a dependency, its config, an untracked file) refuses the checkout before anything is written", () => {

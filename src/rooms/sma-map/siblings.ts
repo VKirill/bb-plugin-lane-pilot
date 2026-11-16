@@ -4,16 +4,17 @@
 // sibling from:
 //   1. an environment override (SMA_SIBLING_CORE / SMA_SIBLING_TELEGRAM): any checkout of it; `off` (or a path that does
 //      not exist) makes the sibling absent — it never falls through;
-//   2. the default locations, the first that holds a checkout: its PRIMARY checkout.
+//   2. the default locations, the first that holds a checkout.
 // A sibling that resolves nowhere is absent: every tool says `absentSibling(name)` for the nodes that need it.
-// The mutation runner WRITES only in the canonical PRIMARY checkout of a repository (owner, 2026-11-15: PRIMARY only; the
-// earlier linked proofs worktrees under ~/.lane-pilot/worktrees are gone): `refuseMutation` below. That PRIMARY is where the
-// core is built and deployed from, so a mutation runs only inside the coordinator's exclusive window (no edit, build or
-// deploy there) — the runner checks the checkout's identity, it does not enforce the window (docs/sma-evidence.md).
+// The mutation runner writes only in the checkout selected by the coordinator: the plugin's cwd for local nodes, or the
+// sibling root selected by `resolveSibling` for sibling nodes. Linked worktrees and independent clones are valid selected
+// roots; `refuseMutation` below still checks that the selected root is a valid git checkout and that its target stays inside.
+// The coordinator owns the exclusive mutation window (docs/sma-evidence.md); the runner does not enforce that window.
 // No imports from other rooms: this ships in the plugin and runs under plain tsx in scripts.
-import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
+import { existsSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
 import { isAbsolute, join, relative, resolve } from "node:path";
+import { headOf, worktreeRootOf } from "./sibling-git";
 
 export type SiblingName = "core" | "telegram";
 export const SIBLING_NAMES: readonly SiblingName[] = ["core", "telegram"];
@@ -24,9 +25,9 @@ export type SiblingSpec = {
   repo: string;
   /** The environment override. */
   env: string;
-  /** The branch its PRIMARY checkout has out: the only branch the mutation runner works on. */
+  /** The branch used by the historical proof checkout and status guidance. */
   branch: string;
-  /** Historical: the branch the proofs were written on before the PRIMARY-only rule; recorded pins may still point at it. */
+  /** Historical proof branch; recorded pins may still point at it. */
   proofBranch: string;
   /** How its tests run: vitest from the package that holds the test, or node:test through tsx from the root. */
   runner: "vitest" | "node-test";
@@ -59,10 +60,10 @@ export const siblingOf = (where: string | undefined): SiblingName | null => (whe
 export const absentSibling = (name: SiblingName) => `sibling repository ${SIBLINGS[name].repo} is not on this machine`;
 
 type Env = Readonly<Record<string, string | undefined>>;
-/** The branch this plugin's own PRIMARY checkout has out: the runner mutates a local node only there. */
+/** Historical status metadata for the plugin's usual checkout. Mutation accepts any valid branch or detached HEAD. */
 export const PLUGIN_BRANCH = "main";
 
-/** The shared checkouts: where the sibling usually is on a machine (OVH, the hub, a Mac checkout beside the plugin). Read-only. */
+/** The shared checkouts: where the sibling usually is on a machine (OVH, the hub, a Mac checkout beside the plugin). */
 export function defaultSiblingLocations(name: SiblingName, cwd: string, home = homedir()): string[] {
   const up = (...parts: string[]) => [join(cwd, "..", ...parts), join(cwd, "..", "..", "..", "..", ...parts)];
   return name === "core"
@@ -94,7 +95,7 @@ export function siblingRoots(cwd: string = process.cwd(), env: Env = process.env
 const real = (path: string) => { try { return realpathSync(path); } catch { return resolve(path); } };
 const inside = (child: string, parent: string) => { const rel = relative(parent, child); return rel === "" || (!!rel && !rel.startsWith("..") && !isAbsolute(rel)); };
 
-/** The canonical PRIMARY checkout of sibling `name` (the first default location holding a checkout, its real path), or null. */
+/** The first default checkout of sibling `name` (after symbolic links), or null. */
 export function canonicalSibling(name: SiblingName, cwd: string = process.cwd(), home = homedir()): string | null {
   const found = defaultSiblingLocations(name, cwd, home).find((path) => existsSync(join(path, ".git")));
   return found ? real(found) : null;
@@ -102,20 +103,21 @@ export function canonicalSibling(name: SiblingName, cwd: string = process.cwd(),
 
 /**
  * Why the mutation runner may NOT write `path` (relative to the checkout `root`) of sibling `name` — or, with `name` null,
- * of this plugin, whose checkout is `cwd` — or null when it may. One rule for every repository: `root` is its canonical
- * PRIMARY checkout (after symbolic links; an override pointing anywhere else is read, never written), a main checkout (a
- * linked worktree is refused), on its branch (core vk/experimental, telegram main, this plugin main), and the file stays
- * inside it after symbolic links are followed.
+ * of this plugin, whose selected checkout is `cwd` — or null when it may. A sibling root must be the exact checkout selected
+ * by `resolveSibling` (after symbolic links); the plugin root must be `cwd`. Any valid git checkout is allowed, including a
+ * linked worktree, an independent clone, an arbitrary branch, or a detached HEAD. The file must stay inside it after links
+ * are followed.
  */
 export function refuseMutation(name: SiblingName | null, root: string, path: string, cwd: string = process.cwd(), home = homedir()): string | null {
   const repo = name ? SIBLINGS[name].repo : "this plugin";
   const at = real(root);
-  const canonical = name ? canonicalSibling(name, cwd, home) : real(cwd);
-  if (!canonical || at !== canonical) return `refused: ${root} is not the PRIMARY checkout of ${repo}${canonical ? ` (${canonical})` : " (none on this machine)"}; a mutation runs only there`;
-  try { if (!statSync(join(at, ".git")).isDirectory()) return `refused: ${root} is a linked worktree (its .git is a file); a mutation runs only in the PRIMARY checkout`; } catch { return `refused: ${root} is not a git checkout`; }
-  const want = name ? SIBLINGS[name].branch : PLUGIN_BRANCH;
-  const branch = (() => { try { return /^ref: refs\/heads\/(.+)$/m.exec(readFileSync(join(at, ".git", "HEAD"), "utf8"))?.[1]?.trim() ?? null; } catch { return null; } })();
-  if (branch !== want) return `refused: ${root} has ${branch ?? "a detached HEAD"} out, not ${want}`;
+  const selected = name ? resolveSibling(name, cwd, process.env, home) : { root: real(cwd) };
+  if (selected.root === null) return `refused: ${root} is not the selected checkout of ${repo} (${selected.why})`;
+  const selectedAt = real(selected.root);
+  if (at !== selectedAt) return `refused: ${root} is not the selected checkout of ${repo} (${selectedAt})`;
+  const worktreeRoot = worktreeRootOf(at);
+  if (!worktreeRoot || real(worktreeRoot) !== at) return `refused: ${root} is not a valid git worktree checkout`;
+  if (!headOf(at)) return `refused: ${root} is not a valid git checkout`;
   if (isAbsolute(path) || path.split(/[\\/]/).includes("..")) return `refused: ${path} must be a path inside the checkout`;
   const file = join(at, path);
   if (existsSync(file) && !inside(real(file), at)) return `refused: ${path} resolves outside ${root} (a symbolic link)`;

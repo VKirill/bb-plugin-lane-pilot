@@ -160,19 +160,20 @@ attestation and trace live here. Worked examples: n560 `m_ce_recover` (core, `ev
 
 **Where a sibling is** (`src/rooms/sma-map/siblings.ts`, the one place every tool asks). The tools read it from
 `SMA_SIBLING_CORE` / `SMA_SIBLING_TELEGRAM` first (any checkout; `off` or a missing path makes the sibling absent and never
-falls through), else from its PRIMARY checkout, the first default location that holds one (`~/.local/share/bb-source-vk`,
+falls through), else from the first default checkout location that holds one (`~/.local/share/bb-source-vk`,
 `~/BB-service/bb-core/vk`, `~/BB-service/bb-plugin-telegram-projects`). If a sibling resolves nowhere, every tool says
 «sibling repository <repo> is not on this machine» for the nodes that need it: the node is not mutated (never a pass), and
 the command still runs. On the hub there are no sources: the committed facts and attestations are what it uses.
 `npm run sma:sibling -- status` prints where each sibling resolves, its HEAD and branch, the pins, and whether the runner may
 mutate there.
 
-**PRIMARY only (owner, 2026-11-15).** Proofs are written, committed and mutated in each repository's PRIMARY checkout. The
-earlier linked proofs worktrees (`~/.lane-pilot/worktrees/<repo>/…`, `sma:sibling setup`) are gone; the proof branches
+**The selected checkout.** Proofs are written and mutated in the checkout selected by the coordinator: `SMA_SIBLING_CORE` /
+`SMA_SIBLING_TELEGRAM` when set, otherwise the first matching default location. A linked worktree or independent clone is
+valid, as are an arbitrary branch and a detached HEAD, provided the selected root is a valid git checkout. The proof branches
 (`sma/core-proofs`, `sma/proofs`) stay only as history the recorded pins may point at.
 
-**The test** goes into the sibling and is committed there, in its PRIMARY checkout on its branch (core `vk/experimental`,
-telegram `main`). The index reads sibling tests from git at a commit, so an uncommitted test is invisible.
+**The test** goes into the sibling and is committed there, in the selected checkout on its current branch or detached HEAD.
+The index reads sibling tests from git at a commit, so an uncommitted test is invisible.
 - core: beside the code, in the package that owns it, picked up by that package's `vitest.config.ts` (for example
   `plugins/provider-retry/src/retry-policy.sma.test.ts`). It must pass with `pnpm exec vitest run <file>` from that package.
 - telegram: `test/<name>.test.ts`, node:test (`import { test } from "node:test"`, `node:assert/strict`). It must pass with
@@ -189,25 +190,25 @@ there; without it, only the static checks run.
 
 ```sh
 node scripts/sma-contracts.mjs                       # picks up core:/telegram: tests at the sibling's HEAD
-npm run sma:mutate -- --node n560                    # mutates in the core's PRIMARY checkout, runs the sibling's runner there
+npm run sma:mutate -- --node n560                    # mutates in the selected core checkout, runs the sibling's runner there
 ```
 
 The runner (`scripts/sma-mutate.mjs`, commands and report readers in `src/rooms/sma-map/mutation-run.ts`) runs vitest from the
 package that holds the test for the core, and `tsx --test --test-name-pattern` with the JUnit reporter from the root for telegram.
 Both filter to the `[sma:<id>]` title. The verdicts are the same as for a local node (an assertion kills; a TypeError, import error
 or timeout is `crash`). Restoring is the same: finally, signals, exit, and a journal that the next run restores after `kill -9`.
-**Where it writes, and what it checks.** One rule for every repository (`refuseMutation`): the canonical PRIMARY checkout
-(after symbolic links) — this plugin on `main`, the core on `vk/experimental`, the Telegram plugin on `main` — a main checkout,
-never a linked worktree or another clone (an `SMA_SIBLING_*` override pointing elsewhere is read, never written), no `..` and
-no symbolic link out of it. That checkout is where the core is built and deployed from, so **a mutation runs only inside the
-coordinator's exclusive window**: no edit, build or deploy in that checkout while it runs. The runner does not enforce the
-window and does not claim to; it checks the checkout's identity:
+**Where it writes, and what it checks.** One rule for every repository (`refuseMutation`): local nodes must use the
+coordinator's selected Lane Pilot cwd; sibling nodes must use the exact root selected by `resolveSibling` (after symbolic
+links). That root must be a valid git checkout; linked worktrees and independent clones are valid, as are arbitrary branches
+and detached HEADs. The target may not contain `..` or resolve through a symbolic link outside the selected checkout. **A
+mutation runs only inside the coordinator's exclusive window**: no edit, build or deploy in that checkout while it runs. The
+runner does not enforce the window and does not claim to; it checks the selected checkout's identity:
 - one lock and one journal per repository, in its git-common-dir (`sma-mutate/`): they survive a reboot, and a second runner
   is `locked` whatever spelling of the path it was given. A checkout's journal is settled only when a run touches it;
 - the journal holds the original's and the mutant's hashes. A file is written back only while it still holds the mutant;
   if it holds anything else (somebody edited or deleted it since), nothing is overwritten, the journal and the original's
   backup stay, and that checkout is `refused` until a person settles it. The file a journal names is written only if it
-  passes the same rule as a mutation (inside the canonical checkout after links, a regular file, no linked folder);
+  passes the same rule as a mutation (inside the selected checkout after links, a regular file);
 - before its first mutation in a checkout the runner records HEAD, its tree and every changed or untracked file with a hash
   of its bytes. The checkout must be clean then (a dirty dependency would be judged as HEAD): nothing in a sibling, in this
   plugin only `contracts.ts` as just regenerated. The mutated file and its tests must also be byte for byte the blobs HEAD
@@ -249,11 +250,11 @@ body text while the Telegram plugin was on no machine; wherever it is checked ou
 anchor must name a declared unit). The batch that takes such a node points its entry at the unit that implements the card (n971:
 `telegram:chat.ts#splitText`) and removes it from the ratchet `TELEGRAM_TEXT_ANCHORS` in `tests/sma-map.test.ts`.
 
-**What is committed where.** The sibling commit is the test only, in the sibling's PRIMARY checkout on its branch (bb-core
-`vk/experimental`: a test-only commit adds no `VK_PATCHES.md` entry; telegram `main`); its owner decides when it lands there.
+**What is committed where.** The sibling commit is the test only, in the sibling's selected checkout on its current branch or
+detached HEAD; its owner decides when it lands there. A test-only core commit adds no `VK_PATCHES.md` entry.
 Here: the evidence line, `attest/rNN.json`, and the regenerated `contracts.ts`/`provenance.json`. A pin moves forward to the
-sibling's HEAD only when HEAD contains it, so a proof commit merged into the PRIMARY branch (not cherry-picked) keeps the
-recorded pins reachable from the checkout the deploy gate reads. Pins recorded at the old proof branches stay valid while
+sibling's HEAD only when HEAD contains it, so a proof commit merged into the selected checkout's history keeps the recorded
+pins reachable from the checkout the deploy gate reads. Pins recorded at the old proof branches stay valid while
 the objects are in the repository.
 
 ## Regenerate before a deploy

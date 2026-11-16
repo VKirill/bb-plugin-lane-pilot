@@ -7,11 +7,23 @@ import { createHash } from "node:crypto";
 import { lstatSync, readFileSync, readlinkSync } from "node:fs";
 import { join } from "node:path";
 
-const git = (root: string, args: readonly string[]) => execFileSync("git", ["-C", root, ...args], { encoding: "utf8", maxBuffer: 256 << 20, stdio: ["ignore", "pipe", "pipe"] });
-const tryGit = (root: string, args: readonly string[]): string | null => { try { return git(root, args); } catch { return null; } };
+export const GIT_IDENTITY_ENV = /^(?:GIT_DIR|GIT_WORK_TREE|GIT_COMMON_DIR|GIT_INDEX_FILE|GIT_OBJECT_DIRECTORY|GIT_ALTERNATE_OBJECT_DIRECTORIES|GIT_NAMESPACE|GIT_CONFIG(?:_.*)?|GIT_CEILING_DIRECTORIES|GIT_DISCOVERY_ACROSS_FILESYSTEM)$/;
+const cleanGitEnv = (): NodeJS.ProcessEnv => {
+  const env = { ...process.env };
+  for (const key of Object.keys(env)) if (GIT_IDENTITY_ENV.test(key)) delete env[key];
+  return env;
+};
+const git = (root: string, args: readonly string[], env: NodeJS.ProcessEnv = process.env) => execFileSync("git", ["-C", root, ...args], { encoding: "utf8", maxBuffer: 256 << 20, stdio: ["ignore", "pipe", "pipe"], env });
+const tryGit = (root: string, args: readonly string[], env: NodeJS.ProcessEnv = process.env): string | null => { try { return git(root, args, env); } catch { return null; } };
 
 /** HEAD of the checkout (12 characters), or null. */
-export const headOf = (root: string): string | null => tryGit(root, ["rev-parse", "HEAD"])?.trim().slice(0, 12) ?? null;
+export const headOf = (root: string): string | null => tryGit(root, ["rev-parse", "HEAD"], cleanGitEnv())?.trim().slice(0, 12) ?? null;
+/** The real top-level directory of a non-bare worktree, or null for a bare/invalid checkout. */
+export function worktreeRootOf(root: string): string | null {
+  const env = cleanGitEnv();
+  if (tryGit(root, ["rev-parse", "--is-inside-work-tree"], env)?.trim() !== "true") return null;
+  return tryGit(root, ["rev-parse", "--path-format=absolute", "--show-toplevel"], env)?.trim() || null;
+}
 /** Whether the checkout has uncommitted changes to tracked files. */
 export const isDirty = (root: string): boolean => !!tryGit(root, ["status", "--porcelain", "--untracked-files=no"])?.trim();
 /**

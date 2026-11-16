@@ -5,11 +5,11 @@
 // AN ASSERTION — a TypeError/ReferenceError/SyntaxError, an import or transform error or a timeout is a `crash`, not a
 // kill. Each node's result is attested in src/rooms/sma-map/attest/rNN.json. Runs are sequential.
 //
-// Where it writes (owner, 2026-11-15: PRIMARY only): the canonical PRIMARY checkout of the repository the spec names —
-// this plugin on main, the core (`core:<path>`) on vk/experimental, the Telegram plugin (`telegram:<path>`) on main — and
-// nowhere else: a linked worktree, another clone (an SMA_SIBLING_* override is read, never written), `..` and a symbolic
-// link out of the checkout are refused (siblings.ts refuseMutation). The coordinator owns the exclusive window (no edit,
-// build or deploy in that checkout while it runs); this runner does not enforce it, it checks the checkout's identity:
+// Where it writes: the coordinator's Lane Pilot cwd for local specs, or the exact checkout selected by resolveSibling for a
+// sibling spec — and nowhere else. Linked worktrees and independent clones are valid selected checkouts, as are arbitrary
+// branches and detached HEADs; `..` and a symbolic link out of the selected checkout are refused (siblings.ts refuseMutation).
+// The coordinator owns the exclusive window (no edit, build or deploy in that checkout while it runs); this runner does not
+// enforce it, it checks the selected checkout's identity:
 //   - one lock and one journal per repository, in its git-common-dir (`sma-mutate/`), so they survive a reboot and do not
 //     depend on how the path is spelled; a checkout's journal is recovered only when a run touches that checkout;
 //   - the journal holds the original's and the mutant's hashes: a file is restored only while it still holds the mutant
@@ -102,7 +102,7 @@ function recover(state, sibling = null) {
 
 /**
  * Why `path` (relative to `checkout`) may not be written: the same rule as placing a mutation (siblings.ts refuseMutation:
- * canonical PRIMARY, main checkout, branch, inside after symbolic links), and it must be a regular file, not a link — or null.
+ * selected checkout, valid git checkout, inside after symbolic links), and it must be a regular file, not a link — or null.
  */
 function targetRefusal(sibling, checkout, path) {
   const refused = refuseMutation(sibling, checkout, path, root);
@@ -129,7 +129,7 @@ process.on("uncaughtException", (error) => { release(); process.stderr.write(`${
 
 const { readJunitReport, readVitestReport, mergeRuns, verdictOf, testCommands, emptyRun } = await import("../src/rooms/sma-map/mutation-run.ts");
 const { refuseMutation, resolveSibling, siblingRoots, splitSiblingPath, SIBLINGS } = await import("../src/rooms/sma-map/siblings.ts");
-const { headOf, isDirty, snapshotOf, frozenChanges, onlyKeysChanged, differFromCommit } = await import("../src/rooms/sma-map/sibling-git.ts");
+const { GIT_IDENTITY_ENV, headOf, isDirty, snapshotOf, frozenChanges, onlyKeysChanged, differFromCommit } = await import("../src/rooms/sma-map/sibling-git.ts");
 
 // ---- running tests ----
 /** Runs one command and reads its report. Async, so a signal handler runs at once (a spawnSync would hold it until the tests end). */
@@ -160,7 +160,7 @@ async function runTests(job) {
 const escapeRe = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const occurrences = (text, find) => { let n = 0; for (let at = text.indexOf(find); at >= 0; at = text.indexOf(find, at + 1)) n++; return n; };
 
-/** Where a spec's file lives: this plugin's PRIMARY checkout or a sibling's (refused anywhere else, siblings.ts refuseMutation). */
+/** Where a spec's file lives: this plugin's selected cwd or a sibling's selected checkout (refused anywhere else). */
 function placeOf(spec, tests) {
   const { sibling, path } = splitSiblingPath(spec.file);
   const files = tests.map((file) => splitSiblingPath(file)).filter((at) => at.sibling === sibling).map((at) => at.path);
@@ -245,6 +245,11 @@ async function mutateOne(job, baselines) {
 
 // ---- fixture mode: specs from a JSON file, nothing attested ----
 const fixture = flag("--fixture");
+const ambientGitIdentity = Object.keys(process.env).find((key) => GIT_IDENTITY_ENV.test(key));
+if (ambientGitIdentity) {
+  process.stderr.write(`refused: active Git identity override ${ambientGitIdentity}; unset it before sma-mutate\n`);
+  process.exit(2);
+}
 if (fixture) {
   const jobs = JSON.parse(readFileSync(resolve(root, fixture), "utf8"));
   const results = [];

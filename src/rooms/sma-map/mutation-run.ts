@@ -82,7 +82,7 @@ export function siblingBin(root: string, from: string, name: string): string | n
     if (dir === root || relative(root, dir).startsWith("..") || dir === dirname(dir)) return null;
   }
 }
-const notInstalled = (sibling: SiblingName, name: string) => `${name} is not installed in the ${SIBLINGS[sibling].repo} checkout: run npm run sma:sibling -- setup ${sibling} (its dependencies)`;
+const notInstalled = (sibling: SiblingName, name: string) => `${name} is not installed in the ${SIBLINGS[sibling].repo} checkout: install its dependencies with ${sibling === "core" ? "pnpm install" : "npm install"} from the repository root`;
 const VITEST_CONFIGS = ["vitest.config.ts", "vitest.config.mts", "vitest.config.js", "vitest.config.mjs"];
 /** The nearest folder at or above the test file (inside `root`) with a vitest config: where the core runs that test. */
 export function vitestHome(root: string, file: string): string {

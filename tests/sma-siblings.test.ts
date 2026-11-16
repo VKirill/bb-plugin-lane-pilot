@@ -14,12 +14,17 @@ import { refuseMutation, resolveSibling } from "../src/rooms/sma-map/siblings";
 import { tallyStates, type NodeState } from "../src/rooms/sma-map/states";
 
 // Sibling repositories as a first-class notion of the SMA proof (src/rooms/sma-map/siblings.ts and its users): where a sibling
-// resolves, where the runner may write (only the canonical PRIMARY checkout, owner 2026-11-15), the identity it holds a checkout
+// resolves, where the runner may write (only the selected checkout), the identity it holds a checkout
 // to, how a sibling attestation is judged, what the contract index does at a pin, how a sibling change point holds a trace
 // back, how a JUnit report is read, and what --gaps says. The runner itself on fixture siblings: tests/sma-siblings-runner.test.ts.
 let tmp = "";
 const git = (cwd: string, ...args: string[]) => execFileSync("git", ["-C", cwd, "-c", "user.email=fx@example.invalid", "-c", "user.name=fixture", ...args], { encoding: "utf8", stdio: "pipe" }).trim();
 const write = (path: string, text: string) => { mkdirSync(dirname(path), { recursive: true }); writeFileSync(path, text); };
+function withEnv<T>(key: string, value: string, fn: () => T): T {
+  const before = process.env[key];
+  process.env[key] = value;
+  try { return fn(); } finally { if (before === undefined) delete process.env[key]; else process.env[key] = before; }
+}
 /** A repository with `files`, committed on `branch`. */
 function repo(at: string, branch: string, files: Record<string, string>): string {
   for (const [path, text] of Object.entries(files)) write(join(at, path), text);
@@ -37,13 +42,13 @@ beforeAll(() => {
   home = join(tmp, "home");
   // Another clone of the core somewhere: read through an override, never written.
   shared = repo(join(tmp, "shared", "bb-core"), "main", { "src/subject.ts": SUBJECT, "src/subject.test.ts": TEST });
-  // The core's PRIMARY checkout: the fake home's ~/BB-service/bb-core/vk, on vk/experimental.
+  // The core's default checkout: the fake home's ~/BB-service/bb-core/vk, on vk/experimental.
   primary = repo(join(home, "BB-service", "bb-core", "vk"), "vk/experimental", { "src/subject.ts": SUBJECT, "src/subject.test.ts": TEST });
 });
 afterAll(() => { if (tmp) rmSync(tmp, { recursive: true, force: true }); });
 
 describe("where a sibling resolves", () => {
-  it("an override wins, `off` and a missing path make it absent (never a fall-through), else its PRIMARY checkout; an old proofs worktree is not looked for", () => {
+  it("an override wins, `off` and a missing path make it absent (never a fall-through), else its default checkout; an old proofs worktree is not looked for", () => {
     expect(resolveSibling("core", tmp, { SMA_SIBLING_CORE: shared }, home)).toEqual({ root: shared, from: "env" });
     expect(resolveSibling("core", tmp, { SMA_SIBLING_CORE: "off" }, home)).toMatchObject({ root: null, why: expect.stringContaining("sibling repository bb-core is not on this machine") });
     expect(resolveSibling("core", tmp, { SMA_SIBLING_CORE: join(tmp, "nowhere") }, home)).toMatchObject({ root: null, why: expect.stringContaining("does not exist") });
@@ -53,39 +58,65 @@ describe("where a sibling resolves", () => {
   });
 });
 
-describe("where the runner may write: only the canonical PRIMARY checkout", () => {
-  it("the core's PRIMARY on vk/experimental may be written; another clone, another branch, `..`, an absolute path and a symbolic link out are refused", () => {
+describe("where the runner may write: only the selected checkout", () => {
+  it("the selected core checkout may be on any branch or detached; another root, `..`, an absolute path and a symbolic link out are refused", () => {
     expect(refuseMutation("core", primary, "src/subject.ts", tmp, home)).toBeNull();
-    expect(refuseMutation("core", shared, "src/subject.ts", tmp, home)).toMatch(/not the PRIMARY checkout of bb-core/);
+    expect(refuseMutation("core", shared, "src/subject.ts", tmp, home)).toMatch(/not the selected checkout of bb-core/);
     expect(refuseMutation("core", primary, "../../shared/bb-core/src/subject.ts", tmp, home)).toMatch(/inside the checkout/);
     expect(refuseMutation("core", primary, join(shared, "src/subject.ts"), tmp, home)).toMatch(/inside the checkout/);
     symlinkSync(join(shared, "src/subject.ts"), join(primary, "src/linked.ts"));
     try { expect(refuseMutation("core", primary, "src/linked.ts", tmp, home)).toMatch(/symbolic link/); }
     finally { rmSync(join(primary, "src/linked.ts")); }
     git(primary, "checkout", "-q", "-b", "elsewhere");
-    try { expect(refuseMutation("core", primary, "src/subject.ts", tmp, home)).toMatch(/has elsewhere out, not vk\/experimental/); }
+    try { expect(refuseMutation("core", primary, "src/subject.ts", tmp, home)).toBeNull(); }
     finally { git(primary, "checkout", "-q", "vk/experimental"); }
-    // Through a symbolic link to the PRIMARY it is the same checkout.
+    git(primary, "checkout", "-q", "--detach");
+    try { expect(refuseMutation("core", primary, "src/subject.ts", tmp, home)).toBeNull(); }
+    finally { git(primary, "checkout", "-q", "vk/experimental"); }
+    const clone = join(tmp, "clone");
+    execFileSync("git", ["clone", "-q", primary, clone], { stdio: "pipe" });
+    withEnv("SMA_SIBLING_CORE", clone, () => {
+      expect(refuseMutation("core", clone, "src/subject.ts", tmp, home)).toBeNull();
+      expect(refuseMutation("core", primary, "src/subject.ts", tmp, home)).toMatch(/not the selected checkout of bb-core/);
+    });
+    // Through a symbolic link to the selected checkout it is the same checkout.
     symlinkSync(primary, join(tmp, "primary-link"));
     expect(refuseMutation("core", join(tmp, "primary-link"), "src/subject.ts", tmp, home)).toBeNull();
-    expect(refuseMutation("core", primary, "src/subject.ts", tmp, join(tmp, "no-home"))).toMatch(/none on this machine/);
+    expect(refuseMutation("core", primary, "src/subject.ts", tmp, join(tmp, "no-home"))).toMatch(/not the selected checkout/);
   });
 
-  it("a linked worktree (its .git is a file) is refused even where the PRIMARY is expected; this plugin's own checkout must be its main checkout on main", () => {
-    // No linked checkout is created: a folder whose .git is a `gitdir:` file is what the refusal reads.
+  it("accepts a real linked worktree when explicitly selected and refuses an invalid git directory", () => {
+    const linked = join(tmp, "linked");
+    git(primary, "worktree", "add", "-q", "-b", "linked", linked, "HEAD");
+    try {
+      expect(refuseMutation("core", linked, "src/subject.ts", tmp, home)).toMatch(/not the selected checkout/);
+      withEnv("SMA_SIBLING_CORE", linked, () => expect(refuseMutation("core", linked, "src/subject.ts", tmp, home)).toBeNull());
+    } finally { git(primary, "worktree", "remove", "-f", linked); }
     const other = join(tmp, "home2");
     write(join(other, "BB-service", "bb-core", "vk", ".git"), `gitdir: ${join(shared, ".git", "worktrees", "vk")}\n`);
     write(join(other, "BB-service", "bb-core", "vk", "src", "subject.ts"), SUBJECT);
-    expect(refuseMutation("core", join(other, "BB-service", "bb-core", "vk"), "src/subject.ts", tmp, other)).toMatch(/linked worktree/);
+    expect(refuseMutation("core", join(other, "BB-service", "bb-core", "vk"), "src/subject.ts", tmp, other)).toMatch(/valid git worktree/);
     const plugin = repo(join(tmp, "plugin"), "main", { "src/a.ts": "a\n" });
     expect(refuseMutation(null, plugin, "src/a.ts", plugin, home)).toBeNull();
     git(plugin, "checkout", "-q", "-b", "feature");
-    expect(refuseMutation(null, plugin, "src/a.ts", plugin, home)).toMatch(/has feature out, not main/);
+    expect(refuseMutation(null, plugin, "src/a.ts", plugin, home)).toBeNull();
+    expect(refuseMutation(null, plugin, "src/a.ts", tmp, home)).toMatch(/not the selected checkout of this plugin/);
     git(plugin, "checkout", "-q", "main");
-    const linked = join(tmp, "plugin-linked");
-    write(join(linked, ".git"), `gitdir: ${join(plugin, ".git", "worktrees", "plugin-linked")}\n`);
-    write(join(linked, "src", "a.ts"), "a\n");
-    expect(refuseMutation(null, linked, "src/a.ts", linked, home)).toMatch(/linked worktree/);
+    const pluginLinked = join(tmp, "plugin-linked");
+    write(join(pluginLinked, ".git"), `gitdir: ${join(plugin, ".git", "worktrees", "plugin-linked")}\n`);
+    write(join(pluginLinked, "src", "a.ts"), "a\n");
+    expect(refuseMutation(null, pluginLinked, "src/a.ts", pluginLinked, home)).toMatch(/valid git worktree/);
+  });
+
+  it("requires the selected root to be a real non-bare worktree and ignores ambient Git directory overrides", () => {
+    const nested = join(primary, "src");
+    expect(refuseMutation("core", nested, "subject.ts", tmp, home)).toMatch(/not the selected checkout/);
+    withEnv("SMA_SIBLING_CORE", nested, () => expect(refuseMutation("core", nested, "subject.ts", tmp, home)).toMatch(/valid git worktree/));
+    const bare = join(tmp, "bare.git");
+    execFileSync("git", ["init", "-q", "--bare", bare], { stdio: "pipe" });
+    withEnv("SMA_SIBLING_CORE", bare, () => expect(refuseMutation("core", bare, "subject.ts", tmp, home)).toMatch(/valid git worktree/));
+    withEnv("GIT_DIR", join(primary, ".git"), () => expect(refuseMutation("core", primary, "src/subject.ts", tmp, home)).toBeNull());
+    withEnv("GIT_CONFIG_COUNT", "1", () => expect(refuseMutation("core", primary, "src/subject.ts", tmp, home)).toBeNull());
   });
 });
 
@@ -203,9 +234,9 @@ describe("the sibling runners", () => {
     expect(run.crash).toEqual(["[sma:x] crashes: TypeError: Cannot read properties of undefined (reading 'f')", "test/b.test.ts: the file failed to load or run"]);
   });
 
-  it("never lets npx fetch a runner for a sibling: a checkout without its dependencies is told to run setup", () => {
+  it("never lets npx fetch a runner for a sibling: a checkout without its dependencies is told to install them", () => {
     const [command] = testCommands("telegram", join(tmp, "nowhere"), ["test/a.test.ts"], "x", join(tmp, "out"));
-    expect(command!.missing).toMatch(/npm run sma:sibling -- setup telegram/);
+    expect(command!.missing).toMatch(/npm install/);
   });
 });
 
@@ -213,7 +244,7 @@ describe("--gaps for a sibling node", () => {
   it("says where its code and tests are, the next step, and that the sibling is absent when it is", () => {
     const absent = siblingAnchor("telegram:chat.ts#splitText(o.text)", "m_tg_split", {});
     expect(absent).toMatchObject({ repo: "bb-plugin-telegram-projects", file: "telegram:chat.ts", root: null, absent: "sibling repository bb-plugin-telegram-projects is not on this machine", hubPlugin: "telegram-projects" });
-    expect(absent!.next).toContain("commit it on main in its PRIMARY checkout");
+    expect(absent!.next).toContain("commit it on main in the selected checkout");
     expect(absent!.next).not.toMatch(/worktree|setup/);
     expect(siblingAnchor("core:src/subject.ts#limit", "fx_one", { core: shared })).toMatchObject({ root: shared, lines: 1 });
     expect(siblingAnchor("src/rooms/x.ts#y", "a", {})).toBeNull();

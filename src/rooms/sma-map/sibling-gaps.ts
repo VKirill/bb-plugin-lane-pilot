@@ -1,5 +1,5 @@
 // What `--gaps` prints for a node whose proof lives in a sibling repository (siblings.ts): where its code and its tests are,
-// whether that sibling is on this machine, and where the proof goes (its PRIMARY checkout). A sibling anchor is never
+// whether that sibling is on this machine, and where the proof goes (its selected checkout). A sibling anchor is never
 // «nothing to do»: the node needs its four proofs like any other (docs/sma-evidence.md «Proofs in a sibling repository»).
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
@@ -41,7 +41,7 @@ export function siblingAnchor(proof: string | undefined, smaId: string, roots: P
   const testHome = sibling === "core" ? `${file.split("/").slice(0, 2).join("/")}/…/<name>.test.ts beside the code` : "test/<name>.test.ts";
   return {
     sibling, repo: spec.repo, file: `${sibling}:${file}`, ...(symbol ? { symbol } : {}), lines, root, ...(root ? {} : { absent: absentSibling(sibling) }), tests,
-    next: `write the [sma:${smaId}] test in ${spec.repo} (${testHome}) and commit it on ${spec.branch} in its PRIMARY checkout; then, inside the coordinator's window (no edit, build or deploy there), npm run sma:mutate -- --node <id>`,
+    next: `write the [sma:${smaId}] test in ${spec.repo} (${testHome}) and commit it on ${spec.branch} in the selected checkout; then, inside the coordinator's window (no edit, build or deploy there), npm run sma:mutate -- --node <id>`,
     ...(spec.hubPlugin ? { hubPlugin: spec.hubPlugin } : {}), ...(flag ? { flag } : {}),
   };
 }
