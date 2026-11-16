@@ -181,7 +181,11 @@
         "en": "Plan the command chain",
         "ru": "Спланировать цепочку команд"
       },
-      "prompt": "Cocoon Chainsmith v3: fill the 9 YAML variables and emit a verified CP-Navigator command sequence for Cocoon Engine X4 (verify the commands against the X4 bundle). Plan only - do not run research here.",
+      "with": {
+        "brief_answer": "{{ask_brief.answer}}",
+        "brief_answer_kind": "{{ask_brief.answer_kind}}"
+      },
+      "prompt": "Cocoon Chainsmith v3: use the exact owner brief answer below when filling the 9 YAML variables; preserve its scope, geography, language, goal and material rather than guessing. Emit a verified CP-Navigator command sequence for Cocoon Engine X4 (verify commands against the X4 bundle). Plan only - do not run research here. Owner brief ({{ask_brief.answer_kind}}): {{ask_brief.answer}}",
       "out": {
         "vars": "any",
         "commands": "string[]",
@@ -295,7 +299,7 @@
         "en": "Final page map",
         "ru": "Финальная карта страниц"
       },
-      "prompt": "Versioned Final Page Map: observed state, candidates, absorbed topics and rejections, prioritized with dependencies and maintenance owners; propose the locked batch (<= max_pages) for the owner. Return page_map_path, batch and locked_count.",
+      "prompt": "Versioned Final Page Map: observed state, candidates, absorbed topics and rejections, prioritized with dependencies and maintenance owners; propose the locked batch (<= max_pages) for the owner. On a reconciliation visit, the incoming owner_edit and owner_answer_kind packet is authoritative: apply the edit exactly, do not restore the prior batch, and return the revised page map. Return page_map_path, batch and locked_count.",
       "out": {
         "page_map_path": "string",
         "batch": "Page[]",
@@ -406,17 +410,20 @@
       "type": "action",
       "action": "fs.write",
       "path": ".agents/seo/{{slug}}/{{run_id}}/",
-      "files": [
-        "research.md",
-        "architecture.json",
-        "page_map.json",
-        "fact_registry.json",
-        "acceptors.json",
-        "briefs/*.md",
-        "audit.md",
-        "handoff.md"
-      ],
-      "note": "Freeze the manifest, run the readiness gates and export by tier; handoff.md separates actual evidence, hypotheses, proposed changes and publication readiness; code changes for the site go in a block 'для PM'",
+      "contents": {
+        "manifest.json": {
+          "research_package_path": "{{research.package_path}}",
+          "architecture_path": "{{architecture.architecture_path}}",
+          "page_map_path": "{{page_map.page_map_path}}",
+          "fact_registry_path": "{{architecture.fact_registry_path}}",
+          "acceptors_path": "{{architecture.acceptors_path}}",
+          "brief_paths": "{{briefs.brief_paths}}",
+          "audit_status": "{{audit.status}}",
+          "audit_findings": "{{audit.findings}}"
+        },
+        "handoff.md": "Cocoon package manifest: see manifest.json for the exact producer paths. The package does not copy or synthesize child brief contents; briefs remain at the paths returned by each seo-brief producer. Audit status: {{audit.status}}."
+      },
+      "note": "Freeze a truthful manifest of producer artifacts, run the readiness gates and export by tier; handoff.md separates actual evidence, hypotheses, proposed changes and publication readiness; code changes for the site go in a block 'для PM'",
       "out": {
         "folder": "string",
         "handoff_path": "string"
@@ -462,7 +469,11 @@
     {
       "from": "ask_brief",
       "to": "chainsmith",
-      "pass": "artifact"
+      "pass": "artifact",
+      "with": {
+        "brief_answer": "ask_brief.answer",
+        "brief_answer_kind": "ask_brief.answer_kind"
+      }
     },
     {
       "from": "chainsmith",
@@ -498,7 +509,26 @@
     {
       "from": "scope_freeze",
       "to": "briefs",
-      "pass": "artifact"
+      "pass": "artifact",
+      "when": "scope_freeze.answer_kind == 'approved'"
+    },
+    {
+      "from": "scope_freeze",
+      "to": "page_map",
+      "pass": "artifact",
+      "when": "scope_freeze.answer_kind == 'edited' && visits('page_map') < 2",
+      "with": {
+        "owner_edit": "scope_freeze.answer",
+        "owner_answer_kind": "scope_freeze.answer_kind"
+      },
+      "label": "reconcile owner edit"
+    },
+    {
+      "from": "scope_freeze",
+      "to": "blocked",
+      "pass": "artifact",
+      "when": "scope_freeze.answer_kind == 'timeout' || (scope_freeze.answer_kind == 'edited' && visits('page_map') >= 2)",
+      "label": "owner approval unavailable"
     },
     {
       "from": "briefs",
