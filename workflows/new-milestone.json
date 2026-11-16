@@ -72,9 +72,10 @@
         "en": "Milestone frame",
         "ru": "Рамка этапа"
       },
-      "prompt": "Archive the finished phases (lane-plan milestone archive <name> when the roadmap has [x] rows). From the goal: 3–7 requirements with ids into REQUIREMENTS.md, then the phases in order (lane-plan phase add <name> --goal …), each a vertical slice (templates/planning/references/mvp-stories.md).",
+      "prompt": "From the goal: 3-7 requirements with ids — return the raw Markdown requirements block in document (the code-owned writer appends it to .agents/planning/REQUIREMENTS.md) and the phases in order in phases, each a vertical slice (see templates/planning/references/mvp-stories.md). This read-only helper does not write files and runs no lane-plan commands.",
       "out": {
-        "phases": "string[]"
+        "phases": "string[]",
+        "document": "string"
       },
       "guards": {
         "maxVisits": 1,
@@ -95,6 +96,25 @@
         "status": "done",
         "phases": "frame.phases"
       }
+    },
+    {
+      "id": "write_requirements",
+      "type": "action",
+      "action": "fs.write",
+      "path": ".agents/planning/REQUIREMENTS.md",
+      "contents": "{{frame.document}}",
+      "out": {
+        "requirements_path": "string"
+      },
+      "mode": "append",
+      "title": {
+        "en": "Append the requirements",
+        "ru": "Дописать требования"
+      },
+      "skip_when": "!frame.document",
+      "skip_out": {
+        "requirements_path": ""
+      }
     }
   ],
   "edges": [
@@ -105,6 +125,11 @@
     },
     {
       "from": "frame",
+      "to": "write_requirements",
+      "pass": "artifact"
+    },
+    {
+      "from": "write_requirements",
       "to": "done",
       "pass": "artifact"
     }

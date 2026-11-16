@@ -112,9 +112,9 @@
         "en": "Value map",
         "ru": "Карта ценности"
       },
-      "prompt": "Value map builder, before asking anything: from README, the passport (project-onboard), the site and the code — who the product is for, the job they hire it for, what they get, how we would know it works. Write .agents/planning/VALUE-MAP.md. {{tree.counts_note}}",
+      "prompt": "Value map builder, before asking anything: from README, the passport (project-onboard), the site and the code — who the product is for, the job they hire it for, what they get, how we would know it works. Return the complete raw Markdown of VALUE-MAP.md in document; the code-owned writer persists it to .agents/planning/. This read-only helper does not write files. {{tree.counts_note}}",
       "out": {
-        "value_map": "string"
+        "document": "string"
       },
       "guards": {
         "maxVisits": 1,
@@ -128,7 +128,7 @@
       ],
       "skip_when": "probe.has_value_map",
       "skip_out": {
-        "value_map": ""
+        "document": ""
       }
     },
     {
@@ -222,11 +222,19 @@
         "full"
       ],
       "skip_out": {
-        "research_notes": ""
+        "research_notes": "",
+        "stack": "",
+        "features": "",
+        "architecture": "",
+        "pitfalls": ""
       },
-      "prompt": "Research competitors and conventions for what the project is, from the value map and the owner's answers. Write .agents/planning/research/STACK.md, FEATURES.md, ARCHITECTURE.md and PITFALLS.md — each with its sources and what the roadmap should take from it. A file that already exists is never overwritten: merge the new text into it keeping what is there, or leave it and write the new text to <name>.new.md next to it (it already exists and was changed by hand, or was not written by the machine: the new text is in <name>.new.md next to it).",
+      "prompt": "Research competitors and conventions for what the project is, from the value map and the owner's answers. Return four raw Markdown documents: stack for .agents/planning/research/STACK.md, features for FEATURES.md, architecture for ARCHITECTURE.md and pitfalls for PITFALLS.md — each with its sources and what the roadmap should take from it, and research_notes with the gist. The code-owned writers append each document to its file, keeping what is already there. This read-only helper does not write files.",
       "out": {
-        "research_notes": "string"
+        "research_notes": "string",
+        "stack": "string",
+        "features": "string",
+        "architecture": "string",
+        "pitfalls": "string"
       },
       "guards": {
         "maxVisits": 1,
@@ -248,9 +256,10 @@
         "en": "Requirements",
         "ru": "Требования"
       },
-      "prompt": "From the goal, the value map, the answers and the research: 3-7 requirements with ids into .agents/planning/REQUIREMENTS.md, the way new-milestone writes them. A file that already exists is never overwritten: merge the new text into it keeping what is there, or leave it and write the new text to <name>.new.md next to it (it already exists and was changed by hand, or was not written by the machine: the new text is in <name>.new.md next to it).",
+      "prompt": "From the goal, the value map, the answers and the research: 3-7 requirements with ids — return the raw Markdown requirements block in document (the way new-milestone writes them); the code-owned writer appends it to .agents/planning/REQUIREMENTS.md, keeping what is already there. This read-only helper does not write files.",
       "out": {
-        "requirements": "string[]"
+        "requirements": "string[]",
+        "document": "string"
       },
       "guards": {
         "maxVisits": 1,
@@ -264,7 +273,8 @@
       ],
       "skip_when": "tree.enabled != 'on' || $mode == 'quick'",
       "skip_out": {
-        "requirements": []
+        "requirements": [],
+        "document": ""
       }
     },
     {
@@ -275,9 +285,10 @@
         "en": "Recap and next steps",
         "ru": "Итог и шаги"
       },
-      "prompt": "Working style and risk from the owner's anamnesis. Recap in five lines, three next steps, and the roadmap skeleton (lane-plan template fill ROADMAP, STATE; phases with lane-plan phase add). {{tree.recap_note}}",
+      "prompt": "Working style and risk from the owner's anamnesis. Recap in five lines and three next steps, plus the roadmap skeleton as raw Markdown in roadmap_draft (phases in order; the code-owned writer persists it to .agents/planning/ROADMAP.md). This read-only helper does not write files and runs no lane-plan commands. {{tree.recap_note}}",
       "out": {
-        "next_steps": "string[]"
+        "next_steps": "string[]",
+        "roadmap_draft": "string"
       },
       "guards": {
         "maxVisits": 1,
@@ -309,7 +320,8 @@
       ],
       "skip_when": "probe.has_roadmap",
       "skip_out": {
-        "next_steps": []
+        "next_steps": [],
+        "roadmap_draft": ""
       }
     },
     {
@@ -318,7 +330,7 @@
       "action": "emit",
       "map": {
         "status": "done",
-        "value_map": "value_map.value_map",
+        "value_map": "value_map.document",
         "next_steps": "recap.next_steps",
         "refused": "profile_write.refused"
       }
@@ -332,6 +344,137 @@
         "value_map": "''",
         "next_steps": "['the project is already started — continue with project-resume']",
         "refused": "[]"
+      }
+    },
+    {
+      "id": "write_value_map",
+      "type": "action",
+      "action": "fs.write",
+      "path": ".agents/planning/VALUE-MAP.md",
+      "contents": "{{value_map.document}}",
+      "out": {
+        "value_map_path": "string"
+      },
+      "title": {
+        "en": "Write the value map",
+        "ru": "Записать карту ценности"
+      },
+      "skip_when": "!value_map.document",
+      "skip_out": {
+        "value_map_path": ""
+      }
+    },
+    {
+      "id": "write_requirements",
+      "type": "action",
+      "action": "fs.write",
+      "path": ".agents/planning/REQUIREMENTS.md",
+      "contents": "{{requirements.document}}",
+      "out": {
+        "requirements_path": "string"
+      },
+      "mode": "append",
+      "title": {
+        "en": "Append the requirements",
+        "ru": "Дописать требования"
+      },
+      "skip_when": "!requirements.document",
+      "skip_out": {
+        "requirements_path": ""
+      }
+    },
+    {
+      "id": "write_roadmap",
+      "type": "action",
+      "action": "fs.write",
+      "path": ".agents/planning/ROADMAP.md",
+      "contents": "{{recap.roadmap_draft}}",
+      "out": {
+        "roadmap_path": "string"
+      },
+      "title": {
+        "en": "Write the roadmap skeleton",
+        "ru": "Записать скелет дорожной карты"
+      },
+      "skip_when": "!recap.roadmap_draft",
+      "skip_out": {
+        "roadmap_path": ""
+      }
+    },
+    {
+      "id": "write_research_stack",
+      "type": "action",
+      "action": "fs.write",
+      "path": ".agents/planning/research/STACK.md",
+      "contents": "{{research.stack}}",
+      "mode": "append",
+      "out": {
+        "research_path": "string"
+      },
+      "skip_when": "!research.stack",
+      "skip_out": {
+        "research_path": ""
+      },
+      "title": {
+        "en": "Write research STACK.md",
+        "ru": "Записать исследование STACK.md"
+      }
+    },
+    {
+      "id": "write_research_features",
+      "type": "action",
+      "action": "fs.write",
+      "path": ".agents/planning/research/FEATURES.md",
+      "contents": "{{research.features}}",
+      "mode": "append",
+      "out": {
+        "research_path": "string"
+      },
+      "skip_when": "!research.features",
+      "skip_out": {
+        "research_path": ""
+      },
+      "title": {
+        "en": "Write research FEATURES.md",
+        "ru": "Записать исследование FEATURES.md"
+      }
+    },
+    {
+      "id": "write_research_architecture",
+      "type": "action",
+      "action": "fs.write",
+      "path": ".agents/planning/research/ARCHITECTURE.md",
+      "contents": "{{research.architecture}}",
+      "mode": "append",
+      "out": {
+        "research_path": "string"
+      },
+      "skip_when": "!research.architecture",
+      "skip_out": {
+        "research_path": ""
+      },
+      "title": {
+        "en": "Write research ARCHITECTURE.md",
+        "ru": "Записать исследование ARCHITECTURE.md"
+      }
+    },
+    {
+      "id": "write_research_pitfalls",
+      "type": "action",
+      "action": "fs.write",
+      "path": ".agents/planning/research/PITFALLS.md",
+      "contents": "{{research.pitfalls}}",
+      "mode": "append",
+      "out": {
+        "research_path": "string"
+      },
+      "skip_when": "!research.pitfalls",
+      "skip_out": {
+        "research_path": ""
+      },
+      "title": {
+        "en": "Write research PITFALLS.md",
+        "ru": "Записать исследование PITFALLS.md"
       }
     }
   ],
@@ -352,6 +495,11 @@
     },
     {
       "from": "value_map",
+      "to": "write_value_map",
+      "pass": "artifact"
+    },
+    {
+      "from": "write_value_map",
       "to": "preview",
       "pass": "artifact"
     },
@@ -375,7 +523,7 @@
     },
     {
       "from": "research",
-      "to": "requirements",
+      "to": "write_research_stack",
       "pass": "artifact",
       "with": {
         "owner_answers": "ctx.answers.ask"
@@ -383,6 +531,11 @@
     },
     {
       "from": "requirements",
+      "to": "write_requirements",
+      "pass": "artifact"
+    },
+    {
+      "from": "write_requirements",
       "to": "recap",
       "pass": "artifact",
       "with": {
@@ -391,8 +544,32 @@
     },
     {
       "from": "recap",
+      "to": "write_roadmap",
+      "pass": "artifact"
+    },
+    {
+      "from": "write_roadmap",
       "to": "done",
       "pass": "artifact"
+    },
+    {
+      "from": "write_research_stack",
+      "to": "write_research_features"
+    },
+    {
+      "from": "write_research_features",
+      "to": "write_research_architecture"
+    },
+    {
+      "from": "write_research_architecture",
+      "to": "write_research_pitfalls"
+    },
+    {
+      "from": "write_research_pitfalls",
+      "to": "requirements",
+      "with": {
+        "owner_answers": "ctx.answers.ask"
+      }
     }
   ],
   "test": {

@@ -1,0 +1,351 @@
+import { coreFileWrite, diskStore } from "../helpers/core-files";
+import { execFileSync } from "node:child_process";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { createRun, openDatabase, setRunThread } from "../../src/rooms/plugin-db";
+import { runCommand } from "../../src/rooms/host-worker/host-handlers";
+import { createCore } from "../../src/rooms/core/server/core";
+import type { Services } from "../../server";
+import { createWorkflowAgents } from "../../src/rooms/workflow/server/workflow-agent";
+import { chainRuntimeFor, registerChainExecutors } from "../../src/rooms/workflow/server/workflow-executors";
+import { registerDispatchExecutors, taskUsage } from "../../src/rooms/writer/server";
+import type { ChainRuntime } from "../../src/rooms/contracts/server";
+import { registerPureActions, wfChildRuns } from "@lane-pilot/workflow-engine";
+import { WorkflowEngine } from "@lane-pilot/workflow-engine";
+import { registerReducers } from "@lane-pilot/workflow-engine";
+import type { Workflow } from "@lane-pilot/workflow-engine";
+import { sha256Hex } from "@lane-pilot/kit";
+import { BUILTIN_SOURCES, builtinWorkflow } from "../../src/rooms/workflow/builtin";
+import { loadWorkflowStore } from "@lane-pilot/workflow-engine";
+import { wf } from "./engine-helpers";
+
+/**
+ * Packet P04-R7: sibling read-only document-write graphs (validate-phase, eval-review, secure-phase,
+ * ai-integration-phase, spike, project-start, new-milestone, ship) and milestone-close's retro append move their
+ * repository document writes out of read-only helper prompts into explicit fs.write actions on the frozen P04.08
+ * writer API (params.contents + params.mode append|prepend, CAS). The real registered fs.write / deliverable.validate
+ * / lp.* handlers run on a real engine over a temp SQLite db and a real git checkout; only the model's replies are
+ * scripted. A green run is itself the proof of zero repo_edited failures: the scripted helpers never touch the
+ * checkout, and the files land exactly where the code-owned writers put them.
+ * Also covered: ai-integration's check->spec rework edge delivering check.gaps (F-A11), ship's review range using
+ * $inputs.head (C-ship-review-ignores-head) and ship's goal_check receiving the actual producer path
+ * (C-ship-goalcheck companion).
+ */
+
+type Row = Record<string, unknown>;
+const PM = "pm-r7", PROJECT = "project-r7", RUN = "run-r7";
+type Script = Record<string, Array<string | ((checkout: string) => string)>>;
+const reply = (body: Row, lead = "Done.") => `${lead}\n\n\`\`\`json\n${JSON.stringify(body)}\n\`\`\`\n`;
+
+let dispose: (() => void) | undefined;
+afterEach(() => { dispose?.(); dispose = undefined; });
+
+/** The executor fixture of a chain run: same composition as production (registerChainExecutors registers fs.write,
+ *  deliverable.validate and the lp.* actions), minus the parts this packet does not exercise. */
+async function setup(script: Script, options: { resolveWorkflow?: (id: string, version?: number) => Workflow | null; human?: (node: Row) => Row } = {}) {
+  const checkout = mkdtempSync(join(tmpdir(), "lp-r7-"));
+  execFileSync("git", ["init", "-q"], { cwd: checkout });
+  writeFileSync(join(checkout, "README.md"), "hello\n");
+  const spawned: Array<Row> = [], writes: Array<{ path: string; content: string }> = [], hostCalls: Array<Row> = [], sends: Array<Row> = [];
+  const nodeOf = new Map<string, string>(), counts = new Map<string, number>();
+  const { bb, harness } = createFakePluginHost({
+    pluginId: "lane-pilot",
+    experimental_callHostRpc: (async (call: { method: string; input: Row }) => {
+      hostCalls.push(call);
+      if (call.method === "runCommand") return runCommand(call.input as never, undefined as never);
+      throw new Error(`unexpected host method ${call.method}`);
+    }) as never,
+    sdk: {
+      threads: {
+        getPluginMetadata: async ({ threadId }) => (threadId === PM ? { role: "pm", lanePilotRunId: RUN } : {}),
+        spawn: async (args) => {
+          const request = args as unknown as Row;
+          spawned.push(request);
+          const id = `helper-${spawned.length}`;
+          nodeOf.set(id, String((request.pluginMetadata as Row).lanePilotWorkflowNode ?? (request.pluginMetadata as Row).role));
+          return { id };
+        },
+        get: async ({ threadId }) => ({ id: threadId, status: "idle", projectId: PROJECT, environmentId: "env-pm", sourceThreadId: PM, lifecycleOwnerThreadId: PM }),
+        events: { list: async ({ threadId }) => {
+          const now = Date.now();
+          return [{ type: "client/turn/requested", threadId, seq: 1, createdAt: now }, { type: "turn/started", threadId, seq: 2, createdAt: now + 1 },
+            { type: "turn/completed", threadId, seq: 3, data: { status: "completed" }, createdAt: now + 2 }];
+        } },
+        send: async (args) => { sends.push(args as unknown as Row); return {} as never; },
+        stop: async () => ({ ok: true }) as never,
+        output: async ({ threadId }) => {
+          const node = nodeOf.get(threadId) ?? "";
+          const at = counts.get(node) ?? 0;
+          counts.set(node, at + 1);
+          const answers = script[node] ?? [];
+          const answer = answers[Math.min(at, answers.length - 1)];
+          return { output: typeof answer === "function" ? answer(checkout) : answer ?? "no script" };
+        },
+      },
+      environments: { get: async () => ({ id: "env-pm", hostId: "local", path: checkout, status: "ready" }) as never },
+      projects: { get: async () => ({ id: PROJECT, name: "Project", sources: [{ hostId: "local", path: checkout }] }) },
+      files: {
+        write: async (args: unknown) => {
+          const filePath = String((args as { path?: unknown }).path ?? "");
+          return coreFileWrite(diskStore(), (path, content) => {
+            if (!/\/\.agents\/runs\/[^/]+\/manifest\.json$/.test(path)) writes.push({ path, content });
+          })(args) as never;
+        },
+        read: async (args: unknown) => {
+          const filePath = String((args as { path?: unknown }).path ?? "");
+          if (!existsSync(filePath)) return { content: null, sha256: null };
+          const content = readFileSync(filePath, "utf8");
+          return { content, sha256: sha256Hex(content), truncated: false };
+        },
+      },
+      hosts: { directory: async () => ({ directory: checkout }) },
+    },
+  });
+  const db = openDatabase(bb);
+  createRun(db, RUN, PROJECT, "bb", checkout, "none", undefined, "local");
+  setRunThread(db, RUN, PM);
+  const ctx = createCore(bb, db);
+  const services = { dispatchWriter: vi.fn(async (args: Row) => ({ runId: RUN, taskId: (args.task as Row).id, state: "queued" })), stability: { loadParked: async () => [] }, taskUsage } as unknown as Services;
+  const engine = new WorkflowEngine({ db, harnessVersion: "test", runtimeFor: chainRuntimeFor(ctx, services), ...(options.resolveWorkflow ? { resolveWorkflow: options.resolveWorkflow } : {}) });
+  registerPureActions(engine);
+  registerReducers(engine);
+  registerChainExecutors(engine, ctx, services, createWorkflowAgents());
+  registerDispatchExecutors(engine, ctx.bb);
+  engine.register("builtin:human", { run: async (c) => ({ output: options.human ? options.human(c.node as unknown as Row) : { answer: "", answer_kind: "timeout" } }) });
+  const rt: ChainRuntime = { ctx, services, pmThreadId: PM, projectId: PROJECT, runId: RUN };
+  const start = (workflow: Workflow, inputs: Row = {}, mode?: "quick" | "standard" | "full") => engine.start({ workflow, inputs, ...(mode ? { mode } : {}), runtime: rt, link: { projectId: PROJECT, runId: RUN } });
+  return { bb, harness, db, engine, checkout, spawned, sends, writes, hostCalls, start, rt, dispose: () => harness.lifecycle.dispose() };
+}
+
+const storeP = loadWorkflowStore({ builtin: BUILTIN_SOURCES });
+const builtin = async (id: string): Promise<Workflow> => (await storeP).resolve(id)!;
+const file = (checkout: string, rel: string) => existsSync(join(checkout, rel)) ? readFileSync(join(checkout, rel), "utf8") : null;
+/** The inputs the engine handed a child workflow run, keyed by the child's workflow id. */
+const childInputs = (db: { prepare: (sql: string) => { get: (...args: unknown[]) => Row | undefined } }, runId: string): Record<string, Row> =>
+  Object.fromEntries(wfChildRuns(db as never, runId).map((child) => [
+    child.workflow_id,
+    JSON.parse(String(db.prepare("SELECT inputs_json FROM lane_pilot_wf_run WHERE id=?").get(child.id)?.inputs_json ?? "{}")) as Row,
+  ]));
+
+describe("P04-R7 sibling document writes through the real fs.write action", () => {
+  it("validate-phase writes VALIDATION.md and the goal check validates that exact producer path", async () => {
+    const t = await setup({
+      audit: [reply({ gaps: [], document: "# Validation\n\n| Promise | Check |\n| --- | --- |\n| P1 | npm test |\n", sampled: 2, handoff: "audit done" })],
+    });
+    dispose = t.dispose;
+    const summary = await t.start(await builtin("validate-phase"), { phase_id: "ph_r7a" }).done;
+    expect(summary.status, summary.error ?? undefined).toBe("succeeded");
+    expect(summary.output).toMatchObject({ status: "done", validation_path: ".agents/phases/ph_r7a/VALIDATION.md" });
+    expect(file(t.checkout, ".agents/phases/ph_r7a/VALIDATION.md")).toContain("| P1 | npm test |");
+  });
+
+  it("eval-review writes EVAL-REVIEW.md; a flawed verdict still records the written path", async () => {
+    const t = await setup({
+      review: [reply({ findings: [], coverage: { dim: "covered" }, flawed: false, document: "# Eval review\n\nAll dimensions covered.\n", handoff: "review done" })],
+    }, { resolveWorkflow: (id) => builtinWorkflow(id) });
+    dispose = t.dispose;
+    const sound = await t.start(await builtin("eval-review"), { phase_id: "ph_r7b" }).done;
+    expect(sound.status, sound.error ?? undefined).toBe("succeeded");
+    expect(sound.output).toMatchObject({ status: "sound", review_path: ".agents/phases/ph_r7b/EVAL-REVIEW.md" });
+    expect(file(t.checkout, ".agents/phases/ph_r7b/EVAL-REVIEW.md")).toContain("All dimensions covered");
+
+    const u = await setup({
+      review: [reply({ findings: [{ file: "eval.ts", line: 1, severity: "high", evidence: "gold set written after tuning", dimension: "leakage" }], coverage: { dim: "missing" }, flawed: true, document: "# Eval review\n\nLeakage found.\n", handoff: "flawed" })],
+    }, { resolveWorkflow: (id) => builtinWorkflow(id) });
+    dispose = u.dispose;
+    const flawed = await u.start(await builtin("eval-review"), { phase_id: "ph_r7c" }).done;
+    expect(flawed.status, flawed.error ?? undefined).toBe("succeeded");
+    expect(flawed.output).toMatchObject({ status: "flawed", review_path: ".agents/phases/ph_r7c/EVAL-REVIEW.md" });
+    expect(file(u.checkout, ".agents/phases/ph_r7c/EVAL-REVIEW.md")).toContain("Leakage found");
+  });
+
+  it("secure-phase appends the status table to an existing SECURITY.md without losing it", async () => {
+    const t = await setup({
+      audit: [reply({ open: [], status_table: "\n## Threat register status\n\n| Threat | Disposition |\n| --- | --- |\n| T1 | mitigated src/a.ts:9 |\n", handoff: "secure done" })],
+    });
+    dispose = t.dispose;
+    mkdirSync(join(t.checkout, ".agents/phases/ph_r7d"), { recursive: true });
+    writeFileSync(join(t.checkout, ".agents/phases/ph_r7d/SECURITY.md"), "# Security\n\n## Threats\n\n- T1: injection\n");
+    const summary = await t.start(await builtin("secure-phase"), { phase_id: "ph_r7d" }).done;
+    expect(summary.status, summary.error ?? undefined).toBe("succeeded");
+    expect(summary.output).toMatchObject({ status: "done", security_path: ".agents/phases/ph_r7d/SECURITY.md" });
+    const written = file(t.checkout, ".agents/phases/ph_r7d/SECURITY.md")!;
+    expect(written).toContain("## Threats");
+    expect(written).toContain("## Threat register status");
+    expect(written.indexOf("## Threats")).toBeLessThan(written.indexOf("## Threat register status"));
+  });
+
+  it("ai-integration-phase persists model research and AI-SPEC, and the rework edge delivers check.gaps to spec visit 2", async () => {
+    const specPrompts: string[] = [];
+    const t = await setup({
+      select: [reply({ framework: "jev", options: [{ name: "jev" }], scores: {}, document: "# Model notes\n\n- jev\n", handoff: "selected" })],
+      research: [reply({ notes: "n", quick_reference: "qr", implementation_notes: "in", domain_notes: "dn", handoff: "researched" })],
+      eval_plan: [reply({ eval_plan: "gold set of 30", handoff: "eval planned" })],
+      spec: [() => { specPrompts.push(String(t.spawned.at(-1)!.prompt)); return reply({ document: "# AI-SPEC v1\n", handoff: "spec v1" }); },
+             () => { specPrompts.push(String(t.spawned.at(-1)!.prompt)); return reply({ document: "# AI-SPEC v2\n\nAll sections present.\n", handoff: "spec v2" }); }],
+      check: [reply({ ok: false, gaps: ["missing ## Evaluation", "no cost line"], handoff: "gaps found" }),
+              reply({ ok: true, gaps: [], handoff: "clean" })],
+    });
+    dispose = t.dispose;
+    const run = t.start(await builtin("ai-integration-phase"), { goal: "add a typed judgment", phase_id: "ph_r7e" });
+    const summary = await Promise.race([run.done, new Promise((_, reject) => setTimeout(() => reject(new Error("STALL: " + JSON.stringify((t.db as never as { prepare(s: string): { all(...a: unknown[]): Row[] } }).prepare("SELECT node_id,state,substr(error,1,200) e FROM lane_pilot_wf_step WHERE run_id=?").all(run.runId)) + " spawns=" + t.spawned.length + " sends=" + t.sends.length)), 20000))]) as Awaited<typeof run.done>;
+    expect(summary.status, summary.error ?? undefined).toBe("succeeded");
+    expect(summary.output).toMatchObject({ status: "done", framework: "jev", spec_path: ".agents/phases/ph_r7e/AI-SPEC.md" });
+    expect(file(t.checkout, ".agents/phases/ph_r7e/AI-SPEC.md")).toBe("# AI-SPEC v2\n\nAll sections present.\n");
+    expect(file(t.checkout, ".agents/research/model-add-a-typed-judgment.md")).toBe("# Model notes\n\n- jev\n");
+    expect(specPrompts).toHaveLength(2);
+    // The rework visit reuses the spec thread, so its prompt goes out as a follow-up send: the check.gaps edge mapping must land in it.
+    const followUp = JSON.stringify(t.sends.map((send) => send.input));
+    expect(followUp).toContain("missing ## Evaluation");
+    expect(followUp).toContain("no cost line");
+  });
+
+  it("spike persists the experiment document under .agents/planning/spikes/ and the goal check passes on it", async () => {
+    const t = await setup({
+      experiment: [reply({ answered: true, decision: "use sqlite WAL", document: "# Spike: journal mode\n\nWAL wins.\n", skill_draft: "", handoff: "answered" })],
+    });
+    dispose = t.dispose;
+    const summary = await t.start(await builtin("spike"), { question: "which journal mode" }).done;
+    expect(summary.status, summary.error ?? undefined).toBe("succeeded");
+    expect(summary.output).toMatchObject({ status: "answered", spike_path: ".agents/planning/spikes/which-journal-mode.md" });
+    expect(file(t.checkout, ".agents/planning/spikes/which-journal-mode.md")).toContain("WAL wins");
+  });
+
+  it("project-start persists the value map, appends REQUIREMENTS.md and writes the roadmap skeleton", async () => {
+    const t = await setup({
+      value_map: [reply({ document: "# Value map\n\nFor the maker.\n", handoff: "mapped" })],
+      preview: [reply({ stack: { lang: "ts" }, memory: {}, handoff: "previewed" })],
+      research: [reply({ research_notes: "three competitors", stack: "# Stack\n\n- vite\n", features: "", architecture: "# Arch\n\n- rooms\n", pitfalls: "", handoff: "researched" })],
+      requirements: [reply({ requirements: ["REQ-1", "REQ-2"], document: "\n## Requirements\n\n- REQ-1: first\n- REQ-2: second\n", handoff: "required" })],
+      recap: [reply({ next_steps: ["step one"], roadmap_draft: "# Roadmap\n\n- phase one\n", handoff: "recapped" })],
+    });
+    dispose = t.dispose;
+    mkdirSync(join(t.checkout, ".agents/planning"), { recursive: true });
+    writeFileSync(join(t.checkout, ".agents/planning/REQUIREMENTS.md"), "# Requirements\n\n- REQ-0: existing\n");
+    const summary = await t.start(await builtin("project-start"), { goal: "start the project" }).done;
+    expect(summary.status, summary.error ?? undefined).toBe("succeeded");
+    expect(summary.output).toMatchObject({ status: "done" });
+    expect(file(t.checkout, ".agents/planning/VALUE-MAP.md")).toBe("# Value map\n\nFor the maker.\n");
+    const reqs = file(t.checkout, ".agents/planning/REQUIREMENTS.md")!;
+    expect(reqs).toContain("REQ-0: existing");
+    expect(reqs).toContain("REQ-2: second");
+    expect(file(t.checkout, ".agents/planning/ROADMAP.md")).toBe("# Roadmap\n\n- phase one\n");
+    expect(file(t.checkout, ".agents/planning/research/STACK.md")).toBe("# Stack\n\n- vite\n");
+    expect(file(t.checkout, ".agents/planning/research/FEATURES.md")).toBeNull();
+  });
+
+  it("new-milestone appends the requirements block, keeping the existing file", async () => {
+    const t = await setup({
+      frame: [reply({ phases: ["phase-a", "phase-b"], document: "\n- REQ-A: alpha\n- REQ-B: beta\n", handoff: "framed" })],
+    });
+    dispose = t.dispose;
+    mkdirSync(join(t.checkout, ".agents/planning"), { recursive: true });
+    writeFileSync(join(t.checkout, ".agents/planning/REQUIREMENTS.md"), "# Requirements\n\n- REQ-OLD: kept\n");
+    const summary = await t.start(await builtin("new-milestone"), { goal: "second milestone" }).done;
+    expect(summary.status, summary.error ?? undefined).toBe("succeeded");
+    expect(summary.output).toMatchObject({ status: "done", phases: ["phase-a", "phase-b"] });
+    const reqs = file(t.checkout, ".agents/planning/REQUIREMENTS.md")!;
+    expect(reqs).toContain("REQ-OLD: kept");
+    expect(reqs).toContain("REQ-B: beta");
+  });
+
+  it("ship appends the deploy record, goal_check validates that path, and review range honors $inputs.head", async () => {
+    const codeReview = wf({
+      id: "code-review",
+      inputs: [{ name: "range", type: "string" }],
+      outputs: [{ name: "status", type: "enum", values: ["pass", "rework", "block"] }],
+      nodes: [{ id: "do", type: "action", action: "emit", map: { status: "'pass'" } }],
+      edges: [{ from: "start", to: "do" }],
+    });
+    const t = await setup({
+      preflight: [reply({ ready: true, held_by: [], handoff: "preflight ok" })],
+      open_pr: [reply({ pr_url: "https://example.invalid/pr/7", deploy_entry: "- 2026-11-16 ph_r7 shipped https://example.invalid/pr/7\n", handoff: "shipped" })],
+    }, {
+      resolveWorkflow: (id) => (id === "code-review" ? codeReview : builtinWorkflow(id)),
+    });
+    dispose = t.dispose;
+    const summary = await t.start(await builtin("ship"), { phase_id: "ph_r7s", base: "main", head: "feature-ship", review: true }).done;
+    expect(summary.status, summary.error ?? undefined).toBe("succeeded");
+    expect(summary.output).toMatchObject({ status: "shipped", pr_url: "https://example.invalid/pr/7" });
+    expect(file(t.checkout, ".agents/deploys.log")).toBe("- 2026-11-16 ph_r7 shipped https://example.invalid/pr/7\n");
+    expect(childInputs(t.db as never, summary.runId)["code-review"]).toMatchObject({ range: "main..feature-ship" });
+  });
+
+  it("ship review range falls back to the current HEAD when $inputs.head is absent", async () => {
+    const codeReview = wf({
+      id: "code-review",
+      inputs: [{ name: "range", type: "string" }],
+      outputs: [{ name: "status", type: "enum", values: ["pass", "rework", "block"] }],
+      nodes: [{ id: "do", type: "action", action: "emit", map: { status: "'pass'" } }],
+      edges: [{ from: "start", to: "do" }],
+    });
+    const t = await setup({
+      preflight: [reply({ ready: true, held_by: [], handoff: "preflight ok" })],
+      open_pr: [reply({ pr_url: "https://example.invalid/pr/8", deploy_entry: "- 2026-11-16 ph_r7 shipped https://example.invalid/pr/8\n", handoff: "shipped" })],
+    }, {
+      resolveWorkflow: (id) => (id === "code-review" ? codeReview : builtinWorkflow(id)),
+    });
+    dispose = t.dispose;
+    const summary = await t.start(await builtin("ship"), { phase_id: "ph_r7s2", base: "release/1.0", review: true }).done;
+    expect(summary.status, summary.error ?? undefined).toBe("succeeded");
+    expect(childInputs(t.db as never, summary.runId)["code-review"]).toMatchObject({ range: "release/1.0.." });
+  });
+
+  it("milestone-close's retro appends changed limits to an existing PROJECT.md and creates none when absent", async () => {
+    const lpClose = wf({
+      id: "lp.close",
+      inputs: ["goals", "goal", "merged_commits", "insights"].map((name) => ({ name, type: "any" })),
+      outputs: [
+        { name: "status", type: "enum", values: ["ok", "low_confidence", "done", "partial", "rework", "pass", "closed", "failed", "inconclusive"] },
+        { name: "staged", type: "number" }, { name: "report_path", type: "string" },
+      ],
+      nodes: [{ id: "do", type: "action", action: "emit", map: { status: "'closed'", staged: "0", report_path: "'.agents/milestones/close.md'" } }],
+      edges: [{ from: "start", to: "do" }],
+    });
+    const t = await setup({
+      retro: [reply({ insights: [], retro_path: "", metrics: {}, project_update: "\n## Limits (milestone 2)\n\n- context budget kept under 80%\n", project_exists: true, handoff: "retro done" })],
+      summary: [reply({ section: "# Milestone 2 summary\n", open_items: [], handoff: "summarized" })],
+    }, {
+      resolveWorkflow: (id) => (id === "lp.close" ? lpClose : builtinWorkflow(id)),
+      human: () => ({ answer: "", answer_kind: "timeout" }),
+    });
+    dispose = t.dispose;
+    mkdirSync(join(t.checkout, ".agents/planning"), { recursive: true });
+    writeFileSync(join(t.checkout, ".agents/planning/PROJECT.md"), "# Project\n\n## Vision\n\nShip it.\n");
+    const run = t.start(await builtin("milestone-close"), { goal: "milestone 2", goals: [] });
+    const summary = await Promise.race([run.done, new Promise((_, reject) => setTimeout(() => reject(new Error("STALL: " + JSON.stringify((t.db as never as { prepare(q: string): { all(...a: unknown[]): Row[] } }).prepare("SELECT node_id,state,substr(error,1,160) e FROM lane_pilot_wf_step WHERE run_id=?").all(run.runId)) + " spawns=" + t.spawned.length + " sends=" + t.sends.length)), 20000))]) as Awaited<typeof run.done>;
+    expect(summary.status, summary.error ?? undefined).toBe("succeeded");
+    const project = file(t.checkout, ".agents/planning/PROJECT.md")!;
+    expect(project).toContain("## Vision");
+    expect(project).toContain("## Limits (milestone 2)");
+    expect(project.indexOf("## Vision")).toBeLessThan(project.indexOf("## Limits (milestone 2)"));
+  });
+
+  it("milestone-close's retro leaves no PROJECT.md write when the helper returns an empty update", async () => {
+    const lpClose = wf({
+      id: "lp.close",
+      inputs: ["goals", "goal", "merged_commits", "insights"].map((name) => ({ name, type: "any" })),
+      outputs: [
+        { name: "status", type: "enum", values: ["ok", "low_confidence", "done", "partial", "rework", "pass", "closed", "failed", "inconclusive"] },
+        { name: "staged", type: "number" }, { name: "report_path", type: "string" },
+      ],
+      nodes: [{ id: "do", type: "action", action: "emit", map: { status: "'closed'", staged: "0", report_path: "'.agents/milestones/close.md'" } }],
+      edges: [{ from: "start", to: "do" }],
+    });
+    const t = await setup({
+      retro: [reply({ insights: [], retro_path: "", metrics: {}, project_update: "\n## Limits\n\n- should never land\n", project_exists: false, handoff: "retro done" })],
+      summary: [reply({ section: "# Milestone 3 summary\n", open_items: [], handoff: "summarized" })],
+    }, {
+      resolveWorkflow: (id) => (id === "lp.close" ? lpClose : builtinWorkflow(id)),
+      human: () => ({ answer: "", answer_kind: "timeout" }),
+    });
+    dispose = t.dispose;
+    const run = t.start(await builtin("milestone-close"), { goal: "milestone 3", goals: [] });
+    const summary = await Promise.race([run.done, new Promise((_, reject) => setTimeout(() => reject(new Error("STALL: " + JSON.stringify((t.db as never as { prepare(q: string): { all(...a: unknown[]): Row[] } }).prepare("SELECT node_id,state,substr(error,1,160) e FROM lane_pilot_wf_step WHERE run_id=?").all(run.runId)) + " spawns=" + t.spawned.length + " sends=" + t.sends.length)), 20000))]) as Awaited<typeof run.done>;
+    expect(summary.status, summary.error ?? undefined).toBe("succeeded");
+    expect(file(t.checkout, ".agents/planning/PROJECT.md")).toBeNull();
+  });
+});

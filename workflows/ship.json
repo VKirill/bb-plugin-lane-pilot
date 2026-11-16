@@ -116,7 +116,7 @@
         "status": "pass"
       },
       "with": {
-        "range": "{{$inputs.base}}..HEAD"
+        "range": "{{$inputs.base}}..{{$inputs.head}}"
       },
       "guards": {
         "maxVisits": 1
@@ -130,9 +130,10 @@
         "en": "Push and open the PR",
         "ru": "Пуш и PR"
       },
-      "prompt": "Push the phase branch (git push -u origin HEAD), write the PR body from the phase's SUMMARY.md and BOOK.md (what, why, how it was verified, receipts) into a temp file made with mktemp outside every repository, open it with gh pr create --body-file <that file> and delete the file, then record the shipment in .agents/deploys.log and set the phase's status and last activity in .agents/planning/STATE.md.",
+      "prompt": "Push the phase branch (git push -u origin HEAD), write the PR body from the phase's SUMMARY.md and BOOK.md (what, why, how it was verified, receipts) into a temp file made with mktemp outside every repository, open it with gh pr create --body-file <that file> and delete the file. Return pr_url and deploy_entry — the one-line .agents/deploys.log record (date, phase, PR url) the code-owned writer appends. This read-only helper does not write files.",
       "out": {
-        "pr_url": "string"
+        "pr_url": "string",
+        "deploy_entry": "string"
       },
       "guards": {
         "maxVisits": 1,
@@ -271,6 +272,25 @@
         "held_by": "['deliverable validation failed after the PR was opened', goal_check.reason]",
         "hooks_failed": "post_ship.hooks_failed"
       }
+    },
+    {
+      "id": "write_deploy_log",
+      "type": "action",
+      "action": "fs.write",
+      "path": ".agents/deploys.log",
+      "contents": "{{open_pr.deploy_entry}}",
+      "out": {
+        "deploy_path": "string"
+      },
+      "mode": "append",
+      "title": {
+        "en": "Record the shipment",
+        "ru": "Записать отгрузку"
+      },
+      "skip_when": "!open_pr.deploy_entry",
+      "skip_out": {
+        "deploy_path": ""
+      }
     }
   ],
   "edges": [
@@ -308,6 +328,11 @@
     },
     {
       "from": "open_pr",
+      "to": "write_deploy_log",
+      "pass": "artifact"
+    },
+    {
+      "from": "write_deploy_log",
       "to": "hooks",
       "pass": "artifact"
     },
@@ -319,7 +344,10 @@
     {
       "from": "post_ship",
       "to": "goal_check",
-      "pass": "artifact"
+      "pass": "artifact",
+      "with": {
+        "path": "write_deploy_log.deploy_path"
+      }
     },
     {
       "from": "goal_check",

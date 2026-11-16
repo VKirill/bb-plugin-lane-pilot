@@ -59,10 +59,10 @@
         "en": "Coverage audit",
         "ru": "Аудит покрытия"
       },
-      "prompt": "Read the phase's SPEC.md, PLAN.md and the task contracts (lane_pilot_phase status). For each promise and requirement: which check proves it, would that check fail without the work (mutate one line in a throwaway copy and run it), is it existence-only. Write .agents/phases/<id>/VALIDATION.md from the template (lane-plan template fill VALIDATION --phase …) with one row per promise and the gaps.",
+      "prompt": "Read the phase's SPEC.md, PLAN.md and the task contracts (lane_pilot_phase status). For each promise and requirement: which check proves it, would that check fail without the work (mutate one line in a throwaway copy and run it), is it existence-only. Return the complete raw Markdown of VALIDATION.md (the VALIDATION template's table with one row per promise and the gaps) in document; the code-owned writer persists it to .agents/phases/<id>/. This read-only helper does not write files.",
       "out": {
         "gaps": "string[]",
-        "validation_path": "string",
+        "document": "string",
         "sampled": "int"
       },
       "guards": {
@@ -83,7 +83,7 @@
       "map": {
         "status": "done",
         "gaps": "[]",
-        "validation_path": "audit.validation_path"
+        "validation_path": "write_validation.validation_path"
       }
     },
     {
@@ -93,7 +93,7 @@
       "map": {
         "status": "gaps",
         "gaps": "audit.gaps",
-        "validation_path": "audit.validation_path"
+        "validation_path": "write_validation.validation_path"
       }
     },
     {
@@ -111,21 +111,40 @@
         "reason": "string",
         "details": "object"
       }
+    },
+    {
+      "id": "write_validation",
+      "type": "action",
+      "action": "fs.write",
+      "path": ".agents/phases/{{$inputs.phase_id}}/VALIDATION.md",
+      "contents": "{{audit.document}}",
+      "out": {
+        "validation_path": "string"
+      },
+      "title": {
+        "en": "Write the validation report",
+        "ru": "Записать отчёт валидации"
+      }
     }
   ],
   "edges": [
     {
       "from": "audit",
+      "to": "write_validation",
+      "pass": "artifact"
+    },
+    {
+      "from": "write_validation",
       "to": "gaps",
       "pass": "artifact",
       "when": "audit.gaps.length > 0"
     },
     {
-      "from": "audit",
+      "from": "write_validation",
       "to": "goal_check",
       "pass": "artifact",
       "with": {
-        "path": "audit.validation_path"
+        "path": "write_validation.validation_path"
       }
     },
     {

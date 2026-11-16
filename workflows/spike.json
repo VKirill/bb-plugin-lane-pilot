@@ -67,11 +67,11 @@
         "en": "Experiment",
         "ru": "Эксперимент"
       },
-      "prompt": "lane-plan spike new \"<question>\" opens the file. Inside the time box: the smallest experiment that answers the question, in a throwaway copy (never the project's main code). Write the result and the decision into the spike file. If wrap_skill is given and the decision is made, run lane-plan wrap spike <file> --skill <wrap_skill>.",
+      "prompt": "Inside the time box: the smallest experiment that answers the question, in a throwaway copy (never the project's main code). Return the result and the decision in document — the raw Markdown the code-owned writer persists as the spike file under .agents/planning/spikes/. If wrap_skill is given and the decision is made, return skill_draft too. This read-only helper does not write files and runs no lane-plan commands.",
       "out": {
         "answered": "bool",
         "decision": "string",
-        "spike_path": "string",
+        "document": "string",
         "skill_draft": "string"
       },
       "guards": {
@@ -92,7 +92,7 @@
       "map": {
         "status": "answered",
         "decision": "experiment.decision",
-        "spike_path": "experiment.spike_path",
+        "spike_path": "write_spike.spike_path",
         "skill_draft": "experiment.skill_draft"
       }
     },
@@ -103,7 +103,7 @@
       "map": {
         "status": "inconclusive",
         "decision": "experiment.decision",
-        "spike_path": "experiment.spike_path",
+        "spike_path": "write_spike.spike_path",
         "skill_draft": "''"
       }
     },
@@ -122,20 +122,43 @@
         "reason": "string",
         "details": "object"
       }
+    },
+    {
+      "id": "write_spike",
+      "type": "action",
+      "action": "fs.write",
+      "path": ".agents/planning/spikes/{{slug}}.md",
+      "contents": "{{experiment.document}}",
+      "out": {
+        "spike_path": "string"
+      },
+      "title": {
+        "en": "Write the spike file",
+        "ru": "Записать файл спайка"
+      },
+      "skip_when": "!experiment.answered || !experiment.document",
+      "skip_out": {
+        "spike_path": ""
+      }
     }
   ],
   "edges": [
     {
       "from": "experiment",
+      "to": "write_spike",
+      "pass": "artifact"
+    },
+    {
+      "from": "write_spike",
       "to": "goal_check",
       "pass": "artifact",
       "when": "experiment.answered",
       "with": {
-        "path": "experiment.spike_path"
+        "path": "write_spike.spike_path"
       }
     },
     {
-      "from": "experiment",
+      "from": "write_spike",
       "to": "inconclusive",
       "pass": "artifact"
     },

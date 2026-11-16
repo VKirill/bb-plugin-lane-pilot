@@ -54,10 +54,10 @@
         "en": "Threat register check",
         "ru": "Проверка реестра угроз"
       },
-      "prompt": "Read the phase's .agents/phases/<id>/SECURITY.md threats and the diff/plan. Per threat a disposition: mitigated (the file:line or check that proves it), accepted (only on the owner's word) or open. Update SECURITY.md with a 'Threat register status' table and return the open threats.",
+      "prompt": "Read the phase's .agents/phases/<id>/SECURITY.md threats and the diff/plan. Per threat a disposition: mitigated (the file:line or check that proves it), accepted (only on the owner's word) or open. Return the '## Threat register status' table as raw Markdown in status_table (the code-owned writer appends it to SECURITY.md) and the open threats in open. This read-only helper does not write files.",
       "out": {
         "open": "string[]",
-        "security_path": "string"
+        "status_table": "string"
       },
       "guards": {
         "maxVisits": 1,
@@ -77,7 +77,7 @@
       "map": {
         "status": "done",
         "open": "[]",
-        "security_path": "audit.security_path"
+        "security_path": "write_security.security_path"
       }
     },
     {
@@ -87,7 +87,7 @@
       "map": {
         "status": "gaps",
         "open": "audit.open",
-        "security_path": "audit.security_path"
+        "security_path": "write_security.security_path"
       }
     },
     {
@@ -105,21 +105,41 @@
         "reason": "string",
         "details": "object"
       }
+    },
+    {
+      "id": "write_security",
+      "type": "action",
+      "action": "fs.write",
+      "path": ".agents/phases/{{$inputs.phase_id}}/SECURITY.md",
+      "contents": "{{audit.status_table}}",
+      "out": {
+        "security_path": "string"
+      },
+      "mode": "append",
+      "title": {
+        "en": "Append the threat register status",
+        "ru": "Дописать статус реестра угроз"
+      }
     }
   ],
   "edges": [
     {
       "from": "audit",
+      "to": "write_security",
+      "pass": "artifact"
+    },
+    {
+      "from": "write_security",
       "to": "gaps",
       "pass": "artifact",
       "when": "audit.open.length > 0"
     },
     {
-      "from": "audit",
+      "from": "write_security",
       "to": "goal_check",
       "pass": "artifact",
       "with": {
-        "path": "audit.security_path"
+        "path": "write_security.security_path"
       }
     },
     {

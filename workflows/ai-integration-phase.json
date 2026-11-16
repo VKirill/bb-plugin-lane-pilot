@@ -61,11 +61,12 @@
         "en": "Framework selection",
         "ru": "Выбор фреймворка"
       },
-      "prompt": "AI framework selector: from the goal, choose the kind of call (typed judgment, generation, retrieval, ranking), the framework and the model. Build a decision matrix of 2–3 options: rows are the options, columns the criteria (cost per call, latency, limits, failure modes, fit to the goal), each scored 0–5 with a one-line reason and a weight. Recommend the option with the highest weighted total; the table goes in the reply and in .agents/research/model-<slug>.md.",
+      "prompt": "AI framework selector: from the goal, choose the kind of call (typed judgment, generation, retrieval, ranking), the framework and the model. Build a decision matrix of 2–3 options: rows are the options, columns the criteria (cost per call, latency, limits, failure modes, fit to the goal), each scored 0–5 with a one-line reason and a weight. Recommend the option with the highest weighted total; the table goes in the reply and in document, the raw Markdown the code-owned writer persists to .agents/research/model-<slug>.md. This read-only helper does not write files.",
       "out": {
         "framework": "string",
         "options": "any",
-        "scores": "json"
+        "scores": "json",
+        "document": "string"
       },
       "guards": {
         "maxVisits": 1,
@@ -149,9 +150,9 @@
         "en": "AI-SPEC",
         "ru": "AI-SPEC"
       },
-      "prompt": "Write .agents/phases/<id>/AI-SPEC.md (lane-plan template fill AI-SPEC --phase …): framework and model, typed inputs and outputs, failure modes and guards (timeout, fallback, ceiling), cost per call. It must hold the sections '## Quick reference' and '## Implementation guidance' from the research, and an '## Evaluation' section with dimensions (what quality means for this feature, grounded in domain_notes), a rubric per dimension with the gold-set cases, guardrails (checks on input and output at run time), monitoring (how a regression is noticed after release), metric and threshold. See templates/planning/references/ai-systems.md.",
+      "prompt": "Produce the complete raw Markdown of AI-SPEC.md in document (the AI-SPEC template's sections): framework and model, typed inputs and outputs, failure modes and guards (timeout, fallback, ceiling), cost per call. It must hold the sections '## Quick reference' and '## Implementation guidance' from the research, and an '## Evaluation' section with dimensions (what quality means for this feature, grounded in domain_notes), a rubric per dimension with the gold-set cases, guardrails (checks on input and output at run time), monitoring (how a regression is noticed after release), metric and threshold. See templates/planning/references/ai-systems.md. Return the document text only; this read-only helper does not write files.",
       "out": {
-        "spec_path": "string"
+        "document": "string"
       },
       "guards": {
         "maxVisits": 3,
@@ -219,7 +220,7 @@
       "map": {
         "status": "done",
         "framework": "select.framework",
-        "spec_path": "spec.spec_path"
+        "spec_path": "write_spec.spec_path"
       }
     },
     {
@@ -229,13 +230,46 @@
       "map": {
         "status": "'blocked'",
         "framework": "select.framework",
-        "spec_path": "spec.spec_path"
+        "spec_path": "write_spec.spec_path"
+      }
+    },
+    {
+      "id": "write_model",
+      "type": "action",
+      "action": "fs.write",
+      "path": ".agents/research/model-{{slug}}.md",
+      "contents": "{{select.document}}",
+      "out": {
+        "model_path": "string"
+      },
+      "title": {
+        "en": "Write the model research note",
+        "ru": "Записать заметку о модели"
+      }
+    },
+    {
+      "id": "write_spec",
+      "type": "action",
+      "action": "fs.write",
+      "path": ".agents/phases/{{$inputs.phase_id}}/AI-SPEC.md",
+      "contents": "{{spec.document}}",
+      "out": {
+        "spec_path": "string"
+      },
+      "title": {
+        "en": "Write the AI spec",
+        "ru": "Записать AI-SPEC"
       }
     }
   ],
   "edges": [
     {
       "from": "select",
+      "to": "write_model",
+      "pass": "artifact"
+    },
+    {
+      "from": "write_model",
       "to": "research",
       "pass": "artifact"
     },
@@ -251,6 +285,11 @@
     },
     {
       "from": "spec",
+      "to": "write_spec",
+      "pass": "artifact"
+    },
+    {
+      "from": "write_spec",
       "to": "check",
       "pass": "artifact"
     },
@@ -259,7 +298,10 @@
       "to": "spec",
       "pass": "same-session",
       "when": "!check.ok && visits('check') < 2",
-      "label": "gaps"
+      "label": "gaps",
+      "with": {
+        "gaps": "check.gaps"
+      }
     },
     {
       "from": "check",

@@ -135,14 +135,18 @@
       "skip_out": {
         "insights": "[]",
         "retro_path": "",
-        "metrics": "{}"
+        "metrics": "{}",
+        "project_update": "",
+        "project_exists": false
       },
       "src": "maestro-flow:workflows/retrospective.md",
-      "prompt": "Read the run metrics - tasks planned/accepted/failed, rework iterations per task, severity distribution of findings, failure classes, merge conflicts. Four lenses: technical (patterns, debt), process (stalls, retries), quality (defects that slipped), decision (choices to revisit).\nDistill insights with a stable id INS-{8hex} (hash of lens + title) so a repeat run is idempotent; each insight routes as a rule candidate, a note or a task, as a candidate only. Read-only on sources; never overwrite history.\n\nIf .agents/planning/PROJECT.md already exists, append this milestone's changed limits to it (Vision, Value, Limits — refresh the Limits from what the run taught, only if the file already exists; never create it).\n",
+      "prompt": "Read the run metrics - tasks planned/accepted/failed, rework iterations per task, severity distribution of findings, failure classes, merge conflicts. Four lenses: technical (patterns, debt), process (stalls, retries), quality (defects that slipped), decision (choices to revisit).\nDistill insights with a stable id INS-{8hex} (hash of lens + title) so a repeat run is idempotent; each insight routes as a rule candidate, a note or a task, as a candidate only. Read-only on sources; never overwrite history.\n\nIf .agents/planning/PROJECT.md already exists, return this milestone's changed limits (Vision, Value, Limits — refresh the Limits from what the run taught) as raw Markdown in project_update; the code-owned writer appends it. Empty project_update when the file does not exist — never create it.\n Read .agents/planning/PROJECT.md first and report whether it exists in project_exists; the limits update goes in project_update only when the file is there.",
       "out": {
         "insights": "Insight[]",
         "retro_path": "string",
-        "metrics": "any"
+        "metrics": "any",
+        "project_update": "string",
+        "project_exists": "bool"
       },
       "guards": {
         "maxVisits": 1,
@@ -307,6 +311,25 @@
         "status": "halted",
         "report_path": "close.report_path"
       }
+    },
+    {
+      "id": "write_project",
+      "type": "action",
+      "action": "fs.write",
+      "path": ".agents/planning/PROJECT.md",
+      "contents": "{{retro.project_update}}",
+      "out": {
+        "project_path": "string"
+      },
+      "mode": "append",
+      "title": {
+        "en": "Append the project limits",
+        "ru": "Дописать пределы проекта"
+      },
+      "skip_when": "!retro.project_exists || !retro.project_update",
+      "skip_out": {
+        "project_path": ""
+      }
     }
   ],
   "edges": [
@@ -338,13 +361,13 @@
       "pass": "artifact"
     },
     {
-      "from": "retro",
+      "from": "write_project",
       "to": "living",
       "pass": "artifact",
       "when": "status.retro_living == 'on'"
     },
     {
-      "from": "retro",
+      "from": "write_project",
       "to": "close",
       "pass": "artifact"
     },
@@ -411,6 +434,11 @@
     {
       "from": "archive",
       "to": "closed",
+      "pass": "artifact"
+    },
+    {
+      "from": "retro",
+      "to": "write_project",
       "pass": "artifact"
     }
   ],
