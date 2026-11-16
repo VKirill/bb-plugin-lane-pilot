@@ -109,11 +109,11 @@ describe("the end of the discussion (n1326, n1327)", () => {
 describe("ship and the clean PR branch (n1328, n1329)", () => {
   it("[sma:k_c_ship] the gates stand before the PR: a red integration gate, a missing preflight item or a review asking for rework hold the ship and say by what; a ready phase opens the PR from its artifacts and runs the hooks, a failed hook is listed", async () => {
     const seen = await observeF.k_c_ship();
-    expect(seen.shipped).toEqual(["gate preflight review open_pr hooks post_ship goal_check shipped", { status: "shipped", pr_url: "https://example/pr/7", held_by: [], hooks_failed: ["tag"] }]);
+    expect(seen.shipped).toEqual(["gate preflight review_range review open_pr write_deploy_log state_mark hooks post_ship goal_check shipped", { status: "shipped", pr_url: "https://example/pr/7", held_by: [], hooks_failed: ["tag"] }]);
     expect(seen.skippedReview).toBe(true);
     expect(seen.gate).toEqual(["gate held_gate", { status: "held", pr_url: "", held_by: ["npm test red on the head"], hooks_failed: [] }]);
     expect(seen.held).toEqual(["gate preflight held", { status: "held", pr_url: "", held_by: ["no full-gate marker", "untriaged vendor bump"], hooks_failed: [] }, 0]);
-    expect(seen.reviewed).toEqual(["gate preflight review held_review", "held", 0]);
+    expect(seen.reviewed).toEqual(["gate preflight review_range review held_review", "held", 0]);
   });
 
   it("[sma:k_c_prbranch] the PR branch is review/<phase> without the planning bookkeeping commits; a conflict stops it as blocked and still names the branch", async () => {

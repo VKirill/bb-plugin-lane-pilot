@@ -178,6 +178,6 @@ export async function obsResearch() {
   return {
     before: next("ask"), after: next("research"), thenRecap: next("requirements"),
     folder: /\.agents\/planning\/research\//.test(prompt), files: ["STACK.md", "FEATURES.md", "ARCHITECTURE.md", "PITFALLS.md"].filter((name) => prompt.includes(name)),
-    neverOverwrites: /never overwritten: merge .*<name>\.new\.md/.test(prompt), role: node.role, skipWhen: node.skip_when, skipOut: node.skip_out,
+    neverOverwrites: /never overwritten: .*<name>\.new\.md/.test(prompt), role: node.role, skipWhen: node.skip_when, skipOut: node.skip_out,
   };
 }

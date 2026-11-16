@@ -5,21 +5,21 @@ import { runSim } from "./chain-harness";
 // The SMA map's command workflows (W17): each takes its happy path and its other exit on stubs.
 describe("SMA command workflows", () => {
   it("validate-phase: no gaps is done, a gap is reported", async () => {
-    const clean = await runSim("validate-phase", { input: { phase_id: "ph_a1b2c3" }, stubs: { audit: { gaps: [], validation_path: "v.md", sampled: 3 } } });
-    expect(pathOf(clean)).toBe("audit goal_check done");
-    const gap = await runSim("validate-phase", { input: { phase_id: "ph_a1b2c3" }, stubs: { audit: { gaps: ["p1: existence only"], validation_path: "v.md", sampled: 1 } } });
-    expect(pathOf(gap)).toBe("audit gaps");
+    const clean = await runSim("validate-phase", { input: { phase_id: "ph_a1b2c3" }, stubs: { audit: { gaps: [], document: "# Validation report", sampled: 3 } } });
+    expect(pathOf(clean)).toBe("audit doc_path write_validation goal_check done");
+    const gap = await runSim("validate-phase", { input: { phase_id: "ph_a1b2c3" }, stubs: { audit: { gaps: ["p1: existence only"], document: "# Validation report", sampled: 1 } } });
+    expect(pathOf(gap)).toBe("audit doc_path write_validation gaps");
     expect(out(gap)).toMatchObject({ status: "gaps", gaps: ["p1: existence only"] });
   });
 
   it("eval-review: sound or flawed", async () => {
-    expect(pathOf(await runSim("eval-review", { input: { phase_id: "ph_a" }, stubs: { review: { findings: [], review_path: "e.md", flawed: false } } }))).toBe("review goal_check sound");
-    expect(out(await runSim("eval-review", { input: { phase_id: "ph_a" }, stubs: { review: { findings: [], review_path: "e.md", flawed: true } } }))).toMatchObject({ status: "flawed" });
+    expect(pathOf(await runSim("eval-review", { input: { phase_id: "ph_a" }, stubs: { review: { findings: [], document: "# Evaluation review", flawed: false } } }))).toBe("review doc_path write_review goal_check sound");
+    expect(out(await runSim("eval-review", { input: { phase_id: "ph_a" }, stubs: { review: { findings: [], document: "# Evaluation review", flawed: true } } }))).toMatchObject({ status: "flawed" });
   });
 
   it("ai-integration-phase: select, research, spec", async () => {
-    const r = await runSim("ai-integration-phase", { input: { goal: "rank photos" }, stubs: { select: { framework: "langchain", options: [] }, research: { notes: "ok" }, spec: { spec_path: "AI-SPEC.md" } } });
-    expect(pathOf(r)).toBe("select research eval_plan spec check done");
+    const r = await runSim("ai-integration-phase", { input: { goal: "rank photos" }, stubs: { select: { framework: "langchain", options: [] }, research: { notes: "ok" }, write_spec: { spec_path: "AI-SPEC.md" } } });
+    expect(pathOf(r)).toBe("select write_model research eval_plan spec spec_path write_spec check done");
     expect(out(r)).toMatchObject({ status: "done", framework: "langchain", spec_path: "AI-SPEC.md" });
   });
 
@@ -30,13 +30,13 @@ describe("SMA command workflows", () => {
   });
 
   it("spike: answered or inconclusive", async () => {
-    expect(pathOf(await runSim("spike", { input: { question: "can fts hold 1M rows" }, stubs: { experiment: { answered: true, decision: "yes", spike_path: "s.md", skill_draft: "" } } }))).toBe("experiment goal_check answered");
-    expect(pathOf(await runSim("spike", { input: { question: "can fts hold 1M rows" }, stubs: { experiment: { answered: false, decision: "", spike_path: "s.md", skill_draft: "" } } }))).toBe("experiment inconclusive");
+    expect(pathOf(await runSim("spike", { input: { question: "can fts hold 1M rows" }, stubs: { experiment: { answered: true, decision: "yes", document: "# Spike findings", skill_draft: "" } } }))).toBe("spike_new experiment write_spike skill_dir write_skill goal_check answered");
+    expect(pathOf(await runSim("spike", { input: { question: "can fts hold 1M rows" }, stubs: { experiment: { answered: false, decision: "", document: "# Spike findings", skill_draft: "" } } }))).toBe("spike_new experiment write_spike skill_dir write_skill inconclusive");
   });
 
   it("ship: a ready phase is shipped, a held one says what holds it", async () => {
     const shipped = await runSim("ship", { input: { phase_id: "ph_a" }, stubs: { preflight: { ready: true, held_by: [] }, open_pr: { pr_url: "https://x/pr/1" }, "lp.post_ship_hooks": { count: 0, files: [] } } });
-    expect(pathOf(shipped)).toBe("gate preflight review open_pr hooks post_ship goal_check shipped");
+    expect(pathOf(shipped)).toBe("gate preflight review_range review open_pr write_deploy_log state_mark hooks post_ship goal_check shipped");
     expect(shipped.skipped).toEqual(["review", "post_ship"]);
     const held = await runSim("ship", { input: { phase_id: "ph_a" }, stubs: { preflight: { ready: false, held_by: ["no full gate marker"] } } });
     expect(pathOf(held)).toBe("gate preflight held");
@@ -76,9 +76,9 @@ describe("SMA command workflows", () => {
   });
 
   it("project-start: value map, preview, recap", async () => {
-    const r = await runSim("project-start", { input: {}, stubs: { "lp.tree_counts": { enabled: "off" }, value_map: { value_map: "for shop owners" }, preview: { stack: {}, memory: {} }, recap: { next_steps: ["a", "b", "c"] } } });
-    expect(pathOf(r)).toBe("tree probe value_map preview profile_write ask research requirements recap done");
-    expect(r.skipped).toEqual(["probe", "profile_write", "ask", "research", "requirements"]);
+    const r = await runSim("project-start", { input: {}, stubs: { "lp.tree_counts": { enabled: "off" }, value_map: { document: "for shop owners" }, preview: { stack: {}, memory: {} }, recap: { next_steps: ["a", "b", "c"] } } });
+    expect(pathOf(r)).toBe("tree probe value_map write_value_map preview profile_write ask research write_research_stack write_research_features write_research_architecture write_research_pitfalls requirements write_requirements recap write_roadmap write_project add_phases done");
+    expect(r.skipped).toEqual(["probe", "profile_write", "ask", "research", "write_research_stack", "write_research_features", "write_research_architecture", "write_research_pitfalls", "requirements", "write_requirements", "write_project", "add_phases"]);
     expect(out(r)).toMatchObject({ status: "done", next_steps: ["a", "b", "c"] });
   });
 });

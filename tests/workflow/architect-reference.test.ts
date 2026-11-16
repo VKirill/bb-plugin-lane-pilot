@@ -21,7 +21,7 @@ describe("the workflow reference the architect reads", () => {
   });
 
   it("lists every action that has an executor", () => {
-    for (const key of [...PURE_ACTION_KEYS, ...DELEGATED_ACTIONS, "fs.write", "git.diff_files", "lp.state_probe", "lp.run_status", "lp.run_close", "lp.lint_contract", "lp.integration_gate_status", "lp.phase_status", "lp.phase_plan_check"]) expect(reference, key).toContain(key);
+    for (const key of [...PURE_ACTION_KEYS, ...DELEGATED_ACTIONS, "fs.write", "git.diff_files", "lp.state_probe", "lp.run_status", "lp.run_close", "lp.lint_contract", "lp.integration_gate_status", "lp.review_range", "lp.ship_state_mark", "lp.phase_add", "lp.spike_new", "lp.doc_path", "lp.phase_status", "lp.phase_plan_check"]) expect(reference, key).toContain(key);
   });
 
   it("names every trigger type", () => {

@@ -76,7 +76,7 @@ describe("tails · a word to a worker, the phase's learnings, the check's report
   it("[sma:m_sh_publish] publish runs only behind the gate marker: a failing marker ends held with its reasons and the PR step never runs; a clean run opens the PR once and ends shipped with its url", async () => {
     const seen = await obsShip();
     expect(seen.held).toEqual({ ran: ["gate", "held_gate"], out: { status: "held", pr_url: "", held_by: ["integration gate not run"], hooks_failed: [] }, openPrCalls: 0 });
-    expect(seen.shipped.ran).toEqual(["gate", "preflight", "open_pr", "hooks", "goal_check", "shipped"]);
+    expect(seen.shipped.ran).toEqual(["gate", "preflight", "review_range", "open_pr", "write_deploy_log", "state_mark", "hooks", "goal_check", "shipped"]);
     expect(seen.shipped.out).toEqual({ status: "shipped", pr_url: "https://x/pr/1", held_by: [], hooks_failed: [] });
     expect(seen.shipped.openPrCalls).toBe(1);
   });
@@ -84,13 +84,13 @@ describe("tails · a word to a worker, the phase's learnings, the check's report
   it("[sma:k_pl_researchdir] the research step sits between the owner's answers and the requirements, writes the four research files into .agents/planning/research and never overwrites; it is skipped when the tree is off", async () => {
     const seen = await obsResearch();
     expect(seen.before).toEqual(["research"]);
-    expect(seen.after).toEqual(["requirements"]);
-    expect(seen.thenRecap).toEqual(["recap"]);
+    expect(seen.after).toEqual(["write_research_stack"]);
+    expect(seen.thenRecap).toEqual(["write_requirements"]);
     expect(seen.folder).toBe(true);
     expect(seen.files).toEqual(["STACK.md", "FEATURES.md", "ARCHITECTURE.md", "PITFALLS.md"]);
     expect(seen.neverOverwrites).toBe(true);
     expect(seen.role).toBe("specialist:tavily");
-    expect(seen.skipWhen).toBe("tree.enabled != 'on'");
-    expect(seen.skipOut).toEqual({ research_notes: "" });
+    expect(seen.skipWhen).toBe("tree.enabled != 'on' || $mode == 'quick'");
+    expect(seen.skipOut).toEqual({ research_notes: "", stack: "", features: "", architecture: "", pitfalls: "" });
   });
 });

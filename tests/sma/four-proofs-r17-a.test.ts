@@ -54,7 +54,7 @@ describe("region 17 · specialist sessions: what the spawned role gets", () => {
     expect(select.spec).toMatchObject({ helper: "analyst", readOnly: true });
     expect(select.fields).toMatchObject({ framework: "string", options: "json", scores: "json" });
     // The recommended framework is what the run reports; a blocked check does not change which framework was picked.
-    const done = await runSim("ai-integration-phase", { input: { goal: "rank" }, stubs: { select: { framework: "langchain", options: [{ name: "langchain" }] }, spec: { spec_path: "x/AI-SPEC.md" }, check: { ok: true, gaps: [] } } });
+    const done = await runSim("ai-integration-phase", { input: { goal: "rank" }, stubs: { select: { framework: "langchain", options: [{ name: "langchain" }] }, write_spec: { spec_path: "x/AI-SPEC.md" }, check: { ok: true, gaps: [] } } });
     expect(out(done)).toMatchObject({ status: "done", framework: "langchain", spec_path: "x/AI-SPEC.md" });
   });
 
@@ -80,8 +80,8 @@ describe("region 17 · specialist sessions: what the spawned role gets", () => {
     const named = [...plan.request.prompt.matchAll(/research\.(\w+)/g)].map((match) => match[1]!);
     expect(named).toEqual(["domain_notes"]);
     for (const field of named) expect(Object.keys(research.fields)).toContain(field);
-    const run = await runSim("ai-integration-phase", { input: { goal: "rank" }, stubs: { research: { domain_notes: "expert criteria; failure modes; regulation" }, spec: { spec_path: "x/AI-SPEC.md" }, check: { ok: true, gaps: [] } } });
-    expect(pathOf(run).split(" ").slice(0, 3)).toEqual(["select", "research", "eval_plan"]);
+    const run = await runSim("ai-integration-phase", { input: { goal: "rank" }, stubs: { research: { domain_notes: "expert criteria; failure modes; regulation" }, write_spec: { spec_path: "x/AI-SPEC.md" }, check: { ok: true, gaps: [] } } });
+    expect(pathOf(run).split(" ").slice(0, 4)).toEqual(["select", "write_model", "research", "eval_plan"]);
     expect(plan.node.consumes?.map((use) => use.from)).toEqual(["research"]);
   });
 
@@ -93,8 +93,8 @@ describe("region 17 · specialist sessions: what the spawned role gets", () => {
     expect(spec.node.consumes?.map((use) => use.from)).toEqual(["select", "research", "eval_plan"]);
     expect(sessionTools("eval-planner").tools).not.toContain("Write");
     // A spec the checker finds gaps in is rewritten by the same spec step, not by a second evaluation plan.
-    const rework = await runSim("ai-integration-phase", { input: { goal: "rank" }, stubs: { spec: { spec_path: "x" }, check: [{ ok: false, gaps: ["no guardrails"] }, { ok: true, gaps: [] }] } });
-    expect(pathOf(rework)).toBe("select research eval_plan spec check spec check done");
+    const rework = await runSim("ai-integration-phase", { input: { goal: "rank" }, stubs: { write_spec: { spec_path: "x" }, check: [{ ok: false, gaps: ["no guardrails"] }, { ok: true, gaps: [] }] } });
+    expect(pathOf(rework)).toBe("select write_model research eval_plan spec spec_path write_spec check spec spec_path write_spec check done");
     expect(rework.called("eval_plan")).toHaveLength(1);
   });
 });
