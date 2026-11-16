@@ -2,6 +2,8 @@
 
 ## 0.1.584
 
+- **Composer-hook checking uses the current contract path.** `npm run check:composer-hook` now reads `src/rooms/contracts/composer-selection.ts` after its move; the stale path caused an `ENOENT` before checking imports. The command and documentation audit pass on the corrected path.
+
 - **Browser QA retains verified screenshot references in its stage receipt.** The BB-thread prompt now requires copying screenshots into the QA thread's own storage before closing the browser. The host resolves that thread's storage host/root, reads bounded PNG/JPEG claims, checks SDK hash/size metadata and image signatures, and records absolute host-bound references for the requested case/viewport pairs. A pass with missing or invalid evidence becomes blocked; a failed or incomplete report preserves its outcome and records available references and evidence problems. Fresh completion and reload adoption share the collector. `tests/stages/qa-artifacts.test.ts`, `tests/spawn-service-tier.test.ts`, `tests/stages/qa-resume.test.ts` and `tests/workflow/equivalence.test.ts` cover path binding, missing/unreadable/duplicate evidence and receipt persistence, including sparse reports. These checks establish bytes available at collection time, not browser provenance, image quality, indefinite retention or live acceptance of all graphs. The legacy parser and old runner backend remain unchanged.
 
 ## 0.1.583

@@ -45,7 +45,7 @@ TL;DR: Lane Pilot enforces room/package boundaries, UI-server separation, file s
 
 - `ui/` modules under `src/rooms/` cannot value-import `server/` modules, and `server/` modules cannot value-import `ui/` modules; type-only imports (`dependencyTypesNot: ["type-only"]`) remain permitted (`tests/architecture/boundaries.test.ts:93-106`, `.dependency-cruiser.cjs:30-40`).
 - The browser runtime closure from `app.tsx` cannot import `node:` built-in modules (`tests/architecture/boundaries.test.ts:83-91`, `.dependency-cruiser.cjs:42-47`).
-- Backend entries (`server.ts`, `host.ts`, `src/rooms/native-agent/composer-selection.ts`) must not import `@get-bb/plugin-sdk/app`, checked by `npm run check:composer-hook` (`scripts/check-composer-hook.mjs:4-12`, `package.json:92`).
+- Backend entries and the shared selection contract (`server.ts`, `host.ts`, `src/rooms/contracts/composer-selection.ts`) must not import `@get-bb/plugin-sdk/app`, checked by `npm run check:composer-hook` (`scripts/check-composer-hook.mjs:4-12`, `package.json:92`).
 - Room modules have no top-level import-time side effects unless explicitly registered in `src/rooms/package.json` `sideEffects` (`src/rooms/package.json:4-25`, `tests/architecture/boundaries.test.ts:135-155`).
 
 ## File size limits
