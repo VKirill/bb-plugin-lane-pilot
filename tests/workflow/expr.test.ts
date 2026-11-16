@@ -97,6 +97,14 @@ describe("values", () => {
     expect(() => value("{{missing.path}}")).toThrow(MissingValueError);
   });
 
+  it("keeps placeholder text inside JSON literals without rendering or changing their type", () => {
+    const value = (text: string) => evalSpec(valueSpecOf(text), env);
+    expect(value('["{{slug}}"]')).toEqual(["{{slug}}"]);
+    expect(value('{"path":"docs/{{slug}}","nested":["{{missing.path}}"]}')).toEqual({
+      path: "docs/{{slug}}", nested: ["{{missing.path}}"],
+    });
+  });
+
   it("writes {{refs}} into a text, keeps the type of a lone one, and picks by_mode", () => {
     const read = (ref: Parameters<EvalEnv["read"]>[0]) => env.read(ref).value;
     expect(renderValue("goal: {{$inputs.goal}} / {{build.status}}", read, "full")).toBe("goal: ship it / done");

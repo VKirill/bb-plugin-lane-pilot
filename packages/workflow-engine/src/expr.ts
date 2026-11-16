@@ -335,8 +335,8 @@ export function valueSpecOf(value: unknown): ValueSpec {
   const whole = /^\{\{\s*([^{}]+?)\s*\}\}$/.exec(text);
   if (whole) return { expr: { t: "ref", ref: refOf(whole[1]!) } };
   if (/^'.*'$/s.test(text) || /^".*"$/s.test(text)) return { literal: text.slice(1, -1) };
-  if (placeholdersIn(text).length) return { template: text };
   if (/^[[{]/.test(text)) { try { return { literal: JSON.parse(text) as unknown }; } catch { /* an expression with a list in it */ } }
+  if (placeholdersIn(text).length) return { template: text };
   if (/^(true|false|null)$/.test(text)) return { literal: text === "true" ? true : text === "false" ? false : null };
   if (/^-?\d+(\.\d+)?$/.test(text)) return { literal: Number(text) };
   if (/^[A-Za-z_][A-Za-z0-9_-]*$/.test(text)) return { literal: text };
