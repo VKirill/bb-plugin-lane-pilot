@@ -72,14 +72,12 @@
       "skip_out": {
         "title": "{{$inputs.title}}",
         "body": "{{$inputs.thought}}",
-        "line": "'todo added'",
         "priority": "{{$inputs.priority}}"
       },
-      "prompt": "Turn the thought into a structured todo: a short title, a priority (low|normal|high), a one-paragraph body, and a one-line `line` that confirms what was recorded. The id of the todo is made by the graph from the run, never by you. Keep the thought's meaning verbatim in body.",
+      "prompt": "Turn the thought into a structured todo: a short title, a priority (low|normal|high), a one-paragraph body. The id of the todo is made by the graph from the run, never by you. Keep the thought's meaning verbatim in body.",
       "out": {
         "title": "string",
         "body": "string",
-        "line": "string",
         "priority": "low|normal|high"
       },
       "guards": {
@@ -115,7 +113,7 @@
       "map": {
         "status": "done",
         "todo_id": "{{run_id}}",
-        "line": "shape.line",
+        "line": "'todo added'",
         "todo_path": "write.todo_path"
       }
     }

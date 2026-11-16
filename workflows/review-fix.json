@@ -296,7 +296,9 @@
       "action": "emit",
       "map": {
         "status": "blocked",
-        "remaining": "re_review.findings"
+        "fix_rounds": "visits('build_fix') + visits('build_fix2')",
+        "remaining": "re_review.findings",
+        "merged_commits": "ctx.merged_commits"
       }
     }
   ],

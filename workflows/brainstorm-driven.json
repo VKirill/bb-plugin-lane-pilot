@@ -273,7 +273,7 @@
       "from": "build",
       "to": "blocked",
       "pass": "artifact",
-      "when": "build.status == 'blocked'"
+      "when": "build.status == 'blocked' && visits('build') == 1"
     },
     {
       "from": "build",

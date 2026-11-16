@@ -7,7 +7,7 @@ import { chainStore, runSim } from "./chain-harness";
  * - brainstorm-driven / issue-batch: an lp.build `blocked` result must not fall through to `partial`.
  * - grill-plan: `blocked` was declared but unreachable - the enum now matches what the graph can emit.
  * - review-fix: fix_rounds counts the builds that ran; a round-2 block reports the latest review's findings.
- * - todo-add: the shape agent is asked for `line`, the field its out contract requires.
+ * - todo-add: `line` is a code-owned literal emitted by done after the write, not a model claim.
  * - seo-page: a ready cocoon folder supplies the briefs dir; the locale plan path reaches the writer.
  */
 
@@ -36,6 +36,16 @@ describe("brainstorm-driven: a blocked build stays blocked", () => {
     });
     expect(pathOf(r)).toBe("research brainstorm plan build replan build partial");
     expect(out(r)).toMatchObject({ status: "partial" });
+  });
+
+  it("a blocked second build keeps the first build's merges as partial, not blocked", async () => {
+    const r = await runSim("brainstorm-driven", {
+      input,
+      stubs: { ...base(), "lp.build": [{ status: "partial", merged_commits: ["b1"] }, { status: "blocked", merged_commits: [], failed_findings: [finding("high")] }], replan: { status: "ok", tasks: [task("b2")] } },
+    });
+    expect(pathOf(r)).toBe("research brainstorm plan build replan build partial");
+    expect(out(r)).toMatchObject({ status: "partial" });
+    expect(out(r)?.merged_commits).toEqual(expect.arrayContaining(["b1"]));
   });
 });
 
@@ -121,7 +131,8 @@ describe("review-fix: fix_rounds and blocked findings stay current", () => {
       },
     });
     expect(pathOf(r)).toBe("first_review plan_fix build_fix re_review plan_fix2 build_fix2 blocked_round2");
-    expect(out(r)).toMatchObject({ status: "blocked", remaining: [expect.objectContaining({ file: "src/b.ts" })] });
+    expect(out(r)).toMatchObject({ status: "blocked", fix_rounds: 2, remaining: [expect.objectContaining({ file: "src/b.ts" })] });
+    expect(out(r)?.merged_commits).toEqual(expect.arrayContaining(["f1"]));
   });
 
   it("a round-1 blocked build still reports the first review findings", async () => {
@@ -150,24 +161,24 @@ describe("review-fix: fix_rounds and blocked findings stay current", () => {
   });
 });
 
-describe("todo-add: the shape contract asks for the line it must return", () => {
-  it("shape.prompt requests `line` and the skip path still answers 'todo added'", async () => {
+describe("todo-add: the confirmation line is code-owned, emitted after the write", () => {
+  it("shape does not ask the model for `line`; both paths answer the literal 'todo added'", async () => {
     const { node } = await nodeOf("todo-add", "shape");
-    expect(String(node.prompt)).toContain("`line`");
-    const line = (node.out as { name: string; type: string; required?: boolean }[]).find((f) => f.name === "line");
-    expect(line).toMatchObject({ type: "string", required: true });
+    expect(String(node.prompt)).not.toContain("`line`");
+    const fields = node.out as { name: string }[];
+    expect(fields.map((f) => f.name)).not.toContain("line");
     const skipped = await runSim("todo-add", { input: { title: "Fix flaky test", thought: "fix the flaky payments test" }, stubs: { "fs.write": { todo_path: ".agents/todos/items/x" } } });
     expect(skipped.skipped).toContain("shape");
     expect(out(skipped)).toMatchObject({ status: "done", line: "todo added" });
   });
 
-  it("the shaped path returns the model's line", async () => {
+  it("the shaped path returns the same literal after the writer ran, ignoring any model-supplied line", async () => {
     const r = await runSim("todo-add", {
       input: { thought: "fix the flaky payments test" },
-      stubs: { shape: { title: "Fix the flaky payments test", body: "fix the flaky payments test", line: "todo added: fix the flaky payments test", priority: "normal" }, "fs.write": { todo_path: ".agents/todos/items/x" } },
+      stubs: { shape: { title: "Fix the flaky payments test", body: "fix the flaky payments test", line: "model claims it worked", priority: "normal" }, "fs.write": { todo_path: ".agents/todos/items/x" } },
     });
     expect(pathOf(r)).toBe("shape write done");
-    expect(out(r)).toMatchObject({ status: "done", line: "todo added: fix the flaky payments test" });
+    expect(out(r)).toMatchObject({ status: "done", line: "todo added" });
   });
 });
 
