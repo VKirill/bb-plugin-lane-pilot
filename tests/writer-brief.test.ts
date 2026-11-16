@@ -197,11 +197,11 @@ describe("writer brief", () => {
     expect(retry).toContain("the contract in your brief above stays the source of truth");
     expect(retry).toContain("<previous_attempt>");
     const next = stickyTurnPrompt({ kind:"next-task", task });
-    expect(next).toContain("<task_goal>");
-    expect(next).toContain(`id: ${task.id}`);
-    expect(stickyTurnPrompt({ kind:"merge", task, conflicts:["src/a.ts"] })).toContain("<task_goal>");
+    expect(next).toContain("### Задача");
+    expect(next).toContain(`**id:** ${task.id}`);
+    expect(stickyTurnPrompt({ kind:"merge", task, conflicts:["src/a.ts"] })).toContain("### Задача");
     // A retry without a failure record keeps the contract as a conservative fallback.
-    expect(stickyTurnPrompt({ kind:"retry", task })).toContain("<task_goal>");
+    expect(stickyTurnPrompt({ kind:"retry", task })).toContain("### Задача");
   });
 
   it("a run-scope ownership rejection names files outside owns_paths as such and asks to undo only the writer's own edits", () => {

@@ -57,5 +57,8 @@ describe("native launcher hooks come from Lane Pilot's bundle", () => {
     const guard = join(launcher, "hooks", "guard_shell.py");
     expect(runGuard(guard, "bb thread stop thr_abc", "lane-pilot-pm").status).toBe(0);
     expect(runGuard(guard, "bb thread new --prompt x", "lane-pilot-pm").status).toBe(2);
+    expect(runGuard(guard, "bb project-folders list --json", "lane-pilot-pm").status).toBe(0);
+    expect(runGuard(guard, "bb project-folders create p - Analytics analytics host", "lane-pilot-pm").status).toBe(0);
+    expect(runGuard(guard, "bb plugin rpc call project-folders spawn --input '{}'", "lane-pilot-pm").status).toBe(2);
   });
 });

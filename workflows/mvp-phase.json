@@ -56,7 +56,7 @@
         "en": "User story",
         "ru": "История"
       },
-      "prompt": "Write the user story for the goal: who (the person), what (they do), why (they need it). Then the MVP cut as ONE vertical slice and the out-of-scope list. On a rework verdict, fix what the critic named.",
+      "prompt": "Write the user story for the goal: who (the person), what (they do), why (they need it). Then the MVP cut as ONE vertical slice and the out-of-scope list. When inputs.critic_verdict is rework, fix the issues in inputs.critic_notes.",
       "out": {
         "who": "string",
         "what": "string",
@@ -137,7 +137,11 @@
     {
       "from": "split_check",
       "to": "story",
-      "when": "split_check.verdict == 'rework' && visits('story') < 2"
+      "when": "split_check.verdict == 'rework' && visits('story') < 2",
+      "with": {
+        "critic_notes": "split_check.notes",
+        "critic_verdict": "split_check.verdict"
+      }
     },
     {
       "from": "split_check",

@@ -24,7 +24,7 @@ export const PM_TOOL_FAMILIES = {
     actions: { start: "lane_pilot_council_start", status: "lane_pilot_council_status", say: "lane_pilot_council_say", stop: "lane_pilot_council_stop" },
   },
   lane_pilot_relay: {
-    summary: "Other threads and projects: ask another thread, answer a question you were asked, list this chat's asks and open waits, hand a card to a new PM chat in another project.",
+    summary: "Other threads and projects: ask another thread, answer a question you were asked, list this chat's asks and open waits, assign or continue a child Pilot in any project or section.",
     actions: { ask: "lane_pilot_ask", reply: "lane_pilot_reply", list: "lane_pilot_relay_list", handoff: "lane_pilot_handoff_create" },
   },
   lane_pilot_memory: {

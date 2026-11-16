@@ -2,19 +2,20 @@ import { getAttempt, getRun, getRunWriterHost, getTaskPlan, latestRunTaskAttempt
 import { bestEffort } from "@lane-pilot/kit";
 import { rec, str } from "./workflow-chain-runtime";
 import type { Row } from "./workflow-chain-runtime";
-import { lpTaskPipeline, need, needLanePilot, quote } from "./workflow-chain-runtime";
+import { lpTaskPipeline, need, needLanePilot, pmCheckout, quote } from "./workflow-chain-runtime";
 import type { ChainRuntime } from "../../contracts/server";
 import type { ServerCore } from "../../contracts/server";
 import type { Services, LpTaskRuntime } from "./workflow-chain-runtime";
 import { validateTaskV2 } from "../../tasks/task-v2";
-import { agentPrompt, outputContract, resolveTaskQualityMode } from "@lane-pilot/workflow-engine";
+import { agentPrompt, outputContract, planPacket, resolveTaskQualityMode } from "@lane-pilot/workflow-engine";
 import type { GraphNode, NodeExecutor, PollResult, StepContext, WorkflowEngine } from "@lane-pilot/workflow-engine";
 import { runOnHost } from "@lane-pilot/host-calls";
 import { TERMINAL_ATTEMPT, graphDependsOn, graphTaskId, graphTaskStem, shortPathCriticDefault, withTaskStandard, taskContractFields } from "./workflow-task-contract";
 import type { HelperUsage, LpTaskNode } from "./workflow-task-contract";
 import { leadHanded } from "./workflow-human-form";
-import type { WorkflowAgents } from "./workflow-agent";
+import type { HelperResult, WorkflowAgents } from "./workflow-agent";
 import type { createTaskLinter } from "../../tasks/server";
+import { deliverRunFile, noteRunFiles } from "./workflow-run-home";
 
 // One deep import into tasks serves the whole room: siblings take it from here, not across the boundary.
 export { validateTaskV2 };
@@ -35,31 +36,32 @@ export function registerLpTask(engine: WorkflowEngine, ctx: ServerCore, services
     run: async (c) => {
       const rt = needLanePilot(need(c), "a code task");
       const node = c.node as LpTaskNode;
-      const { contract, usage: planned } = await contractOf(c, rt, node);
+      const { contract, usage: planned, detail } = await contractOf(c, rt, node);
+      const observation = detail ? { detail } : {};
       const run = getRun(db, rt.runId);
       if (!run?.writer_workspace_path) throw new Error("the run has no workspace to build in");
       const stem = graphTaskStem(c.runId);
       const picked = resolveTaskQualityMode({ contract: contract.quality_mode, node: node.quality_mode, asked: c.mode, workflow: c.workflow.quality_mode ?? null });
-      if (!picked.ok) return { output: failedTask("blocked", picked.detail) };
+      if (!picked.ok) return { output: failedTask("blocked", picked.detail), ...observation };
       const standard = withTaskStandard(contract, node.id);
       const task = { ...standard, id: graphTaskId(stem, str(contract.id) || node.id), depends_on: graphDependsOn(stem, standard.depends_on, (id) => latestRunTaskAttemptState(db, rt.runId, id) !== null),
         project_cwd: run.writer_workspace_path, quality_mode: picked.mode };
       const valid = validateTaskV2(task);
-      if (!valid.ok) return { output: failedTask("failed", `task-v2 invalid: ${valid.errors.join("; ")}`) };
+      if (!valid.ok) return { output: failedTask("failed", `task-v2 invalid: ${valid.errors.join("; ")}`), ...observation };
       const hostId = getRunWriterHost(db, rt.runId) ?? "";
       const lint = await bestEffort(rt.ctx.log, "workflow task lint", lintTask(rt.projectId, rt.runId, valid.task, run.writer_workspace_path, hostId, "workflow"), null);
-      if (lint?.errors.length) return { output: failedTask("failed", `contract lint: ${lint.errors.map((error) => error.message).join("; ").slice(0, 600)}`) };
+      if (lint?.errors.length) return { output: failedTask("failed", `contract lint: ${lint.errors.map((error) => error.message).join("; ").slice(0, 600)}`), ...observation };
       // The planner's files[] are its concrete steps; passing only the objective hid them from the plan critic (Roblox T5, 2026-11-08).
       // A reentrant dispatch keeps its stored plan, including the legacy format: changing its hash would defeat duplicate detection.
       const plan = getTaskPlan(db, valid.task.id) ?? (valid.task.files?.length ? [valid.task.objective, "Planned changes:", ...valid.task.files.map((file, index) =>
         `${index + 1}. ${file.action} ${file.path}${file.target ? ` (${file.target})` : ""}: ${file.change}`)].join("\n\n") : valid.task.objective);
       const reply = await services.dispatchWriter({ threadId: rt.pmThreadId, projectId: rt.projectId, task: valid.task, plan, birth: leadHanded(engine, c.runId) ? "lead" : "workflow", criticCodeDefault: shortPathCriticDefault(c.workflow.id, picked.mode) });
-      if (reply.state === "rejected" || reply.ok === false) return { output: failedTask("blocked", String(reply.reason ?? reply.hint ?? "the dispatch was rejected")) };
+      if (reply.state === "rejected" || reply.ok === false) return { output: failedTask("blocked", String(reply.reason ?? reply.hint ?? "the dispatch was rejected")), ...observation };
       const taskId = str(reply.taskId) || valid.task.id;
       // chains-end: an attempt whose row is lost (task deleted, base wiped) would wait forever; the wait gets a
       // deadline — the node's own timeout or 48 h — and the engine turns it into an explicit await_timeout.
       const deadline = Date.now() + ((node.timeoutSec ?? 48 * 3_600)) * 1000;
-      return { wait: { kind: "attempt", detail: { runId: str(reply.runId) || rt.runId, taskId, files: valid.task.owns_paths }, deadline }, ...(planned ? { usage: planned } : {}) };
+      return { wait: { kind: "attempt", detail: { runId: str(reply.runId) || rt.runId, taskId, files: valid.task.owns_paths }, deadline }, ...(planned ? { usage: planned } : {}), ...observation };
     },
     poll: async (step): Promise<PollResult> => {
       const detail = step.await.detail as { runId: string; taskId: string } | undefined;
@@ -75,14 +77,14 @@ export function registerLpTask(engine: WorkflowEngine, ctx: ServerCore, services
       // started inside, read once, when the task is over (attempt-usage.ts).
       const spent = await services.taskUsage(bb, db, detail.runId, detail.taskId);
       const usage: HelperUsage | undefined = spent.usage;
-      return { output: { state, attempts: listed.length, merge_commit: merge.commit, files: merge.files,
+      return { output: { state, attempts: listed.length, merge_commit: merge.commit, merged_commits: merge.commit ? [merge.commit] : [], files: merge.files,
         verdict: { status: state === "accepted" ? "pass" : "rework", summary: reason, findings: [], evidence: reason || state } }, ...(usage ? { usage } : {}) };
     },
   };
-  const failedTask = (state: string, reason: string): Row => ({ state, attempts: 0, merge_commit: "", files: [], verdict: { status: "rework", summary: reason, findings: [], evidence: reason } });
+  const failedTask = (state: string, reason: string): Row => ({ state, attempts: 0, merge_commit: "", merged_commits: [], files: [], verdict: { status: "rework", summary: reason, findings: [], evidence: reason } });
 
   /** The task contract of an lp-task node: the `contract` as rendered, or one written from `contract_template` and the step's data by a planner helper. */
-  async function contractOf(c: StepContext<ChainRuntime>, rt: ChainRuntime, node: LpTaskNode): Promise<{ contract: Row; usage?: HelperUsage }> {
+  async function contractOf(c: StepContext<ChainRuntime>, rt: ChainRuntime, node: LpTaskNode): Promise<{ contract: Row; usage?: HelperUsage; detail?: HelperResult["detail"] }> {
     if (node.contract !== undefined) {
       const rendered = c.template(node.contract);
       const value = typeof rendered === "string" ? (() => { try { return JSON.parse(rendered) as unknown; } catch { return rendered; } })() : rendered;
@@ -91,11 +93,25 @@ export function registerLpTask(engine: WorkflowEngine, ctx: ServerCore, services
     }
     const template = typeof node.contract_template === "string" ? node.contract_template : JSON.stringify(node.contract_template ?? {});
     const fields = taskContractFields();
+    const inputs = { ...c.inputs, ...c.input.with };
+    const plan = planPacket({ step: { id: node.id, role: "planner", mode: c.mode }, chatId: rt.pmThreadId ?? "", runId: c.runId,
+      inputs: [...Object.entries(inputs).map(([name, value]) => ({ name, value })),
+        ...(c.input.item !== undefined ? [{ name: "item", value: c.input.item }] : []),
+        ...(c.input.via.handoff ? [{ name: "previous_handoff", value: c.input.via.handoff }] : []),
+        ...(c.goals.length ? [{ name: "run_goals", value: c.goals }] : [])] });
+    let filesAt: { hostId: string; path: string } | undefined;
+    if (plan.files.length) {
+      const checkout = await pmCheckout(rt);
+      for (const file of plan.files) await deliverRunFile(bb.sdk.files, checkout, file);
+      await noteRunFiles(ctx, rt, c, checkout, plan.files.map((file) => ({ repoPath: file.path, content: file.text, kind: "step-input" as const, readers: [node.id] })), { required: true });
+      filesAt = checkout;
+    }
     const result = await agents.run({
       rt, workflowRunId: c.runId, stepKey: c.stepKey, nodeId: node.id, spawnKey: c.spawnKey, role: "planner", title: `contract for ${node.id}`, fields, signal: c.signal,
-      prompt: agentPrompt({ workflow: c.workflow.id, node: node.id, title: `contract for ${node.id}`, role: "planner", mode: c.mode, task: `Write ONE task-v2 contract for a writer from this template and the run's artifacts. Template: ${template}\nThe repository paths come from the artifacts in the run's folder; use only real paths. Put the whole contract object in the field \`contract\`.`, inputs: c.input.with, contract: outputContract(fields), readOnly: true }),
+      ...(plan.files.length ? { packetFiles: plan.files, packetFilesAt: filesAt } : {}),
+      prompt: agentPrompt({ workflow: c.workflow.id, node: node.id, title: `contract for ${node.id}`, role: "planner", mode: c.mode, task: `Write ONE task-v2 contract for a writer from this template and the run's artifacts. Template: ${template}\nThe repository paths come from the artifacts in the run's folder; use only real paths. Put the whole contract object in the field \`contract\`.`, inputs, packet: plan.packet, contract: outputContract(fields), readOnly: true }),
     });
-    return { contract: rec(result.output.contract), ...(result.usage ? { usage: result.usage } : {}) };
+    return { contract: rec(result.output.contract), ...(result.usage ? { usage: result.usage } : {}), ...(result.detail ? { detail: result.detail } : {}) };
   }
 
   /** The merge commit of an accepted attempt (found by the trailer every merge commit carries) and the files it changed. */

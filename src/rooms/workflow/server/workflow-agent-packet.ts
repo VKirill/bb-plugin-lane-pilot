@@ -80,6 +80,25 @@ export function stepPacket(ctx: StepContext<ChainRuntime>, node: AgentNode, byRe
   const inputs: PacketInput[] = Object.entries(values).map(([name, value]) => ({ name, value }));
   if (ctx.input.item !== undefined) inputs.push({ name: "item", value: ctx.input.item });
   if (ctx.input.via.handoff) inputs.push({ name: "previous_handoff", value: ctx.input.via.handoff });
+  const consumed = new Set<string>();
+  for (const spec of node.consumes ?? []) {
+    if (spec.as) {
+      // Aliases name already-arrived inputs, not an instruction to overwrite them from a producer.
+      // A continued session still needs the consumed value even when general inputs are omitted.
+      if (!inputs.some((input) => input.name === spec.as) && ctx.inputs[spec.as] !== undefined) {
+        inputs.push({ name: spec.as, value: ctx.inputs[spec.as] });
+      }
+      continue;
+    }
+    if (!spec.from || spec.from === "$inputs" || spec.from === "start" || consumed.has(spec.from)) continue;
+    consumed.add(spec.from);
+    const value = ctx.resolve(spec.from);
+    if (value === undefined) continue; // Required presence is checked by the executor; optional cycle sources may not exist yet.
+    const name = `consumes:${spec.from}`;
+    if (inputs.some((input) => input.name === name)) throw new Error(`consumes_input_collision: ${name}`);
+    // The whole named output is an envelope, not necessarily the artifact's field/schema. Never flatten it into inputs.
+    inputs.push({ name, value });
+  }
   const goalName = GOAL_INPUTS.find((name) => typeof values[name] === "string" && String(values[name]).trim());
   const kinds = Object.fromEntries((node.consumes ?? []).flatMap((spec) => (spec.as ? [[spec.as, `${spec.kind}/${spec.version}`] as const] : [])));
   return planPacket({ step: { id: node.id, role: ctx.render(node.role), mode: ctx.mode }, ...(goalName ? { goal: String(values[goalName]), goalInput: goalName } : {}), inputs, produces: node.produces, gates: node.gates, kinds, data: promptData(ctx, node), chatId: ctx.runtime?.pmThreadId ?? "", runId: ctx.runId, byReference });

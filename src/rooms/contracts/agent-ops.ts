@@ -33,3 +33,8 @@ export const nativeSelectionKey = (token: string) => `native-selection:${token}`
 export const nativeThreadKey = (threadId: string) => `native-thread:${threadId}`;
 export const nativeEnvKey = (threadId: string) => `native-env:${threadId}`;
 export const nativeAgentTypeKey = (threadId: string) => `native-agent-type:${threadId}`;
+
+export type ChildPmRequest = {
+  projectId: string; parentThreadId: string; sectionId?: string;
+  hostId?: string; path?: string; title: string; handoffId: string;
+};

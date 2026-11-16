@@ -74,6 +74,24 @@ describe("council PM notices", () => {
 });
 
 describe("workflow PM notices", () => {
+  it.each([null, false, 0, { detail: "unknown" }])("retains a non-string status %j", async (status) => {
+    const { bb, sends } = noticeBb();
+    await maybeNotifyWorkflowRun({ bb, log: () => undefined, pmThreadId, startedBySchedule: false, run: runRow({ output_json: JSON.stringify({ status }) }) });
+    expect(sends[0]!.text).toContain("### status");
+    expect(sends[0]!.text).toContain(JSON.stringify(status, null, 2));
+    expect(sends[0]!.text).not.toContain("no output");
+  });
+  it("renders an errand report as Markdown without escaping paragraphs or hiding its recorded checks", async () => {
+    const { bb, sends } = noticeBb();
+    const output = { state: "done", output: "**Part A**\n\n- [Receipt](https://example.com/receipt)\n- checked", checks: [{ ok: true, detail: "verified" }], thread_id: "thr_result" };
+    await maybeNotifyWorkflowRun({ bb, log: () => undefined, pmThreadId, startedBySchedule: false, run: runRow({ output_json: JSON.stringify(output) }) });
+    const text = sends[0]!.text;
+    expect(text).toContain("## Lane Pilot · demo");
+    expect(text).toContain("**Part A**\n\n- [Receipt](https://example.com/receipt)");
+    expect(text).not.toContain('\\n');
+    expect(text).toContain('"ok": true');
+    expect(text).toContain("thr_result");
+  });
   it("tells the PM once how a chat-started run ended: the report on success, the actual output or reason otherwise", async () => {
     const { bb, sends, kv } = noticeBb();
     const report = runRow({ id: "wfrun_report", output_json: JSON.stringify({ report_md: "weekly digest" }) });

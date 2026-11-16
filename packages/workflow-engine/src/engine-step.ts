@@ -253,7 +253,7 @@ export async function execStep(engine: WorkflowEngine, runId: string, stepKey: s
     noteUnknownUsage(engine, runId, stepKey, usage);
   };
   if ("wait" in outcome) {
-    if (j.moveStep(runId, stepKey, "running", "waiting", { await_json: JSON.stringify({ ...outcome.wait, partial: outcome.partial ?? null }), receipt_json: receipt({ threadId: outcome.threadId ?? null, usage: usage ?? null }) })) addUsage();
+    if (j.moveStep(runId, stepKey, "running", "waiting", { await_json: JSON.stringify({ ...outcome.wait, partial: outcome.partial ?? null }), receipt_json: receipt({ threadId: outcome.threadId ?? null, usage: usage ?? null, ...(outcome.detail !== undefined ? { detail: outcome.detail } : {}) }) })) addUsage();
     return "done";
   }
   const outputJson = JSON.stringify(outcome.output);

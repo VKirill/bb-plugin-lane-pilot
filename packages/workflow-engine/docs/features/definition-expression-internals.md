@@ -104,11 +104,13 @@ How `checkExpr` works (`packages/workflow-engine/src/expr.ts:234-269`):
 Its branch order is:
 
 1. Mode returns the `quick|standard|full` enum and reports a problem only when the environment says mode is unavailable; run variables, index, and item return string, number, and any respectively (`packages/workflow-engine/src/expr.ts:205-208`).
-2. Context checks the first path segment against `CTX_VARS`; unknown names add a diagnostic. `ctx.merged_commits` is typed as an array and other context values as `any` (`packages/workflow-engine/src/expr.ts:209-212`).
+2. Context checks the first path segment against `CTX_VARS`; unknown names add a diagnostic. `ctx.merged_commits` and `ctx.answers.<humanNode>` are arrays. The latter requires a named human node, with the same check repeated at runtime against the saved definition; unrelated context values retain their existing types (`packages/workflow-engine/src/expr.ts`, `packages/workflow-engine/src/step-read.ts`).
 3. Input with an empty path returns `any`; otherwise `fieldPath` resolves declared input fields. A path error is appended and returns `any` (`packages/workflow-engine/src/expr.ts:213-218`).
 4. Node references report an unknown node and return `any`; known nodes are checked for execution order. A root reference or unknown/null output fields returns `any`; a bad declared path reports a diagnostic and returns `any`, while a valid path returns its field type (`packages/workflow-engine/src/expr.ts:219-230`).
 
 ### Runtime evaluation: `evalExpr` and `evalCondition`
+
+`ctx.answers.<humanNode>` reads succeeded step rows for that human node in the current run and visible scope chain, ordered by row creation. Each record is `{step_key, scope, visit, output}`; metadata is separate from the unchanged answer output. A valid node with no completed visible visits returns `[]`; appending `.length` returns its count. Root scope does not collect descendant branch answers. These are current settled rows, not immutable history: rerunning a node can remove or replace them. A timeout remains tagged in `output.answer_kind` and does not establish consent. `spec-phase` uses this collection to deliver all interview rounds to the next assessment and specification writer.
 
 1. Literals return their value, `visits` calls the environment counter, lists evaluate each item, and `not` negates the workflow truth rule. A reference calls `env.read`; `ran: false` throws `MissingValueError` with code `condition_field_missing` (`packages/workflow-engine/src/expr.ts:276-289`).
 2. `&&` and `||` short-circuit through `truthy`. Arrays, including empty arrays, count as true; other values use `Boolean` conversion (`packages/workflow-engine/src/expr.ts:276`, `packages/workflow-engine/src/expr.ts:291-294`).

@@ -32,8 +32,9 @@ const ran = (r: { steps: Array<{ node_id: string; state: string }> }) => r.steps
 async function spawnOf(workflowId: string, nodeId: string) {
   const flow = (await chainStore()).get(workflowId)!.workflow;
   const node = flow.nodes.find((candidate) => candidate.id === nodeId) as AgentNode;
+  // Profile-only fixture: no upstream step has executed. Full consumed-data delivery is tested by chain-executors.
   const ctx = { runtime: { pmThreadId: "t", projectId: "", runId: "r", ctx: {}, services: {} }, workflow: flow, node, nodeId, runId: "wfrun", stepKey: `${nodeId}#1`, spawnKey: "k", mode: "standard",
-    signal: new AbortController().signal, input: { with: {}, via: { mode: "artifact", fromStep: null } }, goals: [], reground: false, render: (text: string) => text, template: (value: unknown) => value } as unknown as StepContext<never>;
+    signal: new AbortController().signal, input: { with: {}, via: { mode: "artifact", fromStep: null } }, goals: [], reground: false, inputs: {}, resolve: () => undefined, render: (text: string) => text, template: (value: unknown) => value } as unknown as StepContext<never>;
   const request = agentRequest(ctx as never, node);
   const spec = roleSpec(request.role);
   return { role: request.role, helper: spec.helper, readOnly: spec.readOnly, notes: spec.editable(".agents/research/x.md"), src: spec.editable("src/app.ts"), prompt: request.prompt, fields: Object.fromEntries(request.fields.map((field) => [field.name, field.type])), consumes: (node.consumes ?? []).map((use) => use.from) };

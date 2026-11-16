@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.590
+
+- **Native PMs organize projects and sections through Project Folders.** The guard allows named discovery, creation, rules and chat-filing commands and RPC methods; direct spawns, physical relocation and destructive operations remain outside this access. PM instructions route organization directly to the plugin and delegate child work through authenticated relay. Registered child-PM, emitted-launcher guard and command-policy tests cover the bounded behavior; deployment and actual session acceptance remain separate.
+
+- **Native child Pilots receive authenticated assignments after placement.** Cross-project relay creates a destination-bound native PM with its own run, places the chat in the requested Project Folders section, then sends the assignment with its real sender. Unknown send outcomes retain the queued card and IDs for inspection instead of inventing cancellation or retrying blindly.
+- **Graph data survives executor boundaries.** Planner packets retain task inputs and explicit mappings, named consumes reach agent packets, helper receipts survive waiting and settlement, and accepted tasks expose both scalar and collected merge commits. Human answer history is run/scope-bound and preserves every visible succeeded visit. Spec interviews, MVP/asset/SEO rework, security reports and test-failure triage receive their missing inputs. Test-count measurement and other audited graph gaps remain open; this release does not claim full SMA acceptance.
+- **Chat reports and writer briefs use Markdown.** Workflow output strings render paragraphs, lists and links instead of escaped JSON. Visible task contracts and resends have section headings; verification commands retain their literal contents, including heredocs and embedded fences. Hidden context, service attribution, masking and recorded business status remain separate from presentation.
+
 ## 0.1.589
 
 - **Routing separates a concise intent from the complete assignment.** Optional `request` supplies goals, task inputs and constraints without adding prohibited-action words to lexical ranking. Recognized read-only assignments conflicting with a writing graph return clarification; PM guidance forbids candidate/live-trial/fallback launches after that response. Existing callers retain the intent-only path. Tests in `tests/workflow/router.test.ts` and `tests/workflow/router-tools.test.ts` cover the saved long review request, conflicting deployment intent, legacy behavior and registered tool schemas. This is a conservative routing guard, not universal semantic authorization; live acceptance remains separate.

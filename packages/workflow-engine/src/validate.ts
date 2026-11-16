@@ -213,6 +213,7 @@ export function validateWorkflow(workflow: Workflow, options: ValidateOptions = 
     return node ? outputFields(L, node, options.resolve) : null;
   };
   const envFor = (from: string, strict: boolean, item: boolean): CheckEnv => ({
+    nodeType: (id) => byId.get(id)?.type,
     nodeFields: (id) => fieldsOf(id),
     nodeExists: (id) => byId.has(id),
     inputs: L.inputs,

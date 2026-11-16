@@ -51,7 +51,7 @@ def prove_c(proofs: Proofs, tmp) -> None:
           lambda d: f"fields {d['keys']}, the same for another author {d['sameForOtherAuthor']}, small targets {d['seen']['smallTargets']}, overflow {d['seen']['overflowPx']}px")
     # n658 Launch spec assembly: worker, model, effort, tier, the PM it hangs under, the run, task and attempt it belongs to, the brief's header.
     prove("n658", "launchSpec", lambda d: d["launch"] == {"providerId": "codex", "model": "codex-test", "reasoningLevel": "medium", "serviceTier": "default", "projectId": "P", "parentThreadId": "pm-thread"}
-          and d["meta"]["role"] == "writer" and d["meta"]["parentPmThreadId"] == "pm-thread" and d["meta"]["lanePilotTaskId"] == "t1" and d["meta"]["attemptId"] == "a1" and d["header"] == "Lane Pilot task t1: Write the bot",
+          and d["meta"]["role"] == "writer" and d["meta"]["parentPmThreadId"] == "pm-thread" and d["meta"]["lanePilotTaskId"] == "t1" and d["meta"]["attemptId"] == "a1" and d["header"] == "## Lane Pilot task t1: Write the bot",
           lambda d: f"launch {d['launch']}, metadata role {d['meta']['role']} parent {d['meta']['parentPmThreadId']} task {d['meta']['lanePilotTaskId']} attempt {d['meta']['attemptId']}, header «{d['header']}»")
     # n659 Claude launch arguments: the writer's launcher denies the helper and writer tools and carries the turn ceiling (7.9 -> 7); a critic only the helper tools and no ceiling; a PM none.
     prove("n659", "launcher", lambda d: d["writerDenied"].startswith("Workflow,ScheduleWakeup,AskUserQuestion,Agent,Bash(git push:*)") and d["writerTurns"] == "7" and d["writerKeepsCallerArgs"] == "hi"

@@ -4,6 +4,7 @@ export { agentRegistry } from "./agent-registry";
 export type { AgentRegistry, RegistryResult } from "./agent-registry";
 export { AGENTS_USAGE, runAgentsCli } from "./agents-cli";
 export { createActivation } from "./activation";
+export { startChildPm } from "./child-pm";
 export { LANE_WORKTREE_PROVIDER_ID, registerLaneWorktreeProvider } from "./environment-provider";
 export { createBbShimEnv, createPmSkillTraceEnv, createRoleMarkerEnv, mountBbShim } from "./helper-bb-shim";
 export { storeNativeSelection } from "./native-profile";

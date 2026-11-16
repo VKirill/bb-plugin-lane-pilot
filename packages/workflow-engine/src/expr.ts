@@ -24,8 +24,8 @@ export type Expr =
 
 /** Names a run provides without any node: `{{date}}`, `{{run_id}}`, `{{slug}}` (the `slug` input, else a slug of the first of topic, question, query, subject, goal, source, title). */
 export const RUN_VARS = ["date", "run_id", "slug"] as const;
-/** What `ctx.` holds: the run id, the goal input, and the merged commits accumulated from every step that reports them. */
-export const CTX_VARS = ["run_id", "goal", "merged_commits"] as const;
+/** Run context: identity, goal, accumulated merged commits and scoped settled human answers. */
+export const CTX_VARS = ["run_id", "goal", "merged_commits", "answers"] as const;
 
 export class ExprSyntaxError extends Error {}
 
@@ -174,6 +174,7 @@ export type Typed = { kind: Kind; values?: string[] };
 
 /** What the checker can ask of the workflow: the declared fields behind a reference. */
 export type CheckEnv = {
+  nodeType?: (node: string) => string | undefined;
   /** The declared fields of a node's output; null when the node is unknown or its fields cannot be known (a child workflow not loaded). */
   nodeFields(node: string): Field[] | null | "unknown";
   nodeExists(node: string): boolean;
@@ -207,6 +208,14 @@ export function checkRef(ref: Ref, env: CheckEnv, problems: string[], at: string
     case "index": return { kind: "number" };
     case "item": return { kind: "any" };
     case "ctx": {
+      if (ref.path[0] === "answers") {
+        const node = ref.path[1];
+        if (!node || !env.nodeExists(node) || env.nodeType?.(node) !== "human"
+          || (ref.path.length !== 2 && !(ref.path.length === 3 && ref.path[2] === "length"))) {
+          problems.push(`${at}: ctx.answers requires a named human node, optionally followed by .length`);
+        }
+        return { kind: ref.path[2] === "length" ? "number" : "array" };
+      }
       if (!(CTX_VARS as readonly string[]).includes(ref.path[0] ?? "")) problems.push(`${at}: unknown context value "ctx.${ref.path.join(".")}" (available: ${CTX_VARS.join(", ")})`);
       return ref.path[0] === "merged_commits" ? { kind: "array" } : { kind: "any" };
     }

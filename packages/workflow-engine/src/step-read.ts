@@ -44,6 +44,18 @@ export function env(engine: WorkflowEngine, run: RunRow, step: StepRow | null, i
         case "var": return { ran: true, value: ref.path[0] === "date" ? new Date(engine.now()).toISOString().slice(0, 10) : ref.path[0] === "slug" ? slugOf(asObject(run.inputs_json)) : run.id };
         case "ctx": {
           const name = ref.path[0];
+          if (name === "answers") {
+            const node = ref.path[1];
+            if (!node || engine.compiled(run).nodes.get(node)?.type !== "human"
+              || (ref.path.length !== 2 && !(ref.path.length === 3 && ref.path[2] === "length"))) {
+              throw new MissingValueError("answer_history_ref", "ctx.answers requires a named human node, optionally followed by .length");
+            }
+            // Current settled rows, not an immutable history: rerun may replace or remove them.
+            const rows = engine.journal.db.prepare(`SELECT step_key, scope, visit, output_json FROM lane_pilot_wf_step WHERE run_id=? AND node_id=? AND state='succeeded' AND scope IN (${scopes.map(() => "?").join(",")}) ORDER BY rowid`)
+              .all(run.id, node, ...scopes) as Array<Pick<StepRow, "step_key" | "scope" | "visit" | "output_json">>;
+            const answers = rows.map(({ step_key, scope, visit, output_json }) => ({ step_key, scope, visit, output: asObject(output_json) }));
+            return { ran: true, value: ref.path[2] === "length" ? answers.length : answers };
+          }
           const value = name === "run_id" ? run.id : name === "goal" ? asObject(run.inputs_json).goal : name === "merged_commits" ? mergedCommits(engine, run.id) : undefined;
           return { ran: true, value: valueAtPath(value, ref.path.slice(1)) };
         }

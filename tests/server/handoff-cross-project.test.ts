@@ -35,7 +35,7 @@ async function setup(options: { configured?: boolean; activateFails?: boolean } 
     if (options.activateFails) throw new Error("spawn refused");
     return { threadId: "thr-new", runId: "run-new" };
   });
-  mountHandoff({ bb, db, log: () => undefined, isDisposed: () => false }, { activate: activate as never });
+  mountHandoff({ bb, db, log: () => undefined, isDisposed: () => false }, { startChild: activate as never });
   const call = async (params: Record<string, unknown>) =>
     JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_handoff_create", { runId, title: "t", objective: "o", acceptance: ["a"], ...params }, { threadId: pmThreadId, projectId }))) as Record<string, any>;
   return { db, harness, sent, activate, call };
@@ -45,46 +45,45 @@ let dispose: (() => Promise<void> | void) | null = null;
 afterEach(async () => { await dispose?.(); dispose = null; });
 
 describe("handoff into another project", () => {
-  it("starts a PM chat in the target project and sends the card as its first message", async () => {
+  it("starts a PM chat in the target project and delivers the card", async () => {
     const { db, harness, sent, activate, call } = await setup();
     dispose = () => harness.lifecycle.dispose();
 
     const created = await call({ targetProjectId: target, targetSectionId: "sec-1" });
-    expect(activate).toHaveBeenCalledWith(target, null, "bb", undefined, undefined, { sectionId: "sec-1" });
+    expect(activate).toHaveBeenCalledWith(expect.objectContaining({ projectId: target, parentThreadId: pmThreadId, sectionId: "sec-1" }));
     expect(created.deliveredTo).toBe("thr-new");
     expect(created.targetProjectId).toBe(target);
     expect(created.handoff).toMatchObject({ state: "delivered", toAgent: "lane-pilot-pm", recipientThreadId: "thr-new" });
     expect(sent).toHaveLength(1);
     expect(sent[0]).toMatchObject({ threadId: "thr-new", senderThreadId: pmThreadId });
-    expect(sent[0]!.text).toContain(`Handoff ${created.handoff.id}`);
-    expect(sent[0]!.text).toContain(`project ${projectId}`);
+    expect(sent[0]!.text).toContain("as an agent assignment");
+    expect(created.message).toContain(`Handoff ${created.handoff.id}`);
+    expect(created.message).toContain(`project ${projectId}`);
     // The record is the source project's: list and receipt see it.
     expect(getHandoff(db, created.handoff.id)?.card).toMatchObject({ projectId, ownerThreadId: pmThreadId });
     expect(listHandoffs(db, { projectId }).map((row) => row.card.id)).toEqual([created.handoff.id]);
   });
 
-  it("refuses a project without Lane Pilot setup and says what the owner does", async () => {
+  it("starts a child without requiring prior Lane Pilot setup", async () => {
     const { db, harness, sent, activate, call } = await setup({ configured: false });
     dispose = () => harness.lifecycle.dispose();
 
-    const refused = await call({ targetProjectId: target });
-    expect(refused).toMatchObject({ ok: false, error: { sideEffects: "none" } });
-    expect(refused.error.message).toMatch(/not set up in project other-project.*owner has to enable Lane Pilot/s);
-    expect(activate).not.toHaveBeenCalled();
-    expect(sent).toEqual([]);
-    expect(listHandoffs(db, { projectId })).toEqual([]);
+    const created = await call({ targetProjectId: target });
+    expect(created.deliveredTo).toBe("thr-new");
+    expect(activate).toHaveBeenCalledOnce();
+    expect(listHandoffs(db, { projectId })).toHaveLength(1);
   });
 
-  it("points at the existing PM thread when the target project already has one", async () => {
+  it("can create a separate child even when the destination has an active PM", async () => {
     const { db, harness, activate, call } = await setup();
     dispose = () => harness.lifecycle.dispose();
     createRun(db, "run-t", target);
     setRunThread(db, "run-t", "thr-existing");
     claimActivation(db, { projectId: target, pmThreadId: "thr-existing", runId: "run-t" });
 
-    const refused = await call({ targetProjectId: target });
-    expect(refused.error.message).toContain('recipientThreadId "thr-existing"');
-    expect(activate).not.toHaveBeenCalled();
+    const created = await call({ targetProjectId: target });
+    expect(created.deliveredTo).toBe("thr-new");
+    expect(activate).toHaveBeenCalledOnce();
   });
 
   it("cancels the record when the PM chat cannot start", async () => {
@@ -92,18 +91,18 @@ describe("handoff into another project", () => {
     dispose = () => harness.lifecycle.dispose();
 
     const failed = await call({ targetProjectId: target });
-    expect(failed.error.message).toMatch(/could not start a PM chat.*spawn refused/);
+    expect(failed.error.message).toMatch(/could not complete child Pilot handoff.*spawn refused/);
     expect(sent).toEqual([]);
     expect(listHandoffs(db, { projectId }).map((row) => row.card.state)).toEqual(["canceled"]);
   });
 
-  it("rejects the project's own id and a thread together with a project", async () => {
+  it("supports its own project but rejects contradictory target selectors", async () => {
     const { harness, activate, call } = await setup();
     dispose = () => harness.lifecycle.dispose();
 
-    expect((await call({ targetProjectId: projectId })).error.message).toMatch(/own project/);
+    expect((await call({ targetProjectId: projectId })).deliveredTo).toBe("thr-new");
     await expect(call({ targetProjectId: target, recipientThreadId: "x" })).rejects.toThrow(/not both/);
     await expect(call({ targetSectionId: "s" })).rejects.toThrow(/needs targetProjectId/);
-    expect(activate).not.toHaveBeenCalled();
+    expect(activate).toHaveBeenCalledOnce();
   });
 });

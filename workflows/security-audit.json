@@ -184,7 +184,7 @@
       ],
       "type": "agent",
       "role": "analyst",
-      "prompt": "Severity matrix CRITICAL/HIGH/MEDIUM/LOW with file:line, impact and remediation per finding; group by root cause; list scan phases that could not run.",
+      "prompt": "Build the severity matrix CRITICAL/HIGH/MEDIUM/LOW from inputs.scan_findings and the findings in the consumed threat_model output. Include file:line, impact and remediation per finding; group by root cause across both sources. Use inputs.scan_critical_count and inputs.scan_high_count as the scan totals, not totals for the threat register. Preserve inputs.scan_warnings and identify scan phases or checks that could not run; an unavailable check is not a clean result. Secrets remain locations only, never values.",
       "out": {
         "report_path": "string",
         "severity_distribution": "any"
@@ -279,7 +279,13 @@
     {
       "from": "threat_model",
       "to": "report",
-      "pass": "artifact"
+      "pass": "artifact",
+      "with": {
+        "scan_findings": "scan.findings",
+        "scan_warnings": "scan.warnings",
+        "scan_critical_count": "scan.critical_count",
+        "scan_high_count": "scan.high_count"
+      }
     },
     {
       "from": "report",

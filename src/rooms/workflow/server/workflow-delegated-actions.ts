@@ -36,7 +36,7 @@ export function registerDelegatedActions(engine: WorkflowEngine, ctx: ServerCore
           task: `${spec.how}\n\nAction: ${key}\nParameters: ${redactKnown(JSON.stringify(params))}`, inputs: { ...c.input.with, ...reads }, contract: outputContract(fields),
           skills: [...spec.skills, ...stringList(params.skill)] });
         const result = await agents.run(await withResolvedModel({ rt, workflowRunId: c.runId, workflowId: c.workflow.id, stepKey: c.stepKey, nodeId: node.id, spawnKey: c.spawnKey, role: spec.role, title, prompt, fields, skills: [...spec.skills, ...stringList(params.skill)], signal: c.signal }));
-        return { output: result.output, threadId: result.threadId, ...(result.usage ? { usage: result.usage } : {}) };
+        return { output: result.output, threadId: result.threadId, ...(result.usage ? { usage: result.usage } : {}), ...(result.detail ? { detail: result.detail } : {}) };
       },
     } as NodeExecutor<ChainRuntime>);
   }

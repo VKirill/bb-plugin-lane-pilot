@@ -17,6 +17,7 @@ import { NATIVE_LP_BRIDGE_PM_TOOLS } from "../../native-agent";
 import { readGateReport } from "../../tasks/gate-report";
 import { historySearch } from "../../memory-tiers/server";
 import { mountHandoff } from "../../relay/server";
+import { startChildPm } from "../../native-agent/server";
 import { mountInsights } from "../../self-repair/server";
 import { mountHealth } from "../../stability/server";
 import { mountCouncilTools } from "../../council/server";
@@ -439,7 +440,7 @@ export function registerTools(ctx: ServerCore, services: Services, familyContrib
   });
 
   // Modules register their tools after the core ones so the PM tool order follows NATIVE_LP_BRIDGE_TOOLS.
-  mountHandoff(ctx, { activate: services.activate });
+  mountHandoff(ctx, { startChild: (input) => startChildPm(ctx, input) });
   mountInsights(ctx, selfRepairDeps());
   mountHealth(ctx, services);
   mountCouncilTools(ctx, services.council, (threadId) => services.phaseIntake.launchRefusal(threadId));

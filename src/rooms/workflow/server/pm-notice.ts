@@ -7,6 +7,7 @@ import type { RunRow } from "../../storage";
 ;
 import { startedBySchedule } from "./workflow-runtime";
 import { sendServiceMessage } from "../../relay/server";
+import { chatCode } from "../../brief/chat-markdown";
 import type { LeadRoadApi } from "../../contracts";
 import {AFTER_ACCEPT, DOCS_MAINTENANCE, DOCS_NIGHT, LP_TASK_PIPELINE, SELF_REPAIR, WORKTREE_CLEANUP} from "../../contracts";
 
@@ -83,7 +84,7 @@ export async function maybeNotifyWorkflowRun(input: {
   const body = input.startedBySchedule ? delivered! : chatOutcome(run, input.unmetGoalIds);
   const text = input.startedBySchedule
     ? `Lane Pilot: the scheduled run ${run.id} of ${run.workflow_id} finished. Show the owner this result in this chat as it is (no summary, nothing to act on; its helper's own completion may follow: it is the same result, say nothing about it):\n\n${body}`
-    : `Lane Pilot: the run ${run.id} of ${run.workflow_id} ended ${run.status} (engine status).\n\n${body}`;
+    : `## Lane Pilot · ${run.workflow_id}\n\nRun \`${run.id}\` ended ${run.status} (engine status).\n\n${body}`;
   const key = workflowNoticeKey(run.id, run.status, input.transition);
   if (await input.bb.storage.kv.get(key)) return false;
   await bestEffort(input.log, "workflow notice record", input.bb.storage.kv.set(key, Date.now() as never), undefined);
@@ -106,13 +107,18 @@ function chatOutcome(
   const clean = (text: string): string => maskCredentials(withoutSelectionMarkers(text)).text.slice(0, 12_000).trim();
   if (run.status === "succeeded") {
     const raw = run.output_json ?? "";
-    let status = "";
     try {
-      const output = JSON.parse(raw) as { status?: unknown } | null;
-      if (typeof output?.status === "string") status = `Output status: ${output.status}\n`;
+      const output: unknown = JSON.parse(raw);
+      if (typeof output === "string") return clean(output) || "succeeded; the run recorded no output.";
+      if (output && typeof output === "object" && !Array.isArray(output)) {
+        const record = output as Record<string, unknown>;
+        const status = typeof record.status === "string" ? `Output status: ${record.status}\n\n` : "";
+        const fields = Object.entries(record).filter(([key]) => key !== "status" || typeof record.status !== "string").map(([key, value]) =>
+          `### ${key}\n\n${typeof value === "string" ? value : chatCode(JSON.stringify(value, null, 2), "json")}`);
+        return clean(status + fields.join("\n\n")) || "succeeded; the run recorded no output.";
+      }
     } catch { /* Keep malformed output visible as recorded, without inventing an outcome. */ }
-    // Put the recorded business status first so a long report cannot truncate it away.
-    return clean(status + raw) || "succeeded; the run recorded no output.";
+    return clean(raw) || "succeeded; the run recorded no output.";
   }
   const unmet = run.status === "blocked" && unmetGoalIds?.length ? ` Unmet goals: ${unmetGoalIds.join(", ")}.` : "";
   return clean(`Reason: ${run.reason ?? "not recorded"}.${unmet}`);

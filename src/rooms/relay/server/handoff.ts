@@ -25,8 +25,8 @@ import { BB_AGENT_SUMMARIES } from "../../contracts/server";
 import { requirePmRun, type ServerContext } from "../../platform/server";
 import { registerObservedTool } from "../../platform/server";
 import { scheduleIsolated } from "../../platform/server";
-import { getActivation, getRun, loadPrototypeConfig } from "../../storage";
-import type { ActivationApi } from "../../contracts";
+import type { ChildPmRequest } from "../../contracts";
+import { ToolError } from "../../contracts/server";
 import { sendServiceMessage } from "./service-message";
 
 type BundledAgent = { displayName?: string; prompt?: string; skills?: string[]; tools?: string[] };
@@ -55,42 +55,31 @@ const createParams = z.object({
   recipientThreadId: z.string().min(1).optional(),
   targetProjectId: z.string().trim().min(1).optional(),
   targetSectionId: z.string().trim().min(1).optional(),
+  targetHostId: z.string().trim().min(1).optional(),
+  targetPath: z.string().trim().min(1).optional(),
   fromAgent: z.string().trim().min(1).max(120).default("lane-pilot-pm"),
 }).strict().superRefine((value, ctx) => {
   if (value.targetProjectId && value.recipientThreadId) ctx.addIssue({ code: "custom", message: "name either recipientThreadId (an existing thread) or targetProjectId (a new PM chat), not both" });
+  if ((value.targetHostId || value.targetPath) && (!value.targetProjectId || !value.targetHostId || !value.targetPath)) ctx.addIssue({ code: "custom", message: "targetHostId and targetPath require each other and targetProjectId" });
   if (value.targetSectionId && !value.targetProjectId) ctx.addIssue({ code: "custom", message: "targetSectionId needs targetProjectId" });
 });
-
-/** Why a card cannot open a PM chat in the project, with what the owner or the caller does next; null when it can. */
-export function crossProjectRefusal(db: ServerContext["db"], sourceProjectId: string, targetProjectId: string): string | null {
-  if (targetProjectId === sourceProjectId) return "targetProjectId is this chat's own project: do the work here, or pass recipientThreadId for an existing thread.";
-  if (!loadPrototypeConfig(db, targetProjectId)) {
-    return `Lane Pilot is not set up in project ${targetProjectId}, so no PM chat can start there. The owner has to enable Lane Pilot in that project first (open a chat in it and turn Lane Pilot on); then repeat this call. Until then, tell the owner which project the work belongs to.`;
-  }
-  const active = getActivation(db, targetProjectId);
-  const run = active ? getRun(db, active.run_id) : undefined;
-  if (active && !active.pm_thread_id.startsWith("pending:") && run && !run.closed_at && (run.state === "pending" || run.state === "running")) {
-    return `Project ${targetProjectId} already has a Lane Pilot PM chat (thread ${active.pm_thread_id}). Send the card into it: repeat this call with recipientThreadId "${active.pm_thread_id}" instead of targetProjectId.`;
-  }
-  return null;
-}
 
 /**
  * Handoffs between agents as cards with receipts. A card is delivered into a BB thread when the
  * caller names one; otherwise the caller carries the card text to its own subagent and reports the
  * receipt itself.
  */
-export function mountHandoff(ctx: ServerContext, options: { agents?: AgentDefinition[]; activate?: ActivationApi["activate"] } = {}): void {
+export function mountHandoff(ctx: ServerContext, options: { agents?: AgentDefinition[]; startChild?: (input: ChildPmRequest) => Promise<{ threadId: string }> } = {}): void {
   const { bb, db } = ctx;
   const registry = buildCapabilityRegistry(options.agents ?? bundledAgentDefinitions());
 
   registerObservedTool(bb.agents, {
     name: "lane_pilot_handoff_create",
-    description: "Give a task to another agent as a typed card (objective, acceptance, inputs, budget, deadline); returns the card text and its id. With `targetProjectId` it starts a new PM chat in that other BB project (`targetSectionId`: in that section) with the card as its first message.",
+    description: "Assign a card with objective, acceptance, inputs, budget and deadline. targetProjectId opens a child Pilot in any project; targetSectionId selects its section. Returns card and thread ids.",
     instructions: [
-      "Use from the active Lane Pilot PM thread. Name `toAgent`, or describe the work in `request` and the recipient is chosen from the agent registry.",
-      "With `recipientThreadId` the card is sent into that thread and marked delivered. Without it, pass the returned `message` to your own subagent and report its final output with lane_pilot_handoff_receipt.",
-      "targetProjectId: for work of another BB project or when the thread you would write to hangs. Reason: your tools stop at this project. Refuses when Lane Pilot is not set up there, or a PM chat exists (then use `recipientThreadId`): tell the owner. Not clearly that project's work: ask the owner first.",
+      "Active PM only. Name toAgent, or request describes the agent to select.",
+      "recipientThreadId sends to an existing thread. Without a destination, carry the returned message to your subagent and record lane_pilot_handoff_receipt.",
+      "targetProjectId opens an independent child Pilot without setup. targetSectionId selects its folder. For ambiguous folders, pass a listed targetHostId/targetPath pair. Use recipientThreadId for subsequent assignments to the same child; use relay ask/reply for questions. Keep the actual sender; human approvals remain human-only. Never substitute another project or folder after refusal.",
       `Known agents (ids; with only \`request\` the closest one is chosen): ${registry.map((agent) => agent.agentId).join(", ")}.`,
     ].join("\n"),
     parameters: createParams,
@@ -98,11 +87,10 @@ export function mountHandoff(ctx: ServerContext, options: { agents?: AgentDefini
       requirePmRun(db, { runId: params.runId, threadId: context.threadId, projectId: context.projectId });
       const target = params.targetProjectId;
       if (target) {
-        if (!options.activate) throw new Error("starting a PM chat in another project is not available in this host");
-        const refusal = crossProjectRefusal(db, context.projectId, target);
-        if (refusal) throw new Error(refusal);
+        if (!options.startChild) throw new Error("starting a child Pilot is not available in this host");
+        if (params.toAgent && params.toAgent !== "lane-pilot-pm") throw new Error("targetProjectId opens a Pilot; use recipientThreadId for other agents");
       }
-      let toAgent = params.toAgent ?? (target && !params.request ? "lane-pilot-pm" : undefined);
+      let toAgent = params.toAgent ?? (target ? "lane-pilot-pm" : undefined);
       let chosenBy: "caller" | "registry" = "caller";
       if (!toAgent) {
         const choice = chooseRecipient(registry, params.request ?? `${params.title} ${params.objective}`);
@@ -125,20 +113,24 @@ export function mountHandoff(ctx: ServerContext, options: { agents?: AgentDefini
       let message = handoffMessage(stored.card);
       let recipientThreadId = params.recipientThreadId ?? context.threadId;
       if (target) {
-        message = `[Lane Pilot] This chat was opened by the Lane Pilot PM of project ${context.projectId} (thread ${context.threadId}) at the owner's request. The card below is your brief.\n\n${message}`;
-        let opened: { threadId: string; runId: string };
+        message = `[Lane Pilot] This chat was opened by the Lane Pilot PM of project ${context.projectId} (thread ${context.threadId}) as an agent assignment. The card below is your brief; human confirmations are not delegated.\n\n${message}`;
+        let opened: { threadId: string };
         try {
-          opened = await options.activate!(target, null, "bb", undefined, undefined, params.targetSectionId ? { sectionId: params.targetSectionId } : undefined);
+          opened = await options.startChild!({ projectId: target, parentThreadId: context.threadId, sectionId: params.targetSectionId, hostId: params.targetHostId, path: params.targetPath, title: params.title, handoffId: stored.card.id });
         } catch (cause) {
-          transitionHandoff(db, { id: stored.card.id, to: "canceled", actor: "lane-pilot", note: `PM chat in ${target} did not start`, now: Date.now() });
-          throw new Error(`could not start a PM chat in project ${target}: ${cause instanceof Error ? cause.message : String(cause)}. The handoff ${stored.card.id} is canceled; tell the owner.`);
+          transitionHandoff(db, { id: stored.card.id, to: "canceled", actor: "lane-pilot", note: `child setup or delivery failed in ${target}: ${cause instanceof Error ? cause.message : String(cause)}`, now: Date.now() });
+          throw new ToolError(`could not complete child Pilot handoff in project ${target}: ${cause instanceof Error ? cause.message : String(cause)}. The handoff ${stored.card.id} is canceled.`, { code: "child_handoff_failed", retryable: false, sideEffects: "unknown", next: "Inspect the handoff and any returned child thread before retrying." });
         }
         recipientThreadId = opened.threadId;
         try {
-          await sendServiceMessage(bb, { threadId: opened.threadId, text: message, senderThreadId: context.threadId });
+          // Keep the sender strict: a rejected attribution must not become an anonymous assignment.
+          await bb.sdk.threads.send({ threadId: recipientThreadId, senderThreadId: context.threadId, mode: "queue-if-active",
+            input: [{ type: "text", text: message, mentions: [] }] });
         } catch (cause) {
-          transitionHandoff(db, { id: stored.card.id, to: "canceled", actor: "lane-pilot", recipientThreadId, note: "card was not delivered", now: Date.now() });
-          throw new Error(`the PM chat ${opened.threadId} started in project ${target} but the card was not delivered: ${cause instanceof Error ? cause.message : String(cause)}. Tell the owner.`);
+          // A timeout may mean BB accepted the message. Keep the card open; never cancel or resend blindly.
+          throw new ToolError(`handoff ${stored.card.id} delivery to @thread:${recipientThreadId} is unconfirmed: ${cause instanceof Error ? cause.message : String(cause)}`, {
+            code: "handoff_delivery_unknown", retryable: false, sideEffects: "unknown", next: "Inspect this child and handoff before any retry; do not create another child.",
+          });
         }
       } else if (params.recipientThreadId) {
         await sendServiceMessage(bb, { threadId: params.recipientThreadId, text: message, senderThreadId: context.threadId });

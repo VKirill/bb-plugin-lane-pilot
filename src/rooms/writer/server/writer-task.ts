@@ -1,5 +1,6 @@
 import type { TaskV2 } from "../../contracts";
 import { providerForwardsAgentOnly } from "@lane-pilot/models";
+import { chatBriefSection } from "../../brief/chat-markdown";
 import { outputText, valueAt } from "@lane-pilot/kit";
 import { compactContract, pmReadBrief } from "../writer-brief";
 import { summarizeThreadEvents, type ThreadEventLike } from "@lane-pilot/harness-core";
@@ -439,13 +440,15 @@ export function writerPrompt(...args: Parameters<typeof writerBriefSegments>): s
  */
 export function writerBriefInput(task: TaskV2, segments: BriefSegment[], providerId: string): Array<{ type:"text"; text:string; mentions:[]; visibility?:"agent-only" }> {
   const part = (value: string, hide: boolean) => ({ type:"text" as const, text:value, mentions:[] as [], ...(hide ? { visibility:"agent-only" as const } : {}) });
-  if (!providerForwardsAgentOnly(providerId)) return [part(segments.map((segment) => segment.text).join("\n\n"), false)];
-  const parts = [part(`Lane Pilot task ${task.id}: ${task.title}`, false)];
+  const shown = (segment: BriefSegment) => segment.hidden ? segment.text : chatBriefSection(segment.text);
+  const header = `## Lane Pilot task ${task.id}: ${task.title}`;
+  if (!providerForwardsAgentOnly(providerId)) return [part([header, ...segments.map(shown)].join("\n\n"), false)];
+  const parts = [part(header, false)];
   let group: BriefSegment[] = [];
   const flush = () => {
     // The chat shows the visible parts one after another with nothing between them: «…titleTask contract:» (H4). The contract
     // part opens with the break.
-    if (group.length) parts.push(part((group[0]!.hidden ? "" : "\n\n") + group.map((segment) => segment.text).join("\n\n"), group[0]!.hidden));
+    if (group.length) parts.push(part((group[0]!.hidden ? "" : "\n\n") + group.map(shown).join("\n\n"), group[0]!.hidden));
     group = [];
   };
   for (const segment of segments) {
@@ -482,7 +485,7 @@ export function stickyTurnPrompt(input:{ kind:"next-task"|"retry"|"merge"; task:
     ...(input.task.acceptance?.length ? [PLAN_FACT_BRIEF_LINE] : []),
     ...taskFolderLines(input.taskFolder, contractUnchanged),
     ...writerRulesLines(input.rulesText ?? ""),
-    ...(contractUnchanged ? [] : contractSectionText(input.task, false, input.taskFolder)),
+    ...(contractUnchanged ? [] : contractSectionText(input.task, false, input.taskFolder).map(chatBriefSection)),
   ].join("\n\n");
 }
 

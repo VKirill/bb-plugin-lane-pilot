@@ -24,6 +24,7 @@ import { parseWorkflow } from "@lane-pilot/workflow-engine";
 import type { Workflow } from "@lane-pilot/workflow-engine";
 import { builtinWorkflow } from "../../src/rooms/workflow/builtin";
 import { createGoalAuditor } from "../../src/rooms/workflow/server/workflow-goal-audit";
+import { workflowAuditEvidence } from "../../src/rooms/workflow/server/workflow-audit-evidence";
 
 /**
  * The executors of a chain on the host, against a fake BB: a helper thread is a scripted answer, the PM's checkout is a real git
@@ -679,7 +680,92 @@ describe("the agent step", () => {
   });
 });
 
+describe("security audit report inputs", () => {
+  it.each(["", "ph_security_590f"])("delivers scan findings and unavailable-phase warnings with phase %s", async (phase) => {
+    const finding = { id: "scan-590f", severity: "high", file: "src/auth.ts", line: 9,
+      evidence: "SCAN_HEAD_590F " + "verified source evidence ".repeat(1800) + "SCAN_TAIL_590F", remediation: "Validate the request." };
+    const warning = "DEPENDENCIES_UNAVAILABLE_590F " + "audit service unavailable ".repeat(40) + "WARNING_TAIL_590F";
+    const threat = { id: "phase-590f", severity: "high", file: "src/session.ts", line: 12,
+      evidence: "THREAT_REGISTER_590F " + "unmitigated threat ".repeat(40), remediation: "Bind the session." };
+    let reportPrompt = "";
+    const delivered: Record<string, unknown> = {};
+    const t = await setup({
+      recon: [reply({ entry_points: ["src/auth.ts"], stack: ["node"], auth: "session", found_entry_points: true, handoff: "Recon ready." })],
+      "scan:child": [reply({ phase: "fixture-scan", findings: [finding], warnings: [warning], handoff: "Scan complete; consult structured findings." })],
+      threat_model: [reply({ findings: [threat], handoff: "Threat verification ready." })],
+      report: [() => {
+        reportPrompt = String(t.spawned.at(-1)!.prompt);
+        for (const name of ["scan_findings", "scan_warnings", "consumes-threat_model"]) {
+          const file = t.writes.find((write) => new RegExp(`/${name}\\.[0-9a-f]{8}\\.json$`).test(write.path)
+            && reportPrompt.includes(write.path.slice(t.checkout.length + 1)));
+          delivered[name] = file ? JSON.parse(readFileSync(file.path, "utf8")) : null;
+        }
+        return reply({ report_path: "security-report.md", severity_distribution: { high: phase ? 3 : 2 }, handoff: "Report fixture ready." });
+      }],
+    }, { resolveWorkflow: (id) => builtinWorkflow(id) });
+    dispose = t.dispose;
+    const result = await t.start(builtinWorkflow("security-audit")!, { scope: "src", tier: "quick", phase_id: phase }).done;
+    expect(result.status, result.error ?? undefined).toBe("succeeded");
+    expect(result.output).toMatchObject({ status: "done", proposed_workflow: "review-fix", findings: [finding, finding] });
+    expect(delivered.scan_findings).toEqual([finding, finding]);
+    expect(delivered.scan_warnings).toEqual([warning, warning]);
+    expect(reportPrompt).toContain("- scan_critical_count: 0");
+    expect(reportPrompt).toContain("- scan_high_count: 2");
+    expect(reportPrompt).not.toContain("SCAN_TAIL_590F");
+    if (phase) expect(delivered["consumes-threat_model"]).toEqual({ findings: [threat], handoff: "Threat verification ready." });
+    else expect(t.spawned.some((request) => (request.pluginMetadata as Row).lanePilotWorkflowNode === "threat_model")).toBe(false);
+  });
+});
+
 describe("the owner's question", () => {
+  it.each([0, 2])("delivers the complete spec-phase interview after %i answered rounds", async (rounds) => {
+    const answers = ["FIRST_OWNER_590E " + "first requirement ".repeat(60) + "END_FIRST_590E", "SECOND_OWNER_590E keep the export private"];
+    const questions: string[] = [], scoreHistory: unknown[] = [];
+    let scores = 0, specHistory: unknown = null, specPrompt = "";
+    const inputFile = (name: string, prompt: string): unknown => {
+      const file = [...t.writes].reverse().find((write) => new RegExp(`/${name}\\.[0-9a-f]{8}\\.json$`).test(write.path)
+        && prompt.includes(write.path.replace(`${t.checkout}/`, "")));
+      return file ? JSON.parse(readFileSync(file.path, "utf8")) : null;
+    };
+    const t = await setup({
+      score: [() => {
+        scores += 1;
+        scoreHistory.push(inputFile("prior_answers", String(t.spawned.at(-1)!.prompt)));
+        return reply({ ambiguity: scores <= rounds ? 0.6 : 0.1, weakest: `WEAK_DIMENSION_${scores}`, questions: [`QUESTION_${scores}_590E`], handoff: "Assessment ready." });
+      }],
+      spec: [() => {
+        specPrompt = String(t.spawned.at(-1)!.prompt);
+        specHistory = inputFile("answers", specPrompt);
+        return reply({ spec_path: ".agents/phases/ph_590e/SPEC.md", handoff: "Specification ready." });
+      }],
+    });
+    dispose = t.dispose;
+    const started = t.start(builtinWorkflow("spec-phase")!, { phase_id: "ph_590e", goal: "Specify a private export" });
+    const answered = new Set<string>();
+    for (let round = 0; round < rounds; round += 1) {
+      await vi.waitFor(() => expect(t.harness.pendingInteractions.some((form) => !answered.has(form.id))).toBe(true), { timeout: 5000, interval: 10 });
+      const form = t.harness.pendingInteractions.find((candidate) => !answered.has(candidate.id))!;
+      answered.add(form.id);
+      questions.push(String(form.title));
+      t.harness.behavior.submitInteraction(form.id, { choice: "1", text: answers[round]! });
+    }
+    await started.done;
+    await vi.waitFor(() => expect(t.engine.get(started.runId)?.status).toBe("succeeded"), { timeout: 5000, interval: 10 });
+    expect(t.engine.get(started.runId)?.output).toMatchObject({ status: "done", ambiguity: 0.1 });
+    expect(scores).toBe(rounds + 1);
+    if (rounds === 0) {
+      expect(t.harness.pendingInteractions).toHaveLength(0);
+      expect(specPrompt).toContain("- answers: []");
+      return;
+    }
+    expect(questions[0]).toContain("QUESTION_1_590E");
+    expect(questions[1]).toContain("QUESTION_2_590E");
+    const history = answers.map((answer, index) => ({ step_key: `ask#${index + 1}`, scope: "", visit: index + 1, output: { answer, answer_kind: "answered" } }));
+    expect(scoreHistory[1]).toEqual(history.slice(0, 1));
+    expect(scoreHistory[2]).toEqual(history);
+    expect(specHistory).toEqual(history);
+  });
+
   const ask = chain({
     nodes: [
       { id: "ask", type: "human", role: "owner", question: "Ship it? {{$inputs.what}}", output: [{ name: "answer", type: "string" }, { name: "answer_kind", type: "enum", values: ["go", "fix", "abort", "timeout"] }], timeoutSec: 600 },
@@ -1384,6 +1470,193 @@ describe("a code task of a chain", () => {
     edges: [{ from: "start", to: "build" }, { from: "build", to: "done" }],
   });
   const task = (checkout: string) => ({ schema_version: 2, id: "c1", title: "Write a note", risk: "low", lane: "writer", read_first: ["README.md"], interfaces: ["note.txt exists"], invariants: ["only note.txt"], out_of_scope: ["the rest"], expected_outputs: ["note.txt"], owns_paths: ["note.txt"], never_touch: [".git/**"], depends_on: [], objective: "Write note.txt", acceptance: ["note.txt exists"], verify: "tests", verification: [{ command: "test -f note.txt", cwd: checkout, timeout_sec: 30 }] });
+  const plannedChain = () => {
+    const workflow = taskChain(undefined);
+    const build = workflow.nodes.find((node) => node.id === "build")!;
+    if (build.type !== "lp-task") throw new Error("build must be an lp-task");
+    build.contract_template = "Write one note";
+    return workflow;
+  };
+
+  it.each([
+    ["write", "accepted"], ["write-medium", "accepted"], ["write-full", "accepted"],
+    ["write", "blocked"], ["write", "invalid-contract"],
+  ])("settles issue-quick %s with real commit facts after %s", async (nodeId, ending) => {
+    const t = await setup({});
+    dispose = t.dispose;
+    const writer = structuredClone(builtinWorkflow("issue-quick")!.nodes.find((node) => node.id === nodeId)!);
+    if (writer.type !== "lp-task") throw new Error("issue-quick writer must be an lp-task");
+    writer.contract = ending === "invalid-contract" ? {} : task(t.checkout);
+    // Preserve the shipped writer's required output schema and the real ctx collector. Only intake
+    // and downstream product actions are omitted; writer acceptance is a database fixture.
+    const workflow = chain({
+      nodes: [writer, { id: "done", type: "action", action: "emit", map: { state: `${nodeId}.state`, merged_commits: "ctx.merged_commits" } }],
+      outputs: [{ name: "state", type: "string" }, { name: "merged_commits", type: "array" }],
+      edges: [{ from: "start", to: nodeId }, { from: nodeId, to: "done" }],
+    });
+    const started = t.start(workflow);
+    const first = await started.done;
+    let commit: string | null = null;
+    if (ending !== "invalid-contract") {
+      expect(first.status).toBe("waiting");
+      expect(t.dispatched).toHaveLength(1);
+      const dispatched = t.dispatched[0]!.task as Row;
+      createTask(t.db, { id: String(dispatched.id), runId: RUN, kind: "bb", contract: dispatched });
+      createAttempt(t.db, { id: "quick-commit-attempt", runId: RUN, taskId: String(dispatched.id) });
+      if (ending === "accepted") {
+        writeFileSync(join(t.checkout, "note.txt"), "accepted fixture\n");
+        execFileSync("git", ["add", "README.md", "note.txt"], { cwd: t.checkout });
+        execFileSync("git", ["-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "-qm", "Fixture\n\nLane-Pilot-Attempt: quick-commit-attempt"], { cwd: t.checkout });
+        commit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: t.checkout, encoding: "utf8" }).trim();
+      }
+      transitionAttempt(t.db, "quick-commit-attempt", ending === "accepted" ? "accepted" : "blocked");
+      await t.engine.poll();
+    } else expect(t.dispatched).toHaveLength(0);
+    const snapshot = t.engine.snapshot(started.runId)!;
+    const settled = snapshot.steps.find((step) => step.node_id === nodeId)!;
+    expect(settled.state, settled.error ?? "writer settlement").toBe("succeeded");
+    const expected = commit ? [commit] : [];
+    expect(JSON.parse(settled.output_json!).merged_commits).toEqual(expected);
+    expect(snapshot.run.status).toBe("succeeded");
+    expect(JSON.parse(snapshot.run.output_json!)).toEqual({ state: ending === "accepted" ? "accepted" : ending === "invalid-contract" ? "failed" : "blocked", merged_commits: expected });
+  });
+
+  it.each(["accepted", "timeout"])("retains measured planner detail through writer wait and %s settlement", async (ending) => {
+    const t = await setup({ build: [(checkout) => reply({ contract: task(checkout) })] });
+    dispose = t.dispose;
+    const started = t.start(plannedChain());
+    expect((await started.done).status).toBe("waiting");
+    expect(t.dispatched).toHaveLength(1);
+    const waiting = t.engine.journal.steps(started.runId).find((row) => row.node_id === "build")!;
+    const detail = JSON.parse(waiting.receipt_json!).detail;
+    expect(detail?.repoGuard).toMatchObject({ checkout: { hostId: "local", path: t.checkout }, checkoutBinding: "verified", reusedThread: false });
+    expect(detail.repoGuard.before).not.toBeNull();
+    expect(detail.repoGuard.after).not.toBeNull();
+    if (ending === "accepted") {
+      const dispatched = t.dispatched[0]!.task as Row;
+      createTask(t.db, { id: String(dispatched.id), runId: RUN, kind: "bb", contract: dispatched });
+      createAttempt(t.db, { id: "planner-detail-attempt", runId: RUN, taskId: String(dispatched.id) });
+      transitionAttempt(t.db, "planner-detail-attempt", "accepted");
+    } else {
+      t.db.prepare("UPDATE lane_pilot_wf_step SET await_json=? WHERE run_id=? AND step_key=?").run(JSON.stringify({ ...JSON.parse(waiting.await_json!), deadline: 0 }), started.runId, waiting.step_key);
+    }
+    await t.engine.poll();
+    const steps = t.engine.journal.steps(started.runId);
+    const settled = steps.find((row) => row.node_id === "build")!;
+    expect(settled.state).toBe(ending === "accepted" ? "succeeded" : "failed");
+    if (ending === "timeout") expect(settled.error).toBe("await_timeout:attempt");
+    expect(JSON.parse(settled.receipt_json!).detail).toEqual(detail);
+    const evidence = await workflowAuditEvidence(t.rt.ctx, started.runId, steps);
+    expect(evidence.repository).toContainEqual({ runId: started.runId, step: settled.step_key, state: settled.state, window: detail.repoGuard });
+  });
+
+  it("retains measured planner detail when its returned contract is refused before dispatch", async () => {
+    const t = await setup({ build: [reply({ contract: { id: "invalid" } })] });
+    dispose = t.dispose;
+    const started = t.start(plannedChain());
+    expect((await started.done).output).toMatchObject({ state: "failed" });
+    expect(t.dispatched).toHaveLength(0);
+    const step = t.engine.journal.steps(started.runId).find((row) => row.node_id === "build")!;
+    expect(JSON.parse(step.receipt_json!).detail?.repoGuard).toMatchObject({ checkout: { path: t.checkout } });
+  });
+
+  it("retains measured delegated-helper detail in the receipt and audit collector", async () => {
+    const t = await setup({ inspect: [reply({ ok: true })] });
+    dispose = t.dispose;
+    const started = t.start(chain({ outputs: { ok: "bool" }, nodes: [
+      { id: "inspect", type: "action", action: "lp.preflight", out: { ok: "bool" } },
+      { id: "done", type: "action", action: "emit", map: { ok: "inspect.ok" } },
+    ], edges: [{ from: "start", to: "inspect" }, { from: "inspect", to: "done" }] }));
+    expect((await started.done).status).toBe("succeeded");
+    const steps = t.engine.journal.steps(started.runId);
+    const step = steps.find((row) => row.node_id === "inspect")!;
+    const detail = JSON.parse(step.receipt_json!).detail;
+    expect(detail?.repoGuard).toMatchObject({ checkout: { hostId: "local", path: t.checkout }, checkoutBinding: "verified" });
+    const evidence = await workflowAuditEvidence(t.rt.ctx, started.runId, steps);
+    expect(evidence.repository).toContainEqual({ runId: started.runId, step: step.step_key, state: "succeeded", window: detail.repoGuard });
+  });
+
+  it.each(["UNIQUE_GAP_590_discount_boundary", `LONG_GAP_590 ${"boundary detail ".repeat(2500)}TAIL_GAP_590`])("delivers supplied test-gen gaps to the real contract planner before writer dispatch (%#)", async (description) => {
+    const t = await setup({ write_tests: [(checkout) => reply({ contract: task(checkout) })] });
+    dispose = t.dispose;
+    const workflow = builtinWorkflow("test-gen")!;
+    expect(workflow).toBeTruthy();
+    const summary = await t.start(workflow, { scope: "src/discount.ts", goal: "Cover the named gap", quality_mode: "standard", phase_id: "",
+      gaps: [{ file: "src/discount.ts", layer: "L1", priority: "high", description }] }).done;
+    expect(summary.status).toBe("waiting");
+    expect(t.dispatched).toHaveLength(1);
+    const planner = t.spawned.find((row) => (row.pluginMetadata as Row).lanePilotWorkflowNode === "write_tests");
+    expect(planner).toBeDefined();
+    // Inspect the actual helper request and files delivered by the real executor, not a runSim lp-task stub.
+    const delivered = JSON.stringify({ prompt: planner!.prompt, files: t.writes });
+    expect(delivered).toContain(description);
+    expect(delivered).toContain("src/discount.ts");
+    for (const file of t.writes.filter((row) => row.content.includes(description))) {
+      expect(String(planner!.prompt)).toContain(file.path.replace(`${t.checkout}/`, ""));
+      expect(readFileSync(file.path, "utf8")).toBe(file.content);
+    }
+  });
+
+  it("refuses the contract planner before spawn or writer dispatch when required gap files cannot be delivered", async () => {
+    const t = await setup({}, { failWrites: true });
+    dispose = t.dispose;
+    const result = await t.start(builtinWorkflow("test-gen")!, { scope: "src/discount.ts", goal: "Cover gaps",
+      gaps: [{ file: "src/discount.ts", description: "required detail ".repeat(2000) }] }).done;
+    expect(result.status).toBe("failed");
+    expect(t.spawned).toHaveLength(0);
+    expect(t.dispatched).toHaveLength(0);
+  });
+
+  it("delivers derived gaps and the owner's strike to the real test-gen contract planner", async () => {
+    const t = await setup({ derive: [reply({ gaps: [{ file: "tests/keep.ts", description: "KEEP_GAP_590" }, { file: "tests/omit.ts", description: "OMIT_GAP_590" }], handoff: "Review both gaps" })],
+      write_tests: [(checkout) => reply({ contract: task(checkout) })] });
+    dispose = t.dispose;
+    // Script only the external owner's answer; routing and the contract planner are real registered executors.
+    t.engine.register("builtin:human", { run: async () => ({ output: { answer: "Strike OMIT_GAP_590; keep KEEP_GAP_590", answer_kind: "strike" } }) });
+    expect((await t.start(builtinWorkflow("test-gen")!, { scope: "src/discount.ts", goal: "Cover confirmed gaps", phase_id: "phase-590" }).done).status).toBe("waiting");
+    expect(t.dispatched).toHaveLength(1);
+    const planner = t.spawned.find((row) => (row.pluginMetadata as Row).lanePilotWorkflowNode === "write_tests");
+    const delivered = JSON.stringify({ prompt: planner?.prompt, files: t.writes });
+    expect(delivered).toContain("KEEP_GAP_590");
+    expect(delivered).toContain("Strike OMIT_GAP_590; keep KEEP_GAP_590");
+    expect(delivered).toContain("owner_answer_kind");
+    expect(delivered).toContain("strike");
+  });
+
+  it("delivers classified defects and added-file ownership to the real test-gen fix planner", async () => {
+    const workflow = structuredClone(builtinWorkflow("test-gen")!);
+    const writer = workflow.nodes.find((node) => node.id === "write_tests")!;
+    if (writer.type !== "lp-task") throw new Error("write_tests must be an lp-task");
+    workflow.nodes[workflow.nodes.indexOf(writer)] = { id: writer.id, type: "action", action: "fixture.accepted-tests", params: {}, out: writer.out, produces: writer.produces, maxAttempts: writer.maxAttempts };
+    const failure = { id: "FAILURE_590G", file: "tests/new-590.ts", message: "FAILURE_HEAD_590G " + "assertion evidence ".repeat(2500) + "FAILURE_TAIL_590G" };
+    let classifierPrompt = "", classifierFailures: unknown = null;
+    const t = await setup({ run: [reply({ ok: false, tests_passed: 3, tests_failed: 1, pass_rate: 75, failures: [failure], no_framework: false })],
+      classify: [() => {
+        classifierPrompt = String(t.spawned.at(-1)!.prompt);
+        const file = t.writes.find((write) => /\/failures\.[0-9a-f]{8}\.json$/.test(write.path)
+          && classifierPrompt.includes(write.path.slice(t.checkout.length + 1)));
+        classifierFailures = file ? JSON.parse(readFileSync(file.path, "utf8")) : null;
+        return reply({ test_defects: [{ id: "DEFECT_590", file: "tests/new-590.ts", description: "wrong assertion" }], code_defects: [], env_issues: [], test_defect_count: 1, converged: false, handoff: "Fix the test" });
+      }],
+      fix_tests: [(checkout) => reply({ contract: task(checkout) })] });
+    dispose = t.dispose;
+    // The first accepted writer is a fixture; the fix planner consumes the actual shipped edge through the engine.
+    t.engine.register("fixture.accepted-tests", { run: async () => ({ output: { state: "accepted", files: ["tests/new-590.ts"], tests_added: 1, merge_commit: "fixture" } }) });
+    const started = t.start(workflow, { scope: "src/discount.ts", goal: "Cover gaps", gaps: [{ file: "src/discount.ts" }] });
+    const summary = await started.done;
+    expect(summary.status, JSON.stringify({ summary, steps: t.engine.journal.steps(started.runId) })).toBe("waiting");
+    expect(classifierFailures).toEqual([failure]);
+    expect(classifierPrompt).toContain("- pass_rate: 75");
+    expect(classifierPrompt).toContain("- tests_passed: 3");
+    expect(classifierPrompt).toContain("- tests_failed: 1");
+    expect(classifierPrompt).not.toContain("FAILURE_TAIL_590G");
+    expect(t.dispatched).toHaveLength(1);
+    const planner = t.spawned.find((row) => (row.pluginMetadata as Row).lanePilotWorkflowNode === "fix_tests");
+    const delivered = JSON.stringify({ prompt: planner?.prompt, files: t.writes });
+    expect(delivered).toContain("DEFECT_590");
+    expect(delivered).toContain("added_files");
+    expect(delivered).toContain("tests/new-590.ts");
+  });
 
   it("a chain lp-task node still takes the chain path when the dispatch executors register after the chain ones (server.ts order)", async () => {
     // Regression: registerDispatchExecutors used to overwrite the merged "lp-task" executor with the bare pipeline,
@@ -1393,6 +1666,8 @@ describe("a code task of a chain", () => {
     const started = t.start(taskChain(task(t.checkout)));
     expect((await started.done).status).toBe("waiting");
     expect(t.dispatched).toHaveLength(1);
+    const step = t.engine.journal.steps(started.runId).find((row) => row.node_id === "build")!;
+    expect(JSON.parse(step.receipt_json!).detail).toBeUndefined();
   });
 
   it("keeps the planner's file steps in the canonical plan (Roblox T5 plan_critique_blocked, 2026-11-08)", async () => {
@@ -1554,6 +1829,72 @@ describe("the step contract of an agent step (W0)", () => {
 });
 
 describe("handoff by reference and the start packet (W0)", () => {
+  it.each(["roblox-asset", "seo-page"])("delivers %s review feedback to the continued author and stops after two reviews", async (graph) => {
+    const asset = graph === "roblox-asset", author = asset ? "assemble" : "write";
+    const inputName = asset ? "asset_issues" : "quality_findings";
+    const evidence = "REWORK_HEAD_590H " + "specific reviewer evidence ".repeat(1800) + "REWORK_TAIL_590H";
+    const feedback = asset ? [evidence] : [{ id: "seo-590h", severity: "high", file: "draft.md", line: 7, evidence, remediation: "Remove the unsupported claim." }];
+    const authorPrompts: string[] = [];
+    let reviews = 0, delivered: unknown = null;
+    const t = await setup({
+      [author]: [() => {
+        const prompt = authorPrompts.length ? t.sent.at(-1)!.text : String(t.spawned.at(-1)!.prompt);
+        authorPrompts.push(prompt);
+        const file = t.writes.find((write) => new RegExp(`/${inputName}\\.[0-9a-f]{8}\\.json$`).test(write.path)
+          && prompt.includes(write.path.slice(t.checkout.length + 1)));
+        if (file) delivered = JSON.parse(readFileSync(file.path, "utf8"));
+        return reply(asset
+          ? { ok: true, model_path: ".agents/roblox/model.rbxm", part_count: 3, status: "done", handoff: "Asset assembled." }
+          : { ok: true, raw_page_path: "draft.md", word_count: 500, status: "done", handoff: "Draft ready." });
+      }],
+      [asset ? "verify_asset" : "quality"]: [() => {
+        reviews += 1;
+        return reply(asset
+          ? { status: "rework", bounds_ok: false, collisions_ok: false, scale_studs: "1x2x3", report_path: "collision_report.json", issues: feedback, handoff: "Review complete." }
+          : { status: "rework", findings: feedback, handoff: "Review complete." });
+      }],
+      media_brief: [reply({ media_path: "media.md", handoff: "Media brief ready." })],
+    }, { resolveWorkflow: (id) => builtinWorkflow(id) });
+    dispose = t.dispose;
+    const summary = await t.start(builtinWorkflow(graph)!, asset ? { asset_name: "FixtureHelmet" } : { page_topic: "Fixture page", brief_path: "brief.md" }).done;
+    expect(summary.status, JSON.stringify({ summary, steps: t.engine.journal.steps(summary.runId) })).toBe("succeeded");
+    expect(summary.output).toMatchObject({ status: asset ? "partial" : "blocked" });
+    expect(reviews).toBe(2);
+    expect(authorPrompts).toHaveLength(2);
+    expect(t.spawned.filter((request) => (request.pluginMetadata as Row).lanePilotWorkflowNode === author)).toHaveLength(1);
+    expect(t.sent).toHaveLength(1);
+    expect(authorPrompts[0]).not.toContain("REWORK_HEAD_590H");
+    expect(authorPrompts[1]).toContain("- critic_verdict: rework");
+    expect(authorPrompts[1]).not.toContain("REWORK_TAIL_590H");
+    expect(delivered).toEqual(feedback);
+  });
+
+  it.each(["pass", "rework"])("delivers mvp-phase critic notes on the second story visit and preserves %s routing", async (lastVerdict) => {
+    const notes = "MVP_FEEDBACK_590: remove the batch exporter; keep one vertical slice.";
+    const story = { who: "owner", what: "reads stats", why: "makes a decision", slice: "one report", out_of_scope: ["batch exporter"] };
+    let storyVisits = 0, criticVisits = 0;
+    const storyPrompts: string[] = [];
+    const t = await setup({
+      story: [() => {
+        storyVisits += 1;
+        storyPrompts.push(String(t.spawned.at(-1)!.prompt));
+        return reply({ ...story, handoff: "Story ready." });
+      }],
+      split_check: [() => reply({ verdict: ++criticVisits === 1 ? "rework" : lastVerdict, notes, handoff: "Review complete." })],
+    });
+    dispose = t.dispose;
+    // The shipped graph, real routing and registered helper packets; only the model's replies are scripted.
+    const summary = await t.start(builtinWorkflow("mvp-phase")!, { goal: "Show one end-to-end report" }).done;
+    expect(summary.status).toBe("succeeded");
+    expect(storyVisits).toBe(2);
+    expect(criticVisits).toBe(2);
+    expect(storyPrompts[0]).not.toContain(notes);
+    expect(storyPrompts[1]).toContain(notes);
+    expect(storyPrompts[1]).toContain("- critic_verdict: rework");
+    expect(summary.output).toMatchObject({ status: lastVerdict === "pass" ? "done" : "blocked" });
+    if (lastVerdict === "rework") expect(summary.output).toMatchObject({ reason: notes });
+  });
+
   const big = Array.from({ length: 40 }, (_, at) => ({ id: `T${at + 1}`, title: `Task number ${at + 1} of the plan`, objective: "x".repeat(120) }));
   const bigText = JSON.stringify(big, null, 1);
   const reader = (node: Row = {}, inputs: Row = {}) => chain({
@@ -1568,6 +1909,66 @@ describe("handoff by reference and the start packet (W0)", () => {
   });
   const run = { goal: "Rate-limit the export endpoint", tasks: big, note: "short note" };
   const packetOf = (prompt: string) => /<step-packet>[\s\S]*<\/step-packet>/.exec(prompt)![0];
+
+  it.each(["artifact", "same-session", "delivery-failure"])("delivers explicit consumes source bytes before the helper via %s", async (mode) => {
+    const source = { payload: { body: "consumed data ".repeat(3500), tail: "CONSUMED_TAIL_590" }, handoff: "A short handoff is not the source output." };
+    let delivered: string | null = null;
+    const consume = (checkout: string) => {
+      const file = t.writes.find((write) => /consumes-first\.[0-9a-f]{8}\.json$/.test(write.path));
+      delivered = file && existsSync(file.path) ? readFileSync(file.path, "utf8") : null;
+      expect(checkout).toBe(t.checkout);
+      return reply({ count: 1, handoff: "checked" });
+    };
+    const t = await setup({ first: [reply(source), consume], read: [consume] }, { failWrites: mode === "delivery-failure" });
+    dispose = t.dispose;
+    const wf = chain({
+      nodes: [
+        { id: "first", type: "agent", role: "analyst", prompt: "Produce the data.", output: [{ name: "payload", type: "object" }], produces: [{ kind: "report", version: 1 }] },
+        { id: "read", type: "agent", role: "analyst", prompt: "Read the consumed report.", output: [{ name: "count", type: "number" }], consumes: [{ kind: "report", version: 1, from: "first" }], produces: [{ kind: "report", version: 1 }] },
+        { id: "done", type: "action", action: "emit", map: { count: "read.count" } },
+      ],
+      outputs: [{ name: "count", type: "number" }],
+      edges: [{ from: "start", to: "first" }, { from: "first", to: "read", pass: mode === "same-session" ? "same-session" : "artifact" }, { from: "read", to: "done" }],
+    });
+    const summary = await t.start(wf).done;
+    if (mode === "delivery-failure") {
+      expect(summary.status).toBe("failed");
+      expect(summary.error).toContain("input_delivery_failed");
+      expect(t.spawned).toHaveLength(1);
+      expect(delivered).toBeNull();
+      return;
+    }
+    expect(summary.status).toBe("succeeded");
+    expect(delivered).not.toBeNull();
+    expect(JSON.parse(delivered!)).toEqual(source);
+    const prompt = mode === "same-session" ? t.sent[0]!.text : String(t.spawned[1]!.prompt);
+    expect(prompt).toContain("consumes:first");
+    expect(prompt).toMatch(/file: .*consumes-first\.[0-9a-f]{8}\.json/);
+    expect(prompt).not.toContain("CONSUMED_TAIL_590");
+    if (mode === "same-session") expect(t.spawned).toHaveLength(1);
+  });
+
+  it("delivers the shipped lp.plan critic's consumed plan without extra edge mappings", async () => {
+    const definition = builtinWorkflow("lp.plan")!;
+    const plan = definition.nodes.find((node) => node.id === "plan")!;
+    const critic = definition.nodes.find((node) => node.id === "plan_critic")!;
+    if (plan.type !== "agent" || critic.type !== "agent") throw new Error("planning nodes must be agents");
+    const answer = { tasks: big, waves: [], objective: "CONSUMED_PLAN_590", has_ui: false, task_count: big.length, confidence: 90, already_met: false, premortem: [] };
+    const t = await setup({ plan_critic: [reply({ status: "pass", summary: "reviewed", findings: [], evidence: "fixture", handoff: "reviewed" })] });
+    dispose = t.dispose;
+    t.engine.register("fixture.plan", { run: async () => ({ output: answer }) });
+    const wf = chain({
+      nodes: [{ id: "plan", type: "action", action: "fixture.plan", out: plan.out, produces: plan.produces }, critic,
+        { id: "done", type: "action", action: "emit", map: { status: "plan_critic.status" } }],
+      outputs: [{ name: "status", type: "string" }],
+      edges: [{ from: "start", to: "plan" }, { from: "plan", to: "plan_critic" }, { from: "plan_critic", to: "done" }],
+    });
+    expect((await t.start(wf).done).status).toBe("succeeded");
+    const file = t.writes.find((write) => /consumes-plan\.[0-9a-f]{8}\.json$/.test(write.path));
+    expect(file).toBeDefined();
+    expect(JSON.parse(readFileSync(file!.path, "utf8"))).toEqual(answer);
+    expect(String(t.spawned[0]!.prompt)).toContain(`file: ${file!.path.slice(t.checkout.length + 1)}`);
+  });
 
   it("a big input is written to a file of the chat's folder and stands in the prompt as its path and a summary; a small one stays inline", async () => {
     const t = await setup({ read: [reply({ count: 40, handoff: "h" })] });

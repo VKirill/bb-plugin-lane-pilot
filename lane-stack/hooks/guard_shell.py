@@ -69,12 +69,11 @@ _PM_OPEN_PLUGINS = {"lane-pilot", "bb-plugin-lane-pilot", "env-catalog"}
 def _pm_plugin_call_open(words: list[str]) -> bool:
     return (words[:3] == ["plugin", "rpc", "call"] and len(words) > 3 and words[3] in _PM_OPEN_PLUGINS) or (
         words[:3] == ["plugin", "run", "lane-pilot"])
-# A PM never hands work to another chat (owner, 2026-11-01: a PM in a subfolder told the plugin root's PM to dispatch its tasks, and it did).
-# Reading another thread's queue stays open; writing to a thread goes through Lane Pilot's relay (askId) or to the owner.
+# Assignments and questions keep the real sender through Lane Pilot's relay.
 PM_BB_MESSAGE_COMMANDS = {("thread", "queue", "list")}
 PM_BB_HANDOFF_COMMANDS = {("thread", "tell"), ("thread", "message"), ("thread", "queue", "create"), ("thread", "queue", "send")}
-PM_BB_HANDOFF_DENIAL = ("bb thread tell hands work to another chat: a PM never does that. Work outside this chat's folder: name the folder whose "
-                        "chat does it to the owner and stop. A question another thread asked you (it carries an askId) is answered with lane_pilot_relay reply")
+PM_BB_HANDOFF_DENIAL = ("Use lane_pilot_relay: handoff with targetProjectId/targetSectionId creates a child Pilot; "
+                       "recipientThreadId continues it; reply answers an askId. Keep the real sender, not bb thread tell.")
 # A Lane Pilot PM stops a stuck thread, archives it and cancels its plan (owner, 2026-10-09). Starting one (bb thread new) stays
 # with Lane Pilot's tools (lane_pilot_dispatch_writer, lane_pilot_helpers, lane_pilot_errand), so a writer never bypasses critique.
 PM_BB_THREAD_CONTROL = {("thread", "stop"), ("thread", "archive"), ("thread", "unarchive"), ("thread", "cancel-plan")}
@@ -89,6 +88,21 @@ LANE_PILOT_BB_COMMANDS = PM_BB_READ_COMMANDS | PM_BB_MESSAGE_COMMANDS | PM_BB_TH
     ("environment", "list"), ("environment", "show"), ("environment", "get"), ("environment", "providers"),
     ("host", "list"), ("host", "show"), ("provider", "list"), ("provider", "models"), ("skill", "list"),
 }
+# Native project organization uses the installed plugin. No raw spawn, physical relocation,
+# destructive removal or blanket RPC access: those must not bypass run/workspace binding.
+LANE_PILOT_FOLDER_COMMANDS = {
+    ("project", "create"),
+    *{("project-folders", name) for name in (
+        "list", "create", "copy-add", "path-set", "place-chat", "unplace-chat", "sync", "archives")},
+    ("project-folders", "rules", "show"), ("project-folders", "rules", "set"),
+}
+LANE_PILOT_FOLDER_RPCS = {
+    "list", "sections_list", "machines", "project_browse", "project_create", "create", "group_create",
+    "rename", "reorder", "section_reparent", "thread_section", "thread_place", "thread_place_clear",
+    "locations", "browse", "rules_read", "rules_save", "rules_settings_save", "execution_read", "execution_agents",
+    "archive_list", "archive_matches", "copy_add", "section_path_set", "sync",
+}
+
 # Shipping a plugin is the job of that plugin's own PM: reload/install/update only from a bb-plugin-* checkout, so a
 # product PM cannot reload Lane Pilot under running writers.
 LANE_PILOT_BB_PLUGIN_SHIP = {("plugin", "build"), ("plugin", "reload"), ("plugin", "install"), ("plugin", "update")}
@@ -1298,6 +1312,12 @@ def _lane_pilot_segment_error(segment: list[str]) -> str | None:
 def _lane_pilot_bb_command_error(args: list[str], cwd: object = None) -> str | None:
     words = [arg for arg in args if not arg.startswith("-")]
     if any(arg in {"--help", "-h", "--version", "-V"} for arg in args):
+        return None
+    if any(tuple(words[:size]) in LANE_PILOT_FOLDER_COMMANDS for size in (2, 3)):
+        return None
+    if words[:3] in (["plugin", "rpc", "list"], ["plugin", "rpc", "inspect"]) and len(words) > 3 and words[3] == "project-folders":
+        return None
+    if words[:4] == ["plugin", "rpc", "call", "project-folders"] and len(words) > 4 and words[4] in LANE_PILOT_FOLDER_RPCS:
         return None
     if any(tuple(words[:size]) in LANE_PILOT_BB_COMMANDS for size in (1, 2, 3)) or _pm_plugin_call_open(words):
         return None

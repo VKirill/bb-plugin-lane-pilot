@@ -20,7 +20,7 @@ describe("design judge and launch spec (batch c)", () => {
     expect(seen.count).toBe(1);
     expect(seen.launch).toEqual({ providerId: "codex", model: "codex-test", reasoningLevel: "medium", serviceTier: "default", projectId: "P", parentThreadId: "pm-thread" });
     expect(seen.meta).toMatchObject({ role: "writer", lanePilotRunId: "run", lanePilotTaskId: "t1", attemptId: "a1", parentPmThreadId: "pm-thread" });
-    expect(seen.header).toBe("Lane Pilot task t1: Write the bot");
+    expect(seen.header).toBe("## Lane Pilot task t1: Write the bot");
     expect(seen.ownsPaths).toBe(true);
   });
 

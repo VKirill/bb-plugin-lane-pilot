@@ -94,10 +94,10 @@ describe("writer brief v2", () => {
     expect(brief).not.toContain("checks_pass_first_try");
   });
 
-  it("the retry turn says the contract is unchanged; a next task resends it as tagged sections", () => {
+  it("the retry turn says the contract is unchanged; a next task resends it as Markdown sections", () => {
     const next = stickyTurnPrompt({ kind: "next-task", task });
-    expect(next).toContain("<task_goal>");
-    expect(next).toContain(`id: ${task.id}`);
+    expect(next).toContain("### Задача");
+    expect(next).toContain(`**id:** ${task.id}`);
     expect(next).not.toContain('"schema_version": 2');
   });
 });

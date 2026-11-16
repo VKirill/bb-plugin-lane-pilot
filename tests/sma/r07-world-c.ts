@@ -94,7 +94,7 @@ async function launchSpec() {
   const launch = spawned[0] ?? {};
   const parts = (launch.input ?? []) as Array<{ text: string }>;
   return { result, count: spawned.length, launch: { providerId: launch.providerId, model: launch.model, reasoningLevel: launch.reasoningLevel, serviceTier: launch.serviceTier, projectId: launch.projectId, parentThreadId: launch.parentThreadId },
-    meta: launch.pluginMetadata as Record<string, unknown>, header: parts[0]?.text, ownsPaths: parts.map((part) => part.text).join("\n").includes("owns_paths: index.ts") };
+    meta: launch.pluginMetadata as Record<string, unknown>, header: parts[0]?.text, ownsPaths: parts.map((part) => part.text).join("\n").includes("**owns_paths:** index.ts") };
 }
 
 function briefOf() {

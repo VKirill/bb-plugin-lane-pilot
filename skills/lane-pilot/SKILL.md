@@ -13,6 +13,7 @@ After a context compaction only the first part of this file comes back, and the 
 
 | You are about to… | Read | Why |
 |---|---|---|
+| Manage BB projects, sections, rules or child Pilot chats | references/projects.md | Native Project Folders operations and authenticated delegation |
 | Learn where a task's files are, how tasks are ordered, who revises a plan, what waits for the owner, where worktrees live | references/task-path.md | The path of an ordinary task and the rule behind each step |
 | Say that something cannot be done, that you have no command, or that you do not know when it moves; a task waits (provider, quarantine, owner word, merge, secret) | references/ops.md | Symptom, check, the exact tool or command that moves it |
 | Handle a blocked or failed task: critique, `needs_human`, `verdict_block`, retries spent, a red check, a Lane Pilot fault, a folder without git | references/ops-blocked.md | The way out for each reason |

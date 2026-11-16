@@ -192,3 +192,40 @@ describe("the Lane Pilot PM stops, archives and cancels threads and reads settin
     expect(allowed("dev-orchestrator", "bb settings show")).toBe(2);
   });
 });
+
+
+describe("native PM Project Folders integration", () => {
+  it("uses the plugin for discovery, creation, rules and filing without owner setup", () => {
+    for (const command of [
+      "bb project create --name Analytics --root /srv/analytics --host ovh --json",
+      "bb project-folders list --json",
+      "bb project-folders create proj - Analytics analytics ovh --json",
+      "bb project-folders rules show proj folder --json",
+      "bb project-folders rules set proj folder --mode custom --template 'Use tests' --json",
+      "bb project-folders place-chat child proj folder",
+      "bb project-folders unplace-chat child",
+      "bb plugin rpc list project-folders --json",
+      "bb plugin rpc inspect project-folders rename --json",
+      "bb plugin rpc call project-folders project_create --input '{}'",
+      "bb plugin rpc call project-folders group_create --input '{}'",
+      "bb plugin rpc call project-folders rename --input '{}'",
+      "bb plugin rpc call project-folders reorder --input '{}'",
+    ]) {
+      expect(allowedNative(command), command).toBe(0);
+      expect(allowed("lane-pilot-pm", command), command).toBe(0);
+      expect(allowed("dev-orchestrator", command), `terminal ${command}`).toBe(2);
+    }
+  });
+  it("keeps arbitrary launches, workspace moves and destructive operations outside this access", () => {
+    for (const command of [
+      "bb plugin rpc call project-folders spawn --input '{}'",
+      "bb plugin rpc call project-folders thread_move --input '{}'",
+      "bb plugin rpc call project-folders project_delete --input '{}'",
+      "bb plugin rpc call project-folders not_a_method --input '{}'",
+      "bb project-folders move-chat child proj folder host",
+      "bb project-folders remove-section folder purge",
+      "bb project delete proj", "bb thread create --prompt task",
+      "bb project-folders list && bb thread create --prompt task",
+    ]) expect(allowedNative(command), command).toBe(2);
+  });
+});

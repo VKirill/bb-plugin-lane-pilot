@@ -28,7 +28,7 @@ export function pmPrompt(runId: string, config: PrototypeConfig, managedWorkspac
     managedWorkspace
       ? `Run id: ${runId}. This run is bound to the current BB-managed worktree; use the current workspace and do not target the base checkout at ${config.writerWorkspacePath}.`
       : `Run id: ${runId}. The project workspace is ${config.writerWorkspacePath}.`,
-    "Wait for the task: the owner or another BB agent writes it, or an already-open phase carries its goal. Do not invent tasks, write code, run probes, or dispatch a writer until asked. Do not attempt to activate another PM.",
+    "Wait for the task: the owner or another BB agent writes it, or an already-open phase carries its goal. Do not invent tasks, write code, run probes, or dispatch a writer until asked. For delegated work, open or continue a child Pilot through lane_pilot_relay handoff.",
   ].join("\n");
 }
 

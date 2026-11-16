@@ -146,7 +146,7 @@
         "en": "Write tests",
         "ru": "Написать тесты"
       },
-      "contract_template": "add tests for the confirmed gaps (inputs.gaps, else the derive list the owner agreed to); owns_paths only test directories and fixtures; never_touch source files and existing tests; acceptance - new tests run; a test expected to fail because of a confirmed bug is marked expected_fail with the bug in its name",
+      "contract_template": "add tests for the confirmed gaps (gaps, else derived_gaps restricted by owner_answer and owner_answer_kind; a strike excludes the named gaps, never silently restore them); owns_paths only test directories and fixtures; never_touch source files and existing tests; acceptance - new tests run; a test expected to fail because of a confirmed bug is marked expected_fail with the bug in its name",
       "quality_mode": "standard",
       "out": {
         "state": "accepted|failed|blocked|needs_human|cancelled",
@@ -191,7 +191,7 @@
       ],
       "type": "agent",
       "role": "triager",
-      "prompt": "FAILURE_TRIAGE_METHOD per failure: test_defect (fix the test), code_defect (confirmed bug - do not retry, do not edit sources), env_issue (blocked). A critical failure in a layer stops the next layer. In doubt - code_defect. Strategy: rounds 1-2 conservative; more than 80% pass with similar failures - broader; a regression - surgical rollback; stuck 3 rounds - reflect.",
+      "prompt": "Apply FAILURE_TRIAGE_METHOD to each entry in inputs.failures from the latest check run, using inputs.pass_rate, inputs.tests_passed and inputs.tests_failed for its summary. Per failure: test_defect (fix the test), code_defect (confirmed bug - do not retry, do not edit sources), env_issue (blocked). A critical failure in a layer stops the next layer. In doubt - code_defect. Strategy: rounds 1-2 conservative; more than 80% pass with similar failures - broader; a regression - surgical rollback; stuck 3 rounds - reflect.",
       "out": {
         "test_defects": "Failure[]",
         "code_defects": "Finding[]",
@@ -231,7 +231,7 @@
         "en": "Fix the tests",
         "ru": "Поправить тесты"
       },
-      "contract_template": "fix only the listed test_defects in the test files this workflow added; owns_paths those files",
+      "contract_template": "fix only the listed test_defects within added_files, the test files this workflow added; owns_paths only those files",
       "quality_mode": "quick",
       "out": {
         "state": "accepted|failed|blocked|needs_human|cancelled",
@@ -290,7 +290,12 @@
     {
       "from": "confirm",
       "to": "write_tests",
-      "pass": "artifact"
+      "pass": "artifact",
+      "with": {
+        "derived_gaps": "derive.gaps",
+        "owner_answer": "confirm.answer",
+        "owner_answer_kind": "confirm.answer_kind"
+      }
     },
     {
       "from": "write_tests",
@@ -318,7 +323,13 @@
     {
       "from": "run",
       "to": "classify",
-      "pass": "artifact"
+      "pass": "artifact",
+      "with": {
+        "failures": "run.failures",
+        "pass_rate": "run.pass_rate",
+        "tests_passed": "run.tests_passed",
+        "tests_failed": "run.tests_failed"
+      }
     },
     {
       "from": "classify",
@@ -330,7 +341,11 @@
       "from": "classify",
       "to": "fix_tests",
       "pass": "artifact",
-      "when": "classify.test_defects.length > 0 && visits('classify') < 3"
+      "when": "classify.test_defects.length > 0 && visits('classify') < 3",
+      "with": {
+        "test_defects": "classify.test_defects",
+        "added_files": "write_tests.files"
+      }
     },
     {
       "from": "classify",

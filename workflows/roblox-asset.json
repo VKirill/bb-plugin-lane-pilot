@@ -112,7 +112,7 @@
           "roblox-build"
         ]
       },
-      "prompt": "Собери или подготовь Roblox-ассет '{{$inputs.asset_name}}' (тип: {{$inputs.asset_type}}). Раздел навыков каталога: «Roblox-игры» (roblox-toolkit, roblox-build). Если указан source_file ({{$inputs.source_file}}), адаптируй его под требования Roblox. Для аксессуаров настрой Handle, Attachment ({{$inputs.attachment_point}}), текстуры и Avatar Setup правила. Сохрани собранный ассет в .agents/roblox/model.rbxm. Верни статус done или blocked.",
+      "prompt": "Собери или подготовь Roblox-ассет '{{$inputs.asset_name}}' (тип: {{$inputs.asset_type}}). Раздел навыков каталога: «Roblox-игры» (roblox-toolkit, roblox-build). Если указан source_file ({{$inputs.source_file}}), адаптируй его под требования Roblox. Для аксессуаров настрой Handle, Attachment ({{$inputs.attachment_point}}), текстуры и Avatar Setup правила. Сохрани собранный ассет в .agents/roblox/model.rbxm. Верни статус done или blocked. При повторной сборке исправь замечания из inputs.asset_issues; inputs.critic_verdict содержит вердикт проверяющего. На первом ходе этих входов нет.",
       "out": {
         "ok": "bool",
         "model_path": "string",
@@ -268,7 +268,11 @@
       "to": "assemble",
       "pass": "same-session",
       "when": "verify_asset.status == 'rework' && visits('verify_asset') < 2",
-      "label": "rework bounds/collisions"
+      "label": "rework bounds/collisions",
+      "with": {
+        "asset_issues": "verify_asset.issues",
+        "critic_verdict": "verify_asset.status"
+      }
     },
     {
       "from": "verify_asset",

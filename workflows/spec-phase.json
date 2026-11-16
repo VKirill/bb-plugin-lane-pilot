@@ -59,7 +59,7 @@
         "en": "Ambiguity score",
         "ru": "Балл неоднозначности"
       },
-      "prompt": "Rate the ambiguity of the phase 0..1 (it must stay inside 0 and 1) over goal, boundaries, constraints and acceptance; name the weakest dimension and the questions that would clear it.",
+      "prompt": "Rate the ambiguity of the phase 0..1 (it must stay inside 0 and 1) over goal, boundaries, constraints and acceptance; name the weakest dimension and the questions that would clear it. When inputs.prior_answers is present, use every ordered reply record's output.answer and output.answer_kind; a timeout is not an answer from the owner.",
       "out": {
         "ambiguity": "number",
         "weakest": "string",
@@ -84,7 +84,7 @@
         "en": "Clear the weakest point",
         "ru": "Прояснить слабое место"
       },
-      "prompt": "Ask at most 4 questions on the weakest dimension score named.",
+      "prompt": "Clear the weakest dimension: {{score.weakest}}. Ask at most 4 of these questions: {{score.questions}}",
       "out": {
         "answer": "string",
         "answer_kind": "answered|timeout"
@@ -102,7 +102,7 @@
         "en": "SPEC.md",
         "ru": "SPEC.md"
       },
-      "prompt": "Write .agents/phases/<phase_id>/SPEC.md for the phase: the requirement ids and the Given/When/Then promises (the Promise3 shape) from the goal, the answers and the last ambiguity score.",
+      "prompt": "Write .agents/phases/<phase_id>/SPEC.md for the phase: the requirement ids and the Given/When/Then promises (the Promise3 shape) from the goal, the complete ordered reply records in inputs.answers and the last assessment in inputs.ambiguity, inputs.weakest and inputs.questions. Preserve every answered record's output.answer; output.answer_kind=timeout means unanswered, not owner consent. An empty answers list means no interview replies were collected.",
       "out": {
         "spec_path": "string"
       },
@@ -147,12 +147,21 @@
     {
       "from": "score",
       "to": "spec",
-      "pass": "artifact"
+      "pass": "artifact",
+      "with": {
+        "answers": "ctx.answers.ask",
+        "ambiguity": "score.ambiguity",
+        "weakest": "score.weakest",
+        "questions": "score.questions"
+      }
     },
     {
       "from": "ask",
       "to": "score",
-      "pass": "artifact"
+      "pass": "artifact",
+      "with": {
+        "prior_answers": "ctx.answers.ask"
+      }
     },
     {
       "from": "spec",
