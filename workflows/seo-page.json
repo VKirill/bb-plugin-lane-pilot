@@ -135,7 +135,7 @@
         "status": "done",
         "folder": "{{$inputs.cocoon_folder}}",
         "handoff_path": "",
-        "briefs_dir": ""
+        "briefs_dir": "{{$inputs.cocoon_folder}}"
       },
       "title": {
         "en": "Generate cocoon context",
@@ -233,7 +233,7 @@
         "en": "Write SEO page content",
         "ru": "Написание текста SEO-страницы"
       },
-      "prompt": "Pick the page-type template and draft grounded in the fact map and the brief {{brief.brief_path}}: core first, answer-first modules, semantic tables, extractable snippet units and an AEO FAQ, then a completeness pass. No simulated first-person experience. Return ok, raw_page_path, word_count, status done | blocked. On a rework visit, address every finding in inputs.quality_findings; inputs.critic_verdict is the reviewer verdict. These inputs are absent on the first draft.",
+      "prompt": "Pick the page-type template and draft grounded in the fact map and the brief {{brief.brief_path}} (a ready cocoon folder means the briefs under {{cocoon.briefs_dir}}; several locales mean also the locale plan {{locale_plan.locale_plan_path}}): core first, answer-first modules, semantic tables, extractable snippet units and an AEO FAQ, then a completeness pass. No simulated first-person experience. Return ok, raw_page_path, word_count, status done | blocked. On a rework visit, address every finding in inputs.quality_findings; inputs.critic_verdict is the reviewer verdict. These inputs are absent on the first draft.",
       "out": {
         "ok": "bool",
         "raw_page_path": "string",

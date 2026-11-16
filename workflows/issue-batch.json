@@ -49,7 +49,7 @@
     }
   },
   "outputs": {
-    "status": "closed|partial",
+    "status": "closed|partial|blocked",
     "resolution": "fixed|open",
     "comment": "string",
     "merged_commits": "string[]"
@@ -130,6 +130,17 @@
       }
     },
     {
+      "id": "blocked",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "blocked",
+        "resolution": "open",
+        "comment": "'batch: the plan failed or the build merged nothing; nothing was delivered'",
+        "merged_commits": "ctx.merged_commits"
+      }
+    },
+    {
       "id": "already",
       "type": "action",
       "action": "emit",
@@ -156,6 +167,12 @@
     },
     {
       "from": "plan",
+      "to": "blocked",
+      "pass": "artifact",
+      "when": "plan.status == 'failed'"
+    },
+    {
+      "from": "plan",
       "to": "partial",
       "pass": "artifact"
     },
@@ -164,6 +181,12 @@
       "to": "closed",
       "pass": "artifact",
       "when": "build.status == 'done'"
+    },
+    {
+      "from": "build",
+      "to": "blocked",
+      "pass": "artifact",
+      "when": "build.status == 'blocked'"
     },
     {
       "from": "build",

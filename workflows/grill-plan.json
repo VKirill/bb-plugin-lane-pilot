@@ -41,7 +41,7 @@
     }
   },
   "outputs": {
-    "status": "done|blocked|open",
+    "status": "done|open",
     "locked": "string[]",
     "open": "string[]",
     "deferred": "string[]",

@@ -108,7 +108,7 @@ describe("on-map command graph parity", () => {
     const buildBlocked = await runSim("review-fix", { input: { goal: "fix findings", findings: [{ file: "src/a.ts", severity: "high" }] }, stubs: { plan_fix: { status: "ok", tasks: [task("fix-a")] }, build_fix: { status: "blocked", merged_commits: [] } } });
     expect(pathOf(buildBlocked)).toBe("first_review plan_fix build_fix blocked");
     const secondBuildBlocked = await runSim("review-fix", { input: { goal: "fix findings", findings: [{ file: "src/a.ts", severity: "high" }] }, stubs: { plan_fix: { status: "ok", tasks: [task("fix-a")] }, build_fix: { merged_commits: ["c1"] }, re_review: { status: "rework", findings: [{ file: "src/b.ts" }], remaining_actionable: 1 }, plan_fix2: { status: "ok", tasks: [task("fix-b")] }, build_fix2: { status: "blocked", merged_commits: [] } } });
-    expect(pathOf(secondBuildBlocked)).toBe("first_review plan_fix build_fix re_review plan_fix2 build_fix2 blocked");
+    expect(pathOf(secondBuildBlocked)).toBe("first_review plan_fix build_fix re_review plan_fix2 build_fix2 blocked_round2");
     const classified = await runSim("review-fix", { input: { goal: "fix findings", findings: [{ file: "src/a.ts", severity: "high" }] }, stubs: { plan_fix: { status: "ok", tasks: [task("fix-a")] }, build_fix: { merged_commits: ["c1"] }, re_review: { status: "rework", findings: [{ file: "src/b.ts" }], remaining_actionable: 1 }, plan_fix2: { status: "failed", tasks: [] }, classify: { remaining: [{ file: "src/b.ts" }] } }, humans: { ask: { answer_kind: "accept" } } });
     expect(pathOf(classified)).toBe("first_review plan_fix build_fix re_review plan_fix2 classify ask partial");
   });

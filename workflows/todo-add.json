@@ -75,7 +75,7 @@
         "line": "'todo added'",
         "priority": "{{$inputs.priority}}"
       },
-      "prompt": "Turn the thought into a structured todo: a short title, a priority (low|normal|high), a one-paragraph body. The id of the todo is made by the graph from the run, never by you. Keep the thought's meaning verbatim in body.",
+      "prompt": "Turn the thought into a structured todo: a short title, a priority (low|normal|high), a one-paragraph body, and a one-line `line` that confirms what was recorded. The id of the todo is made by the graph from the run, never by you. Keep the thought's meaning verbatim in body.",
       "out": {
         "title": "string",
         "body": "string",

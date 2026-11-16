@@ -271,6 +271,12 @@
     },
     {
       "from": "build",
+      "to": "blocked",
+      "pass": "artifact",
+      "when": "build.status == 'blocked'"
+    },
+    {
+      "from": "build",
       "to": "partial",
       "pass": "artifact"
     },

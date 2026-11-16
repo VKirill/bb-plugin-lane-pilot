@@ -252,7 +252,7 @@
       "map": {
         "status": "done",
         "review_status": "re_review.status",
-        "fix_rounds": 1,
+        "fix_rounds": "visits('build_fix') + visits('build_fix2')",
         "remaining": "[]",
         "merged_commits": "ctx.merged_commits"
       }
@@ -264,6 +264,7 @@
       "map": {
         "status": "partial",
         "review_status": "re_review.status",
+        "fix_rounds": "visits('build_fix') + visits('build_fix2')",
         "remaining": "classify.remaining",
         "merged_commits": "ctx.merged_commits"
       }
@@ -275,6 +276,15 @@
       "map": {
         "status": "blocked",
         "remaining": "first_review.findings"
+      }
+    },
+    {
+      "id": "blocked_round2",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "blocked",
+        "remaining": "re_review.findings"
       }
     }
   ],
@@ -320,7 +330,7 @@
     },
     {
       "from": "build_fix2",
-      "to": "blocked",
+      "to": "blocked_round2",
       "pass": "artifact"
     },
     {
