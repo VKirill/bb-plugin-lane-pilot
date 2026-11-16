@@ -119,7 +119,7 @@ describe("ship and the clean PR branch (n1328, n1329)", () => {
   it("[sma:k_c_prbranch] the PR branch is review/<phase> without the planning bookkeeping commits; a conflict stops it as blocked and still names the branch", async () => {
     const seen = await observeF.k_c_prbranch();
     expect(seen.clean).toEqual(["split done", { status: "done", branch: "review/ph_a", commits: 3 }]);
-    expect(seen.conflict).toEqual(["split blocked", { status: "blocked", branch: "review/ph_a", commits: 1 }]);
+    expect(seen.conflict).toEqual(["split blocked", { status: "blocked", branch: "review/ph_a", commits: 1, blocker: {}, handoff: "split done" }]);
     expect(seen.drops).toBe(true);
     expect(seen.stops).toBe(true);
   });

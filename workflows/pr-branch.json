@@ -38,8 +38,10 @@
   },
   "outputs": {
     "status": "done|blocked",
-    "branch": "string",
-    "commits": "int"
+    "branch": "string?",
+    "commits": "int?",
+    "blocker": "object?",
+    "handoff": "string?"
   },
   "quality_mode": {
     "default": "standard"
@@ -66,7 +68,9 @@
       "out": {
         "branch": "string",
         "commits": "int",
-        "conflict": "bool"
+        "conflict": "bool",
+        "outcome": "done|partial|blocked|failed?",
+        "blocker": "object?"
       },
       "guards": {
         "maxVisits": 1,
@@ -96,7 +100,9 @@
       "map": {
         "status": "blocked",
         "branch": "split.branch",
-        "commits": "split.commits"
+        "commits": "split.commits",
+        "blocker": "split.blocker",
+        "handoff": "split.handoff"
       }
     }
   ],
@@ -105,7 +111,7 @@
       "from": "split",
       "to": "blocked",
       "pass": "artifact",
-      "when": "split.conflict"
+      "when": "split.outcome in [partial, blocked, failed] || split.conflict"
     },
     {
       "from": "split",
