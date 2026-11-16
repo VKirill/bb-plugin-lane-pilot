@@ -88,7 +88,7 @@ async function setup(writerEdits: (workspace: string) => string) {
       listPaths: async () => ({ paths: [] }) as never,
       write: coreFileWrite(diskStore()) as never,
     }, projects: {
-      get: async () => ({ id: projectId, name: projectId, sources: [{ hostId: "host-mono", path: folder }] }) as never,
+      get: async () => ({ id: projectId, name: projectId, sources: [{ hostId: "host-mono", path: folder, isDefault: true }] }) as never,
       list: async () => [] as never,
     } },
     experimental_callHostRpc: async (call) => {
@@ -100,6 +100,12 @@ async function setup(writerEdits: (workspace: string) => string) {
       if (call.method === "diskFree") return { hostId: "host-mono", status: "ok", freeBytes: 500 * 1024 ** 3, totalBytes: 1000 * 1024 ** 3 };
       const handler = (handlers as Record<string, unknown>)[call.method];
       if (typeof handler !== "function") throw new Error(`unexpected host call ${call.method}`);
+      if (call.method === "runCommand") {
+        const command = String(input.command ?? "");
+        // Keep project-Git account probing offline while retaining the real PAYLOAD probe against the temp repo.
+        if (command.includes("PAYLOAD =")) return (handler as (input: unknown) => unknown)(input);
+        if (command.includes("gh auth status") || command.includes("gh api")) return { hostId: "host-mono", exitCode: 127, stdout: "", stderr: "gh is not installed on this fixture host" };
+      }
       return (handler as (input: unknown) => unknown)(input);
     },
   });
@@ -107,7 +113,7 @@ async function setup(writerEdits: (workspace: string) => string) {
   savePrototypeConfig(db, config);
   for (const [key, value] of [["plan_critique.enabled", false], ["memory.enabled", false], ["workspace.provider", false],
     ["integration.gate", "off"], ["docs.enabled", false], ["project_life.enabled", false]] as const) saveProjectSetting(db, projectId, key, value);
-  createRun(db, runId, projectId, "bb", folder);
+  createRun(db, runId, projectId, "bb", folder, undefined, undefined, config.hostId);
   setRunThread(db, runId, pmThreadId);
   await plugin(bb);
   const dispatch = async (patch: Partial<TaskV2> = {}) => JSON.parse(String(await harness.behavior.callAgentTool(
