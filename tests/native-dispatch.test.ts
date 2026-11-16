@@ -6,7 +6,7 @@ import { findOpenNativeRun, getActivation, getRun, openDatabase, savePrototypeCo
 import { sessionOverrideAgentsJson } from "../src/rooms/native-agent/native-agent-definition";
 import { nativeSelectionMarker } from "../src/rooms/native-agent/native-session";
 import { nativeContributedEnv, prepareNativeSessionRecord, traceNativeDispatch } from "../src/rooms/native-agent/native-dispatch";
-import { nativeEnvGenerationKey, nativeEnvKey, nativeThreadKey } from "../src/rooms/contracts";
+import { nativeAgentTypeKey, nativeEnvGenerationKey, nativeEnvKey, nativeThreadKey } from "../src/rooms/contracts";
 import { sha256Hex } from "@lane-pilot/kit";
 
 const stockNativeAgentsJson = () => sessionOverrideAgentsJson({
@@ -122,7 +122,16 @@ it("binds unique tokens per tab and never uses project pending", async () => {
   const first = await fake.harness.behavior.callRpc("prepare_native_session", {
     projectId: "project_a",
     agentId: "lane-stack:dev-orchestrator",
-  }) as { token: string; agentId: string; label: string; profileMode: string };
+  }) as {
+    token: string; agentId: string; label: string; profileMode: string;
+    diagnostics: {
+      requested: { agentId: string };
+      resolved: { agentId: string; profileMode: string; sourceVersion: string; sourceHash: string };
+      target: { agentId: string; providerId: string; model: string; effort: string };
+      effective: { providerId: string; model: string; effort: string };
+      observed: { agentId: string; sourceVersion: string; sourceHash: string };
+    };
+  };
   const second = await fake.harness.behavior.callRpc("prepare_native_session", {
     projectId: "project_a",
     agentId: "dev-orchestrator",
@@ -130,15 +139,38 @@ it("binds unique tokens per tab and never uses project pending", async () => {
   expect(first.agentId).toBe("dev-orchestrator");
   expect(first.label).toBe("Development coordinator");
   expect(first.profileMode).toBe("session-override");
+  expect(first.diagnostics.requested.agentId).toBe("lane-stack:dev-orchestrator");
+  expect(first.diagnostics.resolved).toMatchObject({
+    agentId: "dev-orchestrator",
+    profileMode: "session-override",
+    sourceVersion: "bb-session-1",
+    sourceHash: compileMainAgentProfile("dev-orchestrator").sourceHash,
+  });
+  expect(first.diagnostics.target).toMatchObject({ agentId: "dev-orchestrator", providerId: "unknown", model: "unknown", effort: "unknown" });
+  expect(first.diagnostics.effective).toMatchObject({ providerId: "unknown", model: "unknown", effort: "unknown" });
+  expect(first.diagnostics.observed).toMatchObject({ agentId: "unknown", sourceVersion: "unknown", sourceHash: "unknown" });
   expect(first.token).not.toBe(second.token);
   const hook = fake.harness.registrations.hooks["message.dispatch"]!;
   expect(await hook(context("thr_a", nativeSelectionMarker(first.token)))).toEqual({ action: "proceed" });
   expect(await hook(context("thr_b", nativeSelectionMarker(second.token)))).toEqual({ action: "proceed" });
-  expect(await fake.harness.behavior.callRpc("native_thread", { threadId: "thr_a" })).toMatchObject({
+  const thread = await fake.harness.behavior.callRpc("native_thread", { threadId: "thr_a" }) as {
+    token: string;
+    agentType: string;
+    diagnostics: {
+      resolved: { sourceVersion: string; sourceHash: string };
+      effective: { agentId: string };
+      observed: { agentId: string; observationBoundary: string };
+    };
+  };
+  expect(thread).toMatchObject({
     token: first.token,
     agentType: "dev-orchestrator",
     description: "Development coordinator",
   });
+  expect(thread.diagnostics.resolved).toMatchObject({ sourceVersion: "bb-session-1", sourceHash: compileMainAgentProfile("dev-orchestrator").sourceHash });
+  expect(thread.diagnostics.effective.agentId).toBe("unknown");
+  expect(thread.diagnostics.observed.agentId).toBe("dev-orchestrator");
+  expect(thread.diagnostics.observed.observationBoundary).toBe("host-preparation");
   expect(await fake.harness.behavior.callRpc("native_thread", { threadId: "thr_b" })).toMatchObject({ token: second.token });
   const db = openDatabase(fake.bb);
   const runA = findOpenNativeRun(db, "project_a", "thr_a");
@@ -148,6 +180,26 @@ it("binds unique tokens per tab and never uses project pending", async () => {
   expect(getRun(db, runA!)).toMatchObject({ kind: "cli", state: "running" });
   expect(fake.metadata[0]).toMatchObject({ threadId: "thr_a", set: { role: "pm", lanePilotRunId: runA } });
   expect(fake.rpcCalls.some((row) => row.method === "clearPending")).toBe(false);
+});
+
+it("does not treat a legacy stored selection as effective or observed without the native agent-type receipt", async () => {
+  const fake = await setup();
+  const legacy = await prepareNativeSessionRecord({
+    projectId: "project_a",
+    agentId: "dev-orchestrator",
+    profileMode: "session-override",
+    agentsJson: null,
+    sourceHash: "a".repeat(64),
+  });
+  await fake.bb.storage.kv.set(nativeThreadKey("thr_legacy"), legacy);
+  expect(await fake.harness.behavior.callRpc("native_thread", { threadId: "thr_legacy" })).toMatchObject({
+    diagnostics: {
+      target: { agentId: "dev-orchestrator" },
+      effective: { agentId: "unknown", sourceVersion: "unknown", sourceHash: "unknown" },
+      observed: { agentId: "unknown", sourceVersion: "unknown", sourceHash: "unknown", observationBoundary: "unknown" },
+    },
+  });
+  expect(await fake.bb.storage.kv.get(nativeAgentTypeKey("thr_legacy"))).toBeUndefined();
 });
 
 it("uses the real host path and leaves an ordinary thread without env", async () => {

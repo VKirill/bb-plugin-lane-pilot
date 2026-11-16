@@ -94,6 +94,7 @@ export async function prepareNativeSessionRecord(input: {
   profileMode: NativeSelection["profileMode"];
   agentsJson: string | null;
   sourceHash: string | null;
+  sourceVersion?: string | null;
   parentRunId?: string;
 }): Promise<NativeSelection> {
   const { randomUUID } = await import("node:crypto");
@@ -104,6 +105,7 @@ export async function prepareNativeSessionRecord(input: {
     profileMode: input.profileMode,
     agentsJson: input.agentsJson,
     sourceHash: input.sourceHash,
+    sourceVersion: input.sourceVersion ?? null,
     createdAt: Date.now(),
     ...(input.parentRunId ? { parentRunId: input.parentRunId } : {}),
   });

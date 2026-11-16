@@ -12,7 +12,7 @@ import { pickableAgent } from "../../../contracts/agent-picker";
 import { detectRequiredSessionPolicyCapability } from "../../../contracts/helper-context";
 import { DEFAULT_NATIVE_AGENT, nativeAgentCliId } from "../../../contracts/native-agent-id"
 import { nativeAgentTypeKey, nativeThreadKey } from "../../../contracts"
-import { nativeSelectionSchema } from "../../../contracts/native-selection";
+import { nativeDiagnostics, nativeSelectionSchema } from "../../../contracts/native-selection";
 import { userVisibleProjects } from "../../../contracts/project-scope";
 import { MAIN_ATTEMPT_LIMIT, RETRY_ELIGIBLE } from "../../../contracts/state-machine";
 import type { AttemptState } from "../../../contracts/state-machine";
@@ -115,7 +115,21 @@ export function runsRpc(ctx: ServerCore, services: Services) {
       const roleModel = isSpecialist
         ? (() => { const resolved = resolveRoleModel(`specialist:${record.agentId}`, settings); return { providerId: resolved.providerId, model: resolved.model, effort: resolved.effort ?? null }; })()
         : null;
-      return { token: record.token, label, agentId: record.agentId, profileMode: record.profileMode, cliAgentsCollision: null, environment, placementNote, roleModel };
+      const placementDiagnostics = environment
+        ? { hostId: environment.hostId, path: environment.workspace.path }
+        : {};
+      const diagnostics = nativeDiagnostics({
+        requested: { agentId: agentId || DEFAULT_NATIVE_AGENT },
+        resolved: { selection: record },
+        target: {
+          selection: record,
+          overrides: {
+            ...(roleModel ? { providerId: roleModel.providerId, model: roleModel.model, effort: roleModel.effort ?? "unknown" } : {}),
+            ...placementDiagnostics,
+          },
+        },
+      });
+      return { token: record.token, label, agentId: record.agentId, profileMode: record.profileMode, cliAgentsCollision: null, environment, placementNote, roleModel, diagnostics };
     },
     // threadId → its LP role from the thread's plugin metadata (the sidebar row mark; empty for threads that are not Lane Pilot's).
     helper_thread_labels: async ({ threadIds }) => {
@@ -340,7 +354,8 @@ export function runsRpc(ctx: ServerCore, services: Services) {
       const selected = pending ?? await bb.storage.kv.get(nativeThreadKey(threadId));
       if (!selected) return null;
       const parsed = nativeSelectionSchema.parse(selected);
-      const agentType = (pending ? null : await bb.storage.kv.get<string>(nativeAgentTypeKey(threadId))) ?? parsed.agentId;
+      const observedAgentType = pending ? null : await bb.storage.kv.get<string>(nativeAgentTypeKey(threadId));
+      const agentType = observedAgentType ?? parsed.agentId;
       let shortId = parsed.agentId;
       try { shortId = nativeAgentCliId(agentType); } catch { shortId = parsed.agentId; }
       const stored = (await ownedAgents())[shortId];
@@ -358,6 +373,13 @@ export function runsRpc(ctx: ServerCore, services: Services) {
         description: compiled?.description ?? shortId,
         role: typeof metadata?.role === "string" ? metadata.role : null,
         ownerWords: ownerWordsMode(loadProjectSettings(db, parsed.projectId)),
+        diagnostics: nativeDiagnostics({
+          resolved: { selection: parsed },
+          target: { selection: parsed },
+          ...(observedAgentType ? {
+            observed: { selection: null, overrides: { agentId: observedAgentType, observationBoundary: "host-preparation" } },
+          } : {}),
+        }),
       };
     },
     activation_context: async ({ projectId, threadId }) => {

@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { pickableAgentSchema } from "./rpc-shell";
 import { helperThreadLabelsInput, helperThreadLabelsOutput, listHelperThreadsInput, listHelperThreadsOutput } from "./ui-query-schemas";
+import { nativeDiagnosticsSchema } from "./native-selection";
 
 /** Activating the PM, the native session, helper threads. */
 const directoryPlacement = z.object({ environmentId: z.string().min(1), hostId: z.string().min(1), path: z.string().min(1) }).strict();
@@ -151,6 +152,7 @@ export const rpcNative = {
         model: z.string(),
         effort: z.string().nullable(),
       }).strict().nullable(),
+      diagnostics: nativeDiagnosticsSchema,
     }).strict(),
   },
   /** Whether an existing chat can change its agent, and which agent it runs (or will on its next message). */

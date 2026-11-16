@@ -2,6 +2,7 @@ import { z } from "zod";
 import { pickableAgentSchema } from "./rpc-shell";
 import { runViewSchema, stageSummarySchema, TASK_KINDS } from "@lane-pilot/contracts";
 import { taskBoardInput, taskBoardOutput, threadLiveInput, threadLiveOutput } from "./ui-query-schemas";
+import { nativeDiagnosticsSchema } from "./native-selection";
 
 /** Run cards, stages, helper access and the screen snapshot. */
 const cardThreadSchema: z.ZodType<{ id: string; role: string; title: string | null; status: string | null; children: unknown[] }> = z.lazy(() =>
@@ -109,6 +110,7 @@ export const rpcRuns = {
       /** The thread's Lane Pilot role (pm, writer, …) and the project's owner.words mode: what the composer's boundary line says. */
       role: z.string().nullable().optional(),
       ownerWords: z.enum(["on", "risky", "sensitive", "off"]).optional(),
+      diagnostics: nativeDiagnosticsSchema,
     }).strict().nullable(),
   },
   list_runs: {

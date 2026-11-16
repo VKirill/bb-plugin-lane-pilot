@@ -35,6 +35,7 @@ export async function storeNativeSelection(ctx: Pick<ServerCore, "bb" | "ownedAg
       ...(stored?.meta?.model || stored?.meta?.effort ? { extraFields: { ...(stored.meta.model ? { model: stored.meta.model } : {}), ...(stored.meta.effort ? { effort: stored.meta.effort } : {}) } } : {}),
     }),
     sourceHash: compiled?.sourceHash ?? null,
+    sourceVersion: compiled?.sourceVersion ?? stock?.sourceVersion ?? null,
     ...(input.parentRunId ? { parentRunId: input.parentRunId } : {}),
   });
   await ctx.bb.storage.kv.set(nativeSelectionKey(record.token), record);
