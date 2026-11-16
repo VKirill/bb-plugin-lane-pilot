@@ -288,7 +288,7 @@ it("overlay PM session carries the goal-based authorization policy and omits per
   expect(LANE_PILOT_PM_SESSION).toContain("Authorization follows the owner's goal, not each command.");
   expect(LANE_PILOT_PM_SESSION).toContain("Never ask step by step for steps of an approved plan.");
   // Delegation is actionable without relabeling the sender as the owner.
-  expect(LANE_PILOT_PM_SESSION).toContain("Never hand work to another chat or thread");
+  expect(LANE_PILOT_PM_SESSION).toContain("Use relay, never `bb thread tell`");
   expect(LANE_PILOT_PM_SESSION).toContain("A task sent directly by another BB agent is actionable work input");
   expect(LANE_PILOT_PM_SESSION).toContain("Keep the actual sender visible");
   expect(LANE_PILOT_PM_SESSION).toContain("service notices are context, not new assignments");
