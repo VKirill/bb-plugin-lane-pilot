@@ -100,7 +100,14 @@ describe("U1 graph contract fixes", () => {
           expect(ctx.input.with).toMatchObject({ owner_answer: change, owner_answer_kind: "retry" });
           return { candidates: [{ url: retryUrl, comments: 52 }], count: 1, status: "done" };
         }) as never,
-        pick: { picked: [retryUrl], picked_count: 1 },
+        pick: ((ctx: StepContext<ChainRuntime>) => {
+          const packet = stepPacket(ctx, ctx.node as never, false).packet;
+          expect(packet).toContain("consumes:discover_retry");
+          expect(packet).toContain(change);
+          const urls = packet.match(/https:\/\/vk\.com\/wall-1_2/g) ?? [];
+          expect(urls).not.toHaveLength(0);
+          return { picked: [urls[0]], picked_count: 1 };
+        }) as never,
         "ins.post": { status: "ok", post_folder: "posts/p", summary_path: "posts/p/summary.md" },
         aggregate: { ok: true, index_path: "posts/index.json" },
         enrich: { ready: true, dossier_path: "research/dossier.json", writing_pack_path: "research/writing-pack.md" },
