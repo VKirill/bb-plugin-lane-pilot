@@ -120,7 +120,7 @@ The full generated list is [docs/index.md](docs/index.md). Pages by topic:
 
 | Topic | Pages |
 |---|---|
-| Start here | [overview](docs/overview.md), [architecture](docs/architecture.md), [the task pipeline](docs/flows/task-pipeline.md), [gotchas](docs/gotchas.md), [decisions](docs/decisions.md), [PROJECT.md](PROJECT.md) |
+| Start here | [overview](docs/overview.md), [architecture](docs/architecture.md), [conventions](docs/conventions.md), [testing](docs/testing.md), [the task pipeline](docs/flows/task-pipeline.md), [gotchas](docs/gotchas.md), [decisions](docs/decisions.md), [PROJECT.md](PROJECT.md) |
 | Runtime and contracts | [data model](docs/data-model.md), [RPC and host-call contracts](docs/rpc-callers.md), [RPC route details](docs/rpc-details.md), [native agent activation](docs/native-agent.md), [packages](docs/packages.md), [package operations](docs/package-operations.md), [deployment](docs/deployment.md), [atlas (generated)](docs/atlas.md), [wires](docs/wires.md) |
 | Writer path | [validator decisions](docs/validator-decisions.md), [plan against fact](docs/plan-fact.md), [baseline and regression pass](docs/baseline.md), [return to an earlier stage](docs/stage-return.md), [pilot, then fan-out](docs/pilot.md), [backlog to tasks](docs/backlog.md), [ship](docs/ship.md), [run-goal check](docs/run-goal.md), [rolling back](docs/rollback.md), [phases](docs/phases.md) |
 | Graphs | [workflow engine](docs/workflow-engine.md), [router](docs/workflow-router.md), [triggers](docs/workflow-triggers.md), [executors](docs/workflow-executors.md), [workflow-engine package docs](packages/workflow-engine/docs/index.md) |
@@ -131,5 +131,5 @@ The full generated list is [docs/index.md](docs/index.md). Pages by topic:
 | Observability and owner | [Tasks board](docs/task-board.md), [work graph](docs/work-graph.md), [schedule board](docs/schedule-board.md), [errands](docs/errands.md), [waiting for the owner](docs/owner-waiting.md), [owner presence](docs/owner-presence.md), [deferrals](docs/deferrals.md) |
 | Settings | [enabled settings (generated)](docs/enabled-settings.md), [adoc applicability](docs/adoc-applicability.md) |
 | Workspaces | [i18n](packages/i18n/docs/index.md), [kit](packages/kit/docs/index.md), [memory-core](packages/memory-core/docs/index.md), [models](packages/models/docs/index.md), [ui-kit](packages/ui-kit/docs/index.md), [workflow-engine](packages/workflow-engine/docs/index.md), [world-sim](packages/world-sim/docs/index.md) |
-| Specific flows | [invoice-send](docs/invoice-send.md) |
+| Specific flows | [invoice-send](docs/invoice-send.md), [telegram-send](docs/telegram-send.md) |
 

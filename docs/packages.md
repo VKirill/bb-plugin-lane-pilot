@@ -180,6 +180,7 @@ The UI bundle cannot import Node modules, and the package boundary is enforced b
 ## Referenced by
 
 - [Lane Pilot architecture](architecture.md)
+- [Repository conventions and boundaries](conventions.md)
 - [Writer harness](harness.md)
 - [Lane Pilot overview](overview.md)
 - [Package operation details](package-operations.md)

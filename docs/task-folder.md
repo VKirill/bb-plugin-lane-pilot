@@ -238,3 +238,8 @@ The drill scene `run_home` (`python3 scripts/lp-drill.py --scenario run_home`, a
 twice through the `workflow_run` RPC with `source: "manual"` (the CLI `workflow-trigger` is for scheduled graphs), and passes only if each run's manifest lists its file in a folder keyed by that run, the
 files are on disk, the two runs share no path, and a `find` of `.agents/plans`, `.agents/planning`, `.agents/todos`, `.agents/runs`
 and `.bb/chats` before and after shows nothing new but the two manifests, the files they list and the documented spill.
+
+<!-- lane-pilot:backlinks -->
+## Referenced by
+
+- [Architectural decisions](decisions.md)

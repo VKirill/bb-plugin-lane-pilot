@@ -10,14 +10,17 @@ Built by Lane Pilot from page frontmatter.
 
 | Page | Type | Status | Updated |
 |---|---|---|---|
+| [docs/adoc-applicability.md](adoc-applicability.md) | — | — | — |
 | [Агенты Lane Pilot: кто есть кто](agents.md) | component | active | 2026-11-14 |
 | [Anamnesis and owner profile](anamnesis.md) | component | active | 2026-10-10 |
 | [Lane Pilot architecture](architecture.md) | architecture | active | 2026-11-14 |
+| [docs/atlas.md](atlas.md) | — | — | — |
 | [Maslov work-graphs vs Lane Pilot — gap audit](audits/maslov-graphs-vs-lane-pilot.md) | audit | draft | — |
 | [Backlog to tasks by readiness](backlog.md) | component | active | 2026-10-23 |
 | [The baseline before a writer and the regression pass after acceptance](baseline.md) | component | active | 2026-10-29 |
 | [Capability table of providers](capability.md) | component | active | 2026-10-25 |
 | [Checking the checkers (planted defects, the checker scorecard)](checkers.md) | component | active | 2026-10-25 |
+| [Repository conventions and boundaries](conventions.md) | conventions | active | 2026-11-16 |
 | [Coverage registry, graph and drill](coverage.md) | component | active | 2026-10-22 |
 | [Lane Pilot data model overview](data-model.md) | data-model | active | 2026-10-30 |
 | [Schedules and Pixel World persistence](data-model/automation.md) | data-model | active | 2026-10-10 |
@@ -26,7 +29,9 @@ Built by Lane Pilot from page frontmatter.
 | [Orchestration and execution data](data-model/orchestration.md) | data-model | active | 2026-10-27 |
 | [Architectural decisions](decisions.md) | decisions | active | 2026-10-29 |
 | [Protecting Lane Pilot database access](decisions/2026-10-08-lane-pilot-data-db-access.md) | decisions | active | 2026-10-30 |
+| [docs/decisions/2026-10-09-council-как-построить-экономику-живого-мира-lane-pilot-п.md](decisions/2026-10-09-council-как-построить-экономику-живого-мира-lane-pilot-п.md) | — | — | — |
 | [SDK audit wave 12: implemented items and rejections](decisions/2026-10-30-sdk-audit-wave12.md) | decisions | decided | — |
+| [docs/decisions/2026-11-02-council-владелец-хочет-одну-самодостаточную-память-для-в.md](decisions/2026-11-02-council-владелец-хочет-одну-самодостаточную-память-для-в.md) | — | — | — |
 | [Register of deferrals](deferrals.md) | component | active | 2026-11-14 |
 | [Build and deploy Lane Pilot](deployment.md) | deployment | active | 2026-11-14 |
 | [Design evaluation rubric](design-eval.md) | component | active | 2026-10-25 |
@@ -50,11 +55,12 @@ Built by Lane Pilot from page frontmatter.
 | [Settings and experimental features](guide/settings.md) | overview | active | 2026-11-10 |
 | [Writer harness](harness.md) | component | active | 2026-10-29 |
 | [Hypotheses checked on the bench](hypotheses.md) | component | active | 2026-10-23 |
-| [docs/invoice-send.md](invoice-send.md) | — | — | — |
+| [invoice-send: an invoice in Kontur.Elba, checked, approved and sent](invoice-send.md) | flow | active | 2026-11-16 |
 | [The lead («Штурман»)](lead.md) | component | active | 2026-11-01 |
 | [Learning from the owner's messages](learning.md) | component | active | 2026-11-13 |
 | [LP-Bench, the fixed task set](lp-bench.md) | component | active | 2026-10-30 |
 | [Memory tiers (SMA D2-8)](memory-tiers.md) | component | active | 2026-10-28 |
+| [docs/memory.md](memory.md) | — | — | — |
 | [Native agent activation and dispatch](native-agent.md) | component | active | 2026-10-29 |
 | [Night policy: what the night may decide without the owner](night-policy.md) | component | active | 2026-11-14 |
 | [Outage record and the conveyor switch](outage-conveyor.md) | component | active | 2026-10-23 |
@@ -66,9 +72,9 @@ Built by Lane Pilot from page frontmatter.
 | [Phases](phases.md) | component | active | 2026-10-30 |
 | [Pilot, then fan-out](pilot.md) | component | active | 2026-10-23 |
 | [Plan against fact and the acceptance card](plan-fact.md) | component | active | 2026-10-29 |
-| [Plan split: depends_on, computed waves, start from main](plan-split.md) | component | active | 2026-11-14 |
+| [Plan split](plan-split.md) | component | active | 2026-11-14 |
 | [Relay between threads](relay.md) | component | active | 2026-10-30 |
-| [docs/research-adoption.md](research-adoption.md) | — | — | — |
+| [Research adoption log](research-adoption.md) | overview | active | 2026-11-16 |
 | [Who works a role — the role table and model pools](role-models.md) | component | active | 2026-10-29 |
 | [Rolling work back, trusted tooling and pause](rollback.md) | component | active | 2026-10-30 |
 | [RPC and host-call contracts](rpc-callers.md) | component | active | 2026-10-28 |
@@ -84,14 +90,17 @@ Built by Lane Pilot from page frontmatter.
 | [Rule forms and the path from a rule to a mechanism](rule-forms.md) | component | active | 2026-10-22 |
 | [Run-goal check](run-goal.md) | component | active | 2026-10-23 |
 | [Schedule board: Lane Pilot's own scheduler](schedule-board.md) | component | active | 2026-10-29 |
+| [Совместимость Lane Pilot с BB: штатное ядро, VK-сборка, заявленный минимум](sdk-compatibility.md) | reference | active | — |
 | [The Self-improvement page and its settings](self-improvement-settings.md) | component | active | 2026-10-22 |
 | [Ship after acceptance](ship.md) | component | active | 2026-10-30 |
 | [Skill standard](skill-standard.md) | component | active | 2026-11-06 |
+| [SMA map — authoring per-node evidence of the four proofs](sma-evidence.md) | how-to | current | 2026-11-14 |
 | [Самопроверка SMA (20 вопросов), batch3](sma-self-check.md) | audit | — | — |
 | [Return a task to an earlier stage with added context](stage-return.md) | component | active | 2026-10-22 |
 | [Tasks board and work graph](task-board.md) | component | active | 2026-10-29 |
 | [The task folder (one home per task, lp.task-manifest/1)](task-folder.md) | component | active | 2026-11-14 |
-| [docs/telegram-send.md](telegram-send.md) | — | — | — |
+| [telegram-send: the shared Telegram send fragment](telegram-send.md) | flow | active | 2026-11-16 |
+| [Testing and verification](testing.md) | testing | active | 2026-11-16 |
 | [Twins against the real thing](twins.md) | component | active | 2026-10-23 |
 | [Writer validation decisions](validator-decisions.md) | decisions | active | 2026-10-20 |
 | [The wall journal and the night loop](wall.md) | component | active | 2026-11-14 |
@@ -99,11 +108,11 @@ Built by Lane Pilot from page frontmatter.
 | [Declared wires](wires.md) | component | active | 2026-10-23 |
 | [The work graph](work-graph.md) | component | active | 2026-10-23 |
 | [Workflow engine integration](workflow-engine.md) | overview | active | 2026-10-10 |
-| [Workflow chain executors](workflow-executors.md) | component | active | 2026-11-08 |
+| [Workflow chain executors](workflow-executors.md) | component | active | 2026-11-15 |
 | [Workflow router](workflow-router.md) | component | active | 2026-10-30 |
 | [Workflow triggers](workflow-triggers.md) | component | active | 2026-10-30 |
 | [Worktrees — where they live, who removes them, the cleanup schedule](worktrees.md) | component | active | 2026-11-14 |
-| [docs/writer-hold.md](writer-hold.md) | — | — | — |
+| [Writer hold (H2): no attempt is spent on a writer that cannot start](writer-hold.md) | component | active | 2026-11-16 |
 
 ## Workspace docs
 

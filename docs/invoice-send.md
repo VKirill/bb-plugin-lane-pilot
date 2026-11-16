@@ -1,69 +1,90 @@
+---
+title: "invoice-send: an invoice in Kontur.Elba, checked, approved and sent"
+type: flow
+created: 2026-10-08
+updated: 2026-11-16
+status: active
+confidence: medium
+tags: [workflow, invoice, elba, telegram]
+sources:
+  - workflows/invoice-send.json
+  - src/rooms/workflow/server/workflow-invoice.ts
+  - src/rooms/workflow/server/invoice-pdf.ts
+  - packages/kit/src/invoice-rules.ts
+  - tests/workflow/chains-invoice.test.ts
+  - tests/invoice-rules.test.ts
+---
+
 # invoice-send: an invoice in Kontur.Elba, checked, approved and sent
 
-`workflows/invoice-send.json`, status **tested** (on stubs: `tests/workflow/chains-invoice.test.ts`, `tests/invoice-rules.test.ts`). It becomes
-published after one successful live run. Nothing is sent without the owner's «send».
+TL;DR: `workflows/invoice-send.json` creates or finds an invoice in Kontur.Elba on the Mac mini, verifies the PDF and requisites in code, asks the owner for approval (or review first), and sends the PDF through `telegram-send` (`workflows/invoice-send.json:1-22`, `:60-149`).
+
+`workflows/invoice-send.json` has status `tested` (`workflows/invoice-send.json:16`), backed by stub tests in `tests/workflow/chains-invoice.test.ts:1-96` and rule tests in `tests/invoice-rules.test.ts:1-126`. It becomes published after one successful live run (`workflows/invoice-send.json:17-20`). Nothing is sent without the owner's `send` answer (`workflows/invoice-send.json:109-127`, `:203-206`).
 
 ```mermaid
 flowchart LR
-  I["inputs: company, inn?, amount, service, recipient, report_chat?"] --> C["create (errand, Mac mini browser)\nkontur-elba skill: find the client, make or find the invoice, read it back, download the PDF"]
+  I["inputs: company, inn?, amount, service, recipient, send_at?, report_chat?"] --> C["create (errand, Mac mini browser)\nkontur-elba skill: find the client, make or find the invoice, read it back, download the PDF"]
   C -->|"client_not_found / blocked"| B["emit blocked + reason"]
-  C -->|done| K{"check (rules)\namount, INN, BIK, accounts; client and service line"}
-  K -->|match| A["approve (owner): send invoice N for X to chat Y?"]
-  K -->|"mismatch / unsure"| R["review (owner): continue or stop"]
+  C -->|done| K{"check (invoice.check)\nPDF probe + amount, INN, BIK, accounts; client and service line"}
+  K -->|match| A["approve / approve_later (owner): send invoice N for X to chat Y?"]
+  K -->|"mismatch / unsure"| R["review (owner): continue or abort"]
   R -->|continue| A
-  R -->|"stop / no answer"| X["emit aborted"]
-  A -->|send| S["send (errand, telegram-user): the PDF as a file, once"]
-  A -->|"abort / no answer"| X
+  R -->|"abort / timeout"| X["emit aborted"]
+  A -->|send| S["send (subworkflow telegram-send): PDF as a file, once or scheduled"]
+  A -->|"abort / timeout"| X
   S -->|sent| T["topic: one line to report_chat (skipped when empty)"] --> D["emit sent"]
+  S -->|scheduled| SC["emit scheduled"]
+  S -->|cannot_delay| CD["emit cannot_delay"]
   S -->|failed| F["emit send_failed"]
   S -->|unsure| U["emit send_unconfirmed"]
 ```
 
+## How it works
+
+1. `create` runs as an `errand` agent with `kontur-elba` and `browser-automation` on `host_7sea4qaad8`, locates the existing client, avoids duplicates made the same day for the same client and amount, reads back saved invoice fields, and downloads the PDF (`workflows/invoice-send.json:62-73`). A missing/ambiguous client (`client_not_found`) or blocked page routes to `blocked` (`workflows/invoice-send.json:169-173`, `:195-196`).
+2. `check` invokes `invoice.check` (`workflows/invoice-send.json:75-97`, `src/rooms/workflow/server/workflow-invoice.ts:31-48`). When `pdf_path` is present, `checkInvoicePdf` probes the file on `pdf_host` via `runOnHost` (`src/rooms/workflow/server/invoice-pdf.ts:26-55`), returning `unsure` if the machine is unreachable without hard errors or `mismatch` if the file check fails (`src/rooms/workflow/server/workflow-invoice.ts:37-43`). Otherwise `invoiceVerdict` settles `match`, `mismatch`, or `unsure` (`src/rooms/workflow/server/workflow-invoice.ts:45-46`, `packages/kit/src/invoice-rules.ts:68-74`).
+3. On `match`, the graph branches to `approve` (when `$inputs.send_at == ''`) or `approve_later` (`workflows/invoice-send.json:109-127`, `:197-198`); on `mismatch` or `unsure`, it asks the owner at `review` first before entering `approve` or `approve_later` (`workflows/invoice-send.json:99-107`, `:199-202`).
+4. On `send`, the `send` subworkflow node invokes `telegram-send` with `chat`, `file_path`, formatted caption `text`, and `send_at` (`workflows/invoice-send.json:129-136`). When `send.status == 'sent'`, `topic` posts a summary line via `telegram.send_rich` unless `report_chat` is empty, then emits `sent` (`workflows/invoice-send.json:138-155`, `:207-212`).
+
 ## Inputs and result
 
-| Input | |
-| --- | --- |
-| `company` (required) | the client as it is in Elba: name or INN. The client must exist; the chain never creates a client or a contract |
-| `inn` | the INN when the owner gave it: it is then compared with the invoice |
-| `amount` (required) | the total in RUB, exactly as it must stand in the invoice (final, never recalculated) |
-| `service` (required) | what the invoice is for, in the owner's words |
-| `recipient` (required) | the Telegram chat that gets the PDF: `@username`, a numeric id, a link, or `me` (Saved Messages) |
-| `send_at` | send the invoice later (a delay `+2h`, `30m`, or a local time in the owner's zone `2026-11-03T07:00`): the approval form asks for the timed send, then `telegram-send` puts one send on the schedule board and the run ends `scheduled` (`schedule_id`, `run_at`); a text that is no time ends `cannot_delay` |
-| `report_chat` | a chat or project topic for a one-line report after the send; empty: none |
+| Input | Meaning | Source |
+|---|---|---|
+| `company` (required) | Client as it appears in Elba (name or INN); must already exist | `workflows/invoice-send.json:24` |
+| `inn` | Optional client INN compared against the saved invoice | `workflows/invoice-send.json:25` |
+| `amount` (required) | Final invoice total in RUB, never recalculated | `workflows/invoice-send.json:26`, `:70` |
+| `service` (required) | Service description in the owner's words | `workflows/invoice-send.json:27` |
+| `recipient` (required) | Telegram chat (`@username`, numeric id, link, or `me`); no mail skill exists | `workflows/invoice-send.json:28` |
+| `send_at` | Optional delay (`+2h`) or local time (`2026-11-03T07:00`) passed through `approve_later` and `telegram-send` | `workflows/invoice-send.json:29`, `:119-135` |
+| `report_chat` | Optional Telegram chat or project topic for a one-line post-send report | `workflows/invoice-send.json:30`, `:138-149` |
 
-Mail is not offered: there is no mail skill. The send itself is the shared fragment `telegram-send` (docs/telegram-send.md): `send` is a subworkflow
-node that hands it the chat, the PDF path, the caption line and `send_at`. The result: `status` (`sent`, `scheduled`, `aborted`, `blocked`, `send_failed`,
-`send_unconfirmed`, `cannot_delay`), `invoice_number`, `invoice_url`, `pdf_path` (on the Mini), `message_id`, `schedule_id`, `run_at`, `send_at`, `check_verdict`, `reason`.
+The send itself uses the shared [telegram-send](telegram-send.md) subworkflow (`workflows/invoice-send.json:129-136`). Output fields are `status` (`sent`, `scheduled`, `aborted`, `blocked`, `send_failed`, `send_unconfirmed`, `cannot_delay`), `invoice_number`, `invoice_url`, `pdf_path`, `message_id`, `schedule_id`, `run_at`, `send_at`, `check_verdict`, and `reason` (`workflows/invoice-send.json:32-43`).
 
-## The check (`invoice.check`, the rules in packages/kit, `invoiceVerdict`)
+## The check (`invoice.check`, `invoiceVerdict`, and `checkInvoicePdf`)
 
-Code decides what code can: the invoice has a number and an amount, the amount equals the request (to half a kopeck), the client's INN has valid control
-digits and equals the request's `inn`, the BIK is a Russian one, the payment and correspondent accounts have valid control digits for that BIK. The client
-and the service line are compared by the words they share (the share of the shorter text's words the other has, legal forms ignored). Both agree
-(0.6 for the client, 0.5 for the service line): `match`; a hard check failed: `mismatch`; otherwise `unsure`. No model is asked; `unsure` goes to the owner's review.
-The step's output carries `by: "rules"`.
+- `checkInvoicePdf` validates that `pdf_path` is an absolute `.pdf` path without control characters and probes it on `pdf_host` (`host_7sea4qaad8`): file exists, non-empty size, `%PDF-` header, `%%EOF` trailer, and at least one page object or `/ObjStm` (`src/rooms/workflow/server/invoice-pdf.ts:16-55`).
+- `hardProblems` checks invoice number, positive finite `request.amount` and `invoice.amount` within `0.005` RUB, client name, valid 10- or 12-digit `validInn` matching `request.inn`, optional `payee_inn`, Russian `pay_bik` (`^04\d{7}$`), and 20-digit `validAccount` / `validCorrAccount` control sums (`packages/kit/src/invoice-rules.ts:20-54`).
+- `overlap` compares shared words ignoring `LEGAL_FORMS` (`packages/kit/src/invoice-rules.ts:56-65`). `invoiceVerdict` returns `match` when `company >= 0.6` and `service >= 0.5`, `mismatch` on any hard check failure, and `unsure` otherwise; no model is called and output sets `by: "rules"` (`packages/kit/src/invoice-rules.ts:68-74`, `src/rooms/workflow/server/workflow-invoice.ts:45-46`).
 
 ## Live run: the exact steps (needs the owner's real test invoice; do not do this from an agent)
 
-Before: the build with this chain is on the hub; the project has an open Lane Pilot PM chat; on the Mac mini (`host_7sea4qaad8`) the Elba session works
-(`browser-cookies sync elba`, open `https://elba.kontur.ru` in the headless session: the organization is selected, no login form), `~/toolkit/telegram/tg`
-is logged in; there is a test client in Elba whose invoices the owner is happy to cancel.
+Before: the build with this chain is on the hub; the project has an open Lane Pilot PM chat; on the Mac mini (`host_7sea4qaad8`) the Elba session works (`browser-cookies sync elba`, open `https://elba.kontur.ru` in the headless session: the organization is selected, no login form), `~/toolkit/telegram/tg` is logged in; there is a test client in Elba whose invoices the owner can cancel (`workflows/invoice-send.json:48-55`, `:224`).
 
-1. Preflight: Workflows tab, invoice-send, or `bb plugin rpc call lane-pilot workflow_preflight --input '{"id":"invoice-send","projectId":"<project>"}'`. Every line must be ok (skills `kontur-elba`, `browser-automation`, `telegram-user`, the plugin `browser-automation`, the tools).
-2. Start it as a first live run (the chain is `tested`, so this needs `liveTrial`): the **Run for real** button of the Workflows tab with
-   `company` = the test client, `inn` = its INN, `amount` = `100`, `service` = `Тест Lane Pilot`, `recipient` = `me`, `report_chat` empty; or
-   `bb plugin rpc call lane-pilot workflow_run --input '{"id":"invoice-send","projectId":"<project>","liveTrial":true,"inputs":{"company":"<client>","inn":"<inn>","amount":100,"service":"Тест Lane Pilot","recipient":"me"}}'`.
-3. Watch `workflow_run_snapshot` (the run id comes back): `create` takes minutes in the browser; `check` is instant. Read its output: `verdict`, `reasons`, `by`.
-4. A form opens in the project's PM chat (and on the phone): the review (only if the check was not clean) and then «Send invoice N for 100 RUB to … to Telegram chat me?». Answer **send**.
-5. Check the result against the sources: the PDF arrived in Saved Messages with the caption; open the invoice in Elba and compare number, total, service line, client and the payment details with the PDF and with the run's output (`invoice_number`, `invoice_url`, `pdf_path`).
-6. Run it a second time with the same inputs and answer **abort**: the Elba step must find the invoice of the first run (same client, same amount, same day) and not make a duplicate, and nothing is sent (`status: aborted`). The review path (a check that is not clean) is covered on stubs only; it cannot be provoked live, because the Elba step makes the invoice with the requested amount.
-7. A success makes the chain **published** (status in the Workflows tab). Cancel or delete the test invoice in Elba (do not mark it paid or signed).
+1. Preflight: Workflows tab, `invoice-send`, or `bb plugin rpc call lane-pilot workflow_preflight --input '{"id":"invoice-send","projectId":"<project>"}'`. Every dependency (`kontur-elba`, `telegram-user`, `browser-automation`, tools) reports ready (`workflows/invoice-send.json:48-55`).
+2. Start it as a first live run (`liveTrial` for a `tested` chain): the **Run for real** button of the Workflows tab with `company` = the test client, `inn` = its INN, `amount` = `100`, `service` = `Тест Lane Pilot`, `recipient` = `me`, `report_chat` empty; or `bb plugin rpc call lane-pilot workflow_run --input '{"id":"invoice-send","projectId":"<project>","liveTrial":true,"inputs":{"company":"<client>","inn":"<inn>","amount":100,"service":"Тест Lane Pilot","recipient":"me"}}'` (`workflows/invoice-send.json:16-20`, `:224`).
+3. Watch `workflow_run_snapshot`: `create` runs in the browser (up to 40 min timeout); `check` runs in code (`workflows/invoice-send.json:72-97`). Read `verdict`, `reasons`, and `by`.
+4. A form opens in the project's PM chat (and on the phone): `review` (only if `check.verdict` was not `match`) and then `approve` (`Send invoice ... to Telegram chat me?`). Answer `send` (`workflows/invoice-send.json:99-117`).
+5. Compare the PDF in Saved Messages against the invoice in Elba and the run outputs (`invoice_number`, `invoice_url`, `pdf_path`) (`workflows/invoice-send.json:35-37`, `workflows/invoice-send.json:224`).
+6. Run it a second time with the same inputs and answer `abort`: the Elba step reuses the same-day, same-amount invoice without creating a duplicate (`workflows/invoice-send.json:70`), and nothing is sent (`status: aborted`, `workflows/invoice-send.json:163-167`).
+7. One live `sent` run promotes the chain to `published` (`workflows/invoice-send.json:16-20`). Cancel or delete the test invoice in Elba (never mark it paid or signed).
 
-If a step fails: `create` blocked with a login wall means the Mini session expired (sync the cookies again, no password is asked or stored); `client_not_found` means the
-search did not give exactly one client; `send_unconfirmed` means read the chat before anything is sent again.
+If a step fails: `create` blocked with a login wall means the Mini cookies expired; `client_not_found` means search did not yield one unique client (`workflows/invoice-send.json:70`); `send_unconfirmed` means inspect the chat before retrying (`workflows/invoice-send.json:181-185`).
 
 ## Scheduling it
 
-Once published, the schedule board can run it: a task `{"kind":"workflow","workflowId":"invoice-send","inputs":{...}}` with `when` `{"type":"cron","cron":"0 10 1 * *"} (the owner's time zone)`.
-A scheduled run still asks the owner before the send; it waits in the «waiting for you» column (up to 72 hours, then it is given up and nothing is sent), and the
-overlap policy `skip` keeps a second month from starting while the first waits.
+Once published, the chain declares the `schedule` trigger (`workflows/invoice-send.json:22`), so the [schedule board](schedule-board.md) can run it with a cron rule in the owner's timezone. Scheduled runs still pause at `approve` / `approve_later` (`timeoutMin: 1440`, `workflows/invoice-send.json:109-127`).
+
+<!-- lane-pilot:backlinks -->
+## Referenced by
+
+- [telegram-send: the shared Telegram send fragment](telegram-send.md)

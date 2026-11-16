@@ -82,3 +82,4 @@ The root package scripts define plugin build and verification commands but no de
 
 - [Development](guide/development.md)
 - [Lane Pilot overview](overview.md)
+- [Testing and verification](testing.md)

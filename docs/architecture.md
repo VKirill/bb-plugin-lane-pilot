@@ -135,6 +135,7 @@ The shared SQLite migration array includes stores exported by council, handoff, 
 <!-- lane-pilot:backlinks -->
 ## Referenced by
 
+- [Repository conventions and boundaries](conventions.md)
 - [Lane Pilot overview](overview.md)
 - [i18n workspace overview](../packages/i18n/docs/overview.md)
 - [Kit workspace overview](../packages/kit/docs/overview.md)
