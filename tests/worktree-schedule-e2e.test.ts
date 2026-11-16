@@ -89,7 +89,8 @@ function hub(options: { oldHost?: boolean; host0564?: boolean; deep?: Record<str
 
 describe("the worktree-cleanup system schedules run their graph", () => {
   it("[sma:m_boot_wt_sweep] the hourly schedule on its cron: started detached in project *, the graph succeeds, one host call without deep, nobody is told", async () => {
-    vi.useFakeTimers({ toFake: ["Date"], now: Date.now() });
+    // Keep the next hourly tick clear of the daily 04:40 Europe/Madrid pass.
+    vi.useFakeTimers({ toFake: ["Date"], now: Date.UTC(2026, 10, 16, 12) });
     const w = hub();
     expect(await w.ensure()).toEqual(["worktree-cleanup-hourly", "worktree-cleanup-daily"]);
     const hourly = w.byKey("hourly");
@@ -110,7 +111,7 @@ describe("the worktree-cleanup system schedules run their graph", () => {
   });
 
   it("[sma:dt_wt_sweep] the daily schedule on its cron runs the deep pass; its one owner line is the kept list, not the run's end", async () => {
-    vi.useFakeTimers({ toFake: ["Date"], now: Date.now() });
+    vi.useFakeTimers({ toFake: ["Date"], now: Date.UTC(2026, 10, 16, 12) });
     const kept = [{ path: "/w/app/lpattempt_u1", cls: "lane", reason: "unmerged", detail: "1 commit(s) merged nowhere", bytes: 10, ageMs: 9e8, branch: "lane/lpattempt_u1" }];
     const w = hub({ deep: { kept } });
     await w.ensure();
