@@ -32,6 +32,7 @@ export interface AgentOpsApi {
 export const nativeSelectionKey = (token: string) => `native-selection:${token}`;
 export const nativeThreadKey = (threadId: string) => `native-thread:${threadId}`;
 export const nativeEnvKey = (threadId: string) => `native-env:${threadId}`;
+export const nativeEnvGenerationKey = (threadId: string) => `native-env-generation:${threadId}`;
 export const nativeAgentTypeKey = (threadId: string) => `native-agent-type:${threadId}`;
 
 export type ChildPmRequest = {

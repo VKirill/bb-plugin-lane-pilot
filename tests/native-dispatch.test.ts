@@ -5,7 +5,8 @@ import { compileMainAgentProfile } from "../src/rooms/native-agent/agent-profile
 import { findOpenNativeRun, getActivation, getRun, openDatabase, savePrototypeConfig } from "../src/rooms/plugin-db";
 import { sessionOverrideAgentsJson } from "../src/rooms/native-agent/native-agent-definition";
 import { nativeSelectionMarker } from "../src/rooms/native-agent/native-session";
-import { prepareNativeSessionRecord, traceNativeDispatch } from "../src/rooms/native-agent/native-dispatch";
+import { nativeContributedEnv, prepareNativeSessionRecord, traceNativeDispatch } from "../src/rooms/native-agent/native-dispatch";
+import { nativeEnvGenerationKey, nativeEnvKey } from "../src/rooms/contracts";
 
 const stockNativeAgentsJson = () => sessionOverrideAgentsJson({
   agentId: "dev-orchestrator",
@@ -473,9 +474,36 @@ it("starts a specialist thread with its own profile inside the PM's run, without
     projectId: "project_a",
   });
   expect(fake.prepareCalls.at(-1)).toMatchObject({ agentId: "design-lead", cwd: "/workspace", helper: true });
+  const current = await nativeContributedEnv(fake.bb, { call: async () => new Promise(() => undefined) }, {
+    threadId: "thr_specialist", hostId: "host_a",
+  });
+  expect(current).toEqual([expect.objectContaining({ name: "BB_CLAUDE_CODE_EXECUTABLE", value: "/launcher" })]);
   expect(findOpenNativeRun(db, "project_a", "thr_specialist")).toBeNull();
   expect(fake.metadata.some((row) => row.threadId === "thr_specialist")).toBe(false);
   expect(getRun(db, runId)).toMatchObject({ pm_thread_id: "thr_pm", state: "running" });
+});
+
+it("does not fall back to a legacy helper launcher when refresh times out or fails", async () => {
+  const specialist = await prepareNativeSessionRecord({
+    projectId: "project_a", agentId: "design-lead", profileMode: "installed", agentsJson: null, sourceHash: null, parentRunId: "run_legacy",
+  });
+  const legacy = [{ name: "BB_CLAUDE_CODE_EXECUTABLE", value: "/old-v8-launcher", reason: "legacy" }];
+
+  const slowFake = await setup({ environmentPath: "/workspace" });
+  await slowFake.bb.storage.kv.set(`native-thread:thr_helper`, specialist);
+  await slowFake.bb.storage.kv.set(nativeEnvKey("thr_helper"), legacy);
+  await slowFake.bb.storage.kv.delete(nativeEnvGenerationKey("thr_helper"));
+  await expect(nativeContributedEnv(slowFake.bb, { call: async () => new Promise(() => undefined) }, {
+    threadId: "thr_helper", hostId: "host_a",
+  })).rejects.toThrow("native_helper_launcher_refresh_timeout");
+
+  const failedFake = await setup({ environmentPath: "/workspace" });
+  await failedFake.bb.storage.kv.set(`native-thread:thr_helper`, specialist);
+  await failedFake.bb.storage.kv.set(nativeEnvKey("thr_helper"), legacy);
+  await failedFake.bb.storage.kv.delete(nativeEnvGenerationKey("thr_helper"));
+  await expect(nativeContributedEnv(failedFake.bb, { call: async () => { throw new Error("late prepare failed"); } }, {
+    threadId: "thr_helper", hostId: "host_a",
+  })).rejects.toThrow("late prepare failed");
 });
 
 it("a handoff to a new thread keeps the Lane Pilot profile of the chat it continues", async () => {

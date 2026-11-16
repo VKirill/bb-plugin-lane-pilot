@@ -7,7 +7,7 @@ import type { LanePilotDatabase } from "../storage";
 import { classifyCliAgentsCollision, cliAgentsSelectionNullableSchema, collisionMessage, isMissingPluginRpc, nativeSelectionMarker, nativeSwitchKey, tokensFrom } from "./native-session"
 import { CLI_AGENTS_PLUGIN_ID } from "../contracts/native-agent-id"
 import { nativeSelectionSchema, type NativeSelection } from "../contracts/native-selection";
-import { nativeAgentTypeKey, nativeEnvKey, nativeSelectionKey, nativeThreadKey } from "../contracts";
+import { nativeAgentTypeKey, nativeEnvGenerationKey, nativeEnvKey, nativeSelectionKey, nativeThreadKey } from "../contracts";
 import {
   projectCheckoutIntentPath,
   attachNativeLaneClaim,
@@ -22,6 +22,27 @@ import { bestEffort } from "@lane-pilot/kit";
 type HostClient = {
   call: (method: string, input: unknown, opts: { hostId: string }) => Promise<unknown>;
 };
+
+const NATIVE_HELPER_ENV_GENERATION = "native-helper-settings-v1";
+const NATIVE_STANDALONE_ENV_GENERATION = "native-standalone-settings-v1";
+
+function helperCacheIsCurrent(selected: NativeSelection, generation: string | undefined): boolean {
+  return !selected.parentRunId || generation === NATIVE_HELPER_ENV_GENERATION;
+}
+
+async function rememberNativeEnv(
+  bb: BbPluginApi,
+  threadId: string,
+  selected: NativeSelection,
+  prepared: { env: ExperimentalPluginProviderEnvEntry[]; agentId: string },
+): Promise<void> {
+  await bb.storage.kv.set(nativeEnvKey(threadId), prepared.env);
+  await bb.storage.kv.set(nativeAgentTypeKey(threadId), prepared.agentId);
+  await bb.storage.kv.set(
+    nativeEnvGenerationKey(threadId),
+    selected.parentRunId ? NATIVE_HELPER_ENV_GENERATION : NATIVE_STANDALONE_ENV_GENERATION,
+  );
+}
 
 async function callCliAgentsRpc<T>(
   bb: BbPluginApi,
@@ -312,8 +333,7 @@ export async function handleNativeDispatch(
         agentId: string;
       };
       await bb.storage.kv.set(nativeThreadKey(ctx.thread.id), selected);
-      await bb.storage.kv.set(nativeEnvKey(ctx.thread.id), prepared.env);
-      await bb.storage.kv.set(nativeAgentTypeKey(ctx.thread.id), prepared.agentId);
+      await rememberNativeEnv(bb, ctx.thread.id, selected, prepared);
       if (switching) await bb.storage.kv.delete(switchKey);
       traceNativeDispatch(bb.log, "dispatch.proceed", { ...base, reason: "workspace_pending" });
       return { action: "proceed" };
@@ -337,7 +357,8 @@ export async function handleNativeDispatch(
     // nativeContributedEnv refreshes the launcher on the same send.
     if (bound && !switching) {
       const cached = await bb.storage.kv.get<ExperimentalPluginProviderEnvEntry[]>(nativeEnvKey(ctx.thread.id));
-      if (cached?.length) {
+      const generation = await bb.storage.kv.get<string>(nativeEnvGenerationKey(ctx.thread.id));
+      if (cached?.length && helperCacheIsCurrent(selected, generation)) {
         traceNativeDispatch(bb.log, "dispatch.proceed", { ...base, reason: "bound_cached_env" });
         return { action: "proceed" };
       }
@@ -354,8 +375,7 @@ export async function handleNativeDispatch(
       agentId: string;
     };
     await bb.storage.kv.set(nativeThreadKey(ctx.thread.id), selected);
-    await bb.storage.kv.set(nativeEnvKey(ctx.thread.id), prepared.env);
-    await bb.storage.kv.set(nativeAgentTypeKey(ctx.thread.id), prepared.agentId);
+    await rememberNativeEnv(bb, ctx.thread.id, selected, prepared);
     if (switching) await bb.storage.kv.delete(switchKey);
     traceNativeDispatch(bb.log, "dispatch.proceed", { ...base, reason: "ok" });
     return { action: "proceed" };
@@ -375,10 +395,16 @@ export async function nativeContributedEnv(
   // BB's model catalog asks with threadId null (helper-bb-shim.ts ProviderEnvContext): no thread, no native session.
   const threadId = ctx.threadId;
   if (!threadId) return [];
+  let selected: NativeSelection | null = null;
+  let cached: ExperimentalPluginProviderEnvEntry[] | undefined;
+  let cacheUsable = false;
   try {
-    const selected = await bb.storage.kv.get<NativeSelection>(nativeThreadKey(threadId));
+    selected = (await bb.storage.kv.get<NativeSelection>(nativeThreadKey(threadId))) ?? null;
     if (!selected) return [];
-    const cached = await bb.storage.kv.get<ExperimentalPluginProviderEnvEntry[]>(nativeEnvKey(threadId));
+    cached = await bb.storage.kv.get<ExperimentalPluginProviderEnvEntry[]>(nativeEnvKey(threadId));
+    const generation = await bb.storage.kv.get<string>(nativeEnvGenerationKey(threadId));
+    cacheUsable = helperCacheIsCurrent(selected, generation);
+    const fallback = cacheUsable && cached?.length ? cached : null;
     const thread = await bestEffort(bb.log, "native dispatch thread read", bb.sdk.threads.get({ threadId }), null);
     const environmentId = thread && typeof thread.environmentId === "string" ? thread.environmentId.trim() : "";
     const environment = environmentId
@@ -408,24 +434,29 @@ export async function nativeContributedEnv(
             env: ExperimentalPluginProviderEnvEntry[];
             agentId: string;
           };
-          await bb.storage.kv.set(nativeEnvKey(threadId), prepared.env);
-          await bb.storage.kv.set(nativeAgentTypeKey(threadId), prepared.agentId);
+          await rememberNativeEnv(bb, threadId, selected, prepared);
           return prepared.env;
         })();
-        if (!cached?.length) return await refresh;
         // BB drops this plugin's env after 5 s, and the PM would start without its agent: a slow host gets the
         // cached launcher now, and the refresh still lands in the cache for the next turn.
         refresh.catch((cause: unknown) => bb.log.warn(`Lane Pilot: native launcher refresh failed: ${cause instanceof Error ? cause.message : String(cause)}`));
         let timer: ReturnType<typeof setTimeout> | undefined;
         const late = new Promise<null>((resolve) => { timer = setTimeout(() => resolve(null), NATIVE_ENV_REFRESH_BUDGET_MS); });
         const fresh = await Promise.race([refresh, late]).finally(() => clearTimeout(timer));
-        return fresh ?? cached;
-      } catch {
-        if (cached?.length) return cached;
+        if (fresh) return fresh;
+        if (fallback) return fallback;
+        throw new Error("native_helper_launcher_refresh_timeout");
+      } catch (error) {
+        if (fallback) return fallback;
+        throw error;
       }
     }
-    return cached?.length ? cached : [];
-  } catch {
+    if (fallback) return fallback;
+    if (selected.parentRunId) throw new Error("native_helper_launcher_unavailable");
+    return [];
+  } catch (error) {
+    if (cacheUsable && cached?.length) return cached;
+    if (selected?.parentRunId) throw error;
     return [];
   }
 }
