@@ -4,6 +4,17 @@ import { runSim } from "./chain-harness";
 
 /** The single-step chains (what Maestro runs as one command): analyze-code, plan-only, code-review, grill-plan, test-gen, security-audit, issue-discover, retrospective, ui-audit. */
 
+describe("sketch-wrap-up", () => {
+  it("routes a draft through its writer and an empty draft to blocked", async () => {
+    for (const skill_draft of ["# Winning layout\n", ""]) {
+      const result = await runSim("sketch-wrap-up", { input: { findings: "Keep the compact filter bar", skill_slug: "compact-filter" }, stubs: { draft: { skill_draft } } });
+      expect(pathOf(result)).toBe(skill_draft ? "draft skill_dir write_skill written" : "draft blocked");
+      expect(out(result)).toMatchObject({ status: skill_draft ? "written" : "blocked", skill_draft });
+      expect(result.called("write_skill")).toHaveLength(skill_draft ? 1 : 0);
+    }
+  });
+});
+
 describe("analyze-code", () => {
   it("the spec's case: lp.analyze, a report, done; the depth follows the quality mode", async () => {
     const r = await runSim("analyze-code", { input: { goal: "Explain how the merge queue orders merges", scope: "src/server" }, stubs: { "lp.analyze": { recommendation: "go", confidence: 78, risks: [{ risk: "lock leak" }] } } });

@@ -131,8 +131,7 @@
     },
     {
       "from": "draft",
-      "to": "blocked",
-      "when": "draft.skill_draft == ''"
+      "to": "blocked"
     },
     {
       "from": "skill_dir",
