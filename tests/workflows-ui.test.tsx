@@ -3,7 +3,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-import { cleanup, configure, fireEvent, waitFor } from "@testing-library/react";
+import { act, cleanup, configure, fireEvent, waitFor } from "@testing-library/react";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
 import { setLocaleOverride } from "@lane-pilot/i18n";
 import { createWorkflowLibrary } from "../src/rooms/workflow/server/workflow-library";
@@ -324,19 +324,33 @@ describe("Workflow run view", () => {
     const { rpc, engine } = await world();
     const started = engine.start({ workflow: wf(reviewFix() as never), inputs: { query: "q" } });
     await started.done;
+    const details = vi.fn(rpc.workflow_get);
     const snapshots = vi.fn();
-    const slot = await mount({ ...rpc, workflow_run_snapshot: (input: { runId: string }) => { snapshots(input.runId); return rpc.workflow_run_snapshot(input); } });
+    const slot = await mount({ ...rpc, workflow_get: details, workflow_run_snapshot: (input: { runId: string }) => { snapshots(input.runId); return rpc.workflow_run_snapshot(input); } });
     fireEvent.click(await slot.findByTestId("wf-row-review-fix"));
+    // The definition reads the latest run for node data; finish that read before counting signal refreshes.
+    fireEvent.click(await slot.findByTestId("wf-node-review"));
+    fireEvent.click(await slot.findByTestId("wf-tab-outputs"));
+    await waitFor(() => expect(slot.getByTestId("wf-output-rows-verdict").textContent).toContain("pass"));
     // A finished run is not opened by itself; the owner picks it.
     fireEvent.click(await slot.findByTestId("wf-run-pick"));
     fireEvent.click(await slot.findByTestId(`wf-pick-run-${started.runId}`));
     await waitFor(() => expect(slot.getByTestId("wf-run-summary")).toBeTruthy());
-    await new Promise((done) => setTimeout(done, 60));
-    const settled = snapshots.mock.calls.length;
-    await slot.behavior.emitRealtime("lp:-", { kind: "workflow", runId: "wfrun_other" });
+    expect(snapshots).toHaveBeenCalledTimes(2);
+    await act(async () => {
+      await slot.behavior.emitRealtime("lp:-", { kind: "workflow", runId: "wfrun_other" });
+      await details.mock.results.at(-1)!.value;
+    });
+    expect(details).toHaveBeenCalledTimes(3);
     await slot.behavior.emitRealtime("lp:-", { kind: "council" });
-    await new Promise((done) => setTimeout(done, 60));
-    expect(snapshots).toHaveBeenCalledTimes(settled);
+    expect(details).toHaveBeenCalledTimes(3);
+    expect(snapshots).toHaveBeenCalledTimes(2);
+    // A signal for the shown run does reread its snapshot after the same asynchronous detail boundary.
+    await act(async () => {
+      await slot.behavior.emitRealtime("lp:-", { kind: "workflow", runId: started.runId });
+      await details.mock.results.at(-1)!.value;
+    });
+    expect(snapshots).toHaveBeenCalledTimes(3);
     fireEvent.click(slot.getByTestId("wf-run-pick"));
     fireEvent.click(await slot.findByTestId("wf-pick-definition"));
     await waitFor(() => expect(slot.queryByTestId("wf-run-summary")).toBeNull());
