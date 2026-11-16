@@ -27,17 +27,21 @@ export function createLiveFolder(ctx: ServerCore) {
   // Concurrent askers (the dispatch test-hint, the spawn probe) share one probe; a second rev-parse would break the
   // "one git command on a plain folder" contract of live-folder.
   const probing = new Map<string, Promise<"git" | "no-git" | "unknown">>();
-  async function isLiveFolder(runId: string | undefined, hostId: string, folder: string): Promise<boolean> {
+  const probeGeneration = new Map<string, number>();
+  async function isLiveFolder(runId: string | undefined, hostId: string, folder: string, options?: { fresh?: boolean }): Promise<boolean> {
     const bound = runId ? getRun(db, runId)?.writer_workspace_path : null;
     if (bound && resolve(bound) !== resolve(folder)) return false;
     const key = runId ? `live-folder:${runId}` : null;
     const kv = bb.storage?.kv;
-    if (key && kv) {
+    const generationKey = `${hostId}:${folder}:${key ?? ""}`;
+    if (!probeGeneration.has(generationKey)) probeGeneration.set(generationKey, 0);
+    const generation = options?.fresh ? (probeGeneration.set(generationKey, (probeGeneration.get(generationKey) ?? 0) + 1), probeGeneration.get(generationKey)!) : (probeGeneration.get(generationKey) ?? 0);
+    if (!options?.fresh && key && kv) {
       const saved = await kv.get(key);
       if (saved === "no-git") return true;
       if (saved === "git") return false;
     }
-    const probeKey = `${hostId}:${folder}:${key ?? ""}`;
+    const probeKey = `${hostId}:${folder}:${key ?? ""}${options?.fresh ? `:fresh:${generation}` : ""}`;
     let pending = probing.get(probeKey);
     if (!pending) {
       pending = runOnHost(host, { hostId, cwd: folder, command: LIVE_FOLDER_PROBE_COMMAND, timeoutSec: 15 })
@@ -47,7 +51,7 @@ export function createLiveFolder(ctx: ServerCore) {
       probing.set(probeKey, pending);
     }
     const kind = await pending;
-    if (key && kv && kind !== "unknown") await bestEffort(ctx.log, "writer live folder record", kv.set(key, kind as never), undefined);
+    if (key && kv && kind !== "unknown" && probeGeneration.get(generationKey) === generation) await bestEffort(ctx.log, "writer live folder record", kv.set(key, kind as never), undefined);
     return kind === "no-git";
   }
 

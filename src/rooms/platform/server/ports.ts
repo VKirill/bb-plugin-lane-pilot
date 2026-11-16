@@ -49,14 +49,14 @@ export type WaitWriter = (args: { threadId: string; projectId: string; runId: st
 export type ResumeDispatch = (attemptId: string) => Promise<{ resumed: true; live?: true } | { resumed: false; why: string }>;
 
 /** writer/server/live-folder.ts */
-export type IsLiveFolder = (runId: string | undefined, hostId: string, folder: string) => Promise<boolean>;
+export type IsLiveFolder = (runId: string | undefined, hostId: string, folder: string, options?: { fresh?: boolean }) => Promise<boolean>;
 
 /** writer/server/state.ts — the shared writer state. */
 export interface WriterStateApi {
   activeWriterTasks: Set<string>;
   providerBreaker: ReturnType<typeof createProviderBreaker>;
   /** The keyed writer pool (tasks/run-policy.ts RunWriterPool): one semaphore per run, mirrored structurally. */
-  runWriterPool: { acquire(runId: string, limit: number, rank?: number): Promise<() => void>; /** Optional: a pool that cannot say so just waits unnamed. */ busy?(key: string, limit: number): boolean; /** Same-host parent/child folder claim; old test doubles may omit it. */ acquireFolder?(hostId: string, path: string, rank?: number): Promise<() => void> };
+  runWriterPool: { acquire(runId: string, limit: number, rank?: number): Promise<() => void>; /** Optional: a pool that cannot say so just waits unnamed. */ busy?(key: string, limit: number): boolean; /** Same-host parent/child folder claim; old test doubles may omit it. */ acquireFolder?(hostId: string, path: string, rank?: number, signal?: AbortSignal): Promise<() => void> };
   runBudgets: Map<string, RunBudget>;
   runBudgetFor(runId: string, settings: Record<string, unknown>): RunBudget;
 }

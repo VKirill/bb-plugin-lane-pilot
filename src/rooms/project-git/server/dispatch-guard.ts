@@ -11,7 +11,7 @@ export type ProjectGitDispatchArgs = {
 export type ProjectGitDispatch = (args:ProjectGitDispatchArgs)=>Promise<Record<string,unknown>>;
 export type FolderPool = {
   acquire(key:string,limit:number,rank?:number):Promise<()=>void>;
-  acquireFolder?(hostId:string,path:string,rank?:number):Promise<()=>void>;
+  acquireFolder?(hostId:string,path:string,rank?:number,signal?:AbortSignal):Promise<()=>void>;
 };
 
 const within=(child:string,parent:string):boolean=> {
@@ -58,7 +58,7 @@ export function overlappingLiveRuns(db:LanePilotDatabase,hostId:string,root:stri
 
 type GuardDeps = {
   db:LanePilotDatabase;
-  bb:{ sdk:{ threads:{ getPluginMetadata(input:{threadId:string}):Promise<unknown> } }; storage:{ kv:{ delete(key:string):Promise<unknown> } } };
+  bb:{ sdk:{ threads:{ getPluginMetadata(input:{threadId:string}):Promise<unknown> }; projects:{ get(input:{projectId:string}):Promise<unknown> } }; storage:{ kv:{ delete(key:string):Promise<unknown> } } };
   projectGit:ProjectGit;
   runWriterPool:FolderPool;
   raw:ProjectGitDispatch;
@@ -94,27 +94,53 @@ export function createProjectGitDispatch(deps:GuardDeps):ProjectGitDispatch {
       if (!run || run.project_id!==args.projectId || run.pm_thread_id!==args.threadId) throw new Error("run does not belong to this PM thread and project");
       if (!run.writer_workspace_path || !hostId) throw new Error("run has no persisted writer host and workspace binding");
       // Let raw dispatch own the existing validation/error contract; never ask the owner for an incomplete request.
-      if (!args.task || typeof args.task.project_cwd!=="string" || !within(args.task.project_cwd,run.writer_workspace_path)) return deps.raw(args);
-      const scope=await deps.projectGit.resolveScope({
-        threadId:args.threadId, hostId, projectRoot:run.writer_workspace_path, sectionPath:args.task.project_cwd,
-        taskKey:args.task.id,
-      });
-      if (scope.kind==="repo") return deps.raw(args);
+      if (!args.task || typeof args.task.project_cwd!=="string") return await deps.raw(args);
+      if (!within(args.task.project_cwd,run.writer_workspace_path)) {
+        return refusal(runId,{ kind:"scope_invalid" },`task.project_cwd is outside the frozen writer workspace ${run.writer_workspace_path}; no Git question or mutation was started`);
+      }
+      let project:unknown;
+      try { project=await deps.bb.sdk.projects.get({projectId:args.projectId}); }
+      catch (cause) { return refusal(runId,{ kind:"project_root_unresolved" },`project sources could not be read: ${cause instanceof Error?cause.message:String(cause)}; Git bootstrap was not started`); }
+      const sources=project && typeof project==="object" && Array.isArray((project as {sources?:unknown}).sources)
+        ? (project as {sources:Array<{hostId?:unknown;path?:unknown}>}).sources : [];
+      const projectRoot=sources
+        .filter((source):source is {hostId:string;path:string} => source.hostId===hostId && typeof source.path==="string" && source.path.length>0 && within(run.writer_workspace_path!,source.path))
+        .sort((left,right)=>right.path.length-left.path.length)[0]?.path;
+      if (!projectRoot) return refusal(runId,{ kind:"project_root_unresolved" },`no project source on frozen host ${hostId} encloses ${run.writer_workspace_path}; Git bootstrap was not started`);
+      let scope:ScopeResult;
+      try {
+        scope=await deps.projectGit.resolveScope({
+          threadId:args.threadId, hostId, projectRoot, sectionPath:args.task.project_cwd,
+          taskKey:args.task.id,
+        });
+      } catch (cause) { return refusal(runId,{ kind:"scope_error" },`private Git preflight failed: ${cause instanceof Error?cause.message:String(cause)}; no task or attempt was admitted`); }
+      if (scope.kind==="repo") return await deps.raw(args);
       if (scope.kind==="stopped") return refusal(runId,scope,`private Git bootstrap is stopped (${scope.stage}:${scope.code}): ${scope.detail}`);
       if (deps.isDisposed?.()) return refusal(runId,scope,"Lane Pilot stopped while the owner form was open; no Git bootstrap or task dispatch was started");
       const root=scopeRoot(scope);
       if (!root) return refusal(runId,scope,`private Git is required before dispatch: ${scope.kind}`);
-      const releaseFolder=await (deps.runWriterPool.acquireFolder
-        ? deps.runWriterPool.acquireFolder(hostId,root)
-        : deps.runWriterPool.acquire(`live-folder:${hostId}:${resolve(root)}`,1));
+      if (!deps.runWriterPool.acquireFolder) return refusal(runId,scope,"overlap-aware folder admission is unavailable; Git bootstrap was not started");
+      const abort=new AbortController();
+      const disposalPoll=setInterval(()=>{if(deps.isDisposed?.())abort.abort();},100);
+      disposalPoll.unref?.();
+      let releaseFolder:()=>void;
+      try { releaseFolder=await deps.runWriterPool.acquireFolder(hostId,root,1,abort.signal); }
+      catch (cause) {
+        clearInterval(disposalPoll);
+        return refusal(runId,scope,deps.isDisposed?.()?"Lane Pilot stopped while waiting for folder admission":`folder admission failed: ${cause instanceof Error?cause.message:String(cause)}`);
+      }
+      clearInterval(disposalPoll);
       try {
         if (deps.isDisposed?.()) return refusal(runId,scope,"Lane Pilot stopped before the Git mutation boundary; retry from the current PM run");
-        const result=await deps.projectGit.bootstrap({ hostId, root, account:scope.kind==="chosen"||scope.kind==="resume"?scope.account:"" });
+        let result:Awaited<ReturnType<ProjectGit["bootstrap"]>>;
+        try { result=await deps.projectGit.bootstrap({ hostId, root, account:scope.kind==="chosen"||scope.kind==="resume"?scope.account:"" }); }
+        catch (cause) { return refusal(runId,{ kind:"bootstrapped", result:{ ok:false, stage:"unknown", code:"bootstrap_exception", detail:String(cause) } },`private Git bootstrap failed unexpectedly: ${cause instanceof Error?cause.message:String(cause)}; no task or attempt was admitted, but Git side effects may exist`); }
         if (!result.ok) return refusal(runId,{ kind:"bootstrapped", result },`private Git did not complete (${result.stage}:${result.code}): ${result.detail}; no task or attempt was admitted, but Git side effects may exist`);
         // isLiveFolder caches by run id; the next writer probe must observe the new repository.
-        await deps.bb.storage.kv.delete(`live-folder:${runId}`);
+        try { await deps.bb.storage.kv.delete(`live-folder:${runId}`); }
+        catch (cause) { return refusal(runId,{ kind:"bootstrapped", result },`private Git succeeded but live-folder cache invalidation failed: ${cause instanceof Error?cause.message:String(cause)}; no task or attempt was admitted, but Git side effects may exist`); }
         if (deps.isDisposed?.()) return refusal(runId,{ kind:"bootstrapped", result },"Lane Pilot stopped after Git bootstrap; no task or attempt was admitted and Git side effects may exist");
-        return deps.raw(args);
+        return await deps.raw(args);
       } finally { releaseFolder(); }
     } finally { releaseAdmission(); }
   };

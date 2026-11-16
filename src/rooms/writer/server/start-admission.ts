@@ -118,14 +118,14 @@ export const writerPermit = (deps: StartWriterTaskDeps, state: WriterTaskState, 
       if (services.runWriterPool.busy?.(key, limit)) recordStage(db, { runId:input.runId, taskId:input.taskId, stageId:"writer-agent", state:"pending", input:input.plan,
         reason:`waiting: all ${limit} writer seats of the ${seats} are busy; starts by itself when one frees` });
     };
+    if (state.liveFolder && !services.runWriterPool.acquireFolder) throw new Error("live-folder admission unavailable: overlap-aware folder lease is not wired");
     state.releaseWriterSlot=state.liveFolder
-      ? (noteBusy(`live-folder:${input.config.hostId}:${resolve(state.runFolder)}`, 1, "host"), await (services.runWriterPool.acquireFolder
-        ? services.runWriterPool.acquireFolder(input.config.hostId, resolve(state.runFolder))
-        : services.runWriterPool.acquire(`live-folder:${input.config.hostId}:${resolve(state.runFolder)}`,1)))
+      ? (noteBusy(`live-folder:${input.config.hostId}:${resolve(state.runFolder)}`, 1, "host"), await services.runWriterPool.acquireFolder!(input.config.hostId, resolve(state.runFolder)))
       : (noteBusy(input.runId, state.policy.pools.provider, "run"), await services.runWriterPool.acquire(input.runId,state.policy.pools.provider,rank));
     // A queued live attempt may have waited while private Git converted the folder. Re-probe after the shared claim;
     // cached no-git state must never let this writer mutate a repository as if it were still live-folder mode.
-    if (state.liveFolder && !await services.isLiveFolder(input.runId, input.config.hostId, state.runFolder)) {
+    if (state.liveFolder) await bb.storage.kv.delete(`live-folder:${input.runId}`).catch(() => undefined);
+    if (state.liveFolder && !await services.isLiveFolder(input.runId, input.config.hostId, state.runFolder, { fresh:true })) {
       state.releaseWriterSlot?.();
       state.liveFolder=false;
       noteBusy(input.runId, state.policy.pools.provider, "run");

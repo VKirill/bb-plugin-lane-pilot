@@ -109,7 +109,7 @@ export class RunWriterPool {
   private readonly waiting=new Map<string,Array<{ wake:()=>void; rank:number; seq:number }>>();
   /** Folder claims are deliberately separate from keyed seats: parent/child paths overlap even when their keys differ. */
   private readonly folders: Array<{ hostId:string; path:string; release:()=>void }> = [];
-  private readonly folderWaiting: Array<{ hostId:string; path:string; wake:(release:()=>void)=>void; rank:number; seq:number }> = [];
+  private readonly folderWaiting: Array<{ hostId:string; path:string; wake:(release:()=>void)=>void; reject:(cause:Error)=>void; rank:number; seq:number; signal?:AbortSignal; onAbort?:()=>void }> = [];
   private seq=0;
 
   /** Idle pass (SMA dt_idle): every seat of one pool taken, so an acquire would wait. */
@@ -145,11 +145,17 @@ export class RunWriterPool {
    * One same-host folder claim.  A claim conflicts when either path contains the other, so sibling runs cannot
    * bootstrap Git while a live writer owns their parent/child folder.  Unrelated hosts/folders remain parallel.
    */
-  async acquireFolder(hostId:string,path:string,rank=1):Promise<()=>void> {
+  async acquireFolder(hostId:string,path:string,rank=1,signal?:AbortSignal):Promise<()=>void> {
     const normalized=resolve(path).replace(/\\/g,"/").replace(/\/+$/g,"") || "/";
+    if (signal?.aborted) throw new Error("folder admission aborted");
     if (this.folderAvailable(hostId,normalized)) return this.claimFolder(hostId,normalized);
-    return await new Promise<() => void>((resolve) => {
-      this.folderWaiting.push({ hostId, path:normalized, wake:resolve, rank, seq:this.seq++ });
+    return await new Promise<() => void>((resolve,reject) => {
+      const waiter={ hostId, path:normalized, wake:resolve, reject, rank, seq:this.seq++, signal, onAbort:undefined as (()=>void)|undefined };
+      if (signal) {
+        waiter.onAbort=()=>{ const index=this.folderWaiting.indexOf(waiter); if (index>=0) this.folderWaiting.splice(index,1); reject(new Error("folder admission aborted")); };
+        signal.addEventListener("abort",waiter.onAbort,{ once:true });
+      }
+      this.folderWaiting.push(waiter);
       this.folderWaiting.sort((a,b)=>b.rank-a.rank||a.seq-b.seq);
       this.drainFolderWaiters();
     });
@@ -179,6 +185,7 @@ export class RunWriterPool {
       const index=this.folderWaiting.findIndex((waiter)=>this.folderAvailable(waiter.hostId,waiter.path));
       if (index<0) return;
       const waiter=this.folderWaiting.splice(index,1)[0]!;
+      if (waiter.signal && waiter.onAbort) waiter.signal.removeEventListener("abort",waiter.onAbort);
       waiter.wake(this.claimFolder(waiter.hostId,waiter.path));
       granted=true;
     }
@@ -186,5 +193,5 @@ export class RunWriterPool {
 }
 
 function folderOverlap(left:string,right:string):boolean {
-  return left===right || left.startsWith(`${right}/`) || right.startsWith(`${left}/`);
+  return left===right || left==="/" || right==="/" || left.startsWith(`${right}/`) || right.startsWith(`${left}/`);
 }

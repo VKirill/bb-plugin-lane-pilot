@@ -22,3 +22,14 @@ it("does not serialize different hosts", async () => {
   second();
   first();
 });
+
+it("treats the filesystem root as an ancestor", async () => {
+  const pool = new RunWriterPool();
+  const root = await pool.acquireFolder("h1", "/");
+  let childReady = false;
+  const child = pool.acquireFolder("h1", "/repo").then((release) => { childReady = true; return release; });
+  await new Promise((wake) => setTimeout(wake, 0));
+  expect(childReady).toBe(false);
+  root();
+  (await child)();
+});
