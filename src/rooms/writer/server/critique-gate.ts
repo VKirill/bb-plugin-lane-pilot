@@ -21,13 +21,13 @@ import { pipelineWriterStep, pipelineWriterTag } from "./pipeline-tag";
 import { recordedWriterSkills } from "./skill-pick";
 import { sendServiceMessage } from "../../relay/server";
 import { waitThreadIdle } from "@lane-pilot/thread-observe";
-import { bestEffort, isNotFound, orMiss, sha256Hex, stringAt } from "@lane-pilot/kit";
+import { bestEffort, isNotFound, orMiss, stringAt } from "@lane-pilot/kit";
 import { runOnHost } from "@lane-pilot/host-calls";
 import { bookkeepingSetting, isOwnershipNoise } from "@lane-pilot/settings-catalog";
 import { writeReplacing } from "../../storage";
 import { acceptanceArtifactDir } from "../../tasks";
-import { resolve } from "node:path";
-import { liveBackupPatch } from "./live-backup-evidence";
+import { liveBackupPatches } from "./live-backup-evidence";
+import { captureCritiqueFiles } from "./critique-evidence-files";
 import type { LiveBackupRead } from "../live-backup-read";
 
 /** The shared locals the critique gate reads and writes; owned by the finish body. */
@@ -81,45 +81,10 @@ export async function runCodeCritiqueGate(deps: CritiqueGateDeps, g: CritiqueGat
       };
       const captureEvidence = async () => {
         const dirt = await services.workspaceDirt(input.config, input.task.project_cwd, input.runId);
-        const byPath = new Map((dirt.ok ? dirt.snapshots : []).map((row) => [row.path, row.sha256 || null]));
-        const files:Array<{ path:string; content:string|null|undefined }> = [];
-        for (const path of g.candidate.produced ?? []) {
-          let content: string | null | undefined;
-          try {
-            const file = await orMiss(bb.sdk.files.read({
-              hostId:input.config.hostId, rootPath:input.task.project_cwd, path:resolve(input.task.project_cwd, path),
-            }), null, isNotFound);
-            content = typeof file?.content === "string" ? file.content : null;
-          } catch (cause) {
-            // One unreadable produced file is a named hold, not a silent pass; the rest still count.
-            // undefined is the read-outage outcome, distinct from null (absent).
-            ctx.log(`writer ${input.taskId}: the produced file ${path} could not be read (${cause instanceof Error ? cause.message : String(cause)}); its evidence is left out`);
-            content = undefined;
-          }
-          files.push({ path, content });
-        }
-        // A produced file the writer committed leaves no git-status dirt: a path absent from a successful snapshot
-        // takes the sha256 of the bytes just read — the same bytes buildCandidateEvidence compares. A snapshot row
-        // (hash or explicit null), a failed snapshot and an unreadable file all stay unknown.
-        const contentByPath = new Map(files.map((row) => [row.path, row.content]));
-        const hashes = Object.fromEntries((g.candidate.produced ?? []).map((path) => {
-          if (byPath.has(path)) return [path, byPath.get(path) ?? null];
-          if (!dirt.ok) return [path, null];
-          const content = contentByPath.get(path);
-          return [path, typeof content === "string" ? sha256Hex(content) : null];
-        }));
+        const { files, hashes } = await captureCritiqueFiles(ctx, input, g.candidate.produced ?? [], dirt);
         let beforeUnknown: string | undefined;
-        if (liveBefore) {
-          g.lastPatches = {};
-          for (const { path, content } of files) {
-            const saved = await liveBefore(path);
-            const patch = saved.state === "bytes" && typeof content === "string" ? liveBackupPatch(path, saved.content, content) : null;
-            if (patch === null) {
-              beforeUnknown ??= `${path}: ${saved.state === "unknown" ? saved.reason : typeof content !== "string" ? "current_unreadable" : "diff_too_large"}`;
-              g.lastPatches[path] = "before unknown: live backup evidence unavailable";
-            } else g.lastPatches[path] = patch;
-          }
-        } else g.lastPatches = await candidatePatches(bb, db, { runId:input.runId, taskId:input.taskId, hostId:input.config.hostId, cwd:input.task.project_cwd, paths:g.candidate.produced ?? [] });
+        if (liveBefore) ({ patches:g.lastPatches, beforeUnknown } = await liveBackupPatches(files, liveBefore));
+        else g.lastPatches = await candidatePatches(bb, db, { runId:input.runId, taskId:input.taskId, hostId:input.config.hostId, cwd:input.task.project_cwd, paths:g.candidate.produced ?? [] });
         // The same frozen base candidatePatches diffs against: committed work has no `git diff HEAD`, so the
         // critic's own re-read in pointer mode needs it (absent base → legacy HEAD advice).
         const gitBase = getTaskGitBase(db as never, input.taskId);

@@ -25,3 +25,18 @@ export function liveBackupPatch(path: string, before: string, after: string): st
   const patch = `--- a/${path}\n+++ b/${path}\n@@ -${old.count ? 1 : 0},${old.count} +${next.count ? 1 : 0},${next.count} @@\n${old.text}${next.text}`;
   return Buffer.byteLength(patch, "utf8") <= 64 * 1024 ? patch : null;
 }
+
+/** Build the critic's complete patches, retaining an explicit reason for any unknown baseline. */
+export async function liveBackupPatches(files:Array<{ path:string; content:string | null | undefined }>, liveBefore:(path:string) => Promise<LiveBackupRead>) {
+  const patches:Record<string, string> = {};
+  let beforeUnknown: string | undefined;
+  for (const { path, content } of files) {
+    const saved = await liveBefore(path);
+    const patch = saved.state === "bytes" && typeof content === "string" ? liveBackupPatch(path, saved.content, content) : null;
+    if (patch === null) {
+      beforeUnknown ??= `${path}: ${saved.state === "unknown" ? saved.reason : typeof content !== "string" ? "current_unreadable" : "diff_too_large"}`;
+      patches[path] = "before unknown: live backup evidence unavailable";
+    } else patches[path] = patch;
+  }
+  return { patches, beforeUnknown };
+}
