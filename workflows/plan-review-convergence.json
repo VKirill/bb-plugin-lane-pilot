@@ -52,18 +52,28 @@
   "budget": {
     "max_minutes": 60
   },
-  "entry": "critic_a",
+  "entry": "phase_status",
   "nodes": [
+    {
+      "id": "phase_status",
+      "type": "action",
+      "action": "lp.phase_status",
+      "out": {
+        "status": "any"
+      }
+    },
     {
       "id": "critic_a",
       "type": "agent",
       "role": "plan-critic",
-      "plugins": ["lane-pilot"],
       "title": {
         "en": "Critic A",
         "ru": "Критик A"
       },
-      "prompt": "Review the phase plan (lane_pilot_phase status) against CONTEXT.md and SPEC.md: coverage of requirements and locked decisions, a check per promise that would fail without the work, waves by depends_on, risks. Decision approve or changes_requested with findings.",
+      "with": {
+        "phase_status": "{{phase_status.status}}"
+      },
+      "prompt": "Review the supplied code-owned phase status and plan (including its gates and book) against CONTEXT.md and SPEC.md: coverage of requirements and locked decisions, a check per promise that would fail without the work, waves by depends_on, risks. Decision approve or changes_requested with findings.",
       "out": {
         "decision": "string",
         "findings": "Finding[]"
@@ -107,12 +117,11 @@
       "id": "converge",
       "type": "agent",
       "role": "plan-critic",
-      "plugins": ["lane-pilot"],
       "title": {
         "en": "Converge",
         "ru": "Свести"
       },
-      "prompt": "Merge A's and B's findings (dedupe by file and claim). approve only when both approve; otherwise changes_requested with the merged list. When the input machine is true, return only {decision, findings, rounds} and do not report: the phase machine that started you reads the output. Otherwise report it to the phase driver with lane_pilot_phase plan_check (by: both critics); the driver counts the rounds (three at most).",
+      "prompt": "Merge A's and B's findings (dedupe by file and claim). Approve only when both approve; otherwise changes_requested with the merged list. Return only {decision, findings, rounds}; a following code-owned action reports this result to the phase driver when this is a PM-started run, while machine-started runs consume the result directly.",
       "out": {
         "decision": "string",
         "findings": "Finding[]",
@@ -152,6 +161,22 @@
       }
     },
     {
+      "id": "phase_check",
+      "type": "action",
+      "action": "lp.phase_plan_check",
+      "skip_when": "$inputs.machine == true",
+      "skip_out": {
+        "status": "skipped",
+        "phase_id": "$inputs.phase_id",
+        "decision": "machine"
+      },
+      "out": {
+        "status": "string",
+        "phase_id": "string",
+        "decision": "string"
+      }
+    },
+    {
       "id": "changes",
       "type": "action",
       "action": "emit",
@@ -164,6 +189,11 @@
   ],
   "edges": [
     {
+      "from": "phase_status",
+      "to": "critic_a",
+      "pass": "artifact"
+    },
+    {
       "from": "critic_a",
       "to": "critic_b",
       "pass": "artifact"
@@ -175,12 +205,17 @@
     },
     {
       "from": "converge",
+      "to": "phase_check",
+      "pass": "artifact"
+    },
+    {
+      "from": "phase_check",
       "to": "approve",
       "pass": "artifact",
       "when": "converge.decision == 'approve'"
     },
     {
-      "from": "converge",
+      "from": "phase_check",
       "to": "changes",
       "pass": "artifact"
     }
@@ -207,9 +242,11 @@
         }
       },
       "expect_path": [
+        "phase_status",
         "critic_a",
         "critic_b",
         "converge",
+        "phase_check",
         "approve"
       ],
       "expect_outputs": [

@@ -21,7 +21,7 @@ const TEXT_KINDS = ["text", "answered", "provide", "given", "reason", "chosen", 
 /** What the form offers: the values of the node's `answer_kind` that a person can pick (not the clock's `timeout`, not the skip markers). */
 export function humanOptions(node: Extract<GraphNode, { type: "human" }>): string[] {
   const kind = node.out.find((field) => field.name === "answer_kind");
-  return (kind?.values ?? node.options).filter((value) => !["timeout", "none", "given"].includes(value));
+  return (kind?.values ?? node.options).filter((value) => !["timeout", "none", "given", "skipped"].includes(value));
 }
 
 const normalizeChoice = (text: string) => text.toLowerCase().replace(/[_\-\s]+/g, " ").replace(/^[\s.,;:!?'"«»()]+|[\s.,;:!?'"«»()]+$/g, "");

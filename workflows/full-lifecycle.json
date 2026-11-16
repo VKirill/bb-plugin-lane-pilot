@@ -246,15 +246,14 @@
       ],
       "skip_when": "!plan.has_ui",
       "skip_out": {
-        "answer_kind": "ok",
+        "answer_kind": "skipped",
         "issues": "[]"
       },
-      "src": "maestro-flow:workflows/test.md, ref/severity-inference.md",
-      "prompt": "One scenario at a time (what you should see). Owner answers ok or a remark describing any issue. Severity is inferred from the owner's words - blocker (unusable, crash, data loss), major (wrong result, broken flow without a workaround), minor, trivial; take the strongest signal, on doubt the higher one; never ask how serious. Silence or timeout is never a pass: the scenario is deferred.",
+      "src": "maestro-flow:workflows/test.md",
+      "prompt": "One scenario at a time (what you should see). Owner answers ok or a remark describing any issue. The workflow routes a remark to replan; it does not infer severity from free text. Silence or timeout is never a pass: the scenario is deferred.",
       "out": {
-        "answer_kind": "ok|issues|timeout",
-        "issues": "Finding[]",
-        "blocker_count": "int"
+        "answer_kind": "ok|issues|skipped|timeout",
+        "issues": "Finding[]"
       },
       "guards": {
         "maxVisits": 2,
@@ -432,6 +431,12 @@
       "to": "close",
       "pass": "artifact",
       "when": "uat.answer_kind == 'ok'"
+    },
+    {
+      "from": "uat",
+      "to": "close",
+      "pass": "artifact",
+      "when": "uat.answer_kind == 'skipped'"
     },
     {
       "from": "uat",

@@ -21,6 +21,7 @@ import { registerTaskBookActions } from "./workflow-task-book";
 import { registerDelegatedActions } from "./workflow-delegated-actions";
 import { recordSpecialistLedgerUsage, registerSpExecutors } from "../../specialist/server";
 import { registerPassportExecutors } from "../../passport/server";
+import { registerPhaseActions } from "./workflow-phase-actions";
 
 export { provideLpTaskPipeline, chainRuntimeFor } from "./workflow-chain-runtime";
 export { workflowQuestionKey, humanOptions, humanFields, humanOutput, MACHINE_HUMAN_WAIT_SEC } from "./workflow-human-form";
@@ -156,6 +157,7 @@ export function registerChainExecutors(engine: WorkflowEngine, ctx: ServerCore, 
 
   registerCheckoutActions(engine, ctx, { action, planHome, flagOf });
   registerProjectActions(engine, ctx, { action, planHome, flagOf });
+  registerPhaseActions(engine, ctx, services as Services & { phases?: import("../../phase/server").PhaseApi }, { action });
   registerDeliverableAction(action, { planHome, services, engine });
   registerTaskBookActions(engine, ctx, { action, planHome, lintTask });
   registerSpExecutors(engine, ctx, {

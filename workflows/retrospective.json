@@ -92,6 +92,21 @@
       }
     },
     {
+      "id": "report",
+      "type": "action",
+      "action": "fs.write",
+      "params": {
+        "path": ".agents/retro/reports/{{run_id}}.md"
+      },
+      "reads": [
+        "retro.metrics",
+        "retro.insights"
+      ],
+      "out": {
+        "report_path": "string"
+      }
+    },
+    {
       "id": "living",
       "type": "action",
       "action": "lp.retro_living",
@@ -137,7 +152,7 @@
       "map": {
         "status": "done",
         "insights": "retro.insights",
-        "retro_path": "living.path",
+        "retro_path": "report.report_path",
         "candidates_staged": "stage.staged"
       }
     }
@@ -145,6 +160,11 @@
   "edges": [
     {
       "from": "retro",
+      "to": "report",
+      "pass": "artifact"
+    },
+    {
+      "from": "report",
       "to": "living",
       "pass": "artifact"
     },
@@ -182,6 +202,7 @@
       },
       "expect_path": [
         "retro",
+        "report",
         "living",
         "stage",
         "done"
