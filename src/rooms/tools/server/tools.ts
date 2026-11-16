@@ -153,7 +153,7 @@ export function registerTools(ctx: ServerCore, services: Services, familyContrib
   registerObservedTool(bb.agents, {
     name:LANE_PILOT_READ_NAME,
     description:"Read a bounded UTF-8 slice from the writer workspace or its nearest Git repository.",
-    instructions:"Use only from the matching Lane Pilot PM thread. Plain paths are relative to the frozen writer workspace. Use repo:<relative-path> for a file in the nearest Git repository, including its root or sibling sections; the repository root is verified on the writer host. An independent nested repository cannot access its parent repository. Absolute paths, .. segments, protected metadata and symlink escapes are rejected. offset is a 0-based line index; maxLines limits returned lines. This is not the pm_read stage.",
+    instructions:"Use only from the matching Lane Pilot PM thread. Plain paths are relative to the frozen writer workspace. Use repo:<relative-path> for a file in the nearest Git repository, including its root or sibling sections; the repository root is verified on the writer host. An independent nested repository cannot access its parent repository. Absolute paths and paths escaping the selected root are rejected. repo: paths also reject .. segments and .git, .agents or .bb components. offset is a 0-based line index; maxLines limits returned lines. This is not the pm_read stage.",
     parameters:z.object({
       path:z.string().min(1).max(1024),
       offset:z.number().int().min(0).default(0),
