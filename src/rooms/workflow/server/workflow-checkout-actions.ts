@@ -12,7 +12,7 @@ import {
 import { isPlanningPath } from "../../contracts";
 import { PROFILE_KEYS } from "../../anamnesis";
 import { hasPassportRecord } from "../../passport";
-import { bestEffort, isFsAbsent, isNotFound, sha256Hex } from "@lane-pilot/kit";
+import { bestEffort, isFsAbsent, sha256Hex } from "@lane-pilot/kit";
 import { list, rec, str, pmCheckout, quote, PRUNE } from "./workflow-chain-runtime";
 import { measureTestInventory, diffTestInventory, type InventoryReceipt } from "./test-inventory";
 import { noteRunFiles } from "./workflow-run-home";
@@ -22,6 +22,15 @@ import { runOnHost } from "@lane-pilot/host-calls";
 import { oneLine, ownsPathProblems, parkRoadmapRow } from "../../phase";
 import type { ChainRuntime } from "../../contracts/server";
 import type { ServerCore } from "../../contracts/server";
+
+const CAS_READ_CAP_BYTES = 2_000_000;
+
+function isMissingCasFile(cause: unknown): boolean {
+  if (isFsAbsent(cause)) return true;
+  if (!cause || typeof cause !== "object") return false;
+  const error = cause as { code?: unknown; serverCode?: unknown };
+  return error.code === "not_found" && ["file_not_found", "path_not_found", "host_file_not_found"].includes(String(error.serverCode ?? ""));
+}
 
 type Action = (key: string, run: (c: StepContext<ChainRuntime>, rt: ChainRuntime) => Promise<Row>) => void;
 type PlanHome = (projectId: string, checkout: { hostId: string; path: string }) => Promise<string | null>;
@@ -105,32 +114,30 @@ export function registerCheckoutActions(engine: WorkflowEngine, ctx: ServerCore,
       }
       if (mode) {
         const files = bb.sdk.files as unknown as {
-          read?: (args: { hostId: string; rootPath: string; path: string; maxBytes?: number }) => Promise<unknown>;
+          read?: (args: { hostId: string; rootPath: string; path: string }) => Promise<unknown>;
           write: (args: { hostId: string; rootPath: string; path: string; content: string; contentEncoding: "utf8"; createParents: boolean; expectedSha256: string | null }) => Promise<unknown>;
         };
         if (typeof files.read !== "function") throw new Error(`fs.write: cannot ${mode} "${cleanPath}" because the existing file is unreadable`);
         const rootPath = home ?? checkout.path;
         const fullPath = `${rootPath}/${cleanPath}`;
-        if (!home) noteEngineWrite(checkout.path, cleanPath);
         for (let attempt = 0; attempt < 2; attempt += 1) {
           let previous = "", expectedSha256: string | null = null;
           try {
-            const raw = await files.read({ hostId: checkout.hostId, rootPath, path: fullPath, maxBytes: 2_000_000 });
+            const raw = await files.read({ hostId: checkout.hostId, rootPath, path: fullPath });
             if (raw === null || raw === undefined) throw new Error("the existing file read returned no result");
             if (typeof raw !== "object") throw new Error("the existing file read returned an invalid result");
-            const existing = raw as { content?: unknown; sha256?: unknown; truncated?: unknown; oversized?: unknown };
-            if (existing.truncated === true || existing.oversized === true) throw new Error("the existing file read was truncated");
-            if (existing.content === null) {
-              previous = "";
-            } else if (typeof existing.content === "string") {
-              previous = existing.content;
-              expectedSha256 = typeof existing.sha256 === "string" ? existing.sha256 : sha256Hex(previous);
-              if (expectedSha256 !== sha256Hex(previous)) throw new Error("the existing file read does not match its hash");
-            } else {
-              throw new Error("the existing file read returned no text");
-            }
+            const existing = raw as { content?: unknown; sha256?: unknown; sizeBytes?: unknown };
+            if (typeof existing.content !== "string") throw new Error("the existing file read returned no text");
+            if (typeof existing.sha256 !== "string" || !/^[a-f0-9]{64}$/i.test(existing.sha256)) throw new Error("the existing file read returned an invalid hash");
+            const sizeBytes = existing.sizeBytes;
+            const actualSize = Buffer.byteLength(existing.content, "utf8");
+            if (typeof sizeBytes !== "number" || !Number.isSafeInteger(sizeBytes) || sizeBytes !== actualSize) throw new Error("the existing file read returned an invalid size");
+            if (sizeBytes > CAS_READ_CAP_BYTES) throw new Error(`the existing file exceeds the ${CAS_READ_CAP_BYTES}-byte append limit`);
+            previous = existing.content;
+            expectedSha256 = existing.sha256;
+            if (expectedSha256.toLowerCase() !== sha256Hex(previous)) throw new Error("the existing file read does not match its hash");
           } catch (cause) {
-            if (!isFsAbsent(cause) && !isNotFound(cause)) {
+            if (!isMissingCasFile(cause)) {
               const why = cause instanceof Error ? cause.message : String(cause);
               throw new Error(`cannot ${mode} "${cleanPath}": ${why}`);
             }
@@ -144,6 +151,7 @@ export function registerCheckoutActions(engine: WorkflowEngine, ctx: ServerCore,
             writtenFileCount += 1;
             writtenForRun.push({ repoPath: cleanPath, content: next, kind: "output", root: home ? "planning-home" : "checkout" });
             if (!home) writtenCheckoutPaths.push({ path: cleanPath, content: next, sha256: sha256Hex(next) });
+            if (!home) noteEngineWrite(checkout.path, cleanPath);
             return;
           }
           if (outcome === "conflict" && attempt === 0) continue;

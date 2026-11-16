@@ -224,12 +224,12 @@ describe("parity d3 workflows a", () => {
     // The executor, real: a phase's array symptom is written one gap per line; a second run finds the file and resumes; a hostile name stays inside the folder.
     const t = host();
     dispose = t.dispose;
-    const session = (slug: string) => t.run([node("debug", "session")], [{ name: "session", type: "string", required: false }, { name: "symptom", type: "json", required: false }], { session: slug, symptom: ["check p1 red", "acceptance a2"] }, { found: "session.found", path: "session.path" });
+    const session = (slug: string) => t.run([node("debug", "session")], [{ name: "session", type: "string", required: false }, { name: "symptom", type: "json", required: false }], { session: slug, symptom: ["check p1 red", "acceptance a2"] }, { found: "session.found", path: "session.path", evidence_path: "session.evidence_path" });
     const first = await session("verdict-0123456789ab");
     expect(first.status).toBe("succeeded");
-    expect(first.output).toEqual({ found: false, path: ".agents/planning/debug/verdict-0123456789ab.md" });
+    expect(first.output).toEqual({ found: false, path: ".agents/planning/debug/verdict-0123456789ab.md", evidence_path: ".agents/planning/debug/verdict-0123456789ab.evidence.ndjson" });
     expect(readFileSync(join(t.checkout, ".agents/planning/debug/verdict-0123456789ab.md"), "utf8")).toContain("check p1 red\nacceptance a2");
-    expect((await session("verdict-0123456789ab")).output).toEqual({ found: true, path: ".agents/planning/debug/verdict-0123456789ab.md" });
+    expect((await session("verdict-0123456789ab")).output).toEqual({ found: true, path: ".agents/planning/debug/verdict-0123456789ab.md", evidence_path: ".agents/planning/debug/verdict-0123456789ab.evidence.ndjson" });
     const hostile = await session("../../../escape");
     expect((hostile.output as { path: string }).path).toBe(".agents/planning/debug/escape.md");
     expect(existsSync(join(t.checkout, "escape.md"))).toBe(false);

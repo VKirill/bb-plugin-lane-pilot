@@ -134,7 +134,8 @@
       },
       "out": {
         "found": "bool",
-        "path": "string"
+        "path": "string",
+        "evidence_path": "string"
       },
       "guards": {
         "maxVisits": 1
@@ -308,7 +309,7 @@
       "skip_out": {
         "session_path": ""
       },
-      "path": ".agents/planning/debug/{{$inputs.session}}.md",
+      "path": "{{session.path}}",
       "mode": "append",
       "contents": "{{investigate.session_entry}}",
       "out": {
@@ -323,7 +324,7 @@
       "skip_out": {
         "evidence_path": ""
       },
-      "path": ".agents/planning/debug/{{$inputs.session}}.evidence.ndjson",
+      "path": "{{session.evidence_path}}",
       "mode": "append",
       "contents": "{{investigate.evidence_entry}}\n",
       "out": {
@@ -338,7 +339,7 @@
       "skip_out": {
         "session_path": ""
       },
-      "path": ".agents/planning/debug/{{$inputs.session}}.md",
+      "path": "{{session.path}}",
       "mode": "append",
       "contents": "{{verify_cause.session_entry}}",
       "out": {
@@ -353,7 +354,7 @@
       "skip_out": {
         "evidence_path": ""
       },
-      "path": ".agents/planning/debug/{{$inputs.session}}.evidence.ndjson",
+      "path": "{{session.evidence_path}}",
       "mode": "append",
       "contents": "{{verify_cause.evidence_entry}}\n",
       "out": {

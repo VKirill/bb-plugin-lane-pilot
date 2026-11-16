@@ -133,7 +133,7 @@ describe("the profile, discussion and spec commands (n1306 … n1314)", () => {
     expect(seen.asked).toEqual(["score ask score spec write_spec done", { status: "done", spec_path: ".agents/phases/ph_a/SPEC.md", ambiguity: 0.15 }]);
     expect(seen.clear).toBe("score spec write_spec done");
     expect(seen.edge).toEqual(["score spec write_spec done", "done"]);
-    expect(seen.doubt).toEqual(["score ask score ask score spec write_spec low_confidence", { status: "low_confidence", spec_path: ".agents/phases/ph_a/SPEC.md", ambiguity: 0.6 }]);
+    expect(seen.doubt).toEqual(["score ask score ask score spec write_spec low_confidence", { status: "low_confidence", spec_path: "", ambiguity: 0.6 }]);
     expect(seen.role).toBe("planner");
   });
 

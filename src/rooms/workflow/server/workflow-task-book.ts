@@ -103,19 +103,20 @@ export function registerTaskBookActions(engine: WorkflowEngine, ctx: ServerCore,
   // resumed instead of asking the symptoms again; a new run starts the file with the symptom and status open.
   action("lp.debug_session", async (c, rt) => {
     const slug = debugSessionSlug((c.input.with as Row | undefined)?.session ?? c.resolve("$inputs.session"));
-    if (!slug) return { found: false, path: "" };
+    if (!slug) return { found: false, path: "", evidence_path: "" };
     const path = `.agents/planning/debug/${slug}.md`;
+    const evidencePath = `.agents/planning/debug/${slug}.evidence.ndjson`;
     const checkout = await pmCheckout(rt);
     const root = (await planHome(rt.projectId, checkout)) ?? checkout.path;
     const read = await runOnHost(ctx.host, { hostId: checkout.hostId, cwd: root, command: `test -f ${quote(path)} && cat ${quote(path)} || true`, timeoutSec: 20, timeoutMs: 30_000 });
-    if (read.exitCode === 0 && read.stdout.trim()) return { found: true, path };
+    if (read.exitCode === 0 && read.stdout.trim()) return { found: true, path, evidence_path: evidencePath };
     const content = debugSessionDoc(slug, c.resolve("$inputs.symptom"));
     try {
-      if (root === checkout.path) noteEngineWrite(checkout.path, path);
       await bb.sdk.files.write({ hostId: checkout.hostId, rootPath: root, path: `${root}/${path}`, content, contentEncoding: "utf8", createParents: true });
-      return { found: false, path };
+      if (root === checkout.path) noteEngineWrite(checkout.path, path);
+      return { found: false, path, evidence_path: evidencePath };
     } catch {
-      return { found: false, path: "" };
+      return { found: false, path: "", evidence_path: "" };
     }
   });
 }

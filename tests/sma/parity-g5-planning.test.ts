@@ -328,7 +328,7 @@ describe("the planning home is one resolver for every reader and writer of .agen
     registerPureActions(engine); registerReducers(engine);
     registerChainExecutors(engine, r.ctx, r.services, createWorkflowAgents());
     registerDispatchExecutors(engine, r.ctx.bb);
-    const OUTS: Record<string, Record<string, string>> = { "lp.state_probe": { has_roadmap: "bool", has_profile: "bool" }, "lp.roadmap_park": { n: "string", path: "string" }, "lp.debug_session": { found: "bool", path: "string" } };
+    const OUTS: Record<string, Record<string, string>> = { "lp.state_probe": { has_roadmap: "bool", has_profile: "bool" }, "lp.roadmap_park": { n: "string", path: "string" }, "lp.debug_session": { found: "bool", path: "string", evidence_path: "string" } };
     const run = async (id: string, params: Row = {}, inputs: Row = {}) => (await engine.start({ workflow: actionWorkflow(id, { with: params }, OUTS[id]!, Object.keys(inputs)), inputs, runtime: r.rt, link: { projectId: PROJECT, runId: RUN } }).done) as { status: string; output?: Row; error?: unknown };
     const probe = await run("lp.state_probe");
     expect(probe.output).toMatchObject({ has_roadmap: true });

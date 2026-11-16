@@ -25,6 +25,7 @@ import type { Workflow } from "@lane-pilot/workflow-engine";
 import { builtinWorkflow } from "../../src/rooms/workflow/builtin";
 import { createGoalAuditor } from "../../src/rooms/workflow/server/workflow-goal-audit";
 import { workflowAuditEvidence } from "../../src/rooms/workflow/server/workflow-audit-evidence";
+import { writtenByEngineSince } from "../../src/rooms/verification/server";
 import { sha256Hex } from "@lane-pilot/kit";
 
 /**
@@ -39,7 +40,7 @@ const reply = (body: Row, lead = "Done.") => `${lead}\n\n\`\`\`json\n${JSON.stri
 
 /** What a helper thread of a node spent, as BB reports it: one token-usage event of one turn, on this model. */
 type Spent = { input: number; output: number; model?: string };
-async function setup(script: Script, options: { pmEvents?: () => Row[]; firstTurnError?: string; firstTurnRetries?: boolean; dirty?: boolean; spent?: Record<string, Spent>; failWrites?: boolean; noPm?: boolean; noCheckout?: boolean; invalidParent?: boolean; offers?: Array<{ providerId: string; model: string; host?: string }>; hosts?: Array<{ id: string; name: string; status?: string }>; sources?: Array<{ hostId: string; path: string }>; failManifest?: boolean; failReads?: boolean; enableFileReads?: boolean; envs?: Record<string, { hostId: string; path: string } | null>; resolveWorkflow?: (id: string, version?: number) => Workflow | null; runCommandStub?: (input: Row) => Row | null; vkMetadata?: boolean } = {}) {
+async function setup(script: Script, options: { pmEvents?: () => Row[]; firstTurnError?: string; firstTurnRetries?: boolean; dirty?: boolean; spent?: Record<string, Spent>; failWrites?: boolean; noPm?: boolean; noCheckout?: boolean; invalidParent?: boolean; offers?: Array<{ providerId: string; model: string; host?: string }>; hosts?: Array<{ id: string; name: string; status?: string }>; sources?: Array<{ hostId: string; path: string }>; failManifest?: boolean; failReads?: boolean; enableFileReads?: boolean; readStub?: (filePath: string) => unknown | Promise<unknown>; writeOutcomes?: string[]; envs?: Record<string, { hostId: string; path: string } | null>; resolveWorkflow?: (id: string, version?: number) => Workflow | null; runCommandStub?: (input: Row) => Row | null; vkMetadata?: boolean } = {}) {
   const checkout = mkdtempSync(join(tmpdir(), "lp-chain-"));
   execFileSync("git", ["init", "-q"], { cwd: checkout });
   writeFileSync(join(checkout, "README.md"), "hello\n");
@@ -117,19 +118,22 @@ async function setup(script: Script, options: { pmEvents?: () => Row[]; firstTur
         write: async (args: unknown) => {
           const filePath = String((args as { path?: unknown }).path ?? "");
           if (options.failWrites || (options.failManifest && filePath.endsWith("manifest.json"))) throw new Error("disk full");
+          if (options.writeOutcomes?.length) return { outcome: options.writeOutcomes.shift() };
           // `writes` are the files the nodes made; the run's own manifest (.agents/runs/<run>/manifest.json, tests/workflow/run-home.test.ts) is not one of them.
-          return coreFileWrite(diskStore(), (path, content) => { if (!/\/\.agents\/runs\/[^/]+\/manifest\.json$/.test(path)) writes.push({ path, content }); })(args) as never;
+          const written = coreFileWrite(diskStore(), (path, content) => { if (!/\/\.agents\/runs\/[^/]+\/manifest\.json$/.test(path)) writes.push({ path, content }); })(args) as never;
+          return options.enableFileReads ? { outcome: "written" } : written;
         },
       },
     },
   });
   if (options.enableFileReads) {
     harness.sdk.stub("files.read", async (args: unknown) => {
-      if (options.failReads) throw new Error("permission denied");
       const filePath = String((args as { path?: unknown }).path ?? "");
-      if (!existsSync(filePath)) return { content: null, sha256: null };
+      if (options.readStub) return await options.readStub(filePath);
+      if (options.failReads) throw new Error("permission denied");
+      if (!existsSync(filePath)) throw Object.assign(new Error("file not found"), { code: "not_found", serverCode: "file_not_found" });
       const content = readFileSync(filePath, "utf8");
-      return { content, sha256: sha256Hex(content), truncated: false };
+      return { content, sha256: sha256Hex(content), sizeBytes: Buffer.byteLength(content, "utf8"), contentEncoding: "utf8" };
     });
   }
   // The VK thread-key functions are gated on `bb.vk` existing (thread-keys.ts vkBuild): only a test that asks for the
@@ -722,8 +726,31 @@ describe("security audit report inputs", () => {
     expect(reportPrompt).toContain("- scan_critical_count: 0");
     expect(reportPrompt).toContain("- scan_high_count: 2");
     expect(reportPrompt).not.toContain("SCAN_TAIL_590F");
+    expect(readFileSync(join(t.checkout, ".agents/planning/SECURITY-AUDIT.md"), "utf8")).toContain("# Security audit");
     if (phase) expect(delivered["consumes-threat_model"]).toMatchObject({ findings: [threat], verification: expect.stringContaining("## Verified against the code"), handoff: "Threat verification ready." });
     else expect(t.spawned.some((request) => (request.pluginMetadata as Row).lanePilotWorkflowNode === "threat_model")).toBe(false);
+    if (phase) expect(readFileSync(join(t.checkout, ".agents/phases/ph_security_590f/SECURITY.md"), "utf8")).toContain("Verified against the code");
+  });
+});
+
+describe("milestone summary persistence", () => {
+  it("runs the real fs.write handler and preserves earlier summary bytes", async () => {
+    const t = await setup({ summary: [reply({ section: "## Stats export — 2026-11-16\n\nShipped the export.\n", open_items: [], handoff: "Summary ready." })] }, { enableFileReads: true });
+    dispose = t.dispose;
+    mkdirSync(join(t.checkout, ".agents/planning"), { recursive: true });
+    writeFileSync(join(t.checkout, ".agents/planning/MILESTONE-SUMMARY.md"), "## Earlier milestone\n\nStill true.\n");
+    const workflow = chain({
+      outputs: [{ name: "status", type: "string", required: false }, { name: "summary_path", type: "string", required: false }],
+      nodes: [
+        { id: "summary", type: "agent", role: "analyst", prompt: "Return the section.", out: { section: "string", open_items: "string[]" } },
+        { id: "write_summary", type: "action", action: "fs.write", path: ".agents/planning/MILESTONE-SUMMARY.md", mode: "prepend", contents: "{{summary.section}}", out: { summary_path: "string" } },
+        { id: "done", type: "action", action: "emit", map: { status: "done", summary_path: "write_summary.summary_path" } },
+      ],
+      edges: [{ from: "start", to: "summary" }, { from: "summary", to: "write_summary" }, { from: "write_summary", to: "done" }],
+    });
+    const result = await t.start(workflow).done;
+    expect(result).toMatchObject({ status: "succeeded", output: { status: "done", summary_path: ".agents/planning/MILESTONE-SUMMARY.md" } });
+    expect(readFileSync(join(t.checkout, ".agents/planning/MILESTONE-SUMMARY.md"), "utf8")).toBe("## Stats export — 2026-11-16\n\nShipped the export.\n## Earlier milestone\n\nStill true.\n");
   });
 });
 
@@ -762,6 +789,7 @@ describe("the owner's question", () => {
     await started.done;
     await vi.waitFor(() => expect(t.engine.get(started.runId)?.status).toBe("succeeded"), { timeout: 5000, interval: 10 });
     expect(t.engine.get(started.runId)?.output).toMatchObject({ status: "done", ambiguity: 0.1 });
+    expect(readFileSync(join(t.checkout, ".agents/phases/ph_590e/SPEC.md"), "utf8")).toContain("REQ-1: Given/When/Then");
     expect(scores).toBe(rounds + 1);
     if (rounds === 0) {
       expect(t.harness.pendingInteractions).toHaveLength(0);
@@ -952,19 +980,85 @@ describe("files, diffs and the plugin's own state", () => {
     expect(t.engine.snapshot(summary.runId)!.steps.some((step) => step.node_id === "done")).toBe(false);
   });
 
+  it("fs.write recomposes against the latest bytes after a CAS conflict and marks provenance only after success", async () => {
+    let reads = 0;
+    const t = await setup({}, {
+      enableFileReads: true,
+      readStub: async (filePath) => {
+        if (!filePath.endsWith("/history.md")) {
+          if (!existsSync(filePath)) throw Object.assign(new Error("file not found"), { code: "not_found", serverCode: "file_not_found" });
+          const content = readFileSync(filePath, "utf8");
+          return { content, sha256: sha256Hex(content), sizeBytes: Buffer.byteLength(content, "utf8"), contentEncoding: "utf8" };
+        }
+        const content = reads++ === 0 ? "old\n" : (writeFileSync(filePath, "external\n"), "external\n");
+        return { content, sha256: sha256Hex(content), sizeBytes: Buffer.byteLength(content, "utf8"), contentEncoding: "utf8" };
+      },
+      writeOutcomes: ["conflict"],
+    });
+    dispose = t.dispose;
+    writeFileSync(join(t.checkout, "history.md"), "old\n");
+    const workflow = chain({
+      outputs: [{ name: "path", type: "string", required: false }],
+      nodes: [{ id: "append", type: "action", action: "fs.write", path: "history.md", mode: "append", contents: "new\n", out: { history_path: "string" } }, { id: "done", type: "action", action: "emit", map: { path: "append.history_path" } }],
+      edges: [{ from: "start", to: "append" }, { from: "append", to: "done" }],
+    });
+    const startedAt = Date.now();
+    const summary = await t.start(workflow).done;
+    expect(summary).toMatchObject({ status: "succeeded", output: { path: "history.md" } });
+    expect(t.writes.find((write) => write.path.endsWith("/history.md"))?.content).toBe("external\nnew\n");
+    expect(writtenByEngineSince(t.checkout, startedAt - 1)).toContain("history.md");
+  });
+
+  it.each([
+    ["oversize", (content: string) => ({ content, sha256: sha256Hex(content), sizeBytes: 2_000_001, contentEncoding: "utf8" })],
+    ["hash mismatch", (content: string) => ({ content, sha256: "0".repeat(64), sizeBytes: Buffer.byteLength(content, "utf8"), contentEncoding: "utf8" })],
+    ["malformed absence", () => ({ content: null, sha256: null, sizeBytes: 0 })],
+    ["project not found", () => { throw Object.assign(new Error("project missing"), { code: "not_found", serverCode: "project_not_found" }); }],
+  ] as const)("fs.write rejects %s reads without creating or claiming provenance", async (_name, readResult) => {
+    const t = await setup({}, { enableFileReads: true, readStub: (filePath) => filePath.endsWith("/history.md") ? readResult("existing\n") : (() => { throw Object.assign(new Error("file not found"), { code: "not_found", serverCode: "file_not_found" }); })() });
+    dispose = t.dispose;
+    const workflow = chain({
+      outputs: [{ name: "path", type: "string", required: false }],
+      nodes: [{ id: "append", type: "action", action: "fs.write", path: "history.md", mode: "append", contents: "new\n", out: { history_path: "string" } }, { id: "done", type: "action", action: "emit", map: { path: "append.history_path" } }],
+      edges: [{ from: "start", to: "append" }, { from: "append", to: "done" }],
+    });
+    const startedAt = Date.now();
+    const summary = await t.start(workflow).done;
+    expect(summary.status).toBe("failed");
+    expect(t.writes.some((write) => write.path.endsWith("/history.md"))).toBe(false);
+    expect(writtenByEngineSince(t.checkout, startedAt - 1)).toEqual(new Set());
+  });
+
+  it("fs.write leaves provenance empty after the final CAS conflict", async () => {
+    const t = await setup({}, { enableFileReads: true, writeOutcomes: ["conflict", "conflict"] });
+    dispose = t.dispose;
+    writeFileSync(join(t.checkout, "history.md"), "keep me\n");
+    const workflow = chain({
+      outputs: [{ name: "path", type: "string", required: false }],
+      nodes: [{ id: "append", type: "action", action: "fs.write", path: "history.md", mode: "append", contents: "new\n", out: { history_path: "string" } }, { id: "done", type: "action", action: "emit", map: { path: "append.history_path" } }],
+      edges: [{ from: "start", to: "append" }, { from: "append", to: "done" }],
+    });
+    const startedAt = Date.now();
+    const summary = await t.start(workflow).done;
+    expect(summary.status).toBe("failed");
+    expect(readFileSync(join(t.checkout, "history.md"), "utf8")).toBe("keep me\n");
+    expect(writtenByEngineSince(t.checkout, startedAt - 1)).toEqual(new Set());
+  });
+
   it("debug's real registered handlers append structured session/evidence output without losing the initial session", async () => {
     const t = await setup({
       investigate: [reply({ status: "confirmed", confidence: 82, pressure_pass: true, contradictions: 0, affected_files: ["src/a.ts:4"], refuted: 1, hypotheses_total: 2, evidence_path: "", root_cause: "bad state", mechanism: "state enters empty", fix_direction: "guard the state", regression_tests: [], risks: [], session_entry: "\n### Hypothesis 1\n\nResolved.\n", evidence_entry: '{"hypothesis":"bad state","verdict":"confirmed"}', handoff: "diagnosis ready" })],
       verify_cause: [reply({ confirmed: true, objections: [], session_entry: "\n### Independent check\n\nConfirmed.\n", evidence_entry: '{"hypothesis":"cheaper cause","verdict":"refuted"}', handoff: "check ready" })],
     }, { enableFileReads: true, resolveWorkflow: (id) => builtinWorkflow(id) });
     dispose = t.dispose;
-    const result = await t.start(builtinWorkflow("debug")!, { symptom: "A sufficiently detailed failure symptom for this session.", session: "debug-append", mode: "standalone", auto_fix: false }, "full").done;
-    expect(result).toMatchObject({ status: "succeeded", output: { status: "confirmed", evidence_path: ".agents/planning/debug/debug-append.evidence.ndjson" } });
-    const session = readFileSync(join(t.checkout, ".agents/planning/debug/debug-append.md"), "utf8");
-    expect(session).toContain("# Debug session — debug-append");
+    const result = await t.start(builtinWorkflow("debug")!, { symptom: "A sufficiently detailed failure symptom for this session.", session: "../../etc/passwd", mode: "standalone", auto_fix: false }, "full").done;
+    expect(result).toMatchObject({ status: "succeeded", output: { status: "confirmed", evidence_path: ".agents/planning/debug/etc-passwd.evidence.ndjson" } });
+    const session = readFileSync(join(t.checkout, ".agents/planning/debug/etc-passwd.md"), "utf8");
+    expect(session).toContain("# Debug session — etc-passwd");
     expect(session).toContain("### Hypothesis 1");
     expect(session).toContain("### Independent check");
-    expect(readFileSync(join(t.checkout, ".agents/planning/debug/debug-append.evidence.ndjson"), "utf8")).toBe('{"hypothesis":"bad state","verdict":"confirmed"}\n{"hypothesis":"cheaper cause","verdict":"refuted"}\n');
+    expect(readFileSync(join(t.checkout, ".agents/planning/debug/etc-passwd.evidence.ndjson"), "utf8")).toBe('{"hypothesis":"bad state","verdict":"confirmed"}\n{"hypothesis":"cheaper cause","verdict":"refuted"}\n');
+    expect(existsSync(join(t.checkout, ".agents/planning/debug/etc/passwd.md"))).toBe(false);
   });
 
   it("git.diff_files lists the changed files of a range minus lock and vendor files, and sizes the review", async () => {
