@@ -224,8 +224,6 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
     return { task:moved.task, plan:planWithOutsideReads(plan, moved.outsideReads), movedInto:repo };
   }
 
-  const preparePlacement = createPlacementReader(db, placeTask);
-
   /** `criticCodeDefault`: this task's value of `critic.code.default_for_risk`, over the project's (the bench toggles the code critic per arm with it). */
   async function dispatchWriter(args:{threadId:string; projectId:string; task?:TaskV2; plan?:string; baseRef?:string; objective?:string; requireObjective?:boolean; criticCodeDefault?:CodeCriticDefault; birth?:BirthKind}, preplaced?:PreparedPlacement): Promise<Record<string,unknown>> {
     const preparingRun = latestRunForPmThread(db, args.threadId);
@@ -694,7 +692,7 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
     return { resumed:true };
   }
 
-  return { readWriterWorkspaceFile, dispatchWriter, preparePlacement, waitWriter, resumeDispatch };
+  return { readWriterWorkspaceFile, dispatchWriter, preparePlacement:createPlacementReader(db, placeTask), waitWriter, resumeDispatch };
 }
 
 export type WriterDispatchApi = ReturnType<typeof createWriterDispatch>;
