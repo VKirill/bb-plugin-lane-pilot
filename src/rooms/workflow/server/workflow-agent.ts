@@ -38,19 +38,17 @@ import { projectPassportBlock } from "../../passport";
 import { threadUsage } from "../../usage/server";
 import { stringAt } from "@lane-pilot/kit";
 import { AUTHOR_ROWS, AUTHOR_ROW_IDS, DEFAULT_MODEL, pmAuthorOf, DEFAULT_PROVIDER, DEFAULT_REASONING } from "./workflow-agent-model";
-;
+import { assembleHelperModelResolution, type HelperModelResolution } from "./helper-model-provenance";
+export type { HelperModelResolution } from "./helper-model-provenance";
 import type { ServerCore } from "../../contracts/server";
 import type { ChainRuntime } from "../../contracts/server";
-
 /**
  * The generic agent step of a workflow chain: a helper thread of the PM chat with the profile of the node's role (and the
  * skills, provider and model the node names), the node's prompt and data, a typed answer. The thread is found again by its
  * spawn key and plugin metadata after a reload (`lanePilotWorkflowRunId`, `lanePilotWorkflowStep`), so a lost spawn is not a second
  * helper. The same machinery runs a delegated action (a Telegram send, a skill script) and the router's model step.
  */
-
 export type RoleSpec = { helper: HelperRole; metadata: string; specialist?: string; readOnly: boolean; editable: (file: string) => boolean };
-
 // Lane Pilot's own harness folders (harness.ts) are written by its night editor in the same checkout, not by a helper: magicseo replay
 // 2026-10-31, the designer failed repo_edited on `.lane-pilot/harness-edit/…`. `.lane-pilot/workflows/` stays a helper's edit (a graph is published there).
 const BASE_ALLOWED = (file: string) => file.startsWith(".bb/chats/") || file.startsWith(".lane-pilot/harness/") || file.startsWith(".lane-pilot/harness-edit/");
@@ -64,7 +62,6 @@ const ROLE_MAP: Record<string, HelperRole> = {
   "wall-hunter": "wall-hunter", "workspace-provisioner": "workspace-provisioner", lead: "lead", "workflow-architect": "workflow-architect",
   "harness-editor": "harness-editor", "harness-composer": "harness-composer", "harness-reflection": "harness-reflection",
 };
-
 /** A bundled specialist; any other `specialist:<id>` names an agent the owner created, which must exist when the step runs (`ownSpecialist`). */
 export const isBundledSpecialist = (id: string): boolean => (SPECIALIST_ROLES as readonly string[]).includes(id) || isEmployeeSpecialist(id) || id === LEAD_ID;
 
@@ -161,6 +158,8 @@ export type HelperRequest = {
   provider?: string; model?: string; reasoning?: string; serviceTier?: "default" | "fast";
   /** Set by `withResolvedModel`: provider and model are the table's answer, not a pin. `run` resolves a request that lacks it, so no helper spawns on a guess. */
   resolved?: true;
+  /** Set by `withResolvedModel`; absent for callers that already resolved their request and for continued threads. */
+  modelResolution?: HelperModelResolution;
   skills?: readonly string[];
   /** BB plugins and MCP servers the step's session may load on top of its role's. */
   plugins?: readonly string[]; mcp?: readonly string[];
@@ -380,7 +379,7 @@ export function createWorkflowAgents() {
         environment,
         pluginMetadata: {
           role: spec.metadata, ...(spec.specialist ? { specialist: spec.specialist } : {}), ...(rt.origin ? { origin: rt.origin } : {}), spawnId: req.spawnKey, ...(rt.runId ? { lanePilotRunId: rt.runId } : {}), ...parent, helperMode: policy.mode,
-          lanePilotWorkflowRunId: req.workflowRunId, lanePilotWorkflowStep: req.stepKey, lanePilotWorkflowSpawn: req.spawnKey, lanePilotWorkflowNode: req.nodeId,
+          lanePilotWorkflowRunId: req.workflowRunId, lanePilotWorkflowStep: req.stepKey, lanePilotWorkflowSpawn: req.spawnKey, lanePilotWorkflowNode: req.nodeId, ...(req.modelResolution ? { modelResolution: req.modelResolution } : {}),
         },
       } as Parameters<typeof fullAccessSpawn>[1]);
       let spawned: Awaited<ReturnType<typeof fullAccessSpawn>>;
@@ -447,10 +446,10 @@ export function createWorkflowAgents() {
         // An observed refusal in a ~/Documents folder on this machine is remembered: the pick stops offering it there
         // until a success or the block's TTL (provider.folder_block_ttl_ms, 6 h).
         await noteProviderStartFailure(blockStore, startFolder?.hostId ?? null, failed, startFolder?.path ?? null, cause instanceof Error ? cause.message : String(cause));
-        const again = await bestEffort(bb.log, "workflow helper model resolve", withResolvedModel({ ...request, provider: undefined as never, model: undefined as never, reasoning: undefined as never, resolved: undefined as never }, { avoidProvider: failed }), null);
+        const again = await bestEffort(bb.log, "workflow helper model resolve", withResolvedModel({ ...request, provider: undefined as never, model: undefined as never, reasoning: undefined as never, serviceTier: undefined as never, resolved: undefined as never }, { avoidProvider: failed, reason: "provider_start_failure" }), null);
         if (!again || again.provider === failed) throw cause;
         bb.log.warn(`workflow step ${request.stepKey}: ${failed} could not start (${cause instanceof Error ? cause.message.slice(0, 160) : String(cause)}); rerunning on ${again.provider}/${again.model}`);
-        const fallback = { ...request, provider: again.provider, model: again.model, reasoning: again.reasoning, serviceTier: undefined, spawnKey: `${request.spawnKey}:start` };
+        const fallback = { ...request, ...again, provider: again.provider, model: again.model, reasoning: again.reasoning, serviceTier: undefined, spawnKey: `${request.spawnKey}:start` };
         threadId = await findOrSpawn(fallback);
         await noteProviderStartSuccess(blockStore, startFolder?.hostId ?? null, fallback.provider ?? "", startFolder?.path ?? null);
         request = { ...request, provider: fallback.provider, model: fallback.model };
@@ -495,10 +494,10 @@ export function createWorkflowAgents() {
     if (limit && !request.intoThread) {
       const failed = request.provider ?? DEFAULT_PROVIDER;
       noteProviderLimit(bb, failed, request.model ?? null, limit);
-      const again = await bestEffort(bb.log, "workflow helper model resolve", withResolvedModel({ ...request, provider: undefined as never, model: undefined as never, reasoning: undefined as never, resolved: undefined as never }, { avoidProvider: failed }), null);
+      const again = await bestEffort(bb.log, "workflow helper model resolve", withResolvedModel({ ...request, provider: undefined as never, model: undefined as never, reasoning: undefined as never, serviceTier: undefined as never, resolved: undefined as never }, { avoidProvider: failed, reason: "provider_limit" }), null);
       // Nothing else on offer (the answer is the failed provider again): the step fails with the limit notice, it does not run the same pair twice.
       if (!again || again.provider === failed) throw new HelperFailure("provider_limit", `${failed}/${request.model ?? ""} hit a provider limit (${limit}) and no other model family is on offer on this machine`);
-      const fallback = { ...request, provider: again.provider, model: again.model, reasoning: again.reasoning, serviceTier: undefined, spawnKey: `${request.spawnKey}:limit` };
+      const fallback = { ...request, ...again, provider: again.provider, model: again.model, reasoning: again.reasoning, serviceTier: undefined, spawnKey: `${request.spawnKey}:limit` };
       rt.ctx.bb.log.warn(`workflow step ${request.stepKey}: ${request.provider}/${request.model} hit a provider limit (${limit}); rerunning on ${fallback.provider}/${fallback.model}`);
       // A fresh thread starts with the prompt: its first turn is the one to wait for, as for the first spawn.
       sentAt = undefined;
@@ -640,7 +639,7 @@ async function rememberAuthor(rt: ChainRuntime, workflowRunId: string, row: stri
  * through here, from the generic agent node to the goal audit and the contract planner (`run` resolves what was not resolved before).
  * `avoidProvider`: a provider that just hit its limit is taken out of the offer and no pin applies, so the answer is the role's next model.
  */
-export async function withResolvedModel(request: HelperRequest, options: { avoidProvider?: string | null } = {}): Promise<HelperRequest> {
+export async function withResolvedModel(request: HelperRequest, options: { avoidProvider?: string | null; reason?: HelperModelResolution["reason"] } = {}): Promise<HelperRequest> {
   const { rt } = request;
   const avoid = options.avoidProvider ?? null;
   const settings = (await bestEffort(rt.ctx.log, "workflow helper settings", Promise.resolve().then(() => rt.ctx.effectiveProjectSettings(rt.projectId, rt.runId ? getRunSettingsScopes(rt.ctx.db, rt.runId) : [])), null))?.values ?? {};
@@ -692,7 +691,8 @@ export async function withResolvedModel(request: HelperRequest, options: { avoid
   }
   if (chosen.issues.includes("escalated_for_role")) rt.ctx.log?.(`Lane Pilot: ${where} inherited a model too light for it; it runs on ${chosen.providerId}/${chosen.model} (the role's default)`);
   if (chosen.issues.includes("light_model_for_role")) rt.ctx.log?.(`Lane Pilot: ${where} runs on ${chosen.model}, a light model for that role, as the role table says`);
-  return { ...request, provider: chosen.providerId, model: chosen.model, reasoning: chosen.reasoningEffort, resolved: true, ...(chosen.serviceTier ? { serviceTier: chosen.serviceTier } : {}) };
+  const modelResolution = assembleHelperModelResolution({ role: request.role, requested: request.modelResolution?.requested, providerId: request.provider, model: request.model, reasoningEffort: request.reasoning, serviceTier: request.serviceTier, chosen, hostId, reason: options.reason });
+  return { ...request, provider: chosen.providerId, model: chosen.model, reasoning: chosen.reasoningEffort, resolved: true, modelResolution, ...(chosen.serviceTier ? { serviceTier: chosen.serviceTier } : {}) };
 }
 
 export const agentUsesKeyedSpawn = (rt: ChainRuntime | undefined) => Boolean(rt && keyedSpawnSupported(rt.ctx.bb));
