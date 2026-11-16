@@ -225,6 +225,18 @@ describe("P04-R7 sibling document writes through the real fs.write action", () =
     expect(spike).toContain("WAL wins");
   });
 
+  it("spike refuses a wrap_skill that is not a single safe segment and writes no skill file", async () => {
+    for (const unsafe of ["~root", "..", "a/b", "a\\b", ".hidden"]) {
+      const t = await setup({
+        experiment: [reply({ answered: true, decision: "d", document: "# Spike\n", skill_draft: "# skill\n", handoff: "answered" })],
+      });
+      dispose = t.dispose;
+      const summary = await t.start(await builtin("spike"), { question: "which journal mode " + unsafe, wrap_skill: unsafe }).done;
+      expect(summary.status, `${unsafe} was not refused`).toBe("failed");
+      expect(readdirSync(join(t.checkout, ".agents"), { withFileTypes: false }).includes("forge")).toBe(false);
+    }
+  });
+
   it("project-start persists the value map, never overwrites existing REQUIREMENTS.md (.new.md) and writes the roadmap skeleton", async () => {
     const t = await setup({
       value_map: [reply({ document: "# Value map\n\nFor the maker.\n", handoff: "mapped" })],

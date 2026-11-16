@@ -406,7 +406,7 @@ export function registerProjectActions(engine: WorkflowEngine, ctx: ServerCore, 
     const params = rec(rec(c.node).params);
     const phase = c.render(str(params.phase_id)).trim();
     const doc = oneLine(c.render(str(params.doc)), 120) || "DOC.md";
-    if (doc.includes("/") || doc.includes("\\") || doc.includes("..") || doc.includes("\0") || doc.startsWith(".")) throw new Error(`lp.doc_path: unsafe doc name "${doc}"`);
+    if (doc.includes("/") || doc.includes("\\") || doc.includes("..") || doc.includes("\0") || doc.startsWith(".") || doc.startsWith("~")) throw new Error(`lp.doc_path: unsafe doc name "${doc}"`);
     // A fixed folder other than the phases/research homes (the skills forge): the doc segment is validated the same
     // way and the folder is the graph's own constant — still rejected when it would leave the checkout.
     const dir = c.render(str(params.dir)).trim();
