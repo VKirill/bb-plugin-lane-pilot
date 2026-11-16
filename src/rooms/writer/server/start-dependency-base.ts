@@ -18,6 +18,11 @@ export function dependencyMerges(db: ServerCore["db"], runId: string, dependsOn:
   for (const dep of new Set(dependsOn)) {
     const row = rows.filter((candidate) => dependsOnTask([dep], candidate.task_id)).at(-1);
     if (!row) continue;
+    if (row.outcome === "reverted") {
+      // The historical accepted row remains visible for rollback/status, but it cannot satisfy a
+      // new dependent: the original merge is still an ancestor after `git revert` while its tree is gone.
+      throw new Error(`accepted dependency ${row.task_id} was reverted`);
+    }
     if (typeof row.merge_commit !== "string" || !/^[0-9a-f]{7,64}$/i.test(row.merge_commit)) {
       // A non-null merge is provenance, not an optional hint. Do not turn malformed persisted
       // provenance into the intentional no-merge case, and never interpolate it into a shell command.

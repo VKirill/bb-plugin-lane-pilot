@@ -18,7 +18,7 @@ const taskOf = (workspace: string, id: string, dependsOn: string[] = []): TaskV2
   objective: id, acceptance: ["done"], verify: "none", verification: [],
 });
 
-const makeWorld = (probe: "valid-alias" | "no-deps" | "no-merge" | "stale" | "host-failure" | "malformed" | "invalid-row") => {
+const makeWorld = (probe: "valid-alias" | "no-deps" | "no-merge" | "reverted" | "stale" | "host-failure" | "malformed" | "invalid-row") => {
   const repo = mkdtempSync(join(tmpdir(), "lp-dependency-proof-"));
   git(repo, "init", "-q", "-b", "main");
   writeFileSync(join(repo, "README.md"), "base\n");
@@ -47,7 +47,11 @@ const makeWorld = (probe: "valid-alias" | "no-deps" | "no-merge" | "stale" | "ho
   if (probe !== "no-merge") upsertAttemptChange(db as never, { attemptId: "dep-attempt", runId: "run", taskId: dependencyId }, { outcome: "merged", mergeCommit: probe === "invalid-row" ? "not-a-sha" : dependencyCommit });
   transitionAttempt(db, "dep-attempt", "accepted");
   createAttempt(db, { id: "child-attempt", runId: "run", taskId: "child" });
-  if (probe === "valid-alias" || probe === "no-deps" || probe === "no-merge") git(stale, "merge", "-q", "--ff-only", "main");
+  if (probe === "valid-alias" || probe === "no-deps" || probe === "no-merge" || probe === "reverted") git(stale, "merge", "-q", "--ff-only", "main");
+  if (probe === "reverted") {
+    git(stale, "revert", "--no-edit", dependencyCommit);
+    upsertAttemptChange(db as never, { attemptId: "dep-attempt", runId: "run", taskId: dependencyId }, { outcome: "reverted" });
+  }
 
   const spawned: unknown[] = [];
   const ctx = {
@@ -111,6 +115,15 @@ it("refuses the real stale git base before calling threads.spawn", async () => {
   const result = await world.writer.spawnWriterAttempt({ projectId: "P", runId: "run", taskId: "child", attemptId: "child-attempt", config: world.config, task: world.task, plan: "child", pmThreadId: "pm" });
   expect(result).toMatchObject({ ok: false, status: "spawn_rejected" });
   expect((result as { reason: string }).reason).toContain("attempt_worktree_base_missing_dependency");
+  expect(world.spawned).toHaveLength(0);
+});
+
+it("refuses a reverted accepted dependency even while its original merge remains an ancestor", async () => {
+  const world = makeWorld("reverted");
+  expect(() => git(world.stale, "merge-base", "--is-ancestor", world.dependencyCommit, "HEAD")).not.toThrow();
+  const result = await world.writer.spawnWriterAttempt({ projectId: "P", runId: "run", taskId: "child", attemptId: "child-attempt", config: world.config, task: world.task, plan: "child", pmThreadId: "pm" });
+  expect(result).toMatchObject({ ok: false, status: "spawn_rejected" });
+  expect((result as { reason: string }).reason).toContain("attempt_worktree_base_unproven");
   expect(world.spawned).toHaveLength(0);
 });
 

@@ -172,11 +172,12 @@ export function mergedAttemptChanges(db: RollbackDb, runId: string): Array<{ tas
     .all(runId) as Array<{ task_id: string; changed_json: string }>;
 }
 
-/** Merge commits of a run's accepted attempts (the phase's proof-of-work records). */
-export function acceptedChangeProofRows(db: RollbackDb, runId: string): Array<{ task_id: string; merge_commit: string; changed_json: string }> {
-  return db.prepare(`SELECT c.task_id AS task_id, c.merge_commit AS merge_commit, c.changed_json AS changed_json FROM lane_pilot_attempt_change c
+/** Merge commits of a run's accepted attempts (the phase's proof-of-work records). Outcome is exposed so start-time readers can
+ * distinguish an active accepted merge from one historically accepted and later reverted; the historical row itself remains. */
+export function acceptedChangeProofRows(db: RollbackDb, runId: string): Array<{ task_id: string; merge_commit: string; changed_json: string; outcome: string | null }> {
+  return db.prepare(`SELECT c.task_id AS task_id, c.merge_commit AS merge_commit, c.changed_json AS changed_json, c.outcome AS outcome FROM lane_pilot_attempt_change c
     JOIN ${ATTEMPT_TABLE} a ON a.id=c.attempt_id WHERE c.run_id=? AND a.state='accepted' AND c.merge_commit IS NOT NULL ORDER BY a.updated_at, a.rowid`)
-    .all(runId) as Array<{ task_id: string; merge_commit: string; changed_json: string }>;
+    .all(runId) as Array<{ task_id: string; merge_commit: string; changed_json: string; outcome: string | null }>;
 }
 
 /** Accepted attempts' size evidence (created, finished, changed files, attempt count) for the median task size. */
