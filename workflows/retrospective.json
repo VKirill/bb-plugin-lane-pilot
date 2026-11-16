@@ -71,6 +71,15 @@
       "type": "agent",
       "role": "memory",
       "src": "maestro-flow:workflows/retrospective.md",
+      "with": {
+        "lenses": {
+          "by_mode": {
+            "quick": ["technical", "process"],
+            "standard": "{{$inputs.lenses}}",
+            "full": "{{$inputs.lenses}}"
+          }
+        }
+      },
       "prompt": "Metrics from the run (tasks planned/accepted/failed, rework iterations, severity distribution, failure classes), then the lenses in parallel inside one report. Insight id INS-{8hex} = hash of lens + title; wins, challenges, watch patterns per lens; route each as rule candidate, note or task, as a candidate only.",
       "out": {
         "insights": "Insight[]",
@@ -128,7 +137,7 @@
       "map": {
         "status": "done",
         "insights": "retro.insights",
-        "retro_path": "retro.retro_path",
+        "retro_path": "living.path",
         "candidates_staged": "stage.staged"
       }
     }

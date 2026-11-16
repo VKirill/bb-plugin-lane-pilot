@@ -58,6 +58,7 @@
       "id": "critic_a",
       "type": "agent",
       "role": "plan-critic",
+      "plugins": ["lane-pilot"],
       "title": {
         "en": "Critic A",
         "ru": "Критик A"
@@ -106,6 +107,7 @@
       "id": "converge",
       "type": "agent",
       "role": "plan-critic",
+      "plugins": ["lane-pilot"],
       "title": {
         "en": "Converge",
         "ru": "Свести"

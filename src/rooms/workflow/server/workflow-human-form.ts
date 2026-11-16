@@ -16,7 +16,7 @@ export const workflowQuestionKey = (runId: string, stepKey: string) => `workflow
 // ---------------------------------------------------------------- the owner's question
 
 /** The enum values that carry words, not a decision: a free answer may stand for one of them, never for approve/deploy/send/proceed. */
-const TEXT_KINDS = ["text", "answered", "provide", "given", "reason", "chosen", "resolved"];
+const TEXT_KINDS = ["text", "answered", "provide", "given", "reason", "chosen", "resolved", "issues"];
 
 /** What the form offers: the values of the node's `answer_kind` that a person can pick (not the clock's `timeout`, not the skip markers). */
 export function humanOptions(node: Extract<GraphNode, { type: "human" }>): string[] {

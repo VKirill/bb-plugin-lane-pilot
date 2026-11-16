@@ -250,7 +250,7 @@
         "issues": "[]"
       },
       "src": "maestro-flow:workflows/test.md, ref/severity-inference.md",
-      "prompt": "One scenario at a time (what you should see). Owner answers ok / skip / a remark. Severity is inferred from the owner's words - blocker (unusable, crash, data loss), major (wrong result, broken flow without a workaround), minor, trivial; take the strongest signal, on doubt the higher one; never ask how serious. Silence or timeout is never a pass: the scenario is deferred.",
+      "prompt": "One scenario at a time (what you should see). Owner answers ok or a remark describing any issue. Severity is inferred from the owner's words - blocker (unusable, crash, data loss), major (wrong result, broken flow without a workaround), minor, trivial; take the strongest signal, on doubt the higher one; never ask how serious. Silence or timeout is never a pass: the scenario is deferred.",
       "out": {
         "answer_kind": "ok|issues|timeout",
         "issues": "Finding[]",
