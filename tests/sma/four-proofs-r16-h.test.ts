@@ -70,7 +70,7 @@ describe("region 16 batch h: project start, workspaces and the profile", () => {
     const w = await observeH.k_wst_project();
     expect(w.fresh.executed).toEqual(["tree", "probe", "value_map", "write_value_map", "preview", "profile_write", "research", "requirements", "recap", "write_roadmap", "write_project", "add_phases", "done"]);
     expect(w.fresh.nextSteps).toEqual(["a", "b", "c"]);
-    expect(w.fresh.prompt).toContain("the project's Vision, Value and Limits as raw Markdown in project_document");
+    expect(w.fresh.prompt).toContain("In project_document return the raw Markdown of .agents/planning/PROJECT.md built from VALUE-MAP.md: Vision, Value and Limits");
     expect(w.fresh.prompt).toContain("the roadmap skeleton as raw Markdown in roadmap_draft");
     expect(w.withRoadmap.executed).toEqual(["tree", "probe", "resumed"]);
     expect(w.withRoadmap.nextSteps).toEqual(["the project is already started — continue with project-resume"]);

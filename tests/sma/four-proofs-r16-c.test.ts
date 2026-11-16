@@ -237,9 +237,9 @@ describe("the stand-alone commands (n1215 … n1236)", () => {
 
   it("[sma:k_c_spike] a spike that answered its question and passed the check is reported answered with its decision and file; an experiment that did not answer, or a result that fails the check, is inconclusive and keeps no skill draft", async () => {
     const seen = await observeC.k_c_spike();
-    expect(seen.ok).toEqual({ path: ["spike_new", "experiment", "write_spike", "write_skill", "goal_check", "answered"], out: { status: "answered", decision: "yes, fts5 handles 1M rows", spike_path: "spikes/fts.md", skill_draft: "draft.md", skill_path: "" } });
-    expect(seen.failed).toEqual({ path: ["spike_new", "experiment", "write_spike", "write_skill", "goal_check", "inconclusive"], status: "inconclusive", draft: "" });
-    expect(seen.none).toEqual({ path: ["spike_new", "experiment", "write_spike", "write_skill", "inconclusive"], status: "inconclusive", draft: "" });
+    expect(seen.ok).toEqual({ path: ["spike_new", "experiment", "write_spike", "skill_dir", "write_skill", "goal_check", "answered"], out: { status: "answered", decision: "yes, fts5 handles 1M rows", spike_path: "spikes/fts.md", skill_draft: "draft.md", skill_path: "" } });
+    expect(seen.failed).toEqual({ path: ["spike_new", "experiment", "write_spike", "skill_dir", "write_skill", "goal_check", "inconclusive"], status: "inconclusive", draft: "" });
+    expect(seen.none).toEqual({ path: ["spike_new", "experiment", "write_spike", "skill_dir", "write_skill", "inconclusive"], status: "inconclusive", draft: "" });
   });
 
   it("[sma:k_c_quick] a small issue goes the short way — class, one task from the planner, the writer, a row in STATE, closed; a plan of several tasks or a high risk is proposed to the full chain and writes nothing; a failed writer ends it partial", async () => {

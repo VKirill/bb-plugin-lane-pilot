@@ -109,7 +109,7 @@ const commitFile = (t: Awaited<ReturnType<typeof setup>>, path: string, body: st
 const MAIN_START = {
   value_map: "Value map builder, before asking anything: from README, the passport (project-onboard), the site and the code — who the product is for, the job they hire it for, what they get, how we would know it works. Return the complete raw Markdown of VALUE-MAP.md in document; the code-owned writer persists it to .agents/planning/. This read-only helper does not write files.",
   preview: "Stack and tests: languages, frameworks, the test command and whether it is green. Memory preview: report what the <project_memory> block of this brief holds (the hub corpus's confirmed notes of this project; no block means the corpus holds nothing yet); write nothing to memory. Infra profile: hosts, start, deploy, logs into lane-plan profile --set (the one profile writer).",
-  recap: "Working style and risk from the owner's anamnesis. Recap in five lines and three next steps, plus the roadmap skeleton as raw Markdown in roadmap_draft (phases in order; the code-owned writer persists it to .agents/planning/ROADMAP.md and registers the phases as roadmap rows — return them in phases too) and the project's Vision, Value and Limits as raw Markdown in project_document (the code-owned writer persists it to .agents/planning/PROJECT.md; an existing file is left byte for byte and the new text lands in PROJECT.new.md). This read-only helper does not write files and runs no lane-plan commands.",
+  recap: "Working style and risk from the owner's anamnesis. Recap in five lines and three next steps, plus the roadmap skeleton as raw Markdown in roadmap_draft (phases in order; the code-owned writer persists it to .agents/planning/ROADMAP.md and registers the phases as roadmap rows — return them in phases too). This read-only helper does not write files and runs no lane-plan commands.",
 };
 const startStubs = { value_map: { document: "v" }, preview: { stack: {}, memory: {} }, recap: { next_steps: ["a", "b", "c"], roadmap_draft: "# roadmap\n", project_document: "# project\n", phases: ["1 first"] } };
 /** An install with the start research on and a profile on disk (the `ask` is a person's wait on a real engine, so the fixture answers it by having the profile). */
@@ -176,7 +176,6 @@ describe("parity d4 workflows b-2", () => {
   it("[sma:k_c_note] a note is one write and one confirmation line", async () => {
     const t = await setup(); dispose = t.dispose;
     const summary = await t.start(wf("note-add.json"), { text: "deploy is manual" }).done;
-    if (summary.status !== "succeeded") console.error("DBG4:", JSON.stringify(summary).slice(0, 700));
     expect(summary.status).toBe("succeeded");
     expect(summary.output).toMatchObject({ status: "done", confirmation: "note saved" });
     const notes = t.writes.filter((w) => w.path.includes(".agents/todos/notes/"));
@@ -215,19 +214,21 @@ describe("parity d4 workflows b-2", () => {
     const calls = stubModels(t, startStubs);
     const summary = await t.start(wf("project-start.json"), {}).done;
     expect(summary.status).toBe("succeeded");
-    expect(executed(t, summary.runId)).toEqual(["tree", "value_map", "write_value_map", "preview", "recap", "write_roadmap", "write_project", "add_phases", "done"]);
-    expect(skippedOf(t, summary.runId)).toEqual(["probe", "profile_write", "ask", "research", "write_research_stack", "write_research_features", "write_research_architecture", "write_research_pitfalls", "requirements", "write_requirements"]);
+    expect(executed(t, summary.runId)).toEqual(["tree", "value_map", "write_value_map", "preview", "recap", "write_roadmap", "add_phases", "done"]);
+    expect(skippedOf(t, summary.runId)).toEqual(["probe", "profile_write", "ask", "research", "write_research_stack", "write_research_features", "write_research_architecture", "write_research_pitfalls", "requirements", "write_requirements", "write_project"]);
     expect(calls.map((c) => c.node)).toEqual(["value_map", "preview", "recap"]);
     for (const call of calls) expect(call.prompt.trim()).toBe(MAIN_START[call.node as keyof typeof MAIN_START]);
+    // Off is exactly main's prompt: no PROJECT.md instruction and no PROJECT.md write.
+    expect(calls.find((c) => c.node === "recap")!.prompt).not.toContain("PROJECT.md");
     expect(summary.output).toMatchObject({ status: "done", next_steps: ["a", "b", "c"] });
     // The model writes nothing: the code-owned writers persist its documents, each a non-overwrite or create-only write.
     const paths = [...new Set(t.writes.map((w) => w.path.slice(t.checkout.length + 1)).filter((p) => p.startsWith(".agents/planning/")))].sort();
-    expect(paths).toEqual([".agents/planning/PROJECT.md", ".agents/planning/ROADMAP.md", ".agents/planning/VALUE-MAP.md"]);
+    expect(paths).toEqual([".agents/planning/ROADMAP.md", ".agents/planning/VALUE-MAP.md"]);
     // An install that has the map, the roadmap and the profile re-runs the start as it always did.
     mkdirSync(join(t.checkout, ".agents/planning"), { recursive: true });
     for (const file of ["VALUE-MAP.md", "ROADMAP.md", "PROFILE.md"]) writeFileSync(join(t.checkout, ".agents/planning", file), "x\n");
     const again = await t.start(wf("project-start.json"), {}).done;
-    expect(executed(t, again.runId)).toEqual(["tree", "value_map", "write_value_map", "preview", "recap", "write_roadmap", "write_project", "add_phases", "done"]);
+    expect(executed(t, again.runId)).toEqual(["tree", "value_map", "write_value_map", "preview", "recap", "write_roadmap", "add_phases", "done"]);
     expect(again.output).toMatchObject({ status: "done" });
     // The sim of the same graph: the same model nodes, no human.
     const sim = await runSim("project-start", { input: {}, stubs: { "lp.tree_counts": { enabled: "off" }, ...startStubs } });

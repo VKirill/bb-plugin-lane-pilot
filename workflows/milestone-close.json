@@ -506,10 +506,9 @@
         },
         "retro": {
           "insights": [],
-          "retro_path": "",
           "metrics": {},
           "project_update": "",
-          "project_exists": false
+          "document": ""
         },
         "write_retro": {
           "retro_path": ".agents/milestones/run-1.retro.md"

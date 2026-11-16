@@ -442,4 +442,29 @@ describe("P04-R7 sibling document writes through the real fs.write action", () =
       expect(writtenByEngineSince(t.checkout, 0).size).toBe(0);
     }
   });
+
+  it("a diverted ROADMAP.new.md receives the phase rows while the existing ROADMAP.md stays byte for byte", async () => {
+    const writeThenAdd = wf({
+      id: "t-roadmap-divert",
+      inputs: [{ name: "phases", type: "any" }],
+      outputs: [],
+      nodes: [
+        { id: "write", type: "action", action: "fs.write", params: { path: ".agents/planning/ROADMAP.md", contents: "# fresh roadmap\n", mode: "non_overwrite" }, output: [{ name: "roadmap_path", type: "string" }] },
+        { id: "add", type: "action", action: "lp.phase_add", params: { goal: "grow", path: "{{write.roadmap_path}}" }, output: [{ name: "added", type: "array" }, { name: "count", type: "number" }] },
+      ],
+      edges: [{ from: "start", to: "write" }, { from: "write", to: "add" }, { from: "add", to: "end" }],
+    });
+    const original = "# Existing roadmap\n\n- [x] old phase — kept\n\n## Backlog\n\n- later\n";
+    const t = await setup({});
+    dispose = t.dispose;
+    mkdirSync(join(t.checkout, ".agents/planning"), { recursive: true });
+    writeFileSync(join(t.checkout, ".agents/planning/ROADMAP.md"), original);
+    const summary = await t.start(writeThenAdd, { phases: ["1 coverage", "2 the gate"] }).done;
+    expect(summary.status, summary.error ?? undefined).toBe("succeeded");
+    expect(file(t.checkout, ".agents/planning/ROADMAP.md")).toBe(original);
+    const diverted = file(t.checkout, ".agents/planning/ROADMAP.new.md")!;
+    expect(diverted).toContain("# fresh roadmap");
+    expect(diverted).toContain("- [ ] 1 coverage — grow");
+    expect(diverted).toContain("- [ ] 2 the gate — grow");
+  });
 });

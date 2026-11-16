@@ -61,7 +61,7 @@
         "en": "Framework selection",
         "ru": "Выбор фреймворка"
       },
-      "prompt": "AI framework selector: from the goal, choose the kind of call (typed judgment, generation, retrieval, ranking), the framework and the model. Build a decision matrix of 2–3 options: rows are the options, columns the criteria (cost per call, latency, limits, failure modes, fit to the goal), each scored 0–5 with a one-line reason and a weight. Recommend the option with the highest weighted total; the table goes in the reply and in document, the raw Markdown the code-owned writer persists to .agents/research/model-<slug>.md. This read-only helper does not write files.",
+      "prompt": "AI framework selector: from the goal, choose the kind of call (typed judgment, generation, retrieval, ranking), the framework and the model. Build a decision matrix of 2–3 options: rows are the options, columns the criteria (cost per call, latency, limits, failure modes, fit to the goal), each scored 0–5 with a one-line reason and a weight. Recommend the option with the highest weighted total; the table goes in the reply and in document, the raw Markdown the code-owned writer persists to .agents/research/model-<date>-<run>.md. This read-only helper does not write files.",
       "out": {
         "framework": "string",
         "options": "any",

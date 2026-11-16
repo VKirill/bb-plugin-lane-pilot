@@ -73,7 +73,7 @@
       "params": {
         "counts_note": "Open VALUE-MAP.md with these five lines counted from the tree itself, verbatim:",
         "profile_note": "Exception for this run: do not run the writer yourself, and ignore any instruction above that names `lane-plan profile --set` (there is no lane-plan here). Return the infra profile as the JSON object `profile` (key: value) with only these keys: stack, test_command, release, hosts, start, deploy, logs, style; the next step stores it as the project's profile settings with the one profile writer, which refuses secrets and any other key (the same settings `bb lane-pilot profile` reads and sets).",
-        "recap_note": "Read .agents/planning/research/STACK.md, FEATURES.md, ARCHITECTURE.md and PITFALLS.md and the requirements before the roadmap, and build the roadmap skeleton from the requirements. In project_document return the PROJECT.md text built from VALUE-MAP.md: Vision, Value and Limits (the no-gos and the risks the anamnesis names); the code-owned writer persists it — a file that already exists is never overwritten, the new text lands in PROJECT.new.md next to it."
+        "recap_note": "Read .agents/planning/research/STACK.md, FEATURES.md, ARCHITECTURE.md and PITFALLS.md and the requirements before the roadmap, and build the roadmap skeleton from the requirements. In project_document return the raw Markdown of .agents/planning/PROJECT.md built from VALUE-MAP.md: Vision, Value and Limits (the no-gos and the risks the anamnesis names); the code-owned writer persists it — an existing file is left byte for byte and the new text lands in PROJECT.new.md next to it."
       }
     },
     {
@@ -285,11 +285,11 @@
         "en": "Recap and next steps",
         "ru": "Итог и шаги"
       },
-      "prompt": "Working style and risk from the owner's anamnesis. Recap in five lines and three next steps, plus the roadmap skeleton as raw Markdown in roadmap_draft (phases in order; the code-owned writer persists it to .agents/planning/ROADMAP.md and registers the phases as roadmap rows — return them in phases too) and the project's Vision, Value and Limits as raw Markdown in project_document (the code-owned writer persists it to .agents/planning/PROJECT.md; an existing file is left byte for byte and the new text lands in PROJECT.new.md). This read-only helper does not write files and runs no lane-plan commands. {{tree.recap_note}}",
+      "prompt": "Working style and risk from the owner's anamnesis. Recap in five lines and three next steps, plus the roadmap skeleton as raw Markdown in roadmap_draft (phases in order; the code-owned writer persists it to .agents/planning/ROADMAP.md and registers the phases as roadmap rows — return them in phases too). This read-only helper does not write files and runs no lane-plan commands. {{tree.recap_note}}",
       "out": {
         "next_steps": "string[]",
         "roadmap_draft": "string",
-        "project_document": "string",
+        "project_document": "string?",
         "phases": "string[]"
       },
       "guards": {
@@ -520,7 +520,7 @@
       "out": {
         "project_path": "string"
       },
-      "skip_when": "!recap.project_document",
+      "skip_when": "tree.enabled != 'on' || !recap.project_document",
       "skip_out": {
         "project_path": ""
       }
@@ -540,7 +540,10 @@
         "added": "string[]",
         "count": "int"
       },
-      "skip_when": "!recap.phases.length"
+      "skip_when": "!recap.phases.length",
+      "params": {
+        "path": "{{write_roadmap.roadmap_path}}"
+      }
     }
   ],
   "edges": [

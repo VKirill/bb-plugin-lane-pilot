@@ -167,13 +167,13 @@ describe("on-map command graph parity", () => {
 
   it("spike distinguishes an answered experiment from an inconclusive one", async () => {
     const answered = await runSim("spike", { input: { question: "can FTS hold 1M rows" }, stubs: { experiment: { answered: true, decision: "yes", document: "# spike\n", skill_draft: "" }, goal_check: { ok: true, verdict: "pass" } } });
-    expect(pathOf(answered)).toBe("spike_new experiment write_spike write_skill goal_check answered");
+    expect(pathOf(answered)).toBe("spike_new experiment write_spike skill_dir write_skill goal_check answered");
     expect(out(answered)).toMatchObject({ status: "answered", decision: "yes" });
     const unclear = await runSim("spike", { input: { question: "can FTS hold 1M rows" }, stubs: { experiment: { answered: false, decision: "unclear", document: "# spike\n", skill_draft: "draft.md" } } });
-    expect(pathOf(unclear)).toBe("spike_new experiment write_spike write_skill inconclusive");
+    expect(pathOf(unclear)).toBe("spike_new experiment write_spike skill_dir write_skill inconclusive");
     expect(out(unclear)).toMatchObject({ status: "inconclusive" });
     const failedCheck = await runSim("spike", { input: { question: "can FTS hold 1M rows" }, stubs: { experiment: { answered: true, decision: "yes", document: "# spike\n", skill_draft: "" }, goal_check: { ok: false, verdict: "fail" } } });
-    expect(pathOf(failedCheck)).toBe("spike_new experiment write_spike write_skill goal_check inconclusive");
+    expect(pathOf(failedCheck)).toBe("spike_new experiment write_spike skill_dir write_skill goal_check inconclusive");
     expect(out(failedCheck)).toMatchObject({ status: "inconclusive" });
   });
 

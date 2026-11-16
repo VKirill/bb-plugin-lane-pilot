@@ -208,8 +208,8 @@ describe("project start, new project, code analysis (n1344, n1345, n1347, n1348)
     expect(seen.recapOut).toEqual(["a", "b", "c"]);
     expect(seen.quick).toEqual(["tree", "probe", "value_map", "write_value_map", "preview", "profile_write", "ask", "recap", "write_roadmap", "write_project", "add_phases", "done"]);
     expect(seen.quickSkipped).toEqual(["research", "write_research_stack", "write_research_features", "write_research_architecture", "write_research_pitfalls", "requirements", "write_requirements"]);
-    expect(seen.off).toEqual(["tree", "value_map", "write_value_map", "preview", "recap", "write_roadmap", "write_project", "add_phases", "done"]);
-    expect(seen.offSkipped).toEqual(["probe", "profile_write", "ask", "research", "write_research_stack", "write_research_features", "write_research_architecture", "write_research_pitfalls", "requirements", "write_requirements"]);
+    expect(seen.off).toEqual(["tree", "value_map", "write_value_map", "preview", "recap", "write_roadmap", "add_phases", "done"]);
+    expect(seen.offSkipped).toEqual(["probe", "profile_write", "ask", "research", "write_research_stack", "write_research_features", "write_research_architecture", "write_research_pitfalls", "requirements", "write_requirements", "write_project"]);
     expect(seen.requirementsCalls).toEqual([1, 0, 0]);
     expect(seen.researchCalls).toEqual([1, 0, 0]);
   });

@@ -344,8 +344,12 @@ export function registerProjectActions(engine: WorkflowEngine, ctx: ServerCore, 
   // each phase line becomes one `- [ ] <name> — <goal>` row appended at the end of ROADMAP.md (before the Backlog section when
   // it has one). Names carry their own number; whitespace and leading list/heading marks are collapsed so a row is one line.
   action("lp.phase_add", async (c, rt) => {
-    const path = ".agents/planning/ROADMAP.md";
     const params = rec(rec(c.node).params);
+    // The rows land in the roadmap the writer actually produced: ROADMAP.md, or ROADMAP.new.md when a non-overwrite
+    // write diverted — never anywhere else, and never silently into the preserved original.
+    const rendered = c.render(str(params.path)).trim();
+    const path = rendered === "" ? ".agents/planning/ROADMAP.md" : rendered;
+    if (path !== ".agents/planning/ROADMAP.md" && path !== ".agents/planning/ROADMAP.new.md") throw new Error(`lp.phase_add: the roadmap target "${path}" is not .agents/planning/ROADMAP.md or ROADMAP.new.md`);
     const goal = oneLine(c.render(str(params.goal)), 600);
     const phases = list(c.resolve("frame.phases") ?? c.resolve("recap.phases") ?? c.resolve("$inputs.phases")).map((value) => oneLine(str(value), 200)).filter(Boolean).slice(0, 50);
     if (!phases.length) return { added: [] as string[], count: 0 };
@@ -403,6 +407,13 @@ export function registerProjectActions(engine: WorkflowEngine, ctx: ServerCore, 
     const phase = c.render(str(params.phase_id)).trim();
     const doc = oneLine(c.render(str(params.doc)), 120) || "DOC.md";
     if (doc.includes("/") || doc.includes("\\") || doc.includes("..") || doc.includes("\0") || doc.startsWith(".")) throw new Error(`lp.doc_path: unsafe doc name "${doc}"`);
+    // A fixed folder other than the phases/research homes (the skills forge): the doc segment is validated the same
+    // way and the folder is the graph's own constant — still rejected when it would leave the checkout.
+    const dir = c.render(str(params.dir)).trim();
+    if (dir) {
+      if (dir.includes("\\") || dir.includes("..") || dir.includes("\0") || dir.startsWith("/") || dir.split("/").some((seg) => !seg || seg === "." || seg.startsWith("~"))) throw new Error(`lp.doc_path: unsafe dir "${dir}"`);
+      return { path: `${dir}/${doc}` };
+    }
     if (!phase) return { path: `.agents/research/${doc}` };
     if (phase.includes("/") || phase.includes("\\") || phase.includes("..") || phase.includes("\0") || phase.startsWith(".") || phase.startsWith("~")) throw new Error(`lp.doc_path: the phase id "${phase}" is not a single path segment`);
     return { path: `.agents/phases/${phase}/${doc}` };

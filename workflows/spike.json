@@ -163,6 +163,26 @@
       }
     },
     {
+      "id": "skill_dir",
+      "type": "action",
+      "action": "lp.doc_path",
+      "params": {
+        "dir": ".agents/forge/skills",
+        "doc": "{{$inputs.wrap_skill}}"
+      },
+      "out": {
+        "path": "string"
+      },
+      "title": {
+        "en": "Validate the wrap-skill folder",
+        "ru": "Проверить папку навыка"
+      },
+      "skip_when": "!$inputs.wrap_skill",
+      "skip_out": {
+        "path": ""
+      }
+    },
+    {
       "id": "write_skill",
       "type": "action",
       "action": "fs.write",
@@ -171,7 +191,7 @@
         "ru": "Сохранить черновик скилла"
       },
       "params": {
-        "path": ".agents/forge/skills/{{$inputs.wrap_skill}}/SKILL.md",
+        "path": "{{skill_dir.path}}/SKILL.md",
         "contents": "{{experiment.skill_draft}}",
         "mode": "non_overwrite"
       },
@@ -196,7 +216,7 @@
     },
     {
       "from": "write_spike",
-      "to": "write_skill"
+      "to": "skill_dir"
     },
     {
       "from": "write_skill",
@@ -220,6 +240,10 @@
     {
       "from": "goal_check",
       "to": "inconclusive"
+    },
+    {
+      "from": "skill_dir",
+      "to": "write_skill"
     }
   ],
   "test": {
@@ -246,6 +270,7 @@
         "spike_new",
         "experiment",
         "write_spike",
+        "skill_dir",
         "write_skill",
         "goal_check",
         "answered"
