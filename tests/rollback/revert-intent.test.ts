@@ -28,6 +28,19 @@ function setupRepo() {
   return { repo, changeSha, expectedCommit, expectedTree };
 }
 
+function setupPreMergeRepo() {
+  const repo = mkdtempSync(join(tmpdir(), "lp-revert-premerge-"));
+  git(repo, "init", "-q", "-b", "main");
+  writeFileSync(join(repo, "README.md"), "base\n"); git(repo, "add", "README.md"); git(repo, "commit", "-q", "-m", "base");
+  writeFileSync(join(repo, "dependency.md"), "dependency\n"); git(repo, "add", "dependency.md"); git(repo, "commit", "-q", "-m", "dependency");
+  const baseHead = git(repo, "rev-parse", "HEAD");
+  git(repo, "switch", "-q", "-c", "rollback-scratch"); git(repo, "revert", "--no-edit", baseHead);
+  const expectedCommit = git(repo, "rev-parse", "HEAD");
+  const expectedTree = git(repo, "rev-parse", "HEAD^{tree}");
+  git(repo, "switch", "-q", "main");
+  return { repo, baseHead, expectedCommit, expectedTree };
+}
+
 function setupDb(repo: string) {
   const { bb } = createFakePluginHost({ pluginId: "lane-pilot" });
   const db = openDatabase(bb);
@@ -54,7 +67,7 @@ it("recovers a landed revert from a KV intent using actual Git and SQLite, then 
     if (method !== "runCommand") throw new Error(`unexpected ${method}`);
     return runCommandOnHost({ requestedHostId: "h", cwd: input.cwd, command: input.command, timeoutSec: 30 });
   } };
-  const rollback = createRollback({ bb, db, host, log() {} } as never, {} as never).rollback;
+  const rollback = createRollback({ bb, db, host, log() {}, configForRun: async () => ({ hostId: "h" }) } as never, {} as never).rollback;
   expect(await rollback.recoverRevertIntents()).toEqual(["dep"]);
   expect((await readRevertIntents(bb.storage.kv as never, "run", "dep")).state).toBe("none");
   expect((db.prepare("SELECT outcome FROM lane_pilot_attempt_change WHERE attempt_id='dep-attempt'").get() as { outcome: string }).outcome).toBe("reverted");
@@ -69,10 +82,54 @@ it("retains a lost-ack intent when the host is unknown, then settles on a later 
     if (lost) { lost = false; throw new Error("transport lost"); }
     return runCommandOnHost({ requestedHostId: "h", cwd: input.cwd, command: input.command, timeoutSec: 30 });
   } };
-  const rollback = createRollback({ bb, db, host, log() {} } as never, {} as never).rollback;
+  const rollback = createRollback({ bb, db, host, log() {}, configForRun: async () => ({ hostId: "h" }) } as never, {} as never).rollback;
   expect(await rollback.recoverRevertIntents()).toEqual([]);
   expect((await readRevertIntents(bb.storage.kv as never, "run", "dep")).state).toBe("pending");
   expect(await rollback.recoverRevertIntents()).toEqual(["dep"]);
+});
+
+it("retains a pre-merge crash intent when the scratch commit exists but is not in base", async () => {
+  const repo = setupPreMergeRepo(); const { bb, db } = setupDb(repo.repo);
+  const record = { ...intent(repo.repo, repo.expectedCommit, repo.expectedTree), baseHead: repo.baseHead };
+  await writeRevertIntent(bb.storage.kv as never, record);
+  let probes = 0;
+  const host = { call: async (method: string, input: { cwd: string; command: string }) => {
+    if (method !== "runCommand") throw new Error(`unexpected ${method}`);
+    probes++;
+    return runCommandOnHost({ requestedHostId: "h", cwd: input.cwd, command: input.command, timeoutSec: 30 });
+  } };
+  const rollback = createRollback({ bb, db, host, log() {}, configForRun: async () => ({ hostId: "h" }) } as never, {} as never).rollback;
+  expect(await rollback.recoverRevertIntents()).toEqual([]);
+  expect(probes).toBe(1);
+  expect((await readRevertIntents(bb.storage.kv as never, "run", "dep")).state).toBe("pending");
+  expect((db.prepare("SELECT outcome FROM lane_pilot_attempt_change WHERE attempt_id='dep-attempt'").get() as { outcome: string }).outcome).toBe("merged");
+});
+
+it("retains wrong-host intent without probing that host", async () => {
+  const repo = setupRepo(); const { bb, db } = setupDb(repo.repo);
+  await writeRevertIntent(bb.storage.kv as never, { ...intent(repo.repo, repo.expectedCommit, repo.expectedTree), hostId: "wrong-host" });
+  let probes = 0;
+  const host = { call: async () => { probes++; throw new Error("must not probe wrong binding"); } };
+  const rollback = createRollback({ bb, db, host, log() {}, configForRun: async () => ({ hostId: "h" }) } as never, {} as never).rollback;
+  expect(await rollback.recoverRevertIntents()).toEqual([]);
+  expect(probes).toBe(0);
+  expect((await readRevertIntents(bb.storage.kv as never, "run", "dep")).state).toBe("pending");
+});
+
+it.each(["wrong-base", "orphan-attempt", "nonaccepted-attempt", "cross-run"] as const)("retains %s intent without settlement or host probing", async (kind) => {
+  const repo = setupRepo(); const { bb, db } = setupDb(repo.repo);
+  let record = intent(repo.repo, repo.expectedCommit, repo.expectedTree);
+  if (kind === "wrong-base") record = { ...record, basePath: `${repo.repo}-other` };
+  if (kind === "orphan-attempt") record = { ...record, attemptIds: ["missing-attempt"], opId: `${record.opId}/orphan` };
+  if (kind === "nonaccepted-attempt") db.prepare("UPDATE lane_pilot_attempt SET state='blocked' WHERE id='dep-attempt'").run();
+  if (kind === "cross-run") record = { ...record, runId: "other-run", opId: `other-run/${record.opId}` };
+  await writeRevertIntent(bb.storage.kv as never, record);
+  let probes = 0;
+  const host = { call: async () => { probes++; throw new Error("must not probe an invalid binding"); } };
+  const rollback = createRollback({ bb, db, host, log() {}, configForRun: async () => ({ hostId: "h" }) } as never, {} as never).rollback;
+  expect(await rollback.recoverRevertIntents()).toEqual([]);
+  expect(probes).toBe(0);
+  expect((await readRevertIntents(bb.storage.kv as never, record.runId, record.taskId)).state).toBe("pending");
 });
 
 it("keeps a malformed matching KV record fail-closed", async () => {

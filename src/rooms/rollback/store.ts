@@ -31,7 +31,7 @@ const validIntent = (value: unknown): value is RevertIntent => {
   if (!value || typeof value !== "object") return false;
   const row = value as Partial<RevertIntent>;
   return typeof row.opId === "string" && typeof row.runId === "string" && typeof row.taskId === "string" && typeof row.projectId === "string"
-    && typeof row.hostId === "string" && typeof row.basePath === "string" && Array.isArray(row.attemptIds) && row.attemptIds.length > 0 && row.attemptIds.every((id) => typeof id === "string" && id.length > 0)
+    && typeof row.hostId === "string" && typeof row.basePath === "string" && Array.isArray(row.attemptIds) && row.attemptIds.length > 0 && new Set(row.attemptIds).size === row.attemptIds.length && row.attemptIds.every((id) => typeof id === "string" && id.length > 0)
     && commitList(row.changeSha) && sha(row.baseHead) && sha(row.expectedCommit) && sha(row.expectedTree) && typeof row.trailer === "string"
     && typeof row.createdAt === "number" && Number.isFinite(row.createdAt);
 };
@@ -81,9 +81,13 @@ export type RevertSettlement = {
 /** The receipt and all compensation outcomes become one SQLite commit. The intent is cleared only after this returns. */
 export function settleRevert(db: RollbackDb, input: RevertSettlement): number {
   const settle = (db as Database.Database).transaction(() => {
-    for (const attemptId of input.attemptIds) {
+    const commits = input.changeSha.split(",");
+    if (commits.length !== input.attemptIds.length || commits.some((commit) => !sha(commit))) throw new Error("revert change provenance is malformed");
+    for (const [index, attemptId] of input.attemptIds.entries()) {
       const attempt = getAttemptChange(db, attemptId);
-      if (!attempt || attempt.runId !== input.runId || attempt.taskId !== input.taskId) throw new Error(`revert attempt ${attemptId} no longer matches its intent`);
+      if (!attempt || attempt.runId !== input.runId || attempt.taskId !== input.taskId || attempt.mergeCommit !== commits[index] || attempt.outcome !== "merged") {
+        throw new Error(`revert attempt ${attemptId} no longer matches its accepted change intent`);
+      }
     }
     const id = appendTaskReceipt(db, { kind: "revert", projectId: input.projectId, runId: input.runId, taskId: input.taskId, state: "merged",
       summary: input.summary, attemptId: input.attemptIds[0] ?? null, baseSha: input.baseSha, changeSha: input.changeSha, resultCommit: input.resultCommit, detail: input.detail });
