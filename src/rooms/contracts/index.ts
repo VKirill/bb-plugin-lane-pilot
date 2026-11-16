@@ -95,3 +95,5 @@ export type { IsTaskSatisfied } from "./runs-api";
 export * from "./worktrees";
 export { NATIVE_HOOK_SOURCES } from "./native-hook-sources";
 export * from "./service-notice";
+
+export type { NativeSelection } from "./native-selection";

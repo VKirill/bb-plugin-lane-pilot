@@ -41,7 +41,7 @@ import { recordErrandEpisode, errandSpawnOf } from "./src/rooms/errands";
 import { loadEvalData, runMemoryEval } from "./src/rooms/memory-eval/server";
 import type { ErrandEpisodesApi, InsightsApi, LaneProjectNotice, LeadRoadApi, MemoryEvalRunner, ScheduleAgentApi, StabilityPort, TaskWordPort } from "./src/rooms/contracts";
 import { createPhaseDriver, mountPhaseDriver, mountPhaseIntake, registerPhaseTool } from "./src/rooms/phase/server";
-import { createPhaseReactions } from "./src/rooms/core/server";
+import { createPhaseReactions, createGitWriter } from "./src/rooms/core/server";
 import { selfRepairDeps } from "./src/rooms/self-repair/server";
 import { registerConversationTools, registerQueueTool } from "./src/rooms/tasks/server";
 import { mountOutbound, postEvent } from "./src/rooms/relay/server";
@@ -85,12 +85,9 @@ import { registerTools } from "./src/rooms/tools/server/tools";
 import { bindToolLocale, toolLocale } from "./src/rooms/platform/server";
 import { createWriterHost } from "./src/rooms/writer/server";
 import { createWriterState } from "./src/rooms/writer/server";
-import { createWriterSpawn } from "./src/rooms/writer/server";
 import { createWriterVerify } from "./src/rooms/writer/server";
 import { createWriterFinish } from "./src/rooms/writer/server";
 import { createWriterStart } from "./src/rooms/writer/server";
-import { createWriterDispatch } from "./src/rooms/writer/server";
-import { createProjectGit, createProjectGitDispatch, overlappingLiveRuns } from "./src/rooms/project-git/server";
 import { createAttemptReopen, createWriterReassign, recheckPlanFact, registerDispatchExecutors, taskUsage } from "./src/rooms/writer/server";
 import { stageHelperSettings } from "./src/rooms/settings/server";
 import { createWorkflowEngine } from "./src/rooms/workflow/server";
@@ -360,25 +357,7 @@ export default async function plugin(bb: BbPluginApi) {
   services.tokenCursorRow = tokenCursorRow;
   // The writer pool must exist before project-git and dispatch are composed: the Git guard and live admission share it.
   Object.assign(services, createWriterState(ctx) satisfies WriterStatePort);
-  // Build the live-folder service once so Git bootstrap and writer admission share its generation-safe invalidation.
-  const writerSpawn = createWriterSpawn(ctx, services);
-  const projectGit = createProjectGit({
-    host: ctx.host,
-    kv: ctx.bb.storage.kv,
-    ownerAsk: ctx.ownerAsk,
-    log: ctx.log,
-    activeLiveRun: async ({ hostId, root }) => overlappingLiveRuns(db, hostId, root)[0] ?? null,
-  });
-  const rawWriterDispatch = createWriterDispatch(ctx, services);
-  const guardedDispatch = createProjectGitDispatch({
-    db,
-    bb: ctx.bb,
-    projectGit,
-    runWriterPool: services.runWriterPool,
-    invalidateLiveFolder: writerSpawn.invalidateLiveFolder,
-    raw: rawWriterDispatch.dispatchWriter as never,
-    isDisposed: ctx.isDisposed,
-  });
+  const { writerSpawn, writerDispatch } = createGitWriter(ctx, services);
   Object.assign(
     services,
     createReconcile(ctx, services) satisfies ReconcileApi,
@@ -399,7 +378,7 @@ export default async function plugin(bb: BbPluginApi) {
     createWriterVerify(ctx, services) satisfies { runVerification: RunVerification },
     createWriterFinish(ctx, services),
     createWriterStart(ctx, services) satisfies WriterStartPort,
-    { ...rawWriterDispatch, dispatchWriter: guardedDispatch as never } satisfies WriterDispatchPort,
+    writerDispatch satisfies WriterDispatchPort,
     createQaStages(ctx),
     createStageChildren(ctx),
     createDocsStage(ctx, services),

@@ -21,4 +21,4 @@ export {
   type SkillSwitchRecord,
   type SkillSwitchStats,
 } from "./skill-switch";
-export { LIVE_FOLDER_FILE_CAP } from "./live-folder";
+export { LIVE_FOLDER_FILE_CAP, isLiveDecision } from "./live-folder";

@@ -1,7 +1,7 @@
 import { isAbsolute, relative, resolve } from "node:path";
 import { stringAt, valueAt } from "@lane-pilot/kit";
 import { beginRunAdmission, getAttempt, getRun, getRunWriterHost, latestRunForPmThread, listLatestBlockedAttemptRefs, listOpenAttempts, taskBasePath, type LanePilotDatabase } from "../../storage";
-import { isLiveDecision } from "../../writer/live-folder";
+import { isLiveDecision } from "../../writer";
 import type { ProjectGit, ScopeResult } from "./bootstrap";
 
 export type ProjectGitDispatchArgs = {
