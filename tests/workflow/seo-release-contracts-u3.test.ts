@@ -1,6 +1,58 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { out, pathOf } from "./chain-helpers";
 import { chainStore, runSim } from "./chain-harness";
+import { chain, reply, runHomeWorld } from "./run-home-world";
+import type { Row } from "./run-home-world";
+
+const packageGraph = async (sourceId: "ctr_fix" | "spec", packageId: "package_ctr" | "package_upgrade" | "package_split", sourceOutput: Row, packagePath?: string) => {
+  const shipped = (await chainStore()).get("seo-page-refresh")!.workflow;
+  const route = shipped.nodes.find((node) => node.id === "route")!;
+  const diagnose = shipped.nodes.find((node) => node.id === "diagnose")!;
+  const source = shipped.nodes.find((node) => node.id === sourceId)!;
+  const experiment = shipped.nodes.find((node) => node.id === "experiment")!;
+  const shippedPackage = shipped.nodes.find((node) => node.id === packageId)!;
+  const packageNode = packagePath
+    ? { ...shippedPackage, params: { ...((shippedPackage as { params?: Row }).params ?? {}), path: packagePath } }
+    : shippedPackage;
+  return {
+    workflow: chain({
+      id: `seo-page-refresh-${packageId.replaceAll("_", "-")}-real`,
+      outputs: [
+        { name: "status", type: "string", required: false },
+        { name: "package_path", type: "string", required: false },
+        { name: "release_items", type: "array", required: false },
+        { name: "rewrite_items", type: "array", required: false },
+      ],
+      nodes: [
+        route,
+        diagnose,
+        source,
+        experiment,
+        packageNode,
+        { id: "done", type: "action", action: "emit", map: {
+          status: "done",
+          package_path: `${packageId}.package_path`,
+          release_items: sourceId === "ctr_fix" ? `{{${sourceId}.release_items}}` : [],
+          rewrite_items: sourceId === "spec" ? `{{${sourceId}.rewrite_items}}` : [],
+        } },
+      ],
+      edges: [
+        { from: "start", to: "route", pass: "artifact" },
+        { from: "route", to: "diagnose", pass: "artifact" },
+        { from: "diagnose", to: sourceId, pass: "artifact", when: sourceId === "ctr_fix" ? "route.branch == 'ctr'" : `route.branch == '${packageId === "package_split" ? "split" : "upgrade"}'` },
+        { from: sourceId, to: "experiment", pass: "artifact", with: sourceId === "ctr_fix"
+          ? { release_items: `${sourceId}.release_items` }
+          : { rewrite_items: `${sourceId}.rewrite_items` } },
+        { from: "experiment", to: packageId, pass: "artifact" },
+        { from: packageId, to: "done", pass: "artifact" },
+      ],
+    }),
+    sourceOutput,
+    experimentOutput: { experiment_path: "experiment.md", due_date: "2026-12-04", release_items: ["foreign-model-item.json"], handoff: "experiment complete" },
+  };
+};
 
 describe("U3 SEO release contracts", () => {
   const releaseInput = {
@@ -29,16 +81,77 @@ describe("U3 SEO release contracts", () => {
   it("persists producer-owned arrays as JSON package files, independent of experiment output", async () => {
     const workflow = (await chainStore()).get("seo-page-refresh")!.workflow;
     const node = (id: string) => workflow.nodes.find((candidate) => candidate.id === id) as { params?: Record<string, unknown>; map?: Record<string, unknown> };
-    expect(node("package_ctr").params?.["release-items.json"]).toBe("{{ctr_fix.release_items}}");
-    expect(node("package_fact").params?.["release-items.json"]).toBe("{{fact_update.release_items}}");
-    expect(node("package_upgrade").params?.["release-items.json"]).toEqual([]);
-    expect(node("package_upgrade").params?.["rewrite-items.json"]).toBe("{{spec.rewrite_items}}");
-    expect(node("package_split").params?.["release-items.json"]).toEqual([]);
-    expect(node("package_split").params?.["rewrite-items.json"]).toBe("{{spec.rewrite_items}}");
+    expect(node("package_ctr").params?.contents).toMatchObject({ "release-items.json": "{{ctr_fix.release_items}}", "rewrite-items.json": [] });
+    expect(node("package_fact").params?.contents).toMatchObject({ "release-items.json": "{{fact_update.release_items}}", "rewrite-items.json": [] });
+    expect(node("package_upgrade").params?.contents).toMatchObject({ "release-items.json": [], "rewrite-items.json": "{{spec.rewrite_items}}" });
+    expect(node("package_split").params?.contents).toMatchObject({ "release-items.json": [], "rewrite-items.json": "{{spec.rewrite_items}}" });
+    expect((await chainStore()).get("seo-page-refresh")!.workflow.nodes.find((candidate) => candidate.id === "experiment")).not.toMatchObject({ out: expect.arrayContaining([expect.objectContaining({ name: "release_items" })]) });
     expect(node("done_ctr").map).toMatchObject({ release_items: "{{ctr_fix.release_items}}", rewrite_items: [] });
     expect(node("done_fact").map).toMatchObject({ release_items: "{{fact_update.release_items}}", rewrite_items: [] });
     expect(node("done_upgrade").map).toMatchObject({ release_items: [], rewrite_items: "{{spec.rewrite_items}}" });
     expect(node("done_split").map).toMatchObject({ release_items: [], rewrite_items: "{{spec.rewrite_items}}" });
+  });
+
+  it("runs the shipped CTR package node through real fs.write and persists an exact JSON list", async () => {
+    const graph = await packageGraph("ctr_fix", "package_ctr", { fix_path: "ctr-fix.md", release_items: [".agents/seo/release/ctr-item.json"], handoff: "CTR fix complete" });
+    const world = await runHomeWorld({
+      route: [reply({ status: "pass", branch: "ctr", hypothesis_path: "hypothesis.md", url: "/old-page", handoff: "route complete" })],
+      diagnose: [reply({ diagnosis_path: "diagnosis.md", stage: "ranking", handoff: "diagnosis complete" })],
+      ctr_fix: [reply(graph.sourceOutput)],
+      experiment: [reply(graph.experimentOutput)],
+    });
+    try {
+      const result = await world.start(graph.workflow).done;
+      expect(result.status, result.error ?? "no error").toBe("succeeded");
+      const packagePath = String(result.output?.package_path);
+      const releaseFile = join(world.checkout, packagePath, "release-items.json");
+      const rewriteFile = join(world.checkout, packagePath, "rewrite-items.json");
+      expect(JSON.parse(readFileSync(releaseFile, "utf8"))).toEqual([".agents/seo/release/ctr-item.json"]);
+      expect(JSON.parse(readFileSync(rewriteFile, "utf8"))).toEqual([]);
+      expect(readFileSync(releaseFile, "utf8")).not.toContain("{{");
+      expect(readFileSync(releaseFile, "utf8")).not.toContain("# SEO page refresh");
+    } finally {
+      world.dispose();
+    }
+  });
+
+  it.each([
+    ["package_upgrade", ["rewrite-spec.json"]],
+    ["package_split", ["split-spec.json"]],
+  ] as const)("runs the shipped %s package node through real fs.write and keeps rewrite specs out of release-items.json", async (packageId, rewriteItems) => {
+    const graph = await packageGraph("spec", packageId, { spec_path: "spec.md", rewrite_items: rewriteItems, handoff: "rewrite spec complete" });
+    const world = await runHomeWorld({
+      route: [reply({ status: "pass", branch: packageId === "package_split" ? "split" : "upgrade", hypothesis_path: "hypothesis.md", url: "/old-page", handoff: "route complete" })],
+      diagnose: [reply({ diagnosis_path: "diagnosis.md", stage: "ranking", handoff: "diagnosis complete" })],
+      spec: [reply(graph.sourceOutput)],
+      experiment: [reply(graph.experimentOutput)],
+    });
+    try {
+      const result = await world.start(graph.workflow).done;
+      expect(result.status, result.error ?? "no error").toBe("succeeded");
+      const packagePath = String(result.output?.package_path);
+      expect(JSON.parse(readFileSync(join(world.checkout, packagePath, "release-items.json"), "utf8"))).toEqual([]);
+      expect(JSON.parse(readFileSync(join(world.checkout, packagePath, "rewrite-items.json"), "utf8"))).toEqual(rewriteItems);
+    } finally {
+      world.dispose();
+    }
+  });
+
+  it("rejects a failed shipped package write that escapes the checkout", async () => {
+    const graph = await packageGraph("ctr_fix", "package_ctr", { fix_path: "ctr-fix.md", release_items: ["ctr-item.json"], handoff: "CTR fix complete" }, "../escape/");
+    const world = await runHomeWorld({
+      route: [reply({ status: "pass", branch: "ctr", hypothesis_path: "hypothesis.md", url: "/old-page", handoff: "route complete" })],
+      diagnose: [reply({ diagnosis_path: "diagnosis.md", stage: "ranking", handoff: "diagnosis complete" })],
+      ctr_fix: [reply(graph.sourceOutput)],
+      experiment: [reply(graph.experimentOutput)],
+    });
+    try {
+      const result = await world.start(graph.workflow).done;
+      expect(result.status, result.error ?? "no error").toBe("failed");
+      expect(result.error).toContain("not inside the checkout");
+    } finally {
+      world.dispose();
+    }
   });
 
   it("routes a normal owner timeout to blocked, never to the index-check receipt", async () => {
