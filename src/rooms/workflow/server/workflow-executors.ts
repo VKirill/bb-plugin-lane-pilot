@@ -140,7 +140,7 @@ export function registerChainExecutors(engine: WorkflowEngine, ctx: ServerCore, 
           });
         }
       }
-      return { output: result.output, threadId: result.threadId, ...(result.usage ? { usage: result.usage } : {}) };
+      return { output: result.output, threadId: result.threadId, ...(result.usage ? { usage: result.usage } : {}), ...(result.detail ? { detail: result.detail } : {}) };
     },
   } as NodeExecutor<ChainRuntime>);
 

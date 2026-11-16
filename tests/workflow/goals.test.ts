@@ -8,7 +8,7 @@ import { amendGoalsTool, runWorkflowTool, workflowStatusTool } from "../../src/r
 import type { WorkflowToolDeps } from "../../src/rooms/workflow/server/workflow-tools";
 import { agentPrompt, outputContract } from "@lane-pilot/workflow-engine";
 import type { StepContext } from "@lane-pilot/workflow-engine";
-import { goalsBlock, goalsSha, parseGoals, regroundDue } from "@lane-pilot/workflow-engine";
+import { goalsBlock, goalsSha, parseGoals, regroundDue, sha256 } from "@lane-pilot/workflow-engine";
 import type { GoalAudit, RunGoal } from "@lane-pilot/workflow-engine";
 import { engineOn, journalDb, ok, rows, wf } from "./engine-helpers";
 
@@ -137,6 +137,16 @@ describe("the goals of a run", () => {
     expect(seen).toHaveLength(1);
   });
 
+  it("the request goal's text joins the sha only when it carries one, so plain goals keep their sha", () => {
+    const plain: RunGoal = { id: "g1", done_when: "the digest is posted to the channel", evidence: "a Telegram message id in the output" };
+    // A goal without `request` hashes as it did before the field existed: [id, done_when, evidence].
+    expect(goalsSha([plain])).toBe(sha256(JSON.stringify([[plain.id, plain.done_when, plain.evidence]])).slice(0, 16));
+    const asked: RunGoal = { ...plain, request: "post the digest to the channel" };
+    expect(parseGoals(JSON.stringify([asked]))).toEqual([asked]);
+    expect(goalsSha([asked])).not.toBe(goalsSha([plain]));
+    expect(goalsSha([asked])).not.toBe(goalsSha([{ ...asked, request: "post the digest to the team channel" }]));
+  });
+
   it("cost nothing for a run without goals, and a run with goals but no auditor closes as before", async () => {
     const plain = setup(async () => { throw new Error("must not be called"); });
     expect(await plain.engine.start({ workflow: wf(), inputs: INPUTS }).done).toMatchObject({ status: "succeeded" });
@@ -178,6 +188,15 @@ describe("reground", () => {
     const base = { workflow: "w", node: "n", role: "analyst", mode: "standard", task: "do it", inputs: {}, contract: outputContract([]), readOnly: true };
     expect(agentPrompt({ ...base, goals: block })).toContain("</goals-of-this-run>");
     expect(agentPrompt(base)).not.toContain("goals-of-this-run");
+  });
+
+  it("the request goal's text repeats whole in the reground block, as the owner's words — not a second cut", () => {
+    const tail = "TAIL-587 the cancellation deadline checks";
+    const request = `Review the cancel flow end to end. ${"Verify each handler and its tests. ".repeat(40)}${tail}`;
+    const block = goalsBlock([{ id: "request", done_when: "The request is satisfied: the full request text is in this goal's `request` field", evidence: "the workflow run ends succeeded and its outputs answer the request", guess: true, request }]);
+    expect(block).toContain("Request: ");
+    expect(block).toContain(request);
+    expect(block).toContain(tail);
   });
 });
 

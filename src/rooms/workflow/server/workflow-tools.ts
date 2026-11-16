@@ -248,7 +248,7 @@ function goalsView(engine: ReturnType<WorkflowToolDeps["engine"]>, runId: string
   const changes = (engine.goalJournal?.(runId) ?? []).slice(1).slice(-5).map((entry) => ({ at: entry.at, by: entry.by, reason: redactKnown(entry.reason) }));
   if (!goals.length && !audit && !changes.length) return {};
   return {
-    goals: goals.map((goal) => ({ id: goal.id, done_when: goal.done_when, evidence: goal.evidence, ...(goal.guess ? { guess: true } : {}) })),
+    goals: goals.map((goal) => ({ id: goal.id, done_when: goal.done_when, evidence: goal.evidence, ...(goal.guess ? { guess: true } : {}), ...(goal.request ? { request: goal.request } : {}) })),
     ...(audit ? { goalAudit: { verdict: audit.verdict, met: audit.met, unmet: audit.unmet.map((entry) => ({ id: entry.id, why: fenceOutside("workflow", redactKnown(entry.why)) })), ...(audit.error ? { error: redactKnown(audit.error) } : {}) } } : {}),
     ...(changes.length ? { goalChanges: changes } : {}),
   };

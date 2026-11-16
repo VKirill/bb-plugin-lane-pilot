@@ -146,3 +146,11 @@ A workflow is a JSON file (`workflows/*.json`): inputs, outputs, `requires` (ski
 ## Sources
 
 Where this page's claims start in the code: `packages/workflow-engine/src/engine.ts:33-53`, `packages/workflow-engine/src/router.ts:14-34`, `packages/workflow-engine/src/index.ts:1-21`. The deep pages linked above cite the rest.
+
+### Evidence at the goal audit
+
+The inferred request goal keeps the complete routing request (up to 4,000 characters). A longer request is returned for clarification; it is not silently shortened. The request is retained in the run journal, PM status and helper regrounding, and changing it changes the audit cache identity.
+
+Durable reports are written without prompt-length clipping. Audit blocks exceeding their inline limits are delivered through the existing content-addressed packet files. The auditor must read those references before deciding; inability to read one is missing evidence.
+
+Engine-registered root output files are read on their recorded host and checkout and checked against the stored content hash and byte count. Helper receipts also carry repository observations at the start and end of the observed interval, including nested graph and vote receipts. These are endpoint observations, not proof of every action: temporary write-and-revert, ignored files, untracked file contents and external effects are outside their scope. Missing or incomplete observations cannot be counted as a clean run. Live acceptance must separately show that the auditor actually consumed the references and that the graph met its goals.

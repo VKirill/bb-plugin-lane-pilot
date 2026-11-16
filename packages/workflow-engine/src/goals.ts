@@ -6,12 +6,16 @@ import { sha256 } from "./journal";
  * met, `evidence` what shows it). They travel with the run: agent briefs are reminded of them (reground), the run is audited
  * against them before it closes (goal audit), and the PM may change them with a reason that stays in the run's journal (amend).
  */
+/** The most of the owner's request a goal can carry verbatim; past it routeIntent clarifies instead of routing on a cut request. */
+export const GOAL_REQUEST_MAX = 4000;
 export const goalSchema = z.object({
   id: z.string().regex(/^[A-Za-z][A-Za-z0-9_-]{0,39}$/, "goal id: letters, digits, - and _"),
   done_when: z.string().trim().min(3).max(600),
   evidence: z.string().trim().min(3).max(600),
   /** The router inferred it from the request rather than reading it: the owner has not confirmed it. */
   guess: z.boolean().optional(),
+  /** The owner's request verbatim, when the goal was inferred from one: `done_when` may point here instead of repeating it. The goal audit reads it; the reground block repeats it whole. */
+  request: z.string().trim().min(1).max(GOAL_REQUEST_MAX).optional(),
 }).strict();
 export type RunGoal = z.infer<typeof goalSchema>;
 export const MAX_GOALS = 8;
@@ -33,7 +37,7 @@ export type GoalAudit = {
   notes?: string;
 };
 
-export const goalsSha = (goals: readonly RunGoal[]): string => sha256(JSON.stringify(goals.map((goal) => [goal.id, goal.done_when, goal.evidence]))).slice(0, 16);
+export const goalsSha = (goals: readonly RunGoal[]): string => sha256(JSON.stringify(goals.map((goal) => (goal.request === undefined ? [goal.id, goal.done_when, goal.evidence] : [goal.id, goal.done_when, goal.evidence, goal.request])))).slice(0, 16);
 
 /**
  * A tiny closed run is judged without a model. `skip` leaves the model auditor in place (not tiny, or the run did not
@@ -58,7 +62,7 @@ export const regroundDue = (stepOrdinal: number): boolean => stepOrdinal === 1 |
 export function goalsBlock(goals: readonly RunGoal[]): string {
   return [
     "<goals-of-this-run>",
-    ...goals.map((goal) => `- ${goal.id}${goal.guess ? " (inferred, not confirmed)" : ""}: done when ${goal.done_when}. Evidence: ${goal.evidence}.`),
+    ...goals.map((goal) => `- ${goal.id}${goal.guess ? " (inferred, not confirmed)" : ""}: done when ${goal.done_when}. Evidence: ${goal.evidence}.${goal.request ? `\n  Request: ${goal.request}` : ""}`),
     "</goals-of-this-run>",
     "These are what the whole run is for. Check that your step serves them. If the task of this step works against a goal, or a goal cannot be met with what you were given, say so in your handoff instead of working around it.",
   ].join("\n");

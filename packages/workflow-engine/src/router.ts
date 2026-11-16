@@ -1,4 +1,5 @@
 import { pluginId } from "./preflight";
+import { GOAL_REQUEST_MAX } from "./goals";
 import type { Workflow } from "./schema";
 
 /**
@@ -381,7 +382,7 @@ export const deterministicRouterModel: RouterModel = async ({ candidates }) => s
 
 // ------------------------------------------------------------------ the decision
 
-export type RouteGoal = { id: string; done_when: string; evidence: string; guess?: true };
+export type RouteGoal = { id: string; done_when: string; evidence: string; guess?: true; request?: string };
 export type BoundaryContract = { in_scope: string[]; out_of_scope: string[]; constraints: string[]; guesses: string[] };
 export type RouteDecision = {
   decision: "route" | "clarify";
@@ -491,7 +492,12 @@ function boundaryFor(input: { workflow: Workflow; s: Signals; intent: string; co
 }
 
 function goalsFor(workflow: Workflow, intent: string): RouteGoal[] {
-  const goals: RouteGoal[] = [{ id: "request", done_when: `The request is satisfied: ${intent.trim().slice(0, 200)}`, evidence: `the workflow run ends succeeded and its outputs answer the request`, guess: true }];
+  const text = intent.trim();
+  // The request goal keeps the owner's words whole: `request` carries the intent verbatim (routeIntent clarifies past GOAL_REQUEST_MAX),
+  // `done_when` says the same in at most 600 — the full text when it fits, a pointer to `request` when it does not, never a cut word.
+  const whole = `The request is satisfied: ${text}`;
+  const done_when = whole.length <= 600 ? whole : "The request is satisfied: the full request text is in this goal's `request` field";
+  const goals: RouteGoal[] = [{ id: "request", done_when, evidence: `the workflow run ends succeeded and its outputs answer the request`, guess: true, ...(text ? { request: text } : {}) }];
   // The status first, then the other declared outputs: what the run must produce is what the workflow says it produces.
   const outputs = [...workflow.outputs].sort((a, b) => Number(b.name === "status") - Number(a.name === "status") || Number(b.required) - Number(a.required));
   for (const output of outputs.slice(0, 4)) {
@@ -529,6 +535,12 @@ export async function routeIntent(input: RouteInput): Promise<RouteDecision> {
     ...partial,
   });
   const lang = s.ru ? "ru" : "en";
+  // A goal carries the request verbatim only up to GOAL_REQUEST_MAX; past it a routed run could not be audited against the whole ask, so it is clarified, never cut.
+  if (intent.length > GOAL_REQUEST_MAX) {
+    return empty({ questions: [lang === "ru"
+      ? `Запрос длиннее ${GOAL_REQUEST_MAX} символов: цель прогона не может нести его целиком, и «цель достигнута» было бы нечем проверить. Сократите его или разбейте на части.`
+      : `The request is longer than ${GOAL_REQUEST_MAX} characters: a run goal cannot carry it whole, so "the goal is met" could not be verified. Shorten it or split it into parts.`] });
+  }
   if (CONTINUE.test(s.text)) {
     return empty({ stateContinue: true, evidence: { pattern: "«continue» is answered from the state of the run, not by a workflow", rejected: [], rules: [{ id: "state_continue", note: "continue" }], model: "deterministic" },
       questions: [s.ru ? "Что продолжить? Посмотрите состояние прогона (lane_pilot_run_health) и предложите следующий шаг." : "Continue what? Check the run state (lane_pilot_run_health) and propose the next step."] });

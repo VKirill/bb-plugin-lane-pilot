@@ -37,12 +37,13 @@ const reply = (body: Row, lead = "Done.") => `${lead}\n\n\`\`\`json\n${JSON.stri
 
 /** What a helper thread of a node spent, as BB reports it: one token-usage event of one turn, on this model. */
 type Spent = { input: number; output: number; model?: string };
-async function setup(script: Script, options: { pmEvents?: () => Row[]; firstTurnError?: string; firstTurnRetries?: boolean; dirty?: boolean; spent?: Record<string, Spent>; failWrites?: boolean; noPm?: boolean; noCheckout?: boolean; invalidParent?: boolean; offers?: Array<{ providerId: string; model: string; host?: string }>; hosts?: Array<{ id: string; name: string; status?: string }>; sources?: Array<{ hostId: string; path: string }>; failManifest?: boolean; envs?: Record<string, { hostId: string; path: string } | null>; resolveWorkflow?: (id: string, version?: number) => Workflow | null; runCommandStub?: (input: Row) => Row | null } = {}) {
+async function setup(script: Script, options: { pmEvents?: () => Row[]; firstTurnError?: string; firstTurnRetries?: boolean; dirty?: boolean; spent?: Record<string, Spent>; failWrites?: boolean; noPm?: boolean; noCheckout?: boolean; invalidParent?: boolean; offers?: Array<{ providerId: string; model: string; host?: string }>; hosts?: Array<{ id: string; name: string; status?: string }>; sources?: Array<{ hostId: string; path: string }>; failManifest?: boolean; envs?: Record<string, { hostId: string; path: string } | null>; resolveWorkflow?: (id: string, version?: number) => Workflow | null; runCommandStub?: (input: Row) => Row | null; vkMetadata?: boolean } = {}) {
   const checkout = mkdtempSync(join(tmpdir(), "lp-chain-"));
   execFileSync("git", ["init", "-q"], { cwd: checkout });
   writeFileSync(join(checkout, "README.md"), "hello\n");
   const spawned: Array<Row> = [], sent: Array<{ threadId: string; text: string }> = [], writes: Array<{ path: string; content: string }> = [], hostCalls: Array<Row> = [];
   const nodeOf = new Map<string, string>(), counts = new Map<string, number>();
+  const spawnedIds: Array<{ id: string; metadata: Row }> = [];
   let next = 0;
   const { bb, harness } = createFakePluginHost({
     pluginId: "lane-pilot",
@@ -64,6 +65,7 @@ async function setup(script: Script, options: { pmEvents?: () => Row[]; firstTur
           if (options.invalidParent && (request.pluginMetadata as Row)?.parentPmThreadId) throw new Error("HTTP 400: Parent thread is invalid");
           const id = `helper-${next += 1}`;
           nodeOf.set(id, String((request.pluginMetadata as Row).lanePilotWorkflowNode ?? (request.pluginMetadata as Row).role));
+          spawnedIds.push({ id, metadata: (request.pluginMetadata as Row) ?? {} });
           return { id };
         },
         get: async ({ threadId }) => {
@@ -119,6 +121,20 @@ async function setup(script: Script, options: { pmEvents?: () => Row[]; firstTur
       },
     },
   });
+  // The VK thread-key functions are gated on `bb.vk` existing (thread-keys.ts vkBuild): only a test that asks for the
+  // metadata lookup sees the fake's experimental_vkFindByPluginMetadata; every other test keeps the plain-spawn path.
+  // With `bb.vk` set the keyed-spawn path (fullAccessSpawn -> spawnKeyed) goes live too, and the fake host answers every
+  // unstubbed SDK path with a function — so findByKey/keyedSpawn are stubbed explicitly: no held key, and a keyed spawn
+  // is the ordinary fake spawn once.
+  if (options.vkMetadata) {
+    const bbAny = bb as unknown as { vk?: unknown; sdk: { threads: Record<string, unknown> } };
+    bbAny.vk = {};
+    // The fake SDK proxies `.call` as another SDK path; production lookup invokes the method with its receiver.
+    harness.sdk.stub("threads.experimental_vkFindByPluginMetadata.call", async (_receiver: unknown, args: { match: Record<string, unknown> }) =>
+      spawnedIds.filter((row) => Object.entries(args.match).every(([key, value]) => row.metadata[key] === value)).map((row) => ({ id: row.id })));
+    harness.sdk.stub("threads.experimental_vkFindByKey", async () => null);
+    harness.sdk.stub("threads.experimental_vkSpawnKeyed", async (args: Record<string, unknown>) => ({ thread: await (bbAny.sdk.threads.spawn as (a: unknown) => Promise<unknown>)(args), reused: false }));
+  }
   const db = openDatabase(bb);
   // A project without Lane Pilot has no PM chat and no run of the plugin: the workflow run stands alone.
   if (!options.noPm) {
@@ -511,6 +527,85 @@ describe("the agent step", () => {
     expect((await stage([plans], "planner", "wf-manual:proj:w:k")).error).toContain("repo_edited");
   });
 
+  it("a read-only helper's receipt carries repoGuard: measured checkout endpoints, with the guard's own verdict fields", async () => {
+    const t = await setup({ look: [reply({ count: 1, summary: "s", handoff: "h" })] });
+    dispose = t.dispose;
+    const summary = await t.start(oneAgent()).done;
+    expect(summary.status).toBe("succeeded");
+    const receipt = JSON.parse(t.engine.snapshot(summary.runId)!.steps.find((step) => step.node_id === "look")!.receipt_json!);
+    const guard = receipt.detail?.repoGuard;
+    expect(guard).toMatchObject({ checkout: { hostId: "local", path: t.checkout }, reusedThread: false, checkoutBinding: "verified", edited: [] });
+    expect(Array.isArray(guard.changed)).toBe(true);
+    expect(Array.isArray(guard.pmOwn)).toBe(true);
+    expect(Array.isArray(guard.engineOwn)).toBe(true);
+    expect(guard.before).toMatchObject({ hostId: "local", root: t.checkout });
+    expect(guard.after.head).toBe(guard.before.head);
+    expect(guard.after.workDiffHash).toBe(guard.before.workDiffHash);
+    expect(guard.after.indexDiffHash).toBe(guard.before.indexDiffHash);
+    expect(Array.isArray(guard.after.files)).toBe(true);
+  });
+
+  it("an after snapshot that cannot be read leaves the guard's comparison fields null — 'not compared', never 'nothing changed'", async () => {
+    let snaps = 0, afterFailed = false;
+    const t = await setup({ look: [reply({ count: 1, summary: "s", handoff: "h" })] }, {
+      runCommandStub: (input) => {
+        const command = String(input.command ?? "");
+        if (command.includes("lp-repo-snap")) {
+          snaps += 1;
+          if (snaps > 1) { afterFailed = true; return { hostId: "local", exitCode: 1, stdout: "", stderr: "stubbed" }; }
+          return null;
+        }
+        if (afterFailed && command.trim() === "git status --porcelain -uall") return { hostId: "local", exitCode: 1, stdout: "", stderr: "stubbed" };
+        return null;
+      },
+    });
+    dispose = t.dispose;
+    const summary = await t.start(oneAgent()).done;
+    expect(summary.status).toBe("succeeded");
+    const receipt = JSON.parse(t.engine.snapshot(summary.runId)!.steps.find((step) => step.node_id === "look")!.receipt_json!);
+    const guard = receipt.detail?.repoGuard;
+    expect(guard.before).not.toBeNull();
+    expect(guard.after).toBeNull();
+    expect(guard.changed).toBeNull();
+    expect(guard.pmOwn).toBeNull();
+    expect(guard.engineOwn).toBeNull();
+    expect(guard.edited).toBeNull();
+  });
+
+  it("a continued-thread (intoThread) helper's repoGuard marks its checkout binding unverified — the PM snapshot is not its measured workspace", async () => {
+    const t = await setup({ plan: [reply({ plan: "v1", handoff: "first" }), reply({ plan: "v2", handoff: "revised" })] });
+    dispose = t.dispose;
+    const workflow = chain({
+      nodes: [
+        { id: "plan", type: "agent", role: "planner", prompt: "Plan it.", output: [{ name: "plan", type: "string" }], maxVisits: 2 },
+        { id: "review", type: "action", action: "review", output: [{ name: "ok", type: "boolean" }] },
+        { id: "done", type: "action", action: "emit", map: { plan: "plan.plan" } },
+      ],
+      outputs: [{ name: "plan", type: "string", required: false }],
+      edges: [{ from: "start", to: "plan" }, { from: "plan", to: "review" }, { from: "review", to: "plan", pass: "same-session", when: "!review.ok && visits('plan') < 2" }, { from: "review", to: "done" }],
+    });
+    let reviews = 0;
+    t.engine.register("review", { reentrant: true, run: async () => ({ output: { ok: (reviews += 1) > 1 } }) });
+    const summary = await t.start(workflow).done;
+    expect(summary).toMatchObject({ status: "succeeded" });
+    const guards = t.engine.snapshot(summary.runId)!.steps.filter((step) => step.node_id === "plan")
+      .map((step) => JSON.parse(step.receipt_json!).detail?.repoGuard).filter(Boolean);
+    expect(guards).toHaveLength(2);
+    expect(guards.map((guard) => guard.checkoutBinding).sort()).toEqual(["unverified", "verified"]);
+  });
+
+  it("a reload re-run that restores its helper thread by spawn key marks repoGuard unverified too — the snapshot is not its measured workspace", async () => {
+    const t = await setup({ look: [reply({ count: 1, summary: "s", handoff: "h" }), reply({ count: 2, summary: "s", handoff: "h" })] }, { vkMetadata: true });
+    dispose = t.dispose;
+    const agents = createWorkflowAgents();
+    const request = { rt: t.rt, workflowRunId: "wfrun_guard", stepKey: "look#1", nodeId: "look", spawnKey: "key-guard", role: "analyst", title: "look", prompt: "Count the files.", fields: [{ name: "count", type: "number" }, { name: "summary", type: "string" }] as never, resolved: true as const };
+    const first = await agents.run(request);
+    expect(first.detail?.repoGuard).toMatchObject({ checkoutBinding: "verified", reusedThread: false });
+    const second = await agents.run(request);
+    expect(t.spawned).toHaveLength(1);
+    expect(second.detail?.repoGuard).toMatchObject({ checkoutBinding: "unverified", reusedThread: true });
+  });
+
   it("a step in the same session sends into the earlier helper's thread instead of spawning a new one", async () => {
     const t = await setup({ plan: [reply({ plan: "v1", handoff: "first" }), reply({ plan: "v2", handoff: "revised" })] });
     dispose = t.dispose;
@@ -662,6 +757,26 @@ describe("the owner's question", () => {
 });
 
 describe("files, diffs and the plugin's own state", () => {
+  it("fs.write preserves a complete report beyond the audit prompt's inline limit", async () => {
+    const text = "evidence ".repeat(1800) + "FINAL-CANCEL-CRITERION";
+    const t = await setup({ review: [reply({ text, handoff: "reviewed" })] });
+    dispose = t.dispose;
+    const workflow = chain({
+      outputs: [{ name: "path", type: "string", required: false }],
+      nodes: [
+        { id: "review", type: "agent", role: "analyst", prompt: "Review only.", out: { text: "string", handoff: "string" } },
+        { id: "report", type: "action", action: "fs.write", path: "reports/full-review.md", out: { report_path: "string" } },
+        { id: "done", type: "action", action: "emit", map: { path: "report.report_path" } },
+      ],
+      edges: [{ from: "start", to: "review" }, { from: "review", to: "report" }, { from: "report", to: "done" }],
+    });
+    const summary = await t.start(workflow).done;
+    expect(summary.status).toBe("succeeded");
+    const report = readFileSync(join(t.checkout, String(summary.output!.path)), "utf8");
+    const body = report.match(/```json\n([\s\S]*?)\n```/)![1]!;
+    expect(JSON.parse(body)).toMatchObject({ text });
+  });
+
   it("fs.write writes a report into the PM's checkout with the run's variables in the path and gives the path as the declared field", async () => {
     const t = await setup({});
     dispose = t.dispose;

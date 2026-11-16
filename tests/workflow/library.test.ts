@@ -171,9 +171,12 @@ describe("workflow run snapshot", () => {
     const definition = wf(JSON.parse(JSON.stringify(reviewFix("snap-audit"))) as never);
     const started = engine.start({ workflow: definition, inputs: { query: "q" }, link: { projectId: "proj_1" } });
     await started.done;
+    const request = "Review all cancellation criteria. ".repeat(30) + "LAST-REQUEST-CLAUSE";
+    db.prepare("UPDATE lane_pilot_wf_run SET goals_json=? WHERE id=?").run(JSON.stringify([{ id: "request", done_when: "the request field is satisfied", evidence: "report", request }]), started.runId);
     const out = () => lib.runSnapshot({ runId: started.runId });
     // No goal_audit event yet: the field is null and the strict output parses.
     expect(rpcContract.workflow_run_snapshot.output.parse(out()).snapshot!.goalAudit).toBeNull();
+    expect(rpcContract.workflow_run_snapshot.output.parse(out()).snapshot!.goals[0]!.request).toBe(request);
     // A terminal audit journals sha/outputSha for the engine's own dedup — the contract must not see them.
     db.prepare("INSERT INTO lane_pilot_wf_event(run_id,step_key,kind,from_state,to_state,detail,at) VALUES (?,?,?,?,?,?,?)")
       .run(started.runId, null, "goal_audit", null, "gaps", JSON.stringify({ sha: "sha1", outputSha: "out1", verdict: "gaps", by: "code", met: [], unmet: [{ id: "g1", why: "not done" }] }), Date.now());

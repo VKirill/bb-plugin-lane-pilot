@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { afterEach, describe, expect, it } from "vitest";
 import {builtinWorkflows} from "../../src/rooms/workflow/builtin";
-import { MAX_QUESTIONS, MIN_CONFIDENCE, TOP_N, isOffered, normalizeText, routeIntent, setRouterModel, stateProblem, stems } from "@lane-pilot/workflow-engine";
+import { MAX_QUESTIONS, MIN_CONFIDENCE, TOP_N, goalsSchema, isOffered, normalizeText, routeIntent, setRouterModel, stateProblem, stems } from "@lane-pilot/workflow-engine";
 import type { RouterModel, RouterState } from "@lane-pilot/workflow-engine";
 import { publishedCatalog } from "./router-catalog";
 
@@ -140,6 +140,28 @@ describe("the decision", () => {
     expect(result.goals[0]).toMatchObject({ id: "request", guess: true });
     expect(result.goals.length).toBeGreaterThan(1);
     expect(result.goals.every((goal) => goal.done_when && goal.evidence)).toBe(true);
+  });
+
+  it("the request goal carries the owner's words verbatim: whole in `request`, a pointer in `done_when` past 600 chars", async () => {
+    const tail = "the cancellation deadline checks";
+    const long = `Go over PR 517 and list what's wrong with it; do not change anything. ${"Verify each handler and its tests. ".repeat(30)}${tail}`;
+    expect(long.length).toBeGreaterThan(600);
+    const result = await route(long);
+    expect(result.workflowId).toBe("code-review");
+    const request = result.goals.find((goal) => goal.id === "request")!;
+    expect(request.request).toBe(long);
+    expect(request.done_when.length).toBeLessThanOrEqual(600);
+    expect(request.done_when).toContain("`request`");
+    expect(goalsSchema.safeParse(result.goals).success).toBe(true);
+    const brief = (await route("Go over PR 517 and list what's wrong with it; do not change anything")).goals.find((goal) => goal.id === "request")!;
+    expect(brief.request).toBe("Go over PR 517 and list what's wrong with it; do not change anything");
+    expect(brief.done_when).toBe("The request is satisfied: Go over PR 517 and list what's wrong with it; do not change anything");
+  });
+
+  it("a request past the goal's 4000 chars is clarified, never routed on a cut goal", async () => {
+    const result = await route(`Go over PR 517 and list what's wrong. ${"Verify each handler and its tests. ".repeat(200)}`);
+    expect(result).toMatchObject({ decision: "clarify", workflowId: null, goals: [] });
+    expect(result.questions.join(" ")).toContain("4000");
   });
 
   it("reads tracker ids, files and links from the request and marks the text-derived inputs as guesses", async () => {

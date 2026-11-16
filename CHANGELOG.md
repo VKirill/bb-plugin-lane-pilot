@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.587
+
+- **Workflow goal audits receive complete assignments and recorded evidence.** Routing preserves the request in the goal contract; requests beyond its supported limit return clarification instead of a truncated goal. Audit cache identities include the request, and PM status and regrounding retain it. Large audit values travel through existing file references, while durable reports keep complete JSON. The auditor receives hash-checked engine output files and measured helper repository endpoints, including child runs and votes. These observations do not prove temporary write-and-revert or external effects; missing evidence remains unverified. Regressions in `tests/workflow/router.test.ts`, `tests/workflow/goals.test.ts`, `tests/workflow/goal-audit-evidence.test.ts`, `tests/workflow/chain-executors.test.ts` and `tests/server/repo-snapshot.test.ts` cover the boundaries. Live graph acceptance is separate.
+
 ## 0.1.586
 
 - **Code-review results retain criterion evidence.** `lp.review` now exports its criterion checks; both `code-review` endings forward them before findings. The report and goal auditor can therefore inspect successful checks as well as defects. Empty-scope reviews export an empty list, and review thresholds and goal acceptance remain unchanged. The regression in `tests/workflow/chain-executors.test.ts` exercises the real nested graphs, report writer and audit prompt with a scripted cancellation check; live acceptance is verified separately.

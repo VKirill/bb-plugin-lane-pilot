@@ -306,7 +306,7 @@ export async function runVotes(engine: WorkflowEngine, executor: NodeExecutor<an
   const agreeing = answers.find((answer) => booleans.every(([name, value]) => answer.output[name] === value)) ?? answers[0]!;
   for (const name of names) if (decided[name] === undefined && agreeing.output[name] !== undefined) decided[name] = agreeing.output[name];
   return { output: decided, usage: spent ?? { tokens: 0, costUsd: 0 }, threadId: answers.find((answer) => answer.threadId)?.threadId ?? null,
-    detail: { votes: answers.map((answer) => ({ output: answer.output, threadId: answer.threadId ?? null })), asked: votes } };
+    detail: { votes: answers.map((answer) => ({ output: answer.output, threadId: answer.threadId ?? null, detail: answer.detail ?? null })), asked: votes } };
 }
 
 /** A skipped fan-out has no branches: the join it belongs to is skipped with the same typed output. */
