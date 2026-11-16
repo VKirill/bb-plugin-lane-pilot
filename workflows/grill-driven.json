@@ -138,6 +138,7 @@
       "with": {
         "topic": "{{$inputs.goal}}",
         "upstream": "{{grill}}",
+        "owner_answers": "{{ctx.answers.ask_open}}",
         "roles": {
           "by_mode": {
             "quick": [
@@ -170,6 +171,7 @@
       "with": {
         "goal": "{{$inputs.goal}}",
         "findings": "{{brainstorm}}",
+        "owner_answers": "{{ctx.answers.ask_open}}",
         "boundary": "{{$inputs.boundary}}",
         "mode": "fresh"
       },
@@ -181,10 +183,6 @@
       "id": "build",
       "type": "subworkflow",
       "workflow": "lp.build",
-      "with": {
-        "tasks": "{{replan.tasks}}",
-        "waves": "{{replan.waves}}"
-      },
       "guards": {
         "maxVisits": 2
       }

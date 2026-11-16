@@ -91,7 +91,8 @@
         "retro_living": "string",
         "milestone_archive": "string",
         "milestone_summary": "string",
-        "coverage_matrix": "string"
+        "coverage_matrix": "string",
+        "effective_run_id": "string"
       }
     },
     {
@@ -231,14 +232,13 @@
         "ru": "Запись этапа"
       },
       "params": {
-        "path": ".agents/milestones/{{run_id}}.md"
+        "path": ".agents/milestones/{{status.effective_run_id}}.md"
       },
       "reads": [
         "status",
         "retro.insights",
         "close.staged",
         "close.report_path",
-        "$inputs.run_id",
         "$inputs.goal",
         "$inputs.goals"
       ],

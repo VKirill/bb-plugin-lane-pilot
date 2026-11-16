@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
 import type { NodeExecutor, StepContext, Workflow } from "@lane-pilot/workflow-engine";
-import { loadWorkflowStore } from "@lane-pilot/workflow-engine";
+import { loadWorkflowStore, validateWorkflow } from "@lane-pilot/workflow-engine";
 import type { WorkflowStore } from "@lane-pilot/workflow-engine";
 import {BUILTIN_SOURCES} from "../../src/rooms/workflow/builtin";
+import { stepPacket } from "../../src/rooms/workflow/server/workflow-agent-packet";
 import { engineOn, journalDb, ok, wf } from "./engine-helpers";
 
 /**
@@ -39,7 +40,7 @@ const STATUSES = ["ok", "low_confidence", "done", "partial", "rework", "pass", "
 const statusOut = { name: "status", type: "enum", values: STATUSES };
 
 const FAKES: Record<string, Workflow> = {
-  "lp.plan": child("lp.plan", ["goal", "findings", "mode", "gaps", "boundary", "plan_sha", "extra_rules"], [
+  "lp.plan": child("lp.plan", ["goal", "findings", "mode", "gaps", "boundary", "plan_sha", "extra_rules", "owner_answers"], [
     statusOut, { name: "tasks", type: "json" }, { name: "waves", type: "json" }]),
   "lp.build": child("lp.build", ["tasks", "waves"], [
     statusOut, { name: "merged_commits", type: "json" }, { name: "failed_findings", type: "json" }]),
@@ -47,13 +48,20 @@ const FAKES: Record<string, Workflow> = {
     statusOut, { name: "findings", type: "json" }]),
   "lp.close": child("lp.close", ["goals", "boundary", "goal", "merged_commits", "summary", "insights", "proof_currency", "mode", "scope"], [
     statusOut, { name: "report_path", type: "string" }, { name: "staged", type: "number" }]),
-  "lp.brainstorm": child("lp.brainstorm", ["topic", "hypothesis", "upstream", "roles", "research"], [statusOut]),
+  "lp.brainstorm": child("lp.brainstorm", ["topic", "hypothesis", "upstream", "roles", "research", "owner_answers"], [statusOut]),
   "grill-plan": child("grill-plan", ["plan", "goal", "depth"], [
     { name: "open", type: "json" }, { name: "locked", type: "json" }, { name: "deferred", type: "json" }, { name: "risk_register", type: "json" }]),
   "milestone-summary": child("milestone-summary", ["milestone"], [{ name: "summary_path", type: "string" }]),
 };
 
 const resolveFake = (store: WorkflowStore) => (id: string) => FAKES[id] ?? store.resolve(id);
+
+/** The lp.run_status seam: an explicit safe run id wins; otherwise the run being closed (the PM runtime id — in this
+ *  stub the engine run id stands in for it, as no PM runtime exists under test). */
+const effectiveRunId = (ctx: StepContext) => {
+  const requested = String(ctx.resolve("$inputs.run_id") ?? "");
+  return requested && !/[/\\]/.test(requested) && requested !== "." && requested !== ".." ? requested : ctx.runId;
+};
 
 type Calls = Record<string, Array<Record<string, unknown>>>;
 
@@ -62,7 +70,9 @@ type Calls = Record<string, Array<Record<string, unknown>>>;
 const agents = (handlers: Record<string, (ctx: StepContext, callIndex: number) => Record<string, unknown>>, calls: Calls = {}) => {
   const agent: NodeExecutor = { reentrant: true, run: async (ctx: StepContext) => {
     const label = ctx.nodeId === "do" ? ctx.workflow.id : ctx.nodeId;
-    const index = (calls[label] ??= []).push({ ...ctx.input.with }) - 1;
+    // `packet` is what agentRequest actually renders for this step — input.with plus the consumes envelopes.
+    const packet = stepPacket(ctx as never, ctx.node as never).packet;
+    const index = (calls[label] ??= []).push({ ...ctx.input.with, packet }) - 1;
     const handler = handlers[`${ctx.workflow.id}:${ctx.nodeId}`] ?? handlers[ctx.nodeId] ?? handlers[ctx.workflow.id];
     return { output: { handoff: `${ctx.nodeId} done`, ...(handler ? handler(ctx, index) : {}) } };
   } };
@@ -102,6 +112,31 @@ describe("grill-driven: replan output feeds the second build visit", () => {
     const summary = await engine.start({ workflow: store.get("grill-driven")!.workflow, inputs: { goal: "g", plan_text: "p" } }).done;
     expect(summary.status).toBe("succeeded");
     expect(calls["lp.build"]!.map((call) => call.tasks)).toEqual([["T-PLAN"], ["T-REPLAN"]]);
+    // ask_open was skipped (no open items): brainstorm and plan still see an (empty) answer history — the no-answer branch.
+    expect(calls["lp.brainstorm"]![0]!.owner_answers).toEqual([]);
+    expect(calls["lp.plan"]![0]!.owner_answers).toEqual([]);
+  });
+
+  it("when the owner answers the open questions, brainstorm and plan receive the actual answer", async () => {
+    const store = await load();
+    const { agent, calls } = agents({
+      "grill-plan": () => ({ open: [{ id: "Q1" }], locked: [], deferred: [], risk_register: [] }),
+      "lp.brainstorm": () => ({ status: "ok" }),
+      "lp.plan": () => ({ status: "ok", tasks: ["T"], waves: [["w"]] }),
+      "lp.build": () => ({ status: "done", merged_commits: ["b1"], failed_findings: [] }),
+      "lp.close": () => ({ status: "closed", report_path: "r.md", staged: 0 }),
+    });
+    const engine = engineOn(journalDb(), { agent }, { resolveWorkflow: resolveFake(store) });
+    const started = engine.start({ workflow: store.get("grill-driven")!.workflow, inputs: { goal: "g", plan_text: "p" } });
+    const first = await started.done;
+    expect(first.status).toBe("waiting");
+    expect(first.waiting[0]).toMatchObject({ nodeId: "ask_open" });
+    await engine.resolve(first.runId, first.waiting[0]!.stepKey, { answer: "A-GRILL-9", answer_kind: "answered" });
+    expect(engine.get(first.runId)!.status).toBe("succeeded");
+    for (const id of ["lp.brainstorm", "lp.plan"]) {
+      const answers = calls[id]![0]!.owner_answers as Array<{ output: { answer: string } }>;
+      expect(answers[0]!.output.answer, `${id} did not see the ask_open answer`).toBe("A-GRILL-9");
+    }
   });
 });
 
@@ -129,11 +164,39 @@ describe("impeccable-build: QA findings and the ask_direction answer reach their
     expect(first.waiting[0]).toMatchObject({ nodeId: "ask_direction" });
     await engine.resolve(first.runId, first.waiting[0]!.stepKey, { answer: "ANSWER-DIR-7", answer_kind: "answered" });
     expect(engine.get(first.runId)!.status).toBe("succeeded");
-    // pack saw the human answer history with the actual answer value.
+    // pack saw the human answer history with the actual answer value, both as input and in the rendered step packet.
     const answers = calls["pack"]![0]!.owner_answers as Array<{ output: { answer: string } }>;
     expect(answers[0]!.output.answer).toBe("ANSWER-DIR-7");
+    expect(calls["pack"]![0]!.packet).toContain("ANSWER-DIR-7");
     // fix_plan is the second lp.plan call; gaps are the QA findings, not finish_review's (which had not run).
     expect(calls["lp.plan"]![1]!.gaps).toEqual(qaFindings);
+  });
+
+  it("the finish_review -> fix_plan edge delivers finish_review.findings with no cross-edge override", async () => {
+    const store = await load();
+    const reviewFindings = [{ file: "src/x.tsx", line: 9, severity: "medium", evidence: "contrast", dimension: "accessibility" }];
+    const { agent, calls } = agents({
+      "impeccable-build:brief": () => ({ surface_mode: "m", contract: "c", open_questions: [], has_design_md: false, new_world: false }),
+      "impeccable-build:pack": () => ({ pack_path: "p.md", token_count: 10, component_list: ["c"], prototype_path: "" }),
+      "impeccable-build:qa": () => ({ status: "pass", findings: [], screenshots: [] }),
+      "impeccable-build:finish_review": (_ctx, i) => i === 0
+        ? { disposition: "fix", score: 60, p0_count: 0, p1_count: 1, findings: reviewFindings }
+        : { disposition: "ship", score: 95, p0_count: 0, p1_count: 0, findings: [] },
+      "lp.plan": () => ({ status: "ok", tasks: ["T"], waves: [["w"]] }),
+      "lp.build": () => ({ status: "done", merged_commits: ["b1"], failed_findings: [] }),
+      "lp.close": () => ({ status: "closed", report_path: "r.md", staged: 0 }),
+    });
+    const engine = engineOn(journalDb(), {
+      agent,
+      "lp-task": ok(() => ({ state: "accepted", merge_commit: "m1" })),
+      "deliverable.validate": ok(() => ({ ok: true, verdict: "pass", reason: "", details: {} })),
+    }, { resolveWorkflow: resolveFake(store) });
+    // open_questions is empty: ask_direction is skipped, so pack still gets a (empty) answer history — the no-answer branch.
+    const summary = await engine.start({ workflow: store.get("impeccable-build")!.workflow, inputs: { goal: "g" } }).done;
+    expect(summary.status).toBe("succeeded");
+    expect(calls["pack"]![0]!.owner_answers).toEqual([]);
+    expect(calls["lp.plan"]).toHaveLength(2);
+    expect(calls["lp.plan"]![1]!.gaps).toEqual(reviewFindings);
   });
 });
 
@@ -166,8 +229,8 @@ describe("project-start: the ask answer reaches downstream consumers", () => {
   });
 });
 
-describe("milestone-close: record path uses the runtime run_id", () => {
-  it("with no run_id input the record path is still a real filename, built from the run id", async () => {
+describe("milestone-close: record path uses the effective run id", () => {
+  const run = async (inputs: Record<string, unknown>) => {
     const store = await load();
     const paths: string[] = [];
     const { agent } = agents({
@@ -177,7 +240,7 @@ describe("milestone-close: record path uses the runtime run_id", () => {
     });
     const engine = engineOn(journalDb(), {
       agent,
-      "lp.run_status": ok(() => ({ open_tasks: 0, failed_tasks: 0, unmerged: 0, gate_ok: true, running_attempts: 0, merged_commits: ["m1"], gate_state: "none", unmerged_seen: 0, uncovered_reqs: [], coverage_matrix: "", retro_living: "on", milestone_archive: "off", milestone_summary: "off" })),
+      "lp.run_status": ok((ctx: StepContext) => ({ open_tasks: 0, failed_tasks: 0, unmerged: 0, gate_ok: true, running_attempts: 0, merged_commits: ["m1"], gate_state: "none", unmerged_seen: 0, uncovered_reqs: [], coverage_matrix: "", retro_living: "on", milestone_archive: "off", milestone_summary: "off", effective_run_id: effectiveRunId(ctx) })),
       "lp.retro_living": ok(() => ({ updated: 0, total: 0, path: "" })),
       "fs.write": ok((ctx: StepContext) => {
         paths.push(ctx.render(String((ctx.node as { params: { path: string } }).params.path)));
@@ -186,8 +249,55 @@ describe("milestone-close: record path uses the runtime run_id", () => {
       "lp.milestone_archive": ok(() => ({ folder: "f", files: [], kept: true })),
       "lp.run_close": ok(() => ({ archived: true })),
     }, { resolveWorkflow: resolveFake(store) });
-    const summary = await engine.start({ workflow: store.get("milestone-close")!.workflow, inputs: {}, mode: "standard" }).done;
+    const summary = await engine.start({ workflow: store.get("milestone-close")!.workflow, inputs, mode: "standard" }).done;
+    return { summary, paths };
+  };
+
+  it("with no run_id input the record path falls back to the run being closed, never an empty name", async () => {
+    const { summary, paths } = await run({});
     expect(summary.status).toBe("succeeded");
     expect(paths).toEqual([`.agents/milestones/${summary.runId}.md`]);
+  });
+
+  it("an explicit run_id input names the record after the target run", async () => {
+    const { summary, paths } = await run({ run_id: "run_explicit_42" });
+    expect(summary.status).toBe("succeeded");
+    expect(paths).toEqual([".agents/milestones/run_explicit_42.md"]);
+  });
+});
+
+describe("validate: a required subworkflow input mapped on every incoming edge", () => {
+  const CHILD = wf({
+    id: "req.child",
+    inputs: [{ name: "tasks", type: "json", required: true }],
+    outputs: [{ name: "status", type: "string" }],
+    nodes: [{ id: "do", type: "agent", prompt: "x", output: [{ name: "status", type: "string" }] }],
+    edges: [{ from: "start", to: "do" }, { from: "do", to: "end", with: { status: "do.status" } }],
+  });
+  const resolve = () => CHILD;
+  const graph = (edgeWith: Array<Record<string, string> | undefined>): Workflow => wf({
+    id: "req.parent",
+    nodes: [
+      { id: "a", type: "action", action: "a", out: [{ name: "t", type: "string" }] },
+      { id: "b", type: "action", action: "b", out: [{ name: "t", type: "string" }] },
+      { id: "build", type: "subworkflow", workflow: "req.child" },
+      { id: "done", type: "action", action: "emit", map: { result: "build.status" } },
+    ],
+    edges: [
+      { from: "start", to: "a" },
+      { from: "a", to: "b", when: "a.t == 'x'" },
+      { from: "a", to: "build", with: edgeWith[0] },
+      { from: "b", to: "build", with: edgeWith[1] },
+      { from: "build", to: "done" },
+    ],
+  });
+  const inputErrors = (workflow: Workflow) => validateWorkflow(workflow, { resolve }).filter((p) => p.code === "subworkflow_input");
+
+  it("passes when every incoming edge maps the required input", () => {
+    expect(inputErrors(graph([{ tasks: "a.t" }, { tasks: "b.t" }]))).toEqual([]);
+  });
+
+  it("fails when even one incoming edge does not map it", () => {
+    expect(inputErrors(graph([{ tasks: "a.t" }, undefined]))[0]?.message).toContain('input "tasks"');
   });
 });

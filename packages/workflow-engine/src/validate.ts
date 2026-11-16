@@ -500,8 +500,14 @@ export function validateWorkflow(workflow: Workflow, options: ValidateOptions = 
       const child = options.resolve?.(node.workflow, node.version);
       if (options.resolve && !child) error("subworkflow_missing", `${node.id}: workflow "${node.workflow}" was not found`, extra);
       if (child) {
+        // A required child input may also be delivered edge-exactly: accepted when every incoming edge maps it in `with`,
+        // so per-producer mappings (plan/replan into one build) stay provable without a shadowing node.with.
+        const incoming = L.edges.filter((edge) => edge.to === node.id);
         for (const field of child.inputs) {
-          if (field.required && !given.has(field.name) && field.name !== "quality_mode") error("subworkflow_input", `${node.id}: input "${field.name}" of "${child.id}" is not mapped`, extra);
+          if (field.required && !given.has(field.name) && field.name !== "quality_mode"
+            && !(incoming.length > 0 && incoming.every((edge) => isRecord(edge.with) && field.name in edge.with))) {
+            error("subworkflow_input", `${node.id}: input "${field.name}" of "${child.id}" is not mapped`, extra);
+          }
         }
         for (const name of given) if (!child.inputs.some((field) => field.name === name)) error("subworkflow_input", `${node.id}: "${child.id}" has no input "${name}"`, extra);
         for (const field of node.out) {

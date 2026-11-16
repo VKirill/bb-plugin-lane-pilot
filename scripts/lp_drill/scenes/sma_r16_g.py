@@ -38,7 +38,7 @@ def prove_g(proofs, tmp) -> None:
 
     # ---- milestone close, summary, audit, new milestone, cleanup
     d = seen("k_c_completems")
-    proofs.prove("n1330", d.get("onPath") == FULL_CLOSE and d.get("offPath") == ["status", "retro", "close", "approve_knowledge", "archive", "closed"] and [d.get("onRecordCalled"), d.get("onSnapshotCalled"), d.get("offRecordCalled"), d.get("offSnapshotCalled")] == [1, 1, 0, 0] and d.get("recordPath") == ".agents/milestones/{{$inputs.run_id}}.md" and "only if the file already exists; never create it" in d.get("retroPrompt", ""), f"close path with the record and the snapshot {d.get('onPath')}; switches off {d.get('offPath')}")
+    proofs.prove("n1330", d.get("onPath") == FULL_CLOSE and d.get("offPath") == ["status", "retro", "close", "approve_knowledge", "archive", "closed"] and [d.get("onRecordCalled"), d.get("onSnapshotCalled"), d.get("offRecordCalled"), d.get("offSnapshotCalled")] == [1, 1, 0, 0] and d.get("recordPath") == ".agents/milestones/{{status.effective_run_id}}.md" and "only if the file already exists; never create it" in d.get("retroPrompt", ""), f"close path with the record and the snapshot {d.get('onPath')}; switches off {d.get('offPath')}")
     d = seen("k_c_mssummary")
     proofs.prove("n1331", d.get("alonePath") == ["summary", "goal_check", "done"] and d.get("aloneOut", {}).get("status") == "done" and d.get("summaryCalls") == [1, 0, 0] and "summary" in d.get("onPath", []) and "summary" not in d.get("offPath", []) and d.get("haltedStatus") == "halted", f"summary runs after a close only with the switch on: calls {d.get('summaryCalls')}, graph alone {d.get('alonePath')}")
     d = seen("k_c_auditms")

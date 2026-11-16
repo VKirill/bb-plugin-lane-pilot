@@ -106,6 +106,10 @@ export function registerProjectActions(engine: WorkflowEngine, ctx: ServerCore, 
   action("lp.run_status", async (c, lane) => {
     const rt = needLanePilot(lane, "lp.run_status");
     const runId = str(c.resolve("$inputs.run_id")) || rt.runId;
+    // The milestone record's filename: the explicit target run when it is a safe single path segment, else the run being
+    // closed (the PM's run id — never the workflow engine's own wfrun id).
+    const requested = str(c.resolve("$inputs.run_id"));
+    const effective_run_id = requested && !/[/\\]/.test(requested) && requested !== "." && requested !== ".." ? requested : runId || c.runId;
     const open = listOpenAttempts(db).filter((row) => row.run_id === runId);
     const tasks = listTaskIdsForRun(db, runId);
     const latest = tasks.map((taskId) => listAttemptsForTask(db, runId, taskId).at(-1)).filter(Boolean) as Array<{ state: string }>;
@@ -122,7 +126,8 @@ export function registerProjectActions(engine: WorkflowEngine, ctx: ServerCore, 
     const coverage = await bestEffort(ctx.log, "requirement coverage", requirementCoverage(rt), { uncovered: [] as string[], covered: [] as string[], total: 0, matrix: "" });
     return { open_tasks: tasks.length - latest.filter((attempt) => attempt.state === "accepted").length - failed, failed_tasks: failed, unmerged: 0, gate_ok: failed === 0, running_attempts: open.length, merged_commits: list(c.resolve("ctx.merged_commits")).map(String),
       gate_state: gateState, unmerged_seen: Math.max(unlanded, phaseTrees), uncovered_reqs: coverage.uncovered, coverage_matrix: coverage.matrix,
-      retro_living: flagOf(rt, "retro.living") ? "on" : "off", milestone_archive: flagOf(rt, "milestone.archive") ? "on" : "off", milestone_summary: flagOf(rt, "milestone.summary") ? "on" : "off" };
+      retro_living: flagOf(rt, "retro.living") ? "on" : "off", milestone_archive: flagOf(rt, "milestone.archive") ? "on" : "off", milestone_summary: flagOf(rt, "milestone.summary") ? "on" : "off",
+      effective_run_id };
   });
 
   // The full-gate mark (SMA k_ws_fullgate), only where the project set ship.full_gate to on; unset the node answers ok as it always did.

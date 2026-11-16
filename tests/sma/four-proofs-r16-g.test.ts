@@ -14,7 +14,7 @@ describe("milestone close, summary, audit, new milestone, cleanup (n1330 … n13
     expect(seen.onPath).toEqual(FULL_CLOSE);
     expect(seen.offPath).toEqual(["status", "retro", "close", "approve_knowledge", "archive", "closed"]);
     expect([seen.onRecordCalled, seen.onSnapshotCalled, seen.offRecordCalled, seen.offSnapshotCalled]).toEqual([1, 1, 0, 0]);
-    expect(seen.recordPath).toBe(".agents/milestones/{{$inputs.run_id}}.md");
+    expect(seen.recordPath).toBe(".agents/milestones/{{status.effective_run_id}}.md");
     expect(seen.recordReads).toEqual(["status", "retro.insights", "close.staged", "close.report_path", "$inputs.goal", "$inputs.goals"]);
     expect(seen.snapshotName).toBe("{{$inputs.goal}}");
     expect(seen.retroPrompt).toMatch(/If \.agents\/planning\/PROJECT\.md already exists, append this milestone's changed limits to it/);

@@ -27,6 +27,10 @@
     },
     "research": {
       "type": "any"
+    },
+    "owner_answers": {
+      "type": "any",
+      "note": "settled owner answers to open questions (ctx.answers.<ask> envelope)"
     }
   },
   "outputs": {

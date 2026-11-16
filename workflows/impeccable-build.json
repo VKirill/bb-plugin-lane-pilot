@@ -149,6 +149,13 @@
     },
     {
       "id": "pack",
+      "consumes": [
+        {
+          "kind": "report",
+          "version": 1,
+          "from": "brief"
+        }
+      ],
       "produces": [
         {
           "kind": "report",
@@ -284,8 +291,7 @@
       "workflow": "lp.plan",
       "with": {
         "goal": "{{$inputs.goal}}",
-        "mode": "gaps",
-        "gaps": "{{finish_review.findings}}"
+        "mode": "gaps"
       },
       "guards": {
         "maxVisits": 1
@@ -468,7 +474,10 @@
       "from": "finish_review",
       "to": "fix_plan",
       "pass": "artifact",
-      "when": "finish_review.disposition == 'fix' && visits('fix_plan') == 0"
+      "when": "finish_review.disposition == 'fix' && visits('fix_plan') == 0",
+      "with": {
+        "gaps": "finish_review.findings"
+      }
     },
     {
       "from": "finish_review",
