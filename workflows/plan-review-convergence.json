@@ -66,8 +66,8 @@
       "id": "proof",
       "type": "subworkflow",
       "workflow": "plan-review-convergence-proof",
-      "inputs": {
-        "phase_id": "$inputs.phase_id",
+      "with": {
+        "phase_id": "{{$inputs.phase_id}}",
         "plan_sha": "{{phase_status.status.plan.sha}}",
         "phase_status": "{{phase_status.status}}"
       },
