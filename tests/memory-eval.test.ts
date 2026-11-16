@@ -147,16 +147,16 @@ describe("a run", () => {
   it("reports every retriever at every size, and the plain baseline finds what the production writer path finds on a clean corpus", async () => {
     vi.setSystemTime(T0 + 200 * DAY);
     const report = await runMemoryEval(data(), { sizes: [30, 60], seed: 1, scope: "pile", ...options, migrations });
+    const text = formatEvalReport(report);
     expect(report.sizes.map((size) => size.size)).toEqual([30, 60]);
     for (const size of report.sizes) {
       expect(size.scores.map((row) => row.id)).toEqual(["writer", "plain", "pm", "search", "pm-nofloor", "search-nofloor", "search+floor", "plain-keyword", "reviewer"]);
       const writer = size.scores.find((row) => row.id === "writer")!, plain = size.scores.find((row) => row.id === "plain")!;
-      expect(writer.hit.mean).toBeGreaterThan(0.7);
-      expect(plain.hit.mean).toBeGreaterThan(0.7);
-      expect(plain.falseHitNonCore.mean).toBeLessThan(0.5);
+      expect(writer.hit.mean, text).toBeGreaterThan(0.7);
+      expect(plain.hit.mean, text).toBeGreaterThan(0.7);
+      expect(plain.falseHitNonCore.mean, text).toBeLessThan(0.5);
       expect(size.versus).toHaveLength(4);
     }
-    const text = formatEvalReport(report);
     expect(text).toContain("== 30 notes");
     expect(text).toContain("plain (plain)");
     expect(text).toContain("false-hit(non-core)");
