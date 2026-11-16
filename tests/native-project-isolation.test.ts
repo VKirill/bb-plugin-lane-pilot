@@ -1,5 +1,7 @@
 import { expect, it, vi } from "vitest";
 import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { readFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
@@ -49,6 +51,68 @@ esac
     };
     expect(after.env.AUDIT_PROJECT, JSON.stringify({ sameLauncher: first === second, before: before.env, after: after.env, afterHooks: after.hooks.PreToolUse })).toBe("one");
     expect(first).not.toBe(second);
+  } finally {
+    vi.unstubAllEnvs();
+    await rm(temp, { recursive: true, force: true });
+  }
+});
+
+it("keeps helper settings isolated in generated launchers while standalone native chats retain user settings", async () => {
+  const temp = await mkdtemp(join(tmpdir(), "audit-native-helper-settings-"));
+  state.home = join(temp, "home");
+  const bin = join(temp, "bin");
+  const project = join(temp, "project");
+  await mkdir(bin, { recursive: true });
+  await mkdir(state.home, { recursive: true });
+  await mkdir(join(project, ".claude/agents"), { recursive: true });
+  await writeFile(join(bin, "claude"), `#!/bin/sh
+case "$1" in
+--version) echo fixture-1;;
+--help) echo "--agent NAME --agents JSON --plugin-dir DIR";;
+*) for a in "$@"; do echo "$a"; done;;
+esac
+`, { mode: 0o700 });
+  vi.stubEnv("PATH", `${bin}:${process.env.PATH ?? ""}`);
+  vi.stubEnv("CLAUDE_CONFIG_DIR", join(state.home, ".claude"));
+  const missingHook = join(temp, "missing-user-hook.py");
+  try {
+    await writeFile(join(project, ".claude/agents/design-lead.md"), "fixture profile");
+    await writeFile(join(project, ".claude/settings.json"), JSON.stringify({
+      hooks: { PreToolUse: [{ matcher: "Read", hooks: [{ type: "command", command: `python3 ${missingHook}` }] }] },
+    }));
+    const prepare = (helper: boolean) => prepareNativeClaude({
+      cwd: project,
+      agentId: "design-lead",
+      agentsJson: null,
+      dataDir: join(temp, "data"),
+      helper,
+    });
+    const helper = await prepare(true);
+    const standalone = await prepare(false);
+    const run = (launcher: string, inheritedRole?: string) => spawnSync(launcher, [
+      "--settings", JSON.stringify({ enabledPlugins: { fixture: false } }),
+      "--setting-sources=user,project,local",
+    ], { encoding: "utf8", env: { ...process.env, ...(inheritedRole ? { LANE_PILOT_ROLE: inheritedRole } : {}) } });
+    const settings = (result: ReturnType<typeof run>) => {
+      const args = result.stdout.trim().split("\n");
+      return {
+        args,
+        merged: JSON.parse(readFileSync(args[args.indexOf("--settings") + 1]!, "utf8")) as {
+          hooks: { PreToolUse: Array<{ hooks: Array<{ command: string }> }> };
+        },
+      };
+    };
+    const helperRun = run(helper.env.find((entry) => entry.name === "BB_CLAUDE_CODE_EXECUTABLE")!.value);
+    const helperSettings = settings(helperRun);
+    expect(helperRun.status).toBe(0);
+    expect(helperSettings.args).toContain("--setting-sources=project,local");
+    expect(helperSettings.merged.hooks.PreToolUse.some((group) => group.hooks.some((hook) => hook.command.includes(missingHook)))).toBe(true);
+
+    const standaloneRun = run(standalone.env.find((entry) => entry.name === "BB_CLAUDE_CODE_EXECUTABLE")!.value, "writer");
+    const standaloneSettings = settings(standaloneRun);
+    expect(standaloneRun.status).toBe(0);
+    expect(standaloneSettings.args).toContain("--setting-sources=user,project,local");
+    expect(JSON.stringify(standaloneSettings.merged)).toContain(missingHook);
   } finally {
     vi.unstubAllEnvs();
     await rm(temp, { recursive: true, force: true });

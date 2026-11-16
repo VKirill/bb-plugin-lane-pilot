@@ -39,7 +39,7 @@ async function setup(input?: {
   const failPrepareWithCwd = input?.failPrepareWithCwd;
   const hangPrepare = input?.hangPrepare;
   const rpcCalls: Array<{ method: string; input: unknown }> = [];
-  const prepareCalls: Array<{ cwd: string | null; agentId: string; agentsJson: string | null }> = [];
+  const prepareCalls: Array<{ cwd: string | null; agentId: string; agentsJson: string | null; helper?: boolean }> = [];
   const metadata: Array<{ threadId: string; set: Record<string, unknown> }> = [];
   const fake = createFakePluginHost({
     pluginId: "lane-pilot",
@@ -86,7 +86,8 @@ async function setup(input?: {
         const cwd = (input as { cwd?: string }).cwd ?? null;
         const agentId = String((input as { agentId: string }).agentId);
         const agentsJson = (input as { agentsJson: string | null }).agentsJson ?? null;
-        prepareCalls.push({ cwd, agentId, agentsJson });
+        const helper = (input as { helper?: boolean }).helper === true;
+        prepareCalls.push({ cwd, agentId, agentsJson, ...(helper ? { helper: true } : {}) });
         if (hangPrepare?.on) return await new Promise(() => undefined);
         if (failPrepareWithCwd && cwd) throw new Error("late prepare failed");
         return {
@@ -454,7 +455,7 @@ it("binds hidden composer data on ordinary Send and ignores other plugins", asyn
 });
 
 it("starts a specialist thread with its own profile inside the PM's run, without a run of its own", async () => {
-  const fake = await setup();
+  const fake = await setup({ environmentPath: "/workspace" });
   const hook = fake.harness.registrations.hooks["message.dispatch"]!;
   const pm = await fake.harness.behavior.callRpc("prepare_native_session", { projectId: "project_a", agentId: "dev-orchestrator" }) as { token: string };
   expect(await hook(context("thr_pm", nativeSelectionMarker(pm.token)))).toEqual({ action: "proceed" });
@@ -465,7 +466,13 @@ it("starts a specialist thread with its own profile inside the PM's run, without
   });
   await fake.bb.storage.kv.set(`native-selection:${specialist.token}`, specialist);
   expect(await hook(context("thr_specialist", nativeSelectionMarker(specialist.token)))).toEqual({ action: "proceed" });
-  expect(fake.prepareCalls.at(-1)).toMatchObject({ agentId: "design-lead", cwd: "/workspace" });
+  expect(fake.prepareCalls.at(-1)).toMatchObject({ agentId: "design-lead", cwd: "/workspace", helper: true });
+  await fake.harness.behavior.resolveProviderEnv("claude-code", {
+    threadId: "thr_specialist",
+    hostId: "host_a",
+    projectId: "project_a",
+  });
+  expect(fake.prepareCalls.at(-1)).toMatchObject({ agentId: "design-lead", cwd: "/workspace", helper: true });
   expect(findOpenNativeRun(db, "project_a", "thr_specialist")).toBeNull();
   expect(fake.metadata.some((row) => row.threadId === "thr_specialist")).toBe(false);
   expect(getRun(db, runId)).toMatchObject({ pm_thread_id: "thr_pm", state: "running" });

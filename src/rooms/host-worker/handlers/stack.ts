@@ -82,6 +82,7 @@ export const discoverClaudeAgentsHost: ExperimentalHostRpcHandlers<typeof hostCo
 export const prepareNativeClaudeHost: ExperimentalHostRpcHandlers<typeof hostContract>["prepareNativeClaude"] = async (input, context) => (
   prepareNativeClaude({
     directoryMove: input.directoryMove,
+    helper: input.helper,
     cwd: input.cwd,
     agentId: input.agentId,
     agentsJson: input.agentsJson,

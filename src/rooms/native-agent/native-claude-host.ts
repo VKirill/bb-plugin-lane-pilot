@@ -214,6 +214,7 @@ export function nativeLauncherScript(input: {
   agentId: string;
   settingId: string;
   extraArgs: string[];
+  helper?: boolean;
 }): string {
   const inject = join(input.destDir, "hooks", "inject_agent_type.py");
   const guard = join(input.destDir, "hooks", "guard_shell.py");
@@ -230,7 +231,7 @@ export function nativeLauncherScript(input: {
     "  echo 'Lane Pilot: claude CLI is not executable' >&2",
     "  exit 78",
     "fi",
-    "unset LANE_PILOT_ROLE",
+    input.helper === true ? "export LANE_PILOT_NATIVE_HELPER=1" : "unset LANE_PILOT_ROLE LANE_PILOT_NATIVE_HELPER",
     `export LANE_PILOT_AGENT_TYPE=${shellQuote(input.settingId)}`,
     "export AGENT_HOOK_CLIENT=claude",
     `export LANE_PILOT_HOOK_TRACE=${shellQuote(join(input.destDir, "hook-trace.jsonl"))}`,
@@ -246,7 +247,8 @@ export function nativeLauncherScript(input: {
  * The exec line merges every `--settings` it sees with the guard file (guard last; hook lists concatenate) and hands
  * Claude one. No `--settings` from core: the guard file goes as before. A layer that cannot be read: guard only, said on stderr.
  *
- * A helper or writer (`LANE_PILOT_ROLE` set by its launcher, not `pm`) does not load the `user` setting source: the person's
+ * A native helper carries the generated `LANE_PILOT_NATIVE_HELPER` marker; the bundled guard keeps using its `LANE_PILOT_ROLE` marker.
+ * Neither loads the `user` setting source: the person's
  * `~/.claude/settings.json` differs per machine (14 hooks on OVH, none on the Macs, 2026-11-10), so the same role ran under different
  * hooks depending on where it landed, and the person's env keys reached every helper. Its layer is the bundle, the project's hooks
  * and core's flags: the same on every machine (docs/guide/hooks.md, rule 6). MCP servers still connect (live probe). A PM chat keeps
@@ -276,7 +278,8 @@ const MERGE_SETTINGS_PY = [
   "      for ev,lst in v.items(): a[k][ev]=list(a[k].get(ev,[]))+list(lst)",
   "    elif isinstance(v,dict) and isinstance(a.get(k),dict): merge(a[k],v)",
   "    else: a[k]=v",
-  "helper=os.environ.get(\"LANE_PILOT_ROLE\",\"pm\")!=\"pm\"",
+  // Native launchers use an explicit generated marker; the role fallback keeps the shared merger compatible with claude-guard-launch.
+  "helper=os.environ.get(\"LANE_PILOT_NATIVE_HELPER\") == \"1\" or os.environ.get(\"LANE_PILOT_ROLE\",\"pm\") != \"pm\"",
   "final=guard",
   "if True:",
   "  try:",
@@ -374,6 +377,7 @@ export function claudeExecLine(command: string, settingsPath: string, extraArgs:
 
 export async function prepareNativeClaude(input: {
   directoryMove?: boolean;
+  helper?: boolean;
   cwd?: string | null;
   agentId: string;
   agentsJson: string | null;
@@ -404,7 +408,7 @@ export async function prepareNativeClaude(input: {
   const command = await installedClaudeExecutable();
   // (2026-10-29 audit A-027) cwd is part of the launcher id: two projects with the same agent must not share settings.
   const digest = sha256Hex(JSON.stringify({
-    agentId, command, agentsJson: sessionAgentsJson, settingId, sourceStamp, cwd, version: 8,
+    agentId, command, agentsJson: sessionAgentsJson, settingId, sourceStamp, cwd, helper: input.helper === true, version: 9,
   })).slice(0, 24);
   const dir = join(input.dataDir, "native-launchers", digest);
   await mkdir(dir, { recursive: true, mode: 0o700 });
@@ -427,6 +431,7 @@ export async function prepareNativeClaude(input: {
     agentId,
     settingId,
     extraArgs,
+    helper: input.helper === true,
   }), 0o700);
   return {
     env: [

@@ -303,6 +303,7 @@ export async function handleNativeDispatch(
       }
       traceNativeDispatch(bb.log, "host.call", { ...base, reason: "prepareNativeClaude", host: workspace.hostId, phase: "host-only" });
       const prepared = await host.call("prepareNativeClaude", {
+        helper: Boolean(selected.parentRunId),
         agentId: selected.agentId,
         agentsJson: selected.agentsJson,
         ...directoryMoveCapability(bb, selected),
@@ -343,6 +344,7 @@ export async function handleNativeDispatch(
     }
     traceNativeDispatch(bb.log, "host.call", { ...base, reason: "prepareNativeClaude", host: workspace.hostId });
     const prepared = await host.call("prepareNativeClaude", {
+      helper: Boolean(selected.parentRunId),
       cwd: workspace.workspacePath,
       agentId: selected.agentId,
       agentsJson: selected.agentsJson,
@@ -397,6 +399,7 @@ export async function nativeContributedEnv(
         });
         const refresh = (async () => {
           const prepared = await host.call("prepareNativeClaude", {
+            helper: Boolean(selected.parentRunId),
             cwd: path,
             agentId: selected.agentId,
             agentsJson: selected.agentsJson,
