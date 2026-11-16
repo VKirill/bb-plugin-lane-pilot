@@ -2,7 +2,7 @@ import { compiledMainAgentSpawnBinding, detectCompiledMainAgentCapability, resol
 import type { CompiledMainAgent } from "../agent-profile";
 import { readyComposerSnapshot, spawnEnvironmentFromSelection } from "../../contracts/composer-selection";
 import type { ComposerSelectionSnapshot } from "../../contracts/composer-selection";
-import { claimActivation, createRun, freezeRunBinding, getActivation, getRunSettingsScopes, loadPrototypeConfig, releaseActivation, setRunState, setRunThread, setRunWorkspace } from "../../storage";
+import { claimActivation, createRun, freezeRunBinding, getActivation, getRunSettingsScopes, loadPrototypeConfig, releaseActivation, setRunState, setRunThread } from "../../storage";
 import { ownerCardBlock } from "../../anamnesis";
 import { anamnesisFor } from "../../anamnesis";
 import { projectPassportBlock } from "../../passport";
@@ -13,6 +13,7 @@ import { buildRunPolicy } from "../../tasks";
 import { parseWorkspaceMode, resolveManagedWorkspace, usesManagedWorktree } from "../../verification";
 import { excludeBookkeeping } from "../../verification/server";
 import { fullAccessSpawn, pmPrompt } from "../../platform/server";
+import type { WriterHostApi } from "../../platform/server";
 import { requireHelperSpawn, requiredPolicyField } from "../../runs/server";
 import {id, stringAt, valueAt, orMiss, isNotFound, bestEffort} from "@lane-pilot/kit";
 import type { ServerCore } from "../../contracts/server";
@@ -22,6 +23,7 @@ import type { ResumeOrphansPort } from "../../contracts/stability-api";
 /** The fields of the services bag this file reads, typed by the rooms that own them. */
 interface Services {
   resumeOrphans: ResumeOrphansPort["resumeOrphans"];
+  resolveProjectWriterHost: WriterHostApi["resolveProjectWriterHost"];
 }
 
 
@@ -78,6 +80,22 @@ export function createActivation(ctx: ServerCore, services: Services) {
     if (!config) throw new Error(`Lane Pilot prototype is not configured for ${projectId}`);
     const native = snapshot ? readyComposerSnapshot(snapshot, projectId) : null;
     if (native) await assertComposerEnvironment(projectId, native);
+    // Legacy activation has no composer snapshot to carry an authoritative writer environment. Resolve the
+    // project source before creating a run so an obsolete prototype writerWorkspacePath cannot contaminate
+    // the run, PM instructions, or bookkeeping. The PM's own workspace remains the explicit configured path.
+    const writerBinding = native ? null : await services.resolveProjectWriterHost({ projectId, threadId: sourceThreadId });
+    if (writerBinding && writerBinding.status !== "resolved") {
+      switch (writerBinding.status) {
+        case "ambiguous":
+          throw new Error("Lane Pilot writer binding is ambiguous; select a project folder before activating");
+        case "offline":
+          throw new Error(`Lane Pilot writer host is offline: ${writerBinding.hostId}`);
+        case "catalog_unavailable":
+          throw new Error(`Lane Pilot writer binding is unavailable: ${writerBinding.reason}`);
+        case "setup_required":
+          throw new Error("Lane Pilot writer binding is not configured; add a project folder before activating");
+      }
+    }
     if (!native) {
       const detected = await host.call("detect", {
         requestedHostId: config.hostId,
@@ -115,8 +133,12 @@ export function createActivation(ctx: ServerCore, services: Services) {
     const workspaceMode = parseWorkspaceMode(settings["adoc.040"]);
     const managedWorkspace = usesManagedWorktree(workspaceMode);
     const snapshotEnv = native ? spawnEnvironmentFromSelection(native) : null;
-    const runHostId = native ? null : config.hostId;
-    const runWorkspacePath = native ? null : (managedWorkspace ? null : config.writerWorkspacePath);
+    const writerConfig = writerBinding ? { ...config, hostId: writerBinding.hostId, writerWorkspacePath: writerBinding.path } : config;
+    // A managed legacy PM is provisioned on the explicit PM host; its actual environment binding below
+    // supplies the run host. Leave it unset until then so a writer source on another host cannot leak into
+    // the managed checkout's host bookkeeping.
+    const runHostId = native || managedWorkspace ? null : writerBinding?.hostId ?? null;
+    const runWorkspacePath = native ? null : (managedWorkspace ? null : writerBinding?.path ?? null);
     const runId = id("lprun");
     createRun(db, runId, projectId, kind, runWorkspacePath, runGate, buildRunPolicy(settings, (line) => bb.log.warn(line)), runHostId);
     claimActivation(db, { projectId, pmThreadId:`pending:${sourceThreadId ?? "new"}`, runId });
@@ -144,7 +166,7 @@ export function createActivation(ctx: ServerCore, services: Services) {
           ? writerExecutionSelection(spawnProviderId, spawnModel, native.reasoningLevel, spawnTier)
           : { providerId: spawnProviderId, model: spawnModel, serviceTier: spawnTier, executionInputSources:{ providerId:"explicit" as const, model:"explicit" as const, serviceTier:"explicit" as const } }),
         // The owner's confirmed, non-sensitive facts (anamnesis A5), within 1800 characters; nothing when there are none or the store is out of reach.
-        prompt: pmPrompt(runId, config, !native && managedWorkspace, Boolean(native)) + await ownerCardBlock(anamnesisFor(ctx).hub)
+        prompt: pmPrompt(runId, writerConfig, !native && managedWorkspace, Boolean(native)) + await ownerCardBlock(anamnesisFor(ctx).hub)
           + (() => { const pp = projectPassportBlock(db, { projectId, role: "pm", maxChars: 1600 }); return pp ? `\n\n${pp}` : ""; })()
           // The rules the owner's corrections produced for the PM, within a token budget (src/learning/pm-rules.ts).
           + pmRulesPromptBlock(db, projectId, getRunSettingsScopes(db, runId), ruleBudget("pm"), `pm:${runId}`),
@@ -167,7 +189,7 @@ export function createActivation(ctx: ServerCore, services: Services) {
     if (!threadId) throw new Error("threads.spawn returned no PM thread id");
     const bindResolvedEnvironment = native || managedWorkspace;
     // Where the project's checkout is on its machine: bookkeeping paths are excluded there once the binding is known.
-    let checkout:{ hostId:string; path:string } | null = bindResolvedEnvironment ? null : { hostId:config.hostId, path:config.writerWorkspacePath };
+    let checkout:{ hostId:string; path:string } | null = bindResolvedEnvironment ? null : writerBinding;
     if (bindResolvedEnvironment) {
       const environmentId = stringAt(spawned, "environmentId");
       try {
@@ -185,7 +207,7 @@ export function createActivation(ctx: ServerCore, services: Services) {
           const hostId = stringAt(environment, "hostId") ?? config.hostId;
           const workspace = resolveManagedWorkspace(environment, hostId);
           if (!workspace.path) throw new Error("managed workspace missing path");
-          if (!setRunWorkspace(db, runId, workspace.path, workspace.environmentId ?? environmentId)) {
+          if (!freezeRunBinding(db, runId, { hostId, workspacePath: workspace.path, environmentId: workspace.environmentId ?? environmentId })) {
             throw new Error("managed workspace CAS failed; run is no longer pending or already has a workspace binding");
           }
           checkout = { hostId, path:workspace.path };

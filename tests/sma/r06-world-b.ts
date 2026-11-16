@@ -312,7 +312,10 @@ export async function observeActivation() {
     savePrototypeConfig(ctx.db, CONFIG("proj1", WORKSPACE));
     return { ctx, spawns, db: ctx.db };
   };
-  const services = { resumeOrphans: async () => [] } as never;
+  const services = {
+    resumeOrphans: async () => [],
+    resolveProjectWriterHost: async () => ({ status: "resolved", hostId: "h1", path: WORKSPACE, source: "explicit_override" }),
+  } as never;
   const plain = harnessOf(false);
   const out = await createActivation(plain.ctx, services).activate("proj1", null, "bb");
   const row = plain.db.prepare("SELECT pm_thread_id, kind FROM lane_pilot_run WHERE id=?").get((out as { runId: string }).runId) as { pm_thread_id: string; kind: string };

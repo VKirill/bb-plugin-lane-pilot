@@ -625,7 +625,10 @@ describe("conversation and intake", () => {
 
   it("[sma:m_cf_voice] the PM speaks on the configured PM provider with explicit execution inputs", async () => {
     const { ctx, spawns } = activationHarness();
-    const activation = createActivation(ctx, { resumeOrphans: async () => [] } as never);
+    const activation = createActivation(ctx, {
+      resumeOrphans: async () => [],
+      resolveProjectWriterHost: async () => ({ status: "resolved", hostId: "h1", path: WORKSPACE, source: "explicit_override" }),
+    } as never);
     const out = await activation.activate("proj1", null, "bb");
     expect(out.threadId).toBe("pm-main");
     expect(spawns[0]).toMatchObject({ providerId: "p", model: "pm", executionInputSources: { providerId: "explicit", model: "explicit" } });
@@ -635,7 +638,10 @@ describe("conversation and intake", () => {
     const { bb, ctx, spawns, db } = activationHarness();
     Object.assign(bb.agents as object, { experimental_vkCompiledMainAgent: () => ({ persist: true, bridgeAgentOptions: true, requiredMarker: true, snapshotDigest: true, providerIds: ["claude-code"] }) });
     saveProjectSetting(db, "proj1", "main.agent", "dev-orchestrator");
-    const activation = createActivation(ctx, { resumeOrphans: async () => [] } as never);
+    const activation = createActivation(ctx, {
+      resumeOrphans: async () => [],
+      resolveProjectWriterHost: async () => ({ status: "resolved", hostId: "h1", path: WORKSPACE, source: "explicit_override" }),
+    } as never);
     await activation.activate("proj1", null, "bb");
     const bound = spawns[0]?.experimental_vkCompiledMainAgent as { tools?: Array<{ name?: string } | string> };
     expect(bound).toBeDefined();
@@ -644,14 +650,20 @@ describe("conversation and intake", () => {
     const second = activationHarness();
     saveProjectSetting(second.db, "proj1", "main.agent", "dev-orchestrator");
     const runsBefore = second.db.prepare("SELECT COUNT(*) AS n FROM lane_pilot_run").get() as { n: number };
-    await expect(createActivation(second.ctx, { resumeOrphans: async () => [] } as never).activate("proj1", null, "bb")).rejects.toThrow(/compiled_main_agent_unsupported/);
+    await expect(createActivation(second.ctx, {
+      resumeOrphans: async () => [],
+      resolveProjectWriterHost: async () => ({ status: "resolved", hostId: "h1", path: WORKSPACE, source: "explicit_override" }),
+    } as never).activate("proj1", null, "bb")).rejects.toThrow(/compiled_main_agent_unsupported/);
     expect((second.db.prepare("SELECT COUNT(*) AS n FROM lane_pilot_run").get() as { n: number }).n).toBe(runsBefore.n);
     expect(second.spawns).toHaveLength(0);
   });
 
   it("[sma:m_cf_ensure] a writer thread cannot activate a PM", async () => {
     const { ctx } = activationHarness();
-    const activation = createActivation(ctx, { resumeOrphans: async () => [] } as never);
+    const activation = createActivation(ctx, {
+      resumeOrphans: async () => [],
+      resolveProjectWriterHost: async () => ({ status: "resolved", hostId: "h1", path: WORKSPACE, source: "explicit_override" }),
+    } as never);
     await expect(activation.activate("proj1", "thr_w", "bb")).rejects.toThrow(/writer threads cannot activate a PM/);
   });
 

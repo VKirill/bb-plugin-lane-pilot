@@ -99,7 +99,10 @@ export async function pmActivation(): Promise<{ threadId: string; runId: string;
   const ctx = createCore(bb, db);
   (ctx.host as { call: unknown }).call = async (method: string) => (method === "detect" ? { workspace: { path: "/ws", present: true } } : {});
   savePrototypeConfig(ctx.db, CONFIG);
-  const out = await createActivation(ctx, { resumeOrphans: async () => [] } as never).activate("proj1", null, "bb");
+  const out = await createActivation(ctx, {
+    resumeOrphans: async () => [],
+    resolveProjectWriterHost: async () => ({ status: "resolved", hostId: "h1", path: "/ws", source: "explicit_override" }),
+  } as never).activate("proj1", null, "bb");
   const run = ctx.db.prepare("SELECT pm_thread_id, kind FROM lane_pilot_run WHERE id=?").get(out.runId) as { pm_thread_id: string | null; kind: string | null } | undefined;
   const meta = (spawns[0]?.pluginMetadata ?? {}) as Record<string, unknown>;
   return { threadId: out.threadId, runId: out.runId, role: meta.role, metaRunId: meta.lanePilotRunId, runPmThread: run?.pm_thread_id ?? null, runKind: run?.kind ?? null, spawns: spawns.length };
