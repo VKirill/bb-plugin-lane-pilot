@@ -215,10 +215,13 @@ describe("errands and specialists read the checkout's status on its host", () =>
     const waited = await call("lane_pilot_wait_errand", { threadId: "remote-child", timeoutSec: 20 });
 
     expect(waited).toMatchObject({ state: "blocked", reason: "repo_edited", files: ["stray-from-helper.txt"] });
-    expect(statusCalls).toEqual([
+    // Root endpoint observations also run on this host; the errand's two status reads still detect its stray file.
+    expect(statusCalls.every((call) => call.hostId === "ovh" && call.cwd === REMOTE)).toBe(true);
+    expect(statusCalls.filter((call) => call.command === "git status --porcelain -uall")).toEqual([
       { hostId: "ovh", cwd: REMOTE, command: "git status --porcelain -uall" },
       { hostId: "ovh", cwd: REMOTE, command: "git status --porcelain -uall" },
     ]);
+    expect(statusCalls.filter((call) => call.command.includes("===HEAD==="))).toHaveLength(2);
     expect(touchedRemotePath()).toEqual([]);
   });
 });

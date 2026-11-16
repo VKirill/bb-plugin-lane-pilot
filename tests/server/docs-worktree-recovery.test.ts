@@ -95,15 +95,15 @@ describe("docs worktree recovery from the six MAC Mini merge incidents", () => {
     expect(git(base, "merge-base", "--is-ancestor", earlierHead, "HEAD")).toBe("");
   });
 
-  it("docs.gitnexus_refresh unset is on: the night's pass asks the project's machine for the code index before the docs pass, and with it off asks nothing", async () => {
+  it("docs.gitnexus_refresh unset is on: the night's pass asks the project's machine for the code index before the docs pass, and with it off never refreshes the index", async () => {
     const unset = await replay(fixture.incidents[0]!, "missing", "unset");
-    expect(unset.calls.some((call) => call.method === "runCommand")).toBe(true);
+    expect(unset.calls.some((call) => call.method === "runCommand" && String(call.input.command).includes("gitnexus"))).toBe(true);
     expect(unset.harness.logEntries.filter((entry) => entry.level === "warn" && entry.message.includes("docs gitnexus refresh"))).toHaveLength(1);
     expect(unset.rows).toEqual([expect.objectContaining({ state: "skipped", reason: "no code changes" })]);
     await dispose?.(); dispose = undefined;
     if (root) await rm(root, { recursive: true, force: true });
     const off = await replay(fixture.incidents[0]!, "missing", "off");
-    expect(off.calls.some((call) => call.method === "runCommand")).toBe(false);
+    expect(off.calls.some((call) => call.method === "runCommand" && String(call.input.command).includes("gitnexus"))).toBe(false);
   });
 
   it("still merges an existing leftover before creating the next pass's worktree", async () => {
