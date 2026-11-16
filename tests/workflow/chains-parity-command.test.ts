@@ -97,7 +97,7 @@ describe("on-map command graph parity", () => {
 
   it("review-fix covers a clean review, a repair round and the blocked planner", async () => {
     const clean = await runSim("review-fix", { input: { goal: "fix findings", findings: [] }, stubs: { first_review: { status: "pass", findings: [] } } });
-    expect(pathOf(clean)).toBe("first_review done");
+    expect(pathOf(clean)).toBe("first_review done_first");
     expect(out(clean)).toMatchObject({ status: "done" });
     const repaired = await runSim("review-fix", { input: { goal: "fix findings", findings: [{ file: "src/a.ts", severity: "high" }] }, stubs: { plan_fix: { status: "ok", tasks: [task("fix-a")] }, build_fix: { merged_commits: ["c1"] }, re_review: { status: "pass", findings: [], remaining_actionable: 0 } } });
     expect(pathOf(repaired)).toBe("first_review plan_fix build_fix re_review done");

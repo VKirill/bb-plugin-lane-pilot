@@ -86,10 +86,10 @@ describe("review-fix: fix_rounds and blocked findings stay current", () => {
   const planOk = { "lp.plan": { status: "ok", task_count: 1, tasks: [task("f1")] } };
   const buildOk = { "lp.build": { status: "done", merged_commits: ["f1"] } };
 
-  it("a clean first review reports zero fix rounds", async () => {
+  it("a clean first review reports zero fix rounds and the first review's status", async () => {
     const r = await runSim("review-fix", { input: { goal: "g", findings: [] }, stubs: { "lp.review": { status: "pass", findings: [], remaining_actionable: 0 } } });
-    expect(pathOf(r)).toBe("first_review done");
-    expect(out(r)).toMatchObject({ status: "done", fix_rounds: 0 });
+    expect(pathOf(r)).toBe("first_review done_first");
+    expect(out(r)).toMatchObject({ status: "done", review_status: "pass", fix_rounds: 0 });
   });
 
   it("one fix round reports one, two rounds report two", async () => {
@@ -106,7 +106,7 @@ describe("review-fix: fix_rounds and blocked findings stay current", () => {
       },
     });
     expect(pathOf(two)).toBe("first_review plan_fix build_fix re_review plan_fix2 build_fix2 re_review done");
-    expect(out(two)).toMatchObject({ status: "done", fix_rounds: 2 });
+    expect(out(two)).toMatchObject({ status: "done", review_status: "pass", fix_rounds: 2 });
   });
 
   it("a round-2 blocked build reports the latest review findings, not the first review's", async () => {
@@ -146,7 +146,7 @@ describe("review-fix: fix_rounds and blocked findings stay current", () => {
       humans: { ask: { answer_kind: "accept" } },
     });
     expect(pathOf(r)).toBe("first_review plan_fix build_fix re_review plan_fix2 classify ask partial");
-    expect(out(r)).toMatchObject({ status: "partial", fix_rounds: 1 });
+    expect(out(r)).toMatchObject({ status: "partial", review_status: "rework", fix_rounds: 1 });
   });
 });
 

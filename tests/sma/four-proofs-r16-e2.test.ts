@@ -10,7 +10,7 @@ describe("audit-fix, add-tests and the live check (n1283 … n1290)", () => {
   it("[sma:k_c_auditfix] /sma-audit-fix with no findings audits first, plans the fixes from the audit's findings, builds, re-reviews and ends done; a clean audit stops there; what stays open after two rounds is classified for the owner and ends partial", async () => {
     const seen = await observeE2.k_c_auditfix();
     expect(seen.audited).toEqual([`${ROUNDS} done`, [FINDING], "done"]);
-    expect(seen.clean).toEqual(["first_review done", "done"]);
+    expect(seen.clean).toEqual(["first_review done_first", "done"]);
     expect(seen.stuck).toEqual([`${ROUNDS} classify ask partial`, "partial", [FINDING], 1]);
   });
 

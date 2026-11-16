@@ -246,6 +246,18 @@
       }
     },
     {
+      "id": "done_first",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "done",
+        "review_status": "first_review.status",
+        "fix_rounds": "visits('build_fix') + visits('build_fix2')",
+        "remaining": "[]",
+        "merged_commits": "ctx.merged_commits"
+      }
+    },
+    {
       "id": "done",
       "type": "action",
       "action": "emit",
@@ -291,7 +303,7 @@
   "edges": [
     {
       "from": "first_review",
-      "to": "done",
+      "to": "done_first",
       "pass": "artifact",
       "when": "first_review.status == 'pass'"
     },

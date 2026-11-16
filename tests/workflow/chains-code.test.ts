@@ -108,7 +108,7 @@ describe("review-fix", () => {
 
   it("without findings the first review runs on the range and a clean one ends at once", async () => {
     const clean = await runSim("review-fix", { input: { goal: "g", range: "main..HEAD" }, stubs: { "lp.review": { status: "pass" } } });
-    expect(pathOf(clean)).toBe("first_review done");
+    expect(pathOf(clean)).toBe("first_review done_first");
     const dirty = await runSim("review-fix", { input: { goal: "g", range: "main..HEAD" }, stubs: { ...stubs(), first_review: { status: "rework", findings: [finding("high")] }, re_review: { status: "pass", remaining_actionable: 0 } } });
     expect(pathOf(dirty)).toBe("first_review plan_fix build_fix re_review done");
     expect(firstInput(dirty, "first_review")).toMatchObject({ range: "main..HEAD" });
