@@ -25,7 +25,7 @@ export function assertRunAdmission(db: LanePilotDatabase, runId: string): void {
   if (run.pm_thread_id && directoryMove(db, run.pm_thread_id)) throw new Error("Lane Pilot directory move is pending; finish or recover the move before admitting work");
 }
 
-type Admission = { threadId: string };
+type Admission = { threadId: string } | { workflowRuns: () => readonly string[] };
 type Admissions = { files: Map<string, Set<Admission>>; memory: WeakMap<LanePilotDatabase, Set<Admission>> };
 const admissionKey = Symbol.for("lane-pilot.run-admissions");
 
@@ -45,7 +45,15 @@ function admissions(db: LanePilotDatabase): Set<Admission> {
 }
 
 export function hasRunAdmission(db: LanePilotDatabase, threadId: string): boolean {
-  return [...admissions(db)].some((entry) => entry.threadId === threadId);
+  return [...admissions(db)].some((entry) => "threadId" in entry ? entry.threadId === threadId
+    : entry.workflowRuns().some((runId) => Boolean(db.prepare("SELECT 1 FROM lane_pilot_wf_run w JOIN lane_pilot_run r ON r.id=w.link_run_id WHERE w.id=? AND r.pm_thread_id=?").get(runId, threadId))));
+}
+
+/** A canceled drive can still be settling its async executor. Keep old plugin generations visible until they finish. */
+export function trackWorkflowAdmissions(db: LanePilotDatabase, workflowRuns: () => readonly string[]): () => void {
+  const entries = admissions(db), entry = { workflowRuns };
+  entries.add(entry);
+  return () => { entries.delete(entry); };
 }
 
 export function beginRunAdmission(db: LanePilotDatabase, runId: string): () => void {

@@ -210,3 +210,48 @@ it("parking reserves admission before async state reads and cannot appear behind
   await handleDirectoryMove(f.deps, f.input);
   await expect(stability.onTaskFailed(input)).rejects.toThrow(/move is pending/);
 });
+
+it("waits for a canceled workflow's actual executor to settle before moving", async () => {
+  const f = fixture();
+  const { engineOn, wf, ok } = await import("./workflow/engine-helpers");
+  const { installWorkflowAdmission } = await import("../src/rooms/workflow/server/workflow-admission");
+  const engine = engineOn(f.db);
+  const stopTracking = installWorkflowAdmission(f.db, engine);
+  let entered!: () => void, finish!: () => void;
+  const ready = new Promise<void>((resolve) => { entered = resolve; });
+  const pending = new Promise<void>((resolve) => { finish = resolve; });
+  engine.register("search", ok(async () => { entered(); await pending; return { items: [], count: 0, kind: "fresh" }; }));
+  engine.register("write", ok(() => ({ text: "done" })));
+  try {
+    const run = engine.start({ workflow: wf(), inputs: { query: "q" }, link: { runId: "old", projectId: "project" } });
+    await ready;
+    expect(engine.cancel(run.runId)).toBe(true);
+    expect(engine.get(run.runId)?.status).toBe("canceled");
+    await expect(handleDirectoryMove(f.deps, f.input)).rejects.toThrow(/preparing work/);
+    finish();
+    await run.done;
+    await expect(handleDirectoryMove(f.deps, f.input)).resolves.toEqual({ ok: true });
+  } finally { finish(); await engine.idle(); engine.dispose(); stopTracking(); }
+});
+
+it("keeps a timed-out executor fenced even after the workflow drive has ended", async () => {
+  const f = fixture();
+  const { engineOn, wf, ok } = await import("./workflow/engine-helpers");
+  const { installWorkflowAdmission } = await import("../src/rooms/workflow/server/workflow-admission");
+  const engine = engineOn(f.db), stopTracking = installWorkflowAdmission(f.db, engine);
+  let finish!: () => void;
+  const pending = new Promise<void>((resolve) => { finish = resolve; });
+  engine.register("search", ok(async () => { await pending; return { items: [], count: 0, kind: "fresh" }; }));
+  engine.register("write", ok(() => ({ text: "done" })));
+  const workflow = wf();
+  workflow.nodes.find((node) => node.id === "search")!.timeoutSec = 1;
+  try {
+    const run = engine.start({ workflow, inputs: { query: "q" }, link: { runId: "old", projectId: "project" } });
+    expect((await run.done).status).toBe("failed");
+    expect(engine.inFlight()).toEqual([]);
+    await expect(handleDirectoryMove(f.deps, f.input)).rejects.toThrow(/preparing work/);
+    finish();
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    await expect(handleDirectoryMove(f.deps, f.input)).resolves.toEqual({ ok: true });
+  } finally { finish(); await engine.idle(); engine.dispose(); stopTracking(); }
+});

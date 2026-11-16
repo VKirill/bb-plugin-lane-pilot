@@ -75,5 +75,5 @@ export { listEvidence, recordEvidence, type EvidenceCheck, type EvidenceRecord }
 export { writeReplacing, type ReplacingWrite } from "./write-replacing";
 export { attemptEnvironmentCandidates } from "./attempts-store";
 
-export { assertRunAdmission, beginRunAdmission, hasRunAdmission, directoryMove, nativeDirectoryMigrations, type DirectoryMove } from "./native-directory-guard";
+export { assertRunAdmission, beginRunAdmission, hasRunAdmission, trackWorkflowAdmissions, directoryMove, nativeDirectoryMigrations, type DirectoryMove } from "./native-directory-guard";
 export { readParkedTasks } from "./parked-tasks";

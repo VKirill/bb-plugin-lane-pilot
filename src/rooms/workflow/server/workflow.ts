@@ -1,4 +1,4 @@
-import { assertRunAdmission, beginRunAdmission } from "../../storage";
+import { installWorkflowAdmission } from "./workflow-admission";
 import { HARNESS_VERSION, createStatusResolver } from "../../storage";
 import type { VerificationGatePort } from "../../contracts/integration-gate";
 import type { IsTaskSatisfied } from "../../contracts";
@@ -127,18 +127,8 @@ export function createWorkflowEngine(ctx: ServerCore, services: Services) {
     // A reload ends a dispatch that was between its stages, as it always did: the attempt is blocked and the PM sends the task again.
     resumePolicy: (run) => (run.workflow_id === LP_TASK_PIPELINE || run.idem_key?.startsWith("lp-task:") ? "interrupt" : "continue"),
   });
-  // Every helper/schedule/phase graph shares this admission boundary, including callers that prepared asynchronously.
-  const startGraph = engine.start.bind(engine);
-  engine.start = (input) => db.transaction(() => {
-    if (input.link?.runId) assertRunAdmission(db, input.link.runId);
-    return startGraph(input);
-  }).immediate();
-  const rerunGraph = engine.rerunNode.bind(engine);
-  engine.rerunNode = async (runId, ...args) => {
-    const linked = wfRunRow(db, runId)?.link_run_id;
-    const release = linked ? beginRunAdmission(db, linked) : () => {};
-    try { return await rerunGraph(runId, ...args); } finally { release(); }
-  };
+  const stopAdmissionTracking = installWorkflowAdmission(db, engine);
+  bb.onDispose(() => { void engine.idle().then(stopAdmissionTracking, stopAdmissionTracking); });
   engineRef.current = engine;
   // What runs once a task is accepted (memory and project life), started by the merge.
   registerAfterAcceptExecutors(engine, ctx, services);
