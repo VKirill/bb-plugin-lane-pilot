@@ -31,7 +31,7 @@
     }
   },
   "outputs": {
-    "status": "done",
+    "status": "done|blocked",
     "open_count": "int",
     "audit_path": "string",
     "proposed_workflow": "string?"
@@ -127,6 +127,16 @@
       }
     },
     {
+      "id": "blocked",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "'blocked'",
+        "open_count": "audit.open_count",
+        "audit_path": "write.audit_path"
+      }
+    },
+    {
       "id": "offer",
       "type": "action",
       "action": "lp.propose_workflow",
@@ -154,7 +164,7 @@
       "from": "goal_check",
       "to": "offer",
       "pass": "artifact",
-      "when": "$inputs.propose_followup == true && audit.open_count > 0"
+      "when": "goal_check.ok != false && $inputs.propose_followup == true && audit.open_count > 0"
     },
     {
       "from": "offer",
@@ -164,7 +174,14 @@
     {
       "from": "goal_check",
       "to": "done",
-      "pass": "artifact"
+      "pass": "artifact",
+      "when": "goal_check.ok != false"
+    },
+    {
+      "from": "goal_check",
+      "to": "blocked",
+      "pass": "artifact",
+      "when": "goal_check.ok == false"
     }
   ],
   "test": {

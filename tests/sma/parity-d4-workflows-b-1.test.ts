@@ -29,9 +29,11 @@ import { pushCommands } from "../../src/rooms/cockpit/ui/screens-ops";
 const PROJECT = "d4-project", PM = "d4-pm", RUN = "d4-run";
 type Row = Record<string, unknown>;
 type Script = Record<string, Array<string | ((checkout: string) => string)>>;
+type AgentEnvironment = { hostId: string; path: string };
+type SetupOptions = { agentEnvironments?: Record<string, AgentEnvironment> };
 const reply = (body: Row, lead = "Done.") => `${lead}\n\n\`\`\`json\n${JSON.stringify(body)}\n\`\`\``;
 
-async function setup(script: Script = {}) {
+async function setup(script: Script = {}, options: SetupOptions = {}) {
   const checkout = mkdtempSync(join(tmpdir(), "lp-d4-"));
   execFileSync("git", ["init", "-q"], { cwd: checkout });
   execFileSync("git", ["-c", "user.email=t@t", "-c", "user.name=t", "config", "init.defaultBranch", "main"], { cwd: checkout });
@@ -50,7 +52,11 @@ async function setup(script: Script = {}) {
       threads: {
         getPluginMetadata: async ({ threadId }) => (threadId === PM ? { role: "pm", lanePilotRunId: RUN } : {}),
         spawn: async (args) => { const request = args as unknown as Row; spawned.push(request); const id = `helper-${next += 1}`; nodeOf.set(id, String((request.pluginMetadata as Row).lanePilotWorkflowNode ?? (request.pluginMetadata as Row).role)); return { id }; },
-        get: async ({ threadId }) => ({ id: threadId, status: "idle", projectId: PROJECT, environmentId: "env-pm", sourceThreadId: PM, lifecycleOwnerThreadId: PM }),
+        get: async ({ threadId }) => {
+          const node = nodeOf.get(threadId) ?? (threadId.endsWith("-thread") ? threadId.slice(0, -"-thread".length) : undefined);
+          const registered = node ? options.agentEnvironments?.[node] : undefined;
+          return { id: threadId, status: "idle", projectId: PROJECT, environmentId: registered ? `env-${node}` : "env-pm", sourceThreadId: PM, lifecycleOwnerThreadId: PM };
+        },
         events: { list: async ({ threadId }) => [{ type: "turn/started", threadId, seq: 1 }, { type: "turn/completed", threadId, seq: 2, data: { status: "completed" } }] },
         send: async () => ({}) as never,
         stop: async () => ({ ok: true }) as never,
@@ -61,7 +67,11 @@ async function setup(script: Script = {}) {
           return { output: typeof answer === "function" ? answer(checkout) : answer ?? "no script" };
         },
       },
-      environments: { get: async () => ({ id: "env-pm", hostId: "local", path: checkout, status: "ready" }) },
+      environments: { get: async ({ environmentId }) => {
+        const node = String(environmentId).replace(/^env-/, "");
+        const registered = options.agentEnvironments?.[node];
+        return registered ? { id: String(environmentId), ...registered, status: "ready" } : { id: "env-pm", hostId: "local", path: checkout, status: "ready" };
+      } },
       projects: { get: async () => ({ id: PROJECT, name: "Project", sources: [{ hostId: "local", path: checkout }] }) },
       files: { write: async (args: unknown) => { if (state.failWrites) throw new Error("disk full"); const input = args as { path: string; content: string }; mkdirSync(dirname(input.path), { recursive: true }); writeFileSync(input.path, input.content); writes.push(input); return { ok: true } as never; } },
     },
@@ -79,7 +89,8 @@ async function setup(script: Script = {}) {
   const start = (workflow: Workflow, inputs: Row = {}) => engine.start({ workflow, inputs, runtime: rt, link: { projectId: PROJECT, runId: RUN } });
   const git = (...args: string[]) => execFileSync("git", ["-c", "user.email=t@t", "-c", "user.name=t", ...args], { cwd: checkout, encoding: "utf8" });
   const set = (key: string, value: string) => saveProjectSetting(db, PROJECT, key, value);
-  return { bb, db, engine, checkout, spawned, writes, start, git, rt, set, state, dispose: () => harness.lifecycle.dispose() };
+  const threadFor = (node: string) => [...nodeOf.entries()].find(([, value]) => value === node)?.[0] ?? `${node}-thread`;
+  return { bb, db, engine, checkout, spawned, writes, start, git, rt, set, state, threadFor, dispose: () => harness.lifecycle.dispose() };
 }
 
 let dispose: (() => Promise<void> | void) | null = null;
@@ -261,12 +272,13 @@ describe("parity d4 workflows b1", () => {
   });
 
   it("[P04-R5] macOS routine validates the screenshot on the execute agent's registered environment", async () => {
-    const t = await setup({});
+    const macRoot = mkdtempSync(join(tmpdir(), "lp-macos-registered-"));
+    const t = await setup({}, { agentEnvironments: { execute: { hostId: "mac-test", path: macRoot } } });
     dispose = t.dispose;
-    mkdirSync(join(t.checkout, ".agents/macos"), { recursive: true });
-    writeFileSync(join(t.checkout, ".agents/macos/evidence.png"), "PNG evidence\n");
+    mkdirSync(join(macRoot, ".agents/macos"), { recursive: true });
+    writeFileSync(join(macRoot, ".agents/macos/evidence.png"), "PNG evidence\n");
     t.engine.register("agent", { reentrant: true, run: async (ctx: { nodeId: string }) => ({
-      threadId: PM,
+      threadId: t.threadFor(ctx.nodeId),
       output: ctx.nodeId === "plan"
         ? { handoff: "plan done", ok: true, steps_plan: "take screenshot", status: "done" }
         : ctx.nodeId === "execute"
@@ -276,8 +288,29 @@ describe("parity d4 workflows b1", () => {
     const summary = await t.start(wf("macos-routine.json"), { task: "capture evidence", apps: [], target_dir: ".agents/macos" }).done;
     expect(summary.status).toBe("succeeded");
     expect(summary.output).toMatchObject({ status: "done", screenshot_path: ".agents/macos/evidence.png" });
+    expect(existsSync(join(t.checkout, ".agents/macos/evidence.png"))).toBe(false);
     const check = t.engine.snapshot(summary.runId)?.steps.find((step) => step.node_id === "goal_check");
     expect(JSON.parse(check?.output_json ?? "{}" as string)).toMatchObject({ ok: true, verdict: "pass" });
+  });
+
+  it("[P04-R5] macOS routine blocks when the registered execute environment has no screenshot", async () => {
+    const macRoot = mkdtempSync(join(tmpdir(), "lp-macos-missing-"));
+    const t = await setup({}, { agentEnvironments: { execute: { hostId: "mac-test", path: macRoot } } });
+    dispose = t.dispose;
+    t.engine.register("agent", { reentrant: true, run: async (ctx: { nodeId: string }) => ({
+      threadId: t.threadFor(ctx.nodeId),
+      output: ctx.nodeId === "plan"
+        ? { handoff: "plan done", ok: true, steps_plan: "take screenshot", status: "done" }
+        : ctx.nodeId === "execute"
+          ? { handoff: "execute done", ok: true, output: "screenshot missing", screenshot_path: ".agents/macos/missing.png", affected_files: [], status: "done" }
+          : { handoff: "report done", report_md: "# Report\n\nScreenshot was not found.", screenshot_ok: true, status: "done" },
+    }) } as never);
+    const summary = await t.start(wf("macos-routine.json"), { task: "capture evidence", apps: [], target_dir: ".agents/macos" }).done;
+    expect(summary.status).toBe("succeeded");
+    expect(executed(t, summary.runId)).toEqual(["plan", "execute", "report", "goal_check", "blocked"]);
+    expect(summary.output).toMatchObject({ status: "blocked" });
+    const check = t.engine.snapshot(summary.runId)?.steps.find((step) => step.node_id === "goal_check");
+    expect(JSON.parse(check?.output_json ?? "{}" as string)).toMatchObject({ ok: false, verdict: "rework" });
   });
 
   it("[sma:k_c_auditms] milestone-close with an uncovered REQ id or a red old gate asks the owner first (naming the readings); with the milestone switches off, close_anyway keeps main's tail", async () => {
