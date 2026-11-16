@@ -280,7 +280,7 @@
         "status": "closed",
         "candidates_staged": "close.staged",
         "candidates_approved": "approve_knowledge.approved_ids.length",
-        "deferred": "approve_knowledge.answer_kind != 'approved'",
+        "deferred": "close.staged > 0 && approve_knowledge.answer_kind != 'approved'",
         "report_path": "close.report_path",
         "retro_path": "retro.retro_path",
         "gate_state": "status.gate_state",

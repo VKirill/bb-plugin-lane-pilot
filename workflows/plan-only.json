@@ -127,7 +127,7 @@
       "type": "action",
       "action": "emit",
       "map": {
-        "status": "ok",
+        "status": "plan.status",
         "tasks": "plan.tasks",
         "waves": "plan.waves",
         "plan_path": "save.plan_path",

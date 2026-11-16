@@ -116,6 +116,17 @@
       }
     },
     {
+      "id": "done_offer",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "'done'",
+        "open_count": "audit.open_count",
+        "audit_path": "write.audit_path",
+        "proposed_workflow": "'analyze-plan-execute'"
+      }
+    },
+    {
       "id": "offer",
       "type": "action",
       "action": "lp.propose_workflow",
@@ -147,7 +158,7 @@
     },
     {
       "from": "offer",
-      "to": "done",
+      "to": "done_offer",
       "pass": "artifact"
     },
     {

@@ -207,6 +207,9 @@
       "id": "goal_check",
       "type": "action",
       "action": "deliverable.validate",
+      "params": {
+        "validator": "artifact"
+      },
       "title": {
         "en": "Check the goal was met",
         "ru": "Проверить, что цель достигнута"
@@ -247,6 +250,9 @@
       "from": "report",
       "to": "goal_check",
       "pass": "artifact",
+      "with": {
+        "path": "execute.screenshot_path"
+      },
       "when": "report.status == 'done'"
     },
     {

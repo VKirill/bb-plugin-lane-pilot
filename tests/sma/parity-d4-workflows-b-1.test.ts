@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { afterEach, describe, expect, it } from "vitest";
-import { createRun, openDatabase, setRunThread } from "../../src/rooms/plugin-db";
+import { createAttempt, createRun, createTask, openDatabase, recordFinishedAttempt, setRunThread } from "../../src/rooms/plugin-db";
 import { registerWorktree } from "../../src/rooms/storage";
 import { noteGateRunStart, finishGateRun, saveProjectSetting } from "../../src/rooms/storage";
 import { runCommand } from "../../src/rooms/host-worker/host-handlers";
@@ -125,7 +125,7 @@ const commitFile = (t: Awaited<ReturnType<typeof setup>>, path: string, body: st
 const reviewInput = { range: "HEAD~1..HEAD", files: ["src/bad.ts"], dimensions: ["correctness"] };
 const gateInputs = ["phase_id", "head"];
 const gateChain = () => actionChain("lp.integration_gate_status", { ok: "bool", failing: "string[]" }, gateInputs);
-const statusChain = () => actionChain("lp.run_status", { open_tasks: "int", failed_tasks: "int", unmerged: "int", gate_ok: "bool", running_attempts: "int", merged_commits: "string[]", gate_state: "string", unmerged_seen: "int", uncovered_reqs: "string[]", retro_living: "string", milestone_archive: "string" });
+const statusChain = () => actionChain("lp.run_status", { open_tasks: "int", failed_tasks: "int", unmerged: "int", gate_ok: "bool", running_attempts: "int", merged_commits: "string[]", gate_state: "string", unmerged_seen: "int", uncovered_reqs: "string[]", retro_living: "string", milestone_archive: "string", effective_run_id: "string" }, ["run_id"]);
 const archiveChain = (name?: string) => actionChain("lp.milestone_archive", { folder: "string", files: "string[]", kept: "bool" }, ["goal", "run_id"], name === undefined ? undefined : { name });
 const livingChain = () => actionChain("lp.retro_living", { updated: "int", total: "int", path: "string" }, ["insights", "goal", "run_id"]);
 const planOf = (id: string, covers: string[]) => ({ items: [{ id, title: id, wave: 1, promise: { given: "g", when: "w", then: "t" }, task: {}, covers }], sha: "s", contextSha: "c", submittedAt: 1 });
@@ -235,15 +235,49 @@ describe("parity d4 workflows b1", () => {
     // Another project's open phase worktree, and this project's own.
     insertPhase(t.db, { id: "ph_other", projectId: "other-project", pmThreadId: "o-pm", title: "t", goal: "g", at: 1 });
     registerWorktree(t.db, { host: "local", path: "/x/other-wt", branch: "phase/ph_other", owner_kind: "phase", owner_id: "ph_other" });
-    const status = (await t.start(statusChain()).done).output as Row;
+    const status = (await t.start(statusChain(), { run_id: RUN }).done).output as Row;
     // Unset: the switches are on by default; the readings beside main's gate_ok and unmerged are the same.
     expect(status).toMatchObject({ gate_ok: true, unmerged: 0, gate_state: "red", unmerged_seen: 0, uncovered_reqs: ["REQ-2"], retro_living: "on", milestone_archive: "on" });
     t.set("retro.living", "off"); t.set("milestone.archive", "off");
-    expect((await t.start(statusChain()).done).output).toMatchObject({ retro_living: "off", milestone_archive: "off" });
+    expect((await t.start(statusChain(), { run_id: RUN }).done).output).toMatchObject({ retro_living: "off", milestone_archive: "off" });
     registerWorktree(t.db, { host: "local", path: "/x/own-wt", branch: "phase/ph_done", owner_kind: "phase", owner_id: "ph_done" });
-    expect(((await t.start(statusChain()).done).output as Row).unmerged_seen).toBe(1);
+    expect(((await t.start(statusChain(), { run_id: RUN }).done).output as Row).unmerged_seen).toBe(1);
     const cov = await t.start(actionChain("lp.requirement_coverage", { uncovered: "string[]", covered: "string[]", total: "int" })).done;
     expect(cov.output!.uncovered).toEqual(["REQ-2"]);
+  });
+
+  it("[P04-R3] run_status reads accepted merge receipts from the selected target run, not workflow context", async () => {
+    const t = await setup({});
+    dispose = t.dispose;
+    const target = "d4-target";
+    createRun(t.db, target, PROJECT, "bb", t.checkout, "none", undefined, "local");
+    createTask(t.db, { id: "target-task", runId: target, kind: "bb", contract: { objective: "target" } });
+    createAttempt(t.db, { id: "target-attempt", runId: target, taskId: "target-task" });
+    recordFinishedAttempt(t.db, "target-attempt", "accepted");
+    t.db.prepare(`INSERT INTO lane_pilot_attempt_change(attempt_id,run_id,task_id,merge_commit,changed_json,recorded_at,updated_at)
+      VALUES (?,?,?,?,?,?,?)`).run("target-attempt", target, "target-task", "accepted-target-commit", "[]", Date.now(), Date.now());
+    const status = (await t.start(statusChain(), { run_id: target }).done).output as Row;
+    expect(status.merged_commits).toEqual(["accepted-target-commit"]);
+  });
+
+  it("[P04-R5] macOS routine validates the screenshot on the execute agent's registered environment", async () => {
+    const t = await setup({});
+    dispose = t.dispose;
+    mkdirSync(join(t.checkout, ".agents/macos"), { recursive: true });
+    writeFileSync(join(t.checkout, ".agents/macos/evidence.png"), "PNG evidence\n");
+    t.engine.register("agent", { reentrant: true, run: async (ctx: { nodeId: string }) => ({
+      threadId: PM,
+      output: ctx.nodeId === "plan"
+        ? { handoff: "plan done", ok: true, steps_plan: "take screenshot", status: "done" }
+        : ctx.nodeId === "execute"
+          ? { handoff: "execute done", ok: true, output: "screenshot captured", screenshot_path: ".agents/macos/evidence.png", affected_files: [], status: "done" }
+          : { handoff: "report done", report_md: "# Report\n\nScreenshot verified.", screenshot_ok: true, status: "done" },
+    }) } as never);
+    const summary = await t.start(wf("macos-routine.json"), { task: "capture evidence", apps: [], target_dir: ".agents/macos" }).done;
+    expect(summary.status).toBe("succeeded");
+    expect(summary.output).toMatchObject({ status: "done", screenshot_path: ".agents/macos/evidence.png" });
+    const check = t.engine.snapshot(summary.runId)?.steps.find((step) => step.node_id === "goal_check");
+    expect(JSON.parse(check?.output_json ?? "{}" as string)).toMatchObject({ ok: true, verdict: "pass" });
   });
 
   it("[sma:k_c_auditms] milestone-close with an uncovered REQ id or a red old gate asks the owner first (naming the readings); with the milestone switches off, close_anyway keeps main's tail", async () => {

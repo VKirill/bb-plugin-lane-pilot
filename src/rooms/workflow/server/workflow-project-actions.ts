@@ -11,6 +11,7 @@ import type { StepContext, WorkflowEngine } from "@lane-pilot/workflow-engine";
 import { switchWord } from "@lane-pilot/models";
 import { runOnHost } from "@lane-pilot/host-calls";
 import { instructionForms } from "../../project-life";
+import { acceptedChangeProofRows } from "../../rollback/server";
 import type { ChainRuntime } from "../../contracts/server";
 import type { ServerCore } from "../../contracts/server";
 
@@ -132,7 +133,8 @@ export function registerProjectActions(engine: WorkflowEngine, ctx: ServerCore, 
     const mine = new Set(phases.map((phase) => phase.id));
     const phaseTrees = listOpenWorktrees(db).filter((tree) => tree.owner_kind === "phase" && !!tree.owner_id && mine.has(tree.owner_id)).length;
     const coverage = await bestEffort(ctx.log, "requirement coverage", requirementCoverage(rt), { uncovered: [] as string[], covered: [] as string[], total: 0, matrix: "" });
-    return { open_tasks: tasks.length - latest.filter((attempt) => attempt.state === "accepted").length - failed, failed_tasks: failed, unmerged: 0, gate_ok: failed === 0, running_attempts: open.length, merged_commits: list(c.resolve("ctx.merged_commits")).map(String),
+    const mergedCommits = acceptedChangeProofRows(db as never, runId).map((row) => row.merge_commit).filter((commit): commit is string => Boolean(commit));
+    return { open_tasks: tasks.length - latest.filter((attempt) => attempt.state === "accepted").length - failed, failed_tasks: failed, unmerged: 0, gate_ok: failed === 0, running_attempts: open.length, merged_commits: mergedCommits,
       gate_state: gateState, unmerged_seen: Math.max(unlanded, phaseTrees), uncovered_reqs: coverage.uncovered, coverage_matrix: coverage.matrix,
       retro_living: flagOf(rt, "retro.living") ? "on" : "off", milestone_archive: flagOf(rt, "milestone.archive") ? "on" : "off", milestone_summary: flagOf(rt, "milestone.summary") ? "on" : "off",
       effective_run_id };
