@@ -2,7 +2,7 @@
 title: Workflow Validation and Expression Internals
 type: component
 created: 2026-10-26
-updated: 2026-11-14
+updated: 2026-11-16
 status: active
 confidence: medium
 tags: [workflow-engine, validation, expressions, schema]
@@ -64,7 +64,7 @@ This page records the detailed branches of the parser, expression checker, runti
 | `checkRef`, `checkExpr`, `evalExpr`, `evalCondition`, `renderValue` | Statically check references and expressions; evaluate ASTs and templates (`packages/workflow-engine/src/expr.ts:203-312`, `packages/workflow-engine/src/expr.ts:341-362`). |
 | `conditionSchema`, `consumesSchema`, `edgeSchema`, `nodeSchema` | Parse the corresponding workflow definition shapes (`packages/workflow-engine/src/schema.ts:51-58`, `packages/workflow-engine/src/schema.ts:77-83`, `packages/workflow-engine/src/schema.ts:196-244`). |
 | `validateWorkflow`, `loadWorkflow`, `parseWorkflow` | Return validation diagnostics, a success/failure load result, or throw `WorkflowError` (`packages/workflow-engine/src/validate.ts:22-26`, `packages/workflow-engine/src/validate.ts:550-570`). |
-| `artifactEnums`, `promptCoverageProblems` | Read enum vocabularies from registered artifact schemas and report values not named in an agent prompt or its generated output contract; both are exported from the `prompt` coverage entry point (`packages/workflow-engine/src/prompt-coverage.ts:10-31`, `packages/workflow-engine/src/index.ts:22`). |
+| `artifactEnums`, `promptCoverageProblems` | Read enum vocabularies from registered artifact schemas and report values not named in an agent prompt or its generated output contract; both are exported from the `prompt` coverage entry point (`packages/workflow-engine/src/prompt-coverage.ts:10-31`, `packages/workflow-engine/src/index.ts:23`). |
 | `loadWorkflowStore` | Merge built-in, global, and project definitions and provide lookup methods (`packages/workflow-engine/src/store.ts:50-104`). |
 
 ## Declaration details

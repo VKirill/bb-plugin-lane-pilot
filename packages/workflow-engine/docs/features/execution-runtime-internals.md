@@ -2,7 +2,7 @@
 title: Workflow Execution Runtime Internals
 type: component
 created: 2026-10-27
-updated: 2026-11-14
+updated: 2026-11-16
 status: active
 confidence: medium
 tags: [workflow-engine, execution, reducers, journal, actions]
@@ -35,30 +35,30 @@ Preflight returns all discovered problem messages and does not create a run. A b
 
 ### Reducer input normalization and registration
 
-`registerReducers` registers every `REDUCERS` entry as an asynchronous reentrant executor (`packages/workflow-engine/src/reducers.ts:152-160`). The wrapper takes `results`, `failed`, `rows`, and `items` from `ctx.input.with`, replacing only missing/nullish values with empty arrays, invokes the selected reducer, and returns its record as `output` (`packages/workflow-engine/src/reducers.ts:11-18`, `packages/workflow-engine/src/reducers.ts:152-160`).
+`registerReducers` registers every `REDUCERS` entry as an asynchronous reentrant executor (`packages/workflow-engine/src/reducers.ts:160-167`). The wrapper takes `results`, `failed`, `rows`, and `items` from `ctx.input.with`, replacing only missing/nullish values with empty arrays, invokes the selected reducer, and returns its record as `output` (`packages/workflow-engine/src/reducers.ts:11-18`, `packages/workflow-engine/src/reducers.ts:160-167`).
 
-Shared helpers treat non-array lists as empty, non-string text as empty, non-record values as `{}`, and missing successful-row data as `{}`. `done` selects successful rows in input order and retains branch/item/data; `lost` selects rows whose `ok` is false (`packages/workflow-engine/src/reducers.ts:19-28`, `packages/workflow-engine/src/reducers.ts:27-28`). Reducer failures are not caught by the `registerReducers` wrapper (`packages/workflow-engine/src/reducers.ts:152-160`).
+Shared helpers treat non-array lists as empty, non-string text as empty, non-record values as `{}`, and missing successful-row data as `{}`. `done` selects successful rows in input order and retains branch/item/data; `lost` selects rows whose `ok` is false (`packages/workflow-engine/src/reducers.ts:19-28`, `packages/workflow-engine/src/reducers.ts:27-28`). Reducer failures are not caught by the `registerReducers` wrapper (`packages/workflow-engine/src/reducers.ts:160-167`).
 
 | Key | Branch rules and output |
 |---|---|
-| `reduce.insights-post.posts` | Selects successful rows whose `data.status` is `ok`; emits `ok_folders`, `summary_paths`, `ok_count`, and all remaining rows as failures (`packages/workflow-engine/src/reducers.ts:41-44`). |
-| `reduce.issue-discover.scan` | Flattens `findings` from result rows and returns the list/count (`packages/workflow-engine/src/reducers.ts:45`). |
-| `reduce.issue-quick.review` | Flattens findings, counts `critical` and `high` severities, returns those counts, findings, and `failed_count`; the comment appends a note when `input.failed` is nonempty (`packages/workflow-engine/src/reducers.ts:46-54`). |
-| `reduce.debug.diagnose` | Returns one diagnosis per input row, deriving `gap` from the item's `gap`, `text`, or raw value. Successful rows include root cause, confidence, and status; failed rows include an empty root cause, zero confidence, and the error (`packages/workflow-engine/src/reducers.ts:55-59`). |
-| `reduce.lp.brainstorm.designs` | Accepts successful rows unless `data.ok === false`; returns `digests`, count, and failed roles from lost rows or explicit false results (`packages/workflow-engine/src/reducers.ts:60-64`). |
-| `reduce.lp.build.run_tasks` | Failed rows go to `blocked_ids` or `failed_ids` by their `blocked` flag. Successful `accepted` rows add `accepted_ids` plus unique merge commits; other states contribute verdict findings (`packages/workflow-engine/src/reducers.ts:75-87`). |
-| `reduce.lp.review.dims` | Flattens `findings`, assigns a stable ID when missing, sorts by severity (critical to info, unknown last) while preserving original order for ties, and counts critical/high findings (`packages/workflow-engine/src/reducers.ts:88-94`). |
-| `reduce.lp.review.confirm` | Keeps the branch item's finding ID. Drops only a successful row explicitly returning `confirmed === false` into `dropped_ids`; lost rows remain in `confirmed_ids` (`packages/workflow-engine/src/reducers.ts:95-103`). |
-| `reduce.reels.render` | Successful rows except `ok === false` contribute `files` paths/count. Lost or explicit-false rows contribute `failed_ids` (`packages/workflow-engine/src/reducers.ts:105-108`). |
-| `reduce.reels.verify` | Returns `ok_count`, `bad_files` from lost or explicit-false rows, and flattened `issues` from successful rows (`packages/workflow-engine/src/reducers.ts:109-112`). |
-| `reduce.roadmap-driven.sessions` | Only a successful row with `data.status === "done"` is in `done_ids`; every other row is in `blocked_ids` (`packages/workflow-engine/src/reducers.ts:113-117`). |
-| `reduce.security-audit.scan` | Flattens `findings` and `warnings` and counts critical/high findings (`packages/workflow-engine/src/reducers.ts:118-121`). |
-| `reduce.seo-cocoon.evidence` | Completed non-skipped rows contribute `findings_paths`; all result rows contribute `sources`; skipped and lost rows contribute `skipped_branches` (`packages/workflow-engine/src/reducers.ts:122-128`). |
-| `reduce.seo-cocoon.briefs` | Completed rows with a nonempty brief path contribute `brief_paths` and the count (`packages/workflow-engine/src/reducers.ts:129-130`). |
-| `reduce.web-research.search` | Flattens `sources` and removes later duplicates with the same nonempty URL. Lost items and successful rows with no sources are reported in `unavailable` (`packages/workflow-engine/src/reducers.ts:131-135`). |
-| `reduce.x-to-telegram-digest.score` | Reads `kept` scores only from successful rows. `keep === false` drops a score; otherwise item, post, indexed batch item, or raw score is kept; unique `topics` are returned (`packages/workflow-engine/src/reducers.ts:137-149`). |
+| `reduce.insights-post.posts` | Selects successful rows whose `data.status` is `ok`; emits `ok_folders`, `summary_paths`, `ok_count`, and all remaining rows as failures (`packages/workflow-engine/src/reducers.ts:44-47`). |
+| `reduce.issue-discover.scan` | Flattens `findings` from result rows and returns the list/count (`packages/workflow-engine/src/reducers.ts:48`). |
+| `reduce.issue-quick.review` | Flattens findings, counts `critical` and `high` severities, returns those counts, findings, and `failed_count`; the comment appends a note when `input.failed` is nonempty (`packages/workflow-engine/src/reducers.ts:51-57`). |
+| `reduce.debug.diagnose` | Returns one diagnosis per input row, deriving `gap` from the item's `gap`, `text`, or raw value. Successful rows include root cause, confidence, and status; failed rows include an empty root cause, zero confidence, and the error (`packages/workflow-engine/src/reducers.ts:59-62`). |
+| `reduce.lp.brainstorm.designs` | Accepts successful rows unless `data.ok === false`; returns `digests`, count, and failed roles from lost rows or explicit false results (`packages/workflow-engine/src/reducers.ts:63-67`). |
+| `reduce.lp.build.run_tasks` | Failed rows go to `blocked_ids` or `failed_ids` by their `blocked` flag. Successful `accepted` rows add `accepted_ids` plus unique merge commits; other states contribute verdict findings (`packages/workflow-engine/src/reducers.ts:78-90`). |
+| `reduce.lp.review.dims` | Flattens `findings`, assigns a stable ID when missing, sorts by severity (critical to info, unknown last) while preserving original order for ties, and counts critical/high findings (`packages/workflow-engine/src/reducers.ts:91-97`). |
+| `reduce.lp.review.confirm` | Keeps the branch item's finding ID. Drops only a successful row explicitly returning `confirmed === false` into `dropped_ids`; lost rows remain in `confirmed_ids` (`packages/workflow-engine/src/reducers.ts:98-107`). |
+| `reduce.reels.render` | Successful rows except `ok === false` contribute `files` paths/count. Lost or explicit-false rows contribute `failed_ids` (`packages/workflow-engine/src/reducers.ts:108-111`). |
+| `reduce.reels.verify` | Requires explicit `data.ok === true` and a nonempty branch `item`; returns `ok_count`, `good_files`, and `bad_files` keyed by branch `item` (ignoring child-echoed `clip_file`), plus `issues` combining branch `issues` and non-ok branch `reason` strings (`packages/workflow-engine/src/reducers.ts:112-119`). |
+| `reduce.roadmap-driven.sessions` | Only a successful row with `data.status === "done"` is in `done_ids`; every other row is in `blocked_ids` (`packages/workflow-engine/src/reducers.ts:120-124`). |
+| `reduce.security-audit.scan` | Flattens `findings` and `warnings` and counts critical/high findings (`packages/workflow-engine/src/reducers.ts:125-128`). |
+| `reduce.seo-cocoon.evidence` | Completed non-skipped rows contribute `findings_paths`; all result rows contribute `sources`; skipped and lost rows contribute `skipped_branches` (`packages/workflow-engine/src/reducers.ts:129-135`). |
+| `reduce.seo-cocoon.briefs` | Completed rows with a nonempty brief path contribute `brief_paths` and the count (`packages/workflow-engine/src/reducers.ts:136`). |
+| `reduce.web-research.search` | Flattens `sources` and removes later duplicates with the same nonempty URL. Lost items and successful rows with no sources are reported in `unavailable` (`packages/workflow-engine/src/reducers.ts:137-142`). |
+| `reduce.x-to-telegram-digest.score` | Reads `kept` scores only from successful rows. `keep === false` drops a score; otherwise item, post, indexed batch item, or raw score is kept; unique `topics` are returned (`packages/workflow-engine/src/reducers.ts:144-156`). |
 
-These reducers return data even when some branch rows failed; the reducer-specific fields preserve that failure information. A malformed non-array `rows` value can fail when a reducer iterates it. Such exceptions reject the executor call and enter the engine's `maxAttempts` retry path (`packages/workflow-engine/src/engine-step.ts:192-247`) via `registerReducers` (`packages/workflow-engine/src/reducers.ts:152-160`).
+These reducers return data even when some branch rows failed; the reducer-specific fields preserve that failure information. A malformed non-array `rows` value can fail when a reducer iterates it. Such exceptions reject the executor call and enter the engine's `maxAttempts` retry path (`packages/workflow-engine/src/engine-step.ts:192-247`) via `registerReducers` (`packages/workflow-engine/src/reducers.ts:160-167`).
 
 ### Journal reads and transitions: `createJournal`
 
@@ -72,18 +72,18 @@ Database errors from SQL or event insertion propagate. Event notification errors
 
 ### Deterministic action dispatch: `pureActionExecutor`
 
-1. Select an implementation from the fixed `ACTIONS` map. The returned executor is marked reentrant; on invocation it takes `ctx.node`, defaults missing `params` to `{}`, and selects references from `AGGREGATE_READS` for `verdict.aggregate` or `node.reads` for other actions (`packages/workflow-engine/src/actions.ts:185-188`, `packages/workflow-engine/src/actions.ts:190`, `packages/workflow-engine/src/actions.ts:194-202`).
-2. Its indexed `read` callback resolves the selected reference through `ctx.resolve`, returning undefined for an index without a reference. The action receives node, params, reader, and full context (`packages/workflow-engine/src/actions.ts:194-202`).
-3. Return the action's `output`; include `detail` only when it is not undefined. An unknown key is not checked before lookup and fails when `action.run` is accessed (`packages/workflow-engine/src/actions.ts:194-202`).
+1. Select an implementation from the fixed `ACTIONS` map. The returned executor is marked reentrant; on invocation it takes `ctx.node`, defaults missing `params` to `{}`, and selects references from `AGGREGATE_READS` for `verdict.aggregate` or `node.reads` for other actions (`packages/workflow-engine/src/actions.ts:212-215`, `packages/workflow-engine/src/actions.ts:217`, `packages/workflow-engine/src/actions.ts:221-229`).
+2. Its indexed `read` callback resolves the selected reference through `ctx.resolve`, returning undefined for an index without a reference. The action receives node, params, reader, and full context (`packages/workflow-engine/src/actions.ts:221-229`).
+3. Return the action's `output`; include `detail` only when it is not undefined. An unknown key is not checked before lookup and fails when `action.run` is accessed (`packages/workflow-engine/src/actions.ts:221-229`).
 
 | Key | Input-dependent branch and result |
 |---|---|
-| `items.dedupe` | Uses the first declared output name to select findings mode. Findings merge same-file same-line or text-overlap matches, retaining higher severity; other items drop bare reposts, group by normalized URL/text, and keep the duplicate with greater summed engagement. Returns findings/merged or items/count (`packages/workflow-engine/src/actions.ts:33-63`). |
-| `dag.validate` | Checks session IDs, dependency existence/cycles, and requirement-to-session mappings. Returns `ok`, error strings, and cycle paths; it reports problems in output rather than throwing for invalid graphs (`packages/workflow-engine/src/actions.ts:65-95`). |
-| `digest.check` | Checks nonempty digest, quoted text against source items, cited URLs against known item URLs/links, secret-like patterns, and message-part count. Returns deduplicated violations and parts; over eight parts is a violation (`packages/workflow-engine/src/actions.ts:97-127`). |
-| `citations.check` | Checks `[n]` citations against source count and that each source is cited; returns broken and unresolved lists and `citation_ok` (`packages/workflow-engine/src/actions.ts:129-141`). |
-| `verdict.aggregate` | Uses a fixed read order that now includes `prepass.findings` before `dims.findings`. Removes dropped findings, settles them, then returns `rework` for any critical, more than five high, or unmet criteria; otherwise `block` for unchecked dimensions, else `pass`. A pass with high findings sets `warn` (`packages/workflow-engine/src/actions.ts:150-168`, `packages/workflow-engine/src/actions.ts:189-199`). |
-| `lp.propose_workflow` | Returns empty output and detail containing the proposed workflow and templated inputs; the action itself does not start it (`packages/workflow-engine/src/actions.ts:178-183`). |
+| `items.dedupe` | Uses the first declared output name to select findings mode. Findings merge same-file same-line or text-overlap matches, retaining higher severity; other items drop bare reposts, group by normalized URL/text, and keep the duplicate with greater summed engagement. Returns findings/merged or items/count (`packages/workflow-engine/src/actions.ts:35-64`). |
+| `dag.validate` | Checks session IDs, dependency existence/cycles, and requirement-to-session mappings. Returns `ok`, error strings, and cycle paths; it reports problems in output rather than throwing for invalid graphs (`packages/workflow-engine/src/actions.ts:67-96`). |
+| `digest.check` | Checks nonempty digest, quoted text against source items, cited URLs against known item URLs/links, secret-like patterns, and message-part count. Returns deduplicated violations and parts; over eight parts is a violation (`packages/workflow-engine/src/actions.ts:98-128`). |
+| `citations.check` | Checks `[n]` citations against the bibliography (`read(1)`, accepting records with `url` or bare URL strings) and that every bibliography entry is cited; when discovered candidates (`read(2)`) are supplied, an empty bibliography fails and each bibliography URL must be a valid URL whose fragment-stripped `href` is in the discovered pool, while unselected candidates need not be cited (`packages/workflow-engine/src/actions.ts:130-169`). |
+| `verdict.aggregate` | Uses a fixed read order that now includes `prepass.findings` before `dims.findings`. Removes dropped findings, settles them, then returns `rework` for any critical, more than five high, or unmet criteria; otherwise `block` for unchecked dimensions, else `pass`. A pass with high findings sets `warn` (`packages/workflow-engine/src/actions.ts:177-195`, `packages/workflow-engine/src/actions.ts:216-226`). |
+| `lp.propose_workflow` | Returns empty output and detail containing the proposed workflow and templated inputs; the action itself does not start it (`packages/workflow-engine/src/actions.ts:205-215`). |
 
 Action exceptions propagate to the executor attempt loop. The engine retries the attempt according to node retry settings and fails the step/run after retries are exhausted (`packages/workflow-engine/src/engine-step.ts:192-247`).
 

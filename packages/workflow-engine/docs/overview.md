@@ -2,7 +2,7 @@
 title: Workflow Engine — Overview
 type: overview
 created: 2026-10-10
-updated: 2026-11-14
+updated: 2026-11-16
 status: active
 confidence: high
 tags: [workflow-engine, package, overview]
@@ -35,7 +35,7 @@ TL;DR: `@lane-pilot/workflow-engine` defines, validates, routes, executes, and s
 
 ## What it is
 
-This private ESM package provides the workflow definition format, validation and lowering, expression evaluation, a resumable graph runner, a catalog and router, draft editing and test support, artifacts, and SQLite journal/store adapters. The package root export points at `src/index.ts`, which re-exports server modules including engine, file, and store code that import `node:` modules. The separate `./ui` export points at `src/ui.ts`, which re-exports cron, draft-view, edge-label, and view helpers (`packages/workflow-engine/package.json:8-14`, `packages/workflow-engine/src/index.ts:9-35`, `packages/workflow-engine/src/engine.ts:1`, `packages/workflow-engine/src/files.ts:1-3`, `packages/workflow-engine/src/store.ts:1-3`, `packages/workflow-engine/src/ui.ts:1-4`).
+This private ESM package provides the workflow definition format, validation and lowering, expression evaluation, a resumable graph runner, a catalog and router, draft editing and test support, artifacts, and SQLite journal/store adapters. The package root export points at `src/index.ts`, which re-exports server modules including engine, file, and store code that import `node:` modules. The separate `./ui` export points at `src/ui.ts`, which re-exports cron, draft-view, edge-label, and view helpers (`packages/workflow-engine/package.json:8-14`, `packages/workflow-engine/src/index.ts:9-36`, `packages/workflow-engine/src/engine.ts:1`, `packages/workflow-engine/src/files.ts:1-3`, `packages/workflow-engine/src/store.ts:1-3`, `packages/workflow-engine/src/ui.ts:1-4`).
 
 Built-in workflow definitions are supplied by the caller to the catalog; they are not stored in this package. Custom definitions load from global and project directories via `globalWorkflowDir` and `projectWorkflowDir` (`packages/workflow-engine/src/store.ts:24-26`), while the catalog also exposes synchronous `builtin` and `builtins` readers (`packages/workflow-engine/src/catalog.ts:23-67`).
 
@@ -55,7 +55,7 @@ Built-in workflow definitions are supplied by the caller to the catalog; they ar
 
 ## Public API and configuration
 
-The default package export re-exports the workflow engine, journal, stores, lowering, and validation modules (`packages/workflow-engine/src/index.ts:1-35`):
+The default package export re-exports the workflow engine, journal, stores, lowering, and validation modules (`packages/workflow-engine/src/index.ts:1-36`):
 - The execution engine: `WorkflowEngine` (`packages/workflow-engine/src/engine.ts:39-68`).
 - Catalog and stores: `createWorkflowCatalog` with `builtin` and `builtins` registry lookup (`packages/workflow-engine/src/catalog.ts:11-21`, `packages/workflow-engine/src/catalog.ts:23-67`), `loadWorkflowStore` (`packages/workflow-engine/src/store.ts:50-58`), `createDraftStore` (`packages/workflow-engine/src/draft-store.ts:81-84`), and `createJournal` (`packages/workflow-engine/src/journal.ts:151-155`).
 - Definitions and validation: `loadWorkflow` and `parseWorkflow` (`packages/workflow-engine/src/validate.ts:550-570`).
