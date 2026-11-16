@@ -122,3 +122,10 @@ export function batchAdviceFor(db: LanePilotDatabase, projectId: string, runId: 
   }
   return batchShapeAdvice({ id: task.id, ownsPaths: task.owns_paths, dependsOn: task.depends_on }, open, medianTaskSize(db, projectId));
 }
+
+export function canonicalJson(value:unknown): string {
+  const sorted = (item:unknown): unknown => Array.isArray(item) ? item.map(sorted)
+    : item && typeof item === "object" ? Object.fromEntries(Object.entries(item as Record<string, unknown>).sort(([a], [b]) => a < b ? -1 : 1).map(([k, v]) => [k, sorted(v)]))
+    : item;
+  return JSON.stringify(sorted(value));
+}

@@ -5,7 +5,7 @@ export {
   designGate, discussionGate, drawingRequirements, executionGate, issuable, lessonsNeeded, nextAction, observationDue, observationOutcome, partHash, phaseFolder, phaseStageCells, pieceProblems, planGate, planSignature, renderBook, staleAfterReturn, waveProblems,
 } from "./logic";
 export type { AcceptanceLine, BookPart, BookSection, ContextDoc, FrozenVerdict, GateResult, NextAction, Phase, PhaseObservation, PhaseRecord, PhaseStage, PhaseStageCell, PhaseState, PlanItem, TaskFact } from "./logic";
-export { getPhase, listParts, listPhases, listPhasePartsSince, resolvePhaseRef } from "./store";
+export { getPhase, listParts, listPhases, hasResumablePhaseForThread, listPhasePartsSince, resolvePhaseRef } from "./store";
 export { phaseBoardCards } from "./board-cards";
 export type { PhaseBoardItem } from "./board-cards";
 export { isMachineMessage } from "./intake";

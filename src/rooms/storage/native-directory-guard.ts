@@ -1,5 +1,7 @@
 import { realpathSync } from "node:fs";
+import { wfRunRow } from "@lane-pilot/workflow-engine";
 import type { LanePilotDatabase } from "./database";
+import { getRun } from "./runs-store";
 
 /** The move fence survives process restarts. Live admissions belong to the Core process executing their callbacks. */
 export const nativeDirectoryMigrations = [
@@ -16,6 +18,15 @@ export type DirectoryMove = {
 export function directoryMove(db: LanePilotDatabase, threadId: string): DirectoryMove | null {
   const row = db.prepare("SELECT record_json FROM lane_pilot_directory_move WHERE thread_id=?").get(threadId) as { record_json: string } | undefined;
   return row ? JSON.parse(row.record_json) as DirectoryMove : null;
+}
+
+export function saveDirectoryMove(db: LanePilotDatabase, move: DirectoryMove): void {
+  db.prepare("INSERT INTO lane_pilot_directory_move(thread_id,operation_id,record_json) VALUES(?,?,?) ON CONFLICT(thread_id) DO UPDATE SET operation_id=excluded.operation_id,record_json=excluded.record_json")
+    .run(move.threadId, move.operationId, JSON.stringify(move));
+}
+
+export function clearDirectoryMove(db: LanePilotDatabase, threadId: string, operationId: string): void {
+  db.prepare("DELETE FROM lane_pilot_directory_move WHERE thread_id=? AND operation_id=?").run(threadId, operationId);
 }
 
 export function assertRunAdmission(db: LanePilotDatabase, runId: string): void {
@@ -46,7 +57,10 @@ function admissions(db: LanePilotDatabase): Set<Admission> {
 
 export function hasRunAdmission(db: LanePilotDatabase, threadId: string): boolean {
   return [...admissions(db)].some((entry) => "threadId" in entry ? entry.threadId === threadId
-    : entry.workflowRuns().some((runId) => Boolean(db.prepare("SELECT 1 FROM lane_pilot_wf_run w JOIN lane_pilot_run r ON r.id=w.link_run_id WHERE w.id=? AND r.pm_thread_id=?").get(runId, threadId))));
+    : entry.workflowRuns().some((runId) => {
+      const linked = wfRunRow(db, runId)?.link_run_id;
+      return linked ? getRun(db, linked)?.pm_thread_id === threadId : false;
+    }));
 }
 
 /** A canceled drive can still be settling its async executor. Keep old plugin generations visible until they finish. */

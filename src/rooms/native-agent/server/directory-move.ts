@@ -2,7 +2,9 @@ import { randomUUID } from "node:crypto";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { stringAt } from "@lane-pilot/kit";
 import { closeRun, createRun, freezeRunBinding, hasRunAdmission, getRun, getRunWriterHost, listLiveTasksForRun, listOpenAttempts, readParkedTasks, setRunThread, type LanePilotDatabase } from "../../storage";
-import { directoryMove, type DirectoryMove } from "../../storage";
+import { directoryMove, saveDirectoryMove, clearDirectoryMove, listRunsForPmThread, type DirectoryMove } from "../../storage";
+import { hasResumablePhaseForThread } from "../../phase";
+import { wfHasResumableLinkedRun } from "@lane-pilot/workflow-engine";
 import { buildRunPolicy } from "../../tasks";
 import { nativeEnvKey } from "../../contracts";
 
@@ -10,12 +12,7 @@ export type DirectoryMoveInput = Omit<DirectoryMove, "newRunId"> & { phase: "pre
 type Dependencies = { bb: BbPluginApi; db: LanePilotDatabase; loadParked(): Promise<Array<{ runId: string; pmThreadId: string }>> };
 
 function runsFor(db: LanePilotDatabase, threadId: string) {
-  return db.prepare("SELECT id,project_id,kind,writer_environment_id,writer_workspace_path,closed_at FROM lane_pilot_run WHERE pm_thread_id=?").all(threadId) as Array<{ id: string; project_id: string; kind: string; writer_environment_id: string | null; writer_workspace_path: string | null; closed_at: number | null }>;
-}
-
-function saveMove(db: LanePilotDatabase, move: DirectoryMove): void {
-  db.prepare("INSERT INTO lane_pilot_directory_move(thread_id,operation_id,record_json) VALUES(?,?,?) ON CONFLICT(thread_id) DO UPDATE SET operation_id=excluded.operation_id,record_json=excluded.record_json")
-    .run(move.threadId, move.operationId, JSON.stringify(move));
+  return listRunsForPmThread(db, threadId, -1).map((row) => getRun(db, row.id)!);
 }
 
 function assertIdle(db: LanePilotDatabase, threadId: string): void {
@@ -23,8 +20,8 @@ function assertIdle(db: LanePilotDatabase, threadId: string): void {
   const runs = runsFor(db, threadId), ids = new Set(runs.map((run) => run.id));
   if (listOpenAttempts(db).some((attempt) => ids.has(attempt.run_id))) throw new Error("Lane Pilot has active or queued writer work; finish or cancel it before moving");
   if (runs.some((run) => listLiveTasksForRun(db, run.id).length)) throw new Error("Lane Pilot has unfinished task work; finish or cancel it before moving");
-  if (db.prepare("SELECT 1 FROM lane_pilot_phase WHERE pm_thread_id=? AND state<>'closed' LIMIT 1").get(threadId)) throw new Error("Lane Pilot has a live or resumable phase; close it before moving");
-  if (db.prepare("SELECT 1 FROM lane_pilot_wf_run w JOIN lane_pilot_run r ON r.id=w.link_run_id WHERE r.pm_thread_id=? AND w.status IN ('running','waiting','blocked','interrupted') LIMIT 1").get(threadId)) throw new Error("Lane Pilot has a live or resumable workflow; finish or cancel it before moving");
+  if (hasResumablePhaseForThread(db, threadId)) throw new Error("Lane Pilot has a live or resumable phase; close it before moving");
+  if (runs.some((run) => wfHasResumableLinkedRun(db, run.id))) throw new Error("Lane Pilot has a live or resumable workflow; finish or cancel it before moving");
 }
 
 /** Core calls prepare BEFORE attaching. A failed commit retains the fence and is retried on the next native dispatch. */
@@ -47,7 +44,7 @@ export async function handleDirectoryMove(deps: Dependencies, input: DirectoryMo
   if (held && held.operationId !== input.operationId) throw new Error("Lane Pilot has a pending directory move; recover it before moving again");
   if (input.phase === "abort") {
     if (attached !== input.source.environmentId) throw new Error("Lane Pilot cannot abort after environment attachment; recover the move");
-    db.prepare("DELETE FROM lane_pilot_directory_move WHERE thread_id=? AND operation_id=?").run(input.threadId, input.operationId);
+    clearDirectoryMove(db, input.threadId, input.operationId);
     return { ok: true };
   }
   if (input.phase === "prepare") {
@@ -59,12 +56,12 @@ export async function handleDirectoryMove(deps: Dependencies, input: DirectoryMo
       for (const run of runsFor(db, input.threadId).filter((row) => row.closed_at === null)) {
         if (run.kind !== "cli" || run.project_id !== input.projectId || run.writer_environment_id !== input.source.environmentId || run.writer_workspace_path !== input.source.path || getRunWriterHost(db, run.id) !== input.source.hostId) throw new Error("Lane Pilot run binding does not match the source environment");
       }
-      saveMove(db, held ?? input);
+      saveDirectoryMove(db, held ?? input);
     }).immediate();
     try {
       if ((await deps.loadParked()).some((row) => row.pmThreadId === input.threadId || runsFor(db, input.threadId).some((run) => run.id === row.runId))) throw new Error("Lane Pilot has parked work that can resume; cancel it before moving");
     } catch (cause) {
-      db.prepare("DELETE FROM lane_pilot_directory_move WHERE thread_id=? AND operation_id=?").run(input.threadId, input.operationId);
+      clearDirectoryMove(db, input.threadId, input.operationId);
       throw cause;
     }
     return { ok: true };
@@ -89,12 +86,12 @@ export async function handleDirectoryMove(deps: Dependencies, input: DirectoryMo
     createRun(db, id, input.projectId, "cli", null, "none", buildRunPolicy({}), null);
     if (!freezeRunBinding(db, id, { hostId: held.target.hostId, environmentId: held.target.environmentId, workspacePath: held.target.path })) throw new Error("Lane Pilot new directory binding failed");
     setRunThread(db, id, input.threadId);
-    saveMove(db, { ...current, newRunId: id });
+    saveDirectoryMove(db, { ...current, newRunId: id });
     return id;
   }).immediate();
   await bb.sdk.threads.updatePluginMetadata({ threadId: input.threadId, set: { role: "pm", lanePilotRunId: runId } });
   await bb.storage.kv.delete(nativeEnvKey(input.threadId));
-  db.prepare("DELETE FROM lane_pilot_directory_move WHERE thread_id=? AND operation_id=?").run(input.threadId, input.operationId);
+  clearDirectoryMove(db, input.threadId, input.operationId);
   return { ok: true };
 }
 

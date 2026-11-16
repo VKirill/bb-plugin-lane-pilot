@@ -29,6 +29,7 @@ export * from "./view";
 export * from "./draft-store";
 export * from "./files";
 export * from "./journal";
+export * from "./journal-admission";
 export * from "./ops-store";
 export * from "./store";
 export * from "./verdict";

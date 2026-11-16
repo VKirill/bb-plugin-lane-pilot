@@ -26,7 +26,7 @@ import { writeDispatchHome } from "./task-home";
 import { gateResolverFor, gateRunVerdict } from "../../verification/server"
 import { latestGateRunForTask } from "../../storage"
 import { parseIntegrationGateSettings } from "../../contracts/integration-gate";
-import { batchAdviceFor, baselineRedGuard, recoveryGuard, topicLoopGuard } from "./dispatch-guards";
+import { canonicalJson, batchAdviceFor, baselineRedGuard, recoveryGuard, topicLoopGuard } from "./dispatch-guards";
 import { ownerLastWroteAt } from "../../critique/server";
 import { reviveCanceledTask } from "./revive";
 import { countRunNudges } from "./writer-silence";
@@ -70,12 +70,6 @@ const dispatchAnswerMs = () => {
 /** How often a dispatch starts again after reloads before its attempt is blocked and the PM sends the task again. */
 export const MAX_DISPATCH_RESUMES = 2;
 
-function canonicalJson(value:unknown): string {
-  const sorted = (item:unknown): unknown => Array.isArray(item) ? item.map(sorted)
-    : item && typeof item === "object" ? Object.fromEntries(Object.entries(item as Record<string, unknown>).sort(([a], [b]) => a < b ? -1 : 1).map(([k, v]) => [k, sorted(v)]))
-    : item;
-  return JSON.stringify(sorted(value));
-}
 
 export function createWriterDispatch(ctx: ServerCore, services: Services) {
   const { acceptedTaskWorkspace, bb, configForRun, db, ensureRunScopes, getThreadBounded, host, refreshRun } = ctx;

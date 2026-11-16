@@ -49,6 +49,11 @@ export function listPhases(db: PhaseDb, filter: { pmThreadId?: string; projectId
   return (db.prepare(sql).all(...args, filter.limit ?? 50) as Raw[]).map(phaseOf);
 }
 
+/** Stopped phases remain resumable; unlike the UI live list, relocation must count them too. */
+export function hasResumablePhaseForThread(db: PhaseDb, threadId: string): boolean {
+  return Boolean(db.prepare("SELECT 1 FROM lane_pilot_phase WHERE pm_thread_id=? AND state<>'closed' LIMIT 1").get(threadId));
+}
+
 /** Writes a new stage, state, record or run of the phase; the edition grows when the record changes. */
 export function savePhase(db: PhaseDb, id: string, patch: { stage?: PhaseStage; state?: PhaseState; record?: PhaseRecord; runId?: string | null; at: number }): void {
   const current = getPhase(db, id);

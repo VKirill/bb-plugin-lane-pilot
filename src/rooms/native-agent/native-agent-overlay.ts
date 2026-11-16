@@ -1,4 +1,5 @@
 import { stockEmployee } from "../contracts/employee-manifest";
+import { allowDirectoryMove } from "./native-directory-policy";
 import { SKILL_CATALOG_BLOCK, SKILL_CATALOG_LINE } from "./skill-catalog";
 import { BB_BRIDGE_MCP_SERVER, NATIVE_LP_BRIDGE_ARCHITECT_TOOLS, NATIVE_LP_BRIDGE_LEAD_TOOLS, NATIVE_LP_BRIDGE_PM_TOOLS, NATIVE_LP_BRIDGE_SPECIALIST_TOOLS, unionLpBridgeTools, withoutLpBridgeTools } from "./native-session-hooks";
 import { WORKFLOW_ARCHITECT_ID, WORKFLOW_ARCHITECT_SUMMARY } from "../contracts/server";
@@ -577,7 +578,6 @@ export function stockAgentsOverlayFromInstalled(input: {
   if (disallowed) definition.disallowedTools = disallowed;
   return { [input.agentId]: definition };
 }
-
 export function unionLpBridgeToolsOnAgentsJson(agentId: string, agentsJson: string, directoryMove = false): Record<string, unknown> {
   const parsed = JSON.parse(agentsJson) as unknown;
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("native_agents_json_invalid");
@@ -594,12 +594,6 @@ export function unionLpBridgeToolsOnAgentsJson(agentId: string, agentsJson: stri
     const disallowed = overlayDisallowedTools(agentId, Array.isArray(denied) && denied.every((item) => typeof item === "string") ? denied : undefined);
     if (disallowed) definition.disallowedTools = disallowed;
   }
-  if (directoryMove && isLanePmAgent(agentId)) {
-    if (Array.isArray(definition.disallowedTools)) definition.disallowedTools = definition.disallowedTools.filter((tool) => tool !== `mcp__${BB_BRIDGE_MCP_SERVER}__update_environment_directory`);
-    if (typeof definition.prompt === "string") {
-      definition.prompt = definition.prompt.replace("Stay in this checkout: this run is bound to it, so `update_environment_directory` and in-place chat moves are disabled.", "This run is bound to its checkout.");
-      definition.prompt += "\nFor an explicit request to move THIS chat, use update_environment_directory. Core permits only an idle same-project, same-host move: finish or cancel active, queued, parked and resumable work first. A successful move keeps the old run/history and binds a fresh run; end this turn immediately after success. Do not bypass a refusal with shell or plugin RPC calls.";
-    }
-  }
+  if (directoryMove && isLanePmAgent(agentId)) allowDirectoryMove(definition);
   return { [agentId]: definition };
 }
