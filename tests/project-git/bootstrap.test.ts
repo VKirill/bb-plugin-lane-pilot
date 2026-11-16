@@ -143,6 +143,40 @@ describe("project git retries through the public ensure (P03.08)", () => {
     expect(g.gh().creates ?? 0).toBe(0);
   });
 
+  it("keeps a permanent refusal: the next ensure runs no scan, create or push and asks nothing; a deliberate retry goes on", async () => {
+    const f = makeFixture();
+    const root = f.folder("app", files);
+    f.setAnswer(picked("1"));
+    const restore = intercept(f, async (command, run) => { const ran = await run(); if (isBaseline(command)) f.gh({ authed: false }); return ran; });
+    await ensure(f, root);
+    restore();
+    f.gh({ authed: true });
+    f.sh(root, "echo later > later.txt && git add later.txt && git commit -qm later");
+    expect(await ensure(f, root)).toMatchObject({ kind: "bootstrapped", result: { ok: false, code: "head_moved" } });
+    const before = f.commands.length;
+    expect(await ensure(f, root)).toMatchObject({ kind: "stopped", root, stage: "baseline", code: "head_moved" });
+    const later = f.commands.slice(before);
+    expect(later.some((c) => isBaseline(c) || c.includes("repo create") || / push origin /.test(c) || c.includes(" api "))).toBe(false);
+    expect(f.asks).toHaveLength(1);
+    expect(await f.projectGit.bootstrap({ hostId: "h1", root, account: "octo" })).toMatchObject({ ok: false, code: "head_moved", stopped: true });
+    f.sh(root, "git reset -q --hard HEAD~1");
+    expect(await f.projectGit.bootstrap({ hostId: "h1", root, account: "octo", retryStopped: true })).toMatchObject({ ok: true });
+    expect(f.gh().creates).toBe(1);
+  });
+
+  it("does not pin an account to a preflight that failed before the operation began", async () => {
+    const f = makeFixture();
+    const root = f.folder("app", files);
+    f.setAnswer(picked("1"));
+    f.live.runId = "lprun_1";
+    expect(await ensure(f, root)).toMatchObject({ kind: "bootstrapped", result: { ok: false, code: "live_run_active" } });
+    f.live.runId = null;
+    f.gh({ login: "other" });
+    expect(await ensure(f, root)).toMatchObject({ kind: "bootstrapped", result: { ok: true, fullName: "other/app" } });
+    expect(f.asks).toHaveLength(2);
+    expect(f.asks[1]!.detail).toContain("аккаунте other");
+  });
+
   it("keeps the account the owner was shown: another sign-in stops the continuation", async () => {
     const f = makeFixture();
     const root = f.folder("app", files);
@@ -233,9 +267,10 @@ describe("project git bootstrap (P03.06–08)", () => {
     f.gh({ authed: true });
     expect(await boot(f, root)).toMatchObject({ ok: false, stage: "baseline", code: "head_moved" });
     expect(f.gh().creates ?? 0).toBe(0);
-    // Moved back to the first commit, the bootstrap goes on and publishes exactly it.
+    // The refusal is kept until a deliberate retry; moved back to the first commit, the retry publishes exactly it.
     f.sh(root, "git reset -q --hard HEAD~1");
-    const ok = await boot(f, root);
+    expect(await boot(f, root)).toMatchObject({ ok: false, code: "head_moved", stopped: true });
+    const ok = await f.projectGit.bootstrap({ hostId: "h1", root, account: "octo", retryStopped: true });
     expect(ok).toMatchObject({ ok: true });
     expect(f.sh(f.gh().repos["octo/my-app"]!.bare, "git rev-list --all --count").stdout.trim()).toBe("1");
   });
@@ -275,6 +310,9 @@ describe("project git bootstrap (P03.06–08)", () => {
     f.gh({ repos: { "octo/my-app": { id: 9, private: true, bare: join(f.base, "foreign.git"), created_at: new Date().toISOString(), description: "someone's" } } });
     expect(await boot(f, root)).toMatchObject({ ok: false, stage: "repo", code: "remote_name_taken" });
     expect(f.sh(root, "git remote").stdout.trim()).toBe("");
+    const before = f.commands.length;
+    expect(await boot(f, root)).toMatchObject({ ok: false, code: "remote_name_taken", stopped: true });
+    expect(f.commands.length).toBe(before);
   });
 
   it("works only in the folder it probed when a parent is swapped for a link before the first commit", async () => {

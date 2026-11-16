@@ -3,7 +3,7 @@ import { runOnHost, type RunCommandHost } from "@lane-pilot/host-calls";
 import type { OwnerAsk } from "../../relay/server";
 import {
   bootstrapKey, declinedKey, isWithin, namesOperation, repoDescription, repoNameFor, sameRemote, scopeKey, scopeQuestion, verifyReadback,
-  type BootstrapRecord, type BootstrapStage, type GitProbe, type SavedScope, type ScopeChoice,
+  PERMANENT_STOPS, type BootstrapRecord, type BootstrapStage, type GitProbe, type SavedScope, type ScopeChoice,
 } from "../logic";
 import { baselineCommand, parseBaseline, parseProbe, probeCommand } from "../scripts";
 
@@ -24,7 +24,8 @@ export type ProjectGitDeps = {
 
 export type BootstrapResult =
   | { ok: true; root: string; fullName: string; url: string; commit: string; branch: string }
-  | { ok: false; stage: BootstrapStage; code: string; detail: string; blocked?: Array<{ path: string; why: string }> };
+  /** `stopped`: a kept permanent refusal (PERMANENT_STOPS); only `bootstrap({ retryStopped: true })` runs the stages again. */
+  | { ok: false; stage: BootstrapStage; code: string; detail: string; blocked?: Array<{ path: string; why: string }>; stopped?: true };
 
 export type ScopeResult =
   /** A repository exists: the work goes on in it. `localNoOrigin` is reported, never published: its history was not scanned. */
@@ -32,6 +33,8 @@ export type ScopeResult =
   | { kind: "chosen"; choice: ScopeChoice; account: string }
   /** This operation's bootstrap stopped part-way here (its record has an op id and is not done): it is continued, not asked again. */
   | { kind: "resume"; root: string; account: string }
+  /** This operation stopped here for good (a kept permanent refusal): nothing runs and nothing is asked until a deliberate retry. */
+  | { kind: "stopped"; root: string; stage: BootstrapStage; code: string; detail: string }
   | { kind: "declined"; reason: string }
   | { kind: "unknown"; reason: string }
   /** gh is missing or not signed in to github.com on the host: nothing is asked, nothing is made. */
@@ -54,6 +57,7 @@ const GH = "GH_HOST=github.com gh";
 /** `gh` lends its own login to this one git call: no token is stored, no git config is changed. */
 const GH_GIT = `git -c credential.helper= -c ${q("credential.helper=!gh auth git-credential")}`;
 const clip = (text: string) => text.trim().slice(0, 300);
+const pick = (stop: NonNullable<BootstrapRecord["stopped"]>) => ({ stage: stop.stage, code: stop.code, detail: stop.detail });
 
 /**
  * Private Git for a folder without it: probe (P03.04), the one scope question naming the github.com account (P03.05),
@@ -95,7 +99,8 @@ export function createProjectGit(deps: ProjectGitDeps) {
     for (const root of new Set([target.root, target.cwd, project.cwd])) {
       if (!root) continue;
       const rec = await deps.kv.get<BootstrapRecord>(bootstrapKey(input.hostId, root));
-      if (rec?.opId && rec.account && !rec.doneAt) return { kind: "resume", root, account: rec.account };
+      if (!rec?.opId || !rec.account || rec.doneAt) continue;
+      return rec.stopped ? { kind: "stopped", root, ...pick(rec.stopped) } : { kind: "resume", root, account: rec.account };
     }
     if (target.state !== "noGit") return { kind: "repo", state: target.state, root: target.root! };
     if (project.state === "unknown" || !target.cwd) return { kind: "unknown", reason: project.reason ?? "the project folder could not be probed" };
@@ -135,22 +140,26 @@ export function createProjectGit(deps: ProjectGitDeps) {
     return { kind: "declined", reason };
   }
 
-  /** `account`: the github.com login the owner was shown; another sign-in stops the bootstrap. */
-  function bootstrap(input: { hostId: string; root: string; account: string }): Promise<BootstrapResult> {
+  /**
+   * `account`: the github.com login the owner was shown; another sign-in stops the bootstrap. `retryStopped`: run the
+   * stages again after a kept permanent refusal, once someone has changed what caused it (never set automatically).
+   */
+  function bootstrap(input: { hostId: string; root: string; account: string; retryStopped?: boolean }): Promise<BootstrapResult> {
     const key = bootstrapKey(input.hostId, input.root);
     let pending = running.get(key);
     if (!pending) {
-      pending = stages(input.hostId, input.root, input.account, key).finally(() => running.delete(key));
+      pending = stages(input.hostId, input.root, input.account, key, input.retryStopped === true).finally(() => running.delete(key));
       running.set(key, pending);
     }
     return pending;
   }
 
-  async function stages(hostId: string, root: string, expectedAccount: string, key: string): Promise<BootstrapResult> {
+  async function stages(hostId: string, root: string, expectedAccount: string, key: string, retryStopped: boolean): Promise<BootstrapResult> {
     const rec: BootstrapRecord = (await deps.kv.get<BootstrapRecord>(key)) ?? { v: 1, hostId, root };
     const save = () => deps.kv.set(key, rec as never);
     const fail = async (stage: BootstrapStage, code: string, detail: string, blocked?: Array<{ path: string; why: string }>): Promise<BootstrapResult> => {
       rec.lastError = { stage, code, detail, at: now() };
+      if (PERMANENT_STOPS.has(code)) rec.stopped = rec.lastError;
       await save();
       deps.log(`project git ${hostId}:${root}: ${stage} stopped: ${code} ${detail}`);
       return { ok: false, stage, code, detail, ...(blocked ? { blocked } : {}) };
@@ -160,8 +169,12 @@ export function createProjectGit(deps: ProjectGitDeps) {
       return { ok: true, root, fullName: rec.repo.fullName, url: rec.repo.cloneUrl, commit: rec.baseline.commit, branch: rec.push.branch };
     }
 
-    if (rec.account && rec.account.toLowerCase() !== expectedAccount.toLowerCase()) return fail("auth", "account_changed", `this bootstrap began for ${rec.account}, not ${expectedAccount}`);
-    rec.account = expectedAccount;
+    if (rec.stopped) {
+      if (!retryStopped) return { ok: false, ...pick(rec.stopped), stopped: true };
+      delete rec.stopped;
+    }
+    // The account is bound to the operation, not to a failed preflight: a run refused before it began starts fresh.
+    if (rec.opId && rec.account && rec.account.toLowerCase() !== expectedAccount.toLowerCase()) return fail("auth", "account_changed", `this bootstrap began for ${rec.account}, not ${expectedAccount}`);
     const live = await deps.activeLiveRun({ hostId, root });
     if (live) return fail("guard", "live_run_active", `run ${live} works in this folder without Git; it is not converted while it runs`);
 
@@ -176,7 +189,7 @@ export function createProjectGit(deps: ProjectGitDeps) {
     if (!rec.baseline) {
       // Only a folder without Git, or the repository this operation started, gets a first commit; any other history is never published.
       if (found.state !== "noGit" && !rec.opId) return fail("baseline", "existing_history", "a repository Lane Pilot did not start: its history was never scanned and is not published");
-      if (!rec.opId) { rec.opId = randomUUID(); rec.baselineStartedAt = now(); await save(); }
+      if (!rec.opId) { rec.opId = randomUUID(); rec.account = expectedAccount; rec.baselineStartedAt = now(); await save(); }
       const made = parseBaseline(await run(hostId, root, baselineCommand({ root, opId: rec.opId }), 600));
       if (!made.ok) return fail("baseline", made.code, made.detail, made.blocked);
       rec.baseline = { commit: made.commit, tree: made.tree, branch: made.branch, files: made.files, reused: made.reused, at: now() };
