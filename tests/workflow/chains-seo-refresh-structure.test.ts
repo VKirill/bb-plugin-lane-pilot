@@ -8,9 +8,9 @@ describe("seo-page-refresh", () => {
     pull: { pull_path: "pull/", urls: 1 },
     diagnose: { diagnosis_path: "diagnosis.md", stage: "ranking" },
     route: { status: "pass", branch: "upgrade", hypothesis_path: "hypothesis.md", url: "/old-page" },
-    spec: { spec_path: "spec.md", rewrite_item: "rewrite-item.json" },
-    ctr_fix: { fix_path: "fix.md", release_item: "item.json" },
-    fact_update: { fix_path: "fix.md", dependent_count: 4, release_item: "item.json" },
+    spec: { spec_path: "spec.md", rewrite_items: ["rewrite-item.json"] },
+    ctr_fix: { fix_path: "fix.md", release_items: ["item.json"] },
+    fact_update: { fix_path: "fix.md", dependent_count: 4, release_items: ["item.json"] },
     experiment: { experiment_path: "experiment.md", due_date: "2026-12-04" },
     package: { package_path: ".agents/seo/page-refresh/2026-11-06/" },
   });
@@ -19,7 +19,7 @@ describe("seo-page-refresh", () => {
   it("upgrade branch: spec -> rewrite item for seo-page -> experiment -> approve -> done", async () => {
     const r = await runSim("seo-page-refresh", { input, stubs: base(), humans });
     expect(r.summary.status).toBe("succeeded");
-    expect(pathOf(r)).toBe("pull diagnose route spec experiment approve package done");
+    expect(pathOf(r)).toBe("pull diagnose route spec experiment approve package_upgrade done_upgrade");
     expect(out(r)).toMatchObject({ status: "done", experiment_path: "experiment.md" });
   });
 
@@ -29,7 +29,7 @@ describe("seo-page-refresh", () => {
       stubs: { ...base(), route: { status: "pass", branch: "ctr", hypothesis_path: "hypothesis.md", url: "/old-page" } },
       humans,
     });
-    expect(pathOf(r)).toBe("pull diagnose route ctr_fix experiment approve package done");
+    expect(pathOf(r)).toBe("pull diagnose route ctr_fix experiment approve package_ctr done_ctr");
     expect(r.called("spec")).toEqual([]);
   });
 

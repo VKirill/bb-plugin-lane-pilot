@@ -58,7 +58,8 @@
     "status": "done|partial|blocked",
     "diagnosis_path": "string?",
     "experiment_path": "string?",
-    "release_items": "string[]?"
+    "release_items": "string[]?",
+    "rewrite_items": "string[]?"
   },
   "requires": {
     "plugins": [
@@ -193,10 +194,10 @@
         "en": "CTR snippet fix",
         "ru": "Правка сниппета под CTR"
       },
-      "prompt": "Procedure gsc-snippet-ctr-audit on {{route.url}} (copy-lead + SEO): positions 2-10 with CTR below the norm — rewrite the title/snippet with concrete factual specificity (Ogilvy/Bly 4U) and matching markup, log before and after. Return fix_path and release_item.",
+      "prompt": "Procedure gsc-snippet-ctr-audit on {{route.url}} (copy-lead + SEO): positions 2-10 with CTR below the norm — rewrite the title/snippet with concrete factual specificity (Ogilvy/Bly 4U) and matching markup, log before and after. Return fix_path and release_items as the exact list of release item paths produced by this branch (empty when none).",
       "out": {
         "fix_path": "string",
-        "release_item": "string"
+        "release_items": "string[]"
       },
       "guards": {
         "maxVisits": 1,
@@ -224,10 +225,10 @@
         "en": "Upgrade or spin-off spec",
         "ru": "Спецификация апгрейда или выноса"
       },
-      "prompt": "Branch {{route.branch}} on {{route.url}}: upgrade = declutter, content-effort and E-E-A-T upgrade spec with Information Gain and an honest freshness refresh (procedures page-quality-upgrade, page-utility-enrichment, content-freshness-refresh); split = spin off the H2 stalling at positions 8-30, parent teaser plus Daughter link and child briefs (split-spinoff-incubation, workshop-page-to-node). The spec becomes a rewrite item for seo-page, which the parent graph or the owner starts. Return spec_path and rewrite_item.",
+      "prompt": "Branch {{route.branch}} on {{route.url}}: upgrade = declutter, content-effort and E-E-A-T upgrade spec with Information Gain and an honest freshness refresh (procedures page-quality-upgrade, page-utility-enrichment, content-freshness-refresh); split = spin off the H2 stalling at positions 8-30, parent teaser plus Daughter link and child briefs (split-spinoff-incubation, workshop-page-to-node). The spec becomes a rewrite item for seo-page, which the parent graph or the owner starts. Return spec_path and rewrite_items as the exact list of rewrite specification paths produced by this branch (empty when none); these are not release items.",
       "out": {
         "spec_path": "string",
-        "rewrite_item": "string"
+        "rewrite_items": "string[]"
       },
       "guards": {
         "maxVisits": 1,
@@ -254,11 +255,11 @@
         "en": "Targeted fact update",
         "ru": "Точечное обновление факта"
       },
-      "prompt": "Procedures targeted-fact-update and fact-contradiction-resolution for revision {{$inputs.fact_revision}}: find contradictions through the fact registry, recalculate dependent blocks, metadata and comparisons, log the version. Return fix_path, dependent_count and release_item.",
+      "prompt": "Procedures targeted-fact-update and fact-contradiction-resolution for revision {{$inputs.fact_revision}}: find contradictions through the fact registry, recalculate dependent blocks, metadata and comparisons, log the version. Return fix_path, dependent_count and release_items as the exact list of release item paths produced by this branch (empty when none).",
       "out": {
         "fix_path": "string",
         "dependent_count": "int",
-        "release_item": "string"
+        "release_items": "string[]"
       },
       "guards": {
         "maxVisits": 1,
@@ -285,7 +286,7 @@
         "en": "Experiment contract",
         "ru": "Контракт эксперимента"
       },
-      "prompt": "Procedure signalforge-page-experiment: one change, the primary and control metrics, the day-28 verdict date written to the SEO Change Log. The incoming release_item is the only changed item from the selected branch; return it in release_items unchanged, or return an empty release_items array when no item was produced. Return experiment_path and due_date.",
+      "prompt": "Procedure signalforge-page-experiment: one change, the primary and control metrics, the day-28 verdict date written to the SEO Change Log. The incoming release_items or rewrite_items are code-collected branch outputs; use them only as experiment inputs. Return experiment_path and due_date. Do not create, replace, or select release or rewrite items.",
       "out": {
         "experiment_path": "string",
         "due_date": "string",
@@ -315,7 +316,7 @@
       }
     },
     {
-      "id": "package",
+      "id": "package_ctr",
       "type": "action",
       "action": "fs.write",
       "path": ".agents/seo/page-refresh/{{date}}-{{run_id}}/",
@@ -326,20 +327,116 @@
         "release-items.json",
         "rewrite-items.json"
       ],
-      "note": "diagnosis per URL, the fix package, the experiment contract; rewrite items go to seo-page, release items to seo-release",
+      "release-items.json": "{{ctr_fix.release_items}}",
+      "rewrite-items.json": [],
+      "note": "diagnosis per URL, the fix package, and code-owned CTR release item list; rewrite items stay empty for this branch",
       "out": {
         "package_path": "string"
       }
     },
     {
-      "id": "done",
+      "id": "package_fact",
+      "type": "action",
+      "action": "fs.write",
+      "path": ".agents/seo/page-refresh/{{date}}-{{run_id}}/",
+      "files": [
+        "diagnosis.md",
+        "fix-package.md",
+        "experiment.md",
+        "release-items.json",
+        "rewrite-items.json"
+      ],
+      "release-items.json": "{{fact_update.release_items}}",
+      "rewrite-items.json": [],
+      "note": "diagnosis per URL, the fix package, and code-owned fact-update release item list; rewrite items stay empty for this branch",
+      "out": {
+        "package_path": "string"
+      }
+    },
+    {
+      "id": "package_upgrade",
+      "type": "action",
+      "action": "fs.write",
+      "path": ".agents/seo/page-refresh/{{date}}-{{run_id}}/",
+      "files": [
+        "diagnosis.md",
+        "fix-package.md",
+        "experiment.md",
+        "release-items.json",
+        "rewrite-items.json"
+      ],
+      "release-items.json": [],
+      "rewrite-items.json": "{{spec.rewrite_items}}",
+      "note": "diagnosis per URL, the fix package, and code-owned upgrade rewrite specification list; release items stay empty for this branch",
+      "out": {
+        "package_path": "string"
+      }
+    },
+    {
+      "id": "package_split",
+      "type": "action",
+      "action": "fs.write",
+      "path": ".agents/seo/page-refresh/{{date}}-{{run_id}}/",
+      "files": [
+        "diagnosis.md",
+        "fix-package.md",
+        "experiment.md",
+        "release-items.json",
+        "rewrite-items.json"
+      ],
+      "release-items.json": [],
+      "rewrite-items.json": "{{spec.rewrite_items}}",
+      "note": "diagnosis per URL, the fix package, and code-owned split rewrite specification list; release items stay empty for this branch",
+      "out": {
+        "package_path": "string"
+      }
+    },
+    {
+      "id": "done_ctr",
       "type": "action",
       "action": "emit",
       "map": {
         "status": "done",
         "diagnosis_path": "diagnose.diagnosis_path",
         "experiment_path": "experiment.experiment_path",
-        "release_items": "experiment.release_items"
+        "release_items": "{{ctr_fix.release_items}}",
+        "rewrite_items": []
+      }
+    },
+    {
+      "id": "done_fact",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "done",
+        "diagnosis_path": "diagnose.diagnosis_path",
+        "experiment_path": "experiment.experiment_path",
+        "release_items": "{{fact_update.release_items}}",
+        "rewrite_items": []
+      }
+    },
+    {
+      "id": "done_upgrade",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "done",
+        "diagnosis_path": "diagnose.diagnosis_path",
+        "experiment_path": "experiment.experiment_path",
+        "release_items": [],
+        "rewrite_items": "{{spec.rewrite_items}}"
+      }
+    },
+    {
+      "id": "done_split",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "done",
+        "diagnosis_path": "diagnose.diagnosis_path",
+        "experiment_path": "experiment.experiment_path",
+        "release_items": [],
+        "rewrite_items": "{{spec.rewrite_items}}"
       }
     },
     {
@@ -349,7 +446,8 @@
       "map": {
         "status": "partial",
         "diagnosis_path": "diagnose.diagnosis_path",
-        "release_items": []
+        "release_items": [],
+        "rewrite_items": []
       }
     },
     {
@@ -358,7 +456,8 @@
       "action": "emit",
       "map": {
         "status": "blocked",
-        "release_items": []
+        "release_items": [],
+        "rewrite_items": []
       }
     }
   ],
@@ -407,7 +506,7 @@
       "to": "experiment",
       "pass": "artifact",
       "with": {
-        "release_item": "ctr_fix.release_item"
+        "release_items": "ctr_fix.release_items"
       }
     },
     {
@@ -415,7 +514,7 @@
       "to": "experiment",
       "pass": "artifact",
       "with": {
-        "release_item": "fact_update.release_item"
+        "release_items": "fact_update.release_items"
       }
     },
     {
@@ -423,7 +522,7 @@
       "to": "experiment",
       "pass": "artifact",
       "with": {
-        "release_item": "spec.rewrite_item"
+        "rewrite_items": "spec.rewrite_items"
       }
     },
     {
@@ -433,9 +532,27 @@
     },
     {
       "from": "approve",
-      "to": "package",
+      "to": "package_ctr",
       "pass": "artifact",
-      "when": "approve.answer_kind == 'approved'"
+      "when": "approve.answer_kind == 'approved' && route.branch == 'ctr'"
+    },
+    {
+      "from": "approve",
+      "to": "package_fact",
+      "pass": "artifact",
+      "when": "approve.answer_kind == 'approved' && route.branch == 'fact_update'"
+    },
+    {
+      "from": "approve",
+      "to": "package_upgrade",
+      "pass": "artifact",
+      "when": "approve.answer_kind == 'approved' && route.branch == 'upgrade'"
+    },
+    {
+      "from": "approve",
+      "to": "package_split",
+      "pass": "artifact",
+      "when": "approve.answer_kind == 'approved' && route.branch == 'split'"
     },
     {
       "from": "approve",
@@ -443,8 +560,23 @@
       "pass": "artifact"
     },
     {
-      "from": "package",
-      "to": "done",
+      "from": "package_ctr",
+      "to": "done_ctr",
+      "pass": "artifact"
+    },
+    {
+      "from": "package_fact",
+      "to": "done_fact",
+      "pass": "artifact"
+    },
+    {
+      "from": "package_upgrade",
+      "to": "done_upgrade",
+      "pass": "artifact"
+    },
+    {
+      "from": "package_split",
+      "to": "done_split",
       "pass": "artifact"
     }
   ],
@@ -477,12 +609,14 @@
           "experiment_path": "experiment.md",
           "due_date": "2026-12-04"
         },
-        "package": {
+        "package_upgrade": {
           "package_path": ".agents/seo/page-refresh/2026-11-06/"
         },
         "spec": {
           "spec_path": "spec.md",
-          "rewrite_item": "rewrite-item.json"
+          "rewrite_items": [
+            "rewrite-item.json"
+          ]
         }
       },
       "humans": {
@@ -498,8 +632,8 @@
         "spec",
         "experiment",
         "approve",
-        "package",
-        "done"
+        "package_upgrade",
+        "done_upgrade"
       ],
       "expect_outputs": [
         "status == 'done'",
