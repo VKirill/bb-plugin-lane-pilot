@@ -1,3 +1,4 @@
+import { directoryMove } from "../../storage";
 import { GLOBAL_SETTINGS_PROJECT_ID } from "@lane-pilot/settings-catalog";
 import { secretShaped } from "../../tasks";
 import type { BacklogApi } from "../../backlog/server";
@@ -469,6 +470,9 @@ export function registerTools(ctx: ServerCore, services: Services, familyContrib
   bb.agents.configure((context) => {
     const role = context.pluginMetadata.role;
     const runId = context.pluginMetadata.lanePilotRunId;
+    if (context.thread?.id && directoryMove(db, context.thread.id)) {
+      return { tools: [], skills: [], instructions: "Lane Pilot directory move is pending. Native dispatch must recover the recorded environment binding before tools can admit work." };
+    }
     const legacyOrigin = context.origin.pluginId === "lane-pilot" && role === "pm" && typeof runId === "string";
     const threadId = context.thread?.id;
     const projectId = context.project?.id;

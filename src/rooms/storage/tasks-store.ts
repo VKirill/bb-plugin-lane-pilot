@@ -1,3 +1,4 @@
+import { assertRunAdmission } from "./native-directory-guard";
 import { isAbsolute, relative, resolve } from "node:path";
 import { OPEN_ATTEMPT_STATES } from "../contracts/state-machine";
 import { sha256Hex } from "@lane-pilot/kit";
@@ -23,6 +24,7 @@ export function createTask(
   ids: { id:string; runId:string; kind:"bb"|"cli"; contract:unknown; birth?:string },
 ): void {
   taskFrame(db, ids.id, "created", null, () => {
+    assertRunAdmission(db, ids.runId);
     db.prepare("INSERT INTO lane_pilot_task(id,run_id,kind,contract_json,created_at,birth) VALUES (?,?,?,?,?,?)")
       .run(ids.id, ids.runId, ids.kind, JSON.stringify(ids.contract), Date.now(), ids.birth ?? "pm");
     recordContractEdition(db, ids.id, ids.contract, null, "created");

@@ -30,7 +30,8 @@
       "contributeEnv": {
         "timeoutMs": 10000
       }
-    }
+    },
+    "directoryMove": true
   },
   "dependencies": {
     "@hugeicons/core-free-icons": "^4.1.3",

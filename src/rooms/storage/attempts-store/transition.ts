@@ -1,3 +1,4 @@
+import { assertRunAdmission } from "../native-directory-guard";
 import { sha256Hex } from "@lane-pilot/kit";
 import { ATTEMPT_STATES, IllegalTransitionError, isLegalMove, OPERATIONAL_MOVES, TRANSITION_TABLE } from "../../contracts/state-machine";
 import type { FailureCode } from "../../contracts/failure-class";
@@ -74,6 +75,10 @@ export function transitionAttempt(
   // The state write and its journal row land in one transaction (SMA m_wrappers): a crash between them used to leave a
   // state with no journal. Listeners fire after the commit, so a screen never sees a state that was rolled back.
   const changed = db.transaction(() => {
+    if (state === "queued") {
+      const run = db.prepare("SELECT run_id FROM lane_pilot_attempt WHERE id=?").get(attemptId) as { run_id: string };
+      assertRunAdmission(db, run.run_id);
+    }
     const reopen = settled && before.state !== state && isLegalMove(before.state, state) ? 1 : 0;
     // «Not passed at all» keeps the wake; an explicit null clears it (parkAttemptWake(…, null)); a number sets it.
     const wakeGiven = fields.wakeAt !== undefined ? 1 : 0;

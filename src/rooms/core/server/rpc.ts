@@ -1,3 +1,4 @@
+import { handleDirectoryMove } from "../../native-agent/server";
 import type { rpcContract } from "./plugin-contracts";
 import type { ServerCore } from "../../contracts/server";
 
@@ -158,6 +159,7 @@ export function registerRpc(ctx: ServerCore, services: Services, contract: typeo
   const ownerSweeps = ownerItemSweeps(services);
   // Every call is timed (rpc-timing.ts). No caller check: every machine and every caller is the owner's (owner decision 2026-10-08).
   ctx.bb.rpc.register(contract, journalRpcHandlers(timeRpcHandlers({
+    experimental_vk_directory_move: (input) => handleDirectoryMove({ bb: ctx.bb, db: ctx.db, loadParked: services.stability.loadParked }, input),
     ...preferencesRpc(ctx, services),
     ...runsRpc(ctx, services),
     ...settingsRpc(ctx, services),

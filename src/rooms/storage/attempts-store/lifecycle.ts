@@ -1,13 +1,17 @@
+import { assertRunAdmission } from "../native-directory-guard";
 import { taskFamily, taskRedispatchBase } from "@lane-pilot/contracts";
 import { FREE_CLASSES, failureClass, isOwnerDecision, isPreStartStop, isWaitingSecret, isWriterSilent } from "../../contracts";
 import { HARNESS_VERSION, type LanePilotDatabase } from "../database";
 import { attemptChanged, transitionAttempt } from "./transition";
 
 export function createAttempt(db: LanePilotDatabase, ids: { id:string; runId:string; taskId:string }): void {
-  const now = Date.now();
-  const used = countAttempts(db, ids.runId, ids.taskId);
-  db.prepare("INSERT INTO lane_pilot_attempt(id,run_id,task_id,state,attempt_no,created_at,updated_at,harness_version) VALUES (?,?,?,?,?,?,?,?)")
-    .run(ids.id, ids.runId, ids.taskId, "queued", used + 1, now, now, HARNESS_VERSION);
+  db.transaction(() => {
+    assertRunAdmission(db, ids.runId);
+    const now = Date.now();
+    const used = countAttempts(db, ids.runId, ids.taskId);
+    db.prepare("INSERT INTO lane_pilot_attempt(id,run_id,task_id,state,attempt_no,created_at,updated_at,harness_version) VALUES (?,?,?,?,?,?,?,?)")
+      .run(ids.id, ids.runId, ids.taskId, "queued", used + 1, now, now, HARNESS_VERSION);
+  }).immediate();
   attemptChanged(db, ids.id);
 }
 

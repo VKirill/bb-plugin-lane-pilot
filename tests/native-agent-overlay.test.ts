@@ -306,3 +306,14 @@ it("PM routes non-code requests to lane_pilot_route before searching (thr_n6ukbh
   expect(LANE_PILOT_PM_SESSION).toContain("the router names the graph to start (`web-research`, `errand`, `specialist`)");
   expect(LANE_PILOT_PM_SESSION).not.toContain("work the usual way");
 });
+
+it("exposes the Core directory tool only with its idle-move checkpoint capability", () => {
+  const source = JSON.stringify({ "dev-orchestrator": { tools: ["Read"], disallowedTools: ["mcp__bb-bridge__update_environment_directory"], prompt: "Stay in this checkout: this run is bound to it, so `update_environment_directory` and in-place chat moves are disabled." } });
+  const oldCore = unionLpBridgeToolsOnAgentsJson("dev-orchestrator", source)["dev-orchestrator"] as { disallowedTools: string[] };
+  expect(oldCore.disallowedTools).toContain("mcp__bb-bridge__update_environment_directory");
+  const newCore = unionLpBridgeToolsOnAgentsJson("dev-orchestrator", source, true)["dev-orchestrator"] as { disallowedTools: string[]; prompt: string };
+  expect(newCore.disallowedTools).not.toContain("mcp__bb-bridge__update_environment_directory");
+  expect(newCore.disallowedTools).toContain("mcp__bb-bridge__bb_workflow_run");
+  expect(newCore.prompt).toContain("idle same-project, same-host");
+  expect(newCore.prompt).not.toContain("moves are disabled");
+});

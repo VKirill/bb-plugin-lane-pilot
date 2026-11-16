@@ -15,3 +15,5 @@ export { PM_SKILLS_USAGE, pmSkillName, pmSkillUseCounts, recordPmSkillUse, runPm
 export { PROFILE_CHECK_OWNER_KEY, PROFILE_CHECK_SCHEDULE, createProfileCheck, mountProfileCheck } from "./profile-check";
 export type { ProfileCheckApi } from "./profile-check";
 export type { PmSkillCount } from "./pm-skill-use";
+
+export { handleDirectoryMove, recoverDirectoryMove } from "./directory-move";

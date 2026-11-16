@@ -1,5 +1,5 @@
 import { SETTING_WRITER_CAPACITY_WAIT_MAX_MIN } from "@lane-pilot/settings-catalog";
-import { adoptableBlockedAttempts, createAttempt, getAttempt, getRun, getRunSettingsScopes, latestAttemptByRowid, listOpenAttempts, loadProjectSettings, recentWriterHostIds, stemAttemptRows, transitionAttempt } from "../../storage";
+import { beginRunAdmission, readParkedTasks, adoptableBlockedAttempts, createAttempt, getAttempt, getRun, getRunSettingsScopes, latestAttemptByRowid, listOpenAttempts, loadProjectSettings, recentWriterHostIds, stemAttemptRows, transitionAttempt } from "../../storage";
 import { PARKED_KEY } from "../../contracts";
 import type { ParkedTask } from "../../contracts";
 import packageJson from "../../../../package.json";
@@ -97,8 +97,7 @@ export function createStability(ctx:ServerCore, services:Services) {
   }
 
   async function loadParked():Promise<ParkedTask[]> {
-    const stored = await bb.storage.kv.get(PARKED_KEY);
-    return Array.isArray(stored) ? stored as ParkedTask[] : [];
+    return readParkedTasks(bb.storage.kv);
   }
   async function saveParked(list:ParkedTask[]) { await bb.storage.kv.set(PARKED_KEY, list); }
   /** Drops the restart tickets `match` names (the PM sent or canceled the task itself); the dropped rows come back. */
@@ -170,11 +169,15 @@ export function createStability(ctx:ServerCore, services:Services) {
     const klass = input.klass ?? failureClass(input.state, input.reason);
     const waitingSecret = isWaitingSecret(input.reason);
     // A spent usage window parks too: the class is limit, the wait is Lane Pilot's, not the task's (writer.capacity_wait).
-    if (!(PARKED_CLASSES.has(klass) || waitingSecret || isCapacitySaturated(input.reason)) || await isRunHalted(bb.storage.kv as never, input.runId)) return false;
+    if (!(PARKED_CLASSES.has(klass) || waitingSecret || isCapacitySaturated(input.reason))) return false;
+    const run = getRun(db, input.runId);
+    if (!run || run.closed_at !== null) return false;
+    const releaseAdmission = beginRunAdmission(db, input.runId);
+    try {
+    if (await isRunHalted(bb.storage.kv as never, input.runId)) return false;
     const fingerprint = failureFingerprint(input.reason);
     // A fault of a run that is no longer going (blocked or closed) — leftover attempts the reload reconciles — says nothing about
     // this version: counting it opened the sandbox breaker on 0.1.340's own drill (live 2026-10-27).
-    const run = getRun(db, input.runId);
     const live = !!run && !run.closed_at && (run.state === "pending" || run.state === "running");
     if (klass === "harness" && live) noteHarnessFailure(input.projectId, fingerprint, now);
     const list = await loadParked();
@@ -195,6 +198,7 @@ export function createStability(ctx:ServerCore, services:Services) {
     if (waitingSecret) notePm(input.pmThreadId, `${input.taskId} waits for a secret its checks need (${input.reason.slice(0, 160)}); call env_request for it, or ask the owner to allow it in secrets.allow. It restarts by itself once the access is in place, no attempt is spent.`);
     else if (klass === "dirty_base") notePm(input.pmThreadId, `${input.taskId} hit a dirty base checkout (uncommitted changes there that its merge would overwrite: commit or discard them) (${input.reason.slice(0, 160)}); it is parked and restarts by itself after a short wait.`);
     return true;
+    } finally { releaseAdmission(); }
   }
 
   /** Whether a writer of this project may start now; an open breaker holds it until the fault is fixed. */
@@ -339,9 +343,16 @@ export function createStability(ctx:ServerCore, services:Services) {
   async function adoptBlockedByFaults(now = Date.now()):Promise<string[]> {
     // By when the attempt started: a cleanup that touched an old attempt yesterday made a 2-day-old task look recent.
     const rows = adoptableBlockedAttempts(db, now - 24 * 3600_000) as Array<{ run_id:string; task_id:string; state:string; reason:string|null; created_at:number; updated_at:number; harness_version:string|null; project_id:string; pm_thread_id:string|null }>;
+    const releaseAdmissions: Array<() => void> = [];
+    try {
+      for (const row of rows) {
+        const run = getRun(db, row.run_id);
+        if (run && run.closed_at === null) releaseAdmissions.push(beginRunAdmission(db, row.run_id));
+      }
     const list = await loadParked();
     const adopted:string[] = [];
     for (const row of rows) {
+      if (getRun(db, row.run_id)?.closed_at !== null) continue;
       const klass = failureClass(row.state, row.reason);
       if (!(PARKED_CLASSES.has(klass) || isCapacitySaturated(row.reason)) || !row.pm_thread_id || list.some((entry) => entry.runId === row.run_id && entry.taskId === row.task_id)) continue;
       if (await isRunHalted(bb.storage.kv as never, row.run_id)) continue;
@@ -361,6 +372,7 @@ export function createStability(ctx:ServerCore, services:Services) {
       bb.log.info(`Lane Pilot parked ${adopted.length} task(s) blocked by a Lane Pilot or machine fault: ${adopted.join(", ")}`);
     }
     return adopted;
+    } finally { for (const release of releaseAdmissions) release(); }
   }
 
   /**

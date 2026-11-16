@@ -1,3 +1,4 @@
+import { beginRunAdmission } from "../../storage";
 import { z } from "zod";
 import { findOpenNativeRun, getRun, listTaskTerminalStates, latestRunForProjectThread } from "../../storage";
 import type { LanePilotDatabase } from "../../storage";
@@ -132,6 +133,8 @@ export async function runWorkflowTool(deps: WorkflowToolDeps, params: { workflow
   if (!context.threadId || !context.projectId) throw new Error("workflow_needs_pm_thread: call this from a Lane Pilot PM chat");
   const runId = pmRunId(deps.db, context.projectId, context.threadId);
   if (!runId) throw new Error("workflow_needs_pm_chat: call this from a Lane Pilot PM chat");
+  const releaseAdmission = beginRunAdmission(deps.db, runId);
+  try {
   const store = await deps.store(context.projectId);
   const stored = store.get(params.workflowId);
   const runnable = store.list().filter((item) => isOffered(item.workflow)).map((item) => item.workflow.id);
@@ -218,6 +221,7 @@ export async function runWorkflowTool(deps: WorkflowToolDeps, params: { workflow
     // The engine refuses before it starts when a node's executor is not registered or an input does not fit: that text is the answer.
     return refused(`cannot_start: ${cause instanceof Error ? cause.message : String(cause)}`, { workflow: workflow.id });
   }
+  } finally { releaseAdmission(); }
 }
 
 export async function workflowStatusTool(deps: WorkflowToolDeps, params: { runId: string }, context: ToolContext): Promise<string> {
@@ -260,6 +264,8 @@ export async function amendGoalsTool(deps: WorkflowToolDeps, params: { runId: st
   const engine = deps.engine();
   const snapshot = engine.snapshot(params.runId);
   if (!snapshot || snapshot.run.project_id !== context.projectId) return refused(`not_found: no workflow run "${params.runId}" in this project`, { workflowRunId: params.runId });
+  const releaseAdmission = snapshot.run.link_run_id ? beginRunAdmission(deps.db, snapshot.run.link_run_id) : () => {};
+  try {
   if (!params.goals && !params.rerun) return refused("amend_refused: give goals, rerun, or both", { workflowRunId: params.runId });
   // The per-task pipeline keeps its runtime in memory: it is corrected through the task (lane_pilot_update_task), never re-run by hand.
   if (params.rerun && (snapshot.run.workflow_id === "lp-task-pipeline" || snapshot.run.idem_key?.startsWith("lp-task:"))) return refused("rerun_refused: pipeline_run: correct the task with lane_pilot_update_task", { workflowRunId: params.runId });
@@ -282,6 +288,7 @@ export async function amendGoalsTool(deps: WorkflowToolDeps, params: { runId: st
     status: engine.get(params.runId)?.status ?? "running",
     note: result.reopened ? "The run was held by its goal audit: it is audited again against the new goals; poll lane_pilot_workflow_status." : "Recorded in the run's journal with your reason. A run that is still going is audited against these goals before it closes.",
   }, null, 2);
+  } finally { releaseAdmission(); }
 }
 
 export function mountWorkflowTools(ctx: ServerCore, services: Services): void {

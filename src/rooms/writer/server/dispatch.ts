@@ -1,3 +1,4 @@
+import { beginRunAdmission, latestRunForPmThread } from "../../storage";
 import { closeWriterStages, isTaskSatisfied, loadBlockedBy, recordStage, resetHelperStages, setRunHalted } from "../../runs/server";
 import type { VerificationGatePort } from "../../contracts/integration-gate";
 import type { IsTaskSatisfied } from "../../contracts";
@@ -98,8 +99,6 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
     const metadata = await bb.sdk.threads.getPluginMetadata({ threadId:args.threadId });
     if (valueAt(metadata, "role") !== "pm") throw new Error("caller is not a Lane Pilot PM thread");
     const runId = stringAt(metadata, "lanePilotRunId");
-    // The PM sending a task again is the restart after an owner's stop.
-    if (runId) await setRunHalted(bb.storage.kv as never, runId, false);
     if (!runId) throw new Error("PM thread has no lanePilotRunId");
     const run = getRun(db, runId);
     if (!run || run.project_id !== args.projectId || run.pm_thread_id !== args.threadId) {
@@ -232,13 +231,21 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
 
   /** `criticCodeDefault`: this task's value of `critic.code.default_for_risk`, over the project's (the bench toggles the code critic per arm with it). */
   async function dispatchWriter(args:{threadId:string; projectId:string; task?:TaskV2; plan?:string; baseRef?:string; objective?:string; requireObjective?:boolean; criticCodeDefault?:CodeCriticDefault; birth?:BirthKind}): Promise<Record<string,unknown>> {
+    const preparingRun = latestRunForPmThread(db, args.threadId);
+    if (!preparingRun) throw new Error("PM thread has no Lane Pilot run");
+    const releaseAdmission = beginRunAdmission(db, preparingRun.id);
+    try {
     const metadata = await bb.sdk.threads.getPluginMetadata({ threadId:args.threadId });
     if (valueAt(metadata, "role") !== "pm") throw new Error("caller is not a Lane Pilot PM thread");
     const runId = stringAt(metadata, "lanePilotRunId");
     if (!runId) throw new Error("PM thread has no lanePilotRunId");
+    if (runId !== preparingRun.id) throw new Error("PM run changed during admission; retry from the current binding");
     // Settings of the section this run works in, read by every stage below.
     await ensureRunScopes(runId);
     const run = getRun(db, runId);
+    if (!run || run.project_id !== args.projectId || run.pm_thread_id !== args.threadId) throw new Error("run does not belong to this PM thread and project");
+    // Only an actual new dispatch resumes an owner-stopped run; workspace reads never do.
+    await setRunHalted(bb.storage.kv as never, runId, false);
     // A native run's host, workspace and writer come from its binding and current settings, never from a stale prototype config.
     const config = await configForRun(args.projectId, run);
     if (!config) throw new Error(`Lane Pilot prototype is not configured for ${args.projectId}`);
@@ -427,6 +434,7 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
     const replyWithHint = (reply:Record<string,unknown>): Record<string,unknown> => testHint ? { ...reply, testHint } : reply;
     if (early) return replyWithHint(withAdvice(early));
     return replyWithHint(withAdvice(pendingReply()));
+    } finally { releaseAdmission(); }
   }
 
   /**

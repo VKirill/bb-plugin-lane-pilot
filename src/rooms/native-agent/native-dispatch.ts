@@ -1,3 +1,4 @@
+import { recoverDirectoryMove } from "./server/directory-move";
 import { randomUUID } from "node:crypto";
 import { noteCheckoutGuest } from "../verification/server";
 import type { BbPluginApi, ExperimentalPluginProviderEnvEntry } from "@get-bb/plugin-sdk";
@@ -51,6 +52,11 @@ async function callCliAgentsRpc<T>(
     if (isMissingPluginRpc(error)) return undefined;
     throw error;
   }
+}
+
+function directoryMoveCapability(bb: BbPluginApi, selected: NativeSelection): { directoryMove?: true } {
+  return (bb.vk as { experimental_vkDirectoryMove?: boolean } | undefined)?.experimental_vkDirectoryMove === true && !selected.parentRunId
+    ? { directoryMove: true } : {};
 }
 
 export async function probeCliAgentsCollision(bb: BbPluginApi, input: {
@@ -274,6 +280,7 @@ export async function handleNativeDispatch(
       return reject("cli_agents_collision", collisionMessage(collision), { detail: collision });
     }
     // A specialist thread works inside its PM's run; only a chat of its own opens a run.
+    await recoverDirectoryMove(bb, db, ctx.thread.id);
     const claimed = selected.parentRunId
       ? { runId: selected.parentRunId, created: false }
       : claimNativeLaneRun({
@@ -298,6 +305,7 @@ export async function handleNativeDispatch(
       const prepared = await host.call("prepareNativeClaude", {
         agentId: selected.agentId,
         agentsJson: selected.agentsJson,
+        ...directoryMoveCapability(bb, selected),
       }, { hostId: workspace.hostId }) as {
         env: ExperimentalPluginProviderEnvEntry[];
         agentId: string;
@@ -338,6 +346,7 @@ export async function handleNativeDispatch(
       cwd: workspace.workspacePath,
       agentId: selected.agentId,
       agentsJson: selected.agentsJson,
+      ...directoryMoveCapability(bb, selected),
     }, { hostId: workspace.hostId }) as {
       env: ExperimentalPluginProviderEnvEntry[];
       agentId: string;
@@ -391,6 +400,7 @@ export async function nativeContributedEnv(
             cwd: path,
             agentId: selected.agentId,
             agentsJson: selected.agentsJson,
+            ...directoryMoveCapability(bb, selected),
           }, { hostId: envHost }) as {
             env: ExperimentalPluginProviderEnvEntry[];
             agentId: string;

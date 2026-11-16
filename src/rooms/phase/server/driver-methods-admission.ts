@@ -1,3 +1,4 @@
+import { assertRunAdmission } from "../../storage";
 import { switchOn, switchWord } from "@lane-pilot/models";
 import { randomUUID } from "node:crypto";
 import { latestRunForPmThread } from "../../storage";
@@ -29,7 +30,10 @@ export function installAdmissionMethods(tools: MethodsTools) {
     }
     const id = `ph_${randomUUID().replace(/-/g, "").slice(0, 10)}`;
     const runId = latestRunForPmThread(db, input.pmThreadId)?.id ?? null;
-    insertPhase(db, { id, projectId: input.projectId, pmThreadId: input.pmThreadId, runId, title: input.title.slice(0, 200), goal: input.goal.slice(0, 4000), at: now() });
+    db.transaction(() => {
+      if (runId) assertRunAdmission(db, runId);
+      insertPhase(db, { id, projectId: input.projectId, pmThreadId: input.pmThreadId, runId, title: input.title.slice(0, 200), goal: input.goal.slice(0, 4000), at: now() });
+    }).immediate();
     const settings = await ctx.effectiveProjectSettings(input.projectId).then((result) => result.values as Record<string, unknown>, () => ({} as Record<string, unknown>));
     // Each turn decides its own word from its own evidence (logic/words-policy.ts); at opening only the context's is known: the title and goal.
     const wordTurns = wordTurnsOf({ title: input.title, goal: input.goal, record: {} }, settings, now());

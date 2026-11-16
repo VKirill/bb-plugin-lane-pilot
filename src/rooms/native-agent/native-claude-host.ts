@@ -192,9 +192,9 @@ export function catalogHasAgent(agents: Array<{ id: string }>, agentId: string):
   return agents.some((row) => nativeAgentCliId(row.id) === id);
 }
 
-function sessionAgentsObject(agentId: string, agentsJson: string | null): Record<string, unknown> | null {
+function sessionAgentsObject(agentId: string, agentsJson: string | null, directoryMove = false): Record<string, unknown> | null {
   if (!agentsJson) return null;
-  return unionLpBridgeToolsOnAgentsJson(nativeAgentCliId(agentId), agentsJson);
+  return unionLpBridgeToolsOnAgentsJson(nativeAgentCliId(agentId), agentsJson, directoryMove);
 }
 
 async function atomicWrite(path: string, content: string, mode: number) {
@@ -373,6 +373,7 @@ export function claudeExecLine(command: string, settingsPath: string, extraArgs:
 }
 
 export async function prepareNativeClaude(input: {
+  directoryMove?: boolean;
   cwd?: string | null;
   agentId: string;
   agentsJson: string | null;
@@ -383,7 +384,7 @@ export async function prepareNativeClaude(input: {
   const cwd = input.cwd?.trim() && input.cwd.startsWith("/") ? input.cwd : null;
   let settingId = nativeAgentSettingId(input.agentId);
   let sessionAgentsJson = input.agentsJson
-    ? JSON.stringify(sessionAgentsObject(agentId, input.agentsJson))
+    ? JSON.stringify(sessionAgentsObject(agentId, input.agentsJson, input.directoryMove))
     : null;
   let sourceStamp = input.agentsJson ? "edited" : "none";
   if (cwd) {

@@ -19,6 +19,7 @@
     "experimental_vkPluginMetadata",
     "experimental_vkLastTurn",
     "experimental_vkLaunchTuning",
-    "experimental_vkInspectRequiredSessionPolicies"
+    "experimental_vkInspectRequiredSessionPolicies",
+    "experimental_vkDirectoryMove"
   ]
 }

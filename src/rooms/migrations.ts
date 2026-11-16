@@ -1,3 +1,4 @@
+import { nativeDirectoryMigrations } from "./storage";
 // The composed Lane Pilot migration list, in apply order. Order is locked: tests/fixtures/migrations.lock.json hashes every statement.
 // Owner rooms export their slices; storage applies whatever list it is handed (openDatabase default lives above storage).
 import { handoffMigrations } from "@lane-pilot/handoff";
@@ -735,4 +736,5 @@ export const migrations = [
     at INTEGER NOT NULL
   )`,
   `CREATE INDEX IF NOT EXISTS idx_lp_run_file_read_run ON lane_pilot_run_file_read(run_id)`,
+  ...nativeDirectoryMigrations,
 ];

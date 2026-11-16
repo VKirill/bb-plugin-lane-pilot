@@ -1,5 +1,5 @@
 import type { IsTaskSatisfied } from "../../contracts";
-import { getRun } from "../../storage";
+import { assertRunAdmission, getRun } from "../../storage";
 import { isNotFound, orMiss, stringAt } from "@lane-pilot/kit";
 import type { NodeExecutor, StepContext, WorkflowEngine } from "@lane-pilot/workflow-engine";
 import type { RunRow } from "../../storage";
@@ -70,6 +70,7 @@ export function chainRuntimeFor(ctx: ServerCore, services: Services) {
     if (!run.link_run_id) return { ctx, services, pmThreadId: null, projectId: run.project_id, runId: null, ...(startedBySchedule(ctx.db, run) ? { origin: "schedule" as const } : {}) };
     const linked = getRun(ctx.db, run.link_run_id);
     if (!linked?.pm_thread_id) return undefined;
+    assertRunAdmission(ctx.db, run.link_run_id);
     return { ctx, services, pmThreadId: linked.pm_thread_id, projectId: run.project_id, runId: run.link_run_id, ...(startedBySchedule(ctx.db, run) ? { origin: "schedule" as const } : {}) };
   };
 }

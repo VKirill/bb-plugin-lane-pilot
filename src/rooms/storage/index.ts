@@ -74,3 +74,6 @@ export { setAttemptBarrier, listUnmovedLiveAttempts, liveAttemptsOfRun, hostActi
 export { listEvidence, recordEvidence, type EvidenceCheck, type EvidenceRecord } from "./evidence-store";
 export { writeReplacing, type ReplacingWrite } from "./write-replacing";
 export { attemptEnvironmentCandidates } from "./attempts-store";
+
+export { assertRunAdmission, beginRunAdmission, hasRunAdmission, directoryMove, nativeDirectoryMigrations, type DirectoryMove } from "./native-directory-guard";
+export { readParkedTasks } from "./parked-tasks";

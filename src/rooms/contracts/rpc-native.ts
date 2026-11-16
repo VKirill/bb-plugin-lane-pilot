@@ -3,7 +3,12 @@ import { pickableAgentSchema } from "./rpc-shell";
 import { helperThreadLabelsInput, helperThreadLabelsOutput, listHelperThreadsInput, listHelperThreadsOutput } from "./ui-query-schemas";
 
 /** Activating the PM, the native session, helper threads. */
+const directoryPlacement = z.object({ environmentId: z.string().min(1), hostId: z.string().min(1), path: z.string().min(1) }).strict();
 export const rpcNative = {
+  experimental_vk_directory_move: {
+    input: z.object({ phase: z.enum(["prepare", "commit", "abort"]), operationId: z.string().min(1), threadId: z.string().min(1), projectId: z.string().min(1), source: directoryPlacement, target: directoryPlacement }).strict(),
+    output: z.object({ ok: z.literal(true) }).strict(),
+  },
   finish_run: {
     input: z.object({ projectId: z.string().min(1), runId: z.string().min(1) }).strict(),
     output: z.object({ projectId: z.string(), finishedRunIds: z.array(z.string()), closed: z.boolean() }).strict(),

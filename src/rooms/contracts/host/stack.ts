@@ -85,6 +85,7 @@ export const stackHostMethods = {
   },
   prepareNativeClaude: {
     input: z.object({
+      directoryMove: z.boolean().optional(),
       cwd: z.string().startsWith("/").optional(),
       agentId: z.string().min(1).max(200),
       agentsJson: z.string().max(200_000).nullable(),
