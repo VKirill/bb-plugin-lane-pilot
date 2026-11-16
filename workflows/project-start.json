@@ -368,17 +368,26 @@
     {
       "from": "ask",
       "to": "research",
-      "pass": "artifact"
+      "pass": "artifact",
+      "with": {
+        "owner_answers": "ctx.answers.ask"
+      }
     },
     {
       "from": "research",
       "to": "requirements",
-      "pass": "artifact"
+      "pass": "artifact",
+      "with": {
+        "owner_answers": "ctx.answers.ask"
+      }
     },
     {
       "from": "requirements",
       "to": "recap",
-      "pass": "artifact"
+      "pass": "artifact",
+      "with": {
+        "owner_answers": "ctx.answers.ask"
+      }
     },
     {
       "from": "recap",

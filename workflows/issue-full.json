@@ -172,8 +172,8 @@
       "type": "subworkflow",
       "workflow": "lp.build",
       "with": {
-        "tasks": "{{plan.tasks}}",
-        "waves": "{{plan.waves}}"
+        "tasks": "{{replan.tasks}}",
+        "waves": "{{replan.waves}}"
       },
       "guards": {
         "maxVisits": 2
@@ -287,7 +287,11 @@
       "from": "plan",
       "to": "build",
       "pass": "artifact",
-      "when": "plan.status in ['ok','low_confidence']"
+      "when": "plan.status in ['ok','low_confidence']",
+      "with": {
+        "tasks": "plan.tasks",
+        "waves": "plan.waves"
+      }
     },
     {
       "from": "plan",
@@ -326,7 +330,11 @@
       "from": "replan",
       "to": "build",
       "pass": "artifact",
-      "when": "replan.status in ['ok','low_confidence']"
+      "when": "replan.status in ['ok','low_confidence']",
+      "with": {
+        "tasks": "replan.tasks",
+        "waves": "replan.waves"
+      }
     },
     {
       "from": "replan",

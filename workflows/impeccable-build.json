@@ -406,7 +406,10 @@
     {
       "from": "ask_direction",
       "to": "pack",
-      "pass": "artifact"
+      "pass": "artifact",
+      "with": {
+        "owner_answers": "ctx.answers.ask_direction"
+      }
     },
     {
       "from": "pack",
@@ -445,7 +448,10 @@
       "from": "qa",
       "to": "fix_plan",
       "pass": "artifact",
-      "when": "qa.status == 'rework' && visits('fix_plan') == 0"
+      "when": "qa.status == 'rework' && visits('fix_plan') == 0",
+      "with": {
+        "gaps": "qa.findings"
+      }
     },
     {
       "from": "qa",
