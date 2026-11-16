@@ -1,7 +1,7 @@
 import type Database from "better-sqlite3";
 import { parseJsonOr } from "@lane-pilot/kit";
 import { TASK_SIZE_MIN_SAMPLE, type TaskSizeMedian } from "../tasks";
-import { ATTEMPT_TABLE, RUN_TABLE, hasReconcileCursor } from "../storage";
+import { ATTEMPT_TABLE, RUN_TABLE, getAttempt, getRun, hasReconcileCursor } from "../storage";
 import { failureClass } from "../contracts";
 
 export type RollbackDb = Pick<Database.Database, "prepare">;
@@ -84,8 +84,11 @@ export function settleRevert(db: RollbackDb, input: RevertSettlement): number {
     const commits = input.changeSha.split(",");
     if (commits.length !== input.attemptIds.length || commits.some((commit) => !sha(commit))) throw new Error("revert change provenance is malformed");
     for (const [index, attemptId] of input.attemptIds.entries()) {
+      const actual = getAttempt(db as never, attemptId);
+      const run = actual ? getRun(db as never, actual.run_id) : undefined;
       const attempt = getAttemptChange(db, attemptId);
-      if (!attempt || attempt.runId !== input.runId || attempt.taskId !== input.taskId || attempt.mergeCommit !== commits[index] || attempt.outcome !== "merged") {
+      if (!actual || actual.state !== "accepted" || actual.run_id !== input.runId || actual.task_id !== input.taskId || !run || run.project_id !== input.projectId
+        || !attempt || attempt.runId !== input.runId || attempt.taskId !== input.taskId || attempt.mergeCommit !== commits[index] || attempt.outcome !== "merged") {
         throw new Error(`revert attempt ${attemptId} no longer matches its accepted change intent`);
       }
     }

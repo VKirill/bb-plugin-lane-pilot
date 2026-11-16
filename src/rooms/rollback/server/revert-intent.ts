@@ -1,7 +1,7 @@
 import { resolve } from "node:path";
 import type { ServerCore } from "../../contracts/server";
 import { getAttempt, getRun, getRunWriterHost, getTask, taskBasePath } from "../../storage";
-import { clearRevertIntent, getAttemptChange, readRevertIntents, revertIntentKey, settleRevert, type RevertIntent, type RevertIntentKv } from "../store";
+import { clearRevertIntent, getAttemptChange, listTaskReceipts, readRevertIntents, revertIntentKey, settleRevert, type RevertIntent, type RevertIntentKv } from "../store";
 
 const SHA = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/i;
 const shellQuote = (text: string) => `'${text.replace(/'/g, "'\\''")}'`;
@@ -30,6 +30,8 @@ const landedRevert = async (host: ServerCore["host"], intent: RevertIntent): Pro
     `git merge-base --is-ancestor ${q(intent.baseHead)} \"$base\" || exit 20`,
     `git merge-base --is-ancestor ${q(intent.expectedCommit)} \"$base\" || exit 21`,
     `if git merge-base --is-ancestor ${q(intent.expectedCommit)} ${q(intent.baseHead)}; then exit 22; fi`,
+    ...intent.changeSha.split(",").map((commit) => `git log --format=%B ${q(`${intent.baseHead}..${intent.expectedCommit}`)} | grep -F -q -e ${q(`This reverts commit ${commit}.`)} -e ${q(`This reverts commit ${commit},`)} || exit 24`),
+    `git log --format=%B ${q(intent.baseHead)}..\"$base\" | grep -F -x -- ${q(intent.trailer)} >/dev/null || exit 25`,
     `tree=\"$(git rev-parse --verify ${q(`${intent.expectedCommit}^{tree}`)})\" || exit $?`,
     `[ \"$tree\" = ${q(intent.expectedTree)} ] || exit 23`,
     `printf 'BASE %s\\nTREE %s\\n' \"$base\" \"$tree\"`,
@@ -57,6 +59,7 @@ export function createRevertIntentRecovery(ctx: ServerCore, log: (line: string) 
     if (!actualHost || actualHost !== intent.hostId || !actualBase || resolve(actualBase) !== resolve(intent.basePath)) return false;
     const commits = intent.changeSha.split(",");
     if (commits.length !== intent.attemptIds.length) return false;
+    if (intent.trailer !== `Lane-Pilot-Revert: ${intent.taskId}` || intent.opId !== revertOpId(intent.runId, intent.taskId, intent.attemptIds, intent.changeSha, intent.expectedCommit)) return false;
     return intent.attemptIds.every((attemptId, index) => {
       const attempt = getAttempt(db, attemptId);
       const change = getAttemptChange(db, attemptId);
@@ -81,6 +84,12 @@ export function createRevertIntentRecovery(ctx: ServerCore, log: (line: string) 
       if (read.state !== "pending" || revertIntentKey(read.intent) !== key) { if (read.state === "unknown") log(read.reason); continue; }
       const intent = read.intent;
       const alreadySettled = intent.attemptIds.every((attemptId) => getAttemptChange(db, attemptId)?.outcome === "reverted");
+      const matchingSettlement = listTaskReceipts(db, intent.taskId, "revert").some((receipt) => receipt.state === "merged" && receipt.runId === intent.runId
+        && receipt.projectId === intent.projectId && receipt.changeSha === intent.changeSha && (receipt.detail as { opId?: unknown })?.opId === intent.opId);
+      if (alreadySettled && !matchingSettlement) {
+        log(`rollback intent ${intent.opId} has reverted rows without its matching settlement receipt; it remains pending`);
+        continue;
+      }
       if (!await bindingValid(intent, alreadySettled)) {
         log(`rollback intent ${intent.opId} has mismatched run, task, host, base, attempt, or change provenance; it remains pending`);
         continue;

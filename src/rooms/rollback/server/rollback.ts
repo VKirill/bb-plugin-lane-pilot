@@ -21,6 +21,7 @@ import { listAcceptedAttemptsForTask } from "../../storage";
 import { createRevertIntentRecovery, revertOpId } from "./revert-intent";
 import { createRollbackStatus } from "./status";
 import { createRollbackReceipts } from "./receipts";
+import { createRollbackChanges, type RollbackChange } from "./changes";
 
 /** The fields of the services bag this file reads, typed by the rooms that own them. */
 interface Services {
@@ -78,6 +79,7 @@ export function createRollback(ctx: ServerCore, services: Services) {
   const revertRecovery = createRevertIntentRecovery(ctx, log);
   const statusApi = createRollbackStatus(db, intentKv);
   const { receipt, refuse } = createRollbackReceipts(db, log);
+  const { changeOf } = createRollbackChanges(db, host);
 
   // ---- the record ----
 
@@ -194,21 +196,6 @@ export function createRollback(ctx: ServerCore, services: Services) {
     return listAcceptedAttemptsForTask(db, taskId);
   }
 
-  type Change = { attemptId: string; mergeCommit: string; mergeParent: string | null; changed: ChangedFile[] };
-
-  /** The attempt's merge in main: from the record, else found in main by the attempt's trailer (work accepted before the record existed) and recorded. */
-  async function changeOf(t: RollbackTarget, attemptId: string): Promise<Change | { refused: string }> {
-    const recorded = getAttemptChange(db, attemptId);
-    if (recorded?.mergeCommit) return { attemptId, mergeCommit: recorded.mergeCommit, mergeParent: recorded.mergeParent, changed: recorded.changed };
-    const found = await host.call("gitMergeInfo", { requestedHostId: t.hostId, basePath: t.basePath, attemptId }, { hostId: t.hostId, timeoutMs: 60_000 });
-    if (found.status !== "found" || !found.commit) {
-      return { refused: found.status === "failed" ? `git could not look for the merge of attempt ${attemptId} in ${t.basePath}: ${found.reason ?? "unknown"}` : `attempt ${attemptId} left no merge commit in ${t.basePath} (it was accepted in place, in a folder without git, or its work was already in main)` };
-    }
-    if (!found.inMain) return { refused: `the merge ${found.commit.slice(0, 12)} of attempt ${attemptId} is no longer in the history of ${t.basePath} (history was rewritten)` };
-    upsertAttemptChange(db, { attemptId, runId: t.runId, taskId: t.taskId }, { outcome: "merged", mergeCommit: found.commit, mergeParent: found.base, changed: found.changed });
-    return { attemptId, mergeCommit: found.commit, mergeParent: found.base, changed: found.changed };
-  }
-
   // ---- worktrees on the project's host ----
 
   async function makeWorktree(t: RollbackTarget, name: string, commit: string | undefined, owner: WorktreeOwnerKind): Promise<{ path: string } | { error: string }> {
@@ -308,7 +295,7 @@ export function createRollback(ctx: ServerCore, services: Services) {
     const { target: t } = found;
     const attempts = found.attemptId ? [{ id: found.attemptId, updatedAt: 0 }] : acceptedAttempts(t.taskId);
     if (!attempts.length) return refuse(t, "revert", ref, `task ${t.taskId} has no accepted attempt: nothing of it is in main to revert`, `a task that did not land needs no revert; cancel or redispatch it`);
-    const changes: Change[] = [];
+    const changes: RollbackChange[] = [];
     for (const attempt of attempts) {
       if (getAttempt(db, attempt.id)?.state !== "accepted") return refuse(t, "revert", ref, `attempt ${attempt.id} is ${getAttempt(db, attempt.id)?.state}, not accepted: its work is not in main`, `revert the task by its id to take every accepted attempt`, { attemptId: attempt.id });
       const recorded = getAttemptChange(db, attempt.id);

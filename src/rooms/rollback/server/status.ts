@@ -1,8 +1,8 @@
 import { getAttempt, getTask, listAttemptStatesForTask } from "../../storage";
+import type { LanePilotDatabase } from "../../storage";
 import { getAttemptChange, listTaskReceipts, readRevertIntents, recoveryState, type RevertIntentKv } from "../store";
-import type { RollbackDb } from "../store";
 
-export function createRollbackStatus(db: RollbackDb, intentKv: () => RevertIntentKv) {
+export function createRollbackStatus(db: LanePilotDatabase, intentKv: () => RevertIntentKv) {
   function status(ref: string) {
     const attempt = getAttempt(db, ref);
     const taskId = attempt ? attempt.task_id : ref;
