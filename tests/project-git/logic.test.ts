@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isWithin, repoNameFor, sameRemote, verifyReadback } from "../../src/rooms/project-git";
+import { SECRET_CONTENT_PATTERNS, isWithin, ownsUncertainRepo, repoDescription, repoNameFor, sameRemote, verifyReadback } from "../../src/rooms/project-git";
 
 const row = { id: 5, full_name: "Octo/App", private: true, visibility: "private", owner: { login: "Octo" }, clone_url: "https://github.com/Octo/App.git" };
 
@@ -19,5 +19,23 @@ describe("project git rules", () => {
     expect(sameRemote("https://x@github.com/octo/app.git", "https://github.com/octo/other.git")).toBe(false);
     expect(isWithin("/a/b/c", "/a/b")).toBe(true);
     expect(isWithin("/a/bc", "/a/b")).toBe(false);
+  });
+
+  it("adopts an uncertain repository only by its operation marker while it is empty", () => {
+    const own = { description: repoDescription("op-1"), size: 0 };
+    expect(ownsUncertainRepo(own, "op-1")).toBe(true);
+    expect(ownsUncertainRepo({ ...own, size: 3 }, "op-1")).toBe(false);
+    expect(ownsUncertainRepo(own, "op-2")).toBe(false);
+    expect(ownsUncertainRepo({ description: "Private repository made by Lane Pilot", size: 0 }, "op-1")).toBe(false);
+  });
+
+  it("names the token families and leaves lockfile hashes alone", () => {
+    const hit = (text: string) => SECRET_CONTENT_PATTERNS.some((source) => new RegExp(source).test(text));
+    const samples = [
+      ["-----BEGIN PGP", "PRIVATE KEY BLOCK-----"].join(" "), ["sk", "live", "a".repeat(24)].join("_"), `123456789:${"A".repeat(35)}`,
+      `gh${"p"}_${"a".repeat(36)}`, `sk-${"b".repeat(24)}`, `AKIA${"C".repeat(16)}`,
+    ];
+    for (const sample of samples) expect(hit(sample), sample).toBe(true);
+    expect(hit(`"integrity": "sha512-${"Ab+/".repeat(22)}=="`)).toBe(false);
   });
 });

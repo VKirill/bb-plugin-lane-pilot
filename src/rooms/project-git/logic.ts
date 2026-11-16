@@ -27,9 +27,10 @@ export const IGNORE_MARKER = "# lane-pilot private bootstrap: secrets, generated
  * private history (BB chat storage, Lane Pilot run and memory folders). The owner sees it as the first commit's `.gitignore`.
  */
 export const IGNORE_PATTERNS = [
-  ".env", ".env.*", "!.env.example", "!.env.sample", "!.env.template",
+  ".env", ".env.*", "*.env", ".envrc", "!.env.example", "!.env.sample", "!.env.template",
   "*.pem", "*.key", "*.p12", "*.pfx", "*.keystore", "*.jks", "id_rsa*", "id_ecdsa*", "id_ed25519*",
-  ".npmrc", ".pypirc", ".netrc", ".ssh/", ".aws/", ".gnupg/", "secrets/", "*.sqlite", "*.sqlite3", "*.db",
+  ".npmrc", ".pypirc", ".netrc", ".git-credentials", "credentials*.json", "*.tfstate", "*.tfstate.*",
+  ".ssh/", ".aws/", ".gnupg/", ".docker/", ".kube/", "secrets/", "*.sqlite", "*.sqlite3", "*.db",
   "node_modules/", ".venv/", "venv/", "__pycache__/", "dist/", "build/", "coverage/", ".next/", ".nuxt/", ".turbo/", ".vite/", ".cache/",
   "*.log", ".DS_Store",
   // Lane Pilot's task homes are kept out of git the same way dispatch does it (storage TASK_HOME_EXCLUDE), at any depth.
@@ -38,20 +39,32 @@ export const IGNORE_PATTERNS = [
 
 export const IGNORE_BLOCK = `${IGNORE_MARKER}\n${IGNORE_PATTERNS.join("\n")}\n`;
 
-/** Python `re` sources of content that is a credential wherever it sits; a hit stops the baseline (the file is named, never shown). */
+/**
+ * Python `re` sources of content that is a credential wherever it sits; a hit stops the baseline (the file is named,
+ * never shown). The token families follow tasks/rails SECRET_SHAPES (private keys, GitHub, Slack, AWS, `sk-`, Telegram
+ * bot tokens); its catch-all «40+ base64 characters» is left out on purpose: lockfile integrity hashes match it.
+ * A heuristic, not a guarantee: a password in plain words or an unknown token format passes.
+ */
 export const SECRET_CONTENT_PATTERNS = [
-  "-----BEGIN [A-Z ]*PRIVATE KEY-----",
-  "\\bgh[pousr]_[A-Za-z0-9]{36,}",
+  "-----BEGIN [A-Z ]*PRIVATE KEY(?: BLOCK)?-----",
+  "\\bgh[pousr]_[A-Za-z0-9]{20,}",
   "\\bgithub_pat_[A-Za-z0-9_]{40,}",
   "\\bAKIA[0-9A-Z]{16}\\b",
   "\\bxox[abprs]-[A-Za-z0-9-]{10,}",
-  "\\bsk-(?:ant-|proj-)?[A-Za-z0-9_-]{32,}",
+  "\\bsk-(?:ant-|proj-)?[A-Za-z0-9_-]{20,}",
+  "\\b[sr]k_live_[A-Za-z0-9]{20,}",
+  "\\b\\d{8,10}:[A-Za-z0-9_-]{35}\\b",
   "\\bAIza[0-9A-Za-z_-]{35}",
 ] as const;
 
-export const BASELINE_LIMITS = { maxFileBytes: 5 * 1024 * 1024, maxFiles: 20_000, scanBytes: 1024 * 1024 } as const;
+/** Every file that may be committed is scanned whole: the size limit is the scan limit. */
+export const BASELINE_LIMITS = { maxFileBytes: 5 * 1024 * 1024, maxFiles: 20_000 } as const;
 
 export const BASELINE_MESSAGE = "Initial baseline: the folder as it was before Lane Pilot's first task";
+/** The trailer that ties the first commit to the one bootstrap operation that made it. */
+export const baselineMessage = (opId: string) => `${BASELINE_MESSAGE}\n\nLane-Pilot-Bootstrap: ${opId}`;
+/** The created repository's description carries the operation id: an uncertain create is adopted only by it. */
+export const repoDescription = (opId: string) => `Private repository made by Lane Pilot (op ${opId})`;
 
 /** A GitHub repository name from the folder's name: letters, digits, `.`, `-`, `_`; null when nothing usable is left. */
 export function repoNameFor(root: string): string | null {
@@ -61,6 +74,15 @@ export function repoNameFor(root: string): string | null {
 }
 
 export type RepoReadback = { id: number; fullName: string; owner: string; cloneUrl: string; createdAt: string | null };
+
+/**
+ * Whether a repository found before its create was confirmed is this operation's own: the description names the
+ * operation and nothing was pushed to it yet. A name match or a recent creation time alone is someone else's.
+ */
+export function ownsUncertainRepo(raw: unknown, opId: string): boolean {
+  const row = raw as { description?: unknown; size?: unknown } | null;
+  return Boolean(row) && row!.description === repoDescription(opId) && row!.size === 0;
+}
 
 /**
  * The authenticated read of the repository after create: the exact `owner/name`, `private: true` and the same id as
@@ -97,15 +119,17 @@ export function isWithin(child: string, parent: string): boolean {
 }
 
 export type ScopeChoice = { scope: "project" | "section"; root: string };
+/** A kept pick names the account the owner was shown; another sign-in later asks again. */
+export type SavedScope = ScopeChoice & { account: string };
 
 /** The only question: which folder becomes the repository. Options carry the host paths verbatim. */
-export function scopeQuestion(candidates: ScopeChoice[], locale: "ru" | "en"): { question: string; detail: string; options: string[] } {
+export function scopeQuestion(candidates: ScopeChoice[], locale: "ru" | "en", account: string): { question: string; detail: string; options: string[] } {
   const ru = locale === "ru";
   return {
     question: ru ? "В папке нет Git. Какую область сделать приватным репозиторием?" : "This folder has no Git. Which scope should become a private repository?",
     detail: ru
-      ? "Lane Pilot создаст локальный Git, первый коммит из текущих файлов (без секретов, node_modules и истории агентов) и приватный репозиторий GitHub через gh на этой машине. Закройте форму, чтобы не делать этого сейчас."
-      : "Lane Pilot will create local Git, a first commit of the current files (no secrets, node_modules or agent history) and a private GitHub repository through gh on this machine. Dismiss the form to skip it for now.",
+      ? `Lane Pilot создаст локальный Git, первый коммит из текущих файлов (без секретов, node_modules и истории агентов) и приватный репозиторий на github.com в аккаунте ${account} (вход gh на этой машине). Закройте форму, чтобы не делать этого сейчас.`
+      : `Lane Pilot will create local Git, a first commit of the current files (no secrets, node_modules or agent history) and a private repository on github.com in the account ${account} (the gh sign-in on this machine). Dismiss the form to skip it for now.`,
     options: candidates.map((c) => c.scope === "project" ? `${ru ? "Весь проект" : "Whole project"}: ${c.root}` : `${ru ? "Только раздел" : "This section only"}: ${c.root}`),
   };
 }
@@ -115,9 +139,11 @@ export type BootstrapRecord = {
   v: 1;
   hostId: string;
   root: string;
-  /** Set before `git init`: a repository found here later without a commit is this bootstrap's own. */
+  /** Made before `git init` and written into `.git/lane-pilot-bootstrap`, the first commit's trailer and the repository description: the only proof that a half-done repository is this bootstrap's own. */
+  opId?: string;
   baselineStartedAt?: number;
-  baseline?: { commit: string; files: number; reused: boolean; at: number };
+  /** The one commit that may be published, with its tree and branch; the push sends exactly it. */
+  baseline?: { commit: string; tree: string; branch: string; files: number; reused: boolean; at: number };
   repo?: { owner: string; name: string; requestedAt?: number; id?: number; fullName?: string; cloneUrl?: string; verifiedAt?: number };
   origin?: { url: string; at: number };
   push?: { branch: string; sha: string; at: number };
