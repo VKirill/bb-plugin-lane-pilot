@@ -85,7 +85,7 @@ export function makeFixture() {
     },
   };
   const store = new Map<string, unknown>();
-  const kv = { get: async <T>(key: string) => store.get(key) as T | undefined, set: async (key: string, value: never) => { store.set(key, structuredClone(value)); } };
+  const kv = { get: async <T>(key: string) => (store.has(key) ? structuredClone(store.get(key)) : undefined) as T | undefined, set: async (key: string, value: never) => { store.set(key, structuredClone(value)); } };
   const asks: Array<{ question: string; detail?: string; options?: readonly string[] }> = [];
   let answer: (options: readonly string[]) => Awaited<ReturnType<ProjectGitDeps["ownerAsk"]["ask"]>> = () => ({ outcome: "cancelled", reason: "timeout" });
   const ownerAsk: ProjectGitDeps["ownerAsk"] = {

@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { runOnHost, type RunCommandHost } from "@lane-pilot/host-calls";
 import type { OwnerAsk } from "../../relay/server";
 import {
-  bootstrapKey, declinedKey, isWithin, ownsUncertainRepo, repoDescription, repoNameFor, sameRemote, scopeKey, scopeQuestion, verifyReadback,
+  bootstrapKey, declinedKey, isWithin, namesOperation, repoDescription, repoNameFor, sameRemote, scopeKey, scopeQuestion, verifyReadback,
   type BootstrapRecord, type BootstrapStage, type GitProbe, type SavedScope, type ScopeChoice,
 } from "../logic";
 import { baselineCommand, parseBaseline, parseProbe, probeCommand } from "../scripts";
@@ -30,13 +30,15 @@ export type ScopeResult =
   /** A repository exists: the work goes on in it. `localNoOrigin` is reported, never published: its history was not scanned. */
   | { kind: "repo"; state: "origin" | "localNoOrigin"; root: string }
   | { kind: "chosen"; choice: ScopeChoice; account: string }
+  /** This operation's bootstrap stopped part-way here (its record has an op id and is not done): it is continued, not asked again. */
+  | { kind: "resume"; root: string; account: string }
   | { kind: "declined"; reason: string }
   | { kind: "unknown"; reason: string }
   /** gh is missing or not signed in to github.com on the host: nothing is asked, nothing is made. */
   | { kind: "noProvider"; code: string; reason: string }
   | { kind: "unavailable"; reason: string };
 
-export type EnsureResult = Exclude<ScopeResult, { kind: "chosen" }> | { kind: "bootstrapped"; result: BootstrapResult };
+export type EnsureResult = Exclude<ScopeResult, { kind: "chosen" } | { kind: "resume" }> | { kind: "bootstrapped"; result: BootstrapResult };
 
 export type ScopeInput = {
   threadId: string; hostId: string; projectRoot: string; sectionPath?: string | null;
@@ -88,6 +90,13 @@ export function createProjectGit(deps: ProjectGitDeps) {
     const section = input.sectionPath && input.sectionPath !== input.projectRoot ? await probe(input.hostId, input.sectionPath) : null;
     const target = section ?? project;
     if (target.state === "unknown") return { kind: "unknown", reason: target.reason ?? "the folder could not be probed" };
+    // A repository this operation began (or a folder it was about to begin) is continued with the account the owner was
+    // shown; the script and the stages still prove the repository is this operation's before anything is published.
+    for (const root of new Set([target.root, target.cwd, project.cwd])) {
+      if (!root) continue;
+      const rec = await deps.kv.get<BootstrapRecord>(bootstrapKey(input.hostId, root));
+      if (rec?.opId && rec.account && !rec.doneAt) return { kind: "resume", root, account: rec.account };
+    }
     if (target.state !== "noGit") return { kind: "repo", state: target.state, root: target.root! };
     if (project.state === "unknown" || !target.cwd) return { kind: "unknown", reason: project.reason ?? "the project folder could not be probed" };
     const candidates: ScopeChoice[] = [];
@@ -151,6 +160,8 @@ export function createProjectGit(deps: ProjectGitDeps) {
       return { ok: true, root, fullName: rec.repo.fullName, url: rec.repo.cloneUrl, commit: rec.baseline.commit, branch: rec.push.branch };
     }
 
+    if (rec.account && rec.account.toLowerCase() !== expectedAccount.toLowerCase()) return fail("auth", "account_changed", `this bootstrap began for ${rec.account}, not ${expectedAccount}`);
+    rec.account = expectedAccount;
     const live = await deps.activeLiveRun({ hostId, root });
     if (live) return fail("guard", "live_run_active", `run ${live} works in this folder without Git; it is not converted while it runs`);
 
@@ -184,6 +195,7 @@ export function createProjectGit(deps: ProjectGitDeps) {
     const signedIn = await account(hostId, root);
     if (!signedIn.ok) return fail("auth", signedIn.code, signedIn.detail);
     if (signedIn.login.toLowerCase() !== expectedAccount.toLowerCase()) return fail("auth", "account_changed", `gh is signed in as ${signedIn.login}, the owner was shown ${expectedAccount}`);
+    if (rec.repo?.owner && rec.repo.owner.toLowerCase() !== signedIn.login.toLowerCase()) return fail("auth", "account_changed", `the repository is recorded under ${rec.repo.owner}, gh is signed in as ${signedIn.login}`);
     const owner = rec.repo?.owner ?? signedIn.login;
     const name = rec.repo?.name ?? repoNameFor(root);
     if (!name) return fail("repo", "no_repo_name", `no repository name can be made from ${root}`);
@@ -195,11 +207,20 @@ export function createProjectGit(deps: ProjectGitDeps) {
       if (ran.exitCode === 0) { try { return { kind: "found", raw: JSON.parse(ran.stdout) }; } catch { return { kind: "error", detail: "readback is not JSON" }; } }
       return /\(HTTP 404\)/.test(ran.stderr) ? { kind: "absent" } : { kind: "error", detail: clip(ran.stderr) || `exit ${ran.exitCode}` };
     };
+    /** Found before this operation confirmed its create: adopted only when it names this operation and has no refs at all. */
+    const unproven = async (raw: unknown): Promise<{ code: string; detail: string } | null> => {
+      if (!rec.repo?.requestedAt || !namesOperation(raw, opId)) return { code: "remote_name_taken", detail: `${owner}/${name} already exists and was not made by this bootstrap` };
+      const url = (raw as { clone_url?: unknown }).clone_url;
+      if (typeof url !== "string" || !url) return { code: "remote_unverified", detail: "readback has no clone url" };
+      const refs = await run(hostId, root, `${GH_GIT} ls-remote ${q(url)}`);
+      if (refs.exitCode !== 0) return { code: "remote_unverified", detail: `cannot list the repository's refs: ${clip(refs.stderr) || `exit ${refs.exitCode}`}` };
+      return refs.stdout.trim() ? { code: "remote_name_taken", detail: `${owner}/${name} names this bootstrap but already has refs` } : null;
+    };
     let seen = await readback();
     if (seen.kind === "error") return fail("repo", "readback_failed", seen.detail);
-    // Found before this operation confirmed its create: adopted only when it names this operation and is still empty.
-    if (seen.kind === "found" && rec.repo.id === undefined && !(rec.repo.requestedAt && ownsUncertainRepo(seen.raw, opId))) {
-      return fail("repo", "remote_name_taken", `${owner}/${name} already exists and is not this bootstrap's empty repository`);
+    if (seen.kind === "found" && rec.repo.id === undefined) {
+      const stop = await unproven(seen.raw);
+      if (stop) return fail("repo", stop.code, stop.detail);
     }
     if (seen.kind === "absent") {
       if (rec.repo.id !== undefined) return fail("repo", "repo_missing", `${owner}/${name} was created and verified before but is gone`);
@@ -209,7 +230,8 @@ export function createProjectGit(deps: ProjectGitDeps) {
       seen = await readback();
       if (seen.kind === "absent") return fail("repo", "create_failed", clip(made.stderr || made.stdout) || `exit ${made.exitCode}`);
       if (seen.kind === "error") return fail("repo", "readback_failed", seen.detail);
-      if (rec.repo.id === undefined && !ownsUncertainRepo(seen.raw, opId)) return fail("repo", "remote_name_taken", `${owner}/${name} is not the empty repository this bootstrap asked for`);
+      const stop = await unproven(seen.raw);
+      if (stop) return fail("repo", stop.code, stop.detail);
     }
     const verified = verifyReadback(seen.raw, { owner, name, ...(rec.repo.id !== undefined ? { id: rec.repo.id } : {}) });
     if (!verified.ok) return fail("repo", "readback_mismatch", verified.reason);
@@ -261,6 +283,7 @@ export function createProjectGit(deps: ProjectGitDeps) {
    */
   async function ensure(input: ScopeInput): Promise<EnsureResult> {
     const scope = await resolveScope(input);
+    if (scope.kind === "resume") return { kind: "bootstrapped", result: await bootstrap({ hostId: input.hostId, root: scope.root, account: scope.account }) };
     if (scope.kind !== "chosen") return scope;
     return { kind: "bootstrapped", result: await bootstrap({ hostId: input.hostId, root: scope.choice.root, account: scope.account }) };
   }

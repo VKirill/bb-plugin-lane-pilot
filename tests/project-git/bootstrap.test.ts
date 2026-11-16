@@ -16,6 +16,9 @@ function intercept(f: Fixture, around: (command: string, run: () => Promise<{ ho
   return () => { f.host.call = call; };
 }
 const isBaseline = (command: string) => command.includes("lane-pilot-bootstrap");
+type Rec = { opId?: string; repo?: { requestedAt?: number } };
+const record = (f: Fixture) => [...f.store.entries()].filter(([k]) => k.startsWith("project-git:bootstrap:")).map(([, v]) => v as Rec)[0];
+const ensure = (f: Fixture, root: string) => f.projectGit.ensure({ threadId: "t1", hostId: "h1", projectRoot: root, taskKey: "task-1" });
 
 describe("project git probe (P03.04)", () => {
   it("tells no Git, a parent repository and an unreadable host apart", async () => {
@@ -80,6 +83,78 @@ describe("project git scope question (P03.05)", () => {
     expect(f.asks).toHaveLength(1);
     expect(f.asks[0]!.options).toEqual([`Весь проект: ${project}`]);
     expect(existsSync(join(project, ".git"))).toBe(false);
+  });
+});
+
+describe("project git retries through the public ensure (P03.08)", () => {
+  const files = { "README.md": "# app\n", "src/main.ts": "export const x = 1;\n" };
+
+  it("continues after a blocked first commit once the file is fixed, without asking again", async () => {
+    const f = makeFixture();
+    const root = f.folder("app", { ...files, "src/key.ts": KEY_LINE });
+    f.setAnswer(picked("1"));
+    expect(await ensure(f, root)).toMatchObject({ kind: "bootstrapped", result: { ok: false, code: "blocked_files" } });
+    f.sh(root, "rm src/key.ts");
+    expect(await ensure(f, root)).toMatchObject({ kind: "bootstrapped", result: { ok: true } });
+    expect(f.asks).toHaveLength(1);
+    expect(f.gh().creates).toBe(1);
+    expect(await ensure(f, root)).toEqual({ kind: "repo", state: "origin", root });
+  });
+
+  it("continues after a sign-in stop following the first commit, and after a push failure with origin added", async () => {
+    const f = makeFixture();
+    const root = f.folder("app", files);
+    f.setAnswer(picked("1"));
+    const restore = intercept(f, async (command, run) => { const ran = await run(); if (isBaseline(command)) f.gh({ authed: false }); return ran; });
+    expect(await ensure(f, root)).toMatchObject({ kind: "bootstrapped", result: { ok: false, stage: "auth", code: "no_provider_auth" } });
+    restore();
+    f.gh({ authed: true });
+    const unpush = intercept(f, async (command, run) => { if (/ push origin /.test(command)) throw new Error("host offline"); return run(); });
+    expect(await ensure(f, root)).toMatchObject({ kind: "bootstrapped", result: { ok: false, stage: "push", code: "push_failed" } });
+    expect(f.sh(root, "git remote").stdout.trim()).toBe("origin");
+    unpush();
+    expect(await ensure(f, root)).toMatchObject({ kind: "bootstrapped", result: { ok: true } });
+    expect(f.asks).toHaveLength(1);
+    expect(f.gh().creates).toBe(1);
+    expect(f.sh(f.gh().repos["octo/app"]!.bare, "git rev-list --all --count").stdout.trim()).toBe("1");
+  });
+
+  it("finishes its own marked repository left before the rename, and stops on a .git it did not mark", async () => {
+    const f = makeFixture();
+    const root = f.folder("app", files);
+    f.setAnswer(picked("1"));
+    const restore = intercept(f, async (command, run) => { if (isBaseline(command)) throw new Error("host offline"); return run(); });
+    expect(await ensure(f, root)).toMatchObject({ kind: "bootstrapped", result: { ok: false, stage: "baseline" } });
+    restore();
+    const op = record(f)!.opId!;
+    f.sh(root, `git --git-dir=.git-lp-${op} init -q && git --git-dir=.git-lp-${op} config core.bare false && echo '{"opId":"${op}"}' > .git-lp-${op}/lane-pilot-bootstrap`);
+    expect(await ensure(f, root)).toMatchObject({ kind: "bootstrapped", result: { ok: true } });
+    expect(existsSync(join(root, `.git-lp-${op}`))).toBe(false);
+
+    const g = makeFixture();
+    const other = g.folder("app", files);
+    g.setAnswer(picked("1"));
+    const cut = intercept(g, async (command, run) => { if (isBaseline(command)) throw new Error("host offline"); return run(); });
+    await ensure(g, other);
+    cut();
+    g.sh(other, "git init -q");
+    expect(await ensure(g, other)).toMatchObject({ kind: "bootstrapped", result: { ok: false, stage: "baseline", code: "existing_repo" } });
+    expect(g.asks).toHaveLength(1);
+    expect(g.gh().creates ?? 0).toBe(0);
+  });
+
+  it("keeps the account the owner was shown: another sign-in stops the continuation", async () => {
+    const f = makeFixture();
+    const root = f.folder("app", files);
+    f.setAnswer(picked("1"));
+    const unpush = intercept(f, async (command, run) => { if (/ push origin /.test(command)) throw new Error("host offline"); return run(); });
+    expect((await ensure(f, root)).kind).toBe("bootstrapped");
+    unpush();
+    f.gh({ login: "other" });
+    expect(await ensure(f, root)).toMatchObject({ kind: "bootstrapped", result: { ok: false, stage: "auth", code: "account_changed" } });
+    expect(await f.projectGit.bootstrap({ hostId: "h1", root, account: "other" })).toMatchObject({ ok: false, code: "account_changed" });
+    expect(f.asks).toHaveLength(1);
+    expect(f.gh().creates).toBe(1);
   });
 });
 
@@ -212,6 +287,58 @@ describe("project git bootstrap (P03.06–08)", () => {
     });
     expect(await boot(f, root)).toMatchObject({ ok: false, stage: "baseline", code: "not_canonical" });
     expect(existsSync(join(elsewhere, ".git"))).toBe(false);
+  });
+
+  it("refuses a repository named for this operation once it has refs", async () => {
+    const f = makeFixture();
+    const root = project(f);
+    const restore = intercept(f, async (command, run) => { if (command.includes("repo create")) throw new Error("host offline"); return run(); });
+    expect(await boot(f, root)).toMatchObject({ ok: false, code: "create_failed" });
+    restore();
+    const bare = join(f.base, "filled.git");
+    f.sh(f.base, `git init -q --bare filled.git && git clone -q filled.git w 2>/dev/null; cd w && echo x > x && git add x && git commit -qm x && git push -q origin HEAD:main`);
+    f.gh({ repos: { "octo/my-app": { id: 9, private: true, bare, created_at: new Date().toISOString(), description: `Private repository made by Lane Pilot (op ${record(f)!.opId})` } } });
+    expect(await boot(f, root)).toMatchObject({ ok: false, stage: "repo", code: "remote_name_taken" });
+    expect(f.sh(root, "git remote").stdout.trim()).toBe("");
+  });
+
+  it("refuses an operation-named repository whose refs cannot be listed", async () => {
+    const f = makeFixture();
+    const root = project(f);
+    const restore = intercept(f, async (command, run) => { if (command.includes("repo create")) throw new Error("host offline"); return run(); });
+    await boot(f, root);
+    restore();
+    f.gh({ repos: { "octo/my-app": { id: 9, private: true, bare: join(f.base, "missing.git"), created_at: new Date().toISOString(), description: `Private repository made by Lane Pilot (op ${record(f)!.opId})` } } });
+    expect(await boot(f, root)).toMatchObject({ ok: false, stage: "repo", code: "remote_unverified" });
+  });
+
+  it("refuses a later account against the recorded operation and the recorded repository owner", async () => {
+    const f = makeFixture();
+    const root = project(f);
+    f.gh({ authed: false });
+    await boot(f, root);
+    f.gh({ authed: true, login: "other" });
+    expect(await f.projectGit.bootstrap({ hostId: "h1", root, account: "other" })).toMatchObject({ ok: false, stage: "auth", code: "account_changed", detail: expect.stringContaining("began for octo") });
+
+    const g = makeFixture();
+    const repo = project(g);
+    const unpush = intercept(g, async (command, run) => { if (/ push origin /.test(command)) throw new Error("host offline"); return run(); });
+    await boot(g, repo);
+    unpush();
+    delete (record(g) as { account?: string }).account; // a record from before the account was kept
+    g.gh({ login: "other" });
+    expect(await g.projectGit.bootstrap({ hostId: "h1", root: repo, account: "other" })).toMatchObject({ ok: false, code: "account_changed", detail: expect.stringContaining("recorded under octo") });
+  });
+
+  it("refuses links and bytes that change between the scan and the index", async () => {
+    const f = makeFixture();
+    const linked = f.folder("links", { "a.txt": "a" });
+    symlinkSync("/etc/hostname", join(linked, "host"));
+    expect(await boot(f, linked)).toMatchObject({ ok: false, code: "blocked_files", blocked: [{ path: "host", why: expect.stringMatching(/^a link/) }] });
+    const eol = f.folder("eol", { ".gitattributes": "*.txt text\n", "a.txt": "one\r\ntwo\r\n" });
+    expect(await boot(f, eol)).toMatchObject({ ok: false, stage: "baseline", code: "changed_while_scanned" });
+    expect(f.sh(eol, "git rev-parse --verify -q HEAD").status).not.toBe(0);
+    expect(f.gh().creates ?? 0).toBe(0);
   });
 
   it("resumes at the push after a host outage, with one repository and one commit", async () => {

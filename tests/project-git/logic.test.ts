@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { SECRET_CONTENT_PATTERNS, isWithin, ownsUncertainRepo, repoDescription, repoNameFor, sameRemote, verifyReadback } from "../../src/rooms/project-git";
+import { SECRET_CONTENT_PATTERNS, isWithin, namesOperation, repoDescription, repoNameFor, sameRemote, verifyReadback } from "../../src/rooms/project-git";
 
 const row = { id: 5, full_name: "Octo/App", private: true, visibility: "private", owner: { login: "Octo" }, clone_url: "https://github.com/Octo/App.git" };
 
@@ -21,12 +21,11 @@ describe("project git rules", () => {
     expect(isWithin("/a/bc", "/a/b")).toBe(false);
   });
 
-  it("adopts an uncertain repository only by its operation marker while it is empty", () => {
-    const own = { description: repoDescription("op-1"), size: 0 };
-    expect(ownsUncertainRepo(own, "op-1")).toBe(true);
-    expect(ownsUncertainRepo({ ...own, size: 3 }, "op-1")).toBe(false);
-    expect(ownsUncertainRepo(own, "op-2")).toBe(false);
-    expect(ownsUncertainRepo({ description: "Private repository made by Lane Pilot", size: 0 }, "op-1")).toBe(false);
+  it("names an uncertain repository only by its operation id", () => {
+    expect(namesOperation({ description: repoDescription("op-1") }, "op-1")).toBe(true);
+    expect(namesOperation({ description: repoDescription("op-1") }, "op-2")).toBe(false);
+    expect(namesOperation({ description: "Private repository made by Lane Pilot" }, "op-1")).toBe(false);
+    expect(namesOperation(null, "op-1")).toBe(false);
   });
 
   it("names the token families and leaves lockfile hashes alone", () => {

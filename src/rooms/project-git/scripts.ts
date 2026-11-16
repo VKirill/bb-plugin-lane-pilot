@@ -60,7 +60,7 @@ export function parseProbe(ran: { exitCode: number; stdout: string; stderr: stri
  * this operation's: the only commit in the repository, no parent, its trailer and the tree recorded before it was made.
  * Never `git add .`.
  */
-const BASELINE_SCRIPT = String.raw`import os, re, subprocess
+const BASELINE_SCRIPT = String.raw`import hashlib, os, re, subprocess
 P = PAYLOAD
 def say(**kw):
     print(json.dumps(kw)); raise SystemExit(0)
@@ -87,11 +87,22 @@ else:
     err = top.stderr.decode("utf-8", "replace")
     if top.returncode == 0: say(ok=False, code="inside_work_tree", detail="the folder is inside the repository " + out(top))
     if top.returncode != 128 or "(or any of the parent directories)" not in err: say(ok=False, code="probe_unknown", detail=err.strip()[:300])
-    made = git("init", "-q")
-    if made.returncode != 0: say(ok=False, code="init_failed", detail=made.stderr.decode("utf-8", "replace").strip()[:300])
-    if os.path.realpath(out(git("rev-parse", "--absolute-git-dir"))) != os.path.join(P["root"], ".git"): say(ok=False, code="init_failed", detail="git made its directory elsewhere")
-    mark = {"opId": P["opId"]}
-    write_mark(mark)
+    # The repository is made under a name of this operation, marked, and only then renamed to .git: a .git without the
+    # mark is never this operation's, and a stop before the rename leaves the marked directory for the retry to finish.
+    TMP = ".git-lp-" + P["opId"]
+    if os.path.lexists(TMP):
+        try:
+            with open(os.path.join(TMP, "lane-pilot-bootstrap"), encoding="utf-8") as f: mark = json.load(f)
+        except Exception: mark = None
+        if os.path.islink(TMP) or not os.path.isdir(TMP) or not mark or mark.get("opId") != P["opId"]: say(ok=False, code="existing_repo", detail=TMP + " is not this bootstrap's")
+    else:
+        made = git("--git-dir=" + TMP, "init", "-q")
+        if made.returncode != 0: say(ok=False, code="init_failed", detail=made.stderr.decode("utf-8", "replace").strip()[:300])
+        git("--git-dir=" + TMP, "config", "core.bare", "false")
+        mark = {"opId": P["opId"]}
+        with open(os.path.join(TMP, "lane-pilot-bootstrap"), "w", encoding="utf-8") as f: json.dump(mark, f)
+    os.rename(TMP, ".git")
+    if os.path.realpath(out(git("rev-parse", "--absolute-git-dir"))) != os.path.join(P["root"], ".git"): say(ok=False, code="init_failed", detail="git reads its directory elsewhere")
 if git("rev-parse", "--verify", "-q", "HEAD").returncode == 0:
     commit = out(git("rev-parse", "HEAD"))
     ours = (out(git("rev-list", "--all", "--count")) == "1"
@@ -114,6 +125,8 @@ if listed.returncode != 0: say(ok=False, code="list_failed", detail=listed.stder
 paths = [p.decode("utf-8", "surrogateescape") for p in listed.stdout.split(b"\0") if p]
 if len(paths) > P["maxFiles"]: say(ok=False, code="too_many_files", detail=str(len(paths)) + " files to commit, the limit is " + str(P["maxFiles"]))
 secrets = [re.compile(s.encode()) for s in P["secrets"]]
+fmt = out(git("rev-parse", "--show-object-format")) or "sha1"
+blobs = {}
 blocked = []
 for path in paths:
     if path.endswith("/"):
@@ -122,7 +135,8 @@ for path in paths:
         st = os.lstat(path)
     except OSError:
         blocked.append({"path": path, "why": "unreadable"}); continue
-    if os.path.islink(path): continue
+    if os.path.islink(path):
+        blocked.append({"path": path, "why": "a link (links are not published in the first commit)"}); continue
     if st.st_size > P["maxFileBytes"]:
         blocked.append({"path": path, "why": "larger than " + str(P["maxFileBytes"] // (1024 * 1024)) + " MB"}); continue
     try:
@@ -130,13 +144,22 @@ for path in paths:
     except OSError:
         blocked.append({"path": path, "why": "unreadable"}); continue
     if len(body) > P["maxFileBytes"]: blocked.append({"path": path, "why": "grew while it was read"}); continue
-    if any(rx.search(body) for rx in secrets): blocked.append({"path": path, "why": "looks like it holds a credential"})
+    if any(rx.search(body) for rx in secrets): blocked.append({"path": path, "why": "looks like it holds a credential"}); continue
+    blobs[path] = hashlib.new(fmt, b"blob %d\0" % len(body) + body).hexdigest()
 if blocked: say(ok=False, code="blocked_files", detail=str(len(blocked)) + " file(s) cannot go into the first commit", blocked=blocked[:50])
 for i in range(0, len(paths), 200):
     added = git("add", "--", *paths[i:i + 200])
     if added.returncode != 0: say(ok=False, code="add_failed", detail=added.stderr.decode("utf-8", "replace").strip()[:300])
 staged = set(p.decode("utf-8", "surrogateescape") for p in git("diff", "--cached", "--name-only", "-z").stdout.split(b"\0") if p)
 if staged != set(paths): say(ok=False, code="staged_mismatch", detail="the index differs from the checked list")
+# The bytes git stored must be the bytes that were scanned: a file changed since, or a clean filter or EOL conversion, stops it.
+for entry in git("ls-files", "-s", "-z").stdout.split(b"\0"):
+    if not entry: continue
+    meta, _, name = entry.partition(b"\t")
+    path = name.decode("utf-8", "surrogateescape")
+    if path in blobs and meta.split(b" ")[1].decode() != blobs[path]:
+        git("read-tree", "--empty")
+        say(ok=False, code="changed_while_scanned", detail=path + " in the index is not the content that was scanned")
 if not staged: say(ok=False, code="nothing_to_commit", detail="the folder has nothing to commit")
 tree = out(git("write-tree"))
 mark["tree"] = tree

@@ -76,12 +76,11 @@ export function repoNameFor(root: string): string | null {
 export type RepoReadback = { id: number; fullName: string; owner: string; cloneUrl: string; createdAt: string | null };
 
 /**
- * Whether a repository found before its create was confirmed is this operation's own: the description names the
- * operation and nothing was pushed to it yet. A name match or a recent creation time alone is someone else's.
+ * Whether a repository found before its create was confirmed names this operation: its description carries the
+ * operation id only this record knows. Emptiness is proven separately, by its refs.
  */
-export function ownsUncertainRepo(raw: unknown, opId: string): boolean {
-  const row = raw as { description?: unknown; size?: unknown } | null;
-  return Boolean(row) && row!.description === repoDescription(opId) && row!.size === 0;
+export function namesOperation(raw: unknown, opId: string): boolean {
+  return Boolean(raw) && (raw as { description?: unknown }).description === repoDescription(opId);
 }
 
 /**
@@ -141,6 +140,8 @@ export type BootstrapRecord = {
   root: string;
   /** Made before `git init` and written into `.git/lane-pilot-bootstrap`, the first commit's trailer and the repository description: the only proof that a half-done repository is this bootstrap's own. */
   opId?: string;
+  /** The github.com login the owner was shown when this operation began; any other sign-in stops it. */
+  account?: string;
   baselineStartedAt?: number;
   /** The one commit that may be published, with its tree and branch; the push sends exactly it. */
   baseline?: { commit: string; tree: string; branch: string; files: number; reused: boolean; at: number };
