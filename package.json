@@ -28,7 +28,8 @@
         "timeoutMs": 20000
       },
       "contributeEnv": {
-        "timeoutMs": 10000
+        "timeoutMs": 10000,
+        "required": true
       }
     },
     "directoryMove": true

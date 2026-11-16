@@ -6,7 +6,8 @@ import { findOpenNativeRun, getActivation, getRun, openDatabase, savePrototypeCo
 import { sessionOverrideAgentsJson } from "../src/rooms/native-agent/native-agent-definition";
 import { nativeSelectionMarker } from "../src/rooms/native-agent/native-session";
 import { nativeContributedEnv, prepareNativeSessionRecord, traceNativeDispatch } from "../src/rooms/native-agent/native-dispatch";
-import { nativeEnvGenerationKey, nativeEnvKey } from "../src/rooms/contracts";
+import { nativeEnvGenerationKey, nativeEnvKey, nativeThreadKey } from "../src/rooms/contracts";
+import { sha256Hex } from "@lane-pilot/kit";
 
 const stockNativeAgentsJson = () => sessionOverrideAgentsJson({
   agentId: "dev-orchestrator",
@@ -504,6 +505,41 @@ it("does not fall back to a legacy helper launcher when refresh times out or fai
   await expect(nativeContributedEnv(failedFake.bb, { call: async () => { throw new Error("late prepare failed"); } }, {
     threadId: "thr_helper", hostId: "host_a",
   })).rejects.toThrow("late prepare failed");
+});
+
+it("does not let a late standalone refresh overwrite a switched profile", async () => {
+  const fake = await setup({ environmentPath: "/workspace" });
+  const { token } = await fake.harness.behavior.callRpc("prepare_native_session", {
+    projectId: "project_a", agentId: "dev-orchestrator",
+  }) as { token: string };
+  const hook = fake.harness.registrations.hooks["message.dispatch"]!;
+  await hook(context("thr_refresh_race", nativeSelectionMarker(token)));
+  const selectedA = await fake.bb.storage.kv.get<{
+    token: string; projectId: string; agentId: string; profileMode: "installed" | "session-override";
+    agentsJson: string | null; sourceHash: string | null; createdAt: number; parentRunId?: string;
+  }>(nativeThreadKey("thr_refresh_race"));
+  expect(selectedA).toBeTruthy();
+  const envB = [{ name: "BB_CLAUDE_CODE_EXECUTABLE", value: "/profile-b", reason: "profile-b" }];
+  const selectedB = await prepareNativeSessionRecord({
+    projectId: "project_a", agentId: "lane-stack:dev-orchestrator", profileMode: "installed", agentsJson: null, sourceHash: null,
+  });
+  let resolveA!: (value: unknown) => void;
+  const slowA = new Promise<unknown>((resolve) => { resolveA = resolve; });
+  const refresh = nativeContributedEnv(fake.bb, { call: async () => slowA }, {
+    threadId: "thr_refresh_race", hostId: "host_a",
+  });
+  setTimeout(async () => {
+    await fake.bb.storage.kv.set(nativeThreadKey("thr_refresh_race"), selectedB);
+    await fake.bb.storage.kv.set(nativeEnvKey("thr_refresh_race"), envB);
+    await fake.bb.storage.kv.set(nativeEnvGenerationKey("thr_refresh_race"), {
+      generation: "native-standalone-settings-v1", selectionToken: selectedB.token, agentId: selectedB.agentId,
+      helper: false, envHash: sha256Hex(JSON.stringify(envB)), hostId: "host_a", cwd: "/workspace", environmentId: "env_native",
+    });
+    resolveA({ env: [{ name: "BB_CLAUDE_CODE_EXECUTABLE", value: "/profile-a", reason: "late-a" }], agentId: "dev-orchestrator" });
+  }, 10);
+  await expect(refresh).resolves.toEqual([{ name: "BB_CLAUDE_CODE_EXECUTABLE", value: "/launcher", reason: "Lane Pilot native: dev-orchestrator" }]);
+  expect(await fake.bb.storage.kv.get(nativeEnvKey("thr_refresh_race"))).toEqual(envB);
+  expect(await fake.bb.storage.kv.get(nativeThreadKey("thr_refresh_race"))).toMatchObject({ token: selectedB.token });
 });
 
 it("a handoff to a new thread keeps the Lane Pilot profile of the chat it continues", async () => {
