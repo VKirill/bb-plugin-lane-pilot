@@ -5,6 +5,8 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 
+import { releaseTree, ship as shipFixture } from "../../scripts/lp_drill/scenes/sma_r27_fixture";
+
 const script = join(process.cwd(), "scripts/hub-watchdog.sh");
 const ship = fileURLToPath(new URL("../../scripts/lp-ship.ts", import.meta.url));
 const drillSh = fileURLToPath(new URL("../../scripts/lp-drill.sh", import.meta.url));
@@ -225,18 +227,16 @@ describe("hub watchdog + ship gate parity H1", () => {
   }, 300000);
 
   it("[sma:k_lib_docaudit] doc-audit --strict writes no baseline file; only the explicit --write-baseline flag does", () => {
-    const baseline = join(repoRoot, ".agents/ship/doc-coverage-baseline.json");
-    const before = existsSync(baseline) ? readFileSync(baseline, "utf8") : null;
+    const tree = releaseTree();
     try {
-      spawnSync("npx", ["tsx", ship, "doc-audit", "--strict"], { encoding: "utf8", timeout: 240_000, cwd: repoRoot });
-      expect(existsSync(baseline) ? readFileSync(baseline, "utf8") : null).toBe(before);
-      if (before === null) {
-        spawnSync("npx", ["tsx", ship, "doc-audit", "--strict", "--write-baseline"], { encoding: "utf8", timeout: 240_000, cwd: repoRoot });
-        expect(existsSync(baseline)).toBe(true);
-      }
-    } finally {
-      if (before === null) rmSync(baseline, { force: true });
-      else writeFileSync(baseline, before);
-    }
+      const baseline = join(tree.root, ".agents/ship/doc-coverage-baseline.json");
+      expect(shipFixture(tree, ["doc-audit", "--strict"]).status).toBe(0);
+      expect(existsSync(baseline)).toBe(false);
+      expect(shipFixture(tree, ["doc-audit", "--strict", "--write-baseline"]).status).toBe(0);
+      expect(existsSync(baseline)).toBe(true);
+      const before = readFileSync(baseline, "utf8");
+      expect(shipFixture(tree, ["doc-audit", "--strict"]).status).toBe(0);
+      expect(readFileSync(baseline, "utf8")).toBe(before);
+    } finally { rmSync(tree.root, { recursive: true, force: true }); }
   }, 300000);
 });

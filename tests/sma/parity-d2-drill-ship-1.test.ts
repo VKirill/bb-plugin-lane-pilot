@@ -9,6 +9,8 @@ import { pickBatch, batchItemIsFullLane, batchReceiptGaps, type TodoMeta } from 
 import { openDatabase, saveProjectSetting, savePrototypeConfig } from "../../src/rooms/plugin-db";
 import { shipWatchSweep } from "../../src/rooms/self-repair/server/ship-watch";
 
+import { releaseTree, ship as shipFixture } from "../../scripts/lp_drill/scenes/sma_r27_fixture";
+
 const drill = fileURLToPath(new URL("../../scripts/lp-drill.py", import.meta.url));
 const ship = fileURLToPath(new URL("../../scripts/lp-ship.ts", import.meta.url));
 const drillSh = fileURLToPath(new URL("../../scripts/lp-drill.sh", import.meta.url));
@@ -429,10 +431,13 @@ describe("[sma:k_lib_pkgcheck] publishable called the old way does not ask for b
 
 describe("[sma:k_lib_docaudit] doc-audit called the old way writes no baseline file", () => {
   it("the verb runs and leaves .agents/ship/doc-coverage-baseline.json alone", () => {
-    const baseline = join(repoRoot, ".agents/ship/doc-coverage-baseline.json");
-    const existed = existsSync(baseline);
-    spawnSync("npx", ["tsx", ship, "doc-audit"], { encoding: "utf8", timeout: 240_000, cwd: repoRoot });
-    expect(existsSync(baseline)).toBe(existed);
+    const tree = releaseTree();
+    try {
+      const baseline = join(tree.root, ".agents/ship/doc-coverage-baseline.json");
+      expect(existsSync(baseline)).toBe(false);
+      expect(shipFixture(tree, ["doc-audit"]).status).toBe(0);
+      expect(existsSync(baseline)).toBe(false);
+    } finally { rmSync(tree.root, { recursive: true, force: true }); }
     const text = readFileSync(ship, "utf8");
     expect(text).toContain('args.includes("--strict")');
   });
