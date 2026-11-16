@@ -86,15 +86,16 @@ describe("node runner inventory", () => {
     try {
       type Saved = { rowid: number; node_id: string; output_json: string; receipt_json: string };
       const rows: Saved[] = [];
-      const db = { prepare(sql: string) { return {
-        get() { if (sql.includes("writer_host_id")) return { writer_host_id: "local" }; if (sql.includes("lane_pilot_run")) return { id: "lp-run", project_id: "project", writer_workspace_path: dir }; return undefined; },
+      let claimed = false;
+      const db = { transaction: (fn: () => unknown) => fn, prepare(sql: string) { return {
+        get() { if (sql.includes("FROM lane_pilot_wf_run")) return { parent_run_id: null, parent_step_key: null }; if (sql.includes("inventory_baseline_claim")) return claimed ? { found: 1 } : undefined; if (sql.includes("writer_host_id")) return { writer_host_id: "local" }; if (sql.includes("lane_pilot_run")) return { id: "lp-run", project_id: "project", writer_workspace_path: dir }; return undefined; },
         all() { return rows; },
       }; } };
       const ctx = { db, host, bb: { sdk: { threads: { get: async () => ({ environmentId: "env" }) }, environments: { get: async () => ({ hostId: "local", path: dir }) } } } };
       const rt = { ctx, runId: "lp-run", projectId: "project", pmThreadId: "pm" };
       const actions = new Map<string, (c: never, rt: never) => Promise<Record<string, unknown>>>();
-      registerCheckoutActions({} as never, ctx as never, { action: (key, fn) => { actions.set(key, fn as never); }, planHome: async () => null, flagOf: () => false });
-      const step = { runId: "graph-run", nodeId: "baseline", workflow: { id: "test-gen" } } as never;
+      registerCheckoutActions({ journal: { event: () => { claimed = true; } } } as never, ctx as never, { action: (key, fn) => { actions.set(key, fn as never); }, planHome: async () => null, flagOf: () => false });
+      const step = { runId: "graph-run", nodeId: "baseline", stepKey: "baseline#1", workflow: { id: "test-gen" } } as never;
       const save = (node_id: string, executor: string, output: Record<string, unknown>) => {
         const output_json = JSON.stringify(output), outputSha256 = createHash("sha256").update(output_json).digest("hex");
         rows.push({ rowid: rows.length + 1, node_id, output_json, receipt_json: JSON.stringify({ executor, outputSha256 }) });

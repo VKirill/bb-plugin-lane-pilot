@@ -54,7 +54,30 @@ export function registerCheckoutActions(engine: WorkflowEngine, ctx: ServerCore,
       };
       const baselines = rows.filter(r => r.node_id === "baseline");
       if (mode === "baseline") {
-        if (baselines.length || rows.some(r => r.node_id === "write_tests")) return unavailable("original baseline already exists or writer already ran");
+        // rerunNode removes descendant steps and clears their outputs, but the append-only event journal survives.
+        const previous = db.prepare("SELECT 1 FROM lane_pilot_wf_event WHERE run_id=? AND kind='step' AND step_key GLOB 'baseline#*' AND to_state='succeeded' LIMIT 1").get(c.runId);
+        if (previous || baselines.length || rows.some(r => r.node_id === "write_tests")) return unavailable("original baseline already exists or was invalidated by rerun");
+        // Child runs can be deleted and recreated by a parent rerun. Claim the logical step once on the surviving root run.
+        // Collapse visits and scope suffixes conservatively: an ambiguous second visit must not reset the baseline.
+        const logicalNode = (key: string) => key.replace(/#\d+(?:@[a-f0-9]+)?$/, "");
+        const ancestry: string[] = [c.workflow.id, logicalNode(c.stepKey)];
+        let owner = c.runId;
+        for (let depth = 0; ; depth++) {
+          if (depth > 16) throw Error("inventory run ancestry too deep");
+          const parent = db.prepare("SELECT parent_run_id, parent_step_key FROM lane_pilot_wf_run WHERE id=?").get(owner) as { parent_run_id: string | null; parent_step_key: string | null } | undefined;
+          if (!parent) throw Error("inventory run ancestry missing");
+          if (!parent.parent_run_id) break;
+          if (!parent.parent_step_key) throw Error("inventory parent step missing");
+          ancestry.unshift(logicalNode(parent.parent_step_key));
+          owner = parent.parent_run_id;
+        }
+        const claim = JSON.stringify(ancestry);
+        const claimed = db.transaction(() => {
+          if (db.prepare("SELECT 1 FROM lane_pilot_wf_event WHERE run_id=? AND kind='inventory_baseline_claim' AND detail=? LIMIT 1").get(owner, claim)) return false;
+          engine.journal.event(owner, null, "inventory_baseline_claim", null, null, claim);
+          return true;
+        })();
+        if (!claimed) return unavailable("original baseline already exists or was invalidated by rerun");
         const result = await measureTestInventory(ctx.host, hostId, checkout.path);
         return result.status === "measured" ? { status: "measured", reason: "", receipt: result.receipt } : { status: result.status, reason: result.reason };
       }
