@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { roleSpec } from "../../src/rooms/workflow/server/workflow-agent";
@@ -40,15 +40,83 @@ const captureGraph = (path = ".agents/marketing/cro/{{slug}}/") => chain({
   ],
 });
 
+const browserCapture = {
+  viewport: "375x812",
+  h1: "Restoration",
+  ctas: [{ text: "Order", target: "/order" }],
+};
+
 const browserReply = reply({
-  screens_path: "screens.json",
+  screens_path: "stale-screens.json",
   h1: "Restoration",
   offer_text: "Restore any photo",
   price_text: "from 990",
   cta_count: 1,
-  capture_data: { viewport: "375x812", h1: "Restoration", ctas: [{ text: "Order", target: "/order" }] },
+  capture_data: browserCapture,
   capture_text: "Restore any photo from 990",
   handoff: "capture returned",
+});
+
+const captureMessageGraph = (ads = ".agents/marketing/cro/run/ads.json") => {
+  const base = captureGraph();
+  const message = messageMatchNodes("{{persist_capture.capture_path}}", ads);
+  return chain({
+    ...base,
+    outputs: [
+      { name: "min_score", type: "number", required: false },
+      { name: "mismatches", type: "int", required: false },
+      { name: "price_mismatch", type: "bool", required: false },
+      { name: "report_path", type: "string", required: false },
+    ],
+    nodes: [...base.nodes.filter((node) => node.id !== "done"), ...message],
+    edges: [...base.edges.filter((edge) => edge.to !== "done"), { from: "persist_capture", to: "message_match" }, { from: "message_match", to: "done" }],
+  });
+};
+
+const messageMatchNodes = (capture: string, ads: string) => [
+    {
+      id: "message_match",
+      type: "action",
+      action: "sp.message_match",
+      params: {
+        ads,
+        capture,
+        target: "{{$inputs.landing_url}}",
+        minLemmaOverlap: 0.5,
+      },
+      out: {
+        min_score: "number",
+        mismatches: "int",
+        price_mismatch: "bool",
+        report_path: "string",
+      },
+    },
+    {
+      id: "done",
+      type: "action",
+      action: "emit",
+      map: {
+        min_score: "message_match.min_score",
+        mismatches: "message_match.mismatches",
+        price_mismatch: "message_match.price_mismatch",
+        report_path: "message_match.report_path",
+      },
+    },
+  ];
+
+const messageMatchGraph = (capture = ".agents/marketing/cro/run/capture.json", ads = ".agents/marketing/cro/run/ads.json") => chain({
+  inputs: [{ name: "landing_url", type: "string", required: true }],
+  outputs: [
+    { name: "min_score", type: "number", required: false },
+    { name: "mismatches", type: "int", required: false },
+    { name: "price_mismatch", type: "bool", required: false },
+    { name: "report_path", type: "string", required: false },
+  ],
+  nodes: messageMatchNodes(capture, ads),
+  edges: [
+    { from: "start", to: "message_match" },
+    { from: "message_match", to: "done" },
+  ],
 });
 
 describe("mkt landing CRO capture contract", () => {
@@ -89,5 +157,59 @@ describe("mkt landing CRO capture contract", () => {
     } finally {
       await world.dispose();
     }
+  });
+
+  it("feeds persisted capture bytes to the registered message_match handler, not stale screens_path", async () => {
+    const world = await runHomeWorld({ capture: [browserReply] });
+    try {
+      const adsPath = join(world.checkout, ".agents/marketing/cro/run/ads.json");
+      const stalePath = join(world.checkout, "stale-screens.json");
+      mkdirSync(join(world.checkout, ".agents/marketing/cro/run"), { recursive: true });
+      writeFileSync(adsPath, JSON.stringify([
+        { id: "ad_restore", keyword: "restore photo", title: "Restore any photo", text: "Restore any photo" },
+      ]));
+      writeFileSync(stalePath, "not JSON");
+
+      const summary = await world.start(captureMessageGraph(), { landing_url: "https://example.test/restore" }).done;
+      expect(summary.status).toBe("succeeded");
+
+      // The capture agent's adversarial screens_path is stale and unreadable. The real
+      // consumer still succeeds from the fs.write receipt's capture.json bytes.
+      const persisted = JSON.parse(readFileSync(join(world.checkout, ".agents/marketing/cro/run/capture.json"), "utf8"));
+      expect(persisted.data).toEqual(browserCapture);
+      expect(summary.output).toMatchObject({ mismatches: 0, price_mismatch: false });
+    } finally {
+      await world.dispose();
+    }
+  });
+
+  it("fails closed when the real message_match script returns a schema error", async () => {
+    const world = await runHomeWorld();
+    try {
+      const capturePath = ".agents/marketing/cro/run/capture.json";
+      const adsPath = ".agents/marketing/cro/run/ads.json";
+      mkdirSync(join(world.checkout, ".agents/marketing/cro/run"), { recursive: true });
+      writeFileSync(join(world.checkout, capturePath), JSON.stringify({
+        data: { h1: "Restore any photo", title: "Restore any photo", first_screen: "Restore any photo from 990 ₽" },
+        text: "Restore any photo from 990 ₽",
+      }));
+      writeFileSync(join(world.checkout, adsPath), JSON.stringify({ ads: "wrong schema" }));
+
+      const summary = await world.start(messageMatchGraph(capturePath, adsPath), { landing_url: "https://example.test/restore" }).done;
+      expect(summary.status).toBe("failed");
+      expect(summary.output ?? {}).not.toHaveProperty("min_score");
+      expect(summary.output ?? {}).not.toHaveProperty("mismatches");
+    } finally {
+      await world.dispose();
+    }
+  });
+
+  it("wires analyze to the persisted capture receipt and never to screens_path", () => {
+    const workflow = JSON.parse(readFileSync(join(process.cwd(), "workflows/mkt-landing-cro-audit.json"), "utf8")) as {
+      nodes: Array<{ id: string; prompt?: string }>;
+    };
+    const analyze = workflow.nodes.find((node) => node.id === "analyze");
+    expect(analyze?.prompt).toContain("{{persist_capture.capture_path}}");
+    expect(analyze?.prompt).not.toContain("{{capture.screens_path}}");
   });
 });

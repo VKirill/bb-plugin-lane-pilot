@@ -375,12 +375,34 @@ export function registerSpExecutors(
     const params = c.template(node.params) as Row;
     const checkout = await resolveCheckout(ctx, rt);
     const threshold = typeof params.minLemmaOverlap === "number" ? params.minLemmaOverlap : 0.5;
-    const mmArgs: Row = {
+    const capturePath = typeof params.capture === "string" ? params.capture : "";
+    const sourceArgs: Row = {
       ads: params.ads,
-      landing: params.capture || { url: asStr(params.target), h1: asStr(params.target), title: asStr(params.target), first_screen: asStr(params.target) },
+      landing: capturePath || { url: asStr(params.target), h1: asStr(params.target), title: asStr(params.target), first_screen: asStr(params.target) },
       threshold,
     };
-    const checkoutFiles = await collectScriptCheckoutFiles(ctx, checkout, mmArgs);
+    const checkoutFiles = await collectScriptCheckoutFiles(ctx, checkout, sourceArgs);
+    let landing = sourceArgs.landing;
+    if (capturePath) {
+      const storedCapture = await readCheckoutFileText(ctx, checkout, capturePath);
+      let parsed: unknown;
+      try {
+        parsed = typeof storedCapture === "string" ? JSON.parse(storedCapture) : undefined;
+      } catch {
+        parsed = undefined;
+      }
+      const envelope = parsed && typeof parsed === "object" && !Array.isArray(parsed) ? (parsed as Row) : null;
+      const data = envelope?.data;
+      if (!data || typeof data !== "object" || Array.isArray(data)) {
+        throw new Error(`sp.message_match: persisted capture is not a valid data/text envelope (${capturePath})`);
+      }
+      const captureData = { ...(data as Row) };
+      if (typeof captureData.first_screen !== "string" || !captureData.first_screen.trim()) {
+        if (typeof envelope.text === "string" && envelope.text.trim()) captureData.first_screen = envelope.text;
+      }
+      landing = captureData;
+    }
+    const mmArgs: Row = { ...sourceArgs, landing };
     const spDeps = getSpDeps();
     const res = await runVerifiedSkillScript({
       skill: "mkt-landing-cro",
@@ -391,12 +413,22 @@ export function registerSpExecutors(
       ...(spDeps.allowScriptFixtureFallback !== undefined ? { allowFixtureFallback: spDeps.allowScriptFixtureFallback } : {}),
       checkoutFiles,
     });
+    if (
+      res.raw.ok !== true ||
+      typeof res.raw.min_score !== "number" ||
+      typeof res.raw.mismatches !== "number" ||
+      !Number.isInteger(res.raw.mismatches) ||
+      typeof res.raw.price_mismatch !== "boolean"
+    ) {
+      const detail = typeof res.raw.error === "string" ? `: ${res.raw.error}` : "";
+      throw new Error(`sp.message_match: script returned an invalid result${detail}`);
+    }
     const reportRel = `.agents/marketing/reports/${c.workflow.id}-${node.id}.json`;
     await writeCheckoutFile(ctx, checkout, reportRel, JSON.stringify(res.raw, null, 2));
     return {
-      min_score: typeof res.raw.min_score === "number" ? res.raw.min_score : 1,
-      mismatches: typeof res.raw.mismatches === "number" ? res.raw.mismatches : 0,
-      price_mismatch: Boolean(res.raw.price_mismatch ?? false),
+      min_score: res.raw.min_score,
+      mismatches: res.raw.mismatches,
+      price_mismatch: res.raw.price_mismatch,
       report_path: reportRel,
     };
   });
