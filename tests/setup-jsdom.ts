@@ -1,12 +1,8 @@
 import { vi } from "vitest";
 
-// A worker that keeps its module cache between files (isolate: false) runs the next file on the modules the last one left. Page
-// files (jsdom) start from an empty module registry: plugin modules keep state at module level (a registered settings backend, hooks
-// registered by a shared helper) and a page must not see another's. Node files keep the plugin modules loaded: re-evaluating the
-// whole plugin graph for every one of ~430 files was 110 s of CPU of 390 (a full run of the node project 79 s to 60 s). The one node
-// file that needs fresh module state (tests/deploy-drain.test.ts, a bound drain) runs in the isolated project; LP_TEST_RESET=1 resets
-// modules before every file again, for finding a test that depends on what an earlier file left behind. Packages from node_modules
-// stay loaded either way.
+// The node project isolates module and mock registries per file (vitest.config.ts). UI files also reset modules here because their
+// project shares a worker. LP_TEST_RESET requests an extra module-cache reset when diagnosing order-dependent node tests; it does not
+// reset mocks. Dependencies from node_modules stay loaded either way.
 if (typeof document !== "undefined" || process.env.LP_TEST_RESET) vi.resetModules();
 
 // A worker that keeps its module cache between files (isolate: false) also keeps process.env: every file starts from the
