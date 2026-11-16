@@ -243,7 +243,8 @@ describe("milestone-close: record path uses the effective run id", () => {
       "lp.run_status": ok((ctx: StepContext) => ({ open_tasks: 0, failed_tasks: 0, unmerged: 0, gate_ok: true, running_attempts: 0, merged_commits: ["m1"], gate_state: "none", unmerged_seen: 0, uncovered_reqs: [], coverage_matrix: "", retro_living: "on", milestone_archive: "off", milestone_summary: "off", effective_run_id: effectiveRunId(ctx) })),
       "lp.retro_living": ok(() => ({ updated: 0, total: 0, path: "" })),
       "fs.write": ok((ctx: StepContext) => {
-        paths.push(ctx.render(String((ctx.node as { params: { path: string } }).params.path)));
+        if (ctx.node.type !== "action") throw new Error("fs.write requires an action node");
+        paths.push(ctx.render(String(ctx.node.params.path)));
         return { record_path: paths.at(-1)! };
       }),
       "lp.milestone_archive": ok(() => ({ folder: "f", files: [], kept: true })),
