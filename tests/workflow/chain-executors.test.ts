@@ -21,7 +21,7 @@ import { nodeRefStep, refOf, registerPureActions } from "@lane-pilot/workflow-en
 import { WorkflowEngine } from "@lane-pilot/workflow-engine";
 import { registerReducers } from "@lane-pilot/workflow-engine";
 import { parseWorkflow } from "@lane-pilot/workflow-engine";
-import type { Workflow } from "@lane-pilot/workflow-engine";
+import type { NodeExecutor, Workflow } from "@lane-pilot/workflow-engine";
 import { builtinWorkflow } from "../../src/rooms/workflow/builtin";
 import { createGoalAuditor } from "../../src/rooms/workflow/server/workflow-goal-audit";
 import { workflowAuditEvidence } from "../../src/rooms/workflow/server/workflow-audit-evidence";
@@ -40,10 +40,18 @@ const reply = (body: Row, lead = "Done.") => `${lead}\n\n\`\`\`json\n${JSON.stri
 
 /** What a helper thread of a node spent, as BB reports it: one token-usage event of one turn, on this model. */
 type Spent = { input: number; output: number; model?: string };
-async function setup(script: Script, options: { pmEvents?: () => Row[]; firstTurnError?: string; firstTurnRetries?: boolean; dirty?: boolean; spent?: Record<string, Spent>; failWrites?: boolean; noPm?: boolean; noCheckout?: boolean; invalidParent?: boolean; offers?: Array<{ providerId: string; model: string; host?: string }>; hosts?: Array<{ id: string; name: string; status?: string }>; sources?: Array<{ hostId: string; path: string }>; failManifest?: boolean; failReads?: boolean; enableFileReads?: boolean; readStub?: (filePath: string) => unknown | Promise<unknown>; writeOutcomes?: string[]; envs?: Record<string, { hostId: string; path: string } | null>; resolveWorkflow?: (id: string, version?: number) => Workflow | null; runCommandStub?: (input: Row) => Row | null; vkMetadata?: boolean } = {}) {
+async function setup(script: Script, options: { pmEvents?: () => Row[]; firstTurnError?: string; firstTurnRetries?: boolean; dirty?: boolean; spent?: Record<string, Spent>; failWrites?: boolean; noPm?: boolean; noCheckout?: boolean; invalidParent?: boolean; offers?: Array<{ providerId: string; model: string; host?: string }>; hosts?: Array<{ id: string; name: string; status?: string }>; sources?: Array<{ hostId: string; path: string }>; failManifest?: boolean; failReads?: boolean; enableFileReads?: boolean; readStub?: (filePath: string) => unknown | Promise<unknown>; writeOutcomes?: string[]; envs?: Record<string, { hostId: string; path: string } | null>; resolveWorkflow?: (id: string, version?: number) => Workflow | null; runCommandStub?: (input: Row) => Row | null; vkMetadata?: boolean; inventoryFixture?: boolean } = {}) {
   const checkout = mkdtempSync(join(tmpdir(), "lp-chain-"));
   execFileSync("git", ["init", "-q"], { cwd: checkout });
   writeFileSync(join(checkout, "README.md"), "hello\n");
+  if (options.inventoryFixture) {
+    writeFileSync(join(checkout, "package.json"), JSON.stringify({ name: "lane-pilot-inventory-fixture", private: true, scripts: { test: "node --test test/*.test.js" } }) + "\n");
+    mkdirSync(join(checkout, "test"), { recursive: true });
+    writeFileSync(join(checkout, "test/base.test.js"), "const test = require('node:test');\ntest('fixture baseline', () => {});\n");
+    writeFileSync(join(checkout, ".gitignore"), ".agents/\n.bb/\n");
+    execFileSync("git", ["-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "add", "."], { cwd: checkout });
+    execFileSync("git", ["-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "-qm", "fixture baseline"], { cwd: checkout });
+  }
   const spawned: Array<Row> = [], sent: Array<{ threadId: string; text: string }> = [], writes: Array<{ path: string; content: string }> = [], hostCalls: Array<Row> = [];
   const nodeOf = new Map<string, string>(), counts = new Map<string, number>();
   const spawnedIds: Array<{ id: string; metadata: Row }> = [];
@@ -1738,7 +1746,7 @@ describe("a code task of a chain", () => {
   });
 
   it.each(["UNIQUE_GAP_590_discount_boundary", `LONG_GAP_590 ${"boundary detail ".repeat(2500)}TAIL_GAP_590`])("delivers supplied test-gen gaps to the real contract planner before writer dispatch (%#)", async (description) => {
-    const t = await setup({ write_tests: [(checkout) => reply({ contract: task(checkout) })] });
+    const t = await setup({ write_tests: [(checkout) => reply({ contract: task(checkout) })] }, { inventoryFixture: true });
     dispose = t.dispose;
     const workflow = builtinWorkflow("test-gen")!;
     expect(workflow).toBeTruthy();
@@ -1759,7 +1767,7 @@ describe("a code task of a chain", () => {
   });
 
   it("refuses the contract planner before spawn or writer dispatch when required gap files cannot be delivered", async () => {
-    const t = await setup({}, { failWrites: true });
+    const t = await setup({}, { failWrites: true, inventoryFixture: true });
     dispose = t.dispose;
     const result = await t.start(builtinWorkflow("test-gen")!, { scope: "src/discount.ts", goal: "Cover gaps",
       gaps: [{ file: "src/discount.ts", description: "required detail ".repeat(2000) }] }).done;
@@ -1770,7 +1778,7 @@ describe("a code task of a chain", () => {
 
   it("delivers derived gaps and the owner's strike to the real test-gen contract planner", async () => {
     const t = await setup({ derive: [reply({ gaps: [{ file: "tests/keep.ts", description: "KEEP_GAP_590" }, { file: "tests/omit.ts", description: "OMIT_GAP_590" }], handoff: "Review both gaps" })],
-      write_tests: [(checkout) => reply({ contract: task(checkout) })] });
+      write_tests: [(checkout) => reply({ contract: task(checkout) })] }, { inventoryFixture: true });
     dispose = t.dispose;
     // Script only the external owner's answer; routing and the contract planner are real registered executors.
     t.engine.register("builtin:human", { run: async () => ({ output: { answer: "Strike OMIT_GAP_590; keep KEEP_GAP_590", answer_kind: "strike" } }) });
@@ -1788,8 +1796,8 @@ describe("a code task of a chain", () => {
     const workflow = structuredClone(builtinWorkflow("test-gen")!);
     const writer = workflow.nodes.find((node) => node.id === "write_tests")!;
     if (writer.type !== "lp-task") throw new Error("write_tests must be an lp-task");
-    workflow.nodes[workflow.nodes.indexOf(writer)] = { id: writer.id, type: "action", action: "fixture.accepted-tests", params: {}, out: writer.out, produces: writer.produces, maxAttempts: writer.maxAttempts };
-    const failure = { id: "FAILURE_590G", file: "tests/new-590.ts", message: "FAILURE_HEAD_590G " + "assertion evidence ".repeat(2500) + "FAILURE_TAIL_590G" };
+    const addedTest = "test/new-590.test.js";
+    const failure = { id: "FAILURE_590G", file: addedTest, message: "FAILURE_HEAD_590G " + "assertion evidence ".repeat(2500) + "FAILURE_TAIL_590G" };
     let classifierPrompt = "", classifierFailures: unknown = null;
     const t = await setup({ run: [reply({ ok: false, tests_passed: 3, tests_failed: 1, pass_rate: 75, failures: [failure], no_framework: false })],
       classify: [() => {
@@ -1797,12 +1805,22 @@ describe("a code task of a chain", () => {
         const file = t.writes.find((write) => /\/failures\.[0-9a-f]{8}\.json$/.test(write.path)
           && classifierPrompt.includes(write.path.slice(t.checkout.length + 1)));
         classifierFailures = file ? JSON.parse(readFileSync(file.path, "utf8")) : null;
-        return reply({ test_defects: [{ id: "DEFECT_590", file: "tests/new-590.ts", description: "wrong assertion" }], code_defects: [], env_issues: [], test_defect_count: 1, converged: false, handoff: "Fix the test" });
+        return reply({ test_defects: [{ id: "DEFECT_590", file: addedTest, description: "wrong assertion" }], code_defects: [], env_issues: [], test_defect_count: 1, converged: false, handoff: "Fix the test" });
       }],
-      fix_tests: [(checkout) => reply({ contract: task(checkout) })] });
+      fix_tests: [(checkout) => reply({ contract: task(checkout) })] }, { inventoryFixture: true });
     dispose = t.dispose;
-    // The first accepted writer is a fixture; the fix planner consumes the actual shipped edge through the engine.
-    t.engine.register("fixture.accepted-tests", { run: async () => ({ output: { state: "accepted", files: ["tests/new-590.ts"], tests_added: 1, merge_commit: "fixture" } }) });
+    // Keep the model-produced failure report, but avoid helper artifact files dirtying the measured checkout window.
+    t.engine.register("lp.project_checks", { reentrant: true, run: async () => ({ output: { ok: false, tests_passed: 3, tests_failed: 1, pass_rate: 75, failures: [failure], no_framework: false } }) });
+    // The first accepted writer is a fixture, but it still adds a real passing test and commits it so inventory can bind the result.
+    const realLpTask = (t.engine as unknown as { executors: Map<string, NodeExecutor> }).executors.get("lp-task")!;
+    t.engine.register("lp-task", { reentrant: true, run: async (ctx) => {
+      if (ctx.nodeId === "fix_tests") return realLpTask.run(ctx);
+      writeFileSync(join(t.checkout, addedTest), "const test = require('node:test');\ntest('writer-added passing test', () => {});\n");
+      execFileSync("git", ["-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "add", addedTest], { cwd: t.checkout });
+      execFileSync("git", ["-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "-qm", "writer-added test"], { cwd: t.checkout });
+      const merge_commit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: t.checkout, encoding: "utf8" }).trim();
+      return { output: { state: "accepted", files: [addedTest], merge_commit } };
+    } });
     const started = t.start(workflow, { scope: "src/discount.ts", goal: "Cover gaps", gaps: [{ file: "src/discount.ts" }] });
     const summary = await started.done;
     expect(summary.status, JSON.stringify({ summary, steps: t.engine.journal.steps(started.runId) })).toBe("waiting");
@@ -1816,7 +1834,7 @@ describe("a code task of a chain", () => {
     const delivered = JSON.stringify({ prompt: planner?.prompt, files: t.writes });
     expect(delivered).toContain("DEFECT_590");
     expect(delivered).toContain("added_files");
-    expect(delivered).toContain("tests/new-590.ts");
+    expect(delivered).toContain(addedTest);
   });
 
   it("a chain lp-task node still takes the chain path when the dispatch executors register after the chain ones (server.ts order)", async () => {
