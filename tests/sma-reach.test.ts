@@ -25,6 +25,26 @@ describe("reachability under the effective settings (sma-parity-tz.md §4.3)", (
     expect(out.get("c")).toMatchObject({ reachable: false, why: expect.stringContaining("no reachable predecessor (b)") });
   });
 
+  it("uses canonical on-by-default switches, while explicit off and true default-off gates still block", () => {
+    const canonical = "phase.research";
+    const defaultOff = "phase.autonomous";
+    expect(defaultSettings().get(canonical)).toBe("on");
+    expect(defaultSettings().get(defaultOff)).toBe("off");
+    const nodes = [node("a"), node("b")];
+    const links: Link[] = [["a", "b", "transition", ""]];
+    const specs = { a: entry("a task arrives"), b: via({ [canonical]: "on" }) };
+    expect(reach(nodes, links, specs).get("b")).toMatchObject({ reachable: true });
+    expect(reach(nodes, links, specs, overlay(defaultSettings(), [{ key: canonical, value: "off" }])).get("b")).toMatchObject({
+      reachable: false,
+      why: expect.stringContaining(`needs fail: ${canonical}=off`),
+    });
+    const defaultOffSpecs = { a: entry("a task arrives"), b: via({ [defaultOff]: "on" }) };
+    expect(reach(nodes, links, defaultOffSpecs).get("b")).toMatchObject({
+      reachable: false,
+      why: expect.stringContaining(`needs fail: ${defaultOff}=off`),
+    });
+  });
+
   it("a node with no entry and no control predecessor is unreachable; a passive store is reached when a reachable step writes it", () => {
     const out = reach([node("a"), node("lone"), node("db", "store"), node("doc", "document")], [["a", "db", "writes", ""], ["lone", "doc", "writes", ""]], { a: entry("the nightly schedule") });
     expect(out.get("lone")).toMatchObject({ reachable: false, why: "no entry and no control predecessor" });

@@ -3,6 +3,7 @@
 // defaults, and each active project's rows over those. sma-parity-tz.md §4.3: a node is reachable only under the
 // settings the hub really runs, without a manual switch.
 import { SETTING_CATALOG, UI_CATALOG } from "@lane-pilot/settings-catalog";
+import { SWITCHES_ON_BY_DEFAULT } from "@lane-pilot/models";
 // A copy of the settings room's UNLISTED_SWITCHES (scripts/sma-settings-snapshot.ts): importing that room would close a
 // cycle in the room graph (settings → schedule → … → wall → sma-map).
 import UNLISTED from "./unlisted-switches.json";
@@ -50,6 +51,10 @@ function unlistedDefault(values: string, what: string): string | undefined {
   return values === "on|off" ? "off" : undefined;
 }
 
+function switchDefault(key: string, fallback: string | undefined): string | undefined {
+  return SWITCHES_ON_BY_DEFAULT.has(key) ? "on" : fallback;
+}
+
 let registry: Map<string, SettingInfo> | null = null;
 
 /** Every key the registry knows, with its default; the UI catalog's editable row wins over its other rows. */
@@ -60,11 +65,15 @@ export function settingRegistry(): ReadonlyMap<string, SettingInfo> {
   for (const row of UI_CATALOG) { const cur = live.get(row.storageKey); if (!cur || (cur.uiStatus !== "editable" && row.uiStatus === "editable")) live.set(row.storageKey, row); }
   for (const [key, row] of live) {
     const switchLike = row.control === "switch" || (row.options.length === 2 && row.options.every((option) => ON.has(option.toLowerCase()) || OFF.has(option.toLowerCase())));
-    map.set(key, { key, default: catalogDefault(row.defaultValue), switchLike, source: "ui" });
+    map.set(key, { key, default: switchLike ? switchDefault(key, catalogDefault(row.defaultValue)) : catalogDefault(row.defaultValue), switchLike, source: "ui" });
   }
-  for (const spec of SETTING_CATALOG) if (!map.has(spec.key)) map.set(spec.key, { key: spec.key, default: undefined, switchLike: !!spec.booleanFlag, source: "catalog" });
+  for (const spec of SETTING_CATALOG) if (!map.has(spec.key)) {
+    const switchLike = !!spec.booleanFlag;
+    map.set(spec.key, { key: spec.key, default: switchLike ? switchDefault(spec.key, undefined) : undefined, switchLike, source: "catalog" });
+  }
   for (const [key, [values, what]] of Object.entries(UNLISTED_SWITCHES)) {
-    map.set(key, { key, default: unlistedDefault(values, what), switchLike: /^on\|off$|^gate\|off$|^strict\|off$|^hold\|observe$|^refuse\|warn$/.test(values), source: "unlisted" });
+    const switchLike = /^on\|off$|^gate\|off$|^strict\|off$|^hold\|observe$|^refuse\|warn$/.test(values);
+    map.set(key, { key, default: switchLike ? switchDefault(key, unlistedDefault(values, what)) : unlistedDefault(values, what), switchLike, source: "unlisted" });
   }
   registry = map;
   return map;
