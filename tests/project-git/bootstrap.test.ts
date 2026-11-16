@@ -226,6 +226,33 @@ describe("project git retries through the public ensure (P03.08)", () => {
     expect(record(f) as { doneAt?: number }).not.toHaveProperty("doneAt");
   });
 
+  it("recovers its own origin after the store failed right after remote add, and still refuses a foreign one", async () => {
+    for (const foreign of [false, true]) {
+      const f = makeFixture();
+      const root = f.folder("app", files);
+      f.setAnswer(picked("1"));
+      const set = f.kv.set;
+      f.kv.set = async (key, value) => {
+        if ((value as { origin?: unknown }).origin) throw new Error("store unavailable");
+        return set(key, value);
+      };
+      await expect(ensure(f, root)).rejects.toThrow("store unavailable");
+      f.kv.set = set;
+      expect(f.sh(root, "git remote get-url origin").stdout.trim()).toBe(`file://${f.gh().repos["octo/app"]!.bare}`);
+      expect(record(f) as { origin?: unknown }).not.toHaveProperty("origin");
+      if (foreign) {
+        f.sh(root, "git remote set-url origin https://github.com/someone/else.git");
+        expect(await ensure(f, root)).toMatchObject({ kind: "bootstrapped", result: { ok: false, stage: "probe", code: "already_has_origin" } });
+        expect(f.sh(f.gh().repos["octo/app"]!.bare, "git for-each-ref").stdout.trim()).toBe("");
+      } else {
+        expect(await ensure(f, root)).toMatchObject({ kind: "bootstrapped", result: { ok: true } });
+        expect(f.sh(f.gh().repos["octo/app"]!.bare, "git rev-parse main").stdout.trim()).toBe(head(f, root));
+      }
+      expect(f.asks).toHaveLength(1);
+      expect(f.gh().creates).toBe(1);
+    }
+  });
+
   it("sets no upstream when origin changes while the published commit is verified", async () => {
     const f = makeFixture();
     const root = f.folder("app", files);

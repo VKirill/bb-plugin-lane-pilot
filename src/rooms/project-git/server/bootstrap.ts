@@ -186,7 +186,10 @@ export function createProjectGit(deps: ProjectGitDeps) {
     if (found.state === "origin" && rec.origin && !sameRemote(found.origin!, rec.origin.url)) {
       return fail("probe", "origin_conflict", `origin is now ${found.origin}, not the verified ${rec.origin.url}`);
     }
-    if (found.state === "origin" && !rec.origin) return fail("probe", "already_has_origin", `the repository already has origin ${found.origin}`);
+    // An origin this record did not save is someone else's, except the one this operation added before its record was
+    // written (a crash or a store failure right after `remote add`): the verified repository's own clone url.
+    const ownOrigin = rec.repo?.id !== undefined && rec.repo.cloneUrl !== undefined && found.origin !== undefined && sameRemote(found.origin, rec.repo.cloneUrl);
+    if (found.state === "origin" && !rec.origin && !ownOrigin) return fail("probe", "already_has_origin", `the repository already has origin ${found.origin}`);
 
     if (!rec.baseline) {
       // Only a folder without Git, or the repository this operation started, gets a first commit; any other history is never published.
