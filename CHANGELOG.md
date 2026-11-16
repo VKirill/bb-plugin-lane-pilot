@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **Backlog scans stop when their plugin instance reloads.** Disposal checkpoints after cadence, PM, planning-home and host reads prevent the old scan from querying closed SQLite or continuing into an offer or issue. Reload cancellation stays quiet; database failures in a live instance still log. Offline regression tests use SDK disposal and real SQLite to check that no new database query, host call, KV access or SDK call follows disposal; deployment acceptance remains separate.
+
 - Section tasks can read sibling SDK files with host-verified `repo:` references, including normalized in-repository `../` references, while preserving section cwd and write ownership. Packets retain the selector; unknown roots and protected metadata are refused.
 - Section integration refuses sibling changes before autocommit and checks again before merging, including changes already committed on the writer branch. Candidate files remain available after refusal.
 
