@@ -17,9 +17,10 @@ function fixture(workspace="/repo/section") {
   const raw=vi.fn(async()=>({ok:true,state:"queued"}));
   const projectGit={resolveScope:vi.fn(async()=>({kind:"repo",state:"origin",root:"/repo"})),bootstrap:vi.fn(async()=>({ok:true,root:"/repo",fullName:"octo/repo",url:"https://github.invalid/octo/repo",commit:"abc",branch:"main"}))};
   const pool={acquire:vi.fn(async()=>()=>undefined),acquireFolder:vi.fn(async(_hostId:string,_path:string)=>()=>undefined)};
-  const dispatch=createProjectGitDispatch({db,bb:bb as never,projectGit:projectGit as never,runWriterPool:pool,invalidateLiveFolder:async()=>undefined,raw,isDisposed:()=>false});
+  const invalidateLiveFolder=vi.fn(async()=>undefined);
+  const dispatch=createProjectGitDispatch({db,bb:bb as never,projectGit:projectGit as never,runWriterPool:pool,invalidateLiveFolder,raw,isDisposed:()=>false});
   const task={id:"T1",project_cwd:workspace};
-  return {db,bb,raw,projectGit,pool,dispatch,task};
+  return {db,bb,raw,projectGit,pool,dispatch,task,invalidateLiveFolder};
 }
 
 it("uses the frozen project source for section scope and holds run admission through raw dispatch", async()=>{
@@ -82,6 +83,15 @@ it("contains a bootstrap exception as an uncertain no-task refusal", async()=>{
   expect(f.raw).not.toHaveBeenCalled();
   expect(result).toMatchObject({ok:false,error:{code:"project_git_required",sideEffects:"unknown"}});
   expect(hasRunAdmission(f.db,"pm-thread")).toBe(false);
+});
+
+it("does not dispatch after live-folder cache invalidation fails", async()=>{
+  const f=fixture("/repo");
+  f.projectGit.resolveScope.mockResolvedValue({kind:"chosen",choice:{scope:"project",root:"/repo"},account:"octo"} as never);
+  f.invalidateLiveFolder.mockRejectedValue(new Error("KV unavailable"));
+  const result=await f.dispatch({threadId:"pm-thread",projectId:"project",task:f.task});
+  expect(f.raw).not.toHaveBeenCalled();
+  expect(result).toMatchObject({ok:false,error:{code:"project_git_required",sideEffects:"unknown"}});
 });
 
 it("fails closed for active queued or unresolved live work, but ignores accepted terminal work",()=>{

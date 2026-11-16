@@ -152,6 +152,14 @@ describe("detection", () => {
     await Promise.all([oldProbe, newProbe]);
     expect(calls).toBe(2);
   });
+
+  it("surfaces a live-folder cache deletion failure", async () => {
+    const { bb } = createFakePluginHost({ pluginId: "lane-pilot" });
+    const db = openDatabase(bb);
+    const live = createLiveFolder({ bb, db, host: { call: async () => ({ exitCode: 0, stdout: "", stderr: "" }) } } as never);
+    (bb.storage.kv as { delete: (key: string) => Promise<void> }).delete = async () => { throw new Error("KV unavailable"); };
+    await expect(live.invalidateLiveFolder("r-delete-failure")).rejects.toThrow("KV unavailable");
+  });
 });
 
 describe("content snapshot", () => {

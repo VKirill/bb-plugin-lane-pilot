@@ -40,7 +40,8 @@ export function createLiveFolder(ctx: ServerCore) {
     const key=`live-folder:${runId}`;
     probeGeneration.set(key, generationFor(key)+1);
     await cacheWrites.get(key)?.catch(() => undefined);
-    await bb.storage?.kv?.delete(key).catch(() => undefined);
+    const deleteCache=bb.storage?.kv?.delete;
+    if (deleteCache) await deleteCache.call(bb.storage.kv,key);
   }
 
   async function probeFolder(runId: string | undefined, hostId: string, folder: string, options?: { fresh?: boolean }): Promise<"git"|"no-git"|"unknown"> {
