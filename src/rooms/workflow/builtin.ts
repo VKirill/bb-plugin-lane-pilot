@@ -119,6 +119,7 @@ import prBranch from "../../../workflows/pr-branch.json";
 import cleanup from "../../../workflows/cleanup.json";
 import newMilestone from "../../../workflows/new-milestone.json";
 import planReviewConvergence from "../../../workflows/plan-review-convergence.json";
+import planReviewConvergenceProof from "../../../workflows/plan-review-convergence-proof.json";
 import projectStart from "../../../workflows/project-start.json";
 import projectPassport from "../../../workflows/project-passport.json";
 import type { Workflow } from "@lane-pilot/workflow-engine";
@@ -254,6 +255,7 @@ export const BUILTIN_SOURCES: ReadonlyArray<{ name: string; value: unknown }> = 
   { name: "cleanup.json", value: cleanup },
   { name: "new-milestone.json", value: newMilestone },
   { name: "plan-review-convergence.json", value: planReviewConvergence },
+  { name: "plan-review-convergence-proof.json", value: planReviewConvergenceProof },
   { name: "project-start.json", value: projectStart },
   { name: "project-passport.json", value: projectPassport },
 ];

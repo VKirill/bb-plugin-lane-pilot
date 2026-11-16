@@ -63,92 +63,22 @@
       }
     },
     {
-      "id": "critic_a",
-      "type": "agent",
-      "role": "plan-critic",
-      "title": {
-        "en": "Critic A",
-        "ru": "Критик A"
-      },
-      "with": {
+      "id": "proof",
+      "type": "subworkflow",
+      "workflow": "plan-review-convergence-proof",
+      "inputs": {
+        "phase_id": "$inputs.phase_id",
+        "plan_sha": "{{phase_status.status.plan.sha}}",
         "phase_status": "{{phase_status.status}}"
       },
-      "prompt": "Review the supplied code-owned phase status and plan (including its gates and book) against CONTEXT.md and SPEC.md: coverage of requirements and locked decisions, a check per promise that would fail without the work, waves by depends_on, risks. Decision approve or changes_requested with findings.",
-      "out": {
-        "decision": "string",
-        "findings": "Finding[]"
-      },
-      "guards": {
-        "maxVisits": 1,
-        "timeoutMin": 25
-      },
-      "produces": [
-        {
-          "kind": "report",
-          "version": 1
-        }
-      ]
-    },
-    {
-      "id": "critic_b",
-      "type": "agent",
-      "role": "specialist-reviewer",
-      "title": {
-        "en": "Critic B (another model)",
-        "ru": "Критик B (другая модель)"
-      },
-      "prompt": "External plan bounce: the same review by a model other than critic A's and the planner's; independent findings, do not read A's.",
-      "out": {
-        "decision": "string",
-        "findings": "Finding[]"
-      },
-      "guards": {
-        "maxVisits": 1,
-        "timeoutMin": 25
-      },
-      "produces": [
-        {
-          "kind": "report",
-          "version": 1
-        }
-      ]
-    },
-    {
-      "id": "converge",
-      "type": "agent",
-      "role": "plan-critic",
-      "title": {
-        "en": "Converge",
-        "ru": "Свести"
-      },
-      "prompt": "Merge A's and B's findings (dedupe by file and claim). Approve only when both approve; otherwise changes_requested with the merged list. Return only {decision, findings, rounds}; a following code-owned action reports this result to the phase driver when this is a PM-started run, while machine-started runs consume the result directly.",
       "out": {
         "decision": "string",
         "findings": "Finding[]",
-        "rounds": "int"
-      },
-      "guards": {
-        "maxVisits": 1,
-        "timeoutMin": 25
-      },
-      "produces": [
-        {
-          "kind": "report",
-          "version": 1
-        }
-      ],
-      "consumes": [
-        {
-          "kind": "report",
-          "version": 1,
-          "from": "critic_a"
-        },
-        {
-          "kind": "report",
-          "version": 1,
-          "from": "critic_b"
-        }
-      ]
+        "rounds": "int",
+        "plan_sha": "string",
+        "plan_verdict": "string",
+        "status": "string"
+      }
     },
     {
       "id": "approve",
@@ -156,8 +86,8 @@
       "action": "emit",
       "map": {
         "status": "approve",
-        "findings": "converge.findings",
-        "rounds": "converge.rounds"
+        "findings": "proof.findings",
+        "rounds": "proof.rounds"
       }
     },
     {
@@ -182,29 +112,19 @@
       "action": "emit",
       "map": {
         "status": "changes_requested",
-        "findings": "converge.findings",
-        "rounds": "converge.rounds"
+        "findings": "proof.findings",
+        "rounds": "proof.rounds"
       }
     }
   ],
   "edges": [
     {
       "from": "phase_status",
-      "to": "critic_a",
+      "to": "proof",
       "pass": "artifact"
     },
     {
-      "from": "critic_a",
-      "to": "critic_b",
-      "pass": "artifact"
-    },
-    {
-      "from": "critic_b",
-      "to": "converge",
-      "pass": "artifact"
-    },
-    {
-      "from": "converge",
+      "from": "proof",
       "to": "phase_check",
       "pass": "artifact"
     },
@@ -212,7 +132,7 @@
       "from": "phase_check",
       "to": "approve",
       "pass": "artifact",
-      "when": "converge.decision == 'approve'"
+      "when": "proof.decision == 'approve'"
     },
     {
       "from": "phase_check",
@@ -227,25 +147,18 @@
         "phase_id": "ph_sample01"
       },
       "stubs": {
-        "critic_a": {
-          "decision": "approve",
-          "findings": []
-        },
-        "critic_b": {
-          "decision": "approve",
-          "findings": []
-        },
-        "converge": {
+        "proof": {
           "decision": "approve",
           "findings": [],
-          "rounds": 1
+          "rounds": 1,
+          "plan_sha": "stub",
+          "plan_verdict": "pass",
+          "status": "ok"
         }
       },
       "expect_path": [
         "phase_status",
-        "critic_a",
-        "critic_b",
-        "converge",
+        "proof",
         "phase_check",
         "approve"
       ],
