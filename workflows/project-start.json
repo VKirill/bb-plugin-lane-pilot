@@ -540,7 +540,7 @@
         "added": "string[]",
         "count": "int"
       },
-      "skip_when": "!recap.phases.length",
+      "skip_when": "!recap.phases.length || !write_roadmap.roadmap_path",
       "params": {
         "path": "{{write_roadmap.roadmap_path}}"
       }

@@ -1,7 +1,7 @@
 import { coreFileWrite, diskStore } from "../helpers/core-files";
 import { writtenByEngineSince } from "../../src/rooms/verification/server";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
@@ -41,8 +41,10 @@ const PM = "pm-r7", PROJECT = "project-r7", RUN = "run-r7";
 type Script = Record<string, Array<string | ((checkout: string) => string)>>;
 const reply = (body: Row, lead = "Done.") => `${lead}\n\n\`\`\`json\n${JSON.stringify(body)}\n\`\`\`\n`;
 
-let dispose: (() => void) | undefined;
-afterEach(() => { dispose?.(); dispose = undefined; });
+// Every setup registers its own disposer; afterEach drains them all, so a test that builds several fixtures
+// never leaks the lifecycle or temp checkout of an earlier one.
+const disposers: Array<() => void> = [];
+afterEach(() => { for (const dispose of disposers.splice(0)) dispose(); });
 
 /** The executor fixture of a chain run: same composition as production (registerChainExecutors registers fs.write,
  *  deliverable.validate and the lp.* actions), minus the parts this packet does not exercise. */
@@ -122,7 +124,9 @@ async function setup(script: Script, options: { resolveWorkflow?: (id: string, v
   engine.register("builtin:human", { run: async (c) => ({ output: options.human ? options.human(c.node as unknown as Row) : { answer: "", answer_kind: "timeout" } }) });
   const rt: ChainRuntime = { ctx, services, pmThreadId: PM, projectId: PROJECT, runId: RUN };
   const start = (workflow: Workflow, inputs: Row = {}, mode?: "quick" | "standard" | "full") => engine.start({ workflow, inputs, ...(mode ? { mode } : {}), runtime: rt, link: { projectId: PROJECT, runId: RUN } });
-  return { bb, harness, db, engine, checkout, spawned, sends, writes, hostCalls, start, rt, dispose: () => harness.lifecycle.dispose() };
+  const disposer = () => { harness.lifecycle.dispose(); rmSync(checkout, { recursive: true, force: true }); };
+  disposers.push(disposer);
+  return { bb, harness, db, engine, checkout, spawned, sends, writes, hostCalls, start, rt, dispose: disposer };
 }
 
 const storeP = loadWorkflowStore({ builtin: BUILTIN_SOURCES });
@@ -140,7 +144,6 @@ describe("P04-R7 sibling document writes through the real fs.write action", () =
     const t = await setup({
       audit: [reply({ gaps: [], document: "# Validation\n\n| Promise | Check |\n| --- | --- |\n| P1 | npm test |\n", sampled: 2, handoff: "audit done" })],
     });
-    dispose = t.dispose;
     const summary = await t.start(await builtin("validate-phase"), { phase_id: "ph_r7a" }).done;
     expect(summary.status, summary.error ?? undefined).toBe("succeeded");
     expect(summary.output).toMatchObject({ status: "done", validation_path: ".agents/phases/ph_r7a/VALIDATION.md" });
@@ -151,7 +154,6 @@ describe("P04-R7 sibling document writes through the real fs.write action", () =
     const t = await setup({
       review: [reply({ findings: [], coverage: { dim: "covered" }, flawed: false, document: "# Eval review\n\nAll dimensions covered.\n", handoff: "review done" })],
     }, { resolveWorkflow: (id) => builtinWorkflow(id) });
-    dispose = t.dispose;
     const sound = await t.start(await builtin("eval-review"), { phase_id: "ph_r7b" }).done;
     expect(sound.status, sound.error ?? undefined).toBe("succeeded");
     expect(sound.output).toMatchObject({ status: "sound", review_path: ".agents/phases/ph_r7b/EVAL-REVIEW.md" });
@@ -160,7 +162,6 @@ describe("P04-R7 sibling document writes through the real fs.write action", () =
     const u = await setup({
       review: [reply({ findings: [{ file: "eval.ts", line: 1, severity: "high", evidence: "gold set written after tuning", dimension: "leakage" }], coverage: { dim: "missing" }, flawed: true, document: "# Eval review\n\nLeakage found.\n", handoff: "flawed" })],
     }, { resolveWorkflow: (id) => builtinWorkflow(id) });
-    dispose = u.dispose;
     const flawed = await u.start(await builtin("eval-review"), { phase_id: "ph_r7c" }).done;
     expect(flawed.status, flawed.error ?? undefined).toBe("succeeded");
     expect(flawed.output).toMatchObject({ status: "flawed", review_path: ".agents/phases/ph_r7c/EVAL-REVIEW.md" });
@@ -171,7 +172,6 @@ describe("P04-R7 sibling document writes through the real fs.write action", () =
     const t = await setup({
       audit: [reply({ open: [], status_table: "\n## Threat register status\n\n| Threat | Disposition |\n| --- | --- |\n| T1 | mitigated src/a.ts:9 |\n", handoff: "secure done" })],
     });
-    dispose = t.dispose;
     mkdirSync(join(t.checkout, ".agents/phases/ph_r7d"), { recursive: true });
     writeFileSync(join(t.checkout, ".agents/phases/ph_r7d/SECURITY.md"), "# Security\n\n## Threats\n\n- T1: injection\n");
     const summary = await t.start(await builtin("secure-phase"), { phase_id: "ph_r7d" }).done;
@@ -194,7 +194,6 @@ describe("P04-R7 sibling document writes through the real fs.write action", () =
       check: [reply({ ok: false, gaps: ["missing ## Evaluation", "no cost line"], handoff: "gaps found" }),
               reply({ ok: true, gaps: [], handoff: "clean" })],
     });
-    dispose = t.dispose;
     const run = t.start(await builtin("ai-integration-phase"), { goal: "add a typed judgment", phase_id: "ph_r7e" });
     const summary = await Promise.race([run.done, new Promise((_, reject) => setTimeout(() => reject(new Error("STALL: " + JSON.stringify((t.db as never as { prepare(s: string): { all(...a: unknown[]): Row[] } }).prepare("SELECT node_id,state,substr(error,1,200) e FROM lane_pilot_wf_step WHERE run_id=?").all(run.runId)) + " spawns=" + t.spawned.length + " sends=" + t.sends.length)), 20000))]) as Awaited<typeof run.done>;
     expect(summary.status, summary.error ?? undefined).toBe("succeeded");
@@ -214,7 +213,6 @@ describe("P04-R7 sibling document writes through the real fs.write action", () =
     const t = await setup({
       experiment: [reply({ answered: true, decision: "use sqlite WAL", document: "# Spike: journal mode\n\nWAL wins.\n", skill_draft: "", handoff: "answered" })],
     });
-    dispose = t.dispose;
     const summary = await t.start(await builtin("spike"), { question: "which journal mode" }).done;
     expect(summary.status, summary.error ?? undefined).toBe("succeeded");
     const spikePath = String((summary.output as Row).spike_path);
@@ -230,7 +228,6 @@ describe("P04-R7 sibling document writes through the real fs.write action", () =
       const t = await setup({
         experiment: [reply({ answered: true, decision: "d", document: "# Spike\n", skill_draft: "# skill\n", handoff: "answered" })],
       });
-      dispose = t.dispose;
       const summary = await t.start(await builtin("spike"), { question: "which journal mode " + unsafe, wrap_skill: unsafe }).done;
       expect(summary.status, `${unsafe} was not refused`).toBe("failed");
       expect(readdirSync(join(t.checkout, ".agents"), { withFileTypes: false }).includes("forge")).toBe(false);
@@ -245,7 +242,6 @@ describe("P04-R7 sibling document writes through the real fs.write action", () =
       requirements: [reply({ requirements: ["REQ-1", "REQ-2"], document: "\n## Requirements\n\n- REQ-1: first\n- REQ-2: second\n", handoff: "required" })],
       recap: [reply({ next_steps: ["step one"], roadmap_draft: "# Roadmap\n\n- phase one\n", project_document: "# Project\n\n## Vision\n\nFor makers.\n", phases: ["1 the first phase"], handoff: "recapped" })],
     });
-    dispose = t.dispose;
     mkdirSync(join(t.checkout, ".agents/planning"), { recursive: true });
     writeFileSync(join(t.checkout, ".agents/planning/REQUIREMENTS.md"), "# Requirements\n\n- REQ-0: existing\n");
     const summary = await t.start(await builtin("project-start"), { goal: "start the project" }).done;
@@ -268,7 +264,6 @@ describe("P04-R7 sibling document writes through the real fs.write action", () =
     const t = await setup({
       frame: [reply({ phases: ["phase-a", "phase-b"], document: "\n- REQ-A: alpha\n- REQ-B: beta\n", handoff: "framed" })],
     });
-    dispose = t.dispose;
     mkdirSync(join(t.checkout, ".agents/planning"), { recursive: true });
     writeFileSync(join(t.checkout, ".agents/planning/REQUIREMENTS.md"), "# Requirements\n\n- REQ-OLD: kept\n");
     const summary = await t.start(await builtin("new-milestone"), { goal: "second milestone" }).done;
@@ -296,7 +291,6 @@ describe("P04-R7 sibling document writes through the real fs.write action", () =
     }, {
       resolveWorkflow: (id) => (id === "code-review" ? codeReview : builtinWorkflow(id)),
     });
-    dispose = t.dispose;
     const summary = await t.start(await builtin("ship"), { phase_id: "ph_r7s", base: "main", head: "feature-ship", review: true }).done;
     expect(summary.status, summary.error ?? undefined).toBe("succeeded");
     expect(summary.output).toMatchObject({ status: "shipped", pr_url: "https://example.invalid/pr/7" });
@@ -318,7 +312,6 @@ describe("P04-R7 sibling document writes through the real fs.write action", () =
     }, {
       resolveWorkflow: (id) => (id === "code-review" ? codeReview : builtinWorkflow(id)),
     });
-    dispose = t.dispose;
     const summary = await t.start(await builtin("ship"), { phase_id: "ph_r7s2", base: "release/1.0", review: true }).done;
     expect(summary.status, summary.error ?? undefined).toBe("succeeded");
     expect(childInputs(t.db as never, summary.runId)["code-review"]).toMatchObject({ range: "release/1.0..HEAD" });
@@ -342,7 +335,6 @@ describe("P04-R7 sibling document writes through the real fs.write action", () =
       resolveWorkflow: (id) => (id === "lp.close" ? lpClose : builtinWorkflow(id)),
       human: () => ({ answer: "", answer_kind: "timeout" }),
     });
-    dispose = t.dispose;
     mkdirSync(join(t.checkout, ".agents/planning"), { recursive: true });
     writeFileSync(join(t.checkout, ".agents/planning/PROJECT.md"), "# Project\n\n## Vision\n\nShip it.\n");
     const run = t.start(await builtin("milestone-close"), { goal: "milestone 2", goals: [] });
@@ -372,7 +364,6 @@ describe("P04-R7 sibling document writes through the real fs.write action", () =
       resolveWorkflow: (id) => (id === "lp.close" ? lpClose : builtinWorkflow(id)),
       human: () => ({ answer: "", answer_kind: "timeout" }),
     });
-    dispose = t.dispose;
     const run = t.start(await builtin("milestone-close"), { goal: "milestone 3", goals: [] });
     const summary = await Promise.race([run.done, new Promise((_, reject) => setTimeout(() => reject(new Error("STALL: " + JSON.stringify((t.db as never as { prepare(q: string): { all(...a: unknown[]): Row[] } }).prepare("SELECT node_id,state,substr(error,1,160) e FROM lane_pilot_wf_step WHERE run_id=?").all(run.runId)) + " spawns=" + t.spawned.length + " sends=" + t.sends.length)), 20000))]) as Awaited<typeof run.done>;
     expect(summary.status, summary.error ?? undefined).toBe("succeeded");
@@ -390,7 +381,6 @@ describe("P04-R7 sibling document writes through the real fs.write action", () =
     const bigRoadmap = Array.from({ length: 5000 }, (_, i) => `- [x] phase ${i + 1} — done`).join("\n") + "\n\n## Backlog\n\n- later\n";
     {
       const t = await setup({});
-      dispose = t.dispose;
       mkdirSync(join(t.checkout, ".agents/planning"), { recursive: true });
       writeFileSync(join(t.checkout, ".agents/planning/ROADMAP.md"), bigRoadmap);
       const summary = await t.start(phaseAdd, { phases: ["1 coverage", "2 the gate"] }).done;
@@ -408,7 +398,6 @@ describe("P04-R7 sibling document writes through the real fs.write action", () =
       // The read answers a sliced body under the whole-file hash (truncated:true): the action must refuse,
       // never CAS-write the slice plus rows — the tail past the cap would be silently dropped.
       const t = await setup({}, { truncateReads: true });
-      dispose = t.dispose;
       mkdirSync(join(t.checkout, ".agents/planning"), { recursive: true });
       writeFileSync(join(t.checkout, ".agents/planning/ROADMAP.md"), bigRoadmap);
       const summary = await t.start(phaseAdd, { phases: ["1 coverage"] }).done;
@@ -429,7 +418,6 @@ describe("P04-R7 sibling document writes through the real fs.write action", () =
       // The SDK's real absent shape — code unknown_error carrying a file-scoped serverCode — is absence:
       // the create-only write lands and the path is marked engine-written after the receipt.
       const t = await setup({}, { readError: { code: "unknown_error", serverCode: "file_not_found" } });
-      dispose = t.dispose;
       const summary = await t.start(phaseAdd, { phases: ["1 coverage"] }).done;
       expect(summary.status, summary.error ?? undefined).toBe("succeeded");
       expect(file(t.checkout, ".agents/planning/ROADMAP.md")).toContain("- [ ] 1 coverage — grow");
@@ -438,7 +426,6 @@ describe("P04-R7 sibling document writes through the real fs.write action", () =
     {
       // `project_not_found` is not file absence: the run refuses and nothing is written or marked.
       const t = await setup({}, { readError: { code: "unknown_error", serverCode: "project_not_found" } });
-      dispose = t.dispose;
       const summary = await t.start(phaseAdd, { phases: ["1 coverage"] }).done;
       expect(summary.status, JSON.stringify((t.db as never as { prepare(q: string): { all(...a: unknown[]): Row[] } }).prepare("SELECT node_id,state,substr(error,1,200) e FROM lane_pilot_wf_step WHERE run_id=?").all(summary.runId))).toBe("failed");
       expect(file(t.checkout, ".agents/planning/ROADMAP.md")).toBeNull();
@@ -447,11 +434,47 @@ describe("P04-R7 sibling document writes through the real fs.write action", () =
     {
       // A CAS conflict throws before the receipt: no bytes land and the engine-write mark stays empty.
       const t = await setup({}, { writeOutcome: "conflict" });
-      dispose = t.dispose;
       const summary = await t.start(phaseAdd, { phases: ["1 coverage"] }).done;
       expect(summary.status).toBe("failed");
       expect(file(t.checkout, ".agents/planning/ROADMAP.md")).toBeNull();
       expect(writtenByEngineSince(t.checkout, 0).size).toBe(0);
+    }
+    {
+      // An explicit path that renders empty is a refusal, never a silent fall-back into the preserved ROADMAP.md.
+      const emptyPath = wf({
+        id: "t-phase-add-empty",
+        inputs: [{ name: "phases", type: "any" }],
+        outputs: [],
+        nodes: [{ id: "add", type: "action", action: "lp.phase_add", params: { goal: "grow", path: "" }, output: [{ name: "added", type: "array" }, { name: "count", type: "number" }] }],
+        edges: [{ from: "start", to: "add" }, { from: "add", to: "end" }],
+      });
+      const t = await setup({});
+      mkdirSync(join(t.checkout, ".agents/planning"), { recursive: true });
+      writeFileSync(join(t.checkout, ".agents/planning/ROADMAP.md"), "# kept\n");
+      const summary = await t.start(emptyPath, { phases: ["1 coverage"] }).done;
+      expect(summary.status).toBe("failed");
+      expect(file(t.checkout, ".agents/planning/ROADMAP.md")).toBe("# kept\n");
+      expect(writtenByEngineSince(t.checkout, 0).size).toBe(0);
+    }
+  });
+
+  it("lp.doc_path validates the raw doc name: blank, newline and over-120 refuse; exact valid names pass through", async () => {
+    const docPath = wf({
+      id: "t-doc-path",
+      inputs: [{ name: "skill", type: "any" }],
+      outputs: [],
+      nodes: [{ id: "dir", type: "action", action: "lp.doc_path", params: { dir: ".agents/forge/skills", doc: "{{$inputs.skill}}" }, output: [{ name: "path", type: "string" }] }],
+      edges: [{ from: "start", to: "dir" }, { from: "dir", to: "end" }],
+    });
+    for (const unsafe of ["", "   ", "has\nnewline", "x".repeat(121), " trailing ", "a/b", "a\\b", "..", ".hidden", "~root"]) {
+      const t = await setup({});
+      const summary = await t.start(docPath, { skill: unsafe }).done;
+      expect(summary.status, `${JSON.stringify(unsafe)} was not refused`).toBe("failed");
+    }
+    for (const safe of ["lp-writer", "review.skills_v2", "S-K-I-L-L", "x".repeat(120)]) {
+      const t = await setup({});
+      const summary = await t.start(docPath, { skill: safe }).done;
+      expect(summary.status, `${safe} should be accepted`).toBe("succeeded");
     }
   });
 
@@ -468,7 +491,6 @@ describe("P04-R7 sibling document writes through the real fs.write action", () =
     });
     const original = "# Existing roadmap\n\n- [x] old phase — kept\n\n## Backlog\n\n- later\n";
     const t = await setup({});
-    dispose = t.dispose;
     mkdirSync(join(t.checkout, ".agents/planning"), { recursive: true });
     writeFileSync(join(t.checkout, ".agents/planning/ROADMAP.md"), original);
     const summary = await t.start(writeThenAdd, { phases: ["1 coverage", "2 the gate"] }).done;

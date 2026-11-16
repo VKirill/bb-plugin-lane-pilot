@@ -348,7 +348,8 @@ export function registerProjectActions(engine: WorkflowEngine, ctx: ServerCore, 
     // The rows land in the roadmap the writer actually produced: ROADMAP.md, or ROADMAP.new.md when a non-overwrite
     // write diverted — never anywhere else, and never silently into the preserved original.
     const rendered = c.render(str(params.path)).trim();
-    const path = rendered === "" ? ".agents/planning/ROADMAP.md" : rendered;
+    if (params.path !== undefined && rendered === "") throw new Error("lp.phase_add: the roadmap target rendered empty — the rows would land nowhere real");
+    const path = params.path === undefined ? ".agents/planning/ROADMAP.md" : rendered;
     if (path !== ".agents/planning/ROADMAP.md" && path !== ".agents/planning/ROADMAP.new.md") throw new Error(`lp.phase_add: the roadmap target "${path}" is not .agents/planning/ROADMAP.md or ROADMAP.new.md`);
     const goal = oneLine(c.render(str(params.goal)), 600);
     const phases = list(c.resolve("frame.phases") ?? c.resolve("recap.phases") ?? c.resolve("$inputs.phases")).map((value) => oneLine(str(value), 200)).filter(Boolean).slice(0, 50);
@@ -405,7 +406,8 @@ export function registerProjectActions(engine: WorkflowEngine, ctx: ServerCore, 
   action("lp.doc_path", async (c, _rt) => {
     const params = rec(rec(c.node).params);
     const phase = c.render(str(params.phase_id)).trim();
-    const doc = oneLine(c.render(str(params.doc)), 120) || "DOC.md";
+    const doc = params.doc === undefined ? "DOC.md" : c.render(str(params.doc));
+    if (params.doc !== undefined && (doc !== doc.trim() || doc === "" || doc.includes("\n") || doc.includes("\r") || doc.length > 120)) throw new Error(`lp.doc_path: the doc name is not a clean single name ("${doc}")`);
     if (doc.includes("/") || doc.includes("\\") || doc.includes("..") || doc.includes("\0") || doc.startsWith(".") || doc.startsWith("~")) throw new Error(`lp.doc_path: unsafe doc name "${doc}"`);
     // A fixed folder other than the phases/research homes (the skills forge): the doc segment is validated the same
     // way and the folder is the graph's own constant — still rejected when it would leave the checkout.
