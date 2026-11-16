@@ -68,6 +68,7 @@ The array is positional: the hub records every applied statement by index and re
 
 - [Anamnesis and owner profile](anamnesis.md)
 - [Lane Pilot architecture](architecture.md)
+- [Repository conventions and boundaries](conventions.md)
 - [Build and deploy Lane Pilot](deployment.md)
 - [Development](guide/development.md)
 - [Lane Pilot overview](overview.md)

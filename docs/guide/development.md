@@ -62,3 +62,9 @@ Release notes of every version are in [CHANGELOG.md](../../CHANGELOG.md); ADRs a
 ## Sources
 
 Where this page's claims start in the code: `package.json:1-21`, `src/rooms/migrations.ts:1-60`, `src/rooms/storage/database.ts:20-26`, `scripts/lp-drill.py:123-143`. The deep pages linked above cite the rest.
+
+<!-- lane-pilot:backlinks -->
+## Referenced by
+
+- [Repository conventions and boundaries](../conventions.md)
+- [Testing and verification](../testing.md)

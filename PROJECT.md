@@ -1,6 +1,6 @@
 ---
 title: Lane Pilot project facts
-updated: 2026-11-09
+updated: 2026-11-16
 sources:
   - package.json
   - server.ts
@@ -30,6 +30,8 @@ sources:
   - src/rooms/runs/server/task-graph.ts
   - src/rooms/runs/server/rpc/runs.ts
   - docs/architecture.md
+  - docs/conventions.md
+  - docs/testing.md
   - docs/gotchas.md
   - docs/deployment.md
   - docs/data-model.md
@@ -68,9 +70,10 @@ sources:
 ## Conventions
 
 - Server implementation belongs in a room server module or package; `server.ts` assembles modules ([architecture](docs/architecture.md#startup-and-service-composition)).
-- Cross-room imports use room public indices; packages do not import `src/` ([architecture](docs/architecture.md#dependency-boundaries)).
+- Cross-room imports use room public indices; packages do not import `src/` ([architecture](docs/architecture.md#dependency-boundaries), [conventions](docs/conventions.md)).
 - Contracts and methods are documented in [RPC and host-call contracts](docs/rpc-callers.md).
 - Tasks board and helper-thread graph behavior is documented in [Tasks board](docs/task-board.md).
+- Testing suites, isolation rules, and verification commands are documented in [testing](docs/testing.md).
 
 ## Common gotchas
 
@@ -101,6 +104,8 @@ See [deployment](docs/deployment.md#build) for command ownership and manifest in
 
 - [System overview](docs/overview.md)
 - [Architecture](docs/architecture.md)
+- [Conventions](docs/conventions.md)
+- [Testing](docs/testing.md)
 - [Deployment](docs/deployment.md)
 - [Data model](docs/data-model.md)
 - [Shared packages](docs/packages.md)

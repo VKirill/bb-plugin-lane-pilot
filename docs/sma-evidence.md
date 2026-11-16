@@ -260,3 +260,8 @@ the objects are in the repository.
 
 `npm run sma:facts` (hollow facts, provenance, contracts) and `npm run sma:facts:check` to verify; `npm run sma:mutate -- --stale`
 refreshes attestations whose file or test changed.
+
+<!-- lane-pilot:backlinks -->
+## Referenced by
+
+- [Testing and verification](testing.md)

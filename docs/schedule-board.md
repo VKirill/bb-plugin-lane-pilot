@@ -237,3 +237,4 @@ The same with `"task":{"kind":"errand","task":"Open https://example.com and repo
 ## Referenced by
 
 - [Orchestration and execution data](data-model/orchestration.md)
+- [invoice-send: an invoice in Kontur.Elba, checked, approved and sent](invoice-send.md)
