@@ -67,7 +67,7 @@
       },
       "rule": "code: judgeSharedTrial on the nightly bench. Wait and retire do not edit a prompt. Adopt lifts the hold and still does not write the prompt in this node",
       "out": {
-        "status": "held|trial|skipped",
+        "status": "held|trial|skipped|retired",
         "detail": "string"
       },
       "guards": {
