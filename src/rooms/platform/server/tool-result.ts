@@ -66,28 +66,7 @@ export type ObservedTool<S extends z.ZodType = z.ZodType> = {
   instructions?: string;
   parameters: S;
   execute: (params: z.output<S>, context: ObservedToolContext) => unknown;
-  /** Starts work (a writer, an errand, a specialist, a graph): refused in a turn that another chat's message started (owner-turn.ts). */
-  startsWork?: boolean;
 };
-
-type WorkStartGate = (context: ObservedToolContext, toolName: string) => Promise<string | null>;
-let workStartGate: WorkStartGate | null = null;
-/** Installed once by createCore; null in tests that register tools without a hub. */
-export function setWorkStartGate(gate: WorkStartGate | null): void { workStartGate = gate; }
-
-/** Why a tool that starts work may not run in this turn (a turn another chat's message started), or null: the gate a `startsWork` tool passes, for a path that starts work inside a tool that does not. */
-export async function workStartRefusal(context: ObservedToolContext, toolName: string): Promise<string | null> {
-  return workStartGate ? workStartGate(context, toolName) : null;
-}
-
-function gatedExecute<S extends z.ZodType>(tool: ObservedTool<S>): ObservedTool<S>["execute"] {
-  if (!tool.startsWork) return tool.execute;
-  return async (params, context) => {
-    const refusal = workStartGate ? await workStartGate(context, tool.name) : null;
-    if (refusal) throw new ToolError(refusal, { code: "not_owner_turn", retryable: false, sideEffects: "none" });
-    return tool.execute(params, context);
-  };
-}
 
 /** Every tool registered on one plugin API, unwrapped, so the PM's multiplexed family tools can reuse the handlers (tool-families.ts). */
 const registered = new WeakMap<object, Map<string, ObservedTool>>();
@@ -101,8 +80,8 @@ export function registerObservedTool<S extends z.ZodType>(
   tool: ObservedTool<S>,
 ): void {
   const book = registered.get(agents) ?? new Map<string, ObservedTool>();
-  const execute = gatedExecute(tool);
-  // The book hands the family multiplexer (tool-families.ts) the same gated handler, so no path around the gate exists.
+  const execute = tool.execute;
+  // Direct tools and family calls use the same handler and its PM/project checks.
   book.set(tool.name, { ...tool, execute } as unknown as ObservedTool);
   registered.set(agents, book);
   const presentation = boundPresentation(agents, tool.name);

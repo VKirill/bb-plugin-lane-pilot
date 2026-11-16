@@ -85,7 +85,7 @@ export function mountHandoff(ctx: ServerContext, options: { agents?: AgentDefini
   const registry = buildCapabilityRegistry(options.agents ?? bundledAgentDefinitions());
 
   registerObservedTool(bb.agents, {
-    name: "lane_pilot_handoff_create", startsWork: true,
+    name: "lane_pilot_handoff_create",
     description: "Give a task to another agent as a typed card (objective, acceptance, inputs, budget, deadline); returns the card text and its id. With `targetProjectId` it starts a new PM chat in that other BB project (`targetSectionId`: in that section) with the card as its first message.",
     instructions: [
       "Use from the active Lane Pilot PM thread. Name `toAgent`, or describe the work in `request` and the recipient is chosen from the agent registry.",

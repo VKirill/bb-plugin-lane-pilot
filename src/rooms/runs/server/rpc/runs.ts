@@ -256,7 +256,7 @@ export function runsRpc(ctx: ServerCore, services: Services) {
         groups: areas.length ? areas.map((area) => ({ area, titles: draft.contracts.filter((c) => String((c as { area?: string }).area ?? "") === area).map((c) => String((c as { display_title?: string }).display_title ?? "")) })) : [{ area: "", titles }] };
     },
     // The card's button: the same createFromDraft and the same dispatch function as the PM's confirmed call and lane_pilot_dispatch_writer.
-    // A window that names its project (projectId) creates only that project's drafts. No owner-turn gate: this is the owner's own click, not an agent turn.
+    // A window that names its project (projectId) creates only that project's drafts. This is the owner's own card click; project scope still applies.
     task_draft_create: async ({ draftId, projectId }) => {
       const draft = getDraftOf(db, draftId, projectId);
       if (!draft) throw new Error(projectId ? "draft_not_in_project" : `draft ${draftId} does not exist`);

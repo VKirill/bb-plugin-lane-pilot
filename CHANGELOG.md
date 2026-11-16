@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.585
+
+- **PMs accept task assignments from other BB agents.** Removed the work-start owner-turn restriction and its duplicate draft-creation check. Direct tools and multiplexed tool handlers retain their own PM/project checks. The canonical PM prompt, startup instructions and routing/live-trial guidance accept agent assignments without demanding another owner message, preserve the actual sender, and distinguish assignments from reports and service notices. Explicit proposals, workflow human confirmations and owner-word provenance remain unchanged. `tests/agent-task-delegation.test.ts` reproduces the former rejection through the real plugin and checks both registered handler paths; `tests/workflow/router-tools.test.ts` covers first-live-run recovery for tested workflows and subworkflows. Targeted checks and typecheck pass; live delegated execution is a separate post-deployment acceptance step.
+
 ## 0.1.584
 
 - **Composer-hook checking uses the current contract path.** `npm run check:composer-hook` now reads `src/rooms/contracts/composer-selection.ts` after its move; the stale path caused an `ENOENT` before checking imports. The command and documentation audit pass on the corrected path.

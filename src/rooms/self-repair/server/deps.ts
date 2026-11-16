@@ -41,8 +41,6 @@ export type ObservedTool<S extends z.ZodType = z.ZodType> = {
   instructions?: string;
   parameters: S;
   execute: (params: z.output<S>, context: { threadId: string; projectId: string; signal: AbortSignal }) => unknown;
-  /** Starts work (a writer, an errand, a specialist, a graph): refused in a turn that another chat's message started. */
-  startsWork?: boolean;
 };
 
 export type SelfRepairDeps = {

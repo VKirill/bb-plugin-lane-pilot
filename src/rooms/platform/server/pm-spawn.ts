@@ -11,7 +11,7 @@ import { noteZcodeThread, reserveZcodeSlot } from "./zcode-slot";
 import { withLaunchTuning } from "./launch-tuning";
 
 /**
- * The PM waits for real work: the owner writes the task, or a phase the owner/PM already opened carries its goal.
+ * The PM waits for real work: the owner or another BB agent assigns the task, or an already-open phase carries its goal.
  * Activation itself assigns nothing — no fixture task, no write probes, no writer dispatch (0.1.573: the old
  * non-native prompt made every CLI/programmatic activation demo a fixture task into the project repo first).
  */
@@ -20,7 +20,7 @@ export function pmPrompt(runId: string, config: PrototypeConfig, managedWorkspac
     return [
       "You are the Lane Pilot PM in the selected role.",
       `Run id: ${runId}. Stay in this thread's current workspace.`,
-      "Wait for the user's task. Do not write code, run write probes, or dispatch a writer until the user asks.",
+      "Wait for the user's task or a task delegated by another BB agent. Do not invent work, write code, run write probes, or dispatch a writer until asked.",
     ].join("\n");
   }
   return [
@@ -28,7 +28,7 @@ export function pmPrompt(runId: string, config: PrototypeConfig, managedWorkspac
     managedWorkspace
       ? `Run id: ${runId}. This run is bound to the current BB-managed worktree; use the current workspace and do not target the base checkout at ${config.writerWorkspacePath}.`
       : `Run id: ${runId}. The project workspace is ${config.writerWorkspacePath}.`,
-    "Wait for the task: the owner writes it, or an already-open phase carries its goal. Do not invent tasks, write code, run probes, or dispatch a writer until asked. Do not attempt to activate another PM.",
+    "Wait for the task: the owner or another BB agent writes it, or an already-open phase carries its goal. Do not invent tasks, write code, run probes, or dispatch a writer until asked. Do not attempt to activate another PM.",
   ].join("\n");
 }
 

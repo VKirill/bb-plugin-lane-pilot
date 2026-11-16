@@ -43,6 +43,7 @@ flowchart LR
 ## 1. The PM chat as the door
 
 - The owner enables Lane Pilot in the composer ("Enable Lane Pilot") of a new project chat. The UI needs a selected project and a resolvable writer binding, then starts the chat as a Claude Code PM session (it tries `claude-opus-5-5[1m]`, then `claude-opus-5-5`). See `docs/native-agent.md`.
+- Direct task messages from another BB agent are actionable, including the first live run of a routed graph. The PM keeps the real sender, asks the requester only for missing information, and does not require an extra owner message because the assignment came from an agent. Reports and service notices do not become new tasks. Project/PM boundaries, explicit owner stops and workflow human confirmations still apply.
 - The PM prompt (`LANE_PILOT_PM_SESSION`) says: send every repository change, however small, through `lane_pilot_dispatch_writer`. The shell guard refuses PM edits of project files. The PM may write only `.agents/`, its chat folder, `docs/plans/`, `.env*` and `/tmp`.
 - Asking the owner is the exception: only for business meaning, money or irreversible data, a missing secret, or a real ambiguity. A failing test or contract is dispatched as a fix, not asked about.
 - Size rule in the prompt: one task is one outcome a strong writer finishes in 30 to 120 minutes (a page, a feature, an issue). Findings about one page go into one task; findings about different areas become separate tasks that run side by side.

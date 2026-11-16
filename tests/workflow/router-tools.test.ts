@@ -58,6 +58,26 @@ const ctx = { threadId: PM, projectId: PROJECT };
 const parse = (text: string) => JSON.parse(text) as Record<string, any>;
 
 describe("lane_pilot_run_workflow", () => {
+  it.each([
+    ["code-review", "code-review", {}],
+    ["full-lifecycle", "lp.plan", { goal: "Check the delegated programming task" }],
+  ] as const)("keeps the explicit liveTrial choice for %s without requiring a new owner message", async (workflowId, testedId, inputs) => {
+    const { db } = setup();
+    const store = await loadWorkflowStore({ builtin: published().map((source) => ({ ...source, value: {
+      ...(source.value as object), ...((source.value as { id: string }).id === testedId ? { status: "tested" } : {}),
+    } })) });
+    const { engine, started } = fakeEngine();
+    const deps = depsOf(db, store, engine);
+    const refusal = parse(await runWorkflowTool(deps, { workflowId, inputs }, ctx));
+    expect(refusal).toMatchObject({ status: "refused" });
+    expect(refusal.reason).toContain("owner or a BB agent");
+    expect(refusal.reason).toContain("human confirmations");
+    expect(started).toHaveLength(0);
+    const accepted = parse(await runWorkflowTool(deps, { workflowId, inputs, liveTrial: true }, ctx));
+    expect(accepted).toMatchObject({ workflowRunId: "wfrun_1", status: "running" });
+    expect(started).toHaveLength(1);
+  });
+
   it("refuses an unknown id and lists what can start", async () => {
     const { db } = setup();
     const answer = parse(await runWorkflowTool(depsOf(db, publishedStore, fakeEngine().engine), { workflowId: "no-such", inputs: {} }, ctx));
@@ -223,13 +243,15 @@ describe("lane_pilot_route", () => {
     expect(answer.candidates.length).toBeLessThanOrEqual(10);
   });
 
-  it("offers a tested chain on the shipped statuses with the «not yet run live» flag, and tells the PM to ask the owner for liveTrial", async () => {
+  it("offers a tested chain on the shipped statuses with the «not yet run live» flag, and authorizes an assigned first live run without an extra owner turn", async () => {
     const { db } = setup();
     const shipped = await loadWorkflowStore({ builtin: BUILTIN_SOURCES });
     const answer = parse(await routeTool(depsOf(db, shipped, fakeEngine().engine), { intent: "Нужен кокон страниц для интернет-магазина чая, с исследованием аудитории" }, ctx));
     expect(answer).toMatchObject({ decision: "route", workflowId: "seo-cocoon", notYetRunLive: true });
     expect(answer.candidates[0]).toMatchObject({ id: "seo-cocoon", notYetRunLive: true });
     expect(answer.next).toContain("liveTrial: true");
+    expect(answer.next).toContain("owner or a BB agent");
+    expect(answer.next).toContain("an agent assignment needs no extra owner message");
     expect(answer.warnings.join(" ")).toContain("has not run for real yet");
   });
 

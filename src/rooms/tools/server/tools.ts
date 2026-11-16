@@ -34,7 +34,7 @@ import { mountUsageSnapshots } from "../../usage/server";
 import { mountToolFamilies } from "./tool-families";
 import { CURRICULUM_KV_KEY, runCurriculumWeekly } from "./self-improve";
 import { createFromDraft, dispatchChecked, getDraft, proposeDraft } from "../../tasks/server";
-import { registerObservedTool, requirePmThread, requirePmThreadRun, scheduleIsolated, workStartRefusal } from "../../platform/server";
+import { registerObservedTool, requirePmThread, requirePmThreadRun, scheduleIsolated } from "../../platform/server";
 import { lastPmOwnerMessageAt, selfRepairDeps } from "../../self-repair/server";
 import { ToolError } from "../../contracts/server";
 import { compactDispatchReply, compactReceipt, stageDetail } from "../../runs/server";
@@ -164,7 +164,7 @@ export function registerTools(ctx: ServerCore, services: Services, familyContrib
   });
 
   registerObservedTool(bb.agents, {
-    name:"lane_pilot_dispatch_writer", startsWork: true,
+    name:"lane_pilot_dispatch_writer",
     description:"Start a task-v2 contract with the configured native BB writer and return run/attempt identity immediately.",
     instructions:"Use only from a Lane Pilot PM thread. One call per task (one page or feature). Every task carries display_title (the language the owner writes in, at most 60 characters, what changes for a person), kind (" + TASK_KINDS.join(", ") + ") and area; the first dispatch of a run also carries objective. Overlapping owns_paths or area wait for the open task; depends_on starts once those tasks are accepted. fixes_regressions: ids of the regression rows the task fixes (their quarantine skips it). Returns at once; Lane Pilot sends you the results; a task sent again while its family runs returns task_in_progress. risk is what breaks if the writer errs: low — a prototype, mock, static page, copy, layout, docs, tests; medium — behaviour people rely on; high — payments, auth, data, migrations, deploy. quality_mode wins over the project's: quick for a prototype or a page nobody ships yet (no critics, the checks still run), full when the owner asks for a thorough check, unset = standard by risk; qa_cases (full mode) run in the task's own graph after acceptance, give qa_url with them. A reason that starts verdict_block is a critic's block: do not send the task again unchanged. Red before green: at risk medium or more at least one verification item must fail on the base commit and pass only when the work is done." + "\n" + gateVocabularyLines().join("\n"),
     parameters:z.object({ confirm:z.literal(true), plan:z.string().min(1), task:taskV2Schema.optional(), baseRef:z.string().trim().min(1).max(240).optional(),
@@ -179,7 +179,7 @@ export function registerTools(ctx: ServerCore, services: Services, familyContrib
   });
 
   registerObservedTool(bb.agents, {
-    name:"lane_pilot_propose", startsWork: false,
+    name:"lane_pilot_propose",
     description:"Propose a task-v2 (or a batch of them) to the owner without starting it: stores a draft, prints its card, and starts nothing until the owner says so.",
     instructions:"Use only from a Lane Pilot PM thread when the owner asked what you would do, not to do it. Send task for one draft or tasks for a batch; nothing is enqueued. When the owner answers «да», call this tool again with draftId and create:true — that is the same enqueue path as the card's «Создать» button, so a task is never enqueued twice. It is refused for a draft another chat proposed and for a draft proposed after the owner's last message: wait for the owner's «да» (or the card click) in a new message.",
     parameters:z.object({
@@ -189,9 +189,6 @@ export function registerTools(ctx: ServerCore, services: Services, familyContrib
     execute: async (params, context) => {
       if (params.draftId) {
         if (!params.create) return JSON.stringify({ error:`draftId without create:true does nothing` });
-        // Creating starts work: the same owner-turn gate lane_pilot_dispatch_writer passes (startsWork), then the same dispatch function per contract.
-        const turnRefusal = await workStartRefusal(context, "lane_pilot_dispatch_writer");
-        if (turnRefusal) throw new ToolError(turnRefusal, { code:"not_owner_turn", retryable:false, sideEffects:"none" });
         const draft = getDraft(db, params.draftId);
         // A draft of another project is not this PM's to create (the card's own RPC task_draft_create keeps its project check and is the owner's click).
         if (!draft || draft.projectId !== context.projectId) return JSON.stringify({ error:`draft ${params.draftId} does not exist` });
