@@ -103,13 +103,21 @@ export function registerProjectActions(engine: WorkflowEngine, ctx: ServerCore, 
     return { uncovered: ids.filter((id) => !covered.has(id)), covered: ids.filter((id) => covered.has(id)), total: ids.length, matrix };
   };
 
+  // The run a milestone close acts on: an explicit $inputs.run_id, else the PM run being closed. An explicit id that is
+  // not a single safe path segment is rejected outright — falling back silently would read, archive or record a
+  // different run than the caller named. status, archive and record all resolve through this one selector.
+  const closeTargetRunId = (c: { resolve: (ref: string) => unknown }, rt: ChainRuntime): string => {
+    const requested = str(c.resolve("$inputs.run_id"));
+    if (requested && (/[/\\]/.test(requested) || requested === "." || requested === "..")) throw new Error(`run_id must be a single path segment, got "${requested}"`);
+    return requested || str(rt.runId);
+  };
+
   action("lp.run_status", async (c, lane) => {
     const rt = needLanePilot(lane, "lp.run_status");
-    const runId = str(c.resolve("$inputs.run_id")) || rt.runId;
-    // The milestone record's filename: the explicit target run when it is a safe single path segment, else the run being
-    // closed (the PM's run id — never the workflow engine's own wfrun id).
-    const requested = str(c.resolve("$inputs.run_id"));
-    const effective_run_id = requested && !/[/\\]/.test(requested) && requested !== "." && requested !== ".." ? requested : runId || c.runId;
+    const runId = closeTargetRunId(c, rt);
+    // The milestone record's filename: the same resolved target run status and archive act on; when no PM runtime id
+    // exists (unit worlds) the engine run id is the last-resort name, never an empty segment.
+    const effective_run_id = runId || str(c.runId);
     const open = listOpenAttempts(db).filter((row) => row.run_id === runId);
     const tasks = listTaskIdsForRun(db, runId);
     const latest = tasks.map((taskId) => listAttemptsForTask(db, runId, taskId).at(-1)).filter(Boolean) as Array<{ state: string }>;
@@ -151,7 +159,7 @@ export function registerProjectActions(engine: WorkflowEngine, ctx: ServerCore, 
 
   action("lp.run_close", async (c, lane) => {
     const rt = needLanePilot(lane, "lp.run_close");
-    const runId = str(c.resolve("$inputs.run_id")) || rt.runId;
+    const runId = closeTargetRunId(c, rt);
     // The PM's run is closed by the PM chat's own lifecycle (closeAbandonedRuns); this marks the workflow's end and leaves the run to it.
     return { archived: Boolean(getRun(db, runId)) };
   });

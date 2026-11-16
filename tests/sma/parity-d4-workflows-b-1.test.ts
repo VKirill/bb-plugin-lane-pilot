@@ -317,6 +317,21 @@ describe("parity d4 workflows b1", () => {
     expect(readFileSync(join(t.checkout, ".agents/retro/LIVING.md"), "utf8")).toMatch(/INS-aaa11111[^\n]*last seen Stats export/);
   });
 
+  it("[sma:k_pl_milestones] the record run id is the explicit target, else the PM run; an unsafe explicit id is refused by the real lp.run_status", async () => {
+    const t = await setup({});
+    dispose = t.dispose;
+    const probe = () => chain({ inputs: [{ name: "run_id", type: "string", required: false }],
+      nodes: [{ id: "go", type: "action", action: "lp.run_status", out: { effective_run_id: "string" } },
+        { id: "done", type: "action", action: "emit", map: { effective_run_id: "go.effective_run_id" } }],
+      edges: [{ from: "start", to: "go" }, { from: "go", to: "done" }] });
+    const runStatus = (input: Row) => t.start(probe(), input).done;
+    expect(((await runStatus({ run_id: RUN })).output as Row).effective_run_id).toBe(RUN);
+    expect(((await runStatus({})).output as Row).effective_run_id).toBe(RUN);
+    const refused = await runStatus({ run_id: "../other-run" });
+    expect(refused.status).toBe("failed");
+    expect(existsSync(join(t.checkout, ".agents/milestones"))).toBe(false);
+  });
+
   it("[sma:k_pl_milestones] the archive folder is a safe slug plus a hash of the full name; long goals with one beginning do not collide; a failing write never stops the close", async () => {
     const t = await setup({});
     dispose = t.dispose;
