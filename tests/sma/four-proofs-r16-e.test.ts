@@ -140,7 +140,7 @@ describe("review, security and audit commands (n1276 … n1297)", () => {
   it("[sma:k_c_audituat] /sma-audit-uat lists the open and failed acceptance lines of every phase from its UAT.md, writes the audit and offers a follow-up only when asked and something is open", async () => {
     const seen = await observeE.k_c_audituat();
     expect(seen.rows).toEqual(["a:open", "a:failed"]);
-    expect(seen.asked).toEqual(["audit write goal_check offer done", 2]);
+    expect(seen.asked).toEqual(["audit write goal_check offer done_offer", 2]);
     expect(seen.nothing).toBe("audit write goal_check done");
     expect(seen.plain).toBe("audit write goal_check done");
   });

@@ -528,7 +528,6 @@
       "from": "scope_freeze",
       "to": "blocked",
       "pass": "artifact",
-      "when": "scope_freeze.answer_kind == 'timeout' || (scope_freeze.answer_kind == 'edited' && visits('page_map') >= 2)",
       "label": "owner approval unavailable"
     },
     {
@@ -541,7 +540,6 @@
       "from": "briefs",
       "to": "blocked",
       "pass": "artifact",
-      "when": "briefs.all_complete != true",
       "label": "incomplete brief batch"
     },
     {
