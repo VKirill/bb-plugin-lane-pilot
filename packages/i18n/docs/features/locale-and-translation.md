@@ -2,7 +2,7 @@
 title: Locale resolution and translation
 type: component
 created: 2026-10-24
-updated: 2026-11-15
+updated: 2026-11-16
 status: active
 confidence: high
 tags: [i18n, locale, translations]
@@ -53,6 +53,7 @@ sources:
   - src/rooms/workflow/ui/workflow-actions.tsx
   - src/rooms/ui-shell/ui/setting-copy.ts
   - src/rooms/workflow/ui/workflow-library-parts.tsx
+  - src/rooms/runs/ui/thread-live.tsx
 ---
 # Locale resolution and translation
 
@@ -132,6 +133,7 @@ The run card selects labels by attempt state and maps background-stage labels be
 | `ckWorkerRunning` | `packages/i18n/src/i18n-cockpit.ts:122`, `packages/i18n/src/i18n-cockpit.ts:331` | The day screen displays a worker's running count and task names while that worker has running work (`src/rooms/cockpit/ui/screens-day.tsx:193`) |
 | `ckMemoryWeak` | `packages/i18n/src/i18n-cockpit.ts:100`, `packages/i18n/src/i18n-cockpit.ts:309` | The cockpit shows this note when memory search returns related records without a confident answer (`src/rooms/cockpit/ui/screens-ops.tsx:75`) |
 | `graphTurnsCeil`, `graphMonthCeil`, `graphMonthCeilOf` | `packages/i18n/src/i18n-graph.ts:5-7`, `packages/i18n/src/i18n-graph.ts:65-67` | The work breakdown labels a turn ceiling and monthly spend, with a separate label when a monthly cap is present (`src/rooms/work-graph/ui/work-breakdown.tsx:98-99`) |
+| `liveSessionOpen` | `packages/i18n/src/i18n-graph.ts:58`, `packages/i18n/src/i18n-graph.ts:119` | The thread live panel shows an open-session row with the run ID when `live.session` is present, opening the cockpit `tasks` view on click (`src/rooms/runs/ui/thread-live.tsx:85-91`) |
 | `nativeInstallFailed` | `packages/i18n/src/i18n.ts:151`, `packages/i18n/src/i18n.ts:1380` | The text of the error thrown when the Lane Pilot install reports a failure that differs from the previous one; `{error}` is filled by the caller (`src/rooms/native-install/native-install-lifecycle.ts:96`) |
 | `largeFileRead*` | `packages/i18n/src/i18n.ts:883-889`, `packages/i18n/src/i18n.ts:2112-2118` | The base dictionaries label task preparation as code scouting and supply the English and Russian help text for the separate helper, `read_first` line threshold, model picker, and helper failure behavior. These entries are translated copy; this package does not implement that helper. |
 | `cliOnlyTitle`, `cliOnlyHelp`, `settingOpsCliHelp`, `settingOpsPoolHelp` | `packages/i18n/src/i18n-improvement.ts:16-17`, `packages/i18n/src/i18n-improvement.ts:200-201`, `packages/i18n/src/i18n.ts:867-868`, `packages/i18n/src/i18n.ts:2096-2097` | Retired Lane Stack CLI flags are described as not applied with their stored values kept, in a disclosure that keeps the retired rows out of the live ops section (`src/rooms/pages/service-segment.tsx:191`); pool-size settings use the native run-policy help (`src/rooms/ui-shell/ui/setting-copy.ts:115-130`) |
