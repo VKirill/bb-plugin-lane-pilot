@@ -1,2 +1,1 @@
-// Only the node project (files that share the plugin modules with the files before them, vitest.config.ts) runs this setup.
-// Module state an earlier file left behind and a later file relies on being empty is cleared here, one line per known case.
+// The node project runs this setup for each file. Vitest isolates its module and mock registries; this setup restores worker env/cwd.

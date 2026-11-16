@@ -73,8 +73,8 @@ export default defineConfig({
     // One temp directory per run (TMPDIR for every worker of every project), removed after it: see tests/global-setup.ts.
     globalSetup: ["./tests/global-setup.ts"],
     projects: [
-      // Node tests share one module graph per worker (no per-file re-import of the whole plugin).
-      { extends: true, test: { name: "node", include: nodeTests, exclude: mocking, isolate: false, setupFiles: ["./tests/setup-jsdom.ts", "./tests/setup-shared-modules.ts"] } },
+      // Keep each node file's module and mock registries independent; setup-shared-modules restores worker env/cwd.
+      { extends: true, test: { name: "node", include: nodeTests, exclude: mocking, isolate: true, setupFiles: ["./tests/setup-jsdom.ts", "./tests/setup-shared-modules.ts"] } },
       { extends: true, test: { name: "node-isolated", include: mocking } },
       { extends: true, test: { name: "ui", include: uiTests, exclude: uiAlone, isolate: false } },
       { extends: true, test: { name: "ui-isolated", include: uiAlone } },
