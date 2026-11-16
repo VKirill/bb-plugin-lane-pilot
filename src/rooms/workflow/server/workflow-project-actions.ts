@@ -3,7 +3,7 @@ import { parseIntegrationGateSettings } from "./workflow-chain-runtime";
 import { getRun, getRunSettingsScopes, latestGateRun, listOpenAttempts, listOpenWorktrees, listTaskIdsForRun, listAttemptsForTask, loadProjectSettings, fullGateVerdict, saveProjectSetting } from "../../storage";
 import { getPhase, listPhases, oneLine, stateBlockText, stateHasHeader } from "../../phase";
 import { profilePairProblem, unsafeReason } from "../../anamnesis";
-import { bestEffort, sha256Hex } from "@lane-pilot/kit";
+import { bestEffort, isFsAbsent, sha256Hex } from "@lane-pilot/kit";
 import { writeReplacing } from "../../storage";
 import { list, rec, str, pmCheckout, quote, needLanePilot } from "./workflow-chain-runtime";
 import type { Row } from "./workflow-chain-runtime";
@@ -281,6 +281,33 @@ export function registerProjectActions(engine: WorkflowEngine, ctx: ServerCore, 
     return { findings: [] as Row[], notes: found.slice(0, 20).map((finding) => `${finding.file} ${finding.severity}: ${finding.evidence}`).join("\n"), critical_count: critical, rework: false };
   });
 
+  // The bounded CAS read the document-marking actions share with fs.write: the whole file, its real hash and size, or a
+  // thrown cause — a sliced, truncated or malformed answer is a refusal, never a base for a CAS write (the full-file
+  // sha256 over partial content is exactly how a >cap tail gets silently dropped).
+  const casRead = async (hostId: string, rootPath: string, rel: string): Promise<{ content: string; sha256: string }> => {
+    const files = bb.sdk.files as unknown as { read?: (args: Row) => Promise<unknown> };
+    if (typeof files.read !== "function") throw new Error(`the existing ${rel} is unreadable`);
+    const raw = await files.read({ hostId, rootPath, path: `${rootPath}/${rel}` });
+    if (raw === null || raw === undefined || typeof raw !== "object") throw new Error(`the existing ${rel} read returned an invalid result`);
+    const existing = raw as { content?: unknown; sha256?: unknown; sizeBytes?: unknown; truncated?: unknown };
+    if (existing.truncated === true) throw new Error(`the existing ${rel} read came back truncated`);
+    if (typeof existing.content !== "string") throw new Error(`the existing ${rel} read returned no text`);
+    if (typeof existing.sha256 !== "string" || !/^[a-f0-9]{64}$/i.test(existing.sha256)) throw new Error(`the existing ${rel} read returned an invalid hash`);
+    const sizeBytes = existing.sizeBytes, actualSize = Buffer.byteLength(existing.content, "utf8");
+    if (typeof sizeBytes !== "number" || !Number.isSafeInteger(sizeBytes) || sizeBytes !== actualSize) throw new Error(`the existing ${rel} read returned an invalid size`);
+    if (sizeBytes > 2_000_000) throw new Error(`the existing ${rel} exceeds the 2000000-byte read limit`);
+    if (existing.sha256.toLowerCase() !== sha256Hex(existing.content)) throw new Error(`the existing ${rel} read does not match its hash`);
+    return { content: existing.content, sha256: existing.sha256 };
+  };
+  const isMissing = (cause: unknown): boolean => {
+    if (isFsAbsent(cause)) return true;
+    if (!cause || typeof cause !== "object") return false;
+    const error = cause as { code?: unknown; serverCode?: unknown };
+    return error.code === "not_found" && ["file_not_found", "path_not_found", "host_file_not_found"].includes(String(error.serverCode ?? ""));
+  };
+  const writtenOutcome = (result: unknown): string =>
+    result && typeof result === "object" ? String((result as { outcome?: unknown }).outcome ?? "") : "";
+
   // The review range of a ship or phase review (SMA k_ws_range): `<base>..<head>`, `HEAD` standing in when the run ships the
   // checkout tip (empty head). Computing it here keeps the `..HEAD` fallback out of the graph's template language.
   action("lp.review_range", async (c, _rt) => {
@@ -300,17 +327,17 @@ export function registerProjectActions(engine: WorkflowEngine, ctx: ServerCore, 
     try {
       const checkout = await pmCheckout(rt);
       const root = (await planHome(rt.projectId, checkout)) ?? checkout.path;
-      const host = ctx.host as never as { call(m: string, i: unknown, o?: unknown): Promise<Record<string, unknown>> };
-      const current = await host.call("readBoundedFile", { requestedHostId: checkout.hostId, projectCwd: root, relativePath: path, offset: 0, maxLines: 4000 }, { hostId: checkout.hostId, timeoutMs: 20_000 });
-      const prev = typeof current.content === "string" ? current.content : "";
-      if (!stateHasHeader(prev) || typeof current.sha256 !== "string" || current.truncated === true) return { marked: false, path: "" };
+      // Existing-only: a missing, unreadable, truncated or malformed STATE.md gets no file created — only marked:false.
+      const current = await casRead(checkout.hostId, root, path);
+      const prev = current.content;
+      if (!stateHasHeader(prev)) return { marked: false, path: "" };
       const activity = `activity ${new Date().toISOString()} — shipped ${phase || "phase"}${pr ? ` ${pr}` : ""}`;
       const next = stateBlockText(prev, { phase, status: "shipped" }, { Session: [activity] }, true);
       if ("refused" in next) return { marked: false, path: "", refused: next.refused };
       if (root === checkout.path) noteEngineWrite(checkout.path, path);
       const written = await bb.sdk.files.write({ hostId: checkout.hostId, rootPath: root, path: `${root}/${path}`, content: next.text, contentEncoding: "utf8", createParents: true, expectedSha256: current.sha256 });
-      const outcome = written && typeof written === "object" ? (written as { outcome?: unknown }).outcome : undefined;
-      if (outcome !== undefined && outcome !== "written") return { marked: false, path: "", failed: String(outcome) };
+      const outcome = writtenOutcome(written);
+      if (outcome !== "written") return { marked: false, path: "", failed: outcome || "no write receipt" };
       return { marked: true, path };
     } catch (cause) {
       ctx.log(`ship state mark failed, the ship goes on: ${cause instanceof Error ? cause.message : String(cause)}`);
@@ -329,20 +356,17 @@ export function registerProjectActions(engine: WorkflowEngine, ctx: ServerCore, 
     if (!phases.length) return { added: [] as string[], count: 0 };
     const checkout = await pmCheckout(rt);
     const root = (await planHome(rt.projectId, checkout)) ?? checkout.path;
-    const host = ctx.host as never as { call(m: string, i: unknown, o?: unknown): Promise<Record<string, unknown>> };
     // A missing ROADMAP.md reads as empty and the create-only write below wins against a real file that could not be
-    // read: `expectedSha256: null` answers conflict on an existing file, so an unreadable one is never clobbered.
-    let current = await bestEffort(ctx.log, "roadmap read", host.call("readBoundedFile", { requestedHostId: checkout.hostId, projectCwd: root, relativePath: path, offset: 0, maxLines: 4000 }, { hostId: checkout.hostId, timeoutMs: 20_000 }), null);
-    if (!current || typeof current.content !== "string") {
-      // The bounded read RPC is absent on this host: probe the file over the command channel instead — present → the
-      // bytes plus our own hash feed the CAS write below; absent → the create-only write wins. Either way an
-      // unreadable-but-real ROADMAP.md answers conflict and is never clobbered.
-      const exists = await bestEffort(ctx.log, "roadmap probe", runOnHost(ctx.host, { hostId: checkout.hostId, cwd: root, command: `test -f ${quote(path)} && echo yes`, timeoutSec: 15, timeoutMs: 20_000 }).then((ran) => ran.stdout.trim() === "yes", () => false), false);
-      const text = exists ? (await bestEffort(ctx.log, "roadmap cat", runOnHost(ctx.host, { hostId: checkout.hostId, cwd: root, command: `cat ${quote(path)}`, timeoutSec: 15, timeoutMs: 20_000 }), null))?.stdout ?? null : null;
-      current = text === null ? null : { content: text, sha256: sha256Hex(text) };
+    // read: `expectedSha256: null` answers conflict on an existing file. A truncated or malformed read is a thrown
+    // refusal — never a base for a CAS write — so a tail past the read cap is never dropped.
+    let prev = "", expectedSha256: string | null = null;
+    try {
+      const current = await casRead(checkout.hostId, root, path);
+      prev = current.content;
+      expectedSha256 = current.sha256;
+    } catch (cause) {
+      if (!isMissing(cause)) throw cause;
     }
-    const prev = typeof current?.content === "string" ? current.content : "";
-    const expectedSha256 = typeof current?.sha256 === "string" ? current.sha256 : null;
     const eol = prev.includes("\r\n") ? "\r\n" : "\n";
     const rows = phases.map((name) => `- [ ] ${name}${goal ? ` — ${goal}` : ""}`);
     const lines = prev.split("\n").filter((line, at, all) => !(at === all.length - 1 && line === ""));
@@ -351,8 +375,8 @@ export function registerProjectActions(engine: WorkflowEngine, ctx: ServerCore, 
     else lines.push(...(lines.length && lines[lines.length - 1]!.trim() ? [""] : []), ...rows);
     if (root === checkout.path) noteEngineWrite(checkout.path, path);
     const written = await bb.sdk.files.write({ hostId: checkout.hostId, rootPath: root, path: `${root}/${path}`, content: `${lines.join("\n").replace(/\s+$/, "")}${eol}`, contentEncoding: "utf8", createParents: true, expectedSha256 });
-    const outcome = written && typeof written === "object" ? (written as { outcome?: unknown }).outcome : undefined;
-    if (outcome !== undefined && outcome !== "written") throw new Error(`lp.phase_add: the write of ${path} was not applied (${String(outcome)})`);
+    const outcome = writtenOutcome(written);
+    if (outcome !== "written") throw new Error(`lp.phase_add: the write of ${path} was not applied (${outcome || "no write receipt"})`);
     return { added: rows, count: rows.length };
   });
 

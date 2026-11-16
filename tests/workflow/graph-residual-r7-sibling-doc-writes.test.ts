@@ -45,7 +45,7 @@ afterEach(() => { dispose?.(); dispose = undefined; });
 
 /** The executor fixture of a chain run: same composition as production (registerChainExecutors registers fs.write,
  *  deliverable.validate and the lp.* actions), minus the parts this packet does not exercise. */
-async function setup(script: Script, options: { resolveWorkflow?: (id: string, version?: number) => Workflow | null; human?: (node: Row) => Row } = {}) {
+async function setup(script: Script, options: { resolveWorkflow?: (id: string, version?: number) => Workflow | null; human?: (node: Row) => Row; truncateReads?: boolean } = {}) {
   const checkout = mkdtempSync(join(tmpdir(), "lp-r7-"));
   execFileSync("git", ["init", "-q"], { cwd: checkout });
   writeFileSync(join(checkout, "README.md"), "hello\n");
@@ -98,6 +98,8 @@ async function setup(script: Script, options: { resolveWorkflow?: (id: string, v
           const filePath = String((args as { path?: unknown }).path ?? "");
           if (!existsSync(filePath)) throw Object.assign(new Error(`file not found: ${filePath}`), { code: "not_found", serverCode: "file_not_found" });
           const content = readFileSync(filePath, "utf8");
+          // The broken shape the data-loss review named: a sliced body under the whole-file hash.
+          if (options.truncateReads) return { content: content.split("\n").slice(0, 4000).join("\n"), sha256: sha256Hex(content), sizeBytes: Buffer.byteLength(content, "utf8"), contentEncoding: "utf8", truncated: true };
           return { content, sha256: sha256Hex(content), sizeBytes: Buffer.byteLength(content, "utf8"), contentEncoding: "utf8", truncated: false };
         },
       },
@@ -360,5 +362,43 @@ describe("P04-R7 sibling document writes through the real fs.write action", () =
     const summary = await Promise.race([run.done, new Promise((_, reject) => setTimeout(() => reject(new Error("STALL: " + JSON.stringify((t.db as never as { prepare(q: string): { all(...a: unknown[]): Row[] } }).prepare("SELECT node_id,state,substr(error,1,160) e FROM lane_pilot_wf_step WHERE run_id=?").all(run.runId)) + " spawns=" + t.spawned.length + " sends=" + t.sends.length)), 20000))]) as Awaited<typeof run.done>;
     expect(summary.status, summary.error ?? undefined).toBe("succeeded");
     expect(file(t.checkout, ".agents/planning/PROJECT.md")).toBeNull();
+  });
+
+  it("lp.phase_add preserves every byte of a >4000-line ROADMAP.md and refuses a truncated read outright", async () => {
+    const phaseAdd = wf({
+      id: "t-phase-add",
+      inputs: [{ name: "phases", type: "any" }],
+      outputs: [],
+      nodes: [{ id: "add", type: "action", action: "lp.phase_add", params: { goal: "grow" }, output: [{ name: "added", type: "array" }, { name: "count", type: "number" }] }],
+      edges: [{ from: "start", to: "add" }, { from: "add", to: "end" }],
+    });
+    const bigRoadmap = Array.from({ length: 5000 }, (_, i) => `- [x] phase ${i + 1} — done`).join("\n") + "\n\n## Backlog\n\n- later\n";
+    {
+      const t = await setup({});
+      dispose = t.dispose;
+      mkdirSync(join(t.checkout, ".agents/planning"), { recursive: true });
+      writeFileSync(join(t.checkout, ".agents/planning/ROADMAP.md"), bigRoadmap);
+      const summary = await t.start(phaseAdd, { phases: ["1 coverage", "2 the gate"] }).done;
+      expect(summary.status, summary.error ?? undefined).toBe("succeeded");
+      const after = file(t.checkout, ".agents/planning/ROADMAP.md")!;
+      expect(after.startsWith("- [x] phase 1 — done")).toBe(true);
+      expect(after).toContain("- [x] phase 5000 — done");
+      const backlogAt = after.indexOf("## Backlog");
+      expect(backlogAt).toBeGreaterThan(0);
+      expect(after.slice(0, backlogAt)).toContain("- [ ] 1 coverage — grow");
+      expect(after.slice(0, backlogAt)).toContain("- [ ] 2 the gate — grow");
+      expect(after.endsWith("- later\n")).toBe(true);
+    }
+    {
+      // The read answers a sliced body under the whole-file hash (truncated:true): the action must refuse,
+      // never CAS-write the slice plus rows — the tail past the cap would be silently dropped.
+      const t = await setup({}, { truncateReads: true });
+      dispose = t.dispose;
+      mkdirSync(join(t.checkout, ".agents/planning"), { recursive: true });
+      writeFileSync(join(t.checkout, ".agents/planning/ROADMAP.md"), bigRoadmap);
+      const summary = await t.start(phaseAdd, { phases: ["1 coverage"] }).done;
+      expect(summary.status).toBe("failed");
+      expect(file(t.checkout, ".agents/planning/ROADMAP.md")).toBe(bigRoadmap);
+    }
   });
 });
