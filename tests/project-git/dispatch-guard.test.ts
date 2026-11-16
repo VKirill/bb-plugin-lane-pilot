@@ -15,7 +15,7 @@ function fixture(workspace="/repo/section") {
   setRunThread(db,"run","pm-thread");
   const bb={...fake.bb,sdk:{...fake.bb.sdk,threads:{...fake.bb.sdk.threads,getPluginMetadata:async()=>({role:"pm",lanePilotRunId:"run"})},projects:{...fake.bb.sdk.projects,get:async()=>({sources:[{hostId:"h1",path:"/repo"}]})}}};
   const raw=vi.fn(async()=>({ok:true,state:"queued"}));
-  const projectGit={resolveScope:vi.fn(async()=>({kind:"repo",state:"origin",root:"/repo"})),bootstrap:vi.fn(async()=>({ok:true,root:"/repo",fullName:"octo/repo",url:"https://github.invalid/octo/repo",commit:"abc",branch:"main"}))};
+  const projectGit={resolveScope:vi.fn(async(_input:{taskKey?:string})=>({kind:"repo",state:"origin",root:"/repo"})),bootstrap:vi.fn(async()=>({ok:true,root:"/repo",fullName:"octo/repo",url:"https://github.invalid/octo/repo",commit:"abc",branch:"main"}))};
   const pool={acquire:vi.fn(async()=>()=>undefined),acquireFolder:vi.fn(async(_hostId:string,_path:string)=>()=>undefined)};
   const invalidateLiveFolder=vi.fn(async()=>undefined);
   const preparePlacement=vi.fn(async(input:{runId:string;hostId:string;runFolder:string;task:unknown;plan:string})=>({
@@ -52,6 +52,22 @@ it("preflights the placed nested repository and passes that placement through ra
   expect(f.projectGit.resolveScope).toHaveBeenCalledWith(expect.objectContaining({projectRoot:"/repo",sectionPath:"/repo/plugins/p"}));
   expect(f.raw).toHaveBeenCalledWith(expect.objectContaining({task:f.task}), expect.objectContaining({placement:expect.objectContaining({task:expect.objectContaining({project_cwd:"/repo/plugins/p"}),plan:"placed"})}));
   expect(f.projectGit.bootstrap).not.toHaveBeenCalled();
+});
+
+it("uses the collision-free prepared task id for the declined-key scope lookup", async()=>{
+  const f=fixture("/repo");
+  f.preparePlacement.mockResolvedValue({
+    placement:{ task:{...f.task,id:"T1.2",project_cwd:"/repo"}, plan:"task" },
+    binding:{ runId:"run", hostId:"h1", runFolder:"/repo", taskId:"T1.2", taskJson:"", plan:"task" },
+  } as never);
+  f.projectGit.resolveScope.mockImplementation(async(input)=>{
+    // T1 represents a prior owner decline; the prepared collision-free id must not inherit it.
+    if (input.taskKey === "T1") return {kind:"declined",reason:"prior task was declined"} as never;
+    expect(input.taskKey).toBe("T1.2");
+    return {kind:"repo",state:"origin",root:"/repo"} as never;
+  });
+  await expect(f.dispatch({threadId:"pm-thread",projectId:"project",task:f.task})).resolves.toMatchObject({ok:true,state:"queued"});
+  expect(f.projectGit.resolveScope).toHaveBeenCalledWith(expect.objectContaining({taskKey:"T1.2"}));
 });
 
 it("delegates root and nested-repository paths outside the frozen section to raw placeTask", async()=>{

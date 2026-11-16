@@ -27,6 +27,7 @@ import { gateResolverFor, gateRunVerdict } from "../../verification/server"
 import { latestGateRunForTask } from "../../storage"
 import { parseIntegrationGateSettings } from "../../contracts/integration-gate";
 import { canonicalJson, batchAdviceFor, baselineRedGuard, recoveryGuard, topicLoopGuard } from "./dispatch-guards";
+import { createPlacementReader, placementDriftReason, placementMatches, type PreparedPlacement, type TaskPlacement } from "./placement";
 import { ownerLastWroteAt } from "../../critique/server";
 import { reviveCanceledTask } from "./revive";
 import { countRunNudges } from "./writer-silence";
@@ -183,11 +184,6 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
    * folder without git (BB-сервис holds 41 plugin repositories), the repository every path of the task lies in: the task
    * moves into it (paths relative to it) and gets a worktree, a git diff and a merge there instead of the live folder.
    */
-  type TaskPlacement = { task:TaskV2; plan:string; movedInto?:string; repoScope?:{ root:string; section:string; outside:string[] } } | { rejected:string };
-  type PreparedPlacement = {
-    placement:TaskPlacement;
-    binding:{ runId:string; hostId:string; runFolder:string; taskId:string; taskJson:string; plan:string };
-  };
   async function placeTask(runId:string, hostId:string, runFolder:string, rawTask:TaskV2, plan:string):Promise<TaskPlacement> {
     // repo_scope is earned here, from the host's answer, never taken from the PM's contract.
     const { repo_scope: _sent, ...task } = rawTask;
@@ -228,18 +224,7 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
     return { task:moved.task, plan:planWithOutsideReads(plan, moved.outsideReads), movedInto:repo };
   }
 
-  /** Read-only placement for the project-Git admission guard; invalid contracts remain owned by dispatchWriter. */
-  async function preparePlacement(input:{runId:string; hostId:string; runFolder:string; task:unknown; plan:string}):Promise<PreparedPlacement|null> {
-    if (input.plan.trim().length===0) return null;
-    if (!input.task || typeof input.task!=="object" || Array.isArray(input.task) || typeof (input.task as { id?:unknown }).id!=="string") return null;
-    const taskId=freeTaskId(db,(input.task as { id:string }).id);
-    const valid=validateTaskV2({ ...(input.task as Record<string,unknown>), id:taskId });
-    if (!valid.ok) return null;
-    return {
-      placement:await placeTask(input.runId,input.hostId,input.runFolder,valid.task,input.plan),
-      binding:{ runId:input.runId, hostId:input.hostId, runFolder:input.runFolder, taskId, taskJson:canonicalJson(valid.task), plan:input.plan },
-    };
-  }
+  const preparePlacement = createPlacementReader(db, placeTask);
 
   /** `criticCodeDefault`: this task's value of `critic.code.default_for_risk`, over the project's (the bench toggles the code critic per arm with it). */
   async function dispatchWriter(args:{threadId:string; projectId:string; task?:TaskV2; plan?:string; baseRef?:string; objective?:string; requireObjective?:boolean; criticCodeDefault?:CodeCriticDefault; birth?:BirthKind}, preplaced?:PreparedPlacement): Promise<Record<string,unknown>> {
@@ -278,15 +263,7 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
     if (canonicalPlan.trim().length === 0) throw new Error("canonical plan must be non-empty");
     const valid = validateTaskV2(prepared);
     if (!valid.ok) throw new Error(`task-v2 invalid: ${valid.errors.join("; ")}`);
-    if (preplaced) {
-      const binding=preplaced.binding;
-      const currentJson=canonicalJson(valid.task);
-      if (binding.runId!==runId || binding.hostId!==config.hostId || resolve(binding.runFolder)!==resolve(workspacePath)
-        || binding.taskId!==taskId || binding.taskJson!==currentJson || binding.plan!==canonicalPlan) {
-        const reason="writer placement changed while Git preflight was running; send the same task again";
-        return { runId, state:"rejected", reason, unapplied:[{ key:"task.project_cwd", reason }] };
-      }
-    }
+    if (preplaced && !placementMatches(preplaced,{ runId,hostId:config.hostId,runFolder:workspacePath,taskId,task:valid.task,plan:canonicalPlan })) return { runId, state:"rejected", reason:placementDriftReason, unapplied:[{ key:"task.project_cwd", reason:placementDriftReason }] };
     const placed = preplaced?.placement ?? await placeTask(runId, config.hostId, workspacePath, valid.task, canonicalPlan);
     if ("rejected" in placed) return { runId, state:"rejected", reason:placed.rejected, unapplied:[{ key:"task.project_cwd", reason:placed.rejected }] };
     // The forecast belongs to the PM that made it (SMA k_lib_modelver): the run's own pm model is stamped, whatever the PM sent.

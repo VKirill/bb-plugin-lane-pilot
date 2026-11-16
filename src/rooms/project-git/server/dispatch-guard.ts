@@ -129,7 +129,7 @@ export function createProjectGitDispatch(deps:GuardDeps):ProjectGitDispatch {
       try {
         scope=await deps.projectGit.resolveScope({
           threadId:args.threadId, hostId, projectRoot, sectionPath:placement.placement.task.project_cwd,
-          taskKey:args.task.id,
+          taskKey:placement.placement.task.id,
         });
       } catch (cause) { return refusal(runId,{ kind:"scope_error" },`private Git preflight failed: ${cause instanceof Error?cause.message:String(cause)}; no task or attempt was admitted`); }
       if (scope.kind==="repo") return await deps.raw(args,placement);
