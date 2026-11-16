@@ -32,7 +32,8 @@ export const IGNORE_PATTERNS = [
   ".npmrc", ".pypirc", ".netrc", ".ssh/", ".aws/", ".gnupg/", "secrets/", "*.sqlite", "*.sqlite3", "*.db",
   "node_modules/", ".venv/", "venv/", "__pycache__/", "dist/", "build/", "coverage/", ".next/", ".nuxt/", ".turbo/", ".vite/", ".cache/",
   "*.log", ".DS_Store",
-  ".bb/", ".agents/runs/", ".agents/memory/", ".claude/settings.local.json",
+  // Lane Pilot's task homes are kept out of git the same way dispatch does it (storage TASK_HOME_EXCLUDE), at any depth.
+  ".bb/", "**/.agents/tasks/", "**/.agents/runs/", "**/.agents/memory/", ".claude/settings.local.json",
 ] as const;
 
 export const IGNORE_BLOCK = `${IGNORE_MARKER}\n${IGNORE_PATTERNS.join("\n")}\n`;

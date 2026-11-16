@@ -67,7 +67,7 @@ describe("project git scope question (P03.05)", () => {
 describe("project git bootstrap (P03.06–08)", () => {
   const project = (f: ReturnType<typeof makeFixture>) => f.folder("my app", {
     "README.md": "# app\n", "src/main.ts": "export const x = 1;\n", ".env": "TOKEN=abc\n", ".env.example": "TOKEN=\n",
-    "node_modules/dep/index.js": "x", ".agents/runs/r1.json": "{}", ".agents/PROGRESS.md": "progress\n", ".bb/chats/c.json": "{}", "deploy.key": "k",
+    "node_modules/dep/index.js": "x", ".agents/runs/r1.json": "{}", ".agents/tasks/t1/contract.json": "{}", "site/.agents/tasks/t2/plan.md": "plan", ".agents/PROGRESS.md": "progress\n", ".bb/chats/c.json": "{}", "deploy.key": "k",
   });
 
   it("commits the curated real files, creates a verified private repository and pushes it", async () => {
