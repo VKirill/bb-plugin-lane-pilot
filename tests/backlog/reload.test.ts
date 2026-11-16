@@ -97,6 +97,44 @@ describe("backlog scanning across the 2026-11-16 reload", () => {
     }
   });
 
+  it("stops the public items read when disposed during the planning-home check", async () => {
+    const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
+    const db = openDatabase(bb);
+    savePrototypeConfig(db, { projectId: "P", hostId: "h", pmWorkspacePath: "/repo", writerWorkspacePath: "/repo", pmProviderId: "p", pmModel: "m", writerProviderId: "p", writerModel: "m" });
+    saveProjectSetting(db, "P", "project.planning_home", "/plans");
+    resetPlanningHomeChecks();
+    let disposed = false;
+    bb.onDispose(() => { disposed = true; });
+    const reading = deferred();
+    const pending = deferred();
+    const call = vi.fn(async (method: string) => {
+      if (method === "runCommand") { reading.resolve(); await pending.promise; }
+      return { exitCode: 0, stdout: "", stderr: "" };
+    });
+    const api = createBacklog({ db, bb, host: { call }, isDisposed: () => disposed } as never).backlog;
+    const running = api.items("P").then((items) => ({ items }), (error: unknown) => ({ error }));
+    try {
+      await reading.promise;
+      await harness.dispose();
+      expect(db.open).toBe(false);
+      const prepare = vi.spyOn(db, "prepare");
+      try {
+        pending.resolve();
+        const result = await running;
+        expect.soft(call).toHaveBeenCalledTimes(1);
+        expect(result).toMatchObject({ error: expect.objectContaining({ message: "backlog stopped: plugin disposed" }) });
+        await expect(api.items("P")).rejects.toThrow("backlog stopped: plugin disposed");
+        expect(prepare).not.toHaveBeenCalled();
+      } finally { prepare.mockRestore(); }
+    } finally {
+      pending.resolve();
+      await running;
+      vi.restoreAllMocks();
+      resetPlanningHomeChecks();
+      await harness.dispose();
+    }
+  });
+
   it("still reports a real database failure while the instance is live", async () => {
     const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
     const db = openDatabase(bb);

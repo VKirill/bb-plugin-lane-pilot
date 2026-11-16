@@ -61,9 +61,12 @@ export function createBacklog(ctx: ServerCore) {
 
   /** The project's meta.yaml items as they are on its host right now (no fetch; the board fetches first). */
   async function items(projectId: string): Promise<TodoMeta[]> {
+    assertActive();
     const config = loadPrototypeConfig(db, projectId);
     if (!config?.writerWorkspacePath) return [];
-    const ran = await host.call("gateRun", { requestedHostId: config.hostId, basePath: (await homeOf(projectId, config as never)) ?? config.writerWorkspacePath, command: backlogReadCommand, timeoutSec: 30 }, { hostId: config.hostId, timeoutMs: 60_000 })
+    const planningHome = await homeOf(projectId, config as never);
+    assertActive();
+    const ran = await host.call("gateRun", { requestedHostId: config.hostId, basePath: planningHome ?? config.writerWorkspacePath, command: backlogReadCommand, timeoutSec: 30 }, { hostId: config.hostId, timeoutMs: 60_000 })
       .catch(() => ({ exitCode: 1, stdout: "", stderr: "" }));
     return parseBacklogOutput(ran.stdout);
   }
