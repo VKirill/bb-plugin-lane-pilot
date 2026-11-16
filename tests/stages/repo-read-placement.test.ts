@@ -49,8 +49,16 @@ describe("section read placement",()=>{
     const source={...task(),read_first:[raw],never_touch:[]};
     expect(rerootToRepoRoot(source,"/repo","bot")?.task.read_first).toEqual([raw.replace(/^\.\//,"").slice(5)]);
   });
-  it.each(["/elsewhere\n/remote/repo/bot\n","/remote/repo\n/remote/repo\n","/remote/repo\n/remote/repo/bot\nextra\n"])("refuses unverified root answer %s",async(stdout)=>{
+  it("accepts an explicit selector at the repository root",async()=>{
+    const host={call:async()=>({hostId:"remote",exitCode:0,stdout:"/remote/repo\n/remote/repo\n",stderr:""})};
+    expect(await repoReadRoot(host,"remote","/remote/repo",["repo:sdk/index.ts"])).toEqual({root:"/remote/repo",prefix:""});
+  });
+  it.each(["/elsewhere\n/remote/repo/bot\n","/remote/repo\n/remote/repo/bot\nextra\n"])("refuses unverified root answer %s",async(stdout)=>{
     const host={call:async()=>({hostId:"remote",exitCode:0,stdout,stderr:""})};
     expect(await repoReadRoot(host,"remote","/alias",["repo:sdk/index.ts"])).toBeNull();
+  });
+  it("refuses a root probe answered by another host",async()=>{
+    const host={call:async()=>({hostId:"other",exitCode:0,stdout:"/repo\n/repo/bot\n",stderr:""})};
+    expect(await repoReadRoot(host,"remote","/repo/bot",["repo:sdk/index.ts"])).toBeNull();
   });
 });

@@ -151,6 +151,11 @@ read. Repository selectors cannot cross `.git`, `.agents` or `.bb` components, a
 The selector remains visible in execution packets and deferred reads. Moving a task into a different repository refuses these
 selectors instead of silently binding them to different files.
 
+The PM can use the same `repo:` selector with `lane_pilot_read`, including when the workspace is already at the Git root.
+For a task that must edit a sibling, declare the affected paths in `owns_paths` and outputs. Dispatch places that task at
+the host-verified repository root and translates section-relative paths; its checks retain their declared cwd. An independent
+nested repository is its own boundary. Section-only tasks keep their narrow scope and reject undeclared sibling changes at merge.
+
 `readFirstScopeFindings` (contract-lint) refuses a `read_first` entry that points:
 
 - into another task's home (`.agents/tasks/<other>/`), with code `read_first_foreign_task`;

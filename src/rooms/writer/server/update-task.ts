@@ -340,6 +340,12 @@ export function createWriterUpdateTask(ctx: ServerCore, services: Services) {
     const taskBase = oldContract.project_cwd;
     // repo_scope is dispatch's alone: an update keeps it on a task that has it and never gives it to one that has not.
     const scoped = oldContract.repo_scope === true;
+    if (scoped) {
+      const current = await repoReadRoot(ctx.host, config.hostId, workspacePath, ["repo:probe"]);
+      if (!current || resolve(current.root) !== resolve(taskBase) || !current.prefix) {
+        return { ok:false, error:{ code:"validation_failed", retryable:false, sideEffects:"none", hint:"the task's repository root no longer matches the run workspace; redispatch after checking the repository" } };
+      }
+    }
     delete valid.task.repo_scope;
     if (resolve(valid.task.project_cwd) === resolve(taskBase)) { valid.task.project_cwd = taskBase; if (scoped) valid.task.repo_scope = true; }
     else {

@@ -98,7 +98,7 @@ async function setup() {
   savePrototypeConfig(db, config);
   for (const [key, value] of [["plan_critique.enabled", false], ["memory.enabled", false], ["workspace.provider", false],
     ["integration.gate", "off"], ["docs.enabled", false], ["project_life.enabled", false]] as const) saveProjectSetting(db, projectId, key, value);
-  createRun(db, runId, projectId, "bb", folder);
+  createRun(db, runId, projectId, "bb", folder, "none", {schemaVersion:1,pools:{provider:5,verification:2}}, "host-mono");
   setRunThread(db, runId, pmThreadId);
   await plugin(bb);
   disposers.push(()=>harness.lifecycle.dispose());
@@ -116,6 +116,54 @@ afterEach(async () => {
 });
 
 describe("repo: read_first normalization on dispatch and update", () => {
+  it("keeps an independent nested repository inside its own root", async () => {
+    const env = await setup();
+    git(env.folder,"init","-q","-b","main");
+    git(env.folder,"add","-A");
+    git(env.folder,"commit","-q","-m","nested base");
+    const escaped = await env.call("lane_pilot_read", {path:"repo:../sdk/x.ts",offset:0,maxLines:10});
+    expect(escaped.ok).toBe(false);
+    await env.call("lane_pilot_dispatch_writer", {confirm:true,objective:"Change SDK",plan:"Change outer SDK",task:{
+      schema_version:2,display_title:"Outer change",kind:"feature",area:"feature:outer",id:"outer-change",title:"Change outer",risk:"low",lane:"writer",project_cwd:env.folder,
+      read_first:["README.md"],interfaces:["i"],invariants:["inv"],out_of_scope:["out"],expected_outputs:["../sdk/x.ts"],owns_paths:["../sdk/x.ts"],never_touch:[],depends_on:[],
+      objective:"change outer",acceptance:["updated"],verify:"none",verification:[{command:"true",cwd:env.folder,timeout_sec:60}],
+    }});
+    expect(getTask(env.db,"outer-change")).toBeUndefined();
+  });
+  it("reads a sibling through the registered PM tool and places declared edits at the shared root", async () => {
+    const env = await setup();
+    const read = await env.call("lane_pilot_read", {path:"repo:sdk/x.ts",offset:0,maxLines:10});
+    expect(read, JSON.stringify(read)).toMatchObject({content:expect.stringContaining("export const x")});
+    await env.call("lane_pilot_dispatch_writer", { confirm:true, objective:"Change bot and SDK", plan:"Change bot/src/main.ts and sdk/x.ts", task:{
+      schema_version:2, display_title:"Shared change", kind:"feature", area:"feature:shared", id:"shared-change",
+      title:"Change bot and SDK", risk:"low", lane:"writer", project_cwd:env.folder,
+      read_first:["../sdk/x.ts", "src/main.ts"], interfaces:["i"], invariants:["inv"], out_of_scope:["out"],
+      expected_outputs:["src/main.ts", "../sdk/x.ts"], owns_paths:["src/main.ts", "../sdk/x.ts"], never_touch:[], depends_on:[],
+      objective:"change both files", acceptance:["both updated"], verify:"none",
+      verification:[{command:"test -f src/main.ts",cwd:env.folder,timeout_sec:60}],
+    }});
+    const stored = getTask(env.db,"shared-change")?.contract as TaskV2 | undefined;
+    expect(stored,"dispatch refused before persisting").toBeDefined();
+    expect(stored).toMatchObject({project_cwd:env.root,repo_scope:true,owns_paths:["bot/src/main.ts","sdk/x.ts"],read_first:["sdk/x.ts","bot/src/main.ts"]});
+    expect(stored!.verification[0]!.cwd).toBe(env.folder);
+    createAttempt(env.db,{id:"held-root-attempt",runId,taskId:"shared-change"});
+    setTaskHeldUntil(env.db,"shared-change",runId,Date.now()+86_400_000);
+    git(env.folder,"init","-q","-b","main");
+    const stale = await env.call("lane_pilot_update_task", {taskId:"shared-change",task:stored});
+    expect(stale).toMatchObject({ok:false,error:{code:"validation_failed"}});
+  });
+
+  it("accepts a root-relative contract explicitly naming the shared repository", async () => {
+    const env=await setup();
+    await env.call("lane_pilot_dispatch_writer", {confirm:true,objective:"Change both",plan:"Change bot and SDK",task:{
+      schema_version:2,display_title:"Root change",kind:"feature",area:"feature:root",id:"root-change",title:"Change both",risk:"low",lane:"writer",project_cwd:env.root,
+      read_first:["repo:sdk/x.ts","bot/src/main.ts"],interfaces:["i"],invariants:["inv"],out_of_scope:["out"],expected_outputs:["bot/src/main.ts","sdk/x.ts"],owns_paths:["bot/src/main.ts","sdk/x.ts"],never_touch:[],depends_on:[],
+      objective:"change both",acceptance:["updated"],verify:"none",verification:[{command:"test -f src/main.ts",cwd:env.folder,timeout_sec:60}],
+    }});
+    const stored=getTask(env.db,"root-change")?.contract as TaskV2|undefined;
+    expect(stored,"explicit root dispatch refused").toMatchObject({project_cwd:env.root,repo_scope:true,owns_paths:["bot/src/main.ts","sdk/x.ts"]});
+  });
+
   it("persists the section contract with canonical repo: read_first, probed on the host at the section cwd", async () => {
     const env = await setup();
     await env.call("lane_pilot_dispatch_writer", { confirm: true, objective: "Read the SDK", plan: "Read sdk/x.ts", task: {

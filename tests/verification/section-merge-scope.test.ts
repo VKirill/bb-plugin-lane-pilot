@@ -115,9 +115,11 @@ describe("integrateWorktree keeps section merges inside the section (OBS-2)", ()
   it("keeps an explicitly repository-root integration able to merge sibling changes",async()=>{
     const {base,candidate}=await sectionProject();
     await writeFile(join(candidate,"sibling/notes.txt"),"root scope change\n");
-    const result=await integrateWorktree({basePath:base,worktreePath:candidate,message:"root task",ownsPaths:["**"],removeWorktree:false});
+    await writeFile(join(candidate,"bot/section.txt"),"section scope change\n");
+    const result=await integrateWorktree({basePath:base,worktreePath:candidate,message:"root task",ownsPaths:["bot/section.txt","sibling/notes.txt"],removeWorktree:false});
     expect(result.status).toBe("merged");
     expect(await readFile(join(base,"sibling/notes.txt"),"utf8")).toBe("root scope change\n");
+    expect(await readFile(join(base,"bot/section.txt"),"utf8")).toBe("section scope change\n");
   });
 
 });

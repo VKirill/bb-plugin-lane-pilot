@@ -12,7 +12,7 @@ import type { CodeCriticDefault } from "../../contracts/task-enums";
 import { saveCriticCodeDefault } from "./critic-override";
 import { wfLivePipelineRun, wfRunInputsByKey } from "@lane-pilot/workflow-engine";
 import { TASK_HOME_EXCLUDE, bbTaskFileIo, getRunObjective, setRunObjective, createAttempt, createTask, freeTaskId, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getRunWriterHost, getTask, getTaskPlan, latestTaskAttemptState, getTaskRow, hasFailedStageReceipt, listAttemptsForTask, listAttemptsUpdatedSince, listOpenAttempts, listRunsWithAttempts, listRunTaskRows, listStageReceipts, listTaskKinds, listTaskTerminalStates, loadProjectSettings, saveTaskPlan, setRunState, taskBasePath, transitionAttempt } from "../../storage";
-import { birthGates, commonTaskFolder, isMainfixTask, isTaskBase, landingWordAsked, leavesSection, normalizeRepoReads, repoReadRoot, ownerSaidNo, ownerWordsMode, parseRepoRoot, parseRepoTop, planWithOutsideReads, planWithRepoScope, repoRootCommand, repoTopCommand, rerootTask, rerootToRepoRoot, sha256 , spendReserve, taskStepEvidence, type BirthKind } from "../../tasks";
+import { birthGates, commonTaskFolder, isMainfixTask, isTaskBase, landingWordAsked, leavesSection, normalizeRepoReads, repoReadRoot, ownerSaidNo, ownerWordsMode, parseRepoTop, planWithOutsideReads, planWithRepoScope, repoTopCommand, rerootTask, rerootToRepoRoot, sha256 , spendReserve, taskStepEvidence, type BirthKind } from "../../tasks";
 import { liveFolderLockNote, nextStep } from "../../contracts/failure-class"
 import { taskFamily } from "@lane-pilot/contracts";
 import { validateTaskV2 } from "../../tasks";
@@ -34,6 +34,7 @@ import { isAbsolute, relative, resolve } from "node:path";
 import type { ServerCore } from "../../contracts/server";
 
 import { runOnHost } from "@lane-pilot/host-calls";
+import { parseReadFirstHints, parseReadFirstSelector } from "../../tasks/read-first";
 import { pmRulesOf } from "../../learning";
 import { logRulesShown } from "@lane-pilot/run-insights";
 
@@ -108,13 +109,24 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
     const hostId = getRunWriterHost(db, runId);
     const workspacePath = run.writer_workspace_path;
     if (!hostId || !workspacePath) throw new Error("run has no frozen writer host or workspace binding");
-    if (args.path.includes("\0") || isAbsolute(args.path)) throw new Error("lane_pilot_read_path_escaped_workspace");
-    const absolute = resolve(workspacePath, args.path);
-    const rel = relative(workspacePath, absolute);
+    const selected = parseReadFirstSelector(args.path);
+    let root = workspacePath;
+    let path = args.path;
+    if (selected.scope === "repo") {
+      const hint = parseReadFirstHints([args.path])[0]!;
+      if (hint.windows.length) throw new Error("lane_pilot_read_path_escaped_workspace");
+      const found = await repoReadRoot(host, hostId, workspacePath, [args.path]);
+      if (!found) throw new Error("lane_pilot_read_repo_unknown");
+      root = found.root;
+      path = selected.path;
+    }
+    if (path.includes("\0") || isAbsolute(path)) throw new Error("lane_pilot_read_path_escaped_workspace");
+    const absolute = resolve(root, path);
+    const rel = relative(root, absolute);
     if (!rel || rel.startsWith("..") || isAbsolute(rel)) throw new Error("lane_pilot_read_path_escaped_workspace");
     const file = await host.call("readBoundedFile", {
       requestedHostId: hostId,
-      projectCwd: workspacePath,
+      projectCwd: root,
       relativePath: rel.split("\\").join("/"),
       offset: args.offset,
       maxLines: args.maxLines,
@@ -185,11 +197,11 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
     // A section's task that also changes files elsewhere in the same repository (an SDK next to the bots) works at the repository's root.
     const namesRoot = resolve(task.project_cwd) !== resolve(runFolder) && isTaskBase(task.project_cwd, runFolder);
     if (resolve(task.project_cwd) === resolve(runFolder) ? task.owns_paths.some(leavesSection) : namesRoot) {
-      const found = parseRepoRoot(await bestEffort(ctx.log, "writer repo root probe", runOnHost(host, { hostId, cwd:runFolder, command:repoRootCommand(runFolder), timeoutSec:20, timeoutMs:25_000 }), null));
-      const root = found ? resolve(runFolder, found.up) : null;
-      if (found && root && (!namesRoot || resolve(task.project_cwd) === root)) {
+      const found = await bestEffort(ctx.log, "writer repo root probe", repoReadRoot(host, hostId, runFolder, ["repo:probe"]), null);
+      const root = found?.root;
+      if (found && root && found.prefix && (!namesRoot || resolve(task.project_cwd) === root)) {
         // The PM that names the root itself already wrote root-relative paths: they stay, and the section is only where the chat is.
-        const moved = namesRoot ? { task:{ ...task, repo_scope:true }, outside:[] as string[] } : rerootToRepoRoot(task, root, found.prefix);
+        const moved = namesRoot ? { task:{ ...task, repo_scope:true }, outside:task.owns_paths.filter((path) => path !== found.prefix && !path.startsWith(`${found.prefix}/`)) } : rerootToRepoRoot(task, root, found.prefix);
         if (moved) {
           ctx.log(`Lane Pilot: task ${task.id} of the section ${found.prefix} also changes files outside it, so it works at the repository root ${root}`);
           return { task:moved.task, plan:planWithRepoScope(plan, root, found.prefix, moved.outside), repoScope:{ root, section:found.prefix, outside:moved.outside } };
