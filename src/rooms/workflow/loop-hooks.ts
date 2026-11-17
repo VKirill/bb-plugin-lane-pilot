@@ -3,12 +3,12 @@ import { MAX_SUBWORKFLOW_DEPTH, START } from "@lane-pilot/workflow-engine";
 import type { Workflow, WorkflowNode } from "@lane-pilot/workflow-engine";
 
 /** The only hook points Lane Pilot currently composes into a project workflow. */
-export const LOOP_HOOK_POINTS = ["plan:pre", "verify:post", "ship:post"] as const;
+export const LOOP_HOOK_POINTS = ["discuss:pre", "plan:pre", "verify:post", "ship:post"] as const;
 export type LoopHookPoint = (typeof LOOP_HOOK_POINTS)[number];
 export const LOOP_HOOK_MANIFEST = "loop-hooks.manifest.json";
 
 export type LoopHook = { workflow: string; version?: number; inputs: Record<string, string> };
-export type LoopHookManifest = { schemaVersion: 1; hooks: Record<LoopHookPoint, LoopHook[]> };
+export type LoopHookManifest = { schemaVersion: 1; hooks: Record<Exclude<LoopHookPoint, "discuss:pre">, LoopHook[]> & { "discuss:pre"?: LoopHook[] } };
 export type LoopHookStatus = { status: Workflow["status"]; internal?: boolean; startedBy?: string };
 export type LoopHookSelection = {
   point: LoopHookPoint;
@@ -33,7 +33,7 @@ const own = (value: object, key: string): boolean => Object.prototype.hasOwnProp
 const idPattern = /^[a-z0-9][a-z0-9.-]{0,47}$/;
 const inputRef = /^(?:\$inputs\.[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*|ctx\.(?:run_id|goal|merged_commits)(?:\.[A-Za-z_][A-Za-z0-9_]*)*|ctx\.answers\.[A-Za-z_][A-Za-z0-9_]*(?:\.length)?)$/;
 
-const emptyHooks = (): Record<LoopHookPoint, LoopHook[]> => ({ "plan:pre": [], "verify:post": [], "ship:post": [] });
+const emptyHooks = (): Record<LoopHookPoint, LoopHook[]> => ({ "discuss:pre": [], "plan:pre": [], "verify:post": [], "ship:post": [] });
 
 /** Parse the reserved project file. Missing text is intentionally a no-op. */
 export function parseLoopHookManifest(text: string | null | undefined): { manifest: LoopHookManifest | null; sha256: string | null } {
@@ -41,7 +41,7 @@ export function parseLoopHookManifest(text: string | null | undefined): { manife
   let value: unknown;
   try { value = JSON.parse(text); } catch (cause) { throw new LoopHookRefusal(`loop hooks manifest is not valid JSON: ${cause instanceof Error ? cause.message : String(cause)}`); }
   if (!isRecord(value) || value.schemaVersion !== 1 || !isRecord(value.hooks)) {
-    throw new LoopHookRefusal("loop hooks manifest must be {schemaVersion:1,hooks:{'plan:pre':[],'verify:post':[],'ship:post':[]}}");
+    throw new LoopHookRefusal("loop hooks manifest must be {schemaVersion:1,hooks:{'discuss:pre':[],'plan:pre':[],'verify:post':[],'ship:post':[]}}");
   }
   const hooks = emptyHooks();
   for (const key of Object.keys(value.hooks)) {
@@ -88,6 +88,7 @@ const mergeRequires = (base: Workflow["requires"], child: Workflow["requires"]):
 };
 
 const pointTargets = (workflow: Workflow, point: LoopHookPoint): string[] => {
+  if (point === "discuss:pre") return workflow.id === "lp.analyze" ? ["assess"] : [];
   if (point === "plan:pre") {
     return workflow.id === "lp.plan" ? [workflow.entry ?? workflow.edges.find((edge) => edge.from === START)?.to ?? ""] : [];
   }
@@ -127,8 +128,15 @@ function insertChains(workflow: Workflow, point: LoopHookPoint, hooks: LoopHook[
       const { to: _to, with: _with, pass: _pass, ...head } = original;
       edges = edges.map((candidate) => candidate === edge ? { ...head, to: chain[0], pass: "artifact" as const } : candidate);
       for (let index = 0; index + 1 < chain.length; index += 1) edges.push({ from: chain[index]!, to: chain[index + 1]!, pass: "artifact" });
-      // The original terminal emit remains last, preserving its exact output and failure outcome.
-      edges.push({ ...original, from: chain.at(-1)!, to: target });
+      let last = chain.at(-1)!;
+      if (point === "discuss:pre") {
+        // The next agent consumes the gather handoff, not the last hook's output.
+        const relay = addId(`${stem}-handoff`);
+        nodes.push({ id: relay, type: "decision", reads_node: "gather", maxAttempts: 1, out: [{ name: "handoff", type: "string", required: false }] } as WorkflowNode);
+        edges.push({ from: last, to: relay, pass: "artifact" });
+        last = relay;
+      }
+      edges.push({ ...original, from: last, to: target });
     }
   }
   return { ...workflow, entry: undefined, nodes, edges };
@@ -155,6 +163,14 @@ export function prepareLoopWorkflow(input: PrepareInput): PreparedLoopWorkflow {
       const hooks = manifest.hooks[point] ?? [];
       const targets = pointTargets(current, point);
       if (!hooks.length || !targets.length) continue;
+      if (point === "discuss:pre") {
+        const incoming = current.edges.filter((edge) => edge.to === "assess");
+        if (current.entry === "assess" || current.nodes.find((node) => node.id === "gather")?.type !== "agent" ||
+          current.nodes.find((node) => node.id === "assess")?.type !== "agent" || incoming.length !== 1 ||
+          incoming[0]?.from !== "gather" || incoming[0]?.when !== undefined) {
+          throw new LoopHookRefusal('discuss:pre requires an unconditional gather-to-assess boundary between agents in lp.analyze');
+        }
+      }
       for (const hook of hooks) {
         const child = input.resolve(hook.workflow, hook.version);
         if (!child) throw new LoopHookRefusal(`${point} hook workflow "${hook.workflow}" is missing`);
