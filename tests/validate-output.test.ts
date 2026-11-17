@@ -40,7 +40,7 @@ it("keeps a stage receipt of the 3rd and 4th writer of the chain instead of fail
   createRun(db, "run", "proj", "cli", "/repo");
   db.prepare("INSERT INTO lane_pilot_task(id,run_id,kind,contract_json,created_at) VALUES('t','run','bb','{}',1)").run();
   expect(() => recordStage(db, { runId: "run", taskId: "t", stageId: "writer-agent", state: "pending", input: "plan", attempt: 4 })).not.toThrow();
-  expect(listStageReceipts(db, "run", "t")[0]?.attempt).toBe(2);
+  expect(listStageReceipts(db, "run", "t")[0]?.attempt).toBe(4);
 });
 
 // Live SelfyStudio contract cards-preview-lightbox-fullscreen (2026-10-05): the PM named the folder; the writer changed
