@@ -50,7 +50,7 @@ export const observe = {
 
   /** n121 · the retrospective command: the real graph reads the run, stages the insights for the reviewer's step and ends done with what it staged. */
   async retro() {
-    const r = await runSim("retrospective", { input: { run_id: "r-sample" }, stubs: { retro: { insights: [{ id: "INS-1a2b3c4d" }, { id: "INS-5e6f7a8b" }], retro_path: "retro/r-sample.md" }, stage: { staged: 2 } } });
+    const r = await runSim("retrospective", { input: { run_id: "r-sample" }, stubs: { retro: { insights: [{ id: "INS-1a2b3c4d" }, { id: "INS-5e6f7a8b" }], retro_path: "retro/r-sample.md" }, report: { report_path: "retro/r-sample.md" }, stage: { staged: 2 } } });
     return { path: r.path, output: r.summary.output as Record<string, unknown>, status: r.summary.status, roles: ["retro", "stage"].map((id) => (r.workflow.nodes.find((node) => node.id === id) as { role?: string } | undefined)?.role ?? null) };
   },
 

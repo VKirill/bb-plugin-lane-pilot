@@ -26,7 +26,7 @@ describe("region 0 · the lessons analysis", () => {
     const s = await observe.lessonsStart();
     expect(s.workflow).toBe("retrospective");
     const r = await observe.retro();
-    expect(r.path).toEqual(["retro", "living", "stage", "done"]);
+    expect(r.path).toEqual(["retro", "report", "living", "stage", "done"]);
     expect(r.status).toBe("succeeded");
     expect(r.output).toEqual({ status: "done", insights: [{ id: "INS-1a2b3c4d" }, { id: "INS-5e6f7a8b" }], retro_path: "retro/r-sample.md", candidates_staged: 2 });
   });
