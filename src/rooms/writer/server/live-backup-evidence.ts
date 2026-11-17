@@ -1,5 +1,23 @@
 import { runOnHost, type RunCommandHost } from "@lane-pilot/host-calls";
 import { liveBackupReadCommand, parseLiveBackupRead, type LiveBackupRead } from "../live-backup-read";
+import { liveBackupKey } from "./start-live-folder";
+
+const SAFE_BACKUP_ID = /^[A-Za-z0-9_.-]+$/;
+
+const validBackupId = (id:string):boolean => id !== "." && id !== ".." && SAFE_BACKUP_ID.test(id);
+
+export type LiveBackupBinding = { backupId:string } | { state:"unknown"; reason:"backup_binding_invalid"|"backup_binding_unreadable" };
+
+/** Resolve the backup attached to an attempt; an absent key is the legacy first-attempt shape. */
+export async function resolveLiveBackupId(kv:{ get:(key:string) => Promise<unknown> }, attemptId:string):Promise<LiveBackupBinding> {
+  try {
+    const saved = await kv.get(liveBackupKey(attemptId));
+    if (saved === undefined || saved === null) return validBackupId(attemptId) ? { backupId:attemptId } : { state:"unknown", reason:"backup_binding_invalid" };
+    return typeof saved === "string" && validBackupId(saved) ? { backupId:saved } : { state:"unknown", reason:"backup_binding_invalid" };
+  } catch {
+    return { state:"unknown", reason:"backup_binding_unreadable" };
+  }
+}
 
 /** Read only from the attempt's backup on the live folder's own host. */
 export async function readLiveBefore(host: RunCommandHost, hostId: string, cwd: string, attemptId: string, path: string): Promise<LiveBackupRead> {

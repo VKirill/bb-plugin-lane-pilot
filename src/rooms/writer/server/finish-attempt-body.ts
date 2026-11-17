@@ -32,7 +32,7 @@ import { progressJournal } from "../progress-journal";
 import { mountVerificationAttemptFinished } from "./verification";
 import { executionChecklist } from "./execution-checklist";
 import { isLiveDecision } from "../live-folder";
-import { readLiveBefore } from "./live-backup-evidence";
+import { readLiveBefore, resolveLiveBackupId } from "./live-backup-evidence";
 
 import type { FinishInput, Services } from "./finish-types";
 import { runCodeCritiqueGate } from "./critique-gate";
@@ -192,10 +192,14 @@ export async function finishWriterAttemptBody(ctx: ServerCore, services: Service
       const liveFolder = isLiveDecision(fitAttempt?.workspace_decision);
       // One observation per path: a transient failure cannot disappear between the yardstick, critic and test_fit.
       const liveBaselines = new Map<string, ReturnType<typeof readLiveBefore>>();
+      const liveBackup = liveFolder && workedAt ? resolveLiveBackupId(bb.storage.kv as never, input.attemptId) : undefined;
       const liveBefore = liveFolder && workedAt ? (path:string) => {
         let saved = liveBaselines.get(path);
         if (!saved) {
-          saved = readLiveBefore(host, input.config.hostId, workedAt, input.attemptId, path);
+          saved = (liveBackup ?? Promise.resolve({ reason:"workspace_unavailable" as const })).then((binding) =>
+            "backupId" in binding
+              ? readLiveBefore(host, input.config.hostId, workedAt, binding.backupId, path)
+              : { state:"unknown" as const, reason:binding.reason });
           liveBaselines.set(path, saved);
         }
         return saved;
