@@ -1,6 +1,17 @@
 # Changelog
 
-## Unreleased
+## 0.1.591
+
+> [!NOTE]
+> This candidate combines the reviewed source corrections below. Focused offline tests and mutation receipts support the listed behavior; deployment, native TEST sessions and full 1798-node SMA acceptance are separate gates.
+
+- **Project loop hooks use the existing workflow engine.** A project manifest composes published, pinned graphs at `plan:pre`, `verify:post` and `ship:post`. Existing child journals, human waits and capability preflight apply; malformed manifests and unavailable hooks refuse execution. Loop-hook tests and the offline r21 probe exercise ordered child waits/resumes, retained parent outputs and invalid manifests.
+- **Idle native PM relocation coordinates with Core.** Prepare/commit/abort checkpoints fence new admissions, preserve prior run history and recover a pending rollover. Active work vetoes relocation; missing Core capability keeps bound chats in place. Core directory-move tests and Lane Pilot admission/relocation tests cover the contract; the supporting Core release is required.
+- **Repository scope follows the nearest Git boundary.** Declared sibling writes use repository placement and retain verification cwd; an independent nested repository remains a boundary. Section-only merge tests reject undeclared sibling bytes before committing or merging.
+- **New no-Git dispatch requires private Git setup.** The owner chooses project or section scope and the authenticated host account; bootstrap records its checked baseline, verifies the private remote and pushes the recorded SHA to the verified URL. Offline real-Git tests cover interrupted stages, account/origin changes, secret-pattern refusals and overlapping folder admission. Existing live-folder attempts retain backup-based checks; unknown before-images block acceptance.
+- **Graph artifacts and status have code-owned producers.** CAS document writes preserve existing content and record successful writes; collectors retain branch-specific outputs, owner answers and replan inputs. Completed convergence children supply phase-plan proof, and runner-backed test inventory keeps its original baseline across reruns. Registered-handler and SQLite workflow tests exercise success, refusal, skip and rework paths.
+- **Native helper environments are bound to their launch identity.** Required environment contributions and cache generation/selection checks reject incompatible helper fallbacks. Model fallback retains the requested service tier; diagnostics distinguish requested, resolved and observed values. Focused launcher tests cover stale refresh and lookup failures.
+- **Node test files use Vitest isolation.** An ordered registrar/witness test demonstrated mock-registry leakage with isolation off and real-module loading with it on. The historical memory-evaluation contradiction remains unresolved; a passing focused evaluation is not attribution of that failure.
 
 - **Backlog scans stop when their plugin instance reloads.** Disposal checkpoints after cadence, PM, planning-home and host reads prevent the old scan from querying closed SQLite or continuing into an offer or issue. Reload cancellation stays quiet; database failures in a live instance still log. Offline regression tests use SDK disposal and real SQLite to check that no new database query, host call, KV access or SDK call follows disposal; deployment acceptance remains separate.
 
