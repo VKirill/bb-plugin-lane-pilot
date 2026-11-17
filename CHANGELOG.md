@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.593
+
+> [!NOTE]
+> Corrections from native TEST sessions on 0.1.592. The paused phase must be resumed after verified deployment; offline checks do not establish native lifecycle acceptance.
+
+- **Resolve phase services when a stage runs.** Automatic stages, train routing and the architect read the initialized workflow services instead of retaining empty references from plugin construction. Regressions cover late attachment, embedded fallback, project hooks, lazy catalog fallback and capability refusal before workflow start.
+- **Maintain project records in the accepted task checkout.** Project-life uses the accepted base workspace for repository-scoped tasks started from a section. Receipt tests retain strict command exit checks and ordinary section placement.
+- **Exercise current drill contracts.** R00 expects the persisted retrospective report; R01 dispatch uses a real temporary Git checkout and checks a non-empty deduplicated attempt ID; milestone archive checks inspect physical file bytes and honor compare-and-swap writes.
+
 ## 0.1.592
 
 > [!NOTE]
