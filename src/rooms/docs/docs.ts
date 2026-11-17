@@ -4,6 +4,7 @@ export const DOCS_SINCE_CHOICES = ["yesterday", "24 hours ago", "7 days ago"] as
 export type DocsSince = (typeof DOCS_SINCE_CHOICES)[number];
 
 import { DOCS_DEFAULT_SELECTION } from "./docs-defaults";
+import { DOC_PAGE_TYPES } from "./docs-lint";
 import { sha256Hex } from "@lane-pilot/kit";
 import { resolveRoleModel } from "@lane-pilot/models";
 import { checkBrief, renderBrief } from "../brief";
@@ -228,7 +229,7 @@ const DOCS_CITE_CODE_ONLY = "- Cite only code: a file:line citation of a .md pag
 const METHODOLOGY = [
   "Method (read the docs-methodology skill and its references/ first when it is among your skills for this task; where it and this brief differ, this brief wins, because Lane Pilot's checks enforce it):",
   "- Every docs page starts with YAML frontmatter: title, type, created, updated (YYYY-MM-DD), status (draft|active|stale|deprecated), confidence (high|medium|low, honest: low under 5 sources, medium 5-15, high over 15), tags (kebab-case list), sources (list of files actually read, most relevant first).",
-  "- type is one of overview, architecture, data-model, decisions, deployment, gotchas, gaps, active-areas, active-tasks, component, flow, capabilities, audience. One H1 equal to title, then a one-line TL;DR.",
+  `- type is one of ${DOC_PAGE_TYPES.filter((type) => type !== "index").join(", ")}. One H1 equal to title, then a one-line TL;DR.`,
   "- Write so an agent can learn how the product works from the docs alone, without opening the code. A component page has: Purpose; How it works - the steps in order as a numbered list, a table of the modes, variants or states it branches on (what differs between them: inputs, limits, prices, outputs), and what happens on each failure; Business rules; Public API or commands; Gotchas. A flow page (docs/flows/) has: Trigger; How it works - each step across apps and packages in order, naming the app, the call and the state it changes; Modes; Capabilities - what a user or operator can do in this process, each mode and option, formats, limits, costs and where it is available; Failures and compensation; Related pages. Depth follows the code: a large capability gets a long page or several pages, not a summary.",
   "- Every non-trivial claim cites file:line or file:start-end that exists; at least 3 citations per page, and at least 15 on the main page of a business flow (docs/flows/<slug>.md). No hedges (typically, usually, should) without a citation, no marketing words (powerful, seamless, robust, comprehensive, intuitive, leverage), no dates in prose.",
   DOCS_CITE_CODE_ONLY,
@@ -310,6 +311,8 @@ export function nightlyDocsPrompt(input:{since:DocsSince; hasDocs:boolean; chang
         "Task: there is no docs/ yet, so onboard the project. Create:",
         "- docs/overview.md (overview): what the project is, how it is built and run, its main parts.",
         "- docs/architecture.md (architecture): parts and how they talk, with one mermaid C4 container or component diagram of at most 12 nodes.",
+        "- docs/conventions.md (conventions): the naming, layout and coding patterns the project actually follows, with examples from the code.",
+        "- docs/testing.md (testing): how to run the project's checks, what they cover and how to add a test, taken from the scripts and existing tests.",
         "- docs/features/<capability>.md (component), one per user-facing capability, with the sections the method lists (How it works with steps, modes and failures).",
         "- docs/api.md (component) when the code map lists routes or commands: every route grouped by area, with method, path, caller, purpose and auth.",
         "- docs/data-model.md (data-model) when the code stores data: every table or collection with its fields, keys and who writes it.",

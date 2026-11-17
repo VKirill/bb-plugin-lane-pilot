@@ -31,6 +31,9 @@ import { sendServiceMessage } from "../../relay/server";
 
   export const unitLabelOf=(unit:DocsUnit):string=>unit.flow?`docs/flows/${unit.flow.slug}.md`:unit.docsDir;
 
+  const REQUIREMENTS_UNAVAILABLE="docs completeness requirements unavailable; start a fresh docs pass to read the code map";
+  const hasDocsRequirements=(value:UnitPlan["requirements"]):value is NonNullable<UnitPlan["requirements"]>=>Boolean(value&&Array.isArray(value.tables)&&value.tables.every((table)=>typeof table==="string")&&typeof value.deploy==="boolean");
+
   export function docsSettingsOf(n:NightlyShared,projectId:string,scopes:string[]){
     const {ctx,services,bb,db,host,unitExtras,docsUnitsFinishing}=n;
 
@@ -95,7 +98,9 @@ state:"skipped";row:Record<string,unknown>}|{state:"resume"}|{state:"ready";plan
     const anchors=flow?null:prefetched?await prefetched:await bestEffort(bb.log, `docs anchors ${place.path} ${d}`, host.call("docsAnchors",{requestedHostId:place.hostId,projectCwd:place.path,prefix,
       ...(unit.workspace?{}:{exclude:i.exclude,...(i.workspaces.length?{workspaces:i.workspaces}:{})}),
       pages:pageInput.map((page)=>({path:page.path,title:/^title:\s*(.+)$/m.exec(page.content)?.[1]?.trim()??page.path}))},{hostId:place.hostId,timeoutMs:1_800_000}), null);
-    const gaps=hasDocs&&!flow?docsCompletenessGaps(existing,{tables:anchors?.tables??[],deploy:anchors?.deploy??false,core:anchors?.core??[],docsDir:d,workspace:Boolean(unit.workspace),
+    const requirements=anchors&&Array.isArray(anchors.tables)&&typeof anchors.deploy==="boolean"?{tables:anchors.tables,deploy:anchors.deploy}:undefined;
+    if(!flow&&!hasDocsRequirements(requirements)) throw new Error(REQUIREMENTS_UNAVAILABLE);
+    const gaps=!flow?docsCompletenessGaps(existing,{tables:requirements?.tables??[],deploy:requirements?.deploy??false,core:anchors?.core??[],docsDir:d,workspace:Boolean(unit.workspace),
       flows:unit.flows}):{missingPages:[],uncoveredCore:[]};
     // What the depth check holds the pages to: the core code of the folder, or what the flow's entries call.
     const core=anchors?.core??flow?.calls??[];
@@ -111,7 +116,7 @@ state:"skipped";row:Record<string,unknown>}|{state:"resume"}|{state:"ready";plan
     const last=hasDocs?await bb.storage.kv.get(kvKey) as {warnings?:Array<{path:string;rule:string;detail:string}>}|null:null;
     const pagePaths=new Set(existing.map((page)=>page.path));
     const doubts=(last?.warnings??[]).filter((warning)=>(warning.rule==="evidence-check"||warning.rule==="contradiction")&&pagePaths.has(warning.path));
-    return {state:"ready",plan:{label,hasDocs,changed,changedCount:changed.length,refresh,gaps,
+    return {state:"ready",plan:{label,hasDocs,changed,changedCount:changed.length,refresh,gaps,requirements,
       anchors:anchors?{count:anchors.anchors,...(anchors.briefPath?{briefPath:anchors.briefPath}:{}),deploy:anchors.deploy??false}:null,
       core:core.slice(0,2000),kvKey,doubts,decisionDrafts,beforeDirty:before.dirty,localDate:before.localDate,
       // Pages an earlier failed pass left oversized are this unit's work, not the base's.
@@ -131,6 +136,7 @@ runId:string;stepKey:string;nodeId:string},stop:()=>string|null,retry=""):Promis
     let record=await readUnitRecord(n,recordKey);
     if(!record){
       if(!plan) throw new Error("docs unit has neither a plan nor saved progress");
+      if(!unit.flow&&!hasDocsRequirements(plan.requirements)) throw new Error(REQUIREMENTS_UNAVAILABLE);
       const {settings,docs}=docsSettingsOf(n,i.projectId,i.scopes);
       const docProved=await bestEffort(bb.log,"docs capability gate",Promise.resolve().then(()=>documentaryGateOf(bb)?.proved(i.projectId)),undefined);
       const docsRole=resolveSpawnModel({role:"docs-maintainer",settings,catalog:modelCatalogOf(ctx).peek(),hostId:place.hostId,usage:spawnUsageOf(ctx),...(docProved?{capability:{proved:(providerId:string)=>docProved.has(providerId)}}:{})});
@@ -167,7 +173,7 @@ runId:string;stepKey:string;nodeId:string},stop:()=>string|null,retry=""):Promis
         pluginMetadata:{role:"docs-nightly",stageId:"docs-nightly",spawnId:`${i.projectId}:${sha256(`${place.path}\n${label}`).slice(0,12)}:${plan.localDate}${retry}`,...graphStepMetadata(step)}});
       // From here on the unit's progress is saved, so a plugin reload picks the same agent thread up again.
       record={version:1,projectId:i.projectId,place,...(i.basePath&&i.basePath!==place.path?{basePath:i.basePath}:{}),label,unit,threadId,phase:"writing",beforeDirty:plan.beforeDirty,localDate:plan.localDate,
-        since:docs.since,roots:i.roots,workspaces:i.workspaces,hasDocs:plan.hasDocs,changedCount:plan.changedCount,refresh:plan.refresh,gaps:plan.gaps,
+        since:docs.since,roots:i.roots,workspaces:i.workspaces,hasDocs:plan.hasDocs,changedCount:plan.changedCount,refresh:plan.refresh,gaps:plan.gaps,requirements:plan.requirements,
         anchors:plan.anchors?{count:plan.anchors.count}:null,core:plan.core,kvKey:plan.kvKey,oversizedAtStart:plan.oversizedAtStart,runKey:i.runKey};
       await saveDocsUnitRecord(n,record);
     }
@@ -176,7 +182,7 @@ runId:string;stepKey:string;nodeId:string},stop:()=>string|null,retry=""):Promis
       try{ await waitThreadIdle(bb,record.threadId,"docs_nightly",undefined,undefined,stop); }
       catch(cause){
         // The agent's thread failed: the unit is done for tonight, its pages stay pending. A reload keeps the progress for the next instance.
-        if(!pluginStopped(cause)&&!ctx.isDisposed()) await bestEffort(bb.log, "docs unit record drop", dropDocsUnitRecord(n,record), undefined);
+        if((unit.flow||hasDocsRequirements(record.requirements))&&!pluginStopped(cause)&&!ctx.isDisposed()) await bestEffort(bb.log, "docs unit record drop", dropDocsUnitRecord(n,record), undefined);
         // The model's plan ran out before the work: the unit goes to the next model at once (the failure took the spent plan off the
         // pick, spawn-model.ts), not to the next night. Once: a second refusal is a real failure.
         const limit=!retry&&plan&&!pluginStopped(cause)&&!ctx.isDisposed()?providerLimitNotice((cause instanceof Error?cause.message:String(cause)).replace(/^.*?provider_error:/,"").slice(0,400)):null;
@@ -201,17 +207,21 @@ state:"skipped";row:Record<string,unknown>}|{state:"ok";verified:Verified;thread
     const record=await readUnitRecord(n,key);
     if(!record) throw new Error("docs unit record is gone");
     const {place,unit,threadId,label}=record;
-    // A unit from a night long gone is not finished: its list of files dirty before the agent is stale, so what is
-    // dirty now would pass for the agent's changes and be reverted. Its pages stay for the next pass.
-    if(nightIsOver(record)){
-      await dropDocsUnitRecord(n,record);
-      bb.log.info(`Lane Pilot docs unit ${place.path} ${label} of ${record.localDate} dropped: its night is over`);
-      return {state:"skipped",row:{projectId:record.projectId,path:place.path,docsDir:label,state:"skipped",reason:"night_over"}};
-    }
+    let canDropRecord=Boolean(unit.flow)||hasDocsRequirements(record.requirements);
     docsUnitsFinishing.set(key,unit);
     const othersWritable=unitExtras.get(key)?.othersWritable??((path:string,self:DocsUnit)=>[...docsUnitsFinishing.values()].some((other)=>other!==self&&unitWritable(other)(path)));
     try{
       const d=unit.docsDir, flow=unit.flow, writable=unitWritable(unit);
+      const requirements=record.requirements;
+      const needsFreshRequirements=!flow&&!hasDocsRequirements(requirements);
+      // Old progress still owns its thread and beforeDirty snapshot until it settles and its scoped cleanup succeeds.
+      if(needsFreshRequirements) await waitThreadIdle(bb,threadId,"docs_nightly_legacy",undefined,record.phase==="repairing"?record.sentAt:undefined,stop);
+      // An expired snapshot cannot attribute today's edits. Drain an unknown legacy writer, then leave its bytes pending.
+      if(nightIsOver(record)){
+        await dropDocsUnitRecord(n,record);
+        bb.log.info(`Lane Pilot docs unit ${place.path} ${label} of ${record.localDate} dropped: its night is over`);
+        return {state:"skipped",row:{projectId:record.projectId,path:place.path,docsDir:label,state:"skipped",reason:"night_over"}};
+      }
       const gitScope=()=>host.call("gitDocsScope",{requestedHostId:place.hostId,projectCwd:place.path,sinceEpochMs:docsSinceEpoch(record.since,new Date()),docsDir:label,
         ...(unit.flows?.length?{exclude:["docs/flows"]}:{})},{hostId:place.hostId,timeoutMs:120_000});
       let oversized:string[]=[];
@@ -227,7 +237,7 @@ state:"skipped";row:Record<string,unknown>}|{state:"ok";verified:Verified;thread
       }))).filter((page):page is {path:string;content:string}=>page!==null);
       const core=record.core;
       const before={dirty:record.beforeDirty};
-      if(record.phase==="repairing") await waitThreadIdle(bb,threadId,"docs_nightly_repair",undefined,record.sentAt,stop);
+      if(record.phase==="repairing"&&!needsFreshRequirements) await waitThreadIdle(bb,threadId,"docs_nightly_repair",undefined,record.sentAt,stop);
       const reverted:string[]=[];
       // Check the pages the way the methodology asks, give the agent one round to fix, then index and commit.
       const inspect=async():Promise<Checked>=>{
@@ -239,6 +249,7 @@ state:"skipped";row:Record<string,unknown>}|{state:"ok";verified:Verified;thread
           reverted.push(...undone.reverted);
           if(undone.failed.length) throw new Error(`could not revert files the docs agent changed outside docs: ${undone.failed.join(", ")}`);
         }
+        if(needsFreshRequirements){ canDropRecord=true; throw new Error(REQUIREMENTS_UNAVAILABLE); }
         const pages=await allPages();
         const counts=(await host.call("docsLineCounts",{requestedHostId:place.hostId,projectCwd:place.path,files:citedFiles(mine(pages))},{hostId:place.hostId,timeoutMs:60_000})).counts;
         const docsDirty=after.dirty.filter(writable);
@@ -253,6 +264,9 @@ state:"skipped";row:Record<string,unknown>}|{state:"ok";verified:Verified;thread
           {hostId:place.hostId,timeoutMs:60_000}).then((out)=>out.content,()=>null));
         const findings:DocsFinding[]=blockingDocsFindings([...sized.blocking,
           ...lintDocsPages(pages,counts,oversized).filter((finding)=>writable(finding.path)),...semantic],docsDirty);
+        // An absent page cannot be in docsDirty. Required forms block the whole unit, including after its repair round.
+        if(!flow) findings.push(...docsCompletenessGaps(mine(pages),{...requirements!,core:[],docsDir:d,workspace:Boolean(unit.workspace),flows:unit.flows}).missingPages
+          .map((path)=>({path,rule:"completeness",detail:"required documentation form is missing; add it following the documentation method"})));
         // The capabilities catalogue covers every capability the apps document, not only the ones inside a flow.
         const catalogue=unit.flows?.length?pages.find((page)=>page.path===`${d}/capabilities.md`):undefined;
         if(catalogue){
@@ -279,7 +293,7 @@ state:"skipped";row:Record<string,unknown>}|{state:"ok";verified:Verified;thread
       return {state:"ok",verified:{checked,warnings,reverted},threadId};
     }catch(cause){
       // The agent's thread failed or its work cannot be checked: the unit is done for tonight, its pages stay pending.
-      if(!pluginStopped(cause)&&!ctx.isDisposed()) await bestEffort(bb.log, "docs unit record drop", dropDocsUnitRecord(n,record), undefined);
+      if(canDropRecord&&!pluginStopped(cause)&&!ctx.isDisposed()) await bestEffort(bb.log, "docs unit record drop", dropDocsUnitRecord(n,record), undefined);
       docsUnitsFinishing.delete(key);
       throw cause;
     }

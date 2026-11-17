@@ -3,6 +3,7 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { afterEach, describe, expect, it } from "vitest";
 import plugin from "../../server";
 import { localDateKey } from "../../src/rooms/docs/docs";
+import { docsCompletenessGaps } from "../../src/rooms/docs/docs-lint";
 import {builtinWorkflow} from "../../src/rooms/workflow/builtin";
 import {DOCS_MAINTENANCE, DOCS_NIGHT} from "../../src/rooms/contracts";
 import { claimActivation, createAttempt, createRun, openDatabase, saveProjectSetting, savePrototypeConfig, setRunThread } from "../../src/rooms/plugin-db";
@@ -15,6 +16,28 @@ let dispose: (() => Promise<void> | void) | null = null;
 afterEach(async () => { await dispose?.(); dispose = null; });
 
 const sha = (text: string) => createHash("sha256").update(text).digest("hex");
+const rootForms = docsCompletenessGaps([], { tables: ["widgets"], deploy: true, core: [] }).missingPages.map((path) => {
+  const type = path.slice(5, -3);
+  const content = `---
+title: ${type}
+type: ${type}
+created: 2026-11-17
+updated: 2026-11-17
+status: active
+confidence: low
+tags: [codebase]
+sources: [src/a.ts]
+---
+# ${type}
+
+The source defines values (src/a.ts:1, src/a.ts:2, src/a.ts:3).
+
+## Relations
+
+The values share a module.
+`;
+  return { path, content, sha256: sha(content), modifiedAt: 1 };
+});
 const ev = (seq: number, type: string, data: Record<string, unknown> = {}, createdAt = 1_000) => ({ seq, type, createdAt, threadId: "thr_docs", data });
 const idleEvents = [ev(1, "client/turn/requested", {}, 1_000), ev(2, "turn/started", {}, 1_100), ev(3, "turn/completed", { status: "completed" }, 2_000)].reverse();
 const settle = async (ready: () => boolean | Promise<boolean>) => { for (let tick = 0; tick < 200 && !(await ready()); tick++) await new Promise((done) => setTimeout(done, 10)); };
@@ -38,8 +61,8 @@ describe("the nightly docs of a unit is the graph lp.docs-night", () => {
         calls.push({ method: call.method, input });
         if (call.method === "gitDocsScope") return { hostId: "ovh", status: "ready", isRepoRoot: true, hasDocs: true, changed: [], dirty: ["docs/overview.md", "src/stray.ts"], base: null, workspaces: [], localDate: "x", localHour: 1, reason: null };
         if (call.method === "gitRevertPaths") return { hostId: "ovh", reverted: input.paths, failed: [] };
-        if (call.method === "listDocsPages") return { hostId: "ovh", pages: [], oversized: [] };
-        if (call.method === "docsLineCounts") return { hostId: "ovh", counts: {} };
+        if (call.method === "listDocsPages") return { hostId: "ovh", pages: (call.input as { roots?: string[] }).roots?.includes(".agents/decisions") ? [] : rootForms, oversized: [] };
+        if (call.method === "docsLineCounts") return { hostId: "ovh", counts: { "src/a.ts": 3 } };
         if (call.method === "writeDocsPages") return { hostId: "ovh", previewSha256: sha("p"), status: "applied", writes: [], reason: null };
         if (call.method === "gitCommitDocs") return { hostId: "ovh", status: "committed", commit: "abc123", reason: null };
         if (call.method === "gitIntegrate") return { hostId: "ovh", status: "merged", commit: "def456", conflicts: [], reason: null };
@@ -52,7 +75,7 @@ describe("the nightly docs of a unit is the graph lp.docs-night", () => {
     const key = `docs-unit:proj_docs:${sha("/work/docs-wt\ndocs").slice(0, 12)}`;
     await bb.storage.kv.set(key, { version: 1, projectId: "proj_docs", place: { hostId: "ovh", path: "/work/docs-wt" }, basePath: "/work/project", label: "docs", unit: { docsDir: "docs" }, threadId: "thr_docs",
       phase: "writing", beforeDirty: [], localDate: today, since: "7d", roots: ["docs"], workspaces: [], hasDocs: true, changedCount: 3, refresh: [], gaps: { missingPages: [], uncoveredCore: [] },
-      anchors: null, core: [], kvKey: "docs-unit-report" });
+      anchors: null, requirements: { tables: [], deploy: false }, core: [], kvKey: "docs-unit-report" });
     await bb.storage.kv.set("docs-units-open", { [key]: true });
     await harness.runSchedule("docs-nightly-catchup");
     await settle(async () => !(await bb.storage.kv.get(key)));
@@ -85,8 +108,8 @@ describe("the nightly docs of a unit is the graph lp.docs-night", () => {
       experimental_callHostRpc: (call) => {
         calls.push(call.method);
         if (call.method === "gitDocsScope") return { hostId: "ovh", status: "ready", isRepoRoot: true, hasDocs: true, changed: [], dirty: ["docs/a.md"], base: null, workspaces: [], localDate: "x", localHour: 1, reason: null };
-        if (call.method === "listDocsPages") return { hostId: "ovh", pages: [], oversized: [] };
-        if (call.method === "docsLineCounts") return { hostId: "ovh", counts: {} };
+        if (call.method === "listDocsPages") return { hostId: "ovh", pages: (call.input as { roots?: string[] }).roots?.includes(".agents/decisions") ? [] : rootForms, oversized: [] };
+        if (call.method === "docsLineCounts") return { hostId: "ovh", counts: { "src/a.ts": 3 } };
         if (call.method === "writeDocsPages") return { hostId: "ovh", previewSha256: sha("p"), status: "applied", writes: [], reason: null };
         if (call.method === "gitCommitDocs") return { hostId: "ovh", status: "committed", commit: "abc123", reason: null };
         throw new Error(`stop at ${call.method}`);
@@ -97,7 +120,7 @@ describe("the nightly docs of a unit is the graph lp.docs-night", () => {
     const key = `docs-unit:proj_docs:${sha("/work/p\ndocs").slice(0, 12)}`;
     await bb.storage.kv.set(key, { version: 1, projectId: "proj_docs", place: { hostId: "ovh", path: "/work/p" }, label: "docs", unit: { docsDir: "docs" }, threadId: "thr_docs",
       phase: "writing", beforeDirty: [], localDate: localDateKey(new Date()), since: "7d", roots: ["docs"], workspaces: [], hasDocs: true, changedCount: 1, refresh: [], gaps: { missingPages: [], uncoveredCore: [] },
-      anchors: null, core: [], kvKey: "docs-unit-report2" });
+      anchors: null, requirements: { tables: [], deploy: false }, core: [], kvKey: "docs-unit-report2" });
     await bb.storage.kv.set("docs-units-open", { [key]: true });
     await Promise.all([harness.runSchedule("docs-nightly-catchup"), harness.runSchedule("docs-nightly-catchup")]);
     await settle(async () => !(await bb.storage.kv.get(key)));
@@ -109,6 +132,7 @@ describe("the nightly docs of a unit is the graph lp.docs-night", () => {
     const projectId = "proj_docs_write";
     const spawned: Array<Record<string, any>> = [];
     const calls: string[] = [];
+    const writtenRecords: Array<Record<string, unknown>> = [];
     const { bb, harness } = createFakePluginHost({
       pluginId: "lane-pilot",
       sdk: {
@@ -123,7 +147,12 @@ describe("the nightly docs of a unit is the graph lp.docs-night", () => {
         threads: {
           spawn: async (args: Record<string, any>) => { spawned.push(args); return { id: "thr_docs" } as never; },
           get: async () => ({ id: "thr_docs", status: "idle" }) as never,
-          events: { list: async () => idleEvents as never },
+          events: { list: async () => {
+            const key = `docs-unit:${projectId}:${sha("/work/p\ndocs").slice(0, 12)}`;
+            const record = await bb.storage.kv.get(key) as Record<string, unknown> | undefined;
+            if (record) writtenRecords.push(record);
+            return idleEvents as never;
+          } },
         } as never,
       },
       experimental_callHostRpc: (call) => {
@@ -131,10 +160,10 @@ describe("the nightly docs of a unit is the graph lp.docs-night", () => {
         const input = call.input as Record<string, unknown>;
         if (call.method === "gitDocsScope") return { hostId: "ovh", status: "ready", isRepoRoot: true, hasDocs: false, changed: ["src/a.ts"], dirty: input.docsDir ? ["docs/overview.md"] : [], base: null, workspaces: [], localDate: localDateKey(new Date()), localHour: 4, reason: null };
         if (call.method === "gitCreateWorktree") return { hostId: "ovh", status: "failed", path: null, branch: null, reason: "no worktree in the test" };
-        if (call.method === "listDocsPages") return { hostId: "ovh", pages: [], oversized: [] };
+        if (call.method === "listDocsPages") return { hostId: "ovh", pages: (call.input as { roots?: string[] }).roots?.includes(".agents/decisions") ? [] : rootForms, oversized: [] };
         if (call.method === "docsFlows") return { hostId: "ovh", briefPath: "/tmp/flows.md", routes: 0, flows: [] };
-        if (call.method === "docsAnchors") return { hostId: "ovh", briefPath: "/tmp/brief.md", anchors: 0, tables: [], deploy: false, core: [], productFiles: [] };
-        if (call.method === "docsLineCounts") return { hostId: "ovh", counts: {} };
+        if (call.method === "docsAnchors") return { hostId: "ovh", briefPath: "/tmp/brief.md", anchors: 0, tables: ["widgets"], deploy: true, core: [], productFiles: [] };
+        if (call.method === "docsLineCounts") return { hostId: "ovh", counts: { "src/a.ts": 3 } };
         if (call.method === "writeDocsPages") return { hostId: "ovh", previewSha256: sha("p"), status: "applied", writes: [], reason: null };
         if (call.method === "gitCommitDocs") return { hostId: "ovh", status: "committed", commit: "abc123", reason: null };
         throw new Error(`stop at ${call.method}`);
@@ -150,6 +179,9 @@ describe("the nightly docs of a unit is the graph lp.docs-night", () => {
     const result = await harness.behavior.runCli(["docs-nightly", projectId]) as { stdout: string };
     const rows = JSON.parse(result.stdout) as Array<Record<string, unknown>>;
     expect(rows).toEqual([expect.objectContaining({ projectId, state: "passed", docsDir: "docs", onboarding: true, commit: "abc123", threadId: "thr_docs" })]);
+    expect(writtenRecords).toEqual(expect.arrayContaining([expect.objectContaining({ requirements: { tables: ["widgets"], deploy: true } })]));
+    const prepared = db.prepare("SELECT output_json FROM lane_pilot_wf_step WHERE node_id='prepare'").get() as { output_json: string };
+    expect(JSON.parse(prepared.output_json).plan).toMatchObject({ requirements: { tables: ["widgets"], deploy: true }, gaps: { missingPages: rootForms.map((page) => page.path) } });
     expect(spawned).toHaveLength(1);
     expect(spawned[0]!.providerId).toBe("codex");
     expect(spawned[0]!.permissionMode).toBe("full");
@@ -186,10 +218,10 @@ describe("the nightly docs of a unit is the graph lp.docs-night", () => {
         const input = call.input as Record<string, unknown>;
         if (call.method === "gitDocsScope") return { hostId: "ovh", status: "ready", isRepoRoot: true, hasDocs: false, changed: ["src/a.ts"], dirty: input.docsDir ? ["docs/overview.md"] : [], base: null, workspaces: [], localDate: localDateKey(new Date()), localHour: 4, reason: null };
         if (call.method === "gitCreateWorktree") return { hostId: "ovh", status: "failed", path: null, branch: null, reason: "no worktree in the test" };
-        if (call.method === "listDocsPages") return { hostId: "ovh", pages: [], oversized: [] };
+        if (call.method === "listDocsPages") return { hostId: "ovh", pages: (call.input as { roots?: string[] }).roots?.includes(".agents/decisions") ? [] : rootForms, oversized: [] };
         if (call.method === "docsFlows") return { hostId: "ovh", briefPath: "/tmp/flows.md", routes: 0, flows: [] };
         if (call.method === "docsAnchors") return { hostId: "ovh", briefPath: "/tmp/brief.md", anchors: 0, tables: [], deploy: false, core: [], productFiles: [] };
-        if (call.method === "docsLineCounts") return { hostId: "ovh", counts: {} };
+        if (call.method === "docsLineCounts") return { hostId: "ovh", counts: { "src/a.ts": 3 } };
         if (call.method === "writeDocsPages") return { hostId: "ovh", previewSha256: sha("p"), status: "applied", writes: [], reason: null };
         if (call.method === "gitCommitDocs") return { hostId: "ovh", status: "committed", commit: "abc123", reason: null };
         throw new Error(`stop at ${call.method}`);

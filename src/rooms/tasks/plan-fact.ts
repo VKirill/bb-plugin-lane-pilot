@@ -253,18 +253,27 @@ export function parseDiffHunks(output: string): Record<string, Array<[number, nu
 const quote = (path: string) => `'${path.replace(/'/g, `'\\''`)}'`;
 export const PLAN_FACT_UNTRACKED_MARK = "---untracked---";
 export const PLAN_FACT_NO_BASE_MARK = "---nobase---";
+export const PLAN_FACT_DIFF_OK_MARK = "---diff-ok---";
+export const PLAN_FACT_DIFF_ERROR_MARK = "---diff-error---";
 
 /** One shell command that prints the hunk headers against the base commit, then the untracked files among the paths. */
 export function diffHunksCommand(baseSha: string, paths: readonly string[]): string {
   const list = paths.map(quote).join(" ");
-  return `git cat-file -e ${baseSha}^{commit} 2>/dev/null || echo ${PLAN_FACT_NO_BASE_MARK}; `
-    + `git -c core.quotepath=off diff -U0 --no-color --no-ext-diff ${baseSha} -- ${list} | grep -E '^(\\+\\+\\+ |@@ )'; `
-    + `echo ${PLAN_FACT_UNTRACKED_MARK}; git ls-files --others --exclude-standard -- ${list}`;
+  return `if git cat-file -e ${baseSha}^{commit} 2>/dev/null; then `
+    + `if tmp=$(mktemp); then if git -c core.quotepath=off diff -U0 --no-color --no-ext-diff ${baseSha} -- ${list} >"$tmp"; then `
+    + `grep -E '^(\\+\\+\\+ |@@ )' "$tmp"; code=$?; if [ "$code" -le 1 ]; then echo ${PLAN_FACT_DIFF_OK_MARK}; else echo ${PLAN_FACT_DIFF_ERROR_MARK}; fi; `
+    + `else echo ${PLAN_FACT_DIFF_ERROR_MARK}; fi; rm -f "$tmp"; else echo ${PLAN_FACT_DIFF_ERROR_MARK}; fi; `
+    + `else echo ${PLAN_FACT_NO_BASE_MARK}; fi; `
+    + `echo ${PLAN_FACT_UNTRACKED_MARK}; if ! git ls-files --others --exclude-standard -- ${list}; then echo ${PLAN_FACT_DIFF_ERROR_MARK}; fi`;
 }
 
 /** The facts the diff command's output gives: hunks of tracked paths, `all` for untracked ones. */
-export function hunksFromCommandOutput(output: string, produced: readonly string[]): { hunksKnown: boolean; changed: Record<string, Array<[number, number]> | "all"> } {
-  if (output.includes(PLAN_FACT_NO_BASE_MARK)) return { hunksKnown: false, changed: {} };
+export type DiffHunksResult = { hunksKnown: boolean; changed: Record<string, Array<[number, number]> | "all">; status: "ok" | "missing_base" | "unavailable" };
+export function hunksFromCommandOutput(output: string, produced: readonly string[]): DiffHunksResult {
+  if (output.includes(PLAN_FACT_NO_BASE_MARK)) return { hunksKnown: false, changed: {}, status: "missing_base" };
+  if (output.includes(PLAN_FACT_DIFF_ERROR_MARK) || !output.includes(PLAN_FACT_DIFF_OK_MARK) || !output.includes(PLAN_FACT_UNTRACKED_MARK)) {
+    return { hunksKnown: false, changed: {}, status: "unavailable" };
+  }
   const [tracked = "", untracked = ""] = output.split(PLAN_FACT_UNTRACKED_MARK);
   const hunks = parseDiffHunks(tracked);
   const changed: Record<string, Array<[number, number]> | "all"> = {};
@@ -273,7 +282,7 @@ export function hunksFromCommandOutput(output: string, produced: readonly string
     const path = line.trim();
     if (path && produced.includes(path)) changed[path] = "all";
   }
-  return { hunksKnown: true, changed };
+  return { hunksKnown: true, changed, status: "ok" };
 }
 
 /** The files the table cites that the candidate did not change: whether they exist is a fact the stage reads from the repository. */

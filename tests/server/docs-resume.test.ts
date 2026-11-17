@@ -26,7 +26,7 @@ async function resume(localDate: string, sentAt: number) {
   await bb.storage.kv.set(key, { version:1, projectId:"proj_docs", place:{ hostId:"ovh", path:"/home/ubuntu/project" }, label:"apps/worker/docs",
     unit:{ docsDir:"apps/worker/docs", workspace:{ path:"apps/worker", name:"worker" } }, threadId:"thr_docs", phase:"repairing", sentAt,
     beforeDirty:[], localDate, since:"7d", roots:["apps/worker/docs"], workspaces:[], hasDocs:true, changedCount:1, refresh:[],
-    gaps:{ missingPages:[], uncoveredCore:[] }, anchors:null, core:[], kvKey:"docs-unit-report" });
+    gaps:{ missingPages:[], uncoveredCore:[] }, anchors:null, requirements:{ tables:[], deploy:false }, core:[], kvKey:"docs-unit-report" });
   await bb.storage.kv.set("docs-units-open", { [key]:true });
   await harness.runSchedule("docs-nightly-catchup");
   for (let tick = 0; tick < 50 && !hostCalls.length && await bb.storage.kv.get(key); tick++) await new Promise((done) => setTimeout(done, 10));

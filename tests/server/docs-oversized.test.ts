@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { afterEach, describe, expect, it } from "vitest";
 import plugin from "../../server";
-import { oversizedPageFindings } from "../../src/rooms/docs/docs-lint";
+import { docsCompletenessGaps, oversizedPageFindings } from "../../src/rooms/docs/docs-lint";
 import { localDateKey } from "../../src/rooms/docs/docs";
 
 let dispose: (() => Promise<void> | void) | null = null;
@@ -13,6 +13,11 @@ const sha = (text: string) => createHash("sha256").update(text).digest("hex");
 const BIG = "docs/adoc-applicability.md";
 const overview = ["---", "title: Overview", "type: overview", "created: 2026-10-10", "updated: 2026-10-18", "status: active", "confidence: high",
   "tags: [overview]", "sources:", "  - server.ts", "---", "", "# Overview", "", "Entry (`server.ts:1`, `server.ts:2`, `server.ts:3`).", ""].join("\n");
+const rootForms = docsCompletenessGaps([], { tables: [], core: [] }).missingPages.map((path) => {
+  const type = path.slice(5, -3);
+  const content = overview.replace("title: Overview", `title: ${type}`).replace("type: overview", `type: ${type}`).replace("# Overview", `# ${type}`);
+  return { path, modifiedAt: 1, sha256: sha(content), content };
+});
 
 /**
  * The root unit of Lane Pilot's pass on 2026-10-18 (thr_k9zs29ndm4), resumed after its writing turn: the agent edited
@@ -31,7 +36,7 @@ async function finish(oversizedAtStart: string[] | undefined) {
     experimental_callHostRpc:(call) => {
       calls.push(call.method);
       if (call.method === "gitDocsScope") return { hostId:"mb", status:"ready", isRepoRoot:true, hasDocs:true, changed:[], dirty:[BIG], base:"HEAD", workspaces:[], localDate, localHour:3, reason:null } as never;
-      if (call.method === "listDocsPages") return { hostId:"mb", pages:[{ path:"docs/overview.md", modifiedAt:1, sha256:sha("o"), content:overview }], oversized:[BIG] } as never;
+      if (call.method === "listDocsPages") return { hostId:"mb", pages:rootForms, oversized:[BIG] } as never;
       if (call.method === "docsLineCounts") return { hostId:"mb", counts:{ "server.ts":200 } } as never;
       if (call.method === "writeDocsPages") return { hostId:"mb", previewSha256:sha("p"), status:"applied", writes:[], reason:null } as never;
       if (call.method === "gitCommitDocs") return { hostId:"mb", status:"committed", commit:"c0ffee", reason:null } as never;
@@ -44,7 +49,7 @@ async function finish(oversizedAtStart: string[] | undefined) {
   const key = `docs-unit:proj_lp:${createHash("sha256").update(`${place}\ndocs`).digest("hex").slice(0, 12)}`;
   await bb.storage.kv.set(key, { version:1, projectId:"proj_lp", place:{ hostId:"mb", path:place }, label:"docs", unit:{ docsDir:"docs" },
     threadId:"thr_docs", phase:"repairing", sentAt, beforeDirty:[], localDate, since:"7d", roots:["docs"], workspaces:[], hasDocs:true,
-    changedCount:14, refresh:[], gaps:{ missingPages:[], uncoveredCore:[] }, anchors:null, core:[], kvKey:"docs-unit-report",
+    changedCount:14, refresh:[], gaps:{ missingPages:[], uncoveredCore:[] }, anchors:null, requirements:{ tables:[], deploy:false }, core:[], kvKey:"docs-unit-report",
     ...(oversizedAtStart ? { oversizedAtStart } : {}) });
   await bb.storage.kv.set("docs-units-open", { [key]:true });
   await harness.runSchedule("docs-nightly-catchup");

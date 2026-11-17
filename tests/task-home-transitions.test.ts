@@ -163,10 +163,11 @@ describe("main path transitions through the task manifest", () => {
     saveTaskGitBase(w.db, "t1", { baseRef: "main", baseSha: BASE_SHA, initialHeadSha: BASE_SHA, branch: "lp/t1", compareCommitted: true });
     const table = (status: string) => `Done.\n\n\`\`\`plan-fact\n${JSON.stringify([{ item: 1, status, evidence: ["src/a.ts:4-5"] }])}\n\`\`\`\n`;
     await recordWriterReport(w.ctx, { taskId: "t1", attemptId: "a1", runId: RUN }, table("done"));
-    const host = { call: async () => ({ hostId: "h", exitCode: 0, stdout: "+++ b/src/a.ts\n@@ -3 +4,2 @@\n---untracked---\n", stderr: "" }) };
+    const host = { call: async () => ({ hostId: "h", exitCode: 0, stdout: "+++ b/src/a.ts\n@@ -3 +4,2 @@\n---diff-ok---\n---untracked---\n", stderr: "" }) };
     const result = await runPlanFactStage({ ...(w.ctx as object), host } as never, { projectId: "proj", runId: RUN, taskId: "t1", attempt: 1, hostId: "h1", task: contract("t1"),
       answers: ["no table in memory"], attemptId: "a1", produced: ["src/a.ts"], verification: [{ command: "npm test", exitCode: 0 }] });
     expect(result.check).toMatchObject({ table: "ok" });
+    expect(result.check?.notChecked).toEqual([]);
     const fact = resolveTaskFile(w.db, "t1", "plan-fact", { attemptId: "a1" })!;
     expect(fact.path).toBe("attempts/a1/plan-fact.json");
     expect(JSON.parse(w.files.get(fact.absPath)!).report).toEqual({ path: "attempts/a1/report.md", sha256: sha(table("done")) });

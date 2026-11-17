@@ -5,7 +5,7 @@ import { bestEffort, isNotFound, orMiss, parseJsonOr } from "@lane-pilot/kit";
 import { readWires, wiresCommand } from "../../wires";
 import type { TaskV2 } from "../../contracts";
 import type { ServerCore } from "../../contracts/server";
-import { deleteStageReceipt, getRunSettingsScopes, getStageReceiptResult, getTask, getTaskGitBase, loadProjectSettings, acceptedTaskIdsOfRun, stageReceiptAttemptState } from "../../storage";
+import { deleteStageReceipt, getRunSettingsScopes, getStageReceiptResult, getTask, getTaskGitBase, loadProjectSettings, acceptedTaskIdsOfRun, stageReceiptAttemptState, taskTimelineRow } from "../../storage";
 import { recordStage } from "../../runs/server";
 import { readTaskFile } from "../../storage";
 import { recordTaskHomeFile, taskHomeIo } from "./task-home";
@@ -18,6 +18,28 @@ export type PlanFactMode = "record" | "gate";
 export const planFactMode = (settings: Record<string, unknown>): PlanFactMode => settings[PLAN_FACT_MODE_SETTING] === "gate" ? "gate" : "record";
 
 const MAX_DIFF_PATHS = 100;
+
+/** Whether this task is phase-linked, ordinary work, or has ancestry that cannot safely be identified. */
+export type PhasePlanFactRequirement = "required" | "not_required" | "unknown";
+
+/** Resolve redo ancestry without treating an absent or malformed root as ordinary work. */
+export function phasePlanFactRequirement(db: ServerCore["db"], runId: string, taskId: string): PhasePlanFactRequirement {
+  const own = taskTimelineRow(db, taskId, runId);
+  if (!own || own.birth !== "redo") return own?.birth === "phase" ? "required" : "not_required";
+  let current = taskId;
+  const seen = new Set<string>();
+  for (;;) {
+    if (seen.has(current)) return "unknown";
+    seen.add(current);
+    // Numeric redispatches use taskFamily; second-pilot narrow tasks use the explicit `.n` parent.
+    const parentId = current.endsWith(".n") ? current.slice(0, -2) : taskFamily(current);
+    const parent = taskTimelineRow(db, parentId, runId);
+    if (!parent || parent.birth === null) return "unknown";
+    if (parent.birth === "phase") return "required";
+    if (parent.birth !== "redo") return "not_required";
+    current = parentId;
+  }
+}
 
 /** The table of the first answer that has a readable one; an answer without a table falls back to the earlier one (a repair round's short reply). */
 export function tableFromAnswers(answers: readonly string[]): PlanFactTable {
@@ -84,11 +106,18 @@ export async function runPlanFactStage(ctx: ServerCore, input: {
   const gitBase = gitBaseFamily ?? getTaskGitBase(db, input.taskId);
   const base = gitBase ? gitBase.base_sha ?? gitBase.initial_head_sha : null;
   const unreadable: Record<string, boolean> = {};
+  let diffProbeUnavailable = false;
   if (table.status === "ok" && base && produced.length > 0 && produced.length <= MAX_DIFF_PATHS) {
     try {
       const out = await runOnHost(host, { hostId: input.hostId, cwd: input.task.project_cwd, command: diffHunksCommand(base, produced), timeoutSec: 30 });
-      hunks = hunksFromCommandOutput(out.stdout, produced);
-    } catch { /* hunks stay unknown: the report says the lines were not checked */ }
+      if (out.exitCode !== 0) throw new Error(`diff probe exited ${out.exitCode}: ${out.stderr.slice(0, 200)}`);
+      const parsed = hunksFromCommandOutput(out.stdout, produced);
+      if (parsed.status !== "ok") throw new Error(`diff probe response ${parsed.status}`);
+      hunks = parsed;
+    } catch (cause) {
+      diffProbeUnavailable = true;
+      ctx.log(`plan-fact: diff probe for ${input.taskId} could not run (${cause instanceof Error ? cause.message : String(cause)})`);
+    }
     const cited = new Set(table.rows.flatMap((row) => row.evidence ?? []).map((entry) => /^(.+?)(?::\d+(?:-\d+)?)?$/.exec(entry.trim())?.[1] ?? ""));
     for (const [path, ranges] of Object.entries(hunks.changed)) {
       if (ranges !== "all" || !cited.has(path)) continue;
@@ -113,6 +142,7 @@ export async function runPlanFactStage(ctx: ServerCore, input: {
     produced, ...hunks, lineCount, ...(exists ? { exists } : {}), ...(Object.keys(unreadable).length ? { unreadable } : {}), root: input.task.project_cwd,
     contractCommands: input.task.verification.map((row) => row.command), ran: input.verification,
   });
+  if (diffProbeUnavailable) check.notChecked.push("diff: the candidate diff could not be read, so changed line ranges were not checked");
   if (input.task.wires?.length) {
     const ran = await bestEffort(ctx.log, "plan-fact wires probe", runOnHost(host, { hostId: input.hostId, cwd: input.task.project_cwd, command: wiresCommand(input.task.wires), timeoutSec: 60 }), null);
     if (ran) check.wires = readWires(input.task.wires, ran.stdout);
@@ -121,8 +151,16 @@ export async function runPlanFactStage(ctx: ServerCore, input: {
   if (table.status === "ok" && base === null) check.notChecked.push("line ranges: the task has no recorded base commit (a folder without git), so only the files were checked");
   const settings = loadProjectSettings(db, input.projectId, getRunSettingsScopes(db, input.runId));
   const mode = planFactMode(settings);
+  const codePhaseWork = input.task.acceptance.length > 0 && !NO_CODE_KINDS.has(input.task.kind ?? "");
+  const phaseRequirement = codePhaseWork ? phasePlanFactRequirement(db, input.runId, input.taskId) : "not_required";
   // In gate mode a code task that promises something must hand in a readable table: «not checked» is not «proved».
-  const outcome = planFactOutcome(check, mode === "gate" && input.task.acceptance.length > 0 && !NO_CODE_KINDS.has(input.task.kind ?? ""));
+  const ordinaryOutcome = planFactOutcome(check, mode === "gate" && codePhaseWork);
+  const phaseReason = phaseRequirement === "unknown"
+    ? "plan_fact_lineage_unknown: redo ancestry is missing or does not identify a phase task"
+    : phaseRequirement === "required" && diffProbeUnavailable
+    ? "plan_fact_check_unavailable: the phase candidate diff could not be checked"
+    : phaseRequirement === "required" ? planFactOutcome(check, true).reason : null;
+  const outcome = phaseReason ? { state: "failed" as const, reason: phaseReason } : ordinaryOutcome;
   // A retry of the task reaches this stage again with a new answer: the receipt is the latest one, its earlier events stay.
   deleteStageReceipt(db, input.runId, input.taskId, "plan-fact");
   recordStage(db, {
@@ -135,7 +173,7 @@ export async function runPlanFactStage(ctx: ServerCore, input: {
       content: `${JSON.stringify({ state: outcome.state, reason: outcome.reason ?? null, mode, base, report: report ? { path: report.path, sha256: report.sha256 } : null, check }, null, 2)}\n`,
       producer: { node: "plan-fact", graph: "lp-task-pipeline", stage_id: "plan-fact", run_id: input.runId, attempt_id: input.attemptId }, readers: ["acceptance"] }), null);
   }
-  return { refusal: mode === "gate" && outcome.state === "failed" ? outcome.reason : null, check, state: outcome.state };
+  return { refusal: phaseReason ?? (mode === "gate" && outcome.state === "failed" ? outcome.reason : null), check, state: outcome.state };
 }
 
 /** The writer's table as the check read it, from a receipt's items: a recheck weighs the same evidence, not a new answer. */

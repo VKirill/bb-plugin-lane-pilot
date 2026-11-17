@@ -20,6 +20,8 @@ export interface Services {
     basePath?:string;label:string;unit:DocsUnit;threadId:string;phase:"writing"|"repairing";sentAt?:number;
     beforeDirty:string[];localDate:string;since:ReturnType<typeof parseDocsSettings>["since"];roots:string[];workspaces:Array<{path:string;name:string;docsDir:string|null}>;
     hasDocs:boolean;changedCount:number;refresh:string[];gaps:{missingPages:string[];uncoveredCore:string[]};anchors:{count:number;jev?:string}|null;
+    /** Actual code-map inputs for required forms; absent in legacy records or when the map could not be read. */
+    requirements?:{tables:string[];deploy:boolean};
     core:Array<{name:string;file:string;line:number;endLine:number}>;kvKey:string;
     /** Pages of the place already over the size limit when the agent started (absent in records saved by older versions). */
     oversizedAtStart?:string[];
@@ -31,6 +33,7 @@ export interface Services {
     workspaces:Array<{path:string;name:string;docsDir:string|null}>;base:string;runKey:string;assignment?:string};
   /** What the prepare step found for a unit with work to do, handed to the write step (the unit record is made once the agent has a thread). */
   export type UnitPlan={label:string;hasDocs:boolean;changed:string[];changedCount:number;refresh:string[];gaps:{missingPages:string[];uncoveredCore:string[]};
+    requirements:DocsUnitRecord["requirements"];
     anchors:{count:number;jev?:string;briefPath?:string;deploy:boolean}|null;core:Array<{name:string;file:string;line:number;endLine:number}>;kvKey:string;
     doubts:Array<{path:string;rule:string;detail:string}>;decisionDrafts:string[];beforeDirty:string[];localDate:string;oversizedAtStart:string[]};
 

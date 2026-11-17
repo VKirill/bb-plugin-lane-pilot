@@ -1,7 +1,20 @@
 import { describe, expect, it } from "vitest";
+import { createHash } from "node:crypto";
+import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
+import { createCore } from "../src/rooms/core/server/core";
+import { createPhaseDriver } from "./phase-driver";
+import { installDocs } from "../src/rooms/phase/server/driver-docs";
+import { createRun, openDatabase } from "../src/rooms/plugin-db";
+import type { Services } from "../server";
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
+import { runSim } from "./workflow/chain-harness";
+import { getPhase, savePhase } from "../src/rooms/phase/store";
 import { builtinWorkflow } from "../src/rooms/workflow/builtin";
-import { MACHINE_STAGE_FAILURE, AUTO_LIFETIME_TRIES, AUTO_TRIES, autoDue, contextDoc, createAutoStages, planItems } from "../src/rooms/phase/server/auto-stages";
-import type { Phase, PhaseRecord } from "../src/rooms/phase/logic";
+import { MACHINE_STAGE_FAILURE, AUTO_LIFETIME_TRIES, AUTO_TRIES, autoDue, autoInputs, contextDoc, createAutoStages, planItems } from "../src/rooms/phase/server/auto-stages";
+import type { Phase, PhaseRecord, PlanItem } from "../src/rooms/phase/logic";
+import { taskV2Schema } from "../src/rooms/contracts";
 
 const phaseAt = (stage: string, record: PhaseRecord = {}, state = "active"): Phase => ({ id: "ph_1", projectId: "p", pmThreadId: "thr_pm", runId: "run1", title: "Notes",
   goal: "a notes module with a CLI", stage, state, record, edition: 1, createdAt: 1, updatedAt: 1 }) as unknown as Phase;
@@ -42,6 +55,54 @@ describe("what the machine makes of a workflow's output", () => {
     expect(items.map((item) => [item.id, item.wave])).toEqual([["store", 1], ["cli", 2], ["landing", 1]]);
     expect(items[0]!.promise.then).toBe("writes are atomic");
   });
+  it.each([["ASCII", "a".repeat(600)], ["Cyrillic", "я".repeat(600)], ["emoji", "🙂".repeat(300)]])("keeps a complete 600-unit promise field unchanged (%s)", (_label, value) => {
+    const task = { id: "a", title: value, objective: value, acceptance: [value] };
+    const [item] = planItems(phaseAt("planning"), { tasks: [task] });
+    expect(item!.promise).toEqual({ given: value, when: value, then: value });
+    expect(taskV2Schema.shape.promise.safeParse(item!.promise).success).toBe(true);
+  });
+  it.each([["ASCII", "a".repeat(601)], ["Cyrillic", "я".repeat(601)], ["emoji boundary", `${"a".repeat(599)}🙂`]])("references full contract fields instead of cutting a 601-unit promise (%s)", (_label, value) => {
+    const task = { id: "a", title: value, objective: value, acceptance: [value] };
+    const [item] = planItems(phaseAt("planning"), { tasks: [task] });
+    expect(item!.promise.given).toContain("full task.objective");
+    expect(item!.promise.when).toContain("full task.title");
+    expect(item!.promise.then).toContain("full task.acceptance");
+    expect(Object.values(item!.promise)).not.toContain(value.slice(0, 600));
+    expect(taskV2Schema.shape.promise.safeParse(item!.promise).success).toBe(true);
+    expect(item!.task).toEqual(task);
+  });
+  it("references an overlong inherited goal without losing the full phase goal", () => {
+    const phase = { ...phaseAt("planning"), goal: "g".repeat(601) };
+    const [item] = planItems(phase, { tasks: [{ id: "a", title: "A", acceptance: ["done"] }] });
+    expect(item!.promise.given).toBe("the full phase goal applies");
+    expect(phase.goal).toHaveLength(601);
+  });
+  it("persists the full criteria and bounded reference through real auto apply without admitting an unchecked plan", async () => {
+    const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
+    try {
+      const db = openDatabase(bb);
+      createRun(db, "run1", "projA");
+      const services = { runBudgets: { get: () => undefined }, dispatchWriter: async () => { throw new Error("writer forbidden"); } } as unknown as Services;
+      const phases = createPhaseDriver(createCore(bb, db), services).phases;
+      const phase = await phases.open({ projectId: "projA", pmThreadId: "thr_pm", title: "A", goal: "A" });
+      savePhase(db, phase.id, { stage: "planning", record: { ...phase.record, context: { docs: [], sha: "c", signedAt: 1 } }, at: 1 });
+      const get = () => getPhase(db, phase.id)!;
+      const task = { id: "a", title: "A", objective: "A", acceptance: ["a".repeat(601)], owns_paths: ["src/a.ts"], verification: [{ command: "node verify.cjs", cwd: "." }] };
+      const auto = createAutoStages({ log: () => undefined }, { workflowEngine: {} } as never, {
+        api: { plan: phases.plan, planCheck: phases.planCheck } as never,
+        exhausted: async () => undefined, get, save: (_id, record) => savePhase(db, phase.id, { record, at: 1 }), book: () => undefined,
+        writeDocs: async () => { throw new Error("docs write forbidden"); }, runtime: () => null, pmIdle: async () => true, now: () => 1,
+      });
+      await expect(auto.apply(get(), { kind: "plan", wfRunId: "wf1", startedAt: 1 } as never, { tasks: [task], status: "failed", plan_verdict: "rework" })).rejects.toThrow("the plan is not admitted");
+      const stored = get().record.plan!;
+      expect(stored.items[0]!.task.acceptance).toEqual(task.acceptance);
+      expect(stored.items[0]!.promise.then).toContain("full task.acceptance");
+      expect(taskV2Schema.shape.promise.safeParse(stored.items[0]!.promise).success).toBe(true);
+      expect(stored.critique?.decision).toBe("changes_requested");
+      expect(stored.admittedSha).toBeUndefined();
+      expect(db.prepare("SELECT COUNT(*) AS n FROM lane_pilot_task").get()).toEqual({ n: 0 });
+    } finally { await harness.lifecycle.dispose(); }
+  });
   it("[sma:p2_waves] a plan whose tasks depend on each other in a cycle is refused, not turned into pieces of wave 1", () => {
     expect(() => planItems(phaseAt("planning"), { tasks: [{ id: "a", depends_on: ["b"] }, { id: "b", depends_on: ["a"] }, { id: "c" }], waves: [["a", "b", "c"]] }))
       .toThrow(/waves cannot be computed.*cycle \(a → b → a\)/);
@@ -56,6 +117,7 @@ describe("the machine's pass", () => {
     let exhaustFails = false;
     const booked: string[] = [];
     const calls: string[] = [];
+    const plans: PlanItem[][] = [];
     const runs = new Map<string, { status: string; output: Record<string, unknown> | null }>();
     const engine: Record<string, unknown> = { resolveWorkflow: (id: string) => builtinWorkflow(id) };
     const auto = createAutoStages({ log: () => undefined }, {
@@ -65,7 +127,7 @@ describe("the machine's pass", () => {
       exhausted: async (_phase, input) => { calls.push(`exhausted ${input.kind} ${input.stage}`); if (exhaustFails) throw new Error("the attempt could not be canceled"); },
       api: {
         context: async (input) => { calls.push(`context ${input.docs.join(",")}`); phase = phaseAt("planning", { ...phase.record, context: { docs: [], sha: "c", signedAt: 1 } }); return phase; },
-        plan: (input) => { calls.push(`plan ${input.items.length}${input.alreadyMet ? ` already_met: ${input.alreadyMet}` : ""}`); return phase; }, planCheck: async (input) => { calls.push(`planCheck ${input.decision}${input.wfRunId ? ` ${input.wfRunId}` : ""}`); if (planRefusal) throw planRefusal; return phase; }, question: (input) => { calls.push(`question ${input.text}`); return phase; }, waveReview: () => phase, goalAudit: (input) => { calls.push(`goalAudit ${input.state}\n${input.summary}`); return phase; }, lessons: () => phase, drawing: async () => phase,
+        plan: (input) => { plans.push(input.items); calls.push(`plan ${input.items.length}${input.alreadyMet ? ` already_met: ${input.alreadyMet}` : ""}`); return phase; }, planCheck: async (input) => { calls.push(`planCheck ${input.decision}${input.wfRunId ? ` ${input.wfRunId}` : ""}`); if (planRefusal) throw planRefusal; return phase; }, question: (input) => { calls.push(`question ${input.text}`); return phase; }, waveReview: () => phase, goalAudit: (input) => { calls.push(`goalAudit ${input.state}\n${input.summary}`); return phase; }, lessons: () => phase, drawing: async () => phase,
         returnTo: (input) => { calls.push(`return ${input.to}`); phase = { ...phase, stage: input.to } as Phase; return phase; },
       },
       get: () => phase,
@@ -78,8 +140,28 @@ describe("the machine's pass", () => {
       now: () => 1,
       runStopped: async () => stopped,
     });
-    return { auto, calls, runs, engine, booked, failExhaust: () => { exhaustFails = true; }, failPlan: (error: Error) => { planRefusal = error; }, stop: (value = true) => { stopped = value; }, get: () => phase, finish: () => { runs.set("wfrun_1", { status, output }); } };
+    return { auto, calls, plans, runs, engine, booked, failExhaust: () => { exhaustFails = true; }, failPlan: (error: Error) => { planRefusal = error; }, stop: (value = true) => { stopped = value; }, get: () => phase, finish: () => { runs.set("wfrun_1", { status, output }); } };
   }
+  it("applies a plan with 1057 acceptance characters without storing a cut command or changing its full criteria", async () => {
+    const acceptance = ["`node verify-a.cjs` exits 0".padEnd(477, "."), "`bash verify-b.sh` exits 0".padEnd(180, "."), "`sh verify-c.sh` exits 0".padEnd(396, ".")];
+    expect(acceptance.join("; ")).toHaveLength(1057);
+    const task = { id: "a", title: "A", objective: "o".repeat(601), acceptance, verification: [{ command: "node verify-a.cjs", cwd: "." }, { command: "bash verify-b.sh", cwd: "." }, { command: "sh verify-c.sh", cwd: "." }] };
+    const original = structuredClone(task);
+    const w = world({ tasks: [task], status: "ok", plan_verdict: "pass" }, "succeeded", phaseAt("planning", { context: { docs: [], sha: "c", signedAt: 1 } }));
+    await w.auto.step(w.get());
+    w.finish();
+    await w.auto.step(w.get());
+    expect(w.plans).toHaveLength(1);
+    const [item] = w.plans[0]!;
+    expect(item!.promise.given).toContain("full task.objective");
+    expect(item!.promise.then).toContain("every criterion in the full task.acceptance");
+    expect(item!.promise.then).not.toBe(acceptance.join("; ").slice(0, 600));
+    expect(taskV2Schema.shape.promise.safeParse(item!.promise).success).toBe(true);
+    expect(item!.task).toEqual(original);
+    expect(task).toEqual(original);
+    expect(w.calls).toContain("planCheck approve wfrun_1");
+    expect(w.get().record.auto).toBeUndefined();
+  });
   it("starts no stage workflow while the run is halted or paused, and starts it once the run goes on", async () => {
     const w = world({ decisions: [], risks: [], open_questions: [] });
     w.stop();
@@ -426,5 +508,80 @@ describe("signing again after a return", () => {
     await auto.step(phase);
     expect(signed).toEqual([["CONTEXT.md"]]);
     expect(phase.record.signedBefore).toBeUndefined();
+  });
+});
+
+
+describe("analysis research carried to the signed context", () => {
+  it("keeps five real workflow outputs in written bytes and signs the same document for planning", async () => {
+    const run = await runSim("lp.analyze", { input: { goal: "g" }, stubs: {
+      gather: { summary: "SUMMARY marker", stack: ["STACK marker"], features: ["FEATURE marker"], architecture: ["ARCH marker"] },
+      assess: { confidence: 80, pitfalls: ["PITFALL marker"] },
+    } });
+    expect(run.summary.status).toBe("succeeded");
+    const output = run.summary.output as Record<string, unknown>;
+    expect(output).toMatchObject({ summary: "SUMMARY marker", stack: ["STACK marker"], features: ["FEATURE marker"], architecture: ["ARCH marker"], pitfalls: ["PITFALL marker"] });
+    const dir = mkdtempSync(join(tmpdir(), "lp-context-"));
+    const previous = process.env.LANE_PILOT_OWNER_WORDS_DEFAULT;
+    let refuseWrites = false;
+    process.env.LANE_PILOT_OWNER_WORDS_DEFAULT = "off";
+    try {
+      const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
+      harness.sdk.stub("threads.get" as never, async () => ({ status: "idle", environmentId: "env_pm" }));
+      harness.sdk.stub("threads.list" as never, async () => []);
+      harness.sdk.stub("threads.listRunning" as never, async () => []);
+      harness.sdk.stub("environments.get" as never, async () => ({ path: dir, hostId: "h" }));
+      (bb.hosts as { experimental_client: unknown }).experimental_client = (() => ({ call: async (method: string, input: Record<string, unknown>) => {
+        if (method === "writePhaseBook") return { status: "applied", writes: (input.edits as Array<{ path: string; content: string }>).map((edit) => {
+          if (refuseWrites) return { path: edit.path, status: "conflict" };
+          const path = join(dir, edit.path); mkdirSync(dirname(path), { recursive: true }); writeFileSync(path, edit.content);
+          return { path: edit.path, status: "applied", afterSha256: createHash("sha256").update(readFileSync(path)).digest("hex") };
+        }) };
+        if (method === "gitCommitDocs") return { commit: "c".repeat(40) };
+        return {};
+      } })) as never;
+      const db = openDatabase(bb);
+      createRun(db, "run1", "projA", "bb", dir);
+      db.prepare("UPDATE lane_pilot_run SET writer_host_id='h', writer_workspace_path=?, pm_thread_id='thr_pm' WHERE id='run1'").run(dir);
+      const services = { readWriterWorkspaceFile: async (input: { path: string }) => {
+        const bytes = readFileSync(join(dir, input.path));
+        return { content: bytes.toString("utf8"), sha256: createHash("sha256").update(bytes).digest("hex"), sizeBytes: bytes.length };
+      }, runBudgets: { get: () => undefined }, dispatchWriter: async () => ({ taskId: "task-new", runId: "run1" }),
+        regression: { run: async () => null }, rollback: { noteStopped: async () => ({ recorded: true }) } } as unknown as Services;
+      const ctx = createCore(bb, db);
+      const phases = createPhaseDriver(ctx, services).phases;
+      const phase = await phases.open({ projectId: "projA", pmThreadId: "thr_pm", title: "Notes", goal: "notes" });
+      const get = () => getPhase(db, phase.id)!;
+      const docs = installDocs({ ctx, services, db, bb, now: () => 1, reactions: {} as never });
+      const auto = createAutoStages({ log: () => undefined } as never, { workflowEngine: {} } as never, {
+        api: { context: phases.context, question: () => get() } as never,
+        exhausted: async () => undefined, get, save: (_id, record) => savePhase(db, phase.id, { record, at: 1 }), book: () => undefined,
+        writeDocs: docs.writeDocs, readText: docs.readText, runtime: () => null, pmIdle: async () => true, now: () => 1,
+      });
+      await auto.apply(get(), { kind: "analyze", wfRunId: "wf1", startedAt: 1 } as never, output);
+      const signed = get().record.context!;
+      const doc = signed.docs[0]!;
+      const bytes = readFileSync(join(dir, doc.path));
+      const content = bytes.toString("utf8");
+      for (const [heading, marker] of [["Summary", "SUMMARY marker"], ["Stack", "STACK marker"], ["Features", "FEATURE marker"], ["Architecture", "ARCH marker"], ["Pitfalls", "PITFALL marker"]]) {
+        expect(content).toContain(`## ${heading}\n${heading === "Summary" ? "" : "- "}${marker}`);
+      }
+      expect(doc.sha256).toBe(createHash("sha256").update(bytes).digest("hex"));
+      expect(doc.bytes).toBe(bytes.length);
+      expect((autoInputs(get(), { kind: "plan" }).findings as { context: string }).context).toContain(doc.path);
+      const refusedPhase = await phases.open({ projectId: "projA", pmThreadId: "thr_pm", title: "Refused", goal: "notes" });
+      refuseWrites = true;
+      await expect(auto.apply(getPhase(db, refusedPhase.id)!, { kind: "analyze", wfRunId: "wf2", startedAt: 1 } as never, output)).rejects.toThrow("CONTEXT.md was not written");
+      expect(getPhase(db, refusedPhase.id)!.record.context).toBeUndefined();
+      expect(getPhase(db, refusedPhase.id)!.stage).toBe("discussion");
+    } finally {
+      if (previous === undefined) delete process.env.LANE_PILOT_OWNER_WORDS_DEFAULT; else process.env.LANE_PILOT_OWNER_WORDS_DEFAULT = previous;
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("shows unknown for absent legacy fields", () => {
+    const content = contextDoc(phaseAt("discussion"), {}).content;
+    for (const heading of ["Summary", "Stack", "Features", "Architecture", "Pitfalls"]) expect(content).toMatch(new RegExp(`## ${heading}\\n(?:- )?unknown`));
   });
 });

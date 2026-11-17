@@ -69,6 +69,14 @@
     "advice": {
       "type": "array",
       "required": false
+    },
+    "summary": {
+      "type": "string",
+      "required": false
+    },
+    "architecture": {
+      "type": "array",
+      "required": false
     }
   },
   "entry": "gather",
@@ -99,7 +107,7 @@
         "ru": "Карта области"
       },
       "src": "maestro-flow:workflows/analyze.md",
-      "prompt": "Read-only. Map the area the goal touches in three layers: L1 modules, L2 call chains of 3-5 key files, L3 code anchors (20-50 lines each).\nRead project conventions (AGENTS.md, DESIGN.md for UI) and any upstream report in `upstream`. Write nothing into the repository.\nEvery statement carries file:line; a claim about code you did not open is not a finding.\nAlso report the stack (languages, frameworks, versions, the test command) and the features the area already does, each with file:line.\n",
+      "prompt": "Read-only. Map the area the goal touches in three layers: L1 modules, L2 call chains of 3-5 key files, L3 code anchors (20-50 lines each).\nRead project conventions (AGENTS.md, DESIGN.md for UI) and any upstream report in `upstream`. Write nothing into the repository.\nEvery statement carries file:line; a claim about code you did not open is not a finding.\nAlso report the stack (languages, frameworks, versions, the test command), the features the area already does, and its architecture (modules and their connections), each with file:line.\n",
       "out": {
         "anchors": "Anchor[]",
         "modules": "string[]",
@@ -110,6 +118,10 @@
           "required": false
         },
         "features": {
+          "type": "array",
+          "required": false
+        },
+        "architecture": {
           "type": "array",
           "required": false
         }
@@ -230,7 +242,9 @@
         "pitfalls": "assess.pitfalls",
         "chosen": "choose.chosen",
         "deferred_by_owner": "choose.deferred",
-        "advice": "advise.advice"
+        "advice": "advise.advice",
+        "summary": "gather.summary",
+        "architecture": "gather.architecture"
       }
     },
     {

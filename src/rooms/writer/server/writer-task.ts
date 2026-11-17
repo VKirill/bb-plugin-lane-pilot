@@ -239,6 +239,7 @@ export function previousAttemptBrief(last:Record<string, unknown> | null | undef
   }
   const unproven = /plan_fact_unproven: acceptance items? ([\d, ]+)/.exec(reason)?.[1]?.trim();
   if (unproven) bullets.push(`acceptance item ${unproven} had no evidence that holds in the diff → finish that item, then give it a plan-fact row whose evidence is a file you changed with the lines (path:first-last) or a verification command (cmd:<command>); if an item cannot be done, say so with status not_done and answer \`${ASK_PM_MARKER} <why>\``);
+  if (/^plan_fact_table_(missing|invalid):/.test(reason)) bullets.push("give a readable plan-fact JSON table with one numbered row per acceptance item and evidence for each; if an item cannot be done, mark it not_done and ask the PM");
   if (isWriterStreamError(reason)) {
     bullets.push("the model provider cut your turn off before you finished; nothing was checked → continue the task from where you stopped (your edits are still here), then answer with the changed paths");
   }

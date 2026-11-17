@@ -329,3 +329,10 @@ describe("the NEEDS_HUMAN marker", () => {
     expect(allHidden.verification).toBeUndefined();
     expect(allHidden.verification_hidden_count).toBe(1);
   });
+
+
+it.each(["missing", "invalid"])("explains how to correct a %s plan-fact table", (kind) => {
+  const brief = previousAttemptBrief({ status:"validation_failed", reason:`plan_fact_table_${kind}: report cannot be read` });
+  expect(brief).toContain("one numbered row per acceptance item");
+  expect(brief).toContain("ask the PM");
+});

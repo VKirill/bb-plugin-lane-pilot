@@ -1,3 +1,5 @@
+import { securityDoc } from "./security-document";
+export { securityDoc } from "./security-document";
 import type { ServerCore } from "../../contracts/server";
 import { planningText } from "../../contracts";
 import { reviewDoc, threatGap } from "../stages";
@@ -220,20 +222,13 @@ export function autoInputs(phase: Phase, due: { kind: AutoKind; wave?: number },
 }
 
 const text = (value: unknown, max: number) => String(typeof value === "string" ? value : value === undefined || value === null ? "" : JSON.stringify(value)).trim().slice(0, max);
+const promiseText = (value: unknown, reference: string) => {
+  const full = text(value, Infinity); return full.length <= 600 ? full : reference;
+};
 /** SMA p1_risks: value, usability, feasibility, viability; a security risk is named beside them (it asks for the threat model). */
 const RISK_KEYS = ["value", "usability", "feasibility", "viability", "security"] as const satisfies readonly RiskKey[];
 const RISK_WORDS: Array<[RiskKey, RegExp]> = [["security", /secur|secret|auth|token|permission|безопас|секрет/i], ["viability", /cost|money|budget|price|business|deploy|operat|backup|monitor|стоим|деньг|бюджет|бизнес|выкат|эксплуат/i],
   ["usability", /usab|\bux\b|\bui\b|screen|confus|удобн|экран|понятн/i], ["value", /value|worth|need|goal|ценн|нужн|польз/i]];
-
-/** SECURITY.md: the threat model the plan gate (threatGap) asks for when the analysis names a security risk. */
-export function securityDoc(phase: Pick<Phase, "title" | "goal">, risks: readonly string[]): string {
-  return [
-    `# Threat model — ${phase.title}`, "", `Goal: ${phase.goal}`, "",
-    "## Security risks named by the analysis", ...risks.map((risk) => `- ${risk}`), "",
-    "## What the plan must hold", "- every piece that touches these risks names them in its acceptance and carries a check for them", "- no secret, credential or permission is widened without a check that would fail if it were", "",
-    "Written by Lane Pilot from the analysis (lp.analyze); the planner and the plan critic read it with CONTEXT.md.",
-  ].join("\n");
-}
 
 /** CONTEXT.md of the discussion, written by the machine from the analysis. */
 export function contextDoc(phase: Phase, output: Record<string, unknown>): { content: string; risks: Record<RiskKey, string>; decisions: string[]; questions: string[]; security: string | null; appetite: string; noGos: string[] } {
@@ -263,6 +258,11 @@ export function contextDoc(phase: Phase, output: Record<string, unknown>): { con
   const noGos = (Array.isArray(output.no_gos) ? output.no_gos as unknown[] : []).map((line) => text(line, 300)).filter(Boolean).slice(0, 30);
   const content = [
     `# Context — ${phase.title}`, "", `Goal: ${phase.goal}`, "",
+    "## Summary", text(output.summary, 4000) || "unknown", "",
+    ...(["stack", "features", "architecture", "pitfalls"] as const).flatMap((key) => {
+      const lines = Array.isArray(output[key]) ? (output[key] as unknown[]).map((line) => text(line, 1000)).filter(Boolean).slice(0, 30) : [];
+      return [`## ${key[0]!.toUpperCase()}${key.slice(1)}`, ...(lines.length ? lines.map((line) => `- ${line}`) : ["- unknown"]), ""];
+    }),
     `## Appetite`, appetite, "",
     `Scope: ${text(output.scope_verdict, 40) || "unknown"}; recommendation: ${text(output.recommendation, 40) || "—"}; confidence: ${text(output.confidence, 10) || "—"}.`, "",
     "## Decisions", ...(decisionLines.length ? decisionLines : ["- none recorded"]), "",
@@ -294,7 +294,7 @@ export function planItems(phase: Phase, output: Record<string, unknown>): PlanIt
     const ids = Array.isArray(covers) ? (covers as unknown[]).map(String).filter(Boolean).slice(0, 40) : [];
     return {
       id: String(task.id), title: text(task.display_title ?? task.title, 200) || String(task.id), wave: waveOf(String(task.id)),
-      promise: { given: text(task.objective ?? phase.goal, 600) || phase.title, when: text(task.title ?? task.id, 600), then: text(acceptance.join("; "), 600) || "its checks pass" },
+      promise: { given: promiseText(task.objective ?? phase.goal, task.objective == null ? "the full phase goal applies" : "the full task.objective applies") || promiseText(phase.title, "the full phase title applies"), when: promiseText(task.title ?? task.id, task.title == null ? "the task identified by its full task.id is executed" : "the task described by its full task.title is executed"), then: promiseText(acceptance.join("; "), "every criterion in the full task.acceptance holds; the task contract retains all criteria in their original order and their exact commands") || "its checks pass" },
       task: contract, ...(ids.length ? { covers: ids } : {}),
     };
   });

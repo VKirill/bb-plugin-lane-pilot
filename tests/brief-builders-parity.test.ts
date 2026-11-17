@@ -4,6 +4,7 @@
  */
 import { describe, expect, it } from "vitest";
 import { docsMaintenancePrompt, docsRepairPrompt, nightlyDocsPrompt } from "../src/rooms/docs/docs";
+import { DOC_PAGE_TYPES, docsCompletenessGaps } from "../src/rooms/docs/docs-lint";
 import { analysisPrompt, hunterPrompt, repairBrief } from "../src/rooms/wall/brief";
 import { episodeAnalystPrompt } from "../src/rooms/errands/episode-enrich";
 import { pmReadPrompt } from "../src/rooms/critique/pm-read";
@@ -51,6 +52,27 @@ describe("every brief builder renders through renderBrief and keeps its facts", 
   it("docsRepairPrompt keeps the findings and the one-round limits", () => {
     const prompt = docsRepairPrompt([{ path: "docs/api.md", rule: "cite", detail: "no file:line" }]);
     for (const marker of ["docs/api.md [cite]: no file:line", "only round", "Fix exactly these"]) expect(prompt).toContain(marker);
+  });
+
+  it("docs onboarding and refresh name every writable type accepted by the lint", () => {
+    const prompts = [
+      nightlyDocsPrompt({ since: "24 hours ago", hasDocs: false, changed: [] }),
+      nightlyDocsPrompt({ since: "24 hours ago", hasDocs: true, changed: ["src/a.ts"] }),
+    ];
+    for (const prompt of prompts) {
+      const types = prompt.match(/type is one of ([^.]+)\./)?.[1]?.split(", ");
+      expect(types).toEqual(DOC_PAGE_TYPES.filter((type) => type !== "index"));
+      expect(prompt).toContain("Never write an index.md");
+    }
+  });
+
+  it("root onboarding requests every unconditional form the completeness check requires", () => {
+    const prompt = nightlyDocsPrompt({ since: "24 hours ago", hasDocs: false, changed: [] });
+    const gaps = docsCompletenessGaps([], { tables: [], core: [] });
+    for (const path of gaps.missingPages) {
+      const type = path.slice("docs/".length, -".md".length);
+      expect(prompt).toContain(`- ${path} (${type})`);
+    }
   });
 
   it("hunterPrompt keeps the verdict/action enums and the citation contract", () => {

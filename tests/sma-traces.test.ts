@@ -1,4 +1,5 @@
 import { mkdtempSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
@@ -123,5 +124,98 @@ describe("change points: a trace counts only on a version that has the node's la
     const none = changePoints(["d"], [], () => undefined, "", { ...older, lastDeployed: "0.1.13" }, seen).get("d")!;
     expect(none).toMatchObject({ state: "unshipped" });
     expect(traceAfter(none, 9e12)).toBe(false);
+  });
+});
+
+describe("the separate local R08 trace", () => {
+  it("accepts only the named node from a passed local or legacy scene, never a failed scene or n752", () => {
+    const dir = mkdtempSync(join(tmpdir(), "r08-local-traces-"));
+    writeFileSync(join(dir, "receipts.json"), JSON.stringify({ finishedAt: 5000, scenarios: [
+      { name: "sma_r08_local", result: "pass", proved: [{ node: "n678", ok: true }, { node: "n685", ok: false }] },
+      { name: "sma_r08_local", result: "fail", proved: [{ node: "n704", ok: true }] },
+      { name: "sma_r08", result: "pass", proved: [{ node: "n678", ok: true }, { node: "n752", ok: true }] },
+    ] }));
+    const drills = readDrills(dir);
+    const traces = SMA_EVIDENCE.n678!.trace as TraceSource[];
+    expect(readTraces({ drills }, traces, 0, "n678")).toMatchObject({ judged: true, n: 2 });
+    expect(readTraces({ drills }, SMA_EVIDENCE.n685!.trace as TraceSource[], 0, "n685")).toMatchObject({ n: 0 });
+    expect(readTraces({ drills }, SMA_EVIDENCE.n704!.trace as TraceSource[], 0, "n704")).toMatchObject({ n: 0 });
+    expect(readTrace({ drills }, SMA_EVIDENCE.n752!.trace as TraceSource, 0, "n752")).toMatchObject({ n: 1 });
+    expect(readTrace({ drills }, drill("sma_r08_local"), 0, "n752")).toMatchObject({ n: 0 });
+  });
+
+  it("registers the new scene and fails on missing or failed proofs, including an unexpected live node", () => {
+    const code = `
+import json, sys
+from types import SimpleNamespace
+sys.path.insert(0, ${JSON.stringify(join(process.cwd(), "scripts"))})
+from lp_drill.sma import discover
+from lp_drill.prove import Proofs
+from lp_drill.scenes.sma_r08_local import NODES
+from lp_drill.scenes import sma_r08, sma_r08_core_b, sma_r08_local
+from unittest.mock import patch
+
+def sample(missing=None, bad=None, extra=None):
+    p = Proofs()
+    for node in NODES:
+        if node != missing: p.prove(node, node != bad, "actual observation")
+    if extra: p.prove(extra, False if extra == "n999" else True, "extra observation")
+    with patch.object(sma_r08_local, "prove_local", lambda tmp, proofs: (proofs.items.extend(p.items), [])[1]):
+        return sma_r08_local.scenario_sma_r08_local(None)
+
+def local_stub(tmp, proofs):
+    for node in NODES: proofs.prove(node, True, "local observation")
+    return []
+def local_stub_with(missing=None, bad=None, extra=None):
+    def stub(tmp, proofs):
+        for node in NODES:
+            if node != missing: proofs.prove(node, node != bad, "actual observation")
+        if extra: proofs.prove(extra, False if extra == "n999" else True, "extra observation")
+        return []
+    return stub
+def registry_sentinel(*args, **kwargs):
+    raise AssertionError("local scene called the live registry path")
+scenes = discover()
+def core_failure(proofs, tmp):
+    proofs.prove("n752", False, "registry unavailable")
+with patch.object(sma_r08_local, "prove_local", local_stub), patch.object(sma_r08, "prove_core_b", registry_sentinel), patch.object(sma_r08_core_b, "outdated", registry_sentinel):
+    local = sma_r08_local.scenario_sma_r08_local(None)
+    with patch.object(sma_r08_local, "prove_local", local_stub_with(missing=NODES[0])):
+        missing = sma_r08_local.scenario_sma_r08_local(None)
+    with patch.object(sma_r08_local, "prove_local", local_stub_with(bad=NODES[0])):
+        failed = sma_r08_local.scenario_sma_r08_local(None)
+    with patch.object(sma_r08_local, "prove_local", local_stub_with(extra="n999")):
+        other_failure = sma_r08_local.scenario_sma_r08_local(None)
+    with patch.object(sma_r08_local, "prove_local", local_stub_with(extra="n752")):
+        live_node = sma_r08_local.scenario_sma_r08_local(None)
+    with patch.object(sma_r08, "prove_local", lambda tmp, proofs: (proofs.prove("n678", True, "local observation"), [])[1]), patch.object(sma_r08, "prove_core_b", core_failure):
+        original = sma_r08.scenario_sma_r08(None)
+    nonzero = Proofs()
+    with patch.object(sma_r08.subprocess, "run", lambda *args, **kwargs: SimpleNamespace(returncode=7, stdout='{"probe": "partial"}', stderr="probe failed")):
+        nonzero_problems = sma_r08.prove_local(None, nonzero)
+print(json.dumps({"registered": scenes["sma_r08_local"]["nodes"], "old": "sma_r08" in scenes, "local": local,
+                  "original": original, "pass": sample(), "missing": missing, "failed": failed,
+                  "other_failure": other_failure, "live_node": live_node, "nonzero": nonzero_problems,
+                  "nonzeroProofs": nonzero.items}))
+`;
+    const run = spawnSync("python3", ["-I", "-c", code], { cwd: process.cwd(), encoding: "utf8" });
+    expect(run.status, run.stderr).toBe(0);
+    const out = JSON.parse(run.stdout);
+    expect(out.old).toBe(true);
+    expect(out.local.result).toBe("pass");
+    expect(out.local.proved).toHaveLength(11);
+    expect(out.local.proved.map((row: { node: string }) => row.node)).toEqual(out.registered);
+    expect(out.local.notProved).toEqual({ n752: expect.stringContaining("not run") });
+    expect(out.local.proved.some((row: { node: string }) => row.node === "n752")).toBe(false);
+    expect(out.original.result).toBe("fail");
+    expect(out.original.proved).toEqual(expect.arrayContaining([expect.objectContaining({ node: "n752", ok: false })]));
+    expect(out.registered).toEqual(["n678", "n685", "n704", "n731", "n732", "n733", "n734", "n735", "n737", "n742", "n749"]);
+    expect(out.pass.result).toBe("pass");
+    expect(out.pass.notProved.n752).toContain("not run");
+    expect(out.pass.proved.map((row: { node: string }) => row.node)).toEqual(out.registered);
+    for (const key of ["missing", "failed", "other_failure", "live_node"]) expect(out[key].result, key).toBe("fail");
+    expect(out.live_node.proved.some((row: { node: string }) => row.node === "n752")).toBe(false);
+    expect(out.nonzero).toEqual([expect.stringContaining("exited 7")]);
+    expect(out.nonzeroProofs).toEqual([]);
   });
 });

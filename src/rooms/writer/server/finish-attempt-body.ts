@@ -5,7 +5,7 @@ import {providerLimitNotice} from "@lane-pilot/models";
 import { actionableFindings, parseCodeCritiqueSettings, repairLedgerFromResult } from "../../critique";
 import { CODE_CRITIC_DEFAULT_SETTING, QUALITY_MODE_SETTING, applyCodeCriticDefault, applyQualityMode, resolveCodeCriticDefault, resolveQualityMode, withReferenceTestCritic } from "../../contracts/quality-mode";
 import { loadCriticCodeDefault } from "./critic-override";
-import { runPlanFactStage } from "./plan-fact";
+import { phasePlanFactRequirement, runPlanFactStage } from "./plan-fact";
 import { headSides } from "../../critique/server";
 import { recordGateEvaluation } from "../../runs/server";
 import {bestEffort, BOUNDED_READ_MAX_FILE_BYTES, outputText, sha256Hex, stringAt} from "@lane-pilot/kit";
@@ -15,7 +15,7 @@ import { noteTaskQa } from "./reopen-attempt";
 import { keepWriterNotes, recordTaskHomeFile, recordWriterReport, writerNotePath } from "./task-home";
 import {needsHumanQuestion, providerStreamError, WRITER_STREAM_ERROR} from "./writer-task";
 import { conventionGateHits, type ConventionGate } from "../../session-hooks";
-import { OWNER_WORD_WAIT_MS, TASK_WORDS_KEY, TEST_PATH, acceptanceArtifactDir, acceptanceProofGap, landingWordGap, landingWordAsked, ownerWordsMode, sensitiveHits, taskStepEvidence, questionsFromFile, checkScriptEdits, recordTaskApproach, recordTaskQuestions, referenceTestEdits, shapeFlags, taskWordKey, TEST_EDIT_HOLD_ITEM, testEditAllowance, testEditHoldKey, testFitFindings, testOwnedImports, writerMarkers } from "../../tasks";
+import { OWNER_WORD_WAIT_MS, TASK_WORDS_KEY, TEST_PATH, acceptanceArtifactDir, acceptanceProofGap, landingWordGap, landingWordAsked, ownerWordsMode, sensitiveHits, taskStepEvidence, questionsFromFile, checkScriptEdits, NO_CODE_KINDS, planFactOutcome, recordTaskApproach, recordTaskQuestions, referenceTestEdits, shapeFlags, taskWordKey, TEST_EDIT_HOLD_ITEM, testEditAllowance, testEditHoldKey, testFitFindings, testOwnedImports, writerMarkers } from "../../tasks";
 import type { TaskWord } from "../../tasks";
 import type { StageId } from "../../tasks";
 import { listThreadEventsRaw } from "@lane-pilot/thread-observe";
@@ -263,20 +263,28 @@ export async function finishWriterAttemptBody(ctx: ServerCore, services: Service
       }
       candidate = g.candidate; writerThreadId = g.writerThreadId; review = g.review; lastPatches = g.lastPatches; criticNotes = g.criticNotes;
       { const stopped = stoppedMeanwhile("the code critique", writerThreadId); if (stopped) return stopped; }
-      // The plan against the fact: code checks the writer's evidence per acceptance item against the diff, never its prose. It records
-      // its stage whatever the outcome; only plan_fact.mode=gate sends an item with no evidence that holds back to the writer.
-      // A repair round changed the candidate's answer: the report file follows it, so plan-fact reads what is judged.
+      // The plan against the fact: code checks the writer's evidence per acceptance item against the diff, never its prose.
       if (candidate.output?.trim() && candidate.output !== answer) await recordWriterReport(ctx, input, candidate.output);
+      const needsPhaseProof = phasePlanFactRequirement(db, input.runId, input.taskId) !== "not_required" && input.task.acceptance.length > 0 && !NO_CODE_KINDS.has(input.task.kind ?? "");
       const planFact = await runPlanFactStage(ctx, { projectId:input.projectId, runId:input.runId, taskId:input.taskId, attempt:countAttempts(db,input.runId,input.taskId),
         hostId:input.config.hostId, task:input.task, answers:[candidate.output, answer], attemptId:input.attemptId, produced:candidate.produced ?? [], verification:candidate.verification ?? [] })
         .catch((cause:unknown) => { ctx.log(`plan-fact: ${input.taskId} could not be checked: ${cause instanceof Error ? cause.message : String(cause)}`); return null; });
-      if (planFact?.refusal) {
-        recordGateEvaluation(db,{attemptId:input.attemptId,projectId:input.projectId,runId:input.runId,taskId:input.taskId,gate:"accept",status:"rejected",
-          attempt:countAttempts(db,input.runId,input.taskId),input:JSON.stringify(input.task),summary:{writerStatus:"plan_fact_unproven",reason:planFact.refusal}});
-        const stopped = endedByStop(planFact.refusal, writerThreadId);
+      if (needsPhaseProof && !planFact) {
+        const reason = "plan_fact_check_unavailable: the phase proof could not be checked";
+        const stopped = endedByStop(reason, writerThreadId);
         if (stopped) return stopped;
-        transitionAttempt(db, input.attemptId, "validation_failed", { reason:planFact.refusal });
-        return { status:"validation_failed", reason:planFact.refusal, output:candidate.output, produced:candidate.produced, verification:candidate.verification, attemptId:input.attemptId, writerThreadId };
+        transitionAttempt(db, input.attemptId, "blocked", { reason });
+        return { status:"blocked", reason, attemptId:input.attemptId, writerThreadId };
+      }
+      const refusal = planFact?.refusal ?? (needsPhaseProof && planFact ? planFactOutcome(planFact.check, true).reason : null);
+      if (refusal) {
+        if (refusal.startsWith("plan_fact_check_unavailable:") || refusal.startsWith("plan_fact_lineage_unknown:")) { const stopped = endedByStop(refusal, writerThreadId); if (stopped) return stopped; transitionAttempt(db, input.attemptId, "blocked", { reason:refusal }); return { status:"blocked", reason:refusal, attemptId:input.attemptId, writerThreadId }; }
+        recordGateEvaluation(db,{attemptId:input.attemptId,projectId:input.projectId,runId:input.runId,taskId:input.taskId,gate:"accept",status:"rejected",
+          attempt:countAttempts(db,input.runId,input.taskId),input:JSON.stringify(input.task),summary:{writerStatus:"plan_fact_unproven",reason:refusal}});
+        const stopped = endedByStop(refusal, writerThreadId);
+        if (stopped) return stopped;
+        transitionAttempt(db, input.attemptId, "validation_failed", { reason:refusal });
+        return { status:"validation_failed", reason:refusal, output:candidate.output, produced:candidate.produced, verification:candidate.verification, attemptId:input.attemptId, writerThreadId };
       }
       // Checkable conventions (SMA k_lib_gates): rules.gates on the project, a warning on the card by default and a
       // refusal only where a rule says block. Hits land on lines the diff added in matching paths.

@@ -1,6 +1,10 @@
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
-import { blindPlanFact, diffHunksCommand, hunksFromCommandOutput, parseDiffHunks, parsePlanFact, planFactOutcome, PLAN_FACT_BRIEF_LINE, PLAN_FACT_EVIDENCE_MAX } from "../src/rooms/tasks/plan-fact";
+import { blindPlanFact, diffHunksCommand, hunksFromCommandOutput, parseDiffHunks, parsePlanFact, planFactOutcome, PLAN_FACT_BRIEF_LINE, PLAN_FACT_DIFF_ERROR_MARK, PLAN_FACT_DIFF_OK_MARK, PLAN_FACT_EVIDENCE_MAX, PLAN_FACT_UNTRACKED_MARK } from "../src/rooms/tasks/plan-fact";
 import type { PlanFactFacts } from "../src/rooms/tasks/plan-fact";
 import { writerBriefSegments, stickyTurnPrompt, previousAttemptBrief } from "../src/rooms/writer/server/writer-task";
 import { recheckPlanFact, runPlanFactStage, planFactMode, tableFromAnswers } from "../src/rooms/writer/server/plan-fact";
@@ -137,10 +141,33 @@ describe("the diff behind the line check", () => {
   it("builds one command with the base, the paths quoted, and reads hunks and untracked files from its output", () => {
     const command = diffHunksCommand("a".repeat(40), ["src/a.ts", "it's new.ts"]);
     expect(command).toContain(`git -c core.quotepath=off diff -U0 --no-color --no-ext-diff ${"a".repeat(40)} -- 'src/a.ts' 'it'\\''s new.ts'`);
+    expect(command).toContain("mktemp");
     expect(command).toContain("git ls-files --others --exclude-standard");
-    const out = hunksFromCommandOutput(`+++ b/src/a.ts\n@@ -1 +1,3 @@\n---untracked---\nsrc/new.ts\nsrc/other.ts\n`, ["src/a.ts", "src/new.ts"]);
-    expect(out).toEqual({ hunksKnown: true, changed: { "src/a.ts": [[1, 3]], "src/new.ts": "all" } });
-    expect(hunksFromCommandOutput("---nobase---\n---untracked---\n", ["src/a.ts"])).toEqual({ hunksKnown: false, changed: {} });
+    const out = hunksFromCommandOutput(`+++ b/src/a.ts\n@@ -1 +1,3 @@\n${PLAN_FACT_DIFF_OK_MARK}\n${PLAN_FACT_UNTRACKED_MARK}\nsrc/new.ts\nsrc/other.ts\n`, ["src/a.ts", "src/new.ts"]);
+    expect(out).toEqual({ hunksKnown: true, changed: { "src/a.ts": [[1, 3]], "src/new.ts": "all" }, status: "ok" });
+    expect(hunksFromCommandOutput("---nobase---\n---untracked---\n", ["src/a.ts"])).toEqual({ hunksKnown: false, changed: {}, status: "missing_base" });
+    expect(hunksFromCommandOutput(`${PLAN_FACT_UNTRACKED_MARK}\n`, ["src/a.ts"])).toEqual({ hunksKnown: false, changed: {}, status: "unavailable" });
+  });
+
+  it("keeps a valid empty diff distinct from a swallowed git failure and a missing base", () => {
+    const root = mkdtempSync(join(tmpdir(), "lp-plan-fact-diff-"));
+    try {
+      execFileSync("git", ["init", "-q"], { cwd:root });
+      execFileSync("git", ["config", "user.email", "test@example.invalid"], { cwd:root });
+      execFileSync("git", ["config", "user.name", "test"], { cwd:root });
+      writeFileSync(join(root, "a.ts"), "export const a = 1;\n");
+      execFileSync("git", ["add", "a.ts"], { cwd:root });
+      execFileSync("git", ["commit", "-qm", "base"], { cwd:root });
+      const base = execFileSync("git", ["rev-parse", "HEAD"], { cwd:root, encoding:"utf8" }).trim();
+      const command = diffHunksCommand(base, ["a.ts"]);
+      const empty = execFileSync("bash", ["-c", command], { cwd:root, encoding:"utf8" });
+      expect(hunksFromCommandOutput(empty, ["a.ts"])).toEqual({ hunksKnown:true, changed:{}, status:"ok" });
+      const failed = execFileSync("bash", ["-c", command], { cwd:root, encoding:"utf8", env:{ ...process.env, GIT_WORK_TREE:join(root, "missing-worktree") } });
+      expect(failed).toContain(PLAN_FACT_DIFF_ERROR_MARK);
+      expect(hunksFromCommandOutput(failed, ["a.ts"]).status).toBe("unavailable");
+      const missing = execFileSync("bash", ["-c", diffHunksCommand("d".repeat(40), ["a.ts"])], { cwd:root, encoding:"utf8" });
+      expect(hunksFromCommandOutput(missing, ["a.ts"]).status).toBe("missing_base");
+    } finally { rmSync(root, { recursive:true, force:true }); }
   });
 });
 
@@ -206,7 +233,7 @@ describe("the plan-fact stage and the acceptance card on a database", () => {
     const ctx = {
       db, log: () => undefined,
       bb: { sdk: { files: { read: async () => ({ content: "a\nb\nc\n" }) } } },
-      host: { call: async (_method: string, input: { command: string }) => { commands.push(input.command); return { hostId: "h", exitCode: 0, stdout: "+++ b/src/a.ts\n@@ -3 +4,2 @@\n---untracked---\nsrc/new.ts\n", stderr: "" }; } },
+      host: { call: async (_method: string, input: { command: string }) => { commands.push(input.command); return { hostId: "h", exitCode: 0, stdout: `+++ b/src/a.ts\n@@ -3 +4,2 @@\n${PLAN_FACT_DIFF_OK_MARK}\n${PLAN_FACT_UNTRACKED_MARK}\nsrc/new.ts\n`, stderr: "" }; } },
     };
     return { db, task, ctx, commands };
   }

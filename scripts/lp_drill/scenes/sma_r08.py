@@ -27,14 +27,15 @@ PROBE = ROOT / "scripts/lp_drill/scenes/sma_r08_probe.ts"
 WINDOW_TEST = "tests/sma/four-proofs-r08-a2.test.tsx"
 
 
-def scenario_sma_r08(tmp) -> dict:
-    proofs = Proofs()
+def prove_local(tmp, proofs: Proofs) -> list[str]:
     # vite-node, not tsx: the probe loads the whole plugin's barrel files, which tsx cannot link.
     done = subprocess.run(["npx", "--yes", "vite-node", str(PROBE)], cwd=ROOT, capture_output=True, text=True, timeout=420)
+    if done.returncode != 0:
+        return [f"the probe exited {done.returncode}: {(done.stderr or done.stdout).strip()[-300:]}"]
     try:
         s = json.loads(done.stdout.strip().splitlines()[-1])
     except (ValueError, IndexError):
-        return proofs.verdict("sma_r08", [f"the probe printed no result (exit {done.returncode}): {(done.stderr or done.stdout).strip()[-300:]}"])
+        return [f"the probe printed no result (exit {done.returncode}): {(done.stderr or done.stdout).strip()[-300:]}"]
 
     # n674 The closed table: the call names are exactly the pinned list and every one has a registered handler.
     t = s["table"]
@@ -136,6 +137,14 @@ def scenario_sma_r08(tmp) -> dict:
           and sl["third"] == [{"name": "yard", "status": "failed: host offline"}] and sl["allCas"])
     proofs.prove("n702", ok, f"slugs {sl['slugs']}; first {sl['first']}, clash {sl['second']}, failure {sl['third']}")
     prove_b(proofs, tmp)
+    return []
+
+
+def scenario_sma_r08(tmp) -> dict:
+    proofs = Proofs()
+    problems = prove_local(tmp, proofs)
+    if problems:
+        return proofs.verdict("sma_r08", problems)
     prove_core_b(proofs, tmp)
     held = held_b()
     extra = {"notProved": held, "primaryOnly": True} if held else {}
