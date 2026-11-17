@@ -1,11 +1,12 @@
 import { appetiteStop, runningWriterBudgetStop, tokenUsageFromEvent } from "@lane-pilot/resilience";
+import { providerLimitNotice } from "@lane-pilot/models";
 import type { ServerCore } from "../../contracts/server";
 import type { FinishInput, Services } from "./finish-types";
 import type { AttemptFinished } from "./attempt-finished";
 import { countAttempts, getReasoningTrace, getTaskPlan, getRunSettingsScopes, loadProjectSettings, transitionAttempt } from "../../storage";
 import { closeWriterStages } from "../../runs/server";
 import { THREAD_WATCH_EVENT_TYPES, listThreadEventsRaw, sleepUntilThreadSignal, startLimitWaiting, threadFailure, threadWatchMark, waitThreadIdle } from "@lane-pilot/thread-observe";
-import { setAsideOnStartFailure } from "../../platform/server";
+import { noteProviderLimit, setAsideOnStartFailure } from "../../platform/server";
 import { bestEffort, pollPause, stringAt } from "@lane-pilot/kit";
 import { clearFollowUpCancelled, followUpCancelled, loadFollowUp } from "./sticky";
 import { loadWriterNudge } from "./writer-silence";
@@ -137,11 +138,26 @@ export async function watchWriterRun(deps: WatchWriterDeps): Promise<Record<stri
           if (trace) setAsideOnStartFailure(bb, `writer for ${input.taskId}`, trace.providerId, trace.model, notStarted);
           holdProviderLimit();
         }
+        // A provider limit the terminal event names («Usage limit reached» on a dead pair) is the same quota notice the helper
+        // listener feeds: it ends the attempt as writer_provider_limit and the seen-limit seam's own hold bounds the breaker's
+        // open, so the next wake's chain walk skips the spent pair instead of retrying it (opencode2 took the task four times
+        // on its limit event, 2026-11). The thread status at poll time does not change what the provider said.
+        const limitNotice = !notStarted && eventFailure ? providerLimitNotice(eventFailure.replace(/^provider_error:/, "").slice(0, 400)) : null;
         const rawFailure = notStarted ? `${THREAD_NOT_STARTED_REASON}: ${notStarted}`
+          : limitNotice ? `writer_provider_limit: ${limitNotice}`
           : currentStatus === "error" ? `writer thread status error${eventFailure ? `: ${eventFailure}` : ""}` : eventFailure;
         // A turn held in the concurrency-limit queue is waiting its turn: the provider's start limit is not a failure then.
         const failure = await startLimitWaiting(bb, input.writerThreadId, rawFailure) ? null : rawFailure;
         if (failure) {
+          if (limitNotice) {
+            const trace = getReasoningTrace(db, input.attemptId);
+            // noteProviderLimit returns the seam's hold (an hour first, longer on repeats): it also bounds the pair's breaker
+            // open so the waker's chain walk still sees it. A limit on an untraced attempt ends it just the same, with no hold.
+            if (trace) {
+              const hold = noteProviderLimit(bb, trace.providerId, trace.model, limitNotice);
+              if (hold) holdProviderLimit(Date.now() + hold);
+            }
+          }
           const ended = providerFailed(failure);
           if (["active", "starting"].includes(currentStatus ?? "")) await bestEffort(ctx.log, "writer thread stop", bb.sdk.threads.stop({ threadId:input.writerThreadId }), undefined);
           return ended;

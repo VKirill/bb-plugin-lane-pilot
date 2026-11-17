@@ -51,11 +51,15 @@ export async function writerHold(
   // chain would launch it. It is the owner's switch, not a provider fault: it carries a recheck time (the list may be cleared) and never reads as core_unsupported.
   const off = writerSwitchedOff(input.settings, input.providerId, input.model);
   if (off) return { reason: `writer_provider_unavailable:writer_off:${off}`, until: now + OFF_RECHECK_MS };
-  // The breaker is asked through its read-only snapshot: `decide` would spend the half-open trial another caller's
-  // spawn may need. An open pair frees at its reopen time; a snapshot gives openedAt, so +5 min is the recheck.
+  // The breaker is asked through its read-only snapshot first: `decide` on half_open would spend the trial another
+  // caller's spawn may need. On an open pair decide is a pure read — the same synchronous `now` cannot reach the
+  // half-open branch — and its denial names the real reopen time (a recorded limit's reset, else the cool-down), so
+  // an all-held chain parks until the pair actually frees instead of re-checking it on every wake tick (W4, 2026-11).
   const open = deps.breaker.snapshot(now).find((row) => row.key === breakerKey(input.providerId, input.model) && row.state === "open");
   if (open) {
-    const until = open.openedAt !== null ? open.openedAt + BREAKER_RECHECK_MS : now + BREAKER_RECHECK_MS;
+    const denied = deps.breaker.decide?.(open.key, now);
+    const until = denied && !denied.allow ? denied.retryAt
+      : open.openedAt !== null ? open.openedAt + BREAKER_RECHECK_MS : now + BREAKER_RECHECK_MS;
     return { reason: `writer_provider_unavailable:breaker_open:${open.key}: ${open.failures} provider failures`, until: Math.max(until, now + 1) };
   }
   const mark = deps.presence?.current().find((row) => row.providerId === input.providerId) ?? null;
