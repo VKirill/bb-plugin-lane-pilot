@@ -23,7 +23,7 @@ const HOUR = 3_600_000;
 async function setup() {
   const { bb, harness } = createFakePluginHost({
     pluginId: "lane-pilot",
-    sdk: { threads: {
+    sdk: { projects:{ get:async ({ projectId }) => ({ id:projectId, sources:[{ hostId:"host-test", path:config.writerWorkspacePath }] }) }, threads: {
       getPluginMetadata: async ({ threadId }) => threadId === pmThreadId ? { role: "pm", lanePilotRunId: runId } : { role: "writer" },
       spawn: async () => ({ id: "writer-topic" }),
       wait: async () => new Promise(() => undefined),
@@ -42,14 +42,16 @@ async function setup() {
       if (call.method === "classifyPlan") return { hostId: "host-test", status: "ok", effort: "xhigh", reason: null, planSha256: "a", sentPlanSha256: "a", sourceLength: 1, sentLength: 1 };
       if (call.method === "readBoundedFile") return boundedReadCall(call, "host-test", "fixture\n");
       if (call.method !== "runCommand") throw new Error(`unexpected ${call.method}`);
-      return { hostId: "host-test", exitCode: 0, stdout: String((call.input as { command?: string }).command ?? "").includes("porcelain") ? "[]" : "", stderr: "" };
+      const command = String((call.input as { command?: string }).command ?? "");
+      if (command.includes('if not shutil.which("git")')) return { hostId: "host-test", exitCode: 0, stdout: JSON.stringify({ state: "localNoOrigin", cwd: config.writerWorkspacePath, root: config.writerWorkspacePath, hasCommit: true }), stderr: "" };
+      return { hostId: "host-test", exitCode: 0, stdout: command.includes("porcelain") ? "[]" : "", stderr: "" };
     },
   });
   const db = openDatabase(bb);
   savePrototypeConfig(db, config);
   saveProjectSetting(db, projectId, "plan_critique.enabled", false);
   saveProjectSetting(db, projectId, "memory.enabled", false);
-  createRun(db, runId, projectId, "bb", config.writerWorkspacePath);
+  createRun(db, runId, projectId, "bb", config.writerWorkspacePath, "none", undefined, config.hostId);
   setRunThread(db, runId, pmThreadId);
   await plugin(bb);
   /** A task of the run as it was left: sent `hoursAgo` hours ago, its attempts in the given states. */

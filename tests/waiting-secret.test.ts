@@ -114,6 +114,7 @@ describe("dispatch of a task whose check needs a secret", () => {
     const { bb, harness } = worktreeHost({
       pluginId:"lane-pilot",
       sdk:{
+        projects:{ get: async ({ projectId }:{ projectId:string }) => ({ id:projectId, sources:[{ hostId:"host-test", path:"/tmp" }] }) },
         threads:{
           getPluginMetadata: async ({ threadId }:{ threadId:string }) => threadId === pmThreadId ? { role:"pm", lanePilotRunId:"run-s" } : { role:"writer" },
           spawn: async () => { spawned++; return { id:"writer-s" }; },
@@ -146,6 +147,7 @@ describe("dispatch of a task whose check needs a secret", () => {
         if (call.method === "readBoundedFile") return boundedReadCall(call, "host-test", (path) => path === "README.md" ? "fixture\n" : null);
         if (call.method !== "runCommand") throw new Error(`unexpected ${call.method}`);
         const command = String((call.input as { command?:string }).command ?? "");
+        if (command.includes('if not shutil.which("git")')) return { hostId:"host-test", exitCode:0, stdout:JSON.stringify({ state:"localNoOrigin", cwd:config.writerWorkspacePath, root:config.writerWorkspacePath, hasCommit:true }), stderr:"" };
         if (command.includes("porcelain")) { snapshots += 1; return { hostId:"host-test", exitCode:0, stdout:JSON.stringify(snapshots % 2 === 1 ? [] : [{ path:"hello.txt", sha256:"new-content" }]), stderr:"" }; }
         return { hostId:"host-test", exitCode:0, stdout:"", stderr:"" };
       },
@@ -155,7 +157,7 @@ describe("dispatch of a task whose check needs a secret", () => {
     saveProjectSetting(db, projectId, "plan_critique.enabled", false);
     saveProjectSetting(db, projectId, "memory.enabled", false);
     if (options.allow !== null) saveProjectSetting(db, projectId, "secrets.allow", options.allow);
-    createRun(db, "run-s", projectId, "bb", config.writerWorkspacePath);
+    createRun(db, "run-s", projectId, "bb", config.writerWorkspacePath, "none", undefined, config.hostId);
     setRunThread(db, "run-s", pmThreadId);
     await plugin(bb);
 
