@@ -11,7 +11,7 @@ sources:
   - packages/models/src/agent-model.ts
   - packages/models/src/zcode.ts
   - packages/models/src/model-profiles.ts
-  - src/rooms/core/server/spawn-model.ts
+  - src/rooms/platform/server/spawn-model.ts
   - src/rooms/settings/server/rpc/role-models.ts
   - src/rooms/settings/server/rpc/settings.ts
   - src/rooms/settings/model-keys.ts
@@ -37,7 +37,7 @@ Every agent step of every graph names a role, and the role names the model: one 
 3. A spawn resolves the role in order, first hit wins: the owner's row of the table, then a stage selection made before the table existed (`plan_critique.*`, `specialist.*` and the other legacy keys), then the role's built-in default (`packages/models/src/role-models.ts:288-302`, defaults at `:99-119`). A pick that names no effort takes the row's default when it names the row's default model, else the model's own catalog default (`packages/models/src/role-models.ts:279-282`).
 4. The candidates for one run are the row's model plus its pool (a stored table row only). A Claude Code agent profile role — thirteen of them: the specialist, the workflow architect and the named helper roles (copy-lead, seo-specialist, design-lead, video-lead, tavily, 3d-artist, game-dev, social-manager, billing-assistant, visual-artist, macos-operator — `CLAUDE_PROFILE_ROLES`, `packages/models/src/agent-model.ts:6-10`) — takes only the Claude models of its pool: another provider refuses the profile (`packages/models/src/agent-model.ts:6`, `:130-135`).
 5. The pool is ranked for each run by `rankPool`: a provider whose usage window is spent goes last, then the less spent window (compared in steps of ten percent, so a few points do not flip the order), then the provider with fewer helper starts in the last half hour, then the order the owner gave (`packages/models/src/agent-model.ts:69-80`).
-6. Where the load numbers come from: the spawn resolver reads the cached usage reading with a 1% threshold (ZCode has no window, so always `null`) and counts each provider's helper starts over the last 30 minutes in memory; the chosen provider's start is recorded after the resolution (`src/rooms/core/server/spawn-model.ts:45-54`, `:80-83`, `:99`).
+6. Where the load numbers come from: the spawn resolver reads the cached usage reading with a 1% threshold (ZCode has no window, so always `null`) and counts each provider's helper starts over the last 30 minutes in memory; the chosen provider's start is recorded after the resolution (`src/rooms/platform/server/spawn-model.ts:45-54`, `:80-83`, `:99`).
 7. A background row left on its built-in default tries ZCode's free tokens first — but only where the caller says ZCode can work now (its machine, its free hours, a free slot); a caller that cannot tell never gets it. The rows are `docs-maintainer`, `rules-analyzer`, `memory` and `project-life`; `zcode.background` = false turns the behaviour off (`packages/models/src/zcode.ts:78-80`, `packages/models/src/agent-model.ts:141-145`).
 8. After the row and its pool come the role's built-in default (when the row named something else), then the role's fallback pair, then the PM chat's model (`packages/models/src/agent-model.ts:146-150`).
 
@@ -62,7 +62,7 @@ The `zcode` provider serves one option, `glm-5.3-flash-free` («ZCode · GLM-5.3
 | Pool entry invalid or repeated | Dropped when the pool is read; the row itself still works (`packages/models/src/role-models.ts:190-203`). |
 | A pool provider is spent or busier | It goes last in `rankPool`; another pool model or the row's model takes the run (`packages/models/src/agent-model.ts:69-80`). |
 | ZCode cannot work now | Not offered at pick time (`packages/models/src/agent-model.ts:141-145`); a run-time refusal hands the step to the next writer of the fallback chain. |
-| No usage reading cached | The window percent counts as `null` (0 in the ranking); recent-start counts still order the pool (`src/rooms/core/server/spawn-model.ts:80-83`). |
+| No usage reading cached | The window percent counts as `null` (0 in the ranking); recent-start counts still order the pool (`src/rooms/platform/server/spawn-model.ts:80-83`). |
 
 ## Business rules
 
@@ -75,7 +75,7 @@ The `zcode` provider serves one option, `glm-5.3-flash-free` («ZCode · GLM-5.3
 
 - `get_role_models` returns each role's resolved model with its `pool`, source, version and default (`src/rooms/settings/server/rpc/role-models.ts:16-35`, contract at `src/rooms/contracts/rpc-settings.ts:38-50`); `save_setting` stores `role_model.<role>`.
 - `list_model_overrides` lists the places with their own model rows or agents (sandboxes screened out); `reset_model_overrides` removes the given levels' rows and agents (`src/rooms/settings/server/rpc/settings.ts:333-350`).
-- `resolveSpawnModel` (helpers) and `resolveAgentModel` (pure) are the resolution entry points (`src/rooms/core/server/spawn-model.ts:68-100`, `packages/models/src/agent-model.ts:108-150`).
+- `resolveSpawnModel` (helpers) and `resolveAgentModel` (pure) are the resolution entry points (`src/rooms/platform/server/spawn-model.ts:68-100`, `packages/models/src/agent-model.ts:108-150`).
 - The writer has no per-task pick: it is the project's `writer.provider`/`writer.model`/`writer.reasoning_effort` with the fallback chain (`packages/models/src/writer-fallbacks.ts`), and the effort is the setting clamped to the live catalog (`packages/models/src/writer-reasoning.ts`).
 
 ## Gotchas
