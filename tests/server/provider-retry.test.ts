@@ -102,12 +102,17 @@ describe("provider-retry consent over the durable store", () => {
     expect((await consent("thr_old")).kind).toBe("decline");
     expect((await consent("thr_new")).kind).toBe("allow");
 
-    // closeRun refuses while an attempt is open, so the run closes first; the attempt inserted after still sees it.
+    // A live attempt blocks the public close API. Seed only the closed columns after that refusal: this is a legacy
+    // closed-run + open-attempt row that current admission APIs cannot construct, but retry consent must still fence.
     createRun(db, "run_b", "proj_a");
-    expect(closeRun(db, "run_b", "rpc")).toBe(true);
     createTask(db, { id: "t_r", runId: "run_b", kind: "bb", contract: {} });
     writerOn(db, "run_b", "t_r", "att_r", "thr_r");
-    expect((await consent("thr_r")).kind).toBe("decline");
+    expect(closeRun(db, "run_b", "rpc")).toBe(false);
+    db.prepare("UPDATE lane_pilot_run SET state='closed', closed_at=?, closed_by=?, updated_at=? WHERE id=?")
+      .run(Date.now(), "rpc", Date.now(), "run_b");
+    expect(() => createTask(db, { id: "t_r_rejected", runId: "run_b", kind: "bb", contract: {} }))
+      .toThrow("Lane Pilot admission refused: run is closed; use the chat's current run");
+    expect(await consent("thr_r")).toEqual({ kind: "decline", reason: "run closed" });
 
     createTask(db, { id: "t_l", runId: "run_a", kind: "bb", contract: {} });
     writerOn(db, "run_a", "t_l", "att_l", "thr_live");
