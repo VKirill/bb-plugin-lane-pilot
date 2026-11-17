@@ -66,5 +66,7 @@ def prove_tail_traces(proofs: Proofs, tmp: Path) -> None:
         path = d.get("path", [])
         archive = d.get("archiveStep") or {}
         proofs.prove("n1621", d.get("status") == "succeeded" and "snapshot" in path and "archive" in path
-                     and archive.get("kept") is False and archive.get("files") == ["ROADMAP.md", "REQUIREMENTS.md"],
-                     f"milestone-close path {path}; archive output {archive}")
+                     and archive.get("kept") is False and archive.get("files") == ["ROADMAP.md", "REQUIREMENTS.md"]
+                     and d.get("archiveFiles") == ["ROADMAP.md", "REQUIREMENTS.md"]
+                     and d.get("archiveMatches") == ["ROADMAP.md", "REQUIREMENTS.md"],
+                     f"milestone-close path {path}; archive output {archive}; physical files {d.get('archiveFiles')}; content matches {d.get('archiveMatches')}")
