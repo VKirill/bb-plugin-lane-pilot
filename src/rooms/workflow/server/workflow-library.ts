@@ -78,6 +78,7 @@ export function createWorkflowLibrary(ctx: ServerCore, services: Pick<Services, 
       read: async (path) => (project.dir && dirname(path) === project.dir ? project.files.get(path.slice(project.dir.length + 1)) ?? "" : nodeFileSource.read(path)),
     };
     let loopHooks: ProjectLoopHooks = { manifest: null, sha256: null };
+    if (project.state === "unavailable") loopHooks = { manifest: null, sha256: null, error: "project workflow files are unavailable; loop hooks cannot be safely resolved" };
     if (project.files.has(LOOP_HOOK_MANIFEST)) {
       try { loopHooks = parseLoopHookManifest(project.files.get(LOOP_HOOK_MANIFEST)!); }
       catch (cause) { loopHooks = { manifest: null, sha256: null, error: cause instanceof Error ? cause.message : String(cause) }; }
