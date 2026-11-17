@@ -40,7 +40,7 @@ def prove_e(proofs, tmp) -> None:
     proofs.prove("n120", st.get("due") == {"kind": "lessons"} and st.get("withAnalysis") is None and st.get("noRun") is None and st.get("runId") == "r" and st.get("auto") == "lessons"
                  and done_row.get("why") == "a return" and done_row.get("analysis") == ANALYSIS, f"due {st.get('due')}, handed run {st.get('runId')}, row after the analysis {done_row.get('why')!r}")
     rt = seen("retro")
-    proofs.prove("n121", st.get("workflow") == "retrospective" and rt.get("path") == ["retro", "living", "stage", "done"] and rt.get("status") == "succeeded"
+    proofs.prove("n121", st.get("workflow") == "retrospective" and rt.get("path") == ["retro", "report", "living", "stage", "done"] and rt.get("status") == "succeeded"
                  and rt.get("output") == {"status": "done", "insights": [{"id": "INS-1a2b3c4d"}, {"id": "INS-5e6f7a8b"}], "retro_path": "retro/r-sample.md", "candidates_staged": 2},
                  f"started {st.get('workflow')}, path {rt.get('path')}, output status {rt.get('output', {}).get('status')}")
     # n122 / n123 / n124 author, independent reviewer, the bytes the reviewer saw.
