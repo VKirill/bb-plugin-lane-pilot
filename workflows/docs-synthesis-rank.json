@@ -1,0 +1,42 @@
+{
+  "id": "docs-synthesis-rank",
+  "internal": true,
+  "status": "published",
+  "goal_check": "validate",
+  "name": {
+    "en": "Count a precedence entry",
+    "ru": "Учесть запись приоритета"
+  },
+  "description": {
+    "en": "Echoes one precedence kind for validation.",
+    "ru": "Возвращает вид документа для проверки."
+  },
+  "inputs": {
+    "kind": {
+      "type": "string",
+      "required": true
+    }
+  },
+  "outputs": {
+    "kind": "string"
+  },
+  "nodes": [
+    {
+      "id": "echo",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "kind": "$inputs.kind"
+      },
+      "out": {
+        "kind": "string"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "start",
+      "to": "echo"
+    }
+  ]
+}

@@ -1,0 +1,147 @@
+{
+  "id": "docs-synthesis-check",
+  "internal": true,
+  "status": "published",
+  "goal_check": "validate",
+  "name": {
+    "en": "Validate document conflict",
+    "ru": "Проверить конфликт документов"
+  },
+  "description": {
+    "en": "Checks both sides of a document conflict.",
+    "ru": "Проверяет обе стороны конфликта документов."
+  },
+  "inputs": {
+    "conflict": {
+      "type": "object",
+      "required": true
+    },
+    "precedence": {
+      "type": "array",
+      "required": false,
+      "default": []
+    },
+    "paths": {
+      "type": "array",
+      "required": false,
+      "default": []
+    }
+  },
+  "outputs": {
+    "topic": "string",
+    "a_path": "string",
+    "a_line": "number",
+    "a_quote": "string",
+    "a_kind": "ADR|PRD|SPEC|DOC|unknown",
+    "b_path": "string",
+    "b_line": "number",
+    "b_quote": "string",
+    "b_kind": "ADR|PRD|SPEC|DOC|unknown",
+    "winner": "a|b|none",
+    "rule": "precedence|agents_over_claude|none",
+    "auto_resolved": "bool"
+  },
+  "nodes": [
+    {
+      "id": "top",
+      "type": "parallel",
+      "for_each": "$inputs.precedence where item == $inputs.conflict.a_kind || item == $inputs.conflict.b_kind",
+      "max_fan_out": 10,
+      "onOverflow": "fail",
+      "child": {
+        "type": "subworkflow",
+        "workflow": "docs-synthesis-rank",
+        "with": {
+          "kind": "{{item}}"
+        }
+      },
+      "join": {
+        "policy": "all",
+        "out": {
+          "results": "array",
+          "count": "int"
+        },
+        "uses": "builtin:join"
+      }
+    },
+    {
+      "id": "a_top",
+      "type": "parallel",
+      "for_each": "top.results where index == 0 && kind == $inputs.conflict.a_kind",
+      "max_fan_out": 10,
+      "onOverflow": "fail",
+      "child": {
+        "type": "subworkflow",
+        "workflow": "docs-synthesis-rank",
+        "with": {
+          "kind": "{{item.kind}}"
+        }
+      },
+      "join": {
+        "policy": "all",
+        "out": {
+          "results": "array",
+          "count": "int"
+        },
+        "uses": "builtin:join"
+      }
+    },
+    {
+      "id": "record",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "topic": "$inputs.conflict.topic",
+        "a_path": "$inputs.conflict.a_path",
+        "a_line": "$inputs.conflict.a_line",
+        "a_quote": "$inputs.conflict.a_quote",
+        "a_kind": "$inputs.conflict.a_kind",
+        "b_path": "$inputs.conflict.b_path",
+        "b_line": "$inputs.conflict.b_line",
+        "b_quote": "$inputs.conflict.b_quote",
+        "b_kind": "$inputs.conflict.b_kind",
+        "winner": "$inputs.conflict.winner",
+        "rule": "$inputs.conflict.rule",
+        "auto_resolved": "$inputs.conflict.a_path in $inputs.paths && $inputs.conflict.b_path in $inputs.paths && (($inputs.conflict.rule == 'precedence' && $inputs.conflict.a_kind in $inputs.precedence && $inputs.conflict.b_kind in $inputs.precedence && top.count == 2 && (($inputs.conflict.winner == 'a' && a_top.count == 1) || ($inputs.conflict.winner == 'b' && a_top.count == 0))) || ($inputs.conflict.rule == 'agents_over_claude' && (($inputs.conflict.winner == 'a' && $inputs.conflict.a_path == 'AGENTS.md' && $inputs.conflict.b_path == 'CLAUDE.md') || ($inputs.conflict.winner == 'b' && $inputs.conflict.a_path == 'CLAUDE.md' && $inputs.conflict.b_path == 'AGENTS.md'))))"
+      },
+      "out": {
+        "topic": "string",
+        "a_path": "string",
+        "a_line": "number",
+        "a_quote": "string",
+        "a_kind": "ADR|PRD|SPEC|DOC|unknown",
+        "b_path": "string",
+        "b_line": "number",
+        "b_quote": "string",
+        "b_kind": "ADR|PRD|SPEC|DOC|unknown",
+        "winner": "a|b|none",
+        "rule": "precedence|agents_over_claude|none",
+        "auto_resolved": "bool"
+      },
+      "gates": [
+        "record.a_path != '' && record.b_path != ''",
+        "record.a_quote != '' && record.b_quote != ''",
+        "record.a_line > 0 && record.b_line > 0",
+        "record.a_path != record.b_path || record.a_line != record.b_line",
+        "record.topic != ''",
+        "record.winner == 'none' || record.rule != 'none'",
+        "record.rule == 'none' || record.winner != 'none'",
+        "record.rule != 'precedence' || record.a_kind != record.b_kind"
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "from": "start",
+      "to": "top"
+    },
+    {
+      "from": "top",
+      "to": "a_top"
+    },
+    {
+      "from": "a_top",
+      "to": "record"
+    }
+  ]
+}

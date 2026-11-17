@@ -45,7 +45,7 @@ describe("status of the built-in chains", () => {
     expect(ids).toEqual(expect.arrayContaining(["analyze-plan-execute", "full-lifecycle", "refactor", "review-fix", "quality-loop", "issue-full", "issue-quick", "grill-driven", "brainstorm-driven", "roadmap-driven", "blueprint-driven", "impeccable-build", "debug", "companion", "milestone-close"]));
     expect(ids).toEqual(expect.arrayContaining(["analyze-code", "plan-only", "code-review", "grill-plan", "test-gen", "security-audit", "issue-discover", "retrospective", "ui-audit"]));
     expect(ids).toEqual(expect.arrayContaining(OWN));
-    expect(ids.filter((id) => store.get(id)!.workflow.internal).sort()).toEqual(["ins.post", "lp.analyze", "lp.brainstorm", "lp.build", "lp.close", "lp.draw", "lp.plan", "lp.review", "plan-review-convergence-proof", "telegram-send"]);
+    expect(ids.filter((id) => store.get(id)!.workflow.internal).sort()).toEqual(["docs-synthesis-check", "docs-synthesis-rank", "ins.post", "lp.analyze", "lp.brainstorm", "lp.build", "lp.close", "lp.draw", "lp.plan", "lp.review", "plan-review-convergence-proof", "telegram-send"]);
     expect(ids).toEqual(expect.arrayContaining(["validate-phase", "eval-review", "ai-integration-phase", "spike", "sketch-wrap-up", "ship", "pr-branch", "cleanup", "new-milestone", "plan-review-convergence", "project-start"]));
     expect(ids).toEqual(expect.arrayContaining(["3d-asset", "roblox-asset", "social-post"]));
     expect(ids).toEqual(expect.arrayContaining(["research-dossier", "billing-batch", "macos-routine", "seo-page", "api-recon"]));
@@ -71,6 +71,6 @@ describe("status of the built-in chains", () => {
       "lp.curriculum-ingest",
       "project-passport",
     ]));
-    expect(ids).toHaveLength(125); // Includes the internal convergence proof and sketch-wrap-up.
+    expect(ids).toHaveLength(128); // Includes the internal convergence proof and sketch-wrap-up.
   });
 });

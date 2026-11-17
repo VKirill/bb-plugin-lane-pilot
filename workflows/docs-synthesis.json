@@ -1,0 +1,226 @@
+{
+  "id": "docs-synthesis",
+  "status": "published",
+  "goal_check": "validate",
+  "name": {
+    "en": "Find document conflicts",
+    "ru": "Найти противоречия документов"
+  },
+  "description": {
+    "en": "Identify conflicts in existing project documents with both sources and record unresolved decisions.",
+    "ru": "Находит противоречия в документах проекта с обеими ссылками и сохраняет неразрешённые решения."
+  },
+  "inputs": {
+    "paths": {
+      "type": "array",
+      "required": true
+    },
+    "precedence": {
+      "type": "array",
+      "required": false,
+      "default": []
+    }
+  },
+  "outputs": {
+    "status": "done|open",
+    "conflicts": "array",
+    "markdown_path": "string",
+    "json_path": "string",
+    "owner_response": "decided|keep_both|timeout|none"
+  },
+  "requires": {
+    "plugins": [
+      "lane-pilot"
+    ],
+    "project": {
+      "git": true
+    }
+  },
+  "guards": {
+    "maxFanOut": 50
+  },
+  "entry": "classify",
+  "nodes": [
+    {
+      "id": "classify",
+      "type": "agent",
+      "role": "analyst",
+      "prompt": "Read only the supplied project paths {{$inputs.paths}}. For every Markdown and text document report kind, audience, current or stale (it cites code that still exists), and any duplicate. The kind is one of ADR, PRD, SPEC, DOC or unknown — a runbook, guide, reference or note is DOC with the finer name as a subkind. Given one document, return its single kind; given a folder, return one table. Report source paths and classifications with evidence; change nothing.",
+      "out": {
+        "documents": "array"
+      },
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ]
+    },
+    {
+      "id": "synth",
+      "type": "agent",
+      "role": "analyst",
+      "session": "new",
+      "prompt": "Read classified documents {{classify.documents}} and the precedence in the workflow inputs, if supplied. Identify actual contradictions and return conflicts as an array. Each record must contain topic, a_path, a_line, a_quote, a_kind, b_path, b_line, b_quote, b_kind, winner (a, b, or none), rule (precedence, agents_over_claude, or none). Give both exact quotes with positive line numbers and distinct positions. Kinds are ADR, PRD, SPEC, DOC, or unknown. AGENTS.md takes precedence over CLAUDE.md for their conflicting instructions. Apply kind precedence only if explicitly supplied, in its given order; otherwise leave winner and rule none. Do not invent precedence or write files. Earlier entries in precedence outrank later ones; the engine re-checks every winner and sends anything it cannot verify to the owner.",
+      "out": {
+        "conflicts": "array"
+      },
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ]
+    },
+    {
+      "id": "verify",
+      "type": "parallel",
+      "for_each": "synth.conflicts",
+      "max_fan_out": 50,
+      "onOverflow": "fail",
+      "child": {
+        "type": "subworkflow",
+        "workflow": "docs-synthesis-check",
+        "with": {
+          "conflict": "{{item}}",
+          "precedence": "{{$inputs.precedence}}",
+          "paths": "{{$inputs.paths}}"
+        }
+      },
+      "join": {
+        "policy": "all",
+        "out": {
+          "results": "array",
+          "count": "int"
+        },
+        "uses": "builtin:join"
+      }
+    },
+    {
+      "id": "pick",
+      "type": "parallel",
+      "for_each": "verify.results where auto_resolved == false",
+      "max_fan_out": 50,
+      "onOverflow": "fail",
+      "child": {
+        "type": "subworkflow",
+        "workflow": "docs-synthesis-check",
+        "with": {
+          "conflict": "{{item}}",
+          "precedence": "{{$inputs.precedence}}",
+          "paths": "{{$inputs.paths}}"
+        }
+      },
+      "join": {
+        "policy": "all",
+        "out": {
+          "results": "array",
+          "count": "int"
+        },
+        "uses": "builtin:join"
+      }
+    },
+    {
+      "id": "resolve",
+      "type": "human",
+      "role": "owner",
+      "question": "How should these unresolved conflicts be handled? {{pick.results}}",
+      "timeoutSec": 900,
+      "skip_when": "pick.count == 0",
+      "skip_out": {
+        "answer_kind": "none",
+        "answer": ""
+      },
+      "out": {
+        "answer": "string",
+        "answer_kind": "decided|keep_both|timeout|none"
+      }
+    },
+    {
+      "id": "write_md",
+      "type": "action",
+      "action": "fs.write",
+      "params": {
+        "path": ".agents/planning/ingest/INGEST-CONFLICTS-{{run_id}}.md",
+        "mode": "non_overwrite",
+        "contents": "# Document conflicts\n\nRecords with auto_resolved=false remain unresolved; winner and rule are only the model proposal.\n\nValidated records:\n\n{{verify.results}}\n\nOwner response ({{resolve.answer_kind}}):\n{{resolve.answer}}\n"
+      },
+      "out": {
+        "markdown_path": "string"
+      }
+    },
+    {
+      "id": "write_json",
+      "type": "action",
+      "action": "fs.write",
+      "params": {
+        "path": ".agents/planning/ingest/INGEST-CONFLICT-RECORDS-{{run_id}}.json",
+        "mode": "non_overwrite",
+        "contents": "{{verify.results}}"
+      },
+      "out": {
+        "json_path": "string"
+      }
+    },
+    {
+      "id": "done",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "done",
+        "conflicts": "verify.results",
+        "markdown_path": "write_md.markdown_path",
+        "json_path": "write_json.json_path",
+        "owner_response": "resolve.answer_kind"
+      }
+    },
+    {
+      "id": "open",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "open",
+        "conflicts": "verify.results",
+        "markdown_path": "write_md.markdown_path",
+        "json_path": "write_json.json_path",
+        "owner_response": "resolve.answer_kind"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "classify",
+      "to": "synth"
+    },
+    {
+      "from": "synth",
+      "to": "verify"
+    },
+    {
+      "from": "verify",
+      "to": "pick"
+    },
+    {
+      "from": "pick",
+      "to": "resolve"
+    },
+    {
+      "from": "resolve",
+      "to": "write_md"
+    },
+    {
+      "from": "write_md",
+      "to": "write_json"
+    },
+    {
+      "from": "write_json",
+      "to": "done",
+      "when": "resolve.answer_kind == 'none'",
+      "label": "resolved"
+    },
+    {
+      "from": "write_json",
+      "to": "open"
+    }
+  ]
+}

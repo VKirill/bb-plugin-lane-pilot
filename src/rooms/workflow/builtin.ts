@@ -17,6 +17,9 @@ import ideaShootdown from "../../../workflows/idea-shootdown.json";
 import codeReview from "../../../workflows/code-review.json";
 import companion from "../../../workflows/companion.json";
 import council from "../../../workflows/council.json";
+import docsSynthesis from "../../../workflows/docs-synthesis.json";
+import docsSynthesisRank from "../../../workflows/docs-synthesis-rank.json";
+import docsSynthesisCheck from "../../../workflows/docs-synthesis-check.json";
 import debug from "../../../workflows/debug.json";
 import deploy from "../../../workflows/deploy.json";
 import errand from "../../../workflows/errand.json";
@@ -154,6 +157,9 @@ export const BUILTIN_SOURCES: ReadonlyArray<{ name: string; value: unknown }> = 
   { name: "code-review.json", value: codeReview },
   { name: "companion.json", value: companion },
   { name: "council.json", value: council },
+  { name: "docs-synthesis.json", value: docsSynthesis },
+  { name: "docs-synthesis-check.json", value: docsSynthesisCheck },
+  { name: "docs-synthesis-rank.json", value: docsSynthesisRank },
   { name: "debug.json", value: debug },
   { name: "deploy.json", value: deploy },
   { name: "errand.json", value: errand },
