@@ -15,6 +15,7 @@ import { mapListedQaHosts } from "../../../platform/server";
 import { VISIBLE_CATALOG } from "@lane-pilot/settings-catalog";
 import { NATIVE_WRITER_KEYS } from "../../../runs/server";
 import { asJsonText } from "../../../contracts";
+import { buildRunPolicy, parseRunPolicy, turnCeilingOf } from "../../../tasks";
 import { stringAt } from "@lane-pilot/kit";
 import { PAIR_ROLE_SPECS, PROVIDER_CAPABILITIES, roleAtomicMessage } from "@lane-pilot/models";
 import type { PluginRpcHandlers } from "@get-bb/plugin-sdk";
@@ -185,6 +186,30 @@ export function settingsRpc(ctx: ServerCore, services: Services) {
       const runsWindow = runsLimit ?? SCREEN_RUNS_LIMIT;
       const page = listRunsPage(db, projectId, { limit: runsWindow, offset: 0, pinOpen: true });
       const listed = await runViews(page.runs, values);
+      // Activation freezes project-level settings, even when the screen is viewing a section.
+      const openRuns = page.runs.filter((run) => !run.closed_at);
+      let nextPolicy: ReturnType<typeof buildRunPolicy> | null = null;
+      if (openRuns.length) {
+        try {
+          const activationSettings = (await ctx.effectiveProjectSettings(projectId)).values;
+          // A preview must not consume the builder's once-only warning for an invalid ceiling.
+          const previewSettings = turnCeilingOf(activationSettings["writer.max_turns"]).invalid
+            ? { ...activationSettings, "writer.max_turns": 0 } : activationSettings;
+          nextPolicy = buildRunPolicy(previewSettings);
+        } catch { /* Invalid settings cannot produce a new policy. */ }
+      }
+      const policyDifferences = openRuns.map((run) => {
+        try {
+          const current = parseRunPolicy(ctx.runPolicyFor(run.id));
+          if (!nextPolicy) return { runId: run.id, unavailable: true, changes: [] };
+          const candidates = [
+            { key: "ops.pool_size" as const, current: current.pools.provider, next: nextPolicy.pools.provider },
+            { key: "ops.verify_pool_size" as const, current: current.pools.verification, next: nextPolicy.pools.verification },
+            { key: "writer.max_turns" as const, current: current.maxTurns ?? null, next: nextPolicy.maxTurns ?? null },
+          ];
+          return { runId: run.id, unavailable: false, changes: candidates.filter((item) => item.current !== item.next) };
+        } catch { return { runId: run.id, unavailable: true, changes: [] }; }
+      }).filter((run) => run.unavailable || run.changes.length);
       const latestReceipt = listed
         .flatMap((run) => [
           ...run.attempts.map((attempt) => attempt.cliReceiptJson),
@@ -203,6 +228,7 @@ export function settingsRpc(ctx: ServerCore, services: Services) {
         values,
         versions,
         runs: listed,
+        policyDifferences,
         runsTotal: page.total,
         runsLimit: runsWindow,
         unapplied,

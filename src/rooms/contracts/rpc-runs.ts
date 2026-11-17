@@ -172,6 +172,12 @@ export const rpcRuns = {
       values: z.record(z.string(), z.unknown()),
       versions: z.record(z.string(), z.number()),
       runs: z.array(runViewSchema),
+      policyDifferences: z.array(z.object({
+        runId: z.string(), unavailable: z.boolean(), changes: z.array(z.object({
+          key: z.enum(["ops.pool_size", "ops.verify_pool_size", "writer.max_turns"]),
+          current: z.number().nullable(), next: z.number().nullable(),
+        }).strict()),
+      }).strict()).optional(),
       /** All runs of the project; `runs` carries the newest few and every open one, `list_runs` the rest. */
       runsTotal: z.number().int().nonnegative().optional(),
       runsLimit: z.number().int().positive().optional(),

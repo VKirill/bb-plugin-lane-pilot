@@ -9,6 +9,8 @@ import { runTone } from "../ui-shell/ui";
 import { Surface, SurfaceBody, SurfaceHeader } from "@lane-pilot/ui-kit";
 import { Pill } from "../ui-shell/ui";
 import type { LpPage } from "./use-lp-page";
+import type { z } from "zod";
+import type { rpcMethods } from "../contracts";
 
 const OPEN_STATES = new Set(["pending", "running"]);
 
@@ -69,6 +71,7 @@ export function OverviewTab({ page }: { page: LpPage }) {
           {open.length > 3 ? <p className="text-xs text-muted-foreground">{t("overviewMoreRuns").replace("{n}", String(open.length - 3))}</p> : null}
         </SurfaceBody>
       </Surface>
+      {data ? <PolicyDifferences page={page} data={data} /> : null}
       <Surface testId="needs-attention">
         <SurfaceHeader><h2 className="text-sm font-medium">{t("overviewAttention")}{attention.length ? ` (${attention.length})` : ""}</h2></SurfaceHeader>
         <SurfaceBody className="space-y-2">
@@ -100,6 +103,39 @@ export function OverviewTab({ page }: { page: LpPage }) {
       <HowItWorks />
     </div>
   );
+}
+
+/** Refresh the server comparison when a save or the ordinary run refresh changes its inputs. */
+function PolicyDifferences({ page, data }: { page: LpPage; data: NonNullable<LpPage["data"]> }) {
+  type Comparison = z.infer<typeof rpcMethods.get_screen.output>["policyDifferences"];
+  const incoming = (data as typeof data & { policyDifferences?: Comparison }).policyDifferences;
+  const [result, setResult] = useState(() => ({ values: data.values, runs: data.runs, incoming, projectId: page.projectId, sectionId: page.selectedSectionId, differences: incoming, verified: !page.projectId || page.isGlobal || incoming === undefined }));
+  const fresh = result.verified && result.values === data.values && result.runs === data.runs && result.projectId === page.projectId && result.sectionId === page.selectedSectionId;
+  useEffect(() => {
+    if (fresh) return;
+    let active = true;
+    const update = (differences: Comparison) => {
+      if (active) setResult({ values: data.values, runs: data.runs, incoming, projectId: page.projectId, sectionId: page.selectedSectionId, differences, verified: true });
+    };
+    // A complete new screen already carries its own comparison; a partial values/runs update does not.
+    if (incoming !== result.incoming && incoming !== undefined) update(incoming);
+    else if (incoming !== undefined && page.projectId && !page.isGlobal) {
+      void page.rpc.call("get_screen", { projectId: page.projectId, ...(page.selectedSectionId ? { sectionId: page.selectedSectionId } : {}) })
+        .then((screen) => update(screen.policyDifferences)).catch(() => update(undefined));
+    }
+    return () => { active = false; };
+  }, [data.values, data.runs, incoming, page.projectId, page.selectedSectionId, page.isGlobal, page.rpc]);
+  const differences = fresh ? result.differences : undefined;
+  if (!differences?.length) return null;
+  return <Surface testId="policy-differences">
+    <SurfaceHeader><h2 className="text-sm font-medium">{t("policyDifferences")}</h2></SurfaceHeader>
+    <SurfaceBody className="space-y-2">{differences.map((run) => (
+      <div key={run.runId} className="min-w-0 text-sm" data-testid={`policy-difference-${run.runId}`}>
+        <p className="break-all font-medium">{data.runs.find((item) => item.id === run.runId)?.pmThread?.title ?? run.runId}</p>
+        {run.unavailable ? <p>{t("policyUnavailable")}</p> : run.changes.map((change) => <p key={change.key} className="break-words">{t("policyDifference").replace("{key}", change.key).replace("{current}", change.current === null ? t("policyNoLimit") : String(change.current)).replace("{next}", change.next === null ? t("policyNoLimit") : String(change.next))}</p>)}
+      </div>
+    ))}</SurfaceBody>
+  </Surface>;
 }
 
 /** Which machine and folder the project's helpers use; a choice when several are bound. */
