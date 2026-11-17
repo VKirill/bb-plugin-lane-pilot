@@ -10,7 +10,7 @@ import { LANE_PILOT_PM_SESSION } from "../src/rooms/native-agent/native-agent-ov
  * registered surface is what the PM reads). The ceiling is the measured total on 2026-11-02 rounded up to 1 000; over it,
  * cut first or raise it on purpose, saying why in the commit. Per tool, BB refuses registration above 4096 instructions.
  */
-const SURFACE_CEILING = 67_300; // 591 accounting: release 590 measured 65,765; current tool surface is 67,215 after required repo-boundary/checkout guidance. Per-tool ceiling remains 4,096.
+const SURFACE_CEILING = 67_300; // 591 accounting: current observed PM surface is 67,215 after required repo-boundary/checkout guidance. Per-tool ceiling remains 4,096.
 const TOOL_INSTRUCTIONS_MAX = 4_096;
 
 let dispose: (() => Promise<void> | void) | null = null;
