@@ -33,6 +33,7 @@ import type { DocsNightlyApi } from "../../docs/server/docs-nightly";
 
 import type { WorkflowTriggersApi } from "./workflow-triggers-live";
 import {builtinWorkflows} from "../builtin";
+import { LoopHookRefusal, prepareLoopWorkflow, type LoopHookManifest } from "../loop-hooks";
 
 /** The fields of the services bag this file reads, typed by the rooms that own them. */
 interface Services {
@@ -52,6 +53,7 @@ export type WorkflowToolDeps = {
   db: LanePilotDatabase;
   /** The library the PM sees: the built-in and global workflows, and with `projectId` the project's own files (`.lane-pilot/workflows`) too. */
   store(projectId?: string): Promise<WorkflowStore>;
+  loadProject?(projectId: string): Promise<{ store: WorkflowStore; loopHooks?: { manifest: LoopHookManifest | null; sha256: string | null; error?: string } }>;
   engine(): Pick<WorkflowEngine, "start" | "get" | "snapshot"> & Partial<Pick<WorkflowEngine, "lastAudit" | "goalJournal" | "amendGoals" | "rerunNode">>;
   runtime(input: { pmThreadId: string; projectId: string; runId: string }): ChainRuntime;
   /** What the router may know about the environment; undefined facts count as available. */
@@ -94,7 +96,8 @@ const ROUTE_NEXT_ROUTE = "Show the owner the workflow, the boundary contract (gu
 
 export async function routeTool(deps: WorkflowToolDeps, params: { intent: string; request?: string | undefined; context?: string | undefined }, context: ToolContext): Promise<string> {
   if (!context.threadId || !context.projectId) throw new Error("route_needs_pm_thread: call this from a Lane Pilot PM chat");
-  const store = await deps.store(context.projectId);
+  const loaded = deps.loadProject ? await deps.loadProject(context.projectId) : { store: await deps.store(context.projectId) };
+  const store = loaded.store;
   const runId = pmRunId(deps.db, context.projectId, context.threadId);
   const state = deps.state?.({ projectId: context.projectId, runId });
   const passportCtx = projectPassportBlock(deps.db, { projectId: context.projectId, role: "pm", maxChars: 1200 });
@@ -135,17 +138,30 @@ export async function runWorkflowTool(deps: WorkflowToolDeps, params: { workflow
   if (!runId) throw new Error("workflow_needs_pm_chat: call this from a Lane Pilot PM chat");
   const releaseAdmission = beginRunAdmission(deps.db, runId);
   try {
-  const store = await deps.store(context.projectId);
+  const loaded = deps.loadProject ? await deps.loadProject(context.projectId) : { store: await deps.store(context.projectId) };
+  const store = loaded.store;
   const stored = store.get(params.workflowId);
   const runnable = store.list().filter((item) => isOffered(item.workflow)).map((item) => item.workflow.id);
   const published = store.list().filter((item) => isOffered(item.workflow) && item.workflow.status === "published").map((item) => item.workflow.id);
   if (!stored) return refused(`unknown_workflow: there is no workflow "${params.workflowId}". Call lane_pilot_route, or choose one of: ${runnable.join(", ") || "(none published)"}`, { workflow: params.workflowId });
-  const { workflow } = stored;
-  if (isPipeline(workflow)) return refused(`not_runnable: "${workflow.id}" starts with ${workflow.startedBy}, not with lane_pilot_run_workflow`, { workflow: workflow.id });
-  if (workflow.internal) return refused(`not_runnable: "${workflow.id}" is a fragment of other workflows, not a workflow to start`, { workflow: workflow.id });
+  const baseWorkflow = stored.workflow;
+  if (isPipeline(baseWorkflow)) return refused(`not_runnable: "${baseWorkflow.id}" starts with ${baseWorkflow.startedBy}, not with lane_pilot_run_workflow`, { workflow: baseWorkflow.id });
+  if (baseWorkflow.internal) return refused(`not_runnable: "${baseWorkflow.id}" is a fragment of other workflows, not a workflow to start`, { workflow: baseWorkflow.id });
   // A tested workflow has passed its stub tests but never run for real: it starts only with an explicit first-live-run choice (liveTrial), and its first successful run makes it published.
-  if (workflow.status !== "published" && !(workflow.status === "tested" && params.liveTrial === true)) {
-    return refused(`not_runnable: "${workflow.id}" is ${workflow.status}, only published workflows start.${workflow.status === "tested" ? " It has passed its tests on stubs but has never run for real: when the assignment from the owner or a BB agent requests a real outcome, call again with liveTrial: true; the graph's human confirmations still apply before irreversible steps; one successful run makes it published." : ""} Published: ${published.join(", ") || "(none)"}`, { workflow: workflow.id });
+  if (baseWorkflow.status !== "published" && !(baseWorkflow.status === "tested" && params.liveTrial === true)) {
+    return refused(`not_runnable: "${baseWorkflow.id}" is ${baseWorkflow.status}, only published workflows start.${baseWorkflow.status === "tested" ? " It has passed its tests on stubs but has never run for real: when the assignment from the owner or a BB agent requests a real outcome, call again with liveTrial: true; the graph's human confirmations still apply before irreversible steps; one successful run makes it published." : ""} Published: ${published.join(", ") || "(none)"}`, { workflow: baseWorkflow.id });
+  }
+  let workflow = baseWorkflow;
+  let resolve = store.resolve;
+  if (loaded.loopHooks?.error) return refused(`loop_hooks_invalid: ${loaded.loopHooks.error}`, { workflow: baseWorkflow.id });
+  if (loaded.loopHooks?.manifest) {
+    try {
+      const prepared = prepareLoopWorkflow({ workflow: baseWorkflow, manifest: loaded.loopHooks.manifest, manifestSha256: loaded.loopHooks.sha256, resolve: store.resolve,
+        status: (id, version) => { const item = store.get(id); return item && (version === undefined || item.workflow.version === version) ? { status: item.workflow.status, internal: item.workflow.internal, startedBy: item.workflow.startedBy } : null; } });
+      workflow = prepared.workflow; resolve = prepared.resolve;
+    } catch (cause) {
+      return refused(`loop_hooks_invalid: ${cause instanceof LoopHookRefusal ? cause.message : cause instanceof Error ? cause.message : String(cause)}`, { workflow: baseWorkflow.id });
+    }
   }
   if (params.liveTrial !== true) {
     const seenSub = new Set<string>([workflow.id]);
@@ -155,10 +171,11 @@ export async function runWorkflowTool(deps: WorkflowToolDeps, params: { workflow
         const subId = (n as { workflow?: string }).workflow;
         if (!subId || seenSub.has(subId)) continue;
         seenSub.add(subId);
+        const subWorkflow = resolve(subId, (n as { version?: number }).version);
         const subStored = store.get(subId);
         if (subStored && subStored.workflow.status !== "published") return { id: subId, status: subStored.workflow.status };
-        if (subStored) {
-          const deeper = checkTransitiveSubworkflows(subStored.workflow);
+        if (subWorkflow) {
+          const deeper = checkTransitiveSubworkflows(subWorkflow);
           if (deeper) return deeper;
         }
       }
@@ -205,7 +222,7 @@ export async function runWorkflowTool(deps: WorkflowToolDeps, params: { workflow
   const key = `wf:${runId}:${workflow.id}:${sha16(canonical(inputs))}`;
   try {
     const started = deps.engine().start({
-      workflow, inputs, key, runtime: deps.runtime({ pmThreadId: context.threadId, projectId: context.projectId, runId }), link: { projectId: context.projectId, runId },
+      workflow, inputs, key, resolve, runtime: deps.runtime({ pmThreadId: context.threadId, projectId: context.projectId, runId }), link: { projectId: context.projectId, runId },
       ...(params.goals?.length ? { goals: params.goals } : {}),
     });
     // The run goes on in the background: its steps report through lane_pilot_workflow_status, and a failure of the drive is only logged.
@@ -310,6 +327,7 @@ export function mountWorkflowTools(ctx: ServerCore, services: Services): void {
       if (projectId) { try { return (await library.loadStore(projectId)).store; } catch (cause) { bb.log.warn(`Lane Pilot: project workflows not read for the PM tools (${cause instanceof Error ? cause.message : String(cause)})`); } }
       return services.workflowCatalog.store();
     },
+    loadProject: async (projectId) => library.loadStore(projectId),
     engine: () => services.workflowEngine,
     runtime: ({ pmThreadId, projectId, runId }) => ({ ctx, services, pmThreadId, projectId, runId }),
     state: ({ runId }) => ({

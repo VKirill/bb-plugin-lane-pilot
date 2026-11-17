@@ -10,3 +10,5 @@ export { WorkflowEngine } from "@lane-pilot/workflow-engine";
 export type { NodeExecutor, RunSummary, StepContext } from "@lane-pilot/workflow-engine";
 export type { Workflow } from "@lane-pilot/workflow-engine";
 export type { ValidateOptions, WorkflowProblem } from "@lane-pilot/workflow-engine";
+export { LOOP_HOOK_MANIFEST, LOOP_HOOK_POINTS, LoopHookRefusal, parseLoopHookManifest, prepareLoopWorkflow } from "./loop-hooks";
+export type { LoopHookManifest, LoopHookPoint, PreparedLoopWorkflow } from "./loop-hooks";

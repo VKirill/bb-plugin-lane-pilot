@@ -340,6 +340,8 @@ export function createAutoStages(ctx: Pick<ServerCore, "log">, services: Pick<Se
   proofCurrency?(phase: Phase): Promise<string | null>;
   /** The project's median accepted-task size as one line (tasks/task-size.ts); the plan grain check reads it as `median_task`. */
   medianTask?(phase: Phase): string | null;
+  /** Project-aware graph composition used by machine stages before engine preflight and pinning. */
+  prepareWorkflow?(phase: Phase, workflow: import("@lane-pilot/workflow-engine").Workflow): Promise<{ workflow: import("@lane-pilot/workflow-engine").Workflow; resolve: import("@lane-pilot/workflow-engine").ResolveWorkflow }>;
   /** The design measurement journal (SMA p3_judge): a reworked drawing's scores and remarks are kept too. */
   journal?(line: DesignJournalLine): Promise<void>;
   /** The owner's anamnesis card ("" when none): lp.analyze's advisor reads it (SMA k_wdi_advisor). */
@@ -661,9 +663,9 @@ export function createAutoStages(ctx: Pick<ServerCore, "log">, services: Pick<Se
     // A context signed without the threat model its security risk needs can never pass the plan gate, and replanning cannot give it one: the machine
     // writes SECURITY.md from the signed risk, signs the context again with it and plans anew (drill ph_5cd09d1c7a: two plans, both refused for it alone).
     if (due.kind === "plan" && threatGap(phase.record)) return repairThreatModel(phase);
-    const workflow = services.workflowEngine.resolveWorkflow(AUTO_WORKFLOWS[due.kind]);
+    const baseWorkflow = services.workflowEngine.resolveWorkflow(AUTO_WORKFLOWS[due.kind]);
     const runtime = deps.runtime(phase);
-    if (!workflow || !runtime) return false;
+    if (!baseWorkflow || !runtime) return false;
     try {
       // The goal audit is told from git which recorded proofs are stale, so it does not work currency out by hand; a failed lookup only leaves the facts out.
       const currency = due.kind === "close" && deps.proofCurrency ? await bestEffort(ctx.log, "phase proof currency", deps.proofCurrency(phase), null) : null;
@@ -672,7 +674,8 @@ export function createAutoStages(ctx: Pick<ServerCore, "log">, services: Pick<Se
       // An existing CONTEXT.md is handed to the analysis so its decisions are kept (SMA k_wdi_existing); unreadable is no blocker.
       const contextExisting = due.kind === "analyze" && deps.readText ? await deps.readText(phase, `${phaseFolder(phase.id)}/CONTEXT.md`).catch(() => null) : null;
       const ownerCard = due.kind === "analyze" && wordAsked(phase.record, "context") && phase.record.grayAreas === true && deps.ownerCard ? await bestEffort(ctx.log, "owner card for the analysis", deps.ownerCard(phase), "") : undefined;
-      const started = services.workflowEngine.start({ workflow, inputs: { ...autoInputs(phase, due, deps.medianTask?.(phase) ?? undefined, contextExisting, ownerCard ?? undefined, deps.planningHome ? await deps.planningHome(phase) : null), ...(currency ? { proof_currency: currency } : {}) }, key: `phase:${phase.id}:${due.kind}:${phase.edition}:${deps.now()}`, runtime,
+      const prepared = deps.prepareWorkflow ? await deps.prepareWorkflow(phase, baseWorkflow) : { workflow: baseWorkflow, resolve: services.workflowEngine.resolveWorkflow };
+      const started = services.workflowEngine.start({ workflow: prepared.workflow, resolve: prepared.resolve, inputs: { ...autoInputs(phase, due, deps.medianTask?.(phase) ?? undefined, contextExisting, ownerCard ?? undefined, deps.planningHome ? await deps.planningHome(phase) : null), ...(currency ? { proof_currency: currency } : {}) }, key: `phase:${phase.id}:${due.kind}:${phase.edition}:${deps.now()}`, runtime,
         ...(due.kind === "plan" || due.kind === "check" ? { mode: "full" as const } : {}),
         link: { projectId: phase.projectId, ...(phase.runId ? { runId: phase.runId } : {}) } });
       started.done.catch((cause: unknown) => ctx.log(`phase ${phase.id}: ${AUTO_WORKFLOWS[due.kind]} stopped: ${cause instanceof Error ? cause.message : String(cause)}`));

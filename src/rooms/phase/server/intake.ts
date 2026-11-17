@@ -28,7 +28,7 @@ export type IntakeRecord = { requestId: string; kind: IntakeKind; by: "rules" | 
 
 /** The machine's start of the small-task graph for a request, and the state of a run it started (src/rooms/phase/server/driver.ts wires them). */
 export type IntakeTrain = {
-  start(input: { projectId: string; pmThreadId: string; runId: string; requestId: string; text: string; kind: "small" | "batch" | "heavy" | "full"; path?: { size: PathSize; risk: PathRisk } }): string | null;
+  start(input: { projectId: string; pmThreadId: string; runId: string; requestId: string; text: string; kind: "small" | "batch" | "heavy" | "full"; path?: { size: PathSize; risk: PathRisk } }): string | null | Promise<string | null>;
   status(wfRunId: string): string | null;
   /** The workflow architect, started with the owner's process as its order; resolves to its chat. */
   startProcess?(input: { projectId: string; pmThreadId: string; text: string }): Promise<string | null>;
@@ -122,7 +122,7 @@ export function createPhaseIntake(ctx: Deps, phases: IntakePhases, train?: Intak
         // in this very turn, and the dispatch refusal names the phase if it tries to hand the work out.
         phaseId = live.id;
       } else if (!stopped && train) {
-        heavyRunId = train.start({ projectId: run.project_id, pmThreadId: threadId, runId: run.id, requestId, text, kind: "heavy" }) ?? undefined;
+        heavyRunId = (await train.start({ projectId: run.project_id, pmThreadId: threadId, runId: run.id, requestId, text, kind: "heavy" })) ?? undefined;
         if (heavyRunId) ctx.log(`phase intake: ${threadId} — the owner's request is heavy (${by}); full-lifecycle ${heavyRunId} started`);
         else await heavyUnavailable(threadId, "the full-lifecycle graph did not start");
       } else if (!stopped) {
@@ -223,7 +223,7 @@ export function createPhaseIntake(ctx: Deps, phases: IntakePhases, train?: Intak
       const live = phases.list({ pmThreadId: input.pmThreadId, live: true })[0];
       if (live) return { started: false, kind, reason: `phase ${live.id} is already live in the PM chat` };
       if (train) {
-        const id = train.start({ projectId: run.project_id, pmThreadId: input.pmThreadId, runId: run.id, requestId: input.key, text, kind: "heavy" });
+        const id = await train.start({ projectId: run.project_id, pmThreadId: input.pmThreadId, runId: run.id, requestId: input.key, text, kind: "heavy" });
         if (id) { ctx.log(`phase intake: hand-over (${input.origin.slice(0, 80)}) is heavy (${by}); full-lifecycle ${id} started`); return { started: true, via: "full-lifecycle", id }; }
         return { started: false, kind, reason: "the full-lifecycle graph did not start" };
       }
@@ -234,7 +234,7 @@ export function createPhaseIntake(ctx: Deps, phases: IntakePhases, train?: Intak
       // hand-over: all four such lead runs of a month ended blocked there (hub, 2026-11-06). It goes down issue-full itself.
       const full = downFull || (decided && kind === "small" && (path.size === "large" || path.risk === "high"));
       const via = full ? "issue-full" : kind === "batch" ? "issue-batch" : "issue-quick";
-      const id = train.start({ projectId: run.project_id, pmThreadId: input.pmThreadId, runId: run.id, requestId: input.key, text, kind: full ? "full" : kind, ...(kind === "small" ? { path } : {}) });
+      const id = await train.start({ projectId: run.project_id, pmThreadId: input.pmThreadId, runId: run.id, requestId: input.key, text, kind: full ? "full" : kind, ...(kind === "small" ? { path } : {}) });
       if (id) { ctx.log(`phase intake: hand-over (${input.origin.slice(0, 80)}) is ${kind} (${by}); ${via} ${id} started`); return { started: true, via, id }; }
       return { started: false, kind, reason: "the small-task graph did not start" };
     }

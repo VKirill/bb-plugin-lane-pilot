@@ -8,6 +8,7 @@ import type { PrototypeConfig, TaskV2, BirthKind, CodeCriticDefault } from "../.
 import type { DirtSnapshot } from "../../dirt-snapshot";
 import type { LanePilotDatabase, getAttempt, getRun } from "../../storage";
 import type { ServerCore } from "../../contracts/server";
+import type { LoopHookManifest } from "../../workflow";
 
 /**
  * The cross-room service surfaces, declared here so a consumer types what it uses without importing the owner room.
@@ -23,7 +24,7 @@ export interface WorkflowEngineApi {
 
 /** workflow/server/workflow-library.ts — the graphs a project has, over the built-in and global stores. */
 export interface WorkflowLibraryApi {
-  loadStore(projectId?: string): Promise<{ store: WorkflowStore }>;
+  loadStore(projectId?: string): Promise<{ store: WorkflowStore; loopHooks?: { manifest: LoopHookManifest | null; sha256: string | null; error?: string } }>;
   issueQuickWorkflowId(settings: Record<string, unknown> | null | undefined): "issue-quick" | "issue-quick-legacy";
   issueQuickModelCalls(settings: Record<string, unknown> | null | undefined): number;
   issueQuickShortPath(settings: Record<string, unknown> | null | undefined): boolean;

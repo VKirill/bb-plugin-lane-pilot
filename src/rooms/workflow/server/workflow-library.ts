@@ -13,6 +13,7 @@ import type { ServerCore } from "../../contracts/server";
 import type { DocsNightlyApi } from "../../docs/server/docs-nightly";
 import type { WorkflowEngineApi } from "./workflow";
 import {BUILTIN_SOURCES} from "../builtin";
+import { LOOP_HOOK_MANIFEST, parseLoopHookManifest, type LoopHookManifest } from "../loop-hooks";
 
 /** The fields of the services bag this file reads, typed by the rooms that own them. */
 interface Services {
@@ -28,6 +29,8 @@ type ProjectState = Output<"workflow_list">["project"];
 const RECENT_RUNS = 10;
 const STEP_OUTPUT_LIMIT = 4_000;
 const EVENT_TAIL = 80;
+
+export type ProjectLoopHooks = { manifest: LoopHookManifest | null; sha256: string | null; error?: string };
 
 const field = (item: Field) => ({ name: item.name, type: item.type, required: item.required, ...(item.values ? { values: item.values } : {}), ...((item.description ?? item.note) ? { note: item.description ?? item.note } : {}),
   ...(item.default !== undefined ? { default: item.default } : {}) });
@@ -58,6 +61,9 @@ export function createWorkflowLibrary(ctx: ServerCore, services: Pick<Services, 
     if (!root) return { files: new Map(), dir: null, state: "no_machine" };
     try {
       const listed = await ctx.host.call("listWorkflowFiles", { requestedHostId: root.hostId, projectCwd: root.path }, { hostId: root.hostId, timeoutMs: 15_000 });
+      if (listed.hostId !== root.hostId) throw new Error(`workflow files came from unexpected host ${listed.hostId}`);
+      // The reserved manifest is not a workflow definition. Keep it in the project snapshot for composition, while the
+      // regular store source excludes it below so malformed hook settings never shadow a workflow id.
       return { files: new Map(listed.files.map((file) => [file.path, file.content])), dir: projectWorkflowDir(root.path), state: "ok" };
     } catch (cause) {
       ctx.log(`Lane Pilot workflow library: project files unavailable (${cause instanceof Error ? cause.message : String(cause)})`);
@@ -65,14 +71,19 @@ export function createWorkflowLibrary(ctx: ServerCore, services: Pick<Services, 
     }
   }
 
-  async function loadStore(projectId?: string): Promise<{ store: WorkflowStore; project: ProjectState; files: WorkflowFileSource }> {
+  async function loadStore(projectId?: string): Promise<{ store: WorkflowStore; project: ProjectState; files: WorkflowFileSource; loopHooks: ProjectLoopHooks }> {
     const project = projectId ? await readProjectFiles(projectId) : { files: new Map<string, string>(), dir: null, state: "not_requested" as const };
     const files: WorkflowFileSource = {
-      list: async (dir) => (project.dir && dir === project.dir ? [...project.files.keys()].map((name) => `${dir}/${name}`).sort() : nodeFileSource.list(dir)),
+      list: async (dir) => (project.dir && dir === project.dir ? [...project.files.keys()].filter((name) => name !== LOOP_HOOK_MANIFEST).map((name) => `${dir}/${name}`).sort() : nodeFileSource.list(dir)),
       read: async (path) => (project.dir && dirname(path) === project.dir ? project.files.get(path.slice(project.dir.length + 1)) ?? "" : nodeFileSource.read(path)),
     };
+    let loopHooks: ProjectLoopHooks = { manifest: null, sha256: null };
+    if (project.files.has(LOOP_HOOK_MANIFEST)) {
+      try { loopHooks = parseLoopHookManifest(project.files.get(LOOP_HOOK_MANIFEST)!); }
+      catch (cause) { loopHooks = { manifest: null, sha256: null, error: cause instanceof Error ? cause.message : String(cause) }; }
+    }
     const store = await loadWorkflowStore({ builtin: BUILTIN_SOURCES, files, globalDir, ...(project.dir ? { projectDir: project.dir } : {}), resolveStatus: statuses.resolve });
-    return { store, project: project.state, files };
+    return { store, project: project.state, files, loopHooks };
   }
 
   function statsFor(workflowId: string, projectId?: string): WorkflowStats {
@@ -97,10 +108,12 @@ export function createWorkflowLibrary(ctx: ServerCore, services: Pick<Services, 
     loadStore,
 
     async list(input: { projectId?: string }): Promise<Output<"workflow_list">> {
-      const { store, project } = await loadStore(input.projectId);
+      const { store, project, loopHooks } = await loadStore(input.projectId);
+      const problems = [...store.problems];
+      if (loopHooks.error) problems.push({ origin: "project", source: LOOP_HOOK_MANIFEST, problems: [{ level: "error", code: "loop_hooks", message: loopHooks.error }] });
       return {
         workflows: store.list().map((item) => summary(item, input.projectId)).sort((a, b) => Number(a.internal) - Number(b.internal) || a.name.en.localeCompare(b.name.en)),
-        problems: store.problems.map((row) => ({ origin: row.origin, source: row.source, messages: row.problems.map((problem) => problem.message) })),
+        problems: problems.map((row) => ({ origin: row.origin, source: row.source, messages: row.problems.map((problem) => problem.message) })),
         project,
       };
     },

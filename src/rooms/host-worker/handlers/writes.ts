@@ -44,8 +44,14 @@ export const listWorkflowFiles: ExperimentalHostRpcHandlers<typeof hostContract>
   try { names = (await readdir(dir)).filter((name) => name.endsWith(".json")).sort(); }
   catch (cause) { if ((cause as NodeJS.ErrnoException).code !== "ENOENT" && (cause as NodeJS.ErrnoException).code !== "ENOTDIR") throw cause; }
   const files: Array<{ path: string; content: string }> = [];
-  for (const name of names.slice(0, 200)) {
+  // The reserved manifest is outside the ordinary 200-file workflow listing, but it must never be silently
+  // omitted: otherwise a malformed/oversized hook configuration would look like "no hooks" and bypass refusal.
+  const manifestName = "loop-hooks.manifest.json";
+  const ordered = [ ...(names.includes(manifestName) ? [manifestName] : []), ...names.filter((name) => name !== manifestName).slice(0, 200) ];
+  for (const name of ordered) {
     const info = await lstat(join(dir, name));
+    if (name === manifestName && (!info.isFile() || info.isSymbolicLink())) throw new Error(`reserved workflow manifest must be a regular file: ${name}`);
+    if (name === manifestName && info.size > 262_144) throw new Error(`reserved workflow manifest exceeds 262144 bytes: ${name}`);
     if (!info.isFile() || info.isSymbolicLink() || info.size > 262_144) continue;
     files.push({ path: name, content: await readFile(join(dir, name), "utf8") });
   }

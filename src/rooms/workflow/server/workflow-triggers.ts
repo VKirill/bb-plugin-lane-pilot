@@ -13,6 +13,7 @@ import { isPmChat } from "../../native-agent/server";
 
 import { SCHEDULE_RUN_KEY_PREFIX } from "../../contracts";
 import type { ChainRuntime } from "../../contracts/server";
+import { LoopHookRefusal, prepareLoopWorkflow } from "../loop-hooks";
 
 import type { WorkflowEngineApi } from "./workflow";
 
@@ -95,7 +96,7 @@ export function desiredSchedules(items: StoredWorkflow[], projectId: string, zon
 
 export type TriggerDeps = {
   /** The workflows of a project's view of the library (built-in, global, the project's own). */
-  loadStore(projectId?: string): Promise<{ store: WorkflowStore; project: "not_requested" | "ok" | "no_machine" | "unavailable" }>;
+  loadStore(projectId?: string): Promise<{ store: WorkflowStore; project: "not_requested" | "ok" | "no_machine" | "unavailable"; loopHooks?: { manifest: import("../loop-hooks").LoopHookManifest | null; sha256: string | null; error?: string } }>;
   preflight?(workflow: Workflow, input: { projectId: string; threadId?: string | null }): Promise<PreflightResult>;
   automations?: AutomationsPort;
   now?: () => number;
@@ -155,22 +156,36 @@ export function createWorkflowTriggers(ctx: ServerCore, services: Pick<Services,
     /** The starter a Lane Pilot system schedule names (schedule/server/system-schedules.ts): it may start the one starter graph whose `startedBy`
      * is this name. Only the schedule executor passes it, read from the row's `created_by`, which no caller chooses. */
     starter?: string | undefined }): Promise<TriggerResult> {
-    const { store } = await deps.loadStore(input.projectId);
+    const loaded = await deps.loadStore(input.projectId);
+    const { store } = loaded;
     const stored = store.get(input.workflowId);
     if (!stored) return refuse("unknown_workflow", `There is no workflow "${input.workflowId}".`);
-    const { workflow } = stored;
+    const baseWorkflow = stored.workflow;
     // A starter graph is Lane Pilot's own: never the PM's, a chat's or a hand trigger's. Its own system schedule is the one exception (0.1.562 live:
     // both worktree-cleanup schedules ended start_failed here, so no janitor pass ran at all).
-    const ownStarter = isPipeline(workflow) && input.starter !== undefined && workflow.startedBy === input.starter;
-    if ((isPipeline(workflow) && !ownStarter) || workflow.internal) return refuse("not_runnable", `"${workflow.id}" is not a workflow to start by hand.`);
-    const trial = workflow.status === "tested" && input.liveTrial === true;
-    if (workflow.status !== "published" && !trial) {
-      return refuse("not_runnable", workflow.status === "tested"
-        ? `"${workflow.id}" has passed its tests on stubs but never run for real: start it as a first live run to make it published.`
-        : `"${workflow.id}" is ${workflow.status}; only published workflows start (a tested one as a first live run).`);
+    const ownStarter = isPipeline(baseWorkflow) && input.starter !== undefined && baseWorkflow.startedBy === input.starter;
+    if ((isPipeline(baseWorkflow) && !ownStarter) || baseWorkflow.internal) return refuse("not_runnable", `"${baseWorkflow.id}" is not a workflow to start by hand.`);
+    const trial = baseWorkflow.status === "tested" && input.liveTrial === true;
+    if (baseWorkflow.status !== "published" && !trial) {
+      return refuse("not_runnable", baseWorkflow.status === "tested"
+        ? `"${baseWorkflow.id}" has passed its tests on stubs but never run for real: start it as a first live run to make it published.`
+        : `"${baseWorkflow.id}" is ${baseWorkflow.status}; only published workflows start (a tested one as a first live run).`);
     }
-    if (input.source === "telegram" && !workflow.triggers.some((trigger) => trigger.type === "telegram")) return refuse("no_trigger", `"${workflow.id}" does not list a telegram trigger.`);
-    if (input.source === "schedule" && !workflow.triggers.some((trigger) => trigger.type === "schedule")) return refuse("no_trigger", `"${workflow.id}" no longer has a schedule trigger.`);
+    if (input.source === "telegram" && !baseWorkflow.triggers.some((trigger) => trigger.type === "telegram")) return refuse("no_trigger", `"${baseWorkflow.id}" does not list a telegram trigger.`);
+    if (input.source === "schedule" && !baseWorkflow.triggers.some((trigger) => trigger.type === "schedule")) return refuse("no_trigger", `"${baseWorkflow.id}" no longer has a schedule trigger.`);
+
+    let workflow = baseWorkflow;
+    let resolve = store.resolve;
+    if (loaded.loopHooks?.error) return refuse("loop_hooks_invalid", loaded.loopHooks.error);
+    if (loaded.loopHooks?.manifest) {
+      try {
+        const prepared = prepareLoopWorkflow({ workflow: baseWorkflow, manifest: loaded.loopHooks.manifest, manifestSha256: loaded.loopHooks.sha256, resolve: store.resolve,
+          status: (id, version) => { const item = store.get(id); return item && (version === undefined || item.workflow.version === version) ? { status: item.workflow.status, internal: item.workflow.internal, startedBy: item.workflow.startedBy } : null; } });
+        workflow = prepared.workflow; resolve = prepared.resolve;
+      } catch (cause) {
+        return refuse("loop_hooks_invalid", cause instanceof LoopHookRefusal ? cause.message : cause instanceof Error ? cause.message : String(cause));
+      }
+    }
 
     const given = input.inputs;
     const missing = workflow.inputs.filter((field) => field.required && field.default === undefined && (given[field.name] === undefined || given[field.name] === null || given[field.name] === "")).map((field) => field.name);
@@ -196,7 +211,7 @@ export function createWorkflowTriggers(ctx: ServerCore, services: Pick<Services,
     const runtime: ChainRuntime = { ctx, services: services as Services, pmThreadId: pm?.pmThreadId ?? null, projectId: input.projectId, runId: pm?.runId ?? null, ...(fromSchedule ? { origin: "schedule" as const } : {}) };
     try {
       // The project's library finds its own children too; the run pins them, so a reload does not need the library again.
-      const started = services.workflowEngine.start({ workflow, inputs: given, key, runtime, resolve: (id, version) => store.resolve(id, version), link: { projectId: input.projectId, ...(pm ? { runId: pm.runId } : {}) } });
+      const started = services.workflowEngine.start({ workflow, inputs: given, key, runtime, resolve, link: { projectId: input.projectId, ...(pm ? { runId: pm.runId } : {}) } });
       started.done.catch((cause: unknown) => ctx.log(`Lane Pilot workflow run ${started.runId} (${workflow.id}) stopped with an error: ${cause instanceof Error ? cause.message : String(cause)}`));
       return { ok: true, runId: started.runId, created: started.created, status: services.workflowEngine.get(started.runId)?.status ?? "running", notChecked };
     } catch (cause) {
