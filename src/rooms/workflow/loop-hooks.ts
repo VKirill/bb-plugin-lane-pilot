@@ -140,18 +140,16 @@ export function prepareLoopWorkflow(input: PrepareInput): PreparedLoopWorkflow {
   if (!manifest || !LOOP_HOOK_POINTS.some((point) => manifest.hooks[point]?.length)) {
     return { workflow: input.workflow, resolve: input.resolve, provenance: { baseWorkflow: input.workflow.id, manifestSha256: input.manifestSha256 ?? "", orderedHookIds: [] } };
   }
-  const cache = new Map<string, Workflow>();
   const orderedHookIds: string[] = [];
   const keyOf = (id: string, version?: number) => `${id}@${version ?? "*"}`;
-  const compose = (base: Workflow, trail: string[], depth: number): Workflow => {
+  const compose = (base: Workflow, trail: string[], depth: number, recordProvenance = true): Workflow => {
     const identity = keyOf(base.id, base.version);
     if (trail.includes(identity)) throw new LoopHookRefusal(`loop hooks contain a recursive workflow reference: ${[...trail, identity].join(" -> ")}`);
     if (depth > MAX_SUBWORKFLOW_DEPTH) throw new LoopHookRefusal(`loop hooks exceed the ${MAX_SUBWORKFLOW_DEPTH}-level workflow depth limit at "${base.id}"`);
-    const prior = cache.get(identity); if (prior) return prior;
     let current: Workflow = base;
     // Resolve ordinary subworkflows through this function so nested lp.plan/lp.close starts carry the same project selection.
     const childResolve = (id: string, version?: number) => {
-      const child = input.resolve(id, version); return child ? compose(child, [...trail, identity], depth + 1) : null;
+      const child = input.resolve(id, version); return child ? compose(child, [...trail, identity], depth + 1, recordProvenance) : null;
     };
     for (const point of LOOP_HOOK_POINTS) {
       const hooks = manifest.hooks[point] ?? [];
@@ -163,22 +161,24 @@ export function prepareLoopWorkflow(input: PrepareInput): PreparedLoopWorkflow {
         const status = input.status?.(hook.workflow, hook.version) ?? { status: child.status, internal: child.internal, startedBy: child.startedBy };
         if (status.status !== "published" || status.internal || status.startedBy) throw new LoopHookRefusal(`${point} hook workflow "${hook.workflow}" is not a published runnable workflow`);
         // Compose the hook itself now: this catches indirect hook cycles before the engine has any effects.
-        const composedChild = compose(child, [...trail, identity], depth + 1);
+        const composedChild = compose(child, [...trail, identity], depth + 1, recordProvenance);
         current = { ...current, requires: mergeRequires(current.requires, composedChild.requires) };
       }
-      current = insertChains(current, point, hooks, targets, orderedHookIds, input.manifestSha256 ?? "");
+      current = insertChains(current, point, hooks, targets, recordProvenance ? orderedHookIds : [], input.manifestSha256 ?? "");
     }
     // Existing children are composed lazily by the resolver but are traversed here for cycle/depth validation.
     for (const node of current.nodes) if (node.type === "subworkflow") {
       const child = input.resolve(node.workflow, node.version);
       if (child) {
-        compose(child, [...trail, identity], depth + 1);
+        const composedChild = compose(child, [...trail, identity], depth + 1, recordProvenance);
+        // External capability admission happens once at the root caller. Carry every transitive child requirement upward so
+        // that nested project hooks cannot bypass the normal role/capability policy.
+        current = { ...current, requires: mergeRequires(current.requires, composedChild.requires) };
       }
     }
     current = { ...current, requires: current.requires };
-    cache.set(identity, current);
     return current;
   };
-  const root = compose(input.workflow, [], 0);
-  return { workflow: root, resolve: (id, version) => { const child = input.resolve(id, version); return child ? compose(child, [keyOf(root.id, root.version)], 1) : null; }, provenance: { baseWorkflow: input.workflow.id, manifestSha256: input.manifestSha256 ?? "", orderedHookIds } };
+  const root = compose(input.workflow, [], 0, true);
+  return { workflow: root, resolve: (id, version) => { const child = input.resolve(id, version); return child ? compose(child, [keyOf(root.id, root.version)], 1, false) : null; }, provenance: { baseWorkflow: input.workflow.id, manifestSha256: input.manifestSha256 ?? "", orderedHookIds } };
 }

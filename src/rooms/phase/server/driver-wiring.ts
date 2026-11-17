@@ -1,7 +1,7 @@
 
 
 import type { ArchitectApi, WorkflowLibraryApi } from "../../platform/server";
-import { routeIntent } from "@lane-pilot/workflow-engine";
+import { preflightRefusal, routeIntent } from "@lane-pilot/workflow-engine";
 import { loadProjectSettings } from "../../storage";
 import { taskSizeText } from "../../tasks";
 import { medianTaskSize } from "../../rollback/server";
@@ -16,6 +16,7 @@ import type { Methods } from "./driver-methods";
 import type { Steps } from "./driver-steps";
 import { isNotFound, orMiss } from "@lane-pilot/kit";
 import { LoopHookRefusal, prepareLoopWorkflow } from "../../workflow";
+import { createWorkflowPreflight, realDeps } from "../../workflow/server";
 
 /** A sure route only: the hint takes a request away from the architect (the errand's api-recon bar, 0.1.412). */
 const PUBLISHED_HINT_CONFIDENCE = 85;
@@ -29,6 +30,7 @@ export type WiringTools = DriverBase & Docs & Journal & Methods & Steps;
 export function installWiring(tools: WiringTools) {
   const { ctx, services, db, bb, now } = tools;
   const library = services.workflowLibrary;
+  const workflowPreflight = createWorkflowPreflight(ctx, realDeps(ctx, services));
   const auto = createAutoStages(ctx, services, {
     exhausted: tools.exhaust,
     api: { context: tools.context, plan: tools.plan, planCheck: tools.planCheck, question: tools.question, waveReview: tools.waveReview, goalAudit: tools.goalAudit, lessons: tools.lessons, drawing: tools.drawing, returnTo: tools.returnTo,
@@ -43,10 +45,14 @@ export function installWiring(tools: WiringTools) {
     prepareWorkflow: async (phase, workflow) => {
       const loaded = await library.loadStore(phase.projectId);
       if (loaded.loopHooks?.error) throw new LoopHookRefusal(loaded.loopHooks.error);
-      if (!loaded.loopHooks?.manifest) return { workflow, resolve: loaded.store.resolve };
+      if (!loaded.loopHooks?.manifest) return { workflow, resolve: services.workflowEngine.resolveWorkflow, composed: false };
       const prepared = prepareLoopWorkflow({ workflow, manifest: loaded.loopHooks.manifest, manifestSha256: loaded.loopHooks.sha256, resolve: loaded.store.resolve,
         status: (id, version) => { const item = loaded.store.get(id); return item && (version === undefined || item.workflow.version === version) ? { status: item.workflow.status, internal: item.workflow.internal, startedBy: item.workflow.startedBy } : null; } });
-      return { workflow: prepared.workflow, resolve: prepared.resolve };
+      return { workflow: prepared.workflow, resolve: prepared.provenance.orderedHookIds.length ? prepared.resolve : services.workflowEngine.resolveWorkflow, composed: prepared.provenance.orderedHookIds.length > 0 };
+    },
+    preflight: async (phase, workflow) => {
+      const result = await workflowPreflight.check(workflow, { projectId: phase.projectId, threadId: phase.pmThreadId });
+      return result.ok ? { ok: true } : { ok: false, reason: preflightRefusal(result) };
     },
     pmIdle: async (phase) => ((await orMiss(bb.sdk.threads.get({ threadId: phase.pmThreadId }), null, isNotFound)) as { status?: unknown } | null)?.status === "idle",
     now,
@@ -71,8 +77,14 @@ export function installWiring(tools: WiringTools) {
         const loaded = await library.loadStore(input.projectId);
         if (loaded.loopHooks?.error) throw new LoopHookRefusal(loaded.loopHooks.error);
         const prepared = loaded.loopHooks?.manifest ? prepareLoopWorkflow({ workflow, manifest: loaded.loopHooks.manifest, manifestSha256: loaded.loopHooks.sha256, resolve: loaded.store.resolve,
-          status: (id, version) => { const item = loaded.store.get(id); return item && (version === undefined || item.workflow.version === version) ? { status: item.workflow.status, internal: item.workflow.internal, startedBy: item.workflow.startedBy } : null; } }) : { workflow, resolve: loaded.store.resolve };
-        const started = services.workflowEngine.start({ workflow: prepared.workflow, resolve: prepared.resolve, inputs, goals: intakeRunGoals(input.text), key: `intake:${input.pmThreadId}:${input.requestId}`,
+          status: (id, version) => { const item = loaded.store.get(id); return item && (version === undefined || item.workflow.version === version) ? { status: item.workflow.status, internal: item.workflow.internal, startedBy: item.workflow.startedBy } : null; } }) : null;
+        const selected = prepared?.provenance.orderedHookIds.length ? prepared : { workflow, resolve: services.workflowEngine.resolveWorkflow };
+        const composed = !!prepared?.provenance.orderedHookIds.length;
+        if (composed) {
+          const admission = await workflowPreflight.check(selected.workflow, { projectId: input.projectId, threadId: input.pmThreadId });
+          if (!admission.ok) throw new LoopHookRefusal(preflightRefusal(admission));
+        }
+        const started = services.workflowEngine.start({ workflow: selected.workflow, resolve: selected.resolve, inputs, goals: intakeRunGoals(input.text), key: `intake:${input.pmThreadId}:${input.requestId}`,
           runtime: { ctx, services, pmThreadId: input.pmThreadId, projectId: input.projectId, runId: input.runId }, link: { projectId: input.projectId, runId: input.runId } });
         started.done.catch((cause: unknown) => ctx.log(`intake: ${workflow.id} ${started.runId} stopped: ${cause instanceof Error ? cause.message : String(cause)}`));
         return started.runId;

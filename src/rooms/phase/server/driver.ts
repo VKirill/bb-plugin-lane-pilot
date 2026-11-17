@@ -22,7 +22,7 @@ import type { RegressionApi } from "../../baseline/server/regress";
 import type { RollbackApi } from "../../rollback/server/rollback";
 import type { RunGoalApi } from "../../run-goal/server/run-goal";
 import type { WallLoopPort } from "../../contracts";
-import type { ArchitectApi, DispatchWriter, ReadWriterWorkspaceFile, RecheckPlanFact, WorkflowEngineApi, WorkflowLibraryApi, WriterStateApi } from "../../platform/server";
+import type { ArchitectApi, DispatchWriter, ReadWriterWorkspaceFile, RecheckPlanFact, WorkflowEngineApi, WorkflowLibraryApi, WorkflowTriggersApi, WriterStateApi } from "../../platform/server";
 
 
 
@@ -44,6 +44,7 @@ interface Services {
   wall: WallLoopPort;
   workflowCatalog: WorkflowEngineApi["workflowCatalog"];
   workflowLibrary: WorkflowLibraryApi;
+  workflowTriggers: WorkflowTriggersApi["workflowTriggers"];
   workflowEngine: WorkflowEngineApi["workflowEngine"];
 }
 

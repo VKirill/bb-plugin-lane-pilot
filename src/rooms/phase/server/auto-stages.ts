@@ -341,7 +341,9 @@ export function createAutoStages(ctx: Pick<ServerCore, "log">, services: Pick<Se
   /** The project's median accepted-task size as one line (tasks/task-size.ts); the plan grain check reads it as `median_task`. */
   medianTask?(phase: Phase): string | null;
   /** Project-aware graph composition used by machine stages before engine preflight and pinning. */
-  prepareWorkflow?(phase: Phase, workflow: import("@lane-pilot/workflow-engine").Workflow): Promise<{ workflow: import("@lane-pilot/workflow-engine").Workflow; resolve: import("@lane-pilot/workflow-engine").ResolveWorkflow }>;
+  prepareWorkflow?(phase: Phase, workflow: import("@lane-pilot/workflow-engine").Workflow): Promise<{ workflow: import("@lane-pilot/workflow-engine").Workflow; resolve: import("@lane-pilot/workflow-engine").ResolveWorkflow; composed?: boolean }>;
+  /** The existing capability admission check; a missing capability holds this stage before any engine run is created. */
+  preflight?(phase: Phase, workflow: import("@lane-pilot/workflow-engine").Workflow): Promise<{ ok: boolean; reason?: string }>;
   /** The design measurement journal (SMA p3_judge): a reworked drawing's scores and remarks are kept too. */
   journal?(line: DesignJournalLine): Promise<void>;
   /** The owner's anamnesis card ("" when none): lp.analyze's advisor reads it (SMA k_wdi_advisor). */
@@ -675,6 +677,14 @@ export function createAutoStages(ctx: Pick<ServerCore, "log">, services: Pick<Se
       const contextExisting = due.kind === "analyze" && deps.readText ? await deps.readText(phase, `${phaseFolder(phase.id)}/CONTEXT.md`).catch(() => null) : null;
       const ownerCard = due.kind === "analyze" && wordAsked(phase.record, "context") && phase.record.grayAreas === true && deps.ownerCard ? await bestEffort(ctx.log, "owner card for the analysis", deps.ownerCard(phase), "") : undefined;
       const prepared = deps.prepareWorkflow ? await deps.prepareWorkflow(phase, baseWorkflow) : { workflow: baseWorkflow, resolve: services.workflowEngine.resolveWorkflow };
+      if (deps.preflight && prepared.composed) {
+        const admission = await deps.preflight(phase, prepared.workflow);
+        if (!admission.ok) {
+          const reason = admission.reason ?? "workflow requirements are unavailable";
+          deps.book(phase, "decisions", "auto_waiting_requirements", `${AUTO_WORKFLOWS[due.kind]} did not start: ${reason}`);
+          return true;
+        }
+      }
       const started = services.workflowEngine.start({ workflow: prepared.workflow, resolve: prepared.resolve, inputs: { ...autoInputs(phase, due, deps.medianTask?.(phase) ?? undefined, contextExisting, ownerCard ?? undefined, deps.planningHome ? await deps.planningHome(phase) : null), ...(currency ? { proof_currency: currency } : {}) }, key: `phase:${phase.id}:${due.kind}:${phase.edition}:${deps.now()}`, runtime,
         ...(due.kind === "plan" || due.kind === "check" ? { mode: "full" as const } : {}),
         link: { projectId: phase.projectId, ...(phase.runId ? { runId: phase.runId } : {}) } });
