@@ -217,7 +217,7 @@ describe("terminal verbs", () => {
     createTask(database, { id: "t1", runId: "run_s", kind: "bb", contract: {} });
     createAttempt(database, { id: "a1", runId: "run_s", taskId: "t1" });
     database.prepare("INSERT INTO lane_pilot_attempt_reasoning (attempt_id, trace_json) VALUES (?,?)").run("a1", JSON.stringify({ dispatchContext: "x".repeat(2000) }));
-    recordStage(database, { runId: "run_s", taskId: "t1", stageId: "plan-fact", state: "passed", input: "{}", result: { table: "ok", items: [] } });
+    recordStage(database, { runId: "run_s", taskId: "t1", stageId: "plan-fact", state: "passed", input: "{}", attempt: 1, result: { table: "ok", items: [] } });
     const out = await harness.behavior.runCli(["subagent-receipts", "--project", "proj_s", "--days", "30"]);
     expect(out.exitCode).toBe(0);
     const report = JSON.parse(out.stdout);
