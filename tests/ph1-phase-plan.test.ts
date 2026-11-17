@@ -2,7 +2,7 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
 import { createCore } from "../src/rooms/core/server/core";
 import { createPhaseDriver } from "./phase-driver";
-import { type Phase, type PhaseRecord } from "../src/rooms/phase/logic";
+import { planSignature, type Phase, type PhaseRecord } from "../src/rooms/phase/logic";
 import { autoDue, autoInputs, createAutoStages } from "../src/rooms/phase/server/auto-stages";
 import { phaseToolParams } from "../src/rooms/phase/server/tool";
 import { openDatabase } from "../src/rooms/plugin-db";
@@ -49,7 +49,7 @@ describe("a plan the PM submitted", () => {
   });
 
   it("reports the check run's verdict through the gates without touching the PM's plan", async () => {
-    let phase = withPlan({ auto: { kind: "check", wfRunId: "wfrun_1", startedAt: 1 } });
+    let phase = withPlan({ auto: { kind: "check", wfRunId: "wfrun_1", startedAt: 1 }, plan: { items: [], sha: planSignature([], "ctx"), contextSha: "ctx", submittedAt: 1 } });
     const calls: string[] = [];
     const auto = createAutoStages({ log: () => undefined }, { workflowEngine: { get: () => ({ runId: "wfrun_1", status: "succeeded", output: { status: "ok", plan_verdict: "pass" } }) } as never }, {
       api: { planCheck: async (input: { decision: string; wfRunId?: string }) => { calls.push(`planCheck ${input.decision} ${input.wfRunId}`); return phase; } },

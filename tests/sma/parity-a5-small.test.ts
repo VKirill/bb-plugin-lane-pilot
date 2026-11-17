@@ -278,9 +278,9 @@ describe("receipts, the blind verifier and near misses", () => {
     seed("t1", "a1", "x".repeat(1000));
     seed("t2", "a2", "x".repeat(2000));
     seed("t3", "a3", "x".repeat(3000));
-    recordStage(db, { runId: "run_s", taskId: "t1", stageId: "plan-fact", state: "passed", input: "{}", result: { table: "ok", items: [] } });
-    recordStage(db, { runId: "run_s", taskId: "t2", stageId: "plan-fact", state: "failed", input: "{}", result: { table: "ok", items: [{ item: 1, evidence: [{ evidence: "src/gone.ts", code: "file_not_in_diff" }] }] } });
-    recordStage(db, { runId: "run_s", taskId: "t3", stageId: "plan-fact", state: "skipped", input: "{}", result: { table: "missing" } });
+    recordStage(db, { runId: "run_s", taskId: "t1", stageId: "plan-fact", state: "passed", input: "{}", attempt: 1, result: { table: "ok", items: [] } });
+    recordStage(db, { runId: "run_s", taskId: "t2", stageId: "plan-fact", state: "failed", input: "{}", attempt: 1, result: { table: "ok", items: [{ item: 1, evidence: [{ evidence: "src/gone.ts", code: "file_not_in_diff" }] }] } });
+    recordStage(db, { runId: "run_s", taskId: "t3", stageId: "plan-fact", state: "skipped", input: "{}", attempt: 1, result: { table: "missing" } });
     const report = subagentReceipts(db, { projectId: "proj_s", days: 30 });
     expect(report.coverage).toMatchObject({ checked: 2, skipped: 1 });
     expect(report.phantoms).toEqual([{ taskId: "t2", evidence: "src/gone.ts", code: "file_not_in_diff" }]);

@@ -48,10 +48,10 @@ describe("the candidate and its own checks", () => {
     expect(seen.outside).toBe("sandbox_cwd_outside_workspace");
   });
 
-  it("[sma:av_step] a verify step is a durable receipt: its state, the hash of its input, one row per stage, the attempt number kept in 0-2", () => {
+  it("[sma:av_step] a verify step is a durable receipt: its state, the hash of its input, one row per stage, the task-attempt ordinal kept verbatim", () => {
     const seen = observeStepRecord();
     expect(seen.count).toBe(1);
-    expect(seen.row).toMatchObject({ stageId: "verification", state: "running", inputSha256: seen.inputSha, attempt: 2, providerId: "p", model: "m" });
+    expect(seen.row).toMatchObject({ stageId: "verification", state: "running", inputSha256: seen.inputSha, attempt: 4, providerId: "p", model: "m" });
   });
 });
 

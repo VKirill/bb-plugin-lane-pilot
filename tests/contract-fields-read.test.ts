@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { rpcContract } from "../src/rooms/contracts";
 import { unreadFields, UNSHOWN_FIELDS } from "./helpers/guard-tools";
-import { roomFaceFiles } from "./support/room-files";
+import { uiReaderFiles } from "./support/room-files";
 
 /**
  * Window contract is read (SMA map: Window contract is read, Contract check in tests): every field the server answers to the
@@ -19,7 +19,7 @@ const ROOT = join(__dirname, "..");
 const baselineFile = join(ROOT, "tests/fixtures/unread-fields-baseline.json");
 const baseline = new Set(JSON.parse(readFileSync(baselineFile, "utf8")) as string[]);
 
-const uiSources = [...roomFaceFiles("ui"), join(ROOT, "app.tsx")].map((path) => ({ path, text: readFileSync(path, "utf8") }));
+const uiSources = uiReaderFiles().map((path) => ({ path, text: readFileSync(path, "utf8") }));
 
 describe("every answer field is read by a screen or explained in the register", () => {
   it("no field outside the baseline and the register is left unread", () => {

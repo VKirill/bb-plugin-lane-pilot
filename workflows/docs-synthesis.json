@@ -12,18 +12,18 @@
   },
   "inputs": {
     "paths": {
-      "type": "array",
+      "type": "string[]",
       "required": true
     },
     "precedence": {
-      "type": "array",
+      "type": "string[]",
       "required": false,
       "default": []
     }
   },
   "outputs": {
     "status": "done|open",
-    "conflicts": "array",
+    "conflicts": "any[]",
     "markdown_path": "string",
     "json_path": "string",
     "owner_response": "decided|keep_both|timeout|none"
@@ -47,7 +47,7 @@
       "role": "analyst",
       "prompt": "Read only the supplied project paths {{$inputs.paths}}. For every Markdown and text document report kind, audience, current or stale (it cites code that still exists), and any duplicate. The kind is one of ADR, PRD, SPEC, DOC or unknown — a runbook, guide, reference or note is DOC with the finer name as a subkind. Given one document, return its single kind; given a folder, return one table. Report source paths and classifications with evidence; change nothing.",
       "out": {
-        "documents": "array"
+        "documents": "any[]"
       },
       "produces": [
         {
@@ -63,7 +63,7 @@
       "session": "new",
       "prompt": "Read classified documents {{classify.documents}} and the precedence in the workflow inputs, if supplied. Identify actual contradictions and return conflicts as an array. Each record must contain topic, a_path, a_line, a_quote, a_kind, b_path, b_line, b_quote, b_kind, winner (a, b, or none), rule (precedence, agents_over_claude, or none). Give both exact quotes with positive line numbers and distinct positions. Kinds are ADR, PRD, SPEC, DOC, or unknown. AGENTS.md takes precedence over CLAUDE.md for their conflicting instructions. Apply kind precedence only if explicitly supplied, in its given order; otherwise leave winner and rule none. Do not invent precedence or write files. Earlier entries in precedence outrank later ones; the engine re-checks every winner and sends anything it cannot verify to the owner.",
       "out": {
-        "conflicts": "array"
+        "conflicts": "any[]"
       },
       "produces": [
         {
@@ -90,7 +90,7 @@
       "join": {
         "policy": "all",
         "out": {
-          "results": "array",
+          "results": "any[]",
           "count": "int"
         },
         "uses": "builtin:join"
@@ -114,7 +114,7 @@
       "join": {
         "policy": "all",
         "out": {
-          "results": "array",
+          "results": "any[]",
           "count": "int"
         },
         "uses": "builtin:join"
@@ -222,5 +222,63 @@
       "from": "write_json",
       "to": "open"
     }
-  ]
+  ],
+  "test": {
+    "id": "docs-synthesis-priority",
+    "sim": {
+      "input": {
+        "paths": [
+          "ADR.md",
+          "PRD.md"
+        ],
+        "precedence": [
+          "ADR",
+          "PRD"
+        ]
+      },
+      "stubs": {
+        "classify": {
+          "documents": []
+        },
+        "synth": {
+          "conflicts": [
+            {
+              "topic": "mode",
+              "a_path": "ADR.md",
+              "a_line": 1,
+              "a_quote": "one",
+              "a_kind": "ADR",
+              "b_path": "PRD.md",
+              "b_line": 2,
+              "b_quote": "two",
+              "b_kind": "PRD",
+              "winner": "a",
+              "rule": "precedence"
+            }
+          ]
+        }
+      },
+      "expect_output": {
+        "status": "done",
+        "owner_response": "none",
+        "conflicts": [
+          {
+            "topic": "mode",
+            "a_path": "ADR.md",
+            "a_line": 1,
+            "a_quote": "one",
+            "a_kind": "ADR",
+            "b_path": "PRD.md",
+            "b_line": 2,
+            "b_quote": "two",
+            "b_kind": "PRD",
+            "winner": "a",
+            "rule": "precedence",
+            "auto_resolved": true
+          }
+        ]
+      },
+      "expect_status": "succeeded"
+    }
+  }
 }

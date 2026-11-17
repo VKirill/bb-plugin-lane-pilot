@@ -24,7 +24,7 @@ export default {
     trace: [transition({ to: "blocked", reason: "test_edit_hold" }), drill("sma_r01")],
   },
   n261: {
-    mutation: distort("src/rooms/runs/server/stage-records.ts", "attempt:Math.min(input.attempt ?? 0, 2)", "attempt:Math.min(input.attempt ?? 0, 3)"),
+    mutation: distort("src/rooms/runs/server/stage-records.ts", "attempt:input.attempt ?? 0", "attempt:Math.min(input.attempt ?? 0, 2)"),
     trace: receipt("verification"),
   },
   n262: {

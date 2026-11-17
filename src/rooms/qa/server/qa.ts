@@ -4,7 +4,6 @@ import { QA_HOST_KEY, QA_WORKSPACE_KEY } from "@lane-pilot/settings-catalog";
 import { qaCodexPreflight, qaHostUnreachableReason, resolveBrowserQaTarget, resolveStaleBrowserQaReceipt } from "../qa-host";
 import { sha256 } from "../../tasks";
 import { parseOpenCodeToolTelemetry } from "../../stability";
-import { MAIN_ATTEMPT_LIMIT } from "../../contracts/state-machine";
 import { modelCatalogOf, resolveSpawnModel, spawnUsageOf, warmSpawnUsage } from "../../platform/server";
 import { configuredSetting } from "../../contracts/server";
 import { freezeRunRouting, inheritedProjectSettings, recordStage } from "../../runs/server";
@@ -365,7 +364,7 @@ export function createQaStages(ctx: ServerCore) {
     const existing=listStageReceipts(db,args.runId,args.taskId).find((row)=>row.stageId==="opencode-telemetry");
     if(existing) return {runId:args.runId,taskId:args.taskId,state:existing.state,reason:"telemetry already has a receipt; create a new task for another capture",stage:existing};
     const input={sessionId:args.sessionId,taskFile:args.taskFile,sourcePath:args.sourcePath};
-    const base={runId:args.runId,taskId:args.taskId,stageId:"opencode-telemetry" as const,input:JSON.stringify(input),attempt:Math.min(countAttempts(db,args.runId,args.taskId),MAIN_ATTEMPT_LIMIT)};
+    const base={runId:args.runId,taskId:args.taskId,stageId:"opencode-telemetry" as const,input:JSON.stringify(input),attempt:countAttempts(db,args.runId,args.taskId)};
     recordStage(db,{...base,state:"pending"});
     recordStage(db,{...base,state:"running"});
     try {

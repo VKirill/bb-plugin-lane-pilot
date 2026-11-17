@@ -29,6 +29,21 @@ describe("[sma:k_ag_docsynth] precedence engine preflight", () => {
 });
 
 describe("[sma:k_ag_docsynth] document synthesis", () => {
+  it("declares arrays at all input, output and join boundaries", () => {
+    for (const id of ["docs-synthesis", "docs-synthesis-check"]) {
+      const flow = builtinWorkflow(id)!;
+      for (const name of ["paths", "precedence"]) expect(flow.inputs.find((field) => field.name === name)?.type).toBe("array");
+      for (const node of flow.nodes) if (node.type === "parallel") expect(node.join?.out.find((field) => field.name === "results")?.type).toBe("array");
+    }
+    const flow = builtinWorkflow("docs-synthesis")!;
+    expect(flow.outputs.find((field) => field.name === "conflicts")?.type).toBe("array");
+    for (const [id, name] of [["classify", "documents"], ["synth", "conflicts"]]) {
+      const node = flow.nodes.find((item) => item.id === id)!;
+      if (node.type !== "agent") throw new Error(`expected agent ${id}`);
+      expect(node.out.find((field) => field.name === name)?.type).toBe("array");
+    }
+  });
+
   it("validates docs-synthesis-check", async () => {
     const r = await runSim("docs-synthesis-check", { input: { conflict } });
     expect(r.summary.status, JSON.stringify(r.summary)).toBe("succeeded");
@@ -136,7 +151,7 @@ import { builtinWorkflow } from "../../src/rooms/workflow/builtin";
 import { coreFileWrite, diskStore } from "../helpers/core-files";
 import { sha256Hex } from "@lane-pilot/kit";
 
-async function diskFixture(records: unknown[]) {
+async function diskFixture(records: unknown) {
   const checkout = mkdtempSync(join(tmpdir(), "lp-docs-synthesis-"));
   writeFileSync(join(checkout, "ADR.md"), "one\n");
   writeFileSync(join(checkout, "PRD.md"), "line\ntwo\n");
@@ -167,6 +182,31 @@ async function diskFixture(records: unknown[]) {
 }
 
 describe("[sma:k_ag_docsynth] document synthesis through registered checkout writes", () => {
+  it.each([
+    ["paths", { paths: "ADR.md", precedence: ["ADR"] }],
+    ["precedence", { paths: ["ADR.md"], precedence: "ADR" }],
+  ])("rejects scalar %s at engine start before any step or write", async (_field, inputs) => {
+    const t = await diskFixture([]);
+    try {
+      expect(() => t.engine.start({ workflow: builtinWorkflow("docs-synthesis")!, inputs })).toThrow(/not a valid array/);
+      expect(t.db.prepare("SELECT COUNT(*) AS count FROM lane_pilot_wf_run").get()).toEqual({ count: 0 });
+      expect(t.writes).toEqual([]);
+    } finally { t.dispose(); }
+  });
+  it("rejects a scalar synth result at output validation before asking or writing", async () => {
+    const t = await diskFixture("not an array");
+    try {
+      const started = t.start();
+      const done = await started.done;
+      expect(done.status).toBe("failed");
+      expect(done.reason).toMatch(/output_invalid:synth/);
+      expect(t.engine.get(started.runId)?.waiting).toEqual([]);
+      expect(t.writes).toEqual([]);
+      expect(readFileSync(join(t.checkout, "ADR.md"), "utf8")).toBe("one\n");
+      expect(readFileSync(join(t.checkout, "PRD.md"), "utf8")).toBe("line\ntwo\n");
+    } finally { t.dispose(); }
+  });
+
   it("refuses malformed conflict before human or any write", async () => {
     const t = await diskFixture([{ ...conflict, b_quote: "" }]);
     try {

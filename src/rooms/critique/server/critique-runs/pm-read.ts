@@ -6,7 +6,6 @@ import { buildExecutionPacket, packetSelectedLines, readFirstIo, repoReadRoot, s
 import { graphStepMetadata, setAsideOnStartFailure, zcodeBusyPeek } from "../../../platform/server";
 import { configuredSetting } from "../../../contracts/server";
 import { CODE_CRITIC_DEFAULT_SETTING, QUALITY_MODE_SETTING, applyCodeCriticDefault, applyQualityMode, resolveCodeCriticDefault, resolveQualityMode } from "../../../contracts/quality-mode";
-import { MAIN_ATTEMPT_LIMIT } from "../../../contracts/state-machine";
 import { helperChildPlacement, recordStage, requireHelperSpawn, requiredPolicyField } from "../../../runs/server";
 import { fullAccessSpawn } from "../../../platform/server";
 import { bestEffort, stringAt, orMiss, isNotFound } from "@lane-pilot/kit";
@@ -38,7 +37,7 @@ export async function runPmRead(input:{bb:BbPluginApi;db:ReturnType<typeof openD
   const planHome = taskHomeOf(input.db, input.taskId);
   const planManifestSha = input.plan?.trim() && planHome ? resolveTaskFile(input.db, input.taskId, "plan")?.sha256 ?? null : null;
   const source=JSON.stringify({taskId:input.taskId,readFirst:input.task.read_first,settings:parsedSettings,...(input.plan?.trim()?{planSha256:sha256(input.plan.trim())}:{}),...(planManifestSha?{planManifestSha256:planManifestSha}:{})});
-  const base={runId:input.runId,taskId:input.taskId,stageId:"pm-read" as const,input:source,attempt:Math.min(countAttempts(input.db,input.runId,input.taskId),MAIN_ATTEMPT_LIMIT)};
+  const base={runId:input.runId,taskId:input.taskId,stageId:"pm-read" as const,input:source,attempt:countAttempts(input.db,input.runId,input.taskId)};
   // The no-model skips are decided from settings alone (no host IO) so a disabled or critics-off stage never pays the
   // canonical plan read; only a runnable stage validates the plan before reusing a passed summary.
   const qualityMode = resolveQualityMode(input.task, settings[QUALITY_MODE_SETTING]);

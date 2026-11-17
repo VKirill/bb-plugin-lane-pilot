@@ -290,10 +290,10 @@ describe("[sma:m_tl_contract] answer fields are read or explained", () => {
 describe("[sma:m_tl_contract_test] the contract check runs in the common suite", () => {
   it("every unread field of the real contract is in the baseline or the register, and a new unread field would be caught", async () => {
     const { rpcContract } = await import("../../src/rooms/contracts");
-    const { roomFaceFiles } = await import("../support/room-files");
+    const { uiReaderFiles } = await import("../support/room-files");
     const { readFileSync } = await import("node:fs");
     const baseline = new Set(JSON.parse(readFileSync(join(ROOT, "tests/fixtures/unread-fields-baseline.json"), "utf8")) as string[]);
-    const sources = [...roomFaceFiles("ui"), join(ROOT, "app.tsx")].map((path) => ({ path, text: readFileSync(path, "utf8") }));
+    const sources = uiReaderFiles().map((path) => ({ path, text: readFileSync(path, "utf8") }));
     // The same computation as tests/contract-fields-read.test.ts: nothing outside the baseline.
     expect(unreadFields(rpcContract as never, sources, UNSHOWN_FIELDS).filter((field) => !baseline.has(field))).toEqual([]);
     // A field no screen reads and no register explains is outside the baseline, so the check would fail on it.

@@ -35,7 +35,14 @@ describe("the agent's own outcome", () => {
         if ((outputFields(workflow, node) as Array<{ name: string }>).some((field) => field.name === "outcome" && engineOwnsOutcome(node))) engine += 1; else own += 1;
       }
     }
-    expect({ own, engine }).toEqual({ own: 27, engine: 285 }); // pr-branch owns its outcome; sketch-wrap-up uses the engine's outcome.
+    expect({ own, engine }).toEqual({ own: 27, engine: 287 }); // docs-synthesis adds classify and synth as engine-owned agents.
+    const docs = parseWorkflow(JSON.parse(readFileSync(join(__dirname, "../../workflows/docs-synthesis.json"), "utf8")));
+    for (const id of ["classify", "synth"]) {
+      const node = docs.nodes.find((item) => item.id === id)!;
+      expect(node.type).toBe("agent");
+      expect(engineOwnsOutcome(node)).toBe(true);
+      expect((outputFields(docs, node) as Array<{ name: string }>).some((field) => field.name === "outcome")).toBe(true);
+    }
   });
 
   it("done, partial and no outcome at all (an executor that builds its output in code) leave the step succeeded", async () => {

@@ -84,7 +84,7 @@ describe("the analysis behind the discussion (n1319 … n1325)", () => {
     expect(seen.decisions).toEqual(["- **D1** (locked): reuse the table", "- **D2** (free): the chart library", "- **D3** (deferred): pdf export", "- **D4** (locked): no id and no status"]);
     expect(seen.ids).toEqual(["D1", "D2", "D3", "D4"]);
     expect(seen.head).toEqual(["# Context — Sum", "", "Goal: sums", ""]);
-    expect(seen.sections).toEqual(["## Appetite", "## Decisions", "## No-gos", "## Risks", "## Open questions"]);
+    expect(seen.sections).toEqual(["## Summary", "## Stack", "## Features", "## Architecture", "## Pitfalls", "## Appetite", "## Decisions", "## No-gos", "## Risks", "## Open questions"]);
   });
 });
 

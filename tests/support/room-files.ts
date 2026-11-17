@@ -28,3 +28,8 @@ export function roomFaceFiles(face: "server" | "ui", accept = /\.tsx?$/): string
 export function roomFaceRelative(face: "server" | "ui", accept?: RegExp): string[] {
   return roomFaceFiles(face, accept).map((file) => file.slice(ROOT.length + 1));
 }
+
+/** Absolute paths of every source that can render a contract field: each room's ui face, the pages room's flat .ts/.tsx sources (pages/ keeps no ui/ subdirectory), and the app shell. */
+export function uiReaderFiles(accept = /\.tsx?$/): string[] {
+  return [...roomFaceFiles("ui", accept), ...walk(join(ROOT, "src/rooms/pages"), accept), join(ROOT, "app.tsx")].sort();
+}

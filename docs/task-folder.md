@@ -2,7 +2,7 @@
 title: The task folder (one home per task, lp.task-manifest/1)
 type: component
 created: 2026-11-14
-updated: 2026-11-14
+updated: 2026-11-17
 status: active
 confidence: medium
 tags: [sma, tasks, writer, handoff, manifest]
@@ -155,6 +155,11 @@ The PM can use the same `repo:` selector with `lane_pilot_read`, including when 
 For a task that must edit a sibling, declare the affected paths in `owns_paths` and outputs. Dispatch places that task at
 the host-verified repository root and translates section-relative paths; its checks retain their declared cwd. An independent
 nested repository is its own boundary. Section-only tasks keep their narrow scope and reject undeclared sibling changes at merge.
+
+The `repo:` selector is **read-only**: a `repo:` path in a write, ownership or check field — `owns_paths`, `expected_outputs`,
+`never_touch`, `test_removals`, `drawing`, a `files[]` entry or a `verification[].cwd` — is a dispatch validation refusal
+(`reservedRepoPathFindings`, `src/rooms/tasks/task-v2.ts:37`; the check exempts `expected_outputs` rows that are not output
+paths). Write paths and check cwd always use `project_cwd` coordinates.
 
 `readFirstScopeFindings` (contract-lint) refuses a `read_first` entry that points:
 

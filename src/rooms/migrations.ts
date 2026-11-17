@@ -737,4 +737,72 @@ export const migrations = [
   )`,
   `CREATE INDEX IF NOT EXISTS idx_lp_run_file_read_run ON lane_pilot_run_file_read(run_id)`,
   ...nativeDirectoryMigrations,
+  // attempt is the task-attempt ordinal; the 0-2 CHECKs collapsed fallback ordinals 3+ into 2. Rebuilds below only
+  // widen attempt's CHECK; rows are copied verbatim, clamped legacy values stay as written (ambiguous, not invented).
+  `CREATE TABLE lane_pilot_stage_receipt_next (
+    run_id TEXT NOT NULL,
+    task_id TEXT NOT NULL,
+    stage_id TEXT NOT NULL,
+    contract_version INTEGER NOT NULL CHECK(contract_version = 1),
+    state TEXT NOT NULL CHECK(state IN ('pending','running','passed','failed','blocked','skipped','canceled')),
+    input_sha256 TEXT NOT NULL,
+    output_sha256 TEXT,
+    attempt INTEGER NOT NULL CHECK(attempt >= 0),
+    provider_id TEXT,
+    model TEXT,
+    thread_id TEXT,
+    result_json TEXT,
+    reason TEXT,
+    updated_at INTEGER NOT NULL,
+    PRIMARY KEY(run_id, task_id, stage_id),
+    FOREIGN KEY(run_id) REFERENCES lane_pilot_run(id) ON DELETE CASCADE,
+    FOREIGN KEY(task_id) REFERENCES lane_pilot_task(id) ON DELETE CASCADE
+  ) WITHOUT ROWID`,
+  `INSERT INTO lane_pilot_stage_receipt_next (run_id,task_id,stage_id,contract_version,state,input_sha256,output_sha256,attempt,provider_id,model,thread_id,result_json,reason,updated_at)
+    SELECT run_id,task_id,stage_id,contract_version,state,input_sha256,output_sha256,attempt,provider_id,model,thread_id,result_json,reason,updated_at FROM lane_pilot_stage_receipt`,
+  `DROP TABLE lane_pilot_stage_receipt`,
+  `ALTER TABLE lane_pilot_stage_receipt_next RENAME TO lane_pilot_stage_receipt`,
+  `CREATE TABLE lane_pilot_stage_event_next (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id TEXT NOT NULL,
+    run_id TEXT NOT NULL,
+    task_id TEXT NOT NULL,
+    stage_id TEXT NOT NULL,
+    state TEXT NOT NULL CHECK(state IN ('pending','running','passed','failed','blocked','skipped','canceled')),
+    input_sha256 TEXT NOT NULL,
+    output_sha256 TEXT,
+    attempt INTEGER NOT NULL CHECK(attempt >= 0),
+    occurred_at INTEGER NOT NULL
+  )`,
+  `INSERT INTO lane_pilot_stage_event_next (id,project_id,run_id,task_id,stage_id,state,input_sha256,output_sha256,attempt,occurred_at)
+    SELECT id,project_id,run_id,task_id,stage_id,state,input_sha256,output_sha256,attempt,occurred_at FROM lane_pilot_stage_event`,
+  // Keep the audit ids' high-water mark: a rebuilt AUTOINCREMENT table would otherwise reissue ids above its copied max.
+  `UPDATE sqlite_sequence SET seq = COALESCE((SELECT seq FROM sqlite_sequence WHERE name='lane_pilot_stage_event'), seq) WHERE name='lane_pilot_stage_event_next'`,
+  `DROP TABLE lane_pilot_stage_event`,
+  `ALTER TABLE lane_pilot_stage_event_next RENAME TO lane_pilot_stage_event`,
+  `CREATE INDEX lane_pilot_stage_event_project_time ON lane_pilot_stage_event(project_id, occurred_at DESC)`,
+  `CREATE TRIGGER lane_pilot_stage_event_no_update BEFORE UPDATE ON lane_pilot_stage_event BEGIN SELECT RAISE(ABORT, 'stage events are append-only'); END`,
+  `CREATE TRIGGER lane_pilot_stage_event_no_delete BEFORE DELETE ON lane_pilot_stage_event BEGIN SELECT RAISE(ABORT, 'stage events are append-only'); END`,
+  `CREATE TABLE lane_pilot_gate_event_next (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id TEXT NOT NULL,
+    run_id TEXT NOT NULL,
+    task_id TEXT NOT NULL,
+    gate TEXT NOT NULL CHECK(gate IN ('owns-paths','validate','accept','verification')),
+    status TEXT NOT NULL CHECK(status IN ('passed','rejected','failed','skipped')),
+    input_sha256 TEXT NOT NULL,
+    output_sha256 TEXT,
+    attempt INTEGER NOT NULL CHECK(attempt >= 0),
+    occurred_at INTEGER NOT NULL
+  )`,
+  `INSERT INTO lane_pilot_gate_event_next (id,project_id,run_id,task_id,gate,status,input_sha256,output_sha256,attempt,occurred_at)
+    SELECT id,project_id,run_id,task_id,gate,status,input_sha256,output_sha256,attempt,occurred_at FROM lane_pilot_gate_event`,
+  `UPDATE sqlite_sequence SET seq = COALESCE((SELECT seq FROM sqlite_sequence WHERE name='lane_pilot_gate_event'), seq) WHERE name='lane_pilot_gate_event_next'`,
+  `DROP TABLE lane_pilot_gate_event`,
+  `ALTER TABLE lane_pilot_gate_event_next RENAME TO lane_pilot_gate_event`,
+  `CREATE INDEX lane_pilot_gate_event_project_time ON lane_pilot_gate_event(project_id, occurred_at DESC)`,
+  `CREATE TRIGGER lane_pilot_gate_event_no_update BEFORE UPDATE ON lane_pilot_gate_event BEGIN SELECT RAISE(ABORT, 'gate events are append-only'); END`,
+  `CREATE TRIGGER lane_pilot_gate_event_no_delete BEFORE DELETE ON lane_pilot_gate_event BEGIN SELECT RAISE(ABORT, 'gate events are append-only'); END`,
+  // The rebuild dropped lane_pilot_stage_receipt and with it the thread index an earlier migration added.
+  `CREATE INDEX lane_pilot_stage_receipt_thread ON lane_pilot_stage_receipt(thread_id)`,
 ];

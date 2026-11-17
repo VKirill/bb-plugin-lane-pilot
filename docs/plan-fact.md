@@ -2,13 +2,14 @@
 title: Plan against fact and the acceptance card
 type: component
 created: 2026-10-22
-updated: 2026-10-29
+updated: 2026-11-17
 status: active
 confidence: low
 tags: [sma, acceptance, critic, ui]
 sources:
   - src/rooms/tasks/plan-fact.ts
   - src/rooms/writer/server/plan-fact.ts
+  - src/rooms/writer/server/finish-attempt-body.ts
   - src/rooms/writer/server/finish.ts
   - src/rooms/writer/server/writer-task.ts
   - src/rooms/writer/server/critic-override.ts
@@ -75,7 +76,7 @@ The writer is told the format by `PLAN_FACT_BRIEF_LINE` (`src/rooms/tasks/plan-f
 
 An item «stays as it was» when the contract's line matches `INVARIANT_ITEM` (unchanged, untouched, still works, no changes, не меняется, без изменений, по-прежнему, …); its proof is the code the candidate did not change, and the writer is told to cite those lines (FeedGen run 2026-10-23: «Legacy and error responses unchanged» was called unproven though the writer cited exactly the untouched handler lines). An item is `proven` when one piece of evidence holds. It is blocking when it is `unproven` (claimed done, nothing holds, or no evidence at all), `declared_not_done` (the writer says so) or `no_row` (the table skipped it). Rows for items the contract does not have are listed, not blocking.
 
-The changed hunks come from one shell command run in the task's workspace (`diffHunksCommand`, `src/rooms/tasks/plan-fact.ts:195`): `git diff -U0` against the task's recorded base commit (`lane_pilot_task_git_base`) plus the untracked files; `hunksFromCommandOutput` (`src/rooms/tasks/plan-fact.ts:203`) reads it. A task without a recorded base (a folder without git) or an unreadable diff checks the files only, and the stage says so in `notChecked`.
+The changed hunks come from one shell command run in the task's workspace (`diffHunksCommand`, `src/rooms/tasks/plan-fact.ts:259`): `git diff -U0` against the task's recorded base commit (`lane_pilot_task_git_base`) plus the untracked files, with sentinel lines `---diff-ok---`, `---diff-error---` and `---nobase---` marking how the probe ended; `hunksFromCommandOutput` (`src/rooms/tasks/plan-fact.ts:272`) reads it and reports `status: ok | missing_base | unavailable`. A task without a recorded base (a folder without git) checks the files only and the stage says so in `notChecked`; an `unavailable` diff is a probe failure, not the same fact — for a phase-linked task it fails the stage instead of degrading quietly (below).
 
 ## The stage
 
@@ -87,7 +88,9 @@ The changed hunks come from one shell command run in the task's workspace (`diff
 
 A retry of the task replaces the receipt (its earlier events stay in `lane_pilot_stage_event`). The stage never counts as the code proof that accepts a task: the writer's gates and the checks already are.
 
-`plan_fact.mode` (`src/rooms/writer/server/plan-fact.ts:12`): `record` (default) only records and shows; `gate` also sends the task back to the writer (attempt `validation_failed`, reason `plan_fact_unproven`) when the stage failed. A missing table never refuses, in either mode. The retry brief tells the writer what to cite (`src/rooms/writer/server/writer-task.ts:247`).
+`plan_fact.mode` (`src/rooms/writer/server/plan-fact.ts:15`): `record` (default) only records and shows; `gate` also sends the task back to the writer (attempt `validation_failed`, reason `plan_fact_unproven`) when the stage failed. A missing or invalid table is skipped only when the table is optional. In `gate` mode, a code task with nonempty acceptance must provide a readable table; refusal uses the `validation_failed` path. Phase-linked code tasks require a table in every mode (below). `docs`/`research`/`check` tasks and tasks without acceptance are exempt from this table requirement. The retry brief tells the writer what to cite (`src/rooms/writer/server/writer-task.ts:247`).
+
+**Phase tasks are held to the gate's bar in every mode.** `phasePlanFactRequirement` (`src/rooms/writer/server/plan-fact.ts:26`) resolves whether the task was born `phase`: a direct `phase` birth is `required`; a non-`redo` or absent own row is `not_required`; a `redo` task walks its ancestry (`taskFamily`, the `.n` narrow-task parent) and only a broken, looping or unborn **redo ancestor chain** is `unknown`. For a code-kind task with acceptance (`NO_CODE_KINDS` — `docs`, `research`, `check` — are exempt) the stage then runs with `tableRequired` semantics: a missing or unreadable table fails, and an unavailable diff probe fails as `plan_fact_check_unavailable: the phase candidate diff could not be checked`; `unknown` ancestry fails as `plan_fact_lineage_unknown: …`. The finisher treats those two `plan_fact_*` infrastructure reasons as infrastructure, not workmanship: the attempt ends `blocked` with the reason instead of `validation_failed` (`src/rooms/writer/server/finish-attempt-body.ts:268-286`), and the same `blocked` path applies when the phase-required stage itself could not run at all. Other refusals — including a missing table — keep the `validation_failed` retry path.
 
 > [!note] The docs describe the pipeline's capabilities, not a project's live configuration
 > Every opinion and review stage obeys its `*.enabled` project setting and `quality_mode`: `quick` disables both critiques, `full` enables them, `standard` (the default) reads the settings (`src/rooms/critique/quality-mode.ts:16-24`). A stage with no setting is recorded `skipped` with reason `disabled_by_project_setting` — on the hub most projects keep the critiques off, so a `skipped` receipt is the common case, not a fault. The generated [enabled settings](enabled-settings.md) page lists the defaults and the global `*` values.

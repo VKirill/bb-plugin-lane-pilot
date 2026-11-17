@@ -34,8 +34,9 @@ export function recordStage(db:ReturnType<typeof openDatabase>, input:{runId:str
   saveStageReceipt(db, validateStageReceipt({
     contractVersion:1, runId:input.runId, taskId:input.taskId, stageId:input.stageId,
     state:input.state, inputSha256:sha256(input.input), outputSha256:output === null ? null : sha256(output),
-    // The receipt keeps 0-2; fallback writers (models 3 and 4 of the chain) made it 4 and the task ended internal_error.
-    attempt:Math.min(input.attempt ?? 0, 2), providerId:input.providerId ?? null, model:input.model ?? null,
+    // attempt is the task-attempt ordinal (producers pass attempt_no/countAttempts). It stays unclamped: the old
+    // 0-2 cap collapsed fallback ordinals 3+ into 2, so later attempts' stages were attributed to attempt 2.
+    attempt:input.attempt ?? 0, providerId:input.providerId ?? null, model:input.model ?? null,
     threadId:input.threadId ?? null, result, reason:input.reason ?? null, updatedAt:Date.now(),
   }));
 }
@@ -45,7 +46,7 @@ export function recordGateEvaluation(db:ReturnType<typeof openDatabase>,input:{p
   attemptId?:string; tree?:string|null; verdict?:{status:string;summary:string}|null}):void {
   const output=input.summary===undefined?null:JSON.stringify(input.summary);
   appendGateEvaluation(db,{projectId:input.projectId,runId:input.runId,taskId:input.taskId,gate:input.gate,status:input.status,
-    inputSha256:sha256(input.input),outputSha256:output===null?null:sha256(output),attempt:Math.min(input.attempt,2),occurredAt:Date.now()});
+    inputSha256:sha256(input.input),outputSha256:output===null?null:sha256(output),attempt:input.attempt,occurredAt:Date.now()});
   if (input.attemptId) {
     const summary=input.summary as Record<string, unknown>|undefined;
     const reason=typeof summary?.reason==="string" ? summary.reason : typeof summary?.writerStatus==="string" ? String(summary.writerStatus) : null;
@@ -80,7 +81,7 @@ export function closeWriterStages(db:ReturnType<typeof openDatabase>, input:{run
       recordStage(db, { runId:input.runId, taskId:input.taskId, stageId, state:"running", input:input.plan });
     }
     recordStage(db, { runId:input.runId, taskId:input.taskId, stageId, state:input.terminal, input:input.plan,
-      attempt:Math.min(input.attempt, 2), threadId:input.threadId ?? null,
+      attempt:input.attempt, threadId:input.threadId ?? null,
       result:stageId === "writer-agent" ? input.result ?? null : null, reason:input.terminal === "passed" ? null : input.reason ?? null });
     closed += 1;
   }

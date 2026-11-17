@@ -250,7 +250,7 @@ describe("region scenes sma_rNN (docs/sma-evidence.md)", () => {
       expect(one.stdout).toContain('"proves": ["n1"]');
       const suite = spawnSync("bash", [script, "--suite", "sma", "--dry-run"], { encoding: "utf8", timeout: 30_000, env: quiet });
       expect(suite.status).toBe(0);
-      const present = readdirSync(scenes).filter((name) => /^sma_(r\d+|core|tails)\.py$/.test(name)).map((name) => name.replace(".py", "")).sort();
+      const present = readdirSync(scenes).filter((name) => /^sma_(r\d+|r08_local|core|tails)\.py$/.test(name)).map((name) => name.replace(".py", "")).sort();
       expect(suite.stdout).toContain(`scenarios: ${present.join(", ")}`);
       const quick = spawnSync("bash", [script, "--quick", "--dry-run"], { encoding: "utf8", timeout: 30_000, env: { ...quiet, LP_DRILL_SELECT: "0" } });
       expect(quick.stdout).not.toContain("sma_r");

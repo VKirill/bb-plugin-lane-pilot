@@ -142,9 +142,9 @@ async function main() {
       cover.prepare("INSERT INTO lane_pilot_attempt_reasoning (attempt_id, trace_json) VALUES (?,?)").run(attemptId, JSON.stringify({ dispatchContext: packet }));
     };
     seed("t1", "a1", "x".repeat(1000)); seed("t2", "a2", "x".repeat(2000)); seed("t3", "a3", "x".repeat(3000));
-    recordStage(cover, { runId: "run_s", taskId: "t1", stageId: "plan-fact", state: "passed", input: "{}", result: { table: "ok", items: [] } });
-    recordStage(cover, { runId: "run_s", taskId: "t2", stageId: "plan-fact", state: "failed", input: "{}", result: { table: "ok", items: [{ item: 1, evidence: [{ evidence: "src/gone.ts", code: "file_not_in_diff" }] }] } });
-    recordStage(cover, { runId: "run_s", taskId: "t3", stageId: "plan-fact", state: "skipped", input: "{}", result: { table: "missing" } });
+    recordStage(cover, { runId: "run_s", taskId: "t1", stageId: "plan-fact", state: "passed", input: "{}", attempt: 1, result: { table: "ok", items: [] } });
+    recordStage(cover, { runId: "run_s", taskId: "t2", stageId: "plan-fact", state: "failed", input: "{}", attempt: 1, result: { table: "ok", items: [{ item: 1, evidence: [{ evidence: "src/gone.ts", code: "file_not_in_diff" }] }] } });
+    recordStage(cover, { runId: "run_s", taskId: "t3", stageId: "plan-fact", state: "skipped", input: "{}", attempt: 1, result: { table: "missing" } });
     const report = subagentReceipts(cover, { projectId: "proj_s", days: 30 });
     return { lines: text.split("\n").filter((line) => /^(### |- item|- `npm|- verification|Receipt chain)/.test(line)), tipLine: text.split("\n").at(-1)?.startsWith("Receipt chain tip: `") ?? false,
       coverage: report.coverage, phantoms: report.phantoms, median: report.pack.median };

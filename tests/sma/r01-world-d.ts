@@ -117,7 +117,7 @@ export function observeBarrierRecord() {
   return getAttempt(db, "a1")!.barrier!;
 }
 
-/** n261: the verify step is a durable receipt (state, the hash of its input, the attempt number kept in 0-2). */
+/** n261: the verify step is a durable receipt (state, the hash of its input, the task-attempt ordinal kept verbatim). */
 export function observeStepRecord() {
   const db = openDatabase(createFakePluginHost({ pluginId: "lane-pilot" }).bb);
   createRun(db, "run-d", "proj1", "bb", "/ws");

@@ -7,7 +7,7 @@ import type Database from "better-sqlite3";
 import packageJson from "../../../../package.json";
 import { gateRunVerdict } from "../../verification/server"
 import { parseIntegrationGateSettings } from "../../contracts";
-import { getRun, getAttempt, getReasoningTraceJson, getTaskContractJson, listStageReceipts, loadProjectSettings, openAttemptBriefs, latestGateRun, FULL_GATE_VALID_MS, countLanePilotTables, latestAcceptedAttemptRef, listAttemptReasonsSince, listAttemptRefsSince, listGateEventsForTask } from "../../storage";
+import { getRun, getAttempt, getReasoningTraceJson, getTaskContractJson, listStageReceipts, loadProjectSettings, openAttemptBriefs, latestGateRun, FULL_GATE_VALID_MS, countLanePilotTables, countAttempts, latestAcceptedAttemptRef, listAttemptReasonsSince, listAttemptRefsSince, listGateEventsForTask } from "../../storage";
 import { scoreForecast } from "../../forecast";
 import { calibrationPassport } from "../../forecast/server";
 import { getAttemptChange } from "../../rollback";
@@ -26,6 +26,9 @@ import { listOpenDeferralBriefs } from "../../deferral/server";
 
 type Db = Database.Database;
 const sha = (text: string) => createHash("sha256").update(text).digest("hex");
+/** A stored ordinal of 2 on a task with more than two attempts cannot be told apart from a legacy row the old
+ * 0-2 clamp wrote: post-fix writes are exact, pre-fix writes may be clamped 3+. Flagged, never guessed. */
+const ambiguousOrdinal = (stored: number, taskAttempts: number) => stored === 2 && taskAttempts > 2;
 
 export function passport(db: Db, attemptId: string) {
   const row = getAttempt(db, attemptId);
@@ -34,8 +37,16 @@ export function passport(db: Db, attemptId: string) {
   const trace = getReasoningTraceJson(db, attemptId);
   let model: Record<string, unknown> = {};
   try { const parsed = JSON.parse(trace ?? "{}") as Record<string, unknown>; model = { providerId: parsed.providerId ?? null, model: parsed.model ?? null, reasoning: parsed.reasoningLevel ?? null }; } catch { /* no trace */ }
+  // Receipt rows key on (run,task,stage) and hold the last writer only — without the attempt filter a respawned
+  // attempt's passport reports a later attempt's stages (attemptRecord already filters the same way).
+  const taskAttempts = countAttempts(db, row.run_id, row.task_id);
+  // Receipt rows key on (run,task,stage) and hold the last writer only — without the attempt filter a respawned
+  // attempt's passport reports a later attempt's stages (attemptRecord already filters the same way). attempt 0
+  // rows are pre-attempt task evidence (pm-read etc. run before the attempt row exists): shown as scope 'task',
+  // never as proof about this attempt.
   const stages = listStageReceipts(db, row.run_id, row.task_id)
-    .map((stage) => ({ stage: stage.stageId, state: stage.state, input: stage.inputSha256, output: stage.outputSha256, provider: stage.providerId, model: stage.model }));
+    .filter((stage) => stage.attempt === row.attempt_no || stage.attempt === 0)
+    .map((stage) => ({ stage: stage.stageId, state: stage.state, input: stage.inputSha256, output: stage.outputSha256, provider: stage.providerId, model: stage.model, attempt: stage.attempt, scope: stage.attempt === 0 ? "task" : "attempt", ...(stage.attempt !== 0 && ambiguousOrdinal(stage.attempt, taskAttempts) ? { ambiguous: true } : {}) }));
   // The badge of the model that wrote this attempt's forecast (SMA k_v_passport): old priors are about another model.
   let calibration: { model: string; badge: string } | null = null;
   try {
@@ -157,18 +168,33 @@ export function prPassport(db: Db, runId: string, taskId: string): string {
 export function subagentReceipts(db: Db, input: { projectId?: string; days?: number } = {}) {
   const since = Date.now() - (input.days ?? 30) * 86_400_000;
   const attempts = listAttemptRefsSince(db, since, input.projectId);
-  let checked = 0, skipped = 0;
+  let checked = 0, skipped = 0, unknown = 0, ambiguous = 0;
   const phantoms: Array<{ taskId: string; evidence: string; code: string }> = [];
   const packets: number[] = [];
+  const scannedTasks = new Set<string>();
   for (const attempt of attempts) {
-    const receipt = listStageReceipts(db, attempt.run_id, attempt.task_id).find((row) => row.stageId === "plan-fact");
+    // The receipt row is one per (run,task,stage), last writer wins: only the attempt whose ordinal survives is
+    // attributed. An attempt without a surviving row is unknown — its receipt is absent or was overwritten by a
+    // later attempt; never read as a skip.
+    const receipt = listStageReceipts(db, attempt.run_id, attempt.task_id)
+      .find((row) => row.stageId === "plan-fact" && row.attempt === attempt.attempt_no);
     const result = receipt?.result && typeof receipt.result === "object" ? receipt.result as Record<string, unknown> : null;
-    if (!receipt || !result || receipt.state === "skipped" || result.table === "missing" || result.table === "invalid") skipped += 1;
+    if (!receipt) unknown += 1;
+    else if (ambiguousOrdinal(receipt.attempt, countAttempts(db, attempt.run_id, attempt.task_id))) ambiguous += 1;
+    else if (!result || receipt.state === "skipped" || result.table === "missing" || result.table === "invalid") skipped += 1;
     else checked += 1;
-    for (const item of (result?.items as Array<{ evidence?: Array<{ evidence?: unknown; code?: unknown }> }> | undefined) ?? [])
-      for (const entry of item.evidence ?? [])
-        if (entry.code === "file_not_in_diff" || entry.code === "lines_not_changed" || entry.code === "file_missing")
-          phantoms.push({ taskId: attempt.task_id, evidence: String(entry.evidence ?? ""), code: entry.code });
+    // Phantom findings are task-level evidence: the surviving row is scanned once per distinct task no matter
+    // which attempt's ordinal it carries — coverage says who it belongs to, phantoms say what it found.
+    const taskKey = `${attempt.run_id}:${attempt.task_id}`;
+    if (!scannedTasks.has(taskKey)) {
+      scannedTasks.add(taskKey);
+      const taskReceipt = listStageReceipts(db, attempt.run_id, attempt.task_id).find((row) => row.stageId === "plan-fact");
+      const taskResult = taskReceipt?.result && typeof taskReceipt.result === "object" ? taskReceipt.result as Record<string, unknown> : null;
+      for (const item of (taskResult?.items as Array<{ evidence?: Array<{ evidence?: unknown; code?: unknown }> }> | undefined) ?? [])
+        for (const entry of item.evidence ?? [])
+          if (entry.code === "file_not_in_diff" || entry.code === "lines_not_changed" || entry.code === "file_missing")
+            phantoms.push({ taskId: attempt.task_id, evidence: String(entry.evidence ?? ""), code: entry.code });
+    }
     const trace = getReasoningTraceJson(db, attempt.id);
     if (trace) {
       try {
@@ -179,7 +205,7 @@ export function subagentReceipts(db: Db, input: { projectId?: string; days?: num
   }
   const sorted = [...packets].sort((a, b) => a - b);
   const pick = (q: number) => sorted.length ? sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * q))]! : null;
-  return { attempts: attempts.length, coverage: { checked, skipped, share: attempts.length ? Math.round((checked / attempts.length) * 100) / 100 : null }, phantoms, pack: { samples: packets.length, median: pick(0.5), p90: pick(0.9) } };
+  return { attempts: attempts.length, coverage: { checked, skipped, unknown, ambiguous, share: attempts.length ? Math.round((checked / attempts.length) * 100) / 100 : null }, phantoms, pack: { samples: packets.length, median: pick(0.5), p90: pick(0.9) } };
 }
 
 /**
@@ -190,6 +216,7 @@ export function subagentReceipts(db: Db, input: { projectId?: string; days?: num
 export function attemptRecord(db: Db, attemptId: string) {
   const row = getAttempt(db, attemptId);
   if (!row) return null;
+  const taskAttempts = countAttempts(db, row.run_id, row.task_id);
   const receipts = listStageReceipts(db, row.run_id, row.task_id).filter((stage) => stage.attempt === row.attempt_no);
   const gates = listGateEventsForTask(db, row.run_id, row.task_id).filter((event) => event.attempt === row.attempt_no);
   let dispatchContext: unknown = null;
@@ -199,8 +226,8 @@ export function attemptRecord(db: Db, attemptId: string) {
   const change = getAttemptChange(db, attemptId) ?? null;
   return {
     attempt: { id: row.id, runId: row.run_id, taskId: row.task_id, state: row.state, reason: row.reason, attemptNo: row.attempt_no, threadId: row.thread_id, createdAt: row.created_at },
-    stageReceipts: receipts.map((stage) => ({ stage: stage.stageId, state: stage.state, reason: stage.reason, input: stage.inputSha256, output: stage.outputSha256, threadId: stage.threadId, updatedAt: stage.updatedAt })),
-    gateEvents: gates,
+    stageReceipts: receipts.map((stage) => ({ stage: stage.stageId, state: stage.state, reason: stage.reason, input: stage.inputSha256, output: stage.outputSha256, threadId: stage.threadId, updatedAt: stage.updatedAt, attempt: stage.attempt, ...(ambiguousOrdinal(stage.attempt, taskAttempts) ? { ambiguous: true } : {}) })),
+    gateEvents: gates.map((event) => ({ ...event, ...(ambiguousOrdinal(event.attempt, taskAttempts) ? { ambiguous: true } : {}) })),
     dispatchContext,
     verification,
     criticInputHash,

@@ -16,7 +16,7 @@ export const stageReceiptSchema = z.object({
   state: z.enum(STAGE_STATES),
   inputSha256: z.string().regex(/^[a-f0-9]{64}$/),
   outputSha256: z.string().regex(/^[a-f0-9]{64}$/).nullable(),
-  attempt: z.number().int().min(0).max(2),
+  attempt: z.number().int().min(0),
   providerId: z.string().nullable(),
   model: z.string().nullable(),
   threadId: z.string().nullable(),

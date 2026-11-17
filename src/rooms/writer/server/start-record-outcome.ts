@@ -1,7 +1,6 @@
 import { countAttempts, countThreadTurns, listStageReceipts, noteToldPmDirectly } from "../../storage";
 import { bestEffort } from "@lane-pilot/kit";
 ;
-import { MAIN_ATTEMPT_LIMIT } from "../../contracts";
 import { WRITER_QUESTION_WAIT_TEXT } from "./question-default";
 import { failureClass } from "../../contracts";
 
@@ -67,7 +66,7 @@ import type { WriterTaskInput } from "./start-task-state";
         }
         const terminal = accepted ? "passed" : state.last.status === "canceled" ? "canceled" : "failed";
         recordStage(db, { runId:input.runId, taskId:input.taskId, stageId, state:terminal,
-          input:input.plan, attempt:Math.min(countAttempts(db, input.runId, input.taskId),MAIN_ATTEMPT_LIMIT),
+          input:input.plan, attempt:countAttempts(db, input.runId, input.taskId),
           providerId:stageId==="writer-agent"?state.writerSelection?.providerId:undefined,
           model:stageId==="writer-agent"?state.writerSelection?.model:undefined,threadId:state.writerThreadId,
           result:stageId === "writer-agent" ? {

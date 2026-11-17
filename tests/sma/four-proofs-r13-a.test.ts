@@ -10,7 +10,7 @@ import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { FORBIDDEN_WORDS, houseWordHits, internalIds, leakFindings, leaks, parityGaps, sourceWordHits, UNSHOWN_FIELDS, unreadFields } from "../../src/rooms/guard-tools/guard-tools";
 import { rpcContract } from "../../src/rooms/contracts";
-import { roomFaceFiles } from "../support/room-files";
+import { uiReaderFiles } from "../support/room-files";
 import { attemptSessionLayers, permissionEntries, terminalParity, type ParityLayerSet } from "../../src/rooms/native-agent/terminal-parity";
 import { accountingPartsProblem, PROBES } from "../../src/rooms/native-agent/server/helper-probe";
 import { CAPABILITIES, DOCUMENTARY_CELLS, listReceipts } from "../../src/rooms/capability";
@@ -124,7 +124,7 @@ describe("guard tools: window contract (n1039, n1040, n1041)", () => {
 
   it("[sma:m_tl_contract_test] the real contract has no unread field outside the baseline, and a field no screen reads would be caught", () => {
     const baseline = new Set(JSON.parse(readFileSync(join(ROOT, "tests/fixtures/unread-fields-baseline.json"), "utf8")) as string[]);
-    const sources = [...roomFaceFiles("ui"), join(ROOT, "app.tsx")].map((path) => ({ path, text: readFileSync(path, "utf8") }));
+    const sources = uiReaderFiles().map((path) => ({ path, text: readFileSync(path, "utf8") }));
     const real = unreadFields(rpcContract as never, sources, UNSHOWN_FIELDS);
     expect(real.length).toBeGreaterThan(0);
     expect(real.filter((field) => !baseline.has(field))).toEqual([]);

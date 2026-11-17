@@ -22,7 +22,6 @@ import { runOnHost } from "@lane-pilot/host-calls";
 import { loadWriterPin, noteWriterPair } from "../writer-model-pin";
 import { reassignedReason, takeReassignRequest, type ReassignRequest } from "./reassign";
 import { usageHoldReason, usageSkipPercent } from "../../usage/server";
-import { MAIN_ATTEMPT_LIMIT, RETRY_ELIGIBLE } from "../../contracts/state-machine";
 import { FREE_RETRY_LIMIT, PARKED_CLASSES, REPLAY_CHECK_FAILED, SESSION_MAX_MS, VERIFICATION_TIMEOUT_RETRIES, failureClassCooldownMs, failureFingerprint, isWaitingSecret, isWriterSilent, repeatedFailureReason, turnFailureKey, verificationTimeoutOverBudget } from "../../contracts/failure-class"
 import { taskFamily } from "@lane-pilot/contracts";
 import { coreHostsRequiredProvider, isTaskSatisfied } from "../../runs/server";
@@ -216,7 +215,7 @@ export function createStartWriterTask(deps: StartWriterTaskDeps) {
           if (current.state === "pending") recordStage(db, { runId:input.runId, taskId:input.taskId, stageId, state:"running", input:input.plan });
           recordStage(db, { runId:input.runId, taskId:input.taskId, stageId,
             state:"failed", input:input.plan,
-            attempt:Math.min(countAttempts(db, input.runId, input.taskId),MAIN_ATTEMPT_LIMIT),
+            attempt:countAttempts(db, input.runId, input.taskId),
             providerId:stageId==="writer-agent"?state.writerSelection?.providerId:undefined,
             model:stageId==="writer-agent"?state.writerSelection?.model:undefined,threadId:state.writerThreadId, reason });
         }

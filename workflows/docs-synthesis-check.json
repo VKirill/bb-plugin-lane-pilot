@@ -17,12 +17,12 @@
       "required": true
     },
     "precedence": {
-      "type": "array",
+      "type": "string[]",
       "required": false,
       "default": []
     },
     "paths": {
-      "type": "array",
+      "type": "string[]",
       "required": false,
       "default": []
     }
@@ -58,7 +58,7 @@
       "join": {
         "policy": "all",
         "out": {
-          "results": "array",
+          "results": "any[]",
           "count": "int"
         },
         "uses": "builtin:join"
@@ -80,7 +80,7 @@
       "join": {
         "policy": "all",
         "out": {
-          "results": "array",
+          "results": "any[]",
           "count": "int"
         },
         "uses": "builtin:join"

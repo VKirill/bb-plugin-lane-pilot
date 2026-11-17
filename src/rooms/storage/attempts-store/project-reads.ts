@@ -203,10 +203,10 @@ export function latestAcceptedAttemptOfTask(db: LanePilotDatabase, taskId: strin
 }
 
 /** The attempts created since a moment, of one project or of all: the rows receipt coverage is counted over. */
-export function listAttemptRefsSince(db: LanePilotDatabase, since: number, projectId?: string): Array<{ id: string; run_id: string; task_id: string }> {
+export function listAttemptRefsSince(db: LanePilotDatabase, since: number, projectId?: string): Array<{ id: string; run_id: string; task_id: string; attempt_no: number }> {
   return (projectId
-    ? db.prepare("SELECT a.id, a.run_id, a.task_id FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id WHERE r.project_id=? AND a.created_at>=?").all(projectId, since)
-    : db.prepare("SELECT id, run_id, task_id FROM lane_pilot_attempt WHERE created_at>=?").all(since)) as Array<{ id: string; run_id: string; task_id: string }>;
+    ? db.prepare("SELECT a.id, a.run_id, a.task_id, a.attempt_no FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id WHERE r.project_id=? AND a.created_at>=?").all(projectId, since)
+    : db.prepare("SELECT id, run_id, task_id, attempt_no FROM lane_pilot_attempt WHERE created_at>=?").all(since)) as Array<{ id: string; run_id: string; task_id: string; attempt_no: number }>;
 }
 
 /** The writer threads a run ever ran: a fresh run budget is seeded from their token cursors, so spend of attempts killed
