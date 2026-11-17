@@ -6,9 +6,10 @@ import { BB_AGENT_SESSIONS, LANE_PILOT_PM_SESSION } from "../src/rooms/native-ag
  * talk, 2026-10-08). Each ceiling sits about 10 % above the size on 2026-10-08, so a short addition passes and a silent doubling does
  * not. Over a ceiling: cut something first, or raise the number here on purpose, saying why in the commit.
  */
+// pm +750 on 2026-11-17 (591 accounting): release 590 was 15,641; the current prompt carries required shared-repo and checkout-boundary rules.
 // pm +500 on 2026-11-14 (SMA parity 4е): the PM is told that a task's plan is text kept in the task folder, that depends_on is the only order (code
 // computes the waves) and that the planner revises a returned plan up to 3 rounds; the three additions were cut to 496 characters first.
-const CEILING_CHARS = { pm: 15_750, "workflow-architect": 12_000, other: 2_000 };
+const CEILING_CHARS = { pm: 16_500, "workflow-architect": 12_000, other: 2_000 };
 
 it("keeps the PM session prompt under its size ceiling", () => {
   expect(LANE_PILOT_PM_SESSION.length).toBeLessThanOrEqual(CEILING_CHARS.pm);
