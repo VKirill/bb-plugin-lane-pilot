@@ -29,7 +29,7 @@ export default {
   n1691: { reach: seedEntry("the owner runs the command"), mutation: distort("src/rooms/storage/task-manifest.ts", "plugin_version: row.plugin_version,\n      sha256: row.sha256,", "plugin_version: row.plugin_version,\n      sha256: row.path,"), trace: drill("task_home") },
   n1692: { reach: seedEntry("the owner runs the command"), mutation: flip(RECEIPTS, "receiptChain(db, runId, taskId).tip === tip;", "receiptChain(db, runId, taskId).tip !== tip;"), trace: drill("sma_r25") },
   n1693: { reach: seedEntry("the owner runs the command"), mutation: flip(RECEIPTS, "receipt.state === \"skipped\" || result.table === \"missing\"", "receipt.state !== \"skipped\" || result.table === \"missing\""), trace: drill("sma_r25") },
-  n1694: { reach: seedEntry("the owner runs the command"), mutation: distort(ROLLBACK, "receipt(t, \"revert\", \"merged\", summary,", "receipt(t, \"revert\", \"dry_run\", summary,"), trace: drill("sma_r25") },
+  n1694: { reach: seedEntry("the owner runs the command"), mutation: distort("src/rooms/rollback/store.ts", 'const id = appendTaskReceipt(db, { kind: "revert", projectId: input.projectId, runId: input.runId, taskId: input.taskId, state: "merged",', 'const id = appendTaskReceipt(db, { kind: "revert", projectId: input.projectId, runId: input.runId, taskId: input.taskId, state: "dry_run",'), trace: drill("sma_r25") },
   n1695: { reach: { ...seedEntry("the owner runs the command"), notGatedBy: {"ship.full_gate":"The preship command checks receipts with either value; this switch only adds the full-gate requirement."} }, mutation: flip(RECEIPTS, "clear: items.every((item) => item.disposition === \"keep with its term\")", "clear: items.every((item) => item.disposition !== \"keep with its term\")"), trace: drill("sma_r25") },
   n1696: { mutation: flip(FORECAST, "hit: forecast.checks_pass_first_try === fact.firstTry }", "hit: forecast.checks_pass_first_try !== fact.firstTry }"), trace: drill("sma_r25") },
   n1697: { mutation: flip(FORECAST, ".sort((a, b) => b.tasks - a.tasks || a.area.localeCompare(b.area))", ".sort((a, b) => a.tasks - b.tasks || a.area.localeCompare(b.area))"), trace: drill("sma_r25") },
@@ -44,5 +44,5 @@ export default {
   n1706: { mutation: flip(BASELINE, "? \"red\" : \"partial\"", "? \"partial\" : \"red\""), trace: rows("lane_pilot_baseline", "at", "state = 'ran'") },
   n1707: { mutation: distort(WIRES, "to: wire.chain[hop + 1]!, file:", "to: wire.chain[hop]!, file:"), trace: drill("sma_r25") },
   n1708: { mutation: flip("src/rooms/tasks/plan-fact.ts", "known.some(([a, b]) => from <= b && to >= a)", "known.some(([a, b]) => from <= a && to >= a)"), trace: receipt("plan-fact", ["passed", "failed"]) },
-  n1709: { mutation: distort(ROLLBACK, "cause: mark?.cause ?? \"rolled back, cause unknown\"", "cause: mark?.cause ?? reverted.summary"), trace: drill("sma_r25") },
+  n1709: { mutation: distort("src/rooms/rollback/server/status.ts", "cause: mark?.cause ?? \"rolled back, cause unknown\"", "cause: mark?.cause ?? reverted.summary"), trace: drill("sma_r25") },
 } satisfies RegionEvidence;

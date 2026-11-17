@@ -235,16 +235,18 @@ export const observeD = {
     };
   },
   async k_c_converge() {
-    const r = (decision: string, over: Row = {}) => runSim("plan-review-convergence", { input: { phase_id: "ph_1" }, stubs: { critic_a: { decision: "approve", findings: [] }, critic_b: { decision: "approve", findings: [] }, converge: { decision, findings: [{ severity: "high", text: "split p1" }], rounds: 2, ...over } } });
+    const r = (decision: string, over: Row = {}) => runSim("plan-review-convergence-proof", { input: { phase_id: "ph_1", plan_sha: "plan_1", phase_status: {} }, stubs: { critic_a: { decision: "approve", findings: [] }, critic_b: { decision: "approve", findings: [] }, converge: { decision, findings: [{ severity: "high", text: "split p1" }], rounds: 2, ...over } } });
     const approved = await r("approve");
     const changes = await r("changes_requested");
-    return { approved: [pathOf(approved), outOf(approved)], changes: [pathOf(changes), outOf(changes)] };
+    const result = (run: Awaited<ReturnType<typeof r>>) => ({ status: outOf(run).decision, findings: outOf(run).findings, rounds: outOf(run).rounds });
+    return { approved: [pathOf(approved), result(approved)], changes: [pathOf(changes), result(changes)] };
   },
   async k_c_review() {
-    const r = await runSim("plan-review-convergence", { input: { phase_id: "ph_1" }, stubs: { critic_a: { decision: "approve", findings: [{ text: "a" }] }, critic_b: { decision: "changes_requested", findings: [{ text: "b" }] }, converge: { decision: "changes_requested", findings: [{ text: "a" }, { text: "b" }], rounds: 1 } } });
-    const wf = wfJson("plan-review-convergence");
+    const r = await runSim("plan-review-convergence-proof", { input: { phase_id: "ph_1", plan_sha: "plan_1", phase_status: {} }, stubs: { critic_a: { decision: "approve", findings: [{ text: "a" }] }, critic_b: { decision: "changes_requested", findings: [{ text: "b" }] }, converge: { decision: "changes_requested", findings: [{ text: "a" }, { text: "b" }], rounds: 1 } } });
+    const wf = wfJson("plan-review-convergence-proof");
     const node = (id: string) => wf.nodes.find((row) => row.id === id)!;
-    return { path: pathOf(r), ran: [r.called("critic_a").length, r.called("critic_b").length, r.called("converge").length], roles: [node("critic_a").role, node("critic_b").role, node("converge").role], consumes: (node("converge").consumes as Array<{ from: string }>).map((c) => c.from), out: outOf(r) };
+    const result = outOf(r);
+    return { path: pathOf(r), ran: [r.called("critic_a").length, r.called("critic_b").length, r.called("converge").length], roles: [node("critic_a").role, node("critic_b").role, node("converge").role], consumes: (node("converge").consumes as Array<{ from: string }>).map((c) => c.from), out: { status: result.status, findings: result.findings, rounds: result.rounds } };
   },
   async k_wp_rubric() {
     const w = phaseWorldD();

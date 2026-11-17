@@ -43,7 +43,7 @@ import { buildDailyReport } from "../../src/rooms/reports/server/daily";
 import { runSqliteChild } from "../../src/rooms/reports/server";
 import type { ChainRuntime, ServerCore } from "../../src/rooms/contracts/server";
 import { createAttempt, createRun, createTask, openDatabase, setRunThread, transitionAttempt } from "../../src/rooms/plugin-db";
-import { upsertAttemptChange } from "../../src/rooms/rollback/store";
+import { appendTaskReceipt, upsertAttemptChange } from "../../src/rooms/rollback/store";
 import { journalDb } from "../workflow/engine-helpers";
 import { publishedCatalog } from "../workflow/router-catalog";
 import { chainStore, runSim } from "../workflow/chain-harness";
@@ -517,12 +517,22 @@ export const observeC = {
     const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
     const db = openDatabase(bb);
     createRun(db, "run1", "projA", "bb", base, "none", undefined, HOST);
+    let interleaveReceiptFor: string | null = null;
+    let interleavedMergeInfo = 0;
     const host = { call: async (method: string, input: Record<string, any>) => {
       switch (method) {
         case "gitCreateWorktree": return { hostId: HOST, ...await createWorktree({ basePath: input.basePath, name: input.name, commit: input.commit, targetPath: join(root, "wt", input.name, "project") }) };
         case "gitPrepareWorktree": return { hostId: HOST, linked: [] };
         case "gitRemoveWorktree": return { hostId: HOST, ...await removeLaneWorktree({ basePath: input.basePath, worktreePath: input.worktreePath, ...(input.release ? { releaseDir: join(root, "released") } : {}) }) };
-        case "gitMergeInfo": return { hostId: HOST, ...await mergeInfo({ basePath: input.basePath, commit: input.commit, attemptId: input.attemptId }) };
+        case "gitMergeInfo": {
+          const found = await mergeInfo({ basePath: input.basePath, commit: input.commit, attemptId: input.attemptId });
+          if (interleaveReceiptFor === input.attemptId && found.status === "found" && found.commit) {
+            interleavedMergeInfo += 1;
+            appendTaskReceipt(db, { kind: "revert", projectId: "projA", runId: "run1", taskId: "t4", state: "merged", summary: "receipt inserted while change provenance was loading", attemptId: "att_t4", baseSha: found.base ?? null, changeSha: found.commit, resultCommit: "f".repeat(40), detail: {} });
+            interleaveReceiptFor = null;
+          }
+          return { hostId: HOST, ...found };
+        }
         case "gitRevertCommits": return { hostId: HOST, ...await revertCommitsInWorktree({ worktreePath: input.worktreePath, commits: input.commits }) };
         case "gitWorktreeState": return { hostId: HOST, ...await worktreeState({ basePath: input.basePath, worktreePath: input.worktreePath }) };
         case "gitOwnershipBase": return { hostId: HOST, ...await resolveGitOwnershipBase({ projectCwd: input.projectCwd }) };
@@ -544,7 +554,7 @@ export const observeC = {
       return { command: check.command, exitCode: ran.status ?? 1, stdout: ran.stdout ?? "", stderr: ran.stderr ?? "" };
     }) };
     const { rollback } = createRollback(ctx as never, services as never);
-    const accepted = async (id: string, edit: (dir: string) => void) => {
+    const accepted = async (id: string, edit: (dir: string) => void, record = true) => {
       createTask(db, { id, runId: "run1", kind: "bb", contract: { schema_version: 2, id, title: `title of ${id}`, risk: "low", lane: "server", project_cwd: base, read_first: [], interfaces: [], invariants: [], out_of_scope: [], expected_outputs: ["x"], owns_paths: ["**"], never_touch: [], depends_on: [], objective: id, acceptance: ["done"], verify: "tests", verification: [{ command: "test -f keep.txt", cwd: base }] } as never });
       const attemptId = `att_${id}`;
       createAttempt(db, { id: attemptId, runId: "run1", taskId: id });
@@ -552,7 +562,7 @@ export const observeC = {
       rollback.noteBase(attemptId, made.baseSha);
       edit(made.path!);
       const merged = await integrateWorktree({ basePath: base, worktreePath: made.path!, message: `${id}: title of ${id}\n\nLane-Pilot-Attempt: ${attemptId}`, removeWorktree: true });
-      rollback.noteMerge(attemptId, merged);
+      if (record) rollback.noteMerge(attemptId, merged);
       db.prepare("UPDATE lane_pilot_attempt SET state='accepted', updated_at=? WHERE id=?").run(Date.now(), attemptId);
       return merged.commit!;
     };
@@ -570,7 +580,10 @@ export const observeC = {
       const collide = slim(await rollback.revert("t2"));
       const out2 = { collide, mainKept: git(base, "rev-parse", "HEAD").trim() === head, text: readFileSync(join(base, "server.ts"), "utf8"), worktrees: git(base, "worktree", "list").trim().split("\n").length };
       const order = [slim(await rollback.revert("t3")).state, slim(await rollback.revert("t2")).state];
-      return { first: out1, again, collide: out2, order, back: readFileSync(join(base, "server.ts"), "utf8"), noTask: slim(await rollback.revert("nope")) };
+      await accepted("t4", (dir) => writeFileSync(join(dir, "interleaved.ts"), "x\n"), false);
+      interleaveReceiptFor = "att_t4";
+      const interleaved = slim(await rollback.revert("t4"));
+      return { first: out1, again, collide: out2, order, interleaved, interleavedMergeInfo, back: readFileSync(join(base, "server.ts"), "utf8"), noTask: slim(await rollback.revert("nope")) };
     } finally { await harness.lifecycle.dispose(); rmSync(root, { recursive: true, force: true }); }
   },
 

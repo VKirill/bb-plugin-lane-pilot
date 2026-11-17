@@ -84,7 +84,7 @@ export async function runHomeWorld(script: Record<string, string[]> = {}, option
           const { path } = args as { path: string };
           if (!existsSync(path)) throw Object.assign(new Error("not found"), { code: "not_found" });
           const content = readFileSync(path, "utf8");
-          return { content, sha256: sha(content) };
+          return { content, sha256: sha(content), sizeBytes: Buffer.byteLength(content, "utf8") };
         },
         write: async (args: unknown) => {
           const input = args as { path: string; content: string; expectedSha256?: string | null };

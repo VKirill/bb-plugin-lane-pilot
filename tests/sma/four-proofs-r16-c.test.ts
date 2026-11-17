@@ -192,6 +192,8 @@ describe("the stand-alone commands (n1215 … n1236)", () => {
     expect(seen.collide.collide.next).toContain("Revert `bb lane-pilot revert t3` first");
     expect(seen.collide).toMatchObject({ mainKept: true, text: "line1 from t3\nline2\nline3\n", worktrees: 1 });
     expect(seen.order).toEqual(["merged", "merged"]);
+    expect(seen.interleavedMergeInfo).toBe(1);
+    expect(seen.interleaved).toMatchObject({ ok: false, state: "refused", summary: "task t4 was already reverted in <sha>", next: "nothing to do", conflicts: null });
     expect(seen.back).toBe("line1\nline2\nline3\n");
     expect(seen.noTask).toMatchObject({ ok: false, state: "refused", summary: "no task or attempt \"nope\" in Lane Pilot's records" });
   });
