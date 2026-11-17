@@ -14,9 +14,11 @@ import { memoryRecordId } from "../../../src/rooms/memory/memory";
 import type { TaskV2 } from "../../../src/rooms/contracts";
 import { buildRunPolicy } from "../../../src/rooms/tasks/run-policy";
 import { docsInputHash } from "../../../src/rooms/docs/docs";
+import { probeCommand } from "../../../src/rooms/project-git/scripts";
 
 export const projectId = "stage-project";
 export const pmThreadId = "stage-pm";
+const projectGitProbe = probeCommand();
 const config = {
   projectId, hostId:"stage-host", pmWorkspacePath:"/tmp/stage-pm", writerWorkspacePath:"/tmp/stage-writer",
   pmProviderId:"codex", pmModel:"gpt-6-luna", writerProviderId:"codex", writerModel:"gpt-6-luna",
@@ -342,8 +344,8 @@ export async function setup(critiqueOutput:string, browserQaResult?:Record<strin
         },
       },
       projects:{
-        get:async ({ projectId:id }) => ({ id, name:id, sources:[] }),
-        list:async () => [{ id:projectId, name:projectId, sources:[] }],
+        get:async ({ projectId:id }) => ({ id, name:id, sources:[{ hostId:config.hostId, path:config.writerWorkspacePath }] }),
+        list:async () => [{ id:projectId, name:projectId, sources:[{ hostId:config.hostId, path:config.writerWorkspacePath }] }],
       },
       files:{
         listPaths:async()=>({truncated:false,paths:[...defaultListPaths,...extraListPaths]}) as never,
@@ -468,6 +470,7 @@ export async function setup(critiqueOutput:string, browserQaResult?:Record<strin
       // The revision probe (0.1.416) runs `git status --porcelain` too, but it is not a dirt snapshot: counted as one, it shifted every
       // scripted sequence by one and 11 stage tests went red unnoticed (the deploy runs only the tests of changed files).
       if (command === REVISION_PROBE) return { hostId:config.hostId, exitCode:0, stdout:"", stderr:"" };
+      if (command === projectGitProbe) return { hostId:config.hostId, exitCode:0, stdout:JSON.stringify({ state:"localNoOrigin", cwd:config.writerWorkspacePath, root:config.writerWorkspacePath, hasCommit:true }), stderr:"" };
       if (command.includes("porcelain")) {
         snapshots += 1;
         // Without an explicit sequence the dirt follows where the call runs. Every attempt works in its own worktree (the
@@ -491,7 +494,7 @@ export async function setup(critiqueOutput:string, browserQaResult?:Record<strin
   savePrototypeConfig(db, emergencySelection ? {...config,pmProviderId:emergencySelection.providerId,pmModel:emergencySelection.model} : config);
   for (const [key,value] of Object.entries({"memory.maintain_every":1,"plan_critique.min_score":0,"plan_critique.min_write_tasks":1,"browser_qa.host_id":qaHostId,"browser_qa.workspace_path":"/tmp/lane-pilot-qa","browser_qa.backend":"chrome-qa","browser_qa.provider":"codex","browser_qa.model":"gpt-6-luna",...projectSettings})) saveProjectSetting(db,projectId,key,value);
   createRun(db, "stage-run", projectId, "bb", environmentId ? null : config.writerWorkspacePath,
-    projectSettings["run.gate"] === "pre-merge" ? "pre-merge" : "none",buildRunPolicy(projectSettings));
+    projectSettings["run.gate"] === "pre-merge" ? "pre-merge" : "none",buildRunPolicy(projectSettings),config.hostId);
   if (environmentId) setRunWorkspace(db,"stage-run",config.writerWorkspacePath,environmentId);
   setRunThread(db, "stage-run", pmThreadId);
   await plugin(bb);
