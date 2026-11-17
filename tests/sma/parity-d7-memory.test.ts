@@ -201,6 +201,30 @@ describe("memory corpus care (parity wave d7)", () => {
     expect(db.prepare("SELECT * FROM lane_pilot_memory").all()).toEqual(before);
   });
 
+  it("[sma:k_lib_consolidate] reviews only same-project overlapping concepts once while preserving pair direction and expiry proposals", () => {
+    const db = openDatabase(newHost().bb);
+    const [first, second, unrelated, dated] = put(db, [
+      note("The invoice ledger rounds half to even in the billing totals.", ["billing", "ledger", "invoice"]),
+      note("The invoice ledger rounds half to even for billing totals now.", ["billing", "ledger", "invoice"]),
+      note("The kitchen display refreshes every ten seconds.", ["kitchen", "display"]),
+      note("The weekly audit closes on Friday.", ["billing", "audit"]),
+      ...Array.from({ length: 24 }, (_, index) => note(`Unrelated fact ${index} belongs to another subject.`, [`unrelated-${index}`])),
+    ]);
+    const [qFirst, qSecond] = put(db, [
+      note("The invoice ledger rounds half to even in the billing totals.", ["billing", "ledger", "invoice"]),
+      note("The invoice ledger rounds half to even for billing totals now.", ["billing", "ledger", "invoice"]),
+    ], "Q");
+    db.prepare("UPDATE lane_pilot_memory SET valid_until=? WHERE id=?").run(10, dated!);
+    const proposals = reviewMemory(db, undefined, 20);
+    const supersedes = proposals.filter((item) => item.action === "supersede");
+    expect(new Set(supersedes.map((item) => `${item.id}:${item.by}`))).toEqual(new Set([`${first}:${second}`, `${qFirst}:${qSecond}`]));
+    expect(supersedes).toHaveLength(2); // Three shared concepts must not emit the same pair three times.
+    expect(supersedes.every((item) => item.id !== item.by)).toBe(true);
+    expect(supersedes.map((item) => item.id)).toEqual([...supersedes].sort((left, right) => left.id.localeCompare(right.id)).map((item) => item.id));
+    expect(proposals).toContainEqual({ action: "expire", id: dated, reason: "dated" });
+    expect(proposals).not.toContainEqual(expect.objectContaining({ action: "supersede", id: unrelated }));
+  });
+
   it("[sma:m_lifecycle] a revoked record stays down on every path (restated, or re-imported from the same file); archived stays in the cold tier; an idle one still comes back", () => {
     const db = openDatabase(newHost().bb);
     const unindex = unindexer(db);

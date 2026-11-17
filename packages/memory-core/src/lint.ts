@@ -118,18 +118,33 @@ export type ReviewProposal = { action: "supersede" | "expire"; id: string; by?: 
 /**
  * The corpus review (SMA k_lib_consolidate): SELECT-only, collects what a person may want to do — same-subject
  * twins to merge, idle or dated notes to expire — and writes nothing. Sorted like the lint report.
- * ponytail: same-subject pairs are found by an O(n²) scan of note pairs sharing a concept; the corpus is ~1k rows.
+ * Same-subject candidates are narrowed through a project/concept index, then each pair is evaluated once in the
+ * original row order. If every note shares a concept, candidate generation is still O(n²), which is inherent to
+ * comparing every possible pair in that corpus.
  */
 export function reviewMemory(db: MemoryDatabase, projectId?: string, now = Date.now()): ReviewProposal[] {
   const rows = activeRows(db, projectId);
   const notes = rows.filter((row) => row.kind === "note")
     .map((row) => { let concepts: string[] = []; try { concepts = JSON.parse(row.concepts_json) as string[]; } catch { /* no tags */ } return { row, concepts }; });
   const proposals: ReviewProposal[] = [];
+  const conceptIndex = new Map<string, Map<string, number[]>>();
+  for (let index = 0; index < notes.length; index++) {
+    const note = notes[index]!;
+    let byConcept = conceptIndex.get(note.row.project_id);
+    if (!byConcept) { byConcept = new Map(); conceptIndex.set(note.row.project_id, byConcept); }
+    for (const concept of new Set(note.concepts)) {
+      const candidates = byConcept.get(concept);
+      if (candidates) candidates.push(index);
+      else byConcept.set(concept, [index]);
+    }
+  }
   for (let a = 0; a < notes.length; a++) {
-    for (let b = a + 1; b < notes.length; b++) {
-      const one = notes[a]!, two = notes[b]!;
-      if (one.row.project_id !== two.row.project_id) continue;
-      if (!one.concepts.some((concept) => two.concepts.includes(concept))) continue;
+    const one = notes[a]!;
+    const byConcept = conceptIndex.get(one.row.project_id);
+    const candidates = new Set<number>();
+    for (const concept of new Set(one.concepts)) for (const index of byConcept?.get(concept) ?? []) if (index > a) candidates.add(index);
+    for (const b of [...candidates].sort((left, right) => left - right)) {
+      const two = notes[b]!;
       if (!sameSubject({ content: one.row.content, concepts: one.concepts }, { content: two.row.content, concepts: two.concepts })) continue;
       proposals.push({ action: "supersede", id: one.row.id, by: two.row.id, reason: "same subject" });
     }
