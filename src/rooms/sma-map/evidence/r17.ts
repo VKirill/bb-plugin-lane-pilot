@@ -5,7 +5,7 @@
 // it may write, which field carries its answer or where the graph sends that answer. The behaviour tests are
 // tests/sma/four-proofs-r17-a*.test.ts and the older [sma:k_ag_*] tests they sit beside. Roles that write no row to the hub database
 // (a session, a checked graph that never ran live) are traced by their own prove() line in the region scene scripts/lp_drill/scenes/sma_r17.py.
-import { distort, drill, entry, flip, part, rows, voidIsHave, voidStays, wfRun, wfStep, wrongTarget, type RegionEvidence } from "./types";
+import { distort, drill, entry, flip, outside, part, rows, voidIsHave, wfRun, wfStep, wrongTarget, type RegionEvidence } from "./types";
 
 const BUNDLED = "src/rooms/contracts/bundled-agents.json";
 const STAGES = "src/rooms/phase/stages.ts";
@@ -36,7 +36,7 @@ export default {
   n1385: { mutation: flip("src/rooms/docs/docs.ts", "...(input.assignment?.trim() ? [{ tag: \"owner_assignment\", title: `The owner's assignment for this pass; write", "...(!input.assignment?.trim() ? [{ tag: \"owner_assignment\", title: `The owner's assignment for this pass; write"), trace: drill("sma_r17") },
   n1386: { mutation: flip("src/rooms/docs/docs-lint.ts", "if (!claim.identifiers.some((id) => text.includes(id) ||", "if (claim.identifiers.some((id) => text.includes(id) ||"), trace: drill("sma_r17"), voidReview: voidIsHave("утверждения документации сверяются с живым кодом без модели: lintCitationClaims читает процитированные строки, отсутствующий идентификатор — находка; шаг lp.docs_verify в ночном графе (текущий ours-текст устарел)") },
   n1387: { mutation: givenWrite("Change nothing."), trace: drill("sma_r17") },
-  n1388: { voidReview: voidStays("слитой копии документов не делается (plan-import режет план в задачи, исполнители читают документы на месте), поэтому слияния по приоритету и файла конфликтов нет") },
+  n1388: { mutation: flip("workflows/docs-synthesis-check.json", "($inputs.conflict.winner == 'a' && a_top.count == 1)", "($inputs.conflict.winner == 'a' && a_top.count == 0)"), reach: entry("a PM or the owner starts the published docs-synthesis graph with document paths through a router offer or explicit workflow run"), trace: outside("pending deployed native docs-synthesis outcome verification: both Markdown and JSON reports, declared priority checks, unresolved owner disposition stays open, source/report non-overwrite, and exact identities of docs-synthesis.json, docs-synthesis-check.json and docs-synthesis-rank.json"), voidReview: voidIsHave("назначение реализует явный запуск docs-synthesis: документы читаются на месте, проверенные приоритеты и обе позиции записываются в отчёты; статус have не означает принятие узла, проверка достоверности источников и native outcome остаётся открытой") },
   n1389: { mutation: wrongTarget("workflows/analyze-code.json", "\"scope\": \"{{$inputs.scope}}\"", "\"scope\": \"{{$inputs.goal}}\""), trace: [wfStep("analyze-code", "analyze"), drill("sma_r17")] },
   n1391: { mutation: flip("src/rooms/anamnesis/fragments.ts", "&& confidence >= MIN_KIND_P;", "&& confidence < MIN_KIND_P;"), trace: drill("sma_r17") },
   n1392: { mutation: wrongTarget("workflows/lp.plan.json", "\"premortem\": \"plan.premortem\",\n        \"research_md\": \"research.research_md\",\n        \"patterns_md\": \"patterns.patterns_md\",", "\"premortem\": \"plan.premortem\",\n        \"research_md\": \"research.research_md\",\n        \"patterns_md\": \"research.research_md\","), trace: [wfStep("lp.plan", "plan"), drill("sma_r17")] },

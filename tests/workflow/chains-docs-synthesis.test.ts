@@ -4,7 +4,7 @@ import { humanOptions, humanOutput } from "../../src/rooms/workflow/server/workf
 
 const conflict = { topic: "mode", a_path: "ADR.md", a_line: 1, a_quote: "one", a_kind: "ADR", b_path: "PRD.md", b_line: 2, b_quote: "two", b_kind: "PRD", winner: "a", rule: "precedence" };
 
-describe("precedence engine preflight", () => {
+describe("[sma:k_ag_docsynth] precedence engine preflight", () => {
   it.each([
     ["P1", ["ADR", "PRD"], "a", ["ADR.md", "PRD.md"], true],
     ["P2", ["PRD", "ADR"], "b", ["ADR.md", "PRD.md"], true],
@@ -28,7 +28,7 @@ describe("precedence engine preflight", () => {
   });
 });
 
-describe("document synthesis", () => {
+describe("[sma:k_ag_docsynth] document synthesis", () => {
   it("validates docs-synthesis-check", async () => {
     const r = await runSim("docs-synthesis-check", { input: { conflict } });
     expect(r.summary.status, JSON.stringify(r.summary)).toBe("succeeded");
@@ -166,7 +166,7 @@ async function diskFixture(records: unknown[]) {
   return { engine, db, checkout, writes, start, advance: (ms: number) => { clock += ms; }, dispose: () => { engine.dispose(); db.close(); harness.lifecycle.dispose(); rmSync(checkout, { recursive: true, force: true }); } };
 }
 
-describe("document synthesis through registered checkout writes", () => {
+describe("[sma:k_ag_docsynth] document synthesis through registered checkout writes", () => {
   it("refuses malformed conflict before human or any write", async () => {
     const t = await diskFixture([{ ...conflict, b_quote: "" }]);
     try {

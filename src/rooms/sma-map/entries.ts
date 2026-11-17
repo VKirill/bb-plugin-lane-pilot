@@ -1399,7 +1399,7 @@ export const SMA_ENTRIES: Readonly<Record<string, SmaEntry>> = {
   n1385: ["have", "документы принятой задачи правит граф lp.docs-maintenance", "src/rooms/docs/docs.ts#nightlyDocsPrompt"],
   n1386: ["have", "утверждения документации сверяются с живым кодом без модели: lintCitationClaims читает процитированные строки, отсутствующий идентификатор — находка; шаг lp.docs_verify в ночном графе (текущий ours-текст устарел)", "src/rooms/docs/docs-lint.ts#lintCitationClaims"],
   n1387: ["have", "doc-classifier называет вид документа и ничего не меняет", "src/rooms/contracts/bundled-agents.json#You are **doc-classifier**"],
-  n1388: ["void", "нет предмета: графа ingest-docs в workflows/*.json нет (его команда n1350 была терминальным навыком Claude Lane, убрана 2026-10-30), файла конфликтов нет; споры заметок решает реестр памяти"],
+  n1388: ["have", "граф docs-synthesis читает документы на месте и фиксирует противоречия с обеими позициями; приоритет проверяют docs-synthesis-check и docs-synthesis-rank, спорное передаётся владельцу с сохранением open; Markdown и JSON отчёты без перезаписи", "workflows/docs-synthesis.json"],
   n1389: ["have", "карту кода заменяет разбор модуля и ночной docs", "workflows/analyze-code.json#analyze-code"],
   n1390: ["deviation", "решение 3 (память только на хабе): зеркалирование уроков во внешний граф знаний противоречит единому корпусу хаба; дневник фазы — книга и SUMMARY.md, уроки — память хаба"],
   n1391: ["have", "профиль разработчика", "src/rooms/anamnesis/fragments.ts#fragmentPrompt"],
