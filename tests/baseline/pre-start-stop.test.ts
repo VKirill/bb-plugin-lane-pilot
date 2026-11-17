@@ -78,6 +78,16 @@ describe("a check red on the base outside the task's files", () => {
     expect(redOutsideTaskFiles(red("npx eslint .", "src/other/b.ts\n  3:5  error  'x' is never used  no-unused-vars\n\n✖ 1 problem"), task)).toEqual(["src/other/b.ts"]);
     expect(redOutsideTaskFiles(red("python -m pytest", "  File \"src/other/c.py\", line 3, in <module>\nNameError: name 'x' is not defined"), task)).toEqual(["src/other/c.py"]);
   });
+
+  it("ignores a runtime function label in the captured Node internal stack tail", () => {
+    const note = "nternal/modules/cjs/loader:1830:14)\n    at Object..js (node:internal/modules/cjs/loader:1961:10)\n    at Module.load (node:internal/modules/cjs/loader:1553:32)\n    at Module._load (node:internal/modules/cjs/loader:1355:12)\n    at wrapModuleLoad (node:internal/modules/cjs/loader:255:19)\n    at Module.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:154:5)\n    at node:internal/main/run_main_module:33:47 {\n  generatedMessage: true,\n  code: 'ERR_ASSERTION',\n  actual: 'before\\n',\n  expected: 'lp591 sibling accepted\\n',\n  operator: 'strictEqual',\n  diff: 'simple'\n}\n\nNode.js v24.15.0";
+    expect(redOutsideTaskFiles(red("node checks/native.cjs", note), task)).toEqual([]);
+  });
+
+  it("still names a user stack file outside the task", () => {
+    expect(redOutsideTaskFiles(typecheck("    at userstackfile.js:10:2\nAssertionError: sibling failed"), task)).toEqual(["userstackfile.js"]);
+    expect(redOutsideTaskFiles(typecheck("src/other/user..js:10:2 error"), task)).toEqual(["src/other/user..js"]);
+  });
 });
 
 describe("the baseline stops the attempt before any writer", () => {

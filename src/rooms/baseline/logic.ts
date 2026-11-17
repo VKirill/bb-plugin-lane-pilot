@@ -173,6 +173,12 @@ const FAILURE_SIGN = /\b(?:error|fail(?:ed|ure|s)?|ERR!?|exception|panic(?:ked)?
 /** A line that reports a pass: a test title there may contain any word. */
 const PASS_LINE = /^\s*(?:✔|✓|√|PASS\b|ok \d)/;
 
+/** A Node runtime stack frame can make its function label look like a source file (`Object..js`). */
+function isNodeInternalFrame(line: string, file: string): boolean {
+  const escaped = file.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`^\\s*at\\s+${escaped}\\s+\\(node:internal\\/[^)]*\\)$`).test(line);
+}
+
 /**
  * The lines of a red check's output that report a failure: the file names a check prints while it works (a build's list of what it
  * wrote, a passing test) are not why it is red. A line with a path and nothing else counts when the line after it reports the failure
@@ -206,6 +212,11 @@ export function redOutsideTaskFiles(check: BaselineCheck, task: TaskFiles): stri
     // `bb plugin build` lists dist/* after it succeeds, and a later `grep -q` is red silently: those names are not the failure.
     if (!failing.has(lineOf(found.index))) continue;
     if (/(^|\/)node_modules\//.test(found[1]!)) continue;
+    const lineStart = check.note.lastIndexOf("\n", found.index) + 1;
+    const lineEnd = check.note.indexOf("\n", found.index);
+    const line = check.note.slice(lineStart, lineEnd < 0 ? check.note.length : lineEnd);
+    // Node's internal frames are failure context, not project files; only ignore a token in this exact frame shape.
+    if (isNodeInternalFrame(line, found[1]!)) continue;
     // `Node.js v26` closes every uncaught Node error; it names the runtime, not a file.
     if (/^(?:node|next|nuxt|vue|express)\.js$/i.test(found[1]!)) continue;
     files.add(found[1]!.replace(/^\.\//, ""));
