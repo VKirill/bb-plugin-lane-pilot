@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";
 import { pluginRootFromModule } from "@lane-pilot/kit";
-import { TASK_V2_OPTIONAL, taskV2Schema, type TaskV2 } from "../contracts";
+import { isReservedRepoSelector, TASK_V2_OPTIONAL, taskV2Schema, type TaskV2 } from "../contracts";
 import { applyTrustedTooling } from "./trusted-tooling";
 
 export const TASK_V2_REQUIRED = [
@@ -33,6 +33,27 @@ export function loadTaskV2Schema(): Record<string, unknown> {
 /** Optional upstream task-v2 fields a BB writer does not use; accepted and dropped. */
 const UPSTREAM_OPTIONAL = ["context_selectors", "impact_receipt"] as const;
 
+function reservedRepoPathFindings(task:TaskV2):string[] {
+  const findings:string[] = [];
+  const pathFields:Array<[string, readonly string[]]> = [
+    ["owns_paths", task.owns_paths],
+    ["expected_outputs", task.expected_outputs],
+    ["never_touch", task.never_touch],
+    ...(task.test_removals ? [["test_removals", task.test_removals] as [string, readonly string[]]] : []),
+    ...(task.drawing ? [["drawing", task.drawing] as [string, readonly string[]]] : []),
+  ];
+  for (const [field, paths] of pathFields) for (const path of paths) {
+    if (isReservedRepoSelector(path)) findings.push(`${field} uses reserved repo: selector: ${path}`);
+  }
+  for (const [index, file] of (task.files ?? []).entries()) {
+    if (isReservedRepoSelector(file.path)) findings.push(`files[${index}].path uses reserved repo: selector: ${file.path}`);
+  }
+  for (const [index, check] of task.verification.entries()) {
+    if (isReservedRepoSelector(check.cwd)) findings.push(`verification[${index}].cwd uses reserved repo: selector: ${check.cwd}`);
+  }
+  return findings;
+}
+
 export function validateTaskV2(value: unknown): { ok:true; task:TaskV2 } | { ok:false; errors:string[] } {
   if (value && typeof value === "object" && !Array.isArray(value)) {
     value = Object.fromEntries(Object.entries(value).filter(([key]) => !(UPSTREAM_OPTIONAL as readonly string[]).includes(key)));
@@ -44,6 +65,8 @@ export function validateTaskV2(value: unknown): { ok:true; task:TaskV2 } | { ok:
   const record = value as Record<string, unknown>;
   const extras = Object.keys(record).filter((key) => !(TASK_V2_REQUIRED as readonly string[]).includes(key) && !(TASK_V2_OPTIONAL as readonly string[]).includes(key));
   if (extras.length > 0) return { ok:false, errors:extras.map((key) => `${key}: additionalProperties is false`) };
+  const reservedRepoPaths = reservedRepoPathFindings(parsed.data);
+  if (reservedRepoPaths.length) return { ok:false, errors:reservedRepoPaths };
   // A relative cwd is read against project_cwd; from here on every check carries an absolute folder.
   const task = { ...parsed.data, verification:parsed.data.verification.map((check) => (isAbsolute(check.cwd) ? check : { ...check, cwd:resolve(parsed.data.project_cwd, check.cwd) })) };
   // Trusted tooling (hooks, CI, .claude, the task's own check scripts) joins never_touch unless owns_paths names it (P2-4).

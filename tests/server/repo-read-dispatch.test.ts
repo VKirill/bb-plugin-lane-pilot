@@ -16,7 +16,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import plugin from "../../server";
 import * as handlers from "../../src/rooms/host-worker/host-handlers";
 import type { TaskV2 } from "../../src/rooms/contracts";
-import { createAttempt, createRun, getTask, setTaskHeldUntil, openDatabase, saveProjectSetting, savePrototypeConfig, setRunThread } from "../../src/rooms/plugin-db";
+import { countAttempts, createAttempt, createRun, getTask, setTaskHeldUntil, openDatabase, saveProjectSetting, savePrototypeConfig, setRunThread } from "../../src/rooms/plugin-db";
 
 const projectId = "project-repo-read";
 const pmThreadId = "pm-repo-read";
@@ -116,6 +116,19 @@ afterEach(async () => {
 });
 
 describe("repo: read_first normalization on dispatch and update", () => {
+  it("rejects repo: write selectors before creating a task or attempt", async () => {
+    const env = await setup();
+    const answer = await env.call("lane_pilot_dispatch_writer", { confirm: true, objective: "Write the marker", plan: "Write the marker", task: {
+      schema_version: 2, display_title: "Invalid selector", kind: "fix", area: "feature:marker", id: "invalid-selector",
+      title: "Write the marker", risk: "low", lane: "writer", project_cwd: env.folder, read_first: [], interfaces: ["i"], invariants: ["inv"], out_of_scope: ["out"],
+      expected_outputs: ["the marker is updated"], owns_paths: ["repo:packages/shared/marker.txt"], never_touch: [], depends_on: [],
+      objective: "write marker", acceptance: ["updated"], verify: "none", verification: [{ command: "true", cwd: "repo:." }], repo_scope: true,
+    }});
+    expect(JSON.stringify(answer)).toContain("repo:");
+    expect(getTask(env.db, "invalid-selector")).toBeUndefined();
+    expect(countAttempts(env.db, runId, "invalid-selector")).toBe(0);
+  });
+
   it("keeps an independent nested repository inside its own root", async () => {
     const env = await setup();
     git(env.folder,"init","-q","-b","main");

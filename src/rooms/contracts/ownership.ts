@@ -24,8 +24,13 @@ export type RunOwnershipScope =
   | { ok:true; task:OwnershipTask; tasks:OwnershipTask[]; taskIds:string[] }
   | { ok:false; reason:string };
 
+/** `repo:` is a read selector, not a path namespace for writes or check folders. */
+export function isReservedRepoSelector(value:string):boolean {
+  return value.trim().replace(/^(?:\.\/)+/, "").startsWith("repo:");
+}
+
 export function safeRelative(value:string):string|null {
-  if (!value || value.includes("\\") || value.startsWith("/") || /^[A-Za-z]:/.test(value)) return null;
+  if (!value || value.includes("\\") || value.startsWith("/") || /^[A-Za-z]:/.test(value) || isReservedRepoSelector(value)) return null;
   const normalized = normalizeRelative(value);
   if (normalized === "." || normalized === ".." || normalized.startsWith("../")) return null;
   if (normalized.split("/").includes("..")) return null;
