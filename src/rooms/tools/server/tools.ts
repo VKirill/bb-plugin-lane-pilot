@@ -218,6 +218,7 @@ export function registerTools(ctx: ServerCore, services: Services, familyContrib
     instructions:"Use only from a Lane Pilot PM thread, for tasks a newer task supersedes or the owner dropped. Name the task ids you sent; tasks that depend on a canceled one stop waiting for it, and a canceled task frees its area. Cancel does not undo work already merged into main. To replan queued tasks do not cancel and resend them: hold them (lane_pilot_queue hold), correct with lane_pilot_update_task, then release; a canceled queued task sent again unchanged gets its task and attempt back.",
     parameters:z.object({ taskIds:z.array(z.string().min(1)).min(1).max(50), words:z.string().trim().min(1).max(1000).describe("Closed in words: why these tasks end here; kept on the task.").optional() }).strict(),
     execute: async (params, context) => {
+      const wakeWorkflow = () => services.workflowEngine.poll();
       const runId = await requirePmThreadRun(bb, context);
       const open = listOpenAttempts(db).filter((row) => row.run_id === runId);
       const results = [];
@@ -233,6 +234,7 @@ export function registerTools(ctx: ServerCore, services: Services, familyContrib
           const closed = newest ? closeEndedAttempt(db, { ...newest, run_id:runId, task_id:taskId }, params.words?.trim() ? `PM canceled: ${params.words.trim()}` : `PM canceled the task (it had ended ${newest.state})`, "owner_cancel") : null;
           if (newest && closed) {
             if (params.words) setTaskClosedWords(db, taskId, params.words);
+            try { await wakeWorkflow(); } catch (cause) { bb.log.warn(`Lane Pilot workflow wake after cancellation skipped: ${cause instanceof Error ? cause.message : String(cause)}`); }
             results.push({ taskId, attemptId:newest.id, ...closed });
             continue;
           }
@@ -240,7 +242,7 @@ export function registerTools(ctx: ServerCore, services: Services, familyContrib
           continue;
         }
         const why = params.words?.trim() ? `PM canceled: ${params.words.trim()}` : "PM canceled the task";
-        for (const attempt of attempts) results.push({ taskId, attemptId:attempt.id, ...await cancelAttemptById(ctx, attempt.id, services.rollback, why, "owner_cancel") });
+        for (const attempt of attempts) results.push({ taskId, attemptId:attempt.id, ...await cancelAttemptById(ctx, attempt.id, services.rollback, why, "owner_cancel", wakeWorkflow) });
         // The PM canceled it: its «canceled» is no news for the batched results.
         noteToldPmDirectly(db, context.threadId, taskId, Date.now() + 5 * 60_000);
         if (params.words) setTaskClosedWords(db, taskId, params.words);

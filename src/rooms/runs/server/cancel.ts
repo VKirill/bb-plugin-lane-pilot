@@ -7,6 +7,18 @@ import { valueAt } from "@lane-pilot/kit";
 import { confirmWriterStopped } from "./writer-stop";
 import type { ServerCore } from "../../contracts/server";
 
+type WorkflowWake = () => Promise<unknown> | unknown;
+
+/** A cancellation is durable even when an opportunistic workflow poll cannot run. */
+async function wakeWorkflow(bb: ServerCore["bb"], wake: WorkflowWake | undefined): Promise<void> {
+  if (!wake) return;
+  try {
+    await wake();
+  } catch (cause) {
+    bb.log.warn(`Lane Pilot workflow wake after cancellation skipped: ${cause instanceof Error ? cause.message : String(cause)}`);
+  }
+}
+
 /** Stops the task's helper threads still running and closes their receipts canceled, so a canceled task leaves no helper running. */
 async function cancelStageHelpers(ctx: Pick<ServerCore, "bb" | "db">, attempt: NonNullable<ReturnType<typeof getAttempt>>): Promise<void> {
   const task = getTask(ctx.db, attempt.task_id);
@@ -28,16 +40,20 @@ export function closeEndedAttempt(db: ServerCore["db"], attempt: { id: string; s
 }
 
 /** Cancels one attempt: a queued one at once, a running one once its writer's stop is observed, an ended one by closing it. */
-export async function cancelAttemptById(ctx: Pick<ServerCore, "bb" | "db" | "cancelQueuedAttempt">, attemptId: string, rollback?: { noteStopped(attemptId: string): Promise<{ recorded: boolean; error?: string } | void> }, why?: string, code: CancelCode = "unknown"): Promise<{ ok:boolean; state:string; reason:string | null }> {
+export async function cancelAttemptById(ctx: Pick<ServerCore, "bb" | "db" | "cancelQueuedAttempt">, attemptId: string, rollback?: { noteStopped(attemptId: string): Promise<{ recorded: boolean; error?: string } | void> }, why?: string, code: CancelCode = "unknown", wake?: WorkflowWake): Promise<{ ok:boolean; state:string; reason:string | null }> {
   const { bb, db } = ctx;
   const attempt = getAttempt(db, attemptId);
   if (!attempt) return { ok: false, state: "missing", reason: "attempt does not exist" };
   // The same close the PM's tool gives: the command line and the board refused it («cancel is not legal from blocked»).
   const closed = closeEndedAttempt(db, attempt, why, code);
-  if (closed) return closed;
+  if (closed) {
+    await wakeWorkflow(bb, wake);
+    return closed;
+  }
   if (!attempt.thread_id) {
     const canceled = ctx.cancelQueuedAttempt(attempt, why, code);
     if (canceled.ok) await cancelStageHelpers(ctx, attempt);
+    if (canceled.ok) await wakeWorkflow(bb, wake);
     return canceled;
   }
   const rejection = cancelRejection(db, attempt);
@@ -64,6 +80,7 @@ export async function cancelAttemptById(ctx: Pick<ServerCore, "bb" | "db" | "can
     }
   }
   await cancelStageHelpers(ctx, attempt);
+  await wakeWorkflow(bb, wake);
   if (!noted.recorded) return { ok: false, state: "canceled", reason: `writer stopped, but what its worktree holds is not on record: ${noted.error ?? "unknown"}` };
   return { ok: true, state: "canceled", reason: null };
 }

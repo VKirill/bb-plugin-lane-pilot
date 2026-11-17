@@ -35,7 +35,7 @@ import type { ActivationApi, AgentOpsApi } from "../../../contracts";
 import type { RollbackApi } from "../../../rollback/server/rollback";
 import type { ResumeOrphansPort } from "../../../contracts/stability-api";
 import type { WriterHostApi } from "../../../platform/server";
-import type { DispatchWriter } from "../../../platform/server";
+import type { DispatchWriter, WorkflowEngineApi } from "../../../platform/server";
 
 /** The fields of the services bag this file reads, typed by the rooms that own them. */
 interface Services {
@@ -54,6 +54,7 @@ interface Services {
   phaseCards?: (input: { projectId: string | null; doneSince: number; onError?: (message: string) => void }) => BoardItem[];
   dispatchWriter: DispatchWriter;
   phaseIntake: { dispatchRefusal(threadId: string): Promise<string | null> };
+  workflowEngine: WorkflowEngineApi["workflowEngine"];
 }
 
 
@@ -434,7 +435,7 @@ export function runsRpc(ctx: ServerCore, services: Services) {
         requiredSessionPolicy: detectRequiredSessionPolicyCapability((bb as { agents?: { experimental_vkRequiredSessionPolicy?: unknown } }).agents ?? {}) ? "required" : "none",
       };
     },
-    cancel_attempt: async ({ attemptId, code, note }) => cancelAttemptById(ctx, attemptId, services.rollback, note ? `Остановлено владельцем: ${note}` : "canceled by RPC", code),
+    cancel_attempt: async ({ attemptId, code, note }) => cancelAttemptById(ctx, attemptId, services.rollback, note ? `Остановлено владельцем: ${note}` : "canceled by RPC", code, () => services.workflowEngine.poll()),
     pause_run: async ({ runId }) => await pauseRun(ctx, runId, "pause"),
     resume_run: async ({ runId }) => await pauseRun(ctx, runId, "resume"),
     halt_run: async ({ runId }) => {

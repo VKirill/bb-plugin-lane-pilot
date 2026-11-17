@@ -3,9 +3,10 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { boundedReadCall } from "./helpers/bounded-read";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import plugin from "../server";
+import { wfHasResumableLinkedRun, wfLatestPipelineRunId } from "@lane-pilot/workflow-engine";
 import type { TaskV2 } from "../src/rooms/contracts";
 import {
-  createAttempt, createRun, createTask, getAttempt, listAttemptsForTask, listStageReceipts, openDatabase,
+  createAttempt, createRun, createTask, getAttempt, listAttemptsForTask, listStageReceipts, openDatabase, transitionAttempt,
   saveProjectSetting, savePrototypeConfig, setRunThread,
 } from "../src/rooms/plugin-db";
 
@@ -125,6 +126,35 @@ describe("a replan keeps the task and its attempt", () => {
     await until(() => getAttempt(db, String(first.attemptId))?.state !== "queued");
     expect(getAttempt(db, String(first.attemptId))?.state).not.toBe("queued");
     expect(listAttemptsForTask(db, runId, "replan-me")).toHaveLength(1);
+    await harness.lifecycle.dispose();
+  });
+
+  it("wakes a waiting pipeline when its latest retry is canceled", async () => {
+    const { db, harness, dispatch, tool, releaseBase } = await setup();
+    const first = await dispatch();
+    releaseBase();
+    const pipelineRunId = await (async () => {
+      let id: string | null = null;
+      await until(() => {
+        id = wfLatestPipelineRunId(db, runId, "replan-me");
+        return id !== null;
+      });
+      return id!;
+    })();
+    await until(() => (db.prepare("SELECT status FROM lane_pilot_wf_run WHERE id=?").get(pipelineRunId) as { status?: string } | undefined)?.status === "waiting");
+    expect(getAttempt(db, String(first.attemptId))?.state).toBe("blocked");
+
+    transitionAttempt(db, String(first.attemptId), "blocked", { reason: "retry fixture" });
+    createAttempt(db, { id: "retry-attempt", runId, taskId: "replan-me" });
+    expect(listAttemptsForTask(db, runId, "replan-me").map((attempt) => attempt.state)).toEqual(["blocked", "queued"]);
+
+    const canceled = await tool("lane_pilot_cancel_task", { taskIds: ["replan-me"], words: "stop retry" });
+    expect(canceled).toMatchObject({ results: [{ taskId: "replan-me", attemptId: "retry-attempt", state: "canceled" }] });
+    expect(getAttempt(db, "retry-attempt")?.state).toBe("canceled");
+    expect(db.prepare("SELECT status FROM lane_pilot_wf_run WHERE id=?").get(pipelineRunId)).toEqual({ status: "succeeded" });
+    const output = db.prepare("SELECT output_json FROM lane_pilot_wf_run WHERE id=?").get(pipelineRunId) as { output_json: string };
+    expect(JSON.parse(output.output_json)).toMatchObject({ reply: { attemptId: "retry-attempt", state: "canceled" } });
+    expect(wfHasResumableLinkedRun(db, runId)).toBe(false);
     await harness.lifecycle.dispose();
   });
 
