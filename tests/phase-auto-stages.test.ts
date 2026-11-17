@@ -13,7 +13,7 @@ import { runSim } from "./workflow/chain-harness";
 import { getPhase, savePhase } from "../src/rooms/phase/store";
 import { builtinWorkflow } from "../src/rooms/workflow/builtin";
 import { MACHINE_STAGE_FAILURE, AUTO_LIFETIME_TRIES, AUTO_TRIES, autoDue, autoInputs, contextDoc, createAutoStages, planItems } from "../src/rooms/phase/server/auto-stages";
-import type { Phase, PhaseRecord, PlanItem } from "../src/rooms/phase/logic";
+import { planSignature, type Phase, type PhaseRecord, type PlanItem } from "../src/rooms/phase/logic";
 import { taskV2Schema } from "../src/rooms/contracts";
 
 const phaseAt = (stage: string, record: PhaseRecord = {}, state = "active"): Phase => ({ id: "ph_1", projectId: "p", pmThreadId: "thr_pm", runId: "run1", title: "Notes",
@@ -240,7 +240,8 @@ describe("the machine's pass", () => {
   // the phase recorded «changes requested» for a plan nobody had criticised.
   it("checks a PM's one-piece plan in full mode, so its critic runs and its pass approves the plan [sma:p2_checker]", async () => {
     const piece = { id: "a", title: "a", wave: 1, promise: { given: "g", when: "w", then: "t" }, task: { id: "a" } };
-    const submitted = phaseAt("planning", { context: { docs: [], sha: "c", signedAt: 1 }, plan: { items: [piece], sha: "s", contextSha: "c" } } as never);
+    // The plan carries the signature of exactly these pieces on this context, as api.plan writes it; the run's output echoes the piece, so the critic's pass is a pass over THIS plan.
+    const submitted = phaseAt("planning", { context: { docs: [], sha: "c", signedAt: 1 }, plan: { items: [piece], sha: planSignature([piece as PlanItem], "c"), contextSha: "c" } } as never);
     const w = world({ status: "ok", tasks: [{ id: "a" }], waves: [["a"]], task_count: 1, plan_verdict: "pass" }, "succeeded", submitted);
     await w.auto.step(w.get());
     expect(w.calls).toContain("start lp.plan mode full");
