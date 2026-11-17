@@ -155,5 +155,7 @@ s.resolve = {
   pinned: [modelOf("docs-maintainer", { pinned: { provider: "codex", model: "gpt-x" } }).model, modelOf("docs-maintainer", { pinned: { provider: "codex", model: "gpt-x" } }).source],
 };
 
-process.stdout.write(`${JSON.stringify(s)}\n`);
+await new Promise<void>((resolve, reject) => {
+  process.stdout.write(`${JSON.stringify(s)}\n`, (error) => error ? reject(error) : resolve());
+});
 process.exit(0);
