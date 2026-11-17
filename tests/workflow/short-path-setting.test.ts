@@ -14,6 +14,6 @@ describe("issue_quick.short_path", () => {
 
   it("the intake starts the graph the setting names", () => {
     // The intake calls it wherever the intake lives now: the setting goes dead if the call does.
-    expect(fileContaining("issueQuickWorkflowId(settings)").path).toMatch(/\.tsx?$/);
+    expect(fileContaining("issueQuickWorkflowId?.(settings)").path).toMatch(/\.tsx?$/);
   });
 });
