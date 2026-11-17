@@ -324,6 +324,7 @@ The shipped license ledger (`npx tsx scripts/lp-ship.ts licenses`) checks that e
 | @radix-ui/react-tabs | 1.1.21 | MIT |
 | @xyflow/react | 12.12.0 | MIT |
 | elkjs | 0.12.0 | EPL-2.0 OR GPL-3.0-or-later — shipped under EPL-2.0 |
+| fflate | 0.8.3 | MIT |
 | jsonc-parser | 3.3.1 | MIT |
 | three | 0.186.1 | MIT |
 | zod | 4.6.5 | MIT |
@@ -338,3 +339,31 @@ They are rewritten for Lane Pilot's roles and tools; no EGM code, skill or agent
 |---|---|---|
 | Fresh-context reviewers attack one confirmed hypothesis through fixed lenses; a failed lens is «not run», never «0 findings»; alternatives weighed | `skills/egm-brainstorm/SKILL.md`, `agents/zoom_out.md`, `agents/design_critic.md`, `agents/comprehension.md`, `agents/implementation_readiness.md`, `agents/codebase_details.md`, `agents/structural.md`, `agents/inventive_catalyst.md`, `agents/synthesizer.md` | `workflows/lp.brainstorm.json` (`shootdown`), `workflows/idea-shootdown.json`, `reduce.lp.brainstorm.shootdown` |
 | Paraphrase first: a reviewer restates the proposal in its own words; a wrong paraphrase is a finding | `agents/comprehension.md` | `PLAN_CRITIC_METHOD`, `critiquePrompt` (owner's words) |
+
+## fflate, MIT
+
+License from the shipped fflate 0.8.3 package:
+
+```
+MIT License
+
+Copyright (c) 2026 Arjun Barrett
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```

@@ -8,6 +8,7 @@
 @radix-ui/react-tabs	MIT
 @xyflow/react	MIT
 elkjs	EPL-2.0 OR GPL-3.0-or-later
+fflate	MIT
 jsonc-parser	MIT
 three	MIT
 zod	MIT
