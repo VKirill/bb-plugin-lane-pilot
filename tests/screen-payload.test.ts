@@ -13,7 +13,6 @@ async function seeded(runs: number, stagesPerRun: number, bodyBytes: number) {
   for (let r = 0; r < runs; r++) {
     const runId = `lprun_${String(r).padStart(3, "0")}`;
     createRun(db, runId, projectId);
-    db.prepare("UPDATE lane_pilot_run SET created_at=?, updated_at=?, closed_at=? WHERE id=?").run(1_000 + r, 1_000 + r, r === 0 ? null : 2_000 + r, runId);
     createTask(db, { id: `task-${r}`, runId, kind: "bb", contract: {} });
     for (let s = 0; s < stagesPerRun; s++) {
       saveStageReceipt(db, {
@@ -22,6 +21,7 @@ async function seeded(runs: number, stagesPerRun: number, bodyBytes: number) {
         result: { body: "x".repeat(bodyBytes), at: s }, reason: null, updatedAt: 1,
       });
     }
+    db.prepare("UPDATE lane_pilot_run SET created_at=?, updated_at=?, closed_at=? WHERE id=?").run(1_000 + r, 1_000 + r, r === 0 ? null : 2_000 + r, runId);
   }
   await plugin(bb);
   return { harness, db, projectId };
