@@ -2,7 +2,7 @@
 title: The Self-improvement page and its settings
 type: component
 created: 2026-10-22
-updated: 2026-10-22
+updated: 2026-11-17
 status: active
 confidence: medium
 tags: [settings, sma, night-loop, bench, policy, owner-waiting, ui]
@@ -100,12 +100,12 @@ Every row is in the catalog (`scripts/ui-catalog-hand.json`, written by `scripts
 | `checks.require_red_on_base` | `src/rooms/baseline/logic.ts:20` | `requireRed` |
 | `baseline.already_built` | `src/rooms/baseline/logic.ts:14` | `BaselineSettings` |
 | `baseline.time_cap_sec` | `src/rooms/baseline/logic.ts:18` | `timeCapSec: number` |
-| `regress.nightly` | `src/rooms/baseline/logic.ts:239` | `nightly: boolean` |
-| `regress.last_n` | `src/rooms/baseline/logic.ts:241` | `lastN: number` |
-| `regress.last_days` | `src/rooms/baseline/logic.ts:242` | `days: number` |
-| `regress.check_cap_sec` | `src/rooms/baseline/logic.ts:244` | `checkCapSec: number` |
-| `regress.budget_sec` | `src/rooms/baseline/logic.ts:246` | `budgetSec: number` |
-| `regress.bisect_steps` | `src/rooms/baseline/logic.ts:248` | `bisectSteps: number` |
+| `regress.nightly` | `src/rooms/baseline/logic.ts:250` | `nightly: boolean` |
+| `regress.last_n` | `src/rooms/baseline/logic.ts:252` | `lastN: number` |
+| `regress.last_days` | `src/rooms/baseline/logic.ts:253` | `days: number` |
+| `regress.check_cap_sec` | `src/rooms/baseline/logic.ts:255` | `checkCapSec: number` |
+| `regress.budget_sec` | `src/rooms/baseline/logic.ts:257` | `budgetSec: number` |
+| `regress.bisect_steps` | `src/rooms/baseline/logic.ts:259` | `bisectSteps: number` |
 | `plan_fact.mode` | `src/rooms/writer/server/plan-fact.ts:15` | `PLAN_FACT_MODE_SETTING` |
 | `critic.code.default_for_risk` | `src/rooms/contracts/quality-mode.ts:53` | `CODE_CRITIC_DEFAULT_SETTING` |
 | `memory.note_budget` | `packages/memory-core/src/settings.ts:7` | `noteBudget` |
