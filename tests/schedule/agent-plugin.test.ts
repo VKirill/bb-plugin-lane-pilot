@@ -29,6 +29,7 @@ async function setup(options: { pm?: boolean } = {}) {
     pluginId: "lane-pilot",
     experimental_callHostRpc: (async (call: { method: string; input: { requestedHostId: string; cwd: string } }) => {
       if (call.method === "runCommand") return runCommand(call.input as never, undefined as never);
+      if (call.method === "listWorkflowFiles") return { hostId: "local-host", files: [] };
       throw new Error(`unexpected host call ${call.method}`);
     }) as never,
     sdk: {

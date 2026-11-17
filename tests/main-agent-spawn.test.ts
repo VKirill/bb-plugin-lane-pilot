@@ -65,6 +65,7 @@ describe("main-agent spawn payload", () => {
     const { bb, harness } = createFakePluginHost({
       pluginId: "lane-pilot",
       sdk: {
+        projects: { get: async () => ({ id: projectId, sources: [{ hostId: "host-test", path: "/tmp/writer" }] }) },
         threads: {
           getPluginMetadata: async () => ({ role: "user" }),
           get: async () => ({ status: "idle" }) as never,
@@ -124,6 +125,7 @@ describe("main-agent spawn payload", () => {
     const { bb, harness } = createFakePluginHost({
       pluginId: "lane-pilot",
       sdk: {
+        projects: { get: async () => ({ id: projectId, sources: [{ hostId: "host-test", path: "/tmp/writer" }] }) },
         threads: {
           getPluginMetadata: async () => ({ role: "user" }),
           get: async () => ({ status: "idle", sourceThreadId: "source-thread", lifecycleOwnerThreadId: "source-thread" }) as never,
@@ -158,6 +160,7 @@ describe("main-agent spawn payload", () => {
     const { bb, harness } = createFakePluginHost({
       pluginId: "lane-pilot",
       sdk: {
+        projects: { get: async () => ({ id: projectId, sources: [{ hostId: "host-test", path: "/tmp/writer" }] }) },
         threads: {
           getPluginMetadata: async () => ({ role: "user" }),
           get: async () => ({ status: "idle", sourceThreadId: "source-thread", lifecycleOwnerThreadId: "source-thread" }) as never,
