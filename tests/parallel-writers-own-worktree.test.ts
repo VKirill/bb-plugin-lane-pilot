@@ -59,6 +59,7 @@ describe("parallel low-risk writers in one git folder", () => {
           output: async () => ({ text: "writer output" }),
           list: async () => [] as never,
         },
+        environments: { listProviders: async () => [] as never },
         providers: {
           list: async () => [{ id: "codex", available: true, capabilities: { supportsServiceTier: true }, serviceTiers: [{ id: "default", label: "Default" }] }] as never,
           models: async () => ({ models: [{ id: "codex-test", model: "codex-test",
@@ -75,16 +76,23 @@ describe("parallel low-risk writers in one git folder", () => {
         }
         if (call.method !== "runCommand") throw new Error(`unexpected ${call.method}`);
         const input = call.input as { cwd?: string; command?: string };
+        if (String(input.command ?? "").includes('state="localNoOrigin"')) {
+          return { hostId, exitCode: 0, stdout: JSON.stringify({ state:"localNoOrigin", cwd:folder, root:folder, hasCommit:true }) + "\n", stderr: "" };
+        }
         if (!String(input.command ?? "").includes("porcelain")) return { hostId, exitCode: 0, stdout: "", stderr: "" };
         const files = dirt.get(String(input.cwd ?? "")) ?? new Map<string, string>();
         return { hostId, exitCode: 0, stdout: JSON.stringify([...files].map(([path, sha256]) => ({ path, sha256 }))), stderr: "" };
       },
     }, hostId);
+    harness.sdk.stub("projects.get", async () => ({ id:projectId, name:projectId, sources:[
+      { hostId, path:"/tmp" },
+      { hostId, path:"/srv/project-root" },
+    ] }));
     const db = openDatabase(bb);
     savePrototypeConfig(db, config);
     saveProjectSetting(db, projectId, "plan_critique.enabled", false);
     saveProjectSetting(db, projectId, "memory.enabled", false);
-    createRun(db, "run-parallel", projectId, "bb", folder);
+    createRun(db, "run-parallel", projectId, "bb", folder, "none", undefined, hostId);
     setRunThread(db, "run-parallel", pmThreadId);
     await plugin(bb);
 

@@ -39,7 +39,7 @@ function services(env: ReturnType<typeof setup>, preflight: ((input: unknown) =>
   const all = {
     activeWriterTasks: new Set<string>(), providerBreaker: { record: () => undefined }, ...noOptionalPlugins,
     runBudgetFor: () => ({ check: () => ({ ok: true }), noteAttempt: () => undefined, noteTokens: () => undefined, snapshot: () => ({ limits: {} }) }),
-    runWriterPool: { acquire: async () => () => undefined },
+    runWriterPool: { acquire: async () => () => undefined, acquireFolder: async () => () => undefined },
     stability: { breakerHolds: () => null, diskHolds: async () => null, onTaskFailed: async () => false, loadParked: async () => [] },
     startAfterAcceptance: () => undefined,
     workspaceDirt: async () => ({ ok: true, paths: [], snapshots: [] }), isLiveFolder: async () => false,
@@ -119,7 +119,7 @@ it("a mainfix (its own preflight) and a folder without git take no baseline", as
 
   const live = setup();
   const second = vi.fn(async () => ({ stop: "verdict_block: x", record: null }));
-  const folder = services(live, second, { isLiveFolder: async () => true, restoreLiveFolder: async () => ({ ok: true, restored: [], removed: [], failed: [] }) });
+  const folder = services(live, second, { isLiveFolder: async () => true, probeLiveFolder: async () => "no-git" as const, invalidateLiveFolder: async () => undefined, restoreLiveFolder: async () => ({ ok: true, restored: [], removed: [], failed: [] }) });
   start(live, folder.all);
   await vi.waitFor(() => expect(folder.spawned).toEqual(["T1-a1"]));
   expect(second).not.toHaveBeenCalled();

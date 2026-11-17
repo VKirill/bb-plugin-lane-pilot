@@ -42,6 +42,7 @@ async function setup(editDuringHelper = false) {
   const { bb, harness } = createFakePluginHost({
     pluginId: "lane-pilot",
     experimental_callHostRpc: (async (call: { method: string; input: { requestedHostId: string; cwd: string } }) => {
+      if (call.method === "listWorkflowFiles") return { hostId:"local-host", files:[] };
       if (call.method === "runCommand") {
         expect(call.input.cwd).toBe(cwd);
         return runCommand(call.input as never, undefined as never);

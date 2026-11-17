@@ -34,7 +34,7 @@ export async function observeIdempotent() {
     spawn: async () => ({ id: "writer-idem" }), wait: async () => new Promise(() => undefined),
     get: async ({ threadId }: { threadId: string }) => threadId === pmThreadId ? { id: pmThreadId, status: "idle", projectId } as never : { id: threadId, status: "active" } as never,
     output: async () => ({ text: "" }), list: async () => [] as never, stop: async () => ({}) as never,
-  }, environments: { listProviders: async () => [] as never }, providers: {
+  }, projects: { get: async ({ projectId }: { projectId: string }) => ({ id: projectId, sources: [{ hostId: "host-test", path: config.writerWorkspacePath }] }) }, environments: { listProviders: async () => [] as never }, providers: {
     list: async () => [{ id: "codex", available: true, capabilities: { supportsServiceTier: true }, serviceTiers: [{ id: "default", label: "Default" }] }] as never,
     models: async () => ({ models: [{ id: "codex-test", model: "codex-test", supportedReasoningEfforts: ["medium", "high", "xhigh"].map((reasoningEffort) => ({ reasoningEffort, description: reasoningEffort })) }] as never }),
   }, files: { read: async () => ({ content: "fixture\n" }), write: async () => ({ ok: true }) } },
@@ -43,13 +43,15 @@ export async function observeIdempotent() {
     if (call.method === "classifyPlan") return { hostId: "host-test", status: "ok", effort: "xhigh", reason: null, planSha256: "a", sentPlanSha256: "a", sourceLength: 1, sentLength: 1 };
     if (call.method === "readBoundedFile" && call.input !== undefined) return boundedReadCall({ input: call.input }, "host-test", "fixture\n");
     if (call.method !== "runCommand") throw new Error(`unexpected ${call.method}`);
-    return { hostId: "host-test", exitCode: 0, stdout: String((call.input as { command?: string }).command ?? "").includes("porcelain") ? "[]" : "", stderr: "" };
+    const command = String((call.input as { command?: string }).command ?? "");
+    if (command.includes('state="localNoOrigin"')) return { hostId: "host-test", exitCode: 0, stdout: JSON.stringify({ state: "localNoOrigin", cwd: config.writerWorkspacePath, root: config.writerWorkspacePath, hasCommit: true }) + "\n", stderr: "" };
+    return { hostId: "host-test", exitCode: 0, stdout: command.includes("porcelain") ? "[]" : "", stderr: "" };
   } } as never);
   const db = openDatabase(bb);
   savePrototypeConfig(db, config as never);
   saveProjectSetting(db, projectId, "plan_critique.enabled", false);
   saveProjectSetting(db, projectId, "memory.enabled", false);
-  createRun(db, runId, projectId, "bb", config.writerWorkspacePath);
+  createRun(db, runId, projectId, "bb", config.writerWorkspacePath, "none", undefined, config.hostId);
   setRunThread(db, runId, pmThreadId);
   const { default: plugin } = await import("../../server");
   await plugin(bb);
