@@ -9,6 +9,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import Database from "better-sqlite3";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
+import { coreFileWrite, diskStore } from "../helpers/core-files";
 import { git } from "../verification/git-integrate-helpers";
 import { sha256Hex } from "@lane-pilot/kit";
 import { WorkflowEngine, outputFields, registerPureActions, registerReducers } from "@lane-pilot/workflow-engine";
@@ -96,7 +97,7 @@ async function engineWorld() {
       environments: { get: async () => ({ id: "env-pm", hostId: "local", path: checkout, status: "ready" }) },
       projects: { get: async () => ({ id: PROJECT, name: "Project", sources: [{ hostId: "local", path: checkout }] }) },
       files: {
-        write: async (args: unknown) => { const input = args as { path: string; content: string }; mkdirSync(dirname(input.path), { recursive: true }); writeFileSync(input.path, input.content); return { ok: true, outcome: "written" }; },
+        write: async (args: unknown) => coreFileWrite(diskStore())(args) as never,
         read: async (args: unknown) => {
           const filePath = String((args as { path?: unknown }).path ?? "");
           if (!existsSync(filePath)) throw Object.assign(new Error(`file not found: ${filePath}`), { code: "not_found", serverCode: "file_not_found" });
@@ -459,6 +460,52 @@ export const observeC = {
     const failed = await runSim("spike", { input: { question: "can sqlite fts handle 1M rows" }, stubs: { spike_new: opened, experiment: answered, write_spike: { spike_path: "spikes/fts.md" }, goal_check: { ok: false, verdict: "fail", reason: "no spike file" } } });
     const none = await runSim("spike", { input: { question: "can sqlite fts handle 1M rows" }, stubs: { spike_new: opened, experiment: { answered: false, decision: "unclear", document: "# spike\n", skill_draft: "draft.md" }, write_spike: { spike_path: "spikes/fts.md" } } });
     return { ok: { path: ok.path, out: output(ok) }, failed: { path: failed.path, status: output(failed).status, draft: output(failed).skill_draft }, none: { path: none.path, status: output(none).status, draft: output(none).skill_draft } };
+  },
+
+  /** n1229: spike wrap persists the supplied bytes through the real writer and reports the actual path; an occupied skill is diverted to .new.md without changing the original. */
+  async k_c_spikewrap() {
+    const draft = "---\nname: persist-exact\ndescription: exact bytes\n---\n\nUnicode: ё\ntrailing spaces  \n";
+    const w = await engineWorld();
+    try {
+      const first = await w.run("spike.json", { question: "prove draft persistence", wrap_skill: "persist-exact" }, {
+        experiment: { answered: true, decision: "yes", document: "# Spike\n", skill_draft: draft, handoff: "answered" },
+      });
+      const firstPath = String(first.out.skill_path ?? "");
+      const firstBytes = w.file(firstPath);
+      w.put(".agents/forge/skills/keep/SKILL.md", "original skill bytes\n");
+      const second = await w.run("spike.json", { question: "prove create-only", wrap_skill: "keep" }, {
+        experiment: { answered: true, decision: "yes", document: "# Spike\n", skill_draft: "replacement draft must not clobber\n", handoff: "answered" },
+      });
+      return {
+        first: { path: first.path, status: first.status, skillPath: firstPath, bytes: firstBytes },
+        second: { path: second.path, status: second.status, skillPath: String(second.out.skill_path ?? ""), original: w.file(".agents/forge/skills/keep/SKILL.md"), replacement: w.file(".agents/forge/skills/keep/SKILL.new.md") },
+      };
+    } finally {
+      w.dispose();
+    }
+  },
+
+  /** n1231: sketch wrap persists the analyst's exact draft through the real writer and uses a non-overwriting sibling for an existing skill. */
+  async k_c_sketchwrap() {
+    const draft = "# Compact filter bar\n\nKeep the winning direction visible at narrow widths.\n";
+    const w = await engineWorld();
+    try {
+      const first = await w.run("sketch-wrap-up.json", { findings: "Winning compact filter direction", skill_slug: "compact-filter-bar" }, {
+        draft: { skill_draft: draft, handoff: "draft ready" },
+      });
+      const firstPath = String(first.out.skill_path ?? "");
+      const firstBytes = w.file(firstPath);
+      w.put(".agents/forge/skills/keep/SKILL.md", "# Keep this skill\n");
+      const second = await w.run("sketch-wrap-up.json", { findings: "A revised winning direction", skill_slug: "keep" }, {
+        draft: { skill_draft: "replacement draft must not clobber\n", handoff: "draft ready" },
+      });
+      return {
+        first: { path: first.path, status: first.status, skillPath: firstPath, bytes: firstBytes },
+        second: { path: second.path, status: second.status, skillPath: String(second.out.skill_path ?? ""), original: w.file(".agents/forge/skills/keep/SKILL.md"), replacement: w.file(".agents/forge/skills/keep/SKILL.new.md") },
+      };
+    } finally {
+      w.dispose();
+    }
   },
 
   /** n1233: a trivial task runs inline — one self-check, one task, no plan and no review; a task that is not concrete, bounded and single is sent to the full chain instead and writes nothing; a task the writer could not land is reported blocked. */

@@ -37,7 +37,7 @@ describe("the discussion (n0 … n16)", () => {
     const seen = await observe.p1_appetite();
     expect(seen.bare).toEqual([NO_APPETITE]);
     expect(seen.stage).toBe("discussion");
-    expect(seen.heads).toEqual(["## Appetite", "## Decisions", "## No-gos", "## Risks", "## Open questions"]);
+    expect(seen.heads).toEqual(["## Summary", "## Stack", "## Features", "## Architecture", "## Pitfalls", "## Appetite", "## Decisions", "## No-gos", "## Risks", "## Open questions"]);
     expect(seen.appetite).toBe("two days");
   });
 
@@ -81,8 +81,21 @@ describe("the discussion (n0 … n16)", () => {
     expect(seen.signedDocs).toEqual([`${seen.folder[0]}/CONTEXT.md`]);
     expect(seen.folder[0]).toMatch(/^\.agents\/phases\/ph_\w+$/);
     expect(seen.onDiskIsSigned).toBe(true);
-    expect(seen.text.startsWith("# Context — Sums\n\nGoal: skip blanks\n\n## Appetite\ntwo days\n")).toBe(true);
-    expect(seen.text).toContain("## Decisions\n- **D1** (locked): store in JSON\n\n## No-gos\n- no sync\n");
+    expect(seen.text).toBe([
+      "# Context — Sums", "", "Goal: skip blanks", "",
+      "## Summary", "unknown", "",
+      "## Stack", "- unknown", "",
+      "## Features", "- unknown", "",
+      "## Architecture", "- unknown", "",
+      "## Pitfalls", "- unknown", "",
+      "## Appetite", "two days", "",
+      "Scope: small; recommendation: —; confidence: —.", "",
+      "## Decisions", "- **D1** (locked): store in JSON", "",
+      "## No-gos", "- no sync", "",
+      "## Risks", "- value: totals are missed", "- usability: none seen", "- feasibility: none seen", "- viability: none seen", "",
+      "## Open questions", "- Which tag syntax?", "",
+      "Written by Lane Pilot from the analysis (lp.analyze); the plan stands on this file.",
+    ].join("\n"));
     expect(seen.questions).toEqual(["Which tag syntax?"]);
     expect(seen.book).toEqual(expect.arrayContaining(["auto_started", "question", "signed", "stage", "auto_done"]));
   });

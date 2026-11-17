@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import plugin from "../../server";
@@ -27,7 +28,7 @@ describe("stream i2 graphs", () => {
     const { bb, harness } = createFakePluginHost({
       pluginId: "lane-pilot",
       sdk: {
-        files: { read: async () => { throw new Error("no such file"); } } as never,
+        files: { read: async () => { throw new Error("no such file"); }, write: async () => ({}) } as never,
         projects: { get: async () => ({ id: projectId, name: "P", sources: [{ hostId: "ovh", path: "/work/p", isDefault: true }] }) as never, list: async () => [{ id: projectId }] as never },
         providers: {
           list: async () => [{ id: "codex", available: true, capabilities: { supportsServiceTier: false }, serviceTiers: [] }] as never,
@@ -43,7 +44,10 @@ describe("stream i2 graphs", () => {
         const input = call.input as Record<string, unknown>;
         if (call.method === "gitDocsScope") return { hostId: "ovh", status: "ready", isRepoRoot: true, hasDocs: true, changed: ["src/a.ts"], dirty: ["docs/overview.md"], base: null, workspaces: [], localDate: localDateKey(new Date()), localHour: 4, reason: null };
         if (call.method === "gitCreateWorktree") return { hostId: "ovh", status: "failed", path: null, branch: null, reason: "no worktree in the test" };
-        if (call.method === "listDocsPages") return { hostId: "ovh", pages: [], oversized: [] };
+        if (call.method === "listDocsPages") return { hostId: "ovh", pages: ["overview", "architecture", "gotchas", "conventions", "testing"].map((type) => {
+          const content = `---\ntitle: ${type}\ntype: ${type}\ncreated: 2026-11-17\nupdated: 2026-11-17\nstatus: active\nconfidence: low\ntags: [codebase]\nsources: [src/forms.ts]\n---\n# ${type}\n\nThe code owns the following values.\n\n\`alpha\` is defined in src/forms.ts:1.\n\`beta\` is defined in src/forms.ts:2.\n\`gamma\` is defined in src/forms.ts:3.\n`;
+          return { path: `docs/${type}.md`, modifiedAt: 0, sha256: createHash("sha256").update(content).digest("hex"), content };
+        }), oversized: [] };
         if (call.method === "docsFlows") return { hostId: "ovh", briefPath: "/tmp/flows.md", routes: 0, flows: [] };
         if (call.method === "docsAnchors") return { hostId: "ovh", briefPath: "/tmp/brief.md", anchors: 0, tables: [], deploy: false, core: [], productFiles: [] };
         if (call.method === "docsLineCounts") return { hostId: "ovh", counts: {} };

@@ -14,7 +14,7 @@ from lp_drill.env import ROOT
 
 NODES_C = [
     "n1205", "n1206", "n1207", "n1208", "n1209", "n1210", "n1211", "n1212", "n1213", "n1214", "n1215", "n1216", "n1217", "n1218", "n1219", "n1220", "n1221", "n1222", "n1223",
-    "n1225", "n1226", "n1227", "n1228", "n1232", "n1233", "n1234", "n1235", "n1236",
+    "n1225", "n1226", "n1227", "n1228", "n1229", "n1231", "n1232", "n1233", "n1234", "n1235", "n1236",
 ]
 PROBE_C = ROOT / "scripts/lp_drill/scenes/sma_r16_c_probe.ts"
 
@@ -27,6 +27,10 @@ def prove_c(proofs, tmp) -> None:
     """Run the probe and prove batch c's nodes; when the probe printed nothing every node is recorded as not proved, with the reason."""
     # vite-node, not tsx: the probe loads the plugin's barrel files, which tsx cannot link.
     done = subprocess.run(["npx", "--yes", "vite-node", str(PROBE_C)], cwd=ROOT, capture_output=True, text=True, timeout=900)
+    if done.returncode != 0:
+        for node in NODES_C:
+            proofs.prove(node, False, f"the batch c probe exited {done.returncode}: {(done.stderr or done.stdout).strip()[-200:]}")
+        return
     try:
         s = json.loads(done.stdout.strip().splitlines()[-1])
     except (ValueError, IndexError):
@@ -86,6 +90,10 @@ def prove_c(proofs, tmp) -> None:
     proofs.prove("n1227", d.get("open", {}).get("path") == ["walk", "synth", "open"] and d["open"].get("out", {}).get("locked") == ["GET only"] and d["open"]["out"].get("open") == ["invalidation on write"] and d.get("done") == {"path": ["walk", "synth", "done"], "status": "done", "deferred": ["metrics"]} and d.get("again") == {"path": ["walk", "walk", "synth", "done"], "walks": 2}, f"open {d.get('open', {}).get('out')}; done {d.get('done')}; again {d.get('again')}")
     d = seen("k_c_spike")
     proofs.prove("n1228", d.get("ok") == {"path": ["spike_new", "experiment", "write_spike", "skill_dir", "write_skill", "goal_check", "answered"], "out": {"status": "answered", "decision": "yes, fts5 handles 1M rows", "spike_path": "spikes/fts.md", "skill_draft": "draft.md", "skill_path": ""}} and d.get("failed") == {"path": ["spike_new", "experiment", "write_spike", "skill_dir", "write_skill", "goal_check", "inconclusive"], "status": "inconclusive", "draft": ""} and d.get("none") == {"path": ["spike_new", "experiment", "write_spike", "skill_dir", "write_skill", "inconclusive"], "status": "inconclusive", "draft": ""}, f"ok {d.get('ok')}; failed {d.get('failed')}; none {d.get('none')}")
+    d = seen("k_c_spikewrap")
+    proofs.prove("n1229", d.get("first", {}).get("path") == ["spike_new", "experiment", "write_spike", "skill_dir", "write_skill", "goal_check", "answered"] and d.get("first", {}).get("status") == "succeeded" and d.get("first", {}).get("skillPath") == ".agents/forge/skills/persist-exact/SKILL.md" and d.get("first", {}).get("bytes") == "---\nname: persist-exact\ndescription: exact bytes\n---\n\nUnicode: ё\ntrailing spaces  \n" and d.get("second", {}).get("path") == ["spike_new", "experiment", "write_spike", "skill_dir", "write_skill", "goal_check", "answered"] and d.get("second", {}).get("status") == "succeeded" and d.get("second", {}).get("skillPath") == ".agents/forge/skills/keep/SKILL.new.md" and d.get("second", {}).get("original") == "original skill bytes\n" and d.get("second", {}).get("replacement") == "replacement draft must not clobber\n", f"spike wrap {d}")
+    d = seen("k_c_sketchwrap")
+    proofs.prove("n1231", d.get("first", {}).get("path") == ["draft", "skill_dir", "write_skill", "written"] and d.get("first", {}).get("status") == "succeeded" and d.get("first", {}).get("skillPath") == ".agents/forge/skills/compact-filter-bar/SKILL.md" and d.get("first", {}).get("bytes") == "# Compact filter bar\n\nKeep the winning direction visible at narrow widths.\n" and d.get("second", {}).get("path") == ["draft", "skill_dir", "write_skill", "written"] and d.get("second", {}).get("status") == "succeeded" and d.get("second", {}).get("skillPath") == ".agents/forge/skills/keep/SKILL.new.md" and d.get("second", {}).get("original") == "# Keep this skill\n" and d.get("second", {}).get("replacement") == "replacement draft must not clobber\n", f"sketch wrap {d}")
     d = seen("k_c_quick")
     proofs.prove("n1232", d.get("short", {}).get("path") == ["class", "plan", "lint", "write", "state", "closed"] and d["short"].get("stateGot") == "Typo in button label" and d.get("several") == {"path": ["class", "plan", "escalate", "proposed"], "status": "proposed", "wrote": 0} and d.get("failed") == {"path": ["class", "plan", "lint", "write", "partial"], "status": "partial"} and d.get("row") == ["| date | task | commit |", "| --- | --- | --- |", "| 2026-11-10 | Typo in button label | q1 |"], f"short {d.get('short', {}).get('path')}; several {d.get('several')}; failed {d.get('failed')}")
     d = seen("k_c_fastc")

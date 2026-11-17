@@ -48,7 +48,7 @@ export default {
   n707: { mutation: flip("core:apps/server/src/services/hosts/host-enrollment.ts", "args.hostId ?? createHostId()", "createHostId()") },
   n708: { mutation: distort("core:apps/server/src/services/machine-auth.ts", "remaining: 1,", "remaining: 2,") },
   n709: { mutation: flip("core:apps/server/src/services/machine-auth.ts", "verified.metadata.hostId !== hostId", "verified.metadata.hostId === hostId") },
-  n710: { voidReview: voidStays("нет адреса, приходящего от пира: хосты приходят из регистрации BB, единственный внешний адрес events.webhook_url задаёт владелец (только https), SSRF-входа нет") },
+  n710: { voidReview: voidStays("проверка адреса пира неприменима: федерации машин нет, хосты регистрирует BB; events.webhook_url — отдельный HTTPS-вебхук без IP/DNS-фильтра и с редиректами по умолчанию, он не является peer endpoint") },
   n711: { mutation: distort("core:apps/server/src/internal/hosts.ts", "name: payload.hostName,", "name: payload.hostId,") },
   n712: { mutation: flip("core:apps/server/src/routes/hosts.ts", "if (sessionId) {", "if (!sessionId) {") },
   n713: { mutation: wrongTarget("packages/host-calls/src/run-on-host.ts", "{ hostId: args.hostId, timeoutMs:", "{ hostId: \"hub\", timeoutMs:"), trace: SCENE },

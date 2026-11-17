@@ -55,6 +55,8 @@ def scenario_sma_r16(tmp) -> dict:
     proofs = Proofs()
     # vite-node, not tsx: the probe loads the plugin's barrel files, which tsx cannot link.
     done = subprocess.run(["npx", "--yes", "vite-node", str(PROBE)], cwd=ROOT, capture_output=True, text=True, timeout=420)
+    if done.returncode != 0:
+        return proofs.verdict("sma_r16", [f"the probe exited {done.returncode}: {(done.stderr or done.stdout).strip()[-300:]}"])
     try:
         s = json.loads(done.stdout.strip().splitlines()[-1])
     except (ValueError, IndexError):

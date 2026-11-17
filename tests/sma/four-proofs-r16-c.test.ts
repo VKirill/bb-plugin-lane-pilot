@@ -2,10 +2,34 @@
 // Every test runs the real code of the node through tests/sma/r16-world-c.ts (the same observations the scene scripts/lp_drill/scenes/sma_r16_c.py proves) and checks the
 // result the card names: what a graph step wrote, where the run went next, what the next step received, what was refused. The graphs run on the real engine with the
 // model and owner steps stubbed.
+import { spawnSync } from "node:child_process";
 import { describe, expect, it, vi } from "vitest";
 import { observeC } from "./r16-world-c";
 
 vi.setConfig({ testTimeout: 180_000 });
+
+it("rejects nonzero probe exits before parsing valid or malformed output", () => {
+  const code = `import sys
+from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
+sys.path.insert(0, str(Path.cwd() / "scripts"))
+from lp_drill.prove import Proofs
+from lp_drill.scenes import sma_r16, sma_r16_c
+for output in ('{}', '{malformed'):
+    done = SimpleNamespace(returncode=7, stdout=output, stderr='probe failed')
+    with patch('subprocess.run', return_value=done), patch('json.loads', side_effect=AssertionError('parsed nonzero output')):
+        result = sma_r16.scenario_sma_r16(None)
+        assert result['result'] == 'fail' and 'exited 7' in result['problems'][0]
+        proofs = Proofs()
+        sma_r16_c.prove_c(proofs, None)
+        assert len(proofs.items) == len(sma_r16_c.NODES_C)
+        assert all(not item['ok'] and 'exited 7' in item['detail'] for item in proofs.items)
+print('nonzero probe checks passed')`;
+  const run = spawnSync("python3", ["-I", "-c", code], { encoding: "utf8", timeout: 30_000 });
+  expect(run.status, run.stderr).toBe(0);
+  expect(run.stdout.trim()).toBe("nonzero probe checks passed");
+});
 
 describe("verify-work (n1205 … n1213)", () => {
   it("[sma:k_wv_design] only checklist items of the drawing's contract are points, each with a stable id from its text, a repeated line counts once, at most 40 are kept and the cut is counted", () => {
@@ -242,6 +266,18 @@ describe("the stand-alone commands (n1215 … n1236)", () => {
     expect(seen.ok).toEqual({ path: ["spike_new", "experiment", "write_spike", "skill_dir", "write_skill", "goal_check", "answered"], out: { status: "answered", decision: "yes, fts5 handles 1M rows", spike_path: "spikes/fts.md", skill_draft: "draft.md", skill_path: "" } });
     expect(seen.failed).toEqual({ path: ["spike_new", "experiment", "write_spike", "skill_dir", "write_skill", "goal_check", "inconclusive"], status: "inconclusive", draft: "" });
     expect(seen.none).toEqual({ path: ["spike_new", "experiment", "write_spike", "skill_dir", "write_skill", "inconclusive"], status: "inconclusive", draft: "" });
+  });
+
+  it("[sma:k_c_spikewrap] persists exact skill bytes through the real writer and diverts an occupied skill without overwriting it", async () => {
+    const seen = await observeC.k_c_spikewrap();
+    expect(seen.first).toEqual({ path: ["spike_new", "experiment", "write_spike", "skill_dir", "write_skill", "goal_check", "answered"], status: "succeeded", skillPath: ".agents/forge/skills/persist-exact/SKILL.md", bytes: "---\nname: persist-exact\ndescription: exact bytes\n---\n\nUnicode: ё\ntrailing spaces  \n" });
+    expect(seen.second).toEqual({ path: ["spike_new", "experiment", "write_spike", "skill_dir", "write_skill", "goal_check", "answered"], status: "succeeded", skillPath: ".agents/forge/skills/keep/SKILL.new.md", original: "original skill bytes\n", replacement: "replacement draft must not clobber\n" });
+  });
+
+  it("[sma:k_c_sketchwrap] persists the exact sketch draft and preserves original bytes when writing the sibling", async () => {
+    const seen = await observeC.k_c_sketchwrap();
+    expect(seen.first).toEqual({ path: ["draft", "skill_dir", "write_skill", "written"], status: "succeeded", skillPath: ".agents/forge/skills/compact-filter-bar/SKILL.md", bytes: "# Compact filter bar\n\nKeep the winning direction visible at narrow widths.\n" });
+    expect(seen.second).toEqual({ path: ["draft", "skill_dir", "write_skill", "written"], status: "succeeded", skillPath: ".agents/forge/skills/keep/SKILL.new.md", original: "# Keep this skill\n", replacement: "replacement draft must not clobber\n" });
   });
 
   it("[sma:k_c_quick] a small issue goes the short way — class, one task from the planner, the writer, a row in STATE, closed; a plan of several tasks or a high risk is proposed to the full chain and writes nothing; a failed writer ends it partial", async () => {

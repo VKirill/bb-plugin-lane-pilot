@@ -721,7 +721,7 @@ export const SMA_ENTRIES: Readonly<Record<string, SmaEntry>> = {
   n707: ["have", "выпустить приглашение: enroll ядра", "core:apps/server/src/services/hosts/host-enrollment.ts#issueHostEnrollKey"],
   n708: ["have", "книга приглашений: ключи enroll ядра", "core:apps/server/src/internal/hosts.ts#registerInternalHostRoutes"],
   n709: ["have", "пир присоединяется", "core:apps/server/src/services/machine-auth.ts#enrollHost"],
-  n710: ["void", "нет предмета: федерации машин нет и чужой адрес в плагин не попадает, хосты приходят из регистрации BB; единственный внешний адрес events.webhook_url только https, задан владельцем и шлёт девять несекретных полей"],
+  n710: ["void", "нет предмета: проверка адреса пира неприменима — федерации машин нет, хосты регистрирует BB; events.webhook_url — отдельный HTTPS-вебхук без IP/DNS-фильтра и с редиректами по умолчанию, он не является peer endpoint"],
   n711: ["have", "реестр машин пишет только ядро BB; плагин писать его не может", "core:apps/server/src/internal/hosts.ts#registerInternalHostRoutes"],
   n712: ["have", "отпустить машину", "core:apps/server/src/routes/hosts.ts#registerHostRoutes"],
   n713: ["have", "повторить действие на пире", "packages/host-calls/src/run-on-host.ts#runOnHost"],
