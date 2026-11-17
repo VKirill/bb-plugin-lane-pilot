@@ -96,13 +96,14 @@ describe("production spawn_unknown reconciliation", () => {
     const stopped: string[] = [];
     const { bb, harness } = createFakePluginHost({
       pluginId:"lane-pilot",
-      sdk:{ threads:{
-        stop: async ({ threadId }) => { stopped.push(threadId); },
-        get: async () => ({ status:"idle" }) as never,
-        listRunning: async () => [],
-        getPluginMetadata: async () => ({}),
-        spawn: async () => ({ id:"pm-after-finish" }) as never,
-      } },
+      sdk:{ projects:{ get: async () => ({ id:projectId, sources:[{ hostId:"host-test", path:config.writerWorkspacePath }] }) } as never,
+        threads:{
+          stop: async ({ threadId }) => { stopped.push(threadId); },
+          get: async () => ({ status:"idle" }) as never,
+          listRunning: async () => [],
+          getPluginMetadata: async () => ({}),
+          spawn: async () => ({ id:"pm-after-finish" }) as never,
+        } },
       experimental_callHostRpc: (call) => {
         if (call.method === "detect") return { hostId:"host-test", laneStack:{ present:true,version:"1.39.0",sourceSha:"custom-newer-sha" },openCode:{present:false,version:null},workspace:{path:"/tmp/pm",present:true},targetSha:TARGET_SHA,matchesTarget:false,scenario:"S2" };
         if (call.method === "coexistenceInventory") return { schemaVersion:1,hostId:"host-test",targetSha:TARGET_SHA,managers:[{
@@ -188,6 +189,7 @@ describe("production spawn_unknown reconciliation", () => {
     const { bb, harness } = createFakePluginHost({
       pluginId:"lane-pilot",
       sdk:{
+        projects:{ get: async () => ({ id:projectId, sources:[{ hostId:"host-test", path:config.writerWorkspacePath }] }) } as never,
         threads:{
           getPluginMetadata: async ({ threadId }) => threadId === pmThreadId
             ? { role:"pm", lanePilotRunId:"run-live" }
@@ -226,7 +228,12 @@ describe("production spawn_unknown reconciliation", () => {
         if(call.method==="gitOwnershipBase") return {hostId:"host-test",status:"not-git",branch:null,headSha:null,baseRef:null,baseSha:null,compareCommitted:false,reason:"synthetic fixture is not a git worktree"};
         if (call.method === "readBoundedFile") return boundedReadCall(call, "host-test", (path) => path.endsWith("README.md") ? "reconciliation task fixture\n" : null);
         if (call.method === "runCommand") {
-          return { hostId:"host-test", exitCode:0, stdout:"[]", stderr:"" };
+          const command=String((call.input as { command?:string }).command ?? "");
+          return { hostId:"host-test", exitCode:0,
+            stdout:command.includes('state="localNoOrigin"')
+              ? JSON.stringify({ state:"localNoOrigin", cwd:config.writerWorkspacePath, root:config.writerWorkspacePath, hasCommit:true }) + "\n"
+              : "[]",
+            stderr:"" };
         }
         throw new Error(`unexpected ${call.method}`);
       },
@@ -234,7 +241,7 @@ describe("production spawn_unknown reconciliation", () => {
     const db = openDatabase(bb);
     savePrototypeConfig(db, config);
     saveProjectSetting(db, projectId, "plan_critique.enabled", false);
-    createRun(db, "run-live", projectId, "bb", config.writerWorkspacePath);
+    createRun(db, "run-live", projectId, "bb", config.writerWorkspacePath, "none", undefined, config.hostId);
     setRunThread(db, "run-live", pmThreadId);
     await plugin(bb);
 

@@ -32,7 +32,9 @@ async function setup(options:{ failBase?:boolean } = {}) {
   const stopped: string[] = [];
   const { bb, harness } = createFakePluginHost({
     pluginId:"lane-pilot",
-    sdk:{ threads:{
+    sdk:{ projects:{
+      get: async () => ({ id:projectId, sources:[{ hostId:config.hostId, path:config.writerWorkspacePath }] }),
+    }, threads:{
       getPluginMetadata: async ({ threadId }) => threadId === pmThreadId ? { role:"pm", lanePilotRunId:runId } : { role:"writer" },
       spawn: async () => ({ id:"writer-idem" }),
       wait: async () => new Promise(() => undefined),
@@ -60,14 +62,19 @@ async function setup(options:{ failBase?:boolean } = {}) {
       }
       if (call.method === "readBoundedFile") return boundedReadCall(call, "host-test", "fixture\n");
       if (call.method !== "runCommand") throw new Error(`unexpected ${call.method}`);
-      return { hostId:"host-test", exitCode:0, stdout:String((call.input as { command?:string }).command ?? "").includes("porcelain") ? "[]" : "", stderr:"" };
+      const command=String((call.input as { command?:string }).command ?? "");
+      return { hostId:"host-test", exitCode:0,
+        stdout:command.includes('state="localNoOrigin"')
+          ? JSON.stringify({ state:"localNoOrigin", cwd:config.writerWorkspacePath, root:config.writerWorkspacePath, hasCommit:true }) + "\n"
+          : command.includes("porcelain") ? "[]" : "",
+        stderr:"" };
     },
   });
   const db = openDatabase(bb);
   savePrototypeConfig(db, config);
   saveProjectSetting(db, projectId, "plan_critique.enabled", false);
   saveProjectSetting(db, projectId, "memory.enabled", false);
-  createRun(db, runId, projectId, "bb", config.writerWorkspacePath);
+  createRun(db, runId, projectId, "bb", config.writerWorkspacePath, "none", undefined, config.hostId);
   setRunThread(db, runId, pmThreadId);
   await plugin(bb);
   const dispatch = async (next:Partial<TaskV2> = {}, plan = "Plan for the idempotent dispatch") => JSON.parse(String(await harness.behavior.callAgentTool(
