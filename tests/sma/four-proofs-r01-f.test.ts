@@ -218,7 +218,9 @@ describe("a repeated enqueue", () => {
     const baseHeld = new Promise<void>((resolve) => { releaseBase = resolve; });
     const { bb, harness } = createFakePluginHost({
       pluginId: "lane-pilot",
-      sdk: { threads: {
+      sdk: { projects: {
+        get: async ({ projectId }) => ({ id: projectId, sources: [{ hostId: dconfig.hostId, path: dconfig.writerWorkspacePath }] }),
+      }, threads: {
         getPluginMetadata: async ({ threadId }) => threadId === DPM ? { role: "pm", lanePilotRunId: DRUN } : { role: "writer" },
         spawn: async () => ({ id: "writer-idem" }),
         wait: async () => new Promise(() => undefined),
@@ -233,7 +235,7 @@ describe("a repeated enqueue", () => {
       experimental_callHostRpc: async (call) => {
         if (call.method === "gitOwnershipBase") {
           await baseHeld;
-          return { hostId: "host-test", status: "not-git" as const, branch: null, headSha: null, baseRef: null, baseSha: null, compareCommitted: false, reason: "fixture" };
+          return { hostId: "host-test", status: "ready" as const, branch: "main", headSha: "a".repeat(40), baseRef: null, baseSha: null, compareCommitted: false, reason: null };
         }
         if (call.method === "classifyPlan") return { hostId: "host-test", status: "ok", effort: "xhigh", reason: null, planSha256: "a", sentPlanSha256: "a", sourceLength: 1, sentLength: 1 };
         if (call.method === "readBoundedFile") {
@@ -249,7 +251,11 @@ describe("a repeated enqueue", () => {
             truncated: offset + selected.length < lines.length, returnedBytes: Buffer.byteLength(content) };
         }
         if (call.method !== "runCommand") throw new Error(`unexpected ${call.method}`);
-        return { hostId: "host-test", exitCode: 0, stdout: String((call.input as { command?: string }).command ?? "").includes("porcelain") ? "[]" : "", stderr: "" };
+        const command = String((call.input as { command?: string }).command ?? "");
+        if (command.includes("python3 - <<'PY'")) {
+          return { hostId: "host-test", exitCode: 0, stdout: JSON.stringify({ state: "localNoOrigin", cwd: dconfig.writerWorkspacePath, root: dconfig.writerWorkspacePath, hasCommit: true }), stderr: "" };
+        }
+        return { hostId: "host-test", exitCode: 0, stdout: command.includes("porcelain") ? "[]" : "", stderr: "" };
       },
     });
     try {
@@ -257,13 +263,14 @@ describe("a repeated enqueue", () => {
       savePrototypeConfig(db, dconfig);
       saveProjectSetting(db, DPROJECT, "plan_critique.enabled", false);
       saveProjectSetting(db, DPROJECT, "memory.enabled", false);
-      createRun(db, DRUN, DPROJECT, "bb", dconfig.writerWorkspacePath);
+      createRun(db, DRUN, DPROJECT, "bb", dconfig.writerWorkspacePath, undefined, undefined, dconfig.hostId);
       setRunThread(db, DRUN, DPM);
       await plugin(bb);
       const dispatch = async () => JSON.parse(String(await harness.behavior.callAgentTool(
         "lane_pilot_dispatch_writer", { confirm: true, objective: "Проверка диспетча", plan: "Plan for the idempotent dispatch", task: dtask }, { threadId: DPM, projectId: DPROJECT },
       ))) as Record<string, unknown>;
       const first = await dispatch();
+      expect(first, JSON.stringify(first)).toHaveProperty("attemptId");
       const again = await dispatch();
       const third = await dispatch();
       expect(first.deduplicated).toBeUndefined();
@@ -277,8 +284,8 @@ describe("a repeated enqueue", () => {
       expect(later.deduplicated).toBeUndefined();
       expect(later).toMatchObject({ ok: false, error: { code: "task_in_progress" } });
       expect([count("lane_pilot_task"), count("lane_pilot_attempt")]).toEqual([1, 1]);
-      releaseBase();
     } finally {
+      releaseBase();
       delete process.env.LANE_PILOT_DISPATCH_ANSWER_MS;
       await harness.lifecycle.dispose();
     }
