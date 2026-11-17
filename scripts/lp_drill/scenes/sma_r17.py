@@ -38,11 +38,11 @@ def scenario_sma_r17(tmp) -> dict:
     ok = r["role"] == "specialist:tavily" and r["notes"] and not r["src"] and r["fields"]["quick_reference"] == "string" and r["fields"]["implementation_notes"] == "string" and "research" in s["spec"]["consumes"] and sessions["ai-researcher"]["skills"] == ["tavily"]
     proofs.prove("n1369", ok, f"role {r['role']}, notes writable {r['notes']}, src writable {r['src']}, fields {sorted(k for k in r['fields'] if k.endswith('notes') or k == 'quick_reference')}")
     # n1370 Domain researcher: domain_notes is the field the evaluation plan is told to read, and the research comes before the plan.
-    ok = r["fields"].get("domain_notes") == "string" and s["evalPlan"]["named"] == ["domain_notes"] and ai["path"].startswith("select research eval_plan")
+    ok = r["fields"].get("domain_notes") == "string" and s["evalPlan"]["named"] == ["domain_notes"] and ai["path"].startswith("select write_model research eval_plan")
     proofs.prove("n1370", ok, f"research answers domain_notes, the evaluation plan reads {s['evalPlan']['named']}, path {ai['path']}")
     # n1371 Eval planner: a planner's answer in one typed field, made before the spec and carried into it; a failed check reworks the spec only.
     ep = s["evalPlan"]
-    ok = ep["helper"] == "planner" and ep["readOnly"] and ep["fields"]["eval_plan"] == "string" and s["spec"]["consumes"] == ["select", "research", "eval_plan"] and ai["evalPlanCalls"] == 1 and ai["path"] == "select research eval_plan spec check spec check done"
+    ok = ep["helper"] == "planner" and ep["readOnly"] and ep["fields"]["eval_plan"] == "string" and s["spec"]["consumes"] == ["select", "research", "eval_plan"] and ai["evalPlanCalls"] == 1 and ai["path"] == "select write_model research eval_plan spec spec_path write_spec check spec spec_path write_spec check done"
     proofs.prove("n1371", ok, f"{ep['helper']} read-only {ep['readOnly']}, spec consumes {s['spec']['consumes']}, rework path {ai['path']}")
     # n1372 Executor: the writer is told Lane Pilot commits and merges; the phase conclusion has one line per piece with its task, state and promise.
     ex = s["executor"]
@@ -56,12 +56,16 @@ def scenario_sma_r17(tmp) -> dict:
     ok = (fx["firstReviewCalls"] == 0 and fx["planGaps"]["mode"] == "gaps" and len(fx["planGaps"]["gaps"]) == 2 and fx["buildTasks"]["tasks"] == [{"id": "fix-a", "objective": "fix a"}]
           and fx["secondGaps"]["gaps"][0]["file"] == "src/c.ts" and fx["path"] == "first_review plan_fix build_fix re_review plan_fix2 build_fix2 re_review done" and fx["secondBuild"]["tasks"] == [{"id": "fix-b", "objective": "fix b"}] and fx["out"]["review_status"] == "pass")
     proofs.prove("n1374", ok, f"plan gaps {len(fx['planGaps']['gaps'])}, build tasks {fx['buildTasks']['tasks']}, second-round gaps {fx['secondGaps']['gaps'][0]['file']}, path {fx['path']}")
-    # n1375 Debugger: a read-only debugger handed the scientific method, answering the evidence path.
+    # n1375 Debugger: the read-only helper's diagnosis is persisted by registered handlers, not its self-reported path.
     d = s["debug"]
-    ok = d["helper"] == "debugger" and d["readOnly"] and d["method"] and d["skills"]["names"] == ["gitnexus-debugging"] and d["out"]["evidence_path"] == "e.md" and d["out"]["status"] == "confirmed"
-    proofs.prove("n1375", ok, f"{d['helper']} read-only {d['readOnly']}, method in its brief {d['method']}, answer {d['out']['status']} at {d['out']['evidence_path']}")
+    saved = d["persisted"]
+    ok = (d["helper"] == "debugger" and d["readOnly"] and d["method"] and d["skills"]["names"] == ["gitnexus-debugging"] and d["out"]["evidence_path"] == "" and d["out"]["status"] == "confirmed"
+          and saved["status"] == "succeeded" and saved["evidencePath"] == ".agents/planning/debug/r17-proof.evidence.ndjson" and saved["modelPathExists"] is False
+          and saved["evidence"] == '{"hypothesis":"empty list","verdict":"confirmed"}\n{"hypothesis":"cheaper cause","verdict":"refuted"}\n'
+          and all(part in saved["session"] for part in ("# Debug session — r17-proof", "### Hypothesis 1", "### Independent check")))
+    proofs.prove("n1375", ok, f"{d['helper']} read-only {d['readOnly']}; no-session path {d['out']['evidence_path']!r}; saved {saved['status']} at {saved['evidencePath']}, {len(saved['evidence'].splitlines())} evidence lines, model path exists {saved['modelPathExists']}")
     # n1376 Debug session manager: an objection sends the debugger back, an answered one confirms compactly, an unanswered one ends as partial after three rounds.
-    ok = "investigate verify_cause investigate verify_cause confirmed" in d["path"] and d["out"]["root_cause"] == "list[0] on empty" and d["stuckInvestigate"] == 3 and d["stuckStatus"] == "partial"
+    ok = d["path"] == "ask_symptoms investigate write_investigation_session write_investigation_evidence verify_cause write_verification_session write_verification_evidence investigate write_investigation_session write_investigation_evidence verify_cause write_verification_session write_verification_evidence confirmed" and d["out"]["root_cause"] == "list[0] on empty" and d["stuckInvestigate"] == 3 and d["stuckStatus"] == "partial"
     proofs.prove("n1376", ok, f"path {d['path']}; never-answered objection: {d['stuckInvestigate']} investigations then {d['stuckStatus']}")
     # n1377 Verifier: an unproved promise fails the phase and names the piece, a proved one passes, and the same facts freeze one verdict.
     v = s["verdict"]
@@ -74,7 +78,7 @@ def scenario_sma_r17(tmp) -> dict:
     proofs.prove("n1379", ny["writes"] == [] and ny["skills"] == ["lane-pilot"] and len(s["gaps"]) == 1 and s["gaps"][0].startswith("p1"), f"writes {ny['writes']}, skills {ny['skills']}, gaps {s['gaps']}")
     # n1380 Security auditor: without a phase the threat model is skipped, with one it runs once.
     sec = s["security"]
-    proofs.prove("n1380", sec["plainCalls"] == 0 and sec["plainSkipped"] == ["threat_model"] and sec["phaseCalls"] == 1, f"no phase: {sec['plainCalls']} calls, skipped {sec['plainSkipped']}; with a phase: {sec['phaseCalls']} call")
+    proofs.prove("n1380", sec["plainCalls"] == 0 and sec["plainSkipped"] == ["threat_model", "write_threat_model"] and sec["phaseCalls"] == 1, f"no phase: {sec['plainCalls']} calls, skipped {sec['plainSkipped']}; with a phase: {sec['phaseCalls']} call")
     # n1381 UI auditor: the six-pillar review is its own step, on by default, skipped and no file when review_file is false.
     ui = s["uiAudit"]
     proofs.prove("n1381", ui["offSkipped"] == ["review_doc"] and ui["offCalls"] == 0 and ui["onCalls"] == 1, f"review_file=false skipped {ui['offSkipped']}, default calls {ui['onCalls']}")
@@ -83,7 +87,7 @@ def scenario_sma_r17(tmp) -> dict:
     proofs.prove("n1382", q["blocked"] == "blocked" and q["none"] == "browser_qa_thread_returned_no_verdict" and q["passed"] == "passed", f"{q}")
     # n1383 Eval auditor: a flawed evaluation is offered a fix and answered flawed; a sound one closes sound with its review path.
     er = s["evalReview"]
-    proofs.prove("n1383", er["flawedPath"] == "review offer flawed" and er["flawedOut"]["status"] == "flawed" and er["flawedOut"]["proposed_workflow"] == "todo-add" and er["soundStatus"] == "sound", f"flawed path {er['flawedPath']} -> {er['flawedOut']['status']}, sound -> {er['soundStatus']}")
+    proofs.prove("n1383", er["flawedPath"] == "review doc_path write_review offer flawed" and er["flawedOut"]["status"] == "flawed" and er["flawedOut"]["proposed_workflow"] == "todo-add" and er["soundStatus"] == "sound", f"flawed path {er['flawedPath']} -> {er['flawedOut']['status']}, sound -> {er['soundStatus']}")
     # n1384 UI researcher: the UI-SPEC.md contract names the required sections it misses and passes when each heading is there.
     sp = s["uiSpec"]
     proofs.prove("n1384", sp["ok"] is None and "misses required section(s): accessibility" in (sp["gap"] or ""), f"complete spec -> {sp['ok']}, missing one -> {sp['gap']!r}")

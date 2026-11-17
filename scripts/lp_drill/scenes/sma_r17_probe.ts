@@ -2,6 +2,8 @@
 // nothing: the scene compares each value with the card's expected result and prove()s it. No model, no hub write: the graphs run on the real
 // engine with the model nodes answered by stubs (what a role is given, which field carries its answer and where the graph sends it are observed).
 import type { GraphNode, StepContext } from "@lane-pilot/workflow-engine";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { nightlyDocsPrompt } from "../../../src/rooms/docs/docs";
 import { lintCitationClaims } from "../../../src/rooms/docs/docs-lint";
 import { buildAcceptanceCard } from "../../../src/rooms/acceptance/card";
@@ -22,6 +24,7 @@ import { agentRequest, roleSpec } from "../../../src/rooms/workflow/server/workf
 import { REDUCERS } from "../../../packages/workflow-engine/src/reducers";
 import { world } from "../../../tests/baseline/world";
 import { chainStore, runSim } from "../../../tests/workflow/chain-harness";
+import { PROJECT, RUN, reply, runHomeWorld } from "../../../tests/workflow/run-home-world";
 
 type AgentNode = Extract<GraphNode, { type: "agent" }>;
 const s: Record<string, any> = {};
@@ -85,6 +88,26 @@ const stand = { status: "confirmed", root_cause: "list[0] on empty", mechanism: 
 const dbg = await runSim("debug", { input: { symptom: "x".repeat(60) }, mode: "full", stubs: { investigate: stand, verify_cause: [{ confirmed: false, objections: ["cheaper"] }, { confirmed: true, objections: [] }] } });
 const stuck = await runSim("debug", { input: { symptom: "x".repeat(60) }, mode: "full", stubs: { investigate: stand, verify_cause: { confirmed: false, objections: ["cheaper"] } } });
 s.debug = { helper: investigate.helper, readOnly: investigate.readOnly, method: investigate.prompt.includes("No fix without a confirmed root cause") && investigate.prompt.includes("at most 3 hypotheses"), skills: roleProfilePolicy("debugger").skills, path: dbg.path.join(" "), out: outOf(dbg), stuckInvestigate: stuck.called("investigate").length, stuckStatus: outOf(stuck).status };
+const persistedDebug = await runHomeWorld({
+  investigate: [reply({ ...stand, evidence_path: "model-self-report.md", refuted: 1, hypotheses_total: 2, regression_tests: [], risks: [], session_entry: "\n### Hypothesis 1\n\nResolved.\n", evidence_entry: '{"hypothesis":"empty list","verdict":"confirmed"}', handoff: "diagnosis ready" })],
+  verify_cause: [reply({ confirmed: true, objections: [], session_entry: "\n### Independent check\n\nConfirmed.\n", evidence_entry: '{"hypothesis":"cheaper cause","verdict":"refuted"}', handoff: "check ready" })],
+});
+try {
+  // Exercise existing-file append; the registered-handler regression separately checks absent-file creation.
+  mkdirSync(join(persistedDebug.checkout, ".agents/planning/debug"), { recursive: true });
+  writeFileSync(join(persistedDebug.checkout, ".agents/planning/debug/r17-proof.evidence.ndjson"), "", { flag: "wx" });
+  const saved = await persistedDebug.engine.start({ workflow: (await chainStore()).get("debug")!.workflow, resolve: (await chainStore()).resolve, inputs: { symptom: "A sufficiently detailed failure symptom for the saved debug session.", session: "r17-proof", auto_fix: false }, mode: "full", runtime: persistedDebug.rt, link: { projectId: PROJECT, runId: RUN } }).done;
+  const evidencePath = String((saved.output as Record<string, unknown> | undefined)?.evidence_path ?? "");
+  s.debug.persisted = {
+    status: saved.status, evidencePath,
+    evidence: evidencePath && existsSync(join(persistedDebug.checkout, evidencePath)) ? readFileSync(join(persistedDebug.checkout, evidencePath), "utf8") : "",
+    session: existsSync(join(persistedDebug.checkout, ".agents/planning/debug/r17-proof.md")) ? readFileSync(join(persistedDebug.checkout, ".agents/planning/debug/r17-proof.md"), "utf8") : "",
+    modelPathExists: existsSync(join(persistedDebug.checkout, "model-self-report.md")),
+  };
+} finally {
+  await persistedDebug.dispose();
+  rmSync(persistedDebug.checkout, { recursive: true, force: true });
+}
 
 // ---- the whole-checking roles (n1378) ----
 {
