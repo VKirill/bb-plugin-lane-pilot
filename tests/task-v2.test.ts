@@ -71,7 +71,24 @@ describe("task-v2 reserved repository selectors", () => {
         expect.stringContaining("verification[0].cwd"),
       ]));
       expect(result.errors.join(" ")).toContain("repo:");
+      expect(result.errors.join(" ")).toContain("project_cwd coordinates");
     }
+  });
+
+  it("rejects the selector in each concrete path field while preserving prose outputs", () => {
+    const invalidFields: Array<[string, Record<string, unknown>]> = [
+      ["never_touch", { never_touch: ["repo:secret.txt"] }],
+      ["test_removals", { test_removals: ["repo:old.test.ts"] }],
+      ["drawing", { drawing: ["repo:mock.png"] }],
+      ["files[0].path", { files: [{ path: "repo:created.txt", action: "create", change: "create it" }] }],
+    ];
+    for (const [field, change] of invalidFields) {
+      const result = validateTaskV2({ ...base, ...change });
+      expect(result.ok, field).toBe(false);
+      if (!result.ok) expect(result.errors.join(" "), field).toContain(field);
+    }
+    const prose = validateTaskV2({ ...base, expected_outputs: ["repo: marker should be updated"] });
+    expect(prose.ok).toBe(true);
   });
 
   it("keeps read selectors legal without banning ordinary POSIX colons", () => {

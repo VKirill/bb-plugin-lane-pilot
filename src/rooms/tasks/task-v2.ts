@@ -3,6 +3,7 @@ import { isAbsolute, join, resolve } from "node:path";
 import { pluginRootFromModule } from "@lane-pilot/kit";
 import { isReservedRepoSelector, TASK_V2_OPTIONAL, taskV2Schema, type TaskV2 } from "../contracts";
 import { applyTrustedTooling } from "./trusted-tooling";
+import { isOutputPath } from "./validate-output";
 
 export const TASK_V2_REQUIRED = [
   "schema_version",
@@ -43,13 +44,15 @@ function reservedRepoPathFindings(task:TaskV2):string[] {
     ...(task.drawing ? [["drawing", task.drawing] as [string, readonly string[]]] : []),
   ];
   for (const [field, paths] of pathFields) for (const path of paths) {
-    if (isReservedRepoSelector(path)) findings.push(`${field} uses reserved repo: selector: ${path}`);
+    if (field !== "expected_outputs" || isOutputPath(path)) {
+      if (isReservedRepoSelector(path)) findings.push(`${field} uses reserved repo: selector: ${path}; repo: is read-only; write paths/check cwd use project_cwd coordinates`);
+    }
   }
   for (const [index, file] of (task.files ?? []).entries()) {
-    if (isReservedRepoSelector(file.path)) findings.push(`files[${index}].path uses reserved repo: selector: ${file.path}`);
+    if (isReservedRepoSelector(file.path)) findings.push(`files[${index}].path uses reserved repo: selector: ${file.path}; repo: is read-only; write paths/check cwd use project_cwd coordinates`);
   }
   for (const [index, check] of task.verification.entries()) {
-    if (isReservedRepoSelector(check.cwd)) findings.push(`verification[${index}].cwd uses reserved repo: selector: ${check.cwd}`);
+    if (isReservedRepoSelector(check.cwd)) findings.push(`verification[${index}].cwd uses reserved repo: selector: ${check.cwd}; repo: is read-only; write paths/check cwd use project_cwd coordinates`);
   }
   return findings;
 }
