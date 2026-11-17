@@ -16,7 +16,8 @@ const task: TaskV2 = {
 };
 
 /** The PM's stop lands while the writer starts: the attempt is `cancel_requested` before the spawn finds out. */
-function world(options:{ onBreaker?:boolean; providers?:unknown[]; spawn?:() => Promise<unknown>; settings?:() => Promise<unknown> }) {
+function world(options:{ onBreaker?:boolean; providers?:unknown[]; spawn?:() => Promise<unknown>; settings?:() => Promise<unknown>; wakeFails?:boolean }) {
+  const warnings:string[] = [];
   const { bb } = createFakePluginHost({ pluginId:"lane-pilot" });
   const db = openDatabase(bb);
   createRun(db, "run", "P", "cli", "/repo");
@@ -24,7 +25,7 @@ function world(options:{ onBreaker?:boolean; providers?:unknown[]; spawn?:() => 
   createAttempt(db, { id:"a1", runId:"run", taskId:"t1" });
   const stop = () => transitionAttempt(db, "a1", "cancel_requested", { reason:"stop" });
   const ctx = {
-    bb:{ storage:bb.storage, log:{ info() {}, warn() {} },
+    bb:{ storage:bb.storage, log:{ info() {}, warn(message:string) { warnings.push(message); } },
       sdk:{ projects:{ get:async () => ({ sources:[] }) },
         providers:{ list:async () => options.providers ?? [{ id:"codex", available:true, serviceTiers:[{ id:"default" }] }],
           models:async () => ({ models:[{ id:"codex-test", model:"codex-test", supportedReasoningEfforts:[{ reasoningEffort:"medium" }] }] }) },
@@ -38,11 +39,12 @@ function world(options:{ onBreaker?:boolean; providers?:unknown[]; spawn?:() => 
     } },
     effectiveProjectSettings:options.settings ?? (async () => { if (!options.onBreaker) stop(); return { values:{ "memory.enabled":false, "adoc.040":"auto" } }; }),
   };
-  const services = { providerBreaker:{ decide:() => { if (options.onBreaker) stop(); return options.onBreaker ? { allow:false, reason:"open" } : { allow:true }; } }, ruleScan:{ chainForRun:async () => [] } };
+  const services = { providerBreaker:{ decide:() => { if (options.onBreaker) stop(); return options.onBreaker ? { allow:false, reason:"open" } : { allow:true }; } }, ruleScan:{ chainForRun:async () => [] },
+    ...(options.wakeFails ? { workflowEngine:{ poll:async () => { throw new Error("wake boom"); } } } : {}) };
   const writer = createWriterSpawn(ctx as never, services as never);
   const run = () => writer.spawnWriterAttempt({ projectId:"P", runId:"run", taskId:"t1", attemptId:"a1", config, task, plan:"write", pmThreadId:"pm" });
   const refused = () => db.prepare("SELECT from_state, to_state FROM lane_pilot_attempt_transition WHERE attempt_id='a1' AND refused=1").all();
-  return { db, run, refused, stop };
+  return { db, run, refused, stop, warnings };
 }
 
 describe("a stop requested while the writer starts", () => {
@@ -65,6 +67,14 @@ describe("a stop requested while the writer starts", () => {
     await expect(w.run()).resolves.toMatchObject({ ok:false, status:"canceled", attemptId:"a1" });
     expect(getAttempt(w.db, "a1")).toMatchObject({ state:"canceled" });
     expect(w.refused()).toEqual([]);
+  });
+
+  it("keeps cancellation successful when the terminal workflow wake rejects", async () => {
+    const w = world({ onBreaker:true, wakeFails:true });
+    await expect(w.run()).resolves.toMatchObject({ ok:false, status:"canceled", attemptId:"a1" });
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(getAttempt(w.db, "a1")).toMatchObject({ state:"canceled" });
+    expect(w.warnings).toContain("Lane Pilot workflow wake after cancellation skipped: wake boom");
   });
 });
 

@@ -25,7 +25,7 @@ const task: TaskV2 = {
 };
 
 /** The git-base host call is the first long wait after the attempt exists: held here until the test releases it. */
-async function setup(options:{ failBase?:boolean } = {}) {
+async function setup(options:{ failBase?:boolean; spawn?:() => Promise<unknown>; managedProviders?:boolean } = {}) {
   let releaseBase!: () => void;
   const baseHeld = new Promise<void>((resolve) => { releaseBase = resolve; });
   let baseCalls = 0;
@@ -34,13 +34,13 @@ async function setup(options:{ failBase?:boolean } = {}) {
     pluginId:"lane-pilot",
     sdk:{ projects:{ get:async ({ projectId }) => ({ id:projectId, sources:[{ hostId:"host-test", path:config.writerWorkspacePath }] }) }, threads:{
       getPluginMetadata: async ({ threadId }) => threadId === pmThreadId ? { role:"pm", lanePilotRunId:runId } : { role:"writer" },
-      spawn: async () => ({ id:"writer-revive" }),
+      spawn: options.spawn ?? (async () => ({ id:"writer-revive" })),
       wait: async () => new Promise(() => undefined),
       get: async ({ threadId }) => threadId === pmThreadId ? { id:pmThreadId, status:"idle", projectId } as never : { id:threadId, status:"active" } as never,
       output: async () => ({ text:"" }),
       list: async () => [] as never,
       stop: async ({ threadId }) => { stopped.push(threadId); return {} as never; },
-    }, environments:{ listProviders: async () => [] as never }, providers:{
+    }, environments:{ listProviders: async () => (options.managedProviders ? [{ id:"lane-pilot-worktree", availability:{ status:"available" } }, { id:"git-worktree" }] : []) as never }, providers:{
       list: async () => [{ id:"codex", available:true, capabilities:{ supportsServiceTier:true }, serviceTiers:[{ id:"default", label:"Default" }] }] as never,
       models: async () => ({ models:[{ id:"codex-test", model:"codex-test",
         supportedReasoningEfforts:["medium", "high", "xhigh"].map((reasoningEffort) => ({ reasoningEffort, description:reasoningEffort })) }] as never }),
@@ -154,6 +154,37 @@ describe("a replan keeps the task and its attempt", () => {
     expect(db.prepare("SELECT status FROM lane_pilot_wf_run WHERE id=?").get(pipelineRunId)).toEqual({ status: "succeeded" });
     const output = db.prepare("SELECT output_json FROM lane_pilot_wf_run WHERE id=?").get(pipelineRunId) as { output_json: string };
     expect(JSON.parse(output.output_json)).toMatchObject({ reply: { attemptId: "retry-attempt", state: "canceled" } });
+    expect(wfHasResumableLinkedRun(db, runId)).toBe(false);
+    await harness.lifecycle.dispose();
+  });
+
+  it("wakes a waiting pipeline when a deferred spawn observes cancellation", async () => {
+    let releaseSpawn!: (value:unknown) => void;
+    const spawnHeld = new Promise<unknown>((resolve) => { releaseSpawn = resolve; });
+    const { db, harness, dispatch, tool, releaseBase } = await setup({ spawn:() => spawnHeld, managedProviders:true });
+    // Freeze the run to an already-managed writer environment so this fixture reaches the real deferred writer spawn.
+    db.prepare("UPDATE lane_pilot_run SET writer_environment_id=? WHERE id=?").run("env-deferred", runId);
+    const first = await dispatch();
+    releaseBase();
+    await until(() => getAttempt(db, String(first.attemptId))?.state === "spawn_requested");
+    const pipelineRunId = await (async () => {
+      let id: string | null = null;
+      await until(() => { id = wfLatestPipelineRunId(db, runId, "replan-me"); return id !== null; });
+      return id!;
+    })();
+    await until(() => (db.prepare("SELECT status FROM lane_pilot_wf_run WHERE id=?").get(pipelineRunId) as { status?: string } | undefined)?.status === "waiting");
+
+    const canceled = await tool("lane_pilot_cancel_task", { taskIds:["replan-me"], words:"stop deferred start" });
+    expect(canceled).toMatchObject({ results:[{ taskId:"replan-me", attemptId:first.attemptId, state:"cancel_requested" }] });
+    expect(getAttempt(db, String(first.attemptId))?.state).toBe("cancel_requested");
+    expect(db.prepare("SELECT status FROM lane_pilot_wf_run WHERE id=?").get(pipelineRunId)).toEqual({ status:"waiting" });
+
+    releaseSpawn({ id:"writer-deferred" });
+    await until(() => getAttempt(db, String(first.attemptId))?.state === "canceled");
+    await until(() => (db.prepare("SELECT status FROM lane_pilot_wf_run WHERE id=?").get(pipelineRunId) as { status?: string } | undefined)?.status === "succeeded");
+    expect(db.prepare("SELECT status FROM lane_pilot_wf_run WHERE id=?").get(pipelineRunId)).toEqual({ status:"succeeded" });
+    const output = db.prepare("SELECT output_json FROM lane_pilot_wf_run WHERE id=?").get(pipelineRunId) as { output_json: string };
+    expect(JSON.parse(output.output_json)).toMatchObject({ reply: { attemptId:first.attemptId, state:"canceled" } });
     expect(wfHasResumableLinkedRun(db, runId)).toBe(false);
     await harness.lifecycle.dispose();
   });

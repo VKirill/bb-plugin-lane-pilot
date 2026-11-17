@@ -31,7 +31,7 @@ import type { WriterStateApi } from "./state";
 import type { SpawnInput, SpawnResult } from "./spawn-types";
 import { createSpawnWorktree } from "./spawn-worktree";
 import { buildWriterLaunch } from "./spawn-brief";
-import { spawnWriterAttemptWatched, startSteps } from "./spawn-watchdog";
+import { spawnWriterAttemptWatched, startSteps, wakeWorkflowAfterCancellation } from "./spawn-watchdog";
 import { checkDependencyBase } from "./start-dependency-base";
 import { storedDependsOn } from "./start-wait-dependencies";
 
@@ -47,6 +47,7 @@ interface Services {
   recoverLostHolderThread: ReconcileApi["recoverLostHolderThread"];
   rollback: RollbackApi;
   ruleScan: RuleScanApi;
+  workflowEngine?: { poll(): Promise<number> };
 }
 
 /** How long the pair whose launch was refused for a provider swap is held out of the writer chain. */
@@ -55,6 +56,12 @@ const LAUNCH_PARITY_READ_MS = 2_000;
 
 export function createWriterSpawn(ctx: ServerCore, services: Services) {
   const { bb, db, effectiveProjectSettings, host } = ctx;
+  const wakeWorkflow = () => services.workflowEngine?.poll();
+  const finishSpawn = (attemptId:string, reason:string, threadId?:string) => {
+    const status = endSpawnFailure(db, attemptId, reason, threadId);
+    if (status === "canceled") wakeWorkflowAfterCancellation((message) => bb.log.warn(message), wakeWorkflow);
+    return status;
+  };
   const liveFolder = createLiveFolder(ctx);
   const skillPick = createWriterSkillPick(ctx);
   const skillMaterial = createSkillMaterializer(ctx, (message) => bb.log.info(message));
@@ -120,20 +127,20 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
         const gate = services.providerBreaker.decide(trialKey);
         if (!gate.allow) {
           const reason = `writer_provider_unavailable:breaker_open:${gate.reason}`;
-          return { ok:false, status:endSpawnFailure(db, input.attemptId, reason), reason, attemptId:input.attemptId };
+          return { ok:false, status:finishSpawn(input.attemptId, reason), reason, attemptId:input.attemptId };
         }
         if (gate.state === "half_open") unusedTrial = { key: trialKey, token: gate.trialToken };
         // The owner is at the keyboard on this provider (src/rooms/owner-presence): the writer chain takes the next one.
         const present = services.ownerPresence?.holds(writerProviderId) ?? null;
         if (present) {
           const reason = `writer_provider_unavailable:${present}`;
-          return { ok:false, status:endSpawnFailure(db, input.attemptId, reason), reason, attemptId:input.attemptId };
+          return { ok:false, status:finishSpawn(input.attemptId, reason), reason, attemptId:input.attemptId };
         }
       }
       // The core cannot host this provider under the PM's session policy: the chain takes the next writer instead of a 500.
       if (!coreHostsRequiredProvider(bb, writerProviderId)) {
         const reason = `writer_provider_unavailable:core_unsupported:${writerProviderId}`;
-        return { ok:false, status:endSpawnFailure(db, input.attemptId, reason), reason, attemptId:input.attemptId };
+        return { ok:false, status:finishSpawn(input.attemptId, reason), reason, attemptId:input.attemptId };
       }
       const requestedServiceTier = input.emergency ? "default" as const : bbServiceTier(writerServiceTier(settings));
       let providers:Awaited<ReturnType<typeof bb.sdk.providers.list>>;
@@ -233,7 +240,7 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
       // The watchdog below ended this start while it waited: a thread made now would belong to no attempt.
       if (getAttempt(db, input.attemptId)?.state !== "spawn_requested") {
         const reason = "the writer start ended while it was being prepared";
-        return { ok:false, status:endSpawnFailure(db, input.attemptId, reason), reason, attemptId:input.attemptId };
+        return { ok:false, status:finishSpawn(input.attemptId, reason), reason, attemptId:input.attemptId };
       }
       at("launch");
       const spawned = providerEnvironment ? await worktree.launchOnProvider({ input, providerEnvironment, fallback:environment, launch }) : await launch(environment);
@@ -243,6 +250,7 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
       if (getAttempt(db, input.attemptId)?.state === "cancel_requested") {
         await bestEffort(bb.log, "writer thread stop", bb.sdk.threads.stop({ threadId:writerThreadId }), undefined);
         transitionAttempt(db, input.attemptId, "canceled", { threadId:writerThreadId, reason:"canceled while its writer was starting" });
+        wakeWorkflowAfterCancellation((message) => bb.log.warn(message), wakeWorkflow);
         return { ok:false, status:"canceled", reason:"canceled while its writer was starting", attemptId:input.attemptId };
       }
       if (getAttempt(db, input.attemptId)?.state !== "spawn_requested") {
@@ -281,7 +289,7 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
           services.providerBreaker.record(breakerKey(selectedProviderId, selectedModel), "exhausted", Date.now(), Date.now() + LAUNCH_PARITY_HOLD_MS);
           unusedTrial = null;
           const reason = `writer_provider_unavailable:launch_profile_mismatch:${asked} vs ${ran}`;
-          return { ok:false, status:endSpawnFailure(db, input.attemptId, reason, writerThreadId), reason, attemptId:input.attemptId };
+          return { ok:false, status:finishSpawn(input.attemptId, reason, writerThreadId), reason, attemptId:input.attemptId };
         }
         if ((got.model && selectedModel && normalizeModel(got.model) !== normalizeModel(selectedModel))
           || (got.reasoningLevel && lastExecution?.reasoningLevel && got.reasoningLevel !== lastExecution.reasoningLevel)) {
@@ -300,7 +308,7 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
       }
       if (cause instanceof WriterSelectionError) {
         const reason = cause.message;
-        return { ok:false, status:endSpawnFailure(db, input.attemptId, reason), reason, attemptId:input.attemptId };
+        return { ok:false, status:finishSpawn(input.attemptId, reason), reason, attemptId:input.attemptId };
       }
       // Only a spawn that is still being made is unknown. A failure after the thread was bound (the attempt is running) is
       // a bookkeeping error: reconcile below finds the thread it already has. Any other state is not a spawn's to change.
@@ -309,7 +317,7 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
         // The stop was requested while the spawn was being made and the spawn failed: nothing is left to reconcile for.
         const reason = cause instanceof Error ? cause.message : String(cause);
         bb.log.warn(`Lane Pilot writer spawn for ${input.attemptId} failed after its stop was requested: ${reason}`);
-        return { ok:false, status:endSpawnFailure(db, input.attemptId, reason), reason, attemptId:input.attemptId };
+        return { ok:false, status:finishSpawn(input.attemptId, reason), reason, attemptId:input.attemptId };
       }
       if (during === "spawn_requested") transitionAttempt(db, input.attemptId, "spawn_unknown", { reason:cause instanceof Error ? cause.message : String(cause) });
       else if (during !== "running" && during !== "spawn_unknown") throw cause;
@@ -327,7 +335,7 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
   }
 
   async function spawnWriterAttempt(input: SpawnInput): Promise<SpawnResult> {
-    return spawnWriterAttemptWatched({ db, log:(message) => bb.log.warn(message) }, input, spawnWriterAttemptOnce);
+    return spawnWriterAttemptWatched({ db, log:(message) => bb.log.warn(message), wakeWorkflow }, input, spawnWriterAttemptOnce);
   }
 
   return { spawnWriterAttempt, workspaceDirt:worktree.workspaceDirt, isLiveFolder:liveFolder.isLiveFolder, probeLiveFolder:liveFolder.probeLiveFolder, invalidateLiveFolder:liveFolder.invalidateLiveFolder, backupLiveFolder:liveFolder.backupLiveFolder, restoreLiveFolder:liveFolder.restoreLiveFolder };
