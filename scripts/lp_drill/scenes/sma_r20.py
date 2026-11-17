@@ -30,6 +30,8 @@ NINE = ["event", "projectId", "runId", "taskId", "title", "kind", "state", "atte
 def scenario_sma_r20(tmp: Path) -> dict:
     proofs = Proofs()
     done = subprocess.run(["npx", "tsx", str(PROBE)], cwd=ROOT, capture_output=True, text=True, timeout=600)
+    if done.returncode != 0:
+        return proofs.verdict("sma_r20", [f"the probe exited {done.returncode}: {(done.stderr or done.stdout).strip()[-300:]}"])
     try:
         s = json.loads(done.stdout.strip().splitlines()[-1])
     except (ValueError, IndexError):
