@@ -277,7 +277,9 @@ describe("daemon boot: settings, passport, queue and ledger", () => {
   it("[sma:m_durable_up] the queue is consistent from the first enqueue: a task for a run that does not exist is refused", () => {
     const { bb } = createFakePluginHost({ pluginId: "lane-pilot" });
     const db = openDatabase(bb);
-    expect(() => createTask(db, { id: "t_orphan", runId: "no_such_run", kind: "bb", contract: {} })).toThrow(/FOREIGN KEY/);
+    expect(() => createTask(db, { id: "t_orphan", runId: "no_such_run", kind: "bb", contract: {} })).toThrow("Lane Pilot admission refused: run does not exist");
+    expect(() => db.prepare("INSERT INTO lane_pilot_task(id,run_id,kind,contract_json,created_at,birth) VALUES (?,?,?,?,?,?)")
+      .run("t_orphan_sql", "no_such_run", "bb", "{}", Date.now(), "pm")).toThrow(/FOREIGN KEY/);
     expect(db.prepare("SELECT COUNT(*) AS n FROM lane_pilot_task").get()).toEqual({ n: 0 });
     createRun(db, "run", "proj", "bb");
     createTask(db, { id: "t1", runId: "run", kind: "bb", contract: {} });
