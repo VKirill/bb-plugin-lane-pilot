@@ -61,7 +61,7 @@ describe("project loop hooks: engine integration", () => {
     expect(() => prepareLoopWorkflow({ workflow: root, manifest: parsed.manifest, manifestSha256: parsed.sha256, resolve: (id) => all.get(id) ?? null })).toThrow(/depth limit/);
   });
 
-  it("waits for and resumes a real human-gated hook child, persists its receipt, and keeps the root output", async () => {
+  it("[sma:k_t_loop] waits for and resumes a real human-gated hook child, persists its receipt, and keeps the root output", async () => {
     const db = journalDb();
     const childV1 = hookChild("project-check", "v1");
     let catalog = childV1;
@@ -96,7 +96,7 @@ describe("project loop hooks: engine integration", () => {
 });
 
 describe("project loop hooks: library and production trigger integration", () => {
-  it("isolates project A/B, consumes the reserved manifest through the real trigger, and refuses malformed, unavailable, and host-mismatched projects", async () => {
+  it("[sma:k_t_loop] isolates project A/B, consumes the reserved manifest through the real trigger, and refuses malformed, unavailable, and host-mismatched projects", async () => {
     const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
     const db = openDatabase(bb);
     const projectPaths: Record<string, string> = { projectA: "/work/a", projectB: "/work/b", nestedMissing: "/work/nested", broken: "/work/broken", offline: "/work/offline", mismatch: "/work/mismatch" };

@@ -14,7 +14,7 @@ const root = parseWorkflow({
 });
 
 describe("project loop hook composition", () => {
-  it("keeps ordered hooks as literal subworkflow nodes before a nested plan", () => {
+  it("[sma:k_t_loop] keeps ordered hooks as literal subworkflow nodes before a nested plan", () => {
     const parsed = parseLoopHookManifest(JSON.stringify({ schemaVersion: 1, hooks: { "plan:pre": [{ workflow: "project-check", inputs: { goal: "$inputs.goal" } }, { workflow: "second-check", inputs: { goal: "$inputs.goal" } }], "verify:post": [], "ship:post": [] } }));
     const prepared = prepareLoopWorkflow({ workflow: root, manifest: parsed.manifest, manifestSha256: parsed.sha256, resolve: (id) => id === "lp.plan" ? child(id) : id === "project-check" ? child(id) : id === "second-check" ? child(id) : null, status: () => ({ status: "published" }) });
     expect(prepared.workflow.nodes.filter((node) => node.type === "subworkflow").map((node) => node.id)).toEqual(["plan"]);
@@ -54,7 +54,7 @@ describe("project loop hook composition", () => {
     } finally { engine.dispose(); db.close(); }
   });
 
-  it("places verify post hooks before the terminal emit and keeps its original outcome", async () => {
+  it("[sma:k_t_loop] places verify post hooks before the terminal emit and keeps its original outcome", async () => {
     const db = journalDb();
     const target = child("lp.close");
     const check = child("project-check");

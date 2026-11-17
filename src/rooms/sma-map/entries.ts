@@ -1589,7 +1589,7 @@ export const SMA_ENTRIES: Readonly<Record<string, SmaEntry>> = {
   n1575: ["have", "шапка markdown-документа читается отдельно от тела", "src/rooms/docs/docs-lint.ts#setFrontmatter"],
   n1576: ["have", "проверка структуры плана", "src/rooms/phase/logic/gates.ts#pieceProblems"],
   n1577: ["have", "индекс волн плана", "src/rooms/phase/logic/waves.ts#wavesOf"],
-  n1578: ["missing", "резолвер активных capability hooks для точки цикла перед планированием или после исполнения не реализован; фиксированные шаги post-ship/after-accept не эквивалентны"],
+  n1578: ["have", "манифест проекта задаёт упорядоченные capability hooks для plan:pre, verify:post и ship:post; Lane Pilot резолвит и встраивает их в граф", "src/rooms/workflow/loop-hooks.ts#prepareLoopWorkflow"],
   n1579: ["have", "реестр возможностей", "src/rooms/native-install/feature-registry.ts#featureRegistry"],
   n1580: ["have", "генератор реестра", "scripts/atlas/logic.ts#capabilitySnapshot"],
   n1581: ["void", "нет предмета: это самоописание SMA для её реестра возможностей, загрузчика здесь нет; Lane Pilot описывают созданный атлас и манифест плагина"],
