@@ -26,7 +26,7 @@ import {
 import type { TaskV2 } from "../src/rooms/contracts";
 import { validateAcceptanceV2 } from "../src/rooms/tasks/acceptance-v2";
 import { familyDirtBaseline } from "../src/rooms/writer/server/verify";
-import { createFakeWorktreeHost } from "./own-worktree-host";
+import { withOwnWorktrees } from "./own-worktree-host";
 
 // An in-place redispatch counts only the edits an earlier attempt of the same task family produced; owner or
 // other-task dirt in an owned file keeps its baseline and is never counted as produced.
@@ -59,7 +59,27 @@ const pmThreadId = "pm-thread";
 const withPm = <A extends { threadId:string }, R>(get:(args:A) => Promise<R>) =>
   async (args:A) => args.threadId === pmThreadId ? { id:pmThreadId, status:"idle", projectId } as never : get(args);
 // Every writer attempt of a git project works in its own worktree; tests that follow one task through acceptance use this.
-const worktreeHost = (options:NonNullable<Parameters<typeof createFakePluginHost>[0]>) => createFakeWorktreeHost(options, "host-test");
+const worktreeHost = (options:NonNullable<Parameters<typeof createFakePluginHost>[0]>) => {
+  const inner = options.experimental_callHostRpc;
+  return createFakePluginHost(withOwnWorktrees({
+    ...options,
+    sdk: { ...options.sdk, environments: { listProviders:listLiveWorktreeProviders, ...options.sdk?.environments } } as never,
+    experimental_callHostRpc: async (call) => {
+      const input = call.input as { command?: string };
+      if (call.method === "runCommand" && input.command?.includes("if not shutil.which(\"git\")")) {
+        return { hostId:"host-test", exitCode:0, stdout:JSON.stringify({ state:"localNoOrigin", cwd:config.writerWorkspacePath, root:config.writerWorkspacePath, hasCommit:true }), stderr:"" };
+      }
+      if (call.method === "runCommand" && input.command === "git rev-parse --show-prefix") {
+        return { hostId:"host-test", exitCode:0, stdout:"apps/site/\n", stderr:"" };
+      }
+      if (!inner) throw new Error(`unexpected host method ${call.method}`);
+      return inner(call as never);
+    },
+  }, "host-test", config.writerWorkspacePath));
+};
+
+const createWriterRun = (db:ReturnType<typeof openDatabase>, id:string, workspace=config.writerWorkspacePath) =>
+  createRun(db, id, projectId, "bb", workspace, "none", undefined, "host-test");
 const config = {
   projectId,
   hostId:"host-test",
@@ -112,6 +132,7 @@ function saveLegacyWriterConfig(db: ReturnType<typeof openDatabase>): void {
 const listLiveWriterProviders = async () => [{ id:"codex", available:true, capabilities:{ supportsServiceTier:true }, serviceTiers:[
   { id:"default", label:"Default" }, { id:"fast", label:"Fast" },
 ] }] as never;
+const listLiveWorktreeProviders = async () => [{ id:"git-worktree", availability:{ status:"available" } }] as never;
 const listLiveWriterModels = async () => ({ models:[{
   id:"codex-test", model:"codex-test",
   supportedReasoningEfforts:["medium", "high", "xhigh"].map((reasoningEffort) => ({ reasoningEffort, description:reasoningEffort })),
@@ -172,7 +193,7 @@ describe("BB writer validation on the server path", () => {
     const db = openDatabase(bb);
     saveLegacyWriterConfig(db);
     saveProjectSetting(db, projectId, "writer.service_tier", "fast");
-    createRun(db, "run-delayed", projectId, "bb", taskWorkspace);
+    createWriterRun(db, "run-delayed", taskWorkspace);
     savePrototypeConfig(db, { ...config, writerWorkspacePath:"/tmp/changed-after-run-start" });
     setRunThread(db, "run-delayed", pmThreadId);
     await plugin(bb);
@@ -226,6 +247,7 @@ describe("BB writer validation on the server path", () => {
     const { bb, harness } = worktreeHost({
       pluginId:"lane-pilot",
       sdk:{
+        environments:{ listProviders:listLiveWorktreeProviders },
         threads:{
           getPluginMetadata:async ({ threadId }) => threadId === pmThreadId ? { role:"pm", lanePilotRunId:"run-resumed-receipt" } : { role:"writer" },
           spawn:async () => ({ id:"writer-resumed-receipt" }),
@@ -256,7 +278,7 @@ describe("BB writer validation on the server path", () => {
     });
     const db = openDatabase(bb);
     saveLegacyWriterConfig(db);
-    createRun(db, "run-resumed-receipt", projectId, "bb", config.writerWorkspacePath);
+    createWriterRun(db, "run-resumed-receipt");
     setRunThread(db, "run-resumed-receipt", pmThreadId);
     await plugin(bb);
     await harness.behavior.callAgentTool(
@@ -274,9 +296,10 @@ describe("BB writer validation on the server path", () => {
 
   it("sends a task whose depends_on is already blocked back to the PM to replan instead of queuing it (live: gc-native-price-watermark.4)", async () => {
     let spawns = 0;
-    const { bb, harness } = createFakePluginHost({
+    const { bb, harness } = worktreeHost({
       pluginId:"lane-pilot",
       sdk:{
+        environments:{ listProviders:listLiveWorktreeProviders },
         threads:{
           getPluginMetadata:async ({ threadId }) => threadId === pmThreadId ? { role:"pm", lanePilotRunId:"run-depends" } : { role:"writer" },
           spawn:async () => { spawns += 1; return { id:"writer-depends" }; },
@@ -293,7 +316,7 @@ describe("BB writer validation on the server path", () => {
     });
     const db = openDatabase(bb);
     saveLegacyWriterConfig(db);
-    createRun(db, "run-depends", projectId, "bb", config.writerWorkspacePath);
+    createWriterRun(db, "run-depends");
     setRunThread(db, "run-depends", pmThreadId);
     createTask(db, { id:"dep-task", runId:"run-depends", kind:"bb", contract:{ ...task, id:"dep-task" } });
     createAttempt(db, { id:"dep-attempt", runId:"run-depends", taskId:"dep-task" });
@@ -317,6 +340,7 @@ describe("BB writer validation on the server path", () => {
     const { bb, harness } = worktreeHost({
       pluginId:"lane-pilot",
       sdk:{
+        environments:{ listProviders:listLiveWorktreeProviders },
         threads:{
           getPluginMetadata:async ({ threadId }) => threadId === pmThreadId
             ? { role:"pm", lanePilotRunId:"run-needs-human" }
@@ -346,7 +370,7 @@ describe("BB writer validation on the server path", () => {
     const db = openDatabase(bb);
     saveLegacyWriterConfig(db);
     saveProjectSetting(db, projectId, "writer.reasoning_effort", "high");
-    createRun(db, "run-needs-human", projectId, "bb", config.writerWorkspacePath);
+    createWriterRun(db, "run-needs-human");
     setRunThread(db, "run-needs-human", pmThreadId);
     await plugin(bb);
     const dispatched = JSON.parse(String(await harness.behavior.callAgentTool(
@@ -416,7 +440,7 @@ describe("BB writer validation on the server path", () => {
     db.prepare("INSERT INTO lane_pilot_memory(id,project_id,personal_bot,kind,audience,content,concepts_json,source_sha256,created_at) VALUES('mem-other',?,'','core','subagent','Other client rule.','[]','s',9)").run(projectId);
     db.prepare(`INSERT INTO lane_pilot_rule_proposal (id,project_id,signature,rule,author,state,occurrences,task_count,examples_json,memory_id,first_seen_at,last_seen_at,updated_at,decided_at,scope_json)
       VALUES ('rule-other',?,'s9','Other client rule.','model','accepted',3,3,'[]','mem-other',1,1,1,9,'["section:clients","section:other-client"]')`).run(projectId);
-    createRun(db, "run-rules", projectId, "bb", config.writerWorkspacePath);
+    createWriterRun(db, "run-rules");
     db.prepare("UPDATE lane_pilot_run SET settings_scopes_json=? WHERE id='run-rules'").run(JSON.stringify(["section:clients", "section:this-client"]));
     setRunThread(db, "run-rules", pmThreadId);
     await plugin(bb);
@@ -472,7 +496,7 @@ describe("BB writer validation on the server path", () => {
     saveLegacyWriterConfig(db);
     // The effort ladder belongs to a retry of the same model: the classic order, not the default handoff to the next model.
     saveProjectSetting(db,projectId,"writer.fallback_on_provider_failure","after_retry");
-    createRun(db,"run-effort-retry",projectId,"bb",config.writerWorkspacePath);
+    createWriterRun(db,"run-effort-retry");
     setRunThread(db,"run-effort-retry",pmThreadId);
     await plugin(bb);
     const dispatched=JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",
@@ -526,7 +550,7 @@ describe("BB writer validation on the server path", () => {
     const db=openDatabase(bb);
     saveLegacyWriterConfig(db);
     saveProjectSetting(db, projectId, "writer.reasoning_effort", "high");
-    createRun(db,"run-manual-high",projectId,"bb",config.writerWorkspacePath);
+    createWriterRun(db,"run-manual-high");
     setRunThread(db,"run-manual-high",pmThreadId);
     await plugin(bb);
     const dispatched=JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",
@@ -587,7 +611,7 @@ describe("BB writer validation on the server path", () => {
     });
     const db = openDatabase(bb);
     saveLegacyWriterConfig(db);
-    createRun(db, "run-accepted", projectId, "bb", config.writerWorkspacePath);
+    createWriterRun(db, "run-accepted");
     setRunThread(db, "run-accepted", pmThreadId);
     await plugin(bb);
     const dispatched = JSON.parse(String(await harness.behavior.callAgentTool(
@@ -685,7 +709,7 @@ describe("BB writer validation on the server path", () => {
     const db = openDatabase(bb);
     saveLegacyWriterConfig(db);
     saveProjectSetting(db, projectId, "ops.verify_pool_size", 2);
-    createRun(db, "run-v", projectId, "bb", config.writerWorkspacePath);
+    createWriterRun(db, "run-v");
     setRunThread(db, "run-v", pmThreadId);
     await plugin(bb);
     const dispatched = JSON.parse(String(await harness.behavior.callAgentTool(
@@ -765,7 +789,7 @@ describe("BB writer validation on the server path", () => {
     });
     const db = openDatabase(bb);
     saveLegacyWriterConfig(db);
-    createRun(db, "run-t", projectId, "bb", config.writerWorkspacePath);
+    createWriterRun(db, "run-t");
     setRunThread(db, "run-t", pmThreadId);
     await plugin(bb);
     const dispatched = JSON.parse(String(await harness.behavior.callAgentTool(
@@ -828,7 +852,7 @@ describe("BB writer validation on the server path", () => {
     // This test follows the PM's emergency model alone; the writer's fallbacks are off.
     saveProjectSetting(db, projectId, "writer.fallback1.provider", "");
     saveProjectSetting(db, projectId, "writer.fallback2.provider", "");
-    createRun(db, "run-v", projectId, "bb", config.writerWorkspacePath);
+    createWriterRun(db, "run-v");
     setRunThread(db, "run-v", pmThreadId);
     await plugin(bb);
     const dispatched = JSON.parse(String(await harness.behavior.callAgentTool(
@@ -878,7 +902,7 @@ describe("BB writer validation on the server path", () => {
     });
     const db = openDatabase(bb);
     saveLegacyWriterConfig(db);
-    createRun(db, "run-background-error", projectId, "bb", config.writerWorkspacePath);
+    createWriterRun(db, "run-background-error");
     setRunThread(db, "run-background-error", pmThreadId);
     await plugin(bb);
 
@@ -913,7 +937,7 @@ describe("BB writer validation on the server path", () => {
   it("fails closed when a resumed attempt has a pre-dirty path without a content hash", async () => {
     const resumeTask: TaskV2 = { ...task, id:"resume-task", verify:"none", verification:[] };
     const snapshotCwds:string[] = [];
-    const { bb, harness } = createFakePluginHost({
+    const { bb, harness } = worktreeHost({
       pluginId:"lane-pilot",
       sdk:{
         threads:{
@@ -942,7 +966,7 @@ describe("BB writer validation on the server path", () => {
     });
     const db = openDatabase(bb);
     saveLegacyWriterConfig(db);
-    createRun(db, "run-resume", projectId, "bb", config.writerWorkspacePath);
+    createWriterRun(db, "run-resume");
     savePrototypeConfig(db, { ...config, writerWorkspacePath:"/tmp/changed-after-resume-run-start" });
     setRunThread(db, "run-resume", pmThreadId);
     createTask(db, { id:"resume-task", runId:"run-resume", kind:"bb", contract:resumeTask });
@@ -963,7 +987,7 @@ describe("BB writer validation on the server path", () => {
 
   it("does not spawn when the dirt snapshot fails", async () => {
     let spawnCalled = 0;
-    const { bb, harness } = createFakePluginHost({
+    const { bb, harness } = worktreeHost({
       pluginId:"lane-pilot",
       sdk:{
         threads:{
@@ -997,7 +1021,7 @@ describe("BB writer validation on the server path", () => {
     });
     const db = openDatabase(bb);
     saveLegacyWriterConfig(db);
-    createRun(db, "run-dirt", projectId, "bb", config.writerWorkspacePath);
+    createWriterRun(db, "run-dirt");
     setRunThread(db, "run-dirt", pmThreadId);
     await plugin(bb);
     const dispatched = JSON.parse(String(await harness.behavior.callAgentTool(
