@@ -75,4 +75,27 @@ describe("stages after acceptance", () => {
     expect(core.acceptedTaskWorkspace("run", "bot-fix", base, task)).toMatchObject({ path: base, environmentId: null });
     await harness.lifecycle.dispose();
   });
+
+  it("returns the repository root for an accepted repo-scope section task after its own worktree is disposed", async () => {
+    const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
+    const db = openDatabase(bb);
+    const core = createCore(bb, db);
+    const runPath = `${base}/apps/bot`;
+    const repoTask = { ...(task as object), project_cwd: base, repo_scope: true } as never;
+    const attemptId = "lpattempt_repo_scope";
+    const removedWorktree = "/home/ubuntu/.lane-pilot/worktrees/lpattempt_repo_scope/selfystudio";
+    createRun(db, "run-repo-scope", "P", "bb", runPath);
+    createTask(db, { id: "bot-fix", runId: "run-repo-scope", kind: "bb", contract: repoTask });
+    createAttempt(db, { id: attemptId, runId: "run-repo-scope", taskId: "bot-fix" });
+    setAttemptWorkspace(db, attemptId, { path: removedWorktree, environmentId: null, decision: { disposedAfterMerge: true } });
+    transitionAttempt(db, attemptId, "spawn_requested");
+    transitionAttempt(db, attemptId, "running", { threadId: "thr_writer" });
+    transitionAttempt(db, attemptId, "accepted");
+    const workspace = core.acceptedTaskWorkspace("run-repo-scope", "bot-fix", runPath, repoTask);
+    expect(workspace.path).toBe(base);
+    expect(workspace.environmentId).toBeNull();
+    expect(workspace.task.project_cwd).toBe(base);
+    // The fixture records the disposed binding path but does not create/delete a real worktree.
+    await harness.lifecycle.dispose();
+  });
 });

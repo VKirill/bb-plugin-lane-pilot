@@ -34,11 +34,7 @@ export function createProjectLifeStage(ctx: ServerCore, services: Services) {
     if(!run||run.project_id!==args.projectId||run.pm_thread_id!==args.threadId||!config||!taskRow||taskRow.run_id!==args.runId||taskRow.kind!=="bb") throw new Error("task does not belong to this PM run and project");
     const taskContract=taskV2Schema.parse(taskRow.contract);
     // Project-life memory commits must ONLY happen on the base checkout's main branch, never in an attempt/area worktree.
-    const workspace={
-      path: run.writer_workspace_path!,
-      environmentId: run.writer_environment_id ?? null,
-      task: { ...taskContract, project_cwd: run.writer_workspace_path! },
-    };
+    const workspace=acceptedTaskWorkspace(args.runId,args.taskId,run.writer_workspace_path!,taskContract);
     const accepted=listStageReceipts(db,args.runId,args.taskId).find((row)=>row.stageId==="acceptance-receipt");
     if(accepted?.state!=="passed") throw new Error("project-life maintenance requires an accepted writer receipt first");
 
