@@ -8,9 +8,12 @@ import { runCommandOnHost } from "../src/rooms/writer/cli-run";
 import { readBoundedFile, snapshotDryRun } from "../src/rooms/host-worker/host-handlers";
 import type { TaskV2 } from "../src/rooms/contracts";
 import { coreFileWrite, mapStore } from "./helpers/core-files";
-import { appendTaskQaHome, recordCheckFiles } from "../src/rooms/writer/server/task-home";
+import { appendTaskQaHome, recordCheckFiles, writeDispatchHome } from "../src/rooms/writer/server/task-home";
+import { bbTaskFileIo } from "../src/rooms/storage";
+import { DISPATCH_STAGES_PENDING } from "../src/rooms/runs/constants";
+import { recordStage } from "../src/rooms/runs/server/stage-records";
 import {
-  createRun, createTask, getAttempt, legacyReadCount, listAttemptsForTask, listStageReceipts, loadProjectSettings, openDatabase, renderTaskManifest, saveProjectSetting, savePrototypeConfig, setRunThread,
+  createAttempt, createRun, createTask, freezeRunBinding, getAttempt, legacyReadCount, listAttemptsForTask, listStageReceipts, loadProjectSettings, openDatabase, renderTaskManifest, saveProjectSetting, savePrototypeConfig, saveTaskPlan, setRunThread,
 } from "../src/rooms/plugin-db";
 
 const projectId = "project-live";
@@ -44,6 +47,7 @@ async function setup(writerEdits: (folder: string) => string, feedback: (folder:
   const folder = temp("folder");
   write(folder, "hello.txt", "original\n");
   write(folder, "keep/other.txt", "not owned\n");
+  touched.length = 0;
   const config = {
     projectId, hostId: "host-live", pmWorkspacePath: folder, writerWorkspacePath: folder,
     pmProviderId: "claude-code", pmModel: "claude-test", writerProviderId: "codex", writerModel: "codex-test",
@@ -56,16 +60,18 @@ async function setup(writerEdits: (folder: string) => string, feedback: (folder:
   };
   const hostCalls: string[] = [];
   const commands: string[] = [];
+  const commandResults: Array<{ exitCode: number; stdout: string }> = [];
   const writes = new Map<string, string>();
   const threadSpawns: Array<{ role?: unknown }> = [];
   let answer = "";
   const events: unknown[] = [];
   const extraItems: unknown[] = [];
   const feedbackSeen: string[] = [];
+  const boundedReads: Array<{ path: string; cwd: string; content: string }> = [];
   let seq = 0;
   const { bb, harness } = createFakePluginHost({
     pluginId: "lane-pilot",
-    sdk: { threads: {
+    sdk: { projects: { get: async () => ({ sources: [{ hostId: "host-live", path: folder }] }) }, threads: {
       getPluginMetadata: async ({ threadId }) => threadId === pmThreadId ? { role: "pm", lanePilotRunId: runId } : { role: "writer" },
       spawn: async (args) => {
         const role = (args as { pluginMetadata?: { role?: unknown } }).pluginMetadata?.role;
@@ -97,8 +103,11 @@ async function setup(writerEdits: (folder: string) => string, feedback: (folder:
       models: async () => ({ models: [{ id: "codex-test", model: "codex-test",
         supportedReasoningEfforts: ["medium", "high"].map((reasoningEffort) => ({ reasoningEffort, description: reasoningEffort })) }] as never }),
     }, files: {
-      // A file the plugin wrote reads back as written (the task home); any other file is a fixture.
-      read: async (args) => ({ content: writes.get((args as { path: string }).path) ?? "fixture\n" }),
+      // A file the plugin wrote reads back as written (the task home); real project files stay disk-backed.
+      read: async (args) => {
+        const path = (args as { path: string }).path;
+        return { content: writes.get(path) ?? (existsSync(path) ? readFileSync(path, "utf8") : "fixture\n") };
+      },
       listPaths: async () => ({ paths: [] }) as never,
       write: coreFileWrite(mapStore(writes)) as never,
     } },
@@ -110,33 +119,66 @@ async function setup(writerEdits: (folder: string) => string, feedback: (folder:
       // The contract lint asks the machine about read_first files; that is the host's own file check, no git.
       if (call.method === "snapshotDryRun") return snapshotDryRun(call.input as never, {} as never);
       // The execution packet reads read_first through the machine's bounded file read: a file read on the real folder, no git.
-      if (call.method === "readBoundedFile") return readBoundedFile(call.input as never, {} as never);
+      if (call.method === "readBoundedFile") {
+        const input = call.input as { relativePath?: string; projectCwd?: string };
+        const result = await readBoundedFile(call.input as never, {} as never) as { content?: string };
+        if (typeof result.content === "string") boundedReads.push({ path: input.relativePath ?? "", cwd: input.projectCwd ?? "", content: result.content });
+        return result;
+      }
       if (call.method !== "runCommand") throw new Error(`a folder without git must not call ${call.method}`);
       const input = call.input as { requestedHostId: string; command: string; cwd: string; timeoutSec?: number };
       commands.push(input.command);
-      return runCommandOnHost(input);
+      if (input.command.includes("gh auth status --hostname github.com")) return { hostId: "host-live", exitCode: 1, stdout: "", stderr: "fixture: gh is not authenticated" };
+      const result = await runCommandOnHost(input);
+      commandResults.push(result);
+      return result;
     },
   });
   const db = openDatabase(bb);
   savePrototypeConfig(db, config);
   saveProjectSetting(db, projectId, "plan_critique.enabled", false);
   saveProjectSetting(db, projectId, "memory.enabled", false);
-  createRun(db, runId, projectId, "bb", folder);
+  createRun(db, runId, projectId, "bb", null);
+  freezeRunBinding(db, runId, { environmentId: "env-live", hostId: "host-live", workspacePath: folder });
   setRunThread(db, runId, pmThreadId);
   await plugin(bb);
   const dispatch = async (patch: Partial<TaskV2> = {}) => JSON.parse(String(await harness.behavior.callAgentTool(
     "lane_pilot_dispatch_writer", { confirm: true, objective: "Проверка диспетча", plan: "Make hello.txt say hello", task: { ...task, ...patch } }, { threadId: pmThreadId, projectId },
   ))) as Record<string, unknown>;
+  /** A task that was admitted before the private-Git dispatch guard: recovery resumes its durable pipeline. */
+  const resumeLegacy = async (patch: Partial<TaskV2> = {}) => {
+    const admittedTask = { ...task, ...patch };
+    const attemptId = "attempt-live";
+    // This continuation is the older live-folder run shape: the run keeps its frozen host/path binding but has no BB
+    // managed environment. The public dispatch refusal above still exercises the current binding guard.
+    db.prepare("UPDATE lane_pilot_run SET writer_environment_id=NULL WHERE id=?").run(runId);
+    createTask(db, { id: "live-task", runId, kind: "bb", contract: admittedTask });
+    saveTaskPlan(db, "live-task", "Make hello.txt say hello");
+    await writeDispatchHome(db, bbTaskFileIo(bb as never, "host-live", folder), {
+      taskId: "live-task", projectId, runId, basePath: folder, hostId: "host-live", task: admittedTask, plan: "Make hello.txt say hello",
+    });
+    createAttempt(db, { id: attemptId, runId, taskId: "live-task" });
+    db.prepare("UPDATE lane_pilot_attempt SET reason=? WHERE id=?").run(DISPATCH_STAGES_PENDING, attemptId);
+    for (const stageId of ["writer-agent", "verification", "acceptance-receipt"] as const) recordStage(db, { runId, taskId: "live-task", stageId, state: "pending", input: "Make hello.txt say hello" });
+    const now = Date.now();
+    db.prepare(`INSERT INTO lane_pilot_wf_run(id,idem_key,workflow_id,workflow_version,workflow_sha256,definition_json,project_id,link_run_id,link_task_id,link_attempt_id,
+      status,reason,inputs_json,created_at,updated_at) VALUES(?,?,'lp-task-pipeline',1,'fixture','{}',?,?,?,?,'interrupted','interrupted_by_reload',?,?,?)`)
+      .run("pipeline-live", `lp-task:${attemptId}`, projectId, runId, "live-task", attemptId, JSON.stringify({ taskId: "live-task", attemptId }), now, now);
+    const resumed = await harness.behavior.callRpc("resume_runs", { projectId }) as { resumed?: string[]; skipped?: string[] };
+    expect(resumed.resumed).toContain(attemptId);
+    expect(resumed.skipped ?? []).not.toContain(attemptId);
+    return attemptId;
+  };
   const finished = async () => {
     for (let i = 0; i < 400; i++) {
       const latest = listAttemptsForTask(db, runId, "live-task").at(-1);
       if (latest && !["queued", "spawn_requested", "spawn_unknown", "running", "cancel_requested"].includes(latest.state)
-        && !listStageReceipts(db, runId, "live-task").some((row) => row.state === "running" || row.state === "pending")) return latest;
+        && !listStageReceipts(db, runId, "live-task").some((row) => row.state === "running" || row.state === "pending")) return getAttempt(db, latest.id)!;
       await new Promise((resolve) => setTimeout(resolve, 25));
     }
     throw new Error("the task never finished");
   };
-  return { bb, db, harness, folder, home, task, dispatch, finished, hostCalls, commands, writes, threadSpawns, feedbackSeen, extraItems };
+  return { bb, db, harness, folder, home, task, dispatch, resumeLegacy, finished, hostCalls, commands, commandResults, writes, threadSpawns, feedbackSeen, boundedReads, extraItems };
 }
 
 beforeEach(() => { process.env.LANE_PILOT_DISPATCH_ANSWER_MS = "5000"; });
@@ -147,17 +189,31 @@ afterEach(() => {
 });
 
 describe("a plain folder without git, end to end", () => {
-  it("dispatches, lets the writer edit the live files, accepts, and never touches git, a worktree or a merge", async () => {
+  it("refuses a new public dispatch before a plain folder can enter the live-folder pipeline", async () => {
     const env = await setup((folder) => {
-      write(folder, "hello.txt", "hello\n");
-      write(folder, "src/new.ts", "export {};\n");
-      return "Changed hello.txt and src/new.ts";
+      throw new Error(`writer must not start in a refused dispatch: ${folder}`);
     });
     const sent = await env.dispatch();
-    expect(sent).toMatchObject({ state: "queued" });
-    expect(JSON.stringify(sent.warnings)).toContain("mode live-folder");
+    expect(sent).toMatchObject({ state: "rejected", error: { code: "project_git_required", sideEffects: "none" } });
+    expect(sent.projectGit).toMatchObject({ kind: "noProvider" });
+    expect(env.threadSpawns).toEqual([]);
+    expect(env.hostCalls.filter((method) => /^git/.test(method))).toEqual([]);
+    expect(env.commandResults).toContainEqual(expect.objectContaining({ exitCode: 0, stdout: expect.stringContaining('"state": "noGit"') }));
+    expect(existsSync(join(env.folder, ".git"))).toBe(false);
+    await env.harness.lifecycle.dispose();
+  });
+
+  it("resumes an already-admitted live-folder pipeline, edits a pre-existing live file, accepts, and never touches git, a worktree or a merge", async () => {
+    const env = await setup((folder) => {
+      write(folder, "hello.txt", "hello\n");
+      write(folder, "src/existing.ts", "export {};\n");
+      return "Changed hello.txt and src/existing.ts";
+    });
+    mkdirSync(join(env.folder, "src"), { recursive: true });
+    writeFileSync(join(env.folder, "src", "existing.ts"), "original existing\n");
+    await env.resumeLegacy();
     const attempt = await env.finished();
-    expect(attempt.state).toBe("accepted");
+    expect(attempt).toMatchObject({ state: "accepted", reason: null });
     const bound = getAttempt(env.db, attempt.id)!;
     // In place: the attempt's workspace is the run's folder, decided as a live folder.
     expect(bound.workspace_path).toBe(env.folder);
@@ -165,7 +221,7 @@ describe("a plain folder without git, end to end", () => {
     expect(bound.workspace_decision).toMatchObject({ strategy: "inherit_run", reason: "live_folder" });
     // The files are already in place; nothing was committed, merged or branched.
     expect(readFileSync(join(env.folder, "hello.txt"), "utf8")).toBe("hello\n");
-    expect(existsSync(join(env.folder, "src", "new.ts"))).toBe(true);
+    expect(existsSync(join(env.folder, "src", "existing.ts"))).toBe(true);
     expect(existsSync(join(env.folder, ".git"))).toBe(false);
     noGit(env);
     expect(env.threadSpawns.filter((row) => row.role === "writer")).toHaveLength(1);
@@ -176,22 +232,37 @@ describe("a plain folder without git, end to end", () => {
     expect(loadProjectSettings(env.db, projectId)["writer.lastResult"]).toMatchObject({ workspace: "live-folder" });
     const writerStage = listStageReceipts(env.db, runId, "live-task").find((row) => row.stageId === "writer-agent")!;
     expect(writerStage.result).toMatchObject({ status: "accepted", workspace: { mode: "live-folder" } });
-    expect((writerStage.result as { produced?: string[] }).produced?.slice().sort()).toEqual(["hello.txt", "src/new.ts"]);
+    expect((writerStage.result as { produced?: string[] }).produced?.slice().sort()).toEqual(["hello.txt", "src/existing.ts"]);
     await env.harness.lifecycle.dispose();
   });
 
-  // The live path from the entry to the effect (the 0.1.562 lesson: every function unit-tested, the graph never started): the PM's dispatch tool,
-  // the real lp-task-pipeline executors, the writer, acceptance and the close. Mutations it fails under: dispatch not opening the home or
-  // recording PLAN.md under another kind; pm-read reading an in-memory string instead of the manifest; the receipts written to the run's
+  it("refuses a newly created owned live file without a before-image", async () => {
+    const env = await setup((folder) => {
+      write(folder, "hello.txt", "hello\n");
+      write(folder, "src/new.ts", "export {};\n");
+      return "Changed hello.txt and src/new.ts";
+    });
+    await env.resumeLegacy();
+    const attempt = await env.finished();
+    expect(attempt).toMatchObject({ state: "blocked", reason: "live_backup_before_unknown: src/new.ts: not_in_backup" });
+    expect(existsSync(join(env.folder, "src", "new.ts"))).toBe(false);
+    expect(existsSync(join(env.home, ".lane-pilot", "live-backups", "attempt-live", "created", "src", "new.ts"))).toBe(true);
+    await env.harness.lifecycle.dispose();
+  });
+
+  // The legacy admitted path from durable recovery to the effect (the 0.1.562 lesson: every function unit-tested, the graph never started):
+  // the queued pipeline resume, the real lp-task-pipeline executors, the writer, acceptance and the close. Mutations it fails under: recovery
+  // not opening the home or
+  // recording PLAN.md under another kind; the plan reader resolving the manifest entry; the receipts written to the run's
   // artifacts; the close not reading the attempt's report and acceptance through the manifest.
-  it("[sma:k_pl_quick] walks dispatch → pipeline → accepted, and every main-path reader resolved its input through the task manifest", async () => {
+  it("[sma:k_pl_quick] resumes the admitted pipeline → accepted, and every main-path reader resolved its input through the task manifest", async () => {
     const env = await setup((folder) => {
       write(folder, "hello.txt", "hello\n");
       return "Changed hello.txt\nLESSON: a live folder needs no worktree";
     });
-    await env.dispatch();
+    await env.resumeLegacy();
     const attempt = await env.finished();
-    expect(attempt.state).toBe("accepted");
+    expect(attempt).toMatchObject({ state: "accepted", reason: null });
     type Manifest = { schema: string; files: Array<{ kind: string; path: string; read_by: Array<{ node: string }> }>; legacy: unknown[] };
     let manifest = renderTaskManifest(env.db, "live-task") as Manifest | null;
     // OUTCOME.md and lessons.md are written by the attempt-finished reaction, a moment after the attempt row turns accepted.
@@ -222,9 +293,9 @@ describe("a plain folder without git, end to end", () => {
       write(folder, "hello.txt", "hello\n");
       return "Changed hello.txt\nLESSON: a live folder needs no worktree";
     });
-    await env.dispatch();
+    await env.resumeLegacy();
     const done = await env.finished();
-    expect(done.state).toBe("accepted");
+    expect(done).toMatchObject({ state: "accepted", reason: null });
     const manifestPath = join(env.folder, ".agents/tasks/live-task/manifest.json");
     const kindsOnDisk = () => new Set(((JSON.parse(env.writes.get(manifestPath) ?? '{"files":[]}') as { files: Array<{ kind: string }> }).files).map((row) => row.kind));
     for (let i = 0; i < 200 && !kindsOnDisk().has("lesson"); i++) await new Promise((resolve) => setTimeout(resolve, 25));
@@ -247,9 +318,9 @@ describe("a plain folder without git, end to end", () => {
       writeFileSync(join(folder, "notes-by-pm.md"), "the PM was here\n");
       return "Changed hello.txt";
     });
-    await env.dispatch();
+    await env.resumeLegacy();
     const attempt = await env.finished();
-    expect(attempt.state).toBe("accepted");
+    expect(attempt).toMatchObject({ state: "accepted", reason: null });
     expect(readFileSync(join(env.folder, "notes-by-pm.md"), "utf8")).toBe("the PM was here\n");
     await env.harness.lifecycle.dispose();
   });
@@ -263,11 +334,14 @@ describe("a plain folder without git, end to end", () => {
       writeFileSync(join(folder, "sibling", "README.md"), "the sibling's readme\n");
       return "Changed hello.txt and src/README.md";
     });
+    // The writer overwrites this owned file; seed it before recovery so the live backup has an authentic before image.
+    mkdirSync(join(env.folder, "src"), { recursive: true });
+    writeFileSync(join(env.folder, "src", "README.md"), "original task readme\n");
     createTask(env.db, { id: "sibling-task", runId, kind: "bb", contract: { ...env.task, id: "sibling-task", owns_paths: ["sibling/**"], expected_outputs: ["sibling/README.md"] } });
-    await env.dispatch();
+    await env.resumeLegacy();
     const attempt = await env.finished();
     expect(getAttempt(env.db, attempt.id)?.reason ?? null).toBeNull();
-    expect(attempt.state).toBe("accepted");
+    expect(attempt).toMatchObject({ state: "accepted", reason: null });
     await env.harness.lifecycle.dispose();
   });
 
@@ -278,22 +352,24 @@ describe("a plain folder without git, end to end", () => {
       return "Changed hello.txt";
     });
     env.extraItems.push({ type: "commandExecution", command: "ls -la", aggregatedOutput: "hello.txt\nnotes-by-pm.md\n" });
-    await env.dispatch();
+    await env.resumeLegacy();
     const attempt = await env.finished();
-    expect(attempt.state).toBe("accepted");
+    expect(attempt).toMatchObject({ state: "accepted", reason: null });
     await env.harness.lifecycle.dispose();
   });
 
-  it("keeps the contract lint working: read_first is checked on the folder's machine, a missing file goes back to the PM", async () => {
-    const env = await setup(() => "nothing");
+  it("keeps the admitted pipeline's read_first check on the folder's machine after public noGit refusal", async () => {
+    const env = await setup((folder) => {
+      write(folder, "hello.txt", "hello\n");
+      return "Changed hello.txt";
+    });
     const missing = await env.dispatch({ read_first: ["nowhere/missing.txt"] });
-    expect(missing).toMatchObject({ state: "validation_failed", findings: [{ code: "read_first_missing" }] });
+    expect(missing).toMatchObject({ state: "rejected", error: { code: "project_git_required" } });
     expect(env.threadSpawns).toEqual([]);
-    const present = await env.dispatch({ read_first: ["keep/other.txt"] });
-    expect(present).toMatchObject({ state: "queued" });
-    expect(present.findings).toBeUndefined();
-    await env.finished();
-    expect(env.hostCalls).toContain("snapshotDryRun");
+    await env.resumeLegacy({ read_first: ["keep/other.txt"] });
+    const present = await env.finished();
+    expect(present).toMatchObject({ state: "accepted", reason: null });
+    expect(env.boundedReads).toContainEqual({ path: "keep/other.txt", cwd: env.folder, content: "not owned" });
     await env.harness.lifecycle.dispose();
   });
 
@@ -305,7 +381,7 @@ describe("a plain folder without git, end to end", () => {
       write(folder, "keep/other.txt", "touched by the writer\n");
       return "Changed things";
     });
-    await env.dispatch();
+    await env.resumeLegacy();
     const attempt = await env.finished();
     expect(attempt.state).not.toBe("accepted");
     expect(String(getAttempt(env.db, attempt.id)?.reason ?? "")).toContain("keep/other.txt");
@@ -331,9 +407,9 @@ describe("a plain folder without git, end to end", () => {
       write(folder, "keep/other.txt", "not owned\n");
       return "Undid keep/other.txt";
     });
-    await env.dispatch();
+    await env.resumeLegacy();
     const attempt = await env.finished();
-    expect(attempt.state).toBe("accepted");
+    expect(attempt).toMatchObject({ state: "accepted", reason: null });
     // The feedback turn found the first turn's edit still in place: nothing was rolled back between turns.
     expect(env.feedbackSeen).toEqual(["hello\n"]);
     expect(env.threadSpawns.filter((row) => row.role === "writer")).toHaveLength(1);
@@ -344,8 +420,12 @@ describe("a plain folder without git, end to end", () => {
   });
 });
 
-/** The folder has no git: Lane Pilot asked once whether there is a repository and ran no git step, no worktree, no merge. */
+/** Recovery may probe again; every direct Git command is a read-only repository check. */
 function noGit(env: Awaited<ReturnType<typeof setup>>): void {
   expect(env.hostCalls.filter((method) => /^git/.test(method))).toEqual([]);
-  expect(env.commands.filter((command) => /^git\b/.test(command))).toEqual(["git rev-parse --is-inside-work-tree"]);
+  const gitCommands = env.commands.filter((command) => /^git\b/.test(command));
+  expect(gitCommands.length).toBeGreaterThan(0);
+  expect(gitCommands).toContain("git rev-parse --is-inside-work-tree");
+  expect(gitCommands.every((command) => /^git rev-parse\b/.test(command))).toBe(true);
 }
+
