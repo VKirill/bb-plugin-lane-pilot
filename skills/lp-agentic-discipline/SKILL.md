@@ -27,16 +27,19 @@ The `owner.words` setting (`sensitive` by default: money, database migration, pr
 ## Procedure in a shift
 
 1. Load charter, locks and memory (`sp.load_memory`); stop on a missing charter or a missing MCP server.
-2. Check assumptions: `python3 scripts/check_assumptions_ttl.py --input assumptions.json` → expired, near expiry, sensitivity flags.
+2. Check assumptions: `python3 scripts/check_assumptions_ttl.py --input assumptions.json` → expired, expiring and missing-source/TTL issues (`items[]`, `counts{}`, `verdict`).
 3. Plan with the domain skill; every order lists `assumption_ids[]` and `touches_scopes[]`.
 4. Self-doubt pass (above); the audit node reads it. Audit `pass` is the only road to dispatch; a second rework ends in hold.
 5. Commit intents in one transaction; the outbox drain is idempotent (`idem_key`).
 
 ## Exam and replay
 
-`python3 scripts/replay_scorer.py --input replay.json` scores decisions made at T0 against T+14: interval coverage,
-interval score, Wilson lower bound per action class. Promotion to «decides» needs N ≥ 20 and Wilson LB ≥ 0.70, then
-`owner_go`; demotion applies at once; `owner_only` classes never change.
+`python3 scripts/replay_scorer.py --input replay.json` replays recorded runs against the rubric: six weighted
+checks (including `decision_match` against `expected_decision`), a per-run `score`/`pass` and an aggregate
+`mean_score`, `pass_rate`, `decision_accuracy`. It does not read forecast intervals or action classes and does not
+compute a Wilson bound. Promotion to «decides» needs N ≥ 20 and Wilson LB ≥ 0.70 on rights/forecast evidence
+established separately — no rights/forecast scorer ships in this version — then `owner_go`; without that separate
+evidence the class stays proposes. Demotion applies at once; `owner_only` classes never change.
 
 ## Curriculum ingest lint
 
@@ -54,14 +57,14 @@ share-site marks, a 12-word shingle overlap with the sources above 0.2 → `viol
 | FENCE | outside text never reaches a tool argument unvalidated; orders pass the zod `ActionOrder` schema | order rejected |
 | FORECAST | interval present, due date set | not scored, not counted for rights |
 | COPY | `curriculum_lint.py` pass = true | re-extract |
-| RIGHTS | promotion: N ≥ 20, Wilson LB ≥ 0.70, owner approve | stay proposes |
+| RIGHTS | promotion: N ≥ 20, Wilson LB ≥ 0.70 (separate evidence, no shipped scorer), owner approve | stay proposes |
 
 ## Scripts
 
 | Script | Job |
 |---|---|
-| `scripts/check_assumptions_ttl.py` | TTL and sensitivity of recorded assumptions |
-| `scripts/replay_scorer.py` | historical replay scoring, Wilson LB per class |
+| `scripts/check_assumptions_ttl.py` | TTL dates and source issues of recorded assumptions |
+| `scripts/replay_scorer.py` | rubric replay scoring: weighted checks, pass rate, decision accuracy |
 | `scripts/curriculum_lint.py` | copy and watermark lint of distilled material (`--selftest`) |
 
 One JSON object per run, non-zero exit with a JSON error. `--help` first.

@@ -1,6 +1,6 @@
 # From draft to run
 
-Source: `docs/workflow-engine.md`, `docs/workflow-router.md`, `docs/workflow-triggers.md`, `src/workflow/draft-test.ts`, `ops-store.ts`, `src/server/workflow-architect.ts`, `workflow-tools.ts`, `workflow-triggers.ts`.
+Source: `docs/workflow-engine.md`, `docs/workflow-router.md`, `docs/workflow-triggers.md`, `packages/workflow-engine/src/draft-test.ts`, `packages/workflow-engine/src/ops-store.ts`, `src/rooms/workflow/server/workflow-architect.ts`, `src/rooms/workflow/server/workflow-tools.ts`, `src/rooms/workflow/server/workflow-triggers.ts`.
 
 ## Draft and patch
 

@@ -1,6 +1,6 @@
 # The format
 
-Source: `src/workflow/schema.ts`, `validate.ts`, `docs/workflow-engine.md` sections 5 and 12. The schema is closed: an unknown key is an error. Write the authoring spelling below; it is normalized before validation.
+Source: `packages/workflow-engine/src/schema.ts`, `packages/workflow-engine/src/validate.ts`, `docs/workflow-engine.md` sections 5 and 12. The schema is closed: an unknown key is an error. Write the authoring spelling below; it is normalized before validation.
 
 ## Workflow
 
@@ -24,7 +24,7 @@ Every runnable node: `id`, `title` (`{en, ru}`), `out`, `maxVisits`, `maxAttempt
 | `subworkflow` | `workflow`, `version`, `inputs` | At most 3 levels, no recursion. |
 | `note` | `text` | A comment on the canvas; never runs. |
 
-`for_each` is a reference to a list (`dedupe.items`), a literal list, `ref where <condition on item>`, or `{by: "$inputs.tier", <value>: [...]}`. The default join concatenates arrays of the same name; anything else needs `join.uses` (a reducer that exists in `src/workflow/reducers.ts`; a reducer cannot be written from a chat, so use one the existing graphs have or compute in an action). `votes: N` on an agent child runs it N times and code decides (majority of a boolean, median of a number, most common scalar). `join.policy`: `all` fails at the first failed branch; `majority` and `all_or_low_confidence` let a failed branch arrive as failed.
+`for_each` is a reference to a list (`dedupe.items`), a literal list, `ref where <condition on item>`, or `{by: "$inputs.tier", <value>: [...]}`. The default join concatenates arrays of the same name; anything else needs `join.uses` (a reducer that exists in `packages/workflow-engine/src/reducers.ts`; a reducer cannot be written from a chat, so use one the existing graphs have or compute in an action). `votes: N` on an agent child runs it N times and code decides (majority of a boolean, median of a number, most common scalar). `join.policy`: `all` fails at the first failed branch; `majority` and `all_or_low_confidence` let a failed branch arrive as failed.
 
 ## Edges
 

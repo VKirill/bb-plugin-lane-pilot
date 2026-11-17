@@ -1,5 +1,6 @@
 import { barrierInputBody } from "./barrier-input";
-import { recordCritiqueRound } from "./task-home";
+import { recordCritiqueRound, taskHomeBrief } from "./task-home";
+import { listTaskFolder } from "./spawn-probe";
 import type { ServerCore } from "../../contracts/server";
 import type { HelperPolicySnapshot } from "../../contracts";
 import type { FinishInput, Services } from "./finish-types";
@@ -15,7 +16,7 @@ import { recordGateEvaluation, recordStage } from "../../runs/server";
 import { helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "../../runs/server";
 import { fullAccessSpawn } from "../../platform/server";
 import { writerExecutionSelection } from "@lane-pilot/models";
-import { writerContextBlocks, writerSetupLines } from "./writer-task";
+import { contractSectionText, writerContextBlocks, writerSetupLines } from "./writer-task";
 import { isLiveDecision } from "../live-folder";
 import { pipelineWriterStep, pipelineWriterTag } from "./pipeline-tag";
 import { recordedWriterSkills } from "./skill-pick";
@@ -391,6 +392,14 @@ export async function runCodeCritiqueGate(deps: CritiqueGateDeps, g: CritiqueGat
           }
           let spawned: unknown;
           if (!repairThreadId) {
+            // A repair in a fresh thread remembers nothing: it gets the same compact repair brief plus the
+            // writer's whole contract (visible checks with their cwd, never_touch, invariants — holdout checks
+            // only counted) and the task-home pointer, rendered once by the sections the first writer got.
+            const home = taskHomeBrief(db, input.taskId, input.attemptId);
+            const taskFolder = home ? { path:home.path, files:home.files, home:{ plan:home.plan, checkLog:home.checkLog, attemptFolder:home.attemptFolder } }
+              : await listTaskFolder(bb, input.config.hostId, writerSnapshot.workspacePath, input.taskId);
+            const freshRepairPrompt = [repairPrompt,
+              ...contractSectionText(input.task, Boolean(dispatch.executionPacket), taskFolder)].join("\n\n");
             const placement = await helperChildPlacement({
               bb, db, projectId:input.projectId, runId:input.runId, role:"writer", taskTitle:input.task.title,
             });
@@ -404,7 +413,7 @@ export async function runCodeCritiqueGate(deps: CritiqueGateDeps, g: CritiqueGat
                   writerSnapshot.reasoningLevel,
                   writerSnapshot.serviceTier,
                 ),
-                prompt:repairPrompt,
+                prompt:freshRepairPrompt,
                 environment,
                 pluginMetadata:{
                   role:"writer", lanePilotRunId:input.runId, lanePilotTaskId:input.taskId,
