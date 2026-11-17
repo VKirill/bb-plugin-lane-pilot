@@ -57,12 +57,7 @@ m.bb = fake_bb
 def fake_rpc(method, payload):
     calls.append(["rpc", method])
     return {}
-if DIGEST_ERROR:
-    def bad_rpc(method, payload):
-        raise RuntimeError(DIGEST_ERROR)
-    m.setting_rpc = bad_rpc
-else:
-    m.setting_rpc = fake_rpc
+m.setting_rpc = fake_rpc
 ${body}
 print(json.dumps({"out": out, "calls": calls}))
 `;
@@ -76,8 +71,7 @@ const HEALTHY = `CAP_TABLE = ${JSON.stringify(GREEN.table)}
 CAP_RC = 0
 PROBE_OUT = {"probed": []}
 JOURNAL = [{"day": "2026-11-10", "threadId": "thr_x", "providerId": "claude-code", "hostId": "host_7sea4qaad8"}]
-MARKS = []
-DIGEST_ERROR = ""`;
+MARKS = []`;
 
 describe("series preparation (SMA rl_prep)", () => {
   it("[sma:rl_prep] a healthy hub passes preparation and the checks name database, receipts, browser, accounts, limits, window and person", () => {
@@ -115,17 +109,60 @@ describe("series preparation (SMA rl_prep)", () => {
   });
 
   it("[sma:rl_prep] a hub that never saw the owner and cannot reach him refuses the series", () => {
-    const setup = HEALTHY.replace(`JOURNAL = [{"day": "2026-11-10", "threadId": "thr_x", "providerId": "claude-code", "hostId": "host_7sea4qaad8"}]`, `JOURNAL = []`)
-      .replace(`DIGEST_ERROR = ""`, `DIGEST_ERROR = "unknown rpc method owner_waiting_digest"`);
-    const { out } = drillPy(setup, `out = m.series_preparation(["parallel3"])`) as { out: { problems: string[] } };
-    expect(out.problems.some((line) => line.startsWith("person:"))).toBe(true);
+    const { out, calls } = drillPy(`${HEALTHY}\nJOURNAL = []`, `out = m.series_preparation(["parallel3"])`) as { out: { problems: string[] }; calls: string[][] };
+    expect(out.problems.some((line) => line.startsWith("person:") && line.includes("no owner presence evidence"))).toBe(true);
+    expect(calls).not.toContainEqual(["rpc", "owner_waiting_digest"]);
   });
 
   it("[sma:rl_prep] the owner is found through the 90-day journal (default path: nothing set, nothing fails)", () => {
-    const { out } = drillPy(HEALTHY, `out = m._person_probe()`) as { out: [boolean, string] };
+    const { out, calls } = drillPy(HEALTHY, `out = m._person_probe()`) as { out: [boolean, string]; calls: string[][] };
     expect(out[0]).toBe(true);
     expect(out[1]).toContain("2026-11-10");
+    expect(calls.filter((call) => call[0] === "rpc")).toEqual([]);
   });
+
+  it("valid owner marks prove presence without a notification", () => {
+    const setup = `${HEALTHY}\nJOURNAL = []\nMARKS = [{"providerId": "codex", "hostId": "h", "at": 1794910000000}]`;
+    const { out, calls } = drillPy(setup, `out = m._person_probe()`) as { out: [boolean, string]; calls: string[][] };
+    expect(out[0]).toBe(true);
+    expect(out[1]).toContain("1 mark(s)");
+    expect(calls.filter((call) => call[0] === "rpc")).toEqual([]);
+  });
+
+  it.each(["journal", "marks"])("an unreadable owner %s is refused without a notification", (kind) => {
+    const body = `
+real_bb = m.bb
+def unreadable(*args, **kwargs):
+    if ("--journal" in args) == ${kind === "journal" ? "True" : "False"}:
+        calls.append(list(args))
+        return 1, "", "HTTP 502"
+    return real_bb(*args, **kwargs)
+m.bb = unreadable
+out = m._person_probe()`;
+    const { out, calls } = drillPy(HEALTHY, body) as { out: [boolean, string]; calls: string[][] };
+    expect(out[0]).toBe(false);
+    expect(out[1]).toContain(kind);
+    expect(out[1]).toContain("HTTP 502");
+    expect(calls.filter((call) => call[0] === "rpc")).toEqual([]);
+  });
+
+  it.each(["journal", "marks"].flatMap((kind) => ["{", "{}", "[null]", "[{}]"].map((response) => [kind, response])))
+    ("malformed owner %s response %s is refused without a notification", (kind, response) => {
+      const body = `
+real_bb = m.bb
+def malformed(*args, **kwargs):
+    if ("--journal" in args) == ${kind === "journal" ? "True" : "False"}:
+        calls.append(list(args))
+        return 0, ${JSON.stringify(response)}, ""
+    return real_bb(*args, **kwargs)
+m.bb = malformed
+out = m._person_probe()`;
+      const { out, calls } = drillPy(HEALTHY, body) as { out: [boolean, string]; calls: string[][] };
+      expect(out[0]).toBe(false);
+      expect(out[1]).toContain(kind);
+      expect(out[1]).toMatch(/malformed|invalid/);
+      expect(calls.filter((call) => call[0] === "rpc")).toEqual([]);
+    });
 });
 
 describe("vendors (SMA wr_vendors)", () => {

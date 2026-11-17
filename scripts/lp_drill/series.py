@@ -185,32 +185,31 @@ def _accounts_probe() -> tuple[bool, str]:
 
 
 def _person_probe() -> tuple[bool, str]:
-    """Person (SMA rl_prep): the owner is reachable — the hub has seen him in a thread of his own (the presence marks or the
-    90-day journal of `bb lane-pilot owner-presence`), or the «waiting for the owner» push answers. A hub that has never seen
-    the owner and cannot reach him refuses the series."""
-    marks, journal = [], []
-    rc, out, err = bb("lane-pilot", "owner-presence", "--journal", timeout=60)
-    if rc == 0:
+    """Person (SMA rl_prep): existing marks or the owner's journal prove presence. Preparation only reads evidence;
+    it must not ask the notification digest, which can close inbox items and send webhooks."""
+    evidence: dict[str, list] = {}
+    for kind, suffix in (("journal", ("--journal",)), ("marks", ())):
+        rc, out, err = bb("lane-pilot", "owner-presence", *suffix, timeout=60)
+        if rc != 0:
+            return False, f"owner-presence {kind} did not answer: {(err or out).strip()[:160] or f'exit {rc}'}"
         try:
-            journal = json.loads(out)
+            rows = json.loads(out)
         except ValueError:
-            journal = []
-    elif not RPC_MISSING.search(err or out):
-        return False, f"owner-presence did not answer: {(err or out).strip()[:160]}"
-    rc2, out2, _ = bb("lane-pilot", "owner-presence", timeout=60)
-    if rc2 == 0:
-        try:
-            marks = json.loads(out2)
-        except ValueError:
-            marks = []
+            return False, f"owner-presence {kind} returned malformed JSON"
+        if not isinstance(rows, list) or any(not isinstance(row, dict) for row in rows):
+            return False, f"owner-presence {kind} returned invalid rows"
+        if kind == "journal":
+            valid = all(isinstance(row.get("day"), str) and re.fullmatch(r"\d{4}-\d{2}-\d{2}", row["day"])
+                        and isinstance(row.get("threadId"), str) and row["threadId"].strip() for row in rows)
+        else:
+            valid = all(isinstance(row.get("providerId"), str) and row["providerId"].strip()
+                        and type(row.get("at")) in (int, float) and 0 < row["at"] < float("inf") for row in rows)
+        if not valid:
+            return False, f"owner-presence {kind} returned invalid evidence"
+        evidence[kind] = rows
+    marks, journal = evidence["marks"], evidence["journal"]
     if marks:
         return True, f"the owner is in a session of his own now ({len(marks)} mark(s))"
     if journal:
-        days = sorted(str(row.get("day", "")) for row in journal if isinstance(row, dict) and row.get("day"))
-        return True, f"the hub last saw the owner in a thread of his own on {days[-1] if days else 'an earlier day'}"
-    try:
-        digest = setting_rpc("owner_waiting_digest", {})
-        return True, f"the «waiting for the owner» push answers ({'a send pending' if digest.get('send') else 'nothing pending'})"
-    except Exception as cause:
-        return False, (f"the hub has never seen the owner in a thread of his own and the owner-waiting push does not answer "
-                       f"({str(cause)[:120]}): type in any thread once so the series can reach him")
+        return True, f"the hub last saw the owner in a thread of his own on {max(row['day'] for row in journal)}"
+    return False, "no owner presence evidence: type in any thread once so the series can reach him"
