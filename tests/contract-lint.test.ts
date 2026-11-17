@@ -479,7 +479,7 @@ const config = {
 async function setup(kinds:Record<string, PathKind> | null, targets:Record<string, "file" | "directory" | "missing"> = {}, probeOutput = "", folders:Record<string, string[]> = {}) {
   const { bb, harness } = createFakePluginHost({
     pluginId:"lane-pilot",
-    sdk:{ threads:{
+    sdk:{ projects:{ get: async ({ projectId }) => ({ id:projectId, sources:[{ hostId:"host-test", path:root }] }) }, threads:{
       getPluginMetadata: async ({ threadId }) => threadId === pmThreadId ? { role:"pm", lanePilotRunId:runId } : { role:"writer" },
       spawn: async () => ({ id:"writer-lint" }),
       wait: async () => new Promise(() => undefined),
@@ -500,6 +500,7 @@ async function setup(kinds:Record<string, PathKind> | null, targets:Record<strin
       }
       if (call.method === "gitOwnershipBase") return new Promise(() => undefined);
       if (call.method === "readBoundedFile") return boundedReadCall(call, "host-test", "fixture\n");
+      if (call.method === "runCommand" && String((call.input as { command?:string }).command ?? "").includes('if not shutil.which("git")')) return { hostId:"host-test", exitCode:0, stdout:JSON.stringify({ state:"localNoOrigin", cwd:root, root, hasCommit:true }), stderr:"" };
       if (call.method === "runCommand" && String((call.input as { command?:string }).command ?? "").includes("@@package.json")) return { hostId:"host-test", exitCode:0, stdout:probeOutput, stderr:"" };
       return { hostId:"host-test", exitCode:0, stdout:String((call.input as { command?:string }).command ?? "").includes("porcelain") ? "[]" : "", stderr:"" };
     },
@@ -508,7 +509,7 @@ async function setup(kinds:Record<string, PathKind> | null, targets:Record<strin
   savePrototypeConfig(db, config);
   saveProjectSetting(db, projectId, "plan_critique.enabled", false);
   saveProjectSetting(db, projectId, "memory.enabled", false);
-  createRun(db, runId, projectId, "bb", root);
+  createRun(db, runId, projectId, "bb", root, "none", undefined, "host-test");
   setRunThread(db, runId, pmThreadId);
   await plugin(bb);
   const dispatch = async (next:Partial<TaskV2> = {}) => JSON.parse(String(await harness.behavior.callAgentTool(
