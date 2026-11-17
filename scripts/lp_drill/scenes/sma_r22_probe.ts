@@ -67,11 +67,11 @@ const docs = [{ path: "docs/overview.md", content: "---\ntype: overview\n---\n" 
 const risk = (security?: string, withDoc = false) => rec({ context: { docs: withDoc ? [{ path: `${FOLDER}/SECURITY.md`, sha256: "a", bytes: 1 }] : [], sha: "s", signedAt: 1, ...(security === undefined ? {} : { risks: { security } }) } });
 const out = (result: { summary: { output?: unknown } }) => (result.summary.output ?? {}) as Record<string, unknown>;
 const uiStubs = { capture: { status: "pass", screenshots: ["a.png"] }, audit: { score_40: 30, score_20: 14, findings: [], report_path: "audit.md" } };
-const aiBase = { select: { framework: "langchain", options: [] }, research: { notes: "ok" }, spec: { spec_path: ".agents/phases/ph_a/AI-SPEC.md" } };
+const aiBase = { select: { framework: "langchain", options: [] }, research: { notes: "ok" }, spec: { document: "# spec\n" }, write_spec: { spec_path: ".agents/phases/ph_a/AI-SPEC.md" } };
 
 const ui = await runSim("ui-audit", { input: { url: "http://localhost:4173" }, stubs: { ...uiStubs, review_doc: { review_path: ".agents/ui/pricing/UI-REVIEW.md" } } });
 const uiOff = await runSim("ui-audit", { input: { url: "http://localhost:4173", review_file: false }, stubs: uiStubs });
-const evalFlawed = await runSim("eval-review", { input: { phase_id: "ph_a" }, stubs: { review: { findings: [], review_path: ".agents/phases/ph_a/EVAL-REVIEW.md", flawed: true } } });
+const evalFlawed = await runSim("eval-review", { input: { phase_id: "ph_a" }, stubs: { review: { findings: [], document: "# eval review\n", flawed: true }, write_review: { review_path: ".agents/phases/ph_a/EVAL-REVIEW.md" } } });
 const aiOk = await runSim("ai-integration-phase", { input: { goal: "rank" }, stubs: { ...aiBase, check: { ok: true, gaps: [] } } });
 const aiBlocked = await runSim("ai-integration-phase", { input: { goal: "rank" }, stubs: { ...aiBase, check: { ok: false, gaps: ["no guardrails"] } } });
 const lesson = await lessonIntoMemory();

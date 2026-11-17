@@ -78,7 +78,7 @@ def prove_b(proofs, tmp) -> None:
     d = seen("k_c_verifyphase")
     proofs.prove("n1193", d.get("passed", [""])[0] == "passed" and d.get("unproved") == ["failed", "p2: plan-fact failed — the promise is not proved"] and d.get("running", [""])[0] == "pending" and d.get("noGoal", [""])[0] == "failed" and d.get("same") is True, f"verdicts: all proved {d.get('passed')}, one unproved {d.get('unproved')}, goal check running {d.get('running')}")
     d = seen("k_c_diagnose")
-    proofs.prove("n1194", d.get("due") == "diagnose" and d.get("off") == "replan" and d.get("two") == ["ask_symptoms diagnose diagnosed", 2] and d.get("seven") == ["ask_symptoms diagnose diagnosed", 6], f"failed verdict with phase.diagnose on -> {d.get('due')}, off -> {d.get('off')}; debuggers for 2 gaps {d.get('two', [None, None])[1]}, for 7 gaps {d.get('seven', [None, None])[1]}")
+    proofs.prove("n1194", d.get("due") == "diagnose" and d.get("off") == "replan" and d.get("two") == ["ask_symptoms normalize diagnose diagnosed", 2] and d.get("seven") == ["ask_symptoms normalize diagnose diagnosed", 6], f"failed verdict with phase.diagnose on -> {d.get('due')}, off -> {d.get('off')}; debuggers for 2 gaps {d.get('two', [None, None])[1]}, for 7 gaps {d.get('seven', [None, None])[1]}")
     d = seen("k_c_transition")
     proofs.prove("n1195", d.get("state") == "closed" and d.get("closed") is True and d.get("stateHas") == [True, True, True, True] and d.get("committed") == [[".agents/phases/<id>/SUMMARY.md", ".agents/planning/ROADMAP.md", ".agents/planning/STATE.md"]] and d.get("booked") == 1, f"closed: {d.get('state')}, documents committed {d.get('committed')}, STATE marks {d.get('stateHas')}")
     d = seen("k_c_graduation")

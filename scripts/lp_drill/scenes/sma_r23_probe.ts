@@ -156,7 +156,7 @@ s.strategy = { role: strategy.role, readOnly: strategy.readOnly, onCalls: vOn.ca
 
 // ---- n1639: ai-integration-phase ----
 {
-  const stubs = { select: { framework: "langchain", options: [{ name: "langchain" }] }, research: { domain_notes: "expert criteria" }, spec: { spec_path: "x/AI-SPEC.md" } };
+  const stubs = { select: { framework: "langchain", options: [{ name: "langchain" }] }, research: { domain_notes: "expert criteria" }, spec: { document: "# spec\n" }, write_spec: { spec_path: "x/AI-SPEC.md" } };
   const ok = await runSim("ai-integration-phase", { input: { goal: "rank" }, stubs: { ...stubs, check: { ok: true, gaps: [] } } });
   const once = await runSim("ai-integration-phase", { input: { goal: "rank" }, stubs: { ...stubs, check: [{ ok: false, gaps: ["no guardrails"] }, { ok: true, gaps: [] }] } });
   const twice = await runSim("ai-integration-phase", { input: { goal: "rank" }, stubs: { ...stubs, check: { ok: false, gaps: ["no guardrails"] } } });

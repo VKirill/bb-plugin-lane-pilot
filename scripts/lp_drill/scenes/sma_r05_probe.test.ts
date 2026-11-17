@@ -4,7 +4,7 @@
 // rooms import each other in cycles that plain tsx rejects: scenes/sma_r05.vitest.config.ts), and each section is independent: a section that throws
 // reports its error and the scene fails only the nodes that read it.
 // To add a node: compute its observed value in a new section of `sections`, and add its prove() line to the scene.
-import { it } from "vitest";
+import { expect, it } from "vitest";
 import { writeFileSync } from "node:fs";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import plugin from "../../../server";
@@ -77,13 +77,33 @@ const ctxOf = (bb: Host["bb"], db: ReturnType<typeof openDatabase>) => ({ bb, db
 const scratch = (over: Record<string, unknown> = {}) => { const { bb } = createFakePluginHost({ pluginId: "lane-pilot", ...over } as never); return { bb, db: openDatabase(bb) }; };
 const quiet = { warn: () => undefined, info: () => undefined };
 
+function rawOrphan(db: ReturnType<typeof openDatabase>) {
+  let code: string | null = null;
+  try {
+    db.prepare("INSERT INTO lane_pilot_task(id,run_id,kind,contract_json,created_at,birth) VALUES (?,?,?,?,?,?)")
+      .run("t_orphan_sql", "no_such_run", "bb", "{}", Date.now(), "pm");
+  } catch (cause) { code = (cause as { code?: string }).code ?? String(cause); }
+  const exists = !!db.prepare("SELECT id FROM lane_pilot_task WHERE id=?").get("t_orphan_sql");
+  return { code, exists };
+}
+
+it("the raw orphan check detects disabled foreign keys", () => {
+  const { db } = scratch();
+  db.pragma("foreign_keys = OFF");
+  expect(rawOrphan(db)).toEqual({ code: null, exists: true });
+});
+
 const sections: Record<string, () => Promise<unknown>> = {
   // The plugin factory, booted once: entry (n440), composition (n442), boot order (n453), the queue's first enqueue (n455), the door (n450), the tick (n452), the board (n449), the stop (n471).
   async boot() {
     const fresh = fakeHost();
     const before = { rpc: fresh.harness.registrations.rpcMethods.length, schedules: fresh.harness.registrations.schedules.length, services: fresh.harness.registrations.services.length, logs: fresh.harness.logEntries.length };
+    const database = fresh.bb.storage.database.bind(fresh.bb.storage);
+    let bootDb: ReturnType<typeof openDatabase> | undefined;
+    fresh.bb.storage.database = () => { const db = database(); bootDb ??= db; return db; };
     await plugin(fresh.bb);
-    const db = openDatabase(fresh.bb);
+    if (!bootDb) throw new Error("plugin did not open its database");
+    const db = bootDb;
     const out: Record<string, unknown> = {};
     out.entry = { before, loaded: fresh.harness.logEntries.some((entry) => entry.message === "Lane Pilot PM-to-writer pipeline loaded"), rpc: fresh.harness.registrations.rpcMethods.length };
     const tables = (db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'lane_pilot_%'").all() as Array<{ name: string }>).map((row) => row.name);
@@ -91,7 +111,15 @@ const sections: Record<string, () => Promise<unknown>> = {
     out.compose = { tables: ["lane_pilot_run", "lane_pilot_task", "lane_pilot_attempt", "lane_pilot_attempt_transition"].every((name) => tables.includes(name)), missingRpc, cli: fresh.harness.registrations.cli !== null, tools: fresh.harness.registrations.agentTools.length, tickDeps: await fresh.bb.storage.kv.get("lp.tick-deps") };
     const at = (label: string) => fresh.order.indexOf(label);
     out.order = { migrate: at("migrate"), door: at("rpc.register"), sweep: at("schedule:attempt-worktree-sweep"), service: at("service:startup-recovery"), tick: at("schedule:schedule-board-tick") };
-    out.fk = (() => { try { createTask(db, { id: "t_orphan", runId: "no_such_run", kind: "bb", contract: {} }); return "accepted"; } catch (cause) { return /FOREIGN KEY/.test(String(cause)) ? "refused: foreign key" : String(cause); } })();
+    let admission = "accepted";
+    try { createTask(db, { id: "t_orphan", runId: "no_such_run", kind: "bb", contract: {} }); }
+    catch (cause) { admission = cause instanceof Error ? cause.message : String(cause); }
+    const raw = rawOrphan(db);
+    const orphan = !!db.prepare("SELECT id FROM lane_pilot_task WHERE id=?").get("t_orphan");
+    createRun(db, "run_r05_valid", "proj_r05_valid", "bb", "/w");
+    createTask(db, { id: "t_r05_valid", runId: "run_r05_valid", kind: "bb", contract: {} });
+    const valid = !!db.prepare("SELECT id FROM lane_pilot_task WHERE id=? AND run_id=?").get("t_r05_valid", "run_r05_valid");
+    out.fk = { admission, orphan, raw, valid, tables: tables.includes("lane_pilot_run") && tables.includes("lane_pilot_task"), migrateBeforeDoor: at("migrate") >= 0 && at("migrate") < at("rpc.register") };
     out.front = { missing: missingRpc.length, canary: await fresh.harness.behavior.callRpc("canary_status", {}), conveyor: await fresh.harness.behavior.callRpc("conveyor", {}), world: await fresh.harness.behavior.callRpc("world_version", {}), expectWorld: worldVersion() };
     out.ticks = fresh.harness.registrations.schedules.filter((schedule) => schedule.name === "schedule-board-tick").map((schedule) => schedule.cron);
     createRun(db, "run_b", "proj_b", "bb", "/w");

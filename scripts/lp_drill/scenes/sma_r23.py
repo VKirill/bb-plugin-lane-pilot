@@ -67,7 +67,7 @@ def scenario_sma_r23(tmp) -> dict:
     proofs.prove("n1638", d["sketchBoth"] and d["sketchDesign"] and d["sketchOthers"] == [], f"sketch rules in both briefs {d['sketchBoth']}, in the design rubric {d['sketchDesign']}, in other stages {d['sketchOthers']}")
     # n1639 AI system references: evaluation plan before the spec and carried into it; a failed check reworks the spec once; a second failure blocks.
     a = s["ai"]
-    ok = (a["ok"] == "select research eval_plan spec check done" and a["once"] == "select research eval_plan spec check spec check done" and a["twice"].endswith("spec check spec check blocked")
+    ok = (a["ok"] == "select write_model research eval_plan spec spec_path write_spec check done" and a["once"] == "select write_model research eval_plan spec spec_path write_spec check spec spec_path write_spec check done" and a["twice"] == "select write_model research eval_plan spec spec_path write_spec check spec spec_path write_spec check blocked"
           and a["evalCalls"] == 1 and a["specConsumes"] == ["select", "research", "eval_plan"])
     proofs.prove("n1639", ok, f"clean {a['ok']}; one rework {a['once']}; two failures end {a['twice'].split(' ')[-1]}; spec consumes {a['specConsumes']}")
     # n1640 Debugging philosophy: a read-only debugger with the scientific method; a cause without confidence, pressure pass or files is not confirmed independently.

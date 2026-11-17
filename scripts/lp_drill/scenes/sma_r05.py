@@ -92,8 +92,7 @@ def scenario_sma_r05(tmp: Path) -> dict:
     # n454 Folders before writes: every migration is applied in one call before any write.
     prove("n454", "migrate", lambda d: d["calls"] == 1 and d["all"] and d["count"] > 0, lambda d: f"migrate calls {d['calls']}, all {d['count']} migrations passed {d['all']}")
     # n455 Queue first: from the first enqueue a task for a missing run is refused.
-    data = seen.get("boot", {}) if isinstance(seen.get("boot"), dict) else {}
-    proofs.prove("n455", data.get("fk") == "refused: foreign key", f"orphan task: {data.get('fk')}")
+    prove("n455", "boot", lambda d: d["admission"] == "Lane Pilot admission refused: run does not exist" and not d["orphan"] and d["raw"] == {"code": "SQLITE_CONSTRAINT_FOREIGNKEY", "exists": False} and d["valid"] and d["tables"] and d["migrateBeforeDoor"], lambda d: f"queue readiness and enqueue: {d}", "fk")
     # n456 Door before passes: the door has all its methods when the recovery sweep first touches a copy.
     prove("n456", "recovery", lambda d: d["deleted"] and d["deleted"][0].endswith(f"@rpc{d['doorMethods']}") and d["doorMethods"] > 0, lambda d: f"copy removed {d['deleted']} with the door at {d['doorMethods']} methods")
     # n457 Process record: process number, runtime and start time.
