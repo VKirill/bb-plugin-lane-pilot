@@ -89,7 +89,7 @@ export function createProjectGit(deps: ProjectGitDeps) {
     return login && /^[A-Za-z0-9-]+$/.test(login) ? { ok: true, login } : { ok: false, code: "no_provider_identity", detail: clip(user.stderr) || "gh did not name the signed-in account" };
   }
 
-  async function resolveScope(input: ScopeInput): Promise<ScopeResult> {
+  async function resolveScope(input: ScopeInput, options: { existingOnly?: boolean } = {}): Promise<ScopeResult> {
     const project = await probe(input.hostId, input.projectRoot);
     const section = input.sectionPath && input.sectionPath !== input.projectRoot ? await probe(input.hostId, input.sectionPath) : null;
     const target = section ?? project;
@@ -104,6 +104,10 @@ export function createProjectGit(deps: ProjectGitDeps) {
     }
     if (target.state !== "noGit") return { kind: "repo", state: target.state, root: target.root! };
     if (project.state === "unknown" || !target.cwd) return { kind: "unknown", reason: project.reason ?? "the project folder could not be probed" };
+    // A BB-managed/native environment can be a frozen checkout outside project.sources. It may use an existing
+    // repository, but an unregistered no-Git folder must not open a private-Git question or bootstrap arbitrary
+    // environment storage. Resume/stopped records above are intentionally checked before this boundary.
+    if (options.existingOnly) return { kind: "unknown", reason: "the frozen environment has no Git and is not a registered project source" };
     const candidates: ScopeChoice[] = [];
     if (project.state === "noGit" && project.cwd && (!section || isWithin(target.cwd, project.cwd))) candidates.push({ scope: "project", root: project.cwd });
     if (section?.cwd && section.cwd !== project.cwd) candidates.push({ scope: "section", root: section.cwd });
@@ -123,6 +127,11 @@ export function createProjectGit(deps: ProjectGitDeps) {
       asking.set(key, pending);
     }
     return pending;
+  }
+
+  /** Resolves only an existing repository or an interrupted/stopped bootstrap; never asks to bootstrap a new root. */
+  async function resolveExistingScope(input: ScopeInput): Promise<ScopeResult> {
+    return resolveScope(input, { existingOnly: true });
   }
 
   async function ask(input: ScopeInput, candidates: ScopeChoice[], key: string, login: string): Promise<ScopeResult> {
@@ -322,7 +331,7 @@ export function createProjectGit(deps: ProjectGitDeps) {
     return { kind: "bootstrapped", result: await bootstrap({ hostId: input.hostId, root: scope.choice.root, account: scope.account }) };
   }
 
-  return { probe, resolveScope, bootstrap, ensure };
+  return { probe, resolveScope, resolveExistingScope, bootstrap, ensure };
 }
 
 export type ProjectGit = ReturnType<typeof createProjectGit>;

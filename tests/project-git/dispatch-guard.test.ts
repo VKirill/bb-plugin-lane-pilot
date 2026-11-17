@@ -6,16 +6,18 @@ import { createProjectGitDispatch, overlappingLiveRuns } from "../../src/rooms/p
 const cleanups:Array<()=>Promise<void>>=[];
 afterEach(async()=>{for(const cleanup of cleanups.splice(0))await cleanup();});
 
-function fixture(workspace="/repo/section") {
+function fixture(workspace="/repo/section", projectSources=[{hostId:"h1",path:"/repo"}], environment:unknown={id:"env",projectId:"project",hostId:"h1",path:workspace,status:"ready",managed:true,workspaceProvisionType:"managed-worktree"}) {
   const fake=createFakePluginHost({pluginId:"lane-pilot"});
   cleanups.push(()=>fake.harness.lifecycle.dispose());
   const db=openDatabase(fake.bb);
   createRun(db,"run","project","bb");
-  freezeRunBinding(db,"run",{environmentId:"env",hostId:"h1",workspacePath:workspace});
+  const environmentId=environment && typeof environment==="object" && typeof (environment as {id?:unknown}).id==="string" ? (environment as {id:string}).id : null;
+  if(environmentId) freezeRunBinding(db,"run",{environmentId,hostId:"h1",workspacePath:workspace});
+  else db.prepare("UPDATE lane_pilot_run SET writer_host_id='h1', writer_workspace_path=? WHERE id='run'").run(workspace);
   setRunThread(db,"run","pm-thread");
-  const bb={...fake.bb,sdk:{...fake.bb.sdk,threads:{...fake.bb.sdk.threads,getPluginMetadata:async()=>({role:"pm",lanePilotRunId:"run"})},projects:{...fake.bb.sdk.projects,get:async()=>({sources:[{hostId:"h1",path:"/repo"}]})}}};
+  const bb={...fake.bb,sdk:{...fake.bb.sdk,threads:{...fake.bb.sdk.threads,getPluginMetadata:async()=>({role:"pm",lanePilotRunId:"run"})},projects:{...fake.bb.sdk.projects,get:async()=>({sources:projectSources})},environments:{...fake.bb.sdk.environments,get:async()=>environment}}};
   const raw=vi.fn(async()=>({ok:true,state:"queued"}));
-  const projectGit={resolveScope:vi.fn(async(_input:{taskKey?:string})=>({kind:"repo",state:"origin",root:"/repo"})),bootstrap:vi.fn(async()=>({ok:true,root:"/repo",fullName:"octo/repo",url:"https://github.invalid/octo/repo",commit:"abc",branch:"main"}))};
+  const projectGit={resolveScope:vi.fn(async(_input:{taskKey?:string})=>({kind:"repo",state:"origin",root:"/repo"})),resolveExistingScope:vi.fn(async(_input:{taskKey?:string})=>({kind:"repo",state:"origin",root:workspace})),bootstrap:vi.fn(async()=>({ok:true,root:"/repo",fullName:"octo/repo",url:"https://github.invalid/octo/repo",commit:"abc",branch:"main"}))};
   const pool={acquire:vi.fn(async()=>()=>undefined),acquireFolder:vi.fn(async(_hostId:string,_path:string)=>()=>undefined)};
   const invalidateLiveFolder=vi.fn(async()=>undefined);
   const preparePlacement=vi.fn(async(input:{runId:string;hostId:string;runFolder:string;task:unknown;plan:string})=>({
@@ -126,6 +128,43 @@ it("does not dispatch after live-folder cache invalidation fails", async()=>{
   const result=await f.dispatch({threadId:"pm-thread",projectId:"project",task:f.task});
   expect(f.raw).not.toHaveBeenCalled();
   expect(result).toMatchObject({ok:false,error:{code:"project_git_required",sideEffects:"unknown"}});
+});
+
+it("admits an existing repository in a verified BB managed worktree outside project sources", async()=>{
+  const environment={id:"env-managed",projectId:"project",hostId:"h1",path:"/managed",status:"ready",managed:true,workspaceProvisionType:"managed-worktree"};
+  const f=fixture("/managed",[{hostId:"other",path:"/source"}],environment);
+  f.projectGit.resolveExistingScope.mockResolvedValue({kind:"repo",state:"origin",root:"/managed"} as never);
+  await expect(f.dispatch({threadId:"pm-thread",projectId:"project",task:{...f.task,project_cwd:"/managed"}})).resolves.toMatchObject({ok:true,state:"queued"});
+  expect(f.projectGit.resolveScope).not.toHaveBeenCalled();
+  expect(f.projectGit.resolveExistingScope).toHaveBeenCalledWith(expect.objectContaining({projectRoot:"/managed",sectionPath:"/managed"}));
+  expect(f.raw).toHaveBeenCalledWith(expect.anything(),expect.objectContaining({placement:expect.anything()}));
+});
+
+it("does not trust an outside source path without a managed environment binding", async()=>{
+  const f=fixture("/outside",[{hostId:"other",path:"/source"}],null);
+  const result=await f.dispatch({threadId:"pm-thread",projectId:"project",task:{...f.task,project_cwd:"/outside"}});
+  expect(result).toMatchObject({ok:false,error:{code:"project_git_required"},projectGit:{kind:"project_root_unresolved"}});
+  expect(f.raw).not.toHaveBeenCalled();
+  expect(f.projectGit.resolveExistingScope).not.toHaveBeenCalled();
+});
+
+it("rejects a managed environment bound to another project before probing its folder", async()=>{
+  const environment={id:"env-foreign",projectId:"foreign-project",hostId:"h1",path:"/managed",status:"ready",managed:true,workspaceProvisionType:"managed-worktree"};
+  const f=fixture("/managed",[{hostId:"other",path:"/source"}],environment);
+  const result=await f.dispatch({threadId:"pm-thread",projectId:"project",task:{...f.task,project_cwd:"/managed"}});
+  expect(result).toMatchObject({ok:false,error:{code:"project_git_required"},projectGit:{kind:"managed_binding_unresolved"}});
+  expect(f.raw).not.toHaveBeenCalled();
+  expect(f.projectGit.resolveExistingScope).not.toHaveBeenCalled();
+});
+
+it("continues an interrupted managed bootstrap instead of treating its repository as ready", async()=>{
+  const environment={id:"env-managed",projectId:"project",hostId:"h1",path:"/managed",status:"ready",managed:true,workspaceProvisionType:"managed-worktree"};
+  const f=fixture("/managed",[{hostId:"other",path:"/source"}],environment);
+  f.projectGit.resolveExistingScope.mockResolvedValue({kind:"resume",root:"/managed",account:"octo"} as never);
+  f.projectGit.bootstrap.mockResolvedValue({ok:true,root:"/managed",fullName:"octo/managed",url:"https://github.invalid/octo/managed",commit:"abc",branch:"main"} as never);
+  await expect(f.dispatch({threadId:"pm-thread",projectId:"project",task:{...f.task,project_cwd:"/managed"}})).resolves.toMatchObject({ok:true,state:"queued"});
+  expect(f.projectGit.bootstrap).toHaveBeenCalledWith({hostId:"h1",root:"/managed",account:"octo"});
+  expect(f.raw).toHaveBeenCalled();
 });
 
 it("fails closed for active queued or unresolved live work, but ignores accepted terminal work",()=>{

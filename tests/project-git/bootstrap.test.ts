@@ -71,6 +71,24 @@ describe("project git scope question (P03.05)", () => {
     expect(f.asks).toHaveLength(2);
   });
 
+  it("existing-only scope refuses a new no-Git root without asking the owner", async () => {
+    const f = makeFixture();
+    const root = f.folder("unregistered", { "a.txt": "a" });
+    expect(await f.projectGit.resolveExistingScope({ threadId: "t1", hostId: "h1", projectRoot: root, taskKey: "task-existing" })).toMatchObject({ kind: "unknown" });
+    expect(f.asks).toHaveLength(0);
+  });
+
+  it("existing-only scope preserves an interrupted bootstrap resume record", async () => {
+    const f = makeFixture();
+    const root = f.folder("resumable", { "a.txt": "a" });
+    f.setAnswer(picked("1"));
+    const restore = intercept(f, async (command, run) => { if (isBaseline(command)) throw new Error("host interrupted during baseline"); return run(); });
+    expect(await ensure(f, root)).toMatchObject({ kind: "bootstrapped", result: { ok: false } });
+    restore();
+    expect(await f.projectGit.resolveExistingScope({ threadId: "t1", hostId: "h1", projectRoot: root, taskKey: "task-existing" })).toEqual({ kind: "resume", root, account: "octo" });
+    expect(f.asks).toHaveLength(1);
+  });
+
   it("asks nothing when gh is not signed in, and keeps a dismissal for its task", async () => {
     const f = makeFixture();
     const project = f.folder("proj", { "a.txt": "a" });

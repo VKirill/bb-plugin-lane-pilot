@@ -6,7 +6,7 @@ import type { TaskV2 } from "../src/rooms/contracts";
 import { shouldRunPlanCritique } from "../src/rooms/critique/critique";
 import { parsePlanRevision, planReviseConfig } from "../src/rooms/writer/server/plan-revise";
 import { coreFileWrite, mapStore } from "./helpers/core-files";
-import { contractEditions, createRun, getAttempt, getTaskPlan, listStageReceipts, openDatabase, renderTaskManifest, saveProjectSetting, savePrototypeConfig, setRunThread } from "../src/rooms/plugin-db";
+import { contractEditions, createRun, freezeRunBinding, getAttempt, getTaskPlan, listStageReceipts, openDatabase, renderTaskManifest, saveProjectSetting, savePrototypeConfig, setRunThread } from "../src/rooms/plugin-db";
 
 /**
  * The planner <-> critic loop of the direct dispatch path (SMA n1269 «Up to three revision rounds», n1267, n1268, n22, n23, n25, n28): a plan the
@@ -124,7 +124,7 @@ async function runScenario(scenario: Scenario) {
       environments: {
         listProviders: async () => [{ id: "git-worktree", pluginId: "environment-git-worktree", displayName: "Worktree", acceptsEmptyInputs: true, availability: null, description: null, icon: null, logoUrl: null, machineProviderId: null,
           requires: { gitCheckout: true, gitRemote: false, projectCheckout: true, projectless: false } }] as never,
-        get: async ({ environmentId }) => ({ id: environmentId, hostId: config.hostId, path: config.writerWorkspacePath, status: "ready", managed: true, workspaceProvisionType: "managed-worktree" }) as never,
+        get: async ({ environmentId }) => ({ id: environmentId, projectId, hostId: config.hostId, path: config.writerWorkspacePath, status: "ready", managed: true, workspaceProvisionType: "managed-worktree" }) as never,
       },
       files: {
         listPaths: async () => ({ truncated: false, paths: [{ kind: "file", name: "README.md", path: "README.md", positions: [], score: 1 }] }) as never,
@@ -155,6 +155,7 @@ async function runScenario(scenario: Scenario) {
       }
       if (call.method !== "runCommand") throw new Error(`unexpected host method ${call.method}`);
       const command = String(input.command ?? "");
+      if (command.includes("if not shutil.which(\"git\")")) return { hostId: config.hostId, exitCode: 0, stdout: JSON.stringify({ state: "localNoOrigin", cwd: config.writerWorkspacePath, root: config.writerWorkspacePath, hasCommit: true }), stderr: "" };
       if (command.includes("porcelain")) { porcelain += 1; return { hostId: config.hostId, exitCode: 0, stdout: JSON.stringify(porcelain === 1 ? [] : [{ path: "note.txt", sha256: noteSha }]), stderr: "" }; }
       return { hostId: config.hostId, exitCode: 0, stdout: "", stderr: "" };
     },
@@ -163,7 +164,8 @@ async function runScenario(scenario: Scenario) {
   savePrototypeConfig(db, config);
   const settings = { "plan_critique.min_score": 0, "plan_critique.min_write_tasks": 1, "memory.enabled": false, "project_life.enabled": false, "docs.enabled": false, ...scenario.settings };
   for (const [key, value] of Object.entries(settings)) saveProjectSetting(db, projectId, key, value);
-  createRun(db, runId, projectId, "bb", config.writerWorkspacePath, "none");
+  createRun(db, runId, projectId, "bb", null, "none");
+  freezeRunBinding(db, runId, { environmentId: "pr-writer-env", hostId: config.hostId, workspacePath: config.writerWorkspacePath });
   setRunThread(db, runId, pmThreadId);
   await plugin(bb);
   const dispatched = { ...task, ...scenario.task };
@@ -212,7 +214,7 @@ describe("the planner revises a plan the critic returned", () => {
   it("[sma:k_wp_revision] [sma:k_wp_planner] [sma:p2_planner] [sma:p2_session_end] a return goes to the planner, its revision passes a fresh critic and the writer starts; the PM gets nothing", async () => {
     const run = await runScenario({ settings: planner, critic: [rework(1), PASS], finish: true });
     // The revision is the second contract edition, written by the planner with its round; the stored plan is the planner's.
-    expect(run.editions.map((row) => row.reason)).toEqual(["created", "planner_revision:1/3"]);
+    expect(run.editions.map((row) => row.reason), JSON.stringify(run.reply)).toEqual(["created", "planner_revision:1/3"]);
     expect(run.editionPlans[1]!.plan).toBe("Write the fixture: create note.txt with the reviewed output and check it");
     expect(run.plan).toBe("Write the fixture: create note.txt with the reviewed output and check it");
     // The planner is a session of its own (role planner); the critic of the revision is a new thread, and it has the last word: it passed.

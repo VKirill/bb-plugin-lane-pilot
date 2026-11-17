@@ -2,6 +2,7 @@ import { isAbsolute, relative, resolve } from "node:path";
 import { stringAt, valueAt } from "@lane-pilot/kit";
 import { beginRunAdmission, getAttempt, getRun, getRunWriterHost, latestRunForPmThread, listLatestBlockedAttemptRefs, listOpenAttempts, taskBasePath, type LanePilotDatabase } from "../../storage";
 import { isLiveDecision } from "../../writer";
+import { resolveManagedWorkspace } from "../../verification";
 import type { ProjectGit, ScopeResult } from "./bootstrap";
 
 export type ProjectGitDispatchArgs = {
@@ -61,7 +62,7 @@ export function overlappingLiveRuns(db:LanePilotDatabase,hostId:string,root:stri
 
 type GuardDeps = {
   db:LanePilotDatabase;
-  bb:{ sdk:{ threads:{ getPluginMetadata(input:{threadId:string}):Promise<unknown> }; projects:{ get(input:{projectId:string}):Promise<unknown> } } };
+  bb:{ sdk:{ threads:{ getPluginMetadata(input:{threadId:string}):Promise<unknown> }; projects:{ get(input:{projectId:string}):Promise<unknown> }; environments:{ get(input:{environmentId:string}):Promise<unknown> } } };
   projectGit:ProjectGit;
   runWriterPool:FolderPool;
   invalidateLiveFolder:(runId:string)=>Promise<void>;
@@ -124,14 +125,38 @@ export function createProjectGitDispatch(deps:GuardDeps):ProjectGitDispatch {
       const projectRoot=sources
         .filter((source):source is {hostId:string;path:string} => source.hostId===hostId && typeof source.path==="string" && source.path.length>0 && within(run.writer_workspace_path!,source.path))
         .sort((left,right)=>right.path.length-left.path.length)[0]?.path;
-      if (!projectRoot) return refusal(runId,{ kind:"project_root_unresolved" },`no project source on frozen host ${hostId} encloses ${run.writer_workspace_path}; Git bootstrap was not started`);
       let scope:ScopeResult;
-      try {
-        scope=await deps.projectGit.resolveScope({
-          threadId:args.threadId, hostId, projectRoot, sectionPath:placement.placement.task.project_cwd,
-          taskKey:placement.placement.task.id,
-        });
-      } catch (cause) { return refusal(runId,{ kind:"scope_error" },`private Git preflight failed: ${cause instanceof Error?cause.message:String(cause)}; no task or attempt was admitted`); }
+      if (!projectRoot && run.writer_environment_id) {
+        let environment:unknown;
+        try { environment=await deps.bb.sdk.environments.get({environmentId:run.writer_environment_id}); }
+        catch (cause) { return refusal(runId,{ kind:"managed_binding_unresolved" },`managed writer environment could not be read: ${cause instanceof Error?cause.message:String(cause)}; Git bootstrap was not started`); }
+        if (stringAt(environment,"id")!==run.writer_environment_id || stringAt(environment,"projectId")!==args.projectId) {
+          return refusal(runId,{ kind:"managed_binding_unresolved" },`frozen writer environment ${run.writer_environment_id} is not bound to project ${args.projectId}; Git bootstrap was not started`);
+        }
+        try {
+          const managed=resolveManagedWorkspace(environment,hostId);
+          if (managed.environmentId!==run.writer_environment_id || managed.path!==run.writer_workspace_path) throw new Error("managed environment path does not match the frozen run binding");
+        } catch (cause) {
+          return refusal(runId,{ kind:"managed_binding_unresolved" },`frozen writer environment is not the ready managed worktree for ${hostId}:${run.writer_workspace_path}: ${cause instanceof Error?cause.message:String(cause)}; Git bootstrap was not started`);
+        }
+        try {
+          scope=await deps.projectGit.resolveExistingScope({
+            threadId:args.threadId, hostId, projectRoot:run.writer_workspace_path, sectionPath:placement.placement.task.project_cwd,
+            taskKey:placement.placement.task.id,
+          });
+        } catch (cause) { return refusal(runId,{ kind:"scope_error" },`private Git preflight failed: ${cause instanceof Error?cause.message:String(cause)}; no task or attempt was admitted`); }
+        if (scope.kind!=="repo" && scope.kind!=="resume" && scope.kind!=="stopped") {
+          return refusal(runId,{ kind:"project_root_unresolved" },`no project source on frozen host ${hostId} encloses ${run.writer_workspace_path}; existing Git was not found and bootstrap was not started`);
+        }
+      } else {
+        if (!projectRoot) return refusal(runId,{ kind:"project_root_unresolved" },`no project source on frozen host ${hostId} encloses ${run.writer_workspace_path}; Git bootstrap was not started`);
+        try {
+          scope=await deps.projectGit.resolveScope({
+            threadId:args.threadId, hostId, projectRoot, sectionPath:placement.placement.task.project_cwd,
+            taskKey:placement.placement.task.id,
+          });
+        } catch (cause) { return refusal(runId,{ kind:"scope_error" },`private Git preflight failed: ${cause instanceof Error?cause.message:String(cause)}; no task or attempt was admitted`); }
+      }
       if (scope.kind==="repo") return await deps.raw(args,placement);
       if (scope.kind==="stopped") return refusal(runId,scope,`private Git bootstrap is stopped (${scope.stage}:${scope.code}): ${scope.detail}`);
       if (deps.isDisposed?.()) return refusal(runId,scope,"Lane Pilot stopped while the owner form was open; no Git bootstrap or task dispatch was started");
