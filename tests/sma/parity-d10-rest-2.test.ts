@@ -334,11 +334,11 @@ describe("parity d10-rest-2", () => {
       expect(answer.failed[0]!.reason).toBe(dispatchRefusal.error.message.slice(0, 600));
     }
     expect((w.db.prepare("SELECT count(*) AS n FROM lane_pilot_task").get() as { n: number }).n).toBe(0);
-    // Rails quiet: the draft is pressed again, and the real dispatchWriter answers (the run has no workspace: rejected, no task id).
+    // Rails quiet: the draft is pressed again, and the real dispatchWriter answers with the persisted binding refusal (no task id).
     await w.railsOff();
     const again = await w.harness.behavior.callRpc("task_draft_create", { draftId: viaRpc.id, projectId: w.projectId }) as typeof fromTool;
     expect(again.state).toBe("partial");
-    expect(again.failed.map((f) => f.reason).join("\n")).toMatch(/persisted writerWorkspacePath/);
+    expect(again.failed.map((f) => f.reason).join("\n")).toMatch(/run has no persisted writer host and workspace binding/);
     expect(getDraft(w.db, viaRpc.id)!.taskIds).toEqual([]);
     expect(getDraft(w.db, viaRpc.id)!.state).toBe("partial");
     await w.harness.lifecycle.dispose();
@@ -390,6 +390,9 @@ describe("parity d10-rest-2", () => {
       experimental_callHostRpc: (call: { method: string; input: unknown }) => {
         if (call.method === "gitOwnershipBase") return { hostId, status: "not-git" as const, branch: null, headSha: null, baseRef: null, baseSha: null, compareCommitted: false, reason: "synthetic fixture" };
         const input = call.input as { cwd?: string; command?: string };
+        if (input.cwd === folder && String(input.command ?? "").includes("--show-toplevel")) {
+          return { hostId, exitCode: 0, stdout: JSON.stringify({ state: "localNoOrigin", cwd: folder, root: folder, hasCommit: true }), stderr: "" };
+        }
         if (!String(input.command ?? "").includes("porcelain")) return { hostId, exitCode: 0, stdout: "", stderr: "" };
         const files = dirt.get(String(input.cwd ?? "")) ?? new Map<string, string>();
         return { hostId, exitCode: 0, stdout: JSON.stringify([...files].map(([path, sha256]) => ({ path, sha256 }))), stderr: "" };
