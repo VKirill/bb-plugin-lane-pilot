@@ -138,7 +138,7 @@ describe("work already decided", () => {
     process.env.LANE_PILOT_DISPATCH_ANSWER_MS = "50";
     const { bb, harness } = createFakePluginHost({
       pluginId: "lane-pilot",
-      sdk: { threads: {
+      sdk: { projects: { get: async ({ projectId }) => ({ id: projectId, sources: [{ hostId: "host-test", path: dconfig.writerWorkspacePath }] }) }, threads: {
         getPluginMetadata: async ({ threadId }) => threadId === DPM ? { role: "pm", lanePilotRunId: DRUN } : { role: "writer" },
         spawn: async () => ({ id: "writer-no" }),
         wait: async () => new Promise(() => undefined),
@@ -154,7 +154,9 @@ describe("work already decided", () => {
         if (call.method === "gitOwnershipBase") await new Promise(() => undefined);
         if (call.method === "classifyPlan") return { hostId: "host-test", status: "ok", effort: "xhigh", reason: null, planSha256: "a", sentPlanSha256: "a", sourceLength: 1, sentLength: 1 };
         if (call.method !== "runCommand") throw new Error(`unexpected ${call.method}`);
-        return { hostId: "host-test", exitCode: 0, stdout: String((call.input as { command?: string }).command ?? "").includes("porcelain") ? "[]" : "", stderr: "" };
+        const command = String((call.input as { command?: string }).command ?? "");
+        if (command.includes('if not shutil.which("git")')) return { hostId: "host-test", exitCode: 0, stdout: JSON.stringify({ state: "localNoOrigin", cwd: dconfig.writerWorkspacePath, root: dconfig.writerWorkspacePath, hasCommit: true }), stderr: "" };
+        return { hostId: "host-test", exitCode: 0, stdout: command.includes("porcelain") ? "[]" : "", stderr: "" };
       },
     });
     try {
@@ -163,7 +165,7 @@ describe("work already decided", () => {
       saveProjectSetting(db, DPROJECT, "plan_critique.enabled", false);
       saveProjectSetting(db, DPROJECT, "memory.enabled", false);
       saveProjectSetting(db, DPROJECT, "owner.words", "on");
-      createRun(db, DRUN, DPROJECT, "bb", dconfig.writerWorkspacePath);
+      createRun(db, DRUN, DPROJECT, "bb", dconfig.writerWorkspacePath, "none", undefined, dconfig.hostId);
       setRunThread(db, DRUN, DPM);
       await plugin(bb);
       const dispatch = async () => JSON.parse(String(await harness.behavior.callAgentTool(

@@ -105,8 +105,10 @@ describe("workspace routing", () => {
     const makeHost = (environmentStatus:string) => createFakePluginHost({
       pluginId:"lane-pilot",
       sdk:{
+        projects:{ get:async ({ projectId }) => ({ id:projectId, sources:[{ hostId:"workspace-host", path:"/tmp/lane-base" }] }) },
         threads:{
           getPluginMetadata:async () => ({ role:"user" }),
+          get:async ({ threadId }) => ({ id:threadId, projectId:"workspace-project", status:"idle" }) as never,
           spawn:async (args) => { spawnInputs.push(args as unknown as Record<string,unknown>); return { id:`pm-${environmentStatus}`, environmentId:`env-${environmentStatus}` } as never; },
           stop:async () => undefined,
           list:async () => [] as never,
