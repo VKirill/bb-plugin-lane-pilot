@@ -26,6 +26,9 @@ import { runCapabilityCli } from "../../../src/rooms/capability/server/cli";
 import { createLearning } from "../../../src/rooms/learning/service";
 import { runLearningCli } from "../../../src/rooms/learning/cli";
 import { codeFactsOnHost } from "../../../src/rooms/platform/code-facts";
+import { parseLoopHookManifest, prepareLoopWorkflow } from "../../../src/rooms/workflow/loop-hooks";
+import { WorkflowEngine, parseWorkflow, workflowMigrations, workflowNotVerifiedMigrations, workflowOpsMigrations } from "@lane-pilot/workflow-engine";
+import { registerPureActions } from "@lane-pilot/workflow-engine";
 import { collectAtlasInput } from "../../atlas-input";
 import { capabilitySnapshot } from "../../atlas/logic";
 import { REQUIRED_CAPABILITIES } from "../../../src/rooms/native-install/capabilities";
@@ -35,6 +38,101 @@ import { phaseWorld, seedPhase, STATE, ROADMAP } from "../../../tests/sma/r21-wo
 const out: Record<string, unknown> = {};
 const piece = (id: string, wave: number, over: Record<string, unknown> = {}) => ({ id, title: id, wave, promise: { given: "g", when: "w", then: `then-${id}` },
   task: { id, project_cwd: "/repo", owns_paths: ["src/**"], verification: [{ command: "npm test" }], acceptance: [`acc-${id}`] }, ...over }) as never;
+
+// n1578: this is deliberately a direct production-engine observation, not a test import. The
+// scratch journal records the waiting child, its durable resume, ordered hook children and the
+// unchanged parent output. The three roots exercise each supported hook point.
+const loopHookWorkflow = (id: string, result: string, human = false) => parseWorkflow({
+  schemaVersion: 1, id, name: id, description: { en: id, ru: id }, status: "published",
+  inputs: [{ name: "goal", type: "string" }], outputs: [{ name: "status", type: "string" }],
+  nodes: human ? [
+    { id: "ask", type: "human", question: `Approve ${id}?`, options: ["yes", "no"], output: [{ name: "answer", type: "string" }] },
+    { id: "done", type: "action", action: "emit", map: { status: `'${result}'` } },
+  ] : [{ id: "done", type: "action", action: "emit", map: { status: `'${result}'` } }],
+  edges: human ? [{ from: "start", to: "ask" }, { from: "ask", to: "done" }] : [{ from: "start", to: "done" }],
+});
+
+const loopHookRoot = (id: string, nodeId = "done") => parseWorkflow({
+  schemaVersion: 1, id, name: id, description: { en: id, ru: id }, status: "published",
+  inputs: [{ name: "goal", type: "string" }], outputs: [{ name: "status", type: "string" }],
+  nodes: [{ id: nodeId, type: "action", action: "emit", map: { status: `'parent-${id}'` } }],
+  edges: [{ from: "start", to: nodeId }],
+});
+
+// ---- n1578: project loop hooks, real engine + journal observation ----
+{
+  const manifestText = JSON.stringify({ schemaVersion: 1, hooks: {
+    "plan:pre": [
+      { workflow: "alpha-check", inputs: { goal: "$inputs.goal" } },
+      { workflow: "beta-check", inputs: { goal: "$inputs.goal" } },
+    ],
+    "verify:post": [{ workflow: "verify-check", inputs: { goal: "$inputs.goal" } }],
+    "ship:post": [{ workflow: "ship-check", inputs: { goal: "$inputs.goal" } }],
+  } });
+  const parsed = parseLoopHookManifest(manifestText);
+  const catalog = new Map([
+    loopHookRoot("lp.plan"), loopHookRoot("lp.close"), loopHookRoot("ship", "shipped"),
+    loopHookWorkflow("alpha-check", "alpha", true), loopHookWorkflow("beta-check", "beta", true),
+    loopHookWorkflow("verify-check", "verify"), loopHookWorkflow("ship-check", "ship"),
+  ].map((item) => [item.id, item]));
+  const resolve = (id: string) => catalog.get(id) ?? null;
+  const status = () => ({ status: "published" as const });
+  const { bb } = createFakePluginHost({ pluginId: "lane-pilot" });
+  const db = bb.storage.database();
+  bb.storage.migrate(db, [...workflowMigrations, ...workflowOpsMigrations, ...workflowNotVerifiedMigrations]);
+  const engine = new WorkflowEngine({ db, harnessVersion: "sma-r21-loop-hooks" });
+  registerPureActions(engine);
+  const prepare = (id: string, nodeId?: string) => prepareLoopWorkflow({
+    workflow: catalog.get(id) ?? loopHookRoot(id, nodeId), manifest: parsed.manifest, manifestSha256: parsed.sha256,
+    resolve, status,
+  });
+  const run = async (prepared: ReturnType<typeof prepare>, goal: string) => {
+    const started = engine.start({ workflow: prepared.workflow, resolve: prepared.resolve, inputs: { goal } });
+    await engine.idle();
+    return started.runId;
+  };
+  try {
+    const plan = prepare("lp.plan");
+    const planId = await run(plan, "owner goal");
+    const childRows = () => db.prepare("SELECT id, workflow_id, parent_step_key FROM lane_pilot_wf_run WHERE parent_run_id=? ORDER BY rowid").all(planId) as Array<{ id: string; workflow_id: string; parent_step_key: string }>;
+    const waitingChild = () => {
+      const row = childRows().find((candidate) => engine.get(candidate.id)?.status === "waiting");
+      return row ? { ...row, waiting: engine.get(row.id)?.waiting ?? [] } : null;
+    };
+    const paused = waitingChild();
+    const pausedRoot = engine.get(planId)?.status;
+    const pausedQuestion = (paused?.waiting[0]?.await?.detail as { question?: unknown } | undefined)?.question;
+    const first = paused && paused.waiting[0];
+    const firstResolved = Boolean(first && await engine.resolve(paused!.id, first.stepKey, { answer: "yes", answer_kind: "answered" }));
+    await engine.poll(); await engine.idle();
+    const afterFirst = waitingChild();
+    const second = afterFirst && afterFirst.waiting[0];
+    const secondResolved = Boolean(second && await engine.resolve(afterFirst!.id, second.stepKey, { answer: "yes", answer_kind: "answered" }));
+    await engine.poll(); await engine.idle();
+    const planRuns = childRows().map((row) => ({ workflow: row.workflow_id, status: engine.get(row.id)?.status, output: engine.get(row.id)?.output ?? null }));
+    const planSteps = db.prepare("SELECT node_id, state, output_json FROM lane_pilot_wf_step WHERE run_id=? ORDER BY rowid").all(planId) as Array<{ node_id: string; state: string; output_json: string | null }>;
+    const closeId = await run(prepare("lp.close"), "close goal");
+    const shipId = await run(prepare("ship", "shipped"), "ship goal");
+    const rootRows = db.prepare("SELECT workflow_id, status, output_json FROM lane_pilot_wf_run WHERE id IN (?, ?, ?) ORDER BY rowid").all(planId, closeId, shipId) as Array<{ workflow_id: string; status: string; output_json: string | null }>;
+    const allHookRuns = db.prepare("SELECT workflow_id, parent_run_id, status, output_json FROM lane_pilot_wf_run WHERE workflow_id IN ('alpha-check','beta-check','verify-check','ship-check') ORDER BY rowid").all() as Array<{ workflow_id: string; parent_run_id: string | null; status: string; output_json: string | null }>;
+    let malformed = "";
+    try { parseLoopHookManifest("{"); } catch (cause) { malformed = cause instanceof Error ? cause.message : String(cause); }
+    let unavailable = "";
+    try {
+      const missing = parseLoopHookManifest(JSON.stringify({ schemaVersion: 1, hooks: { "plan:pre": [{ workflow: "missing-check", inputs: {} }], "verify:post": [], "ship:post": [] } }));
+      prepareLoopWorkflow({ workflow: catalog.get("lp.plan")!, manifest: missing.manifest, manifestSha256: missing.sha256, resolve, status });
+    } catch (cause) { unavailable = cause instanceof Error ? cause.message : String(cause); }
+    out.loopHooks = {
+      manifestPath: ".lane-pilot/workflows/loop-hooks.manifest.json", sha256: parsed.sha256,
+      points: { plan: plan.provenance.orderedHookIds, close: prepare("lp.close").provenance.orderedHookIds, ship: prepare("ship", "shipped").provenance.orderedHookIds },
+      waiting: { root: pausedRoot, child: paused?.workflow_id, question: pausedQuestion, firstResolved, secondWaiting: afterFirst?.workflow_id, secondResolved },
+      planRuns, planSteps: planSteps.map((step) => ({ node: step.node_id, state: step.state, output: step.output_json ? JSON.parse(step.output_json) : null })),
+      roots: rootRows.map((row) => ({ workflow: row.workflow_id, status: row.status, output: row.output_json ? JSON.parse(row.output_json) : null })),
+      hookRuns: allHookRuns.map((row) => ({ workflow: row.workflow_id, parent: row.parent_run_id, status: row.status, output: row.output_json ? JSON.parse(row.output_json) : null })),
+      refusal: { malformed, unavailable },
+    };
+  } finally { engine.dispose(); db.close(); }
+}
 
 // ---- n1560 / n1561: the entry bb lane-pilot ----
 {

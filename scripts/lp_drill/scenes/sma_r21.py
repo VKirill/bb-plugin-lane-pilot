@@ -15,7 +15,7 @@ from lp_drill.env import ROOT
 from lp_drill.prove import Proofs
 
 NODES = ["n1560", "n1561", "n1563", "n1564", "n1565", "n1566", "n1567", "n1568", "n1569", "n1570", "n1571", "n1572", "n1573", "n1574", "n1575", "n1576",
-         "n1577", "n1579", "n1580", "n1582", "n1583", "n1584", "n1585", "n1586", "n1587", "n1588"]
+         "n1577", "n1578", "n1579", "n1580", "n1582", "n1583", "n1584", "n1585", "n1586", "n1587", "n1588"]
 PROBE = ROOT / "scripts/lp_drill/scenes/sma_r21_probe.ts"
 UI_TEST = "tests/sma/four-proofs-r21-b.test.tsx"
 
@@ -89,6 +89,22 @@ def scenario_sma_r21(tmp) -> dict:
     # n1577 / n1574 / n1568 The plan inventory, the prefilled plan, the inputs of a stage's workflow.
     w = s["waves"]
     proofs.prove("n1577", w["waves"] == [1, 2, 3] and w["issue"] == ["a", "a2", "b", "c"], f"waves {w['waves']}, issue order {w['issue']}")
+    # n1578 Real project loop-hook composition: ordered plan hooks wait/resume as durable children,
+    # all three boundaries execute, parent emits stay unchanged, and refusal is fail-closed.
+    lh = s["loopHooks"]
+    expected_plan = ["plan:pre:hook-plan-pre-done-0-0:alpha-check", "plan:pre:hook-plan-pre-done-0-1:beta-check"]
+    expected_points = {"plan": expected_plan, "close": ["verify:post:hook-verify-post-done-0-0:verify-check"], "ship": ["ship:post:hook-ship-post-shipped-0-0:ship-check"]}
+    expected_plan_steps = [(step["node"], step["state"], step["output"]) for step in lh["planSteps"]]
+    ok = (lh["manifestPath"] == ".lane-pilot/workflows/loop-hooks.manifest.json" and lh["points"] == expected_points
+          and lh["waiting"] == {"root": "waiting", "child": "alpha-check", "question": "Approve alpha-check?", "firstResolved": True, "secondWaiting": "beta-check", "secondResolved": True}
+          and [row["workflow"] for row in lh["planRuns"]] == ["alpha-check", "beta-check"]
+          and all(row["status"] == "succeeded" for row in lh["planRuns"])
+          and expected_plan_steps == [("hook-plan-pre-done-0-0", "succeeded", {"status": "alpha"}), ("hook-plan-pre-done-0-1", "succeeded", {"status": "beta"}), ("done", "succeeded", {"status": "parent-lp.plan"})]
+          and [(row["workflow"], row["status"], row["output"]) for row in lh["roots"]] == [("lp.plan", "succeeded", {"status": "parent-lp.plan"}), ("lp.close", "succeeded", {"status": "parent-lp.close"}), ("ship", "succeeded", {"status": "parent-ship"})]
+          and [(row["workflow"], row["status"]) for row in lh["hookRuns"]] == [("alpha-check", "succeeded"), ("beta-check", "succeeded"), ("verify-check", "succeeded"), ("ship-check", "succeeded")]
+          and lh["refusal"]["malformed"].startswith("loop hooks manifest is not valid JSON:")
+          and lh["refusal"]["unavailable"] == 'plan:pre hook workflow "missing-check" is missing')
+    proofs.prove("n1578", ok, f"manifest {lh['manifestPath']}; ordered points {lh['points']}; wait/resume {lh['waiting']}; roots {lh['roots']}; refusal {lh['refusal']}")
     t = s["template"]
     ok = t["head"] == ["# Plan — phase ph_t: Sum", "Goal: sums", "## Waves"] and t["w1"] < t["a"] < t["w2"] and t["owns"] and t["checks"]
     proofs.prove("n1574", ok, f"PLAN.md head {t['head']}, piece a at line {t['a']} between wave 1 (line {t['w1']}) and wave 2 (line {t['w2']})")
