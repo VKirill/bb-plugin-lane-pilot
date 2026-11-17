@@ -266,7 +266,13 @@ def hub(sql):
 m.hubsql = hub
 m.git = lambda cwd, *a: "" if "status" in a else "deadbeef"
 m.run = lambda args, **k: (0, json.dumps({"plugins": [{"id": "lane-pilot", "version": ${JSON.stringify(JSON.parse(readFileSync(join(repoRoot, "package.json"), "utf8")).version)}}]}) if args[1:3] == ["plugin", "list"] else "[]", "")
-m.bb = lambda *a, **k: (0, json.dumps({"table": []}) if "capabilities" in a else ${hostListed ? 'json.dumps([{"id": "host_7sea4qaad8"}])' : '"[]"'}, "")
+def fake_bb(*a, **k):
+    if a == ("lane-pilot", "owner-presence", "--journal"):
+        return 0, json.dumps([{"day": "2026-11-10", "threadId": "thr_owner"}]), ""
+    if a == ("lane-pilot", "owner-presence"):
+        return 0, "[]", ""
+    return 0, json.dumps({"table": []}) if "capabilities" in a else ${hostListed ? 'json.dumps([{"id": "host_7sea4qaad8"}])' : '"[]"'}, ""
+m.bb = fake_bb
 def rpc(method, payload):
     if ${limitsError ? "True" : "False"}: raise RuntimeError("cockpit down")
     return {}
