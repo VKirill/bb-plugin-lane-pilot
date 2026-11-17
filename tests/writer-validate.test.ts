@@ -69,13 +69,10 @@ const worktreeHost = (options:NonNullable<Parameters<typeof createFakePluginHost
       if (call.method === "runCommand" && input.command?.includes("if not shutil.which(\"git\")")) {
         return { hostId:"host-test", exitCode:0, stdout:JSON.stringify({ state:"localNoOrigin", cwd:config.writerWorkspacePath, root:config.writerWorkspacePath, hasCommit:true }), stderr:"" };
       }
-      if (call.method === "runCommand" && input.command === "git rev-parse --show-prefix") {
-        return { hostId:"host-test", exitCode:0, stdout:"apps/site/\n", stderr:"" };
-      }
       if (!inner) throw new Error(`unexpected host method ${call.method}`);
       return inner(call as never);
     },
-  }, "host-test", config.writerWorkspacePath));
+  }, "host-test", "/tmp"));
 };
 
 const createWriterRun = (db:ReturnType<typeof openDatabase>, id:string, workspace=config.writerWorkspacePath) =>
