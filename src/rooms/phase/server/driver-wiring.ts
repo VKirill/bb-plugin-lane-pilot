@@ -15,8 +15,6 @@ import type { Journal } from "./driver-journal";
 import type { Methods } from "./driver-methods";
 import type { Steps } from "./driver-steps";
 import { isNotFound, orMiss } from "@lane-pilot/kit";
-import { LoopHookRefusal, prepareLoopWorkflow } from "../../workflow";
-import { createWorkflowPreflight, realDeps } from "../../workflow/server";
 
 /** A sure route only: the hint takes a request away from the architect (the errand's api-recon bar, 0.1.412). */
 const PUBLISHED_HINT_CONFIDENCE = 85;
@@ -30,7 +28,6 @@ export type WiringTools = DriverBase & Docs & Journal & Methods & Steps;
 export function installWiring(tools: WiringTools) {
   const { ctx, services, db, bb, now } = tools;
   const library = services.workflowLibrary;
-  const workflowPreflight = createWorkflowPreflight(ctx, realDeps(ctx, services));
   const auto = createAutoStages(ctx, services, {
     exhausted: tools.exhaust,
     api: { context: tools.context, plan: tools.plan, planCheck: tools.planCheck, question: tools.question, waveReview: tools.waveReview, goalAudit: tools.goalAudit, lessons: tools.lessons, drawing: tools.drawing, returnTo: tools.returnTo,
@@ -43,15 +40,12 @@ export function installWiring(tools: WiringTools) {
     planningHome: tools.planningHome,
     runtime: (phase) => (phase.runId ? { ctx, services, pmThreadId: phase.pmThreadId, projectId: phase.projectId, runId: phase.runId } : null),
     prepareWorkflow: async (phase, workflow) => {
-      const loaded = await library.loadStore(phase.projectId);
-      if (loaded.loopHooks?.error) throw new LoopHookRefusal(loaded.loopHooks.error);
-      if (!loaded.loopHooks?.manifest) return { workflow, resolve: services.workflowEngine.resolveWorkflow, composed: false };
-      const prepared = prepareLoopWorkflow({ workflow, manifest: loaded.loopHooks.manifest, manifestSha256: loaded.loopHooks.sha256, resolve: loaded.store.resolve,
-        status: (id, version) => { const item = loaded.store.get(id); return item && (version === undefined || item.workflow.version === version) ? { status: item.workflow.status, internal: item.workflow.internal, startedBy: item.workflow.startedBy } : null; } });
-      return { workflow: prepared.workflow, resolve: prepared.provenance.orderedHookIds.length ? prepared.resolve : services.workflowEngine.resolveWorkflow, composed: prepared.provenance.orderedHookIds.length > 0 };
+      // Test and embedded drivers may omit the project library: preserve the built-in stage path when no hook catalog exists.
+      if (typeof library.prepareWorkflow !== "function") return { workflow, resolve: services.workflowEngine.resolveWorkflow, composed: false };
+      return library.prepareWorkflow(phase.projectId, workflow);
     },
     preflight: async (phase, workflow) => {
-      const result = await workflowPreflight.check(workflow, { projectId: phase.projectId, threadId: phase.pmThreadId });
+      const result = await services.workflowTriggers.preflight(workflow, { projectId: phase.projectId, threadId: phase.pmThreadId });
       return result.ok ? { ok: true } : { ok: false, reason: preflightRefusal(result) };
     },
     pmIdle: async (phase) => ((await orMiss(bb.sdk.threads.get({ threadId: phase.pmThreadId }), null, isNotFound)) as { status?: unknown } | null)?.status === "idle",
@@ -74,15 +68,12 @@ export function installWiring(tools: WiringTools) {
       const title = input.text.trim().split("\n").find((line) => line.trim())?.trim().slice(0, 120) ?? "Owner's request";
       try {
         const inputs = input.kind === "heavy" ? { goal: input.text.slice(0, 8000) } : { title, text: input.text.slice(0, 8000), ...(input.kind === "small" && input.path ? { size: input.path.size, risk: input.path.risk } : {}) };
-        const loaded = await library.loadStore(input.projectId);
-        if (loaded.loopHooks?.error) throw new LoopHookRefusal(loaded.loopHooks.error);
-        const prepared = loaded.loopHooks?.manifest ? prepareLoopWorkflow({ workflow, manifest: loaded.loopHooks.manifest, manifestSha256: loaded.loopHooks.sha256, resolve: loaded.store.resolve,
-          status: (id, version) => { const item = loaded.store.get(id); return item && (version === undefined || item.workflow.version === version) ? { status: item.workflow.status, internal: item.workflow.internal, startedBy: item.workflow.startedBy } : null; } }) : null;
-        const selected = prepared?.provenance.orderedHookIds.length ? prepared : { workflow, resolve: services.workflowEngine.resolveWorkflow };
-        const composed = !!prepared?.provenance.orderedHookIds.length;
+        const prepared = typeof library.prepareWorkflow === "function" ? await library.prepareWorkflow(input.projectId, workflow) : { workflow, resolve: services.workflowEngine.resolveWorkflow, composed: false };
+        const selected = prepared.composed ? prepared : { workflow, resolve: services.workflowEngine.resolveWorkflow };
+        const composed = prepared.composed;
         if (composed) {
-          const admission = await workflowPreflight.check(selected.workflow, { projectId: input.projectId, threadId: input.pmThreadId });
-          if (!admission.ok) throw new LoopHookRefusal(preflightRefusal(admission));
+          const admission = await services.workflowTriggers.preflight(selected.workflow, { projectId: input.projectId, threadId: input.pmThreadId });
+          if (!admission.ok) throw new Error(preflightRefusal(admission));
         }
         const started = services.workflowEngine.start({ workflow: selected.workflow, resolve: selected.resolve, inputs, goals: intakeRunGoals(input.text), key: `intake:${input.pmThreadId}:${input.requestId}`,
           runtime: { ctx, services, pmThreadId: input.pmThreadId, projectId: input.projectId, runId: input.runId }, link: { projectId: input.projectId, runId: input.runId } });

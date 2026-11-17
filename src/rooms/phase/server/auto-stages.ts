@@ -1,5 +1,3 @@
-
-
 import type { ServerCore } from "../../contracts/server";
 import { planningText } from "../../contracts";
 import { reviewDoc, threatGap } from "../stages";
@@ -344,7 +342,7 @@ export function createAutoStages(ctx: Pick<ServerCore, "log">, services: Pick<Se
   prepareWorkflow?(phase: Phase, workflow: import("@lane-pilot/workflow-engine").Workflow): Promise<{ workflow: import("@lane-pilot/workflow-engine").Workflow; resolve: import("@lane-pilot/workflow-engine").ResolveWorkflow; composed?: boolean }>;
   /** The existing capability admission check; a missing capability holds this stage before any engine run is created. */
   preflight?(phase: Phase, workflow: import("@lane-pilot/workflow-engine").Workflow): Promise<{ ok: boolean; reason?: string }>;
-  /** The design measurement journal (SMA p3_judge): a reworked drawing's scores and remarks are kept too. */
+  /** The design journal (SMA p3_judge): reworked drawing scores and remarks are kept too. */
   journal?(line: DesignJournalLine): Promise<void>;
   /** The owner's anamnesis card ("" when none): lp.analyze's advisor reads it (SMA k_wdi_advisor). */
   ownerCard?(phase: Phase): Promise<string>;

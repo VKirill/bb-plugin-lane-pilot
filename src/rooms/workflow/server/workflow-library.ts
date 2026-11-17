@@ -13,7 +13,7 @@ import type { ServerCore } from "../../contracts/server";
 import type { DocsNightlyApi } from "../../docs/server/docs-nightly";
 import type { WorkflowEngineApi } from "./workflow";
 import {BUILTIN_SOURCES} from "../builtin";
-import { LOOP_HOOK_MANIFEST, parseLoopHookManifest, type LoopHookManifest } from "../loop-hooks";
+import { LOOP_HOOK_MANIFEST, parseLoopHookManifest, prepareLoopWorkflow, type LoopHookManifest } from "../loop-hooks";
 
 /** The fields of the services bag this file reads, typed by the rooms that own them. */
 interface Services {
@@ -107,6 +107,15 @@ export function createWorkflowLibrary(ctx: ServerCore, services: Pick<Services, 
   return {
     issueQuickWorkflowId, issueQuickModelCalls, issueQuickShortPath,
     loadStore,
+
+    async prepareWorkflow(projectId: string, workflow: Workflow) {
+      const loaded = await loadStore(projectId);
+      if (loaded.loopHooks.error) throw new Error(loaded.loopHooks.error);
+      if (!loaded.loopHooks.manifest) return { workflow, resolve: services.workflowEngine.resolveWorkflow, composed: false };
+      const prepared = prepareLoopWorkflow({ workflow, manifest: loaded.loopHooks.manifest, manifestSha256: loaded.loopHooks.sha256, resolve: loaded.store.resolve,
+        status: (id, version) => { const item = loaded.store.get(id); return item && (version === undefined || item.workflow.version === version) ? { status: item.workflow.status, internal: item.workflow.internal, startedBy: item.workflow.startedBy } : null; } });
+      return { workflow: prepared.workflow, resolve: prepared.provenance.orderedHookIds.length ? prepared.resolve : services.workflowEngine.resolveWorkflow, composed: prepared.provenance.orderedHookIds.length > 0 };
+    },
 
     async list(input: { projectId?: string }): Promise<Output<"workflow_list">> {
       const { store, project, loopHooks } = await loadStore(input.projectId);

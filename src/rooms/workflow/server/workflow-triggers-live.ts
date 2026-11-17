@@ -46,7 +46,7 @@ export function createWorkflowTriggersService(ctx: ServerCore, services: Service
   /** Every project that has a schedule from this plugin: the sweep re-checks them, so a file edited outside the tab loses or gains its schedule within the hour. */
   const scheduledProjects = (): string[] => wfScheduledProjectIds(ctx.db);
 
-  return { workflowTriggers: { ...triggers, syncSoon, scheduledProjects } };
+  return { workflowTriggers: { ...triggers, preflight: (workflow, input) => preflight.check(workflow, input), syncSoon, scheduledProjects } };
 }
 
 export type WorkflowTriggersApi = ReturnType<typeof createWorkflowTriggersService>;
