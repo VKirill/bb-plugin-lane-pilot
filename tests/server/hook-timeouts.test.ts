@@ -33,10 +33,10 @@ function setup(options: { vk?: boolean; draining?: boolean } = {}) {
 }
 
 describe("hook timeouts (VK hook policy)", () => {
-  it("declares the policy in the manifest: dispatch 20 s, env 10 s, env not required", () => {
+  it("declares the policy in the manifest: dispatch 20 s, env 10 s, env required", () => {
     const vk = (packageJson as unknown as { vk: { hookPolicy: Record<string, Record<string, unknown>> } }).vk;
     expect(vk.hookPolicy.messageDispatch).toEqual({ timeoutMs: 20_000 });
-    expect(vk.hookPolicy.contributeEnv).toEqual({ timeoutMs: 10_000 });
+    expect(vk.hookPolicy.contributeEnv).toEqual({ timeoutMs: 10_000, required: true });
   });
 
   it("does nothing without the core function", () => {
