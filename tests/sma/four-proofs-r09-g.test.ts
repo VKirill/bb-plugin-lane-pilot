@@ -113,9 +113,11 @@ describe("region 9 · the chat", () => {
       expect(stored).toMatchObject({ id: "t1", objective: "The form saves", owns_paths: ["a/**"] });
       expect(attempts.map((row) => row.state)).toEqual(["queued"]);
 
+      let unboundWriter: string | null = null;
+      let writerRole: string | null = null;
       const writer = dispatchWorld({ role: "writer", lanePilotRunId: "run-1" });
       try {
-        const unboundWriter = await writer.dispatch.dispatchWriter({ threadId: "thr-writer", projectId: "proj-1", task: contract("t2") } as never).then(() => null, (cause: Error) => cause.message);
+        unboundWriter = await writer.dispatch.dispatchWriter({ threadId: "thr-writer", projectId: "proj-1", task: contract("t2") } as never).then(() => null, (cause: Error) => cause.message);
         expect(unboundWriter).toBe("PM thread has no Lane Pilot run");
         expect(listAttemptsForTask(writer.db, "run-1", "t2")).toEqual([]);
         expect(writer.db.prepare("SELECT id FROM lane_pilot_task WHERE id = ?").get("t2")).toBeUndefined();
@@ -126,7 +128,7 @@ describe("region 9 · the chat", () => {
       const boundWriter = dispatchWorld({ role: "writer", lanePilotRunId: "run-1" });
       try {
         setRunThread(boundWriter.db, "run-1", "thr-writer");
-        const writerRole = await boundWriter.dispatch.dispatchWriter({ threadId: "thr-writer", projectId: "proj-1", task: contract("t3") } as never).then(() => null, (cause: Error) => cause.message);
+        writerRole = await boundWriter.dispatch.dispatchWriter({ threadId: "thr-writer", projectId: "proj-1", task: contract("t3") } as never).then(() => null, (cause: Error) => cause.message);
         expect(writerRole).toBe("caller is not a Lane Pilot PM thread");
         expect(listAttemptsForTask(boundWriter.db, "run-1", "t3")).toEqual([]);
         expect(boundWriter.db.prepare("SELECT id FROM lane_pilot_task WHERE id = ?").get("t3")).toBeUndefined();
@@ -138,7 +140,7 @@ describe("region 9 · the chat", () => {
       try {
         const noRun = await loose.dispatch.dispatchWriter({ threadId: "pm-1", projectId: "proj-1", task: contract("t4") } as never).then(() => null, (cause: Error) => cause.message);
         expect(noRun).toBe("PM thread has no lanePilotRunId");
-        observe("n957", { placed: { state: (placed as { state: string }).state, task: stored.id, attempts: attempts.map((row) => row.state) }, unboundWriter: "PM thread has no Lane Pilot run", boundWriter: "caller is not a Lane Pilot PM thread", pmWithoutRun: noRun });
+        observe("n957", { placed: { state: (placed as { state: string }).state, task: stored.id, attempts: attempts.map((row) => row.state) }, unboundWriter, otherThread: writerRole, otherThreadTasks: 0, pmWithoutRun: noRun });
       } finally {
         await loose.harness.lifecycle.dispose();
       }
