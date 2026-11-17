@@ -1,10 +1,15 @@
 // Probe of scenes/sma_r01_g.py: real writer finish/reaction and dispatch entrypoints on scratch sqlite/fakeHost.
 // It judges nothing; the Python scene compares the returned observations with the node cards.
+import { mkdtempSync, realpathSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { join } from "node:path";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { createCore } from "../../../src/rooms/core/server/core";
 import { createWriterFinish } from "../../../src/rooms/writer/server/finish";
 import { mountWriterAttemptFinished } from "../../../src/rooms/writer/server/attempt-reactions";
 import { openDatabase, createAttempt, createRun, createTask, listAttemptsForTask, listStageReceipts, saveProjectSetting, savePrototypeConfig, setRunThread, transitionAttempt } from "../../../src/rooms/plugin-db";
+import { runCommandOnHost } from "../../../src/rooms/writer/cli-run";
+import { resolveGitOwnershipBase } from "../../../src/rooms/verification";
 import { readTaskApproach } from "../../../src/rooms/tasks";
 import { listRuleProposals } from "@lane-pilot/run-insights";
 import { writerMarkers } from "../../../src/rooms/tasks";
@@ -73,40 +78,61 @@ async function observeLessonConsumers() {
 
 async function observeIdempotentDispatch() {
   const projectId = "project-test", pmThreadId = "pm-thread", runId = "run-idem";
-  const dispatchConfig = { ...config, projectId };
+  const workspacePath = realpathSync(mkdtempSync(join("/tmp", "sma-r01g-git-")));
+  writeFileSync(join(workspacePath, "hello.txt"), "fixture\n");
+  execFileSync("git", ["init", "-q", workspacePath]);
+  execFileSync("git", ["-C", workspacePath, "config", "user.name", "Lane Pilot fixture"]);
+  execFileSync("git", ["-C", workspacePath, "config", "user.email", "lane-pilot-fixture@example.invalid"]);
+  execFileSync("git", ["-C", workspacePath, "add", "hello.txt"]);
+  execFileSync("git", ["-C", workspacePath, "commit", "-qm", "fixture baseline"]);
+  const dispatchConfig = { ...config, projectId, hostId: "host-test", writerWorkspacePath: workspacePath };
   const task = { ...taskOf("suite-green"), display_title: "Idempotent dispatch", kind: "feature", area: "feature:suite-green", project_cwd: dispatchConfig.writerWorkspacePath, owns_paths: ["hello.txt"], expected_outputs: ["hello.txt"], verify: "none", verification: [] };
   let releaseBase!: () => void;
   const baseHeld = new Promise<void>((resolve) => { releaseBase = resolve; });
+  let writerStarts = 0;
   const saved = process.env.LANE_PILOT_DISPATCH_ANSWER_MS;
   process.env.LANE_PILOT_DISPATCH_ANSWER_MS = "50";
   const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot", sdk: {
     threads: {
       getPluginMetadata: async ({ threadId }: { threadId: string }) => threadId === pmThreadId ? { role: "pm", lanePilotRunId: runId } : { role: "writer" },
-      spawn: async () => ({ id: "writer-idem" }), wait: async () => new Promise(() => undefined),
+      spawn: async () => { writerStarts += 1; return { id: "writer-idem" }; }, wait: async () => new Promise(() => undefined),
       get: async ({ threadId }: { threadId: string }) => threadId === pmThreadId ? { id: pmThreadId, status: "idle", projectId } as never : { id: threadId, status: "active" } as never,
       output: async () => ({ text: "" }), list: async () => [] as never, stop: async () => ({}) as never,
     },
+    projects: { get: async () => ({ id: projectId, sources: [{ hostId: "host-test", path: workspacePath }] }) },
     environments: { listProviders: async () => [] as never },
     providers: { list: async () => [{ id: "codex", available: true, capabilities: { supportsServiceTier: true }, serviceTiers: [{ id: "default", label: "Default" }] }] as never,
       models: async () => ({ models: [{ id: "codex-test", model: "codex-test", supportedReasoningEfforts: ["medium", "high", "xhigh"].map((reasoningEffort) => ({ reasoningEffort, description: reasoningEffort })) }] as never }) },
     files: { read: async () => ({ content: "fixture\n" }), write: async () => ({ ok: true }) },
   }, experimental_callHostRpc: async (call: { method: string; input?: unknown }) => {
-    if (call.method === "gitOwnershipBase") { await baseHeld; return { hostId: "host-test", status: "not-git", branch: null, headSha: null, baseRef: null, baseSha: null, compareCommitted: false, reason: "fixture" }; }
+    if (call.method === "gitOwnershipBase") {
+      await baseHeld;
+      const input = call.input as { projectCwd: string; baseRef?: string };
+      return { hostId: "host-test", ...await resolveGitOwnershipBase(input) };
+    }
     if (call.method === "classifyPlan") return { hostId: "host-test", status: "ok", effort: "xhigh", reason: null, planSha256: "a", sentPlanSha256: "a", sourceLength: 1, sentLength: 1 };
     if (call.method !== "runCommand") throw new Error(`unexpected ${call.method}`);
-    return { hostId: "host-test", exitCode: 0, stdout: String((call.input as { command?: string }).command ?? "").includes("porcelain") ? "[]" : "", stderr: "" };
+    const input = call.input as { requestedHostId: string; command: string; cwd: string; timeoutSec?: number };
+    return await runCommandOnHost(input);
   } } as never);
   const db = openDatabase(bb);
   savePrototypeConfig(db, dispatchConfig as never);
   saveProjectSetting(db, projectId, "plan_critique.enabled", false);
   saveProjectSetting(db, projectId, "memory.enabled", false);
-  createRun(db, runId, projectId, "bb", dispatchConfig.writerWorkspacePath);
+  createRun(db, runId, projectId, "bb", workspacePath, "none", undefined, "host-test");
   setRunThread(db, runId, pmThreadId);
   const { default: plugin } = await import("../../../server");
   await plugin(bb);
-  const dispatch = async (plan = "Plan for the idempotent dispatch") => JSON.parse(String(await harness.behavior.callAgentTool(
-    "lane_pilot_dispatch_writer", { confirm: true, objective: "Dispatch check", plan, task }, { threadId: pmThreadId, projectId },
-  ))) as Record<string, unknown>;
+  const dispatch = async (plan = "Plan for the idempotent dispatch"): Promise<Record<string, unknown>> => {
+    try {
+      return JSON.parse(String(await harness.behavior.callAgentTool(
+        "lane_pilot_dispatch_writer", { confirm: true, objective: "Dispatch check", plan, task }, { threadId: pmThreadId, projectId },
+      ))) as Record<string, unknown>;
+    } catch (error) {
+      // Keep an unexpected refusal visible in the observation rather than letting the outer step erase which call failed.
+      return { toolError: String((error as Error)?.stack ?? error) };
+    }
+  };
   const count = () => (db.prepare("SELECT COUNT(*) count FROM lane_pilot_task WHERE run_id=?").get(runId) as { count: number }).count;
   try {
     const first = await dispatch();
@@ -114,9 +140,9 @@ async function observeIdempotentDispatch() {
     const again = await dispatch();
     const stagesAfterAgain = listStageReceipts(db, runId, "suite-green").length;
     return {
-      first: { taskId: first.taskId, state: first.state, dedup: first.deduplicated ?? null },
-      again: { taskId: again.taskId, sameAttempt: again.attemptId === first.attemptId, state: again.state, dedup: again.deduplicated ?? null },
-      tasks: count(), attempts: listAttemptsForTask(db, runId, "suite-green").length, stagesAfterFirst, stagesAfterAgain,
+      first: { taskId: first.taskId, attemptId: first.attemptId, state: first.state, dedup: first.deduplicated ?? null, error: first.error ?? first.toolError ?? null, raw: first },
+      again: { taskId: again.taskId, attemptId: again.attemptId, sameAttempt: typeof first.attemptId === "string" && first.attemptId.length > 0 && again.attemptId === first.attemptId, state: again.state, dedup: again.deduplicated ?? null, error: again.error ?? again.toolError ?? null, raw: again },
+      tasks: count(), attempts: listAttemptsForTask(db, runId, "suite-green").length, stagesAfterFirst, stagesAfterAgain, writerStarts,
     };
   } finally {
     releaseBase();

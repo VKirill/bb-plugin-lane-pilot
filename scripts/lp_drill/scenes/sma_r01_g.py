@@ -58,7 +58,13 @@ def prove_g(proofs: Proofs, tmp: Path) -> None:
                      f"lesson consumer filed one proposal and skipped LESSON: none {v}")
     v = value("n330")
     if v:
-        proofs.prove("n330", v.get("first") == {"taskId": "suite-green", "state": "queued", "dedup": None}
-                     and v.get("again") == {"taskId": "suite-green", "sameAttempt": True, "state": "queued", "dedup": True}
-                     and v.get("tasks") == 1 and v.get("attempts") == 1 and v.get("stagesAfterFirst") == v.get("stagesAfterAgain"),
+        first = v.get("first") if isinstance(v.get("first"), dict) else {}
+        again = v.get("again") if isinstance(v.get("again"), dict) else {}
+        first_attempt = first.get("attemptId")
+        proofs.prove("n330", first.get("taskId") == "suite-green" and first.get("state") == "queued" and first.get("dedup") is None
+                     and isinstance(first_attempt, str) and bool(first_attempt) and first.get("error") is None
+                     and again.get("taskId") == "suite-green" and again.get("attemptId") == first_attempt
+                     and again.get("sameAttempt") is True and again.get("state") == "queued" and again.get("dedup") is True and again.get("error") is None
+                     and v.get("tasks") == 1 and v.get("attempts") == 1 and v.get("stagesAfterFirst") == v.get("stagesAfterAgain")
+                     and v.get("writerStarts") == 0,
                      f"repeat dispatch {v.get('again')} left tasks={v.get('tasks')}, attempts={v.get('attempts')}, stages {v.get('stagesAfterFirst')}->{v.get('stagesAfterAgain')}")
