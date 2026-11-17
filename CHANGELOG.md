@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.592
+
+> [!NOTE]
+> Native TEST sessions on 0.1.591 exposed these defects. This correction candidate still requires combined release checks and native write acceptance.
+
+- **Validate repository read selectors before dispatch.** `repo:` remains valid for reads, but task write paths and verification folders reject it before task or attempt creation. Ordinary colon filenames and prose expected outputs remain valid. Dispatch and contract regressions cover the boundary.
+- **Wake waiting workflows after cancellation.** Terminal cancellation wakes the workflow engine, including a writer whose spawn finishes after cancellation was requested. A pending spawn remains nonterminal until it ends; workflow wake failures do not undo cancellation. Engine/journal regressions cover retry and delayed-spawn paths.
+- **Keep Node runtime frames out of baseline file findings.** The captured `Object..js (node:internal/...)` frame no longer becomes an outside-task filename. Regression tests retain genuine user-stack and outside-file refusals.
+
 ## 0.1.591
 
 > [!NOTE]
