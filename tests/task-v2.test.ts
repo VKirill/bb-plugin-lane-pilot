@@ -77,6 +77,7 @@ describe("task-v2 reserved repository selectors", () => {
 
   it("rejects the selector in each concrete path field while preserving prose outputs", () => {
     const invalidFields: Array<[string, Record<string, unknown>]> = [
+      ["expected_outputs", { expected_outputs: ["repo:packages/shared/marker.txt"] }],
       ["never_touch", { never_touch: ["repo:secret.txt"] }],
       ["test_removals", { test_removals: ["repo:old.test.ts"] }],
       ["drawing", { drawing: ["repo:mock.png"] }],
