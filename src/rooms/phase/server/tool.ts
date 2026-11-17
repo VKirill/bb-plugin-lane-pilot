@@ -5,7 +5,7 @@ import { taskV2Schema } from "../../contracts";
 import { PhaseRefusal } from "./driver";
 import { autoDue } from "./auto-stages";
 import { STAGE_RUBRICS } from "../stages";
-import { WORD_TURNS } from "../logic";
+import { WORD_TURNS, type Phase } from "../logic";
 import { isNotFound, orMiss } from "@lane-pilot/kit";
 
 import type { PhaseApi } from "./driver";
@@ -103,14 +103,19 @@ export function registerPhaseTool(ctx: ServerCore, services: Services): void {
         // The phase folder gate (SMA pc_folder): an id, a folder name or a roadmap row number resolves to exactly one phase.
         if ("phaseId" in input && input.phaseId) input = { ...input, phaseId: api.resolve(context.projectId, input.phaseId).id } as never;
         const OWN: Record<string, string[]> = { context: ["analyze", "resign"], plan: ["plan"], plan_check: ["plan"], wave_review: ["review"], goal_audit: ["close"], lessons: ["lessons"], drawing: ["draw"] };
-        if (OWN[input.action] && "phaseId" in input && input.phaseId) {
+        // The one door the machine leaves open at its own stage: an imported plan (n1253) enters a legacy phase — planning, a context that is the legacy
+        // stand-in, no plan yet, no run of the machine in flight — as it does with phase.train off; the machine then checks it itself. Nothing else is opened.
+        const importEntry = (phase: Phase) => input.action === "plan" && phase.state === "active" && phase.stage === "planning" && phase.record.context?.legacy === true && !phase.record.plan && !phase.record.auto;
+        const refuseIfMachineOwns = () => {
+          if (!OWN[input.action] || !("phaseId" in input) || !input.phaseId) return;
           const phase = api.status(input.phaseId).phase;
           const auto = phase.record.auto;
           const due = autoDue(phase);
-          if (auto || (due && OWN[input.action]!.includes(due.kind))) {
+          if (!importEntry(phase) && (auto || (due && OWN[input.action]!.includes(due.kind)))) {
             throw new PhaseRefusal(`Lane Pilot runs this stage itself${auto ? ` (run ${auto.wfRunId})` : " on its next pass"}; its result goes through the gates by itself and you get the next step. Do not report it; tell the owner where the phase is if he asks, and answer the stage's questions (answer) when they come.`);
           }
-        }
+        };
+        refuseIfMachineOwns();
         switch (input.action) {
           case "open": {
             const phase = await api.open({ projectId: context.projectId, pmThreadId: context.threadId, title: input.title, goal: input.goal, legacy: input.legacy, roadmapRow: input.roadmapRow });
@@ -143,6 +148,8 @@ export function registerPhaseTool(ctx: ServerCore, services: Services): void {
               const covers = row.covers?.length ? row.covers : Array.isArray(taskCovers) ? taskCovers : undefined;
               return { ...row, task: { ...task, project_cwd: task.project_cwd || cwd }, ...(covers ? { covers } : {}) };
             });
+            // The machine may have started its own plan run while the checkout was read: its stage is not entered then.
+            refuseIfMachineOwns();
             return json(summary(api.plan({ phaseId: input.phaseId, items: items as never, design: input.design, objective: input.objective, premortem: input.premortem })));
           }
           case "plan_check": return json(summary(await api.planCheck({ phaseId: input.phaseId, decision: input.decision, by: input.by, summary: input.summary, wfRunId: input.wfRunId })));

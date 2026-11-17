@@ -8,6 +8,7 @@ import { CRITIQUE_AXES, type DesignJournalLine } from "@lane-pilot/contracts";
 import { isPlanWordGap, wordAsked, INDEPENDENCE_GAP, openQuestions, phaseFolder, planGate, type Phase, type PhaseRecord, type PlanItem, type RiskKey, candidateOn } from "../logic";
 import { buildsScreens } from "../stages";
 import { cycleText, planGraph } from "../../tasks";
+import { checkedPlanVerdict } from "./plan-binding";
 import packageJson from "../../../../package.json";
 
 import type { WorkflowEngineApi } from "../../platform/server";
@@ -447,8 +448,7 @@ export function createAutoStages(ctx: Pick<ServerCore, "log">, services: Pick<Se
     } else if (auto.kind === "check") {
       // The machine's check of a plan the PM submitted: only the critic's verdict is reported; the plan stays the PM's (PH1).
       if (phase.stage !== "planning" || !phase.record.plan || phase.record.plan.critique) return;
-      const approved = output.status === "ok" && text(output.plan_verdict, 200) === "pass";
-      await deps.api.planCheck({ phaseId: phase.id, decision: approved ? "approve" : "changes_requested", by: `${by}, plan critic`, summary: text(output.plan_verdict, 2000), wfRunId: auto.wfRunId });
+      await deps.api.planCheck({ phaseId: phase.id, ...checkedPlanVerdict(phase.record.plan, output, (run) => planItems(phase, run)), by: `${by}, plan critic`, wfRunId: auto.wfRunId });
     } else if (auto.kind === "draw") {
       if (phase.stage !== "design" || phase.record.design?.drawing) return;
       // With a planning home the drawer was given the absolute folder and may answer with absolute paths: the phase keeps project-relative ones.
