@@ -27,7 +27,6 @@ const PUBLISHED_HINT_CONFIDENCE = 85;
 export type WiringTools = DriverBase & Docs & Journal & Methods & Steps;
 export function installWiring(tools: WiringTools) {
   const { ctx, services, db, bb, now } = tools;
-  const library = services.workflowLibrary;
   const auto = createAutoStages(ctx, services, {
     exhausted: tools.exhaust,
     api: { context: tools.context, plan: tools.plan, planCheck: tools.planCheck, question: tools.question, waveReview: tools.waveReview, goalAudit: tools.goalAudit, lessons: tools.lessons, drawing: tools.drawing, returnTo: tools.returnTo,
@@ -41,7 +40,8 @@ export function installWiring(tools: WiringTools) {
     runtime: (phase) => (phase.runId ? { ctx, services, pmThreadId: phase.pmThreadId, projectId: phase.projectId, runId: phase.runId } : null),
     prepareWorkflow: async (phase, workflow) => {
       // Test and embedded drivers may omit the project library: preserve the built-in stage path when no hook catalog exists.
-      if (typeof library.prepareWorkflow !== "function") return { workflow, resolve: services.workflowEngine.resolveWorkflow, composed: false };
+      const library = services.workflowLibrary;
+      if (!library || typeof library.prepareWorkflow !== "function") return { workflow, resolve: services.workflowEngine.resolveWorkflow, composed: false };
       return library.prepareWorkflow(phase.projectId, workflow);
     },
     preflight: async (phase, workflow) => {
@@ -56,19 +56,20 @@ export function installWiring(tools: WiringTools) {
     journal: (line) => tools.reactions.journalDrawing(line),
     ownerCard: () => ownerCardBlock(anamnesisFor(ctx).hub),
   });
-  const architect = services.architect;
   // The small-task graph for a small job or a batch of fixes: started by the machine, not chosen by the PM.
   const train = {
     start: async (input: { projectId: string; pmThreadId: string; runId: string; requestId: string; text: string; kind: "small" | "batch" | "heavy" | "full"; path?: { size: string; risk: string } }) => {
       // A batch of independent fixes is one task per fix (issue-batch); a small job is one task (issue-quick); a heavy goal is the
       // full-lifecycle graph: analysis, plan, build in waves, review, browser check, the owner's acceptance, close.
       const settings = loadProjectSettings(db, input.projectId);
-      const workflow = services.workflowEngine.resolveWorkflow(input.kind === "heavy" ? "full-lifecycle" : input.kind === "batch" ? "issue-batch" : input.kind === "full" ? "issue-full" : services.workflowLibrary.issueQuickWorkflowId(settings));
+      const library = services.workflowLibrary;
+      const workflowId = input.kind === "heavy" ? "full-lifecycle" : input.kind === "batch" ? "issue-batch" : input.kind === "full" ? "issue-full" : library?.issueQuickWorkflowId?.(settings) ?? "issue-quick";
+      const workflow = services.workflowEngine.resolveWorkflow(workflowId);
       if (!workflow) return null;
       const title = input.text.trim().split("\n").find((line) => line.trim())?.trim().slice(0, 120) ?? "Owner's request";
       try {
         const inputs = input.kind === "heavy" ? { goal: input.text.slice(0, 8000) } : { title, text: input.text.slice(0, 8000), ...(input.kind === "small" && input.path ? { size: input.path.size, risk: input.path.risk } : {}) };
-        const prepared = typeof library.prepareWorkflow === "function" ? await library.prepareWorkflow(input.projectId, workflow) : { workflow, resolve: services.workflowEngine.resolveWorkflow, composed: false };
+        const prepared = library && typeof library.prepareWorkflow === "function" ? await library.prepareWorkflow(input.projectId, workflow) : { workflow, resolve: services.workflowEngine.resolveWorkflow, composed: false };
         const selected = prepared.composed ? prepared : { workflow, resolve: services.workflowEngine.resolveWorkflow };
         const composed = prepared.composed;
         if (composed) {
@@ -85,10 +86,14 @@ export function installWiring(tools: WiringTools) {
       }
     },
     status: (wfRunId: string) => services.workflowEngine.get(wfRunId)?.status ?? null,
-    startProcess: async (input: { projectId: string; pmThreadId: string; text: string }) => (await architect.startOrder(input)).threadId,
+    startProcess: async (input: { projectId: string; pmThreadId: string; text: string }) => (await services.architect.startOrder(input)).threadId,
     // The router without a model (cheap, deterministic) over what lane_pilot_route reads: the project's graphs, else the built-in and global ones.
     findPublished: async (input: { projectId: string; text: string }) => {
-      const store = await library.loadStore(input.projectId).then((loaded) => loaded.store, () => services.workflowCatalog.store());
+      const library = services.workflowLibrary;
+      const fallbackStore = async () => await Promise.resolve(services.workflowCatalog.store());
+      const store = library && typeof library.loadStore === "function"
+        ? await library.loadStore(input.projectId).then((loaded) => loaded.store, fallbackStore)
+        : await fallbackStore();
       const routed = await routeIntent({ intent: input.text, workflows: store.list().map((item) => item.workflow), model: null });
       if (routed.decision !== "route" || !routed.workflowId || routed.confidence < PUBLISHED_HINT_CONFIDENCE) return null;
       const name = routed.candidates.find((card) => card.id === routed.workflowId)?.name ?? routed.workflowId;
