@@ -154,6 +154,7 @@ describe("project loop hooks: library and production trigger integration", () =>
       const runB = (startedB as { runId: string }).runId;
       expect(engine.snapshot(runB)!.run.definition_json).not.toContain("hook-plan-pre-");
       const refusedNested = await triggers.start({ projectId: "nestedMissing", workflowId: "full-lifecycle", inputs: { goal: "nested" }, source: "manual" });
+      expect(admitted.at(-1)!.requires.skills).toContain("project-check-skill");
       expect(refusedNested).toMatchObject({ ok: false, reason: "requirements_missing" });
       expect(db.prepare("SELECT COUNT(*) AS count FROM lane_pilot_wf_run WHERE project_id=?").get("nestedMissing")).toEqual({ count: 0 });
       expect(await triggers.start({ projectId: "broken", workflowId: "lp.plan", inputs: { goal: "x" }, source: "manual" })).toMatchObject({ ok: false, reason: "loop_hooks_invalid" });
