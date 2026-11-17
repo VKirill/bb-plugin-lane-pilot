@@ -261,6 +261,9 @@ describe("[sma:ar_stamp] the writer spawn path stamps the trace it saves", () =>
     const { bb, harness } = createFakeWorktreeHost({
       pluginId: "lane-pilot",
       sdk: {
+        projects: {
+          get: async ({ projectId }: { projectId: string }) => ({ id: projectId, sources: [{ hostId: config.hostId, path: config.writerWorkspacePath }] }),
+        },
         threads: {
           getPluginMetadata: async ({ threadId }: { threadId: string }) => threadId === pmThreadId ? { role: "pm", lanePilotRunId: "run-stamp" } : { role: "writer" },
           spawn: async () => ({ id: "writer-stamp" }),
@@ -273,10 +276,13 @@ describe("[sma:ar_stamp] the writer spawn path stamps the trace it saves", () =>
         files: { read: async ({ path }: { path: string }) => path.endsWith("hello.txt") ? { content: "hello\n" } : { content: "fixture\n" }, write: async () => ({ ok: true }) },
       },
       experimental_callHostRpc: (call: { method: string; input: unknown }) => {
-        if (call.method === "gitOwnershipBase") return { hostId: "host-test", status: "not-git", branch: null, headSha: null, baseRef: null, baseSha: null, compareCommitted: false, reason: "fixture" };
+        if (call.method === "gitOwnershipBase") return { hostId: "host-test", status: "ready", branch: "main", headSha: "a".repeat(40), baseRef: null, baseSha: null, compareCommitted: false, reason: null };
         if (call.method === "readBoundedFile") return boundedReadCall(call, "host-test", "fixture\n");
         if (call.method !== "runCommand") throw new Error(`unexpected ${call.method}`);
         const command = String((call.input as { command?: string }).command ?? "");
+        if (command.includes("PAYLOAD =")) {
+          return { hostId: "host-test", exitCode: 0, stdout: JSON.stringify({ state: "localNoOrigin", cwd: config.writerWorkspacePath, root: config.writerWorkspacePath, hasCommit: true }), stderr: "" };
+        }
         return { hostId: "host-test", exitCode: 0, stdout: command.includes("porcelain") ? JSON.stringify(++snapshots <= 2 ? [] : [{ path: "hello.txt", sha256: "created" }]) : "", stderr: "" };
       },
     } as never, "host-test");
@@ -284,7 +290,7 @@ describe("[sma:ar_stamp] the writer spawn path stamps the trace it saves", () =>
     savePrototypeConfig(db, config);
     saveProjectSetting(db, projectId, "plan_critique.enabled", false);
     saveProjectSetting(db, projectId, "memory.enabled", false);
-    createRun(db, "run-stamp", projectId, "bb", config.writerWorkspacePath);
+    createRun(db, "run-stamp", projectId, "bb", config.writerWorkspacePath, undefined, undefined, config.hostId);
     setRunThread(db, "run-stamp", pmThreadId);
     await plugin(bb);
     const task = { schema_version: 2, display_title: "Stamp", kind: "feature", area: "feature:stamp", id: "stamp-task", title: "Stamp", risk: "low", lane: "writer", project_cwd: config.writerWorkspacePath,
