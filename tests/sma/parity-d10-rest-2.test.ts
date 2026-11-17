@@ -8,7 +8,7 @@ import { explainCatalog, explainWord, firstSection } from "../../src/rooms/tools
 import { CURRICULUM_KV_KEY, CURRICULUM_ROW_BOUND, curriculumClusters, runCurriculumWeekly, weakSpotsBrief, type CurriculumCluster } from "../../src/rooms/tools/server/self-improve";
 import { VERDICT_LIST_COMMAND, verdictFiles, verdictInventory } from "../../src/rooms/tools/server/verdicts";
 import { DRAFT_KEEP_MS, MAX_DRAFT_CONTRACTS, createFromDraft, getDraft, proposeDraft } from "../../src/rooms/tasks/server";
-import { createAttempt, createRun, createTask, migrations, openDatabase, saveProjectSetting, savePrototypeConfig, setAttemptWorkspace, setRunThread, saveReasoningTrace } from "../../src/rooms/plugin-db";
+import { createAttempt, createRun, createTask, freezeRunBinding, migrations, openDatabase, saveProjectSetting, savePrototypeConfig, setAttemptWorkspace, setRunThread, saveReasoningTrace } from "../../src/rooms/plugin-db";
 import { getAttemptChange, landingOf } from "../../src/rooms/rollback";
 import { writeTaskOutcome } from "../../src/rooms/writer/server/attempt-reactions";
 import { snapshotDryRun } from "../../src/rooms/host-worker/host-handlers";
@@ -384,6 +384,7 @@ describe("parity d10-rest-2", () => {
           list: async () => [{ id: "codex", available: true, capabilities: { supportsServiceTier: true }, serviceTiers: [{ id: "default", label: "Default" }] }] as never,
           models: async () => ({ models: [{ id: "codex-test", model: "codex-test", supportedReasoningEfforts: ["medium", "high"].map((reasoningEffort) => ({ reasoningEffort, description: reasoningEffort })) }] as never }),
         },
+        environments: { get: async ({ environmentId }: { environmentId: string }) => ({ id: environmentId, projectId, hostId, path: folder, status: "ready", managed: true, workspaceProvisionType: "managed-worktree" }) },
         files: { read: async ({ path }: { path: string }) => ({ content: path.endsWith(".txt") ? "content\n" : null }), write: async () => ({ ok: true }) },
       },
       experimental_callHostRpc: (call: { method: string; input: unknown }) => {
@@ -406,7 +407,8 @@ describe("parity d10-rest-2", () => {
     savePrototypeConfig(db, { projectId, hostId, pmWorkspacePath: "/tmp/pm", writerWorkspacePath: folder, pmProviderId: "claude-code", pmModel: "claude-test", writerProviderId: "codex", writerModel: "codex-test" });
     saveProjectSetting(db, projectId, "plan_critique.enabled", false);
     saveProjectSetting(db, projectId, "memory.enabled", false);
-    createRun(db, "run-land", projectId, "bb", folder);
+    createRun(db, "run-land", projectId, "bb", null);
+    freezeRunBinding(db, "run-land", { environmentId: "env-land", hostId, workspacePath: folder });
     setRunThread(db, "run-land", pmThreadId);
     await plugin(bb);
     const task: TaskV2 = { schema_version: 2, display_title: "Тестовая задача", kind: "feature", area: "feature:landed", id: "landed", title: "Write landed", risk: "low", lane: "writer", project_cwd: folder,
