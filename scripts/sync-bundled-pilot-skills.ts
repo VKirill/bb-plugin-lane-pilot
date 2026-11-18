@@ -13,9 +13,9 @@ const OUT = join(ROOT, "src/rooms/pilot-panel/bundled-skills.json");
 
 const sha256Hex = (text: string) => createHash("sha256").update(text, "utf8").digest("hex");
 
-function walkSkillTextFiles(rootDir: string, currentDir = rootDir): Array<{ relPath: string; content: string; sha256: string }> {
+function walkSkillTextFiles(rootDir: string, currentDir = rootDir): Array<{ relPath: string; contentBase64: string; sha256: string }> {
   if (!existsSync(currentDir)) return [];
-  const out: Array<{ relPath: string; content: string; sha256: string }> = [];
+  const out: Array<{ relPath: string; contentBase64: string; sha256: string }> = [];
   for (const entry of readdirSync(currentDir).sort()) {
     if (entry.startsWith(".") || entry === "node_modules") continue;
     const full = join(currentDir, entry);
@@ -25,7 +25,7 @@ function walkSkillTextFiles(rootDir: string, currentDir = rootDir): Array<{ relP
     } else if (st.isFile()) {
       const content = readFileSync(full, "utf8");
       const relPath = relative(rootDir, full).replaceAll("\\", "/");
-      out.push({ relPath, content, sha256: sha256Hex(content) });
+      out.push({ relPath, contentBase64: Buffer.from(content, "utf8").toString("base64"), sha256: sha256Hex(content) });
     }
   }
   return out;

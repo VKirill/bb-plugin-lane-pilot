@@ -54,12 +54,26 @@ export interface WorkspacePilotInspection {
   plans: ProjectPlanSummary[];
 }
 
+let decodedBundles: BundledSkillBundle[] | null = null;
+
 export function currentPluginVersion(): string {
   return bundledSkillsData.pluginVersion;
 }
 
 export function loadBundledPilotSkills(): BundledSkillBundle[] {
-  return bundledSkillsData.skills as BundledSkillBundle[];
+  if (!decodedBundles) {
+    decodedBundles = bundledSkillsData.skills.map((skill) => ({
+      name: skill.name,
+      skillMdSha256: skill.skillMdSha256,
+      treeSha256: skill.treeSha256,
+      files: skill.files.map((f) => ({
+        relPath: f.relPath,
+        content: Buffer.from(f.contentBase64, "base64").toString("utf8"),
+        sha256: f.sha256,
+      })),
+    }));
+  }
+  return decodedBundles;
 }
 
 function isMissingFileError(cause: unknown): boolean {
