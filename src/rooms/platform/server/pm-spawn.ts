@@ -10,6 +10,7 @@ import { rememberThreadModel } from "./spawn-model";
 import { noteZcodeThread, reserveZcodeSlot } from "./zcode-slot";
 import { withLaunchTuning } from "./launch-tuning";
 import { unwrapBbApi } from "./lp-service-tier";
+import { cleanSubthreadPolicyField } from "./clean-subthread";
 
 /**
  * The PM waits for real work: the owner or another BB agent assigns the task, or an already-open phase carries its goal.
@@ -153,9 +154,11 @@ export function fullAccessSpawn(bb: BbPluginApi, args: Parameters<BbPluginApi["s
     // Lane Pilot's own threads run on the standard service tier whatever the caller asked for (Pilot Fast off). An
     // explicit "default" is a valid request on every provider, so no capability lookup is needed here: the same final
     // args go to the keyed spawn and to the plain `threads.spawn` fallback.
+    const cleanPolicy = cleanSubthreadPolicyField(bb, restQuiet as Parameters<typeof cleanSubthreadPolicyField>[1]);
     const full = {
       ...restQuiet,
       ...laneAgent,
+      ...cleanPolicy,
       serviceTier: "default" as const,
       permissionMode: "full" as const,
       executionInputSources: {

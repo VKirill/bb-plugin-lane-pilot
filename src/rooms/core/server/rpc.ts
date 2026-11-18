@@ -58,6 +58,7 @@ import { selfRepairDeps } from "../../self-repair/server";
 import { journalRpcHandlers, timeRpcHandlers } from "./rpc-timing";
 import { anamnesisFor } from "../../anamnesis";
 import { passportRpc } from "../../passport/server";
+import { pilotPanelRpc } from "../../pilot-panel/server";
 import { learningFor } from "../../learning";
 import { worldRpc } from "../../world/server";
 
@@ -237,6 +238,7 @@ export function registerRpc(ctx: ServerCore, services: Services, contract: typeo
     ...architectStartRpc(ctx, services),
     ...anamnesisFor(ctx).rpc,
     ...passportRpc(ctx),
+    ...pilotPanelRpc(ctx, { activate: services.activate }),
     specialist_overview: async ({ projectId }: { projectId?: string }) => specialistOverview(ctx.db, projectId),
     ...worldRpc(services.world),
   }, (message) => ctx.bb.log.debug(message)), (name, input) => services.front?.journal(name, input), (message) => ctx.log(message)));

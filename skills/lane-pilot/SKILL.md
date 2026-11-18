@@ -24,6 +24,7 @@ After a context compaction only the first part of this file comes back, and the 
 | Look up roles, the role-to-model table, per-step skills, plugins, MCP, secrets, actions | references/workflows-runtime.md | What a step can reach |
 | Test, publish, schedule or route a graph; goals, audit, amend, follow-up | references/workflows-lifecycle.md | The lifecycle of a graph |
 | Start from a complete, valid graph | assets/example-digest.json | A graph with four test cases to copy the shape from |
+| Prepare a project (`.agents/pilot/` + `.bb/skills/`) or delegate plan tasks to clean subthreads | references/subagent-delegation.md | Project-local skills, readiness, and coordinator → clean worker handoff |
 
 ## Rules that hold for every route
 

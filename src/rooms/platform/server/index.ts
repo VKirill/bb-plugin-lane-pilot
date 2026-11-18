@@ -24,3 +24,4 @@ export * from "./tick-deps";
 export type * from "./ports";
 export * from "./hub";
 export * from "./lp-service-tier";
+export * from "./clean-subthread";

@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.595
+
+- **Project-local Pilot skills and automatic workspace onboarding.** Activating Lane Pilot or running `pilot_panel_prepare_project` materializes `.agents/pilot/config.json`, starter context documents (`DESCRIPTION.md`, `ARCHITECTURE.md`, `rules/base.md`), a marker-bounded block in `AGENTS.md`, and 11 standardized skills inside `<workspacePath>/.bb/skills/` (`lane-pilot`, `lp-project-setup`, `lp-plan`, `lp-implement`, `lp-verify`, `lp-writer`, `lp-docs`, `lane-memory`, `project-life`, `lp-agentic-discipline`, `karpathy-guidelines`) while preserving owner and `project-folders` sections. Covered by `tests/server/pilot-panel.test.ts` and `tests/skills-shipped.test.ts`.
+- **Structured coordinator-to-subagent delegation workflow.** Shipped standardized skills `/lp-project-setup`, `/lp-plan`, `/lp-implement`, and `/lp-verify` plus `skills/lane-pilot/references/subagent-delegation.md` and `.agents/pilot/skill-context/delegation.md` define single-task worker briefs, duplicate-thread checks, coordinator-owned verification/commits, and `default` service-tier execution. Covered by `tests/server/pilot-panel.test.ts` and `tests/skills-shipped.test.ts`.
+- **Clean subthread session enforcement across helper spawns.** `fullAccessSpawn` attaches `experimental_vkRequiredSessionPolicy` role profiles for non-PM helper and subthread spawns that omit an explicit session policy (excluding `pm`, `bench-pm`, and `helperMode: "inherit"`) while keeping `serviceTier: "default"`. Covered by `tests/server/clean-subthreads.test.ts`.
+- **Dedicated chat header icon and right-hand Lane Pilot thread panel.** `app.tsx` registers the `Compass` header action (`open-pilot-panel`) and fixed right-hand thread tab (`pilot-panel`) displaying the active project, 5-step readiness checklist with contextual help, active session/run tasks, `.agents/pilot/plans/*.md` progress, subthread delegation controls, and `.bb/skills/` sync status. Covered by `tests/pilot-panel-ui.test.tsx`.
+
 ## 0.1.594
 
 > [!NOTE]

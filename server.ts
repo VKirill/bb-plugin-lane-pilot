@@ -68,9 +68,10 @@ import { registerRpc, ownerItemSweeps } from "./src/rooms/core/server/rpc";
 import { mountOwnerBell } from "./src/rooms/owner-waiting/server";
 import { mountAnamnesis } from "./src/rooms/anamnesis";
 import { mountPassportObserver } from "./src/rooms/passport/server";
+import { bootstrapProjectForPilot } from "./src/rooms/pilot-panel/server";
 import { mountWorldAssets } from "./src/rooms/world/server";
 import { registerLaneWorktreeProvider } from "./src/rooms/native-agent/server";
-import { checkTickDeps, scheduleIsolated } from "./src/rooms/platform/server";
+import { bindSubthreadProjectSettings, checkTickDeps, scheduleIsolated } from "./src/rooms/platform/server";
 import { clearDrainSnapshot, readDrainSnapshot, skipRedundantStartupScans } from "./src/rooms/stability/server";
 import { tokenCursorRow, tokenDailyByModel } from "./src/rooms/usage/server";
 import type { TokenCursorReader } from "./src/rooms/work-graph/server";
@@ -360,7 +361,7 @@ export default async function plugin(originalBb: BbPluginApi) {
     ownerLearningItems: pendingOwnerLearningItems,
     onAttemptFinished,
   } satisfies Pick<Services, "skillSwitchMorningLine" | "buildCliInvocation" | "taskWords" | "laneProject" | "leadRoad" | "insights" | "memorySettings" | "errandEpisodes" | "scheduleAgents" | "memoryEval" | "wallThreadReader" | "ownerLearningItems" | "onAttemptFinished">);
-  mountNativeWiring(ctx);
+  mountNativeWiring(ctx); bindSubthreadProjectSettings(ctx.bb, (pid) => loadProjectSettings(db, pid));
   services.tokenCursorRow = tokenCursorRow;
   // The writer pool must exist before project-git and dispatch are composed: the Git guard and live admission share it.
   Object.assign(services, createWriterState(ctx) satisfies WriterStatePort);
@@ -368,7 +369,7 @@ export default async function plugin(originalBb: BbPluginApi) {
   Object.assign(
     services,
     createReconcile(ctx, services) satisfies ReconcileApi,
-    createActivation(ctx, services) satisfies ActivationApi,
+    createActivation(ctx, services, (p) => bootstrapProjectForPilot(ctx, p)) satisfies ActivationApi,
     createMergeIntentRecovery(ctx, services) satisfies MergeIntentsApi,
     {
       resolveIntegrationGate: gateResolverFor(ctx),

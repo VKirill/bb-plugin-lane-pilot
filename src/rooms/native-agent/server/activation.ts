@@ -27,7 +27,11 @@ interface Services {
 }
 
 
-export function createActivation(ctx: ServerCore, services: Services) {
+export function createActivation(
+  ctx: ServerCore,
+  services: Services,
+  bootstrapProjectForPilot?: (input: { projectId: string; hostId: string; workspacePath: string }) => Promise<unknown>,
+) {
   const { bb, db, effectiveProjectSettings, host, ownedAgents, refreshRun } = ctx;
 
   async function assertComposerEnvironment(projectId: string, snapshot: Extract<ComposerSelectionSnapshot, { status: "ready" }>): Promise<void> {
@@ -225,6 +229,9 @@ export function createActivation(ctx: ServerCore, services: Services) {
     const excluded = checkout
       ? await excludeBookkeeping((input) => host.call("runCommand", input, { hostId:input.requestedHostId, timeoutMs:30_000 }), checkout.hostId, checkout.path, ctx.log)
       : [];
+    if (native && checkout && bootstrapProjectForPilot) {
+      await bestEffort(bb.log, "pilot project bootstrap", bootstrapProjectForPilot({ projectId, hostId: checkout.hostId, workspacePath: checkout.path }), undefined);
+    }
     await services.resumeOrphans(projectId);
     return { threadId, runId, ...(excluded.length ? { bookkeepingExcluded:excluded } : {}) };
   }

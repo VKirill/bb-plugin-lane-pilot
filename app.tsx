@@ -13,6 +13,7 @@ import { HelperThreadPanel, useHelperThreadIndex } from "./src/rooms/native-agen
 import { HELPER_PANEL_ACTION } from "./src/rooms/contracts/agent-picker";
 import { LANE_DRAFT_DIRECTIVE, LaneDraftCardDirective, RUN_CARD_DIRECTIVE, RunCardDirective, ThreadLive } from "./src/rooms/runs/ui";
 import { bindThreadRowStatus } from "./src/rooms/runs/ui";
+import { PILOT_THREAD_TAB_ID, PilotThreadPanel } from "./src/rooms/pilot-panel/ui";
 
 /** VK core 0.46.1-vk.5: a section of the thread's info panel (feature-tested; older cores get a panel tab instead). */
 type VkThreadInfoSection = (registration: { id: string; title: string; component: ComponentType<{ threadId: string; projectId: string }> }) => void;
@@ -21,11 +22,11 @@ type StockThreadInfoSection = (registration: {
   id: string; group: string; order?: number;
   component: ComponentType<{ threadId: string; projectId: string; environment: unknown }>;
 }) => void;
-/** The thread action tab that replaces `threadPanelAction` (feature-tested; an older BB gets the retired slot instead). */
+/** The thread tab slot (`action` for ad-hoc helper tabs, `fixed` for the persistent right-hand Lane Pilot panel). */
 type ExperimentalTabSlot = (registration: {
   id: string; title: string; icon: string; layout?: "padded" | "flush";
-  context: { kind: "thread" }; availability: "action";
-  component: ComponentType<{ threadId: string; params?: JsonValue }>;
+  context: { kind: "thread" }; availability: "action" | "fixed";
+  component: ComponentType<{ threadId: string; params?: JsonValue; environment?: { id?: string | null } | null }>;
 }) => void;
 import { OWNER_ASK_RENDERER_ID } from "./src/rooms/relay";
 import { OwnerAsk } from "./src/rooms/relay/ui";
@@ -82,6 +83,17 @@ export default definePluginApp((app) => {
     layout: "flush",
     component: ({ threadId, params }) => <HelperThreadPanel threadId={threadId} params={params} />,
   });
+  if (typeof threadTab === "function") {
+    threadTab.call(app.slots, {
+      id: PILOT_THREAD_TAB_ID,
+      title: t("panelTitle"),
+      icon: "Compass",
+      layout: "flush",
+      context: { kind: "thread" },
+      availability: "fixed",
+      component: ({ threadId, environment }) => <PilotThreadPanel threadId={threadId} environment={environment} />,
+    });
+  }
   // What Lane Pilot does for this chat (tasks now, step by step), in the thread's info panel below the uncommitted files.
   const slots = app.slots as unknown as {
     experimental_threadInfoSection?: StockThreadInfoSection;
@@ -119,12 +131,27 @@ export default definePluginApp((app) => {
       },
     });
   }
-  // «Lane Pilot helpers» in every thread's actions menu, opening this chat's helper tab (newer BB only; the slot is feature-tested).
+  // Dedicated header icon («Compass») opening the right-hand Lane Pilot project & session panel, plus «Lane Pilot helpers» in the menu.
   const threadAction = (app.slots as unknown as { experimental_threadAction?: (registration: {
-    id: string; title: string; icon: string; group: string;
-    item: (input: { experimental_panel?: { openTab?: (options: { tab: { id: string; context: { kind: "thread" }; availability: "action" }; params?: JsonValue; title?: string }) => boolean } }) => { label: string; icon: string; run: () => void } | null;
+    id: string; title: string; icon: string; group: string; placement?: "header" | "menu";
+    item: (input: { experimental_panel?: { openTab?: (options: { tab: { id: string; context: { kind: "thread" }; availability: "action" | "fixed" }; params?: JsonValue; title?: string }) => boolean } }) => { label: string; icon: string; detail?: string; run: () => void } | null;
   }) => void }).experimental_threadAction;
   if (typeof threadAction === "function") {
+    if (typeof threadTab === "function") {
+      threadAction.call(app.slots, {
+        id: "open-pilot-panel",
+        title: t("panelTitle"),
+        icon: "Compass",
+        group: "0_pilot",
+        placement: "header",
+        item: (input) => ({
+          label: t("panelTitle"),
+          icon: "Compass",
+          detail: "Проект, подготовка, локальные скиллы, планы и субтреды",
+          run: () => { input.experimental_panel?.openTab?.({ tab: { id: PILOT_THREAD_TAB_ID, context: { kind: "thread" }, availability: "fixed" } }); },
+        }),
+      });
+    }
     threadAction.call(app.slots, {
       id: "lane-pilot-helpers",
       title: t("helperPanelTitle"),
@@ -137,7 +164,15 @@ export default definePluginApp((app) => {
       }),
     });
   }
-  // The same helpers tab from the command palette (B-x3): the context only opens panel tabs, so there is nothing for a Cockpit jump to call.
+  // Command palette shortcuts for both the project panel and the helpers tab.
+  if (typeof threadTab === "function") {
+    app.commands.register({
+      id: "lane-pilot-panel",
+      title: t("panelTitle"),
+      isAvailable: ({ threadId }) => threadId !== null,
+      run: ({ experimental_panel }) => { experimental_panel?.openTab?.({ tab: { id: PILOT_THREAD_TAB_ID, context: { kind: "thread" }, availability: "fixed" } }); },
+    });
+  }
   app.commands.register({
     id: "lane-pilot-helpers",
     title: t("helperPanelTitle"),

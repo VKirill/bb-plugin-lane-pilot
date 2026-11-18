@@ -340,6 +340,40 @@ They are rewritten for Lane Pilot's roles and tools; no EGM code, skill or agent
 | Fresh-context reviewers attack one confirmed hypothesis through fixed lenses; a failed lens is «not run», never «0 findings»; alternatives weighed | `skills/egm-brainstorm/SKILL.md`, `agents/zoom_out.md`, `agents/design_critic.md`, `agents/comprehension.md`, `agents/implementation_readiness.md`, `agents/codebase_details.md`, `agents/structural.md`, `agents/inventive_catalyst.md`, `agents/synthesizer.md` | `workflows/lp.brainstorm.json` (`shootdown`), `workflows/idea-shootdown.json`, `reduce.lp.brainstorm.shootdown` |
 | Paraphrase first: a reviewer restates the proposal in its own words; a wrong paraphrase is a finding | `agents/comprehension.md` | `PLAN_CRITIC_METHOD`, `critiquePrompt` (owner's words) |
 
+## lee-to/ai-factory, MIT
+
+Project readiness steps, in-repository context layout (`.agents/pilot/`), single-task coordinator-to-subthread brief conventions, and the right-hand thread panel structure in `src/rooms/pilot-panel/` and `skills/{lp-project-setup,lp-plan,lp-implement,lp-verify}/` adapt workflow ideas from [lee-to/ai-factory](https://github.com/lee-to/ai-factory) (MIT) and its internal BB integration (`bb-plugin-aif-helper`). All code, schemas, and Russian/English skill texts are written natively for Lane Pilot's contracts, clean subthreads, and `.bb/skills/` project skill discovery; no upstream AI Factory code or skill files are copied.
+
+| Idea | Source concept in ai-factory | Where in Lane Pilot |
+|---|---|---|
+| Five-step project readiness checklist with contextual explanations and optional quality/CI skips | `/aif`, `.ai-factory/`, readiness checklist | `src/rooms/pilot-panel/readiness.ts`, `src/rooms/pilot-panel/ui/readiness-section.tsx` |
+| Coordinator-owned plan & commits + single-task clean worker brief with duplicate-spawn check | `/aif-implement` coordinator/worker handoff | `src/rooms/pilot-panel/delegation.ts`, `skills/lp-implement/SKILL.md`, `skills/lane-pilot/references/subagent-delegation.md` |
+| Standardized project onboarding, planning, and verification commands | `/aif-architecture`, `/aif-plan`, `/aif-verify` | `skills/lp-project-setup/SKILL.md`, `skills/lp-plan/SKILL.md`, `skills/lp-verify/SKILL.md` |
+
+```
+MIT License
+
+Copyright (c) lee-to
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
 ## fflate, MIT
 
 License from the shipped fflate 0.8.3 package:
