@@ -252,8 +252,7 @@
     },
     {
       "from": "review_doc",
-      "to": "done",
-      "when": "!$inputs.review_file"
+      "to": "done"
     },
     {
       "from": "goal_check",

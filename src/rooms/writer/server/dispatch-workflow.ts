@@ -429,10 +429,7 @@ async function pollAttempt(engine: WorkflowEngine, runId: string, taskId: string
 /** The engine key of an attempt's dispatch run; a restart after a reload is a run of its own (`:resume-N`). */
 export const dispatchRunKey = (attemptId: string, resume = 0): string => `lp-task:${attemptId}${resume ? `:resume-${resume}` : ""}`;
 
-/**
- * Starts the dispatch pipeline as a workflow run keyed by the attempt; throws when the engine cannot start it. The PM's
- * baseRef goes into the run's inputs: it is the one dispatch argument nothing else stores, and a restart needs it.
- */
+/** Starts the dispatch pipeline as a workflow run keyed by the attempt; baseRef goes into inputs so restarts retain it. */
 export function startDispatchRun(engine: WorkflowEngine, runtime: DispatchRuntime, resume = 0): { runId: string; done: Promise<RunSummary> } {
   const workflow = engine.resolveWorkflow(LP_TASK_PIPELINE);
   if (!workflow) throw new Error(`built-in workflow ${LP_TASK_PIPELINE} is not loaded`);
@@ -452,30 +449,17 @@ export function dispatchReply(summary: RunSummary): Record<string, unknown> | nu
 }
 
 /** The newest pipeline run of a task (`lp-task-pipeline`, linked to the Lane Pilot run and the task), or null. */
-export function dispatchRunOf(db: ServerCore["db"], runId: string, taskId: string): string | null {
-  return wfLatestPipelineRunId(db, runId, taskId);
-}
+export const dispatchRunOf = (db: ServerCore["db"], runId: string, taskId: string): string | null => wfLatestPipelineRunId(db, runId, taskId);
 
-/**
- * The task's pipeline run is inside the planner loop now: a plan-revise step exists and the run has not ended. A PM update is taken then (it stops
- * the loop: lane_pilot_update_task records PM_STOPPED_PLANNER_LOOP), while an update during the first pm-read and critique is refused as before.
- */
+/** True while a plan-revise step exists on a live pipeline run (PM updates stop the planner loop via PM_STOPPED_PLANNER_LOOP). */
 export function plannerLoopActive(db: ServerCore["db"], runId: string, taskId: string): boolean {
   const pipelineRunId = dispatchRunOf(db, runId, taskId);
-  if (!pipelineRunId) return false;
-  return wfLiveRunHasStep(db, pipelineRunId, "plan-revise");
+  return pipelineRunId ? wfLiveRunHasStep(db, pipelineRunId, "plan-revise") : false;
 }
 
-export type DispatchRerun =
-  | { ok: true; pipelineRunId: string; settled: boolean; critique: { allowed: boolean; reason?: string } | null }
-  | { ok: false; reason: string };
+export type DispatchRerun = { ok: true; pipelineRunId: string; settled: boolean; critique: { allowed: boolean; reason?: string } | null } | { ok: false; reason: string };
 
-/**
- * The PM updated a task that waits for its writer: its pipeline run goes again from `pm-read` with the new contract and plan, by the
- * engine's re-run. The run waits at the `writer` node, so it is canceled first (which ends that wait; the writer queue of the task is
- * not touched and reads the stored task when its turn comes), and `runtime` carries the new task to the steps that go again. Resolves once
- * the run waits for the writer again or ends, or after `waitMs`.
- */
+/** Re-runs a waiting task's pipeline from `pm-read` with updated contract and plan, resolving once it waits for writer, ends, or hits `waitMs`. */
 export async function rerunDispatchStages(engine: WorkflowEngine, runtime: DispatchRuntime, waitMs: number): Promise<DispatchRerun> {
   const pipelineRunId = dispatchRunOf(runtime.ctx.db, runtime.runId, runtime.taskId);
   if (!pipelineRunId) return { ok: false, reason: "no_pipeline_run" };

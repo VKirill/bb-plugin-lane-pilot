@@ -245,7 +245,7 @@ describe("the planner revises a plan the critic returned", () => {
     expect(current).toMatchObject({ path: "PLAN.v2.md", supersedes: "PLAN.md" });
     expect(run.written.get(`${config.writerWorkspacePath}/.agents/tasks/${task.id}/PLAN.v2.md`)).toBe(`${revised}\n`);
     // The second critic's read is recorded on the revised PLAN.md, with the revised text's hash; the first critic read the dispatch's plan.
-    const reads = run.manifest!.files.flatMap((row) => row.read_by.filter((read) => read.node === "plan-critique").map((read) => read.sha256));
+    const reads = plans.flatMap((row) => row.read_by.filter((read) => read.node === "plan-critique").map((read) => read.sha256));
     // Each critique visit resolves PLAN.md twice — once for the stage's plan text, once for the agent's data packet — so every edition's sha appears twice.
     expect(reads).toEqual([createHash("sha256").update(`${PLAN}\n`).digest("hex"), createHash("sha256").update(`${PLAN}\n`).digest("hex"), current.sha256, current.sha256]);
     expect(current.sha256).toBe(createHash("sha256").update(`${revised}\n`).digest("hex"));

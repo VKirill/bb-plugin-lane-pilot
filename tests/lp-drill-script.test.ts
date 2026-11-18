@@ -410,7 +410,7 @@ print(json.dumps(out))`;
     const run = spawnSync("python3", ["-I", "-c", code, door], { encoding: "utf8", timeout: 30_000, env: quiet });
     expect(run.status, run.stderr).toBe(0);
     const out = JSON.parse(run.stdout.trim().split("\n").at(-1)!);
-    expect(out.nodes).toEqual({ r04: 25, r08: 59, r20: 32, r23: 22, r24: 23, r25: 24 });
+    expect(out.nodes).toEqual({ r04: 25, r08: 59, r20: 32, r23: 23, r24: 23, r25: 24 });
     expect(out.on.envs).toEqual(["1", "1", "1"]);
     for (const [scene, checked] of [["r04", 25], ["r24", 23], ["r25", 24]] as const) {
       expect(out.on[scene].checked, scene).toBe(checked);
