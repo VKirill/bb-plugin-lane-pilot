@@ -52,40 +52,6 @@ export function providerSupportsServiceTier(provider: {
 
 const PROVIDER_LIST_TTL_MS = 60_000;
 
-type ProviderList = Awaited<ReturnType<BbPluginApi["sdk"]["providers"]["list"]>>;
-
-const providerListByApi = new WeakMap<BbPluginApi, Map<string, { at: number; list: ProviderList }>>();
-
-/**
- * Whether the provider takes a service tier: true or false when the provider list names it, null when the list could not
- * be read or does not name the provider. Best-effort: a failed lookup must not stop a spawn (the sdk throws synchronously
- * when a method is not available, so the call sits inside the try). The list is cached per host for a minute.
- */
-async function providerSupportsTier(bb: BbPluginApi, providerId: string | undefined, hostId: string | undefined): Promise<boolean | null> {
-  if (!providerId || typeof bb.sdk?.providers?.list !== "function") return null;
-  let cache = providerListByApi.get(bb);
-  if (!cache) {
-    cache = new Map();
-    providerListByApi.set(bb, cache);
-  }
-  const key = hostId ?? "";
-  const now = Date.now();
-  let entry = cache.get(key);
-  if (!entry || now - entry.at > PROVIDER_LIST_TTL_MS) {
-    try {
-      const list = await bb.sdk.providers.list(hostId ? { hostId } : undefined);
-      if (!Array.isArray(list)) throw new Error("providers.list did not return a list");
-      entry = { at: now, list };
-      cache.set(key, entry);
-    } catch (cause) {
-      bb.log.warn(`Lane Pilot: providers.list failed, the spawn of ${providerId} goes without a service tier: ${cause instanceof Error ? cause.message : String(cause)}`);
-      return null;
-    }
-  }
-  const provider = entry.list.find((row) => row.id === providerId);
-  return provider ? providerSupportsServiceTier(provider) : null;
-}
-
 /** OpenCode v2's agent for every thread Lane Pilot starts on it (Lane Stack's `profiles/opencode/agents/lane-pilot.md`): its rules,
  * and Lane Stack's opencode-lane hooks act only in a session whose agent is a `lane-` one (the service is shared, so no env marker reaches them). */
 export const OPENCODE_LANE_AGENT = "lane-pilot";
@@ -170,14 +136,7 @@ export function fullAccessSpawn(bb: BbPluginApi, args: Parameters<BbPluginApi["s
       if (deny) throw new CapabilityUnproven(deny);
     }
     const hostId = args.environment?.type === "host" && typeof args.environment.hostId === "string" ? args.environment.hostId : undefined;
-    const [supportsTier, laneAgent] = await Promise.all([
-      providerSupportsTier(bb, args.providerId, hostId),
-      laneAgentOption(bb, args as unknown as Parameters<typeof laneAgentOption>[1], hostId),
-    ]);
-    // A tier the caller named is sent whatever the lookup says, unless the list shows the provider has no tiers.
-    // With no named tier and an unknown support, nothing is guessed.
-    const namedTier = args.serviceTier === "default" || args.serviceTier === "fast";
-    const sendTier = supportsTier === true || (supportsTier === null && namedTier);
+    const laneAgent = await laneAgentOption(bb, args as unknown as Parameters<typeof laneAgentOption>[1], hostId);
 
     // Launch tuning (launch-tuning.ts): read-only helpers start in the provider's read-only mode; every other spawn passes through unchanged.
     const quiet = withLaunchTuning(quietHelper(args, graphStepLookupByApi.get(bb)));
@@ -188,16 +147,18 @@ export function fullAccessSpawn(bb: BbPluginApi, args: Parameters<BbPluginApi["s
       executionInputSources = restSources;
     }
 
-    const requestedTier: "default" | "fast" = args.serviceTier === "fast" ? "fast" : "default";
+    // Lane Pilot's own threads run on the standard service tier whatever the caller asked for (Pilot Fast off). An
+    // explicit "default" is a valid request on every provider, so no capability lookup is needed here: the same final
+    // args go to the keyed spawn and to the plain `threads.spawn` fallback.
     const full = {
       ...restQuiet,
       ...laneAgent,
-      ...(sendTier ? { serviceTier: requestedTier } : {}),
+      serviceTier: "default" as const,
       permissionMode: "full" as const,
       executionInputSources: {
         ...executionInputSources,
+        serviceTier: "explicit" as const,
         permissionMode: "explicit" as const,
-        ...(sendTier ? { serviceTier: "explicit" as const } : {}),
       },
     } as Parameters<BbPluginApi["sdk"]["threads"]["spawn"]>[0] & Record<string, unknown>;
     // With the VK thread keys the spawn is idempotent: a lost answer repeated returns the same thread (thread-keys.ts).

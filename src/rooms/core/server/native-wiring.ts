@@ -8,6 +8,7 @@ import { attachStreamRetry, droppedStreamDetail } from "../../writer";
 import { retryEligibility } from "../../stability/server";
 import { createPmSkillTraceEnv, createRoleMarkerEnv, mountBbShim } from "../../native-agent/server";
 import { observeOwnerDispatch } from "../../owner-presence/server";
+import { lpStandardTierAdmission } from "../../platform/server";
 import { THREAD_WATCH_EVENT_TYPES, listThreadEventsRaw } from "@lane-pilot/thread-observe";
 import type { ServerCore } from "../../contracts/server";
 
@@ -30,12 +31,17 @@ export function mountNativeWiring(ctx: ServerCore) {
     },
   });
 
-  bb.experimental_hooks.on("message.dispatch", (hookCtx) => {
+  bb.experimental_hooks.on("message.dispatch", async (hookCtx) => {
     // Owner presence is a mark, not a dispatch decision. A failure here must not refuse the message.
     void observeOwnerDispatch(bb, hookCtx).catch((cause: unknown) => {
       bb.log.warn(`owner presence: ${cause instanceof Error ? cause.message : String(cause)}`);
     });
-    return handleNativeDispatch(bb, nativeHost, hookCtx, db);
+    const verdict = await handleNativeDispatch(bb, nativeHost, hookCtx, db);
+    // The standard-tier check never reopens a wait or reject the native dispatch already made; it only refuses an
+    // otherwise-proceed Lane Pilot turn that still carries a nondefault tier (a retry or a queued row saved while
+    // Fast was on — the row is immutable, so the answer is reject, never a rewrite).
+    if (verdict.action !== "proceed") return verdict;
+    return lpStandardTierAdmission(bb, hookCtx);
   });
 
   // One resolver per provider: the native session's launcher, else the bundled guard for a Claude thread Lane Pilot

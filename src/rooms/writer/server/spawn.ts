@@ -157,10 +157,9 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
       if (!provider?.available) throw new WriterSelectionError(`writer_provider_unavailable:${writerProviderId}`);
       const model = findModelIn(catalog.models, writerModel);
       if (!model) throw new WriterSelectionError(`writer_model_unavailable:${writerProviderId}/${writerModel}`);
-      const tierIds = new Set(provider.serviceTiers?.map((tier) => tier.id) ?? []);
-      // «fast» is a speed wish, not a condition: a writer whose provider has no fast tier runs on its default tier
-      // (2026-11-07: a fallback to Antigravity was refused for «fast» and the lead's skill task was blocked).
-      const effectiveServiceTier = tierIds.has(requestedServiceTier) ? requestedServiceTier : null;
+      // Lane Pilot runs on the standard service tier (Pilot Fast off): the wire sends "default" for every spawn.
+      // The requested tier stays recorded for provenance so a snapshot still shows what the settings asked for.
+      const effectiveServiceTier = "default" as const;
       const manual = input.emergency
         ? (input.emergency.reasoningLevel && model.supportedReasoningEfforts.some((item) => item.reasoningEffort === input.emergency!.reasoningLevel) ? input.emergency.reasoningLevel
           : model.supportedReasoningEfforts.some((item) => item.reasoningEffort === "low") ? "low" : model.supportedReasoningEfforts[0]?.reasoningEffort ?? "medium")

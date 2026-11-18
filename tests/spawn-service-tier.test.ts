@@ -64,7 +64,7 @@ describe("spawn service tier", () => {
       expect(spawned[0]?.permissionMode).toBe("full");
     });
 
-    it("passes configured serviceTier when given and provider supports service tiers", async () => {
+    it("sends the standard tier even when the caller asked for fast", async () => {
       const spawned: Record<string, unknown>[] = [];
       const { bb } = createFakePluginHost({
         pluginId: "lane-pilot",
@@ -92,11 +92,11 @@ describe("spawn service tier", () => {
       } as never);
 
       expect(spawned).toHaveLength(1);
-      expect(spawned[0]?.serviceTier).toBe("fast");
+      expect(spawned[0]?.serviceTier).toBe("default");
       expect((spawned[0]?.executionInputSources as Record<string, unknown>)?.serviceTier).toBe("explicit");
     });
 
-    it("sends no service tier to a provider that has no service tiers", async () => {
+    it("sends the standard tier to a provider that lists no service tiers", async () => {
       const spawned: Record<string, unknown>[] = [];
       const { bb } = createFakePluginHost({
         pluginId: "lane-pilot",
@@ -123,12 +123,12 @@ describe("spawn service tier", () => {
       } as never);
 
       expect(spawned).toHaveLength(1);
-      expect(spawned[0]?.serviceTier).toBeUndefined();
-      expect((spawned[0]?.executionInputSources as Record<string, unknown>)?.serviceTier).toBeUndefined();
+      expect(spawned[0]?.serviceTier).toBe("default");
+      expect((spawned[0]?.executionInputSources as Record<string, unknown>)?.serviceTier).toBe("explicit");
       expect(spawned[0]?.permissionMode).toBe("full");
     });
 
-    it("strips requested service tier if provider has no service tiers", async () => {
+    it("sends the standard tier to a provider with no tiers even when the caller asked for fast", async () => {
       const spawned: Record<string, unknown>[] = [];
       const { bb } = createFakePluginHost({
         pluginId: "lane-pilot",
@@ -156,19 +156,19 @@ describe("spawn service tier", () => {
       } as never);
 
       expect(spawned).toHaveLength(1);
-      expect(spawned[0]?.serviceTier).toBeUndefined();
-      expect((spawned[0]?.executionInputSources as Record<string, unknown>)?.serviceTier).toBeUndefined();
+      expect(spawned[0]?.serviceTier).toBe("default");
+      expect((spawned[0]?.executionInputSources as Record<string, unknown>)?.serviceTier).toBe("explicit");
     });
   });
 
-  describe("best-effort tier lookup (providers.list)", () => {
+  describe("provider list not consulted (providers.list)", () => {
     function setupSpawnHost(list: () => Promise<unknown>) {
       const spawned: Record<string, unknown>[] = [];
-      const warnings: string[] = [];
+      let calls = 0;
       const { bb } = createFakePluginHost({
         pluginId: "lane-pilot",
         sdk: {
-          providers: { list },
+          providers: { list: async () => { calls += 1; return list(); } },
           threads: {
             spawn: async (args: unknown) => {
               spawned.push(args as Record<string, unknown>);
@@ -177,25 +177,24 @@ describe("spawn service tier", () => {
           },
         } as never,
       });
-      (bb.log as { warn: (message: string) => void }).warn = (message) => warnings.push(message);
-      return { bb, spawned, warnings };
+      return { bb, spawned, calls: () => calls };
     }
 
-    it("spawns with no service tier when providers.list throws", async () => {
-      const { bb, spawned, warnings } = setupSpawnHost(async () => {
+    it("spawns on the standard tier when providers.list throws", async () => {
+      const { bb, spawned, calls } = setupSpawnHost(async () => {
         throw new Error("provider host unreachable");
       });
 
       await fullAccessSpawn(bb, { projectId: "p1", providerId: "claude-code", prompt: "test", pluginMetadata: { role: "helper" } } as never);
 
       expect(spawned).toHaveLength(1);
-      expect(spawned[0]?.serviceTier).toBeUndefined();
-      expect((spawned[0]?.executionInputSources as Record<string, unknown>)?.serviceTier).toBeUndefined();
+      expect(spawned[0]?.serviceTier).toBe("default");
+      expect((spawned[0]?.executionInputSources as Record<string, unknown>)?.serviceTier).toBe("explicit");
       expect(spawned[0]?.permissionMode).toBe("full");
-      expect(warnings.some((line) => line.includes("providers.list failed") && line.includes("provider host unreachable"))).toBe(true);
+      expect(calls()).toBe(0);
     });
 
-    it("spawns with no service tier when providers.list is not stubbed", async () => {
+    it("spawns on the standard tier when providers.list is not stubbed", async () => {
       const spawned: Record<string, unknown>[] = [];
       const { bb } = createFakePluginHost({
         pluginId: "lane-pilot",
@@ -212,11 +211,11 @@ describe("spawn service tier", () => {
       await fullAccessSpawn(bb, { projectId: "p1", providerId: "claude-code", prompt: "test", pluginMetadata: { role: "helper" } } as never);
 
       expect(spawned).toHaveLength(1);
-      expect(spawned[0]?.serviceTier).toBeUndefined();
+      expect(spawned[0]?.serviceTier).toBe("default");
       expect(spawned[0]?.permissionMode).toBe("full");
     });
 
-    it("keeps a configured fast tier when providers.list fails", async () => {
+    it("sends the standard tier when the caller asked for fast and providers.list fails", async () => {
       const { bb, spawned } = setupSpawnHost(async () => {
         throw new Error("timeout");
       });
@@ -224,17 +223,17 @@ describe("spawn service tier", () => {
       await fullAccessSpawn(bb, { projectId: "p1", providerId: "codex", serviceTier: "fast", prompt: "test", pluginMetadata: { role: "writer" } } as never);
 
       expect(spawned).toHaveLength(1);
-      expect(spawned[0]?.serviceTier).toBe("fast");
+      expect(spawned[0]?.serviceTier).toBe("default");
       expect((spawned[0]?.executionInputSources as Record<string, unknown>)?.serviceTier).toBe("explicit");
     });
 
-    it("sends no service tier when the provider is missing from the list", async () => {
+    it("sends the standard tier when the provider is missing from the list", async () => {
       const { bb, spawned } = setupSpawnHost(async () => [{ id: "other", capabilities: { supportsServiceTier: true } }]);
 
       await fullAccessSpawn(bb, { projectId: "p1", providerId: "claude-code", prompt: "test", pluginMetadata: { role: "helper" } } as never);
 
       expect(spawned).toHaveLength(1);
-      expect(spawned[0]?.serviceTier).toBeUndefined();
+      expect(spawned[0]?.serviceTier).toBe("default");
     });
 
     it("sends 'default' for a provider with tiers and no configured tier", async () => {
@@ -246,12 +245,8 @@ describe("spawn service tier", () => {
       expect((spawned[0]?.executionInputSources as Record<string, unknown>)?.serviceTier).toBe("explicit");
     });
 
-    it("reads the provider list once per host within the cache window", async () => {
-      let calls = 0;
-      const { bb, spawned } = setupSpawnHost(async () => {
-        calls += 1;
-        return [{ id: "claude-code", capabilities: { supportsServiceTier: true } }];
-      });
+    it("never reads the provider list", async () => {
+      const { bb, spawned, calls } = setupSpawnHost(async () => [{ id: "claude-code", capabilities: { supportsServiceTier: true } }]);
       const hostSpawn = { projectId: "p1", providerId: "claude-code", prompt: "test", pluginMetadata: { role: "helper" }, environment: { type: "host", hostId: "host-1" } };
 
       await fullAccessSpawn(bb, hostSpawn as never);
@@ -259,7 +254,7 @@ describe("spawn service tier", () => {
       await fullAccessSpawn(bb, { ...hostSpawn, environment: { type: "host", hostId: "host-2" } } as never);
 
       expect(spawned).toHaveLength(3);
-      expect(calls).toBe(2);
+      expect(calls()).toBe(0);
     });
   });
 
@@ -314,7 +309,7 @@ describe("spawn service tier", () => {
       expect((spawned[0]?.executionInputSources as Record<string, unknown>)?.serviceTier).toBe("explicit");
     });
 
-    it("sends configured serviceTier: 'fast' when errand specifies fast tier", async () => {
+    it("sends the standard tier when the errand asks for fast", async () => {
       const { errands, spawned } = setupErrandHost([
         { id: "claude-code", capabilities: { supportsServiceTier: true }, serviceTiers: [{ id: "fast" }] },
       ]);
@@ -331,11 +326,11 @@ describe("spawn service tier", () => {
       });
 
       expect(spawned).toHaveLength(1);
-      expect(spawned[0]?.serviceTier).toBe("fast");
+      expect(spawned[0]?.serviceTier).toBe("default");
       expect((spawned[0]?.executionInputSources as Record<string, unknown>)?.serviceTier).toBe("explicit");
     });
 
-    it("sends no service tier when errand runs on a provider without service tiers", async () => {
+    it("sends the standard tier when the errand runs on a provider without service tiers", async () => {
       const { errands, spawned } = setupErrandHost([
         { id: "acp-opencode", capabilities: { supportsServiceTier: false }, serviceTiers: [] },
       ]);
@@ -352,8 +347,8 @@ describe("spawn service tier", () => {
       });
 
       expect(spawned).toHaveLength(1);
-      expect(spawned[0]?.serviceTier).toBeUndefined();
-      expect((spawned[0]?.executionInputSources as Record<string, unknown>)?.serviceTier).toBeUndefined();
+      expect(spawned[0]?.serviceTier).toBe("default");
+      expect((spawned[0]?.executionInputSources as Record<string, unknown>)?.serviceTier).toBe("explicit");
     });
   });
 
@@ -420,7 +415,7 @@ describe("spawn service tier", () => {
       expect((spawned[0]?.executionInputSources as Record<string, unknown>)?.serviceTier).toBe("explicit");
     });
 
-    it("sends configured serviceTier: 'fast' when browser-qa specifies fast tier", async () => {
+    it("sends the standard tier when browser-qa asks for fast", async () => {
       const { ctx, spawned } = setupBrowserQaHost([
         { id: "claude-code", capabilities: { supportsServiceTier: true }, serviceTiers: [{ id: "fast" }] },
       ]);
@@ -441,11 +436,11 @@ describe("spawn service tier", () => {
       });
 
       expect(spawned).toHaveLength(1);
-      expect(spawned[0]?.serviceTier).toBe("fast");
+      expect(spawned[0]?.serviceTier).toBe("default");
       expect((spawned[0]?.executionInputSources as Record<string, unknown>)?.serviceTier).toBe("explicit");
     });
 
-    it("sends no service tier when browser-qa runs on a provider without service tiers", async () => {
+    it("sends the standard tier when browser-qa runs on a provider without service tiers", async () => {
       const { ctx, spawned } = setupBrowserQaHost([
         { id: "acp-opencode", capabilities: { supportsServiceTier: false }, serviceTiers: [] },
       ]);
@@ -466,8 +461,8 @@ describe("spawn service tier", () => {
       });
 
       expect(spawned).toHaveLength(1);
-      expect(spawned[0]?.serviceTier).toBeUndefined();
-      expect((spawned[0]?.executionInputSources as Record<string, unknown>)?.serviceTier).toBeUndefined();
+      expect(spawned[0]?.serviceTier).toBe("default");
+      expect((spawned[0]?.executionInputSources as Record<string, unknown>)?.serviceTier).toBe("explicit");
     });
 
     it("cannot pass on a verdict that misses requested case×viewport pairs", async () => {

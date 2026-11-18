@@ -222,13 +222,13 @@ describe("BB writer validation on the server path", () => {
       "lane_pilot_wait_writer", { runId:"run-delayed", timeoutSec:2 }, { threadId:pmThreadId, projectId },
     )));
     expect(completed).toMatchObject({ state:"accepted", receipt:{ lanePilotRunId:"run-delayed", attemptId:dispatched.attemptId } });
-    expect(spawnedInput).toMatchObject({ providerId:"codex", model:"codex-test", reasoningLevel:"medium", serviceTier:"fast", executionInputSources:{ reasoningLevel:"explicit", serviceTier:"explicit" } });
+    expect(spawnedInput).toMatchObject({ providerId:"codex", model:"codex-test", reasoningLevel:"medium", serviceTier:"default", executionInputSources:{ reasoningLevel:"explicit", serviceTier:"explicit" } });
     const fullPlan = "Canonical delayed writer plan. Keep all Unicode 🧭 and newline. CRITICAL_TAIL";
     expect(completed.receipt.reasoning[0]).toMatchObject({
       planSha256:createHash("sha256").update(fullPlan, "utf8").digest("hex"),
       sourceLength:Buffer.byteLength(fullPlan),
       requestedReasoningLevel:"medium", effectiveReasoningLevel:"medium", threadId:"writer-delayed",
-      serviceTier:"fast", requestedServiceTier:"fast",
+      serviceTier:"default", requestedServiceTier:"fast",
     });
     // Two dirt snapshots plus the task-folder exclude shell, which reaches the host as a runCommand.
     expect(cwdCalls.length).toBeGreaterThanOrEqual(2);

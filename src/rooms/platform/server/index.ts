@@ -23,3 +23,4 @@ export * from "./skill-tree";
 export * from "./tick-deps";
 export type * from "./ports";
 export * from "./hub";
+export * from "./lp-service-tier";

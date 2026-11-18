@@ -1,5 +1,6 @@
 import { SETTING_WRITER_SILENCE_NUDGE_MIN } from "@lane-pilot/settings-catalog";
-import { getReasoningTrace, getRun, getRunSettingsScopes, listOpenAttempts, listUnfinishedStages, loadPrototypeConfig, loadProjectSettings, openDatabase, listProjectsWithGlobalSettings } from "./src/rooms/storage";
+import { getReasoningTrace, getRun, getRunSettingsScopes, listOpenAttempts, listUnfinishedStages, loadPrototypeConfig, loadProjectSettings, openDatabase, listProjectsWithGlobalSettings, openRunOfPmThread } from "./src/rooms/storage";
+import { lanePilotOwnedTarget, withStandardServiceTier } from "./src/rooms/platform/server";
 import { PROVIDER_CAPABILITIES, writerFallbackChain, writerFallbacks } from "@lane-pilot/models";
 import { migrations as lanePilotMigrations } from "./src/rooms/migrations";
 import { coupledSettingKeys, validateSettingChanges, validateSettingValue, validateSettingsObject } from "./src/rooms/settings";
@@ -328,7 +329,11 @@ import { rpcContract } from "./src/rooms/core/server/plugin-contracts";
 export { rpcContract };
 
 /** Entry only: storage, the shared core, every module on one services bag, then the registrations. */
-export default async function plugin(bb: BbPluginApi) {
+export default async function plugin(originalBb: BbPluginApi) {
+  // Lane Pilot's own threads run on the standard service tier while the rest of bb keeps Fast: every spawn and every
+  // send a module below makes goes through this one plugin-local view; the original api is untouched.
+  const bb = withStandardServiceTier(originalBb, (request) =>
+    lanePilotOwnedTarget(originalBb, (threadId) => openRunOfPmThread(db, threadId), request));
   const db = openDatabase(bb, { migrations: lanePilotMigrations, validateSetting: { validateSettingValue, validateSettingsObject, coupledSettingKeys, validateSettingChanges } });
   // BB's thread events wake the watchers of writers and helper threads; without them they poll as before.
   installThreadSignals(bb);
