@@ -9,6 +9,7 @@ import { isDocumentaryRole } from "../../contracts";
 import { rememberThreadModel } from "./spawn-model";
 import { noteZcodeThread, reserveZcodeSlot } from "./zcode-slot";
 import { withLaunchTuning } from "./launch-tuning";
+import { unwrapBbApi } from "./lp-service-tier";
 
 /**
  * The PM waits for real work: the owner or another BB agent assigns the task, or an already-open phase carries its goal.
@@ -64,8 +65,9 @@ const laneAgentByApi = new WeakMap<BbPluginApi, Map<string, { at: number; models
  */
 async function laneAgentOption(bb: BbPluginApi, args: { providerId?: string; model?: string; environment?: { environmentId?: unknown } } & Record<string, unknown>, hostId: string | undefined): Promise<{ sessionOptions?: Record<string, string> }> {
   if (!args.providerId || !PROVIDER_CAPABILITIES[args.providerId]?.usesLaneAgent || args.sessionOptions !== undefined) return {};
-  let cache = laneAgentByApi.get(bb);
-  if (!cache) { cache = new Map(); laneAgentByApi.set(bb, cache); }
+  const apiKey = unwrapBbApi(bb);
+  let cache = laneAgentByApi.get(apiKey);
+  if (!cache) { cache = new Map(); laneAgentByApi.set(apiKey, cache); }
   // OpenCode reads its agents from the thread's folder: an existing environment names it, otherwise the host's catalog stands in.
   const environmentId = !hostId && typeof args.environment?.environmentId === "string" ? args.environment.environmentId : undefined;
   const key = hostId ?? (environmentId ? `env:${environmentId}` : "");
@@ -116,30 +118,31 @@ const documentaryGateByApi = new WeakMap<BbPluginApi, DocumentaryGate>();
 
 /** The capability service binds this: whether a provider's installed adapter version proved the documentary cells. */
 export function bindDocumentaryGate(bb: BbPluginApi, gate: DocumentaryGate): void {
-  documentaryGateByApi.set(bb, gate);
+  documentaryGateByApi.set(unwrapBbApi(bb), gate);
 }
 
 /** The bound gate, when the capability service is up; undefined before it binds (no gate then). */
 export function documentaryGateOf(bb: BbPluginApi): DocumentaryGate | undefined {
-  return documentaryGateByApi.get(bb);
+  return documentaryGateByApi.get(unwrapBbApi(bb));
 }
 
 export function fullAccessSpawn(bb: BbPluginApi, args: Parameters<BbPluginApi["sdk"]["threads"]["spawn"]>[0]) {
-  enforceRunChildBudget(bb, args);
+  const apiKey = unwrapBbApi(bb);
+  enforceRunChildBudget(apiKey, args);
   return (async () => {
     const meta = args.pluginMetadata as { role?: unknown; helperProbe?: unknown } | undefined;
     const role = typeof meta?.role === "string" ? meta.role : null;
     // Capability probes of the documentary cells run on a role the gate does not cover; a probe of its own cell would
     // refuse itself otherwise (the probe is what produces the receipt the gate reads).
     if (isDocumentaryRole(role) && meta?.helperProbe !== true) {
-      const deny = await documentaryGateByApi.get(bb)?.deny(args.providerId ?? "", typeof args.model === "string" ? args.model : "", (args as { projectId?: string }).projectId);
+      const deny = await documentaryGateByApi.get(apiKey)?.deny(args.providerId ?? "", typeof args.model === "string" ? args.model : "", (args as { projectId?: string }).projectId);
       if (deny) throw new CapabilityUnproven(deny);
     }
     const hostId = args.environment?.type === "host" && typeof args.environment.hostId === "string" ? args.environment.hostId : undefined;
     const laneAgent = await laneAgentOption(bb, args as unknown as Parameters<typeof laneAgentOption>[1], hostId);
 
     // Launch tuning (launch-tuning.ts): read-only helpers start in the provider's read-only mode; every other spawn passes through unchanged.
-    const quiet = withLaunchTuning(quietHelper(args, graphStepLookupByApi.get(bb)));
+    const quiet = withLaunchTuning(quietHelper(args, graphStepLookupByApi.get(apiKey)));
     const { serviceTier: _incomingTier, ...restQuiet } = quiet;
     let executionInputSources = restQuiet.executionInputSources ? { ...restQuiet.executionInputSources } : undefined;
     if (executionInputSources) {
@@ -182,7 +185,7 @@ const childBudgetByApi = new WeakMap<BbPluginApi, ChildBudgetLookup>();
 
 /** Plugin start binds this so every run-bound helper spawn shares the run's budget. */
 export function bindRunChildBudget(bb: BbPluginApi, budgetFor: ChildBudgetLookup): void {
-  childBudgetByApi.set(bb, budgetFor);
+  childBudgetByApi.set(unwrapBbApi(bb), budgetFor);
 }
 
 function enforceRunChildBudget(bb: BbPluginApi, args: Parameters<BbPluginApi["sdk"]["threads"]["spawn"]>[0]): void {
@@ -191,7 +194,7 @@ function enforceRunChildBudget(bb: BbPluginApi, args: Parameters<BbPluginApi["sd
   const runId = meta.lanePilotRunId;
   const role = meta.role;
   if (typeof runId !== "string" || !runId || role === "pm") return;
-  const budget = childBudgetByApi.get(bb)?.(runId);
+  const budget = childBudgetByApi.get(unwrapBbApi(bb))?.(runId);
   if (!budget) return;
   const check = budget.check();
   if (!check.ok) throw new RunBudgetExceeded(check);
@@ -206,7 +209,7 @@ const graphStepLookupByApi = new WeakMap<BbPluginApi, GraphStepLookup>();
 
 /** Plugin start binds this so a graph marker counts only when it points at a real run and step (`lane_pilot_wf_run`, `lane_pilot_wf_step`). */
 export function bindGraphStepLookup(bb: BbPluginApi, exists: GraphStepLookup): void {
-  graphStepLookupByApi.set(bb, exists);
+  graphStepLookupByApi.set(unwrapBbApi(bb), exists);
 }
 
 /**

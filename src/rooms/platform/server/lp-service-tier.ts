@@ -1,5 +1,8 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
+import { ORIGINAL_BB_API, unwrapBbApi } from "@lane-pilot/thread-observe";
 import { nativeSelectionSchema, nativeThreadKey } from "../../contracts";
+
+export { unwrapBbApi };
 
 export const LANE_PILOT_PLUGIN_ID = "lane-pilot";
 
@@ -125,6 +128,7 @@ export function withStandardServiceTier(
     return cached;
   };
   return passThrough(bb, (target, prop) => {
+    if (prop === ORIGINAL_BB_API) return unwrapBbApi(target);
     if (prop !== "sdk") return undefined;
     return passThrough(Reflect.get(target, "sdk", target) as Record<PropertyKey, unknown>, (sdk, sdkProp) => {
       if (sdkProp !== "threads") return undefined;

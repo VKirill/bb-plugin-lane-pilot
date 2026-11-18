@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { createFakePluginHost, makeMessageDispatchHookContext } from "@get-bb/plugin-sdk/testing";
-import { lanePilotOwnedTarget, lpStandardTierAdmission, withStandardServiceTier } from "../../src/rooms/platform/server/lp-service-tier";
-import { fullAccessSpawn } from "../../src/rooms/platform/server/pm-spawn";
+import { installThreadSignals, threadSignalHub } from "@lane-pilot/thread-observe";
+import { lanePilotOwnedTarget, lpStandardTierAdmission, unwrapBbApi, withStandardServiceTier } from "../../src/rooms/platform/server/lp-service-tier";
+import { bindDocumentaryGate, documentaryGateOf, fullAccessSpawn } from "../../src/rooms/platform/server/pm-spawn";
 import { mountNativeWiring } from "../../src/rooms/core/server/native-wiring";
 import { createRun, openDatabase } from "../../src/rooms/plugin-db";
 import { openRunOfPmThread } from "../../src/rooms/storage/runs-store";
@@ -362,5 +363,26 @@ describe("spawn normalization", () => {
     expect(keyed[0]?.serviceTier).toBe("default");
     expect((keyed[0]?.executionInputSources as Record<string, unknown>)?.serviceTier).toBe("explicit");
     expect(keyed[0]?.permissionMode).toBe("full");
+  });
+
+  it("shares per-instance signal hub and documentary gate across original api and facade", () => {
+    const prev = process.env.LANE_PILOT_THREAD_SIGNALS;
+    process.env.LANE_PILOT_THREAD_SIGNALS = "1";
+    try {
+      const bb = { events: { on: () => undefined }, sdk: {} } as unknown as Parameters<typeof withStandardServiceTier>[0];
+      const api = withStandardServiceTier(bb, async () => false);
+      const gate = { deny: async () => "denied", proved: async () => null };
+
+      expect(unwrapBbApi(api)).toBe(bb);
+      const hub = installThreadSignals(api);
+      expect(hub).not.toBeNull();
+      expect(threadSignalHub(bb)).toBe(hub);
+
+      bindDocumentaryGate(bb, gate);
+      expect(documentaryGateOf(api)).toBe(gate);
+    } finally {
+      if (prev === undefined) delete process.env.LANE_PILOT_THREAD_SIGNALS;
+      else process.env.LANE_PILOT_THREAD_SIGNALS = prev;
+    }
   });
 });

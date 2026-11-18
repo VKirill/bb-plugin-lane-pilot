@@ -73,6 +73,14 @@ export function createThreadSignalHub(fallbackMs = SIGNAL_FALLBACK_MS): ThreadSi
 
 const hubs = new WeakMap<object, ThreadSignalHub>();
 
+/** Identity key for a plugin-local `BbPluginApi` facade (`withStandardServiceTier`) so host and facade share per-instance state. */
+export const ORIGINAL_BB_API = Symbol("lane-pilot.originalBbApi");
+
+export function unwrapBbApi<T extends object>(bb: T): T {
+  const raw = Reflect.get(bb, ORIGINAL_BB_API);
+  return raw && typeof raw === "object" ? (raw as T) : bb;
+}
+
 type EventsApi = { on?: (event: string, handler: (payload: unknown) => void) => void };
 
 function threadIdOf(payload: unknown): string | null {
@@ -87,7 +95,8 @@ function threadIdOf(payload: unknown): string | null {
  * Call from the plugin factory, where `bb.events.on` is legal.
  */
 export function installThreadSignals(bb: BbPluginApi, fallbackMs = SIGNAL_FALLBACK_MS): ThreadSignalHub | null {
-  const existing = hubs.get(bb);
+  const key = unwrapBbApi(bb);
+  const existing = hubs.get(key);
   if (existing) return existing;
   if (process.env.LANE_PILOT_THREAD_SIGNALS === "0") return null;
   const events = (bb as unknown as { events?: EventsApi }).events;
@@ -118,13 +127,13 @@ export function installThreadSignals(bb: BbPluginApi, fallbackMs = SIGNAL_FALLBA
   } catch {
     return null;
   }
-  hubs.set(bb, hub);
+  hubs.set(key, hub);
   (bb as unknown as { onDispose?: (fn: () => void) => void }).onDispose?.(() => hub.dispose());
   return hub;
 }
 
 export function threadSignalHub(bb: unknown): ThreadSignalHub | null {
-  return bb && typeof bb === "object" ? hubs.get(bb) ?? null : null;
+  return bb && typeof bb === "object" ? hubs.get(unwrapBbApi(bb)) ?? null : null;
 }
 
 /** The same LANE_PILOT_POLL_SCALE as packages/kit/src/pace.ts (a package may not depend on kit): tests shorten the no-hub poll. */

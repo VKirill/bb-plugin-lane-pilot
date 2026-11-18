@@ -1,6 +1,6 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { decideThreadCompletion, retryRun, threadFailure, THREAD_WATCH_EVENT_TYPES } from "./completion";
-import { sleepUntilThreadSignal, threadWatchMark } from "./signals";
+import { sleepUntilThreadSignal, threadWatchMark, unwrapBbApi } from "./signals";
 
 function stringAt(value: unknown, key: string): string | null {
   const found = value && typeof value === "object" ? Reflect.get(value, key) : undefined;
@@ -81,7 +81,7 @@ export async function turnHeldByPlugin(bb: BbPluginApi, threadId: string): Promi
 
 /** Who hears that a waited thread failed (the plugin's provider-limit memory); one per plugin instance. */
 const failureListeners = new WeakMap<object, (threadId: string, detail: string) => void>();
-export function onThreadFailure(bb: object, listener: (threadId: string, detail: string) => void): void { failureListeners.set(bb, listener); }
+export function onThreadFailure(bb: object, listener: (threadId: string, detail: string) => void): void { failureListeners.set(unwrapBbApi(bb), listener); }
 
 /** A failure that is only the start limit, while the turn waits in a plugin's queue, is no failure. */
 export async function startLimitWaiting(bb: BbPluginApi, threadId: string, failure: string | null): Promise<boolean> {
@@ -129,7 +129,7 @@ export async function waitThreadIdle(bb: BbPluginApi, threadId: string, timeoutM
     });
     if (decision.ok) return;
     if ((decision.via === "error" || decision.via === "canceled") && !(decision.via === "error" && await startLimitWaiting(bb, threadId, decision.detail))) {
-      if (decision.via === "error") { try { failureListeners.get(bb)?.(threadId, decision.detail); } catch { /* a listener never fails the wait */ } }
+      if (decision.via === "error") { try { failureListeners.get(unwrapBbApi(bb))?.(threadId, decision.detail); } catch { /* a listener never fails the wait */ } }
       throw new Error(`${timeoutMessage}:${decision.via}:${decision.detail}`);
     }
     lastDetail = decision.detail;
@@ -138,7 +138,7 @@ export async function waitThreadIdle(bb: BbPluginApi, threadId: string, timeoutM
       const cause = `provider_error:${stuck.notice}`;
       // Left running it would retry for many minutes more and might then do the work a second time, beside the caller's next model.
       await bb.sdk.threads.stop({ threadId }).catch(() => undefined);
-      try { failureListeners.get(bb)?.(threadId, cause); } catch { /* a listener never fails the wait */ }
+      try { failureListeners.get(unwrapBbApi(bb))?.(threadId, cause); } catch { /* a listener never fails the wait */ }
       throw new Error(`${timeoutMessage}:error:${cause}`);
     }
     await sleepUntilThreadSignal(bb, threadId, mark, 1000, undefined, { deadlineAt: deadline, ...(shouldStop ? { maxMs: 1000 } : {}) });
@@ -157,7 +157,7 @@ export async function waitThreadIdle(bb: BbPluginApi, threadId: string, timeoutM
   if (stopped) throw new Error(`${timeoutMessage}:${stopped}`);
   const cause = threadFailure(listed.events, Date.now(), { includeRetrying: true, requestedAfter });
   if (cause && !(await startLimitWaiting(bb, threadId, cause))) {
-    try { failureListeners.get(bb)?.(threadId, cause); } catch { /* a listener never fails the wait */ }
+    try { failureListeners.get(unwrapBbApi(bb))?.(threadId, cause); } catch { /* a listener never fails the wait */ }
     throw new Error(`${timeoutMessage}:error:${cause}`);
   }
   throw new Error(`${timeoutMessage}:incomplete:${lastDetail}`);

@@ -11,9 +11,11 @@ export {
 export {
   createThreadSignalHub,
   installThreadSignals,
+  ORIGINAL_BB_API,
   sleepUntilThreadSignal,
   threadSignalHub,
   threadWatchMark,
+  unwrapBbApi,
   SIGNAL_FALLBACK_MS,
   type ThreadSignalHub,
   type ThreadSignalReason,
