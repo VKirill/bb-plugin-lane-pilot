@@ -5,8 +5,8 @@
     "ru": "Новый этап"
   },
   "description": {
-    "en": "Starts the next milestone: its goals, the requirements it delivers (REQUIREMENTS.md rows), and the roadmap phases that get there (lane-plan phase add), after the previous milestone is archived.",
-    "ru": "Начинает следующий этап: его цели, требования (строки REQUIREMENTS.md) и фазы дорожной карты, которые к ним ведут (lane-plan phase add), после архивации прошлого этапа."
+    "en": "Starts the next milestone: its goals, the requirements it delivers (REQUIREMENTS.md rows), and the roadmap phases that get there (lp.phase_add), after the previous milestone is archived.",
+    "ru": "Начинает следующий этап: его цели, требования (строки REQUIREMENTS.md) и фазы дорожной карты, которые к ним ведут (lp.phase_add), после архивации прошлого этапа."
   },
   "examples": {
     "ru": [
@@ -72,7 +72,7 @@
         "en": "Milestone frame",
         "ru": "Рамка этапа"
       },
-      "prompt": "From the goal: 3-7 requirements with ids — return the raw Markdown requirements block in document (the code-owned writer appends it to .agents/planning/REQUIREMENTS.md) and the phases in order in phases, each a vertical slice (see templates/planning/references/mvp-stories.md); the code-owned writer registers them as roadmap rows (lane-plan phase add <name> --goal …). This read-only helper does not write files and runs no lane-plan commands.",
+      "prompt": "From the goal: 3-7 requirements with ids — return the raw Markdown requirements block in document (the code-owned writer appends it to .agents/planning/REQUIREMENTS.md) and the phases in order in phases, each a vertical slice (see templates/planning/references/mvp-stories.md); the code-owned writer registers them as roadmap rows (lp.phase_add). This read-only helper does not write files and runs no external CLI commands.",
       "out": {
         "phases": "string[]",
         "document": "string"

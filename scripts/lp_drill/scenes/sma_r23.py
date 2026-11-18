@@ -13,7 +13,7 @@ import subprocess
 from lp_drill.env import ROOT
 from lp_drill.prove import Proofs
 
-NODES = [f"n{n}" for n in range(1627, 1653) if n in (1627, 1629, 1630, 1631, 1632, 1633, 1634, 1635, 1636, 1637, 1638, 1639, 1640, 1641, 1642, 1643, 1644, 1645, 1646, 1650, 1651, 1652)]
+NODES = [f"n{n}" for n in range(1627, 1653) if n in (1627, 1629, 1630, 1631, 1632, 1633, 1634, 1635, 1636, 1637, 1638, 1639, 1640, 1641, 1642, 1643, 1644, 1645, 1646, 1649, 1650, 1651, 1652)]
 PROBE = ROOT / "scripts/lp_drill/scenes/sma_r23_probe.ts"
 def scenario_sma_r23(tmp) -> dict:
     proofs = Proofs()
@@ -96,6 +96,9 @@ def scenario_sma_r23(tmp) -> dict:
     # n1646 Verification patterns: the PM and the check auditor carry the lane-pilot skill, another role does not; another run's red check is set aside, the run's own fails.
     v = s["verify"]
     proofs.prove("n1646", v["pm"] and v["nyquist"] and not v["selector"] and v["reference"] and v["aside"] == "passed" and v["own"] == "failed", f"PM skill {v['pm']}, nyquist {v['nyquist']}, selector {v['selector']}; other run's red check -> {v['aside']}, own red check -> {v['own']}")
+    # n1649 Research templates: STACK.md, FEATURES.md, ARCHITECTURE.md, PITFALLS.md each receive their own research section.
+    rt = s["researchTpl"]
+    proofs.prove("n1649", rt == {"stack": "S-DOC", "features": "F-DOC", "architecture": "A-DOC", "pitfalls": "P-DOC"}, f"research sections written: {rt}")
     # n1650 Plan predictions and risk: forecast and risk are in a piece's plan only with phase.piece_notes.
     pr = s["predictions"]
     proofs.prove("n1650", not pr["plain"] and pr["noted"] and pr["risk"], f"plain plan has Predictions/Risk {pr['plain']}; with piece notes: predictions {pr['noted']}, risk {pr['risk']}")

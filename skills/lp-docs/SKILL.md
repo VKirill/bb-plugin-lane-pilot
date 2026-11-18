@@ -16,7 +16,10 @@ If `$ARGUMENTS` is exactly `info`, print `references/info.md` verbatim (Russian)
 
 The docs-maintainer row of the Settings table «role → model» (default Codex `gpt-6-luna`, effort high); a project's own `docs.provider` / `docs.model` win. `docs.enabled` is `auto` by default: docs are kept where a folder is worth it. In a Lane Pilot chat the prompt names the model; do not pick one.
 
+Legacy standalone terminal harness only (do not run inside a BB Lane Pilot session, where the `lp.docs-night` graph and `docs-lint` run natively):
+
 ```bash
+# Legacy standalone terminal harness (outside BB plugin runtime):
 docs-maintain-project /path/to/repo
 docs-maintain-project /path/to/repo lint
 docs-maintain-all --if-hour

@@ -42,6 +42,9 @@
   "requires": {
     "plugins": [
       "lane-pilot"
+    ],
+    "tools": [
+      "~/.agents/lane-pilot/bin/agent-trash"
     ]
   },
   "budget": {
@@ -57,7 +60,7 @@
         "en": "What to clean",
         "ru": "Что убрать"
       },
-      "prompt": "List: closed phases (lane_pilot_phase status, roadmap rows marked [x]) and their folders; spikes and sketches older than 30 days with a decision; review/* branches already merged; worktrees with no running attempt. With dry_run false, archive the phase folders under .agents/planning/milestones/archive/, move the rest to the Trash (agent-trash), delete merged branches; never touch an open phase.",
+      "prompt": "List: closed phases (lane_pilot_phase status, roadmap rows marked [x]) and their folders; spikes and sketches older than 30 days with a decision; review/* branches already merged; worktrees with no running attempt. With dry_run false, archive the phase folders under .agents/planning/milestones/archive/, move the rest to the Trash (~/.agents/lane-pilot/bin/agent-trash), delete merged branches; never touch an open phase.",
       "out": {
         "moved": "string[]",
         "applied": "bool"

@@ -147,4 +147,45 @@ describe("backlog scanning across the 2026-11-16 reload", () => {
       expect(logs).toEqual(["backlog scan failed: The database connection is not open"]);
     } finally { await harness.dispose(); }
   });
+
+  it("overrides stale /tmp/ag194-v4-cli PrototypeConfig with canonical project.sources in items() and board() (P00.05)", async () => {
+    const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
+    const db = openDatabase(bb);
+    savePrototypeConfig(db, {
+      projectId: "proj_ejbam66722",
+      hostId: "host_mac",
+      pmWorkspacePath: "/Users/vechkasov/Documents/BB-сервис/.agency/jobs/AG-190/tmp/pm-workspace",
+      writerWorkspacePath: "/tmp/ag194-v4-cli",
+      pmProviderId: "claude-code",
+      pmModel: "claude-sonnet-4-6",
+      writerProviderId: "claude-code",
+      writerModel: "claude-sonnet-4-6",
+    });
+    harness.sdk.stub("projects.get" as never, async () => ({
+      id: "proj_ejbam66722",
+      name: "BB-сервис",
+      sources: [
+        { id: "src_canon", hostId: "host_mac", path: "/Users/vechkasov/Documents/BB-сервис", isDefault: true },
+        { id: "src_ovh", hostId: "host_ovh", path: "/home/ubuntu/BB-service", isDefault: false },
+      ],
+    }));
+    const seenPaths: string[] = [];
+    const host = {
+      call: async (_method: string, params: { basePath?: string; cwd?: string }) => {
+        seenPaths.push(params.basePath ?? params.cwd ?? "");
+        return { exitCode: 0, stdout: "", stderr: "" };
+      },
+    };
+    const api = createBacklog({ db, bb, host, log: () => undefined, isDisposed: () => false } as never).backlog;
+    try {
+      await api.items("proj_ejbam66722");
+      await api.board("proj_ejbam66722");
+      expect(seenPaths.length).toBeGreaterThanOrEqual(3);
+      expect(seenPaths.every((p) => p === "/Users/vechkasov/Documents/BB-сервис")).toBe(true);
+      expect(seenPaths).not.toContain("/tmp/ag194-v4-cli");
+    } finally {
+      resetPlanningHomeChecks();
+      await harness.dispose();
+    }
+  });
 });

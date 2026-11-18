@@ -349,6 +349,7 @@ Project readiness steps, in-repository context layout (`.agents/pilot/`), single
 | Five-step project readiness checklist with contextual explanations and optional quality/CI skips | `/aif`, `.ai-factory/`, readiness checklist | `src/rooms/pilot-panel/readiness.ts`, `src/rooms/pilot-panel/ui/readiness-section.tsx` |
 | Coordinator-owned plan & commits + single-task clean worker brief with duplicate-spawn check | `/aif-implement` coordinator/worker handoff | `src/rooms/pilot-panel/delegation.ts`, `skills/lp-implement/SKILL.md`, `skills/lane-pilot/references/subagent-delegation.md` |
 | Standardized project onboarding, planning, and verification commands | `/aif-architecture`, `/aif-plan`, `/aif-verify` | `skills/lp-project-setup/SKILL.md`, `skills/lp-plan/SKILL.md`, `skills/lp-verify/SKILL.md` |
+| Engineering discipline & verification hygiene for clean writer subthreads | `skills/aif-best-practices/SKILL.md` | `skills/lp-writer/SKILL.md` |
 
 ```
 MIT License

@@ -1,6 +1,7 @@
 import { claimStageSpawn, getRun, listStageReceipts, noteTaskFileRead, openDatabase, planSourcePaths, readTaskFile, resolveTaskFile, taskHomeOf, taskPlanDbCopy, writeReplacing, type TaskFileIo } from "../../../storage";
 import { criticAcrossFamilies, criticOffSpent, criticPairCandidates, effortAfterMove, latestWriterPair, pairApartFromWriter, pickCriticByAccuracy, roleSelection, sdkCriticCatalog, usable } from "../../critic-pair";
 import { criticStats } from "../../critic-stats";
+import { criticPromptOf } from "../../critic-edit";
 import { bbServiceTier, findModelIn, listedServiceTier, modelFamily, resolveStageWriterSelection, writerExecutionSelection, writerServiceTier } from "@lane-pilot/models";
 import { spawnClaimed } from "../../../contracts";
 import type { PrototypeConfig, TaskV2 } from "../../../contracts";
@@ -48,6 +49,17 @@ export async function codeCritiqueTaskContext(bb: BbPluginApi, db: ReturnType<ty
       await writeReplacing(bb.sdk.files, { hostId: home.host_id, rootPath: home.base_path, path: absPath, content, createParents: true });
     },
   };
+  const contractRow = resolveTaskFile(db, taskId, "contract");
+  if (contractRow) {
+    const contractRead = await readTaskFile(db, io, { taskId, kind: "contract", reader: "code-critique" }).catch(() => null);
+    if (!contractRead) {
+      noteTaskFileRead(db, { taskId, path: contractRow.path, kind: "contract", reader: "code-critique:db-copy", sha256: contractRow.sha256, legacy: false });
+    }
+  }
+  const researchRow = resolveTaskFile(db, taskId, "research");
+  if (researchRow) {
+    await readTaskFile(db, io, { taskId, kind: "research", reader: "code-critique" }).catch(() => null);
+  }
   const plan = resolveTaskFile(db, taskId, "plan");
   const planRead = plan ? await readTaskFile(db, io, { taskId, kind: "plan", reader: "code-critique" }) : null;
   // A PLAN.md unreadable on its host yields to the dispatch-saved copy under the manifest row's hash — the same rule stagePlanText applies.
@@ -367,14 +379,18 @@ export async function runCodeCritique(input:{
           serviceTier:tier, mode:parsed.mode, maxRounds:parsed.maxRounds, autoFix:parsed.autoFix,
         };
         const personas = criticPersonas(input.task.risk);
+        const calibratedNote = input.bb.storage?.kv
+          ? await criticPromptOf(input.bb.storage.kv as never, "code-critique").catch(() => null)
+          : null;
         const critiques = [];
         const raws: string[] = [];
         for (const persona of personas) {
+          const basePrompt = codeCritiquePrompt({ evidence:input.evidence, task:input.task, agent:parsed.agent, disputes:input.disputes, memoryText:reviewerMemoryFor(input.db, input.projectId, input.runId, input.task), persona, context:taskHome.context, ...(level.tier === "strict" ? { focus:level.reason } : {}) });
           const spawned = await fullAccessSpawn(input.bb, {
             ...placement,
             ...requiredPolicyField(input.bb, helperPolicy, providerId, "code-critic"),
             ...writerExecutionSelection(providerId, modelId, configuredEffort, serviceTier),
-            prompt:codeCritiquePrompt({ evidence:input.evidence, task:input.task, agent:parsed.agent, disputes:input.disputes, memoryText:reviewerMemoryFor(input.db, input.projectId, input.runId, input.task), persona, context:taskHome.context, ...(level.tier === "strict" ? { focus:level.reason } : {}) }),
+            prompt: calibratedNote ? `${basePrompt}\n\n## Calibration guidance\n${calibratedNote}` : basePrompt,
             environment:attemptEnvironment(input.db, input.runId, input.taskId, input.task.project_cwd)
               ?? { type:"host", hostId:input.config.hostId, workspace:{ type:"unmanaged", path:input.task.project_cwd } },
             pluginMetadata:{ role:"code-critic", lanePilotRunId:input.runId, lanePilotTaskId:input.taskId,

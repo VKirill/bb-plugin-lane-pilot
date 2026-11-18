@@ -13,7 +13,7 @@ import { WriterSelectionError, helperChildPlacement, requireHelperSpawn, require
 import { pipelineWriterTag } from "./pipeline-tag";
 import { writerBriefInput, writerBriefSegments } from "./writer-task";
 import { listTaskFolder } from "./spawn-probe";
-import { placeTaskHomeIn, recordTaskHomeFile, taskHomeBrief } from "./task-home";
+import { noteStageTaskHomeReads, placeTaskHomeIn, recordTaskHomeFile, taskHomeBrief } from "./task-home";
 import { taskHomeOf } from "../../storage";
 import type { writerKnowledge } from "./writer-knowledge";
 import type { createWriterSkillPick } from "./skill-pick";
@@ -87,7 +87,10 @@ export async function buildWriterLaunch(deps:{
   // A task with a home whose files cannot be placed does not start; a task on the old layout gets its own old notes by exact name.
   const home = taskHomeBrief(db, input.taskId, input.attemptId);
   const homeRow = taskHomeOf(db, input.taskId);
-  if (home && homeRow) await placeTaskHomeIn({ bb, db }, { taskId:input.taskId, hostId:input.config.hostId, worktreePath:workspacePath, basePath:homeRow.base_path });
+  if (home && homeRow) {
+    await placeTaskHomeIn({ bb, db }, { taskId:input.taskId, hostId:input.config.hostId, worktreePath:workspacePath, basePath:homeRow.base_path });
+    await noteStageTaskHomeReads({ bb, db }, input.taskId, "writer", ["contract", "research"]).catch(() => undefined);
+  }
   else if (!home) await bestEffort(bb.log, "writer legacy task folder place", placeTaskHomeIn({ bb, db }, { taskId:input.taskId, hostId:input.config.hostId, worktreePath:workspacePath, basePath:input.task.project_cwd }), []);
   const taskFolder = home ? { path:home.path, files:home.files, home:{ plan:home.plan, checkLog:home.checkLog, attemptFolder:home.attemptFolder } } : await listTaskFolder(bb, input.config.hostId, workspacePath, input.taskId);
   const contextSegments = writerBriefSegments(attemptTask,briefMemoryText,executionPacket,input.emergency&&!input.continuation

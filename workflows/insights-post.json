@@ -315,6 +315,13 @@
     },
     {
       "id": "draft_post",
+      "consumes": [
+        {
+          "kind": "report",
+          "version": 1,
+          "from": "enrich"
+        }
+      ],
       "produces": [
         {
           "kind": "post-draft",
@@ -338,7 +345,7 @@
         "draft_path": "",
         "claims_used": 0
       },
-      "prompt": "Draft one post from the writing pack only: use allowed claims with their wording, anonymize quotes (no handles), keep the author's platform voice. The author rewrites it herself - mark it as a draft. No fabricated quotes or numbers.",
+      "prompt": "Draft one post from writing pack {{enrich.writing_pack_path}} (dossier {{enrich.dossier_path}}) only: use allowed claims with their wording, anonymize quotes (no handles), keep the author's platform voice. The author rewrites it herself - mark it as a draft. No fabricated quotes or numbers.",
       "out": {
         "draft_path": "string",
         "claims_used": "int"
@@ -513,7 +520,11 @@
       "from": "ready_check",
       "to": "draft_post",
       "pass": "artifact",
-      "when": "ready_check.ok && $inputs.draft"
+      "when": "ready_check.ok && $inputs.draft",
+      "with": {
+        "writing_pack_path": "enrich.writing_pack_path",
+        "dossier_path": "enrich.dossier_path"
+      }
     },
     {
       "from": "ready_check",

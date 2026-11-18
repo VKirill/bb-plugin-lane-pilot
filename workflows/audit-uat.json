@@ -57,7 +57,7 @@
         "en": "Open acceptance items",
         "ru": "Открытые пункты приёмки"
       },
-      "prompt": "Run `lane-plan audit-uat` and also glob .agents/phases/*/UAT.md (phases outside the roadmap). Write no file yourself (you are read-only): return in `document` the full Markdown text of the audit — the open and failed acceptance lines grouped by phase, and a manual test plan with the steps of each item and where to test it (the phase's candidate branch or main). Change no UAT.md. Return open_count and document.",
+      "prompt": "Read .agents/planning/ROADMAP.md and glob .agents/phases/*/UAT.md (including phases outside the roadmap). Write no file yourself (you are read-only): return in `document` the full Markdown text of the audit — the open and failed acceptance lines grouped by phase, and a manual test plan with the steps of each item and where to test it (the phase's candidate branch or main). Change no UAT.md. Return open_count and document.",
       "out": {
         "open_count": "int",
         "document": "string"

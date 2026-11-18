@@ -23,6 +23,7 @@ import { installDocs } from "../../src/rooms/phase/server/driver-docs";
 import { registeredTools } from "../../src/rooms/platform/server";
 import { createRun, openDatabase } from "../../src/rooms/plugin-db";
 import { loadProjectSettings } from "../../src/rooms/storage/settings-store";
+import { LOOP_HOOK_POINTS, parseLoopHookManifest } from "../../src/rooms/workflow/loop-hooks";
 import { effectiveGroup, parseRoleAccess, ROLE_PROFILES } from "../../src/rooms/contracts/helper-context";
 import { UNLISTED_SWITCHES } from "../../src/rooms/settings/switches";
 import { AdvancedRows } from "../../src/rooms/ui-shell/ui/setting-controls";
@@ -416,6 +417,30 @@ export const observeF = {
     const done = await lpAnalyze({});
     const thin = await lpAnalyze({}, { assess: [{ ...ANALYZE_STUBS.assess, confidence: 40, stalled: false }, { ...ANALYZE_STUBS.assess, confidence: 90 }] });
     return { path: pathOf(done), anchors: outOf(done).anchors, again: [pathOf(thin), thin.called("gather").length], role: wfNode("lp.analyze", "gather").role, readOnly: String(wfNode("lp.analyze", "gather").prompt).includes("Write nothing into the repository") };
+  },
+
+  /** n1321: active capability steps at discuss:pre are parsed from loop-hooks.manifest.json in order; unsupported points are refused. */
+  async k_wdi_hooks() {
+    const parsed = parseLoopHookManifest(JSON.stringify({
+      schemaVersion: 1,
+      hooks: {
+        "discuss:pre": [{ workflow: "web-research", inputs: { question: "$inputs.goal" } }],
+        "plan:pre": [],
+        "verify:post": [],
+        "ship:post": [],
+      },
+    }));
+    let refused = false;
+    try {
+      parseLoopHookManifest(JSON.stringify({ schemaVersion: 1, hooks: { "unknown:pre": [] } }));
+    } catch {
+      refused = true;
+    }
+    return {
+      points: [...LOOP_HOOK_POINTS],
+      discussPre: parsed.manifest?.hooks["discuss:pre"]?.map((h) => h.workflow) ?? [],
+      refused,
+    };
   },
 
   /** n1322: the person picks which gray areas to settle: with ask_owner the open questions go to him and the rest are deferred; without it the choice step is not visited. */

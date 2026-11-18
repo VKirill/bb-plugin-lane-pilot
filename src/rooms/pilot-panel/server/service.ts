@@ -30,11 +30,19 @@ import {
   materializeProjectPilotSetup,
 } from "./project-skills";
 
-type DeliveryRecord = { requestId: string; actionId: string; at: number };
+type DeliveryRecord = {
+  requestId: string;
+  actionId: string;
+  fingerprint?: string;
+  state?: "attempting" | "sent" | "queued";
+  at: number;
+};
 
 interface ResolvedThreadPlace {
   threadId: string;
+  providerId: string | null;
   threadState: string;
+  archived: boolean;
   pendingQuestions: number | null;
   pluginRole: string | null;
   projectId: string | null;
@@ -43,6 +51,9 @@ interface ResolvedThreadPlace {
   hostId: string | null;
   rootPath: string | null;
 }
+
+const isThreadStorageScratchPath = (p: string | null): boolean =>
+  Boolean(p && /\.bb-machines\/.*\/thread-storage(?:\/|$)/.test(p));
 
 const skipStorageKey = (hostId: string, rootPath: string) => `pilot-readiness-skip:${hostId}:${rootPath}`;
 const selectionStorageKey = (threadId: string) => `pilot-panel-plan:${threadId}`;
@@ -54,12 +65,26 @@ export function createPilotPanelService(
 ) {
   const { bb, db } = ctx;
 
+  const notifyPanelChanged = (threadId: string, projectId?: string | null) => {
+    if (projectId) ctx.realtime?.notify(projectId, "helpers");
+    try {
+      (bb as { realtime?: { publish?: (event: string, payload: unknown) => void } }).realtime?.publish?.(
+        "pilot-panel-changed",
+        { threadId },
+      );
+    } catch {
+      // Realtime notification is best-effort.
+    }
+  };
+
   async function resolvePlace(threadId: string): Promise<ResolvedThreadPlace> {
     const thread = await orMiss(bb.sdk.threads.get({ threadId }), null, isNotFound);
     const meta = await orMiss(bb.sdk.threads.getPluginMetadata({ threadId }), null, isNotFound);
     const pluginRole = typeof valueAt(meta, "role") === "string" ? (valueAt(meta, "role") as string) : null;
+    const providerId = stringAt(thread, "providerId") ?? null;
     const projectId = stringAt(thread, "projectId") ?? null;
     const environmentId = stringAt(thread, "environmentId") ?? null;
+    const archived = valueAt(thread, "archivedAt") != null;
     const runtimeObj = valueAt(thread, "runtime") as { displayStatus?: unknown } | undefined;
     const threadState =
       (typeof runtimeObj?.displayStatus === "string" ? runtimeObj.displayStatus : null) ??
@@ -78,13 +103,16 @@ export function createPilotPanelService(
 
     let projectName: string | null = null;
     let hostId: string | null = null;
-    let rootPath: string | null;
-    rootPath = null;
+    let rootPath: string | null = null;
 
     if (environmentId && typeof bb.sdk.environments?.get === "function") {
       const env = await orMiss(bb.sdk.environments.get({ environmentId }), null, isNotFound);
-      hostId = stringAt(env, "hostId") ?? null;
-      rootPath = stringAt(env, "path") ?? null;
+      const envHost = stringAt(env, "hostId") ?? null;
+      const envPath = stringAt(env, "path") ?? null;
+      if (!isThreadStorageScratchPath(envPath)) {
+        hostId = envHost;
+        rootPath = envPath;
+      }
     }
     if (projectId && typeof bb.sdk.projects?.get === "function") {
       const proj = (await orMiss(bb.sdk.projects.get({ projectId }), null, isNotFound)) as {
@@ -102,7 +130,9 @@ export function createPilotPanelService(
     }
     return {
       threadId,
-      threadState: pendingQuestions && pendingQuestions > 0 ? "awaiting_input" : threadState,
+      providerId,
+      threadState: archived ? "archived" : pendingQuestions && pendingQuestions > 0 ? "awaiting_input" : threadState,
+      archived,
       pendingQuestions,
       pluginRole,
       projectId,
@@ -248,6 +278,7 @@ export function createPilotPanelService(
         },
         session: {
           threadId: place.threadId,
+          providerId: place.providerId,
           threadState: place.threadState,
           pendingQuestions: place.pendingQuestions,
           role: place.pluginRole,
@@ -269,6 +300,7 @@ export function createPilotPanelService(
           selectedPlan: null,
           hasActiveRun: Boolean(activeRun),
           projectId: place.projectId,
+          providerId: place.providerId,
           canActivatePm,
         }),
         diagnostics,
@@ -351,6 +383,7 @@ export function createPilotPanelService(
       },
       session: {
         threadId: place.threadId,
+        providerId: place.providerId,
         threadState: place.threadState,
         pendingQuestions: place.pendingQuestions,
         role: place.pluginRole,
@@ -380,6 +413,7 @@ export function createPilotPanelService(
         selectedPlan,
         hasActiveRun: Boolean(activeRun),
         projectId: place.projectId,
+        providerId: place.providerId,
         canActivatePm,
       }),
       diagnostics,
@@ -396,7 +430,7 @@ export function createPilotPanelService(
       rootPath: place.rootPath,
       projectName: place.projectName,
     });
-    if (place.projectId) ctx.realtime?.notify(place.projectId, "helpers");
+    notifyPanelChanged(threadId, place.projectId);
     const snapshot = await status({ threadId, force: true });
     return { ok: true as const, ...result, snapshot };
   }
@@ -412,6 +446,7 @@ export function createPilotPanelService(
       projectName: place.projectName,
       delegationOverride: choice,
     });
+    notifyPanelChanged(threadId, place.projectId);
     const next = await status({ threadId, force: true });
     return next.delegation;
   }
@@ -425,6 +460,7 @@ export function createPilotPanelService(
     const list = (await bb.storage.kv.get<string[]>(key)) ?? [];
     const next = skipped ? [...new Set([...list, stepId])] : list.filter((id) => id !== stepId);
     await bb.storage.kv.set(key, next);
+    notifyPanelChanged(threadId, place.projectId);
     return { ok: true as const };
   }
 
@@ -439,21 +475,34 @@ export function createPilotPanelService(
     const runLocked = ctx.serializedKv ?? (<T>(fn: () => Promise<T>) => fn());
     return runLocked(async () => {
       const history = (await bb.storage.kv.get<DeliveryRecord[]>(delivKey)) ?? [];
-      if (history.some((d) => d.requestId === input.requestId)) {
-        return { sent: false, message: "Действие уже выполнено." };
-      }
-      const current = await status({ threadId: input.threadId, targetPlan: input.targetPlan, force: true });
-      if (current.fingerprint !== input.fingerprint && input.actionId !== "prepare-project") {
-        return { sent: false, stale: true, message: "Состояние проекта обновилось. Проверьте панель и нажмите ещё раз." };
+      const existing = history.find((d) => d.requestId === input.requestId);
+      if (existing) {
+        return {
+          sent: false,
+          message:
+            existing.state === "attempting"
+              ? "Отправка ещё не подтверждена; проверьте ленту чата."
+              : "Действие уже выполнено.",
+        };
       }
       if (input.actionId === "prepare-project") {
         const prepared = await prepareProject(input.threadId);
         const count = prepared.installedSkills.length + prepared.updatedSkills.length;
         return {
           sent: true,
-          message: count > 0
-            ? `Проект подготовлен: синхронизировано скиллов в .bb/skills/ — ${count}.`
-            : "Конфигурация .agents/pilot/ и скиллы в .bb/skills/ уже актуальны.",
+          message:
+            count > 0
+              ? `Проект подготовлен: синхронизировано скиллов в .bb/skills/ — ${count}.`
+              : "Конфигурация .agents/pilot/ и скиллы в .bb/skills/ уже актуальны.",
+        };
+      }
+      let current = await status({ threadId: input.threadId, targetPlan: input.targetPlan, force: true });
+      const planBound = input.actionId === "implement" || input.actionId === "verify" || Boolean(input.targetPlan);
+      if (planBound && current.fingerprint !== input.fingerprint) {
+        return {
+          sent: false,
+          stale: true,
+          message: "Состояние выбранного плана изменилось. Проверьте панель и нажмите ещё раз.",
         };
       }
       if (input.actionId === "activate-pilot") {
@@ -461,7 +510,11 @@ export function createPilotPanelService(
           throw new Error("Активация PM недоступна: проект чата не определён.");
         }
         const activated = await deps.activate(current.project.id, input.threadId, "bb");
-        await bb.storage.kv.set(delivKey, [...history.slice(-20), { requestId: input.requestId, actionId: input.actionId, at: Date.now() }]);
+        await bb.storage.kv.set(delivKey, [
+          ...history.slice(-20),
+          { requestId: input.requestId, actionId: input.actionId, state: "sent", at: Date.now() },
+        ]);
+        notifyPanelChanged(input.threadId, current.project.id);
         return {
           sent: true,
           threadId: activated.threadId,
@@ -469,22 +522,87 @@ export function createPilotPanelService(
           message: `Открыт PM-чат Lane Pilot (${activated.runId}).`,
         };
       }
-      if (!["idle", "error", "stopped", "completed", "archived"].includes(current.session.threadState)) {
-        throw new Error("Дождитесь завершения текущего ответа агента перед отправкой следующего шага.");
+      const action = current.actions.find((a) => a.id === input.actionId);
+      if (!action || !action.available) {
+        throw new Error(
+          current.project.rootPath
+            ? `Действие «${input.actionId}» сейчас недоступно для текущего состояния проекта.`
+            : "Сначала выберите проект с подключённой рабочей папкой для этого чата.",
+        );
       }
+      if (current.session.threadState === "archived") {
+        throw new Error("Текущий чат находится в архиве. Разархивируйте чат или откройте новый.");
+      }
+      if (current.session.pendingQuestions && current.session.pendingQuestions > 0) {
+        throw new Error("Сначала ответьте на открытые вопросы текущего шага в чате.");
+      }
+      if (
+        history.some(
+          (d) =>
+            d.actionId === input.actionId &&
+            d.fingerprint === current.fingerprint &&
+            Date.now() - d.at < 10_000,
+        )
+      ) {
+        return { sent: false, message: "Эта команда только что отправлена в чат." };
+      }
+
+      if (
+        current.project.hostId &&
+        current.project.rootPath &&
+        (!current.delegation.configured || current.projectSkills.synced < current.projectSkills.total)
+      ) {
+        await materializeProjectPilotSetup(ctx, {
+          hostId: current.project.hostId,
+          rootPath: current.project.rootPath,
+          projectName: current.project.name,
+          preserveExistingAgentsMd: true,
+        });
+        current = await status({ threadId: input.threadId, targetPlan: input.targetPlan, force: true });
+      }
+
       const prompt = buildPilotActionPrompt(input.actionId, current);
       if (!prompt) throw new Error(`Неизвестное действие панели: ${input.actionId}`);
-      await bb.sdk.threads.send({
-        threadId: input.threadId,
-        serviceTier: "default",
-        executionInputSources: { serviceTier: "explicit" },
-        input: [
-          { type: "text", text: prompt.visible, mentions: [] },
-          { type: "text", text: prompt.context, mentions: [], visibility: "agent-only" },
-        ],
-      } as never);
-      await bb.storage.kv.set(delivKey, [...history.slice(-20), { requestId: input.requestId, actionId: input.actionId, at: Date.now() }]);
-      return { sent: true, message: `В чат отправлена команда «${prompt.visible}».` };
+
+      const record: DeliveryRecord = {
+        requestId: input.requestId,
+        actionId: input.actionId,
+        fingerprint: current.fingerprint,
+        state: "attempting",
+        at: Date.now(),
+      };
+      const pendingHistory = [...history.slice(-20), record];
+      await bb.storage.kv.set(delivKey, pendingHistory);
+
+      let sendResult: Awaited<ReturnType<typeof bb.sdk.threads.send>>;
+      try {
+        sendResult = await bb.sdk.threads.send({
+          threadId: input.threadId,
+          mode: "queue-if-active",
+          input: [
+            { type: "text", text: prompt.visible, mentions: [] },
+            { type: "text", text: prompt.context, mentions: [], visibility: "agent-only" },
+          ],
+        });
+      } catch (cause) {
+        await bb.storage.kv.set(
+          delivKey,
+          pendingHistory.filter((d) => d.requestId !== input.requestId),
+        );
+        throw cause;
+      }
+
+      const queued = (sendResult as { delivery?: unknown } | undefined)?.delivery === "queued";
+      record.state = queued ? "queued" : "sent";
+      await bb.storage.kv.set(delivKey, pendingHistory);
+      notifyPanelChanged(input.threadId, current.project.id);
+      return {
+        sent: true,
+        ...(queued ? { queued: true } : {}),
+        message: queued
+          ? `Команда «${prompt.visible}» поставлена в очередь текущего чата.`
+          : `В чат отправлена команда «${prompt.visible}».`,
+      };
     });
   }
 

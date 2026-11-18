@@ -2,6 +2,7 @@ import { listCliPmProjects, listCliPmThreads, loadProjectSettings, loadPrototype
 import { SETTING_BACKLOG_SCAN_MINUTES } from "@lane-pilot/settings-catalog";
 import { scheduleIsolated } from "../../platform/server";
 import { type ServerCore } from "../../contracts/server";
+import { resolveWriterBinding, type ProjectSourceBinding } from "../../native-agent";
 import { isPmChat } from "../../native-agent/server";
 import { closeOwnerItem, listOpenOwnerItemKeys, postOwnerItem, rpcLine } from "../../owner-waiting";
 import { backlogIssuedTo } from "../store";
@@ -54,6 +55,39 @@ export function createBacklog(ctx: ServerCore) {
     return null;
   }
 
+  /** Canonical writer workspace for the project: project.sources wins over stale legacy PrototypeConfig paths (P00.05). */
+  async function workspaceOf(projectId: string): Promise<{ hostId: string; writerWorkspacePath: string } | null> {
+    assertActive();
+    const config = loadPrototypeConfig(db, projectId);
+    let sources: ProjectSourceBinding[] = [];
+    if (typeof bb.sdk?.projects?.get === "function") {
+      let proj: { sources?: unknown } | null = null;
+      try {
+        proj = await bb.sdk.projects.get({ projectId }) as { sources?: unknown } | null;
+      } catch {
+        proj = null;
+      }
+      assertActive();
+      if (Array.isArray(proj?.sources)) {
+        sources = proj.sources.filter(
+          (row): row is ProjectSourceBinding =>
+            Boolean(row && typeof row === "object" && typeof (row as { hostId?: unknown }).hostId === "string" && typeof (row as { path?: unknown }).path === "string"),
+        );
+      }
+    }
+    const resolved = resolveWriterBinding({
+      projectId,
+      sources,
+      explicit: { hostId: config?.hostId ?? null, path: config?.writerWorkspacePath ?? null },
+    });
+    if (resolved.status === "resolved") {
+      return { hostId: resolved.hostId, writerWorkspacePath: resolved.path };
+    }
+    return config?.hostId && config?.writerWorkspacePath
+      ? { hostId: config.hostId, writerWorkspacePath: config.writerWorkspacePath }
+      : null;
+  }
+
   /** The planning home `.agents/todos` is read under (SMA d_project_planning), checked on the project's host the first time; null: the checkout. */
   function homeOf(projectId: string, config: { hostId: string; writerWorkspacePath: string }): Promise<string | null> {
     return resolvePlanningHome({ host: host as never, hostId: config.hostId, cwd: config.writerWorkspacePath, inputs: planningHomeInputs(db, projectId), log: bb.log });
@@ -62,9 +96,9 @@ export function createBacklog(ctx: ServerCore) {
   /** The project's meta.yaml items as they are on its host right now (no fetch; the board fetches first). */
   async function items(projectId: string): Promise<TodoMeta[]> {
     assertActive();
-    const config = loadPrototypeConfig(db, projectId);
+    const config = await workspaceOf(projectId);
     if (!config?.writerWorkspacePath) return [];
-    const planningHome = await homeOf(projectId, config as never);
+    const planningHome = await homeOf(projectId, config);
     assertActive();
     const ran = await host.call("gateRun", { requestedHostId: config.hostId, basePath: planningHome ?? config.writerWorkspacePath, command: backlogReadCommand, timeoutSec: 30 }, { hostId: config.hostId, timeoutMs: 60_000 })
       .catch(() => ({ exitCode: 1, stdout: "", stderr: "" }));
@@ -78,10 +112,10 @@ export function createBacklog(ctx: ServerCore) {
 
   async function board(projectId: string): Promise<BacklogBoard & { error?: string; readAt?: string; fetched?: boolean; behind?: number | null; lastScanAt?: number | null }> {
     assertActive();
-    const config = loadPrototypeConfig(db, projectId);
     const readAt = new Date().toISOString();
     const scannedAt = await lastScanAt(projectId);
     assertActive();
+    const config = await workspaceOf(projectId);
     if (!config?.writerWorkspacePath) return { issuable: [], needsEstimate: [], decompose: [], blocked: [], readAt, fetched: false, behind: null, lastScanAt: scannedAt, error: "the project has no workspace configured" };
     // Fresh data first (SMA m_in_scan): fetch, then read; whoever sees the result gets its age and how far the branch is behind.
     const freshened = await host.call("gateRun", { requestedHostId: config.hostId, basePath: config.writerWorkspacePath, command: "git fetch --quiet && git rev-list --count HEAD..@{u}", timeoutSec: 20 }, { hostId: config.hostId, timeoutMs: 30_000 })
@@ -90,7 +124,7 @@ export function createBacklog(ctx: ServerCore) {
     const fetched = freshened.exitCode === 0;
     const behindCount = Number((freshened.stdout ?? "").trim());
     const behind = fetched && Number.isFinite(behindCount) ? behindCount : null;
-    const planningHome = await homeOf(projectId, config as never);
+    const planningHome = await homeOf(projectId, config);
     assertActive();
     const ran = await host.call("gateRun", { requestedHostId: config.hostId, basePath: planningHome ?? config.writerWorkspacePath, command: backlogReadCommand, timeoutSec: 30 }, { hostId: config.hostId, timeoutMs: 60_000 })
       .catch((cause: unknown) => ({ exitCode: 1, stdout: "", stderr: cause instanceof Error ? cause.message : String(cause) }));
@@ -125,8 +159,8 @@ export function createBacklog(ctx: ServerCore) {
         if (!issuable.has(key.slice(offerKey(projectId, "").length))) closeOwnerItem(db, key, "janitor:not issuable", now);
       }
       const next = current.issuable[0];
-      const scanConfig = loadPrototypeConfig(db, projectId);
-      const planningHome = scanConfig?.hostId && scanConfig.writerWorkspacePath ? await homeOf(projectId, scanConfig as never).catch(() => null) : null;
+      const scanConfig = await workspaceOf(projectId);
+      const planningHome = scanConfig?.hostId && scanConfig.writerWorkspacePath ? await homeOf(projectId, scanConfig).catch(() => null) : null;
       assertActive();
       const done = async (offered: string | null) => {
         assertActive();
@@ -167,7 +201,9 @@ export function createBacklog(ctx: ServerCore) {
     const item = (await board(projectId)).issuable.find((row) => row.id === todoId);
     assertActive();
     if (!item) return { ok: false, reason: `в бэклоге проекта нет пункта ${todoId}, готового к работе (уже выдан, закрыт или ждёт оценки)` };
-    const planningHome = await homeOf(projectId, loadPrototypeConfig(db, projectId) as never).catch(() => null);
+    const issueConfig = await workspaceOf(projectId);
+    assertActive();
+    const planningHome = issueConfig?.hostId && issueConfig.writerWorkspacePath ? await homeOf(projectId, issueConfig).catch(() => null) : null;
     assertActive();
     await sendServiceMessage(bb as never, { threadId: pm, mode: "queue-if-active", text: issueMessage(item, planningHome) });
     assertActive();

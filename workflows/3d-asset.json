@@ -88,8 +88,7 @@
       "Mac mini with Blender MCP and Metal acceleration"
     ],
     "tools": [
-      "blender",
-      "image-studio"
+      "blender"
     ]
   },
   "budget": {

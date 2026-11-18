@@ -1,5 +1,5 @@
 import type { NodeExecutor, StepContext } from "@lane-pilot/workflow-engine";
-import { CRITIC_EDIT_TRIAL_KEY, criticEditGate, criticEditTrialOn, criticEditTrialSettle, criticPromptProposal, criticStats } from "../../critique";
+import { CRITIC_EDIT_TRIAL_KEY, criticEditGate, criticEditTrialOn, criticEditTrialSettle, criticPromptProposal, criticStats, withCriticTrialPrompt } from "../../critique";
 import { judgeSharedTrial, TRIAL_DEFAULTS } from "../../harness/server";
 import { scheduleIsolated } from "../../platform/server";
 import { type ServerCore } from "../../contracts/server";
@@ -98,7 +98,9 @@ export async function criticEditTrial(ctx: ServerCore, services: Services, proje
   const hasBoth = [armA, armB].every((arm) => set.runs.some((row) => row.arm === arm && row.state === "done"));
   if (!hasBoth) {
     if (!set.runs.some((row) => row.arm === armA)) await services.bench.run({ version: set.version, arm: armA, wait: true });
-    await services.bench.run({ version: set.version, arm: armB, wait: true, settings: { "code_critique.agent": proposal } });
+    await withCriticTrialPrompt(ctx.bb.storage.kv as never, "code-critique", proposal, async () => {
+      await services.bench.run({ version: set.version, arm: armB, wait: true });
+    });
   }
   const comparison = services.bench.compare({ version: set.version, armA, armB });
   return comparison.comparison.verdict === "inconclusive" ? null : { passed: comparison.comparison.verdict === "pass", summary: comparison.text.split("\n")[0] ?? "" };

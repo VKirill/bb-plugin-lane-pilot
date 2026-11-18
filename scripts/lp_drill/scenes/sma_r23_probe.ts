@@ -220,5 +220,34 @@ s.profile = Object.fromEntries(Object.entries({ stack: "ts, vitest", test_comman
   s.milestone = { on: ran(on), off: ran(off) };
 }
 
+// ---- n1649: research documents STACK.md, FEATURES.md, ARCHITECTURE.md, PITFALLS.md + summary ----
+{
+  const written: Record<string, string> = {};
+  await runSim("project-start", {
+    input: { goal: "New SaaS" },
+    humans: { ask: { answer: "ts", answer_kind: "answered" } },
+    stubs: {
+      tree: { enabled: "on", sources: 2, tests: 1, docs: 1, planning: 0, commits: 1, counts_note: "n", profile_note: "p", recap_note: "r" },
+      probe: { has_passport: false, open_tasks: 0, plan_exists: false, has_ui: false, has_value_map: true, has_roadmap: false, has_profile: true },
+      preview: { stack: {}, memory: {}, profile: { stack: "ts" } },
+      profile_write: { refused: [], set: ["stack"], reasons: [] },
+      research: { research_notes: "summary-note", stack: "S-DOC", features: "F-DOC", architecture: "A-DOC", pitfalls: "P-DOC" },
+      requirements: { requirements: ["R1"], document: "# req" },
+      recap: { next_steps: ["1"], roadmap_draft: "# road", project_document: "# proj", phases: ["1 mvp"] },
+      "fs.write": (ctx) => {
+        const params = (ctx.node as { params?: { contents?: string } }).params;
+        written[ctx.nodeId] = ctx.render(String(params?.contents ?? ""));
+        return {};
+      },
+    },
+  });
+  s.researchTpl = {
+    stack: written.write_research_stack,
+    features: written.write_research_features,
+    architecture: written.write_research_architecture,
+    pitfalls: written.write_research_pitfalls,
+  };
+}
+
 process.stdout.write(`${JSON.stringify(s)}\n`);
 process.exit(0);

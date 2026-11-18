@@ -50,10 +50,32 @@ export async function writeDispatchHome(db: ServerCore["db"], io: TaskFileIo, in
   const onlyPath = sources.length > 0 && !/\s/.test(one) && planSourcePaths(one, base)[0] === sources[0]!.path;
   const planText = onlyPath && sources[0]!.text !== null ? sources[0]!.text! : input.plan;
   const files: ResolvedTaskFile[] = [];
-  files.push(await recordTaskFile(db, io, { taskId: input.taskId, kind: "contract", name: "contract.v1.json", content: `${JSON.stringify(input.task, null, 2)}\n`, producer: DISPATCH, readers: ["pm-read", "plan-critique", "writer"] }));
+  files.push(await recordTaskFile(db, io, { taskId: input.taskId, kind: "contract", name: "contract.v1.json", content: `${JSON.stringify(input.task, null, 2)}\n`, producer: DISPATCH, readers: ["pm-read", "plan-critique", "writer", "code-critique"] }));
   files.push(await recordTaskFile(db, io, { taskId: input.taskId, kind: "plan", name: "PLAN.md", content: planText.endsWith("\n") ? planText : `${planText}\n`, producer: DISPATCH, readers: ["pm-read", "plan-critique", "writer"] }));
   if (sources.length) files.push(await recordTaskFile(db, io, { taskId: input.taskId, kind: "plan-source", name: "context/plan-source.md", content: planSourceMarkdown(sources), producer: DISPATCH, readers: ["plan-critique", "writer", "code-critique"] }));
   return { planText, files };
+}
+
+/**
+ * Records that a stage read the task home's `contract.v1.json` (or `research` when present), falling back to a
+ * hash-bound `:db-copy` note on `contract` when the host file is temporarily unreachable.
+ */
+export async function noteStageTaskHomeReads(
+  ctx: Pick<ServerCore, "bb" | "db">,
+  taskId: string,
+  reader: string,
+  kinds: readonly ("contract" | "research")[] = ["contract"],
+): Promise<void> {
+  const io = taskHomeIo(ctx, taskId);
+  if (!io) return;
+  for (const kind of kinds) {
+    const found = resolveTaskFile(ctx.db, taskId, kind);
+    if (!found) continue;
+    const read = await readTaskFile(ctx.db, io, { taskId, kind, reader }).catch(() => null);
+    if (!read && kind === "contract") {
+      noteTaskFileRead(ctx.db, { taskId, path: found.path, kind: "contract", reader: `${reader}:db-copy`, sha256: found.sha256, legacy: false });
+    }
+  }
 }
 
 /**

@@ -10,7 +10,7 @@ import type { TraceSource } from "./traces";
 
 type Node = readonly [id: string, region: number, group: string, kind: string, label: string];
 const EVIDENCE_KEYS = new Set(["mutation", "reach", "trace", "hollowAttested", "voidReview"]);
-const REACH_KEYS = new Set(["entry", "needs", "notGatedBy", "seeded"]);
+const REACH_KEYS = new Set(["entry", "needs", "notGatedBy", "optIn", "seeded"]);
 const words = (value: unknown) => typeof value === "string" ? value.trim().length > 0 : Array.isArray(value) && value.length > 0 && value.every((word) => typeof word === "string" && word.trim().length > 0);
 const text = (value: unknown) => typeof value === "string" && value.trim().length > 0;
 
@@ -73,6 +73,7 @@ export function evidenceProblems(input: CheckInput): string[] {
       if (reach) {
         for (const key of Object.keys(reach)) if (!REACH_KEYS.has(key)) problems.push(`${at}: unknown reach field ${key}`);
         if (reach.entry !== undefined && !text(reach.entry)) problems.push(`${at}: an empty entry class`);
+        if (reach.optIn !== undefined && !text(reach.optIn)) problems.push(`${at}: an empty optIn reason`);
         for (const [key, need] of Object.entries(reach.needs ?? {})) {
           if (!knownSettingKey(key)) problems.push(`${at}: unknown setting key ${key}`);
           const bad = needProblem(need);

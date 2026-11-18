@@ -40,10 +40,22 @@ afterEach(() => {
   }
 });
 
-function createPanelHarness(rootPath: string) {
+function createPanelHarness(
+  rootPath: string,
+  opts: {
+    providerId?: string;
+    threadStatus?: "idle" | "active" | "error";
+    envPathOverride?: string;
+    sendDelivery?: "sent" | "queued";
+  } = {},
+) {
   const sentMessages: Array<Record<string, unknown>> = [];
   const logs: string[] = [];
   const advertised = coreRequiredSessionAdvertisement();
+  const providerId = opts.providerId ?? "claude-code";
+  const threadStatus = opts.threadStatus ?? "idle";
+  const envPath = opts.envPathOverride ?? rootPath;
+  const sendDelivery = opts.sendDelivery ?? (threadStatus === "active" ? "queued" : "sent");
 
   const sha = (buf: Buffer) => createHash("sha256").update(buf).digest("hex");
 
@@ -51,23 +63,29 @@ function createPanelHarness(rootPath: string) {
     pluginId: "lane-pilot",
     sdk: {
       projects: {
-        get: async ({ projectId }: { projectId: string }) => ({ id: projectId, name: "Demo Repo" }),
+        get: async ({ projectId }: { projectId: string }) => ({
+          id: projectId,
+          name: "Demo Repo",
+          sources: [{ id: "src_1", hostId: "host_local", path: rootPath, isDefault: true }],
+        }),
       },
       environments: {
         get: async ({ environmentId }: { environmentId: string }) => ({
           id: environmentId,
           projectId: "proj_demo",
           hostId: "host_local",
-          path: rootPath,
+          path: envPath,
         }),
-        list: async () => [{ id: "env_demo", projectId: "proj_demo", hostId: "host_local", path: rootPath }],
+        list: async () => [{ id: "env_demo", projectId: "proj_demo", hostId: "host_local", path: envPath }],
       },
       threads: {
         get: async ({ threadId }: { threadId: string }) => ({
           id: threadId,
           projectId: "proj_demo",
           environmentId: "env_demo",
-          status: "idle",
+          providerId,
+          status: threadStatus,
+          runtime: { displayStatus: threadStatus },
           pendingQuestionsCount: 0,
         }),
         getPluginMetadata: async () => ({}),
@@ -80,8 +98,16 @@ function createPanelHarness(rootPath: string) {
           },
         ],
         send: async (payload: Record<string, unknown>) => {
+          if (payload.mode !== "queue-if-active") {
+            throw new Error(`Invalid send mode: ${String(payload.mode)}`);
+          }
+          if ("executionInputSources" in payload) {
+            throw new Error("Unexpected executionInputSources in threads.send");
+          }
           sentMessages.push(payload);
-          return { ok: true };
+          return sendDelivery === "queued"
+            ? { ok: true, delivery: "queued", queuedMessage: { id: "q_1" } }
+            : { ok: true, delivery: "sent" };
         },
       },
       providers: {
@@ -306,7 +332,7 @@ describe("project-local Pilot skills & readiness service", () => {
       cleanSession: true,
     });
 
-    // Dispatching `/lp-implement` sends a message with explicit default serviceTier and agent-only context.
+    // Dispatching `/lp-implement` sends a message with queue-if-active mode and agent-only context.
     const sent = await service.runAction({
       threadId: "thr_chat_1",
       actionId: "implement",
@@ -316,7 +342,7 @@ describe("project-local Pilot skills & readiness service", () => {
     });
     expect(sent.sent).toBe(true);
     expect(sentMessages).toHaveLength(1);
-    expect(sentMessages[0]?.serviceTier).toBe("default");
+    expect(sentMessages[0]?.mode).toBe("queue-if-active");
     const parts = sentMessages[0]?.input as Array<{ text: string; visibility?: string }>;
     expect(parts[0]?.text).toContain("/lp-implement");
     expect(parts[1]?.visibility).toBe("agent-only");
@@ -324,6 +350,47 @@ describe("project-local Pilot skills & readiness service", () => {
     // Switching delegation to `self` removes the managed delegation block cleanly.
     await service.setDelegation("thr_chat_1", { mode: "self" });
     expect(readFileSync(join(rootPath, PILOT_DELEGATION_CONTEXT_REL_PATH), "utf8")).toBe("");
+  });
+
+  it("handles setup-context (/lp-project-setup) across claude-code, codex, and acp-antigravity, auto-materializing skills and queueing on active chats", async () => {
+    // 1. Direct setup-context on unprepared workspace with codex ($lp-project-setup)
+    const codexRoot = createTempWorkspace();
+    const codexH = createPanelHarness(codexRoot, { providerId: "codex" });
+    const codexSvc = createPilotPanelService(codexH.ctx);
+    const snapCodex = await codexSvc.status({ threadId: "thr_codex" });
+    const setupRes = await codexSvc.runAction({
+      threadId: "thr_codex",
+      actionId: "setup-context",
+      fingerprint: snapCodex.fingerprint,
+      requestId: "req_codex_setup",
+    });
+    expect(setupRes.sent).toBe(true);
+    expect(existsSync(join(codexRoot, ".bb/skills/lp-project-setup/SKILL.md"))).toBe(true);
+    const codexParts = codexH.sentMessages[0]?.input as Array<{ text: string; visibility?: string }>;
+    expect(codexParts[0]?.text).toBe("$lp-project-setup");
+    expect(codexParts[1]?.text).toContain(".bb/skills/lp-project-setup/SKILL.md");
+
+    // 2. Active thread on acp-antigravity with thread-storage env path falls back to project.sources and queues non-slash prompt
+    const agyRoot = createTempWorkspace();
+    const agyH = createPanelHarness(agyRoot, {
+      providerId: "acp-antigravity",
+      threadStatus: "active",
+      envPathOverride: "/home/ubuntu/.bb-machines/demo.getbb.app/thread-storage",
+      sendDelivery: "queued",
+    });
+    const agySvc = createPilotPanelService(agyH.ctx);
+    const snapAgy = await agySvc.status({ threadId: "thr_agy" });
+    expect(snapAgy.project.rootPath).toBe(agyRoot);
+    const agyRes = await agySvc.runAction({
+      threadId: "thr_agy",
+      actionId: "setup-context",
+      fingerprint: snapAgy.fingerprint,
+      requestId: "req_agy_setup",
+    });
+    expect(agyRes).toMatchObject({ sent: true, queued: true });
+    const agyParts = agyH.sentMessages[0]?.input as Array<{ text: string; visibility?: string }>;
+    expect(agyParts[0]?.text).not.toMatch(/^[/$]/);
+    expect(agyParts[0]?.text).toContain("lp-project-setup");
   });
 
   it("auto-bootstraps an unprepared workspace via bootstrapProjectForPilot without throwing", async () => {

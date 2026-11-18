@@ -27,13 +27,13 @@ const CHILD_STATUS: Record<string, { label: string; tone: PanelTone }> = {
 const PICKER_SEED: PickerValue = {
   providerId: "claude-code",
   model: "",
-  reasoningLevel: "" as PickerValue["reasoningLevel"],
+  reasoningLevel: "medium" as PickerValue["reasoningLevel"],
 };
 
 const toPickerValue = (c: Extract<PilotDelegationChoice, { mode: "bb-subthreads" }>): PickerValue => ({
   providerId: c.providerId,
   model: c.model,
-  reasoningLevel: (c.reasoning ?? "") as PickerValue["reasoningLevel"],
+  reasoningLevel: (c.reasoning ?? "medium") as PickerValue["reasoningLevel"],
 });
 
 const fromPickerValue = (v: PickerValue): PilotDelegationChoice => ({
@@ -46,11 +46,13 @@ const fromPickerValue = (v: PickerValue): PilotDelegationChoice => ({
 export function PilotDelegationSection({
   view,
   environmentId,
+  hostId,
   hasWorkspace,
   onSave,
 }: {
   view: PilotDelegationView;
   environmentId: string | null;
+  hostId?: string | null;
   busy?: boolean;
   hasWorkspace: boolean;
   onSave: (choice: PilotDelegationChoice) => Promise<void>;
@@ -156,7 +158,13 @@ export function PilotDelegationSection({
             value={pick}
             onChange={setPick}
             disabled={saving || !hasWorkspace}
-            routing={environmentId ? { kind: "environment", environmentId } : undefined}
+            routing={
+              environmentId
+                ? { kind: "environment", environmentId }
+                : hostId
+                  ? { kind: "host", hostId }
+                  : undefined
+            }
           />
         </div>
       )}

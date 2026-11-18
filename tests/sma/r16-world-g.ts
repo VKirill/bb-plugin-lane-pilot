@@ -141,7 +141,7 @@ async function k_ws_post() {
   const some = await ship({ "lp.post_ship_hooks": { count: 2, files: ["a", "b"] }, post_ship: { hooks_run: ["h1"], hooks_failed: ["h2"] } });
   const prompt = promptOf("ship", "post_ship");
   return { none: { path: ran(none), calls: none.called("post_ship").length, failed: out(none).hooks_failed, status: out(none).status }, some: { path: ran(some), calls: some.called("post_ship").length, failed: out(some).hooks_failed, status: out(some).status },
-    renders: /lane-plan render-hooks post-ship/.test(prompt), notUndone: /does not undo the ship/.test(prompt) };
+    renders: /hooks\.hooks_markdown/.test(prompt), notUndone: /does not undo the ship/.test(prompt) };
 }
 
 // ---------------------------------------------------------------- project start

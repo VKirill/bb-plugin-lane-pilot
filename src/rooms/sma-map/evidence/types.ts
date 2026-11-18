@@ -22,6 +22,8 @@ export type ReachSpec = {
   readonly needs?: Readonly<Record<string, NeedValue>>;
   /** Settings the node's function reads that do NOT gate it (silences an `undeclared gate`), with the reason. */
   readonly notGatedBy?: Readonly<Record<string, string>>;
+  /** The SMA card itself describes an optional ceiling or mode (`run.max_tokens`, `worker.strict_user`): `reachable` stays false while unset/off, without reporting the node as Sign-4 hollow code. */
+  readonly optIn?: string;
   /** The entry was derived mechanically from the node's kind (a command, a door, a hook), not authored. */
   readonly seeded?: true;
 };

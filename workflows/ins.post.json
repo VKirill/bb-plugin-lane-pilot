@@ -86,7 +86,7 @@
         ]
       },
       "src": "social-insights lenses.md",
-      "prompt": "Stage 3: comment_kinds, clusters, then lenses pains, beliefs, positions, language, stories, segments, angles. Quotes verbatim with comment_id; observation separate from interpretation; support_count and share against the evidence base; status ladder observation/normalized/pattern/hypothesis/candidate. Irrelevant lenses are skipped with a reason.",
+      "prompt": "Stage 3 in {{init.post_folder}}: comment_kinds, clusters, then lenses pains, beliefs, positions, language, stories, segments, angles. Quotes verbatim with comment_id; observation separate from interpretation; support_count and share against the evidence base; status ladder observation/normalized/pattern/hypothesis/candidate. Irrelevant lenses are skipped with a reason.",
       "out": {
         "lenses_done": "string[]",
         "analysis_dir": "string"
@@ -118,7 +118,7 @@
           "social-insights"
         ]
       },
-      "prompt": "Stage 4: needs.yaml and dynamics.yaml as cautious interpretations with confidence; no diagnoses, no sex/age/status from names.",
+      "prompt": "Stage 4 in {{init.post_folder}}: needs.yaml and dynamics.yaml as cautious interpretations with confidence; no diagnoses, no sex/age/status from names.",
       "out": {
         "needs_ok": "bool"
       },
@@ -144,7 +144,7 @@
       ],
       "type": "agent",
       "role": "auditor",
-      "prompt": "Stage 5: review.yaml - verdict per item against the original comments; reject unsupported quotes, inflated shares, 'unique' claims without a comparison corpus.",
+      "prompt": "Stage 5 in {{init.post_folder}}: review.yaml - verdict per item against the original comments; reject unsupported quotes, inflated shares, 'unique' claims without a comparison corpus.",
       "out": {
         "rejects_open": "int",
         "review_path": "string"
@@ -187,7 +187,7 @@
       ],
       "type": "agent",
       "role": "analyst",
-      "prompt": "Stage 6: summary.md for the author - supported pains, angles and quotes with ids (up to 5/5/10; never pad to a quota).",
+      "prompt": "Stage 6 in {{init.post_folder}}: summary.md for the author - supported pains, angles and quotes with ids (up to 5/5/10; never pad to a quota).",
       "out": {
         "summary_path": "string"
       },
@@ -260,7 +260,10 @@
       "from": "init",
       "to": "lenses",
       "pass": "artifact",
-      "when": "init.ok"
+      "when": "init.ok",
+      "with": {
+        "post_folder": "init.post_folder"
+      }
     },
     {
       "from": "init",
@@ -270,12 +273,18 @@
     {
       "from": "lenses",
       "to": "psychology",
-      "pass": "read-prior-session"
+      "pass": "read-prior-session",
+      "with": {
+        "post_folder": "init.post_folder"
+      }
     },
     {
       "from": "psychology",
       "to": "critic",
-      "pass": "read-prior-session"
+      "pass": "read-prior-session",
+      "with": {
+        "post_folder": "init.post_folder"
+      }
     },
     {
       "from": "critic",
@@ -292,7 +301,12 @@
       "to": "lenses",
       "pass": "same-session",
       "when": "(!validate.ok || critic.rejects_open > 0) && visits('lenses') < 2",
-      "label": "fix rejects"
+      "label": "fix rejects",
+      "with": {
+        "post_folder": "init.post_folder",
+        "errors": "validate.errors",
+        "rejects_open": "critic.rejects_open"
+      }
     },
     {
       "from": "validate",
@@ -303,7 +317,10 @@
     {
       "from": "validate",
       "to": "digest",
-      "pass": "artifact"
+      "pass": "artifact",
+      "with": {
+        "post_folder": "init.post_folder"
+      }
     },
     {
       "from": "digest",

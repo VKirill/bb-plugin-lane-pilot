@@ -1,6 +1,8 @@
+import { randomUUID } from "node:crypto";
 import type Database from "better-sqlite3";
 import { z } from "zod";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
+import packageJson from "../../../package.json";
 import { latestProfileCheckReportJson, saveProfileCheckReport } from "../storage";
 import {
   CORE_PROVIDER_GROUPS,
@@ -34,8 +36,16 @@ export const HELPER_THREAD_CAP = 5000;
 export type HelperThreadRow = { threadId: string; role: string; policyJson: string | null };
 export type RolePolicyCount = { role: string; total: number; withPolicy: number; noPolicy: number; narrowed: number };
 export type ProviderVerdict = { provider: string; ok: boolean; reason: string | null };
+export type ProfileCheckInitiator = "scheduled" | "manual";
 export type ProfileReport = {
   at: number;
+  runId?: string;
+  initiator?: ProfileCheckInitiator;
+  scheduleKey?: string | null;
+  pluginVersion?: string;
+  startedAt?: number;
+  finishedAt?: number;
+  scannedTotal?: number;
   threads: number;
   withPolicy: number;
   noPolicy: number;
@@ -68,7 +78,7 @@ export type ProfileReport = {
  * also throws rather than silently reporting a partial window as complete.
  */
 const SDK_LIST_PAGE = 200;
-const SDK_LIST_MAX_PAGES = 25;
+const SDK_LIST_MAX_PAGES = 2500;
 const METADATA_CHUNK = 200;
 const INSPECT_CHUNK = 200;
 
@@ -222,7 +232,11 @@ async function inspectStoredPolicies(
   return out;
 }
 
-export async function helperThreadsViaSdk(bb: BbPluginApi, since: number): Promise<HelperThreadRow[]> {
+export async function helperThreadsViaSdk(
+  bb: BbPluginApi,
+  since: number,
+  opts?: { signal?: AbortSignal; onScannedTotal?: (count: number) => void },
+): Promise<HelperThreadRow[]> {
   const api = bb.sdk.threads;
   if (typeof api.list !== "function" || typeof api.experimental_listPluginMetadata !== "function") {
     throw new Error("this BB has no batched plugin-metadata read (SDK threads.experimental_listPluginMetadata)");
@@ -231,18 +245,23 @@ export async function helperThreadsViaSdk(bb: BbPluginApi, since: number): Promi
   // by createdAt, so every row's timestamp is checked and no early stop is possible. Hitting the page cap means the
   // window cannot be proven complete — that is unverified, not a partial green.
   const candidates: string[] = [];
+  let scannedTotal = 0;
   for (let page = 0; page < SDK_LIST_MAX_PAGES; page += 1) {
+    opts?.signal?.throwIfAborted();
     const rows = await api.list({ hasParent: true, includeHidden: true, limit: SDK_LIST_PAGE, offset: page * SDK_LIST_PAGE });
     if (!Array.isArray(rows)) throw new Error("threads.list returned a non-array response");
+    scannedTotal += rows.length;
     for (const row of rows) {
       if (typeof row.createdAt === "number" && row.createdAt >= since) candidates.push(row.id);
     }
     if (rows.length < SDK_LIST_PAGE) break;
     if (page === SDK_LIST_MAX_PAGES - 1) throw new Error(`more than ${SDK_LIST_MAX_PAGES * SDK_LIST_PAGE} child threads; the profile window cannot be read completely`);
   }
+  opts?.onScannedTotal?.(scannedTotal);
   const metadataFor = async (ids: readonly string[]): Promise<Map<string, Record<string, unknown>>> => {
     const out = new Map<string, Record<string, unknown>>();
     for (let i = 0; i < ids.length; i += METADATA_CHUNK) {
+      opts?.signal?.throwIfAborted();
       const chunk = ids.slice(i, i + METADATA_CHUNK);
       const result = await api.experimental_listPluginMetadata({ threadIds: chunk });
       if (!Array.isArray(result?.threads)) throw new Error("experimental_listPluginMetadata returned a malformed response");
@@ -362,7 +381,17 @@ export function providerVerdicts(agents: { experimental_vkRequiredSessionPolicy?
 }
 
 /** The verdict: a thread of a helper role without a policy, a capability below «required», a drifted provider row. */
-export function buildProfileReport(input: { threads: readonly HelperThreadRow[]; agents: { experimental_vkRequiredSessionPolicy?: unknown }; now: number }): ProfileReport {
+export function buildProfileReport(input: {
+  threads: readonly HelperThreadRow[];
+  agents: { experimental_vkRequiredSessionPolicy?: unknown };
+  now: number;
+  runId?: string;
+  initiator?: ProfileCheckInitiator;
+  scheduleKey?: string | null;
+  startedAt?: number;
+  finishedAt?: number;
+  scannedTotal?: number;
+}): ProfileReport {
   const roles = rolePolicyCounts(input.threads);
   const { providers } = providerVerdicts(input.agents);
   const red: string[] = [];
@@ -372,6 +401,13 @@ export function buildProfileReport(input: { threads: readonly HelperThreadRow[];
   for (const row of providers) if (!row.ok && row.reason !== "not advertised") red.push(`провайдер «${row.provider}»: строка advertisement не совпадает (${row.reason})`);
   return {
     at: input.now,
+    runId: input.runId ?? randomUUID(),
+    initiator: input.initiator ?? "manual",
+    scheduleKey: input.scheduleKey ?? null,
+    pluginVersion: packageJson.version,
+    startedAt: input.startedAt ?? input.now,
+    finishedAt: input.finishedAt ?? input.now,
+    ...(typeof input.scannedTotal === "number" ? { scannedTotal: input.scannedTotal } : {}),
     threads: roles.reduce((sum, row) => sum + row.total, 0),
     withPolicy: roles.reduce((sum, row) => sum + row.withPolicy, 0),
     noPolicy: roles.reduce((sum, row) => sum + row.noPolicy, 0),

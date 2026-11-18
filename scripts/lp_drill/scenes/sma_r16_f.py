@@ -15,7 +15,7 @@ from lp_drill.env import ROOT
 
 NODES_F = [
     "n1298", "n1299", "n1300", "n1301", "n1302", "n1303", "n1304", "n1306", "n1307", "n1308", "n1309", "n1310", "n1311", "n1312", "n1313", "n1314",
-    "n1315", "n1316", "n1317", "n1318", "n1319", "n1320", "n1322", "n1323", "n1324", "n1325", "n1326", "n1327", "n1328", "n1329",
+    "n1315", "n1316", "n1317", "n1318", "n1319", "n1320", "n1321", "n1322", "n1323", "n1324", "n1325", "n1326", "n1327", "n1328", "n1329",
 ]
 PROBE_F = ROOT / "scripts/lp_drill/scenes/sma_r16_f_probe.ts"
 ORDER = ["read the goal and the roadmap row", "scout the code the goal touches", "list the gray areas and pick the ones to settle", "deep-dive each chosen area (one advisor per area)", "write CONTEXT.md: locked / free / deferred, FAQ, ADR", "name the four risks", "sign the context"]
@@ -90,6 +90,8 @@ def prove_f(proofs, tmp) -> None:
     proofs.prove("n1319", d.get("kept", {}).get("tail") == ["## Earlier decisions (kept)", "", "D1: keep this decision always", ""] and len(d["kept"].get("booked", [])) == 1 and d.get("fresh") == {"has": False, "booked": []}, f"existing CONTEXT.md kept: {d.get('kept', {}).get('tail')}")
     d = seen("k_wdi_scout")
     proofs.prove("n1320", d.get("path") == "gather assess done" and d.get("anchors") == [{"file": "src/stats.ts", "line": 12, "note": "the table"}] and d.get("again") == ["gather assess gather assess done", 2] and d.get("readOnly") is True, f"scout path {d.get('path')}, anchors {d.get('anchors')}, thin scout {d.get('again')}")
+    d = seen("k_wdi_hooks")
+    proofs.prove("n1321", d.get("points") == ["discuss:pre", "plan:pre", "verify:post", "ship:post"] and d.get("discussPre") == ["web-research"] and d.get("refused") is True, f"loop hook points {d.get('points')}, discuss:pre {d.get('discussPre')}, unknown refused {d.get('refused')}")
     d = seen("k_wdi_gray")
     proofs.prove("n1322", d.get("asked") == ["gather assess choose advise done", ["cache?"]] and d.get("plain") == ["gather assess done", 0] and d.get("marked") == ["- auth?", "- cache? — deferred by the owner"], f"owner picks: {d.get('asked')}, without ask_owner {d.get('plain')}, CONTEXT lines {d.get('marked')}")
     d = seen("k_wdi_deep")

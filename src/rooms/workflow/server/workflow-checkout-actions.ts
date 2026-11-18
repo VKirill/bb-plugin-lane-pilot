@@ -465,13 +465,22 @@ export function registerCheckoutActions(engine: WorkflowEngine, ctx: ServerCore,
       profile_note: str(params.profile_note), recap_note: str(params.recap_note) };
   });
 
-  // The post-ship hook files of the project, counted on the host (SMA k_ws_post): the ship starts a session for the hooks only when
-  // there is at least one, so a repository without hook files costs no model session. The hooks themselves are listed by `lane-plan render-hooks post-ship`.
+  // The post-ship hook files of the project, counted and rendered on the host (SMA k_ws_post): the ship starts a session for the hooks only when
+  // there is at least one, so a repository without hook files costs no model session.
   action("lp.post_ship_hooks", async (_c, rt) => {
     const checkout = await bestEffort(ctx.log, "post-ship hooks checkout", pmCheckout(rt), null);
-    if (!checkout) return { count: 0, files: [] as string[] };
-    const ran = await bestEffort(ctx.log, "post-ship hooks", runOnHost(ctx.host, { hostId: checkout.hostId, cwd: (await planHome(rt.projectId, checkout)) ?? checkout.path, command: "ls .agents/planning/hooks/post-ship*.md 2>/dev/null || true", timeoutSec: 15, timeoutMs: 20_000 }), null);
+    if (!checkout) return { count: 0, files: [] as string[], hooks_markdown: "" };
+    const cwd = (await planHome(rt.projectId, checkout)) ?? checkout.path;
+    const ran = await bestEffort(ctx.log, "post-ship hooks", runOnHost(ctx.host, { hostId: checkout.hostId, cwd, command: "ls .agents/planning/hooks/post-ship*.md 2>/dev/null || true", timeoutSec: 15, timeoutMs: 20_000 }), null);
     const files = (ran?.stdout ?? "").split("\n").map((line) => line.trim()).filter(Boolean);
-    return { count: files.length, files };
+    if (!files.length) return { count: 0, files: [] as string[], hooks_markdown: "" };
+    const rendered = await bestEffort(ctx.log, "post-ship hooks render", runOnHost(ctx.host, {
+      hostId: checkout.hostId,
+      cwd,
+      command: "for f in .agents/planning/hooks/post-ship*.md; do [ -f \"$f\" ] || continue; printf '### %s\\n' \"$f\"; cat \"$f\"; printf '\\n\\n'; done",
+      timeoutSec: 15,
+      timeoutMs: 20_000,
+    }), null);
+    return { count: files.length, files, hooks_markdown: (rendered?.stdout ?? "").trim() };
   });
 }

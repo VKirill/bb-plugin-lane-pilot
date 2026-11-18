@@ -27,6 +27,7 @@
   "budget": {
     "max_minutes": 30
   },
+  "entry": "analyst",
   "nodes": [
     {
       "id": "analyst",
@@ -61,10 +62,6 @@
     }
   ],
   "edges": [
-    {
-      "from": "start",
-      "to": "analyst"
-    },
     {
       "from": "analyst",
       "to": "done"

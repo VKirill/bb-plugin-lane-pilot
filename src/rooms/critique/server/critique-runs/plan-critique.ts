@@ -8,6 +8,7 @@ import { bbServiceTier, findModelIn, listedServiceTier, resolveStageWriterSelect
 import { settingOff } from "@lane-pilot/models";
 import { sha256 } from "../../../tasks";
 import { callersBlock, critiquePacketPrompt, openQuestions, parseCritique, shouldRunPlanCritique } from "../../critique";
+import { criticPromptOf } from "../../critic-edit";
 import { planCriticTier } from "../../critic-level";
 import { ownerWordsOfRun } from "../owner-words";
 import { binaryOutputs, dropIntendedGaps, dropNoisyGaps, findTaskPlaceholderPaths } from "../../critique-coverage";
@@ -241,7 +242,11 @@ export async function runPlanCritique(input:{bb:BbPluginApi;db:ReturnType<typeof
       step: { id: "plan-critique", role: "plan-critic", mode: qualityMode },
       goal: `Plan critique for task ${input.task.id}: ${input.task.title}`, inputs: packetInputs, readers: ["plan-critique"],
     });
-    prompt = critiquePacketPrompt({ packet: prepared.packet, agent });
+    const basePlanPrompt = critiquePacketPrompt({ packet: prepared.packet, agent });
+    const calibratedPlanNote = input.bb.storage?.kv
+      ? await criticPromptOf(input.bb.storage.kv as never, "plan-critique").catch(() => null)
+      : null;
+    prompt = calibratedPlanNote ? `${basePlanPrompt}\n\n## Calibration guidance\n${calibratedPlanNote}` : basePlanPrompt;
   } catch (cause) {
     const reason = `plan_critique_input_failed:${cause instanceof Error ? cause.message : String(cause)}`;
     recordStage(input.db, { ...base, state:"failed", providerId, model:modelId, reason, result:{ error:reason } });

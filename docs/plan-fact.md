@@ -82,7 +82,7 @@ The changed hunks come from one shell command run in the task's workspace (`diff
 
 `plan-fact` is a stage (`packages/contracts/src/stage-contract.ts:5`) with a code proof of kind `file` (`packages/contracts/src/stage-proof.ts:36`); it is listed in the writer node of `workflows/lp-task-pipeline.json`. `runPlanFactStage` (`src/rooms/writer/server/plan-fact.ts:44-49`) runs after code critique and before the proof-gap check (`src/rooms/writer/server/finish.ts:635-646`). `planFactOutcome` decides the receipt, with the result (items, evidence checks, `notChecked`, mode) stored in it (`src/rooms/writer/server/plan-fact.ts:44-49`, `src/rooms/tasks/plan-fact.ts:161`):
 
-- no table, or an unreadable one: `skipped`, reason `plan_fact_table_missing` or `plan_fact_table_invalid`. It is recorded and shown as not run; it never refuses the task;
+- no table, or an unreadable one: when the table is optional (`record` mode on non-phase tasks, or `docs`/`research`/`check` tasks and tasks without acceptance), `skipped` with reason `plan_fact_table_missing` or `plan_fact_table_invalid`; when the table is required (`gate` mode on code tasks with acceptance, or any phase-linked code task with acceptance), `failed` (refused as `validation_failed`);
 - a blocking item: `failed`, reason `plan_fact_unproven: acceptance item N ...`;
 - otherwise `passed`.
 

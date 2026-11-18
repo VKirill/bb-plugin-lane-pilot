@@ -28,7 +28,7 @@ The plan critic runs for risk high or critical, for 3 or more write tasks, or fo
 
 ## Worktrees and memory
 
-- One root per machine: `~/.lane-pilot/worktrees/<repo>/<id>`. The merge removes the worktree and its branch; a branch with unmerged commits is never deleted. A daily cleanup runs as a Lane Pilot schedule. By hand: `bb lane-pilot worktree-cleanup --dry-run`.
+- One root per machine: `~/.lane-pilot/worktrees/<repo>/<id>` (plus BB-managed worktree environments `environment-git-worktree` where the owner authorized isolated branches/worktrees). The merge removes the task worktree and its branch; a branch with unmerged commits or an unknown/foreign worktree is never deleted. A daily cleanup runs as a Lane Pilot schedule. By hand: `bb lane-pilot worktree-cleanup --dry-run`.
 - Project memory lives only on the hub and is maintained without a person; inside a Lane Pilot thread read it with `lane_pilot_memory` (the thread supplies its project), and at a terminal use `bb lane-pilot memory search "<question>" [--project P]` or write a fact with `bb lane-pilot memory write "<fact>" [--project P]`. Lessons use `lane_pilot_memory`; never write a `.agents/memory/` file.
 
 ## Commands for an agent

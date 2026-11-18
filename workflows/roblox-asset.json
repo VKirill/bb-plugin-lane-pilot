@@ -82,7 +82,9 @@
       "Mac mini or Windows with Roblox Studio and Rojo"
     ],
     "tools": [
-      "rojo",
+      "rojo"
+    ],
+    "mcp": [
       "studio-mcp"
     ]
   },

@@ -35,6 +35,20 @@ export async function bootstrapProjectForPilot(
 
 export function pilotPanelRpc(ctx: ServerCore, deps: { activate?: ActivationApi["activate"] } = {}) {
   const service = createPilotPanelService(ctx, deps);
+  try {
+    const events = (ctx.bb as { events?: { on?: (event: string, cb: (payload: { thread?: { id?: string; parentThreadId?: string | null } }) => void) => void } }).events;
+    const realtime = (ctx.bb as { realtime?: { publish?: (event: string, payload: unknown) => void } }).realtime;
+    if (typeof events?.on === "function" && typeof realtime?.publish === "function") {
+      for (const evt of ["thread.active", "thread.idle", "thread.failed"]) {
+        events.on(evt, ({ thread }) => {
+          if (thread?.id) realtime.publish!("pilot-panel-changed", { threadId: thread.id });
+          if (thread?.parentThreadId) realtime.publish!("pilot-panel-changed", { threadId: thread.parentThreadId });
+        });
+      }
+    }
+  } catch {
+    // Event subscription is best-effort in minimal test hosts.
+  }
   return {
     pilot_panel_status: (input: { threadId: string; targetPlan?: string; force?: boolean }) =>
       service.status(input),

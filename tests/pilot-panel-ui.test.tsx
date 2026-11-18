@@ -33,6 +33,7 @@ vi.mock("@get-bb/plugin-sdk/app", async (importOriginal) => {
       toThread: vi.fn(),
       toPluginPanel: vi.fn(),
     }),
+    useRealtime: () => undefined,
     experimental_Icon: ({ name, className }: { name: string; className?: string }) => (
       <span data-icon={name} className={className} />
     ),

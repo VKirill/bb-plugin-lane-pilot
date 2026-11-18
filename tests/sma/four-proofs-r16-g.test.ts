@@ -57,7 +57,7 @@ describe("milestone close, summary, audit, new milestone, cleanup (n1330 … n13
     expect(seen.path).toEqual(["archive", "frame", "write_requirements", "add_phases", "done"]);
     expect(seen.out).toEqual({ status: "done", phases: ["1 coverage of REQ-2", "2 the gate"] });
     expect(seen.frameGoal).toBe(1);
-    expect(seen.framePrompt).toContain("lane-plan phase add <name> --goal …");
+    expect(seen.framePrompt).toContain("lp.phase_add");
   });
 
   it("[sma:k_c_cleanup] cleanup only lists while the plan is not applied (planned), moves the folders and checks the goal when applied (done), and blocks when the goal check fails; dry run is the default", async () => {

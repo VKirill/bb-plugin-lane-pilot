@@ -13,13 +13,13 @@ import { HelpMark, PanelDisclosure, PanelSection } from "./layout";
 
 export function PilotReadinessSection({
   snapshot,
-  busy,
+  awaitingAnswer = false,
   sending,
   onRunAction,
   onToggleSkip,
 }: {
   snapshot: PilotPanelSnapshot;
-  busy: boolean;
+  awaitingAnswer?: boolean;
   sending: boolean;
   onRunAction: (action: PilotPanelAction) => void;
   onToggleSkip: (stepId: "quality" | "ci", skipped: boolean) => Promise<void>;
@@ -115,7 +115,7 @@ export function PilotReadinessSection({
                 <Button
                   type="button"
                   size="sm"
-                  disabled={sending || (!isDirectServerAction && busy) || !action.available}
+                  disabled={sending || (!isDirectServerAction && awaitingAnswer) || !action.available}
                   onClick={() => onRunAction(action)}
                 >
                   {action.label}

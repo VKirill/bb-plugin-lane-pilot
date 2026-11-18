@@ -10,6 +10,22 @@ export function mapPilotTaskColumn(state: string | null): "queued" | "running" |
   return "queued";
 }
 
+function formatSkillCommand(
+  providerId: string | null | undefined,
+  skillName: string,
+  args: string | undefined,
+  fallbackText: string,
+): string {
+  const suffix = args ? ` ${args}` : "";
+  if (!providerId || providerId === "claude-code") {
+    return `/${skillName}${suffix}`;
+  }
+  if (providerId === "codex" || providerId === "codex-app") {
+    return `$${skillName}${suffix}`;
+  }
+  return fallbackText;
+}
+
 export function buildPilotPanelActions(input: {
   hasWorkspace: boolean;
   configured: boolean;
@@ -19,9 +35,13 @@ export function buildPilotPanelActions(input: {
   selectedPlan: PilotPanelSnapshot["plans"]["selected"];
   hasActiveRun: boolean;
   projectId: string | null;
+  providerId?: string | null;
   canActivatePm?: boolean;
 }): PilotPanelAction[] {
   const actions: PilotPanelAction[] = [];
+  const p = input.providerId;
+  const cmd = (skill: string, args: string | undefined, fallback: string) =>
+    formatSkillCommand(p, skill, args, fallback);
   const add = (
     id: string,
     label: string,
@@ -45,14 +65,14 @@ export function buildPilotPanelActions(input: {
   add(
     "setup-context",
     "Описать проект (/lp-project-setup)",
-    "/lp-project-setup",
+    cmd("lp-project-setup", undefined, "Опиши проект и правила по скиллу lp-project-setup"),
     "Изучает стек, пакеты и проверенные команды репозитория и заполняет .agents/pilot/DESCRIPTION.md, rules/base.md и AGENTS.md.",
     "setup",
   );
   add(
     "setup-architecture",
     "Описать архитектуру",
-    "/lp-project-setup architecture",
+    cmd("lp-project-setup", "architecture", "Опиши архитектуру модулей проекта по скиллу lp-project-setup"),
     "Описывает модули, границы импортов и правила размещения новых файлов в .agents/pilot/ARCHITECTURE.md.",
     "setup",
   );
@@ -80,7 +100,7 @@ export function buildPilotPanelActions(input: {
       add(
         "verify",
         "Проверить реализацию (/lp-verify)",
-        `/lp-verify @${selected.path}`,
+        cmd("lp-verify", `@${selected.path}`, `Проверь реализацию плана ${selected.path} по скиллу lp-verify`),
         "Сверяет фактический diff, архитектуру и команды typecheck/lint/test/build со всеми пунктами выбранного плана.",
         "next",
       );
@@ -88,14 +108,14 @@ export function buildPilotPanelActions(input: {
       add(
         "implement",
         somePlanDone ? "Продолжить план (/lp-implement)" : "Выполнить план (/lp-implement)",
-        `/lp-implement @${selected.path}`,
+        cmd("lp-implement", `@${selected.path}`, `Выполни план ${selected.path} по скиллу lp-implement`),
         "Выполняет готовые задачи выбранного плана через чистые субтреды или дорожки писателей с проверкой результата.",
         "next",
       );
       add(
         "verify",
         "Проверить текущие правки (/lp-verify)",
-        `/lp-verify @${selected.path}`,
+        cmd("lp-verify", `@${selected.path}`, `Проверь текущие изменения по плану ${selected.path} (lp-verify)`),
         "Read-only проверка уже внесённых изменений и тестов.",
         "next",
       );
@@ -103,7 +123,7 @@ export function buildPilotPanelActions(input: {
     add(
       "plan",
       "Уточнить план (/lp-plan)",
-      `/lp-plan @${selected.path}`,
+      cmd("lp-plan", `@${selected.path}`, `Уточни план ${selected.path} по скиллу lp-plan`),
       "Уточняет незавершённые задачи плана с сохранением выполненных чекбоксов.",
       "next",
     );
@@ -111,7 +131,7 @@ export function buildPilotPanelActions(input: {
     add(
       "plan",
       "Составить план (/lp-plan)",
-      "/lp-plan",
+      cmd("lp-plan", undefined, "Составь план задачи по скиллу lp-plan"),
       "Исследует код и записывает исполняемый план задач с зависимостями в .agents/pilot/plans/<slug>.md.",
       "next",
     );
@@ -125,7 +145,7 @@ export function buildPilotPanelActions(input: {
     add(
       "verify",
       "Проверить изменения (/lp-verify)",
-      "/lp-verify",
+      cmd("lp-verify", undefined, "Проверь текущие изменения репозитория по скиллу lp-verify"),
       "Запускает авторитетную проверку текущих изменений репозитория по правилам и тестам проекта.",
       "next",
     );
@@ -159,52 +179,80 @@ export function buildPilotActionPrompt(
   snapshot: PilotPanelSnapshot,
 ): { visible: string; context: string } | null {
   const target = snapshot.plans.selected?.path ?? null;
+  const providerId = snapshot.session.providerId;
+  const rootPrefix = snapshot.project.rootPath ? `${snapshot.project.rootPath.replace(/\/+$/, "")}/` : "";
+  const skillPath = (name: string) => `${rootPrefix}${PILOT_SKILLS_DIR_REL_PATH}/${name}/SKILL.md`;
   const meta = JSON.stringify({
     root: snapshot.project.rootPath,
     targetPlan: target,
     delegation: snapshot.delegation.choice,
-    skillsDir: PILOT_SKILLS_DIR_REL_PATH,
+    skillsDir: `${rootPrefix}${PILOT_SKILLS_DIR_REL_PATH}`,
   });
   switch (actionId) {
     case "setup-context":
       return {
-        visible: "/lp-project-setup",
-        context: `Контекст кнопки панели Lane Pilot: ${meta}.\nПрочитай .bb/skills/lp-project-setup/SKILL.md (если есть на диске) и выполни полную настройку контекста проекта: изучи стек и реальные команды проверок, заполни .agents/pilot/DESCRIPTION.md, .agents/pilot/rules/base.md, .agents/pilot/ARCHITECTURE.md и обнови управляемый блок в AGENTS.md, сохранив все пользовательские правила. Не пиши продуктовый код.`,
+        visible: formatSkillCommand(
+          providerId,
+          "lp-project-setup",
+          undefined,
+          "Опиши проект и правила по скиллу lp-project-setup",
+        ),
+        context: `Контекст кнопки панели Lane Pilot: ${meta}.\nПрочитай файл скилла ${skillPath("lp-project-setup")} и выполни полную настройку контекста проекта в ${snapshot.project.rootPath ?? "корне репозитория"}: изучи стек и реальные команды проверок, заполни .agents/pilot/DESCRIPTION.md, .agents/pilot/rules/base.md, .agents/pilot/ARCHITECTURE.md и обнови управляемый блок в AGENTS.md, сохранив все пользовательские правила. Не пиши продуктовый код.`,
       };
     case "setup-architecture":
       return {
-        visible: "/lp-project-setup architecture",
-        context: `Контекст кнопки панели Lane Pilot: ${meta}.\nПрочитай .bb/skills/lp-project-setup/SKILL.md и подробно опиши модульную архитектуру, границы импортов и правила размещения файлов в .agents/pilot/ARCHITECTURE.md на основе фактического дерева кода. Не меняй код приложения.`,
+        visible: formatSkillCommand(
+          providerId,
+          "lp-project-setup",
+          "architecture",
+          "Опиши архитектуру модулей проекта по скиллу lp-project-setup",
+        ),
+        context: `Контекст кнопки панели Lane Pilot: ${meta}.\nПрочитай файл скилла ${skillPath("lp-project-setup")} и подробно опиши модульную архитектуру, границы импортов и правила размещения файлов в .agents/pilot/ARCHITECTURE.md на основе фактического дерева кода в ${snapshot.project.rootPath ?? "корне репозитория"}. Не меняй код приложения.`,
       };
     case "quality-setup":
       return {
         visible: "Настрой локальные Git-хуки проверок для этого проекта",
-        context: `Контекст кнопки панели Lane Pilot: ${meta}.\nПрочитай AGENTS.md и .agents/pilot/DESCRIPTION.md, проверь существующий стек и предложи/настрой аккуратные pre-commit проверки (.husky или lefthook) только для реально существующих быстрых команд (typecheck/lint). Не затирай существующие хуки.`,
+        context: `Контекст кнопки панели Lane Pilot: ${meta}.\nПрочитай ${rootPrefix}AGENTS.md и ${rootPrefix}.agents/pilot/DESCRIPTION.md, проверь существующий стек и предложи/настрой аккуратные pre-commit проверки (.husky или lefthook) только для реально существующих быстрых команд (typecheck/lint). Не затирай существующие хуки.`,
       };
     case "ci-setup":
       return {
         visible: "Проверь или подготовь конфигурацию CI для этого проекта",
-        context: `Контекст кнопки панели Lane Pilot: ${meta}.\nПрочитай AGENTS.md и .agents/pilot/DESCRIPTION.md, проверь наличие CI и подготовь/проверь workflow на реальных командах установки, проверки типов, линтера и тестов проекта без выдуманных шагов.`,
+        context: `Контекст кнопки панели Lane Pilot: ${meta}.\nПрочитай ${rootPrefix}AGENTS.md и ${rootPrefix}.agents/pilot/DESCRIPTION.md, проверь наличие CI и подготовь/проверь workflow на реальных командах установки, проверки типов, линтера и тестов проекта без выдуманных шагов.`,
       };
     case "explore":
       return {
         visible: "Исследуй текущую задачу по коду проекта до составления плана",
-        context: `Контекст кнопки панели Lane Pilot: ${meta}.\nСначала прочитай AGENTS.md, .agents/pilot/DESCRIPTION.md и .agents/pilot/ARCHITECTURE.md (если они заполнены). Проведи read-only исследование затронутых файлов (file:line), сравни подходы и предложи оптимальный вариант без изменения кода.`,
+        context: `Контекст кнопки панели Lane Pilot: ${meta}.\nСначала прочитай ${rootPrefix}AGENTS.md, ${rootPrefix}.agents/pilot/DESCRIPTION.md и ${rootPrefix}.agents/pilot/ARCHITECTURE.md (если они заполнены). Проведи read-only исследование затронутых файлов (file:line), сравни подходы и предложи оптимальный вариант без изменения кода.`,
       };
     case "plan":
       return {
-        visible: target ? `/lp-plan @${target}` : "/lp-plan",
-        context: `Контекст кнопки панели Lane Pilot: ${meta}.\nПрочитай .bb/skills/lp-plan/SKILL.md, AGENTS.md и .agents/pilot/ARCHITECTURE.md. Составь или уточни исполняемый план задач с графом зависимостей и командами верификации в .agents/pilot/plans/<slug>.md. Код реализации на этом шаге не пиши.`,
+        visible: formatSkillCommand(
+          providerId,
+          "lp-plan",
+          target ? `@${target}` : undefined,
+          target ? `Уточни план ${target} по скиллу lp-plan` : "Составь план задачи по скиллу lp-plan",
+        ),
+        context: `Контекст кнопки панели Lane Pilot: ${meta}.\nПрочитай ${skillPath("lp-plan")}, ${rootPrefix}AGENTS.md и ${rootPrefix}.agents/pilot/ARCHITECTURE.md. Составь или уточни исполняемый план задач с графом зависимостей и командами верификации в .agents/pilot/plans/<slug>.md. Код реализации на этом шаге не пиши.`,
       };
     case "implement":
       return {
-        visible: target ? `/lp-implement @${target}` : "/lp-implement",
-        context: `Контекст кнопки панели Lane Pilot: ${meta}.\nПрочитай .bb/skills/lp-implement/SKILL.md, .agents/pilot/config.json и .agents/pilot/skill-context/delegation.md (если есть). Выполни готовые задачи плана с соблюдением границ модулей, делегирования в чистые субтреды на standard tier и обязательной проверкой каждого слоя.`,
+        visible: formatSkillCommand(
+          providerId,
+          "lp-implement",
+          target ? `@${target}` : undefined,
+          target ? `Выполни план ${target} по скиллу lp-implement` : "Выполни план по скиллу lp-implement",
+        ),
+        context: `Контекст кнопки панели Lane Pilot: ${meta}.\nПрочитай ${skillPath("lp-implement")}, ${rootPrefix}.agents/pilot/config.json и ${rootPrefix}.agents/pilot/skill-context/delegation.md (если есть). Выполни готовые задачи плана с соблюдением границ модулей, делегирования в чистые субтреды на standard tier и обязательной проверкой каждого слоя.`,
       };
     case "verify":
       return {
-        visible: target ? `/lp-verify @${target}` : "/lp-verify",
-        context: `Контекст кнопки панели Lane Pilot: ${meta}.\nПрочитай .bb/skills/lp-verify/SKILL.md, проверь git status/diff против плана, .agents/pilot/ARCHITECTURE.md и .agents/pilot/rules/base.md, прогони команды проверок проекта и выведи честный отчёт с блоком lp-gate-result.`,
+        visible: formatSkillCommand(
+          providerId,
+          "lp-verify",
+          target ? `@${target}` : undefined,
+          target ? `Проверь реализацию плана ${target} по скиллу lp-verify` : "Проверь текущие изменения по скиллу lp-verify",
+        ),
+        context: `Контекст кнопки панели Lane Pilot: ${meta}.\nПрочитай ${skillPath("lp-verify")}, проверь git status/diff против плана, ${rootPrefix}.agents/pilot/ARCHITECTURE.md и ${rootPrefix}.agents/pilot/rules/base.md, прогони команды проверок проекта и выведи честный отчёт с блоком lp-gate-result.`,
       };
     default:
       return null;

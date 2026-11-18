@@ -103,7 +103,7 @@ export function hollowFindings(ctx: HollowContext): HollowFinding[] {
     if (row.status === "have" || row.status === "partial") {
       const gates = undeclaredGates(ctx.facts.settingReads[row.id] ?? null, evidence?.reach, ctx.settings);
       if (gates.length) out.push({ subject, sign: 4, what: `undeclared gate: its function reads ${gates.map((key) => `${key} (${ctx.settings.get(key) ?? "unset"})`).join(", ")}, off by default, and reach.needs does not declare it`, ...on([row.id]) });
-      const failed = failedNeeds(evidence?.reach, ctx.settings);
+      const failed = evidence?.reach?.optIn ? [] : failedNeeds(evidence?.reach, ctx.settings);
       if (failed.length) out.push({ subject, sign: 4, what: `the map calls it working, but its declared needs fail under the effective settings: ${failed.join("; ")}`, ...on([row.id]) });
     }
     for (const defect of ctx.facts.anchorDefects[row.id] ?? []) out.push({ subject, sign: 3, what: defect, ...on([row.id]) });
@@ -114,8 +114,9 @@ export function hollowFindings(ctx: HollowContext): HollowFinding[] {
   for (const defect of ctx.facts.workflowDefects) {
     const ids = defect.node ? index.onNode(defect.graph, defect.node) : defect.edge ? index.onNode(defect.graph, defect.edge[0]) : index.graphs.get(defect.graph) ?? [];
     const subject = defect.edge ? { type: "workflow-edge" as const, path: `${defect.graph}: ${defect.edge[0]} → ${defect.edge[1]}${defect.edge[2] ? ` [${defect.edge[2]}]` : ""}` } : { type: "workflow-node" as const, path: `${defect.graph}.${defect.node}` };
-    // A default-off step matters where the map relies on it; elsewhere it is the owner's per-run choice (calibration 2026-11-14).
-    if (defect.sign === 4 && !ids.length) continue;
+    // A default-off step matters where the map relies on it; when the caller passes an effective setting that is already on (e.g. phase.* in SWITCHES_ON_BY_DEFAULT), the step runs by default.
+    const settingKey = defect.sign === 4 ? /\bproject\s+setting\s+([\w.]+)/i.exec(defect.what)?.[1] : undefined;
+    if (defect.sign === 4 && (!ids.length || (settingKey && ctx.settings.get(settingKey) === "on"))) continue;
     out.push({ subject, sign: defect.sign, what: defect.what, ...on(ids), ...(ids.length ? {} : { guess: defect.edge ? "leftover of an old scheme" : "unfinished function" }) });
   }
   if (ctx.live) {

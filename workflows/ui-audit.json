@@ -256,10 +256,6 @@
       "when": "!$inputs.review_file"
     },
     {
-      "from": "review_doc",
-      "to": "blocked"
-    },
-    {
       "from": "goal_check",
       "to": "offer",
       "when": "goal_check.ok != false && audit.score_40 > 0 && audit.score_40 < 24"

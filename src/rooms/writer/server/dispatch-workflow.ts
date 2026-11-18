@@ -5,7 +5,7 @@ import type { PrototypeConfig, TaskV2 } from "../../contracts";
 import { QUALITY_MODE_SETTING, resolveQualityMode } from "../../contracts/quality-mode";
 import { appendExcludeCommand, filecardsFileText, persistTaskFolder, reflexesFileText } from "../../verification";
 import { hasTaskHome, TASK_HOME_EXCLUDE } from "../../storage";
-import { recordPlanCritique, recordPlannerRevision, recordTaskHomeFile, stagePlanText } from "./task-home";
+import { noteStageTaskHomeReads, recordPlanCritique, recordPlannerRevision, recordTaskHomeFile, stagePlanText } from "./task-home";
 import { pmReadBrief } from "../writer-brief";
 import type { NodeExecutor, RunSummary, StepContext, WorkflowEngine } from "../../workflow";
 import { provideLpTaskPipeline } from "../../workflow/server";
@@ -138,10 +138,21 @@ export function registerDispatchExecutors(engine: WorkflowEngine, bb?: BbPluginA
   exec("lp.pm-read", async (r, ctx) => {
     // The plan comes from the task home's PLAN.md by the manifest (docs/task-folder.md), not from what the dispatch held in memory.
     const plan = await stagePlanText(r.ctx, r.taskId, "pm-read", r.plan);
+    await noteStageTaskHomeReads(r.ctx, r.taskId, "pm-read", ["contract"]).catch(() => undefined);
     const packetSha256 = text(ctx.input.with.packetSha256);
     const selected = ctx.input.with.selectedLines;
     const pmRead = await runPmRead({ stageHelperSettings: r.services.stageHelperSettings, bb: r.ctx.bb, db: r.ctx.db, projectId: r.projectId, runId: r.runId, taskId: r.taskId, pmThreadId: r.threadId, config: r.runConfig, task: r.task, plan, workflow: stepRef(ctx),
       ...(packetSha256 ? { packetSha256 } : {}), ...(typeof selected === "number" ? { selectedLines: selected } : {}) });
+    if (hasTaskHome(r.ctx.db, r.taskId)) {
+      await recordTaskHomeFile(r.ctx, {
+        taskId: r.taskId,
+        kind: "research",
+        name: "context/pm-read.json",
+        content: `${JSON.stringify({ state: pmRead.state, summary: pmRead.summary ?? "", reason: pmRead.reason ?? null }, null, 2)}\n`,
+        producer: { node: "pm-read", graph: "lp-task-pipeline", stage_id: "pm-read", run_id: r.runId },
+        readers: ["writer", "code-critique"],
+      }).catch((cause: unknown) => r.ctx.bb.log.warn(`Lane Pilot: pm-read research of ${r.taskId} was not recorded in its home: ${cause instanceof Error ? cause.message : String(cause)}`));
+    }
     return { state: pmRead.state, summary: pmRead.summary, ...(pmRead.reason !== undefined ? { reason: pmRead.reason } : {}), handoff: handoffOf("pm-read", pmRead.state, pmRead.reason) };
   }, {}, "pm-read");
 
@@ -157,6 +168,7 @@ export function registerDispatchExecutors(engine: WorkflowEngine, bb?: BbPluginA
     if (endedReply(r)) return { allowed: false, revisable: false, reason: "attempt ended before its stages finished", handoff: handoffOf("plan-critique", "skipped", "attempt ended") };
     // The critic of every round reads PLAN.md through the task's manifest (docs/task-folder.md): after a planner round that is the revised edition.
     const plan = await stagePlanText(r.ctx, r.taskId, "plan-critique", r.plan);
+    await noteStageTaskHomeReads(r.ctx, r.taskId, "plan-critique", ["contract"]).catch(() => undefined);
     const critique = await runPlanCritique({ stageHelperSettings: r.services.stageHelperSettings, bb: r.ctx.bb, db: r.ctx.db, projectId: r.projectId, runId: r.runId, taskId: r.taskId,
       config: r.runConfig, task: r.task, plan, pmReadContext: text(ctx.input.with.pmReadContext) || undefined, workflow: stepRef(ctx) });
     // The verdict as critique/plan.r<K>.json in the task home; a failed record never changes the verdict.

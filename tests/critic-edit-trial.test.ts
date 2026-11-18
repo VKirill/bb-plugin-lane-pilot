@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { criticEditTrialSettle, criticEditWasRejected, criticPromptOf, criticPromptRollback } from "../src/rooms/critique/critic-edit";
+import { criticEditTrialSettle, criticEditWasRejected, criticPromptOf, criticPromptRollback, withCriticTrialPrompt } from "../src/rooms/critique/critic-edit";
 
 const kv = () => { const map = new Map<string, unknown>(); return { get: async (k: string) => map.get(k), set: async (k: string, v: never) => { map.set(k, v); } }; };
 
@@ -30,5 +30,16 @@ describe("the critic-edit trial loop", () => {
     expect((await criticEditTrialSettle({ kv: store, stage: "code-critique", proposal: "p", verdict: null })).action).toBe("wait");
     expect(await criticPromptOf(store, "code-critique")).toBeNull();
     expect(await criticEditWasRejected(store, "code-critique", "p")).toBe(false);
+  });
+
+  it("scopes temporary trial prompts via withCriticTrialPrompt without mutating settled store", async () => {
+    const store = kv();
+    await criticEditTrialSettle({ kv: store, stage: "code-critique", proposal: "settled v1", verdict: { passed: true, summary: "ok" }, now: 100 });
+    const observedDuringTrial = await withCriticTrialPrompt(store, "code-critique", "candidate v2", async () => {
+      expect(await criticPromptOf(store, "plan-critique")).toBeNull();
+      return criticPromptOf(store, "code-critique");
+    });
+    expect(observedDuringTrial).toBe("candidate v2");
+    expect(await criticPromptOf(store, "code-critique")).toBe("settled v1");
   });
 });

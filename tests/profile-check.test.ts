@@ -11,7 +11,7 @@ import {
 } from "../src/rooms/native-agent";
 import { helperThreadsViaSdk } from "../src/rooms/native-agent/profile-check";
 import { coreRequiredSessionAdvertisement, type RequiredSessionAdvertisement } from "../src/rooms/contracts/helper-context";
-import { createProfileCheck, PROFILE_CHECK_OWNER_KEY } from "../src/rooms/native-agent/server/profile-check";
+import { createProfileCheck, mountProfileCheck, PROFILE_CHECK_OWNER_KEY, PROFILE_CHECK_SCHEDULE } from "../src/rooms/native-agent/server/profile-check";
 import { openDatabase } from "../src/rooms/plugin-db";
 
 const NOW = Date.UTC(2026, 10, 6, 9, 0, 0);
@@ -589,5 +589,38 @@ describe("the stored report and the morning line", () => {
     const line = profileCheckMorningLine(db);
     expect(line).toContain("КРАСНОЕ");
     expect(line).toContain("writer");
+  });
+
+  it("reads past 5,000 child threads without unverified truncation and stamps scheduled origin + pluginVersion (P09.05)", async () => {
+    const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
+    const db = openDatabase(bb);
+    const liveNow = Date.now();
+    // 5,005 total child threads (26 pages of 200): 5,003 older than window + 2 recent counted writers.
+    const threads: FixtureThread[] = [
+      ...Array.from({ length: 5003 }, (_, i) => ({ id: `old_${i}`, at: liveNow - 48 * HOUR })),
+      { id: "recent_w1", role: "writer", at: liveNow - HOUR, policy: writerPolicy() },
+      { id: "recent_w2", role: "writer", at: liveNow - HOUR, policy: writerPolicy() },
+    ];
+    sdkThreads(harness, threads);
+    sdkInspect(harness, threads);
+    (bb as { agents?: unknown }).agents = { experimental_vkRequiredSessionPolicy: () => coreRequiredSessionAdvertisement() };
+    const ctx = { db, bb, log: () => undefined, isDisposed: () => false };
+    const api = createProfileCheck(ctx as never).profileCheck;
+    mountProfileCheck(ctx as never, api);
+    try {
+      await harness.runSchedule(PROFILE_CHECK_SCHEDULE);
+      const saved = latestProfileCheck(db as never);
+      expect(saved).not.toBeNull();
+      expect(saved?.unverified).toBeNull();
+      expect(saved?.threads).toBe(2);
+      expect(saved?.withPolicy).toBe(2);
+      expect(saved?.scannedTotal).toBe(5005);
+      expect(saved?.initiator).toBe("scheduled");
+      expect(saved?.scheduleKey).toBe("lane-pilot/profile-check-daily");
+      expect(saved?.pluginVersion).toMatch(/^0\.1\.\d+$/);
+      expect(typeof saved?.runId).toBe("string");
+    } finally {
+      await harness.dispose();
+    }
   });
 });

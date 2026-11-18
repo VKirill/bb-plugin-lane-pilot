@@ -108,7 +108,7 @@ const commitFile = (t: Awaited<ReturnType<typeof setup>>, path: string, body: st
 /** The prompts of project-start on main, word for word: a start that sets nothing new gets exactly these. */
 const MAIN_START = {
   value_map: "Value map builder, before asking anything: from README, the passport (project-onboard), the site and the code — who the product is for, the job they hire it for, what they get, how we would know it works. Return the complete raw Markdown of VALUE-MAP.md in document; the code-owned writer persists it to .agents/planning/. This read-only helper does not write files.",
-  preview: "Stack and tests: languages, frameworks, the test command and whether it is green. Memory preview: report what the <project_memory> block of this brief holds (the hub corpus's confirmed notes of this project; no block means the corpus holds nothing yet); write nothing to memory. Infra profile: hosts, start, deploy, logs into lane-plan profile --set (the one profile writer).",
+  preview: "Stack and tests: languages, frameworks, the test command and whether it is green. Memory preview: report what the <project_memory> block of this brief holds (the hub corpus's confirmed notes of this project; no block means the corpus holds nothing yet); write nothing to memory. Infra profile: return hosts, start, deploy, logs in profile for lp.profile_write (the one profile writer).",
   recap: "Working style and risk from the owner's anamnesis. Recap in five lines and three next steps, plus the roadmap skeleton as raw Markdown in roadmap_draft (phases in order; the code-owned writer persists it to .agents/planning/ROADMAP.md and registers the phases as roadmap rows — return them in phases too). This read-only helper does not write files and runs no lane-plan commands.",
 };
 const startStubs = { value_map: { document: "v" }, preview: { stack: {}, memory: {} }, recap: { next_steps: ["a", "b", "c"], roadmap_draft: "# roadmap\n", project_document: "# project\n", phases: ["1 first"] } };
@@ -347,7 +347,7 @@ describe("parity d4 workflows b-2", () => {
     expect(emitted(r)).toMatchObject({ status: "shipped", pr_url: "u", hooks_failed: [] });
     // open_pr is main's prompt minus the hook sentence: hooks run in post_ship only, never twice.
     expect(node("ship.json", "open_pr").prompt).not.toMatch(/post-ship|hook/);
-    expect(node("ship.json", "post_ship").prompt).toContain("lane-plan render-hooks post-ship");
+    expect(node("ship.json", "post_ship").prompt).toContain("hooks.hooks_markdown");
   });
 
   it("[sma:k_ws_post] hook files counted on the host decide it: none, no session; some, post_ship runs once and a failed hook is listed without holding the ship", async () => {

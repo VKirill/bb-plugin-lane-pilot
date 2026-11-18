@@ -97,6 +97,7 @@ export const pilotPanelSnapshotSchema = z.object({
   }).strict(),
   session: z.object({
     threadId: z.string(),
+    providerId: z.string().nullable().optional(),
     threadState: z.string(),
     pendingQuestions: z.number().nullable(),
     role: z.string().nullable(),
@@ -177,6 +178,7 @@ export const pilotPanelRpcMethods = {
     }).strict(),
     output: z.object({
       sent: z.boolean(),
+      queued: z.boolean().optional(),
       stale: z.boolean().optional(),
       threadId: z.string().optional(),
       runId: z.string().optional(),

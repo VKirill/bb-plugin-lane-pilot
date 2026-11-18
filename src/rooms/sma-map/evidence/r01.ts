@@ -28,12 +28,12 @@ export default {
   n161: {
     mutation: flip("src/rooms/writer/server/start-admission.ts", "return reserve.ok ? null : `permit_refused:reserve: ${reserve.why}`;", "return !reserve.ok ? null : `permit_refused:reserve: ${reserve.why}`;"),
     // The permit only holds a price while the run has a token budget: no hub row sets run.max_tokens, so it is unreachable today, honestly.
-    reach: via({ "run.max_tokens": isSet() }),
+    reach: { ...via({ "run.max_tokens": isSet() }), optIn: "card describes optional per-run token ceiling (run.max_tokens)" },
     trace: drill("sma_r01"),
   },
   n162: {
     mutation: distort("src/rooms/tasks/rails.ts", "if (input.budgetTokens === null) return { ok: true, free: null };", "if (input.budgetTokens === null) return { ok: true, free: 0 };"),
-    reach: via({ "run.max_tokens": isSet() }),
+    reach: { ...via({ "run.max_tokens": isSet() }), optIn: "card describes optional per-run token ceiling (run.max_tokens)" },
     trace: drill("sma_r01"),
   },
   n163: {
@@ -51,7 +51,7 @@ export default {
   },
   n166: {
     mutation: wrongTarget("src/rooms/writer/server/start-attempt-loop.ts", 'postOwnerItem(db, { key:`run-budget:${input.runId}`, source:"writer"', 'postOwnerItem(db, { key:`run-budget:${input.taskId}`, source:"writer"'),
-    reach: via({ "run.max_tokens": isSet() }),
+    reach: { ...via({ "run.max_tokens": isSet() }), optIn: "card describes optional per-run token ceiling (run.max_tokens)" },
     trace: drill("sma_r01"),
   },
   n167: {
@@ -67,7 +67,7 @@ export default {
   n169: {
     mutation: wrongTarget("packages/resilience/src/budget.ts", "maxWallMs: now - startedAt, maxTokens: tokens()", "maxWallMs: now - startedAt, maxTokens: children"),
     // The limit does nothing while run.max_tokens is empty — and no hub row sets it: unreachable today, honestly.
-    reach: via({ "run.max_tokens": isSet() }),
+    reach: { ...via({ "run.max_tokens": isSet() }), optIn: "card describes optional per-run token ceiling (run.max_tokens)" },
     trace: transition({ to: "blocked", reason: "run_budget_exceeded" }),
   },
   n170: {
@@ -99,10 +99,12 @@ export default {
     trace: drill("sma_r01"),
   },
   n177: {
+    reach: { notGatedBy: { "writer.retry_escalate": "Retry limit exhaustion blocks the task regardless of whether model escalation on retry is enabled." } },
     mutation: flip("src/rooms/writer/server/start-failure-route.ts", "if (countChargedAttempts(db, input.runId, input.taskId) >= MAIN_ATTEMPT_LIMIT", "if (countChargedAttempts(db, input.runId, input.taskId) > MAIN_ATTEMPT_LIMIT"),
     trace: transition({ to: "blocked", reason: "retry limit 2 exhausted" }),
   },
   n178: {
+    reach: { notGatedBy: { "writer.retry_escalate": "Parking on secret/auth/capacity classes happens regardless of whether model escalation on retry is enabled." } },
     mutation: flip("src/rooms/writer/server/start-failure-route.ts", "if (PARKED_CLASSES.has(failedClass) || isWaitingSecret(", "if (!PARKED_CLASSES.has(failedClass) || isWaitingSecret("),
     trace: drill("sma_r01"),
   },

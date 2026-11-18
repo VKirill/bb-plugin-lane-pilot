@@ -64,13 +64,29 @@ const emptyStore = (): CriticEditStore => ({ prompts: {}, rejected: [] });
 const readStore = (raw: unknown): CriticEditStore =>
   raw && typeof raw === "object" ? { prompts: (raw as CriticEditStore).prompts ?? {}, rejected: (raw as CriticEditStore).rejected ?? [] } : emptyStore();
 
-type KvLike = { get(key: string): Promise<unknown>; set(key: string, value: never): Promise<unknown> };
+type KvLike = { get(key: string): Promise<unknown>; set(key: string, value: never): Promise<unknown>; delete?(key: string): Promise<unknown> };
 const STORE_KEY = "lp.critic.edit.store";
+const TRIAL_PROMPT_KEY = "lp.critic.edit.trial_prompt";
 
 /** The stored prompt of a stage, or null. */
 export async function criticPromptOf(kv: KvLike, stage: string): Promise<string | null> {
+  const trial = await kv.get(TRIAL_PROMPT_KEY).catch(() => null) as { stage?: unknown; text?: unknown } | null;
+  if (trial && typeof trial === "object" && trial.stage === stage && typeof trial.text === "string" && trial.text.trim()) {
+    return trial.text.trim();
+  }
   const store = readStore(await kv.get(STORE_KEY));
   return store.prompts[stage]?.current?.text ?? null;
+}
+
+/** Runs `work` with a temporary trial prompt active in KV for `stage`, restoring clean state afterward. */
+export async function withCriticTrialPrompt<T>(kv: KvLike, stage: string, text: string, work: () => Promise<T>): Promise<T> {
+  await kv.set(TRIAL_PROMPT_KEY, { stage, text } as never);
+  try {
+    return await work();
+  } finally {
+    if (typeof kv.delete === "function") await kv.delete(TRIAL_PROMPT_KEY).catch(() => undefined);
+    else await kv.set(TRIAL_PROMPT_KEY, null as never).catch(() => undefined);
+  }
 }
 
 /** Roll a stage's prompt back one version; returns the prompt now current, or null when nothing is stored. */

@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { scheduleIsolated } from "../../platform/server";
 import { type ServerCore } from "../../contracts/server";
 import { closeOwnerItem, postOwnerItem } from "../../owner-waiting";
@@ -8,6 +9,7 @@ import {
   profileCheckMorningLine,
   saveProfileCheck,
   type HelperThreadRow,
+  type ProfileCheckInitiator,
   type ProfileReport,
 } from "../profile-check";
 
@@ -26,20 +28,42 @@ export function createProfileCheck(ctx: ServerCore) {
   const { db, bb } = ctx;
 
   /** The report with the red list; a core read the SDK cannot serve is «не проверено», not red. */
-  async function check(now: number = Date.now()): Promise<ProfileReport> {
+  async function check(
+    now: number = Date.now(),
+    opts?: { initiator?: ProfileCheckInitiator; scheduleKey?: string | null; signal?: AbortSignal },
+  ): Promise<ProfileReport> {
+    const startedAt = Date.now();
+    const runId = randomUUID();
     const since = now - PROFILE_CHECK_WINDOW_MS;
     let threads: HelperThreadRow[];
+    let scannedTotal: number | undefined;
     let coreMissing: string | null = null;
     try {
-      threads = await helperThreadsViaSdk(bb, since);
+      threads = await helperThreadsViaSdk(bb, since, {
+        signal: opts?.signal,
+        onScannedTotal: (count) => {
+          scannedTotal = count;
+        },
+      });
     } catch (cause) {
       threads = [];
       // A read the SDK cannot serve makes the day unknown, not red: one log line and «не проверено» in the
       // morning line — no owner item, a stale red row stays untouched.
       coreMissing = cause instanceof Error ? cause.message : String(cause);
     }
+    const finishedAt = Date.now();
     const agents = (bb as { agents?: { experimental_vkRequiredSessionPolicy?: unknown } }).agents ?? {};
-    const report = buildProfileReport({ threads, agents, now });
+    const report = buildProfileReport({
+      threads,
+      agents,
+      now,
+      runId,
+      initiator: opts?.initiator ?? "manual",
+      scheduleKey: opts?.scheduleKey ?? null,
+      startedAt,
+      finishedAt,
+      scannedTotal,
+    });
     if (coreMissing) {
       // Unverified is the whole verdict: findings computed over an empty thread substitute would be noise, not signal.
       report.unverified = coreMissing.slice(0, 300);
@@ -75,9 +99,15 @@ export type ProfileCheckApi = ReturnType<typeof createProfileCheck>["profileChec
 export { profileCheckMorningLine };
 
 export function mountProfileCheck(ctx: ServerCore, api: ProfileCheckApi): void {
-  // 04:52, after the night repairs (03:25) and before the 09:00 report: the day knows its loss by breakfast.
-  scheduleIsolated(ctx.bb, PROFILE_CHECK_SCHEDULE, "52 4 * * *", async (signal) => {
+  // Periodic readback on the canonical schedule key so session-policy drift is caught promptly and every scheduled run stamps its origin.
+  scheduleIsolated(ctx.bb, PROFILE_CHECK_SCHEDULE, "*/15 * * * *", async (signal) => {
     if (ctx.isDisposed() || signal?.aborted) return;
-    await api.check().catch((cause: unknown) => ctx.log(`profile-check failed: ${cause instanceof Error ? cause.message : String(cause)}`));
+    await api
+      .check(undefined, {
+        initiator: "scheduled",
+        scheduleKey: `lane-pilot/${PROFILE_CHECK_SCHEDULE}`,
+        signal,
+      })
+      .catch((cause: unknown) => ctx.log(`profile-check failed: ${cause instanceof Error ? cause.message : String(cause)}`));
   }, { timeoutMs: 10 * 60_000 });
 }

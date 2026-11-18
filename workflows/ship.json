@@ -59,6 +59,9 @@
   "requires": {
     "plugins": [
       "lane-pilot"
+    ],
+    "tools": [
+      "gh"
     ]
   },
   "budget": {
@@ -179,7 +182,8 @@
       },
       "out": {
         "count": "int",
-        "files": "string[]"
+        "files": "string[]",
+        "hooks_markdown": "string?"
       }
     },
     {
@@ -195,7 +199,7 @@
         "hooks_run": [],
         "hooks_failed": []
       },
-      "prompt": "Run `lane-plan render-hooks post-ship` and execute each hook it lists, in order. A failed hook does not undo the ship: return hooks_run and hooks_failed, a failed hook is listed, never retried blindly.",
+      "prompt": "Read the rendered post-ship hooks in hooks.hooks_markdown ({{hooks.files}}) and execute each hook it lists, in order. A failed hook does not undo the ship: return hooks_run and hooks_failed, a failed hook is listed, never retried blindly.",
       "out": {
         "hooks_run": "string[]",
         "hooks_failed": "string[]"
@@ -376,7 +380,11 @@
     {
       "from": "hooks",
       "to": "post_ship",
-      "pass": "artifact"
+      "pass": "artifact",
+      "with": {
+        "files": "hooks.files",
+        "hooks_markdown": "hooks.hooks_markdown"
+      }
     },
     {
       "from": "state_mark",

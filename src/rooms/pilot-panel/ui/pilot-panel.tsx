@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   experimental_Icon as BbIcon,
   useBbNavigate,
+  useRealtime,
   useRpc,
   type ExperimentalThreadTabProps,
 } from "@get-bb/plugin-sdk/app";
@@ -96,6 +97,12 @@ export function PilotThreadPanel({
     void refresh();
   });
 
+  useRealtime("pilot-panel-changed", (payload: unknown) => {
+    if ((payload as { threadId?: string } | null)?.threadId === threadId) {
+      void refresh();
+    }
+  });
+
   async function handleRunAction(action: PilotPanelAction) {
     if (!snapshot || sendingRef.current) return;
     sendingRef.current = true;
@@ -128,8 +135,13 @@ export function PilotThreadPanel({
   }
 
   async function handleToggleSkip(stepId: "quality" | "ci", skipped: boolean) {
-    await rpc.call("pilot_panel_set_readiness_skip", { threadId, stepId, skipped });
-    await refresh(true);
+    setError("");
+    try {
+      await rpc.call("pilot_panel_set_readiness_skip", { threadId, stepId, skipped });
+      await refresh(true);
+    } catch (cause) {
+      if (mountedRef.current) setError(cause instanceof Error ? cause.message : String(cause));
+    }
   }
 
   async function handleSaveDelegation(choice: PilotDelegationChoice) {
@@ -139,6 +151,7 @@ export function PilotThreadPanel({
   }
 
   const busy = Boolean(snapshot && !["idle", "error", "stopped", "completed", "archived"].includes(snapshot.session.threadState));
+  const awaitingAnswer = Boolean(snapshot?.session.pendingQuestions && snapshot.session.pendingQuestions > 0);
   const selectedPlan = snapshot?.plans.selected ?? null;
   const planDoneCount = selectedPlan ? selectedPlan.tasks.filter((t) => t.state === "done").length : 0;
   const planPct = selectedPlan && selectedPlan.tasks.length > 0 ? Math.round((planDoneCount / selectedPlan.tasks.length) * 100) : 0;
@@ -233,7 +246,7 @@ export function PilotThreadPanel({
 
             <PilotReadinessSection
               snapshot={snapshot}
-              busy={busy}
+              awaitingAnswer={awaitingAnswer}
               sending={sending}
               onRunAction={(action) => void handleRunAction(action)}
               onToggleSkip={handleToggleSkip}
@@ -393,7 +406,7 @@ export function PilotThreadPanel({
                         type="button"
                         size="sm"
                         variant={action.id === primaryActionId ? "default" : "outline"}
-                        disabled={sending || busy || !action.available}
+                        disabled={sending || awaitingAnswer || !action.available}
                         onClick={() => void handleRunAction(action)}
                       >
                         {action.label}
@@ -413,7 +426,7 @@ export function PilotThreadPanel({
                           type="button"
                           size="sm"
                           variant="outline"
-                          disabled={sending || (!direct && busy) || !action.available}
+                          disabled={sending || (!direct && awaitingAnswer) || !action.available}
                           onClick={() => void handleRunAction(action)}
                         >
                           {action.label}
@@ -428,6 +441,7 @@ export function PilotThreadPanel({
             <PilotDelegationSection
               view={snapshot.delegation}
               environmentId={environment?.id ?? snapshot.project.environmentId}
+              hostId={snapshot.project.hostId}
               busy={busy}
               hasWorkspace={Boolean(snapshot.project.rootPath)}
               onSave={handleSaveDelegation}
@@ -469,8 +483,8 @@ export function PilotThreadPanel({
             <footer className="border-t border-border pt-3 text-xs text-muted-foreground">
               Обновлено {new Date(snapshot.collectedAt).toLocaleTimeString("ru")} ·{" "}
               {busy
-                ? "шаги в чат станут доступны после завершения ответа"
-                : "кнопки шагов отправляют команду в текущий чат на standard tier"}
+                ? "агент работает — нажатые шаги ставятся в очередь текущего чата"
+                : "кнопки шагов отправляют команду в текущий чат"}
             </footer>
           </>
         )}
