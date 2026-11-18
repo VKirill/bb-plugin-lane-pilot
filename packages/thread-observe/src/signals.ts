@@ -73,8 +73,8 @@ export function createThreadSignalHub(fallbackMs = SIGNAL_FALLBACK_MS): ThreadSi
 
 const hubs = new WeakMap<object, ThreadSignalHub>();
 
-/** Identity key for a plugin-local `BbPluginApi` facade (`withStandardServiceTier`) so host and facade share per-instance state. */
-export const ORIGINAL_BB_API = Symbol("lane-pilot.originalBbApi");
+/** Shared with `src/rooms/platform/server/lp-service-tier.ts` (tested in `tests/server/lp-service-tier.test.ts`). */
+export const ORIGINAL_BB_API = Symbol.for("lane-pilot.originalBbApi");
 
 export function unwrapBbApi<T extends object>(bb: T): T {
   const raw = Reflect.get(bb, ORIGINAL_BB_API);

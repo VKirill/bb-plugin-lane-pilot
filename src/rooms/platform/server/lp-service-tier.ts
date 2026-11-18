@@ -1,8 +1,13 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
-import { ORIGINAL_BB_API, unwrapBbApi } from "@lane-pilot/thread-observe";
 import { nativeSelectionSchema, nativeThreadKey } from "../../contracts";
 
-export { unwrapBbApi };
+/** Shared with `packages/thread-observe/src/signals.ts` so partial mocks of `@lane-pilot/thread-observe` never drop `unwrapBbApi`. */
+const ORIGINAL_BB_API = Symbol.for("lane-pilot.originalBbApi");
+
+export function unwrapBbApi<T extends object>(bb: T): T {
+  const raw = Reflect.get(bb, ORIGINAL_BB_API);
+  return raw && typeof raw === "object" ? (raw as T) : bb;
+}
 
 export const LANE_PILOT_PLUGIN_ID = "lane-pilot";
 
