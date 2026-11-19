@@ -7,7 +7,7 @@ import { describe, expect, it } from "vitest";
 import { SMA_ENTRIES } from "../src/rooms/sma-map/entries";
 import { SMA_EVIDENCE } from "../src/rooms/sma-map/evidence";
 import { openDatabase } from "../src/rooms/plugin-db";
-import { SMA_PROVENANCE, anchorText, changePoints, firstSeenAfter, hash12, newerVersion, traceAfter, versionSeen, type ProvenanceFile } from "../src/rooms/sma-map/provenance";
+import { SMA_PROVENANCE, anchorText, changePoints, firstSeenAfter, hash12, localProof, newerVersion, traceAfter, versionSeen, type ProvenanceFile } from "../src/rooms/sma-map/provenance";
 import { drill, gate, kv, outside, part, readDrills, readTrace, readTraces, receipt, rows, rpc, schedule, settingRow, stage, taskField, traceSql, transition, wfRun, wfStep, type TraceSource } from "../src/rooms/sma-map/traces";
 
 const db = () => openDatabase(createFakePluginHost({ pluginId: "lane-pilot" }).bb) as never as { prepare(sql: string): { get(): unknown; all(): unknown[]; run(...args: unknown[]): unknown } };
@@ -222,10 +222,22 @@ print(json.dumps({"registered": scenes["sma_r08_local"]["nodes"], "old": "sma_r0
 });
 
 describe("SMA_PROVENANCE anchor hash sync", () => {
+  const logFix = (event: string, detail: Record<string, unknown>) => {
+    if (process.env.LOG_LEVEL === "debug" || process.env.DEBUG_FIX) {
+      process.stderr.write(`[FIX:ts2345-sma-traces] ${event} ${JSON.stringify(detail)}\n`);
+    }
+  };
+
   it("keeps recorded symbol hashes and valid commit metadata for router.ts anchors aligned with current source", () => {
     const repoRoot = join(import.meta.dirname, "..");
     for (const id of ["n1234", "n1482"] as const) {
       const proof = SMA_ENTRIES[id]?.[2];
+      logFix("input", { id, proof: proof ?? null });
+      expect(localProof(proof), id).toBe(true);
+      if (!localProof(proof)) {
+        logFix("error", { id, reason: "missing_or_external_proof" });
+        throw new Error(`Expected local proof string for ${id}`);
+      }
       const anchor = anchorText(repoRoot, proof);
       expect(anchor, id).not.toBeNull();
       const recorded = SMA_PROVENANCE.nodes[id];
@@ -233,6 +245,7 @@ describe("SMA_PROVENANCE anchor hash sync", () => {
       expect(recorded![0]).toMatch(/^[0-9a-f]{12}$/);
       expect(recorded![4]).toBe("symbol");
       expect(recorded![5]).toBe(hash12(anchor!.text));
+      logFix("success", { id, hash: recorded![5] });
     }
   });
 });
