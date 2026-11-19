@@ -163,11 +163,15 @@ export function PilotThreadPanel({
     setError("");
     setNotice("");
     const method = kind === "publish" ? "pilot_panel_publish_workflow_draft" : "pilot_panel_rollback_workflow_draft";
+    const debugPanel = Boolean(
+      (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env?.DEBUG_FIX ||
+      (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env?.LOG_LEVEL === "debug",
+    );
     try {
       const res = await rpc.call(method, { threadId, draftId });
       if (!mountedRef.current) return;
       if (!res.ok) {
-        console.warn(`[pilot-panel] ${method} failed`, { draftId, message: res.message });
+        if (debugPanel) console.warn(`[FIX:pilot-panel-drafts] ${method} failed`, { draftId, message: res.message });
         setError(res.message);
       } else {
         setNotice(res.message);
@@ -176,7 +180,7 @@ export function PilotThreadPanel({
       }
     } catch (cause) {
       const msg = cause instanceof Error ? cause.message : String(cause);
-      console.warn(`[pilot-panel] ${method} error`, { draftId, error: msg });
+      if (debugPanel) console.warn(`[FIX:pilot-panel-drafts] ${method} error`, { draftId, error: msg });
       if (mountedRef.current) setError(msg);
     } finally {
       sendingRef.current = false;

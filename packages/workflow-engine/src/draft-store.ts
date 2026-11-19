@@ -1,10 +1,10 @@
 import type Database from "better-sqlite3";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 
 import { applyDraftOps, checkDraft, newDraftDefinition, slugWorkflowId } from "./draft";
 import type { DraftCheck, DraftOp, DraftScope, RawDefinition, Refusal } from "./draft";
 import type { DraftTestResult } from "./draft-test";
-import type { ValidateOptions } from "./validate";
+import { loadWorkflow, type ValidateOptions } from "./validate";
 
 /** Appended to the plugin's migrations (append only): drafts of workflows and their version history. */
 export const draftMigrations: string[] = [
@@ -231,33 +231,74 @@ export function createDraftStore(db: Database.Database, now: () => number = Date
 
     latestPublishedSnapshot(draftId: string): PublishedSnapshotInfo | null {
       const draft = get(draftId);
-      if (!draft || !draft.publishedVersion) return null;
-      type VerRow = { version: number; definition_json: string; at: number };
-      const pick = (sql: string, ...args: unknown[]) => db.prepare(sql).get(...args) as VerRow | undefined;
-      const row = draft.status === "published"
-        ? pick("SELECT version, definition_json, at FROM lane_pilot_wf_draft_version WHERE draft_id=? AND version=?", draftId, draft.version)
-        : (draft.tests?.green && draft.testedVersion !== null && draft.testedVersion < draft.version
-            ? pick("SELECT version, definition_json, at FROM lane_pilot_wf_draft_version WHERE draft_id=? AND version=?", draftId, draft.testedVersion)
-            : undefined)
-          ?? (draft.version > 1 ? pick("SELECT version, definition_json, at FROM lane_pilot_wf_draft_version WHERE draft_id=? AND version < ? ORDER BY version DESC LIMIT 1", draftId, draft.version) : undefined)
-          ?? pick("SELECT version, definition_json, at FROM lane_pilot_wf_draft_version WHERE draft_id=? AND version <= ? ORDER BY version DESC LIMIT 1", draftId, draft.version);
+      const row = draft ? resolvePublishedVersionRow(db, draft) : null;
+      if (!draft || !draft.publishedVersion || !row) return null;
       return {
         draftId: draft.id, workflowId: draft.workflowId, publishedVersion: draft.publishedVersion,
-        draftVersion: row?.version ?? draft.version, definition: row ? JSON.parse(row.definition_json) as RawDefinition : draft.definition,
-        path: draft.publishedPath, sha256: draft.publishedSha256, at: row?.at ?? draft.updatedAt,
+        draftVersion: row.version, definition: JSON.parse(row.definition_json) as RawDefinition,
+        path: draft.publishedPath, sha256: draft.publishedSha256, at: row.at,
       };
     },
 
     previousVersionSnapshot(draftId: string): { version: number; definition: RawDefinition; summary: string; at: number } | null {
       const draft = get(draftId);
-      if (!draft) return null;
-      const raw = db.prepare("SELECT version, definition_json, summary, at FROM lane_pilot_wf_draft_version WHERE draft_id=? AND version < ? ORDER BY version DESC LIMIT 1").get(draftId, draft.version) as
-        { version: number; definition_json: string; summary: string; at: number } | undefined;
-      return raw ? { version: raw.version, definition: JSON.parse(raw.definition_json) as RawDefinition, summary: raw.summary, at: raw.at } : null;
+      const pub = draft ? resolvePublishedVersionRow(db, draft) : null;
+      fixDraftLog("previousVersionSnapshot:input", {
+        draftId, draftVersion: draft?.version ?? null, publishedVersion: draft?.publishedVersion ?? null, activeDraftVersion: pub?.version ?? null,
+      });
+      if (!draft || !pub) return null;
+      const pubNorm = JSON.stringify(withoutUi(JSON.parse(pub.definition_json) as RawDefinition));
+      const rows = db.prepare("SELECT version, definition_json, summary, at FROM lane_pilot_wf_draft_version WHERE draft_id=? AND version < ? ORDER BY version DESC")
+        .all(draftId, pub.version) as VersionSnapshotRow[];
+      for (const candidate of rows) {
+        const def = JSON.parse(candidate.definition_json) as RawDefinition;
+        if (JSON.stringify(withoutUi(def)) === pubNorm) continue;
+        if (!loadWorkflow(def).ok) continue;
+        fixDraftLog("previousVersionSnapshot:resolved", { draftId, fromDraftVersion: pub.version, rollbackVersion: candidate.version });
+        return { version: candidate.version, definition: def, summary: candidate.summary, at: candidate.at };
+      }
+      fixDraftLog("previousVersionSnapshot:none", { draftId, fromDraftVersion: pub.version });
+      return null;
     },
   };
 }
 
 export type DraftStore = ReturnType<typeof createDraftStore>;
 
+type VersionSnapshotRow = { version: number; definition_json: string; summary: string; at: number };
+
 const withoutUi = (definition: RawDefinition): Record<string, unknown> => { const { ui: _ui, ...rest } = definition as Record<string, unknown>; return rest; };
+
+const fixDraftLog = (event: string, detail: Record<string, unknown>) => {
+  if (process.env.LOG_LEVEL === "debug" || process.env.DEBUG_FIX) {
+    process.stderr.write(`[FIX:rollback-snapshot] ${event} ${JSON.stringify(detail)}\n`);
+  }
+};
+
+function publishedContentSha256(draft: DraftRow, def: RawDefinition): string | null {
+  if (!draft.publishedVersion) return null;
+  const loaded = loadWorkflow(def);
+  if (!loaded.ok) return null;
+  const scope = draft.scope === "project" ? { level: "project" as const, projectId: draft.projectId } : { level: "global" as const };
+  const final = { ...loaded.workflow, status: "published" as const, version: draft.publishedVersion, scope };
+  return createHash("sha256").update(`${JSON.stringify(final, null, 2)}\n`, "utf8").digest("hex");
+}
+
+function resolvePublishedVersionRow(db: Database.Database, draft: DraftRow): VersionSnapshotRow | null {
+  if (!draft.publishedVersion) return null;
+  const pick = (sql: string, ...args: unknown[]) => db.prepare(sql).get(...args) as VersionSnapshotRow | undefined;
+  if (draft.status === "published") {
+    return pick("SELECT version, definition_json, summary, at FROM lane_pilot_wf_draft_version WHERE draft_id=? AND version=?", draft.id, draft.version) ?? null;
+  }
+  const rows = db.prepare("SELECT version, definition_json, summary, at FROM lane_pilot_wf_draft_version WHERE draft_id=? ORDER BY version DESC")
+    .all(draft.id) as VersionSnapshotRow[];
+  if (draft.publishedSha256) {
+    for (const row of rows) {
+      if (publishedContentSha256(draft, JSON.parse(row.definition_json) as RawDefinition) === draft.publishedSha256) return row;
+    }
+  }
+  return rows.find((r) => r.version < draft.version && r.summary === "copied")
+    ?? rows.find((r) => r.version < draft.version)
+    ?? rows[0]
+    ?? null;
+}

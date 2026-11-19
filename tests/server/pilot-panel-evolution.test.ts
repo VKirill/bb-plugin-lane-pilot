@@ -381,4 +381,132 @@ describe("pilot-panel process-state and workflow evolution RPC", () => {
     expect(noPrevRes.message).toContain("Нет предыдущей версии");
     expect(logs.some((line) => line.includes("WARN [pilotPanel.workflowDrafts] rollback_unavailable"))).toBe(true);
   });
+
+  it("preserves panel visibility and 1-click rollback to v1 after a rejected red candidate or pending structural proposal, and leaves uncited deltas unprocessed", async () => {
+    const { applyGraphEvolveCandidates } = await import("../../src/rooms/night-graphs/server");
+    const { recordTrajectoryDelta, listUnprocessedTrajectoryDeltas } = await import("../../src/rooms/errands");
+    const rootPath = createTempWorkspace();
+    const { ctx, db, logs } = createEvolutionHarness(rootPath);
+    const drafts = createDraftStore(db);
+    const architect = createWorkflowArchitect(ctx, { workflowEngine: { hasExecutor: () => false } } as never);
+    const rpc = pilotPanelRpc(ctx);
+
+    // Publish v1 ("V1 baseline prompt") -> auto-publish v2 ("V2 minor prompt").
+    const seed = drafts.create({
+      projectId: "*",
+      threadId: null,
+      scope: "global",
+      name: { en: "Resilient landing flow", ru: "Устойчивый поток лендинга" },
+      description: { en: "Landing flow", ru: "Поток лендинга" },
+      workflowId: "resilient-landing-flow",
+      definition: makeWorkflowDef("resilient-landing-flow", "V1 baseline prompt for {{$inputs.target_domain}}."),
+    });
+    const v1Loaded = loadWorkflow(seed.definition);
+    if (!v1Loaded.ok) throw new Error("expected valid v1");
+    const v1Tests = [];
+    for (const tc of testCasesOf(v1Loaded.workflow)) {
+      v1Tests.push(await runDraftTest({ db, harnessVersion: HARNESS_VERSION }, v1Loaded.workflow, tc));
+    }
+    drafts.recordTests(seed.id, seed.version, v1Tests, true);
+    expect((await architect.publish({ projectId: "*", draftId: seed.id })).published).toBe(true);
+
+    const dCited = recordTrajectoryDelta(db, {
+      projectId: "proj_evo",
+      workflowId: "resilient-landing-flow",
+      stageArchetype: "copywriting",
+      interventionKind: "skill_request",
+      rawSummary: "Добавь уточнение тона для resilient-landing-flow",
+      resolvedSkills: ["ru-text"],
+    });
+    const dUncited = recordTrajectoryDelta(db, {
+      projectId: "proj_evo",
+      workflowId: "other-future-flow",
+      stageArchetype: "seo",
+      interventionKind: "rule_added",
+      rawSummary: "Проверяй canonical теги в отдельном будущем процессе",
+    });
+
+    const v2Apply = await applyGraphEvolveCandidates(
+      { db, globalDir: globalWorkflowDir, architect, log: ctx.log },
+      [
+        {
+          workflowId: "resilient-landing-flow",
+          scope: "global",
+          name: { en: "Resilient landing flow", ru: "Устойчивый поток лендинга" },
+          description: { en: "Landing flow", ru: "Поток лендинга" },
+          definition: makeWorkflowDef("resilient-landing-flow", "V2 minor prompt for {{$inputs.target_domain}}."),
+          sourceDeltaIds: [dCited.row!.id],
+        },
+      ],
+      { deltaIds: [dCited.row!.id, dUncited.row!.id] },
+    );
+    expect(v2Apply.publishedCount).toBe(1);
+    // Uncited delta from another topic must remain unprocessed.
+    expect(listUnprocessedTrajectoryDeltas(db).map((d) => d.id)).toEqual([dUncited.row!.id]);
+
+    // Subsequent night: a broken minor candidate fails runDraftTest.
+    const redDef = {
+      ...makeWorkflowDef("resilient-landing-flow", "V3 broken prompt for {{$inputs.target_domain}}."),
+      test: {
+        id: "resilient-landing-flow-sim",
+        sim: {
+          input: { target_domain: "example.com" },
+          stubs: { draft_page: { handoff: "Prepared", status: "done" } },
+          expect_path: ["draft_page", "done"],
+          expect_status: "succeeded",
+          expect_output: { status: "impossible_value" },
+        },
+      },
+    };
+    const redApply = await applyGraphEvolveCandidates(
+      { db, globalDir: globalWorkflowDir, architect, log: ctx.log },
+      [
+        {
+          workflowId: "resilient-landing-flow",
+          scope: "global",
+          name: { en: "Resilient landing flow", ru: "Устойчивый поток лендинга" },
+          description: { en: "Landing flow", ru: "Поток лендинга" },
+          definition: redDef,
+        },
+      ],
+    );
+    expect(redApply.rejectedCount).toBe(1);
+
+    // Published v2 must stay visible in Pilot panel with canRollback: true.
+    const statusAfterRed = await rpc.pilot_panel_status({ threadId: "thr_evo_3", force: true });
+    const rowAfterRed = statusAfterRed.workflowEvolution?.items.find((i) => i.draftId === seed.id);
+    expect(rowAfterRed).toMatchObject({ status: "published", publishedVersion: 2, canRollback: true });
+
+    // Next night: a green structural proposal (extra required secret -> structural_or_new) is queued as `tested` (rev 3) while v2 stays live.
+    const structuralDef = {
+      ...makeWorkflowDef("resilient-landing-flow", "V3 structural prompt for {{$inputs.target_domain}}."),
+      requires: { plugins: ["lane-pilot"], skills: [], secrets: ["NEW_API_TOKEN"], machines: [] },
+    };
+    const structApply = await applyGraphEvolveCandidates(
+      { db, globalDir: globalWorkflowDir, architect, log: ctx.log },
+      [
+        {
+          workflowId: "resilient-landing-flow",
+          scope: "global",
+          name: { en: "Resilient landing flow", ru: "Устойчивый поток лендинга" },
+          description: { en: "Landing flow", ru: "Поток лендинга" },
+          definition: structuralDef,
+        },
+      ],
+    );
+    expect(structApply.proposedCount).toBe(1);
+
+    // Clicking 1-click rollback (from panel or open v2 digest) must still restore V1 baseline prompt, NOT republish V2!
+    const statusAfterStruct = await rpc.pilot_panel_status({ threadId: "thr_evo_3", force: true });
+    const rowAfterStruct = statusAfterStruct.workflowEvolution?.items.find((i) => i.draftId === seed.id);
+    expect(rowAfterStruct).toMatchObject({ canPublish: true, canRollback: true });
+
+    const rb = await rpc.pilot_panel_rollback_workflow_draft({ threadId: "thr_evo_3", draftId: seed.id });
+    expect(rb.ok).toBe(true);
+    const diskAfterRollback = JSON.parse(readFileSync(join(globalWorkflowDir(), "resilient-landing-flow.json"), "utf8")) as {
+      nodes: Array<{ id: string; prompt?: string }>;
+    };
+    expect(diskAfterRollback.nodes.find((n) => n.id === "draft_page")?.prompt).toContain("V1 baseline prompt");
+    expect(logs.length).toBeGreaterThan(0);
+  });
 });

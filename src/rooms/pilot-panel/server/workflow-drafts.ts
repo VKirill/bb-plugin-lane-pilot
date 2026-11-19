@@ -61,7 +61,7 @@ export async function collectPilotPanelEvolutionAndState(
     ...drafts.listEvolutionDrafts({ scope: "global", limit: 15 }),
     ...(place.projectId ? drafts.listEvolutionDrafts({ scope: "project", projectId: place.projectId, limit: 15 }) : []),
   ]) {
-    if (!byId.has(row.id) && (row.status === "tested" || row.status === "published")) byId.set(row.id, row);
+    if (!byId.has(row.id) && (row.status === "tested" || row.status === "published" || row.publishedVersion !== null)) byId.set(row.id, row);
   }
   const openItems = listOpenOwnerItems(ctx.db, {});
   const items: PilotWorkflowDraftItem[] = [...byId.values()]
@@ -82,7 +82,7 @@ export async function collectPilotPanelEvolutionAndState(
         publishedVersion: draft.publishedVersion,
         testedGreen,
         canPublish: draft.status === "tested" && testedGreen,
-        canRollback: draft.status === "published" && drafts.previousVersionSnapshot(draft.id) !== null,
+        canRollback: draft.publishedVersion !== null && drafts.previousVersionSnapshot(draft.id) !== null,
         summary: ownerItem?.what ?? drafts.history(draft.id, 1)[0]?.summary ?? titleOf(draft.definition.description, draft.workflowId),
         ownerItemKey: ownerItem?.key ?? null,
         updatedAt: draft.updatedAt,
@@ -155,6 +155,7 @@ export async function rollbackPanelWorkflowDraft(
   const draft = drafts.get(input.draftId);
   if (!draft) return { ok: false, message: `Черновик ${input.draftId} не найден.` };
   const prev = drafts.previousVersionSnapshot(draft.id);
+  if (process.env.LOG_LEVEL === "debug" || process.env.DEBUG_FIX) ctx.log(`[FIX:rollback-snapshot] rollback_request ${redactKnown(JSON.stringify({ draftId: draft.id, draftVersion: draft.version, publishedVersion: draft.publishedVersion, targetVersion: prev?.version ?? null }))}`);
   if (!prev) {
     ctx.log(`WARN [pilotPanel.workflowDrafts] rollback_unavailable ${redactKnown(JSON.stringify({ draftId: draft.id, workflowId: draft.workflowId }))}`);
     return { ok: false, message: "Нет предыдущей версии графа для отката." };

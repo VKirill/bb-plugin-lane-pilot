@@ -56,6 +56,9 @@ const evolveRooms = new Map<string, string>();
 const bilingual = (v: string | { en: string; ru: string }) => typeof v === "string" ? { en: v, ru: v } : { en: v.en || v.ru, ru: v.ru || v.en };
 const titleRuOf = (v: string | { en: string; ru: string }, fallback: string) => (typeof v === "string" ? v : v.ru || v.en) || fallback;
 const parseJson = <T,>(raw: unknown, fallback: T): T => { try { return typeof raw === "string" && raw ? (JSON.parse(raw) as T) : fallback; } catch { return fallback; } };
+const fixEvolveLog = (log: (m: string) => void, event: string, detail: Record<string, unknown>) => {
+  if (process.env.LOG_LEVEL === "debug" || process.env.DEBUG_FIX) log(`[FIX:graph-evolve] ${event} ${redactKnown(JSON.stringify(detail))}`);
+};
 
 /** Collects enriched process clusters and unprocessed trajectory deltas for nightly graph evolution. */
 export function collectGraphEvolveEvidence(
@@ -127,7 +130,7 @@ export async function applyGraphEvolveCandidates(
   const resolve = deps.resolveWorkflow ?? ((id: string, version?: number) => builtinWorkflow(id, version));
   const drafts = createDraftStore(deps.db, now), architect = buildArchitect(deps, dirFn);
   const outcomes: GraphEvolveOutcome[] = [];
-  let publishedCount = 0, proposedCount = 0, rejectedCount = 0;
+  let publishedCount = 0, proposedCount = 0, rejectedCount = 0, citedAnyDelta = false;
 
   for (const candidate of candidates) {
     const workflowId = candidate.workflowId.trim();
@@ -166,20 +169,23 @@ export async function applyGraphEvolveCandidates(
       rejectedCount += 1; continue;
     }
 
+    const results = [];
+    for (const tc of testCasesOf(loaded.workflow)) results.push(await runDraftTest({ db: deps.db as never, harnessVersion: HARNESS_VERSION, resolveWorkflow: resolve, now }, loaded.workflow, tc));
+    const allGreen = results.length > 0 && results.every((r) => r.green);
+    if (!allGreen) {
+      fixEvolveLog(log, "rejected_before_mutate", { workflowId, existingDraftId: existing?.id ?? null, cases: results.length });
+      log(`WARN [nightGraphs.graphEvolve] tested ${redactKnown(JSON.stringify({ workflowId, draftId: existing?.id ?? null, cases: results.length, green: false }))}`);
+      outcomes.push({ workflowId, draftId: existing?.id ?? null, kind: diff.kind, status: "rejected_tests", version: null, reason: results.filter((r) => !r.green).flatMap((r) => r.failures).slice(0, 4).join("; ") || "draft_test_failed" });
+      rejectedCount += 1; continue;
+    }
+
     const draft = existing && (!diskBase || existing.publishedSha256 === diskBase.sha256)
       ? drafts.replaceDefinition(existing.id, preparedDef, `nightly evolution (${diff.kind})`)!
       : diskBase
         ? drafts.replaceDefinition(drafts.create({ projectId, threadId: null, scope: candidate.scope, name: candidate.name, description: candidate.description, workflowId, definition: diskBase.def, base: { path: diskBase.path, sha256: diskBase.sha256, version: diskBase.version } }).id, preparedDef, `nightly evolution (${diff.kind})`)!
         : drafts.create({ projectId, threadId: null, scope: candidate.scope, name: candidate.name, description: candidate.description, workflowId, definition: preparedDef });
-
-    const results = [];
-    for (const tc of testCasesOf(loaded.workflow)) results.push(await runDraftTest({ db: deps.db as never, harnessVersion: HARNESS_VERSION, resolveWorkflow: resolve, now }, loaded.workflow, tc));
-    const recorded = drafts.recordTests(draft.id, draft.version, results, true) ?? draft, allGreen = results.length > 0 && results.every((r) => r.green);
-    log(`${allGreen ? "INFO" : "WARN"} [nightGraphs.graphEvolve] tested ${redactKnown(JSON.stringify({ workflowId, draftId: recorded.id, draftVersion: recorded.version, cases: results.length, green: allGreen }))}`);
-    if (!allGreen) {
-      outcomes.push({ workflowId, draftId: recorded.id, kind: diff.kind, status: "rejected_tests", version: null, reason: results.filter((r) => !r.green).flatMap((r) => r.failures).slice(0, 4).join("; ") || "draft_test_failed" });
-      rejectedCount += 1; continue;
-    }
+    const recorded = drafts.recordTests(draft.id, draft.version, results, true) ?? draft;
+    log(`INFO [nightGraphs.graphEvolve] tested ${redactKnown(JSON.stringify({ workflowId, draftId: recorded.id, draftVersion: recorded.version, cases: results.length, green: true }))}`);
 
     const titleRu = titleRuOf(candidate.name, workflowId), ownerProject = recorded.scope === "project" ? recorded.projectId : null;
     if (diff.kind === "minor_patch" && baseDef) {
@@ -190,7 +196,7 @@ export async function applyGraphEvolveCandidates(
         outcomes.push({ workflowId, draftId: recorded.id, kind: diff.kind, status: "publish_failed", version: null, reason });
         rejectedCount += 1; continue;
       }
-      if (candidate.sourceDeltaIds?.length) markTrajectoryDeltasProcessed(deps.db, candidate.sourceDeltaIds, now(), log);
+      if (candidate.sourceDeltaIds?.length) { citedAnyDelta = true; markTrajectoryDeltasProcessed(deps.db, candidate.sourceDeltaIds, now(), log); }
       const nextVer = Number((pub as { workflowVersion?: number }).workflowVersion ?? (Number(baseDef.version ?? 1) + 1));
       postOwnerItem(deps.db, {
         key: `workflow-evolved:${recorded.id}:v${nextVer}`, source: "night", kind: "workflow_evolved_digest", projectId: ownerProject, wake: false,
@@ -203,7 +209,7 @@ export async function applyGraphEvolveCandidates(
       outcomes.push({ workflowId, draftId: recorded.id, kind: diff.kind, status: "auto_published", version: nextVer });
       publishedCount += 1;
     } else {
-      if (candidate.sourceDeltaIds?.length) markTrajectoryDeltasProcessed(deps.db, candidate.sourceDeltaIds, now(), log);
+      if (candidate.sourceDeltaIds?.length) { citedAnyDelta = true; markTrajectoryDeltasProcessed(deps.db, candidate.sourceDeltaIds, now(), log); }
       postOwnerItem(deps.db, {
         key: `workflow-draft:${recorded.id}:v${recorded.version}`, source: "night", kind: "workflow_draft_proposed", projectId: ownerProject, wake: true,
         what: `Предложен ${baseDef ? "обновлённый" : "новый"} граф «${titleRu}» (${workflowId}, draft v${recorded.version})`,
@@ -217,7 +223,10 @@ export async function applyGraphEvolveCandidates(
     }
   }
 
-  if (options?.deltaIds?.length && rejectedCount === 0 && publishedCount + proposedCount > 0) markTrajectoryDeltasProcessed(deps.db, options.deltaIds, now(), log);
+  if (options?.deltaIds?.length && !citedAnyDelta && rejectedCount === 0 && publishedCount + proposedCount > 0) {
+    fixEvolveLog(log, "batch_mark_deltas", { count: options.deltaIds.length });
+    markTrajectoryDeltasProcessed(deps.db, options.deltaIds, now(), log);
+  }
   return { outcomes, publishedCount, proposedCount, rejectedCount, summary: `graph-evolve: ${publishedCount} auto-published, ${proposedCount} proposed, ${rejectedCount} rejected` };
 }
 
@@ -227,16 +236,13 @@ async function synthesizeInIsolatedRoom(ctx: ServerCore, services: Services, col
     services.resolveProjectWriterHost({ projectId: id } as never).catch((cause: unknown) => { ctx.log(`WARN [nightGraphs.graphEvolve] host_lookup ${cause instanceof Error ? cause.message : String(cause)}`); return null; }));
   if (!place || (place as { status?: string }).status !== "resolved") throw new Error("graph_evolve_no_host");
   const project = place as { hostId: string; path: string };
-  let room = evolveRooms.get(project.hostId);
-  if (!room) {
-    const made = await ctx.host.call("runCommand", {
-      requestedHostId: project.hostId, cwd: project.path, timeoutSec: 30,
-      command: 'mkdir -p "$HOME/.lane-pilot/graph-evolve" && cd "$HOME/.lane-pilot/graph-evolve" && pwd',
-    }, { hostId: project.hostId, timeoutMs: 40_000 }) as { exitCode: number; stdout: string };
-    room = made.exitCode === 0 ? made.stdout.trim().split("\n").at(-1) : undefined;
-    if (!room) throw new Error("graph_evolve_no_empty_room");
-    evolveRooms.set(project.hostId, room);
-  }
+  const made = await ctx.host.call("runCommand", {
+    requestedHostId: project.hostId, cwd: project.path, timeoutSec: 30,
+    command: 'mkdir -p "$HOME/.lane-pilot/graph-evolve" && cd "$HOME/.lane-pilot/graph-evolve" && pwd',
+  }, { hostId: project.hostId, timeoutMs: 40_000 }) as { exitCode: number; stdout: string };
+  const room = (made.exitCode === 0 ? made.stdout.trim().split("\n").at(-1) : undefined) ?? evolveRooms.get(project.hostId);
+  if (!room) throw new Error("graph_evolve_no_empty_room");
+  evolveRooms.set(project.hostId, room);
   const host = { hostId: project.hostId, path: room };
   const settings = (await ctx.effectiveProjectSettings(GLOBAL_SETTINGS_PROJECT_ID).catch(() => null))?.values ?? {};
   const spawnUsage = spawnUsageOf(ctx);
@@ -252,7 +258,7 @@ async function synthesizeInIsolatedRoom(ctx: ServerCore, services: Services, col
   ].join("\n\n"));
   const text = await services.ruleScan.runAnalyzer(threadProject ?? "*", "graph-evolve-nightly", prompt, host, {
     providerId: role.providerId, model: role.model, reasoningLevel: role.reasoningEffort, serviceTier: role.serviceTier,
-  }, { graphEvolve: true }, "episode-analyst");
+  }, { graphEvolve: true }, "episode-analyst").catch((err: unknown) => { evolveRooms.delete(project.hostId); throw err; });
   const start = text.indexOf("{"), end = text.lastIndexOf("}");
   if (start < 0 || end <= start) return [];
   const parsed = parseJson<{ candidates?: unknown }>(text.slice(start, end + 1), {});

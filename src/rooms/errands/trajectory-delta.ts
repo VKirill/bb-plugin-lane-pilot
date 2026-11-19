@@ -4,6 +4,7 @@ import { pmSkillName } from "../native-agent";
 import {
   hasExplicitSkillIntent,
   resolveSkillIntent,
+  shouldEmitSkillLog,
   type SkillCatalogItem,
   type SkillIntentLogLevel,
 } from "./skill-intent";
@@ -81,31 +82,11 @@ export type RecordTrajectoryDeltaResult = {
   readonly reason?: string;
 };
 
-type DbLike = {
-  prepare(sql: string): {
-    run(...params: unknown[]): { changes: number };
-    get(...params: unknown[]): unknown;
-    all(...params: unknown[]): unknown[];
-  };
-};
+type DbStmt = { run(...params: unknown[]): { changes: number }; get(...params: unknown[]): unknown; all(...params: unknown[]): unknown[] };
+type DbLike = { prepare(sql: string): DbStmt };
 
 const KIND_SET = new Set<string>(TRAJECTORY_INTERVENTION_KINDS);
 const SUMMARY_CLIP = 600;
-const LOG_RANK: Readonly<Record<SkillIntentLogLevel, number>> = {
-  debug: 10,
-  info: 20,
-  warn: 30,
-  error: 40,
-  silent: 99,
-};
-
-function effectiveLevel(override?: SkillIntentLogLevel, hasLogger = false): SkillIntentLogLevel {
-  if (override) return override;
-  const envRaw = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env?.LOG_LEVEL;
-  const envLevel = envRaw?.trim().toLowerCase() as SkillIntentLogLevel | undefined;
-  if (envLevel && envLevel in LOG_RANK) return envLevel;
-  return hasLogger ? "debug" : "info";
-}
 
 function emit(
   sink: ((message: string) => void) | undefined,
@@ -114,8 +95,7 @@ function emit(
   payload: Record<string, unknown>,
   override?: SkillIntentLogLevel,
 ): void {
-  if (!sink) return;
-  if (LOG_RANK[level] < LOG_RANK[effectiveLevel(override, true)]) return;
+  if (!sink || !shouldEmitSkillLog(level, override, true)) return;
   sink(redactKnown(`${level.toUpperCase()} [errands.trajectoryDelta] ${event} ${JSON.stringify(payload)}`));
 }
 
@@ -128,20 +108,14 @@ const parseSkills = (json: string | null | undefined): string[] => {
   try {
     const parsed = json ? (JSON.parse(json) as unknown) : [];
     return Array.isArray(parsed) ? parsed.map((s) => String(s)).filter(Boolean) : [];
-  } catch {
-    return [];
-  }
+  } catch { return []; }
 };
 
 const toRow = (raw: Record<string, unknown>): TrajectoryDeltaRow => ({
-  id: String(raw.id),
-  projectId: (raw.project_id as string | null) ?? null,
-  threadId: (raw.thread_id as string | null) ?? null,
-  workflowId: (raw.workflow_id as string | null) ?? null,
-  stageArchetype: String(raw.stage_archetype),
-  interventionKind: String(raw.intervention_kind) as TrajectoryInterventionKind,
-  resolvedSkills: parseSkills(raw.resolved_skills_json as string | null),
-  maskedSummary: String(raw.masked_summary),
+  id: String(raw.id), projectId: (raw.project_id as string | null) ?? null,
+  threadId: (raw.thread_id as string | null) ?? null, workflowId: (raw.workflow_id as string | null) ?? null,
+  stageArchetype: String(raw.stage_archetype), interventionKind: String(raw.intervention_kind) as TrajectoryInterventionKind,
+  resolvedSkills: parseSkills(raw.resolved_skills_json as string | null), maskedSummary: String(raw.masked_summary),
   ownerAccepted: Number(raw.owner_accepted) === 1,
   processedAt: raw.processed_at === null || raw.processed_at === undefined ? null : Number(raw.processed_at),
   createdAt: Number(raw.created_at),

@@ -92,12 +92,11 @@ function matchingDomains(text: string): Map<string, number> {
   return out;
 }
 
-function effectiveLogLevel(options?: ResolveSkillIntentOptions): SkillIntentLogLevel {
-  if (options?.logLevel) return options.logLevel;
+export function shouldEmitSkillLog(level: SkillIntentLogLevel, override?: SkillIntentLogLevel, hasLogger = false): boolean {
   const envRaw = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env?.LOG_LEVEL;
   const envLevel = envRaw?.trim().toLowerCase() as SkillIntentLogLevel | undefined;
-  if (envLevel && envLevel in LOG_RANK) return envLevel;
-  return options?.log ? "debug" : "info";
+  const effective = override ?? (envLevel && envLevel in LOG_RANK ? envLevel : hasLogger ? "debug" : "info");
+  return LOG_RANK[level] >= LOG_RANK[effective];
 }
 
 function emitLog(
@@ -105,9 +104,7 @@ function emitLog(
   level: "debug" | "info",
   payload: Record<string, unknown>,
 ): void {
-  if (!options?.log) return;
-  const threshold = LOG_RANK[effectiveLogLevel(options)];
-  if (LOG_RANK[level] < threshold) return;
+  if (!options?.log || !shouldEmitSkillLog(level, options.logLevel, true)) return;
   const tag = level === "debug" ? "DEBUG" : "INFO";
   options.log(redactKnown(`${tag} [errands.skillIntent] resolved ${JSON.stringify(payload)}`));
 }

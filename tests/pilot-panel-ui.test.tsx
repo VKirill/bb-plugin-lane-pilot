@@ -355,15 +355,16 @@ describe("Lane Pilot chat header icon and right-hand thread panel UI", () => {
         draftId: "wfd_evo_2",
       });
 
-      // Error handling when ok === false
+      // Error handling when ok === false (quiet in console by default, opt-in via DEBUG_FIX)
       mockPublishHandler = async () => ({ ok: false, message: "Публикация отклонена: tests_not_green" });
       fireEvent.click(view.getByText("Опубликовать граф"));
       await waitFor(() =>
         expect(view.getByRole("alert").textContent).toContain("Публикация отклонена: tests_not_green"),
       );
-      expect(warnSpy).toHaveBeenCalled();
+      expect(warnSpy).not.toHaveBeenCalled();
 
-      // Error handling when RPC throws
+      // Error handling when RPC throws (with DEBUG_FIX enabled)
+      process.env.DEBUG_FIX = "1";
       mockRollbackHandler = async () => {
         throw new Error("rollback transport failed");
       };
@@ -371,7 +372,12 @@ describe("Lane Pilot chat header icon and right-hand thread panel UI", () => {
       await waitFor(() =>
         expect(view.getByRole("alert").textContent).toContain("rollback transport failed"),
       );
+      expect(warnSpy).toHaveBeenCalledWith("[FIX:pilot-panel-drafts] pilot_panel_rollback_workflow_draft error", {
+        draftId: "wfd_evo_2",
+        error: "rollback transport failed",
+      });
     } finally {
+      delete process.env.DEBUG_FIX;
       warnSpy.mockRestore();
     }
   });
