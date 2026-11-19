@@ -4,6 +4,7 @@ import type { ServerCore } from "../../contracts/server";
 import type { PilotDelegationChoice } from "../index";
 import { materializeProjectPilotSetup, type ProjectPilotBootstrapResult } from "./project-skills";
 import { createPilotPanelService } from "./service";
+import { registerPilotProcessStateAction, type PilotPanelWorkflowDeps } from "./workflow-drafts";
 
 /**
  * Idempotent project preparation invoked automatically when Lane Pilot activates on a checkout:
@@ -33,7 +34,11 @@ export async function bootstrapProjectForPilot(
   );
 }
 
-export function pilotPanelRpc(ctx: ServerCore, deps: { activate?: ActivationApi["activate"] } = {}) {
+export function pilotPanelRpc(
+  ctx: ServerCore,
+  deps: { activate?: ActivationApi["activate"] } & PilotPanelWorkflowDeps = {},
+) {
+  if (deps.workflowEngine) registerPilotProcessStateAction(deps.workflowEngine, ctx);
   const service = createPilotPanelService(ctx, deps);
   try {
     const events = (ctx.bb as { events?: { on?: (event: string, cb: (payload: { thread?: { id?: string; parentThreadId?: string | null } }) => void) => void } }).events;
@@ -65,5 +70,9 @@ export function pilotPanelRpc(ctx: ServerCore, deps: { activate?: ActivationApi[
       fingerprint: string;
       requestId: string;
     }) => service.runAction(input),
+    pilot_panel_publish_workflow_draft: (input: { threadId?: string; draftId: string }) =>
+      service.publishWorkflowDraft(input),
+    pilot_panel_rollback_workflow_draft: (input: { threadId?: string; draftId: string }) =>
+      service.rollbackWorkflowDraft(input),
   };
 }

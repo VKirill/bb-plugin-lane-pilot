@@ -27,6 +27,12 @@ import {
   inspectProjectPilotWorkspace,
   materializeProjectPilotSetup,
 } from "./project-skills";
+import {
+  collectPilotPanelEvolutionAndState,
+  publishPanelWorkflowDraft,
+  rollbackPanelWorkflowDraft,
+  type PilotPanelWorkflowDeps,
+} from "./workflow-drafts";
 
 type DeliveryRecord = {
   requestId: string;
@@ -42,7 +48,7 @@ const deliveriesStorageKey = (threadId: string) => `pilot-panel-deliveries:${thr
 
 export function createPilotPanelService(
   ctx: ServerCore,
-  deps: { activate?: ActivationApi["activate"] } = {},
+  deps: { activate?: ActivationApi["activate"] } & PilotPanelWorkflowDeps = {},
 ) {
   const { bb, db } = ctx;
   const resolvePlace = (threadId: string) => resolveThreadPlace(ctx, threadId);
@@ -109,34 +115,24 @@ export function createPilotPanelService(
     const canActivatePm = Boolean(
       place.projectId && deps.activate && place.pluginRole !== "writer" && loadPrototypeConfig(db, place.projectId),
     );
+    const baseSession = {
+      threadId: place.threadId, providerId: place.providerId, threadState: place.threadState, pendingQuestions: place.pendingQuestions,
+      role: place.pluginRole, cleanSubthreadsActive: cleanCap, serviceTierPolicy: "standard" as const, activeRun, runItems,
+    };
+    const baseProject = { id: place.projectId, name: place.projectName, hostId: place.hostId, rootPath: place.rootPath, environmentId: place.environmentId };
     if (!place.hostId || !place.rootPath) {
       diagnostics.push("У текущего чата ещё не выбрана рабочая папка проекта; подключите папку проекта для автоподготовки и установки скиллов.");
-      const emptyDelegation = await collectDelegationView(ctx, place, { mode: "pilot-lanes" }, false, null, activeRun?.runId ?? null);
-      const fingerprint = createHash("sha256").update(JSON.stringify([place.threadId, "no-workspace", activeRun?.runId ?? null])).digest("hex");
+      const [emptyDelegation, evo] = await Promise.all([
+        collectDelegationView(ctx, place, { mode: "pilot-lanes" }, false, null, activeRun?.runId ?? null),
+        collectPilotPanelEvolutionAndState(ctx, { hostId: null, rootPath: null, projectId: place.projectId }),
+      ]);
+      const fingerprint = createHash("sha256").update(JSON.stringify([place.threadId, "no-workspace", activeRun?.runId ?? null, evo.workflowEvolution.items.map((i) => `${i.draftId}:${i.version}:${i.status}`)])).digest("hex");
       return {
         collectedAt: new Date().toISOString(),
         fingerprint,
         pluginVersion: currentPluginVersion(),
-        project: {
-          id: place.projectId,
-          name: place.projectName,
-          hostId: place.hostId,
-          rootPath: place.rootPath,
-          environmentId: place.environmentId,
-          gitBranch: null,
-          gitDirty: null,
-        },
-        session: {
-          threadId: place.threadId,
-          providerId: place.providerId,
-          threadState: place.threadState,
-          pendingQuestions: place.pendingQuestions,
-          role: place.pluginRole,
-          cleanSubthreadsActive: cleanCap,
-          serviceTierPolicy: "standard",
-          activeRun,
-          runItems,
-        },
+        project: { ...baseProject, gitBranch: null, gitDirty: null },
+        session: baseSession,
         readiness: [],
         projectSkills: { rootRelPath: PILOT_SKILLS_DIR_REL_PATH, total: 0, synced: 0, items: [] },
         plans: { candidates: [], selected: null },
@@ -153,12 +149,18 @@ export function createPilotPanelService(
           providerId: place.providerId,
           canActivatePm,
         }),
+        processState: null,
+        workflowEvolution: evo.workflowEvolution,
         diagnostics,
       };
     }
 
-    const inspected = await inspectProjectPilotWorkspace(ctx, { hostId: place.hostId, rootPath: place.rootPath });
+    const [inspected, evo] = await Promise.all([
+      inspectProjectPilotWorkspace(ctx, { hostId: place.hostId, rootPath: place.rootPath }),
+      collectPilotPanelEvolutionAndState(ctx, { hostId: place.hostId, rootPath: place.rootPath, projectId: place.projectId }),
+    ]);
     if (inspected.configError) diagnostics.push(inspected.configError);
+    if (evo.processStateError) diagnostics.push(evo.processStateError);
 
     const skipped = (await bb.storage.kv.get<string[]>(skipStorageKey(place.hostId, place.rootPath))) ?? [];
     const missingOrOutdated = inspected.skillStates.filter((s) => s.state !== "synced").map((s) => s.name);
@@ -215,34 +217,21 @@ export function createPilotPanelService(
           selectedPlan?.path ?? "",
           selectedPlan?.tasks.map((t) => t.state) ?? [],
           activeRun?.runId ?? "",
+          evo.processState?.updatedAt ?? "",
+          evo.workflowEvolution.items.map((i) => `${i.draftId}:${i.version}:${i.status}:${i.canPublish}:${i.canRollback}`),
         ]),
       )
       .digest("hex");
+    if (process.env.LOG_LEVEL?.trim().toLowerCase() === "debug") {
+      ctx.log(`DEBUG [pilotPanel.status] fingerprint ${JSON.stringify({ threadId: place.threadId, fingerprint: fingerprint.slice(0, 12), evo: evo.workflowEvolution.items.length })}`);
+    }
 
     return {
       collectedAt: new Date().toISOString(),
       fingerprint,
       pluginVersion: currentPluginVersion(),
-      project: {
-        id: place.projectId,
-        name: place.projectName,
-        hostId: place.hostId,
-        rootPath: place.rootPath,
-        environmentId: place.environmentId,
-        gitBranch: inspected.gitBranch,
-        gitDirty: inspected.gitDirty,
-      },
-      session: {
-        threadId: place.threadId,
-        providerId: place.providerId,
-        threadState: place.threadState,
-        pendingQuestions: place.pendingQuestions,
-        role: place.pluginRole,
-        cleanSubthreadsActive: cleanCap,
-        serviceTierPolicy: "standard",
-        activeRun,
-        runItems,
-      },
+      project: { ...baseProject, gitBranch: inspected.gitBranch, gitDirty: inspected.gitDirty },
+      session: baseSession,
       readiness,
       projectSkills: {
         rootRelPath: PILOT_SKILLS_DIR_REL_PATH,
@@ -267,6 +256,8 @@ export function createPilotPanelService(
         providerId: place.providerId,
         canActivatePm,
       }),
+      processState: evo.processState,
+      workflowEvolution: evo.workflowEvolution,
       diagnostics,
     };
   }
@@ -457,7 +448,25 @@ export function createPilotPanelService(
     });
   }
 
-  return { status, prepareProject, setDelegation, setReadinessSkip, runAction };
+  async function runDraftOp(
+    op: typeof publishPanelWorkflowDraft,
+    input: { draftId: string; threadId?: string },
+  ) {
+    const res = await op(ctx, deps, input);
+    if (res.ok && input.threadId) notifyPanelChanged(input.threadId, res.projectId);
+    const snapshot = res.ok && input.threadId ? await status({ threadId: input.threadId, force: true }) : undefined;
+    return { ok: res.ok, message: res.message, ...(snapshot ? { snapshot } : {}) };
+  }
+
+  return {
+    status,
+    prepareProject,
+    setDelegation,
+    setReadinessSkip,
+    runAction,
+    publishWorkflowDraft: (input: { draftId: string; threadId?: string }) => runDraftOp(publishPanelWorkflowDraft, input),
+    rollbackWorkflowDraft: (input: { draftId: string; threadId?: string }) => runDraftOp(rollbackPanelWorkflowDraft, input),
+  };
 }
 
 export type PilotPanelService = ReturnType<typeof createPilotPanelService>;

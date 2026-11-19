@@ -84,7 +84,7 @@ function isMissingFileError(cause: unknown): boolean {
   return code === "ENOENT" || /\bENOENT\b|not[ _-]?found|does not exist/i.test(msg);
 }
 
-async function readRelText(
+export async function readRelText(
   filesApi: CasFilesLike,
   hostId: string,
   rootPath: string,
@@ -113,7 +113,7 @@ async function readRelText(
   }
 }
 
-async function writeExactCas(
+export async function writeExactCas(
   filesApi: CasFilesLike,
   args: {
     hostId: string;

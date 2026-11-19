@@ -12,6 +12,8 @@ configure({ asyncUtilTimeout: 8_000 });
 
 const rpcCalls: Array<{ method: string; args: unknown }> = [];
 let mockSnapshot: PilotPanelSnapshot;
+let mockPublishHandler: ((args: unknown) => Promise<unknown>) | null = null;
+let mockRollbackHandler: ((args: unknown) => Promise<unknown>) | null = null;
 
 vi.mock("@get-bb/plugin-sdk/app", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@get-bb/plugin-sdk/app")>();
@@ -26,6 +28,14 @@ vi.mock("@get-bb/plugin-sdk/app", async (importOriginal) => {
         }
         if (method === "pilot_panel_set_readiness_skip") return { ok: true };
         if (method === "pilot_panel_set_delegation") return mockSnapshot.delegation;
+        if (method === "pilot_panel_publish_workflow_draft") {
+          if (mockPublishHandler) return mockPublishHandler(args);
+          return { ok: true, message: "Граф new-site-archetype (v1) опубликован.", snapshot: mockSnapshot };
+        }
+        if (method === "pilot_panel_rollback_workflow_draft") {
+          if (mockRollbackHandler) return mockRollbackHandler(args);
+          return { ok: true, message: "Граф universal-landing-flow откачен и опубликован (v1).", snapshot: mockSnapshot };
+        }
         return {};
       },
     }),
@@ -168,6 +178,54 @@ function makeSnapshotFixture(): PilotPanelSnapshot {
         available: true,
       },
     ],
+    processState: {
+      stage: "design-approved",
+      workflowId: "universal-landing-flow",
+      approvedDesignBaseline: {
+        path: "docs/design/landing-v2.md",
+        sha256: "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2",
+        label: "Дизайн лендинга v2",
+      },
+      rejectedVariants: ["Вариант с тёмным фоном без контраста"],
+      activeSkills: ["ru-text", "mkt-landing-cro"],
+      updatedAt: "2026-11-18T07:00:00.000Z",
+    },
+    workflowEvolution: {
+      items: [
+        {
+          draftId: "wfd_new_1",
+          workflowId: "new-site-archetype",
+          title: "Новый архетип сайта",
+          scope: "global",
+          status: "tested",
+          version: 1,
+          publishedVersion: null,
+          testedGreen: true,
+          canPublish: true,
+          canRollback: false,
+          summary: "Предложен новый универсальный граф для лендингов",
+          ownerItemKey: "workflow-draft:wfd_new_1:v1",
+          updatedAt: 1760000000000,
+        },
+        {
+          draftId: "wfd_evo_2",
+          workflowId: "universal-landing-flow",
+          title: "Универсальный поток лендинга",
+          scope: "global",
+          status: "published",
+          version: 2,
+          publishedVersion: 2,
+          testedGreen: true,
+          canPublish: false,
+          canRollback: true,
+          summary: "Утреннее обновление v1 -> v2: добавлен навык ru-text",
+          ownerItemKey: "workflow-evolved:wfd_evo_2:v2",
+          updatedAt: 1760000005000,
+        },
+      ],
+      autoPublishedCount: 1,
+      pendingApprovalCount: 1,
+    },
     diagnostics: [],
   };
 }
@@ -177,6 +235,8 @@ describe("Lane Pilot chat header icon and right-hand thread panel UI", () => {
     cleanup();
     document.body.innerHTML = "";
     rpcCalls.length = 0;
+    mockPublishHandler = null;
+    mockRollbackHandler = null;
     mockSnapshot = makeSnapshotFixture();
   });
 
@@ -254,5 +314,65 @@ describe("Lane Pilot chat header icon and right-hand thread panel UI", () => {
     );
     expect(PilotDelegationSection).toBeTypeOf("function");
     expect(PilotReadinessSection).toBeTypeOf("function");
+  });
+
+  it("renders process state and workflow evolution drafts, supports 1-click publish/rollback, and surfaces RPC errors", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      const { PilotThreadPanel } = await import("../src/rooms/pilot-panel/ui");
+      const view = render(<PilotThreadPanel threadId="thr_main" environment={{ id: "env_demo" }} />);
+
+      await waitFor(() => expect(view.getByText("Состояние процесса")).toBeTruthy());
+      expect(view.getByText("design-approved")).toBeTruthy();
+      expect(view.getByText("Дизайн лендинга v2")).toBeTruthy();
+      expect(view.getByText("#a1b2c3d4")).toBeTruthy();
+      expect(view.getByText("ru-text")).toBeTruthy();
+      expect(view.getByText("Отклонённые варианты · 1")).toBeTruthy();
+
+      expect(view.getByText("Эволюция графов")).toBeTruthy();
+      expect(view.getByText("Новый архетип сайта")).toBeTruthy();
+      expect(view.getByText("Универсальный поток лендинга")).toBeTruthy();
+      expect(view.getByText(/v1 → v2 · опубликован/)).toBeTruthy();
+
+      // 1-click publish
+      fireEvent.click(view.getByText("Опубликовать граф"));
+      await waitFor(() =>
+        expect(rpcCalls.some((c) => c.method === "pilot_panel_publish_workflow_draft")).toBe(true),
+      );
+      expect(rpcCalls.find((c) => c.method === "pilot_panel_publish_workflow_draft")?.args).toEqual({
+        threadId: "thr_main",
+        draftId: "wfd_new_1",
+      });
+      await waitFor(() => expect(view.getByRole("status").textContent).toContain("опубликован"));
+
+      // 1-click rollback
+      fireEvent.click(view.getByText("Откатить версию"));
+      await waitFor(() =>
+        expect(rpcCalls.some((c) => c.method === "pilot_panel_rollback_workflow_draft")).toBe(true),
+      );
+      expect(rpcCalls.find((c) => c.method === "pilot_panel_rollback_workflow_draft")?.args).toEqual({
+        threadId: "thr_main",
+        draftId: "wfd_evo_2",
+      });
+
+      // Error handling when ok === false
+      mockPublishHandler = async () => ({ ok: false, message: "Публикация отклонена: tests_not_green" });
+      fireEvent.click(view.getByText("Опубликовать граф"));
+      await waitFor(() =>
+        expect(view.getByRole("alert").textContent).toContain("Публикация отклонена: tests_not_green"),
+      );
+      expect(warnSpy).toHaveBeenCalled();
+
+      // Error handling when RPC throws
+      mockRollbackHandler = async () => {
+        throw new Error("rollback transport failed");
+      };
+      fireEvent.click(view.getByText("Откатить версию"));
+      await waitFor(() =>
+        expect(view.getByRole("alert").textContent).toContain("rollback transport failed"),
+      );
+    } finally {
+      warnSpy.mockRestore();
+    }
   });
 });

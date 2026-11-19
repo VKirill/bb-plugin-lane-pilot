@@ -238,7 +238,13 @@ export function registerRpc(ctx: ServerCore, services: Services, contract: typeo
     ...architectStartRpc(ctx, services),
     ...anamnesisFor(ctx).rpc,
     ...passportRpc(ctx),
-    ...pilotPanelRpc(ctx, { activate: services.activate }),
+    ...pilotPanelRpc(ctx, {
+      activate: services.activate,
+      docsPlaces: services.docsPlaces,
+      workflowCatalog: services.workflowCatalog,
+      workflowEngine: services.workflowEngine,
+      workflowTriggers: services.workflowTriggers,
+    }),
     specialist_overview: async ({ projectId }: { projectId?: string }) => specialistOverview(ctx.db, projectId),
     ...worldRpc(services.world),
   }, (message) => ctx.bb.log.debug(message)), (name, input) => services.front?.journal(name, input), (message) => ctx.log(message)));

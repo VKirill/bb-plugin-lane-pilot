@@ -119,6 +119,7 @@ export function pilotAgentsContextBlock(): string {
     "- Описание стека и проверенных команд (`typecheck`, `lint`, `test`, `build`): `.agents/pilot/DESCRIPTION.md`.",
     "- Архитектура модулей и границы импортов: `.agents/pilot/ARCHITECTURE.md`.",
     "- Базовые конвенции кода проекта: `.agents/pilot/rules/base.md`.",
+    "- Состояние стадии процесса, baseline и отклонённые варианты: `.agents/pilot/process-state.json`.",
     "- Планы задач с зависимостями: `.agents/pilot/plans/<slug>.md`.",
     "- Стандартизированные системные скиллы лежат прямо внутри проекта в `.bb/skills/` (`lane-pilot`, `lp-project-setup`, `lp-plan`, `lp-implement`, `lp-verify`, `lp-writer`, `lp-docs`, `lane-memory`, `project-life`, `lp-agentic-discipline`, `karpathy-guidelines`), поэтому доступны на любой машине и в чистых субтредах.",
   ].join("\n");

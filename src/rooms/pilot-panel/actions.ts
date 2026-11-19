@@ -1,5 +1,6 @@
 import { type PilotPanelAction, type PilotPanelSnapshot } from "./contract";
 import { PILOT_SKILLS_DIR_REL_PATH } from "./delegation";
+import { formatProcessStatePromptLine, getCachedProcessState } from "./process-state";
 
 export function mapPilotTaskColumn(state: string | null): "queued" | "running" | "checking" | "blocked" | "done" {
   if (!state) return "queued";
@@ -175,6 +176,18 @@ export function buildPilotPanelActions(input: {
 }
 
 export function buildPilotActionPrompt(
+  actionId: string,
+  snapshot: PilotPanelSnapshot,
+): { visible: string; context: string } | null {
+  const built = buildRawPilotActionPrompt(actionId, snapshot);
+  if (!built) return null;
+  const processLine = formatProcessStatePromptLine(
+    snapshot.processState ?? getCachedProcessState(snapshot.project.rootPath),
+  );
+  return processLine ? { visible: built.visible, context: `${built.context}\n${processLine}` } : built;
+}
+
+function buildRawPilotActionPrompt(
   actionId: string,
   snapshot: PilotPanelSnapshot,
 ): { visible: string; context: string } | null {

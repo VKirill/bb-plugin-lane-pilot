@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { pilotDelegationChoiceSchema } from "./delegation";
+import { pilotProcessStateSchema } from "./process-state";
 
 export const PILOT_PROJECT_SKILLS = [
   "lane-pilot",
@@ -82,6 +83,28 @@ export const pilotDelegationViewSchema = z.object({
   children: z.array(pilotChildThreadSchema),
 }).strict();
 
+export const pilotWorkflowDraftItemSchema = z.object({
+  draftId: z.string(),
+  workflowId: z.string(),
+  title: z.string(),
+  scope: z.enum(["global", "project"]),
+  status: z.enum(["draft", "tested", "published"]),
+  version: z.number(),
+  publishedVersion: z.number().nullable(),
+  testedGreen: z.boolean(),
+  canPublish: z.boolean(),
+  canRollback: z.boolean(),
+  summary: z.string(),
+  ownerItemKey: z.string().nullable(),
+  updatedAt: z.number(),
+}).strict();
+
+export const pilotWorkflowEvolutionSchema = z.object({
+  items: z.array(pilotWorkflowDraftItemSchema),
+  autoPublishedCount: z.number(),
+  pendingApprovalCount: z.number(),
+}).strict();
+
 export const pilotPanelSnapshotSchema = z.object({
   collectedAt: z.string(),
   fingerprint: z.string(),
@@ -124,6 +147,8 @@ export const pilotPanelSnapshotSchema = z.object({
   }).strict(),
   delegation: pilotDelegationViewSchema,
   actions: z.array(pilotPanelActionSchema),
+  processState: pilotProcessStateSchema.nullable().optional(),
+  workflowEvolution: pilotWorkflowEvolutionSchema.optional(),
   diagnostics: z.array(z.string()),
 }).strict();
 
@@ -131,6 +156,8 @@ export type PilotPanelSnapshot = z.infer<typeof pilotPanelSnapshotSchema>;
 export type PilotPanelAction = z.infer<typeof pilotPanelActionSchema>;
 export type PilotDelegationView = z.infer<typeof pilotDelegationViewSchema>;
 export type PilotChildThread = z.infer<typeof pilotChildThreadSchema>;
+export type PilotWorkflowDraftItem = z.infer<typeof pilotWorkflowDraftItemSchema>;
+export type PilotWorkflowEvolution = z.infer<typeof pilotWorkflowEvolutionSchema>;
 
 export const pilotPanelRpcMethods = {
   pilot_panel_status: {
@@ -183,6 +210,28 @@ export const pilotPanelRpcMethods = {
       threadId: z.string().optional(),
       runId: z.string().optional(),
       message: z.string(),
+    }).strict(),
+  },
+  pilot_panel_publish_workflow_draft: {
+    input: z.object({
+      threadId: z.string().optional(),
+      draftId: z.string().min(1),
+    }).strict(),
+    output: z.object({
+      ok: z.boolean(),
+      message: z.string(),
+      snapshot: pilotPanelSnapshotSchema.optional(),
+    }).strict(),
+  },
+  pilot_panel_rollback_workflow_draft: {
+    input: z.object({
+      threadId: z.string().optional(),
+      draftId: z.string().min(1),
+    }).strict(),
+    output: z.object({
+      ok: z.boolean(),
+      message: z.string(),
+      snapshot: pilotPanelSnapshotSchema.optional(),
     }).strict(),
   },
 };

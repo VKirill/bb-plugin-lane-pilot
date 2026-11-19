@@ -16,7 +16,13 @@ import type {
 } from "../index";
 import { PilotDelegationSection } from "./delegation-section";
 import { PanelCallout, PanelDisclosure, PanelSection, StatusDot } from "./layout";
+import {
+  PilotProcessStateSection,
+  PilotProjectSkillsDisclosure,
+  PilotProjectSummaryCard,
+} from "./process-state-section";
 import { PilotReadinessSection } from "./readiness-section";
+import { PilotWorkflowDraftsSection } from "./workflow-drafts-section";
 
 export const PILOT_THREAD_TAB_ID = "pilot-panel";
 
@@ -93,7 +99,7 @@ export function PilotThreadPanel({
     return () => window.clearInterval(timer);
   }, [refresh]);
 
-  useLpRealtime(snapshot?.project.id ?? null, ["helpers", "rules", "workflow"], () => {
+  useLpRealtime(snapshot?.project.id ?? null, ["helpers", "rules", "workflow", "workflow-draft"], () => {
     void refresh();
   });
 
@@ -148,6 +154,34 @@ export function PilotThreadPanel({
     await rpc.call("pilot_panel_set_delegation", { threadId, choice });
     setNotice("Настройки делегирования и .agents/pilot/config.json сохранены.");
     await refresh(true);
+  }
+
+  async function handleDraftAction(kind: "publish" | "rollback", draftId: string) {
+    if (sendingRef.current) return;
+    sendingRef.current = true;
+    setSending(true);
+    setError("");
+    setNotice("");
+    const method = kind === "publish" ? "pilot_panel_publish_workflow_draft" : "pilot_panel_rollback_workflow_draft";
+    try {
+      const res = await rpc.call(method, { threadId, draftId });
+      if (!mountedRef.current) return;
+      if (!res.ok) {
+        console.warn(`[pilot-panel] ${method} failed`, { draftId, message: res.message });
+        setError(res.message);
+      } else {
+        setNotice(res.message);
+        if (res.snapshot) setSnapshot(res.snapshot);
+        else void refresh(true);
+      }
+    } catch (cause) {
+      const msg = cause instanceof Error ? cause.message : String(cause);
+      console.warn(`[pilot-panel] ${method} error`, { draftId, error: msg });
+      if (mountedRef.current) setError(msg);
+    } finally {
+      sendingRef.current = false;
+      if (mountedRef.current) setSending(false);
+    }
   }
 
   const busy = Boolean(snapshot && !["idle", "error", "stopped", "completed", "archived"].includes(snapshot.session.threadState));
@@ -209,40 +243,7 @@ export function PilotThreadPanel({
 
         {snapshot && (
           <>
-            <PanelSection
-              label="Текущий проект"
-              title="Текущий проект"
-              aside={
-                <Badge variant="outline" className="truncate font-normal">
-                  {snapshot.session.serviceTierPolicy} · чистые субтреды
-                </Badge>
-              }
-            >
-              <div className="flex min-w-0 flex-col gap-1">
-                <strong className="truncate text-sm font-semibold">
-                  {snapshot.project.name ?? snapshot.project.id ?? "Проект не выбран"}
-                </strong>
-                {snapshot.project.rootPath && (
-                  <code className="block truncate text-xs text-muted-foreground" title={snapshot.project.rootPath}>
-                    {snapshot.project.rootPath}
-                  </code>
-                )}
-              </div>
-              <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground tabular-nums">
-                {snapshot.project.gitBranch && (
-                  <span>
-                    Git <b className="font-semibold text-foreground">{snapshot.project.gitBranch}</b>
-                    {snapshot.project.gitDirty ? " · есть изменения" : " · чисто"}
-                  </span>
-                )}
-                <span>
-                  Скиллы в проекте{" "}
-                  <b className="font-semibold text-foreground">
-                    {snapshot.projectSkills.synced}/{snapshot.projectSkills.total}
-                  </b>
-                </span>
-              </div>
-            </PanelSection>
+            <PilotProjectSummaryCard snapshot={snapshot} />
 
             <PilotReadinessSection
               snapshot={snapshot}
@@ -447,28 +448,16 @@ export function PilotThreadPanel({
               onSave={handleSaveDelegation}
             />
 
-            {snapshot.projectSkills.items.length > 0 && (
-              <PanelDisclosure
-                summary={`Скиллы в проекте (${snapshot.projectSkills.rootRelPath}) · ${snapshot.projectSkills.synced}/${snapshot.projectSkills.total}`}
-              >
-                <p className="m-0 text-xs text-muted-foreground">
-                  Все системные скиллы лежат локально внутри репозитория в `.bb/skills/`, автоматически подхватываются BB для этого проекта и читаются чистыми субтредами с диска.
-                </p>
-                <ul className="m-0 flex list-none flex-col gap-1.5 p-0 text-xs">
-                  {snapshot.projectSkills.items.map((sk) => (
-                    <li key={sk.name} className="flex min-w-0 items-center justify-between gap-2">
-                      <code className="truncate">{sk.name}</code>
-                      <Badge
-                        variant={sk.state === "synced" ? "secondary" : "outline"}
-                        className="shrink-0 text-[11px]"
-                      >
-                        {sk.state === "synced" ? "актуален" : sk.state === "outdated" ? "обновить" : "отсутствует"}
-                      </Badge>
-                    </li>
-                  ))}
-                </ul>
-              </PanelDisclosure>
-            )}
+            <PilotProcessStateSection processState={snapshot.processState} />
+
+            <PilotWorkflowDraftsSection
+              evolution={snapshot.workflowEvolution}
+              busy={sending}
+              onPublish={(draftId) => void handleDraftAction("publish", draftId)}
+              onRollback={(draftId) => void handleDraftAction("rollback", draftId)}
+            />
+
+            <PilotProjectSkillsDisclosure projectSkills={snapshot.projectSkills} />
 
             {snapshot.diagnostics.length > 0 && (
               <PanelDisclosure summary={`Примечания · ${snapshot.diagnostics.length}`}>
