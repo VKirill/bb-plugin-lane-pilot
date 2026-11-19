@@ -169,9 +169,11 @@ const UI_WORD = w("ui|ux|gui"), UI_START = p("дизайн|design|интерфе
 const isUi = (text: string): boolean => UI_WORD.test(text) || UI_START.test(text);
 const BUILD_FROM_SCRATCH = p("с нуля|from scratch|заново|design and build|design system|дизайн систем|responsive|адаптив|состояни|states|спроектируй|пиксел|pixel");
 const AUDIT_WORDS = p("оцен|удобн|usabilit|аудит|audit|heuristic|насколько|how good|how usable|evaluate|critique|ux review|review (the )?(ui|ux|design|page)");
-const WRITES = ["analyze-plan-execute", "full-lifecycle", "refactor", "review-fix", "quality-loop", "issue-full", "issue-quick", "companion", "impeccable-build", "test-gen", "grill-driven", "brainstorm-driven", "roadmap-driven", "blueprint-driven", "deploy"];
+const WRITES = ["analyze-plan-execute", "full-lifecycle", "refactor", "review-fix", "quality-loop", "issue-full", "issue-quick", "companion", "impeccable-build", "site-creation", "test-gen", "grill-driven", "brainstorm-driven", "roadmap-driven", "blueprint-driven", "deploy"];
 const some = (ids: string[], value: number): Record<string, number> => Object.fromEntries(ids.map((id) => [id, value]));
 const STAGE_GROUPS = [p("plan|план|спланир"), p("implement|реализ|build|сделай|напиш|разработ|code|кодим|кодинг"), p("review|ревью|критик|code review"), p("test|тест|qa"), p("accept|приемк|merge|слить|слияни")];
+const SITE_CREATE = p("(?:созда|разработа|сдела|постро|запуст|спроектиру)\\S*\\s+(?:\\S+\\s+){0,2}(?:новы[йем]\\s+)?(?:сайт|веб-?сайт|website|web\\s+site)|(?:create|build|launch|make|design)\\s+(?:a\\s+|an\\s+|the\\s+)?(?:new\\s+)?(?:website|web\\s+site)(?!\\s+s\\b)|(?:сайт|веб-?сайт|website)\\s+(?:с нуля|под\\s+(?:ниш|тематик|бизнес|клиник|студи|сервис|магазин)|с\\s+референс|from\\s+scratch|with\\s+references)");
+const SITE_EXCLUDE = p("анамнез|anamnesis|обо мне|визитк|что нибудь|something|главн\\S* страниц|home\\s*page|страниц\\S* сайта");
 
 /** In order: the first rules mark the area, the last ones (`tiny-edit`) only fire when nothing more specific did. */
 const RULES: Rule[] = [
@@ -233,6 +235,8 @@ const RULES: Rule[] = [
   { id: "api-recon", apply: (s) => p("свой (api|апи)|собственн\\S* (api|апи)|our own (api|automation)|(api|апи) (map|карт)|карт\\S* (api|апи)|reverse engineer|private api|закрыт\\S* (api|апи)|все (его )?(post |get )?запрос|every request|all (its )?requests|network calls|fetch/xhr").test(s.text)
     && p("кабинет|cabinet|dashboard|сервис|service|сайт|website|site|personal account|лк").test(s.text) ? { note: "map a web service's API from its pages", boosts: { "api-recon": 0.6 } } : null },
   { id: "security", apply: (s, prior) => !prior.has("api-recon") && p("безопасност|уязвим|security|vulnerab|дыр\\S* в|pentest|injection|xss|csrf").test(s.text) ? { note: "security", boosts: { "security-audit": 0.5 } } : null },
+  { id: "site-creation", apply: (s, prior) => !["seo", "deploy", "api-recon", "security", "x-digest", "video"].some((id) => prior.has(id)) && SITE_CREATE.test(s.text) && !SITE_EXCLUDE.test(s.text)
+    ? { note: "full website creation request", boosts: { "site-creation": 0.55, "impeccable-build": -0.2, "about-site": -0.25 } } : null },
   { id: "pr-review", apply: (s) => s.pr || p("pull request|merge request|diff|code review|ревью кода|review (the |this |my )?(pr|diff|changes|commit)").test(s.text)
     ? { note: s.pr ? `pull request ${s.pr}` : "review of a change", boosts: { "code-review": 0.4 } } : null },
   { id: "findings-fix", apply: (s) => p("нашел|нашла|нашли|находк|замечани|finding|critic found|reviewer (found|said)|review (found|comments)|after the review|после ревью|по ревью").test(s.text) && FIX.test(s.text)
@@ -513,7 +517,7 @@ function goalsFor(workflow: Workflow, intent: string): RouteGoal[] {
 export type RunRecord = { succeeded: number; failed: number; lastRunAt: number | null; executed: number; workDone: number; refused: number; escalated: number };
 export type RouteInput = { intent: string; request?: string; context?: string; workflows: ReadonlyArray<Workflow>; state?: RouterState; model?: RouterModel | null;
   /** Run statistics by workflow id: between candidates the text search scores (nearly) alike, the one that has run well and lately comes first. Never lets a worse text match win. */
-  stats?: ReadonlyMap<string, RunRecord>; now?: number };
+  stats?: ReadonlyMap<string, RunRecord>; now?: number; log?: (message: string) => void };
 
 /** How much the run record can move a score: less than the gap between two different text matches, enough to order two that are alike. */
 export const STAT_WEIGHT = 0.02;
@@ -644,6 +648,9 @@ export async function routeIntent(input: RouteInput): Promise<RouteDecision> {
   const filled = fillInputs(chosen, assignmentSignals, request, output.inputs);
   if (needsLiveTrial(chosen)) warnings.push(`${chosen.id} passed its tests on stubs but has not run for real yet: when the assignment from the owner or a BB agent requests this outcome, start it with liveTrial: true; its human confirmations still apply before irreversible steps`);
   if (chosen.id === "milestone-close" && (input.state?.openTasks?.() ?? 0) > 0) warnings.push(`${input.state!.openTasks!()} tasks of this run are still open: close the milestone only after they finish`);
+  if (chosen.id === "site-creation" || hits.some((hit) => hit.id === "site-creation")) {
+    input.log?.(`workflow: router site-creation ${JSON.stringify({ workflowId: chosen.id, confidence: output.confidence, rules: hits.map((hit) => hit.id) })}`);
+  }
   return empty({
     decision: "route", workflowId: chosen.id, liveTrial: needsLiveTrial(chosen), confidence: output.confidence, evidence: record(output.pattern, output.rejected), candidates, warnings,
     boundary_contract: boundaryFor({ workflow: chosen, s: assignmentSignals, intent: request, context: input.context, hits: assignmentHits }), goals: goalsFor(chosen, request),

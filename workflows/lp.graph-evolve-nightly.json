@@ -1,0 +1,230 @@
+{
+  "id": "lp.graph-evolve-nightly",
+  "startedBy": "graph-evolve-nightly",
+  "name": {
+    "en": "Nightly workflow graph evolution",
+    "ru": "Ночная эволюция графов воркфлоу"
+  },
+  "description": {
+    "en": "Collects enriched errand episode clusters and unprocessed trajectory deltas, synthesizes de-projectized universal graph candidates in an isolated room, validates and stub-tests each candidate, and either auto-publishes minor patches or proposes new/structural graphs for owner approval.",
+    "ru": "Собирает обогащённые кластеры эпизодов и необработанные траекторные дельты, синтезирует депроектизированных кандидатов универсальных графов в изолированной комнате, валидирует и прогоняет их тест-симуляции, после чего автопубликует минорные патчи или выносит новые/структурные графы на подтверждение владельца."
+  },
+  "status": "published",
+  "tags": [
+    "night",
+    "graph-evolve",
+    "workflows"
+  ],
+  "triggers": [
+    "manual",
+    "schedule"
+  ],
+  "inputs": {},
+  "outputs": {
+    "status": "done|empty|held",
+    "publishedCount": "int",
+    "proposedCount": "int",
+    "rejectedCount": "int",
+    "summary": "string"
+  },
+  "budget": {
+    "max_minutes": 60
+  },
+  "nodes": [
+    {
+      "id": "collect",
+      "type": "action",
+      "action": "lp.graph_evolve_collect",
+      "title": {
+        "en": "Collect clusters and trajectory deltas",
+        "ru": "Собрать кластеры и траекторные дельты"
+      },
+      "out": {
+        "status": "ready|empty",
+        "clustersCount": "int",
+        "deltasCount": "int",
+        "payload_json": "string"
+      },
+      "guards": {
+        "timeoutMin": 10
+      }
+    },
+    {
+      "id": "empty_done",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "empty",
+        "publishedCount": 0,
+        "proposedCount": 0,
+        "rejectedCount": 0,
+        "summary": "'graph-evolve: nothing to process'"
+      }
+    },
+    {
+      "id": "synthesize",
+      "type": "action",
+      "action": "lp.graph_evolve_synthesize",
+      "title": {
+        "en": "Synthesize universal graph candidates",
+        "ru": "Синтезировать кандидатов универсальных графов"
+      },
+      "out": {
+        "candidatesCount": "int",
+        "candidates_json": "string"
+      },
+      "guards": {
+        "timeoutMin": 25
+      }
+    },
+    {
+      "id": "apply",
+      "type": "action",
+      "action": "lp.graph_evolve_apply",
+      "title": {
+        "en": "De-projectize, test and apply candidates",
+        "ru": "Депроектизировать, протестировать и применить кандидатов"
+      },
+      "out": {
+        "status": "done|held",
+        "publishedCount": "int",
+        "proposedCount": "int",
+        "rejectedCount": "int",
+        "summary": "string"
+      },
+      "guards": {
+        "timeoutMin": 20
+      }
+    },
+    {
+      "id": "done",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "apply.status",
+        "publishedCount": "apply.publishedCount",
+        "proposedCount": "apply.proposedCount",
+        "rejectedCount": "apply.rejectedCount",
+        "summary": "apply.summary"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "start",
+      "to": "collect"
+    },
+    {
+      "from": "collect",
+      "to": "empty_done",
+      "when": "collect.status == 'empty'"
+    },
+    {
+      "from": "collect",
+      "to": "synthesize"
+    },
+    {
+      "from": "synthesize",
+      "to": "apply"
+    },
+    {
+      "from": "apply",
+      "to": "done"
+    }
+  ],
+  "test": {
+    "id": "graph-evolve-1",
+    "sim": {
+      "input": {},
+      "stubs": {
+        "collect": {
+          "status": "ready",
+          "clustersCount": 2,
+          "deltasCount": 3,
+          "payload_json": "{\"status\":\"ready\"}"
+        },
+        "synthesize": {
+          "candidatesCount": 1,
+          "candidates_json": "[{\"workflowId\":\"universal-candidate\"}]"
+        },
+        "apply": {
+          "status": "done",
+          "publishedCount": 1,
+          "proposedCount": 0,
+          "rejectedCount": 0,
+          "summary": "graph-evolve: 1 auto-published, 0 proposed, 0 rejected"
+        }
+      },
+      "expect_path": [
+        "collect",
+        "synthesize",
+        "apply",
+        "done"
+      ],
+      "expect_output": {
+        "status": "done",
+        "publishedCount": 1,
+        "proposedCount": 0,
+        "rejectedCount": 0,
+        "summary": "graph-evolve: 1 auto-published, 0 proposed, 0 rejected"
+      },
+      "variant_empty": {
+        "stubs": {
+          "collect": {
+            "status": "empty",
+            "clustersCount": 0,
+            "deltasCount": 0,
+            "payload_json": "{\"status\":\"empty\"}"
+          }
+        },
+        "expect_path": [
+          "collect",
+          "empty_done"
+        ],
+        "expect_output": {
+          "status": "empty",
+          "publishedCount": 0,
+          "proposedCount": 0,
+          "rejectedCount": 0,
+          "summary": "graph-evolve: nothing to process"
+        }
+      },
+      "variant_held": {
+        "stubs": {
+          "collect": {
+            "status": "ready",
+            "clustersCount": 1,
+            "deltasCount": 1,
+            "payload_json": "{\"status\":\"ready\"}"
+          },
+          "synthesize": {
+            "candidatesCount": 1,
+            "candidates_json": "[{\"workflowId\":\"rejected-candidate\"}]"
+          },
+          "apply": {
+            "status": "held",
+            "publishedCount": 0,
+            "proposedCount": 0,
+            "rejectedCount": 1,
+            "summary": "graph-evolve: 0 auto-published, 0 proposed, 1 rejected"
+          }
+        },
+        "expect_path": [
+          "collect",
+          "synthesize",
+          "apply",
+          "done"
+        ],
+        "expect_output": {
+          "status": "held",
+          "publishedCount": 0,
+          "proposedCount": 0,
+          "rejectedCount": 1,
+          "summary": "graph-evolve: 0 auto-published, 0 proposed, 1 rejected"
+        }
+      }
+    },
+    "live": "the graph-evolve-nightly cron (04:50 UTC), or a manual run of lp.graph-evolve-nightly"
+  },
+  "goal_check": "artifact"
+}

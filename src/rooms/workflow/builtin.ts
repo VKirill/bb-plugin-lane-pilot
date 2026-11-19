@@ -51,6 +51,7 @@ import lpHarnessEdit from "../../../workflows/lp.harness-edit.json";
 import lpCriticEdit from "../../../workflows/lp.critic-edit.json";
 import lpHarnessReflect from "../../../workflows/lp.harness-reflect.json";
 import lpEpisodes from "../../../workflows/lp.episodes.json";
+import lpGraphEvolveNightly from "../../../workflows/lp.graph-evolve-nightly.json";
 import lpPmReplay from "../../../workflows/lp.pm-replay.json";
 import lpWallHunt from "../../../workflows/lp.wall-hunt.json";
 import lpRulesAsk from "../../../workflows/lp.rules-ask.json";
@@ -119,6 +120,7 @@ import spike from "../../../workflows/spike.json";
 import sketchWrapUp from "../../../workflows/sketch-wrap-up.json";
 import specialist from "../../../workflows/specialist.json";
 import ship from "../../../workflows/ship.json";
+import siteCreation from "../../../workflows/site-creation.json";
 import prBranch from "../../../workflows/pr-branch.json";
 import cleanup from "../../../workflows/cleanup.json";
 import newMilestone from "../../../workflows/new-milestone.json";
@@ -191,6 +193,7 @@ export const BUILTIN_SOURCES: ReadonlyArray<{ name: string; value: unknown }> = 
   { name: "lp.critic-edit.json", value: lpCriticEdit },
   { name: "lp.harness-reflect.json", value: lpHarnessReflect },
   { name: "lp.episodes.json", value: lpEpisodes },
+  { name: "lp.graph-evolve-nightly.json", value: lpGraphEvolveNightly },
   { name: "lp.pm-replay.json", value: lpPmReplay },
   { name: "lp.wall-hunt.json", value: lpWallHunt },
   { name: "lp.rules-ask.json", value: lpRulesAsk },
@@ -259,6 +262,7 @@ export const BUILTIN_SOURCES: ReadonlyArray<{ name: string; value: unknown }> = 
   { name: "sketch-wrap-up.json", value: sketchWrapUp },
   { name: "specialist.json", value: specialist },
   { name: "ship.json", value: ship },
+  { name: "site-creation.json", value: siteCreation },
   { name: "pr-branch.json", value: prBranch },
   { name: "cleanup.json", value: cleanup },
   { name: "new-milestone.json", value: newMilestone },
