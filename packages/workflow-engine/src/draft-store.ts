@@ -78,6 +78,12 @@ export type PatchResult =
 
 export type RestoreResult = { ok: true; draft: DraftRow } | { ok: false; reason: "not_found" | "version_conflict" | "no_such_version"; currentVersion?: number };
 
+export type EvolutionDraftFilter = { scope?: "global" | "project"; projectId?: string; status?: DraftStatus | readonly DraftStatus[]; workflowId?: string; limit?: number };
+export type PublishedSnapshotInfo = {
+  draftId: string; workflowId: string; publishedVersion: number; draftVersion: number;
+  definition: RawDefinition; path: string | null; sha256: string | null; at: number;
+};
+
 export function createDraftStore(db: Database.Database, now: () => number = Date.now) {
   const get = (id: string): DraftRow | null => {
     const raw = db.prepare("SELECT * FROM lane_pilot_wf_draft WHERE id=?").get(id) as Raw | undefined;
@@ -179,6 +185,24 @@ export function createDraftStore(db: Database.Database, now: () => number = Date
       return get(draftId);
     },
 
+    /** Replaces a draft's full definition as the next version, preserving version history and rollback snapshots. */
+    replaceDefinition(draftId: string, definition: RawDefinition, summary: string): DraftRow | null {
+      return db.transaction((): DraftRow | null => {
+        const draft = get(draftId);
+        if (!draft) return null;
+        const scope = { level: draft.scope, ...(draft.scope === "project" ? { projectId: draft.projectId } : {}) };
+        const normalized: RawDefinition = { ...definition, id: draft.workflowId, status: "draft", scope };
+        const json = JSON.stringify(normalized);
+        const nextVersion = draft.version + 1;
+        const at = now();
+        db.prepare("UPDATE lane_pilot_wf_draft SET definition_json=?, workflow_id=?, version=?, status='draft', updated_at=? WHERE id=? AND version=?")
+          .run(json, draft.workflowId, nextVersion, at, draftId, draft.version);
+        db.prepare("INSERT INTO lane_pilot_wf_draft_version(draft_id,version,definition_json,summary,ops_json,at) VALUES (?,?,?,?,NULL,?)")
+          .run(draftId, nextVersion, json, summary.slice(0, 2000), at);
+        return get(draftId);
+      })();
+    },
+
     history(draftId: string, limit = 50): Array<{ version: number; summary: string; at: number }> {
       return db.prepare("SELECT version, summary, at FROM lane_pilot_wf_draft_version WHERE draft_id=? ORDER BY version DESC LIMIT ?").all(draftId, limit) as Array<{ version: number; summary: string; at: number }>;
     },
@@ -186,6 +210,50 @@ export function createDraftStore(db: Database.Database, now: () => number = Date
     definitionAt(draftId: string, version: number): RawDefinition | null {
       const raw = db.prepare("SELECT definition_json FROM lane_pilot_wf_draft_version WHERE draft_id=? AND version=?").get(draftId, version) as { definition_json: string } | undefined;
       return raw ? JSON.parse(raw.definition_json) as RawDefinition : null;
+    },
+
+    listEvolutionDrafts(filter: EvolutionDraftFilter = {}): DraftRow[] {
+      const clauses: string[] = [];
+      const params: unknown[] = [];
+      if (filter.scope) { clauses.push("scope=?"); params.push(filter.scope); }
+      if (filter.projectId !== undefined) { clauses.push("project_id=?"); params.push(filter.projectId); }
+      if (filter.workflowId) { clauses.push("workflow_id=?"); params.push(filter.workflowId); }
+      if (filter.status !== undefined) {
+        const statuses = Array.isArray(filter.status) ? filter.status : [filter.status];
+        if (!statuses.length) return [];
+        clauses.push(`status IN (${statuses.map(() => "?").join(",")})`);
+        params.push(...statuses);
+      }
+      const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
+      const limit = Math.max(1, Math.min(filter.limit ?? 50, 200));
+      return (db.prepare(`SELECT * FROM lane_pilot_wf_draft ${where} ORDER BY updated_at DESC, id DESC LIMIT ?`).all(...params, limit) as Raw[]).map(toRow);
+    },
+
+    latestPublishedSnapshot(draftId: string): PublishedSnapshotInfo | null {
+      const draft = get(draftId);
+      if (!draft || !draft.publishedVersion) return null;
+      type VerRow = { version: number; definition_json: string; at: number };
+      const pick = (sql: string, ...args: unknown[]) => db.prepare(sql).get(...args) as VerRow | undefined;
+      const row = draft.status === "published"
+        ? pick("SELECT version, definition_json, at FROM lane_pilot_wf_draft_version WHERE draft_id=? AND version=?", draftId, draft.version)
+        : (draft.tests?.green && draft.testedVersion !== null && draft.testedVersion < draft.version
+            ? pick("SELECT version, definition_json, at FROM lane_pilot_wf_draft_version WHERE draft_id=? AND version=?", draftId, draft.testedVersion)
+            : undefined)
+          ?? (draft.version > 1 ? pick("SELECT version, definition_json, at FROM lane_pilot_wf_draft_version WHERE draft_id=? AND version < ? ORDER BY version DESC LIMIT 1", draftId, draft.version) : undefined)
+          ?? pick("SELECT version, definition_json, at FROM lane_pilot_wf_draft_version WHERE draft_id=? AND version <= ? ORDER BY version DESC LIMIT 1", draftId, draft.version);
+      return {
+        draftId: draft.id, workflowId: draft.workflowId, publishedVersion: draft.publishedVersion,
+        draftVersion: row?.version ?? draft.version, definition: row ? JSON.parse(row.definition_json) as RawDefinition : draft.definition,
+        path: draft.publishedPath, sha256: draft.publishedSha256, at: row?.at ?? draft.updatedAt,
+      };
+    },
+
+    previousVersionSnapshot(draftId: string): { version: number; definition: RawDefinition; summary: string; at: number } | null {
+      const draft = get(draftId);
+      if (!draft) return null;
+      const raw = db.prepare("SELECT version, definition_json, summary, at FROM lane_pilot_wf_draft_version WHERE draft_id=? AND version < ? ORDER BY version DESC LIMIT 1").get(draftId, draft.version) as
+        { version: number; definition_json: string; summary: string; at: number } | undefined;
+      return raw ? { version: raw.version, definition: JSON.parse(raw.definition_json) as RawDefinition, summary: raw.summary, at: raw.at } : null;
     },
   };
 }

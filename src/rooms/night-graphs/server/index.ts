@@ -4,13 +4,14 @@
 import type { ServerCore } from "../../contracts/server";
 import { mountCriticEditGraph } from "./critic-edit-graph";
 import { mountEpisodesGraph } from "./episodes-graph";
+import { mountGraphEvolveNightly } from "./graph-evolve-graph";
 
 
 import type { BenchApi } from "../../bench/service";
 import type { DocsNightlyApi } from "../../docs/server/docs-nightly";
 import type { HarnessApi } from "../../harness/server/harness";
 import type { RuleScanApi } from "../../self-repair/server/rule-scan";
-import type { WallGraphApi, WorkflowEngineApi, WriterHostApi } from "../../platform/server";
+import type { WallGraphApi, WorkflowEngineApi, WorkflowTriggersApi, WriterHostApi } from "../../platform/server";
 
 /** The fields of the services bag this file reads, typed by the rooms that own them. */
 interface Services {
@@ -21,8 +22,22 @@ interface Services {
   ruleScan: RuleScanApi;
   wall: WallGraphApi;
   workflowEngine: WorkflowEngineApi["workflowEngine"];
+  workflowCatalog?: WorkflowEngineApi["workflowCatalog"];
+  workflowTriggers?: WorkflowTriggersApi["workflowTriggers"];
 }
 export { analystPlace, episodeSweepDeps } from "./episodes-graph";
+export {
+  GRAPH_EVOLVE_CRON,
+  GRAPH_EVOLVE_SCHEDULE,
+  GRAPH_EVOLVE_WORKFLOW,
+  applyGraphEvolveCandidates,
+  collectGraphEvolveEvidence,
+  mountGraphEvolveNightly,
+  type GraphEvolveCandidate,
+  type GraphEvolveCollectSummary,
+  type GraphEvolveDeps,
+  type GraphEvolveOutcome,
+} from "./graph-evolve-graph";
 import { mountHarnessGraph } from "./harness-graph";
 import { mountRulesScanGraph } from "./rules-scan-graph";
 import { mountWallHuntGraph } from "./wall-hunt-graph";
@@ -33,4 +48,5 @@ export function mountNightGraphs(ctx: ServerCore, services: Services): void {
   mountHarnessGraph(ctx, services);
   mountCriticEditGraph(ctx, services);
   mountEpisodesGraph(ctx, services);
+  mountGraphEvolveNightly(ctx, services);
 }
