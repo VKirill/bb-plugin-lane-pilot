@@ -130,19 +130,55 @@ function skillReadsOf(events: readonly unknown[]): Set<string> {
     if (!/read/iu.test(tool)) continue;
     const input = (item.input ?? item.arguments ?? item.params ?? {}) as Record<string, unknown>;
     const path = String(input.path ?? input.file_path ?? input.file ?? "");
-    const match = /([^/\s]+)\/SKILL\.md(?:["'`\s]|$)/iu.exec(path);
+    const match = /([^/\\\s"']+)[/\\]SKILL\.md(?:["'`\s]|$)/iu.exec(path);
     if (match) out.add(pmSkillName(match[1]!).toLowerCase());
   }
   return out;
 }
 
-/** `{name, offered, read, used}` per offered skill: used comes from the skill-switch sequence (no fallback — the
- * fallback would mark every offered skill used when the thread shows no skill call), read from SKILL.md opens. */
-export function episodeSkills(offered: unknown, events: readonly unknown[]): EpisodeSkillUse[] {
+/** Direct `skill` tool invocations (never generic `server:tool` prefixes such as `bb:bash`). */
+function directSkillCallsOf(events: readonly unknown[]): Set<string> {
+  const out = new Set<string>();
+  for (const raw of events) {
+    if (!raw || typeof raw !== "object") continue;
+    const event = raw as Record<string, unknown>;
+    const item = ((event.data as { item?: Record<string, unknown> } | undefined)?.item ?? event) as Record<string, unknown>;
+    const type = String(item.type ?? "");
+    const tool = String(item.tool ?? item.name ?? "");
+    if (tool !== "skill" && !tool.endsWith(".skill") && type !== "skill") continue;
+    const input = (item.input ?? item.arguments ?? item.params ?? {}) as Record<string, unknown>;
+    const rawId = typeof input.id === "string" ? input.id : typeof input.name === "string" ? input.name : typeof input.skill === "string" ? input.skill : "";
+    const name = pmSkillName(rawId).toLowerCase();
+    if (name) out.add(name);
+  }
+  return out;
+}
+
+/**
+ * `{name, offered, read, used}` per offered skill plus any un-offered skill opened via `SKILL.md` or invoked directly
+ * via the `skill` tool (`offered: false`), capped at 16 entries.
+ */
+export function episodeSkills(
+  offered: unknown,
+  events: readonly unknown[],
+  options?: { log?: (message: string) => void },
+): EpisodeSkillUse[] {
   const names = offeredSkillNames(offered);
   const used = new Set(extractSkillSequence(events).map((name) => pmSkillName(name).toLowerCase()));
   const read = skillReadsOf(events);
-  return names.map((name) => ({ name, offered: true, read: read.has(name), used: used.has(name) }));
+  const directCalls = directSkillCallsOf(events);
+  const offeredRows = names.map((name) => ({ name, offered: true, read: read.has(name), used: used.has(name) }));
+  const seen = new Set(names);
+  const extra: EpisodeSkillUse[] = [];
+  for (const name of [...read, ...directCalls]) {
+    if (seen.has(name)) continue;
+    seen.add(name);
+    extra.push({ name, offered: false, read: read.has(name), used: used.has(name) || directCalls.has(name) });
+  }
+  if (extra.length > 0) {
+    options?.log?.(`[errands.skillIntent] unoffered_skills ${redactKnown(JSON.stringify({ count: extra.length, skills: extra.map((s) => s.name) }))}`);
+  }
+  return [...offeredRows, ...extra].slice(0, 16);
 }
 
 export type EpisodeAnswer = {
@@ -276,7 +312,7 @@ export async function enrichEpisode(row: PendingEpisode, deps: EpisodeEnrichDeps
     return "failed";
   }
   const failureClass = codeClass ?? (row.outcome === "done" ? null : answer.failure_class ?? "other");
-  const skills = episodeSkills(row.skillsOffered, events ?? []);
+  const skills = episodeSkills(row.skillsOffered, events ?? [], { log: deps.log });
   mark(db, row.runId,
     "enrichment_state='enriched', enriched_model=?, enriched_at=?, summary_json=?, failure_class=?, process_key_proposed=?, enrichment_reason=NULL",
     [model, now, fitSummary(answer, skills), failureClass, answer.process_key_proposed], now);

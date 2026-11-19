@@ -7,3 +7,12 @@ export { EPISODE_ENRICH_BACKOFF_MS, EPISODE_SWEEP_LIMIT, codeFailureClass, enric
 export { ERRAND_FAILURE_CLASSES, type ErrandFailureClass } from "./failure-judgment";
 export { diagnosisLines, errandsDiagnosis, errandsDiagnosisMorningLine, type DiagnosisKindCost, type DiagnosisShare, type ErrandsDiagnosis } from "./diagnosis";
 export { chooseProcessKey, nearestKeys, pairwiseF1, type KnownProcessKey, type NearProcessKey, type ProcessKeyPick } from "./process-key";
+export {
+  SKILL_DOMAIN_SYNONYMS, hasExplicitSkillIntent, resolveSkillIntent,
+  type ResolveSkillIntentOptions, type ResolvedSkillMatch, type SkillCatalogItem, type SkillIntentLogLevel,
+} from "./skill-intent";
+export {
+  TRAJECTORY_DELTA_TABLE, TRAJECTORY_INTERVENTION_KINDS,
+  listUnprocessedTrajectoryDeltas, markTrajectoryDeltasProcessed, recordTrajectoryDelta, trajectoryDeltaMigrations,
+  type RecordTrajectoryDeltaInput, type RecordTrajectoryDeltaResult, type TrajectoryDeltaRow, type TrajectoryInterventionKind,
+} from "./trajectory-delta";

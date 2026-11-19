@@ -32,6 +32,7 @@ import { checkerMigrations } from "./checkers";
 import { memoryConflictMigrations } from "@lane-pilot/memory-core";
 import { spMigrations } from "./specialist";
 import { passportMigrations } from "./passport";
+import { trajectoryDeltaMigrations } from "./errands";
 /** The attempt ledger's append-only guards (SMA ar_ledger): a transition row is never rewritten or removed, an attempt row is never deleted. */
 export const ATTEMPT_LEDGER_TRIGGERS = [
   `CREATE TRIGGER lane_pilot_attempt_transition_no_update BEFORE UPDATE ON lane_pilot_attempt_transition BEGIN SELECT RAISE(ABORT,'attempt transitions are append-only'); END`,
@@ -805,4 +806,5 @@ export const migrations = [
   `CREATE TRIGGER lane_pilot_gate_event_no_delete BEFORE DELETE ON lane_pilot_gate_event BEGIN SELECT RAISE(ABORT, 'gate events are append-only'); END`,
   // The rebuild dropped lane_pilot_stage_receipt and with it the thread index an earlier migration added.
   `CREATE INDEX lane_pilot_stage_receipt_thread ON lane_pilot_stage_receipt(thread_id)`,
+  ...trajectoryDeltaMigrations,
 ];
