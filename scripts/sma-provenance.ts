@@ -159,15 +159,36 @@ function siblingChanges(check: boolean): { at: Partial<Record<SiblingName, strin
   return { at, records };
 }
 
+const LOG_FIX = process.env.LOG_LEVEL === "debug" || Boolean(process.env.DEBUG_FIX);
+const fixLog = (event: string, detail: Record<string, unknown>) => {
+  if (LOG_FIX) process.stderr.write(`[FIX:sma-provenance] ${event} ${JSON.stringify(detail)}\n`);
+};
+
 if (process.argv[1]?.endsWith("sma-provenance.ts")) {
-  const out = generate(flag("--deploys") ?? join(homedir(), ".lane-pilot", "deploys.log"), process.argv.includes("--check"));
+  const checkMode = process.argv.includes("--check");
+  const deploysFile = flag("--deploys") ?? join(homedir(), ".lane-pilot", "deploys.log");
+  fixLog("input", { checkMode, deploysFile, target });
+  let out: string;
+  try {
+    out = generate(deploysFile, checkMode);
+  } catch (error) {
+    fixLog("error", { checkMode, message: error instanceof Error ? error.message : String(error) });
+    throw error;
+  }
   // The header names the commit it was generated on; staleness is about the nodes, so --check compares those.
   const body = (text: string) => text.slice(text.indexOf("\"nodes\""));
-  if (process.argv.includes("--check")) {
+  if (checkMode) {
     const current = existsSync(target) ? readFileSync(target, "utf8") : "";
-    if (body(current) !== body(out)) { process.stderr.write("src/rooms/sma-map/provenance.json is stale: run npx tsx scripts/sma-provenance.ts\n"); process.exit(1); }
+    if (body(current) !== body(out)) {
+      fixLog("check_stale", { target });
+      process.stderr.write("src/rooms/sma-map/provenance.json is stale: run npx tsx scripts/sma-provenance.ts\n");
+      process.exit(1);
+    }
+    fixLog("success", { mode: "check", status: "current" });
   } else {
     writeFileSync(target, out);
-    process.stdout.write(`${(out.match(/\n"n\d+"/g) ?? []).length} node change points -> src/rooms/sma-map/provenance.json\n`);
+    const count = (out.match(/\n"n\d+"/g) ?? []).length;
+    fixLog("success", { mode: "write", count, target });
+    process.stdout.write(`${count} node change points -> src/rooms/sma-map/provenance.json\n`);
   }
 }
