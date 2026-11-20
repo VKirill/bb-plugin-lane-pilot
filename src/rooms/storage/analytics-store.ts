@@ -1,6 +1,7 @@
+import { redactKnown, sha256Hex } from "@lane-pilot/kit";
 import { WF_RUN_TABLE } from "@lane-pilot/workflow-engine";
 // The storage room's own tables that answer night and audit questions: the checkers' diff-hidden audit,
-// the model rebench record, the errands' episode table, the janitor's log and the bench's stability marks.
+// the model rebench record, the errands' episode table, the janitor's log, bench stability marks and daily digests.
 import type { LanePilotDatabase } from "./database";
 
 /** One diff-hidden audit row, as the checkers' diff probe records it. */
@@ -161,4 +162,195 @@ export function latestErrandEpisodeRows(db: LanePilotDatabase, runIds: readonly 
     for (const row of rows) map.set(String(row.run_id), row);
   }
   return map;
+}
+
+export type PilotDaySourceKind = "pilot_run" | "pilot_chat" | "workflow_run";
+export type PilotDayCategoryHint = { id: string; label?: { en: string; ru: string } };
+export type PilotDayAttemptFact = { id: string; taskId: string; threadId: string | null; state: string; reason: string | null; attemptNo: number };
+export type PilotDayStageFact = { taskId: string; stageId: string; state: string; reason: string | null };
+
+export type PilotDayCandidate = {
+  digestId: string; dayKey: string; sourceKind: PilotDaySourceKind; sourceId: string;
+  projectId: string | null; threadId: string | null; workflowId: string | null;
+  state: string; objective: string | null; taskSummaries: string[];
+  attempts: PilotDayAttemptFact[]; stageVerdicts: PilotDayStageFact[]; pmSkills: string[];
+  wfInputsJson?: string | null; wfOutputJson?: string | null; wfReason?: string | null; updatedAt: number;
+};
+
+export type PilotDayDigestRow = {
+  digestId: string; dayKey: string; sourceKind: PilotDaySourceKind; sourceId: string;
+  projectId: string | null; threadId: string | null; workflowId: string | null;
+  outcome: string; processKey: string; categoryHint: PilotDayCategoryHint | null;
+  skills: string[]; traps: string[]; maskedGoal: string; maskedLessons: string[];
+  taskCount: number; createdAt: number;
+};
+
+export type PilotDayDigestInput = Omit<
+  PilotDayDigestRow,
+  "projectId" | "threadId" | "workflowId" | "categoryHint" | "skills" | "traps" | "maskedLessons" | "taskCount" | "createdAt"
+> & {
+  projectId?: string | null; threadId?: string | null; workflowId?: string | null;
+  categoryHint?: PilotDayCategoryHint | null; skills?: string[]; traps?: string[];
+  maskedLessons?: string[]; taskCount?: number; createdAt?: number;
+};
+
+const dayDigestId = (dayKey: string, sourceKind: PilotDaySourceKind, sourceId: string): string =>
+  `pdigest_${sha256Hex(`${dayKey}|${sourceKind}|${sourceId}`).slice(0, 24)}`;
+
+const parseJsonSafe = <T,>(raw: string | null | undefined, fallback: T): T => {
+  if (!raw) return fallback;
+  try { return JSON.parse(raw) as T; } catch { return fallback; }
+};
+
+const parseStrList = (raw: string | null | undefined): string[] => {
+  const parsed = parseJsonSafe<unknown>(raw, []);
+  return Array.isArray(parsed) ? parsed.map((item) => String(item)).filter(Boolean) : [];
+};
+
+const parseCategoryHint = (raw: string | null | undefined): PilotDayCategoryHint | null => {
+  const value = parseJsonSafe<unknown>(raw, null);
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const rec = value as { id?: unknown; label?: { en?: unknown; ru?: unknown } };
+  if (typeof rec.id !== "string" || !rec.id) return null;
+  const label = rec.label && typeof rec.label === "object" && typeof rec.label.en === "string" && typeof rec.label.ru === "string"
+    ? { en: rec.label.en, ru: rec.label.ru } : undefined;
+  return label ? { id: rec.id, label } : { id: rec.id };
+};
+
+const pmSkillsForThread = (db: LanePilotDatabase, threadId: string | null, sinceMs: number): string[] => {
+  if (!threadId) return [];
+  return (db.prepare("SELECT skill FROM lane_pilot_pm_skill_use WHERE thread_id=? AND used_at>=? GROUP BY skill ORDER BY MIN(used_at) ASC")
+    .all(threadId, sinceMs) as Array<{ skill: string }>).map((r) => r.skill);
+};
+
+const existingDigestIds = (db: LanePilotDatabase, ids: readonly string[]): Set<string> => {
+  const found = new Set<string>();
+  for (let at = 0; at < ids.length; at += 400) {
+    const chunk = ids.slice(at, at + 400);
+    if (!chunk.length) break;
+    const rows = db.prepare(`SELECT digest_id FROM lane_pilot_day_digest WHERE digest_id IN (${chunk.map(() => "?").join(",")})`)
+      .all(...chunk) as Array<{ digest_id: string }>;
+    for (const row of rows) found.add(row.digest_id);
+  }
+  return found;
+};
+
+const toDayDigestRow = (raw: Record<string, unknown>): PilotDayDigestRow => ({
+  digestId: String(raw.digest_id), dayKey: String(raw.day_key),
+  sourceKind: String(raw.source_kind) as PilotDaySourceKind, sourceId: String(raw.source_id),
+  projectId: (raw.project_id as string | null) ?? null, threadId: (raw.thread_id as string | null) ?? null,
+  workflowId: (raw.workflow_id as string | null) ?? null, outcome: String(raw.outcome), processKey: String(raw.process_key),
+  categoryHint: parseCategoryHint(raw.category_hint_json as string | null),
+  skills: parseStrList(raw.skills_json as string | null), traps: parseStrList(raw.traps_json as string | null),
+  maskedGoal: String(raw.masked_goal ?? ""), maskedLessons: parseStrList(raw.masked_lessons_json as string | null),
+  taskCount: Number(raw.task_count ?? 0), createdAt: Number(raw.created_at),
+});
+
+/** Collects undigested daily Pilot runs, Pilot-activated chats, and finished user workflow runs in [sinceMs, untilMs]. */
+export function listPilotDayCandidates(db: LanePilotDatabase, sinceMs: number, untilMs: number, limit = 20): PilotDayCandidate[] {
+  const safeLimit = Math.max(1, Math.min(Math.floor(limit), 200));
+  const dayKey = new Date(Math.max(0, untilMs - 1)).toISOString().slice(0, 10);
+  const runWindow = `((r.updated_at >= ? AND r.updated_at <= ?) OR (r.closed_at IS NOT NULL AND r.closed_at >= ? AND r.closed_at <= ?)
+    OR EXISTS(SELECT 1 FROM lane_pilot_attempt a WHERE a.run_id = r.id AND a.updated_at >= ? AND a.updated_at <= ?))`;
+  const runThreadsInWindow = new Set(
+    (db.prepare(`SELECT DISTINCT r.pm_thread_id AS t FROM lane_pilot_run r WHERE r.pm_thread_id IS NOT NULL AND ${runWindow}`)
+      .all(sinceMs, untilMs, sinceMs, untilMs, sinceMs, untilMs) as Array<{ t: string }>).map((r) => r.t),
+  );
+  const runRows = db.prepare(`SELECT r.id, r.project_id, r.pm_thread_id, r.state, r.objective,
+      MAX(r.updated_at, COALESCE(r.closed_at, 0), COALESCE((SELECT MAX(a.updated_at) FROM lane_pilot_attempt a WHERE a.run_id = r.id), 0)) AS activity_at
+    FROM lane_pilot_run r WHERE ${runWindow}
+      AND NOT EXISTS (SELECT 1 FROM lane_pilot_day_digest d WHERE d.source_kind = 'pilot_run' AND d.source_id = r.id AND (d.day_key = ? OR d.outcome != 'in_progress'))
+    ORDER BY activity_at DESC LIMIT ?`).all(sinceMs, untilMs, sinceMs, untilMs, sinceMs, untilMs, dayKey, safeLimit) as Array<{
+    id: string; project_id: string; pm_thread_id: string | null; state: string; objective: string | null; activity_at: number;
+  }>;
+
+  const taskStmt = db.prepare("SELECT id, contract_json FROM lane_pilot_task WHERE run_id = ? ORDER BY created_at ASC LIMIT 12");
+  const attemptStmt = db.prepare("SELECT id, task_id, thread_id, state, reason, attempt_no FROM lane_pilot_attempt WHERE run_id = ? ORDER BY updated_at DESC, created_at DESC LIMIT 12");
+  const stageStmt = db.prepare("SELECT task_id, stage_id, state, reason FROM lane_pilot_stage_receipt WHERE run_id = ? ORDER BY updated_at DESC LIMIT 16");
+  const runCandidates: PilotDayCandidate[] = runRows.map((run) => {
+    const tasks = taskStmt.all(run.id) as Array<{ id: string; contract_json: string }>;
+    const attempts = attemptStmt.all(run.id) as Array<{ id: string; task_id: string; thread_id: string | null; state: string; reason: string | null; attempt_no: number }>;
+    const stages = stageStmt.all(run.id) as Array<{ task_id: string; stage_id: string; state: string; reason: string | null }>;
+    return {
+      digestId: dayDigestId(dayKey, "pilot_run", run.id), dayKey, sourceKind: "pilot_run", sourceId: run.id,
+      projectId: run.project_id ?? null, threadId: run.pm_thread_id ?? null, workflowId: null, state: run.state, objective: run.objective ?? null,
+      taskSummaries: tasks.map((t) => {
+        const c = parseJsonSafe<Record<string, unknown> | null>(t.contract_json, null);
+        return typeof c?.title === "string" && c.title.trim() ? c.title.trim() : typeof c?.goal === "string" && c.goal.trim() ? c.goal.trim() : t.id;
+      }),
+      attempts: attempts.map((a) => ({ id: a.id, taskId: a.task_id, threadId: a.thread_id ?? null, state: a.state, reason: a.reason ? a.reason.slice(0, 400) : null, attemptNo: Number(a.attempt_no) })),
+      stageVerdicts: stages.map((s) => ({ taskId: s.task_id, stageId: s.stage_id, state: s.state, reason: s.reason ? s.reason.slice(0, 300) : null })),
+      pmSkills: pmSkillsForThread(db, run.pm_thread_id, sinceMs), updatedAt: Number(run.activity_at),
+    };
+  });
+
+  const chatRows = db.prepare(`SELECT pm_thread_id, MAX(project_id) AS project_id, MAX(activity_at) AS activity_at FROM (
+      SELECT pm_thread_id, project_id, claimed_at AS activity_at FROM lane_pilot_activation WHERE claimed_at >= ? AND claimed_at <= ?
+      UNION ALL
+      SELECT n.pm_thread_id, r.project_id, n.sent_at AS activity_at FROM lane_pilot_pm_notice n
+        LEFT JOIN lane_pilot_attempt a ON a.id = n.attempt_id LEFT JOIN lane_pilot_run r ON r.id = a.run_id
+        WHERE n.sent_at >= ? AND n.sent_at <= ?
+    ) chats WHERE pm_thread_id IS NOT NULL AND pm_thread_id != ''
+      AND NOT EXISTS (SELECT 1 FROM lane_pilot_day_digest d WHERE d.source_kind = 'pilot_chat' AND d.source_id = chats.pm_thread_id AND d.day_key = ?)
+    GROUP BY pm_thread_id ORDER BY activity_at DESC LIMIT ?`).all(sinceMs, untilMs, sinceMs, untilMs, dayKey, safeLimit + runThreadsInWindow.size) as Array<{
+    pm_thread_id: string; project_id: string | null; activity_at: number;
+  }>;
+  const chatCandidates: PilotDayCandidate[] = chatRows
+    .filter((row) => !runThreadsInWindow.has(row.pm_thread_id)).slice(0, safeLimit)
+    .map((row) => ({
+      digestId: dayDigestId(dayKey, "pilot_chat", row.pm_thread_id), dayKey, sourceKind: "pilot_chat", sourceId: row.pm_thread_id,
+      projectId: row.project_id ?? null, threadId: row.pm_thread_id, workflowId: null, state: "active", objective: null,
+      taskSummaries: [], attempts: [], stageVerdicts: [], pmSkills: pmSkillsForThread(db, row.pm_thread_id, sinceMs), updatedAt: Number(row.activity_at),
+    }));
+
+  const wfRows = db.prepare(`SELECT id, workflow_id, project_id, status, reason, inputs_json, output_json, updated_at FROM ${WF_RUN_TABLE} w
+    WHERE w.status IN ('succeeded','failed','canceled','timed_out','blocked','not_verified') AND w.updated_at >= ? AND w.updated_at <= ?
+      AND w.workflow_id != 'errand' AND w.workflow_id NOT LIKE 'lp.%' AND w.workflow_id NOT LIKE 'lp-%' AND w.workflow_id NOT LIKE 'sp.%' AND w.workflow_id NOT LIKE 'sp-%'
+      AND NOT EXISTS (SELECT 1 FROM lane_pilot_day_digest d WHERE d.source_kind = 'workflow_run' AND d.source_id = w.id AND (d.day_key = ? OR d.outcome != 'in_progress'))
+    ORDER BY w.updated_at DESC LIMIT ?`).all(sinceMs, untilMs, dayKey, safeLimit) as Array<{
+    id: string; workflow_id: string; project_id: string | null; status: string; reason: string | null; inputs_json: string; output_json: string | null; updated_at: number;
+  }>;
+  const wfCandidates: PilotDayCandidate[] = wfRows.map((w) => {
+    const inputs = parseJsonSafe<Record<string, unknown> | null>(w.inputs_json, null);
+    const threadId = typeof inputs?.threadId === "string" ? inputs.threadId : typeof inputs?.pmThreadId === "string" ? inputs.pmThreadId : null;
+    return {
+      digestId: dayDigestId(dayKey, "workflow_run", w.id), dayKey, sourceKind: "workflow_run", sourceId: w.id,
+      projectId: w.project_id ?? null, threadId, workflowId: w.workflow_id, state: w.status, objective: null,
+      taskSummaries: [], attempts: [], stageVerdicts: [], pmSkills: [],
+      wfInputsJson: w.inputs_json ?? null, wfOutputJson: w.output_json ?? null, wfReason: w.reason ?? null, updatedAt: Number(w.updated_at),
+    };
+  });
+
+  const combined = [...runCandidates, ...chatCandidates, ...wfCandidates];
+  const existing = existingDigestIds(db, combined.map((c) => c.digestId));
+  return combined.filter((c) => !existing.has(c.digestId)).sort((a, b) => b.updatedAt - a.updatedAt).slice(0, safeLimit);
+}
+
+/** Idempotently persists a daily Pilot digest row by `digest_id` and returns the stored row. */
+export function savePilotDayDigest(db: LanePilotDatabase, input: PilotDayDigestInput, options?: { log?: (message: string) => void }): { saved: boolean; row: PilotDayDigestRow } {
+  const createdAt = input.createdAt ?? Date.now();
+  const res = db.prepare(`INSERT OR IGNORE INTO lane_pilot_day_digest
+    (digest_id, day_key, source_kind, source_id, project_id, thread_id, workflow_id, outcome, process_key, category_hint_json, skills_json, traps_json, masked_goal, masked_lessons_json, task_count, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+    input.digestId, input.dayKey, input.sourceKind, input.sourceId, input.projectId ?? null, input.threadId ?? null, input.workflowId ?? null,
+    input.outcome, input.processKey, input.categoryHint ? JSON.stringify(input.categoryHint) : null,
+    JSON.stringify(input.skills ?? []), JSON.stringify(input.traps ?? []), input.maskedGoal, JSON.stringify(input.maskedLessons ?? []),
+    input.taskCount ?? 0, createdAt,
+  );
+  const stored = db.prepare("SELECT * FROM lane_pilot_day_digest WHERE digest_id = ?").get(input.digestId) as Record<string, unknown>;
+  const row = toDayDigestRow(stored);
+  if (res.changes > 0) {
+    options?.log?.(`INFO [storage.dayDigest] saved ${redactKnown(JSON.stringify({ digestId: row.digestId, sourceKind: row.sourceKind, processKey: row.processKey, outcome: row.outcome }))}`);
+  } else if (process.env.LOG_LEVEL !== "silent") {
+    options?.log?.(`DEBUG [storage.dayDigest] duplicate ${redactKnown(JSON.stringify({ digestId: row.digestId, sourceKind: row.sourceKind }))}`);
+  }
+  return { saved: res.changes > 0, row };
+}
+
+/** Lists stored daily Pilot digests since `sinceMs`, newest first. */
+export function listPilotDayDigests(db: LanePilotDatabase, sinceMs: number, limit = 200): PilotDayDigestRow[] {
+  const safeLimit = Math.max(1, Math.min(Math.floor(limit), 1000));
+  const rows = db.prepare("SELECT * FROM lane_pilot_day_digest WHERE created_at >= ? ORDER BY created_at DESC, digest_id ASC LIMIT ?")
+    .all(sinceMs, safeLimit) as Array<Record<string, unknown>>;
+  return rows.map(toDayDigestRow);
 }

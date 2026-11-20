@@ -77,6 +77,14 @@ const baseSiteStubs = (overrides: Record<string, unknown> = {}) => ({
 });
 
 const graphEvolveStubs = (overrides: Record<string, unknown> = {}) => ({
+  digest: {
+    status: "done",
+    picked: 2,
+    digested: 2,
+    deltasRecorded: 1,
+    skipped: 0,
+    failed: 0,
+  },
   collect: {
     status: "ready",
     clustersCount: 2,
@@ -283,13 +291,13 @@ describe("site-creation simulations", () => {
 });
 
 describe("lp.graph-evolve-nightly simulations", () => {
-  it("happy: runs collect -> synthesize -> apply -> done", async () => {
+  it("happy: runs digest -> collect -> synthesize -> apply -> done", async () => {
     const r = await runSim("lp.graph-evolve-nightly", {
       input: {},
       stubs: graphEvolveStubs(),
     });
     expect(r.summary.status).toBe("succeeded");
-    expect(pathOf(r)).toBe("collect synthesize apply done");
+    expect(pathOf(r)).toBe("digest collect synthesize apply done");
     expect(out(r)).toMatchObject({
       status: "done",
       publishedCount: 1,
@@ -298,7 +306,7 @@ describe("lp.graph-evolve-nightly simulations", () => {
     });
   });
 
-  it("variant_empty: short-circuits collect -> empty_done when nothing to process", async () => {
+  it("variant_empty: short-circuits digest -> collect -> empty_done when nothing to process", async () => {
     const r = await runSim("lp.graph-evolve-nightly", {
       input: {},
       stubs: graphEvolveStubs({
@@ -306,7 +314,7 @@ describe("lp.graph-evolve-nightly simulations", () => {
       }),
     });
     expect(r.summary.status).toBe("succeeded");
-    expect(pathOf(r)).toBe("collect empty_done");
+    expect(pathOf(r)).toBe("digest collect empty_done");
     expect(r.called("synthesize")).toHaveLength(0);
     expect(r.called("apply")).toHaveLength(0);
     expect(out(r)).toMatchObject({ status: "empty", publishedCount: 0, proposedCount: 0, rejectedCount: 0 });
@@ -326,7 +334,7 @@ describe("lp.graph-evolve-nightly simulations", () => {
       }),
     });
     expect(r.summary.status).toBe("succeeded");
-    expect(pathOf(r)).toBe("collect synthesize apply done");
+    expect(pathOf(r)).toBe("digest collect synthesize apply done");
     expect(out(r)).toMatchObject({ status: "held", publishedCount: 0, rejectedCount: 1 });
   });
 

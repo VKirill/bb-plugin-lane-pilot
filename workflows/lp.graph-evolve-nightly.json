@@ -32,6 +32,26 @@
   },
   "nodes": [
     {
+      "id": "digest",
+      "type": "action",
+      "action": "lp.graph_evolve_digest",
+      "title": {
+        "en": "Digest daily Pilot chats and outcomes",
+        "ru": "Разобрать дневные чаты и исходы Пилота"
+      },
+      "out": {
+        "status": "done",
+        "picked": "int",
+        "digested": "int",
+        "deltasRecorded": "int",
+        "skipped": "int",
+        "failed": "int"
+      },
+      "guards": {
+        "timeoutMin": 20
+      }
+    },
+    {
       "id": "collect",
       "type": "action",
       "action": "lp.graph_evolve_collect",
@@ -112,6 +132,10 @@
   "edges": [
     {
       "from": "start",
+      "to": "digest"
+    },
+    {
+      "from": "digest",
       "to": "collect"
     },
     {
@@ -137,6 +161,14 @@
     "sim": {
       "input": {},
       "stubs": {
+        "digest": {
+          "status": "done",
+          "picked": 2,
+          "digested": 2,
+          "deltasRecorded": 1,
+          "skipped": 0,
+          "failed": 0
+        },
         "collect": {
           "status": "ready",
           "clustersCount": 2,
@@ -156,6 +188,7 @@
         }
       },
       "expect_path": [
+        "digest",
         "collect",
         "synthesize",
         "apply",
@@ -170,6 +203,14 @@
       },
       "variant_empty": {
         "stubs": {
+          "digest": {
+            "status": "done",
+            "picked": 0,
+            "digested": 0,
+            "deltasRecorded": 0,
+            "skipped": 0,
+            "failed": 0
+          },
           "collect": {
             "status": "empty",
             "clustersCount": 0,
@@ -178,6 +219,7 @@
           }
         },
         "expect_path": [
+          "digest",
           "collect",
           "empty_done"
         ],
@@ -191,6 +233,14 @@
       },
       "variant_held": {
         "stubs": {
+          "digest": {
+            "status": "done",
+            "picked": 1,
+            "digested": 1,
+            "deltasRecorded": 0,
+            "skipped": 0,
+            "failed": 0
+          },
           "collect": {
             "status": "ready",
             "clustersCount": 1,
@@ -210,6 +260,7 @@
           }
         },
         "expect_path": [
+          "digest",
           "collect",
           "synthesize",
           "apply",

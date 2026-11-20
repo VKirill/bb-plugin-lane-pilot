@@ -66,8 +66,8 @@ export { lastJanitorKept, recordJanitorSweep, releaseWorktreeById, releaseWorktr
 export { noteGateRunStart, finishGateRun, latestGateRun, latestGateRunForTask, gateRunRow, fullGateVerdict, FULL_GATE_VALID_MS } from "./gate-runs-store";
 export type { GateRunRow, GateRunState } from "./gate-runs-store";
 export { reconcileCursorPage, saveReconcileCursor, clearReconcileCursor, hasReconcileCursor } from "./reconcile-store";
-export { saveDiffHiddenRows, diffHiddenAuditSummary, errandEpisodeColumns, listErrandEpisodeFacts, listErrandEpisodeTraces, listPendingErrandEpisodes, listErrandProcessKeys, listErrandEpisodeRows, listErrandEpisodeStates, listErrandEpisodeRunIds, latestErrandEpisodeRows, janitorSums, janitorKeptSample, saveBenchStabilityMarks, listBenchStabilityMarks } from "./analytics-store";
-export type { DiffHiddenAuditRow } from "./analytics-store";
+export { saveDiffHiddenRows, diffHiddenAuditSummary, errandEpisodeColumns, listErrandEpisodeFacts, listErrandEpisodeTraces, listPendingErrandEpisodes, listErrandProcessKeys, listErrandEpisodeRows, listErrandEpisodeStates, listErrandEpisodeRunIds, latestErrandEpisodeRows, janitorSums, janitorKeptSample, saveBenchStabilityMarks, listBenchStabilityMarks, listPilotDayCandidates, savePilotDayDigest, listPilotDayDigests } from "./analytics-store";
+export type { DiffHiddenAuditRow, PilotDaySourceKind, PilotDayCategoryHint, PilotDayAttemptFact, PilotDayStageFact, PilotDayCandidate, PilotDayDigestInput, PilotDayDigestRow } from "./analytics-store";
 export { latestAcceptedAttemptOfTask, listAttemptRefsSince } from "./attempts-store";
 export { listNearMissReceipts } from "./stages-store";
 export { PROTECTIONS, DISARM_TERM_MS, disarmKey, isArmed, readDisarm, noteProtectionDisarm, renewDisarm, storedProtectionValue, endDisarm, disarmedProjects, staleDisarms, failedStageReceiptsSince, type Disarm } from "./protections-store";

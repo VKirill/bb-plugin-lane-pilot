@@ -38,6 +38,13 @@ export {
   type GraphEvolveDeps,
   type GraphEvolveOutcome,
 } from "./graph-evolve-graph";
+export {
+  createLivePilotDayDigestDeps,
+  digestPilotDayDialogues,
+  loadDigestSkillCatalog,
+  type PilotDayDigestDeps,
+  type PilotDayDigestSummary,
+} from "./pilot-day-digest";
 import { mountHarnessGraph } from "./harness-graph";
 import { mountRulesScanGraph } from "./rules-scan-graph";
 import { mountWallHuntGraph } from "./wall-hunt-graph";

@@ -807,4 +807,26 @@ export const migrations = [
   // The rebuild dropped lane_pilot_stage_receipt and with it the thread index an earlier migration added.
   `CREATE INDEX lane_pilot_stage_receipt_thread ON lane_pilot_stage_receipt(thread_id)`,
   ...trajectoryDeltaMigrations,
+  // Nightly digest of Lane Pilot runs, chats and user workflows (src/rooms/storage/analytics-store.ts). Append only.
+  `CREATE TABLE lane_pilot_day_digest (
+    digest_id TEXT PRIMARY KEY,
+    day_key TEXT NOT NULL,
+    source_kind TEXT NOT NULL CHECK(source_kind IN ('pilot_run','pilot_chat','workflow_run')),
+    source_id TEXT NOT NULL,
+    project_id TEXT,
+    thread_id TEXT,
+    workflow_id TEXT,
+    outcome TEXT NOT NULL,
+    process_key TEXT NOT NULL,
+    category_hint_json TEXT,
+    skills_json TEXT NOT NULL DEFAULT '[]',
+    traps_json TEXT NOT NULL DEFAULT '[]',
+    masked_goal TEXT NOT NULL,
+    masked_lessons_json TEXT NOT NULL DEFAULT '[]',
+    task_count INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL
+  )`,
+  `CREATE INDEX lane_pilot_day_digest_created ON lane_pilot_day_digest(created_at DESC)`,
+  `CREATE INDEX lane_pilot_day_digest_day_kind ON lane_pilot_day_digest(day_key, source_kind)`,
+  `CREATE TRIGGER lane_pilot_day_digest_no_delete BEFORE DELETE ON lane_pilot_day_digest BEGIN SELECT RAISE(ABORT, 'day digests are append-only'); END`,
 ];

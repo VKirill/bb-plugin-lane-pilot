@@ -5,14 +5,16 @@ import { GLOBAL_SETTINGS_PROJECT_ID } from "@lane-pilot/settings-catalog";
 import { loadWorkflow, runDraftTest, testCasesOf, wfTerminalByIdemKey, type NodeExecutor, type Workflow } from "@lane-pilot/workflow-engine";
 import type { ChainRuntime, ServerCore } from "../../contracts/server";
 import { listUnprocessedTrajectoryDeltas, markTrajectoryDeltasProcessed } from "../../errands";
+import type { HarnessApi } from "../../harness/server";
 import { postOwnerItem, rpcLine } from "../../owner-waiting";
 import { modelCatalogOf, readProviderFolderBlock, resolveSpawnModel, scheduleIsolated, spawnUsageOf, warmSpawnUsage, type WorkflowEngineApi, type WorkflowTriggersApi, type WriterHostApi } from "../../platform/server";
 import type { RuleScanApi } from "../../self-repair/server";
-import { HARNESS_VERSION, createDraftStore, globalWorkflowDir, latestErrandEpisodeRows, listErrandEpisodeRows, loadWorkflowStore } from "../../storage";
+import { HARNESS_VERSION, createDraftStore, globalWorkflowDir, latestErrandEpisodeRows, listErrandEpisodeRows, listPilotDayDigests, loadWorkflowStore, type PilotDayCategoryHint } from "../../storage";
 import { builtinWorkflow } from "../../workflow";
 import { createWorkflowArchitect, type ArchitectDeps, type WorkflowArchitect } from "../../workflow/server";
 import { checkDeprojectization, classifyEvolutionDiff, type DeprojectizeContext } from "../deprojectize";
 import { analystPlace } from "./episodes-graph";
+import { createLivePilotDayDigestDeps, digestPilotDayDialogues, loadDigestSkillCatalog } from "./pilot-day-digest";
 
 export const GRAPH_EVOLVE_WORKFLOW = "lp.graph-evolve-nightly";
 export const GRAPH_EVOLVE_SCHEDULE = "graph-evolve-nightly";
@@ -25,7 +27,10 @@ export type GraphEvolveCandidate = {
 };
 
 export type GraphEvolveCollectSummary = {
-  clusters: Array<{ processKey: string; count: number; topSkills: string[]; sampleGoals: string[]; traps: string[] }>;
+  clusters: Array<{
+    processKey: string; count: number; topSkills: string[]; sampleGoals: string[]; traps: string[];
+    lessons?: string[]; categoryHint?: PilotDayCategoryHint | null;
+  }>;
   deltas: Array<{ id: string; projectId: string | null; workflowId: string | null; stageArchetype: string; interventionKind: string; resolvedSkills: string[]; maskedSummary: string }>;
   deltaIds: string[]; status: "ready" | "empty";
 };
@@ -45,6 +50,7 @@ export type GraphEvolveOutcome = {
 };
 
 interface Services {
+  harness?: Pick<HarnessApi, "threadEvents">;
   resolveProjectWriterHost: WriterHostApi["resolveProjectWriterHost"];
   ruleScan: Pick<RuleScanApi, "runAnalyzer">;
   workflowEngine: WorkflowEngineApi["workflowEngine"];
@@ -60,28 +66,42 @@ const fixEvolveLog = (log: (m: string) => void, event: string, detail: Record<st
   if (process.env.LOG_LEVEL === "debug" || process.env.DEBUG_FIX) log(`[FIX:graph-evolve] ${event} ${redactKnown(JSON.stringify(detail))}`);
 };
 
-/** Collects enriched process clusters and unprocessed trajectory deltas for nightly graph evolution. */
+/** Collects enriched process clusters (errand episodes + daily Pilot digests) and unprocessed trajectory deltas for nightly graph evolution. */
 export function collectGraphEvolveEvidence(
   db: ServerCore["db"],
   options?: { days?: number; minClusterSize?: number; now?: () => number; log?: (message: string) => void },
 ): GraphEvolveCollectSummary {
   const now = options?.now?.() ?? Date.now();
   const minCluster = options?.minClusterSize ?? 2;
-  const deltas = listUnprocessedTrajectoryDeltas(db, { limit: 100 }).map((d) => ({
+  const sinceMs = now - (options?.days ?? 14) * 86_400_000;
+  const rawDeltas = listUnprocessedTrajectoryDeltas(db, { limit: 100 });
+  const deltaProjects = new Set(rawDeltas.map((d) => d.projectId).filter((x): x is string => Boolean(x)));
+  const deltaThreads = new Set(rawDeltas.map((d) => d.threadId).filter((x): x is string => Boolean(x)));
+  const deltas = rawDeltas.map((d) => ({
     id: d.id, projectId: d.projectId, workflowId: d.workflowId, stageArchetype: d.stageArchetype,
     interventionKind: d.interventionKind, resolvedSkills: d.resolvedSkills, maskedSummary: d.maskedSummary,
   }));
-  const rawEpisodes = listErrandEpisodeRows(db, now - (options?.days ?? 14) * 86_400_000, null, 400);
+  const rawEpisodes = listErrandEpisodeRows(db, sinceMs, null, 400);
   const runIds = [...new Set(rawEpisodes.map((r) => String(r.run_id ?? "")).filter(Boolean))];
   const latestMap = runIds.length ? latestErrandEpisodeRows(db, runIds) : new Map<string, Record<string, unknown>>();
   const rows = latestMap.size ? [...latestMap.values()] : rawEpisodes;
+  const digests = listPilotDayDigests(db, sinceMs, 400);
 
-  const grouped = new Map<string, { count: number; skills: Map<string, number>; goals: Set<string>; traps: Set<string> }>();
+  type ClusterAcc = { count: number; skills: Map<string, number>; goals: Set<string>; traps: Set<string>; lessons: Set<string>; categoryHint: PilotDayCategoryHint | null; richPilotRun: boolean };
+  const grouped = new Map<string, ClusterAcc>();
+  const ensureGroup = (key: string): ClusterAcc => {
+    const existing = grouped.get(key);
+    if (existing) return existing;
+    const created: ClusterAcc = { count: 0, skills: new Map<string, number>(), goals: new Set<string>(), traps: new Set<string>(), lessons: new Set<string>(), categoryHint: null, richPilotRun: false };
+    grouped.set(key, created);
+    return created;
+  };
+
   for (const row of rows) {
     if (row.enrichment_state !== "enriched") continue;
     const key = ((typeof row.process_key === "string" && row.process_key.trim()) || (typeof row.process_key_proposed === "string" && row.process_key_proposed.trim()) || "").trim();
     if (!key) continue;
-    const entry = grouped.get(key) ?? { count: 0, skills: new Map<string, number>(), goals: new Set<string>(), traps: new Set<string>() };
+    const entry = ensureGroup(key);
     entry.count += 1;
     const summary = parseJson<Record<string, unknown>>(row.summary_json, {});
     if (typeof summary.goal === "string" && summary.goal.trim() && entry.goals.size < 5) entry.goals.add(summary.goal.trim());
@@ -90,12 +110,26 @@ export function collectGraphEvolveEvidence(
       const rec = sk && typeof sk === "object" ? (sk as { name?: unknown; read?: unknown; used?: unknown }) : null;
       if (rec && (rec.read === true || rec.used === true) && typeof rec.name === "string" && rec.name.trim()) entry.skills.set(rec.name.trim(), (entry.skills.get(rec.name.trim()) ?? 0) + 1);
     }
-    grouped.set(key, entry);
   }
-  const clusters = [...grouped.entries()].filter(([, g]) => g.count >= minCluster).sort((a, b) => b[1].count - a[1].count).slice(0, 12).map(([processKey, g]) => ({
-    processKey, count: g.count, topSkills: [...g.skills.entries()].sort((a, b) => b[1] - a[1]).slice(0, 10).map(([n]) => n), sampleGoals: [...g.goals], traps: [...g.traps],
+  for (const digest of digests) {
+    const key = digest.processKey.trim();
+    if (!key) continue;
+    const entry = ensureGroup(key);
+    entry.count += 1;
+    const hasMatchingDelta = (digest.projectId !== null && deltaProjects.has(digest.projectId)) || (digest.threadId !== null && deltaThreads.has(digest.threadId));
+    if (digest.sourceKind === "pilot_run" && (digest.taskCount >= 2 || (digest.outcome === "done" && hasMatchingDelta))) entry.richPilotRun = true;
+    if (!entry.categoryHint && digest.categoryHint) entry.categoryHint = digest.categoryHint;
+    if (digest.maskedGoal.trim() && entry.goals.size < 5) entry.goals.add(digest.maskedGoal.trim());
+    for (const trap of digest.traps) if (trap.trim() && entry.traps.size < 8) entry.traps.add(trap.trim());
+    for (const lesson of digest.maskedLessons) if (lesson.trim() && entry.lessons.size < 8) entry.lessons.add(lesson.trim());
+    for (const sk of digest.skills) if (sk.trim()) entry.skills.set(sk.trim(), (entry.skills.get(sk.trim()) ?? 0) + 1);
+  }
+
+  const clusters = [...grouped.entries()].filter(([, g]) => g.count >= minCluster || g.richPilotRun).sort((a, b) => b[1].count - a[1].count).slice(0, 12).map(([processKey, g]) => ({
+    processKey, count: g.count, topSkills: [...g.skills.entries()].sort((a, b) => b[1] - a[1]).slice(0, 10).map(([n]) => n),
+    sampleGoals: [...g.goals], traps: [...g.traps], lessons: [...g.lessons], categoryHint: g.categoryHint,
   }));
-  options?.log?.(`INFO [nightGraphs.graphEvolve] collected ${redactKnown(JSON.stringify({ clusters: clusters.length, deltas: deltas.length }))}`);
+  options?.log?.(`INFO [nightGraphs.graphEvolve] collected ${redactKnown(JSON.stringify({ clusters: clusters.length, deltas: deltas.length, digests: digests.length }))}`);
   return { clusters, deltas, deltaIds: deltas.map((d) => d.id), status: clusters.length || deltas.length ? "ready" : "empty" };
 }
 
@@ -280,6 +314,11 @@ async function knownContextOf(ctx: ServerCore, collected: GraphEvolveCollectSumm
 /** Mounts nightly graph evolution executors (`lp.graph_evolve_*`) and daily cron `50 4 * * *`. */
 export function mountGraphEvolveNightly(ctx: ServerCore, services: Services): void {
   const engine = services.workflowEngine;
+  engine.register<ChainRuntime>("lp.graph_evolve_digest", { reentrant: true, run: async (c) => {
+    const catalog = await loadDigestSkillCatalog(ctx);
+    const result = await digestPilotDayDialogues(createLivePilotDayDigestDeps(ctx, services, () => ctx.isDisposed() || c.signal.aborted, catalog));
+    return { output: { status: "done", picked: result.picked, digested: result.digested, deltasRecorded: result.deltasRecorded, skipped: result.skippedSandbox + result.skippedDisabled, failed: result.failed } };
+  } } as NodeExecutor<ChainRuntime>);
   engine.register<ChainRuntime>("lp.graph_evolve_collect", { reentrant: true, run: async () => {
     const collected = collectGraphEvolveEvidence(ctx.db, { log: (m) => ctx.log(m) });
     return { output: { status: collected.status, clustersCount: collected.clusters.length, deltasCount: collected.deltas.length, payload_json: JSON.stringify(collected) } };
