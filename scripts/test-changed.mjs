@@ -117,21 +117,48 @@ for (const file of changed) {
 // (`en`, `id`) say nothing and are left out.
 // Only top-level declarations count: a local `const limit` inside a function names nothing a test would.
 const DECL = /^(?:export\s+)?(?:default\s+)?(?:async\s+)?(?:function\*?|const|let|var|class|type|interface|enum)\s+([A-Za-z_$][\w$]*)/g;
+const REEXPORT = /^export\s+(?:type\s+)?\{([^}]*)\}/;
+const REEXPORT_ITEM = /^\s{1,6}(?:type\s+)?([A-Za-z_$][\w$]*)(?:\s+as\s+([A-Za-z_$][\w$]*))?\s*,?\s*$/;
 const KEY = /^\s{0,6}["']?([A-Za-z_$][\w$-]{7,})["']?\s*:/;
 const ID_VALUE = /\bid:\s*["']([\w.:-]+)["']/g;
+function extractReexportSpecs(specList, target) {
+  for (const part of specList.split(",")) {
+    const m = /^\s*(?:type\s+)?([A-Za-z_$][\w$]*)(?:\s+as\s+([A-Za-z_$][\w$]*))?\s*$/.exec(part);
+    if (m) target.add(m[2] || m[1]);
+  }
+}
 function touchedIdentifiers(file) {
   const names = new Set();
+  const reexportMinus = new Set(), reexportPlus = new Set();
+  let inExportBlock = false;
   for (const line of git("diff", "-U0", base, "--", file).split("\n")) {
-    const header = line.startsWith("@@") ? line.replace(/^@@[^@]*@@\s?/, "") : null;
-    const body = header ?? (/^[+-](?![+-])/.test(line) ? line.slice(1) : null);
-    if (body === null) continue;
-    for (const match of body.matchAll(DECL)) names.add(match[1]);
-    if (header === null) {
-      const key = KEY.exec(body);
-      if (key) names.add(key[1]);
-      for (const match of body.matchAll(ID_VALUE)) names.add(match[1]);
+    if (line.startsWith("@@")) {
+      const header = line.replace(/^@@[^@]*@@\s?/, "");
+      inExportBlock = /^export\s+(?:type\s+)?\{/.test(header) && !header.includes("}");
+      for (const match of header.matchAll(DECL)) names.add(match[1]);
+      continue;
     }
+    if (!/^[+-](?![+-])/.test(line)) continue;
+    const sign = line[0], body = line.slice(1);
+    const bucket = sign === "-" ? reexportMinus : reexportPlus;
+    const reexp = REEXPORT.exec(body);
+    if (reexp) {
+      extractReexportSpecs(reexp[1], bucket);
+      inExportBlock = !body.includes("}");
+      continue;
+    }
+    if (inExportBlock) {
+      if (body.includes("}")) { inExportBlock = false; continue; }
+      const item = REEXPORT_ITEM.exec(body);
+      if (item) { bucket.add(item[2] || item[1]); continue; }
+    }
+    for (const match of body.matchAll(DECL)) names.add(match[1]);
+    const key = KEY.exec(body);
+    if (key) names.add(key[1]);
+    for (const match of body.matchAll(ID_VALUE)) names.add(match[1]);
   }
+  for (const sym of reexportPlus) if (!reexportMinus.has(sym)) names.add(sym);
+  for (const sym of reexportMinus) if (!reexportPlus.has(sym)) names.add(sym);
   return [...names].filter((name) => name.length >= 4);
 }
 const WIDE = 15;

@@ -39,16 +39,16 @@ const mean = (values: readonly number[]) => values.length ? values.reduce((sum, 
 
 /** Mean and a 95 % bootstrap interval; the questions are the sample. */
 export function stat(values: readonly number[], seed = 1): Stat {
-  if (!values.length) return { mean: 0, lo: 0, hi: 0, n: 0 };
+  if (!values.length) return Object.freeze({ mean: 0, lo: 0, hi: 0, n: 0 });
   const random = prng(seed);
-  const means: number[] = [];
+  const means = new Float64Array(400);
   for (let round = 0; round < 400; round++) {
     let sum = 0;
     for (let index = 0; index < values.length; index++) sum += values[Math.floor(random() * values.length)]!;
-    means.push(sum / values.length);
+    means[round] = sum / values.length;
   }
-  means.sort((a, b) => a - b);
-  return { mean: mean(values), lo: means[Math.floor(means.length * 0.025)]!, hi: means[Math.floor(means.length * 0.975)]!, n: values.length };
+  means.sort();
+  return Object.freeze({ mean: mean(values), lo: means[Math.floor(means.length * 0.025)]!, hi: means[Math.floor(means.length * 0.975)]!, n: values.length });
 }
 const quantile = (values: number[], share: number) => values.length ? [...values].sort((a, b) => a - b)[Math.min(values.length - 1, Math.floor(values.length * share))]! : 0;
 
@@ -70,14 +70,18 @@ export function score(retriever: Pick<Retriever, "id" | "production" | "group" |
     };
   });
   const falseOf = (selected: readonly Row[], nonCore: boolean) => selected.map((row) => cut(row).filter((id) => !nonCore || kindOf(id) !== "core").length > 0 ? 1 : 0);
+  const hit = stat(perPositive.map((item) => item.hit), seed);
+  const precision = stat(perPositive.map((item) => item.precision), seed);
+  const recall = stat(perPositive.map((item) => item.recall), seed);
+  const nearby = stat(perPositive.map((item) => item.nearby), seed);
+  const falseHit = stat(falseOf(nothing, false), seed);
+  const falseHitNonCore = stat(falseOf(nothing, true), seed);
+  // A poisoned twin in the top-k is a delivered wrong fact on the question's own subject (audit #27).
+  const poisonHit = stat(positives.map((row) => cut(row).some((id) => poisonOf(id)) ? 1 : 0), seed);
+  const offtopicFalseHit = stat(falseOf(rows.filter((row) => row.question.kind === "offtopic"), false), seed);
   return {
     id: retriever.id, production: retriever.production, group: retriever.group, k: retriever.k,
-    hit: stat(perPositive.map((item) => item.hit), seed), precision: stat(perPositive.map((item) => item.precision), seed), recall: stat(perPositive.map((item) => item.recall), seed),
-    nearby: stat(perPositive.map((item) => item.nearby), seed),
-    falseHit: stat(falseOf(nothing, false), seed), falseHitNonCore: stat(falseOf(nothing, true), seed),
-    // A poisoned twin in the top-k is a delivered wrong fact on the question's own subject (audit #27).
-    poisonHit: stat(positives.map((row) => cut(row).some((id) => poisonOf(id)) ? 1 : 0), seed),
-    offtopicFalseHit: stat(falseOf(rows.filter((row) => row.question.kind === "offtopic"), false), seed),
+    hit, precision, recall, nearby, falseHit, falseHitNonCore, poisonHit, offtopicFalseHit,
     delivered: mean(rows.map((row) => cut(row).length)),
     latencyMs: { p50: quantile(rows.map((row) => row.ms), 0.5), p95: quantile(rows.map((row) => row.ms), 0.95) },
   };
