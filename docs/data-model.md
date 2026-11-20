@@ -2,12 +2,15 @@
 title: Lane Pilot data model overview
 type: data-model
 created: 2026-10-10
-updated: 2026-10-30
+updated: 2026-11-20
 status: active
 confidence: medium
 tags: [data-model, sqlite, entities]
 sources:
+  - src/rooms/migrations.ts
   - src/rooms/storage/database.ts
+  - src/rooms/storage/analytics-store.ts
+  - src/rooms/errands/trajectory-delta.ts
   - src/rooms/harness/migrations.ts
   - src/rooms/relay/server/relay.ts
   - src/rooms/anamnesis/store.ts
@@ -53,15 +56,18 @@ The root plugin workspace owns the following schema families:
 - [Orchestration and execution](data-model/orchestration.md) — project settings, runs, tasks, attempts, harness trees and experiences, receipts, gates, task-notice receipts, tokens, verification timing and secret issuance (`src/rooms/storage/database.ts:47-426`).
 - [Owner profile and learning](data-model/knowledge.md) — Anamnesis record/evidence history in its separate SQLite store and automatic-learning observations, items and signals in the plugin database (`src/rooms/anamnesis/store.ts:52-72`, `src/rooms/learning/migrations.ts:1-10`, `:11-82`).
 - [Schedules and world](data-model/automation.md) — scheduled jobs, scheduled runs, and the saved Pixel World (`src/rooms/schedule/store.ts:15-63`, `src/rooms/world/migrations.ts:1-13`).
+- Nightly evolution and trajectory crystallization (`src/rooms/migrations.ts:809-831`):
+  - `lane_pilot_trajectory_delta` (`src/rooms/errands/trajectory-delta.ts:29-46`, spread into `src/rooms/migrations.ts:809`) — append-only ledger of masked course-correction interventions (`skill_request`, `rule_added`, `step_inserted`, `reference_branch`, `variant_selected`) guarded by `lane_pilot_trajectory_delta_no_delete`.
+  - `lane_pilot_day_digest` (`src/rooms/migrations.ts:811-831`, accessed via `src/rooms/storage/analytics-store.ts:250-356`) — idempotent nightly digests of daily PM runs, Pilot-activated chats, and completed non-errand user workflow runs guarded by `lane_pilot_day_digest_no_delete`.
 
 Workspace packages document their own schema tables and columns:
 
 - [Workflow engine data model](../packages/workflow-engine/docs/data-model.md) — journal, draft, test and trigger stores.
 - [World simulation data model](../packages/world-sim/docs/data-model.md) — simulation entities, not BB plugin persistence.
 
-The plugin's shared migration array includes stores exported by council, handoff, run-insights, workflow engine, schedule, learning and world packages, plus the harness room migration (`src/rooms/storage/database.ts:47-426`). Their data does not imply foreign-key ownership where the table definition contains no foreign key.
+The plugin's shared migration array (`src/rooms/migrations.ts:42-832`) includes stores exported by council, handoff, run-insights, workflow engine, schedule, learning, errands, and world packages, plus the harness room migration (`src/rooms/migrations.ts:4-35`). Their data does not imply foreign-key ownership where the table definition contains no foreign key.
 
-The array is positional: the hub records every applied statement by index and refuses a plugin whose statement at an index differs, so a new statement is appended at the end of the array, never inside a package's list spread in the middle (`src/rooms/storage/database.ts:422-425`). A workflow-engine migration is therefore exported as its own appended list instead of extending the middle-spread ops list (`packages/workflow-engine/src/ops-store.ts:43-45`). The hash lock `tests/fixtures/migrations.lock.json` pins every statement's index — one hash per statement, 251 entries — and `tests/migration-lineage.test.ts:34-43` fails the suite when a locked statement moved or a new one is missing from the lock.
+The array is positional: the hub records every applied statement by index and refuses a plugin whose statement at an index differs, so a new statement is appended at the end of the array, never inside a package's list spread in the middle (`src/rooms/migrations.ts:1-3`, `src/rooms/migrations.ts:809-832`). A workflow-engine migration is therefore exported as its own appended list instead of extending the middle-spread ops list (`packages/workflow-engine/src/ops-store.ts:43-45`). The hash lock `tests/fixtures/migrations.lock.json` pins every statement's index — one hash per statement, 422 entries — and `tests/migration-lineage.test.ts:34-43` fails the suite when a locked statement moved or a new one is missing from the lock.
 
 <!-- lane-pilot:backlinks -->
 ## Referenced by
