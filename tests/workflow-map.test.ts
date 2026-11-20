@@ -118,6 +118,28 @@ it("hover and search keep every unrelated node and edge object identical (nothin
   }
 }, 60_000);
 
+it("exposes dynamic websites category labels in map() and layoutMap() with deterministic catColor", async () => {
+  const { layoutMap, catColor } = await import("../src/rooms/workflow/ui/workflow-map");
+  const data = await map();
+  const siteCreation = data.graphs.find((graph) => graph.id === "site-creation");
+  expect(siteCreation?.category).toBe("websites");
+  expect(siteCreation?.categoryLabel).toEqual({ en: "Websites & Design", ru: "Сайты и дизайн" });
+
+  const layoutRu = await layoutMap(data, "ru");
+  expect(layoutRu.categories).toContain("websites");
+  expect(layoutRu.categoryLabels.websites).toBe("Сайты и дизайн");
+
+  const layoutEn = await layoutMap(data, "en");
+  expect(layoutEn.categories).toContain("websites");
+  expect(layoutEn.categoryLabels.websites).toBe("Websites & Design");
+
+  const color = catColor("websites");
+  expect(color).toMatch(/^oklch\(/);
+  expect(color).toBe(catColor("websites"));
+  expect(color).not.toBe(catColor("service"));
+  expect(color).not.toBe(catColor("code"));
+}, 60_000);
+
 it("hyphenates long Russian words at syllables, leaves short and Latin words alone", async () => {
   const { softHyphens } = await import("../src/rooms/workflow/ui/workflow-map");
   const show = (text: string) => softHyphens(text).replace(/­/g, "-");

@@ -2,7 +2,7 @@ import type { z } from "zod";
 import type { rpcContract } from "../../contracts";
 import type { StoredWorkflow, WorkflowStore } from "@lane-pilot/workflow-engine";
 import type { WorkflowNode } from "@lane-pilot/workflow-engine";
-import { workflowCategory } from "../categories";
+import { extractCategoryLabel, workflowCategory } from "../categories";
 import { describeStep } from "../step-describe";
 
 type MapOutput = z.infer<typeof rpcContract.workflow_map.output>;
@@ -42,7 +42,7 @@ export function buildWorkflowMap(items: StoredWorkflow[], statsOf: (workflowId: 
   for (const item of items) {
     const { workflow } = item;
     graphs.push({
-      id: workflow.id, name: workflow.name, category: workflowCategory(workflow), tags: workflow.tags,
+      id: workflow.id, name: workflow.name, category: workflowCategory(workflow), categoryLabel: extractCategoryLabel(workflow.category), tags: workflow.tags,
       scope: item.origin, status: workflow.status,
       // Only the two counters the map shows: the library's stats carry a dozen more fields the strict output refuses.
       ...pickStats(statsOf(workflow.id)),

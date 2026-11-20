@@ -30,7 +30,7 @@ const TELEGRAM_BOT_TOKEN_RE = /\b\d{8,10}:AA[A-Za-z0-9_-]{30,}\b/;
 const LITERAL_DOMAIN_RE = /\b(?:[a-z0-9-]+\.)+(?:ru|su|рф|com|net|org|io|ai|app|dev|co|me|info|biz|pro|tech|online|site|store|shop|cloud|uk|de|fr|es|it|nl|pl|ua|by|kz)\b/gi;
 const GENERIC_DOMAINS = new Set(["example.com", "example.org", "example.net", "example.ru", "localhost", "127.0.0.1"]);
 const INPUT_PLACEHOLDER_RE = /\{\{\s*\$?inputs\.[A-Za-z0-9_.-]+\s*\}\}|\$inputs\.[A-Za-z0-9_.-]+/g;
-const STRUCTURAL_REASONS = new Set(["new_v1", "topology_nodes_changed", "topology_edges_changed", "permissions_expanded", "breaking_required_input", "skills_removed"]);
+const STRUCTURAL_REASONS = new Set(["new_v1", "topology_nodes_changed", "topology_edges_changed", "permissions_expanded", "breaking_required_input", "skills_removed", "category_changed"]);
 
 const escapeRe = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const testRe = (re: RegExp, text: string): boolean => { re.lastIndex = 0; return re.test(text); };
@@ -184,6 +184,9 @@ export function classifyEvolutionDiff(
   const addedSkills = [...nextSkills].filter((s) => !baseSkills.has(s));
   if (addedSkills.length > 0) reasons.push("skills_added");
   if ([...baseSkills].some((s) => !nextSkills.has(s))) reasons.push("skills_removed");
+  const catIdOf = (wf: Record<string, unknown>): string | null =>
+    typeof wf.category === "string" ? wf.category.trim() || null : (wf.category as { id?: string } | undefined)?.id?.trim() || null;
+  if (catIdOf(baseWorkflow) !== catIdOf(nextWorkflow)) reasons.push("category_changed");
 
   const uniqueReasons = [...new Set(reasons)];
   if (!uniqueReasons.length && JSON.stringify(baseWorkflow) !== JSON.stringify(nextWorkflow)) uniqueReasons.push("copy_or_checks_refined");

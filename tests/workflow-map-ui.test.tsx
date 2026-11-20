@@ -43,10 +43,10 @@ const data = () => ({
   project: "not_requested" as const,
 });
 
-async function mount(props: Record<string, unknown> = {}) {
+async function mount(props: Record<string, unknown> = {}, mapData = data()) {
   await loadPluginApp(() => import("../app"));
   const { WorkflowMap } = await import("../src/rooms/workflow/ui/workflow-map");
-  const rpc = { workflow_map: async () => data(), get_preferences: () => ({ locale: "en", preference: "en", lastProjectId: null }) };
+  const rpc = { workflow_map: async () => mapData, get_preferences: () => ({ locale: "en", preference: "en", lastProjectId: null }) };
   return renderSlot({ component: () => <WorkflowMap locale="en" projectId={null} {...props} /> }, {}, { context: { projectId: null, threadId: null }, rpc: rpc as never });
 }
 
@@ -97,6 +97,42 @@ describe("Workflow map", () => {
     fireEvent.click(slot.getByTestId("wf-map-cat"));
     fireEvent.click(await slot.findByRole("option", { name: "Content" }));
     await waitFor(() => expect(slot.getByTestId("wf-map-canvas").getAttribute("data-focus")).toBe("content"));
+    expect(slot.getByTestId("wf-map-stats").textContent).toContain("1 graphs");
+  });
+
+  it("renders dynamic category chips and selects a dynamic category without resetting focus to code", async () => {
+    const analyticsBi = workflow({
+      id: "analytics-bi",
+      name: { en: "Analytics BI", ru: "Аналитика BI" },
+      description: { en: "Track BI metrics", ru: "Метрики BI" },
+      status: "published",
+      category: { id: "analytics-ops", label: { en: "Analytics & BI", ru: "Аналитика и BI" } },
+      nodes: [
+        { id: "collect", type: "agent", role: "analyst", prompt: "Collect.", output: [{ name: "done", type: "boolean" }] },
+      ],
+      edges: [{ from: "start", to: "collect" }, { from: "collect", to: "end", with: { result: "collect.done" } }],
+    });
+    const customData = {
+      ...buildWorkflowMap(
+        [item(reviewFix(), "builtin"), item(analyticsBi)],
+        (id) => (id === "review-fix" ? { runs30d: 3, successRate: 1 } : { runs30d: 1, successRate: 1 }),
+        "v-dyn",
+        "en",
+      ),
+      project: "not_requested" as const,
+    };
+
+    const slot = await mount({}, customData);
+    const canvas = await slot.findByTestId("wf-map-canvas");
+    await waitFor(() => expect(canvas.getAttribute("data-layout")).toBe("ready"));
+    expect(canvas.getAttribute("data-focus")).toBe("code");
+
+    const chip = await slot.findByTestId("wf-map-chip-analytics-ops");
+    expect(chip.textContent).toContain("Analytics & BI");
+
+    fireEvent.click(slot.getByTestId("wf-map-cat"));
+    fireEvent.click(await slot.findByRole("option", { name: "Analytics & BI" }));
+    await waitFor(() => expect(slot.getByTestId("wf-map-canvas").getAttribute("data-focus")).toBe("analytics-ops"));
     expect(slot.getByTestId("wf-map-stats").textContent).toContain("1 graphs");
   });
 });

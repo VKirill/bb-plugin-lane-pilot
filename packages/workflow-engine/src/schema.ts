@@ -20,6 +20,11 @@ export const MAX_SUBWORKFLOW_DEPTH = 3;
 const nodeId = z.string().regex(/^[a-z][a-z0-9_-]{0,47}$/, "id: lowercase letters, digits, - and _, starting with a letter");
 const bilingual = z.object({ en: z.string().min(1).max(2000), ru: z.string().min(1).max(2000) }).strict();
 
+export const BUILTIN_WORKFLOW_CATEGORIES = ["seo", "marketing", "code", "content", "research", "games", "business", "routines", "service"] as const;
+export const categorySlugSchema = z.string().regex(/^[a-z0-9][a-z0-9-]{0,31}$/, "category id: lowercase letters, digits, and -");
+export const workflowCategoryMetaSchema = z.object({ id: categorySlugSchema, label: bilingual.optional() }).strict();
+export type WorkflowCategoryMeta = z.infer<typeof workflowCategoryMetaSchema>;
+
 export const FIELD_TYPES = ["string", "number", "boolean", "enum", "array", "object", "json"] as const;
 export type FieldType = (typeof FIELD_TYPES)[number];
 
@@ -267,6 +272,7 @@ export const workflowSchema = z.object({
   /** Ids of neighbouring workflows this one is confused with; shown to the router's model as «not suitable if...». */
   not_for: z.array(z.string()).max(20).default([]),
   tags: z.array(z.string().max(40)).max(20).default([]),
+  category: workflowCategoryMetaSchema.optional(),
   /** A fragment called by a subworkflow node; it is not offered by the router. */
   internal: z.boolean().default(false),
   /** A starter graph: Lane Pilot starts it itself from this tool or event (e.g. `lane_pilot_dispatch_writer`). The router never offers it and `lane_pilot_run_workflow` refuses it. */
@@ -438,6 +444,10 @@ export function normalizeWorkflow(raw: unknown): unknown {
   const next: Raw = { ...raw };
   delete next.common_inputs;
   next.name = bilingualOf(next.name);
+  if ("category" in next && next.category !== undefined) {
+    if (typeof next.category === "string") next.category = { id: next.category };
+    else if (isRaw(next.category) && "label" in next.category && typeof next.category.label === "string") next.category = { ...next.category, label: bilingualOf(next.category.label) };
+  }
   if ("inputs" in next) next.inputs = fieldList(next.inputs, false);
   if ("outputs" in next) next.outputs = fieldList(next.outputs, false);
   if (typeof next.quality_mode === "string") next.quality_mode = { default: next.quality_mode };

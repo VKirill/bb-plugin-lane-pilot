@@ -6,7 +6,7 @@ import { artifactDef, artifactId } from "./artifacts";
 import { cronProblem, timezoneProblem } from "./cron";
 import { EMIT, executorKey, lowerWorkflow, outputFields } from "./lower";
 import { promptCoverageProblems } from "./prompt-coverage";
-import { END, MAX_SUBWORKFLOW_DEPTH, QUALITY_MODES, START, parseWorkflowObject } from "./schema";
+import { BUILTIN_WORKFLOW_CATEGORIES, END, MAX_SUBWORKFLOW_DEPTH, QUALITY_MODES, START, parseWorkflowObject } from "./schema";
 import type { Field, GraphNode, Workflow, WorkflowNode } from "./schema";
 
 export type WorkflowProblem = { level: "error" | "warning"; code: string; message: string; node?: string; edge?: number };
@@ -75,6 +75,9 @@ export function validateWorkflow(workflow: Workflow, options: ValidateOptions = 
     warn("budget_blind_without_usage", "the token or money budget counts only what the provider reports; a step without usage events is not counted, and the run is then stopped at 2 hours unless budget.maxWallSeconds says otherwise");
   }
   if (maxSteps !== undefined) warn("budget_max_steps_ignored", "budget.max_steps is ignored: loops are bounded by maxVisits; bound a run with max_minutes or max_usd");
+  if (workflow.category && !(BUILTIN_WORKFLOW_CATEGORIES as readonly string[]).includes(workflow.category.id) && !(workflow.category.label?.en.trim() && workflow.category.label?.ru.trim())) {
+    error("category_label_required", `category "${workflow.category.id}" is dynamic and requires bilingual label { en, ru }`);
+  }
 
 
   // Authoring-level checks on the file as written; the structure is checked on the form the engine runs.

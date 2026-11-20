@@ -13,6 +13,7 @@ import type { ServerCore } from "../../contracts/server";
 import type { DocsNightlyApi } from "../../docs/server/docs-nightly";
 import type { WorkflowEngineApi } from "./workflow";
 import {BUILTIN_SOURCES} from "../builtin";
+import { extractCategoryLabel, workflowCategory } from "../categories";
 import { LOOP_HOOK_MANIFEST, parseLoopHookManifest, prepareLoopWorkflow, type LoopHookManifest } from "../loop-hooks";
 
 /** The fields of the services bag this file reads, typed by the rooms that own them. */
@@ -101,7 +102,8 @@ export function createWorkflowLibrary(ctx: ServerCore, services: Pick<Services, 
   const summary = (item: StoredWorkflow, projectId?: string): WorkflowSummary => ({
     id: item.workflow.id, name: item.workflow.name, description: item.workflow.description, status: item.workflow.status, version: item.workflow.version,
     scope: item.origin, internal: item.workflow.internal, tags: item.workflow.tags, nodes: item.workflow.nodes.filter((node) => node.type !== "note").length,
-    warnings: item.warnings.length, stats: statsFor(item.workflow.id, projectId),
+    warnings: item.warnings.length, category: workflowCategory(item.workflow), categoryLabel: extractCategoryLabel(item.workflow.category),
+    stats: statsFor(item.workflow.id, projectId),
   });
 
   return {

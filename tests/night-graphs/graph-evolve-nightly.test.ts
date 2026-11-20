@@ -8,6 +8,7 @@ import {
   createStatusResolver,
   definitionSha256,
   loadWorkflow,
+  loadWorkflowStore,
   runDraftTest,
   testCasesOf,
 } from "@lane-pilot/workflow-engine";
@@ -18,6 +19,7 @@ import { applyGraphEvolveCandidates, collectGraphEvolveEvidence } from "../../sr
 import { collectOwnerWaiting, listOpenOwnerItems } from "../../src/rooms/owner-waiting";
 import { openDatabase } from "../../src/rooms/plugin-db";
 import { createWorkflowArchitect } from "../../src/rooms/workflow/server";
+import { buildWorkflowMap } from "../../src/rooms/workflow/server/workflow-map";
 import type { ServerCore } from "../../src/rooms/contracts/server";
 
 const tempDirs: string[] = [];
@@ -30,6 +32,7 @@ function makeTempGlobalDir(): string {
 
 function makeLandingWorkflow(overrides: {
   id?: string;
+  category?: unknown;
   prompt?: string;
   skills?: string[];
   extraInputs?: Record<string, unknown>;
@@ -41,6 +44,7 @@ function makeLandingWorkflow(overrides: {
   const id = overrides.id ?? "universal-landing-flow";
   return {
     id,
+    ...(overrides.category !== undefined ? { category: overrides.category } : {}),
     name: { en: "Universal landing flow", ru: "Универсальный поток лендинга" },
     description: {
       en: "Designs landing copy for {{$inputs.target_domain}} using verified inputs.",
@@ -224,6 +228,45 @@ describe("De-projectization Gate and diff classifier", () => {
     const secretsDiff = classifyEvolutionDiff(base, secretsNext);
     expect(secretsDiff.kind).toBe("structural_or_new");
     expect(secretsDiff.reasons).toContain("permissions_expanded");
+  });
+
+  it("rejects project-bound dynamic categories in checkDeprojectization and classifies category.id vs label changes", () => {
+    const logs: string[] = [];
+    const leakyCategoryDef = makeLandingWorkflow({
+      id: "project-sites-flow",
+      category: {
+        id: "vechkasov-web",
+        label: { en: "Vechkasov.ru Sites", ru: "Сайты Vechkasov.ru" },
+      },
+    });
+    const verdict = checkDeprojectization(leakyCategoryDef, {
+      knownProjectNames: ["Vechkasov"],
+      log: (m) => logs.push(m),
+      logLevel: "debug",
+    });
+    expect(verdict.ok).toBe(false);
+    expect(verdict.findings.map((f) => f.code)).toContain("project_name_or_domain");
+    expect(logs.some((line) => line.includes("WARN [nightGraphs.deprojectize] rejected"))).toBe(true);
+
+    const publishedWithCat = makeLandingWorkflow({
+      id: "analytics-bi-flow",
+      category: { id: "analytics-ops", label: { en: "Analytics & BI", ru: "Аналитика и BI" } },
+    });
+    const labelRefined = makeLandingWorkflow({
+      id: "analytics-bi-flow",
+      category: { id: "analytics-ops", label: { en: "Analytics & Reporting", ru: "Аналитика и отчётность" } },
+    });
+    expect(classifyEvolutionDiff(publishedWithCat, labelRefined)).toMatchObject({
+      kind: "minor_patch",
+    });
+
+    const categoryChanged = makeLandingWorkflow({
+      id: "analytics-bi-flow",
+      category: { id: "bi-reporting", label: { en: "BI Reporting", ru: "BI отчёты" } },
+    });
+    const catChangedDiff = classifyEvolutionDiff(publishedWithCat, categoryChanged);
+    expect(catChangedDiff.kind).toBe("structural_or_new");
+    expect(catChangedDiff.reasons).toContain("category_changed");
   });
 });
 
@@ -486,5 +529,61 @@ describe("lp.graph-evolve-nightly evidence collection and policy matrix", () => 
     expect(proposedItem).toBeDefined();
     expect(proposedItem?.actions[0]?.rpc?.method).toBe("pilot_panel_publish_workflow_draft");
     expect(proposedItem?.actions[0]?.rpc?.input).toEqual({ draftId: newDraft!.id });
+  });
+
+  it("supports end-to-end autonomous dynamic category creation, publish, store load, and workflow map projection", async () => {
+    const { bb } = createFakePluginHost({ pluginId: "lane-pilot" });
+    const db = openDatabase(bb);
+    const globalDir = makeTempGlobalDir();
+    let clock = 1_760_100_000_000;
+    const now = () => {
+      clock += 1_000;
+      return clock;
+    };
+    const logs: string[] = [];
+
+    const applied = await applyGraphEvolveCandidates(
+      { db, globalDir: () => globalDir, now, log: (m) => logs.push(m) },
+      [
+        {
+          workflowId: "analytics-bi-flow",
+          scope: "global",
+          name: { en: "Analytics BI flow", ru: "Поток аналитики и BI" },
+          description: { en: "Builds BI metrics report", ru: "Собирает отчёт по метрикам BI" },
+          definition: makeLandingWorkflow({
+            id: "analytics-bi-flow",
+            category: { id: "analytics-ops", label: { en: "Analytics & BI", ru: "Аналитика и BI" } },
+          }),
+        },
+      ],
+    );
+
+    expect(applied.proposedCount).toBe(1);
+    expect(applied.rejectedCount).toBe(0);
+    expect(applied.outcomes[0]).toMatchObject({
+      workflowId: "analytics-bi-flow",
+      kind: "structural_or_new",
+      status: "proposed_tested",
+      version: 1,
+    });
+    expect(logs.some((line) =>
+      line.includes("INFO [nightGraphs.graphEvolve] category_selected")
+      && line.includes('"categoryId":"analytics-ops"')
+      && line.includes('"isDynamic":true'),
+    )).toBe(true);
+
+    const draftId = applied.outcomes[0]!.draftId!;
+    const architect = makeTestArchitect(db, globalDir, logs);
+    const pub = await architect.publish({ projectId: "*", draftId });
+    expect(pub.published).toBe(true);
+
+    const store = await loadWorkflowStore({ builtin: [], globalDir });
+    const mapData = buildWorkflowMap(store.list(), () => ({ runs30d: 0, successRate: null }), "test-sha");
+    const mapped = mapData.graphs.find((g) => g.id === "analytics-bi-flow");
+    expect(mapped).toMatchObject({
+      id: "analytics-bi-flow",
+      category: "analytics-ops",
+      categoryLabel: { en: "Analytics & BI", ru: "Аналитика и BI" },
+    });
   });
 });

@@ -10,7 +10,7 @@ import { postOwnerItem, rpcLine } from "../../owner-waiting";
 import { modelCatalogOf, readProviderFolderBlock, resolveSpawnModel, scheduleIsolated, spawnUsageOf, warmSpawnUsage, type WorkflowEngineApi, type WorkflowTriggersApi, type WriterHostApi } from "../../platform/server";
 import type { RuleScanApi } from "../../self-repair/server";
 import { HARNESS_VERSION, createDraftStore, globalWorkflowDir, latestErrandEpisodeRows, listErrandEpisodeRows, listPilotDayDigests, loadWorkflowStore, type PilotDayCategoryHint } from "../../storage";
-import { builtinWorkflow } from "../../workflow";
+import { BUILTIN_SOURCES, builtinWorkflow, isBuiltinWorkflowCategory, workflowCategory, WORKFLOW_CATEGORIES } from "../../workflow";
 import { createWorkflowArchitect, type ArchitectDeps, type WorkflowArchitect } from "../../workflow/server";
 import { checkDeprojectization, classifyEvolutionDiff, type DeprojectizeContext } from "../deprojectize";
 import { analystPlace } from "./episodes-graph";
@@ -23,6 +23,7 @@ export const GRAPH_EVOLVE_CRON = "50 4 * * *";
 export type GraphEvolveCandidate = {
   workflowId: string; scope: "global" | "project"; projectId?: string | null;
   name: string | { en: string; ru: string }; description: string | { en: string; ru: string };
+  category?: string | { id: string; label?: { en: string; ru: string } };
   definition: Record<string, unknown>; sourceDeltaIds?: string[]; sourceProcessKey?: string | null;
 };
 
@@ -173,13 +174,17 @@ export async function applyGraphEvolveCandidates(
       outcomes.push({ workflowId, draftId: null, kind: "structural_or_new", status: "rejected_invalid", version: null, reason: "id_reserved" });
       rejectedCount += 1; continue;
     }
+    const category = candidate.definition.category ?? candidate.category;
+    const candidateDef = category !== undefined && candidate.definition.category === undefined
+      ? { ...candidate.definition, category }
+      : candidate.definition;
     const existing = drafts.listEvolutionDrafts({ workflowId, scope: candidate.scope, ...(candidate.scope === "project" && candidate.projectId ? { projectId: candidate.projectId } : {}) })[0] ?? null;
     const diskBase = candidate.scope === "global" ? readDiskBase(dirFn(), workflowId) : null;
     const baseDef = existing?.publishedVersion ? (drafts.latestPublishedSnapshot(existing.id)?.definition ?? diskBase?.def ?? null) : (diskBase?.def ?? null);
-    const diff = classifyEvolutionDiff(baseDef, candidate.definition, { log });
+    const diff = classifyEvolutionDiff(baseDef, candidateDef, { log });
 
     if (candidate.scope === "global") {
-      const verdict = checkDeprojectization(candidate.definition, { ...deps.knownContext, log });
+      const verdict = checkDeprojectization(candidateDef, { ...deps.knownContext, log });
       if (!verdict.ok) {
         const codes = verdict.findings.map((f) => f.code).join(",");
         log(`WARN [nightGraphs.graphEvolve] deprojectize_failed ${redactKnown(JSON.stringify({ workflowId, codes }))}`);
@@ -190,7 +195,7 @@ export async function applyGraphEvolveCandidates(
 
     const projectId = existing?.projectId ?? (candidate.projectId?.trim() || "*");
     const preparedDef: Record<string, unknown> = {
-      ...candidate.definition, id: workflowId, status: "draft",
+      ...candidateDef, id: workflowId, status: "draft",
       name: candidate.definition.name ?? bilingual(candidate.name),
       description: candidate.definition.description ?? bilingual(candidate.description),
       scope: candidate.scope === "project" ? { level: "project", projectId } : { level: "global" },
@@ -202,6 +207,7 @@ export async function applyGraphEvolveCandidates(
       outcomes.push({ workflowId, draftId: null, kind: diff.kind, status: "rejected_invalid", version: null, reason });
       rejectedCount += 1; continue;
     }
+    log(`INFO [nightGraphs.graphEvolve] category_selected ${redactKnown(JSON.stringify({ workflowId, categoryId: loaded.workflow.category?.id ?? workflowCategory(loaded.workflow), isDynamic: Boolean(loaded.workflow.category && !isBuiltinWorkflowCategory(loaded.workflow.category.id)) }))}`);
 
     const results = [];
     for (const tc of testCasesOf(loaded.workflow)) results.push(await runDraftTest({ db: deps.db as never, harnessVersion: HARNESS_VERSION, resolveWorkflow: resolve, now }, loaded.workflow, tc));
@@ -264,6 +270,20 @@ export async function applyGraphEvolveCandidates(
   return { outcomes, publishedCount, proposedCount, rejectedCount, summary: `graph-evolve: ${publishedCount} auto-published, ${proposedCount} proposed, ${rejectedCount} rejected` };
 }
 
+type KnownCategory = { id: string; label?: { en: string; ru: string } };
+function collectKnownCategories(catalog: ReadonlyArray<{ workflow: Workflow }>, collected: GraphEvolveCollectSummary): KnownCategory[] {
+  const map = new Map<string, KnownCategory>(WORKFLOW_CATEGORIES.map((id) => [id, { id }]));
+  const merge = (id: string, label?: { en: string; ru: string } | null) => {
+    const slug = id.trim();
+    if (!slug) return;
+    const prev = map.get(slug);
+    map.set(slug, label ? { id: slug, label } : (prev ?? { id: slug }));
+  };
+  for (const item of catalog) if (item.workflow.status === "published" && item.workflow.category) merge(item.workflow.category.id, item.workflow.category.label);
+  for (const cluster of collected.clusters) if (cluster.categoryHint) merge(cluster.categoryHint.id, cluster.categoryHint.label);
+  return [...map.values()];
+}
+
 async function synthesizeInIsolatedRoom(ctx: ServerCore, services: Services, collected: GraphEvolveCollectSummary): Promise<GraphEvolveCandidate[]> {
   const hintProject = collected.deltas.find((d) => d.projectId)?.projectId ?? null;
   const { place, projectId: threadProject } = await analystPlace(ctx.db, hintProject, (id) =>
@@ -282,10 +302,14 @@ async function synthesizeInIsolatedRoom(ctx: ServerCore, services: Services, col
   const spawnUsage = spawnUsageOf(ctx);
   await warmSpawnUsage(spawnUsage, host.hostId);
   const role = resolveSpawnModel({ role: "episode-analyst", settings, catalog: modelCatalogOf(ctx).peek(), usage: spawnUsage, hostId: host.hostId, envPath: host.path, folderBlock: await readProviderFolderBlock(ctx.bb.storage.kv, host.hostId) });
-  const existingGlobal = (await loadWorkflowStore({ builtin: [], globalDir: globalWorkflowDir() }).catch(() => null))?.list().map((s) => ({ id: s.workflow.id, version: s.workflow.version, title: s.workflow.name })) ?? [];
+  const catalogItems = (await loadWorkflowStore({ builtin: BUILTIN_SOURCES, globalDir: globalWorkflowDir() }).catch(() => null))?.list() ?? [];
+  const existingGlobal = catalogItems.filter((s) => s.origin === "global").map((s) => ({ id: s.workflow.id, version: s.workflow.version, title: s.workflow.name }));
+  const knownCategories = collectKnownCategories(catalogItems, collected);
   const prompt = redactKnown([
     "You are Lane Pilot's nightly graph evolution synthesizer. Do not read files outside this message.",
     "Parameterize all project-specific values with $inputs.* (no absolute paths, domains, projectIds, hostIds or secrets).",
+    `Known categories: ${JSON.stringify(knownCategories)}`,
+    'Category rule: if the workflow belongs to an existing category, specify definition.category (e.g. {"id":"<existing-id>"}) or matching tags. If a new reusable domain/direction crystallizes from daily chats and work that does not fit existing shelves, CREATE a universal deprojectized category directly in definition.category: {"id":"<kebab-slug>","label":{"en":"...","ru":"..."}}.',
     `Existing global workflows: ${JSON.stringify(existingGlobal)}`,
     `Masked evidence: ${JSON.stringify(collected)}`,
     'Return ONLY JSON: {"candidates":[{"workflowId":"...","scope":"global","name":{"en":"...","ru":"..."},"description":{"en":"...","ru":"..."},"sourceDeltaIds":[],"definition":{...}}]}',

@@ -1,13 +1,14 @@
 import type { z } from "zod";
 import type { rpcContract } from "../../contracts";
 import { t, type I18nKey, type Locale } from "@lane-pilot/i18n";
-import { WORKFLOW_CATEGORIES, workflowCategory, type WorkflowCategory } from "../categories";
+import { compareWorkflowCategories, isBuiltinWorkflowCategory, resolveCategoryLabel, workflowCategory } from "../categories";
 
 type Listing = z.infer<(typeof rpcContract)["workflow_list"]["output"]>;
 export type LibraryRow = Listing["workflows"][number];
 export type LibraryView = "grid" | "list";
 export interface CategoryGroup {
-  cat: WorkflowCategory;
+  cat: string;
+  label: string;
   rows: LibraryRow[];
 }
 
@@ -15,30 +16,46 @@ export const STATUS_PILL: Record<LibraryRow["status"], string> = { draft: "lp-pi
 
 export const shortTime = (at: number) => new Date(at).toLocaleString(undefined, { dateStyle: "short", timeStyle: "short" });
 
-const catName = (cat: WorkflowCategory) => t(`wfCat_${cat}` as I18nKey);
+const isDebug = () => {
+  const env = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env;
+  return Boolean(env?.DEBUG_FIX) || env?.LOG_LEVEL === "debug";
+};
+const catName = (cat: string, customLabel: { en: string; ru: string } | null | undefined, locale: Locale) =>
+  resolveCategoryLabel(cat, customLabel, locale === "ru" ? "ru" : "en", (b) => t(`wfCat_${b}` as I18nKey));
 const runs30 = (rows: readonly LibraryRow[]) => rows.reduce((sum, row) => sum + row.stats.runs30d, 0);
 
-/** Rows bucketed by shelf, in WORKFLOW_CATEGORIES order; empty shelves are dropped (a filtered-out group simply is not rendered). */
-export function groupByCategory(rows: readonly LibraryRow[]): CategoryGroup[] {
-  const byCat = new Map<WorkflowCategory, LibraryRow[]>();
+/** Rows bucketed by shelf, in category order; empty shelves are dropped (a filtered-out group simply is not rendered). */
+export function groupByCategory(rows: readonly LibraryRow[], locale: Locale = "en"): CategoryGroup[] {
+  const byCat = new Map<string, LibraryRow[]>();
+  const customLabels = new Map<string, { en: string; ru: string }>();
   for (const row of rows) {
-    const cat = workflowCategory(row);
-    byCat.set(cat, [...(byCat.get(cat) ?? []), row]);
+    const cat = (row.category && row.category.trim()) || workflowCategory(row);
+    const bucket = byCat.get(cat);
+    if (bucket) bucket.push(row);
+    else byCat.set(cat, [row]);
+    if (row.categoryLabel && !customLabels.has(cat)) customLabels.set(cat, row.categoryLabel);
   }
-  return WORKFLOW_CATEGORIES.filter((cat) => byCat.has(cat)).map((cat) => ({ cat, rows: byCat.get(cat)! }));
+  const categories = [...byCat.keys()].sort((a, b) => compareWorkflowCategories(a, b));
+  return categories.map((cat) => {
+    const customLabel = customLabels.get(cat) ?? null;
+    if (!isBuiltinWorkflowCategory(cat) && !customLabel && isDebug()) {
+      console.warn(`[workflowLibrary] dynamic category missing label: ${cat}`);
+    }
+    return { cat, label: catName(cat, customLabel, locale), rows: byCat.get(cat)! };
+  });
 }
 
 /** One chip per category that has graphs, plus «All»; a chip shows the graph count and the 30-day runs of its shelf. */
-export function CategoryChips({ groups, focus, onFocus }: { groups: CategoryGroup[]; focus: WorkflowCategory | null; onFocus: (cat: WorkflowCategory | null) => void }) {
+export function CategoryChips({ groups, focus, onFocus }: { groups: CategoryGroup[]; focus: string | null; onFocus: (cat: string | null) => void }) {
   const chip = (active: boolean) =>
     `shrink-0 whitespace-nowrap rounded-full border px-3 py-1.5 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring ${
       active ? "border-primary bg-primary/10 text-foreground" : "border-border bg-card text-muted-foreground hover:bg-state-hover hover:text-foreground"}`;
   return (
     <div className="flex gap-2 overflow-x-auto pb-1" data-testid="wf-chips" role="group" aria-label={t("wfCatAll")}>
       <button type="button" data-testid="wf-chip-all" aria-pressed={focus === null} onClick={() => onFocus(null)} className={chip(focus === null)}>{t("wfCatAll")}</button>
-      {groups.map(({ cat, rows }) => (
+      {groups.map(({ cat, label, rows }) => (
         <button type="button" key={cat} data-testid={`wf-chip-${cat}`} aria-pressed={focus === cat} onClick={() => onFocus(cat)} className={chip(focus === cat)}>
-          {catName(cat)}
+          {label}
           <span className="ml-1.5 text-muted-foreground">{t("wfCatGraphs").replace("{n}", String(rows.length))} · {t("wfCatRuns30d").replace("{n}", String(runs30(rows)))}</span>
         </button>
       ))}
@@ -76,8 +93,8 @@ export function WorkflowCard({ row, locale, onOpen }: { row: LibraryRow; locale:
 const cardsCls = (view: LibraryView) => view === "grid" ? "grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3" : "divide-y divide-border/60";
 
 /** One shelf: a collapsible header, the «Most used» top-3 by runs30d, then the rest of the shelf's graphs. */
-export function CategorySection({ cat, rows, collapsed, focused, onToggle, view, locale, onOpen }: {
-  cat: WorkflowCategory; rows: LibraryRow[]; collapsed: boolean; focused: boolean;
+export function CategorySection({ cat, label, rows, collapsed, focused, onToggle, view, locale, onOpen }: {
+  cat: string; label?: string; rows: LibraryRow[]; collapsed: boolean; focused: boolean;
   onToggle: () => void; view: LibraryView; locale: Locale; onOpen: (id: string) => void;
 }) {
   const top = rows.filter((row) => row.stats.runs30d > 0).sort((a, b) => b.stats.runs30d - a.stats.runs30d).slice(0, 3);
@@ -89,7 +106,7 @@ export function CategorySection({ cat, rows, collapsed, focused, onToggle, view,
       <button type="button" onClick={onToggle} aria-expanded={!collapsed} data-testid={`wf-cat-toggle-${cat}`}
         className="flex w-full min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5 rounded-lg px-1 py-1.5 text-left hover:bg-state-hover focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring">
         <span aria-hidden className="w-3 shrink-0 text-xs text-muted-foreground">{collapsed ? "▸" : "▾"}</span>
-        <span className="text-sm font-medium">{catName(cat)}</span>
+        <span className="text-sm font-medium">{label ?? catName(cat, null, locale)}</span>
         <span className="text-xs text-muted-foreground">{t("wfCatGraphs").replace("{n}", String(rows.length))} · {t("wfCatRuns30d").replace("{n}", String(runs30(rows)))}</span>
       </button>
       {collapsed ? null : (

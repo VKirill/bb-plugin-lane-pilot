@@ -365,6 +365,7 @@ export const workflowStatsSchema = z.object({
 export const workflowSummarySchema = z.object({
   id: z.string(), name: bilingualSchema, description: bilingualSchema, status: z.enum(["draft", "tested", "published", "deprecated"]), version: z.number().int(),
   scope: z.enum(["builtin", "global", "project"]), internal: z.boolean(), tags: z.array(z.string()), nodes: z.number().int(), warnings: z.number().int(),
+  category: z.string().optional(), categoryLabel: bilingualSchema.nullable().optional(),
   stats: workflowStatsSchema,
 }).strict();
 export const workflowRunRowSchema = z.object({

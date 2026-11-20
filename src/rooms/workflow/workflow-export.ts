@@ -1,6 +1,6 @@
 import type { Workflow } from "@lane-pilot/workflow-engine";
 import { describeWorkflowMarkdown, exportIntro } from "./step-describe";
-import { WORKFLOW_CATEGORIES, workflowCategory, type WorkflowCategory } from "./categories";
+import { compareWorkflowCategories, workflowCategory } from "./categories";
 
 /** One workflow of the library with the text its file carries (the raw JSON object; builtins keep their bundled value). */
 export type WorkflowExportEntry = {
@@ -16,7 +16,7 @@ export type WorkflowExportResult = {
     commit: string | null;
     exportedAt: string;
     redacted: boolean;
-    graphs: Array<{ id: string; version: number; category: WorkflowCategory; scope: WorkflowExportEntry["scope"] }>;
+    graphs: Array<{ id: string; version: number; category: string; scope: WorkflowExportEntry["scope"] }>;
   };
   files: WorkflowExportFile[];
   markdown: string;
@@ -60,9 +60,16 @@ export function redactDefinition(value: unknown): unknown {
 /** The overview of the export: how to read it, then a section per category and every graph step by step, in full. */
 export function exportMarkdown(entries: WorkflowExportEntry[], locale: "en" | "ru" = "ru", redact = true): string {
   const lines: string[] = [locale === "ru" ? "# Графы Lane Pilot" : "# Lane Pilot graphs", "", ...exportIntro(locale)];
-  for (const category of WORKFLOW_CATEGORIES) {
-    const group = entries.filter((entry) => workflowCategory(entry.workflow) === category);
-    if (!group.length) continue;
+  const byCategory = new Map<string, WorkflowExportEntry[]>();
+  for (const entry of entries) {
+    const category = workflowCategory(entry.workflow);
+    const bucket = byCategory.get(category);
+    if (bucket) bucket.push(entry);
+    else byCategory.set(category, [entry]);
+  }
+  const categories = [...byCategory.keys()].sort((a, b) => compareWorkflowCategories(a, b));
+  for (const category of categories) {
+    const group = byCategory.get(category)!;
     lines.push(`## ${category}`, "");
     for (const entry of group) lines.push(...describeWorkflowMarkdown(redact ? redactDefinition(entry.definition) as Record<string, unknown> : entry.definition, locale));
   }

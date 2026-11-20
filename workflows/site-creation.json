@@ -26,6 +26,13 @@
     "ui-audit"
   ],
   "status": "published",
+  "category": {
+    "id": "websites",
+    "label": {
+      "en": "Websites & Design",
+      "ru": "Сайты и дизайн"
+    }
+  },
   "tags": [
     "website",
     "site",

@@ -114,4 +114,34 @@ describe("Workflow library by categories", () => {
     fireEvent.click(slot.getByTestId("wf-tab-library"));
     expect(slot.getByTestId("wf-list")).toBeTruthy();
   });
+
+  it("orders dynamic category shelves, renders localized chips, and passes dynamic categories to export", async () => {
+    const rows = [
+      row("seo-page", { tags: ["seo"] }),
+      row("site-creation", { category: "websites", categoryLabel: { en: "Websites & Design", ru: "Сайты и дизайн" } }),
+      row("lp.janitor"),
+    ];
+
+    const slotEn = await mount(world(rows).rpc);
+    await slotEn.findByTestId("wf-row-seo-page");
+    const order = Array.from(slotEn.getByTestId("wf-list").querySelectorAll("[data-testid^='wf-category-']")).map((node) => node.getAttribute("data-testid"));
+    expect(order).toEqual(["wf-category-seo", "wf-category-websites", "wf-category-service"]);
+    expect(slotEn.getByTestId("wf-chip-websites").textContent).toContain("Websites & Design");
+
+    // Open export dialog and verify dynamic category is present in the category selector.
+    fireEvent.click(slotEn.getByTestId("wfx-open"));
+    fireEvent.click(await slotEn.findByTestId("wfx-what-category"));
+    fireEvent.click(slotEn.getByTestId("wfx-category"));
+    expect(await slotEn.findByRole("option", { name: "Websites & Design" })).toBeTruthy();
+    fireEvent.click(slotEn.getByTestId("wfx-cancel"));
+
+    cleanup();
+    setLocaleOverride("ru");
+    const slotRu = await mount({
+      ...world(rows).rpc,
+      get_preferences: () => ({ locale: "ru", preference: "ru", lastProjectId: null }),
+    }, { locale: "ru" });
+    await slotRu.findByTestId("wf-row-seo-page");
+    expect(slotRu.getByTestId("wf-chip-websites").textContent).toContain("Сайты и дизайн");
+  });
 });

@@ -16,7 +16,6 @@ import { listDrafts, startArchitect, type DraftRow } from "./workflow-drafts";
 import { CategoryChips, CategorySection, groupByCategory, shortTime, type LibraryView } from "./workflow-library-parts";
 import { ExportGraphsButton } from "./workflow-export";
 import { WorkflowMap } from "./workflow-map";
-import type { WorkflowCategory } from "../categories";
 
 type Listing = z.infer<(typeof rpcContract)["workflow_list"]["output"]>;
 type Row = Listing["workflows"][number];
@@ -74,8 +73,8 @@ export function WorkflowsScreen({ locale, projectId, architectProjectId = projec
   const [openId, setOpenId] = useState<string | null>(null);
   const [section, setSection] = useState<"library" | "map">("library");
   const [view, setView] = useState<LibraryView>(storedView);
-  const [focusCat, setFocusCat] = useState<WorkflowCategory | null>(null);
-  const [collapsed, setCollapsed] = useState<ReadonlySet<WorkflowCategory>>(() => new Set<WorkflowCategory>(["service"]));
+  const [focusCat, setFocusCat] = useState<string | null>(null);
+  const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(() => new Set<string>(["service"]));
   const generation = useRef(0);
   const listRef = useRef<HTMLDivElement>(null);
 
@@ -115,12 +114,12 @@ export function WorkflowsScreen({ locale, projectId, architectProjectId = projec
 
   const shown = useMemo(() => (listing?.workflows ?? []).filter((row) =>
     matches(row, query) && (status === ANY || row.status === status) && (scope === ANY || row.scope === scope)), [listing, query, status, scope]);
-  const chipGroups = useMemo(() => groupByCategory(listing?.workflows ?? []), [listing]);
-  const shownGroups = useMemo(() => groupByCategory(shown), [shown]);
+  const chipGroups = useMemo(() => groupByCategory(listing?.workflows ?? [], locale), [listing, locale]);
+  const shownGroups = useMemo(() => groupByCategory(shown, locale), [shown, locale]);
 
   const pickView = (next: LibraryView) => { setView(next); try { localStorage.setItem(VIEW_KEY, next); } catch { /* private mode */ } };
-  const toggleCat = (cat: WorkflowCategory) => setCollapsed((prev) => { const next = new Set(prev); next.has(cat) ? next.delete(cat) : next.add(cat); return next; });
-  const focusCategory = (cat: WorkflowCategory | null) => {
+  const toggleCat = (cat: string) => setCollapsed((prev) => { const next = new Set(prev); next.has(cat) ? next.delete(cat) : next.add(cat); return next; });
+  const focusCategory = (cat: string | null) => {
     setFocusCat(cat);
     if (!cat) return;
     setCollapsed((prev) => { const next = new Set(prev); next.delete(cat); return next; });
@@ -168,7 +167,8 @@ export function WorkflowsScreen({ locale, projectId, architectProjectId = projec
         <div className="flex shrink-0 flex-wrap items-center gap-2">
           {headerActions}
           {/* «Selected» exports what the search and filters show now. */}
-          <ExportGraphsButton locale={locale} projectId={projectId} selectedIds={shown.length < (listing?.workflows.length ?? 0) ? shown.map((row) => row.id) : []} />
+          <ExportGraphsButton locale={locale} projectId={projectId} selectedIds={shown.length < (listing?.workflows.length ?? 0) ? shown.map((row) => row.id) : []}
+            categories={chipGroups.length ? chipGroups.map((g) => ({ key: g.cat, label: g.label })) : undefined} />
           {architectProjectId ? (
             <Button type="button" size="sm" className="lp-accent h-8 shrink-0 px-3 text-sm" disabled={architect.busy} data-testid="wf-architect-start" onClick={() => void buildWithArchitect()}>
               {architect.busy ? t("wfArchitectStarting") : t("wfArchitectBuild")}
@@ -264,8 +264,8 @@ export function WorkflowsScreen({ locale, projectId, architectProjectId = projec
           ) : null}
           {shown.length ? (
             <div className="space-y-4" data-testid="wf-list" ref={listRef}>
-              {shownGroups.map(({ cat, rows }) => (
-                <CategorySection key={cat} cat={cat} rows={rows} collapsed={collapsed.has(cat)} focused={focusCat === cat}
+              {shownGroups.map(({ cat, label, rows }) => (
+                <CategorySection key={cat} cat={cat} label={label} rows={rows} collapsed={collapsed.has(cat)} focused={focusCat === cat}
                   onToggle={() => toggleCat(cat)} view={view} locale={locale} onOpen={setOpenId} />
               ))}
             </div>

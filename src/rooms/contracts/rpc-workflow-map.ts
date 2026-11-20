@@ -12,7 +12,7 @@ export const rpcWorkflowMap = {
       commit: z.string().nullable(),
       generatedAt: z.number().int(),
       graphs: z.array(z.object({
-        id: z.string(), name: bilingualSchema, category: z.string(), tags: z.array(z.string()),
+        id: z.string(), name: bilingualSchema, category: z.string(), categoryLabel: bilingualSchema.nullable().optional(), tags: z.array(z.string()),
         scope: z.enum(["builtin", "global", "project"]), status: z.enum(["draft", "tested", "published", "deprecated"]),
         runs30d: z.number().int(), successRate: z.number().nullable(),
       }).strict()),

@@ -5,7 +5,7 @@ import type { z } from "zod";
 import type { rpcContract } from "../../contracts";
 import { t, type Locale } from "@lane-pilot/i18n";
 import { Button, Icon, Input, Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@lane-pilot/ui-kit";
-import { WORKFLOW_CATEGORIES, type WorkflowCategory } from "../categories";
+import { WORKFLOW_CATEGORIES, compareWorkflowCategories, isBuiltinWorkflowCategory, resolveCategoryLabel, type BuiltinWorkflowCategory } from "../categories";
 
 /**
  * «Карта графов»: every workflow of the library on one canvas — a cluster per category, a framed cell per graph, its steps
@@ -32,7 +32,7 @@ const TYPE_LABEL: Record<string, string> = {
   agent: "wmTypeAgent", human: "wmTypeHuman", action: "wmTypeAction", decision: "wmTypeDecision", jev: "wmTypeJev",
   parallel: "wmTypeParallel", subworkflow: "wmTypeSubworkflow", join: "wmTypeJoin", "lp-task": "wmTypeLpTask", note: "wmTypeAgent",
 };
-const CAT_LABEL: Record<WorkflowCategory, string> = {
+const CAT_LABEL: Record<BuiltinWorkflowCategory, string> = {
   seo: "wmCatSeo", marketing: "wmCatMarketing", code: "wmCatCode", content: "wmCatContent", research: "wmCatResearch",
   games: "wmCatGames", business: "wmCatBusiness", routines: "wmCatRoutines", service: "wmCatService",
 };
@@ -40,12 +40,20 @@ const CAT_LABEL: Record<WorkflowCategory, string> = {
  * The map's palette: one hue per category (oklch hue, chroma). A cluster, its graphs' accent bars and its legend chip all
  * take it, so a category reads as one colour from far out; the step types keep their own colours for the left bar.
  */
-const CAT_HUE: Record<WorkflowCategory, [number, number]> = {
+const CAT_HUE: Record<BuiltinWorkflowCategory, [number, number]> = {
   seo: [25, 0.17], marketing: [340, 0.16], code: [255, 0.15], content: [160, 0.13], research: [300, 0.15],
   games: [200, 0.12], business: [85, 0.14], routines: [55, 0.16], service: [250, 0.03],
 };
-export const catColor = (cat: WorkflowCategory, lightness = 62, alpha = 1): string => {
-  const [hue, chroma] = CAT_HUE[cat] ?? CAT_HUE.code;
+const dynamicHue = (slug: string): [number, number] => {
+  let hash = 2166136261;
+  for (let i = 0; i < slug.length; i += 1) {
+    hash ^= slug.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return [(hash >>> 0) % 360, 0.14];
+};
+export const catColor = (cat: string, lightness = 62, alpha = 1): string => {
+  const [hue, chroma] = isBuiltinWorkflowCategory(cat) ? CAT_HUE[cat] : dynamicHue(cat);
   return `oklch(${lightness}% ${chroma} ${hue} / ${alpha})`;
 };
 const CANVAS_BG = "color-mix(in oklab, var(--background) 93%, var(--primary))";
@@ -89,7 +97,7 @@ export type ModeLayout = { nodes: Node[]; centers: Map<string, { x: number; y: n
  * each call also in a lit version, so a hover swaps one edge object and touches nothing else.
  */
 export type MapLayout = {
-  overview: ModeLayout; detail: ModeLayout; categories: WorkflowCategory[];
+  overview: ModeLayout; detail: ModeLayout; categories: string[]; categoryLabels: Readonly<Record<string, string>>;
   innerEdges: Edge[]; callEdges: Edge[]; litCalls: Map<string, Edge>;
 };
 
@@ -134,7 +142,7 @@ export const CALL_DIM = 0.08;
 const graphIdOf = (node: Node): string | null =>
   node.type === "graphGroup" ? (node.data.graph as MapGraph).id : node.type === "step" ? (node.data.step as MapStep).graph : null;
 
-const catOf = (graph: MapGraph): WorkflowCategory => (WORKFLOW_CATEGORIES as readonly string[]).includes(graph.category) ? graph.category as WorkflowCategory : "code";
+const catOf = (graph: MapGraph): string => graph.category.trim() || "code";
 const runsOf = (graphs: MapGraph[]) => graphs.reduce((sum, graph) => sum + graph.runs30d, 0);
 
 /**
@@ -165,13 +173,28 @@ export async function layoutMap(data: MapData, locale: Locale = "en"): Promise<M
     laidGraphs.set(graph.id, laid);
   }));
 
-  const byCat = new Map<WorkflowCategory, MapGraph[]>();
-  for (const graph of data.graphs) (byCat.get(catOf(graph)) ?? byCat.set(catOf(graph), []).get(catOf(graph))!).push(graph);
+  const byCat = new Map<string, MapGraph[]>();
+  const customLabels = new Map<string, { en: string; ru: string }>();
+  for (const graph of data.graphs) {
+    const cat = catOf(graph);
+    (byCat.get(cat) ?? byCat.set(cat, []).get(cat)!).push(graph);
+    if (graph.categoryLabel && !customLabels.has(cat)) customLabels.set(cat, graph.categoryLabel);
+  }
   // Most runs first; the service graphs (lp.*) always last — they run the most and say the least about the owner's work.
-  const categories = [...byCat.keys()].sort((a, b) => Number(a === "service") - Number(b === "service")
-    || runsOf(byCat.get(b)!) - runsOf(byCat.get(a)!) || WORKFLOW_CATEGORIES.indexOf(a) - WORKFLOW_CATEGORIES.indexOf(b));
+  const categories = [...byCat.keys()].sort((a, b) => compareWorkflowCategories(a, b, runsOf(byCat.get(a)!), runsOf(byCat.get(b)!)));
   const sorted = new Map(categories.map((cat) => [cat, [...byCat.get(cat)!].sort((a, b) => b.runs30d - a.runs30d || a.id.localeCompare(b.id))]));
-  const catLabel = (cat: WorkflowCategory) => t(CAT_LABEL[cat] as Parameters<typeof t>[0]);
+  const env = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env;
+  const debugMode = env?.LOG_LEVEL === "debug" || Boolean(env?.DEBUG_FIX);
+  const lang = locale === "ru" ? "ru" : "en";
+  const categoryLabels: Record<string, string> = {};
+  for (const cat of categories) {
+    const customLabel = customLabels.get(cat);
+    if (!isBuiltinWorkflowCategory(cat) && !customLabel && debugMode) {
+      console.warn(`[workflowMap] dynamic category missing label: ${cat}`);
+    }
+    categoryLabels[cat] = resolveCategoryLabel(cat, customLabel, lang, (b) => t(CAT_LABEL[b] as Parameters<typeof t>[0]));
+  }
+  const catLabel = (cat: string) => categoryLabels[cat] ?? resolveCategoryLabel(cat, null, lang, (b) => t(CAT_LABEL[b] as Parameters<typeof t>[0]));
 
   const draw = (mode: MapMode): ModeLayout => {
     const sizeOf = (graph: MapGraph) => {
@@ -239,7 +262,7 @@ export async function layoutMap(data: MapData, locale: Locale = "en"): Promise<M
     callEdges.push(edge);
     litCalls.set(id, { ...edge, style: { ...edge.style, opacity: 0.9 } });
   }
-  return { overview: draw("overview"), detail: draw("detail"), categories, innerEdges, callEdges, litCalls };
+  return { overview: draw("overview"), detail: draw("detail"), categories, categoryLabels, innerEdges, callEdges, litCalls };
 }
 
 /** The nodes to draw: the layout's own objects, except the few whose dim flag the search changes (hover touches none). */
@@ -261,7 +284,7 @@ export function viewEdges(layout: MapLayout, mode: MapMode, lit: ReadonlyArray<s
 // ------------------------------------------------------------------ nodes
 
 function CategoryNode({ data }: NodeProps) {
-  const cat = data.cat as WorkflowCategory;
+  const cat = data.cat as string;
   return (
     <div className="h-full w-full rounded-[48px] px-14 py-10" data-testid={`wm-cat-${cat}`}
       style={{ background: catColor(cat, 72, 0.08), border: `3px solid ${catColor(cat, 62, 0.28)}` }}>
@@ -308,7 +331,7 @@ export function softHyphens(text: string): string {
 /** A graph: in the overview a chip of the one size and type scale; in the detail view a tinted frame over its steps. */
 function GraphGroup({ data }: NodeProps) {
   const graph = data.graph as MapGraph;
-  const cat = data.cat as WorkflowCategory;
+  const cat = data.cat as string;
   const detail = data.mode === "detail";
   const ran = graph.runs30d > 0;
   const steps = t("wmStepCount").replace("{n}", String(data.steps as number));
@@ -437,7 +460,8 @@ export function WorkflowMap({ locale, projectId, onOpenGraph }: { locale: Locale
         if (mine !== generation.current) return;
         setLayout(next);
         // Opens on `?cat=` when it names a cluster, else on the category with the most runs (the first cluster).
-        setCategory((was) => was ?? (next.categories.includes(catFromUrl() as WorkflowCategory) ? catFromUrl()! : next.categories[0] ?? ANY));
+        const fromUrl = catFromUrl();
+        setCategory((was) => was ?? (fromUrl && next.categories.includes(fromUrl) ? fromUrl : next.categories[0] ?? ANY));
         setReady(true);
       })
       .catch(() => { if (mine === generation.current) setReady(true); });
@@ -527,7 +551,11 @@ export function WorkflowMap({ locale, projectId, onOpenGraph }: { locale: Locale
               <SelectTrigger className="h-8 w-full text-xs sm:w-40" data-testid="wf-map-cat"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value={ANY}>{t("wmCategoryAll")}</SelectItem>
-                {(layout?.categories ?? WORKFLOW_CATEGORIES).map((cat) => <SelectItem key={cat} value={cat}>{t(CAT_LABEL[cat] as Parameters<typeof t>[0])}</SelectItem>)}
+                {(layout?.categories ?? WORKFLOW_CATEGORIES).map((cat) => (
+                  <SelectItem key={cat} value={cat}>
+                    {layout?.categoryLabels[cat] ?? resolveCategoryLabel(cat, null, locale === "ru" ? "ru" : "en", (b) => t(CAT_LABEL[b] as Parameters<typeof t>[0]))}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>
@@ -542,7 +570,7 @@ export function WorkflowMap({ locale, projectId, onOpenGraph }: { locale: Locale
                   className="inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 font-medium transition-colors"
                   style={on ? { background: catColor(cat, 62, 0.16), borderColor: catColor(cat, 55, 0.6), color: catColor(cat, 35) } : { borderColor: "var(--border)" }}>
                   <span className="h-2.5 w-2.5 rounded-full" style={{ background: catColor(cat, 62) }} />
-                  {t(CAT_LABEL[cat] as Parameters<typeof t>[0])}
+                  {layout?.categoryLabels[cat] ?? resolveCategoryLabel(cat, null, locale === "ru" ? "ru" : "en", (b) => t(CAT_LABEL[b] as Parameters<typeof t>[0]))}
                 </button>
               );
             })}
