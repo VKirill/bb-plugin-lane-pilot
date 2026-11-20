@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+// Disk workflow reads go through workflow-engine's nodeFileSource (no direct node:fs in server/).
 import { join } from "node:path";
 import { redactKnown, sha256Hex } from "@lane-pilot/kit";
 import { GLOBAL_SETTINGS_PROJECT_ID } from "@lane-pilot/settings-catalog";
@@ -9,7 +9,7 @@ import type { HarnessApi } from "../../harness/server";
 import { postOwnerItem, rpcLine } from "../../owner-waiting";
 import { modelCatalogOf, readProviderFolderBlock, resolveSpawnModel, scheduleIsolated, spawnUsageOf, warmSpawnUsage, type WorkflowEngineApi, type WorkflowTriggersApi, type WriterHostApi } from "../../platform/server";
 import type { RuleScanApi } from "../../self-repair/server";
-import { HARNESS_VERSION, createDraftStore, globalWorkflowDir, latestErrandEpisodeRows, listErrandEpisodeRows, listPilotDayDigests, loadWorkflowStore, type PilotDayCategoryHint } from "../../storage";
+import { HARNESS_VERSION, createDraftStore, globalWorkflowDir, latestErrandEpisodeRows, listErrandEpisodeRows, listPilotDayDigests, loadWorkflowStore, nodeFileSource, type PilotDayCategoryHint } from "../../storage";
 import { BUILTIN_SOURCES, builtinWorkflow, isBuiltinWorkflowCategory, workflowCategory, WORKFLOW_CATEGORIES } from "../../workflow";
 import { createWorkflowArchitect, type ArchitectDeps, type WorkflowArchitect } from "../../workflow/server";
 import { checkDeprojectization, classifyEvolutionDiff, type DeprojectizeContext } from "../deprojectize";
@@ -145,11 +145,11 @@ function buildArchitect(deps: GraphEvolveDeps, dirFn: () => string): Pick<Workfl
   return createWorkflowArchitect(minCtx, { workflowEngine: { hasExecutor: archDeps.hasExecutor } } as never, archDeps);
 }
 
-function readDiskBase(dir: string, workflowId: string): { path: string; sha256: string; version: number; def: Record<string, unknown> } | null {
+async function readDiskBase(dir: string, workflowId: string): Promise<{ path: string; sha256: string; version: number; def: Record<string, unknown> } | null> {
+  // Read via workflow-engine's FileSource abstraction to avoid node:fs in server/.
   const path = join(dir, `${workflowId}.json`);
-  if (!existsSync(path)) return null;
   try {
-    const raw = readFileSync(path, "utf8");
+    const raw = await nodeFileSource.read(path);
     const def = JSON.parse(raw) as Record<string, unknown>;
     return { path, sha256: sha256Hex(raw), version: typeof def.version === "number" ? def.version : 1, def };
   } catch { return null; }
@@ -179,7 +179,7 @@ export async function applyGraphEvolveCandidates(
       ? { ...candidate.definition, category }
       : candidate.definition;
     const existing = drafts.listEvolutionDrafts({ workflowId, scope: candidate.scope, ...(candidate.scope === "project" && candidate.projectId ? { projectId: candidate.projectId } : {}) })[0] ?? null;
-    const diskBase = candidate.scope === "global" ? readDiskBase(dirFn(), workflowId) : null;
+    const diskBase = candidate.scope === "global" ? await readDiskBase(dirFn(), workflowId) : null;
     const baseDef = existing?.publishedVersion ? (drafts.latestPublishedSnapshot(existing.id)?.definition ?? diskBase?.def ?? null) : (diskBase?.def ?? null);
     const diff = classifyEvolutionDiff(baseDef, candidateDef, { log });
 

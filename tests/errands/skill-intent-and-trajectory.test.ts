@@ -386,17 +386,19 @@ describe("lane_pilot_trajectory_delta & migrations.lock.json", () => {
     }
   });
 
-  it("matches trajectoryDeltaMigrations hashes at the tail of migrations.lock.json", () => {
+  it("matches trajectoryDeltaMigrations hashes in migrations and migrations.lock.json", () => {
     const lockHashes = migrationLock as string[];
     const migrationHashes = migrations.map((statement) =>
       createHash("sha256").update(statement).digest("hex"),
     );
-    const tailHashes = trajectoryDeltaMigrations.map((statement) =>
+    const deltaHashes = trajectoryDeltaMigrations.map((statement) =>
       createHash("sha256").update(statement).digest("hex"),
     );
+    const startIdx = migrations.indexOf(trajectoryDeltaMigrations[0]!);
 
+    expect(startIdx).toBeGreaterThanOrEqual(0);
     expect(migrationHashes).toHaveLength(lockHashes.length);
-    expect(migrationHashes.slice(-tailHashes.length)).toEqual(tailHashes);
-    expect(lockHashes.slice(-tailHashes.length)).toEqual(tailHashes);
+    expect(migrationHashes.slice(startIdx, startIdx + deltaHashes.length)).toEqual(deltaHashes);
+    expect(lockHashes.slice(startIdx, startIdx + deltaHashes.length)).toEqual(deltaHashes);
   });
 });

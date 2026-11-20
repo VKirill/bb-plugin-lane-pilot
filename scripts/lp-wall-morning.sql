@@ -65,6 +65,8 @@ with dark(name) as (
   union all
   select 'lane_pilot_council_message' as name where (select count(*) from lane_pilot_council_message where at >= (select since from lp_morning_30)) = 0
   union all
+  select 'lane_pilot_day_digest' as name where (select count(*) from lane_pilot_day_digest where created_at >= (select since from lp_morning_30)) = 0
+  union all
   select 'lane_pilot_decision' as name where (select count(*) from lane_pilot_decision where created_at >= (select since from lp_morning_30)) = 0
   union all
   select 'lane_pilot_deferral' as name where (select count(*) from lane_pilot_deferral where created_at >= (select since from lp_morning_30)) = 0
@@ -266,6 +268,8 @@ union all
   select 'lane_pilot_token_cursor' as name where (select count(*) from lane_pilot_token_cursor where updated_at >= (select since from lp_morning_30)) = 0
   union all
   select 'lane_pilot_token_daily' as name where (select count(*) from lane_pilot_token_daily where CAST(strftime('%s', day) AS INTEGER) * 1000 >= (select since from lp_morning_30)) = 0
+  union all
+  select 'lane_pilot_trajectory_delta' as name where (select count(*) from lane_pilot_trajectory_delta where created_at >= (select since from lp_morning_30)) = 0
   union all
   select 'lane_pilot_wall' as name where (select count(*) from lane_pilot_wall where created_at >= (select since from lp_morning_30)) = 0
   union all

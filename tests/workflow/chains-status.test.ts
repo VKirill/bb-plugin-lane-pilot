@@ -9,7 +9,7 @@ import { chainStore } from "./chain-harness";
  * need tools the test machine does not have, so they stay `tested` with a note about what is not live yet.
  */
 const dir = __dirname;
-const sources = readdirSync(dir).filter((name) => /^chains-.*\.test\.ts$/.test(name) && name !== "chains-status.test.ts").map((name) => readFileSync(join(dir, name), "utf8")).concat(readFileSync(join(dir, "../sma/parity-d4-workflows-b-2.test.ts"), "utf8")).join("\n");
+const sources = readdirSync(dir).filter((name) => /^chains-.*\.test\.ts$/.test(name) && name !== "chains-status.test.ts").map((name) => readFileSync(join(dir, name), "utf8")).concat(readFileSync(join(dir, "site-creation-and-evolve.test.ts"), "utf8"), readFileSync(join(dir, "../sma/parity-d4-workflows-b-2.test.ts"), "utf8")).join("\n");
 const withCase = new Set([...sources.matchAll(/runSim\("([a-z0-9][a-z0-9.-]*)"/g)].map((match) => match[1]!));
 const OWN = ["about-site", "deploy", "insights-post", "invoice-send", "reels", "resume", "seo-cocoon", "web-research", "x-to-telegram-digest", "year-review"];
 
@@ -71,6 +71,7 @@ describe("status of the built-in chains", () => {
       "lp.curriculum-ingest",
       "project-passport",
     ]));
-    expect(ids).toHaveLength(128); // Includes the internal convergence proof and sketch-wrap-up.
+    expect(ids).toEqual(expect.arrayContaining(["lp.graph-evolve-nightly", "site-creation"]));
+    expect(ids).toHaveLength(130); // Includes the internal convergence proof, sketch-wrap-up, lp.graph-evolve-nightly, and site-creation.
   });
 });
