@@ -1,3 +1,4 @@
+// Owns: src/rooms/storage/analytics-store.ts, src/rooms/night-graphs/server/pilot-day-digest.ts
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { forgetSecrets, registerSecrets } from "@lane-pilot/kit";
 import { afterEach, describe, expect, it, vi } from "vitest";

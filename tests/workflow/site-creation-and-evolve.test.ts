@@ -205,7 +205,9 @@ describe("embedded test.sim cases, deprojectization, and real lp.save_process_st
     }
   });
 
-  it("passes checkDeprojectization on raw lp.graph-evolve-nightly.json", () => {
+  it("passes checkDeprojectization on raw lp.graph-evolve-nightly.json and keeps workflows/site-creation.json removed", () => {
+    expect(existsSync(join(WORKTREE_ROOT, "workflows/site-creation.json"))).toBe(false);
+    expect(existsSync(join(WORKTREE_ROOT, "src/rooms/sma-map/provenance.json"))).toBe(true);
     const raw = readRawWorkflow("lp.graph-evolve-nightly.json");
     const loaded = loadWorkflow(raw);
     expect(loaded.ok).toBe(true);
