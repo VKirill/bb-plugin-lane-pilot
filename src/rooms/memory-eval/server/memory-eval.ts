@@ -37,9 +37,12 @@ export type EvalReport = { seed: number; scope: EvalScope; origin: string; at: n
 
 const mean = (values: readonly number[]) => values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : 0;
 
+const makeStat = (m: number, lo: number, hi: number, n: number): Stat =>
+  JSON.parse(`{"mean":${Number.isFinite(m) ? m : 0},"lo":${Number.isFinite(lo) ? lo : 0},"hi":${Number.isFinite(hi) ? hi : 0},"n":${n}}`) as Stat;
+
 /** Mean and a 95 % bootstrap interval; the questions are the sample. */
 export function stat(values: readonly number[], seed = 1): Stat {
-  if (!values.length) return Object.freeze({ mean: 0, lo: 0, hi: 0, n: 0 });
+  if (!values.length) return makeStat(0, 0, 0, 0);
   const random = prng(seed);
   const means = new Float64Array(400);
   for (let round = 0; round < 400; round++) {
@@ -48,7 +51,7 @@ export function stat(values: readonly number[], seed = 1): Stat {
     means[round] = sum / values.length;
   }
   means.sort();
-  return Object.freeze({ mean: mean(values), lo: means[Math.floor(means.length * 0.025)]!, hi: means[Math.floor(means.length * 0.975)]!, n: values.length });
+  return makeStat(mean(values), means[Math.floor(means.length * 0.025)]!, means[Math.floor(means.length * 0.975)]!, values.length);
 }
 const quantile = (values: number[], share: number) => values.length ? [...values].sort((a, b) => a - b)[Math.min(values.length - 1, Math.floor(values.length * share))]! : 0;
 
