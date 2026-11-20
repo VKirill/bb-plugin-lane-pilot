@@ -17,7 +17,7 @@ describe("workflow categories", () => {
     const of = (id: string) => workflowCategory(JSON.parse(readFileSync(`workflows/${readdirSync("workflows").find((f) => f === `${id}.json`)}`, "utf8")));
     expect([of("seo-page"), of("seo-ai-visibility"), of("mkt-project-intake"), of("mkt-direct-search-campaign"), of("lp.plan"), of("lead-tick"), of("sp-specialist-tick"), of("lp.specialist-eval"), of("lp.curriculum-ingest"), of("invoice-send"), of("ins.post"), of("social-post"), of("roblox-asset"), of("macos-routine"), of("quality-loop"), of("issue-quick")])
       .toEqual(["seo", "seo", "marketing", "marketing", "service", "service", "service", "service", "service", "business", "research", "content", "games", "routines", "code", "code"]);
-    expect(of("site-creation")).toBe("websites");
+    expect(workflowCategory({ id: "site-flow", category: { id: "websites", label: { en: "Websites & Design", ru: "Сайты и дизайн" } } })).toBe("websites");
     expect(workflowCategory({ id: "client-thing" })).toBe("code");
   });
 
@@ -77,15 +77,18 @@ describe("workflow categories", () => {
     expect("category" in clearRes.definition).toBe(false);
   });
 
-  it("exports site-creation with dynamic websites category in manifest and markdown", () => {
-    const raw = JSON.parse(readFileSync("workflows/site-creation.json", "utf8")) as Record<string, unknown>;
+  it("exports workflow with dynamic websites category in manifest and markdown", () => {
+    const raw = workflow({
+      id: "site-lifecycle",
+      category: { id: "websites", label: { en: "Websites & Design", ru: "Сайты и дизайн" } },
+    });
     const parsed = parseWorkflowObject(raw);
     expect(parsed.success).toBe(true);
-    if (!parsed.success) throw new Error("expected site-creation to parse");
+    if (!parsed.success) throw new Error("expected site-lifecycle to parse");
 
-    const entries: WorkflowExportEntry[] = [{ definition: raw, workflow: parsed.data as Workflow, scope: "builtin" }];
+    const entries: WorkflowExportEntry[] = [{ definition: raw, workflow: parsed.data as Workflow, scope: "global" }];
     const exported = buildWorkflowExport({ entries, redact: true, version: "0.0.0-test", commit: null, now: new Date(0) });
-    expect(exported.manifest.graphs[0]).toMatchObject({ id: "site-creation", category: "websites" });
+    expect(exported.manifest.graphs[0]).toMatchObject({ id: "site-lifecycle", category: "websites" });
     expect(exported.markdown).toContain("## websites");
     expect(exportMarkdown(entries, "en", true)).toContain("## websites");
   });

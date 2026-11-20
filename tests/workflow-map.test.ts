@@ -120,10 +120,37 @@ it("hover and search keep every unrelated node and edge object identical (nothin
 
 it("exposes dynamic websites category labels in map() and layoutMap() with deterministic catColor", async () => {
   const { layoutMap, catColor } = await import("../src/rooms/workflow/ui/workflow-map");
-  const data = await map();
-  const siteCreation = data.graphs.find((graph) => graph.id === "site-creation");
-  expect(siteCreation?.category).toBe("websites");
-  expect(siteCreation?.categoryLabel).toEqual({ en: "Websites & Design", ru: "Сайты и дизайн" });
+  const siteSuite = {
+    id: "site-suite",
+    category: { id: "websites", label: { en: "Websites & Design", ru: "Сайты и дизайн" } },
+    name: { en: "Site Suite", ru: "Сьют сайтов" },
+    description: { en: "Builds websites", ru: "Создаёт сайты" },
+    status: "published",
+    triggers: ["manual"],
+    inputs: { goal: { type: "string", required: true } },
+    outputs: { status: "done" },
+    goal_check: "artifact",
+    nodes: [
+      { id: "build", type: "agent", role: "analyst", prompt: "Build {{$inputs.goal}}", out: { handoff: "string" } },
+      { id: "done", type: "action", action: "emit", map: { status: "'done'" } },
+    ],
+    edges: [
+      { from: "start", to: "build" },
+      { from: "build", to: "done" },
+    ],
+  };
+  const store = await loadWorkflowStore({
+    builtin: BUILTIN_SOURCES,
+    globalDir: "/mem",
+    files: {
+      list: async () => ["/mem/site-suite.json"],
+      read: async () => JSON.stringify(siteSuite),
+    },
+  });
+  const data = buildWorkflowMap(store.list(), noRuns, "test-sha");
+  const mappedSite = data.graphs.find((graph) => graph.id === "site-suite");
+  expect(mappedSite?.category).toBe("websites");
+  expect(mappedSite?.categoryLabel).toEqual({ en: "Websites & Design", ru: "Сайты и дизайн" });
 
   const layoutRu = await layoutMap(data, "ru");
   expect(layoutRu.categories).toContain("websites");

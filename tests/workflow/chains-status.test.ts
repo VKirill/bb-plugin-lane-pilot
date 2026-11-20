@@ -71,7 +71,7 @@ describe("status of the built-in chains", () => {
       "lp.curriculum-ingest",
       "project-passport",
     ]));
-    expect(ids).toEqual(expect.arrayContaining(["lp.graph-evolve-nightly", "site-creation"]));
-    expect(ids).toHaveLength(130); // Includes the internal convergence proof, sketch-wrap-up, lp.graph-evolve-nightly, and site-creation.
+    expect(ids).toEqual(expect.arrayContaining(["lp.graph-evolve-nightly"]));
+    expect(ids).toHaveLength(129); // Includes the internal convergence proof, sketch-wrap-up, and lp.graph-evolve-nightly.
   });
 });

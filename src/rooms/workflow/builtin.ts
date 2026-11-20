@@ -120,7 +120,6 @@ import spike from "../../../workflows/spike.json";
 import sketchWrapUp from "../../../workflows/sketch-wrap-up.json";
 import specialist from "../../../workflows/specialist.json";
 import ship from "../../../workflows/ship.json";
-import siteCreation from "../../../workflows/site-creation.json";
 import prBranch from "../../../workflows/pr-branch.json";
 import cleanup from "../../../workflows/cleanup.json";
 import newMilestone from "../../../workflows/new-milestone.json";
@@ -262,7 +261,6 @@ export const BUILTIN_SOURCES: ReadonlyArray<{ name: string; value: unknown }> = 
   { name: "sketch-wrap-up.json", value: sketchWrapUp },
   { name: "specialist.json", value: specialist },
   { name: "ship.json", value: ship },
-  { name: "site-creation.json", value: siteCreation },
   { name: "pr-branch.json", value: prBranch },
   { name: "cleanup.json", value: cleanup },
   { name: "new-milestone.json", value: newMilestone },

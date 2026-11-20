@@ -67,7 +67,7 @@ export { noteGateRunStart, finishGateRun, latestGateRun, latestGateRunForTask, g
 export type { GateRunRow, GateRunState } from "./gate-runs-store";
 export { reconcileCursorPage, saveReconcileCursor, clearReconcileCursor, hasReconcileCursor } from "./reconcile-store";
 export { saveDiffHiddenRows, diffHiddenAuditSummary, errandEpisodeColumns, listErrandEpisodeFacts, listErrandEpisodeTraces, listPendingErrandEpisodes, listErrandProcessKeys, listErrandEpisodeRows, listErrandEpisodeStates, listErrandEpisodeRunIds, latestErrandEpisodeRows, janitorSums, janitorKeptSample, saveBenchStabilityMarks, listBenchStabilityMarks, listPilotDayCandidates, savePilotDayDigest, listPilotDayDigests } from "./analytics-store";
-export type { DiffHiddenAuditRow, PilotDaySourceKind, PilotDayCategoryHint, PilotDayAttemptFact, PilotDayStageFact, PilotDayCandidate, PilotDayDigestInput, PilotDayDigestRow } from "./analytics-store";
+export type { DiffHiddenAuditRow, PilotDaySourceKind, PilotDayCategoryHint, PilotDayAttemptFact, PilotDayStageFact, PilotDayEpisodeFact, PilotDayChildWfFact, PilotDayCandidate, PilotDayDigestInput, PilotDayDigestRow } from "./analytics-store";
 export { latestAcceptedAttemptOfTask, listAttemptRefsSince } from "./attempts-store";
 export { listNearMissReceipts } from "./stages-store";
 export { PROTECTIONS, DISARM_TERM_MS, disarmKey, isArmed, readDisarm, noteProtectionDisarm, renewDisarm, storedProtectionValue, endDisarm, disarmedProjects, staleDisarms, failedStageReceiptsSince, type Disarm } from "./protections-store";

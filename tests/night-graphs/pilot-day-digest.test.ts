@@ -483,4 +483,225 @@ describe("createLivePilotDayDigestDeps", () => {
 
     await w.harness.lifecycle.dispose();
   });
+
+  it("captures full project trajectories without activation (childRuns + episodes), detects MCP/plugins, chooses analyst role for rich candidates, and slices long outlines", async () => {
+    const w = nightWorld({
+      hostReply: (command) => (command.includes('"$HOME/.lane-pilot/graph-evolve"') ? "/home/ubuntu/.lane-pilot/graph-evolve" : undefined),
+    });
+    const db = w.db;
+    const nowMs = Date.UTC(2026, 10, 20, 12, 0, 0);
+    const tRecent = nowMs - 2 * 86_400_000;
+
+    // Parent chat launched errand + specialist + seo-audit WITHOUT lane_pilot_activation
+    const insertWf = db.prepare(`INSERT INTO lane_pilot_wf_run
+      (id, workflow_id, workflow_version, workflow_sha256, definition_json, project_id, status, reason, inputs_json, output_json, created_at, updated_at)
+      VALUES (?, ?, 1, 'sha', '{}', ?, ?, ?, ?, ?, ?, ?)`);
+    insertWf.run("wf_err_1", "errand", "proj_a", "succeeded", null, JSON.stringify({ pmThreadId: "thr_parent_a", goal: "Build .pen UI kit" }), JSON.stringify({ threadId: "thr_child_pen", summary: "Designed UI kit in design.pen via batch_design" }), tRecent, tRecent + 1_000);
+    insertWf.run("wf_spec_1", "specialist", "proj_a", "succeeded", null, JSON.stringify({ threadId: "thr_parent_a", prompt: "Generate stylized hero" }), JSON.stringify({ childThreadId: "thr_child_img", text: "Generated hero via image_studio_generate" }), tRecent, tRecent + 2_000);
+    insertWf.run("wf_other_proj", "errand", "proj_b", "succeeded", null, JSON.stringify({ threadId: "thr_parent_b" }), "{}", tRecent, tRecent + 3_000);
+
+    // Enriched episode rows for wf_err_1 (two extractor versions — v2 must win)
+    const insertEp = db.prepare(`INSERT INTO lane_pilot_errand_episode
+      (run_id, extractor_version, project_id, workflow_id, status, outcome, enrichment_state, process_key, summary_json, created_at, updated_at)
+      VALUES (?, ?, 'proj_a', 'errand', 'succeeded', 'done', 'enriched', ?, ?, ?, ?)`);
+    insertEp.run("wf_err_1", 1, "website|old-v1", JSON.stringify({ goal: "Old v1", traps: [], skills: [] }), tRecent, tRecent + 500);
+    insertEp.run("wf_err_1", 2, "website-design|pen-kit", JSON.stringify({ goal: "Create .pen UI kit before pages", traps: ["Missing CTA map before visual pass"], skills: [{ name: "project-design", read: true, used: true }, { name: "unused-skill", read: false, used: false }] }), tRecent, tRecent + 1_500);
+
+    // Verify projectId filter and candidate attachment
+    const projACands = listPilotDayCandidates(db, nowMs - 7 * 86_400_000, nowMs, 20, { projectId: "proj_a" });
+    expect(projACands).toHaveLength(1);
+    expect(projACands[0]).toMatchObject({ sourceKind: "pilot_chat", sourceId: "thr_parent_a", projectId: "proj_a" });
+    expect(projACands[0]?.episodes).toEqual([{
+      runId: "wf_err_1", threadId: null, processKey: "website-design|pen-kit",
+      goal: "Create .pen UI kit before pages", traps: ["Missing CTA map before visual pass"], skills: ["project-design"], outcome: "done",
+    }]);
+    expect(projACands[0]?.childRuns?.map((r) => r.id)).toEqual(["wf_spec_1", "wf_err_1"]);
+
+    // Run digest with lookbackDays: 7, projectId: "proj_a", readOutput, and check role + integrations retention
+    const rolesSeen: Array<string | undefined> = [];
+    const promptsSeen: string[] = [];
+    const logs: string[] = [];
+    const summary = await digestPilotDayDialogues({
+      db,
+      now: () => nowMs,
+      lookbackDays: 7,
+      projectId: "proj_a",
+      readOutline: async (tid) => tid === "thr_parent_a" ? "User: Build landing page in 3 concepts\nAssistant: Working on it" : null,
+      readOutput: async (tid) => tid === "thr_parent_a" ? "Delivered 3 concepts with design.pen and image-studio assets" : null,
+      readEvents: async (tid) => tid === "thr_child_pen"
+        ? [{ type: "item/completed", seq: 1, data: { item: { type: "toolCall", tool: "mcp__metamcp__batch_design", input: { file: "design.pen" } } } }]
+        : tid === "thr_child_img"
+          ? [{ type: "item/completed", seq: 1, data: { item: { type: "toolCall", tool: "image_studio_generate", input: {} } } }]
+          : [],
+      runModel: async (prompt, _projId, _digestId, role) => {
+        rolesSeen.push(role);
+        promptsSeen.push(prompt);
+        return JSON.stringify({
+          process_key: "websites|landing-full",
+          category_hint: { id: "websites", label: { en: "Websites & Design", ru: "Сайты и дизайн" } },
+          outcome: "done",
+          goal: "Design landing page with 3 visual concepts",
+          traps: ["Avoid skipping CTA map"],
+          lessons: ["Build CTA map before visual design"],
+          interventions: [],
+        });
+      },
+      log: (m) => logs.push(m),
+    });
+
+    expect(summary).toMatchObject({ picked: 1, digested: 1, failed: 0 });
+    expect(rolesSeen).toEqual(["analyst"]);
+    expect(promptsSeen[0]).toContain("Final output: Delivered 3 concepts");
+    expect(promptsSeen[0]).toContain("observedMcp");
+    expect(promptsSeen[0]).toContain("pencil");
+    expect(promptsSeen[0]).toContain("metamcp");
+    expect(promptsSeen[0]).toContain("image-studio");
+
+    const storedA = listPilotDayDigests(db, nowMs - 7 * 86_400_000, 50, "proj_a");
+    expect(storedA).toHaveLength(1);
+    expect(storedA[0]?.taskCount).toBe(3);
+    expect(storedA[0]?.maskedLessons.some((l) => l.includes("Observed integrations:") && l.includes("pencil") && l.includes("image-studio"))).toBe(true);
+    expect(listPilotDayDigests(db, nowMs - 7 * 86_400_000, 50, "proj_b")).toEqual([]);
+    expect(logs.some((l) => l.includes('"modelRole":"analyst"') && l.includes('"episodes":1') && l.includes('"childRuns":2'))).toBe(true);
+
+    // Check createLivePilotDayDigestDeps outline slicing (>60 items -> 15 first + 45 last) & readOutput & model_selected log
+    const longItems = Array.from({ length: 80 }, (_, idx) => ({ role: idx % 2 === 0 ? "user" : "assistant", preview: `msg-${idx}` }));
+    const threadsProxy = new Proxy(w.ctx.bb.sdk.threads, {
+      get: (target, prop, receiver) => prop === "conversationOutline" ? async () => ({ items: longItems }) : Reflect.get(target, prop, receiver),
+    });
+    const outlineCtx = { ...w.ctx, bb: { ...w.ctx.bb, sdk: { ...w.ctx.bb.sdk, threads: threadsProxy } } } as typeof w.ctx;
+    const runAnalyzer = vi.fn(async () => "{}");
+    const liveDeps = createLivePilotDayDigestDeps(
+      outlineCtx,
+      { resolveProjectWriterHost: w.services.resolveProjectWriterHost, ruleScan: { runAnalyzer } },
+      () => false,
+      [],
+      { projectId: "proj_a", lookbackDays: 7 },
+    );
+    expect(liveDeps.projectId).toBe("proj_a");
+    expect(liveDeps.lookbackDays).toBe(7);
+    const slicedOutline = await liveDeps.readOutline!("thr_any");
+    const lines = slicedOutline!.split("\n");
+    expect(lines).toHaveLength(60);
+    expect(lines[0]).toContain("msg-0");
+    expect(lines[14]).toContain("msg-14");
+    expect(lines[15]).toContain("msg-35");
+    expect(lines[59]).toContain("msg-79");
+
+    w.state.outputs.set("thr_out_1", "Final answer text");
+    expect(await liveDeps.readOutput!("thr_out_1")).toBe("Final answer text");
+
+    await liveDeps.runModel("prompt", "proj_a", "dig_1", "analyst");
+    expect(runAnalyzer).toHaveBeenCalledWith(
+      "proj_a", "pilot-day-digest:dig_1", "prompt",
+      { hostId: "host-1", path: "/home/ubuntu/.lane-pilot/graph-evolve" },
+      expect.any(Object), { pilotDayDigest: "dig_1" }, "analyst",
+    );
+
+    await w.harness.lifecycle.dispose();
+  });
+
+  it("aggregates singleton enriched errand episodes with distinct website micro-keys into websites|trajectory-suite and excludes other projects", async () => {
+    const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
+    const db = openDatabase(bb);
+    const nowMs = Date.UTC(2026, 10, 20, 12, 0, 0);
+    const tRecent = nowMs - 2 * 86_400_000;
+
+    const insertRun = db.prepare(`INSERT INTO lane_pilot_wf_run
+      (id, workflow_id, workflow_version, workflow_sha256, definition_json, project_id, status, inputs_json, output_json, tokens_used, cost_micro_usd, created_at, updated_at)
+      VALUES (?, 'errand', 1, 'sha', '{}', ?, 'succeeded', '{}', '{}', 50, 10, ?, ?)`);
+    const insertEp = db.prepare(`INSERT INTO lane_pilot_errand_episode
+      (run_id, extractor_version, project_id, workflow_id, status, outcome, enrichment_state, process_key, summary_json, created_at, updated_at)
+      VALUES (?, 1, ?, 'errand', 'succeeded', 'done', 'enriched', ?, ?, ?, ?)`);
+
+    const rows = [
+      {
+        id: "ep_web_1",
+        projectId: "proj_web",
+        key: "pen-design|desktop-app-mcp",
+        goal: "Design responsive Pencil .pen components",
+        traps: ["Verify text clipping on PNG export"],
+        skills: ["project-design"],
+      },
+      {
+        id: "ep_web_2",
+        projectId: "proj_web",
+        key: "website-design|build-and-export-responsive-homepage",
+        goal: "Build and export responsive homepage layout",
+        traps: ["Check 375px mobile breakpoint"],
+        skills: ["impeccable-ui"],
+      },
+      {
+        id: "ep_web_3",
+        projectId: "proj_web",
+        key: "image-studio|generate-daylight-hero",
+        goal: "Generate cohesive daylight hero imagery",
+        traps: ["Keep visual style consistent across sections"],
+        skills: ["image-prompting"],
+      },
+      {
+        id: "ep_web_4",
+        projectId: "proj_web",
+        key: "competitors|visual-design-audit",
+        goal: "Audit competitor hero and CTA patterns",
+        traps: ["Map primary CTA above the fold first"],
+        skills: ["web-research"],
+      },
+      {
+        id: "ep_other_proj",
+        projectId: "proj_unrelated",
+        key: "website-design|other-project-site",
+        goal: "Unrelated project website task",
+        traps: ["Should never leak into proj_web"],
+        skills: ["seo-tech-audit-kit"],
+      },
+    ];
+
+    for (const r of rows) {
+      insertRun.run(r.id, r.projectId, tRecent, tRecent + 1_000);
+      insertEp.run(
+        r.id,
+        r.projectId,
+        r.key,
+        JSON.stringify({
+          goal: r.goal,
+          traps: r.traps,
+          skills: r.skills.map((name) => ({ name, read: true, used: true })),
+        }),
+        tRecent,
+        tRecent + 1_000,
+      );
+    }
+
+    const evidence = collectGraphEvolveEvidence(db, { projectId: "proj_web", days: 14, now: () => nowMs });
+    expect(evidence.status).toBe("ready");
+    expect(evidence.clusters).toHaveLength(1);
+    expect(evidence.clusters[0]).toMatchObject({
+      processKey: "websites|trajectory-suite",
+      count: 4,
+      categoryHint: { id: "websites", label: { en: "Websites & Design", ru: "Сайты и дизайн" } },
+    });
+    expect(evidence.clusters[0]?.sampleGoals).toEqual(expect.arrayContaining([
+      "Design responsive Pencil .pen components",
+      "Build and export responsive homepage layout",
+      "Generate cohesive daylight hero imagery",
+      "Audit competitor hero and CTA patterns",
+    ]));
+    expect(evidence.clusters[0]?.sampleGoals).not.toContain("Unrelated project website task");
+    expect(evidence.clusters[0]?.traps).toEqual(expect.arrayContaining([
+      "Verify text clipping on PNG export",
+      "Check 375px mobile breakpoint",
+      "Keep visual style consistent across sections",
+      "Map primary CTA above the fold first",
+    ]));
+    expect(evidence.clusters[0]?.topSkills).toEqual(expect.arrayContaining([
+      "project-design",
+      "impeccable-ui",
+      "image-prompting",
+      "web-research",
+    ]));
+    expect(evidence.clusters[0]?.topSkills).not.toContain("seo-tech-audit-kit");
+
+    await harness.lifecycle.dispose();
+  });
 });

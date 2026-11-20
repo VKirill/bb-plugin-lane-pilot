@@ -1,14 +1,25 @@
 {
   "id": "lp.graph-evolve-nightly",
-  "startedBy": "graph-evolve-nightly",
   "name": {
     "en": "Nightly workflow graph evolution",
     "ru": "Ночная эволюция графов воркфлоу"
   },
   "description": {
-    "en": "Collects enriched errand episode clusters and unprocessed trajectory deltas, synthesizes de-projectized universal graph candidates in an isolated room, validates and stub-tests each candidate, and either auto-publishes minor patches or proposes new/structural graphs for owner approval.",
-    "ru": "Собирает обогащённые кластеры эпизодов и необработанные траекторные дельты, синтезирует депроектизированных кандидатов универсальных графов в изолированной комнате, валидирует и прогоняет их тест-симуляции, после чего автопубликует минорные патчи или выносит новые/структурные графы на подтверждение владельца."
+    "en": "Collects daily Pilot digests, errand episode clusters, and unprocessed trajectory deltas, runs a 4-model evolution pipeline (planner -> plan-critic -> workflow-architect -> auditor), validates and stub-tests subworkflow suites in topological order, and auto-publishes minor patches or approved suites.",
+    "ru": "Собирает дневные разборы чатов, кластеры эпизодов и необработанные траекторные дельты, запускает 4-модельный конвейер эволюции (planner -> plan-critic -> workflow-architect -> auditor), валидирует и прогоняет симуляции сьютов в топологическом порядке и автопубликует минорные патчи или одобренные сьюты."
   },
+  "examples": {
+    "en": [
+      "Run nightly workflow evolution on project trajectories"
+    ],
+    "ru": [
+      "Запусти эволюцию графов воркфлоу по чатам проекта"
+    ]
+  },
+  "not_for": [
+    "general coding tasks",
+    "ordinary PM chat routing — started by nightly cron or explicit workflow_run"
+  ],
   "status": "published",
   "tags": [
     "night",
@@ -19,9 +30,25 @@
     "manual",
     "schedule"
   ],
-  "inputs": {},
+  "inputs": {
+    "project_id": {
+      "type": "string",
+      "default": "",
+      "description": "Optional project ID filter (empty = all active projects)"
+    },
+    "lookback_days": {
+      "type": "int",
+      "default": 1,
+      "description": "Lookback window in days for chat/episode digestion (1..90)"
+    },
+    "publish_approved_suite": {
+      "type": "bool",
+      "default": false,
+      "description": "Publish auditor-approved and sim-tested suite immediately to global workflows"
+    }
+  },
   "outputs": {
-    "status": "done|empty|held",
+    "status": "done|empty|noop|held",
     "publishedCount": "int",
     "proposedCount": "int",
     "rejectedCount": "int",
@@ -30,6 +57,8 @@
   "budget": {
     "max_minutes": 60
   },
+  "goal_audit": "exempt",
+  "goal_check": "artifact",
   "nodes": [
     {
       "id": "digest",
@@ -82,6 +111,54 @@
       }
     },
     {
+      "id": "plan_blueprint",
+      "type": "action",
+      "action": "lp.graph_evolve_plan",
+      "title": {
+        "en": "Plan process evolution blueprint",
+        "ru": "Спланировать чертёж эволюции процесса"
+      },
+      "out": {
+        "decision": "noop|minor_patch|suite_or_structural",
+        "graphsCount": "int",
+        "blueprint_json": "string"
+      },
+      "guards": {
+        "maxVisits": 2,
+        "timeoutMin": 15
+      }
+    },
+    {
+      "id": "noop_done",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "noop",
+        "publishedCount": 0,
+        "proposedCount": 0,
+        "rejectedCount": 0,
+        "summary": "'graph-evolve: planner decided noop'"
+      }
+    },
+    {
+      "id": "critique_plan",
+      "type": "action",
+      "action": "lp.graph_evolve_critique",
+      "title": {
+        "en": "Critique evolution blueprint",
+        "ru": "Проверить чертёж эволюции критиком"
+      },
+      "out": {
+        "verdict": "pass|rework",
+        "mustFixCount": "int",
+        "critique_json": "string"
+      },
+      "guards": {
+        "maxVisits": 2,
+        "timeoutMin": 10
+      }
+    },
+    {
       "id": "synthesize",
       "type": "action",
       "action": "lp.graph_evolve_synthesize",
@@ -94,7 +171,26 @@
         "candidates_json": "string"
       },
       "guards": {
+        "maxVisits": 2,
         "timeoutMin": 25
+      }
+    },
+    {
+      "id": "audit_suite",
+      "type": "action",
+      "action": "lp.graph_evolve_audit",
+      "title": {
+        "en": "Audit synthesized workflow suite",
+        "ru": "Аудит синтезированного сьюта графов"
+      },
+      "out": {
+        "verdict": "pass|rework",
+        "mustFixCount": "int",
+        "audit_json": "string"
+      },
+      "guards": {
+        "maxVisits": 2,
+        "timeoutMin": 10
       }
     },
     {
@@ -145,10 +241,37 @@
     },
     {
       "from": "collect",
+      "to": "plan_blueprint"
+    },
+    {
+      "from": "plan_blueprint",
+      "to": "noop_done",
+      "when": "plan_blueprint.decision == 'noop'"
+    },
+    {
+      "from": "plan_blueprint",
+      "to": "critique_plan"
+    },
+    {
+      "from": "critique_plan",
+      "to": "plan_blueprint",
+      "when": "critique_plan.verdict == 'rework' && visits('plan_blueprint') < 2"
+    },
+    {
+      "from": "critique_plan",
       "to": "synthesize"
     },
     {
       "from": "synthesize",
+      "to": "audit_suite"
+    },
+    {
+      "from": "audit_suite",
+      "to": "synthesize",
+      "when": "audit_suite.verdict == 'rework' && visits('synthesize') < 2"
+    },
+    {
+      "from": "audit_suite",
       "to": "apply"
     },
     {
@@ -175,31 +298,49 @@
           "deltasCount": 3,
           "payload_json": "{\"status\":\"ready\"}"
         },
+        "plan_blueprint": {
+          "decision": "suite_or_structural",
+          "graphsCount": 2,
+          "blueprint_json": "{\"decision\":\"suite_or_structural\"}"
+        },
+        "critique_plan": {
+          "verdict": "pass",
+          "mustFixCount": 0,
+          "critique_json": "{\"verdict\":\"pass\",\"findings\":[],\"mustFix\":[]}"
+        },
         "synthesize": {
-          "candidatesCount": 1,
-          "candidates_json": "[{\"workflowId\":\"universal-candidate\"}]"
+          "candidatesCount": 2,
+          "candidates_json": "[{\"workflowId\":\"universal-phase-1\"},{\"workflowId\":\"universal-orchestrator\"}]"
+        },
+        "audit_suite": {
+          "verdict": "pass",
+          "mustFixCount": 0,
+          "audit_json": "{\"verdict\":\"pass\",\"findings\":[],\"mustFix\":[]}"
         },
         "apply": {
           "status": "done",
-          "publishedCount": 1,
+          "publishedCount": 2,
           "proposedCount": 0,
           "rejectedCount": 0,
-          "summary": "graph-evolve: 1 auto-published, 0 proposed, 0 rejected"
+          "summary": "graph-evolve: 2 auto-published, 0 proposed, 0 rejected"
         }
       },
       "expect_path": [
         "digest",
         "collect",
+        "plan_blueprint",
+        "critique_plan",
         "synthesize",
+        "audit_suite",
         "apply",
         "done"
       ],
       "expect_output": {
         "status": "done",
-        "publishedCount": 1,
+        "publishedCount": 2,
         "proposedCount": 0,
         "rejectedCount": 0,
-        "summary": "graph-evolve: 1 auto-published, 0 proposed, 0 rejected"
+        "summary": "graph-evolve: 2 auto-published, 0 proposed, 0 rejected"
       },
       "variant_empty": {
         "stubs": {
@@ -231,22 +372,79 @@
           "summary": "graph-evolve: nothing to process"
         }
       },
+      "variant_noop": {
+        "stubs": {
+          "plan_blueprint": {
+            "decision": "noop",
+            "graphsCount": 0,
+            "blueprint_json": "{\"decision\":\"noop\",\"graphs\":[]}"
+          }
+        },
+        "expect_path": [
+          "digest",
+          "collect",
+          "plan_blueprint",
+          "noop_done"
+        ],
+        "expect_output": {
+          "status": "noop",
+          "publishedCount": 0,
+          "proposedCount": 0,
+          "rejectedCount": 0,
+          "summary": "graph-evolve: planner decided noop"
+        }
+      },
+      "variant_rework": {
+        "stubs": {
+          "critique_plan": [
+            {
+              "verdict": "rework",
+              "mustFixCount": 1,
+              "critique_json": "{\"verdict\":\"rework\",\"findings\":[\"missing gate\"],\"mustFix\":[\"add gate\"]}"
+            },
+            {
+              "verdict": "pass",
+              "mustFixCount": 0,
+              "critique_json": "{\"verdict\":\"pass\",\"findings\":[],\"mustFix\":[]}"
+            }
+          ],
+          "audit_suite": [
+            {
+              "verdict": "rework",
+              "mustFixCount": 1,
+              "audit_json": "{\"verdict\":\"rework\",\"findings\":[\"missing mcp\"],\"mustFix\":[\"add metamcp\"]}"
+            },
+            {
+              "verdict": "pass",
+              "mustFixCount": 0,
+              "audit_json": "{\"verdict\":\"pass\",\"findings\":[],\"mustFix\":[]}"
+            }
+          ]
+        },
+        "expect_path": [
+          "digest",
+          "collect",
+          "plan_blueprint",
+          "critique_plan",
+          "plan_blueprint",
+          "critique_plan",
+          "synthesize",
+          "audit_suite",
+          "synthesize",
+          "audit_suite",
+          "apply",
+          "done"
+        ],
+        "expect_output": {
+          "status": "done",
+          "publishedCount": 2,
+          "proposedCount": 0,
+          "rejectedCount": 0,
+          "summary": "graph-evolve: 2 auto-published, 0 proposed, 0 rejected"
+        }
+      },
       "variant_held": {
         "stubs": {
-          "digest": {
-            "status": "done",
-            "picked": 1,
-            "digested": 1,
-            "deltasRecorded": 0,
-            "skipped": 0,
-            "failed": 0
-          },
-          "collect": {
-            "status": "ready",
-            "clustersCount": 1,
-            "deltasCount": 1,
-            "payload_json": "{\"status\":\"ready\"}"
-          },
           "synthesize": {
             "candidatesCount": 1,
             "candidates_json": "[{\"workflowId\":\"rejected-candidate\"}]"
@@ -262,7 +460,10 @@
         "expect_path": [
           "digest",
           "collect",
+          "plan_blueprint",
+          "critique_plan",
           "synthesize",
+          "audit_suite",
           "apply",
           "done"
         ],
@@ -276,6 +477,5 @@
       }
     },
     "live": "the graph-evolve-nightly cron (04:50 UTC), or a manual run of lp.graph-evolve-nightly"
-  },
-  "goal_check": "artifact"
+  }
 }

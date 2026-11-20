@@ -33,11 +33,27 @@ export {
   applyGraphEvolveCandidates,
   collectGraphEvolveEvidence,
   mountGraphEvolveNightly,
+  validateEvolveSuiteCandidates,
   type GraphEvolveCandidate,
   type GraphEvolveCollectSummary,
   type GraphEvolveDeps,
   type GraphEvolveOutcome,
 } from "./graph-evolve-graph";
+export { extractSubworkflowRefs, topologicalSortSuite } from "./graph-evolve-suite";
+export {
+  auditSynthesizedSuite,
+  createLiveEvolveRoleRunner,
+  critiqueEvolutionBlueprint,
+  planEvolutionBlueprint,
+  synthesizeSuiteFromBlueprint,
+  type EvolveCatalogContext,
+  type EvolveReviewVerdict,
+  type EvolveRole,
+  type EvolveRoleRunner,
+  type ProcessBlueprint,
+  type ProcessBlueprintGraphSpec,
+  type ProcessBlueprintStageSpec,
+} from "./graph-evolve-pipeline";
 export {
   createLivePilotDayDigestDeps,
   digestPilotDayDialogues,
