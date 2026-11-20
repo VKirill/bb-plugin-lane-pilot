@@ -139,11 +139,15 @@ function normalizeBlueprint(raw: Record<string, unknown>): ProcessBlueprint {
   };
 }
 
+const verdictList = (v: unknown): string[] => Array.isArray(v)
+  ? v.flatMap((x) => typeof x === "string" && x.trim() ? [x.trim()] : (x && typeof x === "object" ? [JSON.stringify(x)] : []))
+  : [];
+
 function normalizeVerdict(text: string): EvolveReviewVerdict {
   const raw = parseJsonBlock(text);
   if (!raw) return { verdict: "rework", findings: ["Reviewer did not return valid JSON"], mustFix: ["Return valid JSON {verdict, findings, mustFix}"] };
-  const verdict = raw.verdict === "pass" ? "pass" : "rework";
-  const findings = strList(raw.findings), mustFix = strList(raw.mustFix);
+  const verdict = typeof raw.verdict === "string" && raw.verdict.trim().toLowerCase() === "pass" ? "pass" : "rework";
+  const findings = verdictList(raw.findings), mustFix = verdictList(raw.mustFix);
   return { verdict: verdict === "pass" && mustFix.length === 0 ? "pass" : "rework", findings, mustFix };
 }
 
@@ -344,12 +348,15 @@ export async function auditSynthesizedSuite(input: {
 }): Promise<EvolveReviewVerdict> {
   const iteration = input.iteration ?? 1;
   const prompt = redactKnown([
-    "You are Lane Pilot's Cross-Family Senior Suite Auditor. Do NOT call any tools or read external files. Output ONLY strict JSON: {\"verdict\":\"pass\"|\"rework\",\"findings\":[...],\"mustFix\":[...]}.",
-    "Audit the compiled workflow candidates item-by-item against the approved blueprint and masked evidence:\n"
-      + "- Are ALL planned graphs (phase_graphs + master_orchestrator subworkflow links) present and connected in exact blueprint order?\n"
-      + "- Are required MCPs (metamcp/Pencil .pen), plugins (image-studio/Muse), skills, multi-variant inputs (variants_count/palettes/concepts), and owner human selection gates wired into the compiled nodes and prompts (not dropped during JSON compilation)?\n"
-      + "- Are dense craft rules (contractRules: CTA map before design, UI Kit before pages, Markdown typography, text-clipping verification) preserved inside node prompts/contracts?\n"
-      + "- Are all definitions de-projectized (no domains, brands, person names, proj_*, host_*, or absolute paths)?",
+    "You are Lane Pilot's Cross-Family Senior Suite Auditor. Do NOT call any tools or read external files. Output ONLY strict JSON: {\"verdict\":\"pass\"|\"rework\",\"findings\":[\"<string>\",...],\"mustFix\":[\"<string>\",...]} (elements of findings and mustFix MUST be plain strings).",
+    `WORKFLOW_REFERENCE:\n${JSON.stringify(WORKFLOW_REFERENCE)}`,
+    "Engine Schema Constraints (NEVER ask mustFix to violate WORKFLOW_REFERENCE):\n"
+      + "- nodeSchema is .strict(): ONLY type:\"agent\" nodes accept mcp, plugins, and skills. type:\"human\", \"lp-task\", \"subworkflow\", and \"action\" nodes FORBID mcp/plugins/skills (lp-task integrations live in contract text, and human nodes are owner choice gates).\n"
+      + "- There is NO parallel node type in the schema (multi-item work executes inside agent or lp-task contracts).\n"
+      + "- definition.test is a SINGLE {id, sim} object per workflow (not an array of multiple simulations), and synthetic /tmp/... strings inside test.sim stubs are valid test fixtures, NOT project path leaks.",
+    "Audit Calibration (return verdict:\"rework\" + non-empty mustFix ONLY for genuine schema-valid blocking defects):\n"
+      + "- Blocking (rework): a planned graph from blueprint.graphs is missing; master_orchestrator subworkflow links are missing or out of blueprint order; required MCPs (metamcp/Pencil .pen), plugins (image-studio, browser-automation), multi-variant count inputs, or human selection gates are missing from the relevant agent/workflow definitions; or real project/domain/brand/person/proj_*/host_* identifiers leaked.\n"
+      + "- Non-blocking (pass): if all planned graphs, subworkflow links, required agent MCPs/plugins, multi-variant inputs, human gates, core phase handoffs, and de-projectization hold, return verdict:\"pass\" with mustFix:[] (record optional prose or edge refinements in findings only).",
     `Approved blueprint: ${JSON.stringify(input.blueprint)}`,
     `Compiled candidates: ${JSON.stringify(input.candidates)}`,
     `Masked evidence: ${JSON.stringify(input.collected)}`,

@@ -1328,4 +1328,35 @@ describe("4-model evolution pipeline and topological subworkflow suite publicati
     expect(existsSync(join(dir2, "site-strategy-cta.json"))).toBe(false);
     expect(existsSync(join(dir2, "site-creation-suite.json"))).toBe(false);
   });
+
+  it("preserves structured object findings/mustFix in auditSynthesizedSuite and supplies WORKFLOW_REFERENCE to auditor", async () => {
+    const prompts: string[] = [];
+    const verdict = await auditSynthesizedSuite({
+      blueprint: {
+        decision: "suite_or_structural",
+        rationale: "Site suite",
+        category: { id: "websites", label: { en: "Websites", ru: "Сайты" } },
+        orderInvariants: ["CTA before design"],
+        variantParameters: [{ name: "variants_count", rangeOrValues: "1..8", purpose: "Concepts" }],
+        requiredIntegrations: { mcp: ["metamcp"], plugins: ["image-studio"], skills: [] },
+        graphs: [],
+      },
+      candidates: makeSuiteCandidates(),
+      collected: { status: "ready", clusters: [], deltas: [], deltaIds: [] },
+      runRole: async (_role, prompt) => {
+        prompts.push(prompt);
+        return JSON.stringify({
+          verdict: "rework",
+          findings: [{ workflowId: "site-strategy-cta", detail: "Missing archetype output" }],
+          mustFix: [{ scope: "Suite contracts", action: "Forward homepage_archetype to variants phase" }],
+        });
+      },
+    });
+    expect(prompts[0]).toContain("WORKFLOW_REFERENCE");
+    expect(prompts[0]).toContain("nodeSchema is .strict()");
+    expect(verdict.verdict).toBe("rework");
+    expect(verdict.findings).toHaveLength(1);
+    expect(verdict.mustFix).toHaveLength(1);
+    expect(verdict.mustFix[0]).toContain("homepage_archetype");
+  });
 });

@@ -419,7 +419,7 @@ export async function applyGraphEvolveCandidates(
       outcomes.push({ workflowId, draftId: recorded.id, kind: diff.kind, status: "auto_published", version: nextVer });
       publishedCount += 1;
     } else {
-      if (candidate.sourceDeltaIds?.length) { citedAnyDelta = true; markTrajectoryDeltasProcessed(deps.db, candidate.sourceDeltaIds, now(), log); }
+      if (!options?.publishApprovedSuite && candidate.sourceDeltaIds?.length) { citedAnyDelta = true; markTrajectoryDeltasProcessed(deps.db, candidate.sourceDeltaIds, now(), log); }
       postOwnerItem(deps.db, {
         key: `workflow-draft:${recorded.id}:v${recorded.version}`, source: "night", kind: "workflow_draft_proposed", projectId: ownerProject, wake: true,
         what: `Предложен ${baseDef ? "обновлённый" : "новый"} граф «${titleRu}» (${workflowId}, draft v${recorded.version})`,
@@ -434,7 +434,7 @@ export async function applyGraphEvolveCandidates(
   }
 
   if (publishedCount > 0) deps.invalidateCatalog?.();
-  if (options?.deltaIds?.length && !citedAnyDelta && rejectedCount === 0 && publishedCount + proposedCount > 0) {
+  if (options?.deltaIds?.length && !citedAnyDelta && rejectedCount === 0 && (publishedCount > 0 || (!options?.publishApprovedSuite && proposedCount > 0))) {
     fixEvolveLog(log, "batch_mark_deltas", { count: options.deltaIds.length });
     markTrajectoryDeltasProcessed(deps.db, options.deltaIds, now(), log);
   }
