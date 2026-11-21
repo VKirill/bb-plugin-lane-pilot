@@ -1,5 +1,5 @@
 // Owns: src/rooms/night-graphs/server/graph-evolve-graph.ts, src/rooms/night-graphs/server/graph-evolve-pipeline.ts, src/rooms/night-graphs/server/graph-evolve-suite.ts
-import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
@@ -15,6 +15,7 @@ import {
 } from "@lane-pilot/workflow-engine";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { recordTrajectoryDelta } from "../../src/rooms/errands";
+import { lintSkillDir, readSkillDir } from "../../src/rooms/forge/skill-lint";
 import { checkDeprojectization, classifyEvolutionDiff } from "../../src/rooms/night-graphs";
 import {
   GRAPH_EVOLVE_WORKFLOW,
@@ -29,8 +30,11 @@ import {
   type EvolveRoleRunner,
   type GraphEvolveCandidate,
 } from "../../src/rooms/night-graphs/server";
+import { readExistingCompanionSkills } from "../../src/rooms/night-graphs/server/companion-skill-evolve";
+import { synthesizeSuiteAndSkillsFromBlueprint } from "../../src/rooms/night-graphs/server/graph-evolve-pipeline";
 import { collectOwnerWaiting, listOpenOwnerItems } from "../../src/rooms/owner-waiting";
 import { openDatabase, savePilotDayDigest } from "../../src/rooms/plugin-db";
+import { listSkillEvolutionsForDraft } from "../../src/rooms/storage";
 import { BUILTIN_SOURCES, builtinWorkflow } from "../../src/rooms/workflow";
 import { createWorkflowArchitect } from "../../src/rooms/workflow/server";
 import { buildWorkflowMap } from "../../src/rooms/workflow/server/workflow-map";
@@ -1358,5 +1362,710 @@ describe("4-model evolution pipeline and topological subworkflow suite publicati
     expect(verdict.findings).toHaveLength(1);
     expect(verdict.mustFix).toHaveLength(1);
     expect(verdict.mustFix[0]).toContain("homepage_archetype");
+  });
+});
+
+describe("Operator-driven multi-day convergence, companion skills, and auditVerdict gate", () => {
+  const websitesCategory = { id: "websites", label: { en: "Websites & Web Design", ru: "Сайты и веб-дизайн" } };
+
+  function makeTempSkillsDir(): string {
+    const dir = mkdtempSync(join(tmpdir(), "lp-graph-evolve-skills-"));
+    tempDirs.push(dir);
+    return dir;
+  }
+
+  function makeSiteUikitDef(opts: {
+    extraInputs?: Record<string, unknown>;
+    extraPromptRule?: string;
+    skills?: string[];
+  } = {}): Record<string, unknown> {
+    const promptLines = [
+      "Build CTA conversion map and responsive UI kit for {{$inputs.goal}} ({{$inputs.project_archetype}}).",
+      ...(opts.extraPromptRule ? [opts.extraPromptRule] : []),
+    ];
+    return {
+      id: "site-uikit",
+      version: 1,
+      category: websitesCategory,
+      name: { en: "Site UI Kit & CTA", ru: "UI-кит и карта CTA сайта" },
+      description: {
+        en: "Creates conversion CTA map and reusable UI kit for {{$inputs.project_archetype}}.",
+        ru: "Создаёт карту CTA и переиспользуемый UI-кит для {{$inputs.project_archetype}}.",
+      },
+      status: "draft",
+      triggers: ["manual"],
+      inputs: {
+        goal: { type: "string", required: true, description: "Website goal" },
+        project_archetype: { type: "string", default: "personal-brand", description: "Domain archetype overlay slug" },
+        variants_count: { type: "int", default: 3, description: "Visual directions to explore" },
+        ...(opts.extraInputs ?? {}),
+      },
+      outputs: { status: "done|blocked", uikit_summary: "string" },
+      goal_check: "artifact",
+      requires: { plugins: ["lane-pilot", "image-studio"], skills: opts.skills ?? [], secrets: [], machines: [] },
+      nodes: [
+        {
+          id: "craft_uikit",
+          type: "agent",
+          role: "specialist:design-lead",
+          ...(opts.skills?.length ? { skills: opts.skills } : {}),
+          mcp: ["metamcp"],
+          plugins: ["image-studio"],
+          title: { en: "Craft CTA map & UI kit", ru: "Собрать карту CTA и UI-кит" },
+          prompt: promptLines.join("\n"),
+          out: { status: "done|blocked", uikit_summary: "string", handoff: "string" },
+        },
+        {
+          id: "approve_uikit",
+          type: "human",
+          title: { en: "Approve UI kit", ru: "Утвердить UI-кит" },
+          question: "Approve generated UI kit direction?",
+          options: ["approve", "abort"],
+          out: { answer: "string", answer_kind: "approve|abort" },
+        },
+        {
+          id: "done",
+          type: "action",
+          action: "emit",
+          map: { status: "craft_uikit.status", uikit_summary: "craft_uikit.uikit_summary" },
+        },
+      ],
+      edges: [
+        { from: "start", to: "craft_uikit" },
+        { from: "craft_uikit", to: "approve_uikit" },
+        { from: "approve_uikit", to: "done" },
+      ],
+      test: {
+        id: "site-uikit-sim",
+        sim: {
+          input: { goal: "Launch website", project_archetype: "personal-brand", variants_count: 3 },
+          stubs: { craft_uikit: { status: "done", uikit_summary: "CTA map & UI kit approved", handoff: "Ready" } },
+          human_answers: { approve_uikit: "approve" },
+          expect_path: ["craft_uikit", "approve_uikit", "done"],
+          expect_status: "succeeded",
+          expect_output: { status: "done" },
+        },
+      },
+    };
+  }
+
+  function makeSiteSuiteDef(): Record<string, unknown> {
+    return {
+      id: "site-suite",
+      version: 1,
+      category: websitesCategory,
+      name: { en: "Site Delivery Suite", ru: "Сюит разработки сайта" },
+      description: {
+        en: "Orchestrates universal website UI kit and archetype delivery for {{$inputs.project_archetype}}.",
+        ru: "Оркестрирует универсальный UI-кит и сборку сайта для {{$inputs.project_archetype}}.",
+      },
+      status: "draft",
+      triggers: ["manual"],
+      inputs: {
+        goal: { type: "string", required: true, description: "Website goal" },
+        project_archetype: { type: "string", default: "personal-brand", description: "Domain archetype overlay slug" },
+        variants_count: { type: "int", default: 3, description: "Visual directions to explore" },
+      },
+      outputs: { status: "done|blocked", summary: "string" },
+      goal_check: "artifact",
+      requires: { plugins: ["lane-pilot"], skills: [], secrets: [], machines: [] },
+      nodes: [
+        {
+          id: "uikit_phase",
+          type: "subworkflow",
+          workflow: "site-uikit",
+          title: { en: "Phase 1: UI Kit & CTA", ru: "Фаза 1: UI-кит и CTA" },
+          inputs: {
+            goal: "{{$inputs.goal}}",
+            project_archetype: "{{$inputs.project_archetype}}",
+            variants_count: "{{$inputs.variants_count}}",
+          },
+          out: { status: "done|blocked", uikit_summary: "string" },
+          guards: { maxVisits: 1 },
+        },
+        {
+          id: "done",
+          type: "action",
+          action: "emit",
+          map: { status: "uikit_phase.status", summary: "uikit_phase.uikit_summary" },
+        },
+      ],
+      edges: [
+        { from: "start", to: "uikit_phase" },
+        { from: "uikit_phase", to: "done" },
+      ],
+      test: {
+        id: "site-suite-sim",
+        sim: {
+          input: { goal: "Launch website", project_archetype: "personal-brand", variants_count: 3 },
+          stubs: { uikit_phase: { status: "done", uikit_summary: "CTA map & UI kit approved" } },
+          expect_path: ["uikit_phase", "done"],
+          expect_status: "succeeded",
+          expect_output: { status: "done", summary: "CTA map & UI kit approved" },
+        },
+      },
+    };
+  }
+
+  it("converges Personal Site v1 -> E-commerce v2 -> Fachwerk Landing v3 via patch_converge, retires legacy pbs-brief, and preserves golden skeleton & archetype overlays", async () => {
+    const { bb } = createFakePluginHost({ pluginId: "lane-pilot" });
+    const db = openDatabase(bb);
+    const tempWorkflows = makeTempGlobalDir();
+    const tempSkills = makeTempSkillsDir();
+    let clock = 1_760_300_000_000;
+    const now = () => {
+      clock += 1_000;
+      return clock;
+    };
+    const logs: string[] = [];
+    const log = (m: string) => logs.push(m);
+
+    // Seed legacy narrow global workflow pbs-brief.json
+    const legacyBrief = JSON.stringify({ id: "pbs-brief", version: 1, status: "published", name: { en: "Legacy PBS Brief", ru: "Устаревший бриф PBS" } }, null, 2);
+    writeFileSync(join(tempWorkflows, "pbs-brief.json"), legacyBrief, "utf8");
+
+    // Day 1: VECHKASOV.RU-shaped masked digest (personal-brand)
+    savePilotDayDigest(db, {
+      digestId: "pdigest_site_day1",
+      dayKey: "2026-11-18",
+      sourceKind: "pilot_run",
+      sourceId: "run_site_day1",
+      projectId: "proj_site_conv",
+      outcome: "done",
+      processKey: "websites|site-suite",
+      categoryHint: websitesCategory,
+      archetypeHint: "personal-brand",
+      taskCount: 3,
+      skills: ["impeccable-ui", "ru-text"],
+      traps: ["Map CTA before visual tokens"],
+      maskedGoal: "Build site CTA map and UI kit for [domain]",
+      maskedLessons: ["Approve UI kit and CTA map before building full templates"],
+      artifactSkeleton: {
+        deliverableClass: "ui-kit-spec",
+        sections: ["CTA & Conversion Map", "UI Kit Tokens & Components", "Responsive Layout Grid"],
+        matrices: ["Section Conversion Matrix"],
+        qaChecks: ["Verify 375px and 1280px states"],
+      },
+      createdAt: now(),
+    });
+
+    const collected1 = collectGraphEvolveEvidence(db, { projectId: "proj_site_conv", now, log });
+    expect(collected1.status).toBe("ready");
+    expect(collected1.clusters[0]?.processKey).toBe("websites|site-suite");
+    expect(collected1.clusters[0]?.archetypeHints).toEqual(["personal-brand"]);
+
+    const baseCatalog: EvolveCatalogContext = {
+      knownCategories: [{ id: "code" }, { id: "seo" }, websitesCategory],
+      existingGlobal: [{ id: "pbs-brief", version: 1, title: { en: "Legacy PBS Brief", ru: "Устаревший бриф PBS" }, category: websitesCategory }],
+      reservedBuiltinIds: ["seo-page", "lp.graph-evolve-nightly"],
+      availableSkills: ["impeccable-ui", "ru-text"],
+      availablePlugins: ["image-studio", "browser-automation"],
+      availableMcp: ["metamcp"],
+    };
+
+    const day1Blueprint = {
+      operator: "create_suite",
+      decision: "suite_or_structural",
+      rationale: "Converge narrow pbs-* brief into universal websites suite and companion skill",
+      category: websitesCategory,
+      supersededWorkflowIds: ["pbs-brief"],
+      orderInvariants: ["CTA conversion map before UI kit visual design"],
+      variantParameters: [{ name: "variants_count", rangeOrValues: "1..6", purpose: "Explore multiple visual concepts" }],
+      requiredIntegrations: { mcp: ["metamcp"], plugins: ["image-studio"], skills: ["site-uikit-standard"] },
+      graphs: [
+        {
+          workflowId: "site-uikit",
+          kind: "phase_graph",
+          name: { en: "Site UI Kit & CTA", ru: "UI-кит и карта CTA сайта" },
+          description: { en: "Builds CTA map and UI kit", ru: "Строит карту CTA и UI-кит" },
+          dependsOnGraphs: [],
+          inputs: { goal: "string", project_archetype: "string", variants_count: "int" },
+          outputs: { status: "done|blocked", uikit_summary: "string" },
+          stages: [
+            {
+              id: "craft_uikit",
+              nodeType: "agent",
+              role: "specialist:design-lead",
+              purpose: "Craft CTA map and responsive UI kit",
+              skills: ["site-uikit-standard"],
+              mcp: ["metamcp"],
+              plugins: ["image-studio"],
+              contractRules: ["Follow golden skeleton sections"],
+            },
+          ],
+          acceptanceCriteria: ["Approved UI kit and CTA map"],
+        },
+        {
+          workflowId: "site-suite",
+          kind: "master_orchestrator",
+          name: { en: "Site Delivery Suite", ru: "Сюит разработки сайта" },
+          description: { en: "Orchestrates universal website delivery", ru: "Оркестрирует разработку сайта" },
+          dependsOnGraphs: ["site-uikit"],
+          inputs: { goal: "string", project_archetype: "string", variants_count: "int" },
+          outputs: { status: "done|blocked", summary: "string" },
+          stages: [
+            { id: "uikit_phase", nodeType: "subworkflow", subworkflowId: "site-uikit", purpose: "Run UI kit phase", skills: [], mcp: [], plugins: [], contractRules: [] },
+          ],
+          acceptanceCriteria: ["UI kit phase completes"],
+        },
+      ],
+      companionSkills: [
+        {
+          skillId: "site-uikit-standard",
+          workflowIds: ["site-uikit"],
+          mergeMode: "create_bundle",
+          summary: "Universal website UI kit and CTA conversion specification standard.",
+          whenToUse: "Use when designing website UI kits, conversion maps, or responsive component specs.",
+          whenNotToUse: "Do not use for backend services or non-web CLI tools.",
+          coreRules: [
+            "Build the CTA & conversion map before defining visual tokens and components.",
+            "Verify 375px mobile and 1280px desktop breakpoints before approval.",
+          ],
+          goldenSkeletonSections: [
+            "CTA & Conversion Map",
+            "UI Kit Tokens & Components",
+            "Responsive Layout Grid",
+          ],
+          qaRubricChecks: [
+            "CTA & conversion map precedes visual token definitions.",
+            "375px mobile and 1280px desktop component states pass contrast checks.",
+          ],
+          archetypeOverlays: [
+            {
+              slug: "personal-brand",
+              title: "Expert Authority Site",
+              whenToUse: "applying this process to an expert or founder personal-brand website",
+              rules: [
+                "Lead above the fold with positioning statement, proof metrics, and one primary consultation CTA.",
+              ],
+            },
+          ],
+        },
+      ],
+    };
+
+    const runDay1: EvolveRoleRunner = async (role) => {
+      if (role === "planner") return JSON.stringify(day1Blueprint);
+      if (role === "plan-critic" || role === "auditor") return JSON.stringify({ verdict: "pass", findings: [], mustFix: [] });
+      const uikitDef = makeSiteUikitDef();
+      const suiteDef = makeSiteSuiteDef();
+      return JSON.stringify({
+        candidates: [
+          { workflowId: "site-suite", scope: "global", name: suiteDef.name, description: suiteDef.description, category: websitesCategory, definition: suiteDef },
+          { workflowId: "site-uikit", scope: "global", name: uikitDef.name, description: uikitDef.description, category: websitesCategory, definition: uikitDef },
+        ],
+      });
+    };
+
+    const bp1 = await planEvolutionBlueprint({ collected: collected1, catalog: baseCatalog, runRole: runDay1, iteration: 1, log });
+    expect(bp1.operator).toBe("create_suite");
+    const crit1 = await critiqueEvolutionBlueprint({ blueprint: bp1, collected: collected1, catalog: baseCatalog, runRole: runDay1, iteration: 1, log });
+    expect(crit1.verdict).toBe("pass");
+
+    const synth1 = await synthesizeSuiteAndSkillsFromBlueprint({ blueprint: bp1, collected: collected1, catalog: baseCatalog, runRole: runDay1, iteration: 1, log });
+    const aud1 = await auditSynthesizedSuite({
+      blueprint: bp1, candidates: synth1.candidates, companionSkills: synth1.companionSkills, collected: collected1, runRole: runDay1, iteration: 1, log,
+    });
+    expect(aud1.verdict).toBe("pass");
+
+    const applied1 = await applyGraphEvolveCandidates(
+      { db, globalDir: () => tempWorkflows, skillsDir: () => tempSkills, knownContext: { knownDomains: ["vechkasov.ru"] }, now, log },
+      synth1.candidates,
+      {
+        publishApprovedSuite: true,
+        auditVerdict: aud1.verdict,
+        companionSkills: synth1.companionSkills,
+        operator: bp1.operator,
+        supersededWorkflowIds: synth1.supersededWorkflowIds,
+      },
+    );
+    expect(applied1.publishedCount).toBe(2);
+    expect(applied1.rejectedCount).toBe(0);
+    expect(existsSync(join(tempWorkflows, "pbs-brief.json"))).toBe(false);
+    expect(readdirSync(tempWorkflows).sort()).toEqual(["site-suite.json", "site-uikit.json"]);
+
+    const uikitDisk1 = JSON.parse(readFileSync(join(tempWorkflows, "site-uikit.json"), "utf8")) as {
+      version: number;
+      category: { id: string };
+      nodes: Array<{ id: string; skills?: string[] }>;
+    };
+    expect(uikitDisk1.version).toBe(1);
+    expect(uikitDisk1.category.id).toBe("websites");
+    expect(uikitDisk1.nodes.find((n) => n.id === "craft_uikit")?.skills).toContain("site-uikit-standard");
+
+    const uikitDraftId = applied1.outcomes.find((o) => o.workflowId === "site-uikit")!.draftId!;
+    const day1Ledger = listSkillEvolutionsForDraft(db, uikitDraftId, { status: "published" });
+    expect(day1Ledger.some((r) => r.skillId === "site-uikit-standard" && r.supersededWorkflowIds.includes("pbs-brief"))).toBe(true);
+
+    const skillDir = join(tempSkills, "site-uikit-standard");
+    expect(existsSync(join(skillDir, "SKILL.md"))).toBe(true);
+    expect(existsSync(join(skillDir, "references", "golden-skeleton.md"))).toBe(true);
+    expect(existsSync(join(skillDir, "references", "qa-rubric.md"))).toBe(true);
+    expect(existsSync(join(skillDir, "references", "archetype-personal-brand.md"))).toBe(true);
+    expect(lintSkillDir(readSkillDir(skillDir)).errors).toEqual([]);
+
+    // Day 2: E-commerce chat with Competitor Structure Matrix -> patch_converge (v1 -> v2)
+    savePilotDayDigest(db, {
+      digestId: "pdigest_site_day2",
+      dayKey: "2026-11-19",
+      sourceKind: "pilot_run",
+      sourceId: "run_site_day2",
+      projectId: "proj_site_conv",
+      outcome: "done",
+      processKey: "websites|site-suite",
+      categoryHint: websitesCategory,
+      archetypeHint: "ecommerce",
+      taskCount: 3,
+      skills: ["site-uikit-standard", "impeccable-ui"],
+      traps: ["Compare >= 3 competitor funnels before sketching catalog cards"],
+      maskedGoal: "Design catalog storefront UI kit with competitor structure matrix",
+      maskedLessons: ["Elevate Competitor Structure Matrix into core website UI kit skeleton"],
+      artifactSkeleton: {
+        deliverableClass: "ui-kit-spec",
+        sections: ["Competitor Structure Matrix", "Catalog & PDP Card System"],
+        matrices: ["Competitor Structure Matrix"],
+        qaChecks: ["Competitor Structure Matrix compares at least 3 peers"],
+      },
+      createdAt: now(),
+    });
+
+    const collected2 = collectGraphEvolveEvidence(db, { projectId: "proj_site_conv", now, log });
+    const existingDay2 = await readExistingCompanionSkills(tempSkills);
+    const catalog2: EvolveCatalogContext = {
+      ...baseCatalog,
+      existingGlobal: [
+        { id: "site-uikit", version: 1, title: { en: "Site UI Kit & CTA", ru: "UI-кит и карта CTA сайта" }, category: websitesCategory },
+        { id: "site-suite", version: 1, title: { en: "Site Delivery Suite", ru: "Сюит разработки сайта" }, category: websitesCategory },
+      ],
+      existingCompanionSkills: existingDay2.existingCompanionSkills,
+    };
+
+    const day2Blueprint = {
+      operator: "patch_converge",
+      decision: "minor_patch",
+      rationale: "Converge ecommerce teardown insights into existing site-uikit & site-uikit-standard without cloning",
+      category: websitesCategory,
+      supersededWorkflowIds: [],
+      orderInvariants: ["Competitor Structure Matrix and CTA conversion map before visual tokens"],
+      variantParameters: [{ name: "variants_count", rangeOrValues: "1..6", purpose: "Explore multiple visual concepts" }],
+      requiredIntegrations: { mcp: ["metamcp"], plugins: ["image-studio"], skills: ["site-uikit-standard"] },
+      graphs: [
+        {
+          workflowId: "site-uikit",
+          kind: "phase_graph",
+          name: { en: "Site UI Kit & CTA", ru: "UI-кит и карта CTA сайта" },
+          description: { en: "Builds competitor matrix, CTA map, and UI kit", ru: "Строит матрицу конкурентов, карту CTA и UI-кит" },
+          dependsOnGraphs: [],
+          inputs: { goal: "string", project_archetype: "string", variants_count: "int", competitor_teardown: "string" },
+          outputs: { status: "done|blocked", uikit_summary: "string" },
+          stages: [
+            {
+              id: "craft_uikit",
+              nodeType: "agent",
+              role: "specialist:design-lead",
+              purpose: "Include Competitor Structure Matrix before UI kit tokens",
+              skills: ["site-uikit-standard"],
+              mcp: ["metamcp"],
+              plugins: ["image-studio"],
+              contractRules: ["Complete Competitor Structure Matrix first"],
+            },
+          ],
+          acceptanceCriteria: ["Competitor matrix and UI kit approved"],
+        },
+      ],
+      companionSkills: [
+        {
+          skillId: "site-uikit-standard",
+          workflowIds: ["site-uikit"],
+          mergeMode: "merge_core_and_overlay",
+          summary: "Universal website UI kit and CTA conversion specification standard.",
+          whenToUse: "Use when designing website UI kits, conversion maps, or responsive component specs across archetypes.",
+          whenNotToUse: "Do not use for backend services or non-web CLI tools.",
+          coreRules: [
+            "Complete the Competitor Structure Matrix comparing >= 3 peers before sketching layout blocks.",
+          ],
+          goldenSkeletonSections: [
+            "Competitor Structure Matrix",
+          ],
+          qaRubricChecks: [
+            "Competitor Structure Matrix compares at least 3 peer sites with CTA and fold notes.",
+          ],
+          archetypeOverlays: [
+            {
+              slug: "ecommerce",
+              title: "Storefront & Catalog Archetype",
+              whenToUse: "applying this process to an ecommerce catalog or storefront site",
+              rules: [
+                "Standardize faceted filter chips, quick-add cart states, and PDP trust badges inside the UI kit.",
+              ],
+            },
+          ],
+        },
+      ],
+    };
+
+    const runDay2: EvolveRoleRunner = async (role) => {
+      if (role === "planner") return JSON.stringify(day2Blueprint);
+      if (role === "plan-critic" || role === "auditor") return JSON.stringify({ verdict: "pass", findings: [], mustFix: [] });
+      const uikitV2 = makeSiteUikitDef({
+        extraInputs: { competitor_teardown: { type: "string", default: "", note: "Optional competitor teardown notes" } },
+        extraPromptRule: "Complete the Competitor Structure Matrix before drafting UI kit tokens.",
+      });
+      return JSON.stringify({
+        candidates: [
+          { workflowId: "site-uikit", scope: "global", name: uikitV2.name, description: uikitV2.description, category: websitesCategory, definition: uikitV2 },
+        ],
+      });
+    };
+
+    const bp2 = await planEvolutionBlueprint({ collected: collected2, catalog: catalog2, runRole: runDay2, iteration: 1, log });
+    expect(bp2.operator).toBe("patch_converge");
+    const crit2 = await critiqueEvolutionBlueprint({ blueprint: bp2, collected: collected2, catalog: catalog2, runRole: runDay2, iteration: 1, log });
+    expect(crit2.verdict).toBe("pass");
+
+    const synth2 = await synthesizeSuiteAndSkillsFromBlueprint({
+      blueprint: bp2, collected: collected2, catalog: catalog2, runRole: runDay2, existingSkillBundles: existingDay2.existingSkillBundles, iteration: 1, log,
+    });
+    const aud2 = await auditSynthesizedSuite({
+      blueprint: bp2, candidates: synth2.candidates, companionSkills: synth2.companionSkills, existingSkillBundles: existingDay2.existingSkillBundles, collected: collected2, runRole: runDay2, iteration: 1, log,
+    });
+    expect(aud2.verdict).toBe("pass");
+
+    const applied2 = await applyGraphEvolveCandidates(
+      { db, globalDir: () => tempWorkflows, skillsDir: () => tempSkills, knownContext: { knownDomains: ["vechkasov.ru"] }, now, log },
+      synth2.candidates,
+      { auditVerdict: aud2.verdict, companionSkills: synth2.companionSkills, operator: bp2.operator },
+    );
+    expect(applied2.publishedCount).toBe(1);
+    expect(applied2.outcomes[0]).toMatchObject({ workflowId: "site-uikit", kind: "minor_patch", status: "auto_published", version: 2 });
+    expect(readdirSync(tempWorkflows).sort()).toEqual(["site-suite.json", "site-uikit.json"]);
+
+    const skeletonDay2 = readFileSync(join(skillDir, "references", "golden-skeleton.md"), "utf8");
+    expect(skeletonDay2).toContain("CTA & Conversion Map");
+    expect(skeletonDay2).toContain("UI Kit Tokens & Components");
+    expect(skeletonDay2).toContain("Responsive Layout Grid");
+    expect(skeletonDay2).toContain("Competitor Structure Matrix");
+    expect(readFileSync(join(skillDir, "SKILL.md"), "utf8")).toContain("Competitor Structure Matrix");
+    expect(existsSync(join(skillDir, "references", "archetype-personal-brand.md"))).toBe(true);
+    expect(existsSync(join(skillDir, "references", "archetype-ecommerce.md"))).toBe(true);
+    expect(lintSkillDir(readSkillDir(skillDir)).errors).toEqual([]);
+
+    // Day 3: High-ticket construction/architectural landing (Fachwerk Houses) -> patch_converge (v2 -> v3)
+    savePilotDayDigest(db, {
+      digestId: "pdigest_site_day3",
+      dayKey: "2026-11-20",
+      sourceKind: "pilot_run",
+      sourceId: "run_site_day3",
+      projectId: "proj_site_conv",
+      outcome: "done",
+      processKey: "websites|site-suite",
+      categoryHint: websitesCategory,
+      archetypeHint: "high-ticket-leadgen",
+      taskCount: 3,
+      skills: ["site-uikit-standard"],
+      traps: ["Pair high-ticket estimation calculator with architectural proof gallery"],
+      maskedGoal: "Design high-ticket architectural housing landing UI kit",
+      maskedLessons: ["Add high-ticket-leadgen archetype overlay without duplicating site-uikit"],
+      artifactSkeleton: {
+        deliverableClass: "ui-kit-spec",
+        sections: ["Competitor Structure Matrix", "CTA & Conversion Map"],
+        matrices: ["Qualification Calculator Matrix"],
+        qaChecks: ["Verify project-qualification lead form states"],
+      },
+      createdAt: now(),
+    });
+
+    const collected3 = collectGraphEvolveEvidence(db, { projectId: "proj_site_conv", now, log });
+    const existingDay3 = await readExistingCompanionSkills(tempSkills);
+    const catalog3: EvolveCatalogContext = {
+      ...catalog2,
+      existingGlobal: [
+        { id: "site-uikit", version: 2, title: { en: "Site UI Kit & CTA", ru: "UI-кит и карта CTA сайта" }, category: websitesCategory },
+        { id: "site-suite", version: 1, title: { en: "Site Delivery Suite", ru: "Сюит разработки сайта" }, category: websitesCategory },
+      ],
+      existingCompanionSkills: existingDay3.existingCompanionSkills,
+    };
+
+    const day3Blueprint = {
+      ...day2Blueprint,
+      rationale: "Add high-ticket-leadgen archetype overlay while keeping Day 1/2 core and overlays intact",
+      graphs: [
+        {
+          ...day2Blueprint.graphs[0]!,
+          inputs: { ...day2Blueprint.graphs[0]!.inputs, trust_proof_pack: "string" },
+        },
+      ],
+      companionSkills: [
+        {
+          ...day2Blueprint.companionSkills[0]!,
+          coreRules: ["Require verifiable engineering or craftsmanship proof adjacent to high-ticket lead forms."],
+          goldenSkeletonSections: [],
+          qaRubricChecks: ["High-ticket lead form includes transparent project budget/timeline steps."],
+          archetypeOverlays: [
+            {
+              slug: "high-ticket-leadgen",
+              title: "High-Ticket Leadgen Landing",
+              whenToUse: "applying this process to high-ticket custom builds or architectural leadgen landings",
+              rules: [
+                "Combine interactive project estimate / qualification steps with site-visit booking CTA.",
+              ],
+            },
+          ],
+        },
+      ],
+    };
+
+    const runDay3: EvolveRoleRunner = async (role) => {
+      if (role === "planner") return JSON.stringify(day3Blueprint);
+      if (role === "plan-critic" || role === "auditor") return JSON.stringify({ verdict: "pass", findings: [], mustFix: [] });
+      const uikitV3 = makeSiteUikitDef({
+        extraInputs: {
+          competitor_teardown: { type: "string", default: "", note: "Optional competitor teardown notes" },
+          trust_proof_pack: { type: "string", default: "", note: "Optional engineering proof references" },
+        },
+        extraPromptRule: "Complete the Competitor Structure Matrix and verify high-ticket proof elements.",
+      });
+      return JSON.stringify({
+        candidates: [
+          { workflowId: "site-uikit", scope: "global", name: uikitV3.name, description: uikitV3.description, category: websitesCategory, definition: uikitV3 },
+        ],
+      });
+    };
+
+    const bp3 = await planEvolutionBlueprint({ collected: collected3, catalog: catalog3, runRole: runDay3, iteration: 1, log });
+    const crit3 = await critiqueEvolutionBlueprint({ blueprint: bp3, collected: collected3, catalog: catalog3, runRole: runDay3, iteration: 1, log });
+    expect(crit3.verdict).toBe("pass");
+
+    const synth3 = await synthesizeSuiteAndSkillsFromBlueprint({
+      blueprint: bp3, collected: collected3, catalog: catalog3, runRole: runDay3, existingSkillBundles: existingDay3.existingSkillBundles, iteration: 1, log,
+    });
+    const aud3 = await auditSynthesizedSuite({
+      blueprint: bp3, candidates: synth3.candidates, companionSkills: synth3.companionSkills, existingSkillBundles: existingDay3.existingSkillBundles, collected: collected3, runRole: runDay3, iteration: 1, log,
+    });
+    expect(aud3.verdict).toBe("pass");
+
+    const applied3 = await applyGraphEvolveCandidates(
+      { db, globalDir: () => tempWorkflows, skillsDir: () => tempSkills, knownContext: { knownDomains: ["vechkasov.ru"] }, now, log },
+      synth3.candidates,
+      { auditVerdict: aud3.verdict, companionSkills: synth3.companionSkills, operator: bp3.operator },
+    );
+    expect(applied3.publishedCount).toBe(1);
+    expect(applied3.outcomes[0]).toMatchObject({ workflowId: "site-uikit", kind: "minor_patch", status: "auto_published", version: 3 });
+    expect(readdirSync(tempWorkflows).sort()).toEqual(["site-suite.json", "site-uikit.json"]);
+
+    const skeletonDay3 = readFileSync(join(skillDir, "references", "golden-skeleton.md"), "utf8");
+    expect(skeletonDay3).toContain("CTA & Conversion Map");
+    expect(skeletonDay3).toContain("Competitor Structure Matrix");
+    expect(existsSync(join(skillDir, "references", "archetype-personal-brand.md"))).toBe(true);
+    expect(existsSync(join(skillDir, "references", "archetype-ecommerce.md"))).toBe(true);
+    expect(existsSync(join(skillDir, "references", "archetype-high-ticket-leadgen.md"))).toBe(true);
+    expect(lintSkillDir(readSkillDir(skillDir)).errors).toEqual([]);
+  });
+
+  it("holds minor_patch + companion skill update in proposed_tested when auditVerdict is rework (held_without_audit_pass)", async () => {
+    const { bb } = createFakePluginHost({ pluginId: "lane-pilot" });
+    const db = openDatabase(bb);
+    const tempWorkflows = makeTempGlobalDir();
+    const tempSkills = makeTempSkillsDir();
+    let clock = 1_760_400_000_000;
+    const now = () => {
+      clock += 1_000;
+      return clock;
+    };
+    const logs: string[] = [];
+    const log = (m: string) => logs.push(m);
+
+    // Seed v1 workflow + v1 companion skill on disk via approved publish
+    const v1Def = makeSiteUikitDef({ skills: ["site-uikit-standard"] });
+    const v1Skill = {
+      skillId: "site-uikit-standard",
+      workflowIds: ["site-uikit"],
+      mergeMode: "create_bundle" as const,
+      files: [
+        {
+          path: "SKILL.md",
+          text: [
+            "---",
+            "name: site-uikit-standard",
+            'description: "Universal website UI kit standard. Use when designing site UI kits. Do not use for backend APIs."',
+            "---",
+            "",
+            "# site-uikit-standard",
+            "",
+            "## Core Rules",
+            "",
+            "- Build CTA & conversion map before visual tokens.",
+            "",
+            "## References",
+            "",
+            "- [Golden Skeleton](references/golden-skeleton.md)",
+            "- [QA Rubric](references/qa-rubric.md)",
+            "",
+          ].join("\n"),
+        },
+        {
+          path: "references/golden-skeleton.md",
+          text: "# Golden Skeleton: site-uikit-standard\n\n## 1. CTA & Conversion Map\n\nV1 baseline section.\n",
+        },
+        {
+          path: "references/qa-rubric.md",
+          text: "# QA Rubric: site-uikit-standard\n\n- [ ] Verify CTA map.\n",
+        },
+      ],
+    };
+
+    const seedRes = await applyGraphEvolveCandidates(
+      { db, globalDir: () => tempWorkflows, skillsDir: () => tempSkills, now, log },
+      [{ workflowId: "site-uikit", scope: "global", name: v1Def.name as { en: string; ru: string }, description: v1Def.description as { en: string; ru: string }, category: websitesCategory, definition: v1Def }],
+      { publishApprovedSuite: true, auditVerdict: "pass", companionSkills: [v1Skill], operator: "create_suite" },
+    );
+    expect(seedRes.publishedCount).toBe(1);
+
+    // Attempt minor_patch v2 with auditVerdict: "rework"
+    const v2Def = makeSiteUikitDef({
+      skills: ["site-uikit-standard"],
+      extraInputs: { extra_audit_note: { type: "string", default: "", note: "Optional note" } },
+      extraPromptRule: "V2 extra prompt guidance.",
+    });
+    const v2Skill = {
+      skillId: "site-uikit-standard",
+      workflowIds: ["site-uikit"],
+      mergeMode: "merge_core_and_overlay" as const,
+      files: [
+        ...v1Skill.files.filter((f) => f.path !== "references/golden-skeleton.md"),
+        {
+          path: "references/golden-skeleton.md",
+          text: "# Golden Skeleton: site-uikit-standard\n\n## 1. CTA & Conversion Map\n\nV1 baseline section.\n\n## 2. V2 Held Section\n\nMust stay staged until audit passes.\n",
+        },
+      ],
+    };
+
+    const heldRes = await applyGraphEvolveCandidates(
+      { db, globalDir: () => tempWorkflows, skillsDir: () => tempSkills, now, log },
+      [{ workflowId: "site-uikit", scope: "global", name: v2Def.name as { en: string; ru: string }, description: v2Def.description as { en: string; ru: string }, category: websitesCategory, definition: v2Def }],
+      { auditVerdict: "rework", companionSkills: [v2Skill], operator: "patch_converge" },
+    );
+
+    expect(heldRes.publishedCount).toBe(0);
+    expect(heldRes.proposedCount).toBe(1);
+    expect(heldRes.rejectedCount).toBe(0);
+    expect(heldRes.outcomes[0]).toMatchObject({ workflowId: "site-uikit", kind: "minor_patch", status: "proposed_tested" });
+
+    const wfOnDisk = JSON.parse(readFileSync(join(tempWorkflows, "site-uikit.json"), "utf8")) as {
+      version: number;
+      inputs: Array<{ name: string }>;
+    };
+    expect(wfOnDisk.version).toBe(1);
+    expect(wfOnDisk.inputs.some((i) => i.name === "extra_audit_note")).toBe(false);
+
+    const skeletonOnDisk = readFileSync(join(tempSkills, "site-uikit-standard", "references", "golden-skeleton.md"), "utf8");
+    expect(skeletonOnDisk).not.toContain("V2 Held Section");
+
+    const stagedRows = listSkillEvolutionsForDraft(db, heldRes.outcomes[0]!.draftId!, { draftVersion: heldRes.outcomes[0]!.version!, status: "staged" });
+    expect(stagedRows).toHaveLength(1);
+    expect(stagedRows[0]!.skillId).toBe("site-uikit-standard");
+    expect(stagedRows[0]!.candidateFiles.find((f) => f.path === "references/golden-skeleton.md")?.text).toContain("V2 Held Section");
+
+    expect(logs.some((line) => line.includes("INFO [nightGraphs.graphEvolve] held_without_audit_pass"))).toBe(true);
   });
 });

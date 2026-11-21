@@ -12,10 +12,13 @@ import {
   runDraftTest,
   testCasesOf,
 } from "@lane-pilot/workflow-engine";
-import { HARNESS_VERSION } from "../../src/rooms/storage";
+import { HARNESS_VERSION, listSkillEvolutionsForDraft } from "../../src/rooms/storage";
 import { coreRequiredSessionAdvertisement } from "../../src/rooms/contracts";
+import { lintSkillDir, readSkillDir } from "../../src/rooms/forge/skill-lint";
+import { applyGraphEvolveCandidates } from "../../src/rooms/night-graphs/server";
+import { renderCompanionSkillBundle } from "../../src/rooms/night-graphs/server/companion-skill-merge";
 import { listOpenOwnerItems, postOwnerItem } from "../../src/rooms/owner-waiting";
-import { openDatabase } from "../../src/rooms/plugin-db";
+import { openDatabase, type RunRow } from "../../src/rooms/plugin-db";
 import {
   PILOT_PROCESS_STATE_REL_PATH,
   buildPilotActionPrompt,
@@ -28,8 +31,13 @@ import {
   createPilotPanelService,
   pilotPanelRpc,
 } from "../../src/rooms/pilot-panel/server";
-import { createProcessStateIo } from "../../src/rooms/pilot-panel/server/workflow-drafts";
+import {
+  createProcessStateIo,
+  publishPanelWorkflowDraft,
+  rollbackPanelWorkflowDraft,
+} from "../../src/rooms/pilot-panel/server/workflow-drafts";
 import { createWorkflowArchitect } from "../../src/rooms/workflow/server";
+import { maybeNotifyWorkflowRun, notifyWorkflowIfEnded } from "../../src/rooms/workflow/server/pm-notice";
 import type { ServerCore } from "../../src/rooms/contracts/server";
 
 const tempDirs: string[] = [];
@@ -508,5 +516,260 @@ describe("pilot-panel process-state and workflow evolution RPC", () => {
     };
     expect(diskAfterRollback.nodes.find((n) => n.id === "draft_page")?.prompt).toContain("V1 baseline prompt");
     expect(logs.length).toBeGreaterThan(0);
+  });
+
+  it("supports modular UI Kit -> Brandbook expansion, 1-click coupled publish, v1 -> v2 evolution, atomic 1-click rollback, and silent upkeep", async () => {
+    const rootPath = createTempWorkspace();
+    const { ctx, db, logs } = createEvolutionHarness(rootPath);
+    const tempWorkflows = createTempDir("lp-evo-brandbook-wf-");
+    const tempSkills = createTempDir("lp-evo-brandbook-skills-");
+    let clock = 1_760_500_000_000;
+    const now = () => {
+      clock += 1_000;
+      return clock;
+    };
+
+    const brandingCategory = { id: "branding", label: { en: "Branding & Identity", ru: "Брендинг и айдентика" } };
+    const makeBrandbookDef = (opts: { extraInputs?: Record<string, unknown>; promptSuffix?: string } = {}): Record<string, unknown> => ({
+      id: "brandbook",
+      version: 1,
+      category: brandingCategory,
+      name: { en: "Brandbook System", ru: "Система брендбука" },
+      description: {
+        en: "Builds modular brandbook deliverable for {{$inputs.brand_brief}}.",
+        ru: "Собирает модульный брендбук по брифу {{$inputs.brand_brief}}.",
+      },
+      status: "draft",
+      triggers: ["manual"],
+      inputs: {
+        brand_brief: { type: "string", default: "Modular design system", description: "Brand brief" },
+        brand_tokens_artifact: { type: "string", default: "", description: "Optional handoff tokens from site UI kit" },
+        ...(opts.extraInputs ?? {}),
+      },
+      outputs: { status: "done|blocked", summary: "string" },
+      goal_check: "artifact",
+      requires: { plugins: ["lane-pilot"], skills: ["brandbook-standard"], secrets: [], machines: [] },
+      nodes: [
+        {
+          id: "craft_brandbook",
+          type: "agent",
+          role: "specialist:design-lead",
+          skills: ["brandbook-standard"],
+          title: { en: "Craft Brandbook", ru: "Собрать брендбук" },
+          prompt: `Assemble brandbook for {{$inputs.brand_brief}} using tokens {{$inputs.brand_tokens_artifact}}.${opts.promptSuffix ? ` ${opts.promptSuffix}` : ""}`,
+          out: { status: "done|blocked", summary: "string", handoff: "string" },
+        },
+        {
+          id: "done",
+          type: "action",
+          action: "emit",
+          map: { status: "craft_brandbook.status", summary: "craft_brandbook.summary" },
+        },
+      ],
+      edges: [
+        { from: "start", to: "craft_brandbook" },
+        { from: "craft_brandbook", to: "done" },
+      ],
+      test: {
+        id: "brandbook-sim",
+        sim: {
+          input: { brand_brief: "Modular design system", brand_tokens_artifact: "tokens.json" },
+          stubs: { craft_brandbook: { status: "done", summary: "Brandbook compiled", handoff: "Done" } },
+          expect_path: ["craft_brandbook", "done"],
+          expect_status: "succeeded",
+          expect_output: { status: "done", summary: "Brandbook compiled" },
+        },
+      },
+    });
+
+    const v1Skill = renderCompanionSkillBundle({
+      skillId: "brandbook-standard",
+      workflowIds: ["brandbook"],
+      mergeMode: "create_bundle",
+      summary: "Modular brandbook deliverable standard extending UI kit tokens.",
+      whenToUse: "Use when producing a brandbook or visual identity guideline.",
+      whenNotToUse: "Do not use for backend APIs or unrelated deployment scripts.",
+      coreRules: ["Preserve UI kit color and type token parity inside brandbook sections."],
+      goldenSkeletonSections: ["Logo & Clearspace", "Color Palette", "Typography Scale"],
+      qaRubricChecks: ["Logo minimum clearspace rule is explicit.", "WCAG contrast pairs are checked for Color Palette."],
+      archetypeOverlays: [],
+    });
+
+    // 1) Propose brandbook v1 (proposed_tested) + staged brandbook-standard v1
+    const v1Def = makeBrandbookDef();
+    const proposed = await applyGraphEvolveCandidates(
+      { db, globalDir: () => tempWorkflows, skillsDir: () => tempSkills, now, log: ctx.log },
+      [
+        {
+          workflowId: "brandbook",
+          scope: "global",
+          name: v1Def.name as { en: string; ru: string },
+          description: v1Def.description as { en: string; ru: string },
+          category: brandingCategory,
+          definition: v1Def,
+        },
+      ],
+      { publishApprovedSuite: false, auditVerdict: "pass", operator: "extend_module", companionSkills: [v1Skill] },
+    );
+    expect(proposed.proposedCount).toBe(1);
+    expect(proposed.publishedCount).toBe(0);
+    expect(proposed.outcomes[0]).toMatchObject({ workflowId: "brandbook", status: "proposed_tested", version: 1 });
+    const draftId = proposed.outcomes[0]!.draftId!;
+    expect(existsSync(join(tempWorkflows, "brandbook.json"))).toBe(false);
+    expect(existsSync(join(tempSkills, "brandbook-standard"))).toBe(false);
+
+    // 2) Owner 1-click publish writes BOTH brandbook.json v1 AND brandbook-standard v1 atomically
+    const pubRes = await publishPanelWorkflowDraft(
+      ctx,
+      { globalDir: () => tempWorkflows, skillsDir: () => tempSkills },
+      { draftId, threadId: "thr_evo_bb" },
+    );
+    expect(pubRes.ok).toBe(true);
+
+    const wfPath = join(tempWorkflows, "brandbook.json");
+    const skillDir = join(tempSkills, "brandbook-standard");
+    const skeletonPath = join(skillDir, "references", "golden-skeleton.md");
+    const skillMdPath = join(skillDir, "SKILL.md");
+
+    expect(existsSync(wfPath)).toBe(true);
+    expect(existsSync(skillMdPath)).toBe(true);
+    expect(existsSync(skeletonPath)).toBe(true);
+    expect(lintSkillDir(readSkillDir(skillDir)).errors).toEqual([]);
+
+    const v1WorkflowRaw = readFileSync(wfPath, "utf8");
+    const v1WorkflowJson = JSON.parse(v1WorkflowRaw) as Record<string, unknown>;
+    expect(v1WorkflowJson.version).toBe(1);
+    const v1SkeletonRaw = readFileSync(skeletonPath, "utf8");
+    const v1SkillMdRaw = readFileSync(skillMdPath, "utf8");
+    expect(v1SkeletonRaw).toContain("Logo & Clearspace");
+    expect(v1SkeletonRaw).toContain("Color Palette");
+    expect(v1SkeletonRaw).toContain("Typography Scale");
+
+    // 3) Next day: patch_converge auto-publishes brandbook v2 + brandbook-standard v2 (adding Tone of Voice & Motion Guidelines)
+    const v2Def = makeBrandbookDef({
+      extraInputs: { voice_and_motion: { type: "string", default: "calm", description: "Optional tone & motion notes" } },
+      promptSuffix: "Include Tone of Voice and Motion Guidelines sections ({{$inputs.voice_and_motion}}).",
+    });
+    const v2Skill = renderCompanionSkillBundle(
+      {
+        skillId: "brandbook-standard",
+        workflowIds: ["brandbook"],
+        mergeMode: "merge_core_and_overlay",
+        summary: "Modular brandbook deliverable standard extending UI kit tokens.",
+        whenToUse: "Use when producing a brandbook or visual identity guideline.",
+        whenNotToUse: "Do not use for backend APIs or unrelated deployment scripts.",
+        coreRules: ["Define Tone of Voice and Motion Guidelines alongside visual tokens."],
+        goldenSkeletonSections: ["Tone of Voice", "Motion Guidelines"],
+        qaRubricChecks: ["Tone of Voice examples and Motion Guidelines timings are documented."],
+        archetypeOverlays: [],
+      },
+      readSkillDir(skillDir),
+    );
+
+    const v2Apply = await applyGraphEvolveCandidates(
+      { db, globalDir: () => tempWorkflows, skillsDir: () => tempSkills, now, log: ctx.log },
+      [
+        {
+          workflowId: "brandbook",
+          scope: "global",
+          name: v2Def.name as { en: string; ru: string },
+          description: v2Def.description as { en: string; ru: string },
+          category: brandingCategory,
+          definition: v2Def,
+        },
+      ],
+      { auditVerdict: "pass", operator: "patch_converge", companionSkills: [v2Skill] },
+    );
+    expect(v2Apply.publishedCount).toBe(1);
+    expect(v2Apply.outcomes[0]).toMatchObject({ workflowId: "brandbook", kind: "minor_patch", status: "auto_published", version: 2 });
+
+    const v2WorkflowJson = JSON.parse(readFileSync(wfPath, "utf8")) as { version: number; inputs: Array<{ name: string }> };
+    expect(v2WorkflowJson.version).toBe(2);
+    expect(v2WorkflowJson.inputs.some((i) => i.name === "voice_and_motion")).toBe(true);
+
+    const v2SkeletonRaw = readFileSync(skeletonPath, "utf8");
+    expect(v2SkeletonRaw).toContain("Logo & Clearspace");
+    expect(v2SkeletonRaw).toContain("Color Palette");
+    expect(v2SkeletonRaw).toContain("Typography Scale");
+    expect(v2SkeletonRaw).toContain("Tone of Voice");
+    expect(v2SkeletonRaw).toContain("Motion Guidelines");
+    expect(lintSkillDir(readSkillDir(skillDir)).errors).toEqual([]);
+
+    // 4) Owner clicks 1-click rollback -> BOTH brandbook.json content AND brandbook-standard revert to v1
+    const rbRes = await rollbackPanelWorkflowDraft(
+      ctx,
+      { globalDir: () => tempWorkflows, skillsDir: () => tempSkills },
+      { draftId, threadId: "thr_evo_bb" },
+    );
+    expect(rbRes.ok).toBe(true);
+
+    // Skill files revert byte-for-byte to v1 (v2-only sections removed, all 3 v1 sections intact)
+    expect(readFileSync(skeletonPath, "utf8")).toBe(v1SkeletonRaw);
+    expect(readFileSync(skillMdPath, "utf8")).toBe(v1SkillMdRaw);
+    expect(readFileSync(skeletonPath, "utf8")).not.toContain("Tone of Voice");
+    expect(readFileSync(skeletonPath, "utf8")).not.toContain("Motion Guidelines");
+
+    // Workflow JSON reverts byte-for-byte to v1 content (excluding monotonic published version counter)
+    const rolledWfJson = JSON.parse(readFileSync(wfPath, "utf8")) as Record<string, unknown> & { inputs: Array<{ name: string }> };
+    expect(`${JSON.stringify({ ...rolledWfJson, version: 1 }, null, 2)}\n`).toBe(v1WorkflowRaw);
+    expect(rolledWfJson.inputs.some((i) => i.name === "voice_and_motion")).toBe(false);
+
+    const ledgerEvents = listSkillEvolutionsForDraft(db, draftId);
+    expect(ledgerEvents.some((ev) => ev.skillId === "brandbook-standard" && ev.status === "rolled_back")).toBe(true);
+    expect(logs.some((line) => line.includes("INFO [pilotPanel.workflowDrafts] coupled_skill_restored"))).toBe(true);
+
+    // 5) Silent upkeep verification for lp.graph-evolve-nightly (UPKEEP_WORKFLOWS suppresses PM chat & owner spam)
+    const pmSends: string[] = [];
+    const kv = new Map<string, unknown>();
+    const noticeBb = {
+      sdk: {
+        threads: {
+          send: async (req: { input: Array<{ text: string }> }) => {
+            pmSends.push(req.input[0]!.text);
+          },
+        },
+      },
+      storage: {
+        kv: {
+          get: async (k: string) => kv.get(k) ?? null,
+          set: async (k: string, v: unknown) => {
+            kv.set(k, v);
+          },
+        },
+      },
+    };
+    const upkeepRun: RunRow = {
+      id: "wfrun_upkeep_nightly",
+      idem_key: "wf:graph-evolve:nightly",
+      workflow_id: "lp.graph-evolve-nightly",
+      workflow_version: 1,
+      workflow_sha256: "sha",
+      definition_json: "{}",
+      project_id: "proj_evo",
+      link_run_id: "run_linked_pm",
+      link_task_id: null,
+      link_attempt_id: null,
+      parent_run_id: null,
+      parent_step_key: null,
+      depth: 0,
+      status: "succeeded",
+      reason: null,
+      mode: null,
+      inputs_json: "{}",
+      output_json: JSON.stringify({ status: "done", summary: "2 proposed" }),
+      harness_version: HARNESS_VERSION,
+      steps_used: 1,
+      tokens_used: 0,
+      cost_micro_usd: 0,
+      wait_ms: 0,
+      owner_id: null,
+      lease_until: 0,
+      created_at: now(),
+      updated_at: now(),
+    };
+    expect(await maybeNotifyWorkflowRun({ bb: noticeBb, log: ctx.log, pmThreadId: "thr_evo_bb", startedBySchedule: false, run: upkeepRun })).toBe(false);
+    expect(await maybeNotifyWorkflowRun({ bb: noticeBb, log: ctx.log, pmThreadId: "thr_evo_bb", startedBySchedule: true, run: upkeepRun })).toBe(false);
+    expect(await notifyWorkflowIfEnded({ bb: noticeBb, db, log: ctx.log, run: { ...upkeepRun, link_run_id: null } })).toBe(false);
+    expect(pmSends).toEqual([]);
   });
 });

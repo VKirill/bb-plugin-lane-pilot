@@ -1,21 +1,25 @@
-import { redactKnown } from "@lane-pilot/kit";
-import { loadWorkflow, runDraftTest, testCasesOf, type WorkflowEngine } from "@lane-pilot/workflow-engine";
+import { rm } from "node:fs/promises";
+import { join } from "node:path";
+import { redactKnown, sha256Hex } from "@lane-pilot/kit";
+import {
+  casWriteSkillBundle, casWriteWorkflowFile, computeSkillBundleSha256, globalSkillsDir, globalWorkflowDir,
+  loadWorkflow, loadWorkflowStore, nodeFileSource, readSkillBundle, restoreSkillBundleSnapshot,
+  runDraftTest, testCasesOf, type WorkflowEngine,
+} from "@lane-pilot/workflow-engine";
 import type { ChainRuntime, ServerCore } from "../../contracts/server";
 import { closeOwnerItemsByPrefix, listOpenOwnerItems } from "../../owner-waiting";
 import { projectFolder, type WorkflowEngineApi, type WorkflowTriggersApi } from "../../platform/server";
-import { createDraftStore, HARNESS_VERSION, type CasFilesLike } from "../../storage";
-import { noteEngineWrite } from "../../verification/server";
-import { builtinWorkflow } from "../../workflow";
-import { createWorkflowArchitect } from "../../workflow/server";
 import {
-  PILOT_PROCESS_STATE_REL_PATH,
-  pilotProcessStateSchema,
-  readPilotProcessStateCas,
-  writePilotProcessStateCas,
-  type PilotProcessState,
-  type PilotWorkflowDraftItem,
-  type PilotWorkflowEvolution,
-  type ProcessStateIo,
+  appendSkillEvolutionEvent, createDraftStore, HARNESS_VERSION,
+  listLatestActivePublishedSkillEvolutionsForDraft, listSkillEvolutionsForDraft,
+  type CasFilesLike, type SupersededWorkflowSnapshot,
+} from "../../storage";
+import { noteEngineWrite } from "../../verification/server";
+import { BUILTIN_SOURCES, builtinWorkflow } from "../../workflow";
+import { createWorkflowArchitect, realDeps } from "../../workflow/server";
+import {
+  PILOT_PROCESS_STATE_REL_PATH, pilotProcessStateSchema, readPilotProcessStateCas, writePilotProcessStateCas,
+  type PilotProcessState, type PilotWorkflowDraftItem, type PilotWorkflowEvolution, type ProcessStateIo,
 } from "../index";
 import { resolveThreadPlace } from "./place";
 import { readRelText, writeExactCas } from "./project-skills";
@@ -25,6 +29,8 @@ export interface PilotPanelWorkflowDeps {
   workflowCatalog?: WorkflowEngineApi["workflowCatalog"];
   workflowEngine?: WorkflowEngineApi["workflowEngine"];
   workflowTriggers?: WorkflowTriggersApi["workflowTriggers"];
+  globalDir?: () => string;
+  skillsDir?: () => string;
 }
 
 export function createProcessStateIo(ctx: Pick<ServerCore, "bb">, hostId: string, rootPath: string): ProcessStateIo {
@@ -99,6 +105,25 @@ export async function collectPilotPanelEvolutionAndState(
   };
 }
 
+async function retireSupersededLocal(
+  workflowDir: string,
+  supersededIds: readonly string[],
+  protectedId: string,
+): Promise<SupersededWorkflowSnapshot[]> {
+  const snapshots: SupersededWorkflowSnapshot[] = [];
+  for (const raw of new Set(supersededIds)) {
+    const oldId = raw.trim();
+    if (!oldId || oldId === protectedId || builtinWorkflow(oldId)) continue;
+    const path = join(workflowDir, `${oldId}.json`);
+    try {
+      const content = await nodeFileSource.read(path);
+      await rm(path, { force: true });
+      snapshots.push({ workflowId: oldId, path, content, sha256: sha256Hex(content) });
+    } catch { /* Not present on disk. */ }
+  }
+  return snapshots;
+}
+
 async function publishDraftWithCleanup(
   ctx: ServerCore,
   deps: PilotPanelWorkflowDeps,
@@ -108,12 +133,17 @@ async function publishDraftWithCleanup(
     const folder = await projectFolder(ctx.bb, projectId).catch(() => null);
     return folder ? [{ hostId: folder.hostId, path: folder.path, scopes: [] }] : [];
   });
-  const architect = createWorkflowArchitect(ctx, {
+  const architectServices = {
     workflowEngine: deps.workflowEngine ?? ({ hasExecutor: () => false } as never),
     ...(deps.workflowCatalog ? { workflowCatalog: deps.workflowCatalog } : {}),
     ...(deps.workflowTriggers ? { workflowTriggers: deps.workflowTriggers } : {}),
     docsPlaces,
-  } as never);
+  };
+  const architect = createWorkflowArchitect(
+    ctx,
+    architectServices as never,
+    deps.globalDir ? { ...realDeps(ctx, architectServices as never), globalDir: deps.globalDir } : undefined,
+  );
   const pub = await architect.publish({ projectId: opts.projectId, ...(opts.threadId ? { threadId: opts.threadId } : {}), draftId: opts.draftId });
   if (!pub.published) {
     const reason = String((pub as { reason?: unknown }).reason ?? "publish_refused");
@@ -135,15 +165,36 @@ export async function publishPanelWorkflowDraft(
   const draft = createDraftStore(ctx.db).get(input.draftId);
   if (!draft) return { ok: false, message: `Черновик ${input.draftId} не найден.` };
   const res = await publishDraftWithCleanup(ctx, deps, {
-    draftId: draft.id,
-    projectId: draft.projectId,
-    workflowId: draft.workflowId,
-    fallbackVersion: draft.version,
-    threadId: input.threadId,
-    closePrefix: `workflow-draft:${draft.id}:`,
-    eventName: "published",
+    draftId: draft.id, projectId: draft.projectId, workflowId: draft.workflowId, fallbackVersion: draft.version,
+    threadId: input.threadId, closePrefix: `workflow-draft:${draft.id}:`, eventName: "published",
   });
-  return res.ok ? { ok: true, projectId: res.projectId, message: `Граф ${draft.workflowId} (v${res.version}) опубликован.` } : { ok: false, message: `Публикация отклонена: ${res.reason}` };
+  if (!res.ok) return { ok: false, message: `Публикация отклонена: ${res.reason}` };
+
+  const skillsRoot = (deps.skillsDir ?? globalSkillsDir)(), globalDir = (deps.globalDir ?? globalWorkflowDir)();
+  const staged = listSkillEvolutionsForDraft(ctx.db, draft.id, { draftVersion: draft.version, status: "staged" });
+  const publishedSet = new Set(listSkillEvolutionsForDraft(ctx.db, draft.id, { draftVersion: draft.version, status: "published" }).map((r) => r.skillId));
+  const seenSkills = new Set<string>();
+  for (const row of staged) {
+    if (seenSkills.has(row.skillId) || publishedSet.has(row.skillId)) continue;
+    seenSkills.add(row.skillId);
+    let afterSha: string | null = null;
+    if (row.candidateFiles.length > 0) {
+      const write = await casWriteSkillBundle(skillsRoot, row.skillId, row.candidateFiles, row.beforeBundleSha256, { log: ctx.log });
+      if (write.status === "applied") afterSha = write.afterSha256;
+      else {
+        const disk = await readSkillBundle(skillsRoot, row.skillId).catch(() => null);
+        if (disk?.bundleSha256 !== computeSkillBundleSha256(row.candidateFiles)) {
+          ctx.log(`WARN [pilotPanel.workflowDrafts] coupled_skill_conflict ${redactKnown(JSON.stringify({ draftId: draft.id, skillId: row.skillId, reason: write.reason }))}`);
+          continue;
+        }
+        afterSha = disk.bundleSha256;
+      }
+    }
+    const supersededSnapshots = await retireSupersededLocal(globalDir, row.supersededWorkflowIds, draft.workflowId);
+    appendSkillEvolutionEvent(ctx.db, { ...row, evolutionId: undefined, createdAt: undefined, draftId: draft.id, draftVersion: draft.version, workflowId: draft.workflowId, status: "published", afterBundleSha256: afterSha, supersededSnapshots }, { log: ctx.log });
+    ctx.log(`INFO [pilotPanel.workflowDrafts] coupled_skill_published ${redactKnown(JSON.stringify({ draftId: draft.id, workflowId: draft.workflowId, skillId: row.skillId, supersededCount: supersededSnapshots.length }))}`);
+  }
+  return { ok: true, projectId: res.projectId, message: `Граф ${draft.workflowId} (v${res.version}) опубликован.` };
 }
 
 export async function rollbackPanelWorkflowDraft(
@@ -162,7 +213,9 @@ export async function rollbackPanelWorkflowDraft(
   }
   const restored = drafts.restore(draft.id, prev.version);
   if (!restored.ok) return { ok: false, message: `Откат не выполнен (${restored.reason}).` };
-  const resolve = (id: string, version?: number) => builtinWorkflow(id, version);
+  const globalDir = (deps.globalDir ?? globalWorkflowDir)();
+  const store = await loadWorkflowStore({ builtin: BUILTIN_SOURCES, globalDir }).catch(() => null);
+  const resolve = (id: string, version?: number) => store?.resolve(id, version) ?? builtinWorkflow(id, version);
   const loaded = loadWorkflow(restored.draft.definition, { resolve });
   if (!loaded.ok) {
     ctx.log(`WARN [pilotPanel.workflowDrafts] rollback_invalid ${redactKnown(JSON.stringify({ draftId: draft.id, workflowId: draft.workflowId }))}`);
@@ -176,15 +229,21 @@ export async function rollbackPanelWorkflowDraft(
     return { ok: false, message: "Тесты откаченной версии не прошли." };
   }
   const res = await publishDraftWithCleanup(ctx, deps, {
-    draftId: draft.id,
-    projectId: draft.projectId,
-    workflowId: draft.workflowId,
-    fallbackVersion: restored.draft.version,
-    threadId: input.threadId,
-    closePrefix: `workflow-evolved:${draft.id}:`,
-    eventName: "rolledBack",
+    draftId: draft.id, projectId: draft.projectId, workflowId: draft.workflowId, fallbackVersion: restored.draft.version,
+    threadId: input.threadId, closePrefix: `workflow-evolved:${draft.id}:`, eventName: "rolledBack",
   });
-  return res.ok ? { ok: true, projectId: res.projectId, message: `Граф ${draft.workflowId} откачен и опубликован (v${res.version}).` } : { ok: false, message: `Не удалось опубликовать откаченную версию: ${res.reason}` };
+  if (!res.ok) return { ok: false, message: `Не удалось опубликовать откаченную версию: ${res.reason}` };
+
+  const skillsRoot = (deps.skillsDir ?? globalSkillsDir)();
+  for (const row of listLatestActivePublishedSkillEvolutionsForDraft(ctx.db, draft.id)) {
+    if (row.candidateFiles.length > 0 || (row.beforeFiles?.length ?? 0) > 0) {
+      await restoreSkillBundleSnapshot(skillsRoot, row.skillId, row.beforeFiles ?? [], { log: ctx.log });
+    }
+    for (const snap of row.supersededSnapshots) await casWriteWorkflowFile(globalDir, snap.workflowId, snap.content, null).catch(() => undefined);
+    appendSkillEvolutionEvent(ctx.db, { ...row, evolutionId: undefined, createdAt: undefined, status: "rolled_back", afterBundleSha256: row.beforeBundleSha256 }, { log: ctx.log });
+    ctx.log(`INFO [pilotPanel.workflowDrafts] coupled_skill_restored ${redactKnown(JSON.stringify({ draftId: draft.id, workflowId: draft.workflowId, skillId: row.skillId, restoredSuperseded: row.supersededSnapshots.length }))}`);
+  }
+  return { ok: true, projectId: res.projectId, message: `Граф ${draft.workflowId} откачен и опубликован (v${res.version}).` };
 }
 
 export function registerPilotProcessStateAction(engine: WorkflowEngine, ctx: ServerCore): void {

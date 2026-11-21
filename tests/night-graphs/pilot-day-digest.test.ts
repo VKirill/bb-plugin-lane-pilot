@@ -706,3 +706,141 @@ describe("createLivePilotDayDigestDeps", () => {
     await harness.lifecycle.dispose();
   });
 });
+
+describe("Evolution 2.0 artifactSkeleton & archetypeHint extraction", () => {
+  it("lifts narrow category_hint to websites, persists sanitized artifactSkeleton & archetypeHint, and exposes them via collectGraphEvolveEvidence", async () => {
+    const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
+    const db = openDatabase(bb);
+    const t0 = Date.UTC(2026, 10, 20, 0, 0, 0);
+    const sinceMs = t0;
+    const untilMs = t0 + 86_400_000;
+    let currentTime = t0 + 60_000;
+    const now = () => currentTime;
+
+    const leakedSecret = "sk-skeleton-secret-token-445566";
+    registerSecrets([leakedSecret]);
+
+    try {
+      // Two completed Pilot runs in different verticals (1 task each -> merged via lifted "websites" family into websites|trajectory-suite)
+      createRun(db, "run_evo_pbs", "proj_pbs", "cli");
+      setRunThread(db, "run_evo_pbs", "thr_evo_pbs");
+      setRunObjective(db, "run_evo_pbs", "Спроектировать сайт-визитку эксперта и UI kit");
+      createTask(db, { id: "t_pbs_1", runId: "run_evo_pbs", kind: "cli", contract: { title: "Собрать бриф и UI kit" } });
+      db.prepare("UPDATE lane_pilot_run SET state='accepted', updated_at=? WHERE id=?").run(t0 + 20_000, "run_evo_pbs");
+
+      createRun(db, "run_evo_ecom", "proj_ecom", "cli");
+      setRunThread(db, "run_evo_ecom", "thr_evo_ecom");
+      setRunObjective(db, "run_evo_ecom", "Спроектировать UI kit интернет-магазина");
+      createTask(db, { id: "t_ecom_1", runId: "run_evo_ecom", kind: "cli", contract: { title: "Собрать токены и карточки товаров" } });
+      db.prepare("UPDATE lane_pilot_run SET state='accepted', updated_at=? WHERE id=?").run(t0 + 30_000, "run_evo_ecom");
+
+      const logs: string[] = [];
+      const summary = await digestPilotDayDialogues({
+        db,
+        now,
+        sinceMs,
+        untilMs,
+        readOutline: async (tid) =>
+          tid === "thr_evo_pbs"
+            ? "User: Собери сайт личного бренда\nAssistant: Скелет согласован"
+            : "User: Собери UI kit магазина\nAssistant: Скелет согласован",
+        runModel: async (_prompt, projectId) => {
+          currentTime += 500;
+          if (projectId === "proj_pbs") {
+            return JSON.stringify({
+              process_key: "personal-brand|site-architecture",
+              category_hint: { id: "personal-brand-site", label: { en: "Personal Brand Sites", ru: "Сайты личного бренда" } },
+              archetype_hint: "personal-brand",
+              artifact_skeleton: {
+                deliverable_class: "website-suite",
+                sections: [
+                  "Hero & Positioning for acme-windows.ru",
+                  `Authority Proof proj_secret999 ${leakedSecret}`,
+                  "Booking CTA",
+                ],
+                matrices: ["Competitor Positioning Matrix for client-site.com"],
+                qa_checks: ["Mobile 375px grid passes without overflow", "Primary CTA visible above fold"],
+              },
+              outcome: "done",
+              goal: "Build personal-brand site architecture and UI kit",
+              traps: [],
+              lessons: ["Lock CTA map before visual pass"],
+              interventions: [],
+            });
+          }
+
+          return JSON.stringify({
+            process_key: "ecommerce|uikit-design",
+            category_hint: { id: "ecommerce-site", label: { en: "Online Stores", ru: "Интернет-магазины" } },
+            archetype_hint: "ecommerce",
+            artifact_skeleton: {
+              deliverable_class: "ui-kit",
+              sections: ["Color & Type Tokens", "Product Card Grid", "Checkout Drawer"],
+              matrices: ["Token Contrast Matrix"],
+              qa_checks: ["WCAG AA contrast >= 4.5:1"],
+            },
+            outcome: "done",
+            goal: "Build ecommerce UI kit and product grid",
+            traps: [],
+            lessons: ["Verify token contrast before page assembly"],
+            interventions: [],
+          });
+        },
+        log: (m) => logs.push(m),
+      });
+
+      expect(summary).toMatchObject({ picked: 2, digested: 2, failed: 0 });
+
+      const stored = listPilotDayDigests(db, sinceMs, 20);
+      expect(stored).toHaveLength(2);
+
+      const pbsRow = stored.find((d) => d.projectId === "proj_pbs")!;
+      const ecomRow = stored.find((d) => d.projectId === "proj_ecom")!;
+      expect(pbsRow.categoryHint).toEqual({ id: "websites", label: { en: "Websites & Web Design", ru: "Сайты и веб-дизайн" } });
+      expect(ecomRow.categoryHint).toEqual({ id: "websites", label: { en: "Websites & Web Design", ru: "Сайты и веб-дизайн" } });
+      expect(pbsRow.archetypeHint).toBe("personal-brand");
+      expect(ecomRow.archetypeHint).toBe("ecommerce");
+
+      expect(pbsRow.artifactSkeleton).toEqual({
+        deliverableClass: "website-suite",
+        sections: [
+          "Hero & Positioning for [domain]",
+          "Authority Proof [project] ***",
+          "Booking CTA",
+        ],
+        matrices: ["Competitor Positioning Matrix for [domain]"],
+        qaChecks: ["Mobile 375px grid passes without overflow", "Primary CTA visible above fold"],
+      });
+      const serializedPbs = JSON.stringify(pbsRow.artifactSkeleton);
+      expect(serializedPbs).not.toContain("acme-windows.ru");
+      expect(serializedPbs).not.toContain("client-site.com");
+      expect(serializedPbs).not.toContain("proj_secret999");
+      expect(serializedPbs).not.toContain(leakedSecret);
+
+      expect(ecomRow.artifactSkeleton).toEqual({
+        deliverableClass: "ui-kit",
+        sections: ["Color & Type Tokens", "Product Card Grid", "Checkout Drawer"],
+        matrices: ["Token Contrast Matrix"],
+        qaChecks: ["WCAG AA contrast >= 4.5:1"],
+      });
+
+      const evidence = collectGraphEvolveEvidence(db, { now, minClusterSize: 2, log: (m) => logs.push(m) });
+      expect(evidence.status).toBe("ready");
+      const websitesCluster = evidence.clusters.find((c) => c.processKey === "websites|trajectory-suite");
+      expect(websitesCluster).toBeDefined();
+      expect(websitesCluster?.categoryHint?.id).toBe("websites");
+      expect(websitesCluster?.archetypeHints).toEqual(expect.arrayContaining(["personal-brand", "ecommerce"]));
+      expect(websitesCluster?.artifactSkeletons).toEqual(expect.arrayContaining([
+        pbsRow.artifactSkeleton,
+        ecomRow.artifactSkeleton,
+      ]));
+      const evidenceJson = JSON.stringify(websitesCluster);
+      expect(evidenceJson).not.toContain("acme-windows.ru");
+      expect(evidenceJson).not.toContain("proj_secret999");
+      expect(evidenceJson).not.toContain(leakedSecret);
+    } finally {
+      forgetSecrets();
+      await harness.lifecycle.dispose();
+    }
+  });
+});

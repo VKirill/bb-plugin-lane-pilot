@@ -2,25 +2,24 @@
 // Disk reads go through workflow-engine's nodeFileSource (no direct node:fs in server/).
 import { join } from "node:path";
 import { redactKnown, sha256Hex } from "@lane-pilot/kit";
-import { loadWorkflow, runDraftTest, testCasesOf, type Workflow } from "@lane-pilot/workflow-engine";
+import { globalSkillsDir, loadWorkflow, runDraftTest, testCasesOf, type StoredSkillBundleFile, type Workflow } from "@lane-pilot/workflow-engine";
 import type { ServerCore } from "../../contracts/server";
 import { markTrajectoryDeltasProcessed } from "../../errands";
 import { postOwnerItem, rpcLine } from "../../owner-waiting";
 import {
-  HARNESS_VERSION,
-  casWriteWorkflowFile,
-  createDraftStore,
-  createStatusResolver,
-  definitionSha256,
-  globalWorkflowDir,
-  loadWorkflowStore,
-  nodeFileSource,
-  type DraftStore,
-  type PilotDayCategoryHint,
+  HARNESS_VERSION, casWriteWorkflowFile, createDraftStore, createStatusResolver, definitionSha256,
+  globalWorkflowDir, loadWorkflowStore, nodeFileSource, type DraftStore, type PilotDayCategoryHint, type SupersededWorkflowSnapshot,
 } from "../../storage";
 import { BUILTIN_SOURCES, builtinWorkflow, isBuiltinWorkflowCategory, workflowCategory } from "../../workflow";
 import { createWorkflowArchitect, type ArchitectDeps, type WorkflowArchitect } from "../../workflow/server";
 import { checkDeprojectization, classifyEvolutionDiff, type DeprojectizeContext } from "../deprojectize";
+import {
+  mapCompanionSkillsToWorkflows, publishMatchedSkillsOrRollbackWf, recordPublishedSkillEvolutionEvents,
+  retireSupersededWorkflows, snapshotSkillBundles, stageCompanionSkillsForDraft, validateCompanionSkillCandidates,
+  type PendingPublishedSkillEvent,
+} from "./companion-skill-evolve";
+import type { CompanionSkillCandidate } from "./companion-skill-merge";
+import type { ArtifactSkeleton } from "./pilot-day-skeleton";
 
 export type GraphEvolveCandidate = {
   workflowId: string; scope: "global" | "project"; projectId?: string | null;
@@ -33,13 +32,14 @@ export type GraphEvolveCollectSummary = {
   clusters: Array<{
     processKey: string; count: number; topSkills: string[]; sampleGoals: string[]; traps: string[];
     lessons?: string[]; categoryHint?: PilotDayCategoryHint | null;
+    artifactSkeletons?: ArtifactSkeleton[]; archetypeHints?: string[];
   }>;
   deltas: Array<{ id: string; projectId: string | null; workflowId: string | null; stageArchetype: string; interventionKind: string; resolvedSkills: string[]; maskedSummary: string }>;
   deltaIds: string[]; status: "ready" | "empty";
 };
 
 export type GraphEvolveDeps = {
-  db: ServerCore["db"]; globalDir?: () => string; knownContext?: DeprojectizeContext;
+  db: ServerCore["db"]; globalDir?: () => string; skillsDir?: () => string; knownContext?: DeprojectizeContext;
   synthesize?: (collected: GraphEvolveCollectSummary) => Promise<GraphEvolveCandidate[]>;
   architectDeps?: Partial<ArchitectDeps>; architect?: Pick<WorkflowArchitect, "publish">;
   resolveWorkflow?: (id: string, version?: number) => Workflow | null;
@@ -53,7 +53,7 @@ export type GraphEvolveOutcome = {
   version: number | null; reason?: string;
 };
 
-type DiskBase = { path: string; sha256: string; version: number; def: Record<string, unknown> };
+type DiskBase = { path: string; sha256: string; version: number; def: Record<string, unknown>; raw: string };
 type PreparedCandidate = {
   candidate: GraphEvolveCandidate; workflowId: string; projectId: string;
   candidateDef: Record<string, unknown>; finalDef: Record<string, unknown>;
@@ -152,7 +152,7 @@ async function readDiskBase(dir: string, workflowId: string): Promise<DiskBase |
   try {
     const raw = await nodeFileSource.read(path);
     const def = JSON.parse(raw) as Record<string, unknown>;
-    return { path, sha256: sha256Hex(raw), version: typeof def.version === "number" ? def.version : 1, def };
+    return { path, sha256: sha256Hex(raw), version: typeof def.version === "number" ? def.version : 1, def, raw };
   } catch { return null; }
 }
 
@@ -181,10 +181,11 @@ function preparePass1Defs(candidate: GraphEvolveCandidate, existing: PreparedCan
   return { workflowId, projectId, finalDef };
 }
 
-/** Validates and stub-tests a candidate suite without writing files or mutating drafts. */
+/** Validates and stub-tests a candidate suite (and optional companion skills) without writing files or mutating drafts. */
 export async function validateEvolveSuiteCandidates(
-  deps: Pick<GraphEvolveDeps, "db" | "globalDir" | "knownContext" | "resolveWorkflow" | "now" | "log">,
+  deps: Pick<GraphEvolveDeps, "db" | "globalDir" | "skillsDir" | "knownContext" | "resolveWorkflow" | "now" | "log">,
   candidates: readonly GraphEvolveCandidate[],
+  options?: { companionSkills?: readonly CompanionSkillCandidate[] },
 ): Promise<{ ok: boolean; errors: string[] }> {
   const now = deps.now ?? Date.now, log = deps.log ?? (() => undefined), dirFn = deps.globalDir ?? globalWorkflowDir;
   const baseStore = await loadWorkflowStore({ builtin: BUILTIN_SOURCES, globalDir: dirFn() }).catch(() => null);
@@ -243,6 +244,9 @@ export async function validateEvolveSuiteCandidates(
       if (!res.green) { suiteMap.delete(item.workflowId); failedIds.add(item.workflowId); errors.push(`${item.workflowId}: test ${tc.id}: ${res.failures.slice(0, 3).join("; ")}`); }
     }
   }
+  if (options?.companionSkills?.length) {
+    errors.push(...await validateCompanionSkillCandidates((deps.skillsDir ?? globalSkillsDir)(), options.companionSkills, { deprojectize: deps.knownContext, log }));
+  }
   return { ok: errors.length === 0, errors };
 }
 
@@ -250,9 +254,12 @@ export async function validateEvolveSuiteCandidates(
 export async function applyGraphEvolveCandidates(
   deps: GraphEvolveDeps,
   candidates: readonly GraphEvolveCandidate[],
-  options?: { deltaIds?: readonly string[]; publishApprovedSuite?: boolean },
+  options?: {
+    deltaIds?: readonly string[]; publishApprovedSuite?: boolean; auditVerdict?: string;
+    companionSkills?: readonly CompanionSkillCandidate[]; operator?: string; supersededWorkflowIds?: readonly string[];
+  },
 ): Promise<{ outcomes: GraphEvolveOutcome[]; publishedCount: number; proposedCount: number; rejectedCount: number; summary: string }> {
-  const now = deps.now ?? Date.now, log = deps.log ?? (() => undefined), dirFn = deps.globalDir ?? globalWorkflowDir;
+  const now = deps.now ?? Date.now, log = deps.log ?? (() => undefined), dirFn = deps.globalDir ?? globalWorkflowDir, skillsFn = deps.skillsDir ?? globalSkillsDir;
   const drafts = createDraftStore(deps.db, now), architect = buildArchitect(deps, dirFn);
   const baseStore = await loadWorkflowStore({ builtin: BUILTIN_SOURCES, globalDir: dirFn() }).catch(() => null);
   const outcomes: GraphEvolveOutcome[] = [];
@@ -260,6 +267,7 @@ export async function applyGraphEvolveCandidates(
   const failedSuiteIds = new Set<string>();
   const suiteMap = new Map<string, Workflow>();
   const preparedList: PreparedCandidate[] = [];
+  const auditPassed = options?.auditVerdict === undefined || options.auditVerdict === "pass";
 
   for (const candidate of candidates) {
     const workflowId = candidate.workflowId.trim();
@@ -279,7 +287,9 @@ export async function applyGraphEvolveCandidates(
     const diskBase = candidate.scope === "global" ? await readDiskBase(dirFn(), workflowId) : null;
     const baseDef = existing?.publishedVersion ? (drafts.latestPublishedSnapshot(existing.id)?.definition ?? diskBase?.def ?? null) : (diskBase?.def ?? null);
     const diff = classifyEvolutionDiff(baseDef, candidateDef, { log });
-    const shouldPublish = Boolean((diff.kind === "minor_patch" && baseDef) || options?.publishApprovedSuite);
+    const wouldPublish = Boolean((diff.kind === "minor_patch" && baseDef) || options?.publishApprovedSuite);
+    const shouldPublish = Boolean(auditPassed && wouldPublish);
+    if (!auditPassed && wouldPublish) log(`INFO [nightGraphs.graphEvolve] held_without_audit_pass ${redactKnown(JSON.stringify({ workflowId, auditVerdict: options?.auditVerdict }))}`);
     const { projectId, finalDef } = preparePass1Defs(candidate, existing, diskBase, shouldPublish, candidateDef);
     const loaded1 = loadWorkflow(finalDef);
     if (!loaded1.ok) {
@@ -306,8 +316,17 @@ export async function applyGraphEvolveCandidates(
     if (s && (version === undefined || s.version === version)) return s;
     return deps.resolveWorkflow?.(id, version) ?? baseStore?.resolve(id, version) ?? builtinWorkflow(id, version);
   };
+  const companionSkills = options?.companionSkills ?? [];
+  const skillsByWf = mapCompanionSkillsToWorkflows(ordered.map((o) => o.workflowId), new Set(candidates.map((c) => c.workflowId.trim())), companionSkills);
+  const initialSkillReads = companionSkills.length ? await snapshotSkillBundles(skillsFn(), companionSkills, log) : new Map();
+  const publishedSkillsInRun = new Map<string, { beforeFiles: StoredSkillBundleFile[]; beforeBundleSha256: string | null; afterBundleSha256: string | null }>();
+  const pendingPublishedEvents: PendingPublishedSkillEvent[] = [];
+  let lastPublishedTarget: { draftId: string; draftVersion: number; workflowId: string; operator: string } | null = null;
+  const operator = options?.operator?.trim() || "graph_evolve";
+  const supersededIds = options?.supersededWorkflowIds ?? [];
 
-  for (const item of ordered) {
+  for (let itemIdx = 0; itemIdx < ordered.length; itemIdx += 1) {
+    const item = ordered[itemIdx]!;
     const { candidate, workflowId, projectId, candidateDef, finalDef, existing, diskBase, baseDef, diff, shouldPublish, pass1Workflow } = item;
     const failedDep = extractSubworkflowRefs(pass1Workflow).find((depId) => failedSuiteIds.has(depId));
     if (failedDep) {
@@ -358,19 +377,36 @@ export async function applyGraphEvolveCandidates(
     const recorded = drafts.recordTests(draft.id, draft.version, results, true) ?? draft;
     log(`INFO [nightGraphs.graphEvolve] tested ${redactKnown(JSON.stringify({ workflowId, draftId: recorded.id, draftVersion: recorded.version, cases: results.length, green: true }))}`);
 
+    const failPublish = (reason: string) => {
+      suiteMap.delete(workflowId); failedSuiteIds.add(workflowId);
+      log(`WARN [nightGraphs.graphEvolve] publish_failed ${redactKnown(JSON.stringify({ workflowId, draftId: recorded.id, reason }))}`);
+      outcomes.push({ workflowId, draftId: recorded.id, kind: diff.kind, status: "publish_failed", version: null, reason });
+      rejectedCount += 1;
+    };
+    const matchedSkills = skillsByWf.get(workflowId) ?? [];
+    const isLastOrdered = itemIdx === ordered.length - 1;
+    if (matchedSkills.length > 0 || (!shouldPublish && isLastOrdered && supersededIds.length > 0)) {
+      const stagedRes = await stageCompanionSkillsForDraft({
+        db: deps.db, skillsRoot: skillsFn(), draftId: recorded.id, draftVersion: recorded.version, workflowId, operator,
+        skills: matchedSkills, initialReads: initialSkillReads, supersededWorkflowIds: isLastOrdered || !shouldPublish ? supersededIds : [],
+        deprojectize: deps.knownContext, log,
+      });
+      if (!stagedRes.ok) { failPublish(stagedRes.reason); continue; }
+    }
+
     const titleRu = titleRuOf(candidate.name, workflowId), ownerProject = recorded.scope === "project" ? recorded.projectId : null;
     if (shouldPublish) {
+      const unpubSkills = matchedSkills.filter((s) => !publishedSkillsInRun.has(s.skillId));
+      const preErrors = unpubSkills.length ? await validateCompanionSkillCandidates(skillsFn(), unpubSkills, { deprojectize: deps.knownContext, log }) : [];
+      if (preErrors.length > 0) { failPublish(preErrors.slice(0, 4).join("; ")); continue; }
       let publishedPath: string;
       let nextVer: number;
       if (deps.architect && !options?.publishApprovedSuite && candidates.length === 1) {
         const pub = await architect.publish({ projectId: recorded.projectId, draftId: recorded.id });
-        if (!pub.published) {
-          suiteMap.delete(workflowId); failedSuiteIds.add(workflowId);
-          const reason = String((pub as { reason?: unknown }).reason ?? "publish_failed");
-          log(`WARN [nightGraphs.graphEvolve] publish_failed ${redactKnown(JSON.stringify({ workflowId, draftId: recorded.id, reason }))}`);
-          outcomes.push({ workflowId, draftId: recorded.id, kind: diff.kind, status: "publish_failed", version: null, reason });
-          rejectedCount += 1; continue;
-        }
+        if (!pub.published) { failPublish(String((pub as { reason?: unknown }).reason ?? "publish_failed")); continue; }
+        const skillPub = await publishMatchedSkillsOrRollbackWf({ workflowDir: dirFn(), skillsRoot: skillsFn(), draftId: recorded.id, draftVersion: recorded.version, workflowId, operator, skills: matchedSkills, publishedInRun: publishedSkillsInRun, diskBase, writeAfterSha: null, deprojectize: deps.knownContext, log });
+        if (!skillPub.ok) { failPublish(skillPub.reason); continue; }
+        pendingPublishedEvents.push(...skillPub.events);
         publishedPath = String((pub as { path?: unknown }).path ?? workflowId);
         nextVer = Number((pub as { workflowVersion?: number }).workflowVersion ?? (Number(baseDef?.version ?? 1) + 1));
       } else {
@@ -378,33 +414,19 @@ export async function applyGraphEvolveCandidates(
         const publishedWf = reloaded.ok ? reloaded.workflow : fullLoaded.workflow;
         const content = `${JSON.stringify(publishedWf, null, 2)}\n`;
         const write = await casWriteWorkflowFile(dirFn(), workflowId, content, diskBase?.sha256 ?? null);
-        if (write.status !== "applied") {
-          suiteMap.delete(workflowId); failedSuiteIds.add(workflowId);
-          const reason = write.reason ?? "file_conflict";
-          log(`WARN [nightGraphs.graphEvolve] publish_failed ${redactKnown(JSON.stringify({ workflowId, draftId: recorded.id, reason }))}`);
-          outcomes.push({ workflowId, draftId: recorded.id, kind: diff.kind, status: "publish_failed", version: null, reason });
-          rejectedCount += 1; continue;
-        }
+        if (write.status !== "applied") { failPublish(write.reason ?? "file_conflict"); continue; }
+        const writeAfterSha = write.afterSha256 ?? sha256Hex(content);
+        const skillPub = await publishMatchedSkillsOrRollbackWf({ workflowDir: dirFn(), skillsRoot: skillsFn(), draftId: recorded.id, draftVersion: recorded.version, workflowId, operator, skills: matchedSkills, publishedInRun: publishedSkillsInRun, diskBase, writeAfterSha, deprojectize: deps.knownContext, log });
+        if (!skillPub.ok) { failPublish(skillPub.reason); continue; }
+        pendingPublishedEvents.push(...skillPub.events);
         const publishedSha = definitionSha256(publishedWf);
-        createStatusResolver(deps.db as never).recordTest(
-          publishedWf.id,
-          publishedSha,
-          true,
-          results.map((r) => ({ caseId: r.caseId, green: r.green, path: r.path, failures: r.failures })),
-          now(),
-        );
-        if (typeof drafts.markPublished === "function") {
-          drafts.markPublished(recorded.id, {
-            version: recorded.version,
-            path: write.path,
-            sha256: write.afterSha256 ?? sha256Hex(content),
-            workflowVersion: publishedWf.version,
-          });
-        }
+        createStatusResolver(deps.db as never).recordTest(publishedWf.id, publishedSha, true, results.map((r) => ({ caseId: r.caseId, green: r.green, path: r.path, failures: r.failures })), now());
+        if (typeof drafts.markPublished === "function") drafts.markPublished(recorded.id, { version: recorded.version, path: write.path, sha256: writeAfterSha, workflowVersion: publishedWf.version });
         log(`INFO [nightGraphs.graphEvolve] test_receipt_recorded ${redactKnown(JSON.stringify({ workflowId, version: publishedWf.version, sha256: publishedSha }))}`);
         publishedPath = write.path;
         nextVer = publishedWf.version;
       }
+      lastPublishedTarget = { draftId: recorded.id, draftVersion: recorded.version, workflowId, operator };
       if (candidate.sourceDeltaIds?.length) { citedAnyDelta = true; markTrajectoryDeltasProcessed(deps.db, candidate.sourceDeltaIds, now(), log); }
       postOwnerItem(deps.db, {
         key: `workflow-evolved:${recorded.id}:v${nextVer}`, source: "night", kind: "workflow_evolved_digest", projectId: ownerProject, wake: false,
@@ -433,7 +455,18 @@ export async function applyGraphEvolveCandidates(
     }
   }
 
-  if (publishedCount > 0) deps.invalidateCatalog?.();
+  let supersededSnapshots: SupersededWorkflowSnapshot[] = [];
+  if (rejectedCount === 0 && publishedCount > 0 && supersededIds.length > 0) {
+    supersededSnapshots = await retireSupersededWorkflows(dirFn(), supersededIds, new Set(ordered.map((o) => o.workflowId)), log);
+  }
+  if (publishedCount > 0) {
+    recordPublishedSkillEvolutionEvents({
+      db: deps.db, events: pendingPublishedEvents,
+      supersededWorkflowIds: rejectedCount === 0 ? supersededIds : [],
+      supersededSnapshots, fallbackTarget: lastPublishedTarget, log,
+    });
+    deps.invalidateCatalog?.();
+  }
   if (options?.deltaIds?.length && !citedAnyDelta && rejectedCount === 0 && (publishedCount > 0 || (!options?.publishApprovedSuite && proposedCount > 0))) {
     fixEvolveLog(log, "batch_mark_deltas", { count: options.deltaIds.length });
     markTrajectoryDeltasProcessed(deps.db, options.deltaIds, now(), log);

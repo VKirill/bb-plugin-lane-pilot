@@ -5,8 +5,8 @@
     "ru": "Ночная эволюция графов воркфлоу"
   },
   "description": {
-    "en": "Collects daily Pilot digests, errand episode clusters, and unprocessed trajectory deltas, runs a 4-model evolution pipeline (planner -> plan-critic -> workflow-architect -> auditor), validates and stub-tests subworkflow suites in topological order, and auto-publishes minor patches or approved suites.",
-    "ru": "Собирает дневные разборы чатов, кластеры эпизодов и необработанные траекторные дельты, запускает 4-модельный конвейер эволюции (planner -> plan-critic -> workflow-architect -> auditor), валидирует и прогоняет симуляции сьютов в топологическом порядке и автопубликует минорные патчи или одобренные сьюты."
+    "en": "Collects daily Pilot digests with artifact skeletons, errand episode clusters, and trajectory deltas, runs a 4-model AFlow evolution pipeline (planner -> plan-critic -> workflow-architect -> auditor), validates and stub-tests universal subworkflow suites and paired companion skills, and atomically CAS-publishes minor patches or approved suites with 1-click coupled rollback.",
+    "ru": "Собирает дневные разборы чатов со скелетами артефактов, кластеры эпизодов и траекторные дельты, запускает 4-модельный AFlow-конвейер эволюции (planner -> plan-critic -> workflow-architect -> auditor), валидирует и прогоняет симуляции универсальных сьютов и компаньон-скиллов и атомарно CAS-публикует минорные патчи или одобренные сьюты со связанным 1-клик откатом."
   },
   "examples": {
     "en": [
@@ -163,8 +163,8 @@
       "type": "action",
       "action": "lp.graph_evolve_synthesize",
       "title": {
-        "en": "Synthesize universal graph candidates",
-        "ru": "Синтезировать кандидатов универсальных графов"
+        "en": "Synthesize universal graphs and companion skills",
+        "ru": "Синтезировать универсальные графы и компаньон-скиллы"
       },
       "out": {
         "candidatesCount": "int",
@@ -198,8 +198,8 @@
       "type": "action",
       "action": "lp.graph_evolve_apply",
       "title": {
-        "en": "De-projectize, test and apply candidates",
-        "ru": "Депроектизировать, протестировать и применить кандидатов"
+        "en": "De-projectize, test and atomically apply graphs and skills",
+        "ru": "Депроектизировать, протестировать и атомарно применить графы и скиллы"
       },
       "out": {
         "status": "done|held",

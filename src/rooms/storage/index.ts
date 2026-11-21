@@ -78,3 +78,5 @@ export { attemptEnvironmentCandidates } from "./attempts-store";
 
 export { assertRunAdmission, beginRunAdmission, hasRunAdmission, trackWorkflowAdmissions, directoryMove, saveDirectoryMove, clearDirectoryMove, nativeDirectoryMigrations, type DirectoryMove } from "./native-directory-guard";
 export { readParkedTasks } from "./parked-tasks";
+export { appendSkillEvolutionEvent, listSkillEvolutionsForDraft, latestSkillEvolutionForDraft, listLatestActivePublishedSkillEvolutionsForDraft, latestPublishedSkillEvolutionForDraft, latestPublishedSkillEvolutionBySkill } from "./skill-evolution-store";
+export type { SkillEvolutionStatus, SkillEvolutionFileEntry, SupersededWorkflowSnapshot, SkillEvolutionEventInput, SkillEvolutionRow, SkillEvolutionStoreOptions } from "./skill-evolution-store";

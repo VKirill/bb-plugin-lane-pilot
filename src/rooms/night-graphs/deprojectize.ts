@@ -1,7 +1,16 @@
 import { CREDENTIAL_SHAPE_PATTERNS, redactKnown } from "@lane-pilot/kit";
 import { FORBIDDEN_GRANTS } from "../forge";
+import { validateCategoryAndIdentityGeneralization } from "./category-taxonomy";
 
-export type DeprojectizeFindingCode = "abs_path" | "project_id" | "host_id" | "project_name_or_domain" | "secret_shape" | "forbidden_grant";
+export type DeprojectizeFindingCode =
+  | "abs_path"
+  | "project_id"
+  | "host_id"
+  | "project_name_or_domain"
+  | "secret_shape"
+  | "forbidden_grant"
+  | "niche_category_violation"
+  | "niche_workflow_identity";
 export type DeprojectizeFinding = { readonly code: DeprojectizeFindingCode; readonly path: string; readonly detail: string };
 export type DeprojectizeLogLevel = "debug" | "info" | "warn" | "error" | "silent";
 export type DeprojectizeContext = {
@@ -99,6 +108,10 @@ export function checkDeprojectization(definition: Record<string, unknown>, conte
     }
     for (const grant of FORBIDDEN_GRANTS) if (testRe(grant.pattern, text)) push("forbidden_grant", path, `Forbidden grant: ${grant.why}`);
   });
+
+  for (const violation of validateCategoryAndIdentityGeneralization(definition, { log: context.log, logLevel: context.logLevel })) {
+    push(violation.code, violation.path, violation.detail);
+  }
 
   if (findings.length > 0) emit(context.log, "warn", "rejected", { workflowId, count: findings.length, codes: [...new Set(findings.map((f) => f.code))] }, context.logLevel);
   else emit(context.log, "debug", "passed", { workflowId }, context.logLevel);

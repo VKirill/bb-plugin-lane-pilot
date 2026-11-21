@@ -1,6 +1,6 @@
 // Nightly graph evolution evidence collection and workflow executor wiring (`lp.graph_evolve_*`).
 import { redactKnown } from "@lane-pilot/kit";
-import { wfTerminalByIdemKey, type NodeExecutor, type Workflow } from "@lane-pilot/workflow-engine";
+import { globalSkillsDir, wfTerminalByIdemKey, type NodeExecutor, type StoredSkillBundleFile, type Workflow } from "@lane-pilot/workflow-engine";
 import type { ChainRuntime, ServerCore } from "../../contracts/server";
 import { listUnprocessedTrajectoryDeltas } from "../../errands";
 import type { HarnessApi } from "../../harness/server";
@@ -8,12 +8,14 @@ import { scheduleIsolated, type WorkflowEngineApi, type WorkflowTriggersApi, typ
 import type { RuleScanApi } from "../../self-repair/server";
 import { globalWorkflowDir, latestErrandEpisodeRows, listErrandEpisodeRows, listPilotDayDigests, loadWorkflowStore, type PilotDayCategoryHint } from "../../storage";
 import { BUILTIN_SOURCES, WORKFLOW_CATEGORIES } from "../../workflow";
+import { readExistingCompanionSkills } from "./companion-skill-evolve";
+import type { CompanionSkillCandidate } from "./companion-skill-merge";
 import {
   auditSynthesizedSuite,
   createLiveEvolveRoleRunner,
   critiqueEvolutionBlueprint,
   planEvolutionBlueprint,
-  synthesizeSuiteFromBlueprint,
+  synthesizeSuiteAndSkillsFromBlueprint,
   type EvolveCatalogContext,
   type EvolveReviewVerdict,
   type ProcessBlueprint,
@@ -27,6 +29,7 @@ import {
   type GraphEvolveOutcome,
 } from "./graph-evolve-suite";
 import { createLivePilotDayDigestDeps, digestPilotDayDialogues, loadDigestSkillCatalog } from "./pilot-day-digest";
+import type { ArtifactSkeleton } from "./pilot-day-skeleton";
 
 export const GRAPH_EVOLVE_WORKFLOW = "lp.graph-evolve-nightly";
 export const GRAPH_EVOLVE_SCHEDULE = "graph-evolve-nightly";
@@ -51,6 +54,29 @@ interface Services {
 }
 
 const parseJson = <T,>(raw: unknown, fallback: T): T => { try { return typeof raw === "string" && raw ? (JSON.parse(raw) as T) : fallback; } catch { return fallback; } };
+
+export type SynthesizedPayload = {
+  candidates: GraphEvolveCandidate[];
+  companionSkills: CompanionSkillCandidate[];
+  operator?: string;
+  supersededWorkflowIds?: string[];
+};
+
+/** Parses either `{ candidates, companionSkills, operator, supersededWorkflowIds }` or legacy `GraphEvolveCandidate[]`. */
+export function parseSynthesizedPayload(raw: unknown): SynthesizedPayload {
+  const parsed = typeof raw === "string" ? parseJson<unknown>(raw, null) : raw;
+  if (Array.isArray(parsed)) return { candidates: parsed as GraphEvolveCandidate[], companionSkills: [] };
+  if (parsed && typeof parsed === "object") {
+    const r = parsed as Record<string, unknown>;
+    return {
+      candidates: Array.isArray(r.candidates) ? (r.candidates as GraphEvolveCandidate[]) : [],
+      companionSkills: Array.isArray(r.companionSkills) ? (r.companionSkills as CompanionSkillCandidate[]) : [],
+      ...(typeof r.operator === "string" && r.operator ? { operator: r.operator } : {}),
+      ...(Array.isArray(r.supersededWorkflowIds) ? { supersededWorkflowIds: r.supersededWorkflowIds.filter((s): s is string => typeof s === "string") } : {}),
+    };
+  }
+  return { candidates: [], companionSkills: [] };
+}
 
 function domainFamilyOf(processKey: string, categoryHint?: PilotDayCategoryHint | null): string {
   if (categoryHint?.id === "websites") return "websites";
@@ -84,13 +110,18 @@ export function collectGraphEvolveEvidence(
   const rows = latestMap.size ? [...latestMap.values()] : rawEpisodes;
   const digests = listPilotDayDigests(db, sinceMs, 400, pid);
 
-  type EvidenceItem = { key: string; projectId: string | null; richPilotRun: boolean; categoryHint: PilotDayCategoryHint | null; goal: string; traps: string[]; lessons: string[]; skills: string[] };
-  type ClusterAcc = { count: number; skills: Map<string, number>; goals: Set<string>; traps: Set<string>; lessons: Set<string>; categoryHint: PilotDayCategoryHint | null; richPilotRun: boolean };
-  const newAcc = (): ClusterAcc => ({ count: 0, skills: new Map(), goals: new Set(), traps: new Set(), lessons: new Set(), categoryHint: null, richPilotRun: false });
+  type EvidenceItem = { key: string; projectId: string | null; richPilotRun: boolean; categoryHint: PilotDayCategoryHint | null; archetypeHint: string | null; artifactSkeleton: ArtifactSkeleton | null; goal: string; traps: string[]; lessons: string[]; skills: string[] };
+  type ClusterAcc = { count: number; skills: Map<string, number>; goals: Set<string>; traps: Set<string>; lessons: Set<string>; categoryHint: PilotDayCategoryHint | null; archetypes: Set<string>; skeletons: Map<string, ArtifactSkeleton>; richPilotRun: boolean };
+  const newAcc = (): ClusterAcc => ({ count: 0, skills: new Map(), goals: new Set(), traps: new Set(), lessons: new Set(), categoryHint: null, archetypes: new Set(), skeletons: new Map(), richPilotRun: false });
   const merge = (acc: ClusterAcc, item: EvidenceItem, maxGoals: number, maxTraps: number, maxLessons: number) => {
     acc.count += 1;
     if (item.richPilotRun) acc.richPilotRun = true;
     if (!acc.categoryHint && item.categoryHint) acc.categoryHint = item.categoryHint;
+    if (item.archetypeHint && acc.archetypes.size < 8) acc.archetypes.add(item.archetypeHint);
+    if (item.artifactSkeleton && acc.skeletons.size < 6) {
+      const skKey = `${item.artifactSkeleton.deliverableClass}:${item.artifactSkeleton.sections.join("|")}`;
+      if (!acc.skeletons.has(skKey)) acc.skeletons.set(skKey, item.artifactSkeleton);
+    }
     if (item.goal && acc.goals.size < maxGoals) acc.goals.add(item.goal);
     for (const t of item.traps) if (t && acc.traps.size < maxTraps) acc.traps.add(t);
     for (const l of item.lessons) if (l && acc.lessons.size < maxLessons) acc.lessons.add(l);
@@ -108,7 +139,7 @@ export function collectGraphEvolveEvidence(
       const rec = sk && typeof sk === "object" ? (sk as { name?: unknown; read?: unknown; used?: unknown }) : null;
       return rec && (rec.read === true || rec.used === true) && typeof rec.name === "string" && rec.name.trim() ? [rec.name.trim()] : [];
     });
-    items.push({ key, projectId: typeof row.project_id === "string" && row.project_id ? row.project_id : null, richPilotRun: false, categoryHint: null, goal: typeof summary.goal === "string" ? summary.goal.trim() : "", traps, lessons: [], skills });
+    items.push({ key, projectId: typeof row.project_id === "string" && row.project_id ? row.project_id : null, richPilotRun: false, categoryHint: null, archetypeHint: null, artifactSkeleton: null, goal: typeof summary.goal === "string" ? summary.goal.trim() : "", traps, lessons: [], skills });
   }
   for (const d of digests) {
     const key = d.processKey.trim();
@@ -116,7 +147,8 @@ export function collectGraphEvolveEvidence(
     const hasDelta = (d.projectId !== null && deltaProjects.has(d.projectId)) || (d.threadId !== null && deltaThreads.has(d.threadId));
     items.push({
       key, projectId: d.projectId, richPilotRun: d.sourceKind === "pilot_run" && (d.taskCount >= 2 || (d.outcome === "done" && hasDelta)),
-      categoryHint: d.categoryHint, goal: d.maskedGoal.trim(), traps: d.traps.map((t) => t.trim()).filter(Boolean),
+      categoryHint: d.categoryHint, archetypeHint: d.archetypeHint?.trim() || null, artifactSkeleton: d.artifactSkeleton ?? null,
+      goal: d.maskedGoal.trim(), traps: d.traps.map((t) => t.trim()).filter(Boolean),
       lessons: d.maskedLessons.map((l) => l.trim()).filter(Boolean), skills: d.skills.map((s) => s.trim()).filter(Boolean),
     });
   }
@@ -156,10 +188,16 @@ export function collectGraphEvolveEvidence(
     emitMerged(`${dominant}|project-trajectory`, dominant, list);
   }
 
-  const clusters = [...finalGroups.entries()].sort((a, b) => b[1].count - a[1].count).slice(0, 12).map(([processKey, g]) => ({
-    processKey, count: g.count, topSkills: [...g.skills.entries()].sort((a, b) => b[1] - a[1]).slice(0, 10).map(([n]) => n),
-    sampleGoals: [...g.goals], traps: [...g.traps], lessons: [...g.lessons], categoryHint: g.categoryHint,
-  }));
+  const clusters = [...finalGroups.entries()].sort((a, b) => b[1].count - a[1].count).slice(0, 12).map(([processKey, g]) => {
+    const artifactSkeletons = [...g.skeletons.values()];
+    const archetypeHints = [...g.archetypes];
+    return {
+      processKey, count: g.count, topSkills: [...g.skills.entries()].sort((a, b) => b[1] - a[1]).slice(0, 10).map(([n]) => n),
+      sampleGoals: [...g.goals], traps: [...g.traps], lessons: [...g.lessons], categoryHint: g.categoryHint,
+      ...(artifactSkeletons.length ? { artifactSkeletons } : {}),
+      ...(archetypeHints.length ? { archetypeHints } : {}),
+    };
+  });
   options?.log?.(`INFO [nightGraphs.graphEvolve] collected ${redactKnown(JSON.stringify({ projectId: pid, clusters: clusters.length, singletonMerged, deltas: deltas.length, digests: digests.length }))}`);
   return { clusters, deltas, deltaIds: deltas.map((d) => d.id), status: clusters.length || deltas.length ? "ready" : "empty" };
 }
@@ -178,7 +216,10 @@ function collectKnownCategories(catalog: ReadonlyArray<{ workflow: Workflow }>, 
   return [...map.values()];
 }
 
-async function buildEvolveCatalogContext(ctx: ServerCore, collected: GraphEvolveCollectSummary): Promise<EvolveCatalogContext> {
+async function buildEvolveCatalogContext(
+  ctx: ServerCore,
+  collected: GraphEvolveCollectSummary,
+): Promise<{ catalog: EvolveCatalogContext; existingSkillBundles: Map<string, StoredSkillBundleFile[]> }> {
   const catalogItems = (await loadWorkflowStore({ builtin: BUILTIN_SOURCES, globalDir: globalWorkflowDir() }).catch(() => null))?.list() ?? [];
   const knownCategories = collectKnownCategories(catalogItems, collected);
   const existingGlobal = catalogItems
@@ -186,10 +227,14 @@ async function buildEvolveCatalogContext(ctx: ServerCore, collected: GraphEvolve
     .map((s) => ({ id: s.workflow.id, version: s.workflow.version, title: s.workflow.name, ...(s.workflow.category ? { category: s.workflow.category } : {}) }));
   const reservedBuiltinIds = BUILTIN_SOURCES.map((s) => String((s.value as { id?: unknown })?.id ?? "")).filter(Boolean);
   const availableSkills = (await loadDigestSkillCatalog(ctx)).map((s) => s.name).slice(0, 120);
+  const { existingCompanionSkills, existingSkillBundles } = await readExistingCompanionSkills(globalSkillsDir());
   return {
-    knownCategories, existingGlobal, reservedBuiltinIds, availableSkills,
-    availablePlugins: ["image-studio", "browser-automation", "env-catalog"],
-    availableMcp: ["metamcp", "gitnexus", "blender"],
+    catalog: {
+      knownCategories, existingGlobal, reservedBuiltinIds, availableSkills, existingCompanionSkills,
+      availablePlugins: ["image-studio", "browser-automation", "env-catalog"],
+      availableMcp: ["metamcp", "gitnexus", "blender"],
+    },
+    existingSkillBundles,
   };
 }
 
@@ -243,7 +288,7 @@ export function mountGraphEvolveNightly(ctx: ServerCore, services: Services): vo
     }
     const priorBlueprint = parseJson<ProcessBlueprint | null>(c.resolve("plan_blueprint.blueprint_json"), null);
     const criticFeedback = parseJson<EvolveReviewVerdict | null>(c.resolve("critique_plan.critique_json"), null);
-    const catalog = await buildEvolveCatalogContext(ctx, collected);
+    const { catalog } = await buildEvolveCatalogContext(ctx, collected);
     const blueprint = await planEvolutionBlueprint({
       collected, catalog, runRole: createLiveEvolveRoleRunner(ctx, services, hintOf(projectId, collected)),
       priorBlueprint, criticFeedback, iteration: priorBlueprint ? 2 : 1, log: (m) => ctx.log(m),
@@ -257,7 +302,7 @@ export function mountGraphEvolveNightly(ctx: ServerCore, services: Services): vo
     const blueprint = parseJson<ProcessBlueprint | null>(c.resolve("plan_blueprint.blueprint_json"), null);
     if (!blueprint) return { output: { verdict: "rework", mustFixCount: 1, critique_json: JSON.stringify({ verdict: "rework", findings: ["Missing blueprint"], mustFix: ["Generate ProcessBlueprint"] }) } };
     const priorCritique = parseJson<EvolveReviewVerdict | null>(c.resolve("critique_plan.critique_json"), null);
-    const catalog = await buildEvolveCatalogContext(ctx, collected);
+    const { catalog } = await buildEvolveCatalogContext(ctx, collected);
     const critique = await critiqueEvolutionBlueprint({
       blueprint, collected, catalog, runRole: createLiveEvolveRoleRunner(ctx, services, hintOf(projectId, collected)),
       iteration: priorCritique ? 2 : 1, log: (m) => ctx.log(m),
@@ -270,40 +315,43 @@ export function mountGraphEvolveNightly(ctx: ServerCore, services: Services): vo
     const collected = parseJson<GraphEvolveCollectSummary>(c.resolve("collect.payload_json"), emptyCollected);
     if (collected.status === "empty") return { output: { candidatesCount: 0, candidates_json: "[]" } };
     const blueprint = parseJson<ProcessBlueprint | null>(c.resolve("plan_blueprint.blueprint_json"), null);
-    if (!blueprint || blueprint.decision === "noop" || !blueprint.graphs.length) return { output: { candidatesCount: 0, candidates_json: "[]" } };
-    const priorCandidates = parseJson<GraphEvolveCandidate[]>(c.resolve("synthesize.candidates_json"), []);
+    if (!blueprint || blueprint.decision === "noop" || (!blueprint.graphs.length && !(blueprint.companionSkills?.length))) return { output: { candidatesCount: 0, candidates_json: "[]" } };
+    const prior = parseSynthesizedPayload(c.resolve("synthesize.candidates_json"));
     const auditFeedback = parseJson<EvolveReviewVerdict | null>(c.resolve("audit_suite.audit_json"), null);
-    const iteration = priorCandidates.length || auditFeedback ? 2 : 1;
-    const catalog = await buildEvolveCatalogContext(ctx, collected);
+    const iteration = prior.candidates.length || prior.companionSkills.length || auditFeedback ? 2 : 1;
+    const { catalog, existingSkillBundles } = await buildEvolveCatalogContext(ctx, collected);
     const runRole = createLiveEvolveRoleRunner(ctx, services, hintOf(projectId, collected));
     const log = (m: string) => ctx.log(m);
-    let candidates = await synthesizeSuiteFromBlueprint({
-      blueprint, collected, catalog, runRole,
-      ...(priorCandidates.length ? { priorCandidates } : {}), ...(auditFeedback ? { auditFeedback } : {}), iteration, log,
+    let synth = await synthesizeSuiteAndSkillsFromBlueprint({
+      blueprint, collected, catalog, runRole, existingSkillBundles,
+      ...(prior.candidates.length ? { priorCandidates: prior.candidates } : {}), ...(auditFeedback ? { auditFeedback } : {}), iteration, log,
     });
     const knownContext = await knownContextOf(ctx, collected);
-    const validation = await validateEvolveSuiteCandidates({ db: ctx.db, log, knownContext }, candidates);
-    if (!validation.ok || (blueprint.graphs.length > 0 && candidates.length === 0)) {
+    const validation = await validateEvolveSuiteCandidates({ db: ctx.db, log, knownContext }, synth.candidates, { companionSkills: synth.companionSkills });
+    if (!validation.ok || (blueprint.graphs.length > 0 && synth.candidates.length === 0)) {
       const errors = validation.errors.length ? validation.errors : ["workflow-architect returned 0 candidates for non-noop blueprint"];
       log(`WARN [nightGraphs.graphEvolve] synthesize_repair ${redactKnown(JSON.stringify({ iteration, errors: errors.slice(0, 6) }))}`);
-      candidates = await synthesizeSuiteFromBlueprint({
-        blueprint, collected, catalog, runRole, priorCandidates: candidates, validationErrors: errors,
+      synth = await synthesizeSuiteAndSkillsFromBlueprint({
+        blueprint, collected, catalog, runRole, existingSkillBundles, priorCandidates: synth.candidates, validationErrors: errors,
         ...(auditFeedback ? { auditFeedback } : {}), iteration: iteration + 1, log,
       });
     }
-    ctx.log(`INFO [nightGraphs.graphEvolve] synthesized ${redactKnown(JSON.stringify({ candidatesCount: candidates.length }))}`);
-    return { output: { candidatesCount: candidates.length, candidates_json: JSON.stringify(candidates) } };
+    const payload = { candidates: synth.candidates, companionSkills: synth.companionSkills, operator: blueprint.operator, supersededWorkflowIds: synth.supersededWorkflowIds };
+    ctx.log(`INFO [nightGraphs.graphEvolve] synthesized ${redactKnown(JSON.stringify({ candidatesCount: synth.candidates.length, companionSkillsCount: synth.companionSkills.length }))}`);
+    return { output: { candidatesCount: synth.candidates.length, candidates_json: JSON.stringify(payload) } };
   } } as NodeExecutor<ChainRuntime>);
 
   engine.register<ChainRuntime>("lp.graph_evolve_audit", { reentrant: true, run: async (c) => {
     const { projectId } = readEvolveInputs(c);
     const collected = parseJson<GraphEvolveCollectSummary>(c.resolve("collect.payload_json"), emptyCollected);
     const blueprint = parseJson<ProcessBlueprint | null>(c.resolve("plan_blueprint.blueprint_json"), null);
-    const candidates = parseJson<GraphEvolveCandidate[]>(c.resolve("synthesize.candidates_json"), []);
+    const { candidates, companionSkills } = parseSynthesizedPayload(c.resolve("synthesize.candidates_json"));
     if (!candidates.length || !blueprint) return { output: { verdict: "pass", mustFixCount: 0, audit_json: "{}" } };
     const priorAudit = parseJson<EvolveReviewVerdict | null>(c.resolve("audit_suite.audit_json"), null);
+    const { existingSkillBundles } = await readExistingCompanionSkills(globalSkillsDir());
     const audit = await auditSynthesizedSuite({
-      blueprint, candidates, collected, runRole: createLiveEvolveRoleRunner(ctx, services, hintOf(projectId, collected)),
+      blueprint, candidates, companionSkills, existingSkillBundles, collected,
+      runRole: createLiveEvolveRoleRunner(ctx, services, hintOf(projectId, collected)),
       iteration: priorAudit ? 2 : 1, log: (m) => ctx.log(m),
     });
     return { output: { verdict: audit.verdict, mustFixCount: audit.mustFix.length, audit_json: JSON.stringify(audit) } };
@@ -312,13 +360,14 @@ export function mountGraphEvolveNightly(ctx: ServerCore, services: Services): vo
   engine.register<ChainRuntime>("lp.graph_evolve_apply", { reentrant: true, run: async (c) => {
     const { projectId, publishApprovedSuite } = readEvolveInputs(c);
     const collected = parseJson<GraphEvolveCollectSummary>(c.resolve("collect.payload_json"), emptyCollected);
-    const candidates = parseJson<GraphEvolveCandidate[]>(c.resolve("synthesize.candidates_json"), []);
+    const { candidates, companionSkills, operator, supersededWorkflowIds } = parseSynthesizedPayload(c.resolve("synthesize.candidates_json"));
     if (!candidates.length) return { output: { status: "held", publishedCount: 0, proposedCount: 0, rejectedCount: 0, summary: "graph-evolve: no candidates" } };
-    const auditVerdict = String(c.resolve("audit_suite.verdict") ?? "");
+    const rawVerdict = c.resolve("audit_suite.verdict");
+    const auditVerdict = typeof rawVerdict === "string" ? rawVerdict : "";
     const applied = await applyGraphEvolveCandidates({
       db: ctx.db, log: (m) => ctx.log(m), knownContext: await knownContextOf(ctx, collected),
       invalidateCatalog: () => { services.workflowCatalog?.invalidate(); services.workflowTriggers?.syncSoon?.(projectId ?? "*"); },
-    }, candidates, { deltaIds: collected.deltaIds, publishApprovedSuite: Boolean(publishApprovedSuite && auditVerdict === "pass") });
+    }, candidates, { deltaIds: collected.deltaIds, publishApprovedSuite, auditVerdict, companionSkills, operator, supersededWorkflowIds });
     return { output: { status: applied.publishedCount || applied.proposedCount ? "done" : "held", publishedCount: applied.publishedCount, proposedCount: applied.proposedCount, rejectedCount: applied.rejectedCount, summary: applied.summary } };
   } } as NodeExecutor<ChainRuntime>);
 
