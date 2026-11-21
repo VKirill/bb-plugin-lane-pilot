@@ -16,7 +16,11 @@ import {AFTER_ACCEPT, DOCS_MAINTENANCE, DOCS_NIGHT, LP_TASK_PIPELINE, SELF_REPAI
  * The worktree cleanup's output carries a `report`, which a scheduled run would otherwise deliver as a line every hour; its daily pass posts the
  * one line a person needs itself, and a failed run is the schedule board's.
  */
-const UPKEEP_WORKFLOWS = new Set<string>([AFTER_ACCEPT, DOCS_NIGHT, DOCS_MAINTENANCE, SELF_REPAIR, WORKTREE_CLEANUP]);
+const UPKEEP_WORKFLOWS = new Set<string>([
+  AFTER_ACCEPT, DOCS_NIGHT, DOCS_MAINTENANCE, SELF_REPAIR, WORKTREE_CLEANUP,
+  "lp.graph-evolve-nightly", "lp.episodes", "lp.rules-scan", "lp.wall-hunt",
+  "lp.harness-edit", "lp.harness-reflect", "lp.critic-edit", "lp.specialist-eval", "lp.curriculum-ingest",
+]);
 
 export const WORKFLOW_NOTICE_STATUSES = ["succeeded", "failed", "blocked", "interrupted", "canceled", "not_verified"] as const;
 export type WorkflowNoticeStatus = (typeof WORKFLOW_NOTICE_STATUSES)[number];

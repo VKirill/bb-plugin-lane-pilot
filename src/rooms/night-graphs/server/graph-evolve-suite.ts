@@ -421,7 +421,7 @@ export async function applyGraphEvolveCandidates(
     } else {
       if (!options?.publishApprovedSuite && candidate.sourceDeltaIds?.length) { citedAnyDelta = true; markTrajectoryDeltasProcessed(deps.db, candidate.sourceDeltaIds, now(), log); }
       postOwnerItem(deps.db, {
-        key: `workflow-draft:${recorded.id}:v${recorded.version}`, source: "night", kind: "workflow_draft_proposed", projectId: ownerProject, wake: true,
+        key: `workflow-draft:${recorded.id}:v${recorded.version}`, source: "night", kind: "workflow_draft_proposed", projectId: ownerProject, wake: false,
         what: `Предложен ${baseDef ? "обновлённый" : "новый"} граф «${titleRu}» (${workflowId}, draft v${recorded.version})`,
         why: `Ночной синтез подготовил и проверил на стабах (${results.length}/${results.length} PASS) ${baseDef ? "структурное изменение" : "новый универсальный граф v1"}. Требуется подтверждение владельца перед публикацией.`,
         evidence: [{ kind: "text", ref: `${workflowId}#v${recorded.version}` }],

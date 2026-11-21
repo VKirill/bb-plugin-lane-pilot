@@ -335,4 +335,24 @@ describe("lead hand-over runs", () => {
     expect(db.prepare("SELECT COUNT(*) AS n FROM lane_pilot_owner_item").get()).toMatchObject({ n: 0 });
     await harness.lifecycle.dispose();
   });
+
+  it("never sends PM chat notices or owner items for lp.graph-evolve-nightly upkeep runs", async () => {
+    const { bb, sends } = noticeBb();
+    const { bb: fullBb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
+    const db = openDatabase(fullBb);
+    createRun(db, runId, projectId);
+    setRunThread(db, runId, pmThreadId);
+    const evolveLinked = runRow({
+      id: "wfrun_evolve_1",
+      workflow_id: "lp.graph-evolve-nightly",
+      output_json: JSON.stringify({ status: "done", publishedCount: 0, proposedCount: 6, summary: "6 proposed" }),
+    });
+    expect(await maybeNotifyWorkflowRun({ bb, log: () => undefined, pmThreadId, startedBySchedule: false, run: evolveLinked })).toBe(false);
+    expect(await maybeNotifyWorkflowRun({ bb, log: () => undefined, pmThreadId, startedBySchedule: true, run: evolveLinked })).toBe(false);
+    expect(await notifyWorkflowIfEnded({ bb, db, log: () => undefined, run: evolveLinked })).toBe(false);
+    expect(await notifyWorkflowIfEnded({ bb, db, log: () => undefined, run: { ...evolveLinked, link_run_id: null } })).toBe(false);
+    expect(sends).toHaveLength(0);
+    expect(db.prepare("SELECT COUNT(*) AS n FROM lane_pilot_owner_item").get()).toMatchObject({ n: 0 });
+    await harness.lifecycle.dispose();
+  });
 });
