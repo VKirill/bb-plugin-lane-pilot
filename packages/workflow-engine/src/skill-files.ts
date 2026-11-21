@@ -174,6 +174,21 @@ export function globalSkillsDir(home = homedir()): string {
   return join(home, ".bb", "skills");
 }
 
+/** Lists valid companion skill directory slugs directly under `skillsRoot` (excluding symlinks, best-effort). */
+export async function listSkillBundleIds(skillsRoot: string): Promise<string[]> {
+  try {
+    if (!(await assertNotSymlink(skillsRoot))?.isDirectory()) return [];
+    const ids: string[] = [];
+    for (const entry of await readdir(skillsRoot, { withFileTypes: true })) {
+      if (!entry.isDirectory() || !SKILL_BUNDLE_ID.test(entry.name)) continue;
+      if ((await assertNotSymlink(join(skillsRoot, entry.name)))?.isDirectory()) ids.push(entry.name);
+    }
+    return ids.sort();
+  } catch {
+    return [];
+  }
+}
+
 /** Orders `SKILL.md` first, followed by remaining paths sorted lexicographically. */
 export function sortSkillBundleFiles<T extends { path: string }>(files: readonly T[]): T[] {
   return [...files].sort((a, b) => (a.path === b.path ? 0 : a.path === "SKILL.md" ? -1 : b.path === "SKILL.md" ? 1 : a.path.localeCompare(b.path)));

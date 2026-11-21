@@ -1,9 +1,8 @@
-import { rm } from "node:fs/promises";
 import { join } from "node:path";
 import { redactKnown, sha256Hex } from "@lane-pilot/kit";
 import {
-  casWriteSkillBundle, casWriteWorkflowFile, computeSkillBundleSha256, globalSkillsDir, globalWorkflowDir,
-  loadWorkflow, loadWorkflowStore, nodeFileSource, readSkillBundle, restoreSkillBundleSnapshot,
+  WORKFLOW_FILE_ID, casWriteSkillBundle, casWriteWorkflowFile, computeSkillBundleSha256, globalSkillsDir, globalWorkflowDir,
+  loadWorkflow, loadWorkflowStore, nodeFileSource, readSkillBundle, removeWorkflowFile, restoreSkillBundleSnapshot,
   runDraftTest, testCasesOf, type WorkflowEngine,
 } from "@lane-pilot/workflow-engine";
 import type { ChainRuntime, ServerCore } from "../../contracts/server";
@@ -113,11 +112,11 @@ async function retireSupersededLocal(
   const snapshots: SupersededWorkflowSnapshot[] = [];
   for (const raw of new Set(supersededIds)) {
     const oldId = raw.trim();
-    if (!oldId || oldId === protectedId || builtinWorkflow(oldId)) continue;
+    if (!oldId || !WORKFLOW_FILE_ID.test(oldId) || oldId === protectedId || builtinWorkflow(oldId)) continue;
     const path = join(workflowDir, `${oldId}.json`);
     try {
       const content = await nodeFileSource.read(path);
-      await rm(path, { force: true });
+      await removeWorkflowFile(workflowDir, oldId);
       snapshots.push({ workflowId: oldId, path, content, sha256: sha256Hex(content) });
     } catch { /* Not present on disk. */ }
   }

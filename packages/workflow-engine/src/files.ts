@@ -37,3 +37,9 @@ export async function casWriteWorkflowFile(dir: string, id: string, content: str
   }
   return { status: "applied", path, beforeSha256: before, afterSha256: sha256Hex(content), reason: null };
 }
+
+/** Best-effort removal of `<dir>/<id>.json` when retiring a superseded workflow or rolling back a newly created file. */
+export async function removeWorkflowFile(dir: string, id: string): Promise<void> {
+  if (!WORKFLOW_FILE_ID.test(id)) throw new Error(`workflow id is not a file name: ${id}`);
+  await rm(join(dir, `${id}.json`), { force: true });
+}

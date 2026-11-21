@@ -1,12 +1,13 @@
-import { readdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { redactKnown, sha256Hex } from "@lane-pilot/kit";
 import {
-  SKILL_BUNDLE_ID,
+  WORKFLOW_FILE_ID,
   casWriteSkillBundle,
   casWriteWorkflowFile,
+  listSkillBundleIds,
   nodeFileSource,
   readSkillBundle,
+  removeWorkflowFile,
   restoreSkillBundleSnapshot,
   type SkillBundleReadResult,
   type SkillBundleWriteResult,
@@ -39,15 +40,13 @@ export async function readExistingCompanionSkills(skillsRoot: string): Promise<{
 }> {
   const existingCompanionSkills: ExistingCompanionSkillInfo[] = [];
   const existingSkillBundles = new Map<string, StoredSkillBundleFile[]>();
-  const entries = await readdir(skillsRoot, { withFileTypes: true }).catch(() => []);
-  for (const entry of entries) {
-    if (!entry.isDirectory() || !SKILL_BUNDLE_ID.test(entry.name)) continue;
-    const bundle = await readSkillBundle(skillsRoot, entry.name).catch(() => null);
+  for (const skillId of await listSkillBundleIds(skillsRoot)) {
+    const bundle = await readSkillBundle(skillsRoot, skillId).catch(() => null);
     if (!bundle?.exists) continue;
-    existingSkillBundles.set(entry.name, bundle.files);
+    existingSkillBundles.set(skillId, bundle.files);
     const archetypes = bundle.files.flatMap((f) => { const m = ARCHETYPE_FILE_RE.exec(f.path); return m ? [m[1]!] : []; });
     const skeletonText = bundle.files.find((f) => f.path === "references/golden-skeleton.md")?.text ?? "";
-    existingCompanionSkills.push({ skillId: entry.name, archetypes, sectionCount: (skeletonText.match(/^##\s+/gm) ?? []).length });
+    existingCompanionSkills.push({ skillId, archetypes, sectionCount: (skeletonText.match(/^##\s+/gm) ?? []).length });
   }
   return { existingCompanionSkills, existingSkillBundles };
 }
@@ -159,12 +158,12 @@ export async function retireSupersededWorkflows(
     const oldId = raw.trim();
     if (!oldId || seen.has(oldId)) continue;
     seen.add(oldId);
-    if (builtinWorkflow(oldId) || protectedIds.has(oldId)) continue;
+    if (!WORKFLOW_FILE_ID.test(oldId) || builtinWorkflow(oldId) || protectedIds.has(oldId)) continue;
     const path = join(workflowDir, `${oldId}.json`);
     let content: string;
     try { content = await nodeFileSource.read(path); } catch { continue; }
     const sha256 = sha256Hex(content);
-    await rm(path, { force: true });
+    await removeWorkflowFile(workflowDir, oldId);
     snapshots.push({ workflowId: oldId, path, content, sha256 });
   }
   if (snapshots.length > 0) {
@@ -188,7 +187,7 @@ export async function rollbackWorkflowFileOnDisk(
     if (diskBase) {
       const expected = afterSha256 ?? await nodeFileSource.read(path).then(sha256Hex, () => null);
       await casWriteWorkflowFile(workflowDir, workflowId, diskBase.raw, expected);
-    } else await rm(path, { force: true });
+    } else await removeWorkflowFile(workflowDir, workflowId);
   } catch (cause) {
     log?.(`WARN [nightGraphs.companionSkill] rollback_workflow_failed ${redactKnown(JSON.stringify({
       workflowId, reason: cause instanceof Error ? cause.message : String(cause),

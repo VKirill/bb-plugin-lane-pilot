@@ -203,6 +203,8 @@ with dark(name) as (
   union all
   select 'lane_pilot_setting_generation' as name where (select count(*) from lane_pilot_setting_generation) = 0
   union all
+  select 'lane_pilot_skill_evolution' as name where (select count(*) from lane_pilot_skill_evolution where created_at >= (select since from lp_morning_30)) = 0
+  union all
   select 'lane_pilot_skill_metric' as name where (select count(*) from lane_pilot_skill_metric where recorded_at >= (select since from lp_morning_30)) = 0
   union all
   select 'lane_pilot_sp_autonomy' as name where (select count(*) from lane_pilot_sp_autonomy where updated_at >= (select since from lp_morning_30)) = 0
