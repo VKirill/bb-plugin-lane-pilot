@@ -6,10 +6,11 @@ status: active
 created: 2026-11-06
 confidence: medium
 tags: [guide, self-improvement]
-updated: 2026-11-06
+updated: 2026-11-22
 sources:
   - src/rooms/errands/episode-enrich.ts
   - src/rooms/night-graphs/server/episodes-graph.ts
+  - src/rooms/night-graphs/server/graph-evolve-graph.ts
   - src/rooms/wall/server/index.ts
   - src/rooms/lead/server/index.ts
 ---
@@ -29,6 +30,7 @@ Lane Pilot learns from its own failures and from the owner's messages, and tests
 | `regress-nightly` | 03:25 | Re-checks recent accepted tasks on main |
 | `rules-nightly` | 03:30 | Rule scan, then classifies new rules by form |
 | `harness-nightly` | 04:10 | Judges trials, starts writer-harness editors |
+| `graph-evolve-nightly` | 04:50 | Digests Pilot chats and runs, detects `over_constraint` and `leanDebt`, synthesizes and self-regulates modular workflow suites + companion skills (`lp.graph-evolve-nightly`) |
 | `critic-edit-monthly` | 05:20, day 1 | Critic calibration and prompt proposal |
 | `learning-extract`, `learning-digest` | 03:11, 18:20 | Owner-message learning (the night batch, the day's report) |
 
@@ -39,6 +41,7 @@ The direction since 2026-11-06: work climbs from free agent work to a skill, a g
 - **Episodes.** Every finished errand leaves one row (`lane_pilot_errand_episode`), failed ones too. Facts are written at completion; a `CHECK:` line in the helper's answer gives a verified outcome. Every hour the graph `lp.episodes` takes up to 10 pending episodes, masks secrets and personal data in the helper's thread, and has the `episode-analyst` role (Gemini 3.8 Flash through 9router by default) write the card: goal, parameters, what helped, where it stumbled, failure class, and a proposed process key. Three model calls run at once (`EPISODE_SWEEP_PARALLEL`); the key is chosen one at a time, by Jev's `errand.process_key` among the 8 nearest known keys, so two runs of one process in one batch get one key. The analyst runs in an empty folder (`~/.lane-pilot/episode-analyst`) and is told to call no tools, so it cannot read other threads from disk. `bb lane-pilot errands episodes-backfill` fills rows for past errands; `errands episodes-sweep` runs a pass now; `errands process-key-eval` scores the keys against a hand-labelled gold set.
 - **Diagnosis.** `bb lane-pilot errands diagnose [--days 30]` shows errands by kind, their cost and the groups that repeat (on 2026-11-06: 132 errands, $302 in 30 days, 6 repeat groups).
 - **Five forms.** The lead proposes a repeated process as one of five forms: a rule, a note, a script, a skill or a graph (`docs/lead.md`). A skill comes before a graph unless the work needs a gate, a timetable or helpers of different kinds. New skills follow [the skill standard](../skill-standard.md); `bb lane-pilot skill-lint <dir>` checks one.
+- **Autonomous workflow & companion-skill evolution (`lp.graph-evolve-nightly`).** At 04:50 the nightly graph digests completed Pilot runs, child threads and user workflows, extracts masked interventions (including `over_constraint` friction) and deliverable skeletons, audits existing global graphs and skills for `leanDebt`, and runs a 4-model cross-family AFlow pipeline (`planner` -> `plan-critic` -> `workflow-architect` -> `auditor`) across six operators (`noop`, `patch_converge`, `split_node`, `extend_module`, `create_suite`, `prune_or_relax`). Optional steps stay on the linear spine via `skip_when` + `skip_out`, human gates stay skippable, companion skills (`~/.bb/skills/<slug>/`) are semantically compacted (`<= 14` sections), every candidate passes both `happy-path` and `variant_lean` stub simulations, and CAS snapshots in `lane_pilot_skill_evolution` enable coupled 1-click publish/rollback until `leanDebt` reaches `0` (`noop`). Full architecture and diagrams: [workflows evolution](../workflows-evolution.md).
 
 ## The nightly loop (wall)
 

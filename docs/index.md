@@ -44,14 +44,14 @@ Built by Lane Pilot from page frontmatter.
 | [Development](guide/development.md) | overview | active | 2026-11-14 |
 | [Failure handling and stability](guide/failures.md) | overview | active | 2026-11-06 |
 | [How a piece of work flows](guide/flow.md) | overview | active | 2026-11-14 |
-| [Everything is a graph](guide/graphs.md) | overview | active | 2026-11-06 |
+| [Everything is a graph](guide/graphs.md) | overview | active | 2026-11-22 |
 | [The hand-off standard](guide/handoff.md) | reference | active | 2026-11-10 |
 | [The hook standard](guide/hooks.md) | reference | active | 2026-11-10 |
 | [CLI, agent tools, UI and RPC](guide/interfaces.md) | overview | active | 2026-11-06 |
 | [Memory](guide/memory.md) | overview | active | 2026-11-06 |
 | [Observability](guide/observability.md) | overview | active | 2026-11-14 |
 | [Roles, agents and models](guide/roles.md) | overview | active | 2026-11-14 |
-| [Self-improvement](guide/self-improvement.md) | overview | active | 2026-11-06 |
+| [Self-improvement](guide/self-improvement.md) | overview | active | 2026-11-22 |
 | [Settings and experimental features](guide/settings.md) | overview | active | 2026-11-10 |
 | [Writer harness](harness.md) | component | active | 2026-10-29 |
 | [Hypotheses checked on the bench](hypotheses.md) | component | active | 2026-10-23 |
@@ -111,6 +111,7 @@ Built by Lane Pilot from page frontmatter.
 | [Workflow chain executors](workflow-executors.md) | component | active | 2026-11-15 |
 | [Workflow router](workflow-router.md) | component | active | 2026-10-30 |
 | [Workflow triggers](workflow-triggers.md) | component | active | 2026-10-30 |
+| [Trajectory crystallization, skill intent resolution, and nightly workflow evolution](workflows-evolution.md) | component | active | 2026-11-22 |
 | [Worktrees — where they live, who removes them, the cleanup schedule](worktrees.md) | component | active | 2026-11-14 |
 | [Writer hold (H2): no attempt is spent on a writer that cannot start](writer-hold.md) | component | active | 2026-11-16 |
 

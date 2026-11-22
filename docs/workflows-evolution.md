@@ -2,7 +2,7 @@
 title: "Trajectory crystallization, skill intent resolution, and nightly workflow evolution"
 type: component
 created: 2026-11-18
-updated: 2026-11-21
+updated: 2026-11-22
 status: active
 confidence: high
 tags: [workflows, evolution, night-graphs, skills, pilot-panel, categories, lean]
@@ -52,6 +52,59 @@ sources:
 
 TL;DR: Without live per-message interceptors, `lp.graph-evolve-nightly` begins with autonomous deep trajectory digestion over Pilot runs, unactivated parent chats, child workflow runs, and user workflows (`src/rooms/night-graphs/server/pilot-day-digest.ts:231-389`), extracts friction signals (`extractFrictionSignals`, `src/rooms/night-graphs/friction-signals.ts:102-182`) and vertical `archetypeHint` + `artifactSkeleton` (`src/rooms/night-graphs/server/pilot-day-skeleton.ts:114-215`), writes masked interventions (including `over_constraint`) into `lane_pilot_trajectory_delta` (`src/rooms/errands/trajectory-delta.ts:19-46`, `src/rooms/errands/trajectory-delta.ts:126-192`) and daily summaries into `lane_pilot_day_digest` (`src/rooms/storage/pilot-day-digest-store.ts:296-317`), clusters episodes with `leanDebt` self-regulation (`src/rooms/night-graphs/server/graph-evolve-graph.ts:85-242`), runs a 4-model cross-family AFlow pipeline (`planner` -> `plan-critic` -> `workflow-architect` -> `auditor`) across 6 explicit evolution operators including `prune_or_relax` (`src/rooms/night-graphs/process-blueprint.ts:3-9`, `src/rooms/night-graphs/server/graph-evolve-pipeline.ts:134-374`), enforces a broad-discipline category ceiling (`src/rooms/night-graphs/category-taxonomy.ts:174-233`) and deterministic lean suite policy (`src/rooms/night-graphs/lean-suite-policy.ts:138-278`), semantically compacts and merges paired `Workflow JSON + ~/.bb/skills/<slug>/` Golden-Skeleton bundles (`src/rooms/night-graphs/server/companion-skill-merge.ts:55-114`, `218-350`), requires `auditVerdict === "pass"` before auto-publication (`src/rooms/night-graphs/server/graph-evolve-suite.ts:277`, `295-298`), and tracks coupled skill/workflow mutations in `lane_pilot_skill_evolution` (`src/rooms/storage/skill-evolution-store.ts:156-277`) for 1-click publish and rollback in the Pilot panel (`src/rooms/pilot-panel/server/workflow-drafts.ts:159-246`).
 
+## System map & self-regulation loop
+
+![Mindmap: autonomous self-regulating workflow & companion-skill evolution](images/workflow-evolution-mindmap-ru.jpg)
+
+![Pipeline: 3-tier execution and anti-bloat self-regulation loop](images/workflow-evolution-pipeline-ru.jpg)
+
+### Architectural mindmap (6 pillars around `lp.graph-evolve-nightly`)
+
+```mermaid
+flowchart LR
+  subgraph IN["1-3 · Evidence, Taxonomy & Debt Intake"]
+    P1["1 · Trajectory & Friction Digest (PM chats, runs, episodes, over_constraint)"]
+    P2["2 · De-projectization & Category Ceiling (maskPii, broad shelves, archetypeHint)"]
+    P3["3 · Global Lean-Debt Scanner (validateLeanSuitePolicy + skill duplicate check)"]
+  end
+
+  HUB(["lp.graph-evolve-nightly (04:50) · 6 operators: noop, patch_converge, split_node, extend_module, create_suite, prune_or_relax"])
+
+  subgraph OUT["4-6 · 4-Model Synthesis, Companion Skills & CAS"]
+    P4["4 · 4-Model Pipeline: planner <-> plan-critic (<= 2) -> architect <-> auditor (<= 2)"]
+    P5["5 · Suite + Skill Bundle: 2..5 phase graphs + orchestrator + golden-skeleton <= 14"]
+    P6["6 · Lean Policy, Dual Sim (happy + variant_lean) & CAS 1-click Rollback"]
+  end
+
+  P1 --> HUB
+  P2 --> HUB
+  P3 --> HUB
+  HUB --> P4
+  HUB --> P5
+  HUB --> P6
+  P6 -. "prune_or_relax publishes -> leanDebt = 0 -> noop" .-> P3
+```
+
+### Node-by-node execution & fixed-point convergence (`workflows/lp.graph-evolve-nightly.json`)
+
+```mermaid
+flowchart TD
+  START(["04:50 cron or manual workflow_run"]) --> DIGEST["digest (lp.graph_evolve_digest): analyst + extractFrictionSignals"]
+  DIGEST --> COLLECT["collect (lp.graph_evolve_collect): clusters + deltas + collectLeanDebt"]
+  COLLECT -->|"status == 'empty' (0 clusters, 0 deltas, leanDebt == 0)"| EMPTY(["empty_done (0 synthesis tokens)"])
+  COLLECT -->|"status == 'ready'"| PLAN["plan_blueprint (planner): ProcessBlueprint + operator"]
+  PLAN -->|"decision == 'noop'"| NOOP(["noop_done"])
+  PLAN -->|"minor_patch | suite_or_structural"| CRIT["critique_plan (plan-critic): parsimony <= 7 nodes, <= 2 gates + taxonomy + 9 gates"]
+  CRIT -->|"verdict == 'rework' & visits < 2"| PLAN
+  CRIT -->|"verdict == 'pass' or maxVisits"| SYNTH["synthesize (workflow-architect): JSON suite + skill compaction + auto-repair"]
+  SYNTH --> AUDIT["audit_suite (auditor): skill-merge + validateLeanSuitePolicy + cross-family audit"]
+  AUDIT -->|"verdict == 'rework' & visits < 2"| SYNTH
+  AUDIT -->|"verdict == 'pass' or maxVisits"| APPLY["apply (lp.graph_evolve_apply): leaves -> orchestrator + sim & variant_lean"]
+  APPLY -->|"verdict == 'pass' & (minor_patch | prune_or_relax on baseDef | publish_approved_suite)"| PUB(["CAS auto-publish workflow + skill (snapshot in lane_pilot_skill_evolution)"])
+  APPLY -->|"new v1 or held_without_audit_pass"| DRAFT(["Staged as tested draft (1-click Publish / Rollback in Pilot panel)"])
+  PUB -. "next run measures leanDebt == 0" .-> EMPTY
+```
+
 ## How it works
 
 1. **Resolve skill intent and record actual skill usage**: `hasExplicitSkillIntent` detects RU/EN skill-request phrasing via `EXPLICIT_INTENT_RE` (`src/rooms/errands/skill-intent.ts:61-116`), and `resolveSkillIntent` ranks catalog entries by normalized name hits, `stems` from `@lane-pilot/workflow-engine`, and `SKILL_DOMAIN_SYNONYMS` across `copywriting`, `seo`, `design`, `qa`, and `architecture` (`src/rooms/errands/skill-intent.ts:29-51`, `src/rooms/errands/skill-intent.ts:122-208`). During episode enrichment, `episodeSkills` combines offered skills with un-offered skills discovered via `skillReadsOf` (`*/SKILL.md` file reads) and `directSkillCallsOf` (`skill` tool calls), emitting `{ name, offered: false, read, used }` (`src/rooms/errands/episode-enrich.ts:123-182`).
@@ -59,7 +112,7 @@ TL;DR: Without live per-message interceptors, `lp.graph-evolve-nightly` begins w
 3. **Deep trajectory digestion & friction extraction (`lp.graph_evolve_digest`)**: Every day at `50 4 * * *` (`GRAPH_EVOLVE_CRON`), `mountGraphEvolveNightly` triggers `lp.graph-evolve-nightly` under daily idempotency key `wfTerminalByIdemKey` (`src/rooms/night-graphs/server/graph-evolve-graph.ts:19-21`, `438-450`); manual `workflow_run` calls also accept `project_id`, `lookback_days` (`1..90`), and `publish_approved_suite` (`workflows/lp.graph-evolve-nightly.json:33-49`, `src/rooms/night-graphs/server/graph-evolve-graph.ts:314-322`). `digestPilotDayDialogues` (`src/rooms/night-graphs/server/pilot-day-digest.ts:231-389`) invokes `listPilotDayCandidates` (`src/rooms/storage/pilot-day-digest-store.ts:206-293`, re-exported via `src/rooms/storage/analytics-store.ts:166-171`) with optional `projectId` filtering over `DEFAULT_WINDOW_MS` × `lookbackDays` (`src/rooms/night-graphs/server/pilot-day-digest.ts:61`, `233-236`) to gather:
    - `lane_pilot_run` PM threads with `lane_pilot_task`, `lane_pilot_attempt`, and `lane_pilot_stage_receipt` records (`src/rooms/storage/pilot-day-digest-store.ts:216-242`).
    - Pilot-activated chats (`lane_pilot_activation`, `lane_pilot_pm_notice`) as well as unactivated parent chats discovered from `lane_pilot_wf_run` child triggers (`errand`, `specialist`, `web-research`, `research-dossier`, `browser-step`, `seo-*`, `sp.*`/`sp-*` via `CHILD_WF_FILTER` at `src/rooms/storage/pilot-day-digest-store.ts:49`, `245-266`).
-   - Completed non-errand user `lane_pilot_wf_run` runs (`src/rooms/storage/pilot-day-digest-store.ts:269-287`).
+   - Completed non-errand user `lane_pilot_wf_run` (`WF_RUN_TABLE`) runs (`src/rooms/storage/pilot-day-digest-store.ts:269-287`).
    `attachTrajectoryFacts` (`src/rooms/storage/pilot-day-digest-store.ts:130-203`) joins enriched child `episodes`, `childRuns`, `lane_pilot_gate_event` `owns-paths` rejections (`173-182`), and `listRunStepFrictionFacts` step skip/abort/rework/failure facts (`186-200`, `packages/workflow-engine/src/journal.ts:579-595`). `digestPilotDayDialogues` runs `extractFrictionSignals` (`src/rooms/night-graphs/server/pilot-day-digest.ts:279-282`, `src/rooms/night-graphs/friction-signals.ts:102-182`), merges `judgedCorrectionRows`, reads parent and up to 5 child thread outlines/events, extracts observed MCP servers (`metamcp`, `pencil`, `gitnexus`, `blender`) and BB plugins (`image-studio`, `browser-automation`, `env-catalog`) via `detectIntegrations` (`src/rooms/night-graphs/server/pilot-day-digest.ts:141-165`), masks all text via `maskText` (`68-69`), selects `analyst` when `richness >= 2` or `episode-analyst` otherwise (`311-312`), normalizes `categoryHint`, `archetypeHint`, and `artifactSkeleton` (`115-122`, `src/rooms/night-graphs/server/pilot-day-skeleton.ts:114-215`), persists both model-emitted and deterministically extracted `over_constraint` deltas (`319-350`), and stores daily summaries in `lane_pilot_day_digest` via `savePilotDayDigest` (`src/rooms/storage/pilot-day-digest-store.ts:296-317`).
 4. **Cluster evidence & detect `leanDebt` (`lp.graph_evolve_collect`)**: `collectGraphEvolveEvidence` (`src/rooms/night-graphs/server/graph-evolve-graph.ts:109-242`) combines unprocessed deltas from `listUnprocessedTrajectoryDeltas`, enriched errand episodes, and `listPilotDayDigests` (promoting multi-task or delta-backed `pilot_run` items via `richPilotRun` at line `169`) while carrying `artifactSkeletons` and `archetypeHints` per cluster. Exact `processKey` clusters reaching `minCluster` or `richPilotRun` advance directly; remaining singletons are bucketed by `domainFamilyOf` into `${fam}|trajectory-suite` or `${dominant}|project-trajectory` (`50-58`, `186-209`). Simultaneously, `collectLeanDebt` (`85-106`) scans published global workflows via `validateLeanSuitePolicy` and companion skills via `readExistingCompanionSkills` (`MAX_GOLDEN_SKELETON_SECTIONS` / `hasSemanticDuplicates`), attaching `overConstraintCount`, `frictionSignals`, and `leanViolations` onto matching clusters or emitting synthetic `${debt.catId}|lean-self-regulation` clusters (`211-241`).
 5. **Run the 4-model cross-family evolution pipeline (`planner` -> `plan-critic` -> `workflow-architect` -> `auditor`)**: When `collect.status` is not `'empty'`, `lp.graph-evolve-nightly` runs `plan_blueprint` (`lp.graph_evolve_plan`), short-circuits to `noop_done` when `decision == 'noop'`, or loops through `critique_plan` (`lp.graph_evolve_critique`, up to `visits('plan_blueprint') < 2`), `synthesize` (`lp.graph_evolve_synthesize`, with an automatic schema/lean-policy repair pass at `src/rooms/night-graphs/server/graph-evolve-graph.ts:386-396`), `audit_suite` (`lp.graph_evolve_audit`, up to `visits('synthesize') < 2`), and `apply` (`workflows/lp.graph-evolve-nightly.json:62-281`). Each role runs in `$HOME/.lane-pilot/graph-evolve` via `createLiveEvolveRoleRunner` + `resolveSpawnModel` (`src/rooms/night-graphs/server/graph-evolve-pipeline.ts:88-131`), with prompts modularized in `src/rooms/night-graphs/server/graph-evolve-prompts.ts:9-146`:
@@ -81,7 +134,7 @@ Evolution 2.1 treats workflow bloat, rigid human gates, narrow path locks, and d
 
 1. **Friction capture (`extractFrictionSignals`)**: `listRunStepFrictionFacts` (`packages/workflow-engine/src/journal.ts:579-595`) and `attachTrajectoryFacts` (`src/rooms/storage/pilot-day-digest-store.ts:171-202`) feed step skips/aborts/repeated reworks and `owns-paths` rejections into `extractFrictionSignals` (`src/rooms/night-graphs/friction-signals.ts:102-182`), which combines them with bilingual RU/EN simplification patterns (`hasOverConstraintPhrase`, lines `53-99`) into deduplicated `FrictionSignal` items (`human_gate_bypass_or_abort`, `owns_paths_rejection`, `step_skipped_or_failed`, `user_simplification_request`). `digestPilotDayDialogues` records both model-detected and deterministic `over_constraint` rows in `lane_pilot_trajectory_delta` (`src/rooms/night-graphs/server/pilot-day-digest.ts:319-350`).
 2. **Global catalog debt scan (`collectLeanDebt`)**: Before planning, `collectLeanDebt` (`src/rooms/night-graphs/server/graph-evolve-graph.ts:85-106`) checks every published global workflow with `validateLeanSuitePolicy` and every companion skill with `readExistingCompanionSkills` (`src/rooms/night-graphs/server/companion-skill-evolve.ts:48-67`, checking `sectionCount > 14`, `coreRuleCount > 16`, or `compactSemanticItems(...).collapsedCount > 0`). Any nonzero `leanDebtCount` prevents `noop` and routes debt into matching domain clusters or synthetic `${debt.catId}|lean-self-regulation` clusters (`src/rooms/night-graphs/server/graph-evolve-graph.ts:211-241`).
-3. **Deterministic policy enforcement & fixed-point convergence**: `critiqueEvolutionBlueprint` (`src/rooms/night-graphs/server/graph-evolve-pipeline.ts:191-214`) rejects `noop` when `hasLeanPressure` holds and blocks >7 executable stages or >2 human gates per `phase_graph`. Once synthesized, `auditSynthesizedSuite` (`365-371`) and `applyGraphEvolveCandidates` (`src/rooms/night-graphs/server/graph-evolve-suite.ts:338-343`) enforce `validateLeanSuitePolicy`, auto-publishing `prune_or_relax` updates when `baseDef` exists and `auditVerdict === "pass"` (`295-298`, `420-434`). After deltas are marked processed and the lean suite/compacted skill publishes to disk, subsequent runs measure `leanDebtCount === 0` and `overConstraintDeltas === 0`, converging cleanly to `noop`.
+3. **Deterministic policy enforcement & fixed-point convergence**: `critiqueEvolutionBlueprint` (`src/rooms/night-graphs/server/graph-evolve-pipeline.ts:191-214`) rejects `noop` when `hasLeanPressure` holds and blocks >7 executable stages or >2 human gates per `phase_graph`. Once synthesized, `auditSynthesizedSuite` (`src/rooms/night-graphs/server/graph-evolve-pipeline.ts:365-371`) and `applyGraphEvolveCandidates` / `evalLeanPolicy` (`src/rooms/night-graphs/server/graph-evolve-suite.ts:262-343`) enforce `validateLeanSuitePolicy`, auto-publishing `prune_or_relax` updates when `baseDef` exists and `auditVerdict === "pass"` (`295-298`, `420-434`). After deltas are marked processed and the lean suite/compacted skill publishes to disk, subsequent runs measure `leanDebtCount === 0` and `overConstraintDeltas === 0`, converging cleanly to `noop`.
 
 ## Lean suite policy (`lean-suite-policy.ts`)
 
@@ -104,12 +157,12 @@ Evolution 2.1 treats workflow bloat, rigid human gates, narrow path locks, and d
 Evolution 2.0/2.1 enforces a strict separation between **universal craft categories** (top-level workflow shelves and reusable suites) and **vertical/domain subtypes** (parameterized inputs and modular skill overlays):
 
 - **Digest-time vertical lifting**: `BROAD_CRAFT_CATEGORIES` defines the broad discipline shelves (`websites`, `branding`, `marketing`, `content`, `analytics`, `operations`, plus built-in shelves), while `EXACT_VERTICAL_LIFTS` and `liftNarrowCategory` inside `normalizeCategoryAndArchetype` automatically lift narrow vertical tags up to their parent discipline and record the subtype in `archetypeHint` (`src/rooms/night-graphs/server/pilot-day-skeleton.ts:40-151`).
-- **De-projectization & taxonomy ceiling**: `category-taxonomy.ts` defines `BROAD_DYNAMIC_CATEGORIES` (`websites`, `branding`, `marketing`, `content`, `analytics`, `operations`, `media`, `src/rooms/night-graphs/category-taxonomy.ts:13-21`), `isAllowedBroadCategoryId` (`140-146`), and `validateCategoryAndIdentityGeneralization` (`174-233`). Any workflow category, ID, or localized title matching `NICHE_SLUG_PATTERNS` or `NICHE_TEXT_PATTERNS` raises `niche_category_violation` or `niche_workflow_identity`, failing both `critiqueEvolutionBlueprint` (`src/rooms/night-graphs/server/graph-evolve-pipeline.ts:222-230`) and `checkDeprojectization` (`src/rooms/night-graphs/deprojectize.ts:112-114`).
+- **De-projectization & taxonomy ceiling**: `category-taxonomy.ts` defines `BROAD_DYNAMIC_CATEGORIES` (`websites`, `branding`, `marketing`, `content`, `analytics`, `operations`, `media`, `src/rooms/night-graphs/category-taxonomy.ts:13-21`), `isAllowedBroadCategoryId` (`140-146`), and `validateCategoryAndIdentityGeneralization` (`174-233`). Any workflow category, ID, or localized title matching `NICHE_SLUG_PATTERNS` or `NICHE_TEXT_PATTERNS` raises `niche_category_violation` or `niche_workflow_identity` via `validateCategoryAndIdentityGeneralization`, failing both `critiqueEvolutionBlueprint` (`src/rooms/night-graphs/server/graph-evolve-pipeline.ts:184-230`) and `checkDeprojectization` (`src/rooms/night-graphs/deprojectize.ts:80-119`).
 - **Archetype & deliverable skeleton extraction**: `normalizeArtifactSkeleton` extracts de-projectized `deliverableClass`, ordered `sections` (`>= 2`), `matrices`, and `qaChecks` (`src/rooms/night-graphs/server/pilot-day-skeleton.ts:184-215`) into `lane_pilot_day_digest` (`src/rooms/storage/pilot-day-digest-store.ts:78-91`, `296-308`), feeding `artifactSkeletons` and `archetypeHints` into `collectGraphEvolveEvidence` (`src/rooms/night-graphs/server/graph-evolve-graph.ts:140-144`, `213`, `222`) and `references/archetype-<slug>.md` overlays.
 
 ## Six explicit evolution operators (`ProcessBlueprint.operator`)
 
-`normalizeBlueprint` and `resolveBlueprintOperator` (`src/rooms/night-graphs/process-blueprint.ts:3-9`, `209-263`) normalize legacy and explicit blueprints onto six AFlow evolution operators (`src/rooms/night-graphs/server/graph-evolve-prompts.ts:33-39`):
+`EVOLUTION_OPERATORS`, `normalizeBlueprint`, and `resolveBlueprintOperator` (`src/rooms/night-graphs/process-blueprint.ts:77-84`, `src/rooms/night-graphs/process-blueprint.ts:209-263`) normalize legacy and explicit blueprints onto six AFlow evolution operators prompted by `buildPlannerPrompt` (`src/rooms/night-graphs/server/graph-evolve-prompts.ts:20-52`):
 
 | Operator | Decision mapping | Intended behavior & gates | Source |
 |---|---|---|---|

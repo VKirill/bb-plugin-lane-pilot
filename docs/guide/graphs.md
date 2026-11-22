@@ -6,11 +6,13 @@ status: active
 created: 2026-11-06
 confidence: medium
 tags: [guide, graphs]
-updated: 2026-11-06
+updated: 2026-11-22
 sources:
   - packages/workflow-engine/src/engine.ts
   - packages/workflow-engine/src/router.ts
   - packages/workflow-engine/src/index.ts
+  - workflows/lp.graph-evolve-nightly.json
+  - src/rooms/night-graphs/server/graph-evolve-graph.ts
 ---
 
 # Everything is a graph
@@ -143,6 +145,7 @@ A workflow is a JSON file (`workflows/*.json`): inputs, outputs, `requires` (ski
 | `lp.critic-edit` | Monthly: reads each critic's verdict accuracy and writes a prompt proposal when it is under half on four or more verdicts. |
 | `lp.docs-maintenance` | The docs maintainer of one accepted task: edits returned as JSON, validated by code, written. |
 | `lp.docs-night` | One docs folder brought up to date overnight, with anchors and gap finding. |
+| `lp.graph-evolve-nightly` | Overnight trajectory digestion, `over_constraint` / `leanDebt` detection, 4-model cross-family synthesis (`planner` -> `plan-critic` -> `workflow-architect` -> `auditor`), semantic companion-skill compaction, dual `happy-path` + `variant_lean` simulation, and atomic CAS publication with 1-click rollback (see [workflows evolution](../workflows-evolution.md)). |
 
 ## Sources
 
