@@ -21,5 +21,6 @@ export {
   STANDALONE_SPECIALIST_SKILL_PACKS,
   createNativeSpecialistSessionPolicy,
   mountNativeSpecialistSessionPolicy,
+  specialistProfileAccess,
   type SessionPolicyContextLike,
 } from "./specialist-session-policy";

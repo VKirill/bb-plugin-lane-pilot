@@ -15,7 +15,10 @@ import { openDatabase } from "../../src/rooms/plugin-db";
 import {
   STANDALONE_SPECIALIST_SKILL_PACKS,
   createNativeSpecialistSessionPolicy,
+  specialistProfileAccess,
 } from "../../src/rooms/native-agent/server";
+import { EMPLOYEES, MAIN_AGENT_PROFILE_IDS } from "../../src/rooms/contracts/server";
+import { compileMainAgentProfile } from "../../src/rooms/native-agent";
 import {
   applyGraphEvolveCandidates,
   collectGraphEvolveEvidence,
@@ -352,5 +355,188 @@ describe("domain built-in overlay evolution & seo-specialist bounded skill polic
     // Coordinator PM chat and workflow child helper threads return null (untouched).
     expect(await resolver({ thread: { id: "thr_composer_pm" }, project: { id: "proj_seo_1" }, pluginMetadata: { role: "pm" } })).toBeNull();
     expect(await resolver({ thread: { id: "thr_workflow_seo_child" }, project: { id: "proj_seo_1" }, pluginMetadata: { role: "specialist", lanePilotWorkflowRunId: "wfrun_1" } })).toBeNull();
+  });
+
+  it("enforces zero skill leaks and domain self-sufficiency across all 12 bundled specialists, sub-roles, workflow-architect, lead, and custom agents", async () => {
+    const db = makeDb();
+    const kvMap = new Map<string, unknown>();
+    const bindThread = (threadId: string, agentId: string) => {
+      kvMap.set(nativeThreadKey(threadId), {
+        token: "563d23a8-da01-4680-a796-aab89bbde995",
+        projectId: "proj_all_specs",
+        agentId,
+        profileMode: "session-override",
+        agentsJson: null,
+        sourceHash: null,
+        sourceVersion: "bb-session-1",
+        createdAt: 1795000000000,
+      });
+    };
+
+    for (const id of MAIN_AGENT_PROFILE_IDS) bindThread(`thr_${id}`, id);
+    bindThread("thr_custom_plain", "brand-editor");
+    bindThread("thr_custom_catalog", "market-analyst");
+
+    const customPlainCompiled = compileMainAgentProfile("brand-editor", {
+      description: "Brand editor",
+      prompt: "You edit brand voice.",
+      skills: ["ru-text", "copywriter"],
+      mcpServers: ["gitnexus"],
+    });
+    const customCatalogCompiled = compileMainAgentProfile("market-analyst", {
+      description: "Market analyst",
+      prompt: "You analyze markets.",
+      skills: ["tavily"],
+    });
+
+    const resolver = createNativeSpecialistSessionPolicy({
+      db,
+      bb: {
+        storage: {
+          kv: {
+            get: async <T>(key: string) => kvMap.get(key) as T | undefined,
+          },
+        },
+      } as never,
+      ownedAgents: async () => ({
+        "brand-editor": {
+          compiled: customPlainCompiled,
+          meta: { coreSkills: ["ru-check"] },
+        },
+        "market-analyst": {
+          compiled: customCatalogCompiled,
+          meta: { skillSections: ["Marketing"] },
+        },
+      }),
+    });
+
+    // 1. All 12 bundled employees: bounded (<= 20 skills), self-sufficient domain essentials, agent-tools included, zero cross-domain or dead skill leaks.
+    const expectedDomainEssentials: Record<string, { mustInclude: string[]; mustExclude: string[] }> = {
+      "seo-specialist": {
+        mustInclude: ["env-catalog", "agent-tools", "seo-drmax-orchestrator", "seo-page-templates", "seo-tech-audit-kit", "google", "yandex"],
+        mustExclude: ["blender-director", "roblox-toolkit", "kontur-elba", "mutagen", "xmlstock", "yandex-webmaster", "google-search-console"],
+      },
+      "growth-marketer": {
+        mustInclude: ["env-catalog", "agent-tools", "mkt-end-to-end-analytics", "mkt-landing-cro", "mkt-yandex-direct-epk", "mkt-telegram-ads-method", "telegram-ads"],
+        mustExclude: ["blender-director", "roblox-toolkit", "kontur-elba"],
+      },
+      "copy-lead": {
+        mustInclude: ["env-catalog", "agent-tools", "copywriter", "copy-project-life", "site-copy-headlines", "site-copy-ux", "ru-text", "ru-check", "ai-detect"],
+        mustExclude: ["blender-director", "roblox-toolkit", "kontur-elba", "seo-drmax-orchestrator"],
+      },
+      "design-lead": {
+        mustInclude: ["env-catalog", "agent-tools", "project-design", "modern-web-guidance", "page-prototype", "web-design", "landing-page-design", "unslop", "ui-review"],
+        mustExclude: ["blender-director", "kontur-elba", "telegram-user"],
+      },
+      "video-lead": {
+        mustInclude: ["env-catalog", "agent-tools", "video-lead-playbook", "business-motion-film", "procedural-film", "video-to-reels", "hyperframes", "media-use"],
+        mustExclude: ["kontur-elba", "seo-drmax-orchestrator", "roblox-toolkit"],
+      },
+      "3d-artist": {
+        mustInclude: ["agent-tools", "blender-director", "blender-modeler", "hard-surface", "materials", "lighting", "rendering", "uv-workflow", "export-pipeline"],
+        mustExclude: ["kontur-elba", "seo-drmax-orchestrator", "telegram-user"],
+      },
+      "game-dev": {
+        mustInclude: ["agent-tools", "roblox-toolkit", "roblox-build", "roblox-design", "threejs-fundamentals", "godot-export", "unity-export"],
+        mustExclude: ["kontur-elba", "seo-drmax-orchestrator", "edo-diadoc"],
+      },
+      "social-manager": {
+        mustInclude: ["env-catalog", "agent-tools", "telegram-user", "telegram-rich-messages", "social-browser", "social-insights", "tg-search", "ig-post-assistant"],
+        mustExclude: ["blender-director", "kontur-elba", "roblox-toolkit"],
+      },
+      "billing-assistant": {
+        mustInclude: ["env-catalog", "agent-tools", "kontur-elba", "edo-diadoc", "cloudpayments"],
+        mustExclude: ["edo-windows-diadoc", "blender-director", "seo-drmax-orchestrator"],
+      },
+      "visual-artist": {
+        mustInclude: ["agent-tools", "image-prompting", "nano-banana", "xmlstock-image-research"],
+        mustExclude: ["kontur-elba", "roblox-toolkit", "seo-drmax-orchestrator"],
+      },
+      "macos-operator": {
+        mustInclude: ["env-catalog", "agent-tools", "computer-use", "browser-automation", "linux-sysadmin"],
+        mustExclude: ["kontur-elba", "blender-director", "seo-drmax-orchestrator"],
+      },
+      tavily: {
+        mustInclude: ["env-catalog", "agent-tools", "tavily", "copy-research", "alphaxiv"],
+        mustExclude: ["kontur-elba", "blender-director", "roblox-toolkit"],
+      },
+    };
+
+    expect(Object.keys(expectedDomainEssentials).sort()).toEqual(Object.keys(EMPLOYEES).sort());
+
+    for (const [empId, checks] of Object.entries(expectedDomainEssentials)) {
+      const policy = await resolver({
+        thread: { id: `thr_${empId}` },
+        project: { id: "proj_all_specs" },
+        pluginMetadata: { role: "pm" },
+      });
+      expect(policy?.skills?.mode, empId).toBe("allow");
+      const names = policy?.skills?.names ?? [];
+      expect(names.length, `${empId} skill count (${names.length})`).toBeGreaterThanOrEqual(4);
+      expect(names.length, `${empId} skill count (${names.length})`).toBeLessThanOrEqual(20);
+      expect(names, empId).toEqual(expect.arrayContaining(checks.mustInclude));
+      for (const forbidden of checks.mustExclude) {
+        expect(names, `${empId} must not include ${forbidden}`).not.toContain(forbidden);
+      }
+
+      // Open-ended delegation (`specialist` / `agent-routine`) receives the same domain pack + `agent-tools` plugin.
+      const openAccess = specialistProfileAccess(empId, undefined, { openEnded: true });
+      expect(openAccess.bbPlugins, empId).toEqual(["agent-tools"]);
+      expect(openAccess.skills, empId).toEqual(expect.arrayContaining(STANDALONE_SPECIALIST_SKILL_PACKS[empId]! as string[]));
+      expect(openAccess.skills, empId).toContain("agent-tools");
+    }
+
+    // 2. Internal & architectural profiles: lead (0 skills!), workflow-architect, project-onboarder, and sub-roles.
+    expect(await resolver({ thread: { id: "thr_lead" }, project: { id: "proj_all_specs" } })).toEqual({
+      skills: { mode: "allow", names: [] },
+    });
+    expect(await resolver({ thread: { id: "thr_workflow-architect" }, project: { id: "proj_all_specs" } })).toEqual({
+      skills: { mode: "allow", names: ["lane-pilot", "agent-tools"] },
+    });
+    expect(await resolver({ thread: { id: "thr_project-onboarder" }, project: { id: "proj_all_specs" } })).toEqual({
+      skills: { mode: "allow", names: ["project-life", "project-onboard"] },
+    });
+    expect(await resolver({ thread: { id: "thr_nyquist-auditor" }, project: { id: "proj_all_specs" } })).toEqual({
+      skills: { mode: "allow", names: ["lane-pilot"] },
+    });
+    for (const analyticalId of ["animator", "doc-classifier", "eval-auditor", "eval-planner", "framework-selector", "mempalace-curator"]) {
+      expect(await resolver({ thread: { id: `thr_${analyticalId}` }, project: { id: "proj_all_specs" } }), analyticalId).toEqual({
+        skills: { mode: "allow", names: [] },
+      });
+    }
+    for (const resId of ["advisor-researcher", "ai-researcher", "domain-researcher"]) {
+      const resPolicy = await resolver({ thread: { id: `thr_${resId}` }, project: { id: "proj_all_specs" } });
+      expect(resPolicy?.skills?.names, resId).toEqual(["env-catalog", "tavily", "copy-research", "alphaxiv", "agent-tools"]);
+      // Unedited stock sub-role in step-scoped workflow still receives its core `tavily` skill when row === undefined!
+      expect(specialistProfileAccess(resId, undefined, { openEnded: false })).toEqual({ skills: ["tavily"] });
+    }
+    const uiResPolicy = await resolver({ thread: { id: "thr_ui-researcher" }, project: { id: "proj_all_specs" } });
+    expect(uiResPolicy?.skills?.names).toEqual(["impeccable-ui", "ui-ux-pro-max", "ui-review", "project-design", "agent-tools"]);
+
+    // 3. Custom owner-created agents: strictly scoped to declared skills (+ agent-tools only when skillSections is set).
+    const plainCustomPolicy = await resolver({ thread: { id: "thr_custom_plain" }, project: { id: "proj_all_specs" } });
+    expect(plainCustomPolicy?.skills?.names).toEqual(["env-catalog", "ru-text", "copywriter", "ru-check"]);
+    const catalogCustomPolicy = await resolver({ thread: { id: "thr_custom_catalog" }, project: { id: "proj_all_specs" } });
+    expect(catalogCustomPolicy?.skills?.names).toEqual(["env-catalog", "tavily", "agent-tools"]);
+
+    // 4. Step-scoped workflow (`openEnded: false`) never leaks legacy disabled MCPs (`perplexity`, `studio-scenarios-mcp`) on seo-specialist,
+    //    while honoring an explicit owner MCP override.
+    const unchangedSeoStub = { compiled: compileMainAgentProfile("seo-specialist") };
+    expect(specialistProfileAccess("seo-specialist", unchangedSeoStub, { openEnded: false })).toEqual({
+      skills: ["seo-drmax-orchestrator"],
+    });
+    const customMcpSeo = {
+      prompt: "Custom SEO prompt.",
+      description: "Custom SEO",
+      compiled: compileMainAgentProfile("seo-specialist", {
+        prompt: "Custom SEO prompt.",
+        description: "Custom SEO",
+        mcpServers: ["mcp-gsc"],
+      }),
+    };
+    expect(specialistProfileAccess("seo-specialist", customMcpSeo, { openEnded: false })).toEqual({
+      skills: ["seo-drmax-orchestrator"],
+      mcpServers: ["mcp-gsc"],
+    });
   });
 });

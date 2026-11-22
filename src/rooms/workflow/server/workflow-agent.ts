@@ -4,11 +4,11 @@ import { getRunSettingsScopes, planningHomeInputs } from "../../storage";
 import {findModelIn, isZcodeProvider, providerLimitNotice, writerExecutionSelection, zcodeEnvironmentError} from "@lane-pilot/models";
 ;
 import { MAIN_AGENT_ID, isCustomAgentId } from "../../contracts/server";
-import { compileEffectiveMainAgent, employeeRoleLines, mentionContext, placeEmployeeOn } from "../../native-agent"
+import { employeeRoleLines, mentionContext, placeEmployeeOn } from "../../native-agent"
 import { ROLE_PROFILES } from "../../contracts/helper-context"
 import { employeeView, isEmployeeSpecialist } from "../../contracts/employee-manifest";
 import type { ExtraAccess, HelperRole } from "../../contracts/helper-context";
-import { storeNativeSelection } from "../../native-agent/server";
+import { specialistProfileAccess, storeNativeSelection } from "../../native-agent/server";
 import { LEAD_ID, planningText, resolvePlanningHome } from "../../contracts";
 import {bestEffort, isNotFound, orMiss, outputText, redactKnown} from "@lane-pilot/kit";
 import { READ_ONLY_LINE, agentPrompt, contractProblems, contractRepairPrompt, describeProblems, goalsBlock, hasContractProblems, honestExit, outputContract, outputFields, parseAgentOutput, wfRunIdemParent } from "@lane-pilot/workflow-engine";
@@ -215,12 +215,11 @@ function withProfileAccess(step: ExtraAccess | undefined, profile: ExtraAccess |
  * gets (its prompt), the skills and MCP servers its profile asks for, its model and effort. An id that is no agent of the owner stops the
  * step with a clear code (the validator says the same when the draft is saved).
  */
-export async function ownSpecialist(rt: ChainRuntime, id: string): Promise<{ marker: string; access: ExtraAccess }> {
+export async function ownSpecialist(rt: ChainRuntime, id: string, options?: { openEnded?: boolean }): Promise<{ marker: string; access: ExtraAccess }> {
   const row = (await rt.ctx.ownedAgents())[id];
   if (!isBundledSpecialist(id) && (!row || row.compiledCorrupt)) throw new HelperFailure("unknown_specialist", `there is no agent "${id}" (deleted or renamed?): a node with role specialist:${id} needs a bundled specialist or an agent you created (bb lane-pilot agents list --custom)`);
   const { selection } = await storeNativeSelection(rt.ctx, { projectId: rt.projectId, agentId: id, ...(rt.runId ? { parentRunId: rt.runId } : {}) });
-  const profile = row && !row.compiledCorrupt ? compileEffectiveMainAgent(id, row) : { skills: [], mcpServers: [] };
-  return { marker: mentionContext(selection), access: { ...(profile.skills?.length ? { skills: [...profile.skills] } : {}), ...(profile.mcpServers?.length ? { mcpServers: [...profile.mcpServers] } : {}) } };
+  return { marker: mentionContext(selection), access: specialistProfileAccess(id, row, options) };
 }
 
 /** Whether the thread shows a follow-up turn requested at or after `at`. */
@@ -269,9 +268,10 @@ export function createWorkflowAgents() {
     const spec = roleSpec(asked.role);
     // A `specialist:` role that names no specialist (a role taken from an input, a reserved id) must not quietly run as an analyst.
     if (asked.role.startsWith("specialist:") && !spec.specialist) throw new HelperFailure("unknown_specialist", `"${asked.role.slice("specialist:".length)}" is neither a bundled specialist nor an agent you created (bb lane-pilot agents list)`);
+    const openEnded = asked.workflowId === AGENT_ROUTINE || asked.workflowId === SPECIALIST_GRAPH;
     const own = spec.specialist
-      ? (!isBundledSpecialist(spec.specialist) || asked.workflowId === AGENT_ROUTINE || asked.workflowId === SPECIALIST_GRAPH
-          ? await ownSpecialist(rt, spec.specialist)
+      ? (!isBundledSpecialist(spec.specialist) || openEnded
+          ? await ownSpecialist(rt, spec.specialist, { openEnded })
           : await bestEffort(rt.ctx.log, "bundled specialist profile", Promise.resolve().then(() => ownSpecialist(rt, spec.specialist!)), null))
       : null;
     const roleLines = spec.specialist && asked.workflowId !== SPECIALIST_GRAPH && !asked.intoThread
