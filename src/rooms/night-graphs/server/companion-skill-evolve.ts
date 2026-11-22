@@ -20,11 +20,14 @@ import {
 } from "../../storage";
 import { builtinWorkflow } from "../../workflow";
 import type { DeprojectizeContext } from "../deprojectize";
-import { lintAndVerifyCompanionSkill, type CompanionSkillCandidate } from "./companion-skill-merge";
+import { MAX_CORE_RULES, MAX_GOLDEN_SKELETON_SECTIONS, compactSemanticItems, lintAndVerifyCompanionSkill, type CompanionSkillCandidate } from "./companion-skill-merge";
 
 const ARCHETYPE_FILE_RE = /^references\/archetype-([a-z0-9][a-z0-9-]{0,47})\.md$/;
 
-export type ExistingCompanionSkillInfo = { skillId: string; archetypes: string[]; sectionCount: number };
+export type ExistingCompanionSkillInfo = {
+  skillId: string; archetypes: string[]; sectionCount: number;
+  goldenSectionTitles: string[]; coreRuleCount: number; hasSemanticDuplicates: boolean;
+};
 
 export type PendingPublishedSkillEvent = {
   draftId: string; draftVersion: number; workflowId: string; skillId: string;
@@ -32,6 +35,14 @@ export type PendingPublishedSkillEvent = {
   candidateFiles: StoredSkillBundleFile[]; beforeFiles: StoredSkillBundleFile[];
   beforeBundleSha256: string | null; afterBundleSha256: string | null;
 };
+
+function extractCoreRuleCount(skillMdText: string): number {
+  const idx = skillMdText.indexOf("## Core Rules");
+  if (idx < 0) return 0;
+  const rest = skillMdText.slice(idx + 13);
+  const next = rest.search(/^##\s+/m);
+  return ((next >= 0 ? rest.slice(0, next) : rest).match(/^-\s+.+$/gm) ?? []).length;
+}
 
 /** Scans `skillsRoot` best-effort for existing companion skill bundles and metadata. */
 export async function readExistingCompanionSkills(skillsRoot: string): Promise<{
@@ -46,7 +57,11 @@ export async function readExistingCompanionSkills(skillsRoot: string): Promise<{
     existingSkillBundles.set(skillId, bundle.files);
     const archetypes = bundle.files.flatMap((f) => { const m = ARCHETYPE_FILE_RE.exec(f.path); return m ? [m[1]!] : []; });
     const skeletonText = bundle.files.find((f) => f.path === "references/golden-skeleton.md")?.text ?? "";
-    existingCompanionSkills.push({ skillId, archetypes, sectionCount: (skeletonText.match(/^##\s+/gm) ?? []).length });
+    const goldenSectionTitles = [...skeletonText.matchAll(/^##\s+(.+)$/gm)].map((m) => m[1]!.replace(/^\d+\.\s*/, "").trim()).filter(Boolean);
+    const coreRuleCount = extractCoreRuleCount(bundle.files.find((f) => f.path === "SKILL.md")?.text ?? "");
+    const hasSemanticDuplicates = goldenSectionTitles.length > MAX_GOLDEN_SKELETON_SECTIONS
+      || coreRuleCount > MAX_CORE_RULES || compactSemanticItems(goldenSectionTitles).collapsedCount > 0;
+    existingCompanionSkills.push({ skillId, archetypes, sectionCount: goldenSectionTitles.length, goldenSectionTitles, coreRuleCount, hasSemanticDuplicates });
   }
   return { existingCompanionSkills, existingSkillBundles };
 }

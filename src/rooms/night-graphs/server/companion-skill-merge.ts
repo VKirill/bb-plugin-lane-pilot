@@ -1,37 +1,117 @@
 import { redactKnown } from "@lane-pilot/kit";
 import {
-  SKILL_MD_MAX_BYTES,
-  SKILL_MD_MAX_LINES,
-  sortSkillBundleFiles,
-  validateSkillBundleFiles,
+  SKILL_MD_MAX_BYTES, SKILL_MD_MAX_LINES, dice, grams, sortSkillBundleFiles, stems, validateSkillBundleFiles,
   type SkillBundleFile,
 } from "@lane-pilot/workflow-engine";
 import { lintSkillDir } from "../../forge";
 import { checkDeprojectization, type DeprojectizeContext } from "../deprojectize";
 import type { CompanionArchetypeOverlaySpec, CompanionSkillSpec } from "../process-blueprint";
 
-export type CompanionSkillCandidate = {
-  skillId: string;
-  workflowIds: string[];
-  mergeMode: "create_bundle" | "merge_core_and_overlay";
-  files: SkillBundleFile[];
-};
-
-export type NonDestructiveMergeFindingCode =
-  | "missing_golden_section"
-  | "missing_qa_check"
-  | "dropped_archetype_overlay"
-  | "skill_lint_error"
-  | "deprojectize_error";
-
+export type CompanionSkillCandidate = { skillId: string; workflowIds: string[]; mergeMode: "create_bundle" | "merge_core_and_overlay"; files: SkillBundleFile[] };
+export type NonDestructiveMergeFindingCode = "missing_golden_section" | "missing_qa_check" | "dropped_archetype_overlay" | "skill_lint_error" | "deprojectize_error";
 export type NonDestructiveMergeFinding = { code: NonDestructiveMergeFindingCode; detail: string };
 export type NonDestructiveMergeVerdict = { ok: boolean; skillId: string; findings: NonDestructiveMergeFinding[]; warnings: string[] };
 
+export const MAX_GOLDEN_SKELETON_SECTIONS = 14;
+export const MAX_CORE_RULES = 16;
+
 const ARCHETYPE_FILE_RE = /^references\/archetype-[a-z0-9][a-z0-9-]{0,47}\.md$/;
 const NESTED_REF_RE = /\]\(((?:\.\/)?(?:references\/)?[A-Za-z0-9_.-]+\.md)\)|references\/[A-Za-z0-9_.-]+\.md/;
+const OPTIONAL_TAG_RE = /\[optional:\s*when\s+([^\]]+)\]/i;
+const WEAK_STEMS = new Set(["report", "log", "record", "summary", "section", "overview", "spec", "specs", "check", "checks", "checklist", "list", "role", "item", "artifact", "details", "file", "files"].flatMap((w) => stems(w)));
+
 const normWs = (s: string): string => s.trim().replace(/\s+/g, " ").toLowerCase();
 const normHeading = (s: string): string => normWs(s.replace(/^\d+\.\s*/, ""));
 const stripRefLinks = (s: string): string => s.replace(/references\/[A-Za-z0-9_./-]+/g, "the companion skill");
+const formatWithOptional = (clean: string, opt: string | null): string => (opt ? `${clean} [optional: when ${opt}]` : clean);
+
+function parseOptionalTag(raw: string): { clean: string; optionalCondition: string | null } {
+  const stripped = raw.trim().replace(/^\d+\.\s*/, "").replace(/^-\s+\[[ xX]\]\s*/, "").trim();
+  const match = OPTIONAL_TAG_RE.exec(stripped);
+  if (!match) return { clean: stripped.replace(/\s+/g, " "), optionalCondition: null };
+  const optionalCondition = match[1]!.trim().replace(/\s+/g, " ") || null;
+  return { clean: stripped.replace(OPTIONAL_TAG_RE, "").replace(/\s+/g, " ").trim(), optionalCondition };
+}
+
+function topicStems(text: string): string[] {
+  const raw = [...new Set(stems(parseOptionalTag(text).clean))];
+  const filtered = raw.filter((s) => !WEAK_STEMS.has(s));
+  return filtered.length > 0 ? filtered : raw;
+}
+
+function mergeTopicPair(existingItem: string, nextItem: string): string {
+  const a = parseOptionalTag(existingItem);
+  const b = parseOptionalTag(nextItem);
+  const sa = topicStems(a.clean).length;
+  const sb = topicStems(b.clean).length;
+  const clean = sb > sa || (sb === sa && b.clean.length > a.clean.length) ? b.clean : a.clean;
+  const opt = a.optionalCondition && b.optionalCondition
+    ? (a.optionalCondition.length >= b.optionalCondition.length ? a.optionalCondition : b.optionalCondition)
+    : (a.optionalCondition ?? b.optionalCondition);
+  return formatWithOptional(clean, opt);
+}
+
+/** Semantic topic equivalence predicate combining Szymkiewicz–Simpson stem containment and trigram Dice similarity. */
+export function isSameSkillTopic(a: string, b: string): boolean {
+  const ca = normHeading(parseOptionalTag(a).clean);
+  const cb = normHeading(parseOptionalTag(b).clean);
+  if (!ca || !cb) return ca === cb;
+  if (ca === cb) return true;
+  const sa = topicStems(a);
+  const sb = topicStems(b);
+  if (sa.length === 0 || sb.length === 0) return false;
+  const setB = new Set(sb);
+  const inter = sa.filter((x) => setB.has(x));
+  const minLen = Math.min(sa.length, sb.length);
+  if (minLen >= 2 && inter.length / minLen >= 0.8) return true;
+  if (minLen === 1 && inter.length === 1 && inter[0]!.length >= 4) return true;
+  return dice(grams(sa.join(" ")), grams(sb.join(" "))) >= 0.62;
+}
+
+function coalesceBestPair(items: string[]): void {
+  let bestI = items.length - 2;
+  let bestJ = items.length - 1;
+  let bestScore: [number, number, number] = [-1, -1, -1];
+  for (let i = 0; i < items.length; i += 1) {
+    const si = topicStems(items[i]!);
+    const optI = Boolean(parseOptionalTag(items[i]!).optionalCondition);
+    for (let j = i + 1; j < items.length; j += 1) {
+      const sj = topicStems(items[j]!);
+      const setJ = new Set(sj);
+      const overlap = si.filter((x) => setJ.has(x)).length;
+      const sameOpt = optI === Boolean(parseOptionalTag(items[j]!).optionalCondition) ? 1 : 0;
+      const containment = overlap / Math.max(1, Math.min(si.length, sj.length));
+      const better = sameOpt > bestScore[0]
+        || (sameOpt === bestScore[0] && (overlap > bestScore[1] || (overlap === bestScore[1] && (overlap > 0 ? containment > bestScore[2] : true))));
+      if (better) { bestScore = [sameOpt, overlap, containment]; bestI = i; bestJ = j; }
+    }
+  }
+  const pI = parseOptionalTag(items[bestI]!);
+  const pJ = parseOptionalTag(items[bestJ]!);
+  const opt = pI.optionalCondition && pJ.optionalCondition
+    ? (pI.optionalCondition.length >= pJ.optionalCondition.length ? pI.optionalCondition : pJ.optionalCondition)
+    : null;
+  items[bestI] = formatWithOptional(`${pI.clean}; ${pJ.clean}`, opt);
+  items.splice(bestJ, 1);
+}
+
+/** Deduplicates semantically equivalent items and coalesces excess entries down to `options.maxItems` if provided. */
+export function compactSemanticItems(items: readonly string[], options?: { maxItems?: number }): { items: string[]; collapsedCount: number } {
+  const deduped: string[] = [];
+  let collapsedCount = 0;
+  for (const raw of items) {
+    const parsed = parseOptionalTag(raw);
+    if (!parsed.clean) continue;
+    const normalized = formatWithOptional(parsed.clean, parsed.optionalCondition);
+    const matchIdx = deduped.findIndex((existing) => isSameSkillTopic(existing, normalized));
+    if (matchIdx >= 0) { deduped[matchIdx] = mergeTopicPair(deduped[matchIdx]!, normalized); collapsedCount += 1; }
+    else deduped.push(normalized);
+  }
+  if (options?.maxItems !== undefined && options.maxItems >= 1) {
+    while (deduped.length > options.maxItems && deduped.length >= 2) { coalesceBestPair(deduped); collapsedCount += 1; }
+  }
+  return { items: deduped, collapsedCount };
+}
 
 function extractMatches(markdown: string | undefined, re: RegExp, transform?: (s: string) => string): string[] {
   if (!markdown) return [];
@@ -69,10 +149,11 @@ function mergeOrderedUnique(existing: readonly string[], incoming: readonly stri
 }
 
 function buildDescription(spec: CompanionSkillSpec): string {
-  const summary = spec.summary.trim().replace(/\s+/g, " ").slice(0, 320);
-  const when = spec.whenToUse.trim().replace(/^use\s+(?:this\s+skill\s+)?(?:when|for)\s+/i, "").replace(/\s+/g, " ").slice(0, 280);
-  const notFor = spec.whenNotToUse.trim().replace(/^(?:do\s+not\s+use(?:\s+for)?|not\s+for|skip:?)\s+/i, "").replace(/\s+/g, " ").slice(0, 220);
-  let desc = `${summary}${summary.endsWith(".") ? "" : "."} Use when ${when || `working on ${spec.skillId}`}. Do not use for ${notFor || `tasks unrelated to ${spec.skillId}`}.`;
+  const stripTailPunct = (s: string) => s.replace(/[.!?]+$/, "");
+  const summary = stripTailPunct(stripTailPunct(spec.summary.trim().replace(/\s+/g, " ")).slice(0, 320));
+  const when = stripTailPunct(stripTailPunct(spec.whenToUse.trim().replace(/^use\s+(?:this\s+skill\s+)?(?:when|for)\s+/i, "").replace(/\s+/g, " ")).slice(0, 280));
+  const notFor = stripTailPunct(stripTailPunct(spec.whenNotToUse.trim().replace(/^(?:do\s+not\s+use(?:\s+for)?|not\s+for|skip:?)\s+/i, "").replace(/\s+/g, " ")).slice(0, 220));
+  let desc = `${summary || spec.skillId}. Use when ${when || `working on ${spec.skillId}`}. Do not use for ${notFor || `tasks unrelated to ${spec.skillId}`}.`;
   if (desc.length < 50) desc = `${desc} Follow the golden skeleton and QA rubric.`;
   return desc.slice(0, 900);
 }
@@ -80,10 +161,17 @@ function buildDescription(spec: CompanionSkillSpec): string {
 function renderGoldenSkeleton(skillId: string, sections: readonly string[]): string {
   const effective = sections.length > 0 ? sections : ["Deliverable Overview"];
   const blocks = effective.map((raw, idx) => {
-    const title = stripRefLinks(raw.replace(/^\d+\.\s*/, "").trim());
-    return `## ${idx + 1}. ${title}\n\nProvide concrete, verifiable content and structured details for ${title}.`;
+    const { clean, optionalCondition } = parseOptionalTag(stripRefLinks(raw));
+    const cleanTitle = clean || "Deliverable Overview";
+    const heading = optionalCondition
+      ? `## ${idx + 1}. ${cleanTitle} [optional: when ${optionalCondition}]`
+      : `## ${idx + 1}. ${cleanTitle}`;
+    const body = optionalCondition
+      ? `Optional section — include when ${optionalCondition}; omit cleanly otherwise. Provide concrete, verifiable content and structured details for ${cleanTitle}.`
+      : `Provide concrete, verifiable content and structured details for ${cleanTitle}.`;
+    return `${heading}\n\n${body}`;
   });
-  return `# Golden Skeleton: ${skillId}\n\nMandatory ordered artifact structure. Preserve every numbered section in this order.\n\n${blocks.join("\n\n")}\n`;
+  return `# Golden Skeleton: ${skillId}\n\nMandatory ordered artifact structure. Sections marked [optional: when ...] apply only when that condition holds and may be omitted otherwise.\n\n${blocks.join("\n\n")}\n`;
 }
 
 function renderQaRubric(skillId: string, checks: readonly string[]): string {
@@ -130,39 +218,60 @@ function renderSkillMd(spec: CompanionSkillSpec, coreRules: readonly string[], a
 export function renderCompanionSkillBundle(
   spec: CompanionSkillSpec,
   existingFiles?: readonly SkillBundleFile[] | null,
+  options?: { log?: (msg: string) => void },
 ): CompanionSkillCandidate {
   const isMerge = spec.mergeMode === "merge_core_and_overlay" && Boolean(existingFiles && existingFiles.length > 0);
   const existingMap = new Map((existingFiles ?? []).map((f) => [f.path, f.text]));
+  const stripNum = (s: string) => s.replace(/^\d+\.\s*/, "");
+  const stripBox = (s: string) => s.replace(/^-\s+\[[ xX]\]\s*/, "");
 
-  const goldenSections = mergeOrderedUnique(
-    isMerge ? extractMatches(existingMap.get("references/golden-skeleton.md"), /^##\s+(.+)$/gm, (h) => h.replace(/^\d+\.\s*/, "")) : [],
-    spec.goldenSkeletonSections.map((s) => s.replace(/^\d+\.\s*/, "")),
-    normHeading,
-  );
-  const qaChecks = mergeOrderedUnique(
-    isMerge ? extractMatches(existingMap.get("references/qa-rubric.md"), /^-\s+\[[ xX]\]\s+(.+)$/gm) : [],
-    spec.qaRubricChecks.map((c) => c.replace(/^-\s+\[[ xX]\]\s*/, "")),
-    normWs,
-  );
-  const coreRules = mergeOrderedUnique(isMerge ? extractBullets(existingMap.get("SKILL.md"), "Core Rules") : [], spec.coreRules, normWs);
+  const rawGolden = [...(isMerge ? extractMatches(existingMap.get("references/golden-skeleton.md"), /^##\s+(.+)$/gm, stripNum) : []), ...spec.goldenSkeletonSections.map(stripNum)].filter((s) => s.trim().length > 0);
+  const compactedGolden = compactSemanticItems(rawGolden, { maxItems: MAX_GOLDEN_SKELETON_SECTIONS });
+  const rawQa = [...(isMerge ? extractMatches(existingMap.get("references/qa-rubric.md"), /^-\s+\[[ xX]\]\s+(.+)$/gm) : []), ...spec.qaRubricChecks.map(stripBox)].filter((c) => c.trim().length > 0);
+  const compactedQa = compactSemanticItems(rawQa);
+  const rawRules = [...(isMerge ? extractBullets(existingMap.get("SKILL.md"), "Core Rules") : []), ...spec.coreRules].filter((r) => r.trim().length > 0);
+  const compactedRules = compactSemanticItems(rawRules, { maxItems: MAX_CORE_RULES });
+
+  const collapsedCount = compactedGolden.collapsedCount + compactedRules.collapsedCount;
+  if (collapsedCount > 0) {
+    options?.log?.(`DEBUG [nightGraphs.skillMerge] semantic_compacted ${redactKnown(JSON.stringify({
+      skillId: spec.skillId, beforeSections: rawGolden.length, afterSections: compactedGolden.items.length,
+      collapsedCount, beforeRules: rawRules.length, afterRules: compactedRules.items.length,
+    }))}`);
+  }
 
   const archetypeFiles = new Map<string, string>();
   if (isMerge) for (const [path, text] of existingMap) if (ARCHETYPE_FILE_RE.test(path)) archetypeFiles.set(path, text);
   for (const overlay of spec.archetypeOverlays) {
     const path = `references/archetype-${overlay.slug}.md`;
-    if (!ARCHETYPE_FILE_RE.test(path)) continue;
-    archetypeFiles.set(path, renderArchetypeOverlay(overlay, isMerge ? archetypeFiles.get(path) : undefined));
+    if (ARCHETYPE_FILE_RE.test(path)) archetypeFiles.set(path, renderArchetypeOverlay(overlay, isMerge ? archetypeFiles.get(path) : undefined));
   }
 
   const archetypePaths = [...archetypeFiles.keys()].sort((a, b) => a.localeCompare(b));
   const files: SkillBundleFile[] = [
-    { path: "SKILL.md", text: renderSkillMd(spec, coreRules, archetypePaths) },
-    { path: "references/golden-skeleton.md", text: renderGoldenSkeleton(spec.skillId, goldenSections) },
-    { path: "references/qa-rubric.md", text: renderQaRubric(spec.skillId, qaChecks) },
+    { path: "SKILL.md", text: renderSkillMd(spec, compactedRules.items, archetypePaths) },
+    { path: "references/golden-skeleton.md", text: renderGoldenSkeleton(spec.skillId, compactedGolden.items) },
+    { path: "references/qa-rubric.md", text: renderQaRubric(spec.skillId, compactedQa.items) },
     ...archetypePaths.map((path) => ({ path, text: archetypeFiles.get(path)! })),
   ];
-
   return { skillId: spec.skillId, workflowIds: [...new Set(spec.workflowIds)], mergeMode: spec.mergeMode, files: sortSkillBundleFiles(files) };
+}
+
+function checkPreservedItems(
+  prevItems: readonly string[],
+  nextItems: readonly string[],
+  code: "missing_golden_section" | "missing_qa_check",
+  label: string,
+  findings: NonDestructiveMergeFinding[],
+): void {
+  const nextClean = nextItems.map((item) => parseOptionalTag(item).clean);
+  for (const prev of prevItems) {
+    const prevClean = parseOptionalTag(prev).clean;
+    const preserved = nextItems.some((next, idx) =>
+      normWs(prev) === normWs(next) || isSameSkillTopic(prev, next) || nextClean[idx]!.split(";").some((c) => normHeading(c) === normHeading(prevClean)),
+    );
+    if (!preserved) findings.push({ code, detail: `${label} "${prev}" from existing skill was removed` });
+  }
 }
 
 /** Ensures an updated skill bundle preserves all previously approved skeleton headings, QA checks, and archetype files. */
@@ -174,21 +283,18 @@ export function verifyNonDestructiveSkillMerge(
   const findings: NonDestructiveMergeFinding[] = [];
   const prevMap = new Map(existingFiles.map((f) => [f.path, f.text]));
   const nextMap = new Map(candidateFiles.map((f) => [f.path, f.text]));
+  const stripNum = (h: string) => h.replace(/^\d+\.\s*/, "");
 
-  const nextHeadings = new Set(extractMatches(nextMap.get("references/golden-skeleton.md"), /^##\s+(.+)$/gm, (h) => h.replace(/^\d+\.\s*/, "")).map(normHeading));
-  for (const heading of extractMatches(prevMap.get("references/golden-skeleton.md"), /^##\s+(.+)$/gm, (h) => h.replace(/^\d+\.\s*/, ""))) {
-    if (!nextHeadings.has(normHeading(heading))) {
-      findings.push({ code: "missing_golden_section", detail: `Golden skeleton section "${heading}" from existing skill was removed` });
-    }
-  }
-
-  const nextChecks = new Set(extractMatches(nextMap.get("references/qa-rubric.md"), /^-\s+\[[ xX]\]\s+(.+)$/gm).map(normWs));
-  for (const check of extractMatches(prevMap.get("references/qa-rubric.md"), /^-\s+\[[ xX]\]\s+(.+)$/gm)) {
-    if (!nextChecks.has(normWs(check))) {
-      findings.push({ code: "missing_qa_check", detail: `QA rubric check "${check}" from existing skill was removed` });
-    }
-  }
-
+  checkPreservedItems(
+    extractMatches(prevMap.get("references/golden-skeleton.md"), /^##\s+(.+)$/gm, stripNum),
+    extractMatches(nextMap.get("references/golden-skeleton.md"), /^##\s+(.+)$/gm, stripNum),
+    "missing_golden_section", "Golden skeleton section", findings,
+  );
+  checkPreservedItems(
+    extractMatches(prevMap.get("references/qa-rubric.md"), /^-\s+\[[ xX]\]\s+(.+)$/gm),
+    extractMatches(nextMap.get("references/qa-rubric.md"), /^-\s+\[[ xX]\]\s+(.+)$/gm),
+    "missing_qa_check", "QA rubric check", findings,
+  );
   for (const path of prevMap.keys()) {
     if (ARCHETYPE_FILE_RE.test(path) && !nextMap.has(path)) {
       findings.push({ code: "dropped_archetype_overlay", detail: `Existing archetype overlay "${path}" was dropped` });

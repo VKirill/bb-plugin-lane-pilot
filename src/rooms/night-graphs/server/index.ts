@@ -45,14 +45,17 @@ export {
   createLiveEvolveRoleRunner,
   critiqueEvolutionBlueprint,
   planEvolutionBlueprint,
+  synthesizeSuiteAndSkillsFromBlueprint,
   synthesizeSuiteFromBlueprint,
   type EvolveCatalogContext,
   type EvolveReviewVerdict,
   type EvolveRole,
   type EvolveRoleRunner,
+  type ExistingGlobalWorkflowSummary,
   type ProcessBlueprint,
   type ProcessBlueprintGraphSpec,
   type ProcessBlueprintStageSpec,
+  type SynthesizeSuiteResult,
 } from "./graph-evolve-pipeline";
 export {
   createLivePilotDayDigestDeps,

@@ -15,6 +15,10 @@ export {
   type SynthesizedPayload,
 } from "./server/graph-evolve-graph";
 export {
+  MAX_CORE_RULES,
+  MAX_GOLDEN_SKELETON_SECTIONS,
+  compactSemanticItems,
+  isSameSkillTopic,
   lintAndVerifyCompanionSkill,
   renderCompanionSkillBundle,
   verifyNonDestructiveSkillMerge,
@@ -51,6 +55,7 @@ export {
   type TaxonomyViolation,
 } from "./category-taxonomy";
 export {
+  EVOLUTION_OPERATORS,
   normalizeBlueprint,
   resolveBlueprintOperator,
   type CompanionArchetypeOverlaySpec,
@@ -61,3 +66,20 @@ export {
   type ProcessBlueprintGraphSpec,
   type ProcessBlueprintStageSpec,
 } from "./process-blueprint";
+export {
+  extractFrictionSignals,
+  hasOverConstraintPhrase,
+  type ExtractFrictionInput,
+  type FrictionSignal,
+  type FrictionSignalKind,
+} from "./friction-signals";
+export {
+  MAX_PHASE_GRAPH_EXECUTABLE_NODES,
+  MAX_PHASE_GRAPH_HUMAN_GATES,
+  OPTIONAL_FEATURE_INPUTS,
+  validateLeanSuitePolicy,
+  type LeanPolicyViolation,
+  type LeanPolicyViolationCode,
+  type LeanSuitePolicyOptions,
+  type LeanSuitePolicyVerdict,
+} from "./lean-suite-policy";

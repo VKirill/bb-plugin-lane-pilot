@@ -112,12 +112,12 @@ export function stem(word: string): string {
 /** Significant stems of a text, in order (stop words and one-letter tokens dropped). */
 export const stems = (text: string): string[] => normalizeText(text).split(" ").filter((word) => word.length >= 2 && !STOP.has(word)).map(stem);
 
-const grams = (text: string): Set<string> => {
+export const grams = (text: string): Set<string> => {
   const padded = ` ${text} `, out = new Set<string>();
   for (let i = 0; i + 3 <= padded.length; i += 1) out.add(padded.slice(i, i + 3));
   return out;
 };
-const dice = (a: Set<string>, b: Set<string>): number => {
+export const dice = (a: Set<string>, b: Set<string>): number => {
   if (!a.size || !b.size) return 0;
   let common = 0;
   for (const gram of a) if (b.has(gram)) common += 1;

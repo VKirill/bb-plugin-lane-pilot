@@ -1,6 +1,12 @@
 import { canonicalBroadCategory, isAllowedBroadCategoryId } from "./category-taxonomy";
 
-export type EvolutionOperator = "noop" | "patch_converge" | "split_node" | "extend_module" | "create_suite";
+export type EvolutionOperator =
+  | "noop"
+  | "patch_converge"
+  | "split_node"
+  | "extend_module"
+  | "create_suite"
+  | "prune_or_relax";
 
 export type CompanionArchetypeOverlaySpec = {
   slug: string;
@@ -28,6 +34,8 @@ export type ProcessBlueprintStageSpec = {
   role?: string;
   subworkflowId?: string;
   purpose: string;
+  necessity?: "core" | "optional";
+  skipConditionHint?: string;
   skills: string[];
   mcp: string[];
   plugins: string[];
@@ -37,6 +45,7 @@ export type ProcessBlueprintStageSpec = {
 export type ProcessBlueprintGraphSpec = {
   workflowId: string;
   kind: "phase_graph" | "master_orchestrator";
+  standaloneChat?: boolean;
   name: { en: string; ru: string };
   description: { en: string; ru: string };
   dependsOnGraphs: string[];
@@ -65,7 +74,14 @@ export type NormalizedProcessBlueprint = ProcessBlueprint & {
   companionSkills: CompanionSkillSpec[];
 };
 
-const EVOLUTION_OPERATORS = new Set<EvolutionOperator>(["noop", "patch_converge", "split_node", "extend_module", "create_suite"]);
+export const EVOLUTION_OPERATORS = new Set<EvolutionOperator>([
+  "noop",
+  "patch_converge",
+  "split_node",
+  "extend_module",
+  "create_suite",
+  "prune_or_relax",
+]);
 const DECISIONS = new Set<ProcessBlueprint["decision"]>(["noop", "minor_patch", "suite_or_structural"]);
 const STAGE_TYPES = new Set<ProcessBlueprintStageSpec["nodeType"]>(["agent", "human", "lp-task", "action", "subworkflow", "parallel"]);
 const SKILL_ID_RE = /^[a-z][a-z0-9-]{1,47}$/;
@@ -166,17 +182,23 @@ function normalizeGraphs(raw: unknown): ProcessBlueprintGraphSpec[] {
           const sr = s as Record<string, unknown>, id = str(sr.id);
           if (!id) return [];
           const nt = str(sr.nodeType, "agent") as ProcessBlueprintStageSpec["nodeType"];
+          const necessity = sr.necessity === "optional" ? "optional" : sr.necessity === "core" ? "core" : undefined;
+          const skipConditionHint = str(sr.skipConditionHint) || undefined;
           return [{
             id, nodeType: STAGE_TYPES.has(nt) ? nt : "agent",
             ...(str(sr.role) ? { role: str(sr.role) } : {}),
             ...(str(sr.subworkflowId) ? { subworkflowId: str(sr.subworkflowId) } : {}),
             purpose: str(sr.purpose, id),
+            ...(necessity ? { necessity } : {}),
+            ...(skipConditionHint ? { skipConditionHint } : {}),
             skills: strList(sr.skills), mcp: strList(sr.mcp), plugins: strList(sr.plugins), contractRules: strList(sr.contractRules),
           }];
         })
       : [];
     return [{
-      workflowId, kind, name: bilingual(gr.name, workflowId), description: bilingual(gr.description, workflowId),
+      workflowId, kind,
+      ...(typeof gr.standaloneChat === "boolean" ? { standaloneChat: gr.standaloneChat } : {}),
+      name: bilingual(gr.name, workflowId), description: bilingual(gr.description, workflowId),
       dependsOnGraphs: strList(gr.dependsOnGraphs), inputs: stringRecord(gr.inputs), outputs: stringRecord(gr.outputs),
       stages, acceptanceCriteria: strList(gr.acceptanceCriteria),
     }];
@@ -208,7 +230,7 @@ export function normalizeBlueprint(raw: Record<string, unknown>): NormalizedProc
   if (hasExplicitOp) {
     operator = opRaw;
     if (operator === "noop") decision = "noop";
-    else if (operator === "patch_converge") {
+    else if (operator === "patch_converge" || operator === "prune_or_relax") {
       decision = supersededWorkflowIds.length === 0 && hasExplicitDecision && decisionRaw === "minor_patch" ? "minor_patch" : "suite_or_structural";
     } else decision = "suite_or_structural";
   } else {

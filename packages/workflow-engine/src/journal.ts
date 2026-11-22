@@ -564,3 +564,32 @@ export function listWfRunsByIdsOrdered(db: WfReadDb, ids: readonly string[], pro
 export function wfTerminalByIdemKey(db: WfReadDb, key: string): { status: string } | undefined {
   return db.prepare("SELECT status FROM lane_pilot_wf_run WHERE idem_key=?").get(key) as { status: string } | undefined;
 }
+
+export type WfStepFrictionFact = { runId: string; nodeId: string; state: string; answerKind: string | null; error: string | null; updatedAt: number };
+const FRICTION_ANSWER_KINDS = new Set(["skip", "abort", "rework"]);
+const parseStepAnswerKind = (raw: string | null): string | null => {
+  if (!raw) return null;
+  try {
+    const o = JSON.parse(raw) as Record<string, unknown> | null;
+    if (!o || typeof o !== "object") return null;
+    for (const k of ["answer_kind", "status", "answer"] as const) if (typeof o[k] === "string" && FRICTION_ANSWER_KINDS.has(o[k] as string)) return o[k] as string;
+    return typeof o.answer_kind === "string" && o.answer_kind.trim() ? o.answer_kind.trim() : null;
+  } catch { return null; }
+};
+export function listRunStepFrictionFacts(db: { prepare(sql: string): { all(...params: unknown[]): unknown[] } }, runIds: readonly string[]): WfStepFrictionFact[] {
+  const unique = [...new Set(runIds.map((id) => id.trim()).filter(Boolean))];
+  if (!unique.length) return [];
+  const out: WfStepFrictionFact[] = [];
+  for (let at = 0; at < unique.length; at += 200) {
+    const chunk = unique.slice(at, at + 200);
+    const rows = db.prepare(`SELECT run_id, node_id, state, output_json, error, updated_at FROM lane_pilot_wf_step
+      WHERE run_id IN (${chunk.map(() => "?").join(",")}) AND (state IN ('failed','skipped','canceled') OR (state = 'succeeded' AND output_json IS NOT NULL))
+      ORDER BY updated_at ASC`).all(...chunk) as Array<{ run_id: string; node_id: string; state: string; output_json: string | null; error: string | null; updated_at: number }>;
+    for (const r of rows) {
+      const answerKind = parseStepAnswerKind(r.output_json);
+      if (r.state === "succeeded" && (!answerKind || !FRICTION_ANSWER_KINDS.has(answerKind))) continue;
+      out.push({ runId: r.run_id, nodeId: r.node_id, state: r.state, answerKind, error: typeof r.error === "string" ? r.error.slice(0, 240) : null, updatedAt: Number(r.updated_at) });
+    }
+  }
+  return out.sort((a, b) => a.updatedAt - b.updatedAt);
+}

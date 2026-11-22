@@ -1,5 +1,5 @@
 import { redactKnown, sha256Hex } from "@lane-pilot/kit";
-import { WF_RUN_TABLE } from "@lane-pilot/workflow-engine";
+import { listRunStepFrictionFacts, WF_RUN_TABLE } from "@lane-pilot/workflow-engine";
 import type { LanePilotDatabase } from "./database";
 
 export type PilotDaySourceKind = "pilot_run" | "pilot_chat" | "workflow_run";
@@ -14,6 +14,8 @@ export type PilotDayAttemptFact = { id: string; taskId: string; threadId: string
 export type PilotDayStageFact = { taskId: string; stageId: string; state: string; reason: string | null };
 export type PilotDayEpisodeFact = { runId: string; threadId: string | null; processKey: string | null; goal: string | null; traps: string[]; skills: string[]; outcome: string | null };
 export type PilotDayChildWfFact = { id: string; workflowId: string; threadId: string | null; status: string; reason: string | null; summary: string | null };
+export type PilotDayGateFact = { taskId: string; gate: string; status: string; attempt: number; occurredAt: number };
+export type PilotDayWfStepFact = { runId: string; workflowId: string | null; nodeId: string; state: string; answerKind: string | null; error: string | null };
 
 export type PilotDayCandidate = {
   digestId: string; dayKey: string; sourceKind: PilotDaySourceKind; sourceId: string;
@@ -21,6 +23,7 @@ export type PilotDayCandidate = {
   state: string; objective: string | null; taskSummaries: string[];
   attempts: PilotDayAttemptFact[]; stageVerdicts: PilotDayStageFact[]; pmSkills: string[];
   episodes?: PilotDayEpisodeFact[]; childRuns?: PilotDayChildWfFact[];
+  gateRejections?: PilotDayGateFact[]; wfStepSignals?: PilotDayWfStepFact[];
   wfInputsJson?: string | null; wfOutputJson?: string | null; wfReason?: string | null; updatedAt: number;
 };
 
@@ -165,11 +168,38 @@ function attachTrajectoryFacts(db: LanePilotDatabase, selected: PilotDayCandidat
       fact: { id: String(w.id), workflowId: String(w.workflow_id), threadId: strAt(output, ["threadId", "childThreadId"]) ?? strAt(inputs, ["childThreadId", "threadId", "pmThreadId"]), status: String(w.status), reason: typeof w.reason === "string" && w.reason ? w.reason.slice(0, 300) : null, summary } satisfies PilotDayChildWfFact,
     };
   });
-  return selected.map((c) => ({
-    ...c,
-    episodes: episodes.filter((e) => (c.projectId && e.projectId === c.projectId) || (c.threadId && e.fact.threadId === c.threadId)).slice(0, 20).map((e) => e.fact),
-    childRuns: childRuns.filter((r) => (c.projectId && r.projectId === c.projectId) || (c.threadId && r.parentThreads.includes(c.threadId))).slice(0, 16).map((r) => r.fact),
-  }));
+  const pilotRunIds = selected.filter((c) => c.sourceKind === "pilot_run").map((c) => c.sourceId);
+  const gatesByRun = new Map<string, PilotDayGateFact[]>();
+  if (pilotRunIds.length) {
+    const gateRows = db.prepare(`SELECT run_id, task_id, gate, status, attempt, occurred_at FROM lane_pilot_gate_event
+      WHERE run_id IN (${pilotRunIds.map(() => "?").join(",")}) AND gate = 'owns-paths' AND status IN ('rejected','failed')
+      ORDER BY occurred_at DESC LIMIT 100`).all(...pilotRunIds) as Array<{ run_id: string; task_id: string; gate: string; status: string; attempt: number; occurred_at: number }>;
+    for (const g of gateRows) {
+      const list = gatesByRun.get(g.run_id) ?? [];
+      list.push({ taskId: g.task_id, gate: g.gate, status: g.status, attempt: Number(g.attempt), occurredAt: Number(g.occurred_at) });
+      gatesByRun.set(g.run_id, list);
+    }
+  }
+  const wfIdByRun = new Map<string, string | null>();
+  for (const c of selected) if (c.sourceKind === "workflow_run") wfIdByRun.set(c.sourceId, c.workflowId);
+  for (const r of childRuns) wfIdByRun.set(r.fact.id, r.fact.workflowId);
+  const stepsByRun = new Map<string, PilotDayWfStepFact[]>();
+  for (const s of listRunStepFrictionFacts(db, [...wfIdByRun.keys()])) {
+    const list = stepsByRun.get(s.runId) ?? [];
+    list.push({ runId: s.runId, workflowId: wfIdByRun.get(s.runId) ?? null, nodeId: s.nodeId, state: s.state, answerKind: s.answerKind, error: s.error });
+    stepsByRun.set(s.runId, list);
+  }
+  return selected.map((c) => {
+    const matchedChildren = childRuns.filter((r) => (c.projectId && r.projectId === c.projectId) || (c.threadId && r.parentThreads.includes(c.threadId))).slice(0, 16).map((r) => r.fact);
+    const wfRunIds = [...(c.sourceKind === "workflow_run" ? [c.sourceId] : []), ...matchedChildren.map((r) => r.id)];
+    return {
+      ...c,
+      episodes: episodes.filter((e) => (c.projectId && e.projectId === c.projectId) || (c.threadId && e.fact.threadId === c.threadId)).slice(0, 20).map((e) => e.fact),
+      childRuns: matchedChildren,
+      gateRejections: c.sourceKind === "pilot_run" ? (gatesByRun.get(c.sourceId) ?? []) : [],
+      wfStepSignals: wfRunIds.flatMap((id) => stepsByRun.get(id) ?? []).slice(0, 20),
+    };
+  });
 }
 
 /** Collects undigested daily Pilot runs, Pilot-activated chats, and finished user workflow runs in [sinceMs, untilMs]. */

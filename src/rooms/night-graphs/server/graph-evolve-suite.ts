@@ -13,6 +13,8 @@ import {
 import { BUILTIN_SOURCES, builtinWorkflow, isBuiltinWorkflowCategory, workflowCategory } from "../../workflow";
 import { createWorkflowArchitect, type ArchitectDeps, type WorkflowArchitect } from "../../workflow/server";
 import { checkDeprojectization, classifyEvolutionDiff, type DeprojectizeContext } from "../deprojectize";
+import { validateLeanSuitePolicy, type LeanPolicyViolation } from "../lean-suite-policy";
+import type { ProcessBlueprint } from "../process-blueprint";
 import {
   mapCompanionSkillsToWorkflows, publishMatchedSkillsOrRollbackWf, recordPublishedSkillEvolutionEvents,
   retireSupersededWorkflows, snapshotSkillBundles, stageCompanionSkillsForDraft, validateCompanionSkillCandidates,
@@ -33,9 +35,10 @@ export type GraphEvolveCollectSummary = {
     processKey: string; count: number; topSkills: string[]; sampleGoals: string[]; traps: string[];
     lessons?: string[]; categoryHint?: PilotDayCategoryHint | null;
     artifactSkeletons?: ArtifactSkeleton[]; archetypeHints?: string[];
+    overConstraintCount?: number; frictionSignals?: string[]; leanViolations?: string[];
   }>;
   deltas: Array<{ id: string; projectId: string | null; workflowId: string | null; stageArchetype: string; interventionKind: string; resolvedSkills: string[]; maskedSummary: string }>;
-  deltaIds: string[]; status: "ready" | "empty";
+  deltaIds: string[]; status: "ready" | "empty"; leanDebtCount?: number;
 };
 
 export type GraphEvolveDeps = {
@@ -167,6 +170,22 @@ function buildArchitect(deps: GraphEvolveDeps, dirFn: () => string): Pick<Workfl
   return createWorkflowArchitect(minCtx, { workflowEngine: { hasExecutor: archDeps.hasExecutor } } as never, archDeps);
 }
 
+type LeanOpts = { blueprint?: ProcessBlueprint | null; enforceLeanPolicy?: boolean; operator?: string };
+const formatProblems = (problems: ReadonlyArray<{ level: string; code: string; message: string }>) =>
+  problems.filter((p) => p.level === "error").map((p) => `${p.code}:${p.message}`).slice(0, 4).join("; ");
+
+function evalLeanPolicy(
+  items: ReadonlyArray<{ workflowId: string; candidate: GraphEvolveCandidate; candidateDef: Record<string, unknown> }>,
+  options?: LeanOpts,
+  log?: (m: string) => void,
+): Map<string, LeanPolicyViolation[]> {
+  const byWf = new Map<string, LeanPolicyViolation[]>();
+  if (!options?.enforceLeanPolicy && !options?.blueprint && options?.operator !== "prune_or_relax") return byWf;
+  const res = validateLeanSuitePolicy(items.map((i) => ({ workflowId: i.workflowId, scope: i.candidate.scope, definition: i.candidateDef })), { blueprint: options?.blueprint, log });
+  for (const v of res.violations) { const list = byWf.get(v.workflowId) ?? []; list.push(v); byWf.set(v.workflowId, list); }
+  return byWf;
+}
+
 function preparePass1Defs(candidate: GraphEvolveCandidate, existing: PreparedCandidate["existing"], diskBase: DiskBase | null, shouldPublish: boolean, candidateDef: Record<string, unknown>) {
   const workflowId = candidate.workflowId.trim();
   const projectId = existing?.projectId ?? (candidate.projectId?.trim() || "*");
@@ -185,47 +204,40 @@ function preparePass1Defs(candidate: GraphEvolveCandidate, existing: PreparedCan
 export async function validateEvolveSuiteCandidates(
   deps: Pick<GraphEvolveDeps, "db" | "globalDir" | "skillsDir" | "knownContext" | "resolveWorkflow" | "now" | "log">,
   candidates: readonly GraphEvolveCandidate[],
-  options?: { companionSkills?: readonly CompanionSkillCandidate[] },
+  options?: { companionSkills?: readonly CompanionSkillCandidate[]; blueprint?: ProcessBlueprint | null; enforceLeanPolicy?: boolean; operator?: string },
 ): Promise<{ ok: boolean; errors: string[] }> {
   const now = deps.now ?? Date.now, log = deps.log ?? (() => undefined), dirFn = deps.globalDir ?? globalWorkflowDir;
   const baseStore = await loadWorkflowStore({ builtin: BUILTIN_SOURCES, globalDir: dirFn() }).catch(() => null);
-  const errors: string[] = [];
-  const failedIds = new Set<string>();
-  const suiteMap = new Map<string, Workflow>();
+  const errors: string[] = [], failedIds = new Set<string>(), suiteMap = new Map<string, Workflow>();
   const pass1Items: Array<{ workflowId: string; candidate: GraphEvolveCandidate; candidateDef: Record<string, unknown>; finalDef: Record<string, unknown>; pass1Workflow: Workflow }> = [];
 
   for (const candidate of candidates) {
     const workflowId = candidate.workflowId.trim();
-    if (!workflowId || builtinWorkflow(workflowId)) {
-      if (workflowId) failedIds.add(workflowId);
-      errors.push(`${workflowId || "<empty>"}: id_reserved`); continue;
-    }
+    if (!workflowId || builtinWorkflow(workflowId)) { if (workflowId) failedIds.add(workflowId); errors.push(`${workflowId || "<empty>"}: id_reserved`); continue; }
     if (suiteMap.has(workflowId)) { errors.push(`${workflowId}: duplicate_workflow_id`); continue; }
     const category = candidate.definition.category ?? candidate.category;
     const candidateDef = category !== undefined && candidate.definition.category === undefined ? { ...candidate.definition, category } : candidate.definition;
     const diskBase = candidate.scope === "global" ? await readDiskBase(dirFn(), workflowId) : null;
     const { finalDef } = preparePass1Defs(candidate, null, diskBase, false, candidateDef);
     const loaded = loadWorkflow(finalDef);
-    if (!loaded.ok) {
-      failedIds.add(workflowId);
-      errors.push(`${workflowId}: ${loaded.problems.filter((p) => p.level === "error").map((p) => `${p.code}:${p.message}`).slice(0, 4).join("; ")}`);
-      continue;
-    }
+    if (!loaded.ok) { failedIds.add(workflowId); errors.push(`${workflowId}: ${formatProblems(loaded.problems)}`); continue; }
     suiteMap.set(workflowId, loaded.workflow);
     pass1Items.push({ workflowId, candidate, candidateDef, finalDef, pass1Workflow: loaded.workflow });
   }
 
   const { ordered, cyclic } = topologicalSortSuite(pass1Items);
-  for (const item of cyclic) {
-    suiteMap.delete(item.workflowId); failedIds.add(item.workflowId);
-    errors.push(`${item.workflowId}: subworkflow_cycle`);
+  for (const item of cyclic) { suiteMap.delete(item.workflowId); failedIds.add(item.workflowId); errors.push(`${item.workflowId}: subworkflow_cycle`); }
+  for (const [wfId, vs] of evalLeanPolicy(pass1Items, options, log)) {
+    suiteMap.delete(wfId); failedIds.add(wfId);
+    errors.push(`${wfId}: lean_policy:${vs.map((v) => `${v.code}${v.nodeId ? `(${v.nodeId})` : ""}`).join(",")}`);
+    log(`WARN [nightGraphs.graphEvolve] rejected_lean_policy ${redactKnown(JSON.stringify({ workflowId: wfId, codes: vs.map((v) => v.code) }))}`);
   }
   const resolveSuite = (id: string, version?: number): Workflow | null => {
     const s = suiteMap.get(id);
-    if (s && (version === undefined || s.version === version)) return s;
-    return deps.resolveWorkflow?.(id, version) ?? baseStore?.resolve(id, version) ?? builtinWorkflow(id, version);
+    return (s && (version === undefined || s.version === version)) ? s : (deps.resolveWorkflow?.(id, version) ?? baseStore?.resolve(id, version) ?? builtinWorkflow(id, version));
   };
   for (const item of ordered) {
+    if (failedIds.has(item.workflowId)) continue;
     const badDep = extractSubworkflowRefs(item.pass1Workflow).find((dep) => failedIds.has(dep));
     if (badDep) { suiteMap.delete(item.workflowId); failedIds.add(item.workflowId); errors.push(`${item.workflowId}: dependency_failed:${badDep}`); continue; }
     if (item.candidate.scope === "global") {
@@ -233,11 +245,7 @@ export async function validateEvolveSuiteCandidates(
       if (!verdict.ok) { suiteMap.delete(item.workflowId); failedIds.add(item.workflowId); errors.push(`${item.workflowId}: deprojectize:${verdict.findings.map((f) => f.code).join(",")}`); continue; }
     }
     const full = loadWorkflow(item.finalDef, { resolve: resolveSuite });
-    if (!full.ok) {
-      suiteMap.delete(item.workflowId); failedIds.add(item.workflowId);
-      errors.push(`${item.workflowId}: ${full.problems.filter((p) => p.level === "error").map((p) => `${p.code}:${p.message}`).slice(0, 4).join("; ")}`);
-      continue;
-    }
+    if (!full.ok) { suiteMap.delete(item.workflowId); failedIds.add(item.workflowId); errors.push(`${item.workflowId}: ${formatProblems(full.problems)}`); continue; }
     suiteMap.set(item.workflowId, full.workflow);
     for (const tc of testCasesOf(full.workflow)) {
       const res = await runDraftTest({ db: deps.db as never, harnessVersion: HARNESS_VERSION, resolveWorkflow: resolveSuite, now }, full.workflow, tc);
@@ -257,6 +265,7 @@ export async function applyGraphEvolveCandidates(
   options?: {
     deltaIds?: readonly string[]; publishApprovedSuite?: boolean; auditVerdict?: string;
     companionSkills?: readonly CompanionSkillCandidate[]; operator?: string; supersededWorkflowIds?: readonly string[];
+    blueprint?: ProcessBlueprint | null; enforceLeanPolicy?: boolean;
   },
 ): Promise<{ outcomes: GraphEvolveOutcome[]; publishedCount: number; proposedCount: number; rejectedCount: number; summary: string }> {
   const now = deps.now ?? Date.now, log = deps.log ?? (() => undefined), dirFn = deps.globalDir ?? globalWorkflowDir, skillsFn = deps.skillsDir ?? globalSkillsDir;
@@ -264,57 +273,42 @@ export async function applyGraphEvolveCandidates(
   const baseStore = await loadWorkflowStore({ builtin: BUILTIN_SOURCES, globalDir: dirFn() }).catch(() => null);
   const outcomes: GraphEvolveOutcome[] = [];
   let publishedCount = 0, proposedCount = 0, rejectedCount = 0, citedAnyDelta = false;
-  const failedSuiteIds = new Set<string>();
-  const suiteMap = new Map<string, Workflow>();
-  const preparedList: PreparedCandidate[] = [];
+  const failedSuiteIds = new Set<string>(), suiteMap = new Map<string, Workflow>(), preparedList: PreparedCandidate[] = [];
   const auditPassed = options?.auditVerdict === undefined || options.auditVerdict === "pass";
+  const rejectInvalid = (workflowId: string, kind: GraphEvolveOutcome["kind"], reason: string, event: string, detail: Record<string, unknown>) => {
+    suiteMap.delete(workflowId); failedSuiteIds.add(workflowId);
+    log(`WARN [nightGraphs.graphEvolve] ${event} ${redactKnown(JSON.stringify(detail))}`);
+    outcomes.push({ workflowId, draftId: null, kind, status: "rejected_invalid", version: null, reason });
+    rejectedCount += 1;
+  };
 
   for (const candidate of candidates) {
     const workflowId = candidate.workflowId.trim();
-    if (!workflowId || builtinWorkflow(workflowId)) {
-      if (workflowId) failedSuiteIds.add(workflowId);
-      log(`WARN [nightGraphs.graphEvolve] reserved_or_empty ${redactKnown(JSON.stringify({ workflowId }))}`);
-      outcomes.push({ workflowId, draftId: null, kind: "structural_or_new", status: "rejected_invalid", version: null, reason: "id_reserved" });
-      rejectedCount += 1; continue;
-    }
-    if (suiteMap.has(workflowId)) {
-      outcomes.push({ workflowId, draftId: null, kind: "structural_or_new", status: "rejected_invalid", version: null, reason: "duplicate_workflow_id" });
-      rejectedCount += 1; continue;
-    }
+    if (!workflowId || builtinWorkflow(workflowId)) { rejectInvalid(workflowId, "structural_or_new", "id_reserved", "reserved_or_empty", { workflowId }); continue; }
+    if (suiteMap.has(workflowId)) { outcomes.push({ workflowId, draftId: null, kind: "structural_or_new", status: "rejected_invalid", version: null, reason: "duplicate_workflow_id" }); rejectedCount += 1; continue; }
     const category = candidate.definition.category ?? candidate.category;
     const candidateDef = category !== undefined && candidate.definition.category === undefined ? { ...candidate.definition, category } : candidate.definition;
     const existing = drafts.listEvolutionDrafts({ workflowId, scope: candidate.scope, ...(candidate.scope === "project" && candidate.projectId ? { projectId: candidate.projectId } : {}) })[0] ?? null;
     const diskBase = candidate.scope === "global" ? await readDiskBase(dirFn(), workflowId) : null;
     const baseDef = existing?.publishedVersion ? (drafts.latestPublishedSnapshot(existing.id)?.definition ?? diskBase?.def ?? null) : (diskBase?.def ?? null);
     const diff = classifyEvolutionDiff(baseDef, candidateDef, { log });
-    const wouldPublish = Boolean((diff.kind === "minor_patch" && baseDef) || options?.publishApprovedSuite);
+    const isPruneExisting = options?.operator === "prune_or_relax" && Boolean(baseDef);
+    const wouldPublish = Boolean((diff.kind === "minor_patch" && baseDef) || isPruneExisting || options?.publishApprovedSuite);
     const shouldPublish = Boolean(auditPassed && wouldPublish);
     if (!auditPassed && wouldPublish) log(`INFO [nightGraphs.graphEvolve] held_without_audit_pass ${redactKnown(JSON.stringify({ workflowId, auditVerdict: options?.auditVerdict }))}`);
     const { projectId, finalDef } = preparePass1Defs(candidate, existing, diskBase, shouldPublish, candidateDef);
     const loaded1 = loadWorkflow(finalDef);
-    if (!loaded1.ok) {
-      const reason = loaded1.problems.filter((p) => p.level === "error").map((p) => `${p.code}:${p.message}`).slice(0, 4).join("; ");
-      failedSuiteIds.add(workflowId);
-      log(`WARN [nightGraphs.graphEvolve] invalid_workflow ${redactKnown(JSON.stringify({ workflowId, reason }))}`);
-      outcomes.push({ workflowId, draftId: null, kind: diff.kind, status: "rejected_invalid", version: null, reason });
-      rejectedCount += 1; continue;
-    }
+    if (!loaded1.ok) { rejectInvalid(workflowId, diff.kind, formatProblems(loaded1.problems), "invalid_workflow", { workflowId, reason: formatProblems(loaded1.problems) }); continue; }
     suiteMap.set(workflowId, loaded1.workflow);
     preparedList.push({ candidate, workflowId, projectId, candidateDef, finalDef, existing, diskBase, baseDef, diff, shouldPublish, pass1Workflow: loaded1.workflow });
   }
 
   const { ordered, cyclic } = topologicalSortSuite(preparedList);
-  for (const item of cyclic) {
-    suiteMap.delete(item.workflowId); failedSuiteIds.add(item.workflowId);
-    log(`WARN [nightGraphs.graphEvolve] invalid_workflow ${redactKnown(JSON.stringify({ workflowId: item.workflowId, reason: "subworkflow_cycle" }))}`);
-    outcomes.push({ workflowId: item.workflowId, draftId: null, kind: item.diff.kind, status: "rejected_invalid", version: null, reason: "subworkflow_cycle" });
-    rejectedCount += 1;
-  }
+  for (const item of cyclic) rejectInvalid(item.workflowId, item.diff.kind, "subworkflow_cycle", "invalid_workflow", { workflowId: item.workflowId, reason: "subworkflow_cycle" });
   if (ordered.length) log(`INFO [nightGraphs.graphEvolve] suite_topology ${redactKnown(JSON.stringify({ order: ordered.map((i) => i.workflowId) }))}`);
   const resolveSuite = (id: string, version?: number): Workflow | null => {
     const s = suiteMap.get(id);
-    if (s && (version === undefined || s.version === version)) return s;
-    return deps.resolveWorkflow?.(id, version) ?? baseStore?.resolve(id, version) ?? builtinWorkflow(id, version);
+    return (s && (version === undefined || s.version === version)) ? s : (deps.resolveWorkflow?.(id, version) ?? baseStore?.resolve(id, version) ?? builtinWorkflow(id, version));
   };
   const companionSkills = options?.companionSkills ?? [];
   const skillsByWf = mapCompanionSkillsToWorkflows(ordered.map((o) => o.workflowId), new Set(candidates.map((c) => c.workflowId.trim())), companionSkills);
@@ -324,18 +318,13 @@ export async function applyGraphEvolveCandidates(
   let lastPublishedTarget: { draftId: string; draftVersion: number; workflowId: string; operator: string } | null = null;
   const operator = options?.operator?.trim() || "graph_evolve";
   const supersededIds = options?.supersededWorkflowIds ?? [];
+  const leanByWf = evalLeanPolicy(ordered.filter((i) => i.candidate.scope === "global"), options, log);
 
   for (let itemIdx = 0; itemIdx < ordered.length; itemIdx += 1) {
     const item = ordered[itemIdx]!;
     const { candidate, workflowId, projectId, candidateDef, finalDef, existing, diskBase, baseDef, diff, shouldPublish, pass1Workflow } = item;
     const failedDep = extractSubworkflowRefs(pass1Workflow).find((depId) => failedSuiteIds.has(depId));
-    if (failedDep) {
-      suiteMap.delete(workflowId); failedSuiteIds.add(workflowId);
-      const reason = `dependency_failed:${failedDep}`;
-      log(`WARN [nightGraphs.graphEvolve] dependency_failed ${redactKnown(JSON.stringify({ workflowId, failedDep }))}`);
-      outcomes.push({ workflowId, draftId: null, kind: diff.kind, status: "rejected_invalid", version: null, reason });
-      rejectedCount += 1; continue;
-    }
+    if (failedDep) { rejectInvalid(workflowId, diff.kind, `dependency_failed:${failedDep}`, "dependency_failed", { workflowId, failedDep }); continue; }
     if (candidate.scope === "global") {
       const verdict = checkDeprojectization(candidateDef, { ...deps.knownContext, log });
       if (!verdict.ok) {
@@ -346,14 +335,14 @@ export async function applyGraphEvolveCandidates(
         rejectedCount += 1; continue;
       }
     }
-    const fullLoaded = loadWorkflow(finalDef, { resolve: resolveSuite });
-    if (!fullLoaded.ok) {
-      suiteMap.delete(workflowId); failedSuiteIds.add(workflowId);
-      const reason = fullLoaded.problems.filter((p) => p.level === "error").map((p) => `${p.code}:${p.message}`).slice(0, 4).join("; ");
-      log(`WARN [nightGraphs.graphEvolve] invalid_workflow ${redactKnown(JSON.stringify({ workflowId, reason }))}`);
-      outcomes.push({ workflowId, draftId: null, kind: diff.kind, status: "rejected_invalid", version: null, reason });
-      rejectedCount += 1; continue;
+    const leanVs = leanByWf.get(workflowId);
+    if (leanVs?.length) {
+      const codes = leanVs.map((v) => v.code);
+      rejectInvalid(workflowId, diff.kind, `lean_policy:${codes.join(",")}`, "rejected_lean_policy", { workflowId, codes });
+      continue;
     }
+    const fullLoaded = loadWorkflow(finalDef, { resolve: resolveSuite });
+    if (!fullLoaded.ok) { const reason = formatProblems(fullLoaded.problems); rejectInvalid(workflowId, diff.kind, reason, "invalid_workflow", { workflowId, reason }); continue; }
     suiteMap.set(workflowId, fullLoaded.workflow);
     log(`INFO [nightGraphs.graphEvolve] category_selected ${redactKnown(JSON.stringify({ workflowId, categoryId: fullLoaded.workflow.category?.id ?? workflowCategory(fullLoaded.workflow), isDynamic: Boolean(fullLoaded.workflow.category && !isBuiltinWorkflowCategory(fullLoaded.workflow.category.id)) }))}`);
 
@@ -428,12 +417,15 @@ export async function applyGraphEvolveCandidates(
       }
       lastPublishedTarget = { draftId: recorded.id, draftVersion: recorded.version, workflowId, operator };
       if (candidate.sourceDeltaIds?.length) { citedAnyDelta = true; markTrajectoryDeltasProcessed(deps.db, candidate.sourceDeltaIds, now(), log); }
+      const isPruneExisting = options?.operator === "prune_or_relax" && Boolean(baseDef);
       postOwnerItem(deps.db, {
         key: `workflow-evolved:${recorded.id}:v${nextVer}`, source: "night", kind: "workflow_evolved_digest", projectId: ownerProject, wake: false,
         what: baseDef ? `Граф «${titleRu}» (${workflowId}) автоматически обновлён до v${nextVer}` : `Граф «${titleRu}» (${workflowId}) опубликован как v${nextVer}`,
-        why: baseDef
-          ? `Минорное ночное улучшение (${diff.reasons.join(", ") || "уточнение скиллов и проверок"}) прошло фильтр депроектизации и все симуляции (${results.length}/${results.length}). Доступен откат в 1 клик.`
-          : `Одобренный сьют прошёл фильтр депроектизации, аудит и все симуляции (${results.length}/${results.length}). Доступен откат в 1 клик.`,
+        why: isPruneExisting
+          ? `Саморегулирующееся облегчение графа (prune_or_relax: ${diff.reasons.join(", ") || "упрощение и снятие избыточных ограничений"}) прошло фильтр депроектизации, lean-политику и все симуляции (${results.length}/${results.length}). Доступен откат в 1 клик.`
+          : baseDef
+            ? `Минорное ночное улучшение (${diff.reasons.join(", ") || "уточнение скиллов и проверок"}) прошло фильтр депроектизации и все симуляции (${results.length}/${results.length}). Доступен откат в 1 клик.`
+            : `Одобренный сьют прошёл фильтр депроектизации, аудит и все симуляции (${results.length}/${results.length}). Доступен откат в 1 клик.`,
         evidence: [{ kind: "file", ref: publishedPath }],
         actions: [{ id: "rollback", label: "Откатить версию", cli: rpcLine("pilot_panel_rollback_workflow_draft", { draftId: recorded.id }), rpc: { method: "pilot_panel_rollback_workflow_draft", input: { draftId: recorded.id } } }],
       }, now());
@@ -466,6 +458,9 @@ export async function applyGraphEvolveCandidates(
       supersededSnapshots, fallbackTarget: lastPublishedTarget, log,
     });
     deps.invalidateCatalog?.();
+    if (operator === "prune_or_relax") {
+      log(`INFO [nightGraphs.graphEvolve] prune_or_relax_applied ${redactKnown(JSON.stringify({ publishedCount, workflowIds: outcomes.filter((o) => o.status === "auto_published").map((o) => o.workflowId), skillIds: companionSkills.map((s) => s.skillId) }))}`);
+    }
   }
   if (options?.deltaIds?.length && !citedAnyDelta && rejectedCount === 0 && (publishedCount > 0 || (!options?.publishApprovedSuite && proposedCount > 0))) {
     fixEvolveLog(log, "batch_mark_deltas", { count: options.deltaIds.length });

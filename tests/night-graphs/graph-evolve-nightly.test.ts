@@ -1,22 +1,32 @@
 // Owns: src/rooms/night-graphs/server/graph-evolve-graph.ts, src/rooms/night-graphs/server/graph-evolve-pipeline.ts, src/rooms/night-graphs/server/graph-evolve-suite.ts
-import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { forgetSecrets, registerSecrets } from "@lane-pilot/kit";
 import {
+  WorkflowEngine,
   createDraftStore,
   createStatusResolver,
   definitionSha256,
+  executorKey,
   loadWorkflow,
   loadWorkflowStore,
+  lowerWorkflow,
+  outputFields,
+  registerReducers,
+  routeIntent,
   runDraftTest,
   testCasesOf,
+  type Field,
+  type NodeExecutor,
+  type StepContext,
 } from "@lane-pilot/workflow-engine";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { recordTrajectoryDelta } from "../../src/rooms/errands";
 import { lintSkillDir, readSkillDir } from "../../src/rooms/forge/skill-lint";
-import { checkDeprojectization, classifyEvolutionDiff } from "../../src/rooms/night-graphs";
+import { checkDeprojectization, classifyEvolutionDiff, validateLeanSuitePolicy } from "../../src/rooms/night-graphs";
 import {
   GRAPH_EVOLVE_WORKFLOW,
   applyGraphEvolveCandidates,
@@ -33,6 +43,8 @@ import {
 import { readExistingCompanionSkills } from "../../src/rooms/night-graphs/server/companion-skill-evolve";
 import { synthesizeSuiteAndSkillsFromBlueprint } from "../../src/rooms/night-graphs/server/graph-evolve-pipeline";
 import { collectOwnerWaiting, listOpenOwnerItems } from "../../src/rooms/owner-waiting";
+import { PILOT_PROCESS_STATE_REL_PATH, readPilotProcessStateCas, setCachedProcessState } from "../../src/rooms/pilot-panel";
+import { createProcessStateIo, registerPilotProcessStateAction } from "../../src/rooms/pilot-panel/server/workflow-drafts";
 import { openDatabase, savePilotDayDigest } from "../../src/rooms/plugin-db";
 import { listSkillEvolutionsForDraft } from "../../src/rooms/storage";
 import { BUILTIN_SOURCES, builtinWorkflow } from "../../src/rooms/workflow";
@@ -137,6 +149,7 @@ afterEach(() => {
   forgetSecrets();
   while (tempDirs.length) {
     const dir = tempDirs.pop()!;
+    setCachedProcessState(dir, null);
     rmSync(dir, { recursive: true, force: true });
   }
 });
@@ -2067,5 +2080,1027 @@ describe("Operator-driven multi-day convergence, companion skills, and auditVerd
     expect(stagedRows[0]!.candidateFiles.find((f) => f.path === "references/golden-skeleton.md")?.text).toContain("V2 Held Section");
 
     expect(logs.some((line) => line.includes("INFO [nightGraphs.graphEvolve] held_without_audit_pass"))).toBe(true);
+  });
+});
+
+describe("closed-loop self-regulating lean evolution (prune_or_relax + fixed-point + live WorkflowEngine)", () => {
+  const websitesCategory = { id: "websites", label: { en: "Websites & Web Design", ru: "Сайты и веб-дизайн" } };
+
+  function makeRigidV1Suite(): { cmsDef: Record<string, unknown>; suiteDef: Record<string, unknown> } {
+    const cmsDef: Record<string, unknown> = {
+      id: "site-cms-build-qa",
+      version: 1,
+      category: websitesCategory,
+      name: { en: "Site CMS Build & QA", ru: "Сборка CMS и QA сайта" },
+      description: {
+        en: "Builds CMS templates and verifies QA for {{$inputs.domain_brief}}.",
+        ru: "Собирает CMS-шаблоны и проверяет QA для {{$inputs.domain_brief}}.",
+      },
+      status: "published",
+      triggers: [{ type: "manual" }],
+      inputs: {
+        goal: { type: "string", required: true, description: "Website delivery goal" },
+        domain_brief: { type: "string", default: "", description: "Domain brief" },
+        project_archetype: { type: "string", default: "landing", description: "Website archetype" },
+        legacy_domain: { type: "string", required: true, description: "Legacy domain to migrate" },
+        content_factory_endpoint: { type: "string", default: "", description: "Content factory endpoint" },
+      },
+      outputs: { status: "done|blocked", build_summary: "string", legacy_notes: "string" },
+      goal_check: "artifact",
+      requires: { plugins: ["lane-pilot"], skills: ["site-craft-standard"], secrets: [], machines: [] },
+      nodes: [
+        {
+          id: "legacy_import",
+          type: "agent",
+          role: "analyst",
+          skills: ["site-craft-standard"],
+          title: { en: "Import legacy domain", ru: "Импорт легаси-домена" },
+          prompt: "Inspect legacy domain {{$inputs.legacy_domain}} for {{$inputs.domain_brief}}.",
+          out: { legacy_notes: "string", handoff: "string" },
+        },
+        {
+          id: "build_cms",
+          type: "lp-task",
+          title: { en: "Build CMS templates", ru: "Собрать CMS-шаблоны" },
+          owns_paths: ["cms/**"],
+          contract: {
+            title: "Build CMS for {{$inputs.goal}}",
+            goal: "Implement {{$inputs.project_archetype}} with {{legacy_import.legacy_notes}}",
+            acceptance: ["CMS templates build cleanly"],
+          },
+          out: { state: "accepted|blocked|failed", summary: "string" },
+        },
+        {
+          id: "qa_gate",
+          type: "human",
+          title: { en: "Approve CMS build", ru: "Утвердить сборку CMS" },
+          question: "Approve CMS build?",
+          options: ["approve", "abort"],
+          out: { answer: "string", answer_kind: "approve|abort" },
+        },
+        {
+          id: "done",
+          type: "action",
+          action: "emit",
+          map: { status: "'done'", build_summary: "build_cms.summary", legacy_notes: "legacy_import.legacy_notes" },
+        },
+      ],
+      edges: [
+        { from: "start", to: "legacy_import" },
+        { from: "legacy_import", to: "build_cms" },
+        { from: "build_cms", to: "qa_gate" },
+        { from: "qa_gate", to: "done" },
+      ],
+      test: {
+        id: "site-cms-build-qa-v1-sim",
+        sim: {
+          input: { goal: "Rebuild site", domain_brief: "Portal", project_archetype: "portal", legacy_domain: "old.example" },
+          stubs: {
+            legacy_import: { legacy_notes: "Migrated 4 pages", handoff: "Legacy imported" },
+            build_cms: { state: "accepted", summary: "CMS built" },
+          },
+          human_answers: { qa_gate: "approve" },
+          expect_path: ["legacy_import", "build_cms", "qa_gate", "done"],
+          expect_status: "succeeded",
+        },
+      },
+    };
+
+    const suiteDef: Record<string, unknown> = {
+      id: "site-suite",
+      version: 1,
+      category: websitesCategory,
+      name: { en: "Site Delivery Suite", ru: "Сюит разработки сайта" },
+      description: {
+        en: "Orchestrates website delivery for {{$inputs.project_archetype}}.",
+        ru: "Оркестрирует разработку сайта для {{$inputs.project_archetype}}.",
+      },
+      status: "published",
+      triggers: ["manual"],
+      inputs: {
+        goal: { type: "string", required: true, description: "Website delivery goal" },
+        domain_brief: { type: "string", default: "", description: "Domain brief" },
+        project_archetype: { type: "string", default: "landing", description: "Website archetype" },
+        legacy_domain: { type: "string", default: "", description: "Optional legacy domain" },
+        identity_profile: { type: "string", default: "", description: "Optional identity profile" },
+        content_factory_endpoint: { type: "string", default: "", description: "Optional endpoint" },
+      },
+      outputs: { status: "done|blocked", summary: "string" },
+      goal_check: "artifact",
+      requires: { plugins: ["lane-pilot"], skills: [], secrets: [], machines: [] },
+      nodes: [
+        {
+          id: "strategy",
+          type: "agent",
+          role: "analyst",
+          title: { en: "Strategy & CTA", ru: "Стратегия и CTA" },
+          prompt: "Draft strategy for {{$inputs.goal}} ({{$inputs.domain_brief}}).",
+          out: { cta_map: "string", handoff: "string" },
+        },
+        {
+          id: "imagery",
+          type: "agent",
+          role: "specialist:visual-artist",
+          title: { en: "Generate imagery", ru: "Сгенерировать визуалы" },
+          prompt: "Generate imagery for {{$inputs.identity_profile}}.",
+          out: { photo_sets: "string", handoff: "string" },
+        },
+        {
+          id: "cms_phase",
+          type: "subworkflow",
+          workflow: "site-cms-build-qa",
+          title: { en: "CMS Build & QA", ru: "Сборка CMS и QA" },
+          inputs: {
+            goal: "{{$inputs.goal}}",
+            domain_brief: "{{$inputs.domain_brief}}",
+            project_archetype: "{{$inputs.project_archetype}}",
+            legacy_domain: "{{$inputs.legacy_domain}}",
+            content_factory_endpoint: "{{$inputs.content_factory_endpoint}}",
+            imagery_pack: "{{imagery.photo_sets}}",
+          },
+          out: { status: "done|blocked", build_summary: "string", legacy_notes: "string" },
+          guards: { maxVisits: 1 },
+        },
+        {
+          id: "done",
+          type: "action",
+          action: "emit",
+          map: { status: "cms_phase.status", summary: "cms_phase.build_summary" },
+        },
+      ],
+      edges: [
+        { from: "start", to: "strategy" },
+        { from: "strategy", to: "imagery", when: "$inputs.identity_profile != ''" },
+        { from: "strategy", to: "cms_phase", when: "$inputs.identity_profile == ''" },
+        { from: "imagery", to: "cms_phase" },
+        { from: "cms_phase", to: "done" },
+      ],
+      test: {
+        id: "site-suite-v1-sim",
+        sim: {
+          input: { goal: "Rebuild site", domain_brief: "Portal", project_archetype: "portal", legacy_domain: "old.example", identity_profile: "owner-main" },
+          stubs: {
+            strategy: { cta_map: "Primary CTA", handoff: "Strategy ready" },
+            imagery: { photo_sets: "hero.png", handoff: "Imagery ready" },
+            cms_phase: { status: "done", build_summary: "CMS built", legacy_notes: "Migrated 4 pages" },
+          },
+          expect_path: ["strategy", "imagery", "cms_phase", "done"],
+          expect_status: "succeeded",
+        },
+      },
+    };
+
+    return { cmsDef, suiteDef };
+  }
+
+  function writeBloatedSiteCraftSkill(skillsDir: string): string {
+    const skillDir = join(skillsDir, "site-craft-standard");
+    mkdirSync(join(skillDir, "references"), { recursive: true });
+    writeFileSync(
+      join(skillDir, "SKILL.md"),
+      [
+        "---",
+        "name: site-craft-standard",
+        'description: "Universal website build, CMS integration, and responsive QA standard. Use when building or verifying website layouts and CMS templates. Do not use for backend APIs."',
+        "---",
+        "",
+        "# site-craft-standard",
+        "",
+        "## Scope",
+        "",
+        "- Use when: building or verifying website layouts, CMS templates, and responsive QA.",
+        "- Do not use: backend-only APIs or non-web CLI tools.",
+        "",
+        "## Core Rules",
+        "",
+        "- Verify 375px mobile and 1280px desktop breakpoints before QA approval.",
+        "- Validate contrast and keyboard focus states on primary CTA controls.",
+        "",
+        "## References",
+        "",
+        "- [Golden Skeleton](references/golden-skeleton.md)",
+        "- [QA Rubric](references/qa-rubric.md)",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+    const bloatedSections = [
+      "Conversion Goal & Fold Spec",
+      "Conversion Goals and Above-the-Fold Specification",
+      "Responsive Component Inventory",
+      "Responsive Components & Token Inventory",
+      "Navigation & Footer Map",
+      "Navigation Menu & Footer Structure",
+      "Legacy Route Redirect Map [optional: when legacy_domain is provided]",
+      "Legacy Domain Redirect Mapping [optional: when legacy_domain is provided]",
+      "Brand Imagery & Asset Checklist [optional: when identity_profile is provided]",
+      "Brand Visual Imagery Checklist [optional: when identity_profile is provided]",
+      "Content Factory Ingest Contract [optional: when content_factory_endpoint is provided]",
+      "Content Factory Endpoint Schema [optional: when content_factory_endpoint is provided]",
+      "Form & Lead Capture States",
+      "Lead Form Validation States",
+      "Typography & Spacing Scale",
+      "Typography Scale & Spacing Rhythm",
+      "Accessibility & Focus Audit",
+      "Accessibility Focus & Contrast Audit",
+      "SEO Metadata & OpenGraph Tags",
+      "SEO Meta Tags & OpenGraph Spec",
+      "QA Contrast & Viewport Report",
+      "QA Viewport & Contrast Verification Report",
+    ];
+    expect(bloatedSections).toHaveLength(22);
+    writeFileSync(
+      join(skillDir, "references", "golden-skeleton.md"),
+      `# Golden Skeleton: site-craft-standard\n\n${bloatedSections.map((title, i) => `## ${i + 1}. ${title}\n\nProvide structured details for ${title.replace(/\s*\[optional:[^\]]+\]/i, "")}.\n`).join("\n")}`,
+      "utf8",
+    );
+    writeFileSync(
+      join(skillDir, "references", "qa-rubric.md"),
+      "# QA Rubric: site-craft-standard\n\n- [ ] 375px mobile and 1280px desktop layouts pass visual and contrast checks.\n",
+      "utf8",
+    );
+    return skillDir;
+  }
+
+  function makeLeanV2Suite(): { cmsDef: Record<string, unknown>; suiteDef: Record<string, unknown>; blueprint: Record<string, unknown> } {
+    const cmsDef: Record<string, unknown> = {
+      id: "site-cms-build-qa",
+      version: 2,
+      category: websitesCategory,
+      name: { en: "Site CMS Build & QA", ru: "Сборка CMS и QA сайта" },
+      description: {
+        en: "Compiles CMS templates, layout and responsive QA verification for {{$inputs.domain_brief}}.",
+        ru: "Собирает CMS-шаблоны, вёрстку и запускает QA-проверку адаптива для {{$inputs.domain_brief}}.",
+      },
+      status: "draft",
+      tags: ["cms", "qa", "website", "build", "responsive"],
+      triggers: ["chat", "manual"],
+      examples: {
+        en: [
+          "Run CMS build and QA phase for the website",
+          "Verify CMS templates and responsive QA checks",
+        ],
+        ru: [
+          "Запусти сборку CMS и QA-проверку сайта",
+          "Проведи фазу сборки CMS и адаптивного QA",
+        ],
+      },
+      not_for: ["backend API microservices", "SEO keyword research"],
+      inputs: {
+        goal: { type: "string", required: true, description: "Website delivery goal" },
+        domain_brief: { type: "string", default: "", description: "Domain brief" },
+        project_archetype: { type: "string", default: "landing", description: "Website archetype" },
+        scope_tier: { type: "express|standard|full", default: "standard", description: "Execution depth" },
+        legacy_domain: { type: "string", default: "", description: "Optional legacy domain to migrate" },
+        legacy_notes_in: { type: "string", default: "", description: "Optional pre-imported legacy notes" },
+        content_factory_endpoint: { type: "string", default: "", description: "Optional content factory endpoint" },
+        imagery_pack: { type: "string", default: "", description: "Optional imagery assets pack" },
+      },
+      outputs: { status: "done|blocked", build_summary: "string", legacy_notes: "string" },
+      goal_check: "artifact",
+      requires: { plugins: ["lane-pilot"], skills: ["site-craft-standard"], secrets: [], machines: [] },
+      nodes: [
+        {
+          id: "legacy_import",
+          type: "agent",
+          role: "analyst",
+          skills: ["site-craft-standard"],
+          title: { en: "Import legacy domain", ru: "Импорт легаси-домена" },
+          prompt: "Inspect legacy domain {{$inputs.legacy_domain}} for {{$inputs.domain_brief}} ({{$inputs.scope_tier}}).",
+          skip_when: "$inputs.scope_tier == 'express' || $inputs.legacy_domain == ''",
+          skip_out: { legacy_notes: "'skipped (no legacy domain)'", handoff: "skipped" },
+          out: { legacy_notes: "string", handoff: "string" },
+        },
+        {
+          id: "build_cms",
+          type: "lp-task",
+          title: { en: "Build site & CMS", ru: "Собрать сайт и CMS" },
+          owns_paths: ["**"],
+          contract: {
+            title: "Build site for {{$inputs.goal}}",
+            goal: "Implement {{$inputs.project_archetype}} ({{$inputs.scope_tier}}). Legacy: {{legacy_import.legacy_notes}}. Imagery: {{$inputs.imagery_pack}}",
+            acceptance: ["375px and 1280px states pass"],
+          },
+          out: { state: "accepted|blocked|failed", summary: "string" },
+        },
+        {
+          id: "qa_gate",
+          type: "human",
+          title: { en: "Review CMS build & QA", ru: "Проверить сборку и QA" },
+          question: "Approve CMS build and QA checks, or skip for express delivery?",
+          options: ["approve", "skip", "rework", "abort"],
+          out: { answer: "string", answer_kind: "approve|skip|rework|abort" },
+        },
+        {
+          id: "save_state",
+          type: "action",
+          action: "lp.save_process_state",
+          title: { en: "Save CMS phase process state", ru: "Сохранить состояние фазы CMS" },
+          params: {
+            stage: "cms-build-qa",
+            workflowId: "site-cms-build-qa",
+            activeSkills: ["site-craft-standard"],
+            notes: "{{build_cms.summary}}",
+          },
+          out: { saved: "bool", path: "string", stage: "string" },
+        },
+        {
+          id: "done",
+          type: "action",
+          action: "emit",
+          map: { status: "'done'", build_summary: "build_cms.summary", legacy_notes: "legacy_import.legacy_notes" },
+        },
+        {
+          id: "done_blocked",
+          type: "action",
+          action: "emit",
+          map: { status: "'blocked'", build_summary: "build_cms.summary", legacy_notes: "legacy_import.legacy_notes" },
+        },
+      ],
+      edges: [
+        { from: "start", to: "legacy_import" },
+        { from: "legacy_import", to: "build_cms" },
+        { from: "build_cms", to: "qa_gate" },
+        { from: "qa_gate", to: "save_state", when: "qa_gate.answer_kind == 'approve' || qa_gate.answer_kind == 'skip'" },
+        { from: "qa_gate", to: "done_blocked", when: "qa_gate.answer_kind == 'abort' || qa_gate.answer_kind == 'rework'" },
+        { from: "save_state", to: "done" },
+      ],
+      test: {
+        id: "site-cms-build-qa-sim",
+        sim: {
+          input: {
+            goal: "Full portal",
+            domain_brief: "Portal",
+            project_archetype: "portal",
+            scope_tier: "full",
+            legacy_domain: "old.example",
+            content_factory_endpoint: "https://api.example/ingest",
+          },
+          stubs: {
+            legacy_import: { legacy_notes: "Imported 4 routes", handoff: "Legacy analyzed" },
+            build_cms: { state: "accepted", summary: "CMS built" },
+            save_state: { saved: true, path: ".agents/pilot/process-state.json", stage: "cms-build-qa" },
+          },
+          human_answers: { qa_gate: "approve" },
+          expect_path: ["legacy_import", "build_cms", "qa_gate", "save_state", "done"],
+          expect_status: "succeeded",
+          expect_output: { status: "done", build_summary: "CMS built" },
+          variant_lean: {
+            input: {
+              goal: "Fast promo",
+              domain_brief: "Promo",
+              project_archetype: "landing",
+              scope_tier: "express",
+              legacy_domain: "",
+              content_factory_endpoint: "",
+            },
+            stubs: {
+              build_cms: { state: "accepted", summary: "Express build done" },
+              save_state: { saved: true, path: ".agents/pilot/process-state.json", stage: "cms-build-qa" },
+            },
+            human_answers: { qa_gate: "skip" },
+            expect_path: ["legacy_import", "build_cms", "qa_gate", "save_state", "done"],
+            expect_status: "succeeded",
+            expect_output: { status: "done", legacy_notes: "skipped (no legacy domain)" },
+          },
+        },
+      },
+    };
+
+    const suiteDef: Record<string, unknown> = {
+      id: "site-suite",
+      version: 2,
+      category: websitesCategory,
+      name: { en: "Site Delivery Suite", ru: "Сюит разработки сайта" },
+      description: {
+        en: "Orchestrates universal website delivery for {{$inputs.project_archetype}} across express and full tiers.",
+        ru: "Оркестрирует универсальную разработку сайта для {{$inputs.project_archetype}} в режимах express и full.",
+      },
+      status: "draft",
+      tags: ["websites", "suite", "landing", "delivery"],
+      triggers: ["chat", "manual"],
+      examples: {
+        en: [
+          "Launch full website delivery suite",
+          "Build fast express landing website end-to-end",
+        ],
+        ru: [
+          "Запусти сьют разработки сайта",
+          "Собери быстрый лендинг через сьют разработки сайта",
+        ],
+      },
+      not_for: ["single backend bug fix", "pure SEO audit without site delivery"],
+      inputs: {
+        goal: { type: "string", required: true, description: "Website delivery goal" },
+        domain_brief: { type: "string", default: "", description: "Domain brief" },
+        project_archetype: { type: "string", default: "landing", description: "Website archetype" },
+        scope_tier: { type: "express|standard|full", default: "standard", description: "Execution depth" },
+        legacy_domain: { type: "string", default: "", description: "Optional legacy domain" },
+        identity_profile: { type: "string", default: "", description: "Optional identity profile" },
+        content_factory_endpoint: { type: "string", default: "", description: "Optional content factory endpoint" },
+      },
+      outputs: { status: "done|blocked", summary: "string" },
+      goal_check: "artifact",
+      requires: { plugins: ["lane-pilot"], skills: [], secrets: [], machines: [] },
+      nodes: [
+        {
+          id: "strategy",
+          type: "agent",
+          role: "analyst",
+          title: { en: "Strategy & CTA", ru: "Стратегия и CTA" },
+          prompt: "Draft strategy for {{$inputs.goal}} ({{$inputs.domain_brief}}, tier {{$inputs.scope_tier}}).",
+          out: { cta_map: "string", handoff: "string" },
+        },
+        {
+          id: "imagery",
+          type: "agent",
+          role: "specialist:visual-artist",
+          title: { en: "Generate imagery", ru: "Сгенерировать визуалы" },
+          prompt: "Generate imagery for {{$inputs.identity_profile}} ({{$inputs.domain_brief}}).",
+          skip_when: "$inputs.scope_tier == 'express' || $inputs.identity_profile == ''",
+          skip_out: { photo_sets: "'skipped (no identity profile)'", handoff: "skipped" },
+          out: { photo_sets: "string", handoff: "string" },
+        },
+        {
+          id: "legacy_import",
+          type: "agent",
+          role: "analyst",
+          title: { en: "Import legacy domain", ru: "Импорт легаси-домена" },
+          prompt: "Inspect legacy domain {{$inputs.legacy_domain}} for {{$inputs.domain_brief}} ({{$inputs.scope_tier}}).",
+          skip_when: "$inputs.scope_tier == 'express' || $inputs.legacy_domain == ''",
+          skip_out: { legacy_notes: "'skipped (no legacy domain)'", handoff: "skipped" },
+          out: { legacy_notes: "string", handoff: "string" },
+        },
+        {
+          id: "cms_phase",
+          type: "subworkflow",
+          workflow: "site-cms-build-qa",
+          title: { en: "CMS Build & QA", ru: "Сборка CMS и QA" },
+          inputs: {
+            goal: "$inputs.goal",
+            domain_brief: "$inputs.domain_brief",
+            project_archetype: "$inputs.project_archetype",
+            scope_tier: "$inputs.scope_tier",
+            legacy_notes_in: "legacy_import.legacy_notes",
+            imagery_pack: "imagery.photo_sets",
+          },
+          out: { status: "done|blocked", build_summary: "string", legacy_notes: "string" },
+          guards: { maxVisits: 1 },
+        },
+        {
+          id: "save_state",
+          type: "action",
+          action: "lp.save_process_state",
+          title: { en: "Save suite process state", ru: "Сохранить состояние сьюта" },
+          params: {
+            stage: "site-suite-complete",
+            workflowId: "site-suite",
+            activeSkills: ["site-craft-standard"],
+            notes: "{{cms_phase.build_summary}}",
+          },
+          out: { saved: "bool", path: "string", stage: "string" },
+        },
+        {
+          id: "done",
+          type: "action",
+          action: "emit",
+          map: { status: "cms_phase.status", summary: "cms_phase.build_summary" },
+        },
+      ],
+      edges: [
+        { from: "start", to: "strategy" },
+        { from: "strategy", to: "imagery" },
+        { from: "imagery", to: "legacy_import" },
+        { from: "legacy_import", to: "cms_phase" },
+        { from: "cms_phase", to: "save_state" },
+        { from: "save_state", to: "done" },
+      ],
+      test: {
+        id: "site-suite-sim",
+        sim: {
+          input: {
+            goal: "Full rebuild",
+            domain_brief: "Full rebuild",
+            project_archetype: "portal",
+            scope_tier: "full",
+            legacy_domain: "old.example",
+            identity_profile: "owner-main",
+            content_factory_endpoint: "https://api.example/ingest",
+          },
+          stubs: {
+            strategy: { cta_map: "Primary CTA", handoff: "Strategy ready" },
+            imagery: { photo_sets: "hero.png", handoff: "Imagery ready" },
+            legacy_import: { legacy_notes: "Imported 4 routes", handoff: "Legacy analyzed" },
+            cms_phase: { status: "done", build_summary: "CMS built", legacy_notes: "Imported" },
+            save_state: { saved: true, path: ".agents/pilot/process-state.json", stage: "site-suite-complete" },
+          },
+          expect_path: ["strategy", "imagery", "legacy_import", "cms_phase", "save_state", "done"],
+          expect_status: "succeeded",
+          variant_lean: {
+            input: {
+              goal: "Fast landing",
+              domain_brief: "Fast promo",
+              project_archetype: "landing",
+              scope_tier: "express",
+              legacy_domain: "",
+              identity_profile: "",
+              content_factory_endpoint: "",
+            },
+            stubs: {
+              strategy: { cta_map: "Express CTA", handoff: "Strategy ready" },
+              cms_phase: { status: "done", build_summary: "Express built", legacy_notes: "skipped (no legacy domain)" },
+              save_state: { saved: true, path: ".agents/pilot/process-state.json", stage: "site-suite-complete" },
+            },
+            expect_path: ["strategy", "imagery", "legacy_import", "cms_phase", "save_state", "done"],
+            expect_status: "succeeded",
+          },
+        },
+      },
+    };
+
+    const blueprint: Record<string, unknown> = {
+      operator: "prune_or_relax",
+      decision: "suite_or_structural",
+      rationale: "Relax over-constrained site suite: add skip_when/skip_out on optional stages, allow skip on human gates, generalize owns_paths, add scope_tier + variant_lean + chat triggers, and compact bloated skill sections.",
+      category: websitesCategory,
+      supersededWorkflowIds: [],
+      orderInvariants: ["Strategy before imagery and CMS build; QA gate before process state save"],
+      variantParameters: [{ name: "scope_tier", rangeOrValues: "express|standard|full", purpose: "Scale depth from express landing to full rebuild" }],
+      requiredIntegrations: { mcp: [], plugins: ["lane-pilot"], skills: ["site-craft-standard"] },
+      graphs: [
+        {
+          workflowId: "site-cms-build-qa",
+          kind: "phase_graph",
+          standaloneChat: true,
+          name: cmsDef.name,
+          description: cmsDef.description,
+          dependsOnGraphs: [],
+          inputs: {
+            goal: "string",
+            domain_brief: "string",
+            project_archetype: "string",
+            scope_tier: "express|standard|full",
+            legacy_domain: "string",
+            content_factory_endpoint: "string",
+          },
+          outputs: { status: "done|blocked", build_summary: "string", legacy_notes: "string" },
+          stages: [
+            { id: "legacy_import", nodeType: "agent", role: "analyst", necessity: "optional", skipConditionHint: "scope_tier == 'express' || legacy_domain == ''", purpose: "Optional legacy domain inspection", skills: ["site-craft-standard"], mcp: [], plugins: [], contractRules: [] },
+            { id: "build_cms", nodeType: "lp-task", necessity: "core", purpose: "Stack-neutral build & CMS task", skills: [], mcp: [], plugins: [], contractRules: ["Use owns_paths: ['**']"] },
+            { id: "qa_gate", nodeType: "human", necessity: "core", purpose: "Skippable QA gate", skills: [], mcp: [], plugins: [], contractRules: ["Allow approve, skip, rework, abort"] },
+            { id: "save_state", nodeType: "action", necessity: "core", purpose: "Save process state via lp.save_process_state", skills: [], mcp: [], plugins: [], contractRules: [] },
+          ],
+          acceptanceCriteria: ["Passes express/skip and full/approve simulations"],
+        },
+        {
+          workflowId: "site-suite",
+          kind: "master_orchestrator",
+          standaloneChat: true,
+          name: suiteDef.name,
+          description: suiteDef.description,
+          dependsOnGraphs: ["site-cms-build-qa"],
+          inputs: {
+            goal: "string",
+            domain_brief: "string",
+            project_archetype: "string",
+            scope_tier: "express|standard|full",
+            legacy_domain: "string",
+            identity_profile: "string",
+            content_factory_endpoint: "string",
+          },
+          outputs: { status: "done|blocked", summary: "string" },
+          stages: [
+            { id: "strategy", nodeType: "agent", role: "analyst", necessity: "core", purpose: "CTA & strategy", skills: [], mcp: [], plugins: [], contractRules: [] },
+            { id: "imagery", nodeType: "agent", role: "specialist:visual-artist", necessity: "optional", skipConditionHint: "scope_tier == 'express' || identity_profile == ''", purpose: "Optional brand imagery", skills: [], mcp: [], plugins: [], contractRules: [] },
+            { id: "legacy_import", nodeType: "agent", role: "analyst", necessity: "optional", skipConditionHint: "scope_tier == 'express' || legacy_domain == ''", purpose: "Optional legacy domain inspection", skills: [], mcp: [], plugins: [], contractRules: [] },
+            { id: "cms_phase", nodeType: "subworkflow", subworkflowId: "site-cms-build-qa", necessity: "core", purpose: "Build & QA phase", skills: [], mcp: [], plugins: [], contractRules: [] },
+            { id: "save_state", nodeType: "action", necessity: "core", purpose: "Save suite process state via lp.save_process_state", skills: [], mcp: [], plugins: [], contractRules: [] },
+          ],
+          acceptanceCriteria: ["Passes express and full execution modes"],
+        },
+      ],
+      companionSkills: [
+        {
+          skillId: "site-craft-standard",
+          workflowIds: ["site-cms-build-qa"],
+          mergeMode: "merge_core_and_overlay",
+          summary: "Universal website build, CMS integration, and responsive QA standard.",
+          whenToUse: "Use when building or verifying website layouts, CMS templates, and responsive QA across archetypes.",
+          whenNotToUse: "Do not use for backend-only APIs or non-web CLI tools.",
+          coreRules: [
+            "Verify 375px mobile and 1280px desktop breakpoints before QA approval.",
+            "Validate contrast and keyboard focus states on primary CTA controls.",
+          ],
+          goldenSkeletonSections: [
+            "Conversion Goal & Fold Spec",
+            "Responsive Component Inventory",
+            "QA Contrast & Viewport Report",
+          ],
+          qaRubricChecks: [
+            "375px mobile and 1280px desktop layouts pass visual and contrast checks.",
+          ],
+          archetypeOverlays: [
+            {
+              slug: "landing",
+              title: "Fast Express Landing",
+              whenToUse: "applying this standard to a fast single-page landing site",
+              rules: [
+                "Skip legacy migration and custom CMS collections when scope_tier is express.",
+              ],
+            },
+          ],
+        },
+      ],
+    };
+
+    return { cmsDef, suiteDef, blueprint };
+  }
+
+  it("self-regulates over_constraint + leanDebt via prune_or_relax with publish_approved_suite:false, compacts skill with rollback snapshot, routes phase via chat, and converges to empty/noop", async () => {
+    const tempHome = makeTempGlobalDir();
+    const prevHome = process.env.HOME;
+    process.env.HOME = tempHome;
+
+    try {
+      const tempGlobalDir = join(tempHome, ".lane-pilot", "workflows");
+      const tempSkillsDir = join(tempHome, ".bb", "skills");
+      mkdirSync(tempGlobalDir, { recursive: true });
+      mkdirSync(tempSkillsDir, { recursive: true });
+
+      const { cmsDef: v1Cms, suiteDef: v1Suite } = makeRigidV1Suite();
+      writeFileSync(join(tempGlobalDir, "site-cms-build-qa.json"), JSON.stringify(v1Cms, null, 2), "utf8");
+      writeFileSync(join(tempGlobalDir, "site-suite.json"), JSON.stringify(v1Suite, null, 2), "utf8");
+      const skillDir = writeBloatedSiteCraftSkill(tempSkillsDir);
+
+      const w = nightWorld({
+        hostReply: (command) => (command.includes('"$HOME/.lane-pilot/graph-evolve"') ? join(tempHome, ".lane-pilot/graph-evolve") : undefined),
+      });
+      const logs: string[] = [];
+      const origLog = w.ctx.log;
+      w.ctx.log = (m: string) => {
+        logs.push(m);
+        origLog(m);
+      };
+
+      const nowMs = Date.now();
+      const deltaRes = recordTrajectoryDelta(w.db, {
+        projectId: "proj-lean",
+        workflowId: "site-suite",
+        stageArchetype: "design",
+        interventionKind: "over_constraint",
+        rawSummary: "Слишком жёсткий пайплайн: legacy_import, imagery и cms/** лишние для быстрого лендинга, на гейте нет skip.",
+        resolvedSkills: ["site-craft-standard"],
+        now: nowMs,
+        log: (m) => logs.push(m),
+      });
+      expect(deltaRes.status).toBe("recorded");
+
+      const { cmsDef: v2Cms, suiteDef: v2Suite, blueprint } = makeLeanV2Suite();
+      const runAnalyzer = vi.fn(async (_projId: string, _key: string, _prompt: string, _host: unknown, _model: unknown, _meta: unknown, role?: string) => {
+        if (role === "planner") return JSON.stringify(blueprint);
+        if (role === "plan-critic" || role === "auditor") return JSON.stringify({ verdict: "pass", findings: [], mustFix: [] });
+        if (role === "workflow-architect") {
+          return JSON.stringify({
+            candidates: [
+              { workflowId: "site-cms-build-qa", scope: "global", name: v2Cms.name, description: v2Cms.description, category: websitesCategory, definition: v2Cms },
+              { workflowId: "site-suite", scope: "global", name: v2Suite.name, description: v2Suite.description, category: websitesCategory, definition: v2Suite },
+            ],
+          });
+        }
+        return "{}";
+      });
+
+      w.harness.sdk.stub("hosts.list", async () => []);
+      w.services.ruleScan = { runAnalyzer };
+      mountGraphEvolveNightly(w.ctx, w.services);
+
+      // Pass 1: default cron mode (`publish_approved_suite: false`) auto-publishes prune_or_relax updates to existing suite
+      const nightlyWorkflow = builtinWorkflow(GRAPH_EVOLVE_WORKFLOW)!;
+      const run1 = await w.engine.start({
+        workflow: nightlyWorkflow,
+        inputs: { project_id: "proj-lean", lookback_days: 14, publish_approved_suite: false },
+        runtime: { ctx: w.ctx, services: w.services, pmThreadId: null, projectId: "proj-lean", runId: null, origin: "schedule" },
+      }).done;
+
+      expect(run1.status, JSON.stringify(run1)).toBe("succeeded");
+      expect(run1.output, JSON.stringify(run1.output)).toMatchObject({
+        status: "done",
+        publishedCount: 2,
+        proposedCount: 0,
+        rejectedCount: 0,
+      });
+      expect(logs.some((line) => line.includes("INFO [nightGraphs.graphEvolve] prune_or_relax_applied"))).toBe(true);
+
+      // Disk suite updated to v2 and passes validateLeanSuitePolicy with 0 violations
+      const storeAfter = await loadWorkflowStore({ builtin: BUILTIN_SOURCES, globalDir: tempGlobalDir });
+      expect(storeAfter.problems).toEqual([]);
+      const publishedCms = storeAfter.get("site-cms-build-qa")?.workflow;
+      const publishedSuite = storeAfter.get("site-suite")?.workflow;
+      expect(publishedCms?.version).toBe(2);
+      expect(publishedSuite?.version).toBe(2);
+      expect(publishedCms?.triggers.map((t) => t.type)).toEqual(["chat", "manual"]);
+
+      const leanAfter = validateLeanSuitePolicy([
+        { workflowId: "site-cms-build-qa", scope: "global", definition: JSON.parse(readFileSync(join(tempGlobalDir, "site-cms-build-qa.json"), "utf8")) as Record<string, unknown> },
+        { workflowId: "site-suite", scope: "global", definition: JSON.parse(readFileSync(join(tempGlobalDir, "site-suite.json"), "utf8")) as Record<string, unknown> },
+      ]);
+      expect(leanAfter).toEqual({ ok: true, violations: [] });
+
+      // Companion skill compacted to <= 14 sections on disk while preserving 22-section beforeFiles snapshot in ledger
+      const compactedSkeleton = readFileSync(join(skillDir, "references", "golden-skeleton.md"), "utf8");
+      const compactedSections = [...compactedSkeleton.matchAll(/^##\s+(.+)$/gm)];
+      expect(compactedSections.length).toBeLessThanOrEqual(14);
+      expect(lintSkillDir(readSkillDir(skillDir)).errors).toEqual([]);
+
+      const evoRows = w.db
+        .prepare("SELECT draft_id, workflow_id, skill_id, operator, status, before_files_json FROM lane_pilot_skill_evolution WHERE skill_id = ? AND status = 'published'")
+        .all("site-craft-standard") as Array<{ draft_id: string; workflow_id: string; skill_id: string; operator: string; status: string; before_files_json: string | null }>;
+      expect(evoRows.length).toBeGreaterThanOrEqual(1);
+      expect(evoRows[0]!.operator).toBe("prune_or_relax");
+      const beforeFiles = JSON.parse(evoRows[0]!.before_files_json ?? "[]") as Array<{ path: string; text: string }>;
+      const beforeSkeleton = beforeFiles.find((f) => f.path === "references/golden-skeleton.md")?.text ?? "";
+      expect([...beforeSkeleton.matchAll(/^##\s+(.+)$/gm)]).toHaveLength(22);
+
+      // Chat router can route standalone phase requests in both RU and EN directly to published phase_graph
+      const allOffered = storeAfter.list().map((s) => s.workflow);
+      const ruRoute = await routeIntent({ intent: "Запусти сборку CMS и QA-проверку сайта", workflows: allOffered });
+      expect(ruRoute.decision, JSON.stringify(ruRoute)).toBe("route");
+      expect(ruRoute.workflowId).toBe("site-cms-build-qa");
+
+      const enRoute = await routeIntent({ intent: "Run CMS build and QA phase for the website", workflows: allOffered });
+      expect(enRoute.decision, JSON.stringify(enRoute)).toBe("route");
+      expect(enRoute.workflowId).toBe("site-cms-build-qa");
+
+      // Immediate second collection & nightly run converge to empty / noop without re-running planner
+      const { existingCompanionSkills } = await readExistingCompanionSkills(tempSkillsDir);
+      const collectedPass2 = collectGraphEvolveEvidence(w.db, {
+        projectId: "proj-lean",
+        existingGlobalWorkflows: storeAfter.list().filter((s) => s.origin === "global"),
+        existingCompanionSkills,
+        log: (m) => logs.push(m),
+      });
+      expect(collectedPass2.status).toBe("empty");
+      expect(collectedPass2.leanDebtCount).toBe(0);
+
+      const analyzerCallsBeforeRun2 = runAnalyzer.mock.calls.length;
+      const run2 = await w.engine.start({
+        workflow: nightlyWorkflow,
+        inputs: { project_id: "proj-lean", lookback_days: 14, publish_approved_suite: false },
+        runtime: { ctx: w.ctx, services: w.services, pmThreadId: null, projectId: "proj-lean", runId: null, origin: "schedule" },
+      }).done;
+      expect(run2.status, JSON.stringify(run2)).toBe("succeeded");
+      expect(run2.output).toMatchObject({
+        status: "empty",
+        publishedCount: 0,
+        proposedCount: 0,
+        rejectedCount: 0,
+      });
+      expect(runAnalyzer.mock.calls.length).toBe(analyzerCallsBeforeRun2);
+
+      await w.harness.lifecycle.dispose();
+    } finally {
+      if (prevHome === undefined) delete process.env.HOME;
+      else process.env.HOME = prevHome;
+    }
+  });
+
+  it("executes the published lean suite in real WorkflowEngine across express/skip and full/approve modes with CAS process-state", async () => {
+    const tempGlobalDir = makeTempGlobalDir();
+    const tempSkillsDir = makeTempGlobalDir();
+    const rootPath = mkdtempSync(join(tmpdir(), "lp-lean-checkout-"));
+    tempDirs.push(rootPath);
+
+    const { cmsDef: v1Cms, suiteDef: v1Suite } = makeRigidV1Suite();
+    writeFileSync(join(tempGlobalDir, "site-cms-build-qa.json"), JSON.stringify(v1Cms, null, 2), "utf8");
+    writeFileSync(join(tempGlobalDir, "site-suite.json"), JSON.stringify(v1Suite, null, 2), "utf8");
+    writeBloatedSiteCraftSkill(tempSkillsDir);
+
+    const sha = (buf: Buffer) => createHash("sha256").update(buf).digest("hex");
+    const { bb } = createFakePluginHost({
+      pluginId: "lane-pilot",
+      sdk: {
+        projects: {
+          get: async ({ projectId }: { projectId: string }) => ({
+            id: projectId,
+            name: "Lean Checkout",
+            sources: [{ id: "src_1", hostId: "host_local", path: rootPath, isDefault: true }],
+          }),
+        },
+        files: {
+          read: async ({ path }: { hostId: string; path: string }) => {
+            if (!existsSync(path)) {
+              const err = new Error(`ENOENT: ${path}`) as Error & { code?: string };
+              err.code = "ENOENT";
+              throw err;
+            }
+            const buf = readFileSync(path);
+            return { content: buf.toString("utf8"), sha256: sha(buf) };
+          },
+          write: async ({
+            path,
+            content,
+            expectedSha256,
+            createParents,
+          }: {
+            hostId: string;
+            path: string;
+            content: string;
+            expectedSha256?: string | null;
+            createParents?: boolean;
+          }) => {
+            if (expectedSha256 === null && existsSync(path)) {
+              return { outcome: "sha_mismatch", currentSha256: sha(readFileSync(path)) };
+            }
+            if (typeof expectedSha256 === "string") {
+              const existing = existsSync(path) ? sha(readFileSync(path)) : null;
+              if (existing !== expectedSha256) {
+                return { outcome: "sha_mismatch", currentSha256: existing };
+              }
+            }
+            if (createParents) mkdirSync(dirname(path), { recursive: true });
+            const next = Buffer.from(content, "utf8");
+            writeFileSync(path, next);
+            return { outcome: "written", sha256: sha(next) };
+          },
+        },
+      } as never,
+    });
+
+    const db = openDatabase(bb);
+    const logs: string[] = [];
+    const log = (m: string) => logs.push(m);
+    const ctx = { bb, db, log } as unknown as ServerCore;
+
+    const { cmsDef: v2Cms, suiteDef: v2Suite, blueprint } = makeLeanV2Suite();
+    const { existingSkillBundles } = await readExistingCompanionSkills(tempSkillsDir);
+    const synth = await synthesizeSuiteAndSkillsFromBlueprint({
+      blueprint: blueprint as never,
+      collected: { clusters: [], deltas: [], deltaIds: [], status: "ready" },
+      catalog: { knownCategories: [websitesCategory], existingGlobal: [], reservedBuiltinIds: [] },
+      existingSkillBundles,
+      log,
+      runRole: async () =>
+        JSON.stringify({
+          candidates: [
+            { workflowId: "site-cms-build-qa", scope: "global", name: v2Cms.name, description: v2Cms.description, category: websitesCategory, definition: v2Cms },
+            { workflowId: "site-suite", scope: "global", name: v2Suite.name, description: v2Suite.description, category: websitesCategory, definition: v2Suite },
+          ],
+        }),
+    });
+
+    const applied = await applyGraphEvolveCandidates(
+      { db, globalDir: () => tempGlobalDir, skillsDir: () => tempSkillsDir, log },
+      synth.candidates,
+      {
+        publishApprovedSuite: false,
+        auditVerdict: "pass",
+        companionSkills: synth.companionSkills,
+        operator: "prune_or_relax",
+        blueprint: blueprint as never,
+        enforceLeanPolicy: true,
+      },
+    );
+    expect(applied.publishedCount, JSON.stringify(applied.outcomes)).toBe(2);
+
+    const store = await loadWorkflowStore({ builtin: BUILTIN_SOURCES, globalDir: tempGlobalDir });
+    expect(store.problems).toEqual([]);
+    const suiteWf = store.get("site-suite")!.workflow;
+
+    const engine = new WorkflowEngine({
+      db,
+      harnessVersion: "1.0.0",
+      resolveWorkflow: (id, version) => store.resolve(id, version),
+      runtimeFor: (run) => ({ projectId: run.project_id ?? "proj_lean_live" }),
+    });
+    registerReducers(engine);
+    registerPilotProcessStateAction(engine, ctx);
+
+    const executedNodes: string[] = [];
+    const stubExecutor: NodeExecutor = {
+      reentrant: true,
+      run: async (c: StepContext) => {
+        executedNodes.push(c.nodeId);
+        const fields = outputFields(c.workflow, c.node) as Field[] | "unknown";
+        const base =
+          fields === "unknown"
+            ? {}
+            : Object.fromEntries(
+                fields.map((f) => [
+                  f.name,
+                  f.default ??
+                    (f.type === "enum"
+                      ? f.values?.[0]
+                      : f.type === "boolean"
+                        ? false
+                        : f.type === "number"
+                          ? 1
+                          : f.type === "array"
+                            ? []
+                            : f.type === "object"
+                              ? {}
+                              : `${c.nodeId}-value`),
+                ]),
+              );
+        return {
+          output: {
+            ...base,
+            ...(c.node.type === "agent" ? { handoff: `${c.nodeId} done`, outcome: "done" } : {}),
+            ...(c.node.type === "lp-task" ? { state: "accepted", summary: `${c.nodeId} built` } : {}),
+          },
+        };
+      },
+    };
+    for (const wf of [suiteWf, store.get("site-cms-build-qa")!.workflow]) {
+      for (const node of lowerWorkflow(wf).nodes) {
+        if (node.type === "note") continue;
+        const key = executorKey(node);
+        if (key && !engine.hasExecutor(key)) engine.register(key, stubExecutor);
+      }
+    }
+
+    async function runWithGateAnswer(inputs: Record<string, unknown>, gateAnswer: "skip" | "approve") {
+      executedNodes.length = 0;
+      const started = engine.start({
+        workflow: suiteWf,
+        inputs,
+        link: { projectId: "proj_lean_live" },
+        runtime: { projectId: "proj_lean_live" },
+      });
+      let summary = await started.done;
+      for (let round = 0; summary.status === "waiting" && round < 10; round += 1) {
+        const waitingHumans = db
+          .prepare(
+            `SELECT s.run_id, s.step_key, s.node_id FROM lane_pilot_wf_step s
+             JOIN lane_pilot_wf_run r ON r.id = s.run_id
+             WHERE s.state = 'waiting' AND s.await_json LIKE '%"human"%' AND r.status IN ('waiting', 'running')`,
+          )
+          .all() as Array<{ run_id: string; step_key: string; node_id: string }>;
+        expect(waitingHumans.length).toBeGreaterThan(0);
+        for (const hw of waitingHumans) {
+          await engine.resolve(hw.run_id, hw.step_key, { answer: gateAnswer, answer_kind: gateAnswer });
+        }
+        await engine.poll();
+        await engine.idle();
+        summary = engine.get(started.runId)!;
+      }
+      const parentSteps = engine.snapshot(started.runId)?.steps ?? [];
+      const childRun = db
+        .prepare("SELECT id FROM lane_pilot_wf_run WHERE parent_run_id = ?")
+        .get(started.runId) as { id: string } | undefined;
+      const childSteps = childRun ? (engine.snapshot(childRun.id)?.steps ?? []) : [];
+      return { summary, parentSteps, childSteps, executed: [...executedNodes] };
+    }
+
+    // (a) Express landing + empty optional inputs + "skip" on human gate
+    const runA = await runWithGateAnswer(
+      {
+        goal: "Launch fast promo landing",
+        project_archetype: "landing",
+        domain_brief: "Fast promo page",
+        scope_tier: "express",
+        legacy_domain: "",
+        identity_profile: "",
+        content_factory_endpoint: "",
+      },
+      "skip",
+    );
+    expect(runA.summary.status, JSON.stringify(runA.summary)).toBe("succeeded");
+    expect(runA.executed).not.toContain("imagery");
+    expect(runA.executed).not.toContain("legacy_import");
+    expect(runA.parentSteps.find((s) => s.node_id === "imagery")?.state).toBe("skipped");
+    expect(runA.parentSteps.find((s) => s.node_id === "legacy_import")?.state).toBe("skipped");
+    expect(runA.childSteps.find((s) => s.node_id === "legacy_import")?.state).toBe("skipped");
+    expect(runA.childSteps.find((s) => s.node_id === "qa_gate")?.state).toBe("succeeded");
+    expect([...runA.parentSteps, ...runA.childSteps].some((s) => (s.error ?? "").includes("reference_missing"))).toBe(false);
+
+    const io = createProcessStateIo(ctx, "host_local", rootPath);
+    const persistedA = await readPilotProcessStateCas(io, { hostId: "host_local", rootPath, log });
+    expect(persistedA.error).toBeUndefined();
+    expect(persistedA.state).toMatchObject({
+      stage: "site-suite-complete",
+      workflowId: "site-suite",
+      activeSkills: ["site-craft-standard"],
+    });
+    expect(existsSync(join(rootPath, PILOT_PROCESS_STATE_REL_PATH))).toBe(true);
+
+    // (b) Full project + populated optional inputs + "approve" on human gate
+    const runB = await runWithGateAnswer(
+      {
+        goal: "Full portal rebuild",
+        project_archetype: "legacy-rebuild",
+        domain_brief: "Full rebuild",
+        scope_tier: "full",
+        legacy_domain: "old.example",
+        identity_profile: "owner-main",
+        content_factory_endpoint: "https://api.example/ingest",
+      },
+      "approve",
+    );
+    expect(runB.summary.status, JSON.stringify(runB.summary)).toBe("succeeded");
+    expect(runB.executed).toContain("imagery");
+    expect(runB.executed).toContain("legacy_import");
+    expect(runB.parentSteps.find((s) => s.node_id === "imagery")?.state).toBe("succeeded");
+    expect(runB.parentSteps.find((s) => s.node_id === "legacy_import")?.state).toBe("succeeded");
+    expect(runB.childSteps.find((s) => s.node_id === "qa_gate")?.state).toBe("succeeded");
   });
 });

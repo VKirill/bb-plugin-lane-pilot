@@ -156,6 +156,24 @@ export function classifyEvolutionDiff(
   const nextEdges = edgeKeys(nextWorkflow);
   if (baseEdges.length !== nextEdges.length || baseEdges.some((k, i) => k !== nextEdges[i])) reasons.push("topology_edges_changed");
 
+  const hasSkipWhen = (node: Record<string, unknown>) => node.skip_when !== undefined && node.skip_when !== null && node.skip_when !== "";
+  const hasSkipOut = (node: Record<string, unknown>) =>
+    Boolean(node.skip_out && typeof node.skip_out === "object" && !Array.isArray(node.skip_out) && Object.keys(node.skip_out).length > 0);
+  const sameVal = (a: unknown, bVal: unknown) => JSON.stringify(a ?? null) === JSON.stringify(bVal ?? null);
+  for (const [id, n] of nextNodes) {
+    const b = baseNodes.get(id);
+    if (!b) continue;
+    if ((!hasSkipWhen(b) && hasSkipWhen(n)) || (!hasSkipOut(b) && hasSkipOut(n)) || (hasSkipWhen(n) && !sameVal(b.skip_when, n.skip_when))) {
+      reasons.push("skip_when_added");
+    }
+    if (b.type === "human" && n.type === "human" && !asStrings(b.options).includes("skip") && asStrings(n.options).includes("skip")) {
+      reasons.push("human_skip_enabled");
+    }
+    if (b.type === "lp-task" && n.type === "lp-task" && !asStrings(b.owns_paths).includes("**") && asStrings(n.owns_paths).includes("**")) {
+      reasons.push("owns_paths_generalized");
+    }
+  }
+
   const baseReq = (baseWorkflow.requires ?? {}) as Record<string, unknown>;
   const nextReq = (nextWorkflow.requires ?? {}) as Record<string, unknown>;
   const permExpanded = (["secrets", "plugins", "mcp"] as const).some((k) => hasExtra(asStrings(baseReq[k]), asStrings(nextReq[k])))
@@ -189,6 +207,8 @@ export function classifyEvolutionDiff(
       reasons.push(inp.required ? "breaking_required_input" : "optional_inputs_added");
     } else if (!prev.required && inp.required) {
       reasons.push("breaking_required_input");
+    } else if (prev.required && !inp.required) {
+      reasons.push("optional_inputs_added");
     }
   }
 

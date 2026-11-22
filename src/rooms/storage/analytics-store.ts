@@ -177,6 +177,8 @@ export type {
   PilotDayStageFact,
   PilotDayEpisodeFact,
   PilotDayChildWfFact,
+  PilotDayGateFact,
+  PilotDayWfStepFact,
   PilotDayCandidate,
   PilotDayDigestInput,
   PilotDayDigestRow,

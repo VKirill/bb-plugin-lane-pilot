@@ -852,4 +852,25 @@ export const migrations = [
   `CREATE INDEX lane_pilot_skill_evolution_skill ON lane_pilot_skill_evolution(skill_id, created_at DESC)`,
   `CREATE TRIGGER lane_pilot_skill_evolution_no_update BEFORE UPDATE ON lane_pilot_skill_evolution BEGIN SELECT RAISE(ABORT, 'skill evolution ledger is append-only'); END`,
   `CREATE TRIGGER lane_pilot_skill_evolution_no_delete BEFORE DELETE ON lane_pilot_skill_evolution BEGIN SELECT RAISE(ABORT, 'skill evolution ledger is append-only'); END`,
+  `DROP TRIGGER IF EXISTS lane_pilot_trajectory_delta_no_delete`,
+  `CREATE TABLE lane_pilot_trajectory_delta_next (
+    id TEXT PRIMARY KEY,
+    project_id TEXT,
+    thread_id TEXT,
+    workflow_id TEXT,
+    stage_archetype TEXT NOT NULL,
+    intervention_kind TEXT NOT NULL CHECK(intervention_kind IN ('skill_request','rule_added','step_inserted','reference_branch','variant_selected','over_constraint')),
+    resolved_skills_json TEXT NOT NULL DEFAULT '[]',
+    masked_summary TEXT NOT NULL,
+    owner_accepted INTEGER NOT NULL DEFAULT 1 CHECK(owner_accepted IN (0, 1)),
+    processed_at INTEGER,
+    created_at INTEGER NOT NULL
+  )`,
+  `INSERT INTO lane_pilot_trajectory_delta_next (id, project_id, thread_id, workflow_id, stage_archetype, intervention_kind, resolved_skills_json, masked_summary, owner_accepted, processed_at, created_at)
+    SELECT id, project_id, thread_id, workflow_id, stage_archetype, intervention_kind, resolved_skills_json, masked_summary, owner_accepted, processed_at, created_at FROM lane_pilot_trajectory_delta`,
+  `DROP TABLE lane_pilot_trajectory_delta`,
+  `ALTER TABLE lane_pilot_trajectory_delta_next RENAME TO lane_pilot_trajectory_delta`,
+  `CREATE INDEX lane_pilot_trajectory_delta_unprocessed ON lane_pilot_trajectory_delta(processed_at, created_at)`,
+  `CREATE INDEX lane_pilot_trajectory_delta_project ON lane_pilot_trajectory_delta(project_id, created_at)`,
+  `CREATE TRIGGER lane_pilot_trajectory_delta_no_delete BEFORE DELETE ON lane_pilot_trajectory_delta BEGIN SELECT RAISE(ABORT, 'trajectory deltas are append-only'); END`,
 ];
