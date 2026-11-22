@@ -1,6 +1,7 @@
 import { redactKnown } from "@lane-pilot/kit";
 import { GLOBAL_SETTINGS_PROJECT_ID } from "@lane-pilot/settings-catalog";
 import { sortSkillBundleFiles, type SkillBundleFile } from "@lane-pilot/workflow-engine";
+import type { HelperRole } from "../../contracts";
 import type { ServerCore } from "../../contracts/server";
 import { modelCatalogOf, readProviderFolderBlock, resolveSpawnModel, spawnUsageOf, warmSpawnUsage, type WriterHostApi } from "../../platform/server";
 import type { RuleScanApi } from "../../self-repair/server";
@@ -33,6 +34,12 @@ export {
 
 export type EvolveRole = "planner" | "plan-critic" | "workflow-architect" | "auditor";
 export type EvolveRoleRunner = (role: EvolveRole, prompt: string, stepKey: string) => Promise<string>;
+export const EVOLVE_ROLE_MAP: Readonly<Record<EvolveRole, HelperRole>> = {
+  planner: "evolve-planner",
+  "plan-critic": "evolve-critic",
+  "workflow-architect": "evolve-architect",
+  auditor: "evolve-auditor",
+};
 export type EvolveReviewVerdict = { verdict: "pass" | "rework"; findings: string[]; mustFix: string[] };
 export type EvolveClusterSummary = GraphEvolveCollectSummary["clusters"][number] & {
   artifactSkeletons?: ArtifactSkeleton[]; archetypeHints?: string[];
@@ -116,17 +123,18 @@ export function createLiveEvolveRoleRunner(
     const spawnUsage = spawnUsageOf(ctx);
     await warmSpawnUsage(spawnUsage, host.hostId);
     const folderBlock = await readProviderFolderBlock(ctx.bb.storage.kv, host.hostId);
+    const tableRole = EVOLVE_ROLE_MAP[role];
     const sel = resolveSpawnModel({
-      role, settings, catalog: modelCatalogOf(ctx).peek(), usage: spawnUsage,
+      role: tableRole, settings, catalog: modelCatalogOf(ctx).peek(), usage: spawnUsage,
       hostId: host.hostId, envPath: host.path, folderBlock,
     });
     ctx.log(`INFO [nightGraphs.evolvePipeline] role_selected ${redactKnown(JSON.stringify({
-      stepKey, role, providerId: sel.providerId, model: sel.model, reasoningLevel: sel.reasoningEffort,
+      stepKey, role: tableRole, providerId: sel.providerId, model: sel.model, reasoningLevel: sel.reasoningEffort,
     }))}`);
     return services.ruleScan.runAnalyzer(
       threadProject ?? "*", `graph-evolve:${role}:${stepKey}`, prompt, host,
       { providerId: sel.providerId, model: sel.model, reasoningLevel: sel.reasoningEffort, serviceTier: sel.serviceTier },
-      { graphEvolve: true, evolveStep: stepKey, evolveRole: role }, role,
+      { graphEvolve: true, evolveStep: stepKey, evolveRole: role }, tableRole,
     ).catch((err: unknown) => { evolveRooms.delete(project.hostId); throw err; });
   };
 }

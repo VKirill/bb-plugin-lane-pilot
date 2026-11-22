@@ -1,17 +1,13 @@
 import type { NodeExecutor, StepContext } from "@lane-pilot/workflow-engine";
+import { GLOBAL_SETTINGS_PROJECT_ID } from "@lane-pilot/settings-catalog";
 import { runGraphHelper, sumUsage } from "../../workflow/server";
 import type { ChainRuntime } from "../../contracts/server";
 import type { GraphHelperRun } from "../../workflow/server";
-import { noteProviderLimit } from "../../platform/server";
-
+import { modelCatalogOf, noteProviderLimit, readProviderFolderBlock, resolveSpawnModel, spawnUsageOf, type WorkflowEngineApi } from "../../platform/server";
 import type { ServerCore } from "../../contracts/server";
 import type { AnalyzerSelection, JobResult, ScanJob } from "../../self-repair/server";
-;
-
 import type { RuleScanApi } from "../../self-repair/server/rule-scan";
-import {providerLimitNotice} from "@lane-pilot/models";
-
-import type { WorkflowEngineApi } from "../../platform/server";
+import { ROLE_IDS, providerLimitNotice } from "@lane-pilot/models";
 
 /** The fields of the services bag this file reads, typed by the rooms that own them. */
 interface Services {
@@ -55,7 +51,19 @@ export function mountRulesScanGraph(ctx: ServerCore, services: Services): void {
     }
     if (!limit) { if (first) return first; throw error; }
     noteProviderLimit(ctx.bb, analyzer.providerId, analyzer.model, limit);
-    const next = await scan.analyzerFor(job.projectId, place, { avoidProvider: analyzer.providerId }).catch((cause: unknown) => { ctx.log(`rules-scan: fallback analyzer unreadable: ${cause instanceof Error ? cause.message : String(cause)}`); return null; });
+    const metaRole = typeof job.metadata?.role === "string" && ROLE_IDS.includes(job.metadata.role) ? job.metadata.role : null;
+    let next: AnalyzerSelection | null = null;
+    if (metaRole) {
+      const settings = (await ctx.effectiveProjectSettings(job.projectId && job.projectId !== "*" ? job.projectId : GLOBAL_SETTINGS_PROJECT_ID).catch(() => null))?.values ?? {};
+      const sel = resolveSpawnModel({
+        role: metaRole, avoidProvider: analyzer.providerId, settings, catalog: modelCatalogOf(ctx).peek(),
+        usage: spawnUsageOf(ctx), hostId: place.hostId, envPath: place.path,
+        folderBlock: await readProviderFolderBlock(ctx.bb.storage.kv, place.hostId),
+      });
+      next = { providerId: sel.providerId, model: sel.model, reasoningLevel: sel.reasoningEffort, serviceTier: sel.serviceTier };
+    } else {
+      next = await scan.analyzerFor(job.projectId, place, { avoidProvider: analyzer.providerId }).catch((cause: unknown) => { ctx.log(`rules-scan: fallback analyzer unreadable: ${cause instanceof Error ? cause.message : String(cause)}`); return null; });
+    }
     if (!next || next.providerId === analyzer.providerId) throw new Error(`${analyzer.providerId}/${analyzer.model} hit a provider limit (${limit}) and no other provider is on offer`);
     ctx.bb.log.warn(`rules analyzer ${job.key}: ${analyzer.providerId}/${analyzer.model} hit a provider limit (${limit}); rerunning on ${next.providerId}/${next.model}`);
     return await runOnce(c, { ...job, key: `${job.key}:limit` }, place, next);

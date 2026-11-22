@@ -29,16 +29,18 @@ describe("the table «role -> model»", () => {
       expect(row.default.why.length, row.id).toBeGreaterThan(20);
     }
     const family = (role: string) => modelFamily(ROLE_TABLE.find((row) => row.id === role)!.default.model);
-    for (const author of ["analyst", "planner", "workflow-architect", "specialist"]) expect(family(author), author).toBe("claude");
-    // The reviews run on the Gemini subscription (owner, 2026-10-27); the auditor, the debugger and the chair stay on GPT.
-    for (const judge of ["plan-critic", "specialist-reviewer", "code-critic", "triager"]) expect(family(judge), judge).toBe("google");
+    for (const author of ["analyst", "planner", "workflow-architect", "specialist", "digest-analyst", "evolve-planner", "evolve-architect"]) expect(family(author), author).toBe("claude");
+    // The reviews run on the Gemini subscription (owner, 2026-10-27); the auditor, the debugger and the chair stay on GPT; dedicated digest/evolve judges run on Antigravity Gemini 4.
+    for (const judge of ["plan-critic", "specialist-reviewer", "code-critic", "triager", "digest-light", "evolve-critic", "evolve-auditor"]) expect(family(judge), judge).toBe("google");
     for (const judge of ["auditor", "debugger", "council"]) expect(family(judge), judge).toBe("gpt");
-    // A row whose default is a Gemini names the GPT model it falls to, and that one is another family than the Gemini.
+    // A row whose default is a Gemini names the other-family model (GPT or Claude) it falls to when Gemini is unavailable or spent.
     for (const row of ROLE_TABLE) {
-      if (modelFamily(row.default.model) === "google") expect(modelFamily(roleFallbackModel(row.id)?.model), row.id).toBe("gpt");
+      if (modelFamily(row.default.model) === "google") expect(["gpt", "claude"], row.id).toContain(modelFamily(roleFallbackModel(row.id)?.model));
       else expect(row.fallback, row.id).toBeUndefined();
     }
     expect(roleFallbackModel("code-critic")).toMatchObject({ providerId: "codex", model: "gpt-6.1-sol", effort: "high" });
+    expect(roleFallbackModel("evolve-auditor")).toMatchObject({ providerId: "claude-code", model: "claude-sonnet-5-5", effort: "high" });
+    expect(roleFallbackModel("digest-light")).toMatchObject({ providerId: "claude-code", model: "claude-sonnet-5-5", effort: "medium" });
     expect(roleFallbackModel("triager")).toMatchObject({ model: "gpt-6-luna" });
     expect(roleFallbackModel("auditor")).toBeNull();
     // A role that decides is never left on a light model by default.

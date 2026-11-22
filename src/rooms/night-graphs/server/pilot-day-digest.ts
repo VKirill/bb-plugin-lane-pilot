@@ -43,7 +43,7 @@ export type PilotDayDigestDeps = {
   readOutline?: (threadId: string) => Promise<string | null>;
   readOutput?: (threadId: string) => Promise<string | null>;
   readEvents?: (threadId: string) => Promise<unknown[]>;
-  runModel: (prompt: string, projectId: string | null, digestId: string, role?: "analyst" | "episode-analyst") => Promise<string>;
+  runModel: (prompt: string, projectId: string | null, digestId: string, role?: "digest-analyst" | "digest-light" | "analyst" | "episode-analyst") => Promise<string>;
   skillCatalog?: readonly SkillCatalogItem[];
   stopped?: () => boolean;
   log?: (message: string) => void;
@@ -320,7 +320,7 @@ export async function digestPilotDayDialogues(deps: PilotDayDigestDeps): Promise
       });
 
       const richness = candidate.taskSummaries.length + (candidate.episodes?.length ?? 0) + (candidate.childRuns?.length ?? 0) + candidate.attempts.length;
-      const modelRole: "analyst" | "episode-analyst" = richness >= 2 ? "analyst" : "episode-analyst";
+      const modelRole: "digest-analyst" | "digest-light" = richness >= 2 ? "digest-analyst" : "digest-light";
       const reply = await deps.runModel(buildDigestPrompt(maskedFacts, maskedOutline), projId, candidate.digestId, modelRole);
       const parsed = parseDigestAnswer(reply, candidate, maskedObjective, deps.log);
 
@@ -417,7 +417,7 @@ export async function loadDigestSkillCatalog(ctx: ServerCore): Promise<SkillCata
   } catch { return []; }
 }
 
-/** Live ServerCore adapter for `lp.graph_evolve_digest`: reads BB outlines/traces and runs `analyst`/`episode-analyst` in `$HOME/.lane-pilot/graph-evolve`. */
+/** Live ServerCore adapter for `lp.graph_evolve_digest`: reads BB outlines/traces and runs `digest-analyst`/`digest-light` in `$HOME/.lane-pilot/graph-evolve`. */
 export function createLivePilotDayDigestDeps(
   ctx: ServerCore,
   services: { harness?: Pick<HarnessApi, "threadEvents">; resolveProjectWriterHost: WriterHostApi["resolveProjectWriterHost"]; ruleScan: Pick<RuleScanApi, "runAnalyzer"> },
@@ -463,7 +463,7 @@ export function createLivePilotDayDigestDeps(
       return typeof res?.output === "string" ? res.output : null;
     },
     readEvents: async (threadId) => (services.harness ? services.harness.threadEvents(threadId, ERRAND_EPISODE_TRACE_EVENTS) : []),
-    runModel: async (prompt, projectId, digestId, modelRole = "episode-analyst") => {
+    runModel: async (prompt, projectId, digestId, modelRole = "digest-light") => {
       const { place, projectId: threadProject } = await analystPlace(ctx.db, projectId, (id) =>
         services.resolveProjectWriterHost({ projectId: id } as never).catch((cause: unknown) => {
           logLine(ctx.log, "WARN", "host_lookup", { error: cause instanceof Error ? cause.message : String(cause) });

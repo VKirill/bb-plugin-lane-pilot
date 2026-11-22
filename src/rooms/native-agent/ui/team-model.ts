@@ -41,6 +41,8 @@ export const ROLE_GROUPS: Array<{ id: RoleGroupId; roles: RoleSpec[] }> = [
     { id: "council-seat", testId: "council-settings", detail: "council", keys: [...COUNCIL_KEYS] },
     { id: "rules-analyzer", testId: "rules-analyzer", model: "rules", keys: [] },
     { id: "episode-analyst", keys: [] },
+    { id: "digest-light", keys: [] },
+    { id: "digest-analyst", keys: [] },
     { id: "wall-hunter", keys: [] },
   ] },
   { id: "project", roles: [
@@ -55,7 +57,7 @@ export const ROLE_GROUPS: Array<{ id: RoleGroupId; roles: RoleSpec[] }> = [
     { id: "api-recon", keys: [] },
   ] },
   { id: "specialists", roles: ["specialist:design-lead", "specialist:copy-lead", "specialist:seo-specialist", "specialist:growth-marketer", "specialist:tavily", "specialist:video-lead", "specialist:3d-artist", "specialist:game-dev", "specialist:social-manager", "specialist:billing-assistant", "specialist:visual-artist", "specialist:macos-operator", "specialist:lead"].map((id) => ({ id, keys: [] })) },
-  { id: "workflow", roles: ["analyst", "planner", "auditor", "debugger", "workflow-architect", "lead", "workspace-provisioner", "harness-editor", "harness-composer", "harness-reflection"].map((id) => ({ id, keys: [] })) },
+  { id: "workflow", roles: ["analyst", "planner", "auditor", "debugger", "workflow-architect", "evolve-planner", "evolve-critic", "evolve-architect", "evolve-auditor", "lead", "workspace-provisioner", "harness-editor", "harness-composer", "harness-reflection"].map((id) => ({ id, keys: [] })) },
 ];
 
 export const roleKey = (role: string) => role.replace(/[:-]/g, "_");

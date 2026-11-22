@@ -82,6 +82,7 @@ export type HelperRole =
   | "plan-critic" | "code-critic" | "specialist-reviewer" | "gate-triage" | "pm-reader"
   | "docs-maintainer" | "onboarder" | "memory-maintainer" | "project-life"
   | "browser-qa" | "errand" | "api-recon" | "council-seat" | "rules-analyzer" | "episode-analyst" | "wall-hunter"
+  | "digest-light" | "digest-analyst" | "evolve-planner" | "evolve-critic" | "evolve-architect" | "evolve-auditor"
   | "analyst" | "planner" | "auditor" | "debugger"
   | "workspace-provisioner" | "lead" | "workflow-architect" | "harness-editor" | "harness-composer" | "harness-reflection"
   | "specialist:design-lead" | "specialist:copy-lead" | "specialist:seo-specialist" | "specialist:growth-marketer" | "specialist:tavily" | "specialist:video-lead"
@@ -140,6 +141,12 @@ export const ROLE_PROFILES: Record<HelperRole, RoleProfile> = {
   "rules-analyzer": { bbPlugins: [], skills: [], mcpServers: [] },
   // Both read masked text in a hidden analyzer thread and answer in JSON: no plugin, skill or MCP access.
   "episode-analyst": { bbPlugins: [], skills: [], mcpServers: [] },
+  "digest-light": { bbPlugins: [], skills: [], mcpServers: [] },
+  "digest-analyst": { bbPlugins: [], skills: [], mcpServers: [] },
+  "evolve-planner": { bbPlugins: [], skills: [], mcpServers: [] },
+  "evolve-critic": { bbPlugins: [], skills: [], mcpServers: [] },
+  "evolve-architect": { bbPlugins: [], skills: [], mcpServers: [] },
+  "evolve-auditor": { bbPlugins: [], skills: [], mcpServers: [] },
   "wall-hunter": { bbPlugins: [], skills: [], mcpServers: [] },
   "specialist:design-lead": { bbPlugins: ["env-catalog"], skills: ["env-catalog", "project-design", "modern-web-guidance", "page-prototype"], mcpServers: ["metamcp"] },
   "specialist:copy-lead": { bbPlugins: ["env-catalog"], skills: ["env-catalog", "copywriter"], mcpServers: [] },

@@ -475,7 +475,7 @@ describe("createLivePilotDayDigestDeps", () => {
       { hostId: "host-1", path: "/home/ubuntu/.lane-pilot/graph-evolve" },
       expect.objectContaining({ providerId: expect.any(String), model: expect.any(String) }),
       { pilotDayDigest: "dig_test_1" },
-      "episode-analyst",
+      "digest-light",
     );
 
     const events = await deps.readEvents!("thr-1");
@@ -551,7 +551,7 @@ describe("createLivePilotDayDigestDeps", () => {
     });
 
     expect(summary).toMatchObject({ picked: 1, digested: 1, failed: 0 });
-    expect(rolesSeen).toEqual(["analyst"]);
+    expect(rolesSeen).toEqual(["digest-analyst"]);
     expect(promptsSeen[0]).toContain("Final output: Delivered 3 concepts");
     expect(promptsSeen[0]).toContain("observedMcp");
     expect(promptsSeen[0]).toContain("pencil");
@@ -563,7 +563,7 @@ describe("createLivePilotDayDigestDeps", () => {
     expect(storedA[0]?.taskCount).toBe(3);
     expect(storedA[0]?.maskedLessons.some((l) => l.includes("Observed integrations:") && l.includes("pencil") && l.includes("image-studio"))).toBe(true);
     expect(listPilotDayDigests(db, nowMs - 7 * 86_400_000, 50, "proj_b")).toEqual([]);
-    expect(logs.some((l) => l.includes('"modelRole":"analyst"') && l.includes('"episodes":1') && l.includes('"childRuns":2'))).toBe(true);
+    expect(logs.some((l) => l.includes('"modelRole":"digest-analyst"') && l.includes('"episodes":1') && l.includes('"childRuns":2'))).toBe(true);
 
     // Check createLivePilotDayDigestDeps outline slicing (>60 items -> 15 first + 45 last) & readOutput & model_selected log
     const longItems = Array.from({ length: 80 }, (_, idx) => ({ role: idx % 2 === 0 ? "user" : "assistant", preview: `msg-${idx}` }));
@@ -592,11 +592,11 @@ describe("createLivePilotDayDigestDeps", () => {
     w.state.outputs.set("thr_out_1", "Final answer text");
     expect(await liveDeps.readOutput!("thr_out_1")).toBe("Final answer text");
 
-    await liveDeps.runModel("prompt", "proj_a", "dig_1", "analyst");
+    await liveDeps.runModel("prompt", "proj_a", "dig_1", "digest-analyst");
     expect(runAnalyzer).toHaveBeenCalledWith(
       "proj_a", "pilot-day-digest:dig_1", "prompt",
       { hostId: "host-1", path: "/home/ubuntu/.lane-pilot/graph-evolve" },
-      expect.any(Object), { pilotDayDigest: "dig_1" }, "analyst",
+      expect.any(Object), { pilotDayDigest: "dig_1" }, "digest-analyst",
     );
 
     await w.harness.lifecycle.dispose();

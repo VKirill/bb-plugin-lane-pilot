@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.604
+
+- **Dedicated chat-digestion and graph-evolution roles (`digest-light`, `digest-analyst`, `evolve-planner`, `evolve-critic`, `evolve-architect`, `evolve-auditor`) on Claude Sonnet/Opus + Antigravity Gemini 4.** `role-models.ts`, `agent-model.ts`, `role-names.ts`, `i18n-role-models.ts`, `i18n.ts`, `helper-context.ts`, `team-model.ts`, `pilot-day-digest.ts`, `graph-evolve-pipeline.ts`, `rules-scan-graph.ts`, and `docs/agents.md` decouple chat digestion and workflow evolution from coding roles (`analyst`, `planner`, `plan-critic`, `workflow-architect`, `auditor`), assign cross-family Claude + Antigravity Gemini 4 defaults and fallbacks without GPT dependency, and resolve mid-turn provider-limit retries in `lp.rules-ask` against each role's own `role_model.<id>` chain. Covered by `packages/models/tests/role-models.test.ts`, `tests/agents-doc.test.ts`, and `tests/night-graphs/pilot-day-digest.test.ts`.
+
 ## 0.1.603
 
 - **Clean nightly chat digestion without `draft-test.*` pollution, direct owner BB chat discovery, and concurrent time-bounded digest execution.** `pilot-day-digest-store.ts`, `pilot-day-digest.ts`, `graph-evolve-graph.ts`, and `workflows/lp.graph-evolve-nightly.json` exclude synthetic `draft-test.*`, `lead-tick`, and `agent-routine` runs from both `listPilotDayCandidates` and `collectGraphEvolveEvidence`, discover top-level owner BB chats (`!originPluginId`, `!parentThreadId`, `visibility === "visible"`) via `bb.sdk.threads.list` alongside Pilot runs and workflows, and execute `digestPilotDayDialogues` with bounded concurrency (`3`) and a graceful wall-clock time budget so scheduled `lp.graph-evolve-nightly` runs never fail with `timeout after 1200s`. Covered by `tests/night-graphs/pilot-day-digest.test.ts`.

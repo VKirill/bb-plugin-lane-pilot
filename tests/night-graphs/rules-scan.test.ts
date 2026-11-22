@@ -235,4 +235,24 @@ describe("the rules scan graph", () => {
     expect(await ask()).toBe("{\"ok\":true}");
     expect(w.runs("lp.rules-ask").map((row) => row.status)).toEqual(["failed", "succeeded"]);
   });
+
+  it("mid-turn provider limit in lp.rules-ask resolves fallback against the caller's dedicated role rather than rules-analyzer", async () => {
+    const { w, scan } = setup(["You've hit your usage limit. Try again later.", "{\"ok\":true}"]);
+    const primary = { providerId: "acp-antigravity", model: "gemini-4-hydrogen", reasoningLevel: "medium", serviceTier: null } as const;
+    const text = await scan.runAnalyzer(
+      PROJECT,
+      "pilot-day-digest:dig-role-fb",
+      "Digest",
+      { hostId: "host-1", path: "/proj" },
+      primary,
+      { pilotDayDigest: "dig-role-fb" },
+      "digest-light",
+    );
+    expect(text).toBe("{\"ok\":true}");
+    expect(w.state.spawned.map((row) => `${row.providerId}/${row.model}`)).toEqual([
+      "acp-antigravity/gemini-4-hydrogen",
+      "claude-code/claude-sonnet-5-5",
+    ]);
+    expect(w.state.spawned.every((row) => row.providerId !== "codex")).toBe(true);
+  });
 });

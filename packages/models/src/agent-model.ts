@@ -81,6 +81,7 @@ export function rankPool<T extends { providerId: string; model: string }>(rows: 
 /** The author rows each judge row is judged against, in order: the first one whose model is known is the author. Other roles judge no one. */
 export const AUTHOR_ROWS: Record<string, readonly string[]> = {
   "plan-critic": ["planner"], "plan-critic-light": ["planner"], "specialist-reviewer": ["planner"], auditor: ["planner", "analyst"],
+  "evolve-critic": ["evolve-planner"], "evolve-auditor": ["evolve-architect", "evolve-planner"],
   /** The council chair judges the seats: their models are not kept per run, the council passes them as the author. */
   council: [],
 };

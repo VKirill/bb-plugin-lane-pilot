@@ -33,6 +33,8 @@ export const BRIEF_BUDGETS: Record<string, { instructions: number; total: number
   critic: { instructions: 4_000, total: 30_000 },
   "wall-hunter": { instructions: 4_000, total: 30_000 },
   "episode-analyst": { instructions: 4_000, total: 30_000 },
+  "digest-light": { instructions: 4_000, total: 30_000 },
+  "digest-analyst": { instructions: 4_000, total: 30_000 },
   "harness-editor": { instructions: 10_000, total: 30_000 },
   // The night repair rides inside the self-repair brief; its own budget is for the addendum alone.
   "wall-repair": { instructions: 4_000, total: 30_000 },

@@ -1255,9 +1255,9 @@ describe("4-model evolution pipeline and topological subworkflow suite publicati
             graphs: [],
           });
         }
-        if (role === "planner") return JSON.stringify(makeWebsiteBlueprint(true));
-        if (role === "plan-critic" || role === "auditor") return JSON.stringify({ verdict: "pass", findings: [], mustFix: [] });
-        if (role === "workflow-architect") return JSON.stringify({ candidates: makeSuiteCandidates({ includeMcpAndVariants: true }) });
+        if (role === "evolve-planner") return JSON.stringify(makeWebsiteBlueprint(true));
+        if (role === "evolve-critic" || role === "evolve-auditor") return JSON.stringify({ verdict: "pass", findings: [], mustFix: [] });
+        if (role === "evolve-architect") return JSON.stringify({ candidates: makeSuiteCandidates({ includeMcpAndVariants: true }) });
         return "{}";
       });
 
@@ -2757,9 +2757,9 @@ describe("closed-loop self-regulating lean evolution (prune_or_relax + fixed-poi
 
       const { cmsDef: v2Cms, suiteDef: v2Suite, blueprint } = makeLeanV2Suite();
       const runAnalyzer = vi.fn(async (_projId: string, _key: string, _prompt: string, _host: unknown, _model: unknown, _meta: unknown, role?: string) => {
-        if (role === "planner") return JSON.stringify(blueprint);
-        if (role === "plan-critic" || role === "auditor") return JSON.stringify({ verdict: "pass", findings: [], mustFix: [] });
-        if (role === "workflow-architect") {
+        if (role === "evolve-planner") return JSON.stringify(blueprint);
+        if (role === "evolve-critic" || role === "evolve-auditor") return JSON.stringify({ verdict: "pass", findings: [], mustFix: [] });
+        if (role === "evolve-architect") {
           return JSON.stringify({
             candidates: [
               { workflowId: "site-cms-build-qa", scope: "global", name: v2Cms.name, description: v2Cms.description, category: websitesCategory, definition: v2Cms },
