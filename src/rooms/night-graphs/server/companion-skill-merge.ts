@@ -214,6 +214,27 @@ function renderSkillMd(spec: CompanionSkillSpec, coreRules: readonly string[], a
   return `${header}${keptLines.join("\n")}${refs}`;
 }
 
+function augmentHandcraftedSkillMd(existingText: string, coreRules: readonly string[], archetypePaths: readonly string[]): string {
+  const base = existingText.replace(/\n*## Core Rules\n[\s\S]*?(?=\n## |\s*$)/, "").trimEnd();
+  const refLines = [
+    ...(base.includes("references/golden-skeleton.md") ? [] : ["- [Golden Skeleton](references/golden-skeleton.md) — mandatory ordered artifact sections"]),
+    ...(base.includes("references/qa-rubric.md") ? [] : ["- [QA Rubric](references/qa-rubric.md) — pre-delivery critic checklist"]),
+    ...archetypePaths.filter((p) => !base.includes(p)).map((p) => `- [Archetype: ${p.replace(/^references\/archetype-/, "").replace(/\.md$/, "")}](${p}) — domain archetype overlay rules`),
+  ];
+  const refTail = refLines.length > 0 ? `\n\n## Evolution References\n\n${refLines.join("\n")}\n` : "\n";
+  const rulesHeader = "\n\n## Core Rules\n\n";
+  const maxBodyBytes = SKILL_MD_MAX_BYTES - 128;
+  const keptRules: string[] = [];
+  for (const rule of coreRules) {
+    const line = `- ${rule.trim().slice(0, 360)}`;
+    const candidate = `${base}${rulesHeader}${[...keptRules, line].join("\n")}${refTail}`;
+    if (Buffer.byteLength(candidate, "utf8") < maxBodyBytes && candidate.split("\n").length <= SKILL_MD_MAX_LINES) keptRules.push(line);
+  }
+  if (keptRules.length > 0) return `${base}${rulesHeader}${keptRules.join("\n")}${refTail}`;
+  const withRefs = `${base}${refTail}`;
+  return Buffer.byteLength(withRefs, "utf8") < SKILL_MD_MAX_BYTES && withRefs.split("\n").length <= SKILL_MD_MAX_LINES ? withRefs : `${existingText.trimEnd()}\n`;
+}
+
 /** Deterministically renders or non-destructively merges a `CompanionSkillSpec` into a sorted `SkillBundleFile[]` bundle. */
 export function renderCompanionSkillBundle(
   spec: CompanionSkillSpec,
@@ -222,6 +243,8 @@ export function renderCompanionSkillBundle(
 ): CompanionSkillCandidate {
   const isMerge = spec.mergeMode === "merge_core_and_overlay" && Boolean(existingFiles && existingFiles.length > 0);
   const existingMap = new Map((existingFiles ?? []).map((f) => [f.path, f.text]));
+  const existingSkillMd = existingMap.get("SKILL.md");
+  const isHandcraftedSkill = isMerge && Boolean(existingSkillMd) && !existingMap.has("references/golden-skeleton.md") && !existingSkillMd!.includes("## Scope\n\n- Use when:");
   const stripNum = (s: string) => s.replace(/^\d+\.\s*/, "");
   const stripBox = (s: string) => s.replace(/^-\s+\[[ xX]\]\s*/, "");
 
@@ -229,7 +252,7 @@ export function renderCompanionSkillBundle(
   const compactedGolden = compactSemanticItems(rawGolden, { maxItems: MAX_GOLDEN_SKELETON_SECTIONS });
   const rawQa = [...(isMerge ? extractMatches(existingMap.get("references/qa-rubric.md"), /^-\s+\[[ xX]\]\s+(.+)$/gm) : []), ...spec.qaRubricChecks.map(stripBox)].filter((c) => c.trim().length > 0);
   const compactedQa = compactSemanticItems(rawQa);
-  const rawRules = [...(isMerge ? extractBullets(existingMap.get("SKILL.md"), "Core Rules") : []), ...spec.coreRules].filter((r) => r.trim().length > 0);
+  const rawRules = [...(isMerge ? extractBullets(existingSkillMd, "Core Rules") : []), ...spec.coreRules].filter((r) => r.trim().length > 0);
   const compactedRules = compactSemanticItems(rawRules, { maxItems: MAX_CORE_RULES });
 
   const collapsedCount = compactedGolden.collapsedCount + compactedRules.collapsedCount;
@@ -241,18 +264,28 @@ export function renderCompanionSkillBundle(
   }
 
   const archetypeFiles = new Map<string, string>();
-  if (isMerge) for (const [path, text] of existingMap) if (ARCHETYPE_FILE_RE.test(path)) archetypeFiles.set(path, text);
+  const extraRefFiles = new Map<string, string>();
+  if (isMerge) {
+    for (const [path, text] of existingMap) {
+      if (ARCHETYPE_FILE_RE.test(path)) archetypeFiles.set(path, text);
+      else if (path.startsWith("references/") && path !== "references/golden-skeleton.md" && path !== "references/qa-rubric.md") extraRefFiles.set(path, text);
+    }
+  }
   for (const overlay of spec.archetypeOverlays) {
     const path = `references/archetype-${overlay.slug}.md`;
     if (ARCHETYPE_FILE_RE.test(path)) archetypeFiles.set(path, renderArchetypeOverlay(overlay, isMerge ? archetypeFiles.get(path) : undefined));
   }
 
   const archetypePaths = [...archetypeFiles.keys()].sort((a, b) => a.localeCompare(b));
+  const skillMdText = isHandcraftedSkill
+    ? augmentHandcraftedSkillMd(existingSkillMd!, compactedRules.items, archetypePaths)
+    : renderSkillMd(spec, compactedRules.items, archetypePaths);
   const files: SkillBundleFile[] = [
-    { path: "SKILL.md", text: renderSkillMd(spec, compactedRules.items, archetypePaths) },
+    { path: "SKILL.md", text: skillMdText },
     { path: "references/golden-skeleton.md", text: renderGoldenSkeleton(spec.skillId, compactedGolden.items) },
     { path: "references/qa-rubric.md", text: renderQaRubric(spec.skillId, compactedQa.items) },
     ...archetypePaths.map((path) => ({ path, text: archetypeFiles.get(path)! })),
+    ...[...extraRefFiles.entries()].map(([path, text]) => ({ path, text })),
   ];
   return { skillId: spec.skillId, workflowIds: [...new Set(spec.workflowIds)], mergeMode: spec.mergeMode, files: sortSkillBundleFiles(files) };
 }
@@ -296,12 +329,14 @@ export function verifyNonDestructiveSkillMerge(
     "missing_qa_check", "QA rubric check", findings,
   );
   for (const path of prevMap.keys()) {
-    if (ARCHETYPE_FILE_RE.test(path) && !nextMap.has(path)) {
-      findings.push({ code: "dropped_archetype_overlay", detail: `Existing archetype overlay "${path}" was dropped` });
+    if (path.startsWith("references/") && path !== "references/golden-skeleton.md" && path !== "references/qa-rubric.md" && !nextMap.has(path)) {
+      findings.push({ code: "dropped_archetype_overlay", detail: `Existing reference file "${path}" was dropped` });
     }
   }
   return findings;
 }
+
+const GENERATED_COMPANION_REF_RE = /^references\/(?:golden-skeleton|qa-rubric|archetype-[a-z0-9][a-z0-9-]{0,47})\.md$/;
 
 /** Validates skill bundle structure, `lintSkillDir`, de-projectization, and non-destructive merge invariants. */
 export function lintAndVerifyCompanionSkill(
@@ -313,13 +348,16 @@ export function lintAndVerifyCompanionSkill(
   const bundleCheck = validateSkillBundleFiles(candidate.skillId, candidate.files);
   if (!bundleCheck.ok) findings.push({ code: "skill_lint_error", detail: `validateSkillBundleFiles: ${bundleCheck.reason}` });
 
+  const preExistingErrors = new Set(existingFiles?.length ? lintSkillDir([...existingFiles]).errors : []);
   const lint = lintSkillDir(candidate.files);
-  for (const err of lint.errors) findings.push({ code: "skill_lint_error", detail: err });
+  for (const err of lint.errors) {
+    if (!preExistingErrors.has(err)) findings.push({ code: "skill_lint_error", detail: err });
+  }
   for (const warn of lint.warnings) {
     if (/too_long|body_size|8 KB|8,192|500 lines/i.test(warn)) findings.push({ code: "skill_lint_error", detail: warn });
   }
   for (const file of candidate.files) {
-    if (file.path.startsWith("references/") && NESTED_REF_RE.test(file.text)) {
+    if (GENERATED_COMPANION_REF_RE.test(file.path) && NESTED_REF_RE.test(file.text)) {
       findings.push({ code: "skill_lint_error", detail: `${file.path}: nested reference link inside references/ is forbidden` });
     }
   }

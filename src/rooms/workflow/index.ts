@@ -1,7 +1,15 @@
 // Public API of workflow: what other rooms import. Everything else in this room is private.
 // Add a name here to make it public; scripts/refactor/barrels.ts wrote the first version from the existing imports.
 export { DOCS_MAINTENANCE, DOCS_NIGHT, LP_TASK_PIPELINE, SELF_REPAIR } from "../contracts";
-export { BUILTIN_SOURCES, builtinWorkflow, builtinWorkflows } from "./builtin";
+export {
+  BUILTIN_SOURCES,
+  EVOLVABLE_DOMAIN_BUILTIN_IDS,
+  builtinWorkflow,
+  builtinWorkflows,
+  isCoreLockedBuiltinId,
+  isEvolvableDomainBuiltinId,
+  rawBuiltinWorkflowSource,
+} from "./builtin";
 export {
   WORKFLOW_CATEGORIES,
   compareWorkflowCategories,

@@ -74,6 +74,14 @@ export {
   type FrictionSignalKind,
 } from "./friction-signals";
 export {
+  checkDomainBuiltinOverlayCompatibility,
+  domainFamilyOfBuiltinId,
+  resolveFactoryDomainBase,
+  summarizeWorkflowForEvolveCatalog,
+  type DomainBuiltinCatalogSummary,
+  type FactoryDomainBase,
+} from "./domain-builtin-overlay";
+export {
   MAX_PHASE_GRAPH_EXECUTABLE_NODES,
   MAX_PHASE_GRAPH_HUMAN_GATES,
   OPTIONAL_FEATURE_INPUTS,

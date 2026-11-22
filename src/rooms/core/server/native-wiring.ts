@@ -6,7 +6,7 @@ import { nativeSelectionSchema } from "../../contracts/native-selection";
 import { createClaudeGuardEnv } from "../../native-agent";
 import { attachStreamRetry, droppedStreamDetail } from "../../writer";
 import { retryEligibility } from "../../stability/server";
-import { createPmSkillTraceEnv, createRoleMarkerEnv, mountBbShim } from "../../native-agent/server";
+import { createPmSkillTraceEnv, createRoleMarkerEnv, mountBbShim, mountNativeSpecialistSessionPolicy } from "../../native-agent/server";
 import { observeOwnerDispatch } from "../../owner-presence/server";
 import { lpStandardTierAdmission } from "../../platform/server";
 import { THREAD_WATCH_EVENT_TYPES, listThreadEventsRaw } from "@lane-pilot/thread-observe";
@@ -63,6 +63,7 @@ export function mountNativeWiring(ctx: ServerCore) {
     return merged;
   });
   mountBbShim(ctx);
+  mountNativeSpecialistSessionPolicy(ctx);
 
   attachStreamRetry({
     events: bb.events,

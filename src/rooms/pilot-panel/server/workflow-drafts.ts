@@ -14,7 +14,7 @@ import {
   type CasFilesLike, type SupersededWorkflowSnapshot,
 } from "../../storage";
 import { noteEngineWrite } from "../../verification/server";
-import { BUILTIN_SOURCES, builtinWorkflow } from "../../workflow";
+import { BUILTIN_SOURCES, builtinWorkflow, isEvolvableDomainBuiltinId, rawBuiltinWorkflowSource } from "../../workflow";
 import { createWorkflowArchitect, realDeps } from "../../workflow/server";
 import {
   PILOT_PROCESS_STATE_REL_PATH, pilotProcessStateSchema, readPilotProcessStateCas, writePilotProcessStateCas,
@@ -227,11 +227,27 @@ export async function rollbackPanelWorkflowDraft(
     ctx.log(`WARN [pilotPanel.workflowDrafts] rollback_tests_failed ${redactKnown(JSON.stringify({ draftId: draft.id, workflowId: draft.workflowId, version: restored.draft.version }))}`);
     return { ok: false, message: "Тесты откаченной версии не прошли." };
   }
-  const res = await publishDraftWithCleanup(ctx, deps, {
-    draftId: draft.id, projectId: draft.projectId, workflowId: draft.workflowId, fallbackVersion: restored.draft.version,
-    threadId: input.threadId, closePrefix: `workflow-evolved:${draft.id}:`, eventName: "rolledBack",
-  });
-  if (!res.ok) return { ok: false, message: `Не удалось опубликовать откаченную версию: ${res.reason}` };
+  const stripMeta = (raw: Record<string, unknown>) => { const { ui: _u, status: _st, scope: _sc, ...rest } = raw; return JSON.stringify(rest); };
+  const factoryRaw = draft.scope === "global" && isEvolvableDomainBuiltinId(draft.workflowId) ? rawBuiltinWorkflowSource(draft.workflowId) : null;
+  const rollsBackToFactoryBuiltin = Boolean(factoryRaw && stripMeta(restored.draft.definition as Record<string, unknown>) === stripMeta(factoryRaw));
+  let publishedVersion: number;
+  if (rollsBackToFactoryBuiltin) {
+    await removeWorkflowFile(globalDir, draft.workflowId).catch(() => undefined);
+    drafts.resetToFactoryBaseline(draft.id);
+    closeOwnerItemsByPrefix(ctx.db, `workflow-evolved:${draft.id}:`, "owner:pilot-panel");
+    ctx.realtime?.notify(draft.projectId, "workflow-draft", input.threadId, draft.id);
+    deps.workflowCatalog?.invalidate();
+    deps.workflowTriggers?.syncSoon(draft.projectId);
+    publishedVersion = builtinWorkflow(draft.workflowId)?.version ?? 1;
+    ctx.log(`INFO [pilotPanel.workflowDrafts] rolledBackToFactoryBuiltin ${redactKnown(JSON.stringify({ draftId: draft.id, workflowId: draft.workflowId, version: publishedVersion }))}`);
+  } else {
+    const res = await publishDraftWithCleanup(ctx, deps, {
+      draftId: draft.id, projectId: draft.projectId, workflowId: draft.workflowId, fallbackVersion: restored.draft.version,
+      threadId: input.threadId, closePrefix: `workflow-evolved:${draft.id}:`, eventName: "rolledBack",
+    });
+    if (!res.ok) return { ok: false, message: `Не удалось опубликовать откаченную версию: ${res.reason}` };
+    publishedVersion = res.version;
+  }
 
   const skillsRoot = (deps.skillsDir ?? globalSkillsDir)();
   for (const row of listLatestActivePublishedSkillEvolutionsForDraft(ctx.db, draft.id)) {
@@ -242,7 +258,7 @@ export async function rollbackPanelWorkflowDraft(
     appendSkillEvolutionEvent(ctx.db, { ...row, evolutionId: undefined, createdAt: undefined, status: "rolled_back", afterBundleSha256: row.beforeBundleSha256 }, { log: ctx.log });
     ctx.log(`INFO [pilotPanel.workflowDrafts] coupled_skill_restored ${redactKnown(JSON.stringify({ draftId: draft.id, workflowId: draft.workflowId, skillId: row.skillId, restoredSuperseded: row.supersededSnapshots.length }))}`);
   }
-  return { ok: true, projectId: res.projectId, message: `Граф ${draft.workflowId} откачен и опубликован (v${res.version}).` };
+  return { ok: true, projectId: draft.projectId, message: rollsBackToFactoryBuiltin ? `Оверлей ${draft.workflowId} удалён — восстановлен заводской граф (v${publishedVersion}).` : `Граф ${draft.workflowId} откачен и опубликован (v${publishedVersion}).` };
 }
 
 export function registerPilotProcessStateAction(engine: WorkflowEngine, ctx: ServerCore): void {

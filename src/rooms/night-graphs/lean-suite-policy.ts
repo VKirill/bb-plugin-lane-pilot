@@ -1,5 +1,6 @@
 import { redactKnown } from "@lane-pilot/kit";
 import { placeholdersIn, refOf, valueSpecOf } from "@lane-pilot/workflow-engine";
+import { resolveFactoryDomainBase } from "./domain-builtin-overlay";
 import type { ProcessBlueprint, ProcessBlueprintGraphSpec } from "./process-blueprint";
 
 export const MAX_PHASE_GRAPH_EXECUTABLE_NODES = 7;
@@ -156,15 +157,26 @@ export function validateLeanSuitePolicy(
     const subRefsInSuite = nodes.filter((n) => n.type === "subworkflow" && typeof n.workflow === "string" && candidateIds.has(n.workflow));
     const isMaster = bpGraph?.kind === "master_orchestrator" || subRefsInSuite.length >= 2 || wfId.endsWith("-suite");
     const workNodes = nodes.filter(isWorkNode), humanNodes = nodes.filter((n) => n.type === "human");
+    const factoryBase = candidate.scope !== "project" ? resolveFactoryDomainBase(wfId) : null;
+    const factoryNodes = factoryBase ? asRecs(factoryBase.def.nodes) : [];
+    const factoryWorkCount = factoryNodes.filter(isWorkNode).length;
+    const factoryHumans = factoryNodes.filter((n) => n.type === "human");
+    const factoryHumanIds = new Set(factoryHumans.map((n) => String(n.id ?? "")).filter(Boolean));
+    const maxWorkNodes = factoryBase ? Math.max(MAX_PHASE_GRAPH_EXECUTABLE_NODES, factoryWorkCount + 2) : MAX_PHASE_GRAPH_EXECUTABLE_NODES;
+    const maxHumanGates = factoryBase ? Math.max(MAX_PHASE_GRAPH_HUMAN_GATES, factoryHumans.length + 1) : MAX_PHASE_GRAPH_HUMAN_GATES;
 
-    if (!isMaster && workNodes.length > MAX_PHASE_GRAPH_EXECUTABLE_NODES) {
-      push("node_budget_exceeded", `phase_graph has ${workNodes.length} executable nodes (max ${MAX_PHASE_GRAPH_EXECUTABLE_NODES})`);
+    if (!isMaster && workNodes.length > maxWorkNodes) {
+      push("node_budget_exceeded", `phase_graph has ${workNodes.length} executable nodes (max ${maxWorkNodes})`);
     }
-    if (!isMaster && humanNodes.length > MAX_PHASE_GRAPH_HUMAN_GATES) {
-      push("human_gate_budget_exceeded", `phase_graph has ${humanNodes.length} human gates (max ${MAX_PHASE_GRAPH_HUMAN_GATES})`);
+    if (!isMaster && humanNodes.length > maxHumanGates) {
+      push("human_gate_budget_exceeded", `phase_graph has ${humanNodes.length} human gates (max ${maxHumanGates})`);
     }
     for (const h of humanNodes) {
       const id = String(h.id ?? ""), ak = getFieldMap(h.out).get("answer_kind"), outEdges = edges.filter((e) => e.from === id);
+      const factoryHuman = factoryHumans.find((fh) => String(fh.id ?? "") === id);
+      if (factoryBase && factoryHumanIds.has(id) && options?.blueprint?.operator !== "prune_or_relax" && !asStrs(factoryHuman?.options).includes("skip")) {
+        continue;
+      }
       const akOk = Boolean(ak && (ak.values?.includes("skip") || ak.type === "string" || ak.type === "str"));
       if (!asStrs(h.options).includes("skip") || !akOk || (outEdges.length > 0 && !outEdges.some((e) => whenAllowsSkip(e.when)))) {
         push("human_gate_not_skippable", `human gate "${id}" must allow "skip" in options, out.answer_kind, and outgoing edges`, id);
@@ -223,9 +235,11 @@ export function validateLeanSuitePolicy(
         }
       }
     }
+    const factoryInputs = factoryBase ? getFieldMap(factoryBase.def.inputs) : null;
+    const requireScopeTier = !factoryBase || Boolean(factoryInputs?.has("scope_tier"));
     const st = inputs.get("scope_tier");
-    if (!st || (st.required === true && st.default === undefined) || (st.default !== undefined && st.default !== "standard")
-      || (st.values && !(["express", "standard", "full"] as const).every((v) => st.values!.includes(v)))) {
+    if (requireScopeTier && (!st || (st.required === true && st.default === undefined) || (st.default !== undefined && st.default !== "standard")
+      || (st.values && !(["express", "standard", "full"] as const).every((v) => st.values!.includes(v))))) {
       push("missing_scope_tier", `workflow "${wfId}" must declare optional input scope_tier (express|standard|full, default: "standard")`);
     }
     if (isMaster) {
@@ -237,6 +251,7 @@ export function validateLeanSuitePolicy(
         }
       }
     }
+    const requireVariantLean = !factoryBase || Boolean(asRec(asRec(asRec(factoryBase.def.test)?.sim)?.variant_lean));
     const variantLean = asRec(asRec(asRec(def.test)?.sim)?.variant_lean);
     const intermediateHumans = humanNodes.filter((h) => {
       const hid = String(h.id ?? ""), seen = new Set<string>(), queue = [...(adj.get(hid) ?? [])];
@@ -251,20 +266,25 @@ export function validateLeanSuitePolicy(
       return false;
     });
     const vlAnswers = asRec(variantLean?.human_answers);
-    if (!variantLean || (variantLean.expect_status !== undefined && variantLean.expect_status !== "succeeded")
-      || asRec(variantLean.input)?.scope_tier !== "express" || !intermediateHumans.every((h) => vlAnswers?.[String(h.id ?? "")] === "skip")) {
+    if (requireVariantLean && (!variantLean || (variantLean.expect_status !== undefined && variantLean.expect_status !== "succeeded")
+      || asRec(variantLean.input)?.scope_tier !== "express" || !intermediateHumans.every((h) => vlAnswers?.[String(h.id ?? "")] === "skip"))) {
       push("missing_variant_lean_test", `workflow "${wfId}" must define test.sim.variant_lean with scope_tier: "express", "skip" on intermediate human gates, and expect_status: "succeeded"`);
     }
-    if (def.internal !== true) {
+    const factoryHasChatMeta = factoryBase
+      ? (Array.isArray(factoryBase.def.triggers) && factoryBase.def.triggers.includes("chat") && asStrs(factoryBase.def.not_for).length >= 2)
+      : true;
+    if (def.internal !== true && (!factoryBase || factoryHasChatMeta)) {
       const triggers = new Set((Array.isArray(def.triggers) ? def.triggers : []).map((t) => (typeof t === "string" ? t.trim() : typeof asRec(t)?.type === "string" ? String(asRec(t)!.type).trim() : "")).filter(Boolean));
       const ex = asRec(def.examples), enEx = asStrs(ex?.en).filter((s) => s.trim().length > 0), ruEx = asStrs(ex?.ru).filter((s) => s.trim().length > 0);
       if (!triggers.has("chat") || !triggers.has("manual") || enEx.length < 2 || ruEx.length < 2 || asStrs(def.not_for).filter((s) => s.trim().length > 0).length < 2) {
         push("missing_chat_routing_metadata", `user-facing workflow "${wfId}" requires triggers ["chat","manual"], >=2 EN/RU examples, and >=2 not_for entries`);
       }
     }
+    const factoryHasCheckpoint = factoryNodes.some((n) => n.action === "lp.save_process_state");
     const checkpoints = nodes.filter((n) => n.action === "lp.save_process_state");
-    if (checkpoints.length === 0) push("missing_or_invalid_process_state_checkpoint", `workflow "${wfId}" must include an lp.save_process_state checkpoint action`);
-    else {
+    if (checkpoints.length === 0) {
+      if (!factoryBase || factoryHasCheckpoint) push("missing_or_invalid_process_state_checkpoint", `workflow "${wfId}" must include an lp.save_process_state checkpoint action`);
+    } else {
       for (const cp of checkpoints) {
         const id = String(cp.id ?? ""), out = getFieldMap(cp.out), saved = out.get("saved"), path = out.get("path"), stage = out.get("stage");
         if (cp.type !== "action" || (saved?.type !== "bool" && saved?.type !== "boolean") || (path?.type !== "string" && path?.type !== "str") || (stage?.type !== "string" && stage?.type !== "str")) {

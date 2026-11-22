@@ -7,7 +7,8 @@ import type { HarnessApi } from "../../harness/server";
 import { scheduleIsolated, type WorkflowEngineApi, type WorkflowTriggersApi, type WriterHostApi } from "../../platform/server";
 import type { RuleScanApi } from "../../self-repair/server";
 import { globalWorkflowDir, latestErrandEpisodeRows, listErrandEpisodeRows, listPilotDayDigests, loadWorkflowStore, type PilotDayCategoryHint } from "../../storage";
-import { BUILTIN_SOURCES, WORKFLOW_CATEGORIES } from "../../workflow";
+import { BUILTIN_SOURCES, WORKFLOW_CATEGORIES, isCoreLockedBuiltinId, isEvolvableDomainBuiltinId } from "../../workflow";
+import { domainFamilyOfBuiltinId, summarizeWorkflowForEvolveCatalog } from "../domain-builtin-overlay";
 import { validateLeanSuitePolicy } from "../lean-suite-policy";
 import { readExistingCompanionSkills, type ExistingCompanionSkillInfo } from "./companion-skill-evolve";
 import { MAX_GOLDEN_SKELETON_SECTIONS, type CompanionSkillCandidate } from "./companion-skill-merge";
@@ -178,7 +179,9 @@ export function collectGraphEvolveEvidence(
     if (!key) continue;
     const hasDelta = (d.projectId !== null && deltaProjects.has(d.projectId)) || (d.threadId !== null && deltaThreads.has(d.threadId));
     items.push({
-      key, projectId: d.projectId, richPilotRun: d.sourceKind === "pilot_run" && (d.taskCount >= 2 || (d.outcome === "done" && hasDelta)),
+      key, projectId: d.projectId,
+      richPilotRun: (d.sourceKind === "pilot_run" && (d.taskCount >= 2 || (d.outcome === "done" && hasDelta)))
+        || (d.sourceKind === "pilot_chat" && hasDelta && (d.maskedLessons.length > 0 || d.traps.length > 0)),
       categoryHint: d.categoryHint, archetypeHint: d.archetypeHint?.trim() || null, artifactSkeleton: d.artifactSkeleton ?? null,
       goal: d.maskedGoal.trim(), traps: d.traps.map((t) => t.trim()).filter(Boolean),
       lessons: d.maskedLessons.map((l) => l.trim()).filter(Boolean), skills: d.skills.map((s) => s.trim()).filter(Boolean),
@@ -248,6 +251,22 @@ export function collectGraphEvolveEvidence(
       categoryHint: debt.category, overConstraintCount: matchedDeltas.length + debt.summaries.length, frictionSignals, leanViolations: debt.summaries.slice(0, 12),
     });
   }
+  for (const d of deltas) {
+    if (!d.workflowId || !isEvolvableDomainBuiltinId(d.workflowId) || clusters.length >= 12) continue;
+    const fam = domainFamilyOfBuiltinId(d.workflowId) ?? "general";
+    if (clusters.some((c) => domainFamilyOf(c.processKey, c.categoryHint) === fam || c.processKey.startsWith(`${d.workflowId}|`))) continue;
+    const siblingDeltas = deltas.filter((x) => x.workflowId === d.workflowId);
+    const oc = siblingDeltas.filter((x) => x.interventionKind === "over_constraint");
+    clusters.push({
+      processKey: `${d.workflowId}|domain-feedback`, count: siblingDeltas.length,
+      topSkills: [...new Set(siblingDeltas.flatMap((x) => x.resolvedSkills))].slice(0, 10),
+      sampleGoals: [`Refine specialist workflow ${d.workflowId} and its skills from owner trajectory feedback`],
+      traps: siblingDeltas.map((x) => x.maskedSummary).slice(0, 8),
+      lessons: siblingDeltas.map((x) => x.maskedSummary).slice(0, 8),
+      categoryHint: fam !== "general" ? { id: fam } : null,
+      ...(oc.length ? { overConstraintCount: oc.length, frictionSignals: oc.map((x) => x.maskedSummary).slice(0, 8) } : {}),
+    });
+  }
   const clustersWithFriction = clusters.filter((c) => (c.overConstraintCount ?? 0) > 0 || (c.leanViolations?.length ?? 0) > 0).length;
   options?.log?.(`INFO [nightGraphs.graphEvolve] collected ${redactKnown(JSON.stringify({ projectId: pid, clusters: clusters.length, singletonMerged, deltas: deltas.length, digests: digests.length, overConstraintDeltas: overConstraintDeltas.length, clustersWithFriction, leanDebtCount }))}`);
   return { clusters, deltas, deltaIds: deltas.map((d) => d.id), status: clusters.length || deltas.length || leanDebtCount > 0 ? "ready" : "empty", leanDebtCount };
@@ -274,26 +293,26 @@ async function buildEvolveCatalogContext(
   const catalogItems = (await loadWorkflowStore({ builtin: BUILTIN_SOURCES, globalDir: globalWorkflowDir() }).catch(() => null))?.list() ?? [];
   const knownCategories = collectKnownCategories(catalogItems, collected);
   const globalItems = catalogItems.filter((s) => s.origin === "global");
+  const globalIds = new Set(globalItems.map((s) => s.workflow.id));
   const { evolvedWfs, humanOwnedIds } = classifyGlobalWorkflowOwnership(ctx.db, globalItems);
   const leanByWf = evalGlobalLeanViolations(evolvedWfs).byWf;
-  const existingGlobal: ExistingGlobalWorkflowSummary[] = evolvedWfs.map((s) => {
-    const wf = s.workflow, leanViolations = leanByWf.get(wf.id) ?? [];
-    return {
-      id: wf.id, version: wf.version, title: wf.name, ...(wf.category ? { category: wf.category } : {}),
-      triggers: wf.triggers.map((t) => t.type),
-      inputs: wf.inputs.map((f) => `${f.name}:${f.type}${f.required ? "!" : ""}`),
-      outputs: wf.outputs.map((f) => `${f.name}:${f.type}`),
-      nodes: wf.nodes.filter((n) => n.type !== "note").map((n) => ({
-        id: n.id, type: n.type,
-        ...(n.skip_when ? { skipWhen: typeof n.skip_when === "string" ? n.skip_when : JSON.stringify(n.skip_when) } : {}),
-        ...(n.type === "lp-task" ? { ownsPaths: n.owns_paths } : {}),
-        ...(n.type === "human" ? { options: n.options } : {}),
-        ...(n.type === "subworkflow" ? { workflow: n.workflow } : {}),
-      })),
-      ...(leanViolations.length ? { leanViolations } : {}),
-    };
-  });
-  const reservedBuiltinIds = [...new Set([...BUILTIN_SOURCES.map((s) => String((s.value as { id?: unknown })?.id ?? "")).filter(Boolean), ...humanOwnedIds])];
+  const activeFamilies = new Set<string>([
+    ...collected.clusters.map((c) => domainFamilyOf(c.processKey, c.categoryHint)),
+    ...collected.deltas.flatMap((d) => (d.workflowId ? [domainFamilyOfBuiltinId(d.workflowId) ?? ""] : [])).filter(Boolean),
+  ]);
+  const explicitDeltaWfIds = new Set(collected.deltas.map((d) => d.workflowId?.trim() ?? "").filter(Boolean));
+  const relevantDomainBuiltins = catalogItems.filter((s) =>
+    s.origin === "builtin" && !globalIds.has(s.workflow.id) && isEvolvableDomainBuiltinId(s.workflow.id)
+    && (explicitDeltaWfIds.has(s.workflow.id) || activeFamilies.has(domainFamilyOfBuiltinId(s.workflow.id) ?? "")),
+  );
+  const existingGlobal: ExistingGlobalWorkflowSummary[] = [
+    ...evolvedWfs.map((s) => summarizeWorkflowForEvolveCatalog(s.workflow, leanByWf.get(s.workflow.id))),
+    ...relevantDomainBuiltins.map((s) => summarizeWorkflowForEvolveCatalog(s.workflow)),
+  ];
+  const reservedBuiltinIds = [...new Set([
+    ...BUILTIN_SOURCES.map((s) => String((s.value as { id?: unknown })?.id ?? "")).filter((id) => id && isCoreLockedBuiltinId(id)),
+    ...humanOwnedIds,
+  ])];
   const availableSkills = (await loadDigestSkillCatalog(ctx)).map((s) => s.name).slice(0, 120);
   const { existingCompanionSkills, existingSkillBundles } = await readExistingCompanionSkills(globalSkillsDir());
   return {

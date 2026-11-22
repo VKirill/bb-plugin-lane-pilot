@@ -10,9 +10,10 @@ import {
   HARNESS_VERSION, casWriteWorkflowFile, createDraftStore, createStatusResolver, definitionSha256,
   globalWorkflowDir, loadWorkflowStore, nodeFileSource, type DraftStore, type PilotDayCategoryHint, type SupersededWorkflowSnapshot,
 } from "../../storage";
-import { BUILTIN_SOURCES, builtinWorkflow, isBuiltinWorkflowCategory, workflowCategory } from "../../workflow";
+import { BUILTIN_SOURCES, builtinWorkflow, isBuiltinWorkflowCategory, isCoreLockedBuiltinId, workflowCategory } from "../../workflow";
 import { createWorkflowArchitect, type ArchitectDeps, type WorkflowArchitect } from "../../workflow/server";
 import { checkDeprojectization, classifyEvolutionDiff, type DeprojectizeContext } from "../deprojectize";
+import { checkDomainBuiltinOverlayCompatibility, resolveFactoryDomainBase, type FactoryDomainBase } from "../domain-builtin-overlay";
 import { validateLeanSuitePolicy, type LeanPolicyViolation } from "../lean-suite-policy";
 import type { ProcessBlueprint } from "../process-blueprint";
 import {
@@ -61,7 +62,7 @@ type PreparedCandidate = {
   candidate: GraphEvolveCandidate; workflowId: string; projectId: string;
   candidateDef: Record<string, unknown>; finalDef: Record<string, unknown>;
   existing: ReturnType<DraftStore["listEvolutionDrafts"]>[number] | null;
-  diskBase: DiskBase | null; baseDef: Record<string, unknown> | null;
+  diskBase: DiskBase | null; factoryBase: FactoryDomainBase | null; baseDef: Record<string, unknown> | null;
   diff: ReturnType<typeof classifyEvolutionDiff>; shouldPublish: boolean;
   pass1Workflow: Workflow;
 };
@@ -186,10 +187,12 @@ function evalLeanPolicy(
   return byWf;
 }
 
-function preparePass1Defs(candidate: GraphEvolveCandidate, existing: PreparedCandidate["existing"], diskBase: DiskBase | null, shouldPublish: boolean, candidateDef: Record<string, unknown>) {
+function preparePass1Defs(candidate: GraphEvolveCandidate, existing: PreparedCandidate["existing"], baseVersion: number | null, shouldPublish: boolean, candidateDef: Record<string, unknown>) {
   const workflowId = candidate.workflowId.trim();
   const projectId = existing?.projectId ?? (candidate.projectId?.trim() || "*");
-  const targetVersion = shouldPublish ? (diskBase ? diskBase.version + 1 : 1) : (typeof candidateDef.version === "number" ? candidateDef.version : 1);
+  const targetVersion = shouldPublish
+    ? (baseVersion !== null ? baseVersion + 1 : 1)
+    : (baseVersion !== null ? baseVersion + 1 : (typeof candidateDef.version === "number" ? candidateDef.version : 1));
   const targetStatus = shouldPublish ? "published" : "draft";
   const finalDef: Record<string, unknown> = {
     ...candidateDef, id: workflowId, version: targetVersion, status: targetStatus,
@@ -213,12 +216,15 @@ export async function validateEvolveSuiteCandidates(
 
   for (const candidate of candidates) {
     const workflowId = candidate.workflowId.trim();
-    if (!workflowId || builtinWorkflow(workflowId)) { if (workflowId) failedIds.add(workflowId); errors.push(`${workflowId || "<empty>"}: id_reserved`); continue; }
+    if (!workflowId || isCoreLockedBuiltinId(workflowId) || (candidate.scope !== "global" && builtinWorkflow(workflowId))) {
+      if (workflowId) failedIds.add(workflowId); errors.push(`${workflowId || "<empty>"}: id_reserved`); continue;
+    }
     if (suiteMap.has(workflowId)) { errors.push(`${workflowId}: duplicate_workflow_id`); continue; }
     const category = candidate.definition.category ?? candidate.category;
     const candidateDef = category !== undefined && candidate.definition.category === undefined ? { ...candidate.definition, category } : candidate.definition;
     const diskBase = candidate.scope === "global" ? await readDiskBase(dirFn(), workflowId) : null;
-    const { finalDef } = preparePass1Defs(candidate, null, diskBase, false, candidateDef);
+    const factoryBase = candidate.scope === "global" && !diskBase ? resolveFactoryDomainBase(workflowId) : null;
+    const { finalDef } = preparePass1Defs(candidate, null, diskBase?.version ?? factoryBase?.version ?? null, false, candidateDef);
     const loaded = loadWorkflow(finalDef);
     if (!loaded.ok) { failedIds.add(workflowId); errors.push(`${workflowId}: ${formatProblems(loaded.problems)}`); continue; }
     suiteMap.set(workflowId, loaded.workflow);
@@ -246,6 +252,11 @@ export async function validateEvolveSuiteCandidates(
     }
     const full = loadWorkflow(item.finalDef, { resolve: resolveSuite });
     if (!full.ok) { suiteMap.delete(item.workflowId); failedIds.add(item.workflowId); errors.push(`${item.workflowId}: ${formatProblems(full.problems)}`); continue; }
+    const factoryContractBase = item.candidate.scope === "global" ? resolveFactoryDomainBase(item.workflowId) : null;
+    if (factoryContractBase) {
+      const compatIssues = checkDomainBuiltinOverlayCompatibility(factoryContractBase.workflow, full.workflow);
+      if (compatIssues.length) { suiteMap.delete(item.workflowId); failedIds.add(item.workflowId); errors.push(`${item.workflowId}: overlay_contract:${compatIssues.join(",")}`); continue; }
+    }
     suiteMap.set(item.workflowId, full.workflow);
     for (const tc of testCasesOf(full.workflow)) {
       const res = await runDraftTest({ db: deps.db as never, harnessVersion: HARNESS_VERSION, resolveWorkflow: resolveSuite, now }, full.workflow, tc);
@@ -284,23 +295,26 @@ export async function applyGraphEvolveCandidates(
 
   for (const candidate of candidates) {
     const workflowId = candidate.workflowId.trim();
-    if (!workflowId || builtinWorkflow(workflowId)) { rejectInvalid(workflowId, "structural_or_new", "id_reserved", "reserved_or_empty", { workflowId }); continue; }
+    if (!workflowId || isCoreLockedBuiltinId(workflowId) || (candidate.scope !== "global" && builtinWorkflow(workflowId))) {
+      rejectInvalid(workflowId, "structural_or_new", "id_reserved", "reserved_or_empty", { workflowId }); continue;
+    }
     if (suiteMap.has(workflowId)) { outcomes.push({ workflowId, draftId: null, kind: "structural_or_new", status: "rejected_invalid", version: null, reason: "duplicate_workflow_id" }); rejectedCount += 1; continue; }
     const category = candidate.definition.category ?? candidate.category;
     const candidateDef = category !== undefined && candidate.definition.category === undefined ? { ...candidate.definition, category } : candidate.definition;
     const existing = drafts.listEvolutionDrafts({ workflowId, scope: candidate.scope, ...(candidate.scope === "project" && candidate.projectId ? { projectId: candidate.projectId } : {}) })[0] ?? null;
     const diskBase = candidate.scope === "global" ? await readDiskBase(dirFn(), workflowId) : null;
-    const baseDef = existing?.publishedVersion ? (drafts.latestPublishedSnapshot(existing.id)?.definition ?? diskBase?.def ?? null) : (diskBase?.def ?? null);
+    const factoryBase = candidate.scope === "global" && !diskBase ? resolveFactoryDomainBase(workflowId) : null;
+    const baseDef = existing?.publishedVersion ? (drafts.latestPublishedSnapshot(existing.id)?.definition ?? diskBase?.def ?? factoryBase?.def ?? null) : (diskBase?.def ?? factoryBase?.def ?? null);
     const diff = classifyEvolutionDiff(baseDef, candidateDef, { log });
     const isPruneExisting = options?.operator === "prune_or_relax" && Boolean(baseDef);
     const wouldPublish = Boolean((diff.kind === "minor_patch" && baseDef) || isPruneExisting || options?.publishApprovedSuite);
     const shouldPublish = Boolean(auditPassed && wouldPublish);
     if (!auditPassed && wouldPublish) log(`INFO [nightGraphs.graphEvolve] held_without_audit_pass ${redactKnown(JSON.stringify({ workflowId, auditVerdict: options?.auditVerdict }))}`);
-    const { projectId, finalDef } = preparePass1Defs(candidate, existing, diskBase, shouldPublish, candidateDef);
+    const { projectId, finalDef } = preparePass1Defs(candidate, existing, diskBase?.version ?? factoryBase?.version ?? null, shouldPublish, candidateDef);
     const loaded1 = loadWorkflow(finalDef);
     if (!loaded1.ok) { rejectInvalid(workflowId, diff.kind, formatProblems(loaded1.problems), "invalid_workflow", { workflowId, reason: formatProblems(loaded1.problems) }); continue; }
     suiteMap.set(workflowId, loaded1.workflow);
-    preparedList.push({ candidate, workflowId, projectId, candidateDef, finalDef, existing, diskBase, baseDef, diff, shouldPublish, pass1Workflow: loaded1.workflow });
+    preparedList.push({ candidate, workflowId, projectId, candidateDef, finalDef, existing, diskBase, factoryBase, baseDef, diff, shouldPublish, pass1Workflow: loaded1.workflow });
   }
 
   const { ordered, cyclic } = topologicalSortSuite(preparedList);
@@ -322,7 +336,7 @@ export async function applyGraphEvolveCandidates(
 
   for (let itemIdx = 0; itemIdx < ordered.length; itemIdx += 1) {
     const item = ordered[itemIdx]!;
-    const { candidate, workflowId, projectId, candidateDef, finalDef, existing, diskBase, baseDef, diff, shouldPublish, pass1Workflow } = item;
+    const { candidate, workflowId, projectId, candidateDef, finalDef, existing, diskBase, factoryBase, baseDef, diff, shouldPublish, pass1Workflow } = item;
     const failedDep = extractSubworkflowRefs(pass1Workflow).find((depId) => failedSuiteIds.has(depId));
     if (failedDep) { rejectInvalid(workflowId, diff.kind, `dependency_failed:${failedDep}`, "dependency_failed", { workflowId, failedDep }); continue; }
     if (candidate.scope === "global") {
@@ -343,6 +357,11 @@ export async function applyGraphEvolveCandidates(
     }
     const fullLoaded = loadWorkflow(finalDef, { resolve: resolveSuite });
     if (!fullLoaded.ok) { const reason = formatProblems(fullLoaded.problems); rejectInvalid(workflowId, diff.kind, reason, "invalid_workflow", { workflowId, reason }); continue; }
+    const factoryContractBase = factoryBase ?? (candidate.scope === "global" ? resolveFactoryDomainBase(workflowId) : null);
+    if (factoryContractBase) {
+      const compatIssues = checkDomainBuiltinOverlayCompatibility(factoryContractBase.workflow, fullLoaded.workflow);
+      if (compatIssues.length) { rejectInvalid(workflowId, diff.kind, `overlay_contract:${compatIssues.join(",")}`, "invalid_workflow", { workflowId, compatIssues }); continue; }
+    }
     suiteMap.set(workflowId, fullLoaded.workflow);
     log(`INFO [nightGraphs.graphEvolve] category_selected ${redactKnown(JSON.stringify({ workflowId, categoryId: fullLoaded.workflow.category?.id ?? workflowCategory(fullLoaded.workflow), isDynamic: Boolean(fullLoaded.workflow.category && !isBuiltinWorkflowCategory(fullLoaded.workflow.category.id)) }))}`);
 
@@ -362,7 +381,9 @@ export async function applyGraphEvolveCandidates(
       ? drafts.replaceDefinition(existing.id, draftDef, `nightly evolution (${diff.kind})`)!
       : diskBase
         ? drafts.replaceDefinition(drafts.create({ projectId, threadId: null, scope: candidate.scope, name: candidate.name, description: candidate.description, workflowId, definition: diskBase.def, base: { path: diskBase.path, sha256: diskBase.sha256, version: diskBase.version } }).id, draftDef, `nightly evolution (${diff.kind})`)!
-        : drafts.create({ projectId, threadId: null, scope: candidate.scope, name: candidate.name, description: candidate.description, workflowId, definition: draftDef });
+        : factoryBase
+          ? drafts.replaceDefinition(drafts.create({ projectId, threadId: null, scope: candidate.scope, name: candidate.name, description: candidate.description, workflowId, definition: factoryBase.def }).id, draftDef, `nightly evolution (${diff.kind})`)!
+          : drafts.create({ projectId, threadId: null, scope: candidate.scope, name: candidate.name, description: candidate.description, workflowId, definition: draftDef });
     const recorded = drafts.recordTests(draft.id, draft.version, results, true) ?? draft;
     log(`INFO [nightGraphs.graphEvolve] tested ${redactKnown(JSON.stringify({ workflowId, draftId: recorded.id, draftVersion: recorded.version, cases: results.length, green: true }))}`);
 

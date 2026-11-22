@@ -56,11 +56,14 @@ export async function readExistingCompanionSkills(skillsRoot: string): Promise<{
     if (!bundle?.exists) continue;
     existingSkillBundles.set(skillId, bundle.files);
     const archetypes = bundle.files.flatMap((f) => { const m = ARCHETYPE_FILE_RE.exec(f.path); return m ? [m[1]!] : []; });
-    const skeletonText = bundle.files.find((f) => f.path === "references/golden-skeleton.md")?.text ?? "";
+    const skeletonFile = bundle.files.find((f) => f.path === "references/golden-skeleton.md");
+    const skeletonText = skeletonFile?.text ?? "";
     const goldenSectionTitles = [...skeletonText.matchAll(/^##\s+(.+)$/gm)].map((m) => m[1]!.replace(/^\d+\.\s*/, "").trim()).filter(Boolean);
     const coreRuleCount = extractCoreRuleCount(bundle.files.find((f) => f.path === "SKILL.md")?.text ?? "");
-    const hasSemanticDuplicates = goldenSectionTitles.length > MAX_GOLDEN_SKELETON_SECTIONS
-      || coreRuleCount > MAX_CORE_RULES || compactSemanticItems(goldenSectionTitles).collapsedCount > 0;
+    const hasSemanticDuplicates = Boolean(skeletonFile) && (
+      goldenSectionTitles.length > MAX_GOLDEN_SKELETON_SECTIONS
+      || coreRuleCount > MAX_CORE_RULES || compactSemanticItems(goldenSectionTitles).collapsedCount > 0
+    );
     existingCompanionSkills.push({ skillId, archetypes, sectionCount: goldenSectionTitles.length, goldenSectionTitles, coreRuleCount, hasSemanticDuplicates });
   }
   return { existingCompanionSkills, existingSkillBundles };

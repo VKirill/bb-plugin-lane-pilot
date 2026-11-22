@@ -17,3 +17,9 @@ export type { ProfileCheckApi } from "./profile-check";
 export type { PmSkillCount } from "./pm-skill-use";
 
 export { handleDirectoryMove, recoverDirectoryMove } from "./directory-move";
+export {
+  STANDALONE_SPECIALIST_SKILL_PACKS,
+  createNativeSpecialistSessionPolicy,
+  mountNativeSpecialistSessionPolicy,
+  type SessionPolicyContextLike,
+} from "./specialist-session-policy";

@@ -7,7 +7,7 @@ import { redactKnown, sha256Hex } from "@lane-pilot/kit";
 
 export const SKILL_BUNDLE_ID = /^[a-z][a-z0-9-]{1,47}$/;
 export const ALLOWED_SKILL_BUNDLE_FILE =
-  /^(?:SKILL\.md|references\/(?:golden-skeleton|qa-rubric|archetype-[a-z0-9][a-z0-9-]{0,47})\.md)$/;
+  /^(?:SKILL\.md|references\/[a-z0-9][a-z0-9._-]{0,79}\.md)$/i;
 export const SKILL_MD_MAX_BYTES = 8_192; // SKILL.md must be strictly < 8_192 UTF-8 bytes
 export const SKILL_MD_MAX_LINES = 500; // SKILL.md must be <= 500 lines
 export const SKILL_REF_MAX_BYTES = 32_768; // references/*.md must be <= 32_768 UTF-8 bytes

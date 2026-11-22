@@ -289,8 +289,40 @@ for (const workflow of parsed.values()) {
 }
 
 const order = BUILTIN_SOURCES.map((source) => (source.value as { id: string }).id);
+const rawById = new Map<string, Record<string, unknown>>(
+  BUILTIN_SOURCES.map((source) => [(source.value as { id: string }).id, source.value as Record<string, unknown>]),
+);
+
+/**
+ * Domain/specialist craft built-in workflows that may evolve via `~/.lane-pilot/workflows/<id>.json` global overlays
+ * ONLY when owner feedback (`trajectory_delta`) targets them. Core orchestration, coding, phase, and `lp.*` built-ins
+ * are strictly excluded (`isCoreLockedBuiltinId`).
+ */
+export const EVOLVABLE_DOMAIN_BUILTIN_IDS: ReadonlySet<string> = new Set([
+  // SEO specialist craft workflows
+  "seo-ai-visibility", "seo-brief", "seo-cocoon", "seo-drop-diagnosis", "seo-linkbuilding",
+  "seo-mentions", "seo-monitor", "seo-outreach", "seo-page", "seo-page-refresh",
+  "seo-project-intake", "seo-release", "seo-research", "seo-structure-audit", "seo-tech-audit",
+  "seo-template-scale", "seo-trust",
+  // Growth marketing craft workflows
+  "mkt-direct-search-campaign", "mkt-experiment-cycle", "mkt-landing-cro-audit", "mkt-project-intake",
+  "mkt-pulse-monitor", "mkt-tg-ads-campaign", "mkt-tracking-setup",
+  // Content, research & creative media craft workflows
+  "social-post", "insights-post", "ins.post", "x-to-telegram-digest", "web-research",
+  "research-dossier", "api-recon", "reels", "3d-asset", "roblox-asset",
+]);
+
 export const builtinWorkflows = (): Workflow[] => order.map((id) => parsed.get(id)!);
 export const builtinWorkflow = (id: string, version?: number): Workflow | null => {
   const found = parsed.get(id) ?? null;
   return found && (version === undefined || found.version === version) ? found : null;
+};
+export const isEvolvableDomainBuiltinId = (id: string): boolean => EVOLVABLE_DOMAIN_BUILTIN_IDS.has(id.trim());
+export const isCoreLockedBuiltinId = (id: string): boolean => {
+  const trimmed = id.trim();
+  return parsed.has(trimmed) && !EVOLVABLE_DOMAIN_BUILTIN_IDS.has(trimmed);
+};
+export const rawBuiltinWorkflowSource = (id: string): Record<string, unknown> | null => {
+  const raw = rawById.get(id.trim());
+  return raw ? (JSON.parse(JSON.stringify(raw)) as Record<string, unknown>) : null;
 };

@@ -11,7 +11,7 @@ import { createDraftStore } from "../../storage";
 import type { DraftRow, DraftStore } from "../../storage";
 import { runDraftTest, testCasesOf } from "@lane-pilot/workflow-engine";
 import type { DraftTestResult } from "@lane-pilot/workflow-engine";
-import { builtinWorkflow } from "../builtin";
+import { builtinWorkflow, isEvolvableDomainBuiltinId } from "../builtin";
 import { casWriteWorkflowFile } from "../../storage";
 import { sha256Hex, bestEffort } from "@lane-pilot/kit";
 import { executorKey, lowerWorkflow } from "@lane-pilot/workflow-engine";
@@ -282,7 +282,9 @@ export function createWorkflowArchitect(ctx: ServerCore, services: Pick<Services
       return refuse("tests_not_green", "fix the failing cases and test again; a draft is published only when every case is green", { failing: draft.tests.results.filter((row) => !row.green).map((row) => ({ caseId: row.caseId, failures: row.failures })) });
     }
     const id = load.workflow.id;
-    if (builtinWorkflow(id)) return refuse("id_reserved", `"${id}" is a built-in workflow: rename with set_meta {id}`);
+    if (builtinWorkflow(id) && !(draft.scope === "global" && isEvolvableDomainBuiltinId(id))) {
+      return refuse("id_reserved", `"${id}" is a built-in workflow: rename with set_meta {id}`);
+    }
     const version = draft.publishedVersion ? draft.publishedVersion + 1 : load.workflow.version;
     const final: Workflow = { ...load.workflow, status: "published", version, scope: draft.scope === "project" ? { level: "project", projectId: draft.projectId } : { level: "global" } };
     const reloaded = loadWorkflow(JSON.parse(JSON.stringify(final)), { resolve });

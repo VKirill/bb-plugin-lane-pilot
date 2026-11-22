@@ -185,6 +185,13 @@ export function createDraftStore(db: Database.Database, now: () => number = Date
       return get(draftId);
     },
 
+    /** Clears publication metadata when a global overlay is rolled back to its factory built-in workflow. */
+    resetToFactoryBaseline(draftId: string): DraftRow | null {
+      db.prepare("UPDATE lane_pilot_wf_draft SET status='draft', tests_json=NULL, tested_version=NULL, published_version=NULL, published_path=NULL, published_sha256=NULL, updated_at=? WHERE id=?")
+        .run(now(), draftId);
+      return get(draftId);
+    },
+
     /** Replaces a draft's full definition as the next version, preserving version history and rollback snapshots. */
     replaceDefinition(draftId: string, definition: RawDefinition, summary: string): DraftRow | null {
       return db.transaction((): DraftRow | null => {

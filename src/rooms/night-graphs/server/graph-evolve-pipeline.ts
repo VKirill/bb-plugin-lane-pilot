@@ -5,6 +5,7 @@ import type { ServerCore } from "../../contracts/server";
 import { modelCatalogOf, readProviderFolderBlock, resolveSpawnModel, spawnUsageOf, warmSpawnUsage, type WriterHostApi } from "../../platform/server";
 import type { RuleScanApi } from "../../self-repair/server";
 import { isAllowedBroadCategoryId, validateCategoryAndIdentityGeneralization } from "../category-taxonomy";
+import { resolveFactoryDomainBase } from "../domain-builtin-overlay";
 import { MAX_PHASE_GRAPH_EXECUTABLE_NODES, MAX_PHASE_GRAPH_HUMAN_GATES, validateLeanSuitePolicy } from "../lean-suite-policy";
 import {
   bilingual, normalizeBlueprint, normalizeCompanionSkillSpec, parseJsonBlock, resolveBlueprintOperator, str, strList,
@@ -187,7 +188,8 @@ export async function critiqueEvolutionBlueprint(input: {
 }): Promise<EvolveReviewVerdict> {
   const iteration = input.iteration ?? 1;
   const operator = resolveBlueprintOperator(input.blueprint);
-  const hasRichEvidence = input.collected.clusters.some((c) => c.count >= 2 || c.traps.length > 0 || (c.lessons?.length ?? 0) > 0);
+  const hasRichEvidence = input.collected.deltas.length > 0
+    || input.collected.clusters.some((c) => c.count >= 2 || c.traps.length > 0 || (c.lessons?.length ?? 0) > 0);
   const hasLeanPressure = input.collected.deltas.some((d) => d.interventionKind === "over_constraint")
     || input.collected.clusters.some((c) => (c.overConstraintCount ?? 0) > 0 || (c.frictionSignals?.length ?? 0) > 0 || (c.leanViolations?.length ?? 0) > 0)
     || input.catalog.existingGlobal.some((g) => (g.leanViolations?.length ?? 0) > 0)
@@ -201,13 +203,18 @@ export async function critiqueEvolutionBlueprint(input: {
   } else {
     for (const g of input.blueprint.graphs) {
       if (g.kind !== "phase_graph") continue;
+      const factoryBase = resolveFactoryDomainBase(g.workflowId);
+      const factoryWork = factoryBase ? factoryBase.workflow.nodes.filter((n) => n.type !== "note" && !(n.type === "action" && (n.action === "emit" || n.action === "lp.save_process_state"))).length : 0;
+      const factoryHumans = factoryBase ? factoryBase.workflow.nodes.filter((n) => n.type === "human").length : 0;
+      const maxExec = factoryBase ? Math.max(MAX_PHASE_GRAPH_EXECUTABLE_NODES, factoryWork + 2) : MAX_PHASE_GRAPH_EXECUTABLE_NODES;
+      const maxHumans = factoryBase ? Math.max(MAX_PHASE_GRAPH_HUMAN_GATES, factoryHumans + 1) : MAX_PHASE_GRAPH_HUMAN_GATES;
       const executableStages = g.stages.filter((s) => !isControlStage(s));
-      if (executableStages.length > MAX_PHASE_GRAPH_EXECUTABLE_NODES) {
-        parsimonyIssues.push(`${g.workflowId}: phase_graph has ${executableStages.length} executable stages (max ${MAX_PHASE_GRAPH_EXECUTABLE_NODES}); merge or trim non-core stages.`);
+      if (executableStages.length > maxExec) {
+        parsimonyIssues.push(`${g.workflowId}: phase_graph has ${executableStages.length} executable stages (max ${maxExec}); merge or trim non-core stages.`);
       }
       const humanGates = g.stages.filter((s) => s.nodeType === "human").length;
-      if (humanGates > MAX_PHASE_GRAPH_HUMAN_GATES) {
-        parsimonyIssues.push(`${g.workflowId}: phase_graph has ${humanGates} human gates (max ${MAX_PHASE_GRAPH_HUMAN_GATES}); consolidate or remove redundant human gates.`);
+      if (humanGates > maxHumans) {
+        parsimonyIssues.push(`${g.workflowId}: phase_graph has ${humanGates} human gates (max ${maxHumans}); consolidate or remove redundant human gates.`);
       }
     }
   }
