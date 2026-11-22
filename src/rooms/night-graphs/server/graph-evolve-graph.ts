@@ -175,6 +175,7 @@ export function collectGraphEvolveEvidence(
     items.push({ key, projectId: typeof row.project_id === "string" && row.project_id ? row.project_id : null, richPilotRun: false, categoryHint: null, archetypeHint: null, artifactSkeleton: null, goal: typeof summary.goal === "string" ? summary.goal.trim() : "", traps, lessons: [], skills });
   }
   for (const d of digests) {
+    if (d.workflowId?.startsWith("draft-test.") || d.workflowId === "lead-tick" || d.workflowId === "agent-routine") continue;
     const key = d.processKey.trim();
     if (!key) continue;
     const hasDelta = (d.projectId !== null && deltaProjects.has(d.projectId)) || (d.threadId !== null && deltaThreads.has(d.threadId));

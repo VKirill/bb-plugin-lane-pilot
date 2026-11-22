@@ -180,6 +180,7 @@ export type {
   PilotDayGateFact,
   PilotDayWfStepFact,
   PilotDayCandidate,
+  DirectOwnerChatCandidate,
   PilotDayDigestInput,
   PilotDayDigestRow,
 } from "./pilot-day-digest-store";

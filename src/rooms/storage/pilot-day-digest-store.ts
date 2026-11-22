@@ -46,7 +46,7 @@ export type PilotDayDigestInput = Omit<
   createdAt?: number;
 };
 
-const CHILD_WF_FILTER = `(w.workflow_id IN ('errand','specialist','web-research','research-dossier','browser-step') OR w.workflow_id LIKE 'seo-%' OR w.workflow_id LIKE 'sp.%' OR w.workflow_id LIKE 'sp-%')`;
+const CHILD_WF_FILTER = `(w.workflow_id IN ('errand','specialist','web-research','research-dossier','browser-step') OR w.workflow_id LIKE 'seo-%' OR w.workflow_id LIKE 'mkt-%' OR w.workflow_id LIKE 'sp.%' OR w.workflow_id LIKE 'sp-%')`;
 
 const dayDigestId = (dayKey: string, sourceKind: PilotDaySourceKind, sourceId: string): string =>
   `pdigest_${sha256Hex(`${dayKey}|${sourceKind}|${sourceId}`).slice(0, 24)}`;
@@ -202,8 +202,21 @@ function attachTrajectoryFacts(db: LanePilotDatabase, selected: PilotDayCandidat
   });
 }
 
-/** Collects undigested daily Pilot runs, Pilot-activated chats, and finished user workflow runs in [sinceMs, untilMs]. */
-export function listPilotDayCandidates(db: LanePilotDatabase, sinceMs: number, untilMs: number, limit = 20, options?: { projectId?: string | null }): PilotDayCandidate[] {
+export type DirectOwnerChatCandidate = {
+  threadId: string;
+  projectId: string | null;
+  title?: string | null;
+  updatedAt: number;
+};
+
+/** Collects undigested daily Pilot runs, Pilot-activated chats, direct owner BB chats, and finished user workflow runs in [sinceMs, untilMs]. */
+export function listPilotDayCandidates(
+  db: LanePilotDatabase,
+  sinceMs: number,
+  untilMs: number,
+  limit = 20,
+  options?: { projectId?: string | null; directChats?: readonly DirectOwnerChatCandidate[] },
+): PilotDayCandidate[] {
   const safeLimit = Math.max(1, Math.min(Math.floor(limit), 200));
   const pid = options?.projectId?.trim() || null;
   const dayKey = new Date(Math.max(0, untilMs - 1)).toISOString().slice(0, 10);
@@ -268,12 +281,12 @@ export function listPilotDayCandidates(db: LanePilotDatabase, sinceMs: number, u
   const coveredThreads = new Set([...runThreadsInWindow, ...chatCandidates.map((c) => c.threadId).filter((t): t is string => Boolean(t))]);
   const wfRows = db.prepare(`SELECT id, workflow_id, project_id, status, reason, inputs_json, output_json, updated_at FROM ${WF_RUN_TABLE} w
     WHERE w.status IN ('succeeded','failed','canceled','timed_out','blocked','not_verified') AND w.updated_at >= ? AND w.updated_at <= ?${pid ? " AND w.project_id = ?" : ""}
-      AND w.workflow_id NOT IN ('errand','specialist') AND w.workflow_id NOT LIKE 'lp.%' AND w.workflow_id NOT LIKE 'lp-%' AND w.workflow_id NOT LIKE 'sp.%' AND w.workflow_id NOT LIKE 'sp-%'
+      AND w.workflow_id NOT IN ('errand','specialist','lead-tick','agent-routine') AND w.workflow_id NOT LIKE 'draft-test.%' AND w.workflow_id NOT LIKE 'lp.%' AND w.workflow_id NOT LIKE 'lp-%' AND w.workflow_id NOT LIKE 'sp.%' AND w.workflow_id NOT LIKE 'sp-%'
       AND NOT EXISTS (SELECT 1 FROM lane_pilot_day_digest d WHERE d.source_kind = 'workflow_run' AND d.source_id = w.id AND (d.day_key = ? OR d.outcome != 'in_progress'))
     ORDER BY w.updated_at DESC LIMIT ?`).all(sinceMs, untilMs, ...pArgs, dayKey, safeLimit) as Array<{
     id: string; workflow_id: string; project_id: string | null; status: string; reason: string | null; inputs_json: string; output_json: string | null; updated_at: number;
   }>;
-  const isChildWf = (id: string) => id === "web-research" || id === "research-dossier" || id === "browser-step" || id.startsWith("seo-");
+  const isChildWf = (id: string) => id === "web-research" || id === "research-dossier" || id === "browser-step" || id.startsWith("seo-") || id.startsWith("mkt-");
   const wfCandidates: PilotDayCandidate[] = wfRows.flatMap((w) => {
     const inputs = parseJsonSafe<Record<string, unknown> | null>(w.inputs_json, null);
     const threadId = typeof inputs?.threadId === "string" ? inputs.threadId : typeof inputs?.pmThreadId === "string" ? inputs.pmThreadId : null;
@@ -286,7 +299,36 @@ export function listPilotDayCandidates(db: LanePilotDatabase, sinceMs: number, u
     }];
   });
 
-  const combined = [...runCandidates, ...chatCandidates, ...wfCandidates];
+  const directCandidates: PilotDayCandidate[] = [];
+  if (options?.directChats?.length) {
+    const allRunThreads = new Set(
+      (db.prepare("SELECT DISTINCT pm_thread_id AS t FROM lane_pilot_run WHERE pm_thread_id IS NOT NULL").all() as Array<{ t: string }>).map((r) => r.t),
+    );
+    const seenThreads = new Set([
+      ...allRunThreads,
+      ...chatCandidates.map((c) => c.sourceId),
+      ...wfCandidates.map((c) => c.threadId).filter((t): t is string => Boolean(t)),
+    ]);
+    const hasRecentDigest = db.prepare(
+      "SELECT 1 FROM lane_pilot_day_digest d WHERE ((d.source_kind = 'pilot_chat' AND d.source_id = ?) OR d.thread_id = ?) AND (d.day_key = ? OR d.created_at >= ?) LIMIT 1",
+    );
+    for (const dc of options.directChats) {
+      const tid = dc.threadId?.trim();
+      if (!tid || seenThreads.has(tid)) continue;
+      if (pid && dc.projectId !== pid) continue;
+      if (dc.updatedAt < sinceMs || dc.updatedAt > untilMs) continue;
+      if (hasRecentDigest.get(tid, tid, dayKey, dc.updatedAt)) continue;
+      seenThreads.add(tid);
+      directCandidates.push({
+        digestId: dayDigestId(dayKey, "pilot_chat", tid), dayKey, sourceKind: "pilot_chat", sourceId: tid,
+        projectId: dc.projectId ?? null, threadId: tid, workflowId: null, state: "active",
+        objective: dc.title?.trim() || null, taskSummaries: [], attempts: [], stageVerdicts: [],
+        pmSkills: pmSkillsForThread(db, tid, sinceMs), updatedAt: Number(dc.updatedAt),
+      });
+    }
+  }
+
+  const combined = [...runCandidates, ...chatCandidates, ...wfCandidates, ...directCandidates];
   const existing = existingDigestIds(db, combined.map((c) => c.digestId));
   const selected = combined.filter((c) => !existing.has(c.digestId)).sort((a, b) => b.updatedAt - a.updatedAt).slice(0, safeLimit);
   return attachTrajectoryFacts(db, selected, sinceMs, untilMs, pid);

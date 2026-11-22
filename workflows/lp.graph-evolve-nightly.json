@@ -77,7 +77,7 @@
         "failed": "int"
       },
       "guards": {
-        "timeoutMin": 20
+        "timeoutMin": 30
       }
     },
     {

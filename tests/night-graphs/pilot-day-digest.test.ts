@@ -843,4 +843,123 @@ describe("Evolution 2.0 artifactSkeleton & archetypeHint extraction", () => {
       await harness.lifecycle.dispose();
     }
   });
+
+  it("excludes draft-test.*, lead-tick, and agent-routine runs while discovering direct owner BB chats concurrently", async () => {
+    const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
+    const db = openDatabase(bb);
+    const t0 = Date.UTC(2026, 10, 22, 0, 0, 0);
+    const sinceMs = t0;
+    const untilMs = t0 + 86_400_000;
+
+    try {
+      const insertWf = db.prepare(`INSERT INTO lane_pilot_wf_run
+        (id, workflow_id, workflow_version, workflow_sha256, definition_json, project_id, status, reason, inputs_json, output_json, created_at, updated_at)
+        VALUES (?, ?, 1, 'sha', '{}', ?, 'succeeded', null, '{}', '{}', ?, ?)`);
+      // Synthetic & internal runs that previously clogged the 20-candidate digest queue:
+      insertWf.run("wf_sim_1", "draft-test.site-page-templates", null, t0 + 1_000, t0 + 10_000);
+      insertWf.run("wf_sim_2", "draft-test.site-suite", null, t0 + 1_000, t0 + 11_000);
+      insertWf.run("wf_lead_1", "lead-tick", "proj_core", t0 + 1_000, t0 + 12_000);
+      insertWf.run("wf_routine_1", "agent-routine", "proj_clients", t0 + 1_000, t0 + 13_000);
+      // Real domain workflow run:
+      insertWf.run("wf_real_invoice", "invoice-send", "proj_billing", t0 + 1_000, t0 + 14_000);
+
+      // Even if a legacy draft-test.* digest already exists in SQLite, collectGraphEvolveEvidence ignores it!
+      savePilotDayDigest(db, {
+        digestId: "pdigest_legacy_draft_test_1",
+        dayKey: "2026-11-22",
+        sourceKind: "workflow_run",
+        sourceId: "wf_sim_legacy_1",
+        workflowId: "draft-test.site-suite",
+        outcome: "done",
+        processKey: "websites|build-site-suite",
+        categoryHint: { id: "websites" },
+        maskedGoal: "Simulated draft test",
+        createdAt: t0 + 5_000,
+      });
+      savePilotDayDigest(db, {
+        digestId: "pdigest_legacy_draft_test_2",
+        dayKey: "2026-11-22",
+        sourceKind: "workflow_run",
+        sourceId: "wf_sim_legacy_2",
+        workflowId: "draft-test.site-suite",
+        outcome: "done",
+        processKey: "websites|build-site-suite",
+        categoryHint: { id: "websites" },
+        maskedGoal: "Simulated draft test 2",
+        createdAt: t0 + 6_000,
+      });
+
+      const preEvidence = collectGraphEvolveEvidence(db, { now: () => t0 + 20_000 });
+      expect(preEvidence.status).toBe("empty");
+      expect(preEvidence.clusters).toHaveLength(0);
+
+      let inFlight = 0;
+      let maxInFlight = 0;
+      const runModel = vi.fn(async (_prompt: string, projectId: string | null) => {
+        inFlight += 1;
+        maxInFlight = Math.max(maxInFlight, inFlight);
+        await new Promise((r) => setTimeout(r, 15));
+        inFlight -= 1;
+        return JSON.stringify({
+          process_key: projectId === "proj_billing" ? "operations|prepare-closing-docs" : "marketing|audit-ad-campaigns",
+          category_hint: { id: projectId === "proj_billing" ? "operations" : "marketing" },
+          archetype_hint: "b2b-service",
+          artifact_skeleton: null,
+          outcome: "done",
+          goal: "Prepare monthly closing documents and invoices",
+          traps: [],
+          lessons: ["Verify Elba template before sending invoice"],
+          interventions: [],
+        });
+      });
+
+      const summary = await digestPilotDayDialogues({
+        db,
+        now: () => t0 + 30_000,
+        sinceMs,
+        untilMs,
+        concurrency: 3,
+        projectNames: async () => new Map([
+          ["proj_billing", "ИП Вечкасов К."],
+          ["proj_clients", "Клиенты"],
+          ["proj_acc", "LP Acceptance 0.575 — clean native Pilot"],
+        ]),
+        listOwnerThreads: async () => [
+          { threadId: "thr_elba_docs", projectId: "proj_billing", title: "Подготовить закрывающие документы в Эльбе", updatedAt: t0 + 15_000 },
+          { threadId: "thr_direct_ads", projectId: "proj_clients", title: "Проверить кампании Директа", updatedAt: t0 + 16_000 },
+          { threadId: "thr_acc_skip", projectId: "proj_acc", title: "Acceptance test", updatedAt: t0 + 17_000 },
+        ],
+        readOutline: async (tid) => `User: Задача в ${tid}\nAssistant: Выполнено`,
+        runModel,
+      });
+
+      expect(summary).toEqual({
+        picked: 4, // wf_real_invoice + 3 direct chats (draft-test.*, lead-tick, agent-routine excluded!)
+        digested: 3,
+        deltasRecorded: 0,
+        skippedSandbox: 1, // LP Acceptance skipped!
+        skippedDisabled: 0,
+        failed: 0,
+      });
+      expect(maxInFlight).toBeGreaterThanOrEqual(2);
+
+      // Re-running on same window skips already-digested direct owner chats!
+      const repeat = await digestPilotDayDialogues({
+        db,
+        now: () => t0 + 40_000,
+        sinceMs,
+        untilMs,
+        listOwnerThreads: async () => [
+          { threadId: "thr_elba_docs", projectId: "proj_billing", title: "Подготовить закрывающие документы в Эльбе", updatedAt: t0 + 15_000 },
+          { threadId: "thr_direct_ads", projectId: "proj_clients", title: "Проверить кампании Директа", updatedAt: t0 + 16_000 },
+        ],
+        readOutline: async (tid) => `User: Задача в ${tid}\nAssistant: Выполнено`,
+        runModel,
+      });
+      expect(repeat.picked).toBe(0);
+      expect(repeat.digested).toBe(0);
+    } finally {
+      await harness.lifecycle.dispose();
+    }
+  });
 });

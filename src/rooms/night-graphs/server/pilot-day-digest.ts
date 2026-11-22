@@ -19,7 +19,7 @@ import {
 import type { RuleScanApi } from "../../self-repair/server";
 import {
   listPilotDayCandidates, loadProjectSettings, savePilotDayDigest,
-  type PilotDayCandidate, type PilotDayCategoryHint,
+  type DirectOwnerChatCandidate, type PilotDayCandidate, type PilotDayCategoryHint,
 } from "../../storage";
 import { analystPlace } from "./episodes-graph";
 import { extractFrictionSignals, type FrictionSignal } from "../friction-signals";
@@ -34,9 +34,12 @@ export type PilotDayDigestDeps = {
   sinceMs?: number;
   untilMs?: number;
   limit?: number;
+  concurrency?: number;
+  maxDurationMs?: number;
   projectId?: string | null;
   lookbackDays?: number;
   projectNames?: () => Promise<ReadonlyMap<string, string>>;
+  listOwnerThreads?: (sinceMs: number, untilMs: number, projectId: string | null) => Promise<DirectOwnerChatCandidate[]>;
   readOutline?: (threadId: string) => Promise<string | null>;
   readOutput?: (threadId: string) => Promise<string | null>;
   readEvents?: (threadId: string) => Promise<unknown[]>;
@@ -227,33 +230,37 @@ function matchesRecordedOverConstraint(sig: FrictionSignal, interventions: reado
   });
 }
 
-/** Nightly-only digest over completed daily Pilot runs, Pilot chats, and user workflow runs; no live chat hooks. */
+/** Nightly-only digest over completed daily Pilot runs, Pilot chats, direct BB owner chats, and user workflow runs; no live chat hooks. */
 export async function digestPilotDayDialogues(deps: PilotDayDigestDeps): Promise<PilotDayDigestSummary> {
   const now = deps.now ?? Date.now;
   const untilMs = deps.untilMs ?? now();
   const days = Math.max(1, Math.min(90, Math.floor(deps.lookbackDays ?? 1)));
   const sinceMs = deps.sinceMs ?? (untilMs - (deps.windowMs ?? days * DEFAULT_WINDOW_MS));
-  const candidates = listPilotDayCandidates(deps.db, sinceMs, untilMs, deps.limit ?? 20, { projectId: deps.projectId ?? null });
+  const directChats = deps.listOwnerThreads ? await deps.listOwnerThreads(sinceMs, untilMs, deps.projectId ?? null).catch(() => []) : undefined;
+  const candidates = listPilotDayCandidates(deps.db, sinceMs, untilMs, deps.limit ?? 20, { projectId: deps.projectId ?? null, directChats });
   const summary: PilotDayDigestSummary = { picked: 0, digested: 0, deltasRecorded: 0, skippedSandbox: 0, skippedDisabled: 0, failed: 0 };
   logLine(deps.log, "INFO", "start", { sinceMs, untilMs, projectId: deps.projectId ?? null, candidates: candidates.length });
   if (!candidates.length) { logLine(deps.log, "INFO", "done", summary); return summary; }
 
   const projectMap = deps.projectNames ? await deps.projectNames().catch(() => new Map<string, string>()) : new Map<string, string>();
   const corrections = judgedCorrectionRows(deps.db as never, sinceMs, 200);
+  const deadline = Date.now() + Math.max(1_000, deps.maxDurationMs ?? 20 * 60_000);
+  const concurrency = Math.max(1, Math.min(6, Math.floor(deps.concurrency ?? 3)));
+  let cursor = 0;
 
-  for (const candidate of candidates) {
-    if (deps.stopped?.()) break;
+  const processCandidate = async (candidate: PilotDayCandidate): Promise<void> => {
     summary.picked += 1;
     const projId = candidate.projectId;
-    if ((projId && DRILL_SANDBOX_PROJECT_IDS.includes(projId)) || isSandboxProjectName(projId ? projectMap.get(projId) : undefined)) {
+    const projName = projId ? projectMap.get(projId) : undefined;
+    if ((projId && DRILL_SANDBOX_PROJECT_IDS.includes(projId)) || isSandboxProjectName(projName) || /^LP Acceptance\b/i.test(projName ?? "")) {
       summary.skippedSandbox += 1;
       logLine(deps.log, "DEBUG", "skipped_sandbox", { digestId: candidate.digestId, projectId: projId });
-      continue;
+      return;
     }
     if (!collectEnabled(loadProjectSettings(deps.db, projId ?? GLOBAL_SETTINGS_PROJECT_ID))) {
       summary.skippedDisabled += 1;
       logLine(deps.log, "DEBUG", "skipped_disabled", { digestId: candidate.digestId, projectId: projId });
-      continue;
+      return;
     }
 
     try {
@@ -275,6 +282,10 @@ export async function digestPilotDayDialogues(deps: PilotDayDigestDeps): Promise
       const maskedObjective = maskText(candidate.objective, 800);
       const maskedCorrections = candCorrections.map((c) => ({ kind: c.kind, frustration: c.frustration, text: maskText(c.excerpt || c.body || "", 400), prev: maskText(c.prev, 240) }));
       const maskedOutline = maskText(outlineParts.join("\n\n"), 12_000);
+      if (candidate.sourceKind === "pilot_chat" && !maskedOutline.trim() && !maskedObjective && !candidate.taskSummaries.length && !(candidate.childRuns?.length) && !(candidate.episodes?.length)) {
+        summary.skippedDisabled += 1;
+        return;
+      }
       const userLines = maskedOutline.split("\n").filter((l) => /^User:/i.test(l));
       const frictionSignals = extractFrictionSignals({
         workflowId: candidate.workflowId, wfStepSignals: candidate.wfStepSignals, gateRejections: candidate.gateRejections,
@@ -382,8 +393,16 @@ export async function digestPilotDayDialogues(deps: PilotDayDigestDeps): Promise
       const msg = cause instanceof Error ? cause.message : String(cause);
       logLine(deps.log, "WARN", "candidate_failed", { digestId: candidate.digestId, sourceKind: candidate.sourceKind, error: msg.slice(0, 160) });
     }
-  }
+  };
 
+  const worker = async () => {
+    while (!deps.stopped?.() && Date.now() < deadline) {
+      const idx = cursor++;
+      if (idx >= candidates.length) break;
+      await processCandidate(candidates[idx]!);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(concurrency, candidates.length) }, () => worker()));
   logLine(deps.log, "INFO", "done", summary);
   return summary;
 }
@@ -413,6 +432,24 @@ export function createLivePilotDayDigestDeps(
       const raw = await ctx.bb.sdk.projects.list({ includePersonal: true } as never).catch(() => []);
       const rows = Array.isArray(raw) ? raw : ((raw as { projects?: Array<{ id?: unknown; name?: unknown }> })?.projects ?? []);
       return new Map(rows.map((p) => [String((p as { id?: unknown }).id ?? ""), String((p as { name?: unknown }).name ?? "")]));
+    },
+    listOwnerThreads: async (sinceMs, untilMs, pid) => {
+      const listFn = ctx.bb.sdk.threads?.list as ((q: Record<string, unknown>) => Promise<unknown>) | undefined;
+      if (typeof listFn !== "function") return [];
+      const out: DirectOwnerChatCandidate[] = [];
+      for (let page = 0; page < 8; page += 1) {
+        if (stopped?.()) break;
+        const rows = await listFn({ includeHidden: false, hasParent: false, limit: 200, offset: page * 200 }).catch(() => []);
+        if (!Array.isArray(rows) || !rows.length) break;
+        for (const r of rows as Array<Record<string, unknown>>) {
+          const uat = Number(r.updatedAt ?? r.createdAt ?? 0), proj = typeof r.projectId === "string" && r.projectId ? r.projectId : null;
+          if ((r.visibility ?? "visible") !== "visible" || r.parentThreadId || r.originPluginId || r.deletedAt != null) continue;
+          if (r.status === "active" || r.status === "starting" || uat < sinceMs || uat > untilMs || (pid && proj !== pid)) continue;
+          if (typeof r.id === "string" && r.id) out.push({ threadId: r.id, projectId: proj, title: typeof r.title === "string" ? r.title : null, updatedAt: uat });
+        }
+        if (rows.length < 200) break;
+      }
+      return out;
     },
     readOutline: async (threadId) => {
       const outline = await Promise.resolve().then(() => ctx.bb.sdk.threads.conversationOutline({ threadId })).catch(() => null);
