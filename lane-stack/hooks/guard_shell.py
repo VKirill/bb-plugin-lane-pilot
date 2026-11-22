@@ -18,6 +18,7 @@ LANE_PILOT_HELPER_ROLES = {
     "night-reviewer", "docs", "docs-maintainer", "onboarder",
     "memory-maintainer", "project-life", "gate-triage", "council-seat",
     "rules-analyzer", "auditor", "debugger", "episode-analyst", "wall-hunter",
+    "digest-light", "digest-analyst", "evolve-planner", "evolve-critic", "evolve-architect", "evolve-auditor",
     "design-lead", "copy-lead", "seo-specialist", "tavily",
 }
 

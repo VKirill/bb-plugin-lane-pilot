@@ -368,7 +368,10 @@ describe("a deciding role", () => {
     "specialist.provider": "claude-code", "specialist.model": "claude-haiku-5-5" };
 
   it("never plans or audits on a light model it inherits, and the plan's critic is another model than its planner", () => {
-    expect(ROLE_LEAST_TIER).toEqual({ planner: "strong", "code-critic": "standard", auditor: "standard", debugger: "standard" });
+    expect(ROLE_LEAST_TIER).toEqual({
+      planner: "strong", "code-critic": "standard", auditor: "standard", debugger: "standard",
+      "evolve-planner": "strong", "evolve-critic": "standard", "evolve-architect": "strong", "evolve-auditor": "standard",
+    });
     for (const lightPm of [pm, { providerId: "claude-code", model: "claude-haiku-5-5" }]) {
       const planner = pick("planner", hub, lightPm);
       expect(planner).toMatchObject({ model: "claude-opus-5-5" });
