@@ -5,8 +5,8 @@
     "ru": "Счёт в Контур.Эльбе: выставить, проверить, подтвердить, отправить"
   },
   "description": {
-    "en": "Makes (or finds) the invoice for an existing client in Kontur.Elba in the owner's signed-in browser on the Mac mini and downloads the PDF, checks the amount, INN and bank details in code and the client and service line with a Jev judgment against the request, asks the owner before anything leaves (a review first when the check is not clean) and sends the PDF to a Telegram chat as the owner. Nothing is sent without the owner's yes.",
-    "ru": "Выставляет (или находит) счёт существующему клиенту в Контур.Эльбе в браузере владельца на Mac mini и скачивает PDF, проверяет сумму, ИНН и банковские реквизиты кодом, а клиента и строку услуги — суждением Jev по запросу, спрашивает владельца перед отправкой (при нечистой проверке сначала просит посмотреть счёт) и отправляет PDF в Telegram от имени владельца. Без «да» владельца ничего не уходит."
+    "en": "Makes (or finds) the invoice for an existing client in Kontur.Elba in the owner's signed-in browser on the Mac mini and downloads the PDF, checks the amount, INN and bank details in code and the client and service line with a Jev judgment against the request, asks the owner before anything leaves (a review first when the check is not clean) and sends the PDF to a Telegram chat as the owner. The owner's own request to send (input send_approved) is the yes; otherwise the graph asks before the send.",
+    "ru": "Выставляет (или находит) счёт существующему клиенту в Контур.Эльбе в браузере владельца на Mac mini и скачивает PDF, проверяет сумму, ИНН и банковские реквизиты кодом, а клиента и строку услуги — суждением Jev по запросу, спрашивает владельца перед отправкой (при нечистой проверке сначала просит посмотреть счёт) и отправляет PDF в Telegram от имени владельца. «Отправь» в запросе владельца (вход send_approved) и есть «да»; иначе граф спрашивает перед отправкой."
   },
   "examples": {
     "ru": ["Выставь счёт ООО «Ромашка» на 50 000 ₽ за SEO-сопровождение и отправь Ивану в Telegram", "Сделай счёт в Эльбе на 120 тысяч для клиента Вектор за ведение рекламы и пришли мне на проверку", "Каждое 1-е число выставляй счёт Ромашке на 50 000 за SEO и отправляй в Телеграм", "Выстави счёт клиенту по ИНН 7707083893 на 35 000 за настройку Директа и отправь в чат", "Нужен счёт в Контур.Эльбе для клиента, сумма 80 000, услуга — контекстная реклама, отправь на согласование"],
@@ -27,6 +27,7 @@
     "service": { "type": "string", "required": true, "note": "what the invoice is for, in the owner's words (service, period)" },
     "recipient": { "type": "string", "required": true, "note": "the Telegram chat that gets the PDF: @username, a numeric id, a link, or me (the owner's Saved Messages). Telegram is the only channel today: Lane Pilot has no mail skill" },
     "send_at": { "type": "string", "default": "", "note": "send the invoice later instead of now: ISO local (2026-11-03T07:00) or a delay (+2h). Declared, refused today: the telegram-send fragment cannot create a schedule yet — a given send_at ends the run cannot_delay" },
+    "send_approved": { "type": "boolean", "default": false, "note": "true when the owner's own request already says to send the invoice (now or at send_at); the clean invoice is then sent without the approve question" },
     "report_chat": { "type": "string", "default": "", "note": "a Telegram chat or project topic for a one-line report after the send; empty means no report" }
   },
   "outputs": {
@@ -194,9 +195,11 @@
     { "from": "start", "to": "create", "with": { "company": "input.company", "inn": "input.inn", "amount": "input.amount", "service": "input.service" } },
     { "from": "create", "to": "check", "when": "create.status == 'done'" },
     { "from": "create", "to": "blocked" },
+    { "from": "check", "to": "send", "when": "check.verdict == 'match' && $inputs.send_approved == true" },
     { "from": "check", "to": "approve", "when": "check.verdict == 'match' && $inputs.send_at == ''" },
     { "from": "check", "to": "approve_later", "when": "check.verdict == 'match'" },
     { "from": "check", "to": "review" },
+    { "from": "review", "to": "send", "when": "review.answer_kind == 'continue' && $inputs.send_approved == true" },
     { "from": "review", "to": "approve", "when": "review.answer_kind == 'continue' && $inputs.send_at == ''" },
     { "from": "review", "to": "approve_later", "when": "review.answer_kind == 'continue'" },
     { "from": "review", "to": "aborted" },
@@ -219,7 +222,8 @@
       "human_answers": { "approve": "send" },
       "expect_path": ["create", "check", "approve", "send", "topic", "sent"],
       "expect_output": { "status": "sent", "invoice_number": "142", "message_id": "stub-1" },
-      "variant_delayed": { "input": { "company": "ООО «Ромашка»", "amount": 50000, "service": "SEO-сопровождение за октябрь", "recipient": "@ivan_romashka", "send_at": "2026-11-03T07:00" }, "stubs": { "create": { "status": "done", "invoice_number": "142", "pdf_path": "/Users/owner/projects/romashka/invoice-142.pdf", "client_name": "ООО «Ромашка»", "invoice_amount": 50000, "invoice_service": "SEO-сопровождение за октябрь 2026" }, "check": { "verdict": "match" }, "send": { "status": "scheduled", "schedule_id": "sch-1", "run_at": "2026-11-03 07:00" } }, "human_answers": { "approve_later": "send" }, "expect_path": ["create", "check", "approve_later", "send", "scheduled"], "expect_output": { "status": "scheduled", "send_at": "2026-11-03T07:00", "schedule_id": "sch-1", "run_at": "2026-11-03 07:00" } }
+      "variant_delayed": { "input": { "company": "ООО «Ромашка»", "amount": 50000, "service": "SEO-сопровождение за октябрь", "recipient": "@ivan_romashka", "send_at": "2026-11-03T07:00" }, "stubs": { "create": { "status": "done", "invoice_number": "142", "pdf_path": "/Users/owner/projects/romashka/invoice-142.pdf", "client_name": "ООО «Ромашка»", "invoice_amount": 50000, "invoice_service": "SEO-сопровождение за октябрь 2026" }, "check": { "verdict": "match" }, "send": { "status": "scheduled", "schedule_id": "sch-1", "run_at": "2026-11-03 07:00" } }, "human_answers": { "approve_later": "send" }, "expect_path": ["create", "check", "approve_later", "send", "scheduled"], "expect_output": { "status": "scheduled", "send_at": "2026-11-03T07:00", "schedule_id": "sch-1", "run_at": "2026-11-03 07:00" } },
+      "variant_owner_said_send": { "input": { "send_approved": true }, "expect_path": ["create", "check", "send", "topic", "sent"], "expect_output": { "status": "sent", "invoice_number": "142", "message_id": "stub-1" } }
     },
     "live": "a real test invoice of the owner for a test client, to a chat the owner names (their own Saved Messages: recipient `me`): make, check, approve, send; open the PDF in Telegram and the invoice in Elba and compare number, amount and requisites; then delete or cancel the test invoice in Elba. The exact steps are in docs/invoice-send.md.",
     "note": "Tested on stubs: the Elba step, the Jev judgment's model and the Telegram send answer from stubs. Not live yet: the invoice is made in the owner's Elba session on the Mac mini and the PDF is sent from the owner's Telegram account. See `live` for the acceptance run."
