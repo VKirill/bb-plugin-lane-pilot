@@ -253,7 +253,7 @@ export function listPilotDayCandidates(db: LanePilotDatabase, sinceMs: number, u
         w.project_id, w.updated_at AS activity_at FROM ${WF_RUN_TABLE} w
         WHERE w.updated_at >= ? AND w.updated_at <= ? AND ${CHILD_WF_FILTER}${pid ? " AND w.project_id = ?" : ""}
     ) chats WHERE pm_thread_id IS NOT NULL AND pm_thread_id != ''
-      AND NOT EXISTS (SELECT 1 FROM lane_pilot_day_digest d WHERE d.source_kind = 'pilot_chat' AND d.source_id = chats.pm_thread_id AND d.day_key = ?)
+      AND NOT EXISTS (SELECT 1 FROM lane_pilot_day_digest d WHERE d.source_kind = 'pilot_chat' AND d.source_id = chats.pm_thread_id AND (d.day_key = ? OR d.created_at >= chats.activity_at))
     GROUP BY pm_thread_id ORDER BY activity_at DESC LIMIT ?`).all(sinceMs, untilMs, ...pArgs, sinceMs, untilMs, ...pArgs, sinceMs, untilMs, ...pArgs, dayKey, safeLimit + runThreadsInWindow.size) as Array<{
     pm_thread_id: string; project_id: string | null; activity_at: number;
   }>;

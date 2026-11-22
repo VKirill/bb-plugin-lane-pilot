@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { forgetSecrets } from "@lane-pilot/kit";
-import { casWriteSkillBundle, type SkillBundleFile } from "@lane-pilot/workflow-engine";
+import { casWriteSkillBundle, createDraftStore, loadWorkflow, type SkillBundleFile } from "@lane-pilot/workflow-engine";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { listUnprocessedTrajectoryDeltas, recordTrajectoryDelta } from "../../src/rooms/errands";
 import {
@@ -17,7 +17,8 @@ import {
   type CompanionSkillSpec,
   type ProcessBlueprint,
 } from "../../src/rooms/night-graphs";
-import { digestPilotDayDialogues } from "../../src/rooms/night-graphs/server";
+import { collectGraphEvolveEvidence, digestPilotDayDialogues } from "../../src/rooms/night-graphs/server";
+import { listPilotDayCandidates } from "../../src/rooms/storage";
 import { createRun, createTask, openDatabase, setRunObjective, setRunThread } from "../../src/rooms/plugin-db";
 
 const tempDirs: string[] = [];
@@ -618,5 +619,84 @@ describe("over_constraint SQLite Rebuild Migration & digestPilotDayDialogues Fri
     expect(summaries.some((s) => s.includes("это лишнее, сделай проще без CMS"))).toBe(true);
 
     expect(logs.some((l) => l.includes("INFO [nightGraphs.pilotDayDigest] friction_recorded"))).toBe(true);
+  });
+
+  it("ignores hand-authored owner global workflows (e.g. batch-then-test) in leanDebt and does not re-read unchanged pilot_chat threads across days", async () => {
+    const { bb } = createFakePluginHost({ pluginId: "lane-pilot" });
+    const db = openDatabase(bb);
+    cleanups.push(async () => {
+      db.close();
+    });
+
+    const drafts = createDraftStore(db as never);
+    const manualDef = {
+      id: "batch-then-test",
+      version: 2,
+      name: { en: "Batch then test", ru: "Пакет затем тест" },
+      description: { en: "Owner custom Matvey-style batch workflow", ru: "Ручной граф владельца" },
+      status: "published",
+      triggers: ["manual"],
+      inputs: { batch: { type: "string", required: true } },
+      outputs: { status: "string" },
+      nodes: [
+        { id: "gate", type: "human", title: { en: "Confirm", ru: "Подтвердить" }, question: "Proceed?", options: ["approve", "abort"], out: { answer_kind: "approve|abort" } },
+        { id: "done", type: "action", action: "emit", map: { status: "'ok'" } },
+      ],
+      edges: [
+        { from: "start", to: "gate" },
+        { from: "gate", to: "done" },
+      ],
+    };
+    drafts.create({
+      projectId: "proj_owner",
+      threadId: "thr_architect_manual",
+      scope: "global",
+      name: manualDef.name,
+      description: manualDef.description,
+      workflowId: "batch-then-test",
+      definition: manualDef,
+    });
+    const loadedManual = loadWorkflow(manualDef);
+    expect(loadedManual.ok).toBe(true);
+    if (!loadedManual.ok) return;
+
+    const collected = collectGraphEvolveEvidence(db as never, {
+      existingGlobalWorkflows: [{ workflow: loadedManual.workflow }],
+    });
+    expect(collected.leanDebtCount).toBe(0);
+    expect(collected.status).toBe("empty");
+
+    // Verify unchanged pilot_chat is NOT re-selected on a subsequent day even with lookback_days = 14
+    const day1 = Date.parse("2026-11-20T12:00:00Z");
+    const day2 = Date.parse("2026-11-21T12:00:00Z");
+    db.prepare("INSERT INTO lane_pilot_activation (pm_thread_id, project_id, run_id, claimed_at) VALUES (?, ?, ?, ?)").run(
+      "thr_idle_chat",
+      "proj_owner",
+      "run_unused",
+      day1,
+    );
+
+    const firstPass = await digestPilotDayDialogues({
+      db,
+      now: () => day1 + 60_000,
+      sinceMs: day1 - 86_400_000,
+      untilMs: day1 + 30_000,
+      projectNames: async () => new Map([["proj_owner", "Owner Project"]]),
+      readOutline: async () => "User: quick question\nAssistant: answered",
+      runModel: async () =>
+        JSON.stringify({
+          process_key: "code|routine",
+          outcome: "done",
+          goal: "Routine coding question",
+          traps: [],
+          lessons: [],
+          interventions: [],
+        }),
+    });
+    expect(firstPass.digested).toBe(1);
+
+    // Next day with wide 14-day window and NO new activity: must return 0 candidates
+    const nextDayCandidates = listPilotDayCandidates(db, day2 - 14 * 86_400_000, day2, 20, { projectId: "proj_owner" });
+    expect(nextDayCandidates).toHaveLength(0);
   });
 });

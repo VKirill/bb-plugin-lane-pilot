@@ -1,6 +1,6 @@
 // Nightly graph evolution evidence collection and workflow executor wiring (`lp.graph_evolve_*`).
 import { redactKnown } from "@lane-pilot/kit";
-import { globalSkillsDir, wfTerminalByIdemKey, type NodeExecutor, type StoredSkillBundleFile, type Workflow } from "@lane-pilot/workflow-engine";
+import { createDraftStore, globalSkillsDir, wfTerminalByIdemKey, type NodeExecutor, type StoredSkillBundleFile, type Workflow } from "@lane-pilot/workflow-engine";
 import type { ChainRuntime, ServerCore } from "../../contracts/server";
 import { listUnprocessedTrajectoryDeltas } from "../../errands";
 import type { HarnessApi } from "../../harness/server";
@@ -70,6 +70,17 @@ function deltaFamilyOf(workflowId: string | null, wfCatById: ReadonlyMap<string,
 
 type LeanDebtBucket = { catId: string; category: PilotDayCategoryHint | null; wfIds: Set<string>; summaries: string[]; topSkills: Set<string> };
 
+function classifyGlobalWorkflowOwnership(db: ServerCore["db"], wfs: ReadonlyArray<{ workflow: Workflow }>) {
+  if (!wfs.length) return { evolvedWfs: [] as Array<{ workflow: Workflow }>, humanOwnedIds: [] as string[] };
+  const drafts = createDraftStore(db as never).listEvolutionDrafts({ scope: "global", limit: 200 });
+  const evolvedIds = new Set(drafts.filter((d) => d.threadId === null).map((d) => d.workflowId));
+  const humanIds = new Set(drafts.filter((d) => d.threadId !== null).map((d) => d.workflowId).filter((id) => !evolvedIds.has(id)));
+  return {
+    evolvedWfs: wfs.filter((s) => !humanIds.has(s.workflow.id) && (evolvedIds.has(s.workflow.id) || Boolean(s.workflow.category?.id))),
+    humanOwnedIds: [...humanIds],
+  };
+}
+
 function evalGlobalLeanViolations(wfs: ReadonlyArray<{ workflow: Workflow }>) {
   if (!wfs.length) return { violations: [], byWf: new Map<string, string[]>() };
   const res = validateLeanSuitePolicy(wfs.map((s) => ({ workflowId: s.workflow.id, scope: "global" as const, definition: s.workflow as unknown as Record<string, unknown> })));
@@ -122,7 +133,8 @@ export function collectGraphEvolveEvidence(
     interventionKind: d.interventionKind, resolvedSkills: d.resolvedSkills, maskedSummary: d.maskedSummary,
   }));
   const overConstraintDeltas = deltas.filter((d) => d.interventionKind === "over_constraint");
-  const { leanDebtCount, debtByFamily, wfCatById } = collectLeanDebt(options?.existingGlobalWorkflows, options?.existingCompanionSkills);
+  const { evolvedWfs } = classifyGlobalWorkflowOwnership(db, options?.existingGlobalWorkflows ?? []);
+  const { leanDebtCount, debtByFamily, wfCatById } = collectLeanDebt(evolvedWfs, options?.existingCompanionSkills);
   const rawEpisodes = listErrandEpisodeRows(db, sinceMs, pid, 400);
   const runIds = [...new Set(rawEpisodes.map((r) => String(r.run_id ?? "")).filter(Boolean))];
   const latestMap = runIds.length ? latestErrandEpisodeRows(db, runIds) : new Map<string, Record<string, unknown>>();
@@ -262,8 +274,9 @@ async function buildEvolveCatalogContext(
   const catalogItems = (await loadWorkflowStore({ builtin: BUILTIN_SOURCES, globalDir: globalWorkflowDir() }).catch(() => null))?.list() ?? [];
   const knownCategories = collectKnownCategories(catalogItems, collected);
   const globalItems = catalogItems.filter((s) => s.origin === "global");
-  const leanByWf = evalGlobalLeanViolations(globalItems).byWf;
-  const existingGlobal: ExistingGlobalWorkflowSummary[] = globalItems.map((s) => {
+  const { evolvedWfs, humanOwnedIds } = classifyGlobalWorkflowOwnership(ctx.db, globalItems);
+  const leanByWf = evalGlobalLeanViolations(evolvedWfs).byWf;
+  const existingGlobal: ExistingGlobalWorkflowSummary[] = evolvedWfs.map((s) => {
     const wf = s.workflow, leanViolations = leanByWf.get(wf.id) ?? [];
     return {
       id: wf.id, version: wf.version, title: wf.name, ...(wf.category ? { category: wf.category } : {}),
@@ -280,7 +293,7 @@ async function buildEvolveCatalogContext(
       ...(leanViolations.length ? { leanViolations } : {}),
     };
   });
-  const reservedBuiltinIds = BUILTIN_SOURCES.map((s) => String((s.value as { id?: unknown })?.id ?? "")).filter(Boolean);
+  const reservedBuiltinIds = [...new Set([...BUILTIN_SOURCES.map((s) => String((s.value as { id?: unknown })?.id ?? "")).filter(Boolean), ...humanOwnedIds])];
   const availableSkills = (await loadDigestSkillCatalog(ctx)).map((s) => s.name).slice(0, 120);
   const { existingCompanionSkills, existingSkillBundles } = await readExistingCompanionSkills(globalSkillsDir());
   return {
