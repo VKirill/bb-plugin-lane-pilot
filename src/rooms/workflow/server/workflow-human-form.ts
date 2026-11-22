@@ -100,6 +100,8 @@ export function registerHumanForm(engine: WorkflowEngine, ctx: ServerCore, agent
 
   // ---------------------------------------------------------------- human: the owner's question as a BB form
   const openForms = new Set<string>();
+  /** Questions that live on the owner's list (no PM chat, or a form he dismissed or let time out): the poll never opens the chat form for them again. */
+  const parked = new Set<string>();
   const composing = new Map<string, Promise<string>>();
   /**
    * A human step's text is an instruction to whoever asks («Show the findings and offer revise, proceed, abort»), in English. Shown as
@@ -129,21 +131,25 @@ export function registerHumanForm(engine: WorkflowEngine, ctx: ServerCore, agent
     composing.set(key, job);
     return job;
   };
+  /** The question as a line of the owner's list, with a push, answered by `workflow-answer` or its button. */
+  const parkOnOwnerList = (rt: ChainRuntime, runId: string, stepKey: string, node: Extract<GraphNode, { type: "human" }>, base: string): void => {
+    const options = humanOptions(node);
+    const workflowId = engine.journal.getRun(runId)?.workflow_id ?? "a workflow";
+    postOwnerItem(db, {
+      key: workflowQuestionKey(runId, stepKey), source: "workflow", kind: "workflow_question", projectId: rt.projectId, wake: true,
+      what: `Процесс «${workflowId}» спрашивает: ${base}`,
+      why: `Процесс стоит, пока нет ответа.${options.length ? ` Варианты: ${options.map((value) => value.replace(/_/g, " ")).join(" / ")}.` : ""}${node.timeoutSec ? " Если не ответить, шаг решит сам, когда выйдет его время." : ""}`,
+      evidence: [{ kind: "run", ref: runId, label: node.id }, { kind: "command", ref: `bb lane-pilot workflow-answer ${runId} ${stepKey} <${options.length ? "option" : "words"}> [words]` }],
+      actions: options.map((value) => ({ id: value, label: value.replace(/_/g, " "), cli: `bb lane-pilot workflow-answer ${runId} ${stepKey} ${value}`, rpc: { method: "workflow_answer", input: { runId, stepKey, choice: value } } })),
+    });
+  };
   const ask = async (rt: ChainRuntime, runId: string, stepKey: string, node: Extract<GraphNode, { type: "human" }>, question: string, deadline?: number, base: string = question): Promise<void> => {
     const key = `${runId}|${stepKey}`;
-    if (openForms.has(key)) return;
+    if (openForms.has(key) || parked.has(key)) return;
     // No PM chat to show a form in: the question is a line of the owner's list, with a push, answered by `workflow-answer` or its button.
     if (!rt.pmThreadId) {
-      const options = humanOptions(node);
-      const workflowId = engine.journal.getRun(runId)?.workflow_id ?? "a workflow";
-      postOwnerItem(db, {
-        key: workflowQuestionKey(runId, stepKey), source: "workflow", kind: "workflow_question", projectId: rt.projectId, wake: true,
-        what: `Процесс «${workflowId}» спрашивает: ${base}`,
-        why: `Процесс стоит, пока нет ответа.${options.length ? ` Варианты: ${options.map((value) => value.replace(/_/g, " ")).join(" / ")}.` : ""}${node.timeoutSec ? " Если не ответить, шаг решит сам, когда выйдет его время." : ""}`,
-        evidence: [{ kind: "run", ref: runId, label: node.id }, { kind: "command", ref: `bb lane-pilot workflow-answer ${runId} ${stepKey} <${options.length ? "option" : "words"}> [words]` }],
-        actions: options.map((value) => ({ id: value, label: value.replace(/_/g, " "), cli: `bb lane-pilot workflow-answer ${runId} ${stepKey} ${value}`, rpc: { method: "workflow_answer", input: { runId, stepKey, choice: value } } })),
-      });
-      openForms.add(key);
+      parkOnOwnerList(rt, runId, stepKey, node, base);
+      parked.add(key);
       return;
     }
     const worded = await composeQuestion(rt, runId, stepKey, node, base);
@@ -168,8 +174,11 @@ export function registerHumanForm(engine: WorkflowEngine, ctx: ServerCore, agent
             if (state !== "running" && state !== "waiting" && state !== "pending") return;
             if (state !== "waiting") await new Promise((resolve) => setTimeout(resolve, 100));
           }
+        } else {
+          // «Не сейчас» or the form's own timeout: the step keeps waiting on the owner's list, and the next poll does not open the form again.
+          parkOnOwnerList(rt, runId, stepKey, node, base);
+          parked.add(key);
         }
-        // A dismissed or timed-out form leaves the step waiting: the next poll asks again, or the step's own timeout answers it.
       }, { timeoutMs: deadline ? Math.max(1000, deadline - Date.now()) : undefined });
     if (shown && !answered) openForms.add(key);
   };
