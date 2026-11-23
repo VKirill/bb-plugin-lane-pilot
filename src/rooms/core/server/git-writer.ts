@@ -23,6 +23,7 @@ export function createGitWriter(
     invalidateLiveFolder: writerSpawn.invalidateLiveFolder,
     preparePlacement: rawWriterDispatch.preparePlacement as never,
     raw: rawWriterDispatch.dispatchWriter as never,
+    listProjectSections: ctx.listProjectSections,
     isDisposed: ctx.isDisposed,
   });
   return { writerSpawn, writerDispatch: { ...rawWriterDispatch, dispatchWriter: guardedDispatch as never } };

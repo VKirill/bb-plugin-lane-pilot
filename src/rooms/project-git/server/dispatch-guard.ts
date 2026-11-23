@@ -60,6 +60,13 @@ export function overlappingLiveRuns(db:LanePilotDatabase,hostId:string,root:stri
   return [...new Set(found)];
 }
 
+type SectionFolderRow = {
+  kind?:string;
+  hostId?:string;
+  path?:string;
+  paths?:Array<{ hostId:string; path:string }>;
+};
+
 type GuardDeps = {
   db:LanePilotDatabase;
   bb:{ sdk:{ threads:{ getPluginMetadata(input:{threadId:string}):Promise<unknown> }; projects:{ get(input:{projectId:string}):Promise<unknown> }; environments:{ get(input:{environmentId:string}):Promise<unknown> } } };
@@ -68,8 +75,34 @@ type GuardDeps = {
   invalidateLiveFolder:(runId:string)=>Promise<void>;
   preparePlacement:PlacementReader;
   raw:ProjectGitDispatch;
+  listProjectSections?:(projectId:string)=>Promise<SectionFolderRow[]>;
   isDisposed?:()=>boolean;
 };
+
+function verifyFrozenWriterEnvironment(
+  environment:unknown,
+  expectedEnvironmentId:string,
+  expectedHostId:string,
+  expectedPath:string,
+):void {
+  if (!environment || typeof environment!=="object") {
+    throw new Error("frozen writer environment lookup returned no environment");
+  }
+  const row=environment as Record<string,unknown>;
+  if (row.managed===true || row.workspaceProvisionType==="managed-worktree") {
+    const managed=resolveManagedWorkspace(environment,expectedHostId);
+    if (managed.environmentId!==expectedEnvironmentId || managed.path!==expectedPath) {
+      throw new Error("managed environment path does not match the frozen run binding");
+    }
+    return;
+  }
+  if (row.status!=="ready") throw new Error(`frozen writer environment is not ready (status=${String(row.status)})`);
+  if (row.hostId!==expectedHostId) throw new Error(`frozen writer environment host mismatch (${String(row.hostId)})`);
+  if (row.id!==expectedEnvironmentId) throw new Error("frozen writer environment id mismatch");
+  if (typeof row.path!=="string" || !row.path.startsWith("/") || row.path!==expectedPath) {
+    throw new Error("frozen writer environment path does not match the frozen run binding");
+  }
+}
 
 const refusal=(runId:string,result:unknown,detail:string):Record<string,unknown>=>({
   ok:false, runId, state:"rejected",
@@ -122,9 +155,17 @@ export function createProjectGitDispatch(deps:GuardDeps):ProjectGitDispatch {
       catch (cause) { return refusal(runId,{ kind:"project_root_unresolved" },`project sources could not be read: ${cause instanceof Error?cause.message:String(cause)}; Git bootstrap was not started`); }
       const sources=project && typeof project==="object" && Array.isArray((project as {sources?:unknown}).sources)
         ? (project as {sources:Array<{hostId?:unknown;path?:unknown}>}).sources : [];
-      const projectRoot=sources
+      let projectRoot=sources
         .filter((source):source is {hostId:string;path:string} => source.hostId===hostId && typeof source.path==="string" && source.path.length>0 && within(run.writer_workspace_path!,source.path))
         .sort((left,right)=>right.path.length-left.path.length)[0]?.path;
+      if (!projectRoot && deps.listProjectSections) {
+        const sections=await deps.listProjectSections(args.projectId).catch(()=>[]);
+        projectRoot=sections
+          .filter((row)=>row.kind===undefined || row.kind==="folder")
+          .flatMap((row)=>row.paths?.length ? row.paths : typeof row.hostId==="string" && typeof row.path==="string" ? [{ hostId:row.hostId, path:row.path }] : [])
+          .filter((entry)=>entry.hostId===hostId && typeof entry.path==="string" && entry.path.length>0 && within(run.writer_workspace_path!,entry.path))
+          .sort((left,right)=>right.path.length-left.path.length)[0]?.path;
+      }
       let scope:ScopeResult;
       if (!projectRoot && run.writer_environment_id) {
         let environment:unknown;
@@ -134,10 +175,9 @@ export function createProjectGitDispatch(deps:GuardDeps):ProjectGitDispatch {
           return refusal(runId,{ kind:"managed_binding_unresolved" },`frozen writer environment ${run.writer_environment_id} is not bound to project ${args.projectId}; Git bootstrap was not started`);
         }
         try {
-          const managed=resolveManagedWorkspace(environment,hostId);
-          if (managed.environmentId!==run.writer_environment_id || managed.path!==run.writer_workspace_path) throw new Error("managed environment path does not match the frozen run binding");
+          verifyFrozenWriterEnvironment(environment,run.writer_environment_id,hostId,run.writer_workspace_path);
         } catch (cause) {
-          return refusal(runId,{ kind:"managed_binding_unresolved" },`frozen writer environment is not the ready managed worktree for ${hostId}:${run.writer_workspace_path}: ${cause instanceof Error?cause.message:String(cause)}; Git bootstrap was not started`);
+          return refusal(runId,{ kind:"managed_binding_unresolved" },`frozen writer environment is not the ready workspace for ${hostId}:${run.writer_workspace_path}: ${cause instanceof Error?cause.message:String(cause)}; Git bootstrap was not started`);
         }
         try {
           scope=await deps.projectGit.resolveExistingScope({

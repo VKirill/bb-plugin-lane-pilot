@@ -6,7 +6,7 @@ import { createProjectGitDispatch, overlappingLiveRuns } from "../../src/rooms/p
 const cleanups:Array<()=>Promise<void>>=[];
 afterEach(async()=>{for(const cleanup of cleanups.splice(0))await cleanup();});
 
-function fixture(workspace="/repo/section", projectSources=[{hostId:"h1",path:"/repo"}], environment:unknown={id:"env",projectId:"project",hostId:"h1",path:workspace,status:"ready",managed:true,workspaceProvisionType:"managed-worktree"}) {
+function fixture(workspace="/repo/section", projectSources=[{hostId:"h1",path:"/repo"}], environment:unknown={id:"env",projectId:"project",hostId:"h1",path:workspace,status:"ready",managed:true,workspaceProvisionType:"managed-worktree"}, sections:Array<{kind?:string;hostId?:string;path?:string;paths?:Array<{hostId:string;path:string}>}>=[]) {
   const fake=createFakePluginHost({pluginId:"lane-pilot"});
   cleanups.push(()=>fake.harness.lifecycle.dispose());
   const db=openDatabase(fake.bb);
@@ -20,13 +20,14 @@ function fixture(workspace="/repo/section", projectSources=[{hostId:"h1",path:"/
   const projectGit={resolveScope:vi.fn(async(_input:{taskKey?:string})=>({kind:"repo",state:"origin",root:"/repo"})),resolveExistingScope:vi.fn(async(_input:{taskKey?:string})=>({kind:"repo",state:"origin",root:workspace})),bootstrap:vi.fn(async()=>({ok:true,root:"/repo",fullName:"octo/repo",url:"https://github.invalid/octo/repo",commit:"abc",branch:"main"}))};
   const pool={acquire:vi.fn(async()=>()=>undefined),acquireFolder:vi.fn(async(_hostId:string,_path:string)=>()=>undefined)};
   const invalidateLiveFolder=vi.fn(async()=>undefined);
+  const listProjectSections=vi.fn(async()=>sections);
   const preparePlacement=vi.fn(async(input:{runId:string;hostId:string;runFolder:string;task:unknown;plan:string})=>({
     placement:{ task:{ ...(input.task as {id:string;project_cwd:string}), project_cwd:input.runFolder }, plan:input.plan },
     binding:{ runId:input.runId, hostId:input.hostId, runFolder:input.runFolder, taskId:(input.task as {id:string}).id, taskJson:"", plan:input.plan },
   }));
-  const dispatch=createProjectGitDispatch({db,bb:bb as never,projectGit:projectGit as never,runWriterPool:pool,invalidateLiveFolder,preparePlacement,raw,isDisposed:()=>false});
+  const dispatch=createProjectGitDispatch({db,bb:bb as never,projectGit:projectGit as never,runWriterPool:pool,invalidateLiveFolder,preparePlacement,raw,listProjectSections,isDisposed:()=>false});
   const task={id:"T1",project_cwd:workspace,objective:"task"};
-  return {db,bb,raw,projectGit,pool,dispatch,task,invalidateLiveFolder,preparePlacement};
+  return {db,bb,raw,projectGit,pool,dispatch,task,invalidateLiveFolder,preparePlacement,listProjectSections};
 }
 
 it("uses the frozen project source for section scope and holds run admission through raw dispatch", async()=>{
@@ -138,6 +139,31 @@ it("admits an existing repository in a verified BB managed worktree outside proj
   expect(f.projectGit.resolveScope).not.toHaveBeenCalled();
   expect(f.projectGit.resolveExistingScope).toHaveBeenCalledWith(expect.objectContaining({projectRoot:"/managed",sectionPath:"/managed"}));
   expect(f.raw).toHaveBeenCalledWith(expect.anything(),expect.objectContaining({placement:expect.anything()}));
+});
+
+it("admits an existing repository in a verified native project-checkout environment outside literal project sources (e.g. symlinked Mac path)", async()=>{
+  const environment={id:"env-checkout",projectId:"project",hostId:"h1",path:"/Users/me/Documents/BB/plugins/cf",status:"ready",managed:false,environmentProviderId:"project-checkout"};
+  const f=fixture("/Users/me/Documents/BB/plugins/cf",[{hostId:"h1",path:"/Volumes/SSD/Documents/BB"}],environment);
+  f.projectGit.resolveExistingScope.mockResolvedValue({kind:"repo",state:"origin",root:"/Users/me/Documents/BB/plugins/cf"} as never);
+  await expect(f.dispatch({threadId:"pm-thread",projectId:"project",task:{...f.task,project_cwd:"/Users/me/Documents/BB/plugins/cf"}})).resolves.toMatchObject({ok:true,state:"queued"});
+  expect(f.projectGit.resolveExistingScope).toHaveBeenCalledWith(expect.objectContaining({projectRoot:"/Users/me/Documents/BB/plugins/cf",sectionPath:"/Users/me/Documents/BB/plugins/cf"}));
+  expect(f.raw).toHaveBeenCalled();
+
+  const unready={...environment,status:"creating"};
+  const fUnready=fixture("/Users/me/Documents/BB/plugins/cf",[{hostId:"h1",path:"/Volumes/SSD/Documents/BB"}],unready);
+  await expect(fUnready.dispatch({threadId:"pm-thread",projectId:"project",task:{...fUnready.task,project_cwd:"/Users/me/Documents/BB/plugins/cf"}}))
+    .resolves.toMatchObject({ok:false,error:{code:"project_git_required"},projectGit:{kind:"managed_binding_unresolved"}});
+  expect(fUnready.raw).not.toHaveBeenCalled();
+});
+
+it("resolves projectRoot from registered project-folders sections when outside project.sources", async()=>{
+  const environment={id:"env-section",projectId:"project",hostId:"h1",path:"/Users/me/Projects/section-a",status:"ready",managed:false};
+  const sections=[{kind:"folder",hostId:"h1",path:"/Users/me/Projects/section-a",paths:[{hostId:"h1",path:"/Users/me/Projects/section-a"}]}];
+  const f=fixture("/Users/me/Projects/section-a",[{hostId:"h1",path:"/Volumes/SSD/Other"}],environment,sections);
+  f.projectGit.resolveScope.mockResolvedValue({kind:"repo",state:"origin",root:"/Users/me/Projects/section-a"} as never);
+  await expect(f.dispatch({threadId:"pm-thread",projectId:"project",task:{...f.task,project_cwd:"/Users/me/Projects/section-a"}})).resolves.toMatchObject({ok:true,state:"queued"});
+  expect(f.projectGit.resolveScope).toHaveBeenCalledWith(expect.objectContaining({projectRoot:"/Users/me/Projects/section-a",sectionPath:"/Users/me/Projects/section-a"}));
+  expect(f.projectGit.resolveExistingScope).not.toHaveBeenCalled();
 });
 
 it("does not trust an outside source path without a managed environment binding", async()=>{

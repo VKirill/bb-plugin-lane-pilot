@@ -1,7 +1,7 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
 import { adapterVersions, capabilityTable, CAPABILITIES, dueProbes, listReceipts, providersInUse } from "../../src/rooms/capability";
-import { BASE_PROVIDERS, createCapabilities, runCapabilityCli } from "../../src/rooms/capability/server";
+import { BASE_PROVIDERS, createCapabilities, mountCapabilities, runCapabilityCli } from "../../src/rooms/capability/server";
 import { createRun, openDatabase, setRunThread } from "../../src/rooms/plugin-db";
 
 describe("the capability table", () => {
@@ -92,5 +92,40 @@ describe("the sweep", () => {
   it("pairs a provider with a model within one project, never across projects", () => {
     expect([...providersInUse([{ key: "writer.provider", value: "acp-cursor" }, { key: "writer.model", value: "composer-2.5" }])]).toEqual([["acp-cursor", "composer-2.5"]]);
     expect([...providersInUse([{ key: "writer.provider", value: "acp-cursor" }])]).toEqual([]);
+  });
+
+  it("mounts capability-sweep and claims monthly reconciliation with a valid YYYY-MM-01 schedule date without throwing", async () => {
+    const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
+    harness.sdk.stub("providers.list", async () => [{ id: "claude-code", pluginId: "provider-claude-code" }]);
+    harness.sdk.stub("plugins.list", async () => [{ id: "provider-claude-code", version: "0.1.0" }]);
+    const db = openDatabase(bb);
+    const logs: string[] = [];
+    const schedules = new Map<string, () => Promise<void>>();
+    const scheduledBb = {
+      ...bb,
+      background: {
+        ...bb.background,
+        schedule: (name: string, _cron: string, fn: () => Promise<void>) => { schedules.set(name, fn); },
+      },
+    };
+    const services = {
+      startHelperProbe: async () => ({ ok: true, reason: null }),
+      providerBreaker: { record: () => undefined },
+    };
+    const ctx = { db, bb: scheduledBb, log: (m: string) => logs.push(m), isDisposed: () => false } as never;
+    const api = createCapabilities(ctx, services as never).capabilities;
+    mountCapabilities(ctx, api);
+    const runSweep = schedules.get("capability-sweep");
+    expect(runSweep).toBeTypeOf("function");
+
+    await expect(runSweep!()).resolves.toBeUndefined();
+    const reconcileLogsFirst = logs.filter((l) => l.startsWith("capability reconcile 20"));
+    expect(reconcileLogsFirst.length).toBeGreaterThan(0);
+    expect(logs.some((l) => l.includes("invalid schedule date"))).toBe(false);
+
+    // Second run in the same month is a clean no-op for monthly reconciliation
+    await expect(runSweep!()).resolves.toBeUndefined();
+    expect(logs.filter((l) => l.startsWith("capability reconcile 20"))).toHaveLength(reconcileLogsFirst.length);
+    await harness.lifecycle.dispose();
   });
 });

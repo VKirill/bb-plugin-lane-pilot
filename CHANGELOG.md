@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.605
+
+- **Writer dispatch admission for native `project-checkout` and `project-folders` section environments (`project_git_required` / `managed_binding_unresolved` fix).** `dispatch-guard.ts` and `git-writer.ts` resolve `projectRoot` across both `project.sources` and registered `project-folders` folder sections (`ctx.listProjectSections`), and verify ready non-managed `project-checkout` environments (`status === "ready"`, matching `projectId`, `hostId`, and `path`) alongside `managed-worktree` environments when probing existing Git repositories via `resolveExistingScope`, eliminating `project_git_required` (`managed_binding_unresolved`) rejections on symlinked macOS paths (`/Users/.../Documents` vs `/Volumes/SSD/Documents`) and section checkouts. Covered by `tests/project-git/dispatch-guard.test.ts`.
+- **Valid `YYYY-MM-01` date claim in `capability-sweep` monthly reconciliation.** `capability.ts` (`mountCapabilities`) passes `${monthKey}-01` to `claimDailySchedule` inside a guarded `try/catch` block instead of a 7-char `YYYY-MM` key, preventing `Error: invalid schedule date` on hourly `capability-sweep` ticks. Covered by `tests/capability/capability.test.ts`.
+
 ## 0.1.604
 
 - **Dedicated chat-digestion and graph-evolution roles (`digest-light`, `digest-analyst`, `evolve-planner`, `evolve-critic`, `evolve-architect`, `evolve-auditor`) on Claude Sonnet/Opus + Antigravity Gemini 4.** `role-models.ts`, `agent-model.ts`, `role-names.ts`, `i18n-role-models.ts`, `i18n.ts`, `helper-context.ts`, `team-model.ts`, `pilot-day-digest.ts`, `graph-evolve-pipeline.ts`, `rules-scan-graph.ts`, and `docs/agents.md` decouple chat digestion and workflow evolution from coding roles (`analyst`, `planner`, `plan-critic`, `workflow-architect`, `auditor`), assign cross-family Claude + Antigravity Gemini 4 defaults and fallbacks without GPT dependency, and resolve mid-turn provider-limit retries in `lp.rules-ask` against each role's own `role_model.<id>` chain. Covered by `packages/models/tests/role-models.test.ts`, `tests/agents-doc.test.ts`, and `tests/night-graphs/pilot-day-digest.test.ts`.

@@ -263,15 +263,17 @@ export function mountCapabilities(ctx: ServerCore, api: CapabilitiesApi): void {
     // C1: once a month the capability table is reconciled and the drift is recorded in the log — adapters released since
     // their receipts and unproven cells. Facts only; no chat message (a sweep never wakes a PM thread).
     const monthKey = new Date().toISOString().slice(0, 7);
-    if (!ctx.isDisposed() && claimDailySchedule(ctx.db, SANDBOX_PROJECT_ID, "capability-reconcile", monthKey)) {
+    if (!ctx.isDisposed()) {
       try {
-        const table = await api.table();
-        const receipts = listReceipts(ctx.db);
-        for (const row of table) {
-          const receipted = [...new Set(receipts.filter((r) => r.providerId === row.providerId).map((r) => r.version))];
-          const unproven = Object.values(row.capabilities).filter((state) => state === "unproven").length;
-          const drifted = row.version !== null && !receipted.includes(row.version);
-          ctx.log(`capability reconcile ${monthKey}: ${row.providerId} adapter=${row.version ?? "none"}${drifted ? ` (new since receipts: ${receipted.join(", ") || "none"})` : ""} unproven=${unproven}`);
+        if (claimDailySchedule(ctx.db, SANDBOX_PROJECT_ID, "capability-reconcile", `${monthKey}-01`)) {
+          const table = await api.table();
+          const receipts = listReceipts(ctx.db);
+          for (const row of table) {
+            const receipted = [...new Set(receipts.filter((r) => r.providerId === row.providerId).map((r) => r.version))];
+            const unproven = Object.values(row.capabilities).filter((state) => state === "unproven").length;
+            const drifted = row.version !== null && !receipted.includes(row.version);
+            ctx.log(`capability reconcile ${monthKey}: ${row.providerId} adapter=${row.version ?? "none"}${drifted ? ` (new since receipts: ${receipted.join(", ") || "none"})` : ""} unproven=${unproven}`);
+          }
         }
       } catch (cause) { ctx.log(`capability reconcile failed: ${cause instanceof Error ? cause.message : String(cause)}`); }
     }
