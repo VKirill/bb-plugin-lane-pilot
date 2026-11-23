@@ -1,4 +1,5 @@
 /** @vitest-environment jsdom */
+// Owns src/rooms/native-agent/ui/composer-enable.tsx
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, waitFor } from "@testing-library/react";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
@@ -10,6 +11,12 @@ const hiddenData = vi.hoisted(() => ({ value: null as null | { token: string } }
 const installStarts = vi.hoisted(() => [] as string[]);
 const running = vi.hoisted(() => ({ value: false }));
 const picked = vi.hoisted(() => ({ providerId: "claude-code", model: "claude-opus-5-5[1m]" }));
+const selectionOverride = vi.hoisted(() => ({
+  projectId: "p1",
+  hostId: "host_a",
+  environmentProviderId: "project-checkout",
+  preparedEnvironment: null as null | { type: "host"; hostId: string; workspace: { type: "unmanaged"; path: string } },
+}));
 const prepared: string[] = [];
 const switches: Array<{ threadId: string; agentId: string | null }> = [];
 vi.mock("@get-bb/plugin-sdk/app", async (original) => {
@@ -18,9 +25,9 @@ vi.mock("@get-bb/plugin-sdk/app", async (original) => {
     ...sdk,
     useComposer: () => { const view = sdk.useComposer(); return { ...(running.value ? { ...view, isRunning: true } : view), experimental_vkSetDispatchData: (data: null | { token: string }) => { hiddenData.value = data; } }; },
     experimental_useComposerSelection: () => ({
-      status: "ready", scope: { kind: "new-thread", projectId: "p1" }, projectId: "p1", providerId: picked.providerId, model: picked.model, reasoningLevel: "medium",
-      environment: { kind: "provisioning", type: "provider", environmentProviderId: "project-checkout", machine: { type: "existing", hostId: "host_a" } },
-      environmentRequest: { type: "provider" }, environmentProvenance: { projectId: "p1", sectionId: null },
+      status: "ready", scope: { kind: "new-thread", projectId: selectionOverride.projectId }, projectId: selectionOverride.projectId, providerId: picked.providerId, model: picked.model, reasoningLevel: "medium",
+      environment: { kind: "provisioning", type: "provider", environmentProviderId: selectionOverride.environmentProviderId, machine: { type: "existing", hostId: selectionOverride.hostId } },
+      environmentRequest: { type: "provider" }, environmentProvenance: { projectId: selectionOverride.projectId, sectionId: null },
     }),
   };
 });
@@ -79,6 +86,7 @@ async function mountComposer(input: {
         agentId: agentId || "dev-orchestrator",
         profileMode: "installed",
         cliAgentsCollision: null,
+        environment: selectionOverride.preparedEnvironment,
       }; },
     },
   });
@@ -86,6 +94,10 @@ async function mountComposer(input: {
 
 afterEach(() => {
   picked.providerId = "claude-code"; picked.model = "claude-opus-5-5[1m]";
+  selectionOverride.projectId = "p1";
+  selectionOverride.hostId = "host_a";
+  selectionOverride.environmentProviderId = "project-checkout";
+  selectionOverride.preparedEnvironment = null;
   cleanup();
   setLocaleOverride(null);
   hiddenData.value = null;
@@ -456,5 +468,63 @@ describe("Enable Lane Pilot composer action", () => {
     fireEvent.click(slot.getByRole("switch", { name: "Lane Pilot" }));
     await waitFor(() => expect(slot.getByRole("button", { name: "Lane Pilot" })).toBeTruthy());
     slot.lifecycle.unmount();
+  });
+
+  it("preserves a selected Project Folders section when the affinity host already matches, and switches host only when needed", async () => {
+    selectionOverride.projectId = "proj_a";
+    selectionOverride.hostId = "host_mini";
+    selectionOverride.environmentProviderId = "project-section";
+    selectionOverride.preparedEnvironment = {
+      type: "host",
+      hostId: "host_mini",
+      workspace: { type: "unmanaged", path: "/Volumes/SSD/Documents/BB-сервис" },
+    };
+    const sameHost = await mountComposer({
+      projectId: "proj_a",
+      threadId: null,
+      scope: { kind: "new-thread", projectId: "proj_a" },
+      context: {
+        bindingStatus: "resolved",
+        projects: [{ id: "proj_a", name: "BB" }],
+        mainAgents: [
+          { id: "dev-orchestrator", description: "Lane Pilot development orchestrator" },
+          { id: "game-dev", description: "Game developer", kind: "specialist", domain: "games" },
+        ],
+      },
+    });
+    fireEvent.click(await sameHost.findByRole("button", { name: "Lane Pilot / agent" }));
+    await sameHost.findByTestId("activation-popover");
+    pickAgent(sameHost, "Game developer");
+    await waitFor(() => expect(hiddenData.value).toEqual({ token: "11111111-1111-1111-1111-111111111111" }));
+    expect(sameHost.inspection.composer.selections).toEqual([
+      { providerId: "claude-code", model: "claude-opus-5-5[1m]", permissionMode: "full" },
+    ]);
+    await waitFor(() => expect(installStarts).toEqual(["host_mini"]));
+    sameHost.lifecycle.unmount();
+
+    installStarts.length = 0;
+    selectionOverride.hostId = "host_laptop";
+    const crossHost = await mountComposer({
+      projectId: "proj_a",
+      threadId: null,
+      scope: { kind: "new-thread", projectId: "proj_a" },
+      context: {
+        bindingStatus: "resolved",
+        projects: [{ id: "proj_a", name: "BB" }],
+        mainAgents: [
+          { id: "dev-orchestrator", description: "Lane Pilot development orchestrator" },
+          { id: "game-dev", description: "Game developer", kind: "specialist", domain: "games" },
+        ],
+      },
+    });
+    fireEvent.click(await crossHost.findByRole("button", { name: "Lane Pilot / agent" }));
+    await crossHost.findByTestId("activation-popover");
+    pickAgent(crossHost, "Game developer");
+    await waitFor(() => expect(crossHost.inspection.composer.selections).toEqual([
+      { providerId: "claude-code", model: "claude-opus-5-5[1m]", permissionMode: "full" },
+      { environment: selectionOverride.preparedEnvironment },
+    ]));
+    await waitFor(() => expect(installStarts).toEqual(["host_mini"]));
+    crossHost.lifecycle.unmount();
   });
 });

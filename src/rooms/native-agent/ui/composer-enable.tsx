@@ -16,7 +16,7 @@ import {
   type ActivationBlock,
 } from "../activation";
 import { DEFAULT_NATIVE_AGENT } from "../../contracts/native-agent-id";
-import { selectionHostId } from "../../contracts/composer-selection";
+import { nativeSelectionReady, selectionHostId } from "../../contracts/composer-selection";
 import { noteChatAgentChanged, setPendingNativeAgent } from "./pending-native-agent";
 import { useNativeComposerSelection } from "./composer-selection-hook";
 import { takeArchitectLaunch } from "../architect-launch";
@@ -184,9 +184,17 @@ export function EnableLanePilotAction() {
         expected.current = { providerId: pick.providerId, model: pick.model };
       }
       // New thread only. An existing chat cannot change host: this branch already returned when threadId is set.
-      if (result.environment) await composer.setSelection({ environment: result.environment });
+      // Keep an already-selected project/section workspace on the target machine instead of resetting to the project root.
+      const keepSelectedEnvironment = Boolean(result.environment)
+        && nativeSelectionReady(selection)
+        && selection.status === "ready"
+        && selection.projectId === projectId
+        && hostId === result.environment!.hostId
+        && !(selection.environment.kind === "existing" && selection.environment.type === "host" && selection.environment.workspaceType === "personal");
+      if (result.environment && !keepSelectedEnvironment) await composer.setSelection({ environment: result.environment });
       // Claude Lane may still need installing on that machine; start now so the first send does not wait.
-      if (hostId) void rpc.call("native_install_start", { hostId }).catch(() => undefined);
+      const installHostId = result.environment?.hostId ?? hostId;
+      if (installHostId) void rpc.call("native_install_start", { hostId: installHostId }).catch(() => undefined);
       setPendingNativeAgent({ agentId: result.agentId, description: result.label });
       setSelected({ id: result.agentId, description: result.label });
     } catch (cause) {
