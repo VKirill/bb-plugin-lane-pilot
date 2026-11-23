@@ -2,7 +2,7 @@
 title: Waiting for the owner
 type: component
 created: 2026-10-22
-updated: 2026-11-14
+updated: 2026-11-23
 status: active
 confidence: medium
 tags: [sma, owner, telegram, ui, morning-list]
@@ -16,6 +16,8 @@ sources:
   - src/rooms/policy/morning.ts
   - src/rooms/writer/server/question-timeout.ts
   - src/rooms/workflow/server/pm-notice.ts
+  - src/rooms/workflow/server/workflow-human-form.ts
+  - src/rooms/workflow/server/workflow-answer.ts
   - scripts/lp-morning.sql
   - src/rooms/reports/server/index.ts
   - src/rooms/reports/server/daily.ts
@@ -62,7 +64,7 @@ SMA D0-3 («Waiting for you» card, «one wait, one message»). The night policy
 | `learning` | `lane_pilot_learning_item` in state `pending_owner` — learned items from his own messages (`src/rooms/owner-waiting/items.ts:101-110`) | yes, since 0.1.461 (RPC `learning_decide`) | `bb lane-pilot learning accept\|reject <id>` |
 | `writer` | a writer's question to a human that went unanswered for `writer.question_wait_min` (default two hours): with `writer.auto_return` on, the second pilot could not answer or narrow it and the PM chat was cold or refused the note (`src/rooms/writer/server/second-pilot.ts`, no wake); with it off, a product question (`src/rooms/writer/server/question-timeout.ts`, wake); and, since 0.1.458, a verified task of risk high or critical waiting for the owner's word before it lands (`kind task_word`, `src/rooms/writer/server/finish.ts`, buttons да / нет → `task_word`) | by the row's `wake` | the buttons; or answer in the task's objective and send the task again |
 | `phase` | owner-word turns of a running phase (`src/rooms/phase/server/driver-steps.ts:196`, `:569`) | by the row's wake | the row's own actions |
-| `workflow` | the end of a run that has no PM chat to tell, unless it is the machine's own (an `lp.*` graph or `lead-tick` no schedule started: their end is the log's and the wall's, since 0.1.456) or a scheduled run without a report (`src/rooms/workflow/server/pm-notice.ts:121-138`) | on failure | the row's own actions |
+| `workflow` | the end of a run that has no PM chat to tell, unless it is the machine's own (an `lp.*` graph or `lead-tick` no schedule started: their end is the log's and the wall's, since 0.1.456) or a scheduled run without a report (`src/rooms/workflow/server/pm-notice.ts:121-138`); and a `builtin:human` question when the run has no PM chat or the owner dismissed or timed out the chat form (`kind workflow_question`, `src/rooms/workflow/server/workflow-human-form.ts:135-184`, closed by `answerWorkflowQuestion` in `src/rooms/workflow/server/workflow-answer.ts:36`) | on failure; `yes` for `workflow_question` | the row's own actions (`workflow_answer` / `bb lane-pilot workflow-answer` for `workflow_question`) |
 | `integration-gate` | a red integration gate no merged task is to blame for (pre-existing failures, the machine, a gate that ran no test), or one whose repair task could not be dispatched (since 0.1.459), one row per red episode (`src/rooms/verification/server/gate-red-report.ts:56-63`) | no | read the log the row names; fix the tests or the gate command |
 | `run-goal` | a done run whose accepted tasks are red together on main (`src/rooms/run-goal/server/run-goal.ts:34`) | no | a fix task, or `bb lane-pilot return` |
 | `wall` | a wall class that ran out of moves (`src/rooms/wall/service/backlog.ts:39`) | no | the row's own actions |

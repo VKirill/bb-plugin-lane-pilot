@@ -32,6 +32,9 @@ sources:
   - tests/task-home-transitions.test.ts
   - tests/lp-drill-task-home.test.ts
   - scripts/lp_drill/scenes/task_home.py
+  - sdk/src/index.ts
+  - ../sdk/src/index.ts
+  - src/rooms/tasks/task-v2.ts
 ---
 
 # The task folder
