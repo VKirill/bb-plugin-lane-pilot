@@ -10,7 +10,7 @@ Built by Lane Pilot from page frontmatter.
 
 | Page | Type | Status | Updated |
 |---|---|---|---|
-| [Locale resolution and translation](features/locale-and-translation.md) | component | active | 2026-11-16 |
-| [Canonical role names](features/role-names.md) | component | active | 2026-11-15 |
-| [i18n gotchas](gotchas.md) | gotchas | active | 2026-11-15 |
-| [i18n workspace overview](overview.md) | overview | active | 2026-11-16 |
+| [Locale resolution and translation](features/locale-and-translation.md) | component | active | 2026-11-23 |
+| [Canonical role names](features/role-names.md) | component | active | 2026-11-23 |
+| [i18n gotchas](gotchas.md) | gotchas | active | 2026-11-23 |
+| [i18n workspace overview](overview.md) | overview | active | 2026-11-23 |
