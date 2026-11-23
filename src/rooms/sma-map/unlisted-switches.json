@@ -101,11 +101,19 @@
  ],
  "writer.max_turns": [
   "number",
-  "a writer attempt is stopped at this many tool calls, its worktree kept (unset: 300; 0: no ceiling)"
+  "a writer attempt is stopped at this many tool calls, its worktree kept (unset or 0: no ceiling; 1-10000: explicit cap)"
+ ],
+ "writer.enforce_appetite_minutes": [
+  "on|off",
+  "off: contract appetite.minutes is advisory forecast only (unset or on: ask at 80% and stop at 100%)"
+ ],
+ "writer.respect_owner_presence": [
+  "on|off",
+  "on: hold writer spawns for 10 min on a subscription provider while the owner sends chat turns on it (unset or off: writers run concurrently in isolated worktrees)"
  ],
  "writer.launch_parity": [
   "refuse|warn",
-  "refuse: a writer that started on another provider than asked is stopped and the pair held for 30 minutes (unset warns)"
+  "refuse: a writer that started on another provider than asked is stopped and the pair held for 30 minutes (unset: refuse; warn: log only)"
  ],
  "writer.qa_stop_after": [
   "number",
