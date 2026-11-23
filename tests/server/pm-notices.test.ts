@@ -9,8 +9,13 @@ import { beginWorkflowWait, beginWriterWait, isWriterWaitActive, noteWorkflowRea
 import { isServiceNoticeText } from "../../src/rooms/contracts/service-notice";
 import { SCHEDULE_RUN_KEY_PREFIX } from "../../src/rooms/contracts";
 import { forgetSecrets, registerSecrets } from "@lane-pilot/kit";
+import { parseWorkflow } from "@lane-pilot/workflow-engine";
+import { closeAfterAudit } from "../../packages/workflow-engine/src/engine-goal-audit";
+import { mountRulesScanGraph } from "../../src/rooms/night-graphs/server/rules-scan-graph";
+import { finishWriterAttemptBody } from "../../src/rooms/writer/server/finish-attempt-body";
+import { recordOutcome } from "../../src/rooms/writer/server/start-record-outcome";
 import type { RunRow } from "../../src/rooms/plugin-db";
-import { engineOn, ok, wf } from "../workflow/engine-helpers";
+import { engineOn, journalDb, ok, wf } from "../workflow/engine-helpers";
 
 const projectId = "notice-project";
 const pmThreadId = "notice-pm";
@@ -385,5 +390,45 @@ describe("lead hand-over runs", () => {
     expect(isServiceNoticeText("Council cncl_abc decided.\nQuestion: Q?")).toBe(true);
     expect(isServiceNoticeText("Lane Pilot: проверка после вливания на main упала")).toBe(true);
     expect(isServiceNoticeText("Делай всё что считаешь нужным")).toBe(false);
+  });
+
+  it("closes explicit non-fulfillment request-goal runs without goal_audit LLM calls and wires rules-scan and writer-outcome boundaries", async () => {
+    const audited: string[] = [];
+    const proposeChain = parseWorkflow({
+      id: "propose-exit",
+      name: { en: "Propose exit", ru: "Предложение" },
+      description: { en: "Exits proposed", ru: "Выходит с предложением" },
+      inputs: {},
+      outputs: { status: "string" },
+      entry: "prep",
+      nodes: [
+        { id: "prep", type: "action", action: "mark", out: { ready: "bool" } },
+        { id: "done", type: "action", action: "emit", map: { status: "proposed" } },
+      ],
+      edges: [{ from: "prep", to: "done" }],
+    });
+    const engine = engineOn(journalDb(), { mark: ok(() => ({ ready: true })) }, {
+      auditGoals: async (input) => {
+        audited.push(String(input.output.status));
+        return { met: [], unmet: [{ id: "request", why: "should not audit non-fulfillment exit" }] };
+      },
+    });
+    const result = await engine.start({
+      workflow: proposeChain,
+      inputs: {},
+      goals: [{ id: "request", done_when: "Plan feature", evidence: "tasks", guess: true }],
+    }).done;
+    expect(result).toMatchObject({ status: "succeeded" });
+    expect(audited).toEqual([]);
+    expect(typeof closeAfterAudit).toBe("function");
+
+    const registered: string[] = [];
+    mountRulesScanGraph(
+      { isDisposed: () => false } as unknown as Parameters<typeof mountRulesScanGraph>[0],
+      { ruleScan: {} as never, workflowEngine: { register: (name: string) => { registered.push(name); } } as never },
+    );
+    expect(registered).toEqual(["lp.rules_collect", "lp.rules-analyzer", "lp.rules_apply", "lp.rules-ask"]);
+    expect(typeof finishWriterAttemptBody).toBe("function");
+    expect(typeof recordOutcome).toBe("function");
   });
 });
