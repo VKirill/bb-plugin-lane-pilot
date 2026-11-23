@@ -14,6 +14,7 @@ import type { ServerCore } from "../../contracts/server";
 import type { ChainRuntime } from "../../contracts/server";
 import type { StepContext, WorkflowEngine } from "@lane-pilot/workflow-engine";
 import { specialistRunOfThread, startSpecialistRun, waitSpecialistRun } from "./specialist-graph";
+import { mountScouts, registerScoutActions } from "./scout-graph";
 
 import type { PhaseApi } from "../../phase/server/driver";
 
@@ -57,6 +58,7 @@ export function specialistPrompt(marker: string, role: string, task: string, rol
 
 /** The `brief` step of a `specialist` run: the task and the role lines of this project; the agent step adds the profile marker and the answer contract. */
 export function registerSpecialistActions(engine: WorkflowEngine, ctx: ServerCore): void {
+  registerScoutActions(engine);
   engine.register<ChainRuntime>("lp.specialist_brief", {
     reentrant: true,
     run: async (c: StepContext<ChainRuntime>) => {
@@ -77,6 +79,7 @@ export function registerSpecialistActions(engine: WorkflowEngine, ctx: ServerCor
  * writer. The work is a run of the built-in graph `specialist` (specialist-graph.ts); the two tools keep their names and answers.
  */
 export function mountSpecialists(ctx: ServerCore, services: Services): void {
+  mountScouts(ctx, services);
   const { bb, db } = ctx;
 
   async function start(input: { projectId: string; pmThreadId: string; role: string; task: string; title?: string }) {

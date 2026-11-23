@@ -9,7 +9,8 @@ import { BB_AGENT_SESSIONS, LANE_PILOT_PM_SESSION } from "../src/rooms/native-ag
 // 591 accounting: current observed PM prompt is 16,482; required shared-repo and checkout-boundary rules are retained.
 // pm +500 on 2026-11-14 (SMA parity 4е): the PM is told that a task's plan is text kept in the task folder, that depends_on is the only order (code
 // computes the waves) and that the planner revises a returned plan up to 3 rounds; the three additions were cut to 496 characters first.
-const CEILING_CHARS = { pm: 16_500, "workflow-architect": 12_000, other: 2_000 };
+// 607 accounting: observed PM prompt is 16,994 (+512 over 591's 16,482 for Scout-First 3-angle pre-plan recon and multi-angle audit rule).
+const CEILING_CHARS = { pm: 17_050, "workflow-architect": 12_000, other: 2_000 };
 
 it("keeps the PM session prompt under its size ceiling", () => {
   expect(LANE_PILOT_PM_SESSION.length).toBeLessThanOrEqual(CEILING_CHARS.pm);

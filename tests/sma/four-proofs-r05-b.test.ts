@@ -48,7 +48,7 @@ describe("daemon life b: settings", () => {
 
   it("[sma:m_cfg_default] without a setting every role gets its table default: a model, an effort, source «default»", () => {
     expect(observeB.m_cfg_default()).toEqual({
-      roles: 46, allDefault: true, analyst: "claude-code/claude-opus-5-5/high", copyLead: "claude-code/claude-sonnet-5-5/high", pmReader: "claude-code/claude-haiku-5-5/low", auditor: "codex/gpt-6.1-sol/high",
+      roles: 47, allDefault: true, analyst: "claude-code/claude-opus-5-5/high", copyLead: "claude-code/claude-sonnet-5-5/high", pmReader: "claude-code/claude-haiku-5-5/low", auditor: "codex/gpt-6.1-sol/high",
     });
   });
 

@@ -17,7 +17,7 @@ import { hostContract } from "../../../contracts";
 import { parsePmReadResult, parsePmReadSettings, pmReadPacketPrompt } from "../../pm-read";
 import { prepareCriticPacket, readCanonicalPlan } from "../critique-packet";
 
-import type { PacketInput } from "@lane-pilot/workflow-engine";
+import { PacketInput, wfHasSucceededLinkedWorkflow } from "@lane-pilot/workflow-engine";
 import { limitProbe, logLimitMove } from "./limit-probe";
 import { readAnswer } from "./read-answer";
 
@@ -65,6 +65,11 @@ export async function runPmRead(input:{bb:BbPluginApi;db:ReturnType<typeof openD
   if (settingOff(reviewed["plan_critique.enabled"]) && !settingOn(reviewed["code_critique.enabled"])) {
     recordStage(input.db,{...base,state:"pending",replaceOnNewInput:true,restart:true});
     recordStage(input.db,{...base,state:"skipped",reason:qualityMode === "quick" ? "quality_mode_quick" : "critics_disabled"});
+    return {state:"skipped",summary:""};
+  }
+  if (qualityMode === "standard" && (input.task.risk === "low" || input.task.risk === "medium") && wfHasSucceededLinkedWorkflow(input.db, input.runId, "scout")) {
+    recordStage(input.db,{...base,state:"pending",replaceOnNewInput:true,restart:true});
+    recordStage(input.db,{...base,state:"skipped",reason:"scouted_before_plan"});
     return {state:"skipped",summary:""};
   }
   const fallback=resolveStageWriterSelection({settings,config:input.config});

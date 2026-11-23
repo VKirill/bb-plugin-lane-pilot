@@ -4,4 +4,5 @@ export { candidatePatches, codeCritiqueTaskContext, headSides, runCodeCritique, 
 export { ownerLastWroteAt, ownerWordsOfRun } from "./owner-words";
 export { SPECIALIST_ROLES, mountSpecialists, registerSpecialistActions } from "./specialists";
 export { SPECIALIST_GRAPH, pageReviewByAgent, rememberSpecialistThread } from "./specialist-graph";
+export { DEFAULT_SCOUT_ANGLES, SCOUT_GRAPH, mountScouts, normalizeScoutAngles, registerScoutActions } from "./scout-graph";
 export { recordEmployeeLesson, recordRoleLine, roleLinesKey, snapshotLessonProblem, specialistMemorySlice } from "./employee-lessons";

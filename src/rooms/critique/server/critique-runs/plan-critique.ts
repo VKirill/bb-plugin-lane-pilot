@@ -16,7 +16,7 @@ import type { CoverageCallers, CoverageFinding } from "../../critique-coverage";
 import { readPlanFile } from "./plan-text";
 import { bbTaskFileIo } from "../../../storage";
 import { prepareCriticPacket, readCanonicalPlan } from "../critique-packet";
-import type { PacketInput } from "@lane-pilot/workflow-engine";
+import { PacketInput, wfHasSucceededLinkedWorkflow } from "@lane-pilot/workflow-engine";
 import { boundedAgentName } from "../../../contracts";
 import { graphStepMetadata, setAsideOnStartFailure, zcodeBusyPeek } from "../../../platform/server";
 import type { StageHelperSettings } from "../../../platform/server";
@@ -77,14 +77,6 @@ export async function runPlanCritique(input:{bb:BbPluginApi;db:ReturnType<typeof
     recordStage(input.db, qualityMode === "quick" ? { ...skip, state:"skipped", reason:"quality_mode_quick", result:{ qualityMode } } : { ...skip, state:"skipped", reason:"disabled_by_project_setting" });
     return { allowed:true };
   }
-  const legacy=resolveStageWriterSelection({settings,config:input.config,stageProviderKey:"plan_critique.provider",stageModelKey:"plan_critique.model"});
-  // The strong critic judges high and critical risk, quality_mode full and a task that changes files outside its section (repo_scope); every other task goes to the light row (hub, 30 days to 2026-11-14:
-  // serious defects in 10 of 13 returns at high/critical risk, 4 of 25 below it). The tier is kept in the receipt (critic_tier).
-  const criticTier=planCriticTier(input.task,qualityMode).tier;
-  const selection=await roleSelection({zcodeBusy:zcodeBusyPeek(input.bb),catalog:sdkCriticCatalog(input.bb,input.config.hostId),settings,role:criticTier==="strong"?"plan-critic":"plan-critic-light",fallback:{providerId:legacy.providerId,model:legacy.model},spent:await limitProbe(input.bb,input.config.hostId,settings)});
-  logLimitMove(input.bb,`plan critic for ${input.taskId}`,selection.issues);
-  let providerId=selection.providerId;
-  let modelId=selection.model;
   const mode = settings["plan_critique.mode"] === "advisory" ? "advisory" : "gate";
   const runTasks = listLiveTasksForRun(input.db,input.runId).map((row) => ({id:row.id,...row.contract as {lane?:string;owns_paths?:string[];verify?:TaskV2["verify"];verification?:TaskV2["verification"]}}));
   let coverageStatus:"complete"|"truncated"|"unavailable"="unavailable";
@@ -206,6 +198,15 @@ export async function runPlanCritique(input:{bb:BbPluginApi;db:ReturnType<typeof
     recordStage(input.db,{...base,state:"failed",reason,result:{error:reason,policy:"task-risk-v1"}});
     return {allowed:false,reason:`plan_critique_policy_invalid:${reason}`};
   }
+  // When parallel pre-plan scouts already mapped the repository in this run, ordinary low/medium risk tasks skip the
+  // post-plan LLM critic after deterministic structural checks pass; high/critical risk and full mode still run it.
+  if (qualityMode === "standard" && (input.task.risk === "low" || input.task.risk === "medium") && wfHasSucceededLinkedWorkflow(input.db, input.runId, "scout")) {
+    recordStage(input.db,{...base,state:"skipped",reason:"scouted_before_plan",result:{
+      policy:"scout-first-v1",score:policy.score,writeTaskCount:policy.writeTaskCount,decision:"scouted_before_plan",
+      taskRisk:input.task.risk,structuralCoverage:{status:coverageStatus,pathCount:coveragePathCount},structuralFindings,
+    }});
+    return {allowed:true,reason:"scouted_before_plan"};
+  }
   // A task that also changes a shared part of the repository (an SDK the other bots use) is never below the threshold.
   if (!policy.run && input.task.repo_scope !== true) {
     recordStage(input.db,{...base,state:"skipped",reason:"below_critique_threshold",result:{
@@ -214,6 +215,14 @@ export async function runPlanCritique(input:{bb:BbPluginApi;db:ReturnType<typeof
     }});
     return {allowed:true,reason:"plan_critique_threshold_not_met"};
   }
+  const legacy=resolveStageWriterSelection({settings,config:input.config,stageProviderKey:"plan_critique.provider",stageModelKey:"plan_critique.model"});
+  // The strong critic judges high and critical risk, quality_mode full and a task that changes files outside its section (repo_scope); every other task goes to the light row (hub, 30 days to 2026-11-14:
+  // serious defects in 10 of 13 returns at high/critical risk, 4 of 25 below it). The tier is kept in the receipt (critic_tier).
+  const criticTier=planCriticTier(input.task,qualityMode).tier;
+  const selection=await roleSelection({zcodeBusy:zcodeBusyPeek(input.bb),catalog:sdkCriticCatalog(input.bb,input.config.hostId),settings,role:criticTier==="strong"?"plan-critic":"plan-critic-light",fallback:{providerId:legacy.providerId,model:legacy.model},spent:await limitProbe(input.bb,input.config.hostId,settings)});
+  logLimitMove(input.bb,`plan critic for ${input.taskId}`,selection.issues);
+  let providerId=selection.providerId;
+  let modelId=selection.model;
   recordStage(input.db, { ...base, state:"running", providerId, model:modelId });
   // The critic's whole input goes by reference: task contract, canonical plan (the task home's PLAN.md, hash-checked,
   // or the path-line file read whole), the plan-source snapshot, the filtered owner words, the reader's report, the

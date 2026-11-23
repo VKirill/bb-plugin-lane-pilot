@@ -1,0 +1,262 @@
+{
+  "id": "scout",
+  "name": {
+    "en": "Parallel scout and multi-angle audit",
+    "ru": "Параллельная разведка и многосторонний аудит"
+  },
+  "description": {
+    "en": "Runs 3 parallel read-only scouts before planning (architecture & entry points, existing patterns & conventions, dependencies & verification) or 2-6 custom audit angles (e.g. checking a skill or docs against real code), and synthesizes one structured report with file:line evidence. Changes nothing.",
+    "ru": "Запускает 3 параллельных разведчика только на чтение перед составлением плана (архитектура и точки входа, существующие паттерны и конвенции, зависимости и команды проверки) или 2–6 заданных направлений аудита (например, сверка скилла или документации с реальным кодом) и собирает единый отчёт с file:line. Ничего не меняет."
+  },
+  "examples": {
+    "ru": [
+      "Проведи аудит скилла с разных углов, сверь команды, типы шагов и настройки с реальным кодом",
+      "Сверь документацию плагина с реальным кодом по нескольким направлениям параллельно",
+      "Разведай кодовую базу с трёх сторон перед составлением плана задачи"
+    ],
+    "en": [
+      "Audit the skill from multiple angles against the real codebase: CLI commands, step kinds, disk layout, and settings",
+      "Verify the module documentation against actual code across several angles in parallel",
+      "Run 3-angle reconnaissance of the codebase before authoring the task plan"
+    ]
+  },
+  "not_for": [
+    "code-review",
+    "debug",
+    "review-fix"
+  ],
+  "status": "published",
+  "tags": [
+    "code",
+    "audit",
+    "scout"
+  ],
+  "inputs": {
+    "goal": {
+      "type": "string",
+      "required": true,
+      "note": "what is being planned or audited"
+    },
+    "scope": {
+      "type": "string",
+      "default": "",
+      "note": "optional directory, package or doc/skill target path"
+    },
+    "files": {
+      "type": "string[]",
+      "default": [],
+      "note": "optional seed files to inspect first"
+    },
+    "angles": {
+      "type": "any",
+      "default": [],
+      "note": "optional list of 1-6 custom angles (strings or {id, title, focus}); empty runs the 3 standard reconnaissance angles: architecture, patterns, dependencies"
+    }
+  },
+  "outputs": {
+    "status": "done|partial",
+    "mode": "recon|audit",
+    "angle_count": "int",
+    "summary": "string",
+    "briefs": "any",
+    "anchors": "Anchor[]",
+    "findings": "Finding[]",
+    "conventions": "string[]",
+    "verification": "string[]",
+    "open_questions": "string[]",
+    "failed_angles": "string[]"
+  },
+  "requires": {
+    "plugins": [
+      "lane-pilot"
+    ]
+  },
+  "budget": {
+    "max_minutes": 45,
+    "max_fan_out": 6
+  },
+  "entry": "plan_angles",
+  "nodes": [
+    {
+      "id": "plan_angles",
+      "type": "action",
+      "action": "lp.scout_angles",
+      "title": {
+        "en": "Select scout angles",
+        "ru": "Выбрать направления разведки"
+      },
+      "rule": "code: normalizes custom angles (1 to 6) for multi-angle audit or supplies the 3 standard reconnaissance angles (architecture, patterns, dependencies)",
+      "out": {
+        "mode": "recon|audit",
+        "angle_count": "int",
+        "angles": "any",
+        "context_hint": "string"
+      }
+    },
+    {
+      "id": "scouts",
+      "type": "parallel",
+      "for_each": "plan_angles.angles",
+      "max_fan_out": 6,
+      "onOverflow": "truncate",
+      "concurrency": 6,
+      "title": {
+        "en": "Parallel scouts",
+        "ru": "Параллельные разведчики"
+      },
+      "child": {
+        "produces": [
+          {
+            "kind": "report",
+            "version": 1
+          }
+        ],
+        "type": "agent",
+        "role": "scout",
+        "session": "new",
+        "title": {
+          "en": "Scout: {{item.title}}",
+          "ru": "Разведчик: {{item.title}}"
+        },
+        "prompt": "Read-only parallel scout in the project checkout. Write, edit or commit nothing in the repository.\n\nGoal: {{$inputs.goal}}\nScope / seed files: {{plan_angles.context_hint}}\nYour assigned angle ONLY ({{item.id}} — {{item.title}}): {{item.focus}}\n\nRules:\n1. Open the real files in the checkout and grep for symbols, commands, schemas, types and settings. Never claim anything about a file you did not open.\n2. Every anchor and finding MUST cite exact `file` and `line` (plus short quoted `evidence` on findings). Never paste whole files.\n3. Stay strictly inside your assigned angle (`{{item.title}}`) so sibling scouts do not duplicate work.\n4. Return concise structured output: `angle` (`{{item.id}}`), `summary` (plain synthesis of what the code shows for this angle, <= 1500 chars), `anchors` (`{file, line, symbol?, note}`), `findings` (`{severity: critical|high|medium|low|info, file, line, evidence, finding, suggestion?}` for discrepancies, risks or constraints), `conventions` (patterns to follow with `file:line`), `verification` (exact focused check commands with `cwd` when relevant), and `open_questions` (only genuine ambiguities another file read cannot settle).\n",
+        "out": {
+          "angle": "string",
+          "summary": "string",
+          "anchors": {
+            "type": "array",
+            "required": false
+          },
+          "findings": {
+            "type": "array",
+            "required": false
+          },
+          "conventions": {
+            "type": "array",
+            "required": false
+          },
+          "verification": {
+            "type": "array",
+            "required": false
+          },
+          "open_questions": {
+            "type": "array",
+            "required": false
+          }
+        },
+        "guards": {
+          "maxVisits": 1,
+          "timeoutMin": 20
+        }
+      },
+      "join": {
+        "policy": "all_or_low_confidence",
+        "uses": "reduce.scout.angles",
+        "out": {
+          "status": "done|partial",
+          "summary": "string",
+          "briefs": "any",
+          "anchors": "Anchor[]",
+          "findings": "Finding[]",
+          "conventions": "string[]",
+          "verification": "string[]",
+          "open_questions": "string[]",
+          "failed_angles": "string[]"
+        }
+      }
+    },
+    {
+      "id": "done",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "scouts.status",
+        "mode": "plan_angles.mode",
+        "angle_count": "plan_angles.angle_count",
+        "summary": "scouts.summary",
+        "briefs": "scouts.briefs",
+        "anchors": "scouts.anchors",
+        "findings": "scouts.findings",
+        "conventions": "scouts.conventions",
+        "verification": "scouts.verification",
+        "open_questions": "scouts.open_questions",
+        "failed_angles": "scouts.failed_angles"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "plan_angles",
+      "to": "scouts",
+      "pass": "artifact"
+    },
+    {
+      "from": "scouts",
+      "to": "done",
+      "pass": "artifact"
+    }
+  ],
+  "test": {
+    "id": "scout-1",
+    "sim": {
+      "input": {
+        "goal": "Audit skill CLI commands and step types against code",
+        "scope": "skills/content-factory"
+      },
+      "stubs": {
+        "plan_angles": {
+          "mode": "recon",
+          "angle_count": 3,
+          "context_hint": "scope: skills/content-factory",
+          "angles": [
+            {
+              "id": "architecture",
+              "title": "Architecture & entry points",
+              "focus": "Entry points"
+            },
+            {
+              "id": "patterns",
+              "title": "Existing patterns & conventions",
+              "focus": "Patterns"
+            },
+            {
+              "id": "dependencies",
+              "title": "Dependencies, callers & verification",
+              "focus": "Callers"
+            }
+          ]
+        },
+        "scouts": {
+          "angle": "architecture",
+          "summary": "Mapped CLI entry.",
+          "anchors": [
+            {
+              "file": "src/cli.ts",
+              "line": 12,
+              "note": "CLI registration"
+            }
+          ],
+          "findings": [],
+          "conventions": [
+            "src/cli.ts:12 uses registerCli"
+          ],
+          "verification": [
+            "npm test -- tests/cli.test.ts"
+          ],
+          "open_questions": []
+        }
+      },
+      "expect_path": [
+        "plan_angles",
+        "scouts",
+        "done"
+      ],
+      "expect_outputs": [
+        "status == 'done'",
+        "angle_count == 3",
+        "summary != ''"
+      ]
+    },
+    "live": "from a PM chat: lane_pilot_helpers {action:'scout', goal:'Map the critique gates', scope:'src/rooms/critique'} runs 3 parallel scout child threads and returns one synthesized report"
+  },
+  "goal_check": "artifact"
+}

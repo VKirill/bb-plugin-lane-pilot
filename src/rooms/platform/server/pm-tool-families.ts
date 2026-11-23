@@ -16,8 +16,8 @@ export type ToolFamily = {
 
 export const PM_TOOL_FAMILIES = {
   lane_pilot_helpers: {
-    summary: "Graphs that need no writer: the `specialist` graph (design-lead, copy-lead, seo-specialist, tavily, video-lead, or an agent the owner created: its id), the `browser-step` graph (one step in the owner's Chrome), the `lp.browser-qa` graph (a browser check of an accepted task).",
-    actions: { specialist: "lane_pilot_specialist", wait_specialist: "lane_pilot_wait_specialist", browser: "lane_pilot_browser", browser_qa: "lane_pilot_browser_qa" },
+    summary: "Graphs that need no writer: `scout` (3 parallel read-only codebase scouts before planning, or 2-6 custom parallel audit angles), `specialist` (design-lead, copy-lead, seo-specialist, tavily, video-lead, or an owner-created agent id), `browser-step` (one step in the owner's Chrome), `lp.browser-qa` (a browser check of an accepted task).",
+    actions: { scout: "lane_pilot_scout", wait_scout: "lane_pilot_wait_scout", specialist: "lane_pilot_specialist", wait_specialist: "lane_pilot_wait_specialist", browser: "lane_pilot_browser", browser_qa: "lane_pilot_browser_qa" },
   },
   lane_pilot_council: {
     summary: "Council of directors: role-bound seats on different models argue a product or business question; the chair writes a decision.",

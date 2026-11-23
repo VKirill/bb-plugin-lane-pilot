@@ -64,7 +64,7 @@ def prove_b(proofs, tmp) -> None:
     # n477 Daemon settings file: the settings are rows of the hub database.
     p("n477", "m_cfg_path", lambda d: d["saved"] == {"ok": True, "version": 1} and d["row"] == [{"key": "run.max_tokens", "value": "40", "version": 1}] and d["loaded"] == {"run.max_tokens": 40}, lambda d: f"saved {d.get('saved')}; row {d.get('row')}; read back {d.get('loaded')}")
     # n478 Default pool: every role gets its table default with no setting.
-    p("n478", "m_cfg_default", lambda d: d["roles"] == 46 and d["allDefault"] is True and d["analyst"] == "claude-code/claude-opus-5-5/high" and d["pmReader"] == "claude-code/claude-haiku-5-5/low", lambda d: f"{d.get('roles')} roles, all default {d.get('allDefault')}; analyst {d.get('analyst')}, pm-reader {d.get('pmReader')}")
+    p("n478", "m_cfg_default", lambda d: d["roles"] == 47 and d["allDefault"] is True and d["analyst"] == "claude-code/claude-opus-5-5/high" and d["pmReader"] == "claude-code/claude-haiku-5-5/low", lambda d: f"{d.get('roles')} roles, all default {d.get('allDefault')}; analyst {d.get('analyst')}, pm-reader {d.get('pmReader')}")
     # n479 Door on this machine only: loopback, WireGuard and docker bridges accepted, everyone else dropped.
     p("n479", "m_cfg_bind", lambda d: d == {"standard": {"exit": 0, "laid": RULES("38886"), "removed": 4}, "other": {"exit": 0, "laid": RULES("4000"), "removed": 4}}, lambda d: f"rules laid for the standard port {d.get('standard', {}).get('laid')}")
     # n481 Paid lane has no money: the unset cap is zero for a paid lane; a subscription lane goes on.

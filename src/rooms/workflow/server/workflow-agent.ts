@@ -56,7 +56,7 @@ const ROLE_MAP: Record<string, HelperRole> = {
   analyst: "analyst", planner: "planner", auditor: "auditor", debugger: "debugger", "plan-critic": "plan-critic", "code-critic": "code-critic",
   triager: "gate-triage", "gate-triage": "gate-triage", memory: "memory-maintainer", "memory-maintainer": "memory-maintainer",
   "browser-qa": "browser-qa", errand: "errand", "errand-computer": "errand", "errand-devops": "errand", "errand-research": "errand", "errand-browser": "errand",
-  "api-recon": "api-recon", council: "council-seat", "council-seat": "council-seat", "project-life": "project-life", "pm-reader": "pm-reader",
+  "api-recon": "api-recon", council: "council-seat", "council-seat": "council-seat", "project-life": "project-life", "pm-reader": "pm-reader", scout: "scout",
   writer: "writer", "code-repair": "code-repair", "night-fixer": "night-fixer", "specialist-reviewer": "specialist-reviewer",
   "docs-maintainer": "docs-maintainer", onboarder: "onboarder", "rules-analyzer": "rules-analyzer", "episode-analyst": "episode-analyst",
   "wall-hunter": "wall-hunter", "workspace-provisioner": "workspace-provisioner", lead: "lead", "workflow-architect": "workflow-architect",
@@ -82,7 +82,7 @@ function routineModel(inputs: Record<string, unknown>): Pick<HelperRequest, "mod
 /** What a node's `role` means here: the profile of the helper, the role in its metadata, and which repository files it may touch (none, except the notes of its own chat). */
 const TIER_RANK: Record<string, number> = { light: 0, standard: 1, strong: 2 };
 /** Roles Jev may never cheapen: judges, critics, the planner/PM chair (a code writer is not a table row at all, so it is never touched). */
-const NO_DOWNGRADE = new Set(["plan-critic", "specialist-reviewer", "code-critic", "auditor", "council", "debugger", "triager", "rules-analyzer", "planner", "pm", "dev-orchestrator", "writer", "analyst", "worker", "evolve-planner", "evolve-critic", "evolve-architect", "evolve-auditor"]);
+const NO_DOWNGRADE = new Set(["plan-critic", "specialist-reviewer", "code-critic", "auditor", "council", "debugger", "triager", "rules-analyzer", "planner", "pm", "dev-orchestrator", "writer", "analyst", "worker", "scout", "evolve-planner", "evolve-critic", "evolve-architect", "evolve-auditor"]);
 export function downgradableRole(role: string): boolean {
   const row = roleRowOf(role);
   return !NO_DOWNGRADE.has(role) && ROLE_IDS.includes(row) && !NO_DOWNGRADE.has(row);

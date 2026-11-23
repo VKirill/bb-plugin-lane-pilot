@@ -119,6 +119,7 @@ import aiIntegrationPhase from "../../../workflows/ai-integration-phase.json";
 import spike from "../../../workflows/spike.json";
 import sketchWrapUp from "../../../workflows/sketch-wrap-up.json";
 import specialist from "../../../workflows/specialist.json";
+import scout from "../../../workflows/scout.json";
 import ship from "../../../workflows/ship.json";
 import prBranch from "../../../workflows/pr-branch.json";
 import cleanup from "../../../workflows/cleanup.json";
@@ -260,6 +261,7 @@ export const BUILTIN_SOURCES: ReadonlyArray<{ name: string; value: unknown }> = 
   { name: "spike.json", value: spike },
   { name: "sketch-wrap-up.json", value: sketchWrapUp },
   { name: "specialist.json", value: specialist },
+  { name: "scout.json", value: scout },
   { name: "ship.json", value: ship },
   { name: "pr-branch.json", value: prBranch },
   { name: "cleanup.json", value: cleanup },

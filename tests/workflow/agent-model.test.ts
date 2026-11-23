@@ -53,7 +53,7 @@ describe("which model a workflow agent step runs on: the role's row of one table
       walk(JSON.parse(readFileSync(new URL(file, dir), "utf8")));
     }
     expect(roles.size).toBeGreaterThan(8);
-    for (const role of roles) expect(pick(role).model, role).toMatch(/^(claude-(opus|sonnet|haiku)-5-5|gpt-6\.1-(sol|terra)|gpt-6-luna|router9\/ag\/gemini-3\.8-flash-high)$/);
+    for (const role of roles) expect(pick(role).model, role).toMatch(/^(claude-(opus|sonnet|haiku)-5-5|gpt-6\.1-(sol|terra)|gpt-6-luna|router9\/ag\/gemini-3\.8-flash-high|gemini-4-(argon|hydrogen))$/);
     expect(pick("worker")).toEqual(pick("analyst"));
     expect(pick("something-new")).toEqual(pick("analyst"));
     expect(pick("gate-triage")).toEqual(pick("triager"));
@@ -369,7 +369,7 @@ describe("a deciding role", () => {
 
   it("never plans or audits on a light model it inherits, and the plan's critic is another model than its planner", () => {
     expect(ROLE_LEAST_TIER).toEqual({
-      planner: "strong", "code-critic": "standard", auditor: "standard", debugger: "standard",
+      planner: "strong", "code-critic": "standard", auditor: "standard", debugger: "standard", scout: "standard",
       "evolve-planner": "strong", "evolve-critic": "standard", "evolve-architect": "strong", "evolve-auditor": "standard",
     });
     for (const lightPm of [pm, { providerId: "claude-code", model: "claude-haiku-5-5" }]) {

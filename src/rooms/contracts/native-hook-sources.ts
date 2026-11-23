@@ -136,7 +136,7 @@ export const NATIVE_HOOK_SOURCES: Record<string, string> = {
     "PM_AGENTS = {\"dev-orchestrator\", \"frontend-orchestrator\", \"marketing-orchestrator\"}",
     "LANE_PILOT_PM_AGENT_TYPES = {\"lane-pilot-pm\"}",
     "LANE_PILOT_HELPER_ROLES = {",
-    "    \"errand\", \"specialist\", \"browser-qa\", \"pm-read\", \"pm-reader\",",
+    "    \"errand\", \"specialist\", \"browser-qa\", \"pm-read\", \"pm-reader\", \"scout\",",
     "    \"critic\", \"plan-critic\", \"code-critic\", \"specialist-reviewer\",",
     "    \"night-reviewer\", \"docs\", \"docs-maintainer\", \"onboarder\",",
     "    \"memory-maintainer\", \"project-life\", \"gate-triage\", \"council-seat\",",

@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.607
+
+- **Native parallel `scout` role, `scout` workflow, and `lane_pilot_helpers` (`scout` / `wait_scout`) for 3-angle pre-plan reconnaissance and multi-angle read-only audits.** `role-models.ts`, `role-names.ts`, `i18n-role-models.ts`, `i18n.ts`, `helper-context.ts`, `workflow-agent.ts`, `workflows/scout.json`, `reducers.ts` (`reduce.scout.angles`), `scout-graph.ts`, `pm-tool-families.ts`, `native-agent-overlay.ts`, and `docs/agents.md` add the read-only `scout` role (Antigravity Gemini 4 Argon default with Claude Sonnet 5.5 fallback and `gitnexus` access) and the published `scout` workflow supporting both the 3 standard pre-plan reconnaissance angles (`architecture`, `patterns`, `dependencies`) and 2–6 custom parallel audit angles with deterministic `file:line` report reduction. Covered by `tests/scout-first.test.ts`, `packages/models/tests/role-models.test.ts`, and `tests/agents-doc.test.ts`.
+- **Scout-first pre-writer stage skip (`scouted_before_plan`) on `low` and `medium` risk tasks in `standard` quality mode.** `pm-read.ts`, `plan-critique.ts`, and `journal-admission.ts` (`wfHasSucceededLinkedWorkflow`) skip post-plan `pm-read` and LLM `plan-critique` when a `scout` run has already succeeded for the PM run while retaining deterministic structural contract gates (`structural_plan_critique_blocked`) and `high` / `critical` risk or `full` quality-mode plan critique, and defer `plan-critique` provider/limit catalog probes until after threshold skips. Covered by `tests/scout-first.test.ts`.
+
 ## 0.1.606
 
 - **Preserve selected `Project Folders` section workspace in Composer when affinity host already matches.** `src/rooms/native-agent/ui/composer-enable.tsx` (`EnableLanePilotAction.prepare`) retains a ready non-personal composer workspace selection (such as `project-section`) when `prepare_native_session` returns an affinity `environment` on the same `hostId`, instead of overwriting the composer's environment with the project root folder, and routes `native_install_start` to `result.environment?.hostId ?? hostId` across cross-host affinity switches. Covered by `tests/composer-activation.test.tsx`.

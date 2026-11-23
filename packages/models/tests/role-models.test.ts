@@ -31,7 +31,7 @@ describe("the table «role -> model»", () => {
     const family = (role: string) => modelFamily(ROLE_TABLE.find((row) => row.id === role)!.default.model);
     for (const author of ["analyst", "planner", "workflow-architect", "specialist", "digest-analyst", "evolve-planner", "evolve-architect"]) expect(family(author), author).toBe("claude");
     // The reviews run on the Gemini subscription (owner, 2026-10-27); the auditor, the debugger and the chair stay on GPT; dedicated digest/evolve judges run on Antigravity Gemini 4.
-    for (const judge of ["plan-critic", "specialist-reviewer", "code-critic", "triager", "digest-light", "evolve-critic", "evolve-auditor"]) expect(family(judge), judge).toBe("google");
+    for (const judge of ["plan-critic", "specialist-reviewer", "code-critic", "triager", "scout", "digest-light", "evolve-critic", "evolve-auditor"]) expect(family(judge), judge).toBe("google");
     for (const judge of ["auditor", "debugger", "council"]) expect(family(judge), judge).toBe("gpt");
     // A row whose default is a Gemini names the other-family model (GPT or Claude) it falls to when Gemini is unavailable or spent.
     for (const row of ROLE_TABLE) {
@@ -40,6 +40,7 @@ describe("the table «role -> model»", () => {
     }
     expect(roleFallbackModel("code-critic")).toMatchObject({ providerId: "codex", model: "gpt-6.1-sol", effort: "high" });
     expect(roleFallbackModel("evolve-auditor")).toMatchObject({ providerId: "claude-code", model: "claude-sonnet-5-5", effort: "high" });
+    expect(roleFallbackModel("scout")).toMatchObject({ providerId: "claude-code", model: "claude-sonnet-5-5", effort: "medium" });
     expect(roleFallbackModel("digest-light")).toMatchObject({ providerId: "claude-code", model: "claude-sonnet-5-5", effort: "medium" });
     expect(roleFallbackModel("triager")).toMatchObject({ model: "gpt-6-luna" });
     expect(roleFallbackModel("auditor")).toBeNull();

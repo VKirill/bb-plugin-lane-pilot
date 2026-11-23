@@ -42,6 +42,7 @@ export const BRIEF_BUDGETS: Record<string, { instructions: number; total: number
   "rules-analyzer": { instructions: 8_000, total: 30_000 },
   // The scout reads the files itself: its brief is the task, the plan and where to start, never file contents.
   "pm-reader": { instructions: 4_000, total: 20_000 },
+  scout: { instructions: 4_000, total: 30_000 },
   // The nightly docs agent and the maintenance/repair passes are method-heavy on purpose.
   "docs-maintainer": { instructions: 8_000, total: 300_000 },
   council: { instructions: 6_000, total: 80_000 },

@@ -126,6 +126,33 @@ export const REDUCERS: Record<string, Reducer> = {
     const findings = flat(input.results, "findings");
     return { findings, warnings: flat(input.results, "warnings"), critical_count: sev(findings, "critical"), high_count: sev(findings, "high") };
   },
+  "reduce.scout.angles": (input) => {
+    const ok = done(input);
+    const rank = (finding: Row) => ["critical", "high", "medium", "low", "info"].indexOf(str(finding.severity));
+    const briefs = ok.map((row) => {
+      const item = rec(row.item);
+      const id = str(item.id) || idOf(row.item, row.branch);
+      const title = str(item.title) || str(row.data.angle) || id;
+      return { id, title, summary: str(row.data.summary) };
+    });
+    const seenAnchors = new Set<string>();
+    const anchors = flat(input.results, "anchors").filter((entry) => {
+      const a = rec(entry), key = `${str(a.file)}:${a.line ?? ""}:${str(a.symbol || a.note)}`;
+      if (seenAnchors.has(key)) return false;
+      seenAnchors.add(key); return true;
+    });
+    const findings = flat(input.results, "findings").map((finding) => { const row = rec(finding); return { ...row, id: findingId(row) }; })
+      .map((finding, at) => ({ finding, at })).sort((a, b) => (rank(a.finding) === -1 ? 9 : rank(a.finding)) - (rank(b.finding) === -1 ? 9 : rank(b.finding)) || a.at - b.at).map((entry) => entry.finding);
+    const conventions = unique(flat(input.results, "conventions").map(str).filter(Boolean));
+    const verification = unique(flat(input.results, "verification").map(str).filter(Boolean));
+    const openQuestions = unique(flat(input.results, "open_questions").map(str).filter(Boolean));
+    const failedAngles = lost(input).map((row) => str(rec(row.item).title) || idOf(row.item, row.branch)).filter(Boolean);
+    const summary = briefs.map((b) => `[${b.title}] ${b.summary}`).filter((line) => line.trim().length > 3).join("\n\n");
+    return {
+      status: failedAngles.length === 0 ? "done" : "partial",
+      summary, briefs, anchors, findings, conventions, verification, open_questions: openQuestions, failed_angles: failedAngles,
+    };
+  },
   "reduce.seo-cocoon.evidence": (input) => {
     const ok = done(input).filter((row) => row.data.skipped !== true);
     return {

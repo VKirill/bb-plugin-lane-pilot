@@ -79,7 +79,7 @@ export function coreRequiredSessionAdvertisement(): RequiredSessionAdvertisement
  */
 export type HelperRole =
   | "writer" | "code-repair" | "night-fixer"
-  | "plan-critic" | "code-critic" | "specialist-reviewer" | "gate-triage" | "pm-reader"
+  | "plan-critic" | "code-critic" | "specialist-reviewer" | "gate-triage" | "pm-reader" | "scout"
   | "docs-maintainer" | "onboarder" | "memory-maintainer" | "project-life"
   | "browser-qa" | "errand" | "api-recon" | "council-seat" | "rules-analyzer" | "episode-analyst" | "wall-hunter"
   | "digest-light" | "digest-analyst" | "evolve-planner" | "evolve-critic" | "evolve-architect" | "evolve-auditor"
@@ -114,6 +114,7 @@ export const ROLE_PROFILES: Record<HelperRole, RoleProfile> = {
   // It judges check counters from its message (NO_TOOLS_LINE); 0 of 12 threads called the code graph in the week to 2026-11-10.
   "gate-triage": ONE_SHOT,
   "pm-reader": ONE_SHOT,
+  "scout": READER,
   // 10 graph calls in 1968 docs runs, in 5 of 27 threads; the nightly pass refreshes the index itself (docs.gitnexus_refresh) and the brief never asks for the graph.
   "docs-maintainer": { bbPlugins: [], skills: ["lp-docs", "docs-methodology"], mcpServers: [] },
   "onboarder": { bbPlugins: [], skills: ["project-life"], mcpServers: [] },
@@ -252,7 +253,7 @@ export function effectiveGroup(role: HelperRole, group: AccessGroup, access: Rol
   return { names: withMandatory(base, mandatory), source: "role" };
 }
 
-const CHAIN_CHECKOUT_READERS = new Set<HelperRole>(["analyst", "planner", "auditor"]);
+const CHAIN_CHECKOUT_READERS = new Set<HelperRole>(["analyst", "planner", "auditor", "scout"]);
 
 /** A role whose profile holds no plugin, skill or MCP server answers from the prompt itself: project instructions are files it cannot usefully read, except workflow chain readers that inspect the checkout with file tools. */
 function promptOnlyRole(role: HelperRole): boolean {

@@ -58,7 +58,7 @@ describe("skill catalog note", () => {
     expect(SKILL_CATALOG_BLOCK.length).toBeLessThanOrEqual(SKILL_CATALOG_LIMIT);
     expect(LANE_PILOT_PM_SESSION).toContain(SKILL_CATALOG_LINE);
     expect(LANE_PILOT_PM_SESSION).not.toContain("## Skill catalog");
-    expect(LANE_PILOT_PM_SESSION.length).toBeLessThanOrEqual(16_500); // 591 accounting: current observed prompt is 16,482; see tests/prompt-budget.test.ts
+    expect(LANE_PILOT_PM_SESSION.length).toBeLessThanOrEqual(17_050); // 607 accounting: observed prompt is 16,994; see tests/prompt-budget.test.ts
     expect(lanePmOverlayPrompt("dev-orchestrator")).toContain(SKILL_CATALOG_LINE);
     for (const id of Object.keys(BB_AGENT_SESSIONS)) {
       if (id === "dev-orchestrator") continue;

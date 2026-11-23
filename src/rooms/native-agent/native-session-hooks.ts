@@ -40,6 +40,8 @@ export const NATIVE_LP_BRIDGE_TOOLS = [
   "lane_pilot_council_stop",
   "lane_pilot_specialist",
   "lane_pilot_wait_specialist",
+  "lane_pilot_scout",
+  "lane_pilot_wait_scout",
   "lane_pilot_browser",
   "lane_pilot_errand",
   "lane_pilot_wait_errand",
