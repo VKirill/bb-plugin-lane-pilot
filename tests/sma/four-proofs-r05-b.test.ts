@@ -88,10 +88,10 @@ describe("daemon life b: settings", () => {
     expect(observeB.m_restart_scoped()).toEqual({ first: 5, second: 100, old: null, stored: 100 });
   });
 
-  it("[sma:m_cfg_max_turns] without a key the named default (300) applies, 0 or off is none, a whole number 1-500 as given, anything else is refused", () => {
+  it("[sma:m_cfg_max_turns] without a key no ceiling applies, 0 or off is none, a whole number 1-10000 as given, anything else is refused", () => {
     expect(observeB.m_cfg_max_turns()).toEqual({
-      unset: { ceiling: 300, invalid: false }, empty: { ceiling: 300, invalid: false }, zero: { ceiling: null, invalid: false }, off: { ceiling: null, invalid: false },
-      given: { ceiling: 25, invalid: false }, top: { ceiling: 500, invalid: false }, over: { ceiling: null, invalid: true }, junk: { ceiling: null, invalid: true }, policy: 300,
+      unset: { ceiling: null, invalid: false }, empty: { ceiling: null, invalid: false }, zero: { ceiling: null, invalid: false }, off: { ceiling: null, invalid: false },
+      given: { ceiling: 25, invalid: false }, top: { ceiling: 10_000, invalid: false }, over: { ceiling: null, invalid: true }, junk: { ceiling: null, invalid: true }, policy: null,
     });
   });
 });

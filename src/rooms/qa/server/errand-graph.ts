@@ -6,7 +6,7 @@ import { z } from "zod";
 import { SCHEDULE_RUN_KEY_PREFIX } from "../../contracts";
 import type { ChainRuntime } from "../../contracts/server";
 import { withUsage } from "../../usage/server";
-import { fenceOutside, findThreadsByMetadata, keyedSpawnSupported, registerObservedTool, spawnTextId } from "../../platform/server";
+import { beginWorkflowWait, fenceOutside, findThreadsByMetadata, keyedSpawnSupported, noteWorkflowReadByPm, registerObservedTool, spawnTextId } from "../../platform/server";
 
 import type { ServerCore } from "../../contracts/server";
 import type { ErrandCore, ErrandSnapshot } from "./errands";
@@ -296,11 +296,14 @@ export function mountErrandGraph(ctx: ServerCore, services: Services, core: Erra
       if (runId && !isErrandRun(runId)) throw new Error(`"${runId}" is not an errand run`);
       if (!runId) return legacyWait(params.threadId!, deadline, context.projectId ?? "-");
       let detail = "";
+      const endWait = beginWorkflowWait(runId);
+      try {
       while (Date.now() < deadline && !ctx.isDisposed()) {
         const summary = engine.get(runId);
         if (!summary) throw new Error(`there is no errand run ${runId}`);
         const threadId = spawnedOf(runId)?.threadId ?? params.threadId;
         if (summary.status === "succeeded") {
+          noteWorkflowReadByPm(runId);
           const out = (summary.output ?? {}) as Record<string, unknown>;
           // The api-recon graph's map (see apiRecon): its status, the summary and the paths of the map.
           if (typeof out.status === "string" && out.state === undefined) {
@@ -318,6 +321,7 @@ export function mountErrandGraph(ctx: ServerCore, services: Services, core: Erra
           }, null, 2);
         }
         if (TERMINAL.includes(summary.status)) {
+          noteWorkflowReadByPm(runId);
           return JSON.stringify({ workflowRunId: runId, ...(threadId ? { threadId } : {}), state: "failed", output: fenceOutside("errand", redactKnown(summary.error ?? summary.reason ?? summary.status)) });
         }
         if (threadId) {
@@ -329,6 +333,7 @@ export function mountErrandGraph(ctx: ServerCore, services: Services, core: Erra
       }
       const threadId = spawnedOf(runId)?.threadId ?? params.threadId;
       return JSON.stringify({ workflowRunId: runId, ...(threadId ? { threadId } : {}), state: "running", output: fenceOutside("errand", redactKnown(detail)) });
+      } finally { endWait(); }
     },
   });
 

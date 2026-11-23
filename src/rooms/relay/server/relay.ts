@@ -90,6 +90,8 @@ export type RelayDeps = {
   deferralLines?(projectId:string):string[];
   /** The integration gate's verdict for an accepted task's merge commit (lane_pilot_gate_run), appended to its line. */
   gateLine?(row:TaskOutcome):Promise<string | null>;
+  /** Whether BB SDK natively delivers `childThreadId`'s turn completions and replies to `parentThreadId` (parentNotifications != none, not a quiet helper). */
+  nativelyNotifiesParent?(childThreadId:string, parentThreadId:string):Promise<boolean>;
   now():number;
   log(message:string):void;
   /** Puts the text into BB's queue for `sendAt`; the queued row's id, or null when it could not be queued (the sweep then sends). */
@@ -119,15 +121,8 @@ function isOpen(item:RelayItem):boolean {
 }
 
 function truncateItemText(item:RelayItem, maxLen:number):void {
-  if (item.kind === "remind") {
-    if (item.note.length > maxLen) {
-      item.note = `${item.note.slice(0, maxLen)}…`;
-    }
-  } else {
-    if (item.question.length > maxLen) {
-      item.question = `${item.question.slice(0, maxLen)}…`;
-    }
-  }
+  if (item.kind === "remind" && item.note.length > maxLen) item.note = `${item.note.slice(0, maxLen)}…`;
+  else if (item.kind === "ask" && item.question.length > maxLen) item.question = `${item.question.slice(0, maxLen)}…`;
 }
 
 function boundItemsSize(items:RelayItem[], maxBytes:number):RelayItem[] {
@@ -233,14 +228,17 @@ export function createRelay(deps:RelayDeps) {
         item.deliveryUnknown = true;
         await deps.save(boundItemsSize([...items, item], RELAY_LIMITS.maxStoredBytes));
       }
+      const nativeParent = await deps.nativelyNotifiesParent?.(toThreadId, input.fromThreadId).catch(() => false) ?? false;
       try { await deps.send(toThreadId, [
-        `Lane Pilot: question from @thread:${input.fromThreadId} (${item.id}):`,
+        ...(nativeParent ? [] : [`Lane Pilot: question from @thread:${input.fromThreadId} (${item.id}):`]),
         ...(toThreadId !== input.toThreadId ? [`Fresh chat replacing @thread:${input.toThreadId}; consult its history if needed.`] : []),
-        "",
+        ...(nativeParent && toThreadId === input.toThreadId ? [] : [""]),
         input.question,
-        "",
-        `Answer briefly with the lane_pilot_relay tool, action \`reply\`, using askId "${item.id}": what you are doing, what you are holding and when it frees. Keep working on your task.`,
-        "If you cannot call that tool, end your turn with the answer; it is passed back.",
+        ...(nativeParent ? [] : [
+          "",
+          `Answer briefly with the lane_pilot_relay tool, action \`reply\`, using askId "${item.id}": what you are doing, what you are holding and when it frees. Keep working on your task.`,
+          "If you cannot call that tool, end your turn with the answer; it is passed back.",
+        ]),
       ].join("\n"), input.fromThreadId); } catch (cause) {
         if (!prepareRecipient) throw cause;
         throw new ToolError(`question ${item.id} delivery to @thread:${toThreadId} is unconfirmed: ${cause instanceof Error ? cause.message : String(cause)}`, {
@@ -248,6 +246,12 @@ export function createRelay(deps:RelayDeps) {
         });
       }
       delete item.deliveryUnknown;
+      if (nativeParent) {
+        item.answeredAt = deps.now();
+        await closeAnsweredWaits(items, input.fromThreadId, toThreadId);
+        items.push(item);
+        return { ...item, nativeParentDelivery: true as const };
+      }
       items.push(item);
       return item;
     });
@@ -259,11 +263,12 @@ export function createRelay(deps:RelayDeps) {
       if (!item) throw new Error(`no question ${input.askId}`);
       if (item.toThreadId !== input.fromThreadId) throw new Error("only the asked thread can answer");
       if (item.answeredAt) return item;
-      await deps.send(item.fromThreadId, `Lane Pilot: reply from @thread:${item.toThreadId} to ${item.id}:\n\n${input.answer}`, item.toThreadId);
+      const nativeParent = await deps.nativelyNotifiesParent?.(item.toThreadId, item.fromThreadId).catch(() => false) ?? false;
+      if (!nativeParent) await deps.send(item.fromThreadId, `Lane Pilot: reply from @thread:${item.toThreadId} to ${item.id}:\n\n${input.answer}`, item.toThreadId);
       item.answeredAt = deps.now();
       delete item.deliveryUnknown;
       await closeAnsweredWaits(items, item.fromThreadId, item.toThreadId);
-      return item;
+      return nativeParent ? { ...item, nativeParentDelivery: true as const } : item;
     });
   }
 
@@ -396,15 +401,22 @@ export function createRelay(deps:RelayDeps) {
       // Answers first: whoever gets one now does not also need the reminder that waited on this thread.
       for (const item of items) {
         if (item.kind === "ask" && !item.answeredAt && !item.deliveryUnknown && item.toThreadId === threadId) {
-          const text = (await deps.output(threadId).catch((cause: unknown) => { deps.log(`relay: thread output unreadable: ${cause instanceof Error ? cause.message : String(cause)}`); return ""; })).trim().slice(-4000);
-          await deliver(item.fromThreadId, `Lane Pilot: @thread:${threadId} finished its turn without answering ${item.id}. Its last message:\n\n${text || "(empty)"}`, threadId);
+          const nativeParent = await deps.nativelyNotifiesParent?.(threadId, item.fromThreadId).catch(() => false) ?? false;
+          if (!nativeParent) {
+            const text = (await deps.output(threadId).catch((cause: unknown) => { deps.log(`relay: thread output unreadable: ${cause instanceof Error ? cause.message : String(cause)}`); return ""; })).trim().slice(-4000);
+            await deliver(item.fromThreadId, `Lane Pilot: @thread:${threadId} finished its turn without answering ${item.id}. Its last message:\n\n${text || "(empty)"}`, threadId);
+            woken++;
+          }
           item.answeredAt = deps.now();
           await closeAnsweredWaits(items, item.fromThreadId, threadId);
-          woken++;
         }
       }
       for (const item of items) {
-        if (item.kind === "remind" && !item.firedAt && item.watchThreadId === threadId) { await fire(item, "watch"); woken++; }
+        if (item.kind === "remind" && !item.firedAt && item.watchThreadId === threadId) {
+          if (await deps.nativelyNotifiesParent?.(threadId, item.threadId).catch(() => false)) {
+            await dropQueuedRow(item); item.firedAt = deps.now(); item.firedBy = "answered";
+          } else { await fire(item, "watch"); woken++; }
+        }
       }
       return woken;
     });
@@ -601,13 +613,16 @@ export function relayFor(ctx:ServerContext):Relay {
   const relay = createRelay({
     load:async () => { const value = await bb.storage.kv.get(KEY); return Array.isArray(value) ? value as RelayItem[] : []; },
     save:async (items) => { await bb.storage.kv.set(KEY, items as never); },
-    send:async (threadId, text, senderThreadId) => {
-      await sendServiceMessage(bb, { threadId, text, senderThreadId });
+    send:async (threadId, text, senderThreadId) => { await sendServiceMessage(bb, { threadId, text, senderThreadId }); },
+    nativelyNotifiesParent:async (childThreadId, parentThreadId) => {
+      const [thread, meta] = await Promise.all([
+        bb.sdk.threads.get({ threadId: childThreadId }).catch(() => null) as Promise<{ parentThreadId?: unknown; parentNotifications?: unknown } | null>,
+        (bb.sdk.threads as unknown as { getPluginMetadata?: (args: { threadId: string }) => Promise<Record<string, unknown> | null> }).getPluginMetadata?.({ threadId: childThreadId }).catch(() => null) ?? Promise.resolve(null),
+      ]);
+      return thread?.parentThreadId === parentThreadId && thread?.parentNotifications !== "none" && meta?.experimental_vkQuietChild !== true;
     },
     settled:async (threadId) => {
-      const thread = await bb.sdk.threads.get({ threadId }) as {
-        status?:string; queuedMessageCount?:number; activeBackgroundAgentCount?:number; environmentId?:string|null;
-      };
+      const thread = await bb.sdk.threads.get({ threadId }) as { status?:string; queuedMessageCount?:number; activeBackgroundAgentCount?:number; environmentId?:string|null };
       // threads.get has no background command count; the thread list of its environment does.
       type Listed = { id:string; activity?:{ activeBackgroundCommandCount?:number } };
       const listed = thread.environmentId
@@ -615,13 +630,9 @@ export function relayFor(ctx:ServerContext):Relay {
         : null;
       const row = Array.isArray(listed) ? (listed as Listed[]).find((item) => item.id === threadId) : undefined;
       const commands = row?.activity?.activeBackgroundCommandCount ?? backgroundCommands.get(threadId) ?? 0;
-      return ["idle", "error", "stopped"].includes(thread.status ?? "") && !thread.queuedMessageCount
-        && !thread.activeBackgroundAgentCount && commands === 0;
+      return ["idle", "error", "stopped"].includes(thread.status ?? "") && !thread.queuedMessageCount && !thread.activeBackgroundAgentCount && commands === 0;
     },
-    busy:async (threadId) => {
-      const thread = await bb.sdk.threads.get({ threadId }) as { status?:string };
-      return !["idle", "error", "stopped"].includes(thread.status ?? "");
-    },
+    busy:async (threadId) => !["idle", "error", "stopped"].includes(((await bb.sdk.threads.get({ threadId })) as { status?:string }).status ?? ""),
     taskStates:async (projectId, taskIds) => Object.fromEntries(taskIds.map((task) => [task, latestTaskAttemptState(ctx.db, projectId, task)])),
     latestFamilyMember:async (projectId, taskId) => {
       const family = taskFamily(taskId);

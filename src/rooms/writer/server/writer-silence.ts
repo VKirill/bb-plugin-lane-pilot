@@ -20,13 +20,13 @@ const CEILING_MAX_PAGES = 100;
 export const TURN_CEILING_REASON = "run_budget_exceeded:turn ceiling";
 
 /**
- * The turn ceiling a run froze at creation (writer.max_turns, 1-500), null for no ceiling: a policy without the field (a run
- * created while the setting was unset, or before it existed), an unreadable one, or no run at all.
+ * The turn ceiling a run froze at creation (writer.max_turns, 1-10000), null for no ceiling: a policy without the field (a run
+ * created while the setting was unset, 0 or off, or before it existed), an unreadable one, or no run at all.
  */
 export function turnCeilingOfRun(run:{ run_policy_json?:string | null } | null | undefined):number | null {
   try {
     const value = (JSON.parse(run?.run_policy_json ?? "null") as { maxTurns?: unknown } | null)?.maxTurns;
-    return typeof value === "number" && Number.isInteger(value) && value >= 1 && value <= 500 ? value : null;
+    return typeof value === "number" && Number.isInteger(value) && value >= 1 && value <= 10_000 ? value : null;
   } catch { return null; }
 }
 

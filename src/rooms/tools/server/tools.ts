@@ -11,7 +11,7 @@ import { cancelAttemptById, cleanupFinishedAttemptEnvironments, cleanupStickyLan
 import { bestEffort, LANE_PILOT_READ_NAME } from "@lane-pilot/kit";
 import { taskV2Schema, TASK_KINDS } from "../../contracts";
 import type { ActivationApi } from "../../contracts";
-import { getRun, getRunSettingsScopes, listAttemptsForTask, listEndedTaskIds, listOpenAttempts, listStageReceipts, loadProjectSettings, loadPrototypeConfig, noteToldPmDirectly, setTaskClosedWords, transitionAttempt } from "../../storage";
+import { getRun, getRunSettingsScopes, listAttemptsForTask, listEndedTaskIds, listOpenAttempts, listStageReceipts, listUnreportedTaskOutcomes, loadProjectSettings, loadPrototypeConfig, markTaskOutcomesReported, noteToldPmDirectly, setTaskClosedWords, transitionAttempt } from "../../storage";
 import { FAILED_ATTEMPT_STATES } from "../../contracts";
 import { finalizeNativeLaneBinding, nativeRunReady, ownedNativePmRun, writerWorkspaceForPmInstructions } from "../../native-agent";
 import { NATIVE_LP_BRIDGE_PM_TOOLS } from "../../native-agent";
@@ -322,8 +322,13 @@ export function registerTools(ctx: ServerCore, services: Services, familyContrib
         return JSON.stringify(stageDetail(params.runId, params.stage, listStageReceipts(db, params.runId, params.taskId)));
       }
       const waited = await services.waitWriter({ threadId:context.threadId, projectId:context.projectId, runId:params.runId, timeoutSec:params.timeoutSec });
-      // The receipt shows the PM every task's state: those already ended are no news for the batched results.
-      for (const taskId of listEndedTaskIds(db, params.runId)) noteToldPmDirectly(db, context.threadId, taskId);
+      // The receipt shows the PM every task's state: those already ended are no news for the batched results (persisted across reloads too).
+      const ended = new Set(listEndedTaskIds(db, params.runId));
+      for (const taskId of ended) noteToldPmDirectly(db, context.threadId, taskId);
+      if (ended.size) {
+        const unreported = listUnreportedTaskOutcomes(db, 0).filter((row) => row.pmThreadId === context.threadId && ended.has(row.taskId));
+        if (unreported.length) markTaskOutcomesReported(db, unreported, Date.now());
+      }
       return JSON.stringify(compactWaitResult(waited));
     },
   });

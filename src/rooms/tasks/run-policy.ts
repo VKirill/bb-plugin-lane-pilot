@@ -4,8 +4,8 @@ import { resolve } from "node:path";
 const runPolicySchema=z.object({
   schemaVersion:z.literal(1),
   pools:z.object({provider:z.number().int().min(1).max(15),verification:z.number().int().min(1).max(10)}).strict(),
-  /** The writer turn ceiling frozen at run creation (SMA m_restart_scoped): absent when writer.max_turns was 0 or off, and in older policies; absent means no ceiling. */
-  maxTurns:z.number().int().min(1).max(500).optional(),
+  /** The writer turn ceiling frozen at run creation (SMA m_restart_scoped): absent when writer.max_turns is unset, 0 or off; absent means no ceiling. */
+  maxTurns:z.number().int().min(1).max(10_000).optional(),
 }).strict();
 
 export type RunPolicy=z.infer<typeof runPolicySchema>;
@@ -22,29 +22,29 @@ function configuredPool(value:unknown,key:string,fallback:number):number {
 }
 
 /**
- * The ceiling a run gets when writer.max_turns is unset. Measured on the hub on 2026-11-11: the 39 newest threads of accepted
- * attempts made 2-141 completed tool calls and commands (median 7, p90 56), so SMA's 80 would have cut two accepted ones; 300 is
- * twice the largest and still ends a runaway.
+ * No turn ceiling by default (owner 2026-11-23: large tasks legitimately run 300+ tool calls, and cutting at 300 killed
+ * finished-in-all-but-name work; stalls are caught by the silence and spin sweeps). Explicit writer.max_turns 1-10000 opts in.
  */
-export const WRITER_TURN_CEILING_DEFAULT=300;
+export const WRITER_TURN_CEILING_DEFAULT:number|null=null;
+export const WRITER_TURN_CEILING_MAX=10_000;
 
-/** The turn ceiling a setting value gives: a whole number 1-500; unset or empty is the default; 0 or off is no ceiling (the opt-out). */
+/** The turn ceiling a setting value gives: a whole number 1-10000 when set; unset, empty, 0 or off is no ceiling. */
 export function turnCeilingOf(value:unknown):{ceiling:number|null;invalid:boolean} {
   if(value===undefined||value===null||value==="")return {ceiling:WRITER_TURN_CEILING_DEFAULT,invalid:false};
   if(value===0||value==="0"||value==="off")return {ceiling:null,invalid:false};
   const parsed=typeof value==="string"&&/^\d+$/.test(value.trim())?Number(value.trim()):value;
-  if(typeof parsed!=="number"||!Number.isInteger(parsed)||parsed<1||parsed>500)return {ceiling:null,invalid:true};
+  if(typeof parsed!=="number"||!Number.isInteger(parsed)||parsed<1||parsed>WRITER_TURN_CEILING_MAX)return {ceiling:null,invalid:true};
   return {ceiling:parsed,invalid:false};
 }
 
 const warnedCeilings=new Set<string>();
 
-/** The policy of a new run. writer.max_turns is frozen at creation (unset: the default); 0 or off freezes none; a bad value never blocks run creation (no ceiling, said once). */
+/** The policy of a new run. writer.max_turns is frozen at creation (unset, 0 or off freezes none); a bad value never blocks run creation (no ceiling, said once). */
 export function buildRunPolicy(settings:Record<string,unknown>,warn?:(line:string)=>void):RunPolicy {
   const turns=turnCeilingOf(settings["writer.max_turns"]);
   if(turns.invalid){
     const raw=String(settings["writer.max_turns"]);
-    if(!warnedCeilings.has(raw)){warnedCeilings.add(raw);warn?.(`Lane Pilot: writer.max_turns=${raw.slice(0,40)} is not a whole number from 1 to 500; the writer has no turn ceiling`)}
+    if(!warnedCeilings.has(raw)){warnedCeilings.add(raw);warn?.(`Lane Pilot: writer.max_turns=${raw.slice(0,40)} is not a whole number from 1 to ${WRITER_TURN_CEILING_MAX}; the writer has no turn ceiling`)}
   }
   return runPolicySchema.parse({schemaVersion:1,pools:{
     provider:configuredPool(settings["ops.pool_size"],"ops.pool_size",15),

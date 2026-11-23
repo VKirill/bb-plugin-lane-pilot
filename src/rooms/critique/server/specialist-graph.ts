@@ -3,7 +3,7 @@ import { bestEffort } from "@lane-pilot/kit";
 import { runOnHost } from "@lane-pilot/host-calls";
 import { wfRunInputsJson, wfRunProjectId } from "@lane-pilot/workflow-engine";
 
-import { fenceOutside, spawnTextId } from "../../platform/server";
+import { beginWorkflowWait, fenceOutside, noteWorkflowReadByPm, spawnTextId } from "../../platform/server";
 import { getRun } from "../../storage";
 
 import type { ServerCore } from "../../contracts/server";
@@ -72,12 +72,15 @@ export async function startSpecialistRun(ctx: ServerCore, services: Services, in
 export async function waitSpecialistRun(ctx: ServerCore, services: Services, input: { projectId: string; runId: string; timeoutSec: number }): Promise<Record<string, unknown>> {
   const owner = wfRunProjectId(ctx.db, input.runId, SPECIALIST_GRAPH);
   if (owner !== input.projectId) throw new Error(`not_found: no specialist run "${input.runId}" in this project`);
+  const endWait = beginWorkflowWait(input.runId);
+  try {
   const deadline = Date.now() + input.timeoutSec * 1000;
   for (;;) {
     const summary = services.workflowEngine.get(input.runId);
     const threadId = await ctx.bb.storage.kv.get<string>(threadOfRun(input.runId)) ?? "";
     const base = { threadId, workflowRunId: input.runId };
     if (summary?.status === "succeeded") {
+      noteWorkflowReadByPm(input.runId);
       // Artifact guard (agents-design 3.5): a deliverable that fails its validator goes back to the same thread
       // as a revision remark instead of being accepted. The validator/deliverable fields arrive with the employee
       // manifest (grok/employees); a run that names none is accepted as before.
@@ -109,6 +112,7 @@ export async function waitSpecialistRun(ctx: ServerCore, services: Services, inp
       return { ...base, state: "done", output: fenceOutside("specialist", String(summary.output?.report ?? "")) };
     }
     if (summary && ENDED_BADLY.includes(summary.status)) {
+      noteWorkflowReadByPm(input.runId);
       const error = summary.error ?? summary.reason ?? summary.status;
       const edited = /^repo_edited: .*may not touch: (.+)$/.exec(error);
       if (edited) return { ...base, state: "blocked", reason: "repo_edited", files: edited[1]!.split(/,\s*/), output: fenceOutside("specialist", `Helper edited repository files: ${edited[1]}`) };
@@ -117,6 +121,7 @@ export async function waitSpecialistRun(ctx: ServerCore, services: Services, inp
     if (!summary || Date.now() >= deadline || ctx.isDisposed()) return { ...base, state: "running", output: fenceOutside("specialist", summary ? `the run is ${summary.status}` : "the run is not known to the engine") };
     await sleep(Math.min(POLL_MS, Math.max(1, deadline - Date.now())));
   }
+  } finally { endWait(); }
 }
 
 /**

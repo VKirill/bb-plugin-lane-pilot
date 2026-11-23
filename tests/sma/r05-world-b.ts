@@ -129,11 +129,11 @@ export const observeB = {
     return { first: turnCeilingOfRun(getRun(db, "first")), second: turnCeilingOfRun(getRun(db, "second")), old: turnCeilingOfRun(getRun(db, "old")) ?? null, stored: loadProjectSettings(db, "proj")["writer.max_turns"] };
   },
 
-  /** n486: without a key the named default applies; 0 or off is none; a number 1-500 as given; anything else is refused. */
+  /** n486: without a key no turn ceiling applies; 0 or off is none; a number 1-10000 as given; anything else is refused. */
   m_cfg_max_turns() {
     return {
-      unset: turnCeilingOf(undefined), empty: turnCeilingOf(""), zero: turnCeilingOf("0"), off: turnCeilingOf("off"), given: turnCeilingOf("25"), top: turnCeilingOf(500),
-      over: turnCeilingOf(501), junk: turnCeilingOf("abc"), policy: buildRunPolicy({}).maxTurns,
+      unset: turnCeilingOf(undefined), empty: turnCeilingOf(""), zero: turnCeilingOf("0"), off: turnCeilingOf("off"), given: turnCeilingOf("25"), top: turnCeilingOf(10_000),
+      over: turnCeilingOf(10_001), junk: turnCeilingOf("abc"), policy: buildRunPolicy({}).maxTurns ?? null,
     };
   },
 

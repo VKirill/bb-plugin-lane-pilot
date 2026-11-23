@@ -4,6 +4,7 @@ import plugin from "../../server";
 import { createRun, openDatabase, savePrototypeConfig, setRunThread } from "../../src/rooms/plugin-db";
 import { councilDecisionText, councilEndedText, sendCouncilNotice } from "../../src/rooms/council/server/pm-notice";
 import { maybeNotifyWorkflowRun, notifyWorkflowIfEnded } from "../../src/rooms/workflow/server/pm-notice";
+import { beginWorkflowWait, noteWorkflowReadByPm } from "../../src/rooms/platform/server";
 import { SCHEDULE_RUN_KEY_PREFIX } from "../../src/rooms/contracts";
 import { forgetSecrets, registerSecrets } from "@lane-pilot/kit";
 import type { RunRow } from "../../src/rooms/plugin-db";
@@ -354,5 +355,18 @@ describe("lead hand-over runs", () => {
     expect(sends).toHaveLength(0);
     expect(db.prepare("SELECT COUNT(*) AS n FROM lane_pilot_owner_item").get()).toMatchObject({ n: 0 });
     await harness.lifecycle.dispose();
+  });
+
+  it("suppresses duplicate PM notices when a synchronous wait tool is actively waiting on or already read the workflow run", async () => {
+    const { bb, sends } = noticeBb();
+    const endWait = beginWorkflowWait("wfrun_waited_1");
+    try {
+      expect(await maybeNotifyWorkflowRun({ bb, log: () => undefined, pmThreadId, startedBySchedule: false, run: runRow({ id: "wfrun_waited_1", workflow_id: "specialist", output_json: JSON.stringify({ report: "done" }) }) })).toBe(false);
+    } finally {
+      endWait();
+    }
+    noteWorkflowReadByPm("wfrun_read_1");
+    expect(await maybeNotifyWorkflowRun({ bb, log: () => undefined, pmThreadId, startedBySchedule: false, run: runRow({ id: "wfrun_read_1", workflow_id: "errand", output_json: JSON.stringify({ state: "done", output: "ok" }) }) })).toBe(false);
+    expect(sends).toEqual([]);
   });
 });

@@ -17,3 +17,32 @@ export async function sendPmNotice(bb: Pick<BbPluginApi, "sdk">, threadId: strin
   // (Astra F-005: the second pilot used to report «owner told» on a chat that only looked warm).
   try { await bb.sdk.threads.send({ threadId, mode: "queue-if-active", input: [{ type: "text", text, mentions: [] }] } as never); return true; } catch { return false; }
 }
+
+const activeWorkflowWaiters = new Map<string, number>();
+const readWorkflowRuns = new Map<string, number>();
+
+/** Marks a workflow run as actively awaited by a synchronous PM tool (`wait_specialist`, `wait_errand`, `wait_scout`) so its completion does not also queue a duplicate PM notice. */
+export function beginWorkflowWait(workflowRunId: string): () => void {
+  activeWorkflowWaiters.set(workflowRunId, (activeWorkflowWaiters.get(workflowRunId) ?? 0) + 1);
+  let done = false;
+  return () => {
+    if (done) return;
+    done = true;
+    const next = (activeWorkflowWaiters.get(workflowRunId) ?? 1) - 1;
+    if (next <= 0) activeWorkflowWaiters.delete(workflowRunId);
+    else activeWorkflowWaiters.set(workflowRunId, next);
+  };
+}
+
+/** Marks a terminal workflow run as already read directly by its PM tool so a late background notice does not wake the PM again. */
+export function noteWorkflowReadByPm(workflowRunId: string, now = Date.now()): void {
+  for (const [id, at] of readWorkflowRuns) if (now - at > 3_600_000) readWorkflowRuns.delete(id);
+  readWorkflowRuns.set(workflowRunId, now);
+}
+
+/** True when a synchronous PM wait tool is actively waiting on `workflowRunId` or already returned its terminal result. */
+export function isWorkflowNoticeSuppressed(workflowRunId: string, now = Date.now()): boolean {
+  if ((activeWorkflowWaiters.get(workflowRunId) ?? 0) > 0) return true;
+  const at = readWorkflowRuns.get(workflowRunId);
+  return at !== undefined && now - at <= 3_600_000;
+}

@@ -3,7 +3,7 @@ import { redactKnown } from "@lane-pilot/kit";
 import { wfRunProjectId, wfRunStepThreads } from "@lane-pilot/workflow-engine";
 import type { StepContext, WorkflowEngine } from "@lane-pilot/workflow-engine";
 import { findOpenNativeRun, getRun, latestRunForProjectThread } from "../../storage";
-import { fenceOutside, findThreadsByMetadata, registerObservedTool, spawnTextId } from "../../platform/server";
+import { beginWorkflowWait, fenceOutside, findThreadsByMetadata, noteWorkflowReadByPm, registerObservedTool, spawnTextId } from "../../platform/server";
 import type { ChainRuntime, ServerCore } from "../../contracts/server";
 import type { WorkflowEngineApi } from "../../platform/server";
 
@@ -96,10 +96,13 @@ async function scoutThreads(ctx: ServerCore, projectId: string, workflowRunId: s
 export async function waitScoutRun(ctx: ServerCore, services: Services, input: { projectId: string; workflowRunId: string; timeoutSec: number }): Promise<Record<string, unknown>> {
   const owner = wfRunProjectId(ctx.db, input.workflowRunId, SCOUT_GRAPH);
   if (owner !== input.projectId) throw new Error(`not_found: no scout run "${input.workflowRunId}" in this project`);
+  const endWait = beginWorkflowWait(input.workflowRunId);
+  try {
   const deadline = Date.now() + input.timeoutSec * 1000;
   for (;;) {
     const summary = services.workflowEngine.get(input.workflowRunId);
     if (summary?.status === "succeeded") {
+      noteWorkflowReadByPm(input.workflowRunId);
       const threads = await scoutThreads(ctx, input.projectId, input.workflowRunId);
       const output = (summary.output ?? {}) as Record<string, unknown>;
       return {
@@ -113,6 +116,7 @@ export async function waitScoutRun(ctx: ServerCore, services: Services, input: {
       };
     }
     if (summary && ENDED_BADLY.includes(summary.status)) {
+      noteWorkflowReadByPm(input.workflowRunId);
       const threads = await scoutThreads(ctx, input.projectId, input.workflowRunId);
       return { workflowRunId: input.workflowRunId, state: "failed", threads, error: fenceOutside("scout", summary.error ?? summary.reason ?? summary.status) };
     }
@@ -127,6 +131,7 @@ export async function waitScoutRun(ctx: ServerCore, services: Services, input: {
     }
     await sleep(Math.min(POLL_MS, Math.max(1, deadline - Date.now())));
   }
+  } finally { endWait(); }
 }
 
 const angleInputSchema = z.union([

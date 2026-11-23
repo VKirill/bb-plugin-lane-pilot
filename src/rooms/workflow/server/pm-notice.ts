@@ -6,6 +6,7 @@ import type { LanePilotDatabase } from "../../storage";
 import type { RunRow } from "../../storage";
 ;
 import { startedBySchedule } from "./workflow-runtime";
+import { isWorkflowNoticeSuppressed } from "../../platform/server";
 import { sendServiceMessage } from "../../relay/server";
 import { chatCode } from "../../brief";
 import type { LeadRoadApi } from "../../contracts";
@@ -79,6 +80,11 @@ export async function maybeNotifyWorkflowRun(input: {
   if (run.workflow_id === "council" && run.status === "succeeded") return false;
   if (!input.pmThreadId) return false;
   if (!input.startedBySchedule && !run.link_run_id) return false;
+  const key = workflowNoticeKey(run.id, run.status, input.transition);
+  if (!input.startedBySchedule && isWorkflowNoticeSuppressed(run.id)) {
+    await bestEffort(input.log, "workflow notice record", input.bb.storage.kv.set(key, Date.now() as never), undefined);
+    return false;
+  }
   const delivered = run.status === "succeeded" ? deliverable(run.output_json ?? null) : null;
   // A scheduled run delivers the report it was for; anything else scheduled stays silent (its schedule board carries it).
   if (input.startedBySchedule && !delivered) return false;
@@ -89,7 +95,6 @@ export async function maybeNotifyWorkflowRun(input: {
   const text = input.startedBySchedule
     ? `Lane Pilot: the scheduled run ${run.id} of ${run.workflow_id} finished. Show the owner this result in this chat as it is (no summary, nothing to act on; its helper's own completion may follow: it is the same result, say nothing about it):\n\n${body}`
     : `## Lane Pilot · ${run.workflow_id}\n\nRun \`${run.id}\` ended ${run.status} (engine status).\n\n${body}`;
-  const key = workflowNoticeKey(run.id, run.status, input.transition);
   if (await input.bb.storage.kv.get(key)) return false;
   await bestEffort(input.log, "workflow notice record", input.bb.storage.kv.set(key, Date.now() as never), undefined);
   try {

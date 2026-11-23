@@ -75,8 +75,8 @@ def prove_b(proofs, tmp) -> None:
     p("n483", "m_cfg_secrets_view", lambda d: d["list"] == [{"name": "API_KEY", "kind": "secret"}, {"name": "SITE", "kind": "login"}] and d["leakedInResults"] == [] and d["logLeaked"] is False and d["logLine"] == "deploy failed with *** in the url", lambda d: f"list {d.get('list')}; leaked {d.get('leakedInResults')}; log «{d.get('logLine')}»")
     # n484 Restart-only settings: the ceiling is frozen into the run at its creation.
     p("n484", "m_restart_scoped", lambda d: d == {"first": 5, "second": 100, "old": None, "stored": 100}, lambda d: f"run created before the change keeps {d.get('first')}, the next gets {d.get('second')}, an old policy {d.get('old')}")
-    # n486 Turn ceiling: the named default applies without a key; 0/off none; a number as given; junk refused.
-    p("n486", "m_cfg_max_turns", lambda d: d["unset"]["ceiling"] == 300 and d["zero"]["ceiling"] is None and d["given"]["ceiling"] == 25 and d["over"]["invalid"] is True and d["policy"] == 300, lambda d: f"unset {d.get('unset')}, 0 {d.get('zero')}, 25 {d.get('given')}, 501 {d.get('over')}")
+    # n486 Turn ceiling: no ceiling without a key; 0/off none; a number 1-10000 as given; junk refused.
+    p("n486", "m_cfg_max_turns", lambda d: d["unset"]["ceiling"] is None and d["zero"]["ceiling"] is None and d["given"]["ceiling"] == 25 and d["over"]["invalid"] is True and d["policy"] is None, lambda d: f"unset {d.get('unset')}, 0 {d.get('zero')}, 25 {d.get('given')}, 10001 {d.get('over')}")
     # n487 Stop and restart command: the manager's stop and the manager's own restart.
     p("n487", "m_ctl_cmd", lambda d: d["stop"] == {"status": 0, "first": "stopped: bb-server is inactive", "calls": ["--user stop --no-block bb-server"]} and d["restart"]["status"] == 0 and d["restart"]["calls"] == ["--user restart bb-server"], lambda d: f"stop {d.get('stop')}; restart calls {d.get('restart', {}).get('calls')}")
     # n488 Process by record and door: MainPID of the manager and the configured door address, never a program name.

@@ -4,8 +4,9 @@ import {buildRunExecutionProfile,buildRunPolicy,mapBounded,parseRunPolicy,RunWri
 describe("run-v2 policy adapter",()=>{
   it("snapshots bounded pool settings and applies the configured verification cap in input order",async()=>{
     const policy=buildRunPolicy({"ops.pool_size":7,"ops.verify_pool_size":"3"});
-    // The writer turn ceiling is frozen with the pools: 300 when writer.max_turns is unset, none when it is 0.
-    expect(policy).toEqual({schemaVersion:1,pools:{provider:7,verification:3},maxTurns:300});
+    // No writer turn ceiling is frozen by default; an explicit writer.max_turns freezes it, 0 leaves none.
+    expect(policy).toEqual({schemaVersion:1,pools:{provider:7,verification:3}});
+    expect(buildRunPolicy({"ops.pool_size":7,"ops.verify_pool_size":"3","writer.max_turns":400})).toEqual({schemaVersion:1,pools:{provider:7,verification:3},maxTurns:400});
     expect(buildRunPolicy({"ops.pool_size":7,"ops.verify_pool_size":"3","writer.max_turns":0})).toEqual({schemaVersion:1,pools:{provider:7,verification:3}});
     let active=0,maxActive=0;
     const output=await mapBounded([4,3,2,1],policy.pools.verification,async(value)=>{

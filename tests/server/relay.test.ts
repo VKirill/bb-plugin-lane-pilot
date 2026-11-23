@@ -128,4 +128,33 @@ describe("relay", () => {
     h.tick(41 * 60_000);
     expect((await h.relay.sweep()).fired).toBe(0);
   });
+
+  it("never queues synthetic without-answering, duplicate reply, or watch-wake triggers for native BB child threads", async () => {
+    let items: RelayItem[] = [];
+    const sent: Array<{ threadId: string; text: string; from?: string }> = [];
+    const status = new Map<string, string>([["child", "active"]]);
+    const relay = createRelay({
+      load: async () => structuredClone(items),
+      save: async (next) => { items = structuredClone(next); },
+      send: async (threadId, text, from) => { sent.push({ threadId, text, from }); },
+      nativelyNotifiesParent: async (childId, parentId) => childId === "child" && parentId === "pm",
+      settled: async (threadId) => status.get(threadId) === "idle",
+      output: async () => "Ответил родительскому чату.",
+      taskStates: async () => ({}),
+      now: () => 1_000_000,
+      log: () => undefined,
+    });
+    // 1. A fresh ask to a native child forwards only the message (no askId boilerplate) and closes immediately.
+    const asked = await relay.ask({ projectId: "P", fromThreadId: "pm", toThreadId: "child", question: "Keep tg-triggers-main running." });
+    expect(asked).toMatchObject({ nativeParentDelivery: true });
+    expect(asked.answeredAt).toBe(1_000_000);
+    expect(sent).toEqual([{ threadId: "child", text: "Keep tg-triggers-main running.", from: "pm" }]);
+    // 2. Even if an older open ask or watch reminder existed before upgrade, settling sends zero synthetic PM triggers.
+    items.push({ kind: "ask", id: "ask_legacy", projectId: "P", fromThreadId: "pm", toThreadId: "child", question: "legacy?", createdAt: 900_000, answeredAt: null });
+    await relay.remind({ projectId: "P", threadId: "pm", note: "watch child", inMinutes: 15, watchThreadId: "child" });
+    status.set("child", "idle");
+    expect(await relay.threadSettled("child")).toBe(0);
+    expect(sent.filter((row) => row.threadId === "pm")).toEqual([]);
+    expect(items.find((row) => row.id === "ask_legacy")).toMatchObject({ answeredAt: 1_000_000 });
+  });
 });

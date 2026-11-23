@@ -78,7 +78,7 @@ export function mountHandoff(ctx: ServerContext, options: { agents?: AgentDefini
     instructions: [
       "Active PM only. Name toAgent, or request describes the agent to select.",
       "recipientThreadId checks freshness first: unopened over 5 hours or reported cache expiry opens a replacement in the same project/section. Use deliveredTo for followups. Without a destination, carry the returned message to your subagent and record lane_pilot_handoff_receipt.",
-      "targetProjectId opens an independent child Pilot without setup. targetSectionId selects its folder. For ambiguous folders, pass a listed targetHostId/targetPath pair. Use recipientThreadId for subsequent assignments to the same child; use relay ask/reply for questions. Keep the actual sender; human approvals remain human-only. Never substitute another project or folder after refusal.",
+      "targetProjectId opens an independent child Pilot without setup. targetSectionId selects its folder. For ambiguous folders, pass a listed targetHostId/targetPath pair. Use recipientThreadId for subsequent assignments to the same child (BB delivers a child Pilot's replies and finished turns natively; use relay ask/reply only for non-child threads). Keep the actual sender; human approvals remain human-only. Never substitute another project or folder after refusal.",
       `Known agents (ids; with only \`request\` the closest one is chosen): ${registry.map((agent) => agent.agentId).join(", ")}.`,
     ].join("\n"),
     parameters: createParams,
