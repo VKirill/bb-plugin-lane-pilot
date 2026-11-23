@@ -2,7 +2,7 @@
 title: ZCode Integration Rules
 type: component
 created: 2026-11-08
-updated: 2026-11-08
+updated: 2026-11-23
 status: active
 confidence: medium
 tags: [models, zcode, glm, promo-window, background-tasks]
@@ -29,7 +29,7 @@ Because ZCode relies on a desktop application with free promo quota, host restri
 1. Check host support in `zcodeBlock`: verify that the machine catalog includes the `zcode` provider ID and that the target host ID is in `provider.hostIds` (packages/models/src/zcode.ts:55-57). If the catalog is unknown or the host does not offer ZCode, return a `host` block (packages/models/src/zcode.ts:57).
 2. Check the operating time window with `zcodeWindowBlock`: inspect `zcode.window` setting via `zcodeWindowMode` (packages/models/src/zcode.ts:22-24, :47-52). If set to `promo` (the default), check `inZcodePromo` (packages/models/src/zcode.ts:31-34, :48).
 3. Check slot concurrency: if `busy` is true (all 3 parallel task slots are in use), return a `busy` block (packages/models/src/zcode.ts:10, :60).
-4. Evaluate background tasks in `resolveAgentModel`: if a background role from `ZCODE_FREE_ROWS` (`docs-maintainer`, `rules-analyzer`, `memory`, `project-life`) is on its built-in default, `zcodeBackgroundOn` is true, and the caller confirms ZCode availability, inject `glm-5.3-flash-free` at high effort as the first candidate (packages/models/src/zcode.ts:74-80; packages/models/src/agent-model.ts:139-141).
+4. Evaluate background tasks in `resolveAgentModel`: if a background role from `ZCODE_FREE_ROWS` (`docs-maintainer`, `rules-analyzer`, `memory`, `project-life`) is on its built-in default, `zcodeBackgroundOn` is true, and the caller confirms ZCode availability, inject `glm-5.3-flash-free` at high effort as the first candidate (packages/models/src/zcode.ts:74-80; packages/models/src/agent-model.ts:140-142).
 5. Detect bridge runtime failures with `zcodeEnvironmentError`: match process errors against `ZCODE_ENVIRONMENT` regex to distinguish desktop application states from code generation failures (packages/models/src/zcode.ts:64-70, :81-84).
 
 ### Block conditions and response codes
@@ -56,7 +56,7 @@ Because ZCode relies on a desktop application with free promo quota, host restri
 - Setting validation: `zcode.window` accepts only `"promo"` or `"always"` (packages/models/src/zcode.ts:14, :26-29).
 - Single-machine constraint: The `zcode` provider exists exclusively on the Mac mini; an unknown host or missing catalog resolves to blocked (packages/models/src/zcode.ts:5-7, :56-57).
 - Plan charge prevention: The free model `glm-5.3-flash-free` is programmed never to bill the account; without free tokens the plugin returns `promo_unavailable` rather than incurring plan fees (packages/models/src/zcode.ts:71-72).
-- Free background candidate injection: Background roles `ZCODE_FREE_ROWS` (`docs-maintainer`, `rules-analyzer`, `memory`, `project-life`) attempt ZCode free tokens when on default model and `zcodeBackgroundOn` permits (`zcode.background` = true/`on`; opt-in, off by default since 2026-11-15) (packages/models/src/zcode.ts:78-80; packages/models/src/agent-model.ts:139-141).
+- Free background candidate injection: Background roles `ZCODE_FREE_ROWS` (`docs-maintainer`, `rules-analyzer`, `memory`, `project-life`) attempt ZCode free tokens when on default model and `zcodeBackgroundOn` permits (`zcode.background` = true/`on`; opt-in, off by default) (packages/models/src/zcode.ts:78-80; packages/models/src/agent-model.ts:140-142).
 - Uncharged environment retry: Output matching `zcodeEnvironmentError` triggers an uncharged retry on the next candidate model in the chain (packages/models/src/zcode.ts:64-68).
 
 ## Public API

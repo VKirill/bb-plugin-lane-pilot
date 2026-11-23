@@ -2,7 +2,7 @@
 title: Writer Selection and Fallbacks
 type: component
 created: 2026-11-08
-updated: 2026-11-14
+updated: 2026-11-23
 status: active
 confidence: medium
 tags: [models, writers, table, writer-reasoning, fallbacks, rotation]
@@ -28,7 +28,7 @@ TL;DR: Knows coding models by writer profile key, clamps reasoning efforts to th
 ## Purpose
 
 The writer subsystem manages execution models for task writers (packages/models/src/model-profiles.ts:1-4).
-The package maintains `ROLE_TABLE` for role-based model resolution; writer selection uses a separate table of known `WRITER_PROFILES` for `writer.models_off` matching while allowing any configured `provider/model` ([Role-to-Model Resolution](role-models.md); packages/models/src/role-models.ts:103-146; packages/models/src/model-profiles.ts:1-34).
+The package maintains `ROLE_TABLE` for role-based model resolution; writer selection uses a separate table of known `WRITER_PROFILES` for `writer.models_off` matching while allowing any configured `provider/model` ([Role-to-Model Resolution](role-models.md); packages/models/src/role-models.ts:103-152; packages/models/src/model-profiles.ts:1-34).
 
 ## How it works
 
@@ -37,7 +37,7 @@ The package maintains `ROLE_TABLE` for role-based model resolution; writer selec
 3. Check `listedServiceTier`: strip tier when the provider lacks `supportsServiceTier` capability or when "default" tier is unlisted (packages/models/src/writer-reasoning.ts:55-59).
 4. Resolve the reasoning effort with `resolveWriterReasoning`: `writer.reasoning_effort`, clamped to the model's listed levels, with a diagnostic reason (packages/models/src/writer-reasoning.ts:12-32).
 5. Build the final execution payload using `writerExecutionSelection`: ensure provider and model consistency via `consistentProvider` and mark input sources as explicit (packages/models/src/writer-reasoning.ts:61-80).
-6. Fallback defaults are GLM-5.3 Flash (slot 1), Gemini 3.8 Flash high (slot 2), and off (slot 3) (packages/models/src/writer-fallbacks.ts:12-16). `writerFallbackSlots` reads configured slots and uses the matching default when a provider is unset; malformed configured values turn that slot off (packages/models/src/writer-fallbacks.ts:26-36).
+6. Fallback defaults are LongCat-2.5 on `opencode2` (slot 1), GPT-6.1 Sol on `codex` (slot 2), and off (slot 3) (packages/models/src/writer-fallbacks.ts:12-16). `writerFallbackSlots` reads configured slots and uses the matching default when a provider is unset; malformed configured values turn that slot off (packages/models/src/writer-fallbacks.ts:26-36).
 7. Assemble the fallback sequence using `writerFallbackChain`: deduplicate against the primary writer and append the PM model as the emergency fallback (packages/models/src/writer-fallbacks.ts:44-54).
 8. Apply task rotation via `rotatedWriterSettings`: compute an FNV-1a hash bucket of `taskId` via `rotationBucket`; if below `writer.rotation_share` (default 25%), swap the primary writer with fallback 1 and set `writer.rotated = true` (packages/models/src/writer-fallbacks.ts:62-84).
 

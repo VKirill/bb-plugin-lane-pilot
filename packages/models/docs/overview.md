@@ -2,7 +2,7 @@
 title: Models Workspace — Overview
 type: overview
 created: 2026-11-08
-updated: 2026-11-14
+updated: 2026-11-23
 status: active
 confidence: medium
 tags: [models, catalog, role-models, pricing, writers]
@@ -65,7 +65,7 @@ Key subsystems include:
 Import models, helpers, and types from `@lane-pilot/models`:
 
 1. Resolve the model for a workflow role or agent step:
-   Import `resolveAgentModel` for full step resolution with host, cross-family, and spent checks (packages/models/src/agent-model.ts:104-187) or `resolveRoleModel` for settings-only resolution (packages/models/src/role-models.ts:313-325).
+   Import `resolveAgentModel` for full step resolution with host, cross-family, and spent checks (packages/models/src/agent-model.ts:105-188) or `resolveRoleModel` for settings-only resolution (packages/models/src/role-models.ts:319-331).
 2. Validate a user or node choice against a machine catalog:
    Call `validateChoice` with the current `ModelCatalog` (packages/models/src/model-catalog.ts:70-87).
 3. Compute token usage costs:
@@ -77,7 +77,7 @@ Import models, helpers, and types from `@lane-pilot/models`:
 
 | Export area | Core functions and constants | Evidence |
 |---|---|---|
-| Role-to-model table | `ROLE_TABLE`, `ROLE_IDS`, `resolveRoleModel`, `resolveAgentModel`, `judgeAgainstAuthor`, `peerOffSpent`, `roleModelProblem` | (packages/models/src/role-models.ts:103-146; packages/models/src/agent-model.ts:104-187) |
+| Role-to-model table | `ROLE_TABLE`, `ROLE_IDS`, `resolveRoleModel`, `resolveAgentModel`, `judgeAgainstAuthor`, `peerOffSpent`, `roleModelProblem` | (packages/models/src/role-models.ts:103-154; packages/models/src/agent-model.ts:105-188) |
 | Writer execution | `WRITER_PROFILES`, `writerSwitchedOff`, `writerExecutionSelection`, `resolveWriterReasoning`, `writerFallbackChain`, `rotatedWriterSettings` | (packages/models/src/model-profiles.ts:16-46; packages/models/src/writer-reasoning.ts:12-32, :61-80; packages/models/src/writer-fallbacks.ts:44-84) |
 | Catalog validation | `findProvider`, `findModel`, `findModelIn`, `offeredOnHost`, `validateChoice`, `nodeEffortsFor`, `costTier` | (packages/models/src/model-catalog.ts:40-107) |
 | Pricing and limits | `MODEL_PRICES`, `priceFor`, `costUsd`, `providerLimitNotice`, `compatibleReasoningLevel`, `compatibleServiceTier` | (packages/models/src/model-prices.ts:6-42; packages/models/src/provider-limit.ts:9-13; packages/models/src/picker-compat.ts:1-21) |
@@ -87,7 +87,7 @@ Import models, helpers, and types from `@lane-pilot/models`:
 ## Configuration
 
 Settings keys inspected and formatted by this package include:
-- `role_model.<role>`: JSON object `{ provider?, model, reasoning_effort?, pool? }` storing custom role picks (packages/models/src/role-models.ts:149-150, :231-253).
+- `role_model.<role>`: JSON object `{ provider?, model, reasoning_effort?, pool? }` storing custom role picks (packages/models/src/role-models.ts:155-156, :237-259).
 - `writer.provider`, `writer.model`, `writer.reasoning_effort`, `writer.service_tier`: primary writer settings (packages/models/src/role-specs.ts:20-21).
 - `writer.models_off`: worker exclusion setting; matching forms are documented in [Writer Selection and Fallbacks](features/writer-selection.md) (packages/models/src/model-profiles.ts:41-46).
 - `writer.fallback<slot>.provider`, `.model`, `.reasoning_effort`: writer fallback chain slots (packages/models/src/writer-fallbacks.ts:21-25).
