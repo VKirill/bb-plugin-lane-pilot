@@ -81,7 +81,7 @@
   },
   "entry": "gather",
   "budget": {
-    "max_minutes": 40
+    "max_minutes": 150
   },
   "nodes": [
     {

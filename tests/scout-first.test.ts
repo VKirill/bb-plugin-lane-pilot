@@ -204,13 +204,21 @@ describe("scout role, parallel scout workflow, and scout-first pre-writer policy
     expect(badRes).toMatchObject({ allowed: false, reason: "structural_plan_critique_blocked" });
     expect(criticSpawns).toBe(0);
 
-    // High-risk tasks still run the independent LLM plan critic even after scout!
+    // High-risk tasks in standard mode also skip post-plan critique when scout already mapped the repo,
+    // while quality_mode: "full" still runs the independent LLM plan critic!
     const highTask = { ...(mediumTask as object), id: "t-high", risk: "high" } as never;
     createTask(db, { id: "t-high", runId: "run-s", kind: "bb", contract: highTask });
     createAttempt(db, { id: "a-high", runId: "run-s", taskId: "t-high" });
     const highRes = await runPlanCritique({ stageHelperSettings, bb, db, projectId: "P", runId: "run-s", taskId: "t-high", config, task: highTask, plan: "edit files" });
-    expect(highRes.allowed, JSON.stringify(highRes)).toBe(true);
+    expect(highRes).toEqual({ allowed: true, reason: "scouted_before_plan" });
+    expect(criticSpawns).toBe(0);
+
+    const fullTask = { ...(mediumTask as object), id: "t-full", risk: "high", quality_mode: "full" } as never;
+    createTask(db, { id: "t-full", runId: "run-s", kind: "bb", contract: fullTask });
+    createAttempt(db, { id: "a-full", runId: "run-s", taskId: "t-full" });
+    const fullRes = await runPlanCritique({ stageHelperSettings, bb, db, projectId: "P", runId: "run-s", taskId: "t-full", config, task: fullTask, plan: "edit files" });
+    expect(fullRes.allowed, JSON.stringify(fullRes)).toBe(true);
     expect(criticSpawns).toBe(1);
-    expect(listStageReceipts(db, "run-s", "t-high").find((r) => r.stageId === "plan-critique")?.state).toBe("passed");
+    expect(listStageReceipts(db, "run-s", "t-full").find((r) => r.stageId === "plan-critique")?.state).toBe("passed");
   });
 });

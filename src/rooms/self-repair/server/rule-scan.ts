@@ -569,7 +569,7 @@ export function createRuleScan(ctx: ServerCore, services: RuleScanServices, deps
     // badly is closed for good under its key, so the retry of the same question takes the next numbered key.
     const base = `rules-ask:${projectId}:${new Date().toISOString().slice(0, 10)}:${spawnTextId(`${title}\n${prompt}`)}`;
     let key = base;
-    for (let attempt = 1; attempt < 20; attempt += 1) {
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
       const prior = wfTerminalByIdemKey(db as never, key);
       if (!prior || !["failed", "blocked", "interrupted", "canceled"].includes(prior.status)) break;
       key = `${base}:${attempt}`;

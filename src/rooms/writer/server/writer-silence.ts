@@ -14,8 +14,8 @@ export const NO_ANSWER_MIN = 5;
 export const NO_ANSWER_HOLD_MS = 20 * 60_000;
 /** Events read per page when a turn ceiling is set (the sweep reads 50 when there is none, as it always did). */
 const CEILING_PAGE = "200";
-/** Pages at most read per attempt per sweep: 100 pages = 20000 events, far past the ceiling's 500 calls. */
-const CEILING_MAX_PAGES = 100;
+/** Pages at most read per attempt per sweep: 400 pages = 80000 events, covering explicit high writer.max_turns ceilings. */
+const CEILING_MAX_PAGES = 400;
 /** The reason prefix of an attempt ended at the turn ceiling: it reads as a budget stop (run_budget_exceeded:), like the task's appetite minutes. */
 export const TURN_CEILING_REASON = "run_budget_exceeded:turn ceiling";
 

@@ -7,6 +7,7 @@ import type { ServerCore } from "../../contracts/server";
 import { loadFollowUp, markFollowUpCancelled } from "../../writer/server";
 import { valueAt } from "@lane-pilot/kit";
 import { HOST_JOB_KV_PREFIX, hostJobHostId } from "@lane-pilot/host-calls";
+import { isWriterWaitActive } from "../../platform/server";
 import { sendServiceMessage } from "../../relay/server";
 
 /**
@@ -73,7 +74,7 @@ export function mountLifecycleEvents(ctx: ServerCore, extra?: {
     await saveBlockedBy(bb.storage.kv, attempt.id, blockedBy);
     const pmThreadId = getRun(db, attempt.run_id)?.pm_thread_id;
     bb.log.info(`Lane Pilot: the writer of ${attempt.task_id} (${threadId}) waits for the owner: ${what}`);
-    if (pmThreadId) {
+    if (pmThreadId && !isWriterWaitActive(pmThreadId)) {
       await sendServiceMessage(bb as never, { threadId: pmThreadId, mode: "queue-if-active", text: `Lane Pilot: the writer of task ${attempt.task_id} (@thread:${threadId}) is stopped on a question that needs the owner (${what}). The task stays running and will not go on by itself: tell the owner to open that thread and answer, or cancel the task.` });
     }
   });

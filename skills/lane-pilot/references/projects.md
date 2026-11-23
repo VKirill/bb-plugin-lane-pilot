@@ -14,7 +14,8 @@ Project Folders is the source of truth for the sidebar, section IDs, device path
 
 ## Work in another place
 
-Use `lane_pilot_relay {action:"handoff"}` with the complete assignment, `targetProjectId` and optional `targetSectionId`. No manual Pilot activation is needed. For multiple registered locations, supply a listed `targetHostId`/`targetPath` pair. Use `recipientThreadId` to continue the same child, or relay `ask`/`reply` for questions. Preserve the authentic sender; agent assignments are actionable, but do not replace human confirmations.
+Use `lane_pilot_relay {action:"handoff"}` with the complete assignment, `targetProjectId` and (when handing off into a registered section's own folder) `targetSectionId`. No manual Pilot activation is needed. For multiple registered locations, supply a listed `targetHostId`/`targetPath` pair. Use `recipientThreadId` to continue the same child, or relay `ask`/`reply` for questions. Native BB child threads notify their parent automatically when their turn finishes, so `relay` does not wrap their prompts in `askId` boilerplate or send duplicate synthetic notifications. Preserve the authentic sender; agent assignments are actionable, but do not replace human confirmations.
+When a registered section folder is its own standalone Git repository, writer worktrees clone/worktree only that section repository rather than the entire parent workspace.
 
 The child owns its native run. The plugin creates a service-only bootstrap, awaits placement and then sends the assignment with the actual parent's identity. If the result names a created child or says delivery is unknown, inspect that child and handoff before retrying. Do not blindly create another child or resend the task.
 

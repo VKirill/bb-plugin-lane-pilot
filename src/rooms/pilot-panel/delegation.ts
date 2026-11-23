@@ -80,7 +80,7 @@ export function pilotDelegationContextBlock(choice: PilotDelegationChoice): stri
       "## Делегирование задач (управляется Lane Pilot)",
       "",
       "Владелец выбрал режим **`pilot-lanes`** (конвейер изолированных worktree-дорожек Lane Pilot с проверками и критиками).",
-      "- В PM-чате с инструментами `lane_pilot_dispatch_task` отправляйте готовые задачи (`depends_on` соблюдены, `owns_paths` не пересекаются) в дорожки писателей.",
+      "- В PM-чате с инструментами `lane_pilot_dispatch_writer` отправляйте готовые задачи (`depends_on` соблюдены, `owns_paths` не пересекаются) в дорожки писателей.",
       "- В обычном чате без активного PM-рана используйте чистые субтреды `bb thread spawn --parent-self --service-tier 'default'` по протоколу `.bb/skills/lp-implement/SKILL.md`.",
     ].join("\n");
   }

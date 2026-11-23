@@ -3,6 +3,7 @@ import { closeWriterStages, isTaskSatisfied, loadBlockedBy, recordStage, resetHe
 import type { VerificationGatePort } from "../../contracts/integration-gate";
 import type { IsTaskSatisfied } from "../../contracts";
 import type { StageHelperSettings, WorkflowEngineApi } from "../../platform/server";
+import { beginWriterWait } from "../../platform/server";
 import { isLiveDecision } from "../live-folder";
 import { DISPATCH_IDEMPOTENT_WINDOW_MS, DISPATCH_STAGES_PENDING } from "../../runs";
 import { taskV2Schema } from "../../contracts";
@@ -12,7 +13,7 @@ import { reserveAppetite, resolveBestOf } from "../best-of";
 import type { CodeCriticDefault } from "../../contracts/task-enums";
 import { saveCriticCodeDefault } from "./critic-override";
 import { wfLivePipelineRun, wfRunInputsByKey } from "@lane-pilot/workflow-engine";
-import { TASK_HOME_EXCLUDE, bbTaskFileIo, getRunObjective, setRunObjective, createAttempt, createTask, freeTaskId, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getRunWriterHost, getTask, getTaskPlan, latestTaskAttemptState, getTaskRow, hasFailedStageReceipt, listAttemptsForTask, listAttemptsUpdatedSince, listOpenAttempts, listRunsWithAttempts, listRunTaskRows, listStageReceipts, listTaskKinds, listTaskTerminalStates, loadProjectSettings, saveTaskPlan, setRunState, taskBasePath, transitionAttempt } from "../../storage";
+import { TASK_HOME_EXCLUDE, bbTaskFileIo, getRunObjective, setRunObjective, createAttempt, createTask, freeTaskId, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getRunWriterHost, getTask, getTaskPlan, latestTaskAttemptState, getTaskRow, hasFailedStageReceipt, listAttemptsForTask, listAttemptsUpdatedSince, listOpenAttempts, listRunsWithAttempts, listRunTaskRows, listStageReceipts, listTaskKinds, listTaskTerminalStates, listUnreportedTaskOutcomes, loadProjectSettings, markTaskOutcomesReported, noteToldPmDirectly, saveTaskPlan, setRunState, taskBasePath, transitionAttempt } from "../../storage";
 import { birthGates, commonTaskFolder, isMainfixTask, isTaskBase, landingWordAsked, leavesSection, normalizeRepoReads, repoReadRoot, ownerSaidNo, ownerWordsMode, parseReadFirstHints, parseReadFirstSelector, parseRepoTop, planWithOutsideReads, planWithRepoScope, repoTopCommand, rerootTask, rerootToRepoRoot, sha256 , spendReserve, taskStepEvidence, type BirthKind } from "../../tasks";
 import { liveFolderLockNote, nextStep } from "../../contracts/failure-class"
 import { taskFamily } from "@lane-pilot/contracts";
@@ -379,6 +380,7 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
         recordStage(db,{runId,taskId,stageId,state:"skipped",input:canonicalPlan,reason:"run gate stopped execution before automated stage dispatch"});
       }
       setRunState(db,runId,"blocked");
+      noteToldPmDirectly(db, args.threadId, taskId);
       return {runId,taskId,state:"blocked",reason,gate:run.run_gate,writerDispatched:false,stages:listStageReceipts(db,runId,taskId)};
     }
     // The attempt exists before the long stages: pm-read and plan critique each wait for a helper thread for minutes,
@@ -428,16 +430,19 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
     clearTimeout(timer);
     const testHint = await bestEffort(ctx.log, "writer test hint", testHintPromise, "");
     const replyWithHint = (reply:Record<string,unknown>): Record<string,unknown> => testHint ? { ...reply, testHint } : reply;
-    if (early) return replyWithHint(withAdvice(early));
+    if (early) {
+      if (["accepted", "blocked", "canceled"].includes(String(early.state ?? ""))) {
+        noteToldPmDirectly(db, args.threadId, taskId);
+        const unreported = listUnreportedTaskOutcomes(db, 0).filter((o) => o.pmThreadId === args.threadId && o.taskId === taskId);
+        if (unreported.length > 0) markTaskOutcomesReported(db, unreported, Date.now());
+      }
+      return replyWithHint(withAdvice(early));
+    }
     return replyWithHint(withAdvice(pendingReply()));
     } finally { releaseAdmission(); }
   }
 
-  /**
-   * Each task of the run touched in the last 3 hours, by its latest attempt: a long run always has something
-   * running, so a bare «running» hid that tasks had ended blocked (SelfyStudio 2026-10-04: the PM took two blocked
-   * tasks for waiting ones for two hours).
-   */
+  /** Each task of the run touched in the last 3 hours, by its latest attempt, so blocked tasks surface while others still run. */
   function recentTaskSummary(runId:string) {
     const since = Date.now() - 3 * 3600_000;
     const rows = listAttemptsUpdatedSince(db, runId, since);
@@ -461,11 +466,7 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
     return wfLivePipelineRun(db, runId, taskId);
   };
 
-  /**
-   * The integration gate's verdict for an accepted task's merge (lane_pilot_gate_run; Astra F1): the task is accepted
-   * the moment it lands, but main's own check may still be out. No run row yet and a gate exists: it has not run —
-   * reported `running` so the PM waits for it like for QA instead of reading «accepted» as «ship».
-   */
+    /** The integration gate's verdict for an accepted task's merge: pending keeps the wait like QA until main's check finishes. */
   async function taskGateVerdict(runId:string, projectId:string, taskId:string): Promise<{ line:string; pending:boolean; failed:boolean }> {
     const row = latestGateRunForTask(db, projectId, taskId);
     if (row) return gateRunVerdict(row);
@@ -486,6 +487,8 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
     if (!run || run.project_id !== args.projectId || run.pm_thread_id !== args.threadId) {
       throw new Error("run does not belong to this PM thread and project");
     }
+    const endWait = beginWriterWait(args.threadId);
+    try {
     const deadline = Date.now() + Math.min(240, Math.max(1, args.timeoutSec)) * 1000;
     let qaInGraph = false;
     let gateLines: Array<{ taskId:string; gate:string }> = [];
@@ -644,16 +647,10 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
         ? { message:"Писатель ещё работает. Вызови lane_pilot_wait_writer ещё раз с тем же runId." }
         : { writerStarted:false, message:"Писатель ещё не создан. Старт не закончен или не прошёл. Вызови lane_pilot_wait_writer ещё раз с тем же runId." }),
     };
+    } finally { endWait(); }
   }
 
-  /**
-   * Starts again the stages of a dispatch a reload interrupted, for the same task and attempt. A Lane Pilot deploy reloads
-   * the plugin, and the dispatch pipeline lives in memory: a reload during pm-read (minutes of a helper turn) ended the
-   * dispatch, and start-up recovery blocked the attempt «send the task again» (SelfyStudio 2026-10-08/12/13, each within
-   * 40 s of a release). Everything a dispatch needs is stored when its attempt exists: the placed contract, the plan, the
-   * run's PM thread and workspace, and the PM's baseRef in the pipeline run's inputs. The helper stages start from
-   * nothing (a passed pm-read is kept) under a new pipeline key. `live`: this instance runs the dispatch itself.
-   */
+  /** Restarts dispatch stages interrupted by a plugin reload for the same task and attempt. */
   async function resumeDispatch(attemptId:string): Promise<{ resumed:true; live?:true } | { resumed:false; why:string }> {
     if (liveDispatches.has(attemptId)) return { resumed:true, live:true };
     const engine = services.workflowEngine;

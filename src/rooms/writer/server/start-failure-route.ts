@@ -65,7 +65,7 @@ export const routeAttemptFailure = async (deps: StartWriterTaskDeps, state: Writ
         const attempt = getAttempt(db, state.attemptId);
         if (attempt?.state === "spawn_unknown" || attempt?.state === "spawn_requested") {
           state.writerThreadId = await bestEffort(ctx.log, "writer reconcile attempt thread", services.reconcileAttemptThread(input.projectId, attempt), "");
-        } else if (attempt && !attempt.thread_id) {
+        } else if (attempt && !attempt.thread_id && attempt.state !== "spawn_rejected") {
           // An attempt whose writer thread is stored needs no scan; scanning every thread of the project here blocked
           // retries with reconcile_page_cap once SelfyStudio passed 1000 threads (live 2026-10-04).
           const cursor = reconcileCursor(db, attempt.id, "writer");

@@ -615,11 +615,14 @@ export function relayFor(ctx:ServerContext):Relay {
     save:async (items) => { await bb.storage.kv.set(KEY, items as never); },
     send:async (threadId, text, senderThreadId) => { await sendServiceMessage(bb, { threadId, text, senderThreadId }); },
     nativelyNotifiesParent:async (childThreadId, parentThreadId) => {
-      const [thread, meta] = await Promise.all([
-        bb.sdk.threads.get({ threadId: childThreadId }).catch(() => null) as Promise<{ parentThreadId?: unknown; parentNotifications?: unknown } | null>,
-        (bb.sdk.threads as unknown as { getPluginMetadata?: (args: { threadId: string }) => Promise<Record<string, unknown> | null> }).getPluginMetadata?.({ threadId: childThreadId }).catch(() => null) ?? Promise.resolve(null),
-      ]);
-      return thread?.parentThreadId === parentThreadId && thread?.parentNotifications !== "none" && meta?.experimental_vkQuietChild !== true;
+      const loudChild = async (childId: string, parentId: string) => {
+        const [thread, meta] = await Promise.all([
+          bb.sdk.threads.get({ threadId: childId }).catch(() => null) as Promise<{ parentThreadId?: unknown; parentNotifications?: unknown } | null>,
+          (bb.sdk.threads as unknown as { getPluginMetadata?: (args: { threadId: string }) => Promise<Record<string, unknown> | null> }).getPluginMetadata?.({ threadId: childId }).catch(() => null) ?? Promise.resolve(null),
+        ]);
+        return thread?.parentThreadId === parentId && thread?.parentNotifications !== "none" && meta?.experimental_vkQuietChild !== true;
+      };
+      return (await loudChild(childThreadId, parentThreadId)) || (await loudChild(parentThreadId, childThreadId));
     },
     settled:async (threadId) => {
       const thread = await bb.sdk.threads.get({ threadId }) as { status?:string; queuedMessageCount?:number; activeBackgroundAgentCount?:number; environmentId?:string|null };

@@ -13,7 +13,7 @@ Lane Pilot combines two execution layers borrowed and unified with AI Factory (`
 
 ## Coordinator → Worker Task Handoff Rules
 
-Whether delegating through `lane_pilot_dispatch_task` (isolated worktree writer lanes) or native `bb thread spawn` (`lp-implement` on `.agents/pilot/plans/<slug>.md`):
+Whether delegating through `lane_pilot_dispatch_writer` (isolated worktree writer lanes) or native `bb thread spawn` (`lp-implement` on `.agents/pilot/plans/<slug>.md`):
 
 1. **Coordinator owns orchestration:** Only the coordinator updates plan checkboxes, runs post-worker merge/verification gates, and decides commits.
 2. **One task per worker brief:** Give each worker a written brief naming:

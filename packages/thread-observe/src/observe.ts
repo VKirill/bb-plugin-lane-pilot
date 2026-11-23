@@ -116,7 +116,7 @@ export async function waitThreadIdle(bb: BbPluginApi, threadId: string, timeoutM
     // an unreadable thread just yields no fresh status this poll
     const thread = await bb.sdk.threads.get({ threadId }).catch(() => null);
     const listed = await listThreadEventsRaw(bb, {
-      threadId, types:THREAD_WATCH_EVENT_TYPES, order:"desc", limit:"50",
+      threadId, types:THREAD_WATCH_EVENT_TYPES, order:"desc", limit:"100",
     });
     if (!listed.ok) throw new Error(`${timeoutMessage}:${listed.detail}`);
     lastEvents = listed.events;
@@ -149,7 +149,7 @@ export async function waitThreadIdle(bb: BbPluginApi, threadId: string, timeoutM
   // This final diagnostic read gets at most one poll interval; an unavailable core cannot hold a finished wait open.
   let timer: ReturnType<typeof setTimeout> | undefined;
   const listed = await Promise.race([
-    listThreadEventsRaw(bb, { threadId, types:THREAD_WATCH_EVENT_TYPES, order:"desc", limit:"50" }),
+    listThreadEventsRaw(bb, { threadId, types:THREAD_WATCH_EVENT_TYPES, order:"desc", limit:"100" }),
     new Promise<{ ok:true; events:unknown[] }>((resolve) => { timer = setTimeout(() => resolve({ ok:true, events:lastEvents }), 1000); }),
   ]).finally(() => clearTimeout(timer));
   if (!listed.ok) throw new Error(`${timeoutMessage}:${listed.detail}`);
@@ -180,7 +180,7 @@ export async function observeStageChild(
     // an unreadable thread just yields no fresh status this poll
     const thread = await bb.sdk.threads.get({ threadId }).catch(() => null);
     const listed = await listThreadEventsRaw(bb, {
-      threadId, types:THREAD_WATCH_EVENT_TYPES, order:"desc", limit:"50",
+      threadId, types:THREAD_WATCH_EVENT_TYPES, order:"desc", limit:"100",
     });
     if (!listed.ok) return { kind:"observing", detail:listed.detail };
     const decision = decideThreadCompletion({

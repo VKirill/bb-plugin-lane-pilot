@@ -93,7 +93,7 @@ export async function maybeNotifyWorkflowRun(input: {
   // graph report left to carry it (the 0.1.573 status card covers only the synchronous PM_WAITS_FOR tools).
   const body = input.startedBySchedule ? delivered! : chatOutcome(run, input.unmetGoalIds);
   const text = input.startedBySchedule
-    ? `Lane Pilot: the scheduled run ${run.id} of ${run.workflow_id} finished. Show the owner this result in this chat as it is (no summary, nothing to act on; its helper's own completion may follow: it is the same result, say nothing about it):\n\n${body}`
+    ? `Lane Pilot: the scheduled run ${run.id} of ${run.workflow_id} finished. Show the owner this result in this chat as it is (no summary, nothing to act on):\n\n${body}`
     : `## Lane Pilot · ${run.workflow_id}\n\nRun \`${run.id}\` ended ${run.status} (engine status).\n\n${body}`;
   if (await input.bb.storage.kv.get(key)) return false;
   await bestEffort(input.log, "workflow notice record", input.bb.storage.kv.set(key, Date.now() as never), undefined);

@@ -67,6 +67,7 @@ export function claudeGuardLauncherScript(input: {
     `export LANE_PILOT_ROLE=${shellQuote(input.role)}`,
     `export LANE_PILOT_AGENT_TYPE=${shellQuote(input.agentType)}`,
     "export AGENT_HOOK_CLIENT=claude",
+    "export LANE_SUBAGENT_CAP=0",
     `export LANE_PILOT_HOOK_TRACE=${shellQuote(join(input.destDir, "hook-trace.jsonl"))}`,
     claudeExecLine(input.command, input.settingsPath, [
       ...(input.role === "pm" ? [] : [`--disallowedTools ${shellQuote(WRITER_ROLES.has(input.role) ? `${HELPER_DISALLOWED_TOOLS},${WRITER_DISALLOWED_TOOLS}` : HELPER_DISALLOWED_TOOLS)}`]),
@@ -122,7 +123,7 @@ export async function prepareClaudeGuard(input: {
 }
 
 const CACHE_MS = 60_000;
-const CALL_MS = 4_000;
+const CALL_MS = 8_500;
 
 const reasonOf = (cause: unknown) => (cause instanceof Error ? cause.message : String(cause)).replace(/\s+/g, " ").slice(0, 200);
 

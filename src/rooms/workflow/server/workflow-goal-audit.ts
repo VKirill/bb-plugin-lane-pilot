@@ -47,11 +47,13 @@ const TASK = [
   "Do not do the work again and do not change anything. Give one verdict per goal id, none left out.",
 ].join("\n");
 
-/** What the auditor sees of a step: its node, state and the handoff it wrote. */
-const stepLine = (step: { node_id: string; state: string; output_json: string | null }): { node: string; state: string; handoff?: string } => {
-  let handoff: string | undefined;
-  const output = parseJsonOr(step.output_json ?? "null", null) as { handoff?: unknown } | null; if (typeof output?.handoff === "string") handoff = output.handoff;
-  return { node: step.node_id, state: step.state, ...(handoff ? { handoff } : {}) };
+/** What the auditor sees of a step: its node, state, handoff and structured output fields. */
+const stepLine = (step: { node_id: string; state: string; output_json: string | null }): { node: string; state: string; handoff?: string; output?: Record<string, unknown> } => {
+  const parsed = parseJsonOr(step.output_json ?? "null", null) as Record<string, unknown> | null;
+  const handoff = typeof parsed?.handoff === "string" ? parsed.handoff : undefined;
+  const rest = parsed ? Object.fromEntries(Object.entries(parsed).filter(([key, value]) => key !== "handoff" && value !== undefined)) : {};
+  const compact = Object.keys(rest).length && JSON.stringify(rest).length <= 1600 ? rest : undefined;
+  return { node: step.node_id, state: step.state, ...(handoff ? { handoff } : {}), ...(compact ? { output: compact } : {}) };
 };
 
 /**

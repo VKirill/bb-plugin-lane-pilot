@@ -12,7 +12,7 @@ export const desktopHostMethods = {
       envClass:z.enum(["local","staging","preview","production","unknown"]), viewports:z.string().regex(/^\d{2,4}(,\d{2,4}){0,2}$/),
       authorized:z.boolean(), provider:z.enum(["codex"]), model:z.string().max(120).optional(),
       reasoningEffort:z.enum(["low","medium","high","xhigh","max"]).optional(),
-      backend:z.enum(["live-chrome","chrome-qa","headless"]), timeoutSec:z.number().int().min(30).max(1800),
+      backend:z.enum(["live-chrome","chrome-qa","headless"]), timeoutSec:z.number().int().min(30).max(2400),
     }).strict(),
     output:z.object({
       hostId:z.string(), provider:z.enum(["codex"]), runner:z.string(), exitCode:z.number().int(),

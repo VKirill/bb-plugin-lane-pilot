@@ -13,6 +13,7 @@ import { recordStage } from "../../runs/server";
 import { id } from "@lane-pilot/kit";
 
 import { sendServiceMessage } from "../../relay/server";
+import { isWriterWaitActive } from "../../platform/server";
 import { emitAttemptFinished } from "./attempt-finished";
 
 import type { StartWriterTaskDeps } from "./start-writer-task";
@@ -40,7 +41,7 @@ import type { WriterTaskInput } from "./start-task-state";
       // A writer's question would wait unseen: writers are quiet children and do not wake the PM.
       if (!accepted && reason && failureClass(String(state.last.status), reason) === "judgment" && input.pmThreadId) {
         noteToldPmDirectly(db, input.pmThreadId, input.taskId);
-        void bestEffort(ctx.log, "writer question notice", sendServiceMessage(bb, { threadId:input.pmThreadId, senderThreadId:state.writerThreadId || undefined,
+        if (!isWriterWaitActive(input.pmThreadId)) void bestEffort(ctx.log, "writer question notice", sendServiceMessage(bb, { threadId:input.pmThreadId, senderThreadId:state.writerThreadId || undefined,
           text:`Lane Pilot: ${input.taskId} stopped with a question from its writer. Answer it with lane_pilot_answer_writer (taskId, answer) — from the code or docs if they settle it, else ask the owner once; the writer continues in its own thread and no attempt is spent. ${WRITER_QUESTION_WAIT_TEXT} Send the task again only when the contract itself must change; tasks that depend on it wait for that.${state.liveFolder ? " This folder has no git, so the writer's files stay where they are and the folder stays locked: other tasks for it queue until this question is answered (or the task is sent again)." : ""}\n${reason.slice(0, 1200)}` }), undefined);
       }
       // A failed task is told to stability before the receipts close the run: its record reads the run still running

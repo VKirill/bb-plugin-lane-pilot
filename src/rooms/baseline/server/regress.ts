@@ -305,7 +305,7 @@ export function createRegression(ctx: ServerCore, services: Services) {
           if (Date.now() > deadline || Date.now() - started > settings.budgetSec * 1000) { c.report.skipped = `over the time budget of the pass (${settings.budgetSec}s, regress.budget_sec)`; continue; }
           const fresh = c.eligible.filter((item) => !cache.has(keyOf(item, c.target.task.project_cwd)));
           if (fresh.length) {
-            const ran = await kit().runChecks(c.target, made.path, fresh.map((item) => ({ ...item, timeout_sec: mode === "full" ? (item.timeout_sec ?? 120) : Math.min(item.timeout_sec ?? 120, settings.checkCapSec) }))).catch((cause: unknown) => { c.report.skipped = `the checks could not start: ${cause instanceof Error ? cause.message : String(cause)}`; return [] as RollbackItem[]; });
+            const ran = await kit().runChecks(c.target, made.path, fresh.map((item) => ({ ...item, timeout_sec: mode === "full" ? (item.timeout_sec ?? 900) : Math.min(item.timeout_sec ?? 120, settings.checkCapSec) }))).catch((cause: unknown) => { c.report.skipped = `the checks could not start: ${cause instanceof Error ? cause.message : String(cause)}`; return [] as RollbackItem[]; });
             ran.forEach((row, index) => { cache.set(keyOf(fresh[index]!, c.target.task.project_cwd), row); report.commandsRun += 1; });
           }
           for (const item of c.eligible) {

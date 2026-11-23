@@ -1,6 +1,6 @@
 import { breakerKey } from "@lane-pilot/resilience";
 import { writerLeftWorktree } from "./left-worktree";
-import { hasTaskHome, countAttempts, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getTask, listStageReceipts, loadProjectSettings, noteAttemptStream, priorAttemptStates, transitionAttempt, taskBasePath, failureFieldsOf } from "../../storage";
+import { hasTaskHome, countAttempts, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getTask, listStageReceipts, listUnreportedTaskOutcomes, loadProjectSettings, markTaskOutcomesReported, noteAttemptStream, noteToldPmDirectly, priorAttemptStates, transitionAttempt, taskBasePath, failureFieldsOf } from "../../storage";
 import {providerLimitNotice} from "@lane-pilot/models";
 import { actionableFindings, parseCodeCritiqueSettings, repairLedgerFromResult } from "../../critique";
 import { CODE_CRITIC_DEFAULT_SETTING, QUALITY_MODE_SETTING, applyCodeCriticDefault, applyQualityMode, resolveCodeCriticDefault, resolveQualityMode, withReferenceTestCritic } from "../../contracts/quality-mode";
@@ -334,6 +334,9 @@ export async function finishWriterAttemptBody(ctx: ServerCore, services: Service
         await bestEffort(ctx.log, "test edit hold record", bb.storage.kv.set(testEditHoldKey(input.attemptId),
           heldHits.map((hit) => ({ path:hit.path, afterSha256:afterShaOf(hit.path) })) as never), undefined);
         transitionAttempt(db, input.attemptId, "blocked", { reason });
+        noteToldPmDirectly(db, input.pmThreadId, input.taskId);
+        const holdOutcomes = listUnreportedTaskOutcomes(db, 0).filter((o) => o.pmThreadId === input.pmThreadId && o.taskId === input.taskId);
+        if (holdOutcomes.length > 0) markTaskOutcomesReported(db, holdOutcomes, Date.now());
         postOwnerItem(db as never, { key:`${TEST_EDIT_HOLD_ITEM}${input.attemptId}`, source:"writer", kind:"test_edit_hold", projectId:input.projectId, wake:false,
           what:`Исполнитель ослабил проверочный тест (${paths.join(", ")}) — сдача ждёт вашего разрешения`, why:reason.slice(0, 600) });
         await bestEffort(ctx.log, "test edit hold notice", sendServiceMessage(bb, { threadId:input.pmThreadId,
@@ -344,11 +347,8 @@ export async function finishWriterAttemptBody(ctx: ServerCore, services: Service
         ...(!markers.approach ? ["the report has no APPROACH line"] : []),
         ...(!markers.lesson && !markers.noLessonReason ? ["the report has no LESSON line (a lesson, or none with the reason)"] : []),
         ...(testEdits.length ? [`the writer changed tests that existed before the attempt (reference tests): ${testEdits.join(", ")} — the code critic reviews them in gate mode`] : []),
+        ...(criticNotes ? [criticNotes] : []),
       ];
-      if (criticNotes) {
-        markerWarnings.push(criticNotes);
-        void bestEffort(ctx.log, "writer critic notes notice", sendServiceMessage(bb, { threadId: writerThreadId, senderThreadId: input.pmThreadId, text: criticNotes }), undefined);
-      }
       // The execution checklist, one row on the attempt (sma ag_checklist): the promise flags, the stagnation
       // (prior turns that ended on the same failure key), the scope reads and the reference-test edits, together —
       // they ride the attempt's one accept row (recorded at the acceptance below), so the gate list shows them in one place.

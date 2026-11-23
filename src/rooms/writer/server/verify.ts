@@ -210,9 +210,9 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
       };
       const outcome=failIfNoTestRan(await runWithFlakyRerun(command.command,async()=>{
       const backend=(loadProjectSettings(db,config.projectId,verificationScopes)["sandbox.backend"] as "auto"|"macos-seatbelt"|"linux-bubblewrap"|undefined) ?? "auto";
-      // The sandbox gives a command 120 s when the task names no limit; waiting only 30 s cut longer checks short.
+      // The sandbox gives a command 900 s when the task names no limit; waiting only 120 s cut longer suites short.
       // History widens it for a check that is slow in this project: max(that, p95 of its last 20 green runs x 2), capped.
-      const timeoutSec=checkTimeoutSec(db,config.projectId,{command:command.command,cwd:command.cwd,root:task.project_cwd},command.timeout_sec ?? 120);
+      const timeoutSec=checkTimeoutSec(db,config.projectId,{command:command.command,cwd:command.cwd,root:task.project_cwd},command.timeout_sec ?? 900);
       const startedAt=Date.now();
       // A timeout (124) and a host that failed say nothing about how long the check takes: not kept.
       const recorded=<T extends {exitCode:number;hostError?:true}>(result:T):T=>{
@@ -374,7 +374,7 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
 
   /** What the writer's own thread did (file edits, commands, tool calls), as one text; null when its events cannot be read. */
   async function writerTrace(threadId:string):Promise<string|null> {
-    const listed = await bestEffort(bb.log, "verification writer trace", listThreadEventsRaw(bb, { threadId, types:THREAD_ITEM_EVENT_TYPES, order:"desc", limit:"300" } as never), null);
+    const listed = await bestEffort(bb.log, "verification writer trace", listThreadEventsRaw(bb, { threadId, types:THREAD_ITEM_EVENT_TYPES, order:"asc", limit:"12000" } as never), null);
     if (!listed || !listed.ok) return null;
     return listed.events.map((event) => {
       // Only what the writer did: edited paths, command text and tool arguments. A command's output is no touch —

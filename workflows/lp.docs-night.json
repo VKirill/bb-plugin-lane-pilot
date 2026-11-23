@@ -80,7 +80,7 @@
     "row": "any"
   },
   "budget": {
-    "max_minutes": 420
+    "max_minutes": 780
   },
   "nodes": [
     {

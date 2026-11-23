@@ -6,13 +6,10 @@ resume-project — холодный старт («где мы»)
 - Не для туду и не для нового онбординга.
 
 Как открыть шпаргалку
-- /lane-stack:resume-project info
-- каталог: /lane-stack:info
+- Открой SKILL.md навыка project-resume
 
-Запуск
-- /lane-stack:resume-project
-- /resume-project
-- CLI: ~/.agents/bin/resume-project "$(pwd)" --compact
+Запуск в Lane Pilot
+- Прочитай `.agents/PROGRESS.md`, `.agents/plans/ROADMAP.md`, `.agents/todos/INDEX.md` и вызови `lane_pilot_workspace_status`, `lane_pilot_gate_report`, `lane_pilot_memory` (`action: "context"`).
 
 Что ответить (из HANDOFF, коротко по-русски)
 - Now

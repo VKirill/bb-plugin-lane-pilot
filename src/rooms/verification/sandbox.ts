@@ -367,7 +367,7 @@ export async function runSandboxedCommandOnHost(input:SandboxedCommandInput):Pro
   const cwd = await realDirectory(input.cwd,"sandbox_cwd");
   if (!within(workspacePath,cwd)) throw new Error("sandbox_cwd_outside_workspace");
   if (!input.command.trim() || input.command.length > 32_000 || input.command.includes("\0")) throw new Error("sandbox_command_invalid_or_too_large");
-  const timeoutSec = input.timeoutSec ?? 120;
+  const timeoutSec = input.timeoutSec ?? 900;
   if (!Number.isInteger(timeoutSec) || timeoutSec < 1 || timeoutSec > 7200) throw new Error("sandbox_timeout_out_of_range");
   // macOS tmpdir() sits under the /var -> /private/var symlink and seatbelt matches real paths,
   // so an unresolved temp path would leave the sandbox's own HOME unwritable.

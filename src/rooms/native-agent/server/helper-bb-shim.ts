@@ -21,7 +21,7 @@ import type { ServerCore } from "../../contracts/server";
  */
 export const BB_SHIM_PROVIDER_IDS = ["codex", "opencode2", "acp-cursor", "devin"] as const;
 const CACHE_MS = 60_000;
-const CALL_MS = 4_000;
+const CALL_MS = 8_500;
 const UNKNOWN_CALL = /unknown|not found|no such|not implemented|unsupported|not a function|unrecognized/i;
 
 const reasonOf = (cause: unknown) => (cause instanceof Error ? cause.message : String(cause)).replace(/\s+/g, " ").slice(0, 200);

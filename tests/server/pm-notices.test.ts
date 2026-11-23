@@ -5,7 +5,8 @@ import { createRun, openDatabase, savePrototypeConfig, setRunThread } from "../.
 import { councilDecisionText, councilEndedText, sendCouncilNotice } from "../../src/rooms/council/server/pm-notice";
 import { maybeNotifyWorkflowRun, notifyWorkflowIfEnded } from "../../src/rooms/workflow/server/pm-notice";
 import { SCOUT_GRAPH } from "../../src/rooms/critique/server/scout-graph";
-import { beginWorkflowWait, noteWorkflowReadByPm } from "../../src/rooms/platform/server";
+import { beginWorkflowWait, beginWriterWait, isWriterWaitActive, noteWorkflowReadByPm } from "../../src/rooms/platform/server";
+import { isServiceNoticeText } from "../../src/rooms/contracts/service-notice";
 import { SCHEDULE_RUN_KEY_PREFIX } from "../../src/rooms/contracts";
 import { forgetSecrets, registerSecrets } from "@lane-pilot/kit";
 import type { RunRow } from "../../src/rooms/plugin-db";
@@ -371,5 +372,18 @@ describe("lead hand-over runs", () => {
     noteWorkflowReadByPm("wfrun_scout_1");
     expect(await maybeNotifyWorkflowRun({ bb, log: () => undefined, pmThreadId, startedBySchedule: false, run: runRow({ id: "wfrun_scout_1", workflow_id: SCOUT_GRAPH, output_json: JSON.stringify({ report: "ok" }) }) })).toBe(false);
     expect(sends).toEqual([]);
+  });
+
+  it("tracks active lane_pilot_wait_writer calls and recognizes owner-ask, council, and post-merge gate service notices", () => {
+    expect(isWriterWaitActive("pm-wait-1")).toBe(false);
+    const endWriterWait = beginWriterWait("pm-wait-1");
+    expect(isWriterWaitActive("pm-wait-1")).toBe(true);
+    endWriterWait();
+    expect(isWriterWaitActive("pm-wait-1")).toBe(false);
+
+    expect(isServiceNoticeText("Lane Pilot: the owner answered your question (ask_1): yes")).toBe(true);
+    expect(isServiceNoticeText("Council cncl_abc decided.\nQuestion: Q?")).toBe(true);
+    expect(isServiceNoticeText("Lane Pilot: проверка после вливания на main упала")).toBe(true);
+    expect(isServiceNoticeText("Делай всё что считаешь нужным")).toBe(false);
   });
 });

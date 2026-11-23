@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { expandHomePath } from "@lane-pilot/kit";
 import { spawnAsync } from "@lane-pilot/kit";
@@ -19,6 +20,9 @@ export async function runCommandOnHost(input: {
 }> {
   if (FORBIDDEN.test(input.command) || input.command.includes("--apply") || /\bsetup\b/.test(input.command)) {
     throw new Error("refusing host command: --apply/setup are forbidden in Mode 2");
+  }
+  if (!existsSync(input.cwd)) {
+    return { hostId: process.env.BB_HOST_ID ?? input.requestedHostId, exitCode: 1, stdout: "", stderr: `working directory does not exist: ${input.cwd}` };
   }
   const result = await spawnAsync("/bin/bash", ["-lc", input.command], {
     cwd: input.cwd,

@@ -5,8 +5,7 @@ idea → todo → plan → run → merge
                  status: PROGRESS · decisions; memory: facts/lessons→hub
 
 Как открыть шпаргалку
-- /lane-stack:project-life info
-- каталог: /lane-stack:info
+- Открой SKILL.md навыка project-life и соседние файлы references/
 
 Фразы → действие
 - «запиши / туду / потом / не теряй»     → .agents/todos/ + INDEX

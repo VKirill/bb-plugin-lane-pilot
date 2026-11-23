@@ -51,6 +51,11 @@ export async function closeAfterAudit(engine: WorkflowEngine, run: RunRow): Prom
   try { required = (JSON.parse(run.definition_json) as { goal_audit?: string }).goal_audit === "required"; } catch { required = false; }
   if (!goals.length) return required ? unverified("not_verified: a user workflow closed with no goals", { error: "no goals" }) : close(null);
   const output = asObject(run.output_json);
+  // Explicit non-fulfillment exit statuses on runs with only the synthetic request goal close directly without an LLM audit pass.
+  if (!required && goals.every((goal) => goal.id === "request") && typeof output.status === "string"
+    && ["proposed", "rework", "partial", "blocked", "aborted", "cannot_delay", "rerouted", "send_failed", "send_unconfirmed", "empty", "noop", "skipped"].includes(output.status)) {
+    return close(null);
+  }
   // An instrumented run's verdict is bound to its execution: same goals and output are not enough when a re-run produced fresh observations.
   const execution = engine.options.observeRun !== undefined
     ? { revision: executionRevision(j.db, run.id), guardSeq: latestRepoGuardSeq(j.db, run.id, "afterExecution") }

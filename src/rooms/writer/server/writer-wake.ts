@@ -1,6 +1,7 @@
 import { claimAttemptWake, getRun, getTask, getTaskPlan, listDueWakes, parkAttemptWake } from "../../storage";
 import { taskV2Schema, type PrototypeConfig } from "../../contracts";
 import { sendServiceMessage } from "../../relay/server";
+import { isWriterWaitActive } from "../../platform/server";
 import { providerDisplayName } from "./writer-hold";
 import type { ServerCore } from "../../contracts/server";
 import { bestEffort } from "@lane-pilot/kit";
@@ -74,7 +75,7 @@ export async function noteUnsupportedProvider(ctx: ServerCore, input: {
   if (told) return false;
   await bestEffort(ctx.log, "writer unsupported note", ctx.bb.storage.kv.set(key, String(Date.now())), undefined);
   ctx.log(`writer ${input.taskId}: provider ${input.providerId} is not supported by this core; the task is blocked`);
-  if (!input.pmThreadId) return true;
+  if (!input.pmThreadId || isWriterWaitActive(input.pmThreadId)) return true;
   await bestEffort(ctx.log, "writer unsupported notice", sendServiceMessage(ctx.bb, {
     threadId: input.pmThreadId,
     text: `Lane Pilot: задача ${input.taskId} остановлена — писатель ${providerDisplayName(input.providerId)} не поддерживается этим ядром (core_unsupported). ` +
@@ -83,18 +84,17 @@ export async function noteUnsupportedProvider(ctx: ServerCore, input: {
   return true;
 }
 
-const waitToldKey = (attemptId: string) => `writer-wait-told:${attemptId}`;
+const waitToldKey = (key: string) => `writer-wait-told:${key}`;
 
 /**
- * The one PM line of a wait («задача X ждёт свободного писателя…»): once per attempt, never per tick. Returns true
- * when the line was sent now.
+ * The one PM line of a wait («задача X ждёт свободного писателя…»): once per attempt/run-hold, never per tick, and suppressed while the PM is actively awaiting `lane_pilot_wait_writer`.
  */
-export async function noteWriterWait(ctx: ServerCore, input: { attemptId: string; pmThreadId: string | null | undefined; taskId: string; text: string }): Promise<boolean> {
-  const key = waitToldKey(input.attemptId);
+export async function noteWriterWait(ctx: ServerCore, input: { attemptId: string; runId?: string | null; pmThreadId: string | null | undefined; taskId: string; text: string }): Promise<boolean> {
+  const key = waitToldKey(input.runId ? `${input.runId}:${input.text.slice(0, 80)}` : input.attemptId);
   const told = await ctx.bb.storage.kv.get(key);
   if (told) return false;
   await bestEffort(ctx.log, "writer wait note", ctx.bb.storage.kv.set(key, "1"), undefined);
-  if (!input.pmThreadId) return true;
+  if (!input.pmThreadId || isWriterWaitActive(input.pmThreadId)) return true;
   await bestEffort(ctx.log, "writer wait notice", sendServiceMessage(ctx.bb, {
     threadId: input.pmThreadId,
     text: `Lane Pilot: задача ${input.taskId} ждёт свободного писателя (${input.text}). Проверяю сам, ничего делать не нужно.`,

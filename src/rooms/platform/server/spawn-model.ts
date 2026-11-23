@@ -63,8 +63,8 @@ export function seenProviderLimit(owner: object, providerId: string, model: stri
   const seen = instanceOf(owner).seenLimits.get(limitKey(providerId, model));
   return seen && seen.until > now ? { percent: 100, window: `limit seen: ${seen.notice}` } : null;
 }
-/** The core could not start the provider's session: the thread exists and never ran. */
-export const THREAD_NOT_STARTED = /thread_command_failed|thread\.start failed/i;
+/** The core could not start the provider's session: the thread exists and never ran, or provisioning rejected session policy. */
+export const THREAD_NOT_STARTED = /thread_command_failed|thread\.start failed|vk_required_session_policy_unsupported|vk_required_session_policy_unenforceable|thread_provisioning_failed|provider_not_started/i;
 /**
  * A helper or writer thread its provider could not start: the core refused the session or the provider's CLI is down
  * (acp-antigravity, 2026-11-09: «thread_command_failed … vk_required_session_policy_bridge_unsupported» failed 5 of 5 specialist

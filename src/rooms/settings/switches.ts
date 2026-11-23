@@ -37,7 +37,9 @@ export const UNLISTED_SWITCHES: Readonly<Record<string, readonly [scope: SwitchS
   "ship.max_batch_days": ["project-only", "number", "how many days of unshipped commits make a pile (with ship.watch)"],
   // writers
   "writer.max_turns": ["project", "number", "a writer attempt is stopped at this many tool calls, its worktree kept (unset or 0: no ceiling; 1-10000: explicit cap)"],
-  "writer.launch_parity": ["project", "refuse|warn", "refuse: a writer that started on another provider than asked is stopped and the pair held for 30 minutes (unset warns)"],
+  "writer.enforce_appetite_minutes": ["project", "on|off", "off: contract appetite.minutes is advisory forecast only (unset or on: ask at 80% and stop at 100%)"],
+  "writer.respect_owner_presence": ["global", "on|off", "on: hold writer spawns for 10 min on a subscription provider while the owner sends chat turns on it (unset or off: writers run concurrently in isolated worktrees)"],
+  "writer.launch_parity": ["project", "refuse|warn", "refuse: a writer that started on another provider than asked is stopped and the pair held for 30 minutes (unset: refuse; warn: log only)"],
   "writer.qa_stop_after": ["project", "number", "after this many failed QA receipts of a task family the advice is to stop, not to follow up (unset: 2; 0 or off: always a follow-up, as before)"],
   "writer.lesson_from_accepted": ["project", "on|off", "LESSON: lines of an accepted attempt are filed as lesson proposals"],
   "writer.models_off": ["project", "json", "a list of writer profile keys, provider/model ids or bare model ids no writer is given (the pick and the fallback chain skip them; all off: the task waits, the owner is told)"],

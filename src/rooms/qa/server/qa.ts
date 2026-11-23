@@ -132,7 +132,7 @@ export function createQaStages(ctx: ServerCore) {
       return {runId:args.runId,taskId:args.taskId,state:"blocked",reason,stages:listStageReceipts(db,args.runId,args.taskId)};
     }
     const timeoutValue = configuredSetting(settings,"browser_qa.timeout_sec");
-    const timeoutSec = typeof timeoutValue === "number" && Number.isInteger(timeoutValue) ? Math.min(1800,Math.max(30,timeoutValue)) : 900;
+    const timeoutSec = typeof timeoutValue === "number" && Number.isInteger(timeoutValue) ? Math.min(2400,Math.max(30,timeoutValue)) : 1200;
     let qaTarget;
     try {
       qaTarget = resolveBrowserQaTarget({
@@ -318,7 +318,7 @@ export function createQaStages(ctx: ServerCore) {
         recordStage(db, { ...base, state:"blocked", result:frozen, reason:"browser_qa_dispatch_lost_in_reload" });
         continue;
       }
-      const timeoutSec = typeof frozen.timeoutSec === "number" ? frozen.timeoutSec : 1800;
+      const timeoutSec = typeof frozen.timeoutSec === "number" ? frozen.timeoutSec : 2400;
       // After a reload the remembered values are gone: fetch the logins again so the verdict is masked as it would have been.
       const logins = Array.isArray(frozen.logins) ? frozen.logins.filter((name): name is string => typeof name === "string") : [];
       const deadline = typeof frozen.deadline === "number" ? frozen.deadline : stage.updatedAt + timeoutSec * 1000;

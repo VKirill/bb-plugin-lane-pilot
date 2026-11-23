@@ -123,7 +123,7 @@ export function registerBrowserExecutors(engine: WorkflowEngine, ctx: ServerCore
     return stage && threadId && stage.updatedAt >= since ? await withUsage(ctx.bb, threadId) : {};
   };
   /** A check whose receipt never turns terminal (nothing adopts it) fails the step after the longest check plus a margin. */
-  const NO_VERDICT_MS = (1800 + 300) * 1000;
+  const NO_VERDICT_MS = (2400 + 300) * 1000;
 
   engine.register<ChainRuntime>(BROWSER_QA, {
     reentrant: true,

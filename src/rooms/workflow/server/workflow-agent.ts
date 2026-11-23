@@ -441,7 +441,7 @@ export function createWorkflowAgents() {
       } catch (cause) {
         // The provider cannot start in this environment (its own session policy unenforceable, or its server 500s the
         // MCP listing — opencode2 under ~/Documents on macOS): one retry on the role's next provider, no PM involved.
-        if (!/capability_unproven|vk_required_session_policy_unenforceable|OpenCode[^\n]*\b500\b|\b500\b[^\n]*mcp/i.test(cause instanceof Error ? cause.message : String(cause))) throw cause;
+        if (!/capability_unproven|vk_required_session_policy_unenforceable|vk_required_session_policy_unsupported|thread_provisioning_failed|thread_command_failed|thread\.start failed|OpenCode[^\n]*\b500\b|\b500\b[^\n]*mcp/i.test(cause instanceof Error ? cause.message : String(cause))) throw cause;
         const failed = request.provider ?? DEFAULT_PROVIDER;
         // An observed refusal in a ~/Documents folder on this machine is remembered: the pick stops offering it there
         // until a success or the block's TTL (provider.folder_block_ttl_ms, 6 h).

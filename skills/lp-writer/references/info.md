@@ -5,8 +5,7 @@ writer-practices — стиль кода внутри owns_paths. Для writer,
 - Не для плана, не для docs-maintain, не для DESIGN.md.
 
 Как открыть шпаргалку
-- /lane-stack:writer-practices info
-- каталог: /lane-stack:info
+- Открой SKILL.md навыка lp-writer и соседние файлы references/
 
 Правила
 - Имена: verb+noun (fetchUser). Bool: is/has/can/should. Не tmp, не data2.

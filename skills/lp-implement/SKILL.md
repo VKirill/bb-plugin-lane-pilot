@@ -19,7 +19,7 @@ Execute tasks from `.agents/pilot/plans/<slug>.md` (or an explicitly named `@<pl
 
 ## Execution Modes (`delegation.mode` in `.agents/pilot/config.json`)
 
-- **`pilot-lanes` (when running as a Lane Pilot PM with `lane_pilot_dispatch_task`):** Dispatch independent ready tasks with non-overlapping `owns_paths` into isolated worktree writer lanes, let critique/verification gates run, and integrate accepted commits.
+- **`pilot-lanes` (when running as a Lane Pilot PM with `lane_pilot_dispatch_writer`):** Dispatch independent ready tasks with non-overlapping `owns_paths` into isolated worktree writer lanes, let critique/verification gates run, and integrate accepted commits.
 - **`bb-subthreads` (native clean BB subthreads on the chosen provider/model):** Delegate each task to a clean BB worker thread (`bb thread spawn --parent-self ...` — BB automatically applies the clean `subthreads` session context without extraneous plugins or skills).
 - **`self` (inline single-agent execution):** Implement ready tasks directly in the current thread, running scoped verification after each task. If multiple independent tasks are ready and subthreads are desired, ask or use `bb-subthreads`.
 

@@ -18,7 +18,7 @@ After a context compaction only the first part of this file comes back, and the 
 | Say that something cannot be done, that you have no command, or that you do not know when it moves; a task waits (provider, quarantine, owner word, merge, secret) | references/ops.md | Symptom, check, the exact tool or command that moves it |
 | Handle a blocked or failed task: critique, `needs_human`, `verdict_block`, retries spent, a red check, a Lane Pilot fault, a folder without git | references/ops-blocked.md | The way out for each reason |
 | Handle a graph that failed or stopped; undo accepted work; know what only the owner decides | references/ops-graphs.md | A failed step may already have acted: check before any rerun |
-| Write or review a task contract (the `plan` of a dispatch, `owns_paths`, `acceptance`, `verification`) | references/contract.md | The strict schema and the L0/L1/L2 tiers |
+| Write or review a task contract (the `plan` of a dispatch, `owns_paths`, `acceptance`, `verification`) | references/contract.md | The strict task-v2 schema, ownership rules, and verification commands |
 | Build, test, publish or start a graph (the Workflow architect, or a PM that patches or starts one) | references/workflows.md | The procedure and the rules that decide whether a graph works |
 | Look up the graph format: node types, fields, edges, expressions, `requires` | references/workflows-format.md | The closed schema |
 | Look up roles, the role-to-model table, per-step skills, plugins, MCP, secrets, actions | references/workflows-runtime.md | What a step can reach |

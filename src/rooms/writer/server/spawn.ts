@@ -140,6 +140,8 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
       // The core cannot host this provider under the PM's session policy: the chain takes the next writer instead of a 500.
       if (!coreHostsRequiredProvider(bb, writerProviderId)) {
         const reason = `writer_provider_unavailable:core_unsupported:${writerProviderId}`;
+        services.providerBreaker?.record?.(breakerKey(writerProviderId, writerModel), "exhausted", Date.now(), Date.now() + LAUNCH_PARITY_HOLD_MS);
+        unusedTrial = null;
         return { ok:false, status:finishSpawn(input.attemptId, reason), reason, attemptId:input.attemptId };
       }
       const requestedServiceTier = input.emergency ? "default" as const : bbServiceTier(writerServiceTier(settings));
@@ -307,6 +309,10 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
       }
       if (cause instanceof WriterSelectionError) {
         const reason = cause.message;
+        if (/^writer_(provider|model)_unavailable:/.test(reason) && selectedProviderId && selectedModel) {
+          services.providerBreaker?.record?.(breakerKey(selectedProviderId, selectedModel), "exhausted", Date.now(), Date.now() + LAUNCH_PARITY_HOLD_MS);
+          unusedTrial = null;
+        }
         return { ok:false, status:finishSpawn(input.attemptId, reason), reason, attemptId:input.attemptId };
       }
       // Only a spawn that is still being made is unknown. A failure after the thread was bound (the attempt is running) is

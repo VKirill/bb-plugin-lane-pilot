@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, rmdir } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { bestEffort, spawnAsync } from "@lane-pilot/kit";
@@ -31,6 +32,9 @@ async function dropGateScratch(dir:string):Promise<void> {
 const GATE_OUTPUT_LIMIT = 4 * 1024 * 1024;
 
 export async function runGateOnHost(input:{basePath:string;command:string;timeoutSec:number}):Promise<{exitCode:number;stdout:string;stderr:string;head:string|null}> {
+  if (!existsSync(input.basePath)) {
+    return { exitCode:1, stdout:"", stderr:`working directory does not exist: ${input.basePath}`, head:null };
+  }
   const ran=await spawnAsync("/bin/bash",["-lc",input.command],{cwd:input.basePath,timeout:input.timeoutSec*1000,maxBuffer:64*1024*1024});
   const head=await spawnAsync("git",["rev-parse","HEAD"],{cwd:input.basePath,timeout:30_000});
   const killed=[ran.error?.message,ran.signal?`killed by ${ran.signal}`:null].filter(Boolean).join("; ");

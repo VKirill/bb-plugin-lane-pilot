@@ -132,12 +132,12 @@ export function changelogCommand(line: string, runId: string): string {
   const b64 = Buffer.from(line, "utf8").toString("base64");
   return [
     "set -e", "f=.agents/CHANGELOG.md", "mkdir -p .agents",
+    "for _ in 1 2 3 4 5; do [ ! -e .git/index.lock ] && break; sleep 1; done",
     `[ -f "$f" ] || printf '# Changelog\\n\\n' > "$f"`,
     `if [ -s "$f" ] && [ -n "$(tail -c1 "$f")" ]; then echo >> "$f"; fi`,
     `printf %s '${b64}' | base64 --decode >> "$f"`,
     `if git check-ignore -q "$f"; then echo none; exit 0; fi`,
-    `git add -- "$f"`,
-    `git commit -q --no-verify -m 'chore(progress): changelog after ${runId}' --only -- "$f"`,
+    `for i in 1 2 3; do git add -- "$f" && git commit -q --no-verify -m 'chore(progress): changelog after ${runId}' --only -- "$f" && break; [ "$i" -lt 3 ] && sleep 1; done`,
     "git rev-parse HEAD",
   ].join("\n");
 }

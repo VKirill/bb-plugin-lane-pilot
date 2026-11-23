@@ -10,7 +10,7 @@ export const browserQaInputSchema = z.object({
   envClass:z.enum(["local","staging","preview","production","unknown"]), viewports:z.string().regex(/^\d{2,4}(,\d{2,4}){0,2}$/),
   authorized:z.boolean(), provider:z.enum(["codex"]), model:z.string().max(120).optional(),
   reasoningEffort:z.enum(["low","medium","high","xhigh","max"]).optional(),
-  backend:z.enum(["live-chrome","chrome-qa","headless"]), timeoutSec:z.number().int().min(30).max(1800),
+  backend:z.enum(["live-chrome","chrome-qa","headless"]), timeoutSec:z.number().int().min(30).max(2400),
 }).strict();
 
 export type BrowserQaInput = z.infer<typeof browserQaInputSchema>;

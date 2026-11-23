@@ -47,7 +47,8 @@ export function mountRulesScanGraph(ctx: ServerCore, services: Services): void {
     } catch (cause) {
       if (stopped(c)) throw cause;
       error = cause;
-      limit = providerLimitNotice((cause instanceof Error ? cause.message : String(cause)).slice(0, 400));
+      const msg = (cause instanceof Error ? cause.message : String(cause)).slice(0, 400);
+      limit = providerLimitNotice(msg) ?? (/vk_required_session_policy_un|thread_provisioning_failed|thread_command_failed|thread\.start failed|provider_not_started/i.test(msg) ? msg : null);
     }
     if (!limit) { if (first) return first; throw error; }
     noteProviderLimit(ctx.bb, analyzer.providerId, analyzer.model, limit);

@@ -5,17 +5,11 @@ docs-maintain — живые docs/: пакеты + функциональнос�
 - После дневных коммитов. Не wiki/, не TODO/, не .agents/ (и не устаревший docs/plans/). В чате Lane Pilot эту работу делает его ночной проход docs (см. врезку в SKILL.md); команды ниже — терминальный харнесс.
 
 Как открыть шпаргалку
-- /lane-stack:docs-maintain info
-- каталог: /lane-stack:info
+- Открой SKILL.md навыка lp-docs и соседние файлы references/
 
-Запуск
-- adoc → Документация → Enabled → Apply
-  (паспорт тонкий → project-onboard, потом wiki)
-- docs-init-chain /path/to/repo
-- docs-maintain-project /path/to/repo
-- docs-maintain-project /path/to/repo lint
-- docs-maintain-all --if-hour
-- агент: сначала project-onboarder, потом docs-maintainer
+Запуск в BB Lane Pilot
+- Ночной проход графа `lp.docs-night` обновляет `docs/` автоматически по расписанию (или вручную через `bb lane-pilot docs-nightly`)
+- Настройки: `docs.enabled`, `docs.maintain`, `docs.since`, `docs.page_cap`, `docs.hour`, `docs.review`
 
 Как работает
 1) Паспорт тонкий — ночной раннер зовёт project-onboard, потом wiki (не BLOCKED).

@@ -228,6 +228,7 @@ export async function runWorkflowTool(deps: WorkflowToolDeps, params: { workflow
     // The run goes on in the background: its steps report through lane_pilot_workflow_status, and a failure of the drive is only logged.
     started.done.catch((cause: unknown) => deps.warn(`Lane Pilot workflow run ${started.runId} (${workflow.id}) stopped with an error: ${cause instanceof Error ? cause.message : String(cause)}`));
     const status = deps.engine().get(started.runId)?.status ?? "running";
+    if (["succeeded", "failed", "blocked", "interrupted", "canceled", "not_verified"].includes(status)) noteWorkflowReadByPm(started.runId);
     return JSON.stringify({
       workflowRunId: started.runId, status, workflow: workflow.id, ...(unverified.length ? { notChecked: unverified } : {}),
       note: started.created

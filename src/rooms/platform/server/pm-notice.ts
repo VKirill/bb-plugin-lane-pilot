@@ -20,6 +20,25 @@ export async function sendPmNotice(bb: Pick<BbPluginApi, "sdk">, threadId: strin
 
 const activeWorkflowWaiters = new Map<string, number>();
 const readWorkflowRuns = new Map<string, number>();
+const activeWriterWaiters = new Map<string, number>();
+
+/** Marks a PM chat as actively inside `lane_pilot_wait_writer` so mid-flight background alerts do not queue duplicate turns. */
+export function beginWriterWait(pmThreadId: string): () => void {
+  activeWriterWaiters.set(pmThreadId, (activeWriterWaiters.get(pmThreadId) ?? 0) + 1);
+  let done = false;
+  return () => {
+    if (done) return;
+    done = true;
+    const next = (activeWriterWaiters.get(pmThreadId) ?? 1) - 1;
+    if (next <= 0) activeWriterWaiters.delete(pmThreadId);
+    else activeWriterWaiters.set(pmThreadId, next);
+  };
+}
+
+/** True while a PM chat is synchronously awaiting `lane_pilot_wait_writer`. */
+export function isWriterWaitActive(pmThreadId: string | null | undefined): boolean {
+  return Boolean(pmThreadId && (activeWriterWaiters.get(pmThreadId) ?? 0) > 0);
+}
 
 /** Marks a workflow run as actively awaited by a synchronous PM tool (`wait_specialist`, `wait_errand`, `wait_scout`) so its completion does not also queue a duplicate PM notice. */
 export function beginWorkflowWait(workflowRunId: string): () => void {

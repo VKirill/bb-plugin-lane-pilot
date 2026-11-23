@@ -17,9 +17,11 @@ Everything of one task is in its home, `.agents/tasks/<task-id>/`, in the base c
 - A dependent starts only when its dependencies are accepted and merged; its worktree is cut from that `main`. A failed task holds only its own dependents (up to 6 hours, then they return to the PM as blocked); independent tasks go on.
 - Two tasks whose `owns_paths` overlap do not run together: link them with `depends_on`.
 
-## Plan critique
+## Reconnaissance and plan critique
 
-The plan critic runs for risk high or critical, for 3 or more write tasks, or for 8 or more `owns_paths` at any risk. With `plan_critique.revise_by` = `planner` (the default) a returned plan goes back to the planner, which revises it in its own session up to 3 rounds (`plan_critique.max_rounds`); a fresh critic judges every round. The planner changes the plan text, `read_first` and `verification`; `objective`, `acceptance`, `owns_paths`, `never_touch`, `expected_outputs`, `depends_on` and `risk` stay the PM's. Only what the planner cannot fix, or three spent rounds, reaches the PM (`planner_rounds_exhausted`, `planner_stopped`); `revise_by` = `pm` keeps the old path where the PM fixes every return.
+- **Scout-first reconnaissance:** Before authoring an unfamiliar multi-file plan (or when running a multi-angle audit), call `lane_pilot_helpers {action:"scout"}` (`goal`, `scope?`, `files?`, optional 2–6 `angles`; omit `angles` for the 3 parallel scouts: `architecture`, `patterns`, `dependencies`) and write the plan once from its `file:line` report. When `scout` has already succeeded in the run, `standard` quality mode skips post-plan `pm-read` and LLM `plan-critique` (`scouted_before_plan`) while keeping deterministic structural checks; `full` mode still runs LLM critique.
+- **Post-plan critique (when scout did not run or in `full` mode):** The plan critic runs when `plan_critique.enabled` is on and the task meets the threshold (high/critical risk, `repo_scope`, 3+ write tasks, or 8+ `owns_paths`). With `plan_critique.revise_by` = `planner` (the default) a returned plan goes back to the planner up to 3 rounds (`plan_critique.max_rounds`).
+- **Writer turns:** Writers run with no default tool-call ceiling (`writer.max_turns` unset/0 = uncapped; `writer.enforce_appetite_minutes` unset/off = `appetite.minutes` is advisory only). Stalls are caught by spin and dead-silence sweeps.
 
 ## Who answers the writer, what waits for the owner
 

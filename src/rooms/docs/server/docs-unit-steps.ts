@@ -6,7 +6,7 @@ import { sha256 } from "../../tasks";
 import { projectRoleField } from "../../runs/server";
 import { loadProjectSettings } from "../../storage";
 import { configuredSetting } from "../../contracts/server";
-import { documentaryGateOf, modelCatalogOf, resolveSpawnModel, spawnUsageOf, graphStepMetadata } from "../../platform/server";
+import { documentaryGateOf, modelCatalogOf, resolveSpawnModel, setAsideOnStartFailure, spawnUsageOf, graphStepMetadata } from "../../platform/server";
 import { docsRepairPrompt, docsSelection, docsSinceEpoch, flowDocsWritable, nightlyDocsPrompt, nightlyDocsWritable, parseDocsSettings } from "../docs";
 import type { DocsUnit } from "../docs";
 import { blockingDocsFindings, buildBacklinks, buildDocsIndex, citedFiles, docsCompletenessGaps, isDesignCanon, isDocsIndex, lintCitationClaims, lintDocsPages, oversizedPageFindings, pagesToRefresh, uncataloguedPages, withCitedSources, withVerifiedConfidence } from "../docs-lint";
@@ -164,13 +164,23 @@ runId:string;stepKey:string;nodeId:string},stop:()=>string|null,retry=""):Promis
         const written=await bestEffort(bb.log, `docs material ${rel}`, bb.sdk.files.write({hostId:place.hostId,rootPath:place.path,path:resolve(place.path,rel),content:material,contentEncoding:"utf8",createParents:true}).then(()=>true), false);
         if(written) materialPath=rel;
       }
-      const threadId=await spawnDocsThread(n,{projectId:i.projectId,visibility:"hidden",title:`Lane Pilot docs: ${basename(place.path)}${unit.workspace?` · ${unit.workspace.path}`:unit.flow?` · flow ${unit.flow.slug}`:""}`,
-        ...writerExecutionSelection(selection.providerId,selection.model,effort,tier),
-        ...projectRoleField(bb,db,i.projectId,selection.providerId,"docs-maintainer"),
-        prompt:nightlyDocsPrompt({since:docs.since,hasDocs:plan.hasDocs,changed:plan.changed,refresh:plan.refresh,anchorsPath:plan.anchors?.briefPath,deploy:plan.anchors?.deploy??false,missingPages:plan.gaps.missingPages,uncoveredCore:plan.gaps.uncoveredCore,
-          agent:typeof settings["docs.agent"]==="string"?settings["docs.agent"] as string:undefined,unit,doubts:plan.doubts,decisionDrafts:plan.decisionDrafts,assignment:i.assignment||undefined,...(materialPath?{materialPath}:{})}),
-        environment:{type:"host",hostId:place.hostId,workspace:{type:"unmanaged",path:place.path}},
-        pluginMetadata:{role:"docs-nightly",stageId:"docs-nightly",spawnId:`${i.projectId}:${sha256(`${place.path}\n${label}`).slice(0,12)}:${plan.localDate}${retry}`,...graphStepMetadata(step)}});
+      let threadId:string;
+      try {
+        threadId=await spawnDocsThread(n,{projectId:i.projectId,visibility:"hidden",title:`Lane Pilot docs: ${basename(place.path)}${unit.workspace?` · ${unit.workspace.path}`:unit.flow?` · flow ${unit.flow.slug}`:""}`,
+          ...writerExecutionSelection(selection.providerId,selection.model,effort,tier),
+          ...projectRoleField(bb,db,i.projectId,selection.providerId,"docs-maintainer"),
+          prompt:nightlyDocsPrompt({since:docs.since,hasDocs:plan.hasDocs,changed:plan.changed,refresh:plan.refresh,anchorsPath:plan.anchors?.briefPath,deploy:plan.anchors?.deploy??false,missingPages:plan.gaps.missingPages,uncoveredCore:plan.gaps.uncoveredCore,
+            agent:typeof settings["docs.agent"]==="string"?settings["docs.agent"] as string:undefined,unit,doubts:plan.doubts,decisionDrafts:plan.decisionDrafts,assignment:i.assignment||undefined,...(materialPath?{materialPath}:{})}),
+          environment:{type:"host",hostId:place.hostId,workspace:{type:"unmanaged",path:place.path}},
+          pluginMetadata:{role:"docs-nightly",stageId:"docs-nightly",spawnId:`${i.projectId}:${sha256(`${place.path}\n${label}`).slice(0,12)}:${plan.localDate}${retry}`,...graphStepMetadata(step)}});
+      } catch(cause) {
+        const msg=(cause instanceof Error?cause.message:String(cause)).slice(0,400);
+        if(!retry&&!pluginStopped(cause)&&!ctx.isDisposed()&&(setAsideOnStartFailure(bb,`docs unit ${label}`,selection.providerId,selection.model,msg)||providerLimitNotice(msg))){
+          bb.log.warn(`docs unit ${label}: ${selection.providerId}/${selection.model} could not start (${msg.slice(0,160)}); rerunning on the next model`);
+          return await writeDocsUnit(n,i,plan,step,stop,":start");
+        }
+        throw cause;
+      }
       // From here on the unit's progress is saved, so a plugin reload picks the same agent thread up again.
       record={version:1,projectId:i.projectId,place,...(i.basePath&&i.basePath!==place.path?{basePath:i.basePath}:{}),label,unit,threadId,phase:"writing",beforeDirty:plan.beforeDirty,localDate:plan.localDate,
         since:docs.since,roots:i.roots,workspaces:i.workspaces,hasDocs:plan.hasDocs,changedCount:plan.changedCount,refresh:plan.refresh,gaps:plan.gaps,requirements:plan.requirements,

@@ -14,10 +14,10 @@
  */
 
 /** Roles that read the project and answer; nothing they are told to do writes. */
-const READ_ONLY_ROLES: ReadonlySet<string> = new Set(["plan-critic", "specialist-reviewer", "pm-reader", "gate-triage"]);
+const READ_ONLY_ROLES: ReadonlySet<string> = new Set(["plan-critic", "plan-critic-light", "specialist-reviewer", "pm-reader", "gate-triage"]);
 
-/** The roles Claude Code may also lose its edit tools for: the code critic keeps its Bash (git), only the file editors go. */
-const NO_EDITOR_ROLES: ReadonlySet<string> = new Set([...READ_ONLY_ROLES, "code-critic"]);
+/** The roles Claude Code may also lose its edit tools for: the code critic and scout keep Bash (read-only git/rg), only the file editors go. */
+const NO_EDITOR_ROLES: ReadonlySet<string> = new Set([...READ_ONLY_ROLES, "code-critic", "scout"]);
 
 type AcpTuning = { mode?: string; args?: string[] };
 

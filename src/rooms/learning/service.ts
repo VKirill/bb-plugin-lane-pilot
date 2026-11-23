@@ -120,7 +120,7 @@ export function createLearning(ctx: ServerCore, services: Services) {
     if (!place) throw new Error("no_host");
     const analyzer = await services.ruleScan.analyzerFor(projectId, { hostId: place.hostId, path: place.path });
     if (!analyzer) throw new Error("no_analyzer_model");
-    return await services.ruleScan.runAnalyzer(place.threadProjectId, `Learning from owner messages · ${label}`.slice(0, 160), prompt, { hostId: place.hostId, path: place.path }, analyzer, { learning: true });
+    return await services.ruleScan.runAnalyzer(place.threadProjectId, `Learning from owner messages · ${label}`.slice(0, 160), prompt, { hostId: place.hostId, path: place.path }, analyzer, { learning: true }, "rules-analyzer");
   }
 
   /** The sections of the chat a message was said in: a PM chat's run scopes, else the folder its workspace sits in. */

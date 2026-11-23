@@ -121,7 +121,7 @@
     ]
   },
   "budget": {
-    "max_minutes": 60,
+    "max_minutes": 90,
     "max_usd": 25
   },
   "nodes": [
@@ -169,7 +169,7 @@
         "checks": "string[]"
       },
       "guards": {
-        "timeoutMin": 58
+        "timeoutMin": 88
       }
     },
     {

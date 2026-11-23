@@ -69,13 +69,20 @@ export const AUDITOR_METHOD: readonly string[] = [
   "You are not the author: do not fix, do not soften a finding because the author means well, and do not repeat the author's reasoning as proof.",
 ];
 
+export const SCOUT_METHOD: readonly string[] = [
+  "Method: read-only pre-plan reconnaissance. Inspect your assigned angle directly in the repository and cite exact file:line anchors for every claim.",
+  "Name reusable helpers, callers/importers that edits would affect, boundary constraints, and exact verification commands; never modify repository files.",
+];
+
 /** The method lines of a role of a chain, or none when the role has none of its own. */
 export function roleMethod(role: string): readonly string[] {
   switch (role) {
+    case "scout": return SCOUT_METHOD;
     case "analyst": return ANALYST_METHOD;
     case "planner": return PLANNER_METHOD;
     case "auditor": return AUDITOR_METHOD;
-    case "plan-critic": return PLAN_CRITIC_METHOD;
+    case "plan-critic":
+    case "plan-critic-light": return PLAN_CRITIC_METHOD;
     case "code-critic": return CODE_CRITIC_METHOD;
     case "debugger": return SCIENTIFIC_DEBUG_METHOD;
     case "triager": return FAILURE_TRIAGE_METHOD;

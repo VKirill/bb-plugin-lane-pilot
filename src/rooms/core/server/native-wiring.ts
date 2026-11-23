@@ -1,4 +1,6 @@
-import { getAttempt } from "../../storage";
+import { getAttempt, loadProjectSettings } from "../../storage";
+import { GLOBAL_SETTINGS_PROJECT_ID } from "@lane-pilot/settings-catalog";
+import { switchOn } from "@lane-pilot/models";
 import { handleNativeDispatch, mentionContext, nativeContributedEnv } from "../../native-agent";
 import { nativeSelectionKey, nativeThreadKey } from "../../native-agent"
 import { NATIVE_MENTION_PROVIDER } from "../../contracts/native-agent-id"
@@ -32,10 +34,14 @@ export function mountNativeWiring(ctx: ServerCore) {
   });
 
   bb.experimental_hooks.on("message.dispatch", async (hookCtx) => {
-    // Owner presence is a mark, not a dispatch decision. A failure here must not refuse the message.
-    void observeOwnerDispatch(bb, hookCtx).catch((cause: unknown) => {
-      bb.log.warn(`owner presence: ${cause instanceof Error ? cause.message : String(cause)}`);
-    });
+    // Owner presence is opt-in (writer.respect_owner_presence, default off): writers run in isolated worktrees without pausing on chat messages.
+    const respectOwner = typeof (db as { prepare?: unknown })?.prepare !== "function"
+      || switchOn(loadProjectSettings(db, GLOBAL_SETTINGS_PROJECT_ID), "writer.respect_owner_presence");
+    if (respectOwner) {
+      void observeOwnerDispatch(bb, hookCtx).catch((cause: unknown) => {
+        bb.log.warn(`owner presence: ${cause instanceof Error ? cause.message : String(cause)}`);
+      });
+    }
     const verdict = await handleNativeDispatch(bb, nativeHost, hookCtx, db);
     // The standard-tier check never reopens a wait or reject the native dispatch already made; it only refuses an
     // otherwise-proceed Lane Pilot turn that still carries a nondefault tier (a retry or a queued row saved while

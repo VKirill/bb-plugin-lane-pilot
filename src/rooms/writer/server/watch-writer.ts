@@ -31,13 +31,13 @@ export interface WatchWriterDeps {
 export async function watchWriterRun(deps: WatchWriterDeps): Promise<Record<string, unknown> | null> {
   const { ctx, services, input, facts, providerFailed, holdProviderLimit } = deps;
   const { bb, db, getThreadBounded } = ctx;
-      const budget = services.runBudgetFor(input.runId, loadProjectSettings(db, input.projectId, getRunSettingsScopes(db, input.runId)));
-      // The task's own appetite (contract `appetite`) is watched next to the run's budget: this writer's tokens and the time since the
-      // wait began (a reload starts the clock again: the appetite is then counted generously, never twice).
-      const appetite = input.task.appetite;
+      const runSettings = loadProjectSettings(db, input.projectId, getRunSettingsScopes(db, input.runId));
+      const budget = services.runBudgetFor(input.runId, runSettings);
+      // Task appetite minutes enforce the stage budget unless writer.enforce_appetite_minutes is switched off; run wall/token budgets still apply.
+      const enforceAppetite = runSettings["writer.enforce_appetite_minutes"] === "off" || runSettings["writer.enforce_appetite_minutes"] === false ? undefined : input.task.appetite;
       const attemptStartedAt = Date.now();
       let writerTokens: number | null = null;
-      const watchBudget = budget.snapshot().limits.maxWallMs !== undefined || budget.snapshot().limits.maxTokens !== undefined || appetite?.minutes !== undefined;
+      const watchBudget = budget.snapshot().limits.maxWallMs !== undefined || budget.snapshot().limits.maxTokens !== undefined || enforceAppetite?.minutes !== undefined;
       const noteWriterTokens = async () => {
         if (budget.snapshot().limits.maxTokens === undefined) return;
         try {
@@ -46,17 +46,17 @@ export async function watchWriterRun(deps: WatchWriterDeps): Promise<Record<stri
           if (usage) { writerTokens = usage.totalTokens; budget.noteTokens(usage.threadId, usage.totalTokens); }
         } catch (cause) { ctx.log(`writer ${input.taskId}: usage events unreadable: ${cause instanceof Error ? cause.message : String(cause)}`); }
       };
-      // Stage budget question: at four fifths of the task's appetite minutes the PM is asked once whether to extend them (lane_pilot_update_task)
+      // Stage budget question: at four fifths of enforced appetite minutes the PM is asked once whether to extend them (lane_pilot_update_task)
       // or let the writer stop. The appetite's tokens are a forecast only (packages/resilience/src/appetite.ts): no question, no stop.
       let budgetAsked = false;
       const askBudgetOnce = () => {
-        if (budgetAsked || !appetite?.minutes || !input.pmThreadId) return;
-        const timeUsed = (Date.now() - attemptStartedAt) / (appetite.minutes * 60_000);
+        if (budgetAsked || !enforceAppetite?.minutes || !input.pmThreadId) return;
+        const timeUsed = (Date.now() - attemptStartedAt) / (enforceAppetite.minutes * 60_000);
         if (timeUsed < 0.8) return;
         budgetAsked = true;
-        void bestEffort(ctx.log, "writer budget note", Promise.resolve().then(() => sendServiceMessage(bb as never, { threadId:input.pmThreadId!, mode:"queue-if-active", text:`[Lane Pilot] Task ${input.taskId} has spent ${Math.round(timeUsed * 100)}% of its appetite (${Math.round((Date.now() - attemptStartedAt) / 60_000)}/${appetite.minutes} min). Its writer stops at the appetite: raise it with lane_pilot_update_task now if the work is worth more, or let it stop.` })), undefined);
+        void bestEffort(ctx.log, "writer budget note", Promise.resolve().then(() => sendServiceMessage(bb as never, { threadId:input.pmThreadId!, mode:"queue-if-active", text:`[Lane Pilot] Task ${input.taskId} has spent ${Math.round(timeUsed * 100)}% of its appetite (${Math.round((Date.now() - attemptStartedAt) / 60_000)}/${enforceAppetite.minutes} min). Its writer stops at the appetite: raise it with lane_pilot_update_task now if the work is worth more, or let it stop.` })), undefined);
       };
-      const overBudget = () => { askBudgetOnce(); return runningWriterBudgetStop(budget.check()) ?? appetiteStop(appetite, { tokens:writerTokens, elapsedMs:Date.now() - attemptStartedAt }); };
+      const overBudget = () => { askBudgetOnce(); return runningWriterBudgetStop(budget.check()) ?? appetiteStop(enforceAppetite, { tokens:writerTokens, elapsedMs:Date.now() - attemptStartedAt }); };
       const stopRunningWriter = async (reason:string) => {
         const current = await bestEffort(ctx.log, "writer thread status", getThreadBounded(input.writerThreadId), null);
         const status = stringAt(current, "status");

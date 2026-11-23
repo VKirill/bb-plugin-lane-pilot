@@ -198,9 +198,9 @@ export async function runPlanCritique(input:{bb:BbPluginApi;db:ReturnType<typeof
     recordStage(input.db,{...base,state:"failed",reason,result:{error:reason,policy:"task-risk-v1"}});
     return {allowed:false,reason:`plan_critique_policy_invalid:${reason}`};
   }
-  // When parallel pre-plan scouts already mapped the repository in this run, ordinary low/medium risk tasks skip the
-  // post-plan LLM critic after deterministic structural checks pass; high/critical risk and full mode still run it.
-  if (qualityMode === "standard" && (input.task.risk === "low" || input.task.risk === "medium") && wfHasSucceededLinkedWorkflow(input.db, input.runId, "scout")) {
+  // When parallel pre-plan scouts already mapped the repository in this run, standard-mode tasks skip the post-plan LLM
+  // critic after deterministic structural checks pass; full mode still runs it.
+  if (qualityMode === "standard" && wfHasSucceededLinkedWorkflow(input.db, input.runId, "scout")) {
     recordStage(input.db,{...base,state:"skipped",reason:"scouted_before_plan",result:{
       policy:"scout-first-v1",score:policy.score,writeTaskCount:policy.writeTaskCount,decision:"scouted_before_plan",
       taskRisk:input.task.risk,structuralCoverage:{status:coverageStatus,pathCount:coveragePathCount},structuralFindings,

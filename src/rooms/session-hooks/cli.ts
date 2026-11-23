@@ -322,12 +322,15 @@ function handle(payload: Payload): void {
           };
         } catch { /* a pack that is not JSON is no pack */ }
       }
+      const rawCap = (process.env.LANE_SUBAGENT_CAP ?? "").trim();
+      const envCap = /^(0|off|false|none)$/i.test(rawCap) ? Number.MAX_SAFE_INTEGER : (/^[1-9]\d*$/.test(rawCap) ? Number(rawCap) : undefined);
       const decision = pretaskDecision({
         usage: snap && Array.isArray(snap.windows) ? { skipSetByHuman: snap.skipSetByHuman === true, skipPercent: snap.skipPercent, windows: snap.windows.filter((w) => typeof w?.usedPercent === "number"), model: String(input.model ?? readText(join(dir, "model.txt"))), at: typeof snap.at === "string" ? snap.at : undefined } : undefined,
         role: process.env.LANE_PILOT_ROLE ?? "",
         kind: String(input.subagent_type ?? input.kind ?? "general-purpose"),
         background: input.run_in_background === true,
         spawned,
+        ...(envCap !== undefined ? { cap: envCap } : {}),
         prompt: typeof input.prompt === "string" ? input.prompt : "",
         claims: readLedger(dir).files,
         rules: layers.rules,
