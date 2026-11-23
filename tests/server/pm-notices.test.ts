@@ -4,6 +4,7 @@ import plugin from "../../server";
 import { createRun, openDatabase, savePrototypeConfig, setRunThread } from "../../src/rooms/plugin-db";
 import { councilDecisionText, councilEndedText, sendCouncilNotice } from "../../src/rooms/council/server/pm-notice";
 import { maybeNotifyWorkflowRun, notifyWorkflowIfEnded } from "../../src/rooms/workflow/server/pm-notice";
+import { SCOUT_GRAPH } from "../../src/rooms/critique/server/scout-graph";
 import { beginWorkflowWait, noteWorkflowReadByPm } from "../../src/rooms/platform/server";
 import { SCHEDULE_RUN_KEY_PREFIX } from "../../src/rooms/contracts";
 import { forgetSecrets, registerSecrets } from "@lane-pilot/kit";
@@ -367,6 +368,8 @@ describe("lead hand-over runs", () => {
     }
     noteWorkflowReadByPm("wfrun_read_1");
     expect(await maybeNotifyWorkflowRun({ bb, log: () => undefined, pmThreadId, startedBySchedule: false, run: runRow({ id: "wfrun_read_1", workflow_id: "errand", output_json: JSON.stringify({ state: "done", output: "ok" }) }) })).toBe(false);
+    noteWorkflowReadByPm("wfrun_scout_1");
+    expect(await maybeNotifyWorkflowRun({ bb, log: () => undefined, pmThreadId, startedBySchedule: false, run: runRow({ id: "wfrun_scout_1", workflow_id: SCOUT_GRAPH, output_json: JSON.stringify({ report: "ok" }) }) })).toBe(false);
     expect(sends).toEqual([]);
   });
 });
