@@ -90,7 +90,14 @@ const literalOwners = (file) => {
   if (byPath.length) return { tests: byPath, via: rel };
   const name = basename(file);
   const byName = testFiles.filter((test) => texts.get(test).includes(name));
-  return { tests: byName, via: name };
+  if (byName.length) return { tests: byName, via: name };
+  const wf = /^workflows\/([^/]+)\.json$/.exec(rel);
+  if (wf) {
+    const wfId = wf[1];
+    const byWfId = testFiles.filter((test) => texts.get(test).includes(`"${wfId}"`) || texts.get(test).includes(`'${wfId}'`));
+    if (byWfId.length) return { tests: byWfId, via: wfId };
+  }
+  return { tests: [], via: name };
 };
 
 const selected = new Set();

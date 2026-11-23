@@ -1,6 +1,7 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { createAttempt, createRun, createTask, freezeRunBinding, getAttempt, hasRunAdmission, openDatabase, setAttemptWorkspace, setRunThread } from "../../src/rooms/plugin-db";
+import { createGitWriter } from "../../src/rooms/core/server/git-writer";
 import { createProjectGitDispatch, overlappingLiveRuns } from "../../src/rooms/project-git/server";
 
 const cleanups:Array<()=>Promise<void>>=[];
@@ -164,6 +165,7 @@ it("resolves projectRoot from registered project-folders sections when outside p
   await expect(f.dispatch({threadId:"pm-thread",projectId:"project",task:{...f.task,project_cwd:"/Users/me/Projects/section-a"}})).resolves.toMatchObject({ok:true,state:"queued"});
   expect(f.projectGit.resolveScope).toHaveBeenCalledWith(expect.objectContaining({projectRoot:"/Users/me/Projects/section-a",sectionPath:"/Users/me/Projects/section-a"}));
   expect(f.projectGit.resolveExistingScope).not.toHaveBeenCalled();
+  expect(typeof createGitWriter).toBe("function");
 });
 
 it("does not trust an outside source path without a managed environment binding", async()=>{
