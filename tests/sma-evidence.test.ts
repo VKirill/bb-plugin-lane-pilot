@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { SMA_ENTRIES } from "../src/rooms/sma-map/entries";
@@ -11,10 +12,18 @@ const root = join(import.meta.dirname, "..");
 const empty = (): RegionEvidence[] => SMA_REGIONS.map(() => ({}));
 const check = (byRegion: RegionEvidence[], entries = SMA_ENTRIES) => evidenceProblems({ byRegion, nodes: SMA_NODES, entries, root });
 
+const ATTEST_REGION_FILES = [
+  "r00.json", "r01.json", "r02.json", "r03.json", "r04.json", "r05.json", "r06.json", "r07.json", "r08.json", "r09.json",
+  "r10.json", "r11.json", "r12.json", "r13.json", "r14.json", "r15.json", "r16.json", "r17.json", "r18.json", "r19.json",
+  "r20.json", "r21.json", "r22.json", "r23.json", "r24.json", "r25.json", "r26.json", "r27.json", "r28.json",
+] as const;
+
 describe("the per-node evidence registry (sma-parity-tz.md §4)", () => {
   it("has one file per region, and every line validates against the map, the settings registry and the source", () => {
     expect(SMA_EVIDENCE_BY_REGION).toHaveLength(SMA_REGIONS.length);
     expect(SMA_ATTEST_BY_REGION).toHaveLength(SMA_REGIONS.length);
+    expect(ATTEST_REGION_FILES).toHaveLength(SMA_REGIONS.length);
+    for (const file of ATTEST_REGION_FILES) expect(existsSync(join(root, "src/rooms/sma-map/attest", file))).toBe(true);
     expect(evidenceProblems({ byRegion: [...SMA_EVIDENCE_BY_REGION], nodes: SMA_NODES, entries: SMA_ENTRIES, attest: SMA_ATTEST, root })).toEqual([]);
   });
 
