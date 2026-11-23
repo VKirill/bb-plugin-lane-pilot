@@ -230,8 +230,9 @@ describe("daemon boot: settings, passport, queue and ledger", () => {
     const ctx = createCore(bb, db);
     const frozen = buildRunPolicy({ "ops.pool_size": 7, "ops.verify_pool_size": 3, "writer.max_turns": 40 });
     expect(frozen).toEqual({ schemaVersion: 1, pools: { provider: 7, verification: 3 }, maxTurns: 40 });
-    // Nothing set: the factory defaults.
-    expect(buildRunPolicy({})).toEqual({ schemaVersion: 1, pools: { provider: 15, verification: 2 }, maxTurns: WRITER_TURN_CEILING_DEFAULT });
+    // Nothing set: the factory defaults (no writer turn ceiling).
+    expect(WRITER_TURN_CEILING_DEFAULT).toBeNull();
+    expect(buildRunPolicy({})).toEqual({ schemaVersion: 1, pools: { provider: 15, verification: 2 } });
     createRun(db, "r_first", "proj", "bb", null, "none", frozen, null);
     // The settings change after the run began: a run made now takes the new numbers, the first keeps its copy.
     createRun(db, "r_second", "proj", "bb", null, "none", buildRunPolicy({ "ops.pool_size": 2 }), null);
