@@ -2,7 +2,7 @@
 title: Workflow Engine Gotchas
 type: gotchas
 created: 2026-10-10
-updated: 2026-11-14
+updated: 2026-11-23
 status: active
 confidence: medium
 tags: [workflow-engine, gotchas]
@@ -41,11 +41,11 @@ TL;DR: The main sharp edges are executor side-effect recovery, what counts as a 
 
 ### A tested draft can become draft again after a content edit
 
-**Problem:** Non-UI edits and restore increment the version and set status to `draft`; test receipts are stored only for the matching version (`packages/workflow-engine/src/draft-store.ts:130-145`, `packages/workflow-engine/src/draft-store.ts:165-173`).
+**Problem:** Non-UI edits and restore increment the version and set status to `draft`; test receipts are stored only for the matching version (`packages/workflow-engine/src/draft-store.ts:127-152`, `packages/workflow-engine/src/draft-store.ts:172-180`).
 
 **Risk:** A prior green result does not certify changed workflow content.
 
-**Workaround:** Run the draft tests again after a definition edit. Canvas-only UI placement changes update the current snapshot without changing workflow version (`packages/workflow-engine/src/draft-store.ts:130-136`).
+**Workaround:** Run the draft tests again after a definition edit. Canvas-only UI placement changes update the current snapshot without changing workflow version (`packages/workflow-engine/src/draft-store.ts:136-143`).
 
 ## Medium
 

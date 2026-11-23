@@ -2,9 +2,9 @@
 title: Workflow Draft Authoring
 type: component
 created: 2026-10-10
-updated: 2026-11-07
+updated: 2026-11-23
 status: active
-confidence: high
+confidence: medium
 tags: [workflow-engine, drafts, authoring]
 sources:
   - packages/workflow-engine/src/draft.ts
@@ -12,56 +12,60 @@ sources:
   - packages/workflow-engine/src/draft-test.ts
   - packages/workflow-engine/src/draft-view.ts
   - packages/workflow-engine/src/files.ts
+  - packages/workflow-engine/src/validate.ts
 ---
 # Workflow Draft Authoring
 TL;DR: Draft authoring applies validated workflow edits as versioned operations, runs test cases against stubbed executors, and records publication metadata after a guarded file write.
 
 ## Purpose
 
-The authoring API stores editable definitions and version history, applies structured operations, exposes a view/diff for editor clients, runs draft cases through a test engine, and tracks test and publish state (`packages/workflow-engine/src/draft-store.ts:81-109`, `packages/workflow-engine/src/draft-test.ts:117-123`).
+The authoring API stores editable definitions and version history, applies structured operations, exposes a view/diff for editor clients, runs draft cases through a test engine, and tracks test and publish state (`packages/workflow-engine/src/draft-store.ts:87-116`, `packages/workflow-engine/src/draft-test.ts:118-123`).
 
 ## How it works
 
-1. `createDraftStore(db)` returns operations over the draft and version tables. `create` assigns an ID, derives or accepts a workflow ID, creates or copies a definition, and writes version 1 transactionally (`packages/workflow-engine/src/draft-store.ts:81-109`).
-2. `patch` checks existence and optional expected version, applies all draft operations, and refuses the whole patch if an operation cannot be applied (`packages/workflow-engine/src/draft-store.ts:120-128`).
-3. UI-only layout changes update the current version in place. Definition changes increment the version, append history, and return status to `draft` (`packages/workflow-engine/src/draft-store.ts:130-145`).
-4. `checkDraft` validates the resulting definition (`packages/workflow-engine/src/draft.ts:150-157`). Test cases can provide inputs, `humanAnswers`, keyed `stubs`, and `notChecked` declarations (`packages/workflow-engine/src/draft-test.ts:17-32`).
-5. `runDraftTest` preflights and runs each case in a separate `draft-test.<workflow id>` run. External executors are stubbed; pure actions and reducers execute as code unless the case overrides them (`packages/workflow-engine/src/draft-test.ts:118-174`).
-6. `recordTests` marks the current matching version `tested` only when the run is complete, at least one case exists, and every result is green. `markPublished` records path, hash, and workflow version for the matching draft version (`packages/workflow-engine/src/draft-store.ts:165-179`).
-7. The host writes the definition with `casWriteWorkflowFile`; it compares the current file hash with the expected hash and atomically renames a temporary file into place (`packages/workflow-engine/src/files.ts:17-39`).
+1. `createDraftStore(db)` returns operations over the draft and version tables. `create` assigns an ID, derives or accepts a workflow ID, creates or copies a definition, and writes version 1 transactionally (`packages/workflow-engine/src/draft-store.ts:87-116`).
+2. `patch` checks existence and optional expected version, applies all draft operations, and refuses the whole patch if an operation cannot be applied (`packages/workflow-engine/src/draft-store.ts:127-133`).
+3. UI-only layout changes update the current version in place. Definition changes (`patch`, `restore`, and `replaceDefinition`) increment the version, append history, and return status to `draft` (`packages/workflow-engine/src/draft-store.ts:136-169`, `packages/workflow-engine/src/draft-store.ts:196-211`).
+4. `checkDraft` validates the resulting definition (`packages/workflow-engine/src/draft.ts:150-155`). Test cases can provide inputs, `humanAnswers`, keyed `stubs`, and `notChecked` declarations (`packages/workflow-engine/src/draft-test.ts:17-33`).
+5. `runDraftTest` preflights and runs each case in a separate `draft-test.<workflow id>` run. External executors are stubbed; pure actions and reducers execute as code unless the case overrides them (`packages/workflow-engine/src/draft-test.ts:118-177`).
+6. `recordTests` marks the current matching version `tested` only when the run is complete, at least one case exists, and every result is green. `markPublished` records path, hash, and workflow version for the matching draft version, while `resetToFactoryBaseline` clears test and publication metadata when rolling a global overlay back to its factory built-in workflow (`packages/workflow-engine/src/draft-store.ts:172-193`).
+7. The host writes the definition with `casWriteWorkflowFile` (comparing the current file hash with the expected hash and atomically renaming a temporary file into place) and can remove a retired or newly rolled-back file with `removeWorkflowFile` (`packages/workflow-engine/src/files.ts:20-45`).
+8. For evolution and 1-click rollback, `listEvolutionDrafts` queries drafts by scope/project/workflow/status, `latestPublishedSnapshot` resolves the active published version snapshot (matching `published` status or `publishedSha256`, falling back to `"copied"` or prior snapshots), and `previousVersionSnapshot` walks earlier versions skipping UI-only equivalents and `loadWorkflow`-invalid snapshots (`packages/workflow-engine/src/draft-store.ts:222-269`, `packages/workflow-engine/src/draft-store.ts:285-311`).
 
 ## Modes and failures
 
 | Branch | Result |
 |---|---|
-| Missing draft | Patch/restore returns `not_found` (`packages/workflow-engine/src/draft-store.ts:123-125`, `packages/workflow-engine/src/draft-store.ts:151-153`). |
-| Expected-version mismatch | Patch/restore returns `version_conflict` with the current version and makes no edit (`packages/workflow-engine/src/draft-store.ts:125`, `packages/workflow-engine/src/draft-store.ts:153`). |
-| Refused operation | Patch returns `refused` with operation-level refusals; no operations are saved (`packages/workflow-engine/src/draft-store.ts:126-128`). |
-| UI-only operation | Stores new UI JSON in current draft and current history row without incrementing version or clearing test/publication state (`packages/workflow-engine/src/draft-store.ts:130-136`). |
-| Definition edit or restore | Increments version and returns status to `draft`; history keeps the prior version and the new one (`packages/workflow-engine/src/draft-store.ts:138-145`, `packages/workflow-engine/src/draft-store.ts:148-161`). |
-| Incomplete, empty, or failing test set | Current version remains `draft`; successful tests require complete=true, a nonempty results list, and every case green (`packages/workflow-engine/src/draft-store.ts:165-173`). |
-| Publish hash conflict | Writer returns `status: conflict` and does not replace the existing file (`packages/workflow-engine/src/files.ts:21-30`). |
+| Missing draft | Patch/restore returns `not_found` (`packages/workflow-engine/src/draft-store.ts:130`, `packages/workflow-engine/src/draft-store.ts:158`). |
+| Expected-version mismatch | Patch/restore returns `version_conflict` with the current version and makes no edit (`packages/workflow-engine/src/draft-store.ts:131`, `packages/workflow-engine/src/draft-store.ts:159`). |
+| Refused operation | Patch returns `refused` with operation-level refusals; no operations are saved (`packages/workflow-engine/src/draft-store.ts:133`). |
+| UI-only operation | Stores new UI JSON in current draft and current history row without incrementing version or clearing test/publication state (`packages/workflow-engine/src/draft-store.ts:136-143`). |
+| Definition edit, restore, or `replaceDefinition` | Increments version and returns status to `draft`; history keeps the prior version and the new one (`packages/workflow-engine/src/draft-store.ts:144-169`, `packages/workflow-engine/src/draft-store.ts:196-211`). |
+| Incomplete, empty, or failing test set | Current version remains `draft`; successful tests require complete=true, a nonempty results list, and every case green (`packages/workflow-engine/src/draft-store.ts:172-180`). |
+| Publish hash conflict | Writer returns `status: conflict` and does not replace the existing file (`packages/workflow-engine/src/files.ts:24-29`). |
+| Invalid `removeWorkflowFile` ID | Throws `workflow id is not a file name` before touching disk (`packages/workflow-engine/src/files.ts:42-44`). |
 
 ## Business rules
 
-- Draft scope is `global` or `project`; project scope attaches the given project ID to the definition (`packages/workflow-engine/src/draft-store.ts:15-16`, `packages/workflow-engine/src/draft-store.ts:94-103`).
-- A `set_meta` operation may change every workflow field except the graph, its version, and its status (`packages/workflow-engine/src/draft.ts:133-140`); the allowed keys include `quality_mode` and `goal_audit`, and any other key is refused (`packages/workflow-engine/src/draft.ts:36-37`).
-- A draft patch is all-or-nothing if any operation is refused (`packages/workflow-engine/src/draft-store.ts:120-128`).
-- Canvas placement changes do not create a new content version; all other edits invalidate prior test and publication state by setting status to `draft` (`packages/workflow-engine/src/draft-store.ts:130-145`).
-- A test receipt is tied to the exact version number; stale test results are not written when the requested version no longer matches (`packages/workflow-engine/src/draft-store.ts:165-173`).
-- Workflow file IDs must match a lowercase-leading pattern of up to 48 lowercase letters, digits, periods, or hyphens (`packages/workflow-engine/src/files.ts:6`, `packages/workflow-engine/src/files.ts:21-23`).
+- Draft scope is `global` or `project`; project scope attaches the given project ID to the definition (`packages/workflow-engine/src/draft-store.ts:15`, `packages/workflow-engine/src/draft-store.ts:105-112`).
+- A `set_meta` operation may change every workflow field except the graph, its version, and its status (`packages/workflow-engine/src/draft.ts:133-140`); the allowed keys include `category`, `quality_mode`, and `goal_audit`, and any other key is refused (`packages/workflow-engine/src/draft.ts:36-38`).
+- A draft patch is all-or-nothing if any operation is refused (`packages/workflow-engine/src/draft-store.ts:127-133`).
+- Canvas placement changes do not create a new content version; all other edits invalidate prior test and publication state by setting status to `draft` (`packages/workflow-engine/src/draft-store.ts:136-151`).
+- A test receipt is tied to the exact version number; stale test results are not written when the requested version no longer matches (`packages/workflow-engine/src/draft-store.ts:172-180`).
+- Workflow file IDs must match a lowercase-leading pattern of up to 48 lowercase letters, digits, periods, or hyphens (`packages/workflow-engine/src/files.ts:6`, `packages/workflow-engine/src/files.ts:21`, `packages/workflow-engine/src/files.ts:43`).
+- `listEvolutionDrafts` clamps `limit` to `[1, 200]` (default 50) and returns `[]` immediately when `status` is an empty array (`packages/workflow-engine/src/draft-store.ts:228-236`).
 
 ## Public API
 
 | Import | Purpose |
 |---|---|
-| `createDraftStore`, `DraftStore`, `DraftRow`, `PatchResult`, `RestoreResult` | Persist drafts, versions, test results, and publish metadata (`packages/workflow-engine/src/draft-store.ts:40-80`, `packages/workflow-engine/src/draft-store.ts:81-193`). |
+| `createDraftStore`, `DraftStore`, `DraftRow`, `PatchResult`, `RestoreResult`, `EvolutionDraftFilter`, `PublishedSnapshotInfo` | Persist drafts, versions, test results, publish metadata, and evolution/rollback snapshots (`packages/workflow-engine/src/draft-store.ts:40-85`, `packages/workflow-engine/src/draft-store.ts:87-273`). |
 | `draftOpSchema` | Validate edit operation shapes (`packages/workflow-engine/src/draft.ts:24-32`). |
 | `applyDraftOps`, `checkDraft`, `newDraftDefinition` | Validate and apply edit operations and initialize draft definitions (`packages/workflow-engine/src/draft.ts:63-178`). |
-| `DraftTestCase`, `DraftTestResult` | Authored test case definitions and results (`packages/workflow-engine/src/draft-test.ts:17-44`). |
-| `runDraftTest`, `testCasesOf` | Execute authored test cases in the draft harness (`packages/workflow-engine/src/draft-test.ts:72-180`). |
+| `DraftTestCase`, `DraftTestResult` | Authored test case definitions and results (`packages/workflow-engine/src/draft-test.ts:17-55`). |
+| `runDraftTest`, `testCasesOf` | Execute authored test cases in the draft harness (`packages/workflow-engine/src/draft-test.ts:72-177`). |
 | `draftView`, `draftChanges` | Create editor-facing definition and change views (`packages/workflow-engine/src/draft-view.ts:63-102`). |
-| `casWriteWorkflowFile`, `WORKFLOW_FILE_ID` | Publish a definition with content-hash conflict detection (`packages/workflow-engine/src/files.ts:6-39`). |
+| `casWriteWorkflowFile`, `removeWorkflowFile`, `WORKFLOW_FILE_ID` | Publish with content-hash conflict detection and remove retired workflow files (`packages/workflow-engine/src/files.ts:6-45`). |
 
 ## Package shape
 
@@ -71,7 +75,7 @@ The authoring API stores editable definitions and version history, applies struc
 
 The draft table `lane_pilot_wf_draft` is the current editable row and `lane_pilot_wf_draft_version` is the append-only logical history of definition snapshots and operation summaries (`packages/workflow-engine/src/draft-store.ts:11-38`). In memory, `DraftRow` stores the latest definition and test/publication pointers (`packages/workflow-engine/src/draft-store.ts:43-60`).
 
-Test execution creates a `WorkflowEngine` instance (`packages/workflow-engine/src/draft-test.ts:121-123`) whose journal exercises graph routing and deterministic code while replacing host-dependent work with case stubs (`packages/workflow-engine/src/draft-test.ts:118-142`).
+Test execution creates a `WorkflowEngine` instance (`packages/workflow-engine/src/draft-test.ts:118-123`) whose journal exercises graph routing and deterministic code while replacing host-dependent work with case stubs (`packages/workflow-engine/src/draft-test.ts:118-142`).
 
 ## Dependencies
 
@@ -79,7 +83,7 @@ The draft store receives a SQLite database handle (`Database.Database`) from `be
 
 ## Gotchas
 
-- A successful file write with `casWriteWorkflowFile` (`packages/workflow-engine/src/files.ts:21-39`) and calling `markPublished` (`packages/workflow-engine/src/draft-store.ts:176-179`) are separate operations; the caller owns the ordering and must pass the matching version and hash.
+- A successful file write with `casWriteWorkflowFile` (`packages/workflow-engine/src/files.ts:20-39`) and calling `markPublished` (`packages/workflow-engine/src/draft-store.ts:182-186`) are separate operations; the caller owns the ordering and must pass the matching version and hash.
 - Test stubs match multiple keys, including node ID, action, subworkflow ID, and node type; broad keys can affect more than one step (`packages/workflow-engine/src/draft-test.ts:124-142`).
 
 ## Draft operation and display details

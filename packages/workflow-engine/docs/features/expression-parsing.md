@@ -2,7 +2,7 @@
 title: Expression Parsing and Conditions
 type: component
 created: 2026-10-24
-updated: 2026-10-24
+updated: 2026-11-23
 status: active
 confidence: high
 tags: [workflow-engine, expressions, conditions]
@@ -35,13 +35,13 @@ The expression module parses conditions, skip rules, loop filters, and value exp
 | Primary literal | Numeric and quoted tokens become literals; `true`, `false`, and `null` are recognized identifiers (`packages/workflow-engine/src/expr.ts:80-84`, `packages/workflow-engine/src/expr.ts:97-100`). | Literal AST. |
 | List | `[]` is accepted; items parse recursively, and a bare unqualified word becomes a string (`packages/workflow-engine/src/expr.ts:85-96`). | List AST; missing `]` or malformed item fails parsing. |
 | `visits(...)` | Recognized only when the identifier `visits` is followed by `(`; argument must be a string or identifier, then `)` is required (`packages/workflow-engine/src/expr.ts:101-107`). | Visit-count AST, or syntax error for an invalid argument/delimiter. |
-| Reference | Explicit prefixes have fixed kinds; bare names use node scope unless item scope applies (`packages/workflow-engine/src/expr.ts:57-69`). | Reference AST; validation determines whether the target/path exists (`packages/workflow-engine/src/expr.ts:203-230`). |
-| Structured condition | `all` and `any` become left-folded `&&` and `||`; `not` becomes unary negation; leaf operators map to AST operators (`packages/workflow-engine/src/expr.ts:134-151`). | Expression AST. `exists: false` means null equality negated; other `exists` values mean non-null. `notIn` maps to negated `in` (`packages/workflow-engine/src/expr.ts:141-150`). |
-| Invalid structured condition | `conditionSchema` accepts one strict leaf, nonempty bounded `all`/`any`, or recursive `not`; unknown keys and other shapes fail Zod parsing (`packages/workflow-engine/src/schema.ts:51-56`). | Schema issue; no expression AST is produced. |
+| Reference | Explicit prefixes have fixed kinds; bare names use node scope unless item scope applies (`packages/workflow-engine/src/expr.ts:57-69`). | Reference AST; validation determines whether the target/path exists (`packages/workflow-engine/src/expr.ts:204-240`). |
+| Structured condition | `all` and `any` become left-folded `&&` and `||`; `not` becomes unary negation; leaf operators map to AST operators (`packages/workflow-engine/src/expr.ts:134-151`). | Expression AST. `exists: false` means null equality negated; other `exists` values mean non-null (`packages/workflow-engine/src/expr.ts:141-149`). The remaining `CONDITION_OPS` operator `notIn` (`packages/workflow-engine/src/schema.ts:47`) takes the default negation branch to negated `in` (`packages/workflow-engine/src/expr.ts:150`). |
+| Invalid structured condition | `conditionSchema` accepts one strict leaf, nonempty bounded `all`/`any`, or recursive `not`; unknown keys and other shapes fail Zod parsing (`packages/workflow-engine/src/schema.ts:56-61`). | Schema issue; no expression AST is produced. |
 
 ## Business rules
 
-- The structured `all` and `any` arrays must contain 1–20 conditions; each recursive child must match one of the strict union forms (`packages/workflow-engine/src/schema.ts:51-56`).
+- The structured `all` and `any` arrays must contain 1–20 conditions; each recursive child must match one of the strict union forms (`packages/workflow-engine/src/schema.ts:56-61`).
 - Expression boolean operators bind after comparisons, which bind after addition/subtraction; parentheses can override this order (`packages/workflow-engine/src/expr.ts:112-126`).
 - `conditionToExpr` uses `source` as the node name for every leaf field reference, even when the condition is nested under `all`, `any`, or `not` (`packages/workflow-engine/src/expr.ts:134-140`).
 
@@ -52,13 +52,13 @@ The expression module parses conditions, skip rules, loop filters, and value exp
 | `parseExpr(text, options?)` | Parse expression text, optionally interpreting bare identifiers as item fields (`packages/workflow-engine/src/expr.ts:71-131`). |
 | `refOf(text, options?)` | Convert a reference string into a typed reference (`packages/workflow-engine/src/expr.ts:57-69`). |
 | `conditionToExpr(condition, source)` | Translate a validated structured condition into the expression AST (`packages/workflow-engine/src/expr.ts:133-152`). |
-| `conditionSchema` | Validate the structured condition union (`packages/workflow-engine/src/schema.ts:51-56`). |
+| `conditionSchema` | Validate the structured condition union (`packages/workflow-engine/src/schema.ts:56-61`). |
 
 ## Gotchas
 
-- Parsing builds syntax trees; it does not verify node names, field paths, types, or runtime availability. Those checks happen in validation and evaluation (`packages/workflow-engine/src/expr.ts:72-131`, `packages/workflow-engine/src/validate.ts:191-207`).
+- Parsing builds syntax trees; it does not verify node names, field paths, types, or runtime availability. Those checks happen in validation and evaluation (`packages/workflow-engine/src/expr.ts:72-131`, `packages/workflow-engine/src/validate.ts:230-322`).
 - Quoted strings terminate at the next matching quote; the tokenizer does not decode escapes (`packages/workflow-engine/src/expr.ts:41-45`).
-- `refOf` classifies strings but does not reject an empty or malformed path by itself; callers rely on parser and validation boundaries (`packages/workflow-engine/src/expr.ts:57-69`, `packages/workflow-engine/src/validate.ts:191-198`).
+- `refOf` classifies strings but does not reject an empty or malformed path by itself; callers rely on parser and validation boundaries (`packages/workflow-engine/src/expr.ts:57-69`, `packages/workflow-engine/src/validate.ts:230-247`).
 
 <!-- lane-pilot:backlinks -->
 ## Referenced by

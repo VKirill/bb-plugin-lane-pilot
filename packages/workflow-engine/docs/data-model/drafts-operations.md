@@ -2,15 +2,16 @@
 title: Workflow Draft and Operations Data
 type: data-model
 created: 2026-10-10
-updated: 2026-10-30
+updated: 2026-11-23
 status: active
-confidence: high
+confidence: medium
 tags: [workflow-engine, data-model, drafts]
 sources:
   - packages/workflow-engine/src/draft-store.ts
   - packages/workflow-engine/src/ops-store.ts
   - packages/workflow-engine/src/store.ts
   - packages/workflow-engine/src/business-outcome.ts
+  - packages/workflow-engine/src/validate.ts
 ---
 # Workflow Draft and Operations Data
 TL;DR: Draft records hold editable workflow content and snapshots; operational rows bind exact workflow hashes to test receipts and schedule automation records.
@@ -50,14 +51,15 @@ Status lifecycle:
 
 | From | To | Function | When |
 |---|---|---|---|
-| New | `draft` | `create` (`packages/workflow-engine/src/draft-store.ts:94-109`) | Initial draft row is inserted. |
-| Any editable status | `draft` | `patch`, `restore` (`packages/workflow-engine/src/draft-store.ts:138-145`, `packages/workflow-engine/src/draft-store.ts:148-161`) | Definition changes or prior version is restored. UI-only changes keep status. |
-| `draft` | `tested` or `draft` | `recordTests` (`packages/workflow-engine/src/draft-store.ts:165-173`) | Current version has nonempty complete all-green results, else status remains draft. |
-| Matching current version | `published` | `markPublished` (`packages/workflow-engine/src/draft-store.ts:176-179`) | Caller records the published file metadata. |
+| New | `draft` | `create` (`packages/workflow-engine/src/draft-store.ts:100-116`) | Initial draft row is inserted. |
+| Any editable status | `draft` | `patch`, `restore`, `replaceDefinition` (`packages/workflow-engine/src/draft-store.ts:127-152`, `packages/workflow-engine/src/draft-store.ts:155-169`, `packages/workflow-engine/src/draft-store.ts:196-211`) | Definition changes, prior version is restored, or full definition is replaced. UI-only changes keep status. |
+| `draft` | `tested` or `draft` | `recordTests` (`packages/workflow-engine/src/draft-store.ts:172-180`) | Current version has nonempty complete all-green results, else status remains draft. |
+| Matching current version | `published` | `markPublished` (`packages/workflow-engine/src/draft-store.ts:182-186`) | Caller records the published file metadata. |
+| Any status | `draft` | `resetToFactoryBaseline` (`packages/workflow-engine/src/draft-store.ts:189-193`) | Global overlay is rolled back to its factory built-in workflow, clearing test and publication metadata. |
 
-Invariants: scope/status are SQL-constrained; draft edits use version checks; project listing is ordered by update time (`packages/workflow-engine/src/draft-store.ts:11-28`, `packages/workflow-engine/src/draft-store.ts:112-117`). The resolver separately requires a green receipt for the exact current file hash (current or legacy hash) before an owner-authored `tested` or `published` file counts as tested/published (`packages/workflow-engine/src/ops-store.ts:124-137`).
+Invariants: scope/status are SQL-constrained; draft edits use version checks; project listing is ordered by update time (`packages/workflow-engine/src/draft-store.ts:11-28`, `packages/workflow-engine/src/draft-store.ts:119-124`). The resolver separately requires a green receipt for the exact current file hash (current or legacy hash) before an owner-authored `tested` or `published` file counts as tested/published (`packages/workflow-engine/src/ops-store.ts:124-137`).
 
-Writers/readers: `createDraftStore` writes and reads draft rows; workflow editor/library code uses it. No draft cleanup or retention function is defined in this workspace (`packages/workflow-engine/src/draft-store.ts:81-190`).
+Writers/readers: `createDraftStore` writes and reads draft rows (`list`, `listEvolutionDrafts`, `latestPublishedSnapshot`, `previousVersionSnapshot`); workflow editor/library and evolution code use it. No draft cleanup or retention function is defined in this workspace (`packages/workflow-engine/src/draft-store.ts:87-271`).
 
 ### `lane_pilot_wf_draft_version`
 
@@ -71,7 +73,7 @@ Purpose: Definition snapshot and operation summary for each draft version (`pack
 | `ops_json` | Nullable serialized operations that produced the snapshot. |
 | `at` | Snapshot timestamp in milliseconds. |
 
-Invariants: `(draft_id,version)` is primary key; restore creates a new version rather than overwriting prior history (`packages/workflow-engine/src/draft-store.ts:29-37`, `packages/workflow-engine/src/draft-store.ts:148-161`). Draft creation, patch, and restore write snapshots; `history` and `definitionAt` read them (`packages/workflow-engine/src/draft-store.ts:104-108`, `packages/workflow-engine/src/draft-store.ts:182-188`). No retention job is defined.
+Invariants: `(draft_id,version)` is primary key; restore and full replacement create a new version rather than overwriting prior history (`packages/workflow-engine/src/draft-store.ts:29-37`, `packages/workflow-engine/src/draft-store.ts:155-169`, `packages/workflow-engine/src/draft-store.ts:196-211`). Draft creation, patch, restore, and full definition replacement write snapshots; `history`, `definitionAt`, `latestPublishedSnapshot`, and `previousVersionSnapshot` (which verifies candidate snapshots with `loadWorkflow`) read them (`packages/workflow-engine/src/draft-store.ts:110-114`, `packages/workflow-engine/src/draft-store.ts:213-220`, `packages/workflow-engine/src/draft-store.ts:239-269`). No retention job is defined.
 
 ### `lane_pilot_wf_test`
 

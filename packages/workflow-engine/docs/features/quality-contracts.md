@@ -2,7 +2,7 @@
 title: Workflow Quality and Contracts
 type: component
 created: 2026-10-10
-updated: 2026-11-14
+updated: 2026-11-23
 status: active
 confidence: medium
 tags: [workflow-engine, artifacts, contracts, verdicts, quality-mode]
@@ -150,7 +150,7 @@ A task's quality mode is decided once, before a run starts, in this order — th
 
 Conflict: when the workflow's mode is `fixed: quick` and a contract, the node, or an explicit `quality_mode` input asks for `full`, the result is `ok: false` with code `quality_mode_conflict` — it is not silently run as quick. A plain `start({ mode: "full" })` (an inherited `$mode`, not an explicit input) is still run as the workflow's fixed mode (`packages/workflow-engine/src/quality-mode.ts:19-30`). `WorkflowEngine.start` applies this resolver and throws a `WorkflowError` with that code when it reports a conflict (`packages/workflow-engine/src/engine.ts:97-107`, `packages/workflow-engine/src/engine-start.ts:50-54`, `packages/workflow-engine/src/validate.ts:22-26`).
 
-The workflow-level field is `quality_mode { default, effect, min, fixed }` (`packages/workflow-engine/src/schema.ts:312`).
+The workflow-level field is `quality_mode { default, effect, min, fixed }` (`packages/workflow-engine/src/schema.ts:318`).
 
 <!-- lane-pilot:backlinks -->
 ## Referenced by
