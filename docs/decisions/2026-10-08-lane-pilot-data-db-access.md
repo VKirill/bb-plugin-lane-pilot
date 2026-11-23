@@ -2,7 +2,7 @@
 title: Protecting Lane Pilot database access
 type: decisions
 created: 2026-10-08
-updated: 2026-10-30
+updated: 2026-11-23
 status: active
 confidence: low
 tags: [database, access-control, operations]
@@ -19,13 +19,13 @@ TL;DR: Lane Pilot opens its SQLite database through BB storage; access to the da
 
 ## Context
 
-Lane Pilot obtains its database from `bb.storage.database()`, enables foreign keys, and applies its migrations during `openDatabase` (`src/rooms/storage/database.ts:331-336`). Direct access to that SQLite file can change plugin state outside its RPC handlers. The RPC contract assembles method schemas, and `registerRpc` registers handlers without a caller check (`src/rooms/contracts/index.ts:18-27`, `src/rooms/core/server/rpc.ts:28-30`). See [RPC and host-call contracts](../rpc-callers.md) for the contract surface.
+Lane Pilot obtains its database from `bb.storage.database()`, enables foreign keys, and applies its migrations during `openDatabase` (`src/rooms/storage/database.ts:20-26`). Direct access to that SQLite file can change plugin state outside its RPC handlers. The RPC contract assembles method schemas, and `registerRpc` registers handlers without a caller check (`src/rooms/contracts/index.ts:29-42`, `src/rooms/core/server/rpc.ts:159-162`). See [RPC and host-call contracts](../rpc-callers.md) for the contract surface.
 
 ## Decision
 
 - Protect the database and its containing directory with host filesystem permissions. This repository does not declare or verify the deployed file modes.
-- Do not treat Lane Pilot RPC caller identity checks as the database protection. The BB shell guard explicitly leaves Lane Pilot and Env Catalog CLI calls available to PM agents (`lane-stack/hooks/guard_shell.py:54-66`).
-- Keep any agent process that can access the host filesystem outside the database directory's permission boundary. The guard allows read-only shell tools to PM readers and Lane Pilot PM agents, while mutating operations are handled by separate policy branches (`lane-stack/hooks/guard_shell.py:31-53`, `:203-215`).
+- Do not treat Lane Pilot RPC caller identity checks as the database protection. The BB shell guard explicitly leaves Lane Pilot and Env Catalog CLI calls available to PM agents (`lane-stack/hooks/guard_shell.py:55-72`).
+- Keep any agent process that can access the host filesystem outside the database directory's permission boundary. The guard allows read-only shell tools to PM readers and Lane Pilot PM agents, while mutating operations are handled by separate policy branches (`lane-stack/hooks/guard_shell.py:32-54`, `:250-263`).
 
 ## Owner decision (2026-10-08)
 
@@ -43,8 +43,8 @@ Active. This record describes the code boundary and the chosen host-permission c
 
 ## Consequences
 
-- RPC validation remains a contract check and does not stop a process with direct filesystem access from changing SQLite data (`src/rooms/contracts/index.ts:18-27`, `src/rooms/core/server/rpc.ts:28-30`; see [RPC and host-call contracts](../rpc-callers.md)).
-- The repository does not define an operational review procedure for host process placement or database-directory ownership; `openDatabase` only obtains BB storage, enables foreign keys, and applies migrations (`src/rooms/storage/database.ts:428-433`).
+- RPC validation remains a contract check and does not stop a process with direct filesystem access from changing SQLite data (`src/rooms/contracts/index.ts:29-42`, `src/rooms/core/server/rpc.ts:159-162`; see [RPC and host-call contracts](../rpc-callers.md)).
+- The repository does not define an operational review procedure for host process placement or database-directory ownership; `openDatabase` only obtains BB storage, enables foreign keys, and applies migrations (`src/rooms/storage/database.ts:20-26`).
 
 <!-- lane-pilot:backlinks -->
 ## Referenced by

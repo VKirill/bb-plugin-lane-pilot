@@ -2,7 +2,7 @@
 title: "telegram-send: the shared Telegram send fragment"
 type: flow
 created: 2026-11-02
-updated: 2026-11-16
+updated: 2026-11-23
 status: active
 confidence: medium
 tags: [workflow, telegram, schedule, fragment]
@@ -20,7 +20,7 @@ sources:
 
 TL;DR: `workflows/telegram-send.json` is an internal subworkflow fragment that either schedules a deferred send via `schedule.create`, sends a file directly via `telegram.send_file`, or falls back to the `errand` agent (`telegram-user` skill) with read-back confirmation (`workflows/telegram-send.json:44-105`, `workflows/telegram-send.json:150-163`).
 
-`workflows/telegram-send.json` sets `internal: true` and status `published` (`workflows/telegram-send.json:11-12`). It is covered by stub tests (`tests/workflow/chains-telegram-send.test.ts:1-69`, `tests/schedule/schedule-create.test.ts:1-93`) and called as a subworkflow by [invoice-send](invoice-send.md) (`workflows/invoice-send.json:129-136`).
+`workflows/telegram-send.json` sets `internal: true` and status `published` (`workflows/telegram-send.json:11-12`). It is covered by stub tests (`tests/workflow/chains-telegram-send.test.ts:1-69`, `tests/schedule/schedule-create.test.ts:1-93`) and called as a subworkflow by [invoice-send](invoice-send.md) (`workflows/invoice-send.json:130-137`).
 
 ```mermaid
 flowchart LR
