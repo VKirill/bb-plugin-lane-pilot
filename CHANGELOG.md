@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.606
+
+- **Preserve selected `Project Folders` section workspace in Composer when affinity host already matches.** `src/rooms/native-agent/ui/composer-enable.tsx` (`EnableLanePilotAction.prepare`) retains a ready non-personal composer workspace selection (such as `project-section`) when `prepare_native_session` returns an affinity `environment` on the same `hostId`, instead of overwriting the composer's environment with the project root folder, and routes `native_install_start` to `result.environment?.hostId ?? hostId` across cross-host affinity switches. Covered by `tests/composer-activation.test.tsx`.
+
 ## 0.1.605
 
 - **Writer dispatch admission for native `project-checkout` and `project-folders` section environments (`project_git_required` / `managed_binding_unresolved` fix).** `dispatch-guard.ts` and `git-writer.ts` resolve `projectRoot` across both `project.sources` and registered `project-folders` folder sections (`ctx.listProjectSections`), and verify ready non-managed `project-checkout` environments (`status === "ready"`, matching `projectId`, `hostId`, and `path`) alongside `managed-worktree` environments when probing existing Git repositories via `resolveExistingScope`, eliminating `project_git_required` (`managed_binding_unresolved`) rejections on symlinked macOS paths (`/Users/.../Documents` vs `/Volumes/SSD/Documents`) and section checkouts. Covered by `tests/project-git/dispatch-guard.test.ts`.
