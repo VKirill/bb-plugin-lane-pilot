@@ -80,6 +80,8 @@ export const TOOL_PRESENTATION: Record<string, Entry> = {
   lane_pilot_regression_settle: row("Settling a regression finding", "Settled a regression finding", "Закрываю находку регресса", "Находка регресса закрыта"),
   lane_pilot_tool_search: row("Looking for a Lane Pilot tool", "Looked for a Lane Pilot tool", "Ищу инструмент Lane Pilot", "Инструмент Lane Pilot найден", true),
   lane_pilot_wait_specialist: row("Waiting for a specialist", "Waited for a specialist", "Жду специалиста", "Дождался специалиста", true),
+  lane_pilot_scout: row("Running parallel scouts", "Parallel scouts finished", "Запускаю разведчиков", "Разведчики отработали"),
+  lane_pilot_wait_scout: row("Waiting for scouts", "Waited for scouts", "Жду разведчиков", "Дождался разведчиков", true),
 };
 
 export type ToolLocale = "en" | "ru" | "both";

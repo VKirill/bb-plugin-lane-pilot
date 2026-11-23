@@ -73,8 +73,8 @@ export async function maybeNotifyWorkflowRun(input: {
   if (UPKEEP_WORKFLOWS.has(run.workflow_id)) return false;
   // A phase's stage run reports through the phase's gates and book; a notice of each one had the PM step into the machine's stage (live, 2026-10-25).
   if (run.idem_key?.startsWith("phase:")) return false;
-  // The browser tools wait for their graph and answer with its result: a notice would wake the PM a second time.
-  if (PM_WAITS_FOR.has(run.workflow_id)) return false;
+  // The browser and synchronous scout tools wait for their graph and answer with its result: a notice would wake the PM a second time.
+  if (PM_WAITS_FOR.has(run.workflow_id) || run.idem_key?.startsWith("scout:")) return false;
   // A council that decided has already told the PM through the council's own notice (the decision page and next tasks).
   if (run.workflow_id === "council" && run.status === "succeeded") return false;
   if (!input.pmThreadId) return false;

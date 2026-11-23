@@ -198,3 +198,43 @@ describe("ui-audit", () => {
     expect(pathOf(r)).toBe("capture audit review_doc goal_check blocked");
   });
 });
+
+describe("scout", () => {
+  it("fans out parallel scouts across angles and reduces briefs, anchors and findings in code", async () => {
+    const r = await runSim("scout", {
+      input: { goal: "Audit content-factory skill against code", scope: "skills/content-factory" },
+      stubs: {
+        plan_angles: {
+          mode: "recon",
+          angle_count: 3,
+          context_hint: "scope: skills/content-factory",
+          angles: [
+            { id: "architecture", title: "Architecture", focus: "entry points" },
+            { id: "patterns", title: "Patterns", focus: "conventions" },
+            { id: "dependencies", title: "Dependencies", focus: "callers & tests" },
+          ],
+        },
+        scouts: ((ctx: { input: { item?: { id: string } } }) => {
+          const id = ctx.input.item?.id ?? "architecture";
+          return {
+            angle: id,
+            summary: `${id} mapped`,
+            anchors: [{ file: `src/${id}.ts`, line: 12, note: `${id} anchor` }],
+            findings: id === "patterns" ? [{ severity: "high", finding: "stale CLI flag", file: "SKILL.md", line: 44, evidence: "--old-flag" }] : [],
+            conventions: ["ESM strict"],
+            verification: ["npx vitest run tests/scout-first.test.ts"],
+            open_questions: [],
+          };
+        }) as never,
+      },
+    });
+    expect(r.summary.status).toBe("succeeded");
+    expect(out(r)).toMatchObject({
+      status: "done",
+      mode: "recon",
+      angle_count: 3,
+      anchors: expect.arrayContaining([expect.objectContaining({ file: "src/architecture.ts", line: 12 })]),
+      findings: [expect.objectContaining({ severity: "high", file: "SKILL.md", line: 44 })],
+    });
+  });
+});
