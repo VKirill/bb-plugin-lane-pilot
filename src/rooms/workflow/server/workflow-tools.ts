@@ -10,7 +10,7 @@ import type { RunGoal } from "@lane-pilot/workflow-engine";
 import type { PreflightResult } from "@lane-pilot/workflow-engine";
 import type { Workflow } from "@lane-pilot/workflow-engine";
 import type { WorkflowStore } from "../../storage";
-import { bindGraphStepLookup, fenceOutside, noteWorkflowReadByPm, registerObservedTool } from "../../platform/server";
+import { bindGraphStepLookup, fenceOutside, noteWorkflowFollowedByPm, noteWorkflowReadByPm, registerObservedTool } from "../../platform/server";
 import { isOpenAttemptState } from "../../contracts/state-machine";
 import { backlogMatches } from "../../backlog";
 import { checkPassportMarketRail, projectPassportBlock } from "../../passport";
@@ -250,6 +250,7 @@ export async function workflowStatusTool(deps: WorkflowToolDeps, params: { runId
   // A run of another project is answered like a missing one: nothing about it is told.
   if (!snapshot || !summary || snapshot.run.project_id !== context.projectId) return refused(`not_found: no workflow run "${params.runId}" in this project`, { workflowRunId: params.runId });
   if (["succeeded", "failed", "blocked", "interrupted", "canceled", "not_verified"].includes(summary.status)) noteWorkflowReadByPm(summary.runId);
+  else noteWorkflowFollowedByPm(summary.runId);
   const steps = snapshot.steps.map((step) => ({ node: step.node_id, state: step.state, visit: step.visit }));
   return JSON.stringify({
     workflowRunId: summary.runId, workflow: snapshot.run.workflow_id, version: snapshot.run.workflow_version, status: summary.status,

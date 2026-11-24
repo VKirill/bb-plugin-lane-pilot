@@ -5,7 +5,7 @@ import { createRun, openDatabase, savePrototypeConfig, setRunThread } from "../.
 import { councilDecisionText, councilEndedText, sendCouncilNotice } from "../../src/rooms/council/server/pm-notice";
 import { maybeNotifyWorkflowRun, notifyWorkflowIfEnded } from "../../src/rooms/workflow/server/pm-notice";
 import { SCOUT_GRAPH } from "../../src/rooms/critique/server/scout-graph";
-import { beginWorkflowWait, beginWriterWait, isWriterWaitActive, noteWorkflowReadByPm } from "../../src/rooms/platform/server";
+import { beginWorkflowWait, beginWriterWait, isWriterWaitActive, noteWorkflowFollowedByPm, noteWorkflowReadByPm } from "../../src/rooms/platform/server";
 import { isServiceNoticeText } from "../../src/rooms/contracts/service-notice";
 import { SCHEDULE_RUN_KEY_PREFIX } from "../../src/rooms/contracts";
 import { forgetSecrets, registerSecrets } from "@lane-pilot/kit";
@@ -398,6 +398,16 @@ describe("lead hand-over runs", () => {
     status = "idle";
     expect(await unread).toBe(true);
     expect(sends.map((send) => send.text)).toEqual([expect.stringContaining("wfrun_gap_2")]);
+
+    // lane_pilot_workflow_status polling a running run follows it the same way.
+    status = "running";
+    noteWorkflowFollowedByPm("wfrun_gap_3");
+    const polled = maybeNotifyWorkflowRun({ bb: busyBb, log: () => undefined, pmThreadId, startedBySchedule: false, followWaitMs: 5_000,
+      run: runRow({ id: "wfrun_gap_3", workflow_id: "demo", output_json: JSON.stringify({ report: "ok" }) }) });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    noteWorkflowReadByPm("wfrun_gap_3");
+    expect(await polled).toBe(false);
+    expect(sends).toHaveLength(1);
   });
 
   it("tracks active lane_pilot_wait_writer calls and recognizes owner-ask, council, and post-merge gate service notices", () => {
