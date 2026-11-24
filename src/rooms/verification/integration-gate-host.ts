@@ -65,7 +65,8 @@ export async function bisectGateOnHost(input:{basePath:string;command:string;goo
     const start=await git(["bisect","start",input.badSha,input.goodSha]);
     if(start.status!==0) return {status:"failed",commit:null,reason:`bisect start: ${(start.stderr||start.stdout||"").trim().slice(0,300)}`};
     const run=await git(["bisect","run","/bin/bash","-lc",input.command],scratch,input.timeoutSec*1000);
-    const match=`${run.stdout}\n${run.stderr}`.match(/([0-9a-f]{7,40}) is the first bad commit/);
+    // Newer git quotes the term ("is the first 'bad' commit", seen on 2.56); 2.43 prints it bare. SHA-256 repositories name 64 digits.
+    const match=`${run.stdout}\n${run.stderr}`.match(/([0-9a-f]{7,64}) is the first '?bad'? commit/);
     return match?{status:"found",commit:match[1]!,reason:null}:{status:"none",commit:null,reason:null};
   } finally {
     await bestEffort(console.warn, `gate bisect reset ${scratch}`, git(["bisect","reset"]), undefined);

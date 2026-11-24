@@ -4,7 +4,6 @@ name: test
 
 on:
   push:
-    branches-ignore: [ci/github-actions]
   pull_request:
   workflow_dispatch:
 
@@ -31,6 +30,8 @@ jobs:
       - run: sudo apt-get update -qq && sudo apt-get install -y -qq bubblewrap sqlite3
       - run: git config --global user.name ci && git config --global user.email ci@localhost && git config --global init.defaultBranch main
       - run: npm ci --no-audit --no-fund
+      # The live-window tests (scripts/lp-ui-drive.mjs) drive a real Chromium through Playwright.
+      - run: npx playwright install --with-deps chromium
       - run: npx tsc --noEmit -p .
       - run: npx vitest run
         env:
