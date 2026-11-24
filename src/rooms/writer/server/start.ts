@@ -24,7 +24,7 @@ import { usageHoldReason, usageSkipPercent } from "../../usage/server";
 import { taskFamily } from "@lane-pilot/contracts";
 import { coreHostsRequiredProvider, isTaskSatisfied } from "../../runs/server";
 import { walkWriterChain, waitingWriterReason, waitingWriterText, type ChainWalk } from "./writer-hold";
-import { noteUnsupportedProvider, noteWriterWait } from "./writer-wake";
+import { noteUnsupportedProvider } from "./writer-wake";
 import { listThreadEventsRaw } from "@lane-pilot/thread-observe";
 import { attemptFeedback, isWriterStreamError, pendingWordTake, previousAttemptBrief } from "./writer-task";
 import { stickyTurnPromptWithRules } from "./writer-knowledge";
@@ -103,7 +103,6 @@ import { resolve } from "node:path";
 import { findThreadsByMetadata } from "../../platform/server";
 import type { ServerCore } from "../../contracts/server";
 
-import { sendServiceMessage } from "../../relay/server";
 import { emitAttemptFinished } from "./attempt-finished";
 import { mountWriterTaskFinished } from "./attempt-reactions";
 import { mountStabilityAttemptFinished } from "./stability";

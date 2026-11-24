@@ -3,7 +3,7 @@ import { closeOwnerItem, postOwnerItem } from "../../owner-waiting";
 import { recordStage } from "../../runs/server";
 import { coreHostsRequiredProvider } from "../../runs/server";
 import { waitingWriterReason, waitingWriterText, type ChainWalk } from "./writer-hold";
-import { noteUnsupportedProvider, noteWriterWait } from "./writer-wake";
+import { noteUnsupportedProvider } from "./writer-wake";
 import type { StartWriterTaskDeps } from "./start-writer-task";
 import type { WriterTaskInput, WriterTaskState } from "./start-task-state";
 
@@ -44,7 +44,7 @@ export const parkForWriter = async (deps: StartWriterTaskDeps, state: WriterTask
   const text = waitingWriterText(held, walk.wakeAt);
   parkAttemptWake(db, forAttemptId, reason, walk.wakeAt);
   recordStage(db, { runId:input.runId, taskId:input.taskId, stageId:"writer-agent", state:"pending", input:input.plan, reason:text });
-  void noteWriterWait(ctx, { attemptId:forAttemptId, pmThreadId:input.pmThreadId, taskId:input.taskId, text });
+  // No PM line: the waiting task reaches the PM in the task digest («Still at work (waits: …)»).
   ctx.log(`writer ${input.taskId}: every writer is held (${held.reason}); the attempt waits until ${walk.wakeAt ? new Date(walk.wakeAt).toISOString() : "unknown"}`);
   state.last = { status:"queued", reason, attemptId:forAttemptId };
   return true;

@@ -41,7 +41,7 @@ describe("the baseline before a writer (D1-3)", () => {
     await w.dispose();
   });
 
-  it("in stop mode the attempt does not start: a block verdict the PM reads, with the evidence, and no writer is asked", async () => {
+  it("in stop mode the attempt does not start: a block verdict the PM reads in its task digest, and no writer is asked", async () => {
     const w = await world({ settings: { "baseline.already_built": "stop" } });
     const input = w.pendingTask("t1", ["test -f keep.txt"]);
     const result = await w.services.baseline.preflight(input);
@@ -49,9 +49,8 @@ describe("the baseline before a writer (D1-3)", () => {
     // the PM's own class, never redone as it is
     expect(classifyFailure("blocked", result.stop).cls).toBe("contract");
     expect(getBaseline(w.db, "run1", "t1")).toMatchObject({ verdict: "already_built", action: "stopped" });
-    const text = (w.send.mock.calls[0] as unknown as [{ input: Array<{ text: string }> }])[0].input[0]!.text;
-    expect(text).toContain("задача t1 не запущена");
-    expect(text).toContain("test -f keep.txt");
+    // No message of the baseline's own: the digest carries the stop with the task's state as it is then.
+    expect(w.send).not.toHaveBeenCalled();
     await w.dispose();
   });
 
@@ -144,7 +143,7 @@ describe("the baseline before a writer (D1-3)", () => {
 describe("red before green (checks.require_red_on_base)", () => {
   const at = (input: ReturnType<Awaited<ReturnType<typeof world>>["pendingTask"]>, patch: Record<string, unknown>) => ({ ...input, task: { ...(input.task as object), ...patch } as never });
 
-  it("blocks a feature whose every check is already green, and tells the PM the checks prove nothing", async () => {
+  it("blocks a feature whose every check is already green, and the stop tells the PM the checks prove nothing", async () => {
     const w = await world();
     const input = at(w.pendingTask("t1", ["test -f keep.txt", "grep -q line2 server.ts"]), { risk: "medium", kind: "feature" });
     const result = await w.services.baseline.preflight(input);
@@ -152,10 +151,7 @@ describe("red before green (checks.require_red_on_base)", () => {
     expect(result.stop).toMatch(/no_red_on_base/);
     expect(result.stop).toContain("проверки уже зелёные — они не отличают сделанное от несделанного; добавь проверку, которая сейчас красная");
     expect(getBaseline(w.db, "run1", "t1")).toMatchObject({ verdict: "already_built", action: "stopped" });
-    const text = (w.send.mock.calls[0] as unknown as [{ input: Array<{ text: string }> }])[0].input[0]!.text;
-    expect(text).toContain("проверки уже зелёные — они не отличают сделанное от несделанного; добавь проверку, которая сейчас красная");
-    expect(text).toContain("- test -f keep.txt");
-    expect(text).toContain("- grep -q line2 server.ts");
+    expect(w.send).not.toHaveBeenCalled();
     await w.dispose();
   });
 
@@ -197,9 +193,8 @@ describe("red before green (checks.require_red_on_base)", () => {
     expect(done.alreadyDone).toBeUndefined();
     expect(done.stop).toMatch(/no_red_on_base/);
     expect(getBaseline(w.db, "run1", "fix1")).toMatchObject({ action: "stopped" });
-    const told = (w.send.mock.calls[0] as unknown as [{ input: Array<{ text: string }> }])[0].input[0]!.text;
-    expect(told).toContain("- test -f keep.txt");
-    expect(told).toContain("добавь проверку, которая сейчас красная");
+    expect(done.stop).toContain("добавь проверку, которая сейчас красная");
+    expect(w.send).not.toHaveBeenCalled();
     // A red check that only looks for the new file proves no behaviour of a fix; one that runs something does.
     expect((await w.services.baseline.preflight(at(w.pendingTask("fix2", ["test -f keep.txt", "test -f feature.txt"]), { risk: "low", kind: "fix" }))).stop).toMatch(/no_red_on_base/);
     expect((await w.services.baseline.preflight(at(w.pendingTask("fix2b", ["test -f keep.txt", "cat feature.txt"]), { risk: "low", kind: "fix" }))).stop).toBeNull();

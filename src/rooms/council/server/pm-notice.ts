@@ -1,4 +1,5 @@
 /** One PM-chat notice when a council session writes a decision or ends without one. */
+import { sendServiceMessage } from "../../platform/server";
 
 export type CouncilNoticeKv = {
   get: (key: string) => Promise<unknown>;
@@ -32,11 +33,6 @@ export function councilDecisionText(input: {
   ].join("\n");
 }
 
-export function councilEndedText(input: { id: string; question: string; state: string; reason: string | null }): string {
-  const why = input.reason ? `${input.state}: ${input.reason}` : input.state;
-  return `Council ${input.id} ended without a decision (${why}). Question: ${input.question}`;
-}
-
 export async function sendCouncilNotice(input: {
   bb: CouncilNoticeSend;
   pmThreadId: string;
@@ -49,10 +45,7 @@ export async function sendCouncilNotice(input: {
   if (await input.bb.storage.kv.get(key)) return false;
   await input.bb.storage.kv.set(key, Date.now() as never).catch(() => undefined);
   try {
-    await input.bb.sdk.threads.send({
-      threadId: input.pmThreadId, mode: "queue-if-active",
-      input: [{ type: "text", text: input.text, mentions: [] }],
-    } as never);
+    await sendServiceMessage(input.bb, { threadId: input.pmThreadId, text: input.text, label: "Lane Pilot · council" });
     return true;
   } catch (cause) {
     input.log(`Lane Pilot council ${input.councilId}: PM notice not sent: ${cause instanceof Error ? cause.message : String(cause)}`);

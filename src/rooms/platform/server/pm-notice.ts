@@ -1,4 +1,5 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
+import { sendServiceMessage } from "./service-message";
 
 /** How recently a PM chat must have moved for an informational notice to be worth sending into it. */
 export const PM_NOTICE_FRESH_MS = 30 * 60_000;
@@ -15,7 +16,7 @@ export async function sendPmNotice(bb: Pick<BbPluginApi, "sdk">, threadId: strin
   if (!thread || !Number.isFinite(updatedAt) || now - updatedAt > freshMs) return false;
   // A refused send (the chat archived meanwhile, a transport error) is no delivery: the caller falls back to the owner's list
   // (Astra F-005: the second pilot used to report «owner told» on a chat that only looked warm).
-  try { await bb.sdk.threads.send({ threadId, mode: "queue-if-active", input: [{ type: "text", text, mentions: [] }] } as never); return true; } catch { return false; }
+  try { await sendServiceMessage(bb as never, { threadId, text }); return true; } catch { return false; }
 }
 
 const activeWorkflowWaiters = new Map<string, number>();
@@ -83,4 +84,24 @@ export function noteWorkflowFollowedByPm(workflowRunId: string, now = Date.now()
 export function isWorkflowFollowed(workflowRunId: string, now = Date.now()): boolean {
   const at = followedWorkflowRuns.get(workflowRunId);
   return at !== undefined && now - at <= 3_600_000;
+}
+
+/**
+ * Detaches the PM tool call running now (VK core `bb.agents.experimental_vkDetachToolCall`): the PM gets `text` at once and
+ * the value the tool's `execute` later returns reaches the chat as BB's own delivered tool result, the path
+ * `lane_pilot_ask_owner`'s form already takes. False without the core function (the tool then answers as before and the
+ * PM waits with its wait tool) or when BB refuses; a throwing double counts as absent.
+ */
+export function detachToolCall(bb: { agents: object }, text: string): boolean {
+  const detach = (bb.agents as { experimental_vkDetachToolCall?: (text?: string) => boolean }).experimental_vkDetachToolCall;
+  if (typeof detach !== "function") return false;
+  try { return detach.call(bb.agents, text) === true; } catch { return false; }
+}
+
+/** How long a detached helper tool keeps following its run; past it the PM gets «running» and its wait tool still works. */
+export const DETACHED_WAIT_SEC = 6 * 3600;
+
+/** Detaches a helper start (errand, specialist, scout): the PM is told the result comes by itself, never to poll `waitTool`. */
+export function detachHelperStart(bb: { agents: object }, started: string, waitTool: string): boolean {
+  return detachToolCall(bb, `${started} Its result arrives by itself as this tool's delivered result: do not call ${waitTool}; continue other work or end your turn.`);
 }

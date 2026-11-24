@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { sendServiceMessage } from "../src/rooms/relay/server/service-message";
+import { sendServiceMessage } from "../src/rooms/platform/server/service-message";
 
 function api(fail?: (args: Record<string, unknown>) => unknown) {
   const calls: Array<Record<string, unknown>> = [];
@@ -83,6 +83,27 @@ describe("service messages", () => {
     const authored = api();
     await sendServiceMessage(authored.bb, { threadId: "pm", text: "hi", senderThreadId: "writer" });
     expect((authored.calls[0]!.input as Array<{ text: string }>)[0]!.text).toBe("hi");
+  });
+
+  it("goes as BB's titled system notice when the core offers it, and a gone sender falls back to it too", async () => {
+    const notices: Array<Record<string, unknown>> = [];
+    const sends: Array<Record<string, unknown>> = [];
+    const bb = { sdk: { threads: {
+      send: async (args: Record<string, unknown>) => { sends.push(args); if (args.senderThreadId) throw senderGone(); return { ok: true }; },
+      experimental_vkSystemNotice: async (args: Record<string, unknown>) => { notices.push(args); return true; },
+    } } } as never;
+    expect(await sendServiceMessage(bb, { threadId: "pm", text: "Run ended", label: "Lane Pilot · errand" })).toBe(true);
+    await sendServiceMessage(bb, { threadId: "pm", text: "plain" });
+    await sendServiceMessage(bb, { threadId: "pm", text: "now", mode: "steer-if-active" });
+    await sendServiceMessage(bb, { threadId: "pm", text: "from writer", senderThreadId: "gone" });
+    expect(notices).toEqual([
+      { threadId: "pm", text: "Run ended", label: "Lane Pilot · errand", mode: "queue" },
+      { threadId: "pm", text: "plain", label: "Lane Pilot", mode: "queue" },
+      { threadId: "pm", text: "now", label: "Lane Pilot", mode: "steer" },
+      { threadId: "pm", text: "from writer", label: "Lane Pilot", mode: "queue" },
+    ]);
+    // Only the authored attempt went through send; nothing sender-less was recorded as the owner's words.
+    expect(sends.map((call) => call.senderThreadId)).toEqual(["gone"]);
   });
 
   it("does not hide any other failure", async () => {

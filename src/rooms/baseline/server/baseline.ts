@@ -2,14 +2,14 @@ import type { PrototypeConfig, TaskV2 } from "../../contracts";
 import { taskFamily } from "@lane-pilot/contracts";
 import { ownerAnsweredItem, postOwnerItem, rpcLine } from "../../owner-waiting";
 import { ownerWordsMode } from "../../tasks";
-import { getRunSettingsScopes, listCheckDurations, noteToldPmDirectly, taskBasePath } from "../../storage";
+import { getRunSettingsScopes, listCheckDurations, taskBasePath } from "../../storage";
 import type { RollbackApi, RollbackTarget } from "../../rollback/server";
 import { bestEffort } from "@lane-pilot/kit";
 
 import type { ServerCore } from "../../contracts/server";
 import {
-  baselineSummary, baselineVerdict, CHECK_NOTE_TAIL, estimateSec, parseBaselineSettings, planChecks, RED_OUTSIDE_KINDS, redBeforeAndAfter, redOutsideMessage, redOutsideTaskFiles,
-  closesWhenAlreadyGreen, requiresRedOnBase, turnedRed, unrunnableMessage, unrunnableReason, vacuousChecks, vacuousMessage,
+  baselineSummary, baselineVerdict, CHECK_NOTE_TAIL, estimateSec, parseBaselineSettings, planChecks, RED_OUTSIDE_KINDS, redBeforeAndAfter, redOutsideTaskFiles,
+  closesWhenAlreadyGreen, requiresRedOnBase, turnedRed, unrunnableReason, vacuousChecks,
   type BaselineCheck, type BaselineSettings,
 } from "../logic";
 
@@ -165,12 +165,9 @@ export function createBaseline(ctx: ServerCore, services: Services) {
         const summary = `${baselineSummary(verdict, checks, baseSha)}; ${code}`;
         record(input, { baseSha, state: "ran", verdict, mode: settings.mode, action: "stopped", summary, checks, durationMs: Date.now() - started });
         log(`baseline ${input.taskId}: ${summary} (${detail}); the attempt does not start`);
-        const text = unrunnable.length ? unrunnableMessage(input.taskId, unrunnable, baseSha) : redOutsideMessage(input.taskId, outside, baseSha);
-        if (input.pmThreadId) {
-          noteToldPmDirectly(db, input.pmThreadId, input.taskId);
-          await bestEffort(log, `baseline block notice ${input.taskId}`, sendServiceMessage(bb as never, { threadId: input.pmThreadId, mode: "queue-if-active", text: `Lane Pilot: задача ${input.taskId} не запущена: ${text}` }), undefined);
-        }
-        // The owner is asked only where he signs every landing (owner.words=on). On the default the PM is told above and
+        // No PM message of its own: the stop is the attempt's reason, and the task digest tells the PM with the state as it
+        // is then (a notice queued behind a busy turn arrived after the PM had already canceled the task, 2026-11-24).
+        // The owner is asked only where he signs every landing (owner.words=on). On the default the PM hears it there and
         // fixes the contract: an item here would add a question to the owner's list for a thing the PM settles alone.
         const wordsOn = !unrunnable.length && ownerWordsMode((await ctx.effectiveProjectSettings(input.projectId, getRunSettingsScopes(db, input.runId))).values) === "on";
         if (wordsOn) try {
@@ -192,7 +189,6 @@ export function createBaseline(ctx: ServerCore, services: Services) {
         const summary = `already done: ${baselineSummary(verdict, checks, baseSha)}`;
         record(input, { baseSha, state: "ran", verdict, mode: settings.mode, action: "notified", summary, checks, durationMs: Date.now() - started });
         log(`baseline ${input.taskId}: ${summary}; closing accepted without a writer`);
-        await tellPmAlreadyDone(input, checks, baseSha);
         return { stop: null, alreadyDone: summary, record: getBaseline(db, input.runId, input.taskId) ?? null };
       }
       const vacuous = requiresRedOnBase(settings.requireRed, input.task) ? vacuousChecks(checks, { behaviour: input.task.kind === "fix" }) : [];
@@ -201,10 +197,8 @@ export function createBaseline(ctx: ServerCore, services: Services) {
         record(input, { baseSha, state: "ran", verdict, mode: settings.mode, action: "stopped", summary, checks, durationMs: Date.now() - started });
         log(`baseline ${input.taskId}: ${summary}; the attempt does not start`);
         const proveNothing = "проверки уже зелёные — они не отличают сделанное от несделанного; добавь проверку, которая сейчас красная";
-        if (allGreen) await tellPmGreenProvesNothing(input, checks, proveNothing);
-        else await tellPmVacuous(input, vacuous, baseSha);
         const why = allGreen ? `${proveNothing}. Nothing was started`
-          : `Every check of ${input.taskId} passes before any writer, so none can fail when the work is missing; add a check that is red now and nothing was started`;
+          : `Every check of ${input.taskId} passes before any writer, so none can fail when the work is missing; add a check that is red now and nothing was started${input.task.kind === "fix" ? " (for a fix a file or word check such as test -f or grep -q does not count: add a behaviour test that fails now)" : ""}`;
         return { stop: `verdict_block: no_red_on_base: ${summary}. ${why}`, record: getBaseline(db, input.runId, input.taskId) ?? null };
       }
       const stop = verdict === "already_built" && settings.mode === "stop";
@@ -213,7 +207,7 @@ export function createBaseline(ctx: ServerCore, services: Services) {
       const id = record(input, { baseSha, state: "ran", verdict, mode: settings.mode, action, summary, checks, durationMs: Date.now() - started });
       log(`baseline ${input.taskId}: ${summary}${ranFor ? ` (${ranFor} run, ${Math.round((Date.now() - started) / 1000)}s)` : " (answered from earlier baselines)"}`);
       const saved = id ? getBaseline(db, input.runId, input.taskId) ?? null : null;
-      if (verdict === "already_built") await tellPm(input, checks, baseSha, stop);
+      if (verdict === "already_built" && !stop) await tellPmMaybeDone(input, checks, baseSha);
       return { stop: stop ? `verdict_block: baseline already_built: ${summary}. The checks of ${input.taskId} are green on the base before any writer; nothing was started (baseline.already_built=stop)` : null, record: saved };
     } catch (cause) {
       log(`baseline of ${input.taskId} failed, the attempt starts without it: ${cause instanceof Error ? cause.message : String(cause)}`);
@@ -225,36 +219,11 @@ export function createBaseline(ctx: ServerCore, services: Services) {
     plan.forEach((entry, index) => { if (entry.item.command === command && !checks[index]!.cached) checks[index] = { ...checks[index]!, ...patch }; });
   }
 
-  async function tellPm(input: BaselineInput, checks: BaselineCheck[], baseSha: string | null, stopped: boolean): Promise<void> {
+  /** The writer starts anyway (baseline.already_built=notify): the PM may stop work that is already done. */
+  async function tellPmMaybeDone(input: BaselineInput, checks: BaselineCheck[], baseSha: string | null): Promise<void> {
     if (!input.pmThreadId) return;
     const list = checks.map((check) => `- ${check.command} (${check.cached ? "известно по прошлой проверке этой базы" : "запущена сейчас"})`).join("\n");
-    const fact = `все ${checks.length} проверок(и) задачи ${input.taskId} уже проходят на базе${baseSha ? ` ${baseSha.slice(0, 10)}` : ""}, до писателя`;
-    const text = stopped
-      ? `Lane Pilot: задача ${input.taskId} не запущена: ${fact} (baseline.already_built=stop).\n${list}\nЕсли задача действительно не нужна, ничего делать не надо. Если проверки слабые и работа не сделана, усильте acceptance/verification и отправьте задачу снова.`
-      : `Lane Pilot: ${fact}: задача, возможно, уже сделана. Писатель всё равно стартует (baseline.already_built=notify); карточка приёмки покажет эти проверки.\n${list}\nЕсли работа уже сделана, остановите задачу (lane_pilot_cancel); если проверки слабые, усильте их.`;
-    if (stopped) noteToldPmDirectly(db, input.pmThreadId, input.taskId);
-    await bestEffort(log, "baseline PM notice", sendServiceMessage(bb as never, { threadId: input.pmThreadId, mode: "queue-if-active", text }), undefined);
-  }
-
-  async function tellPmAlreadyDone(input: BaselineInput, checks: BaselineCheck[], baseSha: string | null): Promise<void> {
-    if (!input.pmThreadId) return;
-    const list = checks.map((check) => `- ${check.command}`).join("\n");
-    const text = `Lane Pilot: задача ${input.taskId} закрыта принятой без писателя — все ${checks.length} проверок(и) уже зелёные на базе${baseSha ? ` ${baseSha.slice(0, 10)}` : ""}, до писателя.\n${list}\nЕсли баг на самом деле не исправлен, переоткрой задачу с проверкой, которая его воспроизводит.`;
-    noteToldPmDirectly(db, input.pmThreadId, input.taskId);
-    await bestEffort(log, "baseline PM notice", sendServiceMessage(bb as never, { threadId: input.pmThreadId, mode: "queue-if-active", text }), undefined);
-  }
-
-  async function tellPmGreenProvesNothing(input: BaselineInput, checks: BaselineCheck[], sentence: string): Promise<void> {
-    if (!input.pmThreadId) return;
-    const list = checks.map((check) => `- ${check.command}`).join("\n");
-    noteToldPmDirectly(db, input.pmThreadId, input.taskId);
-    await bestEffort(log, `baseline vacuous notice ${input.taskId}`, sendServiceMessage(bb as never, { threadId: input.pmThreadId, mode: "queue-if-active", text: `Lane Pilot: задача ${input.taskId} не запущена: ${sentence}.\n${list}` }), undefined);
-  }
-
-  async function tellPmVacuous(input: BaselineInput, vacuous: BaselineCheck[], baseSha: string | null): Promise<void> {
-    if (!input.pmThreadId) return;
-    const text = `Lane Pilot: задача ${input.taskId} не запущена: ${vacuousMessage(input.taskId, vacuous, input.task.risk, baseSha, input.task.kind)}`;
-    noteToldPmDirectly(db, input.pmThreadId, input.taskId);
+    const text = `Lane Pilot: все ${checks.length} проверок(и) задачи ${input.taskId} уже проходят на базе${baseSha ? ` ${baseSha.slice(0, 10)}` : ""}, до писателя: задача, возможно, уже сделана. Писатель всё равно стартует (baseline.already_built=notify); карточка приёмки покажет эти проверки.\n${list}\nЕсли работа уже сделана, остановите задачу (lane_pilot_cancel); если проверки слабые, усильте их.`;
     await bestEffort(log, "baseline PM notice", sendServiceMessage(bb as never, { threadId: input.pmThreadId, mode: "queue-if-active", text }), undefined);
   }
 

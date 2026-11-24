@@ -9,7 +9,7 @@ import { z } from "zod";
 import type { ServerContext } from "../../platform/server";
 import type { PrepareRecipient } from "../../contracts";
 import { ToolError } from "../../contracts/server";
-import { sendServiceMessage } from "./service-message";
+import { sendServiceMessage } from "../../platform/server";
 import { registerObservedTool } from "../../platform/server";
 import { gateRunVerdict } from "../../verification/server"
 import { latestGateRun, latestGateRunForTask } from "../../storage"
@@ -434,7 +434,9 @@ export function createRelay(deps:RelayDeps) {
       if (line) gates.set(row.taskId, line);
     }
     const lines = rows.filter((row) => row.state !== "canceled").map((row) => {
-      const reason = row.state === "accepted" ? "" : row.reason ? `: ${row.reason.replace(/\s+/g, " ").slice(0, 300)}` : "";
+      // A stop before any writer carries the contract fix (baseline): it is the PM's only word on it, so it is kept whole.
+      const reasonChars = row.reason?.startsWith("verdict_block:") ? 900 : 300;
+      const reason = row.state === "accepted" ? "" : row.reason ? `: ${row.reason.replace(/\s+/g, " ").slice(0, reasonChars)}` : "";
       const out = reason ? wayOut(row.state, row.reason, row.failureCode) : null;
       const gate = gates.get(row.taskId);
       return `- ${row.taskId} — ${row.state}${reason}${out ? ` → ${out}` : ""}${gate ? ` (gate: ${gate})` : ""}`;

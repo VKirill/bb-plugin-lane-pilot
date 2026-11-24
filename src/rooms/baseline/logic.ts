@@ -93,15 +93,6 @@ export function vacuousChecks(checks: readonly BaselineCheck[], options: { behav
   return ranAll && !checks.some((check) => check.status === "red" && !isExistenceOnly(check.command)) ? [...checks] : [];
 }
 
-/** What the PM reads when the attempt does not start because no check is red on the base: which checks are vacuous and what to add. */
-export function vacuousMessage(taskId: string, vacuous: readonly BaselineCheck[], risk: string, baseSha: string | null, kind?: string): string {
-  const list = vacuous.map((check) => `- ${check.command}`).join("\n");
-  return `все ${vacuous.length} проверок(и) задачи ${taskId} (риск ${risk}) уже проходят на базе${baseSha ? ` ${baseSha.slice(0, 10)}` : ""}, до писателя:\n${list}\n`
-    + `Такие проверки зелёные при любой работе писателя, поэтому не доказывают её. Добавьте хотя бы одну, которая сейчас красная и позеленеет только когда работа сделана: `
-    + `проверку, называющую новый файл или поведение (test -f <новый файл>; grep -q '<новый символ>' <файл>; точечный тест, который падает сейчас), и отправьте задачу снова. `
-    + `Если у работы нельзя написать красную проверку (чистый рефакторинг, документация), укажите kind refactor или docs.`
-    + (kind === "fix" ? ` Для починки (kind fix) проверка наличия файла или слова (test -f, grep -q) не считается: нужен тест поведения, который падает сейчас и проходит после починки.` : "");
-}
 
 // ---- a check the base itself shows to be broken: stopped before any writer, with the contract fix named ----
 
@@ -230,21 +221,7 @@ export function redOutsideTaskFiles(check: BaselineCheck, task: TaskFiles): stri
 /** Kinds whose work may be what turns a red check green only through the task's own files; a fix is expected to start red. */
 export const RED_OUTSIDE_KINDS: readonly string[] = ["feature", "refactor", "chore"];
 
-/** What the PM reads when a check cannot run on the base: which check, why, what to change. */
-export function unrunnableMessage(taskId: string, items: ReadonlyArray<{ check: BaselineCheck; why: string }>, baseSha: string | null): string {
-  const list = items.map((item) => `- ${item.check.command} (cwd ${item.check.cwd}): ${item.why}`).join("\n");
-  return `проверка(и) задачи ${taskId} не могут выполниться на базе${baseSha ? ` ${baseSha.slice(0, 10)}` : ""}, до писателя:\n${list}\n`
-    + `Писатель не сможет её ни пройти, ни починить: упрётся в тот же отказ и задаст вопрос. Исправьте команду или cwd (путь к инструменту, каталог пакета, поддерживаемые флаги) `
-    + `либо уберите проверку из verification и отправьте задачу снова. Попытка не потрачена.`;
-}
 
-/** What the PM reads when a check of a non-fix task is red on the base in files the task does not own. */
-export function redOutsideMessage(taskId: string, items: ReadonlyArray<{ check: BaselineCheck; files: string[] }>, baseSha: string | null): string {
-  const list = items.map((item) => `- ${item.check.command}: красная на базе в ${item.files.join(", ")}`).join("\n");
-  return `проверка(и) задачи ${taskId} красные на базе${baseSha ? ` ${baseSha.slice(0, 10)}` : ""} вне файлов задачи (owns_paths), до писателя:\n${list}\n`
-    + `Писатель этого не исправит и не имеет права: он остановится с вопросом. Сузьте проверку до файлов задачи (запускайте только её тесты или каталог пакета) `
-    + `либо расширьте owns_paths на эти файлы, и отправьте задачу снова. Попытка не потрачена.`;
-}
 
 export type RegressSettings = {
   nightly: boolean;

@@ -114,12 +114,11 @@ export async function mergeAcceptedAttempt(deps: FinishMergeDeps): Promise<Recor
         if (dirtyBase(merged)) {
           const files = merged.conflicts.join(", ");
           ctx.log(`writer ${input.taskId} waits for uncommitted edits in ${basePath} to be committed: ${files}`);
-          // The chats that work in this folder are asked by name; the PM hears who was asked, or that nobody is known.
+          // The chats that work in this folder are asked by name; the PM hears only when nobody is known (it must act then).
+          // Asked guests need nothing from the PM: the merge or the block reaches it in the task digest.
           const asked = await bestEffort(ctx.log, "writer guests commit ask", askGuestsToCommit(bb, basePath, merged.conflicts, input.taskId, input.pmThreadId), [] as string[]);
-          void bestEffort(ctx.log, "writer guests notice", sendServiceMessage(bb, { threadId:input.pmThreadId, senderThreadId:writerThreadId,
-            text:asked.length
-              ? `Lane Pilot: task ${input.taskId} is ready, but main checkout ${basePath} has uncommitted changes in the same files: ${files}. Lane Pilot asked threads working in this folder to commit them: ${asked.map((thread) => `@thread:${thread}`).join(", ")}. The task will merge automatically once files are committed (waits up to 2 hours); no need to resend it.`
-              : `Lane Pilot: task ${input.taskId} is ready, but main checkout ${basePath} has uncommitted changes in the same files: ${files}. Lane Pilot does not know whose chat it is: ask the owner to commit or put them away (or do it yourself if this chat made them). The task will merge automatically once the directory is clean (waits up to 2 hours); no need to resend it.` }), undefined);
+          if (!asked.length) void bestEffort(ctx.log, "writer guests notice", sendServiceMessage(bb, { threadId:input.pmThreadId, senderThreadId:writerThreadId,
+            text:`Lane Pilot: task ${input.taskId} is ready, but main checkout ${basePath} has uncommitted changes in the same files: ${files}. Lane Pilot does not know whose chat it is: ask the owner to commit or put them away (or do it yourself if this chat made them). The task will merge automatically once the directory is clean (waits up to 2 hours); no need to resend it.` }), undefined);
           const since = Date.now();
           // Another task's merge may hold the checkout meanwhile: that is a wait too, never an acceptance without a merge.
           while ((dirtyBase(merged) || merged.status === "busy") && Date.now() - since < DIRTY_BASE_WAIT_MS && !ctx.isDisposed()) {

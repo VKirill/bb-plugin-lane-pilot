@@ -15,6 +15,6 @@ export {
   workflowHumanDetail,
 } from "./owner-locale";
 export { mountRelay, relayFor } from "./relay";
-export { sendServiceMessage } from "./service-message";
+export { sendServiceMessage } from "../../platform/server";
 export { EVENT_FIELDS, isOutboundState, mountOutbound, postEvent, taskEventBody, worldVersion } from "./outbound";
 export type { TaskEvent } from "./outbound";

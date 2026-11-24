@@ -2,7 +2,7 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { afterEach, describe, expect, it } from "vitest";
 import plugin from "../../server";
 import { createRun, openDatabase, savePrototypeConfig, setRunThread } from "../../src/rooms/plugin-db";
-import { councilDecisionText, councilEndedText, sendCouncilNotice } from "../../src/rooms/council/server/pm-notice";
+import { councilDecisionText, sendCouncilNotice } from "../../src/rooms/council/server/pm-notice";
 import { maybeNotifyWorkflowRun, notifyWorkflowIfEnded } from "../../src/rooms/workflow/server/pm-notice";
 import { SCOUT_GRAPH } from "../../src/rooms/critique/server/scout-graph";
 import { beginWorkflowWait, beginWriterWait, isWriterWaitActive, noteWorkflowFollowedByPm, noteWorkflowReadByPm } from "../../src/rooms/platform/server";
@@ -65,19 +65,12 @@ describe("council PM notices", () => {
     expect(text).toContain("Dispatch the tasks it names, or report the decision to the owner.");
   });
 
-  it("sends one short message when the council ends without a decision", () => {
-    const text = councilEndedText({ id: "cncl_abc", question: "How to raise repeat purchases?", state: "failed", reason: "stopped by the owner" });
-    expect(text).toContain("ended without a decision");
-    expect(text).toContain("cncl_abc");
-    expect(text).toContain("How to raise repeat purchases?");
-  });
-
   it("delivers a council notice once per terminal state", async () => {
     const { bb, sends } = noticeBb();
     const input = { bb, pmThreadId, councilId: "cncl_1", state: "done" as const, text: "decided", log: () => undefined };
     expect(await sendCouncilNotice(input)).toBe(true);
     expect(await sendCouncilNotice(input)).toBe(false);
-    expect(sends).toEqual([{ threadId: pmThreadId, mode: "queue-if-active", text: "decided" }]);
+    expect(sends).toEqual([{ threadId: pmThreadId, mode: "queue-if-active", text: "[Lane Pilot service] decided" }]);
   });
 });
 

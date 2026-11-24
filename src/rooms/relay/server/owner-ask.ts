@@ -1,6 +1,7 @@
 import { OWNER_ASK_RENDERER_ID, ownerAnswerText, ownerAskResponseSchema, ownerAskTitle, buildOwnerAskPayload, resolveOwnerResponse, type OwnerAskRequest, type OwnerChoice } from "../owner-ask";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { bestEffort } from "@lane-pilot/kit";
+import { sendServiceMessage } from "../../platform/server";
 
 export type OwnerAnswer =
   | { outcome: "answered"; choice: OwnerChoice; text: string; line: string }
@@ -145,7 +146,7 @@ export function createOwnerAsk(bb: BbPluginApi, log: (message: string) => void) 
   }
 
   async function sendToThread(threadId: string, text: string): Promise<void> {
-    await bb.sdk.threads.send({ threadId, mode: "queue-if-active", input: [{ type: "text", text, mentions: [] }] } as never);
+    await sendServiceMessage(bb, { threadId, text });
   }
 
   return { ask, askInBackground, answerMessage, sendToThread, pending, recoverLost, available: () => requestInput() !== null };

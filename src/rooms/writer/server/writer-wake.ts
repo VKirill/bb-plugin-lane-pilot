@@ -84,20 +84,3 @@ export async function noteUnsupportedProvider(ctx: ServerCore, input: {
   return true;
 }
 
-const waitToldKey = (key: string) => `writer-wait-told:${key}`;
-
-/**
- * The one PM line of a wait («задача X ждёт свободного писателя…»): once per attempt/run-hold, never per tick, and suppressed while the PM is actively awaiting `lane_pilot_wait_writer`.
- */
-export async function noteWriterWait(ctx: ServerCore, input: { attemptId: string; runId?: string | null; pmThreadId: string | null | undefined; taskId: string; text: string }): Promise<boolean> {
-  const key = waitToldKey(input.runId ? `${input.runId}:${input.text.slice(0, 80)}` : input.attemptId);
-  const told = await ctx.bb.storage.kv.get(key);
-  if (told) return false;
-  await bestEffort(ctx.log, "writer wait note", ctx.bb.storage.kv.set(key, "1"), undefined);
-  if (!input.pmThreadId || isWriterWaitActive(input.pmThreadId)) return true;
-  await bestEffort(ctx.log, "writer wait notice", sendServiceMessage(ctx.bb, {
-    threadId: input.pmThreadId,
-    text: `Lane Pilot: задача ${input.taskId} ждёт свободного писателя (${input.text}). Проверяю сам, ничего делать не нужно.`,
-  }), undefined);
-  return true;
-}

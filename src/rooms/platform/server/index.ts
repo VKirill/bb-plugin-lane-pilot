@@ -10,6 +10,7 @@ export * from "./pm-tool-families";
 export * from "./qa-hosts";
 export * from "./realtime";
 export * from "./schedules";
+export * from "./service-message";
 export * from "./spawn-model";
 export * from "./standalone-place";
 export * from "./thread-keys";

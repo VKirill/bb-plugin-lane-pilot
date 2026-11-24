@@ -7,7 +7,7 @@ import { observeStageChild } from "@lane-pilot/thread-observe";
 import { z } from "zod";
 import { findOpenNativeRun, getRun } from "../../storage";
 ;
-import { fenceOutside, registerObservedTool } from "../../platform/server";
+import { DETACHED_WAIT_SEC, detachHelperStart, fenceOutside, registerObservedTool } from "../../platform/server";
 import { ToolError } from "../../contracts/server";
 
 import type { ServerCore } from "../../contracts/server";
@@ -117,7 +117,7 @@ export function mountSpecialists(ctx: ServerCore, services: Services): void {
   registerObservedTool(bb.agents, {
     name: "lane_pilot_specialist",
     description: "Start the `specialist` graph: work for a specialist (design-lead, copy-lead, seo-specialist, growth-marketer, tavily, video-lead, 3d-artist, game-dev, social-manager, billing-assistant, visual-artist, macos-operator, or an agent the owner created) as a child thread of this PM chat that the owner can open.",
-    instructions: "Use from a Lane Pilot PM chat instead of the Agent tool for these roles; an agent the owner created is named by its id. Give the whole task: goal, context, files to read, the deliverable and where to write it. Returns at once with the thread; then call lane_pilot_wait_specialist with that threadId, again while it reports running. Show the owner the returned @thread link. Specialists never change product code; implementation still goes through lane_pilot_dispatch_writer.",
+    instructions: "Use from a Lane Pilot PM chat instead of the Agent tool for these roles; an agent the owner created is named by its id. Give the whole task: goal, context, files to read, the deliverable and where to write it. Returns at once with the thread; the answer arrives later as this tool's result. Only a bare running answer needs lane_pilot_wait_specialist with that threadId. Show the owner the returned @thread link. Specialists never change product code; implementation still goes through lane_pilot_dispatch_writer.",
     parameters: z.object({
       role: z.string().regex(MAIN_AGENT_ID),
       task: z.string().min(1).max(20_000),
@@ -132,7 +132,11 @@ export function mountSpecialists(ctx: ServerCore, services: Services): void {
           .find((phase) => phase.stage === "design" && phase.state === "active" && !phase.record.design?.drawing);
         if (drawing) throw new ToolError(`Phase ${drawing.id} draws its screens itself: its design stage runs the design-lead (lp.draw), and the drawing comes to this chat with a review. Do not start a second designer; wait for it. A correction for the drawing goes to the phase (lane_pilot_phase {action:"correct", phaseId:"${drawing.id}", note}).`, { code: "phase_rails", retryable: false, sideEffects: "none" });
       }
-      return JSON.stringify(await start({ projectId: context.projectId, pmThreadId: context.threadId, role: params.role, task: params.task, title: params.title }), null, 2);
+      const started = await start({ projectId: context.projectId, pmThreadId: context.threadId, role: params.role, task: params.task, title: params.title });
+      if (started.workflowRunId && detachHelperStart(bb, `Specialist ${params.role} started; show the owner ${started.link}.`, "lane_pilot_wait_specialist")) {
+        return JSON.stringify(await waitSpecialistRun(ctx, services, { projectId: context.projectId, runId: started.workflowRunId, timeoutSec: DETACHED_WAIT_SEC }), null, 2);
+      }
+      return JSON.stringify(started, null, 2);
     },
   });
 

@@ -12,7 +12,7 @@ export { createWriterFinish } from "./finish";
 export { createWriterSpawn } from "./spawn";
 export { walkWriterChain, waitingWriterReason, waitingWriterText, WAITING_WRITER_PREFIX, providerDisplayName } from "./writer-hold";
 export type { ChainWalk, WriterCandidate, WriterHold, WriterHoldDeps } from "./writer-hold";
-export { noteUnsupportedProvider, noteWriterWait, sweepWriterWakes } from "./writer-wake";
+export { noteUnsupportedProvider, sweepWriterWakes } from "./writer-wake";
 export { createWriterStart } from "./start";
 export { emitAttemptFinished, onAttemptFinished, attemptFinishedSubscriberCount } from "./attempt-finished";
 export type { AttemptFinished, AttemptFinishedSubscriber } from "./attempt-finished";

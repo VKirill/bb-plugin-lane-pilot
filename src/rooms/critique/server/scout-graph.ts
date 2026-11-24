@@ -3,7 +3,7 @@ import { redactKnown } from "@lane-pilot/kit";
 import { wfRunProjectId, wfRunStepThreads } from "@lane-pilot/workflow-engine";
 import type { StepContext, WorkflowEngine } from "@lane-pilot/workflow-engine";
 import { findOpenNativeRun, getRun, latestRunForProjectThread } from "../../storage";
-import { beginWorkflowWait, fenceOutside, findThreadsByMetadata, noteWorkflowReadByPm, registerObservedTool, spawnTextId } from "../../platform/server";
+import { beginWorkflowWait, DETACHED_WAIT_SEC, detachHelperStart, fenceOutside, findThreadsByMetadata, noteWorkflowReadByPm, registerObservedTool, spawnTextId } from "../../platform/server";
 import type { ChainRuntime, ServerCore } from "../../contracts/server";
 import type { WorkflowEngineApi } from "../../platform/server";
 
@@ -149,7 +149,7 @@ export function mountScouts(ctx: ServerCore, services: Services): void {
   registerObservedTool(bb.agents, {
     name: "lane_pilot_scout",
     description: "Run the `scout` graph: 3 parallel read-only scouts (architecture, patterns, dependencies) before planning, or 2-6 custom parallel audit angles.",
-    instructions: "Omit `angles` for 3-angle pre-plan reconnaissance, or pass 2-6 custom angles; returns `done` with `output` and `@thread` links, or `running` for `wait_scout`.",
+    instructions: "Omit `angles` for 3-angle pre-plan reconnaissance, or pass 2-6 custom angles; the report with `@thread` links arrives as this tool's result; a bare `running` goes to `wait_scout`.",
     parameters: z.object({
       goal: z.string().trim().min(1).max(8000),
       scope: z.string().trim().max(1000).optional(),
@@ -173,7 +173,8 @@ export function mountScouts(ctx: ServerCore, services: Services): void {
       let started = begin(key);
       if (!started.created && ENDED_BADLY.includes(services.workflowEngine.get(started.runId)?.status ?? "")) started = begin(`${key}:${Date.now()}`);
       started.done.catch((cause: unknown) => ctx.log(`Lane Pilot scout run ${started.runId} stopped with an error: ${cause instanceof Error ? cause.message : String(cause)}`));
-      return JSON.stringify(await waitScoutRun(ctx, services, { projectId: context.projectId, workflowRunId: started.runId, timeoutSec: params.waitSec }), null, 2);
+      const detached = detachHelperStart(bb, `Scouts started (run ${started.runId}).`, "lane_pilot_wait_scout");
+      return JSON.stringify(await waitScoutRun(ctx, services, { projectId: context.projectId, workflowRunId: started.runId, timeoutSec: detached ? DETACHED_WAIT_SEC : params.waitSec }), null, 2);
     },
   });
 

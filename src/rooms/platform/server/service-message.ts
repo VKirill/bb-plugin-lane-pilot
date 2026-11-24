@@ -8,7 +8,8 @@
  */
 import { serviceMessageText } from "../../contracts";
 
-type SendMessageApi = { sdk:{ threads:{ send(args:never):Promise<unknown> } } };
+type SystemNotice = (args:{ threadId:string; text:string; label?:string; mode?:"queue" | "steer" }) => Promise<boolean>;
+type SendMessageApi = { sdk:{ threads:{ send(args:never):Promise<unknown>; experimental_vkSystemNotice?:SystemNotice } } };
 
 export type ServiceMessage = {
   threadId:string;
@@ -16,7 +17,12 @@ export type ServiceMessage = {
   mode?:"queue-if-active" | "steer-if-active";
   /** The thread the message comes from; none when Lane Pilot itself is the only author. */
   senderThreadId?:string | null;
+  /** Title of the system row a sender-less notice becomes (VK core `experimental_vkSystemNotice`). */
+  label?:string;
 };
+
+/** Title of a sender-less notice's system row when the caller names none. */
+export const SERVICE_NOTICE_LABEL = "Lane Pilot";
 
 const rec = (value: unknown): Record<string, unknown> | null =>
   value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
@@ -43,7 +49,19 @@ function senderRejected(cause: unknown): boolean {
 
 export async function sendServiceMessage(bb:SendMessageApi, message:ServiceMessage):Promise<unknown> {
   const sender = message.senderThreadId && message.senderThreadId !== message.threadId ? message.senderThreadId : null;
-  // A send without a live sender is recorded initiator:"user" — mark it so owner collection and intake never read it as the owner's words.
+  // Lane Pilot's own notice goes as BB's system message (initiator "system", a titled row), not as the owner's words.
+  const notice = bb.sdk.threads.experimental_vkSystemNotice;
+  const asNotice = async ():Promise<{ sent:unknown } | null> => {
+    if (typeof notice !== "function") return null;
+    // A core without the queue (or a test double of the SDK) throws: the marked send below still delivers it.
+    try { return { sent: await notice.call(bb.sdk.threads, { threadId:message.threadId, text:message.text, label:message.label ?? SERVICE_NOTICE_LABEL, mode:message.mode === "steer-if-active" ? "steer" : "queue" }) }; }
+    catch { return null; }
+  };
+  if (!sender) {
+    const delivered = await asNotice();
+    if (delivered) return delivered.sent;
+  }
+  // Without it a send without a live sender is recorded initiator:"user" — mark it so owner collection and intake never read it as the owner's words.
   const anonymous = { ...message, text: serviceMessageText(message.text) };
   const request = { threadId:message.threadId, mode:message.mode ?? "queue-if-active",
     input:[{ type:"text", text:anonymous.text, mentions:[] }] };
@@ -53,6 +71,8 @@ export async function sendServiceMessage(bb:SendMessageApi, message:ServiceMessa
       input:[{ type:"text", text:message.text, mentions:[] }] } as never);
   } catch (cause) {
     if (!senderRejected(cause)) throw cause;
+    const delivered = await asNotice();
+    if (delivered) return delivered.sent;
     return bb.sdk.threads.send(request as never);
   }
 }

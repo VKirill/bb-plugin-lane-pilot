@@ -20,6 +20,8 @@
     "experimental_vkLastTurn",
     "experimental_vkLaunchTuning",
     "experimental_vkInspectRequiredSessionPolicies",
-    "experimental_vkDirectoryMove"
+    "experimental_vkDirectoryMove",
+    "experimental_vkSystemNotice",
+    "experimental_vkDetachToolCall"
   ]
 }

@@ -3,7 +3,7 @@ import { RETURN_STAGES, returnAffected, type ReturnStage } from "@lane-pilot/con
 import { taskV2Schema } from "../../contracts";
 import { createAttempt, getAttempt, getRun, getTask, getTaskPlan, listAttemptsForTask, listOpenAttempts, listStageReceipts } from "../../storage";
 import { cancelAttemptById, recordStage, reopenWriterStages } from "../../runs/server";
-import type { AttemptReopenApi, StartWriterTask, WriterReassignApi, WriterStateApi } from "../../platform/server";
+import { sendServiceMessage, type AttemptReopenApi, type StartWriterTask, type WriterReassignApi, type WriterStateApi } from "../../platform/server";
 import { id } from "@lane-pilot/kit";
 
 import type { ServerCore } from "../../contracts/server";
@@ -77,7 +77,7 @@ export function createStageReturn(ctx: ServerCore, services: Services) {
 
   async function tell(threadId: string | null, text: string): Promise<boolean> {
     if (!threadId) return false;
-    return await bb.sdk.threads.send({ threadId, mode: "queue-if-active", input: [{ type: "text", text, mentions: [] }] } as never).then(() => true, () => false);
+    return await sendServiceMessage(bb, { threadId, text }).then(() => true, () => false);
   }
 
   /** Waits for the writer loop of a stopped attempt to end, so what follows (the PM's update, a new attempt) does not meet it. */

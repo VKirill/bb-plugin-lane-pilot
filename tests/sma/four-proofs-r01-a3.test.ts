@@ -14,7 +14,6 @@ import { world } from "../baseline/world";
 import { config, contract, observe } from "./r01-world-a";
 
 vi.setConfig({ testTimeout: 180_000 });
-const sentText = (w: Awaited<ReturnType<typeof world>>, index = 0) => (w.send.mock.calls[index] as unknown as [{ input: Array<{ text: string }> }])[0].input[0]!.text;
 
 describe("[sma:ac_baseline] the promised checks run before any work", () => {
   it("[sma:ac_baseline] before the first attempt the task's checks run on the base in a throwaway copy: each answer is recorded green or red for its command, and the copy is gone", async () => {
@@ -52,7 +51,7 @@ describe("[sma:ac_baseline_red] only a person decides to proceed on a red baseli
 });
 
 describe("[sma:ae_preflight] closed without a worker", () => {
-  it("[sma:ae_preflight] a check task whose checks are all green on the base is closed «already done» with the PM told, a feature with the same checks is not", async () => {
+  it("[sma:ae_preflight] a check task whose checks are all green on the base is closed «already done» (the PM hears it in its task digest), a feature with the same checks is not", async () => {
     const w = await world();
     const check = { ...w.pendingTask("c1", ["true"]) };
     check.task = { ...(check.task as object), kind: "check" } as never;
@@ -60,7 +59,7 @@ describe("[sma:ae_preflight] closed without a worker", () => {
     expect(done.stop).toBeNull();
     expect(done.alreadyDone).toMatch(/^already done: /);
     expect(done.record).toMatchObject({ action: "notified" });
-    expect(sentText(w)).toContain("задача c1 закрыта принятой без писателя — все 1 проверок(и) уже зелёные на базе");
+    expect(w.send).not.toHaveBeenCalled();
     const feature = w.pendingTask("f1", ["true"]);
     feature.task = { ...(feature.task as object), kind: "feature" } as never;
     expect((await w.services.baseline.preflight(feature)).alreadyDone).toBeUndefined();

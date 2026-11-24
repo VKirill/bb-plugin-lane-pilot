@@ -78,17 +78,15 @@ describe("gates: what a finished attempt must show", () => {
 
 describe("baseline: nothing to prove, and an already built answer", () => {
   const at = (input: ReturnType<Awaited<ReturnType<typeof world>>["pendingTask"]>, patch: Record<string, unknown>) => ({ ...input, task: { ...(input.task as object), ...patch } as never });
-  const told = (w: Awaited<ReturnType<typeof world>>) => (w.send.mock.calls as unknown as Array<[{ input: Array<{ text: string }> }]>).map((call) => call[0].input[0]!.text);
 
-  it("[sma:ag_moot] a fix whose only red check looks for a new file is not started, and the PM is told which checks prove nothing", async () => {
+  it("[sma:ag_moot] a fix whose only red check looks for a new file is not started, and its stop tells the PM the checks prove nothing", async () => {
     const w = await world();
     const done = await w.services.baseline.preflight(at(w.pendingTask("fix2", ["test -f keep.txt", "test -f feature.txt"]), { risk: "low", kind: "fix" }));
     expect(done.alreadyDone).toBeUndefined();
     expect(done.stop).toMatch(/^verdict_block: no_red_on_base: /);
-    expect(w.send).toHaveBeenCalledTimes(1);
-    const text = told(w)[0]!;
-    expect(text.startsWith("[Lane Pilot service] Lane Pilot: задача fix2 не запущена: все 2 проверок(и) задачи fix2 (риск low) уже проходят на базе")).toBe(true);
-    expect(text).toContain("- test -f keep.txt\n- test -f feature.txt\n");
+    expect(done.stop).toContain("for a fix a file or word check such as test -f or grep -q does not count");
+    // The digest tells the PM, with the task's state as it is then; the baseline sends nothing of its own.
+    expect(w.send).not.toHaveBeenCalled();
     expect(w.ran).toEqual(expect.arrayContaining(["test -f keep.txt", "test -f feature.txt"]));
     await w.dispose();
   });

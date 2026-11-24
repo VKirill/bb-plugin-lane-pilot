@@ -26,7 +26,7 @@ import { FREE_RETRY_LIMIT, PARKED_CLASSES, REPLAY_CHECK_FAILED, SESSION_MAX_MS, 
 import { taskFamily } from "@lane-pilot/contracts";
 import { coreHostsRequiredProvider, isTaskSatisfied } from "../../runs/server";
 import { walkWriterChain, waitingWriterReason, waitingWriterText, type ChainWalk } from "./writer-hold";
-import { noteUnsupportedProvider, noteWriterWait } from "./writer-wake";
+import { noteUnsupportedProvider } from "./writer-wake";
 import { listThreadEventsRaw } from "@lane-pilot/thread-observe";
 import { attemptFeedback, isWriterStreamError, pendingWordTake, previousAttemptBrief } from "./writer-task";
 import { stickyTurnPromptWithRules } from "./writer-knowledge";
@@ -77,7 +77,6 @@ import { resolve } from "node:path";
 import { findThreadsByMetadata } from "../../platform/server";
 import type { ServerCore } from "../../contracts/server";
 
-import { sendServiceMessage } from "../../relay/server";
 import { emitAttemptFinished } from "./attempt-finished";
 
 

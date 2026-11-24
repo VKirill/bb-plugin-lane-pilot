@@ -122,6 +122,21 @@ describe("the errand graph", () => {
     expect(w.first.engine.get(started.workflowRunId)).toMatchObject({ status: "succeeded", output: { state: "done", thread_id: "errand-thr-1" } });
   });
 
+  it("on a core that detaches tool calls the PM is answered at once and the report comes back as the same call's result, with no wait_errand", async () => {
+    const w = world();
+    const detached: string[] = [];
+    Object.assign(w.bb.agents, { experimental_vkDetachToolCall: (text: string) => { detached.push(text); return true; } });
+    const pending = w.call("lane_pilot_errand", { task: TASK });
+    await new Promise((wake) => setTimeout(wake, 300));
+    expect(detached).toHaveLength(1);
+    expect(detached[0]).toContain("@thread:errand-thr-1");
+    expect(detached[0]).toContain("do not call lane_pilot_wait_errand");
+    w.state.ended = true;
+    const report = await pending;
+    expect(report).toMatchObject({ threadId: "errand-thr-1", state: "done" });
+    expect(report.output).toContain("Found 12 new leads.");
+  });
+
   it("a report without the closing line is blocked no_marker; one that says blocked carries the helper's reason", async () => {
     const lost = world({ output: "I looked at the page but the login asked for a code." });
     const a = await lost.call("lane_pilot_errand", { task: TASK });

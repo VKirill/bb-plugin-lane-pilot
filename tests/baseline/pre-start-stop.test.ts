@@ -93,7 +93,7 @@ describe("a check red on the base outside the task's files", () => {
 describe("the baseline stops the attempt before any writer", () => {
   const at = (input: ReturnType<Awaited<ReturnType<typeof world>>["pendingTask"]>, patch: Record<string, unknown>) => ({ ...input, task: { ...(input.task as object), ...patch } as never });
 
-  it("stops a check that cannot run, for a fix as for a feature, tells the PM which check and what to change, and spends no attempt", async () => {
+  it("stops a check that cannot run, for a fix as for a feature, names the check and what to change in the stop, and spends no attempt", async () => {
     for (const kind of ["fix", "feature"]) {
       const w = await world();
       const input = at(w.pendingTask(`t-${kind}`, ["no-such-tool-xyz --version"]), { kind, risk: "low" });
@@ -101,10 +101,9 @@ describe("the baseline stops the attempt before any writer", () => {
       expect(result.stop).toMatch(/^verdict_block: check_cannot_run: no-such-tool-xyz --version: exit 127/);
       expect(classifyFailure("blocked", result.stop).cls).toBe("contract");
       expect(getBaseline(w.db, "run1", `t-${kind}`)).toMatchObject({ action: "stopped" });
-      const text = (w.send.mock.calls[0] as unknown as [{ input: Array<{ text: string }> }])[0].input[0]!.text;
-      expect(text).toContain(`задача t-${kind} не запущена`);
-      expect(text).toContain("no-such-tool-xyz --version");
-      expect(text).toContain("Исправьте команду или cwd");
+      // The PM hears it from the task digest with the state as it is then, not from a message of the baseline's own.
+      expect(result.stop).toContain("Fix the command or cwd");
+      expect(w.send).not.toHaveBeenCalled();
       transitionAttempt(w.db, `att_t-${kind}`, "blocked", { reason: result.stop! });
       expect(countChargedAttempts(w.db, "run1", `t-${kind}`)).toBe(0);
       await w.dispose();
@@ -118,7 +117,8 @@ describe("the baseline stops the attempt before any writer", () => {
     const owned = { owns_paths: ["src/mine/**"] };
     const stopped = await w.services.baseline.preflight(at(w.pendingTask("feat", [red]), { ...owned, kind: "feature" }));
     expect(stopped.stop).toMatch(/^verdict_block: red_outside_task: .*red in src\/other\/legacy\.test\.ts/);
-    expect((w.send.mock.calls[0] as unknown as [{ input: Array<{ text: string }> }])[0].input[0]!.text).toContain("Сузьте проверку");
+    expect(stopped.stop).toContain("Narrow the check to the task's files or widen owns_paths");
+    expect(w.send).not.toHaveBeenCalled();
     expect((await w.services.baseline.preflight(at(w.pendingTask("fixed", [red]), { ...owned, kind: "fix" }))).stop).toBeNull();
     expect((await w.services.baseline.preflight(at(w.pendingTask("nokind", [red]), owned))).stop).toBeNull();
     expect((await w.services.baseline.preflight(at(w.pendingTask("mine", [red]), { owns_paths: ["src/other/**"], kind: "feature" }))).stop).toBeNull();

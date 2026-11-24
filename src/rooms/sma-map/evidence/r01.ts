@@ -158,7 +158,7 @@ export default {
     trace: receipt("plan-fact", "skipped"),
   },
   n191: {
-    mutation: distort("src/rooms/baseline/server/baseline.ts", "не запущена: ${vacuousMessage(", "запущена: ${vacuousMessage("),
+    mutation: distort("src/rooms/baseline/server/baseline.ts", "return { stop: `verdict_block: no_red_on_base: ${summary}. ${why}`", "return { stop: null"),
     trace: rows("lane_pilot_baseline", "at", "action = 'stopped' AND summary LIKE '%no check is red%'"),
   },
   n192: {

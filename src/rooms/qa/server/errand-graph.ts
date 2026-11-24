@@ -6,7 +6,7 @@ import { z } from "zod";
 import { SCHEDULE_RUN_KEY_PREFIX } from "../../contracts";
 import type { ChainRuntime } from "../../contracts/server";
 import { withUsage } from "../../usage/server";
-import { beginWorkflowWait, fenceOutside, findThreadsByMetadata, keyedSpawnSupported, noteWorkflowReadByPm, registerObservedTool, spawnTextId } from "../../platform/server";
+import { beginWorkflowWait, DETACHED_WAIT_SEC, detachHelperStart, fenceOutside, findThreadsByMetadata, keyedSpawnSupported, noteWorkflowReadByPm, registerObservedTool, spawnTextId } from "../../platform/server";
 
 import type { ServerCore } from "../../contracts/server";
 import type { ErrandCore, ErrandSnapshot } from "./errands";
@@ -223,7 +223,7 @@ export function mountErrandGraph(ctx: ServerCore, services: Services, core: Erra
   registerObservedTool(bb.agents, {
     name: "lane_pilot_errand",
     description: "Start the `errand` graph for a non-code task: a helper thread works in a cloud console in the owner's browser, a mailbox, a screen recording, an account in Env Catalog.",
-    instructions: "Use from a Lane Pilot PM chat for work that is not a change to this project's code (code goes through lane_pilot_dispatch_writer). Give the whole task: goal, where, what to report. `authorized: true` when the task makes changes. Authorization follows the owner's goal, as in your instructions. Otherwise the helper only reads and reports. For a step that needs an SSH, FTP or login account (a deploy to a server or hosting), pass its Env Catalog names in `accounts`: the helper reads them from the catalog and keeps the keys out of every repository; the project list secrets.allow, when it is not empty, must include the name, and if one is missing or left out of that list nothing starts and the answer says what to do (env_request for a missing one, add a left-out one to secrets.allow), then call again. The helper loads only the browser, computer use and Env Catalog: when the task needs another BB plugin's tools (Image Studio's image_studio_*, File Gateway), an MCP server (blender, chrome-devtools) or a skill, name them in `plugins` (BB plugin ids such as image-studio), `mcp` (server names) and `skills`, and say in the task which tools to use. A single BB plugin call (one picture, one item card) you make yourself; an errand is for long work such as building a model in Blender. To map a web service's API from its pages (scan its requests to build our own API or automation on it), use lane_pilot_route instead: it offers the api-recon graph, which runs on the computer-use model. The helper never changes, commits or pushes repository files: if the task asks for that it stops with ERRAND: blocked and you must dispatch a writer task. Returns at once with the run and the thread; call lane_pilot_wait_errand with its workflowRunId (or threadId), again while it is running, and show the owner the @thread link. The same task asked twice is the same run. A particular model: pass `providerId` and `model` (and `reasoning`, `serviceTier`) here; do not start a schedule only to pick a model, a scheduled run is a hidden thread with no parent chat and the owner does not see it next to this chat. Without a model, the errand's kind picks the row of the role table it runs on: computer (the screen of a machine, an app, a recording), devops (install, deploy, a GPU, Blender over MCP), browser (a site in the owner's browser), research (a report people read), message (an email, a ticket, a Telegram reply); name it in `kind` when you know it, otherwise the skills you name and the brief decide.",
+    instructions: "Use from a Lane Pilot PM chat for work that is not a change to this project's code (code goes through lane_pilot_dispatch_writer). Give the whole task: goal, where, what to report. `authorized: true` when the task makes changes. Authorization follows the owner's goal, as in your instructions. Otherwise the helper only reads and reports. For a step that needs an SSH, FTP or login account (a deploy to a server or hosting), pass its Env Catalog names in `accounts`: the helper reads them from the catalog and keeps the keys out of every repository; the project list secrets.allow, when it is not empty, must include the name, and if one is missing or left out of that list nothing starts and the answer says what to do (env_request for a missing one, add a left-out one to secrets.allow), then call again. The helper loads only the browser, computer use and Env Catalog: when the task needs another BB plugin's tools (Image Studio's image_studio_*, File Gateway), an MCP server (blender, chrome-devtools) or a skill, name them in `plugins` (BB plugin ids such as image-studio), `mcp` (server names) and `skills`, and say in the task which tools to use. A single BB plugin call (one picture, one item card) you make yourself; an errand is for long work such as building a model in Blender. To map a web service's API from its pages (scan its requests to build our own API or automation on it), use lane_pilot_route instead: it offers the api-recon graph, which runs on the computer-use model. The helper never changes, commits or pushes repository files: if the task asks for that it stops with ERRAND: blocked and you must dispatch a writer task. Returns at once with the run and the thread; show the owner the @thread link. The report then arrives by itself as this tool's delivered result; only when the answer is a bare `running` (an older core) call lane_pilot_wait_errand with its workflowRunId (or threadId), again while it is running. The same task asked twice is the same run. A particular model: pass `providerId` and `model` (and `reasoning`, `serviceTier`) here; do not start a schedule only to pick a model, a scheduled run is a hidden thread with no parent chat and the owner does not see it next to this chat. Without a model, the errand's kind picks the row of the role table it runs on: computer (the screen of a machine, an app, a recording), devops (install, deploy, a GPU, Blender over MCP), browser (a site in the owner's browser), research (a report people read), message (an email, a ticket, a Telegram reply); name it in `kind` when you know it, otherwise the skills you name and the brief decide.",
     parameters: z.object({
       task: z.string().min(10).max(20_000),
       title: z.string().min(1).max(1000).optional(),
@@ -271,16 +271,22 @@ export function mountErrandGraph(ctx: ServerCore, services: Services, core: Erra
         routeTop: routed.top, routeWhy: routed.why,
       });
       const deadline = Date.now() + SPAWN_WAIT_MS;
+      let reply: Record<string, unknown> = { workflowRunId: started.runId, state: "running" };
       for (;;) {
         const spawned = spawnedOf(started.runId);
-        if (spawned) return JSON.stringify({ workflowRunId: started.runId, threadId: spawned.threadId, state: "running", browserMachine: spawned.browserMachine, kind: picked.kind, kindBy: picked.by, link: `@thread:${spawned.threadId}` }, null, 2);
+        if (spawned) { reply = { workflowRunId: started.runId, threadId: spawned.threadId, state: "running", browserMachine: spawned.browserMachine, kind: picked.kind, kindBy: picked.by, link: `@thread:${spawned.threadId}` }; break; }
         const summary = engine.get(started.runId);
         if (summary && TERMINAL.includes(summary.status)) throw new Error(summary.error ?? summary.reason ?? `the errand run ${summary.status}`);
         if (summary?.status === "succeeded" || Date.now() >= deadline || ctx.isDisposed()) break;
         await sleep(100);
       }
+      // BB delivers the report itself when the run ends: no wait tool, no notice of ours, nothing twice.
+      const link = typeof reply.link === "string" ? ` Show the owner ${reply.link}.` : "";
+      if (detachHelperStart(bb, `Errand ${started.runId} started.${link}`, "lane_pilot_wait_errand")) {
+        return (await errandOutcome(started.runId, typeof reply.threadId === "string" ? reply.threadId : undefined, Date.now() + DETACHED_WAIT_SEC * 1000)).text;
+      }
       // The helper is not up yet (or the run already ended without one): the run id is enough to wait on it.
-      return JSON.stringify({ workflowRunId: started.runId, state: "running" }, null, 2);
+      return JSON.stringify(reply, null, 2);
     },
   });
 
@@ -295,34 +301,45 @@ export function mountErrandGraph(ctx: ServerCore, services: Services, core: Erra
       const runId = params.workflowRunId ?? runOfThread(params.threadId!);
       if (runId && !isErrandRun(runId)) throw new Error(`"${runId}" is not an errand run`);
       if (!runId) return legacyWait(params.threadId!, deadline, context.projectId ?? "-");
-      let detail = "";
-      const endWait = beginWorkflowWait(runId);
-      try {
+      const outcome = await errandOutcome(runId, params.threadId, deadline);
+      return outcome.text;
+    },
+  });
+
+  /**
+   * The errand run's report once it ends, or «running» with what the helper is doing when `deadline` passes first. While it
+   * waits, the run counts as awaited, so the run's end never also becomes a PM notice (wait_errand and a detached errand alike).
+   */
+  async function errandOutcome(runId: string, threadIdHint: string | undefined, deadline: number): Promise<{ ended: boolean; text: string }> {
+    const done = (value: string) => ({ ended: true, text: value });
+    let detail = "";
+    const endWait = beginWorkflowWait(runId);
+    try {
       while (Date.now() < deadline && !ctx.isDisposed()) {
         const summary = engine.get(runId);
         if (!summary) throw new Error(`there is no errand run ${runId}`);
-        const threadId = spawnedOf(runId)?.threadId ?? params.threadId;
+        const threadId = spawnedOf(runId)?.threadId ?? threadIdHint;
         if (summary.status === "succeeded") {
           noteWorkflowReadByPm(runId);
           const out = (summary.output ?? {}) as Record<string, unknown>;
           // The api-recon graph's map (see apiRecon): its status, the summary and the paths of the map.
           if (typeof out.status === "string" && out.state === undefined) {
             const files = [text(out.api_map), text(out.endpoints)].filter(Boolean);
-            return JSON.stringify({
+            return done(JSON.stringify({
               workflowRunId: runId, workflow: API_RECON_WORKFLOW, state: out.status === "done" ? "done" : "blocked", ...(text(out.reason) ? { reason: text(out.reason) } : {}),
               ...(files.length ? { files } : {}), observed: out.observed ?? null, bundleOnly: out.bundle_only ?? null, officialApi: out.official_api ?? null,
               output: fenceOutside("errand", text(out.report)),
-            }, null, 2);
+            }, null, 2));
           }
-          return JSON.stringify({
+          return done(JSON.stringify({
             workflowRunId: runId, threadId: text(out.thread_id) || threadId, state: out.state === "done" ? "done" : "blocked",
             ...(text(out.reason) ? { reason: text(out.reason) } : {}), ...(Array.isArray(out.files) && out.files.length ? { files: out.files } : {}),
             output: fenceOutside("errand", text(out.output)),
-          }, null, 2);
+          }, null, 2));
         }
         if (TERMINAL.includes(summary.status)) {
           noteWorkflowReadByPm(runId);
-          return JSON.stringify({ workflowRunId: runId, ...(threadId ? { threadId } : {}), state: "failed", output: fenceOutside("errand", redactKnown(summary.error ?? summary.reason ?? summary.status)) });
+          return done(JSON.stringify({ workflowRunId: runId, ...(threadId ? { threadId } : {}), state: "failed", output: fenceOutside("errand", redactKnown(summary.error ?? summary.reason ?? summary.status)) }));
         }
         if (threadId) {
           const observed = await observeStageChild(bb, threadId, Math.min(WAIT_STEP_MS, Math.max(1, deadline - Date.now())));
@@ -331,11 +348,10 @@ export function mountErrandGraph(ctx: ServerCore, services: Services, core: Erra
           if (observed.kind !== "observing") await sleep(250);
         } else await sleep(Math.min(500, Math.max(1, deadline - Date.now())));
       }
-      const threadId = spawnedOf(runId)?.threadId ?? params.threadId;
-      return JSON.stringify({ workflowRunId: runId, ...(threadId ? { threadId } : {}), state: "running", output: fenceOutside("errand", redactKnown(detail)) });
-      } finally { endWait(); }
-    },
-  });
+      const threadId = spawnedOf(runId)?.threadId ?? threadIdHint;
+      return { ended: false, text: JSON.stringify({ workflowRunId: runId, ...(threadId ? { threadId } : {}), state: "running", output: fenceOutside("errand", redactKnown(detail)) }) };
+    } finally { endWait(); }
+  }
 
   /** An errand thread no run made (started by an earlier version of the plugin): waited on as before, with no checkout snapshot to compare. */
   async function legacyWait(threadId: string, deadline: number, projectId: string): Promise<string> {

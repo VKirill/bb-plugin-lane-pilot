@@ -94,7 +94,8 @@ export function createPhaseIntake(ctx: Deps, phases: IntakePhases, train?: Intak
     const input = Array.isArray(data.input) ? data.input as Array<{ type?: string; text?: string }> : typeof data.input === "string" ? [{ type: "text", text: data.input }] : [];
     // No credential leaves the PM chat: not to the classifier, not to a phase (its goal goes into files of the repository and helper prompts).
     const text = withoutCredentials(withoutSelectionMarkers(input.filter((part) => part.type === "text" && typeof part.text === "string").map((part) => part.text).join("\n")));
-    if (!requestId || !text || data.initiator === "agent" || isMachineMessage(text)) return null;
+    // Only the owner's own words are intake: an agent's message and BB's system notices (initiator "system") are not.
+    if (!requestId || !text || data.initiator === "agent" || data.initiator === "system" || isMachineMessage(text)) return null;
     const known = await bb.storage.kv.get(KEY(threadId)) as IntakeRecord | null;
     if (known?.requestId === requestId) return known;
     const classified = classifyBundle(text);

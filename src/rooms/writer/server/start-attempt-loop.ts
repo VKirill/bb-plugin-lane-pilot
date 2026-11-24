@@ -27,7 +27,6 @@ import type { WriterTaskInput } from "./start-task-state";
 import { continueWith } from "./start-thread-takeover";
 import { spawnFreshWriter } from "./start-attempt-spawn";
 import { routeAttemptFailure } from "./start-failure-route";
-import { sendServiceMessage } from "../../relay/server";
 
       // A merge conflict or a fault of Lane Pilot or the machine does not spend an attempt; free retries are capped too.
       // Free retries are counted within this start: a task restarted after a Lane Pilot fix gets its full share,
@@ -96,7 +95,7 @@ import { sendServiceMessage } from "../../relay/server";
           break;
         }
         // A mainfix runs only while main is still red: when its failing checks already pass on current main (another
-        // task fixed it), it closes as accepted without a writer and the PM hears why.
+        // task fixed it), it closes as accepted without a writer; the PM hears it from the task digest like any accepted task.
         if (state.attemptsHere === 1 && !state.writerThreadId && isMainfixTask(input.task.id) && state.freshTask.verification.length > 0) {
           const checks = await bestEffort(ctx.log, "writer mainfix checks", services.runVerification(state.freshConfig, state.freshTask, input.runId), null);
           if (checks && checks.length > 0 && checks.every((check) => check.exitCode === 0)) {
@@ -104,8 +103,6 @@ import { sendServiceMessage } from "../../relay/server";
             transitionAttempt(db, state.attemptId, "accepted");
             state.last = { status:"accepted", attemptId: state.attemptId, produced:[], verification:checks,
               mainfixPreflight:"the failing checks already pass on current main" };
-            if (input.pmThreadId) void bestEffort(ctx.log, "writer mainfix notice", sendServiceMessage(bb as never, { threadId:input.pmThreadId, mode:"queue-if-active",
-                text:`Lane Pilot: задача ${input.taskId} закрыта принятой без писателя — её проверки уже проходят на текущем main, main починила другая задача. Действий не нужно.` }), undefined);
           }
         }
         const spawnStop = await spawnFreshWriter(deps, state, input);
