@@ -4,6 +4,7 @@ name: test
 
 on:
   push:
+    branches-ignore: [ci/github-actions]
   pull_request:
   workflow_dispatch:
 
