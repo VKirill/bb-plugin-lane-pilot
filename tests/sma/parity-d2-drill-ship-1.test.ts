@@ -178,16 +178,16 @@ print(json.dumps({
 seen = []
 m.bb = lambda *a, **k: (seen.append(list(a)), (0, json.dumps({"receipts": [{"kind": "revert", "state": "dry_run"}]}), ""))[1]
 m.sandbox_sound = lambda cwd: []
-import os
-os.makedirs("/tmp/drillx2", exist_ok=True)
-open("/tmp/drillx2/note.md","w").write("<<<<<<< ours\\n")
+import os, tempfile
+d = tempfile.mkdtemp(prefix="drillx2-")
+open(os.path.join(d, "note.md"),"w").write("<<<<<<< ours\\n")
 m.POLL_SEC = 0
 clock = [m.time.time()]
 m.time.time = lambda: (clock.__setitem__(0, clock[0] + 400), clock[0])[1]
-class Ctx: project = "proj_x"; cwd = "/tmp/drillx2"
+class Ctx: project = "proj_x"; cwd = d
 problems = m.revert_judged(Ctx(), "t", "note.md")
 m.bb = lambda *a, **k: (0, json.dumps({"receipts": [{"kind": "revert", "state": "merged"}]}), "")
-os.remove("/tmp/drillx2/note.md")
+os.remove(os.path.join(d, "note.md"))
 print(json.dumps({"problems": problems, "args": seen[0], "ok": m.revert_judged(Ctx(), "t", "note.md")}))
 `) as { problems: string[]; args: string[]; ok: string[] };
     expect(out.args).toEqual(["lane-pilot", "changes", "t"]);
