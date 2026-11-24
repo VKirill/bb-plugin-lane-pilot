@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { redactKnown } from "@lane-pilot/kit";
+import { SCOUT_SEAT_ROLES } from "@lane-pilot/models";
 import { wfRunProjectId, wfRunStepThreads } from "@lane-pilot/workflow-engine";
 import type { StepContext, WorkflowEngine } from "@lane-pilot/workflow-engine";
 import { findOpenNativeRun, getRun, latestRunForProjectThread } from "../../storage";
@@ -14,6 +15,12 @@ interface Services {
 export const SCOUT_GRAPH = "scout";
 
 export type ScoutAngle = { id: string; title: string; focus: string };
+
+/**
+ * The n-th angle runs on the scout seat n (mod 3) of the role table (SCOUT_SEAT_ROLES), so each standard angle has its own model and custom
+ * angles take the seats in turn. The graph's role is `scout{{item.seat}}`: `seat` is the row's suffix after «scout» ("", "-2", "-3").
+ */
+export type SeatedScoutAngle = ScoutAngle & { seat: string };
 
 /** Default 3-angle pre-plan reconnaissance matching AI Factory's parallel explore scouts. */
 export const DEFAULT_SCOUT_ANGLES: readonly ScoutAngle[] = [
@@ -42,7 +49,7 @@ const slugOf = (text: string, index: number): string =>
   text.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 32) || `angle-${index + 1}`;
 
 /** Normalizes custom audit angles (strings or `{id, title, focus}`) or returns the 3 standard reconnaissance angles. */
-export function normalizeScoutAngles(raw: unknown): { mode: "recon" | "audit"; angles: ScoutAngle[] } {
+export function normalizeScoutAngles(raw: unknown): { mode: "recon" | "audit"; angles: SeatedScoutAngle[] } {
   const list = Array.isArray(raw) ? raw : [];
   const custom: ScoutAngle[] = [];
   for (const [index, entry] of list.slice(0, 6).entries()) {
@@ -60,7 +67,8 @@ export function normalizeScoutAngles(raw: unknown): { mode: "recon" | "audit"; a
       custom.push({ id, title: title || id, focus: focus || title });
     }
   }
-  return custom.length ? { mode: "audit", angles: custom } : { mode: "recon", angles: [...DEFAULT_SCOUT_ANGLES] };
+  const angles = custom.length ? custom : DEFAULT_SCOUT_ANGLES;
+  return { mode: custom.length ? "audit" : "recon", angles: angles.map((angle, index) => ({ ...angle, seat: SCOUT_SEAT_ROLES[index % SCOUT_SEAT_ROLES.length]!.slice("scout".length) })) };
 }
 
 export function registerScoutActions(engine: WorkflowEngine): void {

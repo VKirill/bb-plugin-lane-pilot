@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import plugin from "../server";
-import { resolveRoleModel, roleFallbackModel } from "@lane-pilot/models";
+import { resolveRoleModel, roleFallbackModel, roleRowOf } from "@lane-pilot/models";
+import { roleMethod, SCOUT_METHOD } from "../src/rooms/critique/role-method";
 import { REDUCERS, runDraftTest, testCasesOf } from "@lane-pilot/workflow-engine";
 import { effectiveGroup, effectiveSwitch } from "../src/rooms/contracts/helper-context";
 import { roleSpec } from "../src/rooms/workflow/server/workflow-agent";
@@ -49,6 +50,31 @@ describe("scout role, parallel scout workflow, and scout-first pre-writer policy
     expect(audit.angles).toHaveLength(4);
     expect(audit.angles[0]).toMatchObject({ id: "cli-commands", title: "CLI commands" });
     expect(audit.angles[1]).toMatchObject({ id: "step-kinds", title: "Step kinds & graph fields" });
+  });
+
+  it("gives each of the three scouts its own seat in the role table: own model, own fallback, the scout's rights and method", () => {
+    const recon = normalizeScoutAngles(undefined);
+    expect(recon.angles.map((angle) => `scout${angle.seat}`)).toEqual(["scout", "scout-2", "scout-3"]);
+    // Custom audit angles take the seats in turn.
+    const audit = normalizeScoutAngles(["a", "b", "c", "d", "e"]);
+    expect(audit.angles.map((angle) => `scout${angle.seat}`)).toEqual(["scout", "scout-2", "scout-3", "scout", "scout-2"]);
+    // The graph's role is filled at run time; read before the run it is the first seat.
+    expect(roleRowOf("scout{{item.seat}}")).toBe("scout");
+
+    // Three families by default, and the owner's row of one seat moves only that scout.
+    expect(["scout", "scout-2", "scout-3"].map((seat) => resolveRoleModel(seat, {}).model)).toEqual(["gemini-4-argon", "claude-sonnet-5-5", "gpt-6.1-terra"]);
+    const settings = { "role_model.scout-2": { provider: "codex", model: "gpt-6.1-sol", reasoning_effort: "high" } };
+    expect(resolveRoleModel("scout-2", settings)).toMatchObject({ model: "gpt-6.1-sol", effort: "high", source: "table" });
+    expect(resolveRoleModel("scout", settings).model).toBe("gemini-4-argon");
+    expect(resolveRoleModel("scout-3", settings).model).toBe("gpt-6.1-terra");
+
+    for (const seat of ["scout-2", "scout-3"]) {
+      const spec = roleSpec(seat);
+      expect(spec.helper).toBe("scout");
+      expect(spec.readOnly).toBe(true);
+      expect(spec.editable("src/server.ts")).toBe(false);
+      expect(roleMethod(seat)).toBe(SCOUT_METHOD);
+    }
   });
 
   it("reduces parallel scout branches deterministically with deduplicated anchors, severity-ranked findings, and partial resilience", () => {

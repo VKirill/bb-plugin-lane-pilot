@@ -126,7 +126,11 @@ export const ROLE_TABLE: readonly RoleRow[] = [
   { id: "debugger", default: { model: "gpt-6.1-sol", effort: "high", why: "Finds the cause of a failure by reading logs and code: a judge of causes, strong at terminal-heavy work." }, least: "standard", legacy: ["workflow.debugger", "specialist"] },
   { id: "council", default: { model: "gpt-6.1-sol", effort: "high", why: "The chair weighs the seats' opinions: a judge, not an author." } },
   { id: "pm-reader", default: { model: "claude-haiku-5-5", effort: "low", why: "Reads long files and pulls out what the PM asked for: cheap, fast extraction." }, legacy: ["pm_read"] },
-  { id: "scout", default: { model: "gemini-4-argon", effort: "medium", why: "Runs parallel read-only codebase reconnaissance (architecture, conventions, callers) before planning and multi-angle doc-vs-code audits on Antigravity Gemini 4 Argon; without it: Claude Sonnet 5.5." }, fallback: { model: "claude-sonnet-5-5", effort: "medium" }, least: "standard" },
+  // The three scouts of lane_pilot_scout are three seats (scout-graph.ts SCOUT_SEATS), each with its own model, so the angles are read by
+  // three families: architecture (or the 1st, 4th custom angle), patterns (2nd, 5th), dependencies (3rd, 6th). `scout` keeps the owner's older row.
+  { id: "scout", default: { model: "gemini-4-argon", effort: "medium", why: "Scout 1: the architecture angle (and custom audit angles 1 and 4) of the parallel read-only reconnaissance before planning, on Antigravity Gemini 4 Argon; without it: Claude Sonnet 5.5." }, fallback: { model: "claude-sonnet-5-5", effort: "medium" }, least: "standard" },
+  { id: "scout-2", default: { model: "claude-sonnet-5-5", effort: "medium", why: "Scout 2: the patterns and conventions angle (and custom audit angles 2 and 5), on Claude Sonnet 5.5, another family than scout 1." }, least: "standard" },
+  { id: "scout-3", default: { model: "gpt-6.1-terra", effort: "medium", why: "Scout 3: the dependencies and callers angle (and custom audit angles 3 and 6), on GPT-6.1 Terra, a third family." }, least: "standard" },
   { id: "rules-analyzer", default: { model: "gpt-6-luna", effort: "high", why: "Reads a project's failed writer attempts at night and writes the project rules that would have prevented them (and rewrites a rule that did not work). Luna with high effort set aside failures that were not the writers' where a stronger author wrote a rule that sent writers outside their paths; it is also the cheap one for a job that runs every night." } },
   { id: "episode-analyst", default: { model: GEMINI_FLASH, effort: "medium", why: "Reads one finished errand's chat once and writes its episode: goal, values, pitfalls, failure class and a process-key candidate. Another family than the errand helper (it must not grade itself), a background job on the near-free 9router subscription. Without it: GPT-6 Luna." }, fallback: { model: "gpt-6-luna", effort: "high" } },
   { id: "digest-light", default: { model: "gemini-4-hydrogen", effort: "medium", why: "Reads a single completed chat or workflow run on the nightly digest step and extracts its masked process key, lessons and pitfalls: a fast Antigravity Gemini 4 pass without spending Claude or GPT." }, fallback: { model: "claude-sonnet-5-5", effort: "medium" } },
@@ -153,6 +157,9 @@ export const ROLE_TABLE: readonly RoleRow[] = [
 ];
 
 export const ROLE_IDS: readonly string[] = ROLE_TABLE.map((row) => row.id);
+/** The scouts' seats: the n-th angle of lane_pilot_scout runs on row n (mod 3), each a role of its own with the scout's rights. */
+export const SCOUT_SEAT_ROLES = ["scout", "scout-2", "scout-3"] as const;
+export const isScoutSeat = (role: string): boolean => (SCOUT_SEAT_ROLES as readonly string[]).includes(role);
 export const ROLE_MODEL_KEY_PREFIX = "role_model.";
 export const roleModelKey = (role: string): string => `${ROLE_MODEL_KEY_PREFIX}${role}`;
 
@@ -170,6 +177,9 @@ export function roleRowOf(role: string): string {
     return "specialist";
   }
   if (ROLE_IDS.includes(role)) return role;
+  // A role a graph fills at run time (`scout{{item.seat}}`) is read before the run by its fixed part.
+  const fixed = role.includes("{{") ? role.slice(0, role.indexOf("{{")) : "";
+  if (fixed && ROLE_IDS.includes(fixed)) return fixed;
   return ALIASES[role] ?? "analyst";
 }
 export const roleRow = (role: string): RoleRow => ROLE_TABLE.find((row) => row.id === roleRowOf(role))!;

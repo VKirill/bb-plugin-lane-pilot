@@ -57,7 +57,8 @@ export async function sendServiceMessage(bb:SendMessageApi, message:ServiceMessa
     try { return { sent: await notice.call(bb.sdk.threads, { threadId:message.threadId, text:message.text, label:message.label ?? SERVICE_NOTICE_LABEL, mode:message.mode === "steer-if-active" ? "steer" : "queue" }) }; }
     catch { return null; }
   };
-  if (!sender) {
+  // No await without the function: a core without it sends at once, as before (callers that do not wait rely on that).
+  if (!sender && typeof notice === "function") {
     const delivered = await asNotice();
     if (delivered) return delivered.sent;
   }

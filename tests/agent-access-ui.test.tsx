@@ -1,4 +1,5 @@
 /** @vitest-environment jsdom */
+import { SCOUT_SEAT_ROLES } from "@lane-pilot/models";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, waitFor, within } from "@testing-library/react";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
@@ -239,7 +240,8 @@ describe("Agent access tab", () => {
       await accessReady(slot);
       expect(slot.getByTestId("access-roles").getAttribute("data-inactive")).toBe("false");
       const rows = slot.getByTestId("access-roles").querySelectorAll("[data-role-row]");
-      expect(rows).toHaveLength(HELPER_ROLES.length);
+      // Every helper role, plus the scouts' extra seats (model rows of the one scout helper).
+      expect(rows).toHaveLength(HELPER_ROLES.length + SCOUT_SEAT_ROLES.length - 1);
       for (const role of HELPER_ROLES) {
         const id = role.replace(/[:-]/g, "_");
         const row = slot.getByTestId(`access-role-${id}`);

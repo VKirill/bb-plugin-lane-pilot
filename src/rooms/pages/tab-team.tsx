@@ -19,7 +19,7 @@ import { BrowserDetail, CouncilDetail, WriterDetail } from "./team-details";
 import { Pill, type PillTone } from "../ui-shell/ui";
 import { Surface, SurfaceBody, SurfaceHeader } from "@lane-pilot/ui-kit";
 import type { LpPage } from "./use-lp-page";
-import {roleRowOf, writerFallbackSlots} from "@lane-pilot/models";
+import {isScoutSeat, roleFallbackModel, roleRowOf, writerFallbackSlots} from "@lane-pilot/models";
 
 /** A row of the table «role -> model» as `get_role_models` reads it for the place: what the role runs on now. */
 type TableRole = { role: string; providerId: string; model: string; effort: string; source: "table" | "stage" | "default"; version: number;
@@ -70,9 +70,11 @@ function useRoleModel(page: LpPage) {
 function PoolLine({ row, names, page, onSave }: { row: TableRole; names: ReadonlyMap<string, string>; page: LpPage; onSave: (pool: TableRole["pool"]) => void }) {
   const [adding, setAdding] = useState(false);
   const name = (entry: { providerId: string; model: string }) => names.get(`${entry.providerId}/${entry.model}`) ?? entry.model;
+  // With no fallbacks of the owner's the row still has the role's built-in one (role-models.ts): «none» would hide it.
+  const builtin = row.pool.length ? null : roleFallbackModel(row.role);
   return (
     <div className="flex min-w-0 flex-wrap items-center gap-1 text-xs text-muted-foreground" data-testid={`team-pool-${row.role}`}>
-      <span>{row.pool.length ? t("roleModelsPool") : t("teamPoolNone")}</span>
+      <span>{row.pool.length ? t("roleModelsPool") : builtin ? t("teamPoolBuiltin").replace("{model}", name(builtin)) : t("teamPoolNone")}</span>
       {row.pool.map((entry) => (
         <span key={`${entry.providerId}/${entry.model}`} className="inline-flex items-center gap-1 rounded-md border border-[var(--lp-hairline)] px-1.5 py-0.5 text-foreground">
           {name(entry)}
@@ -98,7 +100,9 @@ function RoleRow({ spec, page, access, rules, open, onToggle, fallbackNames, tab
 }) {
   const { data, isGlobal, selectedSectionId, displayedValue, applySetting, catalogRow, modelPicker, pickerValue, saveWriterSelection, pickers, inheritReset, stackControls, wideTable } = page;
   const id = roleKey(spec.id);
-  const role: RoleView | undefined = access.view?.roles.find((item) => item.role === spec.id);
+  // The scouts' seats differ by model only: their rights are the scout's.
+  const accessRole = isScoutSeat(spec.id) ? "scout" : spec.id;
+  const role: RoleView | undefined = access.view?.roles.find((item) => item.role === accessRole);
   const changed = role ? isChanged(role) : false;
   const accessOrigin: "role" | "global" | "project" | "section" = changed && role ? role.origin ?? access.scope : "role";
   const origin = spec.keys.length ? originOfKeys(spec.keys, data?.explicitKeys, data?.inheritedKeys) : null;

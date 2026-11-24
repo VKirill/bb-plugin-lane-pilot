@@ -105,7 +105,8 @@ describe("six tabs", () => {
     const listed = ROLE_GROUPS.flatMap((group) => group.roles.map((role) => role.id));
     expect(new Set(listed).size).toBe(listed.length);
     expect([...HELPER_ROLES].filter((role) => !listed.includes(role))).toEqual([]);
-    expect(listed.filter((role) => !(HELPER_ROLES as readonly string[]).includes(role))).toEqual([]);
+    // The scouts' seats are model rows of the one scout helper (its rights): the only rows that are not a helper role.
+    expect(listed.filter((role) => !(HELPER_ROLES as readonly string[]).includes(role))).toEqual(["scout-2", "scout-3"]);
   });
 
   it("picks no string by `ru ? … : …` in the UI: every text comes from the dictionaries", () => {

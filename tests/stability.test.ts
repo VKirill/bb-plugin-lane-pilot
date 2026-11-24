@@ -35,6 +35,8 @@ function setup() {
   const { bb } = createFakePluginHost({ pluginId:"lane-pilot", sdk:{ threads:{
     get:async () => ({ id:"pm", projectId:"proj", archivedAt:null }),
     send:async (args:{ threadId:string }) => { sent.push(args.threadId); return {}; },
+    // The hub's core delivers Lane Pilot's notices as system messages (service-message.ts).
+    experimental_vkSystemNotice:async (args:{ threadId:string }) => { sent.push(args.threadId); return true; },
   } } as never });
   const db = openDatabase(bb);
   createRun(db, "run", "proj", "cli", "/repo");
@@ -102,10 +104,12 @@ describe("what the PM is told about parked tasks", () => {
       await bb.storage.kv.set("stability:parked", (await stability.loadParked()).map((row) => ({ ...row, version:"0.0.1" })));
       expect(await stability.sweep(3000)).toEqual(["T1"]);
       vi.advanceTimersByTime(61_000);
+      await new Promise((settle) => setImmediate(settle)); // the notice is sent in the next turn of the loop
       expect(sent).toEqual([]);
       await stability.onTaskFailed({ projectId:"proj", runId:"run", taskId:"T5", pmThreadId:"pm", state:"validation_failed",
         reason:"merge_failed: git merge failed: error: Your local changes to the following files would be overwritten by merge:\n  .agents/PROGRESS.md" }, 4000);
       vi.advanceTimersByTime(61_000);
+      await new Promise((settle) => setImmediate(settle)); // the notice is sent in the next turn of the loop
       expect(sent).toEqual(["pm"]);
     } finally { vi.useRealTimers(); }
   });
@@ -395,6 +399,7 @@ describe("a spent writer window (writer.capacity_wait)", () => {
       expect(await stability.sweep(t0 + 48 * 60_000)).toEqual([]);
       expect(await stability.loadParked()).toEqual([]);
       vi.advanceTimersByTime(61_000);
+      await new Promise((settle) => setImmediate(settle)); // the notice is sent in the next turn of the loop
       expect(sent).toEqual(["pm"]);
     } finally { vi.useRealTimers(); }
   });

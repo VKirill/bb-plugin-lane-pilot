@@ -55,7 +55,7 @@ TL;DR: `writerHold` and `walkWriterChain` check writer availability before spawn
 ## What people see
 
 - **Board card:** `waitingWriterText` formats the active hold reason and minutes until recheck (e.g. `Ждёт писателя: владелец работает в Claude Code, проверка через ... мин`; `src/rooms/writer/server/writer-hold.ts:163-178`), recorded on the pending `writer-agent` stage (`src/rooms/writer/server/start-writer-holds.ts:46`).
-- **PM chat:** `noteWriterWait` sends one message per attempt via `kv` key `writer-wait-told:<attemptId>` (`src/rooms/writer/server/writer-wake.ts:86-103`).
+- **PM chat:** no message of its own: the waiting task reaches the PM in the task digest («Still at work (waits: …)», `src/rooms/relay/server/relay.ts`).
 - **Metrics:** `attemptMetrics` exposes `attemptsPerAcceptedTask` and `heldShare` (share of attempts journaled with `waiting_writer:`) (`src/rooms/usage/server/attempt-metrics.ts:50-52`, `:200-201`, `:296`).
 
 The spawn gate in `spawnWriterAttemptOnce` remains active as the final guard; `writerHold` is advisory (`src/rooms/writer/server/spawn.ts:64-78`).

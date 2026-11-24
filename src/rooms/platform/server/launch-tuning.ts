@@ -12,12 +12,13 @@
  * as the way to see a change that is already committed, and `ask` removes the shell. `auditor` and `triager` are graph agents whose
  * READ_ONLY_LINE lets them keep scratch files under .bb/chats or /tmp, so neither a mode nor a write ban fits them. Writers are never touched.
  */
+import { SCOUT_SEAT_ROLES } from "@lane-pilot/models";
 
 /** Roles that read the project and answer; nothing they are told to do writes. */
 const READ_ONLY_ROLES: ReadonlySet<string> = new Set(["plan-critic", "plan-critic-light", "specialist-reviewer", "pm-reader", "gate-triage"]);
 
 /** The roles Claude Code may also lose its edit tools for: the code critic and scout keep Bash (read-only git/rg), only the file editors go. */
-const NO_EDITOR_ROLES: ReadonlySet<string> = new Set([...READ_ONLY_ROLES, "code-critic", "scout"]);
+const NO_EDITOR_ROLES: ReadonlySet<string> = new Set([...READ_ONLY_ROLES, "code-critic", ...SCOUT_SEAT_ROLES]);
 
 type AcpTuning = { mode?: string; args?: string[] };
 

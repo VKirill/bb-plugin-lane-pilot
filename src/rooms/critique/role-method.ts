@@ -1,4 +1,5 @@
 import { SUBJECTIVE_WORDS, FRONTEND_VERIFY_METHOD } from "../contracts/review-vocabulary";
+import { isScoutSeat } from "@lane-pilot/models";
 /**
  * The working method of Lane Pilot's reviewing and diagnosing roles, as lines the prompt builders put into their briefs.
  * The thresholds, layers and checklists are adapted from catlog22/maestro-flow (MIT; see THIRD_PARTY_NOTICES.md):
@@ -76,8 +77,8 @@ export const SCOUT_METHOD: readonly string[] = [
 
 /** The method lines of a role of a chain, or none when the role has none of its own. */
 export function roleMethod(role: string): readonly string[] {
+  if (isScoutSeat(role)) return SCOUT_METHOD;
   switch (role) {
-    case "scout": return SCOUT_METHOD;
     case "analyst": return ANALYST_METHOD;
     case "planner": return PLANNER_METHOD;
     case "auditor": return AUDITOR_METHOD;

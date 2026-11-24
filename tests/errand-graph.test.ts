@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { stageHelperSettings } from "../src/rooms/settings/server/stage-settings";
 import { readFileSync } from "node:fs";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
@@ -127,8 +127,7 @@ describe("the errand graph", () => {
     const detached: string[] = [];
     Object.assign(w.bb.agents, { experimental_vkDetachToolCall: (text: string) => { detached.push(text); return true; } });
     const pending = w.call("lane_pilot_errand", { task: TASK });
-    await new Promise((wake) => setTimeout(wake, 300));
-    expect(detached).toHaveLength(1);
+    await vi.waitFor(() => expect(detached).toHaveLength(1), { timeout: 10_000 });
     expect(detached[0]).toContain("@thread:errand-thr-1");
     expect(detached[0]).toContain("do not call lane_pilot_wait_errand");
     w.state.ended = true;

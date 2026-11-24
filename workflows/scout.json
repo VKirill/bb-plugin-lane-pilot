@@ -112,7 +112,7 @@
           }
         ],
         "type": "agent",
-        "role": "scout",
+        "role": "scout{{item.seat}}",
         "session": "new",
         "title": {
           "en": "Scout: {{item.title}}",

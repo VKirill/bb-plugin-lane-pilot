@@ -1,5 +1,5 @@
 import type { I18nKey } from "@lane-pilot/i18n";
-import {COUNCIL_KEYS, ROLE_SPECS, WRITER_FALLBACK_SLOTS, type RoleSelectionId, type RoleSpec as RoleSelectionSpec, writerFallbackKeys} from "@lane-pilot/models";
+import {COUNCIL_KEYS, ROLE_SPECS, SCOUT_SEAT_ROLES, WRITER_FALLBACK_SLOTS, type RoleSelectionId, type RoleSpec as RoleSelectionSpec, writerFallbackKeys} from "@lane-pilot/models";
 ;
 
 /** Which roles the table lists, in the order of the access roles (the same groups as the agent profile). */
@@ -57,7 +57,7 @@ export const ROLE_GROUPS: Array<{ id: RoleGroupId; roles: RoleSpec[] }> = [
     { id: "api-recon", keys: [] },
   ] },
   { id: "specialists", roles: ["specialist:design-lead", "specialist:copy-lead", "specialist:seo-specialist", "specialist:growth-marketer", "specialist:tavily", "specialist:video-lead", "specialist:3d-artist", "specialist:game-dev", "specialist:social-manager", "specialist:billing-assistant", "specialist:visual-artist", "specialist:macos-operator", "specialist:lead"].map((id) => ({ id, keys: [] })) },
-  { id: "workflow", roles: ["analyst", "planner", "auditor", "debugger", "scout", "workflow-architect", "evolve-planner", "evolve-critic", "evolve-architect", "evolve-auditor", "lead", "workspace-provisioner", "harness-editor", "harness-composer", "harness-reflection"].map((id) => ({ id, keys: [] })) },
+  { id: "workflow", roles: ["analyst", "planner", "auditor", "debugger", ...SCOUT_SEAT_ROLES, "workflow-architect", "evolve-planner", "evolve-critic", "evolve-architect", "evolve-auditor", "lead", "workspace-provisioner", "harness-editor", "harness-composer", "harness-reflection"].map((id) => ({ id, keys: [] })) },
 ];
 
 export const roleKey = (role: string) => role.replace(/[:-]/g, "_");

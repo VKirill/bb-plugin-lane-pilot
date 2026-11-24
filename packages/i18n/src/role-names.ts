@@ -28,7 +28,9 @@ export const ROLE_NAMES = {
   "planner": agent("management", "Планировщик", "Planner"),
   "workflow-architect": agent("management", "Архитектор графов", "Workflow architect"),
   "pm-reader": agent("management", "Разведчик задачи", "Task scout"),
-  "scout": agent("management", "Разведчик кода", "Codebase scout"),
+  "scout": agent("management", "Разведчик кода 1 · архитектура", "Codebase scout 1 · architecture"),
+  "scout-2": agent("management", "Разведчик кода 2 · паттерны", "Codebase scout 2 · patterns"),
+  "scout-3": agent("management", "Разведчик кода 3 · зависимости", "Codebase scout 3 · dependencies"),
   "onboarder": agent("management", "Знакомство с проектом", "Project onboarding"),
   // Исполнители кода
   "writer": agent("coders", "Исполнитель кода", "Code writer"),

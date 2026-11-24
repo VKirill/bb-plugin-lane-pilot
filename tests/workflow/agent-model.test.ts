@@ -369,7 +369,7 @@ describe("a deciding role", () => {
 
   it("never plans or audits on a light model it inherits, and the plan's critic is another model than its planner", () => {
     expect(ROLE_LEAST_TIER).toEqual({
-      planner: "strong", "code-critic": "standard", auditor: "standard", debugger: "standard", scout: "standard",
+      planner: "strong", "code-critic": "standard", auditor: "standard", debugger: "standard", scout: "standard", "scout-2": "standard", "scout-3": "standard",
       "evolve-planner": "strong", "evolve-critic": "standard", "evolve-architect": "strong", "evolve-auditor": "standard",
     });
     for (const lightPm of [pm, { providerId: "claude-code", model: "claude-haiku-5-5" }]) {
