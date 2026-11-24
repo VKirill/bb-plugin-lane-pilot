@@ -11,7 +11,6 @@ sources:
   - package.json
   - scripts/test-changed.mjs
   - scripts/test-full.sh
-  - .github/workflows/test.yml
   - tests/sequencer.ts
   - tests/global-setup.ts
   - tests/setup-jsdom.ts
@@ -64,9 +63,9 @@ TL;DR: Vitest runs four projects (`node`, `node-isolated`, `ui`, `ui-isolated`) 
 
 ## Continuous integration
 
-- `.github/workflows/test.yml` defines the `test` workflow triggered on `push`, `pull_request`, and `workflow_dispatch`, with per-ref `concurrency` (`cancel-in-progress: true`) so `infrastructure/plugin-deploy/bb-plugin-push` waits for the `HEAD` check instead of running the suite on a server of its own (`.github/workflows/test.yml:1-12`).
-- The `test` job runs on `ubuntu-latest` (`timeout-minutes: 60`) with full history (`fetch-depth: 0`) and ensures a local `main` branch exists so parity and bisect tests can read `main` and walk commits (`.github/workflows/test.yml:14-23`).
-- The job sets up Node `24.15.0` with npm cache, installs `bubblewrap` and `sqlite3`, configures git identity, installs dependencies with `npm ci --no-audit --no-fund`, installs Playwright Chromium, and runs `npx tsc --noEmit -p .` and `npx vitest run` with `NO_COLOR=1` and `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` (`.github/workflows/test.yml:25-39`).
+- The repository has no hosted CI. Checks run on the maintainer's own Linux runner before every deploy: `npx tsc --noEmit -p .` plus `npm run test:changed` against the last fully green commit, and the full `npx vitest run` at least once a day or when dependencies, vitest or TypeScript configs change.
+- Reference environment for a green suite: Linux, Node `24.15.0`, `bubblewrap` and `sqlite3` installed, Playwright Chromium, full git history with a local `main` branch (parity and bisect tests read `main`), `NO_COLOR=1` and `VITE_CONFIG_NATIVE_IGNORE_WARNING=true`.
+- macOS and Windows are not reference platforms: Linux-only tests (bash, `bwrap`, systemd, crontab) fail there by design.
 
 ## Related pages
 
