@@ -16,10 +16,15 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 40
     steps:
+      # Full history and a local main: parity tests read main's files (git show main:…), bisect tests walk commits.
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - run: git rev-parse --verify -q refs/heads/main >/dev/null || git branch main origin/main
+      # The same Node as the old test host (OVH): the node --test inventory accepts versions it knows.
       - uses: actions/setup-node@v4
         with:
-          node-version: 24
+          node-version: 24.15.0
           cache: npm
       # Sandbox tests need bubblewrap; sqlite3 is read by the hub-side helpers.
       - run: sudo apt-get update -qq && sudo apt-get install -y -qq bubblewrap sqlite3
