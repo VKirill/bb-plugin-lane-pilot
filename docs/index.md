@@ -33,7 +33,7 @@ Built by Lane Pilot from page frontmatter.
 | [SDK audit wave 12: implemented items and rejections](decisions/2026-10-30-sdk-audit-wave12.md) | decisions | decided | — |
 | [docs/decisions/2026-11-02-council-владелец-хочет-одну-самодостаточную-память-для-в.md](decisions/2026-11-02-council-владелец-хочет-одну-самодостаточную-память-для-в.md) | — | — | — |
 | [Register of deferrals](deferrals.md) | component | active | 2026-11-14 |
-| [Build and deploy Lane Pilot](deployment.md) | deployment | active | 2026-11-14 |
+| [Build and deploy Lane Pilot](deployment.md) | deployment | active | 2026-11-24 |
 | [Design evaluation rubric](design-eval.md) | component | active | 2026-10-25 |
 | [The nightly docs pass](docs-night.md) | component | active | 2026-10-30 |
 | [Enabled settings (generated)](enabled-settings.md) | component | generated | 2026-10-30 |
@@ -92,7 +92,7 @@ Built by Lane Pilot from page frontmatter.
 | [Schedule board: Lane Pilot's own scheduler](schedule-board.md) | component | active | 2026-10-29 |
 | [Совместимость Lane Pilot с BB: штатное ядро, VK-сборка, заявленный минимум](sdk-compatibility.md) | reference | active | — |
 | [The Self-improvement page and its settings](self-improvement-settings.md) | component | active | 2026-11-17 |
-| [Ship after acceptance](ship.md) | component | active | 2026-10-30 |
+| [Ship after acceptance](ship.md) | component | active | 2026-11-24 |
 | [Skill standard](skill-standard.md) | component | active | 2026-11-06 |
 | [SMA map — authoring per-node evidence of the four proofs](sma-evidence.md) | how-to | current | 2026-11-14 |
 | [Самопроверка SMA (20 вопросов), batch3](sma-self-check.md) | audit | — | — |
@@ -100,7 +100,7 @@ Built by Lane Pilot from page frontmatter.
 | [Tasks board and work graph](task-board.md) | component | active | 2026-10-29 |
 | [The task folder (one home per task, lp.task-manifest/1)](task-folder.md) | component | active | 2026-11-17 |
 | [telegram-send: the shared Telegram send fragment](telegram-send.md) | flow | active | 2026-11-23 |
-| [Testing and verification](testing.md) | testing | active | 2026-11-16 |
+| [Testing and verification](testing.md) | testing | active | 2026-11-24 |
 | [Twins against the real thing](twins.md) | component | active | 2026-10-23 |
 | [Writer validation decisions](validator-decisions.md) | decisions | active | 2026-10-20 |
 | [The wall journal and the night loop](wall.md) | component | active | 2026-11-14 |
