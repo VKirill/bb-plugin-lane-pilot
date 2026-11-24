@@ -1,0 +1,29 @@
+name: nightly-os
+# Nightly full suite on macOS and Windows (own runners). Informational: the suite is Linux-first,
+# so red here does not block a deploy; compare with the Linux run before fixing.
+on:
+  schedule:
+    - cron: "0 1 * * *"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  suite:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-ci, windows-ci]
+    runs-on: [self-hosted, "${{ matrix.os }}"]
+    timeout-minutes: 60
+    env:
+      NO_COLOR: "1"
+      VITE_CONFIG_NATIVE_IGNORE_WARNING: "true"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - run: git branch main origin/main
+        continue-on-error: true
+      - run: node -v
+      - run: npm ci --no-audit --no-fund
+      - run: npx vitest run
