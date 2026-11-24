@@ -2,7 +2,7 @@
 title: Writer Selection and Fallbacks
 type: component
 created: 2026-11-08
-updated: 2026-11-23
+updated: 2026-11-24
 status: active
 confidence: medium
 tags: [models, writers, table, writer-reasoning, fallbacks, rotation]
@@ -28,7 +28,7 @@ TL;DR: Knows coding models by writer profile key, clamps reasoning efforts to th
 ## Purpose
 
 The writer subsystem manages execution models for task writers (packages/models/src/model-profiles.ts:1-4).
-The package maintains `ROLE_TABLE` for role-based model resolution; writer selection uses a separate table of known `WRITER_PROFILES` for `writer.models_off` matching while allowing any configured `provider/model` ([Role-to-Model Resolution](role-models.md); packages/models/src/role-models.ts:103-152; packages/models/src/model-profiles.ts:1-34).
+The package maintains `ROLE_TABLE` for role-based model resolution; writer selection uses a separate table of known `WRITER_PROFILES` for `writer.models_off` matching while allowing any configured `provider/model` ([Role-to-Model Resolution](role-models.md); packages/models/src/role-models.ts:103-153; packages/models/src/model-profiles.ts:1-34).
 
 ## How it works
 

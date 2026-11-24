@@ -2,7 +2,7 @@
 title: Models Workspace — Gotchas
 type: gotchas
 created: 2026-11-08
-updated: 2026-11-23
+updated: 2026-11-24
 status: active
 confidence: medium
 tags: [models, gotchas, edge-cases, validation, providers]
@@ -29,9 +29,9 @@ TL;DR: Critical edge cases, provider mismatches, profile restrictions, and valid
 
 ## Native provider family enforcement
 
-- The native providers `claude-code` and `codex` can only serve models belonging to their native model families (packages/models/src/role-models.ts:200-201).
-- If a caller supplies an invalid pair like `{ provider: "codex", model: "claude-opus-5-5" }`, `rowOption` rejects the option as invalid (`undefined`) (packages/models/src/role-models.ts:196-203).
-- When normalizing providers before execution, `consistentProvider` overrides a mismatched native provider (`claude-code` or `codex`) for any model in `ROLE_MODEL_OPTIONS`; for example, passing `claude-code` with `gpt-6.1-sol` forces provider `codex` (packages/models/src/role-models.ts:295-304).
+- The native providers `claude-code` and `codex` can only serve models belonging to their native model families (packages/models/src/role-models.ts:201-202).
+- If a caller supplies an invalid pair like `{ provider: "codex", model: "claude-opus-5-5" }`, `rowOption` rejects the option as invalid (`undefined`) (packages/models/src/role-models.ts:197-204).
+- When normalizing providers before execution, `consistentProvider` overrides a mismatched native provider (`claude-code` or `codex`) for any model in `ROLE_MODEL_OPTIONS`; for example, passing `claude-code` with `gpt-6.1-sol` forces provider `codex` (packages/models/src/role-models.ts:296-305).
 
 ## ZCode exactOnly matching vs OpenCode GLM
 
@@ -66,14 +66,14 @@ TL;DR: Critical edge cases, provider mismatches, profile restrictions, and valid
 
 ## Host connectivity semantics: Gemini vs native providers
 
-- For Gemini models routed through 9router (`router9/ag/gemini-3.8-flash-high`), `offeredForRole` returns `false` (not `null`) if the machine is connected but lacks the model in its catalog (packages/models/src/role-models.ts:274-280).
-- This explicit `false` allows review roles (`plan-critic`, `code-critic`) to drop to their GPT fallback model (`gpt-6.1-sol`) immediately rather than failing inside the spawn (packages/models/src/role-models.ts:269-273, :283-287).
-- For native providers (`claude-code`, `codex`), missing catalog entries return `null` because native providers are assumed available across connected machines (packages/models/src/role-models.ts:277-279).
+- For Gemini models routed through 9router (`router9/ag/gemini-3.8-flash-high`), `offeredForRole` returns `false` (not `null`) if the machine is connected but lacks the model in its catalog (packages/models/src/role-models.ts:275-281).
+- This explicit `false` allows review roles (`plan-critic`, `code-critic`) to drop to their GPT fallback model (`gpt-6.1-sol`) immediately rather than failing inside the spawn (packages/models/src/role-models.ts:270-274, :284-288).
+- For native providers (`claude-code`, `codex`), missing catalog entries return `null` because native providers are assumed available across connected machines (packages/models/src/role-models.ts:278-280).
 
 ## Inherited legacy escalation vs explicit light configuration
 
 - Deciding roles define a `least` tier requirement in `ROLE_LEAST_TIER` (e.g. `planner` requires `strong`, `code-critic` requires `standard`) (packages/models/src/agent-model.ts:101; packages/models/src/role-models.ts:79, :105, :124).
-- If a role inherits a legacy stage setting below its `least` tier, `resolveRoleModel` passes over that setting, promotes the selection to the role default, and records `escalated: true` with issue `escalated_for_role` (packages/models/src/role-models.ts:327-330; packages/models/src/agent-model.ts:120, :162).
+- If a role inherits a legacy stage setting below its `least` tier, `resolveRoleModel` passes over that setting, promotes the selection to the role default, and records `escalated: true` with issue `escalated_for_role` (packages/models/src/role-models.ts:328-331; packages/models/src/agent-model.ts:120, :162).
 - If the owner explicitly picks a light model in `role_model.<role>`, the pick is honored without promotion, and issue `light_model_for_role` is emitted as a diagnostic warning (packages/models/src/agent-model.ts:121, :164).
 
 ## Provider limit notice character count ceiling
