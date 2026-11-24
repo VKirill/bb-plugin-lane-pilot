@@ -46,6 +46,14 @@ const reply = (body: Row, lead = "Done.") => `${lead}\n\n\`\`\`json\n${JSON.stri
 const disposers: Array<() => void> = [];
 afterEach(() => { for (const dispose of disposers.splice(0)) dispose(); });
 
+// The run's end, or a STALL error with the steps' states after 20 s. The guard timer is cleared when the run ends first:
+// left running, it fired after the test had closed the database (an unhandled error on a slow CI machine).
+async function untilDoneOrStall<R extends { runId: string; done: Promise<unknown> }>(t: { db: unknown; spawned: unknown[]; sends: unknown[] }, run: R, errLen: number): Promise<Awaited<R["done"]>> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const stall = new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error("STALL: " + JSON.stringify((t.db as { prepare(q: string): { all(...a: unknown[]): Row[] } }).prepare(`SELECT node_id,state,substr(error,1,${errLen}) e FROM lane_pilot_wf_step WHERE run_id=?`).all(run.runId)) + " spawns=" + t.spawned.length + " sends=" + t.sends.length)), 20000); });
+  try { return await Promise.race([run.done, stall]) as Awaited<R["done"]>; } finally { clearTimeout(timer); }
+}
+
 /** The executor fixture of a chain run: same composition as production (registerChainExecutors registers fs.write,
  *  deliverable.validate and the lp.* actions), minus the parts this packet does not exercise. */
 async function setup(script: Script, options: { resolveWorkflow?: (id: string, version?: number) => Workflow | null; human?: (node: Row) => Row; truncateReads?: boolean; readError?: { code: string; serverCode: string }; writeOutcome?: string } = {}) {
@@ -195,7 +203,7 @@ describe("P04-R7 sibling document writes through the real fs.write action", () =
               reply({ ok: true, gaps: [], handoff: "clean" })],
     });
     const run = t.start(await builtin("ai-integration-phase"), { goal: "add a typed judgment", phase_id: "ph_r7e" });
-    const summary = await Promise.race([run.done, new Promise((_, reject) => setTimeout(() => reject(new Error("STALL: " + JSON.stringify((t.db as never as { prepare(s: string): { all(...a: unknown[]): Row[] } }).prepare("SELECT node_id,state,substr(error,1,200) e FROM lane_pilot_wf_step WHERE run_id=?").all(run.runId)) + " spawns=" + t.spawned.length + " sends=" + t.sends.length)), 20000))]) as Awaited<typeof run.done>;
+    const summary = await untilDoneOrStall(t, run, 200);
     expect(summary.status, summary.error ?? undefined).toBe("succeeded");
     expect(summary.output).toMatchObject({ status: "done", framework: "jev", spec_path: ".agents/phases/ph_r7e/AI-SPEC.md" });
     expect(file(t.checkout, ".agents/phases/ph_r7e/AI-SPEC.md")).toBe("# AI-SPEC v2\n\nAll sections present.\n");
@@ -338,7 +346,7 @@ describe("P04-R7 sibling document writes through the real fs.write action", () =
     mkdirSync(join(t.checkout, ".agents/planning"), { recursive: true });
     writeFileSync(join(t.checkout, ".agents/planning/PROJECT.md"), "# Project\n\n## Vision\n\nShip it.\n");
     const run = t.start(await builtin("milestone-close"), { goal: "milestone 2", goals: [] });
-    const summary = await Promise.race([run.done, new Promise((_, reject) => setTimeout(() => reject(new Error("STALL: " + JSON.stringify((t.db as never as { prepare(q: string): { all(...a: unknown[]): Row[] } }).prepare("SELECT node_id,state,substr(error,1,160) e FROM lane_pilot_wf_step WHERE run_id=?").all(run.runId)) + " spawns=" + t.spawned.length + " sends=" + t.sends.length)), 20000))]) as Awaited<typeof run.done>;
+    const summary = await untilDoneOrStall(t, run, 160);
     expect(summary.status, summary.error ?? undefined).toBe("succeeded");
     const project = file(t.checkout, ".agents/planning/PROJECT.md")!;
     expect(project).toContain("## Vision");
@@ -365,7 +373,7 @@ describe("P04-R7 sibling document writes through the real fs.write action", () =
       human: () => ({ answer: "", answer_kind: "timeout" }),
     });
     const run = t.start(await builtin("milestone-close"), { goal: "milestone 3", goals: [] });
-    const summary = await Promise.race([run.done, new Promise((_, reject) => setTimeout(() => reject(new Error("STALL: " + JSON.stringify((t.db as never as { prepare(q: string): { all(...a: unknown[]): Row[] } }).prepare("SELECT node_id,state,substr(error,1,160) e FROM lane_pilot_wf_step WHERE run_id=?").all(run.runId)) + " spawns=" + t.spawned.length + " sends=" + t.sends.length)), 20000))]) as Awaited<typeof run.done>;
+    const summary = await untilDoneOrStall(t, run, 160);
     expect(summary.status, summary.error ?? undefined).toBe("succeeded");
     expect(file(t.checkout, ".agents/planning/PROJECT.md")).toBeNull();
   });

@@ -14,7 +14,7 @@ concurrency:
 jobs:
   test:
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 60
     steps:
       # Full history and a local main: parity tests read main's files (git show main:…), bisect tests walk commits.
       - uses: actions/checkout@v4
