@@ -2,7 +2,7 @@
 title: Workflow Execution Runtime Internals
 type: component
 created: 2026-10-27
-updated: 2026-11-16
+updated: 2026-11-24
 status: active
 confidence: medium
 tags: [workflow-engine, execution, reducers, journal, actions]
@@ -35,9 +35,9 @@ Preflight returns all discovered problem messages and does not create a run. A b
 
 ### Reducer input normalization and registration
 
-`registerReducers` registers every `REDUCERS` entry as an asynchronous reentrant executor (`packages/workflow-engine/src/reducers.ts:173-180`). The wrapper takes `results`, `failed`, `rows`, and `items` from `ctx.input.with`, replacing only missing/nullish values with empty arrays, invokes the selected reducer, and returns its record as `output` (`packages/workflow-engine/src/reducers.ts:11-18`, `packages/workflow-engine/src/reducers.ts:173-180`).
+`registerReducers` registers every `REDUCERS` entry as an asynchronous reentrant executor (`packages/workflow-engine/src/reducers.ts:200-207`). The wrapper takes `results`, `failed`, `rows`, and `items` from `ctx.input.with`, replacing only missing/nullish values with empty arrays, invokes the selected reducer, and returns its record as `output` (`packages/workflow-engine/src/reducers.ts:11-16`, `packages/workflow-engine/src/reducers.ts:200-207`).
 
-Shared helpers treat non-array lists as empty, non-string text as empty, non-record values as `{}`, and missing successful-row data as `{}`. `done` selects successful rows in input order and retains branch/item/data; `lost` selects rows whose `ok` is false (`packages/workflow-engine/src/reducers.ts:19-28`, `packages/workflow-engine/src/reducers.ts:27-28`). Reducer failures are not caught by the `registerReducers` wrapper (`packages/workflow-engine/src/reducers.ts:173-180`).
+Shared helpers treat non-array lists as empty, non-string text as empty, non-record values as `{}`, and missing successful-row data as `{}`. `done` selects successful rows in input order and retains branch/item/data; `lost` selects rows whose `ok` is false (`packages/workflow-engine/src/reducers.ts:19-28`, `packages/workflow-engine/src/reducers.ts:27-28`). Reducer failures are not caught by the `registerReducers` wrapper (`packages/workflow-engine/src/reducers.ts:200-207`).
 
 | Key | Branch rules and output |
 |---|---|
@@ -53,12 +53,13 @@ Shared helpers treat non-array lists as empty, non-string text as empty, non-rec
 | `reduce.reels.verify` | Requires explicit `data.ok === true` and a nonempty branch `item`; returns `ok_count`, `good_files`, and `bad_files` keyed by branch `item` (ignoring child-echoed `clip_file`), plus `issues` combining branch `issues` and non-ok branch `reason` strings (`packages/workflow-engine/src/reducers.ts:112-119`). |
 | `reduce.roadmap-driven.sessions` | Only a successful row with `data.status === "done"` is in `done_ids`; every other row is in `blocked_ids` (`packages/workflow-engine/src/reducers.ts:120-124`). |
 | `reduce.security-audit.scan` | Flattens `findings` and `warnings` and counts critical/high findings (`packages/workflow-engine/src/reducers.ts:125-128`). |
-| `reduce.seo-cocoon.evidence` | Completed non-skipped rows contribute `findings_paths`; all result rows contribute `sources`; skipped and lost rows contribute `skipped_branches` (`packages/workflow-engine/src/reducers.ts:129-135`). |
-| `reduce.seo-cocoon.briefs` | Completed rows with `data.status === "done"` and both nonempty `brief_path` and `evidence_path` contribute `brief_paths`, `evidence_paths`, `ok_count`, and `all_complete` (`ok_count === items.length`) (`packages/workflow-engine/src/reducers.ts:136-149`). |
-| `reduce.web-research.search` | Flattens `sources` and removes later duplicates with the same nonempty URL. Lost items and successful rows with no sources are reported in `unavailable` (`packages/workflow-engine/src/reducers.ts:150-155`). |
-| `reduce.x-to-telegram-digest.score` | Reads `kept` scores only from successful rows. `keep === false` drops a score; otherwise item, post, indexed batch item, or raw score is kept; unique `topics` are returned (`packages/workflow-engine/src/reducers.ts:157-169`). |
+| `reduce.scout.angles` | Maps completed branches to `briefs` (`id`, `title`, `summary`), deduplicates `anchors`, `conventions`, `verification`, and `open_questions`, assigns missing finding IDs and sorts `findings` by severity rank, records `failed_angles` from lost rows, joins non-empty brief summaries into `summary`, and sets `status` to `"done"` or `"partial"` (`packages/workflow-engine/src/reducers.ts:129-155`). |
+| `reduce.seo-cocoon.evidence` | Completed non-skipped rows contribute `findings_paths`; all result rows contribute `sources`; skipped and lost rows contribute `skipped_branches` (`packages/workflow-engine/src/reducers.ts:156-162`). |
+| `reduce.seo-cocoon.briefs` | Completed rows with `data.status === "done"` and both nonempty `brief_path` and `evidence_path` contribute `brief_paths`, `evidence_paths`, `ok_count`, and `all_complete` (`ok_count === items.length`) (`packages/workflow-engine/src/reducers.ts:163-176`). |
+| `reduce.web-research.search` | Flattens `sources` and removes later duplicates with the same nonempty URL. Lost items and successful rows with no sources are reported in `unavailable` (`packages/workflow-engine/src/reducers.ts:177-182`). |
+| `reduce.x-to-telegram-digest.score` | Reads `kept` scores only from successful rows. `keep === false` drops a score; otherwise item, post, indexed batch item, or raw score is kept; unique `topics` are returned (`packages/workflow-engine/src/reducers.ts:184-196`). |
 
-These reducers return data even when some branch rows failed; the reducer-specific fields preserve that failure information. A malformed non-array `rows` value can fail when a reducer iterates it. Such exceptions reject the executor call and enter the engine's `maxAttempts` retry path (`packages/workflow-engine/src/engine-step.ts:192-247`) via `registerReducers` (`packages/workflow-engine/src/reducers.ts:173-180`).
+These reducers return data even when some branch rows failed; the reducer-specific fields preserve that failure information. A malformed non-array `rows` value can fail when a reducer iterates it. Such exceptions reject the executor call and enter the engine's `maxAttempts` retry path (`packages/workflow-engine/src/engine-step.ts:192-247`) via `registerReducers` (`packages/workflow-engine/src/reducers.ts:200-207`).
 
 ### Journal reads and transitions: `createJournal`
 

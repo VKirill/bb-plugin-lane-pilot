@@ -2,7 +2,7 @@
 title: Workflow Execution Engine Internals
 type: component
 created: 2026-10-28
-updated: 2026-11-16
+updated: 2026-11-24
 status: active
 confidence: medium
 tags: [workflow-engine, execution, journal, reducers]
@@ -22,7 +22,7 @@ TL;DR: Engine setup, code-only actions and reducers, and journal writes define t
 
 ## Purpose
 
-This page records the branch behavior of `WorkflowEngine` preparation (`packages/workflow-engine/src/engine.ts:39-93`, `packages/workflow-engine/src/compiled.ts:14-26`, `packages/workflow-engine/src/engine-builtins.ts:20-91`), `pureActionExecutor` (`packages/workflow-engine/src/actions.ts:234-242`), registered reducers with `registerReducers` (`packages/workflow-engine/src/reducers.ts:173-180`), `createJournal` (`packages/workflow-engine/src/journal.ts:151-191`), and the `workflowMigrations` SQL array (`packages/workflow-engine/src/journal.ts:10-105`). Run execution and public configuration are covered by [Workflow Execution Engine](execution-engine.md).
+This page records the branch behavior of `WorkflowEngine` preparation (`packages/workflow-engine/src/engine.ts:39-93`, `packages/workflow-engine/src/compiled.ts:14-26`, `packages/workflow-engine/src/engine-builtins.ts:20-91`), `pureActionExecutor` (`packages/workflow-engine/src/actions.ts:234-242`), registered reducers with `registerReducers` (`packages/workflow-engine/src/reducers.ts:200-207`), `createJournal` (`packages/workflow-engine/src/journal.ts:151-191`), and the `workflowMigrations` SQL array (`packages/workflow-engine/src/journal.ts:10-105`). Run execution and public configuration are covered by [Workflow Execution Engine](execution-engine.md).
 
 ## How it works
 
@@ -30,24 +30,24 @@ This page records the branch behavior of `WorkflowEngine` preparation (`packages
 2. `compile` indexes executable nodes, groups outgoing edges, parses non-start edge conditions and `skip_when`, and maps joins by parallel ID (`packages/workflow-engine/src/compiled.ts:14-26`). `compiled` caches the compiled form by run ID (`packages/workflow-engine/src/engine.ts:76-80`).
 3. `preflight` combines workflow validation errors — under an optional resolver argument that defaults to the engine's — with missing executor-key/registration problems. It skips note nodes and returns the list without starting a run (`packages/workflow-engine/src/engine.ts:83-93`).
 4. `pureActionExecutor` looks up the action, chooses its declared read references (or the fixed `verdict.aggregate` list), invokes code with the node/params/context, and returns the action output plus optional detail (`packages/workflow-engine/src/actions.ts:234-242`).
-5. `registerReducers` installs executors that receive `results`, `failed`, `rows`, and `items`, defaulting missing values to empty arrays, then calls the reducer registered for that key (`packages/workflow-engine/src/reducers.ts:173-180`).
+5. `registerReducers` installs executors that receive `results`, `failed`, `rows`, and `items`, defaulting missing values to empty arrays, then calls the reducer registered for that key (`packages/workflow-engine/src/reducers.ts:200-207`).
 6. Journal methods read rows, append events, and conditionally change step/run state. `moveStep` enforces its transition table and expected source state before returning success (`packages/workflow-engine/src/journal.ts:151-188`).
 7. The host applies `workflowMigrations` SQL strings in array order. The export itself does not open a database or execute the statements (`packages/workflow-engine/src/journal.ts:10-105`).
 
 ### `REDUCERS`
 
-How `REDUCERS` works (`packages/workflow-engine/src/reducers.ts:33-170`):
-1. **Input extraction**: `registerReducers` extracts branch `results`, `failed`, `rows`, and `items` from `ctx.input.with`, defaulting missing collections to empty arrays (`packages/workflow-engine/src/reducers.ts:11-18`, `packages/workflow-engine/src/reducers.ts:173-180`).
+How `REDUCERS` works (`packages/workflow-engine/src/reducers.ts:33-197`):
+1. **Input extraction**: `registerReducers` extracts branch `results`, `failed`, `rows`, and `items` from `ctx.input.with`, defaulting missing collections to empty arrays (`packages/workflow-engine/src/reducers.ts:11-16`, `packages/workflow-engine/src/reducers.ts:200-207`).
 2. **Row partitioning**: helper `done(input)` collects completed branch rows preserving item and data; `lost(input)` collects failed rows where `ok` is false (`packages/workflow-engine/src/reducers.ts:19-28`, `packages/workflow-engine/src/reducers.ts:27-28`).
-3. **Domain reduction**: the reducer registered under `reduce.<workflow>.<node>` evaluates branch rows and returns the join node's aggregated output record (`packages/workflow-engine/src/reducers.ts:33-170`). The map includes `reduce.issue-quick.review` and `reduce.debug.diagnose`; their output fields are listed in [Workflow Execution Runtime Internals](execution-runtime-internals.md#reducer-input-normalization-and-registration) (`packages/workflow-engine/src/reducers.ts:51-62`).
+3. **Domain reduction**: the reducer registered under `reduce.<workflow>.<node>` evaluates branch rows and returns the join node's aggregated output record (`packages/workflow-engine/src/reducers.ts:33-197`). The map includes `reduce.issue-quick.review` and `reduce.debug.diagnose`; their output fields are listed in [Workflow Execution Runtime Internals](execution-runtime-internals.md#reducer-input-normalization-and-registration) (`packages/workflow-engine/src/reducers.ts:51-62`).
 
 - **Conditions and modes**:
-  - Status filter (`reduce.insights-post.posts`, `reduce.reels.render`, `reduce.reels.verify`, `reduce.seo-cocoon.evidence`): checks `data.status === "ok"`, `data.ok !== false` (`reduce.reels.render`), explicit `data.ok === true` with non-empty branch `item` (`reduce.reels.verify`), or `data.skipped !== true` to separate success rows from failures (`packages/workflow-engine/src/reducers.ts:44-47`, `packages/workflow-engine/src/reducers.ts:108-119`, `packages/workflow-engine/src/reducers.ts:129-135`).
+  - Status filter (`reduce.insights-post.posts`, `reduce.reels.render`, `reduce.reels.verify`, `reduce.seo-cocoon.evidence`): checks `data.status === "ok"`, `data.ok !== false` (`reduce.reels.render`), explicit `data.ok === true` with non-empty branch `item` (`reduce.reels.verify`), or `data.skipped !== true` to separate success rows from failures (`packages/workflow-engine/src/reducers.ts:44-47`, `packages/workflow-engine/src/reducers.ts:108-119`, `packages/workflow-engine/src/reducers.ts:156-162`).
   - Three-way task split (`reduce.lp.build.run_tasks`): checks `row.ok` and `data.state` to partition tasks into `accepted_ids` (with merge commits), `blocked_ids` (`blocked` or `needs_human`), and `failed_ids` with verdict findings (`packages/workflow-engine/src/reducers.ts:78-90`).
   - Review pairing (`reduce.lp.review.dims`, `reduce.lp.review.confirm`): sorts findings by severity rank (`critical` to `info`), counts critical and high issues, and drops findings only when a branch succeeded with `confirmed === false` (`packages/workflow-engine/src/reducers.ts:91-97`, `packages/workflow-engine/src/reducers.ts:98-107`).
-  - Aggregation (`reduce.web-research.search`, `reduce.x-to-telegram-digest.score`): deduplicates sources by URL and filters scores where `keep !== false`, collecting unique topics (`packages/workflow-engine/src/reducers.ts:150-155`, `packages/workflow-engine/src/reducers.ts:157-169`).
+  - Aggregation (`reduce.scout.angles`, `reduce.web-research.search`, `reduce.x-to-telegram-digest.score`): `reduce.scout.angles` maps completed briefs, deduplicates anchors and list fields, ranks findings by severity, and marks `status` as `"partial"` when any angle fails (`packages/workflow-engine/src/reducers.ts:129-155`); `reduce.web-research.search` deduplicates sources by URL (`packages/workflow-engine/src/reducers.ts:177-182`); `reduce.x-to-telegram-digest.score` filters scores where `keep !== false` and collects unique topics (`packages/workflow-engine/src/reducers.ts:184-196`).
 
-- **Outcomes and failures**: Each reducer returns a plain record that becomes the join step's `output` (`packages/workflow-engine/src/reducers.ts:173-180`). Missing input collections default to empty lists or records without throwing. A reducer error or malformed row structure that throws an unhandled exception rejects the executor call and enters the engine's `maxAttempts` retry path (`packages/workflow-engine/src/reducers.ts:173-180`, `packages/workflow-engine/src/engine-step.ts:192-247`). The per-key outputs are tabulated in [Workflow Execution Runtime Internals](execution-runtime-internals.md).
+- **Outcomes and failures**: Each reducer returns a plain record that becomes the join step's `output` (`packages/workflow-engine/src/reducers.ts:200-207`). Missing input collections default to empty lists or records without throwing. A reducer error or malformed row structure that throws an unhandled exception rejects the executor call and enters the engine's `maxAttempts` retry path (`packages/workflow-engine/src/reducers.ts:200-207`, `packages/workflow-engine/src/engine-step.ts:192-247`). The per-key outputs are tabulated in [Workflow Execution Runtime Internals](execution-runtime-internals.md).
 
 ### `workflowMigrations`
 
@@ -72,8 +72,8 @@ Outcomes and failures: the statements are plain `CREATE TABLE`/`INDEX`/`TRIGGER`
 | Pure action | `verdict.aggregate` | Uses the fixed `AGGREGATE_READS` list instead of `node.reads` (`packages/workflow-engine/src/actions.ts:230`, `packages/workflow-engine/src/actions.ts:238`). |
 | Pure action | Other registered key | Uses `node.reads` or an empty list; out-of-range indexed reads return `undefined` (`packages/workflow-engine/src/actions.ts:238-240`). |
 | Pure action | Unknown key or action throws | The map lookup has no fallback; action call failure propagates to the engine attempt path (`packages/workflow-engine/src/actions.ts:234-242`, `packages/workflow-engine/src/engine-step.ts:192-247`). |
-| Reducer | Missing wrapper collection | `results`, `failed`, `rows`, or `items` defaults to `[]` (`packages/workflow-engine/src/reducers.ts:173-180`). |
-| Reducer | Present malformed collection or thrown reducer error | No shape check or catch is applied; the executor rejects and the engine handles an attempt failure (`packages/workflow-engine/src/reducers.ts:173-180`, `packages/workflow-engine/src/engine-step.ts:192-247`). |
+| Reducer | Missing wrapper collection | `results`, `failed`, `rows`, or `items` defaults to `[]` (`packages/workflow-engine/src/reducers.ts:200-207`). |
+| Reducer | Present malformed collection or thrown reducer error | No shape check or catch is applied; the executor rejects and the engine handles an attempt failure (`packages/workflow-engine/src/reducers.ts:200-207`, `packages/workflow-engine/src/engine-step.ts:192-247`). |
 | Journal event | Event insert succeeds | Listener is called after insert; listener exceptions are swallowed (`packages/workflow-engine/src/journal.ts:156-161`). |
 | Journal step transition | Allowed transition and expected current state | Updates the step, emits a `step` event, returns `true` (`packages/workflow-engine/src/journal.ts:163-180`). |
 | Journal step transition | Illegal transition or stale/missing current state | Illegal transition throws; conditional update with no row emits `refused` and returns `false` (`packages/workflow-engine/src/journal.ts:163-180`). |
@@ -83,7 +83,7 @@ Outcomes and failures: the statements are plain `CREATE TABLE`/`INDEX`/`TRIGGER`
 
 - Compilation excludes `note` nodes, while preflight also skips them when checking executor registration (`packages/workflow-engine/src/compiled.ts:15-17`, `packages/workflow-engine/src/engine.ts:87`).
 - `pureActionExecutor` marks actions reentrant; its fixed map contains `items.dedupe`, `dag.validate`, `digest.check`, `citations.check`, `verdict.aggregate`, `lp.path_class`, `lp.propose_workflow`, and `debug.failures` (`packages/workflow-engine/src/actions.ts:224-228`, `packages/workflow-engine/src/actions.ts:234-242`). `verdict.aggregate` reads the fixed `prepass.findings` reference in addition to dimension findings, dropped IDs, unchecked dimensions, and unmet criteria (`packages/workflow-engine/src/actions.ts:230-239`).
-- Reducers are deterministic functions. `done` preserves branch order and supplies `{}` for missing data; `lost` selects non-ok rows. Per-key reducer outputs and their result-field conditions are listed in [Execution Engine reducer details](execution-engine.md#registerreducers) (`packages/workflow-engine/src/reducers.ts:19-28`, `packages/workflow-engine/src/reducers.ts:33-170`).
+- Reducers are deterministic functions. `done` preserves branch order and supplies `{}` for missing data; `lost` selects non-ok rows. Per-key reducer outputs and their result-field conditions are listed in [Execution Engine reducer details](execution-engine.md#registerreducers) (`packages/workflow-engine/src/reducers.ts:19-28`, `packages/workflow-engine/src/reducers.ts:33-197`).
 - Journal step writes are compare-and-set updates: callers supply allowed source states, and a competing writer cannot overwrite a state that no longer matches (`packages/workflow-engine/src/journal.ts:163-180`).
 - The migration DDL in `workflowMigrations` defines composite primary and unique keys, checks status and state vocabularies, and sets append-only triggers on events (`packages/workflow-engine/src/journal.ts:10-105`).
 
@@ -93,7 +93,7 @@ Outcomes and failures: the statements are plain `CREATE TABLE`/`INDEX`/`TRIGGER`
 |---|---|
 | `WorkflowEngine.register`, `hasExecutor`, `preflight` | Register executors, query registration, and collect validation/executor problems (`packages/workflow-engine/src/engine.ts:65-68`, `packages/workflow-engine/src/engine.ts:83-93`). |
 | `pureActionExecutor`, `PURE_ACTION_KEYS`, `registerPureActions` | Create and register deterministic action executors (`packages/workflow-engine/src/actions.ts:232-247`). |
-| `REDUCERS`, `registerReducers` | Map join reducer keys to functions and install them on an engine (`packages/workflow-engine/src/reducers.ts:33-180`). |
+| `REDUCERS`, `registerReducers` | Map join reducer keys to functions and install them on an engine (`packages/workflow-engine/src/reducers.ts:33-207`). |
 | `workflowMigrations`, `createJournal`, `STEP_TRANSITIONS` | Export SQL statements, journal methods, and allowed step transitions (`packages/workflow-engine/src/journal.ts:10-12`, `packages/workflow-engine/src/journal.ts:116-122`, `packages/workflow-engine/src/journal.ts:151-191`). |
 
 ## Gotchas

@@ -2,7 +2,7 @@
 title: Workflow Execution Engine
 type: component
 created: 2026-10-10
-updated: 2026-11-16
+updated: 2026-11-24
 status: active
 confidence: high
 tags: [workflow-engine, execution, journal]
@@ -67,7 +67,7 @@ The engine runs a workflow against caller-provided node executors and persists r
 | Admission denied / disposed | `admit` returns false or engine is `stopped` | Driver stops at a step boundary and reports `stopped`, leaving work for the next engine instance (`packages/workflow-engine/src/engine-types.ts:39`, `packages/workflow-engine/src/engine.ts:70`, `packages/workflow-engine/src/engine-step.ts:117-118`). |
 | Reloaded or periodically resumed run | Existing run row, whether this engine still holds its runtime, `resumePolicy`, executor reentrancy, and compatibility stamp | A held runtime bypasses `resumePolicy`; otherwise `interrupt` policy ends running/waiting work, while continuation resets a running step to pending only for a reentrant, compatible executor (`packages/workflow-engine/src/engine-resume.ts:42-78`). |
 | Plugin stops during a step error | Attempt fails while the engine is stopping | The step remains `running` for reload recovery; a reentrant step is retried by spawn key, while a non-reentrant step is interrupted (`packages/workflow-engine/src/engine-step.ts:218-230`, `packages/workflow-engine/src/engine-resume.ts:63-73`). |
-| Parallel join | Join policy `all`, `majority`, or `all_or_low_confidence` | Reducer evaluates branch arrivals and produces the join result (`packages/workflow-engine/src/schema.ts:69`, `packages/workflow-engine/src/reducers.ts:33-170`). |
+| Parallel join | Join policy `all`, `majority`, or `all_or_low_confidence` | Reducer evaluates branch arrivals and produces the join result (`packages/workflow-engine/src/schema.ts:69`, `packages/workflow-engine/src/reducers.ts:33-197`). |
 | Any budget limit reached before built-in `emit` or a node skipped by `skip_when`/quality mode | `checkLimits` reports a `budget_exceeded:*` reason (`packages/workflow-engine/src/engine-step.ts:339-351`); an `emit` node or one whose `skipReason` says it will be skipped counts as paid for (`packages/workflow-engine/src/engine-step.ts:89-100,125-134`). | The engine records one `budget_overrun` event and lets the no-spend node complete; other pending nodes block the run (`packages/workflow-engine/src/engine-step.ts:131-134`). |
 
 ## Business rules
@@ -79,7 +79,7 @@ The engine runs a workflow against caller-provided node executors and persists r
 - Spend survives failed tries: `spentBefore` accumulates failed-attempt usage (`packages/workflow-engine/src/engine-step.ts:195-227`), then the total is charged after success or final failure (`packages/workflow-engine/src/engine-step.ts:238-254`).
 - `runVotes` carries rejected executor spend in `failedSpend` into its result; a majority error carries that usage (`packages/workflow-engine/src/engine-step.ts:276-287`).
 - A failed child run's accumulated usage is added to its parent once, with a `child_usage_charged` event guarding the charge across reloads (`packages/workflow-engine/src/engine-builtins.ts:102-111`).
-- Before a run closes, `closeAfterAudit` judges a run with goals against them: all met closes `succeeded`, unmet goals close `blocked` with the unmet ids (`packages/workflow-engine/src/engine-goal-audit.ts:38-90`). A workflow whose definition declares `goal_audit: "required"` — a user workflow — closes `not_verified` instead of `succeeded` when it reaches its exit with no goals, or when the audit could not be made (`packages/workflow-engine/src/engine-goal-audit.ts:41-51,78-80`; the `goal_audit` field at `packages/workflow-engine/src/schema.ts:323`; the status values in the [run journal data model](../data-model/run-journal.md)).
+- Before a run closes, `closeAfterAudit` judges a run with goals against them: all met closes `succeeded`, unmet goals close `blocked` with the unmet ids (`packages/workflow-engine/src/engine-goal-audit.ts:39-102`). A workflow whose definition declares `goal_audit: "required"` — a user workflow — closes `not_verified` instead of `succeeded` when it reaches its exit with no goals, or when the audit could not be made (`packages/workflow-engine/src/engine-goal-audit.ts:42-46,50-52,88-92`; the `goal_audit` field at `packages/workflow-engine/src/schema.ts:323`; the status values in the [run journal data model](../data-model/run-journal.md)). On a non-`required` run whose only goals have `id === "request"`, an explicit non-fulfillment `output.status` (`proposed`, `rework`, `partial`, `blocked`, `aborted`, `cannot_delay`, `rerouted`, `send_failed`, `send_unconfirmed`, `empty`, `noop`, `skipped`) closes `succeeded` directly without an audit pass (`packages/workflow-engine/src/engine-goal-audit.ts:54-58`).
 - A `goal_audit: required` workflow started without goals — from the PM's tool, a trigger, or a schedule — gets one request goal built from the `title` or `text` input via `requestGoals`, so the audit judges the owner's request (`packages/workflow-engine/src/request-goals.ts:4-8`, `packages/workflow-engine/src/engine-start.ts:56-57`).
 - The run's quality mode is resolved once at start through the contract → node → workflow → project order; a contract or explicit `quality_mode: full` input on a workflow whose mode is `fixed: quick` is rejected with `quality_mode_conflict`, not run as quick (`packages/workflow-engine/src/engine-start.ts:50-54`; the resolution order on [Workflow Quality and Contracts](quality-contracts.md)).
 - `cancel` transitions an active run to `canceled` via `setRunStatus`, aborts its active controller, cancels open steps with `cancelOpenSteps`, and queries child runs by `parent_run_id` to cancel each child recursively (`packages/workflow-engine/src/engine-resume.ts:150-158`).
@@ -100,7 +100,7 @@ The engine runs a workflow against caller-provided node executors and persists r
 | `nodeRefStep(engine, run, from, consumerKey, ref, ceilingBound?)` | Resolve a node reference to its settled producer step and extracted value for read-side provenance (`packages/workflow-engine/src/step-read.ts:91-101`, `packages/workflow-engine/src/index.ts:22`). |
 | `requestGoals(inputs)` | The request goal a `goal_audit: required` workflow started without goals is judged by (`packages/workflow-engine/src/request-goals.ts:4-8`). |
 | `createJournal`, `workflowMigrations`, `STEP_TRANSITIONS` | Journal storage and migration definitions (`packages/workflow-engine/src/journal.ts:10-12`, `packages/workflow-engine/src/journal.ts:116-122`, `packages/workflow-engine/src/journal.ts:151-191`). |
-| `lowerWorkflow`, `registerPureActions`, `registerReducers` | Lower workflow syntax, including `for_each`, and register built-in deterministic execution (`packages/workflow-engine/src/lower.ts:66-115`, `packages/workflow-engine/src/actions.ts:245-247`, `packages/workflow-engine/src/reducers.ts:173-180`). |
+| `lowerWorkflow`, `registerPureActions`, `registerReducers` | Lower workflow syntax, including `for_each`, and register built-in deterministic execution (`packages/workflow-engine/src/lower.ts:66-115`, `packages/workflow-engine/src/actions.ts:245-247`, `packages/workflow-engine/src/reducers.ts:200-207`). |
 
 ## Package shape
 
@@ -140,10 +140,10 @@ Includes `detail` only when the action returns it (`packages/workflow-engine/src
 
 ### `registerReducers` and `REDUCERS`
 
-How `REDUCERS` works (`packages/workflow-engine/src/reducers.ts:33-170`):
-1. **Input extraction**: `registerReducers` extracts branch `results`, `failed`, `rows`, and `items` from `ctx.input.with` and wraps reducer output into step output (`packages/workflow-engine/src/reducers.ts:11-18`, `packages/workflow-engine/src/reducers.ts:173-180`).
+How `REDUCERS` works (`packages/workflow-engine/src/reducers.ts:33-197`):
+1. **Input extraction**: `registerReducers` extracts branch `results`, `failed`, `rows`, and `items` from `ctx.input.with` and wraps reducer output into step output (`packages/workflow-engine/src/reducers.ts:11-16`, `packages/workflow-engine/src/reducers.ts:200-207`).
 2. **Row partitioning**: `done(input)` collects successful rows; `lost(input)` collects failed rows (`packages/workflow-engine/src/reducers.ts:27-28`).
-3. **Domain reduction**: Reducers evaluate branch rows and produce aggregated outputs (`packages/workflow-engine/src/reducers.ts:33-170`).
+3. **Domain reduction**: Reducers evaluate branch rows and produce aggregated outputs (`packages/workflow-engine/src/reducers.ts:33-197`).
 - **Conditions and modes**:
   - `reduce.billing-batch.invoices`: maps invoice numbers and non-empty PDF paths from completed branches, and sets `all_checks_matched` (`row.ok && data.check_verdict === "match"` across non-empty rows) and `failed_count` (`packages/workflow-engine/src/reducers.ts:34-43`).
   - `reduce.insights-post.posts`: filters done rows with `data.status === "ok"`; reports ok folders, summary paths, and ok/failed counts (`packages/workflow-engine/src/reducers.ts:44-47`).

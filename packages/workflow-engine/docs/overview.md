@@ -2,7 +2,7 @@
 title: Workflow Engine — Overview
 type: overview
 created: 2026-10-10
-updated: 2026-11-23
+updated: 2026-11-24
 status: active
 confidence: high
 tags: [workflow-engine, package, overview]
@@ -60,7 +60,7 @@ Built-in workflow definitions are supplied by the caller to the catalog; they ar
 
 The default package export re-exports the workflow engine, journal, stores, skill bundle file helpers, lowering, and validation modules (`packages/workflow-engine/src/index.ts:1-40`):
 - The execution engine: `WorkflowEngine` (`packages/workflow-engine/src/engine.ts:39-68`).
-- Catalog and stores: `createWorkflowCatalog` with `builtin` and `builtins` registry lookup (`packages/workflow-engine/src/catalog.ts:11-21`, `packages/workflow-engine/src/catalog.ts:23-67`), `loadWorkflowStore` (`packages/workflow-engine/src/store.ts:50-58`), `createDraftStore` (`packages/workflow-engine/src/draft-store.ts:87-94`), `createJournal` (`packages/workflow-engine/src/journal.ts:151-155`), and journal admission/inventory readers (`packages/workflow-engine/src/journal-admission.ts:4-6`, `packages/workflow-engine/src/journal-inventory.ts:6-35`).
+- Catalog and stores: `createWorkflowCatalog` with `builtin` and `builtins` registry lookup (`packages/workflow-engine/src/catalog.ts:11-21`, `packages/workflow-engine/src/catalog.ts:23-67`), `loadWorkflowStore` (`packages/workflow-engine/src/store.ts:50-58`), `createDraftStore` (`packages/workflow-engine/src/draft-store.ts:87-94`), `createJournal` (`packages/workflow-engine/src/journal.ts:151-155`), and journal admission/inventory readers (`packages/workflow-engine/src/journal-admission.ts:5-31`, `packages/workflow-engine/src/journal-inventory.ts:6-35`).
 - Skill bundle storage: `globalSkillsDir`, `listSkillBundleIds`, `validateSkillBundleFiles`, `readSkillBundle`, `casWriteSkillBundle`, and `restoreSkillBundleSnapshot` (`packages/workflow-engine/src/skill-files.ts:173-314`).
 - Definitions and validation: `loadWorkflow` and `parseWorkflow` (`packages/workflow-engine/src/validate.ts:560-580`).
 - Status and outcome helpers: `createStatusResolver` (`packages/workflow-engine/src/ops-store.ts:94-97`), `workflowFinish` (`packages/workflow-engine/src/business-outcome.ts:25-30`), `resolveTaskQualityMode` (`packages/workflow-engine/src/quality-mode.ts:16-20`), and `requireGreen` (`packages/workflow-engine/src/require-green.ts:10-15`).
