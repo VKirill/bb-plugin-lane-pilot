@@ -1,0 +1,32 @@
+# Type check and full test run on every push: the deploy (infrastructure/plugin-deploy/bb-plugin-push)
+# waits for this check on the HEAD it ships instead of running the suite on a server of its own.
+name: test
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: test-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      # Sandbox tests need bubblewrap; sqlite3 is read by the hub-side helpers.
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq bubblewrap sqlite3
+      - run: git config --global user.name ci && git config --global user.email ci@localhost && git config --global init.defaultBranch main
+      - run: npm ci --no-audit --no-fund
+      - run: npx tsc --noEmit -p .
+      - run: npx vitest run
+        env:
+          NO_COLOR: "1"
+          VITE_CONFIG_NATIVE_IGNORE_WARNING: "true"
