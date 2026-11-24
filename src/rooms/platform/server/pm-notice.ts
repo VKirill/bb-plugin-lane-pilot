@@ -40,8 +40,12 @@ export function isWriterWaitActive(pmThreadId: string | null | undefined): boole
   return Boolean(pmThreadId && (activeWriterWaiters.get(pmThreadId) ?? 0) > 0);
 }
 
+const followedWorkflowRuns = new Map<string, number>();
+
 /** Marks a workflow run as actively awaited by a synchronous PM tool (`wait_specialist`, `wait_errand`, `wait_scout`) so its completion does not also queue a duplicate PM notice. */
-export function beginWorkflowWait(workflowRunId: string): () => void {
+export function beginWorkflowWait(workflowRunId: string, now = Date.now()): () => void {
+  for (const [id, at] of followedWorkflowRuns) if (now - at > 3_600_000) followedWorkflowRuns.delete(id);
+  followedWorkflowRuns.set(workflowRunId, now);
   activeWorkflowWaiters.set(workflowRunId, (activeWorkflowWaiters.get(workflowRunId) ?? 0) + 1);
   let done = false;
   return () => {
@@ -63,5 +67,15 @@ export function noteWorkflowReadByPm(workflowRunId: string, now = Date.now()): v
 export function isWorkflowNoticeSuppressed(workflowRunId: string, now = Date.now()): boolean {
   if ((activeWorkflowWaiters.get(workflowRunId) ?? 0) > 0) return true;
   const at = readWorkflowRuns.get(workflowRunId);
+  return at !== undefined && now - at <= 3_600_000;
+}
+
+/**
+ * True when a PM wait tool has awaited `workflowRunId` at least once: the PM is following the run and will most likely read its end
+ * itself. A run that ends in the gap between two wait calls (live 2026-11-24: the first `wait_errand` hit its 240 s limit 0.4 s before
+ * the run ended, the second came 4 s later) is not «actively awaited» at that instant, yet a notice would duplicate what the PM reads next.
+ */
+export function isWorkflowFollowed(workflowRunId: string, now = Date.now()): boolean {
+  const at = followedWorkflowRuns.get(workflowRunId);
   return at !== undefined && now - at <= 3_600_000;
 }

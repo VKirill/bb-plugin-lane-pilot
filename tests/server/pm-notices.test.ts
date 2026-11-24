@@ -379,6 +379,27 @@ describe("lead hand-over runs", () => {
     expect(sends).toEqual([]);
   });
 
+  it("holds a followed run's notice through the gap between two wait calls and sends it only when the PM's turn ends unread", async () => {
+    const { bb, sends } = noticeBb();
+    let status = "running";
+    const busyBb = { ...bb, sdk: { threads: { ...bb.sdk.threads, get: async () => ({ status }) } } };
+    // Live 2026-11-24: the first wait_errand returned at its limit just before the run ended; the second one read the end 4 s later.
+    beginWorkflowWait("wfrun_gap_1")();
+    const decided = maybeNotifyWorkflowRun({ bb: busyBb, log: () => undefined, pmThreadId, startedBySchedule: false, followWaitMs: 5_000,
+      run: runRow({ id: "wfrun_gap_1", workflow_id: "errand", output_json: JSON.stringify({ state: "done", output: "act sent" }) }) });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    noteWorkflowReadByPm("wfrun_gap_1");
+    expect(await decided).toBe(false);
+
+    beginWorkflowWait("wfrun_gap_2")();
+    const unread = maybeNotifyWorkflowRun({ bb: busyBb, log: () => undefined, pmThreadId, startedBySchedule: false, followWaitMs: 5_000,
+      run: runRow({ id: "wfrun_gap_2", workflow_id: "errand", output_json: JSON.stringify({ state: "done", output: "act sent" }) }) });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    status = "idle";
+    expect(await unread).toBe(true);
+    expect(sends.map((send) => send.text)).toEqual([expect.stringContaining("wfrun_gap_2")]);
+  });
+
   it("tracks active lane_pilot_wait_writer calls and recognizes owner-ask, council, and post-merge gate service notices", () => {
     expect(isWriterWaitActive("pm-wait-1")).toBe(false);
     const endWriterWait = beginWriterWait("pm-wait-1");

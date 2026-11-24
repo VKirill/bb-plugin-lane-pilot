@@ -6,7 +6,7 @@ import type { LanePilotDatabase } from "../../storage";
 import type { RunRow } from "../../storage";
 ;
 import { startedBySchedule } from "./workflow-runtime";
-import { isWorkflowNoticeSuppressed } from "../../platform/server";
+import { isWorkflowFollowed, isWorkflowNoticeSuppressed } from "../../platform/server";
 import { sendServiceMessage } from "../../relay/server";
 import { chatCode } from "../../brief";
 import type { LeadRoadApi } from "../../contracts";
@@ -32,7 +32,7 @@ export type WorkflowNoticeKv = {
 };
 
 export type WorkflowNoticeSend = {
-  sdk: { threads: { send: (request: never) => Promise<unknown> } };
+  sdk: { threads: { send: (request: never) => Promise<unknown>; get?: (request: { threadId: string }) => Promise<unknown> } };
   storage: { kv: WorkflowNoticeKv };
 };
 
@@ -65,6 +65,8 @@ export async function maybeNotifyWorkflowRun(input: {
   unmetGoalIds?: string[];
   /** Journal run-event count naming this terminal transition; absent on paths without journal events (legacy key). */
   transition?: number;
+  /** How long a followed run's notice waits for the PM's turn to end (tests shorten it). */
+  followWaitMs?: number;
 }): Promise<boolean> {
   const { run } = input;
   if (!isNoticeStatus(run.status)) return false;
@@ -81,6 +83,8 @@ export async function maybeNotifyWorkflowRun(input: {
   if (!input.pmThreadId) return false;
   if (!input.startedBySchedule && !run.link_run_id) return false;
   const key = workflowNoticeKey(run.id, run.status, input.transition);
+  // The PM has been waiting on this run: let its current turn end before deciding, so a wait call that comes right after the end reads it alone.
+  if (!input.startedBySchedule && isWorkflowFollowed(run.id)) await untilPmTurnEnds(input.bb, input.pmThreadId, () => isWorkflowNoticeSuppressed(run.id), input.followWaitMs);
   if (!input.startedBySchedule && isWorkflowNoticeSuppressed(run.id)) {
     await bestEffort(input.log, "workflow notice record", input.bb.storage.kv.set(key, Date.now() as never), undefined);
     return false;
@@ -103,6 +107,19 @@ export async function maybeNotifyWorkflowRun(input: {
   } catch (cause) {
     input.log(`Lane Pilot workflow ${run.id}: PM notice not sent: ${cause instanceof Error ? cause.message : String(cause)}`);
     return false;
+  }
+}
+
+const PM_FOLLOW_WAIT_MS = 30 * 60_000;
+const PM_FOLLOW_POLL_MS = 2_000;
+
+/** Waits until the PM chat is idle (or `done` holds, or the bound passes); an unreadable chat counts as idle. */
+async function untilPmTurnEnds(bb: WorkflowNoticeSend, threadId: string, done: () => boolean, waitMs = PM_FOLLOW_WAIT_MS): Promise<void> {
+  const deadline = Date.now() + waitMs;
+  while (!done() && Date.now() < deadline) {
+    const thread = await bb.sdk.threads.get?.({ threadId }).catch(() => null) as { status?: unknown } | null | undefined;
+    if (!thread || ["idle", "error", "stopped"].includes(String(thread.status ?? "idle"))) return;
+    await new Promise((resolve) => setTimeout(resolve, Math.min(PM_FOLLOW_POLL_MS, Math.max(1, deadline - Date.now()))));
   }
 }
 
