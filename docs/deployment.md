@@ -2,12 +2,13 @@
 title: Build and deploy Lane Pilot
 type: deployment
 created: 2026-10-10
-updated: 2026-11-14
+updated: 2026-11-24
 status: active
 confidence: medium
 tags: [deployment, build, configuration]
 sources:
   - package.json
+  - .github/workflows/test.yml
   - packages/contracts/package.json
   - packages/harness-core/package.json
   - packages/council/package.json
@@ -49,21 +50,21 @@ sources:
 
 # Build and deploy Lane Pilot
 
-TL;DR: Lane Pilot's root package manifest declares its server, host, and app entries and owns the plugin build and check commands (`package.json:10-18`, `:86-98`).
+TL;DR: Lane Pilot's root package manifest declares its server, host, and app entries and owns the plugin build and check commands (`package.json:10-18`, `:89-104`).
 
 ## Build
 
-The package manifest maps BB's server, host-worker, and app bundles to `server.ts`, `host.ts`, and `app.tsx` (`package.json:10-18`). The npm workspace pattern is `packages/*` (`package.json:96-98`). `npm run build` invokes `bb plugin build` (`package.json:86-91`). The aggregate `check` script runs `npm test`, typecheck, plugin build, and layout tests in sequence (`package.json:86-95`). These root commands live in the root manifest. The contracts, workflow-engine, and world-sim manifests declare `main`, `types`, and `exports` entry points without package-local script runners; world-sim also exports its protocol subpath (`packages/contracts/package.json:8-12`, `packages/workflow-engine/package.json:8-13`, `packages/world-sim/package.json:8-14`).
+The package manifest maps BB's server, host-worker, and app bundles to `server.ts`, `host.ts`, and `app.tsx` (`package.json:10-18`). The npm workspace pattern is `packages/*` (`package.json:105-107`). `npm run build` invokes `bb plugin build` (`package.json:89-93`). The aggregate `check` script runs `npm test`, typecheck, plugin build, and layout tests in sequence (`package.json:89-101`). These root commands live in the root manifest. The contracts, workflow-engine, and world-sim manifests declare `main`, `types`, and `exports` entry points without package-local script runners; world-sim also exports its protocol subpath (`packages/contracts/package.json:8-12`, `packages/workflow-engine/package.json:8-13`, `packages/world-sim/package.json:8-14`).
 
-The server opens plugin SQLite and applies the migration list as part of plugin startup (`src/rooms/storage/database.ts:20-25`, `src/rooms/migrations.ts:1-4`, `server.ts:331-332`). The list is positional and append-only under a hash lock; the rule and the lock file are owned by the [data model overview](data-model.md). The plugin uses Node 22.19+, 24, or 26 and BB version `>=0.43.3`; the SDK engine requirement is `>=0.4.104` (`package.json:3-7`).
+The server opens plugin SQLite and applies the migration list as part of plugin startup (`src/rooms/storage/database.ts:20-25`, `src/rooms/migrations.ts:1-4`, `server.ts:331-332`). The list is positional and append-only under a hash lock; the rule and the lock file are owned by the [data model overview](data-model.md). The plugin uses Node 22.19+, 24, or 26 and BB version `>=0.43.3`; the SDK engine requirement is `>=0.4.104` (`package.json:3-8`).
 
 ## Configuration and runtime
 
-BB loads the plugin's server and app from the manifest; the host bundle is the worker-facing implementation (`package.json:8-18`, `host.ts:1-30`). The server registers RPC, reports, tools, CLI, lifecycle subscriptions, schedules, and static world assets (`server.ts:465-600`). Host operations are declared by `hostContract`, and the server binds that contract through BB's host client (`src/rooms/contracts/host.ts:13-24`, `src/rooms/core/server/core.ts:50-55`).
+BB loads the plugin's server and app from the manifest; the host bundle is the worker-facing implementation (`package.json:8-18`, `host.ts:1-30`). The server registers RPC, reports, tools, CLI, lifecycle subscriptions, schedules, and static world assets (`server.ts:465-600`). Host operations are declared by `hostContract`, and the server binds that contract through BB's host client (`src/rooms/contracts/host.ts:13-24`, `src/rooms/core/server/core.ts:49`).
 
 For reload or shutdown, the VK lifecycle handler enables the same drain used by `deploy_drain`, waits for in-flight checkout writes and acceptance checks until the supplied deadline or abort, then stores the outcome in BB KV (`src/rooms/native-install/native-install-lifecycle.ts:15-20`, `src/rooms/stability/server/deploy-drain.ts:59-79`). The manifest gives the lifecycle drain a 300,000 ms deadline (`package.json:20-25`). Calls entering during an active drain wait; the drain expires after 20 minutes if it is not disabled (`src/rooms/stability/server/deploy-drain.ts:14-25`). A clean reload snapshot with `afterDrain` skips redundant startup scans; other starts scan immediately (`src/rooms/stability/server/deploy-drain.ts:82-89`, `server.ts:620-632`).
 
-Package scripts define local commands: `npm test`, `npm run test:changed`, `npm run typecheck`, `npm run build`, `npm run test:layout`, and `npm run check` (`package.json:86-95`). By default, `npm run test:changed` compares dirty files with `HEAD` or a clean branch with its merge base against `main`. It selects changed tests, tests whose imports or filenames match changed TypeScript source files, and tests owned by a changed package; if none match, it exits successfully and suggests graph mode (`scripts/test-changed.mjs:19-24`, `:31-77`). `npm run test:changed -- --graph` runs Vitest's changed dependency graph; either mode accepts a base ref and writes no full-suite deploy receipt (`scripts/test-changed.mjs:4-9`, `:26-29`). `scripts/test-full.sh` is the repository wrapper for the full suite (`scripts/test-full.sh:1-22`). Test isolation, DOM shims, and run-level temporary-directory cleanup are defined in `vitest.config.ts`, `tests/setup-jsdom.ts`, and `tests/global-setup.ts` (`vitest.config.ts:21-33`, `tests/setup-jsdom.ts:16-43`, `tests/global-setup.ts:24-35`).
+Package scripts define local commands: `npm test`, `npm run test:changed`, `npm run typecheck`, `npm run build`, `npm run test:layout`, and `npm run check` (`package.json:89-101`). By default, `npm run test:changed` compares dirty files with `HEAD` or a clean branch with its merge base against `main`. It selects changed tests, tests whose imports or filenames match changed TypeScript source files, and tests owned by a changed package; if none match, it exits successfully and suggests graph mode (`scripts/test-changed.mjs:19-24`, `:31-77`). `npm run test:changed -- --graph` runs Vitest's changed dependency graph; either mode accepts a base ref and writes no full-suite deploy receipt (`scripts/test-changed.mjs:4-9`, `:26-29`). `scripts/test-full.sh` is the repository wrapper for the full suite (`scripts/test-full.sh:1-22`). On `push`, `pull_request`, and `workflow_dispatch`, GitHub Actions runs `npx tsc --noEmit -p .` and `npx vitest run` in the `test` workflow so `infrastructure/plugin-deploy/bb-plugin-push` waits for the `HEAD` check instead of running the suite on a server of its own (`.github/workflows/test.yml:1-12`, `.github/workflows/test.yml:35-39`; see [Testing and verification](testing.md#continuous-integration)). Test isolation, DOM shims, and run-level temporary-directory cleanup are defined in `vitest.config.ts`, `tests/setup-jsdom.ts`, and `tests/global-setup.ts` (`vitest.config.ts:21-33`, `tests/setup-jsdom.ts:16-43`, `tests/global-setup.ts:24-35`).
 
 ## Runtime requirements
 
