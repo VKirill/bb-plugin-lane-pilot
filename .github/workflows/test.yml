@@ -1,0 +1,32 @@
+name: test
+# Runs only on the maintainer's own runners. No pull_request trigger: code from forks never reaches them.
+on:
+  push:
+  workflow_dispatch:
+concurrency:
+  group: test-${{ github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: [self-hosted, linux-ci]
+    timeout-minutes: 30
+    env:
+      NO_COLOR: "1"
+      VITE_CONFIG_NATIVE_IGNORE_WARNING: "true"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Local main for parity and bisect tests
+        run: git show-ref --verify --quiet refs/heads/main || git branch main origin/main
+      - run: node -v && git --version
+      - run: npm ci --no-audit --no-fund
+      - name: Typecheck and full suite
+        run: |
+          npx tsc --noEmit -p . > tsc.log 2>&1 & tsc=$!
+          npx vitest run; vt=$?
+          wait $tsc; tc=$?
+          [ $tc -eq 0 ] || { echo "::error::typecheck failed"; head -40 tsc.log; }
+          exit $(( vt || tc ))
