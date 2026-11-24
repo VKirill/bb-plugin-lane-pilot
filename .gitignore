@@ -11,3 +11,6 @@ scripts/live-*.ts
 .cls/
 .agents/skills/
 __pycache__/
+
+# The deploy script's CI mirror records its npm lockfile hash here (infrastructure/plugin-deploy/bb-plugin-push).
+/.lp-ci-lock
