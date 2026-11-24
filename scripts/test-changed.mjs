@@ -61,6 +61,8 @@ const SOURCE = /\.(ts|tsx)$/;
 // Documentation and binary media/fonts/archives are the only changes that can never be a suite input. Everything
 // else — code, JSON, shell, workflow and config files — must map to a suite or be reported as needing scope.
 const INERT = /\.(md|markdown|rst|txt|adoc|org|png|jpe?g|gif|bmp|webp|ico|pdf|zip|gz|tgz|mp4|mp3|wav|webm|mov|avi|mkv|woff2?|ttf|otf|eot)$/i;
+// The CI definition (.github/) runs the suite; no test reads it, so changing it selects nothing.
+const CI_ONLY = /^\.github\//;
 // .agents/ is the drill-evidence store: hundreds of untracked JSON logs that are never suite input, and listing
 // them would make the literal-owner scan below quadratic. Everything else untracked still counts.
 const changed = [...new Set([
@@ -116,7 +118,7 @@ for (const file of changed) {
     for (const test of lit.tests) literalSelected.add(test);
     console.log(`test:changed: ${file}: ${lit.tests.length} test${lit.tests.length === 1 ? "" : "s"} name ${lit.via}`);
   }
-  if (!SOURCE.test(file) && !lit.tests.length && !INERT.test(file)) unsupported.push(file);
+  if (!SOURCE.test(file) && !lit.tests.length && !INERT.test(file) && !CI_ONLY.test(file)) unsupported.push(file);
 }
 
 // The identifiers a change touches in one file: declarations on changed lines and in the hunk headers git gives (the enclosing
