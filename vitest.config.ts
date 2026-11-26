@@ -6,6 +6,8 @@ import LongestFirstSequencer from "./tests/sequencer";
 // Test files that call vi.mock/vi.doMock: a mock replaces a module for every file that shares its module cache, so they run isolated.
 const mocking = [
   // Not mocks, but module-level state that must start empty: the drain, outbound subscriptions and skill-pick slots.
+  // Process-wide memory caches (query vectors, door-lock terms) left by another file let its negative case pull a note.
+  "tests/server/memory-probe.test.ts",
   "tests/deploy-drain.test.ts",
   "tests/errand-episode-sweep.test.ts",
   "tests/ui-version-invalidate.test.ts",
@@ -68,8 +70,9 @@ export default defineConfig({
     // One temp directory per run (TMPDIR for every worker of every project), removed after it: see tests/global-setup.ts.
     globalSetup: ["./tests/global-setup.ts"],
     projects: [
-      // Keep each node file's module and mock registries independent; setup-shared-modules restores worker env/cwd.
-      { extends: true, test: { name: "node", include: nodeTests, exclude: mocking, isolate: true, setupFiles: ["./tests/setup-jsdom.ts", "./tests/setup-shared-modules.ts"] } },
+      // One module graph per worker (2026-11-26): with a fresh graph per file, import was 706 s of a 572 s run on 8 workers;
+      // unisolated 228 s and 442 s. Files that need their own registry are in `mocking`; setup-shared-modules restores env/cwd.
+      { extends: true, test: { name: "node", include: nodeTests, exclude: mocking, isolate: false, setupFiles: ["./tests/setup-jsdom.ts", "./tests/setup-shared-modules.ts"] } },
       { extends: true, test: { name: "node-isolated", include: mocking } },
       { extends: true, test: { name: "ui", include: uiTests, exclude: uiAlone, isolate: false } },
       { extends: true, test: { name: "ui-isolated", include: uiAlone } },

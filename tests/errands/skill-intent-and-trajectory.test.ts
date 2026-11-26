@@ -78,7 +78,6 @@ const toolCall = (seq: number, tool: string, args: unknown) => ({
 
 afterEach(() => {
   forgetSecrets();
-  delete process.env.LOG_LEVEL;
 });
 
 describe("SkillIntentResolver", () => {
@@ -138,7 +137,7 @@ describe("SkillIntentResolver", () => {
     expect(matches.every((m) => !m.name.includes(":"))).toBe(true);
   });
 
-  it("logs DEBUG on empty match, masks registered secrets, and respects LOG_LEVEL=warn", () => {
+  it("logs DEBUG on empty match, masks registered secrets, and respects a warn log level", () => {
     const secret = "sk-live-secret-999";
     registerSecrets([secret]);
 
@@ -157,10 +156,11 @@ describe("SkillIntentResolver", () => {
     expect(debugPayload.count).toBe(0);
     expect(debugPayload.intent).not.toContain(secret);
 
-    process.env.LOG_LEVEL = "warn";
+    // The level comes in as a parameter: LOG_LEVEL is read once at the plugin entry (initRuntimeEnv), not per call.
     const suppressedLogs: string[] = [];
     const matched = resolveSkillIntent("задействуй скиллы копирайтинга", CATALOG, {
       log: (m) => suppressedLogs.push(m),
+      logLevel: "warn",
     });
     expect(matched.length).toBeGreaterThan(0);
     expect(suppressedLogs).toEqual([]);
