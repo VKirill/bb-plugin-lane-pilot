@@ -98,14 +98,18 @@ describe("i18n unused keys", () => {
       readFileSync(join(ROOT, "packages/i18n/src/role-names.ts"), "utf8"),
     ].join("\n");
 
+    // Every "token" / 'token' in the corpus, overlapping matches included, so a lookup equals corpus.includes(`"${key}"`)
+    // for keys made of these characters (all of them today, checked below); one pass instead of one scan per key.
+    const quoted = new Set([...corpus.matchAll(/(?=(["'])([A-Za-z0-9_.$-]+)\1)/g)].map((match) => match[2]!));
+    expect(Object.keys(en).filter((key) => !/^[A-Za-z0-9_.$-]+$/.test(key))).toEqual([]);
     const regIds = new Set(SETTINGS_REGISTRY.visible.map((def) => def.id));
     const regSections = new Set(SETTINGS_REGISTRY.visible.map((def) => def.section));
     const unused = Object.keys(en).filter((key) => {
-      if (corpus.includes(`"${key}"`) || corpus.includes(`'${key}'`)) return false;
+      if (quoted.has(key)) return false;
       return !DYNAMIC_PREFIXES.some((prefix) => key.startsWith(prefix));
     });
     const staleDynamic = Object.keys(en).filter((key) => {
-      if (corpus.includes(`"${key}"`) || corpus.includes(`'${key}'`)) return false;
+      if (quoted.has(key)) return false;
       if (key.startsWith("field_")) return !regIds.has(key.slice(6));
       if (key.startsWith("reason_")) return !regIds.has(key.slice(7));
       if (key.startsWith("section_")) return !regSections.has(key.slice(8));

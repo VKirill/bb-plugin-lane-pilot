@@ -160,7 +160,8 @@ describe("memory suite: the command", () => {
     const dry = await runMemoryEvalCommand(null, ["--e2e", "--stub", "--limit", "4"], migrations);
     expect(dry.stdout).toMatch(/memory e2e: 4 questions/);
     expect((await runMemoryEvalCommand(null, ["--e2e", "--stub", "--limit", "0"], migrations)).stderr).toMatch(/--limit/);
-  });
+    // Runs the whole retrieval suite twice (7 s alone): the default 30 s ran out under the full suite on ovh-ci.
+  }, 120_000);
 });
 
 describe("memory suite: public sets from local files", () => {
