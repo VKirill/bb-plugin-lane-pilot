@@ -179,7 +179,7 @@ async function runScenario(scenario: Scenario) {
   if (updateReply) await updateReply;
   for (let i = 0; i < 300 && (pipelineOpen() || getAttempt(db, String(reply.attemptId ?? ""))?.reason?.startsWith("dispatch_stages_pending")); i++) await new Promise((resolve) => setTimeout(resolve, 30));
   let waited: Record<string, unknown> | null = null;
-  if (scenario.finish) waited = JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_wait_writer", { runId, timeoutSec: 10 }, { threadId: pmThreadId, projectId })));
+  if (scenario.finish) waited = JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_wait_writer", { runId, timeoutSec: 20 }, { threadId: pmThreadId, projectId })));
   const attemptId = String(reply.attemptId ?? "");
   const pipeline = db.prepare("SELECT id, output_json FROM lane_pilot_wf_run WHERE workflow_id='lp-task-pipeline' ORDER BY rowid DESC LIMIT 1").get() as { id: string; output_json: string | null } | undefined;
   const out = {

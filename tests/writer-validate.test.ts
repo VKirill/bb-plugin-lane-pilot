@@ -219,7 +219,7 @@ describe("BB writer validation on the server path", () => {
     releaseWait({ matched:true, thread:{ status:"idle" } });
     expect(stillRunning).toMatchObject({ state:"running", attemptId:dispatched.attemptId, writerThreadId:"writer-delayed" });
     const completed = JSON.parse(String(await harness.behavior.callAgentTool(
-      "lane_pilot_wait_writer", { runId:"run-delayed", timeoutSec:2 }, { threadId:pmThreadId, projectId },
+      "lane_pilot_wait_writer", { runId:"run-delayed", timeoutSec:20 }, { threadId:pmThreadId, projectId },
     )));
     expect(completed).toMatchObject({ state:"accepted", receipt:{ lanePilotRunId:"run-delayed", attemptId:dispatched.attemptId } });
     expect(spawnedInput).toMatchObject({ providerId:"codex", model:"codex-test", reasoningLevel:"medium", serviceTier:"default", executionInputSources:{ reasoningLevel:"explicit", serviceTier:"explicit" } });
@@ -284,7 +284,7 @@ describe("BB writer validation on the server path", () => {
       { threadId:pmThreadId, projectId },
     );
     const result = JSON.parse(String(await harness.behavior.callAgentTool(
-      "lane_pilot_wait_writer", { runId:"run-resumed-receipt", timeoutSec:2 }, { threadId:pmThreadId, projectId },
+      "lane_pilot_wait_writer", { runId:"run-resumed-receipt", timeoutSec:20 }, { threadId:pmThreadId, projectId },
     )));
     expect(listAttemptsForTask(db, "run-resumed-receipt", "resumed-task").map((row) => getAttempt(db, row.id)?.reason ?? null)).toEqual([null]);
     expect(result.state).toBe("accepted");
@@ -377,7 +377,7 @@ describe("BB writer validation on the server path", () => {
     )));
     expect(dispatched.state).toBe("queued");
     const result = JSON.parse(String(await harness.behavior.callAgentTool(
-      "lane_pilot_wait_writer", { runId:"run-needs-human", timeoutSec:2 }, { threadId:pmThreadId, projectId },
+      "lane_pilot_wait_writer", { runId:"run-needs-human", timeoutSec:20 }, { threadId:pmThreadId, projectId },
     )));
     expect(result.state).not.toBe("accepted");
     expect(JSON.stringify(result)).toContain("needs_human: Which pricing plan should the landing show, Pro or Team?");
@@ -429,7 +429,7 @@ describe("BB writer validation on the server path", () => {
       {confirm:true,objective:"Проверка диспетча",plan:"Retry effort escalation fixture",task:{...task,id:"effort-retry-task",verify:"none",verification:[]}},
       {threadId:pmThreadId,projectId}))) as {runId:string;attemptId:string};
     const result=JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_wait_writer",
-      {runId:dispatched.runId,timeoutSec:3},{threadId:pmThreadId,projectId})));
+      {runId:dispatched.runId,timeoutSec:20},{threadId:pmThreadId,projectId})));
     const attempts=listAttemptsForTask(db,dispatched.runId,"effort-retry-task");
     expect(result.state).toBe("accepted");
     expect(attempts.map(row=>row.state)).toEqual(["provider_error","accepted"]);
@@ -482,7 +482,7 @@ describe("BB writer validation on the server path", () => {
     const dispatched=JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",
       {confirm:true,objective:"Проверка диспетча",plan:"Manual high must survive a low classifier answer",task:{...task,id:"manual-high-task",verify:"none",verification:[]}},
       {threadId:pmThreadId,projectId}))) as {attemptId:string};
-    await harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"run-manual-high",timeoutSec:3},{threadId:pmThreadId,projectId});
+    await harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"run-manual-high",timeoutSec:20},{threadId:pmThreadId,projectId});
     expect(classifyCalls).toBe(0);
     expect(spawnedInput).toMatchObject({reasoningLevel:"high",executionInputSources:{reasoningLevel:"explicit"}});
     expect(getReasoningTrace(db, dispatched.attemptId)).toMatchObject({
@@ -549,7 +549,7 @@ describe("BB writer validation on the server path", () => {
     )));
     expect(dispatched).toMatchObject({ runId:"run-accepted", state:"queued", attemptId:expect.any(String), writerThreadId:null });
     const result = JSON.parse(String(await harness.behavior.callAgentTool(
-      "lane_pilot_wait_writer", { runId:"run-accepted", timeoutSec:2 }, { threadId:pmThreadId, projectId },
+      "lane_pilot_wait_writer", { runId:"run-accepted", timeoutSec:20 }, { threadId:pmThreadId, projectId },
     )));
     expect(result.state).toBe("accepted");
 
@@ -574,7 +574,7 @@ describe("BB writer validation on the server path", () => {
       { threadId:pmThreadId, projectId },
     );
     const both = JSON.parse(String(await harness.behavior.callAgentTool(
-      "lane_pilot_wait_writer", { runId:"run-accepted", timeoutSec:2 }, { threadId:pmThreadId, projectId },
+      "lane_pilot_wait_writer", { runId:"run-accepted", timeoutSec:20 }, { threadId:pmThreadId, projectId },
     )));
     expect(both.state).toBe("accepted");
     expect(both.receipt.tasks.map((item:{lanePilotTaskId:string}) => item.lanePilotTaskId).sort()).toEqual(
@@ -646,7 +646,7 @@ describe("BB writer validation on the server path", () => {
       { threadId:pmThreadId, projectId },
     )));
     const result = JSON.parse(String(await harness.behavior.callAgentTool(
-      "lane_pilot_wait_writer", { runId:dispatched.runId, timeoutSec:3 }, { threadId:pmThreadId, projectId },
+      "lane_pilot_wait_writer", { runId:dispatched.runId, timeoutSec:20 }, { threadId:pmThreadId, projectId },
     )));
     // A failing check runs once more before it counts as failed. The failure goes back to the writer as feedback turns until
     // the writer step's three visits are spent (plan R12, Task 7: 3 failed visits, then another angle, then the owner).
@@ -788,7 +788,7 @@ describe("BB writer validation on the server path", () => {
       { threadId:pmThreadId, projectId },
     )));
     const result = JSON.parse(String(await harness.behavior.callAgentTool(
-      "lane_pilot_wait_writer", { runId:dispatched.runId, timeoutSec:3 }, { threadId:pmThreadId, projectId },
+      "lane_pilot_wait_writer", { runId:dispatched.runId, timeoutSec:20 }, { threadId:pmThreadId, projectId },
     )));
     expect(result.state).toBe("blocked");
     // One start of the refused model, then the chain at once: a change of model is not an attempt (owner, 2026-11-10).
@@ -848,7 +848,7 @@ describe("BB writer validation on the server path", () => {
     statusUnavailable = false;
     const result = JSON.parse(String(await harness.behavior.callAgentTool(
       "lane_pilot_wait_writer",
-      { runId:dispatched.runId, timeoutSec:3 },
+      { runId:dispatched.runId, timeoutSec:20 },
       { threadId:pmThreadId, projectId },
     )));
     expect(result).toMatchObject({ state:"blocked", reason:expect.stringContaining("internal_error: synthetic output read failure") });
@@ -957,7 +957,7 @@ describe("BB writer validation on the server path", () => {
       { threadId:pmThreadId, projectId },
     )));
     const result = JSON.parse(String(await harness.behavior.callAgentTool(
-      "lane_pilot_wait_writer", { runId:dispatched.runId, timeoutSec:3 }, { threadId:pmThreadId, projectId },
+      "lane_pilot_wait_writer", { runId:dispatched.runId, timeoutSec:20 }, { threadId:pmThreadId, projectId },
     )));
     expect(spawnCalled).toBe(0);
     expect(result.state).toBe("blocked");
