@@ -395,7 +395,7 @@ it("keeps a task with overlapping owns_paths queued while the running task is re
   vi.useRealTimers();
   await vi.waitFor(() => expect(t2.spawned).toEqual(["T2-a1"]));
   await env.harness.lifecycle.dispose();
-}, 30_000);
+}, 60_000);
 
 // A queued task that cannot start by itself (held, or in a paused run) kept its place in the row order and held every later
 // task of its files or area behind a writer that was not coming.

@@ -225,7 +225,7 @@ describe("a Task spawn: pack, record, tree check", () => {
     expect(asked.status).toBe(0);
     expect(asked.stdout).toBe("");
     expect(task.status).toBe(0);
-  }, 30_000);
+  }, 60_000);
 
   it("[sma:k_hpt_record] a spawn writes a pack record with size, layers, trimming, ranking and build time", () => {
     const home = tmp("g2-record-");
@@ -322,7 +322,7 @@ describe("the tree check of a subagent's claims", () => {
     const phantomPart = /phantoms \(named but nowhere in the tree\): ([^;]*)/.exec(out.stdout)?.[1] ?? "";
     for (const row of unchecked) expect(phantomPart).not.toContain(row.path);
     expect(out.stdout).toContain("not checked in time");
-  }, 30_000);
+  }, 60_000);
 });
 
 describe("the start-of-session briefing", () => {

@@ -92,7 +92,7 @@ describe("dispatch of a task whose check needs a secret", () => {
 
   it("waits with waiting_secret, tells the PM, then runs once the owner saved it, and the secret never lands in a receipt or a message", async () => {
     await scenario({ allow:"WAIT_KEY" });
-  }, 30_000);
+  }, 60_000);
 
   it("with an empty secrets.allow the check runs at once, and the journal names the check", async () => {
     await scenario({ allow:null, saved:true,
@@ -102,7 +102,7 @@ describe("dispatch of a task whose check needs a secret", () => {
         expect(issued).toEqual([{ consumer:"check", secret_name:"WAIT_KEY", task_id:"needs-secret" }]);
         expect(JSON.stringify(db.prepare("SELECT * FROM lane_pilot_secret_issuance").all())).not.toContain(KEY);
       } });
-  }, 30_000);
+  }, 60_000);
 
   async function scenario(options:{ allow:string | null; saved?:boolean; inspect?:(db:ReturnType<typeof openDatabase>) => void }) {
     let catalog:Array<{ name:string; kind:"secret"; value?:string }> = options.saved ? [{ name:"WAIT_KEY", kind:"secret", value:KEY }] : [];

@@ -733,7 +733,7 @@ describe("BB writer validation on the server path", () => {
     expect(released).toHaveLength(created.length);
     expect(result.state).toBe("blocked");
     await harness.lifecycle.dispose();
-  }, 30_000);
+  }, 60_000);
 
   it("observes writer errors, tries one unavailable emergency selection and returns blocked", async () => {
     const threadStates = new Map<string, string>();

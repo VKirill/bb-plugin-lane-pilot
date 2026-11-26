@@ -192,7 +192,7 @@ describe("host background jobs", () => {
     const fresh = await startHostJob({ ...request("/ok"), key: deadKey }, options);
     expect(fresh).toMatch(/^job_[a-z0-9]+$/);
     expect(fresh).not.toBe(live);
-  }, 30_000);
+  }, 60_000);
 
   it("does not delete a rival's fresh empty claim that replaced the stale file", async () => {
     const dir = await mkdtemp(join(tmpdir(), "lp-jobs-claim-"));

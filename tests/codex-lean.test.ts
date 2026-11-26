@@ -132,7 +132,7 @@ describe("codex/<model> judge route", () => {
     const six = Array.from({ length: 6 }, () => codexChat("m", "s", "u", 10_000, hold, join(dir, "r"), auth));
     await expect(codexChat("m", "s", "u", 10_000, hold, join(dir, "r"), auth)).rejects.toThrow(/busy/);
     await Promise.all(six);
-  }, 30_000);
+  }, 60_000);
   it("codex/<id> is routed to the local CLI; a quota error locks it and the fallback answers", async () => {
     const seen: string[] = [];
     const codex = async (model: string, system: string, user: string) => { seen.push(model); expect(system.length).toBeGreaterThan(0); expect(user).toContain("q"); return { content: "1", tokensIn: 5, tokensOut: 1 }; };

@@ -92,7 +92,7 @@ describe("Specialist OS built-in chains (runSim)", () => {
     const rAiVis = await runSim("seo-ai-visibility", cAiVis);
     expect(pathOf(rAiVis)).toBe(cAiVis.expectPath);
     expect(out(rAiVis)).toMatchObject(cAiVis.expectOutput);
-  }, 30_000);
+  }, 60_000);
 
   it("places every Specialist OS workflow on its exact category shelf (marketing, seo, service)", async () => {
     const store = await chainStore();

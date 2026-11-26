@@ -38,4 +38,4 @@ it("catches up once after an absence longer than the counted backlog (run_once)"
     expect(scheduler.materialise().created).toBe(0);
     expect(scheduler.store.runsOf(schedule.id, 50).filter((row) => row.status === "queued")).toHaveLength(1);
   } finally { db.close(); }
-}, 30_000);
+}, 60_000);

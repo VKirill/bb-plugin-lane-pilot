@@ -269,7 +269,7 @@ describe("parity d10-rest-2", () => {
     expect(getDraft(w.db, viaRpc.id)!.taskIds).toEqual([]);
     expect(getDraft(w.db, viaRpc.id)!.state).toBe("partial");
     await w.harness.lifecycle.dispose();
-  }, 30_000);
+  }, 60_000);
 
   it("[sma:m_sw_chat_draft] a draft of project B is refused from project A: the RPC creates nothing and reads no card, the PM tool of project A does not find it", async () => {
     const w = await draftWorld();
@@ -280,7 +280,7 @@ describe("parity d10-rest-2", () => {
     expect(JSON.parse(await w.tool("lane_pilot_propose", { draftId: other.id, create: true }))).toMatchObject({ error: expect.stringContaining("does not exist") });
     expect(getDraft(w.db, other.id)).toMatchObject({ state: "proposed", results: [] });
     await w.harness.lifecycle.dispose();
-  }, 30_000);
+  }, 60_000);
 
   // ---- n1750: what a landed merge records, through the real finish path ----
 

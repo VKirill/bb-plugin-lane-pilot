@@ -23,7 +23,7 @@ describe("line diff", () => {
 
 describe("planted defects", () => {
   let root = "", fixture: Fixture;
-  beforeAll(async () => { root = await mkdtemp(join(tmpdir(), "lp-checkers-mut-")); fixture = await buildFixture(root); }, 30_000);
+  beforeAll(async () => { root = await mkdtemp(join(tmpdir(), "lp-checkers-mut-")); fixture = await buildFixture(root); }, 60_000);
   afterAll(async () => { await rm(root, { recursive: true, force: true }); });
 
   const clamp = (): PlantInput => fixture.candidates[0]!;

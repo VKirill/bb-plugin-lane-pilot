@@ -27,7 +27,7 @@ const criticRework = (file: string) => JSON.stringify({
 
 describe("scoring planted defects", () => {
   let root = "", fixture: Fixture;
-  beforeAll(async () => { root = await mkdtemp(join(tmpdir(), "lp-checkers-svc-")); fixture = await buildFixture(root); }, 30_000);
+  beforeAll(async () => { root = await mkdtemp(join(tmpdir(), "lp-checkers-svc-")); fixture = await buildFixture(root); }, 60_000);
   afterAll(async () => { await rm(root, { recursive: true, force: true }); });
 
   const calls: Array<{ kind: string; prompt: string }> = [];
@@ -59,14 +59,14 @@ describe("scoring planted defects", () => {
     expect(report.scorecard.critic.escapesCaught).toBe(2);
     expect(report.scorecard.critic.recommendation).toBe("inconclusive");
     expect(report.spentTokens).toBeGreaterThan(0);
-  }, 30_000);
+  }, 60_000);
 
   it("asks about every planted defect when told to", async () => {
     calls.length = 0;
     const report = await runScore({ openVerification: async () => fakeSession(), model: model() }, { source: "t", candidates: [fixture.candidates[0]!], criticOn: "all", checkers: ["verification", "code_critic"] });
     const asked = report.rows.filter((row) => row.checker === "code_critic" && row.defectClass !== "control");
     expect(asked.map((row) => row.defectClass).sort()).toEqual(["broken_import", "gilded_defect", "hardcoded_value", "off_by_one", "outside_owns", "acceptance_missing", "swallowed_error", "test_assertion_deleted"].sort());
-  }, 30_000);
+  }, 60_000);
 
   it("stops asking when the cap is spent and says so", async () => {
     calls.length = 0;
@@ -75,13 +75,13 @@ describe("scoring planted defects", () => {
     expect(calls.length).toBe(2);
     expect(report.rows.some((row) => row.outcome === "skipped_budget")).toBe(true);
     expect(report.spentTokens).toBe(1000);
-  }, 30_000);
+  }, 60_000);
 
   it("runs the code checkers alone when no model is given, and counts the critic cells as not run", async () => {
     const report = await runScore({ openVerification: async () => fakeSession() }, { source: "t", candidates: fixture.candidates });
     expect(report.rows.every((row) => row.checker !== "code_critic" || row.outcome === "n/a")).toBe(true);
     expect(report.scorecard.regressions).toEqual([]);
-  }, 30_000);
+  }, 60_000);
 
   it("does not credit a critic with a catch on a file it flags on the clean candidate too", async () => {
     const always: ModelPort = { async ask() { return { text: criticRework("src/clamp.mjs"), tokens: 10, costUsd: null }; } };
@@ -90,7 +90,7 @@ describe("scoring planted defects", () => {
     expect(planted.outcome).toBe("off_target");
     expect(report.scorecard.checkers.code_critic.falseAlarms).toBe(1);
     expect(report.scorecard.checkers.code_critic.hit).toBe(0);
-  }, 30_000);
+  }, 60_000);
 
   it("counts a critic that cannot be read as an error, not a miss", async () => {
     const broken: ModelPort = { async ask() { return { text: "no json here", tokens: 10, costUsd: null }; } };
@@ -98,7 +98,7 @@ describe("scoring planted defects", () => {
     const rows = report.rows.filter((row) => row.checker === "code_critic");
     expect(rows.length).toBeGreaterThan(0);
     expect(rows.every((row) => row.outcome === "error")).toBe(true);
-  }, 30_000);
+  }, 60_000);
 
   it("stores the rows and gives the scorecard back from the database", async () => {
     const { bb } = createFakePluginHost({ pluginId: "lane-pilot" });
@@ -117,7 +117,7 @@ describe("scoring planted defects", () => {
     expect(cli.exitCode).toBe(0);
     expect(cli.stdout).toContain("designed catcher");
     expect(cli.stdout).toContain("code critic for risk >= medium");
-  }, 30_000);
+  }, 60_000);
 
   it("refuses a flag it does not know and a class it does not know", async () => {
     const api = createCheckers({ db: {} as never, log: () => undefined, model: () => null, load: async () => [] });

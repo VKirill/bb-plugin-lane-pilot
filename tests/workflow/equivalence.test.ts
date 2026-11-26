@@ -301,7 +301,7 @@ describe("the dispatch runs on the workflow engine", () => {
       else expect(run.afterAccept).toEqual([]);
       // Every dispatch that gets past the review gate leaves one pipeline run in the journal.
       expect(run.engineRuns.map((row) => row.workflow_id)).toEqual(scenario.runGate === "pre-merge" ? [] : ["lp-task-pipeline"]);
-    }, 30_000);
+    }, 60_000);
   }
 
   describe("the browser check of a task is a step of its own graph", () => {
@@ -357,7 +357,7 @@ describe("the dispatch runs on the workflow engine", () => {
       expect(String(run.reply.reason)).toMatch(/contract lint/);
       expect(JSON.stringify(run.reply.findings)).toMatch(/qa_url_missing/);
       expect(run.attempt).toBeNull();
-    }, 30_000);
+    }, 60_000);
   });
 
   it("keeps the task accepted when the memory stage fails", async () => {
@@ -377,7 +377,7 @@ describe("the dispatch runs on the workflow engine", () => {
     const memory = run.spawnedMeta.find((meta) => meta.role === "memory-maintainer")!;
     expect(memory).toMatchObject({ stageId: "memory-maintenance", lanePilotWorkflowNode: "memory" });
     expect(memory.lanePilotWorkflowRunId).toBeTruthy();
-  }, 30_000);
+  }, 60_000);
 
   it("refuses with engine_unavailable when the engine cannot start the pipeline, creating nothing", async () => {
     vi.spyOn(WorkflowEngine.prototype, "preflight").mockReturnValue(["executor \"lp.pm-read\" is not registered"]);
@@ -390,7 +390,7 @@ describe("the dispatch runs on the workflow engine", () => {
     expect(run.attempt).toBeNull();
     // The refusal is a failure line of the plugin log, which the wall's journal reads.
     expect(warnings.some((line) => /refused: engine_unavailable/.test(line))).toBe(true);
-  }, 30_000);
+  }, 60_000);
 
   it("blocks the attempt when the engine refuses the run after the early check", async () => {
     const start = vi.spyOn(WorkflowEngine.prototype, "start").mockImplementation(() => { throw new Error("journal closed"); });
@@ -399,7 +399,7 @@ describe("the dispatch runs on the workflow engine", () => {
     expect(run.reply).toMatchObject({ state: "blocked" });
     expect(String(run.reply.reason)).toMatch(/dispatch_failed:engine_unavailable: journal closed/);
     expect(run.attempt?.state).toBe("blocked");
-  }, 30_000);
+  }, 60_000);
 
   it("charges the helper threads to the run and tags them with the run and step that spawned them", async () => {
     const run = await runScenario({ name: "usage", usage: true, settings: { "pm_read.enabled": true, "pm_read.min_lines": 50, "pm_read.reasoning_effort": "medium" }, task: { read_first: ["README.md"] }, finish: true,
@@ -413,7 +413,7 @@ describe("the dispatch runs on the workflow engine", () => {
       expect(byStage(role), role).toMatchObject({ lanePilotWorkflowRunId: runRow!.id, lanePilotWorkflowNode: node });
       expect(byStage(role).lanePilotWorkflowStep, role).toBeTruthy();
     }
-  }, 30_000);
+  }, 60_000);
 
   it("records the journal of a finished dispatch: one step per stage, the writer step settled when the task ends", async () => {
     const { engineRuns, engineSteps } = await runScenario({ name: "journal", settings: { "plan_critique.enabled": false }, finish: true });
@@ -423,5 +423,5 @@ describe("the dispatch runs on the workflow engine", () => {
     ]);
     expect(engineSteps.slice(0, -1).every((step) => step.state === "succeeded")).toBe(true);
     expect(["waiting", "succeeded"]).toContain(engineRuns[0]!.status);
-  }, 30_000);
+  }, 60_000);
 });

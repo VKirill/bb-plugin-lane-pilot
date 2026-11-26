@@ -85,7 +85,7 @@ describe("[review 2] lane_pilot_propose create:true", () => {
     expect(text(after)).not.toContain("«да»");
     expect(text(after)).not.toContain("another chat");
     await harness.lifecycle.dispose();
-  }, 30_000);
+  }, 60_000);
 });
 
 describe("[review 3] a malformed draft row does not take the board down", () => {

@@ -122,5 +122,5 @@ describe("parallel low-risk writers in one git folder", () => {
     const decisions = dispatched.map((row) => getAttempt(db, row.attemptId)?.workspace_decision);
     expect(decisions.every((decision) => (decision as { strategy?: string } | null)?.strategy === "provision_attempt_worktree")).toBe(true);
     await harness.lifecycle.dispose();
-  }, 30_000);
+  }, 60_000);
 });

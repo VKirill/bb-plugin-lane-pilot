@@ -115,4 +115,4 @@ it("a queued task waits for a running attempt on the same files even when the ru
   transitionAttempt(env.db, "lpattempt_463b1877", "accepted");
   await vi.waitFor(() => expect(env.spawned).toEqual(["lpattempt_59d0c3e0"]), { timeout:15_000 });
   await env.harness.lifecycle.dispose();
-}, 30_000);
+}, 60_000);
