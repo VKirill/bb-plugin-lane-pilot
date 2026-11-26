@@ -5,12 +5,12 @@ import type { PrototypeConfig, TaskV2 } from "../src/rooms/contracts";
 import { createAttempt, createRun, createTask, listStageReceipts, openDatabase, saveProjectSetting, savePrototypeConfig, saveTaskPlan, setAttemptWorkspace, setRunThread, transitionAttempt } from "../src/rooms/plugin-db";
 import { createCore } from "../src/rooms/core/server/core";
 import type { Services } from "../server";
-import { recordStage, reopenWriterStages } from "../src/rooms/runs/server/stage-records";
-import { createWriterStart } from "../src/rooms/writer/server/start";
-import { LIVE_FOLDER_REASON } from "../src/rooms/writer/live-folder";
-import { RunWriterPool } from "../src/rooms/tasks/run-policy";
+import { recordStage, reopenWriterStages } from "../src/rooms/runs/server";
+import { createWriterStart } from "../src/rooms/writer/server/services/start";
+import { LIVE_FOLDER_REASON } from "../src/rooms/writer/models/live-folder";
+import { RunWriterPool } from "../src/rooms/tasks/server";
 import { HOLD_FOREVER } from "../src/rooms/tasks";
-import { setRunPaused } from "../src/rooms/runs/server/runs-halt";
+import { setRunPaused } from "../src/rooms/runs/server";
 
 const WORKSPACE = "/ws";
 

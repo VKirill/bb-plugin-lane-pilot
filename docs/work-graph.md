@@ -7,8 +7,8 @@ status: active
 confidence: medium
 tags: [sma, ui, stages, models, cost]
 sources:
-  - src/rooms/work-graph/logic.ts
-  - src/rooms/work-graph/server/report.ts
+  - src/rooms/work-graph/models/logic.ts
+  - src/rooms/work-graph/server/services/report.ts
   - src/rooms/work-graph/ui
 ---
 

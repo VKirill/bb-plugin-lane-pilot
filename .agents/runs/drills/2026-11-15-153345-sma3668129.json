@@ -1,0 +1,157 @@
+{
+  "kind": "lane-pilot-sandbox-drill",
+  "date": "2026-11-15",
+  "stamp": "20261115-153345",
+  "startedAt": 1794746025348,
+  "finishedAt": 1794746067993,
+  "durationSec": 43,
+  "project": "proj_3tb652jpsi",
+  "runId": null,
+  "pmThread": null,
+  "sourceThread": null,
+  "mode": "full",
+  "scenarioNames": [
+    "sma_core"
+  ],
+  "commit": "807f967453df4392c679f7f91328298e08062478",
+  "skipped": {},
+  "result": "pass",
+  "problems": [],
+  "checks": null,
+  "tasks": null,
+  "dispatch": null,
+  "scenarios": [
+    {
+      "name": "sma_core",
+      "result": "pass",
+      "problems": [],
+      "proved": [
+        {
+          "node": "n673",
+          "ok": true,
+          "detail": "unknown plugin 404 {'ok': False, 'error': 'unknown plugin \"sma-core-nobody\"'}; undeclared method of lane-pilot 404 unknown_method; body «{» 400; declared bb--git branches 200 ok=True"
+        },
+        {
+          "node": "n680",
+          "ok": true,
+          "detail": "6 refusals (no key, Basic, empty Bearer, unknown routes, a made-up enroll code): statuses [401], distinct bodies 1 = {\"code\":\"unauthorized\",\"message\":\"Unauthorized\"}"
+        },
+        {
+          "node": "n531",
+          "ok": true,
+          "detail": "archived=maybe 400; 201 ids 400 «threadIds must be at most 200 comma-separated thread IDs»; 200 ids 200 []; limit=-1 400; one project, limit 3 -> 3 rows all in it True"
+        },
+        {
+          "node": "n532",
+          "ok": true,
+          "detail": "title «» 400 invalid_request; empty body 400 invalid_request; a good title on no thread 404 thread_not_found (the card says 60 characters; a 61-character title passes the door: 404)"
+        },
+        {
+          "node": "n540",
+          "ok": true,
+          "detail": "empty body 400; input [] 400; no mode 400; whole body on no thread 404 thread_not_found (the card says 8 KB; a 9 KB body passes the door: 404); what the door drops from a body is not readable from outside"
+        },
+        {
+          "node": "n725",
+          "ok": true,
+          "detail": "two sandbox projects: 50 threads, 7 threads, every thread carries its own project id True, no thread in both, 25 projects with distinct ids"
+        },
+        {
+          "node": "n694",
+          "ok": true,
+          "detail": "487 skills in stores ['bb-user', 'plugin', 'provider-project', 'provider-user']: 315 of the machine library all under .bb/skills True, 6 of the project all under its folders True"
+        },
+        {
+          "node": "n1352",
+          "ok": true,
+          "detail": "first 6 oldest first True; limit 3 offset 3 equals rows 4-6 of the first six True; project filter 9 rows all of it; status filter 20 rows all ready"
+        },
+        {
+          "node": "n1412",
+          "ok": true,
+          "detail": "3 providers read: 3 with figures, every window has a label, a percent 0-100 and a reset time True; claude-code carries its account key True; 0 failed reads show no figure True"
+        },
+        {
+          "node": "n723",
+          "ok": true,
+          "detail": "two projects named alike on two folders: ids differ True, both minted proj_..., name stored True, folder stored as data True"
+        },
+        {
+          "node": "n724",
+          "ok": true,
+          "detail": "after the rename the id is the same True, the name is the new one True, the sources are unchanged True"
+        },
+        {
+          "node": "n728",
+          "ok": true,
+          "detail": "25 projects with sources, each has exactly one default source True; a project made without a choice of folder: one source, default True"
+        },
+        {
+          "node": "n1514",
+          "ok": true,
+          "detail": "lane-pilot 0.1.575 runs from path · ~/Documents/BB-сервис/plugins/bb-plugin-lane-pilot: source = that folder True, folder holds bb-plugin-lane-pilot 0.1.575 True, status running"
+        },
+        {
+          "node": "n775",
+          "ok": true,
+          "detail": "GET /api/v1/plugins/lane-pilot/assets/app.js: 200, 5269818 bytes, text/javascript; charset=utf-8, same bytes as the plugin's dist/app.js True; assets/package.json: 404"
+        },
+        {
+          "node": "n1499",
+          "ok": true,
+          "detail": "lane_pilot_route names 95 graphs by id, the catalog has 95 ready ones (same list True); fragments or pipelines named: none of 28"
+        }
+      ],
+      "notProved": {
+        "n533": "the persisted lifecycle wrapper is observed locally by sma_r06 on sibling PRIMARY; this HTTP scene does not prove a deployed process stop",
+        "n1748": "internal: buildPluginApp runs when a plugin is built or installed; an installed plugin's dist shows a result, not this function, and the hub builds nothing on request",
+        "n615": "internal: resolveClaudeCodeExecutable runs when a Claude Code session starts on a machine (the maintenance status uses resolveExecutablePath, n616); needs a session start on the Windows machine",
+        "n1305": "internal: stageInjectedSkillSources runs inside the host daemon when a session starts; its catalog is not readable from outside",
+        "n837": "internal: AttachmentPreview is a window component; a person sees it in the browser, the scene has no browser",
+        "n896": "internal: the accounts window of the account-pool plugin (component); plugin disabled on the hub",
+        "n897": "internal: the account row of the account-pool plugin (component); plugin disabled on the hub",
+        "n898": "internal: the add-account menu of the account-pool plugin (component); plugin disabled on the hub",
+        "n596": "plugin account-pool is disabled on the hub (bb plugin list); enabling it is the owner's decision, and its add writes a real account record",
+        "n597": "plugin account-pool is disabled on the hub; the launch environment of a thread is not readable from outside either",
+        "n598": "plugin account-pool is disabled on the hub; the account secret file is on the machine, not readable through bb",
+        "n812": "plugin account-pool is disabled on the hub; its add command writes a real account into the owner's pool",
+        "n1677": "plugin provider-usage is disabled on the hub (selectUsageResources is its code); `bb settings usage` is n1412's source",
+        "n676": "needs a core-side fixture: the lockout of the owner pairing burns the code of the real owner login; a scene may not make wrong attempts against it",
+        "n707": "needs a core-side fixture: minting an invitation writes a real one-shot key into the hub's key table",
+        "n708": "needs a core-side fixture: the book holds real invitations; a one-shot code can be seen only by minting and spending one",
+        "n709": "needs a core-side fixture: a joining machine creates a machine row and credentials; removal must follow it",
+        "n711": "needs a core-side fixture: the register is written only by an accepted enrollment (the refused one writes nothing, but that is half of the card)",
+        "n712": "needs a core-side fixture: letting a machine go revokes credentials of a real machine; only a machine the scene enrolled itself may be removed",
+        "n693": "needs a core-side fixture: the library write needs a skill of the library to write to (there is no create command); only the refusal of a stale revision is readable",
+        "n1351": "needs a core-side fixture: a new workspace appears when a thread is spawned with a worktree environment, which costs a model turn and has no create command",
+        "n612": "needs a core-side fixture: the sandbox and approval policy ride a real Codex turn (a model call)",
+        "n616": "3 machines answered, 9 programs found, 0 absent: the negative half (a name that is not there) needs a machine that lacks a provider program",
+        "n469": "owner login is off on the hub (BB_VK_OWNER_AUTH unset; `bb owner status`: login off, no key paired): the link and its ticket trade cannot be seen there",
+        "n660": "the sandbox and approval policy the core derives are not readable through bb: `bb thread show` and `bb thread options` of a Codex thread carry neither, and its event log records only the requested permissionMode, never the sandbox or approval policy sent to Codex",
+        "n470": "no plugin is in status error on the hub (85 listed): a start failure cannot be made without changing the hub's plugins"
+      },
+      "coreBuild": "0.49.0-vk.7",
+      "hubUrl": true
+    }
+  ],
+  "seen": null,
+  "judged": [
+    {
+      "name": "sma_core",
+      "verdict": "pass",
+      "evidence": [
+        "proved",
+        "notProved",
+        "coreBuild",
+        "hubUrl"
+      ],
+      "why": ""
+    }
+  ],
+  "series": {
+    "verdict": "pass",
+    "missing": [],
+    "failed": [],
+    "skipped": []
+  }
+}

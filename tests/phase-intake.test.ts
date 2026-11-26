@@ -1,16 +1,13 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
-import { HEAVY_LENGTH, intakeByRules, intakeRunGoals, isMachineMessage } from "../src/rooms/phase/intake";
-import { createPhaseIntake, type IntakePhases, type IntakeTrain } from "../src/rooms/phase/server/intake";
-import type { Phase } from "../src/rooms/phase/logic";
+import { HEAVY_LENGTH, intakeByRules, intakeRunGoals, isMachineMessage } from "../src/rooms/workflow";
+import { createPhaseIntake, type IntakeTrain } from "../src/rooms/workflow/server";
 import { createAttempt, createRun, createTask, openDatabase, transitionAttempt } from "../src/rooms/plugin-db";
-import { pmPrompt } from "../src/rooms/platform/server/pm-spawn";
+import { pmPrompt } from "../src/rooms/platform/server/services/pm-spawn";
 import type { PrototypeConfig } from "../src/rooms/contracts";
 import bootstrapEvents from "./fixtures/phase-intake-pm-bootstrap-2026-10-29.json";
 
 const PM = "thr_pm";
-const mkPhase = (over: Partial<Phase> = {}): Phase => ({ id: "ph_1", projectId: "projA", pmThreadId: PM, runId: "run1", title: "t", goal: "g",
-  stage: "discussion", state: "active", record: {}, edition: 1, createdAt: 1, updatedAt: 1, ...over });
 
 const goal = `Нужно сделать раздел блога заново: авторы, категории, поиск, SEO-разметка каждой страницы, перенос старых статей и редиректы. ${"Подробности и требования к каждому экрану. ".repeat(20)}`;
 
@@ -23,26 +20,14 @@ function world(options: { settings?: Record<string, unknown>; role?: string; tra
   harness.sdk.stub("threads.events.list", async () => [{ type: "client/turn/requested", data: request }]);
   const db = openDatabase(bb);
   createRun(db, "run1", "projA");
-  const opened: Phase[] = [];
-  const phases: IntakePhases = {
-    open: async (input) => {
-      expect(input.rails).toBe(true);
-      const phase = mkPhase({ id: `ph_${opened.length + 1}`, projectId: input.projectId, pmThreadId: input.pmThreadId, title: input.title, goal: input.goal });
-      opened.push(phase);
-      return phase;
-    },
-    tick: async () => ({ moved: 0, idle: null }),
-    list: (filter) => opened.filter((phase) => (!filter.pmThreadId || phase.pmThreadId === filter.pmThreadId) && (!filter.live || !["closed", "stopped"].includes(phase.state))),
-    status: () => ({ next: { text: "write the discussion files and report them with context" } }),
-  };
   // phase.road is retired: a heavy request always takes the full-lifecycle graph; `train: null` simulates its absence.
   const deps = { bb, db, log: () => undefined, effectiveProjectSettings: async () => ({ values: { "phase.rails": "on", ...options.settings } }) } as never;
   const graphStarts: Array<{ kind: string; text: string }> = [];
   const train = options.train === null ? undefined : options.train ?? { start: (input: { kind: string; text: string }) => { graphStarts.push(input); return `wfrun_${graphStarts.length}`; }, status: () => "running" } as IntakeTrain;
-  const intake = createPhaseIntake(deps, phases, train);
-  /** The plugin after a reload: a new intake over the same store and the same phases. */
-  const reloaded = () => createPhaseIntake(deps, phases, train);
-  return { intake, reloaded, opened, db, sent, graphStarts, say: (text: string, id: string, initiator = "user") => { request = { requestId: id, initiator, input: [{ type: "text", text }] }; } };
+  const intake = createPhaseIntake(deps, train);
+  /** The plugin after a reload: a new intake over the same store. */
+  const reloaded = () => createPhaseIntake(deps, train);
+  return { intake, reloaded, db, sent, graphStarts, say: (text: string, id: string, initiator = "user") => { request = { requestId: id, initiator, input: [{ type: "text", text }] }; } };
 }
 
 describe("phase intake rules", () => {
@@ -78,10 +63,9 @@ describe("rails off by default: the PM reads the owner's message itself", () => 
   it("starts nothing and refuses no dispatch when the project did not turn phase.rails on", async () => {
     const started: string[] = [];
     const train: IntakeTrain = { start: (input) => { started.push(input.text); return "wfrun_x"; }, status: () => "running" };
-    const { intake, opened } = world({ settings: { "phase.rails": undefined }, train });
+    const { intake } = world({ settings: { "phase.rails": undefined }, train });
     expect(await intake.take(PM)).toBeNull();
     expect(started).toEqual([]);
-    expect(opened).toEqual([]);
     expect(await intake.dispatchRefusal(PM)).toBeNull();
   });
 });
@@ -90,10 +74,9 @@ describe("the graph road (phase.road graph, the default)", () => {
   it("runs a heavy owner goal as the full-lifecycle graph, opens no phase, and the PM does not dispatch it by hand", async () => {
     const started: Array<{ kind: string; text: string }> = [];
     const train: IntakeTrain = { start: (input) => { started.push(input); return "wfrun_life"; }, status: () => "running" };
-    const { intake, opened } = world({ settings: { "phase.road": "graph" }, train });
+    const { intake } = world({ settings: { "phase.road": "graph" }, train });
     expect(await intake.take(PM)).toMatchObject({ kind: "heavy", phaseId: null, wfRunId: "wfrun_life" });
     expect(started).toEqual([expect.objectContaining({ kind: "heavy" })]);
-    expect(opened).toEqual([]);
     expect(await intake.dispatchRefusal(PM)).toMatch(/went down a graph[\s\S]*wfrun_life[\s\S]*owner's acceptance/);
   });
 });
@@ -101,10 +84,9 @@ describe("the graph road (phase.road graph, the default)", () => {
 describe("rails by default", () => {
   it.each(bootstrapEvents)("does not analyze the live PM bootstrap $threadId as an owner's goal", async (event) => {
     const started: string[] = [];
-    const { intake, opened, say } = world({ request: event.data,
+    const { intake, say } = world({ request: event.data,
       train: { start: (input) => { started.push(input.text); return "wfrun_1"; }, status: () => "running" } });
     expect(await intake.take(PM)).toBeNull();
-    expect(opened).toHaveLength(0);
     expect(started).toHaveLength(0);
     expect(await intake.dispatchRefusal(PM)).toBeNull();
     say(goal, "creq_real_owner");
@@ -113,28 +95,25 @@ describe("rails by default", () => {
   it.each([[false, false], [true, false], [false, true], [true, true]])(
     "leaves the PM activation instruction alone (managed=%s, native=%s)", async (managed, native) => {
       const text = pmPrompt("lprun_bootstrap", { writerWorkspacePath: "/home/ubuntu/lp-drill-sandbox" } as PrototypeConfig, managed, native);
-      const { intake, opened } = world({ request: { source: "spawn", requestId: "creq_bootstrap", initiator: "user", input: [{ type: "text", text }] } });
+      const { intake } = world({ request: { source: "spawn", requestId: "creq_bootstrap", initiator: "user", input: [{ type: "text", text }] } });
       expect(await intake.take(PM)).toBeNull();
-      expect(opened).toHaveLength(0);
     });
   it("still reads a real owner's goal in the spawn of a native PM chat", async () => {
     const { intake } = world({ request: { source: "spawn", requestId: "creq_native", initiator: "user", input: [{ type: "text", text: goal }] } });
     expect(await intake.take(PM)).toMatchObject({ kind: "heavy", wfRunId: "wfrun_1" });
   });
   it("a heavy owner goal starts the full-lifecycle graph once, opens no phase, and the PM may not dispatch it by hand", async () => {
-    const { intake, opened, graphStarts } = world();
+    const { intake, graphStarts } = world();
     const record = await intake.take(PM);
     expect(record).toMatchObject({ kind: "heavy", wfRunId: "wfrun_1" });
     expect(graphStarts).toEqual([expect.objectContaining({ kind: "heavy" })]);
     expect(await intake.take(PM)).toMatchObject({ wfRunId: "wfrun_1" });
     expect(graphStarts).toHaveLength(1);
-    expect(opened).toHaveLength(0);
     expect(await intake.dispatchRefusal(PM)).toMatch(/went down a graph[\s\S]*wfrun_1[\s\S]*owner's acceptance/);
   });
   it("a heavy owner goal with no graph train is explicitly unavailable, never a phase", async () => {
-    const { intake, opened, sent } = world({ train: null });
+    const { intake, sent } = world({ train: null });
     expect(await intake.take(PM)).toMatchObject({ kind: "heavy", phaseId: null });
-    expect(opened).toHaveLength(0);
     expect(sent.some((line) => line.includes("[Lane Pilot service]") && line.includes("Тяжёлая задача не запущена"))).toBe(true);
   });
   it("a small request after the graph started is dispatched as before", async () => {
@@ -151,28 +130,9 @@ describe("rails by default", () => {
     say("поправь опечатку", "creq_4", "agent");
     expect(await intake.dispatchRefusal(PM)).toMatch(/went down a graph/);
   });
-  it("a live phase still absorbs the owner's heavy message; a paused one holds, a closed one lets the PM dispatch", async () => {
-    const { intake, opened } = world();
-    opened.push(mkPhase({}));
-    expect(await intake.take(PM)).toMatchObject({ kind: "heavy", phaseId: "ph_1" });
-    (opened[0] as { state: string }).state = "paused";
-    expect(await intake.dispatchRefusal(PM)).toMatch(/phase ph_1/);
-    (opened[0] as { state: string }).state = "closed";
-    expect(await intake.dispatchRefusal(PM)).toBeNull();
-  });
-  it("a second heavy message joins the live phase instead of starting another graph", async () => {
-    const { intake, opened, say, graphStarts } = world();
-    opened.push(mkPhase({}));
-    await intake.take(PM);
-    say(`${goal} И ещё добавить RSS.`, "creq_5");
-    expect(await intake.take(PM)).toMatchObject({ kind: "heavy", phaseId: "ph_1" });
-    expect(graphStarts).toHaveLength(0);
-    expect(opened).toHaveLength(1);
-  });
   it("phase.rails off, or a chat that is not a PM's, is left alone", async () => {
     const off = world({ settings: { "phase.rails": "off" } });
     expect(await off.intake.take(PM)).toBeNull();
-    expect(off.opened).toHaveLength(0);
     const writer = world({ role: "writer" });
     expect(await writer.intake.take(PM)).toBeNull();
   });
@@ -180,7 +140,7 @@ describe("rails by default", () => {
 
 describe("the small-task graph", () => {
   it("is started by the machine on the judgment's word, and the PM does not dispatch that request by hand", async () => {
-    const { createPhaseIntake: create } = await import("../src/rooms/phase/server/intake");
+    const { createPhaseIntake: create } = await import("../src/rooms/workflow/server/services/intake");
     const { createFakePluginHost: host } = await import("@get-bb/plugin-sdk/testing");
     const { bb, harness } = host({ pluginId: "lane-pilot" });
     harness.sdk.stub("threads.getPluginMetadata", async () => ({ role: "pm", lanePilotRunId: "run1" }));
@@ -188,8 +148,7 @@ describe("the small-task graph", () => {
     const db = openDatabase(bb);
     createRun(db, "run1", "projA");
     const started: string[] = [];
-    const phases = { open: async () => { throw new Error("no phase"); }, tick: async () => ({ moved: 0, idle: null }), list: () => [], status: () => ({ next: { text: "" } }) };
-    const intake = create({ bb, db, log: () => undefined, effectiveProjectSettings: async () => ({ values: { "phase.rails": "on" } }) } as never, phases as never,
+    const intake = create({ bb, db, log: () => undefined, effectiveProjectSettings: async () => ({ values: { "phase.rails": "on" } }) } as never,
       { start: (input) => { started.push(input.text); return "wfrun_1"; }, status: () => "running" });
     (intake as { classify: unknown }).classify = undefined;
     // No Jev here: the length rule alone does not start a build.
@@ -220,9 +179,9 @@ describe("the service answers", () => {
 describe("one stop check guards every machine start in the intake", () => {
   const texts = { heavy: goal, small: "поправь цвет кнопки", batch: "исправь список: 1) футер 2) шапка 3) меню", process: "сделай процесс: каждый день собирай отчёт и отправляй" };
   async function stage(kind: keyof typeof texts, mode: "paused" | "halted" | "running") {
-    const { createPhaseIntake: create } = await import("../src/rooms/phase/server/intake");
+    const { createPhaseIntake: create } = await import("../src/rooms/workflow/server/services/intake");
     const { createFakePluginHost: host } = await import("@get-bb/plugin-sdk/testing");
-    const { setRunPaused, setRunHalted } = await import("../src/rooms/runs/server/runs-halt");
+    const { setRunPaused, setRunHalted } = await import("../src/rooms/runs/server");
     const { bb, harness } = host({ pluginId: "lane-pilot" });
     let request = { requestId: "creq_1", initiator: "user", input: [{ type: "text", text: texts[kind] }] } as Record<string, unknown>;
     harness.sdk.stub("threads.getPluginMetadata", async () => ({ role: "pm", lanePilotRunId: "run1" }));
@@ -230,8 +189,7 @@ describe("one stop check guards every machine start in the intake", () => {
     const db = openDatabase(bb);
     createRun(db, "run1", "projA");
     const starts: string[] = [];
-    const phases = { open: async () => { starts.push("phase"); return { id: "ph_1" }; }, tick: async () => { starts.push("tick"); return 0; }, list: () => [], status: () => ({ next: { text: "" } }) };
-    const intake = create({ bb, db, log: () => undefined, effectiveProjectSettings: async () => ({ values: { "phase.rails": "on" } }) } as never, phases as never,
+    const intake = create({ bb, db, log: () => undefined, effectiveProjectSettings: async () => ({ values: { "phase.rails": "on" } }) } as never,
       { start: (input) => { starts.push(input.kind); return "wfrun_1"; }, status: () => "running", startProcess: async () => { starts.push("architect"); return "thr_arch"; } });
     if (mode === "paused") await setRunPaused(bb.storage.kv as never, "run1", true);
     if (mode === "halted") await setRunHalted(bb.storage.kv as never, "run1", true);
@@ -255,7 +213,7 @@ describe("one stop check guards every machine start in the intake", () => {
 
 describe("the PM is the door: no other system for a request the machine took", () => {
   it("refuses a route or a run while the graph or the architect works, and lets the architect's chain be routed once it is built", async () => {
-    const { createPhaseIntake: create } = await import("../src/rooms/phase/server/intake");
+    const { createPhaseIntake: create } = await import("../src/rooms/workflow/server/services/intake");
     const { createFakePluginHost: host } = await import("@get-bb/plugin-sdk/testing");
     const { bb, harness } = host({ pluginId: "lane-pilot" });
     let architect = "running";
@@ -264,8 +222,7 @@ describe("the PM is the door: no other system for a request the machine took", (
     harness.sdk.stub("threads.get", async () => ({ id: "thr_arch", status: architect }));
     const db = openDatabase(bb);
     createRun(db, "run1", "projA");
-    const phases = { open: async () => { throw new Error("no phase"); }, tick: async () => ({ moved: 0, idle: null }), list: () => [], status: () => ({ next: { text: "" } }) };
-    const intake = create({ bb, db, log: () => undefined, effectiveProjectSettings: async () => ({ values: { "phase.rails": "on" } }) } as never, phases as never,
+    const intake = create({ bb, db, log: () => undefined, effectiveProjectSettings: async () => ({ values: { "phase.rails": "on" } }) } as never,
       { start: () => "wfrun_1", status: () => "running" });
     await bb.storage.kv.set("phase-intake:thr_pm", { requestId: "creq_p", kind: "small", by: "jev", phaseId: null, at: 1, wfRunId: "wfrun_1" });
     expect(await intake.launchRefusal("thr_pm")).toMatch(/went down a graph/);
@@ -277,7 +234,7 @@ describe("the PM is the door: no other system for a request the machine took", (
     // The process hint is the dispatch's: a route does not use it up.
     await bb.storage.kv.set("phase-intake:thr_pm", { requestId: "creq_p", kind: "process", by: "jev", phaseId: null, at: 1 });
     expect(await intake.launchRefusal("thr_pm")).toBeNull();
-    expect(await intake.dispatchRefusal("thr_pm")).toMatch(/lane_pilot_forge/);
+    expect(await intake.dispatchRefusal("thr_pm")).toMatch(/lane_pilot_workflow_draft/);
   });
 });
 
@@ -285,30 +242,27 @@ describe("a hand-over from a scheduled agent is one start per key (RECHECK-341 F
   const hand = (intake: ReturnType<typeof world>["intake"], text: string, key: string) => intake.handOver({ projectId: "projA", pmThreadId: PM, runId: "run1", text, key, origin: "Work found by the scheduled agent" });
 
   it("a late replay after the graph finished returns the same run and starts no second one, also after a reload", async () => {
-    const { intake, reloaded, opened, graphStarts } = world();
+    const { intake, reloaded, graphStarts } = world();
     expect(await hand(intake, goal, "schedule:run-a")).toMatchObject({ started: true, via: "full-lifecycle", id: "wfrun_1" });
     expect(await hand(intake, goal, "schedule:run-a")).toMatchObject({ started: true, via: "full-lifecycle", id: "wfrun_1" });
     expect(await hand(reloaded(), goal, "schedule:run-a")).toMatchObject({ started: true, via: "full-lifecycle", id: "wfrun_1" });
-    expect(opened).toHaveLength(0);
     expect(graphStarts).toHaveLength(1);
     // Another key is a new piece of work and starts its own graph.
     expect(await hand(intake, goal, "schedule:run-b")).toMatchObject({ started: true, via: "full-lifecycle", id: "wfrun_2" });
   });
   it("a heavy hand-over without the graph train is explicitly unavailable, never a phase", async () => {
-    const { intake, opened } = world({ train: null });
+    const { intake } = world({ train: null });
     expect(await hand(intake, goal, "schedule:run-a")).toMatchObject({ started: false, kind: "heavy", reason: "the full-lifecycle graph is unavailable" });
-    expect(opened).toHaveLength(0);
   });
 
   it("a replay returns the same run and a replay racing the first call starts it once", async () => {
-    const { intake, reloaded, opened, graphStarts } = world();
+    const { intake, reloaded, graphStarts } = world();
     expect(await hand(intake, goal, "schedule:run-a")).toMatchObject({ started: true, via: "full-lifecycle", id: "wfrun_1" });
     expect(await hand(reloaded(), goal, "schedule:run-a")).toMatchObject({ started: true, via: "full-lifecycle", id: "wfrun_1" });
     const racing = world();
     const both = await Promise.all([hand(racing.intake, goal, "schedule:run-c"), hand(racing.intake, goal, "schedule:run-c")]);
     expect(both.map((row) => (row.started ? row.id : null))).toEqual(["wfrun_1", "wfrun_1"]);
     expect(racing.graphStarts).toHaveLength(1);
-    expect(opened).toHaveLength(0);
     expect(graphStarts).toHaveLength(1);
   });
 
@@ -348,11 +302,10 @@ describe("a hand-over is approved work, whatever it reads like (lead «да», 2
   it("decided heavy work in a project without phase rails goes down issue-full instead of «phase rails are off» (BB-сервис, 2026-11-10)", async () => {
     const started: string[] = [];
     const train: IntakeTrain = { start: (input) => { started.push(input.kind); return `wfrun_${started.length}`; }, status: () => "succeeded" };
-    const { intake, opened } = world({ train, settings: { "phase.rails": "off" } });
+    const { intake } = world({ train, settings: { "phase.rails": "off" } });
     expect(await intake.handOver({ projectId: "projA", pmThreadId: PM, runId: "run1", text: goal, key: "lead:road_z", origin: "Accepted by the owner" }))
       .toMatchObject({ started: true, via: "issue-full", id: "wfrun_1" });
     expect(started).toEqual(["full"]);
-    expect(opened).toHaveLength(0);
     // Without the graph road there is still nowhere to go, and the refusal says why.
     const bare = world({ settings: { "phase.rails": "off" }, train: null });
     expect(await bare.intake.handOver({ projectId: "projA", pmThreadId: PM, runId: "run1", text: goal, key: "lead:road_z", origin: "Accepted by the owner" }))

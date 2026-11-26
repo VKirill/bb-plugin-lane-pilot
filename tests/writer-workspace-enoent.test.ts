@@ -5,7 +5,7 @@ import { execFileSync } from "node:child_process";
 import { describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { createRun, openDatabase, registerWorktree } from "../src/rooms/plugin-db";
-import { reconcileWorktreeRegistry } from "../src/rooms/stability/server/worktree-janitor";
+import { reconcileWorktreeRegistry } from "../src/rooms/stability/server";
 import { runCommandOnHost } from "../src/rooms/writer/cli-run";
 import {STICKY_WINDOW_MS} from "../src/rooms/platform/server";
 import samples from "./fixtures/writer-workspace-enoent/attempts.json";

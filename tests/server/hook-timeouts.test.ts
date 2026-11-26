@@ -1,8 +1,7 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
 import { openDatabase } from "../../src/rooms/plugin-db";
-import { HOOK_TIMEOUTS_KEY, mountHookTimeoutWatch, type HookTimeoutRecord } from "../../src/rooms/stability/server/hook-timeouts";
-import { createSelfRepair } from "../helpers/self-repair";
+import { HOOK_TIMEOUTS_KEY, mountHookTimeoutWatch, type HookTimeoutRecord } from "../../src/rooms/stability/server";
 import type { ServerCore } from "../../src/rooms/contracts/server";
 import packageJson from "../../package.json";
 
@@ -44,7 +43,7 @@ describe("hook timeouts (VK hook policy)", () => {
     expect(mountHookTimeoutWatch(test.ctx)).toBe(false);
   });
 
-  it("keeps a timeout in kv and self-repair reads it as an incident", async () => {
+  it("keeps a timeout in kv", async () => {
     const test = setup();
     let clock = Date.now() - 10 * 60_000;
     expect(mountHookTimeoutWatch(test.ctx, () => clock)).toBe(true);
@@ -53,14 +52,9 @@ describe("hook timeouts (VK hook policy)", () => {
     const rows = await test.bb.storage.kv.get<HookTimeoutRecord[]>(HOOK_TIMEOUTS_KEY);
     expect(rows).toHaveLength(1);
     expect(rows![0]).toMatchObject({ hook: "contributeEnv", timeoutMs: 10_000, threadId: "thr_pm", quiet: false });
-    const result = await createSelfRepair(test.ctx).tick({ since: 0 });
-    expect(result.incidents).toBe(1);
-    expect(result.signatures[0]).toContain("hook:");
-    expect(test.spawns).toHaveLength(1);
-    expect(String(test.spawns[0]!.prompt)).toContain("hook contributeEnv did not answer in 10000 ms: env not applied");
   });
 
-  it("a timeout in the reload window is kept but is not an incident", async () => {
+  it("a timeout in the reload window is kept as quiet", async () => {
     const test = setup();
     mountHookTimeoutWatch(test.ctx);
     await test.fire({ hook: "messageDispatch", timeoutMs: 20_000 });
@@ -71,7 +65,6 @@ describe("hook timeouts (VK hook policy)", () => {
     await drained.fire({ hook: "contributeEnv", timeoutMs: 10_000 });
     for (const one of [test, drained]) {
       expect((await one.bb.storage.kv.get<HookTimeoutRecord[]>(HOOK_TIMEOUTS_KEY))![0]!.quiet).toBe(true);
-      expect((await createSelfRepair(one.ctx).tick({ since: 0 })).incidents).toBe(0);
     }
   });
 });

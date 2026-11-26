@@ -1,0 +1,145 @@
+{
+  "id": "lp.schedule-script",
+  "startedBy": "schedule-script",
+  "name": {
+    "en": "Scheduled script",
+    "ru": "Скрипт по расписанию"
+  },
+  "description": {
+    "en": "Body of a schedule of kind script: resolves allowed Env Catalog secrets and runs the command on the target machine through a host job.",
+    "ru": "Тело расписания вида «скрипт»: проверяет разрешённые секреты из Env Catalog и запускает команду на выбранной машине через задачу хоста."
+  },
+  "not_for": [
+    "anything a person asks in a chat: this is the body of a schedule, start it by creating a schedule of kind script",
+    "a repository task or agent errand: use lp-task-pipeline or errand"
+  ],
+  "category": "service",
+  "status": "published",
+  "version": 1,
+  "tags": [
+    "schedule",
+    "script"
+  ],
+  "triggers": [
+    {
+      "type": "manual"
+    }
+  ],
+  "scope": {
+    "level": "builtin"
+  },
+  "inputs": {
+    "scheduleId": {
+      "type": "string",
+      "default": ""
+    },
+    "hostId": {
+      "type": "string"
+    },
+    "command": {
+      "type": "string"
+    },
+    "cwd": {
+      "type": "string"
+    },
+    "env": {
+      "type": "string[]",
+      "default": []
+    },
+    "timeoutSec": {
+      "type": "int",
+      "default": 600
+    },
+    "maxOutputBytes": {
+      "type": "int",
+      "default": 0
+    },
+    "runKey": {
+      "type": "string",
+      "default": ""
+    }
+  },
+  "outputs": {
+    "status": "succeeded|failed",
+    "exitCode": "int",
+    "output": "string",
+    "error": "string",
+    "reason": "string",
+    "truncated": "bool",
+    "jobId": "string",
+    "hostId": "string"
+  },
+  "goal_audit": "exempt",
+  "budget": {
+    "max_minutes": 180,
+    "max_usd": 0.01
+  },
+  "guards": {
+    "maxSteps": 4,
+    "maxFanOut": 1
+  },
+  "nodes": [
+    {
+      "id": "run",
+      "type": "action",
+      "label": "Run scheduled script on target host",
+      "uses": "lp.schedule_script",
+      "timeoutSec": 10800,
+      "output": [
+        {
+          "name": "status",
+          "type": "string"
+        },
+        {
+          "name": "exitCode",
+          "type": "int",
+          "required": false
+        },
+        {
+          "name": "output",
+          "type": "string"
+        },
+        {
+          "name": "error",
+          "type": "string"
+        },
+        {
+          "name": "reason",
+          "type": "string"
+        },
+        {
+          "name": "truncated",
+          "type": "bool"
+        },
+        {
+          "name": "jobId",
+          "type": "string"
+        },
+        {
+          "name": "hostId",
+          "type": "string"
+        }
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "from": "start",
+      "to": "run"
+    },
+    {
+      "from": "run",
+      "to": "end",
+      "with": {
+        "status": "run.status",
+        "exitCode": "run.exitCode",
+        "output": "run.output",
+        "error": "run.error",
+        "reason": "run.reason",
+        "truncated": "run.truncated",
+        "jobId": "run.jobId",
+        "hostId": "run.hostId"
+      }
+    }
+  ]
+}

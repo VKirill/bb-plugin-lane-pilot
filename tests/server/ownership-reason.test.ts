@@ -1,8 +1,8 @@
 import { expect, it, vi } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { createAttempt, createRun, createTask, openDatabase, setAttemptWorkspace } from "../../src/rooms/plugin-db";
-import { createWriterVerify } from "../../src/rooms/writer/server/verify";
-import { classifyWriterOutput } from "../../src/rooms/tasks/validate-output";
+import { createWriterVerify } from "../../src/rooms/writer/server/services/verify";
+import { classifyWriterOutput } from "../../src/rooms/tasks";
 import type { TaskV2 } from "../../src/rooms/contracts";
 
 const contract = (id: string, owns: string[]): TaskV2 => ({

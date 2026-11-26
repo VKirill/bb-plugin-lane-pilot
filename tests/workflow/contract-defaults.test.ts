@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { withContractDefaults } from "../../src/rooms/workflow/server/workflow-executors";
-import { validateTaskV2 } from "../../src/rooms/tasks/task-v2";
+import { withContractDefaults } from "../../src/rooms/workflow/server/services/workflow-executors";
+import { validateTaskV2 } from "../../src/rooms/tasks";
 
 // A planner agent wrote the work but not the envelope; the lint refused it three times and the small-task graph stopped for the owner
 // (issue-quick wfrun_8adbad9a…, 2026-10-25). The envelope is filled the same way every time; what the planner wrote wins.
@@ -40,7 +40,7 @@ describe("a planner's task gets the task-v2 envelope", () => {
 
 describe("a check written as prose", () => {
   it("runs its first code span, not the sentence", async () => {
-    const { commandOf } = await import("../../src/rooms/workflow/server/workflow-executors");
+    const { commandOf } = await import("../../src/rooms/workflow/server/services/workflow-executors");
     expect(commandOf("`npm test > /tmp/t1-test.log 2>&1; echo $?` prints `0`")).toBe("npm test > /tmp/t1-test.log 2>&1; echo $?");
     expect(commandOf("npm test")).toBe("npm test");
   });

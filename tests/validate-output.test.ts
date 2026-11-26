@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { classifyWriterOutput } from "../src/rooms/tasks/validate-output";
+import { classifyWriterOutput } from "../src/rooms/tasks";
 import type { TaskV2 } from "../src/rooms/contracts";
 
 const task = (expected: string[]) => ({
@@ -34,7 +34,7 @@ it("still reports a bare name the writer did not make, and a full path elsewhere
 it("keeps a stage receipt of the 3rd and 4th writer of the chain instead of failing the task", async () => {
   const { createFakePluginHost } = await import("@get-bb/plugin-sdk/testing");
   const { openDatabase, createRun, listStageReceipts } = await import("../src/rooms/plugin-db");
-  const { recordStage } = await import("../src/rooms/runs/server/stage-records");
+  const { recordStage } = await import("../src/rooms/runs/server");
   const { bb } = createFakePluginHost({ pluginId: "lane-pilot" });
   const db = openDatabase(bb);
   createRun(db, "run", "proj", "cli", "/repo");

@@ -2,7 +2,7 @@ import { chmod, lstat, mkdir, mkdtemp, readFile, readlink, realpath, rm, utimes,
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { prepareWorktree } from "../../src/rooms/verification/git-integrate";
+import { prepareWorktree } from "../../src/rooms/worktree";
 import { linkUserToolHomes } from "../../src/rooms/verification/sandbox";
 import { git, repo } from "./git-integrate-helpers";
 

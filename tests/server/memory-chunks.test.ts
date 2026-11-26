@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { openDatabase } from "../../src/rooms/plugin-db";
 import { CHUNK_CHARS, DOC_CHARS, EMBED_DIM, contentChunks, deleteMemoryRecord, eraseLeftovers, memoryContext, pendingChunks, rememberQueryVector, searchMemoryRecords, storeMemoryRecords } from "../../packages/memory-core/src";
-import { embedPending } from "../../src/rooms/memory/server/embeddings";
-import { memoryLine } from "../../src/rooms/memory/server/memory-picks";
+import { embedPending } from "../../src/rooms/memory/server/services/embeddings";
+import { memoryLine } from "../../src/rooms/memory/models/memory-picks";
 
 const axis = (i: number) => { const v = new Float32Array(EMBED_DIM); v[i] = 1; return v; };
 const paragraph = (word: string, n: number) => `${word} section ${n}: ` + `${word} filler sentence about the nightly job and its queue. `.repeat(28);

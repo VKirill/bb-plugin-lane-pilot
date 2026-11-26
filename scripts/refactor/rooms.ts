@@ -29,7 +29,6 @@ const ROOMS: Record<string, string> = {
   "project-life": `server/stages/onboarding server/stages/project-life stages/onboarding stages/project-life`,
   memory: `server/memory-mix server/session-memory server/stages/memory stages/memory ui/memory-records`,
   relay: `owner-ask owner-ask-shared server/handoff server/owner-ask server/relay server/service-message ui/owner-ask`,
-  council: `server/council ui/council-page`,
   stability: `reconcile server/canary server/deploy-drain server/health server/hook-timeouts server/probes server/provider-retry server/reconcile server/stability stages/opencode-telemetry`,
   "self-repair": `server/insights server/rpc/insights server/rule-scan server/self-repair ui/rule-proposals`,
   usage: `server/provider-usage server/rpc/token-usage server/token-usage ui/token-usage`,

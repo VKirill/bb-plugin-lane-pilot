@@ -3,13 +3,9 @@ import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { expect, it } from "vitest";
-import { openDatabase } from "../src/rooms/plugin-db";
-import { createSelfRepair } from "./helpers/self-repair";
-import type { ServerCore } from "../src/rooms/contracts/server";
-import { worktreeCreateError } from "../src/rooms/writer/server/spawn";
-import { createWorktree, integrateWorktree, workspaceGitLayout } from "../src/rooms/verification/git-integrate";
+import { worktreeCreateError } from "../src/rooms/writer/server/services/spawn";
+import { createWorktree, integrateWorktree, workspaceGitLayout } from "../src/rooms/worktree";
 import { gitOwnershipChangedPaths, resolveGitOwnershipBase } from "../src/rooms/verification/git-ownership";
 
 const git = (cwd: string, ...args: string[]) => execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", ...args], { cwd, encoding: "utf8" });
@@ -53,24 +49,6 @@ it("creates a writer worktree when the chat folder is the git repo root", async 
 it("names any worktree creation failure as Lane Pilot's", () => {
   expect(worktreeCreateError("fatal: already exists")).toBe("attempt_worktree_failed:fatal: already exists");
   expect(worktreeCreateError(null)).toBe("attempt_worktree_failed:unknown");
-});
-
-it("does not pick the subfolder refusal for self-repair, even across several tasks", async () => {
-  const { bb } = createFakePluginHost({ pluginId: "lane-pilot" });
-  const db = openDatabase(bb);
-  const ctx = { bb, db, log: () => undefined, isDisposed: () => false } as unknown as ServerCore;
-  const now = Date.now();
-  db.prepare("INSERT INTO lane_pilot_run (id,project_id,pm_thread_id,state,created_at,updated_at) VALUES (?,?,?,?,?,?)")
-    .run("lprun_a", "proj_real", "thr_pm", "running", now, now);
-  const reason = "workspace_not_repo_root: /repo/apps/bot is not the git repo root /repo (3 uncommitted files)";
-  for (const n of [1, 2, 3]) {
-    db.prepare("INSERT INTO lane_pilot_attempt (id,run_id,task_id,thread_id,state,reason,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)")
-      .run(`lpattempt_${n}`, "lprun_a", `task-${n}`, `thr_w_${n}`, "blocked", reason, now, now);
-    db.prepare(`INSERT INTO lane_pilot_failure_triage (project_id,attempt_id,run_id,task_id,reason_sha256,reason,origin,status,failed_at,triaged_at)
-      VALUES (?,?,?,?,?,?,?,'ok',?,?)`).run("proj_real", `lpattempt_${n}`, "lprun_a", `task-${n}`, "x", reason, "orchestrator", now, now);
-  }
-  const rows = await createSelfRepair(ctx).collect(0, await createSelfRepair(ctx).config());
-  expect(rows).toEqual([]);
 });
 
 it("ownership in a nested folder sees the writer's new and changed files relative to that folder", async () => {

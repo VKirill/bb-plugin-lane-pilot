@@ -4,12 +4,12 @@ import { join } from "node:path";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createAttempt, createRun, createTask, openDatabase, saveProjectSetting, setRunThread, transitionAttempt } from "../src/rooms/plugin-db";
-import { preship } from "../src/rooms/tools/server/receipts";
+import { preship } from "../src/rooms/tools/server";
 import { gateRunVerdict } from "../src/rooms/verification/server";
 import { finishGateRun, latestGateRunForTask, noteGateRunStart } from "../src/rooms/storage";
-import { createWriterDispatch } from "../src/rooms/writer/server/dispatch";
-import { createWriterFinish } from "../src/rooms/writer/server/finish";
-import * as hostHandlers from "../src/rooms/host-worker/host-handlers";
+import { createWriterDispatch } from "../src/rooms/writer/server/services/dispatch";
+import { createWriterFinish } from "../src/rooms/writer/server/services/finish";
+import * as hostHandlers from "../src/rooms/host-worker";
 
 // Astra F1: «all tasks accepted» used to read as «ship» while the post-merge integration gate still ran, never ran
 // (a host error) or ended red. Now its run is a row (lane_pilot_gate_run), wait_writer waits for it and carries its
@@ -131,7 +131,7 @@ describe("wait_writer carries the gate verdict", () => {
 
   it("green on the merge sha: the wait answers accepted with the gate line", async () => {
     gateScript(null);
-    const { db, accepted, merged, wait } = setup();
+    const { accepted, merged, wait } = setup();
     accepted();
     await merged();
     const answer = await wait();

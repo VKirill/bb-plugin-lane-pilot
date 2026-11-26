@@ -1,9 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { taskBrief } from "../../src/rooms/critique/task-brief";
-import { critiquePrompt } from "../../src/rooms/critique/critique";
-import { specialistPrompt } from "../../src/rooms/critique/specialist";
-import { pmReadPrompt } from "../../src/rooms/critique/pm-read";
-import { codeCritiquePrompt, codeRepairPrompt, buildCandidateEvidence } from "../../src/rooms/critique/code-critique";
+import {
+  buildCandidateEvidence,
+  codeCritiquePrompt,
+  codeRepairPrompt,
+  critiquePrompt,
+  pmReadPrompt,
+  specialistPrompt,
+  taskBrief,
+} from "../../src/rooms/critique";
 
 /** A realistic contract with every field a stage could print, plus a secret name and a hidden flag that must never reach a prompt. */
 const TASK = {

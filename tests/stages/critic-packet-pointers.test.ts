@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { sha256Hex } from "@lane-pilot/kit";
-import { buildCandidateEvidence, codeCritiquePrompt } from "../../src/rooms/critique/code-critique";
+import { buildCandidateEvidence, codeCritiquePrompt } from "../../src/rooms/critique";
 
 // SWE-2 stream C1 (2026-11-03): the critic's prompt carries pointers, not the whole change — a 57 KB muse-image-mode packet
 // was 44 KB of pasted code. Past ~6 KB the prompt lists paths with +/- counts and the git commands; the critic reads itself.

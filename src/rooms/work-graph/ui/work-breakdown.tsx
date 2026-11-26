@@ -1,11 +1,9 @@
-import { useEffect, useState } from "react";
-import { useBbNavigate, useRpc } from "@get-bb/plugin-sdk/app";
+import { useBbNavigate } from "@get-bb/plugin-sdk/app";
 import { t } from "@lane-pilot/i18n";
-import type { rpcContract } from "../../contracts";
-import type { ExecutorRow, StageBlock, TaskGraph } from "../logic";
+import type { ExecutorRow, StageBlock, TaskGraph } from "../models/logic";
 import { StageStrip } from "./stage-strip";
 import { duration, fill, money, roleName, shortModel, stageName, stageState, tokens } from "./format";
-import { ceilingLine } from "../logic";
+import { ceilingLine } from "../models/logic";
 import { useLpRpcQuery } from "../../ui-shell/ui";
 import { usePageVisible } from "./page-visible";
 

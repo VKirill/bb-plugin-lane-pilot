@@ -9,16 +9,18 @@ export const gitHostMethods = {
     output: z.object({ hostId:z.string(), status:z.enum(["ready","not-git","invalid-ref","failed"]), branch:z.string().nullable(), headSha:z.string().nullable(), baseRef:z.string().nullable(), baseSha:z.string().nullable(), compareCommitted:z.boolean(), reason:z.string().nullable() }).strict(),
   },
   gitPrepareWorktree: {
-    // ownsBarrier + the task contract: tracked files outside owns_paths become read-only for the attempt (additive; an older host ignores them and locks nothing).
+    // ownsBarrier + the task contract: tracked files outside owns_paths and contract check files become read-only for the attempt (additive; an older host ignores them and locks nothing).
     input: z.object({ requestedHostId:z.string().min(1), basePath:z.string().startsWith("/"), worktreePath:z.string().startsWith("/"),
-      ownsBarrier:z.boolean().optional(), ownsPaths:z.array(z.string().max(300)).max(200).optional(), neverTouch:z.array(z.string().max(300)).max(200).optional() }).strict(),
+      ownsBarrier:z.boolean().optional(), ownsPaths:z.array(z.string().max(300)).max(200).optional(), neverTouch:z.array(z.string().max(300)).max(200).optional(),
+      readOnlyPaths:z.array(z.string().max(300)).max(200).optional() }).strict(),
     output: z.object({ hostId:z.string(), linked:z.array(z.string()), locked:z.number().int().optional() }).strict(),
   },
   gitOwnsBarrier: {
     // The barrier of an attempt's lane worktree brought to a changed contract (owns_paths widened in place): nothing else
     // of gitPrepareWorktree runs again. `not_lane_worktree`: the path is no worktree under the lane root, where no barrier is set.
     input: z.object({ requestedHostId:z.string().min(1), worktreePath:z.string().startsWith("/"),
-      ownsPaths:z.array(z.string().max(300)).max(200), neverTouch:z.array(z.string().max(300)).max(200) }).strict(),
+      ownsPaths:z.array(z.string().max(300)).max(200), neverTouch:z.array(z.string().max(300)).max(200),
+      readOnlyPaths:z.array(z.string().max(300)).max(200).optional() }).strict(),
     output: z.object({ hostId:z.string(), status:z.enum(["applied","not_lane_worktree"]), locked:z.number().int(), unlocked:z.number().int() }).strict(),
   },
   gitWorktreeSnapshot: {

@@ -14,12 +14,12 @@ import {
   composerButtonDisabled,
   startBlocked,
   type ActivationBlock,
-} from "../activation";
+} from "../models/activation";
 import { DEFAULT_NATIVE_AGENT } from "../../contracts/native-agent-id";
 import { nativeSelectionReady, selectionHostId } from "../../contracts/composer-selection";
 import { noteChatAgentChanged, setPendingNativeAgent } from "./pending-native-agent";
 import { useNativeComposerSelection } from "./composer-selection-hook";
-import { takeArchitectLaunch } from "../architect-launch";
+import { takeArchitectLaunch } from "../models/architect-launch";
 
 /** The «Без агента» row of the agent dropdown (a Select item cannot have an empty value). */
 const NO_AGENT = "__none__";

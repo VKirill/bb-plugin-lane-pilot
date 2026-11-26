@@ -2,13 +2,13 @@ import { afterEach, describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import plugin from "../server";
 import { resolveRoleModel, roleFallbackModel, roleRowOf } from "@lane-pilot/models";
-import { roleMethod, SCOUT_METHOD } from "../src/rooms/critique/role-method";
+import { roleMethod, SCOUT_METHOD } from "../src/rooms/critique";
 import { REDUCERS, runDraftTest, testCasesOf } from "@lane-pilot/workflow-engine";
 import { effectiveGroup, effectiveSwitch } from "../src/rooms/contracts/helper-context";
-import { roleSpec } from "../src/rooms/workflow/server/workflow-agent";
+import { roleSpec } from "../src/rooms/workflow/server/services/workflow-agent";
 import { builtinWorkflow, isCoreLockedBuiltinId } from "../src/rooms/workflow/builtin";
 import { DEFAULT_SCOUT_ANGLES, normalizeScoutAngles, runPlanCritique, runPmRead } from "../src/rooms/critique/server";
-import { stageHelperSettings } from "../src/rooms/settings/server/stage-settings";
+import { stageHelperSettings } from "../src/rooms/settings/server/services/stage-settings";
 import { createAttempt, createRun, createTask, listStageReceipts, openDatabase, saveProjectSetting, setRunThread } from "../src/rooms/plugin-db";
 
 describe("scout role, parallel scout workflow, and scout-first pre-writer policy", () => {

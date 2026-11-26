@@ -2,9 +2,9 @@ import { describe, expect, it } from "vitest";
 import { parseWorkflow, registerPureActions, validateWorkflow } from "@lane-pilot/workflow-engine";
 import { engineOn, journalDb } from "./engine-helpers";
 import { builtinWorkflow } from "../../src/rooms/workflow/builtin";
-import { parseLoopHookManifest, prepareLoopWorkflow, LoopHookRefusal } from "../../src/rooms/workflow/loop-hooks";
+import { parseLoopHookManifest, prepareLoopWorkflow, LoopHookRefusal } from "../../src/rooms/workflow/models/loop-hooks";
 import type { LoopHookManifest } from "../../src/rooms/workflow";
-import { stepPacket } from "../../src/rooms/workflow/server/workflow-agent-packet";
+import { stepPacket } from "../../src/rooms/workflow/server/services/workflow-agent-packet";
 
 const child = (id: string, status: "published" | "draft" = "published") => parseWorkflow({
   id, status, name: { en: id, ru: id }, description: { en: id, ru: id }, inputs: [{ name: "goal", type: "string" }], outputs: [{ name: "status", type: "string" }],
@@ -117,7 +117,7 @@ describe("project loop hook composition", () => {
     registerPureActions(engine);
     try {
       const run = engine.start({ workflow: prepared.workflow, resolve: prepared.resolve, inputs: { goal: "owner goal", depth: "standard", ask_owner: false } });
-      for (const [i, id] of ["check-one", "check-two", "check-one", "check-two"].entries()) {
+      for (const [i] of ["check-one", "check-two", "check-one", "check-two"].entries()) {
         await engine.idle();
         expect(engine.get(run.runId)?.status, JSON.stringify(db.prepare("SELECT node_id, state, error FROM lane_pilot_wf_step WHERE run_id=?").all(run.runId))).toBe("waiting");
         const rows = db.prepare("SELECT id, workflow_id, inputs_json FROM lane_pilot_wf_run WHERE parent_run_id=? ORDER BY rowid").all(run.runId) as Array<{ id: string; workflow_id: string; inputs_json: string }>;

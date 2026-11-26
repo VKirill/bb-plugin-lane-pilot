@@ -34,6 +34,7 @@
     "code",
     "ideation"
   ],
+  "category": "planning",
   "inputs": {
     "topic": {
       "type": "string",

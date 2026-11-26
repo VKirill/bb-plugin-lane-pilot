@@ -5,16 +5,15 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { homedir } from "node:os";
 import { basename, delimiter, isAbsolute, join, relative, resolve } from "node:path";
-import { unionLpBridgeToolsOnAgentsJson } from "./native-agent-overlay";
+import { unionLpBridgeToolsOnAgentsJson } from "./models/agent-overlay";
 import { nativeAgentCliId, nativeAgentSettingId } from "../contracts/native-agent-id";
 import { materializeNativeHookSession } from "./native-session-hooks";
 import { sha256Hex } from "@lane-pilot/kit";
+import { shellQuote } from "@lane-pilot/contracts";
 
 const exec = promisify(execFile);
 
-export function shellQuote(s: string) {
-  return "'" + s.replace(/'/g, "'\\''") + "'";
-}
+export { shellQuote };
 
 export async function installedClaudeExecutable(): Promise<string> {
   const name = "claude";
@@ -277,6 +276,8 @@ const MERGE_SETTINGS_PY = [
   "    if k==\"hooks\" and isinstance(v,dict) and isinstance(a.get(k),dict):",
   "      for ev,lst in v.items(): a[k][ev]=list(a[k].get(ev,[]))+list(lst)",
   "    elif isinstance(v,dict) and isinstance(a.get(k),dict): merge(a[k],v)",
+  "    elif isinstance(v,list) and isinstance(a.get(k),list):",
+  "      a[k]=list(a[k])+[x for x in v if x not in a[k]]",
   "    else: a[k]=v",
   // Native launchers use an explicit generated marker; the role fallback keeps the shared merger compatible with claude-guard-launch.
   "helper=os.environ.get(\"LANE_PILOT_NATIVE_HELPER\") == \"1\" or os.environ.get(\"LANE_PILOT_ROLE\",\"pm\") != \"pm\"",

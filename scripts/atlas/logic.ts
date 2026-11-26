@@ -19,7 +19,7 @@ export type AtlasInput = {
   /** The shipped graphs in workflows/. */
   graphs: Array<{ id: string; name: string; status: string; description: string }>;
   packages: string[];
-  /** First-party feature capabilities from src/rooms/native-install/feature-registry.ts (SMA k_t_capgen). */
+  /** First-party feature capabilities from src/rooms/native-install/models/feature-registry.ts (SMA k_t_capgen). */
   capabilities: Array<{ id: string; runtimes: number; agents: number; skills: number; hooks: number }>;
   /** Sizes for the README numbers: not hashed, they change with every edit. */
   size: { version: string; settings: number; testFiles: number; sourceLines: number };
@@ -81,7 +81,7 @@ export function renderAtlas(input: AtlasInput): string {
     "| graph | name | status | what it does |", "|---|---|---|---|",
     ...input.graphs.map((graph) => `| ${graph.id} | ${esc(graph.name)} | ${graph.status} | ${esc(firstSentence(graph.description))} |`), "",
     `## Feature capabilities (${input.capabilities.length})`, "",
-    "First-party install capabilities from `src/rooms/native-install/feature-registry.ts` — which agents, skills and hooks each brings (SMA k_t_capgen).", "",
+    "First-party install capabilities from `src/rooms/native-install/models/feature-registry.ts` — which agents, skills and hooks each brings (SMA k_t_capgen).", "",
     "| feature | runtimes | agents | skills | hooks |", "|---|---:|---:|---:|---:|",
     ...input.capabilities.map((row) => `| ${row.id} | ${row.runtimes} | ${row.agents} | ${row.skills} | ${row.hooks} |`), "",
     `## RPC methods (${input.rpc.length})`, "", [...input.rpc].sort().map((name) => `\`${name}\``).join(" · "), "",

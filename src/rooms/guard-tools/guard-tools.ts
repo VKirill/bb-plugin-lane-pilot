@@ -1,5 +1,5 @@
 /**
- * Guard tools (SMA map: Guard tools): checks that run in tests and before publishing.
+ * Guard tools: checks that run in tests and before publishing.
  * - Leak scanner: no secret-shaped string in what ships (dist, docs, i18n texts).
  * - Internal ids forbidden: a text a person reads (i18n strings) carries no internal id (lpattempt_…, lprun_…, thr_…, s123).
  * - Explained unshown fields: an RPC field the screens do not show is named with why (the register below).
@@ -7,12 +7,14 @@
  */
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
+import { schemaEnums } from "@lane-pilot/kit";
+import { z } from "zod";
 
 const SECRET_SHAPES = [/\bsk-[A-Za-z0-9_-]{20,}/, /\bgh[pousr]_[A-Za-z0-9]{24,}/, /\bxox[abpr]-[A-Za-z0-9-]{12,}/, /\bAKIA[0-9A-Z]{16}\b/, /-----BEGIN [A-Z ]*PRIVATE KEY-----/, /\b\d{8,10}:AA[A-Za-z0-9_-]{30,}\b/];
 
 const walk = (dir: string): string[] => readdirSync(dir).flatMap((name) => { const path = join(dir, name); return statSync(path).isDirectory() ? (name === "node_modules" ? [] : walk(path)) : [path]; });
 
-/** The walk-and-scan the test run and the publish gate share (SMA m_tl_rebrand_wired): every leak hit under the
+/** The walk-and-scan the test run and the publish gate share: every leak hit under the
  * shipped sources as `path:line`. The same list fails `npx vitest` and `lp-ship.ts publishable`. */
 export function leakFindings(root: string): string[] {
   const dirs = ["src", "docs", "packages/i18n/src"].map((dir) => join(root, dir)).filter(existsSync);
@@ -29,6 +31,74 @@ export function leaks(text: string): Array<{ line: number; shape: string }> {
   return out;
 }
 
+const parseDiffPath = (target: string): string => {
+  const unquoted = target.startsWith('"') && target.endsWith('"') ? target.slice(1, -1) : target;
+  return unquoted.startsWith("b/") ? unquoted.slice(2) : unquoted;
+};
+
+/**
+ * Range leak scanner: inspects every added line in `git log -p --no-color --format=commit:%H <range>`
+ * using `leaks()`, returning `<commit> <path>:<line>` hits (never the matched value).
+ */
+export function addedLineLeaks(
+  range: string,
+  git: (...args: string[]) => string,
+  log?: (message: string) => void,
+): string[] {
+  const raw = git("log", "-p", "--no-color", `--format=commit:%H`, range);
+  const hits: string[] = [];
+  let commit = "";
+  let file: string | null = null;
+  let inHunk = false;
+  let newLine = 0;
+  let commits = 0;
+  let lines = 0;
+
+  for (const line of raw.split(/\r?\n/)) {
+    if (line.startsWith("commit:")) {
+      commit = line.slice("commit:".length).trim();
+      commits += 1;
+      file = null;
+      inHunk = false;
+      continue;
+    }
+    if (line.startsWith("diff --git ")) {
+      file = null;
+      inHunk = false;
+      continue;
+    }
+    if (!inHunk && line.startsWith("+++ ")) {
+      const target = line.slice(4);
+      file = target === "/dev/null" ? null : parseDiffPath(target);
+      continue;
+    }
+    if (line.startsWith("@@ ")) {
+      const match = /^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/.exec(line);
+      if (match) {
+        newLine = Number(match[1]);
+        inHunk = true;
+      }
+      continue;
+    }
+    if (!inHunk || file === null) continue;
+    if (line.startsWith("+")) {
+      lines += 1;
+      if (leaks(line.slice(1)).length > 0) hits.push(`${commit} ${file}:${newLine}`);
+      newLine += 1;
+      continue;
+    }
+    if (line.startsWith(" ")) {
+      newLine += 1;
+      continue;
+    }
+    if (line.startsWith("-") || line.startsWith("\\")) continue;
+    inHunk = false;
+  }
+
+  log?.(`INFO ship.leakscan range=${range} commits=${commits} lines=${lines} hits=${hits.length}`);
+  return hits;
+}
+
 export const INTERNAL_ID = /\b(lpattempt_[0-9a-f]{8,}|lprun_[0-9a-f]{8,}|thr_[a-z0-9]{8,}|proj_[a-z0-9]{8,}|host_[a-z0-9]{8,})\b/;
 /** Internal ids forbidden: the strings of a catalog a person reads that carry an internal id (placeholders like {taskId} are fine). */
 export function internalIds(strings: Readonly<Record<string, string>>): string[] {
@@ -38,8 +108,7 @@ export function internalIds(strings: Readonly<Record<string, string>>): string[]
 /** Explained unshown fields: RPC answer fields no screen shows, and why each is there. */
 export const UNSHOWN_FIELDS: Readonly<Record<string, string>> = {
   "canary_status.samples": "for the CLI (scripts/lp-canary.sh) and the PM alert, not for a screen",
-  "phase_get.facts": "the raw facts of the pieces for the CLI and the PM; the screen shows the book and the lines",
-  "world_version.version": "polled by screens to know when to read the board again; never shown itself",
+  "ui_version.version": "polled by screens to know when to read the board again; never shown itself",
   "money_status.series": "the 14-day series feeds the chart; the numbers are not listed",
   "money_status.estimated": "the same figure as estimatedUsd under a second name (the server emits both); the money screen reads estimatedUsd",
   "money_status.estimatedAttempts": "how many silent paid attempts the estimate could price — the census behind estimatedUsd; the screen shows the sum, not the count",
@@ -51,9 +120,11 @@ export const UNSHOWN_FIELDS: Readonly<Record<string, string>> = {
   "work_file_read.lineEnd": "see work_file_read.lineStart: the range of a page the reader does not turn",
   "work_file_read.totalLines": "see work_file_read.lineStart: the cut is shown as «…», not as a count",
   "work_file_read.sizeBytes": "the file's size is the server's bound on the read, not something the owner is told",
+  "owner_waiting.generatedAt": "server timestamp on the owner-waiting snapshot; screens show item age rather than the snapshot clock",
+  "workflow_map.generatedAt": "server timestamp on the workflow map snapshot; diagnostic metadata not rendered in the UI",
 };
 
-/** Permission rules parity (SMA: Permission rules parity, Session and terminal parity): the tools one place allows and the other does not. */
+/** Permission rules parity: the tools one place allows and the other does not. */
 export function parityGaps(session: readonly string[], terminal: readonly string[]): { onlySession: string[]; onlyTerminal: string[] } {
   const a = new Set(session), b = new Set(terminal);
   return { onlySession: [...a].filter((tool) => !b.has(tool)).sort(), onlyTerminal: [...b].filter((tool) => !a.has(tool)).sort() };
@@ -125,4 +196,49 @@ export function unreadFields(contract: Readonly<Record<string, { output: unknown
     }
   }
   return unread.sort();
+}
+
+/**
+ * Dynamically collect every string literal (enum members, const values, and required field names) from a Zod schema via JSON Schema.
+ * Used by architecture prompt-coverage gates to ensure every judge prompt names all values/keys its Zod parser expects.
+ */
+export function schemaLiterals(zodSchema: z.ZodType): string[] {
+  const jsonSchema = z.toJSONSchema(zodSchema, { unrepresentable: "any", io: "input" });
+  const collected = new Set<string>();
+  for (const group of schemaEnums(jsonSchema)) {
+    for (const value of group.values) collected.add(value);
+  }
+  const seen = new Set<unknown>();
+  const isObj = (value: unknown): value is Record<string, unknown> =>
+    typeof value === "object" && value !== null && !Array.isArray(value);
+  const walkRequired = (node: unknown) => {
+    if (!isObj(node) || seen.has(node)) return;
+    seen.add(node);
+    if (Array.isArray(node.required)) {
+      for (const name of node.required) {
+        if (typeof name === "string" && name !== "") collected.add(name);
+      }
+    }
+    if (typeof node.$ref === "string" && node.$ref.startsWith("#/")) {
+      const target = node.$ref.slice(2).split("/")
+        .map((key) => key.replace(/~1/g, "/").replace(/~0/g, "~"))
+        .reduce<unknown>((at, key) => (isObj(at) ? at[key] : undefined), jsonSchema);
+      walkRequired(target);
+    }
+    if (isObj(node.properties)) {
+      for (const child of Object.values(node.properties)) walkRequired(child);
+    }
+    if (Array.isArray(node.items)) {
+      for (const child of node.items) walkRequired(child);
+    } else {
+      walkRequired(node.items);
+    }
+    for (const key of ["anyOf", "oneOf", "allOf"]) {
+      if (Array.isArray(node[key])) {
+        for (const child of node[key] as unknown[]) walkRequired(child);
+      }
+    }
+  };
+  walkRequired(jsonSchema);
+  return [...collected];
 }

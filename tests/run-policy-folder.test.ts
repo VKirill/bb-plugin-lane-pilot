@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { RunWriterPool } from "../src/rooms/tasks/run-policy";
+import { RunWriterPool } from "../src/rooms/tasks/server";
 
 it("serializes same-host parent/child folder claims while allowing disjoint claims", async () => {
   const pool = new RunWriterPool();

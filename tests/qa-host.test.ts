@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { mapListedQaHosts } from "../src/rooms/platform/server/qa-hosts";
-import { qaCodexPreflightReason, qaHostUnreachableReason, resolveBrowserQaTarget, resolveStaleBrowserQaReceipt } from "../src/rooms/qa/qa-host";
+import { mapListedQaHosts } from "../src/rooms/platform/models/qa-hosts";
+import { qaCodexPreflightReason, qaHostUnreachableReason, resolveBrowserQaTarget, resolveStaleBrowserQaReceipt } from "../src/rooms/qa";
 
 describe("browser QA host routing", () => {
   it("allows the writer host and requires an explicit cwd on another host", () => {

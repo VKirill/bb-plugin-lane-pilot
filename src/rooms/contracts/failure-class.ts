@@ -1,3 +1,5 @@
+import { RUN_BUDGET_EXCEEDED_PREFIX } from "@lane-pilot/resilience";
+
 /**
  * Which side a failed writer attempt is on, so the reaction fits the cause (Kubernetes podFailurePolicy, Buildkite
  * automatic retry, Temporal non-retryable errors): only `task` failures spend the task's two attempts.
@@ -78,7 +80,7 @@ const HARNESS = /internal_error|merge_failed|merge_queue_timeout|ownership run s
 // fault of Lane Pilot to park, and a leftover «not a git repository» reads the same.
 const NO_GIT = /not a git repository|no-git mode/i;
 const CONTRACT = /^merge_blocked:|^missing expected_outputs|output_unowned|depends_on .*(ended|no such task)|plan critique|critique_blocked/i;
-const BUDGET = /^run_budget_exceeded:/;
+const BUDGET = new RegExp(`^${RUN_BUDGET_EXCEEDED_PREFIX}`);
 /** git refused a merge over someone's uncommitted edits in the base checkout: a dirty base, the merge waits for a commit — a writer cannot clear it. */
 const DIRTY_BASE = /would be overwritten by merge|base checkout has uncommitted changes/i;
 /** A run task whose contract names an unsafe path (`../other-repo/`): the PM's contract to fix, not Lane Pilot's fault. */
@@ -167,25 +169,6 @@ export function failureSide(cls:FailureClass):FailureSide {
   return ENVIRONMENT_SIDE.has(cls) ? "environment" : "agent";
 }
 
-/**
- * Two consecutive attempts of a task family failing the same way will not get better on a third: the task is blocked
- * for the PM instead of spending another writer (and no fallback writer is started). Only the task's and the
- * contract's classes stop here — free classes, the provider's among them, have their own handoffs, parks and caps.
- */
-export function repeatedFailureReason(
-  previous:{ state:string; reason:string | null | undefined } | null | undefined,
-  current:{ state:string; reason:string | null | undefined },
-):string | null {
-  if (!previous) return null;
-  const cls = failureClass(previous.state, previous.reason);
-  // A contract failure repeats too (a contract naming outputs or paths no attempt can meet failed the same way
-  // twice); free classes keep their own parks and caps, and judgment stops on its own.
-  if (cls !== "task" && cls !== "contract") return null;
-  if (failureClass(current.state, current.reason) !== cls) return null;
-  if (failureFingerprint(previous.reason) !== failureFingerprint(current.reason)) return null;
-  return `repeated_failure: ${String(current.reason ?? current.state).slice(0, 600)}`;
-}
-
 // The machine, not the merged code: root-owned files left by a deploy (OVH `rmSync …/.output`), a stale output folder.
 // An error line that names a path or a system call (`EACCES: permission denied, rmSync '/x/.output'`, `npm error code EACCES`),
 // or the shell refusing the command itself (`sh: 1: vitest: Permission denied`).
@@ -249,8 +232,6 @@ export function liveFolderLockNote(state:string, reason:string | null | undefine
 
 /** Parked failures: the task waits for a fix or the machine, then restarts by itself. */
 export const PARKED_CLASSES:ReadonlySet<FailureClass> = new Set(["harness", "infra", "dirty_base"]);
-/** Free retries a task may take on top of its two attempts, so a repeating free failure still ends. */
-export const FREE_RETRY_LIMIT = 3;
 
 /** A reason with ids, hashes, numbers and paths taken out: the same fault on different tasks reads the same. */
 export function failureFingerprint(reason:string | null | undefined, max = 120):string {

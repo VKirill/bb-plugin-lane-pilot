@@ -1,0 +1,83 @@
+{
+  "id": "lp.canary-check",
+  "startedBy": "event:lp.attempt.finished",
+  "name": {
+    "en": "Attempt Finished Canary Check",
+    "ru": "Канареечная проверка после попытки"
+  },
+  "description": {
+    "en": "Event-driven stability service workflow triggered on terminal attempt completion to inspect harness version failure rates and flag regressions.",
+    "ru": "Событийный сервисный граф устойчивости, запускаемый по завершении попытки для оценки доли сбоев текущей версии обвязки и выявления деградаций."
+  },
+  "category": "service",
+  "status": "published",
+  "version": 1,
+  "tags": [
+    "event",
+    "stability",
+    "canary"
+  ],
+  "triggers": [
+    {
+      "type": "event",
+      "event": "lp.attempt.finished"
+    }
+  ],
+  "scope": {
+    "level": "builtin"
+  },
+  "inputs": {
+    "attemptId": {
+      "type": "string",
+      "required": false
+    },
+    "taskId": {
+      "type": "string",
+      "required": false
+    },
+    "state": {
+      "type": "string",
+      "required": false
+    }
+  },
+  "outputs": {
+    "degraded": "boolean"
+  },
+  "goal_audit": "exempt",
+  "budget": {
+    "max_minutes": 5,
+    "max_usd": 0.01
+  },
+  "guards": {
+    "maxSteps": 4,
+    "maxFanOut": 1
+  },
+  "nodes": [
+    {
+      "id": "check",
+      "type": "action",
+      "label": "Evaluate harness version canary window",
+      "uses": "lp.canary_check",
+      "timeoutSec": 120,
+      "output": [
+        {
+          "name": "degraded",
+          "type": "boolean"
+        }
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "from": "start",
+      "to": "check"
+    },
+    {
+      "from": "check",
+      "to": "end",
+      "with": {
+        "degraded": "check.degraded"
+      }
+    }
+  ]
+}

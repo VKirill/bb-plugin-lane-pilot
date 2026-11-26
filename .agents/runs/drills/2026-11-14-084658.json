@@ -1,0 +1,144 @@
+{
+  "kind": "lane-pilot-sandbox-drill",
+  "date": "2026-11-14",
+  "stamp": "20261114-084658",
+  "startedAt": 1794635218303,
+  "finishedAt": 1794635751901,
+  "durationSec": 534,
+  "project": "proj_3tb652jpsi",
+  "runId": "lprun_be966d87381c4e1da11e364387174f6a",
+  "pmThread": "thr_xbz2qcgj6a",
+  "sourceThread": "thr_nkyjk2zxgx",
+  "mode": "full",
+  "scenarioNames": [
+    "plan_l"
+  ],
+  "commit": "1c5d042d372d44cf57f1045196a6a9eb354c5d89",
+  "skipped": {},
+  "result": "pass",
+  "problems": [],
+  "checks": null,
+  "tasks": null,
+  "dispatch": null,
+  "scenarios": [
+    {
+      "name": "plan_l",
+      "result": "pass",
+      "problems": [],
+      "tasks": [
+        {
+          "task": "drill-20261114-084658-plan-l",
+          "attempts": 5,
+          "states": [
+            "validation_failed",
+            "validation_failed",
+            "validation_failed",
+            "validation_failed",
+            "blocked"
+          ],
+          "state": "blocked",
+          "reason": "turn limit 5 reached: merge_conflict: main changed since this attempt started: checks red after the replay on main: verification failed (test \"$(sed -n 1p notes/drill/plan-l-20261114-084658/part1.md)\"",
+          "attempt": "lpattempt_8d079a9408dd4665a31b602baafca5b5",
+          "writerThread": "thr_gwnxk8i8u9",
+          "workspace": "/Users/vechkasov/.lane-pilot/worktrees/lp-sandbox-rules/lpattempt_a36fa28d547044968f4bdf16aa77dac2",
+          "environment": "env_36fx2faimj",
+          "holder": null,
+          "file": "notes/drill/plan-l-20261114-084658/part1.md",
+          "fileInSandbox": false
+        }
+      ],
+      "receipts": [
+        [
+          "passed",
+          null
+        ]
+      ],
+      "namesOwnsPaths": true
+    }
+  ],
+  "seen": {
+    "stages": {
+      "acceptance-receipt": {
+        "failed": 1,
+        "passed": 1
+      },
+      "memory-maintenance": {
+        "skipped": 1
+      },
+      "plan-critique": {
+        "passed": 1,
+        "skipped": 1
+      },
+      "plan-fact": {
+        "passed": 2
+      },
+      "pm-read": {
+        "skipped": 2
+      },
+      "specialist-review": {
+        "skipped": 2
+      },
+      "verification": {
+        "failed": 1,
+        "passed": 1
+      },
+      "writer-agent": {
+        "failed": 1,
+        "passed": 1
+      }
+    },
+    "gates": {
+      "accept": {
+        "passed": 1,
+        "rejected": 5
+      },
+      "owns-paths": {
+        "passed": 6
+      },
+      "validate": {
+        "passed": 6
+      },
+      "verification": {
+        "passed": 6
+      }
+    },
+    "moves": {
+      "queued>queued": {
+        "ok": 4
+      },
+      "queued>spawn_requested": {
+        "ok": 6
+      },
+      "running>accepted": {
+        "ok": 1
+      },
+      "running>validation_failed": {
+        "ok": 5
+      },
+      "spawn_requested>running": {
+        "ok": 6
+      },
+      "validation_failed>blocked": {
+        "ok": 1
+      }
+    }
+  },
+  "judged": [
+    {
+      "name": "plan_l",
+      "verdict": "pass",
+      "evidence": [
+        "tasks",
+        "receipts",
+        "namesOwnsPaths"
+      ],
+      "why": ""
+    }
+  ],
+  "series": {
+    "verdict": "pass",
+    "missing": [],
+    "failed": [],
+    "skipped": []
+  }
+}

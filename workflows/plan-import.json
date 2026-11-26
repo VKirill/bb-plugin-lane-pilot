@@ -8,6 +8,7 @@
     "en": "/sma-import: an external plan is grilled for conflicts with the code and locked decisions, resolved by the owner, cut into task-v2 pieces and waves, then opened as a phase whose own check is the independent check.",
     "ru": "/sma-import: внешний план проверяется на конфликты с кодом и решениями, владелец разрешает их, план режется на кусочки task-v2 и волны, затем открывается фаза — её машинная проверка и есть независимая."
   },
+  "category": "planning",
   "status": "published",
   "inputs": {
     "plan": {
@@ -191,5 +192,10 @@
       "from": "check",
       "to": "invalid"
     }
+  ],
+  "not_for": [
+    "plan-only",
+    "grill-plan",
+    "blueprint-driven"
   ]
 }

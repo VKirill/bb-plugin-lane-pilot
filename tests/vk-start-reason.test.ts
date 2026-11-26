@@ -1,7 +1,7 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { expect, it, vi } from "vitest";
 import plugin from "../server";
-import { DRAIN_SNAPSHOT_KEY, skipRedundantStartupScans } from "../src/rooms/stability/server/deploy-drain";
+import { DRAIN_SNAPSHOT_KEY } from "../src/rooms/stability/server";
 import { PARKED_KEY } from "../src/rooms/contracts/stability-api";
 
 const host = () => createFakePluginHost({ pluginId: "lane-pilot", sdk: { threads: { list: async () => [] } }, hostCall: async () => ({}) } as never);
@@ -47,33 +47,16 @@ async function startAfter(vk: { startReason: string; afterDrain: boolean }, snap
   return { lines, parked };
 }
 
-it("skips the run, worktree and parked-task scans after a clean reload drain, and only then", async () => {
+it("runs the run, worktree and parked-task scans on every start, a clean reload drain included: no schedule picks them up later", async () => {
   const clean = { action: "reload", at: 1, clean: true, inFlight: [] };
-  const skipped = await startAfter({ startReason: "reload", afterDrain: true }, clean);
-  expect(skipped.lines).toContain("scans left to their schedules after a clean drain");
-  // Only the parking of blocked tasks reads the parked list; the sweep that would read it again is skipped.
-  const skippedReads = skipped.parked;
+  const afterCleanDrain = await startAfter({ startReason: "reload", afterDrain: true }, clean);
+  expect(afterCleanDrain.lines).not.toContain("skipped after a clean drain");
+  expect(afterCleanDrain.lines).not.toContain("left to their schedules");
   for (const [vk, snapshot] of [
     [{ startReason: "reload", afterDrain: true }, { action: "reload", at: 1, clean: false, inFlight: [{ method: "gitIntegrate", ageSec: 1 }] }],
-    [{ startReason: "reload", afterDrain: false }, clean],
     [{ startReason: "boot", afterDrain: false }, clean],
-    [{ startReason: "reload", afterDrain: true }, undefined],
   ] as const) {
     const ran = await startAfter(vk, snapshot);
-    expect(ran.lines, JSON.stringify([vk, snapshot])).not.toContain("left to their schedules");
-    // The parked-task sweep is part of the ordered task reconcile now and runs on every start (a lost retry is restarted
-    // in the same start-up), so only the run and worktree scans depend on a clean drain.
-    expect(ran.parked, JSON.stringify([vk, snapshot])).toBeGreaterThanOrEqual(skippedReads);
+    expect(afterCleanDrain.parked, JSON.stringify([vk, snapshot])).toBe(ran.parked);
   }
-});
-
-it("skipRedundantStartupScans needs a reload, a finished drain and a clean snapshot of a reload", () => {
-  const clean = { action: "reload", clean: true };
-  expect(skipRedundantStartupScans({ startReason: "reload", afterDrain: true }, clean)).toBe(true);
-  expect(skipRedundantStartupScans({ startReason: "reload", afterDrain: false }, clean)).toBe(false);
-  expect(skipRedundantStartupScans({ startReason: "enable", afterDrain: true }, clean)).toBe(false);
-  expect(skipRedundantStartupScans({ startReason: "reload", afterDrain: true }, { action: "shutdown", clean: true })).toBe(false);
-  expect(skipRedundantStartupScans({ startReason: "reload", afterDrain: true }, { action: "reload", clean: false })).toBe(false);
-  expect(skipRedundantStartupScans({ startReason: "reload", afterDrain: true }, undefined)).toBe(false);
-  expect(skipRedundantStartupScans({}, clean)).toBe(false);
 });

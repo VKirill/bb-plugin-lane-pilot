@@ -38,6 +38,7 @@
     "quality",
     "schedule"
   ],
+  "category": "code",
   "inputs": {
     "scope": {
       "type": "string"
@@ -124,7 +125,12 @@
     },
     {
       "id": "coverage",
-      "produces": [{"kind": "report", "version": 1}],
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
       "type": "agent",
       "role": "analyst",
       "title": {
@@ -149,7 +155,7 @@
       "workflow": "test-gen",
       "skip_when": "coverage.gap_count == 0 || !coverage.framework_found",
       "skip_out": {
-        "status": "done",
+        "status": "not_run",
         "tests_added": 0,
         "measurement_reason": "",
         "failures": "[]"
@@ -164,7 +170,12 @@
     },
     {
       "id": "classify",
-      "produces": [{"kind": "report", "version": 1}],
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
       "type": "agent",
       "role": "triager",
       "uses": "quality-loop.classify",
@@ -191,7 +202,7 @@
       "workflow": "debug",
       "skip_when": "classify.code_defect_count == 0",
       "skip_out": {
-        "status": "confirmed",
+        "status": "not_run",
         "fix_directions": "[]",
         "diagnosis": ""
       },
@@ -231,7 +242,12 @@
     },
     {
       "id": "qa",
-      "produces": [{"kind": "qa-report", "version": 1}],
+      "produces": [
+        {
+          "kind": "qa-report",
+          "version": 1
+        }
+      ],
       "type": "agent",
       "role": "browser-qa",
       "applicable_modes": [
@@ -239,12 +255,12 @@
       ],
       "skip_when": "!replan.has_ui",
       "skip_out": {
-        "status": "pass",
+        "status": "not_run",
         "findings": "[]"
       },
       "prompt": "FRONTEND_VERIFY_METHOD over the fixed UI; silence is never pass. Severity is one of critical, high, medium, low, info.",
       "out": {
-        "status": "pass|rework|block",
+        "status": "pass|rework|block|not_run",
         "findings": "Finding[]"
       },
       "guards": {
@@ -298,7 +314,10 @@
       "id": "test_gen_blocked",
       "type": "action",
       "action": "emit",
-      "map": { "status": "blocked", "measurement_reason": "test_gen.measurement_reason" }
+      "map": {
+        "status": "blocked",
+        "measurement_reason": "test_gen.measurement_reason"
+      }
     }
   ],
   "edges": [
@@ -370,14 +389,14 @@
       "from": "qa",
       "to": "review",
       "pass": "artifact",
-      "when": "qa.status == 'pass' && visits('review') < 2",
+      "when": "qa.status in ['pass', 'not_run'] && visits('review') < 2",
       "label": "re-check"
     },
     {
       "from": "qa",
       "to": "done",
       "pass": "artifact",
-      "when": "qa.status == 'pass'"
+      "when": "qa.status in ['pass', 'not_run']"
     },
     {
       "from": "qa",

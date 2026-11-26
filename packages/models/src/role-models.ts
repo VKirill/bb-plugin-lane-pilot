@@ -139,7 +139,6 @@ export const ROLE_TABLE: readonly RoleRow[] = [
   { id: "evolve-critic", default: { model: "gemini-4-argon", effort: "high", why: "Critiques the evolution blueprint against de-projectization, anti-clone and lean suite gates: a strong Antigravity Gemini 4 judge from another family than its Claude planner." }, fallback: { model: "claude-sonnet-5-5", effort: "high" }, least: "standard" },
   { id: "evolve-architect", default: { model: "claude-opus-5-5", effort: "high", why: "Synthesizes connected JSON graphs and paired companion SKILL.md bundles from an approved evolution blueprint: strict contract authoring on Claude Opus." }, least: "strong" },
   { id: "evolve-auditor", default: { model: "gemini-4-argon", effort: "high", why: "Audits synthesized evolution graphs and companion skills before publication: a strong Antigravity Gemini 4 judge from another family than the Claude synthesizer, independent of coding's auditor." }, fallback: { model: "claude-sonnet-5-5", effort: "high" }, least: "standard" },
-  { id: "wall-hunter", default: { model: "gpt-6.1-sol", effort: "high", why: "The night wall's hunter: replays real writer attempts to find one defect class; a judge of causes, strong at terminal-heavy work." } },
   { id: "triager", default: { model: GEMINI_FLASH, effort: "medium", why: "Sorts a failed gate into its class: a cheap judgment on the failure of a writer's work, on the near-free Gemini subscription. Without it: Luna with high effort, which reads a log as well as a Haiku." }, fallback: { model: "gpt-6-luna", effort: "high" } },
   { id: "memory", default: { model: "claude-haiku-5-5", effort: "medium", why: "Distils notes and facts into the memory: a small, careful text job." }, legacy: ["memory"] },
   { id: "project-life", default: { model: "claude-haiku-5-5", effort: "medium", why: "Keeps PROGRESS and CHANGELOG up to date from what happened: short factual text." }, legacy: ["project_life"] },
@@ -165,7 +164,7 @@ export const roleModelKey = (role: string): string => `${ROLE_MODEL_KEY_PREFIX}$
 
 /** Role names a graph or a helper uses for the same job as a table row. Anything not listed and not a row is the analyst's job (as roleSpec reads it). */
 const ALIASES: Record<string, string> = {
-  "gate-triage": "triager", "memory-maintainer": "memory", "council-seat": "council", "night-reviewer": "auditor",
+  "gate-triage": "triager", "memory-maintainer": "memory", "night-reviewer": "auditor",
   worker: "analyst",
 };
 

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { failureClass } from "../../src/rooms/contracts/failure-class";
-import { USAGE_FETCH_METHOD, USAGE_LIST_METHOD, createProviderUsage, usageHold, usageHoldReason, usageSkipPercent, type UsageMeasurement, type UsageResource } from "../../src/rooms/usage/server/provider-usage";
+import { USAGE_FETCH_METHOD, USAGE_LIST_METHOD, usageHold, usageSkipPercent } from "../../src/rooms/usage/models/provider-usage";
+import { createProviderUsage, usageHoldReason, type UsageMeasurement, type UsageResource } from "../../src/rooms/usage/server";
 
 const NOW = Date.parse("2026-10-07T12:00:00Z");
 const later = "2026-10-07T15:00:00.000Z";

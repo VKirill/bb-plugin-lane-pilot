@@ -29,6 +29,7 @@
     "seo",
     "drmax"
   ],
+  "category": "seo",
   "inputs": {
     "sprint_plan_path": {
       "type": "string",

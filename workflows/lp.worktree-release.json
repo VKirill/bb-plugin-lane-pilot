@@ -1,0 +1,185 @@
+{
+  "schemaVersion": 1,
+  "id": "lp.worktree-release",
+  "startedBy": "event:lp.attempt.finished",
+  "name": {
+    "en": "Attempt worktree release",
+    "ru": "Освобождение worktree попытки"
+  },
+  "description": {
+    "en": "Event-driven worktree release workflow triggered by lp.attempt.finished. Waits out the attempt's durable grace window or sticky area window and releases unused environments and worktrees without periodic polling.",
+    "ru": "Событийное освобождение worktree, запускаемое по lp.attempt.finished. Ожидает окно удержания или sticky-окно области через долговечное ожидание и освобождает неиспользуемые окружения без периодического опроса."
+  },
+  "not_for": [
+    "manual runs or chat routing: Lane Pilot starts this workflow automatically when an attempt finishes"
+  ],
+  "category": "service",
+  "status": "published",
+  "version": 1,
+  "tags": [
+    "event",
+    "cleanup",
+    "worktree"
+  ],
+  "triggers": [
+    {
+      "type": "event",
+      "event": "lp.attempt.finished"
+    }
+  ],
+  "scope": {
+    "level": "builtin"
+  },
+  "inputs": {
+    "attemptId": {
+      "type": "string",
+      "required": false
+    },
+    "taskId": {
+      "type": "string",
+      "required": false
+    },
+    "state": {
+      "type": "string",
+      "required": false
+    }
+  },
+  "outputs": {
+    "released": "int"
+  },
+  "goal_audit": "exempt",
+  "budget": {
+    "max_minutes": 180,
+    "max_usd": 0.01
+  },
+  "guards": {
+    "maxSteps": 6,
+    "maxFanOut": 1
+  },
+  "nodes": [
+    {
+      "id": "plan",
+      "type": "action",
+      "label": "Compute attempt worktree grace deadline",
+      "uses": "lp.worktree_release_plan",
+      "timeoutSec": 30,
+      "output": [
+        {
+          "name": "shouldRelease",
+          "type": "boolean"
+        },
+        {
+          "name": "waitUntil",
+          "type": "number"
+        },
+        {
+          "name": "released",
+          "type": "number"
+        }
+      ]
+    },
+    {
+      "id": "wait",
+      "type": "action",
+      "label": "Wait out attempt worktree grace window",
+      "uses": "builtin:wait",
+      "timeoutSec": 86400,
+      "params": {
+        "timeoutOutput": "timeout"
+      },
+      "proof": {
+        "kind": "receipt",
+        "check": "durable wait until attempt grace or sticky window expires"
+      },
+      "output": [
+        {
+          "name": "woke",
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "id": "release",
+      "type": "action",
+      "label": "Snapshot and release attempt worktree",
+      "uses": "lp.attempt_release_worktree",
+      "timeoutSec": 600,
+      "output": [
+        {
+          "name": "released",
+          "type": "int"
+        }
+      ]
+    },
+    {
+      "id": "done",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "released": "release.released"
+      }
+    },
+    {
+      "id": "nothing",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "released": "0"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "start",
+      "to": "plan",
+      "with": {
+        "attemptId": "$inputs.attemptId"
+      }
+    },
+    {
+      "from": "plan",
+      "to": "wait",
+      "label": "wait for grace window",
+      "when": "plan.shouldRelease == true",
+      "with": {
+        "until": "plan.waitUntil"
+      }
+    },
+    {
+      "from": "plan",
+      "to": "nothing",
+      "label": "nothing to release"
+    },
+    {
+      "from": "wait",
+      "to": "release"
+    },
+    {
+      "from": "release",
+      "to": "done"
+    }
+  ],
+  "test": {
+    "id": "lp-worktree-release-1",
+    "sim": {
+      "input": {
+        "attemptId": "att_1",
+        "taskId": "t1",
+        "state": "accepted"
+      },
+      "stubs": {
+        "plan": {
+          "shouldRelease": false,
+          "waitUntil": 0
+        }
+      },
+      "expect_path": [
+        "plan",
+        "nothing"
+      ],
+      "expect_output": {
+        "released": 0
+      }
+    }
+  }
+}

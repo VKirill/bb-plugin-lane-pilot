@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { hostContract } from "../src/rooms/contracts";
-import { detect } from "../src/rooms/host-worker/host-handlers";
+import { detect } from "../src/rooms/host-worker";
 
 describe("detect RPC output", () => {
   it("matches the host contract and does not leak compatibility", async () => {

@@ -1,7 +1,8 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { lintSkillDir, readSkillDir } from "../src/rooms/forge/skill-lint";
+import { lintSkillDir } from "../src/rooms/tools";
+import { readSkillDir } from "../src/rooms/tools/skill-lint";
 import { parseFrontmatter } from "../src/rooms/docs";
 import { EMPLOYEES } from "../src/rooms/contracts/native-agent-static";
 import { ROLE_PROFILES } from "../src/rooms/contracts/helper-context";
@@ -93,7 +94,7 @@ function referencedSkills(): Map<string, string[]> {
     (agent.skills ?? []).forEach((skill) => add(skill, `bundled-agents.json#${id}`));
     for (const match of (agent.prompt ?? "").matchAll(/load the skill `([a-z0-9-]+)`|[Ll]oad `([a-z0-9-]+)` first/g)) add(match[1] ?? match[2]!, `bundled-agents.json#${id} prompt`);
   }
-  for (const file of ["src/rooms/native-agent/native-agent-overlay.ts", "src/rooms/native-agent/workflow-architect.ts"]) {
+  for (const file of ["src/rooms/native-agent/models/native-agent-overlay.ts", "src/rooms/native-agent/models/workflow-architect.ts"]) {
     const text = readFileSync(file, "utf8");
     for (const match of text.matchAll(/load the skill \\`([a-z0-9-]+)\\`|[Ll]oad \\`([a-z0-9-]+)\\` first/g)) add(match[1] ?? match[2]!, file);
   }

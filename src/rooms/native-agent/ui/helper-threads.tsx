@@ -1,5 +1,5 @@
 import { HELPER_PANEL_ACTION } from "../../contracts/agent-picker";
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useMemo, useRef, type CSSProperties } from "react";
 import { ThreadChat, useBbContext, useBbNavigate, useRpc } from "@get-bb/plugin-sdk/app";
 import { useLpRealtime, useLpRpcQuery, useOpenThreadPanel } from "../../ui-shell/ui";
 import type { rpcContract } from "../../contracts";
@@ -30,7 +30,6 @@ const ROLES: Record<string, { icon: IconName; label: I18nKey }> = {
   "browser-qa": { icon: "Target", label: "helperRole_browserQa" },
   "errand": { icon: "Send", label: "helperRole_errand" },
   "api-recon": { icon: "Search", label: "helperRole_apiRecon" as I18nKey },
-  "council-seat": { icon: "MessageSquare", label: "helperRole_council" },
   "plan-critic": { icon: "ListTodo", label: "helperRole_planCritic" },
   "code-critic": { icon: "Bug", label: "helperRole_codeCritic" },
   "specialist-reviewer": { icon: "CircleCheck", label: "helperRole_specialistReview" },

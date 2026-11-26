@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildCandidateEvidence, codeCritiquePrompt } from "../src/rooms/critique/code-critique";
+import { buildCandidateEvidence, codeCritiquePrompt } from "../src/rooms/critique";
 
 // SMA conformance audit C-04: the map called plan-fact the blind check (k_v_blind), but plan-fact reads the writer's own table of
 // evidence. The blind one in Lane Pilot is the code critic: it judges the contract against the bytes the host read, never the story.

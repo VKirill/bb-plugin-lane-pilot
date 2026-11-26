@@ -1,47 +1,29 @@
 ---
-title: Council, handoff and run-insight data
+title: Handoff data
 type: data-model
 created: 2026-10-10
-updated: 2026-10-19
+updated: 2026-11-26
 status: active
 confidence: medium
-tags: [data-model, council, handoff]
+tags: [data-model, handoff]
 sources:
-  - packages/council/src/store.ts
   - packages/handoff/src/store.ts
-  - packages/run-insights/src/rules.ts
-  - packages/run-insights/src/triage.ts
-  - packages/harness-core/src/experience.ts
-  - packages/council/src/contract.ts
   - packages/handoff/src/contract.ts
+  - src/rooms/legacy-migrations.ts
 ---
 
-# Council, handoff and run-insight data
+# Handoff data
 
-TL;DR: Domain stores keep council discussions, agent handoffs and failure-learning records in plugin SQLite.
+TL;DR: The handoff store keeps inter-agent handoff cards and transition events in plugin SQLite (`packages/handoff/src/store.ts`).
 
 ## Relations
 
 ```mermaid
 erDiagram
-  COUNCIL ||--o{ COUNCIL_MESSAGE : "council_id references id"
   HANDOFF ||--o{ HANDOFF_EVENT : "handoff_id references id"
 ```
 
-`lane_pilot_council_message.council_id` references `lane_pilot_council.id`, and `lane_pilot_handoff_event.handoff_id` references `lane_pilot_handoff.id`; both child rows cascade on parent deletion (`packages/council/src/store.ts:25-33`, `packages/handoff/src/store.ts:34-42`). Rule events and triage rows carry project/rule identifiers but declare no foreign key (`packages/run-insights/src/rules.ts:65-73`, `packages/run-insights/src/triage.ts:8-25`).
-
-## Council
-
-`lane_pilot_council` stores id, project/run, question, agenda/criteria/seats JSON, state, round counters, optional decision JSON/path/reason, and timestamps. `lane_pilot_council_message` stores ordered seat messages with round, kind, body and time; messages cascade with their council (`packages/council/src/store.ts:7-33`). Session state starts at `agenda` with round 0 (`packages/council/src/store.ts:53-57`).
-
-| Table | Meaning |
-|---|---|
-| `lane_pilot_council` | `id` identifies the session; `project_id` and `run_id` scope it; `question` is the decision prompt; `agenda_json`, `criteria_json`, and `seats_json` store participant inputs; `state` is the protocol state; `round` and `max_rounds` count discussion rounds; `decision_json`, `decision_path`, and `reason` record an optional result; `created_at` and `updated_at` are epoch milliseconds. |
-| `lane_pilot_council_message` | `seq` orders messages; `council_id` references the session; `seat_id` identifies the speaker; `round` is the discussion round; `kind` classifies the message; `text` is its body; `at` is epoch milliseconds. |
-
-| Status field | Transitions |
-|---|---|
-| `lane_pilot_council.state` | Created as `agenda`; council runner advances it through protocol states and terminal decision (`packages/council/src/store.ts:53-57`, `packages/council/src/contract.ts:1-30`). |
+`lane_pilot_handoff_event.handoff_id` references `lane_pilot_handoff.id` and child rows cascade on parent deletion (`packages/handoff/src/store.ts:34-42`).
 
 ## Handoff
 
@@ -54,17 +36,13 @@ erDiagram
 
 | Status field | Transitions |
 |---|---|
-| Handoff state | Contract transition rules validate moves; terminal completion releases the lease, and expired deadlines are handled by the store (`packages/handoff/src/contract.ts:1-30`, `packages/handoff/src/store.ts:14-42`). |
+| Handoff state | Contract transition rules validate moves; terminal completion releases the lease, and expired deadlines are handled by the store (`packages/handoff/src/contract.ts`, `packages/handoff/src/store.ts:14-42`). |
 
-## Failure triage and rule proposals
+## Writers, readers and legacy tables
 
-| Table | Meaning | Lifecycle |
-|---|---|---|
-| `lane_pilot_failure_triage` | `project_id` and `attempt_id` identify the project failure; `run_id` and `task_id` locate its work; `reason_sha256` and `reason` preserve a normalized failure; `origin` and `category` use the triage vocabularies, with confidence probabilities; `same_rule_id` identifies a matching rule; `status` is `ok` or `error`; `detail` explains a triage error; `failed_at` and `triaged_at` are epoch milliseconds. | Status: `ok` or `error`; one row per `(project_id,attempt_id)` (`packages/run-insights/src/triage.ts:8-25`). |
-| `lane_pilot_rule_proposal` | `project_id`, `id`, and `signature` identify the proposal; `rule` is its instruction; `author` is `sweep`, `pm`, `owner`, or `model`; `state` is `proposed`, `accepted`, `rejected`, or `revoked`; `occurrences` and `task_count` count supporting failures; `examples_json` and `evidence_json` carry examples and task references; `memory_id` links optional memory; timestamps are epoch milliseconds; `trial_state`, `revision`, `retired_reason` and `decided_by` track trial/decision outcomes; `scope_json` records section scope; `audience` is `writer`, `pm`, or `both`; `always_on` is a boolean integer; Harness² adds `form` (`always`, `skill`, `check`, `hook`, `memory`), situation `cue` and reflection `confidence`. | States: `proposed`, `accepted`, `rejected`, `revoked`; form, cue and confidence are added by rule-form migrations (`packages/run-insights/src/rules.ts:9-24`, `:27-50`, `:57-98`); `form_reason`, `form_by` (`heuristic`, `jev`, `owner`, `reflection`), `mechanized_by` and `mechanized_at` come from `ruleMechanismMigrations` (`packages/run-insights/src/rule-forms.ts`, see `docs/rule-forms.md`). |
-| `lane_pilot_rule_promotion` | `project_id` and `rule_id` identify the rule a mechanism task was generated for; `mechanism` is `contract_lint`, `ownership_check`, `tool_guard` or `static_test`; `state` is `proposed`, `owner_only`, `dispatched`, `done` or `dismissed`; `task_json` is the task contract, `tier` the night policy tier of its files. | One row per rule, written by `bb lane-pilot rules promote`; nothing dispatches it by itself (`src/rooms/rule-forms/promotion.ts`). |
-| `lane_pilot_rule_event` | `id` is the event key; `project_id` and `rule_id` identify the proposal; `action` names the event; `detail` carries optional event data; `at` is epoch milliseconds. | Append event on proposal, trial and owner action (`packages/run-insights/src/rules.ts:65-73`). |
+The handoff store is written by relay/handoff services and read by UI and agent services (`packages/handoff/src/store.ts`). The council, failure-triage and rule-proposal subsystems were removed; their positional historical table DDLs remain only in `src/rooms/legacy-migrations.ts` to keep migration indices immutable.
 
-## Writers, readers and retention
+<!-- lane-pilot:backlinks -->
+## Referenced by
 
-Council and handoff stores are written by their respective domain services and read by their UI/agent services (`packages/council/src/store.ts:53-57`, `packages/handoff/src/store.ts:68-75`). Rule and triage services write rows from task failures and the lessons sweep reads them (`packages/run-insights/src/rules.ts:5-8`, `packages/run-insights/src/triage.ts:5-8`).
+- [Lane Pilot data model overview](../data-model.md)

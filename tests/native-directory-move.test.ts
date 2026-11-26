@@ -2,8 +2,8 @@ import { afterEach, expect, it, vi } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { beginRunAdmission, createRun, createTask, createAttempt, freezeRunBinding, getRun, openDatabase, setRunThread, directoryMove } from "../src/rooms/plugin-db";
-import { handleDirectoryMove, recoverDirectoryMove, type DirectoryMoveInput } from "../src/rooms/native-agent/server/directory-move";
-import { claimNativeLaneRun } from "../src/rooms/native-agent/native-run";
+import { handleDirectoryMove, recoverDirectoryMove, type DirectoryMoveInput } from "../src/rooms/native-agent/server/services/directory-move";
+import { claimNativeLaneRun } from "../src/rooms/native-agent/server/services/native-run";
 
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => { for (const cleanup of cleanups.splice(0)) await cleanup(); });
@@ -85,15 +85,9 @@ it("releases the fence on parked-work veto", async () => {
   expect(directoryMove(f.db, "thread")).toBeNull();
 });
 
-it("vetoes paused or stopped phases that can resume", async () => {
-  const f = fixture();
-  f.db.prepare("INSERT INTO lane_pilot_phase(id,project_id,pm_thread_id,run_id,title,goal,stage,state,created_at,updated_at) VALUES ('phase','project','thread','old','Goal','Goal','discussion','paused',1,1)").run();
-  await expect(handleDirectoryMove(f.deps, f.input)).rejects.toThrow(/resumable phase/);
-});
-
 it("the real writer handler holds admission across async checkout setup", async () => {
   const f = fixture();
-  const { createWriterDispatch } = await import("../src/rooms/writer/server/dispatch");
+  const { createWriterDispatch } = await import("../src/rooms/writer/server/services/dispatch");
   let entered!: () => void, rejectSetup!: (cause: Error) => void;
   const ready = new Promise<void>((resolve) => { entered = resolve; });
   const setup = new Promise<void>((_, reject) => { rejectSetup = reject; });
@@ -111,7 +105,7 @@ it("the real writer handler holds admission across async checkout setup", async 
 
 it("the real workflow handler holds admission while loading its workflow", async () => {
   const f = fixture();
-  const { runWorkflowTool } = await import("../src/rooms/workflow/server/workflow-tools");
+  const { runWorkflowTool } = await import("../src/rooms/workflow/server/handlers/workflow-tools");
   let entered!: () => void, rejectStore!: (cause: Error) => void;
   const ready = new Promise<void>((resolve) => { entered = resolve; });
   const store = new Promise<never>((_, reject) => { rejectStore = reject; });
@@ -133,18 +127,6 @@ it.each(["running", "waiting", "blocked", "interrupted"])("vetoes %s workflow wo
   expect(directoryMove(f.db, "thread")).toBeNull();
 });
 
-it("the real phase opener refuses a fenced or retired latest run", async () => {
-  const f = fixture();
-  const { installAdmissionMethods } = await import("../src/rooms/phase/server/driver-methods-admission");
-  const methods = installAdmissionMethods({ db: f.db, ctx: {}, services: {}, now: Date.now } as never);
-  await handleDirectoryMove(f.deps, f.input);
-  await expect(methods.open({ projectId: "project", pmThreadId: "thread", title: "New", goal: "New" })).rejects.toThrow(/move is pending/);
-  expect(f.db.prepare("SELECT COUNT(*) AS n FROM lane_pilot_phase").get()).toEqual({ n: 0 });
-  await handleDirectoryMove(f.deps, { ...f.input, phase: "abort" });
-  f.db.prepare("UPDATE lane_pilot_run SET closed_at=1,state='closed' WHERE id='old'").run();
-  await expect(methods.open({ projectId: "project", pmThreadId: "thread", title: "New", goal: "New" })).rejects.toThrow(/closed/);
-});
-
 it("vetoes a source path that differs from the immutable run binding", async () => {
   const f = fixture();
   await expect(handleDirectoryMove(f.deps, { ...f.input, source: { ...f.input.source, path: "/stale" } })).rejects.toThrow(/binding does not match/);
@@ -152,7 +134,7 @@ it("vetoes a source path that differs from the immutable run binding", async () 
 
 it("holds admission before the writer's first metadata await", async () => {
   const f = fixture();
-  const { createWriterDispatch } = await import("../src/rooms/writer/server/dispatch");
+  const { createWriterDispatch } = await import("../src/rooms/writer/server/services/dispatch");
   let rejectMetadata!: (cause: Error) => void;
   const metadata = new Promise<never>((_, reject) => { rejectMetadata = reject; });
   const bb = { ...f.bb, sdk: { ...f.bb.sdk, threads: { ...f.bb.sdk.threads, getPluginMetadata: () => metadata } } };
@@ -196,7 +178,7 @@ it("shares admissions across connections and releases them after a process crash
 
 it("parking reserves admission before async state reads and cannot appear behind the move fence", async () => {
   const f = fixture();
-  const { createStability } = await import("../src/rooms/stability/server/stability");
+  const { createStability } = await import("../src/rooms/stability/server");
   let rejectRead!: (cause: Error) => void;
   const read = new Promise<never>((_, reject) => { rejectRead = reject; });
   const bb = { ...f.bb, storage: { ...f.bb.storage, kv: { ...f.bb.storage.kv, get: () => read } } };
@@ -214,7 +196,7 @@ it("parking reserves admission before async state reads and cannot appear behind
 it("waits for a canceled workflow's actual executor to settle before moving", async () => {
   const f = fixture();
   const { engineOn, wf, ok } = await import("./workflow/engine-helpers");
-  const { installWorkflowAdmission } = await import("../src/rooms/workflow/server/workflow-admission");
+  const { installWorkflowAdmission } = await import("../src/rooms/workflow/server/services/workflow-admission");
   const engine = engineOn(f.db);
   const stopTracking = installWorkflowAdmission(f.db, engine);
   let entered!: () => void, finish!: () => void;
@@ -237,7 +219,7 @@ it("waits for a canceled workflow's actual executor to settle before moving", as
 it("keeps a timed-out executor fenced even after the workflow drive has ended", async () => {
   const f = fixture();
   const { engineOn, wf, ok } = await import("./workflow/engine-helpers");
-  const { installWorkflowAdmission } = await import("../src/rooms/workflow/server/workflow-admission");
+  const { installWorkflowAdmission } = await import("../src/rooms/workflow/server/services/workflow-admission");
   const engine = engineOn(f.db), stopTracking = installWorkflowAdmission(f.db, engine);
   let finish!: () => void;
   const pending = new Promise<void>((resolve) => { finish = resolve; });

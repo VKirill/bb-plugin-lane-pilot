@@ -9,12 +9,12 @@ tags: [rpc, workflows, contracts]
 sources:
   - src/rooms/contracts/rpc-workflow.ts
   - src/rooms/contracts/index.ts
-  - src/rooms/workflow/server/rpc/workflows.ts
-  - src/rooms/workflow/server/rpc/workflow-ops.ts
-  - src/rooms/workflow/server/workflow-library.ts
-  - src/rooms/workflow/server/workflow-triggers.ts
+  - src/rooms/workflow/server/handlers/rpc/workflows.ts
+  - src/rooms/workflow/server/handlers/rpc/workflow-ops.ts
+  - src/rooms/workflow/server/services/workflow-library.ts
+  - src/rooms/workflow/server/services/workflow-triggers.ts
+  - src/rooms/workflow/server/services/workflow-ops.ts
   - src/rooms/core/server/rpc.ts
-  - src/rooms/workflow/server/workflow-ops.ts
 ---
 
 # Workflow RPC contract

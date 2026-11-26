@@ -7,70 +7,86 @@
     "ru": "После приёмки"
   },
   "description": {
-    "en": "What Lane Pilot does once a task is accepted: the memory maintainer keeps what the task taught, and the project-life maintainer updates PROGRESS and the plans, side by side. A failure of either leaves the accepted task as it is.",
-    "ru": "Что Lane Pilot делает после приёмки задачи: хранитель памяти записывает то, чему задача научила, а хранитель жизни проекта обновляет PROGRESS и планы, рядом друг с другом. Сбой любого из них не трогает принятую задачу."
+    "en": "What Lane Pilot does once a task is accepted: the memory maintainer keeps what the task taught. A failure leaves the accepted task as it is.",
+    "ru": "Что Lane Pilot делает после приёмки задачи: хранитель памяти записывает то, чему задача научила. Сбой не трогает принятую задачу."
   },
+  "category": "service",
   "not_for": [
     "anything a person asks for: Lane Pilot starts this itself when a task is merged"
   ],
   "inputs": [
-    { "name": "run_id", "type": "string" },
-    { "name": "task_id", "type": "string" },
-    { "name": "pm_thread_id", "type": "string" }
+    {
+      "name": "run_id",
+      "type": "string"
+    },
+    {
+      "name": "task_id",
+      "type": "string"
+    },
+    {
+      "name": "pm_thread_id",
+      "type": "string"
+    }
   ],
   "outputs": [
-    { "name": "memory_state", "type": "string" },
-    { "name": "life_state", "type": "string" }
+    {
+      "name": "memory_state",
+      "type": "string"
+    }
   ],
   "status": "published",
   "version": 1,
   "guards": {
     "maxSteps": 10,
-    "maxFanOut": 2
+    "maxFanOut": 1
   },
   "triggers": [
-    { "type": "manual" }
+    {
+      "type": "manual"
+    }
   ],
   "scope": {
     "level": "builtin"
   },
   "nodes": [
-    { "id": "split", "type": "parallel", "label": "Side by side" },
     {
       "id": "memory",
       "type": "agent",
       "label": "Memory maintenance",
       "role": "memory-maintainer",
       "uses": "lp.memory-maintenance",
-      "produces": [{ "kind": "report", "version": 1 }],
-      "proof": { "kind": "receipt", "check": "the stage receipt memory-maintenance holds the verdict of the maintainer thread and the records it stored" },
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "proof": {
+        "kind": "receipt",
+        "check": "the stage receipt memory-maintenance holds the verdict of the maintainer thread and the records it stored"
+      },
       "output": [
-        { "name": "state", "type": "string" },
-        { "name": "reason", "type": "string", "required": false }
-      ]
-    },
-    {
-      "id": "life",
-      "type": "agent",
-      "label": "Project life",
-      "role": "project-life",
-      "uses": "lp.project-life",
-      "produces": [{ "kind": "report", "version": 1 }],
-      "proof": { "kind": "receipt", "check": "the stage receipt project-life holds the verdict of the maintainer thread and the files it wrote" },
-      "output": [
-        { "name": "state", "type": "string" },
-        { "name": "reason", "type": "string", "required": false }
+        {
+          "name": "state",
+          "type": "string"
+        },
+        {
+          "name": "reason",
+          "type": "string",
+          "required": false
+        }
       ]
     },
     {
       "id": "gather",
-      "type": "join",
-      "parallel": "split",
-      "label": "Both done",
-      "uses": "lp.after-accept.join",
+      "type": "action",
+      "action": "lp.after-accept.join",
+      "label": "Done",
       "output": [
-        { "name": "memory_state", "type": "string" },
-        { "name": "life_state", "type": "string" }
+        {
+          "name": "memory_state",
+          "type": "string"
+        }
       ]
     },
     {
@@ -78,17 +94,26 @@
       "type": "action",
       "action": "emit",
       "map": {
-        "memory_state": "gather.memory_state",
-        "life_state": "gather.life_state"
+        "memory_state": "gather.memory_state"
       }
     }
   ],
   "edges": [
-    { "from": "start", "to": "split" },
-    { "from": "split", "to": "memory" },
-    { "from": "split", "to": "life" },
-    { "from": "memory", "to": "gather", "with": { "memory_state": "memory.state", "memory_reason": "memory.reason" } },
-    { "from": "life", "to": "gather", "with": { "life_state": "life.state", "life_reason": "life.reason" } },
-    { "from": "gather", "to": "done" }
+    {
+      "from": "start",
+      "to": "memory"
+    },
+    {
+      "from": "memory",
+      "to": "gather",
+      "with": {
+        "memory_state": "memory.state",
+        "memory_reason": "memory.reason"
+      }
+    },
+    {
+      "from": "gather",
+      "to": "done"
+    }
   ]
 }

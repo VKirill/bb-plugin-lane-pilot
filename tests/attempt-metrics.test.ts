@@ -1,6 +1,6 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
-import { attemptMetrics, renderAttemptMetrics } from "../src/rooms/usage/server/attempt-metrics";
+import { attemptMetrics, renderAttemptMetrics } from "../src/rooms/usage/server";
 import { createRun, openDatabase } from "../src/rooms/plugin-db";
 import { rpcKnowledge } from "../src/rooms/contracts/rpc-knowledge";
 

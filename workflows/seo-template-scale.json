@@ -31,6 +31,7 @@
     "seo",
     "drmax"
   ],
+  "category": "seo",
   "inputs": {
     "mode": {
       "type": "catalog|service_geo|meta_alt|bofu_programmatic",

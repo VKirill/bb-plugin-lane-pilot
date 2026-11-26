@@ -69,10 +69,9 @@ TL;DR: Vitest runs four projects (`node`, `node-isolated`, `ui`, `ui-isolated`) 
 
 ## Related pages
 
-- [Repository conventions and boundaries](conventions.md)
+- [Repository conventions](conventions.md)
 - [Build and deploy Lane Pilot](deployment.md)
 - [Cross-cutting gotchas](gotchas.md)
-- [SMA map — authoring per-node evidence of the four proofs](sma-evidence.md)
 - [Development](guide/development.md)
 
 <!-- lane-pilot:backlinks -->

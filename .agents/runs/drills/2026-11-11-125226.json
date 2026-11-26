@@ -1,0 +1,122 @@
+{
+  "kind": "lane-pilot-sandbox-drill",
+  "date": "2026-11-11",
+  "stamp": "20261111-125226",
+  "startedAt": 1794390746840,
+  "finishedAt": 1794392905631,
+  "durationSec": 2159,
+  "project": "proj_ibu6v9g64j",
+  "runId": "lprun_04910e6e702a4df9ae1a4d8a0bcd0846",
+  "pmThread": "thr_ef635gsfrr",
+  "sourceThread": "thr_xhbnye58z8",
+  "mode": "full",
+  "scenarioNames": [
+    "phase"
+  ],
+  "commit": "22a033ed9d9e27e561d63fe41c100cf59bc67ac0",
+  "skipped": {},
+  "result": "fail",
+  "problems": [
+    "phase: the machine's stages did not carry the phase to execution: it is at planning",
+    "phase: the phase did not reach verification: it is at planning (active)",
+    "phase: the book has no admitted plan"
+  ],
+  "checks": null,
+  "tasks": null,
+  "dispatch": null,
+  "scenarios": [
+    {
+      "name": "phase",
+      "result": "fail",
+      "problems": [
+        "the machine's stages did not carry the phase to execution: it is at planning",
+        "the phase did not reach verification: it is at planning (active)",
+        "the book has no admitted plan"
+      ],
+      "phaseId": "ph_59008235cd",
+      "stage": "planning",
+      "autoStarted": 3,
+      "issued": 0
+    }
+  ],
+  "seen": {
+    "stages": {
+      "acceptance-receipt": {
+        "passed": 1
+      },
+      "memory-maintenance": {
+        "skipped": 1
+      },
+      "plan-critique": {
+        "skipped": 1
+      },
+      "plan-fact": {
+        "passed": 1
+      },
+      "pm-read": {
+        "skipped": 1
+      },
+      "project-life": {
+        "passed": 1
+      },
+      "specialist-review": {
+        "skipped": 1
+      },
+      "verification": {
+        "passed": 1
+      },
+      "writer-agent": {
+        "passed": 1
+      }
+    },
+    "gates": {
+      "accept": {
+        "passed": 1
+      },
+      "owns-paths": {
+        "passed": 1
+      },
+      "validate": {
+        "passed": 1
+      },
+      "verification": {
+        "passed": 1
+      }
+    },
+    "moves": {
+      "queued>queued": {
+        "ok": 2
+      },
+      "queued>spawn_requested": {
+        "ok": 1
+      },
+      "running>accepted": {
+        "ok": 1
+      },
+      "spawn_requested>running": {
+        "ok": 1
+      }
+    }
+  },
+  "judged": [
+    {
+      "name": "phase",
+      "verdict": "fail",
+      "evidence": [
+        "phaseId",
+        "stage",
+        "autoStarted",
+        "issued"
+      ],
+      "why": "the machine's stages did not carry the phase to execution: it is at planning; the phase did not reach verification: it is at planning (active); the book has no admitted plan"
+    }
+  ],
+  "series": {
+    "verdict": "fail",
+    "missing": [],
+    "failed": [
+      "phase"
+    ],
+    "skipped": []
+  }
+}

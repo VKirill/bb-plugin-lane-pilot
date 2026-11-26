@@ -19,19 +19,17 @@ sources:
 
 A hook is a command the agent's CLI runs around a session event: session start, a prompt, a tool call, compaction, the end of a turn.
 Every agent session on a machine runs all of them, a writer and a helper included, so one bad entry is paid by every session.
-The rules are the ones Maslov's SMA follows for its Claude Code hooks (his map, block «Claude Code session hooks» and «The init installer»;
-the node ids are in brackets).
 
 ## The six rules
 
-| # | Rule | Why | Maslov's map |
-|---|---|---|---|
-| 1 | **Fail-open.** A hook never wedges or reddens a session: any failure is swallowed and the exit is 0. Only a guard that means to refuse a call exits non-zero. | A missing file must not print an error on every session start. | `k_h_failopen` |
-| 2 | **Anchored to the project root.** Paths start from `"$CLAUDE_PROJECT_DIR"`: never from the session's current folder, never from a hard-coded checkout. | A hook inherits the session's folder; a session in a worktree must check its own tree, not the main checkout. | `k_in_anchor` |
-| 3 | **Speaks only when there is something to say.** Pointers (file, line), not bodies; at most 2 KB at session start; nothing repeated within a session. | Hook output is context every later turn pays for. | `k_hss_out`, `k_hpr_out`, `k_hpr_seen`, `k_hss_preact` |
-| 4 | **Soft budget of 1.5 seconds per tool call.** One process per event where the checks are ours; a check that needs longer does not live on every tool call. | Fifty edits times a 3-second check is minutes of a session. | `k_hp_budget`, `k_h_pre`, `k_h_turn_diff` |
-| 5 | **Own entries only.** An installer merges without removing or reordering foreign entries, doubles nothing on a re-run, removes its own stale spellings, and strips only its own on removal. | The person's hooks are theirs. | `k_in_merge`, `k_in_stale`, `k_rm_hooks` |
-| 6 | **A worker's hook layer is known.** A hook the worker cannot read or run is removed with a named reason, not left to fail in every worker session. | A worker pays for the person's hooks without being able to fix them. | `ap_personal`, `m_pl_unreadable` |
+| # | Rule | Why |
+|---|---|---|
+| 1 | **Fail-open.** A hook never wedges or reddens a session: any failure is swallowed and the exit is 0. Only a guard that means to refuse a call exits non-zero. | A missing file must not print an error on every session start. |
+| 2 | **Anchored to the project root.** Paths start from `"$CLAUDE_PROJECT_DIR"`: never from the session's current folder, never from a hard-coded checkout. | A hook inherits the session's folder; a session in a worktree must check its own tree, not the main checkout. |
+| 3 | **Speaks only when there is something to say.** Pointers (file, line), not bodies; at most 2 KB at session start; nothing repeated within a session. | Hook output is context every later turn pays for. |
+| 4 | **Soft budget of 1.5 seconds per tool call.** One process per event where the checks are ours; a check that needs longer does not live on every tool call. | Fifty edits times a 3-second check is minutes of a session. |
+| 5 | **Own entries only.** An installer merges without removing or reordering foreign entries, doubles nothing on a re-run, removes its own stale spellings, and strips only its own on removal. | The person's hooks are theirs. |
+| 6 | **A worker's hook layer is known.** A hook the worker cannot read or run is removed with a named reason, not left to fail in every worker session. | A worker pays for the person's hooks without being able to fix them. |
 
 ## The layers on a machine
 
@@ -71,7 +69,7 @@ skills, not hooks). Measured 2026-11-10 through `scripts/hooks-audit.py --host`:
 So a helper on Claude Code ran under fourteen extra hooks on OVH and under none on the Mac mini. Since 0.1.505 a helper's or writer's
 launcher drops the `user` setting source (`MERGE_SETTINGS_PY` in `native-claude-host.ts`): its layer is Lane Pilot's bundle, the
 project's own hooks (they travel with the repository) and BB core's flags, the same wherever the thread lands. The person's env keys
-no longer reach a helper either (Maslov's `m_pl_never`). MCP servers still connect: they are not a setting source. A PM chat keeps
+no longer reach a helper either. MCP servers still connect: they are not a setting source. A PM chat keeps
 the person's layer.
 
 What a helper no longer inherits on OVH, with the reason (rule 6: removed with a named reason):

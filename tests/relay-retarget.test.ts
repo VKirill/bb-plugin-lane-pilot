@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { createRelay, type RelayItem } from "../src/rooms/relay/server/relay";
+import type { RelayItem } from "../src/rooms/relay/models/relay";
+import { createRelay } from "../src/rooms/relay/server/services/relay";
 import { createAttempt, createRun, openDatabase } from "../src/rooms/plugin-db";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
-import { relayFor } from "../src/rooms/relay/server/relay";
+import { relayFor } from "../src/rooms/relay/server/services/relay-runtime";
 
 describe("relay retargeting and canceled task dropping", () => {
   it("Redispatching <id>.2 retargets open reminders on <id> or <id>.1 to <id>.2", async () => {

@@ -13,7 +13,7 @@ import { dirname, isAbsolute, join, resolve } from "node:path";
 // The session hook runs this file as plain source (node --experimental-strip-types): a relative import needs its .ts suffix.
 // @ts-expect-error TS5097
 import { maskCredentials } from "../../../packages/kit/src/redact.ts";
-import type { FileCard } from "./card";
+import type { FileCard } from "./models/card";
 
 export type Touch = { at: number; tool: string; path: string };
 export type RepoRef = { top: string; gitDir: string; commonDir: string };

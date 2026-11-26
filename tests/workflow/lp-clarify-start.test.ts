@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import plugin from "../../server";
-import { runCommand } from "../../src/rooms/host-worker/host-handlers";
+import { runCommand } from "../../src/rooms/host-worker";
 import { createRun, openDatabase, setRunThread } from "../../src/rooms/plugin-db";
 
 /**

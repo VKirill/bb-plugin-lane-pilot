@@ -1,0 +1,90 @@
+import { z } from "zod";
+import { ANSWER_FORM_LINE, clipped, REVIEW_READ_ONLY_LINE } from "@lane-pilot/workflow-engine";
+import type { Citation } from "./citations";
+import { taskBrief } from "./task-brief";
+import { isSerious, legacyDecisionToStatus, legacyOutputToVerdict, rubricPromptLine, verdictSummary } from "@lane-pilot/workflow-engine";
+import type { Verdict, VerdictStatus } from "@lane-pilot/workflow-engine";
+import { parseVerdictWithLegacy } from "./judge-verdict";
+
+export const specialistResultSchema = z.object({
+  decision: z.enum(["approve", "block"]),
+  summary: clipped(2000),
+  risks: z.array(z.object({
+    severity: z.enum(["high", "critical"]),
+    path: z.string().min(1).max(500),
+    concern: clipped(1000),
+    mitigation: clipped(1000),
+  }).strict()).max(30),
+}).strict();
+
+/** The old shape (`decision`, `risks`) kept for the stage's result, plus the unified verdict: a `block` stops the task, a `rework` sends the plan back to the PM. */
+export type SpecialistResult = z.infer<typeof specialistResultSchema> & { status: VerdictStatus; verdict: Verdict; demoted?: number };
+
+export function specialistPrompt(input: { task: unknown; plan: string; agent?: string }): string {
+  return [
+    `You are ${input.agent?.trim() || "the specialist risk-review stage"} for a bounded software task.`,
+    // It reads the code (2026-11-08): told to open nothing, it passed 389 of 389 reviews in 30 days, judging risks from the plan's words alone.
+    `Review the task and plan for concrete security, data-loss, compatibility, and recovery risks. You are running in the project checkout: open the files the plan changes and grep for what touches the same data, secrets, sign-in or migrations, so a risk you report is one the code shows. ${REVIEW_READ_ONLY_LINE}`,
+    ANSWER_FORM_LINE + " Keys: status (\"pass\", \"rework\" or \"block\"), summary (string, at most 2000 characters), findings (at most 30 objects, each with file, severity \"critical\" or \"high\" (a lower risk is not reported), evidence (at most 2000 characters: the quoted line of code, the task or the plan that shows the risk), finding (at most 1000: the concern), criterion (at most 500: the mitigation the plan lacks), and line when you can name it), evidence (string, what you examined and how, at most 4000 characters). Other keys are ignored. Use pass with an empty findings array when there is no high or critical risk.",
+    rubricPromptLine("specialist"),
+    "rework: a high or critical risk that the PM settles by changing the plan or the contract. block: a risk no edit of the plan removes (data loss, security, a compatibility break the owner must decide); the task stops. Block only when a concrete high or critical risk has no adequate mitigation in the supplied plan. Do not invent repository facts.",
+    "TASK BRIEF:", taskBrief(input.task, { fields: ["title", "objective", "risk", "acceptance", "invariants", "out_of_scope", "expected_outputs", "owns_paths", "never_touch", "depends_on"] }),
+    "CANONICAL PLAN:", input.plan,
+  ].join("\n\n");
+}
+
+/** An answer parseSpecialistResult could not read (wrong keys, no JSON): the reviewer gets one more try, not a block of the task. */
+export const unreadableAnswer = (cause: unknown): boolean => (cause instanceof Error && (cause.name === "ZodError" || cause.name === "SyntaxError"))
+  || /model_output_not_json/.test(cause instanceof Error ? cause.message : String(cause));
+
+export function parseSpecialistResult(output: string, cites?: Citation): SpecialistResult {
+  const parsed = parseVerdictWithLegacy(output, {
+    kind: "specialist",
+    cites,
+    normalize: false,
+    parseLegacy: (raw) => {
+      const legacy = specialistResultSchema.parse(raw);
+      const status = legacyDecisionToStatus(legacy.decision);
+      return {
+        status,
+        legacy,
+        toVerdict: () => legacyOutputToVerdict({
+          status,
+          summary: legacy.summary,
+          findings: legacy.risks.map((risk) => ({
+            severity: "blocking" as const,
+            finding: risk.concern,
+            criterion: risk.mitigation,
+            path: risk.path,
+          })),
+        }),
+      };
+    },
+  });
+  if (parsed.format === "unified") {
+    const { verdict, demoted } = parsed;
+    const risks = verdict.findings.filter(isSerious).map((row) => ({
+      severity: row.severity as "high" | "critical",
+      path: row.file || "-",
+      concern: row.finding ?? row.evidence.slice(0, 1000),
+      mitigation: row.criterion ?? "none stated",
+    }));
+    return { decision: verdict.status === "pass" ? "approve" : "block", summary: verdictSummary(verdict), risks, status: verdict.status, verdict, ...(demoted ? { demoted } : {}) };
+  }
+  return { ...parsed.legacy, status: parsed.status, verdict: parsed.verdict };
+}
+
+export function shouldRunSpecialist(input: { enabled: unknown; when: unknown; risk: string }): { run: boolean; reason: string | null } {
+  const enabled = input.enabled;
+  if (enabled == null || enabled === false || enabled === 0 || (typeof enabled === "string" && ["false", "off", "0", "no"].includes(enabled.trim().toLowerCase()))) {
+    return { run: false, reason: "disabled_by_project_setting" };
+  }
+  if (enabled != null && ![true, 1, "true", "on", "1", "yes"].includes(enabled as never)) {
+    return { run: false, reason: "invalid_specialist_enabled_setting" };
+  }
+  const when = input.when == null ? "high_risk" : input.when;
+  if (when !== "high_risk" && when !== "always") return { run: false, reason: `unsupported_specialist_when:${String(when)}` };
+  return when === "always" || input.risk === "high" || input.risk === "critical"
+    ? { run: true, reason: null }
+    : { run: false, reason: "risk_below_specialist_threshold" };
+}

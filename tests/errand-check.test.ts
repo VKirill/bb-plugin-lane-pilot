@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { errandCheck, errandVerdict } from "../src/rooms/qa/server/errands";
+import { errandCheck, errandVerdict } from "../src/rooms/errands/server";
 import { errandOutcome } from "../src/rooms/contracts/server";
 
 const report = (...lines: string[]) => lines.join("\n");

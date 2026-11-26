@@ -3,7 +3,7 @@ import {
   attemptLogTailInput, attemptLogTailOutput, emptyRpcInput, helperThreadLabelsInput, helperThreadLabelsOutput,
   listHelperThreadsInput, listHelperThreadsOutput, moneyStatusOutput, ownerWaitingOutput, taskBoardInput, taskBoardOutput,
   threadLiveInput, threadLiveOutput, workGraphStripsInput, workGraphStripsOutput, workGraphTaskInput, workGraphTaskOutput,
-  worldVersionOutput,
+  uiVersionOutput,
 } from "../../contracts/ui";
 
 /**
@@ -40,5 +40,5 @@ export const uiQueryContract = defineRpcContract({
   },
   work_graph_strips: { input: workGraphStripsInput, output: workGraphStripsOutput, tags: () => ["work-graph"] },
   work_graph_task: { input: workGraphTaskInput, output: workGraphTaskOutput, tags: () => ["work-graph"] },
-  world_version: { input: emptyRpcInput, output: worldVersionOutput, tags: () => ["world_version"] },
+  ui_version: { input: emptyRpcInput, output: uiVersionOutput, tags: () => ["ui_version"] },
 });

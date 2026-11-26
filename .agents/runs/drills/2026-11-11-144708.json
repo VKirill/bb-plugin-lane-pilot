@@ -1,0 +1,36 @@
+{
+  "kind": "lane-pilot-sandbox-drill",
+  "date": "2026-11-11",
+  "stamp": "20261111-144708",
+  "startedAt": 1794397628121,
+  "finishedAt": 1794397841046,
+  "durationSec": 213,
+  "project": "proj_ibu6v9g64j",
+  "runId": null,
+  "pmThread": null,
+  "sourceThread": "thr_gkk6t6xk3g",
+  "mode": "full",
+  "scenarioNames": [
+    "phase"
+  ],
+  "commit": "8a876de624b1010a37f8b9044d607599919ab113",
+  "skipped": {},
+  "result": "fail",
+  "problems": [
+    "activate failed: timeout after 180s: /home/ubuntu/.bb-machines/vechkasov.getbb.app/npm/lib/node_modules/bb-app/host-daemon/dist/bb lane-pilot activate"
+  ],
+  "checks": null,
+  "tasks": null,
+  "dispatch": null,
+  "scenarios": [],
+  "seen": null,
+  "judged": [],
+  "series": {
+    "verdict": "fail",
+    "missing": [
+      "phase"
+    ],
+    "failed": [],
+    "skipped": []
+  }
+}

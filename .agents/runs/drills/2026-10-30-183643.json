@@ -1,0 +1,612 @@
+{
+  "kind": "lane-pilot-sandbox-drill",
+  "date": "2026-10-30",
+  "stamp": "20261030-183643",
+  "startedAt": 1793374604011,
+  "finishedAt": 1793375119900,
+  "durationSec": 516,
+  "project": "proj_ibu6v9g64j",
+  "runId": "lprun_6ff283ac91d7410e87584ca3a1f19380",
+  "pmThread": "thr_r7umxduk4k",
+  "sourceThread": "thr_aqua9x6caz",
+  "mode": "quick",
+  "scenarioNames": [
+    "guard_hash",
+    "deferrals",
+    "checkers",
+    "memory_paths",
+    "helper_providers",
+    "parallel3"
+  ],
+  "commit": "59959885eb583cef77cd698e81ed3a58b7ac4b82",
+  "skipped": {},
+  "result": "fail",
+  "problems": [
+    "memory_paths: the probe task's writer thread did not start in time, so its brief could not be read",
+    "parallel3: not every task was accepted"
+  ],
+  "checks": {
+    "allAccepted": false,
+    "eachInOwnWorktree": true,
+    "filesInSandbox": false,
+    "checksRan": false
+  },
+  "tasks": [
+    {
+      "task": "drill-20261030-183643-a",
+      "attempts": 2,
+      "states": [
+        "blocked",
+        "blocked"
+      ],
+      "state": "blocked",
+      "reason": "parked (harness): internal_error: writer spawn was not created after a complete reconcile scan",
+      "attempt": "lpattempt_6777e41f7f244dab9179029939fcdadd",
+      "writerThread": null,
+      "workspace": "/home/ubuntu/.lane-pilot/worktrees/lpattempt_6777e41f7f244dab9179029939fcdadd/lp-drill-sandbox",
+      "environment": null,
+      "holder": null,
+      "file": "notes/drill/20261030-183643-a.md",
+      "fileInSandbox": false
+    },
+    {
+      "task": "drill-20261030-183643-b",
+      "attempts": 2,
+      "states": [
+        "blocked",
+        "blocked"
+      ],
+      "state": "blocked",
+      "reason": "parked (harness): internal_error: writer spawn was not created after a complete reconcile scan",
+      "attempt": "lpattempt_f517131b6a4a40b69710032484afe880",
+      "writerThread": null,
+      "workspace": "/home/ubuntu/.lane-pilot/worktrees/lpattempt_f517131b6a4a40b69710032484afe880/lp-drill-sandbox",
+      "environment": null,
+      "holder": null,
+      "file": "notes/drill/20261030-183643-b.md",
+      "fileInSandbox": false
+    },
+    {
+      "task": "drill-20261030-183643-c",
+      "attempts": 2,
+      "states": [
+        "blocked",
+        "blocked"
+      ],
+      "state": "blocked",
+      "reason": "parked (harness): internal_error: writer spawn was not created after a complete reconcile scan",
+      "attempt": "lpattempt_3b5e401384144005a9941ad22fedf52e",
+      "writerThread": null,
+      "workspace": "/home/ubuntu/.lane-pilot/worktrees/lpattempt_3b5e401384144005a9941ad22fedf52e/lp-drill-sandbox",
+      "environment": null,
+      "holder": null,
+      "file": "notes/drill/20261030-183643-c.md",
+      "fileInSandbox": false
+    }
+  ],
+  "dispatch": {
+    "drill-20261030-183643-a": "{\n  \"runId\": \"lprun_6ff283ac91d7410e87584ca3a1f19380\",\n  \"taskId\": \"drill-20261030-183643-a\",\n  \"attemptId\": \"lpattempt_0d712026872d45e6b48d112dfbc4ec78\",\n  \"writerThreadId\": null,\n  \"state\": \"queued\",\n  \"stagesPending\": true,\n  \"stages\": [\n    {\n      \"runId\": \"lprun_6ff283ac91d7410e87584ca3a1f19380\",\n      \"taskId\": \"drill-20261030-183643-a\",\n      \"stageId\": \"acceptance-receipt\",\n      \"contractVersion\": 1,\n      \"state\": \"pending\",\n      \"inputSha256\": \"2e2a4564ae92717c6dfe03b610b503126ba4278c41c22e0083c198d7101b7a83\",\n      \"outputSha256\": null,\n      \"attempt\": 0,\n      \"providerId\": nul",
+    "drill-20261030-183643-b": "{\n  \"runId\": \"lprun_6ff283ac91d7410e87584ca3a1f19380\",\n  \"taskId\": \"drill-20261030-183643-b\",\n  \"attemptId\": \"lpattempt_666fe63bb33d4562853afbc42a6433c4\",\n  \"writerThreadId\": null,\n  \"state\": \"queued\",\n  \"stagesPending\": true,\n  \"stages\": [\n    {\n      \"runId\": \"lprun_6ff283ac91d7410e87584ca3a1f19380\",\n      \"taskId\": \"drill-20261030-183643-b\",\n      \"stageId\": \"acceptance-receipt\",\n      \"contractVersion\": 1,\n      \"state\": \"pending\",\n      \"inputSha256\": \"abd84bd7a6a0abda83b7f0d2a1a1f6c5a38f0c19ed7bdd628016b57534465bef\",\n      \"outputSha256\": null,\n      \"attempt\": 0,\n      \"providerId\": nul",
+    "drill-20261030-183643-c": "{\n  \"runId\": \"lprun_6ff283ac91d7410e87584ca3a1f19380\",\n  \"taskId\": \"drill-20261030-183643-c\",\n  \"attemptId\": \"lpattempt_cc3cead65d3d4a128f3a22f558af7b07\",\n  \"writerThreadId\": null,\n  \"state\": \"queued\",\n  \"stagesPending\": true,\n  \"stages\": [\n    {\n      \"runId\": \"lprun_6ff283ac91d7410e87584ca3a1f19380\",\n      \"taskId\": \"drill-20261030-183643-c\",\n      \"stageId\": \"acceptance-receipt\",\n      \"contractVersion\": 1,\n      \"state\": \"pending\",\n      \"inputSha256\": \"b5a76d8b112a3680237d0b6d612735c5a10af7213e66731f2d1391719f13bbe2\",\n      \"outputSha256\": null,\n      \"attempt\": 0,\n      \"providerId\": nul"
+  },
+  "scenarios": [
+    {
+      "name": "guard_hash",
+      "result": "pass",
+      "problems": [],
+      "machines": [
+        {
+          "machine": "ovh",
+          "files": {
+            "guard_shell.py": {
+              "state": "ok",
+              "installed": "e417a79d332d8f4247e861d3060a2cb5d55b5da139fee9f280b9c14d4b89e0ee",
+              "expected": "e417a79d332d8f4247e861d3060a2cb5d55b5da139fee9f280b9c14d4b89e0ee"
+            },
+            "lib_payload.py": {
+              "state": "ok",
+              "installed": "888d89f05eb23a585b99c343df1865a368f8f28a090e9f6f29a8246a9be99565",
+              "expected": "888d89f05eb23a585b99c343df1865a368f8f28a090e9f6f29a8246a9be99565"
+            }
+          },
+          "reachable": true
+        },
+        {
+          "machine": "mac-mini",
+          "files": {
+            "guard_shell.py": {
+              "state": "ok",
+              "installed": "e417a79d332d8f4247e861d3060a2cb5d55b5da139fee9f280b9c14d4b89e0ee",
+              "expected": "e417a79d332d8f4247e861d3060a2cb5d55b5da139fee9f280b9c14d4b89e0ee"
+            },
+            "lib_payload.py": {
+              "state": "ok",
+              "installed": "888d89f05eb23a585b99c343df1865a368f8f28a090e9f6f29a8246a9be99565",
+              "expected": "888d89f05eb23a585b99c343df1865a368f8f28a090e9f6f29a8246a9be99565"
+            }
+          },
+          "reachable": true
+        },
+        {
+          "machine": "macbook",
+          "files": {
+            "guard_shell.py": {
+              "state": "ok",
+              "installed": "e417a79d332d8f4247e861d3060a2cb5d55b5da139fee9f280b9c14d4b89e0ee",
+              "expected": "e417a79d332d8f4247e861d3060a2cb5d55b5da139fee9f280b9c14d4b89e0ee"
+            },
+            "lib_payload.py": {
+              "state": "ok",
+              "installed": "888d89f05eb23a585b99c343df1865a368f8f28a090e9f6f29a8246a9be99565",
+              "expected": "888d89f05eb23a585b99c343df1865a368f8f28a090e9f6f29a8246a9be99565"
+            }
+          },
+          "reachable": true
+        }
+      ],
+      "expected": {
+        "guard_shell.py": "e417a79d332d8f4247e861d3060a2cb5d55b5da139fee9f280b9c14d4b89e0ee",
+        "lib_payload.py": "888d89f05eb23a585b99c343df1865a368f8f28a090e9f6f29a8246a9be99565"
+      },
+      "unreachable": [],
+      "repaired": true
+    },
+    {
+      "name": "deferrals",
+      "result": "pass",
+      "problems": [],
+      "registerDeployed": true,
+      "counts": {
+        "open": 0,
+        "overdue": 0,
+        "closed": 0,
+        "needs_owner_term": 25
+      },
+      "cited": 19,
+      "needsOwnerTerm": 25
+    },
+    {
+      "name": "checkers",
+      "result": "pass",
+      "problems": [],
+      "checked": [
+        {
+          "defectClass": "test_assertion_deleted",
+          "planted": 2,
+          "caughtBy": [
+            "test_fit"
+          ],
+          "designedCatchers": [
+            "test_fit",
+            "code_critic"
+          ]
+        },
+        {
+          "defectClass": "off_by_one",
+          "planted": 2,
+          "caughtBy": [
+            "verification"
+          ],
+          "designedCatchers": [
+            "verification"
+          ]
+        },
+        {
+          "defectClass": "outside_owns",
+          "planted": 2,
+          "caughtBy": [
+            "ownership"
+          ],
+          "designedCatchers": [
+            "ownership"
+          ]
+        },
+        {
+          "defectClass": "swallowed_error",
+          "planted": 1,
+          "caughtBy": [],
+          "designedCatchers": [
+            "code_critic"
+          ]
+        },
+        {
+          "defectClass": "masked_check",
+          "planted": 2,
+          "caughtBy": [
+            "contract_lint"
+          ],
+          "designedCatchers": [
+            "contract_lint"
+          ]
+        },
+        {
+          "defectClass": "acceptance_missing",
+          "planted": 2,
+          "caughtBy": [
+            "verification",
+            "plan_fact"
+          ],
+          "designedCatchers": [
+            "plan_fact"
+          ]
+        },
+        {
+          "defectClass": "hardcoded_value",
+          "planted": 2,
+          "caughtBy": [
+            "verification"
+          ],
+          "designedCatchers": [
+            "code_critic"
+          ]
+        },
+        {
+          "defectClass": "broken_import",
+          "planted": 2,
+          "caughtBy": [
+            "verification"
+          ],
+          "designedCatchers": [
+            "verification"
+          ]
+        },
+        {
+          "defectClass": "gilded_defect",
+          "planted": 1,
+          "caughtBy": [],
+          "designedCatchers": [
+            "code_critic"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "memory_paths",
+      "result": "fail",
+      "problems": [
+        "the probe task's writer thread did not start in time, so its brief could not be read"
+      ],
+      "token": "b380e764",
+      "lpVersion": "0.1.401",
+      "paths": [
+        {
+          "path": "writer.brief",
+          "found": true,
+          "negativeOk": true,
+          "latencyMs": 33,
+          "detail": "carries note+core+rule: all found; 5947 chars"
+        },
+        {
+          "path": "writer.turn",
+          "found": true,
+          "negativeOk": true,
+          "latencyMs": 1,
+          "detail": "carries rule: all found; 2126 chars"
+        },
+        {
+          "path": "writer.repair",
+          "found": true,
+          "negativeOk": true,
+          "latencyMs": 23,
+          "detail": "carries note+core+rule: all found; 2206 chars"
+        },
+        {
+          "path": "pm.start",
+          "found": true,
+          "negativeOk": true,
+          "latencyMs": 0,
+          "detail": "carries rule: all found; 243 chars"
+        },
+        {
+          "path": "pm.resume",
+          "found": true,
+          "negativeOk": true,
+          "latencyMs": 0,
+          "detail": "carries rule: all found; 241 chars"
+        },
+        {
+          "path": "pm.rules_tool",
+          "found": true,
+          "negativeOk": true,
+          "latencyMs": 1,
+          "detail": "carries rule: all found; 75 chars"
+        },
+        {
+          "path": "pm.memory_tool",
+          "found": true,
+          "negativeOk": true,
+          "latencyMs": 5,
+          "detail": "carries note+core: all found; 400 chars"
+        },
+        {
+          "path": "schedule.agent",
+          "found": true,
+          "negativeOk": true,
+          "latencyMs": 6,
+          "detail": "carries note+core: all found; 400 chars"
+        },
+        {
+          "path": "critic.code",
+          "found": true,
+          "negativeOk": true,
+          "latencyMs": 14,
+          "detail": "carries note+core: all found; 7054 chars"
+        },
+        {
+          "path": "night.review",
+          "found": true,
+          "negativeOk": true,
+          "latencyMs": 15,
+          "detail": "carries note+core: all found; 2647 chars"
+        },
+        {
+          "path": "council.evidence",
+          "found": true,
+          "negativeOk": true,
+          "latencyMs": 6,
+          "detail": "carries note+core: all found; 504 chars"
+        }
+      ],
+      "skipped": [
+        {
+          "path": "pm.contract",
+          "reason": "Handed back on the dispatch reply for the task's paths. Startup and resume do not pass paths, so a path selector stays quiet there."
+        },
+        {
+          "path": "hub.session_rpc",
+          "reason": "Claude Lane's terminal client is gone (2026-10-29). The RPCs stay for the hub; they do not deliver into an agent prompt."
+        },
+        {
+          "path": "pm.cold",
+          "reason": "It only adds notes the active search missed. The probe's active note is already delivered by pm.memory_tool."
+        },
+        {
+          "path": "maintainer.existing",
+          "reason": "A dedupe aid for the stage that writes notes, not a delivery to a worker; the notes are data it compares against and acts on only by `supersedes`."
+        },
+        {
+          "path": "memory.golden_eval",
+          "reason": "It measures search quality for the owner and delivers nothing to an agent."
+        },
+        {
+          "path": "pm.owner_card",
+          "reason": "Facts about the owner from the anamnesis room, not project memory; it has its own checks (`bb lane-pilot anamnesis status`)."
+        }
+      ],
+      "unanswered": {
+        "windowDays": 30,
+        "ownerRepeats": 0,
+        "repeatConfirmations": 0,
+        "routableQuestions": 0
+      },
+      "writerAttempt": null,
+      "dispatch": "{\n  \"runId\": \"lprun_6ff283ac91d7410e87584ca3a1f19380\",\n  \"taskId\": \"drill-20261030-183643-memory\",\n  \"attemptId\": \"lpattempt_6d41447404634d2eb41281845106a2ae\",\n  \"writerThreadId\": null,\n  \"state\": \"queued\",\n  \"stages\": [\n    {\n      \"runId\": \"lprun_6ff283ac91d7410e87584ca3a1f19380\",\n      \"taskId\": \"drill-20261030-183643-memory\",\n      \"stageId\": \"acceptance-receipt\",\n      \"contractVersion\": 1,\n      \"state\": \"pending\",\n      \"inputSha256\": \"2a62a1d3e67df4682b6e5c339685d574a1020f47de10ae41a153e9d14afcfd37\",\n      \"outputSha256\": null,\n      \"attempt\": 0,\n      \"providerId\": null,\n      \"model"
+    },
+    {
+      "name": "helper_providers",
+      "result": "pass",
+      "problems": [],
+      "providers": [
+        {
+          "provider": "claude-code",
+          "model": "claude-sonnet-5-5",
+          "ok": true,
+          "started": true,
+          "answered": true,
+          "threadId": "thr_yh33bkx9nn",
+          "output": "OK",
+          "reason": null,
+          "ms": 13113
+        },
+        {
+          "provider": "codex",
+          "model": "gpt-6-luna",
+          "ok": true,
+          "started": true,
+          "answered": true,
+          "threadId": "thr_undz48vtp3",
+          "output": "OK",
+          "reason": null,
+          "ms": 12075
+        },
+        {
+          "provider": "opencode2",
+          "model": "zai-coding-plan/glm-5.3-flash",
+          "ok": true,
+          "started": true,
+          "answered": true,
+          "threadId": "thr_dtpte6rzms",
+          "output": "OK",
+          "reason": null,
+          "ms": 16742
+        }
+      ]
+    },
+    {
+      "name": "parallel3",
+      "result": "fail",
+      "problems": [
+        "not every task was accepted"
+      ],
+      "tasks": [
+        {
+          "task": "drill-20261030-183643-a",
+          "attempts": 2,
+          "states": [
+            "blocked",
+            "blocked"
+          ],
+          "state": "blocked",
+          "reason": "parked (harness): internal_error: writer spawn was not created after a complete reconcile scan",
+          "attempt": "lpattempt_6777e41f7f244dab9179029939fcdadd",
+          "writerThread": null,
+          "workspace": "/home/ubuntu/.lane-pilot/worktrees/lpattempt_6777e41f7f244dab9179029939fcdadd/lp-drill-sandbox",
+          "environment": null,
+          "holder": null,
+          "file": "notes/drill/20261030-183643-a.md",
+          "fileInSandbox": false
+        },
+        {
+          "task": "drill-20261030-183643-b",
+          "attempts": 2,
+          "states": [
+            "blocked",
+            "blocked"
+          ],
+          "state": "blocked",
+          "reason": "parked (harness): internal_error: writer spawn was not created after a complete reconcile scan",
+          "attempt": "lpattempt_f517131b6a4a40b69710032484afe880",
+          "writerThread": null,
+          "workspace": "/home/ubuntu/.lane-pilot/worktrees/lpattempt_f517131b6a4a40b69710032484afe880/lp-drill-sandbox",
+          "environment": null,
+          "holder": null,
+          "file": "notes/drill/20261030-183643-b.md",
+          "fileInSandbox": false
+        },
+        {
+          "task": "drill-20261030-183643-c",
+          "attempts": 2,
+          "states": [
+            "blocked",
+            "blocked"
+          ],
+          "state": "blocked",
+          "reason": "parked (harness): internal_error: writer spawn was not created after a complete reconcile scan",
+          "attempt": "lpattempt_3b5e401384144005a9941ad22fedf52e",
+          "writerThread": null,
+          "workspace": "/home/ubuntu/.lane-pilot/worktrees/lpattempt_3b5e401384144005a9941ad22fedf52e/lp-drill-sandbox",
+          "environment": null,
+          "holder": null,
+          "file": "notes/drill/20261030-183643-c.md",
+          "fileInSandbox": false
+        }
+      ],
+      "checks": {
+        "allAccepted": false,
+        "eachInOwnWorktree": true,
+        "filesInSandbox": false,
+        "checksRan": false
+      },
+      "dispatch": {
+        "drill-20261030-183643-a": "{\n  \"runId\": \"lprun_6ff283ac91d7410e87584ca3a1f19380\",\n  \"taskId\": \"drill-20261030-183643-a\",\n  \"attemptId\": \"lpattempt_0d712026872d45e6b48d112dfbc4ec78\",\n  \"writerThreadId\": null,\n  \"state\": \"queued\",\n  \"stagesPending\": true,\n  \"stages\": [\n    {\n      \"runId\": \"lprun_6ff283ac91d7410e87584ca3a1f19380\",\n      \"taskId\": \"drill-20261030-183643-a\",\n      \"stageId\": \"acceptance-receipt\",\n      \"contractVersion\": 1,\n      \"state\": \"pending\",\n      \"inputSha256\": \"2e2a4564ae92717c6dfe03b610b503126ba4278c41c22e0083c198d7101b7a83\",\n      \"outputSha256\": null,\n      \"attempt\": 0,\n      \"providerId\": nul",
+        "drill-20261030-183643-b": "{\n  \"runId\": \"lprun_6ff283ac91d7410e87584ca3a1f19380\",\n  \"taskId\": \"drill-20261030-183643-b\",\n  \"attemptId\": \"lpattempt_666fe63bb33d4562853afbc42a6433c4\",\n  \"writerThreadId\": null,\n  \"state\": \"queued\",\n  \"stagesPending\": true,\n  \"stages\": [\n    {\n      \"runId\": \"lprun_6ff283ac91d7410e87584ca3a1f19380\",\n      \"taskId\": \"drill-20261030-183643-b\",\n      \"stageId\": \"acceptance-receipt\",\n      \"contractVersion\": 1,\n      \"state\": \"pending\",\n      \"inputSha256\": \"abd84bd7a6a0abda83b7f0d2a1a1f6c5a38f0c19ed7bdd628016b57534465bef\",\n      \"outputSha256\": null,\n      \"attempt\": 0,\n      \"providerId\": nul",
+        "drill-20261030-183643-c": "{\n  \"runId\": \"lprun_6ff283ac91d7410e87584ca3a1f19380\",\n  \"taskId\": \"drill-20261030-183643-c\",\n  \"attemptId\": \"lpattempt_cc3cead65d3d4a128f3a22f558af7b07\",\n  \"writerThreadId\": null,\n  \"state\": \"queued\",\n  \"stagesPending\": true,\n  \"stages\": [\n    {\n      \"runId\": \"lprun_6ff283ac91d7410e87584ca3a1f19380\",\n      \"taskId\": \"drill-20261030-183643-c\",\n      \"stageId\": \"acceptance-receipt\",\n      \"contractVersion\": 1,\n      \"state\": \"pending\",\n      \"inputSha256\": \"b5a76d8b112a3680237d0b6d612735c5a10af7213e66731f2d1391719f13bbe2\",\n      \"outputSha256\": null,\n      \"attempt\": 0,\n      \"providerId\": nul"
+      }
+    }
+  ],
+  "seen": {
+    "stages": {
+      "acceptance-receipt": {
+        "failed": 5
+      },
+      "plan-critique": {
+        "skipped": 5
+      },
+      "pm-read": {
+        "skipped": 5
+      },
+      "specialist-review": {
+        "passed": 3,
+        "skipped": 2
+      },
+      "verification": {
+        "failed": 5
+      },
+      "writer-agent": {
+        "failed": 5
+      }
+    },
+    "gates": {},
+    "moves": {
+      "queued>queued": {
+        "ok": 10
+      },
+      "queued>spawn_requested": {
+        "ok": 10
+      },
+      "spawn_rejected>blocked": {
+        "ok": 10
+      },
+      "spawn_requested>spawn_rejected": {
+        "ok": 5
+      },
+      "spawn_requested>spawn_unknown": {
+        "ok": 5
+      },
+      "spawn_unknown>spawn_rejected": {
+        "ok": 5
+      }
+    }
+  },
+  "judged": [
+    {
+      "name": "guard_hash",
+      "verdict": "pass",
+      "evidence": [
+        "machines",
+        "expected",
+        "repaired"
+      ],
+      "why": ""
+    },
+    {
+      "name": "deferrals",
+      "verdict": "pass",
+      "evidence": [
+        "registerDeployed",
+        "counts",
+        "cited",
+        "needsOwnerTerm"
+      ],
+      "why": ""
+    },
+    {
+      "name": "checkers",
+      "verdict": "pass",
+      "evidence": [
+        "checked"
+      ],
+      "why": ""
+    },
+    {
+      "name": "memory_paths",
+      "verdict": "fail",
+      "evidence": [
+        "token",
+        "lpVersion",
+        "paths",
+        "skipped",
+        "unanswered",
+        "dispatch"
+      ],
+      "why": "the probe task's writer thread did not start in time, so its brief could not be read"
+    },
+    {
+      "name": "helper_providers",
+      "verdict": "pass",
+      "evidence": [
+        "providers"
+      ],
+      "why": ""
+    },
+    {
+      "name": "parallel3",
+      "verdict": "fail",
+      "evidence": [
+        "tasks",
+        "checks",
+        "dispatch"
+      ],
+      "why": "not every task was accepted"
+    }
+  ],
+  "series": {
+    "verdict": "fail",
+    "missing": [],
+    "failed": [
+      "memory_paths",
+      "parallel3"
+    ],
+    "skipped": []
+  }
+}

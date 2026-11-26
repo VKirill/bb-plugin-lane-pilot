@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import { en, ru } from "@lane-pilot/i18n";
-import { anamnesisEn } from "../src/i18n-anamnesis";
 import { fieldEn } from "../src/i18n-fields";
 import { canvasEn } from "../src/i18n-workflow-canvas";
 import { editorEn } from "../src/i18n-workflow-editor";
@@ -10,7 +9,7 @@ import { workflowEn } from "../src/i18n-workflows";
 import { ownedEn } from "../src/i18n-owned";
 import { scheduleEn } from "../src/i18n-schedule";
 import { tabsEn } from "../src/i18n-tabs";
-import { improvementEn } from "../src/i18n-improvement";
+import { leadUiEn } from "../src/i18n-lead";
 
 /**
  * The dictionaries are spread into one object, so a key defined in two partial dictionaries is shadowed by the later
@@ -18,7 +17,7 @@ import { improvementEn } from "../src/i18n-improvement";
  */
 describe("i18n dictionaries", () => {
   it("defines every key of the partial dictionaries once", () => {
-    const partials = { fieldEn, workflowEn, editorEn, opsEn, modelsEn, canvasEn, scheduleEn, anamnesisEn, tabsEn, ownedEn, improvementEn };
+    const partials = { fieldEn, workflowEn, editorEn, opsEn, modelsEn, canvasEn, scheduleEn, tabsEn, ownedEn, leadUiEn };
     const owner = new Map<string, string>();
     const duplicates: string[] = [];
     for (const [name, dictionary] of Object.entries(partials)) {

@@ -19,12 +19,9 @@ const code = (text: string) => text.split("\n").filter((line) => !/^\s*(\/\/|\*|
 const using = (pattern: RegExp) => files.filter((file) => pattern.test(code(file.text))).map((file) => file.path).sort();
 
 describe("the hand-off standard in the source", () => {
-  it("tells no agent with a checkout to open nothing: only the three reviewers that judge data from the hub", () => {
+  it("tells no agent with a checkout to open nothing: only the reviewer that judges data from the hub", () => {
     expect(using(/\bNO_TOOLS_LINE\b/)).toEqual([
       "packages/workflow-engine/src/model-json.ts",
-      "src/rooms/night/night.ts",
-      "src/rooms/project-life/onboarding.ts",
-      "src/rooms/verification/gate-triage.ts",
     ]);
     // The ban written by hand, past the constant: the memory maintainer (no tools by its role) and the constant itself.
     expect(using(/open no files|call no tools|run no commands/i)).toEqual(["packages/memory-core/src/context.ts", "packages/workflow-engine/src/model-json.ts"]);
@@ -33,14 +30,7 @@ describe("the hand-off standard in the source", () => {
   it("asks no new helper for «JSON and nothing else»: the form line of the standard, or the engine's contract", () => {
     // One-shot analysers written before the standard; each still parses its own strict form.
     expect(using(/JSON (object|array)? ?(and nothing else|only)|Answer with JSON only|no text before or after it/)).toEqual([
-      "packages/council/src/prompts.ts",
       "packages/memory-core/src/context.ts",
-      "src/rooms/docs/docs.ts",
-      "src/rooms/learning/extract.ts",
-      "src/rooms/pm-replay/harvest.ts",
-      "src/rooms/project-life/onboarding.ts",
-      "src/rooms/self-repair/server/rule-scan.ts",
-      "src/rooms/wall/brief.ts",
     ]);
   });
 

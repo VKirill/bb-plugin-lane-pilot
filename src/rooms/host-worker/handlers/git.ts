@@ -1,38 +1,40 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type { ExperimentalHostRpcHandlers } from "@get-bb/plugin-sdk";
+import { currentHostId } from "@lane-pilot/kit";
 import { hostContract } from "../../contracts";
 import { ENVIRONMENT_REASON } from "../../contracts/failure-class";
 import { readCheckRun } from "../../tasks/server";
-import { laneWorktreeRoot as laneRoot, laneWorktreeTargetFor, sweepLaneWorktrees, sweepWorktreeClasses } from "../../verification";
-import { applyLaneOwnsBarrier, createWorktree, integrateWorktree, mergeInfo, prepareWorktree, removeLaneWorktree, revertCommitsInWorktree, syncWorktree, snapshotWorktree, worktreeState, type ReplayCheck, type ReplayCheckOutcome } from "../../verification";
+import { laneWorktreeRoot as laneRoot, laneWorktreeTargetFor, sweepTmpPrefixes, sweepWorktreeClasses } from "../../worktree";
+import { applyLaneOwnsBarrier, createWorktree, integrateWorktree, prepareWorktree, removeLaneWorktree, syncWorktree, snapshotWorktree, revertPaths, type ReplayCheck, type ReplayCheckOutcome } from "../../worktree";
+import { mergeInfo, revertCommitsInWorktree, worktreeState } from "../../verification";
 import { attributeGateOnHost, bisectGateOnHost, runGateOnHost } from "../../verification";
-import { cachedReplayVerdicts, recordReplayVerdict, replayKey } from "../../verification";
-import { glueReplayCommands } from "../../verification/server";
-import { gitOwnershipChangedPaths, resolveGitOwnershipBase, undoCheckWrites, revertPaths } from "../../verification";
+import { cachedReplayVerdicts, recordReplayVerdict, recordedReplayFailure, replayKey, glueReplayCommands } from "../../verification";
+import { gitOwnershipChangedPaths, resolveGitOwnershipBase, undoCheckWrites } from "../../verification";
 import { runSandboxedCommandOnHost } from "../../verification";
 
 export const gitOwnershipBase: ExperimentalHostRpcHandlers<typeof hostContract>["gitOwnershipBase"] = async (input) => ({
-  hostId:process.env.BB_HOST_ID??input.requestedHostId,
+  hostId:currentHostId(input.requestedHostId),
   ...await resolveGitOwnershipBase({projectCwd:input.projectCwd,baseRef:input.baseRef}),
 });
 
 export const gitPrepareWorktree: ExperimentalHostRpcHandlers<typeof hostContract>["gitPrepareWorktree"] = async (input) => ({
-  hostId:process.env.BB_HOST_ID??input.requestedHostId,
+  hostId:currentHostId(input.requestedHostId),
   ...await prepareWorktree({basePath:input.basePath,worktreePath:input.worktreePath,
-    ...(input.ownsBarrier?{ownsBarrier:true,ownsPaths:input.ownsPaths??[],neverTouch:input.neverTouch??[]}:{})}),
+    ...(input.ownsBarrier?{ownsBarrier:true,ownsPaths:input.ownsPaths??[],neverTouch:input.neverTouch??[],...(input.readOnlyPaths?{readOnlyPaths:input.readOnlyPaths}:{})}:{})}),
 });
 
 /** Only the barrier, brought to the attempt's changed contract; the lane root is this host's own (docs/worktrees.md). */
 export const gitOwnsBarrier: ExperimentalHostRpcHandlers<typeof hostContract>["gitOwnsBarrier"] = async (input, context) => ({
-  hostId:process.env.BB_HOST_ID??input.requestedHostId,
-  ...await applyLaneOwnsBarrier({laneRoot:laneWorktreeRoot(),worktreePath:input.worktreePath,ownsPaths:input.ownsPaths,neverTouch:input.neverTouch,signal:context?.signal}),
+  hostId:currentHostId(input.requestedHostId),
+  ...await applyLaneOwnsBarrier({laneRoot:laneWorktreeRoot(),worktreePath:input.worktreePath,ownsPaths:input.ownsPaths,neverTouch:input.neverTouch,...(input.readOnlyPaths?{readOnlyPaths:input.readOnlyPaths}:{}),signal:context?.signal}),
 });
 
 export const gitIntegrate: ExperimentalHostRpcHandlers<typeof hostContract>["gitIntegrate"] = async (input) => ({
-  hostId:process.env.BB_HOST_ID??input.requestedHostId,
+  hostId:currentHostId(input.requestedHostId),
   ...await integrateWorktree({basePath:input.basePath,worktreePath:input.worktreePath,message:input.message,removeWorktree:input.removeWorktree,committedOnly:input.committedOnly,bookkeeping:input.bookkeeping,
     ownsPaths:input.ownsPaths,baseInHead:input.baseInHead,expectedHead:input.expectedHead,
+    recordedReplayFailure,
     replayCheck:input.replayChecks?()=>runReplayChecks(input.requestedHostId,input.replayChecks!):undefined}),
 });
 
@@ -96,48 +98,48 @@ async function runReplayChecks(requestedHostId:string,checks:NonNullable<Paramet
 }
 
 export const gateRun: ExperimentalHostRpcHandlers<typeof hostContract>["gateRun"] = async (input) => ({
-  hostId:process.env.BB_HOST_ID??input.requestedHostId,
+  hostId:currentHostId(input.requestedHostId),
   ...await runGateOnHost({basePath:input.basePath,command:input.command,timeoutSec:input.timeoutSec}),
 });
 
 export const gateBisect: ExperimentalHostRpcHandlers<typeof hostContract>["gateBisect"] = async (input) => ({
-  hostId:process.env.BB_HOST_ID??input.requestedHostId,
+  hostId:currentHostId(input.requestedHostId),
   ...await bisectGateOnHost({basePath:input.basePath,command:input.command,goodSha:input.goodSha,badSha:input.badSha,timeoutSec:input.timeoutSec}),
 });
 
 export const gateAttribute: ExperimentalHostRpcHandlers<typeof hostContract>["gateAttribute"] = async (input) => ({
-  hostId:process.env.BB_HOST_ID??input.requestedHostId,
+  hostId:currentHostId(input.requestedHostId),
   ...await attributeGateOnHost({basePath:input.basePath,baseSha:input.baseSha,commits:input.commits,failing:input.failing,timeoutSec:input.timeoutSec}),
 });
 
 export const gitWorktreeSnapshot: ExperimentalHostRpcHandlers<typeof hostContract>["gitWorktreeSnapshot"] = async (input) => ({
-  hostId:process.env.BB_HOST_ID??input.requestedHostId,
+  hostId:currentHostId(input.requestedHostId),
   ...await snapshotWorktree({worktreePath:input.worktreePath,name:input.name,dir:join(homedir(),".lane-pilot","released")}),
 });
 
 export const gitRemoveWorktree: ExperimentalHostRpcHandlers<typeof hostContract>["gitRemoveWorktree"] = async (input) => ({
-  hostId:process.env.BB_HOST_ID??input.requestedHostId,
+  hostId:currentHostId(input.requestedHostId),
   // With `release` the work is returned (saved as a patch) before the worktree goes; a snapshot that fails keeps it (SMA rule 9).
   ...await removeLaneWorktree({basePath:input.basePath,worktreePath:input.worktreePath,...(input.release?{releaseDir:join(homedir(),".lane-pilot","released")}:{})}),
 });
 
 export const gitWorktreeState: ExperimentalHostRpcHandlers<typeof hostContract>["gitWorktreeState"] = async (input) => ({
-  hostId:process.env.BB_HOST_ID??input.requestedHostId,
+  hostId:currentHostId(input.requestedHostId),
   ...await worktreeState({basePath:input.basePath,worktreePath:input.worktreePath}),
 });
 
 export const gitMergeInfo: ExperimentalHostRpcHandlers<typeof hostContract>["gitMergeInfo"] = async (input) => ({
-  hostId:process.env.BB_HOST_ID??input.requestedHostId,
+  hostId:currentHostId(input.requestedHostId),
   ...await mergeInfo({basePath:input.basePath,...(input.commit?{commit:input.commit}:{}),...(input.attemptId?{attemptId:input.attemptId}:{})}),
 });
 
 export const gitRevertCommits: ExperimentalHostRpcHandlers<typeof hostContract>["gitRevertCommits"] = async (input) => ({
-  hostId:process.env.BB_HOST_ID??input.requestedHostId,
+  hostId:currentHostId(input.requestedHostId),
   ...await revertCommitsInWorktree({worktreePath:input.worktreePath,commits:input.commits}),
 });
 
 export const gitSyncWorktree: ExperimentalHostRpcHandlers<typeof hostContract>["gitSyncWorktree"] = async (input) => ({
-  hostId:process.env.BB_HOST_ID??input.requestedHostId,
+  hostId:currentHostId(input.requestedHostId),
   ...await syncWorktree({basePath:input.basePath,worktreePath:input.worktreePath,keepConflicts:input.keepConflicts}),
 });
 
@@ -150,41 +152,60 @@ export const laneWorktreeRoot = () => laneRoot();
 
 /** The worktree standard (docs/worktrees.md): `<root>/<repository>/<id>`; until 0.1.561 it was `<root>/<id>/<repository>`, which every sweep still reads. */
 export const gitCreateWorktree: ExperimentalHostRpcHandlers<typeof hostContract>["gitCreateWorktree"] = async (input) => ({
-  hostId:process.env.BB_HOST_ID??input.requestedHostId,
+  hostId:currentHostId(input.requestedHostId),
   ...await createWorktree({basePath:input.basePath,name:input.name,...(input.commit?{commit:input.commit}:{}),
     ...(input.taskId?{taskId:input.taskId}:{}),
     targetPath:await laneWorktreeTargetFor(laneWorktreeRoot(),input.basePath,input.name)}),
 });
 
 /**
- * The hourly sweep of Lane Pilot's root; with `deep`, the daily pass over every class in the project repositories after it
- * (docs/worktrees.md). A dry run reads and decides only, including the hourly candidates, without removing them.
+ * One unified worktree cleanup implementation on each host (`sweepWorktreeClasses` + tmp prefixes, docs/worktrees.md).
+ * A dry run reads and decides only without removing anything.
  */
 export const worktreeJanitor: ExperimentalHostRpcHandlers<typeof hostContract>["worktreeJanitor"] = async (input) => {
   const protectedPaths=new Set(input.protectedPaths);
-  const hourlyGraceMs = input.deep?.dryRun ? input.deep.hourlyGraceMs ?? input.graceMs ?? 2 * 3_600_000 : input.graceMs ?? 2 * 3_600_000;
-  const hourly=await sweepLaneWorktrees({root:laneWorktreeRoot(),protectedPaths,graceMs:hourlyGraceMs,
-    ...(input.deep?.dryRun ? { dryRun:true } : {})});
+  const dryRun = input.deep?.dryRun === true;
+  const hourlyGraceMs = dryRun ? input.deep?.hourlyGraceMs ?? input.graceMs ?? 2 * 3_600_000 : input.graceMs ?? 2 * 3_600_000;
+  const rootSweep = await sweepWorktreeClasses({
+    laneRoot: laneWorktreeRoot(),
+    folders: [],
+    bbEnvPaths: [],
+    bbEnvs: [],
+    protectedPaths,
+    abandonedPaths: new Set(),
+    registryPaths: [],
+    maxAgeMs: hourlyGraceMs,
+    youngMs: hourlyGraceMs,
+    dryRun,
+  });
+  const tmpSweep = await sweepTmpPrefixes({ dryRun });
   const search=input.deep?.search;
   const deep=input.deep?await sweepWorktreeClasses({laneRoot:laneWorktreeRoot(),folders:input.deep.folders,bbEnvPaths:input.deep.bbEnvPaths??[],bbEnvs:input.deep.bbEnvs??[],protectedPaths,
     // The bounded search starts at this machine's home unless the hub names the roots (docs/worktrees.md).
     ...(search?{search:{roots:search.roots?.length?search.roots:[homedir()],maxDepth:search.maxDepth,...(search.maxRepos?{maxRepos:search.maxRepos}:{}),...(search.budgetMs?{budgetMs:search.budgetMs}:{})}}:{}),
-    abandonedPaths:new Set(input.deep.abandonedPaths??[]),registryPaths:input.deep.registryPaths??[],maxAgeMs:input.deep.maxAgeMs,youngMs:input.deep.youngMs,dryRun:input.deep.dryRun===true,...(input.deep.now?{now:input.deep.now}:{})}):undefined;
-  return {hostId:process.env.BB_HOST_ID??input.requestedHostId,...hourly,
+    abandonedPaths:new Set(input.deep.abandonedPaths??[]),registryPaths:input.deep.registryPaths??[],maxAgeMs:input.deep.maxAgeMs,youngMs:input.deep.youngMs,dryRun,...(input.deep.now?{now:input.deep.now}:{})}):undefined;
+  return {
+    hostId: currentHostId(input.requestedHostId),
+    removed: rootSweep.removed.map((r) => r.path),
+    freedBytes: rootSweep.freedBytes,
+    kept: rootSweep.kept.map((k) => ({ path: k.path, reason: k.detail, ageMs: k.ageMs, bytes: k.bytes })),
+    tmpRemoved: tmpSweep.tmpRemoved,
+    tmpFreedBytes: tmpSweep.tmpFreedBytes,
+    errors: [...rootSweep.errors, ...tmpSweep.errors],
     ...(deep?{deep:{...deep,removed:deep.removed.slice(0,2000),kept:deep.kept.slice(0,5000),branchesKept:deep.branchesKept.slice(0,2000),registryGone:deep.registryGone.slice(0,5000),errors:deep.errors.slice(0,500),
       decisions:deep.decisions.slice(0,10000)}}:{})};
 };
 
 export const gitRevertPaths: ExperimentalHostRpcHandlers<typeof hostContract>["gitRevertPaths"] = async (input) => ({
-  hostId:process.env.BB_HOST_ID??input.requestedHostId, ...await revertPaths({projectCwd:input.projectCwd,paths:input.paths}),
+  hostId:currentHostId(input.requestedHostId), ...await revertPaths({projectCwd:input.projectCwd,paths:input.paths}),
 });
 
 export const gitUndoCheckWrites: ExperimentalHostRpcHandlers<typeof hostContract>["gitUndoCheckWrites"] = async (input) => ({
-  hostId:process.env.BB_HOST_ID??input.requestedHostId,
+  hostId:currentHostId(input.requestedHostId),
   ...await undoCheckWrites({projectCwd:input.projectCwd,keep:input.keep,ownsPaths:input.ownsPaths,neverTouch:input.neverTouch,bookkeeping:input.bookkeeping}),
 });
 
 export const gitOwnershipChanges: ExperimentalHostRpcHandlers<typeof hostContract>["gitOwnershipChanges"] = async (input) => ({
-  hostId:process.env.BB_HOST_ID??input.requestedHostId,
+  hostId:currentHostId(input.requestedHostId),
   ...await gitOwnershipChangedPaths({projectCwd:input.projectCwd,baseSha:input.baseSha,compareCommitted:input.compareCommitted,unfiltered:input.unfiltered,bookkeeping:input.bookkeeping}),
 });

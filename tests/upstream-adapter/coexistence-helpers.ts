@@ -1,10 +1,10 @@
 import { afterEach } from "vitest";
-import { mkdtemp, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { TARGET_SHA } from "../../src/rooms/runs/constants";
+import { TARGET_SHA } from "../../src/rooms/runs";
 import { hashPath } from "@lane-pilot/kit";
 import { inventoryCoexistenceAtHome, runCoexistenceOperationAtHome } from "../../src/rooms/native-install/coexistence";
 
@@ -92,7 +92,7 @@ export const exactTargetFixture = [
 export async function incompatibleFallback(home: string): Promise<string> {
   if (!exactTargetFixture) throw new Error("A Lane Stack fixture with the target commit is unavailable.");
   const fallback = join(home, "dirty-source");
-  execFileSync("git", ["clone", "--local", "--quiet", exactTargetFixture, fallback]);
+  execFileSync("git", ["clone", "--local", "--no-hardlinks", "--quiet", exactTargetFixture, fallback]);
   execFileSync("git", ["-C", fallback, "checkout", "--quiet", "--detach", TARGET_SHA]);
   const hookPath = join(fallback, "profiles/opencode/opencode-lane/v2.ts");
   const hook = await readFile(hookPath, "utf8");

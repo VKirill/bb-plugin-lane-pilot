@@ -9,6 +9,7 @@
     "en": "Turns a goal (or review gaps) into task-v2 contracts in waves, lints them and has the whole plan critiqued.",
     "ru": "Превращает цель (или находки ревью) в контракты task-v2 по волнам, линтит и отдаёт план целиком на критику."
   },
+  "category": "service",
   "inputs": {
     "goal": {
       "type": "string",
@@ -57,7 +58,7 @@
     }
   },
   "outputs": {
-    "status": "ok|low_confidence|failed",
+    "status": "ok|low_confidence|failed|not_run",
     "tasks": "Task[]",
     "waves": "string[][]",
     "objective": "string",
@@ -239,7 +240,7 @@
         "full"
       ],
       "skip_out": {
-        "status": "pass",
+        "status": "not_run",
         "summary": "skipped",
         "findings": "[]",
         "evidence": "skipped"
@@ -247,7 +248,7 @@
       "src": "maestro-flow:workflows/plan.md (plan-checker), grill.md",
       "prompt": "PLAN_CRITIC_METHOD over all tasks together - goals coverage, dependency correctness (no cycle, depends_on names a real task), size, collisions across tasks, boundary violations. A finding without file:line (or PLAN/TASK + field) does not count. Approve the good, not the perfect. Severity is one of critical, high, medium, low, info. A file a task creates with neither an analog in read_first nor an explicit 'no analog' is a finding of severity low: it never changes the verdict by itself, so do not answer rework or block for it alone. Skip this check when plan_sha is set (a plan the PM submitted is checked as it is, the planner cannot add analogs).",
       "out": {
-        "status": "pass|rework|block",
+        "status": "pass|rework|block|not_run",
         "summary": "string",
         "findings": "Finding[]",
         "evidence": "string"
@@ -363,7 +364,7 @@
       "from": "plan_critic",
       "to": "ok",
       "pass": "artifact",
-      "when": "plan_critic.status == 'pass'"
+      "when": "plan_critic.status in ['pass', 'not_run']"
     },
     {
       "from": "plan_critic",
@@ -388,5 +389,8 @@
       "pass": "artifact"
     }
   ],
-  "status": "published"
+  "status": "published",
+  "not_for": [
+    "plan-only"
+  ]
 }

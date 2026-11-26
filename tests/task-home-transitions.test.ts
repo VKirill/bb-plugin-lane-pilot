@@ -8,10 +8,10 @@ import { bbTaskFileIo } from "../src/rooms/storage";
 import {
   placeTaskHomeIn, recordAcceptanceFiles, recordCheckFiles, recordCritiqueRound, recordPlanCritique, recordTaskClose, recordTaskEdition,
   recordWriterReport, stagePlanText, taskHomeBrief, writeDispatchHome,
-} from "../src/rooms/writer/server/task-home";
-import { taskFolderLines } from "../src/rooms/writer/server/writer-task";
-import { readFirstScopeFindings } from "../src/rooms/tasks/server/read-first-scope";
-import { runPlanFactStage } from "../src/rooms/writer/server/plan-fact";
+} from "../src/rooms/writer/server/services/task-home";
+import { taskFolderLines } from "../src/rooms/writer/models/writer-brief-feedback";
+import { readFirstScopeFindings } from "../src/rooms/tasks";
+import { runPlanFactStage } from "../src/rooms/writer/server/services/plan-fact";
 
 /**
  * One test per node → node transition of the main task path (audit handoff-map §5.5, T1–T17): the next node finds the previous node's output

@@ -1,0 +1,123 @@
+{
+  "kind": "lane-pilot-sandbox-drill",
+  "date": "2026-11-11",
+  "stamp": "20261111-191549",
+  "startedAt": 1794413749649,
+  "finishedAt": 1794417405202,
+  "durationSec": 3656,
+  "project": "proj_ibu6v9g64j",
+  "runId": "lprun_1dfb9e6567864146998282fbdb4bdc61",
+  "pmThread": "thr_5y84rnyprv",
+  "sourceThread": "thr_2d585yv6d2",
+  "mode": "full",
+  "scenarioNames": [
+    "phase"
+  ],
+  "commit": "430304db9d46f54c70d227b542ab71116874ffd0",
+  "skipped": {},
+  "result": "fail",
+  "problems": [
+    "phase: the phase did not reach acceptance: it is at verification (active)"
+  ],
+  "checks": null,
+  "tasks": null,
+  "dispatch": null,
+  "scenarios": [
+    {
+      "name": "phase",
+      "result": "fail",
+      "problems": [
+        "the phase did not reach acceptance: it is at verification (active)"
+      ],
+      "phaseId": "ph_aad5759806",
+      "stage": "verification",
+      "autoStarted": 5,
+      "issued": 1
+    }
+  ],
+  "seen": {
+    "stages": {
+      "acceptance-receipt": {
+        "passed": 2
+      },
+      "code-critique": {
+        "passed": 1
+      },
+      "memory-maintenance": {
+        "skipped": 2
+      },
+      "plan-critique": {
+        "passed": 1,
+        "skipped": 1
+      },
+      "plan-fact": {
+        "passed": 1,
+        "skipped": 1
+      },
+      "pm-read": {
+        "skipped": 2
+      },
+      "project-life": {
+        "passed": 2
+      },
+      "specialist-review": {
+        "skipped": 2
+      },
+      "verification": {
+        "passed": 2
+      },
+      "writer-agent": {
+        "passed": 2
+      }
+    },
+    "gates": {
+      "accept": {
+        "passed": 2
+      },
+      "owns-paths": {
+        "passed": 2
+      },
+      "validate": {
+        "passed": 2
+      },
+      "verification": {
+        "passed": 2
+      }
+    },
+    "moves": {
+      "queued>queued": {
+        "ok": 4
+      },
+      "queued>spawn_requested": {
+        "ok": 2
+      },
+      "running>accepted": {
+        "ok": 2
+      },
+      "spawn_requested>running": {
+        "ok": 2
+      }
+    }
+  },
+  "judged": [
+    {
+      "name": "phase",
+      "verdict": "fail",
+      "evidence": [
+        "phaseId",
+        "stage",
+        "autoStarted",
+        "issued"
+      ],
+      "why": "the phase did not reach acceptance: it is at verification (active)"
+    }
+  ],
+  "series": {
+    "verdict": "fail",
+    "missing": [],
+    "failed": [
+      "phase"
+    ],
+    "skipped": []
+  }
+}

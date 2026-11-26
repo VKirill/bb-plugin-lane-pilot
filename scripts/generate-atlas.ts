@@ -8,7 +8,7 @@ import { collectAtlasInput } from "./atlas-input";
 import { collectSystemMap, renderSystemMap } from "./system-map";
 import { atlasHash, capabilitySnapshot, renderAtlas, renderReadmeNumbers } from "./atlas";
 import { STREAMS } from "../src/rooms/session-hooks";
-import { REQUIRED_CAPABILITIES } from "../src/rooms/native-install/capabilities";
+import { REQUIRED_CAPABILITIES } from "../src/rooms/native-install/models/capabilities";
 
 const root = join(import.meta.dirname, "..");
 const input = collectAtlasInput(root);

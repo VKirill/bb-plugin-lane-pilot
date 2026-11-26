@@ -1,0 +1,54 @@
+{
+  "kind": "lane-pilot-sandbox-drill",
+  "date": "2026-11-18",
+  "stamp": "20261118-165316",
+  "startedAt": 1795009996596,
+  "finishedAt": 1795010598093,
+  "durationSec": 601,
+  "project": "proj_3tb652jpsi",
+  "runId": null,
+  "pmThread": null,
+  "sourceThread": null,
+  "mode": "full",
+  "scenarioNames": [
+    "nogit",
+    "nogit_repo"
+  ],
+  "commit": "f2d8e993bb4c73b27692433f017c9e2c225ef817",
+  "skipped": {},
+  "result": "fail",
+  "problems": [
+    "nogit: scenario raised: [Errno 32] Broken pipe"
+  ],
+  "checks": null,
+  "tasks": null,
+  "dispatch": null,
+  "scenarios": [
+    {
+      "name": "nogit",
+      "result": "fail",
+      "problems": [
+        "scenario raised: [Errno 32] Broken pipe"
+      ]
+    }
+  ],
+  "seen": null,
+  "judged": [
+    {
+      "name": "nogit",
+      "verdict": "fail",
+      "evidence": [],
+      "why": "scenario raised: [Errno 32] Broken pipe"
+    }
+  ],
+  "series": {
+    "verdict": "fail",
+    "missing": [
+      "nogit_repo"
+    ],
+    "failed": [
+      "nogit"
+    ],
+    "skipped": []
+  }
+}

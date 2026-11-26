@@ -1,0 +1,86 @@
+import type { ReactNode } from "react";
+import { t } from "@lane-pilot/i18n";
+import { AdvancedRows, CatalogField, CatalogFields, Pill, SettingsGroup, asBoolean, sectionKey } from "../../ui-shell/ui";
+import { extraSettingTab } from "../models/placement";
+import { HelpSup } from "@lane-pilot/ui-kit";
+import type { LpPage } from "./use-lp-page";
+
+/** The state of a role whose switch lives in «Team»: this tab only shows it next to the policy it governs. */
+function RoleState({ page, enabledKey, fallback, teamLabel }: { page: LpPage; enabledKey: string; fallback: boolean; teamLabel: string }) {
+  const on = asBoolean(page.displayedValue(enabledKey), fallback);
+  return <span className="flex items-center gap-2"><Pill tone={on ? "success" : "muted"} testId={`state-${enabledKey}`}>{on ? t("on") : t("off")}</Pill><span className="text-xs text-muted-foreground">{teamLabel}</span></span>;
+}
+
+/** How work runs: where the writer works, how work is checked and accepted, the limits and the contract paths. */
+export function WorkTab({ page }: { page: LpPage }) {
+  const { advanced, extrasGrouped, isGlobal } = page;
+  const where = t("workModelInTeam");
+  // One level inside the panel: a titled block with the state of the role it governs, not a card in a card.
+  const group = (key: string, children: ReactNode, title: string, help: string, testId: string, enabled: { key: string; fallback: boolean }) => (
+    <section className="space-y-2" data-testid={testId}>
+      <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+        <h3 className="text-sm font-medium">{title}</h3>
+        <RoleState page={page} enabledKey={enabled.key} fallback={enabled.fallback} teamLabel={where} />
+      </div>
+      <p className="max-w-xl text-xs text-muted-foreground">{help}</p>
+      <AdvancedRows show={advanced} testId={`work-${key}`}>{children}</AdvancedRows>
+    </section>
+  );
+  return (
+    <div className="space-y-6" data-testid="work-panel-body">
+      <SettingsGroup testId="settings-execution" title={t("workGroupExecution")}>
+        <section className="space-y-2" data-testid="settings-group-workspace">
+          <CatalogField page={page} keyName="adoc.040" />
+          <AdvancedRows show={advanced}><CatalogFields page={page} keys={["workspace.provider"]} /></AdvancedRows>
+        </section>
+        <section className="space-y-2" data-testid="settings-group-quality">
+          <CatalogField page={page} keyName="quality_mode" />
+          <AdvancedRows show={advanced}><CatalogFields page={page} keys={["sandbox.backend", "verification.sandbox_unsafe", "secrets.allow", "plan_fact.mode"]} /></AdvancedRows>
+        </section>
+      </SettingsGroup>
+
+      {isGlobal ? null : (
+        <div hidden={!advanced}><SettingsGroup testId="settings-project-checks" title={t("workGroupBaseline")}>
+          <p className="max-w-xl text-xs text-muted-foreground">{t("workGroupBaselineHelp")}</p>
+          <CatalogFields page={page} keys={["baseline.already_built", "baseline.time_cap_sec", "checks.require_red_on_base"]} />
+        </SettingsGroup></div>
+      )}
+
+      <div hidden={!advanced}><SettingsGroup title={t("sectionHelperContext")} testId="settings-helper-context" help={<HelpSup label={t("helperContextTechnical")}><p>{t("helperContextTechnical")}</p><p className="mt-1">{t("helperContextNoneNote")}</p></HelpSup>}>
+        <section className="space-y-2" data-testid="helper-context-settings">
+          <p className="max-w-xl text-xs text-muted-foreground">{t("helperContextHelp")}</p>
+          <p className="max-w-xl text-xs text-muted-foreground">{t("helperContextConstraint")}</p>
+          <CatalogField page={page} keyName="helper.placement" />
+        </section>
+      </SettingsGroup></div>
+
+      <SettingsGroup testId="settings-checks" title={t("workGroupChecks")}>
+        {group("plan", <CatalogFields page={page} keys={["plan_critique.mode", "plan_critique.min_score", "plan_critique.min_write_tasks", "plan_critique.on_high_risk"]} />,
+          t("stagePlanCritique"), t("planCritiqueHelp"), "plan-critique-policy", { key: "plan_critique.enabled", fallback: true })}
+        {group("code", <CatalogFields page={page} keys={["code_critique.mode", "code_critique.auto_fix", "code_critique.max_rounds", "critic.code.default_for_risk"]} />,
+          t("stageCodeCritique"), t("codeCritiqueHelp"), "code-critique-policy", { key: "code_critique.enabled", fallback: false })}
+        {group("specialist", <CatalogField page={page} keyName="specialist.when" />,
+          t("specialistReview"), t("settingSpecialistEnabledHelp"), "specialist-policy", { key: "specialist.enabled", fallback: false })}
+        {/* night_review.* is reserved: no stage reads it (settings-catalog channels.ts), so the screen offers no live switch for it (Astra F-012, Gemini F-015.2). */}
+        <section className="space-y-2" data-testid="pm-read-policy">
+          <div className="flex min-w-0 items-center justify-between gap-2">
+            <h3 className="text-sm font-medium">{t("largeFileRead")}<HelpSup label={t("largeFileReadTechnical")}><p>{t("largeFileReadTechnical")}</p></HelpSup></h3>
+            <RoleState page={page} enabledKey="pm_read.enabled" fallback={false} teamLabel={where} />
+          </div>
+          <p className="max-w-xl text-xs text-muted-foreground">{t("largeFileReadHelp")}</p>
+          <p className="max-w-xl text-xs text-muted-foreground">{t("largeFileReadConstraint")}</p>
+          <AdvancedRows show={advanced}><CatalogField page={page} keyName="pm_read.min_lines" /></AdvancedRows>
+        </section>
+      </SettingsGroup>
+
+      {extrasGrouped.map(({ section, rows }) => ({ section, rows: rows.filter((row) => extraSettingTab(row.storageKey) === "work") }))
+        .filter(({ rows }) => rows.length > 0)
+        .map(({ section, rows }) => (
+          <section key={section} className="space-y-2" data-testid={`settings-group-${section}`}>
+            <h3 className="text-sm font-medium">{t(sectionKey(section))}</h3>
+            <div className="space-y-2">{rows.map((row) => <CatalogField key={row.storageKey} page={page} keyName={row.storageKey} />)}</div>
+          </section>
+        ))}
+    </div>
+  );
+}

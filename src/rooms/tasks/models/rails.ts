@@ -1,0 +1,415 @@
+/**
+ * The task graph's rails at the level of one task (SMA map: Task graph — Task birth and words, Durable queue row, Life of one attempt).
+ * Pure decisions; the contract lint, the dispatch and the writer's finish call them.
+ */
+
+/** Where a task row was born (SMA: Five birth kinds of a row); recorded on the task, the board and the metrics read it. */
+export { BIRTH_KINDS, BIRTH_GATES, birthGates } from "../../contracts";
+import { birthGates } from "../../contracts";
+export type { BirthKind } from "../../contracts";
+
+/** Queue priority (SMA: Queue priority, Urgency into queue position): a higher one starts first when the run waits for a free writer. */
+export const PRIORITIES = ["low", "normal", "high", "urgent"] as const;
+export type Priority = (typeof PRIORITIES)[number];
+export const priorityRank = (priority: string | undefined) => {
+  const index = PRIORITIES.indexOf((priority ?? "normal") as Priority);
+  return index < 0 ? 1 : index;
+};
+
+/** Orders queued tasks for a free writer: priority first (urgent before low), then the order they were queued in. */
+export function queueOrder<T extends { priority?: string; queuedAt: number }>(rows: readonly T[]): T[] {
+  return [...rows].sort((a, b) => priorityRank(b.priority) - priorityRank(a.priority) || a.queuedAt - b.queuedAt);
+}
+
+/** The three classes a task that cannot start falls into (SMA: Three blocking classes): something is missing, something must come first, or something is in the way. */
+export type BlockingClass = "missing_info" | "dependency" | "conflict";
+export function blockingClass(code: string): BlockingClass | null {
+  if (/^(clarify_open|clarify_needs_owner|owner_word|read_first_missing|read_first_path|secret_missing|secret_name_unknown|secret_catalog_unavailable|task_standard_|promise_missing|check_not_runnable|price_unknown|missing_)/.test(code)) return "missing_info";
+  if (/^(depends_dead|depends_|waiting_secret|held)/.test(code)) return "dependency";
+  if (/^(owns_overlap|ownership_|never_touch|area_busy|conflict|verification_cwd|task_in_progress)/.test(code)) return "conflict";
+  return null;
+}
+
+type Contract = {
+  risk?: string; kind?: string; owns_paths?: readonly string[]; verification?: ReadonlyArray<{ command: string }>;
+  promise?: { given?: string; when?: string; then?: string }; clarify?: { questions?: readonly string[]; answers?: ReadonlyArray<{ question: string; by: string }> }; drawing?: readonly string[];
+};
+
+const UI_PATH = /\.(tsx|jsx|vue|svelte|css|scss|html)$|(^|\/)(ui|components|pages|screens|views)\//i;
+const atLeastMedium = (risk: string | undefined) => risk === "medium" || risk === "high" || risk === "critical";
+
+/**
+ * The owner's word on a task (SMA: Clarification awaits a person, Clarification confirmed by a person): with owner.words on, an answer the PM
+ * gave himself does not settle a clarification — the owner's does. Off (the default), the PM's answers count as before.
+ */
+export function ownerWordFindings(task: Contract, ownerWords: boolean): Array<{ code: string; message: string }> {
+  if (!ownerWords) return [];
+  const byPm = (task.clarify?.answers ?? []).filter((answer) => answer.by !== "owner");
+  return byPm.length ? [{ code: "clarify_needs_owner", message: `owner.words is on: the clarification ${byPm.map((answer) => `«${answer.question}»`).join(", ")} was answered by the PM; ask the owner with lane_pilot_ask_owner, fold in his answer with by:"owner", then send the task again` }] : [];
+}
+
+/** Findings of the task-birth rails; errors stop the dispatch, warnings go back with it. The gates a birth passes come from BIRTH_GATES. */
+export function birthFindings(task: Contract, birth?: string | null, redoneBirth?: string | null): { errors: Array<{ code: string; message: string }>; warnings: Array<{ code: string; message: string }> } {
+  const gates = birthGates(birth, redoneBirth);
+  const errors: Array<{ code: string; message: string }> = [];
+  const warnings: Array<{ code: string; message: string }> = [];
+  // Clarification awaits: open questions stop the task until they are answered (the PM removes them with the answer in the words).
+  const questions = task.clarify?.questions?.filter((question) => question.trim()) ?? [];
+  if (questions.length) errors.push({ code: "clarify_open", message: `the task has open clarification questions: ${questions.join("; ")} — answer them (ask the owner if only he knows), fold the answers into the contract and drop clarify, then send it again` });
+  // Promise: Given, When, Then — a feature or fix of medium risk or more says what it promises in those words; a phase stage's
+  // piece must carry it (the plan gave it), a bench arm is judged by the bench and needs none.
+  const promise = task.promise;
+  const writing = task.kind === undefined || task.kind === "feature" || task.kind === "fix";
+  const promiseOk = promise && promise.given?.trim() && promise.when?.trim() && promise.then?.trim();
+  if (promise && !promiseOk) errors.push({ code: "promise_incomplete", message: "promise needs given, when and then, each a short sentence" });
+  else if (!promise && writing && atLeastMedium(task.risk)) {
+    if (gates.promise === "warn") warnings.push({ code: "promise_missing", message: "a feature or fix of medium risk or more states its promise: promise {given, when, then} — the checks then prove that sentence" });
+  }
+  const ui = (task.owns_paths ?? []).some((path) => UI_PATH.test(path));
+  if (gates.drawing && ui && atLeastMedium(task.risk) && !(task.drawing?.length)) warnings.push({ code: "drawing_needed", message: "the task changes screens at medium risk or more: name the drawing it follows (drawing: [paths])" });
+  return { errors, warnings };
+}
+
+/** Programs that only wrap the real command; what follows their own options is still the command. */
+const CHECK_WRAPPERS = new Set(["env", "sudo", "nice", "time", "timeout", "command"]);
+/** Wrapper options that consume the next word (`env -u NAME`, `sudo -u USER`, `timeout -k DUR`). */
+const WRAPPER_ARG_OPTS: Record<string, ReadonlySet<string>> = {
+  env: new Set(["-u", "--unset", "-C", "--chdir", "-S", "--split-string", "-a", "--argv0"]),
+  sudo: new Set(["-u", "-g", "-h", "-p", "-C", "-T", "-U", "-R", "-D", "-r", "-t", "-c", "--user", "--group", "--host", "--prompt", "--chdir", "--close-from", "--command-timeout", "--other-user", "--role", "--type"]),
+  nice: new Set(["-n", "--adjustment"]),
+  time: new Set(["-o", "-f", "--output", "--format"]),
+  timeout: new Set(["-k", "--kill-after", "-s", "--signal"]),
+};
+/** The short options of each wrapper that take a value, for the attached `-uNAME` / `-n5` forms. */
+const WRAPPER_ARG_LETTERS: Record<string, ReadonlySet<string>> = {
+  env: new Set(["u", "C", "S", "a"]),
+  sudo: new Set(["u", "g", "h", "p", "C", "T", "U", "R", "D", "r", "t", "c"]),
+  nice: new Set(["n"]),
+  time: new Set(["o", "f"]),
+  timeout: new Set(["k", "s"]),
+};
+/** Wrapper options that take no value (`env -i`, `timeout --foreground`, `sudo -E`). */
+const WRAPPER_FLAGS: Record<string, ReadonlySet<string>> = {
+  env: new Set(["-i", "--ignore-environment", "-0", "--null", "-v", "--debug"]),
+  sudo: new Set(["-E", "-H", "-n", "-S", "-s", "-i", "-K", "-k", "-l", "-v", "-b", "-A", "-V", "--login", "--shell", "--stdin", "--list", "--validate", "--version", "--help", "--edit", "--background", "--bell", "--preserve-env", "--reset-env", "--set-home", "--askpass"]),
+  nice: new Set(["--help", "--version"]),
+  time: new Set(["-a", "-v", "-p", "-q", "--append", "--verbose", "--portability", "--quiet"]),
+  timeout: new Set(["--preserve-status", "--foreground", "--verbose"]),
+  command: new Set(),
+};
+/** `timeout` takes one duration word between its options and the command. */
+const WRAPPER_DURATION = new Set(["timeout"]);
+/** Shell built-ins, reserved words and control operators are never the checked program: the probe cannot name them. */
+const SHELL_WORDS = new Set(["set", "export", "readonly", "local", "declare", "typeset", "unset", "shift", "eval", "exec", "trap", "umask", "cd", "pwd", "wait", "times", "ulimit", "alias", "unalias", "bg", "fg", "jobs", "let", "read", "return", "break", "continue", "source", ".", ":", "true", "false", "hash", "type", "suspend", "enable", "disable", "caller", "getopts", "logout", "bind", "complete", "compgen", "compopt", "dirs", "disown", "fc", "help", "history", "mapfile", "popd", "pushd", "shopt", "coproc", "select", "function", "if", "then", "else", "elif", "fi", "do", "done", "while", "until", "for", "case", "esac", "in", "!", "{", "}", ")", "(", "[[", "]]", "test"]);
+
+/** The program a check runs first, for «is the check command runnable»: env assignments, sudo and the like skipped; null for shell syntax. */
+export function checkProgram(command: string): string | null {
+  const words = command.trim().split(/\s+/);
+  let index = 0;
+  while (index < words.length) {
+    const word = words[index]!;
+    if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(word)) { index += 1; continue; }
+    if (!CHECK_WRAPPERS.has(word)) break;
+    index += 1;
+    const argOpts = WRAPPER_ARG_OPTS[word] ?? new Set<string>();
+    const argLetters = WRAPPER_ARG_LETTERS[word] ?? new Set<string>();
+    const flags = WRAPPER_FLAGS[word] ?? new Set<string>();
+    while (index < words.length) {
+      const opt = words[index]!;
+      if (opt === "--") { index += 1; break; }
+      if (argOpts.has(opt)) { index += 2; continue; }
+      if (opt.length > 2 && opt.startsWith("--") && opt.includes("=")) { index += 1; continue; }
+      if (opt.length > 2 && opt[0] === "-" && argLetters.has(opt[1]!)) { index += 1; continue; }
+      if (flags.has(opt)) { index += 1; continue; }
+      if (opt.startsWith("-") && opt !== "-") return null;
+      break;
+    }
+    if (WRAPPER_DURATION.has(word)) index += 1;
+  }
+  const program = words[index];
+  if (!program || /^[(&|;!{]/.test(program) || program.includes("$") || program.startsWith("-") || SHELL_WORDS.has(program)) return null;
+  return program.replace(/^["']|["']$/g, "");
+}
+
+/** Approach and lesson markers the writer's final report carries (SMA: Approach and lesson markers, Lesson or a reason for none). */
+export type WriterMarkers = { approach: string | null; lesson: string | null; noLessonReason: string | null };
+export function writerMarkers(report: string): WriterMarkers {
+  const line = (label: string) => report.match(new RegExp(`^\\s*(?:[-*]\\s*)?\\**${label}\\**\\s*[:：]\\s*(.+)$`, "im"))?.[1]?.trim() ?? null;
+  const lesson = line("LESSON");
+  const none = lesson && /^none\b|^нет\b/i.test(lesson) ? lesson.replace(/^(none|нет)\s*[—:-]?\s*/i, "").trim() || "no reason given" : null;
+  return { approach: line("APPROACH"), lesson: none ? null : lesson, noLessonReason: none };
+}
+
+/** The marker lines the writer's brief asks for. */
+export const MARKER_BRIEF_LINE = "End with `APPROACH:` and `LESSON:` lines; a question goes as the first line of the answer with `ASK_PM:`, nowhere else.";
+
+/** Stage questions from files (SMA): the lines of the task folder's QUESTIONS.md, each with its kind. */
+export function questionsFromFile(text: string): Array<{ question: string; kind: string }> {
+  return text.split("\n").map((line) => line.replace(/^\s*[-*\d.)]+\s*/, "").trim()).filter((line) => line.length > 3 && !line.startsWith("#")).slice(0, 20)
+    .map((question) => ({ question: question.slice(0, 600), kind: questionKindOf(question) }));
+}
+const questionKindOf = (question: string) => questionKind(question);
+
+export const TEST_PATH = /(^|\/)(__tests__|tests?|spec)\/|\.(test|spec)\.[cm]?[jt]sx?$|_test\.(go|py)$|(^|\/)test_[^/]+\.py$/;
+
+/**
+ * Reference-test edit trace (SMA: Reference-test edit trace, Unauthorised reference edit): tests that existed before the attempt and
+ * that the attempt modified or deleted. A writer that edits the tests it is judged by is flagged for the critic and the acceptance card.
+ */
+export function referenceTestEdits(changes: ReadonlyArray<{ path: string; status: string }>): string[] {
+  return changes.filter((change) => TEST_PATH.test(change.path) && /^(M|D|R)/.test(change.status)).map((change) => change.path);
+}
+
+/**
+ * Check scripts the attempt changed: a produced file a verification command runs (as the program, or as the script of an interpreter), or a
+ * package.json when a command runs through a package manager (its scripts are the check). A writer that narrows `scripts/check.sh` to its new
+ * output, tests untouched, changed the yardstick as much as one that edits a test. A file the command only reads (`grep -q hello src/hello.ts`)
+ * is the work under check, not the check: 0.1.414 counted it and sent every such task to the gate critic (tests/nested-repo-flow.test.ts).
+ */
+// package.json is a check script only when a command runs one of its scripts: `npm test`, `npm run x`, `pnpm x`, `yarn x`, `bun run x`.
+// `npx`, `bunx`, `pnpm dlx|exec` and installs run no script, so a version bump or a new dependency is not a changed check.
+const PACKAGE_SCRIPT_RUN = /(^|[\s;&|(])(npm\s+(test|t|tst|start|run|run-script)\b|(pnpm|yarn)\s+(?!(dlx|exec|install|add|i|remove|rm|up|upgrade|why|ls|list|create|init|config|set|info|cache|link|unlink|publish|pack|audit|outdated|store|dedupe|prune|rebuild|patch|licenses|-)(\s|$))[\w:.@-]+|bun\s+run\b)/;
+export function checkScriptEdits(produced: readonly string[], commands: readonly string[]): string[] {
+  const viaPackage = commands.some((command) => PACKAGE_SCRIPT_RUN.test(command));
+  const run = new Set(commands.flatMap(scriptsRun));
+  return produced.filter((path) => {
+    const bare = path.replace(/^\.\//, "");
+    if (RUNNER_CONFIG.test(bare)) return true;
+    if (TEST_PATH.test(bare)) return false;
+    if (viaPackage && /(^|\/)package\.json$/.test(bare)) return true;
+    return [...run].some((script) => script === bare || script.endsWith(`/${bare}`));
+  });
+}
+
+/** Contract check files that must stay read-only to the writer (referenced scripts, runner configs, test files in commands). */
+export function contractCheckFiles(commands: readonly string[]): string[] {
+  const files = new Set<string>();
+  const viaPackage = commands.some((command) => PACKAGE_SCRIPT_RUN.test(command));
+  if (viaPackage) files.add("package.json");
+  for (const command of commands) {
+    for (const s of scriptsRun(command)) files.add(s);
+    for (const segment of command.split(/&&|\|\||[;|()\n]/)) {
+      let dir = "";
+      const words = segment.trim().split(/\s+/).filter(Boolean);
+      for (let i = 0; i < words.length; i += 1) {
+        const w = words[i]!.replace(/^["']|["']$/g, "").replace(/^\.\//, "");
+        if (w === "cd" && words[i + 1]) {
+          const to = words[i + 1]!.replace(/^["']|["']$/g, "").replace(/^\.\//, "").replace(/\/$/, "");
+          if (to && !to.startsWith("/") && to !== ".") dir = dir ? `${dir}/${to}` : to;
+          continue;
+        }
+        const resolved = dir && !w.startsWith("/") ? `${dir}/${w}` : w;
+        if (TEST_PATH.test(resolved) || RUNNER_CONFIG.test(resolved)) files.add(resolved);
+      }
+    }
+  }
+  return [...files];
+}
+
+// A runner reads its config before any test: an `exclude` in vitest.config.ts or a narrowed `testpaths` in pytest.ini shrinks the run as surely
+// as a weakened test, and the merge check on main inherits it (SWE-2 audit against Maslov's assess, Q9, 2026-10-31).
+const RUNNER_CONFIG = /(^|\/)((vitest|vite|jest|playwright|cypress|karma|ava)\.config\.[cm]?[jt]s|\.mocharc(\.[a-z]+)?|pytest\.ini|tox\.ini|conftest\.py|tsconfig[^/]*\.json|Makefile|justfile)$/;
+const INTERPRETER = /^(?:ba|z|da)?sh$|^node$|^python\d?(?:\.\d+)?$|^tsx$|^ts-node$|^deno$|^bun$|^ruby$|^perl$|^php$/;
+/** The files a shell command runs: each segment's program when it is a path, or the first operand of an interpreter. */
+function scriptsRun(command: string): string[] {
+  const out: string[] = [];
+  let dir = "";
+  const at = (file: string) => { const bare = file.replace(/^\.\//, "").replace(/^["']|["']$/g, ""); return dir && !bare.startsWith("/") ? `${dir}/${bare}` : bare; };
+  for (const segment of command.split(/&&|\|\||[;|()\n]/)) {
+    const words = segment.trim().split(/\s+/).filter(Boolean).filter((word, at, all) => !(/^[A-Za-z_]\w*=/.test(word) && all.slice(0, at).every((w) => /^[A-Za-z_]\w*=/.test(w) || w === "env")));
+    const args = words[0] === "env" ? words.slice(1) : words;
+    const program = args[0];
+    if (!program) continue;
+    // A relative cd moves the later paths, as the shell does; an absolute one leaves them as written.
+    if (program === "cd") { const to = args[1]?.replace(/^\.\//, "").replace(/\/$/, ""); if (to && !to.startsWith("/") && to !== ".") dir = dir ? `${dir}/${to}` : to; continue; }
+    if (INTERPRETER.test(program.split("/").pop()!)) {
+      const operands = args.slice(1).filter((word) => !word.startsWith("-") && word !== "run");
+      if (operands[0]) out.push(at(operands[0]));
+    } else if (program.includes("/")) out.push(at(program));
+  }
+  return out;
+}
+
+/**
+ * The repo paths a test file's relative imports point at, kept to those inside `owned` and not tests themselves
+ * (SMA ag_shape): a test importing none of them only tests itself.
+ */
+export function testOwnedImports(testPath: string, content: string, owned: readonly string[]): string[] {
+  const dir = testPath.replace(/^\.\//, "").split("/").slice(0, -1);
+  const specs = [...content.matchAll(/(?:from|import|require)\s*\(?\s*["']([^"']+)["']/g)].map((match) => match[1]!);
+  const resolved = specs.filter((spec) => spec.startsWith("./") || spec.startsWith("../")).map((spec) => {
+    const out: string[] = [];
+    for (const part of [...dir, ...spec.split("/")]) {
+      if (part === "" || part === ".") continue;
+      if (part === "..") out.pop(); else out.push(part);
+    }
+    return out.join("/").replace(/\.(tsx?|jsx?|mjs|cjs|py|go)$/, "").replace(/\/index$/, "");
+  });
+  return [...new Set(resolved)].filter((path) => !TEST_PATH.test(path) && owned.some((own) => {
+    const bare = own.replace(/^\.\//, "").replace(/\/$/, "");
+    return path === bare.replace(/\.(tsx?|jsx?|mjs|cjs|py|go)$/, "") || path.startsWith(`${bare}/`);
+  }));
+}
+
+/**
+ * The shape of the work (SMA ag_shape): flags a changed path whose first segment did not exist at the base
+ * (`new_top_level:` — a folder nobody has seen) and a test file that imports none of the task's non-test owned
+ * files (`self_test:` — a test that only tests itself). Any flag asks a person before the work lands.
+ */
+export function shapeFlags(input: { changedPaths: readonly string[]; baseTopLevel: ReadonlySet<string>; newTests: ReadonlyArray<{ path: string; imports: readonly string[] }> }): string[] {
+  const flags: string[] = [];
+  const tops = [...new Set(input.changedPaths.map((path) => path.replace(/^\.\//, "").split("/")[0]!).filter((seg) => seg && !input.baseTopLevel.has(seg)))];
+  for (const seg of tops) flags.push(`new_top_level:${seg}`);
+  for (const test of input.newTests) if (!test.imports.length) flags.push(`self_test:${test.path}`);
+  return flags;
+}
+
+/** Spend reserve (SMA: Spend reserve): a task may start only when the run's budget still holds its appetite after the open tasks' appetites. */
+export function spendReserve(input: { budgetTokens: number | null; spentTokens: number; openAppetites: readonly number[]; appetite: number | null }): { ok: boolean; free: number | null; why?: string } {
+  if (input.budgetTokens === null) return { ok: true, free: null };
+  const reserved = input.openAppetites.reduce((sum, value) => sum + value, 0);
+  const free = input.budgetTokens - input.spentTokens - reserved;
+  if (input.appetite !== null && input.appetite > free) return { ok: false, free, why: `the run's budget keeps ${Math.max(0, free)} tokens after the open tasks' appetites; this task's appetite is ${input.appetite}` };
+  return { ok: true, free };
+}
+
+/** Dead letters (SMA: Dead-letter queue): tasks whose latest attempt ended blocked or spawn_rejected and nobody sent again within a day. */
+export function deadLetters<T extends { state: string; updatedAt: number }>(rows: readonly T[], now: number, graceMs = 86_400_000): T[] {
+  return rows.filter((row) => (row.state === "blocked" || row.state === "spawn_rejected") && now - row.updatedAt >= graceMs);
+}
+
+/** A hold (SMA: Held until year 2999): a task kept out of the queue until a person or the PM releases it; the year 2999 marks «no date». */
+export const HOLD_FOREVER = Date.UTC(2999, 0, 1);
+
+/** Four lane queues (SMA: Four lane queues): the kind of work decides which queue a task waits in; each queue can have its own cap (setting queue.lane_caps). */
+export const LANE_QUEUES = ["write", "check", "docs", "research"] as const;
+export type LaneQueue = (typeof LANE_QUEUES)[number];
+export function laneQueueOf(kind: string | undefined): LaneQueue {
+  if (kind === "check") return "check";
+  if (kind === "docs") return "docs";
+  if (kind === "research") return "research";
+  return "write";
+}
+/** The cap of a lane queue from the setting (`{"check": 2, "research": 1}`); null when that lane has none. */
+export function laneCap(setting: unknown, lane: LaneQueue): number | null {
+  let value: unknown = setting;
+  if (typeof value === "string") { try { value = JSON.parse(value); } catch { return null; } }
+  const cap = value && typeof value === "object" ? (value as Record<string, unknown>)[lane] : undefined;
+  return typeof cap === "number" && Number.isInteger(cap) && cap >= 1 && cap <= 50 ? cap : null;
+}
+
+/**
+ * The worker's envelope in eight dimensions (SMA: Envelope: eight dimensions): what bounds a writer, and the mechanism that enforces each.
+ * The test checks every dimension names its enforcement.
+ */
+export const WORKER_ENVELOPE = {
+  files: "owns_paths and never_touch: the ownership gate refuses a change outside them (src/rooms/verification/git-ownership.ts)",
+  git: "no commit, push, merge or branch switch: the guard's lane-pilot-guard, and Lane Pilot merges itself (src/rooms/verification/git-integrate.ts)",
+  shell: "the guard judges the program that runs; deleting for good goes to the Trash (lane-stack hooks/guard_shell.py)",
+  secrets: "no Env Catalog; a check gets a declared secret as an environment variable by name (src/rooms/secrets)",
+  network: "checks run in Seatbelt or bubblewrap with the project's own sandbox settings (src/rooms/verification/sandbox.ts)",
+  tools: "the role's MCP servers, BB plugins and skills only (src/rooms/contracts/helper-context.ts)",
+  time: "the appetite's minutes, the session's turn ceiling and the run's wall clock (packages/resilience)",
+  tokens: "the run's token budget when the owner sets run.max_tokens, with the spend reserve at dispatch (src/rooms/tasks/models/rails.ts spendReserve); the appetite's tokens are a forecast, they stop no writer",
+} as const;
+
+// ---------------------------------------------------------------- conversation and stage questions (SMA: Conversation and intake)
+
+/** The five kinds of a stage question (SMA: Five question kinds): a decision, a missing secret, missing access, a clarification, a contradiction. */
+export const QUESTION_KINDS = ["decision", "secret", "access", "clarification", "contradiction"] as const;
+export type QuestionKind = (typeof QUESTION_KINDS)[number];
+export function questionKind(question: string): QuestionKind {
+  const text = question.toLowerCase();
+  if (/\bneeds? secret\b|api[_ -]?key|token|password|credential|секрет|ключ/.test(text)) return "secret";
+  if (/\baccess\b|permission|login|ssh|доступ|права/.test(text)) return "access";
+  if (/contradict|conflict|does not match|противореч|не совпада/.test(text)) return "contradiction";
+  if (/\bwhich\b|\bwhat should\b|\bdo you want\b|какой|какую|что выбрать|решить/.test(text)) return "decision";
+  return "clarification";
+}
+
+/**
+ * The recognizable credential families, one list for every place that looks for them: the answer rail below and the
+ * private Git bootstrap's file scan (project-git hands each `.source` to Python `re`, so a pattern here stays in the
+ * shared subset: ASCII classes, `\b`, `\d`, `{n,}`, `(?:…)`, no flags).
+ */
+export const SECRET_TOKEN_PATTERNS: ReadonlyArray<{ name: string; pattern: RegExp }> = [
+  { name: "sk- API key", pattern: /\bsk-[A-Za-z0-9_-]{16,}/ },
+  { name: "GitHub token", pattern: /\bgh[pousr]_[A-Za-z0-9]{20,}/ },
+  { name: "Slack token", pattern: /\bxox[abpr]-[A-Za-z0-9-]{10,}/ },
+  { name: "AWS access key id", pattern: /\bAKIA[0-9A-Z]{16}\b/ },
+  { name: "private key", pattern: /-----BEGIN [A-Z ]*PRIVATE KEY-----/ },
+  { name: "Telegram bot token", pattern: /\b\d{8,10}:[A-Za-z0-9_-]{30,}\b/ },
+  { name: "GitHub fine-grained token", pattern: /\bgithub_pat_[A-Za-z0-9_]{40,}/ },
+  { name: "Stripe live key", pattern: /\b[sr]k_live_[A-Za-z0-9]{20,}/ },
+  { name: "PGP private key", pattern: /-----BEGIN PGP PRIVATE KEY BLOCK-----/ },
+  { name: "Google API key", pattern: /\bAIza[0-9A-Za-z_-]{35}/ },
+];
+/** Not a family but a guess: a long base64 run. Answers only; in files it matches every lockfile integrity hash. */
+const BASE64_RUN = /\b[A-Za-z0-9+/]{40,}={0,2}\b/;
+const SECRET_SHAPES = [...SECRET_TOKEN_PATTERNS.map((family) => family.pattern), BASE64_RUN];
+/** Secret-shaped answer refused (SMA): an answer that carries what looks like a key or a password never goes into a writer's thread. */
+export const secretShaped = (text: string) => SECRET_SHAPES.some((pattern) => pattern.test(text));
+
+/** Commands an acceptance line names: `code spans` that look like a command, and the usual test runners written plainly. */
+export function acceptanceCommands(line: string): string[] {
+  const found = new Set<string>();
+  for (const match of line.matchAll(/`([^`]{2,120})`/g)) if (/^(npm|pnpm|yarn|npx|node|bun|deno|pytest|python3? -m|cargo|go|make|bash|sh|\.\/)\b/.test(match[1]!.trim())) found.add(match[1]!.trim());
+  const plain = line.replace(/`[^`]*`/g, " ");
+  for (const match of plain.matchAll(/\b(npm (?:test|run [\w:.-]+)|pnpm (?:test|run [\w:.-]+)|yarn (?:test|run [\w:.-]+)|node --test|pytest|cargo test|go test)\b/g)) found.add(match[1]!);
+  return [...found];
+}
+
+/** An acceptance line that names a command is proved only when that command is a check of the contract. */
+export function acceptanceCommandFindings(task: { id: string; acceptance: readonly string[]; verification: ReadonlyArray<{ command: string }> }): Array<{ code: string; message: string }> {
+  const commands = task.verification.map((check) => check.command);
+  const out: Array<{ code: string; message: string }> = [];
+  for (const line of task.acceptance) {
+    for (const named of acceptanceCommands(line)) {
+      if (!commands.some((command) => command.includes(named))) {
+        out.push({ code: "acceptance_command_unchecked", message: `${task.id}: the acceptance line «${line.slice(0, 120)}» names \`${named}\`, which is not a verification command — add it to verification or reword the line` });
+      }
+    }
+  }
+  return out;
+}
+
+/** Consent is the whole message (SMA): only yes-words, like «да», «ок» or a form button «Да, запускай», are consent to the last proposal; a «да, но …» is a new word, not consent. */
+export const CONSENT_WORDS = new Set(["да", "ага", "угу", "ок", "окей", "ok", "okay", "yes", "yep", "go", "го", "гоу", "давай", "согласен", "согласна", "принято", "подтверждаю", "выдавай", "делай", "запускай", "начинай", "поехали", "погнали", "вперёд", "вперед", "конечно", "+", "++"]);
+export function isWholeConsent(message: string): boolean {
+  const words = message.toLowerCase().split(/[\s,.!)]+/).filter(Boolean);
+  return words.length > 0 && words.every((word) => CONSENT_WORDS.has(word));
+}
+
+/** What kind of question the owner asked (SMA: What kind of question): the ones code answers from facts, and the rest for the model. */
+export const FACT_KINDS = ["board", "limit", "history", "failure", "stage", "free"] as const;
+export type FactKind = (typeof FACT_KINDS)[number];
+export function factKind(question: string): FactKind {
+  const text = question.toLowerCase();
+  if (/почему.*(упал|не прош|красн|заблок)|why.*(fail|block|red)|причин/.test(text)) return "failure";
+  if (/лимит|limit|токен|token|сколько.*(потрат|ушло)|расход|spend/.test(text)) return "limit";
+  if (/вчера|на прошлой|что было|история|history|yesterday|last week/.test(text)) return "history";
+  if (/этап|стади|фаз|\bstage\b|\bphase\b|на каком шаге/.test(text)) return "stage";
+  if (/что с задач|статус|доска|board|status|что идёт|в работе|сколько задач/.test(text)) return "board";
+  return "free";
+}
+
+/** The three check recipes (SMA: Three check recipes) and the one the whole request selects (SMA: Whole request selects a recipe). */
+export const CHECK_RECIPES = ["quick", "full", "browser"] as const;
+export type CheckRecipe = (typeof CHECK_RECIPES)[number];
+export function checkRecipe(request: string): CheckRecipe {
+  const text = request.toLowerCase();
+  // «window» is the window check; «sma green» is the planning-home green run. The phrase is never a command (SMA m_ck_request, 2026-10-29).
+  if (/браузер|страниц|экран|верстк|ui\b|browser|page|screen|375|1280|\bwindow\b|окно|окна|окон/.test(text)) return "browser";
+  if (/sma\s*green|всё|все тесты|полн|full|whole|целиком|регресс/.test(text)) return "full";
+  return "quick";
+}
+
+/** Five required measures of a check (SMA: Five required measures): what ran, where, what was expected, within what time, and the evidence. */
+export type CheckMeasure = { command: string; cwd: string; expectExit: number; timeoutSec: number; evidence: string; exitCode: number; passed: boolean;
+  /** The rest of the five required measures (SMA m_ck_required): the throwaway sandbox and its cleared environment,
+      its closed publication, and the protected-roots manifest before and after. Optional for receipts written before it. */
+  backend?: string; policySha256?: string; env?: "cleared"; publication?: "closed"; rootsSha256?: string; rootsChanged?: boolean;
+  /** Where the recipe came from and where the check ran: `worktree` = a throwaway copy of the commit, `none: <why>` = the live checkout. */
+  recipe?: string; copy?: string;
+  /** The manifest ran out of time or rows (never counts as changed), and what of git it could cover (a linked worktree's gitdir, or uncovered). */
+  rootsPartial?: boolean; rootsGit?: string };

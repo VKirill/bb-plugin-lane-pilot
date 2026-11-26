@@ -1,12 +1,14 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { sha256Hex } from "@lane-pilot/kit";
 import plugin from "../../server";
-import { runCommand } from "../../src/rooms/host-worker/host-handlers";
-import { normalizeSchedule } from "../../src/rooms/schedule/model";
-import { createScheduleStore, scheduleAgentMigrations } from "../../src/rooms/schedule/store";
+import { runCommand } from "../../src/rooms/host-worker";
+import { normalizeSchedule } from "../../src/rooms/schedule/models/schedule";
+import { scheduleAgentMigrations } from "../../src/rooms/schedule/migrations";
+import { createScheduleStore } from "../../src/rooms/schedule/server/repositories/schedule-repository";
 import { createRun, migrations, openDatabase, setRunThread } from "../../src/rooms/plugin-db";
 import { coreFileWrite, mapStore } from "../helpers/core-files";
+import { endedTurn } from "../helpers/ended-turn";
 
 /**
  * A scheduled agent through the whole plugin: the schedule is made through the PM tool, the tick starts the agent's own profile in a
@@ -40,7 +42,7 @@ async function setup(options: { pm?: boolean } = {}) {
           : threadId.startsWith("thr_agent_") ? { origin: "schedule", role: "specialist" } : {},
         spawn: async (args: Record<string, any>) => { spawned.push(args); return { id: `thr_agent_${spawned.length}` }; },
         get: async ({ threadId }: { threadId: string }) => ({ id: threadId, status: "idle", projectId, environmentId: "env-pm", sectionId: "sec_1", sourceThreadId: "thr_pm", lifecycleOwnerThreadId: "thr_pm" }),
-        events: { list: async ({ threadId }: { threadId: string }) => [{ type: "turn/started", threadId, seq: 1 }, { type: "turn/completed", threadId, seq: 2, data: { status: "completed" } }] },
+        events: { list: async ({ threadId }: { threadId: string }) => endedTurn(threadId) },
         output: async () => ({ output: state.report }),
         stop: async () => ({}),
         send: async () => ({}),
@@ -67,7 +69,13 @@ async function setup(options: { pm?: boolean } = {}) {
   }
   const rpc = async (name: string, params: Record<string, unknown>) => await harness.behavior.callRpc(name, params) as Record<string, any>;
   const tool = async (params: Record<string, unknown>, threadId = "thr_pm") => JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_schedule", params, { threadId, projectId }))) as Record<string, any>;
-  const tick = async () => { await registered.get("schedule-board-tick")!({ signal: new AbortController().signal }); };
+  const tick = async () => {
+    await registered.get("engine-clock")!({ signal: new AbortController().signal });
+    await vi.waitFor(() => {
+      const pending = (db.prepare("SELECT COUNT(*) AS n FROM lane_pilot_schedule_run WHERE status IN ('queued','running','waiting')").get() as { n: number }).n;
+      expect(pending).toBe(0);
+    }, { timeout: 15_000, interval: 10 });
+  };
   const kv = async (key: string) => await bb.storage.kv.get<Record<string, any>>(key);
   return { rpc, tool, tick, db, spawned, state, kv, bb, written };
 }

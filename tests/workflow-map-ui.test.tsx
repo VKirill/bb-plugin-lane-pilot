@@ -4,7 +4,7 @@ import { cleanup, configure, fireEvent, waitFor } from "@testing-library/react";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
 import { setLocaleOverride } from "@lane-pilot/i18n";
 import { parseWorkflow } from "@lane-pilot/workflow-engine";
-import { buildWorkflowMap } from "../src/rooms/workflow/server/workflow-map";
+import { buildWorkflowMap } from "../src/rooms/workflow/models/workflow-map";
 import { workflow } from "./workflow/fixtures";
 
 // The map pulls in xyflow and elkjs on first use; a cold import under load can pass the 5 s default.

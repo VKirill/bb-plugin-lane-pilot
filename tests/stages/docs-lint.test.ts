@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, it } from "vitest";
-import { BACKLINKS_MARK, blockingDocsFindings, parseFrontmatter, buildBacklinks, expandCitationLists, pageCitations, uncataloguedPages, unlinkedPages, buildDocsIndex, docsCompletenessGaps, lintDocsPages, pagesToRefresh, withCitedSources, withVerifiedConfidence } from "../../src/rooms/docs/docs-lint";
+import { BACKLINKS_MARK, blockingDocsFindings, parseFrontmatter, buildBacklinks, expandCitationLists, pageCitations, uncataloguedPages, unlinkedPages, buildDocsIndex, docsCompletenessGaps, lintDocsPages, pagesToRefresh, withCitedSources, withVerifiedConfidence } from "../../src/rooms/docs/models";
 import { commitDocs } from "../../src/rooms/docs/git-docs";
 import citationLineEvidence from "../fixtures/docs-citation-line-evidence.json";
 import citationPathEvidence from "../fixtures/docs-citation-path-evidence.json";
@@ -334,7 +334,7 @@ it("reads Expo Router paths: a (group) folder and a +api file", () => {
 });
 
 it("fails a citation whose range does not contain the identifier its claim names", async () => {
-  const { lintCitationClaims } = await import("../../src/rooms/docs/docs-lint");
+  const { lintCitationClaims } = await import("../../src/rooms/docs/models");
   const lines = ["export function runPmRead() {", "  return read();", "}", "", "export function other() {}", "  return 1;", "}", "", "export const TASK_LIMIT = 12;"];
   const read = async (file: string, start: number, end: number) => file === "src/check.ts" ? lines.slice(start - 1, end).join("\n") : null;
   // The claim names runPmRead but points at the lines of `other`: drift the bounds check cannot see.
@@ -352,13 +352,13 @@ it("fails a citation whose range does not contain the identifier its claim names
 });
 
 it("does not infer identifiers from bare product names but keeps explicit type names", async () => {
-  const { claimIdentifiers } = await import("../../src/rooms/docs/docs-lint");
+  const { claimIdentifiers } = await import("../../src/rooms/docs/models");
   expect(claimIdentifiers("OpenCode TypeScript camelCase TASK_LIMIT `ModelCatalog`"))
     .toEqual(["ModelCatalog", "camelCase", "TASK_LIMIT"]);
 });
 
 it("checks a claim's cited ranges together, without borrowing support from another claim", async () => {
-  const { lintCitationClaims } = await import("../../src/rooms/docs/docs-lint");
+  const { lintCitationClaims } = await import("../../src/rooms/docs/models");
   // thr_4pzt6h8uu2, 2026-11-08: the final repair left 17 findings. These claims
   // cite both a symbol and the code that implements its behaviour, often in separate ranges.
   const ranges: Record<string, string> = citationLineEvidence.ranges;
@@ -381,7 +381,7 @@ it("checks a claim's cited ranges together, without borrowing support from anoth
 });
 
 it("keeps punctuation inside inline code in the same citation claim", async () => {
-  const { lintCitationClaims } = await import("../../src/rooms/docs/docs-lint");
+  const { lintCitationClaims } = await import("../../src/rooms/docs/models");
   const ranges: Record<string, string> = citationInlineCodeEvidence.ranges;
   const read = async (file: string, start: number, end: number) => ranges[`${file}:${start}-${end}`] ?? null;
   expect(await lintCitationClaims(citationInlineCodeEvidence.pages, read)).toEqual([]);
@@ -394,7 +394,7 @@ it("keeps punctuation inside inline code in the same citation claim", async () =
 });
 
 it("does not treat citation paths or component filenames as identifiers a claim must prove", async () => {
-  const { lintCitationClaims } = await import("../../src/rooms/docs/docs-lint");
+  const { lintCitationClaims } = await import("../../src/rooms/docs/models");
   // SelfyStudio, 2026-11-13: __tests__ and the other cited Vue filename became
   // the only identifiers on otherwise supported conversion and preview claims.
   const ranges: Record<string, string> = citationPathEvidence.ranges;
@@ -410,7 +410,7 @@ it("does not treat citation paths or component filenames as identifiers a claim 
 });
 
 it("does not infer code identifiers from protocol acronyms in real API claims", async () => {
-  const { claimIdentifiers, lintCitationClaims } = await import("../../src/rooms/docs/docs-lint");
+  const { claimIdentifiers, lintCitationClaims } = await import("../../src/rooms/docs/models");
   const ranges: Record<string, string> = citationPathEvidence.acronyms.ranges;
   expect(await lintCitationClaims(citationPathEvidence.acronyms.pages,
     async (file, start, end) => ranges[`${file}:${start}-${end}`] ?? null)).toEqual([]);
@@ -419,7 +419,7 @@ it("does not infer code identifiers from protocol acronyms in real API claims", 
 });
 
 it("reports an unresolved wildcard re-export as a doubt rather than disproving its exported symbols", async () => {
-  const { lintCitationClaims } = await import("../../src/rooms/docs/docs-lint");
+  const { lintCitationClaims } = await import("../../src/rooms/docs/models");
   const ranges: Record<string, string> = citationPathEvidence.exports.ranges;
   const findings = await lintCitationClaims(citationPathEvidence.exports.pages,
     async (file, start, end) => ranges[`${file}:${start}-${end}`] ?? null);

@@ -3,7 +3,7 @@ import type { StepContext } from "@lane-pilot/workflow-engine";
 import { loadWorkflowStore } from "@lane-pilot/workflow-engine";
 import { BUILTIN_SOURCES } from "../../src/rooms/workflow/builtin";
 import type { ChainRuntime } from "../../src/rooms/contracts/server";
-import { stepPacket } from "../../src/rooms/workflow/server/workflow-agent-packet";
+import { stepPacket } from "../../src/rooms/workflow/server/services/workflow-agent-packet";
 import { runSim } from "./chain-harness";
 import { out, pathOf } from "./chain-helpers";
 
@@ -146,20 +146,4 @@ describe("U1 graph contract fixes", () => {
       expect(result.called("posts:child")).toHaveLength(0);
     }
   });
-
-  it.each(["held", "trial", "skipped", "retired"] as const)(
-    "emits the critic-edit gate status %s through the normalized output contract",
-    async (status) => {
-      const result = await runSim("lp.critic-edit", {
-        input: { project_id: "proj-1", bench: "" },
-        stubs: {
-          prepare: { status: "ready", detail: "proposal", proposal: "candidate" },
-          gate: { status, detail: `${status} detail` },
-        },
-      });
-
-      expect(pathOf(result)).toBe("prepare gate done");
-      expect(out(result)).toMatchObject({ status, detail: `${status} detail` });
-    },
-  );
 });

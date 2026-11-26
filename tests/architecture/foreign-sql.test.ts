@@ -29,13 +29,12 @@ describe("foreign-table SQL ratchet", () => {
 /**
  * BB's server holds its databases with better-sqlite3. A file opened with `node:sqlite` inside the same process is a
  * second SQLite copy on it: it truncates the `-shm` file the first copy has mapped and drops its locks (the hub's daily
- * SIGBUS of 2026-11-07…11). A base someone else holds is read from a child process; only the owner's own file store
- * (anamnesis, a file nothing else opens) uses `node:sqlite` in the plugin.
+ * SIGBUS of 2026-11-07…11). A base someone else holds is read from a child process.
  */
 describe("a second SQLite copy in the server process", () => {
-  it("node:sqlite is imported by the anamnesis file store only", () => {
+  it("node:sqlite is not imported anywhere under src/", () => {
     const importers = (readdirSync(join(ROOT, "src"), { recursive: true }) as string[])
       .filter((file) => /\.(ts|tsx)$/.test(file) && /from "node:sqlite"/.test(readFileSync(join(ROOT, "src", file), "utf8")));
-    expect(importers).toEqual(["rooms/anamnesis/store.ts"]);
+    expect(importers).toEqual([]);
   });
 });

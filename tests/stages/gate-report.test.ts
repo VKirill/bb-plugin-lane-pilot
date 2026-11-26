@@ -1,5 +1,5 @@
 import { describe,expect,it } from "vitest";
-import { buildGateReport } from "../../src/rooms/tasks/gate-report";
+import { buildGateReport } from "../../src/rooms/tasks/server";
 import type { GateEventRow, StageEventRow } from "../../src/rooms/plugin-db";
 
 const events:StageEventRow[]=[

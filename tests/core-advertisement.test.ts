@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { parseRequiredSessionPolicyCapability, requiredSessionPolicySpawnBinding, type HelperPolicySnapshot } from "../src/rooms/contracts/helper-context";
-import { coreHostsRequiredProvider } from "../src/rooms/runs/server";
-import { warnAdvertisementDiff } from "../src/rooms/runs/server/run-routing";
+import { coreHostsRequiredProvider, warnAdvertisementDiff } from "../src/rooms/runs/server";
 import { classifyFailure } from "../src/rooms/contracts/failure-class";
 
 const ROLES_SNAPSHOT: HelperPolicySnapshot = {

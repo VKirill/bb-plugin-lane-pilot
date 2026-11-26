@@ -10,11 +10,11 @@ import { join } from "node:path";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it, vi } from "vitest";
 import { createAttempt, createRun, createTask, getAttempt, openDatabase, setAttemptWorkspace, transitionAttempt } from "../../src/rooms/plugin-db";
-import { classifyWriterOutput } from "../../src/rooms/tasks/validate-output";
-import { syncWorktree } from "../../src/rooms/verification/git-integrate";
-import { WORKSPACE_DIRT_COMMAND } from "../../src/rooms/verification/workspace-dirt";
-import { attemptProduced, parseDirtSnapshots, type DirtSnapshot } from "../../src/rooms/writer/cli-outcome";
-import { createWriterSticky } from "../../src/rooms/writer/server/sticky";
+import { classifyWriterOutput } from "../../src/rooms/tasks";
+import { syncWorktree } from "../../src/rooms/worktree";
+import { WORKSPACE_DIRT_COMMAND } from "../../src/rooms/verification/models/workspace-dirt";
+import { attemptProduced, parseDirtSnapshots, type DirtSnapshot } from "../../src/rooms/writer/models/cli-outcome";
+import { createWriterSticky } from "../../src/rooms/writer/server/services/sticky";
 
 const git = (cwd: string, ...args: string[]) => execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", ...args], { cwd, encoding: "utf8" });
 const snapshot = (cwd: string): DirtSnapshot[] => parseDirtSnapshots(execFileSync("sh", ["-c", WORKSPACE_DIRT_COMMAND], { cwd, encoding: "utf8" }));

@@ -6,7 +6,7 @@ import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { act, cleanup, configure, fireEvent, waitFor } from "@testing-library/react";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
 import { setLocaleOverride } from "@lane-pilot/i18n";
-import { createWorkflowLibrary } from "../src/rooms/workflow/server/workflow-library";
+import { createWorkflowLibrary } from "../src/rooms/workflow/server/services/workflow-library";
 import type { ServerCore } from "../src/rooms/contracts/server";
 import type { Services } from "../server";
 import { engineOn, journalDb, trust, wf } from "./workflow/engine-helpers";
@@ -342,7 +342,7 @@ describe("Workflow run view", () => {
       await details.mock.results.at(-1)!.value;
     });
     expect(details).toHaveBeenCalledTimes(3);
-    await slot.behavior.emitRealtime("lp:-", { kind: "council" });
+    await slot.behavior.emitRealtime("lp:-", { kind: "rules" });
     expect(details).toHaveBeenCalledTimes(3);
     expect(snapshots).toHaveBeenCalledTimes(2);
     // A signal for the shown run does reread its snapshot after the same asynchronous detail boundary.

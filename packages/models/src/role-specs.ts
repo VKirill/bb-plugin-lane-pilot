@@ -1,17 +1,13 @@
 /**
  * ONE table of the roles that have a provider/model selection (the owner's decision of 2026-10-27: the model belongs to the role, not to
  * the step). A row is a role whose provider, model, reasoning effort and service tier are saved together by one RPC
- * (`save_<role>_selection`) into the settings `<prefix>.*`; the council seats and the writer's fallback slots are the same idea with a
- * seat or a slot in the key. Everything that names these roles — the RPC handlers, the `NATIVE_*_KEYS` sets, the screen's picker rows and
+ * (`save_<role>_selection`) into the settings `<prefix>.*`; the writer's fallback slots are the same idea with a
+ * slot in the key. Everything that names these roles — the RPC handlers, the `NATIVE_*_KEYS` sets, the screen's picker rows and
  * the contracts — is derived from this table, so adding a role is one entry here.
  *
  * The table says nothing about what a helper loads (that is `ROLE_PROFILES` in the native-agent room) and nothing about the built-in
  * model of a role (that is `ROLE_TABLE` in role-models.ts). It only says which settings a selection owns and how it is saved.
  */
-
-/** The seats of a council, in the order the council table shows them. */
-export const COUNCIL_SEATS = ["product", "demand", "audience", "skeptic", "growth", "ux", "chair"] as const;
-export type CouncilSeat = (typeof COUNCIL_SEATS)[number];
 
 /** The writer's fallback slots, in the order the writer row shows them. */
 export const WRITER_FALLBACK_SLOTS = [1, 2, 3] as const;
@@ -19,12 +15,9 @@ export type WriterFallbackSlot = (typeof WRITER_FALLBACK_SLOTS)[number];
 
 const PAIR_KEYS = <const P extends string>(prefix: P) =>
   [`${prefix}.provider`, `${prefix}.model`, `${prefix}.reasoning_effort`, `${prefix}.service_tier`] as const;
-const SEAT_KEYS = <const S extends string>(seat: S) =>
-  [`council.${seat}.provider`, `council.${seat}.model`, `council.${seat}.reasoning_effort`] as const;
 const SLOT_KEYS = <const N extends number>(slot: N) =>
   [`writer.fallback${slot}.provider`, `writer.fallback${slot}.model`, `writer.fallback${slot}.reasoning_effort`] as const;
 
-export const COUNCIL_KEYS = COUNCIL_SEATS.flatMap((seat) => [...SEAT_KEYS(seat)]);
 export const WRITER_FALLBACK_KEYS = WRITER_FALLBACK_SLOTS.flatMap((slot) => [...SLOT_KEYS(slot)]);
 
 /** How the catalog a selection is judged against is found. */
@@ -45,11 +38,10 @@ export type RoleSelectionTier = "compatible" | "default";
 /**
  * A role with a provider/model selection. `kind` says which shape the settings take:
  *  - `pair`: the four keys `<prefix>.provider`, `.model`, `.reasoning_effort`, `.service_tier`;
- *  - `council`: `<seat>` × provider, model, effort (no tier);
  *  - `fallback`: `<slot>` × provider, model, effort (no tier).
  */
 export type RoleSpec = {
-  kind: "pair" | "council" | "fallback";
+  kind: "pair" | "fallback";
   /** The role's id: the settings prefix and the RPC's name part. */
   id: string;
   /** The RPC that saves the selection. */
@@ -80,15 +72,13 @@ export type RoleSpec = {
   log?: boolean;
   /** Whether the catalog host's validation is rebuilt as `[key, message]` (the writer). */
   remapValidation?: boolean;
-  /** The seats of a `council` role. */
-  seats?: readonly string[];
   /** The slots of a `fallback` role. */
   slots?: readonly number[];
 };
 
 /**
  * The table. Keep the rows in the order the roles appear in the settings screen: the writer first, then the roles of the work itself,
- * then the council and the writer's fallbacks.
+ * then the writer's fallbacks.
  */
 const ROLE_SPEC_ROWS = [
   {
@@ -107,12 +97,12 @@ const ROLE_SPEC_ROWS = [
     keys: PAIR_KEYS("night_review"),
   },
   {
-    kind: "pair", id: "docs", prefix: "docs", rpc: "save_docs_selection", accessRole: "docs-maintainer", tableRole: "docs-maintainer", selectionId: "docs",
+    kind: "pair", id: "docs", prefix: "docs", rpc: "save_docs_selection", tableRole: "docs-maintainer", selectionId: "docs",
     atomicLabel: "docs", host: "project", defaultEffort: "high",
     keys: PAIR_KEYS("docs"),
   },
   {
-    kind: "pair", id: "project_life", prefix: "project_life", rpc: "save_project_life_selection", accessRole: "project-life", tableRole: "project-life", selectionId: "projectLife",
+    kind: "pair", id: "project_life", prefix: "project_life", rpc: "save_project_life_selection", tableRole: "project-life", selectionId: "projectLife",
     atomicLabel: "project-life", host: "project", defaultEffort: "high",
     keys: PAIR_KEYS("project_life"),
   },
@@ -142,10 +132,6 @@ const ROLE_SPEC_ROWS = [
     keys: PAIR_KEYS("specialist"),
   },
   {
-    kind: "council", id: "council", rpc: "save_council_seat_selection", accessRole: "council-seat",
-    keys: COUNCIL_KEYS, seats: COUNCIL_SEATS,
-  },
-  {
     kind: "fallback", id: "writer_fallback", rpc: "save_writer_fallback_selection", accessRole: "writer",
     keys: WRITER_FALLBACK_KEYS, slots: WRITER_FALLBACK_SLOTS,
   },
@@ -159,8 +145,8 @@ export const PAIR_ROLE_SPECS: readonly RoleSpec[] = ROLE_SPECS.filter((spec) => 
 
 /** The RPC names of the table, in table order. */
 export type RoleSelectionRpc = (typeof ROLE_SPEC_ROWS)[number]["rpc"];
-/** The RPC names of the `pair` rows (the council seats and the writer fallbacks have their own contracts). */
-export type PairRoleSelectionRpc = Exclude<RoleSelectionRpc, "save_council_seat_selection" | "save_writer_fallback_selection">;
+/** The RPC names of the `pair` rows (the writer fallbacks have their own contracts). */
+export type PairRoleSelectionRpc = Exclude<RoleSelectionRpc, "save_writer_fallback_selection">;
 
 type SelectionIdOf<S> = S extends { selectionId: infer Id extends string } ? Id : never;
 /** The screen picker ids the table names (the team row's `SelectionId`). */

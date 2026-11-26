@@ -2,7 +2,7 @@ import { lstat, realpath } from "node:fs/promises";
 import { relative, resolve } from "node:path";
 import { filterOwnershipNoise } from "@lane-pilot/settings-catalog";
 import { fileAllowedByOwns, fileBlockedByNeverTouch, spawnAsync } from "@lane-pilot/kit";
-import { revertPaths } from "./git-integrate";
+import { revertPaths } from "../worktree";
 
 export type GitOwnershipBase = {
   status:"ready"|"not-git"|"invalid-ref"|"failed";

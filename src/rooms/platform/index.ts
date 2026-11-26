@@ -1,5 +1,5 @@
-// Room-root surface of platform: the pieces bottom rooms (storage) may use without pulling the plugin-state helpers
-// in server/, which would close an import cycle back into storage.
-export * from "./server/hub";
+// Room-root surface of platform: pure models, atomic file helpers,
+// and the hub settings repository that lower/host rooms may use without pulling server/ plugin helpers.
+export * from "./models";
 export * from "./atomic-text";
-export * from "./code-facts";
+export * from "./server/repositories/hub-repository";

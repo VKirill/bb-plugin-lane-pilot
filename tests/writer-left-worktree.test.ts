@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { writerLeftWorktree } from "../src/rooms/writer/server/left-worktree";
+import { writerLeftWorktree } from "../src/rooms/writer/server/services/left-worktree";
 
 const notFound = (): Error & { code: string } => Object.assign(new Error("HTTP 404: no such thread"), { code: "thread_not_found" });
 

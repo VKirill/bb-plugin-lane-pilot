@@ -32,12 +32,12 @@ export const rpcWorkflow = {
     output: z.object({ ok: z.boolean(), reason: z.string().optional(), stepKey: z.string().optional(), removed: z.number().int().optional() }).strict(),
   },
   /**
-   * Starts a workflow now, from the tab (`manual`) or from another plugin (`telegram`: the workflow must list a telegram trigger). The project's PM chat runs it.
+   * Starts a workflow now, from the tab (`manual`). The project's PM chat runs it.
    * `liveTrial` is the owner's word for the first real run of a `tested` workflow. `reason` says why not (unknown_workflow, not_runnable, missing_inputs,
    * no_pm_chat, requirements_missing, no_trigger, cannot_start).
    */
   workflow_run: {
-    input: z.object({ id: z.string().min(1), projectId: z.string().min(1), inputs: z.record(z.string(), z.unknown()).default({}), source: z.enum(["manual", "telegram"]).default("manual"), liveTrial: z.boolean().optional() }).strict(),
+    input: z.object({ id: z.string().min(1), projectId: z.string().min(1), inputs: z.record(z.string(), z.unknown()).default({}), source: z.enum(["manual"]).default("manual"), liveTrial: z.boolean().optional() }).strict(),
     output: z.object({ ok: z.boolean(), runId: z.string().optional(), created: z.boolean().optional(), status: z.string().optional(), notChecked: z.array(z.string()).optional(),
       reason: z.string().optional(), message: z.string().optional(), missing: z.array(z.string()).optional(),
       issues: z.array(z.object({ kind: z.string(), name: z.string(), level: z.enum(["missing", "unverified"]), message: z.string() }).strict()).optional(),
@@ -96,6 +96,36 @@ export const rpcWorkflow = {
   workflow_draft_publish: {
     input: z.object({ draftId: z.string().min(1) }).strict(),
     output: workflowDraftPublishResultSchema,
+  },
+  workflow_evolution_list: {
+    input: z.object({ projectId: z.string().min(1).optional() }).strict(),
+    output: z.object({
+      items: z.array(z.object({
+        draftId: z.string(),
+        workflowId: z.string(),
+        title: z.string(),
+        scope: z.enum(["global", "project"]),
+        status: z.enum(["draft", "tested", "published"]),
+        version: z.number(),
+        publishedVersion: z.number().nullable(),
+        testedGreen: z.boolean(),
+        canPublish: z.boolean(),
+        canRollback: z.boolean(),
+        summary: z.string(),
+        ownerItemKey: z.string().nullable(),
+        updatedAt: z.number(),
+      }).strict()),
+      autoPublishedCount: z.number(),
+      pendingApprovalCount: z.number(),
+    }).strict(),
+  },
+  workflow_evolution_publish: {
+    input: z.object({ draftId: z.string().min(1), threadId: z.string().min(1).optional() }).strict(),
+    output: z.object({ ok: z.boolean(), projectId: z.string().optional(), message: z.string() }).strict(),
+  },
+  workflow_draft_rollback: {
+    input: z.object({ draftId: z.string().min(1), threadId: z.string().min(1).optional() }).strict(),
+    output: z.object({ ok: z.boolean(), projectId: z.string().optional(), message: z.string() }).strict(),
   },
   /** Starts a draft from a workflow of the library: `edit` the owner's own file (same id, replaced on publish), or `duplicate` a built-in one under a new id. */
   workflow_draft_create: {

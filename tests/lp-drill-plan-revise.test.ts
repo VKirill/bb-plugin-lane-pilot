@@ -118,9 +118,9 @@ out = seen`);
 
   it("plan_revise_cap: the dispatch lint lets it through, the plan critique finds a structural error the planner may not fix", async () => {
     const { out } = py(`out = m.plan_revise_cap_task(ctx)`);
-    const { lintContract } = await import("../src/rooms/tasks/server/contract-lint");
-    const { findTaskPlaceholderPaths } = await import("../src/rooms/critique/critique-coverage");
-    const { PLAN_FIXABLE_FINDINGS } = await import("../src/rooms/critique/server/critique-runs/plan-critique");
+    const { lintContract } = await import("../src/rooms/tasks/server");
+    const { findTaskPlaceholderPaths } = await import("../src/rooms/critique");
+    const { PLAN_FIXABLE_FINDINGS } = await import("../src/rooms/critique/server");
     // The dispatch lint lets it through (no output_unowned, no depends_self / depends_cycle): otherwise the plan critique never runs.
     const lint = lintContract({ task: out as never, workspacePath: out.project_cwd, hostId: "host-1", sandboxUnsafe: [], openTasks: [], deadDependencies: [], kinds: null, runTasks: [] } as never);
     expect(lint.errors).toEqual([]);

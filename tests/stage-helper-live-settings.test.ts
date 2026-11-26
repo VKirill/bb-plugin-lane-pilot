@@ -1,13 +1,13 @@
 import { createHash } from "node:crypto";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
-import { stageHelperSettings } from "../src/rooms/settings/server/stage-settings";
+import { stageHelperSettings } from "../src/rooms/settings/server/services/stage-settings";
 import { LP_DEFAULTS_KEY } from "@lane-pilot/settings-catalog";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { PrototypeConfig, TaskV2 } from "../src/rooms/contracts";
-import { runPmRead } from "../src/rooms/critique/server/critique-runs";
+import { runPmRead } from "../src/rooms/critique/server";
 import { createAttempt, createRun, createTask, listStageReceipts, openDatabase, openTaskHome, recordTaskFile, saveProjectSetting, setRunThread } from "../src/rooms/plugin-db";
 import { bbTaskFileIo } from "../src/rooms/storage";
-import { createWriterSticky } from "../src/rooms/writer/server/sticky";
+import { createWriterSticky } from "../src/rooms/writer/server/services/sticky";
 
 vi.mock("@lane-pilot/thread-observe", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@lane-pilot/thread-observe")>()),

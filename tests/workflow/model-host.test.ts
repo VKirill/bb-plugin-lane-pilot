@@ -1,9 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
-import { modelCatalogOf } from "../../src/rooms/platform/server/model-catalog-reader";
-import { withResolvedModel, type HelperRequest } from "../../src/rooms/workflow/server/workflow-agent";
-import { resolveAgentModel } from "../../src/rooms/workflow/server/workflow-agent-model";
-import { createWorkflowModels } from "../../src/rooms/workflow/server/workflow-models";
-import { resolveStepExecutors } from "../../src/rooms/workflow/server/workflow-step-executors";
+import { modelCatalogOf } from "../../src/rooms/platform/server/services/model-catalog-reader";
+import { withResolvedModel, type HelperRequest } from "../../src/rooms/workflow/server/services/workflow-agent";
+import { resolveAgentModel } from "../../src/rooms/workflow/models/workflow-agent-model";
+import { createWorkflowModels } from "../../src/rooms/workflow/server/services/workflow-models";
+import { resolveStepExecutors } from "../../src/rooms/workflow/server/services/workflow-step-executors";
 import { offeredForRole, offeredOnHost, validateChoice, type ModelCatalog } from "@lane-pilot/models";
 import { modelsSection } from "@lane-pilot/workflow-engine";
 import { roleModelKey } from "@lane-pilot/models";

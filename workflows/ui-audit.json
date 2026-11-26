@@ -8,6 +8,7 @@
     "en": "Audits a live UI in the browser on six dimensions (visual hierarchy, interaction states, accessibility, responsiveness, micro-interactions, edge cases) and returns scored findings with screenshots. Changes no project file except its review, .agents/ui/<slug>/UI-REVIEW.md (review_file=false: nothing).",
     "ru": "Аудит живого интерфейса в браузере по шести измерениям (иерархия, состояния, доступность, адаптив, микро-взаимодействия, пограничные случаи); возвращает оценённые находки со скриншотами. Не меняет файлы проекта, кроме своего ревью .agents/ui/<slug>/UI-REVIEW.md (review_file=false: ничего)."
   },
+  "category": "qa",
   "examples": {
     "ru": [
       "Проверь интерфейс личного кабинета на удобство и доступность",

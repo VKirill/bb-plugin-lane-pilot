@@ -4,7 +4,7 @@
  */
 import { spawnSync } from "node:child_process";
 
-import type { GitFacts } from "./card";
+import type { GitFacts } from "./models/card";
 
 /** Newest commit and commit count per tracked path, in one `git log` pass over the newest 2000 commits. */
 export function collectGitFacts(cwd: string, paths: readonly string[], warn: (message: string) => void = () => undefined): Map<string, GitFacts> {

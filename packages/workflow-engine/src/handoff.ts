@@ -1,6 +1,7 @@
 import { artifactDef, artifactExample, artifactId, summarizeValue } from "./artifacts";
 import type { ProducesSpec } from "./artifacts";
 import { sha256Hex } from "@lane-pilot/kit";
+import { clip } from "@lane-pilot/contracts";
 
 /**
  * Handoff between steps by reference (W0, Maestro's «artifact by reference, not by text»). A step does not get the whole text
@@ -37,7 +38,6 @@ export function refOf(chatId: string, runId: string, input: PacketInput): InputR
 }
 
 const kb = (bytes: number): string => (bytes < 1024 ? `${bytes} B` : `${(bytes / 1024).toFixed(1)} KB`);
-const clip = (text: string, max: number): string => (text.length > max ? `${text.slice(0, Math.max(0, max - 1))}…` : text);
 const oneLine = (text: string): string => text.replace(/\s+/g, " ").trim();
 
 export type PacketOptions = {

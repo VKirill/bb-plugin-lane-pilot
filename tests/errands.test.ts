@@ -1,9 +1,10 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import plugin from "../server";
-import { runCommand } from "../src/rooms/host-worker/host-handlers";
+import { runCommand } from "../src/rooms/host-worker";
 import { createRun, openDatabase, setRunThread } from "../src/rooms/plugin-db";
-import { errandPrompt } from "../src/rooms/qa/server/errands";
+import { errandPrompt } from "../src/rooms/errands/server";
+import { endedTurn } from "./helpers/ended-turn";
 
 let dispose: (() => Promise<void> | void) | null = null;
 afterEach(async () => { await dispose?.(); dispose = null; });
@@ -40,7 +41,7 @@ describe("errandPrompt", () => {
           getPluginMetadata: async ({ threadId }) => threadId === pmThreadId ? { role: "pm", lanePilotRunId: runId } : {},
           spawn: async (args) => { spawned.push(args as unknown as Record<string, unknown>); return { id: "errand-child-thread" }; },
           get: async ({ threadId }) => ({ id: threadId, status: "idle", projectId, environmentId: "env-pm", sourceThreadId: pmThreadId, lifecycleOwnerThreadId: pmThreadId }),
-          events: { list: async ({ threadId }) => helperEnded ? [{ type: "turn/started", threadId, seq: 1 }, { type: "turn/completed", threadId, seq: 2, data: { status: "completed" } }] : [{ type: "turn/started", threadId, seq: 1 }] },
+          events: { list: async ({ threadId }) => helperEnded ? endedTurn(threadId) : [{ type: "turn/started", threadId, seq: 1 }] },
           output: async () => ({ output: "I updated .gitignore\nERRAND: done" }),
         },
         environments: {

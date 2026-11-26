@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { taskV2Schema } from "../src/rooms/contracts";
 import type { TaskV2 } from "../src/rooms/contracts";
-import { validateTaskV2 } from "../src/rooms/tasks/task-v2";
-import { compactContract } from "../src/rooms/writer/writer-brief";
-import { lintContract, subjectiveWordIn } from "../src/rooms/tasks/server/contract-lint";
+import { validateTaskV2 } from "../src/rooms/tasks";
+import { compactContract } from "../src/rooms/writer/models/writer-brief";
+import { lintContract, subjectiveWordIn } from "../src/rooms/tasks/server";
 
 const root = "/tmp/writer";
 const base: TaskV2 = {

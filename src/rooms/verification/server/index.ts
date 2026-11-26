@@ -1,13 +1,34 @@
 // Public API of verification/server: what other rooms import. Everything else in this room is private.
-// Add a name here to make it public; scripts/refactor/barrels.ts wrote the first version from the existing imports.
-export { excludeBookkeeping } from "./bookkeeping-exclude";
-export { gateResolverFor } from "./gate-detect";
-export { attemptMergeMessage, clearMergeIntent, createMergeIntentRecovery, recordMergeIntent, MERGE_INTENT_PREFIX } from "./merge-intent";
-export { detectRepoEdits, gitRepoSnapshot, gitRepoStatus, namedByChat, noteEngineWrite, writtenByEngineSince } from "./repo-edits";
-export type { RepoSnapshot } from "./repo-edits";
-export { glueReplayCommands } from "./replay-checks"
-export { activeRunFor, allGuests, CLAIMS_MAX, GUEST_LOCK_MS, GUEST_TTL_MS, listGuests, noteCheckoutGuest, saveGuests, trimGuests, withGuestsLock } from "./checkout-guests";
-export type { Claim, Guest } from "./checkout-guests";
-export { WINDOW_USAGE, claimScope, findClaim, forceClearClaim, listClaims, listLiveWindows, projectCheckoutPaths, releaseClaim, runWindowCli, windowCollisions, workFingerprint } from "./window";
-export type { LiveWindow, WindowCollision, WorkFingerprint } from "./window";
-export { IntegrationGateRunner, gateRunVerdict } from "./integration-gate";
+export { room } from "./room";
+export { excludeBookkeeping } from "./services/bookkeeping-exclude";
+export { gateResolverFor } from "./services/gate-detect";
+export { attemptMergeMessage, clearMergeIntent, createMergeIntentRecovery, recordMergeIntent, MERGE_INTENT_PREFIX } from "./services/merge-intent";
+export { detectRepoEdits, gitRepoSnapshot, gitRepoStatus, namedByChat, noteEngineWrite, writtenByEngineSince } from "./services/repo-edits";
+export type { RepoSnapshot } from "./services/repo-edits";
+export { glueReplayCommands } from "../models/replay-checks";
+export { IntegrationGateRunner, gateRunVerdict } from "./services/integration-gate";
+export { buildMainfixTask } from "../models/mainfix";
+export { registerLandingSuiteAction } from "./handlers/landing-suite";
+export { handleLandingRed, verifyProofReceiptsCurrent } from "./services/landing-suite";
+export { checkProofs, hostGit, phaseProofRecords, proofCurrency, renderProofCurrency } from "./services/proof-currency";
+export type { GitRun, ProofCurrencyResult, ProofCurrencyVerdict, ProofRecord, ProofResult, ProofVerdict } from "./services/proof-currency";
+export {
+  beginVerdictReceipt,
+  captureWorkspaceReceiptSnapshot,
+  finishVerdictReceipt,
+  loadVerdictReceipt,
+  persistVerdictReceipt,
+  verdictReceiptKvKey,
+  verdictReceiptPath,
+  verifyAcceptanceReceiptIntegrity,
+} from "./services/verdict-receipt";
+export type { RepoReceiptSnapshot } from "./services/verdict-receipt";
+export {
+  PROVIDER_FAILURES_BEFORE_DISABLE,
+  PROVIDER_PROBE_AFTER_MS,
+  createProviderGate,
+  providerListed,
+  providerSwitchOn,
+  waitProviderEnvironment,
+} from "./services/provider-gate";
+export type { ProviderGate, ProviderHostStatus } from "./services/provider-gate";

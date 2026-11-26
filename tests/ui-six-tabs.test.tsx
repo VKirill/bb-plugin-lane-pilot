@@ -4,8 +4,8 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, configure, fireEvent, waitFor } from "@testing-library/react";
-import { VISIBLE_CATALOG } from "@lane-pilot/settings-catalog";
-import { SEGMENTS, TAB_IDS, resolveTab, segmentsFor } from "../src/rooms/pages/tabs-model";
+import { SETTINGS_REGISTRY } from "../src/rooms/settings-registry";
+import { SEGMENTS, TAB_IDS, resolveTab, segmentsFor } from "../src/rooms/pages/models/tabs-model";
 import { setLocaleOverride, en, ru } from "@lane-pilot/i18n";
 import { HELPER_ROLES } from "../src/rooms/contracts/helper-context";
 import { ROLE_GROUPS } from "../src/rooms/native-agent/ui/team-model";
@@ -54,7 +54,7 @@ describe("six tabs", () => {
       }
     }
     // The self-improvement controls of the hub have their own page (tests/improvement/improvement-ui.test.tsx walks it); the checks a project may override are in «Work».
-    const wanted = [...new Set(VISIBLE_CATALOG.map((row) => row.storageKey))].filter((key) => !HUB_KEYS.has(key));
+    const wanted = [...new Set(SETTINGS_REGISTRY.visible.map((row) => row.storageKey))].filter((key) => !HUB_KEYS.has(key));
     const missing = wanted.filter((key) => !seen.has(key));
     const several = wanted.filter((key) => (seen.get(key)?.size ?? 0) > 1).map((key) => `${key}: ${[...seen.get(key)!].join(", ")}`);
     // Where a few well-known rows live (so the check above cannot pass by seeing nothing).
@@ -63,10 +63,9 @@ describe("six tabs", () => {
     expect(home("plan_critique.mode")).toEqual(["work"]);
     expect(home("memory.maintain")).toEqual(["knowledge"]);
     expect(home("workflow.debugger.model")).toEqual(["automation"]);
-    expect(home("ops.run_dir")).toEqual(["runs"]);
+    expect(home("writer.fast_mode")).toEqual(["runs"]);
     expect(home("baseline.already_built")).toEqual(["work"]);
-    expect(home("regress.last_n")).toEqual(["work"]);
-    expect(wanted.length).toBeGreaterThan(200);
+    expect(wanted.length).toBeGreaterThan(150);
     expect(missing, `catalog rows shown in no tab: ${missing.join(", ")}`).toEqual([]);
     expect(several, `catalog rows shown in more than one tab`).toEqual([]);
     slot.lifecycle.unmount();
@@ -95,10 +94,10 @@ describe("six tabs", () => {
     expect(resolveTab("team")).toEqual({ tab: "team" });
   });
 
-  it("shows no segments that a level cannot use", () => {
-    expect(segmentsFor("knowledge", "system")).toEqual(["memory", "docs", "anamnesis"]);
-    expect(segmentsFor("knowledge", "project")).toEqual(["memory", "passport", "docs", "rules"]);
-    expect(segmentsFor("knowledge", "section")).toEqual(["memory", "passport", "docs", "rules"]);
+  it("shows the segments of the knowledge tab", () => {
+    expect(segmentsFor("knowledge", "system")).toEqual(["memory", "docs"]);
+    expect(segmentsFor("knowledge", "project")).toEqual(["memory", "docs"]);
+    expect(segmentsFor("knowledge", "section")).toEqual(["memory", "docs"]);
   });
 
   it("lists every helper role in the team table once", () => {

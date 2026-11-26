@@ -17,6 +17,7 @@
   "tags": [
     "errand"
   ],
+  "category": "service",
   "triggers": [
     "manual"
   ],

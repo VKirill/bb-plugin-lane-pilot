@@ -2,7 +2,7 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
 import type { PrototypeConfig, TaskV2 } from "../src/rooms/contracts";
 import { createAttempt, createRun, createTask, getAttempt, openDatabase, saveProjectSetting, saveStageReceipt, transitionAttempt } from "../src/rooms/plugin-db";
-import { createWriterFinish } from "../src/rooms/writer/server/finish";
+import { createWriterFinish } from "../src/rooms/writer/server/services/finish";
 import { checksInFlight } from "../src/rooms/runs";
 import { FREE_CLASSES, failureClass } from "../src/rooms/contracts/failure-class";
 

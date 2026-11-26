@@ -8,6 +8,7 @@
     "en": "Fixes what the phase delivers by a Socratic interview: an ambiguity score 0..1 on goal, boundaries, constraints and acceptance, questions on the weakest dimension until it clears, then SPEC.md with requirement ids and Given/When/Then promises.",
     "ru": "Фиксирует, что отдаёт фаза, сократовским интервью: балл неоднозначности 0..1 по цели, границам, ограничениям и приёмке, вопросы по самому слабому измерению до прояснения, затем SPEC.md с id требований и обещаниями Given/When/Then."
   },
+  "category": "planning",
   "status": "published",
   "quality_mode": {
     "default": "standard"

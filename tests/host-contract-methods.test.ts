@@ -6,7 +6,7 @@ import hostEntry from "../host";
 // breaks every one of them. The list is frozen here so a contract or handler rearrangement cannot change it.
 // Additions only: gitOwnsBarrier (2026-11-15, EXT05) is new; a machine without it refuses an in-place owns_paths change.
 const WIRE_METHODS = [
-  "anamnesis", "answerPermit", "applyOnboardingPages", "closeBacklogItem",
+  "answerPermit", "applyOnboardingPages", "closeBacklogItem",
   "coexistenceInventory", "coexistenceOperation", "connectOpencode", "detect", "discoverClaudeAgents",
   "diskFree", "docsAnchors", "docsFlows", "docsLineCounts",
   "docsWorthinessFacts", "findBrowserQaTarget", "gateAttribute", "gateBisect", "gateRun", "gitCommitDocs", "gitCreateWorktree",
@@ -18,13 +18,13 @@ const WIRE_METHODS = [
   "probeBrowserQaTarget", "readBoundedFile", "readOpenCodeTelemetry", "readUsageWindows", "removeClaudeLaneLeftovers",
     "removeWorkerHome",
   "rollback", "runBrowserQa", "runCommand", "runSandboxedCommand", "runScript", "sandboxCommandLine", "sandboxRelease",
-  "session_inventory", "snapshot", "snapshotDryRun", "stabilityDrill", "vpnAddress", "whichPrograms",
+  "session_inventory", "snapshot", "snapshotDryRun", "vpnAddress", "whichPrograms",
   "worktreeJanitor", "writeDocsPages", "writeForgeDraft", "writeForgeEnabled", "writePhaseBook", "writePmSettings", "writeUsageSnapshot",
   "writeWorkflowFile",
 ];
 
 describe("host RPC wire names", () => {
-  it("the contract keeps the same 80 method names", () => {
+  it("the contract keeps the same 78 method names", () => {
     expect(Object.keys(hostContract).sort()).toEqual(WIRE_METHODS);
   });
 

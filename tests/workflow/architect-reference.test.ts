@@ -6,9 +6,9 @@ import { PURE_ACTION_KEYS } from "@lane-pilot/workflow-engine";
 import { WORKFLOW_REFERENCE } from "@lane-pilot/workflow-engine";
 import { ROLE_IDS, roleModelKey } from "@lane-pilot/models";
 import { nodeSchema, workflowSchema } from "@lane-pilot/workflow-engine";
-import { DELEGATED_ACTIONS } from "../../src/rooms/workflow/server/workflow-step-executors";
-import { resolveAgentModel } from "../../src/rooms/workflow/server/workflow-agent-model";
-import { roleSpec } from "../../src/rooms/workflow/server/workflow-agent";
+import { DELEGATED_ACTIONS } from "../../src/rooms/workflow/server/services/workflow-step-executors";
+import { resolveAgentModel } from "../../src/rooms/workflow/models/workflow-agent-model";
+import { roleSpec } from "../../src/rooms/workflow/server/services/workflow-agent";
 
 // Instructions audit 2026-10-08: the architect had no list of roles, actions or presets, and its text named an action as «without an executor»
 // that had one. The reference is what the tool returns on demand; these pins keep it equal to the code it describes.
@@ -21,7 +21,7 @@ describe("the workflow reference the architect reads", () => {
   });
 
   it("lists every action that has an executor", () => {
-    for (const key of [...PURE_ACTION_KEYS, ...DELEGATED_ACTIONS, "fs.write", "git.diff_files", "lp.state_probe", "lp.run_status", "lp.run_close", "lp.lint_contract", "lp.integration_gate_status", "lp.review_range", "lp.ship_state_mark", "lp.phase_add", "lp.spike_new", "lp.doc_path", "lp.phase_status", "lp.phase_plan_check"]) expect(reference, key).toContain(key);
+    for (const key of [...PURE_ACTION_KEYS, ...DELEGATED_ACTIONS, "fs.write", "git.diff_files", "lp.state_probe", "lp.run_status", "lp.run_close", "lp.lint_contract", "lp.integration_gate_status", "lp.review_range", "lp.ship_state_mark", "lp.phase_add", "lp.spike_new", "lp.doc_path"]) expect(reference, key).toContain(key);
   });
 
   it("names every trigger type", () => {
@@ -36,7 +36,6 @@ describe("the workflow reference the architect reads", () => {
     expect(roleSpec("errand").helper).toBe("errand");
     expect(ROLE_PROFILES.errand.bbPlugins).toEqual(expect.arrayContaining(["browser-automation", "env-catalog"]));
     expect(roleSpec("errand").readOnly).toBe(true);
-    expect(roleSpec("project-life").readOnly).toBe(false);
     expect(roleSpec("specialist:tavily").readOnly).toBe(false);
   });
 
@@ -60,7 +59,7 @@ describe("the workflow reference the architect reads", () => {
   });
 
   it("keeps the architect's own text in line with it", () => {
-    for (const phrase of ["role: \"errand\"", "model_preset", "expect_status", "sections: [\"reference\"]", "belongs to the role", "schedule", "telegram"]) expect(WORKFLOW_ARCHITECT_SESSION, phrase).toContain(phrase);
+    for (const phrase of ["role: \"errand\"", "model_preset", "expect_status", "sections: [\"reference\"]", "belongs to the role", "schedule"]) expect(WORKFLOW_ARCHITECT_SESSION, phrase).toContain(phrase);
     // telegram.send_rich has an executor (it runs in an errand helper): it is not the example of an action that has none.
     expect(WORKFLOW_ARCHITECT_SESSION).not.toMatch(/telegram\.send_rich[^.]*no executor/);
     expect(WORKFLOW_ARCHITECT_SESSION).not.toContain("environment none|project|worktree|personal");

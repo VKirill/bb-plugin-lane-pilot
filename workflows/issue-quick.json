@@ -32,13 +32,15 @@
   },
   "not_for": [
     "issue-full",
-    "companion"
+    "companion",
+    "issue-quick-legacy"
   ],
   "status": "published",
   "tags": [
     "code",
     "issue"
   ],
+  "category": "code",
   "inputs": {
     "title": {
       "type": "string",

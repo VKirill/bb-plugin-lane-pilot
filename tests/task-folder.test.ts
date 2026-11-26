@@ -5,9 +5,9 @@ import { expect, it, vi } from "vitest";
 // The real-checkout test below spawns git and sh; inside the sandboxed check the suite runs ~2.5x slower and
 // vitest's 5 s default would cut it off (2026-10-06 check log, sibling git-integrate/git-lock timeouts).
 vi.setConfig({ testTimeout: 120_000 });
-import { stickyTurnPrompt, writerPrompt } from "../src/rooms/writer/server/writer-task";
-import { classifyWriterOutput, parseGitChangedPaths } from "../src/rooms/tasks/validate-output";
-import { appendExcludeCommand, persistTaskFolder, TASK_FOLDER_EXCLUDE } from "../src/rooms/verification/git-integrate";
+import { stickyTurnPrompt, writerPrompt } from "../src/rooms/writer/models/writer-task";
+import { classifyWriterOutput, parseGitChangedPaths } from "../src/rooms/tasks";
+import { appendExcludeCommand, persistTaskFolder, TASK_FOLDER_EXCLUDE } from "../src/rooms/worktree";
 import type { TaskV2 } from "../src/rooms/contracts";
 
 const task = {
@@ -30,7 +30,7 @@ it("keeps the compact contract inline and only adds the folder block when the fo
   expect(stickyWithout).not.toContain(".agents/plans/items/");
   expect(without).toContain('objective: do x');
   const folder = { path: ".agents/plans/items/t1/", files: ["PLAN.md"] };
-  const withFolder = writerPrompt(task, "", "", undefined, "Lane Pilot writer", "", "", "", folder);
+  const withFolder = writerPrompt(task, "", "", undefined, "Lane Pilot writer", "", "", folder);
   const sticky = stickyTurnPrompt({ kind: "retry", task, taskFolder: folder });
   expect(withFolder).toContain(".agents/plans/items/t1/");
   expect(withFolder).toContain("- PLAN.md");

@@ -19,15 +19,14 @@ feature-detection не даёт упасть; полный функционал 
 
 | Возможность | Статус | Где |
 | --- | --- | --- |
-| `experimental_useRpcQuery` + теги + `experimental_invalidate` | Работает: реальные input-схемы всех 10 методов из `ui-query-schemas.ts`, теги на каждом; инвалидация на attempt-сменах (storage-хук), событиях тредов, `onPhaseChanged`, шагах workflow и owner- RPC-мутациях; modern-путь держит лишь медленный safety-poll (¼ cadence, ≥60с), legacy — прежний pollMs | `ui-query-contract.ts`, `platform/server/realtime.ts`, `phase/store.ts`, `phase/server/driver.ts`, `workflow/server/workflow.ts` |
+| `experimental_useRpcQuery` + теги + `experimental_invalidate` | Работает: реальные input-схемы всех 10 методов из `ui-query-schemas.ts`, теги на каждом; инвалидация на attempt-сменах (storage-хук), событиях тредов, шагах workflow и owner- RPC-мутациях; modern-путь держит лишь медленный safety-poll (¼ cadence, ≥60с), legacy — прежний pollMs | `ui-query-contract.ts`, `platform/server/services/realtime.ts`, `workflow/server/services/workflow.ts` |
 | `experimental_threadInfoSection` | Работает: штатный Info-слот вместо VK-алиаса, группа `1_related`; VK-слот и tab — fallback постарше | `app.tsx` |
-| `threads.experimental_listPluginMetadata` (≤200 ID) | Реализовано, проверка текущего пакета ожидается: обычные метаданные helpers пакетно; per-ID fallback в списке помощников на старом SDK. Зарезервированные policy-метаданные этим API недоступны | `runs/server/rpc/runs.ts`, `native-agent/profile-check.ts` |
-| `threads.list` (originPluginId/hasParent/includeHidden/threadIds) | Работает: profile-check и снимок отчётов читают окно помощников без core DB; bb.db не открывается нигде | `native-agent/profile-check.ts`, `reports/server/core-snapshot.ts` |
-| `projects.list` + `threads.experimental_listPluginMetadata` | Работает: SDK-снимок `core.projects`/`core.threads`/`core.thread_plugin_metadata` для daily-отчёта; упавшая секция — «Факты ядра (SDK): …» в тексте, не молчание | `reports/server/core-snapshot.ts`, `reports/server/daily.ts` |
-| `experimental_onWorkerExit` + `host-jobs.reconcile` | Работает: проба сохранённых jobId read-only; `lost` хранит запись и jobId, тот же вызов отклонён (resubmit только detect/coexistenceInventory) | `core/server/core.ts`, `host-calls/host-jobs.ts` |
+| `threads.experimental_listPluginMetadata` (≤200 ID) | Реализовано, проверка текущего пакета ожидается: обычные метаданные helpers пакетно; per-ID fallback в списке помощников на старом SDK. Зарезервированные policy-метаданные этим API недоступны | `runs/server/handlers/runs-rpc.ts` |
+| `projects.list` + `threads.experimental_listPluginMetadata` | Работает для daily-отчёта; упавшая секция пишется в отчёт, не молчание | `reports/server/services/daily-report.ts` |
+| `experimental_onWorkerExit` + `host-jobs.reconcile` | Работает: проба сохранённых jobId read-only; `lost` хранит запись и jobId, тот же вызов отклонён (resubmit только detect/coexistenceInventory) | `core/server/core.ts` |
 | `experimental_environment.removed` | Работает: попытки, привязанные к удалённой среде, проходят resumeOrphans сразу; sweep — fallback | `core/server/lifecycle-events.ts`, `server.ts` |
-| `experimental_claimPath` (provider adopt) | Работает: adopt-путь worktree провайдера клеймится до принятия; конфликт → failed create; старый контекст без метода — прежний путь | `native-agent/server/environment-provider.ts` |
-| `experimental_thread.events` + `threads.events.list` | Работает: feed с курсором, first-contact по bootAt, sweep 60с | `stability/server/thread-event-feed.ts` |
+| `experimental_claimPath` (provider adopt) | Работает: adopt-путь worktree провайдера клеймится до принятия; конфликт → failed create; старый контекст без метода — прежний путь | `native-agent/server/services/` |
+| `experimental_thread.events` + `threads.events.list` | Работает: feed с курсором, first-contact по bootAt, sweep 60с | `stability/server/services/thread-event-feed.ts` |
 
 ## BB + VK (0.48.1-vk.6, хаб)
 
@@ -57,12 +56,7 @@ quiet-children (`parentNotifications:"stuck"` пропускает ошибки)
 ## Что осталось от core DB
 
 Ничего в runtime: `bb.db` не открывается ни в процессе плагина, ни дочерним процессом.
-Profile-check перечисляет помощников через `threads.list` и читает обычные LP-метаданные через `experimental_listPluginMetadata`. Сохранённая required-session-policy читается через опциональный `threads.experimental_vkInspectRequiredSessionPolicies` (VK core P2, чанки ≤200, строгая проверка формы v1: точный набор id, без дублей и пропусков; `valid` → сохранённый snapshot, `absent` → подтверждённое отсутствие → red `noPolicy`, `invalid`/`unavailable`/ошибка/отсутствие метода → день «не проверено»). Это stored snapshot, не доказательство enforcement провайдером; `plugin:skill`-алиасы не разворачиваются (informational в `coverageNote`). На хосте без метода день с counted-релями остаётся «не проверено» — метод есть только в core-сборке с P2 (`experimental_vkInspectRequiredSessionPolicies`), сборки core до него его не имеют. Daily-отчёт получает `core.projects`/`core.threads`/`core.thread_plugin_metadata`
-SDK-снимком (`reports/server/core-snapshot.ts`), который изолированный дочерний
-SQLite-раннер материализует в in-memory схему `core` — SQL-файлы и агрегаты в базе
-плагина не изменились; упавшая секция снимка названа в отчёте. Скрипт
-`scripts/lp-metrics-daily.sh` (вне runtime плагина, отдельный процесс) по-прежнему
-читает `bb.db` напрямую — это не путь плагина.
+Profile-check перечисляет помощников через `threads.list` и читает обычные LP-метаданные через `experimental_listPluginMetadata`. Сохранённая required-session-policy читается через опциональный `threads.experimental_vkInspectRequiredSessionPolicies` (VK core P2, чанки ≤200, строгая проверка формы v1: точный набор id, без дублей и пропусков; `valid` → сохранённый snapshot, `absent` → подтверждённое отсутствие → red `noPolicy`, `invalid`/`unavailable`/ошибка/отсутствие метода → день «не проверено»). Это stored snapshot, не доказательство enforcement провайдером; `plugin:skill`-алиасы не разворачиваются (informational в `coverageNote`). На хосте без метода день с counted-релями остаётся «не проверено» — метод есть только в core-сборке с P2 (`experimental_vkInspectRequiredSessionPolicies`), сборки core до него его не имеют. Daily-отчёт собирает метрики по базе плагина и SDK (`reports/server/services/daily-report.ts`); упавшая секция снимка названа в отчёте.
 
 Граница охвата SDK-чтений (честно, без silent green): `threads.list` включает archived и
 hidden треды (archived не передаётся — умолчание маршрута покрывает обе группы), но ВСЕГДА

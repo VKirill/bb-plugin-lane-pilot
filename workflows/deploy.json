@@ -40,6 +40,7 @@
     "ops",
     "deploy"
   ],
+  "category": "ops",
   "inputs": {
     "target": {
       "type": "lane-pilot-plugin|ssh|ftp|script",
@@ -115,10 +116,11 @@
       "mode": "full",
       "skip_when": "$inputs.target == 'lane-pilot-plugin'",
       "skip_out": {
-        "ok": true,
+        "status": "not_run",
+        "ok": false,
         "tests_passed": 0,
         "tests_failed": 0,
-        "no_tests": false
+        "no_tests": true
       },
       "title": {
         "en": "Full suite once",
@@ -126,6 +128,7 @@
       },
       "note": "один полный набор на партию - запускает координатор, не исполнители; для плагина LP набор и учения гоняет сам bb-plugin-push",
       "out": {
+        "status": "pass|fail|not_run?",
         "ok": "bool",
         "tests_passed": "int",
         "tests_failed": "int",
@@ -138,7 +141,7 @@
       "role": "owner",
       "skip_when": "$inputs.environment != 'prod'",
       "skip_out": {
-        "answer_kind": "deploy"
+        "answer_kind": "not_run"
       },
       "title": {
         "en": "Approve the production deploy",
@@ -147,7 +150,7 @@
       "prompt": "Show: ref and short log since the last deployed version, tests result, target, accounts by name, post-check and the exact rollback command. No answer means NO deploy.",
       "out": {
         "answer": "string",
-        "answer_kind": "deploy|abort|timeout"
+        "answer_kind": "deploy|abort|timeout|not_run"
       },
       "guards": {
         "maxVisits": 1,
@@ -348,7 +351,7 @@
       "from": "tests",
       "to": "blocked",
       "pass": "artifact",
-      "when": "!tests.ok"
+      "when": "!tests.ok && tests.status != 'not_run'"
     },
     {
       "from": "tests",
@@ -359,7 +362,7 @@
       "from": "approve",
       "to": "aborted",
       "pass": "artifact",
-      "when": "approve.answer_kind != 'deploy'"
+      "when": "$inputs.environment == 'prod' && approve.answer_kind != 'deploy'"
     },
     {
       "from": "approve",

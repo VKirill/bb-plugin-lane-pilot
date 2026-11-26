@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { openDatabase } from "../../src/rooms/plugin-db";
 import { isHistoryQuery, memoryContext, memoryContextLine, parseMemorySettings, storeMemoryRecords, type MemoryRecord } from "../../packages/memory-core/src";
-import { memoryLine } from "../../src/rooms/memory/server/memory-picks";
-import { pmMemoryContext } from "../../src/rooms/memory/server/memory-mix";
+import { memoryLine } from "../../src/rooms/memory/models/memory-picks";
+import { pmMemoryContext } from "../../src/rooms/memory/server/services/memory-mix";
 
 const day = (iso: string) => Date.parse(`${iso}T12:00:00Z`);
 const rec = (id: string, content: string, over: Partial<MemoryRecord> = {}): MemoryRecord => ({ id, projectId: "P", personalBot: "", kind: "note", content, concepts: ["labels", "limits"], sourceSha256: "s", createdAt: day("2026-11-01"), ...over });

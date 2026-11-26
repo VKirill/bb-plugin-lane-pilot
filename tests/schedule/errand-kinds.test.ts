@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { ROLE_IDS } from "@lane-pilot/models";
-import { ERRAND_KINDS, classifyErrand, errandKindRole, hintedErrandKind } from "../../src/rooms/schedule/errand-kinds";
+import { ERRAND_KINDS, classifyErrand, errandKindRole, hintedErrandKind } from "../../src/rooms/schedule/models/errand-kinds";
 
 const CRM = "Open the CRM and report the number of new leads.";
 

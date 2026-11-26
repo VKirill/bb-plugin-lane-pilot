@@ -34,6 +34,7 @@
     "asset",
     "modeling"
   ],
+  "category": "games",
   "inputs": {
     "prompt": {
       "type": "string",
@@ -113,9 +114,9 @@
       },
       "skip_when": "$inputs.concept_image != ''",
       "skip_out": {
-        "ok": true,
+        "ok": false,
         "concept_path": "$inputs.concept_image",
-        "status": "done"
+        "status": "not_run"
       },
       "profile": {
         "skills": [
@@ -126,7 +127,7 @@
       "out": {
         "ok": "bool",
         "concept_path": "string",
-        "status": "done|blocked"
+        "status": "done|blocked|not_run"
       },
       "guards": {
         "maxVisits": 2,
@@ -328,7 +329,7 @@
       "from": "concept",
       "to": "model",
       "pass": "artifact",
-      "when": "concept.ok"
+      "when": "concept.ok || $inputs.concept_image != ''"
     },
     {
       "from": "concept",

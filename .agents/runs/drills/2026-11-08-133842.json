@@ -1,0 +1,537 @@
+{
+  "kind": "lane-pilot-sandbox-drill",
+  "date": "2026-11-08",
+  "stamp": "20261108-133842",
+  "startedAt": 1794134322350,
+  "finishedAt": 1794134809317,
+  "durationSec": 487,
+  "project": "proj_ibu6v9g64j",
+  "runId": "lprun_ab3a7bbdaa96489491acddb51f03d67e",
+  "pmThread": "thr_hdfnbdsenf",
+  "sourceThread": "thr_a93ypwqeip",
+  "mode": "quick",
+  "scenarioNames": [
+    "guard_hash",
+    "deferrals",
+    "checkers",
+    "memory_paths",
+    "helper_providers",
+    "parallel3",
+    "lead_shadow",
+    "episodes"
+  ],
+  "commit": "dffc90c421ab9eedf40a02379d8caf358f758187",
+  "skipped": {},
+  "result": "fail",
+  "problems": [
+    "deferrals: the register of deferrals could not be read: deferral_list failed: Error: HTTP 502: Bad Gateway",
+    "lead_shadow: lead_state failed: lead_state failed: Error: HTTP 502: Bad Gateway",
+    "episodes: bb lane-pilot errands diagnose exited 1: error: unknown command 'lane-pilot'\nCommands: browser, status, settings, project, prompt-history, provider, machine, server, updates, terminal, thread, environm",
+    "memory_paths: memory-probe failed (exit 1): error: unknown command 'lane-pilot'\nCommands: browser, status, settings, project, prompt-history, provider, machine, server, updates, terminal, thread, environment, file, theme, plugin, marketplace, skill, guide, diagnostics, owner, voice\nPlugins add commands only while they are installed and enable"
+  ],
+  "checks": {
+    "allAccepted": true,
+    "eachInOwnWorktree": true,
+    "filesInSandbox": true,
+    "checksRan": true
+  },
+  "tasks": [
+    {
+      "task": "drill-20261108-133842-a",
+      "attempts": 1,
+      "states": [
+        "accepted"
+      ],
+      "state": "accepted",
+      "reason": "",
+      "attempt": "lpattempt_7d57affda168418ea3474cea4aadc190",
+      "writerThread": "thr_e5jz2y2ctx",
+      "workspace": "/home/ubuntu/.lane-pilot/worktrees/lpattempt_7d57affda168418ea3474cea4aadc190/lp-drill-sandbox",
+      "environment": "env_mpuzu3tz59",
+      "holder": null,
+      "file": "notes/drill/20261108-133842-a.md",
+      "fileInSandbox": true
+    },
+    {
+      "task": "drill-20261108-133842-b",
+      "attempts": 1,
+      "states": [
+        "accepted"
+      ],
+      "state": "accepted",
+      "reason": "",
+      "attempt": "lpattempt_5826ba5729714163a0630689a2a30efa",
+      "writerThread": "thr_tvgfpd544c",
+      "workspace": "/home/ubuntu/.lane-pilot/worktrees/lpattempt_5826ba5729714163a0630689a2a30efa/lp-drill-sandbox",
+      "environment": "env_fp6a8b6m7u",
+      "holder": null,
+      "file": "notes/drill/20261108-133842-b.md",
+      "fileInSandbox": true
+    },
+    {
+      "task": "drill-20261108-133842-c",
+      "attempts": 1,
+      "states": [
+        "accepted"
+      ],
+      "state": "accepted",
+      "reason": "",
+      "attempt": "lpattempt_2fd98ff1dbe146b18d4c6709519b0ee9",
+      "writerThread": "thr_y862gzks35",
+      "workspace": "/home/ubuntu/.lane-pilot/worktrees/lpattempt_2fd98ff1dbe146b18d4c6709519b0ee9/lp-drill-sandbox",
+      "environment": "env_ipaw2hu9a5",
+      "holder": null,
+      "file": "notes/drill/20261108-133842-c.md",
+      "fileInSandbox": true
+    }
+  ],
+  "dispatch": {
+    "drill-20261108-133842-a": "{\n  \"runId\": \"lprun_ab3a7bbdaa96489491acddb51f03d67e\",\n  \"taskId\": \"drill-20261108-133842-a\",\n  \"attemptId\": \"lpattempt_7d57affda168418ea3474cea4aadc190\",\n  \"writerThreadId\": null,\n  \"state\": \"queued\",\n  \"stagesPending\": true,\n  \"stages\": [\n    {\n      \"runId\": \"lprun_ab3a7bbdaa96489491acddb51f03d67e\",\n      \"taskId\": \"drill-20261108-133842-a\",\n      \"stageId\": \"acceptance-receipt\",\n      \"contractVersion\": 1,\n      \"state\": \"pending\",\n      \"inputSha256\": \"988cb5d9acadc8522c8b3c2353d25b84d29daa4fa7ad046d05bacd062d5506a5\",\n      \"outputSha256\": null,\n      \"attempt\": 0,\n      \"providerId\": nul",
+    "drill-20261108-133842-b": "{\n  \"runId\": \"lprun_ab3a7bbdaa96489491acddb51f03d67e\",\n  \"taskId\": \"drill-20261108-133842-b\",\n  \"attemptId\": \"lpattempt_5826ba5729714163a0630689a2a30efa\",\n  \"writerThreadId\": null,\n  \"state\": \"queued\",\n  \"stagesPending\": true,\n  \"stages\": [\n    {\n      \"runId\": \"lprun_ab3a7bbdaa96489491acddb51f03d67e\",\n      \"taskId\": \"drill-20261108-133842-b\",\n      \"stageId\": \"acceptance-receipt\",\n      \"contractVersion\": 1,\n      \"state\": \"pending\",\n      \"inputSha256\": \"486eaa6672019c191acde66bd60473918abb8a126207b29a7e35cce3e89bcac7\",\n      \"outputSha256\": null,\n      \"attempt\": 0,\n      \"providerId\": nul",
+    "drill-20261108-133842-c": "{\n  \"runId\": \"lprun_ab3a7bbdaa96489491acddb51f03d67e\",\n  \"taskId\": \"drill-20261108-133842-c\",\n  \"attemptId\": \"lpattempt_2fd98ff1dbe146b18d4c6709519b0ee9\",\n  \"writerThreadId\": null,\n  \"state\": \"queued\",\n  \"stagesPending\": true,\n  \"stages\": [\n    {\n      \"runId\": \"lprun_ab3a7bbdaa96489491acddb51f03d67e\",\n      \"taskId\": \"drill-20261108-133842-c\",\n      \"stageId\": \"acceptance-receipt\",\n      \"contractVersion\": 1,\n      \"state\": \"pending\",\n      \"inputSha256\": \"a03c7e364996bb6e2f813001cf10497a9d1bb8712b99e4c9627428d78a844d21\",\n      \"outputSha256\": null,\n      \"attempt\": 0,\n      \"providerId\": nul"
+  },
+  "scenarios": [
+    {
+      "name": "guard_hash",
+      "result": "pass",
+      "problems": [],
+      "machines": [
+        {
+          "machine": "ovh",
+          "files": {
+            "guard_shell.py": {
+              "state": "ok",
+              "installed": "1083570a4e2678a40dad9bab6a313d4d62984e79a44992a76466f0f0423c65b7",
+              "expected": "1083570a4e2678a40dad9bab6a313d4d62984e79a44992a76466f0f0423c65b7"
+            },
+            "lib_payload.py": {
+              "state": "ok",
+              "installed": "888d89f05eb23a585b99c343df1865a368f8f28a090e9f6f29a8246a9be99565",
+              "expected": "888d89f05eb23a585b99c343df1865a368f8f28a090e9f6f29a8246a9be99565"
+            }
+          },
+          "reachable": true
+        },
+        {
+          "machine": "mac-mini",
+          "files": {
+            "guard_shell.py": {
+              "state": "ok",
+              "installed": "1083570a4e2678a40dad9bab6a313d4d62984e79a44992a76466f0f0423c65b7",
+              "expected": "1083570a4e2678a40dad9bab6a313d4d62984e79a44992a76466f0f0423c65b7"
+            },
+            "lib_payload.py": {
+              "state": "unreachable",
+              "installed": null,
+              "expected": "888d89f05eb23a585b99c343df1865a368f8f28a090e9f6f29a8246a9be99565"
+            }
+          },
+          "reachable": true
+        },
+        {
+          "machine": "macbook",
+          "files": {
+            "guard_shell.py": {
+              "state": "unreachable",
+              "installed": null,
+              "expected": "1083570a4e2678a40dad9bab6a313d4d62984e79a44992a76466f0f0423c65b7"
+            },
+            "lib_payload.py": {
+              "state": "unreachable",
+              "installed": null,
+              "expected": "888d89f05eb23a585b99c343df1865a368f8f28a090e9f6f29a8246a9be99565"
+            }
+          },
+          "reachable": false
+        }
+      ],
+      "expected": {
+        "guard_shell.py": "1083570a4e2678a40dad9bab6a313d4d62984e79a44992a76466f0f0423c65b7",
+        "lib_payload.py": "888d89f05eb23a585b99c343df1865a368f8f28a090e9f6f29a8246a9be99565"
+      },
+      "unreachable": [
+        "macbook"
+      ],
+      "repaired": true
+    },
+    {
+      "name": "deferrals",
+      "result": "fail",
+      "problems": [
+        "the register of deferrals could not be read: deferral_list failed: Error: HTTP 502: Bad Gateway"
+      ]
+    },
+    {
+      "name": "checkers",
+      "result": "pass",
+      "problems": [],
+      "checked": [
+        {
+          "defectClass": "test_assertion_deleted",
+          "planted": 2,
+          "caughtBy": [
+            "test_fit"
+          ],
+          "designedCatchers": [
+            "test_fit",
+            "code_critic"
+          ]
+        },
+        {
+          "defectClass": "off_by_one",
+          "planted": 2,
+          "caughtBy": [
+            "verification"
+          ],
+          "designedCatchers": [
+            "verification"
+          ]
+        },
+        {
+          "defectClass": "outside_owns",
+          "planted": 2,
+          "caughtBy": [
+            "ownership"
+          ],
+          "designedCatchers": [
+            "ownership"
+          ]
+        },
+        {
+          "defectClass": "swallowed_error",
+          "planted": 1,
+          "caughtBy": [],
+          "designedCatchers": [
+            "code_critic"
+          ]
+        },
+        {
+          "defectClass": "masked_check",
+          "planted": 2,
+          "caughtBy": [
+            "contract_lint"
+          ],
+          "designedCatchers": [
+            "contract_lint"
+          ]
+        },
+        {
+          "defectClass": "acceptance_missing",
+          "planted": 2,
+          "caughtBy": [
+            "verification",
+            "plan_fact"
+          ],
+          "designedCatchers": [
+            "plan_fact"
+          ]
+        },
+        {
+          "defectClass": "hardcoded_value",
+          "planted": 2,
+          "caughtBy": [
+            "verification"
+          ],
+          "designedCatchers": [
+            "code_critic"
+          ]
+        },
+        {
+          "defectClass": "broken_import",
+          "planted": 2,
+          "caughtBy": [
+            "verification"
+          ],
+          "designedCatchers": [
+            "verification"
+          ]
+        },
+        {
+          "defectClass": "gilded_defect",
+          "planted": 1,
+          "caughtBy": [],
+          "designedCatchers": [
+            "code_critic"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "lead_shadow",
+      "result": "fail",
+      "problems": [
+        "lead_state failed: lead_state failed: Error: HTTP 502: Bad Gateway"
+      ]
+    },
+    {
+      "name": "episodes",
+      "result": "fail",
+      "problems": [
+        "bb lane-pilot errands diagnose exited 1: error: unknown command 'lane-pilot'\nCommands: browser, status, settings, project, prompt-history, provider, machine, server, updates, terminal, thread, environm"
+      ],
+      "episodesDeployed": true,
+      "episodes": 166,
+      "held": 0,
+      "since": 1793962416127
+    },
+    {
+      "name": "memory_paths",
+      "result": "fail",
+      "problems": [
+        "memory-probe failed (exit 1): error: unknown command 'lane-pilot'\nCommands: browser, status, settings, project, prompt-history, provider, machine, server, updates, terminal, thread, environment, file, theme, plugin, marketplace, skill, guide, diagnostics, owner, voice\nPlugins add commands only while they are installed and enable"
+      ]
+    },
+    {
+      "name": "helper_providers",
+      "result": "pass",
+      "problems": [],
+      "providers": [
+        {
+          "provider": "claude-code",
+          "model": "claude-sonnet-5-5",
+          "ok": true,
+          "started": true,
+          "answered": true,
+          "threadId": "thr_yhpwr2ebp8",
+          "output": "OK",
+          "reason": null,
+          "ms": 19230
+        },
+        {
+          "provider": "codex",
+          "model": "gpt-6-luna",
+          "ok": true,
+          "started": true,
+          "answered": true,
+          "threadId": "thr_3tpj867q5j",
+          "output": "OK",
+          "reason": null,
+          "ms": 19131
+        },
+        {
+          "provider": "opencode2",
+          "model": "zai-coding-plan/glm-5.3-flash",
+          "ok": true,
+          "started": true,
+          "answered": true,
+          "threadId": "thr_3fc2vidq5c",
+          "output": "OK",
+          "reason": null,
+          "ms": 22119
+        }
+      ],
+      "quotaExhausted": []
+    },
+    {
+      "name": "parallel3",
+      "result": "pass",
+      "problems": [],
+      "tasks": [
+        {
+          "task": "drill-20261108-133842-a",
+          "attempts": 1,
+          "states": [
+            "accepted"
+          ],
+          "state": "accepted",
+          "reason": "",
+          "attempt": "lpattempt_7d57affda168418ea3474cea4aadc190",
+          "writerThread": "thr_e5jz2y2ctx",
+          "workspace": "/home/ubuntu/.lane-pilot/worktrees/lpattempt_7d57affda168418ea3474cea4aadc190/lp-drill-sandbox",
+          "environment": "env_mpuzu3tz59",
+          "holder": null,
+          "file": "notes/drill/20261108-133842-a.md",
+          "fileInSandbox": true
+        },
+        {
+          "task": "drill-20261108-133842-b",
+          "attempts": 1,
+          "states": [
+            "accepted"
+          ],
+          "state": "accepted",
+          "reason": "",
+          "attempt": "lpattempt_5826ba5729714163a0630689a2a30efa",
+          "writerThread": "thr_tvgfpd544c",
+          "workspace": "/home/ubuntu/.lane-pilot/worktrees/lpattempt_5826ba5729714163a0630689a2a30efa/lp-drill-sandbox",
+          "environment": "env_fp6a8b6m7u",
+          "holder": null,
+          "file": "notes/drill/20261108-133842-b.md",
+          "fileInSandbox": true
+        },
+        {
+          "task": "drill-20261108-133842-c",
+          "attempts": 1,
+          "states": [
+            "accepted"
+          ],
+          "state": "accepted",
+          "reason": "",
+          "attempt": "lpattempt_2fd98ff1dbe146b18d4c6709519b0ee9",
+          "writerThread": "thr_y862gzks35",
+          "workspace": "/home/ubuntu/.lane-pilot/worktrees/lpattempt_2fd98ff1dbe146b18d4c6709519b0ee9/lp-drill-sandbox",
+          "environment": "env_ipaw2hu9a5",
+          "holder": null,
+          "file": "notes/drill/20261108-133842-c.md",
+          "fileInSandbox": true
+        }
+      ],
+      "checks": {
+        "allAccepted": true,
+        "eachInOwnWorktree": true,
+        "filesInSandbox": true,
+        "checksRan": true
+      },
+      "dispatch": {
+        "drill-20261108-133842-a": "{\n  \"runId\": \"lprun_ab3a7bbdaa96489491acddb51f03d67e\",\n  \"taskId\": \"drill-20261108-133842-a\",\n  \"attemptId\": \"lpattempt_7d57affda168418ea3474cea4aadc190\",\n  \"writerThreadId\": null,\n  \"state\": \"queued\",\n  \"stagesPending\": true,\n  \"stages\": [\n    {\n      \"runId\": \"lprun_ab3a7bbdaa96489491acddb51f03d67e\",\n      \"taskId\": \"drill-20261108-133842-a\",\n      \"stageId\": \"acceptance-receipt\",\n      \"contractVersion\": 1,\n      \"state\": \"pending\",\n      \"inputSha256\": \"988cb5d9acadc8522c8b3c2353d25b84d29daa4fa7ad046d05bacd062d5506a5\",\n      \"outputSha256\": null,\n      \"attempt\": 0,\n      \"providerId\": nul",
+        "drill-20261108-133842-b": "{\n  \"runId\": \"lprun_ab3a7bbdaa96489491acddb51f03d67e\",\n  \"taskId\": \"drill-20261108-133842-b\",\n  \"attemptId\": \"lpattempt_5826ba5729714163a0630689a2a30efa\",\n  \"writerThreadId\": null,\n  \"state\": \"queued\",\n  \"stagesPending\": true,\n  \"stages\": [\n    {\n      \"runId\": \"lprun_ab3a7bbdaa96489491acddb51f03d67e\",\n      \"taskId\": \"drill-20261108-133842-b\",\n      \"stageId\": \"acceptance-receipt\",\n      \"contractVersion\": 1,\n      \"state\": \"pending\",\n      \"inputSha256\": \"486eaa6672019c191acde66bd60473918abb8a126207b29a7e35cce3e89bcac7\",\n      \"outputSha256\": null,\n      \"attempt\": 0,\n      \"providerId\": nul",
+        "drill-20261108-133842-c": "{\n  \"runId\": \"lprun_ab3a7bbdaa96489491acddb51f03d67e\",\n  \"taskId\": \"drill-20261108-133842-c\",\n  \"attemptId\": \"lpattempt_2fd98ff1dbe146b18d4c6709519b0ee9\",\n  \"writerThreadId\": null,\n  \"state\": \"queued\",\n  \"stagesPending\": true,\n  \"stages\": [\n    {\n      \"runId\": \"lprun_ab3a7bbdaa96489491acddb51f03d67e\",\n      \"taskId\": \"drill-20261108-133842-c\",\n      \"stageId\": \"acceptance-receipt\",\n      \"contractVersion\": 1,\n      \"state\": \"pending\",\n      \"inputSha256\": \"a03c7e364996bb6e2f813001cf10497a9d1bb8712b99e4c9627428d78a844d21\",\n      \"outputSha256\": null,\n      \"attempt\": 0,\n      \"providerId\": nul"
+      }
+    }
+  ],
+  "seen": {
+    "stages": {
+      "acceptance-receipt": {
+        "canceled": 1,
+        "passed": 3
+      },
+      "memory-maintenance": {
+        "skipped": 3
+      },
+      "plan-critique": {
+        "skipped": 4
+      },
+      "plan-fact": {
+        "passed": 3
+      },
+      "pm-read": {
+        "skipped": 4
+      },
+      "project-life": {
+        "passed": 1
+      },
+      "specialist-review": {
+        "passed": 3,
+        "skipped": 1
+      },
+      "verification": {
+        "canceled": 1,
+        "passed": 3
+      },
+      "writer-agent": {
+        "canceled": 1,
+        "passed": 3
+      }
+    },
+    "gates": {
+      "accept": {
+        "passed": 3
+      },
+      "owns-paths": {
+        "passed": 3
+      },
+      "validate": {
+        "passed": 3
+      },
+      "verification": {
+        "passed": 3
+      }
+    },
+    "moves": {
+      "queued>canceled": {
+        "ok": 1
+      },
+      "queued>queued": {
+        "ok": 7
+      },
+      "queued>spawn_requested": {
+        "ok": 3
+      },
+      "running>accepted": {
+        "ok": 3
+      },
+      "spawn_requested>running": {
+        "ok": 3
+      }
+    }
+  },
+  "judged": [
+    {
+      "name": "guard_hash",
+      "verdict": "pass",
+      "evidence": [
+        "machines",
+        "expected",
+        "unreachable",
+        "repaired"
+      ],
+      "why": ""
+    },
+    {
+      "name": "deferrals",
+      "verdict": "fail",
+      "evidence": [],
+      "why": "the register of deferrals could not be read: deferral_list failed: Error: HTTP 502: Bad Gateway"
+    },
+    {
+      "name": "checkers",
+      "verdict": "pass",
+      "evidence": [
+        "checked"
+      ],
+      "why": ""
+    },
+    {
+      "name": "lead_shadow",
+      "verdict": "fail",
+      "evidence": [],
+      "why": "lead_state failed: lead_state failed: Error: HTTP 502: Bad Gateway"
+    },
+    {
+      "name": "episodes",
+      "verdict": "fail",
+      "evidence": [
+        "episodesDeployed",
+        "episodes",
+        "held",
+        "since"
+      ],
+      "why": "bb lane-pilot errands diagnose exited 1: error: unknown command 'lane-pilot'\nCommands: browser, status, settings, project, prompt-history, provider, machine, server, updates, terminal, thread, environm"
+    },
+    {
+      "name": "memory_paths",
+      "verdict": "fail",
+      "evidence": [],
+      "why": "memory-probe failed (exit 1): error: unknown command 'lane-pilot'\nCommands: browser, status, settings, project, prompt-history, provider, machine, server, updates, terminal, thread, environment, file, theme, plugin, marketplace, skill, guide, diagnostics, owner, voice\nPlugins add commands only while they are installed and enable"
+    },
+    {
+      "name": "helper_providers",
+      "verdict": "pass",
+      "evidence": [
+        "providers"
+      ],
+      "why": ""
+    },
+    {
+      "name": "parallel3",
+      "verdict": "pass",
+      "evidence": [
+        "tasks",
+        "checks",
+        "dispatch"
+      ],
+      "why": ""
+    }
+  ],
+  "series": {
+    "verdict": "fail",
+    "missing": [],
+    "failed": [
+      "deferrals",
+      "lead_shadow",
+      "episodes",
+      "memory_paths"
+    ],
+    "skipped": []
+  }
+}

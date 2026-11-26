@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { runSim } from "./chain-harness";
-import { humanOptions, humanOutput } from "../../src/rooms/workflow/server/workflow-human-form";
+import { humanOptions, humanOutput } from "../../src/rooms/workflow/server/services/workflow-human-form";
 
 const conflict = { topic: "mode", a_path: "ADR.md", a_line: 1, a_quote: "one", a_kind: "ADR", b_path: "PRD.md", b_line: 2, b_quote: "two", b_kind: "PRD", winner: "a", rule: "precedence" };
 
@@ -146,7 +146,7 @@ import { WorkflowEngine } from "@lane-pilot/workflow-engine";
 import type { StepContext } from "@lane-pilot/workflow-engine";
 import { createCore } from "../../src/rooms/core/server/core";
 import { openDatabase, createRun, setRunThread } from "../../src/rooms/plugin-db";
-import { registerCheckoutActions } from "../../src/rooms/workflow/server/workflow-checkout-actions";
+import { registerCheckoutActions } from "../../src/rooms/workflow/server/services/workflow-checkout-actions";
 import { builtinWorkflow } from "../../src/rooms/workflow/builtin";
 import { coreFileWrite, diskStore } from "../helpers/core-files";
 import { sha256Hex } from "@lane-pilot/kit";

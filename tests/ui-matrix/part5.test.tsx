@@ -2,7 +2,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { openTab } from "../ui-tabs";
 import { fireEvent, waitFor } from "@testing-library/react";
-import { boardFixture, mountPage, screenFixture } from "../ui-harness";
+import { boardFixture, mountPage } from "../ui-harness";
 import { en, ru, setLocaleOverride } from "@lane-pilot/i18n";
 import { openRole, useMatrixHooks } from "./helpers";
 

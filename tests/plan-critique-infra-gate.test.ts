@@ -1,6 +1,6 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { expect, it } from "vitest";
-import { runPlanCritique } from "../src/rooms/critique/server/critique-runs/plan-critique";
+import { runPlanCritique } from "../src/rooms/critique/server";
 import { createRun, createTask, listStageReceipts, openDatabase, setRunThread } from "../src/rooms/plugin-db";
 
 // EXT-04b: an exhausted critic pool used to record failed_infra and still return allowed:true — under a gate that let an

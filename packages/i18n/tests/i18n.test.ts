@@ -1,7 +1,8 @@
 /** @vitest-environment jsdom */
 import { describe, expect, it } from "vitest";
 import { afterEach, vi } from "vitest";
-import { UNAPPLIED_REASON, SETTING_CATALOG, unappliedNotValidReason } from "@lane-pilot/settings-catalog";
+import { UNAPPLIED_REASON, unappliedNotValidReason } from "@lane-pilot/settings-catalog";
+import { SETTINGS_REGISTRY } from "../../../src/rooms/settings-registry";
 import { detectLocale, detectLocaleHint, en, localeFromSources, ru, setLocaleOverride, subscribeToLocaleHintChanges, unappliedReason, type I18nKey } from "@lane-pilot/i18n";
 
 afterEach(() => {
@@ -89,9 +90,9 @@ describe("i18n dictionaries", () => {
       expect(translated).not.toBe(reason);
       expect(translated.length).toBeGreaterThan(0);
     }
-    for (const spec of SETTING_CATALOG) {
-      if (spec.channel !== "NONE" || !spec.reason) continue;
-      expect(unappliedReason(spec.reason)).not.toBe(spec.reason);
+    for (const def of SETTINGS_REGISTRY.visible) {
+      if (def.channel !== "NONE" || !def.reason) continue;
+      expect(unappliedReason(def.reason)).not.toBe(def.reason);
     }
     const dynamic = unappliedNotValidReason(
       { key: "ops.poll_interval", channel: "OPS-DIRECT", flag: "--poll-interval" },

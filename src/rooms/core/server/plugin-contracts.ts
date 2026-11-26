@@ -1,9 +1,6 @@
 import { defineRpcContract } from "@get-bb/plugin-sdk";
 import { hostMethods, rpcMethods } from "../../contracts";
-import { anamnesisHostMethods, anamnesisRpcMethods } from "../../anamnesis/contract";
-import { passportRpcMethods } from "../../passport";
-import { pilotPanelRpcMethods } from "../../pilot-panel";
-import { scheduleRpcContract } from "../../schedule/contract";
+import { scheduleRpcContract } from "../../schedule";
 
 // The plugin's wire contracts, assembled inside the composition root (core): the contracts room holds only
 // the base slices in rpcMethods/hostMethods, the schedule and anamnesis slices stay with their domains, and
@@ -12,12 +9,8 @@ import { scheduleRpcContract } from "../../schedule/contract";
 export const rpcContract = defineRpcContract({
   ...scheduleRpcContract,
   ...rpcMethods,
-  ...anamnesisRpcMethods,
-  ...passportRpcMethods,
-  ...pilotPanelRpcMethods,
 });
 
 export const hostContract = defineRpcContract({
   ...hostMethods,
-  ...anamnesisHostMethods,
 });

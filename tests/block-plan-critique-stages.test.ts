@@ -1,6 +1,6 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { expect, it } from "vitest";
-import { registerDispatchExecutors } from "../src/rooms/writer/server/dispatch-workflow";
+import { registerDispatchExecutors } from "../src/rooms/writer/server/handlers/dispatch-workflow";
 import { recordStage } from "../src/rooms/runs/server";
 import { createAttempt, createRun, createTask, getAttempt, listStageReceipts, openDatabase } from "../src/rooms/plugin-db";
 

@@ -2,8 +2,9 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
 import { createAttempt, createRun, createTask, openDatabase, transitionAttempt } from "../src/rooms/plugin-db";
 import { recordStage } from "../src/rooms/runs/server";
-import { blindRecord, readsBlind, renderTaskRecord, taskRecord } from "../src/rooms/tools/server/task-record";
-import { contractSections } from "../src/rooms/writer/server/writer-task";
+import { blindRecord, readsBlind } from "../src/rooms/tools/server/services/task-record";
+import { renderTaskRecord, taskRecord } from "../src/rooms/tools/server";
+import { contractSections } from "../src/rooms/writer/models/writer-task";
 
 const contract = {
   schema_version: 2, id: "t1", title: "t", display_title: "Pay screen", kind: "feature", area: "a", risk: "low", lane: "writer",

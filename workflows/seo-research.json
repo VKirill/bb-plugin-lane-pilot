@@ -30,6 +30,7 @@
     "seo",
     "drmax"
   ],
+  "category": "seo",
   "inputs": {
     "topic": {
       "type": "string",
@@ -58,7 +59,7 @@
     }
   },
   "outputs": {
-    "status": "done|partial|blocked",
+    "status": "done|partial|blocked|not_run",
     "package_path": "string?",
     "corpus_path": "string?",
     "groups_path": "string?",

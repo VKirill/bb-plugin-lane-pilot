@@ -8,6 +8,7 @@
     "en": "Independent multi-dimension review of a branch, PR, commit range or file set; returns a thresholded verdict and findings with file:line. Fixes nothing.",
     "ru": "Независимое многомерное ревью ветки, PR, диапазона коммитов или файлов; возвращает вердикт по порогам и находки с file:line. Ничего не исправляет."
   },
+  "category": "code",
   "examples": {
     "ru": [
       "Посмотри изменения в PR 482 и скажи, что не так",
@@ -47,7 +48,7 @@
     }
   },
   "outputs": {
-    "status": "pass|rework|block",
+    "status": "pass|rework|block|not_run",
     "warn": "bool",
     "criteria": "Criterion[]",
     "findings": "Finding[]",

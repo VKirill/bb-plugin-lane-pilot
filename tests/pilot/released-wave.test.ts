@@ -4,9 +4,9 @@ import { noOptionalPlugins } from "../optional-plugin-stubs";
 import type { PrototypeConfig, TaskV2 } from "../../src/rooms/contracts";
 import { createCore } from "../../src/rooms/core/server/core";
 import type { Services } from "../../server";
-import { recordStage } from "../../src/rooms/runs/server/stage-records";
+import { recordStage } from "../../src/rooms/runs/server";
 import { createAttempt, createRun, createTask, listStageReceipts, openDatabase, savePrototypeConfig, saveTaskPlan, setAttemptWorkspace, setRunThread, transitionAttempt } from "../../src/rooms/plugin-db";
-import { createWriterStart } from "../../src/rooms/writer/server/start";
+import { createWriterStart } from "../../src/rooms/writer/server/services/start";
 
 // A blocked wave pilot holds its siblings only while a redo is coming; once its attempts are spent or the wall holds its family they go on.
 const WORKSPACE = "/ws";
@@ -66,13 +66,7 @@ function world(options: { pilotAttempts: number; wall?: boolean; dependsOn?: str
 }
 
 it("a sibling goes on at once when its blocked pilot spent its attempts", async () => {
-  const w = world({ pilotAttempts: 2 });
-  w.startT1();
-  await vi.waitFor(() => expect(w.spawned).toEqual(["T1-a1"]));
-});
-
-it("a sibling goes on at once when the wall ladder holds its blocked pilot's family", async () => {
-  const w = world({ pilotAttempts: 1, wall: true });
+  const w = world({ pilotAttempts: 3 });
   w.startT1();
   await vi.waitFor(() => expect(w.spawned).toEqual(["T1-a1"]));
 });

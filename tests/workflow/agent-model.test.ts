@@ -1,15 +1,14 @@
 import { readFileSync, readdirSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { agentRequest, withResolvedModel, type HelperRequest } from "../../src/rooms/workflow/server/workflow-agent";
-import { DEFAULT_MODEL, DEFAULT_PROVIDER, DEFAULT_REASONING, ROLE_LEAST_TIER, resolveAgentModel } from "../../src/rooms/workflow/server/workflow-agent-model";
-import { resolveStepExecutors, DELEGATED_ACTIONS } from "../../src/rooms/workflow/server/workflow-step-executors";
-import { validateSettingValue, validateSettingsObject } from "../../src/rooms/settings/setting-validation";
-import { VISIBLE_CATALOG } from "@lane-pilot/settings-catalog";
+import { agentRequest, withResolvedModel, type HelperRequest } from "../../src/rooms/workflow/server/services/workflow-agent";
+import { DEFAULT_MODEL, DEFAULT_PROVIDER, DEFAULT_REASONING, ROLE_LEAST_TIER, resolveAgentModel } from "../../src/rooms/workflow/models/workflow-agent-model";
+import { resolveStepExecutors, DELEGATED_ACTIONS } from "../../src/rooms/workflow/server/services/workflow-step-executors";
+import { validateSettingValue, validateSettingsObject } from "../../src/rooms/settings/models/setting-validation";
+import { SETTINGS_REGISTRY } from "../../src/rooms/settings-registry";
 import { BUILTIN_PRESETS, PRESET_FIELDS, PRESET_SLUGS, ROLE_IDS, presetKey, presetSelection, presetSlug, roleModelKey } from "@lane-pilot/models";
 import type { StepContext } from "@lane-pilot/workflow-engine";
 import type { GraphNode } from "@lane-pilot/workflow-engine";
-import { loadWorkflow, parseWorkflow } from "@lane-pilot/workflow-engine";
-import { workflow } from "./fixtures";
+import { parseWorkflow } from "@lane-pilot/workflow-engine";
 
 const pm = { providerId: "codex", model: "gpt-6-luna" };
 const strongPm = { providerId: "claude-code", model: "claude-opus-5-5" };
@@ -58,7 +57,6 @@ describe("which model a workflow agent step runs on: the role's row of one table
     expect(pick("something-new")).toEqual(pick("analyst"));
     expect(pick("gate-triage")).toEqual(pick("triager"));
     expect(pick("memory-maintainer")).toEqual(pick("memory"));
-    expect(pick("council-seat")).toEqual(pick("council"));
     expect(ROLE_IDS).toContain("workflow-architect");
   });
 
@@ -185,8 +183,8 @@ describe("validating the table and the settings of the removed levels", () => {
       expect(validateSettingsObject({ [key]: "turbo" })).toHaveLength(1);
     }
     for (const field of PRESET_FIELDS) {
-      expect(VISIBLE_CATALOG.some((item) => item.storageKey === `workflow.agent.${field}`)).toBe(false);
-      expect(VISIBLE_CATALOG.some((item) => item.storageKey === `workflow.debugger.${field}`)).toBe(true);
+      expect(SETTINGS_REGISTRY.visible.some((item) => item.storageKey === `workflow.agent.${field}`)).toBe(false);
+      expect(SETTINGS_REGISTRY.visible.some((item) => item.storageKey === `workflow.debugger.${field}`)).toBe(true);
     }
   });
 });
@@ -210,13 +208,13 @@ describe("model presets (now the scheduled errands' only)", () => {
 
   it("have a settings row for each field, with the built-in default shown", () => {
     for (const slug of PRESET_SLUGS) {
-      for (const field of PRESET_FIELDS) expect(VISIBLE_CATALOG.find((item) => item.storageKey === presetKey(slug, field)), presetKey(slug, field)).toMatchObject({ uiStatus: "editable" });
-      expect(VISIBLE_CATALOG.find((item) => item.storageKey === presetKey(slug, "model"))!.defaultValue).toBe(BUILTIN_PRESETS[slug]!.model);
+      for (const field of PRESET_FIELDS) expect(SETTINGS_REGISTRY.visible.find((item) => item.storageKey === presetKey(slug, field)), presetKey(slug, field)).toMatchObject({ uiStatus: "editable" });
+      expect(SETTINGS_REGISTRY.visible.find((item) => item.storageKey === presetKey(slug, "model"))!.defaultValue).toBe(BUILTIN_PRESETS[slug]!.model);
     }
   });
 });
 
-describe("a node names no model", () => {
+describe("the shipped graphs name no model of their own", () => {
   const dir = new URL("../../workflows/", import.meta.url);
   const MODEL_FIELDS = ["provider", "model", "reasoning", "service_tier", "model_preset"];
 
@@ -234,37 +232,6 @@ describe("a node names no model", () => {
       walk(JSON.parse(readFileSync(new URL(file, dir), "utf8")));
     }
     expect(named).toEqual([]);
-  });
-
-  it("is warned about when a file does name one (it loads, the field is ignored when the step runs)", () => {
-    for (const field of MODEL_FIELDS) {
-      const found = loadWorkflow(workflow({
-        nodes: [{ id: "a", type: "agent", role: "analyst", prompt: "x", [field]: field === "reasoning" ? "high" : field === "service_tier" ? "fast" : "gpt-6.1-sol", output: [{ name: "o", type: "string" }] }],
-        edges: [{ from: "start", to: "a" }, { from: "a", to: "end" }],
-      }));
-      const warnings = found.ok ? found.warnings : found.problems;
-      expect(warnings.filter((problem) => problem.code === "model_ignored"), field).toEqual([expect.objectContaining({ level: "warning", node: "a", message: expect.stringContaining(field) })]);
-    }
-    const clean = loadWorkflow(workflow({
-      nodes: [{ id: "a", type: "agent", role: "analyst", prompt: "x", output: [{ name: "o", type: "string" }] }],
-      edges: [{ from: "start", to: "a" }, { from: "a", to: "end" }],
-    }));
-    expect((clean.ok ? clean.warnings : clean.problems).some((problem) => problem.code === "model_ignored")).toBe(false);
-  });
-
-  it("changes nothing in the request or in what the Models view shows", async () => {
-    const flow = parseWorkflow(workflow({
-      nodes: [{ id: "a", type: "agent", role: "analyst", prompt: "x", provider: "codex", model: "gpt-6-luna", reasoning: "low", service_tier: "fast", model_preset: "cheap-fast", output: [{ name: "o", type: "string" }] }],
-      edges: [{ from: "start", to: "a" }, { from: "a", to: "end", with: { result: "a.o" } }],
-    }));
-    const rt = rtFor({}, pm);
-    const node = flow.nodes.find((candidate) => candidate.id === "a") as Extract<GraphNode, { type: "agent" }>;
-    const request = requestFor(flow, node, rt);
-    expect(request).not.toHaveProperty("model");
-    expect(request).not.toHaveProperty("preset");
-    const spawned = await withResolvedModel(request);
-    expect(spawned).toMatchObject({ provider: "claude-code", model: "claude-opus-5-5", reasoning: "high" });
-    expect(resolveStepExecutors({ nodes: [{ ...node }], settings: {}, pm })[0]).toMatchObject({ providerId: "claude-code", model: "claude-opus-5-5", reasoningEffort: "high", source: "role-default" });
   });
 });
 

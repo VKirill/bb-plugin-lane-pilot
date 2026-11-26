@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
-import { compileMainAgentProfile } from "../src/rooms/native-agent/agent-profile";
-import { sessionOverrideAgentsJson } from "../src/rooms/native-agent/native-agent-definition";
+import { compileMainAgentProfile } from "../src/rooms/native-agent/models/agent-profile";
+import { sessionOverrideAgentsJson } from "../src/rooms/native-agent/models/native-agent-definition";
 
 it("emits --agents JSON from the plugin profile, including unedited stock", () => {
   const compiled = compileMainAgentProfile("dev-orchestrator");

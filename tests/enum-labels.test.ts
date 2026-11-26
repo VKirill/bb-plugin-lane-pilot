@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { en, ru, setLocaleOverride } from "@lane-pilot/i18n";
-import { VISIBLE_CATALOG } from "@lane-pilot/settings-catalog";
+import { SETTINGS_REGISTRY } from "../src/rooms/settings-registry";
 import { enumLabelKnown, isBrandEnumValue, presentEnumLabel } from "../src/rooms/ui-shell/ui/enum-labels";
 
 describe("enum presentation labels", () => {
   it("keeps storage codes and localizes working labels in EN and RU", () => {
     const seen = new Set<string>();
-    const rows = VISIBLE_CATALOG.filter((row) => {
+    const rows = SETTINGS_REGISTRY.visible.filter((row) => {
       if (row.uiStatus !== "editable" || row.control !== "select" || row.options.length === 0) return false;
       if (seen.has(row.storageKey)) return false;
       seen.add(row.storageKey);

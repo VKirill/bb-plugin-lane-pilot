@@ -1,11 +1,11 @@
 import { useMemo, useState, type ReactNode } from "react";
 import { useRpc } from "@get-bb/plugin-sdk/app";
-import type { ScheduleBoardContract } from "../contract";
+import type { ScheduleBoardContract } from "../models/contract";
 import { t, type I18nKey } from "@lane-pilot/i18n";
 import { Button } from "@lane-pilot/ui-kit";
 import { Input } from "@lane-pilot/ui-kit";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@lane-pilot/ui-kit";
-import type { ErrandDefaultView, ScheduleView } from "../views";
+import type { ErrandDefaultView, ScheduleView } from "../models/views";
 import { Pill } from "../../ui-shell/ui";
 import { Surface, SurfaceBody, SurfaceHeader } from "@lane-pilot/ui-kit";
 import { definitionWithTask, machineName, modelFieldsOf, withModelFields, type ModelFields } from "./schedule-model";

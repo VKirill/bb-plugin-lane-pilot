@@ -37,7 +37,7 @@ it("uses the same matcher for the run's ownership check", async () => {
 
 it("gives a wildcard pattern that names a folder what is in that folder, as a plain path and the overlap check do", async () => {
   const { matchOwnsPath: m, ownsPathsOverlap: overlap } = await import("@lane-pilot/kit");
-  const { classifyWriterOutput } = await import("../src/rooms/tasks/validate-output");
+  const { classifyWriterOutput } = await import("../src/rooms/tasks");
   const { findUnownedChanges } = await import("../src/rooms/contracts/ownership");
   // SelfyStudio drop-fotosessii-theme-v1 (2026-10-13): «cocoon-write*» was meant for the executor's test folder; the
   // writer's needed edit there was rejected, and the retry put back a test that still expects the removed scenario.

@@ -4,17 +4,18 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
-import { blindPlanFact, diffHunksCommand, hunksFromCommandOutput, parseDiffHunks, parsePlanFact, planFactOutcome, PLAN_FACT_BRIEF_LINE, PLAN_FACT_DIFF_ERROR_MARK, PLAN_FACT_DIFF_OK_MARK, PLAN_FACT_EVIDENCE_MAX, PLAN_FACT_UNTRACKED_MARK } from "../src/rooms/tasks/plan-fact";
-import type { PlanFactFacts } from "../src/rooms/tasks/plan-fact";
-import { writerBriefSegments, stickyTurnPrompt, previousAttemptBrief } from "../src/rooms/writer/server/writer-task";
-import { recheckPlanFact, runPlanFactStage, planFactMode, tableFromAnswers } from "../src/rooms/writer/server/plan-fact";
+import { blindPlanFact, diffHunksCommand, hunksFromCommandOutput, parseDiffHunks, parsePlanFact, planFactOutcome, PLAN_FACT_BRIEF_LINE, PLAN_FACT_DIFF_ERROR_MARK, PLAN_FACT_DIFF_OK_MARK, PLAN_FACT_EVIDENCE_MAX, PLAN_FACT_UNTRACKED_MARK } from "../src/rooms/tasks";
+import type { PlanFactFacts } from "../src/rooms/tasks";
+import { writerBriefSegments, stickyTurnPrompt } from "../src/rooms/writer/models/writer-task";
+import { previousAttemptBrief } from "../src/rooms/writer/models/writer-brief-feedback";
+import { recheckPlanFact, runPlanFactStage, planFactMode, tableFromAnswers } from "../src/rooms/writer/server/services/plan-fact";
 import { recordStage } from "../src/rooms/runs/server";
 import { getStageReceiptResult } from "../src/rooms/plugin-db";
-import { buildAcceptanceCard } from "../src/rooms/acceptance/card";
+import { buildAcceptanceCard } from "../src/rooms/runs/server";
 import { applyCodeCriticDefault, resolveCodeCriticDefault } from "../src/rooms/contracts/quality-mode";
 import { createAttempt, createRun, createTask, openDatabase, saveTaskGitBase } from "../src/rooms/plugin-db";
 import { taskV2Schema } from "../src/rooms/contracts";
-import { upsertAttemptChange } from "../src/rooms/rollback/store";
+import { upsertAttemptChange } from "../src/rooms/rollback/server";
 
 const fence = (json: unknown, tag = "plan-fact") => `Done.\n\n\`\`\`${tag}\n${JSON.stringify(json)}\n\`\`\`\n`;
 const facts = (extra: Partial<PlanFactFacts> = {}): PlanFactFacts => ({
@@ -417,7 +418,7 @@ describe("the plan-fact stage and the acceptance card on a database", () => {
 
 describe("the per-task override a dispatch carries for the code critic", () => {
   it("is stored per task, read back, and ignores values that are not off, medium or high", async () => {
-    const { saveCriticCodeDefault, loadCriticCodeDefault } = await import("../src/rooms/writer/server/critic-override");
+    const { saveCriticCodeDefault, loadCriticCodeDefault } = await import("../src/rooms/writer/server/repositories/critic-override");
     const store = new Map<string, unknown>();
     const kv = { get: async (key: string) => store.get(key), set: async (key: string, value: never) => { store.set(key, value); } };
     await saveCriticCodeDefault(kv, "t1", "medium");

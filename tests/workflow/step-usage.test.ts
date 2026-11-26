@@ -2,8 +2,8 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
 import {graphStepMetadata} from "../../src/rooms/platform/server";
 import { withUsage } from "../../src/rooms/usage/server";
-import { lpTaskPipelineExecutor } from "../../src/rooms/writer/server/dispatch-workflow";
-import { pipelineWriterTag } from "../../src/rooms/writer/server/pipeline-tag";
+import { lpTaskPipelineExecutor } from "../../src/rooms/writer/server/handlers/dispatch-workflow";
+import { pipelineWriterTag } from "../../src/rooms/writer/server/services/pipeline-tag";
 import { createAttempt, createRun, openDatabase } from "../../src/rooms/plugin-db";
 
 const spent = (total: number) => [{ type: "turn/started", seq: 1 }, { type: "thread/tokenUsage/updated", seq: 2, createdAt: 2, data: { turnId: "t1", tokenUsage: { last: { inputTokens: total, outputTokens: 0, totalTokens: total }, total: { inputTokens: total, outputTokens: 0, totalTokens: total } } } }];

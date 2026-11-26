@@ -1,11 +1,18 @@
+import { readFileSync } from "node:fs";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it, vi } from "vitest";
+import { LP_EVENTS } from "@lane-pilot/contracts";
+import { WorkflowEngine, parseWorkflow } from "@lane-pilot/workflow-engine";
 import packageJson from "../../package.json";
 import { createAttempt, createRun, openDatabase } from "../../src/rooms/plugin-db";
-import { CANARY_MAX_ATTEMPTS, REASON_SCAN_CHARS, canaryAlertText, canaryReport, createCanary, rollbackCommand } from "../../src/rooms/stability/server/canary";
+import { transitionAttempt } from "../../src/rooms/storage";
+import { CANARY_MAX_ATTEMPTS, REASON_SCAN_CHARS, canaryAlertText, canaryReport, createCanary, mountCanary, rollbackCommand } from "../../src/rooms/stability/server";
+import { createWorkflowTriggers } from "../../src/rooms/workflow/server/services/workflow-triggers";
+import type { ServerCore } from "../../src/rooms/contracts/server";
+import type { Services } from "../../src/rooms/services";
+import type { StoredWorkflow, WorkflowStore } from "../../src/rooms/storage";
 
 const VERSION: string = packageJson.version;
-const DAY = 86_400_000;
 
 function setup() {
   const sent: Array<{ threadId: string; text: string }> = [];
@@ -205,5 +212,84 @@ describe("canary check", () => {
     expect(text).toContain("4 of the first 10 attempts");
     expect(text).toContain("40%");
     expect(text).toContain("T1: merge_failed: x");
+  });
+});
+
+describe("mountCanary event-driven lp.attempt.finished", () => {
+  const canaryWorkflow = parseWorkflow(
+    JSON.parse(readFileSync(new URL("../../workflows/lp.canary-check.json", import.meta.url), "utf8")),
+  );
+  const storedCanary: StoredWorkflow = {
+    workflow: canaryWorkflow,
+    origin: "builtin",
+    source: "workflows/lp.canary-check.json",
+    sha256: "test-canary-check",
+    warnings: [],
+  };
+  const store: WorkflowStore = {
+    list: () => [storedCanary],
+    get: (id) => (id === canaryWorkflow.id ? storedCanary : null),
+    resolve: (id) => (id === canaryWorkflow.id ? canaryWorkflow : null),
+    problems: [],
+  };
+
+  it("triggers lp.canary-check on terminal attempt states and deduplicates across onAttemptChanged and onAttemptFinished", async () => {
+    const { bb } = createFakePluginHost({ pluginId: "lane-pilot" });
+    const db = openDatabase(bb);
+    const engine = new WorkflowEngine({ db, harnessVersion: packageJson.version });
+    const ctx = {
+      bb,
+      db,
+      isDisposed: () => false,
+      effectiveProjectSettings: async () => ({ values: {} }),
+      log: () => undefined,
+    } as unknown as ServerCore;
+    const triggers = createWorkflowTriggers(ctx, { workflowEngine: engine } as unknown as Services, {
+      loadStore: async () => ({ store, project: "ok" }),
+    });
+    const emitSpy = vi.fn(triggers.emitEvent);
+    const checkSpy = vi.fn(async () => false);
+    const fakeCanary = { check: checkSpy } as unknown as ReturnType<typeof createCanary>;
+
+    let finishedCb: ((event: {
+      scope: string; status: string; projectId: string; runId: string; taskId: string; pmThreadId: string; attemptId?: string;
+    }) => void) | undefined;
+
+    const unsub = mountCanary(ctx, fakeCanary, {
+      engine,
+      emitEvent: emitSpy,
+      onAttemptFinished: (_c, sub) => { finishedCb = sub; },
+    });
+
+    createRun(db, "run_1", "proj_a");
+    createAttempt(db, { id: "att_1", runId: "run_1", taskId: "task_1" });
+
+    // Non-terminal transition does not trigger canary
+    transitionAttempt(db, "att_1", "spawn_requested");
+    transitionAttempt(db, "att_1", "running");
+    await new Promise((r) => setTimeout(r, 20));
+    expect(emitSpy).not.toHaveBeenCalled();
+
+    // Terminal transition fires LP_EVENTS.ATTEMPT_FINISHED and runs lp.canary_check once
+    transitionAttempt(db, "att_1", "blocked", { reason: "test failure" });
+    // Duplicate notification from onAttemptFinished for the same attemptId must be ignored
+    finishedCb?.({
+      scope: "attempt",
+      status: "blocked",
+      projectId: "proj_a",
+      runId: "run_1",
+      taskId: "task_1",
+      pmThreadId: "pm_1",
+      attemptId: "att_1",
+    });
+
+    for (let i = 0; i < 10; i += 1) {
+      await new Promise((r) => setTimeout(r, 15));
+    }
+
+    expect(LP_EVENTS.ATTEMPT_FINISHED).toBe("lp.attempt.finished");
+    expect(emitSpy).toHaveBeenCalledTimes(1);
+    expect(checkSpy).toHaveBeenCalledTimes(1);
+    unsub();
   });
 });

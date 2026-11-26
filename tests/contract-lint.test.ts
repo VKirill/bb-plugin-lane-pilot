@@ -6,8 +6,8 @@ import type { TaskV2 } from "../src/rooms/contracts";
 import {
   createAttempt, createRun, createTask, listAttemptsForTask, openDatabase, recordCheckDuration, saveProjectSetting, savePrototypeConfig, setRunThread, transitionAttempt,
 } from "../src/rooms/plugin-db";
-import { postMergeRepair } from "../src/rooms/writer/server/finish";
-import { lintContract, lintProbePaths, lintReply, siblingTestFolders, type LintInput, type PathKind } from "../src/rooms/tasks/server/contract-lint"
+import { postMergeRepair } from "../src/rooms/writer/server/services/finish";
+import { acceptanceCommands, lintContract, lintProbePaths, lintReply, siblingTestFolders, type LintInput, type PathKind } from "../src/rooms/tasks/server";
 import { runnerFilterArgs } from "../src/rooms/contracts/check-commands";
 
 const root = "/tmp/writer";
@@ -664,5 +664,20 @@ describe("contract lint at dispatch", () => {
     expect(reply).toMatchObject({ taskId:"lint-task", state:"queued" });
     expect(taskCount(first.db)).toBe(1);
     await first.harness.lifecycle.dispose();
+  });
+
+  describe("an acceptance line that names a command", () => {
+    it("finds the command written plainly or in a code span", () => {
+      expect(acceptanceCommands("The three notes test files are appended to the npm test script and npm test is green")).toEqual(["npm test"]);
+      expect(acceptanceCommands("`node scripts/notes.js list` prints the note")).toEqual(["node scripts/notes.js list"]);
+      expect(acceptanceCommands("README has a section «Заметки»")).toEqual([]);
+    });
+    it("requires it to appear among verification commands under acceptance_command_unchecked", () => {
+      const bad = lint({ acceptance:["npm test is green"], verification:[{ command:"node --test tests/notes/*.test.js", cwd:root }] }, {}, { "src/a.ts":"file" });
+      expect(codes(bad)).toContain("acceptance_command_unchecked");
+      expect(bad.errors[0]!.message).toContain("names `npm test`, which is not a verification command");
+      const good = lint({ acceptance:["npm test is green"], verification:[{ command:"npm test", cwd:root }] }, {}, { "src/a.ts":"file" });
+      expect(codes(good)).not.toContain("acceptance_command_unchecked");
+    });
   });
 });

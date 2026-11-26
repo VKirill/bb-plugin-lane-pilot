@@ -3,11 +3,11 @@ import { join } from "node:path";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
 import { NO_UPSTREAM, upstreamPath } from "./upstream-fixture";
-import { aggregateRun } from "../src/rooms/runs/aggregation";
-import { buildCliInvocation } from "../src/rooms/writer/argv-builder";
-import { argvValidationMap } from "../src/rooms/settings/setting-validation";
-import { attemptProduced } from "../src/rooms/writer/cli-outcome";
-import { classifyWriterOutput, parseGitChangedPaths } from "../src/rooms/tasks/validate-output";
+import { aggregateRun } from "../src/rooms/runs";
+import { buildCliInvocation } from "../src/rooms/writer/models/argv-builder";
+import { argvValidationMap } from "../src/rooms/settings/models/setting-validation";
+import { attemptProduced } from "../src/rooms/writer/models/cli-outcome";
+import { classifyWriterOutput, parseGitChangedPaths } from "../src/rooms/tasks";
 import {
   claimActivation,
   countAttempts,
@@ -24,15 +24,16 @@ import {
   transitionAttempt,
 } from "../src/rooms/plugin-db";
 import { fileAllowedByOwns, fnmatch, matchOwnsPath } from "@lane-pilot/kit";
-import { NATIVE_LP_BRIDGE_PM_TOOLS } from "../src/rooms/native-agent/native-session-hooks";
+import { NATIVE_LP_BRIDGE_PM_TOOLS } from "../src/rooms/native-agent/models/bridge-tools";
 import plugin from "../server";
 import {
-  MAIN_ATTEMPT_LIMIT,
   nextAttemptState,
   retryAction,
   TRANSITION_TABLE,
+  WRITER_RETRY_LIMIT,
 } from "../src/rooms/contracts/state-machine";
-import { loadTaskV2Schema, TASK_V2_REQUIRED, validateTaskV2 } from "../src/rooms/tasks/task-v2";
+import { TASK_V2_REQUIRED, validateTaskV2 } from "../src/rooms/tasks";
+import { loadTaskV2Schema } from "../src/rooms/tasks/server";
 
 const config = {
   projectId:"project-test",
@@ -80,10 +81,11 @@ describe("§3.4 transition table", () => {
       expect(nextAttemptState(row.from, row.event)).toBe(row.to);
     });
   }
-  it("retry limit is 2 main attempts", () => {
-    expect(MAIN_ATTEMPT_LIMIT).toBe(2);
+  it("retry limit is 3 visits", () => {
+    expect(WRITER_RETRY_LIMIT).toBe(3);
     expect(retryAction("validation_failed", 1)).toBe("retry");
-    expect(retryAction("validation_failed", 2)).toBe("retry_exhausted");
+    expect(retryAction("validation_failed", 2)).toBe("retry");
+    expect(retryAction("validation_failed", 3)).toBe("retry_exhausted");
   });
 });
 
@@ -219,7 +221,7 @@ describe("activation lock and run mix", () => {
 });
 
 describe("retry creates a new attemptId", () => {
-  it("counts two attempts then stops", async () => {
+  it("counts three attempts then stops", async () => {
     const { bb, harness } = createFakePluginHost({ pluginId:"lane-pilot" });
     const db = openDatabase(bb);
     createRun(db, "run-r", config.projectId);
@@ -228,9 +230,14 @@ describe("retry creates a new attemptId", () => {
     transitionAttempt(db, "a1", "running");
     transitionAttempt(db, "a1", "validation_failed");
     createAttempt(db, { id:"a2", runId:"run-r", taskId:"t" });
-    expect(countAttempts(db, "run-r", "t")).toBe(2);
-    expect(getAttempt(db, "a2")?.attempt_no).toBe(2);
-    expect(retryAction("validation_failed", 2)).toBe("retry_exhausted");
+    transitionAttempt(db, "a2", "spawn_requested");
+    transitionAttempt(db, "a2", "running");
+    transitionAttempt(db, "a2", "validation_failed");
+    createAttempt(db, { id:"a3", runId:"run-r", taskId:"t" });
+    expect(countAttempts(db, "run-r", "t")).toBe(3);
+    expect(getAttempt(db, "a3")?.attempt_no).toBe(3);
+    expect(retryAction("validation_failed", 2)).toBe("retry");
+    expect(retryAction("validation_failed", 3)).toBe("retry_exhausted");
     await harness.lifecycle.dispose();
   });
 });
@@ -419,7 +426,7 @@ describe("PM tool gating", () => {
 
 describe("prose expected outputs", () => {
   it("checks only path-like outputs and needs some change when none are paths", async () => {
-    const { classifyWriterOutput, isOutputPath } = await import("../src/rooms/tasks/validate-output");
+    const { classifyWriterOutput, isOutputPath } = await import("../src/rooms/tasks");
     expect(isOutputPath("lib/monitor-store.ts")).toBe(true);
     expect(isOutputPath("checkHttp enforces the keyword when one is set")).toBe(false);
     const task = { expected_outputs:["checkHttp enforces the keyword"], owns_paths:["lib/**"], never_touch:[], verify:"none", verification:[] } as never;

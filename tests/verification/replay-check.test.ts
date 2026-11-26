@@ -4,9 +4,10 @@ import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { REPLAY_CHECK_FAILED, failureClass } from "../../src/rooms/contracts/failure-class";
-import { previousAttemptBrief, stickyTurnPrompt } from "../../src/rooms/writer/server/writer-task";
-import { resolveInSameThread } from "../../src/rooms/writer/server/sticky";
-import { integrateWorktree, type ReplayCheckOutcome } from "../../src/rooms/verification/git-integrate";
+import { previousAttemptBrief } from "../../src/rooms/writer/models/writer-brief-feedback";
+import { stickyTurnPrompt } from "../../src/rooms/writer/models/writer-task";
+import { resolveInSameThread } from "../../src/rooms/writer/server/services/sticky";
+import { integrateWorktree, type ReplayCheckOutcome } from "../../src/rooms/worktree";
 
 // B6: an attempt replayed on a moved main is checked there before it merges; two tasks that merge cleanly can still
 // break each other (a semantic clash), and without this the clash merged and mainfix repaired it afterwards.

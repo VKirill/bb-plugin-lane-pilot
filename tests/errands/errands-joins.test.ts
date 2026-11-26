@@ -1,9 +1,7 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
 import { openDatabase } from "../../src/rooms/plugin-db";
-import { errandsDiagnosis } from "../../src/rooms/errands/diagnosis";
-import { pendingEpisodes } from "../../src/rooms/errands/episode-enrich";
-import { listEpisodes } from "../../src/rooms/errands/episodes";
+import { errandsDiagnosis } from "../../src/rooms/errands/server";
 
 const NOW = Date.now();
 const DAY = 86_400_000;
@@ -33,24 +31,5 @@ describe("errand episode joins keep the filter and the limit inside the owner qu
     run("new", { ago: DAY }); episode("new");
     const d = errandsDiagnosis(db, { days: 7 });
     expect(d.runs).toBe(1);
-  });
-
-  it("an episode whose run is gone does not take a batch slot: the sweep still gets a full page of live episodes", () => {
-    const { db, run, episode } = world();
-    episode("ghost", { createdAgo: 11 * DAY }); // oldest, no wf_run row
-    for (let i = 0; i < 10; i++) { run(`live${i}`); episode(`live${i}`, { enrichment: "pending" }); }
-    const batch = pendingEpisodes(db, NOW, 10);
-    expect(batch).toHaveLength(10);
-    expect(batch.every((row) => row.reason === "ok")).toBe(true);
-    expect(batch.some((row) => row.runId === "ghost")).toBe(false);
-  });
-
-  it("the episode list fills its page after the join: one orphan among the newest 501 still yields 500", () => {
-    const { db, run, episode } = world();
-    for (let i = 0; i < 500; i++) { run(`r${i}`); episode(`r${i}`, { updatedAgo: (500 - i) * 1000 }); }
-    episode("orphan", { updatedAgo: 0 }); // newest of all, no wf_run row
-    const rows = listEpisodes(db, { days: 30 });
-    expect(rows).toHaveLength(500);
-    expect(rows.some((row) => row.runId === "orphan")).toBe(false);
   });
 });

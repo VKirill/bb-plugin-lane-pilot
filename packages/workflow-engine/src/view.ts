@@ -9,7 +9,6 @@ export type { NodeTone, ViewEdge, ViewNode, WorkflowView } from "./view-core";
  * What a screen needs to draw a workflow: the lowered graph (the form that runs, so a run's step node ids and edge indexes
  * match it) reduced to plain data. Prompts are cut to an excerpt; the file stays the place to read the rest.
  */
-const EXCERPT = 160;
 
 function viewNode(node: WorkflowNode): ViewNode {
   const base: ViewNode = {

@@ -1,11 +1,11 @@
-export { registerSpExecutors } from "./sp-executors";
-export type { SpBacklogPort, SpSchedulePort, SpServicesDeps } from "./sp-dispatch-runner";
+export { registerSpExecutors } from "./handlers/sp-executors";
+export type { SpBacklogPort, SpSchedulePort, SpServicesDeps } from "./services/sp-dispatch-runner";
 export {
   type SpecialistOverviewPayload,
   specialistOverview,
   specialistSnapshot,
   specialistItemSweep,
-} from "./sp-overview";
+} from "./services/sp-overview";
 export {
   type CharterRow,
   type BreakerRow,
@@ -23,7 +23,7 @@ export {
   upsertBreakerState,
   recordSpecialistLedgerUsage,
   specialistLedgerSummary,
-} from "./sp-store";
+} from "./repositories/sp-store";
 export {
   type LockRow,
   listActiveLocks,
@@ -32,17 +32,7 @@ export {
   upsertCohort,
   checkCohortMaturity,
   stageIntent,
-} from "./sp-locks-intents";
-export {
-  type ApprovalNonce,
-  type StrategyGuardResult,
-  type MutationItem,
-  type MutationExecutorFn,
-  mintApprovalNonce,
-  consumeApprovalNonce,
-  checkStrategyGuard,
-  applyMutationsBatch,
-} from "./sp-mutation";
+} from "./repositories/sp-locks-intents";
 export {
   type BankQuestion,
   type TriageOutput,
@@ -50,15 +40,11 @@ export {
   loadMergedQuestions,
   triageQuestions,
   recordQuestionAnswer,
-} from "./sp-questions";
-export {
-  type CfDispatchResult,
-  stageAndDispatchCfBatch,
-  recordCfFeedback,
-} from "./sp-cf-adapter";
+} from "./repositories/sp-questions";
 export {
   type ScriptRunRequest,
   type ScriptRunResult,
   runVerifiedSkillScript,
   mapScriptOutputToDeclaredFields,
-} from "./sp-script-runner";
+} from "./services/sp-script-runner";
+export { room } from "./room";

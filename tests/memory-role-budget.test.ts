@@ -1,7 +1,7 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
 import { roleContextBudget, storeMemoryRecords } from "../packages/memory-core/src";
-import { pmMemoryContext } from "../src/rooms/memory/server/memory-mix";
+import { pmMemoryContext } from "../src/rooms/memory/server/services/memory-mix";
 import { openDatabase } from "../src/rooms/plugin-db";
 
 const limits = { sourceSha256: "a".repeat(64), audience: "subagent" as const, coreBudget: 99_999, noteBudget: 99_999, indexBudget: 999_999 };

@@ -2,9 +2,8 @@ import { chmod, mkdtemp, mkdir, rm, symlink, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { dependencyFindings } from "../../src/rooms/critique/server/critique-runs";
-import type { CoverageFinding } from "../../src/rooms/critique/critique-coverage";
-import { binaryOutputs,collectGitNexusCallerPaths, dropIntendedGaps, dropNoisyGaps, noisyCoveragePath, filteredScriptRun, findTaskPlaceholderPaths, ignoresTrailingFilter, scanCritiqueCoverage } from "../../src/rooms/critique/critique-coverage";
+import type { CoverageFinding } from "../../src/rooms/critique";
+import { binaryOutputs, collectGitNexusCallerPaths, dependencyFindings, dropIntendedGaps, dropNoisyGaps, noisyCoveragePath, filteredScriptRun, findTaskPlaceholderPaths, ignoresTrailingFilter, scanCritiqueCoverage } from "../../src/rooms/critique";
 
 const roots:string[]=[];
 async function workspace():Promise<string>{const path=await mkdtemp(join(tmpdir(),"lane-pilot-critique-"));roots.push(path);return path;}

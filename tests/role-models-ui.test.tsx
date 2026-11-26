@@ -195,6 +195,22 @@ describe("the table «role -> model» on the Team tab", () => {
     }
     slot.lifecycle.unmount();
   });
+
+  it("renders model-per-function first on Team and includes fallback models plus service jobs", async () => {
+    installPickerTestDriver();
+    const { rpc } = tableRpc(view());
+    const slot = await mountPage(rpc);
+    await openTeam(slot);
+    const teamPanel = slot.getByTestId("team-panel");
+    const roleModels = slot.getByTestId("role-models");
+    const pmRow = slot.getByTestId("main-agent");
+    expect(Boolean(roleModels.compareDocumentPosition(pmRow) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true);
+    expect(teamPanel.contains(roleModels)).toBe(true);
+    expect(slot.getByTestId("service-jobs-section")).toBeTruthy();
+    expect(slot.getByTestId("service-jobs-list").textContent).toContain("classify");
+    expect(slot.getByTestId("role-model-pool-plan-critic").textContent).toContain("gpt-6.1-sol");
+    slot.lifecycle.unmount();
+  });
 });
 
 describe("the strings of the table", () => {

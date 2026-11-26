@@ -5,10 +5,8 @@ import type { PrototypeConfig, TaskV2 } from "../src/rooms/contracts";
 import { createAttempt, createRun, createTask, getAttempt, listStageReceipts, openDatabase, savePrototypeConfig, saveTaskPlan, setAttemptWorkspace, setRunThread, transitionAttempt } from "../src/rooms/plugin-db";
 import { createCore } from "../src/rooms/core/server/core";
 import type { Services } from "../server";
-import { setRunPaused } from "../src/rooms/runs/server/runs-halt";
-import { setConveyor } from "../src/rooms/runs";
-import { recordStage } from "../src/rooms/runs/server/stage-records";
-import { createWriterStart } from "../src/rooms/writer/server/start";
+import { recordStage, setConveyor, setRunPaused } from "../src/rooms/runs/server";
+import { createWriterStart } from "../src/rooms/writer/server/services/start";
 
 // P2-8: a paused run lets nothing new start, and a running attempt finishes its stage and then waits for the resume.
 const WORKSPACE = "/ws";
@@ -154,8 +152,8 @@ it("a sibling of an area with three tasks of one kind waits for the pilot, the f
   await env.harness.lifecycle.dispose();
 });
 
-import { waitWhileRunPaused } from "../src/rooms/runs/server/runs-pause";
-import { sweepWriterWakes } from "../src/rooms/writer/server/writer-wake";
+import { waitWhileRunPaused } from "../src/rooms/runs/server";
+import { sweepWriterWakes } from "../src/rooms/writer/server/services/writer-wake";
 
 it("a pause-state read that keeps failing is never 'resumed': the caller's bound decides", async () => {
   const kv = { get: async () => { throw new Error("kv down"); }, set: async () => undefined };

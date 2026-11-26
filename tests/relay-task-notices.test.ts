@@ -1,6 +1,7 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
-import { createRelay, TASK_NOTICE, type RelayItem } from "../src/rooms/relay/server/relay";
+import { TASK_NOTICE, type RelayItem } from "../src/rooms/relay/models/relay";
+import { createRelay } from "../src/rooms/relay/server/services/relay";
 import {
   createAttempt, createRun, listUnreportedTaskOutcomes, markTaskOutcomesReported, openDatabase, pmHasTasksAtWork, setRunThread, transitionAttempt,
   type TaskOutcome,
@@ -284,17 +285,6 @@ describe("task results wait for Lane Pilot's own commit", () => {
     h.tick(TASK_NOTICE.settleMs);
     await h.relay.sweep();
     expect(h.sent).toHaveLength(1);
-  });
-});
-
-describe("pmBookkeepingPending", () => {
-  it("is pending while project life runs for an accepted attempt, or has not started a minute and a half after it", async () => {
-    const { pmBookkeepingPending } = await import("../src/rooms/plugin-db");
-    const db = openDatabase(createFakePluginHost({ pluginId:"lane-pilot" }).bb);
-    const row = { attemptId:"att_x", taskId:"t", state:"accepted", at:1_000 };
-    expect(pmBookkeepingPending(db, [row], 1_000 + 30_000)).toBe(true);
-    expect(pmBookkeepingPending(db, [row], 1_000 + 120_000)).toBe(false);
-    expect(pmBookkeepingPending(db, [{ ...row, state:"blocked" }], 1_000)).toBe(false);
   });
 });
 

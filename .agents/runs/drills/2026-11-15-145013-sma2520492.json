@@ -1,0 +1,1487 @@
+{
+  "kind": "lane-pilot-sandbox-drill",
+  "date": "2026-11-15",
+  "stamp": "20261115-145013",
+  "startedAt": 1794743413795,
+  "finishedAt": 1794743597432,
+  "durationSec": 184,
+  "project": "proj_ibu6v9g64j",
+  "runId": null,
+  "pmThread": null,
+  "sourceThread": null,
+  "mode": "full",
+  "scenarioNames": [
+    "sma_r03",
+    "sma_r05",
+    "sma_r07",
+    "sma_r18",
+    "sma_r21",
+    "sma_tails"
+  ],
+  "commit": "788ca5de01c636d6d11912601539b1895b6b53bb",
+  "skipped": {},
+  "result": "pass",
+  "problems": [],
+  "checks": null,
+  "tasks": null,
+  "dispatch": null,
+  "scenarios": [
+    {
+      "name": "sma_r03",
+      "result": "pass",
+      "problems": [],
+      "proved": [
+        {
+          "node": "n383",
+          "ok": true,
+          "detail": "dimensions ['files', 'git', 'shell', 'secrets', 'network', 'tools', 'time', 'tokens']; files law: owns_paths and never_touch: the ownership gate refuses a change outside them (src/rooms/ve"
+        },
+        {
+          "node": "n384",
+          "ok": true,
+          "detail": "writer denies {'Bash(git push:*)': True, 'Bash(git merge:*)': True, 'Bash(git tag:*)': True, 'Bash(gh release:*)': True}, PM denies {'Bash(git push:*)': False, 'Bash(git merge:*)': False, 'Bash(git tag:*)': False, 'Bash(gh release:*)': False}"
+        },
+        {
+          "node": "n385",
+          "ok": true,
+          "detail": "clean -> ['worker_clean_force'], reset --hard -> ['worker_reset_hard']"
+        },
+        {
+          "node": "n386",
+          "ok": true,
+          "detail": "listed ['ffffffffffffffff'], stale answer {'hostId': 'h', 'written': False, 'expired': True}, fresh answer {'hostId': 'h', 'written': True}"
+        },
+        {
+          "node": "n387",
+          "ok": true,
+          "detail": "host told ['allow', 'deny'], writer told in mode ['queue-if-active', 'queue-if-active']: [Lane Pilot] Permit a1b2c3d4e5f60718: refused — the task owns this file."
+        },
+        {
+          "node": "n388",
+          "ok": true,
+          "detail": "[('claude-code', None), ('codex', '1#k')]; codex pause supported"
+        },
+        {
+          "node": "n396",
+          "ok": true,
+          "detail": "rule 'owner ALL=(lp-sma-r03-user) NOPASSWD:SETENV: ALL\\n', check reachable 0, unreachable 1, bad name 2"
+        },
+        {
+          "node": "n398",
+          "ok": true,
+          "detail": "['-n', '-u', 'lp-worker', '--preserve-env=A,B', '/bin/echo', 'hi']; bad name: worker_user_invalid: Bad User"
+        },
+        {
+          "node": "n399",
+          "ok": true,
+          "detail": "granted ['<run>'], ledger [{'at': 1794743423586, 'user': 'lp-worker', 'owner': 'ubuntu', 'path': '<run>'}]"
+        },
+        {
+          "node": "n400",
+          "ok": true,
+          "detail": "on -> ['lp-worker'], off -> [None]"
+        },
+        {
+          "node": "n401",
+          "ok": true,
+          "detail": "backends ['linux-bubblewrap', 'macos-seatbelt']; missing: sandbox_backend_unavailable: bubblewrap executable is missing; confined run {'exitCode': 0, 'stdout': 'one-answer\\n', 'backend': 'linux-bubblewrap', 'policy': True}"
+        },
+        {
+          "node": "n402",
+          "ok": true,
+          "detail": "{\"atWorktree\": {\"type\": \"reuse\", \"environmentId\": \"env_new\"}, \"otherPath\": null, \"noEnvironment\": null}"
+        },
+        {
+          "node": "n403",
+          "ok": true,
+          "detail": "/srv/proj/.agents/tasks/t1/acceptance.json, /srv/proj/.agents/tasks/t1/receipt.json, only in the base True"
+        },
+        {
+          "node": "n404",
+          "ok": true,
+          "detail": "{\"invalid\": false, \"unknown\": false}"
+        },
+        {
+          "node": "n408",
+          "ok": true,
+          "detail": "roles of lp.draw ['material:specialist:design-lead', 'draw:specialist:design-lead', 'check:plan-critic']"
+        },
+        {
+          "node": "n409",
+          "ok": true,
+          "detail": "{\"allowed\": true, \"role\": \"code-critic\", \"environment\": {\"type\": \"reuse\", \"environmentId\": \"env_wt\"}, \"receipt\": \"passed\"}"
+        },
+        {
+          "node": "n411",
+          "ok": true,
+          "detail": "You are the Creator (forge). Write exactly one skill draft, .agents/forge/skills/cell-sum/SKILL.md, and nothing else.\nA "
+        },
+        {
+          "node": "n412",
+          "ok": true,
+          "detail": "{\"claude-code\": [\"bbPlugins\", \"skills\", \"mcpServers\", \"nativePlugins\"], \"codex\": [\"bbPlugins\", \"skills\", \"mcpServers\", \"nativePlugins\"], \"acp-opencode\": [\"bbPlugins\", \"skills\", \"mcpServers\"], \"acp-cursor\": [\"bbPlugins\", \"skills\", \"mcpServers\"], \"opencode2\": [\"bbPlugins\", \"skills\", \"mcpServers\"]}"
+        },
+        {
+          "node": "n413",
+          "ok": true,
+          "detail": "planner claude-opus-5-5/high, pick without effort medium, with xhigh"
+        },
+        {
+          "node": "n414",
+          "ok": true,
+          "detail": "{\"capacity\": true, \"quota\": true, \"breaker\": true, \"plain\": false}"
+        }
+      ],
+      "checked": 20
+    },
+    {
+      "name": "sma_r05",
+      "result": "pass",
+      "problems": [],
+      "proved": [
+        {
+          "node": "n440",
+          "ok": true,
+          "detail": "before the call {'rpc': 0, 'schedules': 0, 'services': 0, 'logs': 0}; after it 241 RPC methods, start line logged True"
+        },
+        {
+          "node": "n441",
+          "ok": true,
+          "detail": "gaps on record: ['30:the plugin was reloaded (a deploy or a settings change)', '30:остановился без предупреждения: сбой, зависание или машина выключилась']"
+        },
+        {
+          "node": "n442",
+          "ok": true,
+          "detail": "schema True, contract methods missing [], tools 65, tick deps wired 10"
+        },
+        {
+          "node": "n443",
+          "ok": true,
+          "detail": "run one keeps {'provider': 7, 'verification': 3}; run two gets provider pool 2"
+        },
+        {
+          "node": "n444",
+          "ok": true,
+          "detail": "canary 0.1.575, attempt stamp 0.1.575, package 0.1.575"
+        },
+        {
+          "node": "n445",
+          "ok": true,
+          "detail": "validator wired True; without one: no validator"
+        },
+        {
+          "node": "n446",
+          "ok": true,
+          "detail": "attempts ['a_first:1:blocked', 'a_second:2:queued'], journal ['spawn_requested', 'running', 'blocked']"
+        },
+        {
+          "node": "n447",
+          "ok": true,
+          "detail": "task journal ['created'], world seq 1"
+        },
+        {
+          "node": "n448",
+          "ok": true,
+          "detail": "steps per write [1, 1, 0]"
+        },
+        {
+          "node": "n449",
+          "ok": true,
+          "detail": "board ['t_new', 't_old'], identical for two requests True"
+        },
+        {
+          "node": "n450",
+          "ok": true,
+          "detail": "missing methods 0, canary green True, conveyor on True, world 0"
+        },
+        {
+          "node": "n451",
+          "ok": true,
+          "detail": "empty bag misses 10 of 10, full bag misses []"
+        },
+        {
+          "node": "n452",
+          "ok": true,
+          "detail": "registered [{'name': 'schedule-board-tick', 'cron': '* * * * *', 'options': {'isolated': True, 'timeoutMs': 120000, 'overlap': 'skip'}}]"
+        },
+        {
+          "node": "n453",
+          "ok": true,
+          "detail": "order {'migrate': 0, 'door': 1, 'sweep': 52, 'service': 58, 'tick': 62}, canary start stamp number"
+        },
+        {
+          "node": "n454",
+          "ok": true,
+          "detail": "migrate calls 1, all 392 migrations passed True"
+        },
+        {
+          "node": "n455",
+          "ok": true,
+          "detail": "orphan task: refused: foreign key"
+        },
+        {
+          "node": "n456",
+          "ok": true,
+          "detail": "copy removed ['env_done@rpc241'] with the door at 241 methods"
+        },
+        {
+          "node": "n457",
+          "ok": true,
+          "detail": "record {'startedAt': 1700000000000, 'pid': 2526032, 'node': 'v24.15.0'}"
+        },
+        {
+          "node": "n459",
+          "ok": true,
+          "detail": "after two None, after three «several tasks failed on one Lane Pilot fault («attempt_worktree_holder_ambiguous», other project None"
+        },
+        {
+          "node": "n460",
+          "ok": true,
+          "detail": "result {'resumed': ['a_live'], 'skipped': ['a_half'], 'finished': []}, half-done blocked"
+        },
+        {
+          "node": "n461",
+          "ok": true,
+          "detail": "saved: ['snapshot:/wt/env_1', 'archive', 'delete:env_1']; failed save: ['snapshot:/wt/env_1']"
+        },
+        {
+          "node": "n462",
+          "ok": true,
+          "detail": "recheck while active [], when idle ['att_old'], young cancel cancel_requested"
+        },
+        {
+          "node": "n463",
+          "ok": true,
+          "detail": "removed ['env_done@rpc241'], saves 1"
+        },
+        {
+          "node": "n465",
+          "ok": true,
+          "detail": "shared 9, own 4, other project 9, after a change 6"
+        },
+        {
+          "node": "n466",
+          "ok": true,
+          "detail": "on: None; off at start: ['Lane Pilot: the conveyor is OFF since <time> (owner pause): no new work is issued. Turn it on with: bb lane-pilot conveyor on']"
+        },
+        {
+          "node": "n467",
+          "ok": true,
+          "detail": "held pool green False, free pool green True"
+        },
+        {
+          "node": "n468",
+          "ok": true,
+          "detail": "blocked ['codex/gpt|proj|writer_provider_unavailable:breaker_open']"
+        },
+        {
+          "node": "n471",
+          "ok": true,
+          "detail": "stop reason «the plugin was reloaded (a deploy or a settings change)», next start's gap ['the plugin was reloaded (a deploy or a settings change)']"
+        },
+        {
+          "node": "n472",
+          "ok": true,
+          "detail": "slot freed with «time limit 60000 ms» before the work ended (False); the work finished later True"
+        },
+        {
+          "node": "n473",
+          "ok": true,
+          "detail": "log lines ['warn: tick: sweep ran, door: version asked']"
+        },
+        {
+          "node": "n474",
+          "ok": true,
+          "detail": "register [{'reason': 'strange fault at slot 12', 'count': 2, 'lastAt': 300}, {'reason': 'odd one', 'count': 1, 'lastAt': 200}]"
+        },
+        {
+          "node": "n475",
+          "ok": true,
+          "detail": "schedule [{'name': 'permit-sweep', 'cron': '* * * * *'}]; sent ['pm-a: [Lane Pilot permit] The writer of task-a asks permission (delete_for_good): `rm data.csv`. Decid']; after a second sweep 1"
+        },
+        {
+          "node": "n476",
+          "ok": true,
+          "detail": "clean []; broken ['invalid_choice:run.max_tokens', 'incompatible_setting:writer.reasoning_effort']"
+        },
+        {
+          "node": "n477",
+          "ok": true,
+          "detail": "saved {'ok': True, 'version': 1}; row [{'key': 'run.max_tokens', 'value': '40', 'version': 1}]; read back {'run.max_tokens': 40}"
+        },
+        {
+          "node": "n478",
+          "ok": true,
+          "detail": "40 roles, all default True; analyst claude-code/claude-opus-5-5/high, pm-reader claude-code/claude-haiku-5-5/low"
+        },
+        {
+          "node": "n479",
+          "ok": true,
+          "detail": "rules laid for the standard port ['-I INPUT 1 -p tcp --dport 38886 -i lo -j ACCEPT', '-I INPUT 2 -p tcp --dport 38886 -i wg0 -j ACCEPT', '-I INPUT 3 -p tcp --dport 38886 -s 172.16.0.0/12 -j ACCEPT', '-I INPUT 4 -p tcp --dport 38886 -j DROP']"
+        },
+        {
+          "node": "n481",
+          "ok": true,
+          "detail": "cap 0; paid lane: «no money cap is set: openlux is a paid lane and stays closed…»; subscription lane None"
+        },
+        {
+          "node": "n482",
+          "ok": true,
+          "detail": "stale save {'ok': False, 'conflict': True, 'version': 2, 'value': 55}; stored {'run.max_tokens': 55, 'run.max_turns': 90}"
+        },
+        {
+          "node": "n483",
+          "ok": true,
+          "detail": "list [{'name': 'API_KEY', 'kind': 'secret'}, {'name': 'SITE', 'kind': 'login'}]; leaked []; log «deploy failed with *** in the url»"
+        },
+        {
+          "node": "n484",
+          "ok": true,
+          "detail": "run created before the change keeps 5, the next gets 100, an old policy None"
+        },
+        {
+          "node": "n486",
+          "ok": true,
+          "detail": "unset {'ceiling': 300, 'invalid': False}, 0 {'ceiling': None, 'invalid': False}, 25 {'ceiling': 25, 'invalid': False}, 501 {'ceiling': None, 'invalid': True}"
+        },
+        {
+          "node": "n487",
+          "ok": true,
+          "detail": "stop {'status': 0, 'first': 'stopped: bb-server is inactive', 'calls': ['--user stop --no-block bb-server']}; restart calls ['--user restart bb-server']"
+        },
+        {
+          "node": "n488",
+          "ok": true,
+          "detail": "pid 4242, door port 38886/4555/443; status «ok: bb-server active, pid 4242, up <n>s, the door answers»"
+        },
+        {
+          "node": "n489",
+          "ok": true,
+          "detail": "board request answers {'ok': 'ok', 'auth': 'auth', 'notList': 'unknown', 'noise': 'unknown', 'none': 'none'}"
+        },
+        {
+          "node": "n490",
+          "ok": true,
+          "detail": "stop of a stopped service {'status': 0, 'line': 'stopped: bb-server is inactive'}, again {'status': 0, 'line': 'stopped: bb-server is inactive'}, killed False"
+        },
+        {
+          "node": "n491",
+          "ok": true,
+          "detail": "refusals [('status', 2), ('stop', 2), ('restart', 2)]; nothing touched True; other process alive True"
+        },
+        {
+          "node": "n492",
+          "ok": true,
+          "detail": "refused {'status': 2, 'lines': ['refused: live work holds the stop (--force would stop anyway):', 'att1 task1 thr1', 'att2 task2 -']}; issued while refused []; forced {'status': 0, 'issued': True}"
+        },
+        {
+          "node": "n493",
+          "ok": true,
+          "detail": "«stopped hard: the process did not leave in 3s and was killed»; calls ['--user stop --no-block bb-server', '--user kill -s SIGKILL bb-server']; waited 3s"
+        },
+        {
+          "node": "n494",
+          "ok": true,
+          "detail": "door answers: «ok: the door answers after 16s»; silent door: {'status': 1, 'last': 'down: the door did not answer in 30s'}"
+        },
+        {
+          "node": "n495",
+          "ok": true,
+          "detail": "lift commands {'mac': 'launchctl kickstart -k gui/<uid>/svc', 'sudo': 'sudo -n systemctl restart bb-server', 'user': 'systemctl --user restart bb-server'}"
+        },
+        {
+          "node": "n496",
+          "ok": true,
+          "detail": "exit codes {'answers': 0, 'down': 1, 'liveWork': 2, 'forcedLiveWork': 0, 'foreignDoor': 2, 'foreignForced': 0}"
+        },
+        {
+          "node": "n497",
+          "ok": true,
+          "detail": "notes after a day ['no movement for 4 day(s) at discussion'], an hour later ['no movement for 4 day(s) at discussion'], the next day ['no movement for 4 day(s) at discussion', 'no movement for 5 day(s) at discussion']"
+        },
+        {
+          "node": "n498",
+          "ok": true,
+          "detail": "wave table booked ['wave 1:'], after three passes ['wave 1:']"
+        },
+        {
+          "node": "n499",
+          "ok": true,
+          "detail": "posts ['task.blocked', 'task.accepted']; answer read False"
+        },
+        {
+          "node": "n500",
+          "ok": true,
+          "detail": "body keys ['event', 'projectId', 'runId', 'taskId', 'title', 'kind', 'state', 'attempt', 'at']; title clipped to 200; leaked []"
+        },
+        {
+          "node": "n501",
+          "ok": true,
+          "detail": "posts with no address 0, blank 0, http 0"
+        },
+        {
+          "node": "n502",
+          "ok": true,
+          "detail": "digest on True; switched off {'send': False, 'reason': 'disabled'}; on again True; after it went out {'send': False, 'reason': 'nothing_new'}"
+        },
+        {
+          "node": "n503",
+          "ok": true,
+          "detail": "reasons ['decision', 'blocked', 'red', 'term']; digest rows ['• ночь [красное]: the canary is red', '• ночь [стоит]: work cannot go on', '• ночь [срок]: the term ends', '• ночь [решение]: pick the colour']"
+        },
+        {
+          "node": "n504",
+          "ok": true,
+          "detail": "Lane Pilot: ждут владельца, новых — 5. 5 rows, keys ['a0', 'a1', 'a2', 'a3', 'a4']"
+        },
+        {
+          "node": "n505",
+          "ok": true,
+          "detail": "first {'send': True, 'keys': ['a']}; later ticks ['nothing_new', 'nothing_new', 'nothing_new', 'nothing_new', 'nothing_new']; second ack added 0"
+        },
+        {
+          "node": "n506",
+          "ok": true,
+          "detail": "rows [{'key': 'a', 'at': 1792652400000}]; +1h nothing_new; +5h59 nothing_new; +6h ['a#again']; +30h nothing_new"
+        },
+        {
+          "node": "n507",
+          "ok": true,
+          "detail": "digest before ['batch:cancelled', 'night:owner', 'backlog:done', 'backlog:open'], after ['backlog:open']; closed by ['janitor:card is done', 'janitor:batch cancelled', 'screen']"
+        },
+        {
+          "node": "n508",
+          "ok": true,
+          "detail": "failed {'status': 1, 'said': '', 'sends': 1}; at 250 s {'status': 0, 'said': 'waiting after a failed send (250s < 300s)', 'sends': 1}; at 350 s {'status': 0, 'said': 'hi', 'sends': 2}"
+        },
+        {
+          "node": "n509",
+          "ok": true,
+          "detail": "overall {'area': 'all', 'tasks': 5, 'filesMae': 0.6, 'filesBias': -0.2, 'firstTryHit': 0.8, 'tokensRatio': 2, 'minutesRatio': 2}; line: Your forecasts in api (4 tasks): files off by 0.75 on average (bias -0.25), first-try right 75%, real effort ×1.5 the forecast."
+        },
+        {
+          "node": "n510",
+          "ok": true,
+          "detail": "sleeps ['15', '15', '15', '15'], with the setting ['7', '7', '7']; database calls «»/«»"
+        },
+        {
+          "node": "n511",
+          "ok": true,
+          "detail": "7 silent + answer + 7 silent: []; 8 silent: ['first_silence', 'outage', 'message_sent', 'lift']"
+        },
+        {
+          "node": "n512",
+          "ok": true,
+          "detail": "same process ['outage', 'message_sent', 'lift', 'false_alarm', 'message_sent']; another ['outage', 'message_sent', 'lift', 'risen', 'message_sent']"
+        },
+        {
+          "node": "n513",
+          "ok": true,
+          "detail": "MainPID 0 {'outage': False, 'lifted': False}, empty {'outage': False, 'lifted': False}, 4242 {'outage': True, 'lifted': True}"
+        },
+        {
+          "node": "n514",
+          "ok": true,
+          "detail": "activating {'outage': False, 'lifted': False}, reloading {'outage': False, 'lifted': False}, active {'outage': True, 'lifted': True}"
+        },
+        {
+          "node": "n515",
+          "ok": true,
+          "detail": "declared at 8 silent True, at 7 False; refused: at 3 after an answer True, at 2 False"
+        },
+        {
+          "node": "n516",
+          "ok": true,
+          "detail": "['start', 'first_silence', 'outage', 'message_sent']; first silence three knocks (45 s) before the declaration True; «timeout: no answer for 45s from pid 4242 (active)»"
+        },
+        {
+          "node": "n517",
+          "ok": true,
+          "detail": "manager commands in order ['--user kill -s SIGKILL bb-server', '--user restart bb-server']; record ['try 1, killing pid 4242']"
+        },
+        {
+          "node": "n518",
+          "ok": true,
+          "detail": "lift_cmd «systemctl --user restart bb-server»; issued ['--user restart bb-server']"
+        },
+        {
+          "node": "n519",
+          "ok": true,
+          "detail": "door answers [['lift', 'try 1, killing pid 4242']]; door silent [['lift', 'try 1, killing pid 4242'], ['lift_without_outcome', 'try 1, waited 30s'], ['out_of_tries', '1 lifts without an answer: failure']]"
+        },
+        {
+          "node": "n520",
+          "ok": true,
+          "detail": "waits after 0, 1, 2, 3 lifts on record: ['30', '60', '120', '120']"
+        },
+        {
+          "node": "n521",
+          "ok": true,
+          "detail": "holder kill default on a repeated lift: 1"
+        },
+        {
+          "node": "n522",
+          "ok": true,
+          "detail": "record ['1 lifts without an answer: Job failed. See journalctl']; said ['Хаб BB не поднялся после 1 попыток. Причина: Job failed. See journalctl Нужен человек: ssh ubuntu@10.8.0.1, journalctl -u bb-server -n 100.']; 600 s sleeps 1"
+        },
+        {
+          "node": "n523",
+          "ok": true,
+          "detail": "record ['start', 'first_silence', 'outage', 'lift', 'lift_without_outcome', 'out_of_tries']; first silence two knocks before True; times in order True"
+        },
+        {
+          "node": "n524",
+          "ok": true,
+          "detail": "said ['Хаб BB упал: сервер не отвечает 30 с (timeout, процесс 4242 висит). Поднимаю.']"
+        },
+        {
+          "node": "n525",
+          "ok": true,
+          "detail": "said ['Хаб BB не поднялся после 1 попыток. Причина: Job failed. See journalctl Нужен человек: ssh ubuntu@10.8.0.1, journalctl -u bb-server -n 100.']"
+        },
+        {
+          "node": "n526",
+          "ok": true,
+          "detail": "after an answer ['Хаб BB поднялся: не отвечал около 1 мин.']; while silent []; healthy door []"
+        },
+        {
+          "node": "n528",
+          "ok": true,
+          "detail": "[('no file', 'message_not_sent', 0), ('no token', 'message_not_sent', 0), ('no chat', 'message_not_sent', 0), ('refused', 'message_not_sent', 1), ('sent', 'message_sent', 2)]"
+        }
+      ],
+      "checked": 82
+    },
+    {
+      "name": "sma_r07",
+      "result": "pass",
+      "problems": [],
+      "proved": [
+        {
+          "node": "n599",
+          "ok": true,
+          "detail": "homes removed through the host call ['A-done', 'T-done'], homes left ['T-fresh', 'T-plain'], owner's login kept True"
+        },
+        {
+          "node": "n600",
+          "ok": true,
+          "detail": "seeded ['config.toml', 'auth.json'], again [], goals off True, web search off True, AGENTS.md False, login linked True"
+        },
+        {
+          "node": "n602",
+          "ok": true,
+          "detail": "enabled 2, blocked [{'key': 'codex/gpt-6-luna', 'projectIds': ['proj'], 'reason': 'writer_provider_unavailable:breaker_open:codex/gpt-6-luna: 3 provider failures'}]"
+        },
+        {
+          "node": "n603",
+          "ok": true,
+          "detail": "parked reason «waiting_writer:writer_provider_unavailable:breaker_open:codex/gpt-6-luna: 3 provider failures», free member None, an unheld member holds None"
+        },
+        {
+          "node": "n617",
+          "ok": true,
+          "detail": "core cannot run it «writer_provider_unavailable:core_unsupported:devin» / «Ждёт писателя: Devin не поддерживается этим ядром»; switched off «writer_provider_unavailable:writer_off:codex/gpt-6-luna»; breaker «Ждёт писателя: провайдер Codex временно недоступен после сбоев, проверка через 5 мин»"
+        },
+        {
+          "node": "n604",
+          "ok": true,
+          "detail": "strict on with worker.user ci-bot -> asUser ['ci-bot'], strict on -> ['lp-worker'], unset -> [None]"
+        },
+        {
+          "node": "n606",
+          "ok": true,
+          "detail": "launch /usr/bin/sudo -n -u lp-worker --preserve-env=PATH,TOKEN, masked {'dirs': ['.aws', '.config/gh', '.gnupg', '.ssh'], 'files': ['.netrc']}"
+        },
+        {
+          "node": "n608",
+          "ok": true,
+          "detail": "macOS grants ['-a user:lp-worker', '+a user:lp-worker', '+a user:owner'], Linux acl u:lp-worker:rwX,d:u:lp-worker:rwX,u:owner:rwX,d:u:owner:rwX"
+        },
+        {
+          "node": "n610",
+          "ok": true,
+          "detail": "timeout ETIMEDOUT, group alive after it False; normal finish status 0, background alive True"
+        },
+        {
+          "node": "n611",
+          "ok": true,
+          "detail": "claude-code {'family': 'claude', 'windows': True, 'hooks': True, 'codexWindows': None}"
+        },
+        {
+          "node": "n613",
+          "ok": true,
+          "detail": "paid ['openlux', 'anthropic', 'openai', 'api', 'api-acme'], subscription ['claude-code', 'codex', 'opencode2']"
+        },
+        {
+          "node": "n614",
+          "ok": true,
+          "detail": "routing {'planner': 'claude-code/claude-opus-5-5/high', 'auditor': 'codex/gpt-6.1-sol/high', 'docs': 'codex/gpt-6-luna/high', 'codeCritic': 'opencode2/router9/ag/gemini-3.8-flash-high/medium', 'pmReader': 'claude-code/claude-haiku-5-5/low'}"
+        },
+        {
+          "node": "n624",
+          "ok": true,
+          "detail": "40 roles, without an offered model [], without a known effort []"
+        },
+        {
+          "node": "n618",
+          "ok": true,
+          "detail": "claude writer: {'pair': {'providerId': 'codex', 'model': 'gpt-6.1-sol'}, 'changed': True}; gpt writer: {'pair': {'providerId': 'claude-code', 'model': 'claude-opus-5-5'}, 'changed': False}"
+        },
+        {
+          "node": "n619",
+          "ok": true,
+          "detail": "hooks ['core', 'python3 /tmp/sma-r07-merge-lb8GdB/present.py', 'guard'], deny ['Bash(rm -rf /)'], allow None"
+        },
+        {
+          "node": "n623",
+          "ok": true,
+          "detail": "hooks ['core', 'python3 /tmp/sma-r07-merge-lb8GdB/present.py', 'guard'], said «Lane Pilot: hook 2 of group 1 on event PreToolUse dropped from the settings layer of a helper, /definitely/missing/hook.py does not exist: p»"
+        },
+        {
+          "node": "n620",
+          "ok": true,
+          "detail": "secret {'STRIPE': 'tok'}, login variables ['SHOP_PASSWORD', 'SHOP_URL', 'SHOP_USERNAME'], ssh None, ftp None"
+        },
+        {
+          "node": "n621",
+          "ok": true,
+          "detail": "first call ticketed True, call after the grant None, the same call again ticketed True"
+        },
+        {
+          "node": "n622",
+          "ok": true,
+          "detail": "asks 5 from ask-3 of 300 characters, files 30, claims 30, trigger precompact"
+        },
+        {
+          "node": "n605",
+          "ok": true,
+          "detail": "tests of m_ac_identity_probe re-run: 2 passed, 0 failed"
+        },
+        {
+          "node": "n625",
+          "ok": true,
+          "detail": "tests of m_md_parity re-run: 4 passed, 0 failed"
+        },
+        {
+          "node": "n626",
+          "ok": true,
+          "detail": "the launch argv with an installer, an apply, a setup or a permission-bypass flag is refused before the launch: tests of m_md_forbidden re-run on this commit: 1 passed, 0 failed"
+        },
+        {
+          "node": "n627",
+          "ok": true,
+          "detail": "a named role loads its profile, an unlisted role starts as a specialist of the owner: tests of m_md_role re-run on this commit: 1 passed, 0 failed"
+        },
+        {
+          "node": "n629",
+          "ok": true,
+          "detail": "the provider the owner used in the last ten minutes is held with the minutes and the machine named: tests of m_md_day_owner re-run on this commit: 1 passed, 0 failed"
+        },
+        {
+          "node": "n630",
+          "ok": true,
+          "detail": "the chain passes by the busy provider and the next member takes the task: tests of m_md_busy re-run on this commit: 1 passed, 0 failed"
+        },
+        {
+          "node": "n631",
+          "ok": true,
+          "detail": "with every member held the task waits for the earliest and is not failed: tests of m_md_window_wait re-run on this commit: 1 passed, 0 failed"
+        },
+        {
+          "node": "n632",
+          "ok": true,
+          "detail": "a member with its window almost spent is passed by and the next model of the chain takes the task: tests of m_md_agent_model re-run on this commit: 1 passed, 0 failed"
+        },
+        {
+          "node": "n633",
+          "ok": true,
+          "detail": "the paid channel only with every window closed and the cap set and not exceeded: tests of m_mo_rule re-run on this commit: 3 passed, 0 failed"
+        },
+        {
+          "node": "n634",
+          "ok": true,
+          "detail": "the chain asks the hub's money for the cap, the book and the accounts: tests of m_mo_bind re-run on this commit: 1 passed, 0 failed"
+        },
+        {
+          "node": "n635",
+          "ok": true,
+          "detail": "the stop and the screen read the cap from the one global row: tests of m_mo_cap_read re-run on this commit: 1 passed, 0 failed"
+        },
+        {
+          "node": "n636",
+          "ok": true,
+          "detail": "the cap setting becomes a number in one place, no conversion: tests of m_mo_cap_fn re-run on this commit: 1 passed, 0 failed"
+        },
+        {
+          "node": "n637",
+          "ok": true,
+          "detail": "the cap dialog writes only money.monthly_cap_usd, hub-wide, as typed: tests of m_mo_set re-run on this commit: 1 passed, 0 failed"
+        },
+        {
+          "node": "n638",
+          "ok": true,
+          "detail": "a paid lane stops at exactly the cap or when the task's estimate would cross it: tests of m_mo_stop re-run on this commit: 2 passed, 0 failed"
+        },
+        {
+          "node": "n639",
+          "ok": true,
+          "detail": "with no cap set the paid channel is closed by name: tests of m_mo_unset re-run on this commit: 1 passed, 0 failed"
+        },
+        {
+          "node": "n640",
+          "ok": true,
+          "detail": "a paid member over the cap is held until next month, a subscription lane is not: tests of m_mo_fallback re-run on this commit: 1 passed, 0 failed"
+        },
+        {
+          "node": "n641",
+          "ok": true,
+          "detail": "the task's estimate holds a paid lane only when a cap is set and would be crossed: tests of m_mo_task_ceiling re-run on this commit: 1 passed, 0 failed"
+        },
+        {
+          "node": "n642",
+          "ok": true,
+          "detail": "a subscription turn books a row and is priced at zero, never counted as free money: tests of m_mo_usage re-run on this commit: 1 passed, 0 failed"
+        },
+        {
+          "node": "n643",
+          "ok": true,
+          "detail": "the month to date counts this month at the lane's price: tests of m_mo_month re-run on this commit: 1 passed, 0 failed"
+        },
+        {
+          "node": "n644",
+          "ok": true,
+          "detail": "the stop and the screen quote the same book per account: tests of m_mo_accounts re-run on this commit: 1 passed, 0 failed"
+        },
+        {
+          "node": "n645",
+          "ok": true,
+          "detail": "a silent paid attempt is estimated and marked as such: tests of m_mo_estimate re-run on this commit: 4 passed, 0 failed"
+        },
+        {
+          "node": "n646",
+          "ok": true,
+          "detail": "the spend series is the last 14 days by day and account: tests of m_mo_series re-run on this commit: 2 passed, 0 failed"
+        },
+        {
+          "node": "n647",
+          "ok": true,
+          "detail": "the sweep probes each provider in use on the sandbox with its own model: tests of m_pr_create re-run on this commit: 1 passed, 0 failed"
+        },
+        {
+          "node": "n648",
+          "ok": true,
+          "detail": "an unproven adapter is observed, a red receipt holds: tests of m_pr_required re-run on this commit: 1 passed, 0 failed"
+        },
+        {
+          "node": "n649",
+          "ok": true,
+          "detail": "the adapter version is the plugin's, a new version voids the receipt: tests of m_pr_version re-run on this commit: 1 passed, 0 failed"
+        },
+        {
+          "node": "n650",
+          "ok": true,
+          "detail": "a provider is documentary-proved only with all four cells supported: tests of m_pr_doc_cells re-run on this commit: 1 passed, 0 failed"
+        },
+        {
+          "node": "n651",
+          "ok": true,
+          "detail": "the documentary cells are proved by the session's trace, not the model's word: tests of m_pr_doc_drill re-run on this commit: 2 passed, 0 failed"
+        },
+        {
+          "node": "n652",
+          "ok": true,
+          "detail": "stop, confirmed exit and resume by the same thread id: tests of m_pr_claude_pause re-run on this commit: 1 passed, 0 failed"
+        },
+        {
+          "node": "n653",
+          "ok": true,
+          "detail": "the same stop-confirm-resume proof is the Codex pause drill: tests of m_pr_codex_pause re-run on this commit: 1 passed, 0 failed"
+        },
+        {
+          "node": "n654",
+          "ok": true,
+          "detail": "the probe writes only its own .lp-probe-* files in the workspace: tests of m_pr_codex_probe re-run on this commit: 1 passed, 0 failed"
+        },
+        {
+          "node": "n655",
+          "ok": true,
+          "detail": "a Codex thread's commands and tool calls become the progress lines: tests of m_pr_codex_progress re-run on this commit: 1 passed, 0 failed"
+        },
+        {
+          "node": "n656",
+          "ok": true,
+          "detail": "two versions of a page are judged by the rubric, the cleaner one wins: tests of m_pr_design_eval re-run on this commit: 1 passed, 0 failed"
+        },
+        {
+          "node": "n657",
+          "ok": true,
+          "detail": "fields ['h1', 'lowContrast', 'overflowPx', 'smallTargets', 'spacingValues', 'targets', 'textElements', 'tinyText', 'width'], the same for another author True, small targets 2, overflow 110px"
+        },
+        {
+          "node": "n658",
+          "ok": true,
+          "detail": "launch {'providerId': 'codex', 'model': 'codex-test', 'reasoningLevel': 'medium', 'serviceTier': 'default', 'projectId': 'P', 'parentThreadId': 'pm-thread'}, metadata role writer parent pm-thread task t1 attempt a1, header «Lane Pilot task t1: Write the bot»"
+        },
+        {
+          "node": "n659",
+          "ok": true,
+          "detail": "writer denies «Workflow,ScheduleWakeup,AskUserQuestion,Agent,Bash(git push:…» turns 7, critic denies «Workflow,ScheduleWakeup,AskUserQuestion,Agent» ceiling False, PM denies False"
+        },
+        {
+          "node": "n661",
+          "ok": true,
+          "detail": "argv ['exec', '--disallowedTools', 'Bash(git push:*) Bash(rm -rf /)', '--json'], the CLI received 7 arguments, «a b» whole True"
+        },
+        {
+          "node": "n662",
+          "ok": true,
+          "detail": "opening «<outside_data source=\"mail from evilname\">», closing tags 1, broken spellings 3, long source cut to 120 characters"
+        },
+        {
+          "node": "n663",
+          "ok": true,
+          "detail": "contract lines in the chat [True, True, True, True], memory in the chat False, hidden: attempt True, files True, memory True, rules True; a bare task carries []"
+        },
+        {
+          "node": "n664",
+          "ok": true,
+          "detail": "digest ['Did: shell git status; shell npm test; edit src/a.ts', 'Failed: npm test (exit 1)', 'Check: npm test', 'Files: src/a.ts', 'Tools: shell x2, gitnexus/impact x2, edit x1']"
+        },
+        {
+          "node": "n665",
+          "ok": true,
+          "detail": "all held: attempt ['queued', 'waiting_writer:writer_provider_unavailable:breaker_open:codex/gpt-6-luna: 3 provider failures'] wakes at 1794650400000; free member parks False; only unsupported: attempt ['blocked', 'writer_provider_unavailable:core_unsupported:devin']"
+        },
+        {
+          "node": "n666",
+          "ok": true,
+          "detail": "default 5, bad values give [5], set values give [1, 3, 7, 7, 10, 10, 10]"
+        },
+        {
+          "node": "n667",
+          "ok": true,
+          "detail": "open None, exhausted {'percent': 97, 'window': '7d', 'resetsAt': '2026-11-15T18:00:00.000Z'}, unknown measurements [None, None, None, None], one unreadable None"
+        },
+        {
+          "node": "n668",
+          "ok": true,
+          "detail": "stored blocked {'label': '5h', 'providerKey': 'gpt', 'status': 'blocked', 'resetsAtMs': 1794664800000}, records ['rate-limit-windows:claude-code', 'rate-limit-windows:codex'], repeat writes 0, changed writes 1"
+        },
+        {
+          "node": "n669",
+          "ok": true,
+          "detail": "closed until 2026-11-16T14:00:00.000Z, earliest of two accounts 2026-11-14T15:00:00.000Z, event 5 h old {'percent': 100, 'window': '5h', 'resetsAt': '2026-11-16T04:00:00.000Z'}, event 7 h old None"
+        },
+        {
+          "node": "n670",
+          "ok": true,
+          "detail": "no file {'hostId': 'mini', 'at': None, 'windows': {}}, file read {'hostId': 'mini', 'at': '2026-11-14T11:59:00Z', 'windows': {'five_hour': {'utilization': 41.5, 'resetsAt': '2026-11-14T15:00:00Z'}, 'seven_day': {'utilization': 12, 'resetsAt': None}}}"
+        },
+        {
+          "node": "n671",
+          "ok": true,
+          "detail": "board {'five_hour': {'utilization': 55, 'resetsAt': '2026-11-14T14:00:00.000Z'}, 'seven_day': {'utilization': 60, 'resetsAt': '2026-11-18T16:00:00.000Z'}, 'seven_day_opus': {'utilization': 20, 'resetsAt': '2026-11-18T16:00:00.000Z'}}, nothing read {'at': None, 'windows': {}}"
+        },
+        {
+          "node": "n672",
+          "ok": true,
+          "detail": "89.9% -> None, 90% -> {'percent': 90, 'window': '5h', 'resetsAt': '2026-11-14T14:00:00.000Z'}, check off -> None, thresholds [90, 90, 90, 75, 0, 90, 90], account source asked True, off asks []"
+        }
+      ]
+    },
+    {
+      "name": "sma_r18",
+      "result": "pass",
+      "problems": [],
+      "proved": [
+        {
+          "node": "n1402",
+          "ok": true,
+          "detail": "exit and stdout for garbage, empty, cut-off JSON, a list, null: [[0, ''], [0, ''], [0, ''], [0, ''], [0, '']]"
+        },
+        {
+          "node": "n1403",
+          "ok": true,
+          "detail": "attempts the periodic pass asked to take back: [['a1']]"
+        },
+        {
+          "node": "n1404",
+          "ok": true,
+          "detail": "unowned paths: [['src/stray.ts'], [], ['src/owned/secret.ts']]"
+        },
+        {
+          "node": "n1405",
+          "ok": true,
+          "detail": "stored keys ['rate-limit-windows:claude-code'], window {'label': 'five-hour', 'providerKey': 'five_hour', 'status': 'blocked', 'resetsAtMs': 1794747138080}"
+        },
+        {
+          "node": "n1406",
+          "ok": true,
+          "detail": "committed paths ['a.ts', 'b.ts'], stray ['b.ts'], no base → failed"
+        },
+        {
+          "node": "n1407",
+          "ok": true,
+          "detail": "unmoved live attempts: ['old-run']"
+        },
+        {
+          "node": "n1408",
+          "ok": true,
+          "detail": "worktree reconcile: {'removed': 1, 'calls': ['/wt/gone'], 'open': ['/wt/held']}"
+        },
+        {
+          "node": "n1409",
+          "ok": true,
+          "detail": "farewell lines {'status': 0, 'journaled': 'This session changed: src/journaled.ts.', 'listed': 'This session changed: a/first.ts, b/second.ts.'}"
+        },
+        {
+          "node": "n1410",
+          "ok": true,
+          "detail": "segments ['5h 42% - 7d 18% - opus 5%', '⚠ 5h 42% - 7d 18% - opus 5%', '']"
+        },
+        {
+          "node": "n1411",
+          "ok": true,
+          "detail": "settings after the cleaner {'model': 'opus', 'statusLine': {'type': 'command', 'command': 'node /opt/my-line.js --fancy', 'padding': 2}}, own line untouched True"
+        },
+        {
+          "node": "n1413",
+          "ok": true,
+          "detail": "start text {'startupHead': 'Work in this project: 2 live, 1 stale; a merge into main is running.', 'hasCapsule': True}"
+        },
+        {
+          "node": "n1414",
+          "ok": true,
+          "detail": "recall output {'status': 0, 'pointerLine': '- [n1] First sentence names src/a.ts. (file: src/a.ts)'}"
+        },
+        {
+          "node": "n1416",
+          "ok": true,
+          "detail": "calibration task counts per model {'forB': 1, 'forA': 5}"
+        },
+        {
+          "node": "n1417",
+          "ok": true,
+          "detail": "brief line 'Work in this project: 2 live, 1 stale; a merge into main is running.'"
+        },
+        {
+          "node": "n1418",
+          "ok": true,
+          "detail": "PM rules block {'plain': ['- Run the vitest gate before every merge into main.'], 'clients': [\"- Quote the clients section's contract wording when you plan.\", '- Run the vitest gate before every merge into main.']}"
+        },
+        {
+          "node": "n1419",
+          "ok": true,
+          "detail": "weak areas {'weak': ['ui'], 'none': []}"
+        },
+        {
+          "node": "n1420",
+          "ok": true,
+          "detail": "re-armed protections {'rearmed': ['code_critique.mode'], 'again': []}"
+        },
+        {
+          "node": "n1421",
+          "ok": true,
+          "detail": "miss counts {'two': 2, 'three': 3, 'ancient': False}"
+        },
+        {
+          "node": "n1422",
+          "ok": true,
+          "detail": "budget lines {'mid': 'MEMORY.md: 100/200 lines', 'full': 'MEMORY.md: 180/200 lines — near the limit: merge or trim entries'}"
+        },
+        {
+          "node": "n1423",
+          "ok": true,
+          "detail": "compact start {'compactHead': 'Capsule restored after compaction:', 'briefingAfterCapsule': True}"
+        },
+        {
+          "node": "n1424",
+          "ok": true,
+          "detail": "quiet start {'quietStdout': '', 'quietStatus': 0, 'spoken': 'SessionStart'}"
+        },
+        {
+          "node": "n1425",
+          "ok": true,
+          "detail": "search hits ['The zorblax reconciler prunes stale lease rows hourly']"
+        },
+        {
+          "node": "n1426",
+          "ok": true,
+          "detail": "recall arguments {'queryFlag': '--query', 'masked': True, 'words': True}"
+        },
+        {
+          "node": "n1427",
+          "ok": true,
+          "detail": "first/second output {'first': True, 'second': ''}"
+        },
+        {
+          "node": "n1428",
+          "ok": true,
+          "detail": "pointer {'claimAndFile': '- [n1] First sentence names src/a.ts. (file: src/a.ts)', 'bodyShown': False}"
+        },
+        {
+          "node": "n1429",
+          "ok": true,
+          "detail": "pack layers {'status': 0, 'rules': True, 'lessons': True, 'claim': True}"
+        },
+        {
+          "node": "n1430",
+          "ok": true,
+          "detail": "capsule {'status': 0, 'stdout': '', 'asks': ['keep the contract'], 'files': ['src/touched.ts'], 'claims': ['src/claimed.ts'], 'trigger': 'precompact'}"
+        },
+        {
+          "node": "n1431",
+          "ok": true,
+          "detail": "verify text '[subagent-verify] phantoms (named but nowhere in the tree): missing/ghost.ts; already in the tree, unchanged since before the spawn: present.ts: check before you rely on the report.', receipt missing ['missing/ghost.ts']"
+        },
+        {
+          "node": "n1432",
+          "ok": true,
+          "detail": "worker copy {'registered': True, 'status': 0, 'asks': ['keep this'], 'files': ['src/w.ts'], 'trigger': 'precompact'}"
+        },
+        {
+          "node": "n1433",
+          "ok": true,
+          "detail": "cap deny: [spend-cap] the «five-hour» window is at 95% and the cap is 90% (usage.skip_percent, set by a person): no subagent until; no human cap -> None"
+        },
+        {
+          "node": "n1434",
+          "ok": true,
+          "detail": "pack 'Go\\n\\n[context pack] Repository /tmp/r18b-pack-cwd-mnKYJK. Files this window claims: a.ts, b.ts, c.ts. Rules: r one | r two | r three. Lessons: l one. Report the files you changed by path at the end.'"
+        },
+        {
+          "node": "n1435",
+          "ok": true,
+          "detail": "record {'kind': 'Explore', 'deny': None, 'chars': 195, 'packChars': 195, 'layers': {'rules': 3, 'lessons': 1, 'claims': 3}, 'trimmed': False, 'ranked': 7, 'msIsNumber': True}"
+        },
+        {
+          "node": "n1436",
+          "ok": true,
+          "detail": "updatedInput {'subagent_type': 'Explore', 'description': 'map callers', 'additionalContext': None, 'startsWith': True, 'alreadyPackedStdout': ''}"
+        },
+        {
+          "node": "n1437",
+          "ok": true,
+          "detail": "claimed paths ['src/a.ts', 'docs/b.md', 'README.md']"
+        },
+        {
+          "node": "n1438",
+          "ok": true,
+          "detail": "states [{'path': 'src/old.ts', 'state': 'untouched'}, {'path': 'src/dirty.ts', 'state': 'dirty'}, {'path': 'src/new.ts', 'state': 'committed'}, {'path': 'src/ghost.ts', 'state': 'phantom'}]"
+        },
+        {
+          "node": "n1439",
+          "ok": true,
+          "detail": "receipts {'afterOne': 1, 'rows': [{'claimed': ['a/x.ts', 'a/y.ts'], 'missing': ['a/y.ts']}, {'claimed': ['a/x.ts', 'a/y.ts'], 'missing': ['a/y.ts']}], 'farewell': 'Subagents: 2, unverified: a/y.ts.'}"
+        },
+        {
+          "node": "n1440",
+          "ok": true,
+          "detail": "capsule {'taskIsPrompt': True, 'constraints': ['owns_paths: src/gate/**', '- never touch the lockfile'], 'decisions': ['We decided to keep the hook in TypeScript instead of Python. More follows.']}"
+        },
+        {
+          "node": "n1441",
+          "ok": true,
+          "detail": "progress row {'session': 'cp1', 'files': 1, 'asks': 1, 'touched': ['src/a.ts'], 'commands': ['npm test', 'git status']}"
+        },
+        {
+          "node": "n1442",
+          "ok": true,
+          "detail": "guard run {'code': 0, 'heads': ['[git-airbag]', '[reflex] che'], 'streams': ['deps', 'git_airbag', 'reflexes', 'file_card', 'spend', 'claims']}"
+        },
+        {
+          "node": "n1443",
+          "ok": true,
+          "detail": "stall hints {'status': 0, 'failedHint': '[lane-stall class] the same failing call twice (Bash). Do not run it a third time: change the angle. Name the class of this failure, then sweep every similar place offline in one pass (read/grep, no reruns), fix the whole class, and run once to confirm.', 'ha"
+        },
+        {
+          "node": "n1444",
+          "ok": true,
+          "detail": "permit tickets {'categories': ['worker_clean_force', 'worker_curl_sh', 'worker_publish', 'worker_reset_hard'], 'grantedParked': False, 'againParked': True, 'plainParked': False}"
+        },
+        {
+          "node": "n1446",
+          "ok": true,
+          "detail": "fingerprint counts per session folder {'sA': [2], 'sB': [1], 'slash': [1], 'dots': [1]}"
+        },
+        {
+          "node": "n1447",
+          "ok": true,
+          "detail": "streams with a raising advice stream, then a raising required one ['[null, [\"[calm] still here\"]]', 'raised']"
+        },
+        {
+          "node": "n1448",
+          "ok": true,
+          "detail": "budget 0: {'skipped': ['reflexes', 'file_card', 'spend', 'claims'], 'airbagError': None, 'airbagRef': True, 'roomyErrors': 0}"
+        },
+        {
+          "node": "n1449",
+          "ok": true,
+          "detail": "merge [[None, ['[downgraded] stop it', '[spend] x']], ['stop it', ['[spend] y']]]"
+        },
+        {
+          "node": "n1450",
+          "ok": true,
+          "detail": "perf rows {'streams': ['deps', 'spend', 'claims'], 'eachNearTwoTenths': True, 'keptLines': 506}"
+        },
+        {
+          "node": "n1451",
+          "ok": true,
+          "detail": "tiers {'latest': {'tier': 'soft-deny', 'movedAt': 2000}, 'unknownWord': 'note', 'noEvent': {'tier': 'note', 'movedAt': None}, 'otherProject': 'auto-fix'}"
+        },
+        {
+          "node": "n1452",
+          "ok": true,
+          "detail": "claims advice '[claims] /tmp/r18b-claims-repo-cj6NSU/src/x.ts is also being edited by sessA (writer) in the last 30 minutes: coordinate, or touch another file.'"
+        },
+        {
+          "node": "n1453",
+          "ok": true,
+          "detail": "reflex ['[reflex] run it on a copy first', '[reflex] run it on a copy first', '']"
+        },
+        {
+          "node": "n1454",
+          "ok": true,
+          "detail": "gates {'warn': {'warnings': ['no console.log in src'], 'blocks': []}, 'block': {'warnings': [], 'blocks': ['no console.log in src']}, 'outside': {'warnings': [], 'blocks': []}, 'notAdded': {'warnings': [], 'blocks': []}}"
+        },
+        {
+          "node": "n1455",
+          "ok": true,
+          "detail": "airbag '[git-airbag] saved as refs/lane-airbag/1794743554: git checkout b1498210d1 -- . brings it back'"
+        },
+        {
+          "node": "n1456",
+          "ok": true,
+          "detail": "deps guard {'install': True, 'remove': True, 'unlink': False, 'copy': False}"
+        },
+        {
+          "node": "n1457",
+          "ok": true,
+          "detail": "fingerprint {'branch': 'feature/x', 'paths': 50, 'first': 'src/file0.ts', 'dead': {'branch': None, 'paths': []}}"
+        },
+        {
+          "node": "n1458",
+          "ok": true,
+          "detail": "live attempts unmoved past the cutoff ['idle-cancel', 'idle-running']"
+        },
+        {
+          "node": "n1459",
+          "ok": true,
+          "detail": "file notes {'head': '# File notes||src/a.ts -> generated file, edit the template', 'secretKept': False, 'notes': ['[file-note] generated file, edit the template', '[file-note] generated file, edit the template', '', '']}"
+        },
+        {
+          "node": "n1460",
+          "ok": true,
+          "detail": "spend warnings {'low': '', 'at72': '[spend] five-hour is at 72%', 'at72again': '', 'at92': '[spend] five-hour is at 92%', 'at92again': '', 'other': '[spend] five-hour is at 92%'}"
+        },
+        {
+          "node": "n1461",
+          "ok": true,
+          "detail": "stall trail {'recentIsLastEight': True, 'length': 8}"
+        },
+        {
+          "node": "n1462",
+          "ok": true,
+          "detail": "rules {'silentSeven': True, 'eighth': '[lane-stall] eight read-only calls in a row and nothing written: write down what you know and take the next step', 'pingpong': '[lane-stall] you are alternating between two calls; stop and decide which result you trust', 'silentBeforePingpong': True, 'identical"
+        },
+        {
+          "node": "n1463",
+          "ok": true,
+          "detail": "nudges {'a': [False, False, True], 'fourth': False, 'fifth': False, 'b': [False, False, True], 'nudged': 2}"
+        }
+      ],
+      "checked": 59
+    },
+    {
+      "name": "sma_r21",
+      "result": "pass",
+      "problems": [],
+      "proved": [
+        {
+          "node": "n1560",
+          "ok": true,
+          "detail": "unknown verb exit 1, 129 verbs, missing from the usage: []"
+        },
+        {
+          "node": "n1561",
+          "ok": true,
+          "detail": "registered as lane-pilot; conveyor on/off/on across three calls: [True, False, 'deploy window', True]"
+        },
+        {
+          "node": "n1565",
+          "ok": true,
+          "detail": "empty book {'exitCode': 0, 'stdout': 'no phases'}; list ['ph_8f182887f6  discussion   active          Add the footer', 'ph_dc297ec98b  discussion   active          Fix the header']"
+        },
+        {
+          "node": "n1588",
+          "ok": true,
+          "detail": "third on a held row: 'roadmap row row-1 already has a live phase: ph_8f182887f6 «Add the footer» — work with that one, or close it first'; after pausing one: ['ph_8f182887f6  discussion   paused          Add the footer', 'ph_dc297ec98b  discussion   active          Fix the header']"
+        },
+        {
+          "node": "n1563",
+          "ok": true,
+          "detail": "no file -> {'exitCode': 0, 'stdout': 'no STATE.md'}; after two decisions and a blocker the kept lines are [True, True, True, True]"
+        },
+        {
+          "node": "n1564",
+          "ok": true,
+          "detail": "row 1 -> '- [x] 1 First — g1\\n  - note a\\n  - note b'; no row 9 -> {'exitCode': 1, 'stdout': 'no row 9'}; analysis 'ticked without SUMMARY.md: 1 First (phase ph_road)\\nphase folders with no row: none\\nnext open row: 2 Second'"
+        },
+        {
+          "node": "n1587",
+          "ok": true,
+          "detail": "bad roadmap -> 'duplicate roadmap row 2\\nskipped roadmap row(s) between 2 and 4'; agreeing one -> {'exitCode': 0, 'stdout': 'planning files healthy'}"
+        },
+        {
+          "node": "n1584",
+          "ok": true,
+          "detail": "open lines {'exitCode': 1, 'lines': ['ph_u  failed 2. reset: breaks', 'ph_u  open   1. login: not tried']}; after all ticked {'exitCode': 0, 'stdout': 'no open acceptance lines'}"
+        },
+        {
+          "node": "n1566",
+          "ok": true,
+          "detail": "with an open and a failed line: 'UAT is not complete: 1 open, 1 failed of 3 — the owner marks each line in .agents/phases/ph_u/UAT.md first'; every line ticked: accepted"
+        },
+        {
+          "node": "n1567",
+          "ok": true,
+          "detail": "failed: 'Phase ph_f «Sum» — stage 5, verification failed: npm test red. Accepted pieces a'; none yet: \"Phase ph_n «Sum» — stage 5, verification: Lane Pilot runs every piece's checks together on main.\""
+        },
+        {
+          "node": "n1576",
+          "ok": true,
+          "detail": "plan gate lines for p1 ['p1: the task id must equal the piece id', 'p1: no owns_paths — the piece cannot become a work', 'p1: no verification command — nothing proves the promise'], for the sound p2 []"
+        },
+        {
+          "node": "n1585",
+          "ok": true,
+          "detail": "before the yes: listed False; after: row [{'project_id': 'projA', 'kind': 'note', 'origin': 'phase-lessons', 'content': 'keep the migrations small and reversible'}], listed by `learning lessons` True"
+        },
+        {
+          "node": "n1577",
+          "ok": true,
+          "detail": "waves [1, 2, 3], issue order ['a', 'a2', 'b', 'c']"
+        },
+        {
+          "node": "n1574",
+          "ok": true,
+          "detail": "PLAN.md head ['# Plan — phase ph_t: Sum', 'Goal: sums', '## Waves'], piece a at line 4 between wave 1 (line 3) and wave 2 (line 7)"
+        },
+        {
+          "node": "n1568",
+          "ok": true,
+          "detail": "draw inputs {'goal': 'g', 'folder': '.agents/phases/ph_draw', 'material': False, 'requirements': 'actions, texts', 'pieces': True}"
+        },
+        {
+          "node": "n1569",
+          "ok": true,
+          "detail": "code-critic: default opencode2|router9/ag/gemini-3.8-flash-high|medium|default|null; table claude-code|claude-opus-5-5|xhigh|table|role_model.code-critic; stage codex|gpt-6.1-terra|low|stage|code_critique.model; below the least tier opencode2|router9/ag/gemini-3.8-flash-high|medium|default|null|esca"
+        },
+        {
+          "node": "n1570",
+          "ok": true,
+          "detail": "40 roles, 12 offered models, defaults {'analyst': 'claude-opus-5-5:high', 'planner': 'claude-opus-5-5:high', 'copy-lead': 'claude-sonnet-5-5:high', 'code-critic': 'router9/ag/gemini-3.8-flash-high:medium', 'auditor': 'gpt-6.1-sol:high'}"
+        },
+        {
+          "node": "n1571",
+          "ok": true,
+          "detail": "named ['alpha-skill', 'beta-skill'], nine asked -> 8"
+        },
+        {
+          "node": "n1573",
+          "ok": true,
+          "detail": "unset None; 4 refused (integer 1-3), stored None; 2 saved, read 2; stale write refused, still 2"
+        },
+        {
+          "node": "n1572",
+          "ok": true,
+          "detail": "committed '.agents/planning/STATE.md' as 'docs: state'; left over: '?? other.ts'; a second call: nothing"
+        },
+        {
+          "node": "n1586",
+          "ok": true,
+          "detail": "no index -> {'state': 'none'}; two commits behind -> {'state': 'stale', 'behind': 2}; at HEAD -> {'state': 'fresh'}"
+        },
+        {
+          "node": "n1575",
+          "ok": true,
+          "detail": "header read {'title': 'A: b', 'tags': ['x']}; after --set status=done --merge tags=y the file is '---\\ntitle: \"A: b\"\\n# why\\ntags: [x, y]\\nstatus: done\\n---\\n\\n# Body\\n'; a path outside the checkout exits 1"
+        },
+        {
+          "node": "n1579",
+          "ok": true,
+          "detail": "17 bundled agents plus the session guard, gaps [], a made-up feature reports ['made-up: unknown agent no-such-agent', 'made-up: unknown hook no-such-hook', 'made-up: unknown skill no-such-skill']"
+        },
+        {
+          "node": "n1580",
+          "ok": true,
+          "detail": "docs/capabilities.snapshot.json equals the generator's output for the checkout: True (18 capabilities)"
+        },
+        {
+          "node": "n1582",
+          "ok": true,
+          "detail": "all supported exit 0; one not_supported exit 1; unproven exit 0; unknown flag exit 1"
+        },
+        {
+          "node": "n1583",
+          "ok": true,
+          "detail": "run card header reads «2 of 3 tasks accepted», a resent task counts once, a closed run says closed: 1 case(s) of tests/sma/four-proofs-r21-b.test.tsx: ['passed']"
+        }
+      ],
+      "checked": 26
+    },
+    {
+      "name": "sma_tails",
+      "result": "pass",
+      "problems": [],
+      "proved": [
+        {
+          "node": "n480",
+          "ok": true,
+          "detail": "conveyor: a fresh store is ON (the card says off from the factory: a deviation on purpose, the default stays), off keeps its reason «night maintenance» and first time, on clears it, a long reason is cut to 300"
+        },
+        {
+          "node": "n557",
+          "ok": true,
+          "detail": "«make a batch» by the rules: {'kind': 'small', 'confident': False}, in Russian {'kind': 'small', 'confident': False}; no phrase is read as a batch by the rules (the judge reads one, on purpose)"
+        },
+        {
+          "node": "n564",
+          "ok": true,
+          "detail": "hard calls: a writer is refused [['git push origin main', True], ['git tag v1.0', True], ['gh release create v1.0', True]], git status refused: False; the phase waits at {'key': 'execution:word:issue', 'mentionsOwner': True}"
+        },
+        {
+          "node": "n751",
+          "ok": true,
+          "detail": "publish: failing gate marker -> ['gate', 'held_gate'] with no PR step; clean run -> {'status': 'shipped', 'pr_url': 'https://x/pr/1', 'held_by': [], 'hooks_failed': []}"
+        },
+        {
+          "node": "n993",
+          "ok": true,
+          "detail": "a word to a running worker: sent [{'threadId': 'thr_w', 'mode': 'steer-if-active', 'hasWord': True, 'hasControlWord': False}], attempts 1, state running; control run sent 0 (delivery only: a live model turn is not part of this proof)"
+        },
+        {
+          "node": "n1224",
+          "ok": true,
+          "detail": "learnings: 1 note written to the hub memory door, origin phase-lessons; a refused write returns «memory budget is full»"
+        },
+        {
+          "node": "n1604",
+          "ok": true,
+          "detail": "live check report: failed -> rework, a pass with a case not passed -> {'verdict': 'blocked', 'status': 'block'}, all passed -> passed"
+        },
+        {
+          "node": "n1615",
+          "ok": true,
+          "detail": "research step: answers -> ['research'] -> requirements -> recap; files ['STACK.md', 'FEATURES.md', 'ARCHITECTURE.md', 'PITFALLS.md']; never overwrites True (the agent writes the files: the prompt is what is proved)"
+        },
+        {
+          "node": "n1675",
+          "ok": true,
+          "detail": "parity: six lines ['hooks', 'memory', 'rules', 'skills', 'permissions', 'model'], a difference reads «only in the session: m3; only in the terminal: m2», a missing layer is None"
+        },
+        {
+          "node": "n835",
+          "ok": true,
+          "detail": "2 case(s) tagged [sma:m_sw_check_run] rendered in jsdom on this commit (the check's stage steps, Cancel on a checking task, none on a done one): ['passed', 'passed']"
+        },
+        {
+          "node": "n1230",
+          "ok": true,
+          "detail": "the designer's chat is launched with ['project-design', 'modern-web-guidance', 'page-prototype'], as a specialist with ['env-catalog', 'project-design', 'modern-web-guidance', 'page-prototype']; the copy editor's chat with ['copywriter']"
+        },
+        {
+          "node": "n1362",
+          "ok": true,
+          "detail": "the preview step of project-start shows the hub's notes ['- [note] The stack is TypeScript with vitest; the test command is npm test and it is green on main; deploy and logs go through the hosts profile.'] (another project's note and an unconfirmed guess left out); memory rows written: 0"
+        },
+        {
+          "node": "n1059",
+          "ok": true,
+          "detail": "accept stored note with memory rows ['88becc90ce7aaa34b10ccf2e335912461f9fc22ec83eae2341d739526de46891']; replacement adopted -> rule:rp-tail"
+        },
+        {
+          "node": "n1060",
+          "ok": true,
+          "detail": "maintenance receipt passed: stored 1, dropped 1, ids ['52bc494995d01edc619194ae0cf7c2e5a3600e62f7731c036f1cf88931495186'], row {'id': '52bc494995d01edc619194ae0cf7c2e5a3600e62f7731c036f1cf88931495186', 'kind': 'core', 'status': 'active', 'task': 'tail-task'}"
+        },
+        {
+          "node": "n1077",
+          "ok": true,
+          "detail": "empty query miss True, recorded rows [{'projectId': 'P', 'query': 'kubernetes ingress certificates', 'at': 1000, 'kind': 'empty'}]; active query miss False"
+        },
+        {
+          "node": "n132",
+          "ok": true,
+          "detail": "phase ambiguity refused 'roadmap row 3 names several live phases: ph_b, ph_a — name the phase id'; task-file resolver returned null True"
+        },
+        {
+          "node": "n1621",
+          "ok": true,
+          "detail": "milestone-close path ['status', 'ask_finish', 'retro', 'living', 'close', 'record', 'snapshot', 'archive', 'closed']; archive output {'folder': '.agents/planning/milestones/stats-export-68f39cac', 'files': ['ROADMAP.md', 'REQUIREMENTS.md'], 'kept': False}"
+        }
+      ]
+    }
+  ],
+  "seen": null,
+  "judged": [
+    {
+      "name": "sma_r03",
+      "verdict": "pass",
+      "evidence": [
+        "proved",
+        "checked"
+      ],
+      "why": ""
+    },
+    {
+      "name": "sma_r05",
+      "verdict": "pass",
+      "evidence": [
+        "proved",
+        "checked"
+      ],
+      "why": ""
+    },
+    {
+      "name": "sma_r07",
+      "verdict": "pass",
+      "evidence": [
+        "proved"
+      ],
+      "why": ""
+    },
+    {
+      "name": "sma_r18",
+      "verdict": "pass",
+      "evidence": [
+        "proved",
+        "checked"
+      ],
+      "why": ""
+    },
+    {
+      "name": "sma_r21",
+      "verdict": "pass",
+      "evidence": [
+        "proved",
+        "checked"
+      ],
+      "why": ""
+    },
+    {
+      "name": "sma_tails",
+      "verdict": "pass",
+      "evidence": [
+        "proved"
+      ],
+      "why": ""
+    }
+  ],
+  "series": {
+    "verdict": "pass",
+    "missing": [],
+    "failed": [],
+    "skipped": []
+  }
+}

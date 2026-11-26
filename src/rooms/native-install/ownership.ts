@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { lstat, mkdir, readFile, rename, rmdir, unlink, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { hashPath, sha256Hex } from "@lane-pilot/kit";
-import type { CoexistenceManager, CoexistenceOwner } from "./coexistence-contracts";
+import type { CoexistenceManager, CoexistenceOwner } from "./models/coexistence-contracts";
 import { compareAndSwapText, readTextState } from "./cas";
 
 export type OwnershipEntry = {

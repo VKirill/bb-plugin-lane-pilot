@@ -3,30 +3,30 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { CODEX_LEAN_DEFAULT_ROLES, ROLE_PROFILES, codexLeanEnabled, parseCodexLeanRoles } from "../src/rooms/contracts";
-import { createBbShimEnv } from "../src/rooms/native-agent/server/helper-bb-shim";
+import { createBbShimEnv } from "../src/rooms/native-agent/server/services/helper-bb-shim";
 
 // Per-role choice of the lean Codex home (setting codex.lean_roles) and the contents of the role profiles it goes with.
 describe("codex.lean_roles", () => {
   it("unset and `default` mean docs and the one-shot judges and critics; the writer and the open roles stay out", () => {
     for (const raw of [undefined, null, "", "default", " DEFAULT "]) {
       for (const role of CODEX_LEAN_DEFAULT_ROLES) expect(codexLeanEnabled(role, raw), `${role}/${String(raw)}`).toBe(true);
-      for (const role of ["writer", "code-repair", "specialist:tavily", "analyst", "errand", "self-repair", "wall-hunter", "debugger"]) expect(codexLeanEnabled(role, raw), role).toBe(false);
+      for (const role of ["writer", "code-repair", "specialist:tavily", "analyst", "errand", "self-repair", "debugger"]) expect(codexLeanEnabled(role, raw), role).toBe(false);
     }
-    expect(CODEX_LEAN_DEFAULT_ROLES).toEqual(expect.arrayContaining(["docs-maintainer", "plan-critic", "code-critic", "pm-reader"]));
+    expect(CODEX_LEAN_DEFAULT_ROLES).toEqual(expect.arrayContaining(["memory-maintainer", "plan-critic", "code-critic", "pm-reader"]));
   });
 
   it("`off` is the escape hatch, `all` takes every role, a list names exactly those and `default` inside it expands", () => {
     expect(parseCodexLeanRoles("off")).toEqual({ mode: "off" });
-    expect(codexLeanEnabled("docs-maintainer", "off")).toBe(false);
+    expect(codexLeanEnabled("memory-maintainer", "off")).toBe(false);
     expect(codexLeanEnabled("writer", "all")).toBe(true);
-    expect(codexLeanEnabled("writer", "writer, wall-hunter")).toBe(true);
-    expect(codexLeanEnabled("docs-maintainer", "writer, wall-hunter")).toBe(false);
-    expect(codexLeanEnabled("docs-maintainer", "default,wall-hunter")).toBe(true);
-    expect(codexLeanEnabled("wall-hunter", "default,wall-hunter")).toBe(true);
+    expect(codexLeanEnabled("writer", "writer, self-repair")).toBe(true);
+    expect(codexLeanEnabled("memory-maintainer", "writer, self-repair")).toBe(false);
+    expect(codexLeanEnabled("memory-maintainer", "default,self-repair")).toBe(true);
+    expect(codexLeanEnabled("self-repair", "default,self-repair")).toBe(true);
   });
 
   it("the host env LANE_PILOT_CODEX_LEAN_HOME=off beats the setting; `on` is the old all-roles switch only while the setting is unset", () => {
-    expect(codexLeanEnabled("docs-maintainer", "all", "off")).toBe(false);
+    expect(codexLeanEnabled("memory-maintainer", "all", "off")).toBe(false);
     expect(codexLeanEnabled("writer", undefined, "on")).toBe(true);
     expect(codexLeanEnabled("writer", "default", "on")).toBe(false);
   });
@@ -48,7 +48,7 @@ describe("the shim picks the home per role", () => {
   };
 
   it("with nothing set, docs and the critics start in the lean home of their profile and the writer does not", async () => {
-    const docs = await homeOf("docs-maintainer", {});
+    const docs = await homeOf("memory-maintainer", {});
     expect(docs.home).toBe("/h/lean-quiet");
     expect(docs.calls).toEqual([expect.objectContaining({ key: "lean-quiet", profile: "quiet" })]);
     expect((await homeOf("code-critic", {})).home).toBe("/h/lean-quiet");
@@ -57,13 +57,13 @@ describe("the shim picks the home per role", () => {
   });
 
   it("the setting turns it off, widens it to a role, or to every role (the open roles get their own profile)", async () => {
-    expect((await homeOf("docs-maintainer", { "codex.lean_roles": "off" })).home).toBeNull();
+    expect((await homeOf("memory-maintainer", { "codex.lean_roles": "off" })).home).toBeNull();
     expect((await homeOf("writer", { "codex.lean_roles": "default,writer" })).home).toBe("/h/lean-code");
     expect((await homeOf("analyst", { "codex.lean_roles": "all" })).home).toBe("/h/lean-open");
   });
 
   it("other providers never get a codex home", async () => {
-    const { contribute } = setup("docs-maintainer", {});
+    const { contribute } = setup("memory-maintainer", {});
     const entries = await contribute({ threadId: "thr_1", hostId: "h" }, "opencode2");
     expect(entries.map((entry) => entry.name)).not.toContain("CODEX_HOME");
   });
@@ -100,7 +100,7 @@ describe("a lean home shared by parallel sessions", () => {
 describe("role profiles by evidence (audit 2026-11-14)", () => {
   it("keeps the code graph where it is wanted and drops it where it never was called", () => {
     for (const role of ["writer", "code-repair", "night-fixer", "code-critic", "specialist-reviewer", "debugger"] as const) expect(ROLE_PROFILES[role].mcpServers, role).toEqual(["gitnexus"]);
-    for (const role of ["docs-maintainer", "onboarder", "project-life", "plan-critic", "pm-reader", "gate-triage"] as const) expect(ROLE_PROFILES[role].mcpServers, role).toEqual([]);
+    for (const role of ["onboarder", "plan-critic", "pm-reader", "gate-triage"] as const) expect(ROLE_PROFILES[role].mcpServers, role).toEqual([]);
   });
   it("gives no role but the specialists a metamcp gateway; the writer reads docs through its own tools", () => {
     for (const [role, profile] of Object.entries(ROLE_PROFILES)) if (role !== "specialist:design-lead") expect(profile.mcpServers, role).not.toContain("metamcp");

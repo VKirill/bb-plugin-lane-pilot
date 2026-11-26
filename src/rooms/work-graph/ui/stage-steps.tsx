@@ -1,8 +1,6 @@
-import { useEffect, useState } from "react";
-import { useBbNavigate, useRpc } from "@get-bb/plugin-sdk/app";
+import { useBbNavigate } from "@get-bb/plugin-sdk/app";
 import { t } from "@lane-pilot/i18n";
-import type { rpcContract } from "../../contracts";
-import type { ExecutorRow, StageBlock, TaskGraph } from "../logic";
+import type { ExecutorRow, StageBlock, TaskGraph } from "../models/logic";
 import { StageStrip } from "./stage-strip";
 import { duration, fill, money, roleName, shortModel, stageName, stageState } from "./format";
 import { useLpRpcQuery } from "../../ui-shell/ui";

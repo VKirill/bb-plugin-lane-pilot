@@ -4,7 +4,7 @@ import type { PrototypeConfig, TaskV2 } from "../src/rooms/contracts";
 import { CRITIQUE_REPEAT_MAX_LINES, CRITIQUE_REPEAT_WINDOW_MS, critiqueRepeatSkip, patchChangedLines } from "../src/rooms/contracts/quality-mode";
 import { createAttempt, createRun, createTask, listStageReceipts, openDatabase, saveProjectSetting, saveStageReceipt, transitionAttempt } from "../src/rooms/plugin-db";
 import { sha256Hex } from "@lane-pilot/kit";
-import { createWriterFinish } from "../src/rooms/writer/server/finish";
+import { createWriterFinish } from "../src/rooms/writer/server/services/finish";
 
 const NOW = 1_800_000_000_000;
 const approval = (over: Partial<Parameters<typeof critiqueRepeatSkip>[0]["priorApprovals"][number]> = {}) => ({

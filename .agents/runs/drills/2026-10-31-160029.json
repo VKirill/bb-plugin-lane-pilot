@@ -1,0 +1,432 @@
+{
+  "kind": "lane-pilot-sandbox-drill",
+  "date": "2026-10-31",
+  "stamp": "20261031-160029",
+  "startedAt": 1793451629133,
+  "finishedAt": 1793451812522,
+  "durationSec": 183,
+  "project": "proj_ibu6v9g64j",
+  "runId": "lprun_befee878ec9b4d4f868f87d4e7165d6b",
+  "pmThread": "thr_tcg24vxrjh",
+  "sourceThread": "thr_z3ebetha6c",
+  "mode": "quick",
+  "scenarioNames": [
+    "guard_hash",
+    "deferrals",
+    "checkers",
+    "parallel3"
+  ],
+  "commit": "fe3feebc7be1bef34f372c97ab7a59aa01c0bc87",
+  "skipped": {
+    "memory_paths": "passed at 2d24177e8a81 0.9 h ago; none of the 9 file(s) changed since is its code",
+    "helper_providers": "passed at 11ccb8601dfc 0.1 h ago; none of the 3 file(s) changed since is its code"
+  },
+  "result": "pass",
+  "problems": [],
+  "checks": {
+    "allAccepted": true,
+    "eachInOwnWorktree": true,
+    "filesInSandbox": true,
+    "checksRan": true
+  },
+  "tasks": [
+    {
+      "task": "drill-20261031-160029-a",
+      "attempts": 1,
+      "states": [
+        "accepted"
+      ],
+      "state": "accepted",
+      "reason": "",
+      "attempt": "lpattempt_a40d1e1b6ee248469c653cf36bc4b857",
+      "writerThread": "thr_fcv34kua9g",
+      "workspace": "/home/ubuntu/.lane-pilot/worktrees/lpattempt_a40d1e1b6ee248469c653cf36bc4b857/lp-drill-sandbox",
+      "environment": "env_ur7b54uckc",
+      "holder": null,
+      "file": "notes/drill/20261031-160029-a.md",
+      "fileInSandbox": true
+    },
+    {
+      "task": "drill-20261031-160029-b",
+      "attempts": 1,
+      "states": [
+        "accepted"
+      ],
+      "state": "accepted",
+      "reason": "",
+      "attempt": "lpattempt_7d96a5220c614282ae20881fa178a4d2",
+      "writerThread": "thr_9hjreaqtbq",
+      "workspace": "/home/ubuntu/.lane-pilot/worktrees/lpattempt_7d96a5220c614282ae20881fa178a4d2/lp-drill-sandbox",
+      "environment": "env_y8nk3bfpxr",
+      "holder": null,
+      "file": "notes/drill/20261031-160029-b.md",
+      "fileInSandbox": true
+    },
+    {
+      "task": "drill-20261031-160029-c",
+      "attempts": 1,
+      "states": [
+        "accepted"
+      ],
+      "state": "accepted",
+      "reason": "",
+      "attempt": "lpattempt_0858052514124e16bf8add41831a1c54",
+      "writerThread": "thr_t5dsi6b4k3",
+      "workspace": "/home/ubuntu/.lane-pilot/worktrees/lpattempt_0858052514124e16bf8add41831a1c54/lp-drill-sandbox",
+      "environment": "env_in9xda3ryg",
+      "holder": null,
+      "file": "notes/drill/20261031-160029-c.md",
+      "fileInSandbox": true
+    }
+  ],
+  "dispatch": {
+    "drill-20261031-160029-a": "{\n  \"runId\": \"lprun_befee878ec9b4d4f868f87d4e7165d6b\",\n  \"taskId\": \"drill-20261031-160029-a\",\n  \"attemptId\": \"lpattempt_a40d1e1b6ee248469c653cf36bc4b857\",\n  \"writerThreadId\": null,\n  \"state\": \"queued\",\n  \"stagesPending\": true,\n  \"stages\": [\n    {\n      \"runId\": \"lprun_befee878ec9b4d4f868f87d4e7165d6b\",\n      \"taskId\": \"drill-20261031-160029-a\",\n      \"stageId\": \"acceptance-receipt\",\n      \"contractVersion\": 1,\n      \"state\": \"pending\",\n      \"inputSha256\": \"fe9552b2466e96d49bd9b301ef750d11d87217e0de10e2444dc64b9ae783af56\",\n      \"outputSha256\": null,\n      \"attempt\": 0,\n      \"providerId\": nul",
+    "drill-20261031-160029-b": "{\n  \"runId\": \"lprun_befee878ec9b4d4f868f87d4e7165d6b\",\n  \"taskId\": \"drill-20261031-160029-b\",\n  \"attemptId\": \"lpattempt_7d96a5220c614282ae20881fa178a4d2\",\n  \"writerThreadId\": null,\n  \"state\": \"queued\",\n  \"stagesPending\": true,\n  \"stages\": [\n    {\n      \"runId\": \"lprun_befee878ec9b4d4f868f87d4e7165d6b\",\n      \"taskId\": \"drill-20261031-160029-b\",\n      \"stageId\": \"acceptance-receipt\",\n      \"contractVersion\": 1,\n      \"state\": \"pending\",\n      \"inputSha256\": \"56de868a9f1b579c032c141ad3df7134b7bc856837138e05dc57c0df76ff2369\",\n      \"outputSha256\": null,\n      \"attempt\": 0,\n      \"providerId\": nul",
+    "drill-20261031-160029-c": "{\n  \"runId\": \"lprun_befee878ec9b4d4f868f87d4e7165d6b\",\n  \"taskId\": \"drill-20261031-160029-c\",\n  \"attemptId\": \"lpattempt_0858052514124e16bf8add41831a1c54\",\n  \"writerThreadId\": null,\n  \"state\": \"queued\",\n  \"stagesPending\": true,\n  \"stages\": [\n    {\n      \"runId\": \"lprun_befee878ec9b4d4f868f87d4e7165d6b\",\n      \"taskId\": \"drill-20261031-160029-c\",\n      \"stageId\": \"acceptance-receipt\",\n      \"contractVersion\": 1,\n      \"state\": \"pending\",\n      \"inputSha256\": \"2db4ca7990c0a652e8134c3b82c93d27aba32d750bbe32fd1e92293e673284a3\",\n      \"outputSha256\": null,\n      \"attempt\": 0,\n      \"providerId\": nul"
+  },
+  "scenarios": [
+    {
+      "name": "guard_hash",
+      "result": "pass",
+      "problems": [],
+      "machines": [
+        {
+          "machine": "ovh",
+          "files": {
+            "guard_shell.py": {
+              "state": "ok",
+              "installed": "e417a79d332d8f4247e861d3060a2cb5d55b5da139fee9f280b9c14d4b89e0ee",
+              "expected": "e417a79d332d8f4247e861d3060a2cb5d55b5da139fee9f280b9c14d4b89e0ee"
+            },
+            "lib_payload.py": {
+              "state": "ok",
+              "installed": "888d89f05eb23a585b99c343df1865a368f8f28a090e9f6f29a8246a9be99565",
+              "expected": "888d89f05eb23a585b99c343df1865a368f8f28a090e9f6f29a8246a9be99565"
+            }
+          },
+          "reachable": true
+        },
+        {
+          "machine": "mac-mini",
+          "files": {
+            "guard_shell.py": {
+              "state": "ok",
+              "installed": "e417a79d332d8f4247e861d3060a2cb5d55b5da139fee9f280b9c14d4b89e0ee",
+              "expected": "e417a79d332d8f4247e861d3060a2cb5d55b5da139fee9f280b9c14d4b89e0ee"
+            },
+            "lib_payload.py": {
+              "state": "ok",
+              "installed": "888d89f05eb23a585b99c343df1865a368f8f28a090e9f6f29a8246a9be99565",
+              "expected": "888d89f05eb23a585b99c343df1865a368f8f28a090e9f6f29a8246a9be99565"
+            }
+          },
+          "reachable": true
+        },
+        {
+          "machine": "macbook",
+          "files": {
+            "guard_shell.py": {
+              "state": "ok",
+              "installed": "e417a79d332d8f4247e861d3060a2cb5d55b5da139fee9f280b9c14d4b89e0ee",
+              "expected": "e417a79d332d8f4247e861d3060a2cb5d55b5da139fee9f280b9c14d4b89e0ee"
+            },
+            "lib_payload.py": {
+              "state": "ok",
+              "installed": "888d89f05eb23a585b99c343df1865a368f8f28a090e9f6f29a8246a9be99565",
+              "expected": "888d89f05eb23a585b99c343df1865a368f8f28a090e9f6f29a8246a9be99565"
+            }
+          },
+          "reachable": true
+        }
+      ],
+      "expected": {
+        "guard_shell.py": "e417a79d332d8f4247e861d3060a2cb5d55b5da139fee9f280b9c14d4b89e0ee",
+        "lib_payload.py": "888d89f05eb23a585b99c343df1865a368f8f28a090e9f6f29a8246a9be99565"
+      },
+      "unreachable": [],
+      "repaired": true
+    },
+    {
+      "name": "deferrals",
+      "result": "pass",
+      "problems": [],
+      "registerDeployed": true,
+      "counts": {
+        "open": 0,
+        "overdue": 0,
+        "closed": 0,
+        "needs_owner_term": 24
+      },
+      "cited": 19,
+      "needsOwnerTerm": 24
+    },
+    {
+      "name": "checkers",
+      "result": "pass",
+      "problems": [],
+      "checked": [
+        {
+          "defectClass": "test_assertion_deleted",
+          "planted": 2,
+          "caughtBy": [
+            "test_fit"
+          ],
+          "designedCatchers": [
+            "test_fit",
+            "code_critic"
+          ]
+        },
+        {
+          "defectClass": "off_by_one",
+          "planted": 2,
+          "caughtBy": [
+            "verification"
+          ],
+          "designedCatchers": [
+            "verification"
+          ]
+        },
+        {
+          "defectClass": "outside_owns",
+          "planted": 2,
+          "caughtBy": [
+            "ownership"
+          ],
+          "designedCatchers": [
+            "ownership"
+          ]
+        },
+        {
+          "defectClass": "swallowed_error",
+          "planted": 1,
+          "caughtBy": [],
+          "designedCatchers": [
+            "code_critic"
+          ]
+        },
+        {
+          "defectClass": "masked_check",
+          "planted": 2,
+          "caughtBy": [
+            "contract_lint"
+          ],
+          "designedCatchers": [
+            "contract_lint"
+          ]
+        },
+        {
+          "defectClass": "acceptance_missing",
+          "planted": 2,
+          "caughtBy": [
+            "verification",
+            "plan_fact"
+          ],
+          "designedCatchers": [
+            "plan_fact"
+          ]
+        },
+        {
+          "defectClass": "hardcoded_value",
+          "planted": 2,
+          "caughtBy": [
+            "verification"
+          ],
+          "designedCatchers": [
+            "code_critic"
+          ]
+        },
+        {
+          "defectClass": "broken_import",
+          "planted": 2,
+          "caughtBy": [
+            "verification"
+          ],
+          "designedCatchers": [
+            "verification"
+          ]
+        },
+        {
+          "defectClass": "gilded_defect",
+          "planted": 1,
+          "caughtBy": [],
+          "designedCatchers": [
+            "code_critic"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "parallel3",
+      "result": "pass",
+      "problems": [],
+      "tasks": [
+        {
+          "task": "drill-20261031-160029-a",
+          "attempts": 1,
+          "states": [
+            "accepted"
+          ],
+          "state": "accepted",
+          "reason": "",
+          "attempt": "lpattempt_a40d1e1b6ee248469c653cf36bc4b857",
+          "writerThread": "thr_fcv34kua9g",
+          "workspace": "/home/ubuntu/.lane-pilot/worktrees/lpattempt_a40d1e1b6ee248469c653cf36bc4b857/lp-drill-sandbox",
+          "environment": "env_ur7b54uckc",
+          "holder": null,
+          "file": "notes/drill/20261031-160029-a.md",
+          "fileInSandbox": true
+        },
+        {
+          "task": "drill-20261031-160029-b",
+          "attempts": 1,
+          "states": [
+            "accepted"
+          ],
+          "state": "accepted",
+          "reason": "",
+          "attempt": "lpattempt_7d96a5220c614282ae20881fa178a4d2",
+          "writerThread": "thr_9hjreaqtbq",
+          "workspace": "/home/ubuntu/.lane-pilot/worktrees/lpattempt_7d96a5220c614282ae20881fa178a4d2/lp-drill-sandbox",
+          "environment": "env_y8nk3bfpxr",
+          "holder": null,
+          "file": "notes/drill/20261031-160029-b.md",
+          "fileInSandbox": true
+        },
+        {
+          "task": "drill-20261031-160029-c",
+          "attempts": 1,
+          "states": [
+            "accepted"
+          ],
+          "state": "accepted",
+          "reason": "",
+          "attempt": "lpattempt_0858052514124e16bf8add41831a1c54",
+          "writerThread": "thr_t5dsi6b4k3",
+          "workspace": "/home/ubuntu/.lane-pilot/worktrees/lpattempt_0858052514124e16bf8add41831a1c54/lp-drill-sandbox",
+          "environment": "env_in9xda3ryg",
+          "holder": null,
+          "file": "notes/drill/20261031-160029-c.md",
+          "fileInSandbox": true
+        }
+      ],
+      "checks": {
+        "allAccepted": true,
+        "eachInOwnWorktree": true,
+        "filesInSandbox": true,
+        "checksRan": true
+      },
+      "dispatch": {
+        "drill-20261031-160029-a": "{\n  \"runId\": \"lprun_befee878ec9b4d4f868f87d4e7165d6b\",\n  \"taskId\": \"drill-20261031-160029-a\",\n  \"attemptId\": \"lpattempt_a40d1e1b6ee248469c653cf36bc4b857\",\n  \"writerThreadId\": null,\n  \"state\": \"queued\",\n  \"stagesPending\": true,\n  \"stages\": [\n    {\n      \"runId\": \"lprun_befee878ec9b4d4f868f87d4e7165d6b\",\n      \"taskId\": \"drill-20261031-160029-a\",\n      \"stageId\": \"acceptance-receipt\",\n      \"contractVersion\": 1,\n      \"state\": \"pending\",\n      \"inputSha256\": \"fe9552b2466e96d49bd9b301ef750d11d87217e0de10e2444dc64b9ae783af56\",\n      \"outputSha256\": null,\n      \"attempt\": 0,\n      \"providerId\": nul",
+        "drill-20261031-160029-b": "{\n  \"runId\": \"lprun_befee878ec9b4d4f868f87d4e7165d6b\",\n  \"taskId\": \"drill-20261031-160029-b\",\n  \"attemptId\": \"lpattempt_7d96a5220c614282ae20881fa178a4d2\",\n  \"writerThreadId\": null,\n  \"state\": \"queued\",\n  \"stagesPending\": true,\n  \"stages\": [\n    {\n      \"runId\": \"lprun_befee878ec9b4d4f868f87d4e7165d6b\",\n      \"taskId\": \"drill-20261031-160029-b\",\n      \"stageId\": \"acceptance-receipt\",\n      \"contractVersion\": 1,\n      \"state\": \"pending\",\n      \"inputSha256\": \"56de868a9f1b579c032c141ad3df7134b7bc856837138e05dc57c0df76ff2369\",\n      \"outputSha256\": null,\n      \"attempt\": 0,\n      \"providerId\": nul",
+        "drill-20261031-160029-c": "{\n  \"runId\": \"lprun_befee878ec9b4d4f868f87d4e7165d6b\",\n  \"taskId\": \"drill-20261031-160029-c\",\n  \"attemptId\": \"lpattempt_0858052514124e16bf8add41831a1c54\",\n  \"writerThreadId\": null,\n  \"state\": \"queued\",\n  \"stagesPending\": true,\n  \"stages\": [\n    {\n      \"runId\": \"lprun_befee878ec9b4d4f868f87d4e7165d6b\",\n      \"taskId\": \"drill-20261031-160029-c\",\n      \"stageId\": \"acceptance-receipt\",\n      \"contractVersion\": 1,\n      \"state\": \"pending\",\n      \"inputSha256\": \"2db4ca7990c0a652e8134c3b82c93d27aba32d750bbe32fd1e92293e673284a3\",\n      \"outputSha256\": null,\n      \"attempt\": 0,\n      \"providerId\": nul"
+      }
+    }
+  ],
+  "seen": {
+    "stages": {
+      "acceptance-receipt": {
+        "passed": 4
+      },
+      "memory-maintenance": {
+        "skipped": 4
+      },
+      "plan-critique": {
+        "skipped": 4
+      },
+      "plan-fact": {
+        "passed": 4
+      },
+      "pm-read": {
+        "skipped": 4
+      },
+      "project-life": {
+        "running": 1
+      },
+      "specialist-review": {
+        "passed": 3,
+        "skipped": 1
+      },
+      "verification": {
+        "passed": 4
+      },
+      "writer-agent": {
+        "passed": 4
+      }
+    },
+    "gates": {
+      "accept": {
+        "passed": 4
+      },
+      "owns-paths": {
+        "passed": 4
+      },
+      "validate": {
+        "passed": 4
+      },
+      "verification": {
+        "passed": 4
+      }
+    },
+    "moves": {
+      "queued>queued": {
+        "ok": 8
+      },
+      "queued>spawn_requested": {
+        "ok": 4
+      },
+      "running>accepted": {
+        "ok": 4
+      },
+      "spawn_requested>running": {
+        "ok": 4
+      }
+    }
+  },
+  "judged": [
+    {
+      "name": "guard_hash",
+      "verdict": "pass",
+      "evidence": [
+        "machines",
+        "expected",
+        "repaired"
+      ],
+      "why": ""
+    },
+    {
+      "name": "deferrals",
+      "verdict": "pass",
+      "evidence": [
+        "registerDeployed",
+        "counts",
+        "cited",
+        "needsOwnerTerm"
+      ],
+      "why": ""
+    },
+    {
+      "name": "checkers",
+      "verdict": "pass",
+      "evidence": [
+        "checked"
+      ],
+      "why": ""
+    },
+    {
+      "name": "parallel3",
+      "verdict": "pass",
+      "evidence": [
+        "tasks",
+        "checks",
+        "dispatch"
+      ],
+      "why": ""
+    }
+  ],
+  "series": {
+    "verdict": "pass",
+    "missing": [],
+    "failed": [],
+    "skipped": []
+  }
+}

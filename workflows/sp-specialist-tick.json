@@ -35,6 +35,7 @@
     "specialist",
     "schedule-only"
   ],
+  "category": "service",
   "triggers": [
     "manual",
     "schedule"
@@ -148,7 +149,7 @@
       },
       "skip_when": "$inputs.domain != 'marketing'",
       "skip_out": {
-        "freshness_ok": true,
+        "freshness_ok": false,
         "significant_delta": false,
         "deltas_json": "'{}'",
         "missing_data": [],
@@ -189,7 +190,7 @@
       },
       "skip_when": "$inputs.domain != 'seo'",
       "skip_out": {
-        "freshness_ok": true,
+        "freshness_ok": false,
         "significant_delta": false,
         "deltas_json": "'{}'",
         "missing_data": [],
@@ -664,7 +665,7 @@
     {
       "from": "breaker_apply",
       "to": "outage",
-      "when": "collect_mkt.freshness_ok == false || collect_seo.freshness_ok == false",
+      "when": "($inputs.domain == 'marketing' && collect_mkt.freshness_ok == false) || ($inputs.domain == 'seo' && collect_seo.freshness_ok == false)",
       "label": "tracking outage: freeze"
     },
     {

@@ -1,9 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { sha256Hex } from "@lane-pilot/kit";
-import { buildCandidateEvidence, codeCritiquePrompt, MAX_FILE_EXCERPT_BYTES, NEW_FILE_DIFF } from "../../src/rooms/critique/code-critique";
-import { candidateCitations } from "../../src/rooms/critique/citations";
+import { buildCandidateEvidence, candidateCitations, codeCritiquePrompt, MAX_FILE_EXCERPT_BYTES, NEW_FILE_DIFF } from "../../src/rooms/critique";
 import { candidatePatches, headSides } from "../../src/rooms/critique/server";
-import { testFitFindings } from "../../src/rooms/tasks/test-fit";
+import { testFitFindings } from "../../src/rooms/tasks";
 import { createAttempt, createRun, createTask, openDatabase } from "../../src/rooms/plugin-db";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 

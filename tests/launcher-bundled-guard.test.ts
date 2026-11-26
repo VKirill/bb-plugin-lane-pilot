@@ -41,7 +41,7 @@ describe("native launcher hooks come from Lane Pilot's bundle", () => {
   });
 
   it("rewrites the hooks of an existing launcher whose guard is stale, and leaves no temp files", async () => {
-    const { root, moduleUrl, launcher } = await hostWithStaleLaneStack("unused\n");
+    const { root, launcher } = await hostWithStaleLaneStack("unused\n");
     await mkdir(join(launcher, "hooks"), { recursive: true });
     for (const name of HOOKS) await writeFile(join(launcher, "hooks", name), "print('launcher written before the fix')\n");
     await materializeNativeHookSession({ destDir: launcher, moduleUrl: pathToFileURL(join(root, "src", "x.ts")).href });

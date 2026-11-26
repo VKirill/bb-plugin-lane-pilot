@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
-import { UI_CATALOG } from "@lane-pilot/settings-catalog";
-import { classifyManagedWorkspace, parseWorkspaceMode, requireManagedWorktreeProvider, resolveAttemptWorkspace, resolveManagedWorkspace, usesManagedWorktree, waitManagedWorktreeReady } from "../../src/rooms/verification/routing";
+import { SETTINGS_REGISTRY } from "../../src/rooms/settings-registry";
+import { classifyManagedWorkspace, parseWorkspaceMode, requireManagedWorktreeProvider, resolveAttemptWorkspace, resolveManagedWorkspace, usesManagedWorktree, waitManagedWorktreeReady } from "../../src/rooms/verification/models/routing";
 import plugin from "../../server";
 import { getRun, openDatabase, saveProjectSetting, savePrototypeConfig } from "../../src/rooms/plugin-db";
 
@@ -96,7 +96,7 @@ describe("workspace routing", () => {
     expect(decisions.every((row) => row.strategy === "provision_attempt_worktree" && row.reason === "own_worktree")).toBe(true);
     expect(() => resolveAttemptWorkspace({ mode: "auto", risk: "low", expectedOutputCount: 1, minScore: 11, multiWriteEnabled: true })).not.toThrow();
     expect(resolveAttemptWorkspace({ mode: "auto", risk: "low", expectedOutputCount: 1, minScore: Number.NaN, multiWriteEnabled: true }).minScore).toBe(4);
-    const offered = UI_CATALOG.filter((row) => (row.storageKey === "adoc.041" || row.storageKey === "adoc.042") && row.uiStatus !== "excluded");
+    const offered = SETTINGS_REGISTRY.all.filter((row) => row.storageKey === "adoc.041" || row.storageKey === "adoc.042");
     expect(offered.map((row) => row.id)).toEqual([]);
   });
 

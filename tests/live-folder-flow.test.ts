@@ -5,13 +5,13 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import plugin from "../server";
 import { runCommandOnHost } from "../src/rooms/writer/cli-run";
-import { readBoundedFile, snapshotDryRun } from "../src/rooms/host-worker/host-handlers";
+import { readBoundedFile, snapshotDryRun } from "../src/rooms/host-worker";
 import type { TaskV2 } from "../src/rooms/contracts";
 import { coreFileWrite, mapStore } from "./helpers/core-files";
-import { appendTaskQaHome, recordCheckFiles, writeDispatchHome } from "../src/rooms/writer/server/task-home";
+import { appendTaskQaHome, recordCheckFiles, writeDispatchHome } from "../src/rooms/writer/server/services/task-home";
 import { bbTaskFileIo } from "../src/rooms/storage";
-import { DISPATCH_STAGES_PENDING } from "../src/rooms/runs/constants";
-import { recordStage } from "../src/rooms/runs/server/stage-records";
+import { DISPATCH_STAGES_PENDING } from "../src/rooms/runs";
+import { recordStage } from "../src/rooms/runs/server";
 import {
   createAttempt, createRun, createTask, freezeRunBinding, getAttempt, legacyReadCount, listAttemptsForTask, listStageReceipts, loadProjectSettings, openDatabase, renderTaskManifest, saveProjectSetting, savePrototypeConfig, saveTaskPlan, setRunThread,
 } from "../src/rooms/plugin-db";

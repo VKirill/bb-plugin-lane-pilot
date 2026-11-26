@@ -1,0 +1,162 @@
+{
+  "kind": "lane-pilot-sandbox-drill",
+  "date": "2026-11-15",
+  "stamp": "20261115-153606",
+  "startedAt": 1794746166129,
+  "finishedAt": 1794746532658,
+  "durationSec": 367,
+  "project": "proj_3tb652jpsi",
+  "runId": null,
+  "pmThread": null,
+  "sourceThread": null,
+  "mode": "full",
+  "scenarioNames": [
+    "sma_r27"
+  ],
+  "commit": "807f967453df4392c679f7f91328298e08062478",
+  "skipped": {},
+  "result": "pass",
+  "problems": [],
+  "checks": null,
+  "tasks": null,
+  "dispatch": null,
+  "scenarios": [
+    {
+      "name": "sma_r27",
+      "result": "pass",
+      "problems": [],
+      "proved": [
+        {
+          "node": "n1733",
+          "ok": true,
+          "detail": "clean tree exit 0; planted tree exit 1: README.md: names `bb lane-pilot ghost-verb`, which the CLI does not have | README.md: names src/missing.ts, which does not exist | README.md: says 12345 nodes of the SMA map, the map has 1798"
+        },
+        {
+          "node": "n1734",
+          "ok": true,
+          "detail": "untriaged: exit 1, 2 lines; after triage exit 0: «vendor ledger: every update since v0.1.0 is triaged»"
+        },
+        {
+          "node": "n1735",
+          "ok": true,
+          "detail": "ordinary code batch, documents only docs, a core path full; the record recorded then already recorded"
+        },
+        {
+          "node": "n1736",
+          "ok": true,
+          "detail": "two items with receipts «batch lane: a, b»; a lone item «not enough for a batch»; with a core item: «c: owns_paths touch the core, it ships the full lane, not a batch»"
+        },
+        {
+          "node": "n1737",
+          "ok": true,
+          "detail": "waiting -> «waiting — verb» with its doc; graphs -> «graphs — topic»"
+        },
+        {
+          "node": "n1738",
+          "ok": true,
+          "detail": "npm test (no file filter): exit 0, Test Files  1203 passed | 8 skipped (1211)"
+        },
+        {
+          "node": "n1739",
+          "ok": true,
+          "detail": "clean tree exit 0; build failing exit 1; unreachable hub exit 0 with a warning; leak plus promise stops at «gate: publishable failed»"
+        },
+        {
+          "node": "n1740",
+          "ok": true,
+          "detail": "exit 0, asserts [\"«Lane Pilot»\",\"«opened»\",\"horizontal overflow 0px\",\"2 of at least 2\"], screenshot written"
+        },
+        {
+          "node": "n1741",
+          "ok": true,
+          "detail": "staged http://127.0.0.1:4401/ exit 0 with the asserts skipped; a tree with no build exit 2"
+        },
+        {
+          "node": "n1742",
+          "ok": true,
+          "detail": "green report -> «![tests 10/10](https://img.shields.io/badge/tests-10%2F10-brightgreen)…»; one failed -> «![tests 9/10 · 1 failed](https://img.shields.io/badge/tests-9%2F10%20%C2%B7%201%…»; no receipt exit 2"
+        },
+        {
+          "node": "n1743",
+          "ok": true,
+          "detail": "clean tree strict exit 0; broken: version 0.1.0 is not above the last tag v0.1.0 | CHANGELOG.md has no «## 0.1.0» entry | the tree has uncommitted changes | dist/server.meta.json pluginVersion is not 0.1.0"
+        },
+        {
+          "node": "n1744",
+          "ok": true,
+          "detail": "newest entry: 2 unmeasured promises (English and Russian) fail, older entry only warns; exit 1 then 0"
+        },
+        {
+          "node": "n1745",
+          "ok": true,
+          "detail": "dated docs exit 1 (future and stale named); a new undocumented verb over baseline 0: «undocumented CLI verbs grew 0 -> 1: ghostly»; within baseline 1: exit 0"
+        },
+        {
+          "node": "n1746",
+          "ok": true,
+          "detail": "ledger {\"foo\":{\"from\":\"1.0.0\",\"to\":\"1.1.0\",\"note\":\"patch release\"},\"baz\":{\"from\":null,\"to\":\"0.1.0\"}}"
+        },
+        {
+          "node": "n1747",
+          "ok": true,
+          "detail": "exit 1: unnamed (ISC) ships but THIRD_PARTY_NOTICES.md does not name it | copyleft: license GPL-3.0 needs a decision before it ships"
+        },
+        {
+          "node": "n1749",
+          "ok": true,
+          "detail": "fresh bundle exit 0; hub on 0.1.0 exit 1; unpublished exit 0; a window source newer than the bundle: «bundle older than sources: src/rooms/x/ui/panel.tsx»"
+        },
+        {
+          "node": "n1751",
+          "ok": true,
+          "detail": "30 commits since the tag: sweep {\"checked\":1,\"flagged\":[\"proj_r27\"]} posted ship-watch:proj_r27:; after a tag {\"checked\":1,\"flagged\":[]}, 0 items open; lp-ship watch exit 1"
+        },
+        {
+          "node": "n1752",
+          "ok": true,
+          "detail": "an item with no plan-critique and no accepted attempt: d: missing plan-critique receipt | d: missing accepted attempt receipt (exit 1)"
+        },
+        {
+          "node": "n1753",
+          "ok": true,
+          "detail": "unknown word exit 0 lists 141 names sorted; a planted explainer fails: «docs/explainer.md explains n9999999, which the SMA map does not have | docs/explainer.md explains n1036 «Leak scanner», which is no longer proven — th»; this commit's explainers: exit 0 «explainers: every node they explain is pr"
+        },
+        {
+          "node": "n1754",
+          "ok": true,
+          "detail": "failed assert exit 1, page that never loaded exit 2, unreadable scene exit 2"
+        },
+        {
+          "node": "n1755",
+          "ok": true,
+          "detail": "--port 0: «--port wants a port number 1..65535»; --tree alone: «--tree needs a value»; two scenes: «one scene file only»; --trees a, b ,,kit -> [\"a\",\"b\",\"kit\"]"
+        }
+      ],
+      "checked": 21,
+      "checkout": {
+        "predictLint": "exit 0 «prediction lint: the Unreleased notes measure what they promise»",
+        "docAudit": "exit 0, 1 line(s)",
+        "deployed": "deployed 0.1.575 788ca5de01c6 normal, HEAD 807f967453df"
+      }
+    }
+  ],
+  "seen": null,
+  "judged": [
+    {
+      "name": "sma_r27",
+      "verdict": "pass",
+      "evidence": [
+        "proved",
+        "checked",
+        "checkout"
+      ],
+      "why": ""
+    }
+  ],
+  "series": {
+    "verdict": "pass",
+    "missing": [],
+    "failed": [],
+    "skipped": []
+  }
+}

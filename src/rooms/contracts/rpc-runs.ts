@@ -8,7 +8,7 @@ import { nativeDiagnosticsSchema } from "./native-selection";
 const cardThreadSchema: z.ZodType<{ id: string; role: string; title: string | null; status: string | null; children: unknown[] }> = z.lazy(() =>
   z.object({ id: z.string(), role: z.string(), title: z.string().nullable(), status: z.string().nullable(), children: z.array(cardThreadSchema) }).strict());
 
-/** The acceptance card of one task (src/rooms/acceptance): the contract, what each stage proved and how, the plan against the fact, what did not run, cost. */
+/** The acceptance card of one task (src/rooms/runs): the contract, what each stage proved and how, the plan against the fact, what did not run, cost. */
 export const acceptanceCardSchema = z.object({
   contract: z.object({ objective: z.string().nullable(), acceptance: z.array(z.string()), ownsPaths: z.array(z.string()) }).strict(),
   risk: z.string().nullable(),

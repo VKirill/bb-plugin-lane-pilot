@@ -9,42 +9,45 @@ tags: [guide, graphs]
 updated: 2026-11-22
 sources:
   - packages/workflow-engine/src/engine.ts
+  - packages/workflow-engine/src/engine-clock.ts
+  - packages/workflow-engine/src/inbox.ts
   - packages/workflow-engine/src/router.ts
   - packages/workflow-engine/src/index.ts
-  - workflows/lp.graph-evolve-nightly.json
-  - src/rooms/night-graphs/server/graph-evolve-graph.ts
+  - packages/contracts/src/graph-categories.ts
 ---
 
 # Everything is a graph
 
 > Part of the [Lane Pilot guide](../../README.md#the-guide). Moved out of the root README on 2026-11-06.
 
-A workflow is a JSON file (`workflows/*.json`): inputs, outputs, `requires` (skills, plugins, secrets, machines), guards, triggers, nodes and edges. The shared engine (`packages/workflow-engine`) validates it, runs it as a resumable graph, journals every step in SQLite and resolves subworkflows. Node types in the shipped graphs: `agent` (a model step with a role), `action` (code), `decision`, `human` (a form to the owner), `parallel`/`join`, `subworkflow` and `lp-task` (the writer task pipeline). The model of a step belongs to its **role**, never to the node (see [Roles, agents and models](roles.md)).
+A workflow is a JSON file (`workflows/*.json`): inputs, outputs, `category`, `not_for` (distinguishing neighbours), `requires` (skills, plugins, secrets, machines), guards, triggers, nodes and edges. The shared engine (`packages/workflow-engine`) validates it, freezes a snapshot per run (`definition_json`), runs it as a resumable graph, journals every step in SQLite and resolves subworkflows. Node types in the shipped graphs: `agent` (a model step with a role, optional node model override and `form`: `agent | plan | script` with `fallback` and mechanical `verify`), `action` (code), `decision`, `human` (a form to the owner), `parallel`/`join`, `subworkflow`, `lp-task` (the writer task pipeline) and `note`. Model steps resolve `node -> role -> default` (with automatic role fallback on auth/quota/subscription errors, see [Roles, agents and models](roles.md)).
 
-- **Catalog.** 79 graphs ship with the plugin (69 `published`, 10 `tested`). A `tested` graph shows **Run for real** in the Workflows tab; one success makes it published. Owners can add graphs in the global or a project workflow folder.
-- **Router.** `lane_pilot_route` ranks graphs deterministically using BM25, trigram matches, rules, exclusions and requirements. A concise `intent` selects the task family; optional `request` preserves the complete assignment for goals, inputs and constraints (up to 4,000 characters). Without it, `intent` remains the full assignment. A recognized read-only request conflicting with a selected writing graph returns `clarify`, even if the short intent asks for deployment. This conservative check is not a general semantic validator: the PM must compare the selected graph's actions with the complete assignment. `clarify` permits no launch through candidates, live trials or fallback tools; clarify with the requester and route again. An owner or BB-agent assignment can authorize the selected outcome; graph human confirmations remain unchanged.
-- **Triggers.** A graph starts from the PM chat (`chat`), by hand from the Workflows tab (`manual`), from a schedule, or from another plugin (`telegram`). All four go through the same checks.
+- **Catalog.** 117 graphs ship with the plugin (110 `published`, 7 `tested`), organized across 13 categories (`packages/contracts/src/graph-categories.ts`: `code`, `planning`, `qa`, `ops`, `docs`, `seo`, `marketing`, `content`, `research`, `games`, `business`, `routines`, `service`). `builtin.ts` loads `workflows/*.json` from disk. A `tested` graph shows **Run for real** in the Workflows tab; one success makes it published. Owners can add graphs in the global or a project workflow folder.
+- **Events, durable waits and one clock.** Events (`LP_EVENTS`) land in `lane_pilot_wf_inbox` via `emitEvent` (insert-or-ignore, filter match, `engine.wake` with compare-and-set on `state='waiting'` and attempt fencing). Every waiting step (`event` or `human`, 72 h default on `human`) carries an absolute epoch `deadline` (`await_json.deadline`) and a routed `timeoutOutput` edge enforced by `validate-rails.ts`; skipped checks record `not_run` rather than `pass`, and judge nodes cannot take worker sessions. One engine clock (`startClock` in `engine-clock.ts`, paused by `schedule.paused_all`) sleeps until the earliest step deadline or due schedule-board row (up to `CLOCK_BEAT_MS` = 60 s), drains up to 25 overdue waits per tick, and enforces per-node and per-run budgets (`maxTokens`, `maxCostUsd`, `maxWallSeconds`, `maxRepeats`), killing child processes/threads on stop.
+- **Router.** `lane_pilot_route` ranks graphs deterministically using BM25, trigram matches, rules, exclusions, `not_for` hints and requirements. A concise `intent` selects the task family; optional `request` preserves the complete assignment for goals, inputs and constraints (up to 4,000 characters). Without it, `intent` remains the full assignment. A recognized read-only request conflicting with a selected writing graph returns `clarify`, even if the short intent asks for deployment. This conservative check is not a general semantic validator: the PM must compare the selected graph's actions with the complete assignment. `clarify` permits no launch through candidates, live trials or fallback tools; clarify with the requester and route again. An owner or BB-agent assignment can authorize the selected outcome; graph human confirmations remain unchanged.
+- **Triggers.** A graph starts from the PM chat (`chat`), by hand from the Workflows tab (`manual`), from a schedule (`schedule`, synced to schedule-board rows), or on an engine event (`event`). All go through the same checks.
 - **Authoring.** The Workflow architect agent drafts, patches and tests a graph on stubs (nothing is touched); publishing waits for the owner's yes. A published graph can run on a schedule.
-- **Project loop hooks.** A project may reserve `.lane-pilot/workflows/loop-hooks.manifest.json` with `schemaVersion: 1` and ordered arrays for `plan:pre`, `verify:post` and `ship:post`. Each entry names an existing published workflow id and maps child inputs from `$inputs.<field>` or the existing `ctx.run_id`, `ctx.goal`, `ctx.merged_commits` and `ctx.answers.<human>` context values. Lane Pilot resolves these literal children before preflight and pins them with the normal engine definition; requirements are merged for preflight and human waits/errors remain ordinary child outcomes. The reserved file is excluded from the workflow catalog. Missing manifests are a no-op; malformed manifests, missing/unpublished children, cycles and excessive depth refuse a targeted start. `plan:pre` is inserted at the `lp.plan` entry boundary, `verify:post` immediately before each `lp.close` terminal emit, and `ship:post` immediately before the successful `ship`/`shipped` emit; the original emit remains last, so its output and failure semantics are unchanged. This covers trigger, PM tool, intake-machine and automatic phase starts, including nested `lp.plan`/`lp.close` children; callers that bypass workflow start are outside the contract.
+- **Project loop hooks.** A project may reserve `.lane-pilot/workflows/loop-hooks.manifest.json` with `schemaVersion: 1` and ordered arrays for `plan:pre`, `verify:post` and `ship:post`. Each entry names an existing published workflow id and maps child inputs from `$inputs.<field>` or the existing `ctx.run_id`, `ctx.goal`, `ctx.merged_commits` and `ctx.answers.<human>` context values. Lane Pilot resolves these literal children before preflight and pins them with the normal engine definition; requirements are merged for preflight and human waits/errors remain ordinary child outcomes. The reserved file is excluded from the workflow catalog. Missing manifests are a no-op; malformed manifests, missing/unpublished children, cycles and excessive depth refuse a targeted start. `plan:pre` is inserted at the `lp.plan` entry boundary, `verify:post` immediately before each `lp.close` terminal emit, and `ship:post` immediately before the successful `ship`/`shipped` emit; the original emit remains last, so its output and failure semantics are unchanged. This covers trigger and PM tool starts, including nested `lp.plan`/`lp.close` children; callers that bypass workflow start are outside the contract.
 - **Runs audit their goals.** A run is checked against the goals the owner confirmed before it closes; a run blocked on unmet goals is fixed or amended with a reason in its journal.
 
 ## Shipped graphs
 
 `(tested)` marks graphs that have not yet had a successful live run.
 
-**Writer tasks and phases**
+**Code (`code` and core service building blocks)**
 
 | Graph | What it does |
 |---|---|
-| `lp-task-pipeline` | The pipeline of every writer task: PM read, plan critique, specialist review, ownership base, the code task in its own worktree with checks, code critique and merge, then the browser check when the task has `qa_cases`. Not offered by the router. |
-| `lp.after-accept` | Runs after a task is accepted: the memory maintainer and the project-life maintainer, side by side. |
+| `lp-task-pipeline` | The pipeline of every writer task: admission wait (`lp.task.settled`), PM read, plan critique, specialist review, ownership base, the code task in its own worktree with checks, code critique and merge, then the browser check when the task has `qa_cases`. Not offered by the router (`service`). |
+| `lp.after-accept` | Runs on `lp.attempt.merged`: triggers the memory maintainer (`service`). |
 | `lp.plan` | Turns a goal into task contracts in waves, lints them and has the whole plan critiqued. |
 | `lp.build` | Runs task contracts through the pipeline (writer, sandbox verification, code critic, merge queue) and the batch gate. |
 | `lp.analyze` | Read-only analysis of an area with locked, free and deferred decisions, risks and a scope verdict. |
 | `lp.review` | Multi-dimension review of a diff, PR or file set; the verdict is computed by code. |
 | `lp.brainstorm` | Role authors in parallel, a fresh cross-role reviewer, conflicts resolved with the owner, a guidance specification of at most 8 features. |
 | `lp.draw` | The design lead draws the screens a plan changes as clickable HTML mock-ups; another role checks them. |
-| `lp.close` | Checks each goal's `done_when` against evidence, detects intent drift, stages knowledge candidates, updates project life. |
+| `lp.close` | Checks each goal's `done_when` against evidence, detects intent drift and stages knowledge candidates. |
+| `lp.clarify` | Disambiguates an unclear request into scope and questions (`service`). |
 | `analyze-plan-execute` | Default path for a normal code task: analysis, task contracts, plan critique, writers in worktrees, code critic, merge, goal audit, memory. |
 | `companion` | A mechanically clear, bounded change: one writer task in quick mode, no plan, no critics. |
 | `issue-quick` | A small issue from a title and text: one cheap call writes the task, the writer builds it. A large issue is proposed to the full path. |
@@ -52,104 +55,87 @@ A workflow is a JSON file (`workflows/*.json`): inputs, outputs, `requires` (ski
 | `issue-full` | Root cause, plan, build, review; reports fixed only after a green review. |
 | `issue-batch` | Several small independent fixes in one request, edits of one file as one task, independent areas built in one wave. |
 | `issue-discover` | Eight read-only perspectives (security, performance, reliability and more) scan an area; findings are deduplicated. |
-| `plan-only` | Analyze and write task contracts with plan critique, saved as a draft; nothing is built. |
-| `plan-review-convergence` | Two critics of different models review a plan for up to three rounds until both approve. |
 | `full-lifecycle` | Plan, build, independent review with a fix loop, browser check, owner acceptance for UI, goal audit, knowledge closeout. |
-| `blueprint-driven` | For a new product: brief, PRD, architecture decisions, epics, a readiness gate, the spec in the repository, then build per epic. |
-| `brainstorm-driven` | From a vague idea: optional research, multi-role brainstorm, guidance spec, plan, build, close. |
 | `grill-driven` | For big or risky changes: an adversarial walk through the plan against the real code, then brainstorm, plan, build, close. |
-| `grill-plan` | The adversarial review of a plan on its own; changes nothing. |
-| `roadmap-driven` | For large goals: a DAG of sessions approved by the owner, each run as `analyze-plan-execute`. |
 | `impeccable-build` | A UI from scratch: design brief, DESIGN.md pack, build in worktrees, browser verification at 375 and 1280 px, DESIGN.md from the result. |
 | `refactor` | Behaviour-preserving restructuring: baseline first, plan with critique, writers, equivalence check, review. |
 | `quality-loop` | Review, missing tests by layer, failure classification, diagnosis, fix and re-check; schedulable at night. |
 | `review-fix` | Takes review findings (or runs a review), groups them by root cause, fixes and re-reviews up to two rounds. |
-| `test-gen` | Writes missing tests for named gaps in test paths only; never edits source or existing tests. |
-| `ai-integration-phase` | Before a phase that ships model behaviour: framework and model choice, research, AI-SPEC.md with guards, evaluation plan and cost ceiling. |
-
-**Read-only analysis and audits**
-
-| Graph | What it does |
-|---|---|
+| `ai-integration-phase` | Before shipping model behaviour: framework and model choice, research, AI-SPEC.md with guards, evaluation plan and cost ceiling. |
 | `analyze-code` | Understand or evaluate a module or change; reports decisions, risks and confidence. |
 | `code-review` | Independent review of a branch, PR, commit range or file set with file:line findings. Exports the criterion checks from `lp.review` alongside findings, so the report and goal auditor can see checks that produced no finding. |
 | `debug` | Scientific-method diagnosis (hypotheses, evidence log, at most 3 refuted); returns the diagnosis, touches no code. |
 | `security-audit` | Tiered audit (OWASP Top 10, dependencies, secrets, CI/CD, STRIDE on the deep tier); secrets reported by location only. |
-| `ui-audit` | Live UI audit in the browser on six dimensions with scored findings and screenshots. |
-| `eval-review` | Audits the evaluation of an AI feature (gold set independence, metric honesty, gaming, leakage). |
-| `validate-phase` | Checks that every promise of a phase has a check that would fail without the work; writes VALIDATION.md. |
 | `spike` | A time-boxed throw-away experiment answering one technical question. |
+| `scout` | Read-only codebase reconnaissance returning facts and file locations. |
 
-**Delivery, milestones and housekeeping**
+**Planning (`planning`) and QA (`qa`)**
 
 | Graph | What it does |
 |---|---|
-| `ship` | Turns a verified phase into a pull request and runs post-ship hooks. |
-| `pr-branch` | Makes a review branch without the planning commits. |
-| `deploy` (tested) | Preflight, owner approval for production, deploy by the repo script or an errand, post-deploy check, rollback offer. |
+| `plan-only` | Analyze and write task contracts with plan critique, saved as a draft; nothing is built. |
+| `plan-review-convergence-proof` | Two critics of different models review a plan for up to three rounds until both approve. |
+| `blueprint-driven` | For a new product: brief, PRD, architecture decisions, epics, a readiness gate, the spec in the repository, then build per epic. |
+| `brainstorm-driven` | From a vague idea: optional research, multi-role brainstorm, guidance spec, plan, build, close. |
+| `grill-plan` | The adversarial review of a plan on its own; changes nothing. |
+| `idea-shootdown` | Stress-tests an idea against failure modes, existing alternatives and constraints before writing a plan. |
+| `roadmap-driven` | For large goals: a DAG of sub-goals approved by the owner, each run as `analyze-plan-execute`. |
 | `project-start` | Value map first, a preview of stack, tests and memory, infra profile, working style, recap with next steps. |
-| `new-milestone` | Starts the next milestone: goals, requirements, roadmap phases. |
+| `new-milestone` | Starts the next milestone: goals, requirements, roadmap entries. |
+| `milestone-summary` | Summarizes completed tasks and changes across a milestone. |
 | `milestone-close` | Checks the run is finished, audits goals, runs a retrospective, stages knowledge candidates, archives the run. |
-| `retrospective` | Four lenses (technical, process, quality, decision); stages rule or note candidates, writes no knowledge without approval. |
-| `cleanup` | Archives finished phases, stale spikes, merged review branches and leftover worktrees; lists before moving. |
+| `mvp-phase` | Scopes an MVP increment down to the minimum verifiable tasks. |
+| `spec-phase` | Turns an approved outline into a concrete specification before planning. |
+| `phase-assumptions` | Surfaces and verifies unstated assumptions in a plan before execution. |
+| `plan-import` | Imports an existing markdown plan into executable task contracts. |
+| `sketch-wrap-up` | Closes out a sketch session into structured deliverables and follow-ups. |
+| `retrospective` | Four lenses (technical, process, quality, decision); stages note candidates, writes no knowledge without approval. |
+| `backlog-add`, `note-add`, `todo-add` | Add structured backlog items, project notes or TODO entries without code edits. |
+| `test-gen` | Writes missing tests for named gaps in test paths only; never edits source or existing tests (`qa`). |
+| `ui-audit` | Live UI audit in the browser on six dimensions with scored findings and screenshots (`qa`). |
+| `audit-uat` | Runs user acceptance checks against the stated requirements (`qa`). |
+| `validate-phase` | Checks that every promise of a scope has a check that would fail without the work; writes VALIDATION.md (`qa`). |
+| `secure-phase` | Verifies security posture and trust boundaries for a planned scope (`qa`). |
+| `eval-review` | Audits the evaluation of an AI feature (gold set independence, metric honesty, gaming, leakage) (`qa`). |
 
-**Helpers outside the writer path**
-
-| Graph | What it does |
-|---|---|
-| `specialist` | One specialist (design-lead, copy-lead, seo-specialist, tavily, video-lead or an owner-created agent) does a task as a child thread of the PM chat. |
-| `agent-routine` | What a schedule of kind `agent` runs: a named agent does its standing task with its own prompt, skills and memory of earlier runs. |
-| `errand` | A non-code job done end to end by one helper: a browser, a mailbox, a cloud console, a deploy with Env Catalog accounts. Accounts are checked first. |
-| `browser-step` | One goal in the owner's signed-in Chrome on the browser machine with agent-desktop (an LLM agent drives it through the accessibility tree), then the page it ends on. |
-| `lp.browser-qa` | The browser check of an accepted task: a verdict per case and viewport. |
-| `lp.route` | The model step of `lane_pilot_route` when the rules cannot decide a request alone. |
-| `council` | A council of directors: a chair, role-bound seats each on its own model, a written decision. |
-
-**Research, content and media**
-
-| Graph | What it does |
-|---|---|
-| `web-research` (tested) | Sub-questions, parallel search, claims checked against independent sources, a cited report. |
-| `research-dossier` | Sources found, links and quotes verified, unverified sources discarded, a verified dossier. |
-| `insights-post` (tested) | Finds the most discussed posts on a topic, mines comments into insight artifacts, hands the author a writing pack. |
-| `ins.post` | Collects the comments of one post and analyzes them by lenses, with a critic and a validator. |
-| `social-post` | A topic to an audience-validated post in the author's voice, formatted as a Telegram Rich Message. |
-| `x-to-telegram-digest` (tested) | A digest of recent public X posts on a topic, quotes checked in code, sent to Telegram. |
-| `seo-cocoon` (tested) | Semantic cocoon: audience evidence, page architecture, content briefs, audit; changes no site. |
-| `seo-page` | A targeted SEO page built on `seo-cocoon`, proofread and exported to site files. |
-| `reels` (tested) | Long video to vertical clips, or a short code-rendered animated film from a subject. |
-| `3d-asset` | Brief, concept images, modeling in Blender, geometry QA, export. |
-| `roblox-asset` | A Roblox model or accessory, scale and collision checked, deployed via Rojo or Studio. |
-| `macos-routine` | Operational routines on the Mac mini with screenshot evidence. |
-| `invoice-send` (tested) | An invoice in Kontur.Elba made, checked by code rules, approved by the owner, then sent. |
-| `billing-batch` | A list of clients and services invoiced through `invoice-send`, with a summary registry and owner approval before dispatch. |
-
-**Owner profile (Anamnesis)**
+**Delivery, ops and internal service loops (`ops` and `service`)**
 
 | Graph | What it does |
 |---|---|
-| `resume` (tested) | A one-page resume from the confirmed, public anamnesis records. |
-| `about-site` (tested) | A one-page personal site from the same records, with no link or address the facts lack. |
-| `year-review` (tested) | The year in review from the public records. |
+| `ship` | Turns a verified batch into a pull request and runs post-ship hooks (`ops`). |
+| `pr-branch` | Makes a review branch without the planning commits (`ops`). |
+| `deploy` (tested) | Preflight, owner approval for production, deploy by the repo script or an errand, post-deploy check, rollback offer (`ops`). |
+| `cleanup` | Archives finished goals, stale spikes, merged review branches and leftover worktrees; lists before moving (`ops`). |
+| `specialist` | One specialist (`design-lead`, `copy-lead`, `seo-specialist`, `growth-marketer`, `tavily`, `video-lead` or an owner-created agent) does a task as a child thread of the PM chat (`service`). |
+| `errand` | A non-code job done end to end by one helper: a browser, a mailbox, a cloud console, a deploy with Env Catalog accounts (`service`). |
+| `browser-step` | One goal in the owner's signed-in Chrome on the browser machine with agent-desktop, then the page it ends on (`service`). |
+| `lp.browser-qa` | The browser check of an accepted task: a verdict per case and viewport (`service`). |
+| `lp.landing-suite` | Runs the integration gate when triggered by `lp.attempt.merged` (`service`). |
+| `lp.canary-check` | Triggered by `lp.attempt.finished` to watch own-fault rate on a fresh build (`service`). |
+| `lp.daily-report` | Daily 09:00 summary delivered to Telegram (`service`). |
+| `lp.owner-bell`, `lp.owner-push` | Immediate `lp.owner.item-created` notifier with quiet-hours/cap wait (`lp.owner-bell`) and 30-minute Telegram owner digest (`lp.owner-push`) (`service`). |
+| `lp.backlog-scan` | Scans repository TODOs and findings into the backlog (`service`). |
+| `lp.schedule-script` | Runs scheduled host script entries under the workflow engine (`service`). |
+| `lp.worktree-cleanup`, `lp.worktree-release` | Scheduled worktree cleanup and post-attempt worktree release (`service`). |
+| `lead-tick` | Hourly work-graph / nearest-unit scan surfacing hypotheses for graphless work (`service`). |
+| `sp-specialist-tick` | Periodic tick driving specialist background maintenance (`service`). |
 
-**Self-improvement and maintenance (started by Lane Pilot itself)**
+**Docs, SEO, marketing, research, content, games, business and routines**
 
-| Graph | What it does |
+| Category | Graphs |
 |---|---|
-| `lp.self-repair` | One repair of a failure that is Lane Pilot's own fault, in its own worktree, with a test. |
-| `lp.wall-hunt` | The night loop's model work on one wall: read-only hunters from three sides over one evidence pack, citations held by code. |
-| `lp.rules-scan` | The night scan of a project's writer failures that writes project rules and judges rules on trial. |
-| `lp.rules-ask` | One prompt to the rules analyzer (the learning review of the owner's messages). |
-| `lp.harness-edit` | One improvement round of the writer harness for a key (project, area, writer model), put on trial in alternation. |
-| `lp.harness-reflect` | After a decided harness trial: a reflection session and at most one lesson that transfers. |
-| `lp.critic-edit` | Monthly: reads each critic's verdict accuracy and writes a prompt proposal when it is under half on four or more verdicts. |
-| `lp.docs-maintenance` | The docs maintainer of one accepted task: edits returned as JSON, validated by code, written. |
-| `lp.docs-night` | One docs folder brought up to date overnight, with anchors and gap finding. |
-| `lp.graph-evolve-nightly` | Overnight trajectory digestion, `over_constraint` / `leanDebt` detection, 4-model cross-family synthesis (`planner` -> `plan-critic` -> `workflow-architect` -> `auditor`), semantic companion-skill compaction, dual `happy-path` + `variant_lean` simulation, and atomic CAS publication with 1-click rollback (see [workflows evolution](../workflows-evolution.md)). |
+| `docs` | `docs-synthesis`, `docs-synthesis-rank`, `docs-synthesis-check` |
+| `seo` | `seo-project-intake`, `seo-research`, `seo-cocoon` (tested), `seo-brief`, `seo-page`, `seo-page-refresh`, `seo-tech-audit`, `seo-structure-audit`, `seo-drop-diagnosis`, `seo-monitor`, `seo-ai-visibility`, `seo-mentions`, `seo-linkbuilding`, `seo-outreach`, `seo-trust`, `seo-template-scale`, `seo-release` |
+| `marketing` | `mkt-project-intake`, `mkt-landing-cro-audit`, `mkt-direct-search-campaign`, `mkt-tg-ads-campaign`, `mkt-tracking-setup`, `mkt-experiment-cycle`, `mkt-pulse-monitor` |
+| `research` | `web-research` (tested), `research-dossier`, `insights-post` (tested), `ins.post` |
+| `content` | `social-post`, `x-to-telegram-digest` (tested), `reels` (tested), `telegram-send` |
+| `games` | `3d-asset`, `roblox-asset` |
+| `business` | `api-recon`, `invoice-send` (tested), `billing-batch` |
+| `routines` | `agent-routine`, `macos-routine` |
 
 ## Sources
 
-Where this page's claims start in the code: `packages/workflow-engine/src/engine.ts:33-53`, `packages/workflow-engine/src/router.ts:14-34`, `packages/workflow-engine/src/index.ts:1-21`. The deep pages linked above cite the rest.
+Where this page's claims start in the code: `packages/workflow-engine/src/engine.ts`, `packages/workflow-engine/src/engine-clock.ts`, `packages/workflow-engine/src/inbox.ts`, `packages/workflow-engine/src/router.ts`, `packages/contracts/src/graph-categories.ts`. The deep pages linked above cite the rest.
 
 ### Evidence at the goal audit
 

@@ -12,6 +12,7 @@
   "tags": [
     "clarify"
   ],
+  "category": "service",
   "triggers": [
     "manual"
   ],
@@ -97,5 +98,9 @@
       }
     }
   },
-  "goal_audit": "exempt"
+  "goal_audit": "exempt",
+  "not_for": [
+    "spec-phase",
+    "phase-assumptions"
+  ]
 }

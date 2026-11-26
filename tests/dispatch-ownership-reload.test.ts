@@ -3,16 +3,16 @@ import { WorkflowEngine } from "@lane-pilot/workflow-engine";
 import { describe, expect, it, vi } from "vitest";
 import type { PrototypeConfig, TaskV2 } from "../src/rooms/contracts";
 import type { ServerCore } from "../src/rooms/contracts/server";
-import { parsePmReadSettings } from "../src/rooms/critique/pm-read";
-import { sha256 } from "../src/rooms/tasks";
+import { parsePmReadSettings } from "../src/rooms/critique";
+import { sha256 } from "../src/rooms/tasks/server";
 import { createAttempt, createRun, createTask, getAttempt, getTaskGitBase, listAttemptsForTask, listStageReceipts, openDatabase,
   saveTaskGitBase, saveTaskPlan, setRunThread, transitionAttempt } from "../src/rooms/plugin-db";
-import { DISPATCH_STAGES_PENDING } from "../src/rooms/runs/constants";
-import { recordStage } from "../src/rooms/runs/server/stage-records";
-import { createReconcile } from "../src/rooms/stability/server/reconcile";
+import { DISPATCH_STAGES_PENDING } from "../src/rooms/runs";
+import { recordStage } from "../src/rooms/runs/server";
+import { createReconcile } from "../src/rooms/stability/server";
 import { builtinWorkflow } from "../src/rooms/workflow/builtin";
-import { createWriterDispatch } from "../src/rooms/writer/server/dispatch";
-import { registerDispatchExecutors } from "../src/rooms/writer/server/dispatch-workflow";
+import { createWriterDispatch } from "../src/rooms/writer/server/services/dispatch";
+import { registerDispatchExecutors } from "../src/rooms/writer/server/handlers/dispatch-workflow";
 import incident from "./fixtures/dispatch-ownership-reload-2026-11-08.json";
 import { boundedReadCall } from "./helpers/bounded-read";
 

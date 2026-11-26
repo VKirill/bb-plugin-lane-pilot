@@ -1,4 +1,4 @@
-import { OPEN_ATTEMPT_STATES, RETRY_ELIGIBLE } from "../../contracts";
+import { OPEN_ATTEMPT_STATES, RETRY_ELIGIBLE, attemptStateSql } from "../../contracts";
 import type { LanePilotDatabase } from "../database";
 
 export function latestAttemptEnvironmentId(db: LanePilotDatabase, runId: string, taskId: string, workspacePath: string): string | null {
@@ -192,7 +192,7 @@ export function failedTasksAllProjects(db: LanePilotDatabase, since = 0): Array<
   return db.prepare(`SELECT a.id AS attemptId, r.project_id AS projectId, a.run_id AS runId, a.task_id AS taskId, a.state, a.reason, a.failure_code AS failureCode, a.updated_at AS failedAt
     FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id
     WHERE a.attempt_no=(SELECT MAX(b.attempt_no) FROM lane_pilot_attempt b WHERE b.task_id=a.task_id)
-      AND a.state NOT IN ('accepted','canceled','queued','spawn_requested','spawn_unknown','running','cancel_requested')
+      AND a.state NOT IN (${attemptStateSql("open_or_final")})
       AND a.updated_at>=? ORDER BY a.updated_at DESC LIMIT 1000`).all(since) as
     Array<{ attemptId: string; projectId: string; runId: string; taskId: string; state: string; reason: string | null; failureCode: string | null; failedAt: number }>;
 }
@@ -289,9 +289,9 @@ export function workerHomeKey(id: string): string | null {
  * Each row carries the project, and the keys the task's homes may sit under: its id (the key the worker home is made under) and its attempt ids.
  */
 export function finalTaskIdsSince(db: LanePilotDatabase, since: number, limit = 300, now = Date.now(), quietMs = 24 * 3_600_000): Array<{ taskId: string; projectId: string; keys: string[] }> {
-  const open = OPEN_ATTEMPT_STATES.map((state) => `'${state}'`).join(",");
+  const open = attemptStateSql("open");
   const rows = db.prepare(`SELECT a.task_id AS taskId, r.project_id AS projectId, MAX(a.updated_at) AS endedAt FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id
-      WHERE a.state IN ('accepted','blocked','canceled') AND a.updated_at >= ? AND a.updated_at <= ?
+      WHERE a.state IN (${attemptStateSql("terminal")}) AND a.updated_at >= ? AND a.updated_at <= ?
         AND a.attempt_no=(SELECT MAX(b.attempt_no) FROM lane_pilot_attempt b WHERE b.run_id=a.run_id AND b.task_id=a.task_id)
         AND NOT EXISTS (SELECT 1 FROM lane_pilot_attempt o WHERE o.task_id=a.task_id AND o.state IN (${open}))
       GROUP BY a.task_id, r.project_id ORDER BY endedAt DESC LIMIT ?`).all(since, now - quietMs, limit) as Array<{ taskId: string; projectId: string }>;
@@ -339,5 +339,21 @@ export function listUnansweredWriterQuestions(db: LanePilotDatabase): Array<{
     WHERE a.state='blocked' AND a.reason LIKE 'needs_human:%' AND r.closed_at IS NULL
       AND a.created_at=(SELECT MAX(b.created_at) FROM lane_pilot_attempt b WHERE b.run_id=a.run_id AND b.task_id=a.task_id)
     ORDER BY a.created_at`).all() as Array<{ id:string; run_id:string; task_id:string; thread_id:string|null; project_id:string; reason:string|null; updated_at:number }>;
+}
+
+/** Attempt outcomes updated since `sinceMs`, joined with their run's project id, for compact status summaries. */
+export function listAttemptOutcomesSince(
+  db: LanePilotDatabase,
+  sinceMs: number,
+): Array<{ id: string; taskId: string; projectId: string; state: string; failureCode: string | null }> {
+  return db.prepare(`SELECT a.id, a.task_id AS taskId, r.project_id AS projectId, a.state, a.failure_code AS failureCode
+    FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id
+    WHERE a.updated_at>=?`).all(sinceMs) as Array<{
+    id: string;
+    taskId: string;
+    projectId: string;
+    state: string;
+    failureCode: string | null;
+  }>;
 }
 

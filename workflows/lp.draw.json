@@ -10,6 +10,7 @@
     "en": "The phase drawing: the design lead draws the screens the plan's pieces change as clickable HTML mock-ups in the phase folder; another role checks them against the pieces and the design system.",
     "ru": "Чертёж фазы: дизайнер рисует экраны, которые меняют куски плана, кликабельными HTML-макетами в папке фазы; другая роль проверяет их по кускам и дизайн-системе."
   },
+  "category": "service",
   "inputs": {
     "goal": {
       "type": "string",
@@ -176,5 +177,8 @@
       "pass": "artifact"
     }
   ],
-  "goal_check": "artifact"
+  "goal_check": "artifact",
+  "not_for": [
+    "impeccable-build"
+  ]
 }

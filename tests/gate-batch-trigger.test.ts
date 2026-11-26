@@ -4,8 +4,8 @@ import { join } from "node:path";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { afterEach, beforeEach, expect, it } from "vitest";
 import { createAttempt, createRun, createTask, openDatabase, saveProjectSetting, setRunThread, transitionAttempt } from "../src/rooms/plugin-db";
-import * as hostHandlers from "../src/rooms/host-worker/host-handlers";
-import { createWriterFinish } from "../src/rooms/writer/server/finish";
+import * as hostHandlers from "../src/rooms/host-worker";
+import { createWriterFinish } from "../src/rooms/writer/server/services/finish";
 
 // The batch gate runs the whole suite once, after the queue drains: a task that merges while another one is still open
 // only counts; the last one to land starts the gate, and it names the command it detected.

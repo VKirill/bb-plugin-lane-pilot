@@ -16,15 +16,14 @@ export type SystemMap = { nodes: Node[]; edges: Edge[] };
 
 /** Rooms by the part of the system they serve; a room not listed lands in «Other». */
 const AREAS: Record<string, string[]> = {
-  "Task pipeline": ["writer", "runs", "tasks", "acceptance", "baseline", "verification", "validators", "critique", "qa", "stage-return", "phase", "run-goal", "rollback", "backlog", "work-graph"],
-  "Graphs and schedule": ["workflow", "specialist", "night-graphs", "schedule", "relay", "forge"],
-  "PM, agents and doors": ["native-agent", "native-install", "session-hooks", "secrets", "tools", "front", "cockpit", "council", "host-worker", "project-life"],
+  "Task pipeline": ["writer", "runs", "tasks", "acceptance", "baseline", "verification", "validators", "critique", "qa", "stage-return", "phase", "rollback", "backlog", "work-graph"],
+  "Graphs and schedule": ["workflow", "specialist", "night-graphs", "schedule", "relay"],
+  "PM, agents and doors": ["native-agent", "native-install", "session-hooks", "secrets", "tools", "front", "host-worker", "project-life"],
   "Models, Jev, money": ["jev", "capability", "usage", "money"],
-  "Memory and the owner": ["memory", "memory-eval", "memory-probe", "memory-tiers", "passport", "anamnesis", "learning", "rule-forms", "docs"],
-  "Self-improvement": ["wall", "night", "bench", "harness", "hypotheses", "improvement", "self-repair", "lead", "errands", "policy", "checkers", "coverage", "forecast", "design-eval", "pm-replay", "sma-map", "wires"],
+  "Memory and the owner": ["memory", "memory-eval", "memory-probe", "memory-tiers", "learning", "rule-forms", "docs"],
+  "Self-improvement": ["wall", "night", "bench", "harness", "improvement", "self-repair", "lead", "errands", "policy", "checkers", "coverage", "forecast", "pm-replay", "wires"],
   "Stability and the owner's list": ["stability", "outage", "deferral", "owner-waiting", "owner-presence"],
   "Platform": ["core", "storage", "contracts", "settings", "ui-shell"],
-  "Pixel World": ["world"],
 };
 
 export function collectSystemMap(root: string): SystemMap {
@@ -107,10 +106,10 @@ export function collectSystemMap(root: string): SystemMap {
   }
 
   // CLI commands, by the room whose handler the dispatch calls.
-  const cliPath = join(root, "src/rooms/tools/server/cli.ts");
+  const cliPath = join(root, "src/rooms/tools/server/handlers/cli.ts");
   const cli = readFileSync(cliPath, "utf8");
-  const cliImports = readFileSync(join(root, "src/rooms/tools/server/cli-imports.ts"), "utf8");
-  const cliCommands = readFileSync(join(root, "src/rooms/tools/server/cli-commands.ts"), "utf8");
+  const cliImports = readFileSync(join(root, "src/rooms/tools/server/handlers/cli-imports.ts"), "utf8");
+  const cliCommands = readFileSync(join(root, "src/rooms/tools/server/handlers/cli-commands.ts"), "utf8");
   const symbolRoom = new Map<string, string>();
   for (const hit of cliImports.matchAll(/import\s*(?:type\s*)?\{([^}]*)\}\s*from\s*"([^"]+)"/g)) {
     const owner = ownerOf(resolve(dirname(cliPath), hit[2]!));

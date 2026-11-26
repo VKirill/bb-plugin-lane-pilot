@@ -2,10 +2,7 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
 import { BEAT_KEY, gapOutage, listOutages } from "../../src/rooms/outage";
 import { recordStartGap, runOutageCli } from "../../src/rooms/outage/server";
-import { conveyorState, setConveyor } from "../../src/rooms/runs";
-import { isHeld } from "../../src/rooms/runs/server";
-import { setRunPaused } from "../../src/rooms/runs/server";
-import { waitWhileRunPaused } from "../../src/rooms/runs/server";
+import { conveyorState, isHeld, setConveyor, setRunPaused, waitWhileRunPaused } from "../../src/rooms/runs/server";
 import { openDatabase } from "../../src/rooms/plugin-db";
 
 const NOW = Date.parse("2026-10-23T10:00:00Z");
@@ -56,7 +53,7 @@ describe("the conveyor switch", () => {
   });
 });
 
-it("the heartbeat is still scheduled when the first store reads fail", async () => {
+it("mountOutage survives failing store reads and leaves the beat to the engine clock", async () => {
   const { createFakePluginHost } = await import("@get-bb/plugin-sdk/testing");
   const { mountOutage } = await import("../../src/rooms/outage/server");
   const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
@@ -66,6 +63,6 @@ it("the heartbeat is still scheduled when the first store reads fail", async () 
   kv.get = async () => { throw new Error("store down"); };
   const db = openDatabase(bb);
   await mountOutage({ bb, db, log: () => undefined, isDisposed: () => false } as never);
-  expect(scheduled).toContain("outage-beat");
+  expect(scheduled).not.toContain("outage-beat");
   await harness.lifecycle.dispose();
 });

@@ -3,7 +3,7 @@ import { lstat, mkdir, mkdtemp, readFile, realpath, symlink, writeFile } from "n
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { prepareWorktree, protectedCheckout } from "../../src/rooms/verification/git-integrate";
+import { prepareWorktree, protectedCheckout } from "../../src/rooms/worktree";
 import { git } from "./git-integrate-helpers";
 
 /**

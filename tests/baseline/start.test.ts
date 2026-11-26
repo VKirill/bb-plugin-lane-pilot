@@ -5,8 +5,8 @@ import type { PrototypeConfig, TaskV2 } from "../../src/rooms/contracts";
 import { createAttempt, createRun, createTask, getAttempt, listStageReceipts, openDatabase, savePrototypeConfig, saveTaskPlan, setAttemptWorkspace, setRunThread, transitionAttempt } from "../../src/rooms/plugin-db";
 import { createCore } from "../../src/rooms/core/server/core";
 import type { Services } from "../../server";
-import { recordStage } from "../../src/rooms/runs/server/stage-records";
-import { createWriterStart } from "../../src/rooms/writer/server/start";
+import { recordStage } from "../../src/rooms/runs/server";
+import { createWriterStart } from "../../src/rooms/writer/server/services/start";
 
 // D1-3: the baseline runs before the first writer of a task; in stop mode the writer is never asked.
 const WORKSPACE = "/ws";

@@ -3,12 +3,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { migrations } from "../src/rooms/plugin-db";
-import { runMemoryEvalCommand } from "../src/rooms/memory-eval/server/command";
-import { E2E_VERDICTS, ABSTAIN_PHRASE, e2eCases, formatE2e, parseVerdict, runE2e, stubModel, type ModelCall } from "../src/rooms/memory-eval/server/e2e";
-import { formatPublic, loadFactConsolidation, loadLongMemEvalAbstention, runFactConsolidation, runLongMemEvalAbstention } from "../src/rooms/memory-eval/server/public-sets";
-import { formatSuite, plantSuite, regressions, runSuite, scoreSuite, standInEmbedding, type SuiteBaseline } from "../src/rooms/memory-eval/server/suite";
-import { SUITE_CASES, SUITE_NOTES, SUITE_PACK_NOTES } from "../src/rooms/memory-eval/server/suite-fixture";
-import baseline from "../src/rooms/memory-eval/server/suite-baseline.json";
+import { runMemoryEvalCommand } from "../src/rooms/memory-eval/server/handlers/command";
+import { E2E_VERDICTS, ABSTAIN_PHRASE, e2eCases, formatE2e, parseVerdict, runE2e, stubModel, type ModelCall } from "../src/rooms/memory-eval/server/services/e2e";
+import { formatPublic, loadFactConsolidation, loadLongMemEvalAbstention, runFactConsolidation, runLongMemEvalAbstention } from "../src/rooms/memory-eval/server/services/public-sets";
+import { formatSuite, plantSuite, regressions, runSuite, scoreSuite, standInEmbedding, type SuiteBaseline } from "../src/rooms/memory-eval/server/services/suite";
+import { SUITE_CASES, SUITE_NOTES, SUITE_PACK_NOTES } from "../src/rooms/memory-eval/models/suite-fixture";
+import baseline from "../src/rooms/memory-eval/server/services/suite-baseline.json";
 
 // The offline memory suite (H1-H7 of the memory research, 2026-11-13). Update the baseline on purpose:
 //   npx tsx scripts/memory-eval.ts --suite --write-baseline src/rooms/memory-eval/server/suite-baseline.json

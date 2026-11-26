@@ -1,4 +1,5 @@
 import type { ExperimentalHostRpcHandlers } from "@get-bb/plugin-sdk";
+import { currentHostId } from "@lane-pilot/kit";
 import { hostContract } from "../../contracts";
 import { prepareSandboxedCommandLine, releaseSandboxedCommandLine, runSandboxedCommandOnHost } from "../../verification";
 import { runCommandOnHost } from "../../writer";
@@ -25,17 +26,17 @@ export const sandboxCommandLine: ExperimentalHostRpcHandlers<typeof hostContract
 export const sandboxRelease: ExperimentalHostRpcHandlers<typeof hostContract>["sandboxRelease"] = async (input) => {
   const { rootsManifest } = await releaseSandboxedCommandLine({ tempPath:input.tempPath, created:input.created },
     input.workspacePath && input.rootsBefore ? { workspacePath:input.workspacePath, before:{ sha256:input.rootsBefore.sha256, entries:0, truncated:false, partial:input.rootsBefore.partial, git:input.rootsBefore.git ?? "absent" } } : undefined);
-  return { hostId:process.env.BB_HOST_ID ?? input.requestedHostId, released:true, ...(rootsManifest ? { rootsManifest } : {}) };
+  return { hostId:currentHostId(input.requestedHostId), released:true, ...(rootsManifest ? { rootsManifest } : {}) };
 };
 
 /** The writer host asks its OpenCode v2 service about a silent writer's session (writer-silence.ts asks only for opencode2 writers). */
 export const openCodeLimitProbe: ExperimentalHostRpcHandlers<typeof hostContract>["openCodeLimitProbe"] = async (input) => ({
-  hostId:process.env.BB_HOST_ID??input.requestedHostId,
+  hostId:currentHostId(input.requestedHostId),
   ...await probeOpenCodeLimit({sessionId:input.sessionId,sinceMs:input.sinceMs}),
 });
 
 export const inspectCritiqueCoverage: ExperimentalHostRpcHandlers<typeof hostContract>["inspectCritiqueCoverage"] = async (input) => ({
-  hostId:process.env.BB_HOST_ID??input.requestedHostId,
+  hostId:currentHostId(input.requestedHostId),
   ...await scanCritiqueCoverage({workspacePath:input.workspacePath,plan:input.plan,
     tasks:input.tasks.map((task)=>({id:task.id,lane:task.lane,owns_paths:task.ownsPaths,has_verification:task.hasVerification,
       verification:task.verification.map((command)=>({command:command.command,timeout_sec:command.timeoutSec}))}))}),

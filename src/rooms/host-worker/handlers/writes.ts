@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
-import { chmod, lstat, mkdir, open, readFile, readdir, realpath, rename, unlink } from "node:fs/promises";
+import { chmod, lstat, mkdir, open, readFile, readdir, realpath, unlink } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, sep } from "node:path";
 import type { ExperimentalHostRpcHandlers } from "@get-bb/plugin-sdk";
-import { bestEffort, sha256Hex } from "@lane-pilot/kit";
+import { bestEffort, currentHostId, sha256Hex } from "@lane-pilot/kit";
 import { hostContract } from "../../contracts";
 import { renameRetry } from "../../platform";
 import { casWriteWorkflowFile } from "../../storage";
@@ -55,7 +55,7 @@ export const listWorkflowFiles: ExperimentalHostRpcHandlers<typeof hostContract>
     if (!info.isFile() || info.isSymbolicLink() || info.size > 262_144) continue;
     files.push({ path: name, content: await readFile(join(dir, name), "utf8") });
   }
-  return { hostId: process.env.BB_HOST_ID ?? input.requestedHostId, files };
+  return { hostId: currentHostId(input.requestedHostId), files };
 };
 
 type MarkdownWrite = Parameters<ExperimentalHostRpcHandlers<typeof hostContract>["applyOnboardingPages"]>[0];
@@ -92,12 +92,12 @@ export const writeWorkflowFile: ExperimentalHostRpcHandlers<typeof hostContract>
     if (info && (info.isSymbolicLink() || !info.isDirectory())) throw new Error(`workflow folder must be a real directory: ${segment}`);
   }
   const written = await casWriteWorkflowFile(cursor, input.id, input.content, input.expectedSha256);
-  return { hostId: process.env.BB_HOST_ID ?? input.requestedHostId, status: written.status, path: `.lane-pilot/workflows/${input.id}.json`, beforeSha256: written.beforeSha256, afterSha256: written.afterSha256, reason: written.reason };
+  return { hostId: currentHostId(input.requestedHostId), status: written.status, path: `.lane-pilot/workflows/${input.id}.json`, beforeSha256: written.beforeSha256, afterSha256: written.afterSha256, reason: written.reason };
 };
 
 async function casWriteMarkdown(input:MarkdownWrite, maxTotalBytes:number, inScope:(path:string) => boolean):Promise<Awaited<ReturnType<ExperimentalHostRpcHandlers<typeof hostContract>["applyOnboardingPages"]>>> {
   const suppliedPreviewSha256=sha256Hex(JSON.stringify(input.edits));
-  if(suppliedPreviewSha256!==input.previewSha256) return {hostId:process.env.BB_HOST_ID??input.requestedHostId,previewSha256:input.previewSha256,status:"blocked",writes:[],reason:"onboarding preview hash did not match supplied edits"};
+  if(suppliedPreviewSha256!==input.previewSha256) return {hostId:currentHostId(input.requestedHostId),previewSha256:input.previewSha256,status:"blocked",writes:[],reason:"onboarding preview hash did not match supplied edits"};
   const rootInfo=await lstat(input.projectCwd);
   if(!rootInfo.isDirectory()||rootInfo.isSymbolicLink()) throw new Error("onboarding project root must be a real directory");
   const root=await realpath(input.projectCwd);
@@ -135,12 +135,12 @@ async function casWriteMarkdown(input:MarkdownWrite, maxTotalBytes:number, inSco
       if(info.isSymbolicLink()||!info.isFile()) throw new Error(`onboarding target must be a regular file: ${normalized}`);
       const currentHash=sha256Hex(await readFile(fullPath));
       if(edit.expectedSha256===null||currentHash!==edit.expectedSha256){
-        return {hostId:process.env.BB_HOST_ID??input.requestedHostId,previewSha256:input.previewSha256,status:"conflict",writes:[],reason:`onboarding expected hash changed: ${normalized}`};
+        return {hostId:currentHostId(input.requestedHostId),previewSha256:input.previewSha256,status:"conflict",writes:[],reason:`onboarding expected hash changed: ${normalized}`};
       }
       beforeMode=info.mode&0o777;
     }catch(cause){
       if((cause as NodeJS.ErrnoException).code!=="ENOENT") throw cause;
-      if(edit.expectedSha256!==null) return {hostId:process.env.BB_HOST_ID??input.requestedHostId,previewSha256:input.previewSha256,status:"conflict",writes:[],reason:`onboarding target disappeared: ${normalized}`};
+      if(edit.expectedSha256!==null) return {hostId:currentHostId(input.requestedHostId),previewSha256:input.previewSha256,status:"conflict",writes:[],reason:`onboarding target disappeared: ${normalized}`};
     }
     targets.push({path:normalized,fullPath,expectedSha256:edit.expectedSha256,beforeMode});
   }
@@ -156,7 +156,7 @@ async function casWriteMarkdown(input:MarkdownWrite, maxTotalBytes:number, inSco
       const currentHash=currentInfo?sha256Hex(await readFile(target.fullPath)):null;
       if((currentInfo?.isSymbolicLink()??false)||currentHash!==target.expectedSha256){
         writes.push({path:target.path,beforeSha256:currentHash,afterSha256:currentHash,status:"conflict",reason:"target changed after onboarding preflight"});
-        return {hostId:process.env.BB_HOST_ID??input.requestedHostId,previewSha256:input.previewSha256,status:writes.length===1?"conflict":"blocked",writes,reason:"onboarding compare-and-swap changed during apply"};
+        return {hostId:currentHostId(input.requestedHostId),previewSha256:input.previewSha256,status:writes.length===1?"conflict":"blocked",writes,reason:"onboarding compare-and-swap changed during apply"};
       }
       const bytes=Buffer.from(edit.content,"utf8");
       await mkdir(dirname(target.fullPath),{recursive:true});
@@ -172,7 +172,7 @@ async function casWriteMarkdown(input:MarkdownWrite, maxTotalBytes:number, inSco
       if((latestInfo?.isSymbolicLink()??false)||latestHash!==target.expectedSha256){
         await bestEffort(console.warn, `onboarding temp cleanup ${target.path}`, unlink(tempPath), undefined);tempPath=undefined;
         writes.push({path:target.path,beforeSha256:latestHash,afterSha256:latestHash,status:"conflict",reason:"target changed before atomic replacement"});
-        return {hostId:process.env.BB_HOST_ID??input.requestedHostId,previewSha256:input.previewSha256,status:writes.length===1?"conflict":"blocked",writes,reason:"onboarding compare-and-swap changed during apply"};
+        return {hostId:currentHostId(input.requestedHostId),previewSha256:input.previewSha256,status:writes.length===1?"conflict":"blocked",writes,reason:"onboarding compare-and-swap changed during apply"};
       }
       await renameRetry(tempPath,target.fullPath);tempPath=undefined;
       const afterSha256=sha256Hex(await readFile(target.fullPath));
@@ -182,8 +182,8 @@ async function casWriteMarkdown(input:MarkdownWrite, maxTotalBytes:number, inSco
       if(tempPath) await bestEffort(console.warn, `onboarding temp cleanup ${target.path}`, unlink(tempPath), undefined);
       const reason=cause instanceof Error?cause.message:String(cause);
       writes.push({path:target.path,beforeSha256:target.expectedSha256,afterSha256:null,status:"blocked",reason});
-      return {hostId:process.env.BB_HOST_ID??input.requestedHostId,previewSha256:input.previewSha256,status:"blocked",writes,reason};
+      return {hostId:currentHostId(input.requestedHostId),previewSha256:input.previewSha256,status:"blocked",writes,reason};
     }
   }
-  return {hostId:process.env.BB_HOST_ID??input.requestedHostId,previewSha256:input.previewSha256,status:"applied",writes,reason:null};
+  return {hostId:currentHostId(input.requestedHostId),previewSha256:input.previewSha256,status:"applied",writes,reason:null};
 }

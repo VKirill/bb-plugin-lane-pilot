@@ -8,12 +8,12 @@ import { noOptionalPlugins } from "./optional-plugin-stubs";
 import type { PrototypeConfig, TaskV2 } from "../src/rooms/contracts";
 import { createCore } from "../src/rooms/core/server/core";
 import type { Services } from "../server";
-import { recordStage } from "../src/rooms/runs/server/stage-records";
+import { recordStage } from "../src/rooms/runs/server";
 import { createAttempt, createRun, createTask, listStageReceipts, openDatabase, savePrototypeConfig, saveTaskPlan, setAttemptWorkspace, setRunThread, transitionAttempt, updateTaskContract } from "../src/rooms/plugin-db";
-import { upsertAttemptChange } from "../src/rooms/rollback/store";
-import { runCommand } from "../src/rooms/host-worker/host-handlers";
-import { createWriterStart } from "../src/rooms/writer/server/start";
-import { checkDependencyBase } from "../src/rooms/writer/server/start-dependency-base";
+import { upsertAttemptChange } from "../src/rooms/rollback/server";
+import { runCommand } from "../src/rooms/host-worker";
+import { createWriterStart } from "../src/rooms/writer/server/services/start";
+import { checkDependencyBase } from "../src/rooms/writer/server/services/start-dependency-base";
 
 // The owner's rule for a split plan (ТЗ sma-parity 4д) on the real writer start path: which tasks start, in what order, from which base.
 // The base checkout is a real git repository: an accepted task commits its file into main (the merge), a started task gets a worktree

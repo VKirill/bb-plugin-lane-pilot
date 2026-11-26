@@ -1,10 +1,10 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { afterEach, describe, expect, it } from "vitest";
-import { runCodeCritique, runPlanCritique, runPmRead, runSpecialistReview, setAsideOnStartFailure } from "../src/rooms/critique/server/critique-runs";
-import { seenProviderLimit } from "../src/rooms/platform/server";
-import { buildCandidateEvidence } from "../src/rooms/critique/code-critique";
-import { stageHelperSettings } from "../src/rooms/settings/server/stage-settings";
-import { recordStage, resetHelperStages } from "../src/rooms/runs/server/stage-records";
+import { runCodeCritique, runPlanCritique, runPmRead, runSpecialistReview } from "../src/rooms/critique/server";
+import { seenProviderLimit, setAsideOnStartFailure } from "../src/rooms/platform/server";
+import { buildCandidateEvidence } from "../src/rooms/critique";
+import { stageHelperSettings } from "../src/rooms/settings/server/services/stage-settings";
+import { recordStage, resetHelperStages } from "../src/rooms/runs/server";
 import { createAttempt, createRun, createTask, listStageReceipts, openDatabase, saveProjectSetting } from "../src/rooms/plugin-db";
 
 // 2026-10-29 audit (lane-pilot-roast F-001, F-003): quick paid the catalog and the coverage scan for a critic it skipped; pm-read
@@ -104,7 +104,7 @@ describe("helper stages decide before they prepare, and reuse only a receipt of 
     expect(cached).toMatchObject({ allowed:false, reason:"structural_plan_critique_blocked" });
   });
 
-  it("a truncated critique packet is a skipped receipt and does not block the writer", async () => {
+  it("a truncated critique packet is blocked and not allowed as pass", async () => {
     const w = world();
     saveProjectSetting(w.db, "P", "code_critique.enabled", true);
     const hash = "a".repeat(64);
@@ -115,9 +115,9 @@ describe("helper stages decide before they prepare, and reuse only a receipt of 
       packetSha256: hash, outputSha256: hash, ownsPaths: ["note.txt"], neverTouch: [],
     };
     const result = await runCodeCritique({ stageHelperSettings, ...w, projectId: "P", runId: "r", taskId: "t1", config, task, evidence });
-    expect(result.allowed).toBe(true);
+    expect(result.allowed).toBe(false);
     expect(result.reason).toContain("code_critique_evidence_unknown:packet_truncated");
-    expect(listStageReceipts(w.db, "r", "t1").find((row) => row.stageId === "code-critique")?.state).toBe("skipped");
+    expect(listStageReceipts(w.db, "r", "t1").find((row) => row.stageId === "code-critique")?.state).toBe("blocked");
   });
 
   it("a small green change skips the code critic by rule and the receipt names why (critic-level.ts)", async () => {

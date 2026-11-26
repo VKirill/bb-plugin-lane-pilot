@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildCandidateEvidence, codeCritiquePrompt } from "../../src/rooms/critique/code-critique";
-import { verifierPrompt } from "../../src/rooms/critique/code-verifier";
+import { buildCandidateEvidence, codeCritiquePrompt, verifierPrompt } from "../../src/rooms/critique";
 
 const task = (read_first?: string[]) => ({
   schema_version: 2,

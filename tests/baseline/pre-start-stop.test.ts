@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { getBaseline } from "../../src/rooms/baseline";
-import { redOutsideTaskFiles, unrunnableReason, type BaselineCheck } from "../../src/rooms/baseline/logic";
+import { redOutsideTaskFiles, unrunnableReason, type BaselineCheck } from "../../src/rooms/baseline/models/logic";
 import { classifyFailure } from "../../src/rooms/contracts/failure-class";
 import { countChargedAttempts, transitionAttempt } from "../../src/rooms/plugin-db";
 import { world } from "./world";

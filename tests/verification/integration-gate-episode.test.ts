@@ -3,9 +3,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
-import { IntegrationGateRunner } from "../../src/rooms/verification/server/integration-gate";
-import { createAttempt, createTask, openDatabase, transitionAttempt } from "../../src/rooms/plugin-db";
-import * as hostHandlers from "../../src/rooms/host-worker/host-handlers";
+import { IntegrationGateRunner } from "../../src/rooms/verification/server/services/integration-gate";
+import { openDatabase } from "../../src/rooms/plugin-db";
+import * as hostHandlers from "../../src/rooms/host-worker";
 import type { ServerCore } from "../../src/rooms/contracts/server";
 import type { Services } from "../../server";
 
@@ -58,13 +58,6 @@ describe("a red gate never asks the owner and never messages the PM; one owner r
     return runner.maybeRunGate({ runId: "run-1", projectId: "proj-1", pmThreadId: "pm-1", basePath: dir, configHostId: "host-1", trigger: "drain" });
   };
   const toPm = () => sent.filter((m) => m.threadId === "pm-1");
-  const taskInFlight = (id: string, contract: Record<string, unknown>) => {
-    createTask(db, { id, runId: "run-1", kind: "bb", contract });
-    createAttempt(db, { id: `att-${id}`, runId: "run-1", taskId: id });
-    transitionAttempt(db, `att-${id}`, "spawn_requested");
-    transitionAttempt(db, `att-${id}`, "running");
-  };
-  const tick = () => new Promise((resolve) => setTimeout(resolve, 5));
 
   const rows = () => db.prepare("SELECT what, why FROM lane_pilot_owner_item WHERE key LIKE 'gate-red:run-1:%' ORDER BY created_at").all() as Array<{ what: string; why: string }>;
 

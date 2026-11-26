@@ -1,12 +1,9 @@
-import { builtinWorkflow } from "../src/rooms/workflow/builtin";
 import { execFile, execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { checkProofs, hostGit, phaseProofRecords, renderProofCurrency, type GitRun } from "../src/rooms/phase/server/proof-currency";
-import { createAutoStages } from "../src/rooms/phase/server/auto-stages";
-import type { Phase } from "../src/rooms/phase/logic";
+import { checkProofs, hostGit, phaseProofRecords, renderProofCurrency, type GitRun } from "../src/rooms/verification/server";
 
 // The server never runs git itself (the project lives on its host); a test runs it here, the way hostGit does there.
 /** Git in a local folder: execFile with an argument array, no shell, and no inherited repository overrides. */
@@ -175,31 +172,5 @@ describe("the proofs of a phase's run", () => {
   it("has nothing without a run, and no verdict records when the run changed no file", () => {
     expect(phaseProofRecords(db, { runId: null, record: {} }, null)).toEqual([]);
     expect(phaseProofRecords({ prepare: () => ({ all: () => [] }) }, { runId: "run1", record: { verification: { verdict: { mainSha: "eeee5555" } } } }, { headSha: "ffff6666" })).toEqual([]);
-  });
-});
-
-describe("the goal audit gets the currency facts", () => {
-  const phase = { id: "ph_1", projectId: "p", pmThreadId: "thr_pm", runId: "run1", title: "Notes", goal: "g", stage: "verification", state: "active", edition: 1, createdAt: 1, updatedAt: 1,
-    record: { verification: { verdict: { state: "passed", detail: "ok", inputSha: "x", at: 1, mainSha: null } } } } as unknown as Phase;
-  function start(proofCurrency?: (phase: Phase) => Promise<string | null>) {
-    const started: Array<{ workflow: { id: string }; inputs: Record<string, unknown> }> = [];
-    const auto = createAutoStages({ log: () => undefined }, { workflowEngine: { resolveWorkflow: (id: string) => builtinWorkflow(id), start: (input: never) => { started.push(input); return { runId: "wf1", created: true, done: new Promise(() => undefined) }; }, get: () => null } as never }, {
-      exhausted: async () => undefined, api: {} as never, get: () => phase, save: () => undefined, book: () => undefined, writeDocs: async () => ({ written: [] }), runtime: () => ({}), pmIdle: async () => true, now: () => 1,
-      ...(proofCurrency ? { proofCurrency } : {}),
-    });
-    return { auto, started };
-  }
-  it("passes proof_currency to lp.close, and only to lp.close", async () => {
-    const w = start(async () => "- task store: STALE");
-    expect(await w.auto.step(phase)).toBe(true);
-    expect(w.started[0]!.workflow.id).toBe("lp.close");
-    expect(w.started[0]!.inputs).toMatchObject({ goal: "g", proof_currency: "- task store: STALE" });
-  });
-  it("starts the audit without the facts when they are none or the lookup fails", async () => {
-    for (const lookup of [undefined, async () => null, async () => { throw new Error("host gone"); }]) {
-      const w = start(lookup);
-      expect(await w.auto.step(phase)).toBe(true);
-      expect(w.started[0]!.inputs).not.toHaveProperty("proof_currency");
-    }
   });
 });

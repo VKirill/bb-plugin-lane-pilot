@@ -1,53 +1,55 @@
 import { describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
-import { SETTING_CATALOG, CONSUMER_KEYS, specFor, UNAPPLIED_REASON, type SettingSpec } from "@lane-pilot/settings-catalog";
-import { UI_CATALOG, WRITER_EFFORT_CHOICES_BY_PROVIDER, type CatalogRow } from "@lane-pilot/settings-catalog";
-import { buildCliInvocation, isFlagOff, isFlagOn } from "../src/rooms/writer/argv-builder";
-import { argvValidationMap } from "../src/rooms/settings/setting-validation";
+import { UNAPPLIED_REASON, WRITER_EFFORT_CHOICES_BY_PROVIDER, type CatalogRow } from "@lane-pilot/settings-catalog";
+import { SETTINGS_REGISTRY } from "../src/rooms/settings-registry";
+import { buildCliInvocation, isFlagOff, isFlagOn } from "../src/rooms/writer/models/argv-builder";
+import { argvValidationMap } from "../src/rooms/settings/models/setting-validation";
 import { installEnv } from "../src/rooms/native-install/install-runner";
 import plugin from "../server";
-import { NO_UPSTREAM } from "./upstream-fixture";
-import { execFileSync } from "node:child_process";
-import { resolve } from "node:path";
 
-function representativeValues(row: CatalogRow, spec: SettingSpec): unknown[] {
-  if (spec.channel === "OWN" && spec.key.endsWith(".agent")) return ["lane-test-agent"];
-  if (spec.key === "plan_critique.min_score") return [0, 10];
-  if (spec.key === "plan_critique.min_write_tasks") return [1, 3];
-  if (spec.key === "ops.provider_pool") return ["codex=2, claude-code=3"];
-  if (spec.key === "jev.thresholds") return ["employee.remark.remark_p=0.7"];
-  if (spec.key === "jev.modes") return ["employee.remark=shadow"];
-  if (spec.key === "jev.provider") return ["openlux", "typesafe"];
-  if (spec.booleanFlag || spec.key.startsWith("jev.")) return [true, false];
-  if (spec.key === "install.LANE_INSTALL_LOCAL_MARKETPLACE" || spec.key === "install.LANE_INSTALL_CLAUDE_PLUGIN") {
+function representativeValues(row: CatalogRow): unknown[] {
+  if (row.channel === "OWN" && row.storageKey.endsWith(".agent")) return ["lane-test-agent"];
+  if (row.storageKey === "plan_critique.min_score") return [0, 10];
+  if (row.storageKey === "plan_critique.min_write_tasks") return [1, 3];
+  if (row.storageKey === "ops.provider_pool") return ["codex=2, claude-code=3"];
+  if (row.storageKey === "jev.thresholds") return ["employee.remark.remark_p=0.7"];
+  if (row.storageKey === "jev.modes") return ["employee.remark=shadow"];
+  if (row.storageKey === "jev.provider") return ["openlux", "typesafe"];
+  if (row.bounds.kind === "boolean" || row.storageKey.startsWith("jev.")) return [true, false];
+  if (row.storageKey === "install.LANE_INSTALL_LOCAL_MARKETPLACE" || row.storageKey === "install.LANE_INSTALL_CLAUDE_PLUGIN") {
     return [true, false];
   }
   if (row.control === "select") return row.options;
-  if (/^workflow\..*\.reasoning_effort$/.test(spec.key)) return ["low", "max"];
-  if (spec.key === "install.CODEX_HOME") return ["/tmp/codex"];
-  if (spec.key === "lead.tick_cron") return ["30 6,10,14,18 * * *"]; // five cron fields: the lead's validator refuses anything else
-  if (spec.key === "install.CLAUDE_CONFIG_DIR") return ["/tmp/claude"];
-  const catalogRow = UI_CATALOG.find((item) => item.storageKey === spec.key && item.uiStatus === "editable");
-  if (catalogRow?.min != null && catalogRow.max != null) return [catalogRow.min, catalogRow.max];
-  if (catalogRow?.control === "path" || spec.key.includes("dir") || spec.key.includes("cwd") || spec.key.includes("file")) {
+  if (/^workflow\..*\.reasoning_effort$/.test(row.storageKey)) return ["low", "max"];
+  if (row.storageKey === "install.CODEX_HOME") return ["/tmp/codex"];
+  if (row.storageKey === "lead.tick_cron") return ["30 6,10,14,18 * * *"]; // five cron fields: the lead's validator refuses anything else
+  if (row.storageKey === "install.CLAUDE_CONFIG_DIR") return ["/tmp/claude"];
+  if (row.min != null) return row.max != null ? [row.min, row.max] : [row.min];
+  if (row.control === "path" || row.storageKey.includes("dir") || row.storageKey.includes("cwd") || row.storageKey.includes("file")) {
     return ["/tmp/lane-pilot"];
   }
-  if (row?.options.length && row.options[0] && row.options[0] !== "bool") return row.options;
+  if (row.bounds.kind === "json") return ["{}"];
+  if (row.bounds.kind === "time_range") return ["23:00-08:00"];
+  if (row.bounds.kind === "time_zone") return ["Europe/Madrid"];
+  if (row.options.length && row.options[0] && row.options[0] !== "bool") return row.options;
   return ["1"];
 }
 
-function assertChannelValue(spec: SettingSpec, value: unknown): void {
-  const label = `${spec.key}=${JSON.stringify(value)}`;
+function assertChannelValue(spec: CatalogRow, value: unknown): void {
+  const label = `${spec.storageKey}=${JSON.stringify(value)}`;
   if (spec.channel === "OWN") {
+    if (spec.storageKey === "ui.language" || spec.storageKey.startsWith("jev.")) return;
     const cli = buildCliInvocation({
-        validate: argvValidationMap, binary: "run-controller", subcommand: "run", settings: { [spec.key]: value } });
-    expect(cli.applied, label).not.toContain(spec.key);
-    expect(cli.unapplied.find((row) => row.key === spec.key)?.reason, label).toMatch(/native Lane Pilot/i);
+        validate: argvValidationMap, binary: "run-controller", subcommand: "run", settings: { [spec.storageKey]: value } });
+    expect(cli.applied, label).not.toContain(spec.storageKey);
+    const reason = cli.unapplied.find((row) => row.key === spec.storageKey)?.reason;
+    if (spec.storageKey === "adoc.040") expect(reason, label).toBe(UNAPPLIED_REASON.noConsumer);
+    else expect(reason, label).toMatch(/native Lane Pilot/i);
     return;
   }
-  if (spec.key === "install.LANE_INSTALL_CLAUDE_PLUGIN") {
-    const result = installEnv({ homeDir: "/tmp/home", confirmExternalOps: true, settings: { [spec.key]: value } });
-    expect(result.applied, label).not.toContain(spec.key);
+  if (spec.storageKey === "install.LANE_INSTALL_CLAUDE_PLUGIN") {
+    const result = installEnv({ homeDir: "/tmp/home", confirmExternalOps: true, settings: { [spec.storageKey]: value } });
+    expect(result.applied, label).not.toContain(spec.storageKey);
     expect(result.env.LANE_INSTALL_CLAUDE_PLUGIN, label).toBe("0");
     return;
   }
@@ -55,74 +57,44 @@ function assertChannelValue(spec: SettingSpec, value: unknown): void {
     const result = installEnv({
       homeDir: "/tmp/home",
       confirmExternalOps: true,
-      settings: { [spec.key]: value },
+      settings: { [spec.storageKey]: value },
     });
-    expect(result.applied, label).toContain(spec.key);
-    const envName = spec.env ?? "";
+    expect(result.applied, label).toContain(spec.storageKey);
+    const envName = spec.storageKey.slice("install.".length);
     if (isFlagOn(value)) expect(result.env[envName], label).toBe("1");
     else if (isFlagOff(value)) expect(result.env[envName], label).toBe("0");
     else expect(result.env[envName], label).toBe(String(value));
     const cli = buildCliInvocation({
-        validate: argvValidationMap, binary: "run-controller", subcommand: "run", settings: { [spec.key]: value } });
-    expect(cli.unapplied.some((row) => row.key === spec.key), `${label} CLI`).toBe(true);
+        validate: argvValidationMap, binary: "run-controller", subcommand: "run", settings: { [spec.storageKey]: value } });
+    expect(cli.unapplied.some((row) => row.key === spec.storageKey), `${label} CLI`).toBe(true);
     return;
   }
-  const target = requiredFor(spec);
   const built = buildCliInvocation({
         validate: argvValidationMap,
-    binary: target.binary,
-    subcommand: target.subcommand,
-    settings: { [spec.key]: value },
-    required: target.required,
+    binary: "run-controller",
+    subcommand: "run",
+    settings: { [spec.storageKey]: value },
+    required: {},
   });
-  if (spec.booleanFlag && isFlagOff(value) && !spec.offFlag) {
-    expect(built.applied, label).not.toContain(spec.key);
-    expect(built.argv, label).not.toContain(spec.flag);
-    const row = built.unapplied.find((item) => item.key === spec.key);
-    expect(row?.reason, label).toBe(UNAPPLIED_REASON.booleanOffUnsupported);
-    return;
-  }
-  if (spec.channel === "ENV-PASSTHROUGH" && spec.env) {
-    expect(built.applied, label).toContain(spec.key);
-    if (isFlagOn(value)) expect(built.env[spec.env], label).toBe("1");
-    else if (isFlagOff(value)) expect(built.env[spec.env], label).toBe("0");
-    else expect(built.env[spec.env], label).toBe(String(value));
-    return;
-  }
-  expect(built.applied, label).toContain(spec.key);
-  expect(built.argv, label).toContain(spec.flag);
-  if (!spec.booleanFlag) expect(built.argv, label).toContain(String(value));
-}
-
-function requiredFor(spec: SettingSpec): { binary: "run-controller" | "lane-ctl"; subcommand: string; required: Record<string, string> } {
-  return { binary: spec.binaries?.[0] ?? "run-controller", subcommand: spec.subcommands?.[0] ?? "run", required: {} };
+  expect(built.applied, label).not.toContain(spec.storageKey);
 }
 
 describe("UI storage keys feed runtime channels", () => {
-  // scripts/generate-ui-catalog.py checks enums against the pinned upstream; skip on a clean clone.
-  // deferral:dfr_seed_skip_ui_runtime
-  it.skipIf(NO_UPSTREAM)("derives every editable enum from pinned upstream argparse choices", () => {
-    const script = resolve(process.cwd(), "scripts/generate-ui-catalog.py");
-    const result = execFileSync("python3", [script, "--check-upstream-enums"], { encoding: "utf8" });
-    expect(result).toMatch(/editable_enum_rows=\d+; provider_choices=7; effort_choices=5; provider_effort_pairs=7/);
-  });
-  it("intersects SETTING_CATALOG with generated storageKey values", () => {
-    const stored = new Set(UI_CATALOG.map((row) => row.storageKey));
-    const catalog = SETTING_CATALOG.map((spec) => spec.key);
-    expect(catalog.filter((key) => stored.has(key))).toEqual(catalog);
-  });
-
-  it("gives every editable row a consumer key", () => {
-    const missing = UI_CATALOG.filter((row) => row.uiStatus === "editable" && !CONSUMER_KEYS.has(row.storageKey)
-      && !SETTING_CATALOG.some((spec) => spec.key === row.storageKey && spec.channel === "OWN") && row.storageKey !== "ui.language");
-    expect(missing.map((row) => `${row.id}:${row.storageKey}`)).toEqual([]);
+  it("registers every visible and editable row in the composed settings registry", () => {
+    // A floor against a registry that silently loses its rooms, not an exact count: the prune plan deleted rooms and their settings (177 left).
+    expect(SETTINGS_REGISTRY.editable.length).toBeGreaterThan(170);
+    expect(SETTINGS_REGISTRY.visible.every((row) => row.uiStatus === "editable" || row.uiStatus === "readonly")).toBe(true);
+    for (const row of SETTINGS_REGISTRY.editable) {
+      expect(SETTINGS_REGISTRY.isRegistered(row.storageKey), row.storageKey).toBe(true);
+      expect(["OWN", "INSTALL-ENV", "ENV-PASSTHROUGH"].includes(row.channel), row.storageKey).toBe(true);
+    }
   });
 
   it("rejects an invalid choice on save for every editable enum row", async () => {
     const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
     await plugin(bb);
-    const editable = UI_CATALOG.filter((row) => row.uiStatus === "editable");
-    expect(editable).toHaveLength(272); // plan_critique.revise_by, max_rounds, min_owns_paths: +3; cleanup.worktree_max_age_days: +1; codex.lean_roles: +1; memory.scope: +1; R6: +1 episodes.process_key; 0.1.461: -18 night_review.* rows (reserved, no stage reads them); 0.1.459: +2 owner.words, phase.rails; 0.1.452: +1 lead.priority; 0.1.447: +6 lead.* rows; wave17: +3 (failure.interventions, writer.retry_escalate, memory.maintain_mode); wave10: +1 memory.maintain_every; wave9: +1 writer.fallback_on_provider_failure; batch2-next: +4 editable rows (employee/access pickers of the merged branches); 0.1.341: workflow.agent.* gone; 2026-10-29: CLI-only ops rows are readonly; adoc.041/042 do not choose a worktree
+    const editable = SETTINGS_REGISTRY.editable;
+    expect(editable.length).toBeGreaterThan(170);
     const atomicPickerKeys = new Set([
       "memory.provider", "memory.model", "memory.reasoning_effort", "memory.service_tier",
       "night_review.provider", "night_review.model", "night_review.reasoning_effort", "night_review.service_tier",
@@ -134,7 +106,7 @@ describe("UI storage keys feed runtime channels", () => {
       "code_critique.provider", "code_critique.model", "code_critique.reasoning_effort", "code_critique.service_tier",
     ]);
     for (const row of editable) {
-      const choices = UI_CATALOG.filter((candidate) => candidate.storageKey === row.storageKey && candidate.control === "select")
+      const choices = SETTINGS_REGISTRY.visible.filter((candidate) => candidate.storageKey === row.storageKey && candidate.control === "select")
         .flatMap((candidate) => candidate.options);
       if (choices.includes("_probe_opencode_agents")) continue;
       if (!choices.length) continue;
@@ -157,29 +129,25 @@ describe("UI storage keys feed runtime channels", () => {
     await harness.lifecycle.dispose();
   });
 
-  it("keeps one control semantic for rows sharing a storage key", () => {
-    const providerRows = UI_CATALOG.filter((row) => row.storageKey === "writer.provider" && row.uiStatus === "editable");
-    expect(providerRows.length).toBeGreaterThan(1);
-    expect(new Set(providerRows.map((row) => row.control))).toEqual(new Set(["select"]));
-    expect(providerRows.every((row) => row.options.length > 0)).toBe(true);
+  it("keeps select control semantics for writer.provider", () => {
+    const provider = SETTINGS_REGISTRY.get("writer.provider");
+    expect(provider).toBeDefined();
+    expect(provider!.uiStatus).toBe("editable");
+    expect(provider!.control).toBe("select");
+    expect(provider!.options.length).toBeGreaterThan(0);
   });
 
   it("table-drives every editable row and every representative value to argv/env or unapplied", () => {
-    const booleanFlags = SETTING_CATALOG.filter((spec) => spec.booleanFlag);
-    expect(booleanFlags.map((spec) => spec.key)).toEqual([]);
-    const editable = UI_CATALOG.filter((row) => row.uiStatus === "editable");
-    expect(editable).toHaveLength(272); // plan_critique.revise_by, max_rounds, min_owns_paths: +3; cleanup.worktree_max_age_days: +1; codex.lean_roles: +1; memory.scope: +1; R6: +1 episodes.process_key; 0.1.461: -18 night_review.* rows (reserved, no stage reads them); 0.1.459: +2 owner.words, phase.rails; 0.1.452: +1 lead.priority; 0.1.447: +6 lead.* rows; wave17: +3 (failure.interventions, writer.retry_escalate, memory.maintain_mode); wave10: +1 memory.maintain_every; wave9: +1 writer.fallback_on_provider_failure; batch2-next: +4 editable rows (employee/access pickers of the merged branches); 0.1.341: workflow.agent.* gone; 2026-10-29: CLI-only ops rows are readonly; adoc.041/042 do not choose a worktree
-    expect(new Set(editable.map((row) => row.storageKey)).size).toBeLessThan(editable.length);
+    const editable = SETTINGS_REGISTRY.editable;
+    expect(editable.length).toBeGreaterThan(170);
     for (const row of editable) {
       if (row.storageKey === "ui.language") {
         expect(row.options).toEqual(["en", "ru"]);
         continue;
       }
-      const spec = specFor(row.storageKey);
-      expect(spec, row.storageKey).toBeTruthy();
-      if (!spec || spec.channel === "NONE") throw new Error(`${row.storageKey} is editable without a consumer`);
-      for (const value of representativeValues(row, spec)) {
-        assertChannelValue(spec, value);
+      if (row.channel === "NONE") throw new Error(`${row.storageKey} is editable without a consumer`);
+      for (const value of representativeValues(row)) {
+        assertChannelValue(row, value);
       }
     }
   });

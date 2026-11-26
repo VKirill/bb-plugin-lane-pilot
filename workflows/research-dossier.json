@@ -34,6 +34,7 @@
     "factcheck",
     "dossier"
   ],
+  "category": "research",
   "inputs": {
     "question": {
       "type": "string",

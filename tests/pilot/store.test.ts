@@ -1,6 +1,6 @@
 import Database from "better-sqlite3";
 import { describe, expect, it } from "vitest";
-import { pilotBlockedByOthers, pilotOf, pilotUnderWall, runTasks, type RunTask } from "../../src/rooms/writer/server/pilot";
+import { pilotBlockedByOthers, pilotOf, runTasks, type RunTask } from "../../src/rooms/writer/models/pilot";
 import { canceledLatestTaskIds, listRunTaskRows } from "../../src/rooms/storage";
 
 describe("runTasks reads the owned paths of the PM's tasks and which of them ended canceled", () => {
@@ -36,22 +36,6 @@ describe("a task sent again twice is one sibling of its base", () => {
 
   it("still chooses the earliest task of a three-family wave as the pilot", () => {
     expect(pilotOf("P3", [task("P1", 1), task("P1.2", 2), task("P2", 3), task("P3", 4)])).toBe("P1");
-  });
-});
-
-describe("pilotUnderWall", () => {
-  const walls = [
-    { state: "stopped", pack: { meta: { runId: "r", family: "p0" } } },
-    { state: "hunting", pack: { meta: { runId: "r", topic: "scripts/gamedata/rules.py" } } },
-    { state: "hunted", pack: { meta: { runId: "r", topic: "game/done.luau" } } },
-    { state: "stopped", pack: { meta: { runId: "other", family: "p9" } } },
-  ];
-  it("holds a family with a task wall in this run, and a pilot that owns the file of a running hunt; a finished hunt or another run's wall holds nothing", () => {
-    expect(pilotUnderWall(walls, "r", "p0", [])).toBe(true);
-    expect(pilotUnderWall(walls, "r", "p1", ["scripts/gamedata/"])).toBe(true);
-    expect(pilotUnderWall(walls, "r", "p1", ["game/done.luau"])).toBe(false);
-    expect(pilotUnderWall(walls, "r", "p9", [])).toBe(false);
-    expect(pilotUnderWall([], "r", "p0", [])).toBe(false);
   });
 });
 

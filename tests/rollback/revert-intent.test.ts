@@ -5,10 +5,17 @@ import { tmpdir } from "node:os";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { expect, it } from "vitest";
 import { createAttempt, createRun, createTask, openDatabase, transitionAttempt } from "../../src/rooms/plugin-db";
-import { createRollback } from "../../src/rooms/rollback/server/rollback";
-import { appendTaskReceipt, readRevertIntents, revertIntentKey, settleRevert, writeRevertIntent, type RevertIntent } from "../../src/rooms/rollback/store";
-import { revertOpId } from "../../src/rooms/rollback/server/revert-intent";
-import { upsertAttemptChange } from "../../src/rooms/rollback/store";
+import {
+  appendTaskReceipt,
+  createRollback,
+  readRevertIntents,
+  revertIntentKey,
+  revertOpId,
+  settleRevert,
+  upsertAttemptChange,
+  writeRevertIntent,
+  type RevertIntent,
+} from "../../src/rooms/rollback/server";
 import { runCommandOnHost } from "../../src/rooms/writer/cli-run";
 import type { TaskV2 } from "../../src/rooms/contracts";
 

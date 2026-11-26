@@ -1,51 +1,13 @@
 import { z } from "zod";
-import { ruleProposalSchema, ruleScanSchema, rulesAnalyzerSchema } from "@lane-pilot/contracts";
 
-/** Councils, rules, memory, docs, token usage, secrets and the workspace provider. */
+/** Memory, docs, token usage, secrets and the workspace provider. */
 export const rpcKnowledge = {
-  list_councils: {
-    input: z.object({ projectId: z.string().min(1) }).strict(),
-    output: z.object({ councils: z.array(z.object({ id: z.string(), runId: z.string(), question: z.string(), state: z.string(), round: z.number().int(), maxRounds: z.number().int(), decisionPath: z.string().nullable(), updatedAt: z.number().int() })) }).strict(),
-  },
-  get_council_defaults: {
-    input: z.object({ projectId: z.string().min(1) }).strict(),
-    output: z.object({ seats: z.array(z.object({ id: z.string(), title: z.string(), providerId: z.string().nullable(), model: z.string().nullable(), configured: z.boolean() })) }).strict(),
-  },
-  council_say: {
-    input: z.object({ councilId: z.string().min(1), text: z.string().trim().min(1).max(4000).optional(), decide: z.boolean().optional() }).strict(),
-    output: z.object({ seq: z.number().int().nullable(), decideRequested: z.boolean() }).strict(),
-  },
-  council_stop: {
-    input: z.object({ councilId: z.string().min(1) }).strict(),
-    output: z.object({ stopRequested: z.boolean() }).strict(),
-  },
-  get_council: {
-    input: z.object({ councilId: z.string().min(1) }).strict(),
-    output: z.object({
-      id: z.string(), question: z.string(), state: z.string(), round: z.number().int(), maxRounds: z.number().int(), agenda: z.array(z.string()), criteria: z.array(z.string()),
-      decisionPath: z.string().nullable(), reason: z.string().nullable(), recommendation: z.string().nullable(),
-      speaking: z.string().nullable(), speakingSince: z.number().int().nullable(),
-      seats: z.array(z.object({ id: z.string(), title: z.string(), providerId: z.string().nullable(), model: z.string().nullable() })),
-      messages: z.array(z.object({ seq: z.number().int(), seatId: z.string(), round: z.number().int(), kind: z.string(), text: z.string(), at: z.number().int() })),
-    }).strict(),
-  },
   get_routing_hint: {
     input: z.object({ projectId: z.string().min(1), days: z.number().int().min(1).max(365).optional() }).strict(),
     output: z.object({
       current: z.object({ providerId: z.string(), model: z.string() }).nullable(),
       hints: z.array(z.object({ risk: z.string(), hint: z.string() })),
       stats: z.array(z.object({ providerId: z.string(), model: z.string(), risk: z.string(), tasks: z.number().int(), acceptedFirstTry: z.number().int(), accepted: z.number().int(), failed: z.number().int() })),
-    }).strict(),
-  },
-  list_rule_proposals: {
-    input: z.object({ projectId: z.string().min(1) }).strict(),
-    output: z.object({
-      proposals: z.array(ruleProposalSchema),
-      memory: z.object({ enabled: z.boolean(), inject: z.boolean() }).strict(),
-      triage: z.object({ total: z.number().int(), byOrigin: z.record(z.string(), z.number().int()), errors: z.number().int(), lastTriagedAt: z.number().nullable(), pendingGroups: z.number().int() }).strict(),
-      scan: ruleScanSchema,
-      analyzer: rulesAnalyzerSchema.nullable(),
-      events: z.array(z.object({ ruleId: z.string(), action: z.string(), detail: z.string().nullable(), at: z.number().int() }).strict()),
     }).strict(),
   },
   // M1 one-door import: the client reads its JSONL export (`bb plugin rpc call lane-pilot memory_import --input-file x.json`), the hub
@@ -90,16 +52,6 @@ export const rpcKnowledge = {
     input: z.object({ projectId: z.string().min(1), threadId: z.string().min(1) }).strict(),
     output: z.object({ block: z.string().nullable() }).strict(),
   },
-  session_lesson: {
-    // audience defaults to both for older lane-memory clients that do not send it.
-    input: z.object({ projectId: z.string().min(1), rule: z.string().min(8).max(600), evidence: z.string().max(1000).optional(), scope: z.array(z.string()).max(8).optional(),
-      audience: z.union([z.enum(["writer", "pm", "both"]), z.string().regex(/^specialist:[\w-]{1,60}$/)]).optional(), always: z.boolean().optional() }).strict(),
-    output: z.object({ proposalId: z.string(), repeatOf: z.string().nullable(), state: z.string(), adopted: z.boolean() }).strict(),
-  },
-  rule_set_audience: {
-    input: z.object({ projectId: z.string().min(1), ruleId: z.string().min(1), audience: z.enum(["writer", "pm", "both"]), always: z.boolean() }).strict(),
-    output: z.object({ ok: z.boolean() }).strict(),
-  },
   memory_records_list: {
     input: z.object({ projectId: z.string().min(1) }).strict(),
     output: z.object({ records: z.array(z.object({
@@ -134,23 +86,6 @@ export const rpcKnowledge = {
         lastReadAt: z.number().int().nullable(),
       }).strict()),
     }).strict(),
-  },
-  start_rule_scan: {
-    input: z.object({ projectId: z.string().min(1), locale: z.enum(["ru", "en"]) }).strict(),
-    output: z.object({ started: z.boolean(), scan: ruleScanSchema }).strict(),
-  },
-  save_rules_analyzer: {
-    input: z.object({ projectId: z.string().min(1), analyzer: rulesAnalyzerSchema }).strict(),
-    output: z.object({ analyzer: rulesAnalyzerSchema }).strict(),
-  },
-  decide_rule_proposal: {
-    input: z.object({
-      projectId: z.string().min(1),
-      id: z.string().min(1),
-      action: z.enum(["accept", "reject", "revoke"]),
-      rule: z.string().min(8).max(600).optional(),
-    }).strict(),
-    output: z.object({ proposal: ruleProposalSchema }).strict(),
   },
   token_usage: {
     input: z.object({
@@ -214,18 +149,6 @@ export const rpcKnowledge = {
     input: z.object({}).strict(),
     output: z.object({ started: z.boolean() }).strict(),
   },
-  // Backs up the daily and cursor tables (`*_bak_<YYYYMMDD>`), resets the cursors and re-syncs every thread with the current delta rule.
-  // Refused (`started: false`, nothing touched) while a sync runs. `token_usage.lastSyncAt` past `startedAt` means it finished.
-  token_usage_rebuild: {
-    input: z.object({}).strict(),
-    output: z.union([
-      z.object({
-        started: z.literal(true), startedAt: z.number(), backups: z.array(z.string()), backupsKept: z.array(z.string()),
-        cursorsCleared: z.number().int(), dailyRowsCleared: z.number().int(),
-      }).strict(),
-      z.object({ started: z.literal(false) }).strict(),
-    ]),
-  },
   // The journal of Env Catalog names handed to checks, browser checks and errands (never a value), newest first.
   secret_issuance: {
     input: z.object({ projectId: z.string().min(1), limit: z.number().int().min(1).max(500).optional() }).strict(),
@@ -237,10 +160,6 @@ export const rpcKnowledge = {
     }).strict(),
   },
   // Lane Pilot's worktree provider is switched off on a machine after 3 errors in a row; it is probed again after an hour, or lifted here.
-  workspace_provider_status: {
-    input: z.object({}).strict(),
-    output: z.object({ hosts: z.array(z.object({ hostId: z.string(), failures: z.number().int(), disabled: z.boolean(), disabledAt: z.number().nullable(), probeAt: z.number().nullable(), lastReason: z.string().nullable() }).strict()) }).strict(),
-  },
   workspace_provider_reset: {
     input: z.object({ hostId: z.string().min(1).optional() }).strict(),
     output: z.object({ cleared: z.array(z.string()) }).strict(),

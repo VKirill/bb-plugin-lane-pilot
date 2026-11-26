@@ -1,27 +1,10 @@
 import { access, lstat, readFile, readdir, realpath } from "node:fs/promises";
 import { homedir } from "node:os";
-import { isAbsolute, join, relative, resolve } from "node:path";
-import { z } from "zod";
-import { spawnAsync, sha256Hex, orMiss, isFsAbsent } from "@lane-pilot/kit";
+import { isAbsolute, join, relative } from "node:path";
+import { currentHostId, spawnAsync, sha256Hex, orMiss, isFsAbsent } from "@lane-pilot/kit";
+import { browserQaInputSchema, browserQaVerdict, type BrowserQaInput, type BrowserQaResult } from "./models/browser-qa";
 
-export const browserQaInputSchema = z.object({
-  requestedHostId:z.string().min(1), projectCwd:z.string().startsWith("/"), url:z.string().url(),
-  slug:z.string().regex(/^[a-z0-9][a-z0-9-]{0,63}$/), cases:z.array(z.string().min(1).max(2000)).min(1).max(30),
-  envClass:z.enum(["local","staging","preview","production","unknown"]), viewports:z.string().regex(/^\d{2,4}(,\d{2,4}){0,2}$/),
-  authorized:z.boolean(), provider:z.enum(["codex"]), model:z.string().max(120).optional(),
-  reasoningEffort:z.enum(["low","medium","high","xhigh","max"]).optional(),
-  backend:z.enum(["live-chrome","chrome-qa","headless"]), timeoutSec:z.number().int().min(30).max(2400),
-}).strict();
-
-export type BrowserQaInput = z.infer<typeof browserQaInputSchema>;
-
-export type BrowserQaResult = {
-  hostId:string; provider:"codex"; runner:string; exitCode:number; verdict:"passed"|"failed"|"blocked";
-  actualModel:string|null; actualReasoningEffort:string|null; actualBackend:string|null;
-  reportPath:string|null; reportSha256:string|null; reportText:string|null;
-  artifacts:Array<{path:string; sha256:string; size:number}>; stdout:string; stderr:string; reason:string|null;
-  processPid:number|null; runnerPath:string|null;
-};
+export { browserQaInputSchema, browserQaVerdict, type BrowserQaInput, type BrowserQaResult } from "./models/browser-qa";
 
 function sha256(data:Buffer|string):string {
   return sha256Hex(data);
@@ -31,20 +14,6 @@ function redact(text:string):string {
   return text
     .replace(/(\b(?:authorization|cookie|set-cookie|token|password|otp|api[_-]?key)\b\s*[:=]\s*)[^\r\n]+/gi, "$1[REDACTED]")
     .replace(/\beyJ[a-zA-Z0-9_-]{10,}\.[a-zA-Z0-9_-]{10,}\.[a-zA-Z0-9_-]{10,}\b/g, "[REDACTED_JWT]");
-}
-
-export function browserQaVerdict(text:string, exitCode:number):BrowserQaResult["verdict"] {
-  const summary = text.match(/Total\s*\/\s*Passed\s*\/\s*Failed\s*\/\s*Blocked(?:\s*\/\s*Pending)?\s*:\s*(\d+)\s*\/\s*(\d+)\s*\/\s*(\d+)\s*\/\s*(\d+)(?:\s*\/\s*(\d+))?/i);
-  if (!summary) return "blocked";
-  const total = Number(summary[1]);
-  const passed = Number(summary[2]);
-  const failed = Number(summary[3]);
-  const blocked = Number(summary[4]);
-  const pending = summary[5] == null ? total - passed - failed - blocked : Number(summary[5]);
-  if (pending < 0 || passed + failed + blocked + pending !== total) return "blocked";
-  if (failed > 0 || exitCode !== 0) return "failed";
-  if (blocked > 0 || pending > 0 || total === 0 || passed !== total) return "blocked";
-  return "passed";
 }
 
 function hasPotentialSideEffect(cases:string[]):boolean {
@@ -148,12 +117,12 @@ export async function runBrowserQaOnHost(raw:BrowserQaInput):Promise<BrowserQaRe
     }
   } catch (cause) {
     const message = cause instanceof Error ? cause.message : String(cause);
-    if (exitCode === 0) return { hostId:process.env.BB_HOST_ID ?? input.requestedHostId, provider:input.provider, runner, exitCode,
+    if (exitCode === 0) return { hostId:currentHostId(input.requestedHostId), provider:input.provider, runner, exitCode,
       verdict:"blocked", actualModel, actualReasoningEffort, actualBackend, reportPath:null, reportSha256:null, reportText:null, artifacts, stdout:redact(completed.stdout ?? ""),
       stderr:redact(completed.stderr ?? ""), reason:message, processPid:completed.pid ?? null, runnerPath:binary };
   }
   return {
-    hostId:process.env.BB_HOST_ID ?? input.requestedHostId, provider:input.provider, runner, exitCode,
+    hostId:currentHostId(input.requestedHostId), provider:input.provider, runner, exitCode,
     verdict:reportText ? browserQaVerdict(reportText, exitCode) : "blocked", actualModel, actualReasoningEffort, actualBackend, reportPath, reportSha256, reportText,
     artifacts, stdout:redact((completed.stdout ?? "").slice(0, 12_000)), stderr:redact((completed.stderr ?? "").slice(0, 12_000)),
     reason:reportText ? null : "browser_qa_report_missing",

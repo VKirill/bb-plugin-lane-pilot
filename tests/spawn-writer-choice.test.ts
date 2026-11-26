@@ -3,7 +3,7 @@ import { expect, it } from "vitest";
 import "../server";
 import type { PrototypeConfig, TaskV2 } from "../src/rooms/contracts";
 import { createAttempt, createRun, createTask, openDatabase } from "../src/rooms/plugin-db";
-import { createWriterSpawn } from "../src/rooms/writer/server/spawn";
+import { createWriterSpawn } from "../src/rooms/writer/server/services/spawn";
 
 const config: PrototypeConfig = {
   projectId:"P", hostId:"h", pmWorkspacePath:"/repo", writerWorkspacePath:"/repo",
@@ -31,8 +31,8 @@ async function chosenWriter(writerSettings?: Record<string, unknown>) {
     host:{ call:async (method:string) => method === "runCommand" ? { hostId:"h", exitCode:0, stdout:"[]", stderr:"" } : {} },
     effectiveProjectSettings:async () => ({ values:{ "writer.provider":"acp-cursor", "writer.model":"composer-2.5", "memory.enabled":false, "adoc.040":"auto" } }),
   };
-  const services = { providerBreaker:{ decide:(key: string) => { asked.push(key); return { allow:false, reason:"stop here" }; } }, ruleScan:{ chainForRun:async () => [] } };
-  const writer = createWriterSpawn(ctx as never, services as never);
+  const services = { providerBreaker:{ decide:(key: string) => { asked.push(key); return { allow:false, reason:"stop here" }; } } };
+  const writer = createWriterSpawn({ ...ctx, scopesForWorkspace: async () => [] } as never, services as never);
   await writer.spawnWriterAttempt({ projectId:"P", runId:"run", taskId:"t1", attemptId:"a1", config, task, plan:"write", pmThreadId:"pm", ...(writerSettings ? { writerSettings } : {}) });
   return asked;
 }

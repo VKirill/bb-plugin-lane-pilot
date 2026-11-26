@@ -30,7 +30,7 @@ const PACKAGE_DEPENDENCIES: Record<string, string[]> = {
   "@i18n": ["@settings-catalog"],
   "@jev": ["@kit"],
   "@memory-core": ["@kit"],
-  "@run-insights": ["@memory-core"],
+  "@models": ["@contracts", "@resilience"],
   "@settings-catalog": ["@kit"],
 };
 

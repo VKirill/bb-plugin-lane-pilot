@@ -32,6 +32,7 @@
     "seo",
     "drmax"
   ],
+  "category": "seo",
   "inputs": {
     "site_url": {
       "type": "string",
@@ -441,7 +442,7 @@
       "workflow": "seo-structure-audit",
       "skip_when": "route.structure_due != true",
       "skip_out": {
-        "status": "skipped",
+        "status": "not_run",
         "report_path": ""
       },
       "title": {
@@ -468,7 +469,7 @@
       "workflow": "seo-tech-audit",
       "skip_when": "route.tech_due != true",
       "skip_out": {
-        "status": "skipped",
+        "status": "not_run",
         "backlog_path": ""
       },
       "title": {
@@ -494,7 +495,7 @@
       "workflow": "seo-release",
       "skip_when": "route.release_due != true",
       "skip_out": {
-        "status": "done",
+        "status": "not_run",
         "index_status_path": ""
       },
       "title": {

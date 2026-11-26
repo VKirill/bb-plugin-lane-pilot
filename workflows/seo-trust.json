@@ -30,6 +30,7 @@
     "seo",
     "drmax"
   ],
+  "category": "seo",
   "inputs": {
     "project_passport_path": {
       "type": "string",

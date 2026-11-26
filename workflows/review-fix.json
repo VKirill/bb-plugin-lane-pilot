@@ -29,13 +29,15 @@
   "not_for": [
     "code-review",
     "quality-loop",
-    "debug"
+    "debug",
+    "issue-full"
   ],
   "status": "published",
   "tags": [
     "code",
     "review"
   ],
+  "category": "code",
   "inputs": {
     "goal": {
       "type": "string"
@@ -89,7 +91,7 @@
       "workflow": "lp.review",
       "skip_when": "$inputs.findings.length > 0",
       "skip_out": {
-        "status": "rework",
+        "status": "not_run",
         "findings": "$inputs.findings",
         "critical_count": 0,
         "high_count": 0,
@@ -209,7 +211,12 @@
     },
     {
       "id": "classify",
-      "produces": [{"kind": "report", "version": 1}],
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
       "type": "agent",
       "role": "triager",
       "title": {

@@ -4,8 +4,8 @@ import { join } from "node:path";
 import { expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { createAttempt, createRun, createTask, openDatabase, setAttemptWorkspace } from "../src/rooms/plugin-db";
-import { snapshotDryRun } from "../src/rooms/host-worker/host-handlers";
-import { writeTaskOutcome } from "../src/rooms/writer/server/attempt-reactions";
+import { snapshotDryRun } from "../src/rooms/host-worker";
+import { writeTaskOutcome } from "../src/rooms/writer/server/services/attempt-reactions";
 
 it("skips OUTCOME.md after the accepted fixture-readme worktree has been removed", async () => {
   // Hub incident 2026-11-14T05:21:55.571Z: this accepted attempt merged as c5c257231cb8908659df90bc7c153fc2e37ab08d.

@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { TaskV2 } from "../src/rooms/contracts";
-import { checkNamedPaths, emptyCheckReason, existenceOnlyPaths, lintContract, lintProbePaths } from "../src/rooms/tasks/server/contract-lint";
-import type { PathKind } from "../src/rooms/tasks/server/contract-lint";
+import { checkNamedPaths, emptyCheckReason, existenceOnlyPaths, lintContract, lintProbePaths, type PathKind } from "../src/rooms/tasks/server";
 
 const root = "/tmp/writer";
 const base: TaskV2 = {

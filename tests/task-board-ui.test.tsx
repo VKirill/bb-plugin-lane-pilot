@@ -3,7 +3,7 @@ import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { cleanup, configure, fireEvent, waitFor } from "@testing-library/react";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
 import { setLocaleOverride } from "@lane-pilot/i18n";
-import { AcceptanceCard } from "../src/rooms/acceptance/ui";
+import { AcceptanceCard } from "../src/rooms/runs/ui";
 
 configure({ asyncUtilTimeout: 5_000 });
 vi.setConfig({ testTimeout: 20_000 });

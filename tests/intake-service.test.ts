@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { intakeByRules, isMachineMessage } from "../src/rooms/phase/intake";
+import { intakeByRules, isMachineMessage } from "../src/rooms/workflow";
 
 describe("intake service request", () => {
   it("a plain cancel line is a service request with its sub-kind", () => {

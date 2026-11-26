@@ -3,7 +3,7 @@ import type { NodeExecutor, StepContext, Workflow } from "@lane-pilot/workflow-e
 import { loadWorkflowStore, validateWorkflow } from "@lane-pilot/workflow-engine";
 import type { WorkflowStore } from "@lane-pilot/workflow-engine";
 import {BUILTIN_SOURCES} from "../../src/rooms/workflow/builtin";
-import { stepPacket } from "../../src/rooms/workflow/server/workflow-agent-packet";
+import { stepPacket } from "../../src/rooms/workflow/server/services/workflow-agent-packet";
 import { engineOn, journalDb, ok, wf } from "./engine-helpers";
 
 /**

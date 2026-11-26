@@ -1,12 +1,8 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
 import { openDatabase } from "../../src/rooms/plugin-db";
-import {
-  calculateSkillSwitches,
-  getSkillSwitchStats,
-  recordSkillSwitchMetric,
-  skillSwitchMorningLine,
-} from "../../src/rooms/writer/skill-switch";
+import { calculateSkillSwitches } from "../../src/rooms/writer/models/skill-switch";
+import { getSkillSwitchStats, recordSkillSwitchMetric } from "../../src/rooms/writer/server/repositories/skill-switch-store";
 import { extractSkillSequence } from "../../src/rooms/contracts";
 
 describe("skill-switch metric (Item 3)", () => {
@@ -95,15 +91,5 @@ describe("skill-switch metric (Item 3)", () => {
     expect(stats!.highSwitchTotal).toBe(2);
     expect(stats!.highSwitchFailures).toBe(2);
     expect(stats!.highSwitchFailRate).toBe(1.0);
-
-    const morningLine = skillSwitchMorningLine(db, now);
-    expect(morningLine).toContain("Метрика переключения навыков: оценено 4 задач, в среднем 2 переключений");
-    expect(morningLine).toContain("провал: 0% при 0-1 переключениях vs 100% при 2+");
-  });
-
-  it("skillSwitchMorningLine returns null when no metric rows in window", () => {
-    const { bb } = createFakePluginHost({ pluginId: "lane-pilot" });
-    const db = openDatabase(bb);
-    expect(skillSwitchMorningLine(db)).toBeNull();
   });
 });

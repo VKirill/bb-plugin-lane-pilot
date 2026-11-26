@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { createRelay, type RelayItem } from "../src/rooms/relay/server/relay";
+import type { RelayItem } from "../src/rooms/relay/models/relay";
+import { createRelay } from "../src/rooms/relay/server/services/relay";
 
 /**
  * Live 2026-10-09 (SelfyStudio PM): a reminder on `fix-marketing-greeting-cards-tests.2` arrived saying «blocked» eight seconds after

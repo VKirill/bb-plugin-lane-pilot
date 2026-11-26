@@ -33,6 +33,7 @@
     "elba",
     "invoices"
   ],
+  "category": "business",
   "inputs": {
     "items": {
       "type": "json",

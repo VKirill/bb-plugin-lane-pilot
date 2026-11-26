@@ -7,6 +7,7 @@
     "en": "The Lane Pilot task pipeline: the PM read, the plan critique (by quality mode) with the planner's revision rounds when the critic returns the plan, the specialist risk review, the ownership base, then the code task in its own worktree with checks, code critique and merge.",
     "ru": "Конвейер задачи Lane Pilot: чтение PM, критика плана (по режиму качества) с кругами правки планировщиком, если критик вернул план, проверка рисков специалистом, база владения, затем кодовая задача в своём worktree с проверками, критикой кода и слиянием."
   },
+  "category": "service",
   "examples": {
     "en": [
       "dispatch a code task to a writer",
@@ -55,7 +56,7 @@
   "status": "published",
   "version": 3,
   "guards": {
-    "maxSteps": 28,
+    "maxSteps": 250,
     "maxFanOut": 1,
     "maxSubworkflowDepth": 3
   },
@@ -495,7 +496,102 @@
       ]
     },
     {
+      "id": "admission",
+      "type": "action",
+      "label": "Attempt admission",
+      "uses": "lp.attempt-admission",
+      "proof": {
+        "kind": "gate",
+        "check": "enforces pauses, holds, depends_on, secrets, durable provider-breaker holds, writer.max_concurrent cap, and overlapping declared file serialisation"
+      },
+      "output": [
+        {
+          "name": "status",
+          "type": "enum",
+          "values": [
+            "admitted",
+            "wait",
+            "already_done",
+            "blocked"
+          ]
+        },
+        {
+          "name": "attemptId",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "event",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "eventKey",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "waitUntil",
+          "type": "number",
+          "required": false
+        },
+        {
+          "name": "durationSec",
+          "type": "number",
+          "required": false
+        },
+        {
+          "name": "waitReason",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "reply",
+          "type": "json",
+          "required": false
+        }
+      ]
+    },
+    {
+      "id": "admission-wait",
+      "type": "action",
+      "label": "Wait admission hold or slot",
+      "uses": "builtin:wait",
+      "maxVisits": 50,
+      "timeoutSec": 86400,
+      "params": {
+        "durationSec": 86400,
+        "event": "lp.task.settled"
+      },
+      "proof": {
+        "kind": "receipt",
+        "check": "durable wait on lp.task.settled or wakeAt deadline bounded at 48 hours"
+      },
+      "output": [
+        {
+          "name": "woke",
+          "type": "string"
+        },
+        {
+          "name": "event",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "key",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "payload",
+          "type": "json",
+          "required": false
+        }
+      ]
+    },
+    {
       "id": "writer",
+      "maxVisits": 3,
       "produces": [
         {
           "kind": "dispatch-reply",
@@ -503,8 +599,15 @@
         }
       ],
       "type": "lp-task",
-      "label": "Code task",
-      "uses": "lp-task",
+      "label": "Writer attempt",
+      "uses": "lp.attempt-spawn",
+      "stages": [
+        "writer-agent",
+        "verification",
+        "code-critique",
+        "plan-fact",
+        "acceptance-receipt"
+      ],
       "stage_proof": {
         "writer-agent": {
           "kind": "gate",
@@ -528,13 +631,724 @@
           "check": "the acceptance-v2 receipt validates against lane-stack/schemas/acceptance-v2.schema.json (validateAcceptanceV2)"
         }
       },
+      "proof": {
+        "kind": "gate",
+        "check": "spawns the writer session in its worktree and sets the turn silence deadline (at most 3 primary visits)"
+      },
+      "output": [
+        {
+          "name": "status",
+          "type": "enum",
+          "values": [
+            "running",
+            "already_settled",
+            "provider_error",
+            "blocked",
+            "canceled"
+          ]
+        },
+        {
+          "name": "attemptId",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "writerThreadId",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "silenceSec",
+          "type": "number",
+          "required": false
+        },
+        {
+          "name": "until",
+          "type": "number",
+          "required": false
+        },
+        {
+          "name": "attemptState",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "retryable",
+          "type": "boolean",
+          "required": false
+        },
+        {
+          "name": "reason",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "reply",
+          "type": "json",
+          "required": false
+        }
+      ]
+    },
+    {
+      "id": "wait-turn",
+      "type": "action",
+      "label": "Wait writer turn",
+      "uses": "builtin:wait",
+      "timeoutSec": 1200,
+      "params": {
+        "durationSec": 1200,
+        "event": "lp.thread.idle"
+      },
+      "proof": {
+        "kind": "receipt",
+        "check": "durable wait on lp.thread.idle bounded by the writer silence threshold deadline"
+      },
+      "output": [
+        {
+          "name": "woke",
+          "type": "string"
+        },
+        {
+          "name": "event",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "key",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "payload",
+          "type": "json",
+          "required": false
+        }
+      ]
+    },
+    {
+      "id": "nudge",
+      "type": "action",
+      "label": "Nudge silent writer",
+      "uses": "lp.writer-nudge",
+      "maxVisits": 2,
+      "proof": {
+        "kind": "receipt",
+        "check": "nudges a silent writer up to 2 visits and sets a new silence threshold deadline"
+      },
+      "output": [
+        {
+          "name": "action",
+          "type": "string"
+        },
+        {
+          "name": "attemptId",
+          "type": "string"
+        },
+        {
+          "name": "writerThreadId",
+          "type": "string"
+        },
+        {
+          "name": "silenceSec",
+          "type": "number"
+        },
+        {
+          "name": "until",
+          "type": "number"
+        }
+      ]
+    },
+    {
+      "id": "stop-silent",
+      "type": "action",
+      "label": "Stop silent writer",
+      "uses": "lp.writer-stop-silent",
+      "proof": {
+        "kind": "receipt",
+        "check": "stops a silent writer after 2 unanswered nudges and releases its admission slot"
+      },
+      "output": [
+        {
+          "name": "reply",
+          "type": "json"
+        }
+      ]
+    },
+    {
+      "id": "turn-outcome",
+      "type": "action",
+      "label": "Inspect turn outcome",
+      "uses": "lp.turn-outcome",
+      "proof": {
+        "kind": "receipt",
+        "check": "inspects finished writer turn output for completion, provider errors/limits, ASK_PM questions, or cancellation"
+      },
+      "output": [
+        {
+          "name": "status",
+          "type": "enum",
+          "values": [
+            "ready",
+            "needs_answer",
+            "provider_error",
+            "stopped",
+            "blocked"
+          ]
+        },
+        {
+          "name": "attemptId",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "writerThreadId",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "answer",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "answerKind",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "question",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "answerSec",
+          "type": "number",
+          "required": false
+        },
+        {
+          "name": "answerUntil",
+          "type": "number",
+          "required": false
+        },
+        {
+          "name": "exitTimeoutSec",
+          "type": "number",
+          "required": false
+        },
+        {
+          "name": "exitUntil",
+          "type": "number",
+          "required": false
+        },
+        {
+          "name": "retryable",
+          "type": "boolean",
+          "required": false
+        },
+        {
+          "name": "reason",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "reply",
+          "type": "json",
+          "required": false
+        }
+      ]
+    },
+    {
+      "id": "wait-answer",
+      "type": "action",
+      "label": "Wait writer answer or owner word",
+      "uses": "builtin:wait",
+      "maxVisits": 10,
+      "timeoutSec": 7200,
+      "params": {
+        "durationSec": 7200,
+        "event": "lp.writer.answered"
+      },
+      "proof": {
+        "kind": "receipt",
+        "check": "durable wait on lp.writer.answered bounded by writer question wait (2h) or owner word (6h) deadline"
+      },
+      "output": [
+        {
+          "name": "woke",
+          "type": "string"
+        },
+        {
+          "name": "event",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "key",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "payload",
+          "type": "json",
+          "required": false
+        }
+      ]
+    },
+    {
+      "id": "answer-timeout",
+      "type": "action",
+      "label": "Resolve answer timeout",
+      "uses": "lp.answer-timeout",
+      "proof": {
+        "kind": "receipt",
+        "check": "runs question-rules -> second-pilot -> safe-default -> owner-inbox cascade or blocks expired 6h owner-word wait"
+      },
+      "output": [
+        {
+          "name": "action",
+          "type": "string"
+        },
+        {
+          "name": "via",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "attemptId",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "writerThreadId",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "silenceSec",
+          "type": "number",
+          "required": false
+        },
+        {
+          "name": "until",
+          "type": "number",
+          "required": false
+        },
+        {
+          "name": "reply",
+          "type": "json",
+          "required": false
+        }
+      ]
+    },
+    {
+      "id": "reopen-after-answer",
+      "type": "action",
+      "label": "Handle answer event",
+      "uses": "lp.reopen-after-answer",
+      "proof": {
+        "kind": "receipt",
+        "check": "routes answered writer question back to wait-turn or owner word decision to merge"
+      },
+      "output": [
+        {
+          "name": "next",
+          "type": "string"
+        },
+        {
+          "name": "attemptId",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "writerThreadId",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "silenceSec",
+          "type": "number",
+          "required": false
+        },
+        {
+          "name": "until",
+          "type": "number",
+          "required": false
+        },
+        {
+          "name": "reply",
+          "type": "json",
+          "required": false
+        }
+      ]
+    },
+    {
+      "id": "validate",
+      "type": "action",
+      "label": "Validate candidate",
+      "uses": "lp.attempt-validate",
       "stages": [
-        "writer-agent",
         "verification",
-        "code-critique",
-        "plan-fact",
+        "plan-fact"
+      ],
+      "proof": {
+        "kind": "command",
+        "check": "every verification[].command and ownership/plan-fact check passes in the sandbox"
+      },
+      "output": [
+        {
+          "name": "status",
+          "type": "enum",
+          "values": [
+            "passed",
+            "failed",
+            "wait_owner_word",
+            "stopped"
+          ]
+        },
+        {
+          "name": "attemptId",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "writerThreadId",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "answerKind",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "answerSec",
+          "type": "number",
+          "required": false
+        },
+        {
+          "name": "answerUntil",
+          "type": "number",
+          "required": false
+        },
+        {
+          "name": "exitTimeoutSec",
+          "type": "number",
+          "required": false
+        },
+        {
+          "name": "exitUntil",
+          "type": "number",
+          "required": false
+        },
+        {
+          "name": "retryable",
+          "type": "boolean",
+          "required": false
+        },
+        {
+          "name": "reason",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "candidate",
+          "type": "json",
+          "required": false
+        },
+        {
+          "name": "reply",
+          "type": "json",
+          "required": false
+        }
+      ]
+    },
+    {
+      "id": "critique",
+      "type": "action",
+      "label": "Code critique",
+      "uses": "lp.attempt-critique",
+      "stages": [
+        "code-critique"
+      ],
+      "proof": {
+        "kind": "advisory",
+        "reason": "a model's review of the candidate",
+        "form": "parseCodeCritique: verdict schema; a critical or high finding counts only when its file is among the candidate's files and its line exists in it"
+      },
+      "output": [
+        {
+          "name": "status",
+          "type": "enum",
+          "values": [
+            "passed",
+            "rejected",
+            "blocked",
+            "stopped",
+            "wait_owner_word"
+          ]
+        },
+        {
+          "name": "attemptId",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "writerThreadId",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "retryable",
+          "type": "boolean",
+          "required": false
+        },
+        {
+          "name": "review",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "checklist",
+          "type": "json",
+          "required": false
+        },
+        {
+          "name": "answerKind",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "answerSec",
+          "type": "number",
+          "required": false
+        },
+        {
+          "name": "answerUntil",
+          "type": "number",
+          "required": false
+        },
+        {
+          "name": "exitTimeoutSec",
+          "type": "number",
+          "required": false
+        },
+        {
+          "name": "exitUntil",
+          "type": "number",
+          "required": false
+        },
+        {
+          "name": "candidate",
+          "type": "json",
+          "required": false
+        },
+        {
+          "name": "reply",
+          "type": "json",
+          "required": false
+        }
+      ]
+    },
+    {
+      "id": "merge",
+      "type": "action",
+      "label": "Accept and merge",
+      "uses": "lp.attempt-merge",
+      "stages": [
         "acceptance-receipt"
       ],
+      "proof": {
+        "kind": "schema",
+        "check": "persists acceptance-v2 receipt and integrates worktree into base checkout; busy/dirty waits park on deadlines"
+      },
+      "output": [
+        {
+          "name": "status",
+          "type": "enum",
+          "values": [
+            "accepted",
+            "wait_busy",
+            "wait_dirty",
+            "conflict",
+            "blocked"
+          ]
+        },
+        {
+          "name": "waitUntil",
+          "type": "number",
+          "required": false
+        },
+        {
+          "name": "durationSec",
+          "type": "number",
+          "required": false
+        },
+        {
+          "name": "mergeState",
+          "type": "json",
+          "required": false
+        },
+        {
+          "name": "attemptId",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "writerThreadId",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "candidate",
+          "type": "json",
+          "required": false
+        },
+        {
+          "name": "retryable",
+          "type": "boolean",
+          "required": false
+        },
+        {
+          "name": "reply",
+          "type": "json",
+          "required": false
+        }
+      ]
+    },
+    {
+      "id": "merge-wait",
+      "type": "action",
+      "label": "Wait busy or dirty checkout",
+      "uses": "builtin:wait",
+      "maxVisits": 50,
+      "timeoutSec": 7200,
+      "params": {
+        "durationSec": 60,
+        "event": "lp.task.settled"
+      },
+      "proof": {
+        "kind": "receipt",
+        "check": "durable wait on busy or dirty checkout bounded by merge/dirty deadline"
+      },
+      "output": [
+        {
+          "name": "woke",
+          "type": "string"
+        },
+        {
+          "name": "event",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "key",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "payload",
+          "type": "json",
+          "required": false
+        }
+      ]
+    },
+    {
+      "id": "stop-exit-wait",
+      "type": "action",
+      "label": "Wait writer process exit",
+      "uses": "builtin:wait",
+      "timeoutSec": 30,
+      "params": {
+        "durationSec": 30,
+        "event": "lp.writer.process-exited"
+      },
+      "proof": {
+        "kind": "receipt",
+        "check": "condition 1 of stopped: awaits writer process exit event or 30s deadline"
+      },
+      "output": [
+        {
+          "name": "woke",
+          "type": "string"
+        },
+        {
+          "name": "event",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "key",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "payload",
+          "type": "json",
+          "required": false
+        }
+      ]
+    },
+    {
+      "id": "stop-handback-wait",
+      "type": "action",
+      "label": "Wait worktree hand-back",
+      "uses": "builtin:wait",
+      "timeoutSec": 60,
+      "params": {
+        "durationSec": 60,
+        "event": "lp.writer.work-handed-back"
+      },
+      "proof": {
+        "kind": "receipt",
+        "check": "condition 2 of stopped: awaits worktree hand-back event or 60s deadline"
+      },
+      "output": [
+        {
+          "name": "woke",
+          "type": "string"
+        },
+        {
+          "name": "event",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "key",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "payload",
+          "type": "json",
+          "required": false
+        }
+      ]
+    },
+    {
+      "id": "stop-finalize",
+      "type": "action",
+      "label": "Finalize stopped attempt",
+      "uses": "lp.attempt-stop-finalize",
+      "proof": {
+        "kind": "receipt",
+        "check": "closes canceled attempt and stages once both process exit and work hand-back completed"
+      },
+      "output": [
+        {
+          "name": "reply",
+          "type": "json"
+        }
+      ]
+    },
+    {
+      "id": "stop-gap",
+      "type": "action",
+      "label": "Report stop condition gap",
+      "uses": "lp.attempt-stop-gap",
+      "proof": {
+        "kind": "receipt",
+        "check": "closes stopped turn permanently and posts named owner inbox item when process exit or work hand-back timed out"
+      },
       "output": [
         {
           "name": "reply",
@@ -604,6 +1418,112 @@
       "proof": {
         "kind": "receipt",
         "check": "the browser-qa stage receipt of the task holds the verdict of the check thread; a failed one leaves the task not done"
+      },
+      "output": [
+        {
+          "name": "state",
+          "type": "string"
+        },
+        {
+          "name": "reply",
+          "type": "json"
+        }
+      ]
+    },
+    {
+      "id": "writer-fallback",
+      "type": "action",
+      "label": "Writer fallback rerun",
+      "uses": "lp.writer-fallback",
+      "proof": {
+        "kind": "receipt",
+        "check": "reruns the task once on the role fallback model in a fresh attempt after 3 primary writer visits fail"
+      },
+      "output": [
+        {
+          "name": "reply",
+          "type": "json"
+        }
+      ]
+    },
+    {
+      "id": "writer-owner-backlog",
+      "type": "action",
+      "label": "Post owner inbox item",
+      "uses": "lp.owner-backlog",
+      "proof": {
+        "kind": "receipt",
+        "check": "writes an open owner inbox item with failureClass when writer retries and fallback rerun both exhaust"
+      },
+      "output": [
+        {
+          "name": "reply",
+          "type": "json"
+        }
+      ]
+    },
+    {
+      "id": "qa-gate-fallback",
+      "type": "decision",
+      "label": "Browser check due (fallback)",
+      "uses": "lp.qa-gate",
+      "proof": {
+        "kind": "gate",
+        "check": "the fallback attempt accepted with a passed acceptance receipt and its contract carries qa_cases and qa_url"
+      },
+      "output": [
+        {
+          "name": "run",
+          "type": "boolean"
+        },
+        {
+          "name": "run_id",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "task_id",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "url",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "cases",
+          "type": "array",
+          "required": false
+        },
+        {
+          "name": "env_class",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "dev_server",
+          "type": "string",
+          "required": false
+        }
+      ]
+    },
+    {
+      "id": "browser-qa-fallback",
+      "type": "subworkflow",
+      "label": "Browser check (fallback)",
+      "workflow": "lp.browser-qa",
+      "proof": {
+        "kind": "receipt",
+        "check": "the browser-qa stage receipt of the fallback attempt holds the verdict of the check thread"
+      },
+      "inputs": {
+        "run_id": "qa-gate-fallback.run_id",
+        "task_id": "qa-gate-fallback.task_id",
+        "url": "qa-gate-fallback.url",
+        "cases": "qa-gate-fallback.cases",
+        "env_class": "qa-gate-fallback.env_class",
+        "dev_server": "qa-gate-fallback.dev_server"
       },
       "output": [
         {
@@ -805,16 +1725,662 @@
     },
     {
       "from": "baseline",
+      "to": "admission",
+      "label": "red, skipped or already built",
+      "with": {
+        "baselineState": "baseline.state",
+        "live": "ownership-base.live",
+        "pmReadContext": "pm-read.summary"
+      }
+    },
+    {
+      "from": "admission",
+      "to": "admission-wait",
+      "label": "held, capped, overlapping or breaker open",
+      "when": {
+        "field": "status",
+        "op": "eq",
+        "value": "wait"
+      },
+      "with": {
+        "event": "admission.event",
+        "eventKey": "admission.eventKey",
+        "until": "admission.waitUntil",
+        "durationSec": "admission.durationSec"
+      }
+    },
+    {
+      "from": "admission",
+      "to": "qa-gate",
+      "label": "already done",
+      "when": {
+        "field": "status",
+        "op": "eq",
+        "value": "already_done"
+      }
+    },
+    {
+      "from": "admission",
+      "to": "end",
+      "label": "blocked in admission",
+      "when": {
+        "field": "status",
+        "op": "eq",
+        "value": "blocked"
+      },
+      "with": {
+        "reply": "admission.reply"
+      }
+    },
+    {
+      "from": "admission",
       "to": "writer",
-      "label": "red, skipped or already built (closed accepted with no writer)",
+      "label": "admitted (up to 3 primary visits)",
+      "when": {
+        "field": "status",
+        "op": "eq",
+        "value": "admitted"
+      },
+      "with": {
+        "attemptId": "admission.attemptId",
+        "live": "ownership-base.live",
+        "pmReadContext": "pm-read.summary"
+      }
+    },
+    {
+      "from": "admission",
+      "to": "writer-fallback",
+      "label": "3 failed visits -> rerun with role fallback model",
       "with": {
         "live": "ownership-base.live",
         "pmReadContext": "pm-read.summary"
       }
     },
     {
+      "from": "admission-wait",
+      "to": "admission",
+      "label": "settled or wake deadline",
+      "with": {
+        "baselineState": "baseline.state"
+      }
+    },
+    {
       "from": "writer",
-      "to": "qa-gate"
+      "to": "qa-gate",
+      "label": "synchronously accepted",
+      "when": {
+        "all": [
+          {
+            "field": "status",
+            "op": "eq",
+            "value": "already_settled"
+          },
+          {
+            "field": "attemptState",
+            "op": "eq",
+            "value": "accepted"
+          }
+        ]
+      }
+    },
+    {
+      "from": "writer",
+      "to": "end",
+      "label": "terminal synchronously",
+      "when": {
+        "all": [
+          {
+            "field": "status",
+            "op": "eq",
+            "value": "already_settled"
+          },
+          {
+            "field": "retryable",
+            "op": "eq",
+            "value": false
+          }
+        ]
+      },
+      "with": {
+        "reply": "writer.reply"
+      }
+    },
+    {
+      "from": "writer",
+      "to": "admission",
+      "label": "retry synchronous failure or provider error",
+      "when": {
+        "field": "retryable",
+        "op": "eq",
+        "value": true
+      }
+    },
+    {
+      "from": "writer",
+      "to": "wait-turn",
+      "label": "writer turn started",
+      "with": {
+        "eventKey": "writer.writerThreadId",
+        "durationSec": "writer.silenceSec",
+        "until": "writer.until"
+      }
+    },
+    {
+      "from": "wait-turn",
+      "to": "turn-outcome",
+      "label": "thread idle event",
+      "when": {
+        "field": "woke",
+        "op": "eq",
+        "value": "event"
+      },
+      "with": {
+        "attemptId": "writer.attemptId",
+        "writerThreadId": "writer.writerThreadId"
+      }
+    },
+    {
+      "from": "wait-turn",
+      "to": "nudge",
+      "label": "silence threshold expired (up to 2 visits)",
+      "when": {
+        "field": "woke",
+        "op": "eq",
+        "value": "timeout"
+      },
+      "with": {
+        "attemptId": "writer.attemptId",
+        "writerThreadId": "writer.writerThreadId"
+      }
+    },
+    {
+      "from": "wait-turn",
+      "to": "stop-silent",
+      "label": "silent past 2 nudges -> stop",
+      "with": {
+        "attemptId": "writer.attemptId",
+        "writerThreadId": "writer.writerThreadId"
+      }
+    },
+    {
+      "from": "nudge",
+      "to": "wait-turn",
+      "label": "nudged -> await next deadline",
+      "with": {
+        "eventKey": "nudge.writerThreadId",
+        "durationSec": "nudge.silenceSec",
+        "until": "nudge.until"
+      }
+    },
+    {
+      "from": "stop-silent",
+      "to": "admission",
+      "label": "retry after silence stop"
+    },
+    {
+      "from": "turn-outcome",
+      "to": "stop-exit-wait",
+      "label": "stop requested",
+      "when": {
+        "field": "status",
+        "op": "eq",
+        "value": "stopped"
+      },
+      "with": {
+        "eventKey": "turn-outcome.attemptId",
+        "durationSec": "turn-outcome.exitTimeoutSec",
+        "until": "turn-outcome.exitUntil"
+      }
+    },
+    {
+      "from": "turn-outcome",
+      "to": "wait-answer",
+      "label": "writer asked a question",
+      "when": {
+        "field": "status",
+        "op": "eq",
+        "value": "needs_answer"
+      },
+      "with": {
+        "eventKey": "turn-outcome.attemptId",
+        "durationSec": "turn-outcome.answerSec",
+        "until": "turn-outcome.answerUntil"
+      }
+    },
+    {
+      "from": "turn-outcome",
+      "to": "admission",
+      "label": "provider error / limit hold -> retry via admission",
+      "when": {
+        "field": "status",
+        "op": "eq",
+        "value": "provider_error"
+      }
+    },
+    {
+      "from": "turn-outcome",
+      "to": "end",
+      "label": "blocked by turn outcome",
+      "when": {
+        "field": "status",
+        "op": "eq",
+        "value": "blocked"
+      },
+      "with": {
+        "reply": "turn-outcome.reply"
+      }
+    },
+    {
+      "from": "turn-outcome",
+      "to": "validate",
+      "label": "ready for validation",
+      "with": {
+        "attemptId": "turn-outcome.attemptId",
+        "writerThreadId": "turn-outcome.writerThreadId",
+        "answer": "turn-outcome.answer"
+      }
+    },
+    {
+      "from": "wait-answer",
+      "to": "reopen-after-answer",
+      "label": "answered",
+      "when": {
+        "field": "woke",
+        "op": "eq",
+        "value": "event"
+      },
+      "with": {
+        "attemptId": "turn-outcome.attemptId",
+        "writerThreadId": "turn-outcome.writerThreadId",
+        "payload": "wait-answer.payload"
+      }
+    },
+    {
+      "from": "wait-answer",
+      "to": "answer-timeout",
+      "label": "answer wait expired",
+      "with": {
+        "attemptId": "turn-outcome.attemptId",
+        "writerThreadId": "turn-outcome.writerThreadId",
+        "answerKind": "turn-outcome.answerKind"
+      }
+    },
+    {
+      "from": "reopen-after-answer",
+      "to": "merge",
+      "label": "owner word granted",
+      "when": {
+        "field": "next",
+        "op": "eq",
+        "value": "merge"
+      },
+      "with": {
+        "attemptId": "reopen-after-answer.attemptId",
+        "writerThreadId": "reopen-after-answer.writerThreadId",
+        "candidate": "validate.candidate"
+      }
+    },
+    {
+      "from": "reopen-after-answer",
+      "to": "end",
+      "label": "owner word declined",
+      "when": {
+        "field": "next",
+        "op": "eq",
+        "value": "blocked"
+      },
+      "with": {
+        "reply": "reopen-after-answer.reply"
+      }
+    },
+    {
+      "from": "reopen-after-answer",
+      "to": "wait-turn",
+      "label": "question answered -> resume writer wait",
+      "with": {
+        "eventKey": "reopen-after-answer.writerThreadId",
+        "durationSec": "reopen-after-answer.silenceSec",
+        "until": "reopen-after-answer.until"
+      }
+    },
+    {
+      "from": "answer-timeout",
+      "to": "wait-turn",
+      "label": "resolved by rules, second pilot or safe default",
+      "when": {
+        "field": "action",
+        "op": "eq",
+        "value": "reopened"
+      },
+      "with": {
+        "eventKey": "answer-timeout.writerThreadId",
+        "durationSec": "answer-timeout.silenceSec",
+        "until": "answer-timeout.until"
+      }
+    },
+    {
+      "from": "answer-timeout",
+      "to": "end",
+      "label": "escalated to owner inbox",
+      "with": {
+        "reply": "answer-timeout.reply"
+      }
+    },
+    {
+      "from": "validate",
+      "to": "stop-exit-wait",
+      "label": "stopped during validation",
+      "when": {
+        "field": "status",
+        "op": "eq",
+        "value": "stopped"
+      },
+      "with": {
+        "eventKey": "validate.attemptId",
+        "durationSec": "validate.exitTimeoutSec",
+        "until": "validate.exitUntil"
+      }
+    },
+    {
+      "from": "validate",
+      "to": "wait-answer",
+      "label": "awaiting 6h owner word",
+      "when": {
+        "field": "status",
+        "op": "eq",
+        "value": "wait_owner_word"
+      },
+      "with": {
+        "eventKey": "validate.attemptId",
+        "durationSec": "validate.answerSec",
+        "until": "validate.answerUntil"
+      }
+    },
+    {
+      "from": "validate",
+      "to": "admission",
+      "label": "retry failed validation",
+      "when": {
+        "all": [
+          {
+            "field": "status",
+            "op": "eq",
+            "value": "failed"
+          },
+          {
+            "field": "retryable",
+            "op": "eq",
+            "value": true
+          }
+        ]
+      }
+    },
+    {
+      "from": "validate",
+      "to": "end",
+      "label": "terminal validation failure",
+      "when": {
+        "field": "status",
+        "op": "eq",
+        "value": "failed"
+      },
+      "with": {
+        "reply": "validate.reply"
+      }
+    },
+    {
+      "from": "validate",
+      "to": "critique",
+      "label": "validation passed",
+      "with": {
+        "attemptId": "validate.attemptId",
+        "writerThreadId": "validate.writerThreadId",
+        "candidate": "validate.candidate"
+      }
+    },
+    {
+      "from": "critique",
+      "to": "stop-exit-wait",
+      "label": "stopped during critique",
+      "when": {
+        "field": "status",
+        "op": "eq",
+        "value": "stopped"
+      },
+      "with": {
+        "eventKey": "critique.attemptId",
+        "durationSec": "critique.exitTimeoutSec",
+        "until": "critique.exitUntil"
+      }
+    },
+    {
+      "from": "critique",
+      "to": "wait-answer",
+      "label": "awaiting 6h owner word",
+      "when": {
+        "field": "status",
+        "op": "eq",
+        "value": "wait_owner_word"
+      },
+      "with": {
+        "eventKey": "critique.attemptId",
+        "durationSec": "critique.answerSec",
+        "until": "critique.answerUntil"
+      }
+    },
+    {
+      "from": "critique",
+      "to": "admission",
+      "label": "retry after critique rejection",
+      "when": {
+        "field": "status",
+        "op": "eq",
+        "value": "rejected"
+      }
+    },
+    {
+      "from": "critique",
+      "to": "end",
+      "label": "critique blocked",
+      "when": {
+        "field": "status",
+        "op": "eq",
+        "value": "blocked"
+      },
+      "with": {
+        "reply": "critique.reply"
+      }
+    },
+    {
+      "from": "critique",
+      "to": "merge",
+      "label": "critique passed",
+      "with": {
+        "attemptId": "critique.attemptId",
+        "writerThreadId": "critique.writerThreadId",
+        "candidate": "critique.candidate",
+        "review": "critique.review",
+        "checklist": "critique.checklist"
+      }
+    },
+    {
+      "from": "merge",
+      "to": "merge-wait",
+      "label": "checkout busy",
+      "when": {
+        "field": "status",
+        "op": "eq",
+        "value": "wait_busy"
+      },
+      "with": {
+        "until": "merge.waitUntil",
+        "durationSec": "merge.durationSec"
+      }
+    },
+    {
+      "from": "merge",
+      "to": "merge-wait",
+      "label": "base dirty",
+      "when": {
+        "field": "status",
+        "op": "eq",
+        "value": "wait_dirty"
+      },
+      "with": {
+        "until": "merge.waitUntil",
+        "durationSec": "merge.durationSec"
+      }
+    },
+    {
+      "from": "merge",
+      "to": "admission",
+      "label": "retry merge conflict",
+      "when": {
+        "field": "status",
+        "op": "eq",
+        "value": "conflict"
+      }
+    },
+    {
+      "from": "merge",
+      "to": "end",
+      "label": "merge blocked",
+      "when": {
+        "field": "status",
+        "op": "eq",
+        "value": "blocked"
+      },
+      "with": {
+        "reply": "merge.reply"
+      }
+    },
+    {
+      "from": "merge",
+      "to": "qa-gate",
+      "label": "accepted"
+    },
+    {
+      "from": "merge-wait",
+      "to": "merge",
+      "label": "re-check checkout after wait",
+      "with": {
+        "attemptId": "merge.attemptId",
+        "writerThreadId": "merge.writerThreadId",
+        "candidate": "merge.candidate",
+        "mergeState": "merge.mergeState"
+      }
+    },
+    {
+      "from": "stop-exit-wait",
+      "to": "stop-handback-wait",
+      "label": "condition 1 met (process exited)",
+      "when": {
+        "field": "woke",
+        "op": "eq",
+        "value": "event"
+      },
+      "with": {
+        "eventKey": "turn-outcome.attemptId"
+      }
+    },
+    {
+      "from": "stop-exit-wait",
+      "to": "stop-gap",
+      "label": "process exit deadline expired",
+      "with": {
+        "attemptId": "turn-outcome.attemptId",
+        "writerThreadId": "turn-outcome.writerThreadId",
+        "exitWoke": "stop-exit-wait.woke"
+      }
+    },
+    {
+      "from": "stop-handback-wait",
+      "to": "stop-finalize",
+      "label": "condition 2 met (work handed back)",
+      "when": {
+        "field": "woke",
+        "op": "eq",
+        "value": "event"
+      },
+      "with": {
+        "attemptId": "turn-outcome.attemptId",
+        "writerThreadId": "turn-outcome.writerThreadId"
+      }
+    },
+    {
+      "from": "stop-handback-wait",
+      "to": "stop-gap",
+      "label": "process exited without work hand-back",
+      "with": {
+        "attemptId": "turn-outcome.attemptId",
+        "writerThreadId": "turn-outcome.writerThreadId",
+        "handbackWoke": "stop-handback-wait.woke"
+      }
+    },
+    {
+      "from": "stop-finalize",
+      "to": "end",
+      "with": {
+        "reply": "stop-finalize.reply"
+      }
+    },
+    {
+      "from": "stop-gap",
+      "to": "end",
+      "with": {
+        "reply": "stop-gap.reply"
+      }
+    },
+    {
+      "from": "writer-fallback",
+      "to": "qa-gate-fallback",
+      "label": "accepted with fallback model",
+      "when": {
+        "field": "reply.state",
+        "op": "eq",
+        "value": "accepted"
+      }
+    },
+    {
+      "from": "writer-fallback",
+      "to": "writer-owner-backlog",
+      "label": "fallback exhausted -> owner backlog",
+      "with": {
+        "reply": "writer-fallback.reply"
+      }
+    },
+    {
+      "from": "qa-gate-fallback",
+      "to": "end",
+      "label": "no browser check",
+      "when": {
+        "field": "run",
+        "op": "eq",
+        "value": false
+      },
+      "with": {
+        "reply": "writer-fallback.reply"
+      }
+    },
+    {
+      "from": "qa-gate-fallback",
+      "to": "browser-qa-fallback",
+      "label": "qa_cases and qa_url"
+    },
+    {
+      "from": "browser-qa-fallback",
+      "to": "end",
+      "with": {
+        "reply": "writer-fallback.reply",
+        "browser_qa": "browser-qa-fallback.reply"
+      }
+    },
+    {
+      "from": "writer-owner-backlog",
+      "to": "end",
+      "with": {
+        "reply": "writer-owner-backlog.reply"
+      }
     },
     {
       "from": "qa-gate",
@@ -826,7 +2392,7 @@
         "value": false
       },
       "with": {
-        "reply": "writer.reply"
+        "reply": "merge.reply"
       }
     },
     {
@@ -838,7 +2404,7 @@
       "from": "browser-qa",
       "to": "end",
       "with": {
-        "reply": "writer.reply",
+        "reply": "merge.reply",
         "browser_qa": "browser-qa.reply"
       }
     },
@@ -877,5 +2443,9 @@
         "reply": "block-execution-packet.reply"
       }
     }
+  ],
+  "not_for": [
+    "lp.build",
+    "analyze-plan-execute"
   ]
 }

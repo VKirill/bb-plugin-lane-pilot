@@ -1,4 +1,4 @@
-import { BOARD_COLUMNS, type BoardColumn, type RunView, type ScheduleView } from "../views";
+import { BOARD_COLUMNS, type BoardColumn, type RunView, type ScheduleView } from "../models/views";
 
 /** Pure helpers of the automation area: card grouping, wording of a schedule, calendar days. No React, no clock but the `now` given. */
 

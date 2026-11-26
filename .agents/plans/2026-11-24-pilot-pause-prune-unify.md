@@ -92,7 +92,8 @@ isProject: true
 | Docs night | docs-maintenance-hourly, docs-nightly-hourly, docs-nightly-catchup | docs (3476, night part) | **Delete** the night part |
 | Bench | bench-nightly, bench-weekly, bench-sweep, bench-service-models | bench (3293) | **Delete** |
 | Wall / improvement | wall-night, wall-advance, policy-exam-collect | wall (3297), improvement (511) | **Delete** |
-| Lead exams | lead-sweep, lead-exam, lead-labels, lead-memory-exam | lead (2744) | **Delete** |
+| Lead exams | lead-sweep, lead-exam, lead-labels, lead-memory-exam | lead (2744) | **Delete the exams only** (owner, 2026-11-26): keep `lead/server/road.ts`, `lead/server/tick.ts`, the `lead-tick` calendar row and the `lane_pilot_lead_road` plan tree — it is the plan tree of the future employee/project case. Whether `lead-tick` stays a proposal loop or becomes the case planner is decided with `lp.evolve` (step 8) so the two do not overlap |
+| Specialist OS | specialist sweeps, `sp-specialist-tick` graph | specialist (3534) | **Keep** (owner, 2026-11-26): charter and caps, per-action-class autonomy, idempotent intents, breaker, outcome cohorts — the core of the future employee; imports no room marked Delete |
 | Learning / rules / lessons | learning-extract, learning-digest, lessons-sweep, rules-nightly, rules-triage, rule-promotions-weekly, self-repair | learning (1772), self-repair (3153), rule-forms (682) | **Delete** (self-repair is already OFF by owner) |
 | Night graphs | graph-evolve-nightly, episodes-hourly, critic-edit-monthly | night-graphs (4982), night (187) | **Delete** → replaced by step 8 |
 | Regression / harness / replay | regress-nightly, harness-nightly, pm-replay-nightly, curriculum-weekly | baseline (1559), harness (1939), pm-replay (778), tools curriculum part | **Delete** |

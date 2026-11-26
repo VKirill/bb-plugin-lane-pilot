@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { HELPER_ROLES, ROLE_PROFILES } from "../src/rooms/contracts/helper-context";
-import { WRITER_SETUP_LINES } from "../src/rooms/writer/server/writer-task";
-import { qaThreadPrompt } from "../src/rooms/qa/server/qa-thread";
-import { specialistPrompt } from "../src/rooms/critique/server/specialists";
+import { WRITER_SETUP_LINES } from "../src/rooms/writer/models/writer-task";
+import { qaThreadPrompt } from "../src/rooms/qa/server";
+import { specialistPrompt } from "../src/rooms/critique/server";
 
 describe("Env Catalog access by role (J1)", () => {
   it("only errands, the API reconnaissance and specialists carry its tools", () => {

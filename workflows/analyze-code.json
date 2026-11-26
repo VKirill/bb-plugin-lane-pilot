@@ -8,6 +8,7 @@
     "en": "Understand or evaluate a module, idea or change and report decisions, risks, scope verdict and confidence. Changes nothing.",
     "ru": "Разобраться или оценить модуль, идею или изменение и сообщить решения, риски, вердикт по объёму и уверенность. Ничего не меняет."
   },
+  "category": "code",
   "examples": {
     "ru": [
       "Разберись, как устроена очередь слияния, и опиши риски",

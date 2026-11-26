@@ -2,7 +2,7 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { runDraftTest, testCasesOf } from "@lane-pilot/workflow-engine";
 import { describe, expect, it } from "vitest";
 import { migrations } from "../../src/rooms/plugin-db";
-import { workflowCategory } from "../../src/rooms/workflow/categories";
+import { workflowCategory } from "../../src/rooms/workflow/models/categories";
 import { chainStore, runSim } from "./chain-harness";
 import { out, pathOf } from "./chain-helpers";
 
@@ -20,8 +20,6 @@ const NEW_GRAPH_IDS = [
   "mkt-landing-cro-audit",
   "mkt-pulse-monitor",
   "seo-ai-visibility",
-  "lp.specialist-eval",
-  "lp.curriculum-ingest",
 ] as const;
 
 const UPGRADED_SEO_IDS = [
@@ -94,16 +92,6 @@ describe("Specialist OS built-in chains (runSim)", () => {
     const rAiVis = await runSim("seo-ai-visibility", cAiVis);
     expect(pathOf(rAiVis)).toBe(cAiVis.expectPath);
     expect(out(rAiVis)).toMatchObject(cAiVis.expectOutput);
-
-    const cEval = await mainSimConfigOf("lp.specialist-eval");
-    const rEval = await runSim("lp.specialist-eval", cEval);
-    expect(pathOf(rEval)).toBe(cEval.expectPath);
-    expect(out(rEval)).toMatchObject(cEval.expectOutput);
-
-    const cIngest = await mainSimConfigOf("lp.curriculum-ingest");
-    const rIngest = await runSim("lp.curriculum-ingest", cIngest);
-    expect(pathOf(rIngest)).toBe(cIngest.expectPath);
-    expect(out(rIngest)).toMatchObject(cIngest.expectOutput);
   }, 30_000);
 
   it("places every Specialist OS workflow on its exact category shelf (marketing, seo, service)", async () => {
@@ -122,12 +110,12 @@ describe("Specialist OS built-in chains (runSim)", () => {
     for (const id of ["seo-ai-visibility", ...UPGRADED_SEO_IDS]) {
       expect(workflowCategory(store.get(id)!.workflow), id).toBe("seo");
     }
-    for (const id of ["sp-specialist-tick", "lp.specialist-eval", "lp.curriculum-ingest"]) {
+    for (const id of ["sp-specialist-tick"]) {
       expect(workflowCategory(store.get(id)!.workflow), id).toBe("service");
     }
   });
 
-  it("passes every main case and variant_* across all 16 Specialist OS graphs through runDraftTest", async () => {
+  it("passes every main case and variant_* across all 14 Specialist OS graphs through runDraftTest", async () => {
     const store = await chainStore();
     const { bb } = createFakePluginHost({ pluginId: "lane-pilot" });
     const db = bb.storage.database();
@@ -147,7 +135,7 @@ describe("Specialist OS built-in chains (runSim)", () => {
         }
       }
     }
-    expect(caseCount).toBeGreaterThanOrEqual(45);
+    expect(caseCount).toBeGreaterThanOrEqual(38);
     expect(failures).toEqual([]);
   }, 45_000);
 });

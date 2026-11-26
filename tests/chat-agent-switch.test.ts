@@ -2,10 +2,9 @@ import { afterEach, expect, it } from "vitest";
 import { createFakePluginHost, makeMessageDispatchHookContext } from "@get-bb/plugin-sdk/testing";
 import plugin from "../server";
 import { claimActivation, createAttempt, createTask, findOpenNativeRun, getActivation, getRun, listUnreportedTaskOutcomes, openDatabase, savePrototypeConfig, transitionAttempt } from "../src/rooms/plugin-db";
-import { insertPhase, savePhase } from "../src/rooms/phase/store";
-import { createWorkflowTriggers } from "../src/rooms/workflow/server/workflow-triggers";
-import { nativeSelectionMarker } from "../src/rooms/native-agent/native-session";
-import { switchChatAgent } from "../src/rooms/native-agent/server/chat-agent-switch";
+import { createWorkflowTriggers } from "../src/rooms/workflow/server/services/workflow-triggers";
+import { nativeSelectionMarker } from "../src/rooms/native-agent/models/native-session";
+import { switchChatAgent } from "../src/rooms/native-agent/server/services/chat-agent-switch";
 
 const cleanup: Array<() => Promise<void>> = [];
 afterEach(async () => {
@@ -202,15 +201,7 @@ it("a PM chat whose writers are at work refuses the move to a specialist, and to
   expect(findOpenNativeRun(db, "project_a", "thr_pm")).toBeNull();
 });
 
-it("a PM chat with a live phase or a live workflow run refuses the move and says which", async () => {
-  const phase = await pmChat("thr_pm");
-  insertPhase(phase.db, { id: "ph_1", projectId: "project_a", pmThreadId: "thr_pm", title: "Login", goal: "g", runId: phase.runId, at: Date.now() });
-  await expect(phase.t.call("switch_chat_agent", { threadId: "thr_pm", agentId: "copy-lead" })).rejects.toThrow(/phase «Login»/);
-  expect(findOpenNativeRun(phase.db, "project_a", "thr_pm")).toBe(phase.runId);
-  savePhase(phase.db, "ph_1", { state: "stopped", at: Date.now() });
-  await phase.t.call("switch_chat_agent", { threadId: "thr_pm", agentId: "copy-lead" });
-  expect(findOpenNativeRun(phase.db, "project_a", "thr_pm")).toBeNull();
-
+it("a PM chat with a live workflow run refuses the move and says which", async () => {
   const graph = await pmChat("thr_pm2");
   graph.db.prepare(`INSERT INTO lane_pilot_wf_run(id,workflow_id,workflow_version,workflow_sha256,definition_json,project_id,link_run_id,status,created_at,updated_at)
     VALUES ('wfrun_x','code-review',1,'x','{}','project_a',?, 'running',1,1)`).run(graph.runId);
@@ -296,7 +287,7 @@ it("turning Lane Pilot off in a chat whose tasks are at work refuses and changes
   expect(await t.call("chat_agent_state", { threadId: "thr_busy" })).toMatchObject({ current: { agentId: "design-lead", pending: true } });
 
   const ctx = { bb: t.fake.bb, db, ownedAgents: async () => ({}) } as never;
-  await expect(switchChatAgent(ctx, { threadId: "thr_busy", agentId: null }, async () => { throw new Error("tasks are at work"); }, () => [])).rejects.toThrow(/tasks are at work/);
+  await expect(switchChatAgent(ctx, { threadId: "thr_busy", agentId: null }, async () => { throw new Error("tasks are at work"); })).rejects.toThrow(/tasks are at work/);
   expect(await t.call("chat_agent_state", { threadId: "thr_busy" })).toMatchObject({ current: { agentId: "design-lead", pending: true } });
   expect(await t.call("native_thread", { threadId: "thr_busy" })).not.toBeNull();
   expect(findOpenNativeRun(db, "project_a", "thr_busy")).toBe(runId);

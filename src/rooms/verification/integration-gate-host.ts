@@ -2,8 +2,11 @@ import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, rmdir } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { bestEffort, spawnAsync } from "@lane-pilot/kit";
-import { laneWorktreeRoot, prepareWorktree, repoFolderName } from "./git-integrate";
-import { extractFailingFiles } from "./gate-output";
+import { shellQuote } from "@lane-pilot/contracts";
+import { laneWorktreeRoot, prepareWorktree, repoFolderName } from "../worktree";
+import { extractFailingFiles } from "./models/gate-output";
+import type { GateAttributeResult } from "./models/gate-attribution";
+export type { GateAttributeResult };
 
 /**
  * The gate's scratch worktree: `<root>/<repository>/gate-<sha8>-<random>` beside the writers' worktrees (docs/worktrees.md), not a tmp
@@ -76,17 +79,10 @@ export async function bisectGateOnHost(input:{basePath:string;command:string;goo
   }
 }
 
-export type GateAttributeResult = {
-  /** What each given commit changed, by its first parent: the paths and the workspaces (nearest package.json folders) they lie in. */
-  commits: Record<string, { paths: string[]; workspaces: string[] }>;
-  /** Per failing test, in the order given: its workspace folder and repository path (null when the host cannot place it), and whether it also fails on the base. */
-  failing: Array<{ workspaceDir: string | null; path: string | null; preexisting: boolean | null }>;
-  baseline: { status: "ran" | "skipped" | "failed"; reason: string | null };
-};
+/** What each commit changed and how failing tests map to workspaces/preexisting status. */
 
 const posixDir = (path: string) => (path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "");
 const joinPath = (dir: string, file: string) => (dir ? `${dir}/${file}` : file);
-const shellQuote = (text: string) => `'${text.replace(/'/g, `'\\''`)}'`;
 const TEST_FILE = /\.(?:test|spec)\.(?:ts|tsx|js|jsx|mts|cts|mjs|cjs)$/;
 
 /**

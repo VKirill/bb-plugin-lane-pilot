@@ -1,7 +1,7 @@
-import { mkdir, readFile, readdir, rename, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { TARGET_SHA } from "../../src/rooms/runs/constants";
+import { TARGET_SHA } from "../../src/rooms/runs";
 import { addOwnershipEntry, newSnapshotId, ownershipLedgerPath, readOwnershipLedger, readSnapshot, saveSnapshot } from "../../src/rooms/native-install/ownership";
 import { managedEngineDir } from "@lane-pilot/kit";
 import { installStack } from "../../src/rooms/native-install/stack-ops";

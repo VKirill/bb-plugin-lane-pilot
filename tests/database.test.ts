@@ -1,6 +1,6 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
-import { inspectAttempt, inspectState, setRunObjective, appendGateEvaluation, casSetting, claimDailySchedule, claimDocsSpawn, claimStageSpawn, closeRun, createAttempt, createRun, createTask, freezeRunBinding, getAttempt, getRunWriterHost, getTaskGitBase, listGateEvents, listStageEvents, listStageReceipts, listUnfinishedStages, migrations, openDatabase, saveStageReceipt, saveTaskGitBase, setAttemptHolderThread, setAttemptWorkspace, setRunWorkspace, getRun, setRunThread, transitionAttempt } from "../src/rooms/plugin-db";
+import { inspectAttempt, inspectState, setRunObjective, appendGateEvaluation, casSetting, claimDailySchedule, claimStageSpawn, closeRun, createAttempt, createRun, createTask, freezeRunBinding, getAttempt, getRunWriterHost, getTaskGitBase, listGateEvents, listStageEvents, listStageReceipts, listUnfinishedStages, migrations, openDatabase, saveStageReceipt, saveTaskGitBase, setAttemptHolderThread, setAttemptWorkspace, setRunWorkspace, getRun, setRunThread, transitionAttempt } from "../src/rooms/plugin-db";
 
 describe("section 9 storage.database DDL", () => {
   it("migrates an existing populated database without losing rows and expands the run state check", async () => {
@@ -63,13 +63,13 @@ describe("section 9 storage.database DDL", () => {
     setRunThread(db, "bg-run", "pm-1");
     createTask(db, { id:"t1", runId:"bg-run", kind:"bb", contract:{} });
     createTask(db, { id:"t2", runId:"bg-run", kind:"bb", contract:{} });
-    const row = (taskId:string, stageId:"project-life"|"memory-maintenance"|"plan-critique", state:"running"|"passed") => saveStageReceipt(db, {
+    const row = (taskId:string, stageId:"memory-maintenance"|"plan-critique", state:"running"|"passed") => saveStageReceipt(db, {
       contractVersion:1, runId:"bg-run", taskId, stageId, state, inputSha256:"a".repeat(64), outputSha256:null, attempt:1,
       providerId:null, model:null, threadId:null, result:null, reason:null, updatedAt:1,
     });
-    row("t1", "project-life", "running"); row("t1", "memory-maintenance", "passed"); row("t2", "memory-maintenance", "running"); row("t2", "plan-critique", "running");
-    expect(listUnfinishedStages(db, ["memory-maintenance", "project-life"]).map((item) => [item.taskId, item.stageId, item.projectId, item.pmThreadId]).sort())
-      .toEqual([["t1", "project-life", "A", "pm-1"], ["t2", "memory-maintenance", "A", "pm-1"]]);
+    row("t1", "memory-maintenance", "passed"); row("t2", "memory-maintenance", "running"); row("t2", "plan-critique", "running");
+    expect(listUnfinishedStages(db, ["memory-maintenance"]).map((item) => [item.taskId, item.stageId, item.projectId, item.pmThreadId]).sort())
+      .toEqual([["t2", "memory-maintenance", "A", "pm-1"]]);
     await harness.lifecycle.dispose();
   });
 
@@ -152,23 +152,6 @@ describe("section 9 storage.database DDL", () => {
     expect(claimDailySchedule(db,"project-b","docs-maintenance","2026-09-23")).toBe(true);
     expect(() => claimDailySchedule(db,"project-a","../docs","2026-09-25")).toThrow("schedule name");
     expect(() => claimDailySchedule(db,"project-a","docs-maintenance","2026-02-31")).toThrow("schedule date");
-    await harness.lifecycle.dispose();
-  });
-
-  it("claims docs spawn once while running and thread_id is null", async () => {
-    const {bb,harness} = createFakePluginHost({pluginId:"lane-pilot"});
-    const db = openDatabase(bb);
-    createRun(db, "docs-claim-run", "project-a");
-    createTask(db, { id:"docs-claim-task", runId:"docs-claim-run", kind:"bb", contract:{id:"docs-claim-task"} });
-    saveStageReceipt(db, {
-      runId:"docs-claim-run", taskId:"docs-claim-task", stageId:"docs-maintenance", contractVersion:1, state:"running",
-      inputSha256:"a".repeat(64), outputSha256:null, attempt:0, providerId:null, model:null,
-      threadId:null, result:{ snapshot:{ pages:[], since:"yesterday", truncated:false, inputSha256:"b".repeat(64) } },
-      reason:"docs_spawn_requested", updatedAt:Date.now(),
-    });
-    expect(claimDocsSpawn(db,"docs-claim-run","docs-claim-task")).toBe(true);
-    expect(claimDocsSpawn(db,"docs-claim-run","docs-claim-task")).toBe(false);
-    expect((listStageReceipts(db,"docs-claim-run","docs-claim-task")[0].result as {spawnAttempted?:boolean}).spawnAttempted).toBe(true);
     await harness.lifecycle.dispose();
   });
 

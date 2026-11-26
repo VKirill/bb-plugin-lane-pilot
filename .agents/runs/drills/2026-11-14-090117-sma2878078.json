@@ -1,0 +1,91 @@
+{
+  "kind": "lane-pilot-sandbox-drill",
+  "date": "2026-11-14",
+  "stamp": "20261114-090117",
+  "startedAt": 1794636077602,
+  "finishedAt": 1794636086879,
+  "durationSec": 9,
+  "project": "proj_ibu6v9g64j",
+  "runId": null,
+  "pmThread": null,
+  "sourceThread": null,
+  "mode": "full",
+  "scenarioNames": [
+    "sma_r13"
+  ],
+  "commit": "62ea5ac5f2167999975a4e188e15dfcb5c5c8019",
+  "skipped": {},
+  "result": "pass",
+  "problems": [],
+  "checks": null,
+  "tasks": null,
+  "dispatch": null,
+  "scenarios": [
+    {
+      "name": "sma_r13",
+      "result": "pass",
+      "problems": [],
+      "proved": [
+        {
+          "node": "n1036",
+          "ok": true,
+          "detail": "planted secret on lines [2], clean text [], house words ['attemptId', 'brand', 'shortColour']"
+        },
+        {
+          "node": "n1037",
+          "ok": true,
+          "detail": "internal ids refused in ['attempt', 'thread']"
+        },
+        {
+          "node": "n1038",
+          "ok": true,
+          "detail": "gate on a planted tree ['leak scan: src/a.ts:2'], on a clean tree []; leak scan of this commit []"
+        },
+        {
+          "node": "n1039",
+          "ok": true,
+          "detail": "unread fields ['zeta.c']"
+        },
+        {
+          "node": "n1040",
+          "ok": true,
+          "detail": "8 registered fields, all on a known method with a reason and silenced"
+        },
+        {
+          "node": "n1041",
+          "ok": true,
+          "detail": "28 unread fields, outside the baseline []"
+        },
+        {
+          "node": "n1042",
+          "ok": true,
+          "detail": "memory line 'memory:false:only in the session: m3; only in the terminal: m2'; a layer with one side missing: same=None"
+        },
+        {
+          "node": "n1043",
+          "ok": true,
+          "detail": "gaps {\"onlySession\": [\"Bash\"], \"onlyTerminal\": [\"Grep\"]}"
+        }
+      ],
+      "checked": 8
+    }
+  ],
+  "seen": null,
+  "judged": [
+    {
+      "name": "sma_r13",
+      "verdict": "pass",
+      "evidence": [
+        "proved",
+        "checked"
+      ],
+      "why": ""
+    }
+  ],
+  "series": {
+    "verdict": "pass",
+    "missing": [],
+    "failed": [],
+    "skipped": []
+  }
+}

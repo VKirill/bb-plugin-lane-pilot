@@ -1,0 +1,228 @@
+{
+  "kind": "lane-pilot-sandbox-drill",
+  "date": "2026-10-29",
+  "stamp": "20261029-224006",
+  "startedAt": 1793302806363,
+  "finishedAt": 1793302813650,
+  "durationSec": 7,
+  "project": "proj_3tb652jpsi",
+  "runId": null,
+  "pmThread": null,
+  "sourceThread": null,
+  "mode": "quick",
+  "scenarioNames": [
+    "guard_hash",
+    "deferrals",
+    "checkers",
+    "memory_paths",
+    "helper_providers",
+    "parallel3"
+  ],
+  "commit": "e5eec18808f54c577fa51e8d405f6d445f68b2ed",
+  "skipped": {},
+  "result": "fail",
+  "problems": [
+    "source thread did not start: Error: Failed to create thread: Cannot connect to BB server. Ensure it is running and BB_SERVER_URL is correct.",
+    "deferrals: the register of deferrals could not be read: deferral_list failed: Error: Cannot connect to BB server. Ensure it is running and BB_SERVER_URL is correct."
+  ],
+  "checks": null,
+  "tasks": null,
+  "dispatch": null,
+  "scenarios": [
+    {
+      "name": "guard_hash",
+      "result": "pass",
+      "problems": [],
+      "machines": [
+        {
+          "machine": "mac-mini",
+          "files": {
+            "guard_shell.py": {
+              "state": "ok",
+              "installed": "505b017cd1ab7982d3bfc077959e7cb19baca9604277ceae9e3834469fce4104",
+              "expected": "505b017cd1ab7982d3bfc077959e7cb19baca9604277ceae9e3834469fce4104"
+            },
+            "lib_payload.py": {
+              "state": "ok",
+              "installed": "888d89f05eb23a585b99c343df1865a368f8f28a090e9f6f29a8246a9be99565",
+              "expected": "888d89f05eb23a585b99c343df1865a368f8f28a090e9f6f29a8246a9be99565"
+            }
+          },
+          "reachable": true
+        },
+        {
+          "machine": "macbook",
+          "files": {
+            "guard_shell.py": {
+              "state": "unreachable",
+              "installed": null,
+              "expected": "505b017cd1ab7982d3bfc077959e7cb19baca9604277ceae9e3834469fce4104"
+            },
+            "lib_payload.py": {
+              "state": "unreachable",
+              "installed": null,
+              "expected": "888d89f05eb23a585b99c343df1865a368f8f28a090e9f6f29a8246a9be99565"
+            }
+          },
+          "reachable": false
+        },
+        {
+          "machine": "ovh",
+          "files": {
+            "guard_shell.py": {
+              "state": "unreachable",
+              "installed": null,
+              "expected": "505b017cd1ab7982d3bfc077959e7cb19baca9604277ceae9e3834469fce4104"
+            },
+            "lib_payload.py": {
+              "state": "unreachable",
+              "installed": null,
+              "expected": "888d89f05eb23a585b99c343df1865a368f8f28a090e9f6f29a8246a9be99565"
+            }
+          },
+          "reachable": false
+        }
+      ],
+      "expected": {
+        "guard_shell.py": "505b017cd1ab7982d3bfc077959e7cb19baca9604277ceae9e3834469fce4104",
+        "lib_payload.py": "888d89f05eb23a585b99c343df1865a368f8f28a090e9f6f29a8246a9be99565"
+      },
+      "unreachable": [
+        "macbook",
+        "ovh"
+      ],
+      "repaired": true
+    },
+    {
+      "name": "deferrals",
+      "result": "fail",
+      "problems": [
+        "the register of deferrals could not be read: deferral_list failed: Error: Cannot connect to BB server. Ensure it is running and BB_SERVER_URL is correct."
+      ]
+    },
+    {
+      "name": "checkers",
+      "result": "pass",
+      "problems": [],
+      "checked": [
+        {
+          "defectClass": "test_assertion_deleted",
+          "planted": 2,
+          "caughtBy": [],
+          "designedCatchers": [
+            "code_critic"
+          ]
+        },
+        {
+          "defectClass": "off_by_one",
+          "planted": 2,
+          "caughtBy": [
+            "verification"
+          ],
+          "designedCatchers": [
+            "verification"
+          ]
+        },
+        {
+          "defectClass": "outside_owns",
+          "planted": 2,
+          "caughtBy": [
+            "ownership"
+          ],
+          "designedCatchers": [
+            "ownership"
+          ]
+        },
+        {
+          "defectClass": "swallowed_error",
+          "planted": 1,
+          "caughtBy": [],
+          "designedCatchers": [
+            "code_critic"
+          ]
+        },
+        {
+          "defectClass": "masked_check",
+          "planted": 2,
+          "caughtBy": [
+            "contract_lint"
+          ],
+          "designedCatchers": [
+            "contract_lint"
+          ]
+        },
+        {
+          "defectClass": "acceptance_missing",
+          "planted": 2,
+          "caughtBy": [
+            "verification",
+            "plan_fact"
+          ],
+          "designedCatchers": [
+            "plan_fact"
+          ]
+        },
+        {
+          "defectClass": "hardcoded_value",
+          "planted": 2,
+          "caughtBy": [
+            "verification"
+          ],
+          "designedCatchers": [
+            "code_critic"
+          ]
+        },
+        {
+          "defectClass": "broken_import",
+          "planted": 2,
+          "caughtBy": [
+            "verification"
+          ],
+          "designedCatchers": [
+            "verification"
+          ]
+        }
+      ]
+    }
+  ],
+  "seen": null,
+  "judged": [
+    {
+      "name": "guard_hash",
+      "verdict": "pass",
+      "evidence": [
+        "machines",
+        "expected",
+        "unreachable",
+        "repaired"
+      ],
+      "why": ""
+    },
+    {
+      "name": "deferrals",
+      "verdict": "fail",
+      "evidence": [],
+      "why": "the register of deferrals could not be read: deferral_list failed: Error: Cannot connect to BB server. Ensure it is running and BB_SERVER_URL is correct."
+    },
+    {
+      "name": "checkers",
+      "verdict": "pass",
+      "evidence": [
+        "checked"
+      ],
+      "why": ""
+    }
+  ],
+  "series": {
+    "verdict": "fail",
+    "missing": [
+      "memory_paths",
+      "helper_providers",
+      "parallel3"
+    ],
+    "failed": [
+      "deferrals"
+    ],
+    "skipped": []
+  }
+}

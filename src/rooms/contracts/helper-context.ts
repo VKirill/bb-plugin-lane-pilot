@@ -80,9 +80,8 @@ export function coreRequiredSessionAdvertisement(): RequiredSessionAdvertisement
 export type HelperRole =
   | "writer" | "code-repair" | "night-fixer"
   | "plan-critic" | "code-critic" | "specialist-reviewer" | "gate-triage" | "pm-reader" | "scout"
-  | "docs-maintainer" | "onboarder" | "memory-maintainer" | "project-life"
-  | "browser-qa" | "errand" | "api-recon" | "council-seat" | "rules-analyzer" | "episode-analyst" | "wall-hunter"
-  | "digest-light" | "digest-analyst" | "evolve-planner" | "evolve-critic" | "evolve-architect" | "evolve-auditor"
+  | "onboarder" | "memory-maintainer"
+  | "browser-qa" | "errand" | "api-recon" | "rules-analyzer"
   | "analyst" | "planner" | "auditor" | "debugger"
   | "workspace-provisioner" | "lead" | "workflow-architect" | "harness-editor" | "harness-composer" | "harness-reflection"
   | "specialist:design-lead" | "specialist:copy-lead" | "specialist:seo-specialist" | "specialist:growth-marketer" | "specialist:tavily" | "specialist:video-lead"
@@ -115,19 +114,16 @@ export const ROLE_PROFILES: Record<HelperRole, RoleProfile> = {
   "gate-triage": ONE_SHOT,
   "pm-reader": ONE_SHOT,
   "scout": READER,
-  // 10 graph calls in 1968 docs runs, in 5 of 27 threads; the nightly pass refreshes the index itself (docs.gitnexus_refresh) and the brief never asks for the graph.
-  "docs-maintainer": { bbPlugins: [], skills: ["lp-docs", "docs-methodology"], mcpServers: [] },
   "onboarder": { bbPlugins: [], skills: ["project-life"], mcpServers: [] },
   // It returns one JSON array and runs no tools; the memory skills told it to call CLIs (instructions audit 2026-10-03).
   "memory-maintainer": { bbPlugins: [], skills: [], mcpServers: [] },
-  // 1 graph call in 75 runs (launch-footprint audit 2026-11-14).
-  "project-life": { bbPlugins: [], skills: ["project-life"], mcpServers: [] },
   "browser-qa": { bbPlugins: ["browser-automation"], skills: ["browser-automation"], mcpServers: [] },
   // A PM's errand outside the code: a console, a mailbox, a recording. The browser on the browser machine, the fast
   // owner's signed-in Chrome and the apps on the Mac mini through agent-desktop (computer-use; the accessibility tree), the headless browser through the browser-automation plugin, and Env Catalog for the accounts it needs; no code skills.
   "errand": { bbPlugins: ["browser-automation", "env-catalog"], skills: ["browser-automation", "computer-use", "env-catalog"], mcpServers: [] },
   // The API map of a web service (workflows/api-recon.json): the browser and the login, nothing else.
   "api-recon": { bbPlugins: ["browser-automation", "env-catalog"], skills: ["browser-automation", "env-catalog"], mcpServers: [] },
+  "rules-analyzer": { bbPlugins: [], skills: [], mcpServers: [] },
   // The thin roles of the workflow chains (W3): read the repository and answer in a typed message, nothing else. A chain node may
   // name more skills for one step; the owner changes a role here like any other (Agent access).
   // Measured on the hub, the week to 2026-11-10: the code graph was called by 1 of 54 analyst threads, 0 of 27 auditor and 0 of 9 planner
@@ -138,17 +134,6 @@ export const ROLE_PROFILES: Record<HelperRole, RoleProfile> = {
   "auditor": ONE_SHOT,
   // The one thin role that does call the code graph (29 of 99 calls): it names the skill that tells it how.
   "debugger": { bbPlugins: [], skills: ["gitnexus-debugging"], mcpServers: ["gitnexus"] },
-  "council-seat": { bbPlugins: [], skills: [], mcpServers: [] },
-  "rules-analyzer": { bbPlugins: [], skills: [], mcpServers: [] },
-  // Both read masked text in a hidden analyzer thread and answer in JSON: no plugin, skill or MCP access.
-  "episode-analyst": { bbPlugins: [], skills: [], mcpServers: [] },
-  "digest-light": { bbPlugins: [], skills: [], mcpServers: [] },
-  "digest-analyst": { bbPlugins: [], skills: [], mcpServers: [] },
-  "evolve-planner": { bbPlugins: [], skills: [], mcpServers: [] },
-  "evolve-critic": { bbPlugins: [], skills: [], mcpServers: [] },
-  "evolve-architect": { bbPlugins: [], skills: [], mcpServers: [] },
-  "evolve-auditor": { bbPlugins: [], skills: [], mcpServers: [] },
-  "wall-hunter": { bbPlugins: [], skills: [], mcpServers: [] },
   "specialist:design-lead": { bbPlugins: ["env-catalog"], skills: ["env-catalog", "project-design", "modern-web-guidance", "page-prototype"], mcpServers: ["metamcp"] },
   "specialist:copy-lead": { bbPlugins: ["env-catalog"], skills: ["env-catalog", "copywriter"], mcpServers: [] },
   "specialist:seo-specialist": { bbPlugins: ["env-catalog"], skills: ["env-catalog", "seo-drmax-orchestrator"], mcpServers: [] },
@@ -284,7 +269,7 @@ export function roleProfilePolicy(role: HelperRole, access: RoleAccess = {}, ext
 }
 
 export const HELPER_SPAWN_ROLES = [
-  "pm-reader", "plan-critic", "specialist-reviewer", "docs-maintainer",
+  "pm-reader", "plan-critic", "specialist-reviewer",
   "onboarder", "memory-maintainer", "night-fixer", "gate-triage",
 ] as const;
 export type HelperSpawnRole = (typeof HELPER_SPAWN_ROLES)[number];
@@ -641,5 +626,5 @@ export function isHelperSpawnRole(role: unknown): role is HelperSpawnRole {
 }
 
 /** Helper roles whose stage produces a document: they may not start on an adapter version with no documentary receipt (SMA ap_caps). */
-export const DOCUMENTARY_ROLES: ReadonlySet<string> = new Set(["docs-maintainer", "docs-nightly", "docs", "analyst", "planner", "memory-maintainer", "project-life", "onboarder"]);
+export const DOCUMENTARY_ROLES: ReadonlySet<string> = new Set(["analyst", "planner", "memory-maintainer", "onboarder"]);
 export const isDocumentaryRole = (role: string | null | undefined): boolean => typeof role === "string" && DOCUMENTARY_ROLES.has(role);

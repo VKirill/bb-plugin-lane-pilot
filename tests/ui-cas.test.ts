@@ -4,20 +4,15 @@ import { openDatabase, savePrototypeConfig } from "../src/rooms/plugin-db";
 import plugin from "../server";
 
 describe("settings CAS over RPC", () => {
-  it("exposes docs execution settings as editable and registers the hourly SDK schedule", async () => {
+  it("exposes read-only docs mode setting as editable via CAS without docs maintenance schedules", async () => {
     const {bb,harness}=createFakePluginHost({pluginId:"lane-pilot"});
     await plugin(bb);
     const schedule=harness.inspection.registrations.schedules.find((item)=>item.name==="docs-maintenance-hourly");
-    expect(schedule?.cron).toBe("0 * * * *");
-    await harness.runSchedule("docs-maintenance-hourly");
-    const saved=[] as Array<[string,unknown]>;
-    for(const [key,value] of [["docs.enabled","true"],["docs.maintain","false"],["docs.page_cap",12],["docs.since","7 days ago"],["docs.hour",7]] as Array<[string,unknown]>) {
-      const result=await harness.behavior.callRpc("save_setting",{projectId:"proj_docs",key,value,expectedVersion:0}) as {ok:boolean};
-      expect(result.ok,key).toBe(true);
-      saved.push([key,value]);
-    }
+    expect(schedule).toBeUndefined();
+    const result=await harness.behavior.callRpc("save_setting",{projectId:"proj_docs",key:"docs.enabled",value:"true",expectedVersion:0}) as {ok:boolean};
+    expect(result.ok).toBe(true);
     const screen=await harness.behavior.callRpc("get_screen",{projectId:"proj_docs"}) as {values:Record<string,unknown>};
-    expect(screen.values).toMatchObject(Object.fromEntries(saved));
+    expect(screen.values["docs.enabled"]).toBe("true");
     await harness.lifecycle.dispose();
   });
 

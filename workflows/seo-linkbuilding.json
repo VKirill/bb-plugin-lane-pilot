@@ -30,6 +30,7 @@
     "seo",
     "drmax"
   ],
+  "category": "seo",
   "inputs": {
     "acceptors_path": {
       "type": "string",

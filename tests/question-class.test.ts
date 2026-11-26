@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import fixture from "./fixtures/hub-writer-questions-30d.json";
-import { classifyQuestion, filesNamed } from "../src/rooms/writer/server/question-class";
-import { writerQuestion } from "../src/rooms/writer/server/reopen-attempt";
+import { classifyQuestion, filesNamed } from "../src/rooms/writer/models/question-class";
+import { writerQuestion } from "../src/rooms/writer/server/services/reopen-attempt";
 
 type Row = { reason: string; label: string };
 const rows = fixture as Row[];

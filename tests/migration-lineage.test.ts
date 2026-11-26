@@ -107,3 +107,71 @@ describe("the retired YAML import rows", () => {
     await harness.lifecycle.dispose();
   });
 });
+
+const LEGACY_TABLES = [
+  "lane_pilot_council",
+  "lane_pilot_council_message",
+  "lane_pilot_rule_proposal",
+  "lane_pilot_rule_event",
+  "lane_pilot_rule_promotion",
+  "lane_pilot_failure_triage",
+  "lane_pilot_owner_records",
+  "lane_pilot_owner_evidence",
+  "lane_pilot_owner_history",
+  "lane_pilot_owner_tombstones",
+  "lane_pilot_owner_checkpoints",
+  "lane_pilot_owner_sources",
+  "lane_pilot_owner_loads",
+  "lane_pilot_owner_notes_files",
+  "lane_pilot_owner_notes_lines",
+  "lane_pilot_learning_obs",
+  "lane_pilot_learning_item",
+  "lane_pilot_learning_signal",
+  "lane_pilot_pm_scenario",
+  "lane_pilot_pm_replay",
+  "lane_pilot_world",
+  "lane_pilot_harness",
+  "lane_pilot_harness_experience",
+  "lane_pilot_bench_set",
+  "lane_pilot_bench_task",
+  "lane_pilot_bench_run",
+  "lane_pilot_bench_result",
+  "lane_pilot_bench_noise",
+  "lane_pilot_bench_verdict",
+  "lane_pilot_bench_project",
+  "lane_pilot_run_goal",
+  "lane_pilot_phase",
+  "lane_pilot_phase_part",
+  "lane_pilot_capability",
+  "lane_pilot_hypothesis",
+  "lane_pilot_wall_entry",
+  "lane_pilot_wall_class",
+  "lane_pilot_wall_repair",
+  "lane_pilot_wall_night",
+  "lane_pilot_wall",
+  "lane_pilot_wall_rerun",
+  "lane_pilot_passport",
+  "lane_pilot_passport_verbatim",
+  "lane_pilot_passport_pending",
+] as const;
+
+describe("frozen legacy migrations", () => {
+  it("applies the full migration list to an empty database and keeps every legacy table openable", async () => {
+    const hashes = migrations.map((statement) => createHash("sha256").update(statement).digest("hex"));
+    expect(hashes).toEqual(migrationLock);
+
+    const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
+    const db = bb.storage.database();
+    openDatabase(bb);
+
+    const tables = new Set(
+      (db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as Array<{ name: string }>).map((row) => row.name),
+    );
+    for (const table of LEGACY_TABLES) {
+      expect(tables.has(table), `missing legacy table ${table}`).toBe(true);
+      expect(db.prepare(`SELECT * FROM ${table} LIMIT 1`).all()).toEqual([]);
+    }
+    expect(db.pragma("foreign_key_check")).toEqual([]);
+    await harness.lifecycle.dispose();
+  });
+});

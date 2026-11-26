@@ -2,7 +2,7 @@ import { mkdir, readFile, rm, stat, symlink, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, it, vi } from "vitest";
-import { createWorktree, integrateWorktree, removeLaneWorktree } from "../../src/rooms/verification/git-integrate";
+import { createWorktree, integrateWorktree, removeLaneWorktree } from "../../src/rooms/worktree";
 import { mergeInfo, revertCommitsInWorktree, worktreeState } from "../../src/rooms/verification/git-rollback";
 import { git, repo } from "./git-integrate-helpers";
 

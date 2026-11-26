@@ -3,7 +3,8 @@ import { afterEach, describe, expect, it } from "vitest";
 import plugin from "../../server";
 import { createRun, openDatabase, saveProjectSetting, setRunThread } from "../../src/rooms/plugin-db";
 import { forgetSecrets } from "@lane-pilot/kit";
-import { errandAccountLines, errandPrompt } from "../../src/rooms/qa/server/errands";
+import { errandAccountLines, errandPrompt } from "../../src/rooms/errands/server";
+import { endedTurn } from "../helpers/ended-turn";
 
 // Test values only: none of them is a real credential.
 const PRIVATE_KEY = "-----BEGIN TEST KEY-----\nQUJDREVGR0hJSktMTU5PUA\nUVJTVFVWV1hZWjAxMjM0NTY3\n-----END TEST KEY-----";
@@ -37,7 +38,7 @@ describe("accounts for a deploy errand (J7)", () => {
           getPluginMetadata: async ({ threadId }: { threadId: string }) => threadId === pmThreadId ? { role: "pm", lanePilotRunId: runId } : {},
           spawn: async (args: unknown) => { spawned.push(args as Record<string, unknown>); return { id: "errand-thread" }; },
           get: async ({ threadId }: { threadId: string }) => ({ id: threadId, status: "idle", projectId, environmentId: "env-pm", sourceThreadId: pmThreadId, lifecycleOwnerThreadId: pmThreadId }),
-          events: { list: async ({ threadId }: { threadId: string }) => [{ type: "turn/started", threadId, seq: 1 }, { type: "turn/completed", threadId, seq: 2, data: { status: "completed" } }] },
+          events: { list: async ({ threadId }: { threadId: string }) => endedTurn(threadId) },
           output: async () => ({ output: helperOutput }),
         },
         environments: { get: async () => ({ id: "env-pm", hostId: "local-host", path: process.cwd(), status: "ready" }) },

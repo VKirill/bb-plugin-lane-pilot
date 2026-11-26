@@ -1,5 +1,6 @@
 import type Database from "better-sqlite3";
 import { createHash, randomUUID } from "node:crypto";
+import { isDebugFixEnabled } from "@lane-pilot/kit";
 
 import { applyDraftOps, checkDraft, newDraftDefinition, slugWorkflowId } from "./draft";
 import type { DraftCheck, DraftOp, DraftScope, RawDefinition, Refusal } from "./draft";
@@ -124,12 +125,12 @@ export function createDraftStore(db: Database.Database, now: () => number = Date
     },
 
     /** Applies operations as one new version. An operation that cannot be applied refuses all of them and saves nothing. */
-    patch(draftId: string, ops: readonly DraftOp[], options: { expectedVersion?: number; validate?: ValidateOptions } = {}): PatchResult {
+    patch(draftId: string, ops: readonly DraftOp[], options: { expectedVersion?: number; validate?: ValidateOptions; evolutionGate?: boolean } = {}): PatchResult {
       return db.transaction((): PatchResult => {
         const draft = get(draftId);
         if (!draft) return { ok: false, reason: "not_found" };
         if (options.expectedVersion !== undefined && options.expectedVersion !== draft.version) return { ok: false, reason: "version_conflict", currentVersion: draft.version };
-        const applied = applyDraftOps(draft.definition, ops);
+        const applied = applyDraftOps(draft.definition, ops, { evolutionGate: options.evolutionGate });
         if (!applied.ok) return { ok: false, reason: "refused", refused: applied.refused };
         const definitionId = typeof applied.definition.id === "string" ? applied.definition.id : draft.workflowId;
         const json = JSON.stringify(applied.definition);
@@ -277,7 +278,7 @@ type VersionSnapshotRow = { version: number; definition_json: string; summary: s
 const withoutUi = (definition: RawDefinition): Record<string, unknown> => { const { ui: _ui, ...rest } = definition as Record<string, unknown>; return rest; };
 
 const fixDraftLog = (event: string, detail: Record<string, unknown>) => {
-  if (process.env.LOG_LEVEL === "debug" || process.env.DEBUG_FIX) {
+  if (isDebugFixEnabled()) {
     process.stderr.write(`[FIX:rollback-snapshot] ${event} ${JSON.stringify(detail)}\n`);
   }
 };

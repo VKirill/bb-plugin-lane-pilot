@@ -4,8 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { MAX_SOURCE_BYTES } from "@lane-pilot/contracts";
 import { readBoundedWorkspaceFile } from "@lane-pilot/kit";
-import { buildExecutionPacket, renderExecutionPacket, type BoundSlice, type ReadFirstIo, type ReadFirstFile, type SliceOutcome } from "../../src/rooms/tasks/execution-packet";
-import { readFirstIo } from "../../src/rooms/tasks/read-first-io";
+import { buildExecutionPacket, renderExecutionPacket, type BoundSlice, type ReadFirstIo, type ReadFirstFile, type SliceOutcome } from "../../src/rooms/tasks";
+import { readFirstIo } from "../../src/rooms/tasks/server";
 
 describe("bounded execution packet", () => {
   it("reads exact requested lines and carries the inspected source hash", async () => {

@@ -1,11 +1,7 @@
 /** The per-task pipeline every dispatch runs through (PM read, critiques, ownership base, writer). */
 export const LP_TASK_PIPELINE = "lp-task-pipeline";
-/** The graph that runs once a task is accepted: memory maintenance and project life, side by side (started by the merge, never offered). */
+/** The graph that runs once a task is accepted: memory maintenance (started by the merge, never offered). */
 export const AFTER_ACCEPT = "lp.after-accept";
-/** The graph of one docs unit of the night (prepare, write, verify, commit), started by the nightly docs schedules. */
-export const DOCS_NIGHT = "lp.docs-night";
-/** The graph of the docs upkeep of one accepted task, started by the hourly docs-maintenance schedule. */
-export const DOCS_MAINTENANCE = "lp.docs-maintenance";
 /** The graph of one self-repair (worktree, repair thread, verdict and merge), started by the self-repair watcher. */
 export const SELF_REPAIR = "lp.self-repair";
 /** The body of the two worktree-cleanup system schedules (docs/worktrees.md); the daily pass posts its own owner line, a failure is the board's. */

@@ -3,9 +3,8 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, it } from "vitest";
-import { flowDocsWritable, nightlyDocsPrompt } from "../../src/rooms/docs/docs";
 import { docsWorthinessFacts, gitDocsScope } from "../../src/rooms/docs/git-docs";
-import { revertPaths } from "../../src/rooms/verification/git-integrate";
+import { revertPaths } from "../../src/rooms/worktree";
 
 const git = (cwd: string, ...args: string[]) => execFileSync("git", ["-C", cwd, ...args], { stdio: "pipe" });
 const gitAt = (date: string, cwd: string, ...args: string[]) =>
@@ -45,16 +44,6 @@ it("reports a folder outside git", async () => {
   const root = await mkdtemp(join(tmpdir(), "lane-docs-"));
   try { expect((await gitDocsScope({ projectCwd: root, sinceEpochMs: 0 })).status).toBe("not-git"); }
   finally { await rm(root, { recursive: true, force: true }); }
-});
-
-it("asks for onboarding without docs/ and for changed-code pages otherwise", () => {
-  const onboarding = nightlyDocsPrompt({ since: "yesterday", hasDocs: false, changed: [] });
-  expect(onboarding).toContain("there is no docs/ yet");
-  expect(onboarding).toContain("docs/architecture.md");
-  const prompt = nightlyDocsPrompt({ since: "yesterday", hasDocs: true, changed: ["lib/a.ts"], refresh: ["docs/features/a.md"] });
-  expect(prompt).toContain("- lib/a.ts");
-  expect(prompt).toContain("- docs/features/a.md");
-  expect(prompt).toContain("Write only docs/**, README.md and PROJECT.md");
 });
 
 it("finds a monorepo's workspaces and scopes a workspace's own docs folder", async () => {
@@ -110,30 +99,6 @@ it("puts back a file the docs agent renamed in the index, a case-only rename on 
   } finally { await rm(root, { recursive:true, force:true }); }
 });
 
-it("tells a workspace's docs agent to stay in its folder and link to the root docs", () => {
-  const prompt = nightlyDocsPrompt({ since:"yesterday", hasDocs:false, changed:[], unit:{ docsDir:"apps/api/docs", workspace:{ path:"apps/api", name:"@x/api" } } });
-  expect(prompt).toContain("Create:\n- apps/api/docs/overview.md (overview)");
-  expect(prompt).toContain("../../../docs/architecture.md");
-  expect(prompt).toContain("Write only apps/api/docs/**;");
-  const rootPrompt = nightlyDocsPrompt({ since:"yesterday", hasDocs:false, changed:[], unit:{ docsDir:"docs", workspaces:[
-    { path:"apps/api", name:"@x/api", docsDir:"apps/api/docs" }, { path:"packages/result", name:"@x/result", docsDir:null }] } });
-  expect(rootPrompt).toContain("- @x/api: apps/api/docs/overview.md");
-  expect(rootPrompt).toContain("docs/packages.md (component)");
-  expect(rootPrompt).toContain("Write only docs/**, README.md and PROJECT.md;");
-});
-
-it("gives each flow its own agent, page and skeleton, and has the root link the flows", () => {
-  const flow = { slug:"generation", name:"generation", briefPath:"/repo/.git/lane-pilot/docs-flow-generation.md", files:[], calls:[] };
-  const prompt = nightlyDocsPrompt({ since:"yesterday", hasDocs:false, changed:[], unit:{ docsDir:"docs", flow } });
-  expect(prompt).toContain("Task: write docs/flows/generation.md.");
-  expect(prompt).toContain("/repo/.git/lane-pilot/docs-flow-generation.md");
-  expect(prompt).toContain("Write only docs/flows/generation.md and docs/flows/generation/**;");
-  expect(flowDocsWritable("generation")("docs/flows/generation/modes.md")).toBe(true);
-  expect(flowDocsWritable("generation")("docs/flows/payment.md")).toBe(false);
-  const root = nightlyDocsPrompt({ since:"yesterday", hasDocs:false, changed:[], unit:{ docsDir:"docs", flows:["generation"] } });
-  expect(root).toContain("do not write docs/flows/:\n- docs/flows/generation.md");
-});
-
 it("keeps the root's base on its own pages when flow pages are committed after a code change", async () => {
   const root = await mkdtemp(join(tmpdir(), "lane-docs-base-"));
   try {
@@ -145,12 +110,6 @@ it("keeps the root's base on its own pages when flow pages are committed after a
     expect((await gitDocsScope({ projectCwd:root, sinceEpochMs:0 })).changed).toEqual([]);
     expect((await gitDocsScope({ projectCwd:root, sinceEpochMs:0, exclude:["docs/flows"] })).changed).toEqual(["a.ts"]);
   } finally { await rm(root, { recursive:true, force:true }); }
-});
-
-it("asks the root to turn new decision drafts into ADRs", () => {
-  const prompt = nightlyDocsPrompt({ since:"yesterday", hasDocs:true, changed:[], unit:{ docsDir:"docs" }, decisionDrafts:[".agents/decisions/2026-09-27-refund-once.md"] });
-  expect(prompt).toContain("Add each draft below as an ADR");
-  expect(prompt).toContain("- .agents/decisions/2026-09-27-refund-once.md");
 });
 
 it("tells a codebase from a content folder, counting only the folder's own commits", async () => {

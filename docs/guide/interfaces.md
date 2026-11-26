@@ -19,7 +19,7 @@ sources:
 
 ## The `bb lane-pilot` CLI
 
-One command, `bb lane-pilot <subcommand>`, registered in `src/rooms/tools/server/cli.ts`, with handlers in the rooms. A PM's shell cannot start work (`schedule create|update|run-now`, `dispatch-bb`, `workflow-trigger`, `council`) for a request the phase rails took; automations are not touched.
+One command, `bb lane-pilot <subcommand>`, registered in `src/rooms/tools/server/handlers/cli-commands.ts`, with handlers in the rooms. A PM's shell cannot start automations (`schedule create|update|run-now`, `dispatch-bb`, `workflow-trigger`).
 
 The full list, one line per command, is generated from the CLI's own registry into [the atlas](../atlas.md) (section «CLI commands»); `bb lane-pilot` without arguments prints every usage line. The ones used most:
 
@@ -27,15 +27,13 @@ The full list, one line per command, is generated from the CLI's own registry in
 |---|---|
 | `state <project-id>`, `timeline <task-id>` | Runs and attempts of a project; the whole story of one task from the receipts. |
 | `metrics <project-id>`, `money`, `cost` | Per-attempt stages, time, tokens and cost; monthly spend and its cap; cost per verified result. |
-| `waiting`, `wall`, `lead` | What waits for the owner; what the night loop did; the lead's proposals. |
-| `memory search\|write`, `anamnesis`, `rules` | The project memory, the owner profile, rules by form. |
-| `errands diagnose\|episodes-sweep\|process-key-eval` | Repeated errands and their cost; the episode pass; the process-key score. |
-| `schedule`, `workflow-trigger`, `workflow-answer` | The schedule board; start a graph; answer a graph's question. |
-| `capabilities`, `health` | Provider capability table; breakers and budgets. |
-| `revert`, `reverify`, `regress`, `return` | Undo an accepted merge, re-run checks, regression bisect, send a task back to a stage. |
-| `docs-nightly`, `coverage`, `skill-lint` | The nightly docs pass now; coverage of rooms by drills and tests; check a skill folder. |
-
-One command belongs to the opt-in measurements described under [Experimental features](settings.md#experimental-features): `bb lane-pilot checkers diff-hidden`.
+| `waiting`, `lead`, `checkers` | What waits for the owner; the lead's hypotheses; planted-defect scorecard and drills. |
+| `memory search\|write\|eval\|probe\|tiers\|conflicts` | Project memory search, writes, retrieval evaluation, path probes, cold tier, conflicts. |
+| `errands diagnose` | Repeated errands and their cost. |
+| `schedule`, `workflow-trigger`, `workflow-answer` | Schedule board (including `pause-all`/`resume-all`); start a graph; answer a graph's question. |
+| `health` | Breakers, clock, budgets and platform health. |
+| `revert`, `reverify`, `return` | Undo an accepted merge, re-run checks, send a task back to a stage. |
+| `coverage`, `skill-lint` | Coverage of rooms by drills and tests; check a skill folder. |
 
 ## Agent tools
 
@@ -52,23 +50,21 @@ Tools are registered in the rooms and exposed to agents through the `bb-bridge` 
 | `lane_pilot_ask_owner` | Ask the owner as a form in the chat (with a push). |
 | `lane_pilot_errand`, `lane_pilot_wait_errand` | Start and wait for a non-code errand. |
 | `lane_pilot_route`, `lane_pilot_run_workflow`, `lane_pilot_workflow_status`, `lane_pilot_workflow_amend` | Match a request to a workflow, start it, read its progress, change a run's goals. |
+| `lane_pilot_propose` | Surface a structured proposal card (`::lane-draft{id="..."}`). |
 
 **PM family tools**
 
 | Tool | Actions |
 |---|---|
-| `lane_pilot_helpers` | `specialist`, `wait_specialist`, `browser`, `browser_qa` |
-| `lane_pilot_council` | `start`, `status`, `say`, `stop` |
-| `lane_pilot_relay` | `ask`, `reply`, `list` |
-| `lane_pilot_memory` | `context`, `routing_stats`, `lessons_sweep`, `rule_propose`, `lesson`, `learned` |
+| `lane_pilot_helpers` | `scout`, `wait_scout`, `specialist`, `wait_specialist`, `browser`, `browser_qa` |
+| `lane_pilot_relay` | `ask`, `reply`, `list`, `handoff` |
+| `lane_pilot_memory` | `context`, `history` |
 | `lane_pilot_workflow_draft` | `capabilities`, `create`, `patch`, `get`, `test`, `publish` |
 | `lane_pilot_schedule` | List, show with run history, create, change, delete, pause, resume, run now. |
-| `lane_pilot_phase` | Take the owner's goal through discussion, planning, design, execution, verification, acceptance and lessons. |
 | `lane_pilot_queue` | Hold tasks until a date or a release, release them, list dead letters. |
 | `lane_pilot_facts` | Answer questions about tasks, limits, the past or a failure from Lane Pilot's records. |
 | `lane_pilot_check` | Run a quick, full or browser check the owner asked for. |
 | `lane_pilot_permit` | Allow or deny the one command a guard refused for a writer (permanent deletes, DROP/TRUNCATE). |
-| `lane_pilot_forge` | Actions `draft`, `lint`, `enable` (request, confirm), `list`. |
 | `lane_pilot_tool_search` | Find a capability by words. |
 
 **Other roles**
@@ -76,24 +72,25 @@ Tools are registered in the rooms and exposed to agents through the `bb-bridge` 
 | Role | Tools |
 |---|---|
 | Workflow architect | `lane_pilot_read`, `lane_pilot_ask_owner`, `lane_pilot_workflow_draft`, `lane_pilot_relay`, `lane_pilot_tool_search`, plus read-only Read, Glob, Grep, WebFetch, WebSearch. |
+| Lead | `lane_pilot_lead` (hypotheses and work-graph proposals). |
 | Specialists and custom agents | `lane_pilot_schedule` only, so "every Monday collect..." can be said in the specialist's own chat. Internal sessions (`project-onboarder`, `browser-qa`) get none. |
-| Employees' lessons | `lane_pilot_employee_lesson` (record an owner remark about an employee). |
 | Handoff | `lane_pilot_handoff_create`, `_receipt`, `_list`: a typed card (objective, acceptance, inputs, budget, deadline) with a receipt. |
-| Diagnostics | `lane_pilot_gate_report`, `lane_pilot_ingest_opencode_telemetry`, `lane_pilot_memory_golden`. |
+| Diagnostics | `lane_pilot_gate_report`. |
 
 Writers in code worktrees get no `lane_pilot_*` tools in these allow-lists. In helper threads on Codex, OpenCode v2 and Cursor, `bb`, `ssh`, `scp` and `sftp` sit behind guard wrappers and `LANE_PILOT_ROLE` is set.
 
 ## UI surfaces
 
-Lane Pilot adds three pages to the BB sidebar and several panels to threads.
+Lane Pilot adds one page (`Lane Pilot`) to the BB sidebar and panels to threads.
 
-**Pages**
+**System navigation**
 
-| Page | What it holds |
+| Group | Pages |
 |---|---|
-| Lane Pilot | The settings and operations app. A scope rail on the left; the system pages are General settings, Agents, Tokens, Workflows, Automation (the schedule board), Tasks, Self-improvement and Waiting for you (with a count badge). Below them, one entry per project. |
-| Council | Council sessions and the office view. |
-| Lane Pilot - cockpit | Screens of the product map: Home, Phases, Today, Tasks, Money, Workers, Forge, Memory, First run, Coordination, Ship, System, Screens. |
+| Today | Waiting for you (with count badge), Tasks, Errands, Schedule |
+| Setup | General settings, Agents, Workflows, Tokens |
+
+Below those groups sits one entry per project.
 
 **Project tabs.** The same six tabs exist at system, project and section level: Overview, Team, Work, Knowledge, Automation, Runs. Four of them (Team, Work, Knowledge, Automation) have a Basic/Advanced switch.
 
@@ -102,20 +99,18 @@ Lane Pilot adds three pages to the BB sidebar and several panels to threads.
 | Overview | Project status and how to start. |
 | Team | The role roster with each role's model and pool, plus "Agent access". |
 | Work | Writer, critics and the other work settings. |
-| Knowledge | Segments Memory, Documents, Rules, Anamnesis. Rules need a project or section; Anamnesis belongs to the system level. |
+| Knowledge | Segments Memory, Documents. |
 | Automation | Segments Workflows, Schedule. |
-| Runs | Segments Active, History, Analytics, Council, Service. |
+| Runs | Segments Board, Analytics, Service. |
 
-**In chats.** The composer action "Enable Lane Pilot" and the "Lane Pilot / agent" menu pick the PM, a specialist or the workflow architect for a new chat; a banner shows the selected agent. A "Lane Pilot helpers" tab and an actions-menu entry open the helpers of a thread. The thread info panel shows what Lane Pilot is doing for the chat (tasks now, step by step), and a context segment above the composer shows the same. A PM line `::lane-run{id="..."}` renders a live run card. Questions to the owner (PM, gate, repair thread, council) arrive as BB pending interactions, which BB's notification plugin also sends to the phone. Sidebar rows of helper threads carry a short role mark. Several of these slots are feature-tested, so older BB versions draw less.
-
-**Pixel World.** `packages/world-sim` is a deterministic simulation of a small city whose districts, building sites and people follow Lane Pilot's real work. The hub ticks it (`src/rooms/world/server`); it is off until the owner enables it (KV `world:enabled`, RPC `world_enable`). RPCs `world_snapshot`, `world_events` and `world_status` serve a client. `packages/pixel-world` is the three.js engine behind it; the council office is its first scene.
+**In chats.** The composer action "Enable Lane Pilot" and the "Lane Pilot / agent" menu pick the PM, a specialist or the workflow architect for a new chat; a banner shows the selected agent. A "Lane Pilot helpers" tab and an actions-menu entry open the helpers of a thread. The fixed thread live panel (`ThreadLivePanel`, `thread_live`, `liveTitle`) shows what Lane Pilot is doing for the chat, and a context segment above the composer shows the same. A PM line `::lane-run{id="..."}` or `::lane-draft{id="..."}` renders a live run or proposal card. Questions to the owner (PM, gate, workflow human wait) arrive as BB pending interactions, which BB's notification plugin also sends to the phone. Sidebar rows of helper threads carry a short role mark. Several of these slots are feature-tested, so older BB versions draw less.
 
 ## RPC and BB hooks
 
-The plugin's RPC surface is one validated contract built from eight method maps: shell, native, runs, settings, ops, knowledge, workflow and world. Inputs are strict, and each handler is timed. The host worker has a separate `hostContract` (native install, git worktree and integrate, host jobs, snapshots, council and Jev calls). See `docs/rpc-callers.md` and `docs/rpc-callers/contract-map.md`.
+The plugin's RPC surface is one validated contract built from nine method maps: `rpcShell`, `rpcNative`, `rpcRuns`, `rpcSettings`, `rpcOps`, `rpcKnowledge`, `rpcWorkflow`, `rpcWorkflowExport`, and `rpcWorkflowMap`. Inputs are strict, and each handler is timed. The host worker has a separate `hostContract` (native install, git worktree and integrate, host jobs, snapshots and model calls). See `docs/rpc-callers.md` and `docs/rpc-callers/contract-map.md`.
 
 BB hooks: `message.dispatch` runs `handleNativeDispatch` (resolves the selected agent profile and the thread binding, and records owner presence); a mention provider resolves the `native-selection:<token>` the composer attached; an environment contributor adds the native launcher and, for helper threads, `LANE_PILOT_ROLE` and the guard `PATH`. Hook time limits are set in `package.json` (`messageDispatch` 20 s, `contributeEnv` 10 s), with a 300 s drain on reload.
 
 ## Sources
 
-Where this page's claims start in the code: `src/rooms/tools/server/cli.ts:62-82`, `src/rooms/contracts/index.ts:15-32`, `server.ts:77-97`. The deep pages linked above cite the rest.
+Where this page's claims start in the code: `src/rooms/tools/server/handlers/cli-commands.ts`, `src/rooms/platform/models/pm-tool-families.ts`, `src/rooms/contracts/index.ts`, `src/rooms/pages/ui/page.tsx`, `server.ts`. The deep pages linked above cite the rest.

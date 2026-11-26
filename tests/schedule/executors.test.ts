@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import Database from "better-sqlite3";
-import { createScheduleExecutors } from "../../src/rooms/schedule/server/schedule-executors";
-import type { ExecutorInput } from "../../src/rooms/schedule/scheduler";
-import type { RunRow, ScheduleRow } from "../../src/rooms/schedule/store";
+import { createScheduleExecutors } from "../../src/rooms/schedule/server/services/schedule-executors";
+import type { ExecutorInput } from "../../src/rooms/schedule/server/services/scheduler";
+import type { RunRow, ScheduleRow } from "../../src/rooms/schedule/models/schedule";
 
 const schedule = { id: "sch_1", project_id: "p1", name: "Nightly check", timeout_sec: 600 } as ScheduleRow;
 const run = (extra: Partial<RunRow> = {}) => ({ id: "srun_1", schedule_id: "sch_1", run_key: "sch_1:1790000000000", scheduled_at: 1_790_000_000_000, ref_id: null, ...extra }) as RunRow;
@@ -143,5 +143,23 @@ describe("the errand executor", () => {
     const { executors, calls } = world();
     await executors.errand.cancel(input(task, { ref_id: "wfrun_errand" }));
     expect(calls.cancel).toEqual(["wfrun_errand"]);
+  });
+});
+
+describe("the script executor", () => {
+  const task = { kind: "script" as const, hostId: "h1", command: "echo hi", cwd: "/tmp", env: [] as string[] };
+
+  it("starts the lp.schedule-script workflow run and follows its outcome", async () => {
+    const { executors, calls, summaries } = world();
+    const ref = await executors.script.start(input(task));
+    expect(ref).toEqual({ refKind: "workflow_run", refId: "wfrun_1", hostId: "h1" });
+    expect(calls.workflowStart[0]).toMatchObject({ projectId: "p1", workflowId: "lp.schedule-script", source: "manual", key: "sch_1:1790000000000", origin: "schedule", starter: "schedule-script", detached: true });
+    const polled = (summary: Record<string, any> | null) => { if (summary) summaries.set("wfrun_1", summary); else summaries.delete("wfrun_1"); return executors.script.poll(input(task, { ref_id: "wfrun_1" })); };
+    expect(await polled({ status: "running", waiting: [] })).toEqual({ state: "running" });
+    expect(await polled({ status: "succeeded", output: { status: "succeeded", exitCode: 0, output: "hi", truncated: false }, waiting: [] })).toEqual({ state: "done", status: "succeeded", exitCode: 0, output: "hi", truncated: false });
+    expect(await polled({ status: "succeeded", output: { status: "failed", exitCode: 2, output: "err", error: "exit code 2", reason: "exit_code", truncated: false }, waiting: [] }))
+      .toEqual({ state: "done", status: "failed", exitCode: 2, output: "err", error: "exit code 2", reason: "exit_code", truncated: false });
+    await executors.script.cancel(input(task, { ref_id: "wfrun_1" }));
+    expect(calls.cancel).toEqual(["wfrun_1"]);
   });
 });

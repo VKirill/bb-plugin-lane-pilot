@@ -1,0 +1,79 @@
+{
+  "kind": "lane-pilot-sandbox-drill",
+  "date": "2026-11-11",
+  "stamp": "20261111-172205",
+  "startedAt": 1794406925453,
+  "finishedAt": 1794406975717,
+  "durationSec": 50,
+  "project": "proj_ibu6v9g64j",
+  "runId": null,
+  "pmThread": null,
+  "sourceThread": null,
+  "mode": "full",
+  "scenarioNames": [
+    "watchdog"
+  ],
+  "commit": "659b5522fd645f4b86d0f95355f11372eb9cd9a1",
+  "skipped": {},
+  "result": "pass",
+  "problems": [],
+  "checks": null,
+  "tasks": null,
+  "dispatch": null,
+  "scenarios": [
+    {
+      "name": "watchdog",
+      "result": "pass",
+      "problems": [],
+      "events": [
+        "start",
+        "first_silence",
+        "outage",
+        "message_not_sent",
+        "lift",
+        "out_of_tries",
+        "message_not_sent"
+      ],
+      "live": {
+        "events": [
+          "start",
+          "first_silence",
+          "outage",
+          "message_not_sent",
+          "lift",
+          "risen",
+          "message_not_sent"
+        ],
+        "pid": "1053333",
+        "census": {
+          "before": {
+            "rows": 0,
+            "ready": true
+          },
+          "after": {
+            "rows": 0,
+            "ready": true
+          }
+        }
+      }
+    }
+  ],
+  "seen": null,
+  "judged": [
+    {
+      "name": "watchdog",
+      "verdict": "pass",
+      "evidence": [
+        "events",
+        "live"
+      ],
+      "why": ""
+    }
+  ],
+  "series": {
+    "verdict": "pass",
+    "missing": [],
+    "failed": [],
+    "skipped": []
+  }
+}

@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { codeCritiquePrompt, buildCandidateEvidence } from "../../src/rooms/critique/code-critique";
-import { critiquePrompt } from "../../src/rooms/critique/critique";
+import { buildCandidateEvidence, codeCritiquePrompt, critiquePrompt } from "../../src/rooms/critique";
 import { CRITIC_RUBRIC } from "@lane-pilot/workflow-engine";
 
 describe("plan critic prompt priorities", () => {

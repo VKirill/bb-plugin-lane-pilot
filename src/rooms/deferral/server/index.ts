@@ -1,8 +1,8 @@
 // Public API of deferral/server: what other rooms import. Everything else in this room is private.
-export { DEFERRAL_USAGE, runDeferralCli } from "../cli";
-export { createDeferrals, pmDeferralLines } from "../service";
-export type { DeferInput, DeferralApi, DeferralList, DeferralView } from "../service";
-export { noTermDeferralsOf } from "../store";
-export { sdkOwnerMessagePort } from "../verify";
-export { deferralRpc } from "./rpc";
-export { countOpenDeferrals, countTermedDeferrals, listOpenDeferralBriefs } from "../store";
+export { DEFERRAL_USAGE, runDeferralCli } from "./handlers/deferral-cli";
+export { deferralRpc } from "./handlers/deferral-rpc";
+export { createDeferrals, pmDeferralLines } from "./services/deferral-service";
+export type { DeferInput, DeferralApi, DeferralList, DeferralView } from "./services/deferral-service";
+export { sdkOwnerMessagePort } from "./services/verify";
+export { countOpenDeferrals, countTermedDeferrals, listDeferrals, listOpenDeferralBriefs, noTermDeferralsOf, overdueDeferrals } from "./repositories/deferral-repository";
+export { room } from "./room";

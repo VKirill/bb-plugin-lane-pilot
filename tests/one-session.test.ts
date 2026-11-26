@@ -6,12 +6,12 @@ import { countChargedAttempts, createAttempt, createRun, createTask, getAttempt,
 import { SESSION_MAX_MS, failureClass } from "../src/rooms/contracts/failure-class";
 import { createCore } from "../src/rooms/core/server/core";
 import type { Services } from "../server";
-import { recordStage } from "../src/rooms/runs/server/stage-records";
-import { createWriterDispatch } from "../src/rooms/writer/server/dispatch";
-import { retryInSameThread } from "../src/rooms/writer/server/sticky";
-import { createWriterStart } from "../src/rooms/writer/server/start";
-import { createWriterUpdateTask } from "../src/rooms/writer/server/update-task";
-import { classifyWriterOutput } from "../src/rooms/tasks/validate-output";
+import { recordStage } from "../src/rooms/runs/server";
+import { createWriterDispatch } from "../src/rooms/writer/server/services/dispatch";
+import { retryInSameThread } from "../src/rooms/writer/server/services/sticky";
+import { createWriterStart } from "../src/rooms/writer/server/services/start";
+import { createWriterUpdateTask } from "../src/rooms/writer/server/services/update-task";
+import { classifyWriterOutput } from "../src/rooms/tasks";
 
 const WORKSPACE = "/ws";
 const WORKTREE = "/ws/wt";

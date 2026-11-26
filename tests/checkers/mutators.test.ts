@@ -3,10 +3,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { buildFixture, type Fixture } from "../../src/rooms/checkers/fixture";
-import { addedLineNumbers, changedRanges } from "../../src/rooms/checkers/linediff";
-import { honestClaim, plantAll, plantDefect } from "../../src/rooms/checkers/mutators";
+import { addedLineNumbers, changedRanges } from "../../src/rooms/checkers/models/linediff";
+import { honestClaim, plantAll, plantDefect } from "../../src/rooms/checkers/models/mutators";
 import { testFitFindings } from "../../src/rooms/tasks";
-import { DEFECT_CLASSES, EXPECTED_CATCHERS, type PlantInput } from "../../src/rooms/checkers/types";
+import { DEFECT_CLASSES, EXPECTED_CATCHERS, type PlantInput } from "../../src/rooms/checkers/models/types";
 
 describe("line diff", () => {
   it("gives the lines of the new text that are not in the old", () => {

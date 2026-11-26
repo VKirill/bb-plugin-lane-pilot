@@ -9,6 +9,7 @@
     "en": "Multi-dimension code review of a diff, PR or file set with a thresholded verdict computed by code.",
     "ru": "Многомерное ревью диффа, PR или набора файлов; вердикт считается кодом по порогам."
   },
+  "category": "service",
   "inputs": {
     "range": {
       "type": "string|string[]",
@@ -30,7 +31,7 @@
     }
   },
   "outputs": {
-    "status": "pass|rework|block",
+    "status": "pass|rework|block|not_run",
     "warn": "bool",
     "critical_count": "int",
     "high_count": "int",
@@ -279,5 +280,8 @@
       "pass": "artifact"
     }
   ],
-  "status": "published"
+  "status": "published",
+  "not_for": [
+    "code-review"
+  ]
 }

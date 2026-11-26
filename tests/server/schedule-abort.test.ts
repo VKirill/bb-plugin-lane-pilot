@@ -2,12 +2,12 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { afterEach, describe, expect, it } from "vitest";
 import plugin from "../../server";
 import { openDatabase } from "../../src/rooms/plugin-db";
-import { cleanupFinishedAttemptEnvironments, closeAbandonedRuns } from "../../src/rooms/runs/server/run-finish";
+import { cleanupFinishedAttemptEnvironments, closeAbandonedRuns } from "../../src/rooms/runs/server";
 import { createCore } from "../../src/rooms/core/server/core";
-import { createDeployDrain } from "../../src/rooms/stability/server/deploy-drain";
+import { createDeployDrain } from "../../src/rooms/stability/server";
 import { createHostJobs, hostJobKey } from "@lane-pilot/host-calls";
-import { currentScheduleSignal, scheduleIsolated } from "../../src/rooms/platform/server/schedules";
-import { sweepWriterSilence } from "../../src/rooms/writer/server/writer-silence";
+import { currentScheduleSignal, scheduleIsolated } from "../../src/rooms/platform/server/services/schedules";
+import { sweepWriterSilence } from "../../src/rooms/writer/server/services/writer-silence";
 
 type Fn = (context: { signal: AbortSignal }) => unknown;
 const fakeCore = () => {
@@ -54,28 +54,6 @@ describe("isolated schedule runs and the core's signal", () => {
     expect(await settles(Promise.resolve(registered.get("late")!({ signal: controller.signal })))).toBe("rejected: aborted: plugin stopped or reloaded");
   });
 
-  it("the nightly docs tick that hangs is released at the abort and does not block the following tick", async () => {
-    let listed = 0;
-    const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot", sdk: { projects: { list: () => { listed++; return never(); } } } as never });
-    const registered = new Map<string, Fn>();
-    (bb.background as unknown as Record<string, unknown>).experimental_vkSchedule = (name: string, _cron: string, fn: Fn) => { registered.set(name, fn); };
-    await plugin(bb);
-    dispose = () => harness.lifecycle.dispose();
-    const tick = registered.get("docs-nightly-hourly")!;
-    const first = new AbortController();
-    const running = Promise.resolve(tick({ signal: first.signal }));
-    await new Promise((wake) => setTimeout(wake, 50));
-    expect(listed).toBe(1);
-    // While it hangs a second tick finds it running and starts nothing.
-    expect(await settles(Promise.resolve(tick({ signal: new AbortController().signal })))).toBe("resolved");
-    expect(listed).toBe(1);
-    first.abort(new Error("timeout after 1000ms"));
-    expect(await settles(running)).toBe("rejected: timeout after 1000ms");
-    void Promise.resolve(tick({ signal: new AbortController().signal }));
-    await new Promise((wake) => setTimeout(wake, 50));
-    expect(listed).toBe(2);
-  });
-
   it("the remaining ordinary schedules are isolated with a limit", async () => {
     const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
     const registered = new Map<string, { cron: string; options: { isolated?: boolean; timeoutMs?: number; overlap?: string } }>();
@@ -85,14 +63,18 @@ describe("isolated schedule runs and the core's signal", () => {
     (bb.background as unknown as Record<string, unknown>).schedule = (name: string, ...rest: unknown[]) => { plain.push(name); return (schedule as (...args: unknown[]) => unknown)(name, ...rest); };
     await plugin(bb);
     dispose = () => harness.lifecycle.dispose();
-    for (const name of ["stability-drill", "rules-triage", "runs-sweep", "lessons-sweep", "handoff-expiry", "token-usage-sync"]) {
+    for (const name of ["engine-clock"]) {
       expect(registered.get(name)?.options, name).toMatchObject({ isolated: true, overlap: "skip" });
       expect(registered.get(name)?.options.timeoutMs, name).toBeGreaterThan(0);
     }
+    expect(registered.size).toBe(1);
     expect(plain).toEqual([]);
-    // BB starts at most 8 isolated runs at once and skips the tick of a ninth: the new ones are off minute 0.
+    // BB starts at most 8 isolated runs at once and skips the tick of a ninth.
     const crowdedAtZero = [...registered].filter(([, row]) => /^(\*\/5|\*\/15|\*\/30|0|\*\/10|\*\/2) /.test(row.cron) || /^0 /.test(row.cron)).map(([name]) => name);
-    for (const name of ["rules-triage", "runs-sweep", "lessons-sweep", "handoff-expiry", "token-usage-sync", "stability-drill"]) expect(crowdedAtZero, name).not.toContain(name);
+    for (const name of ["engine-clock", "schedule-board-tick", "workflow-schedules", "landing-suite", "task-reconcile", "attempt-worktree-sweep", "runs-sweep", "handoff-expiry"]) {
+      expect(crowdedAtZero, name).not.toContain(name);
+    }
+    expect(registered.has("token-usage-sync")).toBe(false);
   });
 });
 

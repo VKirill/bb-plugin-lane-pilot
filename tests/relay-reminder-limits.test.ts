@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { createRelay, type RelayItem, type RelayReminder } from "../src/rooms/relay/server/relay";
+import type { RelayItem, RelayReminder } from "../src/rooms/relay/models/relay";
+import { createRelay } from "../src/rooms/relay/server/services/relay";
 
 function harness() {
   let items:RelayItem[] = [];

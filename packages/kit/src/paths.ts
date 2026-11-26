@@ -41,3 +41,9 @@ export function pluginRootFromModule(moduleUrl: string): string {
 export function defaultGuardSource(moduleUrl: string): string {
   return join(pluginRootFromModule(moduleUrl), "lane-stack/hooks/guard_shell.py");
 }
+
+/** Whether `child` is `parent` or inside it (host paths, already canonical). */
+export function isWithin(child: string, parent: string): boolean {
+  const p = parent.replace(/\/+$/, "") || "/";
+  return child === p || child.startsWith(p === "/" ? "/" : `${p}/`);
+}

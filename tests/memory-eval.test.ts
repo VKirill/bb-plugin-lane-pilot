@@ -3,16 +3,16 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 afterEach(() => vi.useRealTimers());
 import { memoryRecordId } from "../packages/memory-core/src";
-import { buildEvalDb, planCorpus, poisonCopy, syntheticCopy } from "../src/rooms/memory-eval/server/corpus";
-import { classify, fileKey, folderKey } from "../src/rooms/memory-eval/server/questions";
-import { createRetrievers } from "../src/rooms/memory-eval/server/retrievers";
-import { formatEvalReport, runMemoryEval, score, stat } from "../src/rooms/memory-eval/server/memory-eval";
-import { exportEvalExtract, loadEvalData } from "../src/rooms/memory-eval/server/source";
+import { buildEvalDb, planCorpus, poisonCopy, syntheticCopy } from "../src/rooms/memory-eval/server/services/corpus";
+import { classify, fileKey, folderKey } from "../src/rooms/memory-eval/models/questions";
+import { createRetrievers } from "../src/rooms/memory-eval/server/services/retrievers";
+import { formatEvalReport, runMemoryEval, score, stat } from "../src/rooms/memory-eval/server/services/memory-eval";
+import { exportEvalExtract, loadEvalData } from "../src/rooms/memory-eval/server/repositories/source";
 import type { EvalData, RawNote, RawQuestion } from "../src/rooms/contracts/memory-eval";
-import { runMemoryEvalCommand } from "../src/rooms/memory-eval/server/command";
+import { runMemoryEvalCommand } from "../src/rooms/memory-eval/server/handlers/command";
 import { migrations } from "../src/rooms/plugin-db";
 import { writerMemoryPicks } from "../src/rooms/memory/server";
-import { SHELF_CONFIGS, durabilityScore, formatShelf, pickThree, replayShelf, runShelfReplay } from "../src/rooms/memory-eval/server/shelf";
+import { SHELF_CONFIGS, durabilityScore, formatShelf, pickThree, replayShelf, runShelfReplay } from "../src/rooms/memory-eval/server/services/shelf";
 
 // SMA block 4 «Next» (P2-7): retrieval measured on real accepted tasks, with questions whose right answer is nothing.
 const DAY = 86_400_000;
@@ -243,7 +243,6 @@ describe("poison fixtures (audit #27)", () => {
     const plan = planCorpus({ data: data(), size: 30, seed: 1, scope: "pile", ...options });
     expect(plan.composition.poison).toBeGreaterThan(0);
     const poison = plan.notes.find((note) => note.poison)!;
-    const gold = plan.notes.find((note) => !note.poison && note.id !== poison.id && note.content.split(" ")[0] === poison.content.split(" ")[0]);
     expect(poison.origin).toBe("eval-poison");
     // Numbers shifted by 7, paths and words intact: it competes for the same question.
     const copy = poisonCopy(data().notes.find((note) => /\d/.test(note.content))!);

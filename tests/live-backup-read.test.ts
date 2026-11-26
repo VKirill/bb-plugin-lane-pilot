@@ -6,8 +6,8 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { runCommandOnHost } from "../src/rooms/writer/cli-run";
 import { openDatabase } from "../src/rooms/plugin-db";
-import { createLiveFolder } from "../src/rooms/writer/server/live-folder";
-import { liveBackupReadCommand, parseLiveBackupRead } from "../src/rooms/writer/live-backup-read";
+import { createLiveFolder } from "../src/rooms/writer/server/services/live-folder";
+import { liveBackupReadCommand, parseLiveBackupRead } from "../src/rooms/writer/server/services/live-backup-read";
 
 const roots: string[] = [];
 const realHome = process.env.HOME;

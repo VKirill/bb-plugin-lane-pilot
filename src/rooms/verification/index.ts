@@ -1,28 +1,13 @@
-// Public API of verification: what other rooms import. Everything else in this room is private.
-// Add a name here to make it public; scripts/refactor/barrels.ts wrote the first version from the existing imports.
-export { gateTriagePrompt, parseGateTriageResult } from "./gate-triage";
-export { sweepLaneWorktrees, JANITOR_TMP_PREFIXES } from "./worktree-janitor";
-export type { JanitorKept, JanitorReceipt } from "./worktree-janitor";
-export { REPORTED_KEEP_REASONS, SEARCH_DEFAULTS, SWEEP_CLASSES, findSweepRepos, searchRepos, sweepWorktreeClasses } from "./worktree-sweep";
-export type { BbEnvironment, KeepReason, SweepClass, SweepDecision, SweepKept, SweepReceipt, SweepRemoved } from "./worktree-sweep";
-export { appendExcludeCommand, createWorktree, ensureExcludeLinesCommand, EXCLUDE_NOT_GIT, filecardsFileText, integrateWorktree, persistTaskFolder, reflexesFileText, applyLaneOwnsBarrier, prepareWorktree, removeLaneWorktree, revertPaths, snapshotWorktree, syncWorktree, taskFolderRel, withBaseLock } from "./git-integrate";
-export type { ReplayCheck, ReplayCheckOutcome } from "./git-integrate";
-export { aheadOf, deleteBranchIfMerged, laneWorktreeRoot, laneWorktreeTarget, laneWorktreeTargetFor, mergedAnywhere, mergedInto, mergeTargets, repoFolderName } from "./git-integrate";
-export type { MergedHow } from "./git-integrate";
+// Public API of verification: what other rooms and host handlers import. Everything else in this room is private.
+export * from "./models";
 export { gitOwnershipChangedPaths, resolveGitOwnershipBase, undoCheckWrites } from "./git-ownership";
 export { attributeGateOnHost, bisectGateOnHost, runGateOnHost } from "./integration-gate-host";
 export { darwinAvailableBytes, readMachineFacts } from "./machine-reading";
 export type { HostMachineFacts } from "./machine-reading";
-export { createProviderGate, providerListed, providerSwitchOn, waitProviderEnvironment } from "./provider-gate";
-export { parseWorkspaceMode, requireManagedWorktreeProvider, resolveAttemptWorkspace, resolveManagedWorkspace, usesManagedWorktree, waitManagedWorktreeReady } from "./routing";
 export { prepareSandboxedCommandLine, releaseSandboxedCommandLine, runSandboxedCommandOnHost, userToolBins } from "./sandbox";
-export { WORKSPACE_DIRT_COMMAND } from "./workspace-dirt";
 export { mergeInfo, revertCommitsInWorktree, worktreeState } from "./git-rollback";
-export { MERGE_INTENT_PREFIX } from "./server/merge-intent";
 export type { MergeInfo, RevertResult, WorktreeState } from "./git-rollback";
-export { TEST_FILE_RE, suggestTests, testHintLine } from "./test-hint";
 export { cachedReplayVerdicts, recordedReplayFailure, recordReplayVerdict, replayCacheLocation, replayKey } from "./replay-cache";
 export type { ReplayCacheEntry } from "./replay-cache";
-export { PRESSURE_LIMITS, flakyEvidence, outputTail, pressureOf, readingFrom, readingNote } from "./machine-pressure";
 export { DEFAULT_WORKER, WORKER_SECRET_PATHS, workerSecretReach } from "./worker-user";
-export { WINDOW_USAGE, runWindowCli } from "./server";
+export { CREDENTIAL_DIRS, CREDENTIAL_FILES, CREDENTIAL_SYMLINK_DIRS, credentialDirs, resolveCredentialPaths } from "./credential-paths";

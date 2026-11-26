@@ -82,7 +82,7 @@ type OwnerAnswer =
   | { outcome: "cancelled"; reason: string }
   | { outcome: "unavailable"; reason: string };
 type OwnerAskRequest = {
-  source: "pm" | "gate" | "repair" | "council" | "secret";
+  source: "pm" | "gate" | "repair" | "secret";
   /** The kind of person-facing stop (SMA: Five question kinds); it decides whether free text is allowed. */
   kind: "checkpoint" | "budget" | "pause" | "decision" | "worker";
   question: string;

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { PrototypeConfig } from "../src/rooms/contracts";
-import { pmPrompt } from "../src/rooms/platform/server/pm-spawn";
+import { pmPrompt } from "../src/rooms/platform/server/services/pm-spawn";
 
 const config = { writerWorkspacePath: "/tmp/project" } as PrototypeConfig;
 

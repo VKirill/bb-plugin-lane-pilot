@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { TASK_V2_OPTIONAL, taskV2Schema } from "../src/rooms/contracts";
-import { TASK_V2_REQUIRED, validateTaskV2 } from "../src/rooms/tasks/task-v2";
+import { TASK_V2_REQUIRED, validateTaskV2 } from "../src/rooms/tasks";
 
 // The schema grew `priority` and `drawing` while the list the validator checks extra keys against did not: every piece a phase
 // issued was refused as «priority: additionalProperties is false» (live ph_ae0a8de9db, 2026-10-24).

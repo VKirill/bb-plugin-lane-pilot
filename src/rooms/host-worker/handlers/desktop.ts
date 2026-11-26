@@ -1,10 +1,8 @@
-import { execFile } from "node:child_process";
 import { request as httpRequest } from "node:http";
 import { request as httpsRequest } from "node:https";
-import { lstat, realpath } from "node:fs/promises";
-import { homedir } from "node:os";
-import { join } from "node:path";
+import { realpath } from "node:fs/promises";
 import type { ExperimentalHostRpcHandlers } from "@get-bb/plugin-sdk";
+import { currentHostId } from "@lane-pilot/kit";
 import { hostContract, QA_DEFAULT_PORTS } from "../../contracts";
 import { runBrowserQaOnHost } from "../../qa";
 
@@ -28,12 +26,12 @@ export async function scanBrowserQaPorts(ports: readonly number[]): Promise<stri
 
 /** Every default dev-server port that answers as a web app on this host (SMA k_wqa_find: find the app). */
 export const findBrowserQaTarget: ExperimentalHostRpcHandlers<typeof hostContract>["findBrowserQaTarget"] = async (input) => {
-  const hostId = process.env.BB_HOST_ID ?? input.requestedHostId;
+  const hostId = currentHostId(input.requestedHostId);
   return { hostId, urls: await scanBrowserQaPorts(QA_DEFAULT_PORTS) };
 };
 
 export const probeBrowserQaTarget: ExperimentalHostRpcHandlers<typeof hostContract>["probeBrowserQaTarget"] = async (input) => {
-  const hostId = process.env.BB_HOST_ID ?? input.requestedHostId;
+  const hostId = currentHostId(input.requestedHostId);
   let workspaceRealPath: string;
   try {
     workspaceRealPath = await realpath(input.workspacePath);

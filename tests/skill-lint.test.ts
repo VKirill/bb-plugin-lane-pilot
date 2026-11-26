@@ -2,8 +2,9 @@ import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { lintDraft } from "../src/rooms/forge";
-import { lintSkillDir, runSkillLintCli, type SkillFile } from "../src/rooms/forge";
+import { lintSkillDir, lintSkillFiles, type SkillFile } from "../src/rooms/tools";
+import { runSkillLintCli } from "../src/rooms/tools/skill-lint";
+const lintDraft = (_kind: string, name: string, text: string) => lintSkillFiles([{ path: "SKILL.md", text }], name, { draft: true }).filter((f) => f.severity === "error");
 
 const goodSkill = (body = "Steps: do the thing. Not for bulk edits."): SkillFile[] => [
   { path: "SKILL.md", text: `---\nname: cell-sum\ndescription: Sums empty cells in a sheet. Use when the owner asks for a forged draft of this one skill and nothing else; not for bulk edits.\n---\n${body}\n` },

@@ -7,7 +7,7 @@
  * that was set with `bb lane-pilot wall config`, `bench config` or `owner-waiting config` is lost. The CLI commands write the rows.
  */
 
-export type HubArea = "wall" | "bench" | "owner_push" | "harness";
+export type HubArea = "owner_push";
 export type HubKind = "bool" | "int" | "text" | "enum" | "time_range" | "time_zone";
 
 export type HubSpec = {
@@ -23,26 +23,7 @@ export type HubSpec = {
   divisor?: number;
 };
 
-const EFFORTS = ["low", "medium", "high", "xhigh", "max"] as const;
-
 export const HUB_SPECS: readonly HubSpec[] = [
-  { key: "wall.enabled", area: "wall", field: "enabled", kind: "bool" },
-  { key: "wall.max_classes_per_night", area: "wall", field: "maxClassesPerNight", kind: "int", min: 1, max: 3 },
-  { key: "wall.rounds_per_night", area: "wall", field: "roundsPerNight", kind: "int", min: 1, max: 2 },
-  { key: "wall.walks", area: "wall", field: "walks", kind: "int", min: 1, max: 5 },
-  { key: "wall.hunters", area: "wall", field: "hunters", kind: "int", min: 1, max: 5 },
-  { key: "wall.night_token_cap", area: "wall", field: "nightTokenCap", kind: "int", min: 0, max: 1_000_000_000 },
-  { key: "wall.hunt_share_percent", area: "wall", field: "huntShare", kind: "int", min: 1, max: 100, divisor: 100 },
-  { key: "wall.assumed_repair_tokens", area: "wall", field: "assumedRepairTokens", kind: "int", min: 0, max: 1_000_000_000 },
-  { key: "wall.hunter_provider", area: "wall", field: "hunterProviderId", kind: "text" },
-  { key: "wall.hunter_model", area: "wall", field: "hunterModel", kind: "text" },
-  { key: "wall.hunter_reasoning_effort", area: "wall", field: "hunterReasoningLevel", kind: "enum", options: EFFORTS },
-  { key: "wall.bench_subset", area: "wall", field: "benchSubset", kind: "int", min: 0, max: 50 },
-  { key: "wall.rerun_sandbox_only", area: "wall", field: "rerunSandboxOnly", kind: "bool" },
-  { key: "wall.recurrence_floor", area: "wall", field: "recurrenceFloor", kind: "int", min: 1, max: 50 },
-  { key: "bench.budget_tokens", area: "bench", field: "budgetTokens", kind: "int", min: 1, max: 10_000_000_000 },
-  { key: "bench.budget_hours", area: "bench", field: "budgetHours", kind: "int", min: 1, max: 168 },
-  { key: "harness.adopt_by", area: "harness", field: "adoptBy", kind: "enum", options: ["bench", "live"] },
   { key: "owner_push.enabled", area: "owner_push", field: "enabled", kind: "bool" },
   { key: "owner_push.quiet", area: "owner_push", field: "quiet", kind: "time_range" },
   { key: "owner_push.timezone", area: "owner_push", field: "timezone", kind: "time_zone" },
@@ -54,17 +35,11 @@ export const specOf = (key: string): HubSpec | undefined => HUB_SPECS.find((spec
 /** Settings of the global level that a project may override with its own row (they are read per project). */
 export const PROJECT_DEFAULT_KEYS = [
   "baseline.already_built", "baseline.time_cap_sec", "checks.require_red_on_base",
-  "regress.nightly", "regress.last_n", "regress.last_days", "regress.check_cap_sec", "regress.budget_sec", "regress.bisect_steps",
 ] as const;
 
 /** Whole-number bounds of the project-level checks; the readers (src/rooms/baseline/logic.ts) clamp to the same ranges. */
 const PROJECT_RANGES: Record<string, { min: number; max: number; zeroOff?: boolean }> = {
   "baseline.time_cap_sec": { min: 10, max: 3600, zeroOff: true },
-  "regress.last_n": { min: 1, max: 200 },
-  "regress.last_days": { min: 1, max: 365 },
-  "regress.check_cap_sec": { min: 5, max: 1800 },
-  "regress.budget_sec": { min: 60, max: 14_400 },
-  "regress.bisect_steps": { min: 1, max: 14 },
   "memory.note_budget": { min: 1, max: 1_000_000 },
 };
 
@@ -104,7 +79,6 @@ export function hubSettingProblem(key: string, value: unknown): string | null {
   }
   if (key === "checks.require_red_on_base") return value === "off" || value === "medium" || value === "high" ? null : "off, medium, high";
   if (key === "baseline.already_built") return value === "notify" || value === "stop" ? null : "notify или stop";
-  if (key === "regress.nightly") return typeof value === "boolean" || ["on", "off", "true", "false"].includes(String(value)) ? null : "on, off, true, false";
   return null;
 }
 

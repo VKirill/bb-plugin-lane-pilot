@@ -1,21 +1,16 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
-const evalRunner = { load: () => ({ notes: [], questions: [], origin: "live" as const }), run: async () => ({ sizes: [], caveats: [] }) };
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { GLOBAL_SETTINGS_PROJECT_ID } from "@lane-pilot/settings-catalog";
-import { createCore } from "../src/rooms/core/server/core";
-import type { Services } from "../server";
 import { LEAD_DEFAULTS } from "../src/rooms/lead/settings";
-import { openDecision } from "../src/rooms/lead/server/journal";
-import { addRoad, getRoad, listRoad, proposeRoad, roadPayload } from "../src/rooms/lead/server/road";
-import { lanePilotProjectOrNotice } from "../src/rooms/self-repair/server";
-import { createLeadService } from "../src/rooms/lead/server/service";
-import { architectPrompt, graphlessErrands, hubSnapshot, processPartsOf, processStemOf, proposalDecisionId, proposalItemKey, registerLeadTickActions, seedForm, tickBrief } from "../src/rooms/lead/server/tick";
+import { listRoad, roadPayload } from "../src/rooms/lead/server/repositories/road-repository";
+import { architectPrompt, processPartsOf, processStemOf, seedForm, tickBrief } from "../src/rooms/lead/models/tick";
+import { registerLeadTickActions } from "../src/rooms/lead/server";
+import { graphlessErrands, hubSnapshot } from "../src/rooms/lead/server/services/tick-service";
 import { errandStem } from "../src/rooms/errands";
-import { postOwnerItem } from "../src/rooms/owner-waiting";
-import { migrations, openDatabase, saveProjectSetting } from "../src/rooms/plugin-db";
+import { openDatabase, saveProjectSetting } from "../src/rooms/plugin-db";
 
 const NOW = Date.now();
 let dir = "";
@@ -111,48 +106,13 @@ describe("a process proposal with architectSeed", () => {
     expect(branch.state).toBe("proposed");
     expect(branch.class).toBe("process");
     expect(roadPayload(branch)).toEqual({ architectSeed: { form: "graph", kind: "computer", stem: "партия моделей арендованной gpu", threadIds: ["thr_1", "thr_2", "thr_3"], samples: ["Тест: партия"] } });
-    // The waiting card carries the architect button next to да / потом / нет.
-    const item = db.prepare("SELECT actions_json FROM lane_pilot_owner_item WHERE key=?").get(proposalItemKey(`lead:${branch.id}`)) as { actions_json: string };
-    const actions = JSON.parse(item.actions_json) as Array<{ id: string; rpc?: { method: string; input: Record<string, unknown> } }>;
-    expect(actions.map((action) => action.id)).toEqual(["yes", "later", "no", "architect"]);
-    expect(actions[3]!.rpc).toEqual({ method: "prepare_native_session", input: { projectId: "p_a", agentId: "workflow-architect" } });
+    expect(db.prepare("SELECT key FROM lane_pilot_owner_item").all()).toEqual([]);
     // A second tick with the same stem adds no second branch (the title is the dedupe, in any state).
     const again = await run("lp.lead_propose", { "$inputs.tickId": "tick_b", "think.proposals": [seedProposal({ risk: "high" })], "think.branches": [] });
     expect(again.output.proposed).toBe(0);
     expect(listRoad(db).filter((row) => row.kind === "option")).toHaveLength(1);
     const dropped = JSON.parse(again.output.dropped_json as string) as Array<{ reason: string }>;
     expect(dropped[0]!.reason).toContain("already proposed");
-  });
-});
-
-describe("«да» on a seeded process proposal", () => {
-  it("hands the seed to the Workflow architect through the owner's list, not to the PM intake", async () => {
-    const { bb } = createFakePluginHost({ pluginId: "lane-pilot" });
-    const db = openDatabase(bb);
-    const services = {
-      workflowTriggers: { start: async () => ({ ok: true, runId: "wf_1" }), pmOf: async () => ({ pmThreadId: "thr_pm", runId: "lprun_pm" }) },
-      docsPlaces: async () => [],
-    laneProject: lanePilotProjectOrNotice,
-      workflowEngine: { register: () => undefined, get: () => null },
-      phaseIntake: { handOver: async () => { throw new Error("must not be called: a seeded process goes to the architect"); } },
-    } as unknown as Services;
-    const lead = createLeadService(createCore(bb, db), services, { load: () => ({ notes: [], questions: [], origin: "live" }), run: async () => ({ sizes: [], caveats: [] }) }, migrations);
-    const seed = { form: "graph", kind: "computer", stem: "партия моделей арендованной gpu", threadIds: ["thr_1", "thr_2"], samples: ["Тест: партия моделей"] };
-    addRoad(db, { id: "d1", title: "Grow", kind: "direction", source: "lead", why: "growth" }, 1);
-    addRoad(db, { id: "o1", parentId: "d1", projectId: "p_a", title: "Граф для: партия моделей арендованной gpu", kind: "option", source: "lead", why: "три поручения за месяц", class: "process", payload: { architectSeed: seed } }, 2);
-    const decisionId = proposalDecisionId("o1");
-    openDecision(db, { id: decisionId, surface: "lead", class: "process", situation: { title: "o1" }, options: ["yes", "later", "no"] }, 3);
-    proposeRoad(db, "o1", decisionId, 4);
-    postOwnerItem(db, { key: proposalItemKey("o1"), source: "lead", kind: "proposal", what: "o1", why: "три поручения" }, 4);
-    const result = await lead.decide("o1", "yes", "да", "owner", 10);
-    expect(result).toMatchObject({ ok: true, handover: { state: "started", via: "architect", id: "workflow-architect" } });
-    expect(getRoad(db, "o1")!.state).toBe("accepted");
-    const item = db.prepare("SELECT kind, state, why, actions_json FROM lane_pilot_owner_item WHERE key='lead-handed:o1'").get() as { kind: string; state: string; why: string; actions_json: string };
-    expect(item).toMatchObject({ kind: "handed", state: "open" });
-    expect(item.why).toContain("партия моделей арендованной gpu");
-    expect(item.why).toContain("@thread:thr_1");
-    const actions = JSON.parse(item.actions_json) as Array<{ id: string; rpc?: { method: string; input: Record<string, unknown> } }>;
-    expect(actions[0]).toMatchObject({ id: "architect", rpc: { method: "prepare_native_session", input: { projectId: "p_a", agentId: "workflow-architect" } } });
   });
 });
 

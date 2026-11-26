@@ -1,9 +1,8 @@
 /** @vitest-environment jsdom */
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { openTab } from "../ui-tabs";
-import { cleanup, fireEvent, waitFor, within } from "@testing-library/react";
-import { en, setLocaleOverride } from "@lane-pilot/i18n";
-import { projectId, type RuleRow, mountWithBackend, writerPicker, scopedPicker, choosePickerValue, finish } from "./helpers";
+import { cleanup, waitFor } from "@testing-library/react";
+import { setLocaleOverride } from "@lane-pilot/i18n";
+import { projectId, mountWithBackend, writerPicker, scopedPicker, choosePickerValue, finish } from "./helpers";
 
 vi.mock("sonner", () => ({ toast: { info: vi.fn(), success: vi.fn(), error: vi.fn() } }));
 
@@ -13,77 +12,6 @@ describe("native writer settings against the registered SQLite backend", () => {
     setLocaleOverride(null);
     document.documentElement.lang = "en";
     vi.clearAllMocks();
-  });
-
-  it("shows repeated failures as rule proposals; the owner edits and accepts one, then revokes it", async () => {
-    const rules:RuleRow[] = [
-      { id:"rule_a", rule:"Create every expected output before answering.", author:"model", state:"proposed", occurrences:3, taskCount:3, examples:[],
-        evidence:[{ runId:"r", taskId:"w1", attemptId:"a1", reason:"missing expected_outputs: docs/w1.md" }, { runId:"r", taskId:"w2", attemptId:"a2", reason:"missing expected_outputs: docs/w2.md" }], lastSeenAt:1, decidedAt:null },
-      { id:"rule_b", rule:"Old ownership noise", author:"sweep", state:"rejected", occurrences:40, taskCount:40, examples:[], evidence:[], lastSeenAt:1, decidedAt:2 },
-    ];
-    const ruleCalls:Array<Record<string, unknown>> = [];
-    const { harness, slot } = await mountWithBackend({ rules, ruleCalls });
-    try {
-      openTab(slot, "rules");
-      const card = await slot.findByTestId("rule-rule_a");
-      // Opening the screen must not save an analyzer the picker merely normalized.
-      await new Promise((resolve) => setTimeout(resolve, 200));
-      expect(ruleCalls.filter((call) => "analyzer" in call)).toEqual([]);
-      expect(card.textContent).toContain(`${en.rulesTasks}: 3`);
-      expect(card.textContent).toContain(en.rulesAuthorModel);
-      expect(slot.getByTestId("rule-evidence-rule_a").textContent).toContain("w2: missing expected_outputs: docs/w2.md");
-      expect(slot.getByTestId("rules-triage").textContent).toContain(`${en.rulesOrigin_writer}: 3`);
-      expect(slot.getByTestId("rules-triage").textContent).toContain(`${en.rulesOrigin_orchestrator}: 2`);
-      expect(slot.getByTestId("rules-scan-result").textContent).toContain(`${en.rulesScanProposals} 1`);
-      fireEvent.click(within(slot.getByTestId("rule-proposals")).getByRole("button", { name:en.rulesScan }));
-      await waitFor(() => expect(ruleCalls[0]).toEqual({ scan:{ projectId, locale:"en" } }));
-      ruleCalls.length = 0;
-      expect(slot.getByTestId("rule-proposals").textContent).toContain(`${en.rulesClosed} (1)`);
-      fireEvent.change(card.querySelector("textarea")!, { target:{ value:"Never use the network in verification commands." } });
-      fireEvent.click(within(card).getByRole("button", { name:en.rulesAccept }));
-      await waitFor(() => expect(slot.getByTestId("rule-rule_a").textContent).toContain(en.rulesRevoke));
-      expect(ruleCalls[0]).toMatchObject({ id:"rule_a", action:"accept", rule:"Never use the network in verification commands." });
-      expect(slot.getByTestId("rule-rule_a").textContent).toContain("Never use the network in verification commands.");
-      fireEvent.click(within(slot.getByTestId("rule-rule_a")).getByRole("button", { name:en.rulesRevoke }));
-      await waitFor(() => expect(slot.queryByTestId("rule-rule_a")).toBeNull());
-      expect(ruleCalls[1]).toMatchObject({ id:"rule_a", action:"revoke" });
-    } finally { slot.lifecycle.unmount(); await harness.lifecycle.dispose(); }
-  });
-
-  it("shows a rule the PM proposed as soon as the server signals the project's rules (H6)", async () => {
-    const rules:RuleRow[] = [
-      { id:"rule_a", rule:"Create every expected output before answering.", author:"model", state:"proposed", occurrences:3, taskCount:3, examples:[], evidence:[], lastSeenAt:1, decidedAt:null },
-    ];
-    const { harness, slot } = await mountWithBackend({ rules, ruleCalls:[] });
-    try {
-      openTab(slot, "rules");
-      await slot.findByTestId("rule-rule_a");
-      rules.push({ id:"rule_new", rule:"Run the focused test before the full suite.", author:"pm", state:"proposed", occurrences:1, taskCount:1, examples:[], evidence:[], lastSeenAt:2, decidedAt:null });
-      await slot.behavior.emitRealtime(`lp:${projectId}`, { kind:"council" });
-      await slot.behavior.emitRealtime("lp:proj_other", { kind:"rules" });
-      expect(slot.queryByTestId("rule-rule_new")).toBeNull();
-      await slot.behavior.emitRealtime(`lp:${projectId}`, { kind:"rules" });
-      await slot.findByTestId("rule-rule_new");
-    } finally { slot.lifecycle.unmount(); await harness.lifecycle.dispose(); }
-  });
-
-  it("shows the form of a rule and, when a check enforces it, the mechanism (SMA block 6)", async () => {
-    const rules:RuleRow[] = [
-      { id:"rule_held", rule:"Never read $? after a pipe.", author:"pm", state:"accepted", occurrences:1, taskCount:1, examples:[], evidence:[], lastSeenAt:1, decidedAt:2,
-        decidedBy:"owner", form:"check", formReason:"check/contract_lint: exit-status", mechanizedBy:"contract lint verification_masked_exit (tests/contract-lint-exit-status.test.ts)" },
-      { id:"rule_text", rule:"Ask the owner only for money.", author:"pm", state:"accepted", occurrences:1, taskCount:1, examples:[], evidence:[], lastSeenAt:1, decidedAt:2, decidedBy:"owner", form:"always" },
-    ];
-    const { harness, slot } = await mountWithBackend({ rules, ruleCalls:[] });
-    try {
-      openTab(slot, "rules");
-      await slot.findByTestId("rule-rule_held");
-      expect(slot.getByTestId("rule-form-rule_held").textContent).toBe("check");
-      expect(slot.getByTestId("rule-form-rule_held").getAttribute("title")).toBe("check/contract_lint: exit-status");
-      expect(slot.getByTestId("rule-mechanized-rule_held").textContent).toBe(en.rulesMechanized);
-      expect(slot.getByTestId("rule-mechanized-rule_held").getAttribute("title")).toContain("verification_masked_exit");
-      expect(slot.getByTestId("rule-form-rule_text").textContent).toBe("always");
-      expect(slot.queryByTestId("rule-mechanized-rule_text")).toBeNull();
-    } finally { slot.lifecycle.unmount(); await harness.lifecycle.dispose(); }
   });
 
   it("saves one coherent provider/model/reasoning/service-tier selection with CAS and persists it", async () => {

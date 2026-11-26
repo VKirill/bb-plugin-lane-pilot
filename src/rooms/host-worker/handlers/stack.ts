@@ -95,6 +95,7 @@ export const prepareClaudeGuardHost: ExperimentalHostRpcHandlers<typeof hostCont
   prepareClaudeGuard({
     role: input.role,
     cwd: input.cwd,
+    taskHome: input.taskHome,
     dataDir: context.experimental_paths.dataDir,
   })
 );

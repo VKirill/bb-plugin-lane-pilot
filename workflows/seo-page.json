@@ -36,6 +36,7 @@
     "drmax",
     "writing"
   ],
+  "category": "seo",
   "inputs": {
     "page_topic": {
       "type": "string",
@@ -133,7 +134,7 @@
       "workflow": "seo-cocoon",
       "skip_when": "$inputs.cocoon_folder != '' || $inputs.brief_path != ''",
       "skip_out": {
-        "status": "done",
+        "status": "not_run",
         "folder": "{{$inputs.cocoon_folder}}",
         "handoff_path": "",
         "briefs_dir": "{{$inputs.cocoon_folder}}"
@@ -165,7 +166,7 @@
       "workflow": "seo-brief",
       "skip_when": "$inputs.brief_path != '' || $inputs.cocoon_folder != ''",
       "skip_out": {
-        "status": "done",
+        "status": "not_run",
         "brief_path": "{{$inputs.brief_path}}"
       },
       "title": {
@@ -387,7 +388,7 @@
       "skip_when": "risk_scan.queue_count == 0 && $inputs.risk_tier == 'low'",
       "skip_out": {
         "answer": "",
-        "answer_kind": "approved"
+        "answer_kind": "not_run"
       },
       "title": {
         "en": "Sign-off on regulated claims",
@@ -396,7 +397,7 @@
       "prompt": "Approve the regulated claims in the risk queue with exact wording and source; the sign-off is recorded against this version. approve accepts all, decline stops the page.",
       "out": {
         "answer": "string",
-        "answer_kind": "approved|declined|timeout"
+        "answer_kind": "approved|declined|timeout|not_run"
       },
       "guards": {
         "maxVisits": 1,
@@ -537,7 +538,7 @@
       "from": "cocoon",
       "to": "brief",
       "pass": "artifact",
-      "when": "cocoon.status == 'done'"
+      "when": "cocoon.status == 'done' || $inputs.cocoon_folder != '' || $inputs.brief_path != ''"
     },
     {
       "from": "cocoon",
@@ -548,7 +549,7 @@
       "from": "brief",
       "to": "locale_plan",
       "pass": "artifact",
-      "when": "brief.status == 'done'"
+      "when": "brief.status == 'done' || $inputs.cocoon_folder != '' || $inputs.brief_path != ''"
     },
     {
       "from": "brief",

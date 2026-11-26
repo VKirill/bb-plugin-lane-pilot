@@ -6,7 +6,7 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { expect, it } from "vitest";
 import type { PrototypeConfig, TaskV2 } from "../src/rooms/contracts";
 import { createAttempt, createRun, createTask, getAttempt, openDatabase, setAttemptWorkspace, setRunThread } from "../src/rooms/plugin-db";
-import { createWriterSpawn, shouldMergeAttemptWorktree } from "../src/rooms/writer/server/spawn";
+import { createWriterSpawn, shouldMergeAttemptWorktree } from "../src/rooms/writer/server/services/spawn";
 import { dirtInsideWorkspace } from "../src/rooms/verification/git-ownership";
 
 const folder = "/repo/apps/bot";
@@ -73,8 +73,8 @@ function spawnEnv(options: { bound?: boolean; createReason?: string; kind?: "bb"
     },
     effectiveProjectSettings: async () => ({ values: { "memory.enabled": false, "adoc.040": "auto" } }),
   };
-  const services = { providerBreaker: { decide: () => ({ allow: true }) }, ruleScan: { chainForRun: async () => [] } };
-  return { db, hostCalls, spawned, writer: createWriterSpawn(ctx as never, services as never) };
+  const services = { providerBreaker: { decide: () => ({ allow: true }) } };
+  return { db, hostCalls, spawned, writer: createWriterSpawn({ ...ctx, scopesForWorkspace: async () => [] } as never, services as never) };
 }
 
 // Worktree-only (decision 2026-10-06): a nested chat folder no longer runs in place; it gets a worktree of its repo.
@@ -172,7 +172,7 @@ it("snapshots nested-folder dirt in the folder itself, where the host answers wo
     },
     effectiveProjectSettings: async () => ({ values: {} }),
   };
-  const { workspaceDirt } = createWriterSpawn(ctx as never, { providerBreaker: { decide: () => ({ allow: true }) } } as never);
+  const { workspaceDirt } = createWriterSpawn({ ...ctx, scopesForWorkspace: async () => [] } as never, { providerBreaker: { decide: () => ({ allow: true }) } } as never);
   const dirt = await workspaceDirt({ ...config, writerWorkspacePath: nested }, nested);
   expect(dirt).toEqual({ ok: true, paths: ["index.ts"], snapshots: [{ path: "index.ts", sha256: "aa" }] });
   expect(await realpath(hostCwds[0]!)).toBe(await realpath(nested));

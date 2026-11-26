@@ -31,8 +31,6 @@ const SERVICE_NOTICE_TEXT: readonly RegExp[] = [
   /^Lane Pilot: the owner answered your question(?:\s*\([^)]+\))?:/,
   /^Lane Pilot: the owner's question «.*» was lost when Lane Pilot reloaded/,
   /^Lane Pilot: (проверка после вливания|post-merge gate)/,
-  /^Lane Pilot: (совет|council) \(/,
-  /^Council \S+ (decided\.|ended without a decision \()/,
 ];
 
 export const isServiceNoticeText = (text: string): boolean => SERVICE_NOTICE_TEXT.some((pattern) => pattern.test(text));

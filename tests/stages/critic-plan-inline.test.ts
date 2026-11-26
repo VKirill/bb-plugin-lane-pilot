@@ -1,8 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { callersBlock, critiquePacketPrompt, critiquePrompt } from "../../src/rooms/critique/critique";
-import { callerLabels } from "../../src/rooms/critique/critique-coverage";
-import type { CoverageFinding } from "../../src/rooms/critique/critique-coverage";
-import { readPlanFile } from "../../src/rooms/critique/server/critique-runs/plan-text";
+import { callerLabels, callersBlock, critiquePacketPrompt, critiquePrompt } from "../../src/rooms/critique";
+import type { CoverageFinding } from "../../src/rooms/critique";
+import { readPlanFile } from "../../src/rooms/critique/server";
 import { planPacket } from "@lane-pilot/workflow-engine";
 import { sha256Hex } from "@lane-pilot/kit";
 

@@ -28,6 +28,7 @@
     "code",
     "issue"
   ],
+  "category": "code",
   "inputs": {
     "title": {
       "type": "string",

@@ -83,7 +83,7 @@ const ROLES: Array<[string, string | null, Record<string, string>]> = [
   ["specialist", "specialist:design-lead", {}],
   ["design-lead", "lane-stack:design-lead", {}],
   ["browser-qa", "browser-qa", {}],
-  ["docs maintainer", "docs-maintainer", {}],
+  ["memory maintainer", "memory-maintainer", {}],
   ["writer", "writer", {}],
   ["sub-agent of a Lane Pilot session", "Explore", { LANE_PILOT_AGENT_TYPE: "lane-stack:dev-orchestrator" }],
   ["a session with no agent_type", null, { LANE_PILOT_AGENT_TYPE: "writer" }],

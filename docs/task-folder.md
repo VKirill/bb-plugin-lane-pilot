@@ -9,32 +9,30 @@ tags: [sma, tasks, writer, handoff, manifest]
 sources:
   - src/rooms/storage/task-manifest.ts
   - src/rooms/storage/run-manifest.ts
-  - src/rooms/workflow/server/workflow-run-home.ts
-  - src/rooms/workflow/server/workflow-checkout-actions.ts
-  - src/rooms/workflow/server/workflow-executors.ts
+  - src/rooms/workflow/server/services/workflow-run-home.ts
+  - src/rooms/workflow/server/services/workflow-checkout-actions.ts
+  - src/rooms/workflow/server/services/workflow-executors.ts
   - packages/workflow-engine/src/handoff.ts
   - tests/workflow/run-home.test.ts
   - scripts/lp_drill/scenes/run_home.py
-  - src/rooms/writer/server/task-home.ts
-  - src/rooms/writer/server/dispatch.ts
-  - src/rooms/writer/server/dispatch-workflow.ts
-  - src/rooms/writer/server/spawn-brief.ts
-  - src/rooms/writer/server/verify.ts
-  - src/rooms/writer/server/critique-gate.ts
-  - src/rooms/writer/server/plan-fact.ts
-  - src/rooms/writer/server/finish-attempt-body.ts
-  - src/rooms/writer/server/attempt-reactions.ts
-  - src/rooms/tasks/server/contract-lint.ts
-  - src/rooms/native-agent/server/helper-bb-shim.ts
+  - src/rooms/writer/server/services/task-home.ts
+  - src/rooms/writer/server/services/dispatch.ts
+  - src/rooms/writer/server/handlers/dispatch-workflow.ts
+  - src/rooms/writer/server/services/spawn-brief.ts
+  - src/rooms/writer/server/services/verify.ts
+  - src/rooms/writer/server/services/critique-gate.ts
+  - src/rooms/writer/server/services/plan-fact.ts
+  - src/rooms/writer/server/services/finish-attempt-body.ts
+  - src/rooms/writer/server/services/attempt-reactions.ts
+  - src/rooms/tasks/models/contract-lint.ts
+  - src/rooms/native-agent/server/services/helper-bb-shim.ts
   - lane-stack/hooks/guard_shell.py
   - src/rooms/migrations.ts
   - tests/task-manifest.test.ts
   - tests/task-home-transitions.test.ts
   - tests/lp-drill-task-home.test.ts
   - scripts/lp_drill/scenes/task_home.py
-  - sdk/src/index.ts
-  - ../sdk/src/index.ts
-  - src/rooms/tasks/task-v2.ts
+  - src/rooms/tasks/models/task-v2.ts
 ---
 
 # The task folder
@@ -111,8 +109,7 @@ written) for a file that exists, so the task home writes through `writeReplacing
 }
 ```
 
-The closed list of kinds is `TASK_FILE_KINDS` in `src/rooms/storage/task-manifest.ts`. A task of a phase names the phase
-as its `parent`, with the phase's manifest path given as a reference.
+The closed list of kinds is `TASK_FILE_KINDS` in `src/rooms/storage/task-manifest.ts`.
 
 ## The resolver
 
@@ -161,7 +158,7 @@ nested repository is its own boundary. Section-only tasks keep their narrow scop
 
 The `repo:` selector is **read-only**: a `repo:` path in a write, ownership or check field — `owns_paths`, `expected_outputs`,
 `never_touch`, `test_removals`, `drawing`, a `files[]` entry or a `verification[].cwd` — is a dispatch validation refusal
-(`reservedRepoPathFindings`, `src/rooms/tasks/task-v2.ts:37`; the check exempts `expected_outputs` rows that are not output
+(`reservedRepoPathFindings`, `src/rooms/tasks/models/task-v2.ts:37`; the check exempts `expected_outputs` rows that are not output
 paths). Write paths and check cwd always use `project_cwd` coordinates.
 
 `readFirstScopeFindings` (contract-lint) refuses a `read_first` entry that points:
@@ -242,7 +239,7 @@ next record renders it again.
   rows: a daily job's file that the next run replaces by design. `resolveLatestPointer(db, project, path)` names the run that wrote the
   current one; the specialist memory loader reads the PPC bridge through it, records the read and returns `ppc_bridge_run_id` (empty when
   the file no longer matches the record).
-- **Write contracts that are create-only on purpose** are unchanged (the agent-instruction pointers, forge drafts). `lp.retro_living`
+- **Write contracts that are create-only on purpose** are unchanged (the agent-instruction pointers). `lp.retro_living`
   and `lp.milestone_archive` wrote with `expectedSha256: null`, which BB answers with `conflict` over an existing file without throwing:
   the second milestone's retro or index line was silently dropped. They now replace through the same read-then-hash write.
 

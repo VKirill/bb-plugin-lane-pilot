@@ -4,17 +4,17 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
-import Database from "better-sqlite3";
 import { describe, expect, it } from "vitest";
-import { deferralMigrations } from "../src/rooms/deferral";
 import { pmDeferralLines } from "../src/rooms/deferral/server";
-import { insertDeferral, type Deferral } from "../src/rooms/deferral/store";
-import { createRelay, TASK_NOTICE, type RelayItem } from "../src/rooms/relay/server/relay";
+import { type Deferral } from "../src/rooms/deferral";
+import { insertDeferral } from "../src/rooms/deferral/server/repositories/deferral-repository";
+import { TASK_NOTICE, type RelayItem } from "../src/rooms/relay/models/relay";
+import { createRelay } from "../src/rooms/relay/server/services/relay";
 import { openDatabase, type TaskOutcome } from "../src/rooms/plugin-db";
+import { buildDailyReport } from "../src/rooms/reports/server";
 
 // SMA rule 5, "turns red by itself": the drill, the PM's task-result message and the daily Telegram line read the register.
 const drill = fileURLToPath(new URL("../scripts/lp-drill.py", import.meta.url));
-const daily = readFileSync(new URL("../scripts/lp-metrics-daily.sh", import.meta.url), "utf8");
 const NOW = Date.parse("2026-11-10T12:00:00Z");
 const DAY = 86_400_000;
 
@@ -136,30 +136,25 @@ describe("what the PM reads before it promises a date", () => {
 });
 
 describe("the daily Telegram line", () => {
-  const sql = /dfr=\$\(day "(select 'Отсрочки.*?)" 2>\/dev\/null\)/s.exec(daily)![1]!;
-
-  function line(rows: Array<Partial<Deferral>>) {
-    const db = new Database(":memory:");
-    for (const statement of deferralMigrations) db.exec(statement);
+  async function reportText(rows: Array<Partial<Deferral>>) {
+    const db = database();
     rows.forEach((patch, index) => insertDeferral(db, row({ id: `dfr_00000000000${index}`, ...patch })));
-    const cell = db.prepare(sql.replaceAll("$now_ms", String(NOW))).pluck().get() as string;
-    db.close();
-    return cell;
+    return await buildDailyReport({ db, now: () => NOW });
   }
 
-  it("counts overdue and open entries and names the overdue", () => {
-    expect(line([
+  it("counts overdue and open entries in the compact SQLite daily digest", async () => {
+    const text = await reportText([
       { what: "reload drill", dueAt: NOW - DAY, state: "overdue" },
       { what: "stale", dueAt: NOW - 3 * DAY, state: "open" },
       { what: "soon", dueAt: NOW + DAY },
       { what: "t1", state: "needs_owner_term" }, { what: "t2", state: "needs_owner_term" },
       { what: "done", dueAt: NOW - DAY, state: "closed" },
-    ])).toBe("Отсрочки: просрочено 2, открыто 1 (просрочено: stale [dfr_000000000001]; reload drill [dfr_000000000000])");
+    ]);
+    expect(text).toContain("Отсрочки: открыто 3, просрочено 2");
   });
 
-  it("is a line of zeros on an empty register and is added to the message only when the query answered", () => {
-    expect(line([])).toBe("Отсрочки: просрочено 0, открыто 0");
-    expect(daily).toContain("${dfr:+ ${dfr}.}");
-    expect(daily).toContain(`2>/dev/null) || dfr=""`);
+  it("omits Отсрочки from the compact daily digest when the register is empty", async () => {
+    const text = await reportText([]);
+    expect(text).not.toContain("Отсрочки");
   });
 });

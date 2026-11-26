@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { TaskV2 } from "../src/rooms/contracts";
-import { syncOwnsBarrier } from "../src/rooms/writer/server/owns-barrier-sync";
+import { syncOwnsBarrier } from "../src/rooms/writer/server/services/owns-barrier-sync";
 
 // EXT05 (layers audit 2026-11-15): an in-place owns_paths change goes out only when the worktree's barrier follows it.
 const before = { owns_paths: ["src/a.ts"], never_touch: ["secrets/**"] } as unknown as TaskV2;

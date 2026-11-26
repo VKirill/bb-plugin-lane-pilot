@@ -1,13 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { BB_AGENT_SESSIONS, LANE_PILOT_PM_SESSION, lanePmOverlayPrompt, laneSessionOverlayPrompt } from "../src/rooms/native-agent/native-agent-overlay";
+import { BB_AGENT_SESSIONS, LANE_PILOT_PM_SESSION, lanePmOverlayPrompt, laneSessionOverlayPrompt } from "../src/rooms/native-agent/models/native-agent-overlay";
 import { EMPLOYEES } from "../src/rooms/contracts/server";
 import { coreSkillsOf, isEmployeeSpecialist } from "../src/rooms/contracts/employee-manifest";
-import { SKILL_CATALOG_BLOCK, SKILL_CATALOG_LIMIT, SKILL_CATALOG_LINE } from "../src/rooms/native-agent/skill-catalog";
-import { chooseEmployeePlace } from "../src/rooms/native-agent/employee-place";
-import { parseAgentFile } from "../src/rooms/native-agent/custom-agent";
-import { roleSpec } from "../src/rooms/workflow/server/workflow-agent";
-import { errandPrompt } from "../src/rooms/qa/server/errands";
-import { writerBriefSegments } from "../src/rooms/writer/server/writer-task";
+import { SKILL_CATALOG_BLOCK, SKILL_CATALOG_LIMIT, SKILL_CATALOG_LINE } from "../src/rooms/native-agent/models/skill-catalog";
+import { chooseEmployeePlace } from "../src/rooms/native-agent/models/employee-place";
+import { parseAgentFile } from "../src/rooms/native-agent/models/custom-agent";
+import { roleSpec } from "../src/rooms/workflow/server/services/workflow-agent";
+import { errandPrompt } from "../src/rooms/errands/server";
+import { writerBriefSegments } from "../src/rooms/writer/models/writer-task";
 import {candidateNames, resetSkillTreeCache, skillTreeCached, type SkillTree} from "../src/rooms/platform/server";
 import type { TaskV2 } from "../src/rooms/contracts";
 
@@ -69,7 +69,7 @@ describe("skill catalog note", () => {
     // a thread with a broad skill list still gets the block.
     const brief = writerBriefSegments({ title: "t", objective: "o", owns_paths: [], expected_outputs: [], acceptance: [], verification: [] } as unknown as TaskV2);
     expect(brief.map((segment) => segment.text).join("\n")).toContain("Your skills for this task:");
-    expect(writerBriefSegments({ title: "t", objective: "o", owns_paths: [], expected_outputs: [], acceptance: [], verification: [] } as unknown as TaskV2, "", "", undefined, "w", "", "", "", null, false, { broadSkills: true }).map((segment) => segment.text).join("\n")).toContain("## Skill catalog");
+    expect(writerBriefSegments({ title: "t", objective: "o", owns_paths: [], expected_outputs: [], acceptance: [], verification: [] } as unknown as TaskV2, "", "", undefined, "w", "", "", null, false, { broadSkills: true }).map((segment) => segment.text).join("\n")).toContain("## Skill catalog");
     expect(errandPrompt({ task: "check the mailbox", browserHostId: null, authorized: false })).toContain("Your skills for this task:");
     expect(errandPrompt({ task: "check the mailbox", browserHostId: null, authorized: false, broadSkills: true })).toContain("## Skill catalog");
   });

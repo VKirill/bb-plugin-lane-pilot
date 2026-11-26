@@ -1,9 +1,9 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { afterEach, describe, expect, it } from "vitest";
 import { EMBED_DIM, forgetLockTerms, languageOf, memoryJudgeStats, parseJudgeReply, parseMemorySettings, permutationOf, readJudgeReply, rememberLockTerms, rememberQueryVector, searchMemoryRecords, storeMemoryRecords, storeVectors, wordCandidates, type MemoryRecord } from "../packages/memory-core/src";
-import { judgeFound, openLuxJudge, setMemoryJudge, translateForLock, type MemoryJudge } from "../src/rooms/memory/server/memory-judge";
-import { explicitMemorySearch } from "../src/rooms/memory/server/memory-search";
-import { pmMemoryContext } from "../src/rooms/memory/server/memory-mix";
+import { judgeFound, openLuxJudge, setMemoryJudge, translateForLock, type MemoryJudge } from "../src/rooms/memory/server/services/memory-judge";
+import { explicitMemorySearch } from "../src/rooms/memory/server/services/memory-search";
+import { pmMemoryContext } from "../src/rooms/memory/server/services/memory-mix";
 import { openDatabase } from "../src/rooms/plugin-db";
 
 const record = (id: string, content: string): MemoryRecord => ({ id, content, kind: "note", concepts: [], projectId: "P", personalBot: "", sourceSha256: "", createdAt: 1 });

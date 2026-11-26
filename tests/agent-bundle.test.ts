@@ -5,7 +5,7 @@ import {
   compileMainAgentProfile,
   LEGACY_STOCK_TEMPLATES,
   PROFILE_SOURCE_VERSION,
-} from "../src/rooms/native-agent/agent-profile";
+} from "../src/rooms/native-agent/models/agent-profile";
 import { MAIN_AGENT_PROFILE_IDS } from "../src/rooms/contracts/server";
 import bundledAgents from "../src/rooms/contracts/bundled-agents.json";
 

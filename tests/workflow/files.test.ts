@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync,
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { writeWorkflowFile } from "../../src/rooms/host-worker/host-handlers";
+import { writeWorkflowFile } from "../../src/rooms/host-worker";
 import { sha256Hex } from "@lane-pilot/kit";
 import { casWriteWorkflowFile } from "@lane-pilot/workflow-engine";
 

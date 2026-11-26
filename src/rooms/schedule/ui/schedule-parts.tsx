@@ -1,5 +1,5 @@
 import { t, type I18nKey } from "@lane-pilot/i18n";
-import type { RunView, ScheduleView } from "../views";
+import type { RunView, ScheduleView } from "../models/views";
 import { cronWords } from "./schedule-model";
 
 /** Small pieces the board, the history and the calendar share. */

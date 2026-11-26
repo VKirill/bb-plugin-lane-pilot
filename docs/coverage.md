@@ -7,8 +7,8 @@ status: active
 confidence: medium
 tags: [sma, drill, tests, registry]
 sources:
-  - src/rooms/coverage/registry.ts
-  - src/rooms/coverage/model.ts
+  - src/rooms/coverage/models/registry.ts
+  - src/rooms/coverage/models/model.ts
   - src/rooms/coverage/cli.ts
   - scripts/lp-drill.py
   - tests/coverage.test.ts
@@ -17,7 +17,7 @@ sources:
 
 # Coverage registry: graph and drill
 
-TL;DR: `src/rooms/coverage/registry.ts` says, for every pipeline stage, attempt transition, failure class, gate, memory path, room and key mechanism, which deploy-drill scenario runs it on the hub, or which tests exercise it and why no drill does, or why it is not covered at all. A test fails when a node has no entry. `bb lane-pilot coverage` prints the table.
+TL;DR: `src/rooms/coverage/models/registry.ts` says, for every pipeline stage, attempt transition, failure class, gate, memory path, room and key mechanism, which deploy-drill scenario runs it on the hub, or which tests exercise it and why no drill does, or why it is not covered at all. A test fails when a node has no entry. `bb lane-pilot coverage` prints the table.
 
 ## Purpose
 
@@ -33,7 +33,7 @@ SMA D1-5 («Not covered, with reason», «Graph regression catalogue»). The reg
 | memory path | `MEMORY_PATHS`, derived: a probed path is live through `memory_paths`, an exempt one is «not covered» with its own reason | `tests/memory-paths.test.ts` |
 | failure class | the `FailureClass` type (`src/rooms/contracts/failure-class.ts`), read by the test | the test |
 | room | the directories of `src/rooms` | the test |
-| mechanism | written by hand in the registry (rollback, deferral register, bench, policy, plan-fact, merge queue, …); the spec's mechanisms are required by name | the test |
+| mechanism | written by hand in the registry (rollback, deferral register, plan-fact, merge queue, …); registered mechanisms are required by name | the test |
 
 ## Entry rules
 
@@ -57,7 +57,6 @@ A «live» claim is a statement about the drill, so the drill proves it. `script
 - The drill's tasks carry `verification: []`, so the `verification` stage and gate pass or skip with no command to run: the stage that proves a task's checks is covered by tests only. A drill task with one real check would make it live.
 - `pm-read`, `plan-critique` and `specialist-review` are off in the sandbox project and record «skipped» in every drill run; `code-critique` is off by default.
 - The failures of a running writer (provider error, timeout, no output, a red check) and the retries after them are not provoked by any scenario; `provider_limit` ends in the `provider` class (a missing model), not in `limit`.
-- `project-life` runs in every drill and often fails (60 of 96 receipts of drill tasks on the hub); it never blocks the task, so the drill shows that it starts, not that it passes.
 
 ## Adding a node
 

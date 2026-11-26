@@ -3,9 +3,9 @@ import { mkdtempSync, writeFileSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
-import { registerCheckoutActions } from "../../src/rooms/workflow/server/workflow-checkout-actions";
+import { registerCheckoutActions } from "../../src/rooms/workflow/server/services/workflow-checkout-actions";
 import { execFileSync, spawnSync } from "node:child_process";
-import { measureTestInventory, diffTestInventory, parseInventory } from "../../src/rooms/workflow/server/test-inventory";
+import { measureTestInventory, diffTestInventory, parseInventory } from "../../src/rooms/workflow/server/services/test-inventory";
 import type { ServerCore } from "../../src/rooms/contracts/server";
 
 const host = { async call(_method: string, input: { command: string; cwd: string; requestedHostId: string }) {

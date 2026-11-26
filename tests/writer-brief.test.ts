@@ -2,10 +2,11 @@ import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { taskV2Schema } from "../src/rooms/contracts";
-import { compactContract, pmReadBrief } from "../src/rooms/writer/writer-brief";
+import { compactContract, pmReadBrief } from "../src/rooms/writer/models/writer-brief";
 import { pathAnchors, writerMemory } from "../src/rooms/memory/server";
-import { renderThreadEvents } from "@lane-pilot/harness-core";
-import { needsHumanQuestion, stickyTurnPrompt, writerPrompt, previousAttemptBrief, attemptFeedback } from "../src/rooms/writer/server/writer-task";
+import { renderThreadEvents } from "../src/rooms/writer/server/index";
+import { needsHumanQuestion, stickyTurnPrompt, writerPrompt } from "../src/rooms/writer/models/writer-task";
+import { previousAttemptBrief, attemptFeedback } from "../src/rooms/writer/models/writer-brief-feedback";
 
 // The real brief SelfyStudio's writer got for gc-pages-polish-2 on 2026-10-02 (4130 tokens, 64% memory).
 const original = readFileSync(join(__dirname, "fixtures/writer-brief-gc-pages-polish-2.md"), "utf8");
@@ -48,7 +49,7 @@ describe("writer brief", () => {
   });
 
   it("is under a third of the old brief, fixed rules first, the new-files rule included", () => {
-    const brief = writerPrompt(task, writerMemory(notes, task), packet, undefined, "Lane Pilot writer", pmRead, "");
+    const brief = writerPrompt(task, writerMemory(notes, task), packet, undefined, "Lane Pilot writer", pmRead);
     // The plan→fact format line (PLAN_FACT_BRIEF_LINE, about 620 characters) is part of the brief since 0.1.266: 44% of the old brief instead of 40%.
     // The gate vocabulary for a writer (tasks/gate-vocabulary.ts, about 850 characters) brings it to 50%.
     expect(brief.length).toBeLessThan(original.length / 1.9);
@@ -71,14 +72,14 @@ describe("writer brief", () => {
   });
 
   it("points at the task folder when it exists and stays the same when it does not", () => {
-    const without = writerPrompt(task, writerMemory(notes, task), packet, undefined, "Lane Pilot writer", pmRead, "");
+    const without = writerPrompt(task, writerMemory(notes, task), packet, undefined, "Lane Pilot writer", pmRead);
     const stickyWithout = stickyTurnPrompt({ kind: "next-task", task });
     expect(without).not.toContain(".agents/plans/items/");
     expect(stickyWithout).not.toContain(".agents/plans/items/");
     expect(without).toContain("<task_goal>");
     expect(without).toContain(task.objective);
     const folder = { path: `.agents/plans/items/${task.id}/`, files: ["PLAN.md", "notes.md"] };
-    const withFolder = writerPrompt(task, writerMemory(notes, task), packet, undefined, "Lane Pilot writer", pmRead, "", "", folder);
+    const withFolder = writerPrompt(task, writerMemory(notes, task), packet, undefined, "Lane Pilot writer", pmRead, "", folder);
     const sticky = stickyTurnPrompt({ kind: "retry", task, taskFolder: folder });
     expect(withFolder).toContain(".agents/plans/items/");
     expect(withFolder).toContain(`- PLAN.md`);

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { agentRequest } from "../../src/rooms/workflow/server/workflow-agent";
+import { agentRequest } from "../../src/rooms/workflow/server/services/workflow-agent";
 import type { StepContext } from "@lane-pilot/workflow-engine";
 import { chainStore, runSim } from "./chain-harness";
 

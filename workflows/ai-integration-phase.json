@@ -8,6 +8,7 @@
     "en": "Before a phase that ships model behaviour: selects the AI framework and model, researches it, and writes AI-SPEC.md with typed inputs and outputs, failure guards, the evaluation plan and the cost ceiling.",
     "ru": "Перед фазой с поведением модели: выбирает ИИ-фреймворк и модель, исследует их и пишет AI-SPEC.md с типами входа и выхода, защитой от сбоев, планом оценки и потолком стоимости."
   },
+  "category": "code",
   "examples": {
     "ru": [
       "Спланируй интеграцию ИИ в эту фичу",

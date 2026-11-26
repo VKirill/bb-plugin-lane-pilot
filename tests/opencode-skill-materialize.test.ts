@@ -5,8 +5,8 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   COMPACTION_OFF_CONFIG, createSkillMaterializer, OPENCODE_SKILLS_EXCLUDE, parseMaterialized, recordedMaterializedSkills,
-} from "../src/rooms/writer/server/skill-materialize";
-import { WORKSPACE_DIRT_COMMAND } from "../src/rooms/verification/workspace-dirt";
+} from "../src/rooms/writer/server/services/skill-materialize";
+import { WORKSPACE_DIRT_COMMAND } from "../src/rooms/verification/models/workspace-dirt";
 
 type Call = { command: string; cwd: string };
 

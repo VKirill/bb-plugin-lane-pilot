@@ -3,10 +3,7 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { rpcContract } from "../src/rooms/contracts";
 import { openDatabase } from "../src/rooms/plugin-db";
 import { closeOwnerItem, collectOwnerWaiting, postOwnerItem } from "../src/rooms/owner-waiting";
-import { runWaitingCli } from "../src/rooms/owner-waiting/cli";
-import { ackDigest, inQuietHours, loadPushConfig, planDigest, savePushConfig } from "../src/rooms/owner-waiting/push";
-import { pendingOwnerLearningItems } from "../src/rooms/learning";
-import { ownerWaitingRpc } from "../src/rooms/owner-waiting/server";
+import { ackDigest, inQuietHours, loadPushConfig, ownerWaitingRpc, planDigest, runWaitingCli, savePushConfig } from "../src/rooms/owner-waiting/server";
 
 const HOUR = 3_600_000;
 // 2026-10-22 09:00 in Madrid (CEST, UTC+2).
@@ -33,7 +30,7 @@ function seeded() {
 describe("the owner's waiting list", () => {
   it("ranks by the cost of delay and keeps at most five rows «now»; the digest pushes only those; who settled the week's rows is counted (harness batch 2026-11-02)", () => {
     const db = openDatabase(createFakePluginHost({ pluginId: "lane-pilot" }).bb);
-    const post = (key: string, kind: string, at: number, wake = true) => postOwnerItem(db, { key, source: "night", kind, what: `${key} what`, why: `${key}: why it is the owner's, long enough`, wake }, at);
+    const post = (key: string, kind: string, at: number, wake = true) => postOwnerItem(db, { key, source: "night", kind, reason: kind === "canary_red" ? "red" : kind === "wall" ? "blocked" : "decision", what: `${key} what`, why: `${key}: why it is the owner's, long enough`, wake }, at);
     for (let i = 0; i < 6; i++) post(`d${i}`, "decision", NOW - (6 - i) * HOUR);
     post("wall1", "wall", NOW);
     post("red1", "canary_red", NOW, false);
@@ -51,22 +48,9 @@ describe("the owner's waiting list", () => {
     expect(text).toContain("Решено за 7 дней: вы 1, помощник 1, Штурман 0, уборщик 1.");
   });
 
-  it("holds only what the owner's own words started: a waiting rule, a deferral and a memory conflict are the system's, not his", () => {
-    const waiting = collectOwnerWaiting(seeded(), NOW, [], undefined, pendingOwnerLearningItems);
-    expect(waiting.counts).toEqual({ learning: 1 });
-    expect(waiting.items.map((item) => item.key)).toEqual(["learning:i1"]);
-    for (const item of waiting.items) {
-      expect(item.what.length, item.key).toBeGreaterThan(0);
-      expect(item.why.length, item.key).toBeGreaterThan(20);
-      expect(item.evidence.length, item.key).toBeGreaterThan(0);
-      expect(item.actions.length, item.key).toBeGreaterThan(0);
-      for (const action of item.actions) expect(action.cli, `${item.key} ${action.id}`).toMatch(/^(bb |echo )/);
-    }
-  });
-
   it("holds the night loop's rows in a stable shape: posted once per key, shown, closed", () => {
     const db = seeded();
-    const row = { key: "night:proposal:graph-1", source: "night", kind: "proposal", what: "Add a stage between plan and writer", why: "Any graph change is the owner's (policy owner_only)",
+    const row = { key: "night:proposal:graph-1", source: "night", kind: "proposal", reason: "decision" as const, what: "Add a stage between plan and writer", why: "Any graph change is the owner's (policy owner_only)",
       evidence: [{ kind: "file" as const, ref: "policy/night-policy.json" }], actions: [{ id: "yes", label: "Принять", cli: "bb lane-pilot night apply graph-1" }] };
     expect(postOwnerItem(db, row, NOW).created).toBe(true);
     expect(postOwnerItem(db, row, NOW + HOUR).created).toBe(false);
@@ -99,9 +83,9 @@ describe("the Telegram digest", () => {
   it("pushes only new wake items, once, and the daily report stays the reminder", () => {
     const db = seeded();
     expect(planDigest(db, NOW)).toMatchObject({ send: false, reason: "nothing_new" });
-    postOwnerItem(db, { key: "night:a", source: "night", kind: "proposal", what: "First", why: "posted by a caller", evidence: [], actions: [] }, NOW);
-    postOwnerItem(db, { key: "night:b", source: "night", kind: "proposal", what: "Second", why: "posted by a caller", evidence: [], actions: [] }, NOW);
-    const first = planDigest(db, NOW, [], pendingOwnerLearningItems);
+    postOwnerItem(db, { key: "night:a", source: "night", kind: "proposal", reason: "decision", what: "First", why: "posted by a caller", evidence: [], actions: [] }, NOW);
+    postOwnerItem(db, { key: "night:b", source: "night", kind: "proposal", reason: "decision", what: "Second", why: "posted by a caller", evidence: [], actions: [] }, NOW);
+    const first = planDigest(db, NOW);
     expect(first).toMatchObject({ send: true, reason: null, keys: ["night:a", "night:b"] });
     expect(first.text).toContain("новых — 2");
     expect(first.text).not.toContain("Prefer short answers");
@@ -110,13 +94,13 @@ describe("the Telegram digest", () => {
     expect(ackDigest(db, first.keys, NOW)).toBe(2);
     expect(ackDigest(db, first.keys, NOW)).toBe(0);
     expect(planDigest(db, NOW + HOUR)).toMatchObject({ send: false, reason: "nothing_new" });
-    postOwnerItem(db, { key: "night:wall:1", source: "wall", kind: "wall", what: "Stuck: three tasks fail the same check", why: "The loop stopped", evidence: [{ kind: "text", ref: "x" }], actions: [{ id: "a", label: "a", cli: "bb lane-pilot walls" }] }, NOW + HOUR);
+    postOwnerItem(db, { key: "night:wall:1", source: "wall", kind: "wall", reason: "blocked", what: "Stuck: three tasks fail the same check", why: "The loop stopped", evidence: [{ kind: "text", ref: "x" }], actions: [{ id: "a", label: "a", cli: "bb lane-pilot walls" }] }, NOW + HOUR);
     expect(planDigest(db, NOW + 2 * HOUR).keys).toEqual(["night:wall:1"]);
   });
 
   it("is silent in quiet hours (23:00-08:00 Europe/Madrid) and sends what piled up after", () => {
     const db = seeded();
-    postOwnerItem(db, { key: "night:q", source: "night", kind: "proposal", what: "q", why: "posted by a caller", evidence: [], actions: [] }, NOW);
+    postOwnerItem(db, { key: "night:q", source: "night", kind: "proposal", reason: "decision", what: "q", why: "posted by a caller", evidence: [], actions: [] }, NOW);
     const madrid = (hour: number, minute = 0, month = 9, day = 22) => Date.UTC(2026, month, day, hour - (month === 9 ? 2 : 1), minute);
     expect(planDigest(db, madrid(23, 30))).toMatchObject({ send: false, reason: "quiet_hours" });
     expect(planDigest(db, madrid(3))).toMatchObject({ send: false, reason: "quiet_hours" });
@@ -132,7 +116,7 @@ describe("the Telegram digest", () => {
 
   it("pushes only the «now» rows (five at most); the rest wait their turn on the screen and are not even counted in the message", () => {
     const db = seeded();
-    for (let i = 0; i < 9; i++) postOwnerItem(db, { key: `night:p${i}`, source: "night", kind: "proposal", what: `proposal ${i}`, why: "graph change", evidence: [], actions: [] }, NOW);
+    for (let i = 0; i < 9; i++) postOwnerItem(db, { key: `night:p${i}`, source: "night", kind: "proposal", reason: "decision", what: `proposal ${i}`, why: "graph change", evidence: [], actions: [] }, NOW);
     const digest = planDigest(db, NOW);
     expect(digest.keys).toHaveLength(5);
     expect(digest).toMatchObject({ shown: 5, more: 0 });
@@ -161,18 +145,21 @@ describe("the Telegram digest", () => {
 describe("bb lane-pilot waiting", () => {
   it("prints the list with action lines, and digest / ack / config / post / close work from the command line", () => {
     const db = seeded();
-    const list = runWaitingCli(db, [], NOW, [], pendingOwnerLearningItems);
+    postOwnerItem(db, { key: "night:i1", source: "night", kind: "decision", reason: "decision", what: "Prefer short answers", why: "posted so waiting prints an item", evidence: [], actions: [] }, NOW);
+    const list = runWaitingCli(db, [], NOW);
     expect(list.exitCode).toBe(0);
     expect(list.stdout).toContain("Ждут владельца: 1. Сейчас: 1, остальное подождёт (помечено «потом»). Ничего не блокируется.");
     expect(list.stdout).toContain("Prefer short answers");
-    postOwnerItem(db, { key: "night:x", source: "night", kind: "proposal", what: "x", why: "posted by a caller", evidence: [], actions: [] }, NOW);
+    const initDigest = JSON.parse(runWaitingCli(db, ["digest", "--json"], NOW).stdout!);
+    ackDigest(db, initDigest.keys, NOW);
+    postOwnerItem(db, { key: "night:x", source: "night", kind: "proposal", reason: "decision", what: "x", why: "posted by a caller", evidence: [], actions: [] }, NOW);
     const digest = JSON.parse(runWaitingCli(db, ["digest", "--json"], NOW).stdout!);
     expect(digest.keys).toHaveLength(1);
     expect(JSON.parse(runWaitingCli(db, ["ack", ...digest.keys], NOW).stdout!)).toEqual({ acknowledged: 1 });
     expect(runWaitingCli(db, ["digest"], NOW).stdout).toBe("nothing to send (nothing_new)");
     expect(JSON.parse(runWaitingCli(db, ["config", "quiet=22:00-07:00"], NOW).stdout!).quiet).toBe("22:00-07:00");
     expect(runWaitingCli(db, ["config", "quiet=nope"], NOW)).toMatchObject({ exitCode: 1 });
-    expect(JSON.parse(runWaitingCli(db, ["post", JSON.stringify({ key: "n1", source: "night", kind: "k", what: "w", why: "y" })], NOW).stdout!)).toEqual({ created: true });
+    expect(JSON.parse(runWaitingCli(db, ["post", JSON.stringify({ key: "n1", source: "night", kind: "k", reason: "decision", what: "w", why: "y" })], NOW).stdout!)).toEqual({ created: true });
     expect(JSON.parse(runWaitingCli(db, ["close", "n1", "--by", "done by hand"], NOW).stdout!)).toEqual({ closed: true });
     expect(runWaitingCli(db, ["nonsense"], NOW)).toMatchObject({ exitCode: 1 });
   });
@@ -191,8 +178,8 @@ describe("the RPCs", () => {
   it("screen mutations invalidate the watched owner_waiting read; reads do not", async () => {
     const db = openDatabase(createFakePluginHost({ pluginId: "lane-pilot" }).bb);
     const invalidate = vi.fn();
-    const rpc = ownerWaitingRpc(db, [], undefined, () => undefined, async () => false, invalidate);
-    postOwnerItem(db, { key: "scr:1", source: "test", kind: "proposal", what: "A thing waits", why: "It is the owner's call, stated at length" }, NOW);
+    const rpc = ownerWaitingRpc(db, [], () => undefined, async () => false, invalidate);
+    postOwnerItem(db, { key: "scr:1", source: "test", kind: "proposal", reason: "decision", what: "A thing waits", why: "It is the owner's call, stated at length" }, NOW);
 
     await rpc.owner_waiting();
     expect(invalidate).not.toHaveBeenCalled();

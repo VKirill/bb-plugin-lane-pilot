@@ -9,9 +9,9 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { openDatabase } from "../src/rooms/plugin-db";
-import { searchRepos, sweepWorktreeClasses } from "../src/rooms/verification/worktree-sweep";
-import { worktreeJanitor } from "../src/rooms/host-worker/host-handlers";
-import { OUTSIDE_ITEM_PREFIX, runDailyWorktreePass, runWorktreeCleanupCli } from "../src/rooms/stability/server/worktree-daily-pass";
+import { searchRepos, sweepWorktreeClasses } from "../src/rooms/worktree/worktree-sweep";
+import { worktreeJanitor } from "../src/rooms/host-worker";
+import { OUTSIDE_ITEM_PREFIX, runDailyWorktreePass, runWorktreeCleanupCli } from "../src/rooms/stability/server";
 
 vi.setConfig({ testTimeout: 120_000 });
 

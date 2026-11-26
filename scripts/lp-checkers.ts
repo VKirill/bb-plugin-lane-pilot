@@ -16,13 +16,8 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { spawn } from "node:child_process";
 import Database from "better-sqlite3";
-import { runCheckersCli, createCheckers } from "../src/rooms/checkers/api";
-import { checkerMigrations } from "../src/rooms/checkers/migrations";
-import { loadHistory } from "../src/rooms/checkers/history";
-import type { ModelPort } from "../src/rooms/checkers/checkers";
-import { quote } from "../src/rooms/checkers/workspace";
-import { loadCandidates } from "../src/rooms/bench/candidates";
-import { findSolutionCommit } from "../src/rooms/bench/warmup";
+import { checkerMigrations } from "../src/rooms/checkers";
+import { runCheckersCli, createCheckers, findSolutionCommit, loadCandidates, loadHistory, quote, type ModelPort } from "../src/rooms/checkers/server";
 import { isSandboxProjectName } from "../src/rooms/contracts";
 
 const HOME = process.env.LP_CHECKERS_HOME ?? join(homedir(), "lp-checkers");

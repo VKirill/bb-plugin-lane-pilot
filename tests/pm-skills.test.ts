@@ -1,8 +1,10 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
 import {filterSkillHub, firstSentence, formatSkillList, parseSkillHub, type SkillHub} from "../src/rooms/platform/server";
-import { pmSkillName, pmSkillUseCounts, recordPmSkillUse, runPmSkillsCli, runPmSkillUseCli } from "../src/rooms/native-agent/server/pm-skill-use";
-import { pmSkillUseOf } from "../src/rooms/session-hooks/logic";
+import { pmSkillName } from "../src/rooms/native-agent/models/pm-skill";
+import { pmSkillUseCounts, recordPmSkillUse } from "../src/rooms/native-agent/server/services/pm-skill-use";
+import { runPmSkillsCli, runPmSkillUseCli } from "../src/rooms/native-agent/server/handlers/pm-skills-cli";
+import { pmSkillUseOf } from "../src/rooms/session-hooks/models";
 import { openDatabase } from "../src/rooms/plugin-db";
 
 const HUB: SkillHub = {

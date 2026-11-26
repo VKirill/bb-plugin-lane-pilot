@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { sendServiceMessage } from "../src/rooms/platform/server/service-message";
+import { sendServiceMessage } from "../src/rooms/platform/server/services/service-message";
 
 function api(fail?: (args: Record<string, unknown>) => unknown) {
   const calls: Array<Record<string, unknown>> = [];

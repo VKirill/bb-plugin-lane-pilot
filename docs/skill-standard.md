@@ -5,17 +5,17 @@ created: 2026-11-06
 updated: 2026-11-06
 status: active
 confidence: medium
-tags: [skills, forge, lint, standard]
+tags: [skills, lint, standard]
 sources:
-  - src/rooms/forge/skill-lint.ts
-  - src/rooms/forge/logic.ts
-  - src/rooms/docs/docs-lint.ts
-  - src/rooms/tools/server/cli.ts
+  - src/rooms/tools/models/skill-lint.ts
+  - src/rooms/tools/skill-lint.ts
+  - src/rooms/docs/models/docs-lint.ts
+  - src/rooms/tools/server/handlers/cli.ts
 ---
 
 # Skill standard
 
-The bar every skill meets, forged or published: `SKILL.md` plus the `references/` and `scripts/` it names. The lint is `src/rooms/forge/skill-lint.ts:1`; the forge's `lintDraft` calls the same rules for a one-file draft (`src/rooms/forge/logic.ts:26`), and `bb lane-pilot skill-lint <dir>` checks a local folder such as `~/.bb/skills/<name>/` (`src/rooms/tools/server/cli.ts:414`).
+The bar every skill meets: `SKILL.md` plus the `references/` and `scripts/` it names. The lint is `src/rooms/tools/models/skill-lint.ts`; `bb lane-pilot skill-lint <dir>` (`src/rooms/tools/skill-lint.ts`, dispatched from `src/rooms/tools/server/handlers/cli.ts`) checks a local folder such as `~/.bb/skills/<name>/`.
 
 ## Rules
 
@@ -28,7 +28,7 @@ The bar every skill meets, forged or published: `SKILL.md` plus the `references/
 
 ## How it works
 
-`lintSkillDir(files)` (`src/rooms/forge/skill-lint.ts:88`) returns `{ errors, warnings }`; errors block, warnings advise. Frontmatter is read by `parseFrontmatter` (`src/rooms/docs/docs-lint.ts:48`), which folds a multi-line `description: >`. The CLI walks the folder, keeps text files, and exits 1 when any error stands.
+`lintSkillDir(files)` (`src/rooms/tools/models/skill-lint.ts`) returns `{ errors, warnings }`; errors block, warnings advise. Frontmatter is read by `parseFrontmatter` (`src/rooms/docs/models/docs-lint.ts`), which folds a multi-line `description: >`. The CLI walks the folder, keeps text files, and exits 1 when any error stands.
 
 ## Delivery: which layer wins, and why a plugin-only skill does not arrive
 
@@ -36,8 +36,7 @@ BB builds the skill catalog of a session in `resolveSkillCatalogEntries` (core, 
 
 A Lane Pilot role starts with a session policy (`ROLE_PROFILES`, `src/rooms/contracts/helper-context.ts`). Its `bbPlugins` list is empty for almost every role, and `lane-pilot` is not a mandatory plugin, so the core puts every skill whose provenance is the plugin `lane-pilot` into `bbSkillsDenied` (`buildVkRuntimeSessionPolicy`, `apps/server/src/services/threads/vk-session-policy.ts`). A hub skill has no plugin and passes the plugin filter; it then has to be on the role's `skills` allow-list (a graph node adds its own `skills` to it). Consequences:
 
-- `project-discovery-grill` exists only in the plugin, so no policy-bound Lane Pilot session (writer, graph node, PM helper) receives it. Only `workflow-architect` and `lead` allow the plugin, and they have no use for it.
-- Fix, no code change: publish it to the hub (`bb tools skills-publish`, see the publish list in the skills-standard work), so it arrives as an owner skill. `project-passport` nodes name it in `skills`, which puts it on the node's allow-list.
+- A plugin-only skill must be published to the hub (`bb tools skills-publish`) so it arrives as an owner skill (`bb-user`), then named in the role's or graph node's `skills` allow-list.
 - Rule for new skills: a skill that a graph node, a role or an overlay loads by name must be on the hub when the plugin is released; the plugin folder is the source, the hub copy is what agents read. `tests/skills-shipped.test.ts` checks that every name referenced exists in `skills/` or in `policy/external-skills.json`; it cannot see the hub.
 
 <!-- lane-pilot:backlinks -->

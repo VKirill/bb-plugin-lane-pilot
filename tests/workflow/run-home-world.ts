@@ -6,14 +6,15 @@ import { dirname, join, relative } from "node:path";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { vi } from "vitest";
 import { createRun, openDatabase, setRunThread } from "../../src/rooms/plugin-db";
-import { runCommand } from "../../src/rooms/host-worker/host-handlers";
+import { runCommand } from "../../src/rooms/host-worker";
 import { createCore } from "../../src/rooms/core/server/core";
-import { createWorkflowAgents } from "../../src/rooms/workflow/server/workflow-agent";
-import { chainRuntimeFor, registerChainExecutors } from "../../src/rooms/workflow/server/workflow-executors";
+import { createWorkflowAgents } from "../../src/rooms/workflow/server/services/workflow-agent";
+import { chainRuntimeFor, registerChainExecutors } from "../../src/rooms/workflow/server/services/workflow-executors";
 import { registerPureActions, registerReducers, WorkflowEngine, parseWorkflow } from "@lane-pilot/workflow-engine";
 import type { Workflow } from "@lane-pilot/workflow-engine";
 import type { ChainRuntime } from "../../src/rooms/contracts/server";
 import type { Services } from "../../server";
+import { endedTurn } from "../helpers/ended-turn";
 
 /**
  * A small world for the run folder (docs/task-folder.md, «The run folder»): the real engine, the real chain executors, a real git checkout in a temp
@@ -66,7 +67,7 @@ export async function runHomeWorld(script: Record<string, string[]> = {}, option
           return { id };
         },
         get: async ({ threadId }) => ({ id: threadId, status: "idle", projectId: PROJECT, environmentId: "env-pm", sourceThreadId: PM, lifecycleOwnerThreadId: PM }),
-        events: { list: async ({ threadId }) => [{ type: "turn/started", threadId, seq: 1 }, { type: "turn/completed", threadId, seq: 2, data: { status: "completed" } }] },
+        events: { list: async ({ threadId }) => endedTurn(threadId) },
         send: async () => ({}) as never,
         stop: async () => ({ ok: true }) as never,
         output: async ({ threadId }) => {

@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
-import { afterEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import {builtinWorkflows} from "../../src/rooms/workflow/builtin";
-import { MAX_QUESTIONS, MIN_CONFIDENCE, TOP_N, goalsSchema, isOffered, normalizeText, routeIntent, setRouterModel, stateProblem, stems } from "@lane-pilot/workflow-engine";
+import { MAX_QUESTIONS, MIN_CONFIDENCE, TOP_N, goalsSchema, isOffered, normalizeText, routeIntent, stateProblem, stems } from "@lane-pilot/workflow-engine";
 import type { RouterModel, RouterState } from "@lane-pilot/workflow-engine";
 import { publishedCatalog } from "./router-catalog";
 
@@ -35,7 +35,6 @@ describe("separate routing intent and full request", () => {
 });
 
 const route = (intent: string, extra: Partial<Parameters<typeof routeIntent>[0]> = {}) => routeIntent({ intent, workflows: catalog, ...extra });
-afterEach(() => setRouterModel(null));
 
 describe("text search", () => {
   it("ignores case, diacritics and punctuation, and trims Russian and English endings", () => {
@@ -283,15 +282,6 @@ describe("the model port", () => {
     expect(seen!.candidates[0]).not.toHaveProperty("nodes");
     expect(result).toMatchObject({ decision: "route", workflowId: "quality-loop", confidence: 88 });
     expect(result.evidence).toMatchObject({ pattern: "a bounded change", model: "external", rejected: expect.arrayContaining([{ id: "analyze-plan-execute", reason: "too heavy" }]) });
-  });
-
-  it("a plugged model is used by default through setRouterModel, and unplugging goes back to the scorer", async () => {
-    setRouterModel(async () => ({ choice: "quality-loop", confidence: 91, pattern: "plugged", rejected: [], questions: [] }));
-    expect((await route(phrase)).workflowId).toBe("quality-loop");
-    setRouterModel(null);
-    const back = await route(phrase);
-    expect(back.workflowId).toBe("analyze-plan-execute");
-    expect(back.evidence.model).toBe("deterministic");
   });
 
   it("a null choice means questions, and they are the model's, at most three", async () => {

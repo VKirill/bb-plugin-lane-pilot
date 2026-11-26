@@ -5,22 +5,28 @@
     "ru": "Тик Штурмана"
   },
   "description": {
-    "en": "One tick of the lead («Штурман»): code reads the hub (projects, runs, phases, the road tree, the open proposals, the exam per class, the budget left today) and writes the brief with the identity first; the lead agent updates the tree and names at most five proposals with evidence and a price; code records them (tree, journal with a prediction, the owner's list with да / потом / нет), acts only in a class the nightly exam opened, and closes the tick's receipt with what it cost.",
-    "ru": "Один тик Штурмана: код читает хаб (проекты, запуски, фазы, дерево дороги, открытые предложения, экзамен по классам, остаток бюджета на день) и пишет бриф с личностью первым блоком; агент-ведущий обновляет дерево и называет до пяти предложений с доказательством и ценой; код записывает их (дерево, журнал с прогнозом, список владельца с кнопками да / потом / нет), действует сам только в классе, открытом ночным экзаменом, и закрывает квитанцию тика с его ценой."
+    "en": "One tick of the lead («Штурман»): code reads the project/hub state and writes the brief with the identity first; the lead agent updates the tree and names proposals with evidence and a price; code records them in the road and evolve ledger (lane_pilot_lead_road, never the owner inbox), and closes the tick receipt with what it cost.",
+    "ru": "Один тик Штурмана: код читает состояние проекта и хаба и пишет бриф с личностью первым блоком; агент-ведущий обновляет дерево и называет предложения с доказательством и ценой; код записывает их в дерево дороги и журнал эволюции (lane_pilot_lead_road, без карточек владельцу) и закрывает квитанцию тика с его ценой."
   },
   "not_for": [
-    "anything a person asks in a chat: the lead's schedule and «Тик сейчас» start it (src/rooms/lead/server/service.ts)",
-    "a task or a phase of a project: those go through the project's PM chat or through a proposal the owner accepts"
+    "anything a person asks in a chat: the project calendar schedule and manual tick start it",
+    "posting cards into the owner inbox: proposals go only to the road and evolve ledger"
   ],
   "status": "published",
   "tags": [
     "lead",
     "schedule"
   ],
+  "category": "service",
   "triggers": [
     "manual"
   ],
   "inputs": {
+    "projectId": {
+      "type": "string",
+      "default": "",
+      "note": "optional project id when triggered from a project calendar schedule"
+    },
     "tickId": {
       "type": "string",
       "default": "",
@@ -104,28 +110,12 @@
         "en": "Record the branches and the proposals",
         "ru": "Записать ветки и предложения"
       },
-      "rule": "code: new branches go into the tree; each complete proposal (class, why, evidence, cost) becomes a branch in state proposed, a journal row with a prediction made now, and a line on the owner's list with да / потом / нет; the rest is dropped with its reason",
+      "rule": "code: new branches go into the tree; each complete proposal (class, why, evidence, cost) becomes a branch in state proposed; the rest is dropped with its reason",
       "out": {
         "proposed": "int",
         "proposed_json": "string",
         "dropped_json": "string",
-        "actable_json": "string",
         "branches_added": "int"
-      }
-    },
-    {
-      "id": "act",
-      "type": "action",
-      "action": "lp.lead_act",
-      "title": {
-        "en": "Act where the exam allows",
-        "ru": "Действовать там, где разрешил экзамен"
-      },
-      "rule": "code: a proposal in a class the nightly exam opened (never risk high, never money or external) goes through the project's intake marked as the lead's; everything else waits for the owner",
-      "out": {
-        "acted": "int",
-        "acted_json": "string",
-        "deferred_json": "string"
       }
     },
     {
@@ -136,11 +126,10 @@
         "en": "Close the receipt",
         "ru": "Закрыть квитанцию"
       },
-      "rule": "code: the tick's row gets what was proposed, acted on and deferred, the tokens and the cost; a tick that is over budget, blocked or without a summary is one quiet line on the owner's list",
+      "rule": "code: the tick's row gets what was proposed and deferred, the tokens and the cost",
       "out": {
         "status": "ok|off|budget|error|no_receipt",
         "proposed": "int",
-        "acted": "int",
         "report": "string"
       }
     },
@@ -151,7 +140,6 @@
       "map": {
         "status": "receipt.status",
         "proposed": "receipt.proposed",
-        "acted": "receipt.acted",
         "report": "receipt.report"
       }
     }
@@ -176,10 +164,6 @@
     },
     {
       "from": "propose",
-      "to": "act"
-    },
-    {
-      "from": "act",
       "to": "receipt"
     },
     {
@@ -228,18 +212,11 @@
           "proposed": 1,
           "proposed_json": "[{\"roadId\":\"road_1\"}]",
           "dropped_json": "[]",
-          "actable_json": "[]",
           "branches_added": 0
-        },
-        "act": {
-          "acted": 0,
-          "acted_json": "[]",
-          "deferred_json": "[]"
         },
         "receipt": {
           "status": "ok",
           "proposed": 1,
-          "acted": 0,
           "report": "Three projects, one stale branch.\nПредложений: 1"
         }
       },
@@ -247,7 +224,6 @@
         "state",
         "think",
         "propose",
-        "act",
         "receipt",
         "done"
       ],
@@ -268,7 +244,6 @@
           "receipt": {
             "status": "off",
             "proposed": 0,
-            "acted": 0,
             "report": ""
           }
         },
@@ -282,7 +257,7 @@
         }
       }
     },
-    "live": "switch lead.enabled on, press «Тик сейчас» on the Self-improvement screen, read the receipt in bb lane-pilot lead ticks and the proposals on the owner's list"
+    "live": "switch lead.enabled on, run the project's lead-tick calendar row or start manually, and inspect proposals in the road / evolve ledger"
   },
   "goal_check": "artifact"
 }

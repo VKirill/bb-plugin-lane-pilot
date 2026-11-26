@@ -8,12 +8,14 @@ confidence: medium
 tags: [workflow, router]
 sources:
   - packages/workflow-engine/src/router.ts
-  - src/rooms/workflow/server/workflow-tools.ts
+  - src/rooms/workflow/server/handlers/workflow-tools.ts
+  - src/rooms/workflow/models/route-policy.ts
+  - packages/contracts/src/graph-categories.ts
 ---
 
 # Workflow router (W4)
 
-The router maps a request to one of the published workflows of the catalog, or asks. Pure code in `packages/workflow-engine/src/router.ts` (no SDK, no database); the PM tools are in `src/rooms/workflow/server/workflow-tools.ts`. Source of the rules and of the evaluation set: `workflow-chains-spec.md`, sections 1 and 6.
+The router maps a request to one of the published workflows of the catalog, or asks. Pure code in `packages/workflow-engine/src/router.ts` (no SDK, no database); the PM tools are in `src/rooms/workflow/server/handlers/workflow-tools.ts`. Built-in graphs (`workflows/*.json`, loaded dynamically via `src/rooms/workflow/builtin.ts`) require `category` from `GRAPH_CATEGORIES` (`packages/contracts/src/graph-categories.ts`) and `description`/`not_for`.
 
 ## What is offered
 
@@ -48,7 +50,7 @@ Only `published`, not `internal` workflows, and never `lp-task-pipeline` (how La
 
 ## The PM picks: the tool returns a ranked shortlist
 
-`lane_pilot_route` asks no model. The deterministic scorer (`packages/workflow-engine/src/router.ts`, `routeIntent`) ranks the published workflows and the tool returns the top `TOP_N` (10) as `candidates`: `id`, `purpose` (one line), `needs` (the required inputs with no default), `score` and the `rules` that fired. The PM, which is an LLM already in the loop, reads the purposes and picks; the scorer's own best is only `decision`. The scorer alone found the right graph in its top five for 16 of 36 real requests, which is why the list is wider and the pick is the PM's. A workflow the project's route policy forbids (`route.max_risk`, `secrets.allow`, `src/rooms/workflow/route-policy.ts`) is not offered and is named in `warnings`.
+`lane_pilot_route` asks no model. The deterministic scorer (`packages/workflow-engine/src/router.ts`, `routeIntent`) ranks the published workflows and the tool returns the top `TOP_N` (10) as `candidates`: `id`, `purpose` (one line), `needs` (the required inputs with no default), `score` and the `rules` that fired. The PM, which is an LLM already in the loop, reads the purposes and picks; the scorer's own best is only `decision`. The scorer alone found the right graph in its top five for 16 of 36 real requests, which is why the list is wider and the pick is the PM's. A workflow the project's route policy forbids (`route.max_risk`, `secrets.allow`, `src/rooms/workflow/models/route-policy.ts`) is not offered and is named in `warnings`.
 
 ## What is not here
 

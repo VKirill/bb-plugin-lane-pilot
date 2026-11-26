@@ -23,7 +23,8 @@
   "not_for": [
     "code-review",
     "debug",
-    "review-fix"
+    "review-fix",
+    "phase-assumptions"
   ],
   "status": "published",
   "tags": [
@@ -31,6 +32,7 @@
     "audit",
     "scout"
   ],
+  "category": "code",
   "inputs": {
     "goal": {
       "type": "string",

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { criticLevel, sampledSkip } from "../../src/rooms/critique/critic-level";
+import { criticLevel, sampledSkip } from "../../src/rooms/critique";
 
 /** The critic's level by rule; it replaced the Jev screen `critique.screen`. */
 const green = [{ exitCode: 0 }];

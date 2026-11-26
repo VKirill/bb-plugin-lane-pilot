@@ -3,13 +3,13 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { literalCoverage } from "@lane-pilot/kit";
-import { EXISTENCE_ONLY_WORDS, isExistenceOnly } from "../src/rooms/baseline/logic";
+import { EXISTENCE_ONLY_WORDS, isExistenceOnly } from "../src/rooms/baseline/models/logic";
 import plugin from "../server";
 import { taskV2Schema } from "../src/rooms/contracts";
 import { GATE_CODES, gateVocabularyLines } from "../src/rooms/contracts";
-import { INVARIANT_ITEM, INVARIANT_WORDS } from "../src/rooms/tasks/plan-fact";
+import { INVARIANT_ITEM, INVARIANT_WORDS } from "../src/rooms/tasks/models/plan-fact";
 import {builtinWorkflow} from "../src/rooms/workflow/builtin";
-import { writerBriefSegments, writerPrompt } from "../src/rooms/writer/server/writer-task";
+import { writerBriefSegments, writerPrompt } from "../src/rooms/writer/models/writer-task";
 
 const task = taskV2Schema.parse({
   schema_version: 2, id: "t1", title: "t", risk: "low", lane: "writer", project_cwd: "/repo", read_first: [], interfaces: [], invariants: [], out_of_scope: [],
@@ -30,7 +30,7 @@ describe("the gate vocabulary is made of the constants the gates read", () => {
   });
 
   it("every code is a code the lint or the baseline really writes", () => {
-    const source = [read("src/rooms/tasks/server/contract-lint.ts"), read("src/rooms/baseline/server/baseline.ts"), read("src/rooms/writer/server/question-timeout.ts")].join("\n");
+    const source = [read("src/rooms/tasks/models/contract-lint.ts"), read("src/rooms/tasks/models/contract-lint-checks.ts"), read("src/rooms/baseline/server/services/baseline-service.ts"), read("src/rooms/writer/server/services/question-timeout.ts")].join("\n");
     for (const code of Object.keys(GATE_CODES)) expect(source, code).toContain(code);
   });
 });

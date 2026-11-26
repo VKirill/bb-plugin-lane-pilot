@@ -2,8 +2,8 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { expect, it } from "vitest";
 import { createWorkflowCatalog, validateWorkflow } from "@lane-pilot/workflow-engine";
 import { openDatabase } from "../../src/rooms/plugin-db";
-import { createWorkflowLibrary } from "../../src/rooms/workflow/server/workflow-library";
-import { createWorkflowTriggers } from "../../src/rooms/workflow/server/workflow-triggers";
+import { createWorkflowLibrary } from "../../src/rooms/workflow/server/services/workflow-library";
+import { createWorkflowTriggers } from "../../src/rooms/workflow/server/services/workflow-triggers";
 import { engineOn, journalDb, ok, trust, wf } from "./engine-helpers";
 import { workflow } from "./fixtures";
 

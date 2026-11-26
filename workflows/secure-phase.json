@@ -8,6 +8,7 @@
     "en": "Checks that the plan's threat register is closed: for each threat of the phase's SECURITY.md a disposition mitigated (file:line or check), accepted (the owner's word) or open; the status table goes back into SECURITY.md and open threats end in gaps.",
     "ru": "Проверяет, что реестр угроз плана закрыт: по каждой угрозе из SECURITY.md фазы — решение «закрыта» (file:line или проверка), «принята» (слово владельца) или «открыта»; таблица статусов возвращается в SECURITY.md, открытые угрозы — в пробелы."
   },
+  "category": "qa",
   "status": "published",
   "quality_mode": {
     "default": "standard"

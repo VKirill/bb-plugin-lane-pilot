@@ -35,6 +35,7 @@
     "system",
     "files"
   ],
+  "category": "routines",
   "inputs": {
     "task": {
       "type": "string",

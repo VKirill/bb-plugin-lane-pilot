@@ -30,10 +30,6 @@ export function claimStageSpawn(db: LanePilotDatabase, runId:string, taskId:stri
   }).immediate();
 }
 
-export function claimDocsSpawn(db: LanePilotDatabase, runId:string, taskId:string): boolean {
-  return claimStageSpawn(db, runId, taskId, "docs-maintenance");
-}
-
 export function saveStageReceipt(db: LanePilotDatabase, row:StageReceiptRow): void {
   const { result, ...fields } = row;
   db.transaction(() => {
@@ -216,7 +212,7 @@ export function taskCheckLogRows(db: LanePilotDatabase, runId: string): Array<{ 
 /** Failed or blocked background stages of the run (the card shows them next to an accepted task, not under it). */
 export function failedBackgroundStageRows(db: LanePilotDatabase, runId: string): Array<{ task_id: string; stage_id: string }> {
   return db.prepare(`SELECT task_id, stage_id FROM lane_pilot_stage_receipt WHERE run_id=? AND state IN ('failed','blocked')
-    AND stage_id IN ('memory-maintenance','project-life','docs-maintenance') ORDER BY stage_id`).all(runId) as Array<{ task_id: string; stage_id: string }>;
+    AND stage_id='memory-maintenance' ORDER BY stage_id`).all(runId) as Array<{ task_id: string; stage_id: string }>;
 }
 
 /** The task's stage events, oldest first (the task timeline's stage lines). */
@@ -351,10 +347,4 @@ export function gateEventFailureCounts(db: LanePilotDatabase, runId: string, tas
 export function failedStageCounts(db: LanePilotDatabase, runId: string, taskId: string): Array<{ stage_id: string; n: number }> {
   return db.prepare("SELECT stage_id, count(*) AS n FROM lane_pilot_stage_receipt WHERE run_id=? AND task_id=? AND state IN ('failed','blocked') GROUP BY stage_id")
     .all(runId, taskId) as Array<{ stage_id: string; n: number }>;
-}
-
-/** Stage receipts touched since a moment whose result carries near misses (the «not scored» channel), of one project or all. */
-export function listNearMissReceipts(db: LanePilotDatabase, since: number, projectId?: string): Array<{ project_id: string; task_id: string; result_json: string; updated_at: number }> {
-  return db.prepare(`SELECT r.project_id, s.task_id, s.result_json, s.updated_at FROM lane_pilot_stage_receipt s JOIN lane_pilot_run r ON r.id=s.run_id
-    WHERE s.updated_at>=? AND s.result_json LIKE '%near_misses%'${projectId ? " AND r.project_id=?" : ""}`).all(since, ...(projectId ? [projectId] : [])) as Array<{ project_id: string; task_id: string; result_json: string; updated_at: number }>;
 }

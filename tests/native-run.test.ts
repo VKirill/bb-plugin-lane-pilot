@@ -1,7 +1,8 @@
 import { afterEach, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { closeRun, createRun, getActivation, openDatabase, setRunThread } from "../src/rooms/plugin-db";
-import { claimNativeLaneRun, ownedNativePmRun, projectCheckoutIntentPath, resolveNativeDispatchWorkspace, writerWorkspaceForPmInstructions } from "../src/rooms/native-agent/native-run";
+import { claimNativeLaneRun, ownedNativePmRun } from "../src/rooms/native-agent/server/services/native-run";
+import { projectCheckoutIntentPath, resolveNativeDispatchWorkspace, writerWorkspaceForPmInstructions } from "../src/rooms/native-agent/models/native-dispatch-placement";
 
 const cleanup: Array<() => Promise<void>> = [];
 afterEach(async () => {
@@ -112,7 +113,7 @@ it("gives a repeated task id a fresh key and frees paths held by a dead task", a
 });
 
 it("accepts upstream task-v2 context fields a BB writer does not use", async () => {
-  const { validateTaskV2 } = await import("../src/rooms/tasks/task-v2");
+  const { validateTaskV2 } = await import("../src/rooms/tasks");
   const task = {
     schema_version: 2, id: "t1", title: "T", risk: "low", lane: "write", project_cwd: "/p", read_first: [], interfaces: [], invariants: [],
     out_of_scope: [], expected_outputs: ["a.ts"], owns_paths: ["a.ts"], never_touch: [], depends_on: [], objective: "o", acceptance: ["a"],
@@ -146,7 +147,7 @@ it("keeps section settings on top of the project's and resets a section back to 
 });
 
 it("accepts a switch's boolean for a true/false setting", async () => {
-  const { validateSettingValue } = await import("../src/rooms/settings/setting-validation");
+  const { validateSettingValue } = await import("../src/rooms/settings/models/setting-validation");
   expect(validateSettingValue("docs.enabled", true)).toBeNull();
   expect(validateSettingValue("memory.enabled", false)).toBeNull();
   expect(validateSettingValue("docs.enabled", "true")).toBeNull();

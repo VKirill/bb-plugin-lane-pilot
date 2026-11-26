@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { listActiveLocks, upsertCharter } from "../../src/rooms/specialist/server";
@@ -6,7 +6,7 @@ import { setupLiveSpecialistEnv } from "./live-e2e-harness";
 
 /**
  * Live end-to-end execution of all 6 SEO shelf (`category === "seo"`) workflows
- * and all 3 Service shelf (`category === "service"`) Specialist OS workflows
+ * and both remaining Service shelf (`category === "service"`) Specialist OS workflows
  * on the real `WorkflowEngine` + real SQLite + real git checkout + real Python scripts.
  */
 let cleanup: (() => Promise<void> | void) | null = null;
@@ -27,7 +27,7 @@ const SEO_CODE_ORDER = {
   estimated_cost_usd: 0.25,
 };
 
-describe("Live E2E: SEO shelf (6/6 graphs) & Service shelf (3/3 graphs)", () => {
+describe("Live E2E: SEO shelf (6/6 graphs) & Service shelf (2/2 graphs)", () => {
   it("1. seo-ai-visibility: runs ai_vis_panel, ai_vis_collect, ai_vis_score, agent_ready_audit, ai_vis_diagnose, and dispatches orders", async () => {
     const t = await setupLiveSpecialistEnv({
       panel_seed: { seed_path: ".agents/seo/ai-visibility/seed.json", seed_questions: 20 },
@@ -161,8 +161,8 @@ describe("Live E2E: SEO shelf (6/6 graphs) & Service shelf (3/3 graphs)", () => 
     });
     expect(String(summary.output?.cf_batch_id)).toMatch(/^cfb_/);
 
-    const cfBatches = t.db.prepare("SELECT * FROM lane_pilot_sp_cf_batch WHERE project_id = ?").all(t.projectId);
-    expect(cfBatches.length).toBe(1);
+    const intents = t.db.prepare("SELECT status FROM lane_pilot_sp_intent WHERE project_id = ?").all(t.projectId) as Array<{ status: string }>;
+    expect(intents.length).toBeGreaterThanOrEqual(1);
   });
 
   it("5. seo-release (upgraded): runs release_graph_sim.py premortem, owner approval, indexnow_push.py, and acquires 21-day seo_indexation lock", async () => {
@@ -314,105 +314,5 @@ describe("Live E2E: SEO shelf (6/6 graphs) & Service shelf (3/3 graphs)", () => 
       status: "done",
       dispatched_count: 1,
     });
-  });
-
-  it("8. lp.curriculum-ingest (service): runs curriculum_lint.py (0 watermarks/violations), writes shadow questions.ext.json, and dispatches canon update", async () => {
-    const t = await setupLiveSpecialistEnv({
-      inventory: { inventory_path: ".agents/curriculum/sources.json", sources: 2, new_sources: 2 },
-      extract: { atoms_path: ".agents/curriculum/atoms.json", atoms: 5, quotes: 2 },
-      questions: { shadow_path: ".agents/curriculum/shadow.json", shadow_questions: 1 },
-      arbitrate: {
-        conflicts: 0,
-        conflicts_path: ".agents/curriculum/conflicts.json",
-        canon_changes: 1,
-        orders: [
-          {
-            kind: "code_task",
-            title: "Обновить чеклист модерации Telegram Ads",
-            domain: "marketing",
-            reason_code: "curriculum_canon_update",
-            action_class: "skill_update",
-            is_stop_or_kill: false,
-            requires_owner_go: true,
-            tariff_known: true,
-            estimated_cost_usd: 0.2,
-          },
-        ],
-      },
-      audit: { status: "pass", findings: [], reasons: "0 водяных знаков, цитаты <= 25 слов." },
-    });
-    cleanup = t.dispose;
-
-    // Pre-commit clean curriculum artifacts so analyst read-only check passes and curriculum_lint.py scans real files on disk
-    t.writeCheckoutJson(".agents/curriculum/sources.json", { sources: ["osipenkov-tg-ads-2026"] }, true);
-    t.writeCheckoutJson(
-      ".agents/curriculum/atoms.json",
-      { atoms: [{ id: "A-1", rule: "Использовать start_param для сквозной атрибуции бота", quote: "Короткая проверенная цитата до десяти слов." }] },
-      true,
-    );
-    t.writeCheckoutJson(
-      ".agents/curriculum/shadow.json",
-      { questions: [{ question_id: "SHD-TG-01", question_ru: "Передаётся ли start_param в CRM?" }] },
-      true,
-    );
-
-    const { summary, answeredFormsCount } = await t.runWorkflowLive("lp.curriculum-ingest", {
-      source_dir: ".agents/curriculum",
-      domain: "marketing",
-    });
-
-    expect(summary.status).toBe("succeeded");
-    expect(answeredFormsCount).toBe(1);
-    expect(summary.output).toMatchObject({
-      status: "done",
-      shadow_questions: 1,
-      conflicts: 0,
-      dispatched_count: 1,
-    });
-    const extPath = join(t.checkout, ".agents/marketing/questions.ext.json");
-    expect(existsSync(extPath)).toBe(true);
-    expect(JSON.parse(readFileSync(extPath, "utf8")).questions.length).toBe(1);
-  });
-
-  it("9. lp.specialist-eval (service): runs replay_scorer.py on 30 real specialist answers and promotes autonomy class to bounded_auto", async () => {
-    const t = await setupLiveSpecialistEnv({
-      answer_mkt: () => {
-        const ansRel = ".agents/marketing/eval-answers.json";
-        const passingRuns = Array.from({ length: 30 }, (_, idx) => ({
-          run_id: `eval-run-${idx + 1}`,
-          decision: "hold",
-          expected_decision: "hold",
-          reviewer_visits: 1,
-          fields: { self_doubt: 0.25 },
-          reads: [{ path: "metrics.csv", offset: 0, limit: 200 }],
-          answer:
-            "Конверсия изменилась на 12% [src:metrika 2026-11-01..10], выборка 1 450 визитов [src:metrika]. Решение: держать.\n## Чего не хватило в данных\n- нет разбивки по возвратам за последние 48 часов",
-        }));
-        t.writeCheckoutJson(ansRel, { runs: passingRuns });
-        return { answers_path: ansRel, answered: 30 };
-      },
-      audit: { status: "pass", findings: [], reasons: "Слепой прогон без утечки будущих данных (leakage_ok=true), Wilson LB > 0.80." },
-    });
-    cleanup = t.dispose;
-
-    const { summary, answeredFormsCount } = await t.runWorkflowLive("lp.specialist-eval", {
-      role: "growth-marketer",
-      exam: "both",
-      promote: true,
-    });
-
-    expect(summary.status).toBe("succeeded");
-    expect(answeredFormsCount).toBe(1);
-    expect(summary.output).toMatchObject({
-      status: "promoted",
-      grade: "g4",
-    });
-    expect(Number(summary.output?.wilson_lb)).toBeGreaterThan(0.8);
-
-    const rights = t.db
-      .prepare("SELECT autonomy_class, wilson_lb FROM lane_pilot_sp_autonomy WHERE project_id = ? AND action_class = 'analysis_propose'")
-      .get(t.projectId) as { autonomy_class: string; wilson_lb: number } | undefined;
-    expect(rights?.autonomy_class).toBe("bounded_auto");
-    expect(rights?.wilson_lb).toBeGreaterThan(0.8);
   });
 });

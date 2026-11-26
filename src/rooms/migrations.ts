@@ -2,37 +2,46 @@ import { nativeDirectoryMigrations } from "./storage";
 // The composed Lane Pilot migration list, in apply order. Order is locked: tests/fixtures/migrations.lock.json hashes every statement.
 // Owner rooms export their slices; storage applies whatever list it is handed (openDatabase default lives above storage).
 import { handoffMigrations } from "@lane-pilot/handoff";
-import { councilMigrations, councilRunMigrations } from "@lane-pilot/council";
-import { ruleAudienceMigrations, ruleFormMigrations, ruleMechanismMigrations, ruleMigrations, ruleTrialMigrations, triageMigrations } from "@lane-pilot/run-insights";
-import { workflowMigrations } from "@lane-pilot/workflow-engine";
+import { workflowInboxMigrations, workflowMigrations, workflowNodeFormMigrations, workflowStepFactsMigrations } from "@lane-pilot/workflow-engine";
 import { workflowNotVerifiedMigrations, workflowOpsMigrations } from "@lane-pilot/workflow-engine";
 import { draftMigrations } from "@lane-pilot/workflow-engine";
-import { anamnesisOwnerMigrations } from "./anamnesis/server";
-import { learningMigrations } from "./learning/migrations";
-import { pmReplayMigrations } from "./pm-replay";
 import { scheduleAgentMigrations, scheduleMigrations } from "./schedule";
-import { worldMigrations } from "./world";
-import { harnessMigrations } from "./harness";
 import { deferralKindMigrations, deferralMigrations, wallDeferralKindMigrations } from "./deferral";
 import { rollbackMigrations } from "./rollback";
-import { benchMigrations } from "./bench";
 import { ownerWaitingMigrations } from "./owner-waiting";
 import { leadMigrations } from "./lead";
 import { baselineMigrations } from "./baseline";
 import { stageReturnMigrations } from "./stage-return";
-import { runGoalCoverageMigrations, runGoalMigrations } from "./run-goal";
-import { phaseMigrations } from "./phase";
-import { capabilityMigrations } from "./capability";
 import { outageMigrations } from "./outage";
 import { backlogMigrations } from "./backlog";
 import { memoryTierMigrations } from "./memory-tiers";
-import { hypothesisMigrations } from "./hypotheses";
-import { wallMigrations } from "./wall";
 import { checkerMigrations } from "./checkers";
 import { memoryConflictMigrations } from "@lane-pilot/memory-core";
 import { spMigrations } from "./specialist";
-import { passportMigrations } from "./passport";
 import { trajectoryDeltaMigrations } from "./errands";
+import {
+  anamnesisOwnerMigrations,
+  benchMigrations,
+  capabilityMigrations,
+  councilMigrations,
+  councilRunMigrations,
+  harnessMigrations,
+  hypothesisMigrations,
+  learningMigrations,
+  passportMigrations,
+  phaseMigrations,
+  pmReplayMigrations,
+  ruleAudienceMigrations,
+  ruleFormMigrations,
+  ruleMechanismMigrations,
+  ruleMigrations,
+  ruleTrialMigrations,
+  runGoalCoverageMigrations,
+  runGoalMigrations,
+  triageMigrations,
+  wallMigrations,
+  worldMigrations,
+} from "./legacy-migrations";
 /** The attempt ledger's append-only guards (SMA ar_ledger): a transition row is never rewritten or removed, an attempt row is never deleted. */
 export const ATTEMPT_LEDGER_TRIGGERS = [
   `CREATE TRIGGER lane_pilot_attempt_transition_no_update BEFORE UPDATE ON lane_pilot_attempt_transition BEGIN SELECT RAISE(ABORT,'attempt transitions are append-only'); END`,
@@ -873,4 +882,7 @@ export const migrations = [
   `CREATE INDEX lane_pilot_trajectory_delta_unprocessed ON lane_pilot_trajectory_delta(processed_at, created_at)`,
   `CREATE INDEX lane_pilot_trajectory_delta_project ON lane_pilot_trajectory_delta(project_id, created_at)`,
   `CREATE TRIGGER lane_pilot_trajectory_delta_no_delete BEFORE DELETE ON lane_pilot_trajectory_delta BEGIN SELECT RAISE(ABORT, 'trajectory deltas are append-only'); END`,
+  ...workflowInboxMigrations,
+  ...workflowStepFactsMigrations,
+  ...workflowNodeFormMigrations,
 ];

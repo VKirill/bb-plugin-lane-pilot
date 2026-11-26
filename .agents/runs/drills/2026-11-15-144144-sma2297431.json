@@ -1,0 +1,811 @@
+{
+  "kind": "lane-pilot-sandbox-drill",
+  "date": "2026-11-15",
+  "stamp": "20261115-144144",
+  "startedAt": 1794742904780,
+  "finishedAt": 1794742953876,
+  "durationSec": 49,
+  "project": "proj_ibu6v9g64j",
+  "runId": null,
+  "pmThread": null,
+  "sourceThread": null,
+  "mode": "full",
+  "scenarioNames": [
+    "sma_r00"
+  ],
+  "commit": "788ca5de01c636d6d11912601539b1895b6b53bb",
+  "skipped": {},
+  "result": "pass",
+  "problems": [],
+  "checks": null,
+  "tasks": null,
+  "dispatch": null,
+  "scenarios": [
+    {
+      "name": "sma_r00",
+      "result": "pass",
+      "problems": [],
+      "proved": [
+        {
+          "node": "n0",
+          "ok": true,
+          "detail": "phase opened at discussion, book ['phase opened: Sums'], second open distinct True"
+        },
+        {
+          "node": "n1",
+          "ok": true,
+          "detail": "command key discussion:none, open lines 1, question wait {'key': 'discussion:questions:q1', 'waitsForPm': True, 'text': True}"
+        },
+        {
+          "node": "n2",
+          "ok": true,
+          "detail": "signed card: docs 3, risks ['value', 'usability', 'feasibility', 'viability', 'security'], appetite one day, no-gos ['no OAuth', 'no sync']"
+        },
+        {
+          "node": "n3",
+          "ok": true,
+          "detail": "no appetite refused ['no appetite: say how much this phase may take before any solution (time or size)']; CONTEXT.md headings ['## Appetite', '## Decisions', '## No-gos', '## Risks', '## Open questions']"
+        },
+        {
+          "node": "n4",
+          "ok": true,
+          "detail": "kinds ['value', 'usability', 'feasibility', 'viability'], missing ['risks not named: usability, feasibility, viability (name each, «none» is an answer)']"
+        },
+        {
+          "node": "n5",
+          "ok": true,
+          "detail": "complete card passes True; one risk missing ['risks not named: viability (name each, «none» is an answer)']; no-gos ['no-gos not named: what this phase will not do («none» is an answer)']"
+        },
+        {
+          "node": "n6",
+          "ok": true,
+          "detail": "piece problems: no then ['a: the promise has no «then»'], link ['a depends on gone, which is not in the plan']"
+        },
+        {
+          "node": "n7",
+          "ok": true,
+          "detail": "analysis written to ['.agents/phases/ph_4490c5d4ab']/CONTEXT.md, signed ['.agents/phases/ph_4490c5d4ab/CONTEXT.md'], stage planning"
+        },
+        {
+          "node": "n8",
+          "ok": true,
+          "detail": "host writes [['CONTEXT.md', 'ce5535661367223e6839fadfd36c68f7221ab58c8813088482ac53666df18a19', 'applied'], ['SECURITY.md', None, 'applied']], commit [[['CONTEXT.md', 'SECURITY.md'], 'phase ph: CONTEXT.md and SECURITY.md from the analysis']], signed over the disk bytes True"
+        },
+        {
+          "node": "n9",
+          "ok": true,
+          "detail": "empty document ['docs/FAQ.md is empty'], stage discussion, plan phase ph_980a87da79 is at discussion: a plan is submitted at, once whole planning"
+        },
+        {
+          "node": "n10",
+          "ok": true,
+          "detail": "late revision refused, goal sums skip blanks, revisions 1, admitted None"
+        },
+        {
+          "node": "n11",
+          "ok": true,
+          "detail": "unchanged: the plan is not admitted; edited: docs/CONTEXT.md changed after the context was signed: return the phase to discussion and sign it again"
+        },
+        {
+          "node": "n12",
+          "ok": true,
+          "detail": "owner.words off {'stage': 'planning', 'awaits': 0}, on {'stage': 'discussion', 'awaits': 1, 'afterYes': 'planning'}"
+        },
+        {
+          "node": "n13",
+          "ok": true,
+          "detail": "book line «context signed 6fb96f10b8bb: docs/CONTEXT.md (35 B); appetit», before the stage move True"
+        },
+        {
+          "node": "n14",
+          "ok": true,
+          "detail": "book ['goal/opened', 'verification/live_check', 'discussion/signed', 'decisions/stage'], seqs [1, 2, 3, 4], chained True"
+        },
+        {
+          "node": "n15",
+          "ok": true,
+          "detail": "stage planning, move «discussion → planning: the context documents exist, none is empty, and they are signed», plan on the signed edition True"
+        },
+        {
+          "node": "n16",
+          "ok": true,
+          "detail": "missing documents 1, empty ['docs/CONTEXT.md is empty'], plan refused phase ph_2fb1bad066 is at discussion: a plan is submitted at"
+        },
+        {
+          "node": "n17",
+          "ok": true,
+          "detail": "admission {'good': True, 'stale': 1, 'noContext': 1, 'noCheck': 1, 'asked': ['the plan checker asked for changes: split b']}"
+        },
+        {
+          "node": "n18",
+          "ok": true,
+          "detail": "legacy stage planning, handed in ['the plan check is not proven independent: it names no workflow run: report the wfRunId of the lp.plan run whose plan critic approved'], normal phase discussion"
+        },
+        {
+          "node": "n19",
+          "ok": true,
+          "detail": "lp.plan default: {'skipped': ['research', 'patterns', 'strategy'], 'ran': ['plan', 'lint', 'plan_critic'], 'status': 'succeeded'}; with research: ['research', 'plan', 'lint', 'plan_critic']"
+        },
+        {
+          "node": "n20",
+          "ok": true,
+          "detail": "plan on another edition ['the plan was not built on the signed context (contextSha differs): read the context documents and plan again']"
+        },
+        {
+          "node": "n21",
+          "ok": true,
+          "detail": "lp.analyze: sure ['gather', 'assess', 'done'], unsure ['gather', 'assess', 'gather', 'assess', 'done']"
+        },
+        {
+          "node": "n22",
+          "ok": true,
+          "detail": "lp.plan with a rework: path ['plan', 'lint', 'plan_critic', 'plan', 'lint', 'plan_critic', 'ok'], roles ['planner', 'plan-critic']"
+        },
+        {
+          "node": "n23",
+          "ok": true,
+          "detail": "own session refused [\"the plan check is not proven independent: the plan checker went on in the planner's session thr_planner: continuing by message is no independent check\"]; approved run admitted, stage execution"
+        },
+        {
+          "node": "n24",
+          "ok": true,
+          "detail": "early critic [False, 'the plan checker started before the plan was done: the check must come after the planner'], later [True, 30, 20], driver ['the plan check is not proven independent: the plan checker started before the plan was done: the check must come after the planner']"
+        },
+        {
+          "node": "n25",
+          "ok": true,
+          "detail": "planner after the check ['the plan check is not proven independent: the planner wrote again after the check: the checker must have the last word']; rework ended by a critic: stage execution"
+        },
+        {
+          "node": "n26",
+          "ok": true,
+          "detail": "objective ['the plan names no objective: its goals in one line'], two risks ['the plan names 2 pre-mortem risk(s): name three to five, each a likely cause of failure a week after merge'], six ['the plan names 6 pre-mortem risk(s): name three to five, each a likely cause of failure a week after merge"
+        },
+        {
+          "node": "n27",
+          "ok": true,
+          "detail": "computed waves [['a', 1], ['b', 2], ['c', 3]], cycle the pieces depend on each other in a cycle (a → b → a): no w, gate lines 1"
+        },
+        {
+          "node": "n28",
+          "ok": true,
+          "detail": "piece problems: ['a: the task id must equal the piece id'] ['a: no owns_paths — the piece cannot become a work']"
+        },
+        {
+          "node": "n29",
+          "ok": true,
+          "detail": "drift 1, repeated ids 1, session [\"the plan check is not proven independent: the checker stayed in the planner's session\"]"
+        },
+        {
+          "node": "n30",
+          "ok": true,
+          "detail": "questions [['q1', 'planning', True, 'Which total?'], ['q2', 'planning', False, 'Which colour?']], plan gate while open ['open question q1: Which total?'], after answer []"
+        },
+        {
+          "node": "n33",
+          "ok": true,
+          "detail": "held stage planning, planning word asked True, gate [\"the plan awaits the owner's word: owner.words is on\"], after word execution, admitted True"
+        },
+        {
+          "node": "n34",
+          "ok": true,
+          "detail": "draw due {'kind': 'draw'}, with drawing None, open question None"
+        },
+        {
+          "node": "n35",
+          "ok": true,
+          "detail": "planning parts 0, admitted stage design, after drawing execution"
+        },
+        {
+          "node": "n39",
+          "ok": true,
+          "detail": "draw folder .agents/phases/ph_1, planning-home folder /abs/home/.agents/phases/ph_1"
+        },
+        {
+          "node": "n40",
+          "ok": true,
+          "detail": "report remains at design, waiting {'stage': 'design', 'words': 0}"
+        },
+        {
+          "node": "n41",
+          "ok": true,
+          "detail": "refused paths ['docs/fig.png', '.agents/phases/<id>/SPEC.md', '.agents/phases/<id>/design/../SECRET.md', '/etc/passwd'], before good {'stage': 'design', 'drawing': None, 'parts': 0}, kept ['.agents/phases/<id>/design/UI-SPEC.md', '.agents/phases/<id>/design/kit.html']"
+        },
+        {
+          "node": "n42",
+          "ok": true,
+          "detail": "designer lp.draw: specialist design-lead, draw role specialist:design-lead, calls 1"
+        },
+        {
+          "node": "n43",
+          "ok": true,
+          "detail": "reviewer lp.draw: plan-critic, check role plan-critic, designer lp.draw: specialist design-lead"
+        },
+        {
+          "node": "n45",
+          "ok": true,
+          "detail": "redrawn True, archived [True], prior design words 0, asks again True"
+        },
+        {
+          "node": "n47",
+          "ok": true,
+          "detail": "feasibility gate ['the drawing contradicts the plan: no empty state — return the phase to planning'], contradiction stage planning, feasible stage execution"
+        },
+        {
+          "node": "n50",
+          "ok": true,
+          "detail": "missing key the design yes names the hash of the drawing the owner was shown (status ownerWord.designKey, now c03a08a2ab54146c8fd8eef5284d0dc667aceed090396a243e6637141d834ebf), wrong key the design yes names the hash of the drawing the owner was shown (status ownerWord.designKey, now c03a08a2ab54146"
+        },
+        {
+          "node": "n52",
+          "ok": true,
+          "detail": "returned stage planning, admitted sha None, book return [['drawing', '.agents/phases/<id>/design/UI-SPEC.md by design-lead; contradiction: the screen has no empty state; reviewed by ui-review'], ['return', 'design → planning by design-lead: the drawing contradicts the plan: the screen has no empty s"
+        },
+        {
+          "node": "n53",
+          "ok": true,
+          "detail": "design {'stage': 'design', 'dispatched': 0, 'issued': []}, planning {'stage': 'planning', 'dispatched': 0, 'issued': []}, first stage execution"
+        },
+        {
+          "node": "n56",
+          "ok": true,
+          "detail": "first base 1111111111111111111111111111111111111111, first piece base matches True"
+        },
+        {
+          "node": "n57",
+          "ok": true,
+          "detail": "phase row run run9, stage execution"
+        },
+        {
+          "node": "n58",
+          "ok": true,
+          "detail": "issued {'a': 'task-a'}, own task id a"
+        },
+        {
+          "node": "n67",
+          "ok": true,
+          "detail": "task home phase ph_abc, parent {'kind': 'phase', 'id': 'ph_abc', 'manifest': '.agents/phases/ph_abc/manifest.json'}"
+        },
+        {
+          "node": "n36",
+          "ok": true,
+          "detail": "sections: screens ['actions', 'screens_states', 'texts', 'heuristics', 'accessibility'], mixed ['actions', 'screens_states', 'texts', 'heuristics', 'accessibility', 'c4', 'event_chain']"
+        },
+        {
+          "node": "n37",
+          "ok": true,
+          "detail": "screen {'decision': 'needed', 'why': 'pieces that change screens: u', 'mode': 'screens', 'requirements': ['actions', 'screens_states', 'texts', 'heuristics', 'accessibility']}, asked {'decision': 'needed', 'why': 'the PM asked for a drawing', 'mode': 'screens', 'requirements': ['actions', 'screens_s"
+        },
+        {
+          "node": "n38",
+          "ok": true,
+          "detail": "logic plan {'decision': 'not_needed', 'why': 'no piece changes a screen', 'mode': None, 'requirements': None}, admitted {'stage': 'execution', 'decision': 'not_needed', 'why': 'no piece changes a screen', 'admitted': True}"
+        },
+        {
+          "node": "n44",
+          "ok": true,
+          "detail": "no reviewer ['the drawing is not reviewed by a separate role'], the designer ['the reviewer of the drawing is its designer: it must be a separate role'], another role []; journal stamped by the machine True"
+        },
+        {
+          "node": "n46",
+          "ok": true,
+          "detail": "no answer ['no feasibility answer: feasible, or the contradiction with the plan'], answered []"
+        },
+        {
+          "node": "n48",
+          "ok": true,
+          "detail": "awaiting [\"the drawing awaits the owner's word for this drawing: owner.words was on when the phase opened\"], next step {'key': 'design:word:design', 'waitsForPm': True}"
+        },
+        {
+          "node": "n49",
+          "ok": true,
+          "detail": "ready [], no drawing [\"no drawing: the designer draws the screens into the phase's design folder and names the files\"], no contract [\"the drawing has no contract: add UI-SPEC.md with the checkable points (screens, states, breakpoints) to the drawing's paths\"]"
+        },
+        {
+          "node": "n51",
+          "ok": true,
+          "detail": "unreviewed the drawing is not confirmed (stage design), reviewed → execution, stamped now True"
+        },
+        {
+          "node": "n54",
+          "ok": true,
+          "detail": "changed plan {'refused': 'the plan changed since it was checked: return the phase to planning', 'dispatched': 0, 'issued': {}}, checked plan issued {'a': 'task-a'}"
+        },
+        {
+          "node": "n55",
+          "ok": true,
+          "detail": "gate {'notNeeded': [], 'needed': [\"no drawing: the designer draws the screens into the phase's design folder and names the files\"], 'ready': [], 'unreviewed': ['the drawing is not reviewed by a separate role'], 'undecided': ['the design decision is not made']}, a screen plan waits at design"
+        },
+        {
+          "node": "n1768",
+          "ok": true,
+          "detail": "rubric score 83 (two widths 92), journaled critique {'scores': {'hierarchy': 3, 'spacing': 2, 'contrast': 3, 'states': 2}, 'verdict': 'rework', 'notes': 'redo the states'}"
+        },
+        {
+          "node": "n59",
+          "ok": true,
+          "detail": "same plan {'ok': True, 'detail': 'the plan is the admitted one'}, rewritten {'unchanged': False, 'line': {'ok': False, 'detail': 'the plan changed after its admission'}, 'refused': 'the plan changed since it was checked: return the phase to planning', 'dispatched': 0}"
+        },
+        {
+          "node": "n60",
+          "ok": true,
+          "detail": "bare piece {'display_title': 'Skeleton view', 'kind': 'feature', 'area': 'phase:ph_1/p1', 'promise': {'given': 'an empty cell', 'when': 'the sum runs', 'then': 'it skips the cell (p1)'}, 'qa_cases': None, 'dropped': None}, sent phase:<id>/p1"
+        },
+        {
+          "node": "n61",
+          "ok": true,
+          "detail": "first {'dispatched': 1, 'issued': {'a': 'a'}, 'printIsPiece': True, 'runId': 'run1', 'book': ['a → task a (wave 1)']}, changed {'dispatched': 2, 'secondId': 'a.2', 'issued': {'a': 'a.2'}, 'printIsNewPiece': True, 'reissued': ['a: its contract changed since a — issued again as a.2']}"
+        },
+        {
+          "node": "n62",
+          "ok": true,
+          "detail": "order ['b', 'a', 'c'], issued ['b → task b (wave 1)', 'a → task a (wave 2)', 'c → task c (wave 2)']"
+        },
+        {
+          "node": "n63",
+          "ok": true,
+          "detail": "sent [['ui', ['.agents/phases/ph_1/design/UI-SPEC.md', '.agents/phases/ph_1/design/kit.html']], ['a', None]]"
+        },
+        {
+          "node": "n64",
+          "ok": true,
+          "detail": "none accepted ['a', 'c'], a accepted and c running ['b'], a blocked []"
+        },
+        {
+          "node": "n65",
+          "ok": true,
+          "detail": "pieces [('a', 'full'), ('b', 'full')]"
+        },
+        {
+          "node": "n66",
+          "ok": true,
+          "detail": "closed by cli batch closed: run1, by sweep active"
+        },
+        {
+          "node": "n68",
+          "ok": true,
+          "detail": "running ['b is running'], all in []"
+        },
+        {
+          "node": "n69",
+          "ok": true,
+          "detail": "running execution:running:2:1, blocked execution:blocked:a"
+        },
+        {
+          "node": "n71",
+          "ok": true,
+          "detail": "redo {'taskId': 'a.2', 'state': 'accepted', 'planFact': 'passed', 'verification': 'passed', 'codeCritique': 'passed', 'browserQa': 'passed', 'qaPlanned': True, 'attempt': 'att-a.2'}, running {'taskId': 'b', 'state': 'running', 'planFact': None, 'verification': None, 'codeCritique': None, 'browserQa'"
+        },
+        {
+          "node": "n72",
+          "ok": true,
+          "detail": "no receipts [False, 'the code critic has not passed it (no critic receipt is no reading)'], blocked [False, 'the code critic blocks it']"
+        },
+        {
+          "node": "n73",
+          "ok": true,
+          "detail": "book ['wave 1 in, package <pkg>: ✓ contract_current, ✓ landed, ✓ promises_proved, ✓ checks_passed, ✗ independent_check, ✓ qa_read'], blocked piece wave_in 0"
+        },
+        {
+          "node": "n74",
+          "ok": true,
+          "detail": "not run {'ok': False, 'detail': 'the planned browser check has not passed: a'}, foreign green the live check was taken on head 111111111111, the package it decides on is at 222222222222 — check the same candidate"
+        },
+        {
+          "node": "n75",
+          "ok": true,
+          "detail": "one running execution, one not issued execution, all accepted verification"
+        },
+        {
+          "node": "n76",
+          "ok": true,
+          "detail": "regression [{'projectId': 'projA', 'runId': 'run1', 'force': True, 'mode': 'full', 'basePaths': ['/repo/.git/lp-phases/ph_1']}], goal {'state': 'passed', 'tasks': 2, 'headSha': 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'runId': 'run1'}"
+        },
+        {
+          "node": "n85",
+          "ok": true,
+          "detail": "verified heads {'/repo': 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'}, verdict {'state': 'passed', 'detail': 'every piece accepted and proved; the composition passes on main', 'mainSha': 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'}"
+        },
+        {
+          "node": "n77",
+          "ok": true,
+          "detail": "diff range ['base0..phase/ph_1'], drawing {'paths': ['d/UI-SPEC.md', 'd/one.html'], 'sha256': 'drawsha', 'ui_spec': 'd/UI-SPEC.md'}"
+        },
+        {
+          "node": "n83",
+          "ok": true,
+          "detail": "p2 depends on ['p1']"
+        },
+        {
+          "node": "n78",
+          "ok": true,
+          "detail": "checks failed {'state': 'failed', 'detail': 'a: its checks failed', 'mainSha': 'h1'}"
+        },
+        {
+          "node": "n79",
+          "ok": true,
+          "detail": "no receipt {'state': 'failed', 'detail': 'b: plan-fact left no receipt — its acceptance items were not checked against the diff', 'mainSha': 'h1'}"
+        },
+        {
+          "node": "n81",
+          "ok": true,
+          "detail": "first piece a: its checks failed, last piece c: plan-fact failed — the promise is not proved"
+        },
+        {
+          "node": "n84",
+          "ok": true,
+          "detail": "pending {'state': 'pending', 'detail': \"the run's goal check is still running\", 'mainSha': None}, frozen passed at aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        {
+          "node": "n86",
+          "ok": true,
+          "detail": "one piece running {'state': 'failed', 'detail': 'b not accepted', 'mainSha': 'h1'}"
+        },
+        {
+          "node": "n80",
+          "ok": true,
+          "detail": "later pass {'sameVerdict': True, 'state': 'passed', 'book': 1, 'checks': 2}"
+        },
+        {
+          "node": "n82",
+          "ok": true,
+          "detail": "changed drawing {'state': 'failed', 'detail': 'the drawing changed since it was confirmed: confirmed <confirmed>, now <now>'}"
+        },
+        {
+          "node": "n87",
+          "ok": true,
+          "detail": "moved main {'ok': False, 'detail': 'main moved from bbbbbbbbbbbb to aaaaaaaaaaaa since the verdict — verify again'}, phase went to verification"
+        },
+        {
+          "node": "n88",
+          "ok": true,
+          "detail": "before the heads are frozen None, after [1, 2, 3]"
+        },
+        {
+          "node": "n89",
+          "ok": true,
+          "detail": "numbered lines ['- [ ] 1. p1: given an empty cell, when the sum runs, then it skips the cell (p1)', '- [ ] 2. p2: given an empty cell, when the sum runs, then it skips the cell (p2)']"
+        },
+        {
+          "node": "n90",
+          "ok": true,
+          "detail": "line 4: no UAT line 4: the lines are 1 to 3; after one fail [[1, 'p1', 'open', None], [2, 'p2', 'failed', 'the bar is missing'], [3, 'p3', 'open', None]]; session word before the lines passed: UAT is not complete: 2 open, 1 failed of 3 — the owner answers each line by its number (uat_line)"
+        },
+        {
+          "node": "n91",
+          "ok": true,
+          "detail": "before the landing {'lines': 1, 'sha': '', 'writes': 0}, after {'writes': 1, 'text': '- [x] 1. p1: given an empty cell, when the sum runs, then it skips the cell (p1)', 'sha': True}"
+        },
+        {
+          "node": "n92",
+          "ok": true,
+          "detail": "package 707f00b292eb63ca verdict {'state': 'passed', 'detail': 'every piece accepted and proved', 'mainSha': 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'}, outside acceptance None"
+        },
+        {
+          "node": "n93",
+          "ok": true,
+          "detail": "red on green facts [], red with a claim over a failed check ['checks_passed'], goal {'ok': True, 'detail': 'audit: the goal is met'}"
+        },
+        {
+          "node": "n94",
+          "ok": true,
+          "detail": "editions {'start': 2, 'afterChange': 3, 'afterSame': 3, 'afterStage': 3, 'afterSecond': 4}"
+        },
+        {
+          "node": "n95",
+          "ok": true,
+          "detail": "failed {'ok': False, 'detail': 'the browser check failed: a'}, stale {'ok': False, 'detail': 'the live check was taken on head bbbbbbbbbbbb, the package it decides on is at aaaaaaaaaaaa — check the same candidate'}"
+        },
+        {
+          "node": "n96",
+          "ok": true,
+          "detail": "admitted {'ok': True, 'detail': 'the plan is the admitted one'}, changed {'ok': False, 'detail': 'the plan changed after its admission'}"
+        },
+        {
+          "node": "n97",
+          "ok": true,
+          "detail": "proved {'ok': True, 'detail': '2 promises proved'}, one failed {'ok': False, 'detail': 'not proved by plan-fact: b'}"
+        },
+        {
+          "node": "n98",
+          "ok": true,
+          "detail": "passed {'ok': True, 'detail': \"every piece's checks passed\"}, one failed {'ok': False, 'detail': 'checks failed: b'}"
+        },
+        {
+          "node": "n99",
+          "ok": true,
+          "detail": "passed {'ok': True, 'detail': 'the code critic passed all 1 piece(s)'}, blocked {'ok': False, 'detail': 'the code critic blocks: a'}, no receipt {'ok': False, 'detail': 'the code critic has not passed: a (no critic receipt is no reading)'}"
+        },
+        {
+          "node": "n100",
+          "ok": true,
+          "detail": "main {'ok': True, 'detail': 'every piece is merged into main'}, one not merged {'ok': False, 'detail': 'not merged: b'}"
+        },
+        {
+          "node": "n101",
+          "ok": true,
+          "detail": "useful only {'ok': True, 'detail': 'owner: yes — the result is clear and useful — да'}, waiting {'ok': False, 'detail': \"awaits the owner's keyed decision\"}"
+        },
+        {
+          "node": "n102",
+          "ok": true,
+          "detail": "no term {'ok': False, 'detail': '1 deferred check(s) of this project are open with no term from the owner, so they count as unproven: def-1 — close each with evidence (bb lane-pilot defer-close <id> --evidence …)'}, open items {'ok': True, 'detail': '2 deferred item(s) of this project stay open, nam"
+        },
+        {
+          "node": "n104",
+          "ok": true,
+          "detail": "under the shown key True, another package the owner's word was given on another package (0123456789abcdef): it is asked again"
+        },
+        {
+          "node": "n106",
+          "ok": true,
+          "detail": "unconfirmed read: active / ['closing docs not confirmed: .agents/phases/ph_4441411f45/SUMMARY.md, .agents/phases/ph_4441411f45/BOOK.md did not read back as written']; intact read: closed"
+        },
+        {
+          "node": "n107",
+          "ok": true,
+          "detail": "red lines [\"limits_acknowledged: nothing deferred; awaits the owner's keyed decision\", \"result_useful: awaits the owner's keyed decision\"], key f65b6da544e7ba9e"
+        },
+        {
+          "node": "n108",
+          "ok": true,
+          "detail": "key facts {'shape': True, 'same': True, 'plan': True, 'input': True, 'tree': True, 'drawing': True, 'redrawn': True, 'contract': True, 'unrelated': True}"
+        },
+        {
+          "node": "n109",
+          "ok": true,
+          "detail": "main unmoved {'stage': 'acceptance', 'verdict': 'passed'}, main moved {'stage': 'verification', 'verification': None, 'acceptance': None}"
+        },
+        {
+          "node": "n111",
+          "ok": true,
+          "detail": "covered {'ok': True, 'detail': 'every requirement and locked decision is covered'}, after a withdrawal {'ok': False, 'detail': \"left uncovered at close: requirements no piece covers: r2 (name them in a piece's covers, or defer them in CONTEXT.md and sign again); locked decisions no piece carries out"
+        },
+        {
+          "node": "n112",
+          "ok": true,
+          "detail": "issued piece: issued pieces are canceled, not withdrawn; left ['keep', 'more'], withdrawn ['drop']"
+        },
+        {
+          "node": "n114",
+          "ok": true,
+          "detail": "revert failure, unreadable no_data, open window incomplete, at the end no_failure"
+        },
+        {
+          "node": "n115",
+          "ok": true,
+          "detail": "return {'needed': True, 'why': '1 return(s) to an earlier stage'}, attempt {'needed': True, 'why': '1 failed attempt(s)'}, verdict {'needed': True, 'why': '1 failed verdict(s)'}"
+        },
+        {
+          "node": "n118",
+          "ok": true,
+          "detail": "straight phase: stage closed, booked ['the phase went through without returns or failures']; with a trigger: lessons"
+        },
+        {
+          "node": "n116",
+          "ok": true,
+          "detail": "due at lessons lessons, with an analysis None"
+        },
+        {
+          "node": "n117",
+          "ok": true,
+          "detail": "none {'needed': False, 'why': 'the phase went through without returns or failures'}, all {'needed': True, 'why': '1 return(s) to an earlier stage, 2 failed attempt(s), 3 failed verdict(s)'}"
+        },
+        {
+          "node": "n119",
+          "ok": true,
+          "detail": "no analysis lessons:analysis waits True, written {'key': 'lessons:written', 'waitsForPm': False}"
+        },
+        {
+          "node": "n120",
+          "ok": true,
+          "detail": "due {'kind': 'lessons'}, handed run r, row after the analysis 'a return'"
+        },
+        {
+          "node": "n121",
+          "ok": true,
+          "detail": "started retrospective, path ['retro', 'living', 'stage', 'done'], output status done"
+        },
+        {
+          "node": "n122",
+          "ok": true,
+          "detail": "author thr_retro"
+        },
+        {
+          "node": "n123",
+          "ok": true,
+          "detail": "reviewer thr_stage, own session: [\"the reviewer of wf_self is not a session other than the analysis's author\"]"
+        },
+        {
+          "node": "n124",
+          "ok": true,
+          "detail": "elsewhere: ['the reviewer step «stage» of wf_elsewhere did not receive these bytes: the analysis is not in its input'], forged: [\"the journal's measurement of the reviewer's input does not match its bytes in wf_forged\"]"
+        },
+        {
+          "node": "n125",
+          "ok": true,
+          "detail": "memory rows [{'kind': 'note', 'audience': 'subagent', 'content': 'Phase «Hud» lessons: The plan missed the empty-cell case; a check per promise would have caught it.', 'concepts': ['phase', 'lessons']}]"
+        },
+        {
+          "node": "n126",
+          "ok": true,
+          "detail": "staged {'state': 'staged', 'text': 'Phase «Hud» lessons: The plan missed the empty-cell case; a check per promise would have caught it.'}, memory before the yes 0, declined declined"
+        },
+        {
+          "node": "n127",
+          "ok": true,
+          "detail": "after the refusal {'state': 'staged', 'error': 'memory door closed', 'memory': 0, 'parts': ['the memory door refused the lesson: memory door closed'], 'applied': []}"
+        },
+        {
+          "node": "n129",
+          "ok": true,
+          "detail": "after the later pass {'state': 'applied', 'error': None, 'memory': [{'kind': 'note', 'audience': 'subagent', 'content': 'Phase «Hud» lessons: The plan missed the empty-cell case; a check per promise would have caught it.', 'concepts': ['phase', 'lessons']}], 'analysis': 'The plan missed the empty-ce"
+        },
+        {
+          "node": "n128",
+          "ok": true,
+          "detail": "lessons section ['**analysis** — The plan missed the empty-cell case; a check per promise would have caught it. (by thr_retro, read by thr_stage in wf_read, input df787041da28)', \"**staged** — the lesson waits as a draft for the owner's word «lesson»\", '**memory_refused** — the memory door refused t"
+        },
+        {
+          "node": "n130",
+          "ok": true,
+          "detail": "phase row discussion/active on run run1, task rows 0"
+        },
+        {
+          "node": "n131",
+          "ok": true,
+          "detail": "yes kept on the same files {'edition': 5, 'words': 1, 'sha': True}, voided on other files {'edition': 6, 'words': 0, 'sha': False}"
+        },
+        {
+          "node": "n133",
+          "ok": true,
+          "detail": "folder .agents/phases/ph_abc, book at ['.agents/planning/STATE.md', '.agents/phases/<id>/BOOK.md']"
+        },
+        {
+          "node": "n134",
+          "ok": true,
+          "detail": "running {'stepped': True, 'started': [], 'booked': [], 'auto': 'wf-live'}, no run {'stepped': True, 'started': ['start'], 'booked': ['auto_started'], 'auto': 'wf-new'}"
+        },
+        {
+          "node": "n135",
+          "ok": true,
+          "detail": "dictionary {'analyze': 'lp.analyze', 'plan': 'lp.plan', 'check': 'lp.plan', 'draw': 'lp.draw', 'review': 'lp.review', 'close': 'lp.close', 'lessons': 'retrospective', 'live': 'ui-audit', 'bounce': 'plan-review-convergence', 'diagnose': 'debug'}, started under the title lp.close: ['retrospective']"
+        },
+        {
+          "node": "n136",
+          "ok": true,
+          "detail": "26 actions, accepting a flag: []"
+        },
+        {
+          "node": "n137",
+          "ok": true,
+          "detail": "titles 'Phase ph_1 «Sums» — stage 1, discussion. Goal: sums are righ' / 'Phase ph_1 «Sums» is paused'"
+        },
+        {
+          "node": "n138",
+          "ok": true,
+          "detail": "queue order ['phase-piece', 'urgent-pm', 'normal-pm', 'phase-low'], stage rank 4"
+        },
+        {
+          "node": "n139",
+          "ok": true,
+          "detail": "gates {'discussion': 'discussionGate', 'planning': 'planGate', 'design': 'designGate', 'execution': 'executionGate', 'verification': 'blindVerdict', 'acceptance': 'acceptanceLines', 'lessons': 'lessonsNeeded'}, discussion gate said 4 reasons"
+        },
+        {
+          "node": "n140",
+          "ok": true,
+          "detail": "plan roles [['research', 'analyst'], ['patterns', 'analyst'], ['strategy', 'auditor'], ['plan', 'planner'], ['plan_critic', 'plan-critic']], drawing roles [['material', 'specialist:design-lead'], ['draw', 'specialist:design-lead'], ['check', 'plan-critic']]"
+        },
+        {
+          "node": "n141",
+          "ok": true,
+          "detail": "own reviewer: the reviewer of the drawing is its designer: it must be a separate role; other role: open"
+        },
+        {
+          "node": "n142",
+          "ok": true,
+          "detail": "refused: the plan changed since it was checked: return the phase to planning; dispatched []"
+        },
+        {
+          "node": "n143",
+          "ok": true,
+          "detail": "intact: Stage: acceptance · state: active · edition 1 · chain: intact (2 parts); rewritten: Stage: acceptance · state: active · edition 1 · chain: BROKEN at part 2"
+        },
+        {
+          "node": "n144",
+          "ok": true,
+          "detail": "after the PM's pause intent: paused, booked ['pm']"
+        },
+        {
+          "node": "n157",
+          "ok": true,
+          "detail": "pass on a paused phase: state paused, issued {}, dispatched []"
+        },
+        {
+          "node": "n145",
+          "ok": true,
+          "detail": "requested pause after a pass: {'state': 'paused', 'issued': {}, 'dispatched': []}"
+        },
+        {
+          "node": "n146",
+          "ok": true,
+          "detail": "waitsForPm False, text Phase ph_865018abcb «controls» is paused; lane_pilot_phase {action:\"resume\", phaseId:\"ph_865018abcb\"} moves it on."
+        },
+        {
+          "node": "n147",
+          "ok": true,
+          "detail": "stop unproved: pause_requested (open stops 1); next pass: paused, attempt canceled"
+        },
+        {
+          "node": "n1769",
+          "ok": true,
+          "detail": "active: phase ph_7374e77476 is active: an interrupt is for a pausing or paused phase — pause it first; quiet: phase ph_aa96099a90 has no running work to interrupt: it is already still; piece print interrupted"
+        },
+        {
+          "node": "n148",
+          "ok": true,
+          "detail": "paused paused, resumed active, closed: phase ph_e41e0577fc is closed: open a new phase for new work"
+        },
+        {
+          "node": "n149",
+          "ok": true,
+          "detail": "unobserved stop: {'unconfirmed': 1, 'state': 'active', 'stopping': 'wrong goal', 'attempt': 'cancel_requested'}; next pass: stopped, attempt canceled"
+        },
+        {
+          "node": "n150",
+          "ok": true,
+          "detail": "without words: closing in words carries the words: why the phase ends here; with words: closed {'by': 'owner', 'words': 'the owner stopped the goal'}"
+        },
+        {
+          "node": "n151",
+          "ok": true,
+          "detail": "from verification: a return to execution is allowed only from acceptance, on a ; from acceptance: stage execution, piece print returned"
+        },
+        {
+          "node": "n152",
+          "ok": true,
+          "detail": "booked ['acceptance → execution by owner: the header is wrong'], note the header is wrong"
+        },
+        {
+          "node": "n153",
+          "ok": true,
+          "detail": "sent to ['task-r'], booked ['keep the blank cell → task-r']"
+        },
+        {
+          "node": "n154",
+          "ok": true,
+          "detail": "wave stop: {'canceled': ['task-q'], 'state': 'paused', 'queued': 'canceled', 'running': 'running', 'booked': ['queued pieces canceled: task-q']}"
+        },
+        {
+          "node": "n155",
+          "ok": true,
+          "detail": "unknown: no question nope; answered: {'answer': 'the daily one', 'answeredBy': 'owner'}"
+        },
+        {
+          "node": "n156",
+          "ok": true,
+          "detail": "reverted ['task-done'], booked ['undo the piece: task-done merged']"
+        }
+      ],
+      "checked": 152
+    }
+  ],
+  "seen": null,
+  "judged": [
+    {
+      "name": "sma_r00",
+      "verdict": "pass",
+      "evidence": [
+        "proved",
+        "checked"
+      ],
+      "why": ""
+    }
+  ],
+  "series": {
+    "verdict": "pass",
+    "missing": [],
+    "failed": [],
+    "skipped": []
+  }
+}

@@ -8,6 +8,7 @@
     "en": "Tiered read-only audit - OWASP Top 10, dependencies, secrets, CI/CD, and on the deep tier STRIDE and git history. Report with severity matrix and file:line. Secrets are reported by location, never by value.",
     "ru": "Ярусный аудит только на чтение - OWASP Top 10, зависимости, секреты, CI/CD, а на глубоком ярусе STRIDE и история git. Отчёт с матрицей критичности и file:line. Секреты указываются по расположению, не по значению."
   },
+  "category": "code",
   "examples": {
     "ru": [
       "Проверь проект на уязвимости, ничего не меняй",

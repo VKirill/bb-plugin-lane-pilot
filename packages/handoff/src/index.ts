@@ -19,20 +19,16 @@ export {
   type HandoffState,
 } from "./contract";
 export {
-  claimHandoffLease,
   createHandoff,
   expireOverdueHandoffs,
   getHandoff,
   handoffMigrations,
   listHandoffEvents,
   listHandoffs,
+  nextHandoffDeadline,
   recordHandoffReceipt,
-  releaseHandoffLease,
-  renewHandoffLease,
   transitionHandoff,
   type HandoffDatabase,
-  type HandoffLease,
-  type LeaseResult,
   type StoredHandoff,
   type TransitionResult,
 } from "./store";

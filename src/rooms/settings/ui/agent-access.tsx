@@ -55,7 +55,6 @@ export const ORIGIN_LABEL: Record<"role" | Origin, I18nKey> = {
 const RESET_LABEL: Record<"role" | Origin, I18nKey> = {
   role: "accessResetTo_role", global: "accessResetTo_global", project: "accessResetTo_project", section: "accessResetTo_section",
 };
-const COLUMNS = [...ACCESS_GROUPS, ...ACCESS_SWITCHES] as const;
 const SHOWN_NAMES = 5;
 
 /** «1 навык», «2 навыка», «5 навыков»: the form key follows the language's plural rule. */

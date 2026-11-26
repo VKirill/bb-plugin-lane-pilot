@@ -1,9 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { taskV2Schema } from "../../src/rooms/contracts";
-import { shouldRunPlanCritique } from "../../src/rooms/critique/critique";
-import { advisoryFeedback, codeCritiqueStops, parseCodeCritiqueSettings } from "../../src/rooms/critique/code-critique";
+import { advisoryFeedback, codeCritiqueStops, parseCodeCritiqueSettings, shouldRunPlanCritique } from "../../src/rooms/critique";
 import { applyQualityMode, browserQaRequired, resolveQualityMode, taskQaPlan } from "../../src/rooms/contracts/quality-mode";
-import { validateTaskV2 } from "../../src/rooms/tasks/task-v2";
+import { validateTaskV2 } from "../../src/rooms/tasks";
 
 const base = {
   schema_version: 2, id: "t", title: "T", risk: "low", lane: "writer", project_cwd: "/w", read_first: [], interfaces: [], invariants: [], out_of_scope: [],

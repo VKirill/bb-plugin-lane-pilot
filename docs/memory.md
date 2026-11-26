@@ -7,35 +7,32 @@ status: active
 confidence: medium
 tags: [memory, knowledge, maintenance]
 sources:
-  - src/rooms/memory/server/memory.ts
-  - src/rooms/memory/server/session-memory.ts
+  - src/rooms/memory/server/services/memory.ts
+  - src/rooms/memory/server/handlers/session-memory.ts
   - src/rooms/memory/ui/memory-records.tsx
   - packages/memory-core/src/store.ts
   - packages/memory-core/src/lifecycle.ts
   - packages/memory-core/src/context.ts
   - src/rooms/storage/database.ts
   - src/rooms/contracts/rpc-knowledge.ts
-  - src/rooms/memory-eval/server/memory-eval.ts
-  - src/rooms/memory-eval/server/shelf.ts
-  - src/rooms/memory/server/memory-conflicts.ts
+  - src/rooms/memory-eval/server/services/memory-eval.ts
+  - src/rooms/memory-eval/server/services/shelf.ts
+  - src/rooms/memory/server/services/memory-conflicts.ts
   - packages/memory-core/src/conflicts.ts
   - packages/memory-core/src/conflict-store.ts
   - packages/memory-core/src/candidates.ts
-  - src/rooms/memory/memory-paths.ts
-  - src/rooms/writer/server/writer-knowledge.ts
-  - src/rooms/writer/server/spawn.ts
-  - src/rooms/writer/server/start.ts
-  - src/rooms/learning/pm-rules.ts
-  - src/rooms/learning/service.ts
-  - src/rooms/memory/server/memory-mix.ts
-  - src/rooms/council/server/council.ts
-  - src/rooms/tools/server/cli.ts
+  - src/rooms/memory/models/memory-paths.ts
+  - src/rooms/writer/server/services/writer-knowledge.ts
+  - src/rooms/writer/server/services/spawn.ts
+  - src/rooms/writer/server/services/start.ts
+  - src/rooms/memory/server/services/memory-mix.ts
+  - src/rooms/tools/server/handlers/cli.ts
   - src/rooms/contracts/rpc-ops.ts
-  - src/rooms/memory-probe/server/memory-probe.ts
-  - src/rooms/learning/unanswered.ts
+  - src/rooms/memory-probe/server/services/memory-probe.ts
   - scripts/lp-drill.py
-  - src/rooms/learning/housekeeping.ts
-  - src/rooms/stability/server/canary.ts
+  - src/rooms/stability/server/services/canary.ts
+  - src/rooms/memory/server/services/memory-judge.ts
+  - src/rooms/settings-registry.ts
 ---
 
 # Project memory
@@ -44,15 +41,15 @@ TL;DR: Project memory stores scoped records in plugin SQLite, exposes search and
 
 ## Purpose
 
-Keep project facts and rules available to PM, writer, and terminal sessions through a shared hub-side memory store (`src/rooms/memory/server/session-memory.ts:11-15`, `src/rooms/storage/database.ts:174-184`).
+Keep project facts and rules available to PM, writer, and terminal sessions through a shared hub-side memory store (`src/rooms/memory/server/handlers/session-memory.ts:11-15`, `src/rooms/storage/database.ts:174-184`).
 
 ## How it works
 
-1. `session_memory_project` maps a host path to the deepest matching project scope (`src/rooms/memory/server/session-memory.ts:18-30`).
-2. `session_memory_write` validates a candidate, stores it for the `subagent` audience as `observed`, and returns an inserted, corroborated, duplicate, disabled, or validation result (`src/rooms/memory/server/session-memory.ts:32-48`).
-3. `session_memory_search` retrieves subagent-visible records; `session_memory_core` returns active core records whose expiry is unset or in the future (`src/rooms/memory/server/session-memory.ts:50-59`).
-4. `createMemoryStage` runs after acceptance and validates PM/run/task ownership and requires a passed acceptance receipt before starting maintenance (`src/rooms/memory/server/memory.ts:22-47`).
-5. The maintenance stage creates or resumes one `memory-maintenance` stage receipt and skips work when memory is disabled or maintenance is off (`src/rooms/memory/server/memory.ts:58-83`). It runs inside `lp.after-accept` next to project-life; a `gather` step that fails marks the run `step_failed:gather` and leaves the accepted task untouched — failures are recorded, never retried, and visible in the run's receipts (`workflows/lp.after-accept.json`).
+1. `session_memory_project` maps a host path to the deepest matching project scope (`src/rooms/memory/server/handlers/session-memory.ts:18-30`).
+2. `session_memory_write` validates a candidate, stores it for the `subagent` audience as `observed`, and returns an inserted, corroborated, duplicate, disabled, or validation result (`src/rooms/memory/server/handlers/session-memory.ts:32-48`).
+3. `session_memory_search` retrieves subagent-visible records; `session_memory_core` returns active core records whose expiry is unset or in the future (`src/rooms/memory/server/handlers/session-memory.ts:50-59`).
+4. `createMemoryStage` runs after acceptance and validates PM/run/task ownership and requires a passed acceptance receipt before starting maintenance (`src/rooms/memory/server/services/memory.ts:22-47`).
+5. The maintenance stage creates or resumes one `memory-maintenance` stage receipt and skips work when memory is disabled or maintenance is off (`src/rooms/memory/server/services/memory.ts:58-83`). It runs inside `lp.after-accept`; a `gather` step that fails marks the run `step_failed:gather` and leaves the accepted task untouched — failures are recorded, never retried, and visible in the run's receipts (`workflows/lp.after-accept.json`).
 6. `MemoryRecords` loads the project's rows on mount and when `projectId` changes; a list RPC failure becomes an empty list (`src/rooms/memory/ui/memory-records.tsx:18-23`).
 7. It partitions rows by `rule`, then renders separate fact and rule disclosures. Each row shows its kind, creation date, content, and at most eight concepts; only fact rows render a remove button (`src/rooms/memory/ui/memory-records.tsx:36-50`, `:53-62`).
 8. Removing a fact marks that row busy and calls `memory_record_delete`. A refusal shows the rule-specific or missing-record toast; success reloads the list; a thrown error is shown as a toast, and `finally` clears the busy row (`src/rooms/memory/ui/memory-records.tsx:25-34`).
@@ -61,30 +58,30 @@ Keep project facts and rules available to PM, writer, and terminal sessions thro
 
 | Mode or state | Behavior | Evidence |
 |---|---|---|
-| Memory disabled | A session write returns `memory_disabled`; maintenance records a skipped stage (`src/rooms/memory/server/session-memory.ts:32-35`, `src/rooms/memory/server/memory.ts:65-70`). |
-| Observed session record | Stored for `subagent`, with `trust: observed` and `origin: session` (`src/rooms/memory/server/session-memory.ts:38-45`). |
-| Accepted task | Memory maintenance can run only after the writer acceptance receipt passed (`src/rooms/memory/server/memory.ts:43-47`). |
-| Existing terminal maintenance receipt | Reuse the prior result; another maintenance pass requires a new task (`src/rooms/memory/server/memory.ts:61-64`). |
+| Memory disabled | A session write returns `memory_disabled`; maintenance records a skipped stage (`src/rooms/memory/server/handlers/session-memory.ts:32-35`, `src/rooms/memory/server/services/memory.ts:65-70`). |
+| Observed session record | Stored for `subagent`, with `trust: observed` and `origin: session` (`src/rooms/memory/server/handlers/session-memory.ts:38-45`). |
+| Accepted task | Memory maintenance can run only after the writer acceptance receipt passed (`src/rooms/memory/server/services/memory.ts:43-47`). |
+| Existing terminal maintenance receipt | Reuse the prior result; another maintenance pass requires a new task (`src/rooms/memory/server/services/memory.ts:61-64`). |
 | Rule record | Displayed separately and cannot be deleted through the facts action (`src/rooms/memory/ui/memory-records.tsx:36-46`). |
 | List request failed | The UI stores an empty list; its disclosures render their empty state rather than an RPC error (`src/rooms/memory/ui/memory-records.tsx:18-21`, `:56-61`). |
 | Delete refused or throws | A refusal displays the rule or gone message and reloads; a thrown error displays its message; both clear the busy state (`src/rooms/memory/ui/memory-records.tsx:25-34`). |
-| Core budget full | During accepted-task maintenance, a core candidate that does not fit is stored as a note; `coreDemotedToNotes` reports the number demoted. Other budget failures still reject storage (`src/rooms/memory/server/memory.ts:100-120`, `packages/memory-core/src/store.ts:211-223`). |
+| Core budget full | During accepted-task maintenance, a core candidate that does not fit is stored as a note; `coreDemotedToNotes` reports the number demoted. Other budget failures still reject storage (`src/rooms/memory/server/services/memory.ts:100-120`, `packages/memory-core/src/store.ts:211-223`). |
 
 Maintainer output accepts a JSON array directly, inside a JSON fence, or within surrounding text. Empty extra fields are discarded; `review`, `pitfall`, `invariant`, `security`, or `regression` set to `true` becomes a concept when `concepts` is an array. Other non-empty unknown fields reject the candidate batch. Credential-like content and instruction-override text are also rejected (`packages/memory-core/src/candidates.ts:15-18`, `:58-66`).
 
-The maintenance prompt includes current core fill and replaceable core records. If core entries exceed the remaining core budget, the storage helper retries by changing the last core candidate to a note until the batch fits; it reports the number changed. The retry does not waive note or total-index budgets (`packages/memory-core/src/context.ts:6-16`, `packages/memory-core/src/store.ts:211-223`, `src/rooms/memory/server/memory.ts:100-120`).
+The maintenance prompt includes current core fill and replaceable core records. If core entries exceed the remaining core budget, the storage helper retries by changing the last core candidate to a note until the batch fits; it reports the number changed. The retry does not waive note or total-index budgets (`packages/memory-core/src/context.ts:6-16`, `packages/memory-core/src/store.ts:211-223`, `src/rooms/memory/server/services/memory.ts:100-120`).
 
 ## Business rules
 
-Memory writes are scoped by project, personal bot, audience, source hash, and parsed memory settings (`src/rooms/memory/server/session-memory.ts:32-45`). Core records returned to sessions must be active and unexpired (`src/rooms/memory/server/session-memory.ts:55-58`).
+Memory writes are scoped by project, personal bot, audience, source hash, and parsed memory settings (`src/rooms/memory/server/handlers/session-memory.ts:32-45`). Core records returned to sessions must be active and unexpired (`src/rooms/memory/server/handlers/session-memory.ts:55-58`).
 
 ## Public API or commands
 
-`sessionMemoryRpc` implements the session RPC methods: `session_memory_project`, `session_memory_write`, `session_memory_search`, `session_memory_core`, and `session_lesson` (`src/rooms/memory/server/session-memory.ts:15-18`, `:60-67`). The knowledge RPC contract defines the UI-facing memory record list and delete endpoints (`src/rooms/contracts/rpc-knowledge.ts:90-102`).
+`sessionMemoryRpc` implements the session RPC methods: `session_memory_project`, `session_memory_write`, `session_memory_search`, and `session_memory_core` (`src/rooms/memory/server/handlers/session-memory.ts`). The knowledge RPC contract defines the UI-facing memory record list and delete endpoints (`src/rooms/contracts/rpc-knowledge.ts:90-102`).
 
 ## Gotchas
 
-Maintenance starts asynchronously after acceptance, retries observation while a child is running, and treats its stage receipt as the idempotency record (`src/rooms/memory/server/memory.ts:22-34`, `:61-83`). The data tables and field meanings are indexed in [data model](data-model.md).
+Maintenance starts asynchronously after acceptance, retries observation while a child is running, and treats its stage receipt as the idempotency record (`src/rooms/memory/server/services/memory.ts:22-34`, `:61-83`). The data tables and field meanings are indexed in [data model](data-model.md).
 
 ## Memory you can prove: the delivery paths and the probe (SMA block 4, P0-3)
 
@@ -92,21 +89,21 @@ Matvey Maslov's system carried zero lessons through one delivery path for three 
 
 ### The registry
 
-`MEMORY_PATHS` (`src/rooms/memory/memory-paths.ts:45`) lists every way project memory, rules and owner facts reach an agent: `writer.brief`, `writer.turn`, `writer.repair`, `pm.start`, `pm.resume`, `pm.rules_tool`, `pm.memory_tool`, `critic.code`, `night.review`, `council.evidence` and `maintainer.existing`, `memory.golden_eval`, `pm.owner_card` (exempt, each with its reason). Each entry names what the path `carries` (note, core, rule), what it hands to every task by design (`alwaysOn`) and its injection sites: a file, a primitive from `MEMORY_PRIMITIVES` (`:37`) and how many calls. `tests/memory-paths.test.ts` scans `src/` for those primitives and fails when a call appears or disappears without a registry change, so a new reader of memory cannot ship unregistered. The helpers that read no memory (pm-read, reflection, the harness editor, which sees past briefs only as trace evidence) have no primitive to register; a new call to one of the primitives in them fails the test.
+`MEMORY_PATHS` (`src/rooms/memory/models/memory-paths.ts`) lists every way project memory, rules and owner facts reach an agent: `writer.brief`, `writer.turn`, `writer.repair`, `pm.memory_tool`, `critic.code`, `maintainer.existing`, `memory.golden_eval`, and exempt paths. Each entry names what the path `carries` (note, core, rule), what it hands to every task by design (`alwaysOn`) and its injection sites: a file, a primitive from `MEMORY_PRIMITIVES` and how many calls. `tests/memory-paths.test.ts` scans `src/` for those primitives and fails when a call appears or disappears without a registry change, so a new reader of memory cannot ship unregistered. The helpers that read no memory (such as `pm-read`) have no primitive to register; a new call to one of the primitives in them fails the test.
 
-The sites share one function where they used to build their own copy: `writerKnowledge` / `writerRules` / `stickyTurnPromptWithRules` (`src/rooms/writer/server/writer-knowledge.ts:47`, `:39`, `:61`) for the first brief (`src/rooms/writer/server/spawn.ts:148`) and the continuing turn (`src/rooms/writer/server/start.ts:601`), `pmResumeInstructions` (`src/rooms/learning/pm-rules.ts:51`, called at `src/rooms/learning/service.ts:234`), `pmMemoryContext` (`src/rooms/memory/server/memory-mix.ts:55`) and `councilMemoryBlock` (`src/rooms/council/server/council.ts:108`, used at `:221`). The probe calls the same functions production calls.
+The sites share common functions: `writerKnowledge` / `writerRules` / `stickyTurnPromptWithRules` (`src/rooms/writer/server/services/writer-knowledge.ts`) for the first brief (`src/rooms/writer/server/services/spawn.ts`) and the continuing turn (`src/rooms/writer/server/services/start.ts`), and `pmMemoryContext` (`src/rooms/memory/server/services/memory-mix.ts`). The probe calls the same functions production calls.
 
 A defect found by writing the registry: `stickyTurnPrompt` had a `rulesText` parameter that its only caller never passed, so a writer thread continued with the next task of its area got no rules. The next-task turn now carries the rules that apply to its contract (a retry or merge keeps the first brief's rules).
 
 ### The probe
 
-`bb lane-pilot memory-probe <project-id> [--paths a,b] [--keep] [--clean] [--report] [--force]` (CLI `src/rooms/tools/server/cli.ts:286`; RPC `memory_probe`, `src/rooms/contracts/rpc-ops.ts:91`, `src/rooms/core/server/rpc-memory-probe.ts`) runs `createMemoryProbe().run` (`src/rooms/memory-probe/server/memory-probe.ts:136`):
+`bb lane-pilot memory-probe <project-id> [--paths a,b] [--keep] [--clean] [--report] [--force]` (CLI `src/rooms/tools/server/handlers/cli.ts`; RPC `memory_probe`, `src/rooms/contracts/rpc-ops.ts`, `src/rooms/core/server/rpc-memory-probe.ts`) runs `createMemoryProbe().run` (`src/rooms/memory-probe/server/services/memory-probe.ts`):
 
-1. Refuses a project that is not a drill sandbox (`DRILL_SANDBOX_PROJECT_IDS`: the Mac mini's `proj_3tb652jpsi` and OVH's `proj_ibu6v9g64j`, `src/rooms/stability/server/canary.ts:40-41`, plus `LP_MEMORY_PROBE_PROJECTS`, `:36`) unless `--force`.
-2. Removes what an earlier run left, then plants through the write door (`storeMemoryRecords`, the function the maintainer and the session RPC use; `:153`) a note that names the folder `lp-probe/memory`, a core convention, and through the lesson door (`upsertLessonProposal` + `adoptRuleProposal`) an always-on rule for both audiences. Every record carries a unique token (`lpprobe<8 hex><n|c|r>`), `trust: confirmed`, `origin: probe` and `valid_until` one day ahead (`:33`).
-3. For every probed path builds what the agent receives and looks for the tokens (`PROBES`, `:68`): the brief text from `writerKnowledge` + `writerBriefSegments` (writer.brief), the next-task turn (writer.turn), `codeRepairPrompt` with the dispatch context (writer.repair), `pmRulesPromptBlock` (pm.start), `pmResumeInstructions` (pm.resume), `pmRulesOf` (pm.rules_tool), `pmMemoryContext` (pm.memory_tool), `codeCritiquePrompt` and `nightReviewPrompt` over `reviewerMemoryFor` (critic.code, night.review), `councilMemoryBlock` (council.evidence). A path passes when every kind it carries is in the text (`judge`, `:206`).
+1. Refuses a project that is not a drill sandbox (`DRILL_SANDBOX_PROJECT_IDS`: the Mac mini's `proj_3tb652jpsi` and OVH's `proj_ibu6v9g64j`, `src/rooms/stability/server/services/canary.ts`, plus `LP_MEMORY_PROBE_PROJECTS`) unless `--force`.
+2. Removes what an earlier run left, then plants through the write door (`storeMemoryRecords`, the function the maintainer and the session RPC use) a note that names the folder `lp-probe/memory`, a core convention, and an always-on rule for both audiences. Every record carries a unique token (`lpprobe<8 hex><n|c|r>`), `trust: confirmed`, `origin: probe` and `valid_until` one day ahead.
+3. For every probed path builds what the agent receives and looks for the tokens (`PROBES`): the brief text from `writerKnowledge` + `writerBriefSegments` (`writer.brief`), the next-task turn (`writer.turn`), `codeRepairPrompt` with the dispatch context (`writer.repair`), `pmMemoryContext` (`pm.memory_tool`), and `codeCritiquePrompt` over `reviewerMemoryFor` (`critic.code`). A path passes when every kind it carries is in the text (`judge`).
 4. Negative case: the same path for a task in an unrelated folder, and for a gibberish query. A kind the path does not hand to every task (`alwaysOn`) must not show up, and the gibberish query must pull no record.
-5. Writes one row per path into `lane_pilot_memory_probe` (path, found, negative_ok, latency_ms, lp_version, at, detail, token; `src/rooms/storage/database.ts:357`, the last migration when it was added) and removes its records unless `--keep`. Exit 1 when any path is red. `--report` prints the last run and `memoryUnanswered` (`src/rooms/learning/unanswered.ts`).
+5. Writes one row per path into `lane_pilot_memory_probe` (path, found, negative_ok, latency_ms, lp_version, at, detail, token; `src/rooms/storage/database.ts`) and removes its records unless `--keep`. Exit 1 when any path is red. `--report` prints the last run.
 
 Observed (single-session) records wait a day for writers (`OBSERVED_QUARANTINE_MS`, `packages/memory-core/src/lifecycle.ts:5`), so the probe writes trusted records; a session-written note is visible to `lane-memory` at once and to a writer after a day or a second source, by design.
 
@@ -114,23 +111,19 @@ Observed (single-session) records wait a day for writers (`OBSERVED_QUARANTINE_M
 
 `scenario_memory_paths` (`scripts/lp-drill.py:509`, listed in `QUICK` at `:72`) plants with `--keep` before the drill's PM starts, then fails when: a probe row is red or its negative case pulled our records; the drill PM's first prompt lacks the probe rule (read from `bb thread log`); a real writer spawned for a probe task (`task_memory`, cancelled once its thread exists) lacks the probe note, core or rule in its first prompt; `lane-memory search` / `core` in the sandbox folder do not return the records (skipped when the host has no `lane-memory`). Records are removed at the end and in the final `finally`. A red drill already blocks the deploy (the push script rolls back on it). Tests: `tests/lp-drill-memory-paths.test.ts` (fake `bb`, `ssh`, `lane-memory`), `tests/server/memory-probe.test.ts`, `tests/memory-paths.test.ts`.
 
-### The metric: a question memory did not answer
-
-`memoryUnanswered` (`src/rooms/learning/unanswered.ts`) counts, per project over 30 days, learning items in state `duplicate` (the owner said again what was already in force; `confirmations` counted). The second number it used to carry, `owner_question` signals read by Jev, is gone with that judgment.
-
 ### Why 1532 expired notes were almost never used
 
-Measured on the hub on 2026-10-22: 1532 expired notes, 1515 of them hidden by the budget eviction (`packages/memory-core/src/store.ts:139`), 17 by `valid_until`; none by the 90-day idle rule. One project (`proj_acpiaqf4wq`) holds 1374 of them: 664 accepted attempts produced 1648 notes (about 2.5 per task) in 17 days, while the note shelf (`memory.note_budget` 8000 tokens, about 130 notes) is full, so each batch evicts the oldest never-used notes: the shelf is a one-to-two-day window on busy days (10-12: 247 notes created, 38 still active a week later; 10-13: 159 created, 1 used). A writer reads at most three notes and only those naming a folder of its task (`writerMemoryPicks`), so a note about one finished task is read only if the same folder is touched again within that window. `src/rooms/learning/housekeeping.ts:5` records the same mechanism. The cause is the supply (the maintainer stores task-specific facts; 357 of 1192 passed stages stored nothing, the rest 1 to 15) against a fixed budget, not a bug. The options (a cap per task, a prompt for facts that outlive the task, a larger budget) were then measured: see «Supply against the budget, measured» below.
+Measured on the hub on 2026-10-22: 1532 expired notes, 1515 of them hidden by the budget eviction (`packages/memory-core/src/store.ts:139`), 17 by `valid_until`; none by the 90-day idle rule. One project (`proj_acpiaqf4wq`) holds 1374 of them: 664 accepted attempts produced 1648 notes (about 2.5 per task) in 17 days, while the note shelf (`memory.note_budget` 8000 tokens, about 130 notes) is full, so each batch evicts the oldest never-used notes: the shelf is a one-to-two-day window on busy days (10-12: 247 notes created, 38 still active a week later; 10-13: 159 created, 1 used). A writer reads at most three notes and only those naming a folder of its task (`writerMemoryPicks`), so a note about one finished task is read only if the same folder is touched again within that window. The cause is the supply (the maintainer stores task-specific facts; 357 of 1192 passed stages stored nothing, the rest 1 to 15) against a fixed budget, not a bug. The options (a cap per task, a prompt for facts that outlive the task, a larger budget) were then measured: see «Supply against the budget, measured» below.
 
 ## Evaluation: 30, 300 and 3,000 notes, and questions whose answer is nothing (SMA block 4 «Next», P2-7)
 
-`bb lane-pilot memory-eval [--sizes 30,300,3000] [--seed N] [--scope project|pile] [--source <extract.db>] [--json]` (`src/rooms/memory-eval/server/`, standalone `npx tsx scripts/memory-eval.ts --source <file>`) builds a corpus of each size from the notes the hub really holds and asks it the questions real accepted tasks pose. It reads the plugin database and writes nothing (`--export <file>` makes a small extract of the two things it needs, the notes and the accepted tasks with the files their accepted attempt produced, so the run can happen on any machine).
+`bb lane-pilot memory-eval [--sizes 30,300,3000] [--seed N] [--scope project|pile] [--source <extract.db>] [--json]` (`src/rooms/memory-eval/server/services/`, standalone `npx tsx scripts/memory-eval.ts --source <file>`) builds a corpus of each size from the notes the hub really holds and asks it the questions real accepted tasks pose. It reads the plugin database and writes nothing (`--export <file>` makes a small extract of the two things it needs, the notes and the accepted tasks with the files their accepted attempt produced, so the run can happen on any machine).
 
 - **Question.** An accepted task: the words `writerKnowledge` searches with (title, objective, acceptance) and its path lists (`owns_paths`, `read_first`).
 - **Gold answer.** From the outcome, not from the retrieval: the notes written before the attempt started that name a file the accepted attempt really produced (`produced` of the acceptance receipt, last two path segments). A lower bound, since a note can help without naming a file: precision against gold is a floor, and «nearby» counts delivered notes that name the same folder.
 - **Negative question.** A real task for which the right answer is nothing: no earlier note names a file or folder of its solution. Plus six off-topic questions (a borscht recipe, gibberish). A delivered note is a false hit; core conventions are reported apart because the writer's brief hands them to every task by design (and the reviewer path hands over every review-tagged note by design, so its off-topic figure is not comparable).
 - **Sizes.** The gold notes of the chosen questions are always in the corpus (they may take 50 % of 30 notes, 35 % of 300, 10 % of 3,000), the rest is real filler from the hub, and what the hub does not have (it holds about 2,200 notes ever) is padded with copies of real notes whose folders are renamed (`apps/api/x.ts` becomes `apps-s1/api-s1/x.ts`): they read like the project and name no file anyone touched. `--scope project` keeps each note in its own project as production does; `--scope pile` puts a person's whole memory in one scope (the harder test). A note written after a task started is hidden from it.
-- **Retrievals.** The production ones are the very functions the delivery paths call: `mixWriterMemory` (writer brief), `searchMemoryRecords` + `memoryContext` (PM tool, terminal, council), `searchMemoryRecords` alone, `mixReviewerMemory` (critics, night review). Against them the plain baseline Maslov's claim asks for: **plain** (a note names a folder of the task, the one with most uncommon task words first; no stemming, no trigram index, no rank fusion, no counters) for the writer path, **plain-keyword** (at least three uncommon words in common) for the query paths, and a diagnostic `search+floor` (the production search with a floor of three shared words). Every number comes with a 95 % bootstrap interval; the questions are the sample.
+- **Retrievals.** The production ones are the very functions the delivery paths call: `mixWriterMemory` (writer brief), `searchMemoryRecords` + `memoryContext` (PM tool, terminal), `searchMemoryRecords` alone, `mixReviewerMemory` (critics). Against them the plain baseline Maslov's claim asks for: **plain** (a note names a folder of the task, the one with most uncommon task words first; no stemming, no trigram index, no rank fusion, no counters) for the writer path, **plain-keyword** (at least three uncommon words in common) for the query paths, and a diagnostic `search+floor` (the production search with a floor of three shared words). Every number comes with a 95 % bootstrap interval; the questions are the sample.
 
 Measured on the hub's data of 2026-10-22 (project scope, 3 seeds; ranges are the seeds; hit@k is «a gold note among the k delivered», false hit is «something other than core delivered for a question whose answer is nothing»):
 
@@ -163,16 +156,16 @@ What it says, honestly:
 | relevance order, 24000, cap 2 per task | 90 % | 70 % | 1244 | 562 |
 
 - **A cap per task lowers recall** (62 % to 53-56 % at the old budget): the notes it drops are chosen by how many files they name, and that is a weak guess at which note a later task needs (48 % of all the hub's notes were later the answer of some task). Not implemented. The prompt option (ask for facts that outlive the task) cannot be replayed on history and was not tried.
-- **A larger budget raises it** (62 % to 69 %), and costs no brief space: a writer reads at most three notes whatever the shelf holds, the PM context has its own `memory.context_budget`. `memory.note_budget` now defaults to **24000** tokens (`packages/memory-core/src/settings.ts`, the catalog default in `packages/settings-catalog/src/ui-catalog.ts`); the hub's projects set none, so they take the new default at the next deploy. The total index budget (65536) is unchanged.
+- **A larger budget raises it** (62 % to 69 %), and costs no brief space: a writer reads at most three notes whatever the shelf holds, the PM context has its own `memory.context_budget`. `memory.note_budget` now defaults to **24000** tokens (`packages/memory-core/src/settings.ts`, the catalog default in `src/rooms/settings-registry.ts`); the hub's projects set none, so they take the new default at the next deploy. The total index budget (65536) is unchanged.
 - The shelf is still a window: with 2.5 notes per task and about 400 notes a project holds a few days of busy work, not weeks. The gap that remains (92 % on the shelf, 69 % picked) is retrieval, not supply.
 
 ## The budget limits the shelf, not the memory (archive, 2026-11-13)
 
 Until this change a note the note budget evicted (1515 of the hub's 1532 expired notes) left every index and no search could find it again; a full budget also made `bb lane-pilot memory import` refuse (58 notes waiting to be imported would have pushed out 66). Now the budget limits only what a brief may inject, the **shelf** (`status='active'`).
 
-- **Archive.** A note the budget moves off the shelf keeps `status='expired'`, `expired_reason='budget'` (no new column, no migration) and **keeps its word indexes and its vector**. Nothing is deleted by the budget. `searchMemoryRecords(..., { includeArchive: true })` reads shelf and archive together and ranks them by the same cosine or word rule; without the option it reads the shelf only. The PM `context` action (`pmSearch`), `session_memory_search` and the import check ask for the archive; a writer brief, the reviewers, the council, the maintainer's duplicate check and the prompt recall do not (the archive is never injected).
+- **Archive.** A note the budget moves off the shelf keeps `status='expired'`, `expired_reason='budget'` (no new column, no migration) and **keeps its word indexes and its vector**. Nothing is deleted by the budget. `searchMemoryRecords(..., { includeArchive: true })` reads shelf and archive together and ranks them by the same cosine or word rule; without the option it reads the shelf only. The PM `context` action (`pmSearch`), `session_memory_search` and the import check ask for the archive; a writer brief, the reviewers, the maintainer's duplicate check and the prompt recall do not (the archive is never injected).
 - **Old rows.** The 1515 notes archived before this change lost their word indexes; the first archive search of a process puts back what an index lacks (`indexArchive`), `bb lane-pilot memory index` does the same, and the embedding schedule (`pendingVectors`) gives them vectors. The idle rule does not hide an archived note.
-- **Near duplicates** (`packages/memory-core/src/duplicates.ts`). The write door (`storeMemoryRecords`, so `memory write`, the import and the maintainer) compares a new note with the stored notes of the same project, audience and section: vector cosine >= 0.92 (only when the caller embedded the text: `session_memory_write` and `memory_import` do, best effort) or normalised-text containment >= 0.9 (a leading `[source mark]`, case, punctuation dropped; words cut to stems; the shorter note needs 5 words and the longer is at most 3 times its size). A copy creates no row: its source is appended to the stored note's `verification_json` as one more origin (`duplicateIds` in the result, `merged_with` in the import report; a copy of an observed note from another source corroborates it). A confirmed note that strictly extends a stored one replaces it as a new version. A changed number or a flipped «not» is never a copy. Notes with an explicit `supersedes` (memory-compress) and rules are not compared. `memory duplicates [--project P] [--json]` lists the existing pairs (read-only); `memory dedupe --project P [--apply]` merges them (dry run by default, `--apply` is the owner's): the copy gets `expired_reason='duplicate'`, `superseded_by` = the note kept, stays indexed and embedded; an archive search shows it only when the kept note is not in the result. Suite family H13 checks the door. A pair whose texts share the facts but differ in a heading sentence is found by cosine only. The nightly learning dedup is unchanged.
+- **Near duplicates** (`packages/memory-core/src/duplicates.ts`). The write door (`storeMemoryRecords`, so `memory write`, the import and the maintainer) compares a new note with the stored notes of the same project, audience and section: vector cosine >= 0.92 (only when the caller embedded the text: `session_memory_write` and `memory_import` do, best effort) or normalised-text containment >= 0.9 (a leading `[source mark]`, case, punctuation dropped; words cut to stems; the shorter note needs 5 words and the longer is at most 3 times its size). A copy creates no row: its source is appended to the stored note's `verification_json` as one more origin (`duplicateIds` in the result, `merged_with` in the import report; a copy of an observed note from another source corroborates it). A confirmed note that strictly extends a stored one replaces it as a new version. A changed number or a flipped «not» is never a copy. Notes with an explicit `supersedes` (memory-compress) and rules are not compared. `memory duplicates [--project P] [--json]` lists the existing pairs (read-only); `memory dedupe --project P [--apply]` merges them (dry run by default, `--apply` is the owner's): the copy gets `expired_reason='duplicate'`, `superseded_by` = the note kept, stays indexed and embedded; an archive search shows it only when the kept note is not in the result. Suite family H13 checks the door. A pair whose texts share the facts but differ in a heading sentence is found by cosine only.
 - **Import.** `origin: import` never displaces the shelf: a note of the file that does not fit the budget is stored straight in the archive (`archivedIds` in the report), the stored notes stay. The «would evict» refusal and `refused.noteTokensNeeded` are gone.
 - **Restating** an archived fact brings it back to the shelf (and may move a less used note to the archive). `valid_until`, `idle`, `refuted`, `revoked`, `owner` and `archived` (the owner's cold tier) are unchanged and stay out of search.
 
@@ -196,7 +189,7 @@ Until this change a note the note budget evicted (1515 of the hub's 1532 expired
 The claim: `use_count` / `accepted_count` (`memoryUsefulness`) cut the writer's hit@3 from 62 % to 41 %, so they must leave the score. Checked against the code and the one measurement there is:
 
 - **The 41 % is real and is already fixed.** It is the «legacy order» row of the shelf replay above (569 real tasks, `memory-eval --shelf`): the writer's three notes ordered by the counters. `writerMemoryPicks` has ignored the counters since then (the search's order is kept; `tests/server/memory-usefulness.test.ts` pins it), and nothing in the writer path reads `use_count`, `accepted_count` or `memoryUsefulness` now. Carbon read the historical row as the current state.
-- **Where the counters still count:** the PM / council / terminal context (`memoryContext`: relevance times `0.5 + usefulness + verification bonus`, only among records that already share words with the question), the reviewers' tiers (`reviewerMemoryPicks`) and the pack candidates' `relevance` (`memoryCandidates`). **No measurement says they hurt there:** the replay scores the writer's hit@3 only, and the static suites (`memory-eval`, `--suite`) have all counters at zero, so they cannot see the effect either way. The mechanism (richer get richer) is plausible, but a plausible mechanism with no number is not grounds to change what the PM reads.
+- **Where the counters still count:** the PM and terminal context (`memoryContext`: relevance times `0.5 + usefulness + verification bonus`, only among records that already share words with the question), the reviewers' tiers (`reviewerMemoryPicks`) and the pack candidates' `relevance` (`memoryCandidates`). **No measurement says they hurt there:** the replay scores the writer's hit@3 only, and the static suites (`memory-eval`, `--suite`) have all counters at zero, so they cannot see the effect either way. The mechanism (richer get richer) is plausible, but a plausible mechanism with no number is not grounds to change what the PM reads.
 - **Decision: left as is, logging kept.** To decide it, replay the hub's PM questions (the `memory_miss` and `reminded` rows are the cheapest labelled set) with and without the factor, as the shelf replay did for the writer. The counters no longer touch eviction as a loss: the note budget now moves the least used notes to the archive, where search still finds them.
 
 ## Contradictions: two notes that disagree are held until a person settles it
@@ -205,7 +198,7 @@ The claim: `use_count` / `accepted_count` (`memoryUsefulness`) cut the writer's 
 
 On the hub's 2,191 notes ever stored (the sandbox excluded), 0 pairs of active notes conflict; the history holds 1 pair (two expired notes about a breakpoint, `Below 1024px` against `Below 1280 px`, the same admin page). The first version of the polarity rule found 3 more, all false (a negation in another clause of the same sentence); the 0.8 word overlap removed them. The register is a mechanism waiting for its first real case, not a backlog.
 
-**What is held and how.** After every maintainer write and every session write the new notes are compared; a pair that disagrees gets a row in `lane_pilot_memory_conflict` (state `held`) and **both notes leave every reader through one SQL clause** (`heldClause`, used by `searchMemoryRecords`, `listMemory`, `session_memory_core` and the lane-memory file export): the writer's brief, the reviewers, the PM tool, the council, the terminal's core block. The notes stay `active` in the table, so budgets still count them and nothing is lost. **Why hold both rather than inject both with a «conflict, owner to settle» marker:** an agent cannot weigh two facts neither of which it can check, a marker invites a guess and costs tokens in every brief that carries it, and a wrong «fact» is worse than a missing one (the task's read list still points at the code). The conflict reaches a person through the deferral register instead.
+**What is held and how.** After every maintainer write and every session write the new notes are compared; a pair that disagrees gets a row in `lane_pilot_memory_conflict` (state `held`) and **both notes leave every reader through one SQL clause** (`heldClause`, used by `searchMemoryRecords`, `listMemory`, `session_memory_core` and the lane-memory file export): the writer's brief, the reviewers, the PM tool, and the terminal's core block. The notes stay `active` in the table, so budgets still count them and nothing is lost. **Why hold both rather than inject both with a «conflict, owner to settle» marker:** an agent cannot weigh two facts neither of which it can check, a marker invites a guess and costs tokens in every brief that carries it, and a wrong «fact» is worse than a missing one (the task's read list still points at the code). The conflict reaches a person through the deferral register instead.
 
 **Settled at once (since 2026-10-22).** A pair found by a write is settled right away without a person: the newer note is the later observation, it is kept and the older one is retired as `superseded` by it; the register keeps the pair and the evidence (`automatic: the newer note supersedes the older one`). One write that finds more than 5 pairs settles none and logs that the heuristics are misfiring. No deferral is opened. A pair held before (the earlier design, where the owner settled) still settles by hand or as `moot`.
 
@@ -219,7 +212,7 @@ The owner gave these calls to the writers on 2026-10-30. Each one is the rule th
 
 **F04-3.** A stored label with no colon (`verification`, `bb-plugin-lane-pilot`) is a folder selector: it applies when a task path equals it, ends with it, or contains it as a directory. It does not apply when the task has no paths — so PM rules stored under one never reached the PM. `scripts/memory-scope-dry-run.ts --apply` rebinds such stored scopes to the `section:<uuid>` of the section the label names (map argument, same shape as `memory.scope_map`), journals every "was → is" rewrite, and `--revert <journal>` restores the stored scope. New scopes are still a section id or a file path; `assertRuleScope` rejects a bare label.
 
-**X-2.** One owner per kind of knowledge. Anamnesis owns owner facts. Lane Pilot memory owns project technical facts and rules. The hub DB is the only memory store; BB memory (off on the hub since 2026-11-06) is not used. Code and docs stay the source of behavior. A fact does not get a second author by being copied into another store.
+**X-2.** One owner per kind of knowledge: Lane Pilot memory owns project technical facts and rules, and the hub DB is the only memory store (BB memory, off on the hub since 2026-11-06, is not used). Code and docs stay the source of behavior.
 
 ## Round 2 (2026-11-13): the last stage is a judge, not a floor
 
@@ -229,7 +222,7 @@ Measured on public and hub data (the bench report `memory-bench.md`, sections 2.
 |---|---|---|
 | Does the cosine floor `DENSE_FLOOR` 0.65 help? | LongMemEval-S: 67.6% of answerable questions answered with it, 95.1% without (28:0, p < 1e-8). On the hub set it cut nothing useful. | Removed as a filter. A safety pre-filter at 0.50 stays (`DENSE_PREFILTER`; loses nothing on both sets). A record that names a path written in the question passes whatever its cosine. |
 | Does the `WEAK_MATCH` line help the reader? | 95.1% without, 90.2% with (5:0). | The line and the gate warning are gone from the PM tool, the CLI, the RPC and the writer's brief. The gate score is computed only for the judge's receipt (`gateScore`). |
-| Which last stage? | Judge over the vector's top-12, «all ids that help, or none», gemini-3.8-flash, secrets masked: 96.7% of wanted notes delivered, 99.1% silence on 228 unanswerable questions (Jev 96.3 / 97.7). About $0.37 per 1000 calls at OpenLux's prices; p50 4.7 s, p95 10.4 s. | `src/rooms/memory/server/memory-judge.ts` (HTTP, key, cache, fallback) and `packages/memory-core/src/judge.ts` (prompt, mask, reply parser). |
+| Which last stage? | Judge over the vector's top-12, «all ids that help, or none», gemini-3.8-flash, secrets masked: 96.7% of wanted notes delivered, 99.1% silence on 228 unanswerable questions (Jev 96.3 / 97.7). About $0.37 per 1000 calls at OpenLux's prices; p50 4.7 s, p95 10.4 s. | `src/rooms/memory/server/services/memory-judge.ts` (HTTP, key, cache, fallback) and `packages/memory-core/src/judge.ts` (prompt, mask, reply parser). |
 | Judge before the PM's per-turn context? | Median 4.7 s; QA with the judge did not improve (89.2 / 93.1 against 95.1). | No. The per-turn context is the vector's top notes without floor and warning, packed by the budget. |
 
 **Where the judge runs.** The explicit searches: the PM memory tool (`runMemoryContext` → `pmMemoryContextJudged`), `session_memory_search` (and so `bb lane-pilot memory search`), and the writer's brief (`judgeWriterMemory`, then `mixWriterMemory({ allowedIds })`; a note that names a path of the task bypasses the judge; the 10-minute cache means a second brief of the same task does not ask again). Not on `pmMemoryContext` (per-turn context, scheduled agents, the lead's tick).

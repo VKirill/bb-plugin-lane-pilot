@@ -1,4 +1,3 @@
-// Public API of rollback: the migrations only (storage imports them; the rest of the room is behind ./server so storage never loads it).
+// Public API of rollback: migrations and runtime-neutral models/rules (server code lives behind ./server).
 export { rollbackMigrations } from "./migrations";
-export { getAttemptChange, landingOf, listAttemptChanges, listTaskReceipts, type TaskReceiptState } from "./store";
-export { recoveryState } from "./store";
+export * from "./models";

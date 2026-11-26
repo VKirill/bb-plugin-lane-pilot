@@ -3,19 +3,23 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, it } from "vitest";
 import bundledAgents from "../src/rooms/contracts/bundled-agents.json";
-import { compileMainAgentProfile } from "../src/rooms/native-agent/agent-profile";
+import { compileMainAgentProfile } from "../src/rooms/native-agent/models/agent-profile";
 import {
   splitClaudeToolList,
-  stockAgentsOverlayFromInstalled,
   unionLpBridgeToolsOnAgentsJson,
+  overlaySessionTools,
+  overlayDisallowedTools,
+} from "../src/rooms/native-agent/models/agent-overlay";
+import {
+  stockAgentsOverlayFromInstalled,
+  BB_AGENT_SESSIONS,
   LANE_PILOT_PM_SESSION,
   lanePmOverlayPrompt,
   overlayLanePmPrompt,
   overlayLaneAgentPrompt,
-  overlaySessionTools,
-  overlayDisallowedTools,
   laneSessionOverlayPrompt,
-} from "../src/rooms/native-agent/native-agent-overlay";
+} from "../src/rooms/native-agent/models/native-agent-overlay";
+import { NATIVE_LP_BRIDGE_PM_TOOLS } from "../src/rooms/native-agent/models/bridge-tools";
 import { resolveInstalledAgentFile } from "../src/rooms/native-agent/native-claude-host";
 
 const PLUGIN_MD = `---
@@ -132,15 +136,11 @@ it("gives specialists the schedule and no other bb-bridge tool, and keeps the fo
     "mcp__bb-bridge__lane_pilot_workflow_status",
     "mcp__bb-bridge__lane_pilot_workflow_amend",
     "mcp__bb-bridge__lane_pilot_helpers",
-    "mcp__bb-bridge__lane_pilot_council",
     "mcp__bb-bridge__lane_pilot_relay",
     "mcp__bb-bridge__lane_pilot_memory",
     "mcp__bb-bridge__lane_pilot_workflow_draft",
-    "mcp__bb-bridge__lane_pilot_regression",
     "mcp__bb-bridge__lane_pilot_schedule",
-    "mcp__bb-bridge__lane_pilot_phase",
     "mcp__bb-bridge__lane_pilot_queue",
-    "mcp__bb-bridge__lane_pilot_forge",
     "mcp__bb-bridge__lane_pilot_facts",
     "mcp__bb-bridge__lane_pilot_check",
     "mcp__bb-bridge__lane_pilot_permit",
@@ -266,7 +266,8 @@ You are **dev-orchestrator**. Dispatch run-controller. Then spawn project-onboar
 });
 
 it("keeps a Lane PM from delegating code to general-purpose subagents", async () => {
-  const { withoutCodeWritingSubagents, stockAgentsOverlayFromInstalled } = await import("../src/rooms/native-agent/native-agent-overlay");
+  const { withoutCodeWritingSubagents } = await import("../src/rooms/native-agent/models/agent-overlay");
+  const { stockAgentsOverlayFromInstalled } = await import("../src/rooms/native-agent/models/native-agent-overlay");
   expect(withoutCodeWritingSubagents("dev-orchestrator", ["Agent(lane-stack:run-supervisor, Explore, Plan, general-purpose)", "Read"]))
     .toEqual(["Agent(Explore, Plan)", "Read"]);
   expect(withoutCodeWritingSubagents("lane-stack:dev-orchestrator", ["Agent"])).toEqual(["Agent(Explore, Plan)"]);
@@ -316,4 +317,21 @@ it("exposes the Core directory tool only with its idle-move checkpoint capabilit
   expect(newCore.disallowedTools).toContain("mcp__bb-bridge__bb_workflow_run");
   expect(newCore.prompt).toContain("idle same-project, same-host");
   expect(newCore.prompt).not.toContain("moves are disabled");
+});
+
+it("keeps the PM prompt under 9000 chars, names only NATIVE_LP_BRIDGE_PM_TOOLS, and omits deleted rooms", () => {
+  expect(LANE_PILOT_PM_SESSION.length).toBeLessThanOrEqual(9_000);
+  expect(lanePmOverlayPrompt("dev-orchestrator").length).toBeLessThanOrEqual(9_000);
+
+  const pmTools = new Set<string>(NATIVE_LP_BRIDGE_PM_TOOLS);
+  const mentioned = [...new Set([...LANE_PILOT_PM_SESSION.matchAll(/\blane_pilot_[a-z_]+/g)].map((m) => m[0]))];
+  const absent = mentioned.filter((name) => !pmTools.has(name));
+  expect(absent).toEqual([]);
+
+  const deletedPattern = /\b(docs-nightly|night-reviewer|docs-maintainer|council|regressions|lessons|rules)\b/i;
+  const specialistDeletedPattern = /\b(docs-nightly|night-reviewer|docs-maintainer|council|regressions|lessons)\b|Lane Pilot's rules|project rules/i;
+  expect(LANE_PILOT_PM_SESSION).not.toMatch(deletedPattern);
+  for (const [id, prompt] of Object.entries(BB_AGENT_SESSIONS)) {
+    expect(prompt, id).not.toMatch(specialistDeletedPattern);
+  }
 });

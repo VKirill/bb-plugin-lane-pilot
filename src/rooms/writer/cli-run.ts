@@ -1,7 +1,6 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { expandHomePath } from "@lane-pilot/kit";
-import { spawnAsync } from "@lane-pilot/kit";
+import { currentHostId, expandHomePath, spawnAsync } from "@lane-pilot/kit";
 
 const FORBIDDEN = /(?:^|\s)(--apply(?:[= ]|$)|(?:^|\s)setup(?:\s|$))/;
 
@@ -22,7 +21,7 @@ export async function runCommandOnHost(input: {
     throw new Error("refusing host command: --apply/setup are forbidden in Mode 2");
   }
   if (!existsSync(input.cwd)) {
-    return { hostId: process.env.BB_HOST_ID ?? input.requestedHostId, exitCode: 1, stdout: "", stderr: `working directory does not exist: ${input.cwd}` };
+    return { hostId: currentHostId(input.requestedHostId), exitCode: 1, stdout: "", stderr: `working directory does not exist: ${input.cwd}` };
   }
   const result = await spawnAsync("/bin/bash", ["-lc", input.command], {
     cwd: input.cwd,
@@ -33,7 +32,7 @@ export async function runCommandOnHost(input: {
   // A killed command has no status; say why instead of an empty stderr.
   const killed = [result.error?.message, result.signal ? `killed by ${result.signal}` : null].filter(Boolean).join("; ");
   return {
-    hostId: process.env.BB_HOST_ID ?? input.requestedHostId,
+    hostId: currentHostId(input.requestedHostId),
     exitCode: result.status ?? 1,
     stdout: result.stdout ?? "",
     stderr: [result.stderr, killed].filter(Boolean).join("\n"),
@@ -60,7 +59,7 @@ export async function writePmSettingsOnHost(input: {
   };
   await writeFile(settingsPath, `${JSON.stringify(settings, null, 2)}\n`);
   return {
-    hostId: process.env.BB_HOST_ID ?? input.requestedHostId,
+    hostId: currentHostId(input.requestedHostId),
     settingsPath,
     guardPath,
   };

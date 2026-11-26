@@ -6,16 +6,16 @@ import { dirname, join } from "node:path";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createRun, createTask, createAttempt, openDatabase, saveProjectSetting, saveTaskPlan, setRunThread, transitionAttempt } from "../../src/rooms/plugin-db";
-import { runCommand } from "../../src/rooms/host-worker/host-handlers";
+import { runCommand } from "../../src/rooms/host-worker";
 import { createCore } from "../../src/rooms/core/server/core";
-import { modelCatalogOf } from "../../src/rooms/platform/server/model-catalog-reader";
+import { modelCatalogOf } from "../../src/rooms/platform/server/services/model-catalog-reader";
 import type { Services } from "../../server";
-import { createWorkflowAgents } from "../../src/rooms/workflow/server/workflow-agent";
-import { chainRuntimeFor, humanOptions, humanOutput, registerChainExecutors } from "../../src/rooms/workflow/server/workflow-executors";
-import { registerDispatchExecutors, taskUsage } from "../../src/rooms/writer/server";
-import { answerWorkflowQuestion } from "../../src/rooms/workflow/server/workflow-answer";
-import { reportEndToOwner } from "../../src/rooms/workflow/server/pm-notice";
-import { graphDependsOn, graphTaskId, graphTaskStem } from "../../src/rooms/workflow/server/workflow-task-contract";
+import { createWorkflowAgents } from "../../src/rooms/workflow/server/services/workflow-agent";
+import { chainRuntimeFor, humanOptions, humanOutput, registerChainExecutors } from "../../src/rooms/workflow/server/services/workflow-executors";
+import { registerDispatchExecutors, taskUsage } from "../../src/rooms/writer/server/index";
+import { answerWorkflowQuestion } from "../../src/rooms/workflow/server/services/workflow-answer";
+import { reportEndToOwner } from "../../src/rooms/workflow/server/services/pm-notice";
+import { graphDependsOn, graphTaskId, graphTaskStem } from "../../src/rooms/workflow/server/services/workflow-task-contract";
 import type { ChainRuntime } from "../../src/rooms/contracts/server";
 import { nodeRefStep, refOf, registerPureActions } from "@lane-pilot/workflow-engine";
 import { WorkflowEngine } from "@lane-pilot/workflow-engine";
@@ -23,8 +23,8 @@ import { registerReducers } from "@lane-pilot/workflow-engine";
 import { parseWorkflow } from "@lane-pilot/workflow-engine";
 import type { NodeExecutor, Workflow } from "@lane-pilot/workflow-engine";
 import { builtinWorkflow } from "../../src/rooms/workflow/builtin";
-import { createGoalAuditor } from "../../src/rooms/workflow/server/workflow-goal-audit";
-import { workflowAuditEvidence } from "../../src/rooms/workflow/server/workflow-audit-evidence";
+import { createGoalAuditor } from "../../src/rooms/workflow/server/services/workflow-goal-audit";
+import { workflowAuditEvidence } from "../../src/rooms/workflow/server/services/workflow-audit-evidence";
 import { writtenByEngineSince } from "../../src/rooms/verification/server";
 import { sha256Hex } from "@lane-pilot/kit";
 
@@ -1153,12 +1153,18 @@ describe("the deliverable goal check of a shipped graph", () => {
     claims: [reply({ claims: [{ text: "c1", sources: [1] }], unverified: [], counter: [], claim_count: 1, handoff: "claims" })],
     report: [reply({ report_md: "# Findings\n\nThe answer is [1].\n\n## Sources\n\n1. Example — https://example.com/a", cited_ids: ["1"], sources: [{ url: "https://example.com/a", title: "Example", date: "2026-01-01", snippet: "s", access: "full_text" }], handoff: "reported" })],
   };
+  const researchSpent: Record<string, Spent> = {
+    frame: { input: 10, output: 5, model: "claude-sonnet-5-5" },
+    "search:child": { input: 10, output: 5, model: "claude-sonnet-5-5" },
+    claims: { input: 10, output: 5, model: "claude-sonnet-5-5" },
+    report: { input: 10, output: 5, model: "claude-sonnet-5-5" },
+  };
   const shipped = () => structuredClone(builtinWorkflow("web-research")!);
   const goalCheckOutput = async (t: Awaited<ReturnType<typeof setup>>, runId: string, nodeId = "goal_check") =>
     JSON.parse(t.engine.snapshot(runId)!.steps.find((step) => step.node_id === nodeId)!.output_json ?? "{}");
 
   it("goal_check validates the artifact deliver wrote: the shipped web-research graph reaches done", async () => {
-    const t = await setup(researchScript);
+    const t = await setup(researchScript, { spent: researchSpent });
     dispose = t.dispose;
     const summary = await t.start(shipped(), { question: "what is the answer" }).done;
     expect(summary.status).toBe("succeeded");
@@ -1168,7 +1174,7 @@ describe("the deliverable goal check of a shipped graph", () => {
   });
 
   it("goal_check honours a declared params.path template when no edge mapping names the target", async () => {
-    const t = await setup(researchScript);
+    const t = await setup(researchScript, { spent: researchSpent });
     dispose = t.dispose;
     const workflow = shipped();
     const edge = workflow.edges.find((candidate) => candidate.from === "deliver" && candidate.to === "goal_check")!;
@@ -1182,7 +1188,7 @@ describe("the deliverable goal check of a shipped graph", () => {
 
   it("goal_check refuses a declared target that is not there: relative miss inside the checkout, absolute miss on a foreign host", async () => {
     for (const params of [{ path: "missing/target.md" }, { path: "/definitely/missing/artifact.md", host: "foreign-host" }]) {
-      const t = await setup(researchScript);
+      const t = await setup(researchScript, { spent: researchSpent });
       dispose = t.dispose;
       const workflow = shipped();
       const node = workflow.nodes.find((candidate) => candidate.id === "goal_check")!;
@@ -1197,7 +1203,7 @@ describe("the deliverable goal check of a shipped graph", () => {
   });
 
   it("goal_check names the host mismatch for a relative target on a foreign host instead of reading it on the PM root", async () => {
-    const t = await setup(researchScript);
+    const t = await setup(researchScript, { spent: researchSpent });
     dispose = t.dispose;
     const workflow = shipped();
     const node = workflow.nodes.find((candidate) => candidate.id === "goal_check")!;
@@ -1208,7 +1214,7 @@ describe("the deliverable goal check of a shipped graph", () => {
   });
 
   it("goal_check validates the params target, not a with alias that would pass", async () => {
-    const t = await setup(researchScript);
+    const t = await setup(researchScript, { spent: researchSpent });
     dispose = t.dispose;
     const workflow = shipped();
     const edge = workflow.edges.find((candidate) => candidate.from === "deliver" && candidate.to === "goal_check")!;
@@ -1221,7 +1227,7 @@ describe("the deliverable goal check of a shipped graph", () => {
   });
 
   it("goal_check refuses an edge-declared target whose optional mapping resolved to nothing, ignoring run inputs", async () => {
-    const t = await setup(researchScript);
+    const t = await setup(researchScript, { spent: researchSpent });
     dispose = t.dispose;
     const workflow = shipped();
     workflow.inputs.push({ name: "artifactPath", type: "string", required: false }, { name: "deliverable", type: "string", required: false });
@@ -1233,7 +1239,7 @@ describe("the deliverable goal check of a shipped graph", () => {
   });
 
   it("goal_check rejects an empty declared target: no checkout-dir pass, no run-input fallback", async () => {
-    const t = await setup(researchScript);
+    const t = await setup(researchScript, { spent: researchSpent });
     dispose = t.dispose;
     const workflow = shipped();
     workflow.inputs.push({ name: "deliverable", type: "string", required: false });
@@ -1248,7 +1254,7 @@ describe("the deliverable goal check of a shipped graph", () => {
     const planning = mkdtempSync(join(tmpdir(), "lp-planning-"));
     execFileSync("git", ["init", "-q"], { cwd: planning });
     try {
-      const t = await setup(researchScript);
+      const t = await setup(researchScript, { spent: researchSpent });
       dispose = t.dispose;
       saveProjectSetting(t.db, PROJECT, "project.planning_home", planning);
       const workflow = shipped();
@@ -2033,7 +2039,14 @@ describe("handoff by reference and the start packet (W0)", () => {
           : { status: "rework", findings: feedback, handoff: "Review complete." });
       }],
       media_brief: [reply({ media_path: "media.md", handoff: "Media brief ready." })],
-    }, { resolveWorkflow: (id) => builtinWorkflow(id) });
+    }, {
+      resolveWorkflow: (id) => builtinWorkflow(id),
+      spent: {
+        [author]: { input: 10, output: 5, model: "claude-sonnet-5-5" },
+        [asset ? "verify_asset" : "quality"]: { input: 10, output: 5, model: "claude-sonnet-5-5" },
+        media_brief: { input: 10, output: 5, model: "claude-sonnet-5-5" },
+      },
+    });
     dispose = t.dispose;
     const summary = await t.start(builtinWorkflow(graph)!, asset ? { asset_name: "FixtureHelmet" } : { page_topic: "Fixture page", brief_path: "brief.md" }).done;
     expect(summary.status, JSON.stringify({ summary, steps: t.engine.journal.steps(summary.runId) })).toBe("succeeded");
@@ -2075,7 +2088,6 @@ describe("handoff by reference and the start packet (W0)", () => {
   });
 
   const big = Array.from({ length: 40 }, (_, at) => ({ id: `T${at + 1}`, title: `Task number ${at + 1} of the plan`, objective: "x".repeat(120) }));
-  const bigText = JSON.stringify(big, null, 1);
   const reader = (node: Row = {}, inputs: Row = {}) => chain({
     nodes: [
       { id: "read", type: "agent", role: "analyst", prompt: "Read the plan.", output: [{ name: "count", type: "number" }], produces: [{ kind: "report", version: 1 }], ...node },
@@ -2301,7 +2313,7 @@ describe("handoff by reference and the start packet (W0)", () => {
 
 describe("a phase stage's helper is told the folders it writes", () => {
   it("replaces «write nothing» with the folders of the author's own: the planner and the analyst the phase folder, never the shared .agents/plans/ (docs/task-folder.md)", async () => {
-    const { phaseWriteNote } = await import("../../src/rooms/workflow/server/workflow-agent");
+    const { phaseWriteNote } = await import("../../src/rooms/workflow/server/services/workflow-agent");
     const { READ_ONLY_LINE } = await import("@lane-pilot/workflow-engine");
     const told = phaseWriteNote(`brief\n${READ_ONLY_LINE}\ncontract`, "ph_abc123", "planner");
     expect(told).not.toContain(READ_ONLY_LINE);
@@ -2324,7 +2336,7 @@ describe("a node that runs as an agent the owner created", () => {
   it("runs the agent's own profile: its stored selection leads the first message, and the thread is marked as that specialist", async () => {
     const t = await setup({ write: [reply({ text: "A post.", handoff: "done" })] });
     dispose = t.dispose;
-    const { compileMainAgentProfile } = await import("../../src/rooms/native-agent/agent-profile");
+    const { compileMainAgentProfile } = await import("../../src/rooms/native-agent/models/agent-profile");
     await t.rt.ctx.saveOwnedAgents({ "blog-writer": { ...mine, compiled: compileMainAgentProfile("blog-writer", { prompt: mine.prompt, description: mine.description, skills: ["ru-text"] }) } } as never);
     const summary = await t.start(node("specialist:blog-writer")).done;
     expect(summary).toMatchObject({ status: "succeeded", output: { text: "A post." } });
@@ -2346,7 +2358,7 @@ describe("a node that runs as an agent the owner created", () => {
   it("takes the agent from an input when the role is a template, and refuses an id that is no specialist instead of running it as an analyst", async () => {
     const t = await setup({ write: [reply({ text: "A post.", handoff: "done" })] });
     dispose = t.dispose;
-    const { compileMainAgentProfile } = await import("../../src/rooms/native-agent/agent-profile");
+    const { compileMainAgentProfile } = await import("../../src/rooms/native-agent/models/agent-profile");
     await t.rt.ctx.saveOwnedAgents({ "blog-writer": { ...mine, compiled: compileMainAgentProfile("blog-writer", { prompt: mine.prompt, description: mine.description }) } } as never);
     expect(await t.start(named).done).toMatchObject({ status: "succeeded", output: { text: "A post." } });
     expect(t.spawned[0]!.pluginMetadata).toMatchObject({ role: "specialist", specialist: "blog-writer" });
@@ -2419,7 +2431,8 @@ describe("a run in a project that has no PM chat", () => {
     dispose = t.dispose;
     const started = t.start(ask);
     const items = () => t.db.prepare("SELECT key, source, kind, project_id, what, why, wake, state, actions_json FROM lane_pilot_owner_item").all() as Array<Record<string, any>>;
-    await waitFor(() => items().length);
+    // The item is posted from inside the step; the engine marks the step waiting right after.
+    await waitFor(() => items().length && t.engine.journal.steps(started.runId).some((step: { state: string }) => step.state === "waiting"));
     expect(t.harness.pendingInteractions).toEqual([]);
     const [item] = items();
     expect(item).toMatchObject({ source: "workflow", kind: "workflow_question", project_id: PROJECT, wake: 1, state: "open", what: expect.stringContaining("Ship it?") });
@@ -2430,7 +2443,9 @@ describe("a run in a project that has no PM chat", () => {
 
     expect(await answerWorkflowQuestion(t.rt.ctx, { workflowEngine: t.engine } as never, { runId: started.runId, choice: "maybe later" })).toMatchObject({ ok: false, reason: "answer_decides_nothing", options: ["go", "fix"] });
     expect(await answerWorkflowQuestion(t.rt.ctx, { workflowEngine: t.engine } as never, { runId: started.runId, stepKey: String(actions[0]!.rpc.input.stepKey), choice: "go" })).toMatchObject({ ok: true });
-    expect(await started.done).toMatchObject({ status: "succeeded", output: { kind: "go" } });
+    // `done` settled when the run parked on the question; the answer finishes it.
+    await waitFor(() => t.engine.get(started.runId)?.status === "succeeded");
+    expect(t.engine.get(started.runId)).toMatchObject({ status: "succeeded", output: { kind: "go" } });
     expect(items()[0]).toMatchObject({ state: "closed" });
     expect(await answerWorkflowQuestion(t.rt.ctx, { workflowEngine: t.engine } as never, { runId: started.runId, choice: "go" })).toMatchObject({ ok: false, reason: "not_waiting" });
   });

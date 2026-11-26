@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { RouterCard } from "@lane-pilot/workflow-engine";
-import { filterByPolicy, manifestOf, routePolicyOf } from "../../src/rooms/workflow/route-policy";
+import { filterByPolicy, manifestOf } from "../../src/rooms/workflow/models/route-policy";
 
 const card = (id: string, requires: Partial<RouterCard["requires"]> = {}): RouterCard => ({
   id, name: { en: `${id} name`, ru: `${id} имя` }, description: { en: `${id} does work`, ru: "" }, examples: { en: [`do ${id}`], ru: [] },

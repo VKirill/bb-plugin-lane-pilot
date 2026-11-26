@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { ROLE_PROFILES, HELPER_ROLES } from "../../src/rooms/contracts/helper-context";
-import { roleSpec } from "../../src/rooms/workflow/server/workflow-agent";
+import { roleSpec } from "../../src/rooms/workflow/server/services/workflow-agent";
 import { slugOf } from "@lane-pilot/workflow-engine";
 import { AgentOutputError, agentPrompt, dataBlock, extractJsonObject, outputContract, parseAgentOutput } from "@lane-pilot/workflow-engine";
 import type { Field } from "@lane-pilot/workflow-engine";
-import { roleMethod } from "../../src/rooms/critique/role-method";
+import { roleMethod } from "../../src/rooms/critique";
 import { loadWorkflow } from "@lane-pilot/workflow-engine";
 import { workflow } from "./fixtures";
 
@@ -77,7 +77,7 @@ describe("roles of a chain", () => {
   it("maps a node role to a helper profile, the metadata role and what it may touch", () => {
     expect(roleSpec("analyst")).toMatchObject({ helper: "analyst", metadata: "analyst", readOnly: true });
     expect(roleSpec("triager")).toMatchObject({ helper: "gate-triage" });
-    expect(roleSpec("council")).toMatchObject({ helper: "council-seat" });
+    expect(roleSpec("council")).toMatchObject({ helper: "analyst" });
     expect(roleSpec("somethingelse")).toMatchObject({ helper: "analyst" });
     const specialist = roleSpec("specialist:seo-specialist");
     expect(specialist).toMatchObject({ helper: "specialist:seo-specialist", metadata: "specialist", specialist: "seo-specialist", readOnly: false });
@@ -85,7 +85,7 @@ describe("roles of a chain", () => {
     expect(specialist.editable("src/a.ts")).toBe(false);
     expect(roleSpec("analyst").editable(".agents/x.md")).toBe(false);
     expect(roleSpec("analyst").editable(".bb/chats/thr_1/note.md")).toBe(true);
-    expect(roleSpec("project-life").editable("CHANGELOG.md")).toBe(true);
+    expect(roleSpec("specialist:copy-lead").editable(".agents/copy/x.md")).toBe(true);
   });
 
   it("the thin profiles exist and are read-only: no plugin, no skill; only the debugger keeps the code graph", () => {

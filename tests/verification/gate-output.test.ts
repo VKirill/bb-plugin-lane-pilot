@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { cacheHitsNote, extractCacheHits, extractFailingFiles, extractFailingTests, unhandledErrorBlock } from "../../src/rooms/verification/gate-output";
+import { cacheHitsNote, extractCacheHits, extractFailingFiles, extractFailingTests, unhandledErrorBlock } from "../../src/rooms/verification/models/gate-output";
 
 // An excerpt of the SelfyStudio gate log of 2026-10-09 (turbo + vitest, with colour codes).
 const TURBO_RUN = [

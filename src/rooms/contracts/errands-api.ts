@@ -1,4 +1,4 @@
-/** The errand surface the schedule board calls, implemented by src/rooms/qa (mountErrands). Keep the two signatures in step with it. */
+/** The errand surface the schedule board calls, implemented by src/rooms/errands (mountErrands). Keep the two signatures in step with it. */
 export type ErrandRunStart = {
   projectId: string; pmThreadId: string | null; runId: string | null;
   /** Names the run: the same key is the same run (a schedule's: the key of its run). */

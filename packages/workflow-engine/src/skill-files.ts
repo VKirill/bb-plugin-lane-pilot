@@ -3,7 +3,7 @@ import type { Stats } from "node:fs";
 import { lstat, mkdir, readdir, readFile, rename, rm, rmdir, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { redactKnown, sha256Hex } from "@lane-pilot/kit";
+import { redactKnown, sha256Hex, shouldLogLevel } from "@lane-pilot/kit";
 
 export const SKILL_BUNDLE_ID = /^[a-z][a-z0-9-]{1,47}$/;
 export const ALLOWED_SKILL_BUNDLE_FILE =
@@ -27,9 +27,6 @@ export type SkillBundleWriteResult = {
 };
 export type SkillFilesOptions = { log?: (message: string) => void };
 
-type LogLevel = "debug" | "info" | "warn" | "error" | "silent";
-const LOG_RANK: Record<LogLevel, number> = { debug: 0, info: 1, warn: 2, error: 3, silent: 4 };
-
 class SymlinkForbiddenError extends Error {
   readonly path: string;
   constructor(path: string) {
@@ -41,10 +38,7 @@ class SymlinkForbiddenError extends Error {
 
 function emitLog(options: SkillFilesOptions | undefined, level: "DEBUG" | "INFO" | "WARN", event: string, payload: Record<string, unknown>): void {
   if (!options?.log) return;
-  const raw = process.env.LOG_LEVEL?.trim().toLowerCase();
-  const effective: LogLevel = raw && raw in LOG_RANK ? (raw as LogLevel) : "debug";
-  const rank = level === "DEBUG" ? 0 : level === "INFO" ? 1 : 2;
-  if (rank >= LOG_RANK[effective]) options.log(`${level} [workflowEngine.skillFiles] ${event} ${redactKnown(JSON.stringify(payload))}`);
+  if (shouldLogLevel(level.toLowerCase() as "debug" | "info" | "warn")) options.log(`${level} [workflowEngine.skillFiles] ${event} ${redactKnown(JSON.stringify(payload))}`);
 }
 
 const invalidWrite = (skillId: string, dirPath: string, reason: string): SkillBundleWriteResult => ({

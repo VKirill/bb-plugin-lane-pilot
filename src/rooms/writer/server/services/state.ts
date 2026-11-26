@@ -1,0 +1,92 @@
+import { PROVIDER_CAPABILITIES, providerLimitNotice, usageProviderOf, zcodeBlock } from "@lane-pilot/models";
+import { createProviderBreaker, createRunBudget, parseRunBudgetLimits, type RunBudget } from "@lane-pilot/resilience";
+import { RunWriterPool } from "../../../tasks/server";
+import { createProviderUsage, usageSkipPercent, parseBreakdown, tokenCursorRow } from "../../../usage/server";
+import { listRunWriterThreadIds } from "../../../storage";
+import { createProviderRetryGuard, readRateLimitSnapshot } from "../../../stability/server";
+import { createConcurrencyLimit } from "./concurrency-limit";
+import { CATALOG_WAIT_MS, modelCatalogOf, noteProviderLimit, registerSpawnUsage, threadModelOf, within, zcodeBusy, zcodeBusyPeek } from "../../../platform/server";
+import { onThreadFailure } from "@lane-pilot/thread-observe";
+;
+import type { ServerCore } from "../../../contracts/server";
+import { bestEffort } from "@lane-pilot/kit";
+
+/** State shared by the writer modules: the live task set, the provider pool, the provider breaker and one budget per run. */
+export function createWriterState(ctx: ServerCore) {
+  const activeWriterTasks = new Set<string>();
+
+  const runWriterPool = new RunWriterPool();
+
+  /** Opens for a provider/model after repeated provider failures; poor work never trips it. */
+  const providerBreaker = createProviderBreaker();
+
+  /** Provider usage windows read from BB's usage sources; a writer pair whose window is nearly spent is skipped, never failed. */
+  // ZCode (the Mac mini's app) has no usage window: it is held when the machine has no zcode provider, outside its free hours, or while one of our threads works on it.
+  const providerUsage = createProviderUsage(ctx.bb, Date.now, async ({ hostId, settings }) => zcodeBlock({
+    settings, hostId, now: Date.now(), busy: await zcodeBusy(ctx.bb),
+    catalog: await bestEffort(ctx.log, "writer model catalog", within(modelCatalogOf(ctx).get(), CATALOG_WAIT_MS), null),
+  }), (providerId) => readRateLimitSnapshot(ctx.bb.storage.kv as never, providerId));
+  // The helpers' resolver (resolveSpawnModel) reads the same cache, under the same threshold, to move a table pick off a nearly spent provider.
+  // A usage source may list a provider's quota under a router's own id (Gemini through 9router on OpenCode v2), so both are read.
+  registerSpawnUsage(ctx.bb, {
+    peek: (query) => {
+      const base = { model: query.model, hostId: query.hostId ?? "", threshold: usageSkipPercent(query.settings) };
+      const router = usageProviderOf(query.providerId, query.model);
+      return providerUsage.peek({ ...base, providerId: query.providerId }) ?? (router ? providerUsage.peek({ ...base, providerId: router }) : null);
+    },
+    zcodeBusy: () => zcodeBusyPeek(ctx.bb),
+    warm: (query) => providerUsage.warm({
+      providerIds: [...new Set([...query.providerIds, ...query.providerIds.flatMap((id) => {
+        const router = PROVIDER_CAPABILITIES[id]?.usageProviderId;
+        return router ? [router] : [];
+      })])],
+      hostId: query.hostId ?? "",
+    }),
+  });
+
+  // Any helper thread Lane Pilot waits for that fails on its provider's limit takes that provider off every later pick for a while (spawn-model.ts).
+  onThreadFailure(ctx.bb, (threadId, detail) => {
+    const notice = providerLimitNotice(detail.replace(/^provider_error:/, "").slice(0, 400));
+    const pair = notice ? threadModelOf(ctx.bb, threadId) : null;
+    if (!notice || !pair) return;
+    const hold = noteProviderLimit(ctx.bb, pair.providerId, pair.model, notice);
+    ctx.bb.log.warn(`Lane Pilot: ${pair.providerId}/${pair.model} hit a provider limit (${notice}); helper picks skip it for ${hold / 60_000} min`);
+  });
+
+  /** Cancels the retry BB's provider-retry queued in a writer thread once the task moved on to another writer.
+   *  With the store it also answers provider-retry's consent call and drops late queued retries of ended work. */
+  const providerRetry = createProviderRetryGuard(ctx.bb, ctx.db);
+
+  /** BB's concurrency-limit plugin: how many writers a host may run; null without the plugin. */
+  const concurrencyLimit = createConcurrencyLimit(ctx.bb);
+
+  const runBudgets = new Map<string, RunBudget>();
+
+  /** The budget of a run, created from its effective settings the first time a writer starts there. */
+  function runBudgetFor(runId: string, settings: Record<string, unknown>): RunBudget {
+    let limits = {};
+    try { limits = parseRunBudgetLimits(settings); } catch (cause) { ctx.log(`Lane Pilot run ${runId}: budget settings ignored: ${cause instanceof Error ? cause.message : String(cause)}`); }
+    let budget = runBudgets.get(runId);
+    if (budget) {
+      // A raised (or lowered) run.max_* applies to the live run, over the same recorded spend — without this the
+      // limit of a stopped run could never be lifted (sma ac_pocket).
+      if (JSON.stringify(budget.snapshot().limits) !== JSON.stringify(limits)) budget.setLimits(limits);
+    } else {
+      budget = createRunBudget(limits);
+      // A fresh budget starts at the spend the token cursors already know: attempts killed with the previous
+      // plugin instance left spend behind, and it counts against this run's limits (SMA dt_stopped_spend).
+      try {
+        for (const threadId of listRunWriterThreadIds(ctx.db, runId)) {
+          const total = parseBreakdown(tokenCursorRow(ctx.db, threadId)?.total_json ?? "{}").total;
+          if (total > 0) budget.noteTokens(threadId, total);
+        }
+      } catch (cause) { ctx.log(`Lane Pilot run ${runId}: budget seed from token cursors failed: ${cause instanceof Error ? cause.message : String(cause)}`); }
+      runBudgets.set(runId, budget);
+    }
+    return budget;
+  }
+
+  return { activeWriterTasks, runWriterPool, providerBreaker, providerUsage, providerRetry, concurrencyLimit, runBudgets, runBudgetFor };
+}
+
+export type WriterStateApi = ReturnType<typeof createWriterState>;

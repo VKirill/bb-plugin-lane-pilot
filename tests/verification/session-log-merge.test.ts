@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { integrateWorktree } from "../../src/rooms/verification/git-integrate";
+import { integrateWorktree } from "../../src/rooms/worktree";
 
 // Deploy drill 2026-10-29 14:27 (parallel3): Lane Stack's session ledger hook writes .agents/session-log/ in every session's folder.
 // The PM's and the helpers' sessions left it untracked in the base checkout, the claude-code writers' sessions committed their own

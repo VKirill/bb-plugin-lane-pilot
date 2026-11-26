@@ -1,12 +1,12 @@
 import { useState } from "react";
 import { useRpc } from "@get-bb/plugin-sdk/app";
-import type { ScheduleBoardContract } from "../contract";
+import type { ScheduleBoardContract } from "../models/contract";
 import { t } from "@lane-pilot/i18n";
 import { Button } from "@lane-pilot/ui-kit";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@lane-pilot/ui-kit";
 import { GLOBAL_SETTINGS_PROJECT_ID } from "@lane-pilot/settings-catalog";
-import { ERRAND_BUILTIN, SCHEDULE_ERRAND_DEFAULT_KEY } from "../errand-model";
-import type { ErrandDefaultView } from "../views";
+import { ERRAND_BUILTIN, SCHEDULE_ERRAND_DEFAULT_KEY } from "../models/errand-model";
+import type { ErrandDefaultView } from "../models/views";
 import { PRESET_SLUGS } from "@lane-pilot/models";
 import { Surface, SurfaceBody } from "@lane-pilot/ui-kit";
 import { errorText, fill } from "./schedule-parts";

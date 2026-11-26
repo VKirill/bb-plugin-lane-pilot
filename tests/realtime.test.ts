@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createFakePluginHost, makeThreadResponse } from "@get-bb/plugin-sdk/testing";
 import { createAttempt, createRun, openDatabase, transitionAttempt } from "../src/rooms/plugin-db";
-import { createRealtime, mountHelperSignals, REALTIME_WINDOW_MS } from "../src/rooms/platform/server/realtime";
+import { createRealtime, mountHelperSignals, REALTIME_WINDOW_MS } from "../src/rooms/platform/server";
 import { lpChannel, parseLpSignal } from "@lane-pilot/ui-kit/realtime-channel";
 
 beforeEach(() => { vi.useFakeTimers(); });
@@ -17,19 +17,19 @@ function setup() {
 describe("realtime signals (H6)", () => {
   it("publishes one coalesced signal per project, kind and chat on lp:<project>", () => {
     const { harness, realtime } = setup();
-    realtime.notify("proj_1", "council");
-    realtime.notify("proj_1", "council");
+    realtime.notify("proj_1", "workflow");
+    realtime.notify("proj_1", "workflow");
     realtime.notify("proj_1", "rules");
-    realtime.notify("proj_2", "council");
+    realtime.notify("proj_2", "workflow");
     expect(harness.realtimeSignals).toHaveLength(0);
     vi.advanceTimersByTime(REALTIME_WINDOW_MS + 1);
     const signals = harness.realtimeSignals.map((row) => ({ channel: row.channel, payload: row.payload }));
     expect(signals).toEqual([
-      { channel: "lp:proj_1", payload: { kind: "council" } },
+      { channel: "lp:proj_1", payload: { kind: "workflow" } },
       { channel: "lp:proj_1", payload: { kind: "rules" } },
-      { channel: "lp:proj_2", payload: { kind: "council" } },
+      { channel: "lp:proj_2", payload: { kind: "workflow" } },
     ]);
-    realtime.notify("proj_1", "council");
+    realtime.notify("proj_1", "workflow");
     vi.advanceTimersByTime(REALTIME_WINDOW_MS + 1);
     expect(harness.realtimeSignals).toHaveLength(4);
   });
@@ -48,7 +48,7 @@ describe("realtime signals (H6)", () => {
     const realtime = createRealtime(broken, (line) => logs.push(line));
     realtime.notify("p", "rules");
     vi.advanceTimersByTime(REALTIME_WINDOW_MS + 1);
-    realtime.notify("p", "council");
+    realtime.notify("p", "workflow");
     vi.advanceTimersByTime(REALTIME_WINDOW_MS + 1);
     expect(logs).toHaveLength(1);
     expect(logs[0]).toContain("socket closed");

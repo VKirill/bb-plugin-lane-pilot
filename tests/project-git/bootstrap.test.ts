@@ -2,7 +2,7 @@ import { existsSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { makeFixture } from "./fixture";
-import { baselineCommand } from "../../src/rooms/project-git/scripts";
+import { baselineCommand } from "../../src/rooms/project-git/server/services/scripts";
 
 const KEY_LINE = ["-----BEGIN", "PRIVATE KEY-----"].join(" ");
 type Fixture = ReturnType<typeof makeFixture>;

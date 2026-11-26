@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { brokenWireReason, readWires, wiresCommand } from "../../src/rooms/wires";
-import { planFactOutcome, type PlanFactCheck } from "../../src/rooms/tasks/plan-fact";
+import { planFactOutcome, type PlanFactCheck } from "../../src/rooms/tasks";
 
 function repo() {
   const dir = mkdtempSync(join(tmpdir(), "lp-wires-"));

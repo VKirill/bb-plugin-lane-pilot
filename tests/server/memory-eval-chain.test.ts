@@ -2,9 +2,9 @@ import { describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { openDatabase } from "../../src/rooms/plugin-db";
 import { storeMemoryRecords } from "../../packages/memory-core/src";
-import type { CorpusNote } from "../../src/rooms/memory-eval/server/corpus";
-import { createRetrievers } from "../../src/rooms/memory-eval/server/retrievers";
-import type { EvalQuestion } from "../../src/rooms/memory-eval/server/questions";
+import type { CorpusNote } from "../../src/rooms/memory-eval/server/services/corpus";
+import { createRetrievers } from "../../src/rooms/memory-eval/server/services/retrievers";
+import type { EvalQuestion } from "../../src/rooms/memory-eval/models/questions";
 
 const limits = { projectId: "P", audience: "subagent" as const, sourceSha256: "a".repeat(64), coreBudget: 999, noteBudget: 9_999, indexBudget: 99_999 };
 

@@ -22,6 +22,10 @@ const OUTCOME: Field = { name: "outcome", type: "enum", values: [...OUTCOMES], r
   description: "\"done\" only when the result of the task exists; \"partial\" when part of it is missing (say which in handoff); \"blocked\" when you need something you cannot get yourself; \"failed\" when the task cannot be done as given. With \"blocked\" or \"failed\" the other fields may be left out." };
 const BLOCKER: Field = { name: "blocker", type: "object", required: false,
   description: "Only with outcome \"blocked\": {\"needs\": what is missing, \"from\": who can give it (owner, pm, another step), \"fallback\": what can be done without it}." };
+const WAIT_OUTPUT_FIELDS: Field[] = [
+  { name: "woke", type: "enum", values: ["event", "timeout"], required: true, description: "How the wait ended: event or timeout." },
+  { name: "payload", type: "json", required: false, description: "Event payload when woken by event." },
+];
 /** A node that already routes on a worker state of its own (`status: done | blocked`) keeps it; the engine adds no second one. */
 const declaresOutcome = (out: readonly Field[]) => out.some((field) => field.name === "outcome" || (field.type === "enum" && (field.values ?? []).includes("blocked")));
 /** True when the engine added `outcome` to the node and therefore acts on it (engine.ts): a graph that declares the field routes on it itself. */
@@ -43,6 +47,10 @@ export function outputFields(workflow: Workflow, node: WorkflowNode | typeof STA
   if (node.type === "subworkflow" && node.out.length === 0) {
     const child = resolve?.(node.workflow, node.version);
     return child ? child.outputs : "unknown";
+  }
+  if (executorKey(node) === "builtin:wait") {
+    const names = new Set(node.out.map((field) => field.name));
+    return [...node.out, ...WAIT_OUTPUT_FIELDS.filter((field) => !names.has(field.name))];
   }
   return node.out;
 }

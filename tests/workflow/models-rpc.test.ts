@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createModelCatalog, createWorkflowModels } from "../../src/rooms/workflow/server/workflow-models";
+import { createModelCatalog, createWorkflowModels } from "../../src/rooms/workflow/server/services/workflow-models";
 import type { ServerCore } from "../../src/rooms/contracts/server";
 import { journalDb } from "./engine-helpers";
 
@@ -71,12 +71,12 @@ describe("workflow_step_executors", () => {
     });
   }
 
-  it("resolves a draft against the project's settings: a step runs on its role's model, whatever the node names, and a model the machines do not list is flagged", async () => {
+  it("resolves a draft against the project's settings: a node's own model wins, a step without one runs on its role's model, and a model the machines do not list is flagged", async () => {
     const result = await models().stepExecutors({ draftId: "wfd_1" });
     expect(result.found).toBe(true);
-    // The rules analyzer's row is GPT-6 Luna (Codex has it); the node's own deepseek/v9 is ignored.
+    // The node's own deepseek/v9 is used (no machine lists it, so it is flagged); the lp-task has the rules analyzer's row, GPT-6 Luna.
     expect(result.executors.map((row) => [row.nodeId, row.model, row.issues])).toEqual([
-      ["a", "gpt-6-luna", []], ["w", "gpt-6-luna", ["effort_unsupported"]],
+      ["a", "deepseek/v9", ["model_unknown"]], ["w", "gpt-6-luna", ["effort_unsupported"]],
     ]);
     expect(result.executors[1]!.fallbacks.at(-1)).toEqual({ providerId: null, model: null, reasoningEffort: null, pm: true });
   });

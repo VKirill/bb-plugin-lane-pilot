@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { loadWorkflowStore } from "@lane-pilot/workflow-engine";
 import {BUILTIN_SOURCES} from "../src/rooms/workflow/builtin";
-import { buildWorkflowMap } from "../src/rooms/workflow/server/workflow-map";
+import { buildWorkflowMap } from "../src/rooms/workflow/models/workflow-map";
 
 const noRuns = () => ({ runs30d: 0, successRate: null });
 

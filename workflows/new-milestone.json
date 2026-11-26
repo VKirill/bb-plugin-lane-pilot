@@ -8,6 +8,7 @@
     "en": "Starts the next milestone: its goals, the requirements it delivers (REQUIREMENTS.md rows), and the roadmap phases that get there (lp.phase_add), after the previous milestone is archived.",
     "ru": "Начинает следующий этап: его цели, требования (строки REQUIREMENTS.md) и фазы дорожной карты, которые к ним ведут (lp.phase_add), после архивации прошлого этапа."
   },
+  "category": "planning",
   "examples": {
     "ru": [
       "Начни новый этап проекта",

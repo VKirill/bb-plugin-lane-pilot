@@ -1,6 +1,7 @@
 import type Database from "better-sqlite3";
 
 import type { RunRow, RunStatus, StepRow } from "./journal";
+import type { BudgetDefaults, StepHoldInfo } from "./budgets";
 import type { GoalAudit, RunGoal } from "./goals";
 import type { Workflow } from "./schema";
 
@@ -31,6 +32,12 @@ export type EngineOptions = {
   instanceId?: string;
   now?: () => number;
   log?: (message: string) => void;
+  logger?: {
+    debug?: (message: string) => void;
+    info?: (message: string) => void;
+    warn?: (message: string) => void;
+    error?: (message: string) => void;
+  };
   resolveWorkflow?: (id: string, version?: number) => Workflow | null;
   /** Whether `specialist:<id>` names an agent that exists; a start naming one that does not is refused with the validator's message. */
   specialistKnown?: (id: string) => boolean | null;
@@ -42,6 +49,8 @@ export type EngineOptions = {
   /** What a reload does to a run that was in flight: pick up where the journal stopped, or end it as interrupted. */
   resumePolicy?: (run: RunRow) => "continue" | "interrupt";
   leaseMs?: number;
+  /** Overdue deadlines fired per resume, poll or clock tick (after an outage the rest follow on the next tick). */
+  overdueCap?: number;
   /** K7: judges the run's output against its goals before the run closes. A throw means the audit could not be made: the run closes and says so. */
   auditGoals?: (input: { run: RunRow; goals: RunGoal[]; output: Record<string, unknown>; steps: StepRow[]; signal: AbortSignal }) => Promise<GoalAudit>;
   /** Root runs only, awaited inside the drive loop: `before` once before the first execution, `afterExecution` before the goal audit of each execution. The result is journaled as a `repo_guard` event; a throw becomes an explicit null/reason row, never a clean snapshot. */
@@ -50,4 +59,14 @@ export type EngineOptions = {
   onEvent?: (runId: string) => void;
   /** Test hook: called at named points of the driver; throwing simulates the process dying there. */
   fault?: (point: string) => void;
+  /** Default per-node, per-run, and stuck limits from the settings home when a workflow/node omits them. */
+  budgetDefaults?: BudgetDefaults;
+  /** Per-run override to resolve project-scoped budget defaults from the settings home. */
+  resolveBudgetDefaults?: (run: RunRow) => BudgetDefaults;
+  /** Called when an unmeasured cost under a USD cap holds a step for the owner. */
+  onHoldOwner?: (info: StepHoldInfo) => void;
+  /** Stops a tracked helper thread (and its descendants); returns count stopped. */
+  stopThread?: (threadId: string) => Promise<number | void> | number | void;
+  /** Resolves the current environment fingerprint checked against `node.script.fingerprint`. */
+  environmentFingerprint?: string | ((info: { run: RunRow; step: StepRow; node: import("./schema").GraphNode; cwd?: string }) => string | Promise<string>);
 };

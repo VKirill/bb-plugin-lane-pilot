@@ -1,13 +1,14 @@
 import { readFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { resolve } from "node:path";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import plugin from "../server";
 import { createRun, createTask, openDatabase, saveProjectSetting, setRunThread } from "../src/rooms/plugin-db";
-import { IntegrationGateRunner } from "../src/rooms/verification/server/integration-gate";
+import { IntegrationGateRunner } from "../src/rooms/verification/server/services/integration-gate";
 import type { ServerCore } from "../src/rooms/contracts/server";
 import type { Services } from "../server";
 import { roomFaceFiles } from "./support/room-files";
+import { endedTurn } from "./helpers/ended-turn";
 
 // B2 / bug 2 (review 2026-10-07): the integration gate ran its command, `git bisect` and file reads on the HUB at the
 // project's path, and errands/specialists ran `git status` there. A project on another host has no such path on the hub.
@@ -194,7 +195,7 @@ describe("errands and specialists read the checkout's status on its host", () =>
           getPluginMetadata: async ({ threadId }) => threadId === pmThreadId ? { role: "pm", lanePilotRunId: runId } : {},
           spawn: async () => ({ id: "remote-child" }),
           get: async ({ threadId }) => ({ id: threadId, status: "idle", projectId, environmentId: "env-remote", sourceThreadId: pmThreadId, lifecycleOwnerThreadId: pmThreadId }),
-          events: { list: async ({ threadId }) => helperEnded ? [{ type: "turn/started", threadId, seq: 1 }, { type: "turn/completed", threadId, seq: 2, data: { status: "completed" } }] : [{ type: "turn/started", threadId, seq: 1 }] },
+          events: { list: async ({ threadId }) => helperEnded ? endedTurn(threadId) : [{ type: "turn/started", threadId, seq: 1 }] },
           output: async () => ({ output: "done\nERRAND: done" }),
         },
         environments: { get: async () => ({ id: "env-remote", hostId: "ovh", path: REMOTE, status: "ready" }) },

@@ -3,10 +3,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
-import { detectGateCommand } from "../../src/rooms/verification/server/gate-detect";
-import { IntegrationGateRunner } from "../../src/rooms/verification/server/integration-gate";
+import { detectGateCommand } from "../../src/rooms/verification/server/services/gate-detect";
+import { IntegrationGateRunner } from "../../src/rooms/verification/server/services/integration-gate";
 import { openDatabase, saveProjectSetting } from "../../src/rooms/plugin-db";
-import * as hostHandlers from "../../src/rooms/host-worker/host-handlers";
+import * as hostHandlers from "../../src/rooms/host-worker";
 import type { ServerCore } from "../../src/rooms/contracts/server";
 import type { Services } from "../../server";
 

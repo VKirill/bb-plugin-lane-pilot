@@ -43,6 +43,7 @@
     "research",
     "content"
   ],
+  "category": "research",
   "inputs": {
     "topic": {
       "type": "string",
@@ -133,14 +134,14 @@
       "skip_out": {
         "candidates": "$inputs.post_urls",
         "count": "$inputs.post_urls.length",
-        "status": "done"
+        "status": "not_run"
       },
       "src": "social-insights stage 1",
       "prompt": "social-browser on `platform`: find posts on the topic ranked by discussion (comments, likes); write candidates.yaml with url, author, counts, a one-line why-lively. Read-only.",
       "out": {
         "candidates": "Candidate[]",
         "count": "int",
-        "status": "done|blocked"
+        "status": "done|blocked|not_run"
       },
       "guards": {
         "maxVisits": 1,

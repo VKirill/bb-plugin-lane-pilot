@@ -8,10 +8,10 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { installTestPluginRuntime, loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
 import { setLocaleOverride } from "@lane-pilot/i18n";
 import { loadProjectSettings, migrations } from "../src/rooms/plugin-db";
-import { createWorkflowArchitect } from "../src/rooms/workflow/server/workflow-architect";
-import type { ArchitectDeps } from "../src/rooms/workflow/server/workflow-architect";
-import { createWorkflowLibrary } from "../src/rooms/workflow/server/workflow-library";
-import { createWorkflowModels } from "../src/rooms/workflow/server/workflow-models";
+import { createWorkflowArchitect } from "../src/rooms/workflow/server/services/workflow-architect";
+import type { ArchitectDeps } from "../src/rooms/workflow/server/services/workflow-architect";
+import { createWorkflowLibrary } from "../src/rooms/workflow/server/services/workflow-library";
+import { createWorkflowModels } from "../src/rooms/workflow/server/services/workflow-models";
 import type { ServerCore } from "../src/rooms/contracts/server";
 import type { Services } from "../server";
 import { BROWSER_DIGEST_STEPS } from "./workflow/architect-fixture";
@@ -152,11 +152,10 @@ describe("the Models table of a draft", () => {
     noPickers(slot);
   });
 
-  it("a node that still names a model changes nothing in the table", async () => {
+  it("a node that names a model shows that model, and the Models view says so", async () => {
     const { slot, architect, draftId } = await openDraft();
     architect.rpc.workflow_draft_patch({ draftId, ops: [{ op: "update_node", id: "search", set: { provider: "codex", model: "gpt-6-luna", reasoning: "low", service_tier: "fast" } }] } as never);
-    // The step keeps the model of its role.
-    await waitFor(() => expect(slot.getByTestId("wf-model-line-search").textContent).toBe("claude-code · claude-opus-5-5 · high"));
+    await waitFor(() => expect(slot.getByTestId("wf-model-line-search").textContent).toBe("codex · gpt-6-luna · low · fast"));
     const node = (architect.drafts.get(draftId)!.definition.nodes as Array<Record<string, unknown>>).find((item) => item.id === "search")!;
     expect(node.model).toBe("gpt-6-luna");
   });

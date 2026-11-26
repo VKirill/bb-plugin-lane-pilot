@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { noteProviderLimit, resolveSpawnModel, seenProviderLimit, SEEN_LIMIT_HOLD_MAX_MS, SEEN_LIMIT_HOLD_MS, type SpawnUsageUse } from "../src/rooms/platform/server/spawn-model";
+import { noteProviderLimit, resolveSpawnModel, seenProviderLimit, SEEN_LIMIT_HOLD_MAX_MS, SEEN_LIMIT_HOLD_MS, type SpawnUsageUse } from "../src/rooms/platform/server/services/spawn-model";
 
 // docs-night 2026-11-02..04: 157 units failed one after another on opencode2 GLM «Usage limit reached for 5 hour»; every
 // unit picked the same spent model again. A limit seen once now takes that model's plan off every later helper pick.

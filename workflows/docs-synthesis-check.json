@@ -8,9 +8,10 @@
     "ru": "Проверить конфликт документов"
   },
   "description": {
-    "en": "Checks both sides of a document conflict.",
-    "ru": "Проверяет обе стороны конфликта документов."
+    "en": "Internal subworkflow that checks both sides of a document conflict and returns structured evidence for docs-synthesis.",
+    "ru": "Внутренний подграф, который проверяет обе стороны конфликта документов и возвращает структурированные факты для docs-synthesis."
   },
+  "category": "docs",
   "inputs": {
     "conflict": {
       "type": "object",
@@ -143,5 +144,9 @@
       "from": "a_top",
       "to": "record"
     }
+  ],
+  "not_for": [
+    "docs-synthesis",
+    "docs-synthesis-rank"
   ]
 }

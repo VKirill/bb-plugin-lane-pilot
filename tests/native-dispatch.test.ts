@@ -1,11 +1,11 @@
 import { afterEach, expect, it } from "vitest";
 import { createFakePluginHost, makeMessageDispatchHookContext } from "@get-bb/plugin-sdk/testing";
 import plugin from "../server";
-import { compileMainAgentProfile } from "../src/rooms/native-agent/agent-profile";
+import { compileMainAgentProfile } from "../src/rooms/native-agent/models/agent-profile";
 import { findOpenNativeRun, getActivation, getRun, openDatabase, savePrototypeConfig } from "../src/rooms/plugin-db";
-import { sessionOverrideAgentsJson } from "../src/rooms/native-agent/native-agent-definition";
-import { nativeSelectionMarker } from "../src/rooms/native-agent/native-session";
-import { nativeContributedEnv, prepareNativeSessionRecord, traceNativeDispatch } from "../src/rooms/native-agent/native-dispatch";
+import { sessionOverrideAgentsJson } from "../src/rooms/native-agent/models/native-agent-definition";
+import { nativeSelectionMarker } from "../src/rooms/native-agent/models/native-session";
+import { nativeContributedEnv, prepareNativeSessionRecord, traceNativeDispatch } from "../src/rooms/native-agent/server/services/native-dispatch";
 import { nativeAgentTypeKey, nativeEnvGenerationKey, nativeEnvKey, nativeThreadKey } from "../src/rooms/contracts";
 import { sha256Hex } from "@lane-pilot/kit";
 

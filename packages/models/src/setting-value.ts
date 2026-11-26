@@ -14,7 +14,7 @@ export const SWITCHES_ON_BY_DEFAULT: ReadonlySet<string> = new Set([
   "phase.diagnose", "phase.gray_areas", "phase.research", "phase.pattern_map", "phase.validation", "phase.draw_material",
   "phase.plan_bounce", "phase.design_points", "phase.doc_files", "phase.ambiguity_gate", "phase.piece_notes", "phase.threat_closure",
   "ship.full_gate", "retro.living", "milestone.archive", "milestone.summary", "project.start_research",
-  "ship.watch", "writer.lesson_from_accepted", "hook.subagent_pack", "docs.gitnexus_refresh", "curriculum.weekly", "task.outcome_file",
+  "ship.watch", "writer.lesson_from_accepted", "hook.subagent_pack", "docs.gitnexus_refresh", "task.outcome_file",
   "money.strict", "money.task_ceiling",
   // The owner's word of 2026-11-11 (the SMA money rule): a paid lane has no money until a cap is set; «off» reads unset as no limit.
   "money.cap_unset_zero",

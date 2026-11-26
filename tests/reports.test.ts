@@ -1,281 +1,322 @@
-import { mkdtempSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { readFileSync } from "node:fs";
 import Database from "better-sqlite3";
 import { describe, expect, it, vi } from "vitest";
-import { buildDailyReport, composeDailyReport, dailyDue, mountReports, runOwnerPush, runSqliteChild, splitSql, createTelegramSender, TelegramNotReadyError, TG_CHAT_NAME, TG_TOKEN_NAME, TG_TOPIC_NAME } from "../src/rooms/reports/server";
-import { loadPushConfig, savePushConfig } from "../src/rooms/owner-waiting/push";
-import { coreSnapshotViaSdk } from "../src/rooms/reports/server/core-snapshot";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
+import { WorkflowEngine, parseWorkflow } from "@lane-pilot/workflow-engine";
+import { createAttempt, createRun, openDatabase } from "../src/rooms/plugin-db";
+import { transitionAttempt } from "../src/rooms/storage";
+import { loadPushConfig, savePushConfig } from "../src/rooms/owner-waiting/server";
+import { postOwnerItem } from "../src/rooms/owner-waiting";
+import { insertDeferral } from "../src/rooms/deferral/server/repositories/deferral-repository";
+import { insertOutage } from "../src/rooms/outage/server";
+import {
+  buildDailyReport,
+  composeDailyReport,
+  createTelegramSender,
+  DAILY_DRY_KEY,
+  DAILY_SENT_KEY,
+  dailyDue,
+  mountReports,
+  runOwnerPush,
+  TelegramNotReadyError,
+  TelegramSendError,
+  TG_CHAT_NAME,
+  TG_TOKEN_NAME,
+  TG_TOPIC_NAME,
+} from "../src/rooms/reports/server";
 
 const digest = { send: true, reason: null, text: "Lane Pilot: ждут владельца, новых — 1.\n• x", keys: ["k1", "k2"] };
 
-describe("owner push (was scripts/lp-owner-push.sh)", () => {
-  const base = () => ({ digest: async () => digest, ack: vi.fn(), send: vi.fn(async () => undefined), dryRun: () => false, log: vi.fn() });
+const ownerPushWorkflow = parseWorkflow(
+  JSON.parse(readFileSync(new URL("../workflows/lp.owner-push.json", import.meta.url), "utf8")),
+);
+const dailyReportWorkflow = parseWorkflow(
+  JSON.parse(readFileSync(new URL("../workflows/lp.daily-report.json", import.meta.url), "utf8")),
+);
 
+describe("owner push", () => {
   it("sends the text and then acknowledges exactly its keys", async () => {
-    const deps = base();
-    expect(await runOwnerPush(deps)).toEqual({ status: "sent" });
-    expect(deps.send).toHaveBeenCalledWith(digest.text);
-    expect(deps.ack).toHaveBeenCalledWith(["k1", "k2"]);
+    const sent: string[] = [];
+    const ack = vi.fn();
+    const res = await runOwnerPush({
+      digest: async () => digest,
+      ack,
+      send: async (text) => { sent.push(text); },
+      dryRun: () => false,
+      log: () => undefined,
+    });
+    expect(res).toEqual({ status: "sent" });
+    expect(sent).toEqual([digest.text]);
+    expect(ack).toHaveBeenCalledWith(["k1", "k2"]);
   });
 
   it("does not acknowledge when the send fails, so the next tick offers the same keys", async () => {
-    const deps = { ...base(), send: vi.fn(async () => { throw new Error("HTTP 502"); }) };
-    expect(await runOwnerPush(deps)).toMatchObject({ status: "failed" });
-    expect(deps.ack).not.toHaveBeenCalled();
-  });
-
-  it.each(["quiet_hours", "nothing_new", "disabled"])("sends nothing when the plugin says %s", async (reason) => {
-    const deps = { ...base(), digest: async () => ({ send: false, reason, text: "", keys: [] }) };
-    expect(await runOwnerPush(deps)).toEqual({ status: "idle", reason });
-    expect(deps.send).not.toHaveBeenCalled();
-    expect(deps.ack).not.toHaveBeenCalled();
+    const ack = vi.fn();
+    const log = vi.fn();
+    const res = await runOwnerPush({
+      digest: async () => digest,
+      ack,
+      send: async () => { throw new Error("network down"); },
+      dryRun: () => false,
+      log,
+    });
+    expect(res).toEqual({ status: "failed", reason: "network down" });
+    expect(ack).not.toHaveBeenCalled();
+    expect(log).toHaveBeenCalledWith(expect.stringContaining("network down"));
   });
 
   it("dry run composes and logs the text but sends and acknowledges nothing", async () => {
-    const deps = { ...base(), dryRun: () => true };
-    expect(await runOwnerPush(deps)).toEqual({ status: "dry_run" });
-    expect(deps.log).toHaveBeenCalledWith(expect.stringContaining(digest.text));
-    expect(deps.send).not.toHaveBeenCalled();
-    expect(deps.ack).not.toHaveBeenCalled();
+    const send = vi.fn();
+    const ack = vi.fn();
+    const log = vi.fn();
+    const res = await runOwnerPush({
+      digest: async () => digest,
+      ack,
+      send,
+      dryRun: () => true,
+      log,
+    });
+    expect(res).toEqual({ status: "dry_run" });
+    expect(send).not.toHaveBeenCalled();
+    expect(ack).not.toHaveBeenCalled();
+    expect(log).toHaveBeenCalledWith(expect.stringContaining(digest.text));
   });
 });
 
 describe("Telegram sender (Env Catalog, no secrets in code)", () => {
-  const records: Record<string, string> = { [TG_TOKEN_NAME]: "123:SECRET", [TG_CHAT_NAME]: "2590", [TG_TOPIC_NAME]: "956258" };
-  const secrets = (data: Record<string, string>) => ({ record: async (name: string) => (name in data ? { value: data[name]! } : null) });
+  const secretsOf = (entries: Record<string, string>) => ({
+    record: async (name: string) => (name in entries ? { value: entries[name]! } : null),
+  });
 
   it("posts to the bot's sendMessage in the topic of the chat", async () => {
-    const fetchImpl = vi.fn(async () => new Response("{}", { status: 200 }));
-    await createTelegramSender({ secrets: secrets(records), fetchImpl: fetchImpl as never })("привет");
-    const [url, init] = fetchImpl.mock.calls[0] as unknown as [string, { body: URLSearchParams }];
-    expect(url).toBe("https://api.telegram.org/bot123:SECRET/sendMessage");
-    expect(Object.fromEntries(init.body)).toEqual({ chat_id: "2590", message_thread_id: "956258", text: "привет" });
+    const calls: Array<{ url: string; body: string }> = [];
+    const send = createTelegramSender({
+      secrets: secretsOf({ [TG_TOKEN_NAME]: "tok:123", [TG_CHAT_NAME]: "-1009", [TG_TOPIC_NAME]: "42" }),
+      fetchImpl: (async (url: string | URL, init?: RequestInit) => {
+        calls.push({ url: String(url), body: String(init?.body ?? "") });
+        return new Response("{\"ok\":true}", { status: 200 });
+      }) as typeof fetch,
+    });
+    await send("hello world");
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.url).toBe("https://api.telegram.org/bottok:123/sendMessage");
+    expect(calls[0]!.body).toContain("chat_id=-1009");
+    expect(calls[0]!.body).toContain("message_thread_id=42");
   });
 
   it("names the missing catalog record and sends nothing", async () => {
     const fetchImpl = vi.fn();
-    const { [TG_TOPIC_NAME]: _topic, ...withoutTopic } = records;
-    const send = createTelegramSender({ secrets: secrets(withoutTopic), fetchImpl: fetchImpl as never });
-    await expect(send("x")).rejects.toBeInstanceOf(TelegramNotReadyError);
+    const send = createTelegramSender({
+      secrets: secretsOf({ [TG_TOKEN_NAME]: "tok", [TG_CHAT_NAME]: "-1" }),
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
+    await expect(send("x")).rejects.toThrowError(TelegramNotReadyError);
     await expect(send("x")).rejects.toThrow(TG_TOPIC_NAME);
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 
   it("an HTTP refusal throws without the token in the message", async () => {
-    const fetchImpl = vi.fn(async () => new Response("Bad Request: chat not found", { status: 400 }));
-    const error = await createTelegramSender({ secrets: secrets(records), fetchImpl: fetchImpl as never })("x").catch((cause: Error) => cause);
-    expect((error as Error).message).toContain("HTTP 400");
-    expect((error as Error).message).not.toContain("SECRET");
-  });
-});
-
-describe("splitSql and the sqlite child (what `sqlite3 -readonly` did)", () => {
-  it("splits at semicolons outside quotes and comments", () => {
-    expect(splitSql("-- a; comment\nselect 'a;b'; select 1 -- tail; x\n;  ;select \"q;\"")).toEqual(["select 'a;b'", "select 1 \n", 'select "q;"'].map((s) => s.trim()));
-  });
-
-  it("runs statements in order over two attached files, prints rows with | and empty NULL, and skips a failing statement", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "lp-sql-"));
-    const data = new Database(join(dir, "data.db")); data.exec("create table t(a text, b integer); insert into t values ('x', 1), (null, 2)"); data.close();
-    const core = new Database(join(dir, "core.db")); core.exec("create table projects(id text); insert into projects values ('p1')"); core.close();
-    const result = await runSqliteChild({ file: join(dir, "data.db"), core: join(dir, "core.db"), script: "create temp table p(n integer); insert into p values (7); select a, b from t order by b; select * from missing_table; select id||(select n from p) from core.projects;" });
-    expect(result.lines).toEqual(["x|1", "|2", "p17"]);
-    expect(result.errors).toHaveLength(1);
-  });
-
-  it("is read-only: a write to the plugin database or to the core database fails", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "lp-sql-"));
-    new Database(join(dir, "data.db")).exec("create table t(a)");
-    new Database(join(dir, "core.db")).exec("create table c(a)");
-    const result = await runSqliteChild({ file: join(dir, "data.db"), core: join(dir, "core.db"), script: "insert into t values (1); insert into core.c values (1)" });
-    expect(result.errors).toHaveLength(2);
-  });
-});
-
-function hubFiles() {
-  const dir = mkdtempSync(join(tmpdir(), "lp-daily-"));
-  const data = new Database(join(dir, "data.db"));
-  data.exec(`create table lane_pilot_run(id text primary key, project_id text not null);
-    create table lane_pilot_attempt(id text primary key, run_id text not null, task_id text not null, state text not null, reason text, failure_code text, created_at integer not null, updated_at integer, harness_version text, thread_id text);
-    create table lane_pilot_token_cursor(thread_id text primary key, provider_id text not null default '', last_provider text not null default '', total_json text not null default '{}');
-    create table lane_pilot_failure_triage(project_id text, attempt_id text, reason text, origin text, failed_at integer);
-    create table lane_pilot_project_settings(project_id text, key text, value text);`);
-  // The core facts the report reads, as the SDK snapshot delivers them (projects; no helper threads in this fixture).
-  const coreSnapshot = async () => ({ snapshot: { projects: [{ id: "proj_real", name: "SelfyStudio" }, { id: "proj_sbx", name: "LP sandbox 1" }], threads: [], threadPluginMetadata: [] }, degraded: [] as string[] });
-  return { dir, data, dataFile: join(dir, "data.db"), coreSnapshot };
-}
-
-describe("the daily report (was scripts/lp-metrics-daily.sh)", () => {
-  it("runs the real SQL files on a hub-shaped database and keeps the text of the script", async () => {
-    const hub = hubFiles();
-    const now = Date.now();
-    hub.data.exec("insert into lane_pilot_run values ('r1', 'proj_real'), ('r2', 'proj_sbx')");
-    const insert = hub.data.prepare("insert into lane_pilot_attempt(id, run_id, task_id, state, reason, created_at, updated_at, harness_version) values (?, ?, ?, ?, ?, ?, ?, '0.1.559')");
-    insert.run("a1", "r1", "t1", "accepted", null, now - 3_600_000, now - 3_000_000);
-    insert.run("a2", "r1", "t2", "blocked", "internal_error: x | y", now - 3_600_000, now - 3_000_000);
-    insert.run("a3", "r2", "drill-1", "accepted", null, now - 3_600_000, now - 3_000_000);
-    const text = await buildDailyReport({ db: hub.data, dataFile: hub.dataFile, coreSnapshot: hub.coreSnapshot, run: runSqliteChild, now: () => now });
-    expect(text.startsWith("📊 Lane Pilot за сутки. ")).toBe(true);
-    expect(text).toContain("Окно стабильности: день 1 из 7");
-    expect(text).toContain("Песочницы и учения отдельно: 1 попыток, принято 100.0%");
-    expect(text).toContain("Старые версии (до 0.1.559), для сравнения: 0 попыток, принято 0%");
-    expect(text).toContain("(bb lane-pilot metrics).");
-    // No deferral register in this database: that line is left out, the report is not.
-    expect(text).not.toContain("Отсрочки: просрочено");
-    // A healthy snapshot leaves no degradation line.
-    expect(text).not.toContain("Факты ядра");
-  });
-
-  it("a degraded core snapshot is named in the report, not silently omitted", async () => {
-    const hub = hubFiles();
-    const now = Date.now();
-    hub.data.exec("insert into lane_pilot_run values ('r1', 'proj_real')");
-    hub.data.prepare("insert into lane_pilot_attempt(id, run_id, task_id, state, created_at, harness_version) values ('a1', 'r1', 't1', 'accepted', ?, '0.1.559')").run(now - 3_600_000);
-    const text = await buildDailyReport({
-      db: hub.data, dataFile: hub.dataFile, run: runSqliteChild, now: () => now,
-      coreSnapshot: async () => ({ snapshot: { projects: [], threads: [], threadPluginMetadata: [] }, degraded: ["projects: sdk down", "graph coverage: no metadata api"] }),
+    const send = createTelegramSender({
+      secrets: secretsOf({ [TG_TOKEN_NAME]: "secret-tok", [TG_CHAT_NAME]: "-1", [TG_TOPIC_NAME]: "7" }),
+      fetchImpl: (async () => new Response("bad gateway", { status: 502 })) as unknown as typeof fetch,
     });
-    expect(text).toContain("Факты ядра (SDK): projects: sdk down; graph coverage: no metadata api.");
-    // The report still goes out — degraded blocks show ids/empty, the headline is intact.
-    expect(text).toContain("Песочницы и учения отдельно: 0 попыток");
+    let err: unknown;
+    try { await send("hi"); } catch (cause) { err = cause; }
+    expect(err).toBeInstanceOf(TelegramSendError);
+    expect(String(err)).toContain("502");
+    expect(String(err)).not.toContain("secret-tok");
+  });
+});
+
+describe("the compact SQLite daily digest", () => {
+  it("summarizes 24h attempts, workflow runs, owner waiting, deferrals, and outages within 8 lines", async () => {
+    const now = Date.parse("2026-11-15T09:00:00Z");
+    const { bb } = createFakePluginHost({ pluginId: "lane-pilot" });
+    const db = openDatabase(bb);
+
+    // Accepted + blocked real task attempts + excluded drill/sandbox attempts
+    createRun(db, "r_real", "proj_a");
+    createRun(db, "r_sand", "__drill_sandbox__");
+    createAttempt(db, { id: "att_ok", runId: "r_real", taskId: "t1" });
+    transitionAttempt(db, "att_ok", "spawn_requested");
+    transitionAttempt(db, "att_ok", "running");
+    transitionAttempt(db, "att_ok", "accepted");
+    createAttempt(db, { id: "att_fail", runId: "r_real", taskId: "t2" });
+    transitionAttempt(db, "att_fail", "blocked", { reason: "failed check" });
+    createAttempt(db, { id: "att_drill", runId: "r_sand", taskId: "drill-1" });
+    transitionAttempt(db, "att_drill", "blocked", { reason: "drill" });
+    db.prepare("UPDATE lane_pilot_attempt SET updated_at=?").run(now - 1_500_000);
+
+    // Workflow run + measured cost step
+    const engine = new WorkflowEngine({ db, harnessVersion: "1.0.0", now: () => now - 900_000 });
+    engine.register("lp.daily_report", {
+      reentrant: true,
+      run: async () => ({
+        output: { sent: true, reason: "", day: "2026-11-15" },
+        usage: { tokens: 100, costUsd: 1.25, costState: "measured" },
+      }),
+    });
+    await engine.start({ workflow: dailyReportWorkflow, key: "digest-test-1" }).done;
+
+    postOwnerItem(db, { key: "w1", source: "night", kind: "decision", what: "Check PR", why: "needs input", reason: "decision" }, now - 500_000);
+    insertDeferral(db, {
+      id: "dfr_1", projectId: "proj_a", kind: "gate", area: "", state: "open", what: "Defer check",
+      dueAt: now + 86_400_000, dueSource: "explicit",
+      ownerRef: { threadId: "thr_owner", seq: 1, index: 0, sha256: "x", at: 1 },
+      ownerQuote: "tomorrow",
+      history: [], source: "test", createdAt: now - 500_000, updatedAt: now - 500_000, closedAt: null, closedBy: null,
+    });
+    insertOutage(db, { fromAt: now - 600_000, toAt: now - 300_000, minutes: 5 }, "restart", now - 300_000);
+
+    const text = await buildDailyReport({ db, now: () => now });
+    const lines = text.split("\n").filter((line) => line.trim().length > 0);
+    expect(lines.length).toBeLessThanOrEqual(8);
+    expect(text).toContain("Попытки: принято 1, не прошло 1 (всего 2)");
+    expect(text).toContain("Графы: запусков 1 (успешно 1, сбой 0)");
+    expect(text).toContain("Расходы (24ч): $1.25");
+    expect(text).toContain("Ждут владельца: 1");
+    expect(text).toContain("Отсрочки: открыто 1");
+    expect(text).toContain("Простои: 1");
   });
 
-  it("appends the morning blocks in the script's order and leaves out an empty one", () => {
-    const parts = { live: "L", livew: "W", win: "w", orig: "", orch: "0%", sys: "0", ver: "0.1.1", old: "o", sand: "s", usage: "u", dfr: "Отсрочки: просрочено 0, открыто 1", morning: "M", wall: "", cover: "C", outages: "O" };
-    const text = composeDailyReport(parts);
-    expect(text).toContain("Провалы: нет.");
-    expect(text).toContain("(bb lane-pilot metrics). Отсрочки: просрочено 0, открыто 1.");
-    expect(text.endsWith("\n\nM\nC\nO")).toBe(true);
-    expect(composeDailyReport({ ...parts, dfr: "", morning: "" })).not.toContain("Отсрочки");
+  it("renders not_measured workflow cost as не измерено and never prints 0", async () => {
+    const now = Date.parse("2026-11-15T09:00:00Z");
+    const { bb } = createFakePluginHost({ pluginId: "lane-pilot" });
+    const db = openDatabase(bb);
+    const engine = new WorkflowEngine({ db, harnessVersion: "1.0.0", now: () => now - 900_000 });
+    engine.register("lp.daily_report", {
+      reentrant: true,
+      run: async () => ({
+        output: { sent: true, reason: "", day: "2026-11-15" },
+        usage: { unknown: true },
+      }),
+    });
+    await engine.start({ workflow: dailyReportWorkflow, key: "digest-unmeasured-1" }).done;
+
+    const text = await buildDailyReport({ db, now: () => now });
+    const costLine = text.split("\n").find((line) => line.startsWith("Расходы"));
+    expect(costLine).toBe("Расходы (24ч): не измерено");
+    expect(costLine).not.toMatch(/\$?0\b/);
+  });
+
+  it("omits Отсрочки and Простои when their counts are zero", () => {
+    const text = composeDailyReport({
+      day: "2026-11-15",
+      accepted: 2,
+      failed: 0,
+      total: 2,
+      workflowRuns: 3,
+      workflowSucceeded: 3,
+      workflowFailed: 0,
+      costUsd: 0.4,
+      costState: "measured",
+      measuredSteps: 2,
+      notMeasuredSteps: 0,
+      waitingOpen: 0,
+      waitingOverdue: 0,
+      deferralsOpen: 0,
+      deferralsOverdue: 0,
+      outages: 0,
+    });
+    expect(text).not.toContain("Отсрочки");
+    expect(text).not.toContain("Простои");
+    expect(text.split("\n").length).toBeLessThanOrEqual(8);
   });
 
   it("is due once a day, from nine o'clock in the owner's time zone", () => {
     const at = (iso: string) => Date.parse(iso);
-    expect(dailyDue(at("2026-11-14T07:30:00Z"), "Europe/Madrid", null).due).toBe(false); // 08:30 in Madrid (CET)
+    expect(dailyDue(at("2026-11-14T07:30:00Z"), "Europe/Madrid", null).due).toBe(false); // 08:30 CET
     expect(dailyDue(at("2026-11-14T08:00:00Z"), "Europe/Madrid", null)).toEqual({ due: true, day: "2026-11-14" });
     expect(dailyDue(at("2026-11-14T15:00:00Z"), "Europe/Madrid", "2026-11-14").due).toBe(false);
     expect(dailyDue(at("2026-11-15T08:00:00Z"), "Europe/Madrid", "2026-11-14").due).toBe(true);
   });
 });
 
-describe("the SDK core snapshot (what the report's core.* reads become)", () => {
-  const NOW = Date.now();
-  const SINCE = NOW - 86_400_000;
-
-  function host(threads: Array<{ id: string; createdAt: number }>, projects: Array<{ id: string; name: string }>) {
-    const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
-    harness.sdk.stub("projects.list" as never, async () => projects);
-    harness.sdk.stub("threads.list" as never, async (args: { limit?: number; offset?: number }) =>
-      threads.slice(args.offset ?? 0, (args.offset ?? 0) + (args.limit ?? 200)));
-    harness.sdk.stub("threads.experimental_listPluginMetadata" as never, async (args: { pluginId?: string; threadIds: string[] }) => ({
-      threads: args.threadIds.flatMap((id) => {
-        const t = threads.find((x) => x.id === id);
-        return t ? [{ threadId: id, metadata: { role: "writer", lanePilotWorkflowRunId: "w1" } }] : [];
-      }),
-    }));
-    return bb;
-  }
-
-  it("builds projects + window threads + lane-pilot metadata rows for the child's in-memory core schema", async () => {
-    const bb = host(
-      [{ id: "t1", createdAt: NOW - 3_600_000 }, { id: "t2", createdAt: NOW - 40 * 86_400_000 }, { id: "t3", createdAt: (NOW - 3_600_000) / 1000 }],
-      [{ id: "proj_real", name: "SelfyStudio" }],
-    );
-    const { snapshot, degraded } = await coreSnapshotViaSdk(bb as never, SINCE);
-    expect(degraded).toEqual([]);
-    expect(snapshot.projects).toEqual([{ id: "proj_real", name: "SelfyStudio" }]);
-    // t2 is outside the window; t3's seconds epoch is normalised to ms and kept.
-    expect(snapshot.threads.map((row) => row.id).sort()).toEqual(["t1", "t3"]);
-    expect(snapshot.threads.find((row) => row.id === "t3")?.created_at).toBe(NOW - 3_600_000);
-    expect(snapshot.threadPluginMetadata).toHaveLength(2);
-    expect(snapshot.threadPluginMetadata[0]).toMatchObject({ thread_id: expect.any(String), plugin_id: "lane-pilot" });
-    expect(JSON.parse(snapshot.threadPluginMetadata[0]!.metadata_json)).toMatchObject({ role: "writer" });
-  });
-
-  it("a failed section degrades by name and leaves the others intact", async () => {
-    const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
-    harness.sdk.stub("projects.list" as never, async () => { throw new Error("projects down"); });
-    harness.sdk.stub("threads.list" as never, async () => [{ id: "t1", createdAt: NOW - 3_600_000 }]);
-    harness.sdk.stub("threads.experimental_listPluginMetadata" as never, async () => ({ threads: [] }));
-    const { snapshot, degraded } = await coreSnapshotViaSdk(bb as never, SINCE);
-    expect(snapshot.projects).toEqual([]);
-    expect(snapshot.threads).toHaveLength(1);
-    expect(degraded.join(" ")).toContain("projects: projects down");
-  });
-
-  it("an SDK without the batched metadata read degrades the coverage section, not the report", async () => {
-    const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
-    harness.sdk.stub("projects.list" as never, async () => [{ id: "p", name: "P" }]);
-    // no threads.experimental_listPluginMetadata stub at all
-    const { snapshot, degraded } = await coreSnapshotViaSdk(bb as never, SINCE);
-    expect(snapshot.projects).toHaveLength(1);
-    expect(snapshot.threads).toEqual([]);
-    expect(degraded.join(" ")).toContain("graph coverage");
-  });
-});
-
-describe("the schedules", () => {
-  function mount(opts: { dryRun?: boolean; send?: () => Promise<void>; now?: number }) {
-    const db = new Database(":memory:");
-    db.exec("create table lane_pilot_owner_config(key text primary key, value text not null, updated_at integer not null)");
-    const schedules = new Map<string, () => Promise<void>>();
+describe("report workflow actions (lp.owner-push and lp.daily-report)", () => {
+  function mount(opts: { nowMs?: number; send?: (t: string) => Promise<void> } = {}) {
+    let clock = opts.nowMs ?? Date.parse("2026-11-14T08:30:00Z"); // 09:30 Madrid
+    const { bb } = createFakePluginHost({ pluginId: "lane-pilot" });
+    const db = openDatabase(bb);
+    const engine = new WorkflowEngine({ db, harnessVersion: "1.0.0", now: () => clock });
     const log = vi.fn();
-    const ctx = { db, log, isDisposed: () => false, secrets: {}, bb: { background: { schedule: (name: string, _cron: string, fn: () => Promise<void>) => { schedules.set(name, fn); } } } };
     const ack = vi.fn();
-    const send = vi.fn(opts.send ?? (async () => undefined));
-    const run = vi.fn(async () => ({ lines: [] as string[], errors: [] as string[] }));
-    if (opts.dryRun) db.prepare("insert into lane_pilot_owner_config values ('dry_run','on',1)").run();
-    return { db, schedules, log, ack, send, run, mount: () => mountReports(ctx as never, { digest: async () => digest, ack, send, run }) };
+    const sent: string[] = [];
+    const send = opts.send ?? vi.fn(async (text: string) => { sent.push(text); });
+    const ctx = {
+      bb,
+      db,
+      secrets: { record: async () => null },
+      isDisposed: () => false,
+      log,
+    };
+    mountReports(ctx as never, {
+      engine,
+      digest: async () => digest,
+      ack,
+      send,
+      now: () => clock,
+    });
+    return {
+      db,
+      engine,
+      log,
+      ack,
+      send,
+      sent,
+      setNow: (ms: number) => { clock = ms; },
+      runPush: () => engine.start({ workflow: ownerPushWorkflow, key: `push:${clock}` }).done,
+      runDaily: () => engine.start({ workflow: dailyReportWorkflow, key: `daily:${clock}` }).done,
+    };
   }
 
-  it("registers the owner push every 30 minutes and the daily report hourly (a tick sends once a day)", () => {
-    const t = mount({});
-    t.mount();
-    expect([...t.schedules.keys()].sort()).toEqual(["daily-report", "owner-push"]);
-  });
+  it("lp.owner-push sends digest and acknowledges; dry_run only logs", async () => {
+    const t = mount();
+    await t.runPush();
+    expect(t.sent).toEqual([digest.text]);
+    expect(t.ack).toHaveBeenCalledWith(["k1", "k2"]);
 
-  it("owner-push tick sends the digest and acknowledges; with dry_run it only logs", async () => {
-    const live = mount({}); live.mount();
-    await live.schedules.get("owner-push")!();
-    expect(live.send).toHaveBeenCalledTimes(1);
-    expect(live.ack).toHaveBeenCalledWith(["k1", "k2"]);
-    const dry = mount({ dryRun: true }); dry.mount();
-    await dry.schedules.get("owner-push")!();
-    expect(dry.send).not.toHaveBeenCalled();
-    expect(dry.ack).not.toHaveBeenCalled();
-  });
-
-  it("the daily tick sends once on its day (after 09:00 in the owner's zone), not before, and not again; a failed send is tried again", async () => {
-    vi.useFakeTimers();
-    try {
-      const t = mount({}); t.db.exec("create table lane_pilot_project_settings(project_id text, key text, value text)");
-      t.mount();
-      const tick = t.schedules.get("daily-report")!;
-      vi.setSystemTime(Date.parse("2026-11-14T07:00:00Z")); // 08:00 in Madrid
-      await tick();
-      expect(t.send).not.toHaveBeenCalled();
-      vi.setSystemTime(Date.parse("2026-11-14T08:00:00Z"));
-      await tick(); await tick();
-      expect(t.send).toHaveBeenCalledTimes(1);
-      expect((t.send.mock.calls as unknown as string[][])[0]![0]).toMatch(/^📊 Lane Pilot за сутки\./);
-      vi.setSystemTime(Date.parse("2026-11-15T08:00:00Z"));
-      await tick();
-      expect(t.send).toHaveBeenCalledTimes(2);
-
-      const failing = mount({ send: async () => { throw new Error("offline"); } }); failing.db.exec("create table lane_pilot_project_settings(project_id text, key text, value text)");
-      failing.mount();
-      await failing.schedules.get("daily-report")!(); await failing.schedules.get("daily-report")!();
-      expect(failing.send).toHaveBeenCalledTimes(2);
-    } finally { vi.useRealTimers(); }
-  });
-
-  it("a failed owner-push send is logged and not acknowledged", async () => {
-    const t = mount({ send: async () => { throw new Error("offline"); } }); t.mount();
-    await t.schedules.get("owner-push")!();
+    t.sent.length = 0;
+    t.ack.mockClear();
+    savePushConfig(t.db as never, { dry_run: "on" });
+    t.setNow(t.engine.now() + 1_000);
+    await t.runPush();
+    expect(t.sent).toEqual([]);
     expect(t.ack).not.toHaveBeenCalled();
-    expect(t.log).toHaveBeenCalledWith(expect.stringContaining("offline"));
+    expect(t.log).toHaveBeenCalledWith(expect.stringContaining(digest.text));
+  });
+
+  it("lp.daily-report sends once per local day, honors dry_run, and retries after send failures", async () => {
+    const t = mount({ nowMs: Date.parse("2026-11-14T07:30:00Z") }); // 08:30 CET (before 09:00)
+    await t.runDaily();
+    expect(t.sent).toEqual([]);
+
+    t.setNow(Date.parse("2026-11-14T08:05:00Z")); // 09:05 CET
+    await t.runDaily();
+    expect(t.sent).toHaveLength(1);
+    const stored = t.db.prepare("SELECT value FROM lane_pilot_owner_config WHERE key=?").get(DAILY_SENT_KEY) as { value: string };
+    expect(stored.value).toBe("2026-11-14");
+
+    // Second run same day skips
+    t.setNow(Date.parse("2026-11-14T10:05:00Z"));
+    await t.runDaily();
+    expect(t.sent).toHaveLength(1);
+
+    // Dry run uses DAILY_DRY_KEY
+    savePushConfig(t.db as never, { dry_run: "on" });
+    t.setNow(Date.parse("2026-11-15T08:05:00Z"));
+    await t.runDaily();
+    expect(t.sent).toHaveLength(1);
+    const dryMark = t.db.prepare("SELECT value FROM lane_pilot_owner_config WHERE key=?").get(DAILY_DRY_KEY) as { value: string };
+    expect(dryMark.value).toBe("2026-11-15");
+
+    // Not-ready Telegram does not mark sent so retry succeeds
+    const tFail = mount({
+      nowMs: Date.parse("2026-11-14T08:05:00Z"),
+      send: async () => { throw new TelegramNotReadyError([TG_TOKEN_NAME]); },
+    });
+    await tFail.runDaily();
+    expect(tFail.db.prepare("SELECT value FROM lane_pilot_owner_config WHERE key=?").get(DAILY_SENT_KEY)).toBeUndefined();
+    expect(tFail.log).toHaveBeenCalledWith(expect.stringContaining("telegram_not_ready"));
   });
 
   it("the push settings carry dry_run next to the old keys", () => {

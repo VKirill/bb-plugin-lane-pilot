@@ -56,8 +56,6 @@ export const graphEn = {
   liveWeek: "This week",
   liveWriterOf: "This thread works on:",
   liveSessionOpen: "Session open",
-  liveSteps: "Step by step",
-  liveHide: "Hide steps",
 };
 
 export const graphRu: { [K in keyof typeof graphEn]: string } = {
@@ -117,6 +115,4 @@ export const graphRu: { [K in keyof typeof graphEn]: string } = {
   liveWeek: "За неделю",
   liveWriterOf: "Этот тред работает над:",
   liveSessionOpen: "Сессия открыта",
-  liveSteps: "По шагам",
-  liveHide: "Скрыть шаги",
 };

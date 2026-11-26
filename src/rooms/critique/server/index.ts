@@ -1,8 +1,25 @@
 // Public API of critique/server: what other rooms import. Everything else in this room is private.
-// Add a name here to make it public; scripts/refactor/barrels.ts wrote the first version from the existing imports.
-export { candidatePatches, codeCritiqueTaskContext, headSides, runCodeCritique, runPlanCritique, runPmRead, runSpecialistReview } from "./critique-runs";
-export { ownerLastWroteAt, ownerWordsOfRun } from "./owner-words";
-export { SPECIALIST_ROLES, mountSpecialists, registerSpecialistActions } from "./specialists";
-export { SPECIALIST_GRAPH, pageReviewByAgent, rememberSpecialistThread } from "./specialist-graph";
-export { DEFAULT_SCOUT_ANGLES, SCOUT_GRAPH, mountScouts, normalizeScoutAngles, registerScoutActions } from "./scout-graph";
-export { recordEmployeeLesson, recordRoleLine, roleLinesKey, snapshotLessonProblem, specialistMemorySlice } from "./employee-lessons";
+export { room } from "./room";
+export { attemptEnvironment, candidatePatches, headSides } from "./services/attempt-diffs";
+export { codeCritiqueTaskContext, runCodeCritique } from "./services/code-critique";
+export { sdkCriticCatalog } from "./services/critic-catalog";
+export { criticStats } from "./services/critic-stats";
+export { prepareCriticPacket, readCanonicalPlan } from "./services/critique-packet";
+export type { CriticPacket } from "./services/critique-packet";
+export { logJudgeVerdict, runHelperPrompt, runJudge, stopActiveThread } from "./services/judge-runner";
+export type { HelperRunOptions, HelperRunResult, JudgeRunResult, JudgeStepInput } from "./services/judge-runner";
+export { lastOwnerTurnAt, ownerLastWroteAt, ownerWordsOfRun } from "./services/owner-words";
+export { PLAN_FIXABLE_FINDINGS, planCritiqueFindings, runPlanCritique } from "./services/plan-critique";
+export type { PlanCritiqueFinding, PlanCritiqueOutcome } from "./services/plan-critique";
+export { PlanFileError, readPlanFile } from "./services/plan-text";
+export { runPmRead } from "./services/pm-read";
+export { readAnswer, readCodeCritique } from "./services/read-answer";
+export { PAGE_REVIEW_TIMEOUT_MS, SPECIALIST_GRAPH, pageReviewByAgent, rememberSpecialistThread, specialistRunOfThread, startSpecialistRun, waitSpecialistRun } from "./services/specialist-graph";
+export { runSpecialistReview } from "./services/specialist-review";
+export { verifySeriousFindings } from "./services/verify-findings";
+export type { VerifierOutcome } from "./services/verify-findings";
+export { latestWriterPair } from "./repositories/critic-pair-repository";
+export { critiqueRpc } from "./handlers/rpc";
+export { DEFAULT_SCOUT_ANGLES, SCOUT_GRAPH, mountScouts, normalizeScoutAngles, registerScoutActions, waitScoutRun } from "./handlers/scout-graph";
+export type { ScoutAngle, SeatedScoutAngle } from "./handlers/scout-graph";
+export { EMPLOYEE_VALIDATORS, SPECIALIST_ROLES, mountSpecialists, registerSpecialistActions, specialistPrompt } from "./handlers/specialists";

@@ -1,7 +1,7 @@
 import { expect, it } from "vitest";
-import { LANE_PILOT_PM_SESSION } from "../src/rooms/native-agent/native-agent-overlay";
-import { NATIVE_LP_BRIDGE_PM_TOOLS } from "../src/rooms/native-agent/native-session-hooks";
-import { pmRunInstructions } from "../src/rooms/tools/server/tools";
+import { LANE_PILOT_PM_SESSION } from "../src/rooms/native-agent/models/native-agent-overlay";
+import { NATIVE_LP_BRIDGE_PM_TOOLS } from "../src/rooms/native-agent/models/bridge-tools";
+import { pmRunInstructions } from "../src/rooms/tools/server/handlers/tools";
 
 // The PM spent turns hunting tools its text named but it did not have (instructions audit, 2026-10-03).
 it("names only tools the PM actually has, in its prompt and its per-run instructions", () => {

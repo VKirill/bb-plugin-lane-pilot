@@ -19,12 +19,12 @@ import { vi } from "vitest";
 import type { Services } from "../../server";
 import type { ChainRuntime } from "../../src/rooms/contracts/server";
 import { createCore } from "../../src/rooms/core/server/core";
-import { runCommand } from "../../src/rooms/host-worker/host-handlers";
+import { runCommand } from "../../src/rooms/host-worker";
 import { createRun, openDatabase, setRunThread } from "../../src/rooms/plugin-db";
 import { BUILTIN_SOURCES } from "../../src/rooms/workflow/builtin";
-import { createWorkflowAgents } from "../../src/rooms/workflow/server/workflow-agent";
-import { chainRuntimeFor, registerChainExecutors } from "../../src/rooms/workflow/server/workflow-executors";
-import { registerDispatchExecutors, taskUsage } from "../../src/rooms/writer/server";
+import { createWorkflowAgents } from "../../src/rooms/workflow/server/services/workflow-agent";
+import { chainRuntimeFor, registerChainExecutors } from "../../src/rooms/workflow/server/services/workflow-executors";
+import { registerDispatchExecutors, taskUsage } from "../../src/rooms/writer/server/index";
 
 export type Row = Record<string, unknown>;
 export type AgentReplyCtx = { checkout: string; workflowId: string; nodeId: string; visit: number };
@@ -119,9 +119,12 @@ export async function setupLiveSpecialistEnv(
           lifecycleOwnerThreadId: PM,
         }),
         events: {
+          // BB reports the model and the tokens of every helper turn; without them a USD-capped graph parks the step (R12).
           list: async ({ threadId }) => [
             { type: "turn/started", threadId, seq: 1 },
-            { type: "turn/completed", threadId, seq: 2, data: { status: "completed" } },
+            { type: "client/thread/start", threadId, seq: 2, createdAt: 1, data: { request: { params: { execution: { model: "claude-sonnet-5-5" } } } } },
+            { type: "thread/tokenUsage/updated", threadId, seq: 3, createdAt: 2, data: { turnId: "t1", tokenUsage: { last: { inputTokens: 10, outputTokens: 5, totalTokens: 15 }, total: { inputTokens: 10, outputTokens: 5, totalTokens: 15 } } } },
+            { type: "turn/completed", threadId, seq: 4, data: { status: "completed" } },
           ],
         },
         send: async () => ({}) as never,
@@ -212,10 +215,6 @@ export async function setupLiveSpecialistEnv(
       return { ok: true };
     }),
   };
-  (services as unknown as Record<string, unknown>).executeMutation = vi.fn((item: Row) => ({
-    ok: true,
-    externalReceipt: { adapter: "e2e_mock", entityId: item.entity_id ?? "entity" },
-  }));
   (services as unknown as Record<string, unknown>).allowScriptFixtureFallback = true;
 
   const rt: ChainRuntime = { ctx, services, pmThreadId: PM, projectId: PROJECT, runId: RUN };

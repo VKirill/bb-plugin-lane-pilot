@@ -8,6 +8,7 @@
     "en": "Looks back on a finished run through four lenses (technical, process, quality, decision) and stages insights as rule or note candidates. Writes no knowledge without approval.",
     "ru": "Оглядывается на завершённый прогон через четыре линзы (технический, процесс, качество, решения) и кладёт инсайты на стейджинг как кандидатов в правила или заметки. Знания без одобрения не пишет."
   },
+  "category": "planning",
   "examples": {
     "ru": [
       "Сделай ретроспективу последнего прогона",
@@ -74,7 +75,10 @@
       "with": {
         "lenses": {
           "by_mode": {
-            "quick": ["technical", "process"],
+            "quick": [
+              "technical",
+              "process"
+            ],
             "standard": "{{$inputs.lenses}}",
             "full": "{{$inputs.lenses}}"
           }

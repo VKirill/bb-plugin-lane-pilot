@@ -5,11 +5,10 @@ import type { PrototypeConfig, TaskV2 } from "../src/rooms/contracts";
 import { createAttempt, createRun, createTask, getAttempt, listStageReceipts, openDatabase, savePrototypeConfig, saveTaskPlan, setAttemptWorkspace, setRunThread, transitionAttempt } from "../src/rooms/plugin-db";
 import { createCore } from "../src/rooms/core/server/core";
 import type { Services } from "../server";
-import { recordStage } from "../src/rooms/runs/server/stage-records";
-import { createWriterStart } from "../src/rooms/writer/server/start";
-import { createStability } from "../src/rooms/stability/server/stability";
+import { recordStage } from "../src/rooms/runs/server";
+import { createWriterStart } from "../src/rooms/writer/server/services/start";
+import { createStability } from "../src/rooms/stability/server";
 import { failureClass } from "../src/rooms/contracts/failure-class";
-import { logOrigin } from "../src/rooms/wall/signature";
 
 // log:4b8289a2c542 and its siblings (hub plugin.log, 2026-10-27): the Mac mini had 5–11 GB free, below the then 15 GB disk hold (5 GB since 0.1.341), and
 // «writer drill-20261027-023238-b waits: only N GB free on host_7sea4qaad8» was logged 61 times, once for every GB the free space
@@ -127,10 +126,9 @@ describe("the disk hold's reason is the machine's", () => {
     return stability.diskHolds(HOST, "/ws");
   }
 
-  it("carries disk_low, so the failure classes, the night journal and the metrics read it as infra", async () => {
+  it("carries disk_low, so the failure classes and the metrics read it as infra", async () => {
     const reason = await holdAt(4, 460);
     expect(reason).toBe(`disk_low: only 4 GB free on ${HOST}`);
-    expect(logOrigin(`writer drill-20261027-023238-b waits: ${reason}`)).toBe("infra");
     expect(failureClass("blocked", `waiting: ${reason}; starts by itself once it clears`)).toBe("infra");
     expect(await holdAt(20, 460)).toBeNull();
   });

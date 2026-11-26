@@ -1,15 +1,15 @@
 import { describe, expect, it } from "vitest";
 import { taskV2Schema } from "../src/rooms/contracts";
 import { providerForwardsAgentOnly } from "@lane-pilot/models";
-import { writerBriefInput, writerBriefSegments, writerPrompt, stickyTurnPrompt } from "../src/rooms/writer/server/writer-task";
-import { chatBriefSection } from "../src/rooms/brief/chat-markdown";
+import { writerBriefInput, writerBriefSegments, writerPrompt, stickyTurnPrompt } from "../src/rooms/writer/models/writer-task";
+import { chatBriefSection } from "../src/rooms/brief";
 
 const task = taskV2Schema.parse({
   schema_version: 2, id: "t-1", title: "Add the footer", risk: "low", lane: "ui", project_cwd: "/work/p",
   read_first: ["src/a.ts"], interfaces: [], invariants: [], out_of_scope: [], expected_outputs: ["src/footer.ts"], owns_paths: ["src/footer.ts"],
   never_touch: [], depends_on: [], objective: "Add a footer", acceptance: ["it renders"], verify: "tests", verification: [{ command: "npm test", cwd: "/work/p" }],
 });
-const args = [task, "NOTE-MEMORY", "PACKET-FILES", undefined, "Lane Pilot writer", "", "- RULE-ONE"] as const;
+const args = [task, "NOTE-MEMORY", "PACKET-FILES", undefined, "Lane Pilot writer"] as const;
 
 describe("writer brief as BB input parts", () => {
   it("preserves unstructured heredoc checks in both the initial brief and a sticky resend", () => {
@@ -44,14 +44,14 @@ describe("writer brief as BB input parts", () => {
     expect(writerBriefSegments(...args).map((segment) => segment.text).join("\n\n")).toBe(writerPrompt(...args));
   });
 
-  it("keeps the task header and the contract visible and hides the memory, rules and execution packet", () => {
+  it("keeps the task header and the contract visible and hides the memory and execution packet", () => {
     const parts = writerBriefInput(task, writerBriefSegments(...args), "claude-code");
     expect(parts[0]).toEqual({ type: "text", text: "## Lane Pilot task t-1: Add the footer", mentions: [] });
     const visible = parts.filter((part) => !part.visibility).map((part) => part.text).join("\n");
     const hidden = parts.filter((part) => part.visibility === "agent-only").map((part) => part.text).join("\n\n");
     expect(visible).toContain("### Задача");
     expect(visible).toContain("src/footer.ts");
-    for (const secret of ["NOTE-MEMORY", "PACKET-FILES", "RULE-ONE"]) {
+    for (const secret of ["NOTE-MEMORY", "PACKET-FILES"]) {
       expect(hidden).toContain(secret);
       expect(visible).not.toContain(secret);
     }
@@ -83,7 +83,7 @@ describe("writer brief as BB input parts", () => {
     const parts = writerBriefInput(task, writerBriefSegments(...args), "mystery-provider");
     expect(parts).toHaveLength(1);
     expect(parts[0]!.visibility).toBeUndefined();
-    for (const value of ["### Задача", "NOTE-MEMORY", "PACKET-FILES", "RULE-ONE", "ASK_PM:", "npm test"]) expect(parts[0]!.text).toContain(value);
+    for (const value of ["### Задача", "NOTE-MEMORY", "PACKET-FILES", "ASK_PM:", "npm test"]) expect(parts[0]!.text).toContain(value);
   });
 });
 

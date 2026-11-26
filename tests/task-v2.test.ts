@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { validateTaskV2 } from "../src/rooms/tasks/task-v2";
+import { validateTaskV2 } from "../src/rooms/tasks";
 
 const base = {
   schema_version: 2, id: "T-1", title: "Add a check", risk: "low", lane: "server", project_cwd: "/tmp/project",

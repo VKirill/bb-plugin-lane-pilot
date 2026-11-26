@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { namedRuns, noTestRanReason, testSummaries } from "../../src/rooms/tasks/server/tests-ran";
+import { namedRuns, noTestRanReason, testSummaries } from "../../src/rooms/tasks/server";
 
 /** Real outputs, captured 2026-10-26 by running vitest 4.1 and node 26 `--test` in a scratch dir (exit codes in the comments). */
 const out = (name: string) => readFileSync(new URL(`../fixtures/test-runner-output/${name}.txt`, import.meta.url), "utf8");

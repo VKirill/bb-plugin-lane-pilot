@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {builtinWorkflow} from "../../src/rooms/workflow/builtin";
 import { fileContaining } from "../support/source-text";
 import { costTier, nodeEffortsFor, roleModelKey, validateChoice, type ModelCatalog } from "@lane-pilot/models";
-import { DELEGATED_ACTIONS, resolveStepExecutors, type StepExecutor } from "../../src/rooms/workflow/server/workflow-step-executors";
+import { DELEGATED_ACTIONS, resolveStepExecutors, type StepExecutor } from "../../src/rooms/workflow/server/services/workflow-step-executors";
 
 const pm = { providerId: "claude-code", model: "claude-opus-5-5" };
 const writer = { "writer.provider": "codex", "writer.model": "gpt-6-luna", "writer.reasoning_effort": "high", "writer.service_tier": "fast" };
@@ -42,8 +42,10 @@ describe("step executors by node type", () => {
       .toMatchObject({ providerId: "claude-code", model: "claude-opus-5-5", source: "role-default" });
   });
 
-  it("a node's own model fields and preset change nothing", () => {
-    expect(one({ id: "a", type: "agent", role: "analyst", model_preset: "cheap-fast", provider: "opencode2", model: "router9/ag/gemini-3.8-flash-high", reasoning: "medium", service_tier: "fast" }))
+  it("a node's own model fields win over its role's row; the preset changes nothing", () => {
+    expect(one({ id: "a", type: "agent", role: "analyst", provider: "opencode2", model: "router9/ag/gemini-3.8-flash-high", reasoning: "medium", service_tier: "fast" }))
+      .toMatchObject({ providerId: "opencode2", model: "router9/ag/gemini-3.8-flash-high", reasoningEffort: "medium", serviceTier: "fast", source: "pinned", inherited: false });
+    expect(one({ id: "a", type: "agent", role: "analyst", model_preset: "cheap-fast" }))
       .toMatchObject({ providerId: "claude-code", model: "claude-opus-5-5", reasoningEffort: "high", serviceTier: null, source: "role-default", inherited: true });
   });
 

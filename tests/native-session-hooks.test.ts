@@ -6,7 +6,8 @@ import { spawnSync } from "node:child_process";
 import { expect, it } from "vitest";
 import { hookEnv } from "./hook-env";
 import { NATIVE_HOOK_SOURCES } from "../src/rooms/contracts/native-hook-sources";
-import { lpBridgeCatalogNames, materializeNativeHookSession, NATIVE_LP_BRIDGE_PM_TOOLS, NATIVE_LP_BRIDGE_TOOLS, unionLpBridgeTools } from "../src/rooms/native-agent/native-session-hooks";
+import { materializeNativeHookSession } from "../src/rooms/native-agent/native-session-hooks";
+import { lpBridgeCatalogNames, NATIVE_LP_BRIDGE_PM_TOOLS, NATIVE_LP_BRIDGE_TOOLS, unionLpBridgeTools } from "../src/rooms/native-agent/models/bridge-tools";
 
 it("names only bb-bridge LP tools and does not invent a full allowlist", () => {
   const names = lpBridgeCatalogNames();

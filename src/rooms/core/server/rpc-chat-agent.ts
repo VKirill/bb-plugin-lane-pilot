@@ -1,7 +1,6 @@
 import type { PluginRpcHandlers } from "@get-bb/plugin-sdk";
 import { rpcContract } from "../../contracts";
 import { chatAgentState, switchChatAgent } from "../../native-agent/server";
-import { listPhases } from "../../phase";
 import { finishRunSafely } from "../../runs/server";
 import type { ServerCore } from "../../contracts/server";
 
@@ -13,7 +12,6 @@ export function chatAgentRpc(ctx: ServerCore) {
       return state;
     },
     switch_chat_agent: ({ threadId, agentId }) =>
-      switchChatAgent(ctx, { threadId, agentId }, (projectId, runId) => finishRunSafely(ctx.bb, ctx.db, projectId, runId, "rpc"),
-        (db, filter) => listPhases(db, { ...filter, live: true })),
+      switchChatAgent(ctx, { threadId, agentId }, (projectId, runId) => finishRunSafely(ctx.bb, ctx.db, projectId, runId, "rpc")),
   } satisfies Pick<PluginRpcHandlers<typeof rpcContract>, "chat_agent_state" | "switch_chat_agent">;
 }

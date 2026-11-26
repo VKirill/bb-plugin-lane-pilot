@@ -12,14 +12,17 @@ from lib_payload import (  # type: ignore
 
 PM_AGENTS = {"dev-orchestrator", "frontend-orchestrator", "marketing-orchestrator"}
 LANE_PILOT_PM_AGENT_TYPES = {"lane-pilot-pm"}
+# Parity with HELPER_ROLES in src/rooms/contracts/helper-context.ts (excluding coder roles and specialist:* prefix).
 LANE_PILOT_HELPER_ROLES = {
-    "errand", "specialist", "browser-qa", "pm-read", "pm-reader", "scout",
-    "critic", "plan-critic", "code-critic", "specialist-reviewer",
-    "night-reviewer", "docs", "docs-maintainer", "onboarder",
-    "memory-maintainer", "project-life", "gate-triage", "council-seat",
-    "rules-analyzer", "auditor", "debugger", "episode-analyst", "wall-hunter",
-    "digest-light", "digest-analyst", "evolve-planner", "evolve-critic", "evolve-architect", "evolve-auditor",
-    "design-lead", "copy-lead", "seo-specialist", "tavily",
+    "plan-critic", "code-critic", "specialist-reviewer", "gate-triage", "pm-reader", "scout",
+    "onboarder", "memory-maintainer",
+    "browser-qa", "errand", "api-recon", "rules-analyzer",
+    "analyst", "planner", "auditor", "debugger",
+    "workspace-provisioner", "lead", "workflow-architect", "harness-editor", "harness-composer", "harness-reflection",
+}
+LANE_PILOT_SPECIALIST_ROLES = {
+    "design-lead", "copy-lead", "seo-specialist", "growth-marketer", "tavily", "video-lead",
+    "3d-artist", "game-dev", "social-manager", "billing-assistant", "visual-artist", "macos-operator", "lead",
 }
 
 
@@ -237,7 +240,7 @@ def _lane_pilot_edit_tail(path: str) -> str:
         return ("Lane Pilot keeps PROGRESS.md and CHANGELOG.md; the PM records decisions in .agents/decisions/ "
                 "and plans in .agents/plans/; a task's plan goes to lane_pilot_dispatch_writer as text and Lane Pilot keeps it in .agents/tasks/<id>/.")
     if name == "LESSONS.md":
-        return "Lessons are rules on the hub now: call lane_pilot_memory with action lesson (runId, rule, audience pm, writer or both)."
+        return "LESSONS.md is retired; project knowledge lives in hub memory (lane_pilot_memory)."
     if name == "DESIGN.md":
         return "DESIGN.md belongs to design-lead: lane_pilot_helpers with action specialist, role design-lead and the task."
     if normalized.startswith("docs/") or "/docs/" in normalized or name in {"README.md", "PROJECT.md"}:
@@ -385,7 +388,8 @@ def _git_args(command: str, subcommands: set[str], _depth: int = 4) -> list[list
     # A quoted heredoc body is data, also inside a `bash -c` script: newlines split commands only outside it.
     command = _without_data_heredocs(command)
     try:
-        lexer = shlex.shlex(command, posix=True, punctuation_chars=";&|()\n")
+        lifted = _lift_substitutions(command)[0]
+        lexer = shlex.shlex(lifted, posix=True, punctuation_chars=";&|()\n")
         lexer.whitespace = " \t\r"  # a newline separates commands; it is not a space
         lexer.whitespace_split = True
         lexer.commenters = ""
@@ -485,13 +489,22 @@ def _lift_substitutions(text: str) -> tuple[str, list[str]]:
             continue
         if ch == "\\":
             nxt = text[index + 1 : index + 2]
+            if nxt == "\n":
+                index += 2
+                continue
+            if text[index + 1 : index + 3] == "\r\n":
+                index += 3
+                continue
             out.append(ch + nxt if nxt != "`" else "_")
             index += 2
             continue
         if text.startswith("$(", index):
             end = _closing(text, index + 2)
             body = text[index + 2 : end - 1]
-            if not body.startswith("("):  # $(( arithmetic )) runs nothing
+            if body.startswith("("):  # $(( arithmetic )) runs only any nested $(...) inside it
+                _, inner = _lift_substitutions(body[1:-1] if body.endswith(")") else body[1:])
+                bodies.extend(inner)
+            else:
                 bodies.append(body)
             out.append("__SUBST__")
             index = end
@@ -510,6 +523,8 @@ def _lift_substitutions(text: str) -> tuple[str, list[str]]:
             end = index + 2
             while end < len(text) and text[end] != "'":
                 end += 2 if text[end] == "\\" else 1
+            if end >= len(text):
+                raise ValueError("unclosed ANSI-C quote")
             out.append("__ANSI__")
             index = end + 1
             continue
@@ -584,7 +599,7 @@ def _wrapped_command(head: str, rest: list[str]) -> list[tuple[str, bool]]:
 
 def _segment_payloads(words: list[str], stdin: str | None) -> list[tuple[str, bool]]:
     """Command lines one command asks other programs to run, as (text, nested). nested: the text came out of a quoted string."""
-    while words and _ASSIGNMENT.fullmatch(words[0]):
+    while words and (_ASSIGNMENT.fullmatch(words[0]) or words[0] in _WRITER_SHELL_KW_PREFIX):
         words = words[1:]
     if not words:
         return []
@@ -610,7 +625,7 @@ def _segment_payloads(words: list[str], stdin: str | None) -> list[tuple[str, bo
     elif head in {"psql", "mysql", "mariadb", "sqlite3", "sqlcmd"}:
         if stdin is not None:
             out.append((stdin, True))
-    elif head not in _DATA_PROGRAMS:
+    elif head not in _DATA_PROGRAMS and not _writer_is_interpreter(head) and head not in _SECRET_CLI_RUNNERS:
         out.extend((word, True) for word in rest if re.search(r"\s", word))
     return out
 
@@ -724,8 +739,8 @@ def _is_env_secret_file(name: str) -> bool:
 
 
 # Lane Pilot bookkeeping files the PM never edits, wherever they live (the checkout and the planning home alike):
-# PROGRESS.md and CHANGELOG.md are owned by project-life / living memory; LESSONS.md is not kept any more (lessons are
-# rules on the hub: lane_pilot_memory action lesson / lane-memory lesson).
+# PROGRESS.md and CHANGELOG.md are owned by project-life / living memory; LESSONS.md is retired (project knowledge
+# lives in hub memory via lane_pilot_memory).
 _PM_DENIED_BASENAMES = frozenset({"PROGRESS.md", "CHANGELOG.md", "LESSONS.md"})
 
 # The planning folders of the confirmed planning home the PM may write (SMA d_project_planning): nothing else outside the checkout.
@@ -869,6 +884,8 @@ _TRASH_HINT = (
 
 
 def _disposable_path(path: str) -> bool:
+    if re.search(r"\$\{?IFS\}?", path):
+        return False
     if path.startswith(("$TMPDIR", "${TMPDIR")) or any(path.startswith(root) for root in _DISPOSABLE_ROOTS):
         return True
     variable = re.match(r"\$\{?([A-Za-z_][A-Za-z0-9_]*)", path)
@@ -1561,7 +1578,7 @@ HELPER_DENIAL = "Helpers do not change the repository; report what should change
 def is_helper_role(key: str | None) -> bool:
     if not key:
         return False
-    if key in LANE_PILOT_HELPER_ROLES:
+    if key in LANE_PILOT_HELPER_ROLES or key in LANE_PILOT_SPECIALIST_ROLES:
         return True
     if key.startswith("specialist:"):
         return True
@@ -1750,7 +1767,7 @@ def _ssh_config_hostnames() -> dict[str, str]:
     """Alias -> HostName from ~/.ssh/config (plain Host lines; wildcards and Include are not followed)."""
     table: dict[str, str] = {}
     try:
-        lines = (Path(os.path.expanduser("~")) / ".ssh" / "config").read_text(errors="replace").splitlines()
+        lines = (Path(os.path.expanduser("~")) / ".ssh" / "config").read_text(encoding="utf-8", errors="replace").splitlines()
     except OSError:
         return table
     aliases: list[str] = []
@@ -2044,15 +2061,15 @@ def _permit_or_ticket(p: dict, command: str, category: str, refusal: str) -> str
         ticket_at = 0.0
         if ticket.exists():
             try:
-                ticket_at = float(json.loads(ticket.read_text()).get("at") or 0)
+                ticket_at = float(json.loads(ticket.read_text(encoding="utf-8")).get("at") or 0)
             except (OSError, ValueError):
                 ticket_at = 0.0
         stale = ticket.exists() and time.time() - ticket_at > PERMIT_TTL_S
         if answer.exists() and not stale:
-            verdict = json.loads(answer.read_text())
+            verdict = json.loads(answer.read_text(encoding="utf-8"))
             recorded = ""
             if ticket.exists():
-                recorded = str(json.loads(ticket.read_text()).get("cwd") or "")
+                recorded = str(json.loads(ticket.read_text(encoding="utf-8")).get("cwd") or "")
             try:
                 same_dir = bool(recorded) and os.path.realpath(recorded) == cwd
             except (OSError, ValueError):
@@ -2061,14 +2078,14 @@ def _permit_or_ticket(p: dict, command: str, category: str, refusal: str) -> str
             current = not isinstance(verdict.get("at"), (int, float)) or float(verdict["at"]) >= ticket_at
             if verdict.get("decision") == "allow" and not verdict.get("used") and same_dir and current:
                 verdict["used"] = time.time()
-                answer.write_text(json.dumps(verdict))
+                answer.write_text(json.dumps(verdict), encoding="utf-8")
                 return None
             if verdict.get("decision") == "deny" and current:
                 return f"{refusal} The PM refused this permit: {verdict.get('why', '')}"
         folder.mkdir(parents=True, exist_ok=True)
         if stale or not ticket.exists():
             # A stale ticket is filed again with a fresh clock; a grant meant for the dead ticket no longer counts.
-            ticket.write_text(json.dumps({"ticket": digest, "category": category, "command": command[:2000], "cwd": cwd, "at": time.time(), "refusal": refusal[:500]}))
+            ticket.write_text(json.dumps({"ticket": digest, "category": category, "command": command[:2000], "cwd": cwd, "at": time.time(), "refusal": refusal[:500]}), encoding="utf-8")
     except OSError:
         return refusal
     return f"{refusal} Permit ticket {digest} is filed: Lane Pilot hands it to the PM; when it is granted, run the same command again (once). Meanwhile do the rest of the task."
@@ -2178,11 +2195,11 @@ def _reflex_lines(cwd: str) -> tuple[Path, list[str]] | None:
         for folder in (root, *root.parents):
             candidate = folder / "REFLEXES.md"
             if candidate.is_file():
-                return candidate, candidate.read_text(errors="replace").splitlines()
+                return candidate, candidate.read_text(encoding="utf-8", errors="replace").splitlines()
             # The task folder REFLEXES.md Lane Pilot writes at spawn.
             noted = _task_note_file(folder, "REFLEXES.md")
             if noted:
-                return noted, noted.read_text(errors="replace").splitlines()
+                return noted, noted.read_text(encoding="utf-8", errors="replace").splitlines()
             if len(folder.parts) <= 2:
                 break
         return None
@@ -2203,7 +2220,7 @@ def _reflex_advice(p: dict, command: str, path: str) -> str | None:
             continue
         counter = Path.home() / ".lane-pilot" / "session-hooks" / _session_dir_name(p) / "reflex.json"
         try:
-            counts = json.loads(counter.read_text()) if counter.is_file() else {}
+            counts = json.loads(counter.read_text(encoding="utf-8")) if counter.is_file() else {}
         except (OSError, ValueError):
             counts = {}
         seen = int(counts.get(str(index), 0))
@@ -2212,7 +2229,7 @@ def _reflex_advice(p: dict, command: str, path: str) -> str | None:
         try:
             counter.parent.mkdir(parents=True, exist_ok=True)
             counts[str(index)] = seen + 1
-            counter.write_text(json.dumps(counts))
+            counter.write_text(json.dumps(counts), encoding="utf-8")
         except OSError:
             pass
         return f"[reflex] {match.group(2).strip()}"
@@ -2226,7 +2243,7 @@ def _filecard_lines(cwd: str) -> tuple[Path, list[str]]:
         for folder in (root, *root.parents):
             for candidate in (folder / "FILECARDS.md", _task_note_file(folder, "FILECARDS.md")):
                 if candidate and candidate.is_file():
-                    return folder, candidate.read_text(errors="replace").splitlines()
+                    return folder, candidate.read_text(encoding="utf-8", errors="replace").splitlines()
             if len(folder.parts) <= 2:
                 break
         return root, []
@@ -2286,7 +2303,7 @@ def _stream_filecard(p: dict, name: str, cmd: str, path: str) -> tuple[str | Non
             continue
         counter = _session_counter(p, "filecard.json")
         try:
-            counts = json.loads(counter.read_text()) if counter.is_file() else {}
+            counts = json.loads(counter.read_text(encoding="utf-8")) if counter.is_file() else {}
         except (OSError, ValueError):
             counts = {}
         key = f"{index}:{path}"
@@ -2295,7 +2312,7 @@ def _stream_filecard(p: dict, name: str, cmd: str, path: str) -> tuple[str | Non
         try:
             counter.parent.mkdir(parents=True, exist_ok=True)
             counts[key] = int(counts.get(key, 0)) + 1
-            counter.write_text(json.dumps(counts))
+            counter.write_text(json.dumps(counts), encoding="utf-8")
         except OSError:
             pass
         return None, f"[file-note] {claim[:200]}"
@@ -2319,7 +2336,7 @@ def _catalog_card(p: dict, cwd: str, path: str) -> str | None:
             return None
         needle = '{"path":' + json.dumps(rel, ensure_ascii=False) + ","
         card = None
-        with open(cards, errors="replace") as fh:
+        with open(cards, encoding="utf-8", errors="replace") as fh:
             for line in fh:
                 if line.startswith(needle):
                     card = json.loads(line)
@@ -2327,13 +2344,13 @@ def _catalog_card(p: dict, cwd: str, path: str) -> str | None:
         if not isinstance(card, dict):
             return None
         counter = _session_counter(p, "filecard.json")
-        counts = json.loads(counter.read_text()) if counter.is_file() else {}
+        counts = json.loads(counter.read_text(encoding="utf-8")) if counter.is_file() else {}
         key = f"card:{path}"
         if counts.get(key):
             return None
         counter.parent.mkdir(parents=True, exist_ok=True)
         counts[key] = 1
-        counter.write_text(json.dumps(counts))
+        counter.write_text(json.dumps(counts), encoding="utf-8")
         if card.get("skipped"):
             claim = f"{rel}: {card.get('bytes')} bytes ({card.get('skipped')}, not read)"
         else:
@@ -2360,14 +2377,14 @@ def _claims_repo(start: str) -> tuple[str, str] | None:
             if os.path.isdir(dot):
                 return here, os.path.realpath(dot)
             if os.path.isfile(dot):
-                with open(dot, errors="replace") as fh:
+                with open(dot, encoding="utf-8", errors="replace") as fh:
                     match = re.search(r"^gitdir:\s*(.+)$", fh.read(), re.M)
                 if not match:
                     return None
                 gitdir = os.path.realpath(os.path.join(here, match.group(1).strip()))
                 common = gitdir
                 try:
-                    with open(os.path.join(gitdir, "commondir"), errors="replace") as fh:
+                    with open(os.path.join(gitdir, "commondir"), encoding="utf-8", errors="replace") as fh:
                         common = os.path.realpath(os.path.join(gitdir, fh.read().strip()))
                 except OSError:
                     pass
@@ -2407,10 +2424,10 @@ def _claims_trim(file: Path) -> None:
     try:
         if file.stat().st_size <= _CLAIMS_TRIM_BYTES:
             return
-        kept = file.read_text(errors="replace").splitlines()[-_CLAIMS_KEEP_LINES:]
+        kept = file.read_text(encoding="utf-8", errors="replace").splitlines()[-_CLAIMS_KEEP_LINES:]
         temp = file.with_name(f"{file.name}.{os.getpid()}.tmp")
         fd = os.open(temp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-        with os.fdopen(fd, "w") as fh:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
             fh.write("\n".join(kept) + "\n")
         os.replace(temp, file)
     except OSError:
@@ -2433,7 +2450,7 @@ def _stream_claims(p: dict, name: str, cmd: str, path: str) -> tuple[str | None,
     key = hashlib.sha256(f"{repo}\0{rel}".encode()).hexdigest()[:24]
     seen_file = _session_counter(p, "claims.json")
     try:
-        seen = json.loads(seen_file.read_text()) if seen_file.is_file() else {}
+        seen = json.loads(seen_file.read_text(encoding="utf-8")) if seen_file.is_file() else {}
         seen = seen if isinstance(seen, dict) else {}
     except (OSError, ValueError):
         seen = {}
@@ -2474,7 +2491,7 @@ def _stream_claims(p: dict, name: str, cmd: str, path: str) -> tuple[str | None,
         if len(seen) > 500:
             seen = dict(list(seen.items())[-500:])
         seen_file.parent.mkdir(parents=True, exist_ok=True)
-        seen_file.write_text(json.dumps(seen))
+        seen_file.write_text(json.dumps(seen), encoding="utf-8")
     except OSError:
         pass
     return None, advice
@@ -2500,7 +2517,7 @@ def _usage_snapshot() -> dict | None:
         path = Path.home() / ".lane-pilot" / "usage-snapshot.json"
         if not path.is_file():
             return None
-        snap = json.loads(path.read_text())
+        snap = json.loads(path.read_text(encoding="utf-8"))
         return snap if isinstance(snap, dict) else None
     except (OSError, ValueError):
         return None
@@ -2533,7 +2550,7 @@ def _stream_spend(p: dict, name: str, cmd: str, path: str) -> tuple[str | None, 
         return None, None
     counter = _session_counter(p, "spend.json")
     try:
-        marks = set(json.loads(counter.read_text())) if counter.is_file() else set()
+        marks = set(json.loads(counter.read_text(encoding="utf-8"))) if counter.is_file() else set()
     except (OSError, ValueError):
         marks = set()
     mark = "90" if worst >= 90 else "70"
@@ -2541,7 +2558,7 @@ def _stream_spend(p: dict, name: str, cmd: str, path: str) -> tuple[str | None, 
         return None, None
     try:
         counter.parent.mkdir(parents=True, exist_ok=True)
-        counter.write_text(json.dumps(sorted(marks | {mark})))
+        counter.write_text(json.dumps(sorted(marks | {mark})), encoding="utf-8")
     except OSError:
         pass
     return None, f"[spend] {label} is at {worst:.0f}%"
@@ -2561,7 +2578,7 @@ def _perf_note(p: dict, row: dict) -> None:
     try:
         perf.parent.mkdir(parents=True, exist_ok=True)
         if perf.is_file() and perf.stat().st_size > 256 * 1024:
-            perf.write_text("\n".join(perf.read_text(errors="replace").splitlines()[-500:]) + "\n")
+            perf.write_text("\n".join(perf.read_text(encoding="utf-8", errors="replace").splitlines()[-500:]) + "\n", encoding="utf-8")
         with perf.open("a", encoding="utf-8") as fh:
             fh.write(json.dumps(row) + "\n")
     except OSError:
@@ -2702,6 +2719,437 @@ def _note_guard_crash(exc: BaseException) -> None:
         pass
 
 
+WRITER_GIT_ALLOWED = {
+    "status", "diff", "log", "show", "add", "commit", "restore", "checkout", "switch",
+    "branch", "stash", "rev-parse", "rev-list", "ls-files", "fetch", "grep", "archive",
+    "check-ignore", "describe", "shortlog", "merge-base", "cat-file", "blame",
+}
+_WRITER_INTERPRETERS = {"python", "python2", "python3", "node", "nodejs", "deno", "bun", "perl", "ruby"}
+_WRITER_INTERP_DANGER_RE = re.compile(
+    r"\b(?:subprocess|os\.system|os\.popen|os\.exec\w*|os\.spawn\w*|pty\.spawn|"
+    r"execSync|spawnSync|execFileSync|child_process)\b|\bsystem\s*\(",
+    re.S,
+)
+_WRITER_INTERP_GIT_PUSH_RE = re.compile(
+    r"\bgit\b[\s\S]*\bpush\b|'git'[\s\S]*'push'|\"git\"[\s\S]*\"push\"",
+    re.S,
+)
+_WRITER_SHELL_KW_PREFIX = {"if", "then", "else", "elif", "do", "while", "until", "!", "{"}
+_WRITER_SHELL_KW_ONLY = {"fi", "done", "esac", "}", "[[", "["}
+_WRITER_ALL_SHELLS = _SHELL_NAMES | {"fish"}
+
+
+def _writer_is_interpreter(exe: str) -> bool:
+    return exe in _WRITER_INTERPRETERS or exe.startswith("python3.")
+
+
+def _writer_interpreter_heredoc_error(command: str) -> str | None:
+    """Refuse inline interpreter heredocs that spawn subprocesses, while keeping harmless print heredocs open."""
+    for match in _HEREDOC.finditer(command):
+        line_start = command.rfind("\n", 0, match.start()) + 1
+        line_end = command.find("\n", match.start())
+        header = command[line_start : line_end if line_end >= 0 else len(command)]
+        try:
+            tokens = shlex.split(header, posix=True)
+        except ValueError:
+            continue
+        head = Path(next((t for t in tokens if not _ASSIGNMENT.fullmatch(t)), "")).name
+        if _writer_is_interpreter(head) and _WRITER_INTERP_DANGER_RE.search(match.group(3)):
+            return f"{head} heredoc invokes subprocess/system"
+    return None
+
+
+def _tokenize_writer(text: str) -> list[tuple[str, frozenset[str]]]:
+    """Tokenize POSIX shell text into (value, flags) without losing whether $ / globs / braces were active."""
+    tokens: list[tuple[str, frozenset[str]]] = []
+    n = len(text)
+    i = 0
+
+    def emit_op(op: str) -> None:
+        tokens.append((op, frozenset({"op"})))
+
+    while i < n:
+        ch = text[i]
+        if ch in " \t\r":
+            i += 1
+            continue
+        if ch == "\n":
+            emit_op(";")
+            i += 1
+            continue
+        if ch == "#":
+            nl = text.find("\n", i)
+            i = n if nl < 0 else nl
+            continue
+        if ch == "\\" and text[i + 1 : i + 2] == "\n":
+            i += 2
+            continue
+        if ch == "\\" and text[i + 1 : i + 3] == "\r\n":
+            i += 3
+            continue
+        # Process substitution <( ... ) / >( ... ) outside quotes.
+        if text.startswith("<(", i) or text.startswith(">(", i):
+            raise ValueError("process-sub")
+        # Multi-char operators
+        matched_op = next((op for op in ("<<-", "<<<", "<<", "<&", ">&", ">|", "&>>", "&>", ">>", "&&", "||", "|&", ";;") if text.startswith(op, i)), None)
+        if matched_op:
+            emit_op(matched_op)
+            i += len(matched_op)
+            continue
+        if ch in ";&|()<>":
+            emit_op(ch)
+            i += 1
+            continue
+
+        buf: list[str] = []
+        flags: set[str] = set()
+        quote: str | None = None
+        while i < n:
+            c = text[i]
+            if quote is None:
+                if c in " \t\r\n;&|()<>":
+                    break
+                if text.startswith("<(", i) or text.startswith(">(", i):
+                    raise ValueError("process-sub")
+                if c == "\\":
+                    nxt = text[i + 1 : i + 2]
+                    if nxt == "\n":
+                        i += 2
+                        continue
+                    if text[i + 1 : i + 3] == "\r\n":
+                        i += 3
+                        continue
+                    if not nxt:
+                        raise ValueError("trailing backslash")
+                    buf.append(nxt)
+                    i += 2
+                    continue
+                if c == "'":
+                    quote = "'"
+                    i += 1
+                    continue
+                if c == '"':
+                    quote = '"'
+                    i += 1
+                    continue
+                if text.startswith("$'", i):
+                    end = i + 2
+                    while end < n and text[end] != "'":
+                        end += 2 if text[end] == "\\" else 1
+                    if end >= n:
+                        raise ValueError("unclosed ANSI-C quote")
+                    flags.add("ansi")
+                    buf.append("__ANSI__")
+                    i = end + 1
+                    continue
+                if text.startswith("$(", i):
+                    end = _closing(text, i + 2)
+                    body = text[i + 2 : end - 1]
+                    if body.startswith("("):
+                        flags.add("arith")
+                    else:
+                        flags.add("subst")
+                    buf.append("__SUBST__")
+                    i = end
+                    continue
+                if c == "`":
+                    end = i + 1
+                    while end < n and text[end] != "`":
+                        end += 2 if text[end] == "\\" else 1
+                    if end >= n:
+                        raise ValueError("unclosed backquote")
+                    flags.add("subst")
+                    buf.append("__SUBST__")
+                    i = end + 1
+                    continue
+                if c == "$" and i + 1 < n and text[i + 1] not in " \t\r\n\"'":
+                    flags.add("var")
+                    buf.append(c)
+                    i += 1
+                    continue
+                if c in "*?[":
+                    flags.add("glob")
+                elif c == "{":
+                    # Brace expansion: {a,b} or {1..5} within one unquoted word (never across whitespace/newline).
+                    close = -1
+                    for k in range(i + 1, n):
+                        if text[k] in " \t\r\n;&|()<>":
+                            break
+                        if text[k] == "}":
+                            close = k
+                            break
+                    if close > i + 1 and ("," in text[i + 1 : close] or ".." in text[i + 1 : close]):
+                        flags.add("brace")
+                buf.append(c)
+                i += 1
+            elif quote == "'":
+                if c == "'":
+                    quote = None
+                    i += 1
+                else:
+                    buf.append(c)
+                    i += 1
+            else:  # quote == '"'
+                if c == "\\":
+                    nxt = text[i + 1 : i + 2]
+                    if nxt == "\n":
+                        i += 2
+                        continue
+                    if text[i + 1 : i + 3] == "\r\n":
+                        i += 3
+                        continue
+                    if not nxt:
+                        raise ValueError("unclosed double quote")
+                    buf.append(nxt if nxt in '$`"\\\n' else "\\" + nxt)
+                    i += 2
+                    continue
+                if c == '"':
+                    quote = None
+                    i += 1
+                    continue
+                if text.startswith("$(", i):
+                    end = _closing(text, i + 2)
+                    body = text[i + 2 : end - 1]
+                    flags.add("arith" if body.startswith("(") else "subst")
+                    buf.append("__SUBST__")
+                    i = end
+                    continue
+                if c == "`":
+                    end = i + 1
+                    while end < n and text[end] != "`":
+                        end += 2 if text[end] == "\\" else 1
+                    if end >= n:
+                        raise ValueError("unclosed backquote")
+                    flags.add("subst")
+                    buf.append("__SUBST__")
+                    i = end + 1
+                    continue
+                if c == "$" and i + 1 < n and text[i + 1] not in ' \t\r\n"':
+                    flags.add("var")
+                buf.append(c)
+                i += 1
+        if quote is not None:
+            raise ValueError("unclosed quote")
+        tokens.append(("".join(buf), frozenset(flags)))
+    return tokens
+
+
+def _writer_unwrap_command(
+    words: list[tuple[str, frozenset[str]]],
+) -> tuple[list[tuple[str, frozenset[str]]], tuple[str, str] | None]:
+    """Unwrap sudo/env/command/timeout/xargs... in writer mode, flagging any dynamic wrapper payloads."""
+    while words:
+        tok, flags = words[0]
+        if flags & {"var", "subst", "ansi", "glob", "brace"}:
+            return words, None
+        head = Path(tok).name
+        if head not in _WRAPPER_ARGS:
+            break
+        value_options, positional = _WRAPPER_ARGS[head]
+        rest = words[1:]
+        idx = skipped = 0
+        while idx < len(rest):
+            wtok, wflags = rest[idx]
+            if head == "env" and wtok in {"-S", "--split-string"} and idx + 1 < len(rest):
+                if rest[idx + 1][1] & {"var", "subst", "ansi"}:
+                    return words, ("dynamic-command", "dynamic env -S argument")
+                idx += 2
+                continue
+            if head == "env" and wtok.startswith("--split-string="):
+                if wflags & {"var", "subst", "ansi"}:
+                    return words, ("dynamic-command", "dynamic env --split-string argument")
+                idx += 1
+                continue
+            if wtok in value_options:
+                idx += 2
+                continue
+            if wtok.startswith("-") or _ASSIGNMENT.fullmatch(wtok):
+                idx += 1
+                continue
+            if skipped < positional:
+                skipped += 1
+                idx += 1
+                continue
+            break
+        words = rest[idx:]
+    return words, None
+
+
+def _writer_check_git(args: list[tuple[str, frozenset[str]]]) -> tuple[str, str] | None:
+    """Enforce writer git rules: no -c alias.*, no dynamic subcommand/flags, and an allow-list of subcommands."""
+    i = 0
+    while i < len(args):
+        tok, flags = args[i]
+        if tok == "--":
+            i += 1
+            break
+        if not tok.startswith("-"):
+            break
+        if flags & {"var", "subst", "ansi", "glob", "brace"}:
+            return ("dynamic-command", f"dynamic git option {tok!r}")
+        if tok == "-c" and i + 1 < len(args):
+            if args[i + 1][0].lower().startswith("alias."):
+                return ("alias", "git -c alias.* is forbidden for writers")
+            i += 2
+            continue
+        if len(tok) > 2 and tok.startswith("-c") and not tok.startswith("--"):
+            if tok[2:].lower().startswith("alias."):
+                return ("alias", "git -c alias.* is forbidden for writers")
+            i += 1
+            continue
+        if tok == "--config-env" and i + 1 < len(args):
+            if args[i + 1][0].lower().startswith("alias."):
+                return ("alias", "git --config-env alias.* is forbidden for writers")
+            i += 2
+            continue
+        if tok.startswith("--config-env=") and tok[len("--config-env="):].lower().startswith("alias."):
+            return ("alias", "git --config-env alias.* is forbidden for writers")
+        if "=" in tok or (tok.startswith("-C") and tok != "-C" and not tok.startswith("--")):
+            i += 1
+            continue
+        i += 2 if tok in _GIT_GLOBAL_VALUE else 1
+
+    if i >= len(args):
+        return None
+    sub_tok, sub_flags = args[i]
+    if sub_flags & {"var", "subst", "ansi", "glob", "brace"} or sub_tok.startswith("="):
+        return ("dynamic-command", f"dynamic git subcommand {sub_tok!r}")
+    rest = [t for t, _ in args[i + 1 :]]
+    if sub_tok == "config" and any(a.lower().startswith("alias.") for a in rest):
+        return ("alias", "git config alias.* is forbidden for writers")
+    if sub_tok not in WRITER_GIT_ALLOWED:
+        return ("git-subcommand", f"git {sub_tok} is not on the writer allow-list")
+    return None
+
+
+def _writer_scan_error(cmd: str, push_scans: tuple[str, ...]) -> tuple[str, str] | None:
+    """Return (kind, detail) when a writer command is unreadable or uses a disallowed git subcommand."""
+    interp_heredoc = _writer_interpreter_heredoc_error(cmd)
+    if interp_heredoc:
+        return ("interpreter-body", interp_heredoc)
+
+    for scan in push_scans:
+        try:
+            tokens = _tokenize_writer(scan)
+        except ValueError as exc:
+            if str(exc) == "process-sub":
+                return ("dynamic-command", "process substitution <(...) or >(...) is unreadable")
+            return ("parse-failure", str(exc))
+
+        # Function definition `name() ...`: word immediately followed by `(` and `)`.
+        for idx in range(len(tokens) - 2):
+            if "op" not in tokens[idx][1] and tokens[idx + 1] == ("(", frozenset({"op"})) and tokens[idx + 2] == (")", frozenset({"op"})):
+                return ("alias", f"shell function definition {tokens[idx][0]!r}() is forbidden")
+
+        segments: list[tuple[list[tuple[str, frozenset[str]]], bool, frozenset[str] | None]] = []
+        words: list[tuple[str, frozenset[str]]] = []
+        piped = False
+        here_flags: frozenset[str] | None = None
+        idx = 0
+        while idx <= len(tokens):
+            tok, flags = tokens[idx] if idx < len(tokens) else (";", frozenset({"op"}))
+            idx += 1
+            if "op" in flags and tok in _CONTROL_TOKENS:
+                if words:
+                    segments.append((words, piped, here_flags))
+                piped = tok in {"|", "|&"}
+                words, here_flags = [], None
+            elif "op" in flags and tok == "<<<":
+                if idx < len(tokens):
+                    here_flags = tokens[idx][1]
+                    idx += 1
+            elif "op" in flags and tok in _REDIRECT_TOKENS:
+                idx += 1  # redirect target
+            else:
+                words.append((tok, flags))
+
+        for seg_words, seg_piped, seg_here_flags in segments:
+            while seg_words and _ASSIGNMENT.fullmatch(seg_words[0][0]) and not (seg_words[0][1] & {"op"}):
+                seg_words = seg_words[1:]
+            if not seg_words:
+                continue
+            if seg_words[0][0] in {"for", "case"} and not seg_words[0][1]:
+                continue
+            while seg_words and seg_words[0][0] in _WRITER_SHELL_KW_PREFIX and not seg_words[0][1]:
+                seg_words = seg_words[1:]
+            if not seg_words or (seg_words[0][0] in _WRITER_SHELL_KW_ONLY and not seg_words[0][1]):
+                continue
+
+            seg_words, wrap_err = _writer_unwrap_command(seg_words)
+            if wrap_err:
+                return wrap_err
+            if not seg_words:
+                continue
+
+            cmd_tok, cmd_flags = seg_words[0]
+            head = Path(cmd_tok).name
+            if seg_piped and head in _WRITER_ALL_SHELLS and not (cmd_flags & {"var", "subst", "ansi", "glob", "brace"}):
+                return ("pipe-to-shell", f"piping into {head}")
+            if head in {"alias", "function"} and not cmd_flags:
+                return ("alias", f"{head} definitions are forbidden for writers")
+            if (cmd_flags & {"var", "subst", "ansi", "glob", "brace"}) or cmd_tok.startswith("="):
+                return ("dynamic-command", f"dynamic command word {cmd_tok!r}")
+            if _names_bb(cmd_tok):
+                non_flag_args = [(t, f) for t, f in seg_words[1:] if not t.startswith("-")]
+                for arg_tok, arg_flags in non_flag_args[:3]:
+                    if arg_flags & {"var", "subst", "ansi", "glob", "brace"}:
+                        return ("dynamic-command", f"dynamic bb argument {arg_tok!r}")
+
+            if head == "eval":
+                if any(f & {"var", "subst", "ansi"} for _, f in seg_words[1:]):
+                    return ("dynamic-command", "eval with a dynamic argument")
+            elif head in _WRITER_ALL_SHELLS:
+                if seg_here_flags and (seg_here_flags & {"var", "subst", "ansi"}):
+                    return ("dynamic-command", f"{head} <<< with a dynamic here-string")
+                ci = 1
+                while ci < len(seg_words):
+                    ft = seg_words[ci][0]
+                    if ft in {"--rcfile", "--init-file", "-o", "-O"}:
+                        ci += 2
+                        continue
+                    if re.fullmatch(r"-[a-zA-Z]*c[a-zA-Z]*", ft):
+                        if ci + 1 < len(seg_words) and (seg_words[ci + 1][1] & {"var", "subst", "ansi"}):
+                            return ("dynamic-command", f"{head} -c with a dynamic script")
+                        break
+                    if not ft.startswith("-") or ft == "--":
+                        break
+                    ci += 1
+            elif head in {"su", "sg"}:
+                for ci in range(1, len(seg_words) - 1):
+                    if seg_words[ci][0] in {"-c", "--command"} and (seg_words[ci + 1][1] & {"var", "subst", "ansi"}):
+                        return ("dynamic-command", f"{head} -c with a dynamic script")
+            elif head == "find":
+                for ci in range(1, len(seg_words) - 1):
+                    if seg_words[ci][0] in {"-exec", "-execdir", "-ok", "-okdir"}:
+                        exec_tok, exec_flags = seg_words[ci + 1]
+                        if (exec_flags & {"var", "subst", "ansi", "glob", "brace"}) or exec_tok.startswith("="):
+                            return ("dynamic-command", f"dynamic find -exec target {exec_tok!r}")
+            elif _writer_is_interpreter(head):
+                ci = 1
+                while ci < len(seg_words):
+                    arg = seg_words[ci][0]
+                    code: str | None = None
+                    if arg in {"-c", "-e", "--eval", "-p"} and ci + 1 < len(seg_words):
+                        code = seg_words[ci + 1][0]
+                        ci += 2
+                    elif arg.startswith("--eval="):
+                        code = arg.split("=", 1)[1]
+                        ci += 1
+                    elif arg.startswith(("-c", "-e")) and len(arg) > 2 and not arg.startswith("--"):
+                        code = arg[2:]
+                        ci += 1
+                    else:
+                        ci += 1
+                        continue
+                    if code is not None and (_WRITER_INTERP_DANGER_RE.search(code) or _WRITER_INTERP_GIT_PUSH_RE.search(code)):
+                        return ("interpreter-body", f"{head} inline body invokes subprocess/git push")
+            elif head == "git":
+                git_err = _writer_check_git(seg_words[1:])
+                if git_err:
+                    return git_err
+    return None
+
+
 def main() -> None:
     p = read_payload()
     if not isinstance(p, dict):
@@ -2791,6 +3239,8 @@ def main() -> None:
     try:
         push_scans = (stripped, *_executed_strings(stripped))
     except ValueError as exc:
+        if key in LANE_PILOT_WRITER_ROLES:
+            emit_deny(client, f"[lane-pilot-guard] unreadable: parse-failure ({exc})")
         # Valid bash that the Python lexer still cannot follow is checked as text below instead of refused whole.
         if isinstance(exc, _TooDeep) or not _bash_accepts(cmd):
             emit_deny(client, f"[agent-guard] shell command cannot be safely parsed: {exc}")
@@ -2805,6 +3255,17 @@ def main() -> None:
         # The claude launcher's --disallowedTools already denies gh release; providers without that flag meet this rule.
         if any(re.search(r"(?:^|[;&|(\n]\s*|\b(?:until|while|if|then|do|exec|command)\s+)(?:[^\s;&|()]+/)?gh\s+release\b", scan) for scan in push_scans):
             emit_deny(client, "[lane-pilot-guard] A writer is not granted gh release: releases are published by Lane Pilot or the owner.")
+        writer_err = _writer_scan_error(cmd, push_scans)
+        if writer_err:
+            err_kind, err_detail = writer_err
+            if err_kind == "git-subcommand":
+                danger = _worker_danger(push_scans)
+                if danger:
+                    refusal = _permit_or_ticket(p, cmd, danger, f"[lane-pilot-guard] {danger}: the call is dangerous for a worker even though the general rules let it pass.")
+                    if refusal:
+                        emit_deny(client, refusal)
+                emit_deny(client, f"[lane-pilot-guard] {err_detail}: writers may only run {', '.join(sorted(WRITER_GIT_ALLOWED))}.")
+            emit_deny(client, f"[lane-pilot-guard] unreadable: {err_kind} ({err_detail})")
         danger = _worker_danger(push_scans)
         if danger:
             refusal = _permit_or_ticket(p, cmd, danger, f"[lane-pilot-guard] {danger}: the call is dangerous for a worker even though the general rules let it pass.")

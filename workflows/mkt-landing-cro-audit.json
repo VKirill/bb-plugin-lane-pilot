@@ -34,6 +34,7 @@
     "cro",
     "landing"
   ],
+  "category": "marketing",
   "triggers": [
     "manual"
   ],

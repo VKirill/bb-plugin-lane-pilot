@@ -10,6 +10,7 @@ import { pathAnchorsOf } from "./floor";
 import { crossesLanguage, languageOf } from "./language";
 import { boostAskingSection, type MemoryScopeMode } from "./section-boost"; export type { MemoryScopeMode };
 import { doorOpens, lockQueryText, type DoorLock } from "./door-lock";
+import { notifyMemoryRecordCommitted } from "./commit-events";
 import type { MemoryAudience, MemoryCandidate, MemoryKind, MemoryRecord, MemorySearchEngine, MemoryStatus, MemoryTrust } from "./settings";
 
 /** The better-sqlite3 surface this package needs; BB's `bb.storage.database()` satisfies it. */
@@ -133,7 +134,7 @@ export function storeMemoryRecords(db: MemoryDatabase, input: StoreMemoryInput):
   const origin = input.origin ?? "maintainer";
   const trustOf = (entry: MemoryCandidate) => trust === "confirmed" && origin === "maintainer" && entry.kind === "note" && claimIsHedged(entry.content) ? "observed" : trust;
   trigramReady(db);
-  return db.transaction(() => {
+  const result = db.transaction(() => {
     const personalBot = input.personalBot ?? "";
     // The one door every write passes: rules and imports reach the corpus without the maintainer's parser.
     for (const entry of input.entries) { const issue = memoryContentIssue(entry.content); if (issue) throw new Error(issue); }
@@ -269,12 +270,10 @@ export function storeMemoryRecords(db: MemoryDatabase, input: StoreMemoryInput):
       .filter((row) => row.status === "active" || mine.has(row.id)).map(toRecord);
     return { records, insertedIds, evictedIds, archivedIds: [...archiveIds].filter((id) => pending.some((item) => item.id === id)), supersededIds, expiredIds, corroboratedIds: corroborate, heldIds, duplicateIds: door.duplicateIds };
   }).immediate();
+  if (result.insertedIds.length > 0 && !(db as { inTransaction?: boolean }).inTransaction) notifyMemoryRecordCommitted(db, { projectId: input.projectId, personalBot: input.personalBot ?? "", sourceSha256: input.sourceSha256, insertedIds: result.insertedIds, origin, now });
+  return result;
 }
-
-/**
- * The project's core as the store counts it against `coreBudget` (every active core record of the bot), and the
- * records a maintainer of this audience and section may name in `supersedes` (rules stay with the rules pipeline).
- */
+/** The project's core as the store counts it against `coreBudget` (every active core record of the bot), and the records a maintainer of this audience and section may name in `supersedes` (rules stay with the rules pipeline). */
 export function coreShelf(db: MemoryDatabase, projectId: string, personalBot: string, audience: MemoryAudience, scope: readonly string[] = []): { tokens: number; replaceable: Array<{ id: string; content: string }> } {
   const rows = db.prepare("SELECT id,audience,content,concepts_json,scope_json FROM lane_pilot_memory WHERE project_id=? AND personal_bot=? AND kind='core' AND status='active' ORDER BY created_at, id")
     .all(projectId, personalBot) as Array<Pick<Row, "id" | "audience" | "content" | "concepts_json"> & { scope_json: string | null }>;

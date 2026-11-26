@@ -1,14 +1,11 @@
 import { assertRunAdmission } from "../native-directory-guard";
 import { sha256Hex } from "@lane-pilot/kit";
-import { ATTEMPT_STATES, IllegalTransitionError, isLegalMove, OPERATIONAL_MOVES, TRANSITION_TABLE } from "../../contracts/state-machine";
+import { ATTEMPT_STATES, FINAL_ATTEMPT_STATES, IllegalTransitionError, isLegalMove, OPERATIONAL_MOVES, TRANSITION_TABLE } from "../../contracts/state-machine";
 import type { FailureCode } from "../../contracts/failure-class";
 import type { LanePilotDatabase } from "../database";
 
 /** One key naming the automaton's rule set (SMA ar_stamp): the states, the transition table and the operational moves, hashed. */
 export const TRANSITION_KEY: string = sha256Hex(JSON.stringify({ states: ATTEMPT_STATES, transitions: TRANSITION_TABLE, operational: OPERATIONAL_MOVES }));
-
-/** States an attempt never leaves: its work is merged, or the owner stopped it. */
-const FINAL_ATTEMPT_STATES = ["accepted", "canceled"] as const;
 
 const illegalTransitionLogs = new WeakMap<LanePilotDatabase, (message:string) => void>();
 /** Where a refused move of this database is reported (the plugin log); until set, the console. */

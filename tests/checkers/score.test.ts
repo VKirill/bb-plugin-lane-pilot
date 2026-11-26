@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { CRITIC_BAR, CRITIC_MIN_SAMPLE, buildScorecard, decideCodeCritic, renderScorecard, type ResultRow } from "../../src/rooms/checkers/score";
-import type { CheckerId, DefectClass, Outcome } from "../../src/rooms/checkers/types";
+import { CRITIC_BAR, CRITIC_MIN_SAMPLE, buildScorecard, decideCodeCritic, renderScorecard, type ResultRow } from "../../src/rooms/checkers/models/score";
+import type { CheckerId, DefectClass, Outcome } from "../../src/rooms/checkers/models/types";
 
 let n = 0;
 const row = (defectClass: DefectClass | "control", checker: CheckerId, outcome: Outcome, extra: Partial<ResultRow> = {}): ResultRow => {

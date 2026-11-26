@@ -17,7 +17,7 @@ const EXEMPT = new Set([
   "src/rooms/contracts/native-hook-sources.ts", "src/rooms/contracts/native-opencode-sources.ts", "src/rooms/contracts/session-hook-source.ts",
   "src/rooms/sma-map/contracts.ts", "src/rooms/sma-map/entries.ts", "src/rooms/sma-map/graph.ts",
   "packages/i18n/src/i18n.ts", "packages/i18n/src/i18n-fields.ts",
-  "src/rooms/migrations.ts",
+  "src/rooms/migrations.ts", "src/rooms/legacy-migrations.ts",
 ]);
 
 const walk = (dir: string): string[] => readdirSync(dir).flatMap((name) => {

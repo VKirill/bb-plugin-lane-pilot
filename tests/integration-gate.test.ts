@@ -1,13 +1,13 @@
 import { mkdtempSync, readFileSync, rmSync, writeFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { addRoad, getRoad, listRoad } from "../src/rooms/lead/server/road";
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { addRoad, getRoad, listRoad } from "../src/rooms/lead/server";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
-import { extractFailingFiles, extractStaticImports, isFileRelatedToTask, findCulpritByFiles, formatFixTurnPrompt, IntegrationGateRunner, allFailuresAreTimeouts, buildRecheckGateCommand } from "../src/rooms/verification/server/integration-gate"
+import { extractFailingFiles, extractStaticImports, findCulpritByFiles, formatFixTurnPrompt, IntegrationGateRunner, allFailuresAreTimeouts, buildRecheckGateCommand } from "../src/rooms/verification/server/services/integration-gate"
 import { parseIntegrationGateSettings } from "../src/rooms/contracts/integration-gate";
-import { openDatabase, createTask, saveStageReceipt, saveProjectSetting } from "../src/rooms/plugin-db";
-import * as hostHandlers from "../src/rooms/host-worker/host-handlers";
+import { openDatabase, saveProjectSetting } from "../src/rooms/plugin-db";
+import * as hostHandlers from "../src/rooms/host-worker";
 import type { ServerCore } from "../src/rooms/contracts/server";
 import type { Services } from "../server";
 

@@ -8,26 +8,31 @@ import {
   type Workflow,
 } from "@lane-pilot/workflow-engine";
 import { builtinWorkflow } from "../../src/rooms/workflow/builtin";
-import { workflowCategory } from "../../src/rooms/workflow/categories";
-import { buildWorkflowExport, exportMarkdown, type WorkflowExportEntry } from "../../src/rooms/workflow/workflow-export";
+import { workflowCategory } from "../../src/rooms/workflow/models/categories";
+import { buildWorkflowExport, exportMarkdown, type WorkflowExportEntry } from "../../src/rooms/workflow/models/workflow-export";
 import { codes, workflow } from "./fixtures";
 
 describe("workflow categories", () => {
   it("puts every built-in graph on a shelf by its id and tags", () => {
     const of = (id: string) => workflowCategory(JSON.parse(readFileSync(`workflows/${readdirSync("workflows").find((f) => f === `${id}.json`)}`, "utf8")));
-    expect([of("seo-page"), of("seo-ai-visibility"), of("mkt-project-intake"), of("mkt-direct-search-campaign"), of("lp.plan"), of("lead-tick"), of("sp-specialist-tick"), of("lp.specialist-eval"), of("lp.curriculum-ingest"), of("invoice-send"), of("ins.post"), of("social-post"), of("roblox-asset"), of("macos-routine"), of("quality-loop"), of("issue-quick")])
-      .toEqual(["seo", "seo", "marketing", "marketing", "service", "service", "service", "service", "service", "business", "research", "content", "games", "routines", "code", "code"]);
+    expect([of("seo-page"), of("seo-ai-visibility"), of("mkt-project-intake"), of("mkt-direct-search-campaign"), of("lp.plan"), of("lead-tick"), of("sp-specialist-tick"), of("invoice-send"), of("ins.post"), of("social-post"), of("roblox-asset"), of("macos-routine"), of("quality-loop"), of("issue-quick")])
+      .toEqual(["seo", "seo", "marketing", "marketing", "service", "service", "service", "business", "research", "content", "games", "routines", "code", "code"]);
     expect(workflowCategory({ id: "site-flow", category: { id: "websites", label: { en: "Websites & Design", ru: "Сайты и дизайн" } } })).toBe("websites");
     expect(workflowCategory({ id: "client-thing" })).toBe("code");
   });
 
-  it("keeps built-in graphs without category unchanged and preserves definitionSha256 across serialization", () => {
+  it("preserves absent category on uncategorized graphs and preserves definitionSha256 across serialization", () => {
+    const uncategorized = loadWorkflow(workflow({ id: "uncategorized-demo" }));
+    expect(uncategorized.ok).toBe(true);
+    if (!uncategorized.ok) throw new Error("expected uncategorized-demo to load");
+    expect("category" in uncategorized.workflow).toBe(false);
+    expect(uncategorized.workflow.category).toBeUndefined();
+
     const raw = JSON.parse(readFileSync("workflows/seo-page.json", "utf8")) as Record<string, unknown>;
     const loaded = loadWorkflow(raw, { resolve: builtinWorkflow });
     expect(loaded.ok).toBe(true);
     if (!loaded.ok) throw new Error("expected seo-page to load");
-    expect("category" in loaded.workflow).toBe(false);
-    expect(loaded.workflow.category).toBeUndefined();
+    expect(loaded.workflow.category).toEqual({ id: "seo" });
 
     const roundTripped = loadWorkflow(JSON.parse(JSON.stringify(loaded.workflow)), { resolve: builtinWorkflow });
     expect(roundTripped.ok).toBe(true);

@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cadenceAllowsToday, codeDocsVerdict, docsCadence, docsFactsKey, DOCS_PAUSE_AFTER_MS, DOCS_QUIET_AFTER_MS, fallbackDocsVerdict, type DocsWorthinessFacts } from "../../src/rooms/docs/docs-worthiness";
-import { createSerialQueue } from "../../src/rooms/docs/server/docs-nightly";
+import { cadenceAllowsToday, codeDocsVerdict, docsCadence, docsFactsKey, DOCS_PAUSE_AFTER_MS, DOCS_QUIET_AFTER_MS, fallbackDocsVerdict, type DocsWorthinessFacts } from "../../src/rooms/docs/models";
 
 const facts = (over: Partial<DocsWorthinessFacts>): DocsWorthinessFacts => ({
   status: "ready", trackedFiles: 100, codeFiles: 0, testFiles: 0, contentFiles: 0, languages: [], commits30d: 5, manifests: [], deploy: false, docsPages: 0, ...over,
@@ -37,20 +36,5 @@ describe("docs worthiness", () => {
     expect(cadenceAllowsToday("weekly", "2026-10-05")).toBe(true);
     expect(cadenceAllowsToday("weekly", "2026-10-06")).toBe(false);
     expect(cadenceAllowsToday("paused", "2026-10-05")).toBe(false);
-  });
-
-  it("runs queued passes one at a time in order, past a failure", async () => {
-    const queue = createSerialQueue();
-    const log: string[] = [];
-    let running = 0, peak = 0;
-    const pass = (name: string, fail = false) => queue(async () => {
-      running++; peak = Math.max(peak, running); log.push(`start ${name}`);
-      await new Promise((resolve) => setTimeout(resolve, 5));
-      log.push(`end ${name}`); running--;
-      if (fail) throw new Error(name);
-    });
-    await Promise.allSettled([pass("a"), pass("b", true), pass("c")]);
-    expect(peak).toBe(1);
-    expect(log).toEqual(["start a", "end a", "start b", "end b", "start c", "end c"]);
   });
 });

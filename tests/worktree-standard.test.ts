@@ -9,15 +9,13 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { createCore } from "../src/rooms/core/server/core";
 import { openDatabase } from "../src/rooms/plugin-db";
-import { sweepWorktreeClasses } from "../src/rooms/verification/worktree-sweep";
-import { integrateWorktree, removeLaneWorktree } from "../src/rooms/verification/git-integrate";
-import { deleteBranchIfMerged, laneWorktreeTarget, mergedAnywhere, repoFolderName } from "../src/rooms/verification/git-integrate/worktree-layout";
-import { sweepLaneWorktrees } from "../src/rooms/verification/worktree-janitor";
-import { gitCreateWorktree, gitRemoveWorktree, worktreeJanitor } from "../src/rooms/host-worker/host-handlers";
-import { CLEANUP_ITEM_PREFIX, dailyPassInputs, runDailyWorktreePass } from "../src/rooms/stability/server/worktree-daily-pass";
+import { sweepWorktreeClasses } from "../src/rooms/worktree/worktree-sweep";
+import { deleteBranchIfMerged, integrateWorktree, laneWorktreeTarget, mergedAnywhere, removeLaneWorktree, repoFolderName } from "../src/rooms/worktree";
+import { gitCreateWorktree, gitRemoveWorktree, worktreeJanitor } from "../src/rooms/host-worker";
+import { CLEANUP_ITEM_PREFIX, dailyPassInputs, runDailyWorktreePass } from "../src/rooms/stability/server";
 import { registerWorktree } from "../src/rooms/storage";
-import { SYSTEM_SCHEDULES, ensureSystemSchedules } from "../src/rooms/schedule/server/system-schedules";
-import { normalizeSchedule } from "../src/rooms/schedule/model";
+import { SYSTEM_SCHEDULES, ensureSystemSchedules } from "../src/rooms/schedule/server/services/system-schedules";
+import { normalizeSchedule } from "../src/rooms/schedule/models/schedule";
 
 vi.setConfig({ testTimeout: 120_000 });
 
@@ -83,8 +81,8 @@ describe("worktree layout", () => {
     const fresh = add(join(laneRoot, "app", "lpattempt_new3"), "lane/lpattempt_new3");
     commit(fresh, "fresh.txt");
     git(base, "merge", "-q", "--squash", "lane/lpattempt_new3"); git(base, "commit", "-qm", "squash new3");
-    const hourly = await sweepLaneWorktrees({ root: laneRoot, protectedPaths: new Set(), graceMs: 0, tmpPrefixes: [] });
-    expect(hourly.removed).toEqual([fresh]);
+    const hourly = await sweepWorktreeClasses({ laneRoot, folders: [], bbEnvPaths: [], bbEnvs: [], protectedPaths: new Set(), abandonedPaths: new Set(), registryPaths: [], maxAgeMs: 0, youngMs: 0 });
+    expect(hourly.removed.map((r) => r.path)).toEqual([fresh]);
     expect(branches(base, "lane/lpattempt_new3")).toBe("");
   });
 });
@@ -395,10 +393,10 @@ describe("the cleanup is on the schedule board", () => {
       kv: { get: async (key: string) => kv.get(key) ?? null, set: async (key: string, value: unknown) => { kv.set(key, value); } },
       log: () => undefined,
     };
-    expect(await ensureSystemSchedules(deps)).toEqual(["worktree-cleanup-hourly", "worktree-cleanup-daily"]);
+    expect(await ensureSystemSchedules(deps)).toEqual(["worktree-cleanup-hourly", "worktree-cleanup-daily", "owner-push", "daily-report"]);
     expect(await ensureSystemSchedules(deps)).toEqual([]);
     rows.splice(1, 1);
     expect(await ensureSystemSchedules(deps)).toEqual([]);
-    expect(rows.map((row) => row.created_by)).toEqual(["system:worktree-cleanup-hourly"]);
+    expect(rows.map((row) => row.created_by)).toEqual(["system:worktree-cleanup-hourly", "system:owner-push", "system:daily-report"]);
   });
 });

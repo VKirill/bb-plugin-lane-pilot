@@ -4,7 +4,8 @@ import { dirname, join } from "node:path";
 import { TARGET_SHA, UPSTREAM_REPO } from "../runs";
 import { managedEngineDir, resolveHome } from "@lane-pilot/kit";
 import { spawnAsync } from "@lane-pilot/kit";
-import { assessEngineCapabilities, inspectEngineCapabilities } from "./capabilities";
+import { assessEngineCapabilities } from "./models/capabilities";
+import { inspectEngineCapabilities } from "./capabilities";
 
 export type UpstreamReady = {
   path: string;

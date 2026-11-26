@@ -1,6 +1,5 @@
 /** The strings of the automation area (schedule board, calendar, create forms). Merged into the plugin dictionaries by i18n.ts. */
 export const scheduleEn = {
-  tabSchedule: "Automation",
   navSchedule: "Schedule",
   schHelp: "Tasks Lane Pilot runs by itself: a chain, an errand for an agent, or a script on a machine, once or on a schedule.",
   schHelpAll: "All scheduled tasks of every project.",
@@ -156,7 +155,6 @@ export const scheduleEn = {
   schCostPerRun: "≈ ${usd} per run (average of {n})",
   schCostPrice: "No cost recorded yet. Price: ${in} in / ${out} out per 1M tokens.",
   schCostUnknown: "Cost unknown: this model has no price in the table.",
-  schCostScript: "A script costs no tokens.",
   schRunModel: "Model: {model}",
   schRunCost: "Cost: ≈ ${usd}",
   schRunCostUnknown: "Cost: unknown",
@@ -186,7 +184,6 @@ export const scheduleEn = {
 } as const;
 
 export const scheduleRu: { [K in keyof typeof scheduleEn]: string } = {
-  tabSchedule: "Автоматизация",
   navSchedule: "Расписание",
   schHelp: "Задачи, которые Lane Pilot выполняет сам: граф, поручение агенту или скрипт на машине, один раз или по расписанию.",
   schHelpAll: "Все запланированные задачи всех проектов.",
@@ -342,7 +339,6 @@ export const scheduleRu: { [K in keyof typeof scheduleEn]: string } = {
   schCostPerRun: "≈ ${usd} за запуск (среднее по {n})",
   schCostPrice: "Стоимость запусков пока неизвестна. Цена: ${in} за 1M входных / ${out} за 1M выходных токенов.",
   schCostUnknown: "Стоимость неизвестна: у этой модели нет цены в таблице.",
-  schCostScript: "Скрипт не тратит токены.",
   schRunModel: "Модель: {model}",
   schRunCost: "Стоимость: ≈ ${usd}",
   schRunCostUnknown: "Стоимость: неизвестно",

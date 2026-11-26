@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { readCheckRun } from "../../src/rooms/tasks/server/check-reading";
+import { readCheckRun } from "../../src/rooms/tasks/server";
 
 // One reading for the writer's check, the replay, the post-merge check and the integration gate (Astra's recheck of 0.1.336, P1).
 describe("readCheckRun", () => {

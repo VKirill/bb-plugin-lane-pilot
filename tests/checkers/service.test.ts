@@ -3,10 +3,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { createCheckers, runCheckersCli } from "../../src/rooms/checkers/api";
-import type { CommandRun, ModelPort, Subject, VerificationSession } from "../../src/rooms/checkers/checkers";
+import { createCheckers, runCheckersCli } from "../../src/rooms/checkers/server";
+import type { CommandRun, ModelPort, Subject, VerificationSession } from "../../src/rooms/checkers/server/services/checkers";
 import { buildFixture, type Fixture } from "../../src/rooms/checkers/fixture";
-import { runScore } from "../../src/rooms/checkers/service";
+import { runScore } from "../../src/rooms/checkers/server/services/score-service";
 import { openDatabase } from "../../src/rooms/plugin-db";
 
 /** A stand-in for the clone: a check fails when the written files hold what a planted defect leaves behind. */

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { directTestMatches, importLinkedTests, suggestTests, testHintLine } from "../../src/rooms/verification/test-hint";
+import { directTestMatches, importLinkedTests, suggestTests, testHintLine } from "../../src/rooms/verification/models/test-hint";
 
 const repo = [
   "src/rooms/writer/log-trim.ts",

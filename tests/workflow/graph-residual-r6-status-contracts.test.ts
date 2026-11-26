@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { finding, firstInput, out, pathOf, task } from "./chain-helpers";
+import { finding, out, pathOf, task } from "./chain-helpers";
 import { chainStore, runSim } from "./chain-harness";
 
 /**

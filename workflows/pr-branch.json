@@ -8,6 +8,7 @@
     "en": "Makes a review branch without the planning commits: the phase's code commits cherry-picked onto the base, .agents/planning and .agents/phases left out, so the reviewer sees only the product change.",
     "ru": "Делает ветку для ревью без коммитов планирования: кодовые коммиты фазы переносятся на базу, .agents/planning и .agents/phases остаются вне, ревьюер видит только изменение продукта."
   },
+  "category": "ops",
   "examples": {
     "ru": [
       "Сделай ветку для PR без файлов планирования",

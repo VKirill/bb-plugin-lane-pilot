@@ -12,8 +12,7 @@ sources:
   - packages/models/src/role-specs.ts
   - src/rooms/contracts/helper-context.ts
   - src/rooms/contracts/codex-lean.ts
-  - src/rooms/schedule/errand-kinds.ts
-  - packages/council/src/roles.ts
+  - src/rooms/schedule/models/errand-kinds.ts
 ---
 
 # Агенты Lane Pilot: кто есть кто
@@ -86,14 +85,7 @@ sources:
 | Охотник ночной стены | `wall-hunter` | агент | память и обучение | GPT-6.1 Sol high |
 | Аналитик стены | `wall-analyst` | агент | память и обучение | строка `analyst` |
 | Быстрый судья Jev | `jev` | судья | память и обучение | сервис System One (ключ `TYPESAFE_API_KEY` или `OPENLUX_API_KEY`), модели не выбираются |
-| Участник совета | `council-seat` | агент | совет | по месту: `council.<место>.*` |
-| Директор по продукту | `council.product` | агент | совет | по настройкам места, иначе пары из выбора стадий |
-| Директор по спросу | `council.demand` | агент | совет | то же |
-| Директор по аудитории | `council.audience` | агент | совет | то же |
-| Скептик | `council.skeptic` | агент | совет | то же |
-| Директор по росту | `council.growth` | агент | совет | то же |
-| UX-директор | `council.ux` | агент | совет | то же |
-| Председатель совета | `council.chair` | агент | совет | GPT-6.1 Sol high (строка `council`) |
+| Судья анализа | `council` | судья | проверки | GPT-6.1 Sol high |
 | Дизайнер | `design-lead` | агент | специалисты | Claude Sonnet 5.5 high |
 | Копирайтер | `copy-lead` | агент | специалисты | Claude Sonnet 5.5 high |
 | SEO-специалист | `seo-specialist` | агент | специалисты | Claude Sonnet 5.5 high |
@@ -139,7 +131,6 @@ sources:
 | `project-life-maintainer` | `project-life` | роль треда летописца после приёмки |
 | `project-onboarder` | `onboarder` | запись агента в выборе агента |
 | `night-reviewer` | `auditor` | стадия ночного ревью |
-| `council` | `council.chair` | строка `role_model.council` |
 | `worker` | `analyst` | старое имя шага графа |
 | `specialist:<сотрудник>` | строка сотрудника (`design-lead` и далее, 12 штук) | роль треда сотрудника: `specialist:design-lead`, `specialist:copy-lead`, `specialist:seo-specialist`, `specialist:growth-marketer`, `specialist:tavily`, `specialist:video-lead`, `specialist:3d-artist`, `specialist:game-dev`, `specialist:social-manager`, `specialist:billing-assistant`, `specialist:visual-artist`, `specialist:macos-operator` |
 
@@ -207,24 +198,7 @@ sources:
 | Редактор обвязки (`harness-editor`) | Переписывает файлы, которые получают исполнители. | Граф `lp.harness-edit` по ночному расписанию обвязки. | Системе обучения. | Файлы в `.lane-pilot/harness-edit`. |
 | Сборщик обвязки (`harness-composer`) | Собирает обвязку из частей. | Тот же ночной цикл. | Системе обучения. | Файлы в той же временной папке. |
 | Аналитик обвязки (`harness-reflection`) | Разбирает испытание обвязки. | Граф `lp.harness-reflect`. | Системе обучения. | Ничего. |
-| Охотник ночной стены (`wall-hunter`) | Переигрывает настоящие попытки и ищет один вид дефектов. | Граф `lp.wall-hunt` ночью. | Ночному циклу. | Ничего. |
-| Аналитик стены (`wall-analyst`) | Разбирает находки охотника. | Тот же граф. | Охотнику. | Ничего. |
 | Быстрый судья Jev (`jev`), **судья, не агент** | Короткие суждения: маршрут, выбор исполнителя, класс сбоя и другие. Без ключа действует кодовое правило. | По запросу кода, без сессий. | Коду, который спросил. | Ничего. |
-
-## Совет
-
-Совет директоров: места на разных моделях спорят о продуктовом или деловом вопросе. Запуск: `lane_pilot_council` или `bb lane-pilot council`. Режим `room` (по умолчанию) или `rounds`, 1–6 кругов. Модель места берётся из `council.<место>.provider|model|reasoning_effort`, иначе из пар выбора стадий.
-
-| Имя (id) | Что делает | Когда запускается | Кому подчиняется | Что может менять |
-|---|---|---|---|---|
-| Участник совета (`council-seat`) | Общая роль любого места: профиль доступа без плагинов, навыков и MCP. | Каждое место совета. | Председателю. | Ничего. |
-| Директор по продукту (`council.product`) | Судит идеи по тому, насколько проще и ценнее путь пользователя. | Совет (по умолчанию в составе). | Председателю. | Ничего. |
-| Директор по спросу (`council.demand`) | Группирует запросы и сигналы в намерения, находит пробелы. | Совет (по умолчанию в составе). | Председателю. | Ничего. |
-| Директор по аудитории (`council.audience`) | Язык и ситуация клиента, конкретные правки текстов и оффера. | Совет (по умолчанию в составе). | Председателю. | Ничего. |
-| Скептик (`council.skeptic`) | Ищет, почему предложение не сработает; в раунде говорит последним. | Совет (по умолчанию в составе). | Председателю. | Ничего. |
-| Директор по росту (`council.growth`) | Воронка и повторные покупки. | Совет по запросу. | Председателю. | Ничего. |
-| UX-директор (`council.ux`) | Проходит продукт как пользователь. | Совет по запросу. | Председателю. | Ничего. |
-| Председатель совета (`council.chair`) | Взвешивает мнения, пишет страницу решения в `docs/decisions` и передаёт следующие задачи. | В конце каждого совета. | Владельцу. | Страницу решения. |
 
 ## Специалисты
 
@@ -249,26 +223,12 @@ sources:
 
 ## Ночные графы
 
-Эти графы запускает расписание, а не человек; каждый, кроме отмеченных, стартует агентов. Полные описания и узлы: [граф-атлас](atlas.md), правила, что ночь может решать сама: [night-policy.md](night-policy.md).
+Эти графы запускает расписание, а не человек; каждый, кроме отмеченных, стартует агентов. Полные описания и узлы: [граф-атлас](atlas.md).
 
 | Граф | Имя в интерфейсе | Кто стартует | Агенты |
 |---|---|---|---|
-| `lp.docs-night` | Ночные документы одного раздела | расписание `docs-nightly` (`docs.hour`) | Автор документов |
-| `lp.docs-maintenance` | Документы после принятой задачи | слияние (`docs-maintenance`) | Автор документов |
-| `lp.rules-scan` | Разбор ошибок и правил | расписание `rules-nightly` | Анализатор правил |
-| `lp.rules-ask` | Вопрос анализатору правил | обучение, по вопросу | Анализатор правил |
-| `lp.wall-hunt` | Охота на стену | ночная стена (`wall`) | Охотник ночной стены, Аналитик стены |
-| `lp.episodes` | Часовое обогащение эпизодов поручений | расписание `episodes-hourly` | Аналитик эпизодов |
-| `lp.graph-evolve-nightly` | Ночная эволюция графов воркфлоу | расписание `graph-evolve-nightly` и ручной запуск | Быстрый разборщик чатов, Аналитик разбора чатов, Планировщик эволюции графов, Критик плана эволюции, Синтезатор графов эволюции, Аудитор эволюции графов |
-| `lp.harness-edit` | Правка обвязки исполнителя | расписание `harness-nightly` | Редактор обвязки |
-| `lp.harness-reflect` | Разбор испытания обвязки | расписание `harness-nightly` | Аналитик обвязки |
-| `lp.self-repair` | Самолечение одного вида сбоя | самолечение (каждые 15 минут) | Инженер самолечения |
-| `lp.specialist-eval` | Экзамен специалиста: слепые вопросы и исторический реплей | экзамен специалиста | Аудитор цели, специалисты |
 | `sp-specialist-tick` | Автономная смена специалиста | смена специалиста | Аудитор цели, SEO-специалист, Маркетолог роста |
 | `lead-tick` | Тик Штурмана | расписание Штурмана | Обход Штурмана |
-| `lp.curriculum-ingest` | Загрузка курсов: из транскриптов в атомы и shadow-вопросы | по запросу | Аналитик, Аудитор цели, Маркетолог роста |
-| `lp.critic-edit` | Правка критика | расписание `critic-edit-monthly` | своей роли нет: действия графа `lp.critic_edit_*` |
-| `lp.pm-replay` | Ночной прогон PM-сценариев | расписание `pm-replay-nightly` | своей роли нет: сценарии гонит действие графа `lp.pm_replay_run` |
 
 ## Служебные
 
@@ -317,7 +277,7 @@ sources:
 | Аудитор цели (`auditor`) | GPT-6.1 Sol high; запас Claude Sonnet 5.5 high, `acp-antigravity` Claude Opus 5.5 high | Sol high |
 | Проверяющий в браузере (`browser-qa`) | Claude Sonnet 5.5 medium; запас GPT-6.1 Terra medium, Gemini 3.8 Flash (9router) medium | Sonnet 5.5 medium |
 | Критик кода (`code-critic`) | `acp-antigravity` `gemini-3.8-flash` medium; запас GPT-6.1 Sol high, Claude Sonnet 5.5 high | Gemini 3.8 Flash (9router) medium |
-| Председатель совета (`council`) | GPT-6.1 Sol high; запас Claude Opus 5.5 high, Gemini 3.8 Flash (9router) medium | Sol high |
+| Судья анализа (`council`) | GPT-6.1 Sol high; запас Claude Opus 5.5 high, Gemini 3.8 Flash (9router) medium | Sol high |
 | Отладчик (`debugger`) | GPT-6.1 Sol high | Sol high |
 | Дизайнер (`design-lead`) | Claude Opus 5.5 high | Sonnet 5.5 high |
 | Автор документов (`docs-maintainer`) | Gemini 3.8 Flash (9router) high; запас GPT-6 Luna high, GLM-5.3 Flash high | GPT-6 Luna high |
@@ -345,8 +305,7 @@ sources:
 | Строки таблицы «роль → модель» и встроенные модели | `packages/models/src/role-models.ts` (`ROLE_TABLE`), `packages/models/src/role-specs.ts` |
 | Что загружает помощник каждой роли | `src/rooms/contracts/helper-context.ts` (`ROLE_PROFILES`) |
 | Профили Codex | `src/rooms/contracts/codex-lean.ts` (`CODEX_LEAN_PROFILES`) |
-| Виды поручений | `src/rooms/schedule/errand-kinds.ts` (`ERRAND_KINDS`) |
-| Места совета | `packages/council/src/roles.ts`, `packages/models/src/role-specs.ts` (`COUNCIL_SEATS`) |
-| Экраны, где имя видно | команда «Модели по ролям» (`src/rooms/pages/role-models.tsx`), список помощников (`src/rooms/native-agent/ui/helper-threads.tsx`), страница совета, выбор агента в композере |
-| Команды | `bb lane-pilot council-seats <project-id>` показывает `name` каждого места; `bb lane-pilot agents list` показывает русское имя стоковых агентов |
+| Виды поручений | `src/rooms/schedule/models/errand-kinds.ts` (`ERRAND_KINDS`) |
+| Экраны, где имя видно | команда «Модели по ролям» (`src/rooms/pages/ui/role-models.tsx`), список помощников (`src/rooms/native-agent/ui/helper-threads.tsx`), выбор агента в композере |
+| Команды | `bb lane-pilot agents list` показывает русское имя стоковых агентов |
 | Проверка | `tests/agents-doc.test.ts` |

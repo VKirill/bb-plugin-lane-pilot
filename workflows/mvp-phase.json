@@ -8,6 +8,7 @@
     "en": "Starts a phase from a user story: who, what, why, the MVP cut as one vertical slice and what stays out; a plan critic checks the splitting before the story is handed to planning.",
     "ru": "Начинает фазу из пользовательской истории: кто, что, зачем, MVP-срез одним вертикальным куском и что остаётся за бортом; критик плана проверяет нарезку до передачи в планирование."
   },
+  "category": "planning",
   "status": "published",
   "quality_mode": {
     "default": "standard"

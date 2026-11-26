@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { DRILL_SANDBOX_PROJECT_IDS, isSandboxProjectName } from "../src/rooms/contracts";
-import { isSandboxProject } from "../src/rooms/owner-waiting/items";
-import { isTestProject } from "../src/rooms/pages/service-projects";
+import { isSandboxProject } from "../src/rooms/owner-waiting";
+import { isTestProject } from "../src/rooms/pages/ui/service-projects";
 
 describe("one sandbox rule", () => {
   it("owner-waiting knows every drill sandbox id before the first canary tick", () => {

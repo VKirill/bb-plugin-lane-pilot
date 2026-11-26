@@ -140,7 +140,8 @@ export async function runDraftTest(ports: DraftTestPorts, workflow: Workflow, te
     const fields = outputFields(ctx.workflow, ctx.node) as Field[] | "unknown";
     return { ...(fields === "unknown" ? {} : { ...sampleOutput(fields, ctx.nodeId), ...contractSample("produces" in ctx.node ? ctx.node.produces : undefined, fields) }), ...(given ?? {}) };
   };
-  const stubFor = (key: string): NodeExecutor => ({ reentrant: true, run: async (ctx: StepContext) => ({ output: answer(ctx, key) }) });
+  // A stub spends nothing, and says so: an unmeasured cost would park a step under the graph's USD cap.
+  const stubFor = (key: string): NodeExecutor => ({ reentrant: true, run: async (ctx: StepContext) => ({ output: answer(ctx, key), usage: { tokens: 0, costUsd: 0, costState: "measured" } }) });
   // The executors of the workflow and of every workflow it calls, however deep: a child run needs its own agents, tasks and actions answered too.
   const keys = new Set<string>();
   const seen = new Set<string>();

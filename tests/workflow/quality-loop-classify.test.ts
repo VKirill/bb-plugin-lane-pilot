@@ -2,8 +2,8 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
 import { openDatabase } from "../../src/rooms/plugin-db";
 import { WorkflowEngine } from "@lane-pilot/workflow-engine";
-import { registerQualityLoopClassifyExecutor } from "../../src/rooms/workflow/server/workflow-classify";
-import type { WorkflowAgents } from "../../src/rooms/workflow/server/workflow-agent";
+import { registerQualityLoopClassifyExecutor } from "../../src/rooms/workflow/server/services/workflow-classify";
+import type { WorkflowAgents } from "../../src/rooms/workflow/server/services/workflow-agent";
 
 function setupClassifyTest() {
   const { bb } = createFakePluginHost({ pluginId: "lane-pilot" });

@@ -1,0 +1,477 @@
+{
+  "kind": "lane-pilot-sandbox-drill",
+  "date": "2026-11-15",
+  "stamp": "20261115-155817",
+  "startedAt": 1794747498010,
+  "finishedAt": 1794747674943,
+  "durationSec": 177,
+  "project": "proj_3tb652jpsi",
+  "runId": null,
+  "pmThread": null,
+  "sourceThread": null,
+  "mode": "full",
+  "scenarioNames": [
+    "sma_r06",
+    "sma_core"
+  ],
+  "commit": "be42a313198e43f3e500337ca9c680d5cff43a1f",
+  "skipped": {},
+  "result": "pass",
+  "problems": [],
+  "checks": null,
+  "tasks": null,
+  "dispatch": null,
+  "scenarios": [
+    {
+      "name": "sma_r06",
+      "result": "pass",
+      "problems": [],
+      "proved": [
+        {
+          "node": "n530",
+          "ok": true,
+          "detail": "machine notice read as None; a command-shaped turn read as small by rules, graphs started 0, phases opened 0"
+        },
+        {
+          "node": "n534",
+          "ok": true,
+          "detail": "«run tests», «sma green», «window», an injected phrase -> ['quick', 'full', 'browser', 'quick']"
+        },
+        {
+          "node": "n535",
+          "ok": true,
+          "detail": "the check tool picked ['quick', 'full', 'browser']; commands that ran on the host ['npm test']; full -> 'run the run-goal check of this run: ever', browser -> 'use lane_pilot_helpers {action:\"browser_'"
+        },
+        {
+          "node": "n536",
+          "ok": true,
+          "detail": "host runs 3 for four calls; repeat deduplicated=True state passed, changed request deduplicated=None, late repeat None"
+        },
+        {
+          "node": "n537",
+          "ok": true,
+          "detail": "--clearenv True, HOME the scratch folder True, protected roots {'.git': '--ro-bind same', '.agents': '--ro-bind same', '.cls': '--ro-bind same'}"
+        },
+        {
+          "node": "n538",
+          "ok": true,
+          "detail": "measure {command 'npm test', folder /ws, expected exit 0, limit 30 s, exit 1}; a changed protected root passes in a throwaway copy=False, in the live checkout=True"
+        },
+        {
+          "node": "n539",
+          "ok": true,
+          "detail": "stop -> {'stopped': True, 'idMatches': True, 'state': 'stopped', 'stoppedCommand': 'npm test --watch', 'passed': False, 'cancelled': True, 'rereadState': 'stopped'}"
+        },
+        {
+          "node": "n541",
+          "ok": true,
+          "detail": "queue events handed on [{'name': 'message.dispatched', 'id': 'queued_1'}], messages sent in answer 0"
+        },
+        {
+          "node": "n542",
+          "ok": true,
+          "detail": "two chats read «Что с задачей?» as ['question', 'question'] by ['rules', 'rules'], graphs started 0; the same with a second line: small"
+        },
+        {
+          "node": "n543",
+          "ok": true,
+          "detail": "PM chat ['Another task', 'Fix the door'], running ['Fix the door:running'], an unknown thread None"
+        },
+        {
+          "node": "n545",
+          "ok": true,
+          "detail": "writer chat is writer of thr_pm and sees ['Fix the door']; the running task is marked live ['Fix the door:running']"
+        },
+        {
+          "node": "n544",
+          "ok": true,
+          "detail": "stage discussion, messages to the PM chat 1, the step starts 'Phase ph_00615b0c12 «Sums» — stage 1, discussion. Goal: skip empty cells\\nWrite the discuss'"
+        },
+        {
+          "node": "n547",
+          "ok": true,
+          "detail": "queued -> canceled, running attempt stopped threads ['thr_w'] -> canceled, missing -> missing; a check ends with its turn stopped_by_turn_stop, the other thread's check kept running True"
+        },
+        {
+          "node": "n548",
+          "ok": true,
+          "detail": "three hand-overs of one key and one of another started ['lead:road1', 'lead:road2'], all answered {'started': True, 'via': 'issue-quick', 'id': 'wf_1'}"
+        },
+        {
+          "node": "n550",
+          "ok": true,
+          "detail": "question kinds ['failure', 'limit', 'history', 'stage', 'board', 'free', 'failure']; the tool named ['board', 'limit', 'history', 'failure', 'free']"
+        },
+        {
+          "node": "n553",
+          "ok": true,
+          "detail": "a blocked attempt «npm test exit 1» is class 'task', model calls 0"
+        },
+        {
+          "node": "n554",
+          "ok": true,
+          "detail": "spend 18 tokens over ['claude', 'gpt'], from the spend book (lane_pilot_token_daily, 2026-11-15)"
+        },
+        {
+          "node": "n555",
+          "ok": true,
+          "detail": "board counts {'blocked': 1, 'accepted': 1}, 2 tasks, from the run board (lane_pilot_attempt, run run1)"
+        },
+        {
+          "node": "n556",
+          "ok": true,
+          "detail": "finished attempts ['T1', 'T2'], from the finished attempts (lane_pilot_attempt)"
+        },
+        {
+          "node": "n551",
+          "ok": true,
+          "detail": "«да!», «Да, запускай», «да, но поменяй кнопку», «yes please» -> [True, True, False, False]"
+        },
+        {
+          "node": "n552",
+          "ok": true,
+          "detail": "a yes from another thread -> \"the owner's yes counts only in the phase's own chat (thr_pm); record it from that conversation, not this one\", words recorded 0; from the own chat ['planning:yes:true']"
+        },
+        {
+          "node": "n558",
+          "ok": true,
+          "detail": "plan hash cf0a829f03e3…; another key -> 'the plan changed since it was shown (sho', a 25 h old proposal with a 24 h term -> 'the proposal is stale (submitted 25 h ag', the keyed yes signed ['yes:true']"
+        },
+        {
+          "node": "n533",
+          "ok": true,
+          "detail": "local migrated core DB @3656bae7e: «starting» --stop.requested--> stopping@1794747507957; late run.started applied=False, row still stopping; stop.settled -> idle@1794747507989"
+        },
+        {
+          "node": "n560",
+          "ok": true,
+          "detail": "local drill @3656bae7e: stream-disconnected -> 1 threads.retry (requestId creq_n560_retry, sendAt 1794747598492); decline -> not-retryable, explain parity True; stand-in SDK/tmpdir, no real turn"
+        },
+        {
+          "node": "n559",
+          "ok": true,
+          "detail": "graph starts ['lead:road1', 'lead:road2'] for three hand-overs of one key and one of another; repeats answered {'started': True, 'via': 'issue-quick', 'id': 'wf_1'}"
+        },
+        {
+          "node": "n561",
+          "ok": true,
+          "detail": "PM chat: on -> composerBoundary, sensitive -> composerBoundarySensitive, off -> None; a writer chat -> None"
+        },
+        {
+          "node": "n562",
+          "ok": true,
+          "detail": "a contract without owns_paths refused=True; an output outside owns_paths -> ['area_missing', 'output_unowned'], inside -> ['area_missing'], in never_touch -> ['area_missing', 'output_never_touch']"
+        },
+        {
+          "node": "n563",
+          "ok": true,
+          "detail": "cursor rows ['thr_pm'] total 14, open attempts 0, receipts 0"
+        },
+        {
+          "node": "n565",
+          "ok": true,
+          "detail": "the PM spawned on provider pm-prov model pm-model (the writer's is wr-prov), inputs explicit/explicit"
+        },
+        {
+          "node": "n566",
+          "ok": true,
+          "detail": "an ordinary chat enables a PM (role pm); a writer thread -> 'Lane Pilot writer threads cannot activate a PM', spawns 0"
+        },
+        {
+          "node": "n571",
+          "ok": true,
+          "detail": "the compiled profile dev-orchestrator rode the spawn with its tools=True; without the capability the spawn stopped before a run row (runs 0, spawns 0)"
+        },
+        {
+          "node": "n567",
+          "ok": true,
+          "detail": "cap 3: cut at item 4 -> 'предел ходов: 3'; the cap changed to 5 mid-turn did not move that turn, the next turn cut at its 6th item -> 'предел ходов: 5'"
+        },
+        {
+          "node": "n574",
+          "ok": true,
+          "detail": "4-minute limit: nothing at 3 min [], cut at 5 min ['thr_pm']; named: ['ход не уложился в 4 минут', 'пустой ответ', 'отказ вендора: quota exceeded', 'отказ вендора: model overloaded']"
+        },
+        {
+          "node": "n568",
+          "ok": true,
+          "detail": "board tasks ['t1 accepted', 't2 ?']; with a live phase it starts 'Board now:\\nPhase ph_b051ff75f2 — discussion. Order of work: 1) read th'; an unknown run -> None"
+        },
+        {
+          "node": "n569",
+          "ok": true,
+          "detail": "absolute, .., nested .. and NUL paths -> {'lane_pilot_read_path_escaped_workspace'}, host reads before the good path 0, root /work/proj, a writer caller -> 'caller is not a Lane Pilot PM thread'"
+        },
+        {
+          "node": "n570",
+          "ok": true,
+          "detail": "thread A sees ['ta'] of runA, thread B ['tb'], an unknown thread []"
+        },
+        {
+          "node": "n575",
+          "ok": true,
+          "detail": "a turn chosen on opus that ran on sonnet is booked ['sonnet:14'] and named ['opus->sonnet:14']; without a fallback []"
+        },
+        {
+          "node": "n576",
+          "ok": true,
+          "detail": "fetch before read True, behind 3, read at fresh time True; a failed fetch -> fetched False, board still ['x1']"
+        },
+        {
+          "node": "n577",
+          "ok": true,
+          "detail": "broken output -> [] (threw False); lines before the marker ignored -> ['a']; two items ['a:ready', 'b:open']"
+        },
+        {
+          "node": "n578",
+          "ok": true,
+          "detail": "ready lines issuable (13 points and a done dependency): ['1', '5']"
+        },
+        {
+          "node": "n579",
+          "ok": true,
+          "detail": "a line without an estimate is listed to estimate ['2'], not issued"
+        },
+        {
+          "node": "n580",
+          "ok": true,
+          "detail": "a 14-point line is listed to decompose ['3'], not issued"
+        },
+        {
+          "node": "n581",
+          "ok": true,
+          "detail": "a line with an open dependency is blocked ['4']; one whose dependency is done is issuable"
+        },
+        {
+          "node": "n582",
+          "ok": true,
+          "detail": "the task message: 'Lane Pilot: из беклога проекта готова к работе задача «Item 1» (1, оценка 13, приоритет high).'"
+        },
+        {
+          "node": "n583",
+          "ok": true,
+          "detail": "queue order high-2, high-8, medium-5, low-1 -> ['3', '2', '4', '1']"
+        },
+        {
+          "node": "n594",
+          "ok": true,
+          "detail": "«починить экспорт CSV в отчётах» matches ['csv-export'] (a done line and a new logo are not); a stranger phrase []"
+        },
+        {
+          "node": "n584",
+          "ok": true,
+          "detail": "120-minute interval: 60 min ago -> scanned False, 121 min ago -> scanned True and the time written True; default hour: 61 min -> True, 59 min -> False"
+        },
+        {
+          "node": "n585",
+          "ok": true,
+          "detail": "no home -> {'ids': ['in-checkout'], 'readFrom': 'checkout'}, a planning home -> {'ids': ['in-home'], 'readFrom': 'home'}; the message names 'Описание и подход: /home/owner/plans/.agents/todos/items/1/AGENT.md и README.md.'"
+        },
+        {
+          "node": "n586",
+          "ok": true,
+          "detail": "status line -> 'id: t-door\\nstatus: done\\nestimate: 2\\n', a repeat already, two status lines refused untouched; a queued task not_accepted, a line of another PM not_issued, the accepted own closed"
+        },
+        {
+          "node": "n587",
+          "ok": true,
+          "detail": "written to .agents/phases/ph_3d4b2afba0/BOOK.md: the question line, then the answer line «q1: ru»; answered ['q1:ru:owner']"
+        },
+        {
+          "node": "n588",
+          "ok": true,
+          "detail": "a parked writer's entry in the attempt QA.md: 'A: open — the writer is parked here', the answer appended 'A (PM): ru'; an old-layout task wrote /.agents/plans/items/t-old/QA.md"
+        },
+        {
+          "node": "n589",
+          "ok": true,
+          "detail": "kinds ['checkpoint', 'budget', 'pause', 'decision', 'worker'], each carried unchanged, a stored payload without a kind reads as decision, an unknown kind -> None"
+        },
+        {
+          "node": "n591",
+          "ok": true,
+          "detail": "free text with options: {'checkpoint': True, 'budget': False, 'pause': False, 'decision': True, 'worker': True}; with nothing to pick: {'checkpoint': True, 'budget': True, 'pause': True, 'decision': True, 'worker': True}"
+        },
+        {
+          "node": "n590",
+          "ok": true,
+          "detail": "a key, a token and a private key -> {'secret_shaped_answer'}, text sent to the writer thread ''; a plain answer sent"
+        },
+        {
+          "node": "n592",
+          "ok": true,
+          "detail": "title 'Кнопка оплаты в корзине', promise ['Then покупатель видел итог до оплаты']; with a path in the phrase the title is 'Починить экспорт отчётов'; a long title cut to 60"
+        },
+        {
+          "node": "n593",
+          "ok": true,
+          "detail": "the engine ran ['analyst', 'done'] on the analyst's stub, questions out {'questions': [{'task': 'reports', 'question': 'в каком формате?'}]}, nodes that write or make tasks 0 (the model step itself was not run)"
+        },
+        {
+          "node": "n595",
+          "ok": true,
+          "detail": "waves from depends_on {'c': 3, 'a': 1, 'b': 2, 'd': 1, 'e': 2}, lanes {'c': 'write', 'a': 'write', 'b': 'write', 'd': 'docs', 'e': 'check'}, a cycle gets wave 0 {'x': 0, 'y': 0, 'z': 1}"
+        },
+        {
+          "node": "n529",
+          "ok": true,
+          "detail": "thread thr_5ezad5s6cs: 18 events, seq 1..18, strictly increasing True"
+        },
+        {
+          "node": "n549",
+          "ok": true,
+          "detail": "thread thr_5ezad5s6cs: request seq 1 (client/turn/requested) before the turn started at seq 8; input stored True"
+        }
+      ],
+      "checked": 59
+    },
+    {
+      "name": "sma_core",
+      "result": "pass",
+      "problems": [],
+      "proved": [
+        {
+          "node": "n673",
+          "ok": true,
+          "detail": "unknown plugin 404 {'ok': False, 'error': 'unknown plugin \"sma-core-nobody\"'}; undeclared method of lane-pilot 404 unknown_method; body «{» 400; declared bb--git branches 200 ok=True"
+        },
+        {
+          "node": "n680",
+          "ok": true,
+          "detail": "6 refusals (no key, Basic, empty Bearer, unknown routes, a made-up enroll code): statuses [401], distinct bodies 1 = {\"code\":\"unauthorized\",\"message\":\"Unauthorized\"}"
+        },
+        {
+          "node": "n531",
+          "ok": true,
+          "detail": "archived=maybe 400; 201 ids 400 «threadIds must be at most 200 comma-separated thread IDs»; 200 ids 200 []; limit=-1 400; one project, limit 3 -> 3 rows all in it True"
+        },
+        {
+          "node": "n694",
+          "ok": true,
+          "detail": "487 skills in stores ['bb-user', 'plugin', 'provider-project', 'provider-user']: 315 of the machine library all under .bb/skills True, 6 of the project all under its folders True"
+        },
+        {
+          "node": "n1352",
+          "ok": true,
+          "detail": "first 6 oldest first True; limit 3 offset 3 equals rows 4-6 of the first six True; project filter 9 rows all of it; status filter 20 rows all ready"
+        },
+        {
+          "node": "n723",
+          "ok": true,
+          "detail": "ids proj_smyrb6z9ji proj_wjcy5e8vet; names stored 'Sma-Core-Drill-ab85eff2' / 'Sma-Core-Drill-ab85eff2'; canonical source paths /tmp/lp-drill-hriknd23/project-a / /tmp/lp-drill-hriknd23/project-b stored '/tmp/lp-drill-hriknd23/project-a' / '/tmp/lp-drill-hriknd23/project-b'; host binding host_rwrxyi"
+        },
+        {
+          "node": "n724",
+          "ok": true,
+          "detail": "ids proj_smyrb6z9ji proj_wjcy5e8vet: first keeps its id True, takes the new name True, sources unchanged True; second untouched: same id True, name still True, sources unchanged True"
+        },
+        {
+          "node": "n728",
+          "ok": true,
+          "detail": "25 projects with sources, each has exactly one default source True; a project created with an explicit --root source and no explicit default selection: explicit --root source on each, no explicit default selection; isDefault True / True, one source each True"
+        },
+        {
+          "node": "n1514",
+          "ok": true,
+          "detail": "lane-pilot 0.1.575 runs from path · ~/Documents/BB-сервис/plugins/bb-plugin-lane-pilot: source = that folder True, folder holds bb-plugin-lane-pilot 0.1.575 True, status running"
+        },
+        {
+          "node": "n775",
+          "ok": true,
+          "detail": "GET app.js: 200, 5269818 B, text/javascript; charset=utf-8, sha256 == hub dist True; GET app.css: 200, 658616 B, text/css; charset=utf-8, sha256 == hub dist True; assets/package.json: 404"
+        },
+        {
+          "node": "n1499",
+          "ok": true,
+          "detail": "local fake-host LP registration (not the deployed core): lane_pilot_route names 95 graphs by id, the catalog has 95 ready ones (same list True); fragments or pipelines named: none of 28"
+        },
+        {
+          "node": "n1748",
+          "ok": true,
+          "detail": "local disposable fixture build @3656bae7e — not the deployed build: two successful builds swapped js/css/meta whole (markers, css bytes changed, meta builtWith.bbVersion 0.9.0→0.9.1, pluginId stable); the third build was refused (rejected=True) and did not swap — all 3 served files stayed byte-ident"
+        }
+      ],
+      "notProved": {
+        "n533": "the persisted lifecycle wrapper is observed locally by sma_r06 on sibling PRIMARY; this HTTP scene does not prove a deployed process stop",
+        "n1748": "internal: buildPluginApp runs when a plugin is built or installed; an installed plugin's dist shows a result, not this function, and the hub builds nothing on request",
+        "n615": "internal: resolveClaudeCodeExecutable runs when a Claude Code session starts on a machine (the maintenance status uses resolveExecutablePath, n616); needs a session start on the Windows machine",
+        "n1305": "internal: stageInjectedSkillSources runs inside the host daemon when a session starts; its catalog is not readable from outside",
+        "n837": "internal: AttachmentPreview is a window component; a person sees it in the browser, the scene has no browser",
+        "n896": "internal: the accounts window of the account-pool plugin (component); plugin disabled on the hub",
+        "n897": "internal: the account row of the account-pool plugin (component); plugin disabled on the hub",
+        "n898": "internal: the add-account menu of the account-pool plugin (component); plugin disabled on the hub",
+        "n596": "plugin account-pool is disabled on the hub (bb plugin list); enabling it is the owner's decision, and its add writes a real account record",
+        "n597": "plugin account-pool is disabled on the hub; the launch environment of a thread is not readable from outside either",
+        "n598": "plugin account-pool is disabled on the hub; the account secret file is on the machine, not readable through bb",
+        "n812": "plugin account-pool is disabled on the hub; its add command writes a real account into the owner's pool",
+        "n1677": "plugin provider-usage is disabled on the hub (selectUsageResources is its code); `bb settings usage` is n1412's source",
+        "n676": "needs a core-side fixture: the lockout of the owner pairing burns the code of the real owner login; a scene may not make wrong attempts against it",
+        "n707": "needs a core-side fixture: minting an invitation writes a real one-shot key into the hub's key table",
+        "n708": "needs a core-side fixture: the book holds real invitations; a one-shot code can be seen only by minting and spending one",
+        "n709": "needs a core-side fixture: a joining machine creates a machine row and credentials; removal must follow it",
+        "n711": "needs a core-side fixture: the register is written only by an accepted enrollment (the refused one writes nothing, but that is half of the card)",
+        "n712": "needs a core-side fixture: letting a machine go revokes credentials of a real machine; only a machine the scene enrolled itself may be removed",
+        "n693": "needs a core-side fixture: the library write needs a skill of the library to write to (there is no create command); only the refusal of a stale revision is readable",
+        "n1351": "needs a core-side fixture: a new workspace appears when a thread is spawned with a worktree environment, which costs a model turn and has no create command",
+        "n612": "needs a core-side fixture: the sandbox and approval policy ride a real Codex turn (a model call)",
+        "n532": "diagnostic only: title «» 400 invalid_request; empty body 400 invalid_request; good title on no thread 404 thread_not_found; 61-char title 404. 404 proves no persisted rename or transcript invariant; the 60-char card effect stays unproved",
+        "n540": "diagnostic only: empty body 400; input [] 400; no mode 400; whole body on no thread 404 thread_not_found; 9 KB body 404. Dropped fields and the 8 KB card effect are not observable through a 404; stays unproved",
+        "n725": "a nested group is empty (sandbox 43, nogit 0): project separation cannot be shown non-vacuously",
+        "n1412": "diagnostic only: `bb settings usage` bypasses the mapped usage-source wrapper — 3 providers read upstream, 3 with figures, 0 failed reads; wrapper execution, the accountKey transform and the failed-read branch remain unobserved",
+        "n616": "3 machines answered, 9 programs found, 0 absent: the negative half (a name that is not there) needs a machine that lacks a provider program",
+        "n469": "owner login is off on the hub (BB_VK_OWNER_AUTH unset; `bb owner status`: login off, no key paired): the link and its ticket trade cannot be seen there",
+        "n660": "the sandbox and approval policy the core derives are not readable through bb: `bb thread show` and `bb thread options` of a Codex thread carry neither, and its event log records only the requested permissionMode, never the sandbox or approval policy sent to Codex",
+        "n470": "no plugin is in status error on the hub (85 listed): a start failure cannot be made without changing the hub's plugins"
+      },
+      "coreBuild": "0.49.0-vk.7",
+      "hubUrl": true,
+      "projectFixture": {
+        "cleanup": [
+          {
+            "id": "proj_smyrb6z9ji",
+            "ownEmpty": true,
+            "deleted": true,
+            "gone": true
+          },
+          {
+            "id": "proj_wjcy5e8vet",
+            "ownEmpty": true,
+            "deleted": true,
+            "gone": true
+          }
+        ],
+        "cleanupOk": true
+      }
+    }
+  ],
+  "seen": null,
+  "judged": [
+    {
+      "name": "sma_r06",
+      "verdict": "pass",
+      "evidence": [
+        "proved",
+        "checked"
+      ],
+      "why": ""
+    },
+    {
+      "name": "sma_core",
+      "verdict": "pass",
+      "evidence": [
+        "proved",
+        "notProved",
+        "coreBuild",
+        "hubUrl",
+        "projectFixture"
+      ],
+      "why": ""
+    }
+  ],
+  "series": {
+    "verdict": "pass",
+    "missing": [],
+    "failed": [],
+    "skipped": []
+  }
+}

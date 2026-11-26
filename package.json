@@ -1,6 +1,6 @@
 {
   "name": "bb-plugin-lane-pilot",
-  "version": "0.1.609",
+  "version": "0.1.610",
   "type": "module",
   "engines": {
     "node": "^22.19.0 || ^24.0.0 || ^26.0.0",
@@ -94,10 +94,6 @@
     "check:composer-hook": "node scripts/check-composer-hook.mjs",
     "check:deps": "npx --yes dependency-cruiser@16 --config .dependency-cruiser.cjs --output-type err server.ts host.ts app.tsx src packages",
     "test:layout": "node tests/layout/run.mjs",
-    "sma:mutate": "node scripts/sma-mutate.mjs",
-    "sma:sibling": "npx tsx scripts/sma-sibling.ts",
-    "sma:facts": "npx tsx scripts/sma-hollow.ts && npx tsx scripts/sma-provenance.ts && node scripts/sma-contracts.mjs",
-    "sma:facts:check": "npx tsx scripts/sma-hollow.ts --check && npx tsx scripts/sma-provenance.ts --check && node scripts/sma-contracts.mjs --check",
     "check": "npm test && npm run typecheck && npm run build && npm run test:layout",
     "gate": "npx tsx scripts/lp-ship.ts gate",
     "prepublishOnly": "npm run gate"

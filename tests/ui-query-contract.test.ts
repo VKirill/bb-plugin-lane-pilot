@@ -37,7 +37,7 @@ describe("uiQueryContract schemas and tags", () => {
     expect(method("work_graph_strips").tags!({} as never)).toEqual(["work-graph"]);
     expect(method("money_status").tags!({} as never)).toEqual(["money_status"]);
     expect(method("owner_waiting").tags!({} as never)).toEqual(["owner_waiting"]);
-    expect(method("world_version").tags!({} as never)).toEqual(["world_version"]);
+    expect(method("ui_version").tags!({} as never)).toEqual(["ui_version"]);
     // helper_thread_labels carries no tags: its ids are arbitrary helper threads, covered by helpers:<pm> of the parent read.
     expect(method("helper_thread_labels").tags).toBeUndefined();
   });
@@ -54,11 +54,11 @@ describe("uiQueryContract schemas and tags", () => {
     // work_graph_task: cells/stages/summary envelope; work_graph_strips: runId:taskId → strip record.
     expect(output("work_graph_task").safeParse({ cells: "no" }).success).toBe(false);
     expect(output("work_graph_strips").safeParse({ "r:t": { cells: [], summary: { returns: 0, seconds: null, costUsd: null, costState: null, models: [] } } }).success).toBe(true);
-    // money_status / owner_waiting / world_version: envelope fields typed, open payload allowed.
+    // money_status / owner_waiting / ui_version: envelope fields typed, open payload allowed.
     expect(output("money_status").safeParse({ monthUsd: "x" }).success).toBe(false);
     expect(output("money_status").safeParse({ monthUsd: 1.5, cap: null, left: null, extraField: { any: "json" } }).success).toBe(true);
     expect(output("owner_waiting").safeParse({ generatedAt: 1, items: "no" }).success).toBe(false);
-    expect(output("world_version").safeParse({ version: -1 }).success).toBe(false);
-    expect(output("world_version").safeParse({ version: 3 }).success).toBe(true);
+    expect(output("ui_version").safeParse({ version: -1 }).success).toBe(false);
+    expect(output("ui_version").safeParse({ version: 3 }).success).toBe(true);
   });
 });

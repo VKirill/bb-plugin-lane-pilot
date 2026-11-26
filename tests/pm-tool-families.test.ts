@@ -2,9 +2,9 @@ import { afterEach, describe, expect, it } from "vitest";
 import { z } from "zod";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import plugin from "../server";
-import { NATIVE_LP_BRIDGE_ARCHITECT_TOOLS, NATIVE_LP_BRIDGE_PM_TOOLS, NATIVE_LP_BRIDGE_TOOLS } from "../src/rooms/native-agent/native-session-hooks";
-import { PM_CORE_TOOLS, PM_TOOL_FAMILIES, foldedToolCall, foldedToolHome, rewriteFoldedToolNames } from "../src/rooms/platform/server/pm-tool-families";
-import { mountToolFamilies } from "../src/rooms/tools/server/tool-families";
+import { NATIVE_LP_BRIDGE_ARCHITECT_TOOLS, NATIVE_LP_BRIDGE_PM_TOOLS, NATIVE_LP_BRIDGE_TOOLS } from "../src/rooms/native-agent/models/bridge-tools";
+import { PM_CORE_TOOLS, PM_TOOL_FAMILIES, foldedToolCall, foldedToolHome, rewriteFoldedToolNames } from "../src/rooms/platform/models/pm-tool-families";
+import { mountToolFamilies } from "../src/rooms/tools/server/handlers/tool-families";
 import {registerObservedTool} from "../src/rooms/platform/server";
 
 // A compiled Claude Code profile holds at most 64 tools; the PM had 39 Lane Pilot tools next to 24 stock ones (audit round 4, P2-24).
@@ -25,7 +25,7 @@ describe("the PM's folded tool list", () => {
     const registered = harness.registrations.agentTools.map((tool) => tool.name);
     expect(NATIVE_LP_BRIDGE_PM_TOOLS.length).toBeLessThanOrEqual(31);
     expect(new Set(NATIVE_LP_BRIDGE_PM_TOOLS).size).toBe(NATIVE_LP_BRIDGE_PM_TOOLS.length);
-    expect([...NATIVE_LP_BRIDGE_PM_TOOLS].sort()).toEqual([...PM_CORE_TOOLS, ...Object.keys(PM_TOOL_FAMILIES), "lane_pilot_schedule", "lane_pilot_phase", "lane_pilot_queue", "lane_pilot_forge", "lane_pilot_facts", "lane_pilot_check", "lane_pilot_permit", "lane_pilot_tool_search"].sort());
+    expect([...NATIVE_LP_BRIDGE_PM_TOOLS].sort()).toEqual([...PM_CORE_TOOLS, ...Object.keys(PM_TOOL_FAMILIES), "lane_pilot_schedule", "lane_pilot_queue", "lane_pilot_facts", "lane_pilot_check", "lane_pilot_permit", "lane_pilot_tool_search"].sort());
     for (const name of NATIVE_LP_BRIDGE_PM_TOOLS) expect(registered, name).toContain(name);
     for (const name of NATIVE_LP_BRIDGE_TOOLS) expect(registered, name).toContain(name);
     // The old handlers stay registered under their old names for the roles that still name them.
@@ -135,9 +135,8 @@ describe("the PM's folded tool list", () => {
     expect(ask.matches[0]).toMatchObject({ tool: "lane_pilot_relay", action: "ask", formerName: "lane_pilot_ask" });
     const leftover = await search("set a reminder for later");
     expect(leftover.matches.some((match) => match.action === "remind" || match.formerName === "lane_pilot_remind")).toBe(false);
-    const lesson = await search("mcp__bb-bridge__lane_pilot_lesson");
-    expect(lesson.matches[0]).toMatchObject({ tool: "lane_pilot_memory", action: "lesson" });
-    expect((await search("council")).matches.map((match) => match.tool)).toContain("lane_pilot_council");
+    const memoryContext = await search("mcp__bb-bridge__lane_pilot_memory_context");
+    expect(memoryContext.matches[0]).toMatchObject({ tool: "lane_pilot_memory", action: "context" });
     expect((await search("dispatch")).matches[0]).toMatchObject({ tool: "lane_pilot_dispatch_writer" });
     const none = JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_tool_search", { query: "zzzqqq" }, ctx))) as { matches: unknown[]; available: string[] };
     expect(none.matches).toEqual([]);
@@ -146,7 +145,7 @@ describe("the PM's folded tool list", () => {
   });
 
   it("tells where an old name lives and rewrites old names in a text", () => {
-    expect(foldedToolHome("lane_pilot_council_say")).toEqual({ tool: "lane_pilot_council", action: "say" });
+    expect(foldedToolHome("lane_pilot_relay_list")).toEqual({ tool: "lane_pilot_relay", action: "list" });
     expect(foldedToolHome("lane_pilot_dispatch_writer")).toBeUndefined();
     expect(foldedToolCall("lane_pilot_remind")).toBeUndefined();
     expect(foldedToolCall("lane_pilot_ask")).toBe('lane_pilot_relay {action:"ask"}');

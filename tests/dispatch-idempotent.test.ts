@@ -2,8 +2,8 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { boundedReadCall } from "./helpers/bounded-read";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import plugin from "../server";
-import { DISPATCH_STAGES_PENDING } from "../src/rooms/runs/constants";
-import { recordStage } from "../src/rooms/runs/server/stage-records";
+import { DISPATCH_STAGES_PENDING } from "../src/rooms/runs";
+import { recordStage } from "../src/rooms/runs/server";
 import type { TaskV2 } from "../src/rooms/contracts";
 import {
   createAttempt, createRun, createTask, getAttempt, listAttemptsForTask, listStageReceipts, openDatabase,
@@ -145,7 +145,7 @@ describe("dispatch answers early and is idempotent", () => {
   });
 
   it("does not deduplicate a different contract sent under a different id", async () => {
-    const { db, harness, dispatch, releaseBase } = await setup();
+    const { harness, dispatch, releaseBase } = await setup();
     await dispatch();
     const other = await dispatch({ id:"suite-other", objective:"create something else entirely" });
     expect(other.deduplicated).toBeUndefined();

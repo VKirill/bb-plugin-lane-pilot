@@ -12,9 +12,9 @@ import type { PrototypeConfig, TaskV2 } from "../../src/rooms/contracts";
 import { createAttempt, createRun, createTask, listStageReceipts, openDatabase, savePrototypeConfig, saveTaskPlan, setAttemptWorkspace, setRunThread, transitionAttempt } from "../../src/rooms/plugin-db";
 import { createCore } from "../../src/rooms/core/server/core";
 import type { Services } from "../../server";
-import { recordStage } from "../../src/rooms/runs/server/stage-records";
-import { createReconcile } from "../../src/rooms/stability/server/reconcile";
-import { createWriterStart } from "../../src/rooms/writer/server/start";
+import { recordStage } from "../../src/rooms/runs/server";
+import { createReconcile } from "../../src/rooms/stability/server";
+import { createWriterStart } from "../../src/rooms/writer/server/services/start";
 
 const WORKSPACE = "/ws";
 const WORKTREE = "/wt/lpattempt_432e3386";

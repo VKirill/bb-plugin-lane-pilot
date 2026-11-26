@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import plugin from "../server";
 import type { PrototypeConfig, TaskV2 } from "../src/rooms/contracts";
 import { createAttempt, createRun, createTask, getAttempt, openDatabase, savePrototypeConfig, setRunThread, transitionAttempt } from "../src/rooms/plugin-db";
-import { START_STALL_MS, createWriterSpawn } from "../src/rooms/writer/server/spawn";
+import { START_STALL_MS, createWriterSpawn } from "../src/rooms/writer/server/services/spawn";
 
 const config: PrototypeConfig = {
   projectId:"P", hostId:"h", pmWorkspacePath:"/repo", writerWorkspacePath:"/repo",
@@ -39,9 +39,9 @@ function world(options:{ onBreaker?:boolean; providers?:unknown[]; spawn?:() => 
     } },
     effectiveProjectSettings:options.settings ?? (async () => { if (!options.onBreaker) stop(); return { values:{ "memory.enabled":false, "adoc.040":"auto" } }; }),
   };
-  const services = { providerBreaker:{ decide:() => { if (options.onBreaker) stop(); return options.onBreaker ? { allow:false, reason:"open" } : { allow:true }; } }, ruleScan:{ chainForRun:async () => [] },
-    ...(options.wakeFails ? { workflowEngine:{ poll:async () => { throw new Error("wake boom"); } } } : {}) };
-  const writer = createWriterSpawn(ctx as never, services as never);
+  const services = { providerBreaker:{ decide:() => { if (options.onBreaker) stop(); return options.onBreaker ? { allow:false, reason:"open" } : { allow:true }; } },
+    ...(options.wakeFails ? { workflowEngine:{ wake:async () => { throw new Error("wake boom"); } } } : {}) };
+  const writer = createWriterSpawn({ ...ctx, scopesForWorkspace: async () => [] } as never, services as never);
   const run = () => writer.spawnWriterAttempt({ projectId:"P", runId:"run", taskId:"t1", attemptId:"a1", config, task, plan:"write", pmThreadId:"pm" });
   const refused = () => db.prepare("SELECT from_state, to_state FROM lane_pilot_attempt_transition WHERE attempt_id='a1' AND refused=1").all();
   return { db, run, refused, stop, warnings };

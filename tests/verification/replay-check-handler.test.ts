@@ -11,7 +11,7 @@ vi.mock("../../src/rooms/verification/sandbox", async (importOriginal) => ({
   runSandboxedCommandOnHost: sandbox.run,
 }));
 
-const { gitIntegrate } = await import("../../src/rooms/host-worker/host-handlers");
+const { gitIntegrate } = await import("../../src/rooms/host-worker");
 
 describe("gitIntegrate with replayChecks (the host runs the task's checks in the sandbox after the replay)", () => {
   let base: string;

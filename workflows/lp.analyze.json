@@ -9,6 +9,7 @@
     "en": "Read-only analysis of the area with locked/free/deferred decisions, risks, scope verdict and confidence.",
     "ru": "Анализ области только на чтение - решения locked/free/deferred, риски, вердикт по объёму и уверенность."
   },
+  "category": "service",
   "inputs": {
     "goal": {
       "type": "string",
@@ -39,7 +40,7 @@
     "decisions": "Decision[]",
     "risks": "Risk[]",
     "scope_verdict": "small|medium|large|unknown",
-    "recommendation": "go|go_with_conditions|no_go",
+    "recommendation": "go|go_with_conditions|no_go|not_run",
     "confidence": "int",
     "open_questions": "string[]",
     "residual_risks": "string[]",
@@ -376,5 +377,8 @@
     }
   ],
   "status": "published",
-  "goal_check": "artifact"
+  "goal_check": "artifact",
+  "not_for": [
+    "analyze-code"
+  ]
 }

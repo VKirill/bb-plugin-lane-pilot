@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { criticAcrossFamilies, criticOffSpent, criticPairCandidates, pairApartFromWriter, roleSelection, type CriticCatalog } from "../src/rooms/critique/critic-pair";
+import { criticAcrossFamilies, criticOffSpent, criticPairCandidates, pairApartFromWriter, roleSelection, type CriticCatalog } from "../src/rooms/critique";
 
 const config = { pmProviderId: "claude-code", pmModel: "opus" };
 

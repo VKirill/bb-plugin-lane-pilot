@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseSpecialistResult, unreadableAnswer } from "../src/rooms/critique/specialist";
+import { parseSpecialistResult, unreadableAnswer } from "../src/rooms/critique";
 
 // magicseo T3.2 (2026-10-30): the reviewer answered rubric items, the parse threw, the task was blocked on the form alone.
 describe("a specialist answer that does not read", () => {

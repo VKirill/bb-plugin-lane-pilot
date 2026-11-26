@@ -3,7 +3,7 @@ import { expect, it, vi } from "vitest";
 import { taskV2Schema } from "../src/rooms/contracts";
 import { isEnvironmentCheckFailure } from "../src/rooms/contracts/failure-class";
 import { openDatabase } from "../src/rooms/plugin-db";
-import { createWriterFinish } from "../src/rooms/writer/server/finish";
+import { createWriterFinish } from "../src/rooms/writer/server/services/finish";
 
 const task = taskV2Schema.parse({
   schema_version: 2, id: "site-fix", title: "Fix the site", risk: "medium", lane: "writer", project_cwd: "/work/wt",

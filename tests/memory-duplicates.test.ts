@@ -2,8 +2,9 @@ import Database from "better-sqlite3";
 import { describe, expect, it } from "vitest";
 import { EMBED_DIM, dedupeProject, dropMemoryIndexes, duplicatePairs, duplicateWords, factsAgree, parseMemorySettings, searchMemoryRecords, storeMemoryRecords, storeVectors, textRelation, type MemoryCandidate } from "@lane-pilot/memory-core";
 import { migrations } from "../src/rooms/plugin-db";
-import { runMemoryImport } from "../src/rooms/memory/server/import";
-import { dedupeAllProjects, runMemoryDuplicatesCli } from "../src/rooms/memory/server/memory-duplicates-cli";
+import { runMemoryImport } from "../src/rooms/memory/server/services/import";
+import { dedupeAllProjects } from "../src/rooms/memory/server/services/memory-duplicates";
+import { runMemoryDuplicatesCli } from "../src/rooms/memory/server/handlers/memory-duplicates-cli";
 
 const LIMITS = { coreBudget: 9_999, noteBudget: 99_999, indexBudget: 99_999 };
 const fresh = () => { const db = new Database(":memory:"); for (const m of migrations) db.exec(m); return db; };

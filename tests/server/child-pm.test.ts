@@ -3,10 +3,10 @@ import { createFakePluginHost, makeMessageDispatchHookContext } from "@get-bb/pl
 import plugin from "../../server";
 import { createRun, findOpenNativeRun, getRun, getActivation, loadPrototypeConfig, openDatabase, setRunThread } from "../../src/rooms/plugin-db";
 import { listHandoffs } from "@lane-pilot/handoff";
-import { tokensFrom } from "../../src/rooms/native-agent/native-session";
-import { createRecipientResolver } from "../../src/rooms/native-agent/server/recipient";
-import { relayFor } from "../../src/rooms/relay/server/relay";
-import { finalizeNativeLaneBinding } from "../../src/rooms/native-agent/native-run";
+import { tokensFrom } from "../../src/rooms/native-agent/models/native-session";
+import { createRecipientResolver } from "../../src/rooms/native-agent/server/services/recipient";
+import { relayFor } from "../../src/rooms/relay/server/services/relay-runtime";
+import { finalizeNativeLaneBinding } from "../../src/rooms/native-agent/server/services/native-run";
 
 const projectId = "source", threadId = "parent", runId = "run-parent";
 let dispose: (() => Promise<void> | void) | undefined;

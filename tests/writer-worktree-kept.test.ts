@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { createRun, listOpenWorktrees, openDatabase, registerWorktree } from "../src/rooms/plugin-db";
-import { adoptLegacyWorktrees, ensureLegacyWorktreesAdopted, protectedWorktreePaths, reconcileWorktreeRegistry } from "../src/rooms/stability/server/worktree-janitor";
-import { writerLeftWorktree } from "../src/rooms/writer/server/left-worktree";
+import { adoptLegacyWorktrees, ensureLegacyWorktreesAdopted, protectedWorktreePaths, reconcileWorktreeRegistry } from "../src/rooms/stability/server";
+import { writerLeftWorktree } from "../src/rooms/writer/server/services/left-worktree";
 
 // magicseo T3.3 (2026-10-30): the writer blocked on a question, the reconcile removed its worktree 4 s later,
 // the reopened writer found no folder and moved itself to the main checkout.

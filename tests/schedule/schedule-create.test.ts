@@ -3,8 +3,8 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { WorkflowEngine, registerPureActions } from "@lane-pilot/workflow-engine";
 import { openDatabase } from "../../src/rooms/plugin-db";
 import {builtinWorkflow} from "../../src/rooms/workflow/builtin";
-import { registerAgentRoutineActions } from "../../src/rooms/schedule/server/schedule-agent-actions";
-import { parseMoment, wallClock } from "../../src/rooms/schedule/time";
+import { registerAgentRoutineActions } from "../../src/rooms/schedule/server/handlers/schedule-agent-actions";
+import { parseMoment, wallClock } from "../../src/rooms/schedule/models/time";
 
 /**
  * `schedule.create` through the real engine on telegram-send: a send_at puts one run of the graph on the board (the owner's zone, the run's
@@ -23,7 +23,7 @@ function world(save?: Save) {
   const engine = new WorkflowEngine({ db, harnessVersion: "test" });
   registerPureActions(engine);
   const sends: unknown[] = [];
-  engine.register("agent", { reentrant: true, run: async (c: any) => { sends.push(c.input.with); return { output: { status: "sent", message_id: "m-1", message_url: "", reason: "", handoff: "sent" } }; } });
+  engine.register("agent", { reentrant: true, run: async (c: any) => { sends.push(c.input.with); return { output: { status: "sent", message_id: "m-1", message_url: "", reason: "", handoff: "sent" }, usage: { tokens: 15, costUsd: 0, costState: "measured" as const } }; } });
   engine.register("telegram.send_rich", { reentrant: true, run: async () => ({ output: { message_id: "", status: "ok" } }) });
   engine.register("telegram.send_file", { reentrant: true, run: async () => ({ output: { status: "failed", message_id: "", message_url: "", reason: "not in this test" } }) });
   registerAgentRoutineActions(engine, ctx, services);

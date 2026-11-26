@@ -6,11 +6,15 @@ import { STAGE_IDS, STAGE_PROOF, acceptanceProofGap, isAdvisoryProof, stageProof
 import type { StageId } from "@lane-pilot/contracts";
 import {builtinWorkflow} from "../src/rooms/workflow/builtin";
 import {LP_TASK_PIPELINE} from "../src/rooms/contracts";
-import { candidateCitations, demoteUncited, inputCitations } from "../src/rooms/critique/citations";
-import { parseCritique } from "../src/rooms/critique/critique";
-import { parseCodeCritique } from "../src/rooms/critique/code-critique";
-import { parsePmReadResult } from "../src/rooms/critique/pm-read";
-import { parseSpecialistResult } from "../src/rooms/critique/specialist";
+import {
+  candidateCitations,
+  demoteUncited,
+  inputCitations,
+  parseCodeCritique,
+  parseCritique,
+  parsePmReadResult,
+  parseSpecialistResult,
+} from "../src/rooms/critique";
 
 const ADVISORY: StageId[] = ["pm-read", "plan-critique", "specialist-review", "code-critique"];
 
@@ -68,14 +72,28 @@ describe("a model's opinion alone never accepts a task", () => {
   });
 
   it("is checked where acceptance is decided: before the acceptance receipt is written", () => {
-    const { text: source } = fileContaining("acceptanceProofGap(provenBy)");
-    const guard = source.indexOf("acceptanceProofGap(provenBy)");
-    // The receipt is written by mergeAcceptedAttempt, the last call of the finish body (the landing has its own module since the 2026-11-11 split).
-    const accept = source.indexOf("await mergeAcceptedAttempt(");
+    const { text: gateSource } = fileContaining("acceptanceProofGap(provenBy)");
+    const guard = gateSource.indexOf("acceptanceProofGap(provenBy)");
+    const passed = gateSource.indexOf('return { kind: "passed"');
     expect(guard).toBeGreaterThan(0);
-    expect(accept).toBeGreaterThan(guard);
-    expect(source.slice(guard, accept)).toContain('transitionAttempt(db, input.attemptId, "blocked"');
-    expect(fileContaining("export async function mergeAcceptedAttempt(").text).toContain("services.persistWriterAcceptance(");
+    expect(passed).toBeGreaterThan(guard);
+    expect(gateSource.slice(guard, passed)).toContain('transitionAttempt(db, input.attemptId, "blocked"');
+
+    // Both the legacy finish body and the graph's critique -> merge path run post-validation gates before writing the acceptance receipt.
+    const { text: finishSource } = fileContaining("export async function finishWriterAttemptBody(");
+    const gated = finishSource.indexOf("await runPostValidationGates(");
+    const accept = finishSource.indexOf("await mergeAcceptedAttempt(");
+    expect(gated).toBeGreaterThan(0);
+    expect(accept).toBeGreaterThan(gated);
+    expect(finishSource.slice(gated, accept)).toContain('gated.kind !== "passed"');
+
+    const { text: critiqueSource } = fileContaining('"lp.attempt-critique"');
+    expect(critiqueSource).toContain("await runPostValidationGates(");
+    const pipeline = builtinWorkflow(LP_TASK_PIPELINE)!;
+    expect(pipeline.edges.some((edge) => edge.from === "critique" && edge.to === "merge")).toBe(true);
+    expect(pipeline.edges.some((edge) => edge.from === "validate" && edge.to === "merge")).toBe(false);
+    expect(fileContaining("export async function integrateAttemptOnce(").text).toContain("services.persistWriterAcceptance(");
+    expect(fileContaining("export async function mergeAcceptedAttempt(").text).toContain("integrateAttemptOnce(");
   });
 });
 

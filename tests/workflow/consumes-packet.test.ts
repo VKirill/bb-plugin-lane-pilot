@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { stepPacket } from "../../src/rooms/workflow/server/workflow-agent-packet";
+import { stepPacket } from "../../src/rooms/workflow/server/services/workflow-agent-packet";
 
 /**
  * Unit seam for the consumes-delivery contract (review590-consumes-delivery-design.md): a minimal StepContext-shaped

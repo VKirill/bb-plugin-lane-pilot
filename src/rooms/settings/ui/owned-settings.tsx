@@ -6,7 +6,7 @@ import {
   type ExperimentalProviderModelPickerValue,
 } from "@get-bb/plugin-sdk/app";
 import type { rpcContract } from "../../contracts";
-import { mergeInventoryItems, RESOURCE_KEYS, resourceModeOf, type InventoryGroup, type ResourceKey, type ResourceMode } from "../../native-agent/agent-inventory";
+import { mergeInventoryItems, RESOURCE_KEYS, resourceModeOf, type InventoryGroup, type ResourceKey, type ResourceMode } from "../../native-agent/ui";
 import { Button } from "@lane-pilot/ui-kit";
 import { Input } from "@lane-pilot/ui-kit";
 import { Label } from "@lane-pilot/ui-kit";

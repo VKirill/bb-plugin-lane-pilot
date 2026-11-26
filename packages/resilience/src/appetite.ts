@@ -3,6 +3,8 @@
  * (`appetite: {tokens?, minutes?}`). A writer past it is stopped like a run over its budget, with the same reason prefix, so the failure
  * class (`run_budget_exceeded:`) and the restart rules treat both alike; the reason names the appetite and the numbers.
  */
+import { RUN_BUDGET_EXCEEDED_PREFIX } from "./budget";
+
 export type Appetite = { tokens?: number | undefined; minutes?: number | undefined };
 
 /**
@@ -12,6 +14,6 @@ export type Appetite = { tokens?: number | undefined; minutes?: number | undefin
 export function appetiteStop(appetite: Appetite | undefined, used: { tokens: number | null; elapsedMs: number }): string | null {
   if (!appetite) return null;
   const minutes = Math.floor(used.elapsedMs / 60_000);
-  if (appetite.minutes !== undefined && used.elapsedMs > appetite.minutes * 60_000) return `run_budget_exceeded:appetite minutes ${minutes} > ${appetite.minutes}`;
+  if (appetite.minutes !== undefined && used.elapsedMs > appetite.minutes * 60_000) return `${RUN_BUDGET_EXCEEDED_PREFIX}appetite minutes ${minutes} > ${appetite.minutes}`;
   return null;
 }

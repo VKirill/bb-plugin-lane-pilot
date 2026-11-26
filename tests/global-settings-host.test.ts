@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { GLOBAL_SETTINGS_PROJECT_ID } from "@lane-pilot/settings-catalog";
-import { createWriterHost } from "../src/rooms/writer/server";
+import { createWriterHost } from "../src/rooms/writer/server/index";
 
 // 2026-10-31: the global role table asked the first connected machine (the MacBook) for models; it had no OpenCode and Devin
 // listed only «Agent default», so SWE-2 could not be picked.

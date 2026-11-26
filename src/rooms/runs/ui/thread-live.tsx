@@ -1,7 +1,7 @@
-import { useState } from "react";
-import { useBbNavigate } from "@get-bb/plugin-sdk/app";
+import { useState, type FormEvent } from "react";
+import { useBbNavigate, useSdk } from "@get-bb/plugin-sdk/app";
 import { t, type I18nKey } from "@lane-pilot/i18n";
-import type { rpcContract } from "../../contracts";
+import { Button } from "@lane-pilot/ui-kit";
 import { StageSteps, StageStrip, type Strip } from "../../work-graph/ui";
 import { WorkflowRunSteps } from "./workflow-run-steps";
 import { StatusIcon, shortTaskId } from "./task-board";
@@ -84,7 +84,7 @@ export function ThreadLive({ threadId, locale }: { threadId: string; locale: str
       {live.role !== "pm" ? <p className="text-xs text-muted-foreground">{t("liveWriterOf")}</p> : null}
       {live.session ? (
         <button type="button" data-testid="live-session" title={live.session.runId}
-          onClick={() => navigate.toPluginPanel("lane-pilot-cockpit", { subPath: "tasks" })}
+          onClick={() => navigate.toPluginPanel("lane-pilot")}
           className="flex min-w-0 items-center gap-2 rounded px-1 py-1 text-left text-sm hover:bg-state-hover">
           <span className="shrink-0">{t("liveSessionOpen")}</span>
           <span className="min-w-0 truncate text-muted-foreground">{live.session.runId}</span>
@@ -93,5 +93,66 @@ export function ThreadLive({ threadId, locale }: { threadId: string; locale: str
       {active.length ? (<div>{live.role === "pm" ? <p className="pt-1 text-xs font-medium text-muted-foreground">{t("liveNow")}</p> : null}{active.map(row)}</div>) : null}
       {done.length ? (<div>{live.role === "pm" ? <p className="pt-1 text-xs font-medium text-muted-foreground">{t("liveWeek")}</p> : null}{done.slice(0, 12).map(row)}</div>) : null}
     </section>
+  );
+}
+
+export const THREAD_LIVE_TAB_ID = "lane-pilot-live";
+
+/** Fixed thread tab: live Lane Pilot task tree for the chat plus a lightweight follow-up box via SDK threads.send. */
+export function ThreadLivePanel({ threadId, locale }: { threadId: string; locale: string }) {
+  const sdk = useSdk();
+  const [text, setText] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [status, setStatus] = useState<{ kind: "ok" | "error"; text: string } | null>(null);
+
+  const onSubmit = async (event: FormEvent) => {
+    event.preventDefault();
+    const message = text.trim();
+    if (!message || busy) return;
+    setBusy(true);
+    setStatus(null);
+    try {
+      await sdk.threads.send({
+        threadId,
+        mode: "queue-if-active",
+        input: [{ type: "text", text: message, mentions: [] }],
+      });
+      setText("");
+      setStatus({ kind: "ok", text: t("threadLiveSent") });
+    } catch (cause) {
+      setStatus({ kind: "error", text: cause instanceof Error ? cause.message : String(cause) });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="flex h-full min-h-0 flex-col justify-between gap-3 p-3" data-testid="thread-live-panel">
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <ThreadLive threadId={threadId} locale={locale} />
+      </div>
+      <form className="space-y-2 border-t border-border pt-3" data-testid="thread-live-followup" onSubmit={(e) => void onSubmit(e)}>
+        <textarea
+          rows={2}
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          placeholder={t("threadLivePlaceholder")}
+          data-testid="thread-live-followup-input"
+          className="w-full resize-none rounded-md border border-border bg-background px-2.5 py-1.5 text-sm text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+        />
+        <div className="flex items-center justify-between gap-2">
+          <div className="min-w-0 text-xs">
+            {status ? (
+              <span className={status.kind === "error" ? "text-destructive" : "text-muted-foreground"} data-testid="thread-live-followup-status">
+                {status.text}
+              </span>
+            ) : null}
+          </div>
+          <Button type="submit" size="sm" disabled={busy || !text.trim()} data-testid="thread-live-followup-send">
+            {busy ? t("threadLiveSending") : t("threadLiveSend")}
+          </Button>
+        </div>
+      </form>
+    </div>
   );
 }

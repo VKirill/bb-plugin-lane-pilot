@@ -3,11 +3,11 @@ import type { PluginPendingInteractionProps } from "@get-bb/plugin-sdk/app";
 import { t } from "@lane-pilot/i18n";
 import { Button } from "@lane-pilot/ui-kit";
 import { Icon } from "@lane-pilot/ui-kit";
-import { readOwnerAskPayload, type OwnerAskResponse } from "../owner-ask-shared";
+import { readOwnerAskPayload, type OwnerAskResponse } from "../models/owner-ask-shared";
 import { Disclosure } from "@lane-pilot/ui-kit";
 
 /**
- * A question Lane Pilot (the PM, the integration gate, a repair thread, a council) puts to the owner: what the owner is
+ * A question Lane Pilot (the PM, the integration gate, a repair thread) puts to the owner: what the owner is
  * asked, the tappable answers, and a field for words of their own. It renders in the chat's composer as BB's pending
  * interaction; the same question reaches the phone as a push. Touch-sized rows, the Pokecut card and accent from app.css.
  */

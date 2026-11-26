@@ -8,7 +8,7 @@ import {
   registerReducers,
 } from "@lane-pilot/workflow-engine";
 import { BUILTIN_SOURCES } from "../../src/rooms/workflow/builtin";
-import { stepPacket } from "../../src/rooms/workflow/server/workflow-agent-packet";
+import { stepPacket } from "../../src/rooms/workflow/server/services/workflow-agent-packet";
 import { engineOn, journalDb } from "./engine-helpers";
 
 type Call = { with: Record<string, unknown>; packet: string };

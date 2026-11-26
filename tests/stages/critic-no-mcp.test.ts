@@ -3,10 +3,8 @@ import {
   HELPER_ROLES, MANDATORY_MCP_SERVERS, ROLE_PROFILES, coreRequiredSessionAdvertisement, parseHelperContextSettings, requiredSessionPolicySpawnBinding, roleProfilePolicy,
 } from "../../src/rooms/contracts/helper-context";
 import type { HelperRole } from "../../src/rooms/contracts/helper-context";
-import { codeCritiquePrompt, buildCandidateEvidence } from "../../src/rooms/critique/code-critique";
-import { critiquePrompt } from "../../src/rooms/critique/critique";
-import { pmReadPrompt } from "../../src/rooms/critique/pm-read";
-import { roleSpec } from "../../src/rooms/workflow/server/workflow-agent";
+import { buildCandidateEvidence, codeCritiquePrompt, critiquePrompt, pmReadPrompt } from "../../src/rooms/critique";
+import { roleSpec } from "../../src/rooms/workflow/server/services/workflow-agent";
 
 // Batch C of review 2: the one-shot readers answer from the message and carry no MCP schema (the code-graph tools cost ~8k tokens a turn).
 // 0.1.501: gate triage and the thin chain roles joined them by measurement (the code graph was called by 1 of 102 of their threads in a week).

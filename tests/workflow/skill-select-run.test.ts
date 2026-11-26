@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { experimental_selectedSkillMentions } from "@get-bb/plugin-sdk/provider-bridge";
-import { createWorkflowAgents } from "../../src/rooms/workflow/server/workflow-agent";
+import { createWorkflowAgents } from "../../src/rooms/workflow/server/services/workflow-agent";
 import { fullAccessSpawn, findThreadsByMetadata } from "../../src/rooms/platform/server";
 
 vi.mock("../../src/rooms/platform/server", async (original) => ({

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { resolveWriterBinding } from "../src/rooms/native-agent/project-binding";
+import { resolveWriterBinding } from "../src/rooms/native-agent/models/project-binding";
 import incident from "./fixtures/learning-stale-binding-2026-10-30.json";
 
 describe("resolveWriterBinding", () => {

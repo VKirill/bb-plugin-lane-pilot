@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { validateDeliverable, type RunResult } from "../src/rooms/validators/deliverable";
+import { validateDeliverable, type RunResult } from "../src/rooms/validators/models/deliverable";
 
 const hostOf = (script: (command: string) => RunResult | null) => ({
   host: { run: async (_id: string, _cwd: string, command: string, _t: number) => script(command) ?? { exitCode: 0, stdout: "", stderr: "" } },

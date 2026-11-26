@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
 import { useBbNavigate, useRpc } from "@get-bb/plugin-sdk/app";
-import type { ScheduleBoardContract } from "../contract";
+import type { ScheduleBoardContract } from "../models/contract";
 import { t, type I18nKey } from "@lane-pilot/i18n";
 import { Button } from "@lane-pilot/ui-kit";
-import type { RunView, ScheduleView } from "../views";
+import type { RunView, ScheduleView } from "../models/views";
 import { HELPER_PANEL_ACTION } from "../../contracts/agent-picker";
 import { useOpenThreadPanel } from "../../ui-shell/ui";
 import { Surface, SurfaceBody, SurfaceHeader } from "@lane-pilot/ui-kit";

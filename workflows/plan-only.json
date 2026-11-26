@@ -8,6 +8,7 @@
     "en": "Analyze and write task contracts with plan critique and save them as a draft for approval. Nothing is built.",
     "ru": "Проанализировать и составить контракты задач с критикой плана и сохранить как черновик на утверждение. Ничего не исполняется."
   },
+  "category": "planning",
   "examples": {
     "ru": [
       "Составь план миграции на новую версию фреймворка, выполнять пока не нужно",

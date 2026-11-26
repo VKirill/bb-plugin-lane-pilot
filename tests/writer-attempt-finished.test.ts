@@ -1,10 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
-import { attemptFinishedSubscriberCount, attemptFinishedSubscriberNames, emitAttemptFinished, onAttemptFinished, type AttemptFinished } from "../src/rooms/writer/server/attempt-finished";
-import { createWriterFinish } from "../src/rooms/writer/server/finish";
-import { mountStabilityAttemptFinished } from "../src/rooms/writer/server/stability";
-import { mountWriterTaskFinished } from "../src/rooms/writer/server/attempt-reactions";
-import { mountWorkflowAttemptFinished } from "../src/rooms/workflow/server/after-accept";
+import { attemptFinishedSubscriberCount, attemptFinishedSubscriberNames, emitAttemptFinished, onAttemptFinished, type AttemptFinished } from "../src/rooms/writer/server/services/attempt-finished";
+import { createWriterFinish } from "../src/rooms/writer/server/services/finish";
+import { mountStabilityAttemptFinished } from "../src/rooms/writer/server/services/stability";
+import { mountWriterTaskFinished } from "../src/rooms/writer/server/services/attempt-reactions";
+import { mountWorkflowAttemptFinished } from "../src/rooms/workflow/server/services/after-accept";
 
 const ctx = () => ({ log: vi.fn(), state: { disposed: false }, isDisposed: () => false }) as never;
 
@@ -65,9 +65,7 @@ describe("attempt-finished bus", () => {
     const finishCore = { bb, db: {}, getThreadBounded: vi.fn(), host: {}, log: vi.fn(), state: { disposed: false } };
     createWriterFinish(finishCore as never, {} as never);
     expect(attemptFinishedSubscriberNames(finishCore as never)).toEqual([
-      "rule-forms:settle-stopped-writer",
       "writer:skill-metric-and-materialize",
-      "writer:failed-lesson",
     ]);
     const startCore = { log: vi.fn(), state: { disposed: false } };
     mountStabilityAttemptFinished(startCore as never, { stability: {} } as never);

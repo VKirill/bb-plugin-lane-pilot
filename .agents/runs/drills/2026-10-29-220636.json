@@ -1,0 +1,636 @@
+{
+  "kind": "lane-pilot-sandbox-drill",
+  "date": "2026-10-29",
+  "stamp": "20261029-220636",
+  "startedAt": 1793300796959,
+  "finishedAt": 1793301114012,
+  "durationSec": 317,
+  "project": "proj_ibu6v9g64j",
+  "runId": "lprun_9513c3f4d4a94fd6b6e240fff9f1eae1",
+  "pmThread": "thr_b97mf6r2n4",
+  "sourceThread": "thr_ryhag8nj2a",
+  "mode": "quick",
+  "scenarioNames": [
+    "guard_hash",
+    "deferrals",
+    "checkers",
+    "memory_paths",
+    "helper_providers",
+    "parallel3"
+  ],
+  "commit": "e5eec18808f54c577fa51e8d405f6d445f68b2ed",
+  "skipped": {},
+  "result": "fail",
+  "problems": [
+    "guard_hash: ovh: guard_shell.py differs from the repository (installed 67a460434fde, repository 505b017cd1ab); install: cp -p /home/ubuntu/.agents/hooks/guard_shell.py /home/ubuntu/.agents/hooks/guard_shell.py.bak-2026-10-29; install -m 755 /home/ubuntu/BB-service/bb-plugin-lane-pilot/lane-stack/hooks/guard_shell.py /home/ubuntu/.agents/hooks/guard_shell.py",
+    "guard_hash: mac-mini: guard_shell.py differs from the repository (installed 67a460434fde, repository 505b017cd1ab); install: bb file write --host host_7sea4qaad8 --stdin --create-parents /Users/vechkasov/.agents/hooks/guard_shell.py < /home/ubuntu/BB-service/bb-plugin-lane-pilot/lane-stack/hooks/guard_shell.py",
+    "guard_hash: macbook: guard_shell.py differs from the repository (installed 67a460434fde, repository 505b017cd1ab); install: bb file write --host host_p7jhrgsapq --stdin --create-parents /Users/vechkasov/.agents/hooks/guard_shell.py < /home/ubuntu/BB-service/bb-plugin-lane-pilot/lane-stack/hooks/guard_shell.py"
+  ],
+  "checks": {
+    "allAccepted": true,
+    "eachInOwnWorktree": true,
+    "filesInSandbox": true,
+    "checksRan": true
+  },
+  "tasks": [
+    {
+      "task": "drill-20261029-220636-a",
+      "attempts": 2,
+      "states": [
+        "blocked",
+        "accepted"
+      ],
+      "state": "accepted",
+      "reason": "",
+      "attempt": "lpattempt_1856ff2d442a467c87a75ebe3706f95e",
+      "writerThread": "thr_dr2b97mtk3",
+      "workspace": "/home/ubuntu/.lane-pilot/worktrees/lpattempt_1856ff2d442a467c87a75ebe3706f95e/lp-drill-sandbox",
+      "environment": "env_8ncm5jbsxs",
+      "holder": null,
+      "file": "notes/drill/20261029-220636-a.md",
+      "fileInSandbox": true
+    },
+    {
+      "task": "drill-20261029-220636-b",
+      "attempts": 1,
+      "states": [
+        "accepted"
+      ],
+      "state": "accepted",
+      "reason": "",
+      "attempt": "lpattempt_c67fa8ca5e8f41c1b236fab7e15a1482",
+      "writerThread": "thr_vethxazc34",
+      "workspace": "/home/ubuntu/.lane-pilot/worktrees/lpattempt_c67fa8ca5e8f41c1b236fab7e15a1482/lp-drill-sandbox",
+      "environment": "env_yrchkffkjc",
+      "holder": null,
+      "file": "notes/drill/20261029-220636-b.md",
+      "fileInSandbox": true
+    },
+    {
+      "task": "drill-20261029-220636-c",
+      "attempts": 1,
+      "states": [
+        "accepted"
+      ],
+      "state": "accepted",
+      "reason": "",
+      "attempt": "lpattempt_3b38e8b03b564c3a930379d206b13dee",
+      "writerThread": "thr_236midrt3s",
+      "workspace": "/home/ubuntu/.lane-pilot/worktrees/lpattempt_3b38e8b03b564c3a930379d206b13dee/lp-drill-sandbox",
+      "environment": "env_z52can4zgj",
+      "holder": null,
+      "file": "notes/drill/20261029-220636-c.md",
+      "fileInSandbox": true
+    }
+  ],
+  "dispatch": {
+    "drill-20261029-220636-a": "{\n  \"runId\": \"lprun_9513c3f4d4a94fd6b6e240fff9f1eae1\",\n  \"taskId\": \"drill-20261029-220636-a\",\n  \"attemptId\": \"lpattempt_1e0cf3eb46d34cea8af7f4c540fc6e6f\",\n  \"writerThreadId\": null,\n  \"state\": \"queued\",\n  \"stages\": [\n    {\n      \"runId\": \"lprun_9513c3f4d4a94fd6b6e240fff9f1eae1\",\n      \"taskId\": \"drill-20261029-220636-a\",\n      \"stageId\": \"acceptance-receipt\",\n      \"contractVersion\": 1,\n      \"state\": \"pending\",\n      \"inputSha256\": \"c038d951a86cd64f4b0c193785e9b2646b4149fc2b862dee1d5dc949faafea5b\",\n      \"outputSha256\": null,\n      \"attempt\": 0,\n      \"providerId\": null,\n      \"model\": null,\n ",
+    "drill-20261029-220636-b": "{\n  \"runId\": \"lprun_9513c3f4d4a94fd6b6e240fff9f1eae1\",\n  \"taskId\": \"drill-20261029-220636-b\",\n  \"attemptId\": \"lpattempt_c67fa8ca5e8f41c1b236fab7e15a1482\",\n  \"writerThreadId\": null,\n  \"state\": \"queued\",\n  \"stages\": [\n    {\n      \"runId\": \"lprun_9513c3f4d4a94fd6b6e240fff9f1eae1\",\n      \"taskId\": \"drill-20261029-220636-b\",\n      \"stageId\": \"acceptance-receipt\",\n      \"contractVersion\": 1,\n      \"state\": \"pending\",\n      \"inputSha256\": \"a63b584b0116ae9871a306fddcfb821b40061dfa99075ce9805f480534aa74ee\",\n      \"outputSha256\": null,\n      \"attempt\": 0,\n      \"providerId\": null,\n      \"model\": null,\n ",
+    "drill-20261029-220636-c": "{\n  \"runId\": \"lprun_9513c3f4d4a94fd6b6e240fff9f1eae1\",\n  \"taskId\": \"drill-20261029-220636-c\",\n  \"attemptId\": \"lpattempt_3b38e8b03b564c3a930379d206b13dee\",\n  \"writerThreadId\": null,\n  \"state\": \"queued\",\n  \"stages\": [\n    {\n      \"runId\": \"lprun_9513c3f4d4a94fd6b6e240fff9f1eae1\",\n      \"taskId\": \"drill-20261029-220636-c\",\n      \"stageId\": \"acceptance-receipt\",\n      \"contractVersion\": 1,\n      \"state\": \"pending\",\n      \"inputSha256\": \"d4e6278cd125fedece3a372b584a8c772a5a3eceb2f6d77365a9ce40a46d5ce2\",\n      \"outputSha256\": null,\n      \"attempt\": 0,\n      \"providerId\": null,\n      \"model\": null,\n "
+  },
+  "scenarios": [
+    {
+      "name": "guard_hash",
+      "result": "fail",
+      "problems": [
+        "ovh: guard_shell.py differs from the repository (installed 67a460434fde, repository 505b017cd1ab); install: cp -p /home/ubuntu/.agents/hooks/guard_shell.py /home/ubuntu/.agents/hooks/guard_shell.py.bak-2026-10-29; install -m 755 /home/ubuntu/BB-service/bb-plugin-lane-pilot/lane-stack/hooks/guard_shell.py /home/ubuntu/.agents/hooks/guard_shell.py",
+        "mac-mini: guard_shell.py differs from the repository (installed 67a460434fde, repository 505b017cd1ab); install: bb file write --host host_7sea4qaad8 --stdin --create-parents /Users/vechkasov/.agents/hooks/guard_shell.py < /home/ubuntu/BB-service/bb-plugin-lane-pilot/lane-stack/hooks/guard_shell.py",
+        "macbook: guard_shell.py differs from the repository (installed 67a460434fde, repository 505b017cd1ab); install: bb file write --host host_p7jhrgsapq --stdin --create-parents /Users/vechkasov/.agents/hooks/guard_shell.py < /home/ubuntu/BB-service/bb-plugin-lane-pilot/lane-stack/hooks/guard_shell.py"
+      ],
+      "machines": [
+        {
+          "machine": "ovh",
+          "files": {
+            "guard_shell.py": {
+              "state": "drift",
+              "installed": "67a460434fde6604109314b453d62a91464d9e83bf51a80bdcfee694d55ac597",
+              "expected": "505b017cd1ab7982d3bfc077959e7cb19baca9604277ceae9e3834469fce4104"
+            },
+            "lib_payload.py": {
+              "state": "ok",
+              "installed": "888d89f05eb23a585b99c343df1865a368f8f28a090e9f6f29a8246a9be99565",
+              "expected": "888d89f05eb23a585b99c343df1865a368f8f28a090e9f6f29a8246a9be99565"
+            }
+          },
+          "reachable": true
+        },
+        {
+          "machine": "mac-mini",
+          "files": {
+            "guard_shell.py": {
+              "state": "drift",
+              "installed": "67a460434fde6604109314b453d62a91464d9e83bf51a80bdcfee694d55ac597",
+              "expected": "505b017cd1ab7982d3bfc077959e7cb19baca9604277ceae9e3834469fce4104"
+            },
+            "lib_payload.py": {
+              "state": "ok",
+              "installed": "888d89f05eb23a585b99c343df1865a368f8f28a090e9f6f29a8246a9be99565",
+              "expected": "888d89f05eb23a585b99c343df1865a368f8f28a090e9f6f29a8246a9be99565"
+            }
+          },
+          "reachable": true
+        },
+        {
+          "machine": "macbook",
+          "files": {
+            "guard_shell.py": {
+              "state": "drift",
+              "installed": "67a460434fde6604109314b453d62a91464d9e83bf51a80bdcfee694d55ac597",
+              "expected": "505b017cd1ab7982d3bfc077959e7cb19baca9604277ceae9e3834469fce4104"
+            },
+            "lib_payload.py": {
+              "state": "ok",
+              "installed": "888d89f05eb23a585b99c343df1865a368f8f28a090e9f6f29a8246a9be99565",
+              "expected": "888d89f05eb23a585b99c343df1865a368f8f28a090e9f6f29a8246a9be99565"
+            }
+          },
+          "reachable": true
+        }
+      ],
+      "expected": {
+        "guard_shell.py": "505b017cd1ab7982d3bfc077959e7cb19baca9604277ceae9e3834469fce4104",
+        "lib_payload.py": "888d89f05eb23a585b99c343df1865a368f8f28a090e9f6f29a8246a9be99565"
+      },
+      "unreachable": [],
+      "repaired": false
+    },
+    {
+      "name": "deferrals",
+      "result": "pass",
+      "problems": [],
+      "registerDeployed": true,
+      "counts": {
+        "open": 0,
+        "overdue": 0,
+        "closed": 0,
+        "needs_owner_term": 24
+      },
+      "cited": 18,
+      "needsOwnerTerm": 24
+    },
+    {
+      "name": "checkers",
+      "result": "pass",
+      "problems": [],
+      "checked": [
+        {
+          "defectClass": "test_assertion_deleted",
+          "planted": 2,
+          "caughtBy": [],
+          "designedCatchers": [
+            "code_critic"
+          ]
+        },
+        {
+          "defectClass": "off_by_one",
+          "planted": 2,
+          "caughtBy": [
+            "verification"
+          ],
+          "designedCatchers": [
+            "verification"
+          ]
+        },
+        {
+          "defectClass": "outside_owns",
+          "planted": 2,
+          "caughtBy": [
+            "ownership"
+          ],
+          "designedCatchers": [
+            "ownership"
+          ]
+        },
+        {
+          "defectClass": "swallowed_error",
+          "planted": 1,
+          "caughtBy": [],
+          "designedCatchers": [
+            "code_critic"
+          ]
+        },
+        {
+          "defectClass": "masked_check",
+          "planted": 2,
+          "caughtBy": [
+            "contract_lint"
+          ],
+          "designedCatchers": [
+            "contract_lint"
+          ]
+        },
+        {
+          "defectClass": "acceptance_missing",
+          "planted": 2,
+          "caughtBy": [
+            "verification",
+            "plan_fact"
+          ],
+          "designedCatchers": [
+            "plan_fact"
+          ]
+        },
+        {
+          "defectClass": "hardcoded_value",
+          "planted": 2,
+          "caughtBy": [
+            "verification"
+          ],
+          "designedCatchers": [
+            "code_critic"
+          ]
+        },
+        {
+          "defectClass": "broken_import",
+          "planted": 2,
+          "caughtBy": [
+            "verification"
+          ],
+          "designedCatchers": [
+            "verification"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "memory_paths",
+      "result": "pass",
+      "problems": [],
+      "token": "5564783b",
+      "lpVersion": "0.1.381",
+      "paths": [
+        {
+          "path": "writer.brief",
+          "found": true,
+          "negativeOk": true,
+          "latencyMs": 21,
+          "detail": "carries note+core+rule: all found; 5641 chars"
+        },
+        {
+          "path": "writer.turn",
+          "found": true,
+          "negativeOk": true,
+          "latencyMs": 1,
+          "detail": "carries rule: all found; 2126 chars"
+        },
+        {
+          "path": "writer.repair",
+          "found": true,
+          "negativeOk": true,
+          "latencyMs": 12,
+          "detail": "carries note+core+rule: all found; 2245 chars"
+        },
+        {
+          "path": "pm.start",
+          "found": true,
+          "negativeOk": true,
+          "latencyMs": 1,
+          "detail": "carries rule: all found; 243 chars"
+        },
+        {
+          "path": "pm.resume",
+          "found": true,
+          "negativeOk": true,
+          "latencyMs": 0,
+          "detail": "carries rule: all found; 241 chars"
+        },
+        {
+          "path": "pm.rules_tool",
+          "found": true,
+          "negativeOk": true,
+          "latencyMs": 1,
+          "detail": "carries rule: all found; 75 chars"
+        },
+        {
+          "path": "pm.memory_tool",
+          "found": true,
+          "negativeOk": true,
+          "latencyMs": 5,
+          "detail": "carries note+core: all found; 439 chars"
+        },
+        {
+          "path": "schedule.agent",
+          "found": true,
+          "negativeOk": true,
+          "latencyMs": 6,
+          "detail": "carries note+core: all found; 439 chars"
+        },
+        {
+          "path": "critic.code",
+          "found": true,
+          "negativeOk": true,
+          "latencyMs": 15,
+          "detail": "carries note+core: all found; 6813 chars"
+        },
+        {
+          "path": "night.review",
+          "found": true,
+          "negativeOk": true,
+          "latencyMs": 15,
+          "detail": "carries note+core: all found; 2686 chars"
+        },
+        {
+          "path": "council.evidence",
+          "found": true,
+          "negativeOk": true,
+          "latencyMs": 5,
+          "detail": "carries note+core: all found; 543 chars"
+        },
+        {
+          "path": "terminal.search",
+          "found": true,
+          "negativeOk": true,
+          "latencyMs": 6,
+          "detail": "carries note+core: all found; 328 chars"
+        },
+        {
+          "path": "terminal.core",
+          "found": true,
+          "negativeOk": null,
+          "latencyMs": 0,
+          "detail": "carries core: all found; 194 chars"
+        }
+      ],
+      "skipped": [
+        {
+          "path": "maintainer.existing",
+          "reason": "A dedupe aid for the stage that writes notes, not a delivery to a worker; the notes are data it compares against and acts on only by `supersedes`."
+        },
+        {
+          "path": "memory.golden_eval",
+          "reason": "It measures search quality for the owner and delivers nothing to an agent."
+        },
+        {
+          "path": "pm.owner_card",
+          "reason": "Facts about the owner from the anamnesis room, not project memory; it has its own checks (`bb lane-pilot anamnesis status`)."
+        }
+      ],
+      "unanswered": {
+        "windowDays": 30,
+        "ownerRepeats": 0,
+        "repeatConfirmations": 0,
+        "routableQuestions": 0
+      },
+      "writerAttempt": "lpattempt_c46d906b0fb5497bac949b433722468b",
+      "dispatch": "{\n  \"runId\": \"lprun_9513c3f4d4a94fd6b6e240fff9f1eae1\",\n  \"taskId\": \"drill-20261029-220636-memory\",\n  \"attemptId\": \"lpattempt_c46d906b0fb5497bac949b433722468b\",\n  \"writerThreadId\": null,\n  \"state\": \"queued\",\n  \"stages\": [\n    {\n      \"runId\": \"lprun_9513c3f4d4a94fd6b6e240fff9f1eae1\",\n      \"taskId\": \"drill-20261029-220636-memory\",\n      \"stageId\": \"acceptance-receipt\",\n      \"contractVersion\": 1,\n      \"state\": \"pending\",\n      \"inputSha256\": \"3292c01d25567235c8e486091e1f1c6b01cb1c3f1a8bfd6575f6ededad2ffff6\",\n      \"outputSha256\": null,\n      \"attempt\": 0,\n      \"providerId\": null,\n      \"model"
+    },
+    {
+      "name": "helper_providers",
+      "result": "pass",
+      "problems": [],
+      "providers": [
+        {
+          "provider": "claude-code",
+          "model": "claude-sonnet-5-5",
+          "ok": true,
+          "started": true,
+          "answered": true,
+          "threadId": "thr_sgbimc52u3",
+          "output": "OK",
+          "reason": null,
+          "ms": 24538
+        },
+        {
+          "provider": "codex",
+          "model": "gpt-6-luna",
+          "ok": true,
+          "started": true,
+          "answered": true,
+          "threadId": "thr_jp9zwk6yb6",
+          "output": "OK",
+          "reason": null,
+          "ms": 23792
+        },
+        {
+          "provider": "opencode2",
+          "model": "zai-coding-plan/glm-5.3-flash",
+          "ok": true,
+          "started": true,
+          "answered": true,
+          "threadId": "thr_q9ubr2qqf2",
+          "output": "OK",
+          "reason": null,
+          "ms": 28395
+        }
+      ]
+    },
+    {
+      "name": "parallel3",
+      "result": "pass",
+      "problems": [],
+      "tasks": [
+        {
+          "task": "drill-20261029-220636-a",
+          "attempts": 2,
+          "states": [
+            "blocked",
+            "accepted"
+          ],
+          "state": "accepted",
+          "reason": "",
+          "attempt": "lpattempt_1856ff2d442a467c87a75ebe3706f95e",
+          "writerThread": "thr_dr2b97mtk3",
+          "workspace": "/home/ubuntu/.lane-pilot/worktrees/lpattempt_1856ff2d442a467c87a75ebe3706f95e/lp-drill-sandbox",
+          "environment": "env_8ncm5jbsxs",
+          "holder": null,
+          "file": "notes/drill/20261029-220636-a.md",
+          "fileInSandbox": true
+        },
+        {
+          "task": "drill-20261029-220636-b",
+          "attempts": 1,
+          "states": [
+            "accepted"
+          ],
+          "state": "accepted",
+          "reason": "",
+          "attempt": "lpattempt_c67fa8ca5e8f41c1b236fab7e15a1482",
+          "writerThread": "thr_vethxazc34",
+          "workspace": "/home/ubuntu/.lane-pilot/worktrees/lpattempt_c67fa8ca5e8f41c1b236fab7e15a1482/lp-drill-sandbox",
+          "environment": "env_yrchkffkjc",
+          "holder": null,
+          "file": "notes/drill/20261029-220636-b.md",
+          "fileInSandbox": true
+        },
+        {
+          "task": "drill-20261029-220636-c",
+          "attempts": 1,
+          "states": [
+            "accepted"
+          ],
+          "state": "accepted",
+          "reason": "",
+          "attempt": "lpattempt_3b38e8b03b564c3a930379d206b13dee",
+          "writerThread": "thr_236midrt3s",
+          "workspace": "/home/ubuntu/.lane-pilot/worktrees/lpattempt_3b38e8b03b564c3a930379d206b13dee/lp-drill-sandbox",
+          "environment": "env_z52can4zgj",
+          "holder": null,
+          "file": "notes/drill/20261029-220636-c.md",
+          "fileInSandbox": true
+        }
+      ],
+      "checks": {
+        "allAccepted": true,
+        "eachInOwnWorktree": true,
+        "filesInSandbox": true,
+        "checksRan": true
+      },
+      "dispatch": {
+        "drill-20261029-220636-a": "{\n  \"runId\": \"lprun_9513c3f4d4a94fd6b6e240fff9f1eae1\",\n  \"taskId\": \"drill-20261029-220636-a\",\n  \"attemptId\": \"lpattempt_1e0cf3eb46d34cea8af7f4c540fc6e6f\",\n  \"writerThreadId\": null,\n  \"state\": \"queued\",\n  \"stages\": [\n    {\n      \"runId\": \"lprun_9513c3f4d4a94fd6b6e240fff9f1eae1\",\n      \"taskId\": \"drill-20261029-220636-a\",\n      \"stageId\": \"acceptance-receipt\",\n      \"contractVersion\": 1,\n      \"state\": \"pending\",\n      \"inputSha256\": \"c038d951a86cd64f4b0c193785e9b2646b4149fc2b862dee1d5dc949faafea5b\",\n      \"outputSha256\": null,\n      \"attempt\": 0,\n      \"providerId\": null,\n      \"model\": null,\n ",
+        "drill-20261029-220636-b": "{\n  \"runId\": \"lprun_9513c3f4d4a94fd6b6e240fff9f1eae1\",\n  \"taskId\": \"drill-20261029-220636-b\",\n  \"attemptId\": \"lpattempt_c67fa8ca5e8f41c1b236fab7e15a1482\",\n  \"writerThreadId\": null,\n  \"state\": \"queued\",\n  \"stages\": [\n    {\n      \"runId\": \"lprun_9513c3f4d4a94fd6b6e240fff9f1eae1\",\n      \"taskId\": \"drill-20261029-220636-b\",\n      \"stageId\": \"acceptance-receipt\",\n      \"contractVersion\": 1,\n      \"state\": \"pending\",\n      \"inputSha256\": \"a63b584b0116ae9871a306fddcfb821b40061dfa99075ce9805f480534aa74ee\",\n      \"outputSha256\": null,\n      \"attempt\": 0,\n      \"providerId\": null,\n      \"model\": null,\n ",
+        "drill-20261029-220636-c": "{\n  \"runId\": \"lprun_9513c3f4d4a94fd6b6e240fff9f1eae1\",\n  \"taskId\": \"drill-20261029-220636-c\",\n  \"attemptId\": \"lpattempt_3b38e8b03b564c3a930379d206b13dee\",\n  \"writerThreadId\": null,\n  \"state\": \"queued\",\n  \"stages\": [\n    {\n      \"runId\": \"lprun_9513c3f4d4a94fd6b6e240fff9f1eae1\",\n      \"taskId\": \"drill-20261029-220636-c\",\n      \"stageId\": \"acceptance-receipt\",\n      \"contractVersion\": 1,\n      \"state\": \"pending\",\n      \"inputSha256\": \"d4e6278cd125fedece3a372b584a8c772a5a3eceb2f6d77365a9ce40a46d5ce2\",\n      \"outputSha256\": null,\n      \"attempt\": 0,\n      \"providerId\": null,\n      \"model\": null,\n "
+      }
+    }
+  ],
+  "seen": {
+    "stages": {
+      "acceptance-receipt": {
+        "canceled": 2,
+        "passed": 3
+      },
+      "memory-maintenance": {
+        "passed": 3
+      },
+      "plan-critique": {
+        "skipped": 5
+      },
+      "plan-fact": {
+        "passed": 3
+      },
+      "pm-read": {
+        "skipped": 5
+      },
+      "project-life": {
+        "running": 1
+      },
+      "specialist-review": {
+        "skipped": 5
+      },
+      "verification": {
+        "canceled": 2,
+        "passed": 3
+      },
+      "writer-agent": {
+        "canceled": 2,
+        "passed": 3
+      }
+    },
+    "gates": {
+      "accept": {
+        "passed": 3
+      },
+      "owns-paths": {
+        "passed": 3
+      },
+      "validate": {
+        "passed": 3
+      },
+      "verification": {
+        "passed": 3
+      }
+    },
+    "moves": {
+      "cancel_requested>canceled": {
+        "ok": 2
+      },
+      "canceled>canceled": {
+        "ok": 1
+      },
+      "queued>queued": {
+        "ok": 10
+      },
+      "queued>spawn_requested": {
+        "ok": 6
+      },
+      "running>accepted": {
+        "ok": 3
+      },
+      "running>cancel_requested": {
+        "ok": 1
+      },
+      "spawn_rejected>blocked": {
+        "ok": 1
+      },
+      "spawn_requested>cancel_requested": {
+        "ok": 1
+      },
+      "spawn_requested>running": {
+        "ok": 4
+      },
+      "spawn_requested>spawn_rejected": {
+        "ok": 1
+      }
+    }
+  },
+  "judged": [
+    {
+      "name": "guard_hash",
+      "verdict": "fail",
+      "evidence": [
+        "machines",
+        "expected",
+        "repaired"
+      ],
+      "why": "ovh: guard_shell.py differs from the repository (installed 67a460434fde, repository 505b017cd1ab); install: cp -p /home/ubuntu/.agents/hooks/guard_shell.py /home/ubuntu/.agents/hooks/guard_shell.py.bak-2026-10-29; install -m 755 /home/ubuntu/BB-service/bb-plugin-lane-pilot/lane-stack/hooks/guard_shell.py /home/ubuntu/.agents/hooks/guard_shell.py; mac-mini: guard_shell.py differs from the repository (installed 67a460434fde, repository 505b017cd1ab); install: bb file write --host host_7sea4qaad8 --stdin --create-parents /Users/vechkasov/.agents/hooks/guard_shell.py < /home/ubuntu/BB-service/bb-plugin-lane-pilot/lane-stack/hooks/guard_shell.py; macbook: guard_shell.py differs from the repository (installed 67a460434fde, repository 505b017cd1ab); install: bb file write --host host_p7jhrgsapq --stdin --create-parents /Users/vechkasov/.agents/hooks/guard_shell.py < /home/ubuntu/BB-service/bb-plugin-lane-pilot/lane-stack/hooks/guard_shell.py"
+    },
+    {
+      "name": "deferrals",
+      "verdict": "pass",
+      "evidence": [
+        "registerDeployed",
+        "counts",
+        "cited",
+        "needsOwnerTerm"
+      ],
+      "why": ""
+    },
+    {
+      "name": "checkers",
+      "verdict": "pass",
+      "evidence": [
+        "checked"
+      ],
+      "why": ""
+    },
+    {
+      "name": "memory_paths",
+      "verdict": "pass",
+      "evidence": [
+        "token",
+        "lpVersion",
+        "paths",
+        "skipped",
+        "unanswered",
+        "writerAttempt",
+        "dispatch"
+      ],
+      "why": ""
+    },
+    {
+      "name": "helper_providers",
+      "verdict": "pass",
+      "evidence": [
+        "providers"
+      ],
+      "why": ""
+    },
+    {
+      "name": "parallel3",
+      "verdict": "pass",
+      "evidence": [
+        "tasks",
+        "checks",
+        "dispatch"
+      ],
+      "why": ""
+    }
+  ],
+  "series": {
+    "verdict": "fail",
+    "missing": [],
+    "failed": [
+      "guard_hash"
+    ],
+    "skipped": []
+  }
+}

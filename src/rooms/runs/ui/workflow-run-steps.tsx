@@ -3,12 +3,11 @@ import { useBbNavigate, useRpc } from "@get-bb/plugin-sdk/app";
 import { t, type I18nKey, type Locale } from "@lane-pilot/i18n";
 import { Disclosure } from "@lane-pilot/ui-kit";
 import type { z } from "zod";
+import { clip } from "@lane-pilot/contracts";
 import type { rpcContract } from "../../contracts";
 
 type Snapshot = NonNullable<z.infer<(typeof rpcContract)["workflow_run_snapshot"]["output"]>["snapshot"]>;
-type Step = Snapshot["steps"][number];
 
-const clip = (text: string, max: number) => (text.length > max ? `${text.slice(0, max)}…` : text);
 const clock = (ms: number | null, locale: Locale) =>
   ms === null ? null : new Date(ms).toLocaleTimeString(locale === "ru" ? "ru-RU" : "en-US", { hour: "2-digit", minute: "2-digit" });
 // Engine step states (succeeded, canceled, waiting) are not task-stage states; the same stage_state_* keys with a raw fallback.

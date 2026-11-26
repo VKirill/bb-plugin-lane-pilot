@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { pickCriticByAccuracy } from "../../src/rooms/critique/critic-pair";
+import { pickCriticByAccuracy } from "../../src/rooms/critique";
 
 const current = { providerId: "codex", model: "gpt-a" };
 const better = { providerId: "claude", model: "opus-b" };

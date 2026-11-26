@@ -1,6 +1,5 @@
-// Public API of forecast/server: the report, the command and the RPC.
-export { FORECAST_USAGE, runForecastCli } from "./cli";
-export { forecastReport } from "./report";
-export type { ForecastReport, ForecastRow } from "./report";
-export { forecastRpc } from "./rpc";
-export { calibrationPassport, weakAreas } from "./report";
+// Public API of forecast/server: the report, the command, and the room descriptor.
+export { room } from "./room";
+export { FORECAST_USAGE, runForecastCli } from "./handlers/forecast-cli";
+export { calibrationPassport, forecastReport, weakAreas } from "./services/report";
+export type { CalibrationPassport, ForecastReport, ForecastRow } from "./services/report";

@@ -1,0 +1,1134 @@
+{
+  "kind": "lane-pilot-sandbox-drill",
+  "date": "2026-11-18",
+  "stamp": "20261118-171209",
+  "startedAt": 1795011129277,
+  "finishedAt": 1795011231327,
+  "durationSec": 102,
+  "project": "proj_ibu6v9g64j",
+  "runId": null,
+  "pmThread": null,
+  "sourceThread": null,
+  "mode": "full",
+  "scenarioNames": [
+    "sma_r16"
+  ],
+  "commit": "f2d8e993bb4c73b27692433f017c9e2c225ef817",
+  "skipped": {},
+  "result": "fail",
+  "problems": [
+    "sma_r16: n1333: not proved, gap milestone: path ['archive', 'frame', 'write_requirements', 'add_phases', 'done'], phases ['1 coverage of REQ-2', '2 the gate']",
+    "sma_r16: n1325: not proved, CONTEXT.md decisions ['- **D1** (locked): reuse the table', '- **D2** (free): the chart library', '- **D3** (deferred): pdf export', '- **D4** (locked): no id and no status']"
+  ],
+  "checks": null,
+  "tasks": null,
+  "dispatch": null,
+  "scenarios": [
+    {
+      "name": "sma_r16",
+      "result": "fail",
+      "problems": [
+        "n1333: not proved, gap milestone: path ['archive', 'frame', 'write_requirements', 'add_phases', 'done'], phases ['1 coverage of REQ-2', '2 the gate']",
+        "n1325: not proved, CONTEXT.md decisions ['- **D1** (locked): reuse the table', '- **D2** (free): the chart library', '- **D3** (deferred): pdf export', '- **D4** (locked): no id and no status']"
+      ],
+      "proved": [
+        {
+          "node": "n1144",
+          "ok": true,
+          "detail": "gate with owner words on: {'held': [\"the drawing awaits the owner's word for this drawing\"], 'confirmed': True, 'redrawn': [\"the drawing awaits the owner's word for this drawing\"]}"
+        },
+        {
+          "node": "n1148",
+          "ok": true,
+          "detail": "design rubric ends «eck can read; the designer reviewing his own drawing; motion without the animator's rules.»"
+        },
+        {
+          "node": "n1149",
+          "ok": true,
+          "detail": "read before drawing: ['.agents/phases/ph_sma/CONTEXT.md', '.agents/phases/ph_sma/SPEC.md', '.agents/phases/ph_sma/PLAN.md', 'DESIGN.md']"
+        },
+        {
+          "node": "n1150",
+          "ok": true,
+          "detail": "modes {'screens': ['screens', ['actions', 'screens_states', 'texts', 'heuristics', 'accessibility']], 'system': ['system', ['actions', 'screens_states', 'texts', 'heuristics', 'accessibility', 'c4', 'event_chain']], 'mixed': ['mixed', ['actions', 'screens_states', 'texts', 'heuristics', 'accessibili"
+        },
+        {
+          "node": "n1151",
+          "ok": true,
+          "detail": "archive: replaced ['a'], same drawing 0, capped at 10"
+        },
+        {
+          "node": "n1152",
+          "ok": true,
+          "detail": "PM path {'stage': 'execution', 'kept': ['UI-SPEC.md', 'kit.png'], 'committed': [['UI-SPEC.md', 'kit.png']], 'commit': 'ccccccc', 'designer': 'design-lead', 'book': ['drawing', 'drawing_committed']}; auto path {'stage': 'execution', 'kept': ['UI-SPEC.md', 'kit.png'], 'committed': [['UI-SPEC.md', 'kit"
+        },
+        {
+          "node": "n1160",
+          "ok": true,
+          "detail": "manifest commit [['UI-SPEC.md', 'kit.png']] at ccccccc"
+        },
+        {
+          "node": "n1153",
+          "ok": true,
+          "detail": "draw {'rules': True, 'words': ['data-theme', '--<variant>.html', 'page-prototype', 'no build step', '150–300 ms', 'hierarchy, spacing, contrast, states, brand, motion']}, check {'rules': True, 'words': ['data-theme', '--<variant>.html', 'page-prototype', 'no build step', '150–300 ms', 'hierarchy, sp"
+        },
+        {
+          "node": "n1154",
+          "ok": true,
+          "detail": "contract: DESIGN.md None, partial the drawing's contract misses required section(s): texts, heuristics, accessibility — UI-SPEC.md needs one heading per required section, full None"
+        },
+        {
+          "node": "n1155",
+          "ok": true,
+          "detail": "reviewer {'none': ['the drawing is not reviewed by a separate role'], 'same': ['the reviewer of the drawing is its designer: it must be a separate role'], 'other': True}"
+        },
+        {
+          "node": "n1156",
+          "ok": true,
+          "detail": "browser check path qa verdict done, viewports 375,768,1280, out {'state': 'failed', 'reply': {'reason': 'case 1 failed'}}"
+        },
+        {
+          "node": "n1157",
+          "ok": true,
+          "detail": "off ['draw', 'check', 'done'], on ['material', 'draw', 'check', 'done'], draw told f/design/MATERIAL.md"
+        },
+        {
+          "node": "n1158",
+          "ok": true,
+          "detail": "next action Phase ph_x «Sum» — stage 3, design (screens). Lane Pilot draws the screens itself (lp.draw: design-lead draws "
+        },
+        {
+          "node": "n1159",
+          "ok": true,
+          "detail": "lp.draw path with a rework verdict ['draw', 'check', 'draw', 'check', 'done']"
+        },
+        {
+          "node": "n1161",
+          "ok": true,
+          "detail": "awaiting the word {'key': 'design:word:design', 'waitsForPm': True, 'text': \"Phase ph_sma «Sum» awaits the owner's word at design (owner.\"}, after the yes {'key': 'design:s1:t', 'waitsForPm': True}"
+        },
+        {
+          "node": "n1162",
+          "ok": true,
+          "detail": "readiness {'noPaths': [\"no drawing: the designer draws the screens into the phase's design folder and names the files\"], 'noAnswer': ['no feasibility answer: feasible, or the contradiction with the plan'], 'contradicts': ['the drawing contradicts the plan: needs a backend — return the phase to plann"
+        },
+        {
+          "node": "n1145",
+          "ok": true,
+          "detail": "ready ['p1', 'p3'], after p1 ['p2'], driver issued ['q1']"
+        },
+        {
+          "node": "n1146",
+          "ok": true,
+          "detail": "lp.build done/partial/blocked"
+        },
+        {
+          "node": "n1147",
+          "ok": true,
+          "detail": "retry brief: - the check `npm test` failed (exit 1) → run `npm test` yourself, read its output, fix what it names inside owns_paths"
+        },
+        {
+          "node": "n1163",
+          "ok": true,
+          "detail": "execution rubric ends «ter editing the drawing it follows; accepting on a model's word alone.»"
+        },
+        {
+          "node": "n1164",
+          "ok": true,
+          "detail": "execution context ['.agents/phases/ph_sma/design/UI-SPEC.md', '.agents/phases/ph_sma/design/kit.png', '.agents/phases/ph_sma/PLAN.md']"
+        },
+        {
+          "node": "n1165",
+          "ok": true,
+          "detail": "issued again on resume: {'resumed': ['p2'], 'stillRunning': [], 'changed': ['p1', 'p2']}"
+        },
+        {
+          "node": "n1166",
+          "ok": true,
+          "detail": "presence hold {'within': 'owner_present:codex used by the owner 2 min ago on mac', 'edge': 'owner_present:codex used by the owner 10 min ago on mac', 'after': None, 'old': None, 'other': None, 'wide': 'owner_present:codex used by the owner 20 min ago on mac'}"
+        },
+        {
+          "node": "n1167",
+          "ok": true,
+          "detail": "marker branches {'milestone': ['git branch -f milestone/v1 HEAD', ['marker branch milestone/v1 at the accepted main']], 'phase': ['git branch -f phase/<id> HEAD', ['marker branch phase/<id> at the accepted main']]}"
+        },
+        {
+          "node": "n1168",
+          "ok": true,
+          "detail": "inventory {'waves': [1, 2], 'perWave': [['a', 'd'], ['b', 'c']], 'ready': ['a', 'd', 'b', 'c']}"
+        },
+        {
+          "node": "n1169",
+          "ok": true,
+          "detail": "wave table ['wave 1:', '| piece | task | promise |', '|---|---|---|', '| p1 | task_1 | then-p1 |', '| p2 | — | a / b |']; journal [['wave 1:', '| piece | task | promise |', '|---|---|---|', '| p1 | p1 | then-p1 |', '| p2 | p2 | a / b |']]"
+        },
+        {
+          "node": "n1170",
+          "ok": true,
+          "detail": "contract {'noContract': \"the drawing has no contract: add UI-SPEC.md with the checkable points (screens, states, breakpoints) to the drawing's paths\", 'execution': ['.agents/phases/ph_sma/design/UI-SPEC.md', '.agents/phases/ph_sma/PLAN.md'], 'screen': '   the screens follow the phase drawing: .agent"
+        },
+        {
+          "node": "n1171",
+          "ok": true,
+          "detail": "motion rows {'rows': ['m', 'r'], 'decision': ['m']}"
+        },
+        {
+          "node": "n1172",
+          "ok": true,
+          "detail": "inline law Motion (the animator's law): motion rows: animate transform and opacity only, 150–300 ms f; plain None; off None"
+        },
+        {
+          "node": "n1173",
+          "ok": true,
+          "detail": "reassign {'named': {'ok': True, 'taskId': 'T1', 'runId': 'run1', 'oldThreadId': 'thr_w', 'oldAttemptNo': 1, 'providerId': 'codex', 'model': 'gpt-x'}, 'request': {'reason': 'let codex do this one', 'selection': {'providerId': 'codex', 'model': 'gpt-x'}}, 'stops': ['thr_w'], 'state': 'cancel_requested"
+        },
+        {
+          "node": "n1174",
+          "ok": true,
+          "detail": "one pass issues ['a', 'b', 'c'], with a cap of 2 ['a', 'b'] then ['a', 'b', 'c']"
+        },
+        {
+          "node": "n1175",
+          "ok": true,
+          "detail": "without subagents {'first': ['a'], 'second': ['a', 'b']}, with them ['a', 'b', 'c']"
+        },
+        {
+          "node": "n1176",
+          "ok": true,
+          "detail": "wave lines: 2 piece(s) hold contract_current; broken [['independent_check', False, 'independent_check fails: p2']]"
+        },
+        {
+          "node": "n1177",
+          "ok": true,
+          "detail": "[gate, advisory] stops: advice only [True, False], blocking rubric [True, True], block status [True, True]; default mode gate"
+        },
+        {
+          "node": "n1178",
+          "ok": true,
+          "detail": "regression call {'projectId': 'projA', 'runId': 'run1', 'force': True, 'mode': 'full', 'basePaths': ['/repo/.git/lp-phases/ph_ed445185f0']}; green {'stage': 'verification', 'verdict': 'passed'}; red {'verdict': 'failed', 'detail': \"the run's goal check failed\"}"
+        },
+        {
+          "node": "n1179",
+          "ok": true,
+          "detail": "live check: skipped False, passed True, other head [False, 'the live check was taken on head v0, the package it decides on is at v1 — check the same candidate'], same head [True, '1 piece(s) passed their browser check']"
+        },
+        {
+          "node": "n1180",
+          "ok": true,
+          "detail": "next automatic stage: {'withUi': 'live', 'checkOff': 'close', 'taken': 'close', 'noScreens': 'close', 'beforeVerdict': None}"
+        },
+        {
+          "node": "n1181",
+          "ok": true,
+          "detail": "roadmap rows after the close ['- [x] 1.1 Hud — build it', '- [ ] 1.2 Menu — the menu', '- [ ] 999.1 Later — parked']"
+        },
+        {
+          "node": "n1182",
+          "ok": true,
+          "detail": "owner's yes ['applied', [['phase-lessons', 'Phase «Sums» lessons: The plan missed the empty-cell case; a check per promise would have caught it.']]]; no ['declined', []]"
+        },
+        {
+          "node": "n1183",
+          "ok": true,
+          "detail": "told «Next on the roadmap: 1.2 «Menu» — the menu»; autonomous opened [['Menu', '1.2']]; failed verdict -> replan"
+        },
+        {
+          "node": "n1184",
+          "ok": true,
+          "detail": "todo folder ['<day>-<run>'], meta {'id': 'wfrun_c458c889e25b4a8cbcad9ec96448fde8', 'title': 'Fix flaky test', 'status': 'ready', 'priority': 'high', 'estimate': 3, 'dependsOn': [], 'created': '2026-11-18'}, on the backlog board [True]"
+        },
+        {
+          "node": "n1185",
+          "ok": true,
+          "detail": "note: {'status': 'done', 'confirmation': 'note saved'}, 1 write(s) of note.md"
+        },
+        {
+          "node": "n1186",
+          "ok": true,
+          "detail": "seed meta {'id': 'x1', 'title': 'Try the cache', 'status': 'ready', 'priority': 'low', 'estimate': 5, 'dependsOn': ['a', 'b'], 'created': '2026-11-02'}, board {'issuable': ['later'], 'blocked': ['waits']}"
+        },
+        {
+          "node": "n1187",
+          "ok": true,
+          "detail": "parked as 999.1, then 999.2; the machine's next row 1.1"
+        },
+        {
+          "node": "n1188",
+          "ok": true,
+          "detail": "pick order ['high-small', 'high-big', 'mid', 'low-small'], needs an estimate ['none'], to split ['huge']"
+        },
+        {
+          "node": "n1189",
+          "ok": true,
+          "detail": "open ideas [['r'], [], []], match ['x'], read-only command True"
+        },
+        {
+          "node": "n1190",
+          "ok": true,
+          "detail": "a note from one session is found by another: ['The reports page lives in components/reports and reads the daily table.']; other project sees 0; secret refused [False, True]"
+        },
+        {
+          "node": "n1192",
+          "ok": true,
+          "detail": "UAT lines 3, changed by two answers 2, read back {'lines': 3, 'passed': 1, 'failed': ['3. p3: given g, when w, then then-p3 — the total is wrong'], 'open': ['1. p1: given g, when w, then then-p1']}"
+        },
+        {
+          "node": "n1193",
+          "ok": true,
+          "detail": "verdicts: all proved ['passed', 'every piece accepted and proved; the composition passes on main'], one unproved ['failed', 'p2: plan-fact failed — the promise is not proved'], goal check running ['pending', \"the run's goal check is still running\"]"
+        },
+        {
+          "node": "n1194",
+          "ok": true,
+          "detail": "failed verdict with phase.diagnose on -> diagnose, off -> replan; debuggers for 2 gaps 2, for 7 gaps 6"
+        },
+        {
+          "node": "n1195",
+          "ok": true,
+          "detail": "closed: closed, documents committed [['.agents/phases/<id>/SUMMARY.md', '.agents/planning/ROADMAP.md', '.agents/planning/STATE.md']], STATE marks [True, True, True, True]"
+        },
+        {
+          "node": "n1196",
+          "ok": true,
+          "detail": "rule graduation: {'twice': None, 'thrice': 'recurred', 'owner': 'owner', 'confirmed': 'confirmed', 'proposed': None, 'held': None, 'notAMechanism': None}"
+        },
+        {
+          "node": "n1197",
+          "ok": true,
+          "detail": "lessons at the wrong stage «phase <id> is at discussion, not lessons»; at lessons -> closed, kept {'needed': True, 'why': 'a return', 'analysis': 'The plan missed the empty-cell case; a check per promise would have caught it.', 'author': 'thr_retro', 'reviewer': 'thr_stage', 'reviewRun': 'wf_read', "
+        },
+        {
+          "node": "n1198",
+          "ok": true,
+          "detail": "clean phase {'needed': False, 'why': 'the phase went through without returns or failures'}, troubled {'needed': True, 'why': '2 return(s) to an earlier stage, 1 failed attempt(s)'}"
+        },
+        {
+          "node": "n1199",
+          "ok": true,
+          "detail": "refusals ['forged', 'missing', 'other', 'self']; the independent reviewer thr_stage read the author's thr_retro bytes: True"
+        },
+        {
+          "node": "n1200",
+          "ok": true,
+          "detail": "the daemon wrote [['phase-lessons', 'Phase «Sums» lessons: The plan missed the empty-cell case; a check per promise would have caught it.']]; with the owner's word asked a draft staged, memory rows 0"
+        },
+        {
+          "node": "n1201",
+          "ok": true,
+          "detail": "a writer's report without receipts -> failed; with receipts passed"
+        },
+        {
+          "node": "n1202",
+          "ok": true,
+          "detail": "verification reads ['.agents/phases/ph_sma/SPEC.md', '.agents/phases/ph_sma/VALIDATION.md', '.agents/phases/ph_sma/design/UI-SPEC.md']"
+        },
+        {
+          "node": "n1203",
+          "ok": true,
+          "detail": "UAT state {'lines': 4, 'passed': 1, 'failed': ['2. p2: given g, when w, then t2 — wrong'], 'open': ['3. p3: given g, when w, then t3', '4. p4: given g, when w, then t4']}, next 3. p3: given g, when w, then t3"
+        },
+        {
+          "node": "n1204",
+          "ok": true,
+          "detail": "screens built [True, False, True, True], check live with {'url': 'http://127.0.0.1:5173/', 'urls': ['http://127.0.0.1:5173/'], 'flows': ['v1: given g; when w; then then-v1'], 'dev_server': 'npm run dev'}, backend-only phase -> close"
+        },
+        {
+          "node": "n1205",
+          "ok": true,
+          "detail": "design points: 40 kept of 46, first {'id': 'design_6c4c7e24', 'text': 'point 1: the screen shows 1'}"
+        },
+        {
+          "node": "n1206",
+          "ok": true,
+          "detail": "agreed {'path': ['derive', 'confirm', 'baseline', 'write_tests', 'run', 'inventory', 'done'], 'status': 'done', 'added': 3, 'fromDerive': 'baseline#1'}; timeout {'path': ['derive', 'confirm', 'blocked'], 'status': 'blocked'}; given {'path': ['derive', 'confirm', 'baseline', 'write_tests', 'run', 'in"
+        },
+        {
+          "node": "n1207",
+          "ok": true,
+          "detail": "acceptance file ['- [x] 1. p1: given g, when w, then then-p1', '- [!] 2. p2: given g, when w, then then-p2 — the total is wrong', '- [ ] 3. p3: given g, when w, then then-p3']; read back {'lines': 3, 'passed': 1, 'failed': ['2. p2: given g, when w, then then-p2 — the total is wrong'], 'open': ['3. p"
+        },
+        {
+          "node": "n1208",
+          "ok": true,
+          "detail": "lines [{'n': 1, 'state': 'open', 'note': None, 'by': None}, {'n': 2, 'state': 'passed', 'note': None, 'by': 'owner via screen'}, {'n': 3, 'state': 'failed', 'note': 'the total   is wrong', 'by': 'owner'}]; book ['UAT line 2 (p2): pass by owner via screen', 'UAT line 3 (p3): fail —   the total   is w"
+        },
+        {
+          "node": "n1209",
+          "ok": true,
+          "detail": "the owner's yes: open UAT is not complete: 1 open, 0 failed of 3 — the owner answers each line by its number (uat_line); all passed {'why': None, 'stage': 'acceptance', 'words': [['uat', 'yes']]}"
+        },
+        {
+          "node": "n1210",
+          "ok": true,
+          "detail": "diagnosis path ['ask_symptoms', 'normalize', 'diagnose', 'diagnosed']; causes ['cause 1', 'cause 2', 'cause 3']; gaps ['check p1 red: lint fails', 'check p2 red: the total is wrong', 'check p3 red: timeout']"
+        },
+        {
+          "node": "n1211",
+          "ok": true,
+          "detail": "planner got {'goal': 'Fix review findings', 'mode': 'gaps', 'gaps': [{'file': 'src/a.ts', 'line': 12, 'severity': 'high', 'evidence': 'return value of save() ignored'}]}; path ['first_review', 'plan_fix', 'build_fix', 're_review', 'plan_fix2', 'build_fix2', 're_review', 'done']"
+        },
+        {
+          "node": "n1212",
+          "ok": true,
+          "detail": "big plan {'path': ['plan', 'lint', 'plan_critic', 'ok'], 'verdict': 'pass', 'status': 'ok'}; small {'path': ['plan', 'lint', 'ok'], 'verdict': None}; quick ['plan', 'lint', 'ok']"
+        },
+        {
+          "node": "n1213",
+          "ok": true,
+          "detail": "revision ['plan', 'plan_critic', 'plan', 'plan_critic', 'ok']; endless {'plans': 3, 'critics': 3, 'status': 'low_confidence'}"
+        },
+        {
+          "node": "n1214",
+          "ok": true,
+          "detail": "sure ['session', 'investigate', 'write_investigation_session', 'write_investigation_evidence', 'confirmed']; weak {'path': ['session', 'investigate', 'write_investigation_session', 'write_investigation_evidence', 'investigate', 'write_investigation_session', 'write_investigation_evidence', 'inconclu"
+        },
+        {
+          "node": "n1215",
+          "ok": true,
+          "detail": "post-mortem ['task: task arrived (pm)', 'attempt: attempt 1 created', 'edition: contract edition 1 (created) · sha <12>', 'move: attempt 1: queued → spawn_requested', 'move: attempt 1: spawn_requested → running', 'move: attempt 1: running → blocked: verification_failed: npm test', 'stage: stage veri"
+        },
+        {
+          "node": "n1216",
+          "ok": true,
+          "detail": "integrity [{'area': 'todos', 'missingInIndex': ['unlisted'], 'deadIndexLines': ['- ghost-item — the folder was deleted']}, {'area': 'plans', 'missingInIndex': ['2026-11-02-new-plan'], 'deadIndexLines': []}]; fixed ['todos/INDEX.md: +1 -1 (the text before is in INDEX.md.bak)', 'plans/INDEX.md: +1 -0 "
+        },
+        {
+          "node": "n1217",
+          "ok": true,
+          "detail": "undo revert of t1 (7e8940e450) is clean: 1 file(s) restored, 1/1 task checks green; again task t1 was already reverted in <sha>; collide reverting <sha> conflicts in server.ts"
+        },
+        {
+          "node": "n1218",
+          "ok": true,
+          "detail": "runs {'runs': [['r5', 'succeeded'], ['r4', 'running'], ['r2', 'failed'], ['r1', 'succeeded']], 'hasMore': False}; first page {'runs': [['r5', 'succeeded'], ['r4', 'running']], 'hasMore': True}"
+        },
+        {
+          "node": "n1219",
+          "ok": true,
+          "detail": "resumed ['session', 'investigate', 'write_investigation_session', 'write_investigation_evidence', 'confirmed']; asked 0; file kept True"
+        },
+        {
+          "node": "n1220",
+          "ok": true,
+          "detail": "short {'path': ['ask_symptoms', 'investigate', 'confirmed'], 'status': 'confirmed'}; long {'path': ['investigate', 'confirmed'], 'skipped': True}; failures ['normalize', 'diagnose', 'diagnosed']"
+        },
+        {
+          "node": "n1221",
+          "ok": true,
+          "detail": "session file # Debug session — csv-crash\n\nStatus: open\n\n## Symptom\n\nthe i; hostile {'path': ['session', 'investigate', 'write_investigation_session', 'write_investigation_evidence', 'confirmed'], 'escaped': False, 'kept': True}; no name ['investigate', 'confirmed']"
+        },
+        {
+          "node": "n1222",
+          "ok": true,
+          "detail": "summary keys ['affected_files', 'confidence', 'diagnosis', 'evidence_path', 'fix_direction', 'fix_directions', 'regression_tests', 'risks', 'root_cause', 'status']; fan-out [['diagnose:child', 'new'], ['diagnose:child', 'new']]"
+        },
+        {
+          "node": "n1223",
+          "ok": true,
+          "detail": "whole {'path': ['prepare', 'write', 'verify', 'commit', 'done'], 'row': {'state': 'passed', 'pages': 3}, 'commitGot': 'verify#1'}; unverified {'path': ['prepare', 'write', 'verify', 'skipped-verify'], 'row': {'state': 'skipped', 'why': 'the check could not run'}}; idle {'path': ['prepare', 'skipped-"
+        },
+        {
+          "node": "n1225",
+          "ok": true,
+          "detail": "report: 📊 Lane Pilot за сутки. счёт с 20 / 2 задач, принято 1 (50.0%) / песочницы 1, старые версии 0"
+        },
+        {
+          "node": "n1226",
+          "ok": true,
+          "detail": "stats: phases [['first', 'execution', 'active'], ['second', 'planning', 'active']], plans {'pieces': 5, 'accepted': 2, 'withdrawn': 2}, git {'commits': 1, 'files': 3}"
+        },
+        {
+          "node": "n1227",
+          "ok": true,
+          "detail": "open {'status': 'open', 'locked': ['GET only'], 'open': ['invalidation on write'], 'deferred': [], 'risk_register': [{'risk': 'stale reads', 'severity': 'high'}], 'terminology': [{'term': 'cache', 'meaning': 'the API cache'}], 'branches_walked': 5}; done {'path': ['walk', 'synth', 'done'], 'status':"
+        },
+        {
+          "node": "n1228",
+          "ok": true,
+          "detail": "ok {'path': ['spike_new', 'experiment', 'write_spike', 'skill_dir', 'write_skill', 'goal_check', 'answered'], 'out': {'status': 'answered', 'decision': 'yes, fts5 handles 1M rows', 'spike_path': 'spikes/fts.md', 'skill_draft': 'draft.md', 'skill_path': ''}}; failed {'path': ['spike_new', 'experiment"
+        },
+        {
+          "node": "n1229",
+          "ok": true,
+          "detail": "spike wrap {'first': {'path': ['spike_new', 'experiment', 'write_spike', 'skill_dir', 'write_skill', 'goal_check', 'answered'], 'status': 'succeeded', 'skillPath': '.agents/forge/skills/persist-exact/SKILL.md', 'bytes': '---\\nname: persist-exact\\ndescription: exact bytes\\n---\\n\\nUnicode: ё\\ntrailing"
+        },
+        {
+          "node": "n1231",
+          "ok": true,
+          "detail": "sketch wrap {'first': {'path': ['draft', 'skill_dir', 'write_skill', 'written'], 'status': 'succeeded', 'skillPath': '.agents/forge/skills/compact-filter-bar/SKILL.md', 'bytes': '# Compact filter bar\\n\\nKeep the winning direction visible at narrow widths.\\n'}, 'second': {'path': ['draft', 'skill_dir"
+        },
+        {
+          "node": "n1232",
+          "ok": true,
+          "detail": "short ['class', 'plan', 'lint', 'write', 'state', 'closed']; several {'path': ['class', 'plan', 'escalate', 'proposed'], 'status': 'proposed', 'wrote': 0}; failed {'path': ['class', 'plan', 'lint', 'write', 'partial'], 'status': 'partial'}"
+        },
+        {
+          "node": "n1233",
+          "ok": true,
+          "detail": "done {'path': ['self_check', 'task', 'done'], 'out': {'status': 'done', 'merge_commit': 'c0ffee1', 'files': ['.gitignore'], 'summary': 'one named file'}}; big {'path': ['self_check', 'reroute', 'rerouted'], 'out': {'status': 'rerouted', 'proposed_workflow': 'analyze-plan-execute', 'summary': 'spans "
+        },
+        {
+          "node": "n1234",
+          "ok": true,
+          "detail": "routes: full {'decision': 'route', 'workflowId': 'issue-full', 'questions': 0, 'rule': 'tracker-ref'}; vague {'decision': 'clarify', 'workflowId': None, 'questions': 3, 'rule': None}; continue {'decision': 'clarify', 'workflowId': None, 'questions': 1, 'rule': 'state_continue'}"
+        },
+        {
+          "node": "n1235",
+          "ok": true,
+          "detail": "autonomous on {'next': [['Menu', 'discussion', '1.2']], 'book': ['autonomous: the next phase <id> «Menu» (roadmap 1.2) is open'], 'told': [], 'closed': 'closed'}; off [] told 1"
+        },
+        {
+          "node": "n1236",
+          "ok": true,
+          "detail": "idle PM told [1, 1, 2] times; busy PM [0, 0, 0]"
+        },
+        {
+          "node": "n1237",
+          "ok": true,
+          "detail": "next: open stage {'stage': 'discussion', 'waitsForYou': True, 'next': 'Phase ph_e3debe5aa7 «Hud» — stage 1, discussion. Goal: hud', 'hasHead': 'string'}, paused {'stage': 'discussion', 'waitsForYou': False, 'next': 'Phase ph_e3debe5aa7 «Hud» is paused; lane_pilot_phase {action:\"resume\", phaseId:\"ph_"
+        },
+        {
+          "node": "n1238",
+          "ok": true,
+          "detail": "flags {'full': False, 'validate': False, 'discuss': False, 'research': False}; paths none «class plan lint write state closed», full «class plan validate lint write-full review state closed_reviewed»"
+        },
+        {
+          "node": "n1239",
+          "ok": true,
+          "detail": "task folder .agents/tasks/quick-1, unsafe ids None/None"
+        },
+        {
+          "node": "n1240",
+          "ok": true,
+          "detail": "discuss flag: path «class discuss plan lint write state closed», owner asked 1; no flag: «class plan lint write state closed», asked 0"
+        },
+        {
+          "node": "n1241",
+          "ok": true,
+          "detail": "research flag: path «class research plan lint write state closed», the plan saw {'research_notes': 'files a.ts'}"
+        },
+        {
+          "node": "n1242",
+          "ok": true,
+          "detail": "plan routes: one closed, unclear blocked, two tasks proposed, met already met: nothing changed"
+        },
+        {
+          "node": "n1243",
+          "ok": true,
+          "detail": "plan check: validate path «class plan validate plan validate lint write review state closed_reviewed», critic visits 2, planner visits 2"
+        },
+        {
+          "node": "n1244",
+          "ok": true,
+          "detail": "executor modes {'write': 'quick', 'write-medium': 'standard', 'write-full': 'full'}, medium risk «class plan lint write-medium state closed», failed write ['class plan lint write partial', 'partial', 'quick path: not finished']"
+        },
+        {
+          "node": "n1245",
+          "ok": true,
+          "detail": "review as advice: validate ['class plan validate lint write review state closed_reviewed', 'closed', 1], full ['class plan validate lint write-full review state closed_reviewed', 'closed', 1], no flag ['class plan lint write state closed', 0]"
+        },
+        {
+          "node": "n1246",
+          "ok": true,
+          "detail": "verify by flag: validate ['class plan validate lint write review state closed_reviewed', 0, 'done'], plain ['class plan lint write state closed', 0, 'quick path: built and verified'], modes {'quick': {'plan_critique.enabled': False, 'code_critique.enabled': False}, 'full': {'plan_critique.enabled': "
+        },
+        {
+          "node": "n1247",
+          "ok": true,
+          "detail": "STATE.md rows ['| 2026-11-10 | fix typo | abc123 |', '| 2026-11-11 | fix icon | def456 |'], one heading 1, no STATE.md -> None"
+        },
+        {
+          "node": "n1248",
+          "ok": true,
+          "detail": "help lists 129 commands, missing []"
+        },
+        {
+          "node": "n1249",
+          "ok": true,
+          "detail": "project-life writes: in scope [], refused ['src/app.ts', '.agents/LESSONS.md', 'docs/ARCHITECTURE.md', '.agents/decisions/d1.md', '.agents/PROGRESS.md.bak']"
+        },
+        {
+          "node": "n1250",
+          "ok": true,
+          "detail": "PM skills ['karpathy-guidelines', 'lane-pilot', 'project-life', 'project-resume', 'project-onboard', 'project-design', 'web-design', 'ui-ux-pro-max', 'app-architect', 'page-prototype', 'metamcp'], resume-project reads as project-resume"
+        },
+        {
+          "node": "n1251",
+          "ok": true,
+          "detail": "pause wrote ['.agents/phases/ph_6f0c21bf1a/HANDOFF.json', '.agents/phases/ph_6f0c21bf1a/PAUSE.md']; handoff {'stage': 'execution', 'state': 'paused', 'goal': 'hud', 'pieces': [{'id': 'p1', 'taskId': 'p1', 'state': 'not issued'}, {'id': 'p2', 'taskId': None, 'state': 'not issued'}], 'openQuestions': "
+        },
+        {
+          "node": "n1252",
+          "ok": true,
+          "detail": "plan gate: approved [], no check [\"no independent plan check: run the plan critic (workflow lp.plan) and report its decision with the run's wfRunId\"], three rounds 3 rounds of the plan check asked for changes: stop revising "
+        },
+        {
+          "node": "n1254",
+          "ok": true,
+          "detail": "convergence: approved ['critic_a critic_b converge approve', {'status': 'approve', 'findings': [{'severity': 'high', 'text': 'split p1'}], 'rounds': 2}], changes ['critic_a critic_b converge changes', {'status': 'changes_requested', 'findings': [{'severity': 'high', 'text': 'split p1'}], 'rounds': 2"
+        },
+        {
+          "node": "n1255",
+          "ok": true,
+          "detail": "two independent readers: roles ['plan-critic', 'specialist-reviewer', 'plan-critic'], converge reads ['critic_a', 'critic_b']"
+        },
+        {
+          "node": "n1256",
+          "ok": true,
+          "detail": "planning rubric: [7, 5] steps/blocks, by stage equals by phase True"
+        },
+        {
+          "node": "n1257",
+          "ok": true,
+          "detail": "stage init reads ['.agents/planning/ROADMAP.md', '.agents/planning/REQUIREMENTS.md', '.agents/phases/ph_sma/DISCUSSION.md']; closed ['.agents/phases/ph_sma/BOOK.md']"
+        },
+        {
+          "node": "n1258",
+          "ok": true,
+          "detail": "closed phase refuses resume/pause/replan: phase ph_cd9add1b66 is closed: open a new phase for new work"
+        },
+        {
+          "node": "n1259",
+          "ok": true,
+          "detail": "parked question: held ['q1'], gate ['open question q1: text q1'], after the answer []"
+        },
+        {
+          "node": "n1260",
+          "ok": true,
+          "detail": "planning reads ['.agents/phases/ph_sma/CONTEXT.md', '.agents/phases/ph_sma/DISCUSSION.md'] then SPEC at 2"
+        },
+        {
+          "node": "n1261",
+          "ok": true,
+          "detail": "research: default ['plan', 'lint', 'plan_critic', 'ok'], on ['research', 'plan', 'lint', 'plan_critic', 'ok'], quick ['plan', 'lint', 'ok']"
+        },
+        {
+          "node": "n1262",
+          "ok": true,
+          "detail": "validation strategy: default ['plan', 'lint', 'plan_critic', 'ok'], on ['strategy', 'plan', 'lint', 'plan_critic', 'ok'], quick ['plan', 'lint', 'ok']"
+        },
+        {
+          "node": "n1263",
+          "ok": true,
+          "detail": "threat gate: none None, a risk without SECURITY.md «the security risk «user tokens leave the box» needs a threat model: wr», with it None"
+        },
+        {
+          "node": "n1264",
+          "ok": true,
+          "detail": "UI contract gate: the drawing has no contract: add UI-SPEC.md with the checkable points (screens, states, breakpoints) to the drawing's paths; with UI-SPEC None"
+        },
+        {
+          "node": "n1265",
+          "ok": true,
+          "detail": "code map drift 3, same commit 0, session text «Code map is 3 commits behind HEAD: reindex before relying on it»"
+        },
+        {
+          "node": "n1266",
+          "ok": true,
+          "detail": "patterns: default ['plan', 'lint', 'plan_critic', 'ok'], on ['patterns', 'plan', 'lint', 'plan_critic', 'ok'], quick ['plan', 'lint', 'ok']"
+        },
+        {
+          "node": "n1267",
+          "ok": true,
+          "detail": "planner: role planner, lint-failing plan [['plan', 'lint', 'plan', 'lint', 'plan', 'lint', 'failed'], 3, 0, 'failed'], revisit carries [{'gaps': ['a: owns_paths overlap']}]"
+        },
+        {
+          "node": "n1330",
+          "ok": true,
+          "detail": "close path with the record and the snapshot ['status', 'retro', 'write_project', 'write_retro', 'living', 'close', 'summary', 'approve_knowledge', 'record', 'snapshot', 'archive', 'closed']; switches off ['status', 'retro', 'write_project', 'write_retro', 'close', 'approve_knowledge', 'archive', 'cl"
+        },
+        {
+          "node": "n1331",
+          "ok": true,
+          "detail": "summary runs after a close only with the switch on: calls [1, 0, 0], graph alone ['summary', 'write_summary', 'goal_check', 'done']"
+        },
+        {
+          "node": "n1332",
+          "ok": true,
+          "detail": "owner asked: clear 0, open 1, uncovered ['REQ-2'], red gate red"
+        },
+        {
+          "node": "n1333",
+          "ok": false,
+          "detail": "gap milestone: path ['archive', 'frame', 'write_requirements', 'add_phases', 'done'], phases ['1 coverage of REQ-2', '2 the gate']"
+        },
+        {
+          "node": "n1334",
+          "ok": true,
+          "detail": "cleanup: dry {'status': 'planned', 'moved': ['phases/ph_old']}, applied {'status': 'done', 'moved': ['phases/ph_old']}, failed check {'status': 'blocked'}"
+        },
+        {
+          "node": "n1335",
+          "ok": true,
+          "detail": "not ready: ['gate', 'preflight', 'held'] {'status': 'held', 'pr_url': '', 'held_by': ['verification is not passed: acceptance line 2 does not hold'], 'hooks_failed': []}; ready: shipped"
+        },
+        {
+          "node": "n1336",
+          "ok": true,
+          "detail": "full-gate verdict: none False, fresh True, 7h old False, wrong head False, held ship ['gate', 'held_gate']"
+        },
+        {
+          "node": "n1337",
+          "ok": true,
+          "detail": "untriaged update: held, held_by ['verification is not passed', 'untriaged vendor update: lodash 4.17.21 → 5.0.0 has no note'], PRs opened 0"
+        },
+        {
+          "node": "n1338",
+          "ok": true,
+          "detail": "ritual by target: ssh ['preflight', 'tests', 'run_deploy', 'post_check', 'record', 'deployed_other'], plugin ['preflight', 'push_plugin', 'post_check', 'record', 'deployed'], refused deploys 0"
+        },
+        {
+          "node": "n1339",
+          "ok": true,
+          "detail": "push: errand runs 1x when shipped, held ships [{'pr': 0, 'status': 'held'}, {'pr': 0, 'status': 'held'}, {'pr': 0, 'status': 'held'}]"
+        },
+        {
+          "node": "n1340",
+          "ok": true,
+          "detail": "PR emitted https://git.example/pr/7; body R body from the phase's SUMMARY.md and BOOK.md (what, why, how it was verified, receipts) into a temp file made with mktemp outside every repository, open it with gh pr c"
+        },
+        {
+          "node": "n1341",
+          "ok": true,
+          "detail": "review: off ['review', 'post_ship'], rework ['gate', 'preflight', 'review_range', 'review', 'held_review'], range {'range': 'main..HEAD'}"
+        },
+        {
+          "node": "n1342",
+          "ok": true,
+          "detail": "shipment record: url) the code-owned writer appends; the same code also sets the phase's status and last activity in .agents/planning/STATE.md. This read-only helper does not write files."
+        },
+        {
+          "node": "n1343",
+          "ok": true,
+          "detail": "post-ship hooks: none 0 runs, two files 1 run, failed ['h2']"
+        },
+        {
+          "node": "n1344",
+          "ok": true,
+          "detail": "first run ['tree', 'probe', 'value_map', 'write_value_map', 'preview', 'profile_write', 'ask', 'research', 'write_research_stack', 'write_research_features', 'write_research_architecture', 'write_research_pitfalls', 'requirements', 'write_requirements', 'recap', 'write_roadmap', 'write_project', 'ad"
+        },
+        {
+          "node": "n1345",
+          "ok": true,
+          "detail": "requirements runs [1, 0, 0] (full, quick, research off), quick skips ['research', 'write_research_stack', 'write_research_features', 'write_research_architecture', 'write_research_pitfalls', 'requirements', 'write_requirements']"
+        },
+        {
+          "node": "n1346",
+          "ok": true,
+          "detail": "new milestone: ['archive', 'frame', 'write_requirements', 'add_phases', 'done'] -> {'status': 'done', 'phases': ['1 coverage of REQ-2', '2 the gate']}"
+        },
+        {
+          "node": "n1347",
+          "ok": true,
+          "detail": "analysis: full depth deep, report reports/analysis-run.md"
+        },
+        {
+          "node": "n1348",
+          "ok": true,
+          "detail": "scan: quick {'goal': 'how the merge queue works', 'scope': 'src/rooms/phase', 'depth': 'quick'}, standard depth standard"
+        },
+        {
+          "node": "n1349",
+          "ok": true,
+          "detail": "/sma-import: conflict -> owner -> {'status': 'done', 'pieces': [{'id': 'p1', 'task': {'owns_paths': ['src/**']}}], 'conflicts': ['conflicts with locked decision D3']}; no conflict skips ['resolve']; abort grill resolve aborted; bad pieces grill resolve pieces check invalid"
+        },
+        {
+          "node": "n1350",
+          "ok": true,
+          "detail": "an ADR as the plan: the conflict check saw '# ADR-7: orders move to Postgres\\n\\nStatus', conflicts back ['ADR-7 contradicts the locked decision D3 (the queue is Redis)']; no separate ingest graph: True"
+        },
+        {
+          "node": "n1353",
+          "ok": true,
+          "detail": "first copy removed {'removed': True, 'folder': False, 'listed': False, 'otherKept': True, 'branch': '', 'parent': True}; last copy removed with its workspace folder {'removed': True, 'folder': False, 'listed': False, 'branch': '', 'parent': False, 'main': ['a.txt', 'work.txt']}"
+        },
+        {
+          "node": "n1354",
+          "ok": true,
+          "detail": "value map step given «verbatim: sources 3, tests 2, docs 2, planning artifacts 2, commits 7.»; with no profile the owner is asked after it: ['value_map', 'preview', 'ask', 'research', 'requirements', 'recap']"
+        },
+        {
+          "node": "n1355",
+          "ok": true,
+          "detail": "install with all three resumes ['tree', 'probe', 'resumed'] with 0 model calls; roadmap missing {'costly': ['preview', 'research', 'requirements', 'recap'], 'skipped': ['value_map', 'write_value_map', 'ask', 'write_research_stack', 'write_research_features', 'write_research_architecture', 'write_res"
+        },
+        {
+          "node": "n1356",
+          "ok": true,
+          "detail": "fresh start recap runs and is told to write PROJECT.md and the roadmap skeleton; with a roadmap skipped []"
+        },
+        {
+          "node": "n1357",
+          "ok": true,
+          "detail": "stack and tests the preview answered are stored as {'profile.stack': 'typescript, vitest', 'profile.test_command': 'npm test'}"
+        },
+        {
+          "node": "n1358",
+          "ok": true,
+          "detail": "preview told to return ['stack', 'test_command', 'release', 'hosts', 'start', 'deploy', 'logs', 'style']; writer accepts ['stack', 'test_command', 'release', 'hosts', 'start', 'deploy', 'logs', 'style']; refused ['flavour']"
+        },
+        {
+          "node": "n1359",
+          "ok": true,
+          "detail": "PROJECT.md preferences carry the style; the person's AGENTS.md kept; CLAUDE.md '@AGENTS.md\\n'"
+        },
+        {
+          "node": "n1360",
+          "ok": true,
+          "detail": "start result {'status': 'done', 'value_map': 'for shop owners', 'next_steps': ['a', 'b', 'c'], 'refused': []}"
+        },
+        {
+          "node": "n1361",
+          "ok": true,
+          "detail": "counted from the tree: Open VALUE-MAP.md with these five lines counted from the tree itself, verbatim: sources 3, tests 2, docs 3, planning artifacts 1, commits 9."
+        },
+        {
+          "node": "n1364",
+          "ok": true,
+          "detail": "builder asked once with 'sources 1, tests 0, docs 1, planning artifacts 1, commits 2.'; existing map skips it ['value_map', 'write_value_map', 'ask', 'write_research_stack', 'write_research_features', 'write_research_architecture', 'write_research_pitfalls', 'write_requirements']"
+        },
+        {
+          "node": "n1363",
+          "ok": true,
+          "detail": "profile verb: eight keys read, secret {'exitCode': 1, 'text': 'refused release: the value looks like a secret'}, writer thread refused: the profile is set by the PM chat or the owner, not by a writer thread"
+        },
+        {
+          "node": "n1366",
+          "ok": true,
+          "detail": "profile read through the one reader: {'profile.hosts': 'project-host', 'profile.style': 'terse', 'profile.stack': 'typescript'}; another project sees php/global-host"
+        },
+        {
+          "node": "n1367",
+          "ok": true,
+          "detail": "profile writer set ['stack', 'test_command', 'deploy'], refused by key ['db_password', 'release', 'flavour'], stored {'profile.deploy': 'manual', 'profile.stack': 'typescript', 'profile.test_command': 'npm test'}"
+        },
+        {
+          "node": "n1268",
+          "ok": true,
+          "detail": "plan gate: no check [\"no independent plan check: run the plan critic (workflow lp.plan) and report its decision with the run's wfRunId\"], changes ['the plan checker asked for changes: split p1'], not independent ['the plan check is not proven independent: same thread']"
+        },
+        {
+          "node": "n1269",
+          "ok": true,
+          "detail": "revision rounds: max 3, machine plans again after rounds ['plan', 'plan', 'plan', None], gate at round three 3 rounds of the plan check asked for changes: stop"
+        },
+        {
+          "node": "n1270",
+          "ok": true,
+          "detail": "bounce: due bounce, once per sha None, off None, changes the external plan bounce asked for changes: [{\"text\":\"narrow"
+        },
+        {
+          "node": "n1271",
+          "ok": true,
+          "detail": "requirements gate: [\"requirements no piece covers: R2 (name them in a piece's covers, or defer them in CONTEXT.md and sign again)\"]"
+        },
+        {
+          "node": "n1272",
+          "ok": true,
+          "detail": "decision gate: ['locked decisions no piece carries out: D1'], all []"
+        },
+        {
+          "node": "n1273",
+          "ok": true,
+          "detail": "closed phase marks: STATE [True, True, True, True], roadmap ['- [x] 1.1 Hud — build it', '- [ ] 1.2 Menu — the menu', '- [ ] 999.1 Later — parked']"
+        },
+        {
+          "node": "n1274",
+          "ok": true,
+          "detail": "PLAN.md: on [['.agents/phases/<id>/PLAN.md']], off None, commit switch off []"
+        },
+        {
+          "node": "n1275",
+          "ok": true,
+          "detail": "admission moves on: plain execution, screens design, refused planning"
+        },
+        {
+          "node": "n1276",
+          "ok": true,
+          "detail": "code review: rework review report offer_fix done_offer, pass review report done"
+        },
+        {
+          "node": "n1277",
+          "ok": true,
+          "detail": "fix rounds: one plan_fix build_fix re_review done, spent partial"
+        },
+        {
+          "node": "n1278",
+          "ok": true,
+          "detail": "secure-phase: open ['audit doc_path write_security gaps', {'status': 'gaps', 'open': ['T1', 'T2'], 'security_path': '.agents/phases/ph_a/SECURITY.md'}], clean audit doc_path write_security goal_check done"
+        },
+        {
+          "node": "n1279",
+          "ok": true,
+          "detail": "validate-phase: gaps ['audit doc_path write_validation gaps', {'status': 'gaps', 'gaps': ['p2: existence-only check'], 'validation_path': '.agents/phases/ph_a/VALIDATION.md'}], clean audit doc_path write_validation goal_check done"
+        },
+        {
+          "node": "n1280",
+          "ok": true,
+          "detail": "ui-review: ok capture audit review_doc goal_check done, low score ['capture audit review_doc goal_check offer done_offer', 'review-fix'], blocked ['capture blocked', 'blocked']"
+        },
+        {
+          "node": "n1281",
+          "ok": true,
+          "detail": "eval-review: sound ['review doc_path write_review goal_check sound', 'sound', None], flawed ['review doc_path write_review offer flawed', 'flawed', 'todo-add', 1]"
+        },
+        {
+          "node": "n1282",
+          "ok": true,
+          "detail": "audit-uat: lines ['a:open', 'a:failed'], asked ['audit write goal_check offer done_offer', 2], nothing open audit write goal_check done"
+        },
+        {
+          "node": "n1283",
+          "ok": true,
+          "detail": "audit-fix: audited first_review plan_fix build_fix re_review plan_fix2 build_fix2 re_review done, clean ['first_review done_first', 'done'], stuck partial"
+        },
+        {
+          "node": "n1284",
+          "ok": true,
+          "detail": "add-tests: given ['baseline write_tests run inventory done', 'done', 5], derived ['derive confirm baseline write_tests run inventory done', 'done'], timeout ['derive confirm blocked', 'blocked']"
+        },
+        {
+          "node": "n1285",
+          "ok": true,
+          "detail": "sma-qa: ok [{'workflow_id': 'lp.browser-qa', 'status': 'succeeded', 'reason': None}], red [{'workflow_id': 'lp.browser-qa', 'status': 'failed', 'reason': 'step_failed:verdict'}]"
+        },
+        {
+          "node": "n1286",
+          "ok": true,
+          "detail": "find the app: default ports [3000, 5173, 8080, 4200, 8000], my servers found True, scan ['http://127.0.0.1:<port>/', 'http://127.0.0.1:<port>/']"
+        },
+        {
+          "node": "n1287",
+          "ok": true,
+          "detail": "probe: reachable True, nothing answers -> browser_qa_url_unreachable:connect ECONNREFUSED 127.0.0.1:<port>"
+        },
+        {
+          "node": "n1288",
+          "ok": true,
+          "detail": "spawn: runner argv ['--project-cwd', '--url', 'http://127.0.0.1:5173/', '--slug', 'check-1', '--env-class', 'local', '--viewports', '375,768,1280', '--backend', 'chrome-qa', '--case', 'Home opens', '--case', 'Menu shows three items', '--model', 'gpt-x', '--reasoning-effort', 'high'], authorized True"
+        },
+        {
+          "node": "n1289",
+          "ok": true,
+          "detail": "plaque verdicts {'all': 'passed', 'failed': 'failed', 'blocked': 'blocked', 'pending': 'blocked', 'sum': 'blocked', 'zero': 'blocked', 'exit': 'failed'}"
+        },
+        {
+          "node": "n1290",
+          "ok": true,
+          "detail": "route: blocked not_returnable, two failures stop, defaults [2, None, None, 4, 2]"
+        },
+        {
+          "node": "n1291",
+          "ok": true,
+          "detail": "review gate: config off disabled_by_project_setting, quick quality_mode_quick"
+        },
+        {
+          "node": "n1292",
+          "ok": true,
+          "detail": "scope: given ['src/x.ts', 'src/y.ts'], range ['src/a.ts', 'src/b.ts'], 25 files -> [25, 'deep']"
+        },
+        {
+          "node": "n1293",
+          "ok": true,
+          "detail": "empty scope: ['scope nothing', 'pass', [], 0, 0]"
+        },
+        {
+          "node": "n1294",
+          "ok": true,
+          "detail": "pre-pass: rework ['scope prepass aggregate result', 'rework', 0, 0], clean ['scope prepass spec_check dims', 1, 1]"
+        },
+        {
+          "node": "n1295",
+          "ok": true,
+          "detail": "reviewer depth: quick ['correctness', 'security'], standard 4, full 7"
+        },
+        {
+          "node": "n1296",
+          "ok": true,
+          "detail": "REVIEW.md after wave 1, 2 and a redo of 1: ['# Review — phase ph_sma', '## Wave 2 — failed', 'status rework; critical 1, high 2; reviewer <by>', '- src/a.ts:3 bad', '## Wave 1 — failed', 'status rework; critical 0, high 1; reviewer <by>', '- src/b.ts late']"
+        },
+        {
+          "node": "n1297",
+          "ok": true,
+          "detail": "--fix: offered ['rework', 'review-fix'], fix path plan_fix build_fix re_review done, skipped ['first_review']"
+        },
+        {
+          "node": "n1298",
+          "ok": true,
+          "detail": "new phase {'stage': 'discussion', 'state': 'active', 'title': 'Export', 'goal': 'export the stats as CSV', 'projectId': 'projA', 'pmThreadId': 'thr_pm', 'run': 'run1', 'roadmapRow': '2'}, folder .agents/phases/<id>, live ['Export', 'Hud']"
+        },
+        {
+          "node": "n1299",
+          "ok": true,
+          "detail": "urgent phase {'stage': 'discussion', 'state': 'active', 'title': 'Hotfix', 'goal': 'stop the double charge', 'row': '1.1'}, neighbours unchanged True, rows 1/1.1/2 name ['Login', 'Hotfix', 'Billing']"
+        },
+        {
+          "node": "n1300",
+          "ok": true,
+          "detail": "close without words «closing in words carries the words: why the phase ends here», with words {'stage': 'closed', 'state': 'closed', 'closing': {'by': 'owner', 'words': 'dropped: the owner moved the hud to next quarter'}, 'title': 'Hud'}, live ['Stats']"
+        },
+        {
+          "node": "n1301",
+          "ok": true,
+          "detail": "edit in place {'goal': 'a hud with a CSV export', 'title': 'Hud', 'stage': 'discussion', 'revisions': 1}, then {'goal': 'a hud with a PDF export', 'revisions': 2}; at execution «the goal is revised in discussion or planning: return the phase there first»"
+        },
+        {
+          "node": "n1302",
+          "ok": true,
+          "detail": "project {'plan_critique.enabled': False, 'quality_mode': 'full', 'specialist.enabled': True, 'note': 'plain words'}, section {'plan_critique.enabled': True, 'quality_mode': 'standard', 'specialist.enabled': True, 'note': 'plain words'}, other project {'plan_critique.enabled': False, 'quality_mode': "
+        },
+        {
+          "node": "n1303",
+          "ok": true,
+          "detail": "advanced rows shown {'hidden': False, 'keepsRow': True, 'testId': True}, hidden {'hidden': True, 'keepsRow': True, 'testId': True}, plan bounce ['project', 'on|off']"
+        },
+        {
+          "node": "n1304",
+          "ok": true,
+          "detail": "search specialist {'bbPlugins': ['env-catalog'], 'skills': ['env-catalog', 'tavily'], 'mcpServers': []}, reviewer {'before': False, 'granted': True, 'source': 'owner'}"
+        },
+        {
+          "node": "n1306",
+          "ok": true,
+          "detail": "consent paths: sessions consent sessions card done, questionnaire consent interview record card done, refusal ['consent cancelled', {'status': 'cancelled', 'card': ''}, 0]"
+        },
+        {
+          "node": "n1307",
+          "ok": true,
+          "detail": "gate: nothing 4 reasons, empty file ['e.md is empty'], complete True"
+        },
+        {
+          "node": "n1308",
+          "ok": true,
+          "detail": "walk without anchors ['walk walk synth open', 2, 6], answered walk synth open"
+        },
+        {
+          "node": "n1309",
+          "ok": true,
+          "detail": "questions in the file 7, asked in chat 5"
+        },
+        {
+          "node": "n1310",
+          "ok": true,
+          "detail": "assumptions listed 2, writes 0"
+        },
+        {
+          "node": "n1311",
+          "ok": true,
+          "detail": "spec: score ask score spec write_spec done; under doubt score ask score ask score spec write_spec low_confidence"
+        },
+        {
+          "node": "n1312",
+          "ok": true,
+          "detail": "revision loop draw check draw check done, result verdict pass"
+        },
+        {
+          "node": "n1313",
+          "ok": true,
+          "detail": "AI-SPEC: clean select write_model research eval_plan spec spec_path write_spec check done; short spec blocked"
+        },
+        {
+          "node": "n1314",
+          "ok": true,
+          "detail": "story path story split_check story split_check done, who/what/why ['the owner', 'sees the stats', 'to decide']"
+        },
+        {
+          "node": "n1315",
+          "ok": true,
+          "detail": "discussion order ['read the goal and the roadmap row', 'scout the code the goal touches', 'list the gray areas and pick the ones to settle', 'deep-dive each chosen area (one advisor per area)', 'write CONTEXT.md: locked / free / deferred, FAQ, ADR', 'name the four risks', 'sign the context']"
+        },
+        {
+          "node": "n1316",
+          "ok": true,
+          "detail": "discussion reads ['.agents/planning/ROADMAP.md', '.agents/planning/REQUIREMENTS.md', '.agents/phases/ph_sma/DISCUSSION.md']"
+        },
+        {
+          "node": "n1317",
+          "ok": true,
+          "detail": "blocking antipatterns ['deciding for the owner what only he knows', 'a decision without its reason', 'a free area written as locked', 'risks left unnamed']"
+        },
+        {
+          "node": "n1318",
+          "ok": true,
+          "detail": "SPEC.md written ['<!-- lp:generated -->', '# Spec — phase <id>: Hud', '', 'Goal: a hud for the stats page', ''], planning reads ['.agents/phases/ph_sma/CONTEXT.md', '.agents/phases/ph_sma/SPEC.md', '.agents/phases/ph_sma/RESEARCH.md', '.agents/phases/ph_sma/PATTERNS.md']"
+        },
+        {
+          "node": "n1319",
+          "ok": true,
+          "detail": "existing CONTEXT.md kept: ['## Earlier decisions (kept)', '', 'D1: keep this decision always', '']"
+        },
+        {
+          "node": "n1320",
+          "ok": true,
+          "detail": "scout path gather assess done, anchors [{'file': 'src/stats.ts', 'line': 12, 'note': 'the table'}], thin scout ['gather assess gather assess done', 2]"
+        },
+        {
+          "node": "n1321",
+          "ok": true,
+          "detail": "loop hook points ['discuss:pre', 'plan:pre', 'verify:post', 'ship:post'], discuss:pre ['web-research'], unknown refused True"
+        },
+        {
+          "node": "n1322",
+          "ok": true,
+          "detail": "owner picks: ['gather assess choose advise done', ['cache?']], without ask_owner ['gather assess done', 0], CONTEXT lines ['- auth?', '- cache? — deferred by the owner']"
+        },
+        {
+          "node": "n1323",
+          "ok": true,
+          "detail": "deep-dive step «deep-dive each chosen area (one advisor per area)», advisors for three areas 3, until clear ['gather assess gather assess gather assess done', 3]"
+        },
+        {
+          "node": "n1324",
+          "ok": true,
+          "detail": "advisors: with profile ['gather assess choose advise done', 2, 2], without [0, []], eight areas ['succeeded', 6]"
+        },
+        {
+          "node": "n1325",
+          "ok": false,
+          "detail": "CONTEXT.md decisions ['- **D1** (locked): reuse the table', '- **D2** (free): the chart library', '- **D3** (deferred): pdf export', '- **D4** (locked): no id and no status']"
+        },
+        {
+          "node": "n1326",
+          "ok": true,
+          "detail": "commits: [{'files': ['CONTEXT.md'], 'message': 'phase <id>: CONTEXT.md from the analysis'}]; with a security risk [{'files': ['CONTEXT.md', 'SECURITY.md'], 'message': 'phase <id>: CONTEXT.md and SECURITY.md from the analysis'}]; no commit_docs {'commits': [], 'written': True}"
+        },
+        {
+          "node": "n1327",
+          "ok": true,
+          "detail": "after the signature: auto ['planning', 'planning'], owner's word asked ['discussion', 'discussion']"
+        },
+        {
+          "node": "n1328",
+          "ok": true,
+          "detail": "ship: ready gate preflight review_range review open_pr write_deploy_log state_mark hooks post_ship goal_check shipped; red gate ['npm test red on the head']; held by ['no full-gate marker', 'untriaged vendor bump']; review rework ['gate preflight review_range review held_review', 'held', 0]"
+        },
+        {
+          "node": "n1329",
+          "ok": true,
+          "detail": "PR branch: clean ['split done', {'status': 'done', 'branch': 'review/ph_a', 'commits': 3}], conflict ['split blocked', {'status': 'blocked', 'branch': 'review/ph_a', 'commits': 1, 'blocker': {'needs': 'resolve conflict', 'from': 'owner'}, 'handoff': 'Cherry-pick conflict requires resolution.'}]"
+        }
+      ],
+      "checked": 215
+    }
+  ],
+  "seen": null,
+  "judged": [
+    {
+      "name": "sma_r16",
+      "verdict": "fail",
+      "evidence": [
+        "proved",
+        "checked"
+      ],
+      "why": "n1333: not proved, gap milestone: path ['archive', 'frame', 'write_requirements', 'add_phases', 'done'], phases ['1 coverage of REQ-2', '2 the gate']; n1325: not proved, CONTEXT.md decisions ['- **D1** (locked): reuse the table', '- **D2** (free): the chart library', '- **D3** (deferred): pdf export', '- **D4** (locked): no id and no status']"
+    }
+  ],
+  "series": {
+    "verdict": "fail",
+    "missing": [],
+    "failed": [
+      "sma_r16"
+    ],
+    "skipped": []
+  }
+}

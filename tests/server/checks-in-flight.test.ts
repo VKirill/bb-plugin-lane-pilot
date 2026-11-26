@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { TaskV2 } from "../../src/rooms/contracts";
 import { openDatabase } from "../../src/rooms/plugin-db";
-import { createWriterVerify } from "../../src/rooms/writer/server/verify";
+import { createWriterVerify } from "../../src/rooms/writer/server/services/verify";
 import { beginChecks, checksInFlight, checksMoved } from "../../src/rooms/runs";
 
 const root = realpathSync(mkdtempSync(join(tmpdir(), "lp-checks-in-flight-")));

@@ -2,9 +2,9 @@
 import { describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { GLOBAL_SETTINGS_PROJECT_ID } from "@lane-pilot/settings-catalog";
-import { openDatabase, createRun, createTask, createAttempt, saveStageReceipt, transitionAttempt } from "../src/rooms/plugin-db";
-import { readHubRows } from "../src/rooms/platform/server/hub";
-import { recheckPlanFact } from "../src/rooms/writer/server/plan-fact";
+import { openDatabase, createRun, createTask, saveStageReceipt } from "../src/rooms/plugin-db";
+import { readHubRows } from "../src/rooms/platform/server/repositories/hub-repository";
+import { recheckPlanFact } from "../src/rooms/writer/server/services/plan-fact";
 
 const task = (id: string) => ({ schema_version: 2 as const, id, title: id, risk: "low" as const, lane: "writer" as const, project_cwd: "/x", read_first: [], interfaces: [], invariants: [], out_of_scope: [],
   expected_outputs: [], owns_paths: [`${id}/`], never_touch: [], depends_on: [], objective: id, acceptance: [id], verify: "x", verification: [] });

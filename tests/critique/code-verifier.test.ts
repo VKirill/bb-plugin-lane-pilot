@@ -1,8 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { parseCodeCritique } from "../../src/rooms/critique/code-critique";
-import { parseVerifierAnswer, seriousFindings, verifierPrompt } from "../../src/rooms/critique/code-verifier";
-import { verifySeriousFindings } from "../../src/rooms/critique/server/critique-runs/verify-findings";
-import type { CriticCatalog } from "../../src/rooms/critique/critic-pair";
+import { parseCodeCritique, parseVerifierAnswer, seriousFindings, verifierPrompt, type CriticCatalog } from "../../src/rooms/critique";
+import { verifySeriousFindings } from "../../src/rooms/critique/server";
 
 const GEMINI = "router9/ag/gemini-3.8-flash-high";
 const critic = { providerId: "opencode2", model: GEMINI };

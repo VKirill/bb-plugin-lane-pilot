@@ -6,8 +6,8 @@ import { z } from "zod";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import plugin from "../server";
 import {registeredTools, unionMembers} from "../src/rooms/platform/server";
-import { BB_AGENT_SESSIONS, LANE_PILOT_PM_SESSION } from "../src/rooms/native-agent/native-agent-overlay";
-import { PM_TOOL_FAMILIES } from "../src/rooms/platform/server/pm-tool-families";
+import { BB_AGENT_SESSIONS, LANE_PILOT_PM_SESSION } from "../src/rooms/native-agent/models/native-agent-overlay";
+import { PM_TOOL_FAMILIES } from "../src/rooms/platform/models/pm-tool-families";
 
 // Agents copy the call shapes their instructions show. A shape that names a tool, an action or a field that does not exist sends them to a
 // refusal (live phase ph_86fd9d3fab, 2026-10-27: `revise` without goal and note). This reads every call shape the agents are shown (the PM
@@ -158,7 +158,7 @@ const FOLDED = Object.values(PM_TOOL_FAMILIES).flatMap((family) => Object.values
 it("names no folded tool by its old name in a text the PM or the architect reads (a next step, a notice, a hint)", () => {
   // Skipped: the tools' own description and instructions (the family rewrites them when it mounts), the architect's session text (rewritten
   // the same way when it is exported), the allow-lists and the presentation table.
-  const skip = /(native-session-hooks|tool-presentation|pm-tool-families|native-hook-sources|sma-map\/|native-agent\/workflow-architect\.ts)/;
+  const skip = /(native-session-hooks|tool-presentation|pm-tool-families|native-hook-sources|sma-map\/|native-agent\/models\/workflow-architect\.ts)/;
   const wrong: string[] = [];
   for (const file of sources(join(root, "src"))) {
     if (skip.test(file)) continue;

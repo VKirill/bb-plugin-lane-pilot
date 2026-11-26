@@ -1,5 +1,3 @@
-import type { SqlDb } from "./sql-db";
-
 export const ERRAND_EPISODE_TABLE = "lane_pilot_errand_episode";
 export const ERRAND_EPISODE_EXTRACTOR_VERSION = 1;
 /** Events of the helper thread the trace reads at most (the harness reader pages 100 at a time). */
@@ -29,15 +27,4 @@ export function collectEnabled(settings: Record<string, unknown>): boolean {
   if (typeof value === "number") return value !== 0;
   if (typeof value === "string") return !["false", "0", "off", "no"].includes(value.trim().toLowerCase());
   return true;
-}
-
-/** The errand episode recorder and its spawn read, implemented by src/rooms/errands and handed to the workflow engine. */
-export interface ErrandEpisodesApi {
-  recordErrandEpisode(deps: {
-    db: SqlDb; runId: string;
-    /** The helper thread's events, oldest first, at most ERRAND_EPISODE_TRACE_EVENTS; absent → the trace stays null. */
-    readEvents?: (threadId: string) => Promise<unknown[]>;
-    log?: (message: string) => void; warn?: (message: string) => void;
-  }): Promise<void>;
-  errandSpawnOf(db: SqlDb, runId: string): { threadId: string; browserMachine: string | null } | null;
 }

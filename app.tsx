@@ -4,16 +4,13 @@ import { detectLocale, t } from "@lane-pilot/i18n";
 import type { ComponentType } from "react";
 import type { JsonValue } from "@get-bb/plugin-sdk/app";
 import { LanePilotPage } from "./src/rooms/pages";
-import { useCockpitPageTitle, useOwnerWaitingBadge } from "./src/rooms/ui-shell/ui";
-import { CouncilPage } from "./src/rooms/council/ui";
-import { CockpitPage } from "./src/rooms/cockpit/ui";
+import { useOwnerWaitingBadge } from "./src/rooms/ui-shell/ui";
 import { ComposerAgentBadge, ComposerBoundary } from "./src/rooms/native-agent/ui";
 import { EnableLanePilotAction } from "./src/rooms/native-agent/ui";
 import { HelperThreadPanel, useHelperThreadIndex } from "./src/rooms/native-agent/ui";
 import { HELPER_PANEL_ACTION } from "./src/rooms/contracts/agent-picker";
-import { LANE_DRAFT_DIRECTIVE, LaneDraftCardDirective, RUN_CARD_DIRECTIVE, RunCardDirective, ThreadLive } from "./src/rooms/runs/ui";
+import { LANE_DRAFT_DIRECTIVE, LaneDraftCardDirective, RUN_CARD_DIRECTIVE, RunCardDirective, THREAD_LIVE_TAB_ID, ThreadLive, ThreadLivePanel } from "./src/rooms/runs/ui";
 import { bindThreadRowStatus } from "./src/rooms/runs/ui";
-import { PILOT_THREAD_TAB_ID, PilotThreadPanel } from "./src/rooms/pilot-panel/ui";
 
 /** VK core 0.46.1-vk.5: a section of the thread's info panel (feature-tested; older cores get a panel tab instead). */
 type VkThreadInfoSection = (registration: { id: string; title: string; component: ComponentType<{ threadId: string; projectId: string }> }) => void;
@@ -49,23 +46,6 @@ export default definePluginApp((app) => {
     // The owner-waiting count on the nav entry (SDK 0.6.53+); older BB simply draws no badge.
     experimental_useBadge: useOwnerWaitingBadge,
   });
-  app.slots.navPanel({
-    id: "lane-pilot-council",
-    title: t("councilPageTitle"),
-    icon: "Workflow",
-    path: "lane-pilot-council",
-    component: () => <CouncilPage />,
-  });
-  // The cockpit: the window's screens of the SMA map (phases, today, tasks, money, workers, forge, memory, first run, coordination, ship, system).
-  app.slots.navPanel({
-    id: "lane-pilot-cockpit",
-    title: t("ckTitle"),
-    icon: "Workflow",
-    path: "lane-pilot-cockpit",
-    component: ({ subPath }) => <CockpitPage subPath={subPath} />,
-    // The waiting count in the window title (SDK 0.6.x); older BB keeps the plain title.
-    experimental_usePageTitle: useCockpitPageTitle,
-  });
   // A working helper (writer, specialist, browser check…) opens in the thread's side panel from its square.
   const threadTab = (app.slots as unknown as { experimental_tab?: ExperimentalTabSlot }).experimental_tab;
   const threadActionTab = (registration: { id: string; title: string; layout?: "padded" | "flush"; component: ComponentType<{ threadId: string; params?: JsonValue }> }) => {
@@ -85,13 +65,13 @@ export default definePluginApp((app) => {
   });
   if (typeof threadTab === "function") {
     threadTab.call(app.slots, {
-      id: PILOT_THREAD_TAB_ID,
-      title: t("panelTitle"),
-      icon: "Compass",
+      id: THREAD_LIVE_TAB_ID,
+      title: t("liveTitle"),
+      icon: "Workflow",
       layout: "flush",
       context: { kind: "thread" },
       availability: "fixed",
-      component: ({ threadId, environment }) => <PilotThreadPanel threadId={threadId} environment={environment} />,
+      component: ({ threadId }) => <ThreadLivePanel threadId={threadId} locale={detectLocale()} />,
     });
   }
   // What Lane Pilot does for this chat (tasks now, step by step), in the thread's info panel below the uncommitted files.
@@ -139,16 +119,15 @@ export default definePluginApp((app) => {
   if (typeof threadAction === "function") {
     if (typeof threadTab === "function") {
       threadAction.call(app.slots, {
-        id: "open-pilot-panel",
-        title: t("panelTitle"),
-        icon: "Compass",
+        id: "open-thread-live",
+        title: t("liveTitle"),
+        icon: "Workflow",
         group: "0_pilot",
         placement: "header",
         item: (input) => ({
-          label: t("panelTitle"),
-          icon: "Compass",
-          detail: "Проект, подготовка, локальные скиллы, планы и субтреды",
-          run: () => { input.experimental_panel?.openTab?.({ tab: { id: PILOT_THREAD_TAB_ID, context: { kind: "thread" }, availability: "fixed" } }); },
+          label: t("liveTitle"),
+          icon: "Workflow",
+          run: () => { input.experimental_panel?.openTab?.({ tab: { id: THREAD_LIVE_TAB_ID, context: { kind: "thread" }, availability: "fixed" } }); },
         }),
       });
     }
@@ -164,13 +143,13 @@ export default definePluginApp((app) => {
       }),
     });
   }
-  // Command palette shortcuts for both the project panel and the helpers tab.
+  // Command palette shortcuts for both the thread panel and the helpers tab.
   if (typeof threadTab === "function") {
     app.commands.register({
-      id: "lane-pilot-panel",
-      title: t("panelTitle"),
+      id: "lane-pilot-live",
+      title: t("liveTitle"),
       isAvailable: ({ threadId }) => threadId !== null,
-      run: ({ experimental_panel }) => { experimental_panel?.openTab?.({ tab: { id: PILOT_THREAD_TAB_ID, context: { kind: "thread" }, availability: "fixed" } }); },
+      run: ({ experimental_panel }) => { experimental_panel?.openTab?.({ tab: { id: THREAD_LIVE_TAB_ID, context: { kind: "thread" }, availability: "fixed" } }); },
     });
   }
   app.commands.register({
@@ -183,7 +162,7 @@ export default definePluginApp((app) => {
   app.slots.messageDirective({ id: RUN_CARD_DIRECTIVE, component: RunCardDirective });
   // The PM's `::lane-draft{id="…"}` line becomes a proposal card with a «Создать» button (SMA m_sw_chat_draft).
   app.slots.messageDirective({ id: LANE_DRAFT_DIRECTIVE, component: LaneDraftCardDirective });
-  // A question to the owner (PM, integration gate, repair thread, council) as BB's pending interaction; BB's
+  // A question to the owner (PM, integration gate, repair thread) as BB's pending interaction; BB's
   // notification plugin sends the same interaction to the phone.
   app.slots.pendingInteraction({ id: OWNER_ASK_RENDERER_ID, component: OwnerAsk });
   app.composer.customize({

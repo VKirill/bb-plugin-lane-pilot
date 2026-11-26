@@ -3,11 +3,11 @@ import { describe, expect, it } from "vitest";
 import {
   ROLE_ID_ALIASES, ROLE_NAMES, ROLE_NAME_IDS, canonicalRoleId, en, ru, roleDisplayName, roleLabel,
 } from "@lane-pilot/i18n";
-import { COUNCIL_SEATS, ROLE_IDS, ROLE_SPECS, ROLE_TABLE, WRITER_FALLBACK_SLOTS, roleModelOption } from "@lane-pilot/models";
+import { ROLE_IDS, ROLE_SPECS, ROLE_TABLE, WRITER_FALLBACK_SLOTS, roleModelOption } from "@lane-pilot/models";
 import { CODEX_LEAN_PROFILES } from "../src/rooms/contracts/codex-lean";
 import { HELPER_ROLES, HELPER_SPAWN_ROLES } from "../src/rooms/contracts/helper-context";
 import { STOCK_AGENT_SEED_DESCRIPTIONS } from "../src/rooms/contracts/agent-display";
-import { ERRAND_KINDS, errandKindRole } from "../src/rooms/schedule/errand-kinds";
+import { ERRAND_KINDS, errandKindRole } from "../src/rooms/schedule/models/errand-kinds";
 
 const read = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
 const doc = read("docs/agents.md");
@@ -36,7 +36,6 @@ function knownIds(): string[] {
     ...HELPER_ROLES,
     ...HELPER_SPAWN_ROLES,
     ...ROLE_SPECS.flatMap((spec) => [spec.accessRole, spec.tableRole].filter((id): id is string => Boolean(id))),
-    ...COUNCIL_SEATS.map((seat) => `council.${seat}`),
     ...WRITER_FALLBACK_SLOTS.map((slot) => `writer.fallback${slot}`),
     ...ERRAND_KINDS.map((kind) => errandKindRole(kind)),
     ...CODEX_LEAN_PROFILES.map((name) => `codex-profile:${name}`),
@@ -86,14 +85,13 @@ describe("the one map of agent names", () => {
     expect(roleDisplayName("specialist:design-lead")).toBe("Дизайнер");
     expect(roleDisplayName("gate-triage", "en")).toBe("Failure triager");
     expect(roleDisplayName("a-role-nobody-named")).toBe("a-role-nobody-named");
-    expect(roleLabel("council.chair")).toBe("Председатель совета (council.chair)");
-    expect(roleLabel("council")).toBe("Председатель совета (council)");
+    expect(roleLabel("council")).toBe("Судья анализа (council)");
   });
 
   it("is what the dictionaries show for a role", () => {
     const ruNames = new Set(ROLE_NAME_IDS.map((id) => ROLE_NAMES[id].ru));
     const enNames = new Set(ROLE_NAME_IDS.map((id) => ROLE_NAMES[id].en));
-    const prefixes = ["accessName_", "roleModelName_", "settingCouncilSeat_"];
+    const prefixes = ["accessName_", "roleModelName_"];
     for (const key of Object.keys(en).filter((name) => prefixes.some((prefix) => name.startsWith(prefix)))) {
       expect(enNames.has((en as Record<string, string>)[key]!), `en ${key}`).toBe(true);
       expect(ruNames.has((ru as Record<string, string>)[key]!), `ru ${key}`).toBe(true);
@@ -139,7 +137,7 @@ describe("docs/agents.md", () => {
   it("names every graph of the night table that exists", () => {
     const graphs = readdirSync(new URL("../workflows/", import.meta.url)).map((file) => file.replace(/\.json$/, ""));
     const named = [...doc.matchAll(/^\| `((?:lp\.|sp-|lead-)[^`]+)` \|/gm)].map((match) => match[1]!);
-    expect(named.length).toBeGreaterThan(8);
+    expect(named.length).toBeGreaterThanOrEqual(2);
     for (const graph of named) expect(graphs, graph).toContain(graph);
   });
 

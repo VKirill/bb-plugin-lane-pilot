@@ -7,28 +7,29 @@ status: active
 confidence: medium
 tags: [schedule, automation, component]
 sources:
-  - src/rooms/schedule/scheduler.ts
-  - src/rooms/schedule/store.ts
+  - src/rooms/schedule/server/services/scheduler.ts
+  - src/rooms/schedule/server/repositories/schedule-repository.ts
+  - src/rooms/schedule/server/handlers/board-clock.ts
+  - src/rooms/schedule/server/handlers/schedule-cli.ts
+  - packages/workflow-engine/src/engine-clock.ts
   - src/rooms/storage/database.ts
   - server.ts
   - src/rooms/schedule/server/index.ts
-  - src/rooms/schedule/server/schedule-executors.ts
-  - src/rooms/qa/server/errands.ts
+  - src/rooms/schedule/server/services/schedule-executors.ts
+  - src/rooms/errands/server/services/errand-core.ts
 ---
 
 # Schedule board: Lane Pilot's own scheduler
 
-TL;DR: A core scheduler materializes graph runs (workflow, errand, agent routine) and host-script runs from persisted schedule definitions, then supervises them across ticks.
+TL;DR: A core scheduler materializes graph runs (`workflow`, `errand`, `script`, `agent` — with `script` and `agent` executing via `lp.schedule-script` / `agent-routine` graphs) from persisted schedule definitions, driven by the shared `engine-clock` timer (`packages/workflow-engine/src/engine-clock.ts`, `src/rooms/schedule/server/handlers/board-clock.ts`).
 
-Lane Pilot runs scheduled work itself: a graph (a workflow, an errand, or a named agent that runs as itself and decides from its earlier runs) or a script on a chosen machine, once or on a cron. It does not need
-the official Automations plugin (that one stays on until every automation has moved and run seven days clean; `workflow-triggers.ts` still
-creates its automations for the schedule triggers of workflows, see [workflow-triggers.md](workflow-triggers.md)).
+Lane Pilot runs scheduled work itself: a workflow, an errand (`errand` graph), an agent routine (`agent-routine` graph), or a host script (`lp.schedule-script` graph), once or on a cron. Workflow schedule triggers also sync onto Lane Pilot's schedule board via `lane_pilot_wf_trigger` (`src/rooms/workflow/server/services/workflow-triggers.ts`), rather than creating official BB Automations.
 
-Code: `src/rooms/schedule/` owns time, model, store and scheduler; `src/rooms/schedule/server/` owns executors, service, CLI and RPC (`src/rooms/schedule/server/index.ts:1-7`). The scheduler materializes due rows and supervises active runs (`src/rooms/schedule/scheduler.ts:8-16`).
+Code: `src/rooms/schedule/` owns models, repositories, executors, service, CLI (`bb lane-pilot schedule`), and RPC; `src/rooms/schedule/server/handlers/board-clock.ts` registers the single `engine-clock` schedule (`scheduleIsolated(..., "engine-clock", "* * * * *", ...)`). The scheduler materializes due rows and supervises active runs (`src/rooms/schedule/server/services/scheduler.ts`). Pause and resume across the whole board use `bb lane-pilot schedule pause-all` and `bb lane-pilot schedule resume-all` (`src/rooms/schedule/server/handlers/schedule-cli.ts`).
 
 ## How it works
 
-Every minute the core runs the isolated schedule `schedule-board-tick` (`scheduleIsolated`, overlap `skip`, 2 minute limit). A tick materializes due work, dispatches queued runs, then polls active rows; a concurrent supervise call joins the in-flight loop (`src/rooms/schedule/scheduler.ts:8-16`, `:241-259`):
+A single `setTimeout` clock (`engine-clock` in `packages/workflow-engine/src/engine-clock.ts`) wakes at `MIN(deadline)` across waiting workflow steps and due schedule-board rows (capped at `CLOCK_BEAT_MS = 60_000` for `outage:beat`). On each wakeup the scheduler materializes due work, dispatches queued runs, then checks active rows:
 
 1. **Materialise.** For each active schedule the fire times in `(cursor, now]` become rows of `lane_pilot_schedule_run`, and the cursor moves,
    in one transaction. The row's `run_key` is `<schedule id>:<scheduled time in ms>` and is UNIQUE (`INSERT OR IGNORE`): a tick that runs twice,
@@ -80,15 +81,15 @@ are in `tests/schedule/time.test.ts`. A one-time task takes `runAt` (ms) or `del
 | `task.kind` | Fields | Runs as |
 | --- | --- | --- |
 | `workflow` | `workflowId`, `inputs` | a workflow run of the engine, started like the Run button (published, inputs whole, requirements met, a PM chat of the project). A `tested` workflow is refused until its first live run (Workflows tab, Run for real). Output: the run's output JSON |
-| `errand` | `task` (text), `title`, `authorized`, `accounts` (Env Catalog names), `providerId`, `model`, `reasoning`, `serviceTier`, `preset`, `errandKind` (who runs it, see below) | the `errand` graph: a hidden, detached helper thread filed with the PM project and section; it reuses the PM environment, resolves named accounts, and receives a scheduled-run brief that says nobody is watching and to return `ERRAND: blocked` when it needs a decision, approval or access. The thread carries `origin: "schedule"`. Its report is redacted and checked by the output guard; only a final `ERRAND: done` counts as success (`src/rooms/schedule/server/schedule-executors.ts:54-73`, `src/rooms/qa/server/errands.ts:80-85`, `:188-224`) |
-| `script` | `hostId`, `command`, `cwd`, `env` (Env Catalog names), `maxOutputBytes` | the host job `runScript` (`bash -lc`, own process group, killed at the timeout) on that machine. The secrets are resolved by the hub (allowed for the project, or the owner is asked), reach the script as environment variables only, are masked on the host and again on the hub; the host deletes `input.json` once the job has read it. stdout and stderr are kept head and tail up to the cap; exit code 0 is success |
-| `agent` | `agentId` (a profile id such as `seo-specialist`), `task` (the standing instruction, 10 to 20000 characters), `title`, `authorized`, `accounts`, `historyRuns` (0 to 20, default 5), `model`, `reasoning`, `serviceTier` | the agent's own native profile (the one a chat started with it from the composer gets: prompt, skills, MCP servers) in a hidden thread with no parent chat, filed with the PM project and section and belonging to the PM's run. Carries `origin: "schedule"`, so it cannot create or change schedules. Its first message holds the standing task, the last `historyRuns` finished runs of this schedule (time, state, the outcome each reported, a marker for a change already handed over) and the project memory for the task. It ends with an `OUTCOME` block (summary, decision, follow-ups, code-change, urgent, status); the whole report is the run's output, so the next run reads it. A report without the block is a failed run (`no_outcome`); `status: blocked: why` is a failed run (`blocked`). One line goes to the owner's morning list (`lane_pilot_owner_item`, source `schedule`, `wake` only when the agent says `urgent: yes`). It edits no code: a `code-change` goes down the road of an owner's request in the PM chat (`phaseIntake.handOver`: a heavy goal opens a phase, a small job starts issue-quick, a batch issue-batch), at most once per run and never twice for the same text as the run before; with no PM chat the morning line only. An unknown agent id is refused when the schedule is saved (`src/rooms/schedule/server/schedule-service.ts`); the run itself lives in `src/rooms/schedule/server/schedule-executors.ts`, `src/rooms/schedule/server/schedule-agent-actions.ts` and `src/rooms/schedule/outcome.ts` |
+| `errand` | `task` (text), `title`, `authorized`, `accounts` (Env Catalog names), `providerId`, `model`, `reasoning`, `serviceTier`, `preset`, `errandKind` (who runs it, see below) | the `errand` graph: a hidden, detached helper thread filed with the PM project and section; it reuses the PM environment, resolves named accounts, and receives a scheduled-run brief that says nobody is watching and to return `ERRAND: blocked` when it needs a decision, approval or access. The thread carries `origin: "schedule"`. Its report is redacted and checked by the output guard; only a final `ERRAND: done` counts as success (`src/rooms/schedule/server/services/schedule-executors.ts`, `src/rooms/errands/server/services/errand-core.ts`) |
+| `script` | `hostId`, `command`, `cwd`, `env` (Env Catalog names), `maxOutputBytes` | the `lp.schedule-script` workflow driving host job `runScript` (`bash -lc`, own process group, killed at the timeout) on that machine. Secrets are resolved by the hub (allowed for the project, or the owner is asked), reach the script as environment variables only, are masked on the host and again on the hub; exit code 0 is success (`src/rooms/schedule/server/services/schedule-executors.ts`) |
+| `agent` | `agentId` (a profile id such as `seo-specialist`), `task` (the standing instruction, 10 to 20000 characters), `title`, `authorized`, `accounts`, `historyRuns` (0 to 20, default 5), `model`, `reasoning`, `serviceTier` | the `agent-routine` workflow running the agent's native profile in a hidden thread filed with the PM project and section (`origin: "schedule"`). Its first message holds the standing task, the last `historyRuns` finished runs, and project memory. It ends with an `OUTCOME` block (summary, decision, follow-ups, code-change, urgent, status). One line goes to the owner's morning list (`lane_pilot_owner_item`, source `schedule`, `wake` only when `urgent: yes`); any `code-change` hands off through the PM chat once per run. An unknown agent id is refused on save (`src/rooms/schedule/server/services/schedule-service.ts`, `src/rooms/schedule/server/services/schedule-executors.ts`, `src/rooms/schedule/server/handlers/schedule-agent-actions.ts`, `src/rooms/schedule/models/outcome.ts`) |
 
 The hosts need the Lane Pilot host build with `runScript` and `jobStart.key`; an older host answers that it does not know the method, and the run fails with that.
 
 ## RPCs for the board and the calendar
 
-All times are ms since epoch. `ScheduleView` (`src/rooms/schedule/views.ts`): `id, projectId, name, description, task, when, missed, missedLimit,
+All times are ms since epoch. `ScheduleView` (`src/rooms/schedule/models/views.ts`): `id, projectId, name, description, task, when, missed, missedLimit,
 overlap, timeoutSec, maxFailures, state, pauseReason, consecutiveFailures, createdBy, createdAt, updatedAt, nextFires[], machine, lastRun,
 active[], column, model, cost, where`. `column` is where the card stands: `paused`; else `waiting` (a run waits for the owner), `running`; else `failed` (the last
 run failed or timed out, until one succeeds); else `done` (a one-time task that succeeded); else `scheduled`. The columns of the plan
@@ -117,28 +118,21 @@ resolved-model line and the text are in the edit form.
 
 ### Who runs an errand
 
-Since 0.1.464 the PM tool `lane_pilot_errand` takes the same `providerId`, `model`, `reasoning` and `serviceTier` (`src/rooms/qa/server/errand-graph.ts`), so a PM that wants one model for an errand no longer starts a schedule to get it: a scheduled run is a hidden thread with no parent chat, and the owner saw no helper square next to the chat (thr_yyqwsp3snw, 2026-11-01).
+Since 0.1.464 the PM tool `lane_pilot_errand` takes the same `providerId`, `model`, `reasoning` and `serviceTier` (`src/rooms/errands/server/handlers/errands-graph.ts`), so a PM that wants one model for an errand no longer starts a schedule to get it: a scheduled run is a hidden thread with no parent chat, and the owner saw no helper square next to the chat (thr_yyqwsp3snw, 2026-11-01).
 
-One pure function, `resolveErrandModel({task, settings, pm})` (`src/rooms/schedule/errand-model.ts`), answers for the executor (what is spawned) and for
-`ScheduleView.model` (what the card says). First level that has a model wins; the task's own `reasoning` and `serviceTier` then override the effort
-and tier of that level:
+One pure function, `resolveErrandModel({task, settings, pm})` (`src/rooms/schedule/models/errand-model.ts`), answers for the executor (what is spawned) and for `ScheduleView.model` (what the card says). First level that has a model wins; the task's own `reasoning` and `serviceTier` then override the effort and tier of that level:
 
 1. the task's pair: `providerId` + `model` (`model` alone is the legacy form and means `claude-code`); `source: "task"`;
 2. the task's `preset` (a model preset slug or alias: `cheap-fast`, `strong`, `ins-*`; `workflow.preset.<slug>.*` settings, else the built-in); `source: "preset"`;
 3. the Automation default `schedule.errand_default` (the project's own row, else the global one): `{provider, model, reasoning_effort?, service_tier?}` or `{preset}`; `source: "schedule-default"`;
-4. the row of the role table for the errand's kind (`src/rooms/schedule/errand-kinds.ts`): the owner's row `role_model.<row>`, else the row's built-in default; the `errand` row (a message, no kind) also reads the legacy settings `errand.provider` / `errand.model` / `errand.reasoning_effort` between the two; `source: "errand-role"`, `sourceKey` the row's key or null for a built-in;
-5. the PM chat's model, `source: "pm"`, **only when level 4 has no model**. The built-in default always has one, so no caller reaches this level today (the pure function takes `builtin: null` to model a build without it; the executor passes the PM chat's model; the card, which reads it synchronously, does not, and cannot differ while level 4 always has a model).
+4. the row of the role table for the errand's kind (`src/rooms/schedule/models/errand-kinds.ts`): the owner's row `role_model.<row>`, else the row's built-in default; the `errand` row (a message, no kind) also reads the legacy settings `errand.provider` / `errand.model` / `errand.reasoning_effort` between the two; `source: "errand-role"`, `sourceKey` the row's key or null for a built-in;
+5. the PM chat's model, `source: "pm"`, **only when level 4 has no model**.
 
-No effort anywhere: `high` for claude-code, `none` for another provider. Problems found while resolving come back in `issues` (`unknown_preset`, `invalid_schedule_default`,
-`provider_without_model`); `schedule_upsert` refuses `preset` that does not exist and a `providerId` without a `model`. `ScheduleView.model` is `{providerId, model,
-reasoningEffort, serviceTier, source, sourceKey, issues}` for an errand and `null` for a script and a chain; the board shows «Will run: provider · model · effort — from: ...».
-A chain lists the resolved executor of each step from `workflow_step_executors`, read-only (step models are set in the workflow). The PM tool
-`lane_pilot_schedule` stores no model when none is named; `create` and `list` echo the model it resolves to.
+No effort anywhere: `high` for claude-code, `none` for another provider. Problems found while resolving come back in `issues` (`unknown_preset`, `invalid_schedule_default`, `provider_without_model`); `schedule_upsert` refuses `preset` that does not exist and a `providerId` without a `model`. `ScheduleView.model` is `{providerId, model, reasoningEffort, serviceTier, source, sourceKey, issues}` for an errand and `null` for a script and a chain; the board shows «Will run: provider · model · effort — from: ...». A chain lists the resolved executor of each step from `workflow_step_executors`, read-only (step models are set in the workflow).
 
 ### Errand kinds (since 0.1.465)
 
-One errand graph and one helper profile, but not one model: an errand has a **kind**, and the kind names the row of the role table it runs on
-(`src/rooms/schedule/errand-kinds.ts`). The kinds and their rows:
+One errand graph and one helper profile, but not one model: an errand has a **kind**, and the kind names the row of the role table it runs on (`src/rooms/schedule/models/errand-kinds.ts`). The kinds and their rows:
 
 | Kind | Row | Built-in default | What it is |
 |---|---|---|---|
@@ -149,48 +143,19 @@ One errand graph and one helper profile, but not one model: an errand has a **ki
 | `message` | `errand` | the errand row | an email, a ticket, a Telegram reply |
 | none | `errand` | the errand row | a script or a check, or a brief that fits no kind |
 
-Who names the kind, first hit wins (`classifyErrand`, `src/rooms/schedule/errand-kinds.ts`): the PM's `kind` in `lane_pilot_errand` (a schedule's
-`errandKind`); else a hint, that is a named skill, plugin or MCP server (`computer-use` → computer, `blender` → devops, `browser-automation` → browser,
-`telegram-user` → message, `tavily` → research) and then the words of the brief (`hintedErrandKind`); else the generic `errand` row. No model names the
-kind (the Jev judgment `errand.kind` was removed). A pinned model,
-a preset and the Automation default stay above the kind (levels 1–3). The run carries `kind` and `kindBy` (`pm`, `hint`, `schedule`) in its inputs
-and the helper thread `errandKind` in its metadata, so a week of runs says which kind ran on which model with what outcome:
-
-```sql
-SELECT json_extract(inputs_json,'$.kind') AS kind, json_extract(inputs_json,'$.kindBy') AS by, status, count(*)
-FROM lane_pilot_wf_run WHERE workflow_id='errand' AND created_at > strftime('%s','now','-7 days')*1000 GROUP BY 1,2,3;
-```
-
-The rows are edited where every role is (Settings → Models by role); the owner's row of a kind wins over its default, and the owner's `errand` row
-does not reach another kind. A scheduled errand takes `errandKind` from its task and is not classified by its brief (its brief is standing text).
+Who names the kind, first hit wins (`classifyErrand`, `src/rooms/schedule/models/errand-kinds.ts`): the PM's `kind` in `lane_pilot_errand` (a schedule's `errandKind`); else a hint (`computer-use` → computer, `blender` → devops, `browser-automation` → browser, `telegram-user` → message, `tavily` → research) and then the words of the brief (`hintedErrandKind`); else the generic `errand` row.
 
 ### The Automation default (`schedule.errand_default`)
 
-Saved with the generic `save_setting` (project id of the open project, or `"*"` at the global page; `expectedVersion` from `errandDefault`), validated in
-`src/rooms/settings/setting-validation.ts`. `schedule_list.errandDefault` is `{effective, source ("project" | "global" | null), project, global, projectVersion, globalVersion}`.
-The collapsible block «Default executor» at the top of the schedule area edits the project's value inside a project (with «Inherit», which calls
-`reset_project_settings` and lets the global value show) and the global value at the global page («Clear» saves `null`). The key is allowed in
-`reset_project_settings` beside the catalog keys.
+Saved with the generic `save_setting` (project id of the open project, or `"*"` at the global page; `expectedVersion` from `errandDefault`), validated in `src/rooms/settings/models/setting-validation.ts`. `schedule_list.errandDefault` is `{effective, source ("project" | "global" | null), project, global, projectVersion, globalVersion}`.
 
 ### Cost
 
-`ScheduleView.cost` (errand only) is `{perRunUsd, samples, priceInPer1M, priceOutPer1M}`: the average over the schedule's last 20 finished runs whose run thread has
-usage in `lane_pilot_token_cursor` and a priced model (`packages/models/src/model-prices.ts`), and the resolved model's price per 1M tokens. The board prints «≈ $0.12 per run (average of 5)»,
-with no history the price, and «cost unknown» when the model has no price. `RunView` carries `providerId`, `model`, `tokens`, `costUsd` and `usageKnown` (from the run
-thread, `src/rooms/schedule/server/schedule-usage.ts`): a run with no usage row (an ACP provider reports none, or the sync has not seen the thread yet) prints «unknown», never 0.
-Only `schedule_runs` and `schedule_get` fill these; `lastRun`, `active` and the calendar carry empty ones.
+`ScheduleView.cost` (errand only) is `{perRunUsd, samples, priceInPer1M, priceOutPer1M}` (`packages/models/src/model-prices.ts`, `src/rooms/schedule/server/services/schedule-usage.ts`).
 
 ### Where it runs
 
-`ScheduleView.where` is `{projectName, sectionId, sectionName, sectionPath, hostId, hostName, cwd}` (`src/rooms/schedule/server/schedule-place.ts`). The project's name comes from BB;
-the Project Folders section is the one the project's PM chat is filed in (the thread's `sectionId`, else the deepest folder section whose path — among the section's copies on every device — holds the chat's environment; when the section comes from the thread's `sectionId`, `sectionPath` is that section's copy on the chat's machine);
-the machine and folder of an errand and a chain are the PM chat's environment (the helper thread reuses it; the project's first source when no chat is open); a script names its own
-machine and folder. Whatever BB does not tell stays `null`. The card line reads «SelfyStudio › Marketing · Mac mini». The project, the section and an errand's machine are shown, not
-edited: a schedule cannot move to another project, and where a chat is filed is set in Project Folders. `RunView.hostName` is the machine the work ran on: the errand thread's own
-machine (its environment's host, read once per thread), a script's host; `RunView.hostId` stays the Browser QA machine used for conflict detection.
-
-A definition (`schedule_upsert.definition`, `src/rooms/schedule/model.ts`): `{id?, projectId, name, description?, task, when, missed?, missedLimit?,
-overlap?, timeoutSec?, maxFailures?}` with `when` = `{type:"cron", cron, timezone?}` or `{type:"once", runAt? | delay?}`.
+`ScheduleView.where` is `{projectName, sectionId, sectionName, sectionPath, hostId, hostName, cwd}` (`src/rooms/schedule/server/services/schedule-place.ts`). A definition (`schedule_upsert.definition`, `src/rooms/schedule/models/schedule.ts`) is `{id?, projectId, name, description?, task, when, missed?, missedLimit?, overlap?, timeoutSec?, maxFailures?}` with `when` = `{type:"cron", cron, timezone?}` or `{type:"once", runAt? | delay?}`.
 
 **Conflicts.** A schedule that has a machine (a script's `hostId`, an errand's Browser QA machine) is compared with the other active schedules
 of the project on that machine over the next 7 days: two starts within 10 minutes are a conflict (`{scheduleId, name, machine, pairs, windowMinutes, samples[]}`),

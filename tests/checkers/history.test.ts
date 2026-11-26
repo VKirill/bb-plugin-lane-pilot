@@ -1,10 +1,26 @@
+import { execFileSync, spawn } from "node:child_process";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
-import { runScore } from "../../src/rooms/checkers/service";
-import { loadHistory } from "../../src/rooms/checkers/history";
-import { git, localHost } from "../bench/helpers";
+import { runScore } from "../../src/rooms/checkers/server/services/score-service";
+import { findSolutionCommit, loadCandidates, loadHistory } from "../../src/rooms/checkers/server";
+import { createRun, createTask, openDatabase, saveTaskGitBase } from "../../src/rooms/plugin-db";
+
+const localHost = {
+  run: (_hostId: string, cwd: string, command: string, timeoutSec = 60) => new Promise<{ exitCode: number; stdout: string; stderr: string }>((resolve) => {
+    const child = spawn("/bin/sh", ["-c", command], { cwd, env: { ...process.env, GIT_TERMINAL_PROMPT: "0" } });
+    let stdout = "", stderr = "";
+    child.stdout.on("data", (chunk) => { stdout += String(chunk); });
+    child.stderr.on("data", (chunk) => { stderr += String(chunk); });
+    const timer = setTimeout(() => child.kill("SIGKILL"), timeoutSec * 1000);
+    child.on("close", (code) => { clearTimeout(timer); resolve({ exitCode: code ?? 255, stdout, stderr }); });
+  }),
+};
+
+const git = (cwd: string, ...args: string[]): string =>
+  execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", ...args], { cwd, encoding: "utf8" }).trim();
 
 const CODE = `import { LIMIT } from "./limits.mjs";
 
@@ -91,5 +107,46 @@ describe("candidates from the history", () => {
     }, { limit: 3 });
     expect(rows).toEqual([]);
     expect(lines.join("\n")).toContain("solution_commit_not_found");
+  });
+
+  it("findSolutionCommit locates the merge commit by attempt trailer and falls back to task subject", async () => {
+    const { repo } = repoWithMergedTask();
+    const head = git(repo, "rev-parse", "HEAD");
+    expect(await findSolutionCommit(localHost, { taskId: "pick", attemptId: "a1", hostId: "local", repoPath: repo })).toEqual({ commit: head });
+    expect(await findSolutionCommit(localHost, { taskId: "pick", hostId: "local", repoPath: repo })).toEqual({ commit: head });
+    expect(await findSolutionCommit(localHost, { taskId: "missing", attemptId: "missing", hostId: "local", repoPath: repo })).toMatchObject({ reason: "solution_commit_not_found" });
+  });
+
+  it("loadCandidates selects accepted tasks with valid contracts and records rejection reasons", () => {
+    const { bb } = createFakePluginHost({ pluginId: "lane-pilot" });
+    const db = openDatabase(bb);
+    const contract = (id: string, overrides: Record<string, unknown> = {}) => ({
+      schema_version: 2, id, title: id, display_title: id, kind: "feature", area: "feature:x", risk: "medium", lane: "writer",
+      project_cwd: "/repo/app", read_first: [], interfaces: [], invariants: [], out_of_scope: [], expected_outputs: ["a.ts"], owns_paths: ["a.ts"],
+      never_touch: [], depends_on: [], objective: "x", acceptance: ["ok"], verify: "tests",
+      verification: [{ command: "npm test", cwd: "/repo/app" }, { command: "npm run lint", cwd: "/repo/app" }],
+      ...overrides,
+    });
+    const add = (taskId: string, projectId: string, c: Record<string, unknown>) => {
+      const runId = `run_${taskId}`;
+      createRun(db, runId, projectId, "bb", "/repo/app");
+      createTask(db, { id: taskId, runId, kind: "bb", contract: c });
+      saveTaskGitBase(db, taskId, { baseRef: "main", baseSha: "a".repeat(40), initialHeadSha: "a".repeat(40), branch: "main", compareCommitted: true });
+      db.prepare("INSERT INTO lane_pilot_attempt(id,run_id,task_id,thread_id,state,attempt_no,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)")
+        .run(`att_${taskId}`, runId, taskId, null, "accepted", 1, 1000, 2000);
+    };
+    add("t_ok", "proj_real", contract("t_ok"));
+    add("t_sbx", "proj_sbx", contract("t_sbx"));
+    add("t_net", "proj_real", contract("t_net", { verification: [{ command: "curl https://example.com", cwd: "/repo/app" }, { command: "npm test", cwd: "/repo/app" }] }));
+    add("t_one", "proj_real", contract("t_one", { verification: [{ command: "npm test", cwd: "/repo/app" }] }));
+
+    const result = loadCandidates(db, {
+      projectNames: new Map([["proj_real", "App"], ["proj_sbx", "LP sandbox 1"]]),
+      isSandboxName: (name) => name.startsWith("LP sandbox"),
+      projects: [{ projectId: "proj_real", name: "App", cwdPrefixes: ["/repo/app"] }, { projectId: "proj_sbx", name: "Sandbox", cwdPrefixes: ["/repo/app"] }],
+      hostFor: () => "local",
+    });
+    expect(result.candidates.map((c) => c.taskId)).toEqual(["t_ok"]);
+    expect(result.counts).toEqual({ sandbox_project: 1, check_needs_network_or_login: 1, fewer_than_2_checks: 1 });
   });
 });

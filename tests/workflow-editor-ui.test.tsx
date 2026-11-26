@@ -8,8 +8,8 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
 import { setLocaleOverride } from "@lane-pilot/i18n";
 import { migrations } from "../src/rooms/plugin-db";
-import { createWorkflowArchitect } from "../src/rooms/workflow/server/workflow-architect";
-import type { ArchitectDeps } from "../src/rooms/workflow/server/workflow-architect";
+import { createWorkflowArchitect } from "../src/rooms/workflow/server/services/workflow-architect";
+import type { ArchitectDeps } from "../src/rooms/workflow/server/services/workflow-architect";
 import type { ServerCore } from "../src/rooms/contracts/server";
 import type { Services } from "../server";
 import { connectOps, insertAfterOps, newNode, problemMaps, readWhen, viewEdgeIndexes, writeWhen, whenError, expressionError, uniqueId } from "../src/rooms/workflow/ui/workflow-edit-model";
@@ -533,8 +533,8 @@ describe("editing a draft in the Workflows tab", () => {
     await waitFor(() => expect((architect.drafts.get(draftId)!.definition.triggers as unknown[]).at(-1)).toEqual({ type: "schedule", cron: "0 9 * * 1-5", timezone: "Europe/Moscow", inputs: { query: "cats" } }));
     // Adding another kind of trigger keeps the schedule's fields.
     fireEvent.click(within(slot.getByTestId("wf-edit-triggers")).getByRole("combobox"));
-    fireEvent.click(await slot.findByRole("option", { name: "telegram" }));
-    await waitFor(() => expect((architect.drafts.get(draftId)!.definition.triggers as Array<{ type: string }>).map((item) => item.type)).toContain("telegram"));
+    fireEvent.click(await slot.findByRole("option", { name: "event" }));
+    await waitFor(() => expect((architect.drafts.get(draftId)!.definition.triggers as Array<{ type: string }>).map((item) => item.type)).toContain("event"));
     expect((architect.drafts.get(draftId)!.definition.triggers as Array<{ type: string; cron?: string }>).find((item) => item.type === "schedule")!.cron).toBe("0 9 * * 1-5");
     // The new requirement lists are there to fill.
     expect(slot.getByTestId("wf-edit-tools")).toBeTruthy();

@@ -10,36 +10,32 @@ updated: 2026-11-14
 sources:
   - src/rooms/owner-waiting/server/index.ts
   - src/rooms/reports/server/index.ts
-  - src/rooms/reports/server/daily.ts
-  - src/rooms/reports/server/owner-push.ts
-  - src/rooms/reports/server/telegram.ts
+  - src/rooms/reports/server/handlers/report-workflows.ts
+  - src/rooms/reports/server/services/daily-report.ts
   - src/rooms/schedule/server/index.ts
-  - src/rooms/wall/server/index.ts
+  - packages/workflow-engine/src/engine-clock.ts
 ---
 
 # Observability
 
 > Part of the [Lane Pilot guide](../../README.md#the-guide). Moved out of the root README on 2026-11-06.
 
-## Morning summary and the wall journal
-
-The night loop writes a journal (`lane_pilot_wall_*` tables) of failure classes, repairs, hunts and spend against the night cap. `bb lane-pilot wall morning` and `bb lane-pilot policy morning` print the morning list: rules put on trial or confirmed, what went red in the last 24 hours, what was accepted, deferrals, plus three wall lines (classes and spend; repairs merged, accepted, held, rolled back; hunts, backlog and re-runs).
-
 ## Daily report and the owner push (Telegram)
 
-`mountReports` registers the plugin's two Telegram schedules (`owner-push` and `daily-report`) using Env Catalog secrets `TG_AIVECH_BOT`, `TG_OWNER_CHAT_ID`, and `LANE_PILOT_TG_TOPIC` (`src/rooms/reports/server/index.ts:33-57`, `src/rooms/reports/server/telegram.ts:8-36`). The older hub shell scripts (`scripts/lp-metrics-daily.sh`, `scripts/lp-owner-push.sh`) remain in `scripts/` only as retired fallbacks.
+Both Telegram digests (`lp.daily-report` and `lp.owner-push`) are registered in `SYSTEM_SCHEDULES` (`src/rooms/schedule/server/services/system-schedules.ts`) and driven by the single engine clock, executing `lp.daily_report` and `lp.owner_push` in `src/rooms/reports/server/handlers/report-workflows.ts` with Env Catalog secrets `TG_AIVECH_BOT`, `TG_OWNER_CHAT_ID`, and `LANE_PILOT_TG_TOPIC`. Event-driven immediate notifications go through `lp.owner-bell` (triggered by `lp.owner.item-created`) with a durable quiet-hours and daily-cap wait.
 
-- The daily report runs via the plugin schedule `daily-report` (`src/rooms/reports/server/index.ts:43-56`): the first hourly tick from 09:00 in the owner's time zone (`owner_push.timezone`, Europe/Madrid), once a day. `buildDailyReport` reads the hub database read-only and sends a Russian-language daily report for real projects on the current version (stability headline, failure origins, sandbox and old-version lines, usage coverage, deferrals), then appends `scripts/lp-morning.sql`, `scripts/lp-wall-morning.sql`, `scripts/lp-graph-coverage.sql` from the plugin directory and outage rows when present (`src/rooms/reports/server/daily.ts:51-108`). `bb lane-pilot waiting config dry_run=on` logs the text once a day under `daily_dry_day` without sending (`src/rooms/reports/server/index.ts:18`, `:35`, `:47-52`); `lp-metrics.sh [days]` prints the same metrics on the command line.
-- The plugin schedule `owner-push` runs every 30 minutes (`src/rooms/reports/server/index.ts:37-41`); `runOwnerPush` queries `owner_waiting_digest`, sends the text, and then calls `owner_waiting_ack` (`src/rooms/reports/server/owner-push.ts:12-31`). Bot, chat and topic are Env Catalog records `TG_AIVECH_BOT`, `TG_OWNER_CHAT_ID`, `LANE_PILOT_TG_TOPIC`; `bb lane-pilot waiting config dry_run=on` composes and logs the text without sending or acknowledging. Only items that wake the owner are pushed, one message per waiting, nothing in quiet hours (`owner_push.quiet` `23:00-08:00`, `owner_push.timezone` `Europe/Madrid`, `owner_push.enabled` `true`), at most six items named.
+- The daily report (`lp.daily-report`): runs on the first hourly tick from 09:00 in the owner's time zone (`owner_push.timezone`, Europe/Madrid), once a day. `buildDailyReport` (`src/rooms/reports/server/services/daily-report.ts`) reads the hub database read-only (attempts, workflow runs/steps, token cost or `not_measured`, waiting items, deferrals, outages) and sends the summary. `bb lane-pilot waiting config dry_run=on` logs the text without sending; `lp-metrics.sh [days]` prints attempt metrics on the command line.
+- The owner push (`lp.owner-push`): runs every 30 minutes, queries `owner_waiting_digest`, sends the digest, and calls `owner_waiting_ack`. Only items that wake the owner are pushed, nothing in quiet hours (`owner_push.quiet` `23:00-08:00`, `owner_push.timezone` `Europe/Madrid`, `owner_push.enabled` `true`), at most six items named.
 
 ## Waiting for the owner
 
-The screen "Waiting for you" (`bb lane-pilot waiting`) holds only what needs a person: learned items pending the owner, a writer's product question unanswered for an hour, phase turns, workflow runs without a PM chat, wall classes out of moves, outages, scheduled-agent blocks and anything posted with `waiting post`. Each item says why it is the owner's, links evidence and gives the exact action. Nothing waits for an answer: the work goes on. The list is ranked by the cost of putting a row off and capped: the first five rows are «now», the rest fold under «Потом»; the rail badge and the Telegram digest count only «now» rows, and `answered` shows who closed the week's rows (owner, agent, lead, janitor). Most rows are decided by the agent itself (`--by agent`); only money, messages to other people, publishing and high-risk changes wait for the owner. Details: [owner waiting](../owner-waiting.md). It also shows what went red overnight and what was accepted.
+The screen "Waiting for you" (`bb lane-pilot waiting`) holds only what needs a person: a writer's product question unanswered for an hour, workflow runs waiting at a `human` form (72 h default deadline), outages, scheduled-agent blocks, role fallback alerts, and anything posted with `waiting post`. Each item says why it is the owner's, links evidence and gives the exact action. The list is ranked by the cost of putting a row off and capped: the first five rows are «now», the rest fold under «Потом»; the rail badge and the Telegram digest count only «now» rows, and `answered` shows who closed the week's rows (`owner`, `agent`, `lead`). Most rows are decided by the agent itself (`--by agent`); only money, messages to other people, publishing and high-risk changes wait for the owner. Details: [owner waiting](../owner-waiting.md).
 
-## Stage receipts, attempt metrics and the acceptance card
+## Stage receipts, attempt metrics and per-step workflow facts
 
-- Every stage leaves a receipt and events (`lane_pilot_stage_event`) with a proof kind decided by code (`command`, `file`, `gate`, `receipt`, `schema`, or `advisory` for a model's opinion that never accepts a task alone). `bb lane-pilot passport <attempt-id>`, `receipt-chain`, `manifest`, `pr-passport` and `preship` assemble them.
-- `bb lane-pilot metrics <project-id> [--days N] [--json]` prints per attempt the stages passed or failed, seconds per stage, writer tokens and list-price cost (a price table, also on a subscription). A provider that reports no usage is `not_measured`, never 0; a thread shared by several attempts puts its tokens on the last one and marks the others `partial`.
+- Every stage leaves a receipt and events (`lane_pilot_stage_event`) with a proof kind decided by code (`command`, `file`, `gate`, `receipt`, `schema`, or `advisory` for a model's opinion that never accepts a task alone). `bb lane-pilot attempt <attempt-id>`, `receipt-chain`, `manifest`, and `preship` inspect and assemble them.
+- Each workflow step records token, cache-read/write, list-price cost (`packages/models/src/model-prices.ts`, or `not_measured`), duration, `verdict` (`pass|fail|not_run`), `failure_class`, `form_used`, and requested vs answered model in `lane_pilot_wf_step` (`STEP_FACT_FIELDS`).
+- `bb lane-pilot metrics <project-id> [--days N] [--json]` prints per attempt the stages passed or failed, seconds per stage, writer tokens and list-price cost. A provider that reports no usage is `not_measured`, never 0; a thread shared by several attempts puts its tokens on the last one and marks the others `partial`.
 - The task size metric (files, diff lines, minutes, attempts of each accepted task) rides the acceptance receipt; with five accepted tasks the median warns when a plan slices work far below the project's grain.
 - The task page loads the acceptance card (`task_acceptance_card`): the contract, plan against fact per item, stage receipts with proof kind, gate events, what did not run (apart from "no findings"), risk, base commit and cost. `acceptance_stats` reports per project and ISO week first-try and eventual acceptance, attempts per accepted task and failure causes.
 
@@ -49,30 +45,29 @@ System, Tasks shows tasks and top-level workflow runs as a board (queued, runnin
 
 ## In a chat
 
-A PM chat's info panel (`thread_live`, polled every 8 s) lists the tasks at work with phase, stage, model and minutes and their stage squares; a click opens the steps. A writer or helper thread shows its own task. A thread Lane Pilot has no part in shows nothing.
+A PM chat's info panel (`thread_live`, polled every 8 s) lists the tasks at work with stage, model and minutes and their stage squares; a click opens the steps. A writer or helper thread shows its own task. A thread Lane Pilot has no part in shows nothing.
 
-## Schedule board
+## Schedule board and the single engine clock
 
-Lane Pilot schedules workflows, errands, named agent routines and host scripts itself (once or on a five-field cron with an IANA time zone). `schedule-board-tick` runs every minute, materialises due runs idempotently by run key (`<schedule id>:<time>`) and supervises them; a host silent ten minutes past its deadline fails the run. `bb lane-pilot schedule list|show|history|preview|create|update|pause|resume|run-now|delete`; the board is in the Automation tab.
+Lane Pilot schedules workflows, errands, named agent routines and host scripts itself (once or on a five-field cron with an IANA time zone). One engine clock (`startClock` in `packages/workflow-engine/src/engine-clock.ts`, wired to `startBoardClock` in `src/rooms/schedule/server/handlers/board-clock.ts`) replaces minute polling: it wakes at the earliest waiting-step deadline or due schedule-board row (`MIN(deadline)`, capped at `CLOCK_BEAT_MS` = 60 s), materialises due runs idempotently by run key (`<schedule id>:<time>`), and handles overdue waits. Board-wide scheduling pauses and resumes via `schedule.paused_all` (`bb lane-pilot schedule pause-all|resume-all`). `bb lane-pilot schedule list|show|history|preview|create|update|pause|resume|run-now|delete`; the board is in the Automation tab.
 
 ## Where each signal lives
 
 | Signal | Where |
 |---|---|
-| Daily Telegram report | Plugin schedule `daily-report` (09:00 Europe/Madrid) |
-| What waits for the owner | Screen "Waiting for you", `waiting`, Telegram push |
-| Morning list and wall lines | `policy morning`, `wall morning`, appended to the daily report |
-| Per-attempt cost and stages | `metrics`, task page, acceptance card |
+| Daily Telegram report | `SYSTEM_SCHEDULES` `lp.daily-report` (09:00 Europe/Madrid) |
+| What waits for the owner | Screen "Waiting for you", `waiting`, `lp.owner-bell` & `lp.owner-push` |
+| Engine clock & waits | `health`, startup clock log, `schedule` board |
+| Step facts & model census | `lane_pilot_wf_step` (`STEP_FACT_FIELDS`), `nodeCensus()` |
+| Per-attempt cost and stages | `metrics`, `attempt`, task page, acceptance card |
 | Acceptance by week | RPC `acceptance_stats`, Acceptance stats view |
 | Writer reuse | RPC `writer_reuse_stats` (cold threads per accepted task, area share, median minutes to accept) |
 | Memory health | `memory-probe --report`, `memory-tiers`, `memory-conflicts`, `memory-eval` |
-| Bench and baseline | `bench status`, `bench baseline`, `bench gate` |
-| Self-improvement status | System, Self-improvement page |
 
 ## Other signals
 
-`bb lane-pilot money` (month-to-date paid spend against `money.monthly_cap_usd`), `outages` (gaps over five minutes in the plugin heartbeat), `owner-presence` (writers keep off a provider the owner used in the last ten minutes), `bench baseline` and the live stability figures in the daily report.
+`bb lane-pilot money` (month-to-date paid spend against `money.monthly_cap_usd`), `outages` (gaps over five minutes in the plugin heartbeat), `owner-presence` (writers keep off a provider the owner used in the last ten minutes) and the live stability figures in `canary` and the daily report.
 
 ## Sources
 
-Where this page's claims start in the code: `src/rooms/owner-waiting/server/index.ts:1-5`, `src/rooms/schedule/server/index.ts:3-9`, `src/rooms/wall/server/index.ts:2-6`. The deep pages linked above cite the rest.
+Where this page's claims start in the code: `src/rooms/owner-waiting/server/index.ts`, `src/rooms/reports/server/index.ts`, `src/rooms/schedule/server/handlers/board-clock.ts`, `packages/workflow-engine/src/engine-clock.ts`. The deep pages linked above cite the rest.

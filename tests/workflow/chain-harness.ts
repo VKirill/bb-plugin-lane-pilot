@@ -74,7 +74,7 @@ export async function runSim(workflowId: string, sim: Sim) {
   const stubOf = (ctx: StepContext): Stub | undefined => sim.stubs?.[ctx.nodeId] ?? (ctx.node.type === "subworkflow" ? sim.stubs?.[ctx.node.workflow] : undefined)
     ?? (ctx.nodeId.endsWith(":child") ? sim.stubs?.[ctx.nodeId.slice(0, -":child".length)] : undefined) ?? (ctx.node.type === "action" ? sim.stubs?.[ctx.node.action ?? ""] : undefined) ?? sim.stubs?.[ctx.node.type];
 
-  const model: NodeExecutor = { reentrant: true, run: async (ctx) => ({ output: answer(ctx, stubOf(ctx), outputFields(ctx.workflow, ctx.node)) }) };
+  const model: NodeExecutor = { reentrant: true, run: async (ctx) => ({ output: answer(ctx, stubOf(ctx), outputFields(ctx.workflow, ctx.node)), usage: { tokens: 0, costUsd: 0, costState: "measured" } }) };
 
   // Every executor key any chain uses: the agent, the code task, the actions of the catalog and the fragments' joins.
   const every = new Set<string>();
@@ -109,7 +109,7 @@ export async function runSim(workflowId: string, sim: Sim) {
     const node = ctx.node as Extract<typeof ctx.node, { type: "subworkflow" }>;
     if (sim.stubs && (node.id in sim.stubs || node.workflow in sim.stubs)) {
       const stub = (node.id in sim.stubs ? sim.stubs[node.id] : sim.stubs[node.workflow]) as Stub;
-      return { output: answer(ctx, stub, outputFields(ctx.workflow, ctx.node)) };
+      return { output: answer(ctx, stub, outputFields(ctx.workflow, ctx.node)), usage: { tokens: 0, costUsd: 0, costState: "measured" } };
     }
     return real.run(ctx);
   } });

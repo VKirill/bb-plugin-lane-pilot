@@ -5,10 +5,10 @@ import plugin from "../../server";
 import { createRun, openDatabase, setRunThread } from "../../src/rooms/plugin-db";
 import { coreFileWrite, mapStore } from "../helpers/core-files";
 import {builtinWorkflow} from "../../src/rooms/workflow/builtin";
-import { roleSpec } from "../../src/rooms/workflow/server/workflow-agent";
-import { SPECIALIST_GRAPH } from "../../src/rooms/critique/server";
-import { waitSpecialistRun } from "../../src/rooms/critique/server/specialist-graph";
+import { roleSpec } from "../../src/rooms/workflow/server/services/workflow-agent";
+import { SPECIALIST_GRAPH, waitSpecialistRun } from "../../src/rooms/critique/server";
 import { detectRepoEdits } from "../../src/rooms/verification/server";
+import { endedTurn } from "../helpers/ended-turn";
 
 const projectId = "sg-project";
 const pmThreadId = "sg-pm";
@@ -32,7 +32,7 @@ async function world() {
         getPluginMetadata: async ({ threadId }) => threadId === pmThreadId ? { role: "pm", lanePilotRunId: runId } : {},
         spawn: async (args) => { spawned.push(args as unknown as Record<string, unknown>); return { id: `sg-thread-${spawned.length}` }; },
         get: async ({ threadId }) => ({ id: threadId, status: "idle", projectId, environmentId: "env-pm", sourceThreadId: pmThreadId, lifecycleOwnerThreadId: pmThreadId }),
-        events: { list: async ({ threadId }) => [{ type: "turn/started", threadId, seq: 1 }, { type: "turn/completed", threadId, seq: 2, data: { status: "completed" } }] },
+        events: { list: async ({ threadId }) => endedTurn(threadId) },
         output: async () => ({ output: reply("Copy written to .agents/copy/h1.md") }),
       },
       environments: { get: async () => ({ id: "env-pm", hostId: "local-host", path: process.cwd(), status: "ready" }) },
@@ -64,13 +64,12 @@ describe("the graph behind lane_pilot_specialist", () => {
     expect(graph.nodes.find((node) => node.id === "work")).toMatchObject({ type: "agent", role: "specialist:{{$inputs.role}}" });
   });
 
-  it("keeps the role lines of the project in the first message, names the thread by the title, and does not repeat the task as graph inputs", async () => {
+  it("keeps the specialist instructions in the first message, names the thread by the title, and does not repeat the task as graph inputs", async () => {
     const t = await world();
-    await t.bb.storage.kv.set(`lp.role.lines:${projectId}:copy-lead`, ["2026-10-20 never promise a price in an H1"] as never);
     const started = await t.call("lane_pilot_specialist", { role: "copy-lead", task: "Write three H1 variants for /pricing.", title: "H1 for pricing" });
     const prompt = String(t.spawned[0]!.prompt);
     // brief.text is over the inline bound, so the packet delivers it whole as a file and the prompt points at it.
-    const delivered = [...t.written.values()].find((content) => content.includes("never promise a price in an H1"));
+    const delivered = [...t.written.values()].find((content) => content.includes("Write three H1 variants"));
     expect(delivered).toBeDefined();
     expect(delivered).toContain("write only your deliverable");
     expect(delivered!.match(/Write three H1 variants/g)).toHaveLength(1);

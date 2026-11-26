@@ -8,6 +8,7 @@
     "en": "Lists the assumptions made about a phase before planning: each with its evidence file:line or none, what breaks if it is wrong and a confidence, split Verified and Unverified. Reads only, writes nothing.",
     "ru": "Показывает предположения о фазе до планирования: каждое с доказательством file:line или без, что сломается, если оно неверно, и уверенность; разделены на Проверенные и Непроверенные. Только читает, ничего не пишет."
   },
+  "category": "planning",
   "status": "published",
   "quality_mode": {
     "default": "standard"
@@ -32,7 +33,8 @@
   },
   "not_for": [
     "grill-plan",
-    "validate-phase"
+    "validate-phase",
+    "scout"
   ],
   "inputs": {
     "phase_id": {

@@ -3,9 +3,9 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { WorkflowEngine, registerPureActions } from "@lane-pilot/workflow-engine";
 import { openDatabase } from "../../src/rooms/plugin-db";
 import {builtinWorkflow} from "../../src/rooms/workflow/builtin";
-import { registerAgentRoutineActions } from "../../src/rooms/schedule/server/schedule-agent-actions";
-import { agentHistoryBlock, agentOutcomeOf, handOverTrailer, parseAgentOutcome, parseHandOver, renderAgentOutcome } from "../../src/rooms/schedule/outcome";
-import { createScheduleStore } from "../../src/rooms/schedule/store";
+import { registerAgentRoutineActions } from "../../src/rooms/schedule/server/handlers/schedule-agent-actions";
+import { agentHistoryBlock, agentOutcomeOf, handOverTrailer, parseAgentOutcome, parseHandOver, renderAgentOutcome } from "../../src/rooms/schedule/models/outcome";
+import { createScheduleStore } from "../../src/rooms/schedule/server/repositories/schedule-repository";
 import { addSchedule, createClock } from "./harness";
 
 /**
@@ -30,7 +30,7 @@ function world(options: { pm?: boolean; agent?: Record<string, unknown>; handOve
   registerPureActions(engine);
   let scripted = options.agent ?? answer();
   const seen: Array<Record<string, unknown>> = [];
-  engine.register("agent", { reentrant: true, run: async (c: { node: { id: string; role: string; prompt: string }; render: (text: string) => string }) => { seen.push({ role: c.render(c.node.role), prompt: c.render(c.node.prompt) }); return { output: scripted }; } } as never);
+  engine.register("agent", { reentrant: true, run: async (c: { node: { id: string; role: string; prompt: string }; render: (text: string) => string }) => { seen.push({ role: c.render(c.node.role), prompt: c.render(c.node.prompt) }); return { output: scripted, usage: { tokens: 15, costUsd: 0, costState: "measured" } }; } } as never);
   registerAgentRoutineActions(engine, ctx, services);
   const clock = createClock(Date.UTC(2026, 9, 26, 5));
   const schedule = addSchedule(db, clock, { task: { kind: "agent", agentId: "seo-specialist", task: "Check the positions.", authorized: false, accounts: [], historyRuns: 5 } as never, name: "Positions", when: { type: "cron", cron: "0 9 * * 1", timezone: "UTC" } });

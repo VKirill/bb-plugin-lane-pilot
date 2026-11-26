@@ -8,6 +8,7 @@
     "en": "Eight read-only perspectives (security, performance, reliability, maintainability, scalability, ux, accessibility, compliance) scan an area in two batches of four; findings are deduplicated and returned as the run's list, with file:line and a severity.",
     "ru": "Восемь перспектив только на чтение (безопасность, производительность, надёжность, сопровождаемость, масштабируемость, UX, доступность, соответствие) проходят область двумя пачками по четыре; находки дедуплицируются и возвращаются списком в итоге запуска, с file:line и важностью."
   },
+  "category": "code",
   "examples": {
     "ru": [
       "Найди проблемы в модуле заказов и дай список",

@@ -11,7 +11,6 @@ import { useLpPoll, useLpRealtime, useOpenThreadPanel } from "../../ui-shell/ui"
 import { useObservedWidth } from "@lane-pilot/ui-kit";
 import { getDraft, type DraftDoc } from "./workflow-drafts";
 import { NodePanel, WorkflowGraph, type NodePanelContext, type NodePanelRenderer } from "./workflow-detail";
-import { nodeTitle } from "./workflow-titles";
 import {
   connectOps, edgesOf, endName, insertAfterOps, isRaw, newNode, nodeById, problemMaps, setMetaOps, viewEdgeIndexes, END_KEY, START_KEY, type NodeType, type Raw,
 } from "./workflow-edit-model";

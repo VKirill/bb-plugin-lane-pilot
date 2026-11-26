@@ -3,8 +3,10 @@ import { readFile, realpath, stat } from "node:fs/promises";
 import { join, posix } from "node:path";
 import { promisify } from "node:util";
 import { bestEffort, readTextOrNull } from "@lane-pilot/kit";
-import { CODE_FILE, TEST_PATH } from "./docs-anchors";
-import { withBaseLock } from "../verification";
+import { TEST_PATH } from "../tasks";
+import { withBaseLock } from "../worktree";
+
+const CODE_FILE = /\.(ts|tsx|mts|cts|js|jsx|mjs|cjs|py|vue|prisma)$/;
 
 const run = promisify(execFile);
 /** git's empty tree: the base when the repository has no history before the window. */

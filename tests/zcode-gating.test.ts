@@ -1,11 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import {WRITER_FALLBACK_SLOTS, roleModelKey, type ModelCatalog, zcodeEnvironmentError} from "@lane-pilot/models";
-import { resolveSpawnModel, spawnUsageOf } from "../src/rooms/platform/server/spawn-model";
-import { fullAccessSpawn } from "../src/rooms/platform/server/pm-spawn";
-import { noteZcodeThread, zcodeBusy, zcodeBusyPeek } from "../src/rooms/platform/server/zcode-slot";
-import { createWriterState } from "../src/rooms/writer/server/state";
-import { createProviderUsage, usageHoldReason } from "../src/rooms/usage/server/provider-usage";
-import { roleSelection, type CriticCatalog } from "../src/rooms/critique/critic-pair";
+import { roleModelKey, type ModelCatalog, zcodeEnvironmentError } from "@lane-pilot/models";
+import { resolveSpawnModel, spawnUsageOf } from "../src/rooms/platform/server/services/spawn-model";
+import { fullAccessSpawn } from "../src/rooms/platform/server/services/pm-spawn";
+import { noteZcodeThread, zcodeBusy, zcodeBusyPeek } from "../src/rooms/platform/server/services/zcode-slot";
+import { createWriterState } from "../src/rooms/writer/server/services/state";
+import { createProviderUsage, usageHoldReason } from "../src/rooms/usage/server";
+import { roleSelection, type CriticCatalog } from "../src/rooms/critique";
 import { failureClass } from "../src/rooms/contracts/failure-class";
 ;
 

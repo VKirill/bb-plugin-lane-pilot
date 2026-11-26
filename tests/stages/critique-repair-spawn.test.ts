@@ -3,9 +3,9 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { taskV2Schema, type PrototypeConfig } from "../../src/rooms/contracts";
 import { createAttempt, createRun, createTask, openDatabase, saveProjectSetting, saveReasoningTrace, setAttemptWorkspace, setRunThread, transitionAttempt } from "../../src/rooms/plugin-db";
 import { openTaskHome, recordTaskFile, type TaskFileIo } from "../../src/rooms/storage";
-import { createWriterFinish } from "../../src/rooms/writer/server/finish";
-import { requireHelperSpawn } from "../../src/rooms/runs/server/run-routing";
-import { stageHelperSettings } from "../../src/rooms/settings/server/stage-settings";
+import { createWriterFinish } from "../../src/rooms/writer/server/services/finish";
+import { requireHelperSpawn } from "../../src/rooms/runs/server";
+import { stageHelperSettings } from "../../src/rooms/settings/server/services/stage-settings";
 import { sha256Hex } from "@lane-pilot/kit";
 
 // RP1: the fresh code-repair fallback starts a new thread that remembers nothing. The prompt it gets must carry

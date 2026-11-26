@@ -4,7 +4,7 @@ import { cleanup, configure, fireEvent, waitFor } from "@testing-library/react";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
 import { setLocaleOverride } from "@lane-pilot/i18n";
 import { COLUMNS, conflictKeys, cronWords, groupByColumn, viewDays } from "../src/rooms/schedule/ui/schedule-model";
-import type { RunView, ScheduleView } from "../src/rooms/schedule/views";
+import type { RunView, ScheduleView } from "../src/rooms/schedule/models/views";
 
 configure({ asyncUtilTimeout: 5_000 });
 vi.setConfig({ testTimeout: 20_000 });

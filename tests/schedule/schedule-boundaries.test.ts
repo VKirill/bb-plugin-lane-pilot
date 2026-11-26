@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 import { addSchedule, createClock, createDb, createFakeExecutor, schedulerOn } from "./harness";
-import { createScheduleExecutors } from "../../src/rooms/schedule/server/schedule-executors";
+import { createScheduleExecutors } from "../../src/rooms/schedule/server/services/schedule-executors";
 
 // The 2026-10-29 full-code audit (Аудит GPT), probes A-007, A-008 and A-009, kept as regressions.
 it("stops the job of a run canceled while its start was awaited, once the job has a reference", async () => {

@@ -5,15 +5,14 @@ import { join } from "node:path";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { runCommandOnHost } from "../src/rooms/writer/cli-run";
-import { attemptProduced } from "../src/rooms/writer/cli-outcome";
+import { attemptProduced } from "../src/rooms/writer/models/cli-outcome";
 import { createRun, openDatabase } from "../src/rooms/plugin-db";
-import {
-  chunkPaths, classifyFolderProbe, liveOwnedFiles, liveOwnedRoots, LIVE_BACKUP_SCRIPT, LIVE_DELETED_SHA, LIVE_FOLDER_BIG_BYTES, LIVE_FOLDER_FILE_CAP, LIVE_SNAPSHOT_SCRIPT, LIVE_SNAPSHOT_SKIP_DIRS,
-  LIVE_SNAPSHOT_OUTPUT_BYTES, LIVE_SNAPSHOT_SKIP_PATHS, liveSnapshotCommand, parseLiveSnapshot, pythonCommand,
-} from "../src/rooms/writer/live-folder";
-import { LANE_PILOT_PM_SESSION } from "../src/rooms/native-agent/native-agent-overlay";
-import { createLiveFolder } from "../src/rooms/writer/server/live-folder";
-import { previousAttemptBrief, writerPrompt, writerSetupLines, WRITER_SETUP_LINES } from "../src/rooms/writer/server/writer-task";
+import { chunkPaths, LIVE_FOLDER_FILE_CAP, liveSnapshotCommand, parseLiveSnapshot, pythonCommand } from "../src/rooms/writer/server/services/live-folder-scripts";
+import { classifyFolderProbe, liveOwnedFiles, liveOwnedRoots, LIVE_BACKUP_SCRIPT, LIVE_DELETED_SHA, LIVE_FOLDER_BIG_BYTES, LIVE_SNAPSHOT_SCRIPT, LIVE_SNAPSHOT_SKIP_DIRS, LIVE_SNAPSHOT_OUTPUT_BYTES, LIVE_SNAPSHOT_SKIP_PATHS } from "../src/rooms/writer/models/live-folder";
+import { LANE_PILOT_PM_SESSION } from "../src/rooms/native-agent/models/native-agent-overlay";
+import { createLiveFolder } from "../src/rooms/writer/server/services/live-folder";
+import { previousAttemptBrief } from "../src/rooms/writer/models/writer-brief-feedback";
+import { writerPrompt, writerSetupLines, WRITER_SETUP_LINES } from "../src/rooms/writer/models/writer-task";
 
 const roots: string[] = [];
 const realHome = process.env.HOME;
@@ -117,7 +116,7 @@ describe("detection", () => {
     } };
     const live = createLiveFolder({ bb, db, host } as never);
     const oldProbe = live.isLiveFolder("r-invalidate", "h", folder);
-    await setEntered;
+    await entered;
     spawnSync("git", ["init", "-q"], { cwd: folder });
     const invalidation = live.invalidateLiveFolder("r-invalidate");
     releaseSet();
@@ -420,7 +419,7 @@ describe("what the writer and the PM are told", () => {
   const LIVE = "This folder has no git: you edit the live files directly; Lane Pilot does not commit; do not run git commands.";
 
   it("swaps the worktree line of the writer's brief for the live-folder one, and only for a live folder", () => {
-    const live = writerPrompt(task, "", "", undefined, "Lane Pilot writer", "", "", "", null, true);
+    const live = writerPrompt(task, "", "", undefined, "Lane Pilot writer", "", "", null, true);
     expect(live).toContain(LIVE);
     expect(live).not.toContain("own git worktree");
     const normal = writerPrompt(task);

@@ -2,7 +2,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, it } from "vitest";
-import { readCheckRun } from "../src/rooms/tasks/server/check-reading";
+import { readCheckRun } from "../src/rooms/tasks/server";
 import { runGateOnHost } from "../src/rooms/verification/integration-gate-host";
 
 it("A-036 a timed-out gate is not successful when its TERM handler exits zero", async () => {

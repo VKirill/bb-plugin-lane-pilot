@@ -1,5 +1,5 @@
 import { stat } from "node:fs/promises";
-import { git, identity, changedBetween, TASK_FOLDER_EXCLUDE, type ChangedFile } from "./git-integrate";
+import { git, identity, changedBetween, TASK_FOLDER_EXCLUDE, type ChangedFile } from "../worktree";
 
 /**
  * The git side of rolling work back (SMA wall 4: every job rolls back to the state before it, and the record names that

@@ -12,7 +12,7 @@ import plugin from "../../server";
 import { QA_HOST_KEY } from "@lane-pilot/settings-catalog";
 import type { TaskV2 } from "../../src/rooms/contracts";
 import { createRun, getAttempt, getRun, listStageReceipts, openDatabase, saveProjectSetting, savePrototypeConfig, setRunThread } from "../../src/rooms/plugin-db";
-import { runCommand } from "../../src/rooms/host-worker/host-handlers";
+import { runCommand } from "../../src/rooms/host-worker";
 
 /**
  * The dispatch pipeline runs on the workflow engine and nowhere else. Each scenario states what the dispatch must answer, which
@@ -171,7 +171,10 @@ async function runScenario(scenario: Scenario) {
       }
       if (call.method === "gitOwnershipChanges") return { hostId: config.hostId, status: "ready", headSha: "a".repeat(40), paths: [], reason: null };
       if (call.method === "gitIntegrate") return { hostId: config.hostId, status: "merged", commit: "d".repeat(40), conflicts: [], reason: null };
-      if (call.method === "runSandboxedCommand") return { hostId: config.hostId, backend: "macos-seatbelt", workspacePath: config.writerWorkspacePath, cwd: config.writerWorkspacePath, exitCode: 0, policySha256: "c".repeat(64), stdout: "", stderr: "" };
+      if (call.method === "runSandboxedCommand") {
+        const writerRan = spawned.some((row) => (row.pluginMetadata as Record<string, unknown>).role === "writer");
+        return { hostId: config.hostId, backend: "macos-seatbelt", workspacePath: config.writerWorkspacePath, cwd: config.writerWorkspacePath, exitCode: writerRan ? 0 : 1, policySha256: "c".repeat(64), stdout: "", stderr: "" };
+      }
       if (call.method === "readBoundedFile") return boundedReadCall(call, config.hostId, (path) =>
         path.endsWith("README.md") ? readme : path.endsWith(".txt") ? "reviewed output\n" : null);
       if (call.method !== "runCommand") throw new Error(`unexpected host method ${call.method}`);
@@ -256,18 +259,18 @@ afterAll(() => rmSync(writerWorkspacePath, { recursive: true, force: true }));
 
 /** The stage receipts each scenario leaves (`stageId:state`, sorted by stage id). The after-acceptance stages are skipped here because memory and project life are off in the fixture. */
 const STAGES: Record<string, string[]> = {
-  "no review stages: queued, then accepted": ["acceptance-receipt:passed", "memory-maintenance:skipped", "plan-critique:skipped", "plan-fact:skipped", "pm-read:skipped", "project-life:skipped", "specialist-review:skipped", "verification:passed", "writer-agent:passed"],
-  "plan critique approves, then accepted": ["acceptance-receipt:passed", "memory-maintenance:skipped", "plan-critique:passed", "plan-fact:skipped", "pm-read:skipped", "project-life:skipped", "specialist-review:skipped", "verification:passed", "writer-agent:passed"],
-  "plan critique and PM read configured, then accepted": ["acceptance-receipt:passed", "memory-maintenance:skipped", "plan-critique:passed", "plan-fact:skipped", "pm-read:passed", "project-life:skipped", "specialist-review:skipped", "verification:passed", "writer-agent:passed"],
-  "quality_mode quick: the critique receipt is skipped by its own rule": ["acceptance-receipt:passed", "memory-maintenance:skipped", "plan-critique:skipped", "plan-fact:skipped", "pm-read:skipped", "project-life:skipped", "specialist-review:skipped", "verification:passed", "writer-agent:passed"],
-  "quality_mode full on a task of its own": ["acceptance-receipt:passed", "code-critique:passed", "memory-maintenance:skipped", "plan-critique:passed", "plan-fact:skipped", "pm-read:skipped", "project-life:skipped", "specialist-review:skipped", "verification:passed", "writer-agent:passed"],
+  "no review stages: queued, then accepted": ["acceptance-receipt:passed", "memory-maintenance:skipped", "plan-critique:skipped", "plan-fact:skipped", "pm-read:skipped", "specialist-review:skipped", "verification:passed", "writer-agent:passed"],
+  "plan critique approves, then accepted": ["acceptance-receipt:passed", "memory-maintenance:skipped", "plan-critique:passed", "plan-fact:skipped", "pm-read:skipped", "specialist-review:skipped", "verification:passed", "writer-agent:passed"],
+  "plan critique and PM read configured, then accepted": ["acceptance-receipt:passed", "memory-maintenance:skipped", "plan-critique:passed", "plan-fact:skipped", "pm-read:passed", "specialist-review:skipped", "verification:passed", "writer-agent:passed"],
+  "quality_mode quick: the critique receipt is skipped by its own rule": ["acceptance-receipt:passed", "memory-maintenance:skipped", "plan-critique:skipped", "plan-fact:skipped", "pm-read:skipped", "specialist-review:skipped", "verification:passed", "writer-agent:passed"],
+  "quality_mode full on a task of its own": ["acceptance-receipt:passed", "code-critique:passed", "memory-maintenance:skipped", "plan-critique:passed", "plan-fact:skipped", "pm-read:skipped", "specialist-review:skipped", "verification:passed", "writer-agent:passed"],
   "plan critique asks for changes: blocked before any writer": ["acceptance-receipt:skipped", "plan-critique:failed", "pm-read:skipped", "specialist-review:skipped", "verification:skipped", "writer-agent:skipped"],
-  "PM read returns malformed output: the task goes on without a summary": ["acceptance-receipt:passed", "memory-maintenance:skipped", "plan-critique:passed", "plan-fact:skipped", "pm-read:failed", "project-life:skipped", "specialist-review:skipped", "verification:passed", "writer-agent:passed"],
+  "PM read returns malformed output: the task goes on without a summary": ["acceptance-receipt:passed", "memory-maintenance:skipped", "plan-critique:passed", "plan-fact:skipped", "pm-read:failed", "specialist-review:skipped", "verification:passed", "writer-agent:passed"],
   "a cancel during a failing PM read keeps the task canceled and the run open": ["acceptance-receipt:canceled", "pm-read:canceled", "verification:canceled", "writer-agent:canceled"],
   "a cancel during a passing PM read starts no plan critique": ["acceptance-receipt:canceled", "pm-read:canceled", "verification:canceled", "writer-agent:canceled"],
   "specialist blocks a high-risk task": ["acceptance-receipt:skipped", "plan-critique:passed", "pm-read:skipped", "specialist-review:blocked", "verification:skipped", "writer-agent:skipped"],
   "ownership base unavailable for an explicit base ref": ["acceptance-receipt:skipped", "plan-critique:skipped", "pm-read:skipped", "run-gate:blocked", "specialist-review:skipped", "verification:skipped", "writer-agent:skipped"],
-  "explicit base ref is frozen, then accepted": ["acceptance-receipt:passed", "memory-maintenance:skipped", "plan-critique:skipped", "plan-fact:skipped", "pm-read:skipped", "project-life:skipped", "specialist-review:skipped", "verification:passed", "writer-agent:passed"],
+  "explicit base ref is frozen, then accepted": ["acceptance-receipt:passed", "memory-maintenance:skipped", "plan-critique:skipped", "plan-fact:skipped", "pm-read:skipped", "specialist-review:skipped", "verification:passed", "writer-agent:passed"],
   "explicit review gate stops before the stages": ["acceptance-receipt:skipped", "plan-critique:skipped", "pm-read:skipped", "run-gate:blocked", "specialist-review:skipped", "verification:skipped", "writer-agent:skipped"],
   "unresolved placeholder in the task blocks the plan critique": ["acceptance-receipt:skipped", "plan-critique:blocked", "pm-read:skipped", "specialist-review:skipped", "verification:skipped", "writer-agent:skipped"],
 };
@@ -322,8 +325,8 @@ describe("the dispatch runs on the workflow engine", () => {
       expect(waited.state).toBe("accepted");
       expect(waited.next).toBeUndefined();
       expect(run.spawned).toContain("browser-qa:");
-      // The pipeline went writer -> qa-gate -> browser-qa and ended well; the check is a child graph run of the pipeline.
-      expect(run.engineSteps.map((step) => step.node_id).slice(-3)).toEqual(["writer", "qa-gate", "browser-qa"]);
+      // The pipeline went merge -> qa-gate -> browser-qa and ended well; the check is a child graph run of the pipeline.
+      expect(run.engineSteps.map((step) => step.node_id).slice(-3)).toEqual(["merge", "qa-gate", "browser-qa"]);
       expect(run.engineRuns[0]!.status).toBe("succeeded");
       expect(run.qaRuns.map((row) => row.status)).toEqual(["succeeded"]);
       expect(run.pipelineOutput).toMatchObject({ browser_qa: { state: "passed" } });
@@ -357,14 +360,14 @@ describe("the dispatch runs on the workflow engine", () => {
     }, 30_000);
   });
 
-  it("keeps the task accepted when the memory stage fails; project life is independent of it", async () => {
+  it("keeps the task accepted when the memory stage fails", async () => {
     const run = await runScenario({ name: "memory fails", finish: true, settings: { "plan_critique.enabled": false, "memory.enabled": true, "memory.maintain": true, "memory.maintain_every": 1, "memory.provider": "codex", "memory.model": "gpt-6-luna" } });
     expect((run.waited as { state: string }).state).toBe("accepted");
     expect(run.attempt?.state).toBe("accepted");
     // The fixture's memory helper answers prose, not memory records: the stage fails by its own receipt.
     const states = Object.fromEntries(run.stages.map((row) => [row.stageId, row.state]));
     expect(states["memory-maintenance"]).toBe("failed");
-    expect(states["project-life"]).toBe("skipped");
+    expect(states["project-life"]).toBeUndefined();
     expect(states["acceptance-receipt"]).toBe("passed");
     // Both stages ran as steps of one graph run, which ended well; the memory thread carries the run and step it ran in.
     expect(run.afterAccept).toHaveLength(1);
@@ -414,7 +417,10 @@ describe("the dispatch runs on the workflow engine", () => {
 
   it("records the journal of a finished dispatch: one step per stage, the writer step settled when the task ends", async () => {
     const { engineRuns, engineSteps } = await runScenario({ name: "journal", settings: { "plan_critique.enabled": false }, finish: true });
-    expect(engineSteps.map((step) => step.node_id)).toEqual(["execution-packet", "pm-read", "quality-mode", "plan-critique", "specialist-review", "ownership-base", "task-folder", "baseline", "writer", "qa-gate"]);
+    expect(engineSteps.map((step) => step.node_id)).toEqual([
+      "execution-packet", "pm-read", "quality-mode", "plan-critique", "specialist-review", "ownership-base", "task-folder", "baseline",
+      "admission", "writer", "wait-turn", "turn-outcome", "validate", "critique", "merge", "qa-gate",
+    ]);
     expect(engineSteps.slice(0, -1).every((step) => step.state === "succeeded")).toBe(true);
     expect(["waiting", "succeeded"]).toContain(engineRuns[0]!.status);
   }, 30_000);

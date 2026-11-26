@@ -1,8 +1,18 @@
 import { describe, expect, it } from "vitest";
-import { actionableFindings, buildCandidateEvidence, codeCritiquePrompt, critiqueFromStageResult, parseCodeCritique, parseCodeCritiqueSettings, shouldRequestRepair } from "../../src/rooms/critique/code-critique";
-import { critiquePrompt, parseCritique } from "../../src/rooms/critique/critique";
 import { reasonForStatus } from "@lane-pilot/workflow-engine";
-import { parseSpecialistResult, specialistPrompt } from "../../src/rooms/critique/specialist";
+import {
+  actionableFindings,
+  buildCandidateEvidence,
+  codeCritiquePrompt,
+  critiqueFromStageResult,
+  critiquePrompt,
+  parseCodeCritique,
+  parseCodeCritiqueSettings,
+  parseCritique,
+  parseSpecialistResult,
+  shouldRequestRepair,
+  specialistPrompt,
+} from "../../src/rooms/critique";
 
 const evidence = buildCandidateEvidence({ produced: [], hashes: {}, verification: [], output: "", ownsPaths: [], neverTouch: [], dirtOk: true });
 const f = (over: Record<string, unknown> = {}) => ({ file: "src/a.ts", line: 12, severity: "high", evidence: "export const login = () => null; // TODO: implement", finding: "login handler is a stub", criterion: "acceptance 2", ...over });

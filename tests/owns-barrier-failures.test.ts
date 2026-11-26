@@ -14,7 +14,7 @@ vi.mock("node:fs/promises", async (original) => {
   } };
 });
 
-const { applyLaneOwnsBarrier, applyOwnsBarrier, liftOwnsBarrier } = await import("../src/rooms/verification/git-integrate");
+const { applyLaneOwnsBarrier, applyOwnsBarrier, liftOwnsBarrier } = await import("../src/rooms/worktree");
 
 const git = (cwd: string, ...args: string[]) => execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", ...args], { cwd, encoding: "utf8" });
 const modeOf = async (dir: string, path: string) => (await stat(join(dir, path))).mode & 0o777;

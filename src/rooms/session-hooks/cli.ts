@@ -10,7 +10,7 @@ import { homedir } from "node:os";
 import { basename, join, resolve, sep } from "node:path";
 // node --experimental-strip-types resolves this file only with a .ts specifier.
 // @ts-expect-error TS5097
-import { buildCapsule, capsuleDetails, claimedPaths, claimedState, codeMapDrift, draftTarget, EDIT_TOOLS, failOpen, hookOutput, injectPack, ledgerAddAsk, ledgerAddCommand, ledgerAddFile, ledgerOf, maskText, pmSkillUseOf, pretaskDecision, progressRecord, promptRecall, protectionsOff, runStreams, sessionEndDraft, sessionStartText, stallObserve, subagentVerify, subagentVerifyText, treeVerifyText, type Capsule, type ClaimedState, type PmSkillUse, type SessionLedger, type ToolCtx } from "./logic.ts";
+import { buildCapsule, capsuleDetails, claimedPaths, claimedState, codeMapDrift, draftTarget, EDIT_TOOLS, failOpen, hookOutput, injectPack, ledgerAddAsk, ledgerAddCommand, ledgerAddFile, ledgerOf, maskText, pmSkillUseOf, pretaskDecision, progressRecord, promptRecall, protectionsOff, runStreams, sessionEndDraft, sessionStartText, stallObserve, subagentVerify, subagentVerifyText, treeVerifyText, type Capsule, type ClaimedState, type PmSkillUse, type SessionLedger, type ToolCtx } from "./models/index.ts";
 // @ts-expect-error TS5097
 import { appendTouch, buildCatalog, cardNotes, findRepo, startCatalogBuild } from "../file-cards/index.ts";
 
@@ -401,6 +401,7 @@ function handle(payload: Payload): void {
     return;
   }
   if (event === "SubagentStop") {
+    if (payload.stop_hook_active === true || payload.stopHookActive === true) return;
     // The claims are the paths the subagent's last message names (SMA k_hsv_tree); the payload arrays, when
     // present, win. Each is tested against the real tree: on disk, in git status, in a commit after the spawn.
     const message = typeof payload.last_assistant_message === "string" ? payload.last_assistant_message : "";
@@ -468,7 +469,11 @@ function handle(payload: Payload): void {
     } catch { /* a draft that cannot be placed is lost, the session still ends */ }
     return;
   }
-  if (event === "Stop") return;
+  if (event === "Stop") {
+    // Blocking stop hooks must honour stop_hook_active so a session can always finish.
+    if (payload.stop_hook_active === true || payload.stopHookActive === true) return;
+    return;
+  }
 }
 
 // `<hook file> catalog-build <cwd>`: the detached background build a session start asked for; no stdin, no output.

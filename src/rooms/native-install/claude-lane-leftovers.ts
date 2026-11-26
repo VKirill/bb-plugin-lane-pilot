@@ -1,9 +1,10 @@
 import { chmod, lstat, mkdir, readdir, readFile, rename, writeFile } from "node:fs/promises";
-import { dirname, join, relative, sep } from "node:path";
+import { join, relative, sep } from "node:path";
 import { applyEdits, modify, parse, type ParseError } from "jsonc-parser/lib/esm/main.js";
 import { compareAndSwapText, readTextState, withCasLock } from "./cas";
 import { ownedPmGuardPath } from "./guard-apply";
 import { isFsAbsent, orMiss } from "@lane-pilot/kit";
+import { shellQuote } from "@lane-pilot/contracts";
 
 const PLUGIN_ID = "codex-lane@claude-lane-stack";
 const HOOKS_SUFFIX = ".agents/hooks/";
@@ -68,8 +69,6 @@ function stripHookGroups(groups: unknown[], home: string, removed: string[]): un
 
 /** The statusLine the person had before the old installer wired its wrapper: the installer saved it here (merge_claude_settings.py PREV_STATUSLINE). */
 export const PREV_STATUSLINE_FILE = ".agents/state/statusline.prev.json";
-
-const shellQuote = (value: string) => `'${value.replace(/'/g, `'\\''`)}'`;
 
 /**
  * Drops hook commands under ~/.agents/hooks/ and a statusLine that runs lane-statusline. Other entries stay. The person's own status

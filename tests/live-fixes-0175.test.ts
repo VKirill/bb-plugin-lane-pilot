@@ -1,8 +1,8 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { expect, it } from "vitest";
 import { createRun, createTask, listStageReceipts, openDatabase } from "../src/rooms/plugin-db";
-import { recordStage } from "../src/rooms/runs/server/stage-records";
-import { previousAttemptBrief } from "../src/rooms/writer/server/writer-task";
+import { recordStage } from "../src/rooms/runs/server";
+import { previousAttemptBrief } from "../src/rooms/writer/models/writer-brief-feedback";
 
 // Fixes found by the live scenario matrix in the sandbox on 2026-10-07.
 

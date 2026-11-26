@@ -1,7 +1,6 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
-const taskWords = { ask: async () => undefined, answer: () => undefined };
 import { describe, expect, it } from "vitest";
-import { registerQueueTool } from "../../src/rooms/tasks/server/queue-tool";
+import { registerQueueTool } from "../../src/rooms/tasks/server";
 import { createAttempt, createRun, createTask, openDatabase, setRunThread, transitionAttempt } from "../../src/rooms/plugin-db";
 
 // [Gemini F-008.3] the PM records the owner's word with lane_pilot_queue {action:"word"} while the task's latest attempt is

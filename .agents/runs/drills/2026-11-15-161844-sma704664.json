@@ -1,0 +1,142 @@
+{
+  "kind": "lane-pilot-sandbox-drill",
+  "date": "2026-11-15",
+  "stamp": "20261115-161844",
+  "startedAt": 1794748724843,
+  "finishedAt": 1794748742043,
+  "durationSec": 17,
+  "project": "proj_tvcq2tujmg",
+  "runId": null,
+  "pmThread": null,
+  "sourceThread": null,
+  "mode": "full",
+  "scenarioNames": [
+    "sma_r15"
+  ],
+  "commit": "51d0094c9d051f2657faab08d265e66571348f4f",
+  "skipped": {},
+  "result": "pass",
+  "problems": [],
+  "checks": null,
+  "tasks": null,
+  "dispatch": null,
+  "scenarios": [
+    {
+      "name": "sma_r15",
+      "result": "pass",
+      "problems": [],
+      "proved": [
+        {
+          "node": "n1120",
+          "ok": true,
+          "detail": "dossier stream 'wrote hello.txt', verifier commands ['npm test'], commands hash ok True, verdict {'gate': 'validate', 'status': 'passed'}"
+        },
+        {
+          "node": "n1123",
+          "ok": true,
+          "detail": "links [True, True, True], intact verdict None, rewritten part named 2"
+        },
+        {
+          "node": "n1127",
+          "ok": true,
+          "detail": "signals on the stream [{\"channel\": \"lp:proj_rt\", \"payload\": {\"kind\": \"workflow\", \"threadId\": \"thr_a\", \"runId\": \"wfrun_1\"}}, {\"channel\": \"lp:proj_rt\", \"payload\": {\"kind\": \"helpers\", \"threadId\": \"thr_pm\"}}]"
+        },
+        {
+          "node": "n1131",
+          "ok": true,
+          "detail": "suites ['task', 'batch', 'phase', 'release', 'window', 'worker', 'lockstep', 'wiring', 'metrics']; ungrouped/regrouped/unknown/unlisted/undefined/missingStories/empty [[], [], [], [], [], [], []]"
+        },
+        {
+          "node": "n1132",
+          "ok": true,
+          "detail": "suite order ['task', 'batch', 'phase'], task ['parallel3', 'conflict'], batch ['helper_providers', 'flow_contract', 'live_word'], phase ['phase', 'phase_route'], parallel3 writes 3 tasks"
+        },
+        {
+          "node": "n1129",
+          "ok": true,
+          "detail": "34 scenes in suites ['task', 'batch', 'phase', 'release', 'window', 'worker', 'lockstep', 'wiring'], verdict pass, head 51d0094c"
+        },
+        {
+          "node": "n1134",
+          "ok": true,
+          "detail": "32 scene processes, each `-I lp-drill.py --scenario <name>`; parallel3 timed out with exit 124 in 1.0s and the other 33 scenes still ran; verdict fail"
+        },
+        {
+          "node": "n1135",
+          "ok": true,
+          "detail": "--scenario guard_hash,phase lists «guard_hash, phase», exit 0, files left 0; --scout prints the suites ['task', 'batch', 'phase', 'release', 'window', 'worker', 'lockstep', 'wiring', 'metrics']"
+        },
+        {
+          "node": "n1133",
+          "ok": true,
+          "detail": "story scenes [('vitest:tests/release-stories-window.test.tsx', 0), ('vitest:tests/release-stories-worker.test.ts', 0)]"
+        },
+        {
+          "node": "n1141",
+          "ok": true,
+          "detail": "manifest kind lane-pilot-release-series, head 51d0094c, stamp 20261115-161844, selected units {'window': 1}"
+        },
+        {
+          "node": "n1130",
+          "ok": true,
+          "detail": "checks ['database', 'receipts', 'browser', 'accounts', 'limits', 'window', 'person'], 1 problem(s) [\"database: 'str' object has no attribute 'get'\"], gaps 0; injected problem -> rc 2, launches 0, manifest False"
+        },
+        {
+          "node": "n1136",
+          "ok": true,
+          "detail": "live claims: task 25 (parallel3), batch 3, phase 1; 60 of 195 rows live"
+        },
+        {
+          "node": "n1137",
+          "ok": true,
+          "detail": "1 uncovered rows, 0 without a reason"
+        },
+        {
+          "node": "n1138",
+          "ok": true,
+          "detail": "strict verdict exit 0: 0 uncovered row(s) without a term or the owner's word, each a gap; first []"
+        },
+        {
+          "node": "n1139",
+          "ok": true,
+          "detail": "5 scene(s) of 2026-11-15-141701.json judged: ['pass', 'pass', 'pass', 'pass', 'pass']"
+        },
+        {
+          "node": "n1140",
+          "ok": true,
+          "detail": "series verdict pass (failed [], skipped 0); with 'episodes' left out: fail, missing ['episodes']"
+        },
+        {
+          "node": "n1143",
+          "ok": true,
+          "detail": "clean archive pass; exit 3 -> ['scene s0 exited 3']; one green of three -> ['only 1/3 scenario verdicts are green, under the 0.5 floor']"
+        },
+        {
+          "node": "n1142",
+          "ok": true,
+          "detail": "run lprun_5f02f14fec85474dab7e735873fd8d6d (sandbox proj_tvcq2tujmg): 10 stages, 4 gates, 7 moves"
+        }
+      ],
+      "checked": 18,
+      "notProved": {}
+    }
+  ],
+  "seen": null,
+  "judged": [
+    {
+      "name": "sma_r15",
+      "verdict": "pass",
+      "evidence": [
+        "proved",
+        "checked"
+      ],
+      "why": ""
+    }
+  ],
+  "series": {
+    "verdict": "pass",
+    "missing": [],
+    "failed": [],
+    "skipped": []
+  }
+}

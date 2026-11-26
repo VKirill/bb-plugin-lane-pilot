@@ -1,11 +1,11 @@
 import { useEffect, useState } from "react";
 import { useRpc } from "@get-bb/plugin-sdk/app";
-import type { ScheduleBoardContract } from "../contract";
+import type { ScheduleBoardContract } from "../models/contract";
 import { t, type I18nKey } from "@lane-pilot/i18n";
 import { Button } from "@lane-pilot/ui-kit";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@lane-pilot/ui-kit";
-import { ERRAND_BUILTIN } from "../errand-model";
-import type { CostView, ErrandDefaultView, ModelView } from "../views";
+import { ERRAND_BUILTIN } from "../models/errand-model";
+import type { CostView, ErrandDefaultView, ModelView } from "../models/views";
 import { PRESET_SLUGS, presetSelection } from "@lane-pilot/models";
 import { Pill } from "../../ui-shell/ui";
 import { fill } from "./schedule-parts";

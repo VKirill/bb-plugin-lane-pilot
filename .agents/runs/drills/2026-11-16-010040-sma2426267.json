@@ -1,0 +1,176 @@
+{
+  "kind": "lane-pilot-sandbox-drill",
+  "date": "2026-11-16",
+  "stamp": "20261116-010040",
+  "startedAt": 1794780040475,
+  "finishedAt": 1794780057127,
+  "durationSec": 17,
+  "project": "proj_tvcq2tujmg",
+  "runId": null,
+  "pmThread": null,
+  "sourceThread": null,
+  "mode": "full",
+  "scenarioNames": [
+    "sma_r04"
+  ],
+  "commit": "ae9f9631327190954684570c5ef475b29b4a92ad",
+  "skipped": {},
+  "result": "pass",
+  "problems": [],
+  "checks": null,
+  "tasks": null,
+  "dispatch": null,
+  "scenarios": [
+    {
+      "name": "sma_r04",
+      "result": "pass",
+      "problems": [],
+      "proved": [
+        {
+          "node": "n415",
+          "ok": true,
+          "detail": "phase-drive registered {'isolated': True, 'timeoutMs': 1800000, 'overlap': 'skip'}; PM messages about the phase before the timer 0, after it 1, after a second timer 1"
+        },
+        {
+          "node": "n416",
+          "ok": true,
+          "detail": "conveyor off: spawned [], attempt queued, receipt «waiting: the run is paused; starts by itself once it is resu»; on: spawned ['a1']"
+        },
+        {
+          "node": "n417",
+          "ok": true,
+          "detail": "seeded budget 5000 tokens, after a later result 5200"
+        },
+        {
+          "node": "n418",
+          "ok": true,
+          "detail": "passes (count, ended): [(1, None), (2, None), (2, True), (2, True)]"
+        },
+        {
+          "node": "n419",
+          "ok": true,
+          "detail": "spawn_unknown attempt: thread None -> writer-found, running; queued attempt stays queued"
+        },
+        {
+          "node": "n420",
+          "ok": true,
+          "detail": "queue failures: [['p1', 't1', 'second boom'], ['p2', 't2', 'second boom']]"
+        },
+        {
+          "node": "n421",
+          "ok": true,
+          "detail": "pass ok: merged copy removed True, unmerged copy kept True, janitor row {'removed': 1, 'keptUnmerged': 1}"
+        },
+        {
+          "node": "n422",
+          "ok": true,
+          "detail": "issued after the first scan ['t-01'], after the second the same day ['t-01'], messages 1"
+        },
+        {
+          "node": "n423",
+          "ok": true,
+          "detail": "aging parts ['no movement for 4 day(s) at discussion'], after a repeat pass 1, stored on the record False"
+        },
+        {
+          "node": "n424",
+          "ok": true,
+          "detail": "product parked False, harness parked True, sweep too early [], later ['T2'], re-queued ['T2']"
+        },
+        {
+          "node": "n425",
+          "ok": true,
+          "detail": "owner row {'key': 'phase-word:ph_e2bdf12db1:planning', 'kind': 'word', 'source': 'phase'}, PM told True"
+        },
+        {
+          "node": "n426",
+          "ok": true,
+          "detail": "«hud is blocked» sent 1 time after the first pass, 1 after the second, to thr_pm"
+        },
+        {
+          "node": "n427",
+          "ok": true,
+          "detail": "over budget issued [] (wave budget question: the run's budget keeps 20 to); fitting wave issued ['a']"
+        },
+        {
+          "node": "n428",
+          "ok": true,
+          "detail": "decision needed, workflows started by the pass ['lp.draw'], auto stage draw"
+        },
+        {
+          "node": "n429",
+          "ok": true,
+          "detail": "wave lines ['wave 1 in, package f5bd4127590f: ✓ contract_current, ✓ landed, ✗ promises_proved, ✓ checks_passed, ✗ independent_check, ✓ qa_read'], after a second pass 1"
+        },
+        {
+          "node": "n430",
+          "ok": true,
+          "detail": "a new driver reads the phase as paused, pieces issued by the next pass 0"
+        },
+        {
+          "node": "n431",
+          "ok": true,
+          "detail": "canceled ['piece1'], messages to the running writer [{'mode': 'queue-if-active', 'wave': True}]"
+        },
+        {
+          "node": "n432",
+          "ok": true,
+          "detail": "free lane b, holds ['writer_provider_unavailable:breaker_open:a/m: 3 provider failures'], all-held chain free None (writer_provider_unavailable:breaker_open:a/m: 3 provider failures)"
+        },
+        {
+          "node": "n433",
+          "ok": true,
+          "detail": "cap 1 issued ['a'], cap 8 issued ['a', 'b']"
+        },
+        {
+          "node": "n434",
+          "ok": true,
+          "detail": "cap 1 with a piece at work issued [], one worker issued ['a']"
+        },
+        {
+          "node": "n435",
+          "ok": true,
+          "detail": "second acquire done while taken False, after the release True"
+        },
+        {
+          "node": "n436",
+          "ok": true,
+          "detail": "spawned while held [], after release True"
+        },
+        {
+          "node": "n437",
+          "ok": true,
+          "detail": "{'moved': 0, 'idle': 'no live phase'} / {'moved': 0, 'idle': 'all live phases wait for the PM'} / {'moved': 0, 'idle': 'all live phases at work'}"
+        },
+        {
+          "node": "n438",
+          "ok": true,
+          "detail": "at 14 min {'settled': False, 'state': 'spawn_requested'}; at 16 min spawn_rejected: writer_start_stalled: no writer thread after 15 min, waiting"
+        },
+        {
+          "node": "n439",
+          "ok": true,
+          "detail": "attempt blocked True, pool seat free"
+        }
+      ],
+      "checked": 25
+    }
+  ],
+  "seen": null,
+  "judged": [
+    {
+      "name": "sma_r04",
+      "verdict": "pass",
+      "evidence": [
+        "proved",
+        "checked"
+      ],
+      "why": ""
+    }
+  ],
+  "series": {
+    "verdict": "pass",
+    "missing": [],
+    "failed": [],
+    "skipped": []
+  }
+}

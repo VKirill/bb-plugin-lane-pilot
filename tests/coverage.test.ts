@@ -84,14 +84,9 @@ describe("the coverage registry (graph ↔ drill)", () => {
     // A memory path the probe cannot ask is exempt with its reason: it shows as not covered, with that reason.
     const exempt = rows.filter((row) => row.kind === "memory_path" && row.status === "none");
     for (const row of exempt) expect(row.note).not.toBe("");
-    expect(rows.find((row) => row.kind === "memory_path" && row.id === "pm.contract")).toMatchObject({
+    expect(rows.find((row) => row.kind === "memory_path" && row.id === "hook.prompt_recall")).toMatchObject({
       status: "tests",
-      tests: expect.arrayContaining(["tests/memory-paths.test.ts", "tests/writer-validate.test.ts"]),
-    });
-    // A structural registry entry without an explicit behavioral proof remains uncovered.
-    expect(rows.find((row) => row.kind === "memory_path" && row.id === "passport.role_lenses")).toMatchObject({
-      status: "none",
-      tests: ["tests/memory-paths.test.ts"],
+      tests: expect.arrayContaining(["tests/session-hooks/parity-g2-hooks-2.test.ts"]),
     });
   });
 

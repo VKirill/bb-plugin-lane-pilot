@@ -1,8 +1,7 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { expect, it } from "vitest";
 import { sha256Hex } from "@lane-pilot/kit";
-import { runPlanCritique } from "../src/rooms/critique/server/critique-runs/plan-critique";
-import { prepareCriticPacket } from "../src/rooms/critique/server/critique-packet";
+import { prepareCriticPacket, runPlanCritique } from "../src/rooms/critique/server";
 import { createRun, createTask, listRunFiles, openDatabase, openTaskHome, recordTaskFile, runHomeOf, setRunThread } from "../src/rooms/plugin-db";
 import { bbTaskFileIo } from "../src/rooms/storage";
 
@@ -72,7 +71,7 @@ it("a large plan and task reach the critic as refs: the prompt is bounded, the f
 });
 
 it("a write failure is a named blocked result with zero critic spawns", async () => {
-  const { db, spawns, input } = rig(async () => { throw new Error("disk full"); });
+  const { spawns, input } = rig(async () => { throw new Error("disk full"); });
   const out = await runPlanCritique({ ...input, plan: "x".repeat(2000) } as never);
   expect(out.allowed).toBe(false);
   expect(out.reason).toMatch(/^plan_critique_input_failed:/);

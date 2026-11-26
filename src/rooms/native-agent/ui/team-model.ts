@@ -1,6 +1,5 @@
 import type { I18nKey } from "@lane-pilot/i18n";
-import {COUNCIL_KEYS, ROLE_SPECS, SCOUT_SEAT_ROLES, WRITER_FALLBACK_SLOTS, type RoleSelectionId, type RoleSpec as RoleSelectionSpec, writerFallbackKeys} from "@lane-pilot/models";
-;
+import { ROLE_SPECS, SCOUT_SEAT_ROLES, WRITER_FALLBACK_SLOTS, type RoleSelectionId, type RoleSpec as RoleSelectionSpec, writerFallbackKeys } from "@lane-pilot/models";
 
 /** Which roles the table lists, in the order of the access roles (the same groups as the agent profile). */
 export type RoleGroupId = "code" | "check" | "project" | "browser" | "specialists" | "workflow";
@@ -11,11 +10,11 @@ export type RoleSpec = {
   /** Test id of the row (the old per-tab block it replaces). */
   testId?: string;
   /** The role's model: one native picker. */
-  model?: RoleSelectionId | "writer" | "rules";
+  model?: RoleSelectionId | "writer";
   /** The on/off column: a switch on this key, or the three-way docs mode. */
   enabled?: { key: string; fallback: boolean; label: I18nKey } | { key: "docs.enabled"; mode: true; label: I18nKey };
   /** The row opens into settings of its own besides the access. */
-  detail?: "writer" | "council" | "browser";
+  detail?: "writer" | "browser";
   /** Every storage key the row covers: origin and reset read them, the coverage test counts them. */
   keys: string[];
 };
@@ -38,18 +37,11 @@ export const ROLE_GROUPS: Array<{ id: RoleGroupId; roles: RoleSpec[] }> = [
     { id: "specialist-reviewer", testId: "specialist-settings", model: selectionIdOf("specialist-reviewer"), enabled: { key: "specialist.enabled", fallback: false, label: "specialistReview" }, keys: ["specialist.enabled", ...selectionKeysOf("specialist-reviewer")] },
     { id: "gate-triage", keys: [] },
     { id: "pm-reader", testId: "pm-read-settings", model: selectionIdOf("pm-reader"), enabled: { key: "pm_read.enabled", fallback: false, label: "largeFileRead" }, keys: ["pm_read.enabled", ...selectionKeysOf("pm-reader")] },
-    { id: "council-seat", testId: "council-settings", detail: "council", keys: [...COUNCIL_KEYS] },
-    { id: "rules-analyzer", testId: "rules-analyzer", model: "rules", keys: [] },
-    { id: "episode-analyst", keys: [] },
-    { id: "digest-light", keys: [] },
-    { id: "digest-analyst", keys: [] },
-    { id: "wall-hunter", keys: [] },
   ] },
   { id: "project", roles: [
-    { id: "docs-maintainer", testId: "docs-picker", model: selectionIdOf("docs-maintainer"), enabled: { key: "docs.enabled", mode: true, label: "groupDocs" }, keys: ["docs.enabled", ...selectionKeysOf("docs-maintainer")] },
     { id: "onboarder", testId: "onboarding-picker", model: selectionIdOf("onboarder"), keys: [...selectionKeysOf("onboarder")] },
+    { id: "rules-analyzer", testId: "rules-analyzer", keys: [] },
     { id: "memory-maintainer", testId: "memory-picker", model: selectionIdOf("memory-maintainer"), enabled: { key: "memory.enabled", fallback: true, label: "settingMemoryEnabled" }, keys: ["memory.enabled", ...selectionKeysOf("memory-maintainer")] },
-    { id: "project-life", testId: "project-life-picker", model: selectionIdOf("project-life"), enabled: { key: "project_life.enabled", fallback: true, label: "groupProjectLife" }, keys: ["project_life.enabled", ...selectionKeysOf("project-life")] },
   ] },
   { id: "browser", roles: [
     { id: "browser-qa", testId: "browser-qa-host", detail: "browser", enabled: { key: "browser_qa.enabled", fallback: true, label: "globalQaHost" }, keys: ["browser_qa.enabled", "browser_qa.provider", "browser_qa.model", "browser_qa.backend", "browser_qa.approve", "browser_qa.reasoning_effort"] },
@@ -57,7 +49,7 @@ export const ROLE_GROUPS: Array<{ id: RoleGroupId; roles: RoleSpec[] }> = [
     { id: "api-recon", keys: [] },
   ] },
   { id: "specialists", roles: ["specialist:design-lead", "specialist:copy-lead", "specialist:seo-specialist", "specialist:growth-marketer", "specialist:tavily", "specialist:video-lead", "specialist:3d-artist", "specialist:game-dev", "specialist:social-manager", "specialist:billing-assistant", "specialist:visual-artist", "specialist:macos-operator", "specialist:lead"].map((id) => ({ id, keys: [] })) },
-  { id: "workflow", roles: ["analyst", "planner", "auditor", "debugger", ...SCOUT_SEAT_ROLES, "workflow-architect", "evolve-planner", "evolve-critic", "evolve-architect", "evolve-auditor", "lead", "workspace-provisioner", "harness-editor", "harness-composer", "harness-reflection"].map((id) => ({ id, keys: [] })) },
+  { id: "workflow", roles: ["analyst", "planner", "auditor", "debugger", ...SCOUT_SEAT_ROLES, "workflow-architect", "lead", "workspace-provisioner", "harness-editor", "harness-composer", "harness-reflection"].map((id) => ({ id, keys: [] })) },
 ];
 
 export const roleKey = (role: string) => role.replace(/[:-]/g, "_");

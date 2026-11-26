@@ -51,18 +51,13 @@ type Row = {
   state: HandoffState;
   card_json: string;
   receipt_json: string | null;
-  lease_holder: string | null;
-  lease_expires_at: number | null;
   created_at: number;
   updated_at: number;
 };
 
-export type HandoffLease = { holder: string; expiresAt: number };
-
 export type StoredHandoff = {
   card: HandoffCard;
   receipt: HandoffReceipt | null;
-  lease: HandoffLease | null;
 };
 
 function rowToStored(row: Row): StoredHandoff {
@@ -78,11 +73,10 @@ function rowToStored(row: Row): StoredHandoff {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   });
-  const lease = row.lease_holder && row.lease_expires_at !== null ? { holder: row.lease_holder, expiresAt: row.lease_expires_at } : null;
-  return { card, receipt: row.receipt_json ? (JSON.parse(row.receipt_json) as HandoffReceipt) : null, lease };
+  return { card, receipt: row.receipt_json ? (JSON.parse(row.receipt_json) as HandoffReceipt) : null };
 }
 
-const SELECT = "SELECT id,project_id,run_id,owner_thread_id,recipient_thread_id,state,card_json,receipt_json,lease_holder,lease_expires_at,created_at,updated_at FROM lane_pilot_handoff";
+const SELECT = "SELECT id,project_id,run_id,owner_thread_id,recipient_thread_id,state,card_json,receipt_json,created_at,updated_at FROM lane_pilot_handoff";
 
 function appendEvent(db: HandoffDatabase, input: { handoffId: string; from: HandoffState | null; to: HandoffState; actor: string; note?: string; now: number }): void {
   db.prepare("INSERT INTO lane_pilot_handoff_event(handoff_id,from_state,to_state,actor,note,occurred_at) VALUES(?,?,?,?,?,?)")
@@ -176,34 +170,11 @@ export function recordHandoffReceipt(db: HandoffDatabase, input: { id: string; r
   }).immediate();
 }
 
-export type LeaseResult = { ok: true; lease: HandoffLease } | { ok: false; reason: "not_found" | "held_by_other" | "terminal"; holder?: string };
-
-export function claimHandoffLease(db: HandoffDatabase, input: { id: string; holder: string; leaseMs: number; now?: number }): LeaseResult {
-  const now = input.now ?? Date.now();
-  return db.transaction((): LeaseResult => {
-    const current = getHandoff(db, input.id);
-    if (!current) return { ok: false, reason: "not_found" };
-    if (isTerminalHandoffState(current.card.state)) return { ok: false, reason: "terminal" };
-    const lease = current.lease;
-    if (lease && lease.holder !== input.holder && lease.expiresAt > now) return { ok: false, reason: "held_by_other", holder: lease.holder };
-    const expiresAt = now + Math.max(1, input.leaseMs);
-    db.prepare("UPDATE lane_pilot_handoff SET lease_holder=?, lease_expires_at=?, updated_at=? WHERE id=?").run(input.holder, expiresAt, now, input.id);
-    return { ok: true, lease: { holder: input.holder, expiresAt } };
-  }).immediate();
-}
-
-export function renewHandoffLease(db: HandoffDatabase, input: { id: string; holder: string; leaseMs: number; now?: number }): LeaseResult {
-  const now = input.now ?? Date.now();
-  const current = getHandoff(db, input.id);
-  if (!current) return { ok: false, reason: "not_found" };
-  if (!current.lease || current.lease.holder !== input.holder) return { ok: false, reason: "held_by_other", holder: current.lease?.holder };
-  return claimHandoffLease(db, { ...input, now });
-}
-
-export function releaseHandoffLease(db: HandoffDatabase, input: { id: string; holder: string; now?: number }): boolean {
-  const now = input.now ?? Date.now();
-  const result = db.prepare("UPDATE lane_pilot_handoff SET lease_holder=NULL, lease_expires_at=NULL, updated_at=? WHERE id=? AND lease_holder=?").run(now, input.id, input.holder);
-  return result.changes > 0;
+/** Nearest deadline among active handoff cards, or null when none are pending. */
+export function nextHandoffDeadline(db: HandoffDatabase): number | null {
+  const row = db.prepare("SELECT MIN(COALESCE(deadline_at, created_at + ?)) AS at FROM lane_pilot_handoff WHERE state IN ('queued','delivered','accepted','in_progress')")
+    .get(HANDOFF_DEFAULT_DEADLINE_MS) as { at: number | null } | undefined;
+  return typeof row?.at === "number" ? row.at : null;
 }
 
 /** Cards past their deadline that nobody finished become `expired`; returns their ids. */

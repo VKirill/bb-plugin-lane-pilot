@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { parseOpenCodeToolTelemetry } from "../../src/rooms/stability/opencode-telemetry";
+import { parseOpenCodeToolTelemetry } from "../../src/rooms/stability";
 
-describe("OpenCode tool telemetry adapter", () => {
+describe("opencode-telemetry stage: OpenCode tool telemetry adapter", () => {
   it("correlates only the requested session, deduplicates by source-line hash, and drops tool arguments/output", () => {
     const event = JSON.stringify({
       t: 1790200000, src: "tool.execute.after", mod: "budget", ok: true,

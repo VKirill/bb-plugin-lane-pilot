@@ -18,11 +18,10 @@ import {
   setRunThread,
   transitionAttempt,
 } from "../src/rooms/plugin-db";
-import { runHealth } from "../src/rooms/stability/server/health";
-import { bindRunChildBudget, fullAccessSpawn } from "../src/rooms/platform/server/pm-spawn";
-import { createStability } from "../src/rooms/stability/server/stability";
-import { createWriterFinish } from "../src/rooms/writer/server/finish";
-import { createWriterSpawn } from "../src/rooms/writer/server/spawn";
+import { createStability, runHealth } from "../src/rooms/stability/server";
+import { bindRunChildBudget, fullAccessSpawn } from "../src/rooms/platform/server/services/pm-spawn";
+import { createWriterFinish } from "../src/rooms/writer/server/services/finish";
+import { createWriterSpawn } from "../src/rooms/writer/server/services/spawn";
 import type { PrototypeConfig, TaskV2 } from "../src/rooms/contracts";
 
 const config: PrototypeConfig = {
@@ -126,9 +125,8 @@ describe("run-bound helper spawn", () => {
       effectiveProjectSettings: async () => ({ values: { "memory.enabled": false, "adoc.040": "auto" } }),
     };
     bindRunChildBudget(ctx.bb as never, () => budget);
-    const writer = createWriterSpawn(ctx as never, {
+    const writer = createWriterSpawn({ ...ctx, scopesForWorkspace: async () => [] } as never, {
       providerBreaker: { decide: () => ({ allow: true }) },
-      ruleScan: { chainForRun: async () => [] },
     } as never);
     const result = await writer.spawnWriterAttempt({
       projectId: "P", runId: "run", taskId: "t1", attemptId: "a1", config, task, plan: "write", pmThreadId: "pm",
@@ -155,10 +153,9 @@ describe("the owner at the keyboard (SMA D2-6)", () => {
       host: { call: async (method: string) => (method === "runCommand" ? { hostId: "h", exitCode: 0, stdout: "[]", stderr: "" } : method === "gitCreateWorktree" ? { status: "ready", path: "/wt/a1/repo", branch: "lane/a1", reason: null } : {}) },
       effectiveProjectSettings: async () => ({ values: { "memory.enabled": false, "adoc.040": "auto" } }),
     };
-    const writer = createWriterSpawn(ctx as never, {
+    const writer = createWriterSpawn({ ...ctx, scopesForWorkspace: async () => [] } as never, {
       providerBreaker: { decide: () => ({ allow: true }) },
       ownerPresence: { holds: (provider: string) => (provider === "codex" ? "owner_present:codex used by the owner 2 min ago on mini" : null) },
-      ruleScan: { chainForRun: async () => [] },
     } as never);
     const result = await writer.spawnWriterAttempt({ projectId: "P", runId: "run", taskId: "t1", attemptId: "a1", config, task, plan: "write", pmThreadId: "pm" });
     expect(result).toMatchObject({ ok: false, reason: "writer_provider_unavailable:owner_present:codex used by the owner 2 min ago on mini" });

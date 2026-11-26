@@ -37,6 +37,7 @@
     "code",
     "ideation"
   ],
+  "category": "planning",
   "inputs": {
     "goal": {
       "type": "string",
@@ -93,7 +94,12 @@
   "nodes": [
     {
       "id": "research",
-      "produces": [{"kind": "search-results", "version": 1}],
+      "produces": [
+        {
+          "kind": "search-results",
+          "version": 1
+        }
+      ],
       "type": "agent",
       "role": "specialist:tavily",
       "skip_when": "!$inputs.research",

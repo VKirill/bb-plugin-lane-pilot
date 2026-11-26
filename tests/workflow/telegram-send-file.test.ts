@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { sendFileCommand, sendFileOutput } from "../../src/rooms/workflow/server/workflow-telegram";
+import { sendFileCommand, sendFileOutput } from "../../src/rooms/workflow/server/services/workflow-telegram";
 
 describe("telegram.send_file", () => {
   it("quotes every argument for the shell", () => {

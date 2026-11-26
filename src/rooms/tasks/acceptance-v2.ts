@@ -2,28 +2,12 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { pluginRootFromModule, sha256Hex } from "@lane-pilot/kit";
 import type { TaskV2 } from "../contracts";
+export { acceptanceArtifactDir, bbWriterReportMarkdown } from "./models/acceptance-v2";
 
 const CLI_PROVIDERS = new Set(["agy", "grok", "codex", "qwen", "kimi", "cursor", "opencode"]);
 
 export function loadAcceptanceV2Schema(): Record<string, unknown> {
   return JSON.parse(readFileSync(join(pluginRootFromModule(import.meta.url), "lane-stack/schemas/acceptance-v2.schema.json"), "utf8")) as Record<string, unknown>;
-}
-
-export function acceptanceArtifactDir(workspace: string, runId: string, taskId: string): string {
-  return `${workspace}/.agents/runs/${runId}/artifacts/${taskId}`;
-}
-
-export function bbWriterReportMarkdown(task: TaskV2, attempt: number): string {
-  return [
-    "STATUS: complete",
-    "",
-    `# ${task.title}`,
-    "",
-    task.objective,
-    "",
-    `Attempt ${attempt} accepted by Lane Pilot BB writer.`,
-    "",
-  ].join("\n");
 }
 
 export function buildAcceptanceV2(input: {

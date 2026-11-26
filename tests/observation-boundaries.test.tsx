@@ -5,11 +5,11 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
 import { createAttempt, createRun, createTask, migrations, openDatabase } from "../src/rooms/plugin-db";
 import { createCore } from "../src/rooms/core/server/core";
-import { runsRpc } from "../src/rooms/runs/server/rpc/runs";
-import { registerCli } from "../src/rooms/tools/server/cli";
+import { runsRpc } from "../src/rooms/runs/server";
+import { registerCli } from "../src/rooms/tools/server";
 import type { Services } from "../server";
 import { setLocaleOverride } from "@lane-pilot/i18n";
-import { AcceptanceCard } from "../src/rooms/acceptance/ui";
+import { AcceptanceCard } from "../src/rooms/runs/ui";
 
 vi.setConfig({ testTimeout: 60_000 });
 afterEach(() => { cleanup(); vi.useRealTimers(); });

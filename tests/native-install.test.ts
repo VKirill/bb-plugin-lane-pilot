@@ -7,8 +7,8 @@ import { nativeInstallOperation } from "../src/rooms/native-install/native-insta
 import { detectOwnInstall, lanePilotEnv } from "../src/rooms/native-install/native-install-bootstrap";
 import { setLocaleOverride } from "@lane-pilot/i18n";
 import { reconcileClaudeLane } from "../src/rooms/native-agent/native-lane-reconcile";
-import { createNativeInstaller, experimental_vkLifecycle, registerNativeInstallHost } from "../src/rooms/native-install/native-install-lifecycle";
-import { nativeContributedEnv } from "../src/rooms/native-agent/native-dispatch";
+import { createNativeInstaller, experimental_vkLifecycle, registerNativeInstallHost } from "../src/rooms/native-install/server";
+import { nativeContributedEnv } from "../src/rooms/native-agent/server/services/native-dispatch";
 import { nativeEnvKey, nativeThreadKey } from "../src/rooms/contracts";
 import refreshIncident from "./fixtures/native-refresh-lock-2026-11-13.json";
 const roots: string[] = [];

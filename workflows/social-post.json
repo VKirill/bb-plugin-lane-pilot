@@ -33,6 +33,7 @@
     "content",
     "copywriting"
   ],
+  "category": "content",
   "inputs": {
     "topic": {
       "type": "string",

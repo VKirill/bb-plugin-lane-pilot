@@ -3,19 +3,19 @@ import { afterEach, describe, expect, it } from "vitest";
 import { openTab } from "./ui-tabs";
 import { cleanup, fireEvent } from "@testing-library/react";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
-import { VISIBLE_CATALOG } from "@lane-pilot/settings-catalog";
+import { SETTINGS_REGISTRY } from "../src/rooms/settings-registry";
 
 afterEach(() => cleanup());
 
 function screenFixture() {
-  const values = Object.fromEntries(VISIBLE_CATALOG.map((row) => [row.storageKey, row.defaultValue]));
+  const values = Object.fromEntries(SETTINGS_REGISTRY.visible.map((row) => [row.storageKey, row.defaultValue]));
   values["writer.provider"] = "codex";
   values["writer.model"] = "test-model";
   values["writer.reasoning_effort"] = "medium";
   return {
     projectId: "proj_ui", hostId: "host_ui", workspacePath: "/tmp/lane-pilot-ui",
     explicitKeys: ["writer.provider", "writer.model", "writer.reasoning_effort"], values,
-    versions: Object.fromEntries(VISIBLE_CATALOG.map((row) => [row.storageKey, 1])),
+    versions: Object.fromEntries(SETTINGS_REGISTRY.visible.map((row) => [row.storageKey, 1])),
     runs: [], unapplied: [], cliPreview: { argv: ["run"], env: {}, applied: [], unapplied: [] }, legacyStack: true,
     lastSnapshotPath: "/tmp/snapshot", lastReceiptJson: null, writerResultJson: null, writerResultPatch: null, cliReceiptJson: null, qaHosts: [], lastWriterTrace: null,
   };

@@ -7,13 +7,13 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { expect, it, vi } from "vitest";
 
 vi.setConfig({ testTimeout: 120_000 });
-import type { DirtSnapshot } from "../../src/rooms/writer/cli-outcome";
+import type { DirtSnapshot } from "../../src/rooms/writer/models/cli-outcome";
 import type { PrototypeConfig, TaskV2 } from "../../src/rooms/contracts";
 import { createAttempt, createRun, createTask, openDatabase, setAttemptWorkspace } from "../../src/rooms/plugin-db";
-import { createWriterVerify } from "../../src/rooms/writer/server/verify";
-import { buildRunPolicy } from "../../src/rooms/tasks/run-policy";
+import { createWriterVerify } from "../../src/rooms/writer/server/services/verify";
+import { buildRunPolicy } from "../../src/rooms/tasks";
 import { undoCheckWrites } from "../../src/rooms/verification/git-ownership";
-import { WORKSPACE_DIRT_SCRIPT } from "../../src/rooms/verification/workspace-dirt";
+import { WORKSPACE_DIRT_SCRIPT } from "../../src/rooms/verification/models/workspace-dirt";
 
 // cakekeeper ck-31-calendar-month-chips (2026-10-12): the task owns the calendar screens, its check
 // `next build && screens --grep @clients` rewrote next-env.d.ts and regenerated docs/screens/clients/*.png. The first

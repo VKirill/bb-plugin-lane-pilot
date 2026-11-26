@@ -39,6 +39,7 @@
     "code",
     "default"
   ],
+  "category": "code",
   "inputs": {
     "goal": {
       "type": "string",
@@ -99,7 +100,12 @@
   "nodes": [
     {
       "id": "contract",
-      "produces": [{"kind": "report", "version": 1}],
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
       "type": "agent",
       "role": "planner",
       "title": {
@@ -128,9 +134,9 @@
       "workflow": "lp.analyze",
       "skip_when": "$inputs.tasks.length > 0",
       "skip_out": {
-        "scope_verdict": "small",
-        "recommendation": "go",
-        "confidence": 100,
+        "scope_verdict": "unknown",
+        "recommendation": "not_run",
+        "confidence": 0,
         "decisions": "[]",
         "risks": "[]",
         "open_questions": "[]",
@@ -189,7 +195,7 @@
       "workflow": "lp.plan",
       "skip_when": "$inputs.tasks.length > 0",
       "skip_out": {
-        "status": "ok",
+        "status": "not_run",
         "tasks": "$inputs.tasks",
         "waves": "[]",
         "objective": "",
@@ -252,7 +258,12 @@
     },
     {
       "id": "qa",
-      "produces": [{"kind": "qa-report", "version": 1}],
+      "produces": [
+        {
+          "kind": "qa-report",
+          "version": 1
+        }
+      ],
       "type": "agent",
       "role": "browser-qa",
       "title": {
@@ -264,13 +275,13 @@
       ],
       "skip_when": "!plan.has_ui",
       "skip_out": {
-        "status": "pass",
+        "status": "not_run",
         "findings": "[]"
       },
       "src": "maestro-flow:ref/frontend-verify.md",
       "prompt": "FRONTEND_VERIFY_METHOD - per feature three layers (entry in UI exists, the write request is observed with the right payload, the result is in the DOM); a write endpoint without a UI entry is a defect; a check that did not run is rework, silence is never pass. Viewports 375 and 1280. Severity is one of critical, high, medium, low, info.",
       "out": {
-        "status": "pass|rework|block",
+        "status": "pass|rework|block|not_run",
         "findings": "Finding[]"
       },
       "guards": {
@@ -365,7 +376,7 @@
       "from": "analyze",
       "to": "ask_scope",
       "pass": "artifact",
-      "when": "analyze.scope_verdict == 'unknown' || analyze.recommendation == 'no_go' || analyze.confidence < 40"
+      "when": "analyze.recommendation != 'not_run' && (analyze.scope_verdict == 'unknown' || analyze.recommendation == 'no_go' || analyze.confidence < 40)"
     },
     {
       "from": "analyze",
@@ -398,7 +409,7 @@
       "from": "plan",
       "to": "build",
       "pass": "artifact",
-      "when": "plan.status in ['ok','low_confidence']"
+      "when": "plan.status in ['ok','low_confidence'] || $inputs.tasks.length > 0"
     },
     {
       "from": "plan",
@@ -448,7 +459,7 @@
       "from": "qa",
       "to": "close",
       "pass": "artifact",
-      "when": "qa.status == 'pass'"
+      "when": "qa.status in ['pass', 'not_run']"
     },
     {
       "from": "qa",

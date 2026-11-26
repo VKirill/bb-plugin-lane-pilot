@@ -1,4 +1,4 @@
-import { parseCodeCritique } from "../../src/rooms/critique/code-critique";
+import { parseCodeCritique } from "../../src/rooms/critique";
 import { describe, expect, it } from "vitest";
 import { VERDICT_BLOCK_PREFIX, blockReason, isHardCritical, isVerdictBlockReason, legacyDecisionToStatus, legacySeverityToVerdict, proseOnly, settleVerdict, verdictSchema, verdictSeverityToLegacy } from "@lane-pilot/workflow-engine";
 import type { Verdict } from "@lane-pilot/workflow-engine";

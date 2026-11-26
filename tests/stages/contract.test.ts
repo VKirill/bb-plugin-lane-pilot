@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { critiquePrompt, parseCritique } from "../../src/rooms/critique/critique";
+import { critiquePrompt, parseCritique } from "../../src/rooms/critique";
 import { sha256Hex } from "@lane-pilot/kit";
 import { stageTransition, validateStageReceipt } from "@lane-pilot/contracts";
 

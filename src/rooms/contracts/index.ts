@@ -10,12 +10,11 @@ import { rpcKnowledge } from "./rpc-knowledge";
 import { rpcWorkflow } from "./rpc-workflow";
 import { rpcWorkflowExport } from "./rpc-workflow-export";
 import { rpcWorkflowMap } from "./rpc-workflow-map";
-import { rpcWorld } from "./rpc-world";
 
 // The RPC contracts of the plugin. The schemas are in schemas.ts, the host methods in host.ts and the methods of the
 // screens in the rpc-*.ts parts; this file assembles them and is the only public file of the room.
-export { HOST_JOB_KINDS, WORKFLOW_NODE_TONES, installReceiptSchema, modelCatalogSchema, prototypeConfigSchema, secretNameSchema, settingValidationSchema, stepExecutorSchema, TASK_KINDS, TASK_V2_OPTIONAL, taskV2Schema, workflowDraftCheckSchema, workflowDraftPatchResultSchema, workflowDraftPublishResultSchema, workflowDraftSummarySchema, workflowDraftTestResultSchema, workflowStatsSchema, workflowTrialCaseSchema, workflowViewEdgeSchema, workflowViewNodeSchema, workflowViewSchema } from "@lane-pilot/contracts";
-export type { HostJobKind, PrototypeConfig, TaskV2 } from "@lane-pilot/contracts";
+export { HOST_JOB_KINDS, LP_EVENTS, WORKFLOW_NODE_TONES, installReceiptSchema, modelCatalogSchema, prototypeConfigSchema, secretNameSchema, settingValidationSchema, stepExecutorSchema, TASK_KINDS, TASK_V2_OPTIONAL, taskV2Schema, workflowDraftCheckSchema, workflowDraftPatchResultSchema, workflowDraftPublishResultSchema, workflowDraftSummarySchema, workflowDraftTestResultSchema, workflowStatsSchema, workflowTrialCaseSchema, workflowViewEdgeSchema, workflowViewNodeSchema, workflowViewSchema } from "@lane-pilot/contracts";
+export type { HostJobKind, LpEventName, PrototypeConfig, TaskV2 } from "@lane-pilot/contracts";
 export type StepExecutor = z.infer<typeof stepExecutorSchema>;
 export { hostContract, hostMethods } from "./host";
 export { QA_DEFAULT_PORTS } from "./host/desktop";
@@ -36,7 +35,6 @@ export const rpcMethods = {
   ...rpcWorkflow,
   ...rpcWorkflowExport,
   ...rpcWorkflowMap,
-  ...rpcWorld,
 };
 
 export const rpcContract = defineRpcContract(rpcMethods);
@@ -46,12 +44,11 @@ export * from "./service-models";
 export * from "./skill-sequence";
 export * from "./brief-mode";
 export { default as bundledAgents } from "./bundled-agents.json";
-export { LEAD_ID, LEAD_LAUNCH, LEAD_NAME, LEAD_SESSION, LEAD_SUMMARY, LEAD_TICK, LEAD_TOOLS } from "./lead-agent";
+export { LEAD_ID, LEAD_NAME, LEAD_SESSION, LEAD_SUMMARY, LEAD_TICK, LEAD_TOOLS } from "./lead-agent";
 export { taskWordItemPrefix, type TaskWordDb, type TaskWordPort, type WordTask } from "./task-word";
 export type { LaneProjectNotice } from "./lane-project";
-export type { InsightsApi, AnalyzerSelection, RuleScanSurface } from "./insights";
-export type { ErrandEpisodesApi, ErrandOutcome, ErrandVerifiedOutcome } from "./errand-episodes";
-export type { LoopEvidence, LoopSubject, WallConfigStatus, WallLoopPort } from "./wall-api";
+export type { AnalyzerSelection, RuleScanSurface } from "./insights";
+export type { ErrandOutcome, ErrandVerifiedOutcome } from "./errand-episodes";
 export { SANDBOX_OWN_ENV } from "./sandbox-own-env";
 export { NO_RED_KINDS } from "./baseline-vocabulary";
 export { parseExecutionLineWindows, type LineWindow, type PathWindows } from "./execution-line-windows";
@@ -79,7 +76,6 @@ export * from "./check-commands";
 export * from "./machine-pressure";
 export * from "./review-vocabulary";
 export * from "./docs-page";
-export * from "./project-life";
 export * from "./agent-picker";
 export * from "./native-selection";
 export * from "./integration-gate";
@@ -95,5 +91,10 @@ export type { IsTaskSatisfied } from "./runs-api";
 export * from "./worktrees";
 export { NATIVE_HOOK_SOURCES } from "./native-hook-sources";
 export * from "./service-notice";
+export { INTAKE_KINDS, SERVICE_KINDS, isMachineMessage } from "./intake";
+export type { HandOverResult, HandOverStarted, IntakeKind, IntakeRecord, PhaseIntake, ServiceKind } from "./intake";
 
 export type { NativeSelection } from "./native-selection";
+export type { Room, RoomCliCall, RoomCliVerb } from "./room";
+export * from "./owner-turn";
+export * from "./owner-messages";

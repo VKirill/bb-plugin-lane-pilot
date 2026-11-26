@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRpc } from "@get-bb/plugin-sdk/app";
-import type { ScheduleBoardContract } from "../contract";
+import type { ScheduleBoardContract } from "../models/contract";
 import { t, type I18nKey, type Locale } from "@lane-pilot/i18n";
 import { Button } from "@lane-pilot/ui-kit";
 import { LP_ALL_PROJECTS } from "@lane-pilot/ui-kit/realtime-channel";
-import type { BoardColumn, ErrandDefaultView, RunView, ScheduleView } from "../views";
+import type { BoardColumn, ErrandDefaultView, RunView, ScheduleView } from "../models/views";
 import { Surface, SurfaceBody, SurfaceHeader } from "@lane-pilot/ui-kit";
 import { useLpPoll, useLpRealtime } from "../../ui-shell/ui";
 import { ScheduleCalendar } from "./schedule-calendar";

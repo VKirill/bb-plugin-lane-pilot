@@ -1,8 +1,8 @@
 import { afterEach, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import plugin from "../server";
-import { NATIVE_LP_BRIDGE_PM_TOOLS } from "../src/rooms/native-agent/native-session-hooks";
-import { LANE_PILOT_PM_SESSION } from "../src/rooms/native-agent/native-agent-overlay";
+import { NATIVE_LP_BRIDGE_PM_TOOLS } from "../src/rooms/native-agent/models/bridge-tools";
+import { LANE_PILOT_PM_SESSION } from "../src/rooms/native-agent/models/native-agent-overlay";
 
 /**
  * What the PM pays for every turn: the session prompt plus the description and instructions of every tool on its folded

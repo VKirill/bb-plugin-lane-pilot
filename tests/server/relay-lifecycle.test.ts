@@ -1,6 +1,6 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it, vi } from "vitest";
-import { mountRelay } from "../../src/rooms/relay/server/relay";
+import { mountRelay } from "../../src/rooms/relay/server/handlers/relay-tools";
 import { openDatabase } from "../../src/rooms/plugin-db";
 import incident from "../fixtures/relay-reload-2026-10-29.json";
 
@@ -20,25 +20,21 @@ function setup() {
   const get = host.bb.storage.kv.get.bind(host.bb.storage.kv);
   let reads = 0;
   const spy = vi.spyOn(host.bb.storage.kv, "get").mockImplementation((key) => {
-    // mount's initial watch refresh finishes; only the service's first sweep is held.
+    // mount's initial watch refresh finishes; the initial event/deadline sweep is held.
     if (key === "relay:items" && ++reads === 2) { entered(); return pending; }
     return get(key);
   });
   mountRelay({ bb: host.bb, db, log: (line: string) => logs.push(line), isDisposed: () => disposed } as never);
-  const service = host.harness.behavior.runService("relay-sweep");
-  return { host, logs, reading, rejectRead, spy, ...service };
+  return { host, logs, reading, rejectRead, spy };
 }
 
-describe("relay sweep lifecycle (hub reload 2026-10-29)", () => {
-  it("stops before a pending sweep finishes and does not report its late rejection as a failure", async () => {
+describe("relay deadline/event lifecycle (hub reload 2026-10-29)", () => {
+  it("disposes cleanly without a background sweep service and does not report late rejection after dispose", async () => {
     const h = setup();
     try {
       await h.reading;
-      h.controller.abort();
-      await h.done;
       await h.host.harness.dispose();
       h.rejectRead(new Error(cause));
-      // Drain the sweep's update chain and its detached catch after the service has stopped.
       await new Promise<void>((resolve) => setImmediate(resolve));
       expect(h.logs).not.toContain(failure);
     } finally {
@@ -55,8 +51,6 @@ describe("relay sweep lifecycle (hub reload 2026-10-29)", () => {
       await new Promise<void>((resolve) => setImmediate(resolve));
       expect(h.logs).toContain(`relay sweep failed: ${message}`);
     } finally {
-      h.controller.abort();
-      await h.done;
       h.spy.mockRestore();
       await h.host.harness.dispose();
     }

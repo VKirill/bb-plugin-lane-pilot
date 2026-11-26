@@ -1,4 +1,5 @@
 import { experimental_defineHostEntry } from "@get-bb/plugin-sdk/host";
+import { initRuntimeEnv } from "@lane-pilot/kit";
 import { hostContract } from "./src/rooms/core/server/plugin-contracts";
 import {
   connectOpencode,
@@ -21,7 +22,6 @@ import {
   gitRemoveWorktree,
   gitSyncWorktree,
   diskFree,
-  stabilityDrill,
   gitWorktreeSnapshot,
   gitWorktreeState,
   gitMergeInfo,
@@ -79,7 +79,8 @@ import {
 } from "./src/rooms/host-worker";
 import { sessionInventory } from "./src/rooms/native-agent";
 import { nativeInstallHost, removeClaudeLaneLeftoversHost } from "./src/rooms/native-install/native-install-host";
-import { anamnesisHandler } from "./src/rooms/anamnesis";
+
+initRuntimeEnv();
 
 // A host job is this same bundle run as its own process (host-worker/jobs.ts spawns it): `node <bundle> <arg> <dir>`.
 if (process.argv[2] === HOST_JOB_ARG && process.argv[3]) {
@@ -91,8 +92,7 @@ export default experimental_defineHostEntry({
   handlers: {
     nativeInstall: nativeInstallHost,
     removeClaudeLaneLeftovers: removeClaudeLaneLeftoversHost,
-    anamnesis: anamnesisHandler,
-    detect, coexistenceInventory, coexistenceOperation, gitOwnershipBase, gitOwnershipChanges, gitDocsScope, docsWorthinessFacts, docsLineCounts, gitCommitDocs, gitRevertPaths, gitUndoCheckWrites, docsAnchors, docsFlows, gitIntegrate, gateRun, gateBisect, gateAttribute, jobStart, jobStatus, jobCancel, gitPrepareWorktree, gitOwnsBarrier, gitCreateWorktree, gitRemoveWorktree, gitSyncWorktree, diskFree, stabilityDrill, gitWorktreeSnapshot, gitWorktreeState, gitMergeInfo, gitRevertCommits, worktreeJanitor, openCodeLimitProbe, readOpenCodeTelemetry, readBoundedFile, listDocsPages, listWorkflowFiles, applyOnboardingPages, writeDocsPages, writePhaseBook, writeForgeEnabled, writeForgeDraft, prepareWorkerHome, removeWorkerHome, whichPrograms, listFolders, closeBacklogItem, readUsageWindows, writeUsageSnapshot, listPermitTickets, answerPermit, writeWorkflowFile, snapshotDryRun, snapshot, install, rollback, connectOpencode, inspectCritiqueCoverage,
+    detect, coexistenceInventory, coexistenceOperation, gitOwnershipBase, gitOwnershipChanges, gitDocsScope, docsWorthinessFacts, docsLineCounts, gitCommitDocs, gitRevertPaths, gitUndoCheckWrites, docsAnchors, docsFlows, gitIntegrate, gateRun, gateBisect, gateAttribute, jobStart, jobStatus, jobCancel, gitPrepareWorktree, gitOwnsBarrier, gitCreateWorktree, gitRemoveWorktree, gitSyncWorktree, diskFree, gitWorktreeSnapshot, gitWorktreeState, gitMergeInfo, gitRevertCommits, worktreeJanitor, openCodeLimitProbe, readOpenCodeTelemetry, readBoundedFile, listDocsPages, listWorkflowFiles, applyOnboardingPages, writeDocsPages, writePhaseBook, writeForgeEnabled, writeForgeDraft, prepareWorkerHome, removeWorkerHome, whichPrograms, listFolders, closeBacklogItem, readUsageWindows, writeUsageSnapshot, listPermitTickets, answerPermit, writeWorkflowFile, snapshotDryRun, snapshot, install, rollback, connectOpencode, inspectCritiqueCoverage,
     runCommand, runScript, runSandboxedCommand, sandboxCommandLine, sandboxRelease, vpnAddress, runBrowserQa, probeBrowserQaTarget, findBrowserQaTarget, writePmSettings, session_inventory: sessionInventory,
     discoverClaudeAgents: discoverClaudeAgentsHost, prepareNativeClaude: prepareNativeClaudeHost,
     prepareClaudeGuard: prepareClaudeGuardHost,

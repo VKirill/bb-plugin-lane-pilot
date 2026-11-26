@@ -1,0 +1,124 @@
+{
+  "kind": "lane-pilot-sandbox-drill",
+  "date": "2026-11-11",
+  "stamp": "20261111-173016",
+  "startedAt": 1794407416682,
+  "finishedAt": 1794411078511,
+  "durationSec": 3662,
+  "project": "proj_ibu6v9g64j",
+  "runId": "lprun_2117c072da394c2381fd210bc45cf6c8",
+  "pmThread": "thr_skhkggswfv",
+  "sourceThread": "thr_59sitg7rfk",
+  "mode": "full",
+  "scenarioNames": [
+    "phase"
+  ],
+  "commit": "0dcb28ae79d4edbd96addc28f45a1484a824df3f",
+  "skipped": {},
+  "result": "fail",
+  "problems": [
+    "phase: the machine's stages did not carry the phase to execution: it is at planning",
+    "phase: the phase did not reach acceptance: it is at planning (active)"
+  ],
+  "checks": null,
+  "tasks": null,
+  "dispatch": null,
+  "scenarios": [
+    {
+      "name": "phase",
+      "result": "fail",
+      "problems": [
+        "the machine's stages did not carry the phase to execution: it is at planning",
+        "the phase did not reach acceptance: it is at planning (active)"
+      ],
+      "phaseId": "ph_ff441bc702",
+      "stage": "planning",
+      "autoStarted": 7,
+      "issued": 1
+    }
+  ],
+  "seen": {
+    "stages": {
+      "acceptance-receipt": {
+        "passed": 2
+      },
+      "code-critique": {
+        "passed": 1
+      },
+      "memory-maintenance": {
+        "skipped": 2
+      },
+      "plan-critique": {
+        "passed": 1,
+        "skipped": 1
+      },
+      "plan-fact": {
+        "passed": 2
+      },
+      "pm-read": {
+        "skipped": 2
+      },
+      "project-life": {
+        "passed": 2
+      },
+      "specialist-review": {
+        "skipped": 2
+      },
+      "verification": {
+        "passed": 2
+      },
+      "writer-agent": {
+        "passed": 2
+      }
+    },
+    "gates": {
+      "accept": {
+        "passed": 2
+      },
+      "owns-paths": {
+        "passed": 2
+      },
+      "validate": {
+        "passed": 2
+      },
+      "verification": {
+        "passed": 2
+      }
+    },
+    "moves": {
+      "queued>queued": {
+        "ok": 4
+      },
+      "queued>spawn_requested": {
+        "ok": 2
+      },
+      "running>accepted": {
+        "ok": 2
+      },
+      "spawn_requested>running": {
+        "ok": 2
+      }
+    }
+  },
+  "judged": [
+    {
+      "name": "phase",
+      "verdict": "fail",
+      "evidence": [
+        "phaseId",
+        "stage",
+        "autoStarted",
+        "issued"
+      ],
+      "why": "the machine's stages did not carry the phase to execution: it is at planning; the phase did not reach acceptance: it is at planning (active)"
+    }
+  ],
+  "series": {
+    "verdict": "fail",
+    "missing": [],
+    "failed": [
+      "phase"
+    ],
+    "skipped": []
+  }
+}

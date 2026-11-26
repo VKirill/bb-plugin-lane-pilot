@@ -50,6 +50,7 @@ export function foreignSql(root) {
   const owner = new Map();
   for (const file of files) {
     const room = roomOf(file) === "@migrations.ts" ? "storage" : roomOf(file);
+    if (room === "@legacy-migrations.ts") continue;
     for (const m of readFileSync(file, "utf8").matchAll(CREATE_RE)) {
       const table = m[1];
       if (!owner.has(table)) owner.set(table, room);

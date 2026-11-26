@@ -1,13 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
-import { stageHelperSettings } from "../src/rooms/settings/server/stage-settings";
+import { stageHelperSettings } from "../src/rooms/settings/server/services/stage-settings";
 import { readFileSync } from "node:fs";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { WorkflowEngine, loadWorkflowStore, registerPureActions } from "@lane-pilot/workflow-engine";
 import { createRun, openDatabase, setRunThread } from "../src/rooms/plugin-db";
-import { mountErrands } from "../src/rooms/qa/server/errands";
+import { mountErrands } from "../src/rooms/errands/server";
 import {BUILTIN_SOURCES, builtinWorkflow} from "../src/rooms/workflow/builtin";
 import { validateWorkflow } from "@lane-pilot/workflow-engine";
 import { coreRequiredSessionAdvertisement } from "../src/rooms/contracts/helper-context";
+import { endedTurn } from "./helpers/ended-turn";
 
 /**
  * The errand as a graph (workflows/errand.json): the account check, the helper's step wrapping the errand core, and the PM tools that start and read the run.
@@ -32,7 +33,7 @@ function world(options: { pm?: boolean; output?: string; gate?: (names: string[]
         spawn: async (args: unknown) => { state.spawned.push(args as Record<string, any>); return { id: `errand-thr-${state.spawned.length}` }; },
         stop: async ({ threadId }: { threadId: string }) => { state.stopped.push(threadId); },
         output: async () => ({ output: state.output }),
-        events: { list: async ({ threadId }: { threadId: string }) => state.ended ? [{ type: "turn/started", threadId, seq: 1 }, { type: "turn/completed", threadId, seq: 2, data: { status: "completed" } }] : [{ type: "turn/started", threadId, seq: 1 }] },
+        events: { list: async ({ threadId }: { threadId: string }) => state.ended ? endedTurn(threadId) : [{ type: "turn/started", threadId, seq: 1 }] },
       },
       environments: { get: async () => ({ id: "env-1", path: "/checkout", hostId: "host-1" }) },
     } as never;

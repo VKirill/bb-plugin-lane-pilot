@@ -9,13 +9,13 @@ import { expect, it, vi } from "vitest";
 // Real repositories and shells: inside Lane Pilot's sandboxed check the whole suite runs ~2.5x slower, and
 // vitest's 5 s default would cut these off (2026-10-06 check log, sibling git-integrate/git-lock timeouts).
 vi.setConfig({ testTimeout: 120_000 });
-import type { DirtSnapshot } from "../../src/rooms/writer/cli-outcome";
+import type { DirtSnapshot } from "../../src/rooms/writer/models/cli-outcome";
 import type { PrototypeConfig, TaskV2 } from "../../src/rooms/contracts";
 import { createAttempt, createRun, createTask, openDatabase, setAttemptWorkspace } from "../../src/rooms/plugin-db";
-import { createWriterVerify } from "../../src/rooms/writer/server/verify";
-import { buildRunPolicy } from "../../src/rooms/tasks/run-policy";
-import { appendExcludeCommand, persistTaskFolder, TASK_FOLDER_EXCLUDE } from "../../src/rooms/verification/git-integrate";
-import { WORKSPACE_DIRT_SCRIPT } from "../../src/rooms/verification/workspace-dirt";
+import { createWriterVerify } from "../../src/rooms/writer/server/services/verify";
+import { buildRunPolicy } from "../../src/rooms/tasks";
+import { appendExcludeCommand, persistTaskFolder, TASK_FOLDER_EXCLUDE } from "../../src/rooms/worktree";
+import { WORKSPACE_DIRT_SCRIPT } from "../../src/rooms/verification/models/workspace-dirt";
 
 const git = (cwd: string, ...args: string[]) => execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", ...args], { cwd, encoding: "utf8" });
 
@@ -137,7 +137,7 @@ it("accepts an owned change while bb chat noise is dirty before and after and un
 });
 
 it("ignores unhashable bb bookkeeping in the pre-existing dirt instead of blocking the attempt on it", async () => {
-  const { repo, sub } = await subfolderRepo();
+  const { sub } = await subfolderRepo();
   const dirtBefore = workspaceDirt(sub);
   await mkdir(join(sub, ".bb", "chats", "thr_ghost"), { recursive: true });
   await writeFile(join(sub, ".bb", "chats", "thr_ghost", "thread.json"), "{}\n");

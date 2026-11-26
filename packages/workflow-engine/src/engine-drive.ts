@@ -3,7 +3,7 @@ import type { RunSummary } from "./engine-types";
 import { failRun, summary } from "./run-status";
 import { routeAll } from "./engine-routing";
 import { gates } from "./engine-branches";
-import { checkLimits, execStep } from "./engine-step";
+import { execStep } from "./engine-step";
 import { closeAfterAudit } from "./engine-goal-audit";
 import { observeRunPhase } from "./engine-observation";
 import type { WorkflowEngine } from "./engine";

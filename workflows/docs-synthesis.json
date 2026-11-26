@@ -10,6 +10,7 @@
     "en": "Identify conflicts in existing project documents with both sources and record unresolved decisions.",
     "ru": "Находит противоречия в документах проекта с обеими ссылками и сохраняет неразрешённые решения."
   },
+  "category": "docs",
   "inputs": {
     "paths": {
       "type": "string[]",
@@ -280,5 +281,10 @@
       },
       "expect_status": "succeeded"
     }
-  }
+  },
+  "not_for": [
+    "docs-synthesis-check",
+    "docs-synthesis-rank",
+    "validate-phase"
+  ]
 }

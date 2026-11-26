@@ -4,12 +4,13 @@ import type { PrototypeConfig, TaskV2 } from "../src/rooms/contracts";
 import { createCore } from "../src/rooms/core/server/core";
 import type { Services } from "../server";
 import { classifyFailure } from "../src/rooms/contracts/failure-class";
-import { recordStage } from "../src/rooms/runs/server/stage-records";
+import { recordStage } from "../src/rooms/runs/server";
 import { countChargedAttempts, createAttempt, createRun, createTask, getAttempt, listUnansweredWriterQuestions, openDatabase, savePrototypeConfig, saveProjectSetting, saveTaskPlan, setRunThread, transitionAttempt } from "../src/rooms/plugin-db";
-import { createWriterFinish } from "../src/rooms/writer/server/finish";
+import { createWriterFinish } from "../src/rooms/writer/server/services/finish";
 import { collectOwnerWaiting } from "../src/rooms/owner-waiting";
-import { isProductDecision, markAnsweredByDefault, SAFE_DEFAULT_ANSWER, WRITER_QUESTION_WAIT_MS } from "../src/rooms/writer/server/question-default";
-import { createWriterQuestionTimeout } from "../src/rooms/writer/server/question-timeout";
+import { isProductDecision, SAFE_DEFAULT_ANSWER, WRITER_QUESTION_WAIT_MS } from "../src/rooms/writer/models/question-default";
+import { markAnsweredByDefault } from "../src/rooms/writer/server/repositories/question-default-store";
+import { createWriterQuestionTimeout } from "../src/rooms/writer/server/services/question-timeout";
 
 const WORKSPACE = "/ws";
 const REASON = "needs_human: May I add tests/x.test.ts to owns_paths?";

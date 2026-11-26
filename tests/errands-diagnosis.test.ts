@@ -3,7 +3,8 @@ import { describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import type { StoredWorkflow } from "@lane-pilot/workflow-engine";
 import { openDatabase, type LanePilotDatabase } from "../src/rooms/plugin-db";
-import { diagnosisLines, errandsDiagnosis, errandsDiagnosisMorningLine } from "../src/rooms/errands/diagnosis";
+import { diagnosisLines } from "../src/rooms/errands";
+import { errandsDiagnosis, errandsDiagnosisMorningLine } from "../src/rooms/errands/server";
 
 /**
  * The errand diagnosis (stage-1 stream F, plan R7): one inline journal reproduces every section — outcomes and the

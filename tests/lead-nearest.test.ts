@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { publishedCatalog } from "./workflow/router-catalog";
-import { attachNearest, formHypothesis, graphSignalsOf, nearestUnits, SKILL_NEAR_SCORE, type FormHint, type GroupSignals, type NearestUnit } from "../src/rooms/lead/server/nearest";
+import { attachNearest, formHypothesis, graphSignalsOf, nearestUnits, SKILL_NEAR_SCORE, type FormHint, type GroupSignals, type NearestUnit } from "../src/rooms/lead/server/services/nearest";
 
 const skills = (...entries: Array<[string, string]>): Array<{ name: string; description: string | null }> =>
   entries.map(([name, description]) => ({ name, description }));

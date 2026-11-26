@@ -1,7 +1,9 @@
+import type { NodeForm } from "@lane-pilot/contracts";
 import type { EffectRow } from "./journal";
 import type { RunGoal } from "./goals";
 import type { GraphNode as WorkflowNode, PassMode, QualityMode, Workflow } from "./schema";
 import type { Usage } from "./usage";
+import type { StepStopDecision, TrackedChild, TurnCheckInput } from "./budgets";
 
 /** What a step receives: only the mapped fields (mode artifact), and where they came from. */
 export type StepInput = {
@@ -18,9 +20,9 @@ export type StepInput = {
 
 export type StepDone = { output: Record<string, unknown>; usage?: Usage; threadId?: string | null; detail?: unknown };
 
-export type StepWait = { wait: { kind: string; detail?: unknown; deadline?: number }; partial?: Record<string, unknown>; usage?: Usage; threadId?: string | null; detail?: unknown };
+export type StepWait = { wait: { kind: string; eventKey?: string; attemptKey?: string; detail?: unknown; deadline?: number; timeoutOutput?: Record<string, unknown> }; timeoutOutput?: Record<string, unknown>; partial?: Record<string, unknown>; usage?: Usage; threadId?: string | null; detail?: unknown };
 export type StepOutcome = StepDone | StepWait;
-export type PollResult = null | { output: Record<string, unknown>; usage?: Usage; threadId?: string | null } | { error: string };
+export type PollResult = null | { output: Record<string, unknown>; usage?: Usage; threadId?: string | null; detail?: unknown } | { error: string; usage?: Usage; threadId?: string | null; detail?: unknown };
 
 export type EffectReconcile<T> = (effect: EffectRow) => Promise<{ happened: true; result: T } | { happened: false } | null>;
 
@@ -38,6 +40,8 @@ export interface StepContext<R = unknown> {
   spawnKey: string; signal: AbortSignal;
   /** Set when the node has `votes` > 1: this is one of `of` independent runs of the same step. */
   vote?: { index: number; of: number };
+  /** Execution form selected for this attempt (`agent | plan | script`). */
+  readonly form?: NodeForm;
   /** The value of `node.field`, `$inputs.name`, `ctx.x`, `item` or `index` as this step sees it. */
   resolve(ref: string): unknown;
   /** Writes `{{ref}}` placeholders into a text. */
@@ -48,6 +52,10 @@ export interface StepContext<R = unknown> {
   template(value: unknown): unknown;
   /** An external call recorded as intended before and done after, so a reload neither repeats nor forgets it. */
   effect<T>(key: string, kind: string, fn: () => Promise<T>, options?: { intent?: unknown; reconcile?: EffectReconcile<T> }): Promise<T>;
+  /** Engine-enforced post-turn check for tokens/USD/wall budgets and repeated identical tool calls (`stuck`). */
+  checkTurn?: (input: TurnCheckInput) => Promise<StepStopDecision> | StepStopDecision;
+  /** Registers a child process PID or helper thread so stopping the step or run kills the whole child tree. */
+  trackChild?: (child: Omit<TrackedChild, "stepKey">) => () => void;
 }
 
 export interface NodeExecutor<R = unknown> {
@@ -55,5 +63,5 @@ export interface NodeExecutor<R = unknown> {
   reentrant?: boolean;
   run(ctx: StepContext<R>): Promise<StepOutcome>;
   /** For a waiting step: settles it when what it waits for is over; null keeps waiting. */
-  poll?(step: { runId: string; stepKey: string; nodeId: string; await: { kind: string; detail?: unknown; deadline?: number } }, ctx: { runtime: R | undefined; node: WorkflowNode }): Promise<PollResult>;
+  poll?(step: { runId: string; stepKey: string; nodeId: string; await: { kind: string; eventKey?: string; attemptKey?: string; detail?: unknown; deadline?: number; timeoutOutput?: Record<string, unknown> } }, ctx: { runtime: R | undefined; node: WorkflowNode }): Promise<PollResult>;
 }

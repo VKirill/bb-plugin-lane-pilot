@@ -1,15 +1,16 @@
 import { randomUUID } from "node:crypto";
-import { access, lstat, mkdir, readFile, readdir, rename, rm } from "node:fs/promises";
+import { access, readFile, readdir, rename, rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { parse, type ParseError } from "jsonc-parser/lib/esm/main.js";
 import { TARGET_SHA } from "../runs";
-import {hashPath, isFsAbsent, orMiss} from "@lane-pilot/kit";
+import { currentHostId, hashPath, isFsAbsent, orMiss } from "@lane-pilot/kit";
 import { agentsDir, resolveHome } from "@lane-pilot/kit";
-import { assessEngineCapabilities, IMPACTED_FUNCTIONS, inspectEngineCapabilities, inspectEngineCapabilitiesDetailed } from "./capabilities";
-import { createOpenCodePluginShim, isManagedOpenCodePlugin } from "./opencode-plugin";
+import { assessEngineCapabilities, IMPACTED_FUNCTIONS } from "./models/capabilities";
+import { inspectEngineCapabilities, inspectEngineCapabilitiesDetailed } from "./capabilities";
+import { createOpenCodePluginShim, isManagedOpenCodePlugin } from "./opencode-connect";
 import { ensureUpstream } from "./upstream";
 import { spawnAsync } from "@lane-pilot/kit";
-import { OPENCODE_PLUGIN_ENTRY, ensureOpenCodePluginEntry, removeOpenCodePluginEntry } from "./opencode-jsonc";
+import { OPENCODE_PLUGIN_ENTRY, ensureOpenCodePluginEntry, removeOpenCodePluginEntry } from "./models/opencode-jsonc";
 import { compareAndSwapText, readTextState } from "./cas";
 import { addOwnershipEntry, newSnapshotId, ownershipLedgerPath, readOwnershipLedger, readOwnershipLedgerStrict, readSnapshot, removeOwnershipEntry, removeOwnershipEntryIfMatches, removeSnapshotIfMatches, restoreOwnershipLedgerWrite, saveSnapshot, snapshotPath } from "./ownership";
 import type {
@@ -20,16 +21,16 @@ import type {
   CoexistenceOperationInput,
   CoexistenceOperationResult,
   CoexistenceOwner,
-} from "./coexistence-contracts";
+} from "./models/coexistence-contracts";
 
-export * from "./coexistence-contracts";
+export * from "./models/coexistence-contracts";
 
 type InstallMarker = { source_sha?: string; source_repo?: string; version?: string };
 
 function assertInput(projectId: string, hostId: string): void {
   if (!projectId.trim()) throw new Error("projectId is required");
   if (!hostId.trim()) throw new Error("hostId is required");
-  const currentHost = process.env.BB_HOST_ID;
+  const currentHost = currentHostId();
   if (currentHost && currentHost !== hostId) throw new Error(`requested host ${hostId} does not match local host ${currentHost}`);
 }
 
@@ -245,7 +246,7 @@ async function inventoryForHome(input: CoexistenceInventoryInput, home: string):
 
   return {
     schemaVersion: 1,
-    hostId: process.env.BB_HOST_ID ?? input.hostId,
+    hostId: currentHostId(input.hostId),
     targetSha,
     managers: [markerState, ...managedStates, ...cacheStates, claudeSettings, opencodeConfig, opencodePlugin],
   };
@@ -288,7 +289,7 @@ function resultOf(
 ): CoexistenceOperationResult {
   return {
     schemaVersion: 1,
-    hostId: process.env.BB_HOST_ID ?? input.hostId,
+    hostId: currentHostId(input.hostId),
     operation: input.operation,
     manager: input.manager,
     path: values.path ?? input.path,

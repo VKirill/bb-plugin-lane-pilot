@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { estimateTokens, memoryEntrySalience } from "./candidates";
+import { estimateTokens } from "./candidates";
 import { roleContextBudget } from "./context";
 import { memoryContextLine } from "./context";
 import type { MemoryRecord } from "./settings";

@@ -1,11 +1,12 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import plugin from "../server";
-import { agentListItem, parseAgentFile } from "../src/rooms/native-agent/custom-agent";
+import { agentListItem, parseAgentFile } from "../src/rooms/native-agent/models/custom-agent";
 import { MAIN_AGENT_PROFILE_IDS } from "../src/rooms/contracts/server";
-import { parseOwnedAgents } from "../src/rooms/native-agent/agent-profile";
-import { BB_AGENT_SESSIONS, laneSessionOverlayPrompt, unionLpBridgeToolsOnAgentsJson } from "../src/rooms/native-agent/native-agent-overlay";
-import { NATIVE_LP_BRIDGE_SPECIALIST_TOOLS } from "../src/rooms/native-agent/native-session-hooks";
+import { parseOwnedAgents } from "../src/rooms/native-agent/models/agent-profile";
+import { BB_AGENT_SESSIONS, laneSessionOverlayPrompt } from "../src/rooms/native-agent/models/native-agent-overlay";
+import { unionLpBridgeToolsOnAgentsJson } from "../src/rooms/native-agent/models/agent-overlay";
+import { NATIVE_LP_BRIDGE_SPECIALIST_TOOLS } from "../src/rooms/native-agent/models/bridge-tools";
 import { roleProfilePolicy, type HelperRole } from "../src/rooms/contracts/helper-context";
 import { LP_AGENT_OVERRIDES_KEY } from "@lane-pilot/settings-catalog";
 import { listSettingRows, openDatabase } from "../src/rooms/plugin-db";

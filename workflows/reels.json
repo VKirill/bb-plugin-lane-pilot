@@ -47,6 +47,7 @@
     "video",
     "social"
   ],
+  "category": "content",
   "inputs": {
     "source": {
       "type": "string",
@@ -229,7 +230,7 @@
         "full"
       ],
       "skip_out": {
-        "answer_kind": "ok"
+        "answer_kind": "not_run"
       },
       "title": {
         "en": "Approve the clip list",
@@ -238,7 +239,7 @@
       "prompt": "Show each clip: range, hook line, payoff; options - go, change (say which), abort.",
       "out": {
         "answer": "string",
-        "answer_kind": "ok|change|abort|timeout"
+        "answer_kind": "ok|change|abort|timeout|not_run"
       },
       "guards": {
         "maxVisits": 2,
@@ -677,7 +678,7 @@
       "from": "approve_clips",
       "to": "edit_plan",
       "pass": "artifact",
-      "when": "approve_clips.answer_kind == 'ok'"
+      "when": "approve_clips.answer_kind in ['ok','not_run']"
     },
     {
       "from": "approve_clips",

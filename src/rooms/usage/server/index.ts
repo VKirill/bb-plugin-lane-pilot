@@ -1,13 +1,46 @@
 // Public API of usage/server: what other rooms import. Everything else in this room is private.
-// Add a name here to make it public; scripts/refactor/barrels.ts wrote the first version from the existing imports.
-export { createProviderUsage, usageHoldReason, usageSkipPercent, USAGE_SKIP_KEY } from "./provider-usage";
-export { humanSkip, mountUsageSnapshots, SNAPSHOT_PROVIDER, USAGE_SNAPSHOT_SCHEDULE } from "./usage-snapshot";
-export { limitEventHold, LIMIT_EVENT_MAX_AGE_MS } from "./provider-usage";
-export type { BoardWindows, LimitEvent, LimitEventReader, ProviderUsage, UsageHold } from "./provider-usage";
-export { tokenUsageRpc } from "./rpc/token-usage";
-export { billedFrom, normalizeModel, openTokenCursor, parseBreakdown, syncTokenUsage, threadUsage } from "./token-usage";
-export { withUsage } from "./step-usage";
-export type { StepUsage } from "./step-usage";
-export { attemptMetrics, measuredAttemptTokens, medianTokens, renderAttemptMetrics, unmeasuredAttempts } from "./attempt-metrics";
-export type { AttemptMetrics, AttemptMetricsReport, CostState } from "./attempt-metrics";
-export { tokenCursorRow, tokenDailyByModel, tokenDailyRowsSince, tokenDailySeries, tokenDailyTotal } from "./token-usage";
+export { room } from "./room";
+export { DEFAULT_USAGE_SKIP_PERCENT, USAGE_SKIP_KEY } from "../settings";
+export {
+  LIMIT_EVENT_MAX_AGE_MS,
+  limitEventHold,
+  usageHoldReason,
+  usageSkipPercent,
+} from "../models/provider-usage";
+export type {
+  BoardWindows,
+  LimitEvent,
+  LimitEventReader,
+  UsageHold,
+  UsageMeasurement,
+  UsageResource,
+} from "../models/provider-usage";
+export { createProviderUsage, type ProviderUsage } from "./services/provider-usage";
+export { SNAPSHOT_PROVIDER, USAGE_SNAPSHOT_SCHEDULE, humanSkip } from "../models/usage-snapshot";
+export { mountUsageSnapshots } from "./handlers/usage-snapshot";
+export { tokenUsageRpc } from "./handlers/rpc/token-usage";
+export { billedFrom, parseBreakdown } from "../models/token-math";
+export { normalizeModel } from "../models/token-usage";
+export { syncTokenUsage } from "./services/token-usage";
+export { threadUsage } from "./services/thread-usage";
+export { withUsage, type StepUsage } from "./services/step-usage";
+export {
+  medianTokens,
+  queueWaitPercentiles,
+  renderAttemptMetrics,
+} from "../models/attempt-metrics";
+export type { AttemptMetrics, AttemptMetricsReport, CostState } from "../models/attempt-metrics";
+export {
+  attemptMetrics,
+  measuredAttemptTokens,
+  runQueueWaits,
+  unmeasuredAttempts,
+} from "./services/attempt-metrics";
+export {
+  openTokenCursor,
+  tokenCursorRow,
+  tokenDailyByModel,
+  tokenDailyRowsSince,
+  tokenDailySeries,
+  tokenDailyTotal,
+} from "./repositories/token-usage-repository";

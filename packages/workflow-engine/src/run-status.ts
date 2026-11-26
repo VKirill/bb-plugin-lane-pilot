@@ -1,6 +1,7 @@
-import { TERMINAL_RUN } from "./journal";
 import type { RunSummary } from "./engine-types";
 import { asObject } from "./step-read";
+import { buildStepFactColumns, emitStepFactLogs, usageFromStepRow } from "./run-facts";
+import { stopRunChildren } from "./budgets";
 import type { WorkflowEngine } from "./engine";
 
 export function summary(engine: WorkflowEngine, runId: string): RunSummary {
@@ -25,10 +26,23 @@ export function failRun(engine: WorkflowEngine, runId: string, reason: string): 
   if (!j.setRunStatus(runId, ["running", "waiting"], "failed", reason)) return;
   cancelOpenSteps(engine, runId);
   engine.aborts.get(runId)?.abort(); // the sibling branches still running stop (their threads are stopped) instead of finishing work nobody will read
+  void stopRunChildren(engine, runId);
 }
 
 export function cancelOpenSteps(engine: WorkflowEngine, runId: string): void {
+  const run = engine.journal.getRun(runId);
   for (const step of engine.journal.steps(runId)) {
-    if (step.state === "pending" || step.state === "waiting") engine.journal.moveStep(runId, step.step_key, step.state, "canceled", { ended: true });
+    if (step.state !== "pending" && step.state !== "waiting") continue;
+    if (!run) {
+      engine.journal.moveStep(runId, step.step_key, step.state, "canceled", { ended: true });
+      continue;
+    }
+    const cols = buildStepFactColumns(run, step, "canceled", engine.now(), {
+      usage: usageFromStepRow(step),
+      hasAgentCall: false,
+    });
+    if (engine.journal.moveStep(runId, step.step_key, step.state, "canceled", { ...cols, ended: true })) {
+      emitStepFactLogs(engine, runId, step.step_key, step.node_id, "canceled", cols, false);
+    }
   }
 }

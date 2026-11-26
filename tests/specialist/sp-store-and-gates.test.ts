@@ -3,32 +3,26 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
-import { snapshotLessonProblem } from "../../src/rooms/critique/server";
 import { openDatabase } from "../../src/rooms/plugin-db";
 import {
   type ActionOrder,
   checkRuSeasonality,
   classifyToolTier,
   estimateActionOrderCost,
-  evaluateAutonomyGate,
-  wilsonLowerBound,
 } from "../../src/rooms/specialist";
 import {
   acquireLock,
   acquireTick,
   advanceCursor,
-  applyMutationsBatch,
   checkCohortMaturity,
   checkLockCollisions,
-  checkStrategyGuard,
   completeTick,
-  consumeApprovalNonce,
   getBudgetRemainingUsd,
   getCharter,
   listCursors,
   loadMergedQuestions,
   loadQuestionBank,
-  mintApprovalNonce,
+  mapScriptOutputToDeclaredFields,
   recordQuestionAnswer,
   reserveBudget,
   settleBudget,
@@ -38,7 +32,7 @@ import {
   upsertCharter,
   upsertCohort,
 } from "../../src/rooms/specialist/server";
-import { roleSpec } from "../../src/rooms/workflow/server/workflow-agent";
+import { roleSpec } from "../../src/rooms/workflow/server/services/workflow-agent";
 
 function freshDb() {
   const { bb } = createFakePluginHost({ pluginId: "lane-pilot" });
@@ -269,7 +263,7 @@ describe("Specialist OS SQLite store, safety gates, and role protections", () =>
     expect(dupSem).toMatchObject({ status: "dropped", dropReason: "duplicate_semantic_key" });
   });
 
-  it("enforces G-02 single-use HMAC nonces, G-03 tool tiers (R/D/L/S), and strategy guard (<=15% / 120h)", () => {
+  it("enforces G-03 tool tiers (R/D/L/S) and sweeps expired locks", () => {
     const db = freshDb();
     const now = 1_760_000_000_000;
 
@@ -278,98 +272,21 @@ describe("Specialist OS SQLite store, safety gates, and role protections", () =>
     expect(classifyToolTier("mcp-yandex-direct", "update_campaign_budget")).toBe("L");
     expect(classifyToolTier("mcp-yandex-direct", "delete_campaign")).toBe("S");
 
-    // Tier S refused without charter emergency authorisation
-    const sBlocked = applyMutationsBatch(db, {
+    acquireLock(db, {
       projectId: "p1",
-      domain: "marketing",
-      tier: "S",
-      items: [{ entity_id: "camp_1", mutation_kind: "delete_campaign" }],
-      nowMs: now,
+      domain: "seo",
+      scopeType: "url",
+      scopeValue: "/expiring",
+      ownerGraph: "seo-release",
+      ownerRunId: "r_old",
+      reasonCode: "test_ttl",
+      ttlMs: 3_600_000,
+      nowMs: now - 4_000_000,
     });
-    expect(sBlocked.applied).toBe(0);
-    expect(sBlocked.errors).toContain("tier_S_forbidden_without_emergency_charter");
-
-    // Tier L requires valid single-use HMAC nonce bound to exact payload
-    const items = [{ entity_id: "camp_1", mutation_kind: "budget_edit", current_value: 100, next_value: 112 }];
-    const nonce = mintApprovalNonce(db, { projectId: "p1", actionId: "mkt-direct:push_live", payload: items, nowMs: now });
-
-    // Tampered payload rejected without burning the valid nonce
-    const mismatch = consumeApprovalNonce(db, {
-      projectId: "p1",
-      actionId: "mkt-direct:push_live",
-      payload: [{ entity_id: "camp_1", mutation_kind: "budget_edit", current_value: 100, next_value: 150 }],
-      token: nonce.token,
-      nowMs: now + 1_000,
-    });
-    expect(mismatch).toEqual({ ok: false, reason: "payload_mismatch" });
-
-    // Honest staging without external adapter (`G-02` / `G-25`): records simulated + staged_manual without claiming live applied
-    const stagedNonce = mintApprovalNonce(db, { projectId: "p1", actionId: "mkt-direct:stage_only", payload: items, nowMs: now });
-    const stagedOnly = applyMutationsBatch(db, {
-      projectId: "p1",
-      domain: "marketing",
-      tier: "L",
-      items: [{ entity_id: "camp_stage", mutation_kind: "goal_upsert" }],
-      actionId: "mkt-direct:stage_only",
-      nonceToken: mintApprovalNonce(db, {
-        projectId: "p1",
-        actionId: "mkt-direct:stage_only",
-        payload: [{ entity_id: "camp_stage", mutation_kind: "goal_upsert" }],
-        nowMs: now,
-      }).token,
-      nowMs: now + 1_500,
-    });
-    expect(stagedNonce.token.length).toBeGreaterThan(10);
-    expect(stagedOnly.applied).toBe(0);
-    expect(stagedOnly.staged).toBe(1);
-    expect(stagedOnly.mode).toBe("staged_manual");
-
-    // Valid apply succeeds (+12% <= 15%) when external mutation adapter executes
-    const okApply = applyMutationsBatch(db, {
-      projectId: "p1",
-      domain: "marketing",
-      tier: "L",
-      items,
-      actionId: "mkt-direct:push_live",
-      nonceToken: nonce.token,
-      executeMutation: () => ({ ok: true, externalReceipt: { adapter: "test_direct_api" } }),
-      nowMs: now + 2_000,
-    });
-    expect(okApply.applied).toBe(1);
-    expect(okApply.mode).toBe("live");
-
-    // Replay with the same nonce fails immediately
-    const replay = applyMutationsBatch(db, {
-      projectId: "p1",
-      domain: "marketing",
-      tier: "L",
-      items,
-      actionId: "mkt-direct:push_live",
-      nonceToken: nonce.token,
-      nowMs: now + 3_000,
-    });
-    expect(replay.applied).toBe(0);
-    expect(replay.errors).toContain("nonce_nonce_already_consumed");
-
-    // Second budget edit within 120h or >15% step is blocked by checkStrategyGuard
-    const sg = checkStrategyGuard(db, {
-      projectId: "p1",
-      entityId: "camp_1",
-      mutationKind: "budget_edit",
-      currentValue: 112,
-      nextValue: 140,
-      nowMs: now + 3_600_000,
-    });
-    expect(sg.allowed).toBe(false);
-    expect(sg.reasons.some((r) => r.startsWith("budget_step_"))).toBe(true);
-    expect(sg.reasons.some((r) => r.startsWith("cooldown_active_"))).toBe(true);
-
-    // Sweep cleans expired locks & old unconsumed nonces
-    mintApprovalNonce(db, { projectId: "p1", actionId: "old", payload: {}, ttlMs: 1_000, nowMs: now - 100_000_000 });
-    expect(spSweep(db, now).purgedNonces).toBe(1);
+    expect(spSweep(db, now).expiredLocks).toBe(1);
   });
 
-  it("loads the 480-question native bank, merges shadow questions.ext.json, triages with cooldowns, and checks Wilson/RU calendar/E-07/E-11", () => {
+  it("loads the 480-question native bank, merges shadow questions.ext.json, triages with cooldowns, and checks degraded script fail-closed aliases/RU calendar/E-07/E-11", () => {
     const db = freshDb();
     const bank = loadQuestionBank();
     expect(bank.questions.length).toBe(480);
@@ -422,17 +339,33 @@ describe("Specialist OS SQLite store, safety gates, and role protections", () =>
       nowMs: 1_760_000_000_000,
     });
 
-    // Wilson lower bound + autonomy promotion gate
-    expect(wilsonLowerBound(29, 30)).toBeGreaterThan(0.8);
-    expect(evaluateAutonomyGate({ actionClass: "analysis_propose", samplesN: 30, successesK: 29, cohenKappa: 0.75 }).allowedClass).toBe("bounded_auto");
-    expect(evaluateAutonomyGate({ actionClass: "live_budget", samplesN: 30, successesK: 30, cohenKappa: 0.9, highRisk: true }).allowedClass).toBe("propose");
+    // Degraded scripts must fail closed (never synthesize pass / true on degraded_error)
+    const degradedRelease = mapScriptOutputToDeclaredFields(
+      "release_graph_sim.py",
+      { degraded_error: true },
+      [{ name: "premortem_verdict", type: "enum", required: true, values: ["pass", "block"] }],
+      "report.json",
+    );
+    expect(degradedRelease.premortem_verdict).toBe("block");
+
+    const degradedFunnel = mapScriptOutputToDeclaredFields(
+      "funnel_reconcile.py",
+      { degraded_error: true, ok: true },
+      [{ name: "tracking_health_ok", type: "boolean", required: true }],
+      "report.json",
+    );
+    expect(degradedFunnel.tracking_health_ok).toBe(false);
+
+    const degradedDrop = mapScriptOutputToDeclaredFields(
+      "drop_window_split.py",
+      { degraded_error: true },
+      [{ name: "real_drop", type: "boolean", required: true }],
+      "report.json",
+    );
+    expect(degradedDrop.real_drop).toBe(false);
 
     // RU calendar seasonality check (New Year holidays)
     expect(checkRuSeasonality("2026-01-04").holidayId).not.toBeNull();
-
-    // E-07: snapshotLessonProblem rejects dated KPI snapshots, accepts timeless rules
-    expect(snapshotLessonProblem("2026-11-10 CPA = 450₽ и CTR 3.2% в кампании Поиск")).not.toBeNull();
-    expect(snapshotLessonProblem("При росте автотаргетинга в ЕПК проверять долю широких синонимов через поисковые запросы.")).toBeNull();
 
     // E-11: roleSpec blocks direct helper edits to engine-owned Specialist OS files
     const gmSpec = roleSpec("specialist:growth-marketer");

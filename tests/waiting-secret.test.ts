@@ -8,8 +8,8 @@ import {
 } from "../src/rooms/plugin-db";
 import { failureClass, isWaitingSecret, nextStep } from "../src/rooms/contracts/failure-class";
 import { forgetSecrets } from "@lane-pilot/kit";
-import { createSecrets } from "../src/rooms/secrets/server/secrets";
-import { createStability } from "../src/rooms/stability/server/stability";
+import { createSecrets } from "../src/rooms/secrets/server";
+import { createStability } from "../src/rooms/stability/server";
 import { boundedReadCall } from "./helpers/bounded-read";
 
 // Test values only: none of them is a real credential.

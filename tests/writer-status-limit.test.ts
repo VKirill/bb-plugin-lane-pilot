@@ -8,9 +8,9 @@ import type { PrototypeConfig, TaskV2 } from "../src/rooms/contracts";
 import { createAttempt, createRun, createTask, getAttempt, openDatabase, saveReasoningTrace, transitionAttempt } from "../src/rooms/plugin-db";
 import { breakerKey, createProviderBreaker } from "@lane-pilot/resilience";
 import { seenProviderLimit } from "../src/rooms/platform/server";
-import { walkWriterChain, writerHold, type WriterHoldDeps } from "../src/rooms/writer/server/writer-hold";
-import { watchWriterRun } from "../src/rooms/writer/server/watch-writer";
-import { createWriterFinish } from "../src/rooms/writer/server/finish";
+import { walkWriterChain, writerHold } from "../src/rooms/writer/server/services/writer-hold";
+import { watchWriterRun } from "../src/rooms/writer/server/services/watch-writer";
+import { createWriterFinish } from "../src/rooms/writer/server/services/finish";
 
 const config: PrototypeConfig = {
   projectId:"P", hostId:"h", pmWorkspacePath:"/repo", writerWorkspacePath:"/repo",

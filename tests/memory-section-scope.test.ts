@@ -2,8 +2,6 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
 import { listMemory, scopeValuesFor, searchMemoryRecords, storeMemoryRecords } from "../packages/memory-core/src";
 import { openDatabase } from "../src/rooms/plugin-db";
-import { createDigest } from "../src/rooms/learning/digest";
-import { insertItem, type Item } from "../src/rooms/learning/store";
 
 /**
  * «Мои проекты» holds several games and FeedGen in one BB project: what one section learned (a decision about Roblox characters)
@@ -34,25 +32,5 @@ describe("memory of a section", () => {
     expect(read()).toEqual(["Decision: deploy images through the CDN"]);
     expect(listMemory(db, "P", { kind: "note" }, 20, "subagent", "", { chain: FEEDGEN }).map((row) => row.content)).not.toContain("Decision: the vampire clock starts at 18:00");
     expect(scopeValuesFor(VAMPIRE)).toEqual(["[]", '["section:roblox"]', '["section:roblox","section:vampirism"]']);
-  });
-});
-
-describe("the learning report", () => {
-  const item = (id: string, threadId: string): Item => ({ id, obsId: `${threadId}:1:0`, projectId: "P", threadId, kind: "decision", text: `Decision ${id}`, audience: null,
-    reach: "project", dueAt: null, state: "noted", target: null, evidence: `owner message ${threadId}:1:0`, duplicateOf: null, confirmations: 0, note: null,
-    createdAt: 1, decidedAt: null, announcedAt: null });
-
-  // 0.1.458: the report is one row on the owner's list per project; no PM chat of any section is woken (0.1.443).
-  it("is one report per project on the owner's list; no section's PM is woken", async () => {
-    const { db } = setup();
-    insertItem(db as never, item("a", "thr_roblox_chat"));
-    insertItem(db as never, item("b", "thr_feedgen_chat"));
-    const announced: Array<[string, string]> = [];
-    const digest = createDigest({ db: db as never, announce: async (projectId, report) => { announced.push([projectId, report.text]); } });
-    const out = await digest.run();
-    expect(announced.map(([projectId]) => projectId)).toEqual(["P"]);
-    expect(announced[0]![1]).toContain("Decision a");
-    expect(announced[0]![1]).toContain("Decision b");
-    expect(out).toMatchObject([{ projectId: "P", sent: true, items: 2 }]);
   });
 });

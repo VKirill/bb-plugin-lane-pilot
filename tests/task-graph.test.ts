@@ -1,8 +1,7 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
 import { createAttempt, createRun, createTask, openDatabase, transitionAttempt } from "../src/rooms/plugin-db";
-import { recordStage } from "../src/rooms/runs/server/stage-records";
-import { buildTaskGraph } from "../src/rooms/runs/server/task-graph";
+import { buildTaskGraph, recordStage } from "../src/rooms/runs/server";
 import { taskSteps } from "../src/rooms/native-agent/ui/task-graph-view";
 
 /**

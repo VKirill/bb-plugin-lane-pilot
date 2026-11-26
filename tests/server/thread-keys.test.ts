@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { reconcile, reconcileHolder } from "../../src/rooms/stability/reconcile";
-import { fullAccessSpawn } from "../../src/rooms/platform/server/pm-spawn";
-import { clearSpawnMarker, findThreadsByMetadata, spawnIdentity, spawnKey, spawnTextId } from "../../src/rooms/platform/server/thread-keys";
+import { reconcile, reconcileHolder } from "../../src/rooms/stability";
+import { fullAccessSpawn } from "../../src/rooms/platform/server/services/pm-spawn";
+import { clearSpawnMarker, findThreadsByMetadata, spawnIdentity, spawnKey, spawnTextId } from "../../src/rooms/platform/server/services/thread-keys";
 
 type Row = { id: string; key: string | null; metadata: Record<string, unknown>; archived: boolean };
 
@@ -97,12 +97,12 @@ describe("keyed spawn of Lane Pilot threads", () => {
     expect(core.rows[1]!.key).toMatch(/:specialist:2$/);
   });
 
-  it("a council seat of another round is another thread", async () => {
+  it("a spawnId of another round is another thread", async () => {
     const core = keyedBb({ noFind: true });
-    const seat = (round: number) => ({ projectId: "p", prompt: "x", pluginMetadata: { role: "council-seat", lanePilotRunId: "run", spawnId: `council1:seatA:r${round}` } }) as never;
-    await fullAccessSpawn(core.bb, seat(1));
-    await fullAccessSpawn(core.bb, seat(2));
-    expect(core.rows.map((row) => row.key)).toEqual(["lp:council1:seatA:r1:council-seat:1", "lp:council1:seatA:r2:council-seat:1"]);
+    const roundRun = (round: number) => ({ projectId: "p", prompt: "x", pluginMetadata: { role: "analyst", lanePilotRunId: "run", spawnId: `run1:seatA:r${round}` } }) as never;
+    await fullAccessSpawn(core.bb, roundRun(1));
+    await fullAccessSpawn(core.bb, roundRun(2));
+    expect(core.rows.map((row) => row.key)).toEqual(["lp:run1:seatA:r1:analyst:1", "lp:run1:seatA:r2:analyst:1"]);
   });
 
   it("a thread adopted through reconcile is not handed to the next round of the same identity", async () => {

@@ -11,7 +11,7 @@ import { describe, expect, it, vi } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { createRun, createTask, openDatabase } from "../src/rooms/plugin-db";
 import { openTaskHome, placeTaskHome, readTaskFile, recordTaskFile, renderTaskManifest, resolveTaskFile, TASK_HOME_EXCLUDE, type TaskFileIo } from "../src/rooms/storage";
-import { sweepWorktreeClasses } from "../src/rooms/verification/worktree-sweep";
+import { sweepWorktreeClasses } from "../src/rooms/worktree/worktree-sweep";
 
 vi.setConfig({ testTimeout: 120_000 });
 

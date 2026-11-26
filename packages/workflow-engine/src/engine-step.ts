@@ -10,13 +10,19 @@ import { parseGoals, regroundDue } from "./goals";
 import type { Compiled } from "./compiled";
 import { isEngineBug } from "./engine-errors";
 import { asObject, env, lenient } from "./step-read";
-import { checkStepOutput } from "./step-output";
-import { addSpend, UNKNOWN_USAGE_MAX_WALL_SECONDS } from "./usage";
+import { addSpend, noteUnknownUsage, receiptUsage, UNKNOWN_USAGE_MAX_WALL_SECONDS } from "./usage";
 import type { Usage } from "./usage";
+import { BudgetStopError, effectiveBudgetDefaults, effectiveRunLimits, holdStepForUnknownCost, stopRunChildren, trackRunChild, usageTokensWithCache } from "./budgets";
+import type { StepBudgetGuard, StepStopDecision } from "./budgets";
+import { buildStepFactColumns, emitStepFactLogs, stepHadAgentCall } from "./run-facts";
+import { readFormErrorMeta, runAttemptWithForm } from "./step-form";
+import type { NodeForm } from "@lane-pilot/contracts";
 import type { EffectReconcile, NodeExecutor, StepContext, StepDone, StepInput, StepOutcome } from "./step-types";
 import { visitsOf } from "./engine-routing";
 import { failStep } from "./engine-branches";
 import { cancelOpenSteps, failRun } from "./run-status";
+import { attemptMatches, claimUnconsumedInboxEvent } from "./inbox";
+import { settle } from "./engine-settle";
 import type { WorkflowEngine } from "./engine";
 
 export function runtimeOf(engine: WorkflowEngine, run: RunRow): unknown {
@@ -26,7 +32,7 @@ export function runtimeOf(engine: WorkflowEngine, run: RunRow): unknown {
   return built;
 }
 
-export function contextFor(engine: WorkflowEngine, run: RunRow, c: Compiled, step: StepRow, node: WorkflowNode, attempt: number, signal: AbortSignal): StepContext {
+export function contextFor(engine: WorkflowEngine, run: RunRow, c: Compiled, step: StepRow, node: WorkflowNode, attempt: number, signal: AbortSignal, guard?: StepBudgetGuard): StepContext {
   const j = engine.journal;
   const input = JSON.parse(step.input_json) as StepInput;
   const goals = parseGoals(j.getRun(run.id)?.goals_json);
@@ -42,6 +48,8 @@ export function contextFor(engine: WorkflowEngine, run: RunRow, c: Compiled, ste
     value: (spec) => evalSpec(valueSpecOf(spec), lenient(scope), `${node.id}`),
     template: (value) => renderValue(value, (ref) => lenient(scope).read(ref).value, run.mode),
     effect: (key, kind, fn, options) => runEffect(engine, j, run.id, step.step_key, key, kind, fn, options),
+    ...(guard ? { checkTurn: (turn) => guard.recordTurn(turn) } : {}),
+    trackChild: (child) => trackRunChild(engine, run.id, { ...child, stepKey: step.step_key }),
   };
 }
 
@@ -122,7 +130,7 @@ export async function execStep(engine: WorkflowEngine, runId: string, stepKey: s
   let step = j.getStep(runId, stepKey)!;
   if (step.state !== "pending") return "skip";
   const node = c.nodes.get(step.node_id)!;
-  const found = checkLimits(engine, run, c);
+  const found = checkLimits(engine, run, c, node.id);
   // A budget guards spending; an emit spends nothing, so what was already paid for is handed on, the overrun on record.
   // A step or time budget too: magicseo lp.plan (2026-10-30) had its critic pass on step 14 of 14, and the run was
   // blocked on the end emit — 31 minutes of planning thrown away and run again from the start.
@@ -131,24 +139,31 @@ export async function execStep(engine: WorkflowEngine, runId: string, stepKey: s
   const paidFor = found !== null && found.startsWith("budget_exceeded:") && (executorKey(node) === "builtin:emit" || skipsFree(engine, run, c, step, node));
   if (paidFor && !j.db.prepare("SELECT 1 FROM lane_pilot_wf_event WHERE run_id=? AND kind='budget_overrun' LIMIT 1").get(runId)) j.event(runId, stepKey, "budget_overrun", null, null, `${found}: the end emits what the run already paid for`);
   const limit = paidFor ? null : found;
-  if (limit) { if (j.setRunStatus(runId, ["running", "waiting"], "blocked", limit)) { cancelOpenSteps(engine, runId); engine.aborts.get(runId)?.abort(); } return "skip"; }
+  if (limit) { if (j.setRunStatus(runId, ["running", "waiting"], "blocked", limit)) { cancelOpenSteps(engine, runId); engine.aborts.get(runId)?.abort(); await stopRunChildren(engine, runId, stepKey); } return "skip"; }
 
   // Skipped before it starts: the quality mode or skip_when says so; the node keeps a typed output.
   try {
     const why = skipReason(engine, run, c, step, node);
     if (why) {
       const output = skipOutput(engine, run, c, step, node);
+      const factCols = buildStepFactColumns(run, step, "skipped", engine.now(), { nodeType: node.type, output, hasAgentCall: false });
+      let moved = false;
       j.db.transaction(() => {
-        if (!j.moveStep(runId, stepKey, "pending", "skipped", { output_json: JSON.stringify(output), ended: true, receipt_json: JSON.stringify({ executor: executorKey(node), skipped: why, harnessVersion: engine.options.harnessVersion }) })) return;
+        if (!j.moveStep(runId, stepKey, "pending", "skipped", { ...factCols, output_json: JSON.stringify(output), ended: true, receipt_json: JSON.stringify({ executor: executorKey(node), skipped: why, harnessVersion: engine.options.harnessVersion }) })) return;
+        moved = true;
         if (node.type === "parallel") skipFan(engine, run, c, step, node, output);
       })();
+      if (moved) emitStepFactLogs(engine, runId, stepKey, node.id, "skipped", factCols, false);
       return "done";
     }
   } catch (cause) {
     if (isEngineBug(cause)) throw cause;
     const message = cause instanceof Error ? cause.message : String(cause);
     const code = cause instanceof MissingValueError ? cause.code : "skip_failed";
-    j.db.transaction(() => { if (j.moveStep(runId, stepKey, "pending", "canceled", { error: message, ended: true })) failRun(engine, runId, `${code}:${node.id}`); })();
+    const factCols = buildStepFactColumns(run, step, "canceled", engine.now(), { nodeType: node.type, error: message, errorCode: code, hasAgentCall: false });
+    let moved = false;
+    j.db.transaction(() => { if (j.moveStep(runId, stepKey, "pending", "canceled", { ...factCols, error: message, ended: true })) { moved = true; failRun(engine, runId, `${code}:${node.id}`); } })();
+    if (moved) emitStepFactLogs(engine, runId, stepKey, node.id, "canceled", factCols, false);
     return "done";
   }
 
@@ -167,7 +182,10 @@ export async function execStep(engine: WorkflowEngine, runId: string, stepKey: s
     if (isEngineBug(cause)) throw cause;
     const message = cause instanceof Error ? cause.message : String(cause);
     const code = cause instanceof MissingValueError ? cause.code : "with_failed";
-    j.db.transaction(() => { if (j.moveStep(runId, stepKey, "pending", "canceled", { error: message, ended: true })) failRun(engine, runId, `${code}:${node.id}`); })();
+    const factCols = buildStepFactColumns(run, step, "canceled", engine.now(), { nodeType: node.type, error: message, errorCode: code, hasAgentCall: false });
+    let moved = false;
+    j.db.transaction(() => { if (j.moveStep(runId, stepKey, "pending", "canceled", { ...factCols, error: message, ended: true })) { moved = true; failRun(engine, runId, `${code}:${node.id}`); } })();
+    if (moved) emitStepFactLogs(engine, runId, stepKey, node.id, "canceled", factCols, false);
     return "done";
   }
 
@@ -186,63 +204,111 @@ export async function execStep(engine: WorkflowEngine, runId: string, stepKey: s
       return base.run(ctx);
     } };
   }
-  const votes = node.type === "agent" ? node.votes ?? 1 : 1;
   const abort = engine.aborts.get(runId) ?? new AbortController();
   engine.aborts.set(runId, abort);
+  const stepStartedAt = engine.now();
+  const receipt = (extra: Record<string, unknown>) => JSON.stringify({ executor: executorKey(node), harnessVersion: engine.options.harnessVersion, engineCompat: engine.compat, ...extra });
   let outcome: StepOutcome | null = null, lastError: unknown = null;
+  let budgetStop: Extract<StepStopDecision, { stop: true }> | null = null;
+  let heldForOwner = false;
+  let lastFormUsed: NodeForm | null = node.type === "agent" ? (node.form ?? "agent") : null;
+  let lastFallbackTaken: string | null = null;
+  let lastFingerprint: string | null = null;
   // What the failed attempts spent: a retry that succeeds does not erase it (2026-10-29 audit A-003: 100 tokens of a failed try
   // were dropped when the second try spent 5). Kept in memory: a reload mid-step loses it rather than charging it twice.
   let spentBefore: Usage | undefined;
   for (let attempt = startAttempt; attempt <= node.maxAttempts; attempt += 1) {
     if (attempt !== startAttempt) j.db.prepare("UPDATE lane_pilot_wf_step SET attempt=?, spawn_key=?, updated_at=? WHERE run_id=? AND step_key=?").run(attempt, spawnKeyOf(engine, runId, step, attempt), engine.now(), runId, stepKey);
+    const attemptAbort = new AbortController();
     try {
       engine.fault("before-run");
       const fresh = j.getStep(runId, stepKey)!;
-      const attemptAbort = new AbortController();
       const forward = () => attemptAbort.abort();
       abort.signal.addEventListener("abort", forward, { once: true });
       let timer: ReturnType<typeof setTimeout> | undefined;
       try {
         const context = contextFor(engine, run, c, fresh, node, attempt, attemptAbort.signal);
-        const running = votes > 1 ? runVotes(engine, executor, context, c, node, votes) : executor.run(context);
+        const running = runAttemptWithForm(engine, run, c, fresh, node, executor, context, attemptAbort, stepStartedAt, spentBefore, runVotes);
         const limited = node.timeoutSec === undefined || node.type === "human" ? running : Promise.race([running, new Promise<never>((_resolve, reject) => {
           timer = setTimeout(() => { attemptAbort.abort(); reject(new Error(`timeout after ${node.timeoutSec}s`)); }, node.timeoutSec! * 1000);
         })]);
-        outcome = await limited;
+        const formResult = await limited;
+        lastFormUsed = formResult.formUsed;
+        lastFallbackTaken = formResult.fallbackTaken;
+        lastFingerprint = formResult.environmentFingerprint;
+        if (formResult.heldForOwner) { heldForOwner = true; outcome = null; break; }
+        outcome = formResult.outcome;
       } finally { clearTimeout(timer); abort.signal.removeEventListener("abort", forward); }
-      if (!("wait" in outcome)) {
-        outcome = { ...outcome, output: checkStepOutput(node, outputFields(c.wf, node), outcome.output) };
-      }
       lastError = null;
       break;
     } catch (cause) {
       if (isEngineBug(cause)) throw cause;
       lastError = cause; outcome = null;
+      const formMeta = readFormErrorMeta(cause);
+      if (formMeta) { lastFormUsed = formMeta.formUsed; lastFallbackTaken = formMeta.fallbackTaken; lastFingerprint = formMeta.environmentFingerprint; }
       spentBefore = addSpend(spentBefore, (cause as { usage?: Usage } | null)?.usage);
+      const stopped = cause instanceof BudgetStopError ? cause.decision : null;
+      if (stopped) { budgetStop = stopped; break; }
       j.event(runId, stepKey, "attempt_failed", null, null, `${attempt}/${node.maxAttempts}: ${cause instanceof Error ? cause.message : String(cause)}`);
       if (abort.signal.aborted || engine.stopped()) break;
       // Another attempt cannot bring what the agent said it lacks.
       if (cause instanceof MissingValueError && cause.code === "agent_blocked") break;
     }
   }
+  if (heldForOwner) {
+    await stopRunChildren(engine, runId, stepKey);
+    return "done";
+  }
   // A step whose helper gave up because the plugin is stopping did not fail: it stays running for the reload, which runs a
   // reentrant one again (its spawn found by key) and interrupts any other. magicseo replay recon (2026-10-31) was failed by a deploy.
   if (!outcome && engine.stopped()) return "stop";
   engine.fault("after-run");
   const current = j.getRun(runId)!;
-  if (TERMINAL_RUN.includes(current.status)) { j.moveStep(runId, stepKey, "running", "canceled", { ended: true }); return "skip"; }
-  const receipt = (extra: Record<string, unknown>) => JSON.stringify({ executor: executorKey(node), harnessVersion: engine.options.harnessVersion, engineCompat: engine.compat, ...extra });
+  const freshStep = j.getStep(runId, stepKey)!;
+  if (TERMINAL_RUN.includes(current.status)) {
+    await stopRunChildren(engine, runId, stepKey);
+    const cancelCols = buildStepFactColumns(current, freshStep, "canceled", engine.now(), { nodeType: node.type, usage: spentBefore, hasAgentCall: false });
+    if (j.moveStep(runId, stepKey, "running", "canceled", { ...cancelCols, ended: true })) {
+      emitStepFactLogs(engine, runId, stepKey, node.id, "canceled", cancelCols, false);
+    }
+    return "skip";
+  }
   if (!outcome) {
-    const message = lastError instanceof Error ? lastError.message : String(lastError);
-    const code = lastError instanceof MissingValueError ? lastError.code : "step_failed";
+    if (budgetStop?.reason === "unknown_cost") {
+      const errObj = lastError && typeof lastError === "object" ? lastError as { threadId?: string | null; detail?: unknown } : null;
+      const formMeta = { formUsed: lastFormUsed, fallbackTaken: lastFallbackTaken, environmentFingerprint: lastFingerprint };
+      const holdCols = buildStepFactColumns(current, freshStep, "succeeded", engine.now(), { usage: spentBefore, nodeType: node.type, detail: errObj?.detail, threadId: errObj?.threadId ?? null, ...formMeta });
+      holdStepForUnknownCost(engine, j, current, freshStep, node, spentBefore, holdCols, budgetStop.detail, { threadId: errObj?.threadId ?? null, receiptJson: receipt({ reason: "unknown_cost", usage: receiptUsage(spentBefore), ...formMeta }) });
+      await stopRunChildren(engine, runId, stepKey);
+      return "done";
+    }
+    const message = budgetStop ? budgetStop.detail : (lastError instanceof Error ? lastError.message : String(lastError));
+    const code = budgetStop ? budgetStop.reason : (lastError instanceof MissingValueError ? lastError.code : "step_failed");
     // A step that failed after its helper had spent still spent: an error may carry what (`usage`), and the run is charged for it, once.
     const spentOnFailure = spentBefore;
-    if (spentOnFailure && typeof spentOnFailure.tokens === "number") {
-      j.db.prepare("UPDATE lane_pilot_wf_run SET tokens_used=tokens_used+?, cost_micro_usd=cost_micro_usd+? WHERE id=?").run(Math.round(spentOnFailure.tokens ?? 0), Math.round((spentOnFailure.costUsd ?? 0) * 1_000_000), runId);
+    if (spentOnFailure) {
+      const usedTokens = usageTokensWithCache(spentOnFailure);
+      j.db.prepare("UPDATE lane_pilot_wf_run SET tokens_used=tokens_used+?, cost_micro_usd=cost_micro_usd+? WHERE id=?").run(Math.round(usedTokens), Math.round((spentOnFailure.costUsd ?? 0) * 1_000_000), runId);
       if (spentOnFailure.unknown) j.event(runId, stepKey, "usage", null, "unknown", node.id);
       noteUnknownUsage(engine, runId, stepKey, spentOnFailure);
     }
-    if (j.moveStep(runId, stepKey, "running", "failed", { error: message, ended: true, receipt_json: receipt({ code }) })) failStep(engine, runId, c, stepKey, `${code}:${node.id}`, message);
+    const errObj = lastError && typeof lastError === "object" ? lastError as { threadId?: string | null; detail?: unknown } : null;
+    const formMeta = { formUsed: lastFormUsed, fallbackTaken: lastFallbackTaken, environmentFingerprint: lastFingerprint };
+    const factOpts = { usage: spentOnFailure, nodeType: node.type, detail: errObj?.detail, error: message, errorCode: code, threadId: errObj?.threadId ?? null, ...formMeta };
+    const factCols = buildStepFactColumns(current, freshStep, "failed", engine.now(), factOpts);
+    const hasAgent = stepHadAgentCall("failed", factOpts);
+    if (j.moveStep(runId, stepKey, "running", "failed", { ...factCols, error: message, ended: true, receipt_json: receipt({ code, ...formMeta }) })) {
+      if (budgetStop) {
+        if (j.setRunStatus(runId, ["running", "waiting"], "blocked", budgetStop.detail)) {
+          cancelOpenSteps(engine, runId);
+          engine.aborts.get(runId)?.abort();
+        }
+      } else {
+        failStep(engine, runId, c, stepKey, `${code}:${node.id}`, message);
+      }
+      emitStepFactLogs(engine, runId, stepKey, node.id, "failed", factCols, hasAgent);
+    }
+    await stopRunChildren(engine, runId, stepKey);
     return "done";
   }
   const usage = addSpend(spentBefore, outcome.usage);
@@ -253,16 +319,53 @@ export async function execStep(engine: WorkflowEngine, runId: string, stepKey: s
     noteUnknownUsage(engine, runId, stepKey, usage);
   };
   if ("wait" in outcome) {
-    if (j.moveStep(runId, stepKey, "running", "waiting", { await_json: JSON.stringify({ ...outcome.wait, partial: outcome.partial ?? null }), receipt_json: receipt({ threadId: outcome.threadId ?? null, usage: usage ?? null, ...(outcome.detail !== undefined ? { detail: outcome.detail } : {}) }) })) addUsage();
+    const deadline = outcome.wait.deadline ?? (node.timeoutSec !== undefined ? engine.now() + node.timeoutSec * 1000 : undefined);
+    const timeoutOutput = outcome.timeoutOutput ?? outcome.wait.timeoutOutput;
+    const waitPayload = {
+      ...outcome.wait,
+      ...(deadline !== undefined ? { deadline } : {}),
+      ...(timeoutOutput !== undefined ? { timeoutOutput } : {}),
+      partial: outcome.partial ?? null,
+    };
+    const formMeta = { formUsed: lastFormUsed, fallbackTaken: lastFallbackTaken, environmentFingerprint: lastFingerprint };
+    const waitFactCols = buildStepFactColumns(current, freshStep, "succeeded", engine.now(), {
+      usage, nodeType: node.type, detail: outcome.detail, threadId: outcome.threadId ?? null, ...formMeta,
+    });
+    const parked = j.moveStep(runId, stepKey, "running", "waiting", { ...waitFactCols, await_json: JSON.stringify(waitPayload),
+      receipt_json: receipt({ threadId: outcome.threadId ?? null, usage: receiptUsage(usage), ...formMeta, ...(outcome.detail !== undefined ? { detail: outcome.detail } : {}) }) });
+    if (parked) {
+      engine.log(`wf.wait parked step=${runId}/${stepKey} deadline=${deadline ?? "none"}`, "debug");
+      engine.clock?.arm();
+      addUsage();
+      if (typeof outcome.wait.eventKey === "string") {
+        const expectedAttempt = typeof outcome.wait.attemptKey === "string" && outcome.wait.attemptKey ? outcome.wait.attemptKey : undefined;
+        const claimed = claimUnconsumedInboxEvent(j.db, {
+          name: outcome.wait.kind,
+          key: outcome.wait.eventKey,
+          consumedBy: `${runId}:${stepKey}`,
+          accept: (payload) => {
+            const eventAttempt = typeof payload.attemptKey === "string" && payload.attemptKey ? payload.attemptKey : undefined;
+            return attemptMatches(expectedAttempt, run.link_attempt_id ?? undefined, eventAttempt);
+          },
+        });
+        if (claimed) settle(engine, runId, stepKey, { output: claimed.payload }, { by: "event" });
+      }
+    }
     return "done";
   }
   const outputJson = JSON.stringify(outcome.output);
+  const formMeta = { formUsed: lastFormUsed, fallbackTaken: lastFallbackTaken, environmentFingerprint: lastFingerprint };
+  const factOpts = { usage, nodeType: node.type, output: outcome.output, detail: outcome.detail, threadId: outcome.threadId ?? null, ...formMeta };
+  const factCols = buildStepFactColumns(current, freshStep, "succeeded", engine.now(), factOpts);
+  const hasAgent = stepHadAgentCall("succeeded", factOpts);
+  let moved = false;
   j.db.transaction(() => {
-    if (j.moveStep(runId, stepKey, "running", "succeeded", { output_json: outputJson, ended: true,
-      receipt_json: receipt({ inputSha256: sha256(step.input_json), outputSha256: sha256(outputJson), threadId: outcome.threadId ?? null, usage: usage ?? null,
+    if (j.moveStep(runId, stepKey, "running", "succeeded", { ...factCols, output_json: outputJson, ended: true,
+      receipt_json: receipt({ inputSha256: sha256(step.input_json), outputSha256: sha256(outputJson), threadId: outcome.threadId ?? null, usage: receiptUsage(usage), ...formMeta,
         handoff: node.type === "agent" ? outcome.output.handoff ?? null : null, ...(node.type === "agent" && outcome.output.outcome ? { outcome: outcome.output.outcome } : {}), attempts: j.getStep(runId, stepKey)!.attempt,
-        ...(outcome.detail !== undefined ? { detail: outcome.detail } : {}) }) })) addUsage();
+        ...(outcome.detail !== undefined ? { detail: outcome.detail } : {}) }) })) { moved = true; addUsage(); }
   })();
+  if (moved) emitStepFactLogs(engine, runId, stepKey, node.id, "succeeded", factCols, hasAgent);
   engine.fault("after-record");
   return "done";
 }
@@ -316,37 +419,42 @@ export function skipFan(engine: WorkflowEngine, run: RunRow, c: Compiled, fan: S
   const j = engine.journal;
   const visit = visitsOf(engine, run.id, join.id, fan.scope) + 1;
   const stepKey = `${join.id}#${visit}${fan.scope ? `@${stableId(fan.scope).slice(0, 6)}` : ""}`;
-  j.db.prepare(`INSERT OR IGNORE INTO lane_pilot_wf_step(run_id,step_key,origin,node_id,visit,scope,parent_key,edge_index,state,input_json,output_json,routed,ended_at,updated_at)
-    VALUES (?,?,?,?,?,?,?,?,'skipped',?,?,0,?,?)`)
-    .run(run.id, stepKey, stableId("join", fan.step_key, join.id), join.id, visit, fan.scope, fan.step_key, null, JSON.stringify({ with: {}, via: { mode: "artifact", fromStep: fan.step_key } }), JSON.stringify(output), engine.now(), engine.now());
+  const nowMs = engine.now();
+  j.db.prepare(`INSERT OR IGNORE INTO lane_pilot_wf_step(run_id,step_key,origin,node_id,visit,scope,parent_key,edge_index,state,input_json,output_json,routed,ended_at,updated_at,cost_micro_usd,cost_state,duration_ms,verdict,rework_visits,graph_version,attempt_id)
+    VALUES (?,?,?,?,?,?,?,?,'skipped',?,?,0,?,?,0,'measured',0,'not_run',?,?,?)`)
+    .run(run.id, stepKey, stableId("join", fan.step_key, join.id), join.id, visit, fan.scope, fan.step_key, null, JSON.stringify({ with: {}, via: { mode: "artifact", fromStep: fan.step_key } }), JSON.stringify(output), nowMs, nowMs, Math.max(0, visit - 1), run.workflow_version, run.link_attempt_id ?? null);
   j.db.prepare("UPDATE lane_pilot_wf_step SET routed=1 WHERE run_id=? AND step_key=?").run(run.id, fan.step_key);
   j.event(run.id, stepKey, "step", null, "skipped", `join of skipped ${fan.step_key}`);
 }
 
-/** A step whose provider reported no usage: the run's journal says so once, and `checkLimits` takes it from there. */
-export function noteUnknownUsage(engine: WorkflowEngine, runId: string, stepKey: string, usage: Usage): void {
-  if (!usage.unknown) return;
-  const j = engine.journal;
-  if (j.db.prepare("SELECT 1 FROM lane_pilot_wf_event WHERE run_id=? AND kind='usage_unknown' LIMIT 1").get(runId)) return;
-  j.event(runId, stepKey, "usage_unknown", null, null, `the provider reported no usage for this step: a token or money budget cannot count it; the run is held to ${UNKNOWN_USAGE_MAX_WALL_SECONDS / 60} minutes unless the budget sets its own`);
-}
+/** Re-exported for callers importing from engine-step. */
+export { noteUnknownUsage };
 
 /** The steps of a run whose spending is not known (the provider reports no usage): its token and cost totals leave them out, and a budget cannot see them. */
 export function unknownUsageSteps(engine: WorkflowEngine, runId: string): string[] {
   return (engine.journal.db.prepare("SELECT step_key FROM lane_pilot_wf_event WHERE run_id=? AND kind='usage' AND to_state='unknown' ORDER BY seq").all(runId) as Array<{ step_key: string }>).map((row) => row.step_key);
 }
 
-export function checkLimits(engine: WorkflowEngine, run: RunRow, c: Compiled): string | null {
-  const budget = c.wf.budget;
+export function checkLimits(engine: WorkflowEngine, run: RunRow, c: Compiled, nodeId = "run"): string | null {
+  const budget = effectiveRunLimits(c, effectiveBudgetDefaults(engine, run));
   // A token or money budget is blind to a step without usage events; the run then gets a time and step limit of its own.
   if ((budget.maxTokens !== undefined || budget.maxCostUsd !== undefined) && engine.journal.db.prepare("SELECT 1 FROM lane_pilot_wf_event WHERE run_id=? AND kind='usage_unknown' LIMIT 1").get(run.id)) {
     if (budget.maxWallSeconds === undefined && engine.now() - run.created_at - run.wait_ms >= UNKNOWN_USAGE_MAX_WALL_SECONDS * 1000) return "budget_exceeded:usage_unknown_wall_time";
   }
-  // No step budget: every loop is bounded by maxVisits, money and time by their own budgets. The one step stop in 277 hub runs
-  // was false (magicseo lp.plan, 2026-10-30: the critic passed on step 14 of 14). guards.maxSteps still catches an engine fault.
-  if (budget.maxTokens !== undefined && run.tokens_used >= budget.maxTokens) return "budget_exceeded:tokens";
-  if (budget.maxCostUsd !== undefined && run.cost_micro_usd >= Math.round(budget.maxCostUsd * 1_000_000)) return "budget_exceeded:cost";
-  if (budget.maxWallSeconds !== undefined && engine.now() - run.created_at - run.wait_ms >= budget.maxWallSeconds * 1000) return "budget_exceeded:wall_time";
+  // No step budget: every loop is bounded by maxVisits, money and time by their own budgets.
+  if (budget.maxTokens !== undefined && run.tokens_used >= budget.maxTokens) {
+    engine.log(`WARN budget exhausted node=${nodeId} kind=tokens used=${run.tokens_used} cap=${budget.maxTokens}`, "warn");
+    return "budget_exceeded:tokens";
+  }
+  if (budget.maxCostUsd !== undefined && run.cost_micro_usd >= Math.round(budget.maxCostUsd * 1_000_000)) {
+    engine.log(`WARN budget exhausted node=${nodeId} kind=usd used=${run.cost_micro_usd / 1_000_000} cap=${budget.maxCostUsd}`, "warn");
+    return "budget_exceeded:cost";
+  }
+  const wallSec = Math.round((engine.now() - run.created_at - run.wait_ms) / 1000);
+  if (budget.maxWallSeconds !== undefined && engine.now() - run.created_at - run.wait_ms >= budget.maxWallSeconds * 1000) {
+    engine.log(`WARN budget exhausted node=${nodeId} kind=wall used=${wallSec} cap=${budget.maxWallSeconds}`, "warn");
+    return "budget_exceeded:wall_time";
+  }
   return null;
 }
 

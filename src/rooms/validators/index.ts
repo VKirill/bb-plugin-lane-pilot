@@ -1,2 +1,2 @@
-export { validateDeliverable } from "./deliverable";
-export type { ValidatorDeps, PageReview } from "./deliverable";
+export { validateDeliverable } from "./models/deliverable";
+export type { ValidatorDeps, PageReview } from "./models/deliverable";

@@ -1,0 +1,305 @@
+{
+  "kind": "lane-pilot-sandbox-drill",
+  "date": "2026-11-24",
+  "stamp": "20261124-110212",
+  "startedAt": 1795514532433,
+  "finishedAt": 1795514550794,
+  "durationSec": 18,
+  "project": "proj_3tb652jpsi",
+  "runId": null,
+  "pmThread": null,
+  "sourceThread": null,
+  "mode": "quick",
+  "scenarioNames": [
+    "guard_hash",
+    "deferrals",
+    "checkers",
+    "lead_shadow",
+    "episodes"
+  ],
+  "commit": "5a6c87520ef5e466f6601b52b81f943e57c1f2bb",
+  "skipped": {
+    "memory_paths": "live: runs in the nightly drill (LP_DRILL_LIVE=1 runs it here)",
+    "helper_providers": "live: runs in the nightly drill (LP_DRILL_LIVE=1 runs it here)",
+    "parallel3": "live: runs in the nightly drill (LP_DRILL_LIVE=1 runs it here)"
+  },
+  "result": "fail",
+  "problems": [
+    "guard_hash: ovh: guard_shell.py differs from the repository (installed 2165b89d1a5f, repository dc0ddc0b8a19); install: scp /Volumes/SSD/Documents/BB-сервис/plugins/bb-plugin-lane-pilot/lane-stack/hooks/guard_shell.py ovh-main:.agents/lane-pilot/pm/guard_shell.py && ssh ovh-main chmod 755 .agents/lane-pilot/pm/guard_shell.py"
+  ],
+  "checks": null,
+  "tasks": null,
+  "dispatch": null,
+  "scenarios": [
+    {
+      "name": "guard_hash",
+      "result": "fail",
+      "problems": [
+        "ovh: guard_shell.py differs from the repository (installed 2165b89d1a5f, repository dc0ddc0b8a19); install: scp /Volumes/SSD/Documents/BB-сервис/plugins/bb-plugin-lane-pilot/lane-stack/hooks/guard_shell.py ovh-main:.agents/lane-pilot/pm/guard_shell.py && ssh ovh-main chmod 755 .agents/lane-pilot/pm/guard_shell.py"
+      ],
+      "machines": [
+        {
+          "machine": "mac-mini",
+          "files": {
+            "guard_shell.py": {
+              "state": "ok",
+              "installed": "dc0ddc0b8a193ec9262452d96d8640d09c3f18b133fa288732c1e63f19231b22",
+              "expected": "dc0ddc0b8a193ec9262452d96d8640d09c3f18b133fa288732c1e63f19231b22"
+            },
+            "lib_payload.py": {
+              "state": "ok",
+              "installed": "64d0fb253d284b8e119b8a22bef90c2943f2065da4d5d5e9336c45b912f893c2",
+              "expected": "64d0fb253d284b8e119b8a22bef90c2943f2065da4d5d5e9336c45b912f893c2"
+            }
+          },
+          "reachable": true
+        },
+        {
+          "machine": "macbook",
+          "files": {
+            "guard_shell.py": {
+              "state": "ok",
+              "installed": "dc0ddc0b8a193ec9262452d96d8640d09c3f18b133fa288732c1e63f19231b22",
+              "expected": "dc0ddc0b8a193ec9262452d96d8640d09c3f18b133fa288732c1e63f19231b22"
+            },
+            "lib_payload.py": {
+              "state": "ok",
+              "installed": "64d0fb253d284b8e119b8a22bef90c2943f2065da4d5d5e9336c45b912f893c2",
+              "expected": "64d0fb253d284b8e119b8a22bef90c2943f2065da4d5d5e9336c45b912f893c2"
+            }
+          },
+          "reachable": true
+        },
+        {
+          "machine": "ovh",
+          "files": {
+            "guard_shell.py": {
+              "state": "drift",
+              "installed": "2165b89d1a5fa4caf00b34256088eaf2a49386e6175a4fa9fcba2461ac0a289a",
+              "expected": "dc0ddc0b8a193ec9262452d96d8640d09c3f18b133fa288732c1e63f19231b22"
+            },
+            "lib_payload.py": {
+              "state": "ok",
+              "installed": "64d0fb253d284b8e119b8a22bef90c2943f2065da4d5d5e9336c45b912f893c2",
+              "expected": "64d0fb253d284b8e119b8a22bef90c2943f2065da4d5d5e9336c45b912f893c2"
+            }
+          },
+          "reachable": true
+        }
+      ],
+      "expected": {
+        "guard_shell.py": "dc0ddc0b8a193ec9262452d96d8640d09c3f18b133fa288732c1e63f19231b22",
+        "lib_payload.py": "64d0fb253d284b8e119b8a22bef90c2943f2065da4d5d5e9336c45b912f893c2"
+      },
+      "unreachable": [],
+      "repaired": false
+    },
+    {
+      "name": "deferrals",
+      "result": "pass",
+      "problems": [],
+      "registerDeployed": true,
+      "counts": {
+        "open": 0,
+        "overdue": 0,
+        "closed": 0,
+        "needs_owner_term": 25
+      },
+      "cited": 18,
+      "needsOwnerTerm": 25
+    },
+    {
+      "name": "checkers",
+      "result": "pass",
+      "problems": [],
+      "checked": [
+        {
+          "defectClass": "test_assertion_deleted",
+          "planted": 2,
+          "caughtBy": [
+            "test_fit"
+          ],
+          "designedCatchers": [
+            "test_fit",
+            "code_critic"
+          ]
+        },
+        {
+          "defectClass": "off_by_one",
+          "planted": 2,
+          "caughtBy": [
+            "verification"
+          ],
+          "designedCatchers": [
+            "verification"
+          ]
+        },
+        {
+          "defectClass": "outside_owns",
+          "planted": 2,
+          "caughtBy": [
+            "ownership"
+          ],
+          "designedCatchers": [
+            "ownership"
+          ]
+        },
+        {
+          "defectClass": "swallowed_error",
+          "planted": 1,
+          "caughtBy": [],
+          "designedCatchers": [
+            "code_critic"
+          ]
+        },
+        {
+          "defectClass": "masked_check",
+          "planted": 2,
+          "caughtBy": [
+            "contract_lint"
+          ],
+          "designedCatchers": [
+            "contract_lint"
+          ]
+        },
+        {
+          "defectClass": "acceptance_missing",
+          "planted": 2,
+          "caughtBy": [
+            "verification",
+            "plan_fact"
+          ],
+          "designedCatchers": [
+            "plan_fact"
+          ]
+        },
+        {
+          "defectClass": "hardcoded_value",
+          "planted": 2,
+          "caughtBy": [
+            "verification"
+          ],
+          "designedCatchers": [
+            "code_critic"
+          ]
+        },
+        {
+          "defectClass": "broken_import",
+          "planted": 2,
+          "caughtBy": [
+            "verification"
+          ],
+          "designedCatchers": [
+            "verification"
+          ]
+        },
+        {
+          "defectClass": "gilded_defect",
+          "planted": 1,
+          "caughtBy": [],
+          "designedCatchers": [
+            "code_critic"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "lead_shadow",
+      "result": "pass",
+      "problems": [],
+      "leadDeployed": true,
+      "enabled": true,
+      "tickCron": "30 6,10,14,18 * * *",
+      "ticks": 10,
+      "proposalsOpen": 6,
+      "journal": {
+        "total": 320,
+        "exam": 103,
+        "backtest": 38
+      },
+      "tiers": {
+        "next_step": "decides",
+        "schedule": "decides",
+        "landing": "proposes",
+        "process": "decides",
+        "defer": "decides",
+        "money": "owner_only",
+        "external": "owner_only"
+      }
+    },
+    {
+      "name": "episodes",
+      "result": "pass",
+      "problems": [],
+      "episodesDeployed": true,
+      "episodes": 382,
+      "held": 0,
+      "since": 1793962416127
+    }
+  ],
+  "seen": null,
+  "judged": [
+    {
+      "name": "guard_hash",
+      "verdict": "fail",
+      "evidence": [
+        "machines",
+        "expected",
+        "repaired"
+      ],
+      "why": "ovh: guard_shell.py differs from the repository (installed 2165b89d1a5f, repository dc0ddc0b8a19); install: scp /Volumes/SSD/Documents/BB-сервис/plugins/bb-plugin-lane-pilot/lane-stack/hooks/guard_shell.py ovh-main:.agents/lane-pilot/pm/guard_shell.py && ssh ovh-main chmod 755 .agents/lane-pilot/pm/guard_shell.py"
+    },
+    {
+      "name": "deferrals",
+      "verdict": "pass",
+      "evidence": [
+        "registerDeployed",
+        "counts",
+        "cited",
+        "needsOwnerTerm"
+      ],
+      "why": ""
+    },
+    {
+      "name": "checkers",
+      "verdict": "pass",
+      "evidence": [
+        "checked"
+      ],
+      "why": ""
+    },
+    {
+      "name": "lead_shadow",
+      "verdict": "pass",
+      "evidence": [
+        "leadDeployed",
+        "enabled",
+        "tickCron",
+        "ticks",
+        "proposalsOpen",
+        "journal",
+        "tiers"
+      ],
+      "why": ""
+    },
+    {
+      "name": "episodes",
+      "verdict": "pass",
+      "evidence": [
+        "episodesDeployed",
+        "episodes",
+        "held",
+        "since"
+      ],
+      "why": ""
+    }
+  ],
+  "series": {
+    "verdict": "fail",
+    "missing": [],
+    "failed": [
+      "guard_hash"
+    ],
+    "skipped": []
+  }
+}

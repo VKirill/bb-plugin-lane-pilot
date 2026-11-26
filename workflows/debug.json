@@ -36,6 +36,7 @@
     "code",
     "diagnosis"
   ],
+  "category": "code",
   "inputs": {
     "symptom": {
       "type": "string|Finding[]",
@@ -63,7 +64,7 @@
     }
   },
   "outputs": {
-    "status": "confirmed|partial|inconclusive|proposed",
+    "status": "confirmed|partial|inconclusive|proposed|not_run",
     "root_cause": "string",
     "confidence": "int",
     "affected_files": "string[]",
@@ -284,13 +285,15 @@
         "full"
       ],
       "skip_out": {
-        "confirmed": true,
+        "status": "not_run",
+        "confirmed": false,
         "objections": "[]",
         "session_entry": "",
         "evidence_entry": ""
       },
       "prompt": "Fresh agent re-checks the claimed cause from the evidence log and the code only; try to refute it with one cheaper explanation; report confirmed or the objection with file:line. Return session_entry as one Markdown block and evidence_entry as one JSON object line; the code-owned fs.write nodes append them, so this read-only helper never writes files.\nSession file: when input `session` is set, read .agents/planning/debug/<session>.md — describe the append block in session_entry and the evidence line in evidence_entry.\n",
       "out": {
+        "status": "pass|fail|not_run?",
         "confirmed": "bool",
         "objections": "string[]",
         "session_entry": "string",
@@ -571,13 +574,13 @@
       "from": "write_verification_evidence",
       "to": "propose_fix",
       "pass": "artifact",
-      "when": "verify_cause.confirmed && $inputs.auto_fix"
+      "when": "(verify_cause.confirmed || verify_cause.status == 'not_run') && $inputs.auto_fix"
     },
     {
       "from": "write_verification_evidence",
       "to": "confirmed",
       "pass": "artifact",
-      "when": "verify_cause.confirmed"
+      "when": "verify_cause.confirmed || verify_cause.status == 'not_run'"
     },
     {
       "from": "write_verification_evidence",

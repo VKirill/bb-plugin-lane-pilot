@@ -72,10 +72,6 @@ export type RouterModelOutput = {
 };
 export type RouterModel = (input: RouterModelInput) => Promise<RouterModelOutput>;
 
-let pluggedModel: RouterModel | null = null;
-/** Plugs the live model for every `routeIntent` call that does not pass its own; `null` goes back to the deterministic scorer. */
-export const setRouterModel = (model: RouterModel | null): void => { pluggedModel = model; };
-
 // ------------------------------------------------------------------ text
 
 /** Lowercase, no diacritics (so ё is е and й is и on both sides of every comparison). */
@@ -595,7 +591,7 @@ export async function routeIntent(input: RouteInput): Promise<RouteDecision> {
   if (bestExcluded && bestExcluded.score > (top[0]?.score ?? 0)) warnings.push(`the closest match ${bestExcluded.workflow.id} is not available: ${excluded.find((e) => e.id === bestExcluded.workflow.id)!.reason}`);
 
   // The model chooses among the candidates; a failing or off-list answer falls back to the scorer, never to an unlisted id.
-  const model = input.model === undefined ? pluggedModel : input.model;
+  const model = input.model ?? null;
   let output: RouterModelOutput | null = null, modelFallback: string | undefined;
   if (model && cards.length) {
     try {

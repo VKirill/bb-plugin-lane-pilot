@@ -1,0 +1,224 @@
+import { dirname } from "node:path";
+import { issueQuickModelCalls, issueQuickShortPath, issueQuickWorkflowId } from "../../models/short-path";
+import type { z } from "zod";
+import type { rpcContract } from "../../../contracts";
+;
+import type { Field, Workflow } from "@lane-pilot/workflow-engine";
+import { sha256Hex, bestEffort, orMiss, isNotFound } from "@lane-pilot/kit";
+import { legacyDefinitionSha256, parseGoals, tallyOutcomes, type WorkflowView, wfChildRuns, wfLastRun, wfRecentRuns, wfRunOutcomeRows, wfTriggersOfWorkflow, workDoneRate, workflowView } from "@lane-pilot/workflow-engine";
+import { HARNESS_VERSION, createStatusResolver, globalWorkflowDir, loadWorkflowStore, nodeFileSource, projectWorkflowDir, type StoredWorkflow, type WorkflowFileSource, type WorkflowStore } from "../../../storage";
+import { buildWorkflowMap } from "../../models/workflow-map";
+import type { ServerCore } from "../../../contracts/server";
+
+import type { DocsApi } from "../../../docs/server";
+import type { WorkflowEngineApi } from "./workflow";
+import { BUILTIN_SOURCES, builtinWorkflows } from "../../builtin";
+export { builtinWorkflows };
+import type { WorkflowExportEntry } from "../../models/workflow-export";
+import { extractCategoryLabel, workflowCategory } from "../../models/categories";
+import { LOOP_HOOK_MANIFEST, parseLoopHookManifest, prepareLoopWorkflow, type LoopHookManifest } from "../../models/loop-hooks";
+
+/** The fields of the services bag this file reads, typed by the rooms that own them. */
+interface Services {
+  docsPlaces: DocsApi["docsPlaces"];
+  workflowEngine: WorkflowEngineApi["workflowEngine"];
+}
+
+type Output<K extends keyof typeof rpcContract> = z.infer<(typeof rpcContract)[K]["output"]>;
+export type WorkflowSummary = Output<"workflow_list">["workflows"][number];
+export type WorkflowStats = WorkflowSummary["stats"];
+type ProjectState = Output<"workflow_list">["project"];
+
+const RECENT_RUNS = 10;
+const STEP_OUTPUT_LIMIT = 4_000;
+const EVENT_TAIL = 80;
+
+export type ProjectLoopHooks = { manifest: LoopHookManifest | null; sha256: string | null; error?: string };
+
+const field = (item: Field) => ({ name: item.name, type: item.type, required: item.required, ...(item.values ? { values: item.values } : {}), ...((item.description ?? item.note) ? { note: item.description ?? item.note } : {}),
+  ...(item.default !== undefined ? { default: item.default } : {}) });
+
+/** A big output goes to the screen as a preview: the journal keeps the whole value. */
+export function clipJson(value: unknown, limit = STEP_OUTPUT_LIMIT): unknown {
+  if (value === null || value === undefined) return null;
+  const text = JSON.stringify(value);
+  return text.length <= limit ? value : { truncated: true, preview: text.slice(0, Math.floor(limit / 2.5)) };
+}
+
+const parseJson = (text: string | null): unknown => { if (text === null) return null; try { return JSON.parse(text); } catch { return null; } };
+
+/**
+ * The read side of the workflow screens: the library (built-in files, the hub's `~/.lane-pilot/workflows`, the project's
+ * `.lane-pilot/workflows` read on the project's machine), run statistics from the journal, and a run as a live view.
+ * Nothing here writes; the editor (W6) will add its saves next to these reads.
+ */
+export function createWorkflowLibrary(ctx: ServerCore, services: Pick<Services, "docsPlaces" | "workflowEngine">, options: { globalDir?: string } = {}) {
+  const { db } = ctx;
+  const globalDir = options.globalDir ?? globalWorkflowDir();
+  const statuses = createStatusResolver(db);
+
+  /** The project's workflow files, read once on its machine and served from memory to the store. */
+  async function readProjectFiles(projectId: string): Promise<{ files: Map<string, string>; dir: string | null; state: ProjectState }> {
+    const places = await bestEffort(ctx.log, "workflow library project places", services.docsPlaces(projectId), []);
+    const root = places.find((place) => place.scopes.length === 0) ?? places[0];
+    if (!root) return { files: new Map(), dir: null, state: "no_machine" };
+    try {
+      const listed = await ctx.host.call("listWorkflowFiles", { requestedHostId: root.hostId, projectCwd: root.path }, { hostId: root.hostId, timeoutMs: 15_000 });
+      if (listed.hostId !== root.hostId) throw new Error(`workflow files came from unexpected host ${listed.hostId}`);
+      // The reserved manifest is not a workflow definition. Keep it in the project snapshot for composition, while the
+      // regular store source excludes it below so malformed hook settings never shadow a workflow id.
+      return { files: new Map(listed.files.map((file) => [file.path, file.content])), dir: projectWorkflowDir(root.path), state: "ok" };
+    } catch (cause) {
+      ctx.log(`Lane Pilot workflow library: project files unavailable (${cause instanceof Error ? cause.message : String(cause)})`);
+      return { files: new Map(), dir: null, state: "unavailable" };
+    }
+  }
+
+  async function loadStore(projectId?: string): Promise<{ store: WorkflowStore; project: ProjectState; files: WorkflowFileSource; loopHooks: ProjectLoopHooks }> {
+    const project = projectId ? await readProjectFiles(projectId) : { files: new Map<string, string>(), dir: null, state: "not_requested" as const };
+    const files: WorkflowFileSource = {
+      list: async (dir) => (project.dir && dir === project.dir ? [...project.files.keys()].filter((name) => name !== LOOP_HOOK_MANIFEST).map((name) => `${dir}/${name}`).sort() : nodeFileSource.list(dir)),
+      read: async (path) => (project.dir && dirname(path) === project.dir ? project.files.get(path.slice(project.dir.length + 1)) ?? "" : nodeFileSource.read(path)),
+    };
+    let loopHooks: ProjectLoopHooks = { manifest: null, sha256: null };
+    if (project.state === "unavailable") loopHooks = { manifest: null, sha256: null, error: "project workflow files are unavailable; loop hooks cannot be safely resolved" };
+    if (project.files.has(LOOP_HOOK_MANIFEST)) {
+      try { loopHooks = parseLoopHookManifest(project.files.get(LOOP_HOOK_MANIFEST)!); }
+      catch (cause) { loopHooks = { manifest: null, sha256: null, error: cause instanceof Error ? cause.message : String(cause) }; }
+    }
+    const store = await loadWorkflowStore({ builtin: BUILTIN_SOURCES, files, globalDir, ...(project.dir ? { projectDir: project.dir } : {}), resolveStatus: statuses.resolve });
+    return { store, project: project.state, files, loopHooks };
+  }
+
+  function statsFor(workflowId: string, projectId?: string): WorkflowStats {
+    // ponytail: the same full scan as runRecords. Ceiling: a workflow with a very long history. Upgrade: a stored outcome column.
+    const rows = wfRunOutcomeRows(db, workflowId, projectId);
+    const since30d = Date.now() - 30 * 86_400_000;
+    const tally = tallyOutcomes(rows);
+    const last = wfLastRun(db, workflowId, projectId);
+    return { runs: tally.runs, runs30d: rows.filter((row) => row.created_at >= since30d).length, succeeded: tally.executed, failed: tally.engineBad, active: tally.active, successRate: workDoneRate(tally),
+      executed: tally.executed, workDone: tally.workDone, refused: tally.refused, escalated: tally.escalated,
+      lastRunAt: last?.created_at ?? null, lastStatus: last?.status ?? null, lastRunId: last?.id ?? null };
+  }
+
+  const summary = (item: StoredWorkflow, projectId?: string): WorkflowSummary => ({
+    id: item.workflow.id, name: item.workflow.name, description: item.workflow.description, status: item.workflow.status, version: item.workflow.version,
+    scope: item.origin, internal: item.workflow.internal, tags: item.workflow.tags, nodes: item.workflow.nodes.filter((node) => node.type !== "note").length,
+    warnings: item.warnings.length, category: workflowCategory(item.workflow), categoryLabel: extractCategoryLabel(item.workflow.category),
+    stats: statsFor(item.workflow.id, projectId),
+  });
+
+  return {
+    issueQuickWorkflowId, issueQuickModelCalls, issueQuickShortPath,
+    loadStore,
+
+    async prepareWorkflow(projectId: string, workflow: Workflow) {
+      const loaded = await loadStore(projectId);
+      if (loaded.loopHooks.error) throw new Error(loaded.loopHooks.error);
+      if (!loaded.loopHooks.manifest) return { workflow, resolve: services.workflowEngine.resolveWorkflow, composed: false };
+      const prepared = prepareLoopWorkflow({ workflow, manifest: loaded.loopHooks.manifest, manifestSha256: loaded.loopHooks.sha256, resolve: loaded.store.resolve,
+        status: (id, version) => { const item = loaded.store.get(id); return item && (version === undefined || item.workflow.version === version) ? { status: item.workflow.status, internal: item.workflow.internal, startedBy: item.workflow.startedBy } : null; } });
+      return { workflow: prepared.workflow, resolve: prepared.provenance.orderedHookIds.length ? prepared.resolve : services.workflowEngine.resolveWorkflow, composed: prepared.provenance.orderedHookIds.length > 0 };
+    },
+
+    async list(input: { projectId?: string }): Promise<Output<"workflow_list">> {
+      const { store, project, loopHooks } = await loadStore(input.projectId);
+      const problems = [...store.problems];
+      if (loopHooks.error) problems.push({ origin: "project", source: LOOP_HOOK_MANIFEST, problems: [{ level: "error", code: "loop_hooks", message: loopHooks.error }] });
+      return {
+        workflows: store.list().map((item) => summary(item, input.projectId)).sort((a, b) => Number(a.internal) - Number(b.internal) || a.name.en.localeCompare(b.name.en)),
+        problems: problems.map((row) => ({ origin: row.origin, source: row.source, messages: row.problems.map((problem) => problem.message) })),
+        project,
+      };
+    },
+
+    /** The library as one map for «Карта графов»: the same definitions `list` reads, plus the calls between graphs. */
+    async map(input: { projectId?: string; locale?: "en" | "ru" }): Promise<Output<"workflow_map">> {
+      const { store, project } = await loadStore(input.projectId);
+      return { ...buildWorkflowMap(store.list(), (id) => statsFor(id, input.projectId), HARNESS_VERSION, input.locale), project };
+    },
+
+    /** A workflow of the library with the file it was read from (its text hashed), so an editor can start from it and publish over that file and no other. */
+    async source(input: { id: string; projectId?: string }): Promise<{ workflow: Workflow; origin: StoredWorkflow["origin"]; path: string; fileSha256: string | null; ids: string[] } | null> {
+      const { store, files } = await loadStore(input.projectId);
+      const item = store.get(input.id);
+      if (!item) return null;
+      const text = item.origin === "builtin" ? null : await orMiss(files.read(item.source), null, isNotFound);
+      return { workflow: item.workflow, origin: item.origin, path: item.source, fileSha256: text === null ? null : sha256Hex(text), ids: store.list().map((other) => other.workflow.id) };
+    },
+
+    async get(input: { id: string; projectId?: string }): Promise<Output<"workflow_get">> {
+      const { store } = await loadStore(input.projectId);
+      const item = store.get(input.id);
+      if (!item) return { workflow: null };
+      const { workflow } = item;
+      const runs = wfRecentRuns(db, workflow.id, input.projectId, RECENT_RUNS);
+      const requires = workflow.requires;
+      return {
+        workflow: {
+          ...summary(item, input.projectId),
+          examples: workflow.examples, inputs: workflow.inputs.map(field), outputs: workflow.outputs.map(field),
+          triggers: workflow.triggers.map((trigger) => trigger.cron ? `${trigger.type} ${trigger.cron}` : trigger.type),
+          requires: [...requires.plugins, ...requires.skills, ...requires.mcp, ...requires.tools, ...requires.platforms, ...requires.machines, ...requires.env, ...requires.secrets, ...(requires.browserSession ? ["browser session"] : [])],
+          budget: { maxTokens: workflow.budget.maxTokens ?? null, maxCostUsd: workflow.budget.maxCostUsd ?? null, maxWallSeconds: workflow.budget.maxWallSeconds ?? null },
+          qualityMode: workflow.quality_mode?.default ?? null, source: item.source, sha256: item.sha256,
+          startedBy: workflow.startedBy ?? null,
+          schedules: wfTriggersOfWorkflow(db, workflow.id)
+            .map((row) => ({ projectId: row.project_id, slot: row.slot, automationId: row.automation_id })),
+          proven: (() => { const live = statuses.liveSuccess(workflow.id, workflow.version, workflow.live_success, { current: item.sha256, legacy: legacyDefinitionSha256(workflow) }); return live ? { runId: live.id, at: live.updated_at } : null; })(),
+          warningMessages: item.warnings.map((warning) => warning.message),
+          graph: workflowView(workflow, store.resolve),
+          runs: runs.map((row) => ({ id: row.id, status: row.status, reason: row.reason, mode: row.mode, createdAt: row.created_at, updatedAt: row.updated_at,
+            tokens: row.tokens_used, costUsd: row.cost_micro_usd / 1_000_000, parentRunId: row.parent_run_id })),
+        },
+      };
+    },
+
+    /** The run as the engine journals it: the pinned definition drawn as a graph, every step with its state and thread, the child runs of subworkflow nodes. */
+    runSnapshot(input: { runId: string }): Output<"workflow_run_snapshot"> {
+      const snapshot = services.workflowEngine.snapshot(input.runId);
+      if (!snapshot) return { snapshot: null };
+      const { run } = snapshot;
+      const children = wfChildRuns(db, run.id);
+      const events = (snapshot.events as Array<{ seq: number; step_key: string | null; kind: string; from_state: string | null; to_state: string | null; detail: string | null; at: number }>).slice(-EVENT_TAIL);
+      // The audit row also carries the engine's dedup keys (sha/outputSha); the contract sees only the verdict.
+      const audit = services.workflowEngine.lastAudit(run.id);
+      return {
+        snapshot: {
+          run: { id: run.id, workflowId: run.workflow_id, version: run.workflow_version, status: run.status, reason: run.reason, mode: run.mode, projectId: run.project_id,
+            createdAt: run.created_at, updatedAt: run.updated_at, tokens: run.tokens_used, costUsd: run.cost_micro_usd / 1_000_000, parentRunId: run.parent_run_id,
+            parentStepKey: run.parent_step_key, stepsUsed: run.steps_used, inputs: clipJson(parseJson(run.inputs_json)), output: clipJson(parseJson(run.output_json)) },
+          graph: workflowView(JSON.parse(run.definition_json)) as WorkflowView,
+          steps: snapshot.steps.map((step) => {
+            const receipt = parseJson(step.receipt_json) as { threadId?: string | null } | null;
+            const output = parseJson(step.output_json) as Record<string, unknown> | null;
+            const awaiting = parseJson(step.await_json) as { kind?: string } | null;
+            return { key: step.step_key, nodeId: step.node_id, state: step.state, visit: step.visit, scope: step.scope, attempt: step.attempt, parentKey: step.parent_key, edgeIndex: step.edge_index,
+              startedAt: step.started_at, endedAt: step.ended_at, error: step.error, threadId: receipt?.threadId ?? null,
+              handoff: typeof output?.handoff === "string" ? output.handoff : null, awaiting: awaiting?.kind ?? null, input: clipJson(parseJson(step.input_json)), output: clipJson(output) };
+          }),
+          children: children.map((row) => ({ runId: row.id, stepKey: row.parent_step_key, workflowId: row.workflow_id, status: row.status })),
+          goals: parseGoals(run.goals_json),
+          goalAudit: audit ? { verdict: audit.verdict, met: audit.met, unmet: audit.unmet.map((entry) => ({ id: entry.id, why: entry.why })),
+            ...(audit.notes !== undefined ? { notes: audit.notes } : {}), ...(audit.error !== undefined ? { error: audit.error } : {}), at: audit.at } : null,
+          goalChanges: services.workflowEngine.goalJournal(run.id).map((entry) => ({ at: entry.at, by: entry.by, reason: entry.reason, goals: entry.goals.length })),
+          events: events.map((row) => ({ seq: row.seq, stepKey: row.step_key, kind: row.kind, from: row.from_state, to: row.to_state, detail: row.detail, at: row.at })),
+        },
+      };
+    },
+
+    async exportEntries(projectId?: string): Promise<WorkflowExportEntry[]> {
+      const { store, files } = await loadStore(projectId);
+      const entries: WorkflowExportEntry[] = [];
+      for (const item of store.list()) {
+        let definition: unknown = null;
+        if (item.origin === "builtin") definition = BUILTIN_SOURCES.find((source) => source.name === item.source)?.value ?? null;
+        else {
+          try { definition = JSON.parse(await files.read(item.source)); } catch { definition = null; }
+        }
+        entries.push({ definition: (definition ?? item.workflow) as Record<string, unknown>, workflow: item.workflow, scope: item.origin });
+      }
+      return entries;
+    },
+  };
+}

@@ -24,7 +24,7 @@ import {
   listProjectArtifacts,
   listTaskTransitions,
 } from "../../src/rooms/storage";
-import { runWorkflowTool } from "../../src/rooms/workflow/server/workflow-tools";
+import { runWorkflowTool } from "../../src/rooms/workflow/server/handlers/workflow-tools";
 import { setupLiveSpecialistEnv } from "./live-e2e-harness";
 
 describe("Specialist OS live ActionOrder dispatch, PDAS v1 artifacts, and G-22..G-35 closures", () => {
@@ -179,8 +179,8 @@ describe("Specialist OS live ActionOrder dispatch, PDAS v1 artifacts, and G-22..
       );
 
       expect(Number(res.output.executed_count)).toBeGreaterThanOrEqual(2);
-      expect(Number(res.output.proposed_count)).toBe(3);
-      expect(Number(res.output.waiting_owner_count)).toBeGreaterThanOrEqual(1);
+      expect(Number(res.output.proposed_count)).toBe(2);
+      expect(Number(res.output.waiting_owner_count)).toBeGreaterThanOrEqual(2);
       expect(Number(res.output.blocked_count)).toBe(0);
       expect(
         Number(res.output.executed_count) +
@@ -201,21 +201,9 @@ describe("Specialist OS live ActionOrder dispatch, PDAS v1 artifacts, and G-22..
       // 3. create_extension wrote skill draft + workflow draft
       expect(listProjectArtifacts(env.db, env.projectId, { kind: "extension_skill" }).length).toBeGreaterThanOrEqual(1);
 
-      // 4. content_batch never fabricated hardcoded vs-competitor-a
-      const cfBatches = env.db
-        .prepare("SELECT batch_id, item_count FROM lane_pilot_sp_cf_batch WHERE project_id = ?")
-        .all(env.projectId) as Array<{ batch_id: string; item_count: number }>;
-      expect(cfBatches.length).toBeGreaterThanOrEqual(1);
-      expect(cfBatches[0]!.item_count).toBe(2);
-      const cfStagingArts = listProjectArtifacts(env.db, env.projectId, { kind: "cf_batch_manifest" });
-      expect(cfStagingArts.length).toBeGreaterThanOrEqual(1);
-      const stagedManifestText = readFileSync(join(env.checkout, cfStagingArts[0]!.rel_path), "utf8");
-      expect(stagedManifestText).toContain("vs-linear");
-      expect(stagedManifestText).not.toContain("vs-competitor-a");
-
-      // 5. owner_gate posted valid OwnerWaiting item
+      // 4. owner_gate and content_batch fallback posted valid OwnerWaiting items
       const openOwner = listOpenOwnerItems(env.db, { source: "specialist" });
-      expect(openOwner.length).toBeGreaterThanOrEqual(1);
+      expect(openOwner.length).toBeGreaterThanOrEqual(2);
 
       // 6. .agents/manifest.json updated with PDAS v1 schema
       const manifest = JSON.parse(readFileSync(join(env.checkout, ".agents/manifest.json"), "utf8")) as {
@@ -223,13 +211,13 @@ describe("Specialist OS live ActionOrder dispatch, PDAS v1 artifacts, and G-22..
         artifacts: Array<{ rel_path: string }>;
       };
       expect(manifest.schema).toBe("lp.project-manifest/1");
-      expect(manifest.artifacts.length).toBeGreaterThanOrEqual(3);
+      expect(manifest.artifacts.length).toBeGreaterThanOrEqual(2);
     } finally {
       await env.dispose();
     }
   });
 
-  it("writes lane_pilot_sp_eval_run, question answers, api_units ledger, fs.write folder files, and sweeps resolved owner items", async () => {
+  it("writes question answers, api_units ledger, fs.write folder files, and sweeps resolved owner items", async () => {
     const env = await setupLiveSpecialistEnv();
     try {
       const execs = (
@@ -268,7 +256,7 @@ describe("Specialist OS live ActionOrder dispatch, PDAS v1 artifacts, and G-22..
       expect(existsSync(join(env.checkout, ".agents/seo/pages/pricing/meta.json"))).toBe(true);
       expect(getProjectArtifact(env.db, env.projectId, ".agents/seo/pages/pricing/brief.md")?.domain).toBe("seo");
 
-      // Test sp.commit_memory writing eval_run + question answers + api_units + shadow questions (no fake hardcoded questions!)
+      // Test sp.commit_memory writing question answers + api_units + shadow questions (no fake hardcoded questions!)
       mkdirSync(join(env.checkout, ".agents/specialist"), { recursive: true });
       const shadowPath = ".agents/specialist/shadow-questions.json";
       writeFileSync(
@@ -280,17 +268,10 @@ describe("Specialist OS live ActionOrder dispatch, PDAS v1 artifacts, and G-22..
       const commitExec = execs.get("sp.commit_memory")!;
       const commitParams = {
         domain: "marketing",
-        summary: { note: "Nightly eval completed" },
+        summary: { note: "Weekly review completed" },
         shadowQuestions: JSON.parse(readFileSync(join(env.checkout, shadowPath), "utf8")),
         answeredQuestions: [{ questionId: "q_checkout_friction", answer: "42% drop at card CVV" }],
         apiUnitsSpent: 42,
-        evalReport: {
-          suite: "golden_20",
-          passed: 19,
-          total: 20,
-          calibration_ece: 0.03,
-          false_action_rate: 0.0,
-        },
       };
       const commitRes = await commitExec.run({
         runId: "wf_eval_1",
@@ -302,7 +283,7 @@ describe("Specialist OS live ActionOrder dispatch, PDAS v1 artifacts, and G-22..
           params: commitParams,
           out: [{ name: "questions_added", type: "number" }, { name: "swept_questions", type: "number" }],
         },
-        workflow: { id: "lp.specialist-eval", version: 1, name: { en: "Specialist Eval" }, nodes: [] } as unknown as Workflow,
+        workflow: { id: "mkt-weekly-review", version: 1, name: { en: "Weekly Review" }, nodes: [] } as unknown as Workflow,
         runtime: env.rt,
         template: (v: unknown) => v,
         render: (s: string) => s,
@@ -311,11 +292,6 @@ describe("Specialist OS live ActionOrder dispatch, PDAS v1 artifacts, and G-22..
       } as unknown as StepContext<ChainRuntime>);
       expect(commitRes.output.questions_added).toBe(1);
       expect(commitRes.output.swept_questions).toBe(1);
-
-      const evalRows = env.db
-        .prepare("SELECT * FROM lane_pilot_sp_eval_run WHERE project_id = ? AND role = 'growth-marketer'")
-        .all(env.projectId) as Array<Record<string, unknown>>;
-      expect(evalRows).toHaveLength(1);
 
       const qRow = env.db
         .prepare("SELECT status, answer_text FROM lane_pilot_sp_question_state WHERE project_id = ? AND question_id = 'q_checkout_friction'")
@@ -363,6 +339,7 @@ describe("Specialist OS live ActionOrder dispatch, PDAS v1 artifacts, and G-22..
         key: `sp:intent:${staged.intentId}`,
         source: "specialist",
         kind: "decision",
+        reason: "decision",
         projectId: env.projectId,
         wake: false,
         what: "Sweep test gate",
@@ -376,11 +353,10 @@ describe("Specialist OS live ActionOrder dispatch, PDAS v1 artifacts, and G-22..
       expect(listOpenOwnerItems(env.db, { source: "specialist" }).some((i) => i.key === `sp:intent:${staged.intentId}`)).toBe(false);
 
       const ov = specialistOverview(env.db, env.projectId);
-      expect(ov.evalRunsCount).toBe(1);
       expect(ov.taskTransitionsCount).toBe(1);
       expect(ov.memoryReceiptsCount).toBe(1);
       expect(ov.artifactsCount).toBeGreaterThanOrEqual(2);
-      expect(specialistSnapshot(env.db, env.projectId).evalRunsCount).toBe(1);
+      expect(specialistSnapshot(env.db, env.projectId).taskTransitionsCount).toBe(1);
     } finally {
       await env.dispose();
     }

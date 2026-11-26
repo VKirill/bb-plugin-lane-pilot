@@ -28,13 +28,15 @@
   },
   "not_for": [
     "issue-full",
-    "companion"
+    "companion",
+    "issue-quick"
   ],
   "status": "published",
   "tags": [
     "code",
     "issue"
   ],
+  "category": "code",
   "inputs": {
     "title": {
       "type": "string",

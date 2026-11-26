@@ -4,7 +4,6 @@ import {
   buildCapabilityRegistry,
   canTransition,
   chooseRecipient,
-  claimHandoffLease,
   createHandoff,
   expireOverdueHandoffs,
   extractHandoffReceiptBlock,
@@ -13,10 +12,10 @@ import {
   handoffMigrations,
   listHandoffEvents,
   listHandoffs,
+  nextHandoffDeadline,
   parseHandoffCard,
   parseHandoffReceipt,
   recordHandoffReceipt,
-  releaseHandoffLease,
   transitionHandoff,
 } from "../src/index";
 
@@ -78,23 +77,13 @@ describe("handoff store", () => {
     expect(result).toEqual({ ok: false, reason: "illegal_transition", from: "queued" });
   });
 
-  it("gives one holder a lease at a time and frees it on a terminal state", () => {
-    const db = openDb();
-    createHandoff(db, { id: "h3", projectId: "p", draft });
-    expect(claimHandoffLease(db, { id: "h3", holder: "a", leaseMs: 1000, now: 0 }).ok).toBe(true);
-    expect(claimHandoffLease(db, { id: "h3", holder: "b", leaseMs: 1000, now: 500 })).toEqual({ ok: false, reason: "held_by_other", holder: "a" });
-    expect(claimHandoffLease(db, { id: "h3", holder: "b", leaseMs: 1000, now: 1500 }).ok).toBe(true);
-    expect(releaseHandoffLease(db, { id: "h3", holder: "a" })).toBe(false);
-    expect(releaseHandoffLease(db, { id: "h3", holder: "b" })).toBe(true);
-    transitionHandoff(db, { id: "h3", to: "canceled", actor: "pm" });
-    expect(claimHandoffLease(db, { id: "h3", holder: "a", leaseMs: 10 })).toEqual({ ok: false, reason: "terminal" });
-  });
-
-  it("expires overdue cards and lists by state", () => {
+  it("computes the nearest deadline across active handoffs and expires overdue cards", () => {
     const db = openDb();
     createHandoff(db, { id: "late", projectId: "p", draft: { ...draft, deadlineAt: 100 }, now: 0 });
     createHandoff(db, { id: "fresh", projectId: "p", draft: { ...draft, deadlineAt: 10_000 }, now: 0 });
+    expect(nextHandoffDeadline(db)).toBe(100);
     expect(expireOverdueHandoffs(db, 200)).toEqual(["late"]);
+    expect(nextHandoffDeadline(db)).toBe(10_000);
     expect(listHandoffs(db, { projectId: "p", states: ["queued"] }).map((item) => item.card.id)).toEqual(["fresh"]);
   });
 });

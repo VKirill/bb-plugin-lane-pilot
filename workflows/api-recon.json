@@ -42,6 +42,7 @@
     "recon",
     "reverse-engineering"
   ],
+  "category": "business",
   "triggers": [
     "chat",
     "manual"

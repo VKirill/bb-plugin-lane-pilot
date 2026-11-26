@@ -1,8 +1,8 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { DEFAULT_LEAD_MD, identityBlock, leadDir, loadIdentity, sha256, writeRoadExport } from "../../src/rooms/lead/server/identity";
+import { DEFAULT_LEAD_MD, identityBlock, leadDir, loadIdentity, sha256 } from "../../src/rooms/lead/identity";
 
 const dirs: string[] = [];
 const fresh = () => { const dir = mkdtempSync(join(tmpdir(), "lead-id-")); dirs.push(dir); return dir; };
@@ -31,13 +31,10 @@ describe("the lead's identity file", () => {
     expect(block.endsWith("</lead_identity>")).toBe(true);
   });
 
-  it("writes ROAD.md next to LEAD.md and honours LANE_PILOT_LEAD_DIR", () => {
+  it("honours LANE_PILOT_LEAD_DIR when loading LEAD.md", () => {
     const dir = fresh();
     process.env.LANE_PILOT_LEAD_DIR = dir;
     expect(leadDir()).toBe(dir);
-    const path = writeRoadExport("---\ntitle: ROAD\n---\n");
-    expect(path).toBe(join(dir, "ROAD.md"));
-    expect(readFileSync(path, "utf8")).toContain("title: ROAD");
     expect(loadIdentity().path).toBe(join(dir, "LEAD.md"));
   });
 });

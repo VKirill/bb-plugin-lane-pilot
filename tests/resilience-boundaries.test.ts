@@ -1,7 +1,7 @@
 import { expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { breakerKey, createProviderBreaker, createRunBudget, runningWriterBudgetStop } from "@lane-pilot/resilience";
-import { createWriterSpawn } from "../src/rooms/writer/server/spawn";
+import { createWriterSpawn } from "../src/rooms/writer/server/services/spawn";
 import { createAttempt, createRun, createTask, openDatabase, setRunThread } from "../src/rooms/plugin-db";
 
 it("A-034 owner presence refusal releases an unused half-open provider trial", async () => {
@@ -21,7 +21,7 @@ it("A-034 owner presence refusal releases an unused half-open provider trial", a
     host: { call: async (method: string) => method === "runCommand" ? { hostId: "h", exitCode: 0, stdout: "[]", stderr: "" } : {} },
     effectiveProjectSettings: async () => ({ values: { "memory.enabled": false, "adoc.040": "auto" } }),
   };
-  const writer = createWriterSpawn(ctx as never, { providerBreaker: breaker, ownerPresence: { holds: () => "owner_present:fixture" }, ruleScan: { chainForRun: async () => [] } } as never);
+  const writer = createWriterSpawn({ ...ctx, scopesForWorkspace: async () => [] } as never, { providerBreaker: breaker, ownerPresence: { holds: () => "owner_present:fixture" } } as never);
   try {
     const result = await writer.spawnWriterAttempt({ projectId: "P", runId: "run", taskId: "t1", attemptId: "a1", config: { projectId: "P", hostId: "h", pmWorkspacePath: "/repo", writerWorkspacePath: "/repo", pmProviderId: "codex", pmModel: "fixture", writerProviderId: "codex", writerModel: "fixture" }, task: task as never, plan: "fixture", pmThreadId: "pm" });
     expect(result).toMatchObject({ ok: false, reason: "writer_provider_unavailable:owner_present:fixture" });

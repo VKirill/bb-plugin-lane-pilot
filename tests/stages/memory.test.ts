@@ -2,7 +2,7 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
 import { searchMemoryRecords, storeMemoryRecords } from "@lane-pilot/memory-core";
 import { migrations, openDatabase } from "../../src/rooms/plugin-db";
-import { memoryContext, memoryRecordId, parseMemoryCandidates, parseMemorySettings } from "../../src/rooms/memory/memory";
+import { memoryContext, memoryRecordId, parseMemoryCandidates, parseMemorySettings } from "../../src/rooms/memory/models/memory";
 
 describe("project memory stage", () => {
   it("validates JSON output, rejects secret-like content, and enforces per-output budgets", () => {

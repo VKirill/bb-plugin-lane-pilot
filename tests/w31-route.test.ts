@@ -1,12 +1,10 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
 import { createAttempt, createRun, createTask, openDatabase, transitionAttempt } from "../src/rooms/plugin-db";
-import { attemptMetrics, queueWaitMs, runQueueWaits } from "../src/rooms/usage/server/attempt-metrics";
-import { markCancelCode, cancelAttemptById, CANCEL_CODES } from "../src/rooms/runs/server/cancel";
-import { cancelParetoLine } from "../src/rooms/wall/morning";
+import { queueWaitMs } from "../src/rooms/usage/models/attempt-metrics";
+import { attemptMetrics, runQueueWaits } from "../src/rooms/usage/server";
+import { markCancelCode, cancelAttemptById, CANCEL_CODES } from "../src/rooms/runs/server";
 import { rpcRuns } from "../src/rooms/contracts/rpc-runs";
-
-const NOW = 20 * 86_400_000;
 
 function world() {
   const { bb } = createFakePluginHost({ pluginId: "lane-pilot" });
@@ -42,22 +40,6 @@ describe("W31 rank 6: cancel codes", () => {
     await cancelAttemptById(ctx, "a2", undefined, "why", "superseded");
     expect(seen).toEqual(["superseded"]);
     expect((db.prepare("SELECT cancel_code FROM lane_pilot_attempt WHERE id='a2'").get() as { cancel_code: string }).cancel_code).toBe("superseded");
-  });
-
-  it("the morning line reports the Pareto of cancel codes in the window", () => {
-    const { db } = world();
-    for (const [id, code] of [["c1", "owner_cancel"], ["c2", "owner_cancel"], ["c3", "stuck"], ["c4", null]] as const) {
-      createAttempt(db, { id, runId: "run", taskId: "t1" });
-      transitionAttempt(db, id, "spawn_requested"); transitionAttempt(db, id, "running", { threadId: `thr_${id}` });
-      transitionAttempt(db, id, "cancel_requested"); transitionAttempt(db, id, "canceled");
-      if (code) markCancelCode(db, id, code);
-    }
-    const line = cancelParetoLine(db as never);
-    expect(line).toContain("owner_cancel 2");
-    expect(line).toContain("stuck 1");
-    expect(line).toContain("unknown 1");
-    // Before the window: nothing.
-    expect(cancelParetoLine(db as never, Date.now() + 2 * 86_400_000)).toBeNull();
   });
 });
 

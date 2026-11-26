@@ -1,10 +1,7 @@
-import { VISIBLE_CATALOG, type CatalogRow } from "@lane-pilot/settings-catalog";
+import { type CatalogRow } from "@lane-pilot/settings-catalog";
 import { t, type I18nKey } from "@lane-pilot/i18n";
-import { COUNCIL_SEATS } from "@lane-pilot/models";
 import type { StageReceipt } from "@lane-pilot/contracts";
 import { settingUnitKey } from "./setting-copy";
-
-export { COUNCIL_SEATS };
 
 /** History comes this many runs at a time. */
 
@@ -156,7 +153,7 @@ export const HELP_BY_KEY: Record<string, I18nKey> = {
 };
 
 export function uniqueByStorage(rows: CatalogRow[]): CatalogRow[] {
-  const rank: Record<CatalogRow["uiStatus"], number> = { editable: 3, readonly: 2, gap: 1, excluded: 0 };
+  const rank: Record<CatalogRow["uiStatus"], number> = { editable: 3, readonly: 2, hidden: 0 };
   const byKey = new Map<string, CatalogRow>();
   for (const row of rows) {
     const current = byKey.get(row.storageKey);
@@ -169,8 +166,8 @@ export function isCompatibilityAlias(row: CatalogRow): boolean {
   return row.storageKey.startsWith("adoc.") && row.channel === "NONE";
 }
 
-export function compatibilityAliasRows(): CatalogRow[] {
-  return uniqueByStorage(VISIBLE_CATALOG.filter((row) => isCompatibilityAlias(row)));
+export function compatibilityAliasRows(rows: readonly CatalogRow[] = []): CatalogRow[] {
+  return uniqueByStorage(rows.filter((row) => isCompatibilityAlias(row)));
 }
 
 export function numericUnit(row: CatalogRow): I18nKey {

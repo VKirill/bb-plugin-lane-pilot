@@ -2,8 +2,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import plugin from "../../server";
 import { rpcContract } from "../../src/rooms/contracts";
-import { tokensFrom } from "../../src/rooms/native-agent/native-session";
-import { architectStartRpc } from "../../src/rooms/workflow/server/architect-start";
+import { tokensFrom } from "../../src/rooms/native-agent/models/native-session";
+import { architectStartRpc } from "../../src/rooms/workflow/server/handlers/architect-start";
 import { openDatabase } from "../../src/rooms/plugin-db";
 
 const projectId = "proj_arch";

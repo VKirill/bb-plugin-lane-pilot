@@ -36,6 +36,7 @@
     "code",
     "lifecycle"
   ],
+  "category": "code",
   "inputs": {
     "goal": {
       "type": "string",
@@ -90,7 +91,12 @@
   "nodes": [
     {
       "id": "contract",
-      "produces": [{"kind": "report", "version": 1}],
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
       "type": "agent",
       "role": "planner",
       "title": {
@@ -134,8 +140,8 @@
         "decisions": "[]",
         "risks": "[]",
         "scope_verdict": "unknown",
-        "recommendation": "go",
-        "confidence": 100,
+        "recommendation": "not_run",
+        "confidence": 0,
         "open_questions": "[]",
         "residual_risks": "[]",
         "anchors": "[]"
@@ -147,7 +153,7 @@
       "workflow": "lp.plan",
       "skip_when": "$inputs.tasks.length > 0",
       "skip_out": {
-        "status": "ok",
+        "status": "not_run",
         "tasks": "$inputs.tasks",
         "waves": "[]",
         "has_ui": false
@@ -210,7 +216,12 @@
     },
     {
       "id": "qa",
-      "produces": [{"kind": "qa-report", "version": 1}],
+      "produces": [
+        {
+          "kind": "qa-report",
+          "version": 1
+        }
+      ],
       "type": "agent",
       "role": "browser-qa",
       "applicable_modes": [
@@ -219,13 +230,13 @@
       ],
       "skip_when": "!plan.has_ui",
       "skip_out": {
-        "status": "pass",
+        "status": "not_run",
         "findings": "[]"
       },
       "src": "maestro-flow:ref/frontend-verify.md",
       "prompt": "FRONTEND_VERIFY_METHOD over the merged result: three layers per feature, 375 and 1280 px, silence is never pass. Severity is one of critical, high, medium, low, info.",
       "out": {
-        "status": "pass|rework|block",
+        "status": "pass|rework|block|not_run",
         "findings": "Finding[]"
       },
       "guards": {
@@ -367,7 +378,7 @@
       "from": "plan",
       "to": "build",
       "pass": "artifact",
-      "when": "plan.status in ['ok','low_confidence']"
+      "when": "plan.status in ['ok','low_confidence'] || $inputs.tasks.length > 0"
     },
     {
       "from": "plan",
@@ -410,7 +421,7 @@
       "from": "qa",
       "to": "uat",
       "pass": "artifact",
-      "when": "qa.status == 'pass'"
+      "when": "qa.status in ['pass', 'not_run']"
     },
     {
       "from": "qa",

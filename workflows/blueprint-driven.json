@@ -37,6 +37,7 @@
     "docs",
     "large"
   ],
+  "category": "planning",
   "inputs": {
     "goal": {
       "type": "string",
@@ -105,7 +106,12 @@
   "nodes": [
     {
       "id": "discovery",
-      "produces": [{"kind": "report", "version": 1}],
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
       "type": "agent",
       "role": "analyst",
       "title": {
@@ -128,8 +134,19 @@
     },
     {
       "id": "brief",
-      "consumes": [{"kind": "report", "version": 1, "from": "discovery"}],
-      "produces": [{"kind": "report", "version": 1}],
+      "consumes": [
+        {
+          "kind": "report",
+          "version": 1,
+          "from": "discovery"
+        }
+      ],
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
       "type": "agent",
       "role": "planner",
       "src": "maestro-flow:workflows/blueprint.md (P2)",
@@ -145,8 +162,19 @@
     },
     {
       "id": "prd",
-      "consumes": [{"kind": "report", "version": 1, "from": "brief"}],
-      "produces": [{"kind": "report", "version": 1}],
+      "consumes": [
+        {
+          "kind": "report",
+          "version": 1,
+          "from": "brief"
+        }
+      ],
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
       "type": "agent",
       "role": "planner",
       "src": "maestro-flow:workflows/blueprint.md (P3)",
@@ -163,8 +191,19 @@
     },
     {
       "id": "architecture",
-      "consumes": [{"kind": "report", "version": 1, "from": "prd"}],
-      "produces": [{"kind": "report", "version": 1}],
+      "consumes": [
+        {
+          "kind": "report",
+          "version": 1,
+          "from": "prd"
+        }
+      ],
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
       "type": "agent",
       "role": "planner",
       "src": "maestro-flow:workflows/blueprint.md (P4)",
@@ -180,8 +219,19 @@
     },
     {
       "id": "epics",
-      "consumes": [{"kind": "report", "version": 1, "from": "architecture"}],
-      "produces": [{"kind": "report", "version": 1}],
+      "consumes": [
+        {
+          "kind": "report",
+          "version": 1,
+          "from": "architecture"
+        }
+      ],
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
       "type": "agent",
       "role": "planner",
       "src": "maestro-flow:workflows/blueprint.md (P5)",
@@ -199,13 +249,39 @@
     {
       "id": "readiness",
       "consumes": [
-        {"kind": "report", "version": 1, "from": "brief"},
-        {"kind": "report", "version": 1, "from": "prd"},
-        {"kind": "report", "version": 1, "from": "architecture"},
-        {"kind": "report", "version": 1, "from": "epics"},
-        {"kind": "report", "version": 1, "from": "autofix", "required": false}
+        {
+          "kind": "report",
+          "version": 1,
+          "from": "brief"
+        },
+        {
+          "kind": "report",
+          "version": 1,
+          "from": "prd"
+        },
+        {
+          "kind": "report",
+          "version": 1,
+          "from": "architecture"
+        },
+        {
+          "kind": "report",
+          "version": 1,
+          "from": "epics"
+        },
+        {
+          "kind": "report",
+          "version": 1,
+          "from": "autofix",
+          "required": false
+        }
       ],
-      "produces": [{"kind": "report", "version": 1}],
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
       "type": "agent",
       "role": "plan-critic",
       "session": "new",
@@ -229,13 +305,38 @@
     {
       "id": "autofix",
       "consumes": [
-        {"kind": "report", "version": 1, "from": "brief"},
-        {"kind": "report", "version": 1, "from": "prd"},
-        {"kind": "report", "version": 1, "from": "architecture"},
-        {"kind": "report", "version": 1, "from": "epics"},
-        {"kind": "report", "version": 1, "from": "readiness"}
+        {
+          "kind": "report",
+          "version": 1,
+          "from": "brief"
+        },
+        {
+          "kind": "report",
+          "version": 1,
+          "from": "prd"
+        },
+        {
+          "kind": "report",
+          "version": 1,
+          "from": "architecture"
+        },
+        {
+          "kind": "report",
+          "version": 1,
+          "from": "epics"
+        },
+        {
+          "kind": "report",
+          "version": 1,
+          "from": "readiness"
+        }
       ],
-      "produces": [{"kind": "report", "version": 1}],
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
       "type": "agent",
       "role": "planner",
       "title": {
@@ -271,8 +372,19 @@
     },
     {
       "id": "commit_spec",
-      "consumes": [{"kind": "report", "version": 1, "from": "readiness"}],
-      "produces": [{"kind": "task-result", "version": 1}],
+      "consumes": [
+        {
+          "kind": "report",
+          "version": 1,
+          "from": "readiness"
+        }
+      ],
+      "produces": [
+        {
+          "kind": "task-result",
+          "version": 1
+        }
+      ],
       "type": "lp-task",
       "title": {
         "en": "Commit the spec",
@@ -439,7 +551,7 @@
     {
       "from": "autofix",
       "to": "readiness",
-      "pass": "read-prior-session"
+      "pass": "artifact"
     },
     {
       "from": "ack",

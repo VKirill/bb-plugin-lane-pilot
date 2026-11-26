@@ -9,6 +9,7 @@
     "en": "Collect comments of one post, analyze by lenses, psychology, critic with validator, digest.",
     "ru": "Сбор комментариев одного поста, разбор по линзам, психология, критик с валидатором, сводка."
   },
+  "category": "research",
   "inputs": {
     "post_url": {
       "type": "json",
@@ -281,7 +282,7 @@
     {
       "from": "psychology",
       "to": "critic",
-      "pass": "read-prior-session",
+      "pass": "artifact",
       "with": {
         "post_folder": "init.post_folder"
       }
@@ -341,5 +342,8 @@
     }
   ],
   "status": "published",
-  "goal_check": "validate"
+  "goal_check": "validate",
+  "not_for": [
+    "insights-post"
+  ]
 }

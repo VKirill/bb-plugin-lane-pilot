@@ -2,8 +2,8 @@ import { expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { taskV2Schema } from "../src/rooms/contracts";
-import { classifyWriterOutput } from "../src/rooms/tasks/validate-output";
-import { postMergeRepair } from "../src/rooms/writer/server/finish";
+import { classifyWriterOutput } from "../src/rooms/tasks";
+import { postMergeRepair } from "../src/rooms/writer/server/services/finish";
 
 const original = readFileSync(join(__dirname, "fixtures/writer-brief-gc-pages-polish-2.md"), "utf8");
 const merged = taskV2Schema.parse(JSON.parse(original.slice(original.indexOf('{\n  "schema_version"'))));

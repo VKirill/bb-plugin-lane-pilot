@@ -1,0 +1,347 @@
+{
+  "kind": "lane-pilot-sandbox-drill",
+  "date": "2026-11-15",
+  "stamp": "20261115-174752",
+  "startedAt": 1794754072414,
+  "finishedAt": 1794754121458,
+  "durationSec": 49,
+  "project": "proj_tvcq2tujmg",
+  "runId": null,
+  "pmThread": null,
+  "sourceThread": null,
+  "mode": "full",
+  "scenarioNames": [
+    "sma_r08"
+  ],
+  "commit": "2915b0036fbb64fab8021ce5be3ef15ee96480f6",
+  "skipped": {},
+  "result": "pass",
+  "problems": [],
+  "checks": null,
+  "tasks": null,
+  "dispatch": null,
+  "scenarios": [
+    {
+      "name": "sma_r08",
+      "result": "pass",
+      "problems": [],
+      "proved": [
+        {
+          "node": "n674",
+          "ok": true,
+          "detail": "224 call names equal the pinned list; without a handler: []"
+        },
+        {
+          "node": "n675",
+          "ok": true,
+          "detail": "unknown name -> 'plugin \"lane-pilot\" has no rpc method \"no_such_door\"'; no id / empty id / stray field -> 'rpc input validation failed'; good call -> {'on': True, 'since': None, 'reason': None}"
+        },
+        {
+          "node": "n678",
+          "ok": true,
+          "detail": "startup ['merge-intents:0', 'resume', 'after-resume', 'park', 'parked-sweep', 'wf-resume', 'wf-poll']; periodic ['merge-intents:120000', 'recheck-cancels', 'park', 'parked-sweep', 'wf-resume', 'wf-poll']; a failing resume stops nothing: ['merge-intents:0', 'resume', 'park', 'parked-sweep', 'wf-resum"
+        },
+        {
+          "node": "n682",
+          "ok": true,
+          "detail": "lines before/after a read 1/1; the change left {'action': 'conveyor', 'keys': ['set', 'reason'], 'timed': True}; value leaked: False"
+        },
+        {
+          "node": "n683",
+          "ok": true,
+          "detail": "log ['rpc broken 40 ms failed', 'rpc refused 40 ms refused', 'rpc fine 40 ms']; errors passed on ['disk gone', 'the owner gate']"
+        },
+        {
+          "node": "n684",
+          "ok": true,
+          "detail": "tests/sma/four-proofs-r08-a2.test.tsx: exit 0, 1 passed"
+        },
+        {
+          "node": "n685",
+          "ok": true,
+          "detail": "app ./app.tsx (exists True, defines the app True), build script 'bb plugin build'"
+        },
+        {
+          "node": "n686",
+          "ok": true,
+          "detail": "12 old ids resolved to ['automation', 'knowledge', 'runs', 'team', 'work']; unknown id -> {'tab': 'overview'}"
+        },
+        {
+          "node": "n687",
+          "ok": true,
+          "detail": "call to mac-2 {'hostId': 'mac-2', 'timeoutMs': 25000}, to the hub {'hostId': 'hub', 'timeoutMs': 777}"
+        },
+        {
+          "node": "n688",
+          "ok": true,
+          "detail": "word calls of the hub ['first_run_answer', 'task_word', 'workflow_answer']; among the peers' 75 methods: [], word-named []"
+        },
+        {
+          "node": "n689",
+          "ok": true,
+          "detail": "stock in the product's order True; the owner's agent last: context-lead skills ['lane-memory'] connections ['gitnexus']; custom filter ['context-lead']"
+        },
+        {
+          "node": "n690",
+          "ok": true,
+          "detail": "by key 'glm-flash', by pair 'codex/gpt-6-luna', by model 'some-unprofiled-model', another model None, empty None"
+        },
+        {
+          "node": "n691",
+          "ok": true,
+          "detail": "stock recognised True, custom False, create under a stock name -> {'ok': False, 'id': 'copy-lead', 'error': 'agent_id_reserved'}, listed custom flags [False]"
+        },
+        {
+          "node": "n692",
+          "ok": true,
+          "detail": "picked: 'Your skills for this task: lp-writer, modern-web-guidance.'; role default: 'Your skills for this task: lp-writer, karpathy-guidelines, and the skills Lane Pilot picked for this task.'"
+        },
+        {
+          "node": "n695",
+          "ok": true,
+          "detail": "writer ['gitnexus'], critic []; owner's allow list gives ['bb-bridge', 'metamcp']; 'all' narrows nothing: None"
+        },
+        {
+          "node": "n696",
+          "ok": true,
+          "detail": "stored {'mode': 'allow', 'names': ['gitnexus', 'metamcp']}, keys ['mode', 'names']"
+        },
+        {
+          "node": "n697",
+          "ok": true,
+          "detail": "off {'on': False, 'since': '2026-11-15T14:48:02.546Z', 'reason': 'deploy window'}, read back {'on': False, 'since': '2026-11-15T14:48:02.546Z', 'reason': 'deploy window'}, off again unchanged True, on {'on': True, 'since': None, 'reason': None}; through the door {'on': False, 'since': '2026-11-15T14"
+        },
+        {
+          "node": "n698",
+          "ok": true,
+          "detail": "attempts ['a1:accepted', 'a2:failed', 'a3:accepted', 'a4:running', 'a6:blocked'], per accepted task 2.5, finished attempt took 120 s, a running one None"
+        },
+        {
+          "node": "n699",
+          "ok": true,
+          "detail": "found ['claude:agent:yard', 'claude:skill:pick', 'opencode:agent:scout', 'codex:agent:ranger'] on host h1"
+        },
+        {
+          "node": "n700",
+          "ok": true,
+          "detail": "claude claude, opencode opencode, codex codex, no front matter None, foreign tool None"
+        },
+        {
+          "node": "n701",
+          "ok": true,
+          "detail": "results [{'name': 'yard', 'status': 'applied'}, {'name': 'pick', 'status': 'applied'}], paths ['.agents/forge/roles/yard/yard.md', '.agents/forge/skills/pick/SKILL.md'], written only if absent [None, None]"
+        },
+        {
+          "node": "n702",
+          "ok": true,
+          "detail": "slugs ['my-helper-x', 'edge-case', 47]; first [{'name': 'yard', 'status': 'applied'}], clash [{'name': 'yard', 'status': 'kept: a draft with this name exists'}], failure [{'name': 'yard', 'status': 'failed: host offline'}]"
+        },
+        {
+          "node": "n704",
+          "ok": true,
+          "detail": "h1 True named Big, h2 off keeps last-seen -300000 ms from now; leaks []"
+        },
+        {
+          "node": "n705",
+          "ok": true,
+          "detail": "answered: [('h1', True), ('h2', False), ('h3', False), ('h4', None)]"
+        },
+        {
+          "node": "n706",
+          "ok": true,
+          "detail": "after a host left ['h1'], after an empty list ['h1'], restarted front []"
+        },
+        {
+          "node": "n713",
+          "ok": true,
+          "detail": "answer {'hostId': 'mac-2', 'exitCode': 7, 'stdout': 'out\\n', 'stderr': 'warn: x\\n'} via {'hostId': 'mac-2', 'timeoutMs': 8000}, refusal 'peer door refused'"
+        },
+        {
+          "node": "n714",
+          "ok": true,
+          "detail": "75 peer methods, owns barrier: True, owner's word calls among them: []"
+        },
+        {
+          "node": "n715",
+          "ok": true,
+          "detail": "lines ['Mini: не отвечает (last seen 5 min ago) · проекты: — · сегодня: принято 0, стоит 0, идёт 0', 'Big: на связи · окна: five_hour 40% · проекты: — · сегодня: принято 0, стоит 0, идёт 0']"
+        },
+        {
+          "node": "n716",
+          "ok": true,
+          "detail": "steps ['goal', 'writer', 'quality', 'words'], draft keys ['answers', 'at', 'projectId'], next quality"
+        },
+        {
+          "node": "n717",
+          "ok": true,
+          "detail": "settings [None, 'writer', 'quality_mode', 'owner.words']"
+        },
+        {
+          "node": "n718",
+          "ok": true,
+          "detail": "goal 'Ship the parcel tracker', writer 'codex / gpt-6-luna', long answer 2000 chars, kept ['goal', 'quality', 'writer']"
+        },
+        {
+          "node": "n719",
+          "ok": true,
+          "detail": "refused 'this answer looks like a key or a password: it is not kept; save secrets in Env Catalog and answer with their name'; stored after refusal None; plain answer kept {'goal': 'Key lives in Env Catalog as STRIPE_KEY'}"
+        },
+        {
+          "node": "n720",
+          "ok": true,
+          "detail": "{'fresh': True, 'emptyDraft': True, 'writerSet': False, 'legacyWriter': False, 'finished': False}"
+        },
+        {
+          "node": "n721",
+          "ok": true,
+          "detail": "wrote {'written': ['writer.provider', 'writer.model', 'quality_mode', 'owner.words'], 'goal': True}, settings {'provider': 'codex', 'model': 'gpt-6-luna', 'quality': 'full', 'words': 'sensitive', 'goal': 'Track parcels for the shop'}, needed after False"
+        },
+        {
+          "node": "n722",
+          "ok": true,
+          "detail": "good /plans/a/b, unfit [None, None, None, None, None], warnings 5"
+        },
+        {
+          "node": "n726",
+          "ok": true,
+          "detail": "{'set': '/plans/p', 'unset': '/w/p', 'invalid': '/w/p', 'none': None, 'homeOnly': '/plans/p'}"
+        },
+        {
+          "node": "n727",
+          "ok": true,
+          "detail": "versions ['quick', 1] -> ['full', 2] -> ['standard', 3]"
+        },
+        {
+          "node": "n730",
+          "ok": true,
+          "detail": "discussion reads ['.agents/planning/ROADMAP.md', '.agents/planning/REQUIREMENTS.md', '.agents/phases/ph_1/DISCUSSION.md']; in a home /plans/g5/.agents/planning/ROADMAP.md"
+        },
+        {
+          "node": "n731",
+          "ok": true,
+          "detail": "{'checks': 'checking', 'works': 'writing', 'free': 'queued', 'waits': 'waiting'}"
+        },
+        {
+          "node": "n732",
+          "ok": true,
+          "detail": "first {'move': 'queued/queued', 'fresh': 'running/retrying', 'blk': 'blocked/blocked', 'acc': 'done/accepted', 'can': 'done/canceled', 'stuck': 'blocked/stuck'}; after the move running/writing; board tables []"
+        },
+        {
+          "node": "n733",
+          "ok": true,
+          "detail": "entries ['h1', 'h2'], first {'five_hour': {'utilization': 40, 'resetsAt': None}}, second None, host calls []"
+        },
+        {
+          "node": "n734",
+          "ok": true,
+          "detail": "project {'quality_mode': 'full', 'writer.provider': 'global-writer'}; in a section {'quality_mode': 'quick', 'writer.provider': 'global-writer', 'owner.words': 'on'}"
+        },
+        {
+          "node": "n735",
+          "ok": true,
+          "detail": "door 'the BB hub' / 'https://hub.example.org', over 'WireGuard (no public bb connect)', leaks []"
+        },
+        {
+          "node": "n736",
+          "ok": true,
+          "detail": "call {'requestedHostId': 'h1', 'command': 'lane-coord status', 'cwd': '/ws/p', 'timeoutSec': 20}, output 20000 chars, quiet 2000 chars"
+        },
+        {
+          "node": "n737",
+          "ok": true,
+          "detail": "first editor hears nothing True, second hears sess-A True, denied False, again False, book ['sess-A', 'sess-B'], claim of 60 min silent True, of 10 min heard True"
+        },
+        {
+          "node": "n738",
+          "ok": true,
+          "detail": "refused without/empty/short/blank reason {'missing': True, 'empty': True, 'short': True, 'spaces': True, 'good': True}; command \"lane-coord force-clear 'sessAxy' --reason 'stale claim of a gone session'\""
+        },
+        {
+          "node": "n739",
+          "ok": true,
+          "detail": "{'issuable': ['b', 'a', 'h', 'c'], 'needsEstimate': ['d'], 'decompose': ['e'], 'blocked': ['f', 'g']}"
+        },
+        {
+          "node": "n740",
+          "ok": true,
+          "detail": "note True, past tasks 1, cold 1, miss ['quantum teleportation licensing'], off memory_disabled"
+        },
+        {
+          "node": "n741",
+          "ok": true,
+          "detail": "keys ['builtAt', 'name', 'node', 'osRelease', 'platform', 'tables', 'unknownCodes', 'version'], unknown codes 3 (a 20-day-old one left out), leaks []"
+        },
+        {
+          "node": "n742",
+          "ok": true,
+          "detail": "5 signals after 250 ms (none inside the window True); log ['Lane Pilot realtime publish failed: bus down']"
+        },
+        {
+          "node": "n743",
+          "ok": true,
+          "detail": "kinds ['helpers', 'council', 'rules', 'workflow', 'workflow-draft', 'schedule', 'harness'], unknown kind -> None"
+        },
+        {
+          "node": "n747",
+          "ok": true,
+          "detail": "clean exit 0 «gate: build, freshness, publishable, licenses, doc-audit and predict-lint all clean»; with a promise exit 1 «gate: predict-lint failed»"
+        },
+        {
+          "node": "n748",
+          "ok": true,
+          "detail": "live lock taken: False, dead True, empty True, free True"
+        },
+        {
+          "node": "n749",
+          "ok": true,
+          "detail": "exit 3 in /tmp/lp-r08-verb-MDjxG9, error text 'oops', slow command exit 1 ('spawn /bin/bash ETIMEDOUT; killed by SIGTERM')"
+        },
+        {
+          "node": "n750",
+          "ok": true,
+          "detail": "with receipt [0, 'publishable: 0.1.1'], without [1, True], other node version [1, True], changed tree [1, True], stamped again [0, 'publishable: 0.1.1']"
+        },
+        {
+          "node": "n753",
+          "ok": true,
+          "detail": "newer guard on disk kept '# a newer guard, not the bundled one\\n'; absent one placed True"
+        },
+        {
+          "node": "n754",
+          "ok": true,
+          "detail": "without yes blocked (installs 0), with yes ok, refusing machine 'machine refused the install', last receipt kept True"
+        },
+        {
+          "node": "n752",
+          "ok": true,
+          "detail": "85 plugins checked {'pinned': 61, 'current': 22, 'update-available': 2}; inconsistent: none"
+        }
+      ],
+      "checked": 58,
+      "notProved": {
+        "n729": "PRIMARY-only hold: world codeTreeWorktree creates real scratch git worktrees (tests/sma/r08-world-b.ts)"
+      },
+      "primaryOnly": true
+    }
+  ],
+  "seen": null,
+  "judged": [
+    {
+      "name": "sma_r08",
+      "verdict": "pass",
+      "evidence": [
+        "proved",
+        "checked",
+        "notProved",
+        "primaryOnly"
+      ],
+      "why": ""
+    }
+  ],
+  "series": {
+    "verdict": "pass",
+    "missing": [],
+    "failed": [],
+    "skipped": []
+  }
+}

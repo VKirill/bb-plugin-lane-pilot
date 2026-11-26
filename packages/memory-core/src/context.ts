@@ -59,7 +59,11 @@ export type PackOptions = { heads?: boolean; neighbours?: boolean;
   /** The records come in the order a reranker made: keep it (no overlap score, no overlap filter), so the budget cuts from the tail. */
   ordered?: boolean;
   /** Pinned records (`memory.pinned`: core conventions, notes naming a path of the question) are packed first and need no word overlap with the question. */
-  pinned?: ReadonlySet<string> };
+  pinned?: ReadonlySet<string>;
+  /** Current time for expiry checks (`validUntil <= now`); defaults to `Date.now()`. */
+  now?: number;
+  /** Optional verification check for a note; false keeps the note out of the pack. */
+  verifyNote?: (record: MemoryRecord) => boolean };
 /** A head line shows the first this many characters of a record, and at most this many heads are added to one pack. */
 const HEAD_CHARS = 120, MAX_HEADS = 10;
 
@@ -72,10 +76,15 @@ export function memoryHeadLine(record:MemoryRecord):string {
 }
 
 export function memoryContext(records:MemoryRecord[],taskText:string,budget:number,options:PackOptions={}):{text:string;records:MemoryRecord[];estimatedTokens:number;cut:MemoryRecord[];heads:MemoryRecord[]} {
-  const {heads:withHeads=true,neighbours:withNeighbours=true,ordered=false,pinned}=options;
+  const {heads:withHeads=true,neighbours:withNeighbours=true,ordered=false,pinned,now=Date.now(),verifyNote}=options;
+  const deliverable=records.filter((record)=>{
+    if(record.status!=="superseded"&&record.validUntil!=null&&record.validUntil<=now)return false;
+    if(verifyNote){try{if(!verifyNote(record))return false;}catch{return false;}}
+    return true;
+  });
   const terms=new Set(tokens(taskText));
   // Relevance first; a note that served accepted attempts counts for more than one that did not, and each extra independent source adds a small bonus (arXiv #21).
-  const ranked=records.map((record)=>({record,score:ordered?1:tokens(`${record.content} ${record.concepts.join(" ")}`).reduce((sum,token)=>sum+(terms.has(token)?1:0),0)*(0.5+memoryUsefulness(record)+Math.min(0.3,0.1*((record.verification?.length??1)-1)))}))
+  const ranked=deliverable.map((record)=>({record,score:ordered?1:tokens(`${record.content} ${record.concepts.join(" ")}`).reduce((sum,token)=>sum+(terms.has(token)?1:0),0)*(0.5+memoryUsefulness(record)+Math.min(0.3,0.1*((record.verification?.length??1)-1)))}))
     .filter((item)=>ordered||item.score>0||pinned?.has(item.record.id)===true).sort((a,b)=>ordered?0:b.score-a.score||b.record.createdAt-a.record.createdAt||a.record.id.localeCompare(b.record.id));
   if(!ordered&&ranked.some((item)=>item.record.askingSection)){const lifted=liftPreferred(ranked,(item)=>item.record.askingSection===true);ranked.splice(0,ranked.length,...lifted);}
   if(pinned?.size)ranked.sort((a,b)=>Number(pinned.has(b.record.id))-Number(pinned.has(a.record.id)));

@@ -1,9 +1,9 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it, vi } from "vitest";
 import { createCore } from "../../src/rooms/core/server/core";
-import { cancelAttemptById } from "../../src/rooms/runs/server/cancel";
-import { createRollback } from "../../src/rooms/rollback/server/rollback";
-import { createReconcile } from "../../src/rooms/stability/server/reconcile";
+import { cancelAttemptById } from "../../src/rooms/runs/server";
+import { createRollback } from "../../src/rooms/rollback/server";
+import { createReconcile } from "../../src/rooms/stability/server";
 import { createAttempt, createRun, createTask, getAttempt, openDatabase, transitionAttempt } from "../../src/rooms/plugin-db";
 
 // The 2026-10-29 full-code audit (Аудит GPT), probes A-004, A-005 and A-006, kept as regressions.

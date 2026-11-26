@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, it } from "vitest";
 import { buildSync } from "esbuild";
-import { prepareWorktree } from "../../src/rooms/verification/git-integrate/worktree-lifecycle";
+import { prepareWorktree } from "../../src/rooms/worktree";
 
 it.each([["", ""], ["aiphoto_bot", "aiphoto_bot"], ["aiphoto_bot", ""]])("workspace %s → %s gets root tools plus the destination's sibling SDK", async (prefix, targetPrefix) => {
   // Independent temporary repositories model source/destination; no linked worktree or live project is created.
@@ -94,7 +94,7 @@ it("installs a standalone section's local dependencies with an isolated home and
       } }));
     }
     const script = join(temp, "prepare.cjs");
-    buildSync({ stdin:{ contents:`import { prepareWorktree } from ${JSON.stringify(join(process.cwd(), "src/rooms/verification/git-integrate/worktree-lifecycle.ts"))}; prepareWorktree(JSON.parse(process.argv[2])).catch(e => { console.error(e); process.exitCode=1; });`, resolveDir:process.cwd(), loader:"ts" },
+    buildSync({ stdin:{ contents:`import { prepareWorktree } from ${JSON.stringify(join(process.cwd(), "src/rooms/worktree/worktree-lifecycle.ts"))}; prepareWorktree(JSON.parse(process.argv[2])).catch(e => { console.error(e); process.exitCode=1; });`, resolveDir:process.cwd(), loader:"ts" },
       bundle:true, platform:"node", format:"cjs", outfile:script, logLevel:"silent" });
     execFileSync(process.execPath, [script, JSON.stringify({ basePath:join(base, "bot"), worktreePath:join(target, "bot") })], {
       env:{ ...process.env, HOME:join(temp, "home"), npm_config_cache:join(temp, "cache"), npm_config_offline:"true", npm_config_ignore_scripts:"true" }, timeout:30_000,

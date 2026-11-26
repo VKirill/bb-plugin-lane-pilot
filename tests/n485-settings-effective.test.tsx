@@ -1,5 +1,4 @@
 /** @vitest-environment jsdom */
-import React from "react";
 import { render, screen, cleanup, fireEvent, waitFor } from "@testing-library/react";
 import { afterEach, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
@@ -7,7 +6,7 @@ import { setLocaleOverride } from "@lane-pilot/i18n";
 import plugin from "../server";
 import { closeRun, createRun, getRun, openDatabase } from "../src/rooms/plugin-db";
 import { buildRunPolicy } from "../src/rooms/tasks";
-import { OverviewTab } from "../src/rooms/pages/tab-overview";
+import { OverviewTab } from "../src/rooms/pages/ui/tab-overview";
 import { mountPage } from "./ui-harness";
 import { openTab } from "./ui-tabs";
 

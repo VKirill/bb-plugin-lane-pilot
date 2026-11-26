@@ -37,6 +37,7 @@
     "planning",
     "risky"
   ],
+  "category": "code",
   "inputs": {
     "goal": {
       "type": "string",

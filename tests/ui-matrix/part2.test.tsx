@@ -26,8 +26,8 @@ describe("Lane Pilot UI", () => {
     expect(slot.getByTestId("plan-critique-settings").textContent).not.toMatch(/dispatch|changes_requested/);
     expect(slot.getByTestId("code-critique-settings")).toBeTruthy();
     openTab(slot, "work");
-    expect(slot.getByTestId("work-panel").textContent).not.toContain(`${en.fieldDefault}:`);
-    expect(slot.getByTestId("work-panel").textContent).not.toContain(`${en.fieldEffective}:`);
+    expect(slot.getByTestId("work-panel").textContent).not.toContain("Default:");
+    expect(slot.getByTestId("work-panel").textContent).not.toContain("Effective:");
     fireEvent.click(slot.getByTestId("help-pm_read.min_lines"));
     expect(slot.getByTestId("help-dialog-pm_read.min_lines").textContent).toContain(en.largeFileThresholdHelp);
     openTab(slot, "service");
@@ -38,18 +38,18 @@ describe("Lane Pilot UI", () => {
     expect(keys).toContain("writer.fast_mode");
     expect(slot.getByTestId("field-s024").textContent).toContain(en.legacyFastModeExplanation);
     expect(slot.getByTestId("compat-aliases")).toBeTruthy();
-    expect(slot.getByTestId("compat-adoc.177").querySelector("input,button[role='combobox'],button[role='switch']")).toBeNull();
+    expect(slot.getByTestId("compat-aliases").querySelector("input,button[role='combobox'],button[role='switch']")).toBeNull();
     slot.lifecycle.unmount();
   });
 
   it("switches all chrome strings when document lang is ru", async () => {
     setLocaleOverride("en");
     document.documentElement.lang = "en";
-    expect(t("tabSettings")).toBe(en.tabSettings);
+    expect(t("tabWork")).toBe(en.tabWork);
     setLocaleOverride(null);
     Object.defineProperty(navigator, "language", { configurable: true, value: "ru-RU" });
     document.documentElement.lang = "ru";
-    expect(t("tabSettings")).toBe(ru.tabSettings);
+    expect(t("tabWork")).toBe(ru.tabWork);
     expect(t("confirmBody")).toBe(ru.confirmBody);
     const slot = await mountPage();
     expect(slot.getByTestId("tab-overview").textContent).toBe(ru.tabOverview);

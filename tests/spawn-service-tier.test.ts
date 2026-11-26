@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
-import { fullAccessSpawn, providerSupportsServiceTier } from "../src/rooms/platform/server/pm-spawn";
-import { mountErrands } from "../src/rooms/qa/server/errands";
-import { runQaThread } from "../src/rooms/qa/server/qa-thread";
+import { fullAccessSpawn, providerSupportsServiceTier } from "../src/rooms/platform/server/services/pm-spawn";
+import { mountErrands } from "../src/rooms/errands/server";
+import { runQaThread } from "../src/rooms/qa/server";
 import { createRun, openDatabase } from "../src/rooms/plugin-db";
 
 vi.mock("@lane-pilot/thread-observe", () => ({ observeStageChild: async () => ({ kind: "completed" }) }));

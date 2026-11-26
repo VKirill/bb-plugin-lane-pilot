@@ -1,14 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
-import { closeRun, createAttempt, createRun, createTask, openDatabase, transitionAttempt } from "../../src/rooms/plugin-db";
+import { createAttempt, createRun, createTask, openDatabase, transitionAttempt } from "../../src/rooms/plugin-db";
 import {
   closeOwnerItem, collectOwnerWaiting, OWNER_FACT_TTL_MS, OWNER_NOTE_TTL_MS, ownerWaitingCounts, postOwnerItem, sweepOwnerItems,
 } from "../../src/rooms/owner-waiting";
-import { insertPhase, savePhase } from "../../src/rooms/phase/store";
-import { ownerWaitingRpc } from "../../src/rooms/owner-waiting/server/rpc";
-import { writerQuestionSweep } from "../../src/rooms/writer/server";
-import { runGoalSweep } from "../../src/rooms/run-goal/server";
-import { phaseWordSweep } from "../../src/rooms/phase/server";
+import { ownerWaitingRpc } from "../../src/rooms/owner-waiting/server";
+import { writerQuestionSweep } from "../../src/rooms/writer/server/index";
 import { scheduleFailureSweep } from "../../src/rooms/schedule/server";
 import type { PostOwnerItem } from "../../src/rooms/owner-waiting";
 
@@ -18,9 +15,9 @@ function db() {
   return openDatabase(createFakePluginHost({ pluginId: "lane-pilot" }).bb);
 }
 function item(key: string, extra: Partial<PostOwnerItem> = {}): PostOwnerItem {
-  return { key, source: "writer", kind: "question", what: `what of ${key}`, why: `why of ${key}`, ...extra };
+  return { key, source: "writer", kind: "question", reason: "decision", what: `what of ${key}`, why: `why of ${key}`, ...extra };
 }
-const OWNER_ITEM_SWEEPS = [writerQuestionSweep, runGoalSweep, phaseWordSweep, scheduleFailureSweep];
+const OWNER_ITEM_SWEEPS = [writerQuestionSweep, scheduleFailureSweep];
 const openKeys = (database: ReturnType<typeof db>, now: number) => collectOwnerWaiting(database, now, OWNER_ITEM_SWEEPS).items.map((row) => row.key);
 const rowOf = (database: ReturnType<typeof db>, key: string) =>
   database.prepare("SELECT * FROM lane_pilot_owner_item WHERE key=?").get(key) as
@@ -56,33 +53,6 @@ describe("the owner-list janitor", () => {
     // The owner answered: the same attempt left `blocked` — no newer row needed for the sweep.
     transitionAttempt(database, "att3", "running", { reason: "owner answered" });
     expect(openKeys(database, T + 1_000)).toEqual([]);
-  });
-
-  it("[SWE-2 F-006, Gemini F-006.3] a run goal dies with its run", () => {
-    const database = db();
-    createRun(database, "run3", "proj_1");
-    postOwnerItem(database, item("run-goal:run3", { source: "run-goal" }), T);
-    expect(openKeys(database, T + 1_000)).toEqual(["run-goal:run3"]);
-    closeRun(database, "run3", "sweep");
-    expect(openKeys(database, T + 2_000)).toEqual([]);
-    expect(rowOf(database, "run-goal:run3")?.closed_by).toBe("janitor:run closed");
-  });
-
-  it("[Gemini F-006.1] a phase's word dies when the phase stops or disappears, and lives while it is active", () => {
-    const database = db();
-    insertPhase(database, { id: "ph1", projectId: "proj_1", pmThreadId: "thr_pm", title: "Phase one", goal: "ship it", at: T });
-    postOwnerItem(database, item("phase-word:ph1:7", { source: "phase" }), T);
-    postOwnerItem(database, item("phase-word:ph2:3", { source: "phase" }), T);
-    // Only the live phase keeps its word: ph2 has no row at all and is closed on the first read.
-    expect(openKeys(database, T + 1_000)).toEqual(["phase-word:ph1:7"]);
-    savePhase(database, "ph1", { state: "stopped", at: T + 1_000 });
-    expect(openKeys(database, T + 2_000)).toEqual([]);
-    insertPhase(database, { id: "ph3", projectId: "proj_1", pmThreadId: "thr_pm", title: "Phase three", goal: "ship it", at: T + 3_000 });
-    savePhase(database, "ph3", { state: "closed", at: T + 3_500 });
-    postOwnerItem(database, item("phase-word:ph3:1", { source: "phase" }), T + 4_000);
-    // [Gemini F-006.1 remainder, 0.1.462] the lesson draft is asked as the phase closes: a closed phase is its normal state, the janitor leaves it.
-    postOwnerItem(database, item("phase-word:ph3:lesson", { source: "phase" }), T + 4_000);
-    expect(openKeys(database, T + 5_000)).toEqual(["phase-word:ph3:lesson"]);
   });
 
   it("[SWE-2 F-004, Gemini F-006.4] a row without actions dies after its term, a row with actions never does", () => {

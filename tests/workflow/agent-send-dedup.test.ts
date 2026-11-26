@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createWorkflowAgents } from "../../src/rooms/workflow/server/workflow-agent";
+import { createWorkflowAgents } from "../../src/rooms/workflow/server/services/workflow-agent";
 
 // The send-dedup record lives in the plugin store: a read that fails must surface, not read as "never sent".
 vi.mock("../../src/rooms/platform/server", async (original) => ({

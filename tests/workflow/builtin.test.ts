@@ -27,7 +27,7 @@ describe("built-in workflows", () => {
     const workflow = builtinWorkflow(LP_TASK_PIPELINE)!;
     expect(workflow).toMatchObject({ status: "published", scope: { level: "builtin" } });
     const next = (from: string, matching?: (edge: (typeof workflow.edges)[number]) => boolean) => workflow.edges.filter((edge) => edge.from === from && (!matching || matching(edge))).map((edge) => edge.to);
-    const happy = ["execution-packet", "pm-read", "quality-mode", "plan-critique", "specialist-review", "ownership-base", "task-folder", "baseline", "writer", "qa-gate", "browser-qa"];
+    const happy = ["execution-packet", "pm-read", "quality-mode", "plan-critique", "specialist-review", "ownership-base", "task-folder", "baseline", "admission", "writer-fallback", "writer-owner-backlog"];
     let at: string = START;
     const walked: string[] = [];
     while (at !== END) {
@@ -45,11 +45,14 @@ describe("built-in workflows", () => {
     expect(quick?.when).toEqual({ field: "mode", op: "eq", value: "quick" });
     // Every blocking branch ends at the exit with a reply, and the writer owns the stages that stay inside it.
     for (const block of ["block-execution-packet", "block-plan-critique", "block-specialist", "block-ownership", "block-baseline"]) expect(next(block)).toEqual([END]);
-    // After the code task a gate decides whether the task's own graph runs the browser check: only a task with qa_cases and qa_url does, the others go straight to the exit.
-    expect(next("writer")).toEqual(["qa-gate"]);
+    // Admission gates entry to writer (up to 3 visits), then routes to writer-fallback and owner backlog; writer runs wait-turn or terminal/accepted paths.
+    expect(next("admission")).toEqual(["admission-wait", "qa-gate", END, "writer", "writer-fallback"]);
+    expect(next("writer")).toEqual(["qa-gate", END, "admission", "wait-turn"]);
     expect(workflow.edges.find((edge) => edge.from === "qa-gate" && edge.to === END)?.when).toEqual({ field: "run", op: "eq", value: false });
     expect(workflow.nodes.find((node) => node.id === "browser-qa")).toMatchObject({ type: "subworkflow", workflow: "lp.browser-qa" });
-    expect(workflow.nodes.find((node) => node.id === "writer")).toMatchObject({ type: "lp-task", stages: expect.arrayContaining(["writer-agent", "verification", "code-critique", "acceptance-receipt"]) });
+    expect(workflow.nodes.find((node) => node.id === "writer")).toMatchObject({ type: "lp-task", maxVisits: 3, stages: expect.arrayContaining(["writer-agent", "verification", "code-critique", "acceptance-receipt"]) });
+    expect(next("writer-fallback")).toEqual(["qa-gate-fallback", "writer-owner-backlog"]);
+    expect(next("writer-owner-backlog")).toEqual([END]);
   });
 
   it("is also valid when checked on its own with the engine's checks", () => {

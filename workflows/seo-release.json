@@ -31,6 +31,7 @@
     "seo",
     "drmax"
   ],
+  "category": "seo",
   "inputs": {
     "items": {
       "type": "string[]",
@@ -56,7 +57,7 @@
     }
   },
   "outputs": {
-    "status": "done|blocked",
+    "status": "done|blocked|not_run",
     "change_log_path": "string?",
     "release_report_path": "string?",
     "redirect_map_path": "string?",
@@ -226,7 +227,7 @@
       },
       "prompt": "Stages 1-2 of fix verification on staging: the control URL list in list mode, statuses, canonicals, redirects, CWV against the baseline. Status pass | rework | block. The pre-mortem report {{premortem.report_path}} must show 0 loops, 0 chains over one hop and no unplanned top-20 URL change.",
       "out": {
-        "status": "pass|rework|block",
+        "status": "pass|rework|block|not_run",
         "qa_path": "string"
       },
       "guards": {
@@ -234,7 +235,7 @@
         "timeoutMin": 30
       },
       "skip_out": {
-        "status": "pass",
+        "status": "not_run",
         "qa_path": ""
       }
     },

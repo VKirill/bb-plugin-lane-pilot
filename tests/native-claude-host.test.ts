@@ -69,7 +69,8 @@ it("hands claude one --settings: the core flag layer merged with the guard file,
 });
 
 it("a helper launcher denies the orchestration built-ins, a PM launcher keeps them", async () => {
-  const { claudeGuardLauncherScript, HELPER_DISALLOWED_TOOLS } = await import("../src/rooms/native-agent/claude-guard-launch");
+  const { claudeGuardLauncherScript } = await import("../src/rooms/native-agent/claude-guard-launch");
+  const { HELPER_DISALLOWED_TOOLS } = await import("../src/rooms/native-agent/models/claude-guard");
   const dest = await mkdtemp(join(tmpdir(), "lp-guard-tools-"));
   await mkdir(join(dest, "hooks"), { recursive: true });
   const settingsPath = join(dest, "settings.json");

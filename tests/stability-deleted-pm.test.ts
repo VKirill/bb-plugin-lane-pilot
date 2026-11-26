@@ -1,8 +1,8 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { countAttempts, createAttempt, createRun, createTask, listStageReceipts, openDatabase } from "../src/rooms/plugin-db";
-import { recordStage } from "../src/rooms/runs/server/stage-records";
-import { createStability } from "../src/rooms/stability/server/stability";
+import { recordStage } from "../src/rooms/runs/server";
+import { createStability } from "../src/rooms/stability/server";
 import incident from "./fixtures/parked-deleted-pm-2026-11-15.json";
 
 const databases:ReturnType<typeof openDatabase>[] = [];

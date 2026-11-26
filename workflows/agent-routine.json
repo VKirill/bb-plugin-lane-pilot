@@ -16,6 +16,7 @@
     "schedule",
     "agent"
   ],
+  "category": "routines",
   "triggers": [
     "manual"
   ],

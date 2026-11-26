@@ -7,24 +7,22 @@ status: active
 confidence: high
 tags: [worktrees, git, cleanup, janitor, schedule]
 sources:
-  - src/rooms/verification/git-integrate/worktree-layout.ts
-  - src/rooms/verification/git-integrate/merge.ts
-  - src/rooms/verification/git-integrate/worktree-lifecycle.ts
-  - src/rooms/verification/worktree-sweep.ts
-  - src/rooms/verification/worktree-janitor.ts
+  - src/rooms/worktree/merge.ts
+  - src/rooms/worktree/worktree-lifecycle.ts
+  - src/rooms/worktree/worktree-sweep.ts
   - src/rooms/verification/integration-gate-host.ts
-  - src/rooms/stability/server/worktree-janitor.ts
-  - src/rooms/stability/server/worktree-daily-pass.ts
-  - src/rooms/schedule/server/system-schedules.ts
-  - src/rooms/writer/server/finish-merge.ts
+  - src/rooms/stability/server/services/worktree-janitor.ts
+  - src/rooms/stability/server/services/worktree-daily-pass.ts
+  - src/rooms/schedule/server/services/system-schedules.ts
+  - src/rooms/writer/server/services/finish-merge.ts
   - workflows/lp.worktree-cleanup.json
   - tests/worktree-standard.test.ts
   - tests/worktree-schedule-e2e.test.ts
   - tests/worktree-coverage.test.ts
   - src/rooms/host-worker/handlers/git.ts
-  - src/rooms/schedule/server/schedule-executors.ts
-  - src/rooms/workflow/server/workflow-triggers.ts
-  - src/rooms/workflow/server/pm-notice.ts
+  - src/rooms/schedule/server/services/schedule-executors.ts
+  - src/rooms/workflow/server/services/workflow-triggers.ts
+  - src/rooms/platform/server/services/pm-notice.ts
 ---
 
 # Worktrees
@@ -36,12 +34,12 @@ commits merged nowhere is never deleted. This page says where each part of that 
 ## 1. One place per machine
 
 `<home>/.lane-pilot/worktrees/<repository>/<id>` (`laneWorktreeRoot`, `laneWorktreeTarget` in
-`src/rooms/verification/git-integrate/worktree-layout.ts`; `LANE_PILOT_WORKTREE_ROOT` overrides the root, tests use it).
+`src/rooms/worktree/worktree-lifecycle.ts`; `LANE_PILOT_WORKTREE_ROOT` overrides the root, tests use it).
 
 | Who makes it | `<id>` | Branch |
 |---|---|---|
 | A writer attempt (both paths: the `lane-pilot-worktree` BB environment and the bare spawn) | `lpattempt_…` | `lane/lpattempt_…` |
-| Self-repair, docs, regress, revert/rollback, reverify | `self-repair-…`, `docs-…`, `regress-…`, `rollback…` | `lane/<id>` or detached |
+| Docs, revert/rollback, reverify | `docs-…`, `rollback…` | `lane/<id>` or detached |
 | The integration gate's bisect and baseline (`integration-gate-host.ts`) | `gate-<sha8>-<random>` | detached |
 
 `<repository>` is the folder name of the git top the worktree forks, so a chat folder nested in a larger repository is filed under that
@@ -62,15 +60,10 @@ not silently omit them. Root-scoped tasks and machine-selected committed package
 system tmp. Both layouts are two levels deep, so the hourly sweep, the daily pass and `removeLaneWorktree` find and remove either; an
 attempt that started before the deploy finishes and is removed where it stands. The tmp prefixes stay in `JANITOR_TMP_PREFIXES`.
 
-**Not moved yet: phase candidates.** A phase's candidate tree stays at `<base>/.git/lp-phases/<phaseId>` on `phase/<id>`
-(`src/rooms/phase/server/candidate.ts`). Its pieces take that tree as their `project_cwd`, and a task's folder must lie inside its run
-folder (`tasks/task-base.ts`, `isTaskBase`), so moving it to `<root>/<repo>/phase-<id>` needs the phase pipeline to accept a folder
-outside the run first. Until then the daily pass sweeps `.git/lp-phases` as its own class once the phase branch is merged.
-
 ## 2. Removed by the code that merged it
 
-`integrateWorktree` (`git-integrate/merge.ts`) with `removeWorktree` removes the worktree and its branch in the same call that merged it,
-and answers `worktreeRemoved`. `mergeAcceptedAttempt` (`writer/server/finish-merge.ts`) asks for it for every accepted attempt, also one
+`integrateWorktree` (`worktree/merge.ts`) with `removeWorktree` removes the worktree and its branch in the same call that merged it,
+and answers `worktreeRemoved`. `mergeAcceptedAttempt` (`writer/server/services/finish-merge.ts`) asks for it for every accepted attempt, also one
 that ran in a BB environment (until 0.1.561 only attempts without an environment were cleaned there, so the default path left every
 accepted worktree to the hourly janitor). Only `lane/…` and `bb/…` branches are removed this way; a worktree on any other branch (a
 chat's own checkout an attempt reused) is never the merge's to remove. An area task keeps its worktree for the area's next task (the
@@ -78,8 +71,7 @@ sticky sweep removes it after the window). The registry row is released by the h
 
 **Nothing writes into an attempt's worktree after the merge.** The folder is gone the moment the merge answers, so every write that
 belongs to the attempt (OUTCOME.md, notes, evidence) happens before the merge or goes to the task's own folder in the base checkout.
-0.1.561 broke this once: `writeTaskOutcome` wrote OUTCOME.md into the removed folder and self-repair fixed it (commit `91e0790f`, the
-write is skipped for a task folder that no longer exists). A new post-merge step must read from the base checkout, never from the attempt's path.
+A post-merge step reads from the base checkout, never from the removed attempt worktree.
 
 **Cancel and drop keep unmerged work.** `removeLaneWorktree` (`worktree-lifecycle.ts`) removes the worktree folder (after saving the
 uncommitted edits and unique commits as a patch when asked to `release`) and deletes the branch only when its work is in `main`:
@@ -89,9 +81,9 @@ stays and the answer names it (`branchKept`); the hub logs it and the daily pass
 ## 3. The cleanup schedule
 
 Two Lane Pilot schedules on the schedule board, in «every project» (project `*`), made once at start by `ensureSystemSchedules`
-(`schedule/server/system-schedules.ts`); a schedule the owner deleted is not made again (pause it, or set `cleanup.worktrees=off`).
+(`schedule/server/services/system-schedules.ts`); a schedule the owner deleted is not made again (pause it, or set `cleanup.worktrees=off`).
 Both run the graph `lp.worktree-cleanup` (`workflows/lp.worktree-cleanup.json`), whose one step is `lp.worktree_cleanup`
-(`registerWorktreeCleanupActions` in `stability/server/worktree-daily-pass.ts`, beside the daily pass; the hourly pass and the registry are in `worktree-janitor.ts`). «Запустить сейчас» on the board (`bb lane-pilot schedule
+(`registerWorktreeCleanupActions` in `stability/server/services/worktree-daily-pass.ts`, beside the daily pass; the hourly pass and the registry are in `worktree-janitor.ts`). «Запустить сейчас» on the board (`bb lane-pilot schedule
 run-now <id>`) runs a pass by hand.
 
 **Who may start the graph.** `lp.worktree-cleanup` is a starter graph (`startedBy: "worktree-cleanup"`): never offered to the PM or the
@@ -100,7 +92,7 @@ schedule executor reads the row's `created_by` (`system:worktree-cleanup-hourly|
 update, so no chat can claim it), finds its `starter` in `SYSTEM_SCHEDULES` (`systemStarterOf`) and passes it to `workflowTriggers.start`,
 which lets a starter graph through only when its `startedBy` equals that starter. The run is detached: no PM chat, no run link. A schedule
 the owner or a chat makes naming the same graph fails `start_failed` (0.1.562 shipped without this exception: both schedules ended
-`start_failed` and no pass ran). The graph is an upkeep graph for the end-of-run notice (`UPKEEP_WORKFLOWS` in `workflow/server/pm-notice.ts`):
+`start_failed` and no pass ran). The graph is an upkeep graph for the end-of-run notice (`UPKEEP_WORKFLOWS` in `platform/server/services/pm-notice.ts`):
 a successful pass messages no one (its output's `report` would otherwise be delivered as an owner line every hour); the daily pass posts its
 own line below, and a failed run is the schedule board's line.
 
@@ -114,7 +106,7 @@ deciding only (nothing removed, no janitor row, no owner line; a dry run is alwa
 | «Уборка worktree: ежедневно» | `40 4 * * *` (owner's zone) | `runDailyWorktreePass`: everything below, on every connected machine |
 
 The hub reaches each machine the way the hourly janitor always did: one host call `worktreeJanitor` per connected host, now with a
-`deep` part (`sweepWorktreeClasses`, `src/rooms/verification/worktree-sweep.ts`). A machine whose plugin is older checks the input
+`deep` part (`sweepWorktreeClasses`, `src/rooms/worktree/worktree-sweep.ts`). A machine whose plugin is older checks the input
 against its own strict contract. One on 0.1.562–0.1.564 refuses newer keys (`bbEnvs`, `search`, `hourlyGraceMs`): it is asked once more for the
 daily pass it knows, without them and with no BB environment paths, and the report says «ran the old daily pass (no home search, no
 BB-environment decisions): its Lane Pilot build is older» (`oldPass: true` in its janitor row). One before 0.1.562 refuses `deep` itself,
@@ -125,7 +117,7 @@ the retry too: nothing is removed on it, and the pass's errors say «this machin
 environment worktrees of Lane Pilot attempts outside the root; every BB environment of that machine with a folder (`bbEnvironmentsByHost`:
 `environments.list`, and `threads.list({ archived: false })` for which of them a live thread is in; `managed` = BB's provider made it as
 a worktree); the bounded home search (`WORKTREE_SEARCH`); the worktrees of abandoned tasks; the paths live work holds (open attempts,
-the registry's open rows, the trees of a phase in work); the registry's open paths; `cleanup.worktree_max_age_days`.
+the registry's open rows); the registry's open paths; `cleanup.worktree_max_age_days`.
 «Abandoned» (`dailyPassInputs`): every attempt that used the path has ended without acceptance, at least one of them was cancelled,
 was followed by a later attempt of the task, or sits in a closed run, and none moved within the last day. A BB that refuses the
 environment list is an error line of the pass (no environment is then removed through BB, none is known to be live), not a failed run.
@@ -146,7 +138,6 @@ table names on OVH except `/tmp`, which is outside home, is reached.) `~/tools/c
 | `lane` | Lane Pilot's root, either layout |
 | `claude` | `<repo>/.claude/worktrees/*` (Claude Code subagents) |
 | `dot-worktrees` | `<repo>/.worktrees/*` |
-| `lp-phases` | `<repo>/.git/lp-phases/*` (phase candidates) |
 | `bb-env` | a BB environment its provider made as a worktree (`managed`), wherever it is |
 | `outside` | any other linked worktree: a release copy, a hand-made checkout, a deploy copy, a BB environment folder BB no longer lists |
 

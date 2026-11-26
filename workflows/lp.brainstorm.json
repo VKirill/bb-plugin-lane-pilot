@@ -9,6 +9,7 @@
     "en": "Role authors work in parallel, a fresh cross-role reviewer finds conflicts, gaps and synergies, conflicts are resolved with the owner, a guidance specification with at most 8 features is written.",
     "ru": "Роли-авторы работают параллельно, свежий перекрёстный ревьюер находит конфликты, пробелы и синергии, конфликты решаются с владельцем, пишется guidance-спецификация не более чем на 8 фич."
   },
+  "category": "service",
   "inputs": {
     "topic": {
       "type": "string",
@@ -331,5 +332,8 @@
     }
   ],
   "status": "published",
-  "goal_check": "artifact"
+  "goal_check": "artifact",
+  "not_for": [
+    "brainstorm-driven"
+  ]
 }

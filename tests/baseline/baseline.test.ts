@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { buildAcceptanceCard } from "../../src/rooms/acceptance/card";
+import { buildAcceptanceCard } from "../../src/rooms/runs/server";
 import { getBaseline } from "../../src/rooms/baseline";
 import { recordCheckDuration } from "../../src/rooms/plugin-db";
 import { classifyFailure } from "../../src/rooms/contracts/failure-class";

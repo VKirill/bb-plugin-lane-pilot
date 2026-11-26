@@ -4,7 +4,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { createWorktree, worktreeOfBranch } from "../src/rooms/verification/git-integrate";
+import { createWorktree, worktreeOfBranch } from "../src/rooms/worktree";
 
 /**
  * An attempt's worktree is created again when the answer of the first create was lost (a plugin reload, a host call that timed out

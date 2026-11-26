@@ -1,0 +1,141 @@
+/**
+ * The registry of what proves what (SMA D1-5, «not covered, with reason»). Every pipeline stage, attempt transition, failure class, gate,
+ * memory path, room and key mechanism of Lane Pilot has an entry here that says
+ *  - `live`: the deploy-drill scenarios (scripts/lp-drill.py) that run it on the hub by design, with `via` saying how; or
+ *  - `tests`: the test files that exercise it, and `reason`: why no drill scenario does (a gap named is a gap that can be closed); or
+ *  - neither, and `reason` says why it is not covered at all.
+ * tests/coverage.test.ts fails when a stage, transition, failure class, gate, memory path or room has no entry (or an entry names a node
+ * that is gone), when a drill scenario or a test file named here does not exist, and when a «live» claim has no drill scenario. A drill
+ * receipt records what the run left on the hub (`seen`); `bb lane-pilot coverage --receipt <file>` checks the claims against it.
+ */
+export const NODE_KINDS = ["stage", "transition", "failure_class", "gate", "memory_path", "room", "mechanism"] as const;
+export type NodeKind = (typeof NODE_KINDS)[number];
+
+export type CoverageEntry = {
+  kind: NodeKind;
+  /** The nodes this entry covers; `from+event` for a transition (∅ for a new attempt). */
+  ids: readonly string[];
+  /** Drill scenarios that run it live, by design. */
+  live?: readonly string[];
+  /** How the drill exercises it. */
+  via?: string;
+  tests?: readonly string[];
+  /** Required unless the entry is live: why no drill scenario covers it. */
+  reason?: string;
+};
+
+const STAGE_SUITE = ["tests/stages/server-stage/part1.test.ts", "tests/stages/server-stage/part2.test.ts", "tests/stages/server-stage/part3.test.ts", "tests/stages/server-stage/part4.test.ts"];
+const SANDBOX_OFF = "the sandbox project the drill runs in has this stage off, so every drill run records it skipped";
+
+export const COVERAGE: readonly CoverageEntry[] = [
+  // ── stages (STAGE_IDS) ───────────────────────────────────────────────────────────────────────────────────────────────────────────
+  { kind: "stage", ids: ["execution-packet"], tests: ["tests/execution-packet-gate.test.ts", ...STAGE_SUITE], reason: "no dedicated live drill receipt yet; the deterministic read_first input gate is covered by the named tests" },
+  { kind: "stage", ids: ["writer-agent"], live: ["parallel3", "conflict", "main_moved", "provider", "provider_limit", "reload", "nogit", "nogit_repo"], via: "every drill task is written by a real writer and passes the owns-paths and validate gates", tests: ["tests/dispatch-idempotent.test.ts", "tests/parallel-writers-own-worktree.test.ts"] },
+  { kind: "stage", ids: ["acceptance-receipt"], live: ["parallel3"], via: "each accepted drill task ends with an acceptance-v2 receipt that validates against the schema", tests: ["tests/acceptance-v2.test.ts"] },
+  { kind: "stage", ids: ["plan-fact"], live: ["parallel3"], via: "the writer closes its answer with the plan-fact table and the blind check passes (3 of 3 in the 2026-10-22 quick drill)", tests: ["tests/plan-fact.test.ts"] },
+  { kind: "stage", ids: ["memory-maintenance"], live: ["parallel3"], via: "the memory helper runs after each accepted drill task and its candidates pass the schema check", tests: ["tests/stages/memory.test.ts"] },
+  { kind: "stage", ids: ["project-life"], tests: ["tests/plan-fact.test.ts"], reason: "stage removed in Task 5; id kept in CARD_STAGE_IDS for old receipts" },
+  { kind: "stage", ids: ["verification"], tests: ["tests/dispatch-verification-check.test.ts", "tests/check-timing.test.ts"], reason: "drill tasks carry verification: [], so the stage passes with no command to run (the verification gate was skipped for 3 of 4 tasks in the 2026-10-22 quick drill); give a drill task a real check to make this live" },
+  { kind: "stage", ids: ["pm-read"], tests: ["tests/stages/pm-read.test.ts", "tests/stages/read-first.test.ts"], reason: SANDBOX_OFF },
+  { kind: "stage", ids: ["plan-critique"], tests: ["tests/critic-stats.test.ts", "tests/cancel-stage-threads.test.ts", "tests/stages/critique-policy.test.ts"], reason: SANDBOX_OFF },
+  { kind: "stage", ids: ["specialist-review"], tests: ["tests/stages/specialist.test.ts", "tests/pipeline-proof.test.ts"], reason: SANDBOX_OFF },
+  { kind: "stage", ids: ["run-gate"], tests: [...STAGE_SUITE, "tests/pipeline-proof.test.ts"], reason: "its receipt is written only for an explicit pre-merge review gate; no drill project sets one" },
+  { kind: "stage", ids: ["code-critique"], tests: ["tests/stages/code-critique.test.ts", "tests/stages/critic-answer-retry.test.ts"], reason: "the code critic is off by default (critic.code.default_for_risk=off) and the sandbox does not turn it on" },
+  { kind: "stage", ids: ["browser-qa"], tests: ["tests/stages/browser-qa.test.ts"], reason: "needs a dev server and a browser host; the sandbox project has neither" },
+  { kind: "stage", ids: ["docs-maintenance"], tests: ["tests/stages/docs.test.ts", ...STAGE_SUITE], reason: "a nightly pass on its own schedule, off in the sandbox" },
+  { kind: "stage", ids: ["onboarding-preview"], tests: ["tests/database.test.ts", ...STAGE_SUITE], reason: "no tool starts it since 0.1.341 (its PM tools were removed); kept for old receipts; it was a one-time pass when a project is first adopted; the drill's projects are already onboarded" },
+  { kind: "stage", ids: ["onboarding-apply"], tests: ["tests/stages/onboarding-host.test.ts", ...STAGE_SUITE], reason: "no tool starts it since 0.1.341 (its PM tools were removed); kept for old receipts alongside onboarding-preview" },
+  { kind: "stage", ids: ["night-review", "night-fix", "workspace-status", "gate-triage"], tests: STAGE_SUITE, reason: "night-review/night-fix/gate-triage were removed (ids kept in CARD_STAGE_IDS for historical cards); workspace-status is checked on demand" },
+  { kind: "stage", ids: ["opencode-telemetry"], tests: ["tests/stages/opencode-telemetry.test.ts"], reason: "runs only for an OpenCode writer; the drill's writers are claude-code and codex" },
+
+  // ── attempt transitions (TRANSITION_TABLE) ───────────────────────────────────────────────────────────────────────────────────────
+  { kind: "transition", ids: ["∅+form_task", "queued+spawn_called", "spawn_requested+spawn_ok", "running+checks_passed"], live: ["parallel3"], via: "the happy path of every drill task", tests: ["tests/state-machine-enforce.test.ts", "tests/pipeline.test.ts"] },
+  { kind: "transition", ids: ["running+cancel", "cancel_requested+cancel_observed"], live: ["memory_paths"], via: "the probe's writer is cancelled once its thread exists, and quiet() cancels what a scenario leaves running", tests: ["tests/state-machine-enforce.test.ts", "tests/cancel-stage-threads.test.ts"] },
+  { kind: "transition", ids: ["spawn_requested+spawn_explicit_error", "spawn_rejected+retry_exhausted"], live: ["provider_limit"], via: "a writer model that does not exist is refused at spawn and that attempt ends blocked; a new attempt on the next writer is accepted (hub: 9 of 9 provider_limit tasks)", tests: ["tests/state-machine-enforce.test.ts", "tests/writer-fallbacks.test.ts"] },
+  { kind: "transition", ids: ["spawn_rejected+retry"], tests: ["tests/state-machine-enforce.test.ts", "tests/pipeline.test.ts"], reason: "a rejected spawn is not retried inside the same attempt: provider_limit ends it blocked and hands the task to the next writer as a new attempt, so no scenario drives this move" },
+  { kind: "transition", ids: ["spawn_requested+spawn_network_error", "spawn_unknown+reconcile_found", "spawn_unknown+reconcile_not_found", "spawn_unknown+reconcile_ambiguous", "spawn_unknown+reconcile_error"],
+    tests: ["tests/state-machine-enforce.test.ts", "tests/reconcile.test.ts"], reason: "a spawn whose answer is lost happens only when the network or a reload hits that instant; the reload scenario reaches it by chance, not by design" },
+  { kind: "transition", ids: ["provider_error+retry_exhausted", "timeout+retry_exhausted", "empty_output+retry_exhausted", "validation_failed+retry_exhausted"],
+    tests: ["tests/state-machine-enforce.test.ts", "tests/workflow/writer-retry-consolidation.test.ts"], reason: "needs a task that fails its allowed attempts; the drill's tasks are trivial and every scenario ends accepted" },
+  { kind: "transition", ids: ["running+provider_error", "running+wait_timeout", "running+empty_output", "running+validation_failed", "provider_error+retry", "timeout+retry", "empty_output+retry", "validation_failed+retry"],
+    tests: ["tests/state-machine-enforce.test.ts", "tests/failure-class.test.ts", "tests/pipeline.test.ts"], reason: "the failures of a running writer (provider error, timeout, no output, a red check) are not provoked by any scenario: provider_limit stops the writer before it runs, and the drill's tasks carry no check to fail" },
+
+  // ── failure classes (FailureClass) ───────────────────────────────────────────────────────────────────────────────────────────────
+  { kind: "failure_class", ids: ["merge"], live: ["conflict", "main_moved"], via: "two tasks rewrite the same line, and main moves under a working writer: the merge is redone for free", tests: ["tests/failure-class.test.ts"] },
+  { kind: "failure_class", ids: ["provider"], live: ["provider_limit"], via: "a writer model that does not exist ends the attempt as writer_model_unavailable, a provider failure; the next writer takes the task (hub: 9 of 9 provider_limit tasks)", tests: ["tests/failure-class.test.ts", "tests/writer-fallbacks.test.ts"] },
+  { kind: "failure_class", ids: ["limit"], tests: ["tests/failure-class.test.ts", "tests/writer-fallbacks.test.ts"], reason: "a provider's plan or usage-window notice; provider_limit uses a model that does not exist, which is the provider class, and the drill cannot make a real provider run out of quota" },
+  { kind: "failure_class", ids: ["task", "judgment", "contract"], tests: ["tests/failure-class.test.ts", "tests/jev/failure-class.test.ts"], reason: "classes of a failing task: the drill's tasks do not fail their own checks, the PM never needs a human answer, and a bad contract is refused before an attempt exists" },
+  { kind: "failure_class", ids: ["verification_timeout"], tests: ["tests/failure-class.test.ts", "tests/check-timing.test.ts"], reason: "a timed-out check has its own retry budget and ends in this class; the drill's tasks carry no check to time out" },
+  { kind: "failure_class", ids: ["dirty_base", "harness", "infra", "budget", "reassign"], tests: ["tests/failure-class.test.ts", "tests/reassign-task.test.ts"], reason: "each needs a fault the drill must not cause on the owner's machines (a dirty base checkout, a full disk, an internal error, an exhausted run budget, a PM reassignment)" },
+
+  // ── gates (GATE_CATEGORIES) ──────────────────────────────────────────────────────────────────────────────────────────────────────
+  { kind: "gate", ids: ["owns-paths", "validate", "accept"], live: ["parallel3", "conflict", "main_moved"], via: "every accepted drill task passes the three gates (3 of 3 each in the 2026-10-22 quick drill); the rejecting side is tests only", tests: ["tests/gate-detect.test.ts", "tests/owns-overlap.test.ts", "tests/stages/gate-report.test.ts"] },
+  { kind: "gate", ids: ["verification"], tests: ["tests/dispatch-verification-check.test.ts", "tests/check-timing.test.ts"], reason: "drill tasks carry verification: [], so the gate is skipped (3 of 4 tasks in the 2026-10-22 quick drill) or passes with nothing to run" },
+
+  // ── rooms (src/rooms/<room>) ─────────────────────────────────────────────────────────────────────────────────────────────────────
+  { kind: "room", ids: ["writer", "runs", "storage", "core", "contracts", "host-worker", "tasks", "verification", "worktree", "tools", "platform"], live: ["parallel3"], via: "the code path of every drill task: dispatch-bb, contract lint, the writer, the gates, the state machine, the host calls", tests: ["tests/pipeline.test.ts"] },
+  { kind: "room", ids: ["project-git"], tests: ["tests/project-git/bootstrap.test.ts", "tests/project-git/dispatch-guard.test.ts", "tests/project-git/logic.test.ts"], reason: "offline tests use real temporary Git repositories, bare remotes and a fake GitHub; live/native host acceptance is still pending, so this room has no drill claim" },
+  { kind: "room", ids: ["deferral"], live: ["deferrals"], via: "the scenario reads the register over RPC and fails on an overdue entry or a bad skip citation", tests: ["tests/deferral-register.test.ts"] },
+  { kind: "room", ids: ["memory", "memory-probe"], live: ["memory_paths"], via: "the probe plants a token through the write door and checks every delivery path, then the real writer brief and PM prompt", tests: ["tests/memory-paths.test.ts"] },
+  { kind: "room", ids: ["native-agent"], live: ["helper_providers", "provider"], via: "one helper per provider in use, and the worktree provider of the writer", tests: ["tests/native-run.test.ts"] },
+  { kind: "room", ids: ["stability"], live: ["reload"], via: "a plugin reload while a writer works: the task still ends accepted", tests: ["tests/reconcile.test.ts"] },
+  { kind: "room", ids: ["settings"], live: ["provider_limit"], via: "the scenario sets writer.model through the settings RPC and puts it back", tests: ["tests/owned-settings.test.ts"] },
+  { kind: "room", ids: ["evolve"], reason: "pure comparison and trial models kept for the future lp.evolve graph; nothing runs them live until Task 20 builds that graph", tests: ["tests/evolve-compare.test.ts", "tests/evolve-trial.test.ts"] },
+  { kind: "room", ids: ["errands"], reason: "the «Errands» page is a read model over the errand runs of the workflow journal; the errand graph itself is covered by the schedule room", tests: ["tests/errands/errands-logic.test.ts", "tests/errands/errands-ui.test.tsx"] },
+  { kind: "room", ids: ["guard-tools"], tests: ["tests/guard-tools.test.ts"], reason: "checks of development time and of the ship gate (leak scan, internal ids in texts, explained unshown fields, permission parity): no drill task reaches them" },
+  { kind: "room", ids: ["validators"], tests: ["tests/validators.test.ts"], reason: "shared validators are exercised through the rooms that call them; no drill step calls them alone" },
+  { kind: "room", ids: ["protections"], tests: ["tests/protections.test.ts"], reason: "runtime safety protections and disarm expiry re-arming; exercised directly by protections suite rather than deploy drill" },
+  { kind: "room", ids: ["session-hooks"], tests: ["tests/session-hooks/session-hooks-1.test.ts"], reason: "the hook process runs inside a native Claude session on a machine (capsule before compaction, stall rules); a drill thread has no native session to fire it, so the bundled hook is run as a process in the test" },
+  { kind: "room", ids: ["memory-eval"], tests: ["tests/memory-eval.test.ts"], reason: "scores memory over hours and tokens on hub data; too slow and too dear for a pre-deploy drill" },
+  { kind: "room", ids: ["critique"], tests: ["tests/critic-pair.test.ts", "tests/stages/critique-policy.test.ts"], reason: SANDBOX_OFF },
+  { kind: "room", ids: ["docs"], tests: ["tests/stages/docs.test.ts"], reason: "nightly docs maintenance passes, off or idle in the sandbox" },
+  { kind: "room", ids: ["native-install"], tests: ["tests/native-install.test.ts"], reason: "installs the native stack on hosts; guard_hash checks the installed guard's bytes but no scenario runs an install" },
+  { kind: "room", ids: ["front"], tests: ["tests/owner-words-sensitive.test.ts"], reason: "the window's front: screens and their reads; no drill opens a screen (scripts/lp-ui-drive.mjs runs scenes against a live window)" },
+  { kind: "room", ids: ["money"], tests: ["tests/session-hooks/parity-g1-hooks-1.test.ts"], reason: "reads and reports over the hub's data (spend, receipts, history), not a step a drill task takes" },
+  { kind: "mechanism", ids: ["tools.receipts"], tests: ["tests/shipgate.test.ts"], reason: "receipt chain and passports over the hub's data, not a step a drill task takes" },
+  { kind: "mechanism", ids: ["relay.outbound"], tests: ["tests/relay/relay-parity.test.ts", "tests/ui-version-invalidate.test.ts"], reason: "the task-event webhook needs a live subscriber, not a step a drill task takes" },
+  { kind: "mechanism", ids: ["writer.permits"], tests: ["tests/permit-routing.test.ts"], reason: "a permit ticket needs a writer the guard refuses (delete for good, DROP); no drill task asks for one" },
+  { kind: "room", ids: ["qa"], tests: ["tests/qa-host.test.ts"], reason: "browser QA needs a dev server and a browser host" },
+  { kind: "room", ids: ["relay"], tests: ["tests/server/relay.test.ts", "tests/server/pm-notices.test.ts"], reason: "task results do reach the drill's PM, but no scenario asserts on the message" },
+  { kind: "room", ids: ["baseline"], tests: ["tests/baseline/baseline.test.ts", "tests/baseline/logic.test.ts", "tests/baseline/start.test.ts"], reason: "the baseline runs before every real writer (the drill tasks carry no checks yet); checked live on a sandbox clone" },
+  { kind: "room", ids: ["checkers"], live: ["checkers"], via: "the quick drill plants defects in a fixture repository and runs every code checker on them (model critics: hand runs, scripts/lp-checkers.ts)", tests: ["tests/checkers/score.test.ts"] },
+  { kind: "room", ids: ["work-graph"], tests: ["tests/work-graph/logic.test.ts", "tests/work-graph-ui.test.tsx"], reason: "a read-only view over stage events, receipts, attempts and token cursors; no drill task asserts what the owner's screens show" },
+  { kind: "room", ids: ["forecast"], tests: ["tests/forecast/forecast.test.ts"], reason: "a report over accepted tasks that carry a forecast; read by the PM before it promises a date, no drill task carries a forecast" },
+  { kind: "room", ids: ["wires"], tests: ["tests/wires/wires.test.ts", "tests/acceptance-card-ui.test.tsx"], reason: "runs in the plan-fact stage of a task whose contract declares wires; no drill task declares one" },
+  { kind: "room", ids: ["reports"], tests: ["tests/reports.test.ts"], reason: "the two Telegram schedules of the owner's topic are registered on SYSTEM_SCHEDULES and driven by lp.owner_push / lp.daily_report; tests run them with a fake sender, in-memory SQLite facts and `dry_run=on`" },
+  { kind: "room", ids: ["outage"], tests: ["tests/outage/outage-conveyor.test.ts"], reason: "a gap shows only after the plugin was down for more than five minutes; the daily report reads the table" },
+  { kind: "room", ids: ["backlog"], tests: ["tests/backlog/backlog.test.ts"], reason: "the hourly scan reads real projects' todos and writes to their PMs; the drill has no backlog" },
+  { kind: "mechanism", ids: ["writer.pilot"], tests: ["tests/pilot/pilot.test.ts", "tests/pilot/store.test.ts", "tests/run-pause-start.test.ts"], reason: "takes effect only for three sibling tasks of one area and kind in a run; the drill's tasks have no area" },
+  { kind: "room", ids: ["file-cards"], tests: ["tests/file-cards.test.ts"], reason: "the catalog is built by a native session's start hook and read by the guard before an edit; a drill thread has no native session to fire either, so the builder, the hook and the guard are run as processes in the tests" },
+  { kind: "room", ids: ["memory-tiers"], tests: ["tests/memory-tiers/tiers.test.ts"], reason: "runs inside the PM's memory query; the memory probe drill covers the active paths, the cold tier needs notes unused for 90 days" },
+  { kind: "mechanism", ids: ["runs.conveyor"], tests: ["tests/outage/outage-conveyor.test.ts", "tests/run-pause-start.test.ts"], reason: "a switch a person or an agent turns; the drill keeps it on" },
+  { kind: "room", ids: ["owner-presence"], tests: ["tests/owner-presence/presence.test.ts", "tests/run-budget.test.ts"], reason: "acts only while the owner types in a session of his own; the drill runs with no owner at the keyboard" },
+  { kind: "room", ids: ["stage-return"], tests: ["tests/stage-return/logic.test.ts", "tests/stage-return/return.test.ts", "tests/stage-return/spawn-brief.test.ts", "tests/stage-return-ui.test.tsx"], reason: "a person sends a task back to an earlier stage; the drill has no owner to do it, checked live on the sandbox project" },
+  { kind: "room", ids: ["rollback"], tests: ["tests/rollback.test.ts"], reason: "no drill merges a change and reverts it on the sandbox" },
+  { kind: "room", ids: ["schedule"], tests: ["tests/schedule/scheduler.test.ts"], reason: "scheduled errands tick on their own clock; the drill starts none" },
+  { kind: "room", ids: ["secrets"], tests: ["tests/server/secrets.test.ts"], reason: "the Env Catalog access of the sandbox is not exercised" },
+  { kind: "room", ids: ["ui-shell", "pages", "usage", "workflow"], tests: ["tests/setting-copy.test.ts", "tests/ui-six-tabs.test.tsx", "tests/attempt-metrics.test.ts", "tests/workflow/contract.test.ts", "tests/workflow/after-accept.test.ts"], reason: "the leaf UI kit, the page composition, token accounting and workflow chains; checked by hand on the live UI (375 and 1280 px), no drill scenario drives them" },
+  { kind: "room", ids: ["owner-waiting"], tests: ["tests/owner-waiting.test.ts", "tests/owner-waiting-ui.test.tsx", "tests/owner-push-script.test.ts", "tests/owner-waiting/bell-events.test.ts"], reason: "a screen, durable bell graph and a Telegram digest; checked by hand on the live UI harness at 375 and 1280 px, and a send needs the hub's bot" },
+  { kind: "room", ids: ["lead"], tests: ["tests/lead/road.test.ts", "tests/lead/tick.test.ts", "tests/lead/identity.test.ts", "tests/lead-agent.test.ts"], reason: "the lead («Штурман»): road tree, tick graph, and identity; the drill scenario lead_shadow reads the CLI on the deployed plugin without enabling autonomous ticks" },
+  { kind: "room", ids: ["coverage"], tests: ["tests/coverage.test.ts"], reason: "this registry; its test is its check" },
+  { kind: "room", ids: ["brief"], tests: ["tests/brief-standard.test.ts", "tests/writer-brief-v2.test.ts"], reason: "the shared brief renderer and its per-role budgets: a leaf module checked by unit tests, no drill step spawns an agent" },
+  { kind: "room", ids: ["specialist"], tests: ["tests/specialist/sp-store-and-gates.test.ts", "tests/specialist/sp-dispatch-and-pdas.test.ts"], reason: "the Specialist OS autonomous runtime (intents, locks, breakers, Wilson autonomy, verified scripts, ActionOrder dispatch and PDAS artifact sync): verified on real SQLite and workflow engine harnesses in unit and E2E tests" },
+
+  // ── key mechanisms ───────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  { kind: "mechanism", ids: ["deferral.register", "deferral.skip-scan"], live: ["deferrals"], via: "the scenario fails on an overdue entry and on a skipped test that cites a missing or closed entry", tests: ["tests/deferral-register.test.ts", "tests/deferral-skips.test.ts"] },
+  { kind: "mechanism", ids: ["merge.queue"], live: ["conflict", "main_moved"], via: "two writers rewrite one line; main moves under a writer: both are accepted, no conflict markers", tests: ["tests/server/merge-intent.test.ts"] },
+  { kind: "mechanism", ids: ["worktree.provider"], live: ["provider", "parallel3"], via: "each accepted attempt must carry its own environment and no holder thread", tests: ["tests/parallel-writers-own-worktree.test.ts"] },
+  { kind: "mechanism", ids: ["nogit.mode"], live: ["nogit", "nogit_repo"], via: "a folder without git, and one git repository inside it", tests: ["tests/live-folder.test.ts", "tests/nested-repo-flow.test.ts"] },
+  { kind: "mechanism", ids: ["task.home"], tests: ["tests/task-manifest.test.ts", "tests/task-home-transitions.test.ts", "tests/lp-drill-task-home.test.ts"], reason: "the drill scene task_home (two note tasks through the main path: each home holds every expected kind per its manifest, nothing new in the shared folders) runs in the release series, suite task, and by name; like every new scene it stays out of the deploy drill" },
+  { kind: "mechanism", ids: ["reload.recovery"], live: ["reload"], via: "plugin reload while a writer works", tests: ["tests/reconcile.test.ts", "tests/deploy-drain.test.ts"] },
+  { kind: "mechanism", ids: ["provider.fallback"], live: ["provider_limit"], via: "a bad writer model hands the task to the next writer", tests: ["tests/writer-fallbacks.test.ts"] },
+  { kind: "mechanism", ids: ["guard.hash"], live: ["guard_hash"], via: "the installed shell guard on each machine equals the repository's copy", tests: ["tests/lp-drill-guard-hash.test.ts"] },
+  { kind: "mechanism", ids: ["plan-fact.blind-check"], live: ["parallel3"], via: "the stage passes on real drill writers' tables", tests: ["tests/plan-fact.test.ts"] },
+  { kind: "mechanism", ids: ["rollback.reverify", "rollback.revert"], tests: ["tests/rollback.test.ts"], reason: "no drill merges a change and reverts it on the sandbox; the tests run on throwaway git repositories" },
+  { kind: "mechanism", ids: ["memory.conflict-hold"], tests: ["tests/memory-conflicts.test.ts"], reason: "detection runs after memory writes; the drill's memory probe plants one token, never two notes that disagree" },
+  { kind: "mechanism", ids: ["owner-waiting.digest"], tests: ["tests/owner-waiting.test.ts", "tests/owner-push-script.test.ts"], reason: "the hub script needs the daily report's Telegram bot; the test runs it with a fake bb and curl" },
+  { kind: "mechanism", ids: ["coverage.registry"], tests: ["tests/coverage.test.ts"], reason: "the registry checks itself against the code on every test run" },
+];
+
+/** Mechanisms the spec names; the test keeps them present. */
+export const REQUIRED_MECHANISMS = ["rollback.reverify", "rollback.revert", "deferral.register", "plan-fact.blind-check", "memory.conflict-hold"] as const;

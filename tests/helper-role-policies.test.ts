@@ -47,8 +47,8 @@ function boundPolicy(providerId: string, role: HelperRole) {
 }
 
 const PROMPT_ONLY: HelperRole[] = [
-  "plan-critic", "pm-reader", "memory-maintainer", "council-seat",
-  "rules-analyzer", "episode-analyst", "wall-hunter", "specialist:lead", "workspace-provisioner",
+  "plan-critic", "pm-reader", "memory-maintainer", 
+  "specialist:lead", "workspace-provisioner",
 ];
 
 describe("role profiles carried on the spawn", () => {
@@ -79,7 +79,7 @@ describe("role profiles carried on the spawn", () => {
     // An empty profile means prompt-only; the harness sessions edit files, but the mission on disk is their whole brief.
     for (const role of ["harness-editor", "harness-composer", "harness-reflection"] as const)
       expect(roleProfilePolicy(role).projectInstructions, role).toBe(false);
-    for (const role of ["writer", "code-critic", "docs-maintainer", "lead", "workflow-architect"] as const)
+    for (const role of ["writer", "code-critic", "lead", "workflow-architect"] as const)
       expect(roleProfilePolicy(role).projectInstructions, role).toBeUndefined();
   });
 

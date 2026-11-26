@@ -2,16 +2,15 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { runCommandOnHost } from "../src/rooms/writer/cli-run";
-import { createLiveFolder } from "../src/rooms/writer/server/live-folder";
+import { createLiveFolder } from "../src/rooms/writer/server/services/live-folder";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { sha256Hex } from "@lane-pilot/kit";
-import { describe, expect, it, vi } from "vitest";
-import * as planFactStage from "../src/rooms/writer/server/plan-fact";
+import { describe, expect, it } from "vitest";
 import type { PrototypeConfig, TaskV2 } from "../src/rooms/contracts";
 import { createAttempt, createRun, createTask, listStageReceipts, openDatabase, saveProjectSetting, saveReasoningTrace, saveStageReceipt, saveTaskGitBase, setAttemptWorkspace, setRunThread, transitionAttempt } from "../src/rooms/plugin-db";
-import { createWriterFinish } from "../src/rooms/writer/server/finish";
-import { requireHelperSpawn } from "../src/rooms/runs/server/run-routing";
-import { stageHelperSettings } from "../src/rooms/settings/server/stage-settings";
+import { createWriterFinish } from "../src/rooms/writer/server/services/finish";
+import { requireHelperSpawn } from "../src/rooms/runs/server";
+import { stageHelperSettings } from "../src/rooms/settings/server/services/stage-settings";
 
 // 0.1.571 live phase drill (ph_e7a06c6925): the plan made the writer commit its produced files, the attempt
 // worktree went clean, workspaceDirt saw no rows and every produced hash stayed null — code critique skipped
@@ -59,9 +58,6 @@ function world(opts: {
   gitBase?: boolean;
   patch?: string;
   content?: string;
-  diffProbeFailure?: boolean;
-  diffProbeMissingBase?: boolean;
-  phaseFixture?: { birth:string; rootBirth?:string; root?:boolean; taskId?:string; kind?:string; output:string };
 }) {
   const path = opts.live?.path ?? PRODUCED;
   const cwd = opts.live?.folder ?? "/repo";
@@ -70,15 +66,14 @@ function world(opts: {
   const db = openDatabase(bb);
   createRun(db, "run", "P", "cli", cwd);
   setRunThread(db, "run", "pm");
-  const taskId = opts.phaseFixture?.taskId ?? (opts.phaseFixture?.birth === "redo" ? "t1.2" : "t1");
-  const fixtureTask = { ...task(path, cwd), id:taskId, ...(opts.phaseFixture ? { kind:opts.phaseFixture.kind, acceptance:["first", "second", "third"], verification:["check1", "check2", "check3"].map((command) => ({ command })) } : {}) } as TaskV2;
-  if (opts.phaseFixture?.birth === "redo" && opts.phaseFixture.root !== false) createTask(db, { id:"t1", runId:"run", kind:"bb", contract:task(path, cwd), birth:opts.phaseFixture.rootBirth });
-  createTask(db, { id:taskId, runId:"run", kind:"bb", contract:fixtureTask, birth:opts.phaseFixture?.birth });
+  const taskId = "t1";
+  const fixtureTask = task(path, cwd);
+  createTask(db, { id:taskId, runId:"run", kind:"bb", contract:fixtureTask });
   createAttempt(db, { id:"a-t1", runId:"run", taskId });
   transitionAttempt(db, "a-t1", "spawn_requested");
   if (opts.live) setAttemptWorkspace(db, "a-t1", { path:cwd, environmentId:null, decision:{ reason:"live_folder" } });
   transitionAttempt(db, "a-t1", "running", { threadId:"writer-t1" });
-  if (opts.gitBase !== false && opts.phaseFixture?.root !== false) {
+  if (opts.gitBase !== false) {
     saveTaskGitBase(db, taskId, { baseRef:"main", baseSha:BASE_SHA, initialHeadSha:BASE_SHA, branch:"lp/t1", compareCommitted:true });
   }
   saveProjectSetting(db, "P", "code_critique.enabled", opts.criticEnabled ?? true);
@@ -135,10 +130,9 @@ function world(opts: {
     host:{ call:async (method:string, input?:{ command?:string; cwd?:string; relativePath?:string }) => method === "readBoundedFile" && opts.live
       ? { content:opts.live.content, sha256:sha256Hex(opts.live.content), lineEnd:1, truncated:false }
       : method === "runCommand"
-      ? (opts.diffProbeFailure && String(input?.command).includes("git cat-file") ? Promise.reject(new Error("fixture diff probe failure"))
-        : opts.live && String(input?.command).includes("import base64, json, os, re, sys, time, zlib") ? (async () => { const actual = await runCommandOnHost({ requestedHostId:"h", command:String(input?.command), cwd:String(input?.cwd) }); return opts.liveRead?.(++liveReads, actual) ?? actual; })()
+      ? (opts.live && String(input?.command).includes("import base64, json, os, re, sys, time, zlib") ? (async () => { const actual = await runCommandOnHost({ requestedHostId:"h", command:String(input?.command), cwd:String(input?.cwd) }); return opts.liveRead?.(++liveReads, actual) ?? actual; })()
         : opts.runCommand?.({ command:String(input?.command ?? ""), cwd:String(input?.cwd ?? "") })
-        ?? { hostId:"h", exitCode:0, stdout:opts.diffProbeMissingBase ? "---nobase---\n---untracked---\n" : opts.phaseFixture ? "---diff-ok---\n---untracked---\n" : `${"f".repeat(40)}\n`, stderr:"" })
+        ?? { hostId:"h", exitCode:0, stdout:`${"f".repeat(40)}\n`, stderr:"" })
       : ({}) },
     isDisposed:() => false, log:() => undefined,
   };
@@ -159,7 +153,7 @@ function world(opts: {
       validations++;
       // Stop after observing the repair: this fixture proves routing, not a real writer's acceptance.
       if (opts.repair && validations > 1) return { status:"blocked", reason:"fixture_repair_checked" };
-      return { status:"accepted", output:opts.phaseFixture?.output ?? "done", produced:[path], verification:opts.phaseFixture ? ["check1", "check2", "check3"].map((command) => ({ command, exitCode:0 })) : [] };
+      return { status:"accepted", output:"done", produced:[path], verification:[] };
     },
     persistWriterAcceptance:async () => { landed++; return { state:"passed" }; },
     workspaceDirt:async () => {
@@ -229,9 +223,9 @@ describe("code critique evidence covers committed produced files", () => {
   it("a snapshot hash that disagrees with the read content stays unknown — the fallback never overwrites a snapshot row", async () => {
     const w = world({ snapshots:[{ path:PRODUCED, sha256:"0".repeat(64) }] });
     const result = await w.run();
-    expect(result).toMatchObject({ state:"passed" });
+    expect(result).toMatchObject({ status:"blocked" });
     const receipt = critiqueReceipt(w.db);
-    expect(receipt?.state).toBe("skipped");
+    expect(receipt?.state).toBe("blocked");
     expect(receipt?.reason).toContain("code_critique_evidence_unknown");
     expect(w.spawns).toHaveLength(0);
   });
@@ -251,9 +245,9 @@ describe("code critique evidence covers committed produced files", () => {
   it("a failed dirt snapshot keeps every produced hash unknown", async () => {
     const w = world({ dirtOk:false });
     const result = await w.run();
-    expect(result).toMatchObject({ state:"passed" });
+    expect(result).toMatchObject({ status:"blocked" });
     const receipt = critiqueReceipt(w.db);
-    expect(receipt?.state).toBe("skipped");
+    expect(receipt?.state).toBe("blocked");
     expect(receipt?.reason).toContain("code_critique_evidence_unknown");
     expect(w.spawns).toHaveLength(0);
   });
@@ -465,74 +459,5 @@ describe("live backup evidence in the finish gate", () => {
         expect(w.spawns).toHaveLength(0);
       } finally { w.db.close(); }
     } finally { process.env.HOME = oldHome; rmSync(root, { recursive:true, force:true }); }
-  });
-});
-
-
-describe("phase plan-fact before landing", () => {
-  const report = (items:number[]) => "```plan-fact\n" + JSON.stringify(items.map((item) => ({ item, status:"done", evidence:[`cmd:check${item}`] }))) + "\n```";
-  it("rejects one row for three passed checks before landing", async () => {
-    const output = "```plan-fact\n" + JSON.stringify([{ item:1, status:"done", evidence:["cmd:check1", "cmd:check2", "cmd:check3"] }]) + "\n```";
-    const w = world({ criticEnabled:false, phaseFixture:{ birth:"phase", output } });
-    expect(await w.run()).toMatchObject({ status:"validation_failed", reason:expect.stringMatching(/plan_fact_unproven.*2, 3/) });
-    expect(w.landed).toBe(0);
-  });
-  it("lands phase work with all explicit rows", async () => {
-    const w = world({ criticEnabled:false, phaseFixture:{ birth:"phase", output:report([1, 2, 3]) } });
-    expect(await w.run()).toMatchObject({ state:"passed" });
-    expect(w.landed).toBe(1);
-  });
-  it("leaves non-phase record mode unchanged", async () => {
-    const w = world({ criticEnabled:false, phaseFixture:{ birth:"pm", output:report([1]) } });
-    expect(await w.run()).toMatchObject({ state:"passed" });
-    expect(w.landed).toBe(1);
-  });
-  it("applies the phase rule to redo and excludes no-code tasks", async () => {
-    const redo = world({ criticEnabled:false, phaseFixture:{ birth:"redo", rootBirth:"phase", output:report([1]) } });
-    expect(await redo.run()).toMatchObject({ status:"validation_failed", reason:expect.stringContaining("plan_fact_unproven") });
-    expect(redo.landed).toBe(0);
-    const docs = world({ criticEnabled:false, phaseFixture:{ birth:"phase", kind:"docs", output:"done" } });
-    expect(await docs.run()).toMatchObject({ state:"passed" });
-    expect(docs.landed).toBe(1);
-  });
-  it("fails closed for missing numeric redo roots and phase-origin second-pilot .n tasks", async () => {
-    const missing = world({ criticEnabled:false, phaseFixture:{ birth:"redo", root:false, taskId:"t1.2", output:report([1, 2, 3]) } });
-    expect(await missing.run()).toMatchObject({ status:"blocked", reason:expect.stringContaining("plan_fact_lineage_unknown") });
-    expect(missing.landed).toBe(0);
-    expect(missing.sends).toHaveLength(0);
-    const narrowed = world({ criticEnabled:false, phaseFixture:{ birth:"redo", rootBirth:"phase", taskId:"t1.n", output:report([1]) } });
-    expect(await narrowed.run()).toMatchObject({ status:"validation_failed", reason:expect.stringContaining("plan_fact_unproven") });
-    expect(narrowed.landed).toBe(0);
-  });
-  it("keeps a known ordinary redo in record mode", async () => {
-    const redo = world({ criticEnabled:false, phaseFixture:{ birth:"redo", rootBirth:"pm", output:report([1]) } });
-    expect(await redo.run()).toMatchObject({ state:"passed" });
-    expect(redo.landed).toBe(1);
-  });
-  it("blocks a partial diff-probe failure without landing or writer correction", async () => {
-    const w = world({ criticEnabled:false, diffProbeFailure:true, phaseFixture:{ birth:"phase", output:report([1, 2, 3]) } });
-    expect(await w.run()).toMatchObject({ status:"blocked", reason:expect.stringContaining("plan_fact_check_unavailable") });
-    expect(w.landed).toBe(0);
-    expect(w.sends).toHaveLength(0);
-  });
-  it("blocks a valid-host missing-base response without landing or writer correction", async () => {
-    const w = world({ criticEnabled:false, diffProbeMissingBase:true, phaseFixture:{ birth:"phase", output:report([1, 2, 3]) } });
-    expect(await w.run()).toMatchObject({ status:"blocked", reason:expect.stringContaining("plan_fact_check_unavailable") });
-    expect(w.landed).toBe(0);
-    expect(w.sends).toHaveLength(0);
-  });
-  it("blocks an infrastructure failure without landing or requesting writer correction", async () => {
-    const failure = vi.spyOn(planFactStage, "runPlanFactStage").mockRejectedValueOnce(new Error("fixture storage failure"));
-    try {
-      const w = world({ criticEnabled:false, phaseFixture:{ birth:"phase", output:report([1, 2, 3]) } });
-      expect(await w.run()).toMatchObject({ status:"blocked", reason:expect.stringContaining("plan_fact_check_unavailable") });
-      expect(w.landed).toBe(0);
-      expect(w.sends).toHaveLength(0);
-    } finally { failure.mockRestore(); }
-  });
-  it.each(["done", "```plan-fact\nnot json\n```"])("rejects missing or invalid phase reports", async (output) => {
-    const w = world({ criticEnabled:false, phaseFixture:{ birth:"phase", output } });
-    expect(await w.run()).toMatchObject({ status:"validation_failed", reason:expect.stringMatching(/plan_fact_table_(missing|invalid)/) });
-    expect(w.landed).toBe(0);
   });
 });

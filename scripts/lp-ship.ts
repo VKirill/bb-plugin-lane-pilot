@@ -24,16 +24,15 @@ import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { join, relative } from "node:path";
-import { smaDonePercent, smaRows, brokenProof, defaultProofRoots } from "../src/rooms/sma-map";
-import { leakFindings } from "../tests/helpers/guard-tools";
-import { batchItemIsFullLane, batchReceiptGaps, pickBatch, parseTodoMeta, FULL_LANE_PATHS, type TodoMeta } from "../src/rooms/backlog/logic";
+import { addedLineLeaks, leakFindings } from "../tests/helpers/guard-tools";
+import { batchItemIsFullLane, batchReceiptGaps, pickBatch, parseTodoMeta, FULL_LANE_PATHS, type TodoMeta } from "../src/rooms/backlog";
 
 // LP_SHIP_ROOT points every verb at another tree (the four-proofs tests and the region scene sma_r27 judge a fixture tree, never the checkout they run in).
 const ROOT = process.env.LP_SHIP_ROOT || join(import.meta.dirname, "..");
 // The built tree the gate judges. A test points it at an empty folder so the checkout's own leftover build never decides its result.
 const DIST = process.env.LP_SHIP_DIST || join(ROOT, "dist");
 const read = (path: string) => readFileSync(join(ROOT, path), "utf8");
-const git = (...args: string[]) => execFileSync("git", args, { cwd: ROOT, encoding: "utf8" }).trim();
+const git = (...args: string[]) => execFileSync("git", args, { cwd: ROOT, encoding: "utf8", maxBuffer: 64e6 }).trim();
 const pkg = JSON.parse(read("package.json")) as { version: string; dependencies?: Record<string, string>; license?: string };
 const out = (findings: string[], ok: string) => { console.log(findings.length ? findings.join("\n") : ok); return findings.length ? 1 : 0; };
 
@@ -43,8 +42,10 @@ function docs(): string[] {
 }
 
 function cliCommands(): Set<string> {
-  const text = read("src/rooms/tools/server/cli-commands.ts");
-  return new Set([...text.matchAll(/\{ name:"([a-z0-9-]+)"/g)].map((m) => m[1]!));
+  const text = read("src/rooms/tools/server/handlers/cli-commands.ts");
+  // Room-owned verbs live in each room's `cli` list (src/rooms/<room>/server/room.ts), composed by the registry.
+  const rooms = readdirSync(join(ROOT, "src/rooms")).map((room) => `src/rooms/${room}/server/room.ts`).filter((file) => existsSync(join(ROOT, file))).map(read).join("\n");
+  return new Set([...text.matchAll(/\{ name:"([a-z0-9-]+)"/g), ...rooms.matchAll(/\{\s*name:\s*"([a-z0-9-]+)",\s*summary:/g)].map((m) => m[1]!));
 }
 
 // `--strict` (the gate) adds the date rules and the verb-coverage baseline, which writes .agents/ship/doc-coverage-baseline.json; the plain verb is main's.
@@ -52,7 +53,6 @@ function docAudit(args: string[] = []): number {
   const strict = args.includes("--strict");
   const findings: string[] = [];
   const commands = cliCommands();
-  const map = smaRows();
   const today = Math.floor(Date.now() / 1000);
   for (const file of docs()) {
     const text = read(file);
@@ -69,7 +69,6 @@ function docAudit(args: string[] = []): number {
     for (const m of text.matchAll(/bb lane-pilot ([a-z][a-z0-9-]+)/g)) if (!commands.has(m[1]!) && !/^(activate|dispatch-bb|finish|cancel|defer|defer-close)$/.test(m[1]!)) findings.push(`${file}: names \`bb lane-pilot ${m[1]}\`, which the CLI does not have`);
     // A decision record keeps the paths of its day: only living documents are held to the code.
     if (!file.startsWith("docs/decisions/")) for (const m of text.matchAll(/`((?:src|scripts|packages|workflows|tests|docs)\/[A-Za-z0-9._/-]+\.[a-z]{1,5})`/g)) if (!existsSync(join(ROOT, m[1]!))) findings.push(`${file}: names ${m[1]}, which does not exist`);
-    for (const m of text.matchAll(/(\d{3,5}) (?:nodes|узл)/g)) if (Number(m[1]) !== map.length && /SMA/.test(text)) findings.push(`${file}: says ${m[1]} nodes of the SMA map, the map has ${map.length}`);
   }
   // Coverage of the verbs: every CLI command must appear in some document. The count is kept against a stored baseline,
   // so a newly added undocumented verb fails but the ones already missing today do not (SMA k_lib_docaudit).
@@ -166,6 +165,11 @@ function publishable(args: string[] = []): number {
   // The same scan the test run is red on (SMA m_tl_rebrand_wired): the gate's strict form fails on a leak too; plain stays main's.
   // LP_SHIP_LEAK_ROOT points the scan at another tree (the test plants its probe outside the repository).
   if (strict) for (const hit of leakFindings(process.env.LP_SHIP_LEAK_ROOT || ROOT)) findings.push(`leak scan: ${hit}`);
+  let hasOriginMain = false;
+  try { git("rev-parse", "--verify", "--quiet", "origin/main"); hasOriginMain = true; } catch { hasOriginMain = false; }
+  if (hasOriginMain) {
+    for (const hit of addedLineLeaks("origin/main..HEAD", git, console.log)) findings.push(`leak scan: ${hit}`);
+  }
   try { execFileSync("npx", ["tsx", "scripts/generate-atlas.ts", "--check"], { cwd: ROOT, stdio: "pipe" }); } catch { findings.push("the atlas is stale: npx tsx scripts/generate-atlas.ts"); }
   // Entry files and their builds: the package is publishable only when bb.server/bb.host/bb.app exist, dist/ holds their
   // builds and every dist/*.meta.json agrees with package.json (SMA k_lib_pkgcheck).
@@ -204,24 +208,13 @@ function predictLint(): number {
 }
 
 function explain(): number {
-  const rows = new Map(smaRows().map((row) => [row.id, row]));
-  const roots = defaultProofRoots(ROOT);
   const findings: string[] = [];
-  for (const file of docs()) {
-    const head = read(file).match(/^---\n([\s\S]*?)\n---/)?.[1] ?? "";
-    const ids = head.match(/explains:\s*\[([^\]]*)\]/)?.[1]?.split(",").map((s) => s.trim()).filter(Boolean) ?? [];
-    for (const id of ids) {
-      const row = rows.get(id);
-      if (!row) findings.push(`${file} explains ${id}, which the SMA map does not have`);
-      else if (!row.proof || brokenProof(row.proof, roots)) findings.push(`${file} explains ${id} «${row.label}», which is no longer proven — the explainer is out of date`);
-    }
-  }
-  // Coverage line (SMA k_lib_explain): CLI verbs no explainer names. Reported, never a finding.
-  const cli = readFileSync(join(ROOT, "src/rooms/tools/server/cli-commands.ts"), "utf8");
+  // Coverage line: CLI verbs no explainer names. Reported, never a finding.
+  const cli = readFileSync(join(ROOT, "src/rooms/tools/server/handlers/cli-commands.ts"), "utf8");
   const verbs = [...cli.matchAll(/name:\s*"([a-z][a-z0-9-]*)"\s*,\s*summary:/g)].map((m) => m[1]!);
   const uncovered = verbs.filter((verb) => !docs().some((file) => { const text = read(file); return text.includes(`lane-pilot ${verb}`) || text.includes(`\`${verb}\``); }));
   console.log(`explain coverage: ${verbs.length - uncovered.length}/${verbs.length} CLI verbs have an explainer${uncovered.length ? ` (missing: ${uncovered.slice(0, 20).join(", ")}${uncovered.length > 20 ? "…" : ""})` : ""}`);
-  return out(findings, `explainers: every node they explain is proven (map ${smaDonePercent(smaRows())}%)`);
+  return out(findings, "explainers: CLI coverage checked");
 }
 
 // `lane [base]` prints the four fields, drafts the changelog entry and keeps one record per (base, head) in .agents/ship/lanes.jsonl

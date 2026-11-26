@@ -1,3 +1,5 @@
+import { defineSetting, type SettingDefinition } from "@lane-pilot/settings-catalog";
+
 /**
  * The lead's settings (roadmap §3.3): rows of the global level (project `*`), edited on the Self-improvement screen or with `bb lane-pilot settings`.
  * `enabled` is off until the owner's word; the rest have defaults the owner can live with.
@@ -53,3 +55,13 @@ export function leadSettingProblem(key: string, value: unknown): string | null {
     default: return null;
   }
 }
+
+export const leadSettings: readonly SettingDefinition[] = [
+  defineSetting({"key":"lead.budget_daily_usd","room":"lead","default":15,"bounds":{"kind":"lead","min":0,"max":10000},"ui":{"id":"s605","status":"editable","control":"number","section":"improvement","scope":"global","min":0,"max":10000,"invType":"int"}}),
+  defineSetting({"key":"lead.enabled","room":"lead","default":"off","bounds":{"kind":"lead"},"ui":{"id":"s602","status":"editable","control":"select","section":"improvement","scope":"global","options":["on","off"],"invType":"enum"}}),
+  defineSetting({"key":"lead.max_proposals","room":"lead","default":5,"bounds":{"kind":"lead","min":1,"max":20},"ui":{"id":"s607","status":"editable","control":"number","section":"improvement","scope":"global","min":1,"max":20,"invType":"int"}}),
+  defineSetting({"key":"lead.priority","room":"lead","default":"","bounds":{"kind":"lead"},"ui":{"id":"s608","status":"editable","control":"input","section":"improvement","scope":"global","invType":"text"}}),
+  defineSetting({"key":"lead.project","room":"lead","default":"","bounds":{"kind":"lead"},"ui":{"id":"s603","status":"editable","control":"input","section":"improvement","scope":"global","invType":"text"}}),
+  defineSetting({"key":"lead.projects","room":"lead","default":"","bounds":{"kind":"lead"},"ui":{"id":"s604","status":"editable","control":"input","section":"improvement","scope":"global","invType":"text"}}),
+  defineSetting({"key":"lead.tick_cron","room":"lead","default":"30 6,10,14,18 * * *","bounds":{"kind":"cron"},"ui":{"id":"s606","status":"editable","control":"input","section":"improvement","scope":"global","invType":"text"}}),
+];

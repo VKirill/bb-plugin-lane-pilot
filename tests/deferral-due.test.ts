@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { dayOfArg, namedDates, resolveTerm } from "../src/rooms/deferral/due";
+import { dayOfArg, namedDates, resolveTerm } from "../src/rooms/deferral/models/due";
 
 // SMA rule 5: a term is the owner's date, read from his message. 2026-10-22 is a Thursday.
 const AT = Date.parse("2026-10-22T10:00:00Z");

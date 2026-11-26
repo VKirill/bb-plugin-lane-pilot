@@ -5,7 +5,7 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
 import { createAttempt, createRun, createTask, openDatabase, saveStageReceipt, setAttemptWorkspace, transitionAttempt } from "../src/rooms/plugin-db";
 import { createCore } from "../src/rooms/core/server/core";
-import { runsRpc } from "../src/rooms/runs/server/rpc/runs";
+import { runsRpc } from "../src/rooms/runs/server";
 import type { Services } from "../server";
 
 // The first test imports the whole app; a cold import alone can pass 5 s.
@@ -156,12 +156,12 @@ describe("get_run_card RPC", () => {
     ]);
   });
 
-  it("marks an accepted task whose memory or project log failed after acceptance, and nothing for a passed or a not-accepted one", async () => {
+  it("marks an accepted task whose background memory failed after acceptance, and nothing for a passed or a not-accepted one", async () => {
     const { bb } = createFakePluginHost({ pluginId: "lane-pilot" });
     const db = openDatabase(bb);
     const handlers = runsRpc(createCore(bb, db), {} as unknown as Services);
     createRun(db, "run_bg", "proj_1", "bb");
-    const receipt = (taskId: string, stageId: "memory-maintenance" | "project-life", state: "failed" | "passed") => saveStageReceipt(db, { runId: "run_bg", taskId, stageId, contractVersion: 1, state, inputSha256: "s",
+    const receipt = (taskId: string, stageId: "memory-maintenance", state: "failed" | "passed") => saveStageReceipt(db, { runId: "run_bg", taskId, stageId, contractVersion: 1, state, inputSha256: "s",
       outputSha256: null, attempt: 1, providerId: null, model: null, threadId: null, result: {}, reason: null, updatedAt: Date.now() });
     for (const [id, end] of [["ok", "accepted"], ["bg", "accepted"], ["red", "blocked"]] as const) {
       createTask(db, { id, runId: "run_bg", kind: "bb", contract: { id, title: id } });
@@ -171,10 +171,9 @@ describe("get_run_card RPC", () => {
     }
     receipt("ok", "memory-maintenance", "passed");
     receipt("bg", "memory-maintenance", "failed");
-    receipt("bg", "project-life", "failed");
     receipt("red", "memory-maintenance", "failed");
     const tasks = (await handlers.get_run_card({ runId: "run_bg" }))!.tasks;
-    expect(tasks.find((task) => task.id === "bg")!.background).toEqual(["memory-maintenance", "project-life"]);
+    expect(tasks.find((task) => task.id === "bg")!.background).toEqual(["memory-maintenance"]);
     expect(tasks.find((task) => task.id === "ok")!.background).toBeUndefined();
     expect(tasks.find((task) => task.id === "red")!.background).toBeUndefined();
   });

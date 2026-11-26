@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { installThreadEventFeed, type FeedEvent } from "../src/rooms/stability/server/thread-event-feed";
+import { installThreadEventFeed, type FeedEvent } from "../src/rooms/stability/server";
 
 /**
  * The shared thread event feed (0.1.575): the real contract is a debounced {thread, sequence} wake plus

@@ -4,31 +4,25 @@ import { constants as fsConstants } from "node:fs";
 import { delimiter, join, relative } from "node:path";
 import { homedir, networkInterfaces } from "node:os";
 import type { ExperimentalHostRpcHandlers } from "@get-bb/plugin-sdk";
-import { isFsAbsent, orMiss, readTextOrNull } from "@lane-pilot/kit";
+import { currentHostId, isFsAbsent, orMiss, readTextOrNull } from "@lane-pilot/kit";
 import { hostContract } from "../../contracts";
 import { leanCodexConfig } from "../../contracts";
 import { readMachineFacts, userToolBins } from "../../verification";
-import { runStabilityDrill } from "../../stability";
 import { writePmSettingsOnHost } from "../../writer";
 
 /** Free space for whoever decides before a spawn: a full disk (OVH, 2026-10-03) killed the BB host daemon. With `machine`: the host's load and memory too, the reading taken before a check. */
 export const diskFree: ExperimentalHostRpcHandlers<typeof hostContract>["diskFree"] = async (input) => {
   const fs = await statfs(input.path);
-  return { hostId:process.env.BB_HOST_ID??input.requestedHostId, path:input.path, freeBytes:Number(fs.bavail)*Number(fs.bsize), totalBytes:Number(fs.blocks)*Number(fs.bsize),
+  return { hostId:currentHostId(input.requestedHostId), path:input.path, freeBytes:Number(fs.bavail)*Number(fs.bsize), totalBytes:Number(fs.blocks)*Number(fs.bsize),
     ...(input.machine ? { machine:await readMachineFacts() } : {}) };
 };
-
-export const stabilityDrill: ExperimentalHostRpcHandlers<typeof hostContract>["stabilityDrill"] = async (input) => ({
-  hostId:process.env.BB_HOST_ID??input.requestedHostId,
-  checks:await runStabilityDrill(),
-});
 
 /** A ticket stands unanswered for ten minutes, then a late answer cannot authorise the call (SMA wb_ticket). */
 export const PERMIT_TTL_S = 600;
 
 /** The permit channel on this machine: every live ticket a writer filed that has no answer yet. */
 export const listPermitTickets: ExperimentalHostRpcHandlers<typeof hostContract>["listPermitTickets"] = async (input) => {
-  const hostId = process.env.BB_HOST_ID ?? input.requestedHostId;
+  const hostId = currentHostId(input.requestedHostId);
   const root = join(homedir(), ".agents", "permits");
   const tickets: Array<{ session: string; ticket: string; category: string; command: string; cwd: string; at: number }> = [];
   for (const session of await orMiss(readdir(root), [] as string[], isFsAbsent)) {
@@ -50,7 +44,7 @@ export const listPermitTickets: ExperimentalHostRpcHandlers<typeof hostContract>
 
 /** The PM's answer to one permit ticket. */
 export const answerPermit: ExperimentalHostRpcHandlers<typeof hostContract>["answerPermit"] = async (input) => {
-  const hostId = process.env.BB_HOST_ID ?? input.requestedHostId;
+  const hostId = currentHostId(input.requestedHostId);
   const folder = join(homedir(), ".agents", "permits", input.session);
   const ticketPath = join(folder, `${input.ticket}.ticket.json`);
   if (!await stat(ticketPath).then(() => true, () => false)) return { hostId, written: false };
@@ -65,7 +59,7 @@ export const answerPermit: ExperimentalHostRpcHandlers<typeof hostContract>["ans
 
 /** The subscription windows the statusline cached on this machine: five hours, seven days, seven days of Opus (utilization in percent). */
 export const readUsageWindows: ExperimentalHostRpcHandlers<typeof hostContract>["readUsageWindows"] = async (input) => {
-  const hostId = process.env.BB_HOST_ID ?? input.requestedHostId;
+  const hostId = currentHostId(input.requestedHostId);
   const file = join(process.env.LANE_STATUSLINE_CACHE ?? join(homedir(), ".agents", "statusline"), "last_usage.json");
   const raw = await readFile(file, "utf8").then((text) => JSON.parse(text) as Record<string, unknown>, () => null);
   const usage = (raw?.usage ?? {}) as Record<string, { utilization?: unknown; resets_at?: unknown }>;
@@ -78,7 +72,7 @@ export const readUsageWindows: ExperimentalHostRpcHandlers<typeof hostContract>[
 
 /** The hub's latest usage snapshot for this machine's session guard (~/.lane-pilot/usage-snapshot.json). */
 export const writeUsageSnapshot: ExperimentalHostRpcHandlers<typeof hostContract>["writeUsageSnapshot"] = async (input) => {
-  const hostId = process.env.BB_HOST_ID ?? input.requestedHostId;
+  const hostId = currentHostId(input.requestedHostId);
   const dir = join(homedir(), ".lane-pilot");
   const file = join(dir, "usage-snapshot.json");
   const temp = `${file}.${randomUUID().slice(0, 8)}`;
@@ -91,7 +85,7 @@ export const writeUsageSnapshot: ExperimentalHostRpcHandlers<typeof hostContract
 
 /** Close exactly that line: the backlog item's meta.yaml gets `status: done`; a file with no or two status lines is refused, not guessed. */
 export const closeBacklogItem: ExperimentalHostRpcHandlers<typeof hostContract>["closeBacklogItem"] = async (input) => {
-  const hostId = process.env.BB_HOST_ID ?? input.requestedHostId;
+  const hostId = currentHostId(input.requestedHostId);
   const file = join(await realpath(input.projectCwd), ".agents", "todos", "items", input.id, "meta.yaml");
   const text = await readTextOrNull(file);
   if (text === null) return { hostId, status: "refused", reason: `no ${relative(input.projectCwd, file)}` };
@@ -118,7 +112,7 @@ export const whichPrograms: ExperimentalHostRpcHandlers<typeof hostContract>["wh
     }
     found[program] = hit;
   }
-  return { hostId: process.env.BB_HOST_ID ?? input.requestedHostId, found };
+  return { hostId: currentHostId(input.requestedHostId), found };
 };
 
 /**
@@ -191,7 +185,7 @@ export const removeWorkerHome: ExperimentalHostRpcHandlers<typeof hostContract>[
   const { rm, realpath } = await import("node:fs/promises");
   const { homedir: home } = await import("node:os");
   const { join: at, resolve, sep } = await import("node:path");
-  const hostId = process.env.BB_HOST_ID ?? input.requestedHostId;
+  const hostId = currentHostId(input.requestedHostId);
   // The handler is reached by the contract's regex, but it checks the key itself: "." would resolve to the root and remove every home.
   if (input.key === "" || input.key.startsWith(".") || input.key.includes("/") || input.key.includes("\\")) return { hostId, removed: false };
   const root = at(home(), ".lane-pilot", "codex-homes");
@@ -211,7 +205,7 @@ export const removeWorkerHome: ExperimentalHostRpcHandlers<typeof hostContract>[
  * reaches a dev server here at that address, without a public tunnel.
  */
 export const vpnAddress: ExperimentalHostRpcHandlers<typeof hostContract>["vpnAddress"] = async (input) => {
-  const hostId = process.env.BB_HOST_ID ?? input.requestedHostId;
+  const hostId = currentHostId(input.requestedHostId);
   for (const [name, entries] of Object.entries(networkInterfaces())) {
     if (!/^(wg|utun|tun|tailscale)/.test(name)) continue;
     const ipv4 = entries?.find((entry) => entry.family === "IPv4" && !entry.internal

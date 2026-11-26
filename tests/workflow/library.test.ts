@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { parseLpSignal } from "@lane-pilot/ui-kit/realtime-channel";
-import { createWorkflowLibrary, clipJson } from "../../src/rooms/workflow/server/workflow-library";
+import { createWorkflowLibrary, clipJson } from "../../src/rooms/workflow/server/services/workflow-library";
 import { rpcContract } from "../../src/rooms/contracts";
 import type { ServerCore } from "../../src/rooms/contracts/server";
 import type { Services } from "../../server";

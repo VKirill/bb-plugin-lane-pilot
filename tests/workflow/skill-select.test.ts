@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { experimental_selectedSkillMentions } from "@get-bb/plugin-sdk/provider-bridge";
-import { nativeSkillSelection, skillThreadRoute, skillWorkspaceRoute } from "../../src/rooms/workflow/server/workflow-skill-select";
+import { nativeSkillSelection, skillThreadRoute, skillWorkspaceRoute } from "../../src/rooms/workflow/server/services/workflow-skill-select";
 
 const skill = (name: string, extra: Record<string, unknown> = {}) => ({ name, source: "skill", origin: "project", argumentHint: null, ...extra });
 const bbWith = (commands: unknown[] | Error) => ({

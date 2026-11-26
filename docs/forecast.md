@@ -7,8 +7,9 @@ status: active
 confidence: medium
 tags: [sma, forecast, calibration, pm]
 sources:
-  - src/rooms/forecast/logic.ts
-  - src/rooms/forecast/server/report.ts
+  - src/rooms/forecast/models/forecast.ts
+  - src/rooms/forecast/server/services/report.ts
+  - src/rooms/forecast/server/handlers/forecast-cli.ts
 ---
 
 # Plan forecast and calibration (SMA D2-1)
@@ -27,4 +28,4 @@ that came true, the median fact/forecast ratio of tokens and minutes.
 - `bb lane-pilot forecast [--project P] [--days 30] [--json]`, RPC `forecast_report`.
 - The PM reads one calibration line with the register of deferrals before it promises a date (SMA rule 6), once three tasks are scored.
 
-Pure parts (`scoreForecast`, `calibrate`, `calibrationLine`) are in `src/rooms/forecast/logic.ts`; the reading of the facts in `server/report.ts`.
+Pure parts (`scoreForecast`, `calibrate`, `calibrationLine`) are in `src/rooms/forecast/models/forecast.ts`; the reading of the facts in `src/rooms/forecast/server/services/report.ts`.

@@ -5,7 +5,7 @@ import { mkdirSync, mkdtempSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { hostContract } from "../../src/rooms/contracts";
-import { validateSettingValue } from "../../src/rooms/settings/setting-validation";
+import { validateSettingValue } from "../../src/rooms/settings/models/setting-validation";
 
 describe("host sandbox policy", () => {
   it("resolves auto only to the verified native backend and fails closed for unsupported hosts or backends", () => {

@@ -1,12 +1,12 @@
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
-import { VISIBLE_CATALOG } from "@lane-pilot/settings-catalog";
+import { SETTINGS_REGISTRY } from "../src/rooms/settings-registry";
 import { openAllTabs } from "./ui-tabs";
 
 // Shared harness of the settings-page UI tests: the fixture screen, the RPC defaults and a mounted page with every tab warmed.
 // The test files keep their own vi.mock("sonner") and configure() calls.
 
 export function screenFixture() {
-  const values = Object.fromEntries(VISIBLE_CATALOG.map((row) => [row.storageKey, row.defaultValue]));
+  const values = Object.fromEntries(SETTINGS_REGISTRY.visible.map((row) => [row.storageKey, row.defaultValue]));
   values["writer.provider"] = "codex";
   values["writer.model"] = "test-model";
   values["writer.reasoning_effort"] = "medium";
@@ -16,7 +16,7 @@ export function screenFixture() {
     workspacePath: "/tmp/lane-pilot-ui",
     explicitKeys: ["writer.provider", "writer.model", "writer.reasoning_effort"],
     values,
-    versions: Object.fromEntries(VISIBLE_CATALOG.map((row) => [row.storageKey, 1])),
+    versions: Object.fromEntries(SETTINGS_REGISTRY.visible.map((row) => [row.storageKey, 1])),
     runs: [{
       id: "lprun_1",
       state: "running",

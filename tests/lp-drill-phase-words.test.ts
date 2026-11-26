@@ -1,7 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { wordTurnsOf } from "../src/rooms/phase/logic";
 
 // phase_words_sensitive: owner.words=sensitive, a neutral phase never waits for a word, a plan that touches migrations/ does (full set only).
 const drill = fileURLToPath(new URL("../scripts/lp-drill.py", import.meta.url));
@@ -62,21 +61,6 @@ out = {"n": m.goal_paths(n), "g": m.goal_paths(g), "nSensitive": bool(m.SENSITIV
     expect(out.g.some((p: string) => p.startsWith("migrations/") && p.endsWith(".sql"))).toBe(true);
     expect(out.gSensitive).toBe(true);
     expect(out.gText).toContain("migrations/");
-  });
-
-  it("under the plugin's own rule neither goal makes the context ask on sensitive; a piece owning the goal's migrations/ file makes the plan ask with data", () => {
-    const { out } = py(`out = {"n": m.neutral_phase_goal("20260101-000000"), "g": m.migration_phase_goal("20260101-000000")}`);
-    const settings = { "owner.words": "sensitive" };
-    for (const goal of [out.n, out.g]) {
-      expect(wordTurnsOf({ title: "Drill words 20260101-000000", goal, record: {} }, settings, 1).context, goal).toMatchObject({ asks: false, classes: [] });
-    }
-    const piece = (owns: string) => ({ id: "a", wave: 1, task: { title: "the note", objective: out.g, owns_paths: [owns], verification: [{ command: `test -f ${owns}` }] } });
-    const migrationFile = (out.g.match(/migrations\/\S+\.sql/) ?? [""])[0];
-    const asked = wordTurnsOf({ title: "t", goal: out.g, record: { plan: { items: [piece(migrationFile)] } } as never }, settings, 1);
-    expect(asked.planning).toMatchObject({ asks: true, classes: ["data"] });
-    const neutralFile = (out.n.match(/drills\/\S+\.md/) ?? [""])[0];
-    const quiet = wordTurnsOf({ title: "t", goal: out.n, record: { plan: { items: [{ ...piece(neutralFile), task: { ...piece(neutralFile).task, objective: out.n } }] } } as never }, settings, 1);
-    expect(quiet.planning).toMatchObject({ asks: false, classes: [] });
   });
 
   it("waits for a plan before it judges the planning turn: the turn written at opening from an empty plan is no sign", () => {

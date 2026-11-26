@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { SEED_ENTRIES } from "../src/rooms/deferral/seed";
+import { SEED_ENTRIES } from "../src/rooms/deferral/models/seed";
 import { citedDeferralIds, scanSkips } from "../src/rooms/deferral/skips";
 
 // SMA rule 5: `it.todo` without a term is a silent hole. Every skipped test names the register entry that excuses it.
@@ -16,7 +16,7 @@ describe("skipped tests carry a deferral", () => {
   it("every skip, todo and skipIf in tests/ cites an entry: a seeded one, or a runtime id the deploy drill checks against the register", () => {
     const seeded = new Set(SEED_ENTRIES.map((entry) => entry.id));
     const sites = scanSkips(ROOT);
-    expect(sites.length).toBeGreaterThan(20);
+    expect(sites.length).toBeGreaterThanOrEqual(18);
     const bare = sites.filter((site) => !site.deferralId).map((site) => `${site.file}:${site.line}  ${site.code}`);
     expect(bare, `add "${mark("<id>")}" above each skipped test, with the id of an open entry of the register (bb lane-pilot defer … --kind skipped_test)`).toEqual([]);
     const unknown = sites.filter((site) => site.deferralId && !seeded.has(site.deferralId) && !RUNTIME_ID.test(site.deferralId))

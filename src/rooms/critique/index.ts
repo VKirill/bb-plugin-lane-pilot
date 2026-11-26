@@ -1,15 +1,5 @@
 // Public API of critique: what other rooms import. Everything else in this room is private.
-// Add a name here to make it public; scripts/refactor/barrels.ts wrote the first version from the existing imports.
-export { MAX_FILE_EXCERPT_BYTES, actionableFindings, critiqueFromStageResult, advisoryFeedback, buildCandidateEvidence, codeCritiquePrompt, codeCritiqueSource, codeCritiqueStops, parseCodeCritique, codeRepairPrompt, findingsHash, nextRepairAction, parseCodeCritiqueSettings, parseWriterRepairReply, repairLedgerFromResult, sameUnresolvedFindings, sameWriterIdentity, settingsFromFrozenPolicy, shouldRequestRepair } from "./code-critique";
-export type { FrozenCritiquePolicy, WriterIdentity } from "./code-critique";
-export { criticStats } from "./critic-stats";
-export { CRITIC_EDIT_TRIAL_KEY, criticEditGate, criticEditTrialOn, criticEditTrialSettle, criticEditWasRejected, criticPromptOf, criticPromptProposal, criticPromptRollback, withCriticTrialPrompt } from "./critic-edit";
-export type { CriticEditRow, CriticEditStore, CriticEditTrialOutcome } from "./critic-edit";
-export { critiquePrompt, parseCritique } from "./critique";
-export { scanCritiqueCoverage } from "./critique-coverage"
-export { resolveRetryEffort } from "./retry-effort";
-export { FAILURE_TRIAGE_METHOD, PLANNER_METHOD, SCIENTIFIC_DEBUG_METHOD, roleMethod } from "./role-method"
-export { taskBrief } from "./task-brief";
-export type { TaskBriefField } from "./task-brief";
-export { markPathsWidened, pathsWidenedOf } from "./critic-level";
-export { roleSelection, sdkCriticCatalog } from "./critic-pair";
+export * from "./models";
+export * from "./settings";
+export { codeCritiquePrompt } from "./code-critique-prompt";
+export { callerLabels, collectGitNexusCallerPaths, scanCritiqueCoverage } from "./critique-coverage";

@@ -8,6 +8,7 @@
     "en": "Archives what finished work leaves behind: closed phases' folders into the milestone archive, stale spikes and sketches, merged review branches and leftover worktrees; lists everything first and moves nothing it cannot name.",
     "ru": "Убирает то, что оставила законченная работа: папки закрытых фаз — в архив этапа, устаревшие спайки и наброски, слитые ветки ревью и забытые worktree; сначала всё перечисляет и не трогает то, что не может назвать."
   },
+  "category": "ops",
   "examples": {
     "ru": [
       "Прибери закрытые фазы",

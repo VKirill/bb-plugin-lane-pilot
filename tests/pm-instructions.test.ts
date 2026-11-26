@@ -1,10 +1,10 @@
 import { expect, it } from "vitest";
 import bundledAgents from "../src/rooms/contracts/bundled-agents.json";
 import { buildCapabilityRegistry, chooseRecipient, describeRegistry } from "@lane-pilot/handoff";
-import { BB_AGENT_SESSIONS, LANE_PILOT_PM_SESSION, laneSessionOverlayPrompt } from "../src/rooms/native-agent/native-agent-overlay";
-import { bundledAgentDefinitions } from "../src/rooms/relay/server/handoff";
+import { BB_AGENT_SESSIONS, LANE_PILOT_PM_SESSION, laneSessionOverlayPrompt } from "../src/rooms/native-agent/models/native-agent-overlay";
+import { bundledAgentDefinitions } from "../src/rooms/relay/server/handlers/handoff";
 import { SESSION_MAX_MS, SESSION_MAX_TURNS } from "../src/rooms/contracts/failure-class";
-import { LIVE_FOLDER_FILE_CAP } from "../src/rooms/writer/live-folder";
+import { LIVE_FOLDER_FILE_CAP } from "../src/rooms/writer/server/services/live-folder-scripts";
 import {STICKY_WINDOW_MS} from "../src/rooms/platform/server";
 
 it("defines shipping as push, bring the project up its own way, and prove it is live", () => {
@@ -23,11 +23,11 @@ it("gives the PM a done criterion and no route to agents it cannot spawn", () =>
   expect(LANE_PILOT_PM_SESSION).toMatch(/shell redirects into project files/);
 });
 
-it("states the docs rule once, with its reason, in every session that must not write docs", () => {
-  for (const id of ["copy-lead", "seo-specialist", "design-lead", "project-onboarder", "browser-qa"]) {
-    expect(BB_AGENT_SESSIONS[id]).toContain("reverts other edits there");
+it("states the docs rule once across every session that must not write docs", () => {
+  for (const id of ["copy-lead", "seo-specialist", "design-lead", "project-onboarder", "browser-qa", "growth-marketer"]) {
+    expect(BB_AGENT_SESSIONS[id]).toContain("do not edit them directly");
   }
-  expect(LANE_PILOT_PM_SESSION).toContain("reverts other edits there");
+  expect(LANE_PILOT_PM_SESSION).toContain("do not edit them directly");
 });
 
 it("keeps the bundled copy byte-identical to the overlay", () => {
@@ -40,14 +40,13 @@ it("keeps the bundled copy byte-identical to the overlay", () => {
   }
 });
 
-it("tells the PM that a council's decision comes to the chat and a run's status lives in the status tool", () => {
-  expect(LANE_PILOT_PM_SESSION).toContain("Council decisions come here");
+it("tells the PM that a run's status lives in the status tool", () => {
   expect(LANE_PILOT_PM_SESSION).toContain("lane_pilot_workflow_status");
   expect(LANE_PILOT_PM_SESSION).toContain("End the turn after starting");
 });
 
-it("tells the PM that a council question and ask_owner text are in the owner's language", () => {
-  expect(LANE_PILOT_PM_SESSION).toContain("A council question and any `lane_pilot_ask_owner` text are written in the owner's language; they are shown to the owner.");
+it("tells the PM that ask_owner text is in the owner's language", () => {
+  expect(LANE_PILOT_PM_SESSION).toContain("Any `lane_pilot_ask_owner` text is written in the owner's language; it is shown to the owner.");
 });
 
 it("tells the PM to retry a tool only when retryable is true and sideEffects is none", () => {

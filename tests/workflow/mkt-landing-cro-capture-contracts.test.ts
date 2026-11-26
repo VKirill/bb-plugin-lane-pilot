@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { roleSpec } from "../../src/rooms/workflow/server/workflow-agent";
+import { roleSpec } from "../../src/rooms/workflow/server/services/workflow-agent";
 import { chain, reply, runHomeWorld } from "./run-home-world";
 
 const captureGraph = (path = ".agents/marketing/cro/{{slug}}/{{run_id}}/") => chain({

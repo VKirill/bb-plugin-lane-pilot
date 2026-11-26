@@ -8,6 +8,7 @@
     "en": "A readable project summary from the milestone's artifacts: what shipped per phase in plain words, the decisions, the lessons, the open items and how to try it. Writes .agents/planning/MILESTONE-SUMMARY.md.",
     "ru": "Читаемый итог проекта по артефактам этапа: что вышло по каждой фазе простыми словами, решения, уроки, открытые пункты и как попробовать. Пишет .agents/planning/MILESTONE-SUMMARY.md."
   },
+  "category": "planning",
   "examples": {
     "ru": [
       "Сделай читаемый итог этапа",

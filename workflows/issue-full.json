@@ -29,13 +29,15 @@
   "not_for": [
     "issue-quick",
     "debug",
-    "analyze-plan-execute"
+    "analyze-plan-execute",
+    "review-fix"
   ],
   "status": "published",
   "tags": [
     "code",
     "issue"
   ],
+  "category": "code",
   "inputs": {
     "title": {
       "type": "string",
@@ -96,7 +98,12 @@
   "nodes": [
     {
       "id": "triage",
-      "produces": [{"kind": "report", "version": 1}],
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
       "type": "agent",
       "role": "analyst",
       "title": {
@@ -125,7 +132,12 @@
     },
     {
       "id": "root_cause",
-      "produces": [{"kind": "diagnosis", "version": 1}],
+      "produces": [
+        {
+          "kind": "diagnosis",
+          "version": 1
+        }
+      ],
       "type": "agent",
       "role": "analyst",
       "title": {
@@ -228,7 +240,12 @@
           "from": "root_cause"
         }
       ],
-      "produces": [{"kind": "report", "version": 1}],
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
       "type": "agent",
       "role": "memory",
       "with": {

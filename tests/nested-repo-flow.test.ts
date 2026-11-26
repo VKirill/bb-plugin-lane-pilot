@@ -6,7 +6,7 @@ import { dirname, join } from "node:path";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import plugin from "../server";
-import * as handlers from "../src/rooms/host-worker/host-handlers";
+import * as handlers from "../src/rooms/host-worker";
 import type { TaskV2 } from "../src/rooms/contracts";
 import { createRun, getAttempt, getTask, getTaskPlan, listAttemptsForTask, listStageReceipts, openDatabase, saveProjectSetting, savePrototypeConfig, setRunThread } from "../src/rooms/plugin-db";
 
@@ -189,14 +189,14 @@ describe("a task over one repository of a run folder without git (BB-серви�
     });
     // The check as the drill wrote it: cwd is the run folder, the path starts with the repository. Silently running this task in the live folder
     // left its file untracked in the repository, so the PM is told to put the check in the repository instead.
-    const check = { command: "grep -q hello plugins/p/src/hello.ts", cwd: env.folder, timeout_sec: 60 };
+    const check = { command: "grep -q '\"hello\"' plugins/p/src/hello.ts", cwd: env.folder, timeout_sec: 60 };
     const sent = await env.dispatch({ verification: [check] });
     expect(sent).toMatchObject({ state: "rejected" });
     expect(String(sent.reason)).toContain("plugins/p");
     expect(String(sent.reason)).toContain("cwd");
     expect(getTask(env.db, "p-hello")).toBeUndefined();
     // The same check from inside the repository moves the task.
-    const fixed = await env.dispatch({ verification: [{ command: "grep -q hello src/hello.ts", cwd: join(env.folder, "plugins", "p"), timeout_sec: 60 }] });
+    const fixed = await env.dispatch({ verification: [{ command: "grep -q '\"hello\"' src/hello.ts", cwd: join(env.folder, "plugins", "p"), timeout_sec: 60 }] });
     expect(fixed.state).not.toBe("rejected");
     expect((getTask(env.db, "p-hello")!.contract as TaskV2).project_cwd).toBe(join(env.folder, "plugins", "p"));
     const attempt = await env.finished();

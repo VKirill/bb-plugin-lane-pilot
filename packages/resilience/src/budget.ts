@@ -15,9 +15,11 @@ export type RunBudgetSnapshot = { attempts: number; children: number; tokens: nu
 
 const LABEL: Record<BudgetKind, string> = { maxAttempts: "attempts", maxWallMs: "wall-clock ms", maxTokens: "tokens", maxChildren: "child threads" };
 
+export const RUN_BUDGET_EXCEEDED_PREFIX = "run_budget_exceeded:";
+
 /** Attempt / spawn reason prefix: `run_budget_exceeded:child threads`, `run_budget_exceeded:tokens`, … */
 export function budgetStopReason(kind: BudgetKind): string {
-  return `run_budget_exceeded:${LABEL[kind]}`;
+  return `${RUN_BUDGET_EXCEEDED_PREFIX}${LABEL[kind]}`;
 }
 
 /** Wall-clock and token overruns stop a running writer; child/attempt overruns refuse the next spawn instead.

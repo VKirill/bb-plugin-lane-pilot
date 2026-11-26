@@ -2,8 +2,8 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createRunBudget } from "@lane-pilot/resilience";
 import { createAttempt, createRun, createTask, getAttempt, openDatabase, transitionAttempt } from "../src/rooms/plugin-db";
-import { createWriterFinish } from "../src/rooms/writer/server/finish";
-import { saveFollowUp } from "../src/rooms/writer/server/sticky";
+import { createWriterFinish } from "../src/rooms/writer/server/services/finish";
+import { saveFollowUp } from "../src/rooms/writer/server/services/sticky";
 import type { PrototypeConfig, TaskV2 } from "../src/rooms/contracts";
 
 // The follow-up wait ends with the thread's interruption only after the budget stop has stopped the thread.

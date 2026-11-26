@@ -2,7 +2,7 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it, vi } from "vitest";
 import { failureClass, failureFingerprint } from "../src/rooms/contracts/failure-class";
 import { countAttempts, countChargedAttempts, createAttempt, createRun, openDatabase, setRunState, transitionAttempt } from "../src/rooms/plugin-db";
-import { createStability } from "../src/rooms/stability/server/stability";
+import { createStability } from "../src/rooms/stability/server";
 
 // Reasons copied from SelfyStudio attempts of 2026-10-03/04: each must land on the side that caused it.
 describe("failure class of real reasons", () => {
@@ -210,7 +210,7 @@ describe("adoption at start-up", () => {
 describe("restart reopens the writer stages", () => {
   // Live 2026-10-04: three restarted SelfyStudio tasks died on «illegal stage transition writer-agent: failed -> running».
   it("sets failed writer stages back to pending so the writer can run again", async () => {
-    const { recordStage } = await import("../src/rooms/runs/server/stage-records");
+    const { recordStage } = await import("../src/rooms/runs/server");
     const { listStageReceipts } = await import("../src/rooms/plugin-db");
     const { bb, db, stability } = setup();
     for (const state of ["pending", "running", "failed"] as const) recordStage(db, { runId:"run", taskId:"T1", stageId:"writer-agent", state, input:"plan" });
@@ -238,14 +238,14 @@ describe("superseded work is never restarted", () => {
     attempt("o3", "G1", "blocked", "internal_error: y", now - 3600_000);
     attempt("o4", "G1.2", "accepted", "", now - 7200_000); // accepted sibling, even earlier
     expect(await stability.adoptBlockedByFaults(now)).toEqual([]);
-    const { taskStem } = await import("../src/rooms/stability/server/stability");
+    const { taskStem } = await import("../src/rooms/stability/server");
     expect([taskStem("fix-r4"), taskStem("G1.12"), taskStem("plain")]).toEqual(["fix", "G1", "plain"]);
   });
 });
 
 describe("an owner's stop of a run", () => {
   it("keeps a halted run out of parking and restarts", async () => {
-    const { setRunHalted } = await import("../src/rooms/runs/server/runs-halt");
+    const { setRunHalted } = await import("../src/rooms/runs/server");
     const { bb, stability, resumed } = setup();
     await setRunHalted(bb.storage.kv as never, "run", true);
     expect(await stability.onTaskFailed({ projectId:"proj", runId:"run", taskId:"T1", pmThreadId:"pm", state:"blocked", reason:"internal_error: x" }, 1000)).toBe(false);

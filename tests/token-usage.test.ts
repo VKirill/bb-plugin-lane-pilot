@@ -3,10 +3,15 @@ import { afterEach, describe, expect, it } from "vitest";
 import { openDatabase } from "../src/rooms/plugin-db";
 import plugin from "../server";
 import { costUsd } from "@lane-pilot/models";
+import { isCumulativeProvider, tokenDelta } from "../src/rooms/usage/models/token-math";
+import { EVENT_PAGE, TOKEN_USAGE_EVENT_TYPES } from "../src/rooms/usage/models/thread-usage";
 import {
-  EVENT_PAGE, TOKEN_USAGE_CACHE_SPLIT_RESET_KEY, TOKEN_USAGE_CURSOR_RESET_KEY, TOKEN_USAGE_EVENT_TYPES, TOKEN_USAGE_SCHEDULE,
-  isCumulativeProvider, normalizeModel, queryTokenUsage, rebuildTokenUsage, resetTokenUsageForRebuild, syncTokenUsage, threadUsage, tokenDelta, utcDay,
-} from "../src/rooms/usage/server/token-usage";
+  TOKEN_USAGE_CACHE_SPLIT_RESET_KEY, TOKEN_USAGE_CURSOR_RESET_KEY, TOKEN_USAGE_SCHEDULE,
+  normalizeModel, utcDay,
+} from "../src/rooms/usage/models/token-usage";
+import { resetTokenUsageForRebuild } from "../src/rooms/usage/server/repositories/token-usage-repository";
+import { threadUsage } from "../src/rooms/usage/server/services/thread-usage";
+import { queryTokenUsage, rebuildTokenUsage, syncTokenUsage } from "../src/rooms/usage/server/services/token-usage";
 
 let dispose: (() => Promise<void> | void) | null = null;
 afterEach(async () => { await dispose?.(); dispose = null; });
@@ -373,20 +378,19 @@ describe("normalizeModel", () => {
   });
 });
 
-describe("token usage schedule", () => {
-  it("returns while a sync still runs, so other schedules keep their turn", async () => {
+describe("token usage event hook (no cron schedule)", () => {
+  it("replays on ready without blocking or registering a cron schedule", async () => {
     const { bb, harness } = createFakePluginHost({
       pluginId: "lane-pilot",
       sdk: { threads: { list: () => new Promise(() => {}) } } as never,
     });
-    await plugin(bb);
-    dispose = () => harness.lifecycle.dispose();
-    const settled = (name: string) => Promise.race([
-      harness.runSchedule(name).then(() => "returned"),
+    const booted = await Promise.race([
+      plugin(bb).then(() => "ready"),
       new Promise((done) => setTimeout(() => done("held"), 200)),
     ]);
-    expect(await settled(TOKEN_USAGE_SCHEDULE)).toBe("returned");
-    expect(await settled(TOKEN_USAGE_SCHEDULE)).toBe("returned");
+    dispose = () => harness.lifecycle.dispose();
+    expect(booted).toBe("ready");
+    expect(harness.registrations.schedules.map((s) => s.name)).not.toContain(TOKEN_USAGE_SCHEDULE);
   });
 });
 

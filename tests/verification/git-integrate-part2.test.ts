@@ -1,9 +1,7 @@
-import { execFileSync, spawn } from "node:child_process";
-import { mkdir, readFile, rm, utimes, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { expect, it, vi } from "vitest";
-import { integrateWorktree, prepareWorktree, withBaseLock } from "../../src/rooms/verification/git-integrate";
-import { gitOwnershipChangedPaths } from "../../src/rooms/verification/git-ownership";
+import { integrateWorktree, prepareWorktree } from "../../src/rooms/worktree";
 import { git, repo } from "./git-integrate-helpers";
 
 // These tests build real repositories and worktrees; inside Lane Pilot's sandboxed check the whole suite runs
@@ -11,7 +9,7 @@ import { git, repo } from "./git-integrate-helpers";
 vi.setConfig({ testTimeout: 120_000 });
 
 it("creates Lane Pilot's own worktree of a section repo and removes it once merged", async () => {
-  const { createWorktree } = await import("../../src/rooms/verification/git-integrate");
+  const { createWorktree } = await import("../../src/rooms/worktree");
   const { stat } = await import("node:fs/promises");
   const { base } = await repo();
   const target = join(base, "..", "own", "main");
@@ -25,7 +23,7 @@ it("creates Lane Pilot's own worktree of a section repo and removes it once merg
 });
 
 it("removes only Lane Pilot's own worktree of a failed attempt", async () => {
-  const { createWorktree, removeLaneWorktree } = await import("../../src/rooms/verification/git-integrate");
+  const { createWorktree, removeLaneWorktree } = await import("../../src/rooms/worktree");
   const { stat } = await import("node:fs/promises");
   const { base, worktree } = await repo();
   const own = join(base, "..", "own2", "main");
@@ -37,7 +35,7 @@ it("removes only Lane Pilot's own worktree of a failed attempt", async () => {
 });
 
 it("removes the empty folder a Lane Pilot worktree sat in, and only under .lane-pilot/worktrees", async () => {
-  const { createWorktree, removeLaneWorktree } = await import("../../src/rooms/verification/git-integrate");
+  const { createWorktree, removeLaneWorktree } = await import("../../src/rooms/worktree");
   const { stat } = await import("node:fs/promises");
   const { base } = await repo();
   const holder = join(base, "..", ".lane-pilot", "worktrees", "lpattempt_9");
@@ -51,7 +49,7 @@ it("removes the empty folder a Lane Pilot worktree sat in, and only under .lane-
 });
 
 it("re-points workspace package links at the worktree so checks import the writer's edits", async () => {
-  const { prepareWorktree } = await import("../../src/rooms/verification/git-integrate");
+  const { prepareWorktree } = await import("../../src/rooms/worktree");
   const { mkdir, lstat, realpath } = await import("node:fs/promises");
   const { base, worktree } = await repo();
   await writeFile(join(base, "package.json"), JSON.stringify({ name: "mono", workspaces: ["packages/*", "apps/api"] }) + "\n");

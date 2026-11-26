@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { upsertProjectArtifact, saveProjectSetting } from "../../src/rooms/plugin-db";
 import { readRunFile, renderRunManifest, resolveLatestPointer, resolveRunFile } from "../../src/rooms/storage";
-import { checkoutFileIo, deliverRunFile } from "../../src/rooms/workflow/server/workflow-run-home";
+import { checkoutFileIo, deliverRunFile } from "../../src/rooms/workflow/server/services/workflow-run-home";
 import { sha256Hex } from "@lane-pilot/kit";
 import { PROJECT, chain, reply, runHomeWorld } from "./run-home-world";
 import type { Row } from "./run-home-world";

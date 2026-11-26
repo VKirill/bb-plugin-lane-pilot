@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseSpecialistResult, shouldRunSpecialist, specialistPrompt } from "../../src/rooms/critique/specialist";
+import { parseSpecialistResult, shouldRunSpecialist, specialistPrompt } from "../../src/rooms/critique";
 
 describe("specialist review stage contract", () => {
   it("runs for high or critical risk and supports an explicit always policy", () => {

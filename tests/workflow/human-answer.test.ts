@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { humanOutput } from "../../src/rooms/workflow/server/workflow-executors";
+import { humanOutput } from "../../src/rooms/workflow/server/services/workflow-executors";
 import {BUILTIN_SOURCES} from "../../src/rooms/workflow/builtin";
 import { loadWorkflowStore } from "@lane-pilot/workflow-engine";
 

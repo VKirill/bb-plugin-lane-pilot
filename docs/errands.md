@@ -8,10 +8,9 @@ updated: 2026-11-01
 # Errands: the page and the read model
 
 **What it is.** An errand is a one-off job a helper does outside the code: the screen of a machine, a server, a site in the owner's browser, a report,
-a message. A PM gives it from its chat (`lane_pilot_errand`), a schedule of kind `errand` by its clock, the lead from its tick. Every errand is a run
-of the graph `errand` (`src/rooms/qa/server/errand-graph.ts`); since 0.1.465 it has a **kind**, and the kind names the row of the role table it runs
-on (`docs/schedule-board.md`, «Errand kinds»). The owner asked (2026-11-01) for one place that shows which errands the system has, so the kinds can
-grow over time: the «Errands» page of the scope rail (`src/rooms/errands`).
+a message. A PM gives it from its chat (`lane_pilot_errand`), or a schedule of kind `errand` runs it. Every errand runs
+the graph `errand` (`src/rooms/errands/server/handlers/errands-graph.ts`, `src/rooms/errands/server/services/errand-graph.ts`); it has a **kind**, and the kind names the row of the role table it runs
+on (`docs/schedule-board.md`, «Errand kinds»). The «Errands» page of the scope rail lives in `src/rooms/errands` (`errands-screen.tsx`, rail item `navErrands`).
 
 **The page** (`src/rooms/errands/ui/errands-screen.tsx`, rail item `navErrands`, test id `errands-screen`):
 
@@ -31,34 +30,22 @@ grow over time: the «Errands» page of the scope rail (`src/rooms/errands`).
 **Where it sits.** The rail groups the system pages for a person reading top-down (0.1.469, the owner: «systematise the pages so I am not
 lost»): «Today» holds what the machines are doing and what waits for the owner's word (Waiting for you, Tasks, Errands, Schedule); then the
 projects; then «Setup» (General settings, Agent profiles, Workflows, Tokens, Self-improvement). The phone select has the same three groups
-(`src/rooms/pages/project-nav.tsx:15-30`). The work area is the full width of the plugin's pane since 0.1.469 (`src/rooms/pages/page.tsx:53`).
-The rule since 0.1.470: a rail page shows a thing across all projects, a project's tab shows the same thing for that project under the same
-name. So the project's «Tasks» tab is the rail's board locked to the project (`TaskBoard lockedProjectId`, `src/rooms/pages/tab-runs.tsx`),
+(`src/rooms/pages/ui/project-nav.tsx`). The work area is the full width of the plugin's pane (`src/rooms/pages/ui/page.tsx`).
+The rule: a rail page shows a thing across all projects, a project's tab shows the same thing for that project under the same
+name. So the project's «Tasks» tab is the rail's board locked to the project (`TaskBoard lockedProjectId`, `src/rooms/pages/ui/tab-runs.tsx`),
 the rail's «Schedule» and «Workflows» are what the project's «Automation» tab shows for one project, and «Agent profiles» (who the agents are)
 is kept apart from a project's «Team» (who works there).
 
 **The errand routes its brief.** Before `lane_pilot_errand` starts a plain errand it routes the brief with the same router the PM's
-`lane_pilot_route` uses, over the project's offered catalog (`routedGraph` in `errand-graph.ts`). A match with `decision: "route"` and
-confidence ≥ 90 (`ERRAND_ROUTE_CONFIDENCE`) is started as that graph's run when the graph is offered (not `internal`, no `startedBy`),
-is not `errand`, `specialist`, `browser-step`, `web-research` or any `lp.*` graph, and is `published` — or `tested`, which is a first
-real run (`liveTrial`, as `lane_pilot_run_workflow` does since 0.1.476) that a brief with `authorized: true` never starts: authorized
-routes only to `published`. Inputs come from the router's boundary contract, guesses included; a required input still missing means no
-self-route and a plain errand instead. The PM's answer names the graph and the confidence: it waits on the run with
-`lane_pilot_workflow_status` and does only what the brief asks beyond the graph's result. The api-recon graph went through this path
-first (0.1.466): the magicseo recons routed at 100 as errands because the PM did not know the graph existed, and the two invoices of
-2026-11-02 did the same with `invoice-send` at 95 and 70.
+`lane_pilot_route` uses, over the project's offered catalog (`routedGraph` in `src/rooms/errands/server/services/errand-graph.ts`). A match with `decision: "route"` and
+confidence ≥ 90 (`ERRAND_ROUTE_CONFIDENCE`) starts that graph's run when offered (`published` or `tested`, except `authorized: true` routes only to `published`).
 
-Every plain errand run records what the router said in its `inputs_json` (the errands page and the lead read it): `routeTop` is
-`<workflowId>:<confidence>` of the top match or empty, and `routeWhy` is empty, `below_confidence`, `missing_inputs:<names>`,
-`not_offered`, `tested_needs_unauthorized` or `none`.
+Every plain errand run records what the router said in its `inputs_json` (the errands page and `lead` `nearest` read it): `routeTop` is
+`<workflowId>:<confidence>` of the top match or empty, and `routeWhy` is `below_confidence`, `missing_inputs:<names>`, `not_offered`, `tested_needs_unauthorized`, or `none`.
 
-**The read model** (`src/rooms/errands/logic.ts`; RPC `errands_overview` in `src/rooms/errands/server/rpc.ts`, contract `rpc-ops.ts`) reads the
-workflow journal only, no table of its own: the kind, model and source from `inputs_json` (`kind`, `kindBy`, `providerId`, `model`, `scheduleId`),
-the verdict from `output_json`, the helper thread from the `errand.spawn` effect, the PM chat from the linked run's `pm_thread_id`, the schedule's
-name from `lane_pilot_schedule`, the cost from the run's `cost_micro_usd`. The outcome is one of five words: *in progress*, *done* (`state: done`),
-*stopped* (`state: blocked` with the helper's reason), *failed* (the run failed), *cancelled* (a canceled run, or a helper the owner stopped: its
-reason says `cancel`, the same rule `schedule-service.ts` uses to post no owner row). A new kind is a row in `src/rooms/schedule/errand-kinds.ts`
-and appears on the page by itself.
+**The read model** (`src/rooms/errands/models/errands.ts`; RPC `errands_overview` in `src/rooms/errands/server/handlers/errands-rpc.ts`, contract `rpc-ops.ts`) reads the
+workflow journal only, no table of its own: kind, model and source from `inputs_json`, verdict from `output_json`, helper thread from `errand.spawn`, PM chat from `pm_thread_id`, schedule name from `lane_pilot_schedule`, cost from `cost_micro_usd`. Outcomes: *in progress*, *done*, *stopped*, *failed*, *cancelled* (`schedule-service.ts` posts no owner item on cancel). A new kind is a row in `src/rooms/schedule/models/errand-kinds.ts`
+and appears on the page automatically.
 
 **Tests.** `tests/errands/errands-logic.test.ts` (outcomes, titles, the list with sources and filter, the kinds summary), `tests/errands/errands-ui.test.tsx`
 (the screen, the filter and period, Russian), `tests/ui-project-nav.test.tsx` (the rail item).

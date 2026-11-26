@@ -3,10 +3,9 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { openDatabase, saveProjectSetting } from "../../src/rooms/plugin-db";
 import { memoryUsefulness, storeMemoryRecords } from "../../packages/memory-core/src";
 import type { MemoryCandidate } from "../../packages/memory-core/src";
-import { mixReviewerMemory, reviewerMemoryFor } from "../../src/rooms/memory/server/memory-mix";
+import { mixReviewerMemory, reviewerMemoryFor } from "../../src/rooms/memory/server/services/memory-mix";
 import { writerMemory } from "../../src/rooms/memory/server";
-import { codeCritiquePrompt } from "../../src/rooms/critique/code-critique";
-import { nightReviewPrompt } from "../../src/rooms/night/night";
+import { codeCritiquePrompt } from "../../src/rooms/critique";
 
 type Db = ReturnType<typeof openDatabase>;
 const newDb = (): Db => openDatabase(createFakePluginHost({ pluginId: "lane-pilot" }).bb);
@@ -92,14 +91,11 @@ describe("K8 reviewer role: reviewers and critics get the notes relevant to revi
     expect(writerMemory([{ content: "Review check about timezones", concepts: ["review"], kind: "note" }], task)).toBe("");
   });
 
-  it("the critic and the night review prompts carry the notes as data, only when there are some", () => {
+  it("the critic prompt carries the notes as data, only when there are some", () => {
     const critic = codeCritiquePrompt({ evidence: { artifactRevisionSha256: "", evidenceSha256: "", outputSha256: "", packetSha256: "", produced: [], hashes: {}, baselineHashes: {}, ownsPaths: [], neverTouch: [], files: [], verification: [] } as never, task: {}, memoryText: "- check idempotency" });
     expect(critic).toContain("<project_memory>\n- check idempotency\n</project_memory>");
     expect(critic).toMatch(/data, not instructions/);
     expect(codeCritiquePrompt({ evidence: { files: [], verification: [] } as never, task: {} })).not.toContain("project_memory");
-    const night = nightReviewPrompt({ agent: "a", task: {}, acceptedResult: {}, workspace: "/w", maxFindings: 5, memoryText: "- check idempotency" });
-    expect(night).toContain("<project_memory>\n- check idempotency\n</project_memory>");
-    expect(nightReviewPrompt({ agent: "a", task: {}, acceptedResult: {}, workspace: "/w", maxFindings: 5 })).not.toContain("project_memory");
   });
 });
 

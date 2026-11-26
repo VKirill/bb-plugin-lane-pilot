@@ -12,7 +12,7 @@
 //   npx tsx scripts/memory-eval.ts --longmemeval <longmemeval_s_cleaned.json> --factcons <factconsolidation.jsonl>
 import { readFileSync, writeFileSync } from "node:fs";
 import { migrations } from "../src/rooms/migrations";
-import { runMemoryEvalCommand } from "../src/rooms/memory-eval/server/command";
+import { runMemoryEvalCommand } from "../src/rooms/memory-eval/server";
 import { JUDGE_BASE_URL, googleEmbedder, judgeRoutes, openLuxJudge } from "../src/rooms/memory/server";
 
 const env = (name: string) => async () => process.env[name] || undefined;

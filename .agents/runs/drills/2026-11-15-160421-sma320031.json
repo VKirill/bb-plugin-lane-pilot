@@ -1,0 +1,266 @@
+{
+  "kind": "lane-pilot-sandbox-drill",
+  "date": "2026-11-15",
+  "stamp": "20261115-160421",
+  "startedAt": 1794747861695,
+  "finishedAt": 1794747875965,
+  "durationSec": 14,
+  "project": "proj_3tb652jpsi",
+  "runId": null,
+  "pmThread": null,
+  "sourceThread": null,
+  "mode": "full",
+  "scenarioNames": [
+    "sma_r19"
+  ],
+  "commit": "be42a313198e43f3e500337ca9c680d5cff43a1f",
+  "skipped": {},
+  "result": "pass",
+  "problems": [],
+  "checks": null,
+  "tasks": null,
+  "dispatch": null,
+  "scenarios": [
+    {
+      "name": "sma_r19",
+      "result": "pass",
+      "problems": [],
+      "proved": [
+        {
+          "node": "n1464",
+          "ok": true,
+          "detail": "settings after one apply {'theme': 'owner', 'commentKept': True, 'pre': ['bash /usr/local/bin/guardian-code.sh'], 'stop': [['node /opt/gitnexus/hook.js']], 'codexKept': True, 'again': False}"
+        },
+        {
+          "node": "n1465",
+          "ok": true,
+          "detail": "dry-run plan {'apply': False, 'settings': ['python3 ~/.agents/hooks/guard_shell.py', 'python3 ~/.agents/hooks/sma_hooks.py'], 'hasMoves': True, 'untouched': True}"
+        },
+        {
+          "node": "n1466",
+          "ok": true,
+          "detail": "four non-yes calls untouched [True, True, True, True], apply true moved True"
+        },
+        {
+          "node": "n1467",
+          "ok": true,
+          "detail": "verb: dry apply=False, with --apply=True, host asked [False, True]"
+        },
+        {
+          "node": "n1468",
+          "ok": true,
+          "detail": "moved ['.agents/bin/lane-ctl', '.agents/bin/lane-foo', '.agents/bin/lane-memory', '.agents/hooks', '.config/opencode/agents/lane-critic.md', '.config/opencode/agents/lane-reviewer.md', '.config/opencode/agents/lane-writer.md', '.local/share/claude-lane-stack-installed'], left in bin ['mytool'], agen"
+        },
+        {
+          "node": "n1469",
+          "ok": true,
+          "detail": "memory, skills and state files byte for byte {'corpusSame': True, 'files': 3}"
+        },
+        {
+          "node": "n1470",
+          "ok": true,
+          "detail": "block cut {'restored': True, 'refused': [True, True]}"
+        },
+        {
+          "node": "n1471",
+          "ok": true,
+          "detail": "strip result {'removed': 5, 'pre': ['bash /usr/local/bin/guardian-code.sh', 'python3 /home/p/.agents/hooks-other/d.py'], 'sessionStart': None, 'stop': 'node /opt/gitnexus/hook.js', 'theme': 'owner'}"
+        },
+        {
+          "node": "n1472",
+          "ok": true,
+          "detail": "status line {'restored': {'type': 'command', 'command': 'node /opt/my-line.js --fancy', 'padding': 2}, 'withoutRecord': None}"
+        },
+        {
+          "node": "n1473",
+          "ok": true,
+          "detail": "after plugin remove {'ownedGone': True, 'rootGone': True, 'foreign': True, 'ownedKeyGone': True, 'personal': 'mine', 'rowsAfterRemove': [], 'stopped': 'machine offline', 'kept': ['native-install:host:h2']}"
+        },
+        {
+          "node": "n1474",
+          "ok": true,
+          "detail": "install into an empty home {'installed': 'enabled', 'guardSame': True, 'personSame': True, 'repeatSame': True}"
+        },
+        {
+          "node": "n1476",
+          "ok": true,
+          "detail": "refusals ['Invalid managed install path', 'Invalid managed install path', 'Managed install parent is a symlink: ~/l'], real folder accepted True"
+        },
+        {
+          "node": "n1477",
+          "ok": true,
+          "detail": "status {'before': 'absent', 'after': 'enabled', 'guardGone': 'absent'}"
+        },
+        {
+          "node": "n1478",
+          "ok": true,
+          "detail": "project hook rewritten to the session copy: {'calls': True, 'copied': \"print('project check')\\n\", 'outside': True, 'origs': ['orig-0-check.py'], 'projectSame': True}"
+        },
+        {
+          "node": "n1479",
+          "ok": true,
+          "detail": "hook commands 10, missing files []"
+        },
+        {
+          "node": "n1480",
+          "ok": true,
+          "detail": "definitions {'defs': [True, True], 'distinct': True}"
+        },
+        {
+          "node": "n1481",
+          "ok": true,
+          "detail": "lines kept and appended to a new role text: '\\n\\nLines added to your role in this project (one dated line per review lesson):\\n- 2026-11-01: never touch the lock file\\n- 2026-11-03: keep the diff small'"
+        },
+        {
+          "node": "n1482",
+          "ok": true,
+          "detail": "offered 95 of 123 graphs, fragment offered False"
+        },
+        {
+          "node": "n1483",
+          "ok": true,
+          "detail": "run_workflow {'ran': 'running', 'refused': 'refused', 'started': ['companion']}"
+        },
+        {
+          "node": "n1486",
+          "ok": true,
+          "detail": "events ['PostToolUse', 'PreCompact', 'PreToolUse', 'SessionEnd', 'SessionStart', 'SubagentStop', 'UserPromptSubmit']"
+        },
+        {
+          "node": "n1487",
+          "ok": true,
+          "detail": "command python3 '/tmp/r19-guard-AjtYpV/it'\\''s a home/.agents/lane-pilot/pm/guard_shell.py'"
+        },
+        {
+          "node": "n1488",
+          "ok": true,
+          "detail": "refusals {'refused': [True, True, True, True]}"
+        },
+        {
+          "node": "n1489",
+          "ok": true,
+          "detail": "merge {'matchers': ['Bash', 'Edit', '*'], 'comment': True, 'repeatSame': True}"
+        },
+        {
+          "node": "n1490",
+          "ok": true,
+          "detail": "stale copies {'copies': 1, 'firstKept': True, 'person': True}"
+        },
+        {
+          "node": "n1492",
+          "ok": true,
+          "detail": "info/exclude '# my own\\nbuild/\\n**/.agents/runs/\\n**/.agents/reports/\\n**/.bb/chats/\\n**/notes/lock/\\n**/.zcode/\\n'"
+        },
+        {
+          "node": "n1493",
+          "ok": true,
+          "detail": "migrated old schema {'oldHadStatus': False, 'kept': {'content': 'the old note', 'status': 'active', 'trust': 'confirmed'}, 'ftsColumns': ['id', 'project_id', 'content', 'concepts'], 'found': [{'id': 'old'}]}"
+        },
+        {
+          "node": "n1494",
+          "ok": true,
+          "detail": "rules block {'none': None, 'pm': True, 'writer': False, 'claudeMdSame': True}"
+        },
+        {
+          "node": "n1495",
+          "ok": true,
+          "detail": "install receipt {'blocked': 'blocked', 'storedBlocked': None, 'ok': 'ok', 'native': 'enabled', 'saved': ['ok', 'enabled'], 'error': 'machine refused the install', 'afterFail': 'ok'}"
+        },
+        {
+          "node": "n1496",
+          "ok": true,
+          "detail": "old checkout {'moved': True, 'gone': True, 'backup': '# old installer\\n'}"
+        },
+        {
+          "node": "n1497",
+          "ok": true,
+          "detail": "bundled hook files {'bundled': [True, True, True], 'refreshed': True}"
+        },
+        {
+          "node": "n1498",
+          "ok": true,
+          "detail": "role definition {'keys': ['dev-orchestrator'], 'description': True, 'prompt': True, 'projectSame': True, 'agents': ['mine.md']}"
+        },
+        {
+          "node": "n1500",
+          "ok": true,
+          "detail": "session settings {'inSession': True, 'projectSame': True, 'model': 'claude-local', 'env': {'KEEP_ME': '1'}, 'person': True, 'guards': 1}"
+        },
+        {
+          "node": "n1501",
+          "ok": true,
+          "detail": "run state {'runs': [{'id': 'lprun-b1', 'project_id': 'proj-b', 'state': 'pending'}], 'secondHandle': 1, 'fk': 1, 'projectSame': True, 'noSmaFolder': True}"
+        },
+        {
+          "node": "n1502",
+          "ok": true,
+          "detail": "rules block {'empty': '', 'lines': ['- Quote the contract wording when you ask the owner a question', \"- Never plan past the signed context, whatever the owner's hurry says\"], 'marker': False, 'claudeMdSame': True}"
+        },
+        {
+          "node": "n1504",
+          "ok": true,
+          "detail": "scaffold {'empty': [0, 0], 'inserts': ['ok', 'ok', 'refused', 'refused'], 'after': 2}"
+        },
+        {
+          "node": "n1505",
+          "ok": true,
+          "detail": "resume instructions {'lines': ['- Keep every diff under two hundred lines', '- Ask before touching the lock file'], 'torn': False, 'claudeMdSame': True}"
+        },
+        {
+          "node": "n1508",
+          "ok": true,
+          "detail": "install door {'blocked': 'blocked', 'reason': 'Explicit installation confirmation is required; no operation was run.', 'callsBlocked': 0, 'stored': None, 'ok': 'ok'}"
+        },
+        {
+          "node": "n1509",
+          "ok": true,
+          "detail": "installer {'calls': [{'method': 'nativeInstall', 'action': 'install', 'requested': 'host-up'}], 'hosts': ['native-install:host:host-up'], 'first': 'enabled', 'second': 'enabled', 'guardIsBundle': True, 'repeatSame': True}"
+        },
+        {
+          "node": "n1515",
+          "ok": true,
+          "detail": "update over owner files {'placed': True, 'status': 'enabled', 'personSame': True, 'guardKept': True}"
+        },
+        {
+          "node": "n1516",
+          "ok": true,
+          "detail": "guard check {'steps': [False, True, False, True, False], 'repaired': 1, 'ownerKept': True}"
+        },
+        {
+          "node": "n1506",
+          "ok": true,
+          "detail": "85 plugins checked {'pinned': 61, 'current': 22, 'update-available': 2}"
+        },
+        {
+          "node": "n1507",
+          "ok": true,
+          "detail": "2 entries with an update show installed and candidate True; installed versions of 85 plugins the same after the check True (read ok)"
+        },
+        {
+          "node": "n1512",
+          "ok": true,
+          "detail": "2 planned updates of 85 checked; one candidate each, blocked newer than it; problems none"
+        }
+      ],
+      "checked": 43
+    }
+  ],
+  "seen": null,
+  "judged": [
+    {
+      "name": "sma_r19",
+      "verdict": "pass",
+      "evidence": [
+        "proved",
+        "checked"
+      ],
+      "why": ""
+    }
+  ],
+  "series": {
+    "verdict": "pass",
+    "missing": [],
+    "failed": [],
+    "skipped": []
+  }
+}

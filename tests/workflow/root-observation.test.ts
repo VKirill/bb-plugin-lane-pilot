@@ -4,8 +4,8 @@ import { WorkflowEngine, observeRunPhase, parseWorkflow, readRootObservations, r
 import type { RunRow } from "@lane-pilot/workflow-engine";
 import { openDatabase } from "../../src/rooms/plugin-db";
 import type { ServerCore } from "../../src/rooms/contracts/server";
-import type { Services } from "../../src/rooms/workflow/server/workflow-chain-runtime";
-import { createRootObserver } from "../../src/rooms/workflow/server/workflow-root-observation";
+import type { Services } from "../../src/rooms/workflow/server/services/workflow-chain-runtime";
+import { createRootObserver } from "../../src/rooms/workflow/server/services/workflow-root-observation";
 import { workflow } from "./fixtures";
 
 const snapshot = { at: 1, hostId: "h1", root: "/repo", head: null, files: [] as string[], workDiffHash: null, indexDiffHash: null, hashAlgorithm: "git-object" as const };

@@ -1,44 +1,69 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, rename, rm, writeFile } from "node:fs/promises";
+import { realpathSync } from "node:fs";
+import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
-import type { BbPluginApi } from "@get-bb/plugin-sdk";
-import { nativeThreadKey, resolvePlanningHome } from "../contracts";
-import { getRun, planningHomeInputs, type LanePilotDatabase } from "../storage";
-import type { RunCommandHost } from "@lane-pilot/host-calls";
 import { sha256Hex } from "@lane-pilot/kit";
+import { resolveCredentialPaths } from "../verification";
+import {
+  HELPER_DISALLOWED_TOOLS,
+  WRITER_DISALLOWED_TOOLS,
+  WRITER_MAX_TURNS,
+  WRITER_ROLES,
+  claudeGuardAgentType,
+} from "./models/claude-guard";
 import { claudeExecLine, installedClaudeExecutable, shellQuote } from "./native-claude-host";
 import { materializeNativeHookSession } from "./native-session-hooks";
 
-type EnvEntry = { name: string; value: string; reason: string };
+export type WriterIsolationSettings = {
+  permissions: { deny: string[] };
+  sandbox: {
+    enabled: true;
+    allowUnsandboxedCommands: false;
+    filesystem: { allowWrite: string[]; denyRead: string[] };
+  };
+};
 
-/**
- * The agent_type the bundled guard's deny list keys on. A PM's metadata role is `pm`; the guard's PM rules
- * key on `lane-pilot-pm`. Every other role is already the guard's name (errand, writer, code-critic, …).
- * (2026-10-29 claude-guard)
- */
-export function claudeGuardAgentType(role: string): string {
-  return role === "pm" ? "lane-pilot-pm" : role;
+function realPathVariants(path: string): string[] {
+  try {
+    const resolved = realpathSync(path);
+    return resolved !== path ? [path, resolved] : [path];
+  } catch {
+    return [path];
+  }
 }
 
 /**
- * Claude Code built-ins a background helper never uses: orchestration, self-wakeups, questions nobody answers, its own
- * subagents. Their definitions are ~40 KB of every helper's first request (Workflow alone 22.9 KB, measured 2026-11-07).
- * A second `--disallowedTools` from BB core adds to this one (real claude run: both sets are removed). PM keeps them.
+ * Builds Read/Edit deny rules and Claude Code `sandbox` filesystem boundaries for writer roles.
+ * Non-writer roles (PM, critics, helpers) never receive these settings.
  */
-export const HELPER_DISALLOWED_TOOLS = "Workflow,ScheduleWakeup,AskUserQuestion,Agent";
-
-/** Push, merge, tag and release stay human-only (SMA wb_human_only): the denial rides the launch, not only a call-time check. */
-export const WRITER_DISALLOWED_TOOLS = "Bash(git push:*),Bash(git merge:*),Bash(git tag:*),Bash(gh release:*)";
-
-/** Roles that never push, merge, tag or release; same set the bundled guard keys on (LANE_PILOT_WRITER_ROLES). */
-export const WRITER_ROLES = new Set(["writer", "emergency-writer"]);
-
-/**
- * Turn ceiling on a writer's claude launch (`--max-turns`). 0 = no ceiling, the default: a long task legitimately runs
- * hundreds of turns, and a fixed cap would cut finished-in-all-but-name work; stalls are caught by the silence and spin
- * sweeps and by the token budget. The launch carries the flag whenever a ceiling above zero is passed.
- */
-export const WRITER_MAX_TURNS = 0;
+export function buildWriterIsolationSettings(input: {
+  cwd?: string | null;
+  taskHome?: string | null;
+  home?: string;
+  tempDir?: string;
+}): WriterIsolationSettings {
+  const creds = resolveCredentialPaths(input.home ?? homedir(), { existingOnly: false });
+  const rulePath = (abs: string) => `//${abs.replace(/^\/+/, "")}`;
+  const deny = [
+    ...creds.dirs.flatMap((dir) => [`Read(${rulePath(dir)}/**)`, `Edit(${rulePath(dir)}/**)`]),
+    ...creds.files.flatMap((file) => [`Read(${rulePath(file)})`, `Edit(${rulePath(file)})`]),
+  ];
+  const allowWrite = [...new Set([
+    ...(input.cwd ? realPathVariants(input.cwd) : []),
+    ...(input.taskHome ? realPathVariants(input.taskHome) : []),
+    ...realPathVariants(input.tempDir ?? tmpdir()),
+  ])];
+  const denyRead = [...new Set([...creds.dirs, ...creds.files])];
+  return {
+    permissions: { deny },
+    sandbox: {
+      enabled: true,
+      allowUnsandboxedCommands: false,
+      filesystem: { allowWrite, denyRead },
+    },
+  };
+}
 
 /** Same launcher shape as a native session: `--settings` with the bundled guard, and no machine-wide hook. No `--agent`. */
 export function claudeGuardLauncherScript(input: {
@@ -55,6 +80,7 @@ export function claudeGuardLauncherScript(input: {
   return [
     "#!/bin/sh",
     "unset BB_CLAUDE_CODE_EXECUTABLE",
+    ...(WRITER_ROLES.has(input.role) ? ["unset SSH_AUTH_SOCK"] : []),
     'export PATH="$HOME/.agents/bin:$HOME/.local/bin:$PATH"',
     `if [ ! -f ${shellQuote(input.settingsPath)} ] || [ ! -f ${shellQuote(inject)} ] || [ ! -f ${shellQuote(guard)} ]; then`,
     "  echo 'Lane Pilot: claude guard hooks missing' >&2",
@@ -87,22 +113,46 @@ async function atomicWrite(path: string, content: string, mode: number) {
   }
 }
 
+type EnvEntry = { name: string; value: string; reason: string };
+
 /** Writes the bundled guard and a claude launcher for one role. Runs on the host where the thread runs. */
 export async function prepareClaudeGuard(input: {
   role: string;
   cwd?: string | null;
+  taskHome?: string | null;
   dataDir: string;
-}): Promise<{ env: EnvEntry[] }> {
+}): Promise<{ env: EnvEntry[]; isolation?: { denies: number; sandbox: boolean } }> {
   const role = input.role.trim();
   if (!role) throw new Error("claude_guard_failed: missing role");
   const agentType = claudeGuardAgentType(role);
   const command = await installedClaudeExecutable();
   const cwd = input.cwd?.trim() && input.cwd.startsWith("/") ? input.cwd : null;
+  const isWriter = WRITER_ROLES.has(role);
+  const taskHome = isWriter && input.taskHome?.trim().startsWith("/") ? input.taskHome.trim() : null;
+  const isolationSettings = isWriter ? buildWriterIsolationSettings({ cwd, taskHome }) : null;
   const maxTurns = role === "writer" ? WRITER_MAX_TURNS : 0;
-  const digest = sha256Hex(JSON.stringify({ role, agentType, command, cwd, maxTurns, version: 2 })).slice(0, 24);
+  const digest = sha256Hex(JSON.stringify({
+    role, agentType, command, cwd, taskHome, maxTurns,
+    denies: isolationSettings?.permissions.deny.length ?? 0,
+    version: 3,
+  })).slice(0, 24);
   const dir = join(input.dataDir, "claude-guard", digest);
   await mkdir(dir, { recursive: true, mode: 0o700 });
   const session = await materializeNativeHookSession({ cwd, destDir: dir });
+  if (isolationSettings) {
+    const base = JSON.parse(await readFile(session.settingsPath, "utf8")) as Record<string, unknown>;
+    const basePerms = base.permissions && typeof base.permissions === "object" && !Array.isArray(base.permissions)
+      ? base.permissions as Record<string, unknown>
+      : {};
+    const existingDeny = Array.isArray(basePerms.deny) ? basePerms.deny.filter((x): x is string => typeof x === "string") : [];
+    const mergedDeny = [...existingDeny, ...isolationSettings.permissions.deny.filter((rule) => !existingDeny.includes(rule))];
+    const updated = {
+      ...base,
+      permissions: { ...basePerms, deny: mergedDeny },
+      sandbox: isolationSettings.sandbox,
+    };
+    await atomicWrite(session.settingsPath, `${JSON.stringify(updated, null, 2)}\n`, 0o600);
+  }
   const launcher = join(dir, "claude");
   await atomicWrite(launcher, claudeGuardLauncherScript({
     destDir: dir,
@@ -119,87 +169,9 @@ export async function prepareClaudeGuard(input: {
       { name: "LANE_PILOT_ROLE", value: role, reason },
       { name: "LANE_PILOT_AGENT_TYPE", value: agentType, reason: `Claude agentSetting ${agentType}`.slice(0, 500) },
     ],
-  };
-}
-
-const CACHE_MS = 60_000;
-const CALL_MS = 8_500;
-
-const reasonOf = (cause: unknown) => (cause instanceof Error ? cause.message : String(cause)).replace(/\s+/g, " ").slice(0, 200);
-
-async function within<T>(ms: number, label: string, work: Promise<T>): Promise<T> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  try {
-    return await Promise.race([work, new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms} ms`)), ms); })]);
-  } finally { clearTimeout(timer); }
-}
-
-type HostCall = { call(method: string, input: unknown, options: { hostId: string }): Promise<unknown> };
-
-/** The PM's planning home for the bundled guard (SMA d_project_planning): the confirmed home's path, or null. */
-async function pmPlanningHome(ctx: { bb: BbPluginApi; db: LanePilotDatabase; nativeHost: HostCall }, thread: { threadId: string | null; hostId: string }, metadata: unknown, cwd: string | null): Promise<string | null> {
-  const runId = metadata && typeof metadata === "object" ? (metadata as Record<string, unknown>).lanePilotRunId : null;
-  const run = typeof runId === "string" && runId ? getRun(ctx.db, runId) : null;
-  if (!run || !cwd) return null;
-  const host = { call: (method: string, input: unknown, options: { hostId: string }) => ctx.nativeHost.call(method, input, options) } as unknown as RunCommandHost;
-  return resolvePlanningHome({ host, hostId: thread.hostId, cwd, inputs: planningHomeInputs(ctx.db, run.project_id), log: ctx.bb.log });
-}
-
-/**
- * Claude Code threads Lane Pilot started (PM, helpers, writers, errands) get the bundled guard through
- * BB_CLAUDE_CODE_EXECUTABLE. Native sessions already have their own launcher. The owner's chats have no role.
- * (2026-10-29 claude-guard)
- */
-export function createClaudeGuardEnv(ctx: { bb: BbPluginApi; db: LanePilotDatabase; nativeHost: HostCall }) {
-  const cache = new Map<string, { at: number; env: EnvEntry[] }>();
-  return async (thread: { threadId: string | null; hostId: string }): Promise<EnvEntry[]> => {
-    if (!thread.threadId) return [];
-    const native = await ctx.bb.storage.kv.get(nativeThreadKey(thread.threadId));
-    if (native) return [];
-    let metadata: unknown = null;
-    try {
-      metadata = await within(CALL_MS, "getPluginMetadata", Promise.resolve(ctx.bb.sdk.threads.getPluginMetadata({ threadId: thread.threadId })));
-    } catch (cause) {
-      ctx.bb.log.warn(`Lane Pilot: could not tell whether thread ${thread.threadId} needs the claude guard (${reasonOf(cause)}); it starts without a bundled guard`);
-      return [];
-    }
-    const role = metadata && typeof metadata === "object" && typeof (metadata as Record<string, unknown>).role === "string" ? (metadata as Record<string, unknown>).role as string : undefined;
-    if (!role) return [];
-    let cwd: string | null = null;
-    try {
-      const row = await ctx.bb.sdk.threads.get({ threadId: thread.threadId });
-      const environmentId = row && typeof row.environmentId === "string" ? row.environmentId.trim() : "";
-      if (environmentId) {
-        const environment = await ctx.bb.sdk.environments.get({ environmentId });
-        const path = environment && typeof environment.path === "string" ? environment.path.trim() : "";
-        if (path.startsWith("/")) cwd = path;
-      }
-    } catch { /* the guard still applies; the project's own hooks are copied only when the workspace is known */ }
-    const key = `${thread.hostId}\n${role}\n${cwd ?? ""}`;
-    const hit = cache.get(key);
-    const now = Date.now();
-    // The planning home is per project, never cached: two projects can share one checkout path, and a cleared setting must apply at once.
-    const withHome = async (base: EnvEntry[]): Promise<EnvEntry[]> => {
-      const env = [...base];
-      // Only a confirmed home travels to the guard (resolvePlanningHome runs the host-side git check);
-      // a failure leaves the PM writing in the checkout only, as today.
-      if (role === "pm") {
-        const home = await pmPlanningHome(ctx, thread, metadata, cwd).catch(() => null);
-        if (home) env.push({ name: "LANE_PILOT_PLANNING_HOME", value: home, reason: `Lane Pilot: the PM writes its planning folders under the confirmed planning home` });
-      }
-      return env;
-    };
-    if (hit && now - hit.at < CACHE_MS) return withHome(hit.env);
-    try {
-      const prepared = await within(CALL_MS, "prepareClaudeGuard", Promise.resolve(ctx.nativeHost.call("prepareClaudeGuard", {
-        role, ...(cwd ? { cwd } : {}),
-      }, { hostId: thread.hostId }))) as { env?: EnvEntry[] };
-      const env = Array.isArray(prepared?.env) ? prepared.env : [];
-      if (!env.some((entry) => entry.name === "BB_CLAUDE_CODE_EXECUTABLE")) throw new Error("prepareClaudeGuard returned no launcher");
-      cache.set(key, { at: now, env });
-      return await withHome(env);
-    } catch (cause) {
-      throw new Error(`claude_guard_failed:${thread.hostId}: ${reasonOf(cause)}`);
-    }
+    isolation: {
+      denies: isolationSettings?.permissions.deny.length ?? 0,
+      sandbox: Boolean(isolationSettings),
+    },
   };
 }

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { glueReplayCommands } from "../../src/rooms/verification/server"
 import { gluedCheckCommand } from "../../src/rooms/contracts/check-commands";
-import { lintContract, type LintInput } from "../../src/rooms/tasks/server/contract-lint";
+import { lintContract, type LintInput } from "../../src/rooms/tasks/server";
 import type { TaskV2 } from "../../src/rooms/contracts";
 
 describe("gluedCheckCommand (G2/G8: a chain of one runner is one run)", () => {

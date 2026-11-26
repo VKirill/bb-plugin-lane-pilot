@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { withResolvedModel, type HelperRequest } from "../../src/rooms/workflow/server/workflow-agent";
-import { resolveAgentModel } from "../../src/rooms/workflow/server/workflow-agent-model";
+import { withResolvedModel, type HelperRequest } from "../../src/rooms/workflow/server/services/workflow-agent";
+import { resolveAgentModel } from "../../src/rooms/workflow/models/workflow-agent-model";
 import { roleModelKey } from "@lane-pilot/models";
 
 const opus = { providerId: "claude-code", model: "claude-opus-5-5" };

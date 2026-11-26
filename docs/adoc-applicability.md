@@ -7,6 +7,9 @@ status: in_review
 language: ru
 ---
 
+> [!NOTE]
+> Historical record. Since Task 33 of the 2026-11-24 prune plan the settings live in one typed registry (`src/rooms/settings-registry.ts`, `defineSetting`), and the `adoc.*`/`ops.*` placeholder rows this table mapped were dropped. The table is no longer checked against code.
+
 # Применимость настроек adoc к режиму BB
 
 Источник: `settings.json` AG-179 @2 и матрица AG-186 @2, 355 строк. Upstream v1.38.0 `claude-lane-stack` SHA `747a9ff9b2fa4ffdcf5c65c8d07eff2b9386a821`.

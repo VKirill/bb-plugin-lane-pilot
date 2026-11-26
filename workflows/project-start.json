@@ -8,6 +8,7 @@
     "en": "Starts work on a project: a value map before any question (who it is for, what they get, how we know), a preview of the stack, the tests and the memory it already has, the infra profile, the owner's working style and risk, then a recap with next steps and the roadmap skeleton.",
     "ru": "Начинает работу над проектом: карта ценности до любых вопросов (для кого, что получают, как узнаем), обзор стека, тестов и уже накопленной памяти, профиль инфраструктуры, стиль работы владельца и риск, затем итог со следующими шагами и каркасом дорожной карты."
   },
+  "category": "planning",
   "examples": {
     "ru": [
       "Начни работу над новым проектом",
@@ -22,10 +23,7 @@
       "Prepare the start: stack, tests, memory, infra"
     ]
   },
-  "not_for": [
-    "about-site",
-    "resume"
-  ],
+  "not_for": [],
   "status": "published",
   "inputs": {
     "project_cwd": {

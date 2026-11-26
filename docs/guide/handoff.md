@@ -58,7 +58,7 @@ Plain-text reasoning first, then one JSON object as the last thing in the final 
 **The honest exit.** An agent that is blocked or cannot do the task owes the handoff and nothing else. Asked for the other fields it would invent them. Before 2026-11-10 a graph step had no way to say this and the graph went on with made-up values.
 
 - **Graph step.** The engine adds `outcome` and `blocker` to every agent node (`outputFields`, `lower.ts`). `blocked` or `failed` stops the run with `agent_blocked:<node>` or `agent_failed:<node>` and the agent's reason; a blocked step is not retried, since another attempt cannot bring what it lacks. A node that declares `outcome` itself, or an enum with `blocked` in it, keeps routing on its own field and the engine stays out (`engineOwnsOutcome`).
-- **Pipeline stage** (scout, plan critic, specialist, code critic, night review, gate triage). The prompt offers the exit in one shared sentence (`ANSWER_FORM_LINE`); `helperExit` reads it and the stage fails with `helper_blocked:needs … from …`.
+- **Pipeline stage** (scout, plan critic, specialist, code critic, gate triage). The prompt offers the exit in one shared sentence (`ANSWER_FORM_LINE`); `helperExit` reads it and the stage fails with `helper_blocked:needs … from …`.
 - **Writer.** `ASK_PM:` (older spelling `NEEDS_HUMAN:`) is the writer asking the PM: Lane Pilot answers it by rule or by the second pilot; only a product decision, secret, money or an irreversible act reaches the owner. An errand's `ERRAND: blocked` likewise.
 
 ## Reading an answer
@@ -97,16 +97,15 @@ The idea of reading the task from one shared place is Multica's (the agent gets 
 
 `tests/handoff-standard.test.ts` reads the source. Its lists only shrink.
 
-- `NO_TOOLS_LINE` is used by three reviewers that judge hub data only (night review, onboarding preview, gate triage). No other file may tell an agent to open nothing.
-- «JSON and nothing else» survives in ten one-shot analysers written before the standard; no new file may add it.
+- `NO_TOOLS_LINE` is only allowed in `packages/workflow-engine/src/model-json.ts`; the only other tool-ban string is the hand-written one for the memory maintainer in `packages/memory-core/src/context.ts`. No other file may tell an agent to open nothing.
+- «JSON and nothing else» is confined to the legacy one-shot list in `tests/handoff-standard.test.ts`; no new file may add it.
 - The two read-only sentences come from their constants and are not copied by hand.
 
 ## Not yet on the standard
 
 - The critics' prompts are built by hand, not by `renderBrief`: same content and order, without the tagged sections.
 - The writer and the errand keep their marker lines (`NEEDS_HUMAN:`, `ERRAND: done|blocked`).
-- Night review and the onboarding preview still get their material pasted with «open no files». Neither ran in the week before this page was written.
-- 24 of the 237 agent nodes in `workflows/` declare a status of their own with `blocked` in it (`done|blocked` mostly); they route on it themselves and get no engine `outcome`.
+- 0 of the 283 agent nodes in `workflows/` declare a `blocked` value on `status` or `outcome`; all use engine `outcome` and `blocker`.
 
 ## What was taken from where
 

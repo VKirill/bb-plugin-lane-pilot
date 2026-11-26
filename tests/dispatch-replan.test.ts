@@ -130,7 +130,10 @@ describe("a replan keeps the task and its attempt", () => {
   });
 
   it("wakes a waiting pipeline when its latest retry is canceled", async () => {
-    const { db, harness, dispatch, tool, releaseBase } = await setup();
+    const spawnHeld = new Promise<unknown>(() => undefined);
+    const { db, harness, dispatch, tool, releaseBase } = await setup({ spawn: () => spawnHeld, managedProviders: true });
+    // Keep the pipeline parked at the `writer` step (`lp.attempt-spawn`) so cancelling an injected retry attempt wakes it.
+    db.prepare("UPDATE lane_pilot_run SET writer_environment_id=? WHERE id=?").run("env-retry", runId);
     const first = await dispatch();
     releaseBase();
     const pipelineRunId = await (async () => {
@@ -141,10 +144,11 @@ describe("a replan keeps the task and its attempt", () => {
       });
       return id!;
     })();
+    await until(() => getAttempt(db, String(first.attemptId))?.state === "spawn_requested");
     await until(() => (db.prepare("SELECT status FROM lane_pilot_wf_run WHERE id=?").get(pipelineRunId) as { status?: string } | undefined)?.status === "waiting");
-    expect(getAttempt(db, String(first.attemptId))?.state).toBe("blocked");
 
     transitionAttempt(db, String(first.attemptId), "blocked", { reason: "retry fixture" });
+    expect(getAttempt(db, String(first.attemptId))?.state).toBe("blocked");
     createAttempt(db, { id: "retry-attempt", runId, taskId: "replan-me" });
     expect(listAttemptsForTask(db, runId, "replan-me").map((attempt) => attempt.state)).toEqual(["blocked", "queued"]);
 

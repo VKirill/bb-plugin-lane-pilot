@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseCodeCritique } from "../../src/rooms/critique/code-critique";
-import { parseCritique } from "../../src/rooms/critique/critique";
+import { parseCodeCritique, parseCritique } from "../../src/rooms/critique";
 
 // Hub 2026-10-30, six tasks blocked on code_critique_failed by answer shapes, not by findings.
 describe("a code critic answer in a known foreign form is folded, not refused", () => {

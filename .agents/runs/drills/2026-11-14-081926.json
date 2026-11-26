@@ -1,0 +1,249 @@
+{
+  "kind": "lane-pilot-sandbox-drill",
+  "date": "2026-11-14",
+  "stamp": "20261114-081926",
+  "startedAt": 1794633566677,
+  "finishedAt": 1794634756606,
+  "durationSec": 1190,
+  "project": "proj_3tb652jpsi",
+  "runId": "lprun_d29e388c340d44b981fcd18233351e38",
+  "pmThread": "thr_xkd3ubqcwy",
+  "sourceThread": "thr_r8tkgjvmip",
+  "mode": "full",
+  "scenarioNames": [
+    "plan_split"
+  ],
+  "commit": "7fb52d799ce7fb3ca753c3dde003ab20c878f442",
+  "skipped": {},
+  "result": "fail",
+  "problems": [
+    "plan_split: base_lacks_dependency_merge: the worktree of drill-20261114-081926-d-b was cut from c5c257231cb8, which does not hold the merge 7126fff6c4fd of drill-20261114-081926-d-a",
+    "plan_split: base_lacks_dependency_merge: the worktree of drill-20261114-081926-d-c.2 was cut from 037c39cd1c61, which does not hold the merge 7126fff6c4fd of drill-20261114-081926-d-a",
+    "plan_split: base_lacks_dependency_merge: the worktree of drill-20261114-081926-d-d was cut from c46e69eacd90, which does not hold the merge 037c39cd1c61 of drill-20261114-081926-d-b",
+    "plan_split: base_lacks_dependency_merge: the worktree of drill-20261114-081926-d-d was cut from c46e69eacd90, which does not hold the merge c46e69eacd90 of drill-20261114-081926-d-c.2",
+    "plan_split: base_lacks_dependency_merge: the worktree of drill-20261114-081926-d-f was cut from 4139a27ef5e6, which does not hold the merge 4139a27ef5e6 of drill-20261114-081926-d-d"
+  ],
+  "checks": null,
+  "tasks": null,
+  "dispatch": null,
+  "scenarios": [
+    {
+      "name": "plan_split",
+      "result": "fail",
+      "problems": [
+        "base_lacks_dependency_merge: the worktree of drill-20261114-081926-d-b was cut from c5c257231cb8, which does not hold the merge 7126fff6c4fd of drill-20261114-081926-d-a",
+        "base_lacks_dependency_merge: the worktree of drill-20261114-081926-d-c.2 was cut from 037c39cd1c61, which does not hold the merge 7126fff6c4fd of drill-20261114-081926-d-a",
+        "base_lacks_dependency_merge: the worktree of drill-20261114-081926-d-d was cut from c46e69eacd90, which does not hold the merge 037c39cd1c61 of drill-20261114-081926-d-b",
+        "base_lacks_dependency_merge: the worktree of drill-20261114-081926-d-d was cut from c46e69eacd90, which does not hold the merge c46e69eacd90 of drill-20261114-081926-d-c.2",
+        "base_lacks_dependency_merge: the worktree of drill-20261114-081926-d-f was cut from 4139a27ef5e6, which does not hold the merge 4139a27ef5e6 of drill-20261114-081926-d-d"
+      ],
+      "runId": "lprun_d29e388c340d44b981fcd18233351e38",
+      "sql": "SELECT a.task_id, a.id AS attempt_id, a.state, a.reason,\n  (SELECT min(at) FROM lane_pilot_attempt_transition t WHERE t.attempt_id=a.id AND t.to_state='spawn_requested') AS started,\n  (SELECT min(at) FROM lane_pilot_attempt_transition t WHERE t.attempt_id=a.id AND t.to_state='accepted') AS accepted,\n  c.base_sha, c.merge_commit, c.changed_json\nFROM lane_pilot_attempt a LEFT JOIN lane_pilot_attempt_change c ON c.attempt_id=a.id\nWHERE a.run_id=:run ORDER BY started;",
+      "rows": [
+        {
+          "task_id": "drill-20261114-081926-d-x",
+          "attempt_id": "lpattempt_d9372133d90a447698387db3bd614585",
+          "state": "blocked",
+          "reason": "depends_on drill-20261114-081926-d-y: no such task was dispatched in this run",
+          "started": null,
+          "accepted": null,
+          "base_sha": null,
+          "merge_commit": null,
+          "changed_json": null
+        },
+        {
+          "task_id": "drill-20261114-081926-d-a",
+          "attempt_id": "lpattempt_5e5f34f551e140238b5b1e10304ab1a8",
+          "state": "accepted",
+          "reason": null,
+          "started": 1794633601875,
+          "accepted": 1794633722244,
+          "base_sha": "eaa19a9290edf1af9fcf099c1e4a1d13ebcac77a",
+          "merge_commit": "7126fff6c4fd93729f1b7dd27dfd18f12a599d00",
+          "changed_json": "[{\"path\":\"notes/drill/20261114-081926-d-a.md\",\"status\":\"A\"}]"
+        },
+        {
+          "task_id": "drill-20261114-081926-d-e",
+          "attempt_id": "lpattempt_b4a1bf6fcb884998b0a414e6239a5873",
+          "state": "accepted",
+          "reason": null,
+          "started": 1794633605400,
+          "accepted": 1794633717315,
+          "base_sha": "eaa19a9290edf1af9fcf099c1e4a1d13ebcac77a",
+          "merge_commit": "c408d7c84a6d8883113c80bb850cd9c5c762e9e3",
+          "changed_json": "[{\"path\":\"notes/drill/20261114-081926-d-e.md\",\"status\":\"A\"}]"
+        },
+        {
+          "task_id": "fixture-readme",
+          "attempt_id": "lpattempt_2d1f2701b318442aa7c77f971099aa72",
+          "state": "accepted",
+          "reason": null,
+          "started": 1794633628257,
+          "accepted": 1794633714790,
+          "base_sha": "eaa19a9290edf1af9fcf099c1e4a1d13ebcac77a",
+          "merge_commit": "c5c257231cb8908659df90bc7c153fc2e37ab08d",
+          "changed_json": "[{\"path\":\"fixture/README.md\",\"status\":\"A\"}]"
+        },
+        {
+          "task_id": "drill-20261114-081926-d-c",
+          "attempt_id": "lpattempt_f87341b9dab44d1087cc532bb2ae6a9b",
+          "state": "blocked",
+          "reason": "needs_human: This task's checks 2 and 3 cannot both pass: check 2 (`test \"$(cat notes/drill/20261114-081926-d-c.md)\" = A+C`) pins the file to exactly `A+C`, while check 3 (`grep -q redtoken-20261114-081926 notes/drill/20261114-081926-d-c.md`) requires the same file to contain `redtoken-20261114-081926`. Should I write only `A+C` and treat the redtoken grep as a leak detector that must not be satisfied, or should the redtoken check be dropped from the contract?",
+          "started": 1794633725780,
+          "accepted": null,
+          "base_sha": "c5c257231cb8908659df90bc7c153fc2e37ab08d",
+          "merge_commit": null,
+          "changed_json": "[]"
+        },
+        {
+          "task_id": "drill-20261114-081926-d-b",
+          "attempt_id": "lpattempt_1ad87e47a80a41158d8787a430472d2a",
+          "state": "accepted",
+          "reason": null,
+          "started": 1794633730323,
+          "accepted": 1794633779443,
+          "base_sha": "c5c257231cb8908659df90bc7c153fc2e37ab08d",
+          "merge_commit": "037c39cd1c61a49b88b859298029e5ae4c1d5baa",
+          "changed_json": "[{\"path\":\"notes/drill/20261114-081926-d-b.md\",\"status\":\"A\"}]"
+        },
+        {
+          "task_id": "drill-20261114-081926-d-c.2",
+          "attempt_id": "lpattempt_d5852fb6aa6943ebb217587b15980dcb",
+          "state": "accepted",
+          "reason": null,
+          "started": 1794634457906,
+          "accepted": 1794634508448,
+          "base_sha": "037c39cd1c61a49b88b859298029e5ae4c1d5baa",
+          "merge_commit": "c46e69eacd90d2e88885951e3894d42cd085f7af",
+          "changed_json": "[{\"path\":\"notes/drill/20261114-081926-d-c.md\",\"status\":\"A\"}]"
+        },
+        {
+          "task_id": "drill-20261114-081926-d-d",
+          "attempt_id": "lpattempt_861c5481afb146b9a7cbc331b9b4c203",
+          "state": "accepted",
+          "reason": null,
+          "started": 1794634509454,
+          "accepted": 1794634633032,
+          "base_sha": "c46e69eacd90d2e88885951e3894d42cd085f7af",
+          "merge_commit": "4139a27ef5e6ab1b3c4afc1e80326ea92a04bde6",
+          "changed_json": "[{\"path\":\"notes/drill/20261114-081926-d-d.md\",\"status\":\"A\"}]"
+        },
+        {
+          "task_id": "drill-20261114-081926-d-f",
+          "attempt_id": "lpattempt_26e1dbd55e604706905a8c89c5df05c5",
+          "state": "accepted",
+          "reason": null,
+          "started": 1794634636288,
+          "accepted": 1794634693926,
+          "base_sha": "4139a27ef5e6ab1b3c4afc1e80326ea92a04bde6",
+          "merge_commit": "fbb08a4a857f2b39dbf7f6dbaf1e837c560e5bc1",
+          "changed_json": "[{\"path\":\"notes/drill/20261114-081926-d-f.md\",\"status\":\"A\"}]"
+        }
+      ],
+      "ddReason": "waiting for depends_on: drill-20261114-081926-d-c",
+      "cycleReply": "{\n  \"runId\": \"lprun_d29e388c340d44b981fcd18233351e38\",\n  \"state\": \"validation_failed\",\n  \"replan\": true,\n  \"reason\": \"contract lint: nothing was dispatched and no attempt was spent. Fix and send the task again:\\n- depends_on closes a cycle with the open tasks of this run (drill-20261114-081926-d-y → drill-20261114-081926-d-x → drill-20261114-081926-d-y), so none of them could start; drop the depends_on that is not a real output dependency\",\n  \"findings\": [\n    {\n      \"code\": \"depends_cycle\",\n      \"message\": \"depends_on closes a cycle with the open tasks of this run (drill-20261114-081926-d-y",
+      "dispatch": {
+        "drill-20261114-081926-d-a": "{\n  \"runId\": \"lprun_d29e388c340d44b981fcd18233351e38\",\n  \"taskId\": \"drill-20261114-081926-d-a\",\n  \"attemptId\": \"lpattempt_5e5f34f551e140238b5b1e10304ab1a8\",\n  \"writerThreadId\": null,\n  \"state\": \"queued\",\n  \"stages\": [\n    {\n      \"runId\": \"lprun_d29e388c340d44b981fcd18233351e38\",\n      \"taskId\": \"drill-20261114-081926-d-a\",\n      \"stageId\": \"acceptance-receipt\",\n      \"contractVersion\": 1,\n      \"state\": \"pending\",\n      \"inputSha256\": \"7e7ca911c99d6400dd4349286c480401882232cb86fe19cbfa70aa014a9f7588\",\n      \"outputSha256\": null,\n      \"attempt\": 0,\n      \"providerId\": null,\n      \"model\": nul",
+        "drill-20261114-081926-d-e": "{\n  \"runId\": \"lprun_d29e388c340d44b981fcd18233351e38\",\n  \"taskId\": \"drill-20261114-081926-d-e\",\n  \"attemptId\": \"lpattempt_b4a1bf6fcb884998b0a414e6239a5873\",\n  \"writerThreadId\": null,\n  \"state\": \"queued\",\n  \"stages\": [\n    {\n      \"runId\": \"lprun_d29e388c340d44b981fcd18233351e38\",\n      \"taskId\": \"drill-20261114-081926-d-e\",\n      \"stageId\": \"acceptance-receipt\",\n      \"contractVersion\": 1,\n      \"state\": \"pending\",\n      \"inputSha256\": \"a5ed9e81e38a85a885b4dee51c9e01928c13dc59cf0daa44b057b522d50ffe11\",\n      \"outputSha256\": null,\n      \"attempt\": 0,\n      \"providerId\": null,\n      \"model\": nul",
+        "drill-20261114-081926-d-b": "{\n  \"runId\": \"lprun_d29e388c340d44b981fcd18233351e38\",\n  \"taskId\": \"drill-20261114-081926-d-b\",\n  \"attemptId\": \"lpattempt_1ad87e47a80a41158d8787a430472d2a\",\n  \"writerThreadId\": null,\n  \"state\": \"queued\",\n  \"stages\": [\n    {\n      \"runId\": \"lprun_d29e388c340d44b981fcd18233351e38\",\n      \"taskId\": \"drill-20261114-081926-d-b\",\n      \"stageId\": \"acceptance-receipt\",\n      \"contractVersion\": 1,\n      \"state\": \"pending\",\n      \"inputSha256\": \"8f136f357733a8937a2237b6d94bf1a99cc3724160bd11dc2763313a3e22b82d\",\n      \"outputSha256\": null,\n      \"attempt\": 0,\n      \"providerId\": null,\n      \"model\": nul",
+        "drill-20261114-081926-d-c": "{\n  \"runId\": \"lprun_d29e388c340d44b981fcd18233351e38\",\n  \"taskId\": \"drill-20261114-081926-d-c\",\n  \"attemptId\": \"lpattempt_f87341b9dab44d1087cc532bb2ae6a9b\",\n  \"writerThreadId\": null,\n  \"state\": \"queued\",\n  \"stages\": [\n    {\n      \"runId\": \"lprun_d29e388c340d44b981fcd18233351e38\",\n      \"taskId\": \"drill-20261114-081926-d-c\",\n      \"stageId\": \"acceptance-receipt\",\n      \"contractVersion\": 1,\n      \"state\": \"pending\",\n      \"inputSha256\": \"fb429750a26fa02243d5157b9e43c14117e5e6b4c4065f0fe79a37a164e1e988\",\n      \"outputSha256\": null,\n      \"attempt\": 0,\n      \"providerId\": null,\n      \"model\": nul",
+        "drill-20261114-081926-d-d": "{\n  \"runId\": \"lprun_d29e388c340d44b981fcd18233351e38\",\n  \"taskId\": \"drill-20261114-081926-d-d\",\n  \"attemptId\": \"lpattempt_861c5481afb146b9a7cbc331b9b4c203\",\n  \"writerThreadId\": null,\n  \"state\": \"queued\",\n  \"stages\": [\n    {\n      \"runId\": \"lprun_d29e388c340d44b981fcd18233351e38\",\n      \"taskId\": \"drill-20261114-081926-d-d\",\n      \"stageId\": \"acceptance-receipt\",\n      \"contractVersion\": 1,\n      \"state\": \"pending\",\n      \"inputSha256\": \"153ea9c1edc23f6879dcee8ae65a6d1618987a17007b24fc4cdb31d416910056\",\n      \"outputSha256\": null,\n      \"attempt\": 0,\n      \"providerId\": null,\n      \"model\": nul",
+        "drill-20261114-081926-d-f": "{\n  \"runId\": \"lprun_d29e388c340d44b981fcd18233351e38\",\n  \"taskId\": \"drill-20261114-081926-d-f\",\n  \"attemptId\": \"lpattempt_26e1dbd55e604706905a8c89c5df05c5\",\n  \"writerThreadId\": null,\n  \"state\": \"queued\",\n  \"stages\": [\n    {\n      \"runId\": \"lprun_d29e388c340d44b981fcd18233351e38\",\n      \"taskId\": \"drill-20261114-081926-d-f\",\n      \"stageId\": \"acceptance-receipt\",\n      \"contractVersion\": 1,\n      \"state\": \"pending\",\n      \"inputSha256\": \"1a3ae25e0202f94b0b3c2903cf3e23ee200e0562a2780d07e3df4f489d77fb86\",\n      \"outputSha256\": null,\n      \"attempt\": 0,\n      \"providerId\": null,\n      \"model\": nul",
+        "drill-20261114-081926-d-c.2": "{\n  \"runId\": \"lprun_d29e388c340d44b981fcd18233351e38\",\n  \"taskId\": \"drill-20261114-081926-d-c.2\",\n  \"attemptId\": \"lpattempt_d5852fb6aa6943ebb217587b15980dcb\",\n  \"writerThreadId\": null,\n  \"state\": \"queued\",\n  \"stages\": [\n    {\n      \"runId\": \"lprun_d29e388c340d44b981fcd18233351e38\",\n      \"taskId\": \"drill-20261114-081926-d-c.2\",\n      \"stageId\": \"acceptance-receipt\",\n      \"contractVersion\": 1,\n      \"state\": \"pending\",\n      \"inputSha256\": \"fb429750a26fa02243d5157b9e43c14117e5e6b4c4065f0fe79a37a164e1e988\",\n      \"outputSha256\": null,\n      \"attempt\": 0,\n      \"providerId\": null,\n      \"model\":"
+      }
+    }
+  ],
+  "seen": {
+    "stages": {
+      "acceptance-receipt": {
+        "failed": 2,
+        "passed": 7
+      },
+      "memory-maintenance": {
+        "skipped": 7
+      },
+      "plan-critique": {
+        "skipped": 9
+      },
+      "plan-fact": {
+        "failed": 1,
+        "passed": 6
+      },
+      "pm-read": {
+        "skipped": 9
+      },
+      "project-life": {
+        "failed": 1
+      },
+      "specialist-review": {
+        "skipped": 9
+      },
+      "verification": {
+        "failed": 2,
+        "passed": 7
+      },
+      "writer-agent": {
+        "failed": 2,
+        "passed": 7
+      }
+    },
+    "gates": {
+      "accept": {
+        "passed": 7,
+        "skipped": 1
+      },
+      "owns-paths": {
+        "passed": 7
+      },
+      "validate": {
+        "passed": 7
+      },
+      "verification": {
+        "passed": 8
+      }
+    },
+    "moves": {
+      "queued>blocked": {
+        "ok": 1
+      },
+      "queued>queued": {
+        "ok": 18
+      },
+      "queued>spawn_requested": {
+        "ok": 8
+      },
+      "running>accepted": {
+        "ok": 7
+      },
+      "running>blocked": {
+        "ok": 1
+      },
+      "spawn_requested>running": {
+        "ok": 8
+      }
+    }
+  },
+  "judged": [
+    {
+      "name": "plan_split",
+      "verdict": "fail",
+      "evidence": [
+        "runId",
+        "sql",
+        "rows",
+        "ddReason",
+        "cycleReply",
+        "dispatch"
+      ],
+      "why": "base_lacks_dependency_merge: the worktree of drill-20261114-081926-d-b was cut from c5c257231cb8, which does not hold the merge 7126fff6c4fd of drill-20261114-081926-d-a; base_lacks_dependency_merge: the worktree of drill-20261114-081926-d-c.2 was cut from 037c39cd1c61, which does not hold the merge 7126fff6c4fd of drill-20261114-081926-d-a; base_lacks_dependency_merge: the worktree of drill-20261114-081926-d-d was cut from c46e69eacd90, which does not hold the merge 037c39cd1c61 of drill-20261114-081926-d-b; base_lacks_dependency_merge: the worktree of drill-20261114-081926-d-d was cut from c46e69eacd90, which does not hold the merge c46e69eacd90 of drill-20261114-081926-d-c.2; base_lacks_dependency_merge: the worktree of drill-20261114-081926-d-f was cut from 4139a27ef5e6, which does not hold the merge 4139a27ef5e6 of drill-20261114-081926-d-d"
+    }
+  ],
+  "series": {
+    "verdict": "fail",
+    "missing": [],
+    "failed": [
+      "plan_split"
+    ],
+    "skipped": []
+  }
+}

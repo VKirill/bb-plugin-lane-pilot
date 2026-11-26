@@ -1,0 +1,11 @@
+{
+  "gaps": [
+    {
+      "id": "script-01",
+      "class": "script-write-exec",
+      "reason": "Writing a shell script to /tmp and running sh <file> is an accepted reader limit (real writers run bash /tmp/.../check.sh); enforced by sandbox and credential isolation."
+    }
+  ],
+  "p2Baseline": 51,
+  "replay30dBudget": 5
+}

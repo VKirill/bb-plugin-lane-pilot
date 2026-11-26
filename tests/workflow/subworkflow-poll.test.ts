@@ -47,8 +47,11 @@ describe("terminal subworkflow polling", () => {
       error: `subworkflow ${incident.child.workflowId} failed: ${incident.failure.error}`,
     });
     expect(engine.journal.getStep(runId, incident.step.key)).toMatchObject({ state: "failed" });
+    const settledLines = log.mock.calls.length;
     expect(await engine.poll()).toBe(0);
-    expect(log).not.toHaveBeenCalled();
+    // The settle may say once that the parent's step woke; the failure itself is never logged, and a second poll says nothing.
+    expect(log.mock.calls.length).toBe(settledLines);
+    expect(log.mock.calls.filter(([line]) => !String(line).startsWith("workflow: wf.wait "))).toEqual([]);
     expect(engine.journal.getRun(runId)).toMatchObject({ tokens_used: incident.parent.tokens, cost_micro_usd: Math.round(incident.parent.costUsd * 1_000_000) });
     expect(rows(db, "SELECT * FROM lane_pilot_wf_event WHERE run_id=? AND kind='child_usage_charged'", runId)).toHaveLength(1);
   });

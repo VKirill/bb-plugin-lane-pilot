@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { BRIEF_BUDGETS, capBlock, renderBrief, tagSection, validateBrief } from "../src/rooms/brief";
-import { stickyTurnPrompt } from "../src/rooms/writer/server/writer-task";
+import { stickyTurnPrompt } from "../src/rooms/writer/models/writer-task";
 
 describe("renderBrief", () => {
   it("a data block cannot close its own tag early: the closing tag inside the text is defused", () => {

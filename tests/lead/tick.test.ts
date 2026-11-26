@@ -5,8 +5,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { LEAD_DEFAULTS, parseLeadSettings } from "../../src/rooms/lead/settings";
-import { addRoad, getRoad } from "../../src/rooms/lead/server/road";
-import { hubSnapshot, projectRoot, proposalProblem, tickBrief, type HubSnapshot } from "../../src/rooms/lead/server/tick";
+import { addRoad, getRoad } from "../../src/rooms/lead/server";
+import { proposalProblem, tickBrief, type HubSnapshot } from "../../src/rooms/lead/models/tick";
+import { hubSnapshot, projectRoot } from "../../src/rooms/lead/server/services/tick-service";
 import { openDatabase } from "../../src/rooms/plugin-db";
 import { out, pathOf } from "../workflow/chain-helpers";
 import { runSim } from "../workflow/chain-harness";
@@ -20,23 +21,22 @@ const stubs = {
   state: { enabled: true, over_budget: false, budget_left_usd: 14.5, brief: "<lead_identity>…</lead_identity>", projects: 3, open_branches: 4 },
   think: { summary: "Three projects, one stale branch.", proposals: [{ title: "Close the stale branch", class: "next_step", risk: "low", why: "nothing moved for two weeks", evidence: [{ kind: "run", ref: "lprun_1" }], cost_estimate: "2h" }], branches: [], deferred: "the SEO direction: no artifact yet", status: "done" },
   propose: { proposed: 1, proposed_json: "[{\"roadId\":\"road_1\"}]", dropped_json: "[]", actable_json: "[]", branches_added: 0 },
-  act: { acted: 0, acted_json: "[]", deferred_json: "[]" },
-  receipt: { status: "ok", proposed: 1, acted: 0, report: "Three projects, one stale branch.\nПредложений: 1" },
+  receipt: { status: "ok", proposed: 1, report: "Three projects, one stale branch.\nПредложений: 1" },
 };
 
 describe("the lead-tick graph (workflows/lead-tick.json)", () => {
-  it("runs state → think → propose → act → receipt → done when the lead is on and under budget", async () => {
+  it("runs state → think → propose → receipt → done when the lead is on and under budget", async () => {
     const r = await runSim("lead-tick", { input: { tickId: "tick_test", trigger: "manual" }, stubs });
     expect(r.summary.status).toBe("succeeded");
-    expect(pathOf(r)).toBe("state think propose act receipt done");
-    expect(out(r)).toMatchObject({ status: "ok", proposed: 1, acted: 0 });
+    expect(pathOf(r)).toBe("state think propose receipt done");
+    expect(out(r)).toMatchObject({ status: "ok", proposed: 1 });
   });
 
   it("goes straight to the receipt when the lead is off or over budget: no agent is paid for nothing", async () => {
-    const off = await runSim("lead-tick", { input: { tickId: "tick_off", trigger: "cron" }, stubs: { ...stubs, state: { ...stubs.state, enabled: false }, receipt: { status: "off", proposed: 0, acted: 0, report: "" } } });
+    const off = await runSim("lead-tick", { input: { tickId: "tick_off", trigger: "cron" }, stubs: { ...stubs, state: { ...stubs.state, enabled: false }, receipt: { status: "off", proposed: 0, report: "" } } });
     expect(pathOf(off)).toBe("state receipt done");
     expect(out(off)).toMatchObject({ status: "off" });
-    const broke = await runSim("lead-tick", { input: { tickId: "tick_b", trigger: "cron" }, stubs: { ...stubs, state: { ...stubs.state, over_budget: true, budget_left_usd: 0 }, receipt: { status: "budget", proposed: 0, acted: 0, report: "" } } });
+    const broke = await runSim("lead-tick", { input: { tickId: "tick_b", trigger: "cron" }, stubs: { ...stubs, state: { ...stubs.state, over_budget: true, budget_left_usd: 0 }, receipt: { status: "budget", proposed: 0, report: "" } } });
     expect(pathOf(broke)).toBe("state receipt done");
     expect(out(broke)).toMatchObject({ status: "budget" });
   });
@@ -74,18 +74,13 @@ describe("what a proposal of the agent must carry before it reaches the owner", 
 });
 
 describe("the hub snapshot and the brief of a tick", () => {
-  it("reads budget, road, rights and exam from an empty hub and puts the identity first in the brief", async () => {
+  it("reads budget and road from an empty hub and puts the identity first in the brief", async () => {
     const { bb, db } = world();
     addRoad(db, { id: "d1", title: "Grow", kind: "direction", source: "owner", why: "the owner said so" }, 10);
     const snapshot: HubSnapshot = await hubSnapshot({ db, bb } as never, { ...LEAD_DEFAULTS, projects: [] }, { tickId: "tick_1", trigger: "manual" }, 1_000_000);
     expect(snapshot.budget).toEqual({ spentUsd: 0, leftUsd: LEAD_DEFAULTS.budgetDailyUsd, ticksToday: 0 });
     expect(snapshot.road.counts.open).toBe(1);
     expect(snapshot.road.open[0]).toMatchObject({ id: "d1", source: "owner" });
-    expect(snapshot.rights).toHaveLength(7);
-    expect(snapshot.rights.find((row) => row.class === "next_step")!.tier).toBe("decides");
-    expect(snapshot.rights.find((row) => row.class === "landing")!.tier).toBe("proposes");
-    expect(snapshot.rights.find((row) => row.class === "money")!.tier).toBe("owner_only");
-    expect(snapshot.exam).toEqual([]);
     expect(snapshot.identity.path).toBe(join(dir, "LEAD.md"));
     const brief = tickBrief(snapshot, "# Штурман\n\nМеньше, но до конца.");
     expect(brief.startsWith(`<lead_identity sha="${snapshot.identity.sha.slice(0, 12)}"`)).toBe(true);

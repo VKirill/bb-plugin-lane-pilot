@@ -1,4 +1,4 @@
-import { cp, lstat, mkdir, readFile } from "node:fs/promises";
+import { cp, lstat, mkdir } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { applyEdits, findNodeAtLocation, modify, parse, parseTree, type ParseError } from "jsonc-parser/lib/esm/main.js";
 import { defaultGuardSource } from "@lane-pilot/kit";

@@ -8,6 +8,7 @@
     "en": "Saves a note with no questions: one write to .agents/todos/notes/ and one confirmation line.",
     "ru": "Сохраняет заметку без вопросов: одна запись в .agents/todos/notes/ и одна строка подтверждения."
   },
+  "category": "planning",
   "status": "published",
   "quality_mode": {
     "default": "standard"

@@ -9,16 +9,79 @@ import type { StepOutcome } from "./step-types";
 import type { RunSummary } from "./engine-types";
 import { summary } from "./run-status";
 import { unknownUsageSteps } from "./engine-step";
+import { runScriptCommand } from "./step-form";
 import type { WorkflowEngine } from "./engine";
 
 /** A human wait without a node timeout still ends: this is its deadline in seconds (72 h). */
-const HUMAN_WAIT_DEFAULT_SEC = 72 * 3_600;
+export const HUMAN_WAIT_DEFAULT_SEC = 72 * 3_600;
+
+/** Computes the absolute epoch deadline (ms) for a human wait using its timeoutSec or the 72 h default. */
+export function humanWaitDeadline(nowMs: number, timeoutSec?: number, maxSec?: number): number {
+  const raw = timeoutSec ?? HUMAN_WAIT_DEFAULT_SEC;
+  const effective = maxSec !== undefined ? Math.min(raw, maxSec) : raw;
+  return nowMs + effective * 1000;
+}
+
+/** Resolves the outcome of an expired human wait from the node's declared answer kinds / timeout policy. */
+export function humanTimeoutOutcome(
+  human: Extract<WorkflowNode, { type: "human" }>,
+  timeoutFields?: (node: Extract<WorkflowNode, { type: "human" }>) => Record<string, unknown>,
+): { output: Record<string, unknown> } | { error: string } {
+  // A question whose answer kinds include `timeout` is answered by the clock; otherwise onTimeout says.
+  const kind = human.out.find((field) => field.name === "answer_kind");
+  if (kind?.values?.includes("timeout")) {
+    return { output: timeoutFields ? timeoutFields(human) : { answer: "", answer_kind: "timeout" } };
+  }
+  if (human.onTimeout === "default" && human.defaultOption) {
+    const field = human.out.find((candidate) => candidate.type === "string" || candidate.type === "enum");
+    return { output: field ? { [field.name]: human.defaultOption } : {} };
+  }
+  return { error: "human_timeout" };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function parseWaitDeadline(nowMs: number, params: Record<string, unknown>, nodeTimeoutSec?: number): number {
+  let untilDeadline: number | undefined;
+  if (params.until !== undefined) {
+    if (typeof params.until === "number" && Number.isFinite(params.until)) {
+      untilDeadline = params.until;
+    } else if (typeof params.until === "string" && params.until.trim()) {
+      const parsed = Date.parse(params.until);
+      if (!Number.isFinite(parsed)) throw new Error(`builtin:wait: invalid until "${params.until}"`);
+      untilDeadline = parsed;
+    } else {
+      throw new Error("builtin:wait: invalid until value");
+    }
+  }
+  const rawDuration = params.durationSec ?? nodeTimeoutSec;
+  let durationDeadline: number | undefined;
+  if (rawDuration !== undefined) {
+    if (typeof rawDuration !== "number" || !Number.isFinite(rawDuration) || rawDuration < 0) {
+      throw new Error(`builtin:wait: invalid durationSec "${String(rawDuration)}"`);
+    }
+    durationDeadline = nowMs + rawDuration * 1000;
+  }
+  if (untilDeadline !== undefined && durationDeadline !== undefined) return Math.min(untilDeadline, durationDeadline);
+  if (untilDeadline !== undefined) return untilDeadline;
+  if (durationDeadline !== undefined) return durationDeadline;
+  throw new Error("builtin:wait requires until, durationSec, or timeoutSec");
+}
 
 /** A terminal child result, distinct from a retryable failure to read its journal. */
 class ChildRunError extends Error {}
 
 export function registerBuiltins(engine: WorkflowEngine): void {
   engine.register("builtin:parallel", { reentrant: true, run: async () => ({ output: {} }) });
+  engine.register("builtin:script", {
+    reentrant: true,
+    run: async (ctx) => {
+      const node = ctx.node as Extract<WorkflowNode, { type: "agent" }>;
+      return runScriptCommand(ctx, node.script);
+    },
+  });
   engine.register("builtin:join", { reentrant: true, run: async (ctx) => {
     const results = (ctx.input.with.results as Array<Record<string, unknown>>) ?? [];
     const output: Record<string, unknown> = { results, count: results.length, failed_count: ((ctx.input.with.failed as unknown[] | undefined) ?? []).length };
@@ -42,20 +105,39 @@ export function registerBuiltins(engine: WorkflowEngine): void {
       const node = ctx.node as Extract<WorkflowNode, { type: "human" }>;
       // chains-end: no human question waits forever — a node without its own timeout gets the 72 h default;
       // the poll below turns an expired deadline into a timeout answer, a default option or a human_timeout error.
-      const deadline = engine.now() + (node.timeoutSec ?? HUMAN_WAIT_DEFAULT_SEC) * 1000;
+      const deadline = humanWaitDeadline(engine.now(), node.timeoutSec);
       return { wait: { kind: "human", detail: { question: ctx.render(node.question), options: node.options }, deadline } };
     },
     poll: async (step, { node }) => {
       const human = node as Extract<WorkflowNode, { type: "human" }>;
       if (!step.await.deadline || engine.now() < step.await.deadline) return null;
-      // A question whose answer kinds include `timeout` is answered by the clock; otherwise onTimeout says.
-      const kind = human.out.find((field) => field.name === "answer_kind");
-      if (kind?.values?.includes("timeout")) return { output: { answer: "", answer_kind: "timeout" } };
-      if (human.onTimeout === "default" && human.defaultOption) {
-        const field = human.out.find((candidate) => candidate.type === "string" || candidate.type === "enum");
-        return { output: field ? { [field.name]: human.defaultOption } : {} };
+      return humanTimeoutOutcome(human);
+    },
+  });
+  engine.register("builtin:wait", {
+    run: async (ctx) => {
+      const node = ctx.node as Extract<WorkflowNode, { type: "action" }>;
+      const raw = { ...(isRecord(node.params) ? (ctx.template(node.params) as Record<string, unknown>) : {}), ...ctx.input.with };
+      const deadline = parseWaitDeadline(engine.now(), raw, node.timeoutSec);
+      const event = typeof raw.event === "string" && raw.event.trim() ? raw.event.trim() : undefined;
+      const eventKey = raw.eventKey !== undefined && raw.eventKey !== null ? String(raw.eventKey) : (event ? "" : undefined);
+      const attemptKey = typeof raw.attemptKey === "string" && raw.attemptKey.trim() ? raw.attemptKey.trim() : undefined;
+      const timeoutOutput: Record<string, unknown> = { ...(isRecord(raw.timeoutOutput) ? raw.timeoutOutput : {}), woke: "timeout" };
+      return {
+        wait: {
+          kind: event ?? "timer",
+          ...(eventKey !== undefined ? { eventKey } : {}),
+          ...(attemptKey ? { attemptKey } : {}),
+          deadline,
+          timeoutOutput,
+        },
+      };
+    },
+    poll: async (step) => {
+      if (typeof step.await.deadline === "number" && engine.now() >= step.await.deadline) {
+        return { output: step.await.timeoutOutput ?? { woke: "timeout" } };
       }
-      return { error: "human_timeout" };
+      return null;
     },
   });
   engine.register("builtin:subworkflow", {

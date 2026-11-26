@@ -1,0 +1,166 @@
+{
+  "kind": "lane-pilot-sandbox-drill",
+  "date": "2026-11-18",
+  "stamp": "20261118-161022",
+  "startedAt": 1795007422322,
+  "finishedAt": 1795007429450,
+  "durationSec": 7,
+  "project": "proj_ibu6v9g64j",
+  "runId": null,
+  "pmThread": null,
+  "sourceThread": null,
+  "mode": "full",
+  "scenarioNames": [
+    "sma_r23"
+  ],
+  "commit": "f2d8e993bb4c73b27692433f017c9e2c225ef817",
+  "skipped": {},
+  "result": "pass",
+  "problems": [],
+  "checks": null,
+  "tasks": null,
+  "dispatch": null,
+  "scenarios": [
+    {
+      "name": "sma_r23",
+      "result": "pass",
+      "problems": [],
+      "proved": [
+        {
+          "node": "n1627",
+          "ok": true,
+          "detail": "main in the candidate -> merged (file on main True); main moved after -> failed «base moved since the candidate took it i», main unchanged True"
+        },
+        {
+          "node": "n1629",
+          "ok": true,
+          "detail": "max 3; stop-revising gap at round 3: 1, one round earlier: 0, approved: 0"
+        },
+        {
+          "node": "n1630",
+          "ok": true,
+          "detail": "deny tags ['execution-without-agent', 'subagent-foreground', 'subagent-cap', 'spend-cap'] -> gaps {'empty': [], 'unknown': []}; unknown tag reported ['no-such-deny'] (10 rows)"
+        },
+        {
+          "node": "n1631",
+          "ok": true,
+          "detail": "role planner, rules in brief True, method True, path plan lint plan lint plan_critic ok, second plan call got gaps ['t1 and t2 run in the same wave (neither depends on the other) but both own src']"
+        },
+        {
+          "node": "n1632",
+          "ok": true,
+          "detail": "planner/critic/analyst/debugger own method in brief [True, True, True, True], crossed False, specialist:tavily has any False, writer lines 0"
+        },
+        {
+          "node": "n1633",
+          "ok": true,
+          "detail": "claims role analyst read-only True; no sources -> frame search blocked; bad citation fixed -> done, still bad -> partial"
+        },
+        {
+          "node": "n1634",
+          "ok": true,
+          "detail": "plain plan has the example False, noted plan ends with it True, same head True"
+        },
+        {
+          "node": "n1635",
+          "ok": true,
+          "detail": "worktree brief: rule True, live line False; live brief: live line True, rule False"
+        },
+        {
+          "node": "n1636",
+          "ok": true,
+          "detail": "roles ['planner', 'plan-critic'], one rework path story split_check story split_check done, always rework: story called 2 times"
+        },
+        {
+          "node": "n1637",
+          "ok": true,
+          "detail": "roles ['specialist:design-lead', 'plan-critic'], rules in both briefs True, in the design rubric True, in other stages []"
+        },
+        {
+          "node": "n1638",
+          "ok": true,
+          "detail": "sketch rules in both briefs True, in the design rubric True, in other stages []"
+        },
+        {
+          "node": "n1639",
+          "ok": true,
+          "detail": "clean select write_model research eval_plan spec spec_path write_spec check done; one rework select write_model research eval_plan spec spec_path write_spec check spec spec_path write_spec check done; two failures end blocked; spec consumes ['select', 'research', 'eval_plan']"
+        },
+        {
+          "node": "n1640",
+          "ok": true,
+          "detail": "role debugger read-only True, method in brief True; backed cause confirmed True; weak causes re-investigated [True, True, True]"
+        },
+        {
+          "node": "n1641",
+          "ok": true,
+          "detail": "role auditor, runs with validation on 1, off 0, quick 0, plan got «V: an empty list fixture»"
+        },
+        {
+          "node": "n1642",
+          "ok": true,
+          "detail": "{'yes': True, 'launch': True, 'but': False, 'please': False, 'butLaunch': False}"
+        },
+        {
+          "node": "n1643",
+          "ok": true,
+          "detail": "note inside the data block True, outside it False; clean entry parsed 1; override -> 'memory content addresses the assistant w'; credential -> 'memory content appears to contain a cred'"
+        },
+        {
+          "node": "n1644",
+          "ok": true,
+          "detail": "planner claude-opus-5-5, critic router9/ag/gemini-3.8-flash-high, with the owner's row gpt-6.1-sol (table), analyst unchanged claude-opus-5-5, bad row ignored claude-opus-5-5"
+        },
+        {
+          "node": "n1645",
+          "ok": true,
+          "detail": "profile pairs judged: {'stack': None, 'test_command': None, 'style': 'the value is longer than 1000 characters', 'api_key': 'unknown profile key «api_key»; the keys ', 'deploy': 'the value looks like a secret', 'hobby': 'unknown profile key «hobby»; the keys ar'}"
+        },
+        {
+          "node": "n1646",
+          "ok": true,
+          "detail": "PM skill True, nyquist True, selector False; other run's red check -> passed, own red check -> failed"
+        },
+        {
+          "node": "n1649",
+          "ok": true,
+          "detail": "research sections written: {'stack': 'S-DOC', 'features': 'F-DOC', 'architecture': 'A-DOC', 'pitfalls': 'P-DOC'}"
+        },
+        {
+          "node": "n1650",
+          "ok": true,
+          "detail": "plain plan has Predictions/Risk False; with piece notes: predictions True, risk True"
+        },
+        {
+          "node": "n1651",
+          "ok": true,
+          "detail": "pointers to PROJECT.md True, CLAUDE.md '@AGENTS.md\\n', preferences filled True"
+        },
+        {
+          "node": "n1652",
+          "ok": true,
+          "detail": "retro on: status retro write_project write_retro living close record snapshot archive closed; retro off: status retro write_project write_retro close snapshot archive closed"
+        }
+      ],
+      "checked": 23
+    }
+  ],
+  "seen": null,
+  "judged": [
+    {
+      "name": "sma_r23",
+      "verdict": "pass",
+      "evidence": [
+        "proved",
+        "checked"
+      ],
+      "why": ""
+    }
+  ],
+  "series": {
+    "verdict": "pass",
+    "missing": [],
+    "failed": [],
+    "skipped": []
+  }
+}

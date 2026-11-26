@@ -79,6 +79,17 @@ def adapt_pretool_output(stdout: str, returncode: int) -> tuple[str, int]:
     return json.dumps(adapted, ensure_ascii=False) + "\n", 0
 
 
+def _stop_hook_active(payload: object) -> bool:
+    if not isinstance(payload, dict):
+        return False
+    val = payload.get("stop_hook_active") if "stop_hook_active" in payload else payload.get("stopHookActive")
+    return val is True or (isinstance(val, str) and val.strip().lower() == "true")
+
+
+def _is_stop_event(payload: object) -> bool:
+    return _event_name(payload) in {"Stop", "SubagentStop"}
+
+
 def main() -> int:
     if "--" not in sys.argv:
         print("usage: inject_agent_type.py -- <original command...>", file=sys.stderr)
@@ -95,6 +106,11 @@ def main() -> int:
     agent = os.environ.get("LANE_PILOT_AGENT_TYPE", "").strip()
     if isinstance(payload, dict) and agent and not payload.get("agent_type"):
         payload["agent_type"] = agent
+    # Blocking stop hooks must honour stop_hook_active so a session cannot be trapped in an infinite Stop loop.
+    if _is_stop_event(payload) and _stop_hook_active(payload):
+        _trace(payload, 0)
+        sys.stdout.write("{}\n")
+        return 0
     completed = subprocess.run(
         cmd,
         input=json.dumps(payload, ensure_ascii=False),
@@ -102,7 +118,10 @@ def main() -> int:
         check=False,
         capture_output=True,
     )
-    stdout, exit_code = adapt_pretool_output(completed.stdout, completed.returncode)
+    if _is_stop_event(payload):
+        stdout, exit_code = completed.stdout, completed.returncode
+    else:
+        stdout, exit_code = adapt_pretool_output(completed.stdout, completed.returncode)
     _trace(payload, exit_code)
     if stdout:
         sys.stdout.write(stdout)

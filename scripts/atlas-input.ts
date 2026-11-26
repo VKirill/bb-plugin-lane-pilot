@@ -1,11 +1,11 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 import { STAGE_PROOF } from "@lane-pilot/contracts";
-import { COVERAGE } from "../src/rooms/coverage/registry";
+import { COVERAGE } from "../src/rooms/coverage";
 import { rpcContract } from "../src/rooms/contracts";
-import { MEMORY_PATHS } from "../src/rooms/memory/memory-paths";
+import { MEMORY_PATHS } from "../src/rooms/memory";
 import { TRANSITION_TABLE } from "../src/rooms/contracts/state-machine";
-import { SETTING_CATALOG } from "../packages/settings-catalog/src/channels";
+import { SETTINGS_REGISTRY } from "../src/rooms/settings-registry";
 import { featureRegistry } from "../src/rooms/native-install";
 import type { AtlasInput } from "./atlas";
 
@@ -27,7 +27,7 @@ export function collectAtlasInput(root: string): AtlasInput {
     return { name, files: own.length, lines: own.reduce((sum, path) => sum + lines(path), 0), publicExports, coverage };
   });
   const all = [...files(roomsDir), ...files(join(root, "packages"))].filter((path) => !path.includes("/node_modules/"));
-  const cliSource = readFileSync(join(root, "src/rooms/tools/server/cli-commands.ts"), "utf8");
+  const cliSource = readFileSync(join(root, "src/rooms/tools/server/handlers/cli-commands.ts"), "utf8");
   const cli = [...cliSource.matchAll(/\{ name:"([a-z0-9-]+)", summary:"((?:[^"\\]|\\.)*)"/g)].map((hit) => ({ name: hit[1]!, summary: hit[2]!.replace(/\\"/g, '"') }));
   const graphs = readdirSync(join(root, "workflows")).filter((name) => name.endsWith(".json")).sort().map((name) => {
     const graph = JSON.parse(readFileSync(join(root, "workflows", name), "utf8")) as { id: string; name?: { en?: string } | string; status?: string; description?: { en?: string } | string };
@@ -59,7 +59,7 @@ export function collectAtlasInput(root: string): AtlasInput {
     packages,
     size: {
       version: (JSON.parse(readFileSync(join(root, "package.json"), "utf8")) as { version: string }).version,
-      settings: Object.keys(SETTING_CATALOG).length,
+      settings: SETTINGS_REGISTRY.all.length,
       testFiles: ["tests", "src", "packages"].reduce((sum, dir) => sum + tests(join(root, dir)), 0),
       sourceLines: sourceFiles.reduce((sum, path) => sum + lines(path), 0),
     },

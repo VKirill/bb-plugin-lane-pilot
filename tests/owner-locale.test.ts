@@ -2,15 +2,14 @@ import { describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import plugin from "../server";
 import {
-  councilOwnerForm,
   OWNER_RESOLVED_LOCALE_KEY,
-  ownerLocale,
   SELF_REPAIR_GO_AHEAD_EN,
   SELF_REPAIR_LEAVE_EN,
   selfRepairOwnerForm,
   workflowHumanDetail,
   englishSelfRepairChoice,
-} from "../src/rooms/relay/server/owner-locale";
+} from "../src/rooms/relay/models/owner-locale";
+import { ownerLocale } from "../src/rooms/relay/server/services/owner-locale";
 
 function kvHost(store: Record<string, string | undefined>) {
   return {
@@ -43,17 +42,6 @@ describe("ownerLocale", () => {
 });
 
 describe("owner form copy", () => {
-  it("builds the council form in ru and en", () => {
-    expect(councilOwnerForm("ru", "How to raise repeat purchases?")).toEqual({
-      question: "Совет «How to raise repeat purchases?» ждёт вас. Добавьте свой довод или позвольте председателю решить.",
-      decideLabel: "Пусть решит председатель",
-    });
-    expect(councilOwnerForm("en", "How to raise repeat purchases?")).toEqual({
-      question: "The council «How to raise repeat purchases?» waits for you. Add a point, or let the chair decide.",
-      decideLabel: "Let the chair decide",
-    });
-  });
-
   it("builds the self-repair form in ru and en", () => {
     expect(selfRepairOwnerForm("ru", "index.lock")).toEqual({
       question: "Самоисправление «index.lock» ждёт вашего решения. Откройте тред ремонта, чтобы прочитать отчёт.",

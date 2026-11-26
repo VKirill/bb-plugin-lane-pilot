@@ -1,8 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { validateTaskV2 } from "../src/rooms/tasks/task-v2";
-import { rerootTask } from "../src/rooms/tasks/task-base";
-import { classifyWriterOutput } from "../src/rooms/tasks/validate-output";
-import { TRUSTED_TOOLING_PATTERNS, applyTrustedTooling, verificationScriptPaths } from "../src/rooms/tasks/trusted-tooling";
+import { TRUSTED_TOOLING_PATTERNS, applyTrustedTooling, classifyWriterOutput, rerootTask, validateTaskV2, verificationScriptPaths } from "../src/rooms/tasks";
 import { findUnownedChanges } from "../src/rooms/contracts/ownership";
 
 const base = {

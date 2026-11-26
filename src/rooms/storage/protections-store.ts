@@ -1,5 +1,5 @@
 // The protective settings and their disarm records (SMA k_lib_stpa): rows of the settings tables, so they live
-// with the settings store. The policy room decides when to re-arm and what to tell the owner (policy/protections.ts).
+// with the settings store. The protections room decides when to re-arm and what to tell the owner (src/rooms/protections).
 import type { LanePilotDatabase } from "./database";
 
 type Db = Pick<LanePilotDatabase, "prepare">;

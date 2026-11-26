@@ -48,33 +48,6 @@ export function StatusRow({ state, title, detail, action, testId }: { state: "ok
   );
 }
 
-export function CheckGroup({
-  title,
-  testId,
-  toggle,
-  help,
-  children,
-}: {
-  title: string;
-  testId: string;
-  toggle?: ReactNode;
-  help?: string;
-  children: ReactNode;
-}) {
-  return (
-    <Surface testId={testId}>
-      <SurfaceHeader className="justify-between">
-        <h2 className="text-sm font-medium">{title}</h2>
-        {toggle}
-      </SurfaceHeader>
-      <SurfaceBody>
-        {help ? <p className="max-w-xl text-xs text-muted-foreground">{help}</p> : null}
-        {children}
-      </SurfaceBody>
-    </Surface>
-  );
-}
-
 export function FieldControl({
   row,
   value,
@@ -198,7 +171,6 @@ export function SettingField({
   const inheritance = useContext(InheritanceContext);
   const { stackControls } = usePanelLayout();
   const inherited = value == null || value === "";
-  const effective = inherited ? row.defaultValue : value;
   const controlValue = inherited ? row.defaultValue : value;
   return (
     <div
@@ -235,7 +207,6 @@ export function SettingField({
 
 export function StatusBadge({ status }: { status: CatalogRow["uiStatus"] }) {
   if (status === "editable") return <Badge variant="secondary">{t("editableBadge")}</Badge>;
-  if (status === "gap") return <Badge variant="destructive">{t("gapBadge")}</Badge>;
   return <Badge variant="outline">{t("readonlyBadge")}</Badge>;
 }
 

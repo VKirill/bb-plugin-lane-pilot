@@ -8,6 +8,7 @@
     "en": "Adversarial Socratic review of a plan or idea against the real code - branches of questions with file:line, locked/open/deferred decisions and a risk register. Changes nothing.",
     "ru": "Состязательный допрос плана или идеи по реальному коду - ветки вопросов с file:line, решения locked/open/deferred и реестр рисков. Ничего не меняет."
   },
+  "category": "planning",
   "examples": {
     "ru": [
       "Найди дыры в моём плане перехода на очередь сообщений",

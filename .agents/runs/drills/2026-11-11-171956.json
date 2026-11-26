@@ -1,0 +1,63 @@
+{
+  "kind": "lane-pilot-sandbox-drill",
+  "date": "2026-11-11",
+  "stamp": "20261111-171956",
+  "startedAt": 1794406796909,
+  "finishedAt": 1794406838336,
+  "durationSec": 41,
+  "project": "proj_ibu6v9g64j",
+  "runId": null,
+  "pmThread": null,
+  "sourceThread": null,
+  "mode": "full",
+  "scenarioNames": [
+    "outage_live"
+  ],
+  "commit": "659b5522fd645f4b86d0f95355f11372eb9cd9a1",
+  "skipped": {},
+  "result": "pass",
+  "problems": [],
+  "checks": null,
+  "tasks": null,
+  "dispatch": null,
+  "scenarios": [
+    {
+      "name": "outage_live",
+      "result": "pass",
+      "problems": [],
+      "events": [
+        "start",
+        "first_silence",
+        "outage",
+        "message_sent",
+        "lift",
+        "risen",
+        "message_sent"
+      ],
+      "pid": "996821",
+      "posts": [
+        "/botdrill/sendMessage chat_id=1&text=%D0%A5%D0%B0%D0%B1+BB+%D1%83%D0%BF%D0%B0%D0%BB%3A+%D1%81%D0%B5%D1%80%D0%B2%D0%B5%D1%80+%D0%BD%D0%B5+%D0%BE%D1%82%D0%B2%D0%B5%D1%87%D0%B0%D0%B5%D1%82+2+%D1%81+%28timeout%2C+%D0%BF%D1%80%D0%BE%D1%86%D0%B5%D1%81%D1%81+996821+%D0%B2%D0%B8%D1%81%D0%B8%D1%82%29.+%D0%9F%D0%BE%D0%B4%D0%BD%D0%B8%D0%BC%D0%B0%D1%8E.",
+        "/botdrill/sendMessage chat_id=1&text=%D0%A5%D0%B0%D0%B1+BB+%D0%BF%D0%BE%D0%B4%D0%BD%D1%8F%D0%BB%D1%81%D1%8F%3A+%D0%BD%D0%B5+%D0%BE%D1%82%D0%B2%D0%B5%D1%87%D0%B0%D0%BB+%D0%BE%D0%BA%D0%BE%D0%BB%D0%BE+1+%D0%BC%D0%B8%D0%BD."
+      ]
+    }
+  ],
+  "seen": null,
+  "judged": [
+    {
+      "name": "outage_live",
+      "verdict": "pass",
+      "evidence": [
+        "events",
+        "pid",
+        "posts"
+      ],
+      "why": ""
+    }
+  ],
+  "series": {
+    "verdict": "pass",
+    "missing": [],
+    "failed": [],
+    "skipped": []
+  }
+}

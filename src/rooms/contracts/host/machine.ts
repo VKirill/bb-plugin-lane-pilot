@@ -8,10 +8,6 @@ export const machineHostMethods = {
     output: z.object({ hostId:z.string(), path:z.string(), freeBytes:z.number().nonnegative(), totalBytes:z.number().nonnegative(),
       machine:z.object({ load1:z.number().nonnegative().nullable(), cpuCount:z.number().int().positive().nullable(), memFreeBytes:z.number().nonnegative().nullable(), memTotalBytes:z.number().nonnegative().nullable() }).strict().optional() }).strict(),
   },
-  stabilityDrill: {
-    input: z.object({ requestedHostId:z.string().min(1) }).strict(),
-    output: z.object({ hostId:z.string(), checks:z.array(z.object({ name:z.string(), ok:z.boolean(), detail:z.string().nullable() }).strict()) }).strict(),
-  },
   /** SMA «Permit channel»: the permit tickets writers filed on this machine (~/.agents/permits/<session>/<ticket>.ticket.json) and not yet answered. */
   listPermitTickets: {
     input: z.object({ requestedHostId:z.string().min(1) }).strict(),

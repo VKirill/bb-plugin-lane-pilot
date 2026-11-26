@@ -1,18 +1,49 @@
-// Public API of errands (the «Errands» page and the episode facts): the read model over the errand runs, the episode
-// recorder the workflow engine calls when a run ends, and the phase-B enrichment the hourly sweep writes. The RPC is
-// behind ./server, the screen behind ./ui.
-export { ERRAND_KINDS_WITH_NONE, errandStem, errandTitle, routeConfidence, kindsOverview, listErrands, type ErrandKindOrNone, type ErrandRow, type ErrandSource, type KindSummary } from "./logic";
-export { ERRAND_EPISODE_ENRICH_COLUMNS, errandSpawnOf, listEpisodes, pendingErrandEpisode, recordErrandEpisode, type EpisodeDeps, type EpisodeRow } from "./episodes";
-export { EPISODE_ENRICH_BACKOFF_MS, EPISODE_SWEEP_LIMIT, codeFailureClass, enrichEpisode, episodeSkills, episodesBackfill, parseEpisodeAnswer, pendingEpisodes, sweepErrandEpisodes, type BackfillResult, type EpisodeAnswer, type EpisodeEnrichDeps, type EpisodeSkillUse, type PendingEpisode, type SweepResult } from "./episode-enrich";
-export { ERRAND_FAILURE_CLASSES, type ErrandFailureClass } from "./failure-judgment";
-export { diagnosisLines, errandsDiagnosis, errandsDiagnosisMorningLine, type DiagnosisKindCost, type DiagnosisShare, type ErrandsDiagnosis } from "./diagnosis";
-export { chooseProcessKey, nearestKeys, pairwiseF1, type KnownProcessKey, type NearProcessKey, type ProcessKeyPick } from "./process-key";
+// Public API of errands (the «Errands» page, skill-intent resolution, trajectory deltas, process keys, and migrations).
+// Server code lives behind ./server, the screen behind ./ui.
+export { trajectoryDeltaMigrations } from "./migrations";
+export { errandsSettings } from "./settings";
 export {
-  SKILL_DOMAIN_SYNONYMS, hasExplicitSkillIntent, resolveSkillIntent,
-  type ResolveSkillIntentOptions, type ResolvedSkillMatch, type SkillCatalogItem, type SkillIntentLogLevel,
-} from "./skill-intent";
-export {
-  TRAJECTORY_DELTA_TABLE, TRAJECTORY_INTERVENTION_KINDS,
-  listUnprocessedTrajectoryDeltas, markTrajectoryDeltasProcessed, recordTrajectoryDelta, trajectoryDeltaMigrations,
-  type RecordTrajectoryDeltaInput, type RecordTrajectoryDeltaResult, type TrajectoryDeltaRow, type TrajectoryInterventionKind,
-} from "./trajectory-delta";
+  ERRAND_FAILURE_CLASSES,
+  ERRAND_KINDS_WITH_NONE,
+  SKILL_DOMAIN_SYNONYMS,
+  TRAJECTORY_DELTA_TABLE,
+  TRAJECTORY_INTERVENTION_KINDS,
+  chooseProcessKey,
+  diagnosisLines,
+  episodeSkills,
+  errandAccountLines,
+  errandCheck,
+  errandPrompt,
+  errandStem,
+  errandTitle,
+  errandVerdict,
+  hasExplicitSkillIntent,
+  nearestKeys,
+  pairwiseF1,
+  resolveSkillIntent,
+  routeConfidence,
+  type DiagnosisKindCost,
+  type DiagnosisShare,
+  type EpisodeSkillUse,
+  type ErrandCheck,
+  type ErrandFailureClass,
+  type ErrandKindOrNone,
+  type ErrandRow,
+  type ErrandSnapshot,
+  type ErrandSource,
+  type ErrandStart,
+  type ErrandVerified,
+  type ErrandsDiagnosis,
+  type KindSummary,
+  type KnownProcessKey,
+  type NearProcessKey,
+  type ProcessKeyPick,
+  type RecordTrajectoryDeltaInput,
+  type RecordTrajectoryDeltaResult,
+  type ResolveSkillIntentOptions,
+  type ResolvedSkillMatch,
+  type SkillCatalogItem,
+  type SkillIntentLogLevel,
+  type TrajectoryDeltaRow,
+  type TrajectoryInterventionKind,
+} from "./models";

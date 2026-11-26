@@ -1,9 +1,9 @@
-import { timelineArgs } from "../src/rooms/tools/server/cli";
+import { timelineArgs } from "../src/rooms/tools/server/handlers/cli";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
 import { appendGateEvaluation, createAttempt, createRun, createTask, openDatabase, transitionAttempt } from "../src/rooms/plugin-db";
-import { recordStage } from "../src/rooms/runs/server";
-import { renderTimeline, taskTimeline } from "../src/rooms/runs";
+import { recordStage, taskTimeline } from "../src/rooms/runs/server";
+import { renderTimeline } from "../src/rooms/runs";
 
 const contract = {
   schema_version: 2, id: "t1", title: "t", display_title: "t", kind: "feature", area: "a", risk: "low", lane: "writer",

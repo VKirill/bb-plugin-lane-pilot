@@ -1,17 +1,9 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { PrototypeConfig, TaskV2 } from "../src/rooms/contracts";
-import { createAttempt, createRun, createTask, getAttempt, getRun, openDatabase, saveProjectSetting, transitionAttempt } from "../src/rooms/plugin-db";
-import { createWriterFinish } from "../src/rooms/writer/server/finish";
-import { createWriterStart } from "../src/rooms/writer/server/start";
-
-
-
-function deferred<T>() {
-  let resolve!: (value: T) => void;
-  const promise = new Promise<T>((yes) => { resolve = yes; });
-  return { promise, resolve };
-}
+import { createAttempt, createRun, createTask, getRun, openDatabase, saveProjectSetting, transitionAttempt } from "../src/rooms/plugin-db";
+import { createWriterFinish } from "../src/rooms/writer/server/services/finish";
+import { createWriterStart } from "../src/rooms/writer/server/services/start";
 
 const config: PrototypeConfig = {
   projectId:"P", hostId:"h", pmWorkspacePath:"/repo", writerWorkspacePath:"/repo",

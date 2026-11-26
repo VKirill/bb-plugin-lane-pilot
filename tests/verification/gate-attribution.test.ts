@@ -2,14 +2,14 @@ import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:f
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { addRoad, getRoad, listRoad } from "../../src/rooms/lead/server/road";
+import { addRoad, getRoad, listRoad } from "../../src/rooms/lead/server";
 import { spawnAsync } from "@lane-pilot/kit";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
-import { IntegrationGateRunner, type MergedTaskInfo } from "../../src/rooms/verification/server/integration-gate";
-import { attributeFailures } from "../../src/rooms/verification/server/gate-attribution";
+import { IntegrationGateRunner, type MergedTaskInfo } from "../../src/rooms/verification/server/services/integration-gate";
+import { attributeFailures } from "../../src/rooms/verification/models/gate-attribution";
 import { attributeGateOnHost } from "../../src/rooms/verification/integration-gate-host";
 import { createTask, openDatabase, saveProjectSetting } from "../../src/rooms/plugin-db";
-import * as hostHandlers from "../../src/rooms/host-worker/host-handlers";
+import * as hostHandlers from "../../src/rooms/host-worker";
 import type { ServerCore } from "../../src/rooms/contracts/server";
 import type { Services } from "../../server";
 

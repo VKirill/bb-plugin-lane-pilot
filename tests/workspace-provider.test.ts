@@ -2,9 +2,9 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it, vi } from "vitest";
 import type { PrototypeConfig, TaskV2 } from "../src/rooms/contracts";
 import { HARNESS_VERSION, createAttempt, createRun, createTask, getAttempt, openDatabase, setRunThread } from "../src/rooms/plugin-db";
-import { LANE_WORKTREE_PROVIDER_ID, LANE_WORKTREE_RETIRE_GRACE_MS, laneWorktreeInputs, registerLaneWorktreeProvider } from "../src/rooms/native-agent/server/environment-provider";
-import { createWriterSpawn } from "../src/rooms/writer/server/spawn";
-import { PROVIDER_FAILURES_BEFORE_DISABLE, PROVIDER_PROBE_AFTER_MS, createProviderGate, providerListed, providerSwitchOn, waitProviderEnvironment } from "../src/rooms/verification/provider-gate";
+import { LANE_WORKTREE_PROVIDER_ID, LANE_WORKTREE_RETIRE_GRACE_MS, laneWorktreeInputs, registerLaneWorktreeProvider } from "../src/rooms/native-agent/server/handlers/environment-provider";
+import { createWriterSpawn } from "../src/rooms/writer/server/services/spawn";
+import { PROVIDER_FAILURES_BEFORE_DISABLE, PROVIDER_PROBE_AFTER_MS, createProviderGate, providerListed, providerSwitchOn, waitProviderEnvironment } from "../src/rooms/verification/server";
 
 const config = (folder: string): PrototypeConfig => ({
   projectId: "P", hostId: "h", pmWorkspacePath: folder, writerWorkspacePath: folder,
@@ -359,8 +359,8 @@ function world(options: World = {}) {
     },
     effectiveProjectSettings: async () => ({ values: { "memory.enabled": false, "adoc.040": "auto", ...options.settings } }),
   };
-  const services = { providerBreaker: { decide: () => ({ allow: true }) }, ruleScan: { chainForRun: async () => [] }, reconcileAttemptThread: async () => "writer-recovered", recoverLostHolderThread: async () => null };
-  const writer = createWriterSpawn(ctx as never, services as never);
+  const services = { providerBreaker: { decide: () => ({ allow: true }) }, reconcileAttemptThread: async () => "writer-recovered", recoverLostHolderThread: async () => null };
+  const writer = createWriterSpawn({ ...ctx, scopesForWorkspace: async () => [] } as never, services as never);
   const start = (attemptId = "a1") => writer.spawnWriterAttempt({ projectId: "P", runId: "run", taskId: "t1", attemptId, config: config(folder), task: task(folder), plan: "edit", pmThreadId: "pm" });
   return { db, bb, hostCalls, removeCalls, spawned, stopped, archived, infos, warns, start, made, folder };
 }

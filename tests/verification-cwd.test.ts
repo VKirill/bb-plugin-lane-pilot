@@ -1,9 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { PrototypeConfig, TaskV2 } from "../src/rooms/contracts";
-import { mapVerificationCwd, retargetTask } from "../src/rooms/tasks/verification-cwd";
-import { validateTaskV2 } from "../src/rooms/tasks/task-v2";
-import { lintContract } from "../src/rooms/tasks/server/contract-lint";
-import { freshAttemptStart } from "../src/rooms/writer/server/start";
+import { mapVerificationCwd, retargetTask, validateTaskV2 } from "../src/rooms/tasks";
+import { lintContract } from "../src/rooms/tasks/server";
+import { freshAttemptStart } from "../src/rooms/writer/server/services/start";
 
 /**
  * Live 2026-10-09 (SelfyStudio): `fix-marketing-greeting-cards-tests` had `npx vitest run tests/fitness/ ...` with cwd

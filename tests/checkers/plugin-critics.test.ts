@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createCheckers } from "../../src/rooms/checkers/api";
-import { createPluginCheckers } from "../../src/rooms/checkers/server/plugin-ports";
+import { createCheckers, createPluginCheckers } from "../../src/rooms/checkers/server";
 
 describe("the checker scorecard inside the plugin asks no model", () => {
   it("a score with --critic where the host asks no model says where the critics run, and names the code checkers as the plugin's part", async () => {

@@ -1,7 +1,6 @@
 import { taskFamily } from "@lane-pilot/contracts";
-import { OPEN_ATTEMPT_STATES } from "../../contracts";
+import { OPEN_ATTEMPT_STATES, attemptStateSql } from "../../contracts";
 import type { LanePilotDatabase } from "../database";
-import { listStageReceipts } from "../stages-store";
 
 /** A task result the PM has not been told: the latest attempt of a task of a PM's run ended accepted, blocked or canceled. A closed run tells no one: its PM chat has handed the lead back or the run is over. */
 export type TaskOutcome = { transitionId:number; attemptId:string; projectId:string; pmThreadId:string; taskId:string; state:string; reason:string|null; failureCode?:string|null; at:number };
@@ -17,7 +16,7 @@ export function listUnreportedTaskOutcomes(db: LanePilotDatabase, since: number)
     FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id
     JOIN lane_pilot_attempt_transition t ON t.rowid=(SELECT t2.rowid FROM lane_pilot_attempt_transition t2
       WHERE t2.attempt_id=a.id AND t2.refused=0 AND t2.to_state=a.state ORDER BY t2.at DESC, t2.rowid DESC LIMIT 1)
-    WHERE a.state IN ('accepted','blocked','canceled') AND r.pm_thread_id IS NOT NULL AND r.closed_at IS NULL AND a.updated_at>=? AND t.at>=?
+    WHERE a.state IN (${attemptStateSql("terminal")}) AND r.pm_thread_id IS NOT NULL AND r.closed_at IS NULL AND a.updated_at>=? AND t.at>=?
       AND NOT EXISTS (SELECT 1 FROM lane_pilot_task k WHERE k.run_id=a.run_id AND k.id=a.task_id AND k.birth='lead')
       AND a.attempt_no=(SELECT MAX(b.attempt_no) FROM lane_pilot_attempt b WHERE b.run_id=a.run_id AND b.task_id=a.task_id)
       AND NOT EXISTS (SELECT 1 FROM lane_pilot_attempt c JOIN lane_pilot_run rc ON rc.id=c.run_id
@@ -77,20 +76,6 @@ export function pmTasksWaiting(db: LanePilotDatabase, pmThreadId: string): Array
     WHERE r.pm_thread_id=? AND s.stage_id='writer-agent' AND s.state='pending' AND s.reason IS NOT NULL AND s.reason != ''
       AND a.state IN (${OPEN_ATTEMPT_STATES.map(() => "?").join(",")})
     ORDER BY s.task_id`).all(pmThreadId, ...OPEN_ATTEMPT_STATES) as Array<{ taskId: string; reason: string }>;
-}
-
-/**
- * Lane Pilot's own commit after an accepted task is still on its way to main: the project-life stage of one of these accepted attempts
- * is pending or running, or has not started within `startMs` of the acceptance. A PM told its results now would push before it.
- */
-export function pmBookkeepingPending(db: LanePilotDatabase, rows: ReadonlyArray<Pick<TaskOutcome, "attemptId" | "taskId" | "state" | "at">>, now: number, startMs = 90_000): boolean {
-  const stage = db.prepare(`SELECT s.state FROM lane_pilot_stage_receipt s JOIN lane_pilot_attempt a ON a.run_id=s.run_id AND a.task_id=s.task_id
-    WHERE a.id=? AND s.stage_id='project-life'`);
-  return rows.some((row) => {
-    if (row.state !== "accepted") return false;
-    const receipt = stage.get(row.attemptId) as { state:string } | undefined;
-    return receipt ? receipt.state === "pending" || receipt.state === "running" : now - row.at < startMs;
-  });
 }
 
 export function markTaskOutcomesReported(db: LanePilotDatabase, rows: Array<Pick<TaskOutcome, "transitionId" | "attemptId" | "pmThreadId">>, at: number): void {

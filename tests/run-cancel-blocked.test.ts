@@ -1,8 +1,7 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
 import { createCore } from "../src/rooms/core/server/core";
-import { cancelAttemptById } from "../src/rooms/runs/server/cancel";
-import { cancelRejection } from "../src/rooms/runs/server/run-finish";
+import { cancelAttemptById, cancelRejection } from "../src/rooms/runs/server";
 import { createAttempt, createRun, createTask, getAttempt, openDatabase, setRunState, transitionAttempt } from "../src/rooms/plugin-db";
 
 // Live drill 2026-10-27: a drill run ended `blocked` with three attempts still `spawn_requested`. `lane-pilot finish` refused while

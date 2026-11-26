@@ -1,13 +1,11 @@
-import { gitnexusRepoOf } from "../src/rooms/writer/server/writer-knowledge";
+import { gitnexusRepoOf } from "../src/rooms/writer/server/services/writer-knowledge";
 import { describe, expect, it } from "vitest";
 import { mkdtempSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { ROLE_PROFILES, HelperRole, requiredSessionPolicySpawnBinding, coreRequiredSessionAdvertisement } from "../src/rooms/contracts/helper-context";
-import { writerToolLine } from "../src/rooms/writer/server/writer-task";
-import { critiquePrompt } from "../src/rooms/critique/critique";
-import { codeCritiquePrompt, buildCandidateEvidence } from "../src/rooms/critique/code-critique";
-import { pmReadPrompt } from "../src/rooms/critique/pm-read";
+import { writerToolLine } from "../src/rooms/writer/models/writer-task";
+import { buildCandidateEvidence, codeCritiquePrompt, critiquePrompt, pmReadPrompt } from "../src/rooms/critique";
 
 describe("role MCP server configurations", () => {
   it("assigns expected MCP servers across all helper roles", () => {
@@ -28,7 +26,7 @@ describe("role MCP server configurations", () => {
 
     // Roles that did not call the code graph in a measured week carry no MCP server (hub, the week to 2026-11-10).
     // docs-maintainer: 10 calls in 1968 runs; onboarder and project-life: 1 in 75 (audit 2026-11-14).
-    for (const role of ["gate-triage", "analyst", "planner", "auditor", "plan-critic", "pm-reader", "docs-maintainer", "onboarder", "project-life"] as HelperRole[]) {
+    for (const role of ["gate-triage", "analyst", "planner", "auditor", "plan-critic", "pm-reader", "onboarder"] as HelperRole[]) {
       expect(ROLE_PROFILES[role].mcpServers, `Role ${role} carries no MCP server`).toEqual([]);
     }
 
@@ -40,8 +38,6 @@ describe("role MCP server configurations", () => {
       "plan-critic",
       "pm-reader",
       "memory-maintainer",
-      "council-seat",
-      "rules-analyzer",
       "browser-qa",
       "errand",
       "specialist:copy-lead",

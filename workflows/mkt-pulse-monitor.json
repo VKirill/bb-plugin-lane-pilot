@@ -34,6 +34,7 @@
     "monitor",
     "schedule"
   ],
+  "category": "marketing",
   "triggers": [
     "manual",
     "schedule"
@@ -301,7 +302,7 @@
       "session": "new",
       "skip_when": "alerts.anomaly_count == 0 && forecast.out_of_corridor == 0 && alerts.matured_locks == 0 && breaker.fired == false",
       "skip_out": {
-        "status": "pass",
+        "status": "not_run",
         "findings": [],
         "reasons": ""
       },
@@ -323,7 +324,7 @@
       },
       "prompt": "Audit the pulse classification <data>{{classify.causes}}; orders {{classify.orders}}; summary {{classify.summary}}</data> against <data>{{alerts.anomalies_json}}</data>. Check: no action on a signal classed seasonality, holiday, gsc_lag, immature_cohort or noise; a real_drop cites the robust z, the BH-adjusted p and two windows of persistence; a matured-lock route cites readiness >= 1 or a boundary; no duplicate route already open for the same entity. Status pass, rework (what to change in reasons) or block; findings carry severity critical, high, medium, low or info.",
       "out": {
-        "status": "pass|rework|block",
+        "status": "pass|rework|block|not_run",
         "findings": "Finding[]",
         "reasons": "string"
       },
@@ -498,7 +499,7 @@
     {
       "from": "audit",
       "to": "owner_go",
-      "when": "audit.status == 'pass'"
+      "when": "audit.status in ['pass', 'not_run']"
     },
     {
       "from": "audit",

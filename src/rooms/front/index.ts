@@ -1,5 +1,5 @@
-// Public API of the front: first run, own helpers, peers, coordination, the door, the action journal.
-export { FIRST_RUN_STEPS, MUTATING_RPC, answerFirstRun, firstRunNeeded, firstRunSettings, helperDraft, parseHelper, peerLine } from "./logic";
-export type { FirstRunDraft, FirstRunStep, ForeignHelper, PeerSnapshot } from "./logic";
-export { createFront, mountFront } from "./server";
+// Public API of the front room: project first-run onboarding interview.
+export { FIRST_RUN_STEPS, answerFirstRun, firstRunNeeded, firstRunSettings } from "./models/first-run";
+export type { FirstRunDraft, FirstRunStep } from "./models/first-run";
+export { createFront } from "./server";
 export type { FrontApi } from "./server";

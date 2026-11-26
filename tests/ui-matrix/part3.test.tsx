@@ -4,8 +4,8 @@ import { openTab } from "../ui-tabs";
 import { fireEvent, waitFor, within } from "@testing-library/react";
 import { mountPage, missingStack, screenFixture } from "../ui-harness";
 import { en, ru, setLocaleOverride, validationMessage } from "@lane-pilot/i18n";
-import { EXTERNAL_OPS } from "../../src/rooms/runs/constants";
-import { openRole, useMatrixHooks } from "./helpers";
+import { EXTERNAL_OPS } from "../../src/rooms/runs";
+import { useMatrixHooks } from "./helpers";
 
 vi.mock("sonner", () => ({ toast: { info: vi.fn(), success: vi.fn(), error: vi.fn() } }));
 
@@ -127,7 +127,7 @@ describe("Lane Pilot UI", () => {
     openTab(slot, "monitor");
     expect(slot.getAllByText(ru.state_running).length).toBeGreaterThan(0);
     openTab(slot, "service");
-    expect(slot.getAllByText(new RegExp(ru.unappliedNoChannel)).length).toBeGreaterThan(0);
+    expect(slot.getAllByText(ru.legacyFastModeExplanation).length).toBeGreaterThan(0);
     slot.lifecycle.unmount();
   });
 

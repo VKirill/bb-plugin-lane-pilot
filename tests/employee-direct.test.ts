@@ -31,7 +31,7 @@ describe("direct employee call (section 3.6): owner picks a specialist in the co
   });
 
   it("an owner's role-model row wins over the table default", async () => {
-    const { bb, rpc } = await host();
+    const { rpc } = await host();
     await rpc("save_setting", { projectId: "proj_direct", key: "role_model.billing-assistant", value: { model: "claude-opus-5-5" }, expectedVersion: 0 });
     const started = await rpc<Prepared>("prepare_native_session", { projectId: "proj_direct", agentId: "billing-assistant" });
     expect(started.roleModel).toMatchObject({ providerId: "claude-code", model: "claude-opus-5-5" });

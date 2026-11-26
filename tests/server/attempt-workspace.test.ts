@@ -2,7 +2,7 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
 import { createAttempt, createRun, createTask, openDatabase, setAttemptWorkspace, transitionAttempt } from "../../src/rooms/plugin-db";
 import { createCore } from "../../src/rooms/core/server/core";
-import { freshAttemptStart } from "../../src/rooms/writer/server/start";
+import { freshAttemptStart } from "../../src/rooms/writer/server/services/start";
 
 const base = "/home/ubuntu/apps/selfystudio";
 const worktree = "/home/ubuntu/.lane-pilot/worktrees/lpattempt_a/selfystudio";

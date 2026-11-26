@@ -6,9 +6,10 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { EMBED_DIM, addToIndexes, searchMemoryRecords, storeMemoryRecords, storeVectors } from "@lane-pilot/memory-core";
 import type { MemoryCandidate, MemoryDatabase } from "@lane-pilot/memory-core";
 import { migrations, openDatabase } from "../src/rooms/plugin-db";
-import { registerCli } from "../src/rooms/tools/server/cli";
+import { registerCli } from "../src/rooms/tools/server";
 import { createCore } from "../src/rooms/core/server/core";
-import { applyMoveSection, planMoveSection, rewriteSectionScope, runMemoryMoveSectionCli } from "../src/rooms/memory/server/memory-move-section";
+import { applyMoveSection, planMoveSection, rewriteSectionScope } from "../src/rooms/memory/server/services/move-section";
+import { runMemoryMoveSectionCli } from "../src/rooms/memory/server/handlers/memory-move-section-cli";
 import type { Services } from "../server";
 
 const BUDGETS = { coreBudget: 99_999, noteBudget: 99_999, indexBudget: 999_999 };

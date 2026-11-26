@@ -1,0 +1,88 @@
+{
+  "id": "lp.daily-report",
+  "startedBy": "daily-report",
+  "name": {
+    "en": "Owner Daily Status Digest",
+    "ru": "Ежедневный дайджест владельца"
+  },
+  "description": {
+    "en": "Scheduled service workflow that builds a compact 8-line daily summary of attempts, workflow runs, and measured costs from SQLite and sends it to Telegram.",
+    "ru": "Регулярный сервисный граф, формирующий короткую сводку до 8 строк из SQLite о попытках, графах и расходах за сутки с отправкой в Telegram."
+  },
+  "category": "service",
+  "status": "published",
+  "version": 1,
+  "tags": [
+    "schedule",
+    "telegram",
+    "reports"
+  ],
+  "triggers": [
+    {
+      "type": "manual"
+    }
+  ],
+  "scope": {
+    "level": "builtin"
+  },
+  "inputs": {
+    "force": {
+      "type": "boolean",
+      "required": false
+    }
+  },
+  "outputs": {
+    "sent": "boolean",
+    "reason": "string",
+    "day": "string"
+  },
+  "goal_audit": "exempt",
+  "budget": {
+    "max_minutes": 5,
+    "max_usd": 0.01
+  },
+  "guards": {
+    "maxSteps": 4,
+    "maxFanOut": 1
+  },
+  "nodes": [
+    {
+      "id": "digest",
+      "type": "action",
+      "label": "Compose and send compact daily digest",
+      "uses": "lp.daily_report",
+      "timeoutSec": 120,
+      "output": [
+        {
+          "name": "sent",
+          "type": "boolean"
+        },
+        {
+          "name": "reason",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "day",
+          "type": "string",
+          "required": false
+        }
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "from": "start",
+      "to": "digest"
+    },
+    {
+      "from": "digest",
+      "to": "end",
+      "with": {
+        "sent": "digest.sent",
+        "reason": "digest.reason",
+        "day": "digest.day"
+      }
+    }
+  ]
+}

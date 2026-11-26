@@ -8,6 +8,7 @@
     "en": "Audits the evaluation of an AI feature: is the gold set independent of the prompt, does the metric track the user goal, can the model game it, is there leakage; writes EVAL-REVIEW.md with a verdict.",
     "ru": "Проверяет оценку ИИ-функции: независим ли золотой набор от промпта, отражает ли метрика цель пользователя, может ли модель её обмануть, нет ли утечки; пишет EVAL-REVIEW.md с вердиктом."
   },
+  "category": "qa",
   "examples": {
     "ru": [
       "Проверь, честно ли мы оцениваем генерацию",

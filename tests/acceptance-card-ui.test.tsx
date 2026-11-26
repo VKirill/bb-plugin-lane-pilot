@@ -36,7 +36,7 @@ const card = (extra: Record<string, unknown> = {}) => ({
 
 async function mount(rpc: Record<string, unknown>) {
   await loadPluginApp(() => import("../app"));
-  const { AcceptanceCard } = await import("../src/rooms/acceptance/ui");
+  const { AcceptanceCard } = await import("../src/rooms/runs/ui");
   return renderSlot({ component: () => <AcceptanceCard runId="run" taskId="t1" refreshKey={1} finished={false} fallback={{ objective: "Save the form", acceptance: ["the form saves"] }} /> }, {}, { context: { projectId: null, threadId: null }, rpc: rpc as never });
 }
 

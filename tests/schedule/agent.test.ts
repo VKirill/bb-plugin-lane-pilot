@@ -2,17 +2,18 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const observe = vi.hoisted(() => ({ result: { kind: "completed" } as { kind: string; detail?: string; via?: string } }));
 vi.mock("@lane-pilot/thread-observe", () => ({ observeStageChild: async () => observe.result }));
-vi.mock("../../src/rooms/memory/server", () => ({ taskMemoryContext: (_db: unknown, _project: string, _run: string | null, query: string) => `NOTE for «${query.slice(0, 20)}»: the site is on Yandex Webmaster` }));
+vi.mock("../../src/rooms/memory/server", async (importOriginal) => ({ ...(await importOriginal<typeof import("../../src/rooms/memory/server")>()), taskMemoryContext: (_db: unknown, _project: string, _run: string | null, query: string) => `NOTE for «${query.slice(0, 20)}»: the site is on Yandex Webmaster` }));
 
 import Database from "better-sqlite3";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { createRun, openDatabase, setRunThread } from "../../src/rooms/plugin-db";
-import { createScheduleExecutors } from "../../src/rooms/schedule/server/schedule-executors";
-import { normalizeSchedule } from "../../src/rooms/schedule/model";
-import { AGENT_OUTCOME_FORMAT, agentHistoryBlock, alreadyHandedOver, handOverTrailer, parseAgentOutcome, parseHandOver } from "../../src/rooms/schedule/outcome";
-import { createScheduleStore, scheduleAgentMigrations, scheduleMigrations, type RunRow, type ScheduleRow } from "../../src/rooms/schedule/store";
+import { createScheduleExecutors } from "../../src/rooms/schedule/server/services/schedule-executors";
+import { normalizeSchedule, type RunRow, type ScheduleRow } from "../../src/rooms/schedule/models/schedule";
+import { AGENT_OUTCOME_FORMAT, agentHistoryBlock, alreadyHandedOver, handOverTrailer, parseAgentOutcome, parseHandOver } from "../../src/rooms/schedule/models/outcome";
+import { scheduleAgentMigrations, scheduleMigrations } from "../../src/rooms/schedule/migrations";
+import { createScheduleStore } from "../../src/rooms/schedule/server/repositories/schedule-repository";
 import { ownerWaitingMigrations } from "../../src/rooms/owner-waiting/migrations";
-import { createPhaseIntake } from "../../src/rooms/phase/server/intake";
+import { createPhaseIntake } from "../../src/rooms/workflow/server/services/intake";
 import { addSchedule, createClock, createDb } from "./harness";
 
 const task = { kind: "agent" as const, agentId: "seo-specialist", task: "Check the positions of the main queries and decide what to improve.", authorized: false, accounts: [] as string[], historyRuns: 5 };
@@ -223,25 +224,19 @@ describe("a run of kind agent", () => {
 });
 
 describe("PhaseIntake.handOver", () => {
-  function intake(options: { text?: string; live?: boolean; settings?: Record<string, unknown> } = {}) {
+  function intake(options: { text?: string; settings?: Record<string, unknown> } = {}) {
     const { bb } = createFakePluginHost({ pluginId: "lane-pilot" });
     const db = openDatabase(bb);
     createRun(db, "lprun_1", "p1", "cli");
     setRunThread(db, "lprun_1", "thr_pm");
-    const opened: Array<Record<string, any>> = [], started: Array<Record<string, any>> = [];
-    const phases = {
-      open: async (args: Record<string, any>) => { opened.push(args); return { id: "ph_1" } as never; },
-      tick: async () => 0,
-      list: () => (options.live ? [{ id: "ph_live" }] as never : []),
-      status: () => ({ next: { text: "" } }),
-    };
+    const started: Array<Record<string, any>> = [];
     const train = { start: (args: Record<string, any>) => { started.push(args); return `wfrun_${started.length}`; }, status: () => null };
     const kv = new Map<string, unknown>();
     const ctx = {
       bb: { storage: { kv: { get: async (key: string) => kv.get(key) ?? null, set: async (key: string, value: unknown) => { kv.set(key, value); } } }, sdk: { threads: { events: { list: async () => [] } } } },
       db, effectiveProjectSettings: async () => ({ values: { "phase.rails": "on", ...options.settings } }), log: () => undefined,
     } as never;
-    return { handOver: createPhaseIntake(ctx, phases as never, train as never).handOver, opened, started };
+    return { handOver: createPhaseIntake(ctx, train as never).handOver, started };
   }
   const base = { projectId: "p1", pmThreadId: "thr_pm", runId: "lprun_1", key: "schedule:k1", origin: "Work found by the scheduled agent x; source: schedule." };
 
@@ -258,18 +253,13 @@ describe("PhaseIntake.handOver", () => {
     const world1 = intake();
     expect(await world1.handOver({ ...base, text: heavy })).toEqual({ started: true, via: "full-lifecycle", id: "wfrun_1" });
     expect(world1.started[0]).toMatchObject({ kind: "heavy", requestId: "schedule:k1" });
-    expect(world1.opened).toEqual([]);
   });
 
-  it("phase.road is ignored: a heavy hand-over always takes the full-lifecycle graph, a live phase still refuses, and no work is refused", async () => {
+  it("phase.road is ignored: a heavy hand-over always takes the full-lifecycle graph, and non-work or off train refuses", async () => {
     const heavy = "Redesign the whole pricing section with a new plan comparison, a calculator and a migration of the old plans. ".repeat(12);
     const open = intake({ settings: { "phase.road": "phase" } });
     expect(await open.handOver({ ...base, text: heavy })).toEqual({ started: true, via: "full-lifecycle", id: "wfrun_1" });
-    expect(open.opened).toEqual([]);
     expect(open.started[0]!.text).toContain("source: schedule");
-    const busy = intake({ live: true });
-    expect(await busy.handOver({ ...base, text: heavy })).toMatchObject({ started: false, reason: expect.stringContaining("ph_live") });
-    expect(busy.opened).toEqual([]);
     expect(await intake().handOver({ ...base, text: "Is the canonical tag on /pricing?" })).toMatchObject({ started: false, kind: "question" });
     expect(await intake({ settings: { "phase.train": "off" } }).handOver({ ...base, text: "Add the canonical tag." })).toMatchObject({ started: false, reason: expect.stringContaining("off") });
     expect(await intake().handOver({ ...base, runId: "gone", text: "Add the canonical tag." })).toMatchObject({ started: false });

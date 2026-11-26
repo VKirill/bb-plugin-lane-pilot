@@ -7,7 +7,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import Database from "better-sqlite3";
-import { applyRuleScopeRebind, planScopeMigration, revertRuleScopeRebind } from "../src/rooms/memory/server/scope-migration";
+import { applyRuleScopeRebind, planScopeMigration, revertRuleScopeRebind } from "../src/rooms/memory/server/repositories/scope-migration";
 
 function arg(name: string): string | undefined {
   const index = process.argv.indexOf(name);

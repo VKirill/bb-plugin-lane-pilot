@@ -2,6 +2,7 @@ import type { RunRow, StepRow } from "./journal";
 import type { GraphNode as WorkflowNode } from "./schema";
 import type { Compiled } from "./compiled";
 import { asObject } from "./step-read";
+import { buildStepFactColumns, emitStepFactLogs } from "./run-facts";
 import { failRun } from "./run-status";
 import { tryJoin } from "./engine-routing";
 import type { WorkflowEngine } from "./engine";
@@ -57,7 +58,14 @@ export function gates(engine: WorkflowEngine, run: RunRow, c: Compiled, pending:
     if (failed === undefined || !branch) { ready.push(step); continue; }
     const dependency = (asObject(j.getStep(run.id, input.group)!.input_json) as { items?: unknown[] }).items?.[failed];
     const label = typeof dependency === "object" && dependency !== null && typeof (dependency as { id?: unknown }).id === "string" ? (dependency as { id: string }).id : String(failed);
-    if (!j.moveStep(run.id, step.step_key, "pending", "canceled", { error: `upstream_blocked:${label}`, ended: true })) continue;
+    const cols = buildStepFactColumns(run, step, "canceled", engine.now(), {
+      nodeType: c.nodes.get(step.node_id)?.type,
+      error: `upstream_blocked:${label}`,
+      errorCode: "upstream_blocked",
+      hasAgentCall: false,
+    });
+    if (!j.moveStep(run.id, step.step_key, "pending", "canceled", { ...cols, error: `upstream_blocked:${label}`, ended: true })) continue;
+    emitStepFactLogs(engine, run.id, step.step_key, step.node_id, "canceled", cols, false);
     arrive(engine, run, c, branch, step.step_key, { $failed: `upstream_blocked:${label}`, $blocked: true });
     changed = true;
   }

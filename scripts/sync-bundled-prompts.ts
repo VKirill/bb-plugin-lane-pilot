@@ -4,7 +4,7 @@
  * Run after changing a session prompt or after `bundle-lane-agents.py`: node_modules/.bin/tsx scripts/sync-bundled-prompts.ts
  */
 import { readFileSync, writeFileSync } from "node:fs";
-import { laneSessionOverlayPrompt } from "../src/rooms/native-agent/native-agent-overlay";
+import { laneSessionOverlayPrompt } from "../src/rooms/native-agent/models/native-agent-overlay";
 
 const file = new URL("../src/rooms/contracts/bundled-agents.json", import.meta.url);
 const bundled = JSON.parse(readFileSync(file, "utf8")) as Record<string, { prompt: string; provenance?: { file?: string; sha256?: string; bytes?: number } }>;

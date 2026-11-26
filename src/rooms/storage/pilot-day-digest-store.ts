@@ -1,4 +1,4 @@
-import { redactKnown, sha256Hex } from "@lane-pilot/kit";
+import { currentLogLevel, redactKnown, sha256Hex } from "@lane-pilot/kit";
 import { listRunStepFrictionFacts, WF_RUN_TABLE } from "@lane-pilot/workflow-engine";
 import type { LanePilotDatabase } from "./database";
 
@@ -352,7 +352,7 @@ export function savePilotDayDigest(db: LanePilotDatabase, input: PilotDayDigestI
   const row = toDayDigestRow(stored);
   if (res.changes > 0) {
     options?.log?.(`INFO [storage.dayDigest] saved ${redactKnown(JSON.stringify({ digestId: row.digestId, sourceKind: row.sourceKind, processKey: row.processKey, outcome: row.outcome }))}`);
-  } else if (process.env.LOG_LEVEL !== "silent") {
+  } else if (currentLogLevel("debug") !== "silent") {
     options?.log?.(`DEBUG [storage.dayDigest] duplicate ${redactKnown(JSON.stringify({ digestId: row.digestId, sourceKind: row.sourceKind }))}`);
   }
   return { saved: res.changes > 0, row };

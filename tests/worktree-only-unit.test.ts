@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseWorkspaceMode, resolveAttemptWorkspace } from "../src/rooms/verification/routing";
+import { parseWorkspaceMode, resolveAttemptWorkspace } from "../src/rooms/verification/models/routing";
 
 describe("worktree-only unit tests", () => {
   it("parses legacy in_place and Russian label as auto", () => {

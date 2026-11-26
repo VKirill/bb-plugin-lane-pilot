@@ -1,3 +1,14 @@
+import {
+  FINAL_ATTEMPT_STATES,
+  OPEN_ATTEMPT_STATES,
+  TERMINAL_ATTEMPT_STATES,
+  isFinalAttemptState,
+  isOpenAttemptState,
+  isTerminalAttemptState,
+} from "@lane-pilot/contracts";
+
+export { FINAL_ATTEMPT_STATES, OPEN_ATTEMPT_STATES, TERMINAL_ATTEMPT_STATES, isFinalAttemptState, isOpenAttemptState, isTerminalAttemptState };
+
 export const ATTEMPT_STATES = [
   "queued",
   "spawn_requested",
@@ -79,7 +90,7 @@ export const TRANSITION_TABLE: TransitionRow[] = [
   { from:"validation_failed", event:"retry_exhausted", to:"blocked" },
 ];
 
-export const MAIN_ATTEMPT_LIMIT = 2;
+export const WRITER_RETRY_LIMIT = 3;
 
 export const RETRY_ELIGIBLE: AttemptState[] = [
   "spawn_rejected",
@@ -89,18 +100,24 @@ export const RETRY_ELIGIBLE: AttemptState[] = [
   "validation_failed",
 ];
 
-/** Attempt states still at work: queued, being spawned, running or being canceled. Every other state ended the attempt. */
-export const OPEN_ATTEMPT_STATES: readonly AttemptState[] = ["queued", "spawn_requested", "spawn_unknown", "running", "cancel_requested"];
-
-export function isOpenAttemptState(state: string): boolean {
-  return (OPEN_ATTEMPT_STATES as readonly string[]).includes(state);
-}
-
 /** Attempt states that ended in failure: every state minus the open ones, `accepted` and `canceled`. The canary, the wall, self-repair and the live rate all read this one set — a report that needs a different membership is a bug to name, not a list to fork. */
 export const FAILED_ATTEMPT_STATES: readonly AttemptState[] = ATTEMPT_STATES.filter((state) => !isOpenAttemptState(state) && state !== "accepted" && state !== "canceled");
 
 export function isFailedAttemptState(state: string): boolean {
   return (FAILED_ATTEMPT_STATES as readonly string[]).includes(state);
+}
+
+export type AttemptStateSqlKind = "terminal" | "open" | "failed" | "final" | "open_or_final";
+
+/** Quoted SQL IN-list for attempt state sets (e.g. `'accepted','blocked','canceled'`). */
+export function attemptStateSql(kind: AttemptStateSqlKind): string {
+  const states: readonly AttemptState[] =
+    kind === "terminal" ? TERMINAL_ATTEMPT_STATES
+    : kind === "open" ? OPEN_ATTEMPT_STATES
+    : kind === "failed" ? FAILED_ATTEMPT_STATES
+    : kind === "final" ? FINAL_ATTEMPT_STATES
+    : [...FINAL_ATTEMPT_STATES, ...OPEN_ATTEMPT_STATES];
+  return states.map((state) => `'${state}'`).join(",");
 }
 
 export function resolveTransition(from: AttemptState | null, event: TransitionEvent): AttemptState | "stay" {
@@ -120,7 +137,7 @@ export function nextAttemptState(from: AttemptState | null, event: TransitionEve
 
 export function retryAction(failed: AttemptState, usedAttempts: number): TransitionEvent {
   if (!RETRY_ELIGIBLE.includes(failed)) throw new Error(`retry is not legal from ${failed}`);
-  return usedAttempts >= MAIN_ATTEMPT_LIMIT ? "retry_exhausted" : "retry";
+  return usedAttempts >= WRITER_RETRY_LIMIT ? "retry_exhausted" : "retry";
 }
 
 /**

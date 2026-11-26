@@ -1,14 +1,13 @@
 import { getAttempt, loadProjectSettings } from "../../storage";
 import { GLOBAL_SETTINGS_PROJECT_ID } from "@lane-pilot/settings-catalog";
 import { switchOn } from "@lane-pilot/models";
-import { handleNativeDispatch, mentionContext, nativeContributedEnv } from "../../native-agent";
+import { mentionContext } from "../../native-agent";
 import { nativeSelectionKey, nativeThreadKey } from "../../native-agent"
 import { NATIVE_MENTION_PROVIDER } from "../../contracts/native-agent-id"
 import { nativeSelectionSchema } from "../../contracts/native-selection";
-import { createClaudeGuardEnv } from "../../native-agent";
-import { attachStreamRetry, droppedStreamDetail } from "../../writer";
+import { attachStreamRetry, droppedStreamDetail } from "../../writer/server";
 import { retryEligibility } from "../../stability/server";
-import { createPmSkillTraceEnv, createRoleMarkerEnv, mountBbShim, mountNativeSpecialistSessionPolicy } from "../../native-agent/server";
+import { createClaudeGuardEnv, createPmSkillTraceEnv, createRoleMarkerEnv, handleNativeDispatch, mountBbShim, mountNativeSpecialistSessionPolicy, nativeContributedEnv } from "../../native-agent/server";
 import { observeOwnerDispatch } from "../../owner-presence/server";
 import { lpStandardTierAdmission } from "../../platform/server";
 import { THREAD_WATCH_EVENT_TYPES, listThreadEventsRaw } from "@lane-pilot/thread-observe";

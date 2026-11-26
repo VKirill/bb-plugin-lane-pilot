@@ -1,0 +1,85 @@
+{
+  "kind": "lane-pilot-sandbox-drill",
+  "date": "2026-11-11",
+  "stamp": "20261111-172038",
+  "startedAt": 1794406838407,
+  "finishedAt": 1794406888640,
+  "durationSec": 50,
+  "project": "proj_ibu6v9g64j",
+  "runId": null,
+  "pmThread": null,
+  "sourceThread": null,
+  "mode": "full",
+  "scenarioNames": [
+    "watchdog"
+  ],
+  "commit": "659b5522fd645f4b86d0f95355f11372eb9cd9a1",
+  "skipped": {},
+  "result": "fail",
+  "problems": [
+    "watchdog: an old log did not rotate to its day"
+  ],
+  "checks": null,
+  "tasks": null,
+  "dispatch": null,
+  "scenarios": [
+    {
+      "name": "watchdog",
+      "result": "fail",
+      "problems": [
+        "an old log did not rotate to its day"
+      ],
+      "events": [
+        "start",
+        "first_silence",
+        "outage",
+        "message_not_sent",
+        "lift",
+        "out_of_tries",
+        "message_not_sent"
+      ],
+      "live": {
+        "events": [
+          "start",
+          "first_silence",
+          "outage",
+          "message_not_sent",
+          "lift",
+          "risen",
+          "message_not_sent"
+        ],
+        "pid": "1017478",
+        "census": {
+          "before": {
+            "rows": 0,
+            "ready": true
+          },
+          "after": {
+            "rows": 0,
+            "ready": true
+          }
+        }
+      }
+    }
+  ],
+  "seen": null,
+  "judged": [
+    {
+      "name": "watchdog",
+      "verdict": "fail",
+      "evidence": [
+        "events",
+        "live"
+      ],
+      "why": "an old log did not rotate to its day"
+    }
+  ],
+  "series": {
+    "verdict": "fail",
+    "missing": [],
+    "failed": [
+      "watchdog"
+    ],
+    "skipped": []
+  }
+}

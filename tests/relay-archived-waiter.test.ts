@@ -1,5 +1,6 @@
 import { expect, it } from "vitest";
-import { createRelay, type RelayItem } from "../src/rooms/relay/server/relay";
+import type { RelayItem } from "../src/rooms/relay/models/relay";
+import { createRelay } from "../src/rooms/relay/server/services/relay";
 
 // Hub 2026-10-31: a helper settled while the PM that asked it was archived. The answer's send got 409 «Thread is archived», threw out
 // of the whole update, the wait stayed open and was tried again on every thread event; a self-repair was opened for the warnings.

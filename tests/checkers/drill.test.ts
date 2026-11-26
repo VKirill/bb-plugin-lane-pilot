@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { renderDrill, runDrill } from "../../src/rooms/checkers/drill";
-import { CODE_CHECKERS, DEFECT_CLASSES, EXPECTED_CATCHERS } from "../../src/rooms/checkers/types";
+import { CODE_CHECKERS, DEFECT_CLASSES, EXPECTED_CATCHERS } from "../../src/rooms/checkers/models/types";
 
 describe("checker drill", () => {
   it("is green on the fixture: every designed code catcher catches its planted defects and no code checker flags a clean candidate", async () => {

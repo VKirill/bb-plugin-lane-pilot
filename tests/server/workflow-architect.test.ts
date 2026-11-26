@@ -4,8 +4,8 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import plugin from "../../server";
-import { writeWorkflowFile } from "../../src/rooms/host-worker/host-handlers";
-import { REALTIME_WINDOW_MS } from "../../src/rooms/platform/server/realtime";
+import { writeWorkflowFile } from "../../src/rooms/host-worker";
+import { REALTIME_WINDOW_MS } from "../../src/rooms/platform/server/services/realtime";
 import { globalWorkflowDir, loadWorkflowStore, projectWorkflowDir } from "@lane-pilot/workflow-engine";
 import { BROWSER_DIGEST_STEPS } from "../workflow/architect-fixture";
 
@@ -238,18 +238,17 @@ describe("workflow architect tools", () => {
     expect(result.models.roles.auditor).toMatchObject({ provider: "codex", model: "gpt-6.1-sol", offered: false });
     // The reviews' default is the Gemini through 9router: also on neither machine here.
     expect(result.models.roles["code-critic"]).toMatchObject({ provider: "opencode2", model: "router9/ag/gemini-3.8-flash-high", reasoning: "medium", offered: false });
-    expect(result.models.note).toContain("a step names a `role`, never a model");
+    expect(result.models.note).toContain("a step names a `role`");
     const narrowed = await call("lane_pilot_workflow_capabilities", { sections: ["models"], query: "critic" });
     expect(Object.keys(narrowed.models.roles)).toEqual(["plan-critic", "plan-critic-light", "code-critic", "evolve-critic"]);
 
-    // A node that names a model is a warning (never an error): the field is ignored when the step runs.
+    // A node's own model is used when it can exist; a model its provider does not have fails validation with the node id.
     const created = await call("lane_pilot_workflow_draft_create", { name: "Model check", description: "pair check", scope: "global" });
     const node = (provider: string, model: string) => ({ op: "add_node", node: { id: `n_${model.replace(/\W/g, "_")}`, type: "agent", prompt: "do it", provider, model, out: [{ name: "handoff", type: "string" }] } });
     const patched = await call("lane_pilot_workflow_draft_patch", { draftId: created.draftId, ops: [node("claude-code", "claude-opus-5-5"), node("claude-code", "claude-mystery-9"),
       { op: "add_edge", edge: { from: "start", to: "n_claude_opus_5_5" } }, { op: "add_edge", edge: { from: "n_claude_opus_5_5", to: "n_claude_mystery_9" } }, { op: "add_edge", edge: { from: "n_claude_mystery_9", to: "end" } }] });
-    const ignored = patched.problems.filter((row: { code: string }) => row.code === "model_ignored");
-    expect(ignored.map((row: { node: string; level: string }) => [row.node, row.level])).toEqual([["n_claude_opus_5_5", "warning"], ["n_claude_mystery_9", "warning"]]);
-    expect(patched.problems.some((row: { code: string }) => row.code === "unknown_model")).toBe(false);
+    expect(patched.problems.some((row: { code: string }) => row.code === "model_ignored")).toBe(false);
+    expect(patched.problems.filter((row: { code: string }) => row.code === "unknown_model").map((row: { node: string; level: string }) => [row.node, row.level])).toEqual([["n_claude_mystery_9", "error"]]);
   });
 
   it("says a source could not be read instead of listing it empty", async () => {

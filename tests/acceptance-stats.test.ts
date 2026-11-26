@@ -1,6 +1,6 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { expect, it } from "vitest";
-import { acceptanceStats, failureCause } from "../src/rooms/runs/acceptance-stats";
+import { acceptanceStats, failureCause } from "../src/rooms/runs/server";
 import { createRun, openDatabase } from "../src/rooms/plugin-db";
 
 it("maps a failed attempt to the plan's coarse cause buckets", () => {
@@ -22,8 +22,6 @@ it("aggregates first-try acceptance, redispatches and causes per project and ISO
   createRun(db, "run", "proj", "cli", "/repo");
   createRun(db, "run2", "proj2", "cli", "/repo2");
   let id = 0;
-  const task = (runId:string, taskId:string, at:number) =>
-    db.prepare("INSERT INTO lane_pilot_task(id,run_id,kind,contract_json,created_at) VALUES(?,?,'bb','{}',?)").run(taskId, runId, at);
   const attempt = (runId:string, taskId:string, state:string, reason:string | null, at:number) =>
     db.prepare("INSERT INTO lane_pilot_attempt(id,run_id,task_id,state,attempt_no,reason,created_at,updated_at) VALUES(?,?,?,?,1,?,?,?)")
       .run(`a${id++}`, runId, taskId, state, reason, at, at);

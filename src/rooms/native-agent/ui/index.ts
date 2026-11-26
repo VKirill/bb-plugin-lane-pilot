@@ -6,3 +6,5 @@ export { EnableLanePilotAction } from "./composer-enable";
 export { HelperThreadPanel, useHelperThreadIndex } from "./helper-threads"
 export { ROLE_GROUPS, originOfKeys, roleKey, roleName, rolePurpose } from "./team-model";
 export type { RoleOrigin, RoleSpec } from "./team-model";
+export { RESOURCE_KEYS, mergeInventoryItems, resourceModeOf } from "../models/agent-inventory";
+export type { InventoryGroup, ResourceKey, ResourceMode } from "../models/agent-inventory";

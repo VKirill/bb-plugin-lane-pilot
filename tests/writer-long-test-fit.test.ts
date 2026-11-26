@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { observeTestEditHold } from "./sma/r01-world-d";
+import { observeTestEditHold } from "./helpers/test-edit-hold";
 
 it.each([false, true])("a weakened assertion after line 400 is held and only its complete approval releases it (in place: %s)", async (inPlace) => {
   const seen = await observeTestEditHold(2100, undefined, inPlace);

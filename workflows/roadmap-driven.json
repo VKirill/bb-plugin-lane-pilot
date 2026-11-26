@@ -37,6 +37,7 @@
     "planning",
     "large"
   ],
+  "category": "planning",
   "inputs": {
     "goal": {
       "type": "string",

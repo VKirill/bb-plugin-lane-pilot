@@ -1,0 +1,79 @@
+{
+  "id": "lp.backlog-scan",
+  "startedBy": "backlog-scan",
+  "name": {
+    "en": "Backlog Scan",
+    "ru": "Скан бэклога"
+  },
+  "description": {
+    "en": "Reads a project's .agents/todos/items/*.yaml and automatically issues one ready item per cap window to its PM chat without creating owner cards.",
+    "ru": "Читает .agents/todos/items/*.yaml проекта и автоматически выдаёт одну готовую задачу в PM-чат с соблюдением дневных лимитов и без карточек владельцу."
+  },
+  "category": "service",
+  "status": "published",
+  "version": 1,
+  "tags": [
+    "schedule",
+    "backlog"
+  ],
+  "triggers": [
+    {
+      "type": "manual"
+    }
+  ],
+  "scope": {
+    "level": "builtin"
+  },
+  "inputs": {
+    "projectId": {
+      "type": "string",
+      "required": false
+    }
+  },
+  "outputs": {
+    "scanned": "int",
+    "issued": "int"
+  },
+  "goal_audit": "exempt",
+  "budget": {
+    "max_minutes": 20,
+    "max_usd": 0.01
+  },
+  "guards": {
+    "maxSteps": 4,
+    "maxFanOut": 1
+  },
+  "nodes": [
+    {
+      "id": "scan",
+      "type": "action",
+      "label": "Scan backlog todos and auto-issue within caps",
+      "uses": "lp.backlog_scan",
+      "timeoutSec": 1200,
+      "output": [
+        {
+          "name": "scanned",
+          "type": "int"
+        },
+        {
+          "name": "issued",
+          "type": "int"
+        }
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "from": "start",
+      "to": "scan"
+    },
+    {
+      "from": "scan",
+      "to": "end",
+      "with": {
+        "scanned": "scan.scanned",
+        "issued": "scan.issued"
+      }
+    }
+  ]
+}

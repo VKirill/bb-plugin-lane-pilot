@@ -35,6 +35,7 @@
     "analytics",
     "intake"
   ],
+  "category": "marketing",
   "triggers": [
     "manual"
   ],

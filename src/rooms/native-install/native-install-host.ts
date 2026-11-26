@@ -3,6 +3,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { z } from "zod";
+import { currentHostId } from "@lane-pilot/kit";
 import type { hostContract } from "../contracts";
 import { detectOwnInstall, lanePilotEnv, materializeOwnTools, placeLanePilotGuard } from "./native-install-bootstrap";
 import { removeClaudeLaneLeftovers, type LeftoverReport } from "./claude-lane-leftovers";
@@ -59,11 +60,13 @@ export async function nativeInstallOperation(input: { root: string; home: string
 }
 
 export const nativeInstallHost: ExperimentalHostRpcHandlers<typeof hostContract>["nativeInstall"] = async (input, context) => {
-  if (process.env.BB_HOST_ID && process.env.BB_HOST_ID !== input.requestedHostId) throw new Error("Native installation host mismatch");
+  const envHost = currentHostId();
+  if (envHost && envHost !== input.requestedHostId) throw new Error("Native installation host mismatch");
   return nativeInstallOperation({ root: join(context.experimental_paths.dataDir, "native-install"), home: homedir(), action: input.action, signal: context.signal });
 };
 
 export const removeClaudeLaneLeftoversHost: ExperimentalHostRpcHandlers<typeof hostContract>["removeClaudeLaneLeftovers"] = async (input): Promise<LeftoverReport> => {
-  if (process.env.BB_HOST_ID && process.env.BB_HOST_ID !== input.requestedHostId) throw new Error("Native installation host mismatch");
+  const envHost = currentHostId();
+  if (envHost && envHost !== input.requestedHostId) throw new Error("Native installation host mismatch");
   return removeClaudeLaneLeftovers({ home: homedir(), apply: input.apply === true });
 };

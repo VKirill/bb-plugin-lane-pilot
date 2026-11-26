@@ -1,9 +1,10 @@
 import { taskRedispatchBase } from "@lane-pilot/contracts";
+import { attemptStateSql } from "../../contracts";
 import type { LanePilotDatabase } from "../database";
 
 /** Tasks of the run whose latest attempt ended (accepted, blocked or canceled). */
 export function listEndedTaskIds(db: LanePilotDatabase, runId: string): string[] {
-  return (db.prepare(`SELECT DISTINCT task_id AS taskId FROM lane_pilot_attempt a WHERE run_id=? AND state IN ('accepted','blocked','canceled')
+  return (db.prepare(`SELECT DISTINCT task_id AS taskId FROM lane_pilot_attempt a WHERE run_id=? AND state IN (${attemptStateSql("terminal")})
     AND attempt_no=(SELECT MAX(b.attempt_no) FROM lane_pilot_attempt b WHERE b.run_id=a.run_id AND b.task_id=a.task_id)`)
     .all(runId) as Array<{ taskId: string }>).map((row) => row.taskId);
 }
@@ -11,7 +12,7 @@ export function listEndedTaskIds(db: LanePilotDatabase, runId: string): string[]
 /** Live attempts of other tasks in this task's contract area (an area copy stays while it holds work). */
 export function countOtherLiveAttemptsInArea(db: LanePilotDatabase, taskId: string): number {
   return (db.prepare(`SELECT count(*) AS n FROM lane_pilot_attempt a JOIN lane_pilot_task t ON t.id=a.task_id
-    WHERE a.state IN ('queued','spawn_requested','spawn_unknown','running','cancel_requested')
+    WHERE a.state IN (${attemptStateSql("open")})
       AND a.task_id<>? AND json_extract(t.contract_json,'$.area')=(SELECT json_extract(contract_json,'$.area') FROM lane_pilot_task WHERE id=?)`)
     .get(taskId, taskId) as { n: number }).n;
 }

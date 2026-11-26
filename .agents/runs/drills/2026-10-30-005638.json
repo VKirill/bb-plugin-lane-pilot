@@ -1,0 +1,167 @@
+{
+  "kind": "lane-pilot-sandbox-drill",
+  "date": "2026-10-30",
+  "stamp": "20261030-005638",
+  "startedAt": 1793310998319,
+  "finishedAt": 1793311004202,
+  "durationSec": 6,
+  "project": "proj_3tb652jpsi",
+  "runId": null,
+  "pmThread": null,
+  "sourceThread": null,
+  "mode": "quick",
+  "scenarioNames": [
+    "guard_hash",
+    "deferrals",
+    "checkers",
+    "memory_paths",
+    "helper_providers",
+    "parallel3"
+  ],
+  "commit": "b62e98474e33f3dcbd44393f1a29094fbb00676c",
+  "skipped": {},
+  "result": "fail",
+  "problems": [
+    "guard_hash: scenario raised: [Errno 2] No such file or directory: 'bb'",
+    "deferrals: the register of deferrals could not be read: [Errno 2] No such file or directory: 'bb'"
+  ],
+  "checks": null,
+  "tasks": null,
+  "dispatch": null,
+  "scenarios": [
+    {
+      "name": "guard_hash",
+      "result": "fail",
+      "problems": [
+        "scenario raised: [Errno 2] No such file or directory: 'bb'"
+      ]
+    },
+    {
+      "name": "deferrals",
+      "result": "fail",
+      "problems": [
+        "the register of deferrals could not be read: [Errno 2] No such file or directory: 'bb'"
+      ]
+    },
+    {
+      "name": "checkers",
+      "result": "pass",
+      "problems": [],
+      "checked": [
+        {
+          "defectClass": "test_assertion_deleted",
+          "planted": 2,
+          "caughtBy": [],
+          "designedCatchers": [
+            "code_critic"
+          ]
+        },
+        {
+          "defectClass": "off_by_one",
+          "planted": 2,
+          "caughtBy": [
+            "verification"
+          ],
+          "designedCatchers": [
+            "verification"
+          ]
+        },
+        {
+          "defectClass": "outside_owns",
+          "planted": 2,
+          "caughtBy": [
+            "ownership"
+          ],
+          "designedCatchers": [
+            "ownership"
+          ]
+        },
+        {
+          "defectClass": "swallowed_error",
+          "planted": 1,
+          "caughtBy": [],
+          "designedCatchers": [
+            "code_critic"
+          ]
+        },
+        {
+          "defectClass": "masked_check",
+          "planted": 2,
+          "caughtBy": [
+            "contract_lint"
+          ],
+          "designedCatchers": [
+            "contract_lint"
+          ]
+        },
+        {
+          "defectClass": "acceptance_missing",
+          "planted": 2,
+          "caughtBy": [
+            "verification",
+            "plan_fact"
+          ],
+          "designedCatchers": [
+            "plan_fact"
+          ]
+        },
+        {
+          "defectClass": "hardcoded_value",
+          "planted": 2,
+          "caughtBy": [
+            "verification"
+          ],
+          "designedCatchers": [
+            "code_critic"
+          ]
+        },
+        {
+          "defectClass": "broken_import",
+          "planted": 2,
+          "caughtBy": [
+            "verification"
+          ],
+          "designedCatchers": [
+            "verification"
+          ]
+        }
+      ]
+    }
+  ],
+  "seen": null,
+  "judged": [
+    {
+      "name": "guard_hash",
+      "verdict": "fail",
+      "evidence": [],
+      "why": "scenario raised: [Errno 2] No such file or directory: 'bb'"
+    },
+    {
+      "name": "deferrals",
+      "verdict": "fail",
+      "evidence": [],
+      "why": "the register of deferrals could not be read: [Errno 2] No such file or directory: 'bb'"
+    },
+    {
+      "name": "checkers",
+      "verdict": "pass",
+      "evidence": [
+        "checked"
+      ],
+      "why": ""
+    }
+  ],
+  "series": {
+    "verdict": "fail",
+    "missing": [
+      "memory_paths",
+      "helper_providers",
+      "parallel3"
+    ],
+    "failed": [
+      "guard_hash",
+      "deferrals"
+    ],
+    "skipped": []
+  }
+}

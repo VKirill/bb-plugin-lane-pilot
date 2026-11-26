@@ -1,0 +1,123 @@
+{
+  "kind": "lane-pilot-sandbox-drill",
+  "date": "2026-11-11",
+  "stamp": "20261111-083957",
+  "startedAt": 1794375597904,
+  "finishedAt": 1794377195839,
+  "durationSec": 1598,
+  "project": "proj_ibu6v9g64j",
+  "runId": "lprun_a109c3d2bf0a4865850f138506291b6f",
+  "pmThread": "thr_9xfrn79mm9",
+  "sourceThread": "thr_p3j2u6yk84",
+  "mode": "full",
+  "scenarioNames": [
+    "phase"
+  ],
+  "commit": "38fb3f377fbf4b6884c6ab56926b2cf374caaefe",
+  "skipped": {},
+  "result": "fail",
+  "problems": [
+    "phase: scenario raised: phase_control failed: Error: HTTP 502: Bad Gateway"
+  ],
+  "checks": null,
+  "tasks": null,
+  "dispatch": null,
+  "scenarios": [
+    {
+      "name": "phase",
+      "result": "fail",
+      "problems": [
+        "scenario raised: phase_control failed: Error: HTTP 502: Bad Gateway"
+      ]
+    }
+  ],
+  "seen": {
+    "stages": {
+      "acceptance-receipt": {
+        "failed": 1,
+        "passed": 1
+      },
+      "memory-maintenance": {
+        "skipped": 1
+      },
+      "plan-critique": {
+        "passed": 1,
+        "skipped": 1
+      },
+      "plan-fact": {
+        "passed": 1
+      },
+      "pm-read": {
+        "skipped": 2
+      },
+      "project-life": {
+        "passed": 1
+      },
+      "specialist-review": {
+        "skipped": 2
+      },
+      "verification": {
+        "failed": 1,
+        "passed": 1
+      },
+      "writer-agent": {
+        "failed": 1,
+        "passed": 1
+      }
+    },
+    "gates": {
+      "accept": {
+        "passed": 1,
+        "rejected": 1,
+        "skipped": 1
+      },
+      "owns-paths": {
+        "passed": 2
+      },
+      "validate": {
+        "passed": 1,
+        "rejected": 1
+      },
+      "verification": {
+        "failed": 1,
+        "passed": 1
+      }
+    },
+    "moves": {
+      "queued>queued": {
+        "ok": 4
+      },
+      "queued>spawn_requested": {
+        "ok": 3
+      },
+      "running>accepted": {
+        "ok": 1
+      },
+      "running>blocked": {
+        "ok": 1
+      },
+      "running>validation_failed": {
+        "ok": 1
+      },
+      "spawn_requested>running": {
+        "ok": 3
+      }
+    }
+  },
+  "judged": [
+    {
+      "name": "phase",
+      "verdict": "fail",
+      "evidence": [],
+      "why": "scenario raised: phase_control failed: Error: HTTP 502: Bad Gateway"
+    }
+  ],
+  "series": {
+    "verdict": "fail",
+    "missing": [],
+    "failed": [
+      "phase"
+    ],
+    "skipped": []
+  }
+}

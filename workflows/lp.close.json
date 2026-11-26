@@ -9,6 +9,7 @@
     "en": "Checks every goal's done_when against evidence, detects intent drift, stages knowledge candidates and updates project life.",
     "ru": "Сверяет каждую цель done_when с доказательствами, ловит дрейф намерения, кладёт кандидатов знаний на стейджинг и обновляет жизнь проекта."
   },
+  "category": "service",
   "inputs": {
     "goals": {
       "type": "Goal[]"
@@ -70,16 +71,18 @@
       },
       "skip_when": "$mode == 'quick' && $inputs.goals.length <= 1",
       "skip_out": {
+        "status": "not_run",
         "goals": "[]",
-        "all_met": true,
+        "all_met": false,
         "unmet_ids": "[]",
-        "intent_aligned": true,
+        "intent_aligned": false,
         "drift_items": "[]",
         "points": "[]"
       },
       "src": "maestro-flow:prepare/ralph.md (post-goal-audit, post-reground)",
       "prompt": "For each goal check `done_when` against evidence (command output, file:line, test result); met only with evidence you re-checked now.\nEach goal carries its piece's contract (acceptance, verification commands, owns_paths) and `depends_on`: check each goal against its own contract, and a goal whose dependency is unmet is unmet.\n`merged_commits` names the diff range of the phase's work: read the changes there. The work stands on Lane Pilot's own phase branch until acceptance lands it on the base branch: work not on the base branch yet, or built on that branch, is neither unmet nor drift, and a check written to run after the landing is not evidence against a goal. Lane Pilot keeps its own records in the same history (.agents/CHANGELOG.md lines, the phase's folder .agents/phases/<phase>/ with its plan, book, review and verification reports, .agents/PROGRESS.md, .agents/runs/): they are not the writer's work, never drift and never a scope violation. When `drawing` is given, check the screens against its UI-SPEC.md.\n`proof_currency`, when given, is git's own verdict on whether each recorded proof still covers the code: use it, do not work currency out from git by hand. A proof marked STALE, NOT ON THIS HISTORY or UNKNOWN COMMIT is not current evidence: re-check that goal on the code as it is now and name the changed paths in the evidence.\nintent_aligned=false when the result drifts from the original goal: two or more in_scope items missing or one out_of_scope item violated (confident drift at 80%+).\nDifferent model from the writer. Never ask the owner for what the repository can answer.\nWhen `drawing.points` is given, judge every point of the drawing contract against the screens and return it in `points` with its id: met only with evidence you re-checked now.\n",
       "out": {
+        "status": "pass|fail|not_run?",
         "goals": "GoalResult[]",
         "all_met": "bool",
         "unmet_ids": "string[]",
@@ -196,7 +199,7 @@
       "from": "goal_audit",
       "to": "unmet",
       "pass": "artifact",
-      "when": "!goal_audit.intent_aligned || !goal_audit.all_met"
+      "when": "goal_audit.status != 'not_run' && (!goal_audit.intent_aligned || !goal_audit.all_met)"
     },
     {
       "from": "goal_audit",
@@ -220,5 +223,8 @@
     }
   ],
   "status": "published",
-  "goal_check": "artifact"
+  "goal_check": "artifact",
+  "not_for": [
+    "milestone-close"
+  ]
 }

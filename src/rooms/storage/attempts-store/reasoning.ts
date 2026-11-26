@@ -48,6 +48,14 @@ export type ReasoningTrace = {
     serviceTier:"default"|"fast"|null;
     reasoningLevelSource:"explicit"|"client-preference";
   };
+  isolation?:{
+    role:string;
+    providerId:string;
+    denies:number;
+    sandbox:boolean;
+    pushEnv:boolean;
+    warning?:string;
+  };
 };
 
 export function saveReasoningTrace(db: LanePilotDatabase, trace: ReasoningTrace): void {

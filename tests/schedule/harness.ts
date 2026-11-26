@@ -1,7 +1,8 @@
 import Database from "better-sqlite3";
-import { normalizeSchedule, type ScheduleInput, type ScheduleKind } from "../../src/rooms/schedule/model";
-import { createScheduler, type Executor, type ExecutorInput, type PollResult, type Scheduler } from "../../src/rooms/schedule/scheduler";
-import { createScheduleStore, scheduleAgentMigrations, scheduleMigrations, type RunRow } from "../../src/rooms/schedule/store";
+import { normalizeSchedule, type RunRow, type ScheduleInput, type ScheduleKind } from "../../src/rooms/schedule/models/schedule";
+import { scheduleAgentMigrations, scheduleMigrations } from "../../src/rooms/schedule/migrations";
+import { createScheduleStore } from "../../src/rooms/schedule/server/repositories/schedule-repository";
+import { createScheduler, type Executor, type ExecutorInput, type PollResult, type Scheduler } from "../../src/rooms/schedule/server/services/scheduler";
 
 /** A fake clock the scheduler's sleeps advance, so a minute of supervising costs no time. */
 export function createClock(start: number) {

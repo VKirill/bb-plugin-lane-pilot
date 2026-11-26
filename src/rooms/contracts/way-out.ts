@@ -29,7 +29,6 @@ export const WAY_OUT: ReadonlyArray<readonly [key: string, pattern: RegExp, wayO
   ["owner_word: no", /^owner_word: the owner said no/, "the owner said no to this task: it does not land — ask him what he wants instead; do not send it again"],
   ["owner_word", /^owner_word/, "verified but waits for the owner's word to land on main: ask him once with lane_pilot_ask_owner, record the answer with lane_pilot_queue {action:\"word\", taskId, decision, text}, then send the task again (the same writer thread merges)"],
   // Held states: nothing to do — the machine resumes itself.
-  ["quarantine", /^quarantine/, "a regression finding quarantines a file this task touches: if the change was meant, settle it with lane_pilot_regression {action:\"settle\", id, reason}; a real break is fixed in a task that owns the shared files and names the row in fixes_regressions:[<id>]; the waiting task starts by itself within 30 s of the row closing"],
   ["owner_present", /owner_present/, "nothing: the owner is working in this writer provider; the task resumes by itself when they leave (the chain already moved to the next one)"],
   ["usage_window", /usage_window/, "nothing: this provider's usage window is nearly spent; the task resumes by itself when the window resets"],
   ["breaker_open", /breaker_open/, "nothing: this provider is paused after errors; the task resumes by itself when its breaker closes"],

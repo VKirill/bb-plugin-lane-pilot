@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useBbNavigate, useRpc, type PluginMessageDirectiveProps } from "@get-bb/plugin-sdk/app";
+import { TERMINAL_ATTEMPT_STATES } from "@lane-pilot/contracts";
 import type { rpcContract } from "../../contracts";
 import { t, type I18nKey } from "@lane-pilot/i18n";
 import { HELPER_PANEL_ACTION } from "../../contracts/agent-picker";
@@ -8,7 +9,7 @@ import { useOpenThreadPanel } from "../../ui-shell/ui";
 /** The directive a PM message uses for its run: `::lane-run{id="lprun_…"}` (the PM's per-run instructions name it). */
 export const RUN_CARD_DIRECTIVE = "lane-run";
 const POLL_MS = 5_000;
-const DONE = new Set(["accepted", "blocked", "canceled", "failed"]);
+const DONE = new Set<string>([...TERMINAL_ATTEMPT_STATES, "failed"]);
 
 type RunCard = {
   runId: string; state: string; closed: boolean;

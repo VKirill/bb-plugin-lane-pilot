@@ -60,7 +60,7 @@ function selectEdges(definition: RawDefinition, selector: EdgeSelector): number[
 const edgeLabel = (edge: Record<string, unknown>) => `${String(edge.from)} -> ${String(edge.to)}`;
 
 /** Applies operations in order to a copy. One that cannot be applied refuses the whole patch, and nothing is changed. */
-export function applyDraftOps(definition: RawDefinition, ops: readonly DraftOp[]): AppliedOps {
+export function applyDraftOps(definition: RawDefinition, ops: readonly DraftOp[], options: { evolutionGate?: boolean } = {}): AppliedOps {
   const next = clone(definition);
   next.nodes = nodesOf(next);
   next.edges = edgesOf(next);
@@ -77,6 +77,9 @@ export function applyDraftOps(definition: RawDefinition, ops: readonly DraftOp[]
         if (typeof id !== "string" || !id) return refuse("node.id is required");
         if (typeof type !== "string" || !type) return refuse("node.type is required (agent, lp-task, action, decision, human, parallel, join, subworkflow, note)");
         if (nodes.some((node) => node.id === id)) return refuse(`node "${id}" already exists; use update_node`);
+        if (op.node.form !== undefined && op.node.form !== "agent" && !options.evolutionGate) {
+          return refuse("only the evolution gate may change a node's form");
+        }
         nodes.push(clone(op.node));
         changes.push(`added node ${id} (${type})`);
         return;
@@ -86,6 +89,9 @@ export function applyDraftOps(definition: RawDefinition, ops: readonly DraftOp[]
         const node = nodes.find((candidate) => candidate.id === op.id);
         if (!node) return refuse(`node "${op.id}" does not exist`);
         if ("id" in set || "type" in set) return refuse("the id and the type of a node do not change: remove the node and add it again");
+        const curForm = node.form ?? "agent";
+        const formChanged = ("form" in set && (set.form ?? "agent") !== curForm) || ((op.unset ?? []).includes("form") && curForm !== "agent");
+        if (formChanged && !options.evolutionGate) return refuse("only the evolution gate may change a node's form");
         for (const [key, value] of Object.entries(set)) { if (value === null) delete node[key]; else node[key] = clone(value); }
         for (const key of op.unset ?? []) delete node[key];
         changes.push(`updated node ${op.id} (${[...Object.keys(set), ...(op.unset ?? [])].join(", ") || "nothing"})`);

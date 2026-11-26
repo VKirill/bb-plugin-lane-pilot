@@ -12,13 +12,13 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { WorkflowEngine, isOffered, wfRunRow } from "@lane-pilot/workflow-engine";
 import { openDatabase } from "../src/rooms/plugin-db";
 import { hostContract } from "../src/rooms/contracts/host";
-import { createScheduleService } from "../src/rooms/schedule/server/schedule-service";
-import { ensureSystemSchedules, systemStarterOf } from "../src/rooms/schedule/server/system-schedules";
-import { createWorkflowLibrary } from "../src/rooms/workflow/server/workflow-library";
-import { createWorkflowPreflight } from "../src/rooms/workflow/server/workflow-preflight";
-import { createWorkflowTriggers } from "../src/rooms/workflow/server/workflow-triggers";
-import { notifyWorkflowIfEnded } from "../src/rooms/workflow/server/pm-notice";
-import { CLEANUP_ITEM_PREFIX, registerWorktreeCleanupActions, runWorktreeCleanupCli } from "../src/rooms/stability/server/worktree-daily-pass";
+import { createScheduleService } from "../src/rooms/schedule/server/services/schedule-service";
+import { ensureSystemSchedules, systemStarterOf } from "../src/rooms/schedule/server/services/system-schedules";
+import { createWorkflowLibrary } from "../src/rooms/workflow/server/services/workflow-library";
+import { createWorkflowPreflight } from "../src/rooms/workflow/server/services/workflow-preflight";
+import { createWorkflowTriggers } from "../src/rooms/workflow/server/services/workflow-triggers";
+import { notifyWorkflowIfEnded } from "../src/rooms/workflow/server/services/pm-notice";
+import { CLEANUP_ITEM_PREFIX, registerWorktreeCleanupActions, runWorktreeCleanupCli } from "../src/rooms/stability/server";
 import { cleanupFinishedAttemptEnvironments, cleanupStickyLaneWorktrees } from "../src/rooms/runs/server";
 
 vi.setConfig({ testTimeout: 120_000 });
@@ -63,6 +63,9 @@ function hub(options: { oldHost?: boolean; host0564?: boolean; deep?: Record<str
   });
   const sweeps = { cleanupStickyLaneWorktrees, cleanupFinishedAttemptEnvironments };
   registerWorktreeCleanupActions(engine, ctx, sweeps);
+  for (const key of ["lp.owner_push", "lp.daily_report"]) {
+    engine.register(key, { reentrant: true, run: async () => ({ output: { sent: false, reason: "stub", day: "" } }) });
+  }
   const library = createWorkflowLibrary(ctx, { docsPlaces: async () => [], workflowEngine: engine } as never, { globalDir: mkdtempSync(join(tmpdir(), "lp-wt-e2e-lib-")) });
   const preflight = createWorkflowPreflight(ctx, { capabilityPorts: () => ({}), projectPlace: async () => null, projectPlaceOf: async () => null } as never);
   const workflowTriggers = createWorkflowTriggers(ctx, { workflowEngine: engine } as never, { loadStore: (projectId) => library.loadStore(projectId), preflight: (workflow, input) => preflight.check(workflow, input) });
@@ -92,7 +95,7 @@ describe("the worktree-cleanup system schedules run their graph", () => {
     // Keep the next hourly tick clear of the daily 04:40 Europe/Madrid pass.
     vi.useFakeTimers({ toFake: ["Date"], now: Date.UTC(2026, 10, 16, 12) });
     const w = hub();
-    expect(await w.ensure()).toEqual(["worktree-cleanup-hourly", "worktree-cleanup-daily"]);
+    expect(await w.ensure()).toEqual(["worktree-cleanup-hourly", "worktree-cleanup-daily", "owner-push", "daily-report"]);
     const hourly = w.byKey("hourly");
     expect(hourly.project_id).toBe("*");
     const run = await w.fire(hourly.id);
@@ -220,7 +223,7 @@ describe("the other live edges of the batch", () => {
     await w.ensure();
     expect(w.schedules.remove(w.byKey("hourly").id)).toBe(true);
     expect(await w.ensure()).toEqual([]);
-    expect(w.schedules.store.list().map((row) => row.created_by)).toEqual(["system:worktree-cleanup-daily"]);
+    expect(w.schedules.store.list().map((row) => row.created_by)).toEqual(["system:worktree-cleanup-daily", "system:owner-push", "system:daily-report"]);
     const daily = w.byKey("daily");
     w.schedules.runNow(daily.id, "press");
     expect((await w.settled(daily.id)).status).toBe("succeeded");

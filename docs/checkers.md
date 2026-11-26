@@ -7,20 +7,19 @@ status: active
 confidence: medium
 tags: [sma, checkers, critic, drill, evaluation]
 sources:
-  - src/rooms/checkers/types.ts
-  - src/rooms/checkers/linediff.ts
-  - src/rooms/checkers/mutators.ts
-  - src/rooms/checkers/checkers.ts
-  - src/rooms/checkers/workspace.ts
-  - src/rooms/checkers/service.ts
-  - src/rooms/checkers/score.ts
+  - src/rooms/checkers/models/types.ts
+  - src/rooms/checkers/models/linediff.ts
+  - src/rooms/checkers/models/mutators.ts
+  - src/rooms/checkers/models/score.ts
+  - src/rooms/checkers/server/services/checkers.ts
+  - src/rooms/checkers/server/services/workspace.ts
+  - src/rooms/checkers/server/services/score-service.ts
+  - src/rooms/checkers/server/services/plugin-ports.ts
+  - src/rooms/checkers/server/services/history.ts
+  - src/rooms/checkers/server/repositories/checker-repository.ts
+  - src/rooms/checkers/server/repositories/candidates.ts
   - src/rooms/checkers/fixture.ts
   - src/rooms/checkers/drill.ts
-  - src/rooms/checkers/api.ts
-  - src/rooms/checkers/migrations.ts
-  - src/rooms/checkers/server/plugin-ports.ts
-  - src/rooms/checkers/history.ts
-  - src/rooms/checkers/store.ts
   - scripts/lp-checkers.ts
   - scripts/lp-drill.py
   - tests/checkers/drill.test.ts
@@ -40,17 +39,17 @@ SMA atlas D1-4 asks whether key checks catch planted defects; the scorecard reco
 
 ## How it works
 
-1. Candidate history is loaded from accepted tasks and filtered to contracts and diffs that can be replayed and planted (`src/rooms/checkers/history.ts:29-80`).
-2. Each eligible candidate is opened in a clone at its pre-acceptance base commit; mutators produce planted defects and configured checkers run against them (`src/rooms/checkers/history.ts:44-78`, `src/rooms/checkers/service.ts:1-80`).
-3. Results are scored by defect class and checker, then stored in a run record and result rows (`src/rooms/checkers/score.ts:1-100`, `src/rooms/checkers/store.ts:14-26`).
+1. Candidate history is loaded from accepted tasks and filtered to contracts and diffs that can be replayed and planted (`src/rooms/checkers/server/services/history.ts`).
+2. Each eligible candidate is opened in a clone at its pre-acceptance base commit; mutators produce planted defects and configured checkers run against them (`src/rooms/checkers/server/services/score-service.ts`).
+3. Results are scored by defect class and checker, then stored in a run record and result rows (`src/rooms/checkers/models/score.ts`, `src/rooms/checkers/server/repositories/checker-repository.ts`).
 
 | Mode or outcome | Behavior |
 |---|---|
-| Code checkers only | Runs deterministic checks without a model critic (`src/rooms/checkers/service.ts:1-80`). |
-| Critic enabled | Adds the configured provider/model critic to candidates selected for judgment (`src/rooms/checkers/service.ts:1-80`). |
-| Budget exhausted | The run ends as `stopped_budget` and records its spend (`src/rooms/checkers/store.ts:8-26`). |
-| Candidate cannot be replayed or planted | It is skipped with a reason; it is not scored as a checker miss (`src/rooms/checkers/history.ts:34-72`). |
-| Verification or critic error | Records an `error` outcome for that candidate/checker and continues scoring other work (`src/rooms/checkers/service.ts:74-89`, `:102-110`). |
+| Code checkers only | Runs deterministic checks without a model critic (`src/rooms/checkers/server/services/score-service.ts`). |
+| Critic enabled | Adds the configured provider/model critic to candidates selected for judgment. |
+| Budget exhausted | The run ends as `stopped_budget` and records its spend (`src/rooms/checkers/server/repositories/checker-repository.ts`). |
+| Candidate cannot be replayed or planted | It is skipped with a reason; it is not scored as a checker miss (`src/rooms/checkers/server/services/history.ts`). |
+| Verification or critic error | Records an `error` outcome for that candidate/checker and continues scoring other work. |
 
 ## Defects
 
@@ -83,11 +82,11 @@ The designed catchers are one table, `EXPECTED_CATCHERS` (`types.ts`). `applies(
 
 ## Where it runs
 
-`createPluginCheckers` connects the checker service to plugin storage, candidate discovery, host execution and result reporting; `startRun` inserts a generated `chk_` run with its serialized configuration and `running` state before results are saved (`src/rooms/checkers/server/plugin-ports.ts:13-67`, `src/rooms/checkers/store.ts:14-26`). `loadHistory` derives candidates from accepted commits, validates task-v2 contracts and parent commits, and excludes binary, generated, lockfile, oversized, and overly large diffs before opening a clone at the base commit (`src/rooms/checkers/history.ts:21-80`).
+`createPluginCheckers` connects the checker service to plugin storage, candidate discovery, host execution and result reporting; `startRun` inserts a generated `chk_` run with its serialized configuration and `running` state before results are saved (`src/rooms/checkers/server/services/plugin-ports.ts`, `src/rooms/checkers/server/repositories/checker-repository.ts`). `loadHistory` derives candidates from accepted commits, validates task-v2 contracts and parent commits, and excludes binary, generated, lockfile, and oversized diffs before opening a clone at the base commit (`src/rooms/checkers/server/services/history.ts`).
 
-- `bb lane-pilot checkers score [--tasks 6] [--only id,..] [--classes a,b] [--checkers a,b] [--critic provider/model] [--critic-on escapes|all] [--budget-tokens N] [--check-timeout sec] [--json]`: candidates from the hub history (accepted tasks the bench would take: `loadCandidates`, the commit that merged the attempt, a diff of at most 8 files and 600 lines, text only, no lockfiles; the ones that fit the most classes first, in a fixed order). Without `--critic` only the code checkers run. The rows are stored (`lane_pilot_checker_run`, `lane_pilot_checker_result`, appended last in `storage/database.ts`).
+- `bb lane-pilot checkers score [--tasks 6] [--only id,..] [--classes a,b] [--checkers a,b] [--critic provider/model] [--critic-on escapes|all] [--budget-tokens N] [--check-timeout sec] [--json]`: candidates from hub history (`loadCandidates`). Without `--critic` only the code checkers run. Rows are stored in `lane_pilot_checker_run` and `lane_pilot_checker_result`.
 - `bb lane-pilot checkers scorecard [run-id]`: the stored scorecard. `checkers defects`: the classes and their designed catchers.
-- `scripts/lp-checkers.ts` is the same code outside BB (bundle it as `scripts/lp-bench.ts` says): candidates from `~/lp-bench/bench.db`, checks on the machines, critics as hidden `bb thread spawn` threads. It is what runs until the plugin carrying the command is deployed.
+- `scripts/lp-checkers.ts` runs the checker scorecard standalone against hub candidates/machines and spawns critics cleanly.
 
 ## The drill
 

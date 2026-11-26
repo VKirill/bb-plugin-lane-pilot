@@ -7,17 +7,17 @@ status: active
 confidence: medium
 tags: [sma, pilot, dispatch]
 sources:
-  - src/rooms/writer/server/pilot/logic.ts
-  - src/rooms/writer/server/start.ts
+  - src/rooms/writer/models/pilot.ts
+  - src/rooms/writer/server/services/start.ts
 ---
 
 # Pilot, then fan-out (SMA D2-2)
 
 Sibling tasks of one run — the same `area` and the same `kind` — tend to fail the same way. With three of them or more, the earliest sibling
-that depends on nothing is the pilot: the others wait for its acceptance through the same wait as `depends_on`. A task the PM already ordered
+that depends on nothing is the pilot (`src/rooms/writer/models/pilot.ts`): the others wait for its acceptance through the same wait as `depends_on`. A task the PM already ordered
 with `depends_on` keeps its own order and gets no pilot, so the two rules can never wait for each other. A blocked pilot is waited for while the
 PM sends it again (up to six hours); a canceled pilot holds no one. The writer stage of a waiting sibling says
 `… (T0 is the pilot of its area: the siblings start once it is accepted)`.
 
-The area rule already runs same-area tasks one after another in one writer thread; the pilot rule keeps the rest from starting after the
-first one failed. The cross-check of a whole wave is the run-goal check (`docs/run-goal.md`): every accepted task's checks together on main.
+The area rule already runs same-area tasks one after another in one writer thread (`src/rooms/writer/server/services/start.ts`); the pilot rule keeps the rest from starting after the
+first one failed.

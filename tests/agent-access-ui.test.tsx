@@ -264,17 +264,17 @@ describe("Agent access tab", () => {
       for (const group of ["code", "check", "project", "browser", "specialists", "workflow"]) expect(slot.getByTestId(`access-section-${group}`)).toBeTruthy();
       expect(within(slot.getByTestId("access-section-specialists")).getByTestId("access-role-specialist_seo_specialist")).toBeTruthy();
       // A row opens its drawer with the editor, and closes it again.
-      expect(slot.getByTestId("role-open-docs_maintainer").getAttribute("aria-expanded")).toBe("false");
-      expect(slot.getByTestId("access-role-docs_maintainer").getAttribute("data-open")).toBe("false");
-      expect(slot.queryByTestId("role-drawer-docs_maintainer")).toBeNull();
-      fireEvent.click(slot.getByTestId("role-open-docs_maintainer"));
-      const drawer = await slot.findByTestId("role-drawer-docs_maintainer");
-      expect(slot.getByTestId("role-open-docs_maintainer").getAttribute("aria-expanded")).toBe("true");
-      expect(slot.getByTestId("access-role-docs_maintainer").getAttribute("data-open")).toBe("true");
-      expect(within(drawer).getByTestId("access-body-docs_maintainer")).toBeTruthy();
-      expect(within(drawer).getByTestId("access-badge-open-docs_maintainer").textContent).toBe(en.accessOrigin_role);
-      fireEvent.click(slot.getByTestId("role-open-docs_maintainer"));
-      await waitFor(() => expect(slot.queryByTestId("role-drawer-docs_maintainer")).toBeNull());
+      expect(slot.getByTestId("role-open-memory_maintainer").getAttribute("aria-expanded")).toBe("false");
+      expect(slot.getByTestId("access-role-memory_maintainer").getAttribute("data-open")).toBe("false");
+      expect(slot.queryByTestId("role-drawer-memory_maintainer")).toBeNull();
+      fireEvent.click(slot.getByTestId("role-open-memory_maintainer"));
+      const drawer = await slot.findByTestId("role-drawer-memory_maintainer");
+      expect(slot.getByTestId("role-open-memory_maintainer").getAttribute("aria-expanded")).toBe("true");
+      expect(slot.getByTestId("access-role-memory_maintainer").getAttribute("data-open")).toBe("true");
+      expect(within(drawer).getByTestId("access-body-memory_maintainer")).toBeTruthy();
+      expect(within(drawer).getByTestId("access-badge-open-memory_maintainer").textContent).toBe(en.accessOrigin_role);
+      fireEvent.click(slot.getByTestId("role-open-memory_maintainer"));
+      await waitFor(() => expect(slot.queryByTestId("role-drawer-memory_maintainer")).toBeNull());
     } finally { slot.lifecycle.unmount(); await harness.lifecycle.dispose(); }
   });
 

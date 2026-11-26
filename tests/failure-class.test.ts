@@ -1,10 +1,10 @@
 import { createProviderBreaker } from "@lane-pilot/resilience";
 import { describe, expect, it } from "vitest";
-import { FREE_CLASSES, PARKED_CLASSES, failureClass, isEnvironmentCheckFailure, nextStep, repeatedFailureReason, verificationTimeoutOverBudget } from "../src/rooms/contracts/failure-class"
+import { FREE_CLASSES, PARKED_CLASSES, failureClass, isEnvironmentCheckFailure, nextStep, verificationTimeoutOverBudget } from "../src/rooms/contracts/failure-class"
 import { taskFamily } from "@lane-pilot/contracts";
-import { classifyWriterOutput } from "../src/rooms/tasks/validate-output";
+import { classifyWriterOutput } from "../src/rooms/tasks";
 import type { TaskV2 } from "../src/rooms/contracts";
-import {providerStreamError} from "../src/rooms/writer/server/writer-task";
+import {providerStreamError} from "../src/rooms/writer/models/writer-brief-feedback";
 import {providerLimitNotice} from "@lane-pilot/models";
 
 describe("failure classes", () => {
@@ -153,43 +153,6 @@ describe("a permission error is the machine's only when the code is not red", ()
   });
 });
 
-describe("repeated failures", () => {
-  it("blocks two consecutive attempts that failed the same way", () => {
-    const first = { state:"validation_failed", reason:"verification failed (npm run typecheck): error TS2345 in thr_abc at line 12" };
-    const again = { state:"validation_failed", reason:"verification failed (npm run typecheck): error TS2345 in thr_def at line 13" };
-    expect(repeatedFailureReason(first, again)).toMatch(/^repeated_failure: verification failed \(npm run typecheck\)/);
-    expect(repeatedFailureReason(again, first)).toMatch(/^repeated_failure: /);
-  });
-
-  it("lets different reasons, classes and first attempts through", () => {
-    expect(repeatedFailureReason(null, { state:"validation_failed", reason:"x" })).toBeNull();
-    expect(repeatedFailureReason(undefined, { state:"provider_error", reason:"thread status error" })).toBeNull();
-    expect(repeatedFailureReason(
-      { state:"validation_failed", reason:"verification failed (npm run typecheck): a" },
-      { state:"validation_failed", reason:"verification failed (npm run vitest): b" },
-    )).toBeNull();
-    // An answered empty_output is a task failure; a silent one is the provider's — never the same failure.
-    expect(repeatedFailureReason(
-      { state:"empty_output", reason:"writer returned no output" },
-      { state:"empty_output", reason:"writer answered but changed no files" },
-    )).toBeNull();
-    expect(repeatedFailureReason(
-      { state:"empty_output", reason:"writer answered but changed no files" },
-      { state:"empty_output", reason:"writer answered but changed no files" },
-    )).toMatch(/^repeated_failure: /);
-    // A contract failure repeats too: a contract no attempt can meet fails the same way twice and then stops.
-    expect(repeatedFailureReason(
-      { state:"validation_failed", reason:"missing expected_outputs: src/a.ts" },
-      { state:"validation_failed", reason:"missing expected_outputs: src/a.ts" },
-    )).toMatch(/^repeated_failure: missing expected_outputs/);
-    // Free classes keep their own parks and caps.
-    expect(repeatedFailureReason(
-      { state:"validation_failed", reason:"merge_conflict: main changed since this attempt started: src/a.ts" },
-      { state:"validation_failed", reason:"merge_conflict: main changed since this attempt started: src/a.ts" },
-    )).toBeNull();
-  });
-});
-
 describe("task families", () => {
   it("groups a task with its redispatches and mainfixes", () => {
     expect(taskFamily("P1")).toBe("P1");
@@ -207,7 +170,6 @@ describe("task families", () => {
     const reason = `writer_provider_limit: ${notice}`;
     expect(failureClass("provider_error", reason)).toBe("limit");
     expect(FREE_CLASSES.has("limit")).toBe(true);
-    expect(repeatedFailureReason({ state:"provider_error", reason }, { state:"provider_error", reason })).toBeNull();
     expect(failureClass("spawn_rejected", "writer_provider_unavailable:breaker_open:acp-cursor/grok-4.6: 1 provider failures in 10 min")).toBe("limit");
     for (const text of ["You've hit your usage limit. Try again in 3 hours.", "Error: quota exceeded for this month", "429 Too Many Requests",
       "You are out of credits.", "Your credit balance is too low to access the API",

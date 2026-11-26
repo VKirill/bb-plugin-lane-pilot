@@ -2,12 +2,13 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
 import type { NodeExecutor } from "@lane-pilot/workflow-engine";
 import { openDatabase } from "../src/rooms/plugin-db";
-import { threadUsage } from "../src/rooms/usage/server/token-usage";
-import { withUsage } from "../src/rooms/usage/server/step-usage";
-import { markAttemptStart } from "../src/rooms/writer/server/attempt-marker";
-import { taskThreadWindows, taskUsage } from "../src/rooms/writer/server/attempt-usage";
-import { lpTaskPipelineExecutor } from "../src/rooms/writer/server/dispatch-workflow";
+import { threadUsage, withUsage } from "../src/rooms/usage/server";
+import { markAttemptStart } from "../src/rooms/writer/server/repositories/attempt-marker";
+import { taskThreadWindows, taskUsage } from "../src/rooms/writer/server/services/attempt-usage";
+import { lpTaskPipelineExecutor } from "../src/rooms/writer/server/handlers/dispatch-workflow";
 import { engineOn, journalDb, ok, rows, wf } from "./workflow/engine-helpers";
+import { childOutcome } from "../packages/workflow-engine/src/engine-builtins";
+import { summary as runSummary } from "../packages/workflow-engine/src/run-status";
 
 /**
  * F5 of Astra's review (2026-10-27): a step is charged the turns it caused, not a thread's total. A sticky writer carries many tasks in one
@@ -132,7 +133,7 @@ describe("the engine charges a step that failed after spending, and a failed chi
     // A reload: a new engine over the same journal is asked about the same failed child again (the parent's poll does exactly this).
     const reloaded = engineOn(db, executors, { resolveWorkflow: (id) => (id === "leaf" ? leaf : null) });
     const child = rows<{ id: string }>(db, "SELECT id FROM lane_pilot_wf_run WHERE depth=1")[0]!.id;
-    const ask = () => (reloaded as unknown as { childOutcome(summary: unknown, node: unknown): unknown }).childOutcome((reloaded as unknown as { summary(id: string): unknown }).summary(child), { workflow: "leaf" });
+    const ask = () => childOutcome(reloaded, runSummary(reloaded, child), { workflow: "leaf" } as Parameters<typeof childOutcome>[2]);
     expect(ask).toThrow("subworkflow leaf");
     expect(ask).toThrow("subworkflow leaf");
     expect(total()).toBe(700);

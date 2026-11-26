@@ -98,7 +98,7 @@ describe("Live E2E: Marketing shelf workflows (7/7 graphs)", () => {
     expect(existsSync(join(t.checkout, ".agents/marketing/reports/mkt-project-intake-unit_econ.json"))).toBe(true);
   });
 
-  it("2. mkt-tracking-setup: runs utm_validator.py + funnel_reconcile.py, applies Tier L live mutation with HMAC nonce, and dispatches code tasks", async () => {
+  it("2. mkt-tracking-setup: runs utm_validator.py + funnel_reconcile.py, stages manual live-change plan, and dispatches code tasks", async () => {
     const t = await setupLiveSpecialistEnv({
       inventory: {
         inventory_path: ".agents/marketing/tracking/inventory.json",
@@ -129,13 +129,11 @@ describe("Live E2E: Marketing shelf workflows (7/7 graphs)", () => {
     expect(answeredFormsCount).toBe(1);
     expect(summary.output).toMatchObject({
       status: "done",
-      live_changes_applied: 1,
+      live_changes_applied: 0,
       dispatched_count: 1,
     });
     expect(typeof summary.output?.discrepancy_pct).toBe("number");
-
-    const mutRows = t.db.prepare("SELECT * FROM lane_pilot_sp_mutation_log WHERE project_id = ?").all(t.projectId);
-    expect(mutRows.length).toBe(1);
+    expect(existsSync(join(t.checkout, ".agents/marketing/receipts/mkt-tracking-setup-live_apply.json"))).toBe(true);
     expect(existsSync(join(t.checkout, ".agents/marketing/reports/mkt-tracking-setup-reconcile.json"))).toBe(true);
   });
 

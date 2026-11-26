@@ -34,6 +34,7 @@
     "closeout",
     "memory"
   ],
+  "category": "planning",
   "inputs": {
     "run_id": {
       "type": "string",

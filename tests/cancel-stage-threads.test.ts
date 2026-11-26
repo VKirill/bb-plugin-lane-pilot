@@ -2,8 +2,7 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
 import type { TaskV2 } from "../src/rooms/contracts";
 import { createAttempt, createRun, createTask, getAttempt, listStageReceipts, openDatabase, transitionAttempt } from "../src/rooms/plugin-db";
-import { cancelAttemptById } from "../src/rooms/runs/server/cancel";
-import { recordStage } from "../src/rooms/runs/server/stage-records";
+import { cancelAttemptById, recordStage } from "../src/rooms/runs/server";
 
 const task: TaskV2 = {
   schema_version:2, id:"t1", title:"Write", risk:"low", lane:"writer", project_cwd:"/repo", read_first:[], interfaces:[], invariants:[],

@@ -1,18 +1,17 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
 import plugin from "../server";
-import type { EventLike, ThreadLike } from "../src/rooms/anamnesis";
-import { SEED_ENTRIES } from "../src/rooms/deferral/seed";
+import type { EventLike, ThreadLike } from "../src/rooms/contracts";
+import { SEED_ENTRIES } from "../src/rooms/deferral/models/seed";
 import { createDeferrals, noTermDeferralsOf, runDeferralCli } from "../src/rooms/deferral/server";
 import { sha256Hex } from "@lane-pilot/kit";
-import { parseOwnerRef, verifyOwnerMessage, type OwnerMessagePort } from "../src/rooms/deferral/verify";
+import { parseOwnerRef, verifyOwnerMessage, type OwnerMessagePort } from "../src/rooms/deferral/server/services/verify";
 import { migrations, openDatabase } from "../src/rooms/plugin-db";
 
 // SMA rule 5: a deferral's term is the owner's date, read from a real message of the owner; an agent cannot make one up or move one.
 const T0 = Date.parse("2026-10-22T10:00:00Z");
 const DAY = 86_400_000;
 
-type Msg = { seq: number; text: string; at?: number; data?: Record<string, unknown> };
 /** One top-level thread of the owner with the given requests, and one agent thread, one plugin thread. */
 function fakePort(extra: { threads?: Record<string, Partial<ThreadLike>>; events?: Record<string, EventLike[]> } = {}): OwnerMessagePort & { reads: number } {
   const owner = (text: string, seq: number, at = T0, data: Record<string, unknown> = {}): EventLike => ({

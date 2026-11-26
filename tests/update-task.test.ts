@@ -1,13 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { stageHelperSettings } from "../src/rooms/settings/server/stage-settings";
+import { stageHelperSettings } from "../src/rooms/settings/server/services/stage-settings";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { openDatabase, createRun, createTask, createAttempt, countAttempts, getAttempt, getTask, getTaskGitBase, getTaskPlan, loadPrototypeConfig,
   savePrototypeConfig, listStageReceipts, saveProjectSetting, transitionAttempt, closeRun, getRun } from "../src/rooms/plugin-db";
-import { recordStage } from "../src/rooms/runs/server/stage-records";
-import { createWriterUpdateTask } from "../src/rooms/writer/server/update-task";
+import { recordStage } from "../src/rooms/runs/server";
+import { createWriterUpdateTask } from "../src/rooms/writer/server/services/update-task";
 import { gateResolverFor } from "../src/rooms/verification/server";
 import { isTaskSatisfied } from "../src/rooms/runs/server";
-import { registerDispatchExecutors, startDispatchRun } from "../src/rooms/writer/server/dispatch-workflow";
+import { registerDispatchExecutors } from "../src/rooms/writer/server/handlers/dispatch-workflow";
+import { startDispatchRun } from "../src/rooms/writer/server/services/dispatch-workflow-ops";
 import {builtinWorkflow} from "../src/rooms/workflow/builtin";
 import { WorkflowEngine } from "@lane-pilot/workflow-engine";
 import type { TaskV2 } from "../src/rooms/contracts";
@@ -170,10 +171,11 @@ describe("lane_pilot_update_task", () => {
     expect(rerun[0]!.detail).toContain("node pm-read");
     const critiques = db.prepare("SELECT input_json FROM lane_pilot_wf_step WHERE run_id=? AND node_id IN ('plan-critique','plan-critique-quick') AND state='succeeded'").all(pipelineRunId);
     expect(critiques).toHaveLength(1);
-    // The one pipeline run: no second run was started, and the writer's own queue was not started a second time by the update.
+    // The one pipeline run: no second run was started, and because `depends_on: ["dep-1"]` is unsatisfied, durable `admission` parks at `admission-wait` without spawning a writer.
     expect(db.prepare("SELECT COUNT(*) AS n FROM lane_pilot_wf_run WHERE workflow_id='lp-task-pipeline'").get()).toEqual({ n: 1 });
-    expect(started.length).toBeGreaterThanOrEqual(1);
-    expect(getAttempt(db, "att-1")).toMatchObject({ state: "queued", reason: null });
+    expect(started).toEqual([]);
+    expect(db.prepare("SELECT state FROM lane_pilot_wf_step WHERE run_id=? AND node_id='admission-wait'").all(pipelineRunId)).toContainEqual({ state: "waiting" });
+    expect(getAttempt(db, "att-1")).toMatchObject({ state: "queued", reason: "waiting for dependency dep-1" });
 
     // A second update goes again the same way: the first left the run waiting and the attempt free.
     const again = await updateTask({ projectId, runId, pmThreadId, taskId, task: { ...updatedTask, title: "Updated twice" }, plan: "Third plan" });

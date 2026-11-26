@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { runView } from "../../src/rooms/schedule/board";
-import type { RunRow } from "../../src/rooms/schedule/store";
+import { runView } from "../../src/rooms/schedule/models/board";
+import type { RunRow } from "../../src/rooms/schedule/models/schedule";
 
 const row = (extra: Partial<RunRow>): RunRow => ({
   id: "r1", schedule_id: "s1", run_key: "k", scheduled_at: 1, trigger: "tick", status: "succeeded", reason: null, queued_at: 1, started_at: 1, finished_at: 2, deadline_at: null,

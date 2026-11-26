@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { integrateWorktree } from "../../src/rooms/verification/git-integrate";
+import { integrateWorktree } from "../../src/rooms/worktree";
 
 describe("bookkeeping merge collision", () => {
   let base: string;
@@ -149,11 +149,5 @@ describe("bookkeeping merge collision", () => {
     expect(res.status).toBe("merged");
     expect(await readFile(join(base, ".agents/PROGRESS.md"), "utf8")).toBe("main progress v2\n");
     expect(await readFile(join(base, "product.ts"), "utf8")).toBe("export const product = 2;\n");
-  });
-
-  it("project-life/memory commits never happen inside an attempt or area worktree (test)", async () => {
-    // Project-life maintenance stage factory builds the stage API
-    const { createProjectLifeStage } = await import("../../src/rooms/project-life/server/project-life");
-    expect(typeof createProjectLifeStage).toBe("function");
   });
 });

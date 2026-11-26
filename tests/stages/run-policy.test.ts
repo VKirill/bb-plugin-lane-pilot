@@ -1,5 +1,6 @@
 import {describe,it,expect} from "vitest";
-import {buildRunExecutionProfile,buildRunPolicy,mapBounded,parseRunPolicy,RunWriterPool,shouldReconcileAttemptThread,shouldResumeWorktreeHolder,shouldScanLostWorktreeHolder} from "../../src/rooms/tasks/run-policy";
+import { buildRunExecutionProfile, buildRunPolicy, mapBounded, parseRunPolicy, shouldReconcileAttemptThread, shouldResumeWorktreeHolder, shouldScanLostWorktreeHolder } from "../../src/rooms/tasks";
+import { RunWriterPool } from "../../src/rooms/tasks/server";
 
 describe("run-v2 policy adapter",()=>{
   it("snapshots bounded pool settings and applies the configured verification cap in input order",async()=>{

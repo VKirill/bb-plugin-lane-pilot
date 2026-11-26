@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseQaVerdict, qaExpectFromRequest, qaThreadPrompt } from "../../src/rooms/qa/server/qa-thread";
+import { parseQaVerdict, qaExpectFromRequest, qaThreadPrompt } from "../../src/rooms/qa/server";
 
 describe("browser check thread", () => {
   it("reads the last verdict block and never turns a bare pass into a pass", () => {

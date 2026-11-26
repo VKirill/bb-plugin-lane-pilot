@@ -2,8 +2,8 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { expect, it, vi } from "vitest";
 import { taskV2Schema } from "../src/rooms/contracts";
 import { openDatabase } from "../src/rooms/plugin-db";
-import { createWriterFinish } from "../src/rooms/writer/server/finish";
-import { runWithFlakyRerun } from "../src/rooms/writer/server/verify";
+import { createWriterFinish } from "../src/rooms/writer/server/services/finish";
+import { runWithFlakyRerun } from "../src/rooms/writer/server/services/verify-flaky";
 
 const task = taskV2Schema.parse({
   schema_version: 2, id: "site-fix", title: "Fix the site", risk: "medium", lane: "writer", project_cwd: "/work/wt",
@@ -122,7 +122,7 @@ it("a -mainfix that leaves main red is one row for the owner, without a re-run",
 });
 
 it("redBeforeAndAfter keeps only checks that were red on the base and are red now; an unknown or host-failed one says nothing", async () => {
-  const { redBeforeAndAfter } = await import("../src/rooms/baseline/logic");
+  const { redBeforeAndAfter } = await import("../src/rooms/baseline/models/logic");
   const base = (command: string, status: "green" | "red" | "unknown") => ({ command, cwd: "/", status, exitCode: null, note: "" });
   expect(redBeforeAndAfter([base("a", "red"), base("b", "green"), base("c", "unknown"), base("d", "red")], [
     { command: "a", exitCode: 1 }, { command: "b", exitCode: 1 }, { command: "c", exitCode: 1 }, { command: "d", exitCode: 1, hostError: true },

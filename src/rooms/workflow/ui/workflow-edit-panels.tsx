@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { t, type I18nKey, type Locale } from "@lane-pilot/i18n";
+import { t, type I18nKey } from "@lane-pilot/i18n";
 import { Button } from "@lane-pilot/ui-kit";
 import { Icon, type IconName } from "@lane-pilot/ui-kit";
 import { Input } from "@lane-pilot/ui-kit";
@@ -411,7 +411,7 @@ export function WorkflowForm({ definition, catalog, edit, onClose, narrow }: { d
         </div>
         <SelectField label={t("wfEditQualityDefault")} value={(isRaw(definition.quality_mode) ? text(definition.quality_mode.default) : text(definition.quality_mode)) as "standard" | ""} none={t("wfEditDefault")}
           options={(["quick", "standard", "full"] as const).map((value) => ({ value, label: value }))} onChange={(next) => meta({ quality_mode: next ? { default: next } : null })} />
-        <ChipsField label={t("wfTriggers")} values={triggers} catalog={["chat", "manual", "schedule", "telegram"].map((value) => ({ value }))} testId="wf-edit-triggers"
+        <ChipsField label={t("wfTriggers")} values={triggers} catalog={["chat", "manual", "schedule", "event"].map((value) => ({ value }))} testId="wf-edit-triggers"
           onChange={(next) => meta({ triggers: next.map((type) => triggerRows.find((item) => item.type === type) ?? { type }) })} />
         {schedule ? (
           <div className="grid min-w-0 gap-3 sm:grid-cols-2" data-testid="wf-edit-schedule">

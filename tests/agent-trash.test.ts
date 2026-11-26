@@ -7,7 +7,7 @@ import { describe, expect, it } from "vitest";
 import { materializeAgentTrash, ownedAgentTrashPath } from "../src/rooms/writer/agent-trash";
 import incidents from "./fixtures/native-install-agent-trash-2026-10-30.json";
 
-const moduleUrl = pathToFileURL(join(__dirname, "../src/rooms/writer/agent-trash.ts")).href;
+const moduleUrl = pathToFileURL(join(__dirname, "../src/rooms/writer/server/services/agent-trash.ts")).href;
 
 describe("bundled agent-trash", () => {
   it.each(incidents)("installs from the single-file host artifact on $hostId at $ts", async ({ sourcePath }) => {

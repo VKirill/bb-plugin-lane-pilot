@@ -4,16 +4,16 @@ import type { PrototypeConfig, TaskV2 } from "../../src/rooms/contracts";
 import { createAttempt, createRun, createTask, getAttempt, listAttemptsForTask, listStageReceipts, openDatabase, savePrototypeConfig, saveTaskPlan, setAttemptWorkspace, setRunThread, transitionAttempt } from "../../src/rooms/plugin-db";
 import { createCore } from "../../src/rooms/core/server/core";
 import type { Services } from "../../server";
-import { recordStage } from "../../src/rooms/runs/server/stage-records";
+import { recordStage } from "../../src/rooms/runs/server";
 import { renderReturnNotes } from "../../src/rooms/stage-return";
 import { createStageReturn } from "../../src/rooms/stage-return/server";
 import { runReturnCli } from "../../src/rooms/stage-return/server";
-import { createWriterReassign, takeReassignRequest } from "../../src/rooms/writer/server/reassign";
-import { createAttemptReopen } from "../../src/rooms/writer/server/reopen-attempt";
+import { createWriterReassign, takeReassignRequest } from "../../src/rooms/writer/server/services/reassign";
+import { createAttemptReopen } from "../../src/rooms/writer/server/services/reopen-attempt";
 
 // The stop is confirmed by asking the thread until it is idle (30 s at most); a test decides the answer.
 const stopAnswer = vi.hoisted(() => ({ stopped: true }));
-vi.mock("../../src/rooms/runs/server/writer-stop", () => ({
+vi.mock("../../src/rooms/runs/server/services/writer-stop", () => ({
   STOP_CONFIRM_MS: 30_000,
   confirmWriterStopped: async () => ({ stopped: stopAnswer.stopped, status: stopAnswer.stopped ? "idle" : "active", waitedMs: 0 }),
 }));

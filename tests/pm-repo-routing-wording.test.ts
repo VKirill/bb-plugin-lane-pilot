@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
-import { LANE_PILOT_PM_SESSION } from "../src/rooms/native-agent/native-agent-overlay";
-import { pmRunInstructions } from "../src/rooms/tools/server/tools";
+import { LANE_PILOT_PM_SESSION } from "../src/rooms/native-agent/models/native-agent-overlay";
+import { pmRunInstructions } from "../src/rooms/tools/server/handlers/tools";
 
 it("describes shared-repository ancestor rerooting and nested-repository boundaries", () => {
   const prompts = [

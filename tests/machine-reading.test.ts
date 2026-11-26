@@ -1,7 +1,7 @@
 import { tmpdir } from "node:os";
 import { describe, expect, it } from "vitest";
 import { hostContract } from "../src/rooms/contracts";
-import { diskFree } from "../src/rooms/host-worker/host-handlers";
+import { diskFree } from "../src/rooms/host-worker";
 import { darwinAvailableBytes, readingFrom } from "../src/rooms/verification";
 
 /** `vm_stat` of the Mac mini, 2026-10-26: `os.freemem()` said 0.4 % free on the same machine. */

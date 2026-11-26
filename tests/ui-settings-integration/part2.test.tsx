@@ -85,18 +85,6 @@ describe("native writer settings against the registered SQLite backend", () => {
     await finish(harness,slot);
   });
 
-  it("saves docs-maintenance model selection as a native catalog-validated CAS tuple",async()=>{
-    const {harness,slot,docsSaveCalls}=await mountWithBackend();
-    const before=await harness.behavior.callRpc("get_screen",{projectId}) as {versions:Record<string,number>};
-    await waitFor(()=>expect(slot.getByTestId("docs-picker").querySelector("[data-testid='bb-provider-model-picker']")).toBeTruthy());
-    const picker=slot.getByTestId("docs-picker").querySelector("[data-testid='bb-provider-model-picker']");
-    expect(picker?.getAttribute("data-provider")).toBe("codex");
-    await choosePickerValue({providerId:"qwen",model:"qwen-test",reasoningLevel:"medium",serviceTier:"default"}, picker as PickerNode);
-    await waitFor(()=>expect(docsSaveCalls).toHaveLength(1));
-    expect(docsSaveCalls[0]).toMatchObject({providerId:"qwen",model:"qwen-test",reasoningLevel:"medium",expectedVersions:{"docs.provider":before.versions["docs.provider"]??0,"docs.model":before.versions["docs.model"]??0,"docs.reasoning_effort":before.versions["docs.reasoning_effort"]??0,"docs.service_tier":before.versions["docs.service_tier"]??0}});
-    await finish(harness,slot);
-  });
-
   it("saves onboarding model selection as a native catalog-validated CAS tuple",async()=>{
     const {harness,slot,onboardingSaveCalls}=await mountWithBackend();
     const before=await harness.behavior.callRpc("get_screen",{projectId}) as {versions:Record<string,number>};

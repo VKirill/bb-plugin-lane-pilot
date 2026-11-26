@@ -4,6 +4,7 @@ import type { SettingValidationError } from "../setting-validation";
 import { requireSettingValidator, type LanePilotDatabase } from "./database";
 import { noteProtectionDisarm, storedProtectionValue } from "./protections-store";
 import { PLANNING_HOME_SETTING, planningHomeProblem } from "../contracts";
+import { emitSettingChanged } from "./setting-events";
 
 const CONFIG_KEYS = [
   "hostId", "pmWorkspacePath", "writerWorkspacePath", "pmProviderId",
@@ -109,6 +110,7 @@ export function saveProjectSetting(
     bumpSettingGeneration(db,projectId,key,nextVersion);
     noteProtectionDisarm(db, projectId, key, value, { previous });
   })();
+  emitSettingChanged(db, projectId, [key]);
 }
 
 export function listSettingRows(db: LanePilotDatabase, projectId: string, bindingId = ""): Array<{
@@ -217,7 +219,9 @@ export function casUpsertSetting(
     WHERE project_id=? AND binding_id=? AND key=?`).get(args.projectId, bindingId, args.key) as {version:number};
   return { ok:true, version:next.version };
   });
-  return save.immediate();
+  const result = save.immediate();
+  if (result.ok) emitSettingChanged(db, args.projectId, [args.key]);
+  return result;
 }
 
 export type SettingChange = { key:string; value:unknown; expectedVersion:number };
@@ -292,7 +296,9 @@ export function casUpsertSettings(
     }
     return { ok:true, conflict:false, values, versions };
   });
-  return save.immediate();
+  const result = save.immediate();
+  if (result.ok) emitSettingChanged(db, args.projectId, args.changes.map((change) => change.key));
+  return result;
 }
 
 /** Remove explicit rows only after the validated snapshot still matches. Durable generations survive deletion. */
@@ -301,7 +307,7 @@ export function casResetSettings(
   args: { projectId: string; keys: string[]; expectedVersions: Record<string, number>; validationKeys: string[]; validatedRows: ReturnType<typeof listSettingRows>; bindingId?: string },
 ): SaveSettingsResult {
   const bindingId = args.bindingId ?? "";
-  return db.transaction((): SaveSettingsResult => {
+  const result = db.transaction((): SaveSettingsResult => {
     const rows = listSettingRows(db, args.projectId, bindingId);
     const byKey = new Map(rows.map((row) => [row.key, row]));
     const values = Object.fromEntries(args.keys.map((key) => [key, byKey.get(key)?.value ?? null]));
@@ -319,6 +325,8 @@ export function casResetSettings(
     }
     return { ok: true, conflict: false, values: Object.fromEntries(args.keys.map((key) => [key, null])), versions: Object.fromEntries(args.keys.map((key) => [key, versions[key]])) };
   })();
+  if (result.ok) emitSettingChanged(db, args.projectId, args.keys);
+  return result;
 }
 
 /** The settings a project or a section keeps for itself among those `isOverride` accepts: where a level overrides what it inherits. The global level is never listed. */
@@ -337,7 +345,8 @@ export function listOwnSettingLevels(db: LanePilotDatabase, isOverride: (key: st
 
 /** Removes the accepted rows of the given levels in one transaction, as a reset does: the generations move on, so a save made on an older read conflicts. Returns how many rows went. */
 export function removeOwnSettings(db: LanePilotDatabase, levels: ReadonlyArray<{ projectId: string; sectionId: string | null }>, isOverride: (key: string) => boolean): number {
-  return db.transaction((): number => {
+  const changed = new Map<string, Set<string>>();
+  const removed = db.transaction((): number => {
     let removed = 0;
     for (const { projectId, sectionId } of levels) {
       if (projectId === GLOBAL_SETTINGS_PROJECT_ID) continue;
@@ -347,11 +356,16 @@ export function removeOwnSettings(db: LanePilotDatabase, levels: ReadonlyArray<{
       for (const key of keys) {
         db.prepare("DELETE FROM lane_pilot_project_settings WHERE project_id=? AND binding_id=? AND key=?").run(projectId, bindingId, key);
         bumpSettingGeneration(db, projectId, key, versions[key]! + 1, bindingId);
+        let set = changed.get(projectId);
+        if (!set) { set = new Set(); changed.set(projectId, set); }
+        set.add(key);
         removed += 1;
       }
     }
     return removed;
   })();
+  for (const [projectId, keys] of changed) emitSettingChanged(db, projectId, [...keys]);
+  return removed;
 }
 
 /**
@@ -359,7 +373,7 @@ export function removeOwnSettings(db: LanePilotDatabase, levels: ReadonlyArray<{
  * move on, so a save made on an older read conflicts. Returns the project ids that held such a row.
  */
 export function clearSettingValue(db: LanePilotDatabase, key: string, value: string): string[] {
-  return db.transaction((): string[] => {
+  const projects = db.transaction((): string[] => {
     const rows = db.prepare("SELECT project_id, binding_id, value FROM lane_pilot_project_settings WHERE key=?").all(key) as Array<{ project_id: string; binding_id: string; value: string }>;
     const projects = new Set<string>();
     for (const row of rows) {
@@ -373,6 +387,8 @@ export function clearSettingValue(db: LanePilotDatabase, key: string, value: str
     }
     return [...projects];
   })();
+  for (const projectId of projects) emitSettingChanged(db, projectId, [key]);
+  return projects;
 }
 
 /**
@@ -389,6 +405,7 @@ export function putGlobalSettingValue(db: LanePilotDatabase, projectId: string, 
   else db.prepare("INSERT INTO lane_pilot_project_settings(project_id,binding_id,key,value,version,updated_at) VALUES (?,?,?,?,?,?)").run(projectId, "", key, text, next, now);
   db.prepare(`INSERT INTO lane_pilot_setting_generation(project_id,binding_id,key,version) VALUES (?,?,?,?)
     ON CONFLICT(project_id,binding_id,key) DO UPDATE SET version=excluded.version`).run(projectId, "", key, next);
+  emitSettingChanged(db, projectId, [key]);
   return true;
 }
 
@@ -459,4 +476,10 @@ export function planningHomeInputs(db: LanePilotDatabase, projectId: string): { 
 export function otherProjectCheckouts(db: LanePilotDatabase, projectId: string): string[] {
   const rows = db.prepare(`SELECT value FROM lane_pilot_project_settings WHERE binding_id='' AND project_id<>? AND key IN ('writerWorkspacePath','pmWorkspacePath')`).all(projectId) as Array<{ value: string }>;
   return rows.flatMap((row) => { try { const parsed: unknown = JSON.parse(row.value); return typeof parsed === "string" && parsed ? [parsed] : []; } catch { return []; } });
+}
+
+/** Distinct setting keys currently stored across all projects/bindings (for startup unknown-key warning). */
+export function listDistinctSettingKeys(db: LanePilotDatabase): string[] {
+  return (db.prepare("SELECT DISTINCT key FROM lane_pilot_project_settings ORDER BY key").all() as Array<{ key: string }>)
+    .map((row) => row.key);
 }

@@ -2,7 +2,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { spawnAsync } from "@lane-pilot/kit";
 import type { TaskV2 } from "../contracts";
-import type { FileChange, PlantInput } from "./types";
+import type { FileChange, PlantInput } from "./models/types";
 
 /**
  * The drill's candidates: two small accepted tasks in a throw-away repository. Plain node modules and `node --test`, so the checks run anywhere

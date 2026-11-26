@@ -31,6 +31,7 @@
     "experiment",
     "analytics"
   ],
+  "category": "marketing",
   "triggers": [
     "manual"
   ],
@@ -153,7 +154,7 @@
         "required_events": 0,
         "days_to_readiness": 0,
         "min_viable_cell_eur": 0,
-        "feasible": true,
+        "feasible": false,
         "boundary_json": "'{}'",
         "report_path": ""
       },
@@ -193,7 +194,7 @@
         "lift": 0,
         "lo80": 0,
         "hi80": 0,
-        "srm_ok": true,
+        "srm_ok": false,
         "boundary_hit": "none",
         "report_path": ""
       },
@@ -416,7 +417,7 @@
     {
       "from": "mde",
       "to": "not_feasible",
-      "when": "mde.feasible == false",
+      "when": "$inputs.phase != 'evaluate' && mde.feasible == false",
       "label": "cell below MDE: do not launch"
     },
     {

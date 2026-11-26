@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { failureClassCooldownMs } from "../src/rooms/contracts/failure-class";
-import { loadWriterPin, noteWriterPair, writerPinKey } from "../src/rooms/writer/writer-model-pin";
+import { loadWriterPin, noteWriterPair, writerPinKey } from "../src/rooms/writer/models/writer-model-pin";
 
 const fakeKv = () => {
   const map = new Map<string, unknown>();

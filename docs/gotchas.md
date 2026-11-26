@@ -7,42 +7,36 @@ status: active
 confidence: medium
 tags: [gotchas, runtime, failure-modes]
 sources:
-  - src/rooms/writer/live-folder.ts
-  - src/rooms/writer/server/dispatch.ts
-  - src/rooms/writer/server/start.ts
-  - src/rooms/writer/server/start-wait-overlap.ts
-  - src/rooms/writer/server/start-task-state.ts
-  - src/rooms/writer/server/start-admission.ts
-  - src/rooms/writer/server/start-failure-records.ts
-  - src/rooms/writer/server/start-fallback-chain.ts
-  - src/rooms/writer/server/start-writer-task.ts
-  - src/rooms/stability/server/reconcile.ts
-  - src/rooms/runs/checks-in-flight.ts
-  - src/rooms/verification/git-integrate/worktree-dependencies.ts
-  - src/rooms/verification/git-integrate/deps-install.ts
-  - src/rooms/writer/server/reopen-attempt.ts
-  - src/rooms/writer/server/verify.ts
-  - src/rooms/writer/server/finish.ts
-  - src/rooms/writer/server/finish-merge.ts
-  - src/rooms/writer/server/watch-writer.ts
-  - src/rooms/stability/server/stability.ts
-  - src/rooms/self-repair/server/self-repair.ts
-  - src/rooms/self-repair/server/collect.ts
-  - src/rooms/self-repair/server/repair-state.ts
-  - src/rooms/self-repair/server/repair-prompt.ts
-  - src/rooms/self-repair/server/episodes.ts
-  - src/rooms/relay/server/relay.ts
+  - src/rooms/writer/models/live-folder.ts
+  - src/rooms/writer/server/services/dispatch.ts
+  - src/rooms/writer/server/services/start.ts
+  - src/rooms/writer/server/services/start-wait-overlap.ts
+  - src/rooms/writer/server/services/start-task-state.ts
+  - src/rooms/writer/server/services/start-admission.ts
+  - src/rooms/writer/server/repositories/start-failure-records.ts
+  - src/rooms/writer/server/services/start-fallback-chain.ts
+  - src/rooms/writer/server/services/start-writer-task.ts
+  - src/rooms/stability/server/services/reconcile.ts
+  - src/rooms/runs/models/checks-in-flight.ts
+  - src/rooms/worktree/worktree-dependencies.ts
+  - src/rooms/worktree/deps-install.ts
+  - src/rooms/writer/server/services/reopen-attempt.ts
+  - src/rooms/writer/server/services/verify.ts
+  - src/rooms/writer/server/services/finish.ts
+  - src/rooms/writer/server/services/finish-merge.ts
+  - src/rooms/writer/server/services/watch-writer.ts
+  - src/rooms/stability/server/services/stability.ts
+  - src/rooms/relay/server/services/relay.ts
+  - src/rooms/relay/server/handlers/relay-deadlines.ts
   - src/rooms/verification/sandbox.ts
   - tests/server/resumed-attempt-redo.test.ts
   - tests/server/resumed-running-writer.test.ts
-  - tests/server/self-repair.test.ts
-  - tests/verification/check-env-deps.test.ts
   - tests/writer-validate.test.ts
   - packages/kit/src/spawn-async.ts
   - packages/kit/src/output-capture.ts
-  - src/rooms/native-agent/server/helper-bb-shim.ts
-  - src/rooms/native-agent/native-dispatch.ts
-  - src/rooms/stability/server/deploy-drain.ts
+  - src/rooms/native-agent/server/services/helper-bb-shim.ts
+  - src/rooms/native-agent/server/services/native-dispatch.ts
+  - src/rooms/stability/server/services/deploy-drain.ts
   - src/rooms/core/server/lifecycle-events.ts
   - packages/thread-observe/src/signals.ts
   - packages/thread-observe/src/completion.ts
@@ -53,9 +47,9 @@ sources:
   - tests/tmpdir-isolation.test.ts
   - tests/ui-matrix/helpers.tsx
   - vitest.config.ts
-  - src/rooms/platform/server/launch-tuning.ts
-  - src/rooms/platform/server/pm-spawn.ts
-  - src/rooms/writer/server/skill-materialize.ts
+  - src/rooms/platform/server/services/launch-tuning.ts
+  - src/rooms/platform/server/services/pm-spawn.ts
+  - src/rooms/writer/server/services/skill-materialize.ts
   - tests/dispatch-ownership-reload.test.ts
 ---
 
@@ -65,64 +59,60 @@ TL;DR: Workspace mode, host capabilities, event delivery, and isolated test setu
 
 ## Writer workspace modes
 
-- A new public dispatch into a folder without Git does not silently use live-folder mode: the guard requires the owner's project/section choice, the authenticated GitHub account on that host, and a successful private-Git bootstrap. A declined choice, missing provider/auth, unknown probe, or stopped bootstrap is an explicit refusal. An attempt already admitted with `workspace_decision.reason=live_folder` uses the legacy live-folder snapshots and rollback backups; it has no worktree, commit, or merge. In the same project and checkout, a queued task waits behind an admitted task when the workspace is a live folder, the task areas match, or owned paths overlap. Queued tasks still waiting on dependencies do not block others; dependent tasks are exempted from waiting on their prerequisite, and different checkouts wait only for overlapping paths (`src/rooms/writer/server/start-wait-overlap.ts:63-81`). The admission hold is in memory and spans redo/fallback attempts (`src/rooms/writer/server/start-wait-overlap.ts:44-48`, `src/rooms/writer/server/start-admission.ts:188-199`, `src/rooms/writer/server/start-writer-task.ts:232-235`). Snapshots are capped at 50,000 paths, and files above 20 MiB use size/mtime fingerprints (`src/rooms/writer/live-folder.ts:5-22`, `:89-111`).
-- Live-folder backups retain seven days of data and refuse owned-file sets above 2 GiB (`src/rooms/writer/live-folder.ts:20-22`). Snapshot output has its own 6 MiB ceiling because host calls cap `runCommand` output (`src/rooms/writer/live-folder.ts:23-32`).
-- Task ownership filters snapshot paths through `owns_paths` and `never_touch`; the backup listing walks every file and symlink under the task's owned roots, including clean files and nested repositories (`src/rooms/writer/live-folder.ts:197-212`, `:215-253`).
-- A snapshot cap or malformed response returns a concrete refusal reason; dispatch must not treat it as an empty snapshot (`src/rooms/writer/live-folder.ts:119-139`).
+- A new public dispatch into a folder without Git does not silently use live-folder mode: the guard requires the owner's project/section choice, the authenticated GitHub account on that host, and a successful private-Git bootstrap. A declined choice, missing provider/auth, unknown probe, or stopped bootstrap is an explicit refusal. An attempt already admitted with `workspace_decision.reason=live_folder` uses the legacy live-folder snapshots and rollback backups; it has no worktree, commit, or merge. In the same project and checkout, a queued task waits behind an admitted task when the workspace is a live folder, the task areas match, or owned paths overlap (`src/rooms/writer/server/services/start-wait-overlap.ts`, `src/rooms/writer/server/services/start-admission.ts`, `src/rooms/writer/server/services/start-writer-task.ts`). Snapshots are capped by path count, and files above 20 MiB use size/mtime fingerprints (`src/rooms/writer/models/live-folder.ts:14-18`).
+- Live-folder backups retain seven days of data and refuse owned-file sets above 2 GiB (`src/rooms/writer/models/live-folder.ts:16-18`). Snapshot output has its own 6 MiB ceiling because host calls cap `runCommand` output (`src/rooms/writer/models/live-folder.ts:20-28`).
+- Task ownership filters snapshot paths through `owns_paths` and `never_touch`; the backup listing walks every file and symlink under the task's owned roots, including clean files and nested repositories.
+- A snapshot cap or malformed response returns a concrete refusal reason; dispatch must not treat it as an empty snapshot.
 
 ## Dispatch and retries
 
-A repeat dispatch of the same task id, contract, and plan within 30 minutes returns the existing task when its latest attempt is neither blocked nor canceled; before an attempt exists, it returns the existing task only if no stage receipt is blocked or failed (`src/rooms/writer/server/dispatch.ts:125-157`, `:241-244`). A task from the same task-id family is rejected while a sibling attempt is open or parked, except `mainfix` tasks (`src/rooms/writer/server/dispatch.ts:159-170`, `:252-256`).
+A repeat dispatch of the same task id, contract, and plan within 30 minutes returns the existing task when its latest attempt is neither blocked nor canceled; before an attempt exists, it returns the existing task only if no stage receipt is blocked or failed (`src/rooms/writer/server/services/dispatch.ts`). A task from the same task-id family is rejected while a sibling attempt is open or parked, except `mainfix` tasks.
 
-A task dispatched in a run with `run_gate=pre-merge` is created with its canonical plan, receives a blocked `run-gate` receipt and skipped PM-read, plan-critique, specialist-review, writer-agent, verification, and acceptance-receipt stages, and blocks the run. Dispatch returns this result before creating an attempt (`src/rooms/writer/server/dispatch.ts:302-311`).
+A task dispatched in a run with `run_gate=pre-merge` is created with its canonical plan, receives a blocked `run-gate` receipt and skipped helper/writer stages, and blocks the run before creating an attempt.
 
-If a reload interrupts dispatch after helper stages or ownership capture, `resumeDispatch` restarts the pipeline for the same attempt when the workflow engine has a pipeline record; the immutable base is retained even if HEAD moved, helper stages restart except a passed PM-read, and baseline can still block before any writer starts (`src/rooms/writer/server/dispatch.ts:627-663`, `tests/dispatch-ownership-reload.test.ts:70-98`). It blocks with a reason when the engine is off, no pipeline record exists, the attempt no longer waits for its stages, its run or task cannot be read, `MAX_DISPATCH_RESUMES` is exceeded, or the engine cannot start it (`src/rooms/writer/server/dispatch.ts:627-656`). A writer reopened after a PM answer or contract fix is sent directly back into its existing thread (`turnSent`) and skips admission waits it already passed on the first start (`src/rooms/writer/server/reopen-attempt.ts:77-111`, `src/rooms/writer/server/start-writer-task.ts:182-186`, `src/rooms/writer/server/start-task-state.ts:21-22`).
+If a reload interrupts dispatch after helper stages or ownership capture, `resumeDispatch` restarts the pipeline for the same attempt when the workflow engine has a pipeline record; the immutable base is retained even if HEAD moved, helper stages restart except a passed PM-read, and baseline can still block before any writer starts (`src/rooms/writer/server/services/dispatch.ts`, `tests/dispatch-ownership-reload.test.ts`). A writer reopened after a PM answer or contract fix is sent directly back into its existing thread and skips admission waits it already passed on the first start (`src/rooms/writer/server/services/reopen-attempt.ts`, `src/rooms/writer/server/services/start-writer-task.ts`, `src/rooms/writer/server/services/start-task-state.ts`).
 
-After a task passes writer admission, it holds its checkout against relevant queued tasks through its redo and fallback attempts. In a Git checkout, the blocker predicate checks same area or overlapping `owns_paths`; in a live folder, any other task in the same checkout waits. Dependency ordering can exempt a task from blocking or being blocked to avoid deadlock (`src/rooms/writer/server/start-wait-overlap.ts:63-81`). The admitted-task map is per core instance and released at the end of the writer loop (`src/rooms/writer/server/start-wait-overlap.ts:44-48`, `src/rooms/writer/server/start-admission.ts:188-199`, `src/rooms/writer/server/start-writer-task.ts:232-235`).
+After a task passes writer admission, it holds its checkout against relevant queued tasks through its redo and fallback attempts (`src/rooms/writer/server/services/start-wait-overlap.ts`). Dependency ordering can exempt a task from blocking or being blocked to avoid deadlock.
 
-On reload recovery, a writer thread found idle or errored while its attempt is still running is restarted through `startWriterTask` with `turnSent: true`; that re-enters the current writer turn in the same thread with its saved workspace and prior failure context. A cancellation observed during recovery becomes canceled; a missing matching thread ends as a spawn failure, and an ambiguous scan blocks the attempt (`src/rooms/stability/server/reconcile.ts:82-109`, `:111-145`).
+On reload recovery, a writer thread found idle or errored while its attempt is still running is restarted through `startWriterTask` with `turnSent: true`; that re-enters the current writer turn in the same thread (`src/rooms/stability/server/services/reconcile.ts`).
 
-Writer-owned validation failures (`isOwnFailure` via `lastOwnFailure`) are included in the next writer's brief on an eligible retry or fallback, so the new attempt receives the rejected paths and reason. Provider failures do not become task-failure context; when loading prior failures, an accepted attempt ends the search (`src/rooms/writer/server/start-failure-records.ts:14-35`, `src/rooms/writer/server/start-task-state.ts:43-44`). A resumed attempt whose worktree contains Lane Pilot's own receipt from a pass interrupted by reload continues through validation (`tests/writer-validate.test.ts:277-327`).
+Writer-owned validation failures are included in the next writer's brief on an eligible retry or fallback (`src/rooms/writer/server/repositories/start-failure-records.ts`, `src/rooms/writer/server/services/start-task-state.ts`). A merge and moved-main replay register as checks in flight (`src/rooms/writer/server/services/finish-merge.ts`, `src/rooms/runs/models/checks-in-flight.ts`).
 
-When a continued writer waits for its queued follow-up turn under a token or wall budget, the wait is checked every two seconds. If the budget stops the attempt first, the pending wait's later rejection is consumed so it does not become an unhandled rejection in the BB server (`src/rooms/writer/server/watch-writer.ts:78-92`).
-
-The self-repair repeat detector excludes a task's own red verification checks when they are classified as task failures; checks attributed to the orchestrator or environment still count (`src/rooms/self-repair/server/collect.ts:158-165`, `src/rooms/self-repair/server/episodes.ts:51-57`). A merge and moved-main replay register as checks in flight, so the stuck-attempt watcher sees that work before it finishes (`src/rooms/writer/server/finish-merge.ts:69-81`, `src/rooms/self-repair/server/collect.ts:81-82`, `src/rooms/runs/checks-in-flight.ts:11-37`).
+When a continued writer waits for its queued follow-up turn under a token or wall budget, the pending wait's later rejection is consumed so it does not become an unhandled rejection in the BB server (`src/rooms/writer/server/services/watch-writer.ts`).
 
 ## Event and polling behavior
 
-BB thread lifecycle events wake watchers, but the thread's final status comes from a fresh read and a 20-second fallback poll covers missed events (`packages/thread-observe/src/signals.ts:3-10`). A top-level `error` status includes a detected BB failure cause after `thread_status_error:` in the decision detail; with no detected cause the detail stays `thread_status_error` (`packages/thread-observe/src/completion.ts:77-90`, `:150-178`). `LANE_PILOT_THREAD_SIGNALS=0` disables signal subscriptions; it also leaves polling as the watcher path (`packages/thread-observe/src/signals.ts:84-99`, `src/rooms/core/server/lifecycle-events.ts:22-37`). Poll pauses can be scaled for test environments by `LANE_PILOT_POLL_SCALE` (`packages/kit/src/pace.ts:1-8`).
+BB thread lifecycle events wake watchers, but the thread's final status comes from a fresh read and a fallback poll covers missed events (`packages/thread-observe/src/signals.ts:3-10`). A top-level `error` status includes a detected BB failure cause after `thread_status_error:` (`packages/thread-observe/src/completion.ts`). `LANE_PILOT_THREAD_SIGNALS=0` disables signal subscriptions (`packages/thread-observe/src/signals.ts`, `src/rooms/core/server/lifecycle-events.ts`). Poll pauses can be scaled for test environments by `LANE_PILOT_POLL_SCALE` (`packages/kit/src/pace.ts`).
 
-Lifecycle-event registration is best-effort: BB versions that do not recognize an event produce a log entry while scheduled sweeps remain the recovery mechanism (`src/rooms/core/server/lifecycle-events.ts:26-37`). Archived or deleted PM threads close abandoned runs only when the run has no open attempt (`src/rooms/core/server/lifecycle-events.ts:39-48`).
+Lifecycle-event registration is best-effort (`src/rooms/core/server/lifecycle-events.ts`). Archived or deleted PM threads close abandoned runs only when the run has no open attempt.
 
 ## Stability and local provider setup
 
-Stability breakers are persisted across plugin reloads and restored only for the same Lane Pilot version (`src/rooms/stability/server/stability.ts:62-82`). A version change discards a prior open breaker because the fault may have shipped fixed (`src/rooms/stability/server/stability.ts:67-80`).
+Stability breakers are persisted across plugin reloads and restored only for the same Lane Pilot version (`src/rooms/stability/server/services/stability.ts`). A version change discards a prior open breaker because the fault may have shipped fixed.
 
-OpenCode v2 runs every session in one shared service per host, so a thread's process environment cannot change its config. Lane Pilot's OpenCode writers get `agent=lane-pilot` (the lane hooks act only under a `lane-` agent) and a git-excluded `.opencode/opencode.jsonc` that turns OpenCode's own compaction off; a project's own config is kept (`src/rooms/platform/server/pm-spawn.ts:97-131`, `src/rooms/writer/server/skill-materialize.ts:15-21`).
+OpenCode v2 runs every session in one shared service per host, so a thread's process environment cannot change its config. Lane Pilot's OpenCode writers get `agent=lane-pilot` and a git-excluded `.opencode/opencode.jsonc` that turns OpenCode's own compaction off (`src/rooms/platform/server/services/pm-spawn.ts`, `src/rooms/writer/server/services/skill-materialize.ts`).
 
-Read-only helper spawn tuning (`withLaunchTuning`) attaches `experimental_vkLaunchTuning` only when the role reads and answers without needing a shell or scratch files: `plan-critic`, `specialist-reviewer`, `pm-reader`, and `gate-triage` get `ask` on `acp-cursor` and `devin`, `plan` plus `--sandbox` on `acp-antigravity`, and `CLAUDE_EDITOR_TOOLS` disabled on `claude-code` (`src/rooms/platform/server/launch-tuning.ts:17-58`, `src/rooms/platform/server/pm-spawn.ts:189`). `code-critic` is excluded from ACP `ask` modes because `ask` removes the shell needed for `git log -p`, while on `claude-code` it disables only editor tools and keeps `Bash`; BB cores without launch-tuning support store the metadata key and ignore it, and `LANE_PILOT_LAUNCH_TUNING=off` disables tuning on the hub (`src/rooms/platform/server/launch-tuning.ts:1-20`, `:37-58`).
+Read-only helper spawn tuning (`withLaunchTuning`) attaches `experimental_vkLaunchTuning` for roles that answer without shells (`src/rooms/platform/server/services/launch-tuning.ts`, `src/rooms/platform/server/services/pm-spawn.ts`); `LANE_PILOT_LAUNCH_TUNING=off` disables tuning on the hub.
 
-Codex, OpenCode (`opencode2`) and Cursor helper providers get environment entries only when a thread id and non-PM Lane Pilot role are available. Those entries include `LANE_PILOT_ROLE` and, when host preparation succeeds, a guarded `PATH`. Unknown `prepareBbShim` calls leave the marker but omit the wrapper path; other preparation failures reject environment resolution (`src/rooms/native-agent/server/helper-bb-shim.ts:60-95`). If metadata lookup fails, it returns no entries (`src/rooms/native-agent/server/helper-bb-shim.ts:75-80`). A Codex writer receives a task-specific `CODEX_HOME` only when strict-user mode is enabled and `workerHome` returns a path; shim preparation is independent of that value (`src/rooms/native-agent/server/helper-bb-shim.ts:86-95`, `:111-123`).
+Codex, OpenCode (`opencode2`) and Cursor helper providers get environment entries (`LANE_PILOT_ROLE` and guarded `PATH`) when host preparation succeeds (`src/rooms/native-agent/server/services/helper-bb-shim.ts`). A Codex writer receives a task-specific `CODEX_HOME` only when strict-user mode is enabled.
 
-Reload drain covers checkout-writing host methods and `runSandboxedCommand` acceptance checks. Other host calls bypass the drain; an active drain blocks new covered calls while existing calls finish, and an expired drain stops blocking after 20 minutes (`src/rooms/stability/server/deploy-drain.ts:1-25`). A lifecycle drain can reach its deadline with calls still in flight and records `clean: false` with their method names and ages (`src/rooms/stability/server/deploy-drain.ts:65-79`).
+Reload drain covers checkout-writing host methods and `runSandboxedCommand` acceptance checks (`src/rooms/stability/server/services/deploy-drain.ts`).
 
-Before saving a non-dry-run tick, self-repair drops the oldest eligible signatures while its serialized state exceeds 200 KiB (`STATE_BUDGET_BYTES`); it does not prune signatures with a worktree or pending spawn. Loading state truncates each stored sample reason to 1,000 characters (`SAMPLE_REASON_CHARS`), and the repair prompt clips displayed incident reasons to 600 characters (`src/rooms/self-repair/server/repair-state.ts:36-39`, `:83-100`, `src/rooms/self-repair/server/repair-prompt.ts:19`).
+If a fallback chain ends without acceptance, its last retry-eligible attempt transitions to `blocked` (`src/rooms/writer/server/services/start-fallback-chain.ts`).
 
-The self-repair prompt tells its agent to contact a live PM only when that PM must act; for an idle PM it puts the next action in the repair report (`src/rooms/self-repair/server/repair-prompt.ts:22-35`, `:56`). A queued-attempt incident is collected only after two hours with no working attempt in the run and no other recent non-queued attempt; a dependency in a holding state or still inside the blocked-dependency redo window suppresses that incident (`src/rooms/self-repair/server/collect.ts:23`, `:40-49`, `:92-101`). If a fallback chain ends without acceptance, its last retry-eligible attempt transitions to `blocked` (`src/rooms/writer/server/start-fallback-chain.ts:185-190`).
+Relay groups task outcomes for a PM (`src/rooms/relay/server/services/relay.ts`, `src/rooms/relay/server/handlers/relay-deadlines.ts`). A canceled-only group is recorded as reported without sending a message; within the 24-hour notice window a due group waits when the PM thread is busy or sending fails.
 
-Relay groups task outcomes for a PM. A canceled-only group is recorded as reported without sending a message; a mixed group includes canceled tasks as a count. Within the 24-hour notice window, a due group stays unreported when the PM thread is busy, the busy check fails, or sending fails, so a later sweep can retry it. Outcomes older than the window are marked reported without a notice. The background relay sweep runs every 30 seconds (`src/rooms/relay/server/relay.ts:400-440`, `:441-488`, `:702-716`).
+An owner-dated reminder is exempt from the two-hour cap and the repeated time-only reminder chain limit.
 
-An owner-dated reminder is exempt from the two-hour cap and the repeated time-only reminder chain limit. Only an unobserved, time-only wait is capped; reminders attached to a watched thread or task state also use their event condition instead (`src/rooms/relay/server/relay.ts:246-277`).
+Sandboxed checks use `spawnAsync` with `keepEnds`, linking installed user tool homes and Playwright browser binaries (`src/rooms/verification/sandbox.ts`).
 
-Sandboxed checks use `spawnAsync` with `keepEnds`, so excess stdout/stderr is truncated to head-and-tail captures instead of terminating the check; stderr is capped separately after process completion (`src/rooms/verification/sandbox.ts:6-36`, `:210-217`, `:222-242`). The temporary sandbox HOME links installed user tool homes and Playwright browser binaries, while browser cache lock and link metadata remain local to that HOME (`src/rooms/verification/sandbox.ts:103-144`).
-
-Worktree preparation installs from a root lockfile when dependencies are missing and refreshes an existing install when npm's hidden lock is older than the project lock. It mirrors root workspaces and eligible nested packages, refreshing stale nested installs before mirroring; a failed refresh is remembered for that lockfile timestamp (`src/rooms/verification/git-integrate/deps-install.ts:35-47`, `:56-78`, `src/rooms/verification/git-integrate/worktree-dependencies.ts:141-159`). The mirror keeps third-party packages linked to the base while copying npm's mutable state (`NODE_MODULES_NPM_STATE`) and selected generated packages (`NODE_MODULES_WRITABLE_COPIES`) into the worktree (`src/rooms/verification/git-integrate/worktree-dependencies.ts:25-82`).
+Worktree preparation installs dependencies from the root lockfile when missing and mirrors mutable npm state (`src/rooms/worktree/deps-install.ts`, `src/rooms/worktree/worktree-dependencies.ts`).
 
 ## Test isolation
 
-Vitest assigns one scratch directory per run to `TMPDIR`, `TEMP`, and `TMP`; teardown removes it, and a later run sweeps directories left by dead processes (`tests/global-setup.ts:9-35`, `tests/tmpdir-isolation.test.ts:7-17`). Node files that mock modules and selected UI files run in isolated Vitest projects; the shared UI matrix gets a 60-second test timeout and empties the DOM before and after each test (`vitest.config.ts:4-32`, `tests/ui-matrix/helpers.tsx:6-26`).
+Vitest assigns one scratch directory per run to `TMPDIR`, `TEMP`, and `TMP` (`tests/global-setup.ts`, `tests/tmpdir-isolation.test.ts`). Node files that mock modules and selected UI files run in isolated Vitest projects (`vitest.config.ts`, `tests/ui-matrix/helpers.tsx`).
 
-`scripts/test-full.sh` keys success receipts by the committed tree hash and Node version. A dirty tracked tree still runs Vitest but does not write a receipt; an existing receipt skips the full run for the same key (`scripts/test-full.sh:2-18`). The record-and-guard helper records raw hook identity and forwards a normalized Lane Pilot PM marker to the guard process (`scripts/record_and_guard.py:19-49`).
+`scripts/test-full.sh` keys success receipts by the committed tree hash and Node version. The record-and-guard helper records raw hook identity and forwards a normalized Lane Pilot PM marker (`scripts/record_and_guard.py`).
 
 <!-- lane-pilot:backlinks -->
 ## Referenced by

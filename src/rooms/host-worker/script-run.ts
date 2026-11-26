@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
-import { createCapture, redactSecrets } from "@lane-pilot/kit";
+import { createCapture, currentHostId, redactSecrets } from "@lane-pilot/kit";
 
 export { createCapture };
 
@@ -22,7 +22,7 @@ export async function runScriptOnHost(input: ScriptRunInput): Promise<ScriptRunR
   const out = createCapture(cap), err = createCapture(Math.max(8 * 1024, Math.floor(cap / 2)));
   const started = Date.now();
   const secrets = Object.values(input.env ?? {});
-  const hostId = process.env.BB_HOST_ID ?? input.requestedHostId;
+  const hostId = currentHostId(input.requestedHostId);
   if (!existsSync(input.cwd)) {
     return { hostId, exitCode: 1, stdout: "", stderr: redactSecrets(`working directory does not exist: ${input.cwd}`, secrets), truncated: false, timedOut: false, durationMs: Date.now() - started };
   }

@@ -6,8 +6,7 @@ import { applyInstalledGuard, isOwnedPmGuardApplied, ownedPmGuardPath } from "./
 import type { InstallPhase } from "./install-runner";
 import { connectOpencode } from "./opencode-connect";
 import { inventoryCoexistenceAtHome, runCoexistenceOperationAtHome } from "./coexistence";
-import { agentsDir, resolveHome } from "@lane-pilot/kit";
-import { spawnAsync } from "@lane-pilot/kit";
+import { agentsDir, currentHostId, resolveHome, spawnAsync } from "@lane-pilot/kit";
 import { skippedOpsReceipt, writeReceipt, type FileChange, type InstallReceipt } from "./receipt";
 import {
   finalizeSnapshotAfter,
@@ -15,7 +14,8 @@ import {
   takeSnapshot,
   verifyRollback,
 } from "./snapshot";
-import { assessEngineCapabilities, inspectEngineCapabilities } from "./capabilities";
+import { assessEngineCapabilities } from "./models/capabilities";
+import { inspectEngineCapabilities } from "./capabilities";
 
 export type HostContext = {
   requestedHostId: string;
@@ -107,7 +107,7 @@ export async function detectStack(ctx: HostContext) {
     sources.push({ manager: "local-fallback", path: fallbackRoot, version: null, sourceSha: await gitHead(fallbackRoot) });
   }
   return {
-    hostId: process.env.BB_HOST_ID ?? ctx.requestedHostId,
+    hostId: currentHostId(ctx.requestedHostId),
     laneStack: {
       present: install.sourceSha !== null || install.version !== null,
       version: install.version,

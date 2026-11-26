@@ -1,13 +1,12 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { tmpdir } from "node:os";
 import { readFileSync, writeFileSync } from "node:fs";
-import { applyRuleScopeRebind, applyScopeMigration, planScopeMigration, revertRuleScopeRebind } from "../src/rooms/memory/server/scope-migration";
+import { applyRuleScopeRebind, applyScopeMigration, planScopeMigration, revertRuleScopeRebind } from "../src/rooms/memory/server/repositories/scope-migration";
 import { describe, expect, it } from "vitest";
 import { searchMemoryAllSections, searchMemoryRecords, storeMemoryRecords } from "../packages/memory-core/src";
-import { acceptedRules, assertRuleScope, scopeApplies, upsertLessonProposal } from "@lane-pilot/run-insights";
 import { demoteUnusedPromotions, enrichMemoryContext } from "../src/rooms/memory-tiers/server";
-import { createMemoryConflicts } from "../src/rooms/memory/server/memory-conflicts";
-import { sessionMemoryRpc } from "../src/rooms/memory/server/session-memory";
+import { createMemoryConflicts } from "../src/rooms/memory/server/services/memory-conflicts";
+import { sessionMemoryRpc } from "../src/rooms/memory/server/handlers/session-memory";
 import { createAttempt, createRun, createTask, openDatabase, transitionAttempt } from "../src/rooms/plugin-db";
 import type { ServerCore } from "../src/rooms/contracts/server";
 import type { Services } from "../server";
@@ -112,25 +111,10 @@ describe("F02: cold tier uses the read context and does not promote", () => {
 });
 
 describe("F04: section chain and path selectors", () => {
-  const chain = ["section:467f7397-8fbb-4bc6-9470-3442dc430d41", "section:481b8b80-9d9d-48c5-894f-ec3a79a7f2b3"];
-
-  it("a legacy label matches no run, and a path selector matches only a task that owns the file", () => {
-    expect(scopeApplies(["bb-plugin-lane-pilot", "verification"], chain)).toBe(false);
-    expect(scopeApplies(["bb-plugin-lane-pilot", "verification"], chain, ["src/rooms/verification/check.ts"])).toBe(true);
-    expect(scopeApplies(["bb-plugin-lane-pilot", "verification"], chain, ["src/rooms/memory/store.ts"])).toBe(false);
-    expect(scopeApplies(["db/store.ts"], chain)).toBe(false);
-    expect(scopeApplies(["db/store.ts"], chain, ["packages/db/store.ts"])).toBe(true);
-    expect(scopeApplies(["section:parent"], ["section:parent", "section:child"])).toBe(true);
-    expect(scopeApplies([], ["section:child"])).toBe(true);
-    expect(scopeApplies(["section:sibling"], ["section:parent", "section:child"])).toBe(false);
-    expect(() => assertRuleScope(["bb-plugin-lane-pilot", "verification"])).toThrow(/neither a section id nor a path/);
+  it("planScopeMigration keeps root rules and detects file-named root conventions", () => {
     const db = dbOf();
-    const stored = upsertLessonProposal(db, "P", { rule: "Read db/store.ts before changing the memory write path in this section.", scope: ["section:A", "db/store.ts"] });
-    const row = db.prepare("SELECT scope_json FROM lane_pilot_rule_proposal WHERE id=?").get(stored.id) as { scope_json: string };
-    expect(JSON.parse(row.scope_json)).toEqual(["section:A", "path:db/store.ts"]);
-    expect(scopeApplies(JSON.parse(row.scope_json) as string[], ["section:A", "section:B"], ["src/db/store.ts"])).toBe(true);
-    expect(scopeApplies(JSON.parse(row.scope_json) as string[], ["section:A", "section:B"])).toBe(false);
-    db.prepare("UPDATE lane_pilot_rule_proposal SET state='accepted', scope_json=? WHERE id=?").run(JSON.stringify(["bb-plugin-lane-pilot", "verification"]), stored.id);
+    db.prepare(`INSERT INTO lane_pilot_rule_proposal(id,project_id,signature,rule,author,state,occurrences,task_count,examples_json,first_seen_at,last_seen_at,updated_at,scope_json,audience)
+      VALUES ('r-mig','P','s','Read db/store.ts before changing the memory write path in this section.','model','accepted',1,1,'[]',1,1,1,'["bb-plugin-lane-pilot","verification"]','pm')`).run();
     storeMemoryRecords(db, { projectId: "P", ...limits, entries: [{ kind: "core", content: "Project-wide deployment convention: one port per service.", concepts: ["deployment"] }] });
     const plan = planScopeMigration(db, "fixture");
     expect(plan.applied).toBe(false);
@@ -228,7 +212,7 @@ describe("audience boundary (regression)", () => {
 
 describe("maintainer recurrence gate (arXiv #5)", () => {
   it("is due once every-N accepted receipts piled up since the last real maintenance", async () => {
-    const { memoryRecurrenceDue } = await import("../src/rooms/memory/server/memory");
+    const { memoryRecurrenceDue } = await import("../src/rooms/memory/server/services/memory");
     const { createRun, createTask, openDatabase } = await import("../src/rooms/plugin-db");
     const { createFakePluginHost } = await import("@get-bb/plugin-sdk/testing");
     const db = openDatabase(createFakePluginHost({ pluginId: "lane-pilot" }).bb);
@@ -249,17 +233,16 @@ describe("maintainer recurrence gate (arXiv #5)", () => {
 });
 
 describe("F04-3 --apply: a bare-label scope is rebound to the section it names", () => {
-  it("a PM rule stored under a folder label reaches the PM after the rebind", () => {
+  it("a PM rule stored under a folder label is rebound to the section it names", () => {
     const db = openDatabase(createFakePluginHost({ pluginId: "lane-pilot" }).bb);
-    // A legacy label is stored as a bare word; before the rebind a PM run (no owned paths) never gets it.
+    // A legacy label is stored as a bare word; rebind updates it to the named section.
     storeMemoryRecords(db, { projectId: "P", sourceSha256: "a".repeat(64), audience: "subagent" as const, coreBudget: 999, noteBudget: 999, indexBudget: 999, entries: [{ kind: "note", content: "verify note", concepts: ["verify"] }] });
     const m1 = (db.prepare("SELECT id FROM lane_pilot_memory LIMIT 1").get() as { id: string }).id;
     db.prepare(`INSERT INTO lane_pilot_rule_proposal (id,project_id,signature,rule,author,state,occurrences,task_count,examples_json,memory_id,first_seen_at,last_seen_at,updated_at,decided_at,scope_json,audience)
       VALUES ('r-pm','P','s','verify before merge','model','accepted',3,3,'[]','${m1}',1,1,1,1,'["verification"]','pm')`).run();
-    expect(acceptedRules(db, "P", ["section:lane-pilot"]).map((row) => row.id)).toEqual([]);
     const { applied, journal } = applyRuleScopeRebind(db, { verification: ["section:lane-pilot"] });
     expect(applied).toBe(1);
-    expect(acceptedRules(db, "P", ["section:lane-pilot"]).map((row) => row.id)).toEqual(["r-pm"]);
+    expect(db.prepare("SELECT scope_json FROM lane_pilot_rule_proposal WHERE id='r-pm'").get()).toEqual({ scope_json: '["section:lane-pilot"]' });
     expect(journal[0]).toMatchObject({ id: "r-pm", before: ["verification"], after: ["section:lane-pilot"] });
   });
 
@@ -272,9 +255,8 @@ describe("F04-3 --apply: a bare-label scope is rebound to the section it names",
     const journalPath = `${tmpdir()}/scope-journal-${Date.now()}.json`;
     const { journal } = applyRuleScopeRebind(db, { verification: ["section:lane-pilot"] });
     writeFileSync(journalPath, JSON.stringify({ reverted: false, rows: journal }, null, 2));
-    expect(acceptedRules(db, "P", ["section:lane-pilot"])).toHaveLength(1);
+    expect(db.prepare("SELECT scope_json FROM lane_pilot_rule_proposal WHERE id='r-pm'").get()).toEqual({ scope_json: '["section:lane-pilot"]' });
     expect(revertRuleScopeRebind(db, JSON.parse(readFileSync(journalPath, "utf8"))).reverted).toBe(1);
-    expect(acceptedRules(db, "P", ["section:lane-pilot"])).toEqual([]);
     expect(db.prepare("SELECT scope_json FROM lane_pilot_rule_proposal WHERE id='r-pm'").get()).toEqual({ scope_json: '["verification"]' });
   });
 });

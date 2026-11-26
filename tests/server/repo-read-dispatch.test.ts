@@ -14,7 +14,7 @@ import { dirname, join } from "node:path";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import plugin from "../../server";
-import * as handlers from "../../src/rooms/host-worker/host-handlers";
+import * as handlers from "../../src/rooms/host-worker";
 import type { TaskV2 } from "../../src/rooms/contracts";
 import { countAttempts, createAttempt, createRun, getTask, setTaskHeldUntil, openDatabase, saveProjectSetting, savePrototypeConfig, setRunThread } from "../../src/rooms/plugin-db";
 

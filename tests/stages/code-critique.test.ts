@@ -16,7 +16,7 @@ import {
   sameWriterIdentity,
   settingsFromFrozenPolicy,
   shouldRequestRepair,
-} from "../../src/rooms/critique/code-critique";
+} from "../../src/rooms/critique";
 
 describe("code critique policy", () => {
   it("stays off unless explicitly enabled", () => {

@@ -3,7 +3,7 @@ import { expect, it } from "vitest";
 import type { TaskV2 } from "../src/rooms/contracts";
 import { createAttempt, createRun, createTask, openDatabase } from "../src/rooms/plugin-db";
 import { checkoutOwnsOverlap } from "../src/rooms/tasks";
-import { batchAdviceFor } from "../src/rooms/writer/server/dispatch-guards";
+import { batchAdviceFor } from "../src/rooms/writer/server/services/dispatch-guards";
 
 const P = "/p/BB-сервис";
 const task = (id: string, cwd: string, owns: string[]): TaskV2 => ({

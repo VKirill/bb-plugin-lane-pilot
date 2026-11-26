@@ -43,6 +43,7 @@
     "content",
     "drmax"
   ],
+  "category": "seo",
   "inputs": {
     "topic": {
       "type": "string",
@@ -95,11 +96,11 @@
     }
   },
   "outputs": {
-    "status": "done|partial|blocked",
+    "status": "done|partial|blocked|not_run",
     "clusters": "Cluster[]",
     "page_count": "int",
     "briefs_dir": "string",
-    "audit_status": "pass|rework|block",
+    "audit_status": "pass|rework|block|not_run",
     "folder": "string",
     "handoff_path": "string"
   },
@@ -202,7 +203,7 @@
       "workflow": "seo-research",
       "skip_when": "$inputs.research_package_path != ''",
       "skip_out": {
-        "status": "done",
+        "status": "not_run",
         "package_path": "{{$inputs.research_package_path}}"
       },
       "title": {
@@ -387,7 +388,7 @@
         "full"
       ],
       "skip_out": {
-        "status": "pass",
+        "status": "not_run",
         "findings": "[]",
         "orphan_count": 0,
         "cannibal_count": 0
@@ -398,7 +399,7 @@
       },
       "prompt": "Verdict on the whole cocoon from the files only: vector overlap and cannibalization, functional duplicates, architectural home vs rel=canonical, drift and the three-filter pruning (a list of support pages to spawn), and the provenance and claim bounds of every map row. Status pass | rework | block; findings cite the page slug and the passage, severity one of critical, high, medium, low, info.",
       "out": {
-        "status": "pass|rework|block",
+        "status": "pass|rework|block|not_run",
         "findings": "Finding[]",
         "orphan_count": "int",
         "cannibal_count": "int"
@@ -558,7 +559,7 @@
       "from": "package",
       "to": "done",
       "pass": "artifact",
-      "when": "audit.status in ['pass']"
+      "when": "audit.status in ['pass', 'not_run']"
     },
     {
       "from": "package",

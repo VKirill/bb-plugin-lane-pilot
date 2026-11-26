@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { casUpsertSettings, getSettingVersions, listSettingRows, loadProjectSettings, openDatabase, saveProjectSetting, sectionBindingId } from "../src/rooms/plugin-db";
-import { isModelSettingKey, isRoleOverrideKey } from "../src/rooms/settings/model-keys";
-import { validateSettingValue } from "../src/rooms/settings/setting-validation";
-import { PICKER_KEYS } from "../src/rooms/pages/page-model";
+import { isModelSettingKey, isRoleOverrideKey } from "../src/rooms/settings/models/model-keys";
+import { validateSettingValue } from "../src/rooms/settings/models/setting-validation";
+import { PICKER_KEYS } from "../src/rooms/pages/ui/page-model";
 ;
 import plugin from "../server";
 import {writerFallbackKeys} from "@lane-pilot/models";
@@ -46,7 +46,7 @@ describe("giving every project and section the global role models back", () => {
     const { db, harness } = await mount();
     saveProjectSetting(db, GLOBAL, "writer.provider", "codex");
     saveProjectSetting(db, GLOBAL, "writer.model", "gpt-6-luna");
-    saveProjectSetting(db, GLOBAL, "docs.provider", "codex");
+    saveProjectSetting(db, GLOBAL, "pm_read.provider", "codex");
     saveProjectSetting(db, "p1", "writer.provider", "qwen");
     saveProjectSetting(db, "p1", "writer.model", "qwen-test");
     saveProjectSetting(db, "p1", "writer.fallback1.provider", "claude-code");
@@ -54,8 +54,8 @@ describe("giving every project and section the global role models back", () => {
     saveProjectSetting(db, "p1", "night_review.enabled", true);
     saveProjectSetting(db, "p2", "writer.agent", "other-writer");
     casUpsertSettings(db, { projectId: "p1", bindingId: sectionBindingId("s1"), changes: [
-      { key: "docs.provider", value: "qwen", expectedVersion: 0 },
-      { key: "docs.model", value: "qwen-test", expectedVersion: 0 },
+      { key: "pm_read.provider", value: "qwen", expectedVersion: 0 },
+      { key: "pm_read.model", value: "qwen-test", expectedVersion: 0 },
     ] });
     saveProjectSetting(db, "gone", "memory.model", "qwen-test"); // a project the host no longer lists
     saveProjectSetting(db, "pb", "writer.model", "gpt-6-luna"); // the bench pins its models on purpose
@@ -64,8 +64,8 @@ describe("giving every project and section the global role models back", () => {
 
   it("a project and a section keep their own value over the global one", async () => {
     const { db, harness } = await seed();
-    expect(loadProjectSettings(db, "p1")).toMatchObject({ "writer.provider": "qwen", "docs.provider": "codex" });
-    expect(loadProjectSettings(db, "p1", [sectionBindingId("s1")])).toMatchObject({ "writer.provider": "qwen", "docs.provider": "qwen" });
+    expect(loadProjectSettings(db, "p1")).toMatchObject({ "writer.provider": "qwen", "pm_read.provider": "codex" });
+    expect(loadProjectSettings(db, "p1", [sectionBindingId("s1")])).toMatchObject({ "writer.provider": "qwen", "pm_read.provider": "qwen" });
     expect(loadProjectSettings(db, "p2")).toMatchObject({ "writer.provider": "codex" });
     await harness.lifecycle.dispose();
   });
@@ -76,7 +76,7 @@ describe("giving every project and section the global role models back", () => {
     expect(listed.levels).toEqual([
       { projectId: "gone", projectName: null, sectionId: null, sectionName: null, keys: ["memory.model"] },
       { projectId: "p1", projectName: "Alpha", sectionId: null, sectionName: null, keys: ["writer.agent", "writer.fallback1.provider", "writer.model", "writer.provider"] },
-      { projectId: "p1", projectName: "Alpha", sectionId: "s1", sectionName: null, keys: ["docs.model", "docs.provider"] },
+      { projectId: "p1", projectName: "Alpha", sectionId: "s1", sectionName: null, keys: ["pm_read.model", "pm_read.provider"] },
       { projectId: "p2", projectName: "Beta", sectionId: null, sectionName: null, keys: ["writer.agent"] },
     ]);
     await harness.lifecycle.dispose();
@@ -94,8 +94,8 @@ describe("giving every project and section the global role models back", () => {
     // Even when a caller names it, the bench keeps its pinned model.
     expect(await harness.behavior.callRpc("reset_model_overrides", { levels: [{ projectId: "pb", sectionId: null }] })).toMatchObject({ levels: 0, removed: 0 });
     expect(listSettingRows(db, "pb").map((row) => row.key)).toEqual(["writer.model"]);
-    expect(listSettingRows(db, GLOBAL).map((row) => row.key).sort()).toEqual(["docs.provider", "writer.model", "writer.provider"]);
-    expect(loadProjectSettings(db, "p1", [sectionBindingId("s1")])).toMatchObject({ "writer.provider": "codex", "writer.model": "gpt-6-luna", "docs.provider": "codex" });
+    expect(listSettingRows(db, GLOBAL).map((row) => row.key).sort()).toEqual(["pm_read.provider", "writer.model", "writer.provider"]);
+    expect(loadProjectSettings(db, "p1", [sectionBindingId("s1")])).toMatchObject({ "writer.provider": "codex", "writer.model": "gpt-6-luna", "pm_read.provider": "codex" });
     // A save that read the screen before the reset conflicts, as after the per-role reset.
     expect(getSettingVersions(db, "p1", ["writer.provider"])["writer.provider"]).toBe(before["writer.provider"]! + 1);
     const screen = await harness.behavior.callRpc("get_screen", { projectId: "p1" }) as { explicitKeys: string[]; inheritedKeys: string[]; values: Record<string, unknown> };

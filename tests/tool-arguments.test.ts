@@ -3,7 +3,7 @@ import { z } from "zod";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import plugin from "../server";
 import {registeredTools} from "../src/rooms/platform/server";
-import { PM_TOOL_FAMILIES } from "../src/rooms/platform/server/pm-tool-families";
+import { PM_TOOL_FAMILIES } from "../src/rooms/platform/models/pm-tool-families";
 
 // Live phase ph_86fd9d3fab, 2026-10-27: the PM called lane_pilot_phase revise twice before it learned the call takes goal and note.
 // BB shows a model only `type: object` of a top-level union, so the instructions must say what each action takes, and a refusal must too.
@@ -42,7 +42,7 @@ it("names every action of every action tool with all its required fields, genera
   const { harness, book } = await start();
   const published = harness.registrations.agentTools as Published[];
   const actionTools = published.filter((tool) => tool.inputSchema.properties?.action?.enum || tool.inputSchema.oneOf);
-  expect(actionTools.map((tool) => tool.name)).toEqual(expect.arrayContaining(["lane_pilot_phase", "lane_pilot_schedule", "lane_pilot_queue", "lane_pilot_check", "lane_pilot_forge", ...Object.keys(PM_TOOL_FAMILIES)]));
+  expect(actionTools.map((tool) => tool.name)).toEqual(expect.arrayContaining(["lane_pilot_schedule", "lane_pilot_queue", "lane_pilot_check", ...Object.keys(PM_TOOL_FAMILIES)]));
   for (const tool of actionTools) {
     // BB keeps only `type: object` of a top-level union: every action tool must publish one flat object.
     expect(tool.inputSchema.type, tool.name).toBe("object");
@@ -58,28 +58,6 @@ it("names every action of every action tool with all its required fields, genera
       for (const field of required) expect(braces, `${tool.name} ${action} names ${field}`).toMatch(new RegExp(`(^|[\\s,])${field}(:|,|$)`));
     }
   }
-});
-
-it("writes the revise signature of lane_pilot_phase with its required fields and marks optional ones", async () => {
-  const { harness } = await start();
-  const instructions = (harness.registrations.agentTools as Published[]).find((tool) => tool.name === "lane_pilot_phase")!.instructions!;
-  expect(instructions).toContain("revise {phaseId, goal, note}");
-  expect(instructions).toContain("status {phaseId?}");
-  expect(instructions).toContain("return {phaseId, to: discussion|planning|design|execution, note}");
-});
-
-it("refuses a phase revise without goal or note by naming what revise needs", async () => {
-  const { harness } = await start();
-  const call = (args: Record<string, unknown>) => harness.behavior.callAgentTool("lane_pilot_phase", args, { threadId: "pm-thread", projectId: "project-a" });
-  await expect(call({ action: "revise", phaseId: "ph_1" })).rejects.toThrow("lane_pilot_phase revise needs: goal (string), note (string)");
-  await expect(call({ action: "revise", phaseId: "ph_1", goal: "g" })).rejects.toThrow("lane_pilot_phase revise needs: note (string)");
-  await expect(call({ action: "return", phaseId: "ph_1", note: "n" })).rejects.toThrow("lane_pilot_phase return needs: to (discussion|planning|design|execution)");
-});
-
-it("names the action that owns an argument sent to another action of a union tool", async () => {
-  const { harness } = await start();
-  const call = (args: Record<string, unknown>) => harness.behavior.callAgentTool("lane_pilot_phase", args, { threadId: "pm-thread", projectId: "project-a" });
-  await expect(call({ action: "pause", phaseId: "ph_1", goal: "x" })).rejects.toThrow("lane_pilot_phase pause does not take goal (an argument of open)");
 });
 
 it("hands a union tool's handler the same value the union parses: defaults kept, JSON text for a list read", async () => {

@@ -2,10 +2,8 @@ import { describe, expect, it, vi } from "vitest";
 
 vi.mock("@lane-pilot/thread-observe", async (original) => ({ ...(await original<object>()), waitThreadIdle: vi.fn(async () => undefined) }));
 
-const { readAnswer, readCodeCritique } = await import("../../src/rooms/critique/server/critique-runs");
-const { parseSpecialistResult } = await import("../../src/rooms/critique/specialist");
-const { parsePmReadResult } = await import("../../src/rooms/critique/pm-read");
-const { parseNightReviewResult } = await import("../../src/rooms/night/night");
+const { readAnswer, readCodeCritique } = await import("../../src/rooms/critique/server");
+const { parsePmReadResult, parseSpecialistResult } = await import("../../src/rooms/critique");
 const { recordStage } = await import("../../src/rooms/runs/server");
 const { createRun, createTask, listStageReceipts, openDatabase } = await import("../../src/rooms/plugin-db");
 const { createFakePluginHost } = await import("@get-bb/plugin-sdk/testing");
@@ -58,7 +56,6 @@ describe("one reading of a helper's answer for every stage", () => {
       await expect(readAnswer(bb, "thr", blocked, parse as never, "status")).rejects.toThrow("helper_blocked:needs the real path of src/pay/checkout.ts from pm");
       expect(sent).toHaveLength(0);
     }
-    expect(() => parseNightReviewResult('{"outcome":"failed","handoff":"the accepted result is empty"}')).toThrow("helper_failed:the accepted result is empty");
   });
 
   it("reads an answer with the reasoning before the object", async () => {

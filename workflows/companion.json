@@ -36,6 +36,7 @@
     "code",
     "small"
   ],
+  "category": "code",
   "inputs": {
     "goal": {
       "type": "string",
@@ -75,7 +76,12 @@
   "nodes": [
     {
       "id": "self_check",
-      "produces": [{"kind": "report", "version": 1}],
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
       "type": "agent",
       "role": "planner",
       "title": {
@@ -99,8 +105,19 @@
     },
     {
       "id": "task",
-      "consumes": [{"kind": "report", "version": 1, "from": "self_check"}],
-      "produces": [{"kind": "task-result", "version": 1}],
+      "consumes": [
+        {
+          "kind": "report",
+          "version": 1,
+          "from": "self_check"
+        }
+      ],
+      "produces": [
+        {
+          "kind": "task-result",
+          "version": 1
+        }
+      ],
       "type": "lp-task",
       "contract": "{{self_check.contract}}",
       "quality_mode": "quick",

@@ -1,0 +1,494 @@
+import { randomUUID } from "node:crypto";
+import type { BbPluginApi, ExperimentalPluginProviderEnvEntry } from "@get-bb/plugin-sdk";
+import { z } from "zod";
+import { bestEffort } from "@lane-pilot/kit";
+import { nativeEnvGenerationKey, nativeEnvKey, nativeSelectionKey, nativeThreadKey } from "../../../contracts";
+import { CLI_AGENTS_PLUGIN_ID } from "../../../contracts/native-agent-id";
+import { nativeSelectionSchema, type NativeSelection } from "../../../contracts/native-selection";
+import type { LanePilotDatabase } from "../../../storage";
+import { noteCheckoutGuest } from "../../../worktree/server";
+import {
+  NATIVE_WORKSPACE_REFUSAL,
+  inspectDispatchPlacement,
+  projectCheckoutIntentPath,
+  resolveNativeDispatchWorkspace,
+} from "../../models/native-dispatch-placement";
+import {
+  nativeCacheIdentityMatches,
+  nativeCacheIsCurrent,
+  nativeEnvBinding,
+  type NativeEnvPlacement,
+} from "../../models/native-env-cache";
+import {
+  classifyCliAgentsCollision,
+  cliAgentsSelectionNullableSchema,
+  collisionMessage,
+  isMissingPluginRpc,
+  nativeSwitchKey,
+  tokensFrom,
+} from "../../models/native-session";
+import { rememberNativeEnv } from "../repositories/native-env-repository";
+import { recoverDirectoryMove } from "./directory-move";
+import { attachNativeLaneClaim, claimNativeLaneRun, finalizeNativeLaneBinding } from "./native-run";
+
+type HostClient = {
+  call: (method: string, input: unknown, opts: { hostId: string }) => Promise<unknown>;
+};
+
+async function callCliAgentsRpc<T>(
+  bb: BbPluginApi,
+  method: "pending" | "thread",
+  input: Record<string, unknown>,
+  outputSchema: z.ZodType<T>,
+): Promise<T | undefined> {
+  const plugins = (bb.sdk as { plugins?: {
+    experimental_discoverRpc?: (q: { pluginId: string; method: string }) => Promise<unknown[]>;
+    callRpc: (args: { pluginId: string; method: string; input?: unknown; outputSchema: z.ZodType<T> }) => Promise<T>;
+  } }).plugins;
+  if (!plugins?.callRpc) return undefined;
+  try {
+    const listed = await plugins.experimental_discoverRpc?.({ pluginId: CLI_AGENTS_PLUGIN_ID, method });
+    if (Array.isArray(listed) && listed.length === 0) return undefined;
+  } catch (error) {
+    if (!isMissingPluginRpc(error)) throw error;
+    return undefined;
+  }
+  try {
+    return await plugins.callRpc({
+      pluginId: CLI_AGENTS_PLUGIN_ID,
+      method,
+      input,
+      outputSchema,
+    });
+  } catch (error) {
+    if (isMissingPluginRpc(error)) return undefined;
+    throw error;
+  }
+}
+
+function directoryMoveCapability(bb: BbPluginApi, selected: NativeSelection): { directoryMove?: true } {
+  return (bb.vk as { experimental_vkDirectoryMove?: boolean } | undefined)?.experimental_vkDirectoryMove === true && !selected.parentRunId
+    ? { directoryMove: true } : {};
+}
+
+export async function probeCliAgentsCollision(bb: BbPluginApi, input: {
+  projectId: string;
+  threadId: string;
+  hostId: string | undefined;
+  providerId: string;
+  messageValue: unknown;
+}): Promise<ReturnType<typeof classifyCliAgentsCollision>> {
+  const pending = await callCliAgentsRpc(
+    bb,
+    "pending",
+    { projectId: input.projectId, providerId: input.providerId },
+    cliAgentsSelectionNullableSchema,
+  ) ?? null;
+  const thread = await callCliAgentsRpc(
+    bb,
+    "thread",
+    { threadId: input.threadId },
+    cliAgentsSelectionNullableSchema,
+  ) ?? null;
+  return classifyCliAgentsCollision({
+    messageValue: input.messageValue,
+    pending,
+    thread,
+    hostId: input.hostId,
+    providerId: input.providerId,
+  });
+}
+
+export async function prepareNativeSessionRecord(input: {
+  projectId: string;
+  agentId: string;
+  profileMode: NativeSelection["profileMode"];
+  agentsJson: string | null;
+  sourceHash: string | null;
+  sourceVersion?: string | null;
+  parentRunId?: string;
+}): Promise<NativeSelection> {
+  return nativeSelectionSchema.parse({
+    token: randomUUID(),
+    projectId: input.projectId,
+    agentId: input.agentId,
+    profileMode: input.profileMode,
+    agentsJson: input.agentsJson,
+    sourceHash: input.sourceHash,
+    sourceVersion: input.sourceVersion ?? null,
+    createdAt: Date.now(),
+    ...(input.parentRunId ? { parentRunId: input.parentRunId } : {}),
+  });
+}
+
+function placementTrace(ctx: {
+  host?: { id?: string } | null;
+  environment?: { id?: string | null; path?: string | null; hostId?: string | null } | null;
+  environmentIntent?: unknown;
+}): Record<string, string | number | boolean | null> {
+  const placement = inspectDispatchPlacement(ctx);
+  return {
+    intent: placement.kind,
+    envProvider: placement.providerId,
+    machine: placement.machineType,
+    host: placement.hostId,
+    pathPresent: placement.pathPresent,
+    inputKeys: placement.inputKeys,
+  };
+}
+
+export function traceNativeDispatch(
+  log: { debug: (message: string) => void },
+  stage: string,
+  fields: Record<string, string | number | boolean | null | undefined>,
+): void {
+  const parts = Object.entries(fields)
+    .filter(([, value]) => value !== undefined)
+    .map(([key, value]) => `${key}=${value === null ? "null" : String(value)}`);
+  // A debug line: at warn level these were 2661 of the hub log's 2663 warnings (audit 2026-10-08) and hid the real ones.
+  log.debug(`native-trace ${stage} ${parts.join(" ")}`);
+}
+
+/**
+ * The thread a handoff continues: BB writes «Continue from @thread:<id>» at the start of the new thread's first
+ * message, with a thread mention on it. Any other mention of a thread is not a handoff.
+ */
+export function handoffSourceThread(blocks: unknown): string | null {
+  if (!Array.isArray(blocks)) return null;
+  const first = blocks[0] as { type?: unknown; text?: unknown; mentions?: unknown } | undefined;
+  if (!first || first.type !== "text" || typeof first.text !== "string") return null;
+  const match = /^Continue from @thread:(thr_[a-z0-9]+)\b/.exec(first.text);
+  if (!match) return null;
+  const mentions = Array.isArray(first.mentions) ? first.mentions as Array<{ resource?: { kind?: unknown; threadId?: unknown } }> : [];
+  return mentions.some((mention) => mention.resource?.kind === "thread" && mention.resource.threadId === match[1]) ? match[1]! : null;
+}
+
+/** The source chat's profile for a handoff thread of the same project, as a fresh selection of its own run. */
+async function handoffSelection(bb: BbPluginApi, ctx: { project: { id: string }; input: { blocks?: unknown } }): Promise<NativeSelection | null> {
+  const source = handoffSourceThread(ctx.input.blocks);
+  if (!source) return null;
+  const raw = await bb.storage.kv.get<NativeSelection>(nativeThreadKey(source));
+  const parsed = raw ? nativeSelectionSchema.safeParse(raw) : null;
+  if (!parsed?.success || parsed.data.projectId !== ctx.project.id) return null;
+  const { parentRunId: _specialistRun, ...profile } = parsed.data;
+  const selection: NativeSelection = { ...profile, token: randomUUID(), createdAt: Date.now() };
+  await bb.storage.kv.set(nativeSelectionKey(selection.token), selection);
+  return selection;
+}
+
+export async function handleNativeDispatch(
+  bb: BbPluginApi,
+  host: HostClient,
+  ctx: {
+    thread: { id: string };
+    project: { id: string };
+    host?: { id?: string } | null;
+    environment?: { path?: string | null; id?: string | null; hostId?: string | null } | null;
+    environmentIntent?: unknown;
+    requestedExecution: { providerId: string };
+    input: { blocks?: unknown };
+    experimental_submission?: { pluginId: string; data: unknown } | null;
+  },
+  db: LanePilotDatabase,
+): Promise<{ action: "proceed" } | { action: "reject"; message: string }> {
+  const hidden = ctx.experimental_submission?.pluginId === "lane-pilot"
+    ? z.object({ token: z.string().uuid() }).safeParse(ctx.experimental_submission.data)
+    : null;
+  if (hidden && !hidden.success) return { action: "reject", message: "Lane Pilot: Invalid profile selection. Enable Lane Pilot again." };
+  const tokens = [...new Set([
+    ...tokensFrom(ctx.input.blocks),
+    ...(hidden?.success ? [hidden.data.token] : []),
+  ])];
+  // An existing chat whose agent was switched in the composer: the switch waits here for the chat's next message.
+  const switchKey = nativeSwitchKey(ctx.thread.id);
+  const switchToken = tokens.length ? null : await bb.storage.kv.get<string>(switchKey);
+  const switching = typeof switchToken === "string";
+  if (switching) tokens.push(switchToken);
+  const base = {
+    thread: ctx.thread.id,
+    project: ctx.project.id,
+    token: tokens[0] ?? null,
+    tokens: tokens.length,
+    provider: ctx.requestedExecution.providerId,
+    env: ctx.environment?.id ? "attached" : "null",
+    ...placementTrace(ctx),
+  };
+  const reject = (
+    reason: string,
+    message: string,
+    extra?: Record<string, string | number | boolean | null>,
+  ) => {
+    traceNativeDispatch(bb.log, "reject", { ...base, reason, ...extra });
+    return { action: "reject" as const, message: `Lane Pilot: ${message}` };
+  };
+  try {
+    traceNativeDispatch(bb.log, "dispatch.start", base);
+    if (tokens.length > 1) {
+      return reject("multiple_tokens", "Select one Lane Pilot profile per chat.");
+    }
+    const boundRaw = await bb.storage.kv.get<NativeSelection>(nativeThreadKey(ctx.thread.id));
+    const bound = boundRaw ? nativeSelectionSchema.parse(boundRaw) : null;
+    // «Передать в новый тред» from a Lane Pilot chat: BB starts the new thread from the thread composer, where no
+    // profile is attached, so the new chat came up without the agent. It takes the source chat's profile instead.
+    const inherited = !tokens.length && !bound ? await handoffSelection(bb, ctx) : null;
+    if (inherited) traceNativeDispatch(bb.log, "dispatch.handoff", { ...base, reason: "inherited", token: inherited.token });
+    if (!tokens.length && !bound && !inherited) {
+      traceNativeDispatch(bb.log, "dispatch.skip", { ...base, reason: "no_token_or_bound" });
+      // An ordinary chat in a folder where a Lane Pilot run merges: remembered, and told once to commit as it goes.
+      void bestEffort(bb.log, "checkout guest note", noteCheckoutGuest(bb, db, ctx.thread.id, ctx.environment?.path ?? projectCheckoutIntentPath(ctx.environmentIntent), { providerId: ctx.requestedExecution.providerId }), undefined);
+      return { action: "proceed" };
+    }
+    // Another model chosen in the composer turns the profile off for this message instead of refusing it (owner 2026-11-08: a chat
+    // that Opus refused could not be handed to another model, «Передать в новый тред» inherited the profile and was blocked).
+    // The chat stays bound: back on Claude Code it is the Lane Pilot chat again. A pending profile switch waits for that.
+    if (ctx.requestedExecution.providerId !== "claude-code") {
+      traceNativeDispatch(bb.log, "dispatch.skip", { ...base, reason: "provider_not_claude_code", inherited: !!inherited, bound: !!bound });
+      return { action: "proceed" };
+    }
+    if (tokens.length && bound && bound.token !== tokens[0] && !switching) {
+      return reject(
+        "bound_token_mismatch",
+        "The Lane Pilot profile is fixed for this chat. Start a new chat to choose another.",
+        { bound: bound.token },
+      );
+    }
+    let selected = bound ?? inherited;
+    if (tokens.length) {
+      const candidate = await bb.storage.kv.get<NativeSelection>(nativeSelectionKey(tokens[0]));
+      if (!candidate) {
+        if (switching) await bb.storage.kv.delete(switchKey);
+        return reject("selection_missing", "Lane Pilot selection is missing. Choose the profile again.");
+      }
+      selected = nativeSelectionSchema.parse(candidate);
+    }
+    if (!selected) {
+      traceNativeDispatch(bb.log, "dispatch.skip", { ...base, reason: "no_selection" });
+      return { action: "proceed" };
+    }
+    if (selected.projectId !== ctx.project.id) {
+      return reject(
+        "project_mismatch",
+        "The Lane Pilot profile belongs to a different project.",
+        { tokenProject: selected.projectId },
+      );
+    }
+    let workspace;
+    try {
+      workspace = resolveNativeDispatchWorkspace(ctx);
+    } catch (error) {
+      return reject("workspace", (error as Error).message);
+    }
+    const collision = await probeCliAgentsCollision(bb, {
+      projectId: ctx.project.id,
+      threadId: ctx.thread.id,
+      hostId: workspace.hostId ?? undefined,
+      providerId: ctx.requestedExecution.providerId,
+      messageValue: ctx.input.blocks,
+    });
+    if (collision) {
+      return reject("cli_agents_collision", collisionMessage(collision), { detail: collision });
+    }
+    // A specialist thread works inside its PM's run; only a chat of its own opens a run.
+    await recoverDirectoryMove(bb, db, ctx.thread.id);
+    const claimed = selected.parentRunId
+      ? { runId: selected.parentRunId, created: false }
+      : claimNativeLaneRun({
+        db,
+        threadId: ctx.thread.id,
+        projectId: ctx.project.id,
+      });
+    if (claimed.created) {
+      await attachNativeLaneClaim({
+        bb,
+        db,
+        threadId: ctx.thread.id,
+        projectId: ctx.project.id,
+        runId: claimed.runId,
+      });
+    }
+    if (workspace.phase === "pending") {
+      if (!workspace.hostId) {
+        return reject("workspace", NATIVE_WORKSPACE_REFUSAL);
+      }
+      traceNativeDispatch(bb.log, "host.call", { ...base, reason: "prepareNativeClaude", host: workspace.hostId, phase: "host-only" });
+      const prepared = await host.call("prepareNativeClaude", {
+        helper: Boolean(selected.parentRunId),
+        agentId: selected.agentId,
+        agentsJson: selected.agentsJson,
+        ...directoryMoveCapability(bb, selected),
+      }, { hostId: workspace.hostId }) as {
+        env: ExperimentalPluginProviderEnvEntry[];
+        agentId: string;
+      };
+      await bb.storage.kv.set(nativeThreadKey(ctx.thread.id), selected);
+      await rememberNativeEnv(bb, ctx.thread.id, selected, prepared, {
+        hostId: workspace.hostId,
+        cwd: null,
+        environmentId: null,
+      });
+      if (switching) await bb.storage.kv.delete(switchKey);
+      traceNativeDispatch(bb.log, "dispatch.proceed", { ...base, reason: "workspace_pending" });
+      return { action: "proceed" };
+    }
+    if (workspace.environmentId && !selected.parentRunId) {
+      if (!finalizeNativeLaneBinding({
+        db,
+        runId: claimed.runId,
+        hostId: workspace.hostId,
+        workspacePath: workspace.workspacePath,
+        environmentId: workspace.environmentId,
+      })) {
+        return reject(
+          "environment_cas",
+          "native environment CAS failed; run is no longer pending or already has a binding",
+        );
+      }
+    }
+    // A chat already bound with a launcher needs no host call here: BB gives this hook 10 s, a busy host took up
+    // to 36 s to prepare, and every message into the PM (owner's or a relay reminder) failed with «did not decide».
+    // nativeContributedEnv refreshes the launcher on the same send.
+    if (bound && !switching) {
+      const cached = await bb.storage.kv.get<ExperimentalPluginProviderEnvEntry[]>(nativeEnvKey(ctx.thread.id));
+      const generation = await bb.storage.kv.get<unknown>(nativeEnvGenerationKey(ctx.thread.id));
+      const placement: NativeEnvPlacement = {
+        hostId: workspace.hostId,
+        cwd: workspace.workspacePath,
+        environmentId: workspace.environmentId,
+      };
+      if (nativeCacheIsCurrent(selected, cached, generation, placement)) {
+        traceNativeDispatch(bb.log, "dispatch.proceed", { ...base, reason: "bound_cached_env" });
+        return { action: "proceed" };
+      }
+    }
+    traceNativeDispatch(bb.log, "host.call", { ...base, reason: "prepareNativeClaude", host: workspace.hostId });
+    const prepared = await host.call("prepareNativeClaude", {
+      helper: Boolean(selected.parentRunId),
+      cwd: workspace.workspacePath,
+      agentId: selected.agentId,
+      agentsJson: selected.agentsJson,
+      ...directoryMoveCapability(bb, selected),
+    }, { hostId: workspace.hostId }) as {
+      env: ExperimentalPluginProviderEnvEntry[];
+      agentId: string;
+    };
+    await bb.storage.kv.set(nativeThreadKey(ctx.thread.id), selected);
+    await rememberNativeEnv(bb, ctx.thread.id, selected, prepared, {
+      hostId: workspace.hostId,
+      cwd: workspace.workspacePath,
+      environmentId: workspace.environmentId,
+    });
+    if (switching) await bb.storage.kv.delete(switchKey);
+    traceNativeDispatch(bb.log, "dispatch.proceed", { ...base, reason: "ok" });
+    return { action: "proceed" };
+  } catch (error) {
+    return reject("exception", (error as Error).message);
+  }
+}
+
+/** How long contributeEnv waits for a fresh launcher when a cached one exists; BB's own limit is 5 s. */
+export const NATIVE_ENV_REFRESH_BUDGET_MS = 2_500;
+
+export async function nativeContributedEnv(
+  bb: BbPluginApi,
+  host: HostClient,
+  ctx: { threadId: string | null; hostId: string },
+): Promise<ExperimentalPluginProviderEnvEntry[]> {
+  // BB's model catalog asks with threadId null (helper-bb-shim.ts ProviderEnvContext): no thread, no native session.
+  const threadId = ctx.threadId;
+  if (!threadId) return [];
+  // A failed selection lookup is not the same as a verified ordinary thread. Let the storage
+  // error reach the composed resolver; otherwise a successful guard lookup can make a native
+  // helper start without its required launcher.
+  const selected = await bb.storage.kv.get<NativeSelection>(nativeThreadKey(threadId));
+  if (!selected) return [];
+  let cached: ExperimentalPluginProviderEnvEntry[] | undefined;
+  let cacheUsable = false;
+  try {
+    cached = await bb.storage.kv.get<ExperimentalPluginProviderEnvEntry[]>(nativeEnvKey(threadId));
+    const generation = await bb.storage.kv.get<unknown>(nativeEnvGenerationKey(threadId));
+    const thread = await bestEffort(bb.log, "native dispatch thread read", bb.sdk.threads.get({ threadId }), null);
+    const environmentId = thread && typeof thread.environmentId === "string" ? thread.environmentId.trim() : "";
+    const environment = environmentId
+      ? await bestEffort(bb.log, "native dispatch environment read", bb.sdk.environments.get({ environmentId }), null)
+      : null;
+    const path = environment && typeof environment.path === "string" ? environment.path.trim() : "";
+    const envHost = environment && typeof environment.hostId === "string" && environment.hostId.trim()
+      ? environment.hostId.trim()
+      : ctx.hostId;
+    const placement: NativeEnvPlacement = {
+      hostId: envHost,
+      cwd: path.startsWith("/") ? path : null,
+      environmentId: environment ? environmentId || null : null,
+    };
+    cacheUsable = nativeCacheIsCurrent(selected, cached, generation, placement, environment !== null);
+    const fallbackIdentity = nativeCacheIdentityMatches(selected, cached, nativeEnvBinding(generation));
+    // Standalone chats retain the pre-existing cached launcher if a refresh for a changed placement fails;
+    // the selection token still prevents a late profile A refresh from becoming profile B's cache.
+    const fallback = (cacheUsable || (!selected.parentRunId && fallbackIdentity)) && cached?.length ? cached : null;
+    if (path.startsWith("/") && envHost && (!ctx.hostId || envHost === ctx.hostId)) {
+      try {
+        traceNativeDispatch(bb.log, "host.call", {
+          thread: threadId,
+          token: selected.token,
+          reason: "prepareNativeClaude",
+          host: envHost,
+          phase: "contributeEnv",
+        });
+        const refresh = (async () => {
+          const prepared = await host.call("prepareNativeClaude", {
+            helper: Boolean(selected.parentRunId),
+            cwd: path,
+            agentId: selected.agentId,
+            agentsJson: selected.agentsJson,
+            ...directoryMoveCapability(bb, selected),
+          }, { hostId: envHost }) as {
+            env: ExperimentalPluginProviderEnvEntry[];
+            agentId: string;
+          };
+          const currentSelection = await bb.storage.kv.get<NativeSelection>(nativeThreadKey(threadId));
+          if (!currentSelection || currentSelection.token !== selected.token) {
+            throw new Error("native_launcher_refresh_stale_selection");
+          }
+          const currentThread = await bestEffort(bb.log, "native dispatch refresh thread read", bb.sdk.threads.get({ threadId }), null);
+          const currentEnvironmentId = currentThread && typeof currentThread.environmentId === "string" ? currentThread.environmentId.trim() : "";
+          const currentEnvironment = currentEnvironmentId
+            ? await bestEffort(bb.log, "native dispatch refresh environment read", bb.sdk.environments.get({ environmentId: currentEnvironmentId }), null)
+            : null;
+          const currentPath = currentEnvironment && typeof currentEnvironment.path === "string" ? currentEnvironment.path.trim() : "";
+          const currentHost = currentEnvironment && typeof currentEnvironment.hostId === "string" && currentEnvironment.hostId.trim()
+            ? currentEnvironment.hostId.trim()
+            : ctx.hostId;
+          const currentPlacement: NativeEnvPlacement = {
+            hostId: currentHost,
+            cwd: currentPath.startsWith("/") ? currentPath : null,
+            environmentId: currentEnvironment ? currentEnvironmentId || null : null,
+          };
+          if (currentPlacement.hostId !== placement.hostId || currentPlacement.cwd !== placement.cwd || currentPlacement.environmentId !== placement.environmentId) {
+            throw new Error("native_launcher_refresh_stale_placement");
+          }
+          await rememberNativeEnv(bb, threadId, selected, prepared, placement);
+          return prepared.env;
+        })();
+        // BB drops this plugin's env after 5 s, and the PM would start without its agent: a slow host gets the
+        // cached launcher now, and the refresh still lands in the cache for the next turn.
+        refresh.catch((cause: unknown) => bb.log.warn(`Lane Pilot: native launcher refresh failed: ${cause instanceof Error ? cause.message : String(cause)}`));
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const late = new Promise<null>((resolve) => { timer = setTimeout(() => resolve(null), NATIVE_ENV_REFRESH_BUDGET_MS); });
+        const fresh = await Promise.race([refresh, late]).finally(() => clearTimeout(timer));
+        if (fresh) return fresh;
+        if (fallback) return fallback;
+        throw new Error("native_helper_launcher_refresh_timeout");
+      } catch (error) {
+        if (fallback) return fallback;
+        throw error;
+      }
+    }
+    if (fallback) return fallback;
+    if (selected.parentRunId) throw new Error("native_helper_launcher_unavailable");
+    return [];
+  } catch (error) {
+    if (cacheUsable && cached?.length) return cached;
+    if (selected?.parentRunId) throw error;
+    return [];
+  }
+}

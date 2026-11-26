@@ -8,6 +8,7 @@
     "en": "Answers one technical question by a throw-away experiment inside a time box: the question, the experiment, the result and the decision in .agents/planning/spikes/; a finished spike can be wrapped into a skill draft.",
     "ru": "Отвечает на один технический вопрос одноразовым экспериментом в рамке времени: вопрос, опыт, результат и решение в .agents/planning/spikes/; готовый спайк можно свернуть в черновик скилла."
   },
+  "category": "code",
   "examples": {
     "ru": [
       "Сделай спайк: потянет ли SQLite такой поиск",

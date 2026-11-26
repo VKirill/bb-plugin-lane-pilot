@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import { BB_SHIM_PROVIDER_IDS, createBbShimEnv, createRoleMarkerEnv, mountBbShim } from "../../src/rooms/native-agent/server/helper-bb-shim";
-import { nativeContributedEnv } from "../../src/rooms/native-agent/native-dispatch";
+import { BB_SHIM_PROVIDER_IDS, createBbShimEnv, createRoleMarkerEnv, mountBbShim } from "../../src/rooms/native-agent/server/services/helper-bb-shim";
+import { nativeContributedEnv } from "../../src/rooms/native-agent/server/services/native-dispatch";
 
 // Audit 2026-10-08 round 3, P0-2: Codex, OpenCode and Cursor threads of Lane Pilot get the bb guard wrappers first on PATH.
 const SHIM = { dir: "/data/bb-shim", path: "/data/bb-shim:/usr/local/bin:/usr/bin" };
@@ -21,13 +21,23 @@ function setup(callHost: () => Promise<unknown> = async () => SHIM, options: { r
 
 describe("the bb guard wrappers of a Codex, OpenCode or Cursor thread", () => {
   it("puts the machine's wrapper PATH on a writer or helper thread", async () => {
-    for (const role of ["writer", "pm-reader", "plan-critic", "code-critic", "specialist", "self-repair", "docs-nightly"]) {
+    for (const role of ["pm-reader", "plan-critic", "code-critic", "specialist", "self-repair", "docs-nightly"]) {
       const { contribute, host } = setup(undefined, { role });
       const entries = await contribute({ threadId: "thr_1", hostId: "ovh" });
       expect(entries).toEqual([expect.objectContaining({ name: "LANE_PILOT_ROLE", value: role }), expect.objectContaining({ name: "PATH", value: SHIM.path }), expect.objectContaining({ name: "LANE_PILOT_CHATS", value: "thr_1" })]);
       expect(entries[1]!.reason).toContain(role);
       expect(host.call).toHaveBeenCalledWith("prepareBbShim", { requestedHostId: "ovh" }, expect.objectContaining({ hostId: "ovh" }));
     }
+    const { contribute, host } = setup(undefined, { role: "writer" });
+    const writerEntries = await contribute({ threadId: "thr_1", hostId: "ovh" }, "codex");
+    expect(writerEntries).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: "LANE_PILOT_ROLE", value: "writer" }),
+      expect.objectContaining({ name: "PATH", value: SHIM.path }),
+      expect.objectContaining({ name: "LANE_PILOT_CHATS", value: "thr_1" }),
+      expect.objectContaining({ name: "GIT_SSH_COMMAND", value: "/usr/bin/false" }),
+      expect.objectContaining({ name: "GIT_TERMINAL_PROMPT", value: "0" }),
+    ]));
+    expect(host.call).toHaveBeenCalledWith("prepareBbShim", { requestedHostId: "ovh" }, expect.objectContaining({ hostId: "ovh" }));
   });
 
   it("leaves the owner's own chats and the PM alone", async () => {
@@ -63,7 +73,11 @@ describe("the bb guard wrappers of a Codex, OpenCode or Cursor thread", () => {
   it("lets a thread on a host that does not know the call yet start, and logs it", async () => {
     const { contribute, warns } = setup(async () => { throw new Error("unknown host method prepareBbShim"); });
     // The lane marker still goes out: the machine's lane plugins must know it is a Lane Pilot thread.
-    expect(await contribute({ threadId: "thr_1", hostId: "old" })).toEqual([expect.objectContaining({ name: "LANE_PILOT_ROLE", value: "writer" }), expect.objectContaining({ name: "LANE_PILOT_CHATS", value: "thr_1" })]);
+    expect(await contribute({ threadId: "thr_1", hostId: "old" })).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: "LANE_PILOT_ROLE", value: "writer" }),
+      expect.objectContaining({ name: "LANE_PILOT_CHATS", value: "thr_1" }),
+      expect.objectContaining({ name: "GIT_SSH_COMMAND", value: "/usr/bin/false" }),
+    ]));
     expect(warns.join("\n")).toContain("does not know prepareBbShim");
   });
 
@@ -126,7 +140,12 @@ describe("which providers get the wrappers", () => {
     const { registered } = mounted(mountBbShim);
     expect([...registered.keys()].sort()).toEqual([...BB_SHIM_PROVIDER_IDS].sort());
     expect(BB_SHIM_PROVIDER_IDS).toEqual(expect.arrayContaining(["codex", "opencode2", "acp-cursor", "devin"]));
-    expect(await registered.get("codex")!({ threadId: "thr_1", hostId: "ovh" })).toEqual([expect.objectContaining({ name: "LANE_PILOT_ROLE", value: "writer" }), expect.objectContaining({ name: "PATH", value: SHIM.path }), expect.objectContaining({ name: "LANE_PILOT_CHATS", value: "thr_1" })]);
+    expect(await registered.get("codex")!({ threadId: "thr_1", hostId: "ovh" })).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: "LANE_PILOT_ROLE", value: "writer" }),
+      expect.objectContaining({ name: "PATH", value: SHIM.path }),
+      expect.objectContaining({ name: "LANE_PILOT_CHATS", value: "thr_1" }),
+      expect.objectContaining({ name: "GIT_SSH_COMMAND", value: "/usr/bin/false" }),
+    ]));
   });
 
   it("a Claude Code thread Lane Pilot started gets the lane marker alone, no PATH shim; the PM and the owner's chats get nothing", async () => {

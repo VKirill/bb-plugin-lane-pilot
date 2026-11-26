@@ -4,7 +4,7 @@ Source: `docs/workflow-engine.md`, `docs/workflow-router.md`, `docs/workflow-tri
 
 ## Draft and patch
 
-`draft_create {name, description, scope: global|project, workflowId?}`: `project` writes to the project's `.lane-pilot/workflows/` on its machine, `global` to the owner's `~/.lane-pilot/workflows/` (usable in every project). `draft_patch {draftId, ops, expectedVersion?}`: 1-40 ops applied in order as one version: `add_node`, `update_node {id, set, unset}`, `remove_node`, `add_edge`, `update_edge`, `remove_edge` (by index or `from`/`to`/`when`), `set_meta`. An unfinished draft is saved with its problems; only an op that cannot be applied (unknown node, taken id) refuses the whole patch. The validator's problems come back with `node` and `edge` indexes: fix errors before the next step; warnings (`model_ignored`, a schedule with a bad cron, a join that needs a reducer) are read, not ignored.
+`draft_create {name, description, scope: global|project, workflowId?}`: `project` writes to the project's `.lane-pilot/workflows/` on its machine, `global` to the owner's `~/.lane-pilot/workflows/` (usable in every project). `draft_patch {draftId, ops, expectedVersion?}`: 1-40 ops applied in order as one version: `add_node`, `update_node {id, set, unset}`, `remove_node`, `add_edge`, `update_edge`, `remove_edge` (by index or `from`/`to`/`when`), `set_meta`. An unfinished draft is saved with its problems; only an op that cannot be applied (unknown node, taken id) refuses the whole patch. The validator's problems come back with `node` and `edge` indexes: fix errors before the next step; warnings (a schedule with a bad cron, a join that needs a reducer) are read, not ignored.
 
 ## Test
 

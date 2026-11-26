@@ -2,21 +2,20 @@ import { describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import plugin from "../server";
 import { en, ru } from "@lane-pilot/i18n";
-import { readFileSync } from "node:fs";
-import { UI_CATALOG, VISIBLE_CATALOG } from "@lane-pilot/settings-catalog";
-import { DEFAULT_SILENCE_NUDGE_MIN } from "../src/rooms/writer/server/writer-silence";
-import { parseIntegrationGateSettings } from "../src/rooms/contracts/integration-gate";
 import { bookkeepingSetting } from "@lane-pilot/settings-catalog";
-import { DEFAULT_USAGE_SKIP_PERCENT } from "../src/rooms/usage/server/provider-usage";
+import { SETTINGS_REGISTRY } from "../src/rooms/settings-registry";
+import { DEFAULT_SILENCE_NUDGE_MIN } from "../src/rooms/writer/server/services/writer-silence";
+import { parseIntegrationGateSettings } from "../src/rooms/contracts/integration-gate";
+import { DEFAULT_USAGE_SKIP_PERCENT } from "../src/rooms/usage/settings";
 
-const row = (key: string) => VISIBLE_CATALOG.find((item) => item.storageKey === key);
+const row = (key: string) => SETTINGS_REGISTRY.visible.find((item) => item.storageKey === key);
 
 describe("settings that code reads and the catalog now lists", () => {
-  it("keeps every hand-added row of scripts/ui-catalog-hand.json in the catalog, which the generator reproduces from it", () => {
-    const hand = JSON.parse(readFileSync(new URL("../scripts/ui-catalog-hand.json", import.meta.url), "utf8")) as { rows: Array<{ id: string; storageKey: string }> };
-    expect(hand.rows.length).toBeGreaterThan(50);
-    for (const handRow of hand.rows) expect(UI_CATALOG.find((item) => item.id === handRow.id)?.storageKey, handRow.id).toBe(handRow.storageKey);
-    expect(UI_CATALOG.map((item) => item.index)).toEqual(UI_CATALOG.map((_, index) => index));
+  it("indexes every live visible setting sequentially with unique keys", () => {
+    const all = SETTINGS_REGISTRY.all;
+    expect(all.length).toBeGreaterThan(200);
+    expect(SETTINGS_REGISTRY.visible.every((item) => item.uiStatus === "editable" || item.uiStatus === "readonly")).toBe(true);
+    expect(all.every((item, idx) => item.index === idx)).toBe(true);
   });
 
   it("has a row for each, with the default the code uses", () => {

@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { en, ru } from "@lane-pilot/i18n";
 import { SETTING_META, settingLabelIsRaw } from "../src/rooms/ui-shell/ui/setting-copy";
-import { VISIBLE_CATALOG } from "@lane-pilot/settings-catalog";
-import { estimateTokens } from "../src/rooms/memory/memory";
+import { SETTINGS_REGISTRY } from "../src/rooms/settings-registry";
+import { estimateTokens } from "../src/rooms/memory/models/memory";
 
 const PICKER_PREFIXES = [
   "writer.provider", "writer.model", "writer.reasoning_effort", "writer.service_tier",
@@ -18,7 +18,7 @@ const PICKER_PREFIXES = [
 
 function uniqueEditable() {
   const seen = new Set<string>();
-  return VISIBLE_CATALOG.filter((row) => {
+  return SETTINGS_REGISTRY.visible.filter((row) => {
     if (row.uiStatus !== "editable") return false;
     if (row.storageKey.startsWith("jev.")) return false;
     if (PICKER_PREFIXES.includes(row.storageKey)) return false;

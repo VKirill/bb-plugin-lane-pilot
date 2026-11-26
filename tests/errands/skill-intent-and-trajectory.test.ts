@@ -4,23 +4,21 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { forgetSecrets, registerSecrets } from "@lane-pilot/kit";
 import { openDatabase } from "../../src/rooms/plugin-db";
 import { migrations } from "../../src/rooms/migrations";
-import { ERRAND_EPISODE_TABLE } from "../../src/rooms/contracts/server";
 import {
   SKILL_DOMAIN_SYNONYMS,
   TRAJECTORY_DELTA_TABLE,
-  enrichEpisode,
   episodeSkills,
   hasExplicitSkillIntent,
-  listUnprocessedTrajectoryDeltas,
-  markTrajectoryDeltasProcessed,
-  pendingEpisodes,
-  recordErrandEpisode,
-  recordTrajectoryDelta,
   resolveSkillIntent,
   trajectoryDeltaMigrations,
   type SkillCatalogItem,
   type TrajectoryInterventionKind,
 } from "../../src/rooms/errands";
+import {
+  listUnprocessedTrajectoryDeltas,
+  markTrajectoryDeltasProcessed,
+  recordTrajectoryDelta,
+} from "../../src/rooms/errands/server";
 import migrationLock from "../fixtures/migrations.lock.json";
 
 const CATALOG: readonly SkillCatalogItem[] = [
@@ -187,99 +185,6 @@ describe("unoffered SKILL.md reads & direct skill calls", () => {
     ]);
     expect(skills.some((s) => s.name.includes("bash") || s.name === "bb")).toBe(false);
     expect(logs.some((line) => line.includes("[errands.skillIntent] unoffered_skills") && line.includes("impeccable-ui") && line.includes("ru-text"))).toBe(true);
-  });
-
-  it("persists offered:false, read:true skills into summary_json during full enrichEpisode", async () => {
-    const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
-    const db = openDatabase(bb);
-    const now = 1_730_000_000_000;
-
-    try {
-      db.prepare(
-        `INSERT INTO lane_pilot_wf_run
-          (id, idem_key, workflow_id, workflow_version, workflow_sha256, definition_json, project_id, status, reason, inputs_json, output_json, created_at, updated_at)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-      ).run(
-        "wfrun-design-1",
-        "idem-design-1",
-        "errand",
-        1,
-        "sha",
-        "{}",
-        "proj-vechkasov",
-        "succeeded",
-        null,
-        JSON.stringify({ title: "Redesign VECHKASOV.RU landing", skills: [] }),
-        JSON.stringify({ state: "done", verified: "done_checked" }),
-        now,
-        now,
-      );
-
-      db.prepare(
-        `INSERT INTO lane_pilot_wf_effect
-          (id, run_id, step_key, effect_key, kind, state, result_json, created_at, updated_at)
-         VALUES (?,?,?,?,?,?,?,?,?)`,
-      ).run(
-        "eff-design-1",
-        "wfrun-design-1",
-        "work",
-        "spawn",
-        "errand.spawn",
-        "done",
-        JSON.stringify({ threadId: "thr-design-1" }),
-        now,
-        now,
-      );
-
-      const events = [
-        toolCall(1, "read", { path: "/repo/.agents/skills/impeccable-ui/SKILL.md" }),
-        toolCall(2, "read", { path: "/repo/.agents/skills/ru-text/SKILL.md" }),
-        toolCall(3, "skill", { id: "ru-text" }),
-        toolCall(4, "bb:bash", { command: "echo ok" }),
-      ];
-
-      await recordErrandEpisode({ db, runId: "wfrun-design-1", readEvents: async () => events });
-      const [pending] = pendingEpisodes(db, now + 400_000, 10);
-      expect(pending).toBeDefined();
-      expect(pending?.skillsOffered).toEqual([]);
-
-      const logs: string[] = [];
-      const outcome = await enrichEpisode(pending!, {
-        db,
-        now: () => now + 400_000,
-        log: (m) => logs.push(m),
-        readOutline: async () => "User: polish VECHKASOV.RU landing\nAssistant: applied design & copy skills",
-        readEvents: async () => events,
-        runModel: async () => ({
-          model: "fake/analyst-1",
-          text: JSON.stringify({
-            goal: "Polish VECHKASOV.RU landing page design and copy",
-            params: [{ name: "site", value: "vechkasov.ru" }],
-            steps_that_worked: ["read design and copywriting skills", "checked layout"],
-            traps: [],
-            check: "verified landing copy and layout",
-            failure_class: null,
-            process_key_proposed: "web|landing-polish",
-          }),
-        }),
-      });
-
-      expect(outcome).toBe("enriched");
-      const stored = db
-        .prepare(`SELECT enrichment_state, summary_json FROM ${ERRAND_EPISODE_TABLE} WHERE run_id = ?`)
-        .get("wfrun-design-1") as { enrichment_state: string; summary_json: string };
-      expect(stored.enrichment_state).toBe("enriched");
-      const summary = JSON.parse(stored.summary_json) as {
-        skills: Array<{ name: string; offered: boolean; read: boolean; used: boolean }>;
-      };
-      expect(summary.skills).toEqual([
-        { name: "impeccable-ui", offered: false, read: true, used: false },
-        { name: "ru-text", offered: false, read: true, used: true },
-      ]);
-      expect(logs.some((line) => line.includes("[errands.skillIntent] unoffered_skills"))).toBe(true);
-    } finally {
-      await harness.lifecycle.dispose();
-    }
   });
 });
 

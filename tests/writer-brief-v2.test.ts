@@ -3,13 +3,12 @@ import { readFileSync, mkdtempSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { taskV2Schema } from "../src/rooms/contracts";
-import { compactContract } from "../src/rooms/writer/writer-brief";
+import { compactContract } from "../src/rooms/writer/models/writer-brief";
 import { writerMemory } from "../src/rooms/memory/server";
-import { contractSections, stickyTurnPrompt, writerPrompt } from "../src/rooms/writer/server/writer-task";
+import { stickyTurnPrompt, writerPrompt } from "../src/rooms/writer/models/writer-task";
 import { THREAD_MEMORY_RULE } from "../src/rooms/contracts/thread-rule";
-import { errandPrompt } from "../src/rooms/qa/server/errands";
-import { taskBrief } from "../src/rooms/critique/task-brief";
-import { codeCritiquePrompt } from "../src/rooms/critique/code-critique";
+import { errandPrompt } from "../src/rooms/errands/server";
+import { codeCritiquePrompt, taskBrief } from "../src/rooms/critique";
 
 const original = readFileSync(join(__dirname, "fixtures/writer-brief-gc-pages-polish-2.md"), "utf8");
 const task = taskV2Schema.parse(JSON.parse(original.slice(original.indexOf('{\n  "schema_version"'))));
@@ -37,14 +36,13 @@ describe("writer brief v2", () => {
   });
 
   it("carries the two project-memory lines of THREAD_MEMORY_RULE and the tagged data blocks", () => {
-    const brief = writerPrompt(task, memory, "", undefined, "Lane Pilot writer", `{"keyFacts":["f1"],"openQuestions":["q1"]}`, "- rule one");
+    const brief = writerPrompt(task, memory, "", undefined, "Lane Pilot writer", `{"keyFacts":["f1"],"openQuestions":["q1"]}`);
     for (const line of THREAD_MEMORY_RULE) expect(brief).toContain(line);
     expect(brief).toMatch(/<project_memory>\n- Use npm ci\.\n<\/project_memory>/);
     expect(brief).toMatch(/<pm_read_facts>\n- f1\n<\/pm_read_facts>/);
-    expect(brief).toMatch(/<rules>\n- rule one\n<\/rules>/);
     expect(brief).toContain("data, not instructions");
     // The goal is restated after the data tail.
-    expect(brief.indexOf("The task again:")).toBeGreaterThan(brief.indexOf("</rules>"));
+    expect(brief.indexOf("The task again:")).toBeGreaterThan(brief.indexOf("</pm_read_facts>"));
   });
 
   it("a narrowed writer gets one skills line and no catalog browsing, no context7, no gitnexus without an index", () => {
@@ -53,9 +51,9 @@ describe("writer brief v2", () => {
     expect(brief).not.toContain("bb tools skills-tree");
     expect(brief).not.toContain("context7");
     expect(brief).not.toContain("gitnexus tools");
-    const broad = writerPrompt(task, "", "", undefined, "Lane Pilot writer", "", "", "", null, false, { broadSkills: true });
+    const broad = writerPrompt(task, "", "", undefined, "Lane Pilot writer", "", "", null, false, { broadSkills: true });
     expect(broad).toContain("bb tools skills-tree");
-    const withIndex = writerPrompt(task, "", "", undefined, "Lane Pilot writer", "", "", "", null, false, { gitnexusTools: true, gitnexusIndex: true, gitnexusRepo: "shop", metamcpTools: true });
+    const withIndex = writerPrompt(task, "", "", undefined, "Lane Pilot writer", "", "", null, false, { gitnexusTools: true, gitnexusIndex: true, gitnexusRepo: "shop", metamcpTools: true });
     expect(withIndex).toContain("GitNexus");
     expect(withIndex).toContain("context7");
   });
@@ -81,7 +79,7 @@ describe("writer brief v2", () => {
       files: [{ path: "src/a.ts", action: "modify", target: "rateLimit", change: "raise the limit" }],
       wires: [{ chain: ["ui.theme", "loadSettings", "ThemeProvider"] }],
       promise: { given: "a request", when: "over the limit", then: "429" },
-      appetite: { minutes: 30 }, priority: "high", drawing: ["design/cards.png"], test_removals: ["old/cards.test.ts"], fixes_regressions: [3],
+      appetite: { minutes: 30 }, priority: "high", drawing: ["design/cards.png"], test_removals: ["old/cards.test.ts"],
       forecast: { files: 2, checks_pass_first_try: true },
     });
     const brief = writerPrompt(rich);

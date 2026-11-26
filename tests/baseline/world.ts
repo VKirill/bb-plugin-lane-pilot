@@ -4,10 +4,10 @@ import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { vi } from "vitest";
-import { createBaselineRoom, type BaselineApi, type RegressionApi } from "../../src/rooms/baseline/server";
+import { createBaseline, type BaselineApi } from "../../src/rooms/baseline/server";
 import { createRollback, type RollbackApi } from "../../src/rooms/rollback/server";
 import { createAttempt, createRun, createTask, loadProjectSettings, openDatabase, saveProjectSetting } from "../../src/rooms/plugin-db";
-import { createWorktree, integrateWorktree, removeLaneWorktree } from "../../src/rooms/verification/git-integrate";
+import { createWorktree, integrateWorktree, removeLaneWorktree } from "../../src/rooms/worktree";
 import { mergeInfo, revertCommitsInWorktree, worktreeState } from "../../src/rooms/verification/git-rollback";
 import { bisectGateOnHost, runGateOnHost } from "../../src/rooms/verification/integration-gate-host";
 import { resolveGitOwnershipBase } from "../../src/rooms/verification/git-ownership";
@@ -76,7 +76,7 @@ export async function world(options: { settings?: Record<string, unknown>; setti
     }),
   };
   Object.assign(services, createRollback(ctx as never, services));
-  Object.assign(services, createBaselineRoom(ctx as never, services));
+  Object.assign(services, createBaseline(ctx as never, services));
 
   const contract = (id: string, verification: Array<string | { command: string; timeout_sec?: number; secrets?: string[] }>) => ({
     schema_version: 2, id, title: `title of ${id}`, risk: "low", lane: "server", project_cwd: base, read_first: [], interfaces: [], invariants: [], out_of_scope: [],
@@ -109,7 +109,7 @@ export async function world(options: { settings?: Record<string, unknown>; setti
 
   const worktrees = () => git(base, "worktree", "list").trim().split("\n").length;
   return {
-    root, base, db, bb, calls, logs, send, ran, runs, services: services as { baseline: BaselineApi; regression: RegressionApi; rollback: RollbackApi }, acceptedTask, pendingTask, worktrees,
+    root, base, db, bb, calls, logs, send, ran, runs, services: services as { baseline: BaselineApi; rollback: RollbackApi }, acceptedTask, pendingTask, worktrees,
     dispose: async () => { await harness.lifecycle.dispose(); await rm(root, { recursive: true, force: true }); },
   };
 }

@@ -8,6 +8,7 @@
     "en": "Audits whether every promise and requirement of a phase has a check that would fail without the work, samples the checks against a broken copy, and writes VALIDATION.md with the gaps.",
     "ru": "Проверяет, у каждого ли обещания и требования фазы есть проверка, которая упала бы без работы, пробует проверки на испорченной копии и пишет VALIDATION.md с пробелами."
   },
+  "category": "qa",
   "examples": {
     "ru": [
       "Проверь покрытие фазы проверками",

@@ -1,6 +1,7 @@
 import type Database from "better-sqlite3";
 
 import { sha256Hex } from "@lane-pilot/kit";
+import type { StepFactColumns } from "./run-facts";
 
 /**
  * The workflow journal: run, step, join arrival, effect and an append-only event log. Every change of a step is a
@@ -136,7 +137,7 @@ export type StepRow = {
   state: StepState; attempt: number; input_json: string; output_json: string | null; error: string | null; await_json: string | null;
   spawn_key: string | null; harness_version: string | null; receipt_json: string | null; routed: number; fan_count: number | null;
   started_at: number | null; ended_at: number | null; updated_at: number;
-};
+} & Partial<StepFactColumns>;
 
 export type EffectRow = {
   id: string; run_id: string; step_key: string; effect_key: string; kind: string; state: "intended" | "done" | "failed" | "unknown";
@@ -162,7 +163,7 @@ export function createJournal(db: Database.Database, now: () => number = Date.no
 
   /** Moves a step along the table; false (and a logged refusal) when it is no longer in `from`. */
   function moveStep(runId: string, stepKey: string, from: StepState | readonly StepState[], to: StepState, patch: Partial<Pick<StepRow,
-    "attempt" | "output_json" | "error" | "await_json" | "spawn_key" | "harness_version" | "receipt_json" | "fan_count" | "input_json">> & { started?: boolean; ended?: boolean } = {}): boolean {
+    "attempt" | "output_json" | "error" | "await_json" | "spawn_key" | "harness_version" | "receipt_json" | "fan_count" | "input_json"> & StepFactColumns> & { started?: boolean; ended?: boolean } = {}): boolean {
     const froms: StepState[] = typeof from === "string" ? [from] : [...from];
     for (const state of froms) if (!STEP_TRANSITIONS[state].includes(to)) throw new Error(`illegal workflow step transition ${state} -> ${to}`);
     const sets = ["state=?", "updated_at=?"], values: unknown[] = [to, now()];
@@ -230,9 +231,9 @@ export function wfLatestPipelineRunId(db: WfReadDb, linkRunId: string, linkTaskI
     .get(linkRunId, linkTaskId) as { id: string } | undefined)?.id ?? null;
 }
 
-/** The step key of a run's `writer` node, newest visit first. */
+/** The step key of a run's writer node, newest visit first. */
 export function wfPipelineWriterStepKey(db: WfReadDb, runId: string): string | null {
-  return (db.prepare("SELECT step_key FROM lane_pilot_wf_step WHERE run_id=? AND node_id='writer' ORDER BY visit DESC LIMIT 1")
+  return (db.prepare("SELECT step_key FROM lane_pilot_wf_step WHERE run_id=? AND node_id IN ('writer','critique','validate','wait-turn','spawn') ORDER BY CASE node_id WHEN 'writer' THEN 0 WHEN 'critique' THEN 1 WHEN 'validate' THEN 2 WHEN 'wait-turn' THEN 3 ELSE 4 END, visit DESC LIMIT 1")
     .get(runId) as { step_key: string } | undefined)?.step_key ?? null;
 }
 
@@ -311,11 +312,6 @@ export function wfWorkflowIdOfRun(db: WfReadDb, runId: string): string | null {
 /** The run's idempotency key and parent (a walk climbs parents to find a phase or schedule key). */
 export function wfRunIdemParent(db: WfReadDb, runId: string): { idem_key: string | null; parent_run_id: string | null } | undefined {
   return db.prepare("SELECT idem_key, parent_run_id FROM lane_pilot_wf_run WHERE id=?").get(runId) as { idem_key: string | null; parent_run_id: string | null } | undefined;
-}
-
-/** The status of the run an idempotency key points at (a retry key is taken only when the prior run ended badly). */
-export function wfStatusByIdemKey(db: WfReadDb, idemKey: string): string | null {
-  return (db.prepare("SELECT status FROM lane_pilot_wf_run WHERE idem_key=?").get(idemKey) as { status: string } | undefined)?.status ?? null;
 }
 
 /** The earliest workflow run a Lane Pilot run linked inside a window (a route's outcome is the graph it started). */
@@ -434,11 +430,6 @@ export function wfStepExists(db: WfReadDb, runId: string, stepKey: string): bool
   return Boolean(db.prepare("SELECT 1 FROM lane_pilot_wf_step WHERE run_id=? AND step_key=?").get(runId, stepKey));
 }
 
-/** A run's status by its idempotency key, or null (the replay's once-a-day guard). */
-export function wfRunStatusByIdem(db: WfReadDb, idemKey: string): string | null {
-  return (db.prepare("SELECT status FROM lane_pilot_wf_run WHERE idem_key=?").get(idemKey) as { status: string } | undefined)?.status ?? null;
-}
-
 /** A run's workflow definition JSON (the schedule executor's final-rule read). */
 export function wfRunDefinitionJson(db: WfReadDb, id: string): string | undefined {
   return (db.prepare("SELECT definition_json FROM lane_pilot_wf_run WHERE id=?").get(id) as { definition_json?: string } | undefined)?.definition_json;
@@ -471,10 +462,6 @@ export function wfErrandSpawnThreadIds(db: WfReadDb, runId: string): string[] {
 }
 
 export const WF_RUN_TABLE = "lane_pilot_wf_run";
-
-export function wfRunStatusByIdemKey(db: WfReadDb, key: string): string | undefined {
-  return (db.prepare("SELECT status FROM lane_pilot_wf_run WHERE idem_key=?").get(key) as { status: string } | undefined)?.status;
-}
 
 export function wfLiveRun(db: WfReadDb, workflowId: string, projectId: string): boolean {
   return Boolean(db.prepare("SELECT 1 FROM lane_pilot_wf_run WHERE workflow_id=? AND project_id=? AND status IN ('running','waiting') LIMIT 1").get(workflowId, projectId));
@@ -559,10 +546,6 @@ export function listWfRunsByIdsOrdered(db: WfReadDb, ids: readonly string[], pro
       .all(...chunk, ...(projectId ? [projectId] : [])) as RunRow[]));
   }
   return rows.sort((a, b) => a.created_at - b.created_at);
-}
-
-export function wfTerminalByIdemKey(db: WfReadDb, key: string): { status: string } | undefined {
-  return db.prepare("SELECT status FROM lane_pilot_wf_run WHERE idem_key=?").get(key) as { status: string } | undefined;
 }
 
 export type WfStepFrictionFact = { runId: string; nodeId: string; state: string; answerKind: string | null; error: string | null; updatedAt: number };

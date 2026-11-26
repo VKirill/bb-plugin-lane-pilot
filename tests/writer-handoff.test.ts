@@ -2,8 +2,8 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
 import type { PrototypeConfig, TaskV2 } from "../src/rooms/contracts";
 import { createAttempt, createRun, createTask, getAttempt, openDatabase, setRunThread } from "../src/rooms/plugin-db";
-import { createWriterSpawn } from "../src/rooms/writer/server/spawn";
-import { HANDOFF_BRIEF_MAX_CHARS, buildHandoffBrief, collectHandoffBrief } from "../src/rooms/writer/server/writer-handoff";
+import { createWriterSpawn } from "../src/rooms/writer/server/services/spawn";
+import { HANDOFF_BRIEF_MAX_CHARS, buildHandoffBrief, collectHandoffBrief } from "../src/rooms/writer/server/services/writer-handoff";
 
 const INSTRUCTION = "Do not start over; review them, finish the remaining work, run the checks, end with your summary.";
 
@@ -115,7 +115,7 @@ describe("fallback spawn with a continuation", () => {
       },
       effectiveProjectSettings: async () => ({ values: { "memory.enabled": false, "adoc.040": "auto" } }),
     };
-    const writer = createWriterSpawn(ctx as never, { providerBreaker: { decide: () => ({ allow: true }) }, ruleScan: { chainForRun: async () => [] } } as never);
+    const writer = createWriterSpawn({ ...ctx, scopesForWorkspace: async () => [] } as never, { providerBreaker: { decide: () => ({ allow: true }) } } as never);
     const result = await writer.spawnWriterAttempt({
       projectId: "P", runId: "run", taskId: "t1", attemptId: "a1", config, task, plan: "write", pmThreadId: "pm",
       emergency: { providerId: "codex", model: "codex-test", reason: "primary_provider_error" },

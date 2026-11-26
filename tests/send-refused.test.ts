@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { sendRefused } from "../src/rooms/writer/server/reopen-attempt";
+import { sendRefused } from "../src/rooms/writer/server/services/reopen-attempt";
 
 // EXT05 review (send-refusal-sdk-contract-audit.md): only BB's dispatch-hook refusal, as the SDK's BbHttpError carries it,
 // proves a turn was not queued; every other failure is «not confirmed».

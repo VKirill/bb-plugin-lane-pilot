@@ -1,5 +1,5 @@
 import type Database from "better-sqlite3";
-import { id, redactKnown } from "@lane-pilot/kit";
+import { id, redactKnown, shouldLogLevel } from "@lane-pilot/kit";
 
 export type SkillEvolutionStatus = "staged" | "published" | "rolled_back";
 
@@ -73,22 +73,13 @@ type RawEvolutionRow = {
   created_at: number;
 };
 
-const LOG_RANK = { debug: 10, info: 20, warn: 30, error: 40, silent: 100 } as const;
-
-function shouldLog(level: "debug" | "info" | "warn"): boolean {
-  const raw = process.env.LOG_LEVEL?.trim().toLowerCase();
-  if (!raw) return true;
-  const threshold = raw in LOG_RANK ? LOG_RANK[raw as keyof typeof LOG_RANK] : LOG_RANK.info;
-  return LOG_RANK[level] >= threshold;
-}
-
 function emitLog(
   options: SkillEvolutionStoreOptions | undefined,
   level: "debug" | "info" | "warn",
   event: string,
   payload: Record<string, unknown>,
 ): void {
-  if (!options?.log || !shouldLog(level)) return;
+  if (!options?.log || !shouldLogLevel(level)) return;
   options.log(`${level.toUpperCase()} [storage.skillEvolution] ${event} ${redactKnown(JSON.stringify(payload))}`);
 }
 

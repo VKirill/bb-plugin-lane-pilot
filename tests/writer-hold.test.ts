@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { PRESENCE_WINDOW_MS, type Presence } from "../src/rooms/owner-presence";
 import { createProviderBreaker } from "@lane-pilot/resilience";
 import { createAttempt, createRun, createTask, getAttempt, listDueWakes, openDatabase, parkAttemptWake, claimAttemptWake } from "../src/rooms/plugin-db";
-import { waitingWriterReason, waitingWriterText, walkWriterChain, writerHold, type WriterHoldDeps } from "../src/rooms/writer/server/writer-hold";
+import { waitingWriterReason, waitingWriterText, walkWriterChain, writerHold, type WriterHoldDeps } from "../src/rooms/writer/server/services/writer-hold";
 
 const NOW = 1_700_000_000_000;
 

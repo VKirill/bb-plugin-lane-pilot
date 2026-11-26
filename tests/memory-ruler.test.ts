@@ -5,12 +5,12 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { parseJudgeReply } from "../packages/memory-core/src";
 import { migrations } from "../src/rooms/migrations";
-import { runMemoryEvalCommand } from "../src/rooms/memory-eval/server/command";
-import { copyOfDatabase, formatRuler, mergeIntoHub, parseRuler, runRuler, wilson, type RulerOptions } from "../src/rooms/memory-eval/server/ruler";
-import { plantSuite, standInEmbedding } from "../src/rooms/memory-eval/server/suite";
-import { SUITE_NOTES, SUITE_PACK_NOTES, SUITE_PROJECT } from "../src/rooms/memory-eval/server/suite-fixture";
+import { runMemoryEvalCommand } from "../src/rooms/memory-eval/server/handlers/command";
+import { copyOfDatabase, formatRuler, mergeIntoHub, parseRuler, runRuler, wilson, type RulerOptions } from "../src/rooms/memory-eval/server/services/ruler";
+import { plantSuite, standInEmbedding } from "../src/rooms/memory-eval/server/services/suite";
+import { SUITE_NOTES, SUITE_PACK_NOTES, SUITE_PROJECT } from "../src/rooms/memory-eval/models/suite-fixture";
 import { setMemoryJudge, type MemoryJudge } from "../src/rooms/memory/server";
-import { setEmbedder } from "../src/rooms/memory/server/embeddings";
+import { setEmbedder } from "../src/rooms/memory/server/services/embeddings";
 
 afterEach(() => { setMemoryJudge(null); setEmbedder(null); });
 

@@ -2,9 +2,9 @@ import { createHash, randomUUID } from "node:crypto";
 import { chmod, lstat, mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { hashPath, lanePilotRoot } from "@lane-pilot/kit";
-import { AGENT_TRASH_SOURCE } from "./agent-trash-source";
+import { AGENT_TRASH_SOURCE } from "./server/services/agent-trash-source";
 
-/** Writers, the live-folder restore and the shell guard name this path. (2026-10-29) not ~/.agents/bin from Claude Lane. */
+/** Writers, the live-folder restore and the shell guard name this path. (2026-10-29) not ~/.agents/bin from the legacy layout. */
 export const AGENT_TRASH_RELATIVE = ".agents/lane-pilot/bin/agent-trash";
 
 export function ownedAgentTrashPath(homeDir: string): string {

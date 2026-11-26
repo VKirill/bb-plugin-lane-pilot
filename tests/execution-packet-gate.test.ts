@@ -3,7 +3,7 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { expect, it } from "vitest";
 import { WorkflowEngine, registerPureActions } from "@lane-pilot/workflow-engine";
 import { builtinWorkflow } from "../src/rooms/workflow/builtin";
-import { registerDispatchExecutors } from "../src/rooms/writer/server/dispatch-workflow";
+import { registerDispatchExecutors } from "../src/rooms/writer/server/handlers/dispatch-workflow";
 import { getAttempt, listStageReceipts, openDatabase, createAttempt, createRun, createTask } from "../src/rooms/plugin-db";
 
 // Live defect: a task whose read_first named 8 CSVs of 10–158 MB burned the paid plan critic and pm-read on every
@@ -90,7 +90,7 @@ it("a malformed read_first window blocks the attempt before pm-read or any paid 
 });
 
 it("a valid packet reaches pm-read, which reuses the gate outcome instead of reading the sources again", async () => {
-  const { db, done, fileReads, hostCalls, spawns } = rig(["notes.txt"], { content: "alpha\nbeta\ngamma\n" });
+  const { db, done, fileReads, hostCalls } = rig(["notes.txt"], { content: "alpha\nbeta\ngamma\n" });
   await done;
   // Windowless: one bounded probe proved the source small, then files.read ran for the gate only — pm-read consumed
   // packetSha256/selectedLines through the edge.

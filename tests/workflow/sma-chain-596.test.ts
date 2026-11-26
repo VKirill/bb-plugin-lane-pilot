@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { LOOP_HOOK_POINTS, parseLoopHookManifest } from "../../src/rooms/workflow/loop-hooks";
+import { LOOP_HOOK_POINTS, parseLoopHookManifest } from "../../src/rooms/workflow/models/loop-hooks";
 import { out, pathOf, task } from "./chain-helpers";
 import { runSim } from "./chain-harness";
 

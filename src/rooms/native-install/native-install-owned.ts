@@ -1,6 +1,5 @@
-import { randomUUID } from "node:crypto";
 import { atomicText } from "../platform";
-import { chmod, lstat, mkdir, readFile, readlink, rename, rm, rmdir, symlink, writeFile } from "node:fs/promises";
+import { chmod, lstat, mkdir, readFile, readlink, rm, rmdir, symlink, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { applyEdits, modify, parse, type ParseError } from "jsonc-parser/lib/esm/main.js";
 import { lstatOrNull, sha256Hex } from "@lane-pilot/kit";

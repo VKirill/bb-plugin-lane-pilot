@@ -2,7 +2,7 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
 import { storeMemoryRecords } from "../packages/memory-core/src";
 import { openDatabase, saveProjectSetting, createRun } from "../src/rooms/plugin-db";
-import { threadMemoryBlock, THREAD_MEMORY_RULE } from "../src/rooms/memory/server/thread-block";
+import { threadMemoryBlock, THREAD_MEMORY_RULE } from "../src/rooms/memory/server/services/thread-block";
 
 /**
  * M2: the L1 showcase every ordinary BB thread gets through contributeInstructions — facts of the project's core shelf

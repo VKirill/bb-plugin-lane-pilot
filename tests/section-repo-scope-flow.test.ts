@@ -6,7 +6,7 @@ import { dirname, join } from "node:path";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import plugin from "../server";
-import * as handlers from "../src/rooms/host-worker/host-handlers";
+import * as handlers from "../src/rooms/host-worker";
 import type { TaskV2 } from "../src/rooms/contracts";
 import { createRun, getAttempt, getTask, getTaskPlan, listAttemptsForTask, listStageReceipts, openDatabase, saveProjectSetting, savePrototypeConfig, setRunThread } from "../src/rooms/plugin-db";
 
@@ -51,7 +51,7 @@ async function setup(writerEdits: (workspace: string) => string) {
     schema_version: 2, display_title: "Тестовая задача", kind: "feature", area: "feature:bot-lib", id: "bot-lib", title: "Change the SDK and the bot", risk: "low", lane: "writer", project_cwd: folder,
     read_first: ["README.md"], interfaces: ["i"], invariants: ["inv"], out_of_scope: ["out"],
     expected_outputs: ["../sdk/src/lib.ts", "src/main.ts"], owns_paths: ["../sdk/src/lib.ts", "src/main.ts"], never_touch: [], depends_on: [],
-    objective: "say new", acceptance: ["lib says new"], verify: "none", verification: [{ command: "test -f src/main.ts", cwd: folder, timeout_sec: 60 }],
+    objective: "say new", acceptance: ["lib says new"], verify: "none", verification: [{ command: "grep -q '\"new\"' src/main.ts", cwd: folder, timeout_sec: 60 }],
   };
   const spawnedAt: string[] = [];
   const hostCalls: Array<{ method: string; input: Record<string, unknown> }> = [];
@@ -154,7 +154,7 @@ describe("a section chat's task that also changes files elsewhere in the same re
     expect(stored).toMatchObject({ project_cwd: env.root, repo_scope: true, owns_paths: ["sdk/src/lib.ts", "bot/src/main.ts"],
       expected_outputs: ["sdk/src/lib.ts", "bot/src/main.ts"], read_first: ["bot/README.md"],
       // the check keeps the section's folder
-      verification: [{ command: "test -f src/main.ts", cwd: join(env.root, "bot") }] });
+      verification: [{ command: "grep -q '\"new\"' src/main.ts", cwd: join(env.root, "bot") }] });
     expect(getTaskPlan(env.db, "bot-lib")).toContain("Outside the section you may change only: sdk/src/lib.ts");
     const attempt = await env.finished();
     expect(getAttempt(env.db, attempt.id)?.reason ?? null).toBeNull();
@@ -172,9 +172,10 @@ describe("a section chat's task that also changes files elsewhere in the same re
     let blocked = "";
     const env = await setup((workspace) => {
       put(workspace, "sdk/src/lib.ts", "export const lib = \"new\";\n");
+      put(workspace, "bot/src/main.ts", "export const main = \"new\";\n");
       // The worktree's ownership barrier makes every file outside owns_paths read-only: the root scope opens only the files the contract names.
       try { put(workspace, "other_bot/src/main.ts", "export const other = 2;\n"); } catch (cause) { blocked = String(cause); }
-      return "Changed sdk/src/lib.ts";
+      return "Changed sdk/src/lib.ts and bot/src/main.ts";
     });
     await env.dispatch();
     await env.finished();

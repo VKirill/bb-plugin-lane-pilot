@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { previousAttemptBrief } from "../src/rooms/writer/server/writer-task";
+import { previousAttemptBrief } from "../src/rooms/writer/models/writer-brief-feedback";
 
 describe("a check the sandbox could not run", () => {
   it("tells the writer that exit 127 is the check environment, not its code (Vampirism Fire, 2026-10-23)", () => {

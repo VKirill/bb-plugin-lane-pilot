@@ -10,12 +10,12 @@ import { join, resolve } from "node:path";
 
 // The session hook runs this file as plain source (node --experimental-strip-types): a relative import needs its .ts suffix.
 // @ts-expect-error TS5097
-import { buildFileCard, CARD_MAX_BYTES, CARD_PEEK_BYTES } from "./card.ts";
+import { buildFileCard, CARD_MAX_BYTES, CARD_PEEK_BYTES } from "./models/card.ts";
 // @ts-expect-error TS5097
 import { collectGitFacts, trackedFiles } from "./git.ts";
 // @ts-expect-error TS5097
 import { catalogDir, findRepo, readMeta, replaceCatalog, repoHead, writeMeta } from "./store.ts";
-import type { FileCard } from "./card";
+import type { FileCard } from "./models/card";
 
 export const BUILD_MAX_FILES = 5000;
 export const BUILD_WALL_MS = 60_000;

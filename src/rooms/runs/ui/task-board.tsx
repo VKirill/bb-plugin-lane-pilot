@@ -4,7 +4,7 @@ import { t, type I18nKey } from "@lane-pilot/i18n";
 import { Button, Disclosure, Icon, Input, Select, SelectContent, SelectItem, SelectTrigger, SelectValue, Switch, useMediaQuery } from "@lane-pilot/ui-kit";
 import type { z } from "zod";
 import type { rpcContract } from "../../contracts";
-/** The acceptance card the task page shows, implemented by src/rooms/acceptance and handed in from the page shell. */
+/** The acceptance card the task page shows, implemented inside src/rooms/runs and handed in from the page shell. */
 export type AcceptanceCardView = (props: {
   runId: string; taskId: string; refreshKey: unknown; finished: boolean;
   fallback: { objective: string | null; acceptance: string[] } | null;
@@ -141,7 +141,6 @@ export function TaskBoard({ projects = [], serviceProjectIds = [], initialProjec
   lockedProjectId?: string | null; locale: string;
   AcceptanceCard: AcceptanceCardView;
 }) {
-  const rpc = useRpc<typeof rpcContract>();
   const navigate = useBbNavigate();
   const locked = lockedProjectId != null;
   // On a phone the fixed columns hide all but one: the board opens as the list and stacks at full width (SMA m_wnr_tasks).
@@ -168,7 +167,7 @@ export function TaskBoard({ projects = [], serviceProjectIds = [], initialProjec
   if (open) return <TaskPage item={open} locale={locale} projectName={projectName(open.projectId)} onBack={() => setOpen(null)} AcceptanceCard={AcceptanceCard} />;
   const showProject = projectId === "all";
   const tile = (item: Item) => <TaskCardTile key={item.key} item={item} showProject={showProject} projectName={projectName(item.projectId)} locale={locale}
-    onOpen={() => item.kind === "phase" ? navigate.toPluginPanel("lane-pilot-cockpit", { subPath: "phases" }) : item.kind === "batch" ? (item.pmThreadId ? navigate.toThread(item.pmThreadId) : undefined) : setOpen(item)} />;
+    onOpen={() => item.kind === "phase" ? navigate.toPluginPanel("lane-pilot") : item.kind === "batch" ? (item.pmThreadId ? navigate.toThread(item.pmThreadId) : undefined) : setOpen(item)} />;
   return (
     <div className="space-y-3" data-testid="task-board">
       <div className="flex flex-wrap items-end justify-between gap-2">

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { critiquePrompt } from "../../src/rooms/critique/critique";
-import { ownerWordsOfRun } from "../../src/rooms/critique/server/owner-words";
-import type { EventLike, ThreadLike } from "../../src/rooms/anamnesis/owner-messages";
+import { critiquePrompt } from "../../src/rooms/critique";
+import { ownerWordsOfRun } from "../../src/rooms/critique/server";
+import type { EventLike, ThreadLike } from "../../src/rooms/contracts/owner-messages";
 
 const T = Date.UTC(2026, 10, 1, 12);
 const pmThread: ThreadLike = { id: "thr_pm", projectId: "proj_a", createdAt: T - 1_000, visibility: "visible", parentThreadId: null, originPluginId: null, deletedAt: null };

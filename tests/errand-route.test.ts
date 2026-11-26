@@ -1,9 +1,18 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { WorkflowEngine, loadWorkflowStore, registerPureActions } from "@lane-pilot/workflow-engine";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
-import { WorkflowEngine, loadWorkflowStore, registerPureActions, setRouterModel } from "@lane-pilot/workflow-engine";
+
+const mockModelChoice = vi.hoisted(() => ({ value: { choice: "invoice-send", confidence: 95, pattern: "invoice", rejected: [], questions: [] } as { choice: string | null; confidence: number; pattern: string; rejected: Array<{ id: string; reason: string }>; questions: string[] } }));
+vi.mock("@lane-pilot/workflow-engine", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@lane-pilot/workflow-engine")>();
+  return {
+    ...actual,
+    routeIntent: (input: Parameters<typeof actual.routeIntent>[0]) => actual.routeIntent({ ...input, model: async () => mockModelChoice.value }),
+  };
+});
 import { createRun, openDatabase, setRunThread } from "../src/rooms/plugin-db";
 import { builtinWorkflow } from "../src/rooms/workflow/builtin";
-import { mountErrands } from "../src/rooms/qa/server/errands";
+import { mountErrands } from "../src/rooms/errands/server";
 
 /**
  * The errand's self-route (errand-graph.ts routedGraph): a brief the router matches surely to an offered graph starts that graph's
@@ -70,12 +79,12 @@ function world(catalog: Array<Record<string, unknown>> = [stub({ id: "invoice-se
   return { state, call, runs, inputsOf };
 }
 
-afterEach(() => setRouterModel(null));
+afterEach(() => { mockModelChoice.value = { choice: "invoice-send", confidence: 95, pattern: "invoice", rejected: [], questions: [] }; });
 
 describe("the errand routes its brief to a sure graph", () => {
   it("a brief that routes at >= 90 to a published graph starts that graph's run and no errand run, and says the graph and the confidence", async () => {
     const w = world();
-    setRouterModel(async () => ({ choice: "invoice-send", confidence: 95, pattern: "invoice", rejected: [], questions: [] }));
+    mockModelChoice.value = { choice: "invoice-send", confidence: 95, pattern: "invoice", rejected: [], questions: [] };
     const answer = await w.call("lane_pilot_errand", { task: TASK });
     expect(answer).toMatchObject({ workflowRunId: expect.stringMatching(/^wfrun_/), state: "running", workflow: "invoice-send", confidence: 95 });
     expect(answer.note).toContain("lane_pilot_workflow_status");
@@ -86,7 +95,7 @@ describe("the errand routes its brief to a sure graph", () => {
 
   it("a tested graph is its first real run: the errand starts it with liveTrial, the way lane_pilot_run_workflow's tested branch does", async () => {
     const w = world([stub({ id: "invoice-send", status: "tested" })]);
-    setRouterModel(async () => ({ choice: "invoice-send", confidence: 95, pattern: "invoice", rejected: [], questions: [] }));
+    mockModelChoice.value = { choice: "invoice-send", confidence: 95, pattern: "invoice", rejected: [], questions: [] };
     const answer = await w.call("lane_pilot_errand", { task: TASK });
     expect(answer).toMatchObject({ workflow: "invoice-send", state: "running" });
     expect(w.runs()).toEqual([expect.objectContaining({ workflow_id: "invoice-send" })]);
@@ -94,7 +103,7 @@ describe("the errand routes its brief to a sure graph", () => {
 
   it("a route under 90 stays a plain errand with routeTop <id>:<confidence> and routeWhy below_confidence on its inputs", async () => {
     const w = world();
-    setRouterModel(async () => ({ choice: "invoice-send", confidence: 70, pattern: "unsure", rejected: [], questions: [] }));
+    mockModelChoice.value = { choice: "invoice-send", confidence: 70, pattern: "unsure", rejected: [], questions: [] };
     const answer = await w.call("lane_pilot_errand", { task: TASK });
     expect(answer).not.toHaveProperty("workflow");
     expect(w.runs()).toEqual([expect.objectContaining({ workflow_id: "errand" })]);
@@ -103,7 +112,7 @@ describe("the errand routes its brief to a sure graph", () => {
 
   it("a sure route whose required input the brief cannot fill stays a plain errand with routeWhy missing_inputs:<name>", async () => {
     const w = world([stub({ id: "invoice-send", inputs: [{ name: "goal", type: "string" }, { name: "recipient", type: "string", required: true }] })]);
-    setRouterModel(async () => ({ choice: "invoice-send", confidence: 95, pattern: "invoice", rejected: [], questions: [] }));
+    mockModelChoice.value = { choice: "invoice-send", confidence: 95, pattern: "invoice", rejected: [], questions: [] };
     const answer = await w.call("lane_pilot_errand", { task: TASK });
     expect(answer).not.toHaveProperty("workflow");
     expect(w.runs()).toEqual([expect.objectContaining({ workflow_id: "errand" })]);
@@ -112,7 +121,7 @@ describe("the errand routes its brief to a sure graph", () => {
 
   it("a brief with authorized: true routes only to a published graph, never to a tested one (routeWhy tested_needs_unauthorized)", async () => {
     const w = world([stub({ id: "invoice-send", status: "tested" })]);
-    setRouterModel(async () => ({ choice: "invoice-send", confidence: 95, pattern: "invoice", rejected: [], questions: [] }));
+    mockModelChoice.value = { choice: "invoice-send", confidence: 95, pattern: "invoice", rejected: [], questions: [] };
     const answer = await w.call("lane_pilot_errand", { task: TASK, authorized: true });
     expect(answer).not.toHaveProperty("workflow");
     expect(w.runs()).toEqual([expect.objectContaining({ workflow_id: "errand" })]);

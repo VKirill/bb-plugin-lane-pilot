@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { activeRunForProject, claimActivation, closeRun, createAttempt, createRun, createTask, getRun, listTaskLatestAttempts, listTaskTerminalStates, openDatabase, setRunState, transitionAttempt } from "../src/rooms/plugin-db";
-import { aggregateRun } from "../src/rooms/runs/aggregation";
-import { recordStage } from "../src/rooms/runs/server/stage-records";
+import { aggregateRun } from "../src/rooms/runs";
+import { recordStage } from "../src/rooms/runs/server";
 import type { AttemptState } from "../src/rooms/contracts/state-machine";
 
 // magicseo (2026-10-30): every family accepted, the run still ended «blocked» on the replaced T1.3, T3.2, T5…

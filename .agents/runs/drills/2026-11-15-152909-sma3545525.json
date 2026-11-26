@@ -1,0 +1,820 @@
+{
+  "kind": "lane-pilot-sandbox-drill",
+  "date": "2026-11-15",
+  "stamp": "20261115-152909",
+  "startedAt": 1794745749178,
+  "finishedAt": 1794745942051,
+  "durationSec": 193,
+  "project": "proj_3tb652jpsi",
+  "runId": null,
+  "pmThread": null,
+  "sourceThread": null,
+  "mode": "full",
+  "scenarioNames": [
+    "sma_r06",
+    "sma_r10",
+    "sma_r12",
+    "sma_r26"
+  ],
+  "commit": "807f967453df4392c679f7f91328298e08062478",
+  "skipped": {},
+  "result": "pass",
+  "problems": [],
+  "checks": null,
+  "tasks": null,
+  "dispatch": null,
+  "scenarios": [
+    {
+      "name": "sma_r06",
+      "result": "pass",
+      "problems": [],
+      "proved": [
+        {
+          "node": "n530",
+          "ok": true,
+          "detail": "machine notice read as None; a command-shaped turn read as small by rules, graphs started 0, phases opened 0"
+        },
+        {
+          "node": "n534",
+          "ok": true,
+          "detail": "«run tests», «sma green», «window», an injected phrase -> ['quick', 'full', 'browser', 'quick']"
+        },
+        {
+          "node": "n535",
+          "ok": true,
+          "detail": "the check tool picked ['quick', 'full', 'browser']; commands that ran on the host ['npm test']; full -> 'run the run-goal check of this run: ever', browser -> 'use lane_pilot_helpers {action:\"browser_'"
+        },
+        {
+          "node": "n536",
+          "ok": true,
+          "detail": "host runs 3 for four calls; repeat deduplicated=True state passed, changed request deduplicated=None, late repeat None"
+        },
+        {
+          "node": "n537",
+          "ok": true,
+          "detail": "--clearenv True, HOME the scratch folder True, protected roots {'.git': '--ro-bind same', '.agents': '--ro-bind same', '.cls': '--ro-bind same'}"
+        },
+        {
+          "node": "n538",
+          "ok": true,
+          "detail": "measure {command 'npm test', folder /ws, expected exit 0, limit 30 s, exit 1}; a changed protected root passes in a throwaway copy=False, in the live checkout=True"
+        },
+        {
+          "node": "n539",
+          "ok": true,
+          "detail": "stop -> {'stopped': True, 'idMatches': True, 'state': 'stopped', 'stoppedCommand': 'npm test --watch', 'passed': False, 'cancelled': True, 'rereadState': 'stopped'}"
+        },
+        {
+          "node": "n541",
+          "ok": true,
+          "detail": "queue events handed on [{'name': 'message.dispatched', 'id': 'queued_1'}], messages sent in answer 0"
+        },
+        {
+          "node": "n542",
+          "ok": true,
+          "detail": "two chats read «Что с задачей?» as ['question', 'question'] by ['rules', 'rules'], graphs started 0; the same with a second line: small"
+        },
+        {
+          "node": "n543",
+          "ok": true,
+          "detail": "PM chat ['Another task', 'Fix the door'], running ['Fix the door:running'], an unknown thread None"
+        },
+        {
+          "node": "n545",
+          "ok": true,
+          "detail": "writer chat is writer of thr_pm and sees ['Fix the door']; the running task is marked live ['Fix the door:running']"
+        },
+        {
+          "node": "n544",
+          "ok": true,
+          "detail": "stage discussion, messages to the PM chat 1, the step starts 'Phase ph_5408a3a299 «Sums» — stage 1, discussion. Goal: skip empty cells\\nWrite the discuss'"
+        },
+        {
+          "node": "n547",
+          "ok": true,
+          "detail": "queued -> canceled, running attempt stopped threads ['thr_w'] -> canceled, missing -> missing; a check ends with its turn stopped_by_turn_stop, the other thread's check kept running True"
+        },
+        {
+          "node": "n548",
+          "ok": true,
+          "detail": "three hand-overs of one key and one of another started ['lead:road1', 'lead:road2'], all answered {'started': True, 'via': 'issue-quick', 'id': 'wf_1'}"
+        },
+        {
+          "node": "n550",
+          "ok": true,
+          "detail": "question kinds ['failure', 'limit', 'history', 'stage', 'board', 'free', 'failure']; the tool named ['board', 'limit', 'history', 'failure', 'free']"
+        },
+        {
+          "node": "n553",
+          "ok": true,
+          "detail": "a blocked attempt «npm test exit 1» is class 'task', model calls 0"
+        },
+        {
+          "node": "n554",
+          "ok": true,
+          "detail": "spend 18 tokens over ['claude', 'gpt'], from the spend book (lane_pilot_token_daily, 2026-11-15)"
+        },
+        {
+          "node": "n555",
+          "ok": true,
+          "detail": "board counts {'accepted': 1, 'blocked': 1}, 2 tasks, from the run board (lane_pilot_attempt, run run1)"
+        },
+        {
+          "node": "n556",
+          "ok": true,
+          "detail": "finished attempts ['T1', 'T2'], from the finished attempts (lane_pilot_attempt)"
+        },
+        {
+          "node": "n551",
+          "ok": true,
+          "detail": "«да!», «Да, запускай», «да, но поменяй кнопку», «yes please» -> [True, True, False, False]"
+        },
+        {
+          "node": "n552",
+          "ok": true,
+          "detail": "a yes from another thread -> \"the owner's yes counts only in the phase's own chat (thr_pm); record it from that conversation, not this one\", words recorded 0; from the own chat ['planning:yes:true']"
+        },
+        {
+          "node": "n558",
+          "ok": true,
+          "detail": "plan hash cf0a829f03e3…; another key -> 'the plan changed since it was shown (sho', a 25 h old proposal with a 24 h term -> 'the proposal is stale (submitted 25 h ag', the keyed yes signed ['yes:true']"
+        },
+        {
+          "node": "n533",
+          "ok": true,
+          "detail": "local migrated core DB @3656bae7e: «starting» --stop.requested--> stopping@1794745760571; late run.started applied=False, row still stopping; stop.settled -> idle@1794745760605"
+        },
+        {
+          "node": "n559",
+          "ok": true,
+          "detail": "graph starts ['lead:road1', 'lead:road2'] for three hand-overs of one key and one of another; repeats answered {'started': True, 'via': 'issue-quick', 'id': 'wf_1'}"
+        },
+        {
+          "node": "n561",
+          "ok": true,
+          "detail": "PM chat: on -> composerBoundary, sensitive -> composerBoundarySensitive, off -> None; a writer chat -> None"
+        },
+        {
+          "node": "n562",
+          "ok": true,
+          "detail": "a contract without owns_paths refused=True; an output outside owns_paths -> ['area_missing', 'output_unowned'], inside -> ['area_missing'], in never_touch -> ['area_missing', 'output_never_touch']"
+        },
+        {
+          "node": "n563",
+          "ok": true,
+          "detail": "cursor rows ['thr_pm'] total 14, open attempts 0, receipts 0"
+        },
+        {
+          "node": "n565",
+          "ok": true,
+          "detail": "the PM spawned on provider pm-prov model pm-model (the writer's is wr-prov), inputs explicit/explicit"
+        },
+        {
+          "node": "n566",
+          "ok": true,
+          "detail": "an ordinary chat enables a PM (role pm); a writer thread -> 'Lane Pilot writer threads cannot activate a PM', spawns 0"
+        },
+        {
+          "node": "n571",
+          "ok": true,
+          "detail": "the compiled profile dev-orchestrator rode the spawn with its tools=True; without the capability the spawn stopped before a run row (runs 0, spawns 0)"
+        },
+        {
+          "node": "n567",
+          "ok": true,
+          "detail": "cap 3: cut at item 4 -> 'предел ходов: 3'; the cap changed to 5 mid-turn did not move that turn, the next turn cut at its 6th item -> 'предел ходов: 5'"
+        },
+        {
+          "node": "n574",
+          "ok": true,
+          "detail": "4-minute limit: nothing at 3 min [], cut at 5 min ['thr_pm']; named: ['ход не уложился в 4 минут', 'пустой ответ', 'отказ вендора: quota exceeded', 'отказ вендора: model overloaded']"
+        },
+        {
+          "node": "n568",
+          "ok": true,
+          "detail": "board tasks ['t1 accepted', 't2 ?']; with a live phase it starts 'Board now:\\nPhase ph_89e9632cdb — discussion. Order of work: 1) read th'; an unknown run -> None"
+        },
+        {
+          "node": "n569",
+          "ok": true,
+          "detail": "absolute, .., nested .. and NUL paths -> {'lane_pilot_read_path_escaped_workspace'}, host reads before the good path 0, root /work/proj, a writer caller -> 'caller is not a Lane Pilot PM thread'"
+        },
+        {
+          "node": "n570",
+          "ok": true,
+          "detail": "thread A sees ['ta'] of runA, thread B ['tb'], an unknown thread []"
+        },
+        {
+          "node": "n575",
+          "ok": true,
+          "detail": "a turn chosen on opus that ran on sonnet is booked ['sonnet:14'] and named ['opus->sonnet:14']; without a fallback []"
+        },
+        {
+          "node": "n576",
+          "ok": true,
+          "detail": "fetch before read True, behind 3, read at fresh time True; a failed fetch -> fetched False, board still ['x1']"
+        },
+        {
+          "node": "n577",
+          "ok": true,
+          "detail": "broken output -> [] (threw False); lines before the marker ignored -> ['a']; two items ['a:ready', 'b:open']"
+        },
+        {
+          "node": "n578",
+          "ok": true,
+          "detail": "ready lines issuable (13 points and a done dependency): ['1', '5']"
+        },
+        {
+          "node": "n579",
+          "ok": true,
+          "detail": "a line without an estimate is listed to estimate ['2'], not issued"
+        },
+        {
+          "node": "n580",
+          "ok": true,
+          "detail": "a 14-point line is listed to decompose ['3'], not issued"
+        },
+        {
+          "node": "n581",
+          "ok": true,
+          "detail": "a line with an open dependency is blocked ['4']; one whose dependency is done is issuable"
+        },
+        {
+          "node": "n582",
+          "ok": true,
+          "detail": "the task message: 'Lane Pilot: из беклога проекта готова к работе задача «Item 1» (1, оценка 13, приоритет high).'"
+        },
+        {
+          "node": "n583",
+          "ok": true,
+          "detail": "queue order high-2, high-8, medium-5, low-1 -> ['3', '2', '4', '1']"
+        },
+        {
+          "node": "n594",
+          "ok": true,
+          "detail": "«починить экспорт CSV в отчётах» matches ['csv-export'] (a done line and a new logo are not); a stranger phrase []"
+        },
+        {
+          "node": "n584",
+          "ok": true,
+          "detail": "120-minute interval: 60 min ago -> scanned False, 121 min ago -> scanned True and the time written True; default hour: 61 min -> True, 59 min -> False"
+        },
+        {
+          "node": "n585",
+          "ok": true,
+          "detail": "no home -> {'ids': ['in-checkout'], 'readFrom': 'checkout'}, a planning home -> {'ids': ['in-home'], 'readFrom': 'home'}; the message names 'Описание и подход: /home/owner/plans/.agents/todos/items/1/AGENT.md и README.md.'"
+        },
+        {
+          "node": "n586",
+          "ok": true,
+          "detail": "status line -> 'id: t-door\\nstatus: done\\nestimate: 2\\n', a repeat already, two status lines refused untouched; a queued task not_accepted, a line of another PM not_issued, the accepted own closed"
+        },
+        {
+          "node": "n587",
+          "ok": true,
+          "detail": "written to .agents/phases/ph_f91eae8f97/BOOK.md: the question line, then the answer line «q1: ru»; answered ['q1:ru:owner']"
+        },
+        {
+          "node": "n588",
+          "ok": true,
+          "detail": "a parked writer's entry in the attempt QA.md: 'A: open — the writer is parked here', the answer appended 'A (PM): ru'; an old-layout task wrote /.agents/plans/items/t-old/QA.md"
+        },
+        {
+          "node": "n589",
+          "ok": true,
+          "detail": "kinds ['checkpoint', 'budget', 'pause', 'decision', 'worker'], each carried unchanged, a stored payload without a kind reads as decision, an unknown kind -> None"
+        },
+        {
+          "node": "n591",
+          "ok": true,
+          "detail": "free text with options: {'checkpoint': True, 'budget': False, 'pause': False, 'decision': True, 'worker': True}; with nothing to pick: {'checkpoint': True, 'budget': True, 'pause': True, 'decision': True, 'worker': True}"
+        },
+        {
+          "node": "n590",
+          "ok": true,
+          "detail": "a key, a token and a private key -> {'secret_shaped_answer'}, text sent to the writer thread ''; a plain answer sent"
+        },
+        {
+          "node": "n592",
+          "ok": true,
+          "detail": "title 'Кнопка оплаты в корзине', promise ['Then покупатель видел итог до оплаты']; with a path in the phrase the title is 'Починить экспорт отчётов'; a long title cut to 60"
+        },
+        {
+          "node": "n593",
+          "ok": true,
+          "detail": "the engine ran ['analyst', 'done'] on the analyst's stub, questions out {'questions': [{'task': 'reports', 'question': 'в каком формате?'}]}, nodes that write or make tasks 0 (the model step itself was not run)"
+        },
+        {
+          "node": "n595",
+          "ok": true,
+          "detail": "waves from depends_on {'c': 3, 'a': 1, 'b': 2, 'd': 1, 'e': 2}, lanes {'c': 'write', 'a': 'write', 'b': 'write', 'd': 'docs', 'e': 'check'}, a cycle gets wave 0 {'x': 0, 'y': 0, 'z': 1}"
+        },
+        {
+          "node": "n529",
+          "ok": true,
+          "detail": "thread thr_5ezad5s6cs: 18 events, seq 1..18, strictly increasing True"
+        },
+        {
+          "node": "n549",
+          "ok": true,
+          "detail": "thread thr_5ezad5s6cs: request seq 1 (client/turn/requested) before the turn started at seq 8; input stored True"
+        }
+      ],
+      "checked": 58
+    },
+    {
+      "name": "sma_r10",
+      "result": "pass",
+      "problems": [],
+      "proved": [
+        {
+          "node": "n818",
+          "ok": true,
+          "detail": "stand-in Bot API: pairing before {'owner': None, 'code': 'EBAJV5LC', 'link': 'https://t.me/sma_bot?start=EBAJV5LC'}, after a chat is paired {'owner': 4242, 'code': None, 'link': None}"
+        },
+        {
+          "node": "n960",
+          "ok": true,
+          "detail": "stand-in Bot API: requests while no bridge existed 0, bridge published on True, then polled True and took in ['chat:in:1'], taken down on chat off True"
+        },
+        {
+          "node": "n961",
+          "ok": true,
+          "detail": "stand-in Bot API: requests 0, stored keys [], link off; on without a token: bot_configuration_unavailable"
+        },
+        {
+          "node": "n962",
+          "ok": true,
+          "detail": "stand-in Bot API: poll requests [{'offset': 0, 'timeout': 25, 'allowed_updates': ['message', 'callback_query']}, {'offset': 8, 'timeout': 25, 'allowed_updates': ['message', 'callback_query']}], ceilings [40000, 40000] ms"
+        },
+        {
+          "node": "n963",
+          "ok": true,
+          "detail": "stand-in Bot API: pauses after failures [10, 20, 40, 80, 160, 300, 300, 10] s (the card says 5 s doubling to 60 s)"
+        },
+        {
+          "node": "n964",
+          "ok": true,
+          "detail": "stand-in Bot API: two strangers, three messages -> [[99, 'Этот бот работает только со своим владельцем.'], [100, 'Этот бот работает только со своим владельцем.']], conversation rows [], BB calls 0"
+        },
+        {
+          "node": "n965",
+          "ok": true,
+          "detail": "stand-in Bot API: wrong code, group and bare /start paired {'owner': None, 'sent': 0}; the right one paired 55; code left None; an 11-minute-old code paired None"
+        },
+        {
+          "node": "n966",
+          "ok": true,
+          "detail": "stand-in Bot API: after pairing 55 the bridge took in ['chat:in:2'] for [55, 55], answered the chat 2 times (confirmation + its own word); the stranger got ['Этот бот работает только со своим владельцем.']"
+        },
+        {
+          "node": "n967",
+          "ok": true,
+          "detail": "stand-in Bot API: sticker -> refuse and answer [[7, 'Я читаю текст, голосовые, фото и файлы. Напиши словами, что сделать.']]; photo -> chat without text, chats started 0, answer ['Отправь текст или голосовое сообщение. Вложения пока открывай в BB.'] (voice is transcribed, not refused)"
+        },
+        {
+          "node": "n968",
+          "ok": true,
+          "detail": "stand-in BB: [['spawn', 'Собери мне лендинг', 'visible'], ['send', [{'type': 'text', 'text': 'И добавь форму', 'mentions': []}], 'thr_one']]"
+        },
+        {
+          "node": "n969",
+          "ok": true,
+          "detail": "stand-in Bot API: two messages -> 1 explanation, conversation rows [], an hour later 2 in all, link linked"
+        },
+        {
+          "node": "n970",
+          "ok": true,
+          "detail": "stand-in BB, recording Telegram: signs idle / working / +4 s / +5 s = [0, 1, 1, 2]"
+        },
+        {
+          "node": "n971",
+          "ok": true,
+          "detail": "stand-in Bot API, stand-in BB SDK, sibling c7573a2: sends 3 chunks [3429, 3429], sentId 17, receipts 3, replay 0; edge_ok True, edge chunks [3499, 2001, 3400], kept receipt 777"
+        },
+        {
+          "node": "n972",
+          "ok": true,
+          "detail": "stand-in BB with confirmNewChat on: {'waiting': {'started': 0, 'draft': 'Напиши стихотворение'}, 'started': [['spawn', 'Лучше напиши рассказ']], 'left': False}"
+        },
+        {
+          "node": "n973",
+          "ok": true,
+          "detail": "stand-in Bot API: requests [['getUpdates', {'offset': 0, 'timeout': 25}, 12345], ['sendMessage', {'text': 'hi', 'message_thread_id': 7, 'chat_id': 4242}, 12345], ['sendMessage', {'text': 'hey', 'chat_id': 99}, 12345], ['sendChatAction', {'action': 'typing', 'chat_id': 4242}, 12345], ['getMe', {}, 12"
+        },
+        {
+          "node": "n974",
+          "ok": true,
+          "detail": "stand-in Bot API: errors (code:token-in-it) ['telegram_network:false', 'telegram_invalid_response:false', 'telegram_401:false']"
+        },
+        {
+          "node": "n975",
+          "ok": true,
+          "detail": "stand-in Bot API: token [False, 'none'] -> [True, 'manual'], saved [True, 'sma_bot'], token in anything the window reads False, disconnected True"
+        },
+        {
+          "node": "n976",
+          "ok": true,
+          "detail": "code EBAJV5LC, the same at 9.5 min True, a new one at 10 min 4CJTDHKB"
+        },
+        {
+          "node": "n977",
+          "ok": true,
+          "detail": "stand-in Bot API: link https://t.me/sma_bot?start=EBAJV5LC, token in the views False, link once paired None"
+        },
+        {
+          "node": "n978",
+          "ok": true,
+          "detail": "stand-in Bot API: link states ['off', 'awaiting_code', 'linked']"
+        },
+        {
+          "node": "n979",
+          "ok": true,
+          "detail": "stand-in Bot API: bridge off True, on again True, off with the plugin switched off True; sync rounds before the change 1, woken within 2.5 s True"
+        },
+        {
+          "node": "n980",
+          "ok": true,
+          "detail": "stand-in Bot API: stored code {'code': 'EBAJV5LC', 'at': 'number'}, token setting [True, 'manual']"
+        },
+        {
+          "node": "n981",
+          "ok": true,
+          "detail": "stand-in Bot API: owner after the code 55 (a wrong code, a group and a bare /start left it None)"
+        },
+        {
+          "node": "n982",
+          "ok": true,
+          "detail": "stand-in Bot API: after disconnecting link ['awaiting_code', None]"
+        }
+      ],
+      "checked": 24
+    },
+    {
+      "name": "sma_r12",
+      "result": "pass",
+      "problems": [],
+      "proved": [
+        {
+          "node": "n994",
+          "ok": true,
+          "detail": "verification_ran {'t1': True, 't2': False, 't3': False, 't4': False}"
+        },
+        {
+          "node": "n995",
+          "ok": true,
+          "detail": "first try [], second try ['edit-free answer work needed 2 attempts to close on its answer']"
+        },
+        {
+          "node": "n996",
+          "ok": true,
+          "detail": "good ['pass', []], red accepted ['fail', ['a task whose check failed was accepted without a word']]"
+        },
+        {
+          "node": "n997",
+          "ok": true,
+          "detail": "revert_merged {'merged': True, 'dry': False, 'none': False}"
+        },
+        {
+          "node": "n998",
+          "ok": true,
+          "detail": "changed ['skill files changed after the press: a'], same []"
+        },
+        {
+          "node": "n1000",
+          "ok": true,
+          "detail": "good ['pass', []], one blocked ['fail', ['not every task was accepted']]"
+        },
+        {
+          "node": "n999",
+          "ok": true,
+          "detail": "refusal skipped; live pass problems [], events ['start', 'first_silence', 'outage', 'message_sent', 'lift', 'risen', 'message_sent'], posts to the stand-in bot 2"
+        },
+        {
+          "node": "n1001",
+          "ok": true,
+          "detail": "log '{\"at\":1794745924,\"event\":\"lift\",\"detail\":\"try 1, killing pid 4242\"}', lifted-pid 5151"
+        },
+        {
+          "node": "n1005",
+          "ok": true,
+          "detail": "lift commands {'mac': 'launchctl kickstart -k gui/1000/lp-drill-door', 'linux': '/tmp/lp-drill-hq3jx2a3/lift/bin/systemctl --user restart lp-drill-door'}, lift returned rc=0"
+        },
+        {
+          "node": "n1006",
+          "ok": true,
+          "detail": "output 'nothing to do: the door answers'"
+        },
+        {
+          "node": "n1008",
+          "ok": true,
+          "detail": "missing [1, 'missing: /tmp/lp-drill-hq3jx2a3/dbready/missing.db'], good [0, 'ready: /tmp/lp-drill-hq3jx2a3/dbready/good.db']"
+        },
+        {
+          "node": "n1022",
+          "ok": true,
+          "detail": "UTF-16 file [1, 'not ready: /tmp/lp-drill-hq3jx2a3/dbready/wide.db (ok, UTF-16le)']"
+        },
+        {
+          "node": "n1023",
+          "ok": true,
+          "detail": "corrupt file [1, 'not ready: /tmp/lp-drill-hq3jx2a3/dbready/corrupt.db (Error: in prepare, file is not a database (26), Error: in prepare, file is not a database (26))']"
+        },
+        {
+          "node": "n1009",
+          "ok": true,
+          "detail": "system unit runs the loop; files left behind []"
+        },
+        {
+          "node": "n1010",
+          "ok": true,
+          "detail": "user unit: login target, 30 s between restarts, cap 5 (3 when asked for 3)"
+        },
+        {
+          "node": "n1011",
+          "ok": true,
+          "detail": "launchd entry: run at load, keep alive, runs the loop"
+        },
+        {
+          "node": "n1014",
+          "ok": true,
+          "detail": "launchd entry sends stdout and stderr to the watchdog log"
+        },
+        {
+          "node": "n1018",
+          "ok": true,
+          "detail": "rotated 'rotated: outages-2023-11-15.jsonl'"
+        },
+        {
+          "node": "n1013",
+          "ok": true,
+          "detail": "daily count '2023-11-15 lift 1'"
+        },
+        {
+          "node": "n1015",
+          "ok": true,
+          "detail": "exit 1, failures ['FAIL: prerequisite: curl']"
+        },
+        {
+          "node": "n1012",
+          "ok": true,
+          "detail": "line 'Без прав администратора — ярлык в `shell:startup` с той же командой.'"
+        },
+        {
+          "node": "n1016",
+          "ok": true,
+          "detail": "Windows section: Russian text, ONLOGON task, the run command"
+        },
+        {
+          "node": "n1017",
+          "ok": true,
+          "detail": "the guide names the agent file whose label print-unit mac prints"
+        },
+        {
+          "node": "n1027",
+          "ok": true,
+          "detail": "status with a silent door exit 1, unknown verb exit 2"
+        },
+        {
+          "node": "n1028",
+          "ok": true,
+          "detail": "units cap a fallen watchdog at 5 restarts an hour; the cap is absent when set to 0"
+        },
+        {
+          "node": "n1029",
+          "ok": true,
+          "detail": "second watchdog with the lock held: exit 0, 'another watchdog runs (lock /tmp/lp-drill-hq3jx2a3/batchb/hu'"
+        },
+        {
+          "node": "n1030",
+          "ok": true,
+          "detail": "after 5 lifts in the window the next is {'refused': True, 'lift_rows': 5}"
+        },
+        {
+          "node": "n1031",
+          "ok": true,
+          "detail": "refusal said before the fallback True, user unit written with the cap"
+        },
+        {
+          "node": "n1032",
+          "ok": true,
+          "detail": "crontab after install ['0 3 * * * /usr/bin/backup', '@reboot /bin/bash /home/ubuntu/BB-service/bb-plugin-lane-pilot/scripts/hub-watchdog.sh run >> /tmp/lp-drill-hq3jx2a3/batchb/hub-watchdog.log 2>&1']"
+        },
+        {
+          "node": "n1033",
+          "ok": true,
+          "detail": "guide line ['Без прав администратора — ярлык в `shell:startup` с той же командой.'], Windows command ends with the verb the unit runs (run)"
+        },
+        {
+          "node": "n1034",
+          "ok": true,
+          "detail": "units carry the two-minute first look and the cap; files left behind by print-unit []"
+        },
+        {
+          "node": "n1035",
+          "ok": true,
+          "detail": "agent file written with run-at-load and keep-alive, launchctl calls ['bootout gui/1000 /tmp/lp-drill-hq3jx2a3/home-mac/Library/LaunchAgents/pro.vechkasov.lp-hub-watchdog.plist', 'bootstrap gui/1000 /tmp/lp-drill-hq3jx2a3/home-mac/Library/LaunchAgents/pro.vechkasov.lp-hub-watchdog.plist']"
+        },
+        {
+          "node": "n1019",
+          "ok": true,
+          "detail": "watchdog scene problems with the real script's rotate: []"
+        },
+        {
+          "node": "n1002",
+          "ok": true,
+          "detail": "every grant command on both platforms names only the run folder: [True, True]"
+        },
+        {
+          "node": "n1003",
+          "ok": true,
+          "detail": "granted folders {'grantedIsGood': True, 'rows': 1, 'rowIsGood': True}"
+        },
+        {
+          "node": "n1020",
+          "ok": true,
+          "detail": "rows after one mark 1, same thread same day 1, another thread 2, 91-day-old dropped True"
+        },
+        {
+          "node": "n1021",
+          "ok": true,
+          "detail": "summary {'days': 3, 'windowDays': 7, 'attempts': 10, 'share': 0.42857142857142855}, empty journal 0 days"
+        },
+        {
+          "node": "n1024",
+          "ok": true,
+          "detail": "database opened twice: created True, second open raised False, row kept 1"
+        }
+      ],
+      "checked": 38
+    },
+    {
+      "name": "sma_r26",
+      "result": "pass",
+      "problems": [],
+      "proved": [
+        {
+          "node": "n1710",
+          "ok": true,
+          "detail": "scheduled True, off -> None, on -> 'WHEN a p1 question like «who owns the wall» returns nothing → write the fact to memory (3 misses)'"
+        },
+        {
+          "node": "n1721",
+          "ok": true,
+          "detail": "brief 'WHEN a p1 question like «who owns the wall» returns nothing → write the fact to memory (3 misses)'"
+        },
+        {
+          "node": "n1722",
+          "ok": true,
+          "detail": "tier note -> warning, tier events [{'action': 'tier', 'detail': 'warning'}]"
+        },
+        {
+          "node": "n1711",
+          "ok": true,
+          "detail": "rules ladder: 'r1  warning   applied 0  recurrences 0  next warning  run lint before commit'"
+        },
+        {
+          "node": "n1723",
+          "ok": true,
+          "detail": "{'added': 1, 'skipped': 0, 'total': 1}, again {'added': 0, 'skipped': 1, 'total': 1}, item {'quote': 'decision 1', 'expected': 'owner_only', 'why': 'the owner decided 1', 'strength': 'strong', 'source': 'owner_message'}, collected ['night_proposes']"
+        },
+        {
+          "node": "n1713",
+          "ok": true,
+          "detail": "{'exitCode': 0, 'total': 20, 'correct': 16, 'unsafe': 2, 'passed': True, 'verdict': True}"
+        },
+        {
+          "node": "n1724",
+          "ok": true,
+          "detail": "{'exitCode': 2, 'inSplit': 4, 'seenExcluded': 1, 'total': 3, 'enough': False, 'said': True}"
+        },
+        {
+          "node": "n1719",
+          "ok": true,
+          "detail": "[{'pattern': 'zz_unlisted_change→night_decides', 'times': 4, 'suggestion': 'the owner decided zz_unlisted_change→night_decides 4 times: let the night policy decide it the same way'}]"
+        },
+        {
+          "node": "n1712",
+          "ok": true,
+          "detail": "{'first': {'mined': 1, 'skipped': 1, 'total': 1}, 'second': {'mined': 0, 'skipped': 2, 'total': 1}, 'drafts': [['да, выкатывай', 'approve', 'owner_only']], 'before': 0, 'after': 1}"
+        },
+        {
+          "node": "n1714",
+          "ok": true,
+          "detail": "ran ['dear', 'cheap', 'failing']"
+        },
+        {
+          "node": "n1725",
+          "ok": true,
+          "detail": "ranks [['stored', 2, 4], ['dear', 3, 9], ['cheap', 1, 0.5], ['failing', 4, None]]"
+        },
+        {
+          "node": "n1715",
+          "ok": true,
+          "detail": "'baseline (no model), 2026-11-01..2026-11-15: 2 accepted task(s)\\nfalse-done rate 50% (1: regression, merged revert or -mainfix after acceptance)\\nphantom writes 50% (1 of 2 recorded accepted attempt(s) whose merge lacks an expected output)\\ngit loss recoverability 50% (1 of 2 merge commit(s) still "
+        },
+        {
+          "node": "n1726",
+          "ok": true,
+          "detail": "false-done {'count': 1, 'rate': 0.5, 'tasks': ['ghost']}, git loss {'merged': 2, 'checked': 2, 'recoverable': 1, 'rate': 0.5, 'lost': ['bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'], 'unchecked': 0}"
+        },
+        {
+          "node": "n1716",
+          "ok": true,
+          "detail": "same seed twice: scores equal True, seed 7"
+        },
+        {
+          "node": "n1727",
+          "ok": true,
+          "detail": "last line 'reproduce: bb lane-pilot memory-eval --source /tmp/r26-eval-IPim4G/extract.db --sizes 30 --seed 7 --scope project'; the printed command repeats the scores: True"
+        },
+        {
+          "node": "n1717",
+          "ok": true,
+          "detail": "north-star appended True, absent without the flag True, gate [0, 'memory gate: 40 cases, 0 leaks, 0 overflows, 0 cut rules, 0 ']"
+        },
+        {
+          "node": "n1728",
+          "ok": true,
+          "detail": "retrieval scores reproduced from one extract; gate 'memory gate: 40 cases, 0 leaks, 0 overflows, 0 cut rules, 0 '"
+        },
+        {
+          "node": "n1718",
+          "ok": true,
+          "detail": "found [['02e1719dc810', 'исправить разбор даты', ['src/c.ts']], ['c7737d7ed222', 'fix the crash on an empty list', ['src/a.ts']]]"
+        },
+        {
+          "node": "n1730",
+          "ok": true,
+          "detail": "asked [\"git 'log' '--no-merges' '-n' '400' '--name-only' '--format=%x01%H%x02%s'\"]"
+        },
+        {
+          "node": "n1729",
+          "ok": true,
+          "detail": "[['projA', 600, 1, 600]]"
+        },
+        {
+          "node": "n1720",
+          "ok": true,
+          "detail": "report {'doctype': True, 'money': True, 'cost': True, 'map': True}"
+        },
+        {
+          "node": "n1732",
+          "ok": true,
+          "detail": "page {'heading': True, 'columns': True, 'escaped': True, 'outside': False}"
+        },
+        {
+          "node": "n1731",
+          "ok": true,
+          "detail": "cells [{'stageId': 'verification', 'state': 'passed', 'rounds': 2, 'failures': 1, 'reason': None}], stage {'stageId': 'verification', 'green': 2, 'red': 0, 'skipped': 0, 'unknown': 0, 'greenShare': 1, 'medianRounds': 1.5, 'medianCostUsd': None, 'medianSeconds': 30}"
+        }
+      ],
+      "checked": 23
+    }
+  ],
+  "seen": null,
+  "judged": [
+    {
+      "name": "sma_r06",
+      "verdict": "pass",
+      "evidence": [
+        "proved",
+        "checked"
+      ],
+      "why": ""
+    },
+    {
+      "name": "sma_r10",
+      "verdict": "pass",
+      "evidence": [
+        "proved",
+        "checked"
+      ],
+      "why": ""
+    },
+    {
+      "name": "sma_r12",
+      "verdict": "pass",
+      "evidence": [
+        "proved",
+        "checked"
+      ],
+      "why": ""
+    },
+    {
+      "name": "sma_r26",
+      "verdict": "pass",
+      "evidence": [
+        "proved",
+        "checked"
+      ],
+      "why": ""
+    }
+  ],
+  "series": {
+    "verdict": "pass",
+    "missing": [],
+    "failed": [],
+    "skipped": []
+  }
+}

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { MAIN_AGENT_PROFILE_IDS } from "../src/rooms/contracts/server";
-import { compileMainAgentProfile } from "../src/rooms/native-agent/agent-profile";
+import { compileMainAgentProfile } from "../src/rooms/native-agent/models/agent-profile";
 import { agentBadgeChart, agentKind, agentPickerLabel, composerAgentLabel, STOCK_AGENT_SEED_DESCRIPTIONS } from "../src/rooms/contracts/agent-display";
 import { t, setLocaleOverride } from "@lane-pilot/i18n";
 

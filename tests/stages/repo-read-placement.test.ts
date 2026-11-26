@@ -1,8 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { TaskV2 } from "../../src/rooms/contracts";
-import { normalizeRepoReads, rerootTask, rerootToRepoRoot } from "../../src/rooms/tasks/task-base";
-import { repoReadRoot } from "../../src/rooms/tasks/repo-read";
-import { lintContract, lintProbePaths } from "../../src/rooms/tasks/server/contract-lint";
+import { normalizeRepoReads, rerootTask, rerootToRepoRoot } from "../../src/rooms/tasks";
+import { lintContract, lintProbePaths, repoReadRoot } from "../../src/rooms/tasks/server";
 
 const task = ():TaskV2 => ({schema_version:2,id:"section-read",title:"Read SDK",display_title:"Чтение SDK",kind:"fix",area:"bot",risk:"low",lane:"writer",
   project_cwd:"/repo/bot",read_first:["../sdk/index.ts:1-20","src/main.ts"],owns_paths:["src/**"],never_touch:["../sdk/**","dist/**"],expected_outputs:["src/main.ts"],

@@ -1,6 +1,6 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { expect, it } from "vitest";
-import { criticStats } from "../src/rooms/critique/critic-stats";
+import { criticStats } from "../src/rooms/critique/server";
 import { createRun, openDatabase } from "../src/rooms/plugin-db";
 
 it("counts blocks, what became of them, misses and first-try acceptance from recorded tasks", () => {

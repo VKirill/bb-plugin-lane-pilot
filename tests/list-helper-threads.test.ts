@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { createCore } from "../src/rooms/core/server/core";
 import { createAttempt, createRun, createTask, openDatabase, saveStageReceipt, setRunThread, transitionAttempt } from "../src/rooms/plugin-db";
-import { runsRpc } from "../src/rooms/runs/server/rpc/runs";
+import { runsRpc } from "../src/rooms/runs/server";
 import { rpcNative } from "../src/rooms/contracts/rpc-native";
 import type { Services } from "../server";
 
@@ -45,7 +45,7 @@ describe("list_helper_threads RPC", () => {
   });
 
   it("logs list error once per minute and keeps other pages", async () => {
-    const { bb, harness, handlers } = setupHost();
+    const { harness, handlers } = setupHost();
     let callCount = 0;
     harness.sdk.stub("threads.list", async (args: { offset?: number }) => {
       callCount += 1;
@@ -55,7 +55,6 @@ describe("list_helper_threads RPC", () => {
       throw new Error("network error on page 2");
     });
 
-    const warnSpy = bb.log.warn as unknown as { mock?: { calls: unknown[][] } };
     const result = await handlers.list_helper_threads({ threadId: "thr_pm" });
     expect(result.threads).toHaveLength(1);
     expect(result.threads[0]?.id).toBe("thr_ok");

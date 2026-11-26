@@ -2,9 +2,10 @@ import { accessSync, constants as fsConstants, existsSync } from "node:fs";
 import { access, lstat, mkdir, mkdtemp, readdir, readFile, realpath, rm, rmdir, symlink, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { delimiter, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
-import { bestEffort, createCapture, lstatOrNull, redactSecrets, sha256Hex } from "@lane-pilot/kit";
-import { spawnAsync } from "@lane-pilot/kit";
+import { bestEffort, createCapture, currentHostId, lstatOrNull, redactSecrets, sha256Hex, spawnAsync } from "@lane-pilot/kit";
+import { shellQuote } from "@lane-pilot/contracts";
 import { asWorker, existsAsUser, grantRunFolders, homeOfUser, workerReachable } from "./worker-user";
+import { CREDENTIAL_FILES, credentialDirs, resolveCredentialPaths } from "./credential-paths";
 
 export type SandboxedCommandInput = {
   requestedHostId:string; workspacePath:string; cwd:string; command:string; backend?:"auto"|"macos-seatbelt"|"linux-bubblewrap"; timeoutSec?:number;
@@ -89,13 +90,9 @@ export async function protectedRootsManifest(workspacePath:string, options:{cap?
 }
 
 /** Credential stores a publish would reach for (SMA m_ck_required): masked in the sandbox so a check can use the net but not publish. */
-const CREDENTIAL_DIRS=(sshKeys:boolean)=>[...(sshKeys?[]:[".ssh"]),".gnupg",".aws",".azure",join(".config","gh")];
-const CREDENTIAL_FILES=[".git-credentials",".netrc"];
 /** `sshKeys` (the project's verification.ssh_keys is on) leaves `~/.ssh` out of the mask; the other stores stay masked. */
 export function credentialMaskPaths(home = homedir(), options:{sshKeys?:boolean} = {}):{dirs:string[];files:string[]} {
-  const dirs=CREDENTIAL_DIRS(options.sshKeys===true).map((name)=>join(home,name)).filter((path)=>existsSync(path));
-  const files=CREDENTIAL_FILES.map((name)=>join(home,name)).filter((path)=>existsSync(path));
-  return {dirs,files};
+  return resolveCredentialPaths(home, { sshKeys: options.sshKeys, existingOnly: true });
 }
 /**
  * The mask for one run. With `asUser` (the strict worker) it is the worker's home that is masked, not the hub process's: the
@@ -104,8 +101,8 @@ export function credentialMaskPaths(home = homedir(), options:{sshKeys?:boolean}
 export async function credentialMaskFor(input:{asUser?:string;sshKeys?:boolean}):Promise<{dirs:string[];files:string[]}> {
   if (!input.asUser) return credentialMaskPaths(homedir(),{sshKeys:input.sshKeys});
   const home=await homeOfUser(input.asUser);
-  const found=async(names:string[])=>(await Promise.all(names.map(async(name)=>{ const path=join(home,name); return await existsAsUser(input.asUser!,path) ? path : null; }))).filter((path):path is string=>path!==null);
-  return {dirs:await found(CREDENTIAL_DIRS(input.sshKeys===true)),files:await found(CREDENTIAL_FILES)};
+  const found=async(names:readonly string[])=>(await Promise.all(names.map(async(name)=>{ const path=join(home,name); return await existsAsUser(input.asUser!,path) ? path : null; }))).filter((path):path is string=>path!==null);
+  return {dirs:await found(credentialDirs({sshKeys:input.sshKeys})),files:await found(CREDENTIAL_FILES)};
 }
 const sshMasked=(mask:{dirs:string[]},home:string|null,input:{sshKeys?:boolean})=>input.sshKeys!==true&&mask.dirs.some((dir)=>dir.endsWith(`${sep}.ssh`)&&(home===null||dir===join(home,".ssh")));
 
@@ -411,7 +408,7 @@ export async function runSandboxedCommandOnHost(input:SandboxedCommandInput):Pro
       if (child.error && ["EPERM","EACCES","ENOENT"].includes(String((child.error as NodeJS.ErrnoException).code))) {
         throw new Error("sandbox_backend_unavailable: bubblewrap launch was denied or executable is missing");
       }
-      return {hostId:process.env.BB_HOST_ID ?? input.requestedHostId,backend,workspacePath,cwd,exitCode:child.status ?? (timedOut(child) ? 124 : 1),
+      return {hostId:currentHostId(input.requestedHostId),backend,workspacePath,cwd,exitCode:child.status ?? (timedOut(child) ? 124 : 1),
         policySha256,...(await rootsField()),maskedSsh,stdout:maskSecrets(child.stdout ?? "",secrets),stderr:maskSecrets(keepEnds(child.stderr ?? child.error?.message ?? "",KEEP_STDERR),secrets)};
     }
     const profile = buildSeatbeltProfile(workspacePath,tempPath,credentialMask);
@@ -436,7 +433,7 @@ export async function runSandboxedCommandOnHost(input:SandboxedCommandInput):Pro
       throw new Error("sandbox_backend_unavailable: Seatbelt policy could not be applied by the host");
     }
     return {
-      hostId:process.env.BB_HOST_ID ?? input.requestedHostId,backend,workspacePath,cwd,
+      hostId:currentHostId(input.requestedHostId),backend,workspacePath,cwd,
       exitCode:child.status ?? (timedOut(child) ? 124 : 1),policySha256,...(await rootsField()),maskedSsh,
       stdout:maskSecrets(child.stdout ?? "",seatbeltSecrets),stderr:maskSecrets(keepEnds(child.stderr ?? child.error?.message ?? "",KEEP_STDERR),seatbeltSecrets),
     };
@@ -445,8 +442,6 @@ export async function runSandboxedCommandOnHost(input:SandboxedCommandInput):Pro
     await rm(tempPath,{recursive:true,force:true});
   }
 }
-
-const shellQuote=(value:string)=>`'${value.replace(/'/g,"'\\''")}'`;
 
 export type SandboxedCommandLine = {
   hostId:string; backend:"macos-seatbelt"|"linux-bubblewrap"; workspacePath:string; cwd:string; policySha256:string;
@@ -484,7 +479,7 @@ export async function prepareSandboxedCommandLine(input:SandboxedCommandInput & 
   if (!input.command.trim() || input.command.length > 32_000 || input.command.includes("\0")) throw new Error("sandbox_command_invalid_or_too_large");
   const tempPath = await realpath(await mkdtemp(resolve(tmpdir(),"lane-pilot-sandbox-")));
   await linkUserToolHomes(tempPath);
-  const hostId=process.env.BB_HOST_ID ?? input.requestedHostId;
+  const hostId=currentHostId(input.requestedHostId);
   const credentialMask=credentialMaskPaths(homedir(),{sshKeys:input.sshKeys});
   const maskedSsh=sshMasked(credentialMask,null,input);
   // The before manifest is taken at prepare time, the after one at release: together they are the same

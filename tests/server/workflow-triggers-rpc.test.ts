@@ -20,7 +20,7 @@ const file = (extra: Record<string, unknown> = {}) => ({
   inputs: [{ name: "query", type: "string" }], outputs: [{ name: "result", type: "string" }],
   nodes: [{ id: "done", type: "action", action: "emit", map: { result: "$inputs.query" } }],
   edges: [{ from: "start", to: "done" }],
-  triggers: [{ type: "schedule", cron: "0 9 * * *", timezone: "Europe/Moscow", projectId, inputs: { query: "cats" } }, { type: "manual" }, { type: "telegram" }],
+  triggers: [{ type: "schedule", cron: "0 9 * * *", timezone: "Europe/Moscow", projectId, inputs: { query: "cats" } }, { type: "manual" }],
   ...extra,
 });
 const write = (definition: Record<string, unknown>) => { mkdirSync(globalWorkflowDir(), { recursive: true }); writeFileSync(join(globalWorkflowDir(), "daily-digest.json"), JSON.stringify(definition)); };
@@ -40,6 +40,8 @@ async function setup(options: { pm?: boolean } = {}) {
   });
   // The run's chat is a PM chat (role pm): a triggered run goes to no other.
   harness.sdk.stub("threads.getPluginMetadata", async ({ threadId }: { threadId: string }) => (threadId === "thr_pm" ? { role: "pm", lanePilotRunId: "lprun_s" } : {}));
+  harness.sdk.stub("hosts.list", async () => []);
+  harness.sdk.stub("projects.list", async () => []);
   await plugin(bb);
   dispose = () => harness.lifecycle.dispose();
   const db = openDatabase(bb);
@@ -49,19 +51,24 @@ async function setup(options: { pm?: boolean } = {}) {
 }
 
 describe("schedule triggers end to end", () => {
-  it("a file is a draft until its tests pass; then it gets an automation, and the tick runs it through the CLI", async () => {
+  it("a file is a draft until its tests pass; then it gets a schedule-board row (no BB automations), and the tick runs it through the CLI", async () => {
     write(file());
     const { harness, rpc, automationCalls } = await setup();
     expect((await rpc("workflow_list", { projectId })).workflows.find((row: { id: string }) => row.id === "daily-digest")).toMatchObject({ status: "draft" });
-    expect(automationCalls).toEqual([]);
+    expect((await rpc("schedule_list", { projectId })).schedules).toEqual([]);
 
     expect(await rpc("workflow_run_tests", { id: "daily-digest", projectId })).toMatchObject({ green: true, status: "published" });
-    await until("the automation", () => automationCalls.length > 0);
-    expect(automationCalls[0]).toMatchObject({ method: "automations_create", input: { projectId, name: "Lane Pilot: Daily digest", origin: "app",
-      trigger: { triggerType: "schedule", cron: "0 9 * * *", timezone: "Europe/Moscow" }, execution: { mode: "script", interpreter: "bash" } } });
-    const script = String(automationCalls[0]!.input.execution.script);
-    expect(script).toContain("bb lane-pilot workflow-trigger \"$BB_PROJECT_ID\" 'daily-digest' '{\"query\":\"cats\"}'");
-    expect((await rpc("workflow_get", { id: "daily-digest", projectId })).workflow.schedules).toEqual([{ projectId, slot: 0, automationId: "auto_1" }]);
+    const rows = (await rpc("schedule_list", { projectId })).schedules as Array<Record<string, any>>;
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      projectId,
+      name: "Lane Pilot: Daily digest",
+      task: { kind: "workflow", workflowId: "daily-digest", inputs: { query: "cats" } },
+      when: { type: "cron", cron: "0 9 * * *", timezone: "Europe/Moscow" },
+      createdBy: "workflow:daily-digest:0",
+    });
+    expect(automationCalls).toEqual([]);
+    expect((await rpc("workflow_get", { id: "daily-digest", projectId })).workflow.schedules).toEqual([{ projectId, slot: 0, automationId: rows[0]!.id }]);
 
     // The tick: BB runs the script, which calls the CLI with the project, the inputs and the run id of the tick.
     const tick = await harness.behavior.runCli(["workflow-trigger", projectId, "daily-digest", '{"query":"cats"}', "autorun_1"]);
@@ -84,33 +91,25 @@ describe("schedule triggers end to end", () => {
     expect((await harness.behavior.runCli(["workflow-trigger", projectId, "daily-digest", "[1]"])).exitCode).not.toBe(0);
   });
 
-  it("deprecating the file and running its tests again removes the automation", async () => {
+  it("deprecating the file and running its tests again removes the schedule-board row", async () => {
     write(file());
     const { rpc, automationCalls } = await setup();
     await rpc("workflow_run_tests", { id: "daily-digest", projectId });
-    await until("created", () => automationCalls.length === 1);
+    expect((await rpc("schedule_list", { projectId })).schedules).toHaveLength(1);
     write(file({ status: "deprecated" }));
     await rpc("workflow_run_tests", { id: "daily-digest", projectId });
-    await until("removed", () => automationCalls.length === 2);
-    expect(automationCalls[1]).toMatchObject({ method: "automations_delete", input: { projectId, automationId: "auto_1" } });
+    expect((await rpc("schedule_list", { projectId })).schedules).toEqual([]);
+    expect(automationCalls).toEqual([]);
   });
 
-  it("the Run button's RPC starts the workflow, asks for missing inputs, and refuses a source it has no trigger for", async () => {
+  it("the Run button's RPC starts the workflow and asks for missing inputs", async () => {
     write(file({ triggers: [{ type: "manual" }] }));
     const { rpc } = await setup();
     await rpc("workflow_run_tests", { id: "daily-digest", projectId });
     expect(await rpc("workflow_run", { id: "daily-digest", projectId, inputs: {} })).toMatchObject({ ok: false, reason: "missing_inputs", missing: ["query"] });
-    expect(await rpc("workflow_run", { id: "daily-digest", projectId, inputs: { query: "q" }, source: "telegram" })).toMatchObject({ ok: false, reason: "no_trigger" });
     const ran = await rpc("workflow_run", { id: "daily-digest", projectId, inputs: { query: "q" } });
     expect(ran).toMatchObject({ ok: true, created: true });
     await until("the run", async () => ((await rpc("workflow_run_snapshot", { runId: ran.runId })).snapshot?.run.status === "succeeded"));
     expect((await rpc("workflow_runs", { id: "daily-digest" })).runs).toHaveLength(1);
-  });
-
-  it("a Telegram message can start a workflow that lists a telegram trigger", async () => {
-    write(file());
-    const { rpc } = await setup();
-    await rpc("workflow_run_tests", { id: "daily-digest", projectId });
-    expect(await rpc("workflow_run", { id: "daily-digest", projectId, inputs: { query: "from telegram" }, source: "telegram" })).toMatchObject({ ok: true });
   });
 });

@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { CANCEL_CODES, acceptanceTotalsSchema, acceptanceWeekSchema } from "@lane-pilot/contracts";
-import { attemptLogTailInput, attemptLogTailOutput, emptyRpcInput, moneyStatusOutput, ownerWaitingOutput, workGraphStripsInput, workGraphStripsOutput, workGraphTaskInput, workGraphTaskOutput, worldVersionOutput } from "./ui-query-schemas";
+import { attemptLogTailInput, attemptLogTailOutput, emptyRpcInput, moneyStatusOutput, ownerWaitingOutput, workGraphStripsInput, workGraphStripsOutput, workGraphTaskInput, workGraphTaskOutput, uiVersionOutput } from "./ui-query-schemas";
 
 /** Run control, statistics, deploy, self-repair, canary and the stack installer. */
 export const rpcOps = {
@@ -8,15 +8,6 @@ export const rpcOps = {
   halt_run: {
     input: z.object({ runId: z.string().min(1) }).strict(),
     output: z.object({ ok: z.boolean(), canceled: z.array(z.string()), left: z.array(z.string()) }).strict(),
-  },
-  /** Pauses a run at a safe boundary: new tasks wait, running attempts finish their current stage and then wait; nothing is canceled. */
-  pause_run: {
-    input: z.object({ runId: z.string().min(1) }).strict(),
-    output: z.unknown(),
-  },
-  resume_run: {
-    input: z.object({ runId: z.string().min(1) }).strict(),
-    output: z.unknown(),
   },
   cancel_attempt: {
     input: z.object({ attemptId: z.string().min(1),
@@ -37,10 +28,6 @@ export const rpcOps = {
       skipped: z.array(z.string()),
       finished: z.array(z.string()),
     }).strict(),
-  },
-  writer_brief_stats: {
-    input: z.object({ projectId: z.string().min(1), since: z.number().int(), until: z.number().int().optional() }).strict(),
-    output: z.unknown(),
   },
   /** How much each critic is worth in a project: blocks, what became of blocked tasks, misses, first-try acceptance. */
   critic_stats: {
@@ -76,31 +63,6 @@ export const rpcOps = {
     input: z.object({ on:z.boolean() }).strict(),
     output: z.unknown(),
   },
-  deploy_status: {
-    input: z.object({}).strict(),
-    output: z.unknown(),
-  },
-  self_repair_status: {
-    input: z.object({}).strict(),
-    output: z.unknown(),
-  },
-  self_repair_configure: {
-    input: z.object({
-      enabled: z.boolean().optional(),
-      projectId: z.string().min(1).optional(),
-      environmentId: z.string().min(1).optional(),
-      sectionId: z.string().min(1).nullable().optional(),
-      providerId: z.string().min(1).optional(),
-      model: z.string().min(1).optional(),
-      reasoningLevel: z.string().min(1).optional(),
-      maxPerDay: z.number().int().min(0).max(20).optional(),
-      ignoreProjects: z.array(z.string().min(1)).max(50).optional(),
-      hubSsh: z.string().trim().min(1).max(300).optional(),
-      hubDb: z.string().trim().min(1).max(300).optional(),
-      hubLog: z.string().trim().min(1).max(300).optional(),
-    }).strict(),
-    output: z.unknown(),
-  },
   canary_status: {
     input: z.object({}).strict(),
     output: z.unknown(),
@@ -109,10 +71,6 @@ export const rpcOps = {
   memory_probe: {
     input: z.object({ projectId: z.string().min(1), paths: z.array(z.string().min(1)).max(40).optional(), keep: z.boolean().optional(), force: z.boolean().optional(),
       action: z.enum(["run", "clean", "report"]).default("run") }).strict(),
-    output: z.unknown(),
-  },
-  self_repair_tick: {
-    input: z.object({ dryRun: z.boolean().default(true), since: z.number().int().optional() }).strict(),
     output: z.unknown(),
   },
   stack_detect: {
@@ -129,27 +87,6 @@ export const rpcOps = {
   },
   stack_rollback: {
     input: z.object({ projectId: z.string().min(1), snapshotPath: z.string().startsWith("/").optional() }).strict(),
-    output: z.unknown(),
-  },
-  /** The writer harness that learns (src/rooms/harness): trees per area and writer, trials, the nightly editor. */
-  harness_status: {
-    input: z.object({ projectId: z.string().min(1) }).strict(),
-    output: z.unknown(),
-  },
-  harness_configure: {
-    input: z.object({ projectId: z.string().min(1), patch: z.record(z.string(), z.unknown()) }).strict(),
-    output: z.unknown(),
-  },
-  harness_edit: {
-    input: z.object({ projectId: z.string().min(1), area: z.string().max(120).optional(), writerKey: z.string().max(200).optional(), wait: z.boolean().default(false) }).strict(),
-    output: z.unknown(),
-  },
-  harness_tick: {
-    input: z.object({ projectId: z.string().min(1), dryRun: z.boolean().default(true) }).strict(),
-    output: z.unknown(),
-  },
-  harness_reflect: {
-    input: z.object({ harnessId: z.string().min(1) }).strict(),
     output: z.unknown(),
   },
   /** The register of deferrals (src/rooms/deferral): terms come only from a verified owner message. */
@@ -170,31 +107,6 @@ export const rpcOps = {
   },
   deferral_close: {
     input: z.object({ id: z.string().min(1).max(80), evidence: z.string().min(1).max(2000) }).strict(),
-    output: z.unknown(),
-  },
-  /** The project's backlog read live and sorted into lanes (issuable, to estimate, to split, blocked) for the board screen (src/rooms/backlog). */
-  backlog_board: {
-    input: z.object({ projectId: z.string().min(1).max(200) }).strict(),
-    output: z.unknown(),
-  },
-  /** The owner's «выдать» on a backlog row of his list: the todo goes to the project's PM as a work order (src/rooms/backlog). */
-  backlog_issue: {
-    input: z.object({ projectId: z.string().min(1).max(200), todoId: z.string().min(1).max(120) }).strict(),
-    output: z.unknown(),
-  },
-  /** The task's verification[] again on its recorded base plus the accepted change, in a fresh worktree; a receipt is kept (src/rooms/rollback). */
-  task_reverify: {
-    input: z.object({ ref: z.string().min(1).max(200) }).strict(),
-    output: z.unknown(),
-  },
-  /** Reverts an accepted task's merge commit(s) in a worktree, checked and merged through the merge queue; refused with the next step on a conflict. */
-  task_revert: {
-    input: z.object({ ref: z.string().min(1).max(200), dryRun: z.boolean().optional(), skipGate: z.boolean().optional(), why: z.string().max(2000).optional(), by: z.string().max(60).optional() }).strict(),
-    output: z.unknown(),
-  },
-  /** What is on record for a task or an attempt: bases, merges, changed files, receipts. */
-  task_changes: {
-    input: z.object({ ref: z.string().min(1).max(200) }).strict(),
     output: z.unknown(),
   },
   /** The changes of a work as a patch: git show of its merge commit, clipped with a mark (src/rooms/rollback). */
@@ -237,19 +149,9 @@ export const rpcOps = {
     input: z.object({ projectId: z.string().min(1).optional(), days: z.number().int().min(1).max(365).optional(), excludeProjectIds: z.array(z.string().min(1)).max(100).optional() }).strict(),
     output: z.unknown(),
   },
-  /** The PM's forecasts against the facts of accepted tasks, scored and calibrated per area (src/rooms/forecast). */
-  forecast_report: {
-    input: z.object({ projectId: z.string().min(1).optional(), days: z.number().int().min(1).max(365).optional() }).strict(),
-    output: z.unknown(),
-  },
   /** The conveyor switch: read it, or turn it on or off (off: no new work is issued anywhere; src/rooms/runs/server/conveyor.ts). */
   conveyor: {
     input: z.object({ set: z.enum(["on", "off"]).optional(), reason: z.string().max(300).optional() }).strict(),
-    output: z.unknown(),
-  },
-  /** Per provider in use: the adapter version installed and each capability's state, supported, not_supported or unproven (src/rooms/capability). */
-  capability_table: {
-    input: z.object({}).strict(),
     output: z.unknown(),
   },
   /** Money (src/rooms/money): spent month to date, the 14-day series, the cap and what is left of it. */
@@ -257,125 +159,19 @@ export const rpcOps = {
     input: emptyRpcInput,
     output: moneyStatusOutput,
   },
-  /** The world version (src/rooms/relay/server): one number that grows with every attempt change; a screen reads the board again when it moved. */
-  world_version: {
+  /** The UI version (src/rooms/relay/server): one number that grows with every attempt change; a screen reads the board again when it moved. */
+  ui_version: {
     input: emptyRpcInput,
-    output: worldVersionOutput,
+    output: uiVersionOutput,
   },
-  /** Phases on rails (src/rooms/phase): the live and recent phases of a project or a PM chat, with stage and next action. */
-  phase_list: {
-    input: z.object({ projectId: z.string().min(1).optional(), pmThreadId: z.string().min(1).optional(), live: z.boolean().optional() }).strict(),
-    output: z.unknown(),
-  },
-  /** One phase: its record, gates, next action, the facts of its pieces and its book (the chain of parts). */
-  phase_get: {
-    input: z.object({ phaseId: z.string().min(1).max(40) }).strict(),
-    output: z.unknown(),
-  },
-  /** The phase folder as a tree (no path) or one file as text (path, relative, under .agents/phases/<id>/). */
-  phase_files: {
-    input: z.object({ phaseId: z.string().min(1).max(40), path: z.string().min(1).max(1024).optional() }).strict(),
-    output: z.unknown(),
-  },
-  /** Controls of a phase from the screen or the CLI: pause, resume, return to an earlier stage with a note, stop the wave, close in words. */
-  /** The window's cockpit (src/rooms/cockpit): Today, workers, the memory corpus, the forge order, the designer, windows, views, faults. */
-  cockpit_today: { input: z.object({ projectId: z.string().min(1).max(200) }).strict(), output: z.unknown() },
-  cockpit_workers: { input: z.object({ projectId: z.string().min(1).max(200) }).strict(), output: z.unknown() },
-  cockpit_memory: { input: z.object({ runId: z.string().min(1).max(200), action: z.enum(["lint", "index", "tags", "consolidate"]) }).strict(), output: z.unknown() },
-  cockpit_forge_order: { input: z.object({ projectId: z.string().min(1).max(200), kind: z.enum(["skill", "role", "workflow"]), name: z.string().regex(/^[a-z][a-z0-9-]{1,47}$/), brief: z.string().trim().min(20).max(4000), body: z.string().max(20_000).optional() }).strict(), output: z.unknown() },
-  cockpit_forge_list: { input: z.object({ projectId: z.string().min(1).max(200) }).strict(), output: z.unknown() },
-  cockpit_designer: { input: z.object({ projectId: z.string().min(1).max(200).optional() }).strict(), output: z.unknown() },
-  cockpit_windows: { input: z.object({ hostId: z.string().min(1).max(200) }).strict(), output: z.unknown() },
-  cockpit_seen: { input: z.object({ screen: z.string().min(1).max(80), ms: z.number().int().min(0).max(86_400_000) }).strict(), output: z.unknown() },
-  cockpit_seen_list: { input: z.object({}).strict(), output: z.unknown() },
-  cockpit_request: { input: z.object({ projectId: z.string().min(1).max(200), kind: z.enum(["task", "batch", "promote", "ship"]), text: z.string().trim().min(5).max(8000) }).strict(), output: z.unknown() },
-  cockpit_queue: { input: z.object({ runId: z.string().min(1).max(200), taskIds: z.array(z.string().min(1).max(200)).min(1).max(50), action: z.enum(["hold", "release", "priority"]), priority: z.enum(["low", "normal", "high", "urgent"]).optional() }).strict(), output: z.unknown() },
-  cockpit_update: { input: z.object({ hostId: z.string().min(1).max(200), apply: z.boolean().default(false) }).strict(), output: z.unknown() },
-  cockpit_task: { input: z.object({ runId: z.string().min(1).max(200), taskId: z.string().min(1).max(200) }).strict(), output: z.unknown() },
-  cockpit_task_drawing_ok: { input: z.object({ runId: z.string().min(1).max(200), taskId: z.string().min(1).max(200) }).strict(), output: z.unknown() },
-  cockpit_task_correct: { input: z.object({ runId: z.string().min(1).max(200), taskId: z.string().min(1).max(200), text: z.string().trim().min(3).max(4000) }).strict(), output: z.unknown() },
-  cockpit_accounts: { input: z.object({}).strict(), output: z.unknown() },
-  cockpit_rules: { input: z.object({ projectId: z.string().min(1).max(200) }).strict(), output: z.unknown() },
-  cockpit_forge_enable: { input: z.object({ projectId: z.string().min(1).max(200), kind: z.enum(["skill", "role", "workflow"]), name: z.string().regex(/^[a-z][a-z0-9-]{1,47}$/) }).strict(), output: z.unknown() },
-  /** One attempt's whole record in one answer: writer thread, stage receipts and gate events of that attempt, the dispatch context, verification results, critic input hash, the attempt-change row (SMA ap_run_dir). */
-  cockpit_attempt: { input: z.object({ attemptId: z.string().min(1).max(200) }).strict(), output: z.unknown() },
-
-  cockpit_fault: { input: z.object({ screen: z.string().min(1).max(80), text: z.string().trim().min(3).max(2000) }).strict(), output: z.unknown() },
-  /** The front (src/rooms/front): the first-run interview, the project's own helpers, peers, coordination, the door, the action journal. */
+  /** Project first-run onboarding interview (src/rooms/front). */
   first_run_get: { input: z.object({ projectId: z.string().min(1).max(200) }).strict(), output: z.unknown() },
   first_run_answer: { input: z.object({ projectId: z.string().min(1).max(200), step: z.enum(["goal", "writer", "quality", "words"]), answer: z.string().trim().min(1).max(2000) }).strict(), output: z.unknown() },
   first_run_finish: { input: z.object({ projectId: z.string().min(1).max(200) }).strict(), output: z.unknown() },
-  helpers_list: { input: z.object({ runId: z.string().min(1).max(200) }).strict(), output: z.unknown() },
-  helpers_import: { input: z.object({ runId: z.string().min(1).max(200), names: z.array(z.string().min(1).max(80)).min(1).max(30) }).strict(), output: z.unknown() },
-  peers_list: { input: z.object({}).strict(), output: z.unknown() },
-  coord_status: { input: z.object({ runId: z.string().min(1).max(200) }).strict(), output: z.unknown() },
-  coord_clear: { input: z.object({ runId: z.string().min(1).max(200), session: z.string().min(1).max(120), reason: z.string().trim().min(3).max(300) }).strict(), output: z.unknown() },
-  door_audience: { input: z.object({}).strict(), output: z.unknown() },
-  actions_recent: { input: z.object({ limit: z.number().int().min(1).max(1000).optional() }).strict(), output: z.unknown() },
   /** The owner's word on a task (owner.words on): a verified task waiting to land gets yes or no (src/rooms/tasks/words.ts). */
   task_word: {
     input: z.object({ runId: z.string().min(1).max(200), taskId: z.string().min(1).max(200), decision: z.enum(["yes", "no"]), text: z.string().trim().min(1).max(600) }).strict(),
     output: z.union([z.object({ ok: z.literal(true) }).strict(), z.object({ ok: z.literal(false), reason: z.string() }).strict()]),
-  },
-  /** What the PM reports to a phase, from the owner's screen or a drill (the same driver checks as lane_pilot_phase). */
-  phase_act: {
-    input: z.object({ action: z.enum(["open", "context", "plan", "plan_check", "drawing", "goal_audit", "lessons", "correct", "answer"]), projectId: z.string().min(1).max(200), pmThreadId: z.string().min(1).max(200),
-      phaseId: z.string().min(1).max(40).optional(), payload: z.record(z.string(), z.unknown()).default({}) }).strict(),
-    output: z.unknown(),
-  },
-  phase_control: {
-    input: z.object({ phaseId: z.string().min(1).max(40), action: z.enum(["pause", "resume", "return", "stop_wave", "stop", "close", "word", "interrupt", "decide", "withdraw", "cancel_piece", "uat_line"]), to: z.enum(["discussion", "planning", "design", "execution"]).optional(),
-      note: z.string().max(2000).optional(), turn: z.enum(["context", "planning", "design", "issue", "wave", "acceptance", "uat", "lesson"]).optional(), decision: z.enum(["yes", "no"]).optional(),
-      useful: z.boolean().optional(), limits: z.boolean().optional(), key: z.string().max(64).optional(),
-      piece: z.string().min(1).max(80).optional(), choice: z.enum(["skip", "retry", "cancel"]).optional(),
-      line: z.number().int().min(1).max(200).optional(), result: z.enum(["pass", "fail"]).optional(),
-      wave: z.number().int().min(1).max(100).optional() }).strict(),
-    output: z.unknown(),
-  },
-  /** The run-goal verdict of a run: every accepted task's checks together on the final main (src/rooms/run-goal). */
-  run_goal_status: {
-    input: z.object({ runId: z.string().min(1).max(200) }).strict(),
-    output: z.unknown(),
-  },
-  /** Runs the run-goal check of a run now and keeps the verdict. */
-  run_goal_check: {
-    input: z.object({ runId: z.string().min(1).max(200) }).strict(),
-    output: z.unknown(),
-  },
-  /** The returns on record for a task: the note, the stale and kept stages, how far each got. */
-  task_returns: {
-    input: z.object({ ref: z.string().min(1).max(200) }).strict(),
-    output: z.unknown(),
-  },
-  /** The baseline a task started from (checks already green or red on its base, what turned red after the merge) and the regression findings (src/rooms/baseline). */
-  baseline_status: {
-    input: z.object({ taskId: z.string().min(1).max(200) }).strict(),
-    output: z.unknown(),
-  },
-  /** The regression pass: the last accepted tasks' checks on current main, a bisect for the ones that went red. `plan` only picks; `dryRun` writes nothing. */
-  regress_run: {
-    input: z.object({ projectId: z.string().min(1).optional(), lastN: z.number().int().min(1).max(200).optional(), days: z.number().int().min(1).max(365).optional(),
-      dryRun: z.boolean().optional(), plan: z.boolean().optional(), force: z.boolean().optional() }).strict(),
-    output: z.unknown(),
-  },
-  /** The regression findings still open (or all of them), with the first bad commit, its task and the evidence. */
-  regress_list: {
-    input: z.object({ projectId: z.string().min(1).optional(), all: z.boolean().optional() }).strict(),
-    output: z.unknown(),
-  },
-  /** Settles a regression finding by hand, with the reason. */
-  regress_close: {
-    input: z.object({ id: z.number().int().min(1), reason: z.string().min(1).max(500) }).strict(),
-    output: z.unknown(),
-  },
-  /** LP-Bench (src/rooms/bench): the fixed task set, its series per arm and the paired comparison. Building and running go through `bb lane-pilot bench`. */
-  bench_status: {
-    input: z.object({ version: z.string().min(1).max(40).optional() }).strict(),
-    output: z.unknown(),
-  },
-  bench_compare: {
-    input: z.object({ version: z.string().min(1).max(40).default("v1"), armA: z.string().min(1).max(80), armB: z.string().min(1).max(80), noise: z.tuple([z.string(), z.string()]).optional() }).strict(),
-    output: z.unknown(),
   },
   /** «Waiting for the owner» (src/rooms/owner-waiting): what only the owner can decide, the Telegram digest of new items, and its settings. */
   owner_waiting: {
@@ -395,56 +191,10 @@ export const rpcOps = {
     input: z.object({ patch: z.record(z.string().max(40), z.string().max(80)).optional() }).strict(),
     output: z.unknown(),
   },
-  /** The «Self-improvement» screen in one read: the values and versions of its controls, the status strip, the night policy and the deferral counts (src/rooms/improvement). */
-  improvement_view: {
-    input: z.object({}).strict(),
-    output: z.unknown(),
-  },
-  /** The wall journal and the night loop (src/rooms/wall): classes by recurrence, the night's repairs, the wall ladder, what a night spent. */
-  wall_status: {
-    input: z.object({}).strict(),
-    output: z.unknown(),
-  },
-  wall_show: {
-    input: z.object({ key: z.string().min(1).max(200) }).strict(),
-    output: z.unknown(),
-  },
-  /** Runs the night now; `dryRun` keeps nothing, calls no model and answers what it would pick and why. */
-  wall_night: {
-    input: z.object({ dryRun: z.boolean().optional() }).strict(),
-    output: z.unknown(),
-  },
-  /** Reads (no fields) or changes the night loop's settings: classes and rounds per night, walks, hunters, the night's token cap. */
-  wall_config: {
-    input: z.object({
-      enabled: z.boolean().optional(), maxClassesPerNight: z.number().int().min(1).max(3).optional(), roundsPerNight: z.number().int().min(1).max(2).optional(),
-      walks: z.number().int().min(1).max(5).optional(), hunters: z.number().int().min(1).max(5).optional(), nightTokenCap: z.number().int().min(0).optional(),
-      huntShare: z.number().min(0.01).max(1).optional(), assumedRepairTokens: z.number().int().min(0).optional(), hunterProviderId: z.string().min(1).max(80).optional(),
-      hunterModel: z.string().min(1).max(120).optional(), hunterReasoningLevel: z.string().min(1).max(40).optional(), benchSubset: z.number().int().min(0).max(50).optional(),
-      rerunSandboxOnly: z.boolean().optional(), recurrenceFloor: z.number().int().min(1).max(50).optional(),
-    }).strict(),
-    output: z.unknown(),
-  },
   /** The «Errands» page (src/rooms/errands): the kinds with the model in force and the period's counts, and the period's errand runs with outcome, source, helper thread and cost. */
   errands_overview: { input: z.object({ days: z.number().int().min(1).max(365).optional(), kind: z.string().min(1).max(40).optional(), projectId: z.string().min(1).max(200).optional(), limit: z.number().int().min(1).max(500).optional() }).strict(), output: z.unknown() },
   /** The «Диагноз» block of the «Errands» page (src/rooms/errands/diagnosis): outcomes with their N, cost and time, failure classes, repeats, router near misses, unused skills and catalog litter. */
   errands_diagnosis: { input: z.object({ days: z.number().int().min(1).max(365).optional(), projectId: z.string().min(1).max(200).optional() }).strict(), output: z.unknown() },
-  /** The lead («Штурман», src/rooms/lead): everything the Self-improvement strip and the CLI show — settings, identity sha, next and last ticks, road counts, open proposals, the tier of every class with its exam numbers, journal counts. */
-  lead_state: { input: z.object({}).strict(), output: z.unknown() },
-  /** The road tree: open branches by default, `history` adds rejected and done ones with their reasons; `projectId` null = above projects, absent = every project. */
-  lead_road: { input: z.object({ projectId: z.string().min(1).max(200).nullable().optional(), history: z.boolean().optional() }).strict(), output: z.unknown() },
-  /** The owner's answer to a proposal of the lead (да / потом / нет on his list): the branch, the journal row and the list line move together. */
-  lead_decide: { input: z.object({ roadId: z.string().min(1).max(60), decision: z.enum(["yes", "later", "no"]), text: z.string().max(600).optional() }).strict(), output: z.unknown() },
-  /** The owner's answer to a learned item that waits for him («Вы сказали это в чате…», src/rooms/learning): accept, reject or take back one in force. */
-  learning_decide: { input: z.object({ id: z.string().min(1).max(200), action: z.enum(["accept", "reject", "drop"]) }).strict(), output: z.unknown() },
-  /** «Тик сейчас»: one tick of the lead outside its cron (the graph lead-tick); refused while one is running. */
-  /** The owner's own label on a judged row of the journal (the «Разметка» block): the judge's kappa is measured against these. */
-  lead_label: { input: z.object({ id: z.string().min(1).max(200), label: z.enum(["exact", "partial", "miss"]) }).strict(), output: z.unknown() },
-  lead_tick_now: { input: z.object({}).strict(), output: z.unknown() },
-  /** The switch of the lead's ticks (lead.enabled); the word itself becomes a row of the journal. */
-  lead_set_enabled: { input: z.object({ on: z.boolean() }).strict(), output: z.unknown() },
-  /** «Открыть чат Штурмана»: a chat thread with the lead profile active in its home project; a live one is returned instead of a second (`reused`). */
-  lead_chat_start: { input: z.object({ sectionId: z.string().min(1).optional() }).strict(), output: z.object({ threadId: z.string(), projectId: z.string(), reused: z.boolean() }).strict() },
   /** Specialist OS (src/rooms/specialist): project or hub snapshot of active intents, locks, questions, evals, PDAS artifacts and ledger spend. */
   specialist_overview: { input: z.object({ projectId: z.string().min(1).max(200).optional() }).strict(), output: z.unknown() },
 };

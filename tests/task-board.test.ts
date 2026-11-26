@@ -1,8 +1,7 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
 import { createAttempt, createRun, createTask, openDatabase, setRunThread, transitionAttempt } from "../src/rooms/plugin-db";
-import { recordStage } from "../src/rooms/runs/server/stage-records";
-import { buildTaskBoard, inferTaskKind, readTaskCard } from "../src/rooms/runs/server/task-board";
+import { buildTaskBoard, inferTaskKind, readTaskCard, recordStage } from "../src/rooms/runs/server";
 
 /** 2026-10-12: with the BB Tasks plugin off, the owner asked for its board: all tasks of every chat by status, a card per task. */
 function world() {

@@ -2,7 +2,7 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
 import { sha256Hex } from "@lane-pilot/kit";
 import { checkHistoryKey, createAttempt, createRun, createTask, listCheckDurations, listCheckTimeouts, openDatabase, recordCheckDuration, transitionAttempt } from "../src/rooms/plugin-db";
-import { CHECK_TIMEOUT_CAP_SEC, checkTimeoutSec, historyTimeoutSec, orderChecksForFailFast, p95 } from "../src/rooms/writer/check-timing";
+import { CHECK_TIMEOUT_CAP_SEC, checkTimeoutSec, historyTimeoutSec, orderChecksForFailFast, p95 } from "../src/rooms/writer/server/services/check-timing";
 
 const ROOT = "/work/proj";
 const STUDIO = "python3 -I scripts/studio_test.py";

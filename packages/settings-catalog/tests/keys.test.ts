@@ -7,8 +7,8 @@ import {
   SETTING_WORKER_USER,
   SETTING_WRITER_CAPACITY_WAIT_MAX_MIN,
   SETTING_WRITER_SILENCE_NUDGE_MIN,
-  SETTING_CATALOG,
 } from "@lane-pilot/settings-catalog";
+import { SETTINGS_REGISTRY } from "../../../src/rooms/settings-registry";
 
 // Pin the persisted row keys: a rename breaks every stored setting, so these strings are frozen.
 it("keeps the shared setting keys byte-identical", () => {
@@ -21,9 +21,8 @@ it("keeps the shared setting keys byte-identical", () => {
   expect(SETTING_EPISODES_PROCESS_KEY).toBe("episodes.process_key");
 });
 
-it("keeps the catalog rows on the same key objects", () => {
-  const keys = new Set(SETTING_CATALOG.map((row) => row.key));
+it("keeps the registered setting rows on the same key objects", () => {
   for (const key of [SETTING_WRITER_SILENCE_NUDGE_MIN, SETTING_WRITER_CAPACITY_WAIT_MAX_MIN, SETTING_EPISODES_PROCESS_KEY]) {
-    expect(keys.has(key), key).toBe(true);
+    expect(SETTINGS_REGISTRY.isRegistered(key), key).toBe(true);
   }
 });

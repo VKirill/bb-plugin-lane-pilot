@@ -13,7 +13,7 @@ import {
   setRunThread,
   transitionAttempt,
 } from "../src/rooms/plugin-db";
-import { TARGET_SHA } from "../src/rooms/runs/constants";
+import { TARGET_SHA } from "../src/rooms/runs";
 import { buildTask } from "./fixtures/hello-task";
 import { boundedReadCall } from "./helpers/bounded-read";
 
@@ -398,7 +398,7 @@ describe("production spawn_unknown reconciliation", () => {
 
 describe("lost worktree holder scan", () => {
   it("runs only for an attempt whose holder spawn had begun", async () => {
-    const { createReconcile } = await import("../src/rooms/stability/server/reconcile");
+    const { createReconcile } = await import("../src/rooms/stability/server");
     const { openDatabase, createRun, getAttempt } = await import("../src/rooms/plugin-db");
     let listed = 0;
     const { bb } = createFakePluginHost({ pluginId: "lane-pilot", sdk: { threads: {

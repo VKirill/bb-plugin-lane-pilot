@@ -8,6 +8,7 @@
     "en": "Turns the winning findings from a sketch into a project skill draft and persists it without overwriting an existing skill.",
     "ru": "Превращает победившие находки эскиза в черновик проектного скилла и сохраняет его, не перезаписывая существующий."
   },
+  "category": "planning",
   "status": "published",
   "inputs": {
     "findings": {
@@ -183,5 +184,9 @@
       }
     }
   },
-  "goal_audit": "exempt"
+  "goal_audit": "exempt",
+  "not_for": [
+    "spike",
+    "todo-add"
+  ]
 }

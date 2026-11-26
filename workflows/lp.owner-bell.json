@@ -1,0 +1,226 @@
+{
+  "id": "lp.owner-bell",
+  "startedBy": "event:lp.owner.item-created",
+  "name": {
+    "en": "Owner Browser Bell",
+    "ru": "Браузерный колокольчик владельца"
+  },
+  "description": {
+    "en": "Reacts to newly created owner-waiting items, parks during quiet hours or after the daily cap via durable wait, and folds overflow alerts into a single digest notice.",
+    "ru": "Реагирует на новые вопросы владельцу, пережидает тихие часы и дневной лимит через долговечное ожидание и сводит переполнение в одно сводное уведомление."
+  },
+  "category": "service",
+  "status": "published",
+  "version": 1,
+  "tags": [
+    "event",
+    "owner-waiting",
+    "notification"
+  ],
+  "triggers": [
+    {
+      "type": "event",
+      "event": "lp.owner.item-created"
+    }
+  ],
+  "scope": {
+    "level": "builtin"
+  },
+  "inputs": {
+    "key": {
+      "type": "string",
+      "required": false
+    },
+    "kind": {
+      "type": "string",
+      "required": false
+    }
+  },
+  "outputs": {
+    "sent": "boolean",
+    "reason": "string"
+  },
+  "goal_audit": "exempt",
+  "budget": {
+    "max_minutes": 1440,
+    "max_usd": 0.01
+  },
+  "guards": {
+    "maxSteps": 16,
+    "maxFanOut": 1
+  },
+  "nodes": [
+    {
+      "id": "plan",
+      "type": "action",
+      "label": "Evaluate browser bell window and daily cap",
+      "uses": "lp.owner_bell_plan",
+      "maxVisits": 4,
+      "timeoutSec": 30,
+      "output": [
+        {
+          "name": "send",
+          "type": "boolean"
+        },
+        {
+          "name": "shouldWait",
+          "type": "boolean"
+        },
+        {
+          "name": "waitUntil",
+          "type": "number",
+          "required": false
+        },
+        {
+          "name": "digestOnWake",
+          "type": "boolean"
+        },
+        {
+          "name": "reason",
+          "type": "string",
+          "required": false
+        }
+      ]
+    },
+    {
+      "id": "wait",
+      "type": "action",
+      "label": "Wait until quiet hours end or next digest window",
+      "uses": "builtin:wait",
+      "maxVisits": 4,
+      "timeoutSec": 86400,
+      "params": {
+        "timeoutOutput": "timeout"
+      },
+      "proof": {
+        "kind": "receipt",
+        "check": "durable wait until quiet hours end or digest window opens"
+      },
+      "output": [
+        {
+          "name": "woke",
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "id": "send_now",
+      "type": "action",
+      "label": "Send browser bell notification immediately",
+      "uses": "lp.owner_bell_send",
+      "timeoutSec": 30,
+      "params": {
+        "bypassDailyCap": false,
+        "includeLater": false
+      },
+      "output": [
+        {
+          "name": "sent",
+          "type": "boolean"
+        },
+        {
+          "name": "reason",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "count",
+          "type": "number"
+        }
+      ]
+    },
+    {
+      "id": "send_digest",
+      "type": "action",
+      "label": "Send overflow digest notification after daily cap wait",
+      "uses": "lp.owner_bell_send",
+      "timeoutSec": 30,
+      "params": {
+        "bypassDailyCap": true,
+        "includeLater": true
+      },
+      "output": [
+        {
+          "name": "sent",
+          "type": "boolean"
+        },
+        {
+          "name": "reason",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "count",
+          "type": "number"
+        }
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "from": "start",
+      "to": "plan"
+    },
+    {
+      "from": "plan",
+      "to": "send_now",
+      "label": "ready to notify now",
+      "when": "plan.send == true"
+    },
+    {
+      "from": "plan",
+      "to": "wait",
+      "label": "quiet hours or daily cap active",
+      "when": "plan.shouldWait == true",
+      "with": {
+        "until": "plan.waitUntil"
+      }
+    },
+    {
+      "from": "plan",
+      "to": "end",
+      "label": "nothing new or already waiting",
+      "with": {
+        "sent": "plan.send",
+        "reason": "plan.reason"
+      }
+    },
+    {
+      "from": "wait",
+      "to": "send_digest",
+      "label": "digest window reached after cap",
+      "when": "wait.woke == 'timeout' && plan.digestOnWake == true"
+    },
+    {
+      "from": "wait",
+      "to": "plan",
+      "label": "quiet hours ended",
+      "when": "wait.woke == 'timeout'"
+    },
+    {
+      "from": "wait",
+      "to": "end",
+      "label": "wait interrupted",
+      "with": {
+        "sent": "plan.send",
+        "reason": "plan.reason"
+      }
+    },
+    {
+      "from": "send_now",
+      "to": "end",
+      "with": {
+        "sent": "send_now.sent",
+        "reason": "send_now.reason"
+      }
+    },
+    {
+      "from": "send_digest",
+      "to": "end",
+      "with": {
+        "sent": "send_digest.sent",
+        "reason": "send_digest.reason"
+      }
+    }
+  ]
+}

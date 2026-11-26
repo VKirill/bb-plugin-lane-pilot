@@ -36,7 +36,7 @@ export const threadLiveInput = z.object({ threadId: z.string().min(1) }).strict(
 export const attemptLogTailInput = z.object({ runId: z.string().min(1), taskId: z.string().min(1), projectId: z.string().min(1).optional() }).strict();
 export const workGraphTaskInput = z.object({ runId: z.string().min(1), taskId: z.string().min(1) }).strict();
 export const workGraphStripsInput = z.object({ keys: z.array(z.object({ runId: z.string().min(1), taskId: z.string().min(1) }).strict()).max(300) }).strict();
-export const worldVersionOutput = z.object({ version: z.number().int().nonnegative() }).strict();
+export const uiVersionOutput = z.object({ version: z.number().int().nonnegative() }).strict();
 
 /** Stable envelopes of the remaining watched reads, mirrored from the server types (work-graph/logic.ts,
  *  owner-waiting/items.ts, runs/ui/thread-live.tsx, money/server.ts). Truly open payloads stay records/JSON,

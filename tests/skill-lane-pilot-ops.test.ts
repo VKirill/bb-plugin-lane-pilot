@@ -3,8 +3,8 @@ import { readFileSync } from "node:fs";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { migrations, openDatabase } from "../src/rooms/plugin-db";
 import { createCore } from "../src/rooms/core/server/core";
-import { registerCli } from "../src/rooms/tools/server/cli";
-import { LANE_PILOT_TOOL_SEARCH_NAME, PM_CORE_TOOLS, PM_FAMILY_TOOLS } from "../src/rooms/platform/server/pm-tool-families";
+import { registerCli } from "../src/rooms/tools/server";
+import { LANE_PILOT_TOOL_SEARCH_NAME, PM_CORE_TOOLS, PM_FAMILY_TOOLS } from "../src/rooms/platform/models/pm-tool-families";
 import type { Services } from "../server";
 
 // The runbook a stuck PM loads (skills/lane-pilot/references/ops*.md): every command and tool it names must exist, or it sends a PM nowhere.

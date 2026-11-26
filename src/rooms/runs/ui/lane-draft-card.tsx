@@ -68,7 +68,7 @@ export function LaneDraftCardDirective({ attributes, message }: PluginMessageDir
           : <>
               <span className="text-xs text-muted-foreground">Создано · {card.taskIds.join(", ") || "—"}</span>
               {firstTask && card.runId ? (
-                <button type="button" onClick={() => navigate.toPluginPanel("lane-pilot-cockpit", { subPath: "tasks" })}
+                <button type="button" onClick={() => navigate.toPluginPanel("lane-pilot")}
                   data-testid="lane-draft-graph" className="rounded-md border border-border px-3 py-1 text-xs">Открыть граф</button>
               ) : null}
             </>}

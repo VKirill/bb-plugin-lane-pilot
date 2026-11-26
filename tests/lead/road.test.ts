@@ -1,6 +1,6 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
-import { addRoad, decideRoad, doneRoad, getRoad, listRoad, proposeRoad, rejectRoad, renderRoadTree, roadCounts, roadMarkdown, roadTree } from "../../src/rooms/lead/server/road";
+import { addRoad, decideRoad, doneRoad, getRoad, listRoad, proposeRoad, rejectRoad, renderRoadTree, roadCounts, roadTree } from "../../src/rooms/lead/server/repositories/road-repository";
 import { openDatabase } from "../../src/rooms/plugin-db";
 
 // The migration that owns this table lands in a sibling change; the test cannot wait for it, so the fixture applies the same DDL.
@@ -134,26 +134,5 @@ describe("listRoad and roadCounts", () => {
     expect(listRoad(db, { projectId: null }).map((row) => row.id)).toEqual(["up"]);
     expect(listRoad(db, { projectId: "alpha", state: ["rejected", "done"] }).map((row) => row.id)).toEqual(["o1"]);
     expect(roadCounts(db)).toEqual({ open: 3, proposed: 0, accepted: 0, later: 0, rejected: 1, done: 0 });
-  });
-});
-
-describe("roadMarkdown", () => {
-  it("has front matter, per-project sections, a History section, and is deterministic", () => {
-    const db = world();
-    addRoad(db, direction("d1", { projectId: "alpha" }), 1);
-    addRoad(db, option("o1", "d1", { title: "Option A" }), 2);
-    addRoad(db, direction("d2", { title: "Meta" }), 3);
-    addRoad(db, direction("d3", { projectId: "alpha", title: "Old" }), 4);
-    rejectRoad(db, "d3", "superseded by d1", "owner", 5);
-    const md = roadMarkdown(db, 1_700_000_000_000);
-    expect(md).toContain('title: "ROAD"');
-    expect(md).toContain('generated: "2023-11-14T22:13:20.000Z"');
-    expect(md).toContain("rejected: 1");
-    expect(md).toContain("## alpha");
-    expect(md).toContain("## Above projects");
-    expect(md).toContain("- **Grow revenue** (direction/open, lead)");
-    expect(md).toContain("## History");
-    expect(md).toContain("- **Old** (direction/rejected, lead)");
-    expect(roadMarkdown(db, 1_700_000_000_000)).toBe(md);
   });
 });

@@ -35,6 +35,7 @@
     "luau",
     "rojo"
   ],
+  "category": "games",
   "inputs": {
     "asset_name": {
       "type": "string",

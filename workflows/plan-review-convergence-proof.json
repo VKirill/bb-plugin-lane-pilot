@@ -10,6 +10,7 @@
     "en": "Runs the independent plan critics and closes with code-owned checker evidence.",
     "ru": "Запускает независимых критиков плана и завершает проверяемым кодовым результатом."
   },
+  "category": "planning",
   "inputs": {
     "phase_id": {
       "type": "string",
@@ -210,5 +211,9 @@
       ]
     }
   },
-  "goal_check": "artifact"
+  "goal_check": "artifact",
+  "not_for": [
+    "plan-only",
+    "grill-plan"
+  ]
 }

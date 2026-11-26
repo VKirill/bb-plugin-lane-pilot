@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { collectQaArtifacts } from "../../src/rooms/qa/server/qa-artifacts";
-import type { QaExpect } from "../../src/rooms/qa/server/qa-thread";
+import { collectQaArtifacts, type QaExpect } from "../../src/rooms/qa/server";
 
 const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3]);
 const PNG_FILE = { content: PNG.toString("base64"), contentEncoding: "base64", sha256: "b".repeat(64), sizeBytes: PNG.length };

@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { repoReadRoot } from "../../src/rooms/tasks/repo-read";
+import { readFirstIo, repoReadRoot } from "../../src/rooms/tasks/server";
 import { afterEach, describe, expect, it } from "vitest";
 import { createHash } from "node:crypto";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -7,9 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { MAX_SOURCE_BYTES } from "@lane-pilot/contracts";
 import { readBoundedWorkspaceFile } from "@lane-pilot/kit";
-import { buildExecutionPacket, renderExecutionPacket } from "../../src/rooms/tasks/execution-packet";
-import { parseReadFirstHints, parseReadFirstSelector } from "../../src/rooms/tasks/read-first";
-import { readFirstIo } from "../../src/rooms/tasks/read-first-io";
+import { buildExecutionPacket, parseReadFirstHints, parseReadFirstSelector, renderExecutionPacket } from "../../src/rooms/tasks";
 
 const ownedRoots:string[]=[];
 afterEach(()=>{for(const root of ownedRoots.splice(0)) rmSync(root,{recursive:true,force:true});});

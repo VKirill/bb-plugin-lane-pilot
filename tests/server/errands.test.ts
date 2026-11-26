@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { errandPrompt, errandVerdict } from "../../src/rooms/qa/server/errands";
+import { errandPrompt } from "../../src/rooms/errands/server";
 
 describe("errands", () => {
   it("lets a helper change things only when the owner asked for the change", () => {

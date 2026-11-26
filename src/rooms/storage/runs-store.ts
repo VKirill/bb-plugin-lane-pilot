@@ -248,12 +248,6 @@ export function listLiveRuns(db: LanePilotDatabase): Array<{ id: string; project
     .all() as Array<{ id: string; project_id: string; state: string; pm_thread_id: string | null; updated_at: number }>;
 }
 
-/** Hosts that wrote a run recently (the fire drill calls each one). */
-export function recentWriterHostIds(db: LanePilotDatabase, since: number): string[] {
-  return (db.prepare("SELECT DISTINCT writer_host_id FROM lane_pilot_run WHERE writer_host_id IS NOT NULL AND created_at > ?")
-    .all(since) as Array<{ writer_host_id: string }>).map((row) => row.writer_host_id);
-}
-
 /** The run card header: state, close time and the writer host a check log path resolves on. */
 export function getRunCard(db: LanePilotDatabase, runId: string): { id: string; state: string; closed_at: number | null; writer_host_id: string | null } | undefined {
   return db.prepare("SELECT id, state, closed_at, writer_host_id FROM lane_pilot_run WHERE id=?")

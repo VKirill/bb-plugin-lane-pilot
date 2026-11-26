@@ -1,16 +1,14 @@
 import { useCallback, useEffect, useState } from "react";
 import { useBbNavigate, useRpc } from "@get-bb/plugin-sdk/app";
 import { t, type I18nKey, type Locale } from "@lane-pilot/i18n";
-import { roleModelKey, type ModelCatalog } from "@lane-pilot/models";
+import { roleModelKey } from "@lane-pilot/models";
 import { GLOBAL_SETTINGS_PROJECT_ID } from "@lane-pilot/settings-catalog";
 import { Button, Segments, Surface, SurfaceBody, SurfaceHeader, usePanelLayout } from "@lane-pilot/ui-kit";
-import type { rpcContract } from "../../contracts";
+import type { ErrandOutcome, rpcContract } from "../../contracts";
 import { HELPER_PANEL_ACTION } from "../../contracts/agent-picker";
 import { Pill, useOpenThreadPanel } from "../../ui-shell/ui";
 import { NativeModelPicker, useModelCatalog, type ModelChoice } from "../../ui-shell/ui";
-import type { ErrandKindOrNone, ErrandRow, KindSummary } from "../logic";
-import type { ErrandOutcome } from "../../contracts/server";
-import type { ErrandsDiagnosis } from "../diagnosis";
+import type { ErrandKindOrNone, ErrandRow, ErrandsDiagnosis, KindSummary } from "../models";
 
 type Payload = { days: number; kinds: KindSummary[]; errands: ErrandRow[] };
 type RoleRow = { role: string; providerId: string; model: string; effort: string; own: boolean; version: number; pool: Array<{ providerId: string; model: string; effort: string | null }> };

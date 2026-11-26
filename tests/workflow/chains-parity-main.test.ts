@@ -132,14 +132,6 @@ describe("hollow sign-2 workflow branches: fragments", () => {
     expect(pathOf(full)).toBe("gather assess second_opinion choose advise done");
   });
 
-  it("keeps a docs unit at skipped verification when the real prepare and verify results say skipped", async () => {
-    const prepareSkipped = await runSim("lp.docs-night", { input: { project_id: "p", host_id: "h", path: "/docs", unit: { docsDir: "docs" } }, stubs: { prepare: { state: "skipped", row: { state: "skipped" } } } });
-    expect(pathOf(prepareSkipped)).toBe("prepare skipped-prepare");
-
-    const verifySkipped = await runSim("lp.docs-night", { input: { project_id: "p", host_id: "h", path: "/docs", unit: { docsDir: "docs" } }, stubs: { prepare: { state: "ready", row: { state: "writing" }, plan: { pages: ["docs/a.md"] } }, write: { state: "written", thread_id: "thr-docs" }, verify: { state: "skipped", row: { state: "skipped" } } } });
-    expect(pathOf(verifySkipped)).toBe("prepare write verify skipped-verify");
-  });
-
   it("takes lp.draw material into draw, and lp.review's structural prepass can end directly at aggregate", async () => {
     const drawn = await runSim("lp.draw", { input: { goal: "a settings page", pieces: "settings", folder: ".agents/phases/ph_1", material: true }, stubs: { material: { material_path: ".agents/phases/ph_1/design/MATERIAL.md" }, draw: { paths: ["a.html"], feasible: true, contradiction: "" }, check: { verdict: "pass", notes: "ok" } } });
     expect(pathOf(drawn)).toBe("material draw check done");

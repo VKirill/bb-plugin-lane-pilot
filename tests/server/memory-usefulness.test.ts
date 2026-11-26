@@ -4,7 +4,7 @@ import { createAttempt, createRun, createTask, openDatabase, saveReasoningTrace,
 import { memoryContext, memoryUsefulness, recordMemoryMixed, searchMemoryRecords, storeMemoryRecords } from "../../packages/memory-core/src";
 import type { MemoryRecord } from "../../packages/memory-core/src";
 import { writerMemory } from "../../src/rooms/memory/server";
-import { mixWriterMemory } from "../../src/rooms/memory/server/memory-mix";
+import { mixWriterMemory } from "../../src/rooms/memory/server/services/memory-mix";
 
 type Db = ReturnType<typeof openDatabase>;
 const newDb = (): Db => openDatabase(createFakePluginHost({ pluginId: "lane-pilot" }).bb);
@@ -56,7 +56,7 @@ describe("K8 usefulness: how often a note was mixed into a brief, and how often 
     expect(text.split("\n").map((line) => line.replace(/^- \[[\d-]+\] The (\w+) fact.*/, "$1"))).toEqual(["one", "two", "three"]);
   });
 
-  it("ranks the PM and council context the same way", () => {
+  it("ranks memoryContext by usefulness and recency", () => {
     const records = [rec("bad", "deploy staging checklist", { useCount: 8, acceptedCount: 0 }), rec("good", "deploy staging checklist", { useCount: 8, acceptedCount: 8 })];
     expect(memoryContext(records, "deploy staging checklist", 1000).records.map((row) => row.id)).toEqual(["good", "bad"]);
   });
@@ -75,7 +75,7 @@ describe("K8 usefulness: how often a note was mixed into a brief, and how often 
 describe("F08: a verified fact outranks the same unverified one", () => {
   it("each extra independent source adds up to 0.3 to the usefulness factor of an equally relevant note", () => {
     const db = newDb();
-    const [unverified, verified] = put(db, ["The widget layout lives in src/widget.ts", "Widget layout: see docs/layout.md for the structure"]);
+    const [, verified] = put(db, ["The widget layout lives in src/widget.ts", "Widget layout: see docs/layout.md for the structure"]);
     db.prepare("UPDATE lane_pilot_memory SET verification_json=? WHERE id=?").run(JSON.stringify([{ by: "a", sha: "1", at: 1 }, { by: "b", sha: "2", at: 2 }]), verified);
     const found = searchMemoryRecords(db, "P", "widget", 10, "auto", "subagent", "", { includeObserved: true });
     const ctx = memoryContext(found, "widget layout", 500);

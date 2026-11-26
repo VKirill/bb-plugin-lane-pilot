@@ -6,8 +6,8 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { expect, it } from "vitest";
 import type { PrototypeConfig, TaskV2 } from "../src/rooms/contracts";
 import { createAttempt, createRun, createTask, openDatabase, setRunThread, transitionAttempt } from "../src/rooms/plugin-db";
-import { upsertAttemptChange, writeRevertIntent } from "../src/rooms/rollback/store";
-import { createWriterSpawn } from "../src/rooms/writer/server/spawn";
+import { upsertAttemptChange, writeRevertIntent } from "../src/rooms/rollback/server";
+import { createWriterSpawn } from "../src/rooms/writer/server/services/spawn";
 import { runCommandOnHost } from "../src/rooms/writer/cli-run";
 
 const git = (cwd: string, ...args: string[]) => execFileSync("git", ["-c", "user.email=t@t", "-c", "user.name=t", ...args], { cwd, encoding: "utf8" }).trim();
@@ -87,8 +87,8 @@ const makeWorld = (probe: "valid-alias" | "no-deps" | "no-merge" | "reverted" | 
     },
     effectiveProjectSettings: async () => ({ values: { "memory.enabled": false, "adoc.040": "worktree" } }),
   };
-  const services = { providerBreaker: { decide: () => ({ allow: true }) }, ruleScan: { chainForRun: async () => [] } };
-  const writer = createWriterSpawn(ctx as never, services as never);
+  const services = { providerBreaker: { decide: () => ({ allow: true }) } };
+  const writer = createWriterSpawn({ ...ctx, scopesForWorkspace: async () => [] } as never, services as never);
   const config: PrototypeConfig = {
     projectId: "P", hostId: "h", pmWorkspacePath: stale, writerWorkspacePath: stale,
     pmProviderId: "codex", pmModel: "codex-test", writerProviderId: "codex", writerModel: "codex-test",

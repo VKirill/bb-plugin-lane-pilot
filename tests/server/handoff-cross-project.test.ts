@@ -65,7 +65,7 @@ describe("handoff into another project", () => {
   });
 
   it("starts a child without requiring prior Lane Pilot setup", async () => {
-    const { db, harness, sent, activate, call } = await setup({ configured: false });
+    const { db, harness, activate, call } = await setup({ configured: false });
     dispose = () => harness.lifecycle.dispose();
 
     const created = await call({ targetProjectId: target });

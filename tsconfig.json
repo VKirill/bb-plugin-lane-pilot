@@ -12,11 +12,13 @@
       "@/*": ["./*"],
       // node_modules is a symlink to the main checkout in worktrees; pin i18n to this tree so new keys typecheck before merge.
       "@lane-pilot/i18n": ["./packages/i18n/src/index.ts"],
-      "@lane-pilot/council": ["./packages/council/src/index.ts"],
       "@lane-pilot/memory-core": ["./packages/memory-core/src/index.ts"],
+      "@lane-pilot/workflow-engine": ["./packages/workflow-engine/src/index.ts"],
+      "@lane-pilot/workflow-engine/ui": ["./packages/workflow-engine/src/ui.ts"],
       "elkjs/lib/elk.bundled.js": ["./src/rooms/workflow/ui/elk-shim.d.ts"]
     },
     "noEmit": true,
+    "noUnusedLocals": true,
     "resolveJsonModule": true,
     "skipLibCheck": false
   },

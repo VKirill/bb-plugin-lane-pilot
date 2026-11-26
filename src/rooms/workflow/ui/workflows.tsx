@@ -3,12 +3,8 @@ import { ThreadChat, useRpc } from "@get-bb/plugin-sdk/app";
 import type { z } from "zod";
 import type { rpcContract } from "../../contracts";
 import { t, type I18nKey, type Locale } from "@lane-pilot/i18n";
-import { Button } from "@lane-pilot/ui-kit";
-import { Input } from "@lane-pilot/ui-kit";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@lane-pilot/ui-kit";
+import { Badge, Button, CONTROL_H, Input, Select, SelectContent, SelectItem, SelectTrigger, SelectValue, Surface, SurfaceBody, SurfaceHeader } from "@lane-pilot/ui-kit";
 import { LP_ALL_PROJECTS } from "@lane-pilot/ui-kit/realtime-channel";
-import { CONTROL_H } from "@lane-pilot/ui-kit";
-import { Surface, SurfaceBody, SurfaceHeader } from "@lane-pilot/ui-kit";
 import { useLpPoll, useLpRealtime } from "../../ui-shell/ui";
 import { WorkflowDetail, type NodePanelRenderer } from "./workflow-detail";
 import { WorkflowDraftDetail } from "./workflow-draft-detail";
@@ -18,7 +14,25 @@ import { ExportGraphsButton } from "./workflow-export";
 import { WorkflowMap } from "./workflow-map";
 
 type Listing = z.infer<(typeof rpcContract)["workflow_list"]["output"]>;
+type EvolutionData = z.infer<(typeof rpcContract)["workflow_evolution_list"]["output"]>;
+type EvolutionItem = EvolutionData["items"][number];
 type Row = Listing["workflows"][number];
+
+function evoStatusLabel(item: EvolutionItem): string {
+  if (item.status === "published") return t("wfEvolutionStatusPublished");
+  if (item.status === "tested") return t(item.testedGreen ? "wfEvolutionStatusTestedGreen" : "wfEvolutionStatusTestedRed");
+  return t("wfEvolutionStatusDraft");
+}
+
+function evoVersionText(item: EvolutionItem): string {
+  if (item.status === "published" && item.canRollback && item.publishedVersion && item.publishedVersion > 1) {
+    return `v${item.publishedVersion - 1} → v${item.publishedVersion}`;
+  }
+  if (item.status === "published" && item.publishedVersion !== null && item.version > item.publishedVersion) {
+    return `v${item.publishedVersion} → v${item.version}`;
+  }
+  return `v${item.publishedVersion ?? item.version}`;
+}
 
 const STATUSES = ["draft", "tested", "published", "deprecated"] as const;
 const SCOPES = ["builtin", "global", "project"] as const;
@@ -61,6 +75,9 @@ export function WorkflowsScreen({ locale, projectId, architectProjectId = projec
   // The architect's chat sits beside the library or graph (owner, 2026-10-07): the chain it builds stays in view.
   const [architectThread, setArchitectThread] = useState<string | null>(null);
   const [drafts, setDrafts] = useState<DraftRow[]>([]);
+  const [evolution, setEvolution] = useState<EvolutionData | null>(null);
+  const [evoBusy, setEvoBusy] = useState(false);
+  const [evoFeedback, setEvoFeedback] = useState<{ kind: "ok" | "error"; text: string } | null>(null);
   const [openDraft, setOpenDraft] = useState<string | null>(null);
   // A draft opened from a workflow's «Edit» goes straight to the editor; one opened from the list is first shown as it is.
   const [editFirst, setEditFirst] = useState(false);
@@ -81,14 +98,19 @@ export function WorkflowsScreen({ locale, projectId, architectProjectId = projec
   const load = useCallback(async () => {
     const mine = ++generation.current;
     try {
-      const [result, found] = await Promise.all([rpc.call("workflow_list", projectId ? { projectId } : {}), listDrafts(rpc, projectId ?? architectProjectId)]);
+      const [result, found, evo] = await Promise.all([
+        rpc.call("workflow_list", projectId ? { projectId } : {}),
+        listDrafts(rpc, projectId ?? architectProjectId),
+        rpc.call("workflow_evolution_list", projectId ? { projectId } : {}).catch(() => null),
+      ]);
       if (mine !== generation.current) return;
       setListing(result);
       setDrafts(found);
+      setEvolution(evo);
       setError(null);
     } catch (cause) { if (mine === generation.current) setError(cause instanceof Error ? cause.message : String(cause)); }
   }, [projectId, architectProjectId, rpc]);
-  useEffect(() => { setListing(null); setDrafts([]); setOpenId(null); setOpenDraft(null); void load(); }, [load]);
+  useEffect(() => { setListing(null); setDrafts([]); setEvolution(null); setOpenId(null); setOpenDraft(null); void load(); }, [load]);
 
   // The detail view has its own subscription; this one keeps the library's counts and «running» marks fresh.
   const pollMs = useLpRealtime(projectId ?? LP_ALL_PROJECTS, ["workflow", "workflow-draft"], (signal) => {
@@ -124,6 +146,23 @@ export function WorkflowsScreen({ locale, projectId, architectProjectId = projec
     if (!cat) return;
     setCollapsed((prev) => { const next = new Set(prev); next.delete(cat); return next; });
     requestAnimationFrame(() => listRef.current?.querySelector(`[data-cat="${cat}"]`)?.scrollIntoView?.({ block: "start", behavior: "smooth" }));
+  };
+
+  const runEvolutionAction = async (kind: "publish" | "rollback", draftId: string) => {
+    if (evoBusy) return;
+    setEvoBusy(true);
+    setEvoFeedback(null);
+    try {
+      const res = kind === "publish"
+        ? await rpc.call("workflow_evolution_publish", { draftId })
+        : await rpc.call("workflow_draft_rollback", { draftId });
+      setEvoFeedback({ kind: res.ok ? "ok" : "error", text: res.message });
+      await load();
+    } catch (cause) {
+      setEvoFeedback({ kind: "error", text: cause instanceof Error ? cause.message : String(cause) });
+    } finally {
+      setEvoBusy(false);
+    }
   };
 
   const withArchitect = (content: ReactNode) => !architectThread ? content : (
@@ -201,6 +240,59 @@ export function WorkflowsScreen({ locale, projectId, architectProjectId = projec
                     {row.version !== null ? <span className="font-mono text-xs text-muted-foreground">{t("wfDraftVersion").replace("{n}", String(row.version))}</span> : null}
                     {row.updatedAt ? <span className="text-xs text-muted-foreground">{t("wfDraftUpdated").replace("{time}", shortTime(row.updatedAt))}</span> : null}
                   </button>
+                </li>
+              ))}
+            </ul>
+          </SurfaceBody>
+        </Surface>
+      ) : null}
+      {evolution && evolution.items.length > 0 ? (
+        <Surface testId="workflow-evolution">
+          <SurfaceHeader className="flex-wrap gap-2">
+            <h2 className="text-sm font-medium">{t("wfEvolutionHeading")}</h2>
+            <div className="flex flex-wrap items-center gap-1.5">
+              {evolution.pendingApprovalCount > 0 ? (
+                <Badge variant="outline" className="text-[11px]">{t("wfEvolutionPending").replace("{n}", String(evolution.pendingApprovalCount))}</Badge>
+              ) : null}
+              {evolution.autoPublishedCount > 0 ? (
+                <Badge variant="secondary" className="text-[11px]">{t("wfEvolutionAutoPublished").replace("{n}", String(evolution.autoPublishedCount))}</Badge>
+              ) : null}
+            </div>
+          </SurfaceHeader>
+          <SurfaceBody>
+            {evoFeedback ? (
+              <p className={`text-xs ${evoFeedback.kind === "error" ? "text-destructive" : "text-muted-foreground"}`} role={evoFeedback.kind === "error" ? "alert" : "status"} data-testid="wf-evolution-feedback">
+                {evoFeedback.text}
+              </p>
+            ) : null}
+            <ul className="space-y-2.5" data-testid="wf-evolution-list">
+              {evolution.items.map((item) => (
+                <li key={item.draftId} className="flex min-w-0 flex-col gap-2 rounded-md border border-border bg-muted/30 p-3" data-testid={`wf-evo-${item.workflowId}`}>
+                  <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+                    <strong className="min-w-0 flex-1 truncate text-xs font-semibold text-foreground">{item.title}</strong>
+                    <Badge variant={item.status === "published" ? "secondary" : "outline"} className="shrink-0 text-[11px]">
+                      {evoVersionText(item)} · {evoStatusLabel(item)}
+                    </Badge>
+                  </div>
+                  <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
+                    <code className="truncate">{item.workflowId}</code>
+                    <span>{t(item.scope === "global" ? "wfEvolutionGlobal" : "wfEvolutionProject")}</span>
+                  </div>
+                  <p className="m-0 text-xs text-muted-foreground">{item.summary}</p>
+                  {(item.canPublish || item.canRollback) ? (
+                    <div className="flex min-w-0 flex-wrap gap-2 pt-0.5">
+                      {item.canPublish ? (
+                        <Button type="button" size="sm" disabled={evoBusy} data-testid={`wf-evo-publish-${item.draftId}`} onClick={() => void runEvolutionAction("publish", item.draftId)}>
+                          {t("wfEvolutionPublish")}
+                        </Button>
+                      ) : null}
+                      {item.canRollback ? (
+                        <Button type="button" size="sm" variant="outline" disabled={evoBusy} data-testid={`wf-evo-rollback-${item.draftId}`} onClick={() => void runEvolutionAction("rollback", item.draftId)}>
+                          {t("wfEvolutionRollback")}
+                        </Button>
+                      ) : null}
+                    </div>
+                  ) : null}
                 </li>
               ))}
             </ul>

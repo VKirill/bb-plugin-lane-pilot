@@ -3,7 +3,7 @@ import { useRpc } from "@get-bb/plugin-sdk/app";
 import { t } from "@lane-pilot/i18n";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@lane-pilot/ui-kit";
 import type { rpcContract } from "../../contracts";
-import type { GraphStats } from "../logic";
+import type { GraphStats } from "../models/logic";
 import { duration, fill, money, percent, roleName, shortModel, stageName } from "./format";
 
 type Stats = GraphStats & { days: number; capped: boolean };

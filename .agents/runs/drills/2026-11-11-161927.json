@@ -1,0 +1,96 @@
+{
+  "kind": "lane-pilot-sandbox-drill",
+  "date": "2026-11-11",
+  "stamp": "20261111-161927",
+  "startedAt": 1794403167503,
+  "finishedAt": 1794405780024,
+  "durationSec": 2613,
+  "project": "proj_ibu6v9g64j",
+  "runId": "lprun_cbbe8a966c2940b594476708e1bcd6c3",
+  "pmThread": "thr_m3psv4r6w3",
+  "sourceThread": "thr_5ten9jgvmd",
+  "mode": "full",
+  "scenarioNames": [
+    "phase"
+  ],
+  "commit": "2151b3e0b518d5829699be765f3cd1d28ea0c147",
+  "skipped": {},
+  "result": "fail",
+  "problems": [],
+  "checks": null,
+  "tasks": null,
+  "dispatch": null,
+  "scenarios": [],
+  "seen": {
+    "stages": {
+      "acceptance-receipt": {
+        "passed": 2
+      },
+      "code-critique": {
+        "passed": 1
+      },
+      "memory-maintenance": {
+        "skipped": 2
+      },
+      "plan-critique": {
+        "passed": 1,
+        "skipped": 1
+      },
+      "plan-fact": {
+        "passed": 2
+      },
+      "pm-read": {
+        "skipped": 2
+      },
+      "project-life": {
+        "passed": 2
+      },
+      "specialist-review": {
+        "skipped": 2
+      },
+      "verification": {
+        "passed": 2
+      },
+      "writer-agent": {
+        "passed": 2
+      }
+    },
+    "gates": {
+      "accept": {
+        "passed": 2
+      },
+      "owns-paths": {
+        "passed": 2
+      },
+      "validate": {
+        "passed": 2
+      },
+      "verification": {
+        "passed": 2
+      }
+    },
+    "moves": {
+      "queued>queued": {
+        "ok": 4
+      },
+      "queued>spawn_requested": {
+        "ok": 2
+      },
+      "running>accepted": {
+        "ok": 2
+      },
+      "spawn_requested>running": {
+        "ok": 2
+      }
+    }
+  },
+  "judged": [],
+  "series": {
+    "verdict": "fail",
+    "missing": [
+      "phase"
+    ],
+    "failed": [],
+    "skipped": []
+  }
+}

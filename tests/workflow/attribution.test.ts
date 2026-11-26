@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { migrations } from "../../src/rooms/plugin-db";
 import type { ServerCore } from "../../src/rooms/contracts/server";
 import type { Services } from "../../server";
-import { createWorkflowLibrary } from "../../src/rooms/workflow/server/workflow-library";
+import { createWorkflowLibrary } from "../../src/rooms/workflow/server/services/workflow-library";
 import { PIPELINE_RUNS_ATTRIBUTION } from "@lane-pilot/workflow-engine";
 import { runRecords } from "@lane-pilot/workflow-engine";
 import { wf } from "./engine-helpers";

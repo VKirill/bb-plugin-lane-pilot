@@ -35,6 +35,7 @@
     "code",
     "refactor"
   ],
+  "category": "code",
   "inputs": {
     "goal": {
       "type": "string",

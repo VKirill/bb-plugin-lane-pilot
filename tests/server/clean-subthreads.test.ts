@@ -59,7 +59,6 @@ describe("clean subthread session policy enforcement", () => {
     expect(resolveCleanSubthreadRole("rules-analyzer", true)).toBe("rules-analyzer");
     expect(resolveCleanSubthreadRole("workspace-provisioner", false)).toBe("workspace-provisioner");
     expect(resolveCleanSubthreadRole("workflow-architect", true)).toBe("workflow-architect");
-    expect(resolveCleanSubthreadRole("wall-hunter", false)).toBe("wall-hunter");
     expect(resolveCleanSubthreadRole("harness-editor", false)).toBe("harness-editor");
     expect(resolveCleanSubthreadRole("lead", false)).toBe("lead");
     expect(resolveCleanSubthreadRole("specialist:security", true)).toBe("specialist:security");
@@ -77,7 +76,6 @@ describe("clean subthread session policy enforcement", () => {
       "rules-analyzer",
       "workspace-provisioner",
       "workflow-architect",
-      "wall-hunter",
       "harness-editor",
       "lead",
     ]) {
@@ -92,7 +90,7 @@ describe("clean subthread session policy enforcement", () => {
       } as never);
     }
 
-    expect(spawned).toHaveLength(7);
+    expect(spawned).toHaveLength(6);
     for (const call of spawned) {
       expect(call.serviceTier).toBe("default");
       const binding = call.experimental_vkRequiredSessionPolicy as {

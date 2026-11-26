@@ -1,5 +1,6 @@
 import { z } from "zod";
-import { stageProofSchema } from "@lane-pilot/contracts";
+import { GRAPH_CATEGORY_IDS, stageProofSchema } from "@lane-pilot/contracts";
+import { nodeFormFallbackSchema, nodeFormSchema, planConfigSchema, scriptConfigSchema, verifyObjectSchema } from "./node-form";
 
 /**
  * The workflow file format (W1). A workflow is a graph of typed nodes; every node declares the fields of its output, and a
@@ -20,7 +21,7 @@ export const MAX_SUBWORKFLOW_DEPTH = 3;
 const nodeId = z.string().regex(/^[a-z][a-z0-9_-]{0,47}$/, "id: lowercase letters, digits, - and _, starting with a letter");
 const bilingual = z.object({ en: z.string().min(1).max(2000), ru: z.string().min(1).max(2000) }).strict();
 
-export const BUILTIN_WORKFLOW_CATEGORIES = ["seo", "marketing", "code", "content", "research", "games", "business", "routines", "service"] as const;
+export const BUILTIN_WORKFLOW_CATEGORIES = GRAPH_CATEGORY_IDS;
 export const categorySlugSchema = z.string().regex(/^[a-z0-9][a-z0-9-]{0,31}$/, "category id: lowercase letters, digits, and -");
 export const workflowCategoryMetaSchema = z.object({ id: categorySlugSchema, label: bilingual.optional() }).strict();
 export type WorkflowCategoryMeta = z.infer<typeof workflowCategoryMetaSchema>;
@@ -110,6 +111,12 @@ const nodeBase = {
   /** Tries of one visit before the step fails. */
   maxAttempts: z.number().int().min(1).max(5).default(1),
   timeoutSec: z.number().int().min(1).max(86_400).optional(),
+  budget: z.object({
+    maxTokens: z.number().int().min(1).optional(),
+    maxCostUsd: z.number().positive().optional(),
+    maxWallSeconds: z.number().int().min(1).optional(),
+  }).strict().optional(),
+  maxRepeats: z.number().int().min(1).max(100).optional(),
   /** The node runs only in these quality modes; elsewhere it is skipped and its output is `skip_out`. */
   applicable_modes: z.array(z.enum(QUALITY_MODES)).min(1).max(3).optional(),
   skip_when: whenSchema.optional(),
@@ -119,7 +126,7 @@ const nodeBase = {
   with: z.record(z.string(), z.unknown()).optional(),
   /** Data this node reads, as references; checked like any reference. */
   reads: z.array(z.string()).max(30).optional(),
-  /** Accepted so older files load; IGNORED when the step runs and warned about (`model_ignored`): the model belongs to the step's role, in the table «role -> model» in Settings. */
+  /** Accepted so older files load; it changes nothing: the model is the node's own `provider`/`model`, else its role's row in Settings. */
   model_preset: z.string().max(64).optional(),
   profile: z.object({ skills: z.array(z.string().min(1).max(120)).max(12).default([]) }).strict().optional(),
   position,
@@ -128,12 +135,14 @@ const nodeBase = {
 const agentBody = {
   role: z.string().max(80).default("worker"),
   prompt: z.string().max(12_000).default(""),
-  // `provider`, `model`, `reasoning` and `service_tier` are accepted so older files load, and IGNORED when the step runs (warning `model_ignored`):
-  // the model belongs to `role`, in the table «role -> model» in Settings, the same in every graph.
+  // The model of the step: these fields, else the row of `role` in Settings («role -> model»), else the built-in default.
   provider: z.string().max(64).optional(),
   model: z.string().max(120).optional(),
   reasoning: z.enum(["low", "medium", "high", "xhigh", "ultracode", "max"]).optional(),
   service_tier: z.enum(["default", "fast"]).optional(),
+  /** A critic or verifier may share provider and model with the writer it judges only on this flag, with the reason in `same_model_reason`. */
+  allow_same_model: z.boolean().optional(),
+  same_model_reason: z.string().max(300).optional(),
   skills: z.array(z.string().min(1).max(120)).max(8).default([]),
   /** BB plugins this step's session may load, on top of its role's (by plugin id; the helper's session policy narrows to the role's list plus these). */
   plugins: z.array(z.string().min(1).max(120)).max(8).default([]),
@@ -144,6 +153,11 @@ const agentBody = {
   authorized: z.boolean().optional(),
   /** Independent copies of this child run per item and decided by a mechanical majority (a parallel child). */
   votes: z.number().int().min(1).max(9).optional(),
+  form: nodeFormSchema.default("agent"),
+  fallback: nodeFormFallbackSchema.optional(),
+  script: scriptConfigSchema.optional(),
+  plan: planConfigSchema.optional(),
+  verify: z.union([z.string().min(1).max(600), conditionSchema, verifyObjectSchema]).optional(),
 };
 const lpTaskBody = {
   quality_mode: z.string().max(40).optional(),
@@ -253,15 +267,22 @@ export type WorkflowEdge = z.infer<typeof edgeSchema>;
  * How a workflow is started besides the router. `schedule` becomes a BB automation while the workflow is published (own files
  * only): `cron` (5 fields), `timezone` (IANA; the hub's own when absent), `inputs` (the values every scheduled run gets) and the
  * `projectId` whose PM chat runs it (the project of a project workflow when absent). `manual` is the Run button of the tab.
- * `telegram` has no API behind it yet; see docs/workflow-triggers.md.
  */
 const trigger = z.object({
-  type: z.enum(["chat", "schedule", "telegram", "manual"]),
+  type: z.enum(["chat", "schedule", "manual", "event"]),
   cron: z.string().max(120).optional(),
   timezone: z.string().max(100).optional(),
   inputs: z.record(z.string(), z.unknown()).optional(),
   projectId: z.string().max(80).optional(),
-}).strict();
+  event: z.string().min(1).max(120).optional(),
+  match: z.record(z.string(), z.string()).optional(),
+}).strict().superRefine((value, ctx) => {
+  if (value.type === "event" && !value.event) ctx.addIssue({ code: "custom", path: ["event"], message: "event trigger requires event" });
+  if (value.type !== "event" && (value.event !== undefined || value.match !== undefined)) {
+    ctx.addIssue({ code: "custom", message: `trigger type "${value.type}" does not allow event or match` });
+  }
+});
+export type WorkflowTrigger = z.infer<typeof trigger>;
 
 export const workflowSchema = z.object({
   schemaVersion: z.literal(WORKFLOW_SCHEMA_VERSION).default(WORKFLOW_SCHEMA_VERSION),
@@ -403,7 +424,7 @@ function fieldList(value: unknown, defaultRequired: boolean): unknown {
 
 const bilingualOf = (value: unknown): unknown => (typeof value === "string" ? { en: value, ru: value } : value);
 
-const ACTION_KEYS = new Set(["id", "type", "title", "label", "src", "consumes", "produces", "gates", "proof", "out", "output", "uses", "maxVisits", "maxAttempts", "timeoutSec", "guards", "applicable_modes", "skip_when", "skip_out", "with", "reads",
+const ACTION_KEYS = new Set(["id", "type", "title", "label", "src", "consumes", "produces", "gates", "proof", "out", "output", "uses", "maxVisits", "maxAttempts", "timeoutSec", "budget", "maxRepeats", "guards", "applicable_modes", "skip_when", "skip_out", "with", "reads",
   "model_preset", "profile", "position", "action", "params", "map", "test_mode"]);
 
 function normalizeNode(node: unknown, isChild = false): unknown {
@@ -471,3 +492,6 @@ export function normalizeWorkflow(raw: unknown): unknown {
 
 /** Parses a workflow in either spelling with the closed schema (zod issues carry the path in the normalized value). */
 export const parseWorkflowObject = (raw: unknown) => workflowSchema.safeParse(normalizeWorkflow(raw));
+/** Shipped graphs (`workflows/*.json`) require a known category from `@lane-pilot/contracts`. */
+export const shippedWorkflowSchema = workflowSchema.extend({ category: workflowCategoryMetaSchema.superRefine((cat, ctx) => { if (!(GRAPH_CATEGORY_IDS as readonly string[]).includes(cat.id)) ctx.addIssue({ code: "custom", path: ["id"], message: `unknown shipped category "${cat.id}"` }); }) });
+export const parseShippedWorkflowObject = (raw: unknown) => shippedWorkflowSchema.safeParse(normalizeWorkflow(raw));

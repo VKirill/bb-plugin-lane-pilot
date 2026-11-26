@@ -1,9 +1,7 @@
 import { describe, expect, it } from "vitest";
 import Database from "better-sqlite3";
-import { batchShapeAdvice } from "../src/rooms/tasks/batch-shape";
-import { taskSizeOf, taskSizeText } from "../src/rooms/tasks/task-size";
+import { batchShapeAdvice, taskSizeOf, taskSizeText } from "../src/rooms/tasks";
 import { medianTaskSize } from "../src/rooms/rollback/server";
-import { isLongCandidate, longStratum } from "../src/rooms/bench/stratify";
 
 function db() {
   const d = new Database(":memory:");
@@ -47,15 +45,5 @@ describe("accepted task size (#29)", () => {
     expect(batchShapeAdvice({ id: "T", ownsPaths: ["a.ts", "b.ts", "c.ts"], dependsOn: [] }, [], median)).toEqual([]);
     // No median → no warning, old behaviour.
     expect(batchShapeAdvice(tiny, [])).toEqual([]);
-  });
-});
-
-describe("long stratum", () => {
-  const cand = (contract: Record<string, unknown>): never => ({ taskId: "t", projectId: "p", area: "feature:x", risk: "low", hard: false, contract } as never);
-  it("large text or 3+ expected outputs count; small does not", () => {
-    expect(isLongCandidate(cand({ title: "t", objective: "o".repeat(400) }))).toBe(false); // long but not classed large, <3 outputs
-    expect(isLongCandidate(cand({ title: "t", objective: "o".repeat(400), expected_outputs: ["a", "b", "c"] }))).toBe(true);
-    expect(isLongCandidate(cand({ title: "tiny" }))).toBe(false);
-    expect(longStratum().key).toBe("long");
   });
 });

@@ -14,13 +14,23 @@ RULE="/etc/sudoers.d/lp-worker-$OWNER"
 [[ "$USER_NAME" =~ ^[a-z_][a-z0-9_-]{0,31}$ ]] || { echo "bad user name: $USER_NAME" >&2; exit 2; }
 
 create() {
+  if [ "$(uname -s)" = "Darwin" ]; then
+    local gid
+    if dscl . -read "/Groups/$USER_NAME" PrimaryGroupID >/dev/null 2>&1; then
+      gid=$(dscl . -read "/Groups/$USER_NAME" PrimaryGroupID | awk '{print $2}')
+    else
+      gid=499; while dscl . -list /Groups PrimaryGroupID | awk '{print $2}' | grep -qx "$gid"; do gid=$((gid - 1)); done
+      sudo dscl . -create "/Groups/$USER_NAME"
+      sudo dscl . -create "/Groups/$USER_NAME" PrimaryGroupID "$gid"
+    fi
+  fi
   if id "$USER_NAME" >/dev/null 2>&1; then echo "user $USER_NAME exists"; else
     if [ "$(uname -s)" = "Darwin" ]; then
       local uid=499; while dscl . -list /Users UniqueID | awk '{print $2}' | grep -qx "$uid"; do uid=$((uid - 1)); done
       sudo dscl . -create "/Users/$USER_NAME"
       sudo dscl . -create "/Users/$USER_NAME" UserShell /bin/bash
       sudo dscl . -create "/Users/$USER_NAME" UniqueID "$uid"
-      sudo dscl . -create "/Users/$USER_NAME" PrimaryGroupID 20
+      sudo dscl . -create "/Users/$USER_NAME" PrimaryGroupID "$gid"
       sudo dscl . -create "/Users/$USER_NAME" NFSHomeDirectory "/var/empty"
       sudo dscl . -create "/Users/$USER_NAME" IsHidden 1
     else
@@ -36,10 +46,20 @@ create() {
 
 check() {
   if sudo -n -u "$USER_NAME" /usr/bin/true 2>/dev/null; then echo "reachable: $OWNER runs as $USER_NAME without a password"; else echo "unreachable: run $0 create $USER_NAME as an admin"; exit 1; fi
-  # The probe's second part (SMA m_ac_identity_probe): a warning line per credential path the worker can read. It never changes the exit code
-  # (check and create exit exactly as before); ~/.lane-pilot is not probed, the worker's own worktrees live under it by design.
-  local path
-  for path in "$HOME"/.ssh "$HOME"/.codex/auth.json "$HOME"/.claude/.credentials.json "$HOME"/.aws "$HOME"/.gnupg; do
+  # Credential list mirrored from src/rooms/verification/credential-paths.ts (parity tested in tests/writer-isolation.test.ts).
+  local rel path resolved
+  local -a probed=()
+  for rel in .ssh .gnupg .aws .azure .config/gh .bb .codex .claude .git-credentials .netrc .claude.json .codex/auth.json .claude/.credentials.json; do
+    path="$HOME/$rel"
+    probed+=("$path")
+    if [ "$rel" = ".codex" ] || [ "$rel" = ".claude" ]; then
+      if [ -L "$path" ]; then
+        resolved=$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$path" 2>/dev/null || readlink "$path" 2>/dev/null || true)
+        [ -n "$resolved" ] && [ "$resolved" != "$path" ] && probed+=("$resolved")
+      fi
+    fi
+  done
+  for path in "${probed[@]}"; do
     if sudo -n -u "$USER_NAME" /usr/bin/test -r "$path" 2>/dev/null; then echo "warning: $USER_NAME can read $path"; fi
   done
   return 0
@@ -51,7 +71,12 @@ case "${1:-check}" in
   grants) cat "$HOME/.lane-pilot/worker-grants.jsonl" 2>/dev/null || echo "no grants yet" ;;
   remove)
     sudo rm -f "$RULE"
-    if [ "$(uname -s)" = "Darwin" ]; then sudo dscl . -delete "/Users/$USER_NAME" 2>/dev/null || true; else sudo userdel "$USER_NAME" 2>/dev/null || true; fi
+    if [ "$(uname -s)" = "Darwin" ]; then
+      sudo dscl . -delete "/Users/$USER_NAME" 2>/dev/null || true
+      sudo dscl . -delete "/Groups/$USER_NAME" 2>/dev/null || true
+    else
+      sudo userdel "$USER_NAME" 2>/dev/null || true
+    fi
     echo "removed $USER_NAME and $RULE" ;;
   *) echo "usage: $0 create|check|grants|remove [user]" >&2; exit 2 ;;
 esac

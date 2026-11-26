@@ -1,7 +1,7 @@
 import { createFakePluginHost, makeQueueEntry } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
 import { closeRun, createAttempt, createRun, createTask, openDatabase, transitionAttempt } from "../../src/rooms/plugin-db";
-import { PROVIDER_RETRY_CONSENT_METHOD, createProviderRetryGuard, retryEligibility } from "../../src/rooms/stability/server/provider-retry";
+import { PROVIDER_RETRY_CONSENT_METHOD, createProviderRetryGuard, retryEligibility } from "../../src/rooms/stability/server";
 
 type Row = ReturnType<typeof makeQueueEntry>;
 const retryRow = (id: string, threadId: string): Row => makeQueueEntry({ id, threadId, sendAt: Date.now() + 3600_000, payload: { kind: "retry", attempt: 1, reason: "Rate limited", retryOfTurnRequestId: "req-1" } });

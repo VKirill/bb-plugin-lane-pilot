@@ -30,6 +30,7 @@
     "seo",
     "drmax"
   ],
+  "category": "seo",
   "inputs": {
     "site_url": {
       "type": "string",

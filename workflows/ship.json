@@ -8,6 +8,7 @@
     "en": "Turns a verified phase into a pull request: checks the verification passed and the full gate marker, lists untriaged vendor updates, pushes the branch, writes the PR body from the phase book and opens it, records the shipment and runs the post-ship hooks.",
     "ru": "Превращает проверенную фазу в pull request: проверяет, что проверка пройдена и есть метка полных ворот, перечисляет неразобранные обновления зависимостей, пушит ветку, пишет описание PR по книге фазы и открывает его, записывает отгрузку и запускает хуки после отгрузки."
   },
+  "category": "ops",
   "examples": {
     "ru": [
       "Отгрузи фазу пулл-реквестом",
@@ -132,7 +133,7 @@
       },
       "skip_when": "!$inputs.review",
       "skip_out": {
-        "status": "pass"
+        "status": "not_run"
       },
       "with": {
         "range": "{{review_range.range}}"

@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { mountNativeWiring } from "../src/rooms/core/server/native-wiring";
-import { prepareClaudeGuardHost } from "../src/rooms/host-worker/host-handlers";
+import { prepareClaudeGuardHost } from "../src/rooms/host-worker";
 import { createOwnerPresence } from "../src/rooms/owner-presence/server";
 import { sdkDouble } from "./fixtures/sdk-double";
 

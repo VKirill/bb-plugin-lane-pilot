@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { fileFingerprint, storeMemoryRecords } from "../../packages/memory-core/src";
 import { openDatabase } from "../../src/rooms/plugin-db";
-import { mixWriterMemory } from "../../src/rooms/memory/server/memory-mix";
+import { mixWriterMemory } from "../../src/rooms/memory/server/services/memory-mix";
 
 const limits = { sourceSha256: "a".repeat(64), audience: "subagent" as const, coreBudget: 999, noteBudget: 9_999, indexBudget: 99_999 };
 const task = { owns_paths: ["src/rooms/widget.ts"], read_first: [] as string[] };

@@ -2,10 +2,10 @@ import { afterEach, describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import plugin from "../server";
 import { LANE_PILOT_READ_NAME } from "@lane-pilot/kit";
-import { TOOL_PRESENTATION, presentationFor, toolLocale } from "../src/rooms/platform/server/tool-presentation";
+import { TOOL_PRESENTATION, presentationFor, toolLocale } from "../src/rooms/platform/models/tool-presentation";
 import { knownOwnerLocale } from "../src/rooms/relay/server";
 
-const QUIET = ["lane_pilot_tool_search", "lane_pilot_wait_writer", "lane_pilot_wait_specialist", "lane_pilot_wait_scout", "lane_pilot_wait_errand", "lane_pilot_relay_list", "lane_pilot_read", "lane_pilot_regression_list", "lane_pilot_workflow_draft_get", "lane_pilot_workflow_capabilities", "lane_pilot_workflow_status"];
+const QUIET = ["lane_pilot_tool_search", "lane_pilot_wait_writer", "lane_pilot_wait_specialist", "lane_pilot_wait_scout", "lane_pilot_wait_errand", "lane_pilot_relay_list", "lane_pilot_read", "lane_pilot_workflow_draft_get", "lane_pilot_workflow_capabilities", "lane_pilot_workflow_status"];
 
 describe("tool presentation", () => {
   let dispose: (() => Promise<void> | void) | null = null;
@@ -70,8 +70,8 @@ describe("tool presentation", () => {
       await bb.storage.kv.set("preferences:resolved-locale", "en");
       await plugin(bb);
       dispose = () => harness.lifecycle.dispose();
-      const phase = harness.registrations.agentTools.find((tool) => tool.name === "lane_pilot_phase") as unknown as { presentation: { label: { completed: string } } };
-      expect(phase.presentation.label.completed).toBe("Moved the phase");
+      const schedule = harness.registrations.agentTools.find((tool) => tool.name === "lane_pilot_schedule") as unknown as { presentation: { label: { completed: string } } };
+      expect(schedule.presentation.label.completed).toBe("Worked with the schedule");
     });
   });
 });

@@ -24,8 +24,8 @@ import {
   transitionAttempt,
 } from "../src/rooms/plugin-db";
 import type { TaskV2 } from "../src/rooms/contracts";
-import { validateAcceptanceV2 } from "../src/rooms/tasks/acceptance-v2";
-import { familyDirtBaseline } from "../src/rooms/writer/server/verify";
+import { validateAcceptanceV2 } from "../src/rooms/tasks/server";
+import { familyDirtBaseline } from "../src/rooms/writer/models/verify";
 import { withOwnWorktrees } from "./own-worktree-host";
 
 // An in-place redispatch counts only the edits an earlier attempt of the same task family produced; owner or
@@ -387,77 +387,6 @@ describe("BB writer validation on the server path", () => {
     await harness.lifecycle.dispose();
   });
 
-  it("puts every accepted rule meant for a writer into the writer prompt and keeps the PM-only rules out", async () => {
-    const expected = ["Run every npm verification command before answering.", "Check the site healthcheck after every deploy."];
-    const jev = "none";
-    let spawnedPrompt = "";
-    const { bb, harness } = worktreeHost({
-      pluginId:"lane-pilot",
-      sdk:{
-        threads:{
-          getPluginMetadata:async ({ threadId }) => threadId === pmThreadId ? { role:"pm", lanePilotRunId:"run-rules" } : { role:"writer" },
-          spawn:async (input) => { spawnedPrompt = String((input as { prompt?:string }).prompt ?? ((input as { input?:Array<{ text?:string }> }).input ?? []).map((part) => part.text ?? "").join("\n\n")); return { id:"writer-rules" }; },
-          wait:async () => ({ matched:true, thread:{ status:"idle" } }),
-          get:withPm(async () => ({ id:"writer-rules", status:"idle" })),
-          output:async () => ({ text:"NEEDS_HUMAN: stop here, the test only needs the prompt" }),
-          list:async () => [] as never,
-        },
-        providers:{ list:listLiveWriterProviders, models:async () => ({ models:[{ id:"codex-test", model:"codex-test", supportedReasoningEfforts:["medium","high"].map((reasoningEffort) => ({ reasoningEffort, description:reasoningEffort })) }] as never }) },
-        files:{ read:async ({ path }) => path.endsWith("README.md") ? { content:"fixture\n" } : { content:null }, write:async () => ({ ok:true }) },
-      },
-      experimental_callHostRpc:(call) => {
-        const gitBase=noGitOwnershipBase(call.method); if(gitBase) return gitBase;
-        if (call.method === "classifyPlan") throw new Error("RPC transport failed");
-        if (call.method === "readBoundedFile") return boundedReadCall(call, "host-test", (path) => path.endsWith("README.md") ? "fixture\n" : null);
-        if (call.method !== "runCommand") throw new Error(`unexpected host method ${call.method}`);
-        const command = String((call.input as { command?:string }).command ?? "");
-        if (command.includes("porcelain")) return { hostId:"host-test", exitCode:0, stdout:"[]", stderr:"" };
-        return { hostId:"host-test", exitCode:0, stdout:"", stderr:"" };
-      },
-    });
-    const db = openDatabase(bb);
-    saveLegacyWriterConfig(db);
-    saveProjectSetting(db, projectId, "writer.reasoning_effort", "high");
-    saveProjectSetting(db, projectId, "memory.enabled", "true");
-    saveProjectSetting(db, projectId, "memory.inject", "true");
-    ["Run every npm verification command before answering.", "Check the site healthcheck after every deploy."].forEach((rule, index) => {
-      db.prepare("INSERT INTO lane_pilot_memory(id,project_id,personal_bot,kind,audience,content,concepts_json,source_sha256,created_at) VALUES(?,?,?,?,?,?,?,?,?)")
-        .run(`mem-${index}`, projectId, "", "core", "subagent", rule, '["rule"]', "s", index);
-      db.prepare(`INSERT INTO lane_pilot_rule_proposal (id,project_id,signature,rule,author,state,occurrences,task_count,examples_json,memory_id,first_seen_at,last_seen_at,updated_at,decided_at)
-        VALUES (?,?,?,?,'owner','accepted',3,3,'[]',?,1,1,1,?)`).run(`rule-${index}`, projectId, `s${index}`, rule, `mem-${index}`, index);
-    });
-    // A PM's rule never reaches a writer; a rule for every task reaches it without a question to System One.
-    [["rule-pm", "Write owns_paths with every sibling test.", "pm", 0], ["rule-always", "Never read the exit code after a pipe.", "writer", 1]].forEach(([id, rule, audience, always], index) => {
-      db.prepare("INSERT INTO lane_pilot_memory(id,project_id,personal_bot,kind,audience,content,concepts_json,source_sha256,created_at) VALUES(?,?,?,?,?,?,?,?,?)")
-        .run(`mem-${id}`, projectId, "", "core", "subagent", rule, '["rule"]', "s", 5 + index);
-      db.prepare(`INSERT INTO lane_pilot_rule_proposal (id,project_id,signature,rule,author,state,occurrences,task_count,examples_json,memory_id,first_seen_at,last_seen_at,updated_at,decided_at,audience,always_on)
-        VALUES (?,?,?,?,'pm','accepted',1,0,'[]',?,1,1,1,?,?,?)`).run(id, projectId, `s-${id}`, rule, `mem-${id}`, 5 + index, audience, always);
-    });
-    // A rule from another section of the project (another client) must never reach this run's writer.
-    db.prepare("INSERT INTO lane_pilot_memory(id,project_id,personal_bot,kind,audience,content,concepts_json,source_sha256,created_at) VALUES('mem-other',?,'','core','subagent','Other client rule.','[]','s',9)").run(projectId);
-    db.prepare(`INSERT INTO lane_pilot_rule_proposal (id,project_id,signature,rule,author,state,occurrences,task_count,examples_json,memory_id,first_seen_at,last_seen_at,updated_at,decided_at,scope_json)
-      VALUES ('rule-other',?,'s9','Other client rule.','model','accepted',3,3,'[]','mem-other',1,1,1,9,'["section:clients","section:other-client"]')`).run(projectId);
-    createWriterRun(db, "run-rules");
-    db.prepare("UPDATE lane_pilot_run SET settings_scopes_json=? WHERE id='run-rules'").run(JSON.stringify(["section:clients", "section:this-client"]));
-    setRunThread(db, "run-rules", pmThreadId);
-    await plugin(bb);
-    const dispatched = JSON.parse(String(await harness.behavior.callAgentTool(
-      "lane_pilot_dispatch_writer",
-      { confirm: true, objective: "Проверка диспетча", plan:"Plan for the rules test", task:{ ...task, id:`rules-task-${jev}`, verify:"none", verification:[] } },
-      { threadId:pmThreadId, projectId },
-    )));
-    expect(dispatched.pathRules).toEqual(expect.arrayContaining([
-      expect.objectContaining({ id:"rule-pm", rule:"Write owns_paths with every sibling test." }),
-    ]));
-    await harness.behavior.callAgentTool("lane_pilot_wait_writer", { runId:"run-rules", timeoutSec:2 }, { threadId:pmThreadId, projectId });
-    for (const rule of expected) expect(spawnedPrompt).toContain(rule);
-    expect(spawnedPrompt).not.toContain("Other client rule.");
-    expect(spawnedPrompt).not.toContain("Write owns_paths with every sibling test.");
-    expect(spawnedPrompt).toContain("Never read the exit code after a pipe.");
-    expect(getReasoningTrace(db, dispatched.attemptId)?.dispatchContext?.rulesPicked).toEqual({ total:4, picked:["rule-0", "rule-1", "rule-always"] });
-    await harness.lifecycle.dispose();
-  });
-
   it("escalates a retry from the first effort and stores the applied choice in its receipt", async () => {
     let snapshots=0;
     const spawned:Array<Record<string,unknown>>=[];
@@ -596,7 +525,9 @@ describe("BB writer validation on the server path", () => {
         if (call.method !== "runCommand") throw new Error(`unexpected ${call.method}`);
         const command = String((call.input as { command?:string }).command ?? "");
         if (command.includes("porcelain")) {
-          snapshots += 1;
+          // Only the writer's file snapshot (the hashlib script) alternates before/after; the HEAD probe and the repo snapshot
+          // also run `git status` and must not shift the parity.
+          if (command.includes("hashlib")) snapshots += 1;
           return {
             hostId:"host-test", exitCode:0,
             stdout:JSON.stringify(snapshots % 2 === 1 ? [] : [{ path:"hello.txt", sha256:"new-content" }]),
@@ -717,11 +648,10 @@ describe("BB writer validation on the server path", () => {
     const result = JSON.parse(String(await harness.behavior.callAgentTool(
       "lane_pilot_wait_writer", { runId:dispatched.runId, timeoutSec:3 }, { threadId:pmThreadId, projectId },
     )));
-    // A failing check runs once more before it counts as failed. One writer session: the failure goes back to the same
-    // writer as feedback turns (this fake's diff changes on turns 1-3, then repeats with the same failure on turn 4,
-    // which ends the session), so the three commands run four times instead of twice.
+    // A failing check runs once more before it counts as failed. The failure goes back to the writer as feedback turns until
+    // the writer step's three visits are spent (plan R12, Task 7: 3 failed visits, then another angle, then the owner).
     expect(ran.filter((command) => command === "test -d ." || command === "false")).toEqual(
-      Array.from({ length:4 }, () => ["test -d .", "false", "false"]).flat());
+      Array.from({ length:3 }, () => ["test -d .", "false", "false"]).flat());
     expect(maxActiveVerifications).toBe(2);
     expect(JSON.parse(getRun(db,"run-v")!.run_policy_json)).toMatchObject({pools:{verification:2}});
     expect(result.state).toBe("blocked");

@@ -1,6 +1,6 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
-import { readThreadLive } from "../src/rooms/runs/server/thread-live";
+import { readThreadLive } from "../src/rooms/runs/server";
 import { rpcContract } from "../src/rooms/contracts";
 import { tokenCursorRow } from "../src/rooms/usage/server";
 import { createAttempt, createRun, createTask, openDatabase, setRunThread } from "../src/rooms/plugin-db";

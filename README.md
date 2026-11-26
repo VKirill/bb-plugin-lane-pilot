@@ -2,13 +2,13 @@
 
 ![Lane Pilot: a captain crab plans, writer crabs dig their own branches, checks in a sandbox, merges into main](docs/images/hero.jpg)
 
-Lane Pilot is a BB plugin that runs coding work from a project chat. The owner talks to a PM chat; Lane Pilot turns the request into task contracts, hands each task to a writer agent in its own git worktree, checks the result in a sandbox, has critics review it, merges what passes, and keeps what it learned in one project memory on the BB hub. The same machinery runs research, browser and Mac errands, specialist work, councils and scheduled routines. Every piece of work it runs is a graph (a workflow); the PM chat is the door to the machine, not its engine.
+Lane Pilot is a BB plugin that runs coding work from a project chat. The owner talks to a PM chat; Lane Pilot turns the request into task contracts, hands each task to a writer agent in its own git worktree, checks the result in a sandbox, has critics review it, merges what passes, and keeps what it learned in one project memory on the BB hub. The same machinery runs research, browser and Mac errands, specialist work and scheduled routines. Every piece of work it runs is a graph (a workflow) driven by events, durable deadlines and one engine clock; the PM chat is the door to the machine, not its engine.
 
-It is for people who run several agents on one codebase and want the boring parts (isolation, verification, retries, merging, memory, night maintenance) done by code, not by a chat.
+It is for people who run several agents on one codebase and want the boring parts (isolation, verification, retries, merging, memory, scheduling) done by code, not by a chat.
 
 ## If you are an agent, read this first
 
-1. **What this repository is.** The plugin's code: `server.ts` (hub server, SQLite), `host.ts` (git, sandbox and machine work on enrolled hosts), `app.tsx` (UI). Each subsystem is a room in `src/rooms/<room>/`; other rooms import only its `index.ts`, `server/index.ts` or `ui/index.ts`. Shared code lives in `packages/*`, shipped graphs in `workflows/*.json`.
+1. **What this repository is.** The plugin's code: `server.ts` (hub server, SQLite), `host.ts` (git, sandbox and machine work on enrolled hosts), `app.tsx` (UI). Each subsystem is a room in `src/rooms/<room>/` following the enforced layout (`index.ts`, `models/`, `server/{handlers,services,repositories}/`, `ui/`); other rooms import only its `index.ts`, `server/index.ts` or `ui/index.ts`. Shared code lives in `packages/*`, shipped graphs in `workflows/*.json`.
 2. **Where to look a thing up.** The [interactive system map](https://vkirill.github.io/bb-plugin-lane-pilot/map/) and the [atlas](docs/atlas.md) are generated from the code: every room with its public API, every task stage, the attempt state machine, every `bb lane-pilot` command and every shipped graph. The [guide](#the-guide) below explains how the parts work together; deep pages per subsystem are in the [documentation map](#documentation-map).
 3. **Project facts that are not in the code** (who the owner is, decisions, lessons) live in the hub memory: `bb lane-pilot memory search "<question>"`, record one with `bb lane-pilot memory write "<fact>"`. Not in local memory files.
 4. **Rules that bite.** The database schema is append-only (see [Development](docs/guide/development.md#database-migrations)). A release goes only through the deploy script and ends with a drill that rolls back on red. Run focused tests while working (`npx vitest related <files> --run`); the full suite runs at the gate. Traps: [gotchas](docs/gotchas.md).
@@ -23,34 +23,34 @@ flowchart LR
   owner([Owner]) --> pm[PM chat]
   pm -->|task contracts| run[Graph run]
   pm -->|errand, browser, specialist| run
+  events([Events & clock]) --> run
   run --> stages[Stages: plan, brief, critic]
   stages --> writer[Writer in its own worktree]
   writer --> checks[Checks in a sandbox]
   checks --> critics[Critics]
   critics -->|accepted| merge[Merge queue, integration gate]
-  merge --> release[Release]
-  run -.->|episode, receipts| learn[Memory, lessons, rules]
-  learn -.->|facts and rules in every brief and thread| pm
-  night[Night loop: wall, bench, docs, labels] -.-> learn
+  merge --> release[Landing & memory maintenance]
+  release -.->|facts and receipts| mem[Project memory & step facts]
+  mem -.->|memory search in briefs and threads| pm
 ```
 
-The PM plans and talks; code does the rest. Each step leaves a receipt in the database, so a failure has a recorded cause, and the night loop turns repeated failures and repeated work into rules, skills, scripts and graphs.
+The PM plans and talks; code does the rest. Every step records a receipt and per-step run facts in the database, waits park with absolute deadlines settled once by compare-and-set, and periodic work runs as scheduled graphs driven by events and the single engine clock.
 
 ## Numbers
 
-<!-- numbers:start 36f5ae1fe484ab97 -->
+<!-- numbers:start 10b8d47f60cb7f07 -->
 | What | Count |
 |---|---:|
-| Version | 0.1.609 |
-| Rooms (components in `src/rooms/`) | 79 |
-| Workspace packages (`packages/`) | 17 |
-| Shipped graphs (published / own maintenance `lp.*`) | 130 (120 / 25) |
+| Version | 0.1.610 |
+| Rooms (components in `src/rooms/`) | 56 |
+| Workspace packages (`packages/`) | 12 |
+| Shipped graphs (published / own maintenance `lp.*`) | 117 (110 / 19) |
 | Task stages / attempt state transitions | 21 / 26 |
-| `bb lane-pilot` commands | 129 |
-| RPC methods | 225 |
-| Memory delivery paths | 27 |
-| Settings in the catalog | 266 |
-| Test files / lines of source (TypeScript, without tests) | 1287 / 242348 |
+| `bb lane-pilot` commands | 74 |
+| RPC methods | 137 |
+| Memory delivery paths | 14 |
+| Settings in the catalog | 236 |
+| Test files / lines of source (TypeScript, without tests) | 911 / 170503 |
 
 Generated by `npx tsx scripts/generate-atlas.ts` together with [the atlas](docs/atlas.md), which lists every room, command and graph.
 <!-- numbers:end -->
@@ -62,13 +62,12 @@ Generated by `npx tsx scripts/generate-atlas.ts` together with [the atlas](docs/
 | How did the project's tasks go (stages, time, tokens, cost) | `bb lane-pilot metrics <project-id> [--days N]` |
 | Which errands repeat and what they cost | `bb lane-pilot errands diagnose [--days 30]` |
 | What waits for the owner | `bb lane-pilot waiting` |
-| What the night loop did | `bb lane-pilot wall` |
 | Monthly spend and its cap | `bb lane-pilot money` |
 | The full story of one task | `bb lane-pilot timeline <task-id>` |
 
 ## What it is and what it needs
 
-Lane Pilot is one plugin with three entries declared in `package.json`: a server (`server.ts`, owns the plugin SQLite database and all room services), a host worker (`host.ts`, runs git, sandbox and machine operations on enrolled hosts) and a UI app (`app.tsx`, the settings, Tasks board and composer action).
+Lane Pilot is one plugin with three entries declared in `package.json`: a server (`server.ts`, owns the plugin SQLite database and all room services), a host worker (`host.ts`, runs git, sandbox and machine operations on enrolled hosts) and a UI app (`app.tsx`, project tabs, system pages and composer action).
 
 | Requirement | Detail |
 |---|---|
@@ -81,7 +80,7 @@ Lane Pilot is one plugin with three entries declared in `package.json`: a server
 
 1. Install Lane Pilot through BB's plugin manager (or, for a path plugin, `bb-plugin-push lane-pilot` from the checkout, see [Development](docs/guide/development.md)).
 2. Connect the project to an enrolled host and open **Lane Pilot** in the project navigation. The Overview tab shows what is missing (for example, no writer chosen).
-3. Pick the writer model in **Team**. Models per role come from a role table; the writer of each task is picked by rules and the role table.
+3. Pick the writer model in **Team** (models per function come from the role table, with automatic fallback when a model is unavailable).
 4. In a new project chat open **Lane Pilot / agent** under the message box, turn Lane Pilot on and send the task. The first activation installs the Lane Pilot stack on the host by itself; its state is under **Runs, Service**.
 5. The PM dispatches tasks, you watch them on **Tasks** (board or list) and in the chat's info panel, and the PM ships the merged result.
 
@@ -94,24 +93,23 @@ How the system works, one page per part. Start with the first one.
 
 | Page | What it answers |
 |---|---|
-| [How a piece of work flows](docs/guide/flow.md) | What happens between the owner's message and the merged commit: the 13 steps. |
-| [Everything is a graph](docs/guide/graphs.md) | Why every job is a graph, which graphs ship, how a graph is built, tested and started. |
+| [How a piece of work flows](docs/guide/flow.md) | What happens between the owner's message and the merged commit. |
+| [Everything is a graph](docs/guide/graphs.md) | Why every job is a graph, which graphs ship, how a graph is built, tested, triggered and started. |
 | [Roles, agents and models](docs/guide/roles.md) | Who does what (PM, writer, critics, lead, specialists, errands), which model each role gets, providers, Jev. |
 | [Agents: who is who](docs/agents.md) | The one table of every agent, judge and Codex config profile with its Russian display name, id, job, trigger, access and model (in Russian). |
 | [The hand-off standard](docs/guide/handoff.md) | What crosses the boundary when one agent gives work to another: the task message, the result, the honest exit, how an answer is read. |
 | [The hook standard](docs/guide/hooks.md) | The six rules for session hooks on a machine (fail-open, anchored to the project root, quiet, budgeted), the layers, the audit command. |
-| [Failure handling and stability](docs/guide/failures.md) | Failure classes, retries, held writers, self-repair, deploys, drills, budgets. |
+| [Failure handling and stability](docs/guide/failures.md) | Failure classes, retries, held writers, model fallbacks, deploys, drills, budgets. |
 | [Memory](docs/guide/memory.md) | The one project memory: who writes it, how it reaches agents, search, import, proof that it works. |
-| [Self-improvement](docs/guide/self-improvement.md) | The night loop, LP-Bench, lessons to rules, episodes and crystallization of repeated work. |
-| [Observability](docs/guide/observability.md) | Morning summary, owner inbox, receipts, boards, where each signal lives. |
-| [Settings and experimental features](docs/guide/settings.md) | The six settings tabs, the important keys, what is off by default. |
+| [Self-improvement](docs/guide/self-improvement.md) | Run facts, graph library, evolution building blocks, and crystallization of repeated work. |
+| [Observability](docs/guide/observability.md) | Daily digest, owner inbox, receipts, boards, where each signal lives. |
+| [Settings and experimental features](docs/guide/settings.md) | The six settings tabs, the typed settings registry, model per function, what is off by default. |
 | [CLI, agent tools, UI and RPC](docs/guide/interfaces.md) | The doors into the system: commands, tools, screens, RPC and BB hooks. |
 | [Development](docs/guide/development.md) | Layout, commands, tests, migrations, deploy. |
 
 ## Keeping these docs current
 
 - The numbers above, the [system map](docs/map/index.html) and the [atlas](docs/atlas.md) (rooms, stages, commands, graphs, RPC) are generated from the code; `tests/atlas.test.ts` fails when they are stale.
-- Every night the docs pass (`lp.docs-night`, [docs night](docs/docs-night.md)) reads the day's diff, finds the pages and README sections it made wrong, rewrites them and commits. `bb lane-pilot docs-nightly <project-id>` runs it now.
 - [CHANGELOG.md](CHANGELOG.md) has every release; a guide page cites it rather than repeating it.
 
 ## Documentation map
@@ -122,14 +120,12 @@ The full generated list is [docs/index.md](docs/index.md). Pages by topic:
 |---|---|
 | Start here | [overview](docs/overview.md), [architecture](docs/architecture.md), [conventions](docs/conventions.md), [testing](docs/testing.md), [the task pipeline](docs/flows/task-pipeline.md), [gotchas](docs/gotchas.md), [decisions](docs/decisions.md), [PROJECT.md](PROJECT.md) |
 | Runtime and contracts | [data model](docs/data-model.md), [RPC and host-call contracts](docs/rpc-callers.md), [RPC route details](docs/rpc-details.md), [native agent activation](docs/native-agent.md), [packages](docs/packages.md), [package operations](docs/package-operations.md), [deployment](docs/deployment.md), [atlas (generated)](docs/atlas.md), [wires](docs/wires.md) |
-| Writer path | [validator decisions](docs/validator-decisions.md), [plan against fact](docs/plan-fact.md), [baseline and regression pass](docs/baseline.md), [return to an earlier stage](docs/stage-return.md), [pilot, then fan-out](docs/pilot.md), [backlog to tasks](docs/backlog.md), [ship](docs/ship.md), [run-goal check](docs/run-goal.md), [rolling back](docs/rollback.md), [phases](docs/phases.md) |
-| Graphs | [workflow engine](docs/workflow-engine.md), [router](docs/workflow-router.md), [triggers](docs/workflow-triggers.md), [executors](docs/workflow-executors.md), [workflows evolution](docs/workflows-evolution.md), [workflow-engine package docs](packages/workflow-engine/docs/index.md) |
-| Models and providers | [agents: who is who](docs/agents.md), [role table and model pools](docs/role-models.md), [capability table](docs/capability.md), [relay between threads](docs/relay.md) |
+| Writer path | [validator decisions](docs/validator-decisions.md), [plan against fact](docs/plan-fact.md), [baseline](docs/baseline.md), [return to an earlier stage](docs/stage-return.md), [pilot, then fan-out](docs/pilot.md), [backlog to tasks](docs/backlog.md), [ship](docs/ship.md), [rolling back](docs/rollback.md) |
+| Graphs | [workflow engine](docs/workflow-engine.md), [router](docs/workflow-router.md), [triggers](docs/workflow-triggers.md), [executors](docs/workflow-executors.md), [workflow-engine package docs](packages/workflow-engine/docs/index.md) |
+| Models and providers | [agents: who is who](docs/agents.md), [role table and model pools](docs/role-models.md), [relay between threads](docs/relay.md) |
 | Stability | [watchdog](docs/watchdog.md), [outage record and conveyor](docs/outage-conveyor.md), [checkers](docs/checkers.md), [twins](docs/twins.md), [coverage](docs/coverage.md) |
-| Memory and owner profile | [memory](docs/memory.md), [memory tiers](docs/memory-tiers.md), [anamnesis](docs/anamnesis.md), [learning from the owner's messages](docs/learning.md) |
-| Self-improvement | [wall and the night loop](docs/wall.md), [LP-Bench](docs/lp-bench.md), [hypotheses](docs/hypotheses.md), [writer harness](docs/harness.md), [rule forms](docs/rule-forms.md), [night policy](docs/night-policy.md), [Self-improvement settings](docs/self-improvement-settings.md), [workflows evolution](docs/workflows-evolution.md), [research adoption](docs/research-adoption.md), [SMA self-check](docs/sma-self-check.md), [design evaluation](docs/design-eval.md), [forecast](docs/forecast.md), [docs night](docs/docs-night.md) |
+| Memory and evolution | [memory](docs/memory.md), [memory tiers](docs/memory-tiers.md), [evolution graph design record](docs/decisions/2026-11-25-evolution-graph.md), [research adoption](docs/research-adoption.md), [forecast](docs/forecast.md) |
 | Observability and owner | [Tasks board](docs/task-board.md), [work graph](docs/work-graph.md), [schedule board](docs/schedule-board.md), [errands](docs/errands.md), [waiting for the owner](docs/owner-waiting.md), [owner presence](docs/owner-presence.md), [deferrals](docs/deferrals.md) |
-| Settings | [enabled settings (generated)](docs/enabled-settings.md), [adoc applicability](docs/adoc-applicability.md) |
-| Workspaces | [i18n](packages/i18n/docs/index.md), [kit](packages/kit/docs/index.md), [memory-core](packages/memory-core/docs/index.md), [models](packages/models/docs/index.md), [ui-kit](packages/ui-kit/docs/index.md), [workflow-engine](packages/workflow-engine/docs/index.md), [world-sim](packages/world-sim/docs/index.md) |
+| Settings | [enabled settings (generated)](docs/enabled-settings.md), [adoc applicability (historical)](docs/adoc-applicability.md) |
+| Workspaces | [i18n](packages/i18n/docs/index.md), [kit](packages/kit/docs/index.md), [memory-core](packages/memory-core/docs/index.md), [models](packages/models/docs/index.md), [ui-kit](packages/ui-kit/docs/index.md), [workflow-engine](packages/workflow-engine/docs/index.md) |
 | Specific flows | [invoice-send](docs/invoice-send.md), [telegram-send](docs/telegram-send.md) |
-

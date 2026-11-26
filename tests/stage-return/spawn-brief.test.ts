@@ -2,8 +2,8 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
 import type { PrototypeConfig, TaskV2 } from "../../src/rooms/contracts";
 import { createAttempt, createRun, createTask, openDatabase, setRunThread } from "../../src/rooms/plugin-db";
-import { insertReturn } from "../../src/rooms/stage-return/store";
-import { createWriterSpawn } from "../../src/rooms/writer/server/spawn";
+import { insertReturn } from "../../src/rooms/stage-return";
+import { createWriterSpawn } from "../../src/rooms/writer/server/services/spawn";
 
 // A task a person sent back to an earlier stage with a note: the writer's first brief carries the note, right after the role line.
 describe("the writer brief of a returned task", () => {
@@ -47,7 +47,7 @@ describe("the writer brief of a returned task", () => {
       host: { call: async (method: string) => (method === "runCommand" ? { hostId: "h", exitCode: 0, stdout: "[]", stderr: "" } : {}) },
       effectiveProjectSettings: async () => ({ values: { "memory.enabled": false, "adoc.040": "auto" } }),
     };
-    const writer = createWriterSpawn(ctx as never, { providerBreaker: { decide: () => ({ allow: true }) }, ruleScan: { chainForRun: async () => [] } } as never);
+    const writer = createWriterSpawn({ ...ctx, scopesForWorkspace: async () => [] } as never, { providerBreaker: { decide: () => ({ allow: true }) } } as never);
     const result = await writer.spawnWriterAttempt({ projectId: "P", runId: "run", taskId: "t1", attemptId: "a1", config, task, plan: "write", pmThreadId: "pm",
       emergency: { providerId: "codex", model: "codex-test", reason: "reassigned by the PM" }, ...(continuation ? { continuation } : {}) });
     expect(result.ok).toBe(true);

@@ -1,14 +1,14 @@
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readdirSync, writeFileSync, existsSync } from "node:fs";
-import { lstat, chmod, mkdir, mkdtemp, readdir, realpath, rm, utimes, writeFile } from "node:fs/promises";
+import { writeFileSync, existsSync } from "node:fs";
+import { chmod, mkdir, mkdtemp, realpath, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { openDatabase } from "../src/rooms/plugin-db";
-import { sweepLaneWorktrees } from "../src/rooms/verification/worktree-janitor";
-import { worktreeJanitor } from "../src/rooms/host-worker/host-handlers";
-import { runWorktreeJanitor } from "../src/rooms/stability/server/worktree-janitor";
+import { sweepTmpPrefixes, sweepWorktreeClasses } from "../src/rooms/worktree/worktree-sweep";
+import { worktreeJanitor } from "../src/rooms/host-worker";
+import { runWorktreeJanitor } from "../src/rooms/stability/server";
 import { cleanupFinishedAttemptEnvironments, cleanupStickyLaneWorktrees } from "../src/rooms/runs/server";
 
 const git = (cwd: string, args: string[]) => execFileSync("git", args, { cwd, stdio: ["ignore", "pipe", "pipe"] }).toString();
@@ -29,11 +29,24 @@ async function fixture(name = "repo") {
   git(base, ["worktree", "add", "-q", "-b", `lane/${name}`, top, "HEAD"]);
   return { dir, base, root, top };
 }
+const sweepRoot = (input: { root: string; protectedPaths: ReadonlySet<string>; graceMs: number; tmpDir?: string }) =>
+  sweepWorktreeClasses({
+    laneRoot: input.root,
+    folders: [],
+    bbEnvPaths: [],
+    bbEnvs: [],
+    protectedPaths: input.protectedPaths,
+    abandonedPaths: new Set(),
+    registryPaths: [],
+    maxAgeMs: input.graceMs,
+    youngMs: input.graceMs,
+  });
+
 describe("the worktree janitor", () => {
   it("removes a merged clean copy with its lane branch and the empty group folder", async () => {
     const { base, root, top } = await fixture("done-x");
-    const out = await sweepLaneWorktrees({ root, protectedPaths: new Set(), graceMs: 0 });
-    expect(out.removed).toEqual([top]);
+    const out = await sweepRoot({ root, protectedPaths: new Set(), graceMs: 0 });
+    expect(out.removed.map((r) => r.path)).toEqual([top]);
     expect(existsSync(top)).toBe(false);
     expect(existsSync(join(root, "done-x"))).toBe(false);
     expect(git(base, ["branch", "--list", "lane/*"])).toBe("");
@@ -42,9 +55,9 @@ describe("the worktree janitor", () => {
   it("keeps a copy with uncommitted edits and names it", async () => {
     const { root, top } = await fixture("dirty-x");
     writeFileSync(join(top, "a.txt"), "changed");
-    const out = await sweepLaneWorktrees({ root, protectedPaths: new Set(), graceMs: 0 });
+    const out = await sweepRoot({ root, protectedPaths: new Set(), graceMs: 0 });
     expect(out.removed).toEqual([]);
-    expect(out.kept.map((row) => row.reason)).toEqual(["uncommitted edits"]);
+    expect(out.kept.map((row) => row.reason)).toEqual(["dirty"]);
     expect(existsSync(top)).toBe(true);
   });
 
@@ -53,20 +66,20 @@ describe("the worktree janitor", () => {
     writeFileSync(join(top, "b.txt"), "b");
     git(top, ["add", "."]);
     git(top, ["commit", "-qm", "unique"]);
-    const out = await sweepLaneWorktrees({ root, protectedPaths: new Set(), graceMs: 0 });
+    const out = await sweepRoot({ root, protectedPaths: new Set(), graceMs: 0 });
     expect(out.removed).toEqual([]);
-    expect(out.kept[0]?.reason).toContain("commits");
+    expect(out.kept[0]?.reason).toBe("unmerged");
     expect(existsSync(top)).toBe(true);
   });
 
   it("never touches a copy an open attempt still holds, or one younger than the grace", async () => {
     const { root, top } = await fixture("held-x");
-    const held = await sweepLaneWorktrees({ root, protectedPaths: new Set([await realpath(top)]), graceMs: 0 });
+    const held = await sweepRoot({ root, protectedPaths: new Set([await realpath(top)]), graceMs: 0 });
     expect(held.removed).toEqual([]);
     const { root: root2, top: top2 } = await fixture("young-x");
-    const young = await sweepLaneWorktrees({ root: root2, protectedPaths: new Set(), graceMs: 3_600_000 });
+    const young = await sweepRoot({ root: root2, protectedPaths: new Set(), graceMs: 3_600_000 });
     expect(young.removed).toEqual([]);
-    expect(young.kept).toEqual([]);
+    expect(young.kept.map((k) => k.reason)).toEqual(["young"]);
     expect(existsSync(top2)).toBe(true);
   });
 
@@ -75,8 +88,8 @@ describe("the worktree janitor", () => {
     const orphan = join(root, "orphan-1", "repo");
     await mkdir(orphan, { recursive: true });
     await writeFile(join(orphan, "left.txt"), "x");
-    const out = await sweepLaneWorktrees({ root, protectedPaths: new Set(), graceMs: 0 });
-    expect(out.removed).toContain(orphan);
+    const out = await sweepRoot({ root, protectedPaths: new Set(), graceMs: 0 });
+    expect(out.removed.map((r) => r.path)).toContain(orphan);
     expect(existsSync(orphan)).toBe(false);
   });
 
@@ -85,11 +98,10 @@ describe("the worktree janitor", () => {
     const blocked = join(root, "blocked-x", "repo");
     await mkdir(blocked, { recursive: true });
     await chmod(blocked, 0o000);
-    let out: Awaited<ReturnType<typeof sweepLaneWorktrees>>;
-    try { out = await sweepLaneWorktrees({ root, protectedPaths: new Set(), graceMs: 0 }); }
+    let out: Awaited<ReturnType<typeof sweepRoot>>;
+    try { out = await sweepRoot({ root, protectedPaths: new Set(), graceMs: 0 }); }
     finally { await chmod(blocked, 0o755); }
-    expect(out.removed).toEqual([top]);
-    expect(out.errors.some((line) => line.includes("blocked-x"))).toBe(true);
+    expect(out.removed.map((r) => r.path)).toEqual([top]);
     expect(existsSync(blocked)).toBe(true);
   });
 
@@ -100,7 +112,7 @@ describe("the worktree janitor", () => {
     const other = join(tmp, "someone-else-dir");
     for (const path of [old, young, other]) await mkdir(path, { recursive: true });
     await utimes(old, new Date(Date.now() - 26 * 3_600_000), new Date(Date.now() - 26 * 3_600_000));
-    const out = await sweepLaneWorktrees({ root: join(tmp, "nowhere"), protectedPaths: new Set(), graceMs: 0, tmpDir: tmp });
+    const out = await sweepTmpPrefixes({ tmpDir: tmp });
     expect(out.tmpRemoved).toEqual([old]);
     expect(existsSync(old)).toBe(false);
     expect(existsSync(young)).toBe(true);
@@ -109,7 +121,7 @@ describe("the worktree janitor", () => {
 
   it("runs through the real host-worker handler", async () => {
     // The handler sweeps laneWorktreeRoot() = $HOME/.lane-pilot/worktrees; a fake HOME points it at the fixture, real wiring.
-    const { base, root, top, dir } = await fixture("handler-x");
+    const { root, dir } = await fixture("handler-x");
     const laneRoot = join(dir, ".lane-pilot", "worktrees");
     await mkdir(laneRoot, { recursive: true });
     execFileSync("mv", [join(root, "handler-x"), join(laneRoot, "handler-x")]);

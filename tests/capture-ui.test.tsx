@@ -5,9 +5,9 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { fireEvent } from "@testing-library/react";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
-import { VISIBLE_CATALOG } from "@lane-pilot/settings-catalog";
+import { SETTINGS_REGISTRY } from "../src/rooms/settings-registry";
 import { en, ru } from "@lane-pilot/i18n";
-import { EXTERNAL_OPS } from "../src/rooms/runs/constants";
+import { EXTERNAL_OPS } from "../src/rooms/runs";
 
 const root = process.cwd();
 const outDir = resolve(root, "../../.agency/jobs/AG-235/tmp/ui-html");
@@ -19,8 +19,8 @@ function screenFixture() {
     projectId: "proj_ui",
     hostId: "host_ui",
     workspacePath: "/tmp/lane-pilot-ui",
-    values: Object.fromEntries(VISIBLE_CATALOG.map((row) => [row.storageKey, row.defaultValue])),
-    versions: Object.fromEntries(VISIBLE_CATALOG.map((row) => [row.storageKey, 1])),
+    values: Object.fromEntries(SETTINGS_REGISTRY.visible.map((row) => [row.storageKey, row.defaultValue])),
+    versions: Object.fromEntries(SETTINGS_REGISTRY.visible.map((row) => [row.storageKey, 1])),
     runs: [{
       id: "lprun_1",
       state: "running",
@@ -75,7 +75,7 @@ async function mount(lang: string) {
       stack_rollback: () => ({ status: "ok" }),
     },
   });
-  await slot.findByText(lang === "ru" ? ru.tabSettings : en.tabSettings);
+  await slot.findByText(lang === "ru" ? ru.tabWork : en.tabWork);
   return slot;
 }
 

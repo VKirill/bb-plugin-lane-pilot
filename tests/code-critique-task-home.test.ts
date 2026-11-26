@@ -1,12 +1,12 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { sha256Hex } from "@lane-pilot/kit";
 import { afterEach, describe, expect, it } from "vitest";
-import { codeCritiqueTaskContext, runCodeCritique } from "../src/rooms/critique/server/critique-runs";
-import { codeCritiquePrompt, codeCritiqueSource } from "../src/rooms/critique/code-critique";
-import { stageHelperSettings } from "../src/rooms/settings/server/stage-settings";
+import { codeCritiqueTaskContext, runCodeCritique } from "../src/rooms/critique/server";
+import { codeCritiquePrompt, codeCritiqueSource } from "../src/rooms/critique";
+import { stageHelperSettings } from "../src/rooms/settings/server/services/stage-settings";
 import { createAttempt, createRun, createTask, listStageReceipts, openDatabase, saveProjectSetting, saveTaskPlan, setRunThread } from "../src/rooms/plugin-db";
 import { openTaskHome, recordTaskFile } from "../src/rooms/storage";
-import { writeDispatchHome } from "../src/rooms/writer/server/task-home";
+import { writeDispatchHome } from "../src/rooms/writer/server/services/task-home";
 import type { TaskFileIo } from "../src/rooms/storage";
 
 // 0.1.570 live drill task_home (lprun_a2dc1669e8524c509ad3d4f3f4f8cdba): dispatch snapshots the shared plan into the task home's

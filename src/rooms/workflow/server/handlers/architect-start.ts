@@ -1,0 +1,163 @@
+import type { PluginRpcHandlers } from "@get-bb/plugin-sdk";
+import { z } from "zod";
+import type { rpcContract } from "../../../contracts";
+import { writerExecutionSelection } from "@lane-pilot/models";
+import { mentionContext } from "../../../native-agent";
+import { projectRoleField } from "../../../runs/server";
+import { WORKFLOW_ARCHITECT_ID } from "../../../contracts/server";
+import { WORKFLOW_ARCHITECT_NAME } from "../../../native-agent";
+import { createDraftStore } from "../../../storage";
+import type { ServerCore } from "../../../contracts/server";
+import { storeNativeSelection } from "../../../native-agent/server";
+import { fullAccessSpawn, modelCatalogOf, resolveSpawnModel, spawnUsageOf, warmSpawnUsage } from "../../../platform/server";
+import type { LaneProjectNotice } from "../../../contracts";
+import { stringAt, orMiss, isNotFound, bestEffort } from "@lane-pilot/kit";
+
+import type { DocsApi } from "../../../docs/server";
+
+/** The fields of the services bag this file reads, typed by the rooms that own them. */
+interface Services {
+  docsPlaces: DocsApi["docsPlaces"];
+  laneProject: LaneProjectNotice;
+}
+
+/** The architect runs on the `workflow-architect` row of the role table (Claude Opus 5.5, high, unless the owner changed it), whatever the owner's remembered chat choice says. */
+const architectExecution = async (ctx: ServerCore, projectId: string) => {
+  const settings = (await bestEffort(ctx.log, "architect settings", ctx.effectiveProjectSettings(projectId), null))?.values ?? {};
+  const spawnUsage=spawnUsageOf(ctx);
+  await warmSpawnUsage(spawnUsage,null);
+  const picked = resolveSpawnModel({ role: "workflow-architect", settings, catalog: modelCatalogOf(ctx).peek(), usage: spawnUsage });
+  return { providerId: picked.providerId, model: picked.model, reasoningLevel: picked.reasoningEffort };
+};
+
+/** Threads in these states are over: a new button press starts a new architect chat instead of returning them. */
+const DEAD_STATUSES = new Set(["error", "stopped"]);
+
+type OpeningPart = { type: "text"; text: string; mentions: []; visibility?: "agent-only" };
+
+/**
+ * The architect's first message. The visible part carries the profile token (the dispatch hook turns the thread into a real
+ * architect session from it, as for the composer's «Lane Pilot / agent») and one line the owner can read; the brief is
+ * `agent-only`, so the chat opens with the architect's own greeting. The visible part comes first: a message that opens
+ * with an agent-only part reads to BB as a seed.
+ */
+export function architectOpening(input: { marker: string; projectId: string; projectName: string | null; draft: { id: string; name: string } | null;
+  /** The machine's order: the owner described a new process in a PM chat; the chain is built without a conversation (src/rooms/phase/server/intake.ts). */
+  order?: { text: string; pmThreadId: string } }): OpeningPart[] {
+  const part = (text: string, hide: boolean): OpeningPart => ({ type: "text", text, mentions: [], ...(hide ? { visibility: "agent-only" as const } : {}) });
+  const brief = [
+    `The owner pressed «Собрать с архитектором» in the Workflows tab of Lane Pilot (project ${input.projectName ? `${input.projectName}, ` : ""}${input.projectId}). Drafts you create belong to this project; offer scope global (the owner's library) unless the chain is only for this project.`,
+    ...(input.order
+      ? [
+        `The owner described a new process in the PM chat @thread:${input.order.pmThreadId}; Lane Pilot's intake took it as a process and started you to build it as a small graph (a workflow), without a conversation — the owner takes no part in the loop:`,
+        `<process>\n${input.order.text.slice(0, 6000)}\n</process>`,
+        "Build the chain yourself: create a draft for this project, make the validator clean, write its test cases and run them until they are green, then publish it. Decide what the text leaves open and say what you decided. Ask no one. When it is published (or cannot be built), send one line to the PM chat with lane_pilot_relay (or end with it): the chain's id, what starts it, and how the PM runs it (lane_pilot_route).",
+      ]
+      : input.draft
+      ? [
+        `The owner wants to continue the draft ${input.draft.id} («${input.draft.name}»). Read it first with lane_pilot_workflow_draft, action get (draftId "${input.draft.id}", history true), then open the conversation in Russian in two or three sentences: what the chain does now, what is missing (validator problems, tests) and the question of what to change. Patch that draft; do not start another one unless the owner asks.`,
+      ]
+      : [
+        "Open the conversation yourself, in Russian: a short greeting (one or two sentences) and one question about the chain the owner wants to build - the goal in a sentence, what starts it, where the information comes from, what comes out and where it goes. Do not call tools before the owner answers.",
+      ]),
+  ].join("\n\n");
+  return [
+    // The profile marker rides in the hidden part: the dispatch hook reads the whole message, the owner sees one plain line.
+    part("Собрать граф с архитектором.", false),
+    part(`${input.marker}\n\n${brief}`, true),
+  ];
+}
+
+/**
+ * `workflow_architect_start`: a chat thread with the Workflow architect already active, spawned by the server so the
+ * Workflows tab can open it in the side panel. Where it runs: the project's own source folder on its machine, the project
+ * being `projectId`, else the draft's, else the Lane Pilot project of the hub (self-repair's `projectId`, where Lane Pilot's
+ * own repository lives), so the button works with no setting at all.
+ */
+export function architectStarter(ctx: ServerCore, services: Pick<Services, "docsPlaces" | "laneProject">) {
+  const { bb, db } = ctx;
+  const drafts = createDraftStore(db);
+  const inflight = new Map<string, Promise<{ threadId: string; projectId: string; reused: boolean }>>();
+
+  const keyOf = (projectId: string, draftId: string | null) => `architect-thread:${projectId}:${draftId ?? "-"}`;
+
+  async function liveThread(key: string, projectId: string): Promise<string | null> {
+    const threadId = await bb.storage.kv.get<string>(key);
+    if (typeof threadId !== "string" || !threadId) return null;
+    const thread = await orMiss(bb.sdk.threads.get({ threadId }), null, isNotFound) as { archivedAt?: unknown } | null;
+    if (!thread || thread.archivedAt) return null;
+    if (stringAt(thread, "projectId") !== projectId || DEAD_STATUSES.has(stringAt(thread, "status") ?? "")) return null;
+    return threadId;
+  }
+
+  async function lanePilotProjectId(): Promise<string> {
+    const found = await services.laneProject(db, bb, ctx.host);
+    if (!found) throw new Error("lane_pilot_project_unresolved: self-repair:config has no projectId and no project source shares this repository's remote");
+    return found.projectId;
+  }
+
+  async function placeThread(threadId: string, projectId: string, folderId: string): Promise<void> {
+    try {
+      await bb.sdk.plugins.callRpc({ pluginId: "project-folders", method: "thread_place", input: { threadId, projectId, folderId }, outputSchema: z.object({ ok: z.literal(true) }) });
+    } catch (cause) {
+      bb.log.warn(`architect: could not file @thread:${threadId} in section ${folderId}: ${cause instanceof Error ? cause.message : String(cause)}`);
+    }
+  }
+
+  async function start(input: { projectId?: string; sectionId?: string; draftId?: string; order?: { text: string; pmThreadId: string } }) {
+    const draft = input.draftId ? drafts.get(input.draftId) : null;
+    if (input.draftId && !draft) throw new Error(`draft ${input.draftId} does not exist`);
+    if (draft && input.projectId && draft.projectId !== input.projectId) throw new Error(`draft ${draft.id} belongs to another project`);
+    const projectId = input.projectId ?? draft?.projectId ?? await lanePilotProjectId();
+    const key = input.order ? `architect-order:${projectId}:${input.order.pmThreadId}:${input.order.text.length}` : keyOf(projectId, draft?.id ?? null);
+    const reusedId = await liveThread(key, projectId);
+    if (reusedId) return { threadId: reusedId, projectId, reused: true };
+
+    const places = await services.docsPlaces(projectId);
+    const root = places.find((place) => place.scopes.length === 0) ?? places[0];
+    if (!root) throw new Error(`project ${projectId} has no source folder on a machine: add one to the project in BB, then press the button again`);
+
+    const { selection } = await storeNativeSelection(ctx, { projectId, agentId: WORKFLOW_ARCHITECT_ID });
+    const described = await orMiss(bb.sdk.projects.get({ projectId }), null, isNotFound) as { name?: unknown } | null;
+    const execution = await architectExecution(ctx, projectId);
+    const spawned = await fullAccessSpawn(bb, {
+      projectId,
+      // The architect works through the lane_pilot_workflow_* tools and its skill; the profile keeps exactly that.
+      ...projectRoleField(bb, db, projectId, execution.providerId, "workflow-architect"),
+      ...writerExecutionSelection(execution.providerId, execution.model, execution.reasoningLevel, "default"),
+      title: WORKFLOW_ARCHITECT_NAME.ru,
+      input: architectOpening({ marker: mentionContext(selection), projectId, projectName: typeof described?.name === "string" ? described.name : null,
+        draft: draft ? { id: draft.id, name: String((draft.definition.name as { ru?: unknown; en?: unknown } | undefined)?.ru ?? (draft.definition.name as { en?: unknown } | undefined)?.en ?? draft.workflowId ?? draft.id) } : null,
+        ...(input.order ? { order: input.order } : {}) }),
+      environment: { type: "host", hostId: root.hostId, workspace: { type: "unmanaged", path: root.path } },
+      visibility: "visible",
+      pluginMetadata: { role: "workflow-architect", spawnId: `architect:${projectId}:${draft?.id ?? "new"}`, architectProjectId: projectId, ...(draft ? { architectDraftId: draft.id } : {}) },
+    } as unknown as Parameters<typeof fullAccessSpawn>[1]);
+    const threadId = stringAt(spawned, "id");
+    if (!threadId) throw new Error("threads.spawn returned no architect thread id");
+    await bb.storage.kv.set(key, threadId);
+    if (input.sectionId) await placeThread(threadId, projectId, input.sectionId);
+    return { threadId, projectId, reused: false };
+  }
+
+  return {
+    start,
+    inflight,
+    /** The machine's start: a process the owner described in a PM chat goes to the architect as an order (no conversation). */
+    startOrder: (input: { projectId: string; text: string; pmThreadId: string }) => start({ projectId: input.projectId, order: { text: input.text, pmThreadId: input.pmThreadId } }),
+  };
+}
+
+export function architectStartRpc(ctx: ServerCore, services: Pick<Services, "docsPlaces" | "laneProject">) {
+  const { start, inflight } = architectStarter(ctx, services);
+  return {
+    // One start per project and draft at a time: a double click joins the call in flight instead of spawning a second chat.
+    workflow_architect_start: ({ projectId, sectionId, draftId }) => {
+      const pending = inflight.get(`${projectId ?? ""}:${draftId ?? ""}`);
+      if (pending) return pending;
+      const run = start({ projectId, sectionId, draftId }).finally(() => inflight.delete(`${projectId ?? ""}:${draftId ?? ""}`));
+      inflight.set(`${projectId ?? ""}:${draftId ?? ""}`, run);
+      return run;
+    },
+  } satisfies Pick<PluginRpcHandlers<typeof rpcContract>, "workflow_architect_start">;
+}

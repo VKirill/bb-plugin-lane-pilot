@@ -2,9 +2,9 @@ import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { ROLE_IDS, ROLE_TABLE, consistentProvider, modelFamily, roleModelKey, type ModelCatalog } from "@lane-pilot/models";
-import { resolveSpawnModel, spawnUsageOf, warmSpawnUsage } from "../src/rooms/platform/server/spawn-model";
-import { createWriterState } from "../src/rooms/writer/server/state";
-import { USAGE_FETCH_METHOD, USAGE_LIST_METHOD } from "../src/rooms/usage/server/provider-usage";
+import { resolveSpawnModel, spawnUsageOf, warmSpawnUsage } from "../src/rooms/platform/server/services/spawn-model";
+import { createWriterState } from "../src/rooms/writer/server/services/state";
+import { USAGE_FETCH_METHOD, USAGE_LIST_METHOD } from "../src/rooms/usage/models/provider-usage";
 
 /**
  * F4 of Astra's review (2026-10-27): the role -> model table must be what really spawns. Every place that starts a model thread is listed
@@ -15,35 +15,20 @@ import { USAGE_FETCH_METHOD, USAGE_LIST_METHOD } from "../src/rooms/usage/server
 type Wrapper = { via: "resolver"; roles: readonly string[]; note?: string; source?: string } | { via: "table"; roles: readonly string[]; note: string } | { via: "exception"; note: string };
 
 const WRAPPERS: Record<string, Wrapper> = {
-  "src/rooms/workflow/server/workflow-agent.ts": { via: "resolver", roles: ["*"], note: "every graph helper: withResolvedModel; `run` resolves what was not resolved; a provider-limit fallback asks the resolver again without the failed provider" },
-  "src/rooms/workflow/server/architect-start.ts": { via: "resolver", roles: ["workflow-architect"] },
-  "src/rooms/lead/server/service.ts": { via: "resolver", roles: ["lead"], note: "the lead's chat («Штурман») runs on the lead row; the tick's agent step goes through workflow-agent.ts as specialist:lead" },
-  "src/rooms/council/server/council-graph.ts": { via: "resolver", roles: ["council"], note: "the chair; the SEATS keep the models they were given (exception: the owner's council.<role>.* or distinct stage selections), only the provider+model pair is made consistent by writerExecutionSelection" },
-  "src/rooms/memory/server/memory.ts": { via: "resolver", roles: ["memory"] },
-  "src/rooms/project-life/server/project-life.ts": { via: "resolver", roles: ["project-life"] },
-  "src/rooms/docs/server/docs.ts": { via: "resolver", roles: ["docs-maintainer"] },
-  "src/rooms/docs/server/docs-spawn.ts": { via: "resolver", roles: ["docs-maintainer"], source: "src/rooms/docs/server/docs-unit-steps.ts" },
+  "src/rooms/workflow/server/services/workflow-agent.ts": { via: "resolver", roles: ["*"], note: "every graph helper: withResolvedModel; `run` resolves what was not resolved; a provider-limit fallback asks the resolver again without the failed provider" },
+  "src/rooms/workflow/server/handlers/architect-start.ts": { via: "resolver", roles: ["workflow-architect"] },
+  "src/rooms/memory/server/services/memory.ts": { via: "resolver", roles: ["memory"] },
 
-  "src/rooms/qa/server/qa-thread.ts": { via: "resolver", roles: ["browser-qa"], source: "src/rooms/qa/server/qa.ts", note: "spawns the agent qa.ts resolved (the thread takes it as an input)" },
-  "src/rooms/qa/server/errands.ts": { via: "resolver", roles: ["errand"], note: "what the schedule / tool named is a pin; nothing named is the errand row" },
-  "src/rooms/self-repair/server/spawn-repair.ts": { via: "resolver", roles: ["repairer"], note: "the night plan's or the watcher's pick (which holds the repairer row) goes through as a pin" },
-  "src/rooms/self-repair/server/rule-scan.ts": { via: "resolver", roles: ["rules-analyzer"], note: "the owner's stored analyzer is a pin; otherwise the row" },
-  "src/rooms/critique/server/critique-runs/code-critique.ts": { via: "table", roles: ["pm-reader", "plan-critic", "code-critic", "specialist-reviewer"], note: "roleSelection(): resolveRoleModel + the host catalog's `usable`, then criticAcrossFamilies; a critic left in the writer's family is warned about (same table, the stage's own effort/tier checks)" },
-  "src/rooms/critique/server/critique-runs/plan-critique.ts": { via: "table", roles: ["pm-reader", "plan-critic", "code-critic", "specialist-reviewer"], note: "roleSelection(): resolveRoleModel + the host catalog's `usable`, then criticAcrossFamilies; a critic left in the writer's family is warned about (same table, the stage's own effort/tier checks)" },
-  "src/rooms/critique/server/critique-runs/pm-read.ts": { via: "table", roles: ["pm-reader", "plan-critic", "code-critic", "specialist-reviewer"], note: "roleSelection(): resolveRoleModel + the host catalog's `usable`, then criticAcrossFamilies; a critic left in the writer's family is warned about (same table, the stage's own effort/tier checks)" },
-  "src/rooms/critique/server/critique-runs/specialist-review.ts": { via: "table", roles: ["pm-reader", "plan-critic", "code-critic", "specialist-reviewer"], note: "roleSelection(): resolveRoleModel + the host catalog's `usable`, then criticAcrossFamilies; a critic left in the writer's family is warned about (same table, the stage's own effort/tier checks)" },
-  "src/rooms/writer/server/second-pilot.ts": { via: "table", roles: ["plan-critic"], note: "roleSelection() on the plan critic's row: the second pilot reads a writer's unanswered question with the contract and docs (W34), one shot, no tools" },
-  "src/rooms/writer/server/plan-revise.ts": { via: "table", roles: ["planner"], note: "roleSelection() on the planner's row: the planner revises a plan the critic returned, in its own session (plan_critique.revise_by=planner)" },
-  "src/rooms/writer/server/spawn-brief.ts": { via: "exception", note: "the writer is Jev's pick from the writers' anamnesis, not a row of the table" },
-  "src/rooms/writer/server/spawn-worktree.ts": { via: "exception", note: "the short-lived holder that makes BB provision the writer's worktree: it runs on the writer's own pick" },
-  "src/rooms/writer/server/critique-gate.ts": { via: "exception", note: "a code-repair turn goes back to the writer's own recorded provider/model" },
-  "src/rooms/native-agent/server/child-pm.ts": { via: "exception", note: "a child native PM keeps the parent Claude model, otherwise uses the destination host default" },
-  "src/rooms/native-agent/server/activation.ts": { via: "exception", note: "the PM chat runs on the owner's chosen model" },
-  "src/rooms/native-agent/server/helper-probe.ts": { via: "exception", note: "a probe asks about exactly the provider/model it checks" },
-  "src/rooms/stability/server/probes.ts": { via: "exception", note: "fixed probe threads of the stability drills" },
-  "src/rooms/bench/server/plugin-ports.ts": { via: "exception", note: "the benchmark's own fixed writer" },
-  "src/rooms/harness/server/sessions.ts": { via: "exception", note: "the nightly harness editor and its trial arms use the harness' own selection (harness config), not a row" },
-  "src/rooms/wall/server/wall.ts": { via: "resolver", roles: ["wall-hunter"], note: "a wall config the owner changed is a pin (pickHunter); otherwise the row" },
+  "src/rooms/errands/server/services/errand-core.ts": { via: "resolver", roles: ["errand"], note: "what the schedule / tool named is a pin; nothing named is the errand row" },
+  "src/rooms/runs/server/services/analyzer.ts": { via: "resolver", roles: ["rules-analyzer"], note: "the owner's stored analyzer is a pin; otherwise the row" },
+  "src/rooms/critique/server/services/judge-runner.ts": { via: "table", roles: ["pm-reader", "plan-critic", "code-critic", "specialist-reviewer", "browser-qa"], note: "one judge/helper spawn runner shared by critique stages (roleSelection) and browser-qa (qa.ts resolved agent)" },
+  "src/rooms/writer/server/services/second-pilot.ts": { via: "table", roles: ["plan-critic"], note: "roleSelection() on the plan critic's row: the second pilot reads a writer's unanswered question with the contract and docs (W34), one shot, no tools" },
+  "src/rooms/writer/server/services/plan-revise.ts": { via: "table", roles: ["planner"], note: "roleSelection() on the planner's row: the planner revises a plan the critic returned, in its own session (plan_critique.revise_by=planner)" },
+  "src/rooms/writer/server/services/spawn-brief.ts": { via: "exception", note: "the writer is Jev's pick from the writers' anamnesis, not a row of the table" },
+  "src/rooms/writer/server/services/spawn-worktree.ts": { via: "exception", note: "the short-lived holder that makes BB provision the writer's worktree: it runs on the writer's own pick" },
+  "src/rooms/writer/server/services/critique-gate.ts": { via: "exception", note: "a code-repair turn goes back to the writer's own recorded provider/model" },
+  "src/rooms/native-agent/server/services/child-pm.ts": { via: "exception", note: "a child native PM keeps the parent Claude model, otherwise uses the destination host default" },
+  "src/rooms/native-agent/server/services/activation.ts": { via: "exception", note: "the PM chat runs on the owner's chosen model" },
 };
 
 const walk = (dir: string): string[] => readdirSync(dir).flatMap((name) => {
@@ -55,7 +40,7 @@ const read = (file: string) => readFileSync(join(ROOT, file), "utf8");
 
 describe("every place that spawns a model thread is accounted for", () => {
   it("lists exactly the files that call fullAccessSpawn", () => {
-    const spawning = walk(join(ROOT, "src")).map((file) => relative(ROOT, file)).filter((file) => file !== "src/rooms/platform/server/pm-spawn.ts" && /\bfullAccessSpawn\(/.test(read(file))).sort();
+    const spawning = walk(join(ROOT, "src")).map((file) => relative(ROOT, file)).filter((file) => file !== "src/rooms/platform/server/services/pm-spawn.ts" && /\bfullAccessSpawn\(/.test(read(file))).sort();
     expect(spawning).toEqual(Object.keys(WRAPPERS).sort());
   });
 
@@ -381,7 +366,7 @@ vi.mock("../src/rooms/runs/server", async (original) => ({
 
 describe("the generic helper spawns what the resolver answers", { timeout: 60_000 }, () => {
   const spawnedBy = async (role: string, settings: Record<string, unknown>) => {
-    const { createWorkflowAgents } = await import("../src/rooms/workflow/server/workflow-agent");
+    const { createWorkflowAgents } = await import("../src/rooms/workflow/server/services/workflow-agent");
     const rt = {
       pmThreadId: "pm", projectId: "p", runId: "run1",
       ctx: {

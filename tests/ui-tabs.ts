@@ -1,5 +1,5 @@
 import { fireEvent } from "@testing-library/react";
-import { resolveTab, TAB_IDS } from "../src/rooms/pages/tabs-model";
+import { resolveTab, TAB_IDS } from "../src/rooms/pages/models/tabs-model";
 
 type TabSlot = { findByTestId: (id: string) => Promise<HTMLElement>; getByTestId: (id: string) => HTMLElement };
 

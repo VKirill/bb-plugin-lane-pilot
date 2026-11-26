@@ -12,8 +12,8 @@ import type { PrototypeConfig, TaskV2 } from "../../src/rooms/contracts";
 import { createAttempt, createRun, createTask, getAttempt, openDatabase, savePrototypeConfig, saveTaskPlan, setAttemptWorkspace, setRunThread, transitionAttempt } from "../../src/rooms/plugin-db";
 import { createCore } from "../../src/rooms/core/server/core";
 import type { Services } from "../../server";
-import { createReconcile } from "../../src/rooms/stability/server/reconcile";
-import { createWriterStart } from "../../src/rooms/writer/server/start";
+import { createReconcile } from "../../src/rooms/stability/server";
+import { createWriterStart } from "../../src/rooms/writer/server/services/start";
 
 const WORKSPACE = "/ws";
 const RUN = "lprun_18aa9a16";

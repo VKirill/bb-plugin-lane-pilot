@@ -6,6 +6,9 @@ import { artifactDef, artifactId } from "./artifacts";
 import { cronProblem, timezoneProblem } from "./cron";
 import { EMIT, executorKey, lowerWorkflow, outputFields } from "./lower";
 import { promptCoverageProblems } from "./prompt-coverage";
+import { validateNodeModels } from "./validate-models";
+import { validateNodeForms } from "./validate-form";
+import { validateWorkflowRails } from "./validate-rails";
 import { BUILTIN_WORKFLOW_CATEGORIES, END, MAX_SUBWORKFLOW_DEPTH, QUALITY_MODES, START, parseWorkflowObject } from "./schema";
 import type { Field, GraphNode, Workflow, WorkflowNode } from "./schema";
 
@@ -17,6 +20,8 @@ export type ValidateOptions = {
   hasExecutor?: (key: string) => boolean;
   /** Whether `specialist:<id>` names an agent that exists (a bundled specialist or one the owner created); null when that cannot be known yet (then nothing is said). */
   specialistKnown?: (id: string) => boolean | null;
+  /** Enforce shipped-graph category rules (`category` required and in the built-in home). */
+  shipped?: boolean;
 };
 
 export class WorkflowError extends Error {
@@ -75,6 +80,10 @@ export function validateWorkflow(workflow: Workflow, options: ValidateOptions = 
     warn("budget_blind_without_usage", "the token or money budget counts only what the provider reports; a step without usage events is not counted, and the run is then stopped at 2 hours unless budget.maxWallSeconds says otherwise");
   }
   if (maxSteps !== undefined) warn("budget_max_steps_ignored", "budget.max_steps is ignored: loops are bounded by maxVisits; bound a run with max_minutes or max_usd");
+  if (options.shipped && !workflow.category) error("category_required", `shipped workflow "${workflow.id}" requires a category`);
+  if (workflow.category && options.shipped && !(BUILTIN_WORKFLOW_CATEGORIES as readonly string[]).includes(workflow.category.id)) {
+    error("category_unknown", `shipped workflow "${workflow.id}" has unknown category "${workflow.category.id}"`);
+  }
   if (workflow.category && !(BUILTIN_WORKFLOW_CATEGORIES as readonly string[]).includes(workflow.category.id) && !(workflow.category.label?.en.trim() && workflow.category.label?.ru.trim())) {
     error("category_label_required", `category "${workflow.category.id}" is dynamic and requires bilingual label { en, ru }`);
   }
@@ -396,10 +405,6 @@ export function validateWorkflow(workflow: Workflow, options: ValidateOptions = 
       if (!key) error("executor_missing", `${node.id}: no executor (set "uses"${node.type === "action" ? " or \"action\"" : ""})`, extra);
       else if (!options.hasExecutor(key)) error("executor_missing", `${node.id}: no executor "${key}"`, extra);
     }
-    // The model belongs to the role (the table «role -> model» in Settings), not to the step: a node's own model fields are accepted so older
-    // files load, ignored when the step runs, and say so here instead of looking effective.
-    const named = (["provider", "model", "reasoning", "service_tier", "model_preset"] as const).filter((field) => (node as Record<string, unknown>)[field] !== undefined);
-    if (named.length) warn("model_ignored", `${node.id}: ${named.join(", ")} change nothing: the model belongs to the role ("${(node as { role?: string }).role ?? "the step's role"}"), set once for every graph in Settings, and a step cannot name its own; remove ${named.length > 1 ? "them" : "it"}`, extra);
     if (node.type === "agent") {
       // The helper runs in the PM chat's environment; the field is accepted so older files load, and says so instead of looking protective.
       if (node.environment !== "none") warn("environment_not_executed", `${node.id}: environment "${node.environment}" changes nothing: the helper runs in the PM chat's environment (remove it, or use an lp-task for work in a worktree)`, extra);
@@ -545,6 +550,10 @@ export function validateWorkflow(workflow: Workflow, options: ValidateOptions = 
       }
     }
   }
+
+  validateWorkflowRails(L, byId, error);
+  validateNodeModels(L, byId, error);
+  validateNodeForms(L, byId, options, envFor, ancestorOf, checkTemplate, error);
 
   if (options.resolve) {
     const depth = subworkflowDepth(workflow, options.resolve);

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
-import { fullAccessSpawn } from "../src/rooms/platform/server/pm-spawn";
-import { CLAUDE_EDITOR_TOOLS, launchTuningFor, withLaunchTuning } from "../src/rooms/platform/server/launch-tuning";
+import { fullAccessSpawn } from "../src/rooms/platform/server/services/pm-spawn";
+import { CLAUDE_EDITOR_TOOLS, launchTuningFor, withLaunchTuning } from "../src/rooms/platform/server/services/launch-tuning";
 
 const KEY = "experimental_vkLaunchTuning";
 const READ_ONLY = ["plan-critic", "specialist-reviewer", "pm-reader", "gate-triage"];

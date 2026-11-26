@@ -42,6 +42,7 @@
     "research",
     "web"
   ],
+  "category": "research",
   "inputs": {
     "question": {
       "type": "string",

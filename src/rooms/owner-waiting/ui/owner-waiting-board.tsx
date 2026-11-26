@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { t, type I18nKey } from "@lane-pilot/i18n";
 import { Button, Disclosure, Input, Switch } from "@lane-pilot/ui-kit";
 import type { rpcContract } from "../../contracts";
-import type { OwnerAction, OwnerItem, OwnerWaiting } from "../index";
+import type { OwnerAction, OwnerItem, OwnerWaiting } from "../models/owner-item";
 
 /**
  * «Waiting for you» (SMA D0-3): the one screen of what only the owner can decide. It is read by a person who does not program (the owner,
@@ -20,9 +20,9 @@ const SECTIONS: Array<{ source: string; title: I18nKey; folded?: boolean }> = [
   { source: "deferral_overdue", title: "ow_section_deferral_overdue" }, { source: "lead", title: "ow_section_lead" }, { source: "phase", title: "ow_section_phase" },
   { source: "writer", title: "ow_section_writer" }, { source: "workflow", title: "ow_section_workflow" }, { source: "schedule", title: "ow_section_schedule" },
   { source: "night", title: "ow_section_night" }, { source: "wall", title: "ow_section_wall" }, { source: "backlog", title: "ow_section_backlog" },
-  { source: "integration-gate", title: "ow_section_gate" }, { source: "run-goal", title: "ow_section_run_goal" }, { source: "outage", title: "ow_section_outage" },
-  { source: "memory_conflict", title: "ow_section_memory_conflict" }, { source: "rule_proposal", title: "ow_section_rule_proposal" },
-  { source: "learning", title: "ow_section_learning" }, { source: "deferral_term", title: "ow_section_deferral_term", folded: true },
+  { source: "integration-gate", title: "ow_section_gate" }, { source: "outage", title: "ow_section_outage" },
+  { source: "memory_conflict", title: "ow_section_memory_conflict" },
+  { source: "deferral_term", title: "ow_section_deferral_term", folded: true },
 ];
 const KIND_KEYS: Record<string, I18nKey> = { attempt: "ow_kind_attempt", task: "ow_kind_task", run: "ow_kind_run", file: "ow_kind_file", note: "ow_kind_note", message: "ow_kind_message", command: "ow_kind_command", text: "ow_kind_text" };
 const STATE_KEYS: Record<string, I18nKey> = { blocked: "ow_state_blocked", failed: "ow_state_failed", provider_error: "ow_state_provider_error", validation_failed: "ow_state_validation_failed" };
@@ -216,7 +216,6 @@ export function OwnerWaitingBoard({ projects }: { projects: Array<{ id: string; 
 
 /** The number next to the screen's name in the rail; nothing while it is 0 or cannot be read. */
 export function OwnerWaitingBadge() {
-  const rpc = useRpc<typeof rpcContract>();
   const waiting = (useLpRpcQuery("owner_waiting", {}, { pollMs: 60_000 }).data ?? null) as OwnerWaiting | null;
   const count = waiting?.now ?? waiting?.items.length ?? 0;
   return count ? <span className="ml-1.5 rounded-full bg-secondary px-1.5 text-[11px] leading-5 text-muted-foreground" data-testid="owner-badge">{count}</span> : null;

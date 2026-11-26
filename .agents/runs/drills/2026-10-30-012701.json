@@ -1,0 +1,36 @@
+{
+  "kind": "lane-pilot-sandbox-drill",
+  "date": "2026-10-30",
+  "stamp": "20261030-012701",
+  "startedAt": 1793312821874,
+  "finishedAt": 1793312872523,
+  "durationSec": 51,
+  "project": "proj_3tb652jpsi",
+  "runId": null,
+  "pmThread": null,
+  "sourceThread": "thr_5ezad5s6cs",
+  "mode": "full",
+  "scenarioNames": [
+    "parallel3"
+  ],
+  "commit": "3119b660f9c5dc2aae8dfc09c291c8a0612b043b",
+  "skipped": {},
+  "result": "fail",
+  "problems": [
+    "activate failed: Lane Pilot PM cannot activate: no compatible engine was found. Missing required interfaces: opencode.plugin.default_export, opencode.hook.event_subscribe, opencode.hook.session_prompt, opencode.hook.session_context, opencode.hook.tool_execute_before, opencode.hook.tool_execute_after, opencode.hook.p"
+  ],
+  "checks": null,
+  "tasks": null,
+  "dispatch": null,
+  "scenarios": [],
+  "seen": null,
+  "judged": [],
+  "series": {
+    "verdict": "fail",
+    "missing": [
+      "parallel3"
+    ],
+    "failed": [],
+    "skipped": []
+  }
+}

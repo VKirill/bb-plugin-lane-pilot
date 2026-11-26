@@ -13,3 +13,4 @@ export * from "./agent-model";
 export * from "./zcode";export * from "./writer-fallbacks";
 export * from "./stage-writer-selection";
 export * from "./provider-limit";
+export * from "./service-jobs";

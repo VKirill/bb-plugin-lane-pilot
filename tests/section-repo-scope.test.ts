@@ -1,10 +1,10 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
 import type { TaskV2 } from "../src/rooms/contracts";
-import { criticLevel, planCriticTier } from "../src/rooms/critique/critic-level";
+import { criticLevel, planCriticTier } from "../src/rooms/critique";
 import { checkoutBase, createAttempt, createRun, createTask, openDatabase, taskBasePath } from "../src/rooms/plugin-db";
 import { checkoutOwnsOverlap, leavesSection, parseRepoRoot, planWithRepoScope, rerootToRepoRoot, taskInRunScope } from "../src/rooms/tasks";
-import { batchAdviceFor } from "../src/rooms/writer/server/dispatch-guards";
+import { batchAdviceFor } from "../src/rooms/writer/server/services/dispatch-guards";
 
 const R = "/srv/monorepo";
 const BOT = `${R}/aiphoto_bot`;

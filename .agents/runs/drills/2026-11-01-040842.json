@@ -1,0 +1,603 @@
+{
+  "kind": "lane-pilot-sandbox-drill",
+  "date": "2026-11-01",
+  "stamp": "20261101-040842",
+  "startedAt": 1793495322605,
+  "finishedAt": 1793496086442,
+  "durationSec": 764,
+  "project": "proj_ibu6v9g64j",
+  "runId": "lprun_67fce0107b504310b0ef8a8636bedbc6",
+  "pmThread": "thr_mq6e6v5ve3",
+  "sourceThread": "thr_cqh6jwsurv",
+  "mode": "quick",
+  "scenarioNames": [
+    "guard_hash",
+    "deferrals",
+    "checkers",
+    "memory_paths",
+    "helper_providers",
+    "parallel3"
+  ],
+  "commit": "5a4e48a0d44c4fb0d350859ef67e9a8865875075",
+  "skipped": {},
+  "result": "fail",
+  "problems": [
+    "helper_providers: claude-code (claude-sonnet-5-5): a helper did not start: Unexpected response from the plugin CLI endpoint (HTTP 200)",
+    "helper_providers: codex (gpt-6-luna): a helper did not start: helper_parent_thread_unresolved",
+    "helper_providers: opencode2 (zai-coding-plan/glm-5.3-flash): a helper did not start: Unexpected response from the plugin CLI endpoint (HTTP 200)",
+    "parallel3: a dispatch-bb call exited with an error (see receipt dispatch output)",
+    "parallel3: not every task was accepted"
+  ],
+  "checks": {
+    "allAccepted": false,
+    "eachInOwnWorktree": false,
+    "filesInSandbox": false,
+    "checksRan": false
+  },
+  "tasks": [
+    {
+      "task": "drill-20261101-040842-a",
+      "attempts": 0,
+      "states": [],
+      "state": null,
+      "reason": null,
+      "attempt": null,
+      "writerThread": null,
+      "workspace": null,
+      "environment": null,
+      "holder": null,
+      "file": "notes/drill/20261101-040842-a.md",
+      "fileInSandbox": false
+    },
+    {
+      "task": "drill-20261101-040842-b",
+      "attempts": 0,
+      "states": [],
+      "state": null,
+      "reason": null,
+      "attempt": null,
+      "writerThread": null,
+      "workspace": null,
+      "environment": null,
+      "holder": null,
+      "file": "notes/drill/20261101-040842-b.md",
+      "fileInSandbox": false
+    },
+    {
+      "task": "drill-20261101-040842-c",
+      "attempts": 0,
+      "states": [],
+      "state": null,
+      "reason": null,
+      "attempt": null,
+      "writerThread": null,
+      "workspace": null,
+      "environment": null,
+      "holder": null,
+      "file": "notes/drill/20261101-040842-c.md",
+      "fileInSandbox": false
+    }
+  ],
+  "dispatch": {
+    "drill-20261101-040842-a": "error: unknown command 'lane-pilot'\nCommands: browser, status, settings, project, prompt-history, provider, machine, server, updates, terminal, thread, environment, file, theme, plugin, marketplace, skill, guide, diagnostics, owner, voice\nPlugins add commands only while they are installed and enabled. If 'lane-pilot' is a plugin command, check `bb plugin list`.",
+    "drill-20261101-040842-b": "error: unknown command 'lane-pilot'\nCommands: browser, status, settings, project, prompt-history, provider, machine, server, updates, terminal, thread, environment, file, theme, plugin, marketplace, skill, guide, diagnostics, owner, voice\nPlugins add commands only while they are installed and enabled. If 'lane-pilot' is a plugin command, check `bb plugin list`.",
+    "drill-20261101-040842-c": "error: unknown command 'lane-pilot'\nCommands: browser, status, settings, project, prompt-history, provider, machine, server, updates, terminal, thread, environment, file, theme, plugin, marketplace, skill, guide, diagnostics, owner, voice\nPlugins add commands only while they are installed and enabled. If 'lane-pilot' is a plugin command, check `bb plugin list`."
+  },
+  "scenarios": [
+    {
+      "name": "guard_hash",
+      "result": "pass",
+      "problems": [],
+      "machines": [
+        {
+          "machine": "ovh",
+          "files": {
+            "guard_shell.py": {
+              "state": "ok",
+              "installed": "e417a79d332d8f4247e861d3060a2cb5d55b5da139fee9f280b9c14d4b89e0ee",
+              "expected": "e417a79d332d8f4247e861d3060a2cb5d55b5da139fee9f280b9c14d4b89e0ee"
+            },
+            "lib_payload.py": {
+              "state": "ok",
+              "installed": "888d89f05eb23a585b99c343df1865a368f8f28a090e9f6f29a8246a9be99565",
+              "expected": "888d89f05eb23a585b99c343df1865a368f8f28a090e9f6f29a8246a9be99565"
+            }
+          },
+          "reachable": true
+        },
+        {
+          "machine": "mac-mini",
+          "files": {
+            "guard_shell.py": {
+              "state": "ok",
+              "installed": "e417a79d332d8f4247e861d3060a2cb5d55b5da139fee9f280b9c14d4b89e0ee",
+              "expected": "e417a79d332d8f4247e861d3060a2cb5d55b5da139fee9f280b9c14d4b89e0ee"
+            },
+            "lib_payload.py": {
+              "state": "ok",
+              "installed": "888d89f05eb23a585b99c343df1865a368f8f28a090e9f6f29a8246a9be99565",
+              "expected": "888d89f05eb23a585b99c343df1865a368f8f28a090e9f6f29a8246a9be99565"
+            }
+          },
+          "reachable": true
+        },
+        {
+          "machine": "macbook",
+          "files": {
+            "guard_shell.py": {
+              "state": "ok",
+              "installed": "e417a79d332d8f4247e861d3060a2cb5d55b5da139fee9f280b9c14d4b89e0ee",
+              "expected": "e417a79d332d8f4247e861d3060a2cb5d55b5da139fee9f280b9c14d4b89e0ee"
+            },
+            "lib_payload.py": {
+              "state": "ok",
+              "installed": "888d89f05eb23a585b99c343df1865a368f8f28a090e9f6f29a8246a9be99565",
+              "expected": "888d89f05eb23a585b99c343df1865a368f8f28a090e9f6f29a8246a9be99565"
+            }
+          },
+          "reachable": true
+        }
+      ],
+      "expected": {
+        "guard_shell.py": "e417a79d332d8f4247e861d3060a2cb5d55b5da139fee9f280b9c14d4b89e0ee",
+        "lib_payload.py": "888d89f05eb23a585b99c343df1865a368f8f28a090e9f6f29a8246a9be99565"
+      },
+      "unreachable": [],
+      "repaired": true
+    },
+    {
+      "name": "deferrals",
+      "result": "pass",
+      "problems": [],
+      "registerDeployed": true,
+      "counts": {
+        "open": 0,
+        "overdue": 0,
+        "closed": 0,
+        "needs_owner_term": 25
+      },
+      "cited": 19,
+      "needsOwnerTerm": 25
+    },
+    {
+      "name": "checkers",
+      "result": "pass",
+      "problems": [],
+      "checked": [
+        {
+          "defectClass": "test_assertion_deleted",
+          "planted": 2,
+          "caughtBy": [
+            "test_fit"
+          ],
+          "designedCatchers": [
+            "test_fit",
+            "code_critic"
+          ]
+        },
+        {
+          "defectClass": "off_by_one",
+          "planted": 2,
+          "caughtBy": [
+            "verification"
+          ],
+          "designedCatchers": [
+            "verification"
+          ]
+        },
+        {
+          "defectClass": "outside_owns",
+          "planted": 2,
+          "caughtBy": [
+            "ownership"
+          ],
+          "designedCatchers": [
+            "ownership"
+          ]
+        },
+        {
+          "defectClass": "swallowed_error",
+          "planted": 1,
+          "caughtBy": [],
+          "designedCatchers": [
+            "code_critic"
+          ]
+        },
+        {
+          "defectClass": "masked_check",
+          "planted": 2,
+          "caughtBy": [
+            "contract_lint"
+          ],
+          "designedCatchers": [
+            "contract_lint"
+          ]
+        },
+        {
+          "defectClass": "acceptance_missing",
+          "planted": 2,
+          "caughtBy": [
+            "verification",
+            "plan_fact"
+          ],
+          "designedCatchers": [
+            "plan_fact"
+          ]
+        },
+        {
+          "defectClass": "hardcoded_value",
+          "planted": 2,
+          "caughtBy": [
+            "verification"
+          ],
+          "designedCatchers": [
+            "code_critic"
+          ]
+        },
+        {
+          "defectClass": "broken_import",
+          "planted": 2,
+          "caughtBy": [
+            "verification"
+          ],
+          "designedCatchers": [
+            "verification"
+          ]
+        },
+        {
+          "defectClass": "gilded_defect",
+          "planted": 1,
+          "caughtBy": [],
+          "designedCatchers": [
+            "code_critic"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "memory_paths",
+      "result": "pass",
+      "problems": [],
+      "token": "926e4557",
+      "lpVersion": "0.1.446",
+      "paths": [
+        {
+          "path": "writer.brief",
+          "found": true,
+          "negativeOk": true,
+          "latencyMs": 24,
+          "detail": "carries note+core+rule: all found; 6002 chars"
+        },
+        {
+          "path": "writer.turn",
+          "found": true,
+          "negativeOk": true,
+          "latencyMs": 1,
+          "detail": "carries rule: all found; 2181 chars"
+        },
+        {
+          "path": "writer.repair",
+          "found": true,
+          "negativeOk": true,
+          "latencyMs": 15,
+          "detail": "carries note+core+rule: all found; 2206 chars"
+        },
+        {
+          "path": "pm.start",
+          "found": true,
+          "negativeOk": true,
+          "latencyMs": 0,
+          "detail": "carries rule: all found; 243 chars"
+        },
+        {
+          "path": "pm.resume",
+          "found": true,
+          "negativeOk": true,
+          "latencyMs": 1,
+          "detail": "carries rule: all found; 241 chars"
+        },
+        {
+          "path": "pm.rules_tool",
+          "found": true,
+          "negativeOk": true,
+          "latencyMs": 0,
+          "detail": "carries rule: all found; 75 chars"
+        },
+        {
+          "path": "pm.memory_tool",
+          "found": true,
+          "negativeOk": true,
+          "latencyMs": 5,
+          "detail": "carries note+core: all found; 400 chars"
+        },
+        {
+          "path": "schedule.agent",
+          "found": true,
+          "negativeOk": true,
+          "latencyMs": 5,
+          "detail": "carries note+core: all found; 400 chars"
+        },
+        {
+          "path": "critic.code",
+          "found": true,
+          "negativeOk": true,
+          "latencyMs": 11,
+          "detail": "carries note+core: all found; 7054 chars"
+        },
+        {
+          "path": "night.review",
+          "found": true,
+          "negativeOk": true,
+          "latencyMs": 10,
+          "detail": "carries note+core: all found; 2647 chars"
+        },
+        {
+          "path": "council.evidence",
+          "found": true,
+          "negativeOk": true,
+          "latencyMs": 6,
+          "detail": "carries note+core: all found; 504 chars"
+        }
+      ],
+      "skipped": [
+        {
+          "path": "pm.contract",
+          "reason": "Handed back on the dispatch reply for the task's paths. Startup and resume do not pass paths, so a path selector stays quiet there."
+        },
+        {
+          "path": "hub.session_rpc",
+          "reason": "Claude Lane's terminal client is gone (2026-10-29). The RPCs stay for the hub; they do not deliver into an agent prompt."
+        },
+        {
+          "path": "pm.cold",
+          "reason": "It only adds notes the active search missed. The probe's active note is already delivered by pm.memory_tool."
+        },
+        {
+          "path": "maintainer.existing",
+          "reason": "A dedupe aid for the stage that writes notes, not a delivery to a worker; the notes are data it compares against and acts on only by `supersedes`."
+        },
+        {
+          "path": "memory.golden_eval",
+          "reason": "It measures search quality for the owner and delivers nothing to an agent."
+        },
+        {
+          "path": "pm.owner_card",
+          "reason": "Facts about the owner from the anamnesis room, not project memory; it has its own checks (`bb lane-pilot anamnesis status`)."
+        }
+      ],
+      "unanswered": {
+        "windowDays": 30,
+        "ownerRepeats": 0,
+        "repeatConfirmations": 0,
+        "routableQuestions": 0
+      },
+      "writerAttempt": "lpattempt_076c7b925f134aee9f80f6bba928f8fa",
+      "dispatch": "{\n  \"runId\": \"lprun_67fce0107b504310b0ef8a8636bedbc6\",\n  \"taskId\": \"drill-20261101-040842-memory\",\n  \"attemptId\": \"lpattempt_076c7b925f134aee9f80f6bba928f8fa\",\n  \"writerThreadId\": null,\n  \"state\": \"queued\",\n  \"stages\": [\n    {\n      \"runId\": \"lprun_67fce0107b504310b0ef8a8636bedbc6\",\n      \"taskId\": \"drill-20261101-040842-memory\",\n      \"stageId\": \"acceptance-receipt\",\n      \"contractVersion\": 1,\n      \"state\": \"pending\",\n      \"inputSha256\": \"c03c06e2091348f1d9f2567ba37fc5db3c3eb5b83f21bc9a1e412db9329b5102\",\n      \"outputSha256\": null,\n      \"attempt\": 0,\n      \"providerId\": null,\n      \"model"
+    },
+    {
+      "name": "helper_providers",
+      "result": "fail",
+      "problems": [
+        "claude-code (claude-sonnet-5-5): a helper did not start: Unexpected response from the plugin CLI endpoint (HTTP 200)",
+        "codex (gpt-6-luna): a helper did not start: helper_parent_thread_unresolved",
+        "opencode2 (zai-coding-plan/glm-5.3-flash): a helper did not start: Unexpected response from the plugin CLI endpoint (HTTP 200)"
+      ],
+      "providers": [
+        {
+          "provider": "claude-code",
+          "model": "claude-sonnet-5-5",
+          "ok": false,
+          "started": false,
+          "answered": false,
+          "threadId": null,
+          "output": null,
+          "reason": "Unexpected response from the plugin CLI endpoint (HTTP 200)",
+          "ms": null
+        },
+        {
+          "provider": "codex",
+          "model": "gpt-6-luna",
+          "ok": false,
+          "started": false,
+          "answered": false,
+          "threadId": null,
+          "output": null,
+          "reason": "helper_parent_thread_unresolved",
+          "ms": 3435
+        },
+        {
+          "provider": "opencode2",
+          "model": "zai-coding-plan/glm-5.3-flash",
+          "ok": false,
+          "started": false,
+          "answered": false,
+          "threadId": null,
+          "output": null,
+          "reason": "Unexpected response from the plugin CLI endpoint (HTTP 200)",
+          "ms": null
+        }
+      ]
+    },
+    {
+      "name": "parallel3",
+      "result": "fail",
+      "problems": [
+        "a dispatch-bb call exited with an error (see receipt dispatch output)",
+        "not every task was accepted"
+      ],
+      "tasks": [
+        {
+          "task": "drill-20261101-040842-a",
+          "attempts": 0,
+          "states": [],
+          "state": null,
+          "reason": null,
+          "attempt": null,
+          "writerThread": null,
+          "workspace": null,
+          "environment": null,
+          "holder": null,
+          "file": "notes/drill/20261101-040842-a.md",
+          "fileInSandbox": false
+        },
+        {
+          "task": "drill-20261101-040842-b",
+          "attempts": 0,
+          "states": [],
+          "state": null,
+          "reason": null,
+          "attempt": null,
+          "writerThread": null,
+          "workspace": null,
+          "environment": null,
+          "holder": null,
+          "file": "notes/drill/20261101-040842-b.md",
+          "fileInSandbox": false
+        },
+        {
+          "task": "drill-20261101-040842-c",
+          "attempts": 0,
+          "states": [],
+          "state": null,
+          "reason": null,
+          "attempt": null,
+          "writerThread": null,
+          "workspace": null,
+          "environment": null,
+          "holder": null,
+          "file": "notes/drill/20261101-040842-c.md",
+          "fileInSandbox": false
+        }
+      ],
+      "checks": {
+        "allAccepted": false,
+        "eachInOwnWorktree": false,
+        "filesInSandbox": false,
+        "checksRan": false
+      },
+      "dispatch": {
+        "drill-20261101-040842-a": "error: unknown command 'lane-pilot'\nCommands: browser, status, settings, project, prompt-history, provider, machine, server, updates, terminal, thread, environment, file, theme, plugin, marketplace, skill, guide, diagnostics, owner, voice\nPlugins add commands only while they are installed and enabled. If 'lane-pilot' is a plugin command, check `bb plugin list`.",
+        "drill-20261101-040842-b": "error: unknown command 'lane-pilot'\nCommands: browser, status, settings, project, prompt-history, provider, machine, server, updates, terminal, thread, environment, file, theme, plugin, marketplace, skill, guide, diagnostics, owner, voice\nPlugins add commands only while they are installed and enabled. If 'lane-pilot' is a plugin command, check `bb plugin list`.",
+        "drill-20261101-040842-c": "error: unknown command 'lane-pilot'\nCommands: browser, status, settings, project, prompt-history, provider, machine, server, updates, terminal, thread, environment, file, theme, plugin, marketplace, skill, guide, diagnostics, owner, voice\nPlugins add commands only while they are installed and enabled. If 'lane-pilot' is a plugin command, check `bb plugin list`."
+      }
+    }
+  ],
+  "seen": {
+    "stages": {
+      "acceptance-receipt": {
+        "canceled": 2
+      },
+      "plan-critique": {
+        "skipped": 2
+      },
+      "pm-read": {
+        "skipped": 2
+      },
+      "specialist-review": {
+        "skipped": 2
+      },
+      "verification": {
+        "canceled": 2
+      },
+      "writer-agent": {
+        "canceled": 2
+      }
+    },
+    "gates": {},
+    "moves": {
+      "cancel_requested>canceled": {
+        "ok": 2
+      },
+      "canceled>canceled": {
+        "ok": 1
+      },
+      "queued>queued": {
+        "ok": 4
+      },
+      "queued>spawn_requested": {
+        "ok": 2
+      },
+      "running>cancel_requested": {
+        "ok": 1
+      },
+      "spawn_requested>cancel_requested": {
+        "ok": 1
+      },
+      "spawn_requested>running": {
+        "ok": 1
+      }
+    }
+  },
+  "judged": [
+    {
+      "name": "guard_hash",
+      "verdict": "pass",
+      "evidence": [
+        "machines",
+        "expected",
+        "repaired"
+      ],
+      "why": ""
+    },
+    {
+      "name": "deferrals",
+      "verdict": "pass",
+      "evidence": [
+        "registerDeployed",
+        "counts",
+        "cited",
+        "needsOwnerTerm"
+      ],
+      "why": ""
+    },
+    {
+      "name": "checkers",
+      "verdict": "pass",
+      "evidence": [
+        "checked"
+      ],
+      "why": ""
+    },
+    {
+      "name": "memory_paths",
+      "verdict": "pass",
+      "evidence": [
+        "token",
+        "lpVersion",
+        "paths",
+        "skipped",
+        "unanswered",
+        "writerAttempt",
+        "dispatch"
+      ],
+      "why": ""
+    },
+    {
+      "name": "helper_providers",
+      "verdict": "fail",
+      "evidence": [
+        "providers"
+      ],
+      "why": "claude-code (claude-sonnet-5-5): a helper did not start: Unexpected response from the plugin CLI endpoint (HTTP 200); codex (gpt-6-luna): a helper did not start: helper_parent_thread_unresolved; opencode2 (zai-coding-plan/glm-5.3-flash): a helper did not start: Unexpected response from the plugin CLI endpoint (HTTP 200)"
+    },
+    {
+      "name": "parallel3",
+      "verdict": "fail",
+      "evidence": [
+        "tasks",
+        "checks",
+        "dispatch"
+      ],
+      "why": "a dispatch-bb call exited with an error (see receipt dispatch output); not every task was accepted"
+    }
+  ],
+  "series": {
+    "verdict": "fail",
+    "missing": [],
+    "failed": [
+      "helper_providers",
+      "parallel3"
+    ],
+    "skipped": []
+  }
+}

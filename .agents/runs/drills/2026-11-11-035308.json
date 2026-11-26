@@ -1,0 +1,128 @@
+{
+  "kind": "lane-pilot-sandbox-drill",
+  "date": "2026-11-11",
+  "stamp": "20261111-035308",
+  "startedAt": 1794358388566,
+  "finishedAt": 1794359808965,
+  "durationSec": 1420,
+  "project": "proj_ibu6v9g64j",
+  "runId": "lprun_59c5b8514cc746a0830e255e366d49d3",
+  "pmThread": "thr_2zyvww9tqi",
+  "sourceThread": "thr_hs6gu7hffa",
+  "mode": "full",
+  "scenarioNames": [
+    "phase",
+    "phase_route"
+  ],
+  "commit": "f9d31d889ab9968258bc36977f236c5eb21d21a7",
+  "skipped": {},
+  "result": "fail",
+  "problems": [
+    "phase: scenario raised: phase_act failed: Error: handler_error: HTTP 500: the discussion is not complete"
+  ],
+  "checks": null,
+  "tasks": null,
+  "dispatch": null,
+  "scenarios": [
+    {
+      "name": "phase",
+      "result": "fail",
+      "problems": [
+        "scenario raised: phase_act failed: Error: handler_error: HTTP 500: the discussion is not complete"
+      ]
+    },
+    {
+      "name": "phase_route",
+      "result": "pass",
+      "problems": [],
+      "phaseId": "ph_4cc2a4c044",
+      "stage": "execution",
+      "autoStarted": 2
+    }
+  ],
+  "seen": {
+    "stages": {
+      "acceptance-receipt": {
+        "passed": 1
+      },
+      "memory-maintenance": {
+        "skipped": 1
+      },
+      "plan-critique": {
+        "skipped": 1
+      },
+      "plan-fact": {
+        "passed": 1
+      },
+      "pm-read": {
+        "skipped": 1
+      },
+      "project-life": {
+        "passed": 1
+      },
+      "specialist-review": {
+        "skipped": 1
+      },
+      "verification": {
+        "passed": 1
+      },
+      "writer-agent": {
+        "passed": 1
+      }
+    },
+    "gates": {
+      "accept": {
+        "passed": 1
+      },
+      "owns-paths": {
+        "passed": 1
+      },
+      "validate": {
+        "passed": 1
+      },
+      "verification": {
+        "passed": 1
+      }
+    },
+    "moves": {
+      "queued>queued": {
+        "ok": 2
+      },
+      "queued>spawn_requested": {
+        "ok": 1
+      },
+      "running>accepted": {
+        "ok": 1
+      },
+      "spawn_requested>running": {
+        "ok": 1
+      }
+    }
+  },
+  "judged": [
+    {
+      "name": "phase",
+      "verdict": "fail",
+      "evidence": [],
+      "why": "scenario raised: phase_act failed: Error: handler_error: HTTP 500: the discussion is not complete"
+    },
+    {
+      "name": "phase_route",
+      "verdict": "pass",
+      "evidence": [
+        "phaseId",
+        "stage",
+        "autoStarted"
+      ],
+      "why": ""
+    }
+  ],
+  "series": {
+    "verdict": "fail",
+    "missing": [],
+    "failed": [
+      "phase"
+    ],
+    "skipped": []
+  }
+}

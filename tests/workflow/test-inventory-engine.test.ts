@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { registerPureActions, type NodeExecutor } from "@lane-pilot/workflow-engine";
 import { builtinWorkflow } from "../../src/rooms/workflow/builtin";
-import { registerCheckoutActions } from "../../src/rooms/workflow/server/workflow-checkout-actions";
+import { registerCheckoutActions } from "../../src/rooms/workflow/server/services/workflow-checkout-actions";
 import { engineOn, journalDb } from "./engine-helpers";
 
 const git = (dir: string, ...args: string[]) => execFileSync("git", args, { cwd: dir, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();

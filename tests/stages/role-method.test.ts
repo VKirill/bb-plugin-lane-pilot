@@ -1,14 +1,18 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { repairPrompt } from "../../src/rooms/self-repair/server/self-repair";
-import { qaThreadPrompt } from "../../src/rooms/qa/server/qa-thread";
-import { buildCandidateEvidence, codeCritiquePrompt } from "../../src/rooms/critique/code-critique";
-import { critiquePrompt } from "../../src/rooms/critique/critique";
-import { CODE_CRITIC_METHOD, FAILURE_TRIAGE_METHOD, PLAN_CRITIC_METHOD, SCIENTIFIC_DEBUG_METHOD } from "../../src/rooms/critique/role-method"
+import { qaThreadPrompt } from "../../src/rooms/qa/server";
+import {
+  buildCandidateEvidence,
+  CODE_CRITIC_METHOD,
+  codeCritiquePrompt,
+  critiquePrompt,
+  FAILURE_TRIAGE_METHOD,
+  PLAN_CRITIC_METHOD,
+  SCIENTIFIC_DEBUG_METHOD,
+} from "../../src/rooms/critique";
 import { FRONTEND_VERIFY_METHOD } from "../../src/rooms/contracts/review-vocabulary";
 
 const evidence = buildCandidateEvidence({ produced: [], hashes: {}, verification: [], output: "", ownsPaths: [], neverTouch: [], dirtOk: true });
-const workspace = { path: "/wt/r/lane-pilot", branch: "lane/r", basePath: "/repo/lane-pilot" };
 /** Commands and tools of the Maestro-Flow runtime that Lane Pilot does not have: its text must not send a role to look for them. */
 const MAESTRO_ONLY = /maestro|AskUserQuestion|spawn_agents|workflow-(planner|reviewer|plan-checker)|chrome-devtools|e2e-results|evidence\.ndjson|\.workflow\//i;
 
@@ -48,17 +52,6 @@ describe("K1: role texts adapted from Maestro-Flow", () => {
     expect(prompt).toMatch(/no quoted code at a file:line is not accepted/);
     expect(prompt).toMatch(/what the candidate implements/);
     expect(prompt).not.toMatch(MAESTRO_ONLY);
-  });
-
-  it("self-repair: scientific debugging with at most 3 hypotheses, each with evidence, and the failure triage", () => {
-    const text = repairPrompt([], "blocked:abc:x", workspace);
-    expect(text).toMatch(/No fix without a confirmed root cause/);
-    expect(text).toMatch(/at most 3 hypotheses/);
-    expect(text).toMatch(/the evidence you gathered/);
-    expect(text).toMatch(/After 3 refuted hypotheses/);
-    for (const kind of ["test_defect", "code_defect", "env_issue"]) expect(text).toContain(kind);
-    expect(text).not.toMatch(MAESTRO_ONLY);
-    expect(text).toMatch(/SELF-REPAIR-VERDICT: fixed \| already-fixed \| not-lane-pilot \| needs-owner/);
   });
 
   it("browser check: three layers per feature, an unasserted case is blocked, never passed", () => {

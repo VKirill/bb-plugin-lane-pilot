@@ -40,7 +40,7 @@ describe("the open draft follows the architect's patches", () => {
     expect(state.reads).toBe(before + 1);
 
     await slot.behavior.emitRealtime("lp:proj_1", { kind: "workflow-draft", draftId: "wfd_other" });
-    await slot.behavior.emitRealtime("lp:proj_1", { kind: "council" });
+    await slot.behavior.emitRealtime("lp:proj_1", { kind: "rules" });
     await slot.behavior.emitRealtime("lp:proj_2", { kind: "workflow-draft", draftId: "wfd_1" });
     expect(state.reads).toBe(before + 1);
     slot.lifecycle.unmount();

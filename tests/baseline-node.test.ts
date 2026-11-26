@@ -1,6 +1,6 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
-import { registerDispatchExecutors } from "../src/rooms/writer/server/dispatch-workflow";
+import { registerDispatchExecutors } from "../src/rooms/writer/server/handlers/dispatch-workflow";
 import { createAttempt, createRun, createTask, getAttempt, openDatabase } from "../src/rooms/plugin-db";
 
 // Step [1] of Matvey's task path is a node of lp-task-pipeline now: the checks on the base run before the writer step, and a stop ends

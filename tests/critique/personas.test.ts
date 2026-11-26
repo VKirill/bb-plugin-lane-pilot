@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { criticPersonas, unionCriticFails, type CodeCritiqueResult } from "../../src/rooms/critique/code-critique";
+import { criticPersonas, unionCriticFails, type CodeCritiqueResult } from "../../src/rooms/critique";
 
 const row = (status: "pass" | "rework" | "block", id: string): CodeCritiqueResult => ({
   decision: status === "pass" ? "approve" : "changes_requested",

@@ -2,7 +2,7 @@ import { expect, it } from "vitest";
 import { createFakePluginHost, makeTurnFailedEvent } from "@get-bb/plugin-sdk/testing";
 import plugin from "../server";
 import { createAttempt, createRun, createTask, openDatabase, transitionAttempt } from "../src/rooms/plugin-db";
-import { MAX_STREAM_RETRY_ATTEMPTS, streamRetryDecision } from "../src/rooms/writer/stream-retry";
+import { MAX_STREAM_RETRY_ATTEMPTS, streamRetryDecision } from "../src/rooms/writer/models/stream-retry";
 import { nativeSelectionSchema } from "../src/rooms/contracts/native-selection";
 
 const streamError = {

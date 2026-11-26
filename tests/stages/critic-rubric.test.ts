@@ -1,8 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { actionableFindings, codeCritiquePrompt, parseCodeCritique, parseCodeCritiqueSettings, shouldRequestRepair } from "../../src/rooms/critique/code-critique";
-import { critiquePrompt, parseCritique } from "../../src/rooms/critique/critique";
-import { parseSpecialistResult, specialistPrompt } from "../../src/rooms/critique/specialist";
-import { buildCandidateEvidence } from "../../src/rooms/critique/code-critique";
+import {
+  actionableFindings,
+  buildCandidateEvidence,
+  codeCritiquePrompt,
+  critiquePrompt,
+  parseCodeCritique,
+  parseCodeCritiqueSettings,
+  parseCritique,
+  parseSpecialistResult,
+  shouldRequestRepair,
+  specialistPrompt,
+} from "../../src/rooms/critique";
 import { failureSide } from "../../src/rooms/contracts/failure-class";
 
 const evidence = "the host-read diff and the check output were read";

@@ -41,7 +41,7 @@ export function codexLeanProfile(role: string): CodexLeanProfile {
  * strict worker home where `worker.strict_user` is on; a writer outside it joins only when `writer` is listed (or `all`).
  */
 export const CODEX_LEAN_DEFAULT_ROLES: readonly string[] = [
-  "docs-maintainer", "plan-critic", "code-critic", "specialist-reviewer", "pm-reader", "gate-triage", "memory-maintainer", "project-life",
+  "plan-critic", "code-critic", "specialist-reviewer", "pm-reader", "gate-triage", "memory-maintainer",
 ];
 export type CodexLeanChoice = { mode: "off" } | { mode: "all" } | { mode: "roles"; roles: ReadonlySet<string> };
 

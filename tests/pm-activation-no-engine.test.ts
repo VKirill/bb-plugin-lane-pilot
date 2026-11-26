@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import plugin from "../server";
-import { TARGET_SHA } from "../src/rooms/runs/constants";
+import { TARGET_SHA } from "../src/rooms/runs";
 import { openDatabase, saveProjectSetting, savePrototypeConfig } from "../src/rooms/plugin-db";
 
 // Live 2026-10-30: after the Claude Lane cleanup every PM activation outside the composer (the drill, automations) stopped on
@@ -27,7 +27,6 @@ describe("PM activation without a Claude Lane engine", () => {
         asked.push(call.method);
         if (call.method === "detect") return { hostId: "host-test", laneStack: { present: false, version: null, sourceSha: null }, openCode: { present: false, version: null }, workspace: { path: "/tmp/pm", present: true }, targetSha: TARGET_SHA, matchesTarget: false, scenario: "S1" };
         if (call.method === "coexistenceInventory") return { schemaVersion: 1, hostId: "host-test", targetSha: TARGET_SHA, managers: [] };
-        if (call.method === "anamnesis") return { hostId: "host-test", response: { text: "", chars: 0, records: 0 } };
         throw new Error(`unexpected ${call.method}`);
       }) as never,
     });
@@ -68,7 +67,6 @@ describe("PM activation without a Claude Lane engine", () => {
       experimental_callHostRpc: ((call: { method: string }) => {
         if (call.method === "detect") return { hostId: "host-test", laneStack: { present: false, version: null, sourceSha: null }, openCode: { present: false, version: null }, workspace: { path: "/tmp/pm", present: true }, targetSha: TARGET_SHA, matchesTarget: false, scenario: "S1" };
         if (call.method === "coexistenceInventory") return { schemaVersion: 1, hostId: "host-test", targetSha: TARGET_SHA, managers: [] };
-        if (call.method === "anamnesis") return { hostId: "host-test", response: { text: "", chars: 0, records: 0 } };
         throw new Error(`unexpected ${call.method}`);
       }) as never,
     });

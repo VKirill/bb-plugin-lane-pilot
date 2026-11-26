@@ -1,8 +1,9 @@
-// Public API of lead/server: the service and its mount (server.ts), the RPC (core/server/rpc.ts), the tool (tools room), the CLI (tools mount it).
-// The journal and the backtest stay private; the surfaces are on the room's index.
-export { LEAD_USAGE, runLeadCli } from "../cli";
-export { leadRpc } from "./rpc";
-export { addRoad, doneRoad, getRoad, listRoad, reopenRoad } from "./road";
-export { taskWordPort } from "./surfaces";
-export { createLeadService, LEAD_EXAM_CRON, LEAD_SWEEP_CRON, mountLead, type LeadApi, type LeadState } from "./service";
-export { mountLeadTool } from "./tool";
+// Public API of lead/server: the road, nearest-unit ladder, tick actions, and task-word surface.
+export { addRoad, doneRoad, getRoad, listRoad, reopenRoad } from "./repositories/road-repository";
+export { taskWordPort } from "./services/surfaces";
+export { attachNearest, formHypothesis, graphSignalsOf, nearestUnits } from "./services/nearest";
+export { registerLeadTickActions } from "./handlers/tick-actions";
+export { parseLeadSettings } from "../settings";
+export { OWNER_ITEM_SWEEPS } from "./services/sweeps";
+export { mountLeadTool } from "./handlers/lead-tool";
+export { room } from "./room";

@@ -1,16 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { acceptRuleProposal, adoptRuleProposal, deleteMemoryRecord, rejectRuleProposal, retireAdoptedRule } from "../../src/rooms/self-repair/server";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { openDatabase } from "../../src/rooms/plugin-db";
-import { LESSON_PROPOSALS_MAX, listRuleProposals, upsertLessonProposal } from "@lane-pilot/run-insights";
-import { sessionMemoryRpc } from "../../src/rooms/memory/server/session-memory";
+import { sessionMemoryRpc } from "../../src/rooms/memory/server/handlers/session-memory";
 import type { ServerCore } from "../../src/rooms/contracts/server";
 import type { Services } from "../../server";
 
 function setup() {
   const { bb } = createFakePluginHost({ pluginId:"lane-pilot", sdk:{ projects:{ list:async () => [{ id:"P" }, { id:"Q" }] } } as never });
   const db = openDatabase(bb);
-  const services = { insights: { acceptRuleProposal, adoptRuleProposal, deleteMemoryRecord, rejectRuleProposal, retireAdoptedRule }, docsPlaces: async (projectId:string) => projectId === "P"
+  const services = { docsPlaces: async (projectId:string) => projectId === "P"
     ? [{ hostId:"ovh", path:"/home/u/apps/selfy", scopes:[] }, { hostId:"ovh", path:"/home/u/apps/selfy/apps/bot", scopes:["section:bot"] }]
     : [{ hostId:"mini", path:"/Users/k/Documents/BB", scopes:[] }] } as unknown as Services;
   return { db, rpc:sessionMemoryRpc({ bb, db } as unknown as ServerCore, services) };
@@ -62,22 +60,5 @@ describe("session memory on the hub", () => {
       outcomes: [{ line: 2, source_id: "missing", outcome: "added", id: "missing-id", concepts:["deploy"], content: "Deploy staging safely after review." }],
     } });
     expect(missing).toMatchObject({ questions: 1, hits: 0 });
-  });
-
-  it("a lesson becomes a rule on trial; the same lesson again is a repeat, not a new rule", async () => {
-    const { rpc, db } = setup();
-    const first = await rpc.session_lesson({ projectId:"P", rule:"Run npm ci in a writer worktree, never npm install, the lockfile stays untouched", evidence:"owner corrected 2026-10-03" });
-    expect(first).toMatchObject({ repeatOf:null, state:"accepted", adopted:true });
-    const again = await rpc.session_lesson({ projectId:"P", rule:"In a writer worktree run npm ci, never npm install — the lockfile stays untouched" });
-    expect(again).toMatchObject({ proposalId:first.proposalId, repeatOf:first.proposalId });
-    expect(listRuleProposals(db, "P")).toHaveLength(1);
-    expect(listRuleProposals(db, "P")[0]!.occurrences).toBe(2);
-  });
-
-  it("waiting lessons never pile up beyond the limit", () => {
-    const { db } = setup();
-    for (let n = 0; n < LESSON_PROPOSALS_MAX + 5; n++) upsertLessonProposal(db, "P", { rule:`Distinct lesson number ${n} about subsystem${n} configuration${n} handling${n}` }, 1000 + n);
-    expect(listRuleProposals(db, "P", { state:"proposed", limit:500 })).toHaveLength(LESSON_PROPOSALS_MAX);
-    expect(listRuleProposals(db, "P", { state:"rejected", limit:500 })).toHaveLength(5);
   });
 });

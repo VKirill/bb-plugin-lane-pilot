@@ -1,4 +1,4 @@
-import { readFile, writeFile } from "node:fs/promises";
+import { writeFile } from "node:fs/promises";
 import { isAbsolute, join, resolve } from "node:path";
 import { spawnAsync, sha256Hex, bestEffort, parseJsonOr, readTextOrNull } from "@lane-pilot/kit";
 

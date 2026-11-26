@@ -1,8 +1,8 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import plugin from "../../server";
 import { createRun, openDatabase, saveProjectSetting, setRunThread } from "../../src/rooms/plugin-db";
-import { sweepOwnerItems } from "../../src/rooms/owner-waiting/items";
+import { sweepOwnerItems } from "../../src/rooms/owner-waiting";
 import { scheduleFailureSweep } from "../../src/rooms/schedule/server";
 
 /**
@@ -60,7 +60,13 @@ async function setup(options: { metadata?: Record<string, Record<string, unknown
   saveProjectSetting(db, projectId, "secrets.allow", "MY_TOKEN");
   const rpc = async (name: string, params: Record<string, unknown>) => await harness.behavior.callRpc(name, params) as Record<string, any>;
   const tool = async (params: Record<string, unknown>, threadId = "thr_pm") => JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_schedule", params, { threadId, projectId }))) as Record<string, any>;
-  const tick = async () => { await registered.get("schedule-board-tick")!({ signal: new AbortController().signal }); };
+  const tick = async () => {
+    await registered.get("engine-clock")!({ signal: new AbortController().signal });
+    await vi.waitFor(() => {
+      const pending = (db.prepare("SELECT COUNT(*) AS n FROM lane_pilot_schedule_run WHERE status IN ('queued','running','waiting')").get() as { n: number }).n;
+      expect(pending).toBe(0);
+    }, { timeout: 15_000, interval: 10 });
+  };
   return { harness, rpc, tool, tick, db, hostCalls, registered, sent };
 }
 
@@ -78,7 +84,7 @@ describe("the RPCs of the board", () => {
 
   it("registers the tick as an isolated schedule and previews, creates and lists with the next fire times", async () => {
     const { rpc, registered } = await setup();
-    expect(registered.has("schedule-board-tick")).toBe(true);
+    expect(registered.has("engine-clock")).toBe(true);
     const preview = await rpc("schedule_preview", { definition: script(), next: 4 });
     expect(preview).toMatchObject({ ok: true, problems: [] });
     expect(preview.nextFires).toHaveLength(4);
@@ -180,7 +186,7 @@ describe("a script on a machine", () => {
     expect(hostCalls.filter((call) => call.method === "jobStart")).toHaveLength(1);
     const { runs } = await rpc("schedule_runs", { id: made.id });
     expect(runs).toHaveLength(1);
-    expect(runs[0]).toMatchObject({ status: "succeeded", trigger: "manual", exitCode: 0, refKind: "host_job", refId: "job_abcdefghij1", hostId: "h1" });
+    expect(runs[0]).toMatchObject({ status: "succeeded", trigger: "manual", exitCode: 0, refKind: "workflow_run", refId: expect.stringMatching(/^wfrun_/), hostId: "h1" });
     expect(runs[0].output).toContain("token=***");
     expect(JSON.stringify(runs)).not.toContain(SECRET);
     const card = (await rpc("schedule_get", { id: made.id })).schedule;

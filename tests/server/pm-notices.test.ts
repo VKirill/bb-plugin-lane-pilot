@@ -1,26 +1,22 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { afterEach, describe, expect, it } from "vitest";
-import plugin from "../../server";
-import { createRun, openDatabase, savePrototypeConfig, setRunThread } from "../../src/rooms/plugin-db";
-import { councilDecisionText, sendCouncilNotice } from "../../src/rooms/council/server/pm-notice";
-import { maybeNotifyWorkflowRun, notifyWorkflowIfEnded } from "../../src/rooms/workflow/server/pm-notice";
-import { SCOUT_GRAPH } from "../../src/rooms/critique/server/scout-graph";
+import { createRun, openDatabase, setRunThread } from "../../src/rooms/plugin-db";
+import { maybeNotifyWorkflowRun, notifyWorkflowIfEnded } from "../../src/rooms/workflow/server/services/pm-notice";
+import { SCOUT_GRAPH } from "../../src/rooms/critique/server";
 import { beginWorkflowWait, beginWriterWait, isWriterWaitActive, noteWorkflowFollowedByPm, noteWorkflowReadByPm } from "../../src/rooms/platform/server";
 import { isServiceNoticeText } from "../../src/rooms/contracts/service-notice";
 import { SCHEDULE_RUN_KEY_PREFIX } from "../../src/rooms/contracts";
 import { forgetSecrets, registerSecrets } from "@lane-pilot/kit";
 import { parseWorkflow } from "@lane-pilot/workflow-engine";
 import { closeAfterAudit } from "../../packages/workflow-engine/src/engine-goal-audit";
-import { mountRulesScanGraph } from "../../src/rooms/night-graphs/server/rules-scan-graph";
-import { finishWriterAttemptBody } from "../../src/rooms/writer/server/finish-attempt-body";
-import { recordOutcome } from "../../src/rooms/writer/server/start-record-outcome";
+import { finishWriterAttemptBody } from "../../src/rooms/writer/server/services/finish-attempt-body";
+import { recordOutcome } from "../../src/rooms/writer/server/services/start-record-outcome";
 import type { RunRow } from "../../src/rooms/plugin-db";
 import { engineOn, journalDb, ok, wf } from "../workflow/engine-helpers";
 
 const projectId = "notice-project";
 const pmThreadId = "notice-pm";
 const runId = "notice-run";
-const workspace = "/tmp/notice-workspace";
 afterEach(() => forgetSecrets());
 
 function noticeBb() {
@@ -50,28 +46,6 @@ const runRow = (patch: Partial<RunRow> = {}): RunRow => ({
   status: "succeeded", reason: null, mode: null, inputs_json: "{}", output_json: null, harness_version: "test",
   steps_used: 1, tokens_used: 0, cost_micro_usd: 0, wait_ms: 0, owner_id: null, lease_until: 0, created_at: 1, updated_at: 1,
   ...patch,
-});
-
-describe("council PM notices", () => {
-  it("names the council, question, decision page, next tasks and what to do", () => {
-    const text = councilDecisionText({
-      id: "cncl_abc", question: "How to raise repeat purchases?", decisionPath: "docs/decisions/2026-10-14-council-repeat.md",
-      nextTasks: [{ title: "Guest checkout", toAgent: "writer" }],
-    });
-    expect(text).toContain("Council cncl_abc decided.");
-    expect(text).toContain("Question: How to raise repeat purchases?");
-    expect(text).toContain("Decision page: docs/decisions/2026-10-14-council-repeat.md");
-    expect(text).toContain("- Guest checkout → writer");
-    expect(text).toContain("Dispatch the tasks it names, or report the decision to the owner.");
-  });
-
-  it("delivers a council notice once per terminal state", async () => {
-    const { bb, sends } = noticeBb();
-    const input = { bb, pmThreadId, councilId: "cncl_1", state: "done" as const, text: "decided", log: () => undefined };
-    expect(await sendCouncilNotice(input)).toBe(true);
-    expect(await sendCouncilNotice(input)).toBe(false);
-    expect(sends).toEqual([{ threadId: pmThreadId, mode: "queue-if-active", text: "[Lane Pilot service] decided" }]);
-  });
 });
 
 describe("workflow PM notices", () => {
@@ -238,80 +212,10 @@ describe("workflow PM notices", () => {
   });
 });
 
-describe("council start reports the decision to the PM chat", () => {
-  let dispose: (() => Promise<void> | void) | null = null;
-  afterEach(async () => { await dispose?.(); dispose = null; });
-
-  it("sends one decision notice after the council writes its page", async () => {
-    const sends: Array<{ threadId: string; text: string; mode: string }> = [];
-    const meta = new Map<string, Record<string, unknown>>();
-    const agendaJson = JSON.stringify({ agenda: ["Where do buyers stop?"], criteria: ["effect on sales"] });
-    const decisionJson = JSON.stringify({
-      summary: "Buyers stop at payment.",
-      options: [{ title: "Guest checkout", expectedImpact: "faster first purchase", effort: "low", confidence: "high", evidence: [] }],
-      recommendation: "Ship guest checkout first.",
-      dissent: [], experiments: [],
-      nextTasks: [{ title: "Guest checkout", objective: "Let a visitor buy without an account.", acceptance: ["No account form before payment"], toAgent: "writer" }],
-    });
-    const { bb, harness } = createFakePluginHost({
-      pluginId: "lane-pilot",
-      sdk: {
-        threads: {
-          getPluginMetadata: async ({ threadId }) => threadId === pmThreadId ? { role: "pm", lanePilotRunId: runId } : meta.get(threadId) ?? {},
-          spawn: async (args) => {
-            const request = args as unknown as Record<string, unknown>;
-            const id = `seat-${meta.size + 1}`;
-            meta.set(id, (request.pluginMetadata as Record<string, unknown>) ?? {});
-            return { id };
-          },
-          get: async ({ threadId }) => ({ id: threadId, status: "idle", projectId, sourceThreadId: pmThreadId, lifecycleOwnerThreadId: pmThreadId }),
-          events: { list: async ({ threadId }) => [{ type: "turn/started", threadId, seq: 1 }, { type: "turn/completed", threadId, seq: 2, data: { status: "completed" } }] },
-          output: async ({ threadId }) => {
-            const m = meta.get(threadId) ?? {};
-            const round = Number(m.round);
-            if (m.seatId === "chair") return { output: round === 0 ? `\`\`\`json\n${agendaJson}\n\`\`\`` : decisionJson };
-            if (round === 1) return { output: `${String(m.seatId)}: position on payment.` };
-            return { output: "PASS" };
-          },
-          send: async (args: unknown) => {
-            const request = args as { threadId: string; mode: string; input: Array<{ text?: string }> };
-            sends.push({ threadId: request.threadId, mode: request.mode, text: request.input[0]?.text ?? "" });
-          },
-          stop: async () => ({ ok: true }) as never,
-          list: async () => [...meta.keys()].map((id) => ({ id })) as never,
-        },
-        providers: { list: async () => [] as never, models: async () => ({ models: [] }) as never },
-        files: { read: async () => ({ content: null }) as never, write: async () => ({ ok: true }) as never },
-      },
-    });
-    await plugin(bb);
-    dispose = () => harness.lifecycle.dispose();
-    const db = openDatabase(bb);
-    savePrototypeConfig(db, { projectId, hostId: "host-1", pmWorkspacePath: workspace, writerWorkspacePath: workspace, pmProviderId: "codex", pmModel: "m", writerProviderId: "codex", writerModel: "m" });
-    createRun(db, runId, projectId);
-    setRunThread(db, runId, pmThreadId);
-    const call = async (name: string, params: Record<string, unknown>) => JSON.parse(String(await harness.behavior.callAgentTool(name, params, { threadId: pmThreadId, projectId }))) as Record<string, any>;
-    const started = await call("lane_pilot_council_start", { runId, question: "Как поднять повторные покупки в кабинете?", roles: ["product", "skeptic"], maxRounds: 2, mode: "rounds" });
-    let view: Record<string, any> = started;
-    for (let i = 0; i < 100 && !["done", "failed", "stopped"].includes(view.state); i++) {
-      await new Promise((resolve) => setTimeout(resolve, 100));
-      view = await call("lane_pilot_council_status", { runId, councilId: started.id });
-    }
-    expect(view.state).toBe("done");
-    for (let i = 0; i < 40 && !sends.some((item) => item.text.includes("decided")); i++) await new Promise((resolve) => setTimeout(resolve, 50));
-    const notice = sends.find((item) => item.text.includes("decided"));
-    expect(notice).toMatchObject({ threadId: pmThreadId, mode: "queue-if-active" });
-    expect(notice!.text).toContain(started.id);
-    expect(notice!.text).toContain(view.decisionPath);
-    expect(notice!.text).toContain("Guest checkout → writer");
-    expect(sends.filter((item) => item.text.includes("decided"))).toHaveLength(1);
-  });
-});
-
 describe("lead hand-over runs", () => {
   it("send nothing to the borrowed PM chat: the end goes back to the lead's road", async () => {
-    const { addRoad, decideRoad, getRoad, listRoad, proposeRoad, reopenRoad } = await import("../../src/rooms/lead/server/road");
-    const roadApi = { addRoad, getRoad, listRoad, doneRoad: (await import("../../src/rooms/lead/server/road")).doneRoad, reopenRoad };
+    const { addRoad, decideRoad, getRoad, listRoad, proposeRoad, reopenRoad } = await import("../../src/rooms/lead/server/repositories/road-repository");
+    const roadApi = { addRoad, getRoad, listRoad, doneRoad: (await import("../../src/rooms/lead/server/repositories/road-repository")).doneRoad, reopenRoad };
     const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
     const db = openDatabase(bb);
     createRun(db, runId, projectId);
@@ -332,26 +236,6 @@ describe("lead hand-over runs", () => {
     const doneId = accepted();
     expect(await notifyWorkflowIfEnded({ bb, db, leadRoad: roadApi, log: () => undefined, run: runRow({ idem_key: `intake:${pmThreadId}:lead:${doneId}`, workflow_id: "issue-quick" }) })).toBe(false);
     expect(getRoad(db, doneId)!.state).toBe("done");
-    expect(sends).toHaveLength(0);
-    expect(db.prepare("SELECT COUNT(*) AS n FROM lane_pilot_owner_item").get()).toMatchObject({ n: 0 });
-    await harness.lifecycle.dispose();
-  });
-
-  it("never sends PM chat notices or owner items for lp.graph-evolve-nightly upkeep runs", async () => {
-    const { bb, sends } = noticeBb();
-    const { bb: fullBb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
-    const db = openDatabase(fullBb);
-    createRun(db, runId, projectId);
-    setRunThread(db, runId, pmThreadId);
-    const evolveLinked = runRow({
-      id: "wfrun_evolve_1",
-      workflow_id: "lp.graph-evolve-nightly",
-      output_json: JSON.stringify({ status: "done", publishedCount: 0, proposedCount: 6, summary: "6 proposed" }),
-    });
-    expect(await maybeNotifyWorkflowRun({ bb, log: () => undefined, pmThreadId, startedBySchedule: false, run: evolveLinked })).toBe(false);
-    expect(await maybeNotifyWorkflowRun({ bb, log: () => undefined, pmThreadId, startedBySchedule: true, run: evolveLinked })).toBe(false);
-    expect(await notifyWorkflowIfEnded({ bb, db, log: () => undefined, run: evolveLinked })).toBe(false);
-    expect(await notifyWorkflowIfEnded({ bb, db, log: () => undefined, run: { ...evolveLinked, link_run_id: null } })).toBe(false);
     expect(sends).toHaveLength(0);
     expect(db.prepare("SELECT COUNT(*) AS n FROM lane_pilot_owner_item").get()).toMatchObject({ n: 0 });
     await harness.lifecycle.dispose();
@@ -403,7 +287,7 @@ describe("lead hand-over runs", () => {
     expect(sends).toHaveLength(1);
   });
 
-  it("tracks active lane_pilot_wait_writer calls and recognizes owner-ask, council, and post-merge gate service notices", () => {
+  it("tracks active lane_pilot_wait_writer calls and recognizes owner-ask and post-merge gate service notices", () => {
     expect(isWriterWaitActive("pm-wait-1")).toBe(false);
     const endWriterWait = beginWriterWait("pm-wait-1");
     expect(isWriterWaitActive("pm-wait-1")).toBe(true);
@@ -411,12 +295,11 @@ describe("lead hand-over runs", () => {
     expect(isWriterWaitActive("pm-wait-1")).toBe(false);
 
     expect(isServiceNoticeText("Lane Pilot: the owner answered your question (ask_1): yes")).toBe(true);
-    expect(isServiceNoticeText("Council cncl_abc decided.\nQuestion: Q?")).toBe(true);
     expect(isServiceNoticeText("Lane Pilot: проверка после вливания на main упала")).toBe(true);
     expect(isServiceNoticeText("Делай всё что считаешь нужным")).toBe(false);
   });
 
-  it("closes explicit non-fulfillment request-goal runs without goal_audit LLM calls and wires rules-scan and writer-outcome boundaries", async () => {
+  it("closes explicit non-fulfillment request-goal runs without goal_audit LLM calls and wires writer-outcome boundaries", async () => {
     const audited: string[] = [];
     const proposeChain = parseWorkflow({
       id: "propose-exit",
@@ -445,13 +328,6 @@ describe("lead hand-over runs", () => {
     expect(result).toMatchObject({ status: "succeeded" });
     expect(audited).toEqual([]);
     expect(typeof closeAfterAudit).toBe("function");
-
-    const registered: string[] = [];
-    mountRulesScanGraph(
-      { isDisposed: () => false } as unknown as Parameters<typeof mountRulesScanGraph>[0],
-      { ruleScan: {} as never, workflowEngine: { register: (name: string) => { registered.push(name); } } as never },
-    );
-    expect(registered).toEqual(["lp.rules_collect", "lp.rules-analyzer", "lp.rules_apply", "lp.rules-ask"]);
     expect(typeof finishWriterAttemptBody).toBe("function");
     expect(typeof recordOutcome).toBe("function");
   });

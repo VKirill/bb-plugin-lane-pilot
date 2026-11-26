@@ -13,7 +13,7 @@ const deferred = () => {
 describe("backlog scanning across the 2026-11-16 reload", () => {
   // Observed log: drained at 1794820693052, startup recovery at 1794820693257,
   // then "backlog scan failed: The database connection is not open" at 1794820693365.
-  it.each(["scan cadence", "PM metadata", "PM selection", "board cadence", "fetch", "board planning home", "read", "offer planning home", "issue board planning home", "issue planning home", "issue send", "scan save"])("stops without querying the closed database when disposed during %s", async (pause) => {
+  it.each(["scan cadence", "PM metadata", "PM selection", "board cadence", "fetch", "board planning home", "read", "issue board planning home", "issue planning home", "issue send", "scan save"])("stops without querying the closed database when disposed during %s", async (pause) => {
     const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
     const db = openDatabase(bb);
     savePrototypeConfig(db, { projectId: "P", hostId: "h", pmWorkspacePath: "/repo", writerWorkspacePath: "/repo", pmProviderId: "p", pmModel: "m", writerProviderId: "p", writerModel: "m" });
@@ -21,7 +21,6 @@ describe("backlog scanning across the 2026-11-16 reload", () => {
     setRunThread(db, "run_cli", "thr_pm");
     resetPlanningHomeChecks();
     if (pause.includes("planning home")) saveProjectSetting(db, "P", "project.planning_home", "/plans");
-    if (pause.startsWith("issue")) saveProjectSetting(db, "P", "backlog.auto_issue", "on");
     let disposed = false;
     bb.onDispose(() => { disposed = true; });
     const reading = deferred();
@@ -54,7 +53,7 @@ describe("backlog scanning across the 2026-11-16 reload", () => {
     let planningReads = 0;
     const call = vi.fn(async (method: string, input: { command: string }) => {
       if (method === "runCommand") {
-        await waitAt(["board planning home", "offer planning home", "issue board planning home", "issue planning home"][planningReads++]!);
+        await waitAt(["board planning home", "issue board planning home", "issue planning home"][planningReads++]!);
         return { exitCode: 0, stdout: "", stderr: "" };
       }
       const fetching = input.command.startsWith("git fetch");
@@ -66,8 +65,9 @@ describe("backlog scanning across the 2026-11-16 reload", () => {
     const logs: string[] = [];
     const ctx = { db, bb, host: { call }, log: (line: string) => logs.push(line), isDisposed: () => disposed };
     const api = createBacklog(ctx as never).backlog;
-    mountBacklog(ctx as never, api);
-    const running = harness.runSchedule("backlog-scan");
+    const actions = new Map<string, { run(c: unknown): Promise<unknown> }>();
+    mountBacklog(ctx as never, api, { register: (name: string, executor: { run(c: unknown): Promise<unknown> }) => actions.set(name, executor) } as never);
+    const running = actions.get("lp.backlog_scan")!.run({ resolve: () => undefined }).catch(() => undefined);
     try {
       await reading.promise;
       await harness.dispose();
@@ -140,10 +140,11 @@ describe("backlog scanning across the 2026-11-16 reload", () => {
     const db = openDatabase(bb);
     const logs: string[] = [];
     const ctx = { db, bb, log: (line: string) => logs.push(line), isDisposed: () => false };
-    mountBacklog(ctx as never, createBacklog(ctx as never).backlog);
+    const actions = new Map<string, { run(c: unknown): Promise<unknown> }>();
+    mountBacklog(ctx as never, createBacklog(ctx as never).backlog, { register: (name: string, executor: { run(c: unknown): Promise<unknown> }) => actions.set(name, executor) } as never);
     try {
       db.close();
-      await harness.runSchedule("backlog-scan");
+      await actions.get("lp.backlog_scan")!.run({ resolve: () => undefined }).catch(() => undefined);
       expect(logs).toEqual(["backlog scan failed: The database connection is not open"]);
     } finally { await harness.dispose(); }
   });

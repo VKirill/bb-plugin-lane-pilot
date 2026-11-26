@@ -9,9 +9,9 @@ import { chainStore } from "./chain-harness";
  * need tools the test machine does not have, so they stay `tested` with a note about what is not live yet.
  */
 const dir = __dirname;
-const sources = readdirSync(dir).filter((name) => /^chains-.*\.test\.ts$/.test(name) && name !== "chains-status.test.ts").map((name) => readFileSync(join(dir, name), "utf8")).concat(readFileSync(join(dir, "site-creation-and-evolve.test.ts"), "utf8"), readFileSync(join(dir, "../sma/parity-d4-workflows-b-2.test.ts"), "utf8")).join("\n");
+const sources = readdirSync(dir).filter((name) => /^chains-.*\.test\.ts$/.test(name) && name !== "chains-status.test.ts").map((name) => readFileSync(join(dir, name), "utf8")).join("\n");
 const withCase = new Set([...sources.matchAll(/runSim\("([a-z0-9][a-z0-9.-]*)"/g)].map((match) => match[1]!));
-const OWN = ["about-site", "deploy", "insights-post", "invoice-send", "reels", "resume", "seo-cocoon", "web-research", "x-to-telegram-digest", "year-review"];
+const OWN = ["deploy", "insights-post", "invoice-send", "reels", "seo-cocoon", "web-research", "x-to-telegram-digest"];
 
 describe("status of the built-in chains", () => {
   it("every chain of the catalog has a test case, and published means its case is there", async () => {
@@ -46,7 +46,7 @@ describe("status of the built-in chains", () => {
     expect(ids).toEqual(expect.arrayContaining(["analyze-code", "plan-only", "code-review", "grill-plan", "test-gen", "security-audit", "issue-discover", "retrospective", "ui-audit"]));
     expect(ids).toEqual(expect.arrayContaining(OWN));
     expect(ids.filter((id) => store.get(id)!.workflow.internal).sort()).toEqual(["docs-synthesis-check", "docs-synthesis-rank", "ins.post", "lp.analyze", "lp.brainstorm", "lp.build", "lp.close", "lp.draw", "lp.plan", "lp.review", "plan-review-convergence-proof", "telegram-send"]);
-    expect(ids).toEqual(expect.arrayContaining(["validate-phase", "eval-review", "ai-integration-phase", "spike", "sketch-wrap-up", "ship", "pr-branch", "cleanup", "new-milestone", "plan-review-convergence", "project-start"]));
+    expect(ids).toEqual(expect.arrayContaining(["validate-phase", "eval-review", "ai-integration-phase", "spike", "sketch-wrap-up", "ship", "pr-branch", "cleanup", "new-milestone", "project-start"]));
     expect(ids).toEqual(expect.arrayContaining(["3d-asset", "roblox-asset", "social-post"]));
     expect(ids).toEqual(expect.arrayContaining(["research-dossier", "billing-batch", "macos-routine", "seo-page", "api-recon"]));
     // SEO wave 1: the intake and the monitor are chains; the research, the brief and the release are called by other graphs.
@@ -67,11 +67,9 @@ describe("status of the built-in chains", () => {
       "mkt-landing-cro-audit",
       "mkt-pulse-monitor",
       "seo-ai-visibility",
-      "lp.specialist-eval",
-      "lp.curriculum-ingest",
-      "project-passport",
     ]));
-    expect(ids).toEqual(expect.arrayContaining(["lp.graph-evolve-nightly", "scout"]));
-    expect(ids).toHaveLength(130); // Includes the internal convergence proof, sketch-wrap-up, lp.graph-evolve-nightly, and scout.
+    expect(ids).toEqual(expect.arrayContaining(["scout"]));
+    expect(ids).toEqual(expect.arrayContaining(["lp.landing-suite", "lp.worktree-release"]));
+    expect(ids).toHaveLength(117);
   });
 });

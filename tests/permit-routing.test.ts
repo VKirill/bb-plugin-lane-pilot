@@ -1,20 +1,21 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
+import { LP_EVENTS } from "@lane-pilot/contracts";
 import { expect, it } from "vitest";
-import { mountPermits } from "../src/rooms/writer/server";
+import { mountPermits } from "../src/rooms/writer/server/index";
 import { createAttempt, createRun, createTask, openDatabase, transitionAttempt } from "../src/rooms/plugin-db";
 
 async function fixture() {
   const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
   const db = openDatabase(bb);
   const sends: Array<{ threadId: string }> = [];
-  let sweep: () => Promise<void> = async () => {};
+  const listeners = new Map<string, (payload: unknown) => unknown>();
   let answerTool: { execute: (input: unknown, ctx: unknown) => Promise<unknown> };
   let tickets: Array<Record<string, unknown>> = [];
   let failSend = false;
   const facade = {
     ...bb,
     agents: { registerTool: (tool: { execute: typeof answerTool.execute }) => { answerTool = tool; } },
-    background: { schedule: (_name: string, _cron: string, fn: () => Promise<void>) => { sweep = fn; } },
+    events: { on: (name: string, fn: (payload: unknown) => unknown) => { listeners.set(name, fn); } },
     hosts: { experimental_client: () => ({ call: async (method: string) => method === "listPermitTickets" ? { tickets } : { written: true } }) },
     sdk: { ...bb.sdk, threads: { send: async (payload: { threadId: string }) => { if (failSend) throw new Error("down"); sends.push(payload); } } },
   };
@@ -29,8 +30,12 @@ async function fixture() {
   }
   mountPermits({ bb: facade, db, isDisposed: () => false } as never);
   const both = ["a", "b"].map((id) => ({ session: "sess-" + id, ticket: "a1b2c3d4e5f60718", category: "delete_for_good", command: "rm data.csv", cwd: "/fixture/" + id, at: 1 }));
+  const emitPermit = async () => {
+    listeners.get(LP_EVENTS.PERMIT_REQUESTED)?.({ hostId: "host", tickets });
+    await new Promise((r) => setTimeout(r, 15));
+  };
   return {
-    harness, db, sends, sweep, answerTool: answerTool!, setTickets: (next: typeof tickets) => { tickets = next; }, both,
+    harness, db, sends, sweep: emitPermit, answerTool: answerTool!, setTickets: (next: typeof tickets) => { tickets = next; }, both,
     setFailSend: (next: boolean) => { failSend = next; },
   };
 }

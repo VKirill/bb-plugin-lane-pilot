@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import { describe, expect, it } from "vitest";
 import { MAIN_AGENT_PROFILE_IDS } from "../src/rooms/contracts/server";
-import { compileMainAgentProfile } from "../src/rooms/native-agent/agent-profile";
+import { compileMainAgentProfile } from "../src/rooms/native-agent/models/agent-profile";
 import { claudeGuardLauncherScript } from "../src/rooms/native-agent/claude-guard-launch";
 import { disableCodexMemories } from "../src/rooms/host-worker/handlers/machine";
 

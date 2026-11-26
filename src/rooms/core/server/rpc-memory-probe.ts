@@ -1,7 +1,7 @@
 import type { PluginRpcHandlers } from "@get-bb/plugin-sdk";
 import type { rpcContract } from "../../contracts";
 
-import type { MemoryProbeApi } from "../../memory-probe/server/memory-probe";
+import type { MemoryProbeApi } from "../../memory-probe/server";
 
 /** The fields of the services bag this file reads, typed by the rooms that own them. */
 interface Services {

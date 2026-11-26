@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { BUILTIN_PRESETS, priceFor } from "@lane-pilot/models";
-import { DEFAULT_MODEL } from "../../src/rooms/workflow/server/workflow-agent-model";
+import { DEFAULT_MODEL } from "../../src/rooms/workflow/models/workflow-agent-model";
 
 describe("the price table", () => {
   it("prices every model a built-in preset and the helpers' default run on (an unpriced one counts as the dearest)", () => {

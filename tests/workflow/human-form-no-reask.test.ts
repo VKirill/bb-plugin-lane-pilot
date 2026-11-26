@@ -3,10 +3,10 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { WorkflowEngine, parseWorkflow } from "@lane-pilot/workflow-engine";
 import type { Workflow } from "@lane-pilot/workflow-engine";
 import { openDatabase } from "../../src/rooms/plugin-db";
-import { registerHumanForm, workflowQuestionKey } from "../../src/rooms/workflow/server/workflow-human-form";
+import { registerHumanForm, workflowQuestionKey } from "../../src/rooms/workflow/server/services/workflow-human-form";
 import type { ChainRuntime, ServerCore } from "../../src/rooms/contracts/server";
 import type { OwnerAnswer } from "../../src/rooms/relay/server";
-import type { WorkflowAgents } from "../../src/rooms/workflow/server/workflow-agent";
+import type { WorkflowAgents } from "../../src/rooms/workflow/server/services/workflow-agent";
 
 /**
  * A human step whose owner form was dismissed («Не сейчас») or timed out must not be re-asked on every poll of

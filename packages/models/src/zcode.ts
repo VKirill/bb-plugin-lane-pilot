@@ -1,4 +1,5 @@
 import { findProvider, type ModelCatalog } from "./model-catalog";
+import { ZCODE_ENVIRONMENT_RE } from "@lane-pilot/resilience";
 
 /**
  * ZCode (the owner's ZCode desktop app on the Mac mini, BB provider `zcode`, plugin bb-plugin-zcode) as a model Lane Pilot may use.
@@ -66,7 +67,7 @@ export function zcodeBlock(input: { settings: Record<string, unknown>; catalog: 
  * sign-in expired. They are the machine's state, not the model's work: the task runs again at once on another model, uncharged. Null otherwise.
  * Only the bridge's own forms count (`ZCode (code): …`, `ZCode is busy …`, the sign-in hint), so a word in a check's output never matches.
  */
-const ZCODE_ENVIRONMENT = /ZCode is busy|ZCode \((?:text-not-visible|foreground_required|session_expired|promo_unavailable)\)|sign in inside the ZCode app/i;
+const ZCODE_ENVIRONMENT = ZCODE_ENVIRONMENT_RE;
 
 /** The model of ZCode Lane Pilot runs: GLM-5.3-Flash on the Start Plan's free tokens (bb-plugin-zcode refuses it with `promo_unavailable` rather than bill the plan). */
 export const ZCODE_FREE_MODEL = "glm-5.3-flash-free";
@@ -75,7 +76,7 @@ export const ZCODE_FREE_MODEL = "glm-5.3-flash-free";
  * owner picked a model for the row: cheap text jobs with a checker or a reader behind them. Outside the hours, off the Mac mini, with every
  * slot taken or the free tokens gone, the row's own model runs. Opt-in since 2026-11-15: only `zcode.background` = true/`on` turns it on.
  */
-export const ZCODE_FREE_ROWS: readonly string[] = ["docs-maintainer", "rules-analyzer", "memory", "project-life"];
+export const ZCODE_FREE_ROWS: readonly string[] = ["memory"];
 export const ZCODE_BACKGROUND_KEY = "zcode.background";
 export const zcodeBackgroundOn = (settings: Record<string, unknown>): boolean => settings[ZCODE_BACKGROUND_KEY] === true || settings[ZCODE_BACKGROUND_KEY] === "on";
 export function zcodeEnvironmentError(text: string | null | undefined): string | null {

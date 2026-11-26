@@ -4,9 +4,9 @@ import { join } from "node:path";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { afterEach, describe, expect, it } from "vitest";
 import { collectCapabilities, parseWorkflow, validateWorkflow } from "@lane-pilot/workflow-engine";
-import { roleSpec } from "../../src/rooms/workflow/server/workflow-agent";
-import { createWorkflowArchitect } from "../../src/rooms/workflow/server/workflow-architect";
-import type { ArchitectDeps } from "../../src/rooms/workflow/server/workflow-architect";
+import { roleSpec } from "../../src/rooms/workflow/server/services/workflow-agent";
+import { createWorkflowArchitect } from "../../src/rooms/workflow/server/services/workflow-architect";
+import type { ArchitectDeps } from "../../src/rooms/workflow/server/services/workflow-architect";
 import type { Services } from "../../server";
 import { migrations } from "../../src/rooms/plugin-db";
 

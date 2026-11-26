@@ -2,8 +2,7 @@ import { readFileSync } from "node:fs";
 import { gunzipSync } from "node:zlib";
 import { describe, expect, it } from "vitest";
 import { memoryMaintenancePrompt, parseMemorySettings } from "../../packages/memory-core/src";
-import { nightReviewPrompt } from "../../src/rooms/night/night";
-import { compactAcceptedResult } from "../../src/rooms/tasks/server/accepted-compact";
+import { compactAcceptedResult } from "../../src/rooms/tasks/server";
 
 /**
  * Real memory-maintenance briefs of the SelfyStudio project on the hub (first turn, 2026-10-02..07), task and accepted
@@ -14,7 +13,6 @@ type Fixture = { source: string; briefChars: number; task: unknown; acceptedResu
 const load = (name: string): Fixture => JSON.parse(gunzipSync(readFileSync(new URL(`../fixtures/accepted-results/${name}.json.gz`, import.meta.url))).toString("utf8"));
 const settings = parseMemorySettings({});
 const memoryBrief = (task: unknown, acceptedResult: unknown) => memoryMaintenancePrompt({ task, acceptedResult, settings });
-const nightBrief = (task: unknown, acceptedResult: unknown) => nightReviewPrompt({ agent: "n", task, acceptedResult, workspace: "/w", maxFindings: 5 });
 
 describe("compactAcceptedResult on real accepted results", () => {
   for (const [name, cap] of [["median", 12_000], ["p90", 12_000], ["max", 12_000]] as const) {
@@ -44,15 +42,6 @@ describe("compactAcceptedResult on real accepted results", () => {
       const json = JSON.stringify(compact);
       expect(json).not.toMatch(/\\u001b|\\r\\n/);
       for (const dropped of ["reasoning", "planSha256", "runV2", "executionPacketSha256", "acceptancePath", "lanePilotRunId", "schema_version"]) expect(json).not.toContain(dropped);
-    });
-
-    it(`${name}: the night review brief shrinks the same way`, () => {
-      const { task, acceptedResult } = load(name);
-      const before = nightBrief(task, acceptedResult).length;
-      const brief = nightBrief(task, compactAcceptedResult(acceptedResult));
-      expect(brief.length).toBeLessThan(cap);
-      expect(brief.length).toBeLessThan(before * 0.5);
-      expect(brief).toContain(JSON.stringify(task));
     });
   }
 });

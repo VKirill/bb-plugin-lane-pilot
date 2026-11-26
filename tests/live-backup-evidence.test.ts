@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { liveBackupKey } from "../src/rooms/writer/server/start-live-folder";
-import { resolveLiveBackupId } from "../src/rooms/writer/server/live-backup-evidence";
+import { liveBackupKey } from "../src/rooms/writer/server/services/start-live-folder";
+import { resolveLiveBackupId } from "../src/rooms/writer/server/services/live-backup-evidence";
 
 describe("live-folder backup binding", () => {
   it("resolves a continuation to the original backup", async () => {

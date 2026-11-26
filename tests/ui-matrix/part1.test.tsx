@@ -22,7 +22,7 @@ describe("Lane Pilot UI", () => {
     await openAllTabs(slot);
     await waitFor(() => expect(slot.container.querySelector("[data-testid='bb-provider-model-picker']")).not.toBeNull());
     expect(remember).toHaveBeenCalledWith({ projectId:"proj_ui" });
-    expect(slot.queryByRole("button", { name:en.openProject })).toBeNull();
+    expect(slot.queryByRole("button", { name: "Open project" })).toBeNull();
     expect(slot.getByTestId("scope-rail")).toBeTruthy();
     expect(slot.getByTestId("scope-nav").querySelector(".grid")).toBeNull();
     expect(slot.getByTestId("tab-work").closest("[data-testid='project-settings']")).toBeTruthy();

@@ -6,10 +6,10 @@ import { describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import plugin from "../server";
 import { BOOKKEEPING_EXCLUDE_LINES, isBookkeepingPath } from "@lane-pilot/settings-catalog";
-import { TARGET_SHA } from "../src/rooms/runs/constants";
+import { TARGET_SHA } from "../src/rooms/runs";
 import { openDatabase, saveProjectSetting, savePrototypeConfig } from "../src/rooms/plugin-db";
-import { excludeBookkeeping } from "../src/rooms/verification/server/bookkeeping-exclude";
-import { ensureExcludeLinesCommand } from "../src/rooms/verification/git-integrate";
+import { excludeBookkeeping } from "../src/rooms/verification/server/services/bookkeeping-exclude";
+import { ensureExcludeLinesCommand } from "../src/rooms/worktree";
 
 const sh = (cwd:string, command:string) => execFileSync("sh", ["-c", command], { cwd, encoding: "utf8" });
 const git = (cwd:string, ...args:string[]) => execFileSync("git", args, { cwd, encoding: "utf8" });

@@ -1,22 +1,19 @@
-import { spawnSync } from "node:child_process";
 import { describe, expect, it } from "vitest";
 import {
-  baselineVerdict, bisectCommand, bisectStepsFor, estimateSec, messageOwner, parseBaselineSettings, parseRegressSettings, planChecks, requiresRedOnBase, turnedRed, vacuousChecks, type BaselineCheck,
-} from "../../src/rooms/baseline/logic";
+  baselineVerdict, estimateSec, parseBaselineSettings, planChecks, requiresRedOnBase, turnedRed, vacuousChecks, type BaselineCheck,
+} from "../../src/rooms/baseline/models/logic";
 
 const item = (command: string, extra: Record<string, unknown> = {}) => ({ command, cwd: "/p", ...extra }) as never;
 const check = (command: string, status: BaselineCheck["status"]): BaselineCheck => ({ command, cwd: "/p", status, exitCode: status === "green" ? 0 : status === "red" ? 1 : null, note: "" });
 
-describe("baseline and regression settings", () => {
-  it("default to notify, a 300 s cap, a nightly pass over 30 tasks of 14 days", () => {
+describe("baseline settings", () => {
+  it("default to notify and a 300 s cap", () => {
     expect(parseBaselineSettings({})).toEqual({ mode: "notify", timeCapSec: 300, requireRed: "medium" });
-    expect(parseRegressSettings({})).toEqual({ nightly: true, lastN: 30, days: 14, checkCapSec: 120, budgetSec: 1800, bisectSteps: 9 });
   });
   it("read stop, 0 as off, numeric strings, and fall back on nonsense instead of failing a task", () => {
     expect(parseBaselineSettings({ "baseline.already_built": "stop", "baseline.time_cap_sec": "0" })).toEqual({ mode: "stop", timeCapSec: 0, requireRed: "medium" });
     expect(parseBaselineSettings({ "baseline.already_built": "maybe", "baseline.time_cap_sec": "soon" })).toEqual({ mode: "notify", timeCapSec: 300, requireRed: "medium" });
     expect(parseBaselineSettings({ "baseline.time_cap_sec": 99999 }).timeCapSec).toBe(3600);
-    expect(parseRegressSettings({ "regress.nightly": "off", "regress.last_n": "5", "regress.last_days": 3, "regress.bisect_steps": 99 })).toMatchObject({ nightly: false, lastN: 5, days: 3, bisectSteps: 14 });
   });
 });
 
@@ -52,24 +49,6 @@ describe("what the baseline says", () => {
   });
 });
 
-describe("the bisect command and the blame", () => {
-  it("exits 0 for green and 1 for red, whatever the check exits with, in the check's folder", () => {
-    for (const [command, expected] of [["exit 0", 0], ["exit 3", 1], ["exit 125", 1], ["exit 200", 1], ["echo \"it's\" && true", 0]] as const) {
-      const ran = spawnSync("bash", ["-c", bisectCommand("", command)]);
-      expect(ran.status, command).toBe(expected);
-    }
-    expect(spawnSync("bash", ["-c", bisectCommand("no/such/folder", "true")]).status).toBe(125);
-    expect(spawnSync("bash", ["-c", bisectCommand("/tmp", "test \"$(pwd -P)\" = \"$(cd /tmp && pwd -P)\"")]).status).toBe(0);
-  });
-  it("reads the owner of a commit from the attempt trailer or the task id that starts the subject", () => {
-    expect(messageOwner("t1: title\n\nLane-Pilot-Attempt: lpattempt_abc")).toEqual({ attemptId: "lpattempt_abc", taskId: "t1" });
-    expect(messageOwner("fix the thing")).toEqual({ attemptId: null, taskId: null });
-  });
-  it("needs log2 steps", () => {
-    expect([0, 1, 2, 3, 8, 9, 512].map(bisectStepsFor)).toEqual([0, 0, 1, 2, 3, 4, 9]);
-  });
-});
-
 describe("red before green", () => {
   it("reads checks.require_red_on_base: medium by default, off and high, nonsense is the default", () => {
     expect(parseBaselineSettings({ "checks.require_red_on_base": "off" }).requireRed).toBe("off");
@@ -87,7 +66,7 @@ describe("red before green", () => {
   });
   it("asks a fix of any risk for a red check, unless the setting is off or raised to high (Vampirism Fire 2026-10-26: five low-risk vf-fix-b1-* passed on a check.sh that was green on the base)", () => {
     expect(requiresRedOnBase("medium", { risk: "low", kind: "fix" })).toBe(true);
-    expect(requiresRedOnBase("medium", { risk: "low", kind: "feature" })).toBe(false);
+    expect(requiresRedOnBase("medium", { risk: "low", kind: "feature" })).toBe(true);
     expect(requiresRedOnBase("medium", { risk: "low" })).toBe(false);
     expect(requiresRedOnBase("high", { risk: "low", kind: "fix" })).toBe(false);
     expect(requiresRedOnBase("high", { risk: "high", kind: "fix" })).toBe(true);

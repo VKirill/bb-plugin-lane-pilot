@@ -1,6 +1,6 @@
 import { CronExpressionParser } from "cron-parser";
 import { describe, expect, it } from "vitest";
-import { fireTimes, nextFire, offsetAt, parseDelay, scheduleTimeProblem } from "../../src/rooms/schedule/time";
+import { fireTimes, nextFire, offsetAt, parseDelay, scheduleTimeProblem } from "../../src/rooms/schedule/models/time";
 
 const iso = (ms: number) => new Date(ms).toISOString();
 const at = (text: string) => Date.parse(text);
@@ -114,7 +114,7 @@ describe("delays", () => {
 
 describe("a cron without a time zone", () => {
   it("runs in the zone it is given (the owner's), not the hub's; a named zone wins", async () => {
-    const { normalizeSchedule } = await import("../../src/rooms/schedule/model");
+    const { normalizeSchedule } = await import("../../src/rooms/schedule/models/schedule");
     const definition = (when: Record<string, unknown>) => ({ projectId: "p", name: "n", task: { kind: "script", hostId: "h", command: "true", cwd: "/tmp", env: [] }, when });
     const owner = normalizeSchedule(definition({ type: "cron", cron: "0 9 * * 1" }), Date.now(), "Europe/Madrid");
     expect(owner.ok && owner.value.when).toMatchObject({ timezone: "Europe/Madrid" });

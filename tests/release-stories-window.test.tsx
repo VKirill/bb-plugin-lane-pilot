@@ -11,7 +11,7 @@ function driveTo(state: AttemptState, events: TransitionEvent[]): AttemptState {
   return events.reduce((from, event) => nextAttemptState(from, event), state);
 }
 
-describe("window stories: the cockpit window model through its states", () => {
+describe("window stories: the runs window model through its states", () => {
   it("the window reader pages through a live window in contract-sized pages", async () => {
     const calls: number[] = [];
     const call = async (_m: "list_runs", input: { offset: number; limit: number }) => {

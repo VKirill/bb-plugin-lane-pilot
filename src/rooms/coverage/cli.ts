@@ -1,7 +1,7 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { checkReceipt, coverageRows, codeNodes, holes, summarize, untermedGaps, type CoverageRow, type DrillReceipt } from "./model";
-import { NODE_KINDS } from "./registry";
+import { checkReceipt, coverageRows, codeNodes, holes, summarize, untermedGaps, type CoverageRow, type DrillReceipt } from "./models/model";
+import { NODE_KINDS } from "./models/registry";
 
 export const COVERAGE_USAGE = "bb lane-pilot coverage [--json] [--strict] [--kind stage|transition|failure_class|gate|memory_path|room|mechanism] [--status live|tests|none] [--receipt <drill receipt.json|latest>]   --strict: a not-covered node without a term or the owner's word fails the run. What proves each stage and mechanism: covered live by a drill scenario / by tests only / not covered, with the reason";
 

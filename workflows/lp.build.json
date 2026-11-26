@@ -9,6 +9,7 @@
     "en": "Runs task-v2 contracts through the Lane Pilot pipeline (writer, sandbox verification, code critic, merge queue) and the batch gate.",
     "ru": "Прогоняет контракты task-v2 через конвейер LP (исполнитель, песочная проверка, критик кода, очередь слияния) и гейт партии."
   },
+  "category": "service",
   "inputs": {
     "tasks": {
       "type": "Task[]",
@@ -36,13 +37,19 @@
       "id": "run_tasks",
       "type": "parallel",
       "for_each": "$inputs.tasks",
-      "order": "depends_on", "on_child_fail": "block_dependents",
+      "order": "depends_on",
+      "on_child_fail": "block_dependents",
       "title": {
         "en": "Run tasks",
         "ru": "Выполнить задачи"
       },
       "child": {
-        "produces": [{"kind": "task-result", "version": 1}],
+        "produces": [
+          {
+            "kind": "task-result",
+            "version": 1
+          }
+        ],
         "type": "lp-task",
         "contract": "{{item}}",
         "quality_mode": "{{$mode}}",
@@ -150,5 +157,9 @@
       "pass": "artifact"
     }
   ],
-  "status": "published"
+  "status": "published",
+  "not_for": [
+    "lp-task-pipeline",
+    "analyze-plan-execute"
+  ]
 }

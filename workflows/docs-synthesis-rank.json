@@ -8,9 +8,10 @@
     "ru": "Учесть запись приоритета"
   },
   "description": {
-    "en": "Echoes one precedence kind for validation.",
-    "ru": "Возвращает вид документа для проверки."
+    "en": "Internal subworkflow that evaluates and echoes one document precedence kind for docs-synthesis conflict resolution.",
+    "ru": "Внутренний подграф, который оценивает и возвращает тип приоритета документа при разрешении конфликтов в docs-synthesis."
   },
+  "category": "docs",
   "inputs": {
     "kind": {
       "type": "string",
@@ -38,5 +39,9 @@
       "from": "start",
       "to": "echo"
     }
+  ],
+  "not_for": [
+    "docs-synthesis",
+    "docs-synthesis-check"
   ]
 }

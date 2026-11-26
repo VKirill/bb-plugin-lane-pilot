@@ -1,13 +1,14 @@
 import { describe, expect, it, afterEach } from "vitest";
-import { roleSpec } from "../src/rooms/workflow/server/workflow-agent";
+import { roleSpec } from "../src/rooms/workflow/server/services/workflow-agent";
 import { setLocaleOverride, t } from "@lane-pilot/i18n";
 import { agentPickerLabel } from "../src/rooms/contracts/agent-display";
 import { MAIN_AGENT_PROFILE_IDS } from "../src/rooms/contracts/server";
-import { compileMainAgentProfile } from "../src/rooms/native-agent/agent-profile";
+import { compileMainAgentProfile } from "../src/rooms/native-agent/models/agent-profile";
 import { BB_AGENT_SUMMARIES } from "../src/rooms/contracts/server";
-import { laneSessionOverlayPrompt, overlaySessionTools } from "../src/rooms/native-agent/native-agent-overlay";
-import { NATIVE_LP_BRIDGE_LEAD_TOOLS } from "../src/rooms/native-agent/native-session-hooks";
-import { LEAD_ID, LEAD_LAUNCH, LEAD_SESSION, LEAD_TICK } from "../src/rooms/contracts/lead-agent";
+import { laneSessionOverlayPrompt } from "../src/rooms/native-agent/models/native-agent-overlay";
+import { overlaySessionTools } from "../src/rooms/native-agent/models/agent-overlay";
+import { NATIVE_LP_BRIDGE_LEAD_TOOLS } from "../src/rooms/native-agent/models/bridge-tools";
+import { LEAD_ID, LEAD_SESSION, LEAD_TICK } from "../src/rooms/contracts/lead-agent";
 import {BUILTIN_SOURCES} from "../src/rooms/workflow/builtin";
 
 afterEach(() => setLocaleOverride(null));
@@ -23,8 +24,7 @@ describe("the lead («Штурман») profile", () => {
     expect(agentPickerLabel({ id: LEAD_ID, description: profile.description }, t)).toBe("Штурман");
     expect(agentPickerLabel({ id: LEAD_ID, description: "Lane Pilot lead" }, t)).toBe("Штурман");
     expect(BB_AGENT_SUMMARIES[LEAD_ID]).toContain("road tree");
-    expect(LEAD_LAUNCH).toMatchObject({ agentId: LEAD_ID, rpc: "lead_chat_start" });
-  });
+    });
 
   it("keeps the road and the journal and nothing else: reading, the web and lane_pilot_lead; no write, no dispatch, no schedule", () => {
     const profile = compileMainAgentProfile(LEAD_ID);

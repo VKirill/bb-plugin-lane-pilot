@@ -6,10 +6,15 @@ import { Button } from "@lane-pilot/ui-kit";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@lane-pilot/ui-kit";
 import { t, type I18nKey, type Locale } from "@lane-pilot/i18n";
 import type { rpcContract } from "../../contracts";
-import { WORKFLOW_CATEGORIES } from "../categories";
+import { WORKFLOW_CATEGORIES, resolveCategoryLabel, type BuiltinWorkflowCategory } from "../models/categories";
 import { downloadBlob } from "./workflow-download";
 
 type What = "all" | "category" | "selected";
+
+const WFX_CAT_KEYS: Partial<Record<BuiltinWorkflowCategory, I18nKey>> = {
+  seo: "wfxCat_seo", marketing: "wfxCat_marketing", code: "wfxCat_code", content: "wfxCat_content",
+  research: "wfxCat_research", games: "wfxCat_games", business: "wfxCat_business", routines: "wfxCat_routines", service: "wfxCat_service",
+};
 
 /**
  * «Выгрузить графы»: a button that opens a small dialog (all / one category / the rows selected in the library;
@@ -33,7 +38,10 @@ export function ExportGraphsButton(props: {
   const [error, setError] = useState<string | null>(null);
 
   const selected = props.selectedIds ?? [];
-  const categories = props.categories ?? WORKFLOW_CATEGORIES.map((key) => ({ key, label: t(`wfxCat_${key}` as I18nKey) }));
+  const categories = props.categories ?? WORKFLOW_CATEGORIES.map((key) => ({
+    key,
+    label: resolveCategoryLabel(key, null, props.locale === "ru" ? "ru" : "en", (b) => (WFX_CAT_KEYS[b] ? t(WFX_CAT_KEYS[b]!) : undefined)),
+  }));
 
   const run = async () => {
     setBusy(true);

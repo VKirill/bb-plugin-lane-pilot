@@ -75,20 +75,6 @@ describe("on-map command graph parity", () => {
     expect(out(result)).toMatchObject({ status: "done", phases: ["1 billing", "2 invoices"] });
   });
 
-  it("plan-review-convergence records both approval and requested changes", async () => {
-    const base = { critic_a: { decision: "approve", findings: [] }, critic_b: { decision: "approve", findings: [] }, converge: { decision: "approve", findings: [], rounds: 1 } };
-    const phaseStatus = { status: { plan: { sha: "plan-sha" } } };
-    const phaseCheck = { status: "recorded", phase_id: "ph_a", decision: "approve" };
-    const approve = await runSim("plan-review-convergence", { input: { phase_id: "ph_a" }, stubs: { ...base, phase_status: phaseStatus, "lp.phase_plan_check": phaseCheck } });
-    expect(pathOf(approve)).toBe("phase_status proof phase_check approve");
-    expect(out(approve)).toMatchObject({ status: "approve", rounds: 1 });
-    const changes = await runSim("plan-review-convergence", { input: { phase_id: "ph_a" }, stubs: { phase_status: phaseStatus, critic_a: base.critic_a, critic_b: { decision: "changes_requested", findings: [{ file: "PLAN.md" }] }, converge: { decision: "changes_requested", findings: [{ file: "PLAN.md" }], rounds: 2 }, "lp.phase_plan_check": { ...phaseCheck, decision: "changes_requested" } } });
-    expect(pathOf(changes)).toBe("phase_status proof phase_check changes");
-    expect(out(changes)).toMatchObject({ status: "changes_requested", rounds: 2 });
-    const child = approve.db.prepare("SELECT inputs_json FROM lane_pilot_wf_run WHERE parent_run_id=? ORDER BY rowid").get(approve.summary.runId) as { inputs_json: string };
-    expect(JSON.parse(child.inputs_json)).toMatchObject({ phase_id: "ph_a", plan_sha: "plan-sha", phase_status: phaseStatus.status });
-  });
-
   it("plan-review-convergence-proof runs its critics and emits approval independently", async () => {
     const proof = await runSim("plan-review-convergence-proof", { input: { phase_id: "ph_a", plan_sha: "plan-sha", phase_status: {} }, stubs: { critic_a: { decision: "approve", findings: [] }, critic_b: { decision: "approve", findings: [] }, converge: { decision: "approve", findings: [], rounds: 1 } } });
     expect(pathOf(proof)).toBe("critic_a critic_b converge approve");

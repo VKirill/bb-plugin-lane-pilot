@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { openDatabase } from "../../src/rooms/plugin-db";
-import { deleteMemoryRecord } from "../../src/rooms/self-repair/server/insights";
+import { createMemoryConflicts, sessionMemoryRpc } from "../../src/rooms/memory/server";
 import { memoryContext, memoryRecordId, searchMemoryRecords, storeMemoryRecords } from "../../packages/memory-core/src";
 import type { MemoryCandidate, MemoryDatabase } from "../../packages/memory-core/src";
 
@@ -28,10 +28,11 @@ describe("K8 trigram search: substrings and Russian word forms", () => {
     expect(new Set(found).size).toBe(found.length);
   });
 
-  it("a hidden, evicted, superseded or deleted record is not found by trigram either", () => {
+  it("a hidden, evicted, superseded or deleted record is not found by trigram either", async () => {
     const db = newDb();
     const [gone, hidden, kept] = put(db, [note("Ошибка в тестах первой группы", ["a"]), note("Ошибка в тестах второй группы", ["b"]), note("Ошибка в тестах третьей группы", ["c"])]);
-    deleteMemoryRecord(db, "P", gone!);
+    const memoryConflicts = createMemoryConflicts({ db, deferrals: () => ({ close() {} }) as never });
+    await sessionMemoryRpc({ db } as never, { memoryConflicts } as never).memory_record_delete({ projectId: "P", id: gone! });
     db.prepare("UPDATE lane_pilot_memory SET status='expired' WHERE id=?").run(hidden);
     expect(find(db, "ошибки тестов")).toEqual(["Ошибка в тестах третьей группы"]);
     expect(kept).toBeTruthy();

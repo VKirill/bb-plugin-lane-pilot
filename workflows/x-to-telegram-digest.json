@@ -31,12 +31,19 @@
     "insights-post"
   ],
   "status": "tested",
-  "live_success": { "output": "status", "in": ["sent", "thin_sent"] },
+  "live_success": {
+    "output": "status",
+    "in": [
+      "sent",
+      "thin_sent"
+    ]
+  },
   "tags": [
     "social",
     "digest",
     "telegram"
   ],
+  "category": "content",
   "triggers": [
     "chat",
     "schedule",
@@ -118,8 +125,20 @@
   "nodes": [
     {
       "id": "collect",
-      "consumes": [{"kind": "report", "version": 1, "from": "widen", "required": false}],
-      "produces": [{"kind": "report", "version": 1}],
+      "consumes": [
+        {
+          "kind": "report",
+          "version": 1,
+          "from": "widen",
+          "required": false
+        }
+      ],
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
       "type": "agent",
       "role": "errand",
       "title": {
@@ -142,8 +161,19 @@
     },
     {
       "id": "widen",
-      "consumes": [{"kind": "report", "version": 1, "from": "collect"}],
-      "produces": [{"kind": "report", "version": 1}],
+      "consumes": [
+        {
+          "kind": "report",
+          "version": 1,
+          "from": "collect"
+        }
+      ],
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
       "type": "agent",
       "role": "analyst",
       "title": {
@@ -220,7 +250,12 @@
         "ru": "Оценить релевантность"
       },
       "child": {
-        "produces": [{"kind": "report", "version": 1}],
+        "produces": [
+          {
+            "kind": "report",
+            "version": 1
+          }
+        ],
         "type": "agent",
         "role": "analyst",
         "prompt": "For each post: relevance 0-1 to the query, one-word topic, keep=true when relevance >= 0.5 and the post says something (not a bare link or ad). Do not rewrite the text.",
@@ -240,7 +275,12 @@
     },
     {
       "id": "summarize",
-      "produces": [{"kind": "report", "version": 1}],
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
       "type": "agent",
       "role": "analyst",
       "profile": {
@@ -290,12 +330,12 @@
       },
       "skip_when": "!$inputs.confirm_before_send",
       "skip_out": {
-        "answer_kind": "send"
+        "answer_kind": "not_run"
       },
       "prompt": "Show the digest preview and the target chat; options - send, edit (say what), abort.",
       "out": {
         "answer": "string",
-        "answer_kind": "send|edit|abort|timeout"
+        "answer_kind": "send|edit|abort|timeout|not_run"
       },
       "guards": {
         "maxVisits": 2,
@@ -489,7 +529,7 @@
       "from": "approve_send",
       "to": "send",
       "pass": "artifact",
-      "when": "approve_send.answer_kind == 'send'"
+      "when": "approve_send.answer_kind == 'send' || !$inputs.confirm_before_send"
     },
     {
       "from": "approve_send",

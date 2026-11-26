@@ -4,7 +4,7 @@ import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { TARGET_SHA } from "../src/rooms/runs/constants";
+import { TARGET_SHA } from "../src/rooms/runs";
 import { hashPath } from "@lane-pilot/kit";
 import { ownershipLedgerPath } from "../src/rooms/native-install/ownership";
 import { installStack } from "../src/rooms/native-install/stack-ops";
@@ -30,7 +30,7 @@ async function makeHome(): Promise<string> {
 async function makeIncompatibleFallback(home: string): Promise<string> {
   if (!UPSTREAM_FIXTURE) throw new Error("A Lane Stack fixture with the target commit is unavailable.");
   const fallback = join(home, "dirty-source");
-  execFileSync("git", ["clone", "--local", "--quiet", UPSTREAM_FIXTURE, fallback]);
+  execFileSync("git", ["clone", "--local", "--no-hardlinks", "--quiet", UPSTREAM_FIXTURE, fallback]);
   execFileSync("git", ["-C", fallback, "checkout", "--quiet", "--detach", TARGET_SHA]);
   const hook = join(fallback, "profiles/opencode/opencode-lane/v2.ts");
   const contents = await readFile(hook, "utf8");

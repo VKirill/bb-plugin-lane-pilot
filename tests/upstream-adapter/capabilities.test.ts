@@ -3,9 +3,9 @@ import { describe, expect, it } from "vitest";
 import {
   assessEngineCapabilities,
   decideEngine,
-} from "../../src/rooms/native-install/capabilities";
+} from "../../src/rooms/native-install/models/capabilities";
 import { parseExecutionLineWindows } from "../../src/rooms/contracts";
-import { createOpenCodePluginShim } from "../../src/rooms/native-install/opencode-plugin";
+import { createOpenCodePluginShim } from "../../src/rooms/native-install/opencode-connect";
 
 type Fixture = {
   schemaVersion: number;

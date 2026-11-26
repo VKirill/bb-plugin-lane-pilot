@@ -1,7 +1,4 @@
-import { useState } from "react";
-
-import type { rpcContract } from "../../contracts";
-import type { StageCell, TaskSummary } from "../logic";
+import type { StageCell, TaskSummary } from "../models/logic";
 import { fill, stageName, stageState } from "./format";
 import { useLpRpcQuery } from "../../ui-shell/ui";
 

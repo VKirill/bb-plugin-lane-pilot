@@ -1,0 +1,28 @@
+{
+  "schema": "lp.run-manifest/1",
+  "run_id": "wfrun_182dca20609c42f9ba084da678885fae",
+  "project_id": "proj_ejbam66722",
+  "workflow_id": "issue-quick",
+  "parent": null,
+  "files": [
+    {
+      "path": ".bb/chats/thr_ysr8fzbk54/artifacts/wf-wfrun_182dca20609c42f9ba/text.75394966.txt",
+      "root": "checkout",
+      "kind": "step-input",
+      "produced_by": {
+        "node": "plan",
+        "graph": "issue-quick",
+        "run_id": "wfrun_182dca20609c42f9ba084da678885fae",
+        "wf_step_key": "plan#1"
+      },
+      "plugin_version": "0.1.604",
+      "sha256": "75394966b2b7ccbc7ea319e91b5a05e092557b0ca09af1ef28985486da5c9693",
+      "bytes": 1221,
+      "created_at": 1795412007068,
+      "readers": [
+        "plan"
+      ],
+      "read_by": []
+    }
+  ]
+}

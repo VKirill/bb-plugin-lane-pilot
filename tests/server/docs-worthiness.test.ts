@@ -57,18 +57,12 @@ describe("docs in auto mode", () => {
     await harness.behavior.callRpc("docs_overview", { projectId, recheck: true });
     expect(factsCalls).toBe(asked + 3);
 
-    const result = await harness.behavior.runCli(["docs-nightly", projectId]) as { stdout: string };
-    const rows = JSON.parse(result.stdout) as Array<Record<string, unknown>>;
-    expect(rows).toEqual(expect.arrayContaining([expect.objectContaining({ path: "/Users/me/project/ads", state: "skipped", reason: "docs_not_needed:no_code" })]));
-    expect(rows.find((row) => row.path === "/home/ubuntu/project")?.reason).not.toMatch(/^docs_not_needed/);
-
     // «Always» bypasses the verdict; «Never» drops the folder before any fact is read.
     saveProjectSetting(db, projectId, "docs.enabled", true);
     const always = await harness.behavior.callRpc("docs_overview", { projectId }) as { places: Array<Record<string, any>> };
     expect(always.places.every((place) => place.mode === "on" && place.verdict === null)).toBe(true);
     saveProjectSetting(db, projectId, "docs.enabled", false);
-    scoped.length = 0;
-    await harness.behavior.runCli(["docs-nightly", projectId]);
-    expect(scoped).toEqual([]);
+    const off = await harness.behavior.callRpc("docs_overview", { projectId }) as { places: Array<Record<string, any>> };
+    expect(off.places.every((place) => place.mode === "off" && place.verdict === null)).toBe(true);
   });
 });

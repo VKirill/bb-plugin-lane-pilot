@@ -103,9 +103,14 @@ export const stackHostMethods = {
     input: z.object({
       role: z.string().min(1).max(80),
       cwd: z.string().startsWith("/").optional(),
+      taskHome: z.string().startsWith("/").optional(),
     }).strict(),
     output: z.object({
       env: z.array(z.object({ name: z.string(), value: z.string(), reason: z.string() }).strict()),
+      isolation: z.object({
+        denies: z.number().int().nonnegative(),
+        sandbox: z.boolean(),
+      }).strict().optional(),
     }).strict(),
   },
 };

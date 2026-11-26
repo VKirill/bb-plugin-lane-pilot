@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { createWorkflowAgents, withResolvedModel, type HelperRequest } from "../../src/rooms/workflow/server/workflow-agent";
+import { createWorkflowAgents, withResolvedModel, type HelperRequest } from "../../src/rooms/workflow/server/services/workflow-agent";
 import { fullAccessSpawn } from "../../src/rooms/platform/server";
 
 vi.mock("../../src/rooms/platform/server", async (original) => ({

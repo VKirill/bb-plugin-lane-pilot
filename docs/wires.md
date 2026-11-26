@@ -7,8 +7,8 @@ status: active
 confidence: medium
 tags: [sma, wires, plan-fact]
 sources:
-  - src/rooms/wires/logic.ts
-  - src/rooms/writer/server/plan-fact.ts
+  - src/rooms/wires/models/wires.ts
+  - src/rooms/writer/server/services/plan-fact.ts
 ---
 
 # Declared wires (SMA D2-4)

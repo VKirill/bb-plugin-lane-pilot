@@ -1,7 +1,7 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { expect, it, vi } from "vitest";
 import { createAttempt, createRun, openDatabase } from "../../src/rooms/plugin-db";
-import { cleanupFinishedAttemptEnvironments } from "../../src/rooms/runs/server/run-finish";
+import { cleanupFinishedAttemptEnvironments } from "../../src/rooms/runs/server";
 
 async function sweep(snapshotStatus: "clean" | "saved" | "failed" = "clean", failure = "disk") {
   const deleted: string[] = [], snapshots: string[] = [];
@@ -95,7 +95,7 @@ it("keeps an area's last accepted worktree for the sticky window, then releases 
 it("removes Lane Pilot's own area worktrees after the sticky window, once, and never while an attempt works there", async () => {
   const { createTask } = await import("../../src/rooms/plugin-db");
   const { STICKY_WINDOW_MS } = await import("../../src/rooms/platform/server");
-  const { cleanupStickyLaneWorktrees } = await import("../../src/rooms/runs/server/run-finish");
+  const { cleanupStickyLaneWorktrees } = await import("../../src/rooms/runs/server");
   const { bb } = createFakePluginHost({ pluginId:"lane-pilot" });
   const db = openDatabase(bb);
   createRun(db, "run", "proj", "bb", "/repo", "none", undefined, "ovh");
@@ -119,7 +119,7 @@ it("removes Lane Pilot's own area worktrees after the sticky window, once, and n
 
 it("removes the worktree of a task without an area once its attempts are over for 30 minutes, and never while one is open or could still be redone", async () => {
   const { createTask } = await import("../../src/rooms/plugin-db");
-  const { cleanupStickyLaneWorktrees } = await import("../../src/rooms/runs/server/run-finish");
+  const { cleanupStickyLaneWorktrees } = await import("../../src/rooms/runs/server");
   const { bb } = createFakePluginHost({ pluginId:"lane-pilot" });
   const db = openDatabase(bb);
   createRun(db, "run", "proj", "bb", "/repo", "none", undefined, "ovh");

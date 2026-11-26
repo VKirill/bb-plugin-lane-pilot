@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { roleRow } from "@lane-pilot/models";
 import { ROLE_PROFILES } from "../src/rooms/contracts/helper-context";
-import { roleSpec } from "../src/rooms/workflow/server/workflow-agent";
+import { roleSpec } from "../src/rooms/workflow/server/services/workflow-agent";
 
 // The owner (2026-10-31): a service's API is mapped through its pages by GPT Terra, the computer-use model, in a scenario of its own.
 describe("the api-recon scenario", () => {

@@ -1,0 +1,155 @@
+import { MAIN_AGENT_PROFILE_IDS } from "../../../contracts/server";
+import { UNLISTED_STOCK_IDS, agentListItem } from "../../../native-agent";
+import type { AgentListItem } from "../../../contracts/agent-picker";
+import { loadPrototypeConfig } from "../../../storage";
+import { GLOBAL_SETTINGS_PROJECT_ID, LP_DEFAULTS_KEY, parseLanePilotDefaults } from "@lane-pilot/settings-catalog";
+import { resolveWriterBinding } from "../../../native-agent";
+import type { ProjectSourceBinding } from "../../../native-agent";
+import { mapListedQaHosts } from "../../../platform/server";
+import { CATALOG_WAIT_MS, modelCatalogOf, within } from "../../../platform/server";
+import { stringAt, orMiss, isNotFound, bestEffort } from "@lane-pilot/kit";
+import type { ServerCore } from "../../../contracts/server";
+
+export function createWriterHost(ctx: ServerCore) {
+  const { bb, db, ownedAgents, writerBindingKey } = ctx;
+
+  async function resolveProjectWriterHost(args: {
+    projectId: string;
+    threadId?: string | null;
+    selected?: { hostId: string; path: string } | null;
+  }) {
+    if (args.projectId === GLOBAL_SETTINGS_PROJECT_ID) {
+      // Global settings are not tied to a folder; the pickers show one machine's catalog. A machine named by the caller wins,
+      // then the one offering the most providers and models: the first connected one was the MacBook, without OpenCode and with
+      // Devin listing only «Agent default» (2026-10-30/31).
+      const hosts = mapListedQaHosts(await bestEffort(bb.log, "writer host list", (bb.sdk as { hosts?: { list?: () => Promise<unknown> } }).hosts?.list?.() ?? Promise.resolve([]), []) ?? []);
+      const preferred = parseLanePilotDefaults(await bb.storage.kv.get(LP_DEFAULTS_KEY)).qaHostId;
+      // A read that does not answer in time falls back to the last snapshot, so the screen and a save made a minute later name the
+      // same machine; with no snapshot at all the first connected one answers (a save judged on another machine's thinner Devin
+      // catalog refused SWE-2 while the row showed it, 2026-10-31).
+      const reader = modelCatalogOf(ctx);
+      const catalog = await bestEffort(bb.log, "writer host catalog", within(reader.get(), CATALOG_WAIT_MS), reader.peek());
+      const offered = (hostId: string) => (catalog?.providers ?? []).reduce((sum, provider) => sum
+        + (provider.hostIds.includes(hostId) ? 1000 : 0) + provider.models.filter((model) => model.hostIds.includes(hostId)).length, 0);
+      const richest = hosts.filter((row) => row.connected).sort((a, b) => offered(b.id) - offered(a.id) || Number(b.id === preferred) - Number(a.id === preferred))[0];
+      const host = hosts.find((row) => row.connected && row.id === args.selected?.hostId) ?? richest;
+      return host
+        ? { status: "resolved" as const, hostId: host.id, path: "", source: "explicit_override" as const }
+        : { status: "catalog_unavailable" as const, reason: "no connected machine" };
+    }
+    let project: { sources?: ProjectSourceBinding[] } | null = null;
+    const getProject = bb.sdk.projects?.get;
+    const legacyAbsent = typeof getProject !== "function";
+    if (!legacyAbsent) {
+      try {
+        project = await getProject({ projectId: args.projectId }) as { sources?: ProjectSourceBinding[] } | null;
+      } catch (cause) {
+        return {
+          status: "catalog_unavailable" as const,
+          reason: cause instanceof Error ? cause.message : String(cause),
+        };
+      }
+    }
+    const sources = (Array.isArray(project?.sources) ? project.sources : []) as ProjectSourceBinding[];
+    const config = loadPrototypeConfig(db, args.projectId);
+    let session: { environmentId?: string | null; projectId?: string | null } | undefined;
+    let environment: { id: string; hostId: string; path: string | null; status: string; projectId?: string | null } | null = null;
+    if (args.threadId) {
+      const thread = await orMiss(bb.sdk.threads.get({ threadId: args.threadId }), null, isNotFound);
+      if (thread && stringAt(thread, "projectId") === args.projectId) {
+        const environmentId = stringAt(thread, "environmentId");
+        session = { environmentId, projectId: stringAt(thread, "projectId") };
+        if (environmentId) {
+          const env = await orMiss(bb.sdk.environments.get({ environmentId }), null, isNotFound);
+          if (env) {
+            environment = {
+              id: stringAt(env, "id") ?? environmentId,
+              hostId: stringAt(env, "hostId") ?? "",
+              path: stringAt(env, "path"),
+              status: stringAt(env, "status") ?? "",
+              projectId: stringAt(env, "projectId"),
+            };
+          }
+        }
+      }
+    }
+    const resolveWith = (selected: { hostId: string; path: string } | null) => resolveWriterBinding({
+      projectId: args.projectId,
+      sources,
+      session,
+      environment,
+      explicit: config ? { hostId: config.hostId, path: config.writerWorkspacePath } : undefined,
+      selected,
+    });
+    const resolved = resolveWith(args.selected ?? null);
+    if (resolved.status !== "ambiguous" || args.selected) return resolved;
+    // The machine and folder the user picked on the settings page settle an ambiguous project.
+    const stored = await bb.storage.kv.get(writerBindingKey(args.projectId)) as { hostId?: unknown; path?: unknown } | null;
+    if (typeof stored?.hostId !== "string" || typeof stored.path !== "string") return resolved;
+    const chosen = resolveWith({ hostId: stored.hostId, path: stored.path });
+    return chosen.status === "resolved" ? chosen : resolved;
+  }
+
+  async function selectionCatalogHost(projectId: string, threadId?: string | null, selected?: { hostId: string; path: string } | null) {
+    const binding = await resolveProjectWriterHost({ projectId, threadId, selected });
+    if (binding.status === "catalog_unavailable") {
+      return { ok: false as const, validation: { code: "catalog_unavailable" as const, key: "project.sources", params: ["project.sources", binding.reason] } };
+    }
+    if (binding.status === "setup_required") {
+      return { ok: false as const, validation: { code: "setup_required" as const, key: "project.sources", params: ["project.sources", "project_folders_source_required"] } };
+    }
+    if (binding.status === "ambiguous") {
+      return { ok: false as const, validation: { code: "writer_binding_ambiguous" as const, key: "project.sources", params: ["project.sources", "select_existing_project_binding"] } };
+    }
+    if (binding.status === "offline") {
+      return { ok: false as const, validation: { code: "writer_host_offline" as const, key: "project.sources", params: ["project.sources", binding.hostId] } };
+    }
+    return { ok: true as const, hostId: binding.hostId };
+  }
+
+  /**
+   * The one list of agents (bundled, then the owner's own), in the shape of `AgentListItem` (src/rooms/native-agent/custom-agent.ts). The management
+   * list and the CLI see all of them; a picker (`pickable`) skips an unedited developer sub-role (`UNLISTED_STOCK_IDS`, 0.1.463).
+   */
+  async function listedAgentProfiles(opts?: { pickable?: boolean }): Promise<AgentListItem[]> {
+    const owned = await ownedAgents();
+    const ids = [...new Set([...MAIN_AGENT_PROFILE_IDS, ...Object.keys(owned)])];
+    const rows: AgentListItem[] = [];
+    for (const id of ids) {
+      try {
+        if (opts?.pickable && UNLISTED_STOCK_IDS.has(id) && !owned[id]) continue;
+        if (owned[id]?.compiledCorrupt) continue;
+        rows.push(agentListItem(id, owned[id]));
+      } catch { /* skip incomplete custom rows */ }
+    }
+    return rows;
+  }
+
+  /**
+   * The providers and the provider's models a pick is judged against, in the SDK's shape so the checks read the same. On the global
+   * level that is every connected machine merged (a global pick is bound to no machine; a project's run checks its own machine when
+   * it starts), elsewhere the named machine's. One machine's thinner list refusing a model another machine offers (Devin on the
+   * MacBook listing only «Agent default», 2026-10-31) is what this ends.
+   */
+  async function selectionCatalog(projectId: string, hostId: string, providerId: string): Promise<[Awaited<ReturnType<typeof bb.sdk.providers.list>>, Awaited<ReturnType<typeof bb.sdk.providers.models>>]> {
+    if (projectId !== GLOBAL_SETTINGS_PROJECT_ID) {
+      return Promise.all([bb.sdk.providers.list({ hostId }), bb.sdk.providers.models({ providerId, hostId })]);
+    }
+    const reader = modelCatalogOf(ctx);
+    const merged = await bestEffort(bb.log, "writer host catalog", within(reader.get(), CATALOG_WAIT_MS), reader.peek());
+    if (!merged) throw new Error("model catalog unavailable");
+    const providers = merged.providers.map((provider) => ({
+      id: provider.id, displayName: provider.displayName, available: provider.hostIds.length > 0,
+      capabilities: { supportsServiceTier: provider.supportsServiceTier }, serviceTiers: provider.serviceTiers.map((id) => ({ id })),
+    }));
+    const models = (merged.providers.find((provider) => provider.id === providerId)?.models ?? []).filter((model) => model.hostIds.length > 0).map((model) => ({
+      id: model.id, model: model.model, displayName: model.displayName, isDefault: model.isDefault,
+      supportedReasoningEfforts: model.efforts.map((reasoningEffort) => ({ reasoningEffort })), defaultReasoningEffort: model.defaultEffort ?? undefined,
+    }));
+    return [providers, { models }] as unknown as [Awaited<ReturnType<typeof bb.sdk.providers.list>>, Awaited<ReturnType<typeof bb.sdk.providers.models>>];
+  }
+
+  return { resolveProjectWriterHost, selectionCatalogHost, selectionCatalog, listedAgentProfiles };
+}
+
+export type WriterHostApi = ReturnType<typeof createWriterHost>;

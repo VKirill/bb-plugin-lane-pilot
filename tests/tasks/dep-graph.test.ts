@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cycleText, findCycle, planGraph, readyNow, type DepNode } from "../../src/rooms/tasks/dep-graph";
-import { dependsOnTask } from "../../src/rooms/tasks/depends";
+import { cycleText, dependsOnTask, findCycle, planGraph, readyNow, type DepNode } from "../../src/rooms/tasks";
 
 const t = (id: string, depends_on: string[] = [], owns_paths: string[] = [`notes/${id}.md`]): DepNode => ({ id, depends_on, owns_paths });
 const set = (...ids: string[]) => new Set(ids);

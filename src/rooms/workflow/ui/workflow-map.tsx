@@ -5,7 +5,7 @@ import type { z } from "zod";
 import type { rpcContract } from "../../contracts";
 import { t, type Locale } from "@lane-pilot/i18n";
 import { Button, Icon, Input, Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@lane-pilot/ui-kit";
-import { WORKFLOW_CATEGORIES, compareWorkflowCategories, isBuiltinWorkflowCategory, resolveCategoryLabel, type BuiltinWorkflowCategory } from "../categories";
+import { WORKFLOW_CATEGORIES, compareWorkflowCategories, isBuiltinWorkflowCategory, resolveCategoryLabel, type BuiltinWorkflowCategory } from "../models/categories";
 
 /**
  * «Карта графов»: every workflow of the library on one canvas — a cluster per category, a framed cell per graph, its steps
@@ -32,7 +32,7 @@ const TYPE_LABEL: Record<string, string> = {
   agent: "wmTypeAgent", human: "wmTypeHuman", action: "wmTypeAction", decision: "wmTypeDecision", jev: "wmTypeJev",
   parallel: "wmTypeParallel", subworkflow: "wmTypeSubworkflow", join: "wmTypeJoin", "lp-task": "wmTypeLpTask", note: "wmTypeAgent",
 };
-const CAT_LABEL: Record<BuiltinWorkflowCategory, string> = {
+const CAT_LABEL: Partial<Record<BuiltinWorkflowCategory, string>> = {
   seo: "wmCatSeo", marketing: "wmCatMarketing", code: "wmCatCode", content: "wmCatContent", research: "wmCatResearch",
   games: "wmCatGames", business: "wmCatBusiness", routines: "wmCatRoutines", service: "wmCatService",
 };
@@ -40,7 +40,7 @@ const CAT_LABEL: Record<BuiltinWorkflowCategory, string> = {
  * The map's palette: one hue per category (oklch hue, chroma). A cluster, its graphs' accent bars and its legend chip all
  * take it, so a category reads as one colour from far out; the step types keep their own colours for the left bar.
  */
-const CAT_HUE: Record<BuiltinWorkflowCategory, [number, number]> = {
+const CAT_HUE: Partial<Record<BuiltinWorkflowCategory, [number, number]>> = {
   seo: [25, 0.17], marketing: [340, 0.16], code: [255, 0.15], content: [160, 0.13], research: [300, 0.15],
   games: [200, 0.12], business: [85, 0.14], routines: [55, 0.16], service: [250, 0.03],
 };
@@ -53,7 +53,7 @@ const dynamicHue = (slug: string): [number, number] => {
   return [(hash >>> 0) % 360, 0.14];
 };
 export const catColor = (cat: string, lightness = 62, alpha = 1): string => {
-  const [hue, chroma] = isBuiltinWorkflowCategory(cat) ? CAT_HUE[cat] : dynamicHue(cat);
+  const [hue, chroma] = (isBuiltinWorkflowCategory(cat) ? CAT_HUE[cat] : undefined) ?? dynamicHue(cat);
   return `oklch(${lightness}% ${chroma} ${hue} / ${alpha})`;
 };
 const CANVAS_BG = "color-mix(in oklab, var(--background) 93%, var(--primary))";
@@ -187,14 +187,15 @@ export async function layoutMap(data: MapData, locale: Locale = "en"): Promise<M
   const debugMode = env?.LOG_LEVEL === "debug" || Boolean(env?.DEBUG_FIX);
   const lang = locale === "ru" ? "ru" : "en";
   const categoryLabels: Record<string, string> = {};
+  const catLabel = (cat: string) =>
+    categoryLabels[cat] ?? resolveCategoryLabel(cat, null, lang, (b) => (CAT_LABEL[b] ? t(CAT_LABEL[b] as Parameters<typeof t>[0]) : undefined));
   for (const cat of categories) {
     const customLabel = customLabels.get(cat);
     if (!isBuiltinWorkflowCategory(cat) && !customLabel && debugMode) {
       console.warn(`[workflowMap] dynamic category missing label: ${cat}`);
     }
-    categoryLabels[cat] = resolveCategoryLabel(cat, customLabel, lang, (b) => t(CAT_LABEL[b] as Parameters<typeof t>[0]));
+    categoryLabels[cat] = resolveCategoryLabel(cat, customLabel, lang, (b) => (CAT_LABEL[b] ? t(CAT_LABEL[b] as Parameters<typeof t>[0]) : undefined));
   }
-  const catLabel = (cat: string) => categoryLabels[cat] ?? resolveCategoryLabel(cat, null, lang, (b) => t(CAT_LABEL[b] as Parameters<typeof t>[0]));
 
   const draw = (mode: MapMode): ModeLayout => {
     const sizeOf = (graph: MapGraph) => {
@@ -553,7 +554,7 @@ export function WorkflowMap({ locale, projectId, onOpenGraph }: { locale: Locale
                 <SelectItem value={ANY}>{t("wmCategoryAll")}</SelectItem>
                 {(layout?.categories ?? WORKFLOW_CATEGORIES).map((cat) => (
                   <SelectItem key={cat} value={cat}>
-                    {layout?.categoryLabels[cat] ?? resolveCategoryLabel(cat, null, locale === "ru" ? "ru" : "en", (b) => t(CAT_LABEL[b] as Parameters<typeof t>[0]))}
+                    {layout?.categoryLabels[cat] ?? resolveCategoryLabel(cat, null, locale === "ru" ? "ru" : "en", (b) => (CAT_LABEL[b] ? t(CAT_LABEL[b] as Parameters<typeof t>[0]) : undefined))}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -570,7 +571,7 @@ export function WorkflowMap({ locale, projectId, onOpenGraph }: { locale: Locale
                   className="inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 font-medium transition-colors"
                   style={on ? { background: catColor(cat, 62, 0.16), borderColor: catColor(cat, 55, 0.6), color: catColor(cat, 35) } : { borderColor: "var(--border)" }}>
                   <span className="h-2.5 w-2.5 rounded-full" style={{ background: catColor(cat, 62) }} />
-                  {layout?.categoryLabels[cat] ?? resolveCategoryLabel(cat, null, locale === "ru" ? "ru" : "en", (b) => t(CAT_LABEL[b] as Parameters<typeof t>[0]))}
+                  {layout?.categoryLabels[cat] ?? resolveCategoryLabel(cat, null, locale === "ru" ? "ru" : "en", (b) => (CAT_LABEL[b] ? t(CAT_LABEL[b] as Parameters<typeof t>[0]) : undefined))}
                 </button>
               );
             })}

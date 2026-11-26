@@ -25,7 +25,7 @@ flowchart LR
   O["Owner"] --> PM["PM chat"]
   PM -->|"task-v2 contract"| L["Contract lint"]
   L --> S["Baseline, PM read, plan critique, specialist review"]
-  S --> P["Writer pick: rules, role table, pinned pair, fallback chain, capacity wait"]
+  S --> P["Writer pick: role table, pinned pair, fallback chain, capacity wait"]
   P --> W["Writer attempt in its own worktree"]
   W -->|"feedback turn"| W
   W --> V["Checks in the sandbox"]
@@ -34,10 +34,10 @@ flowchart LR
   A --> M["Merge queue"]
   M --> G["Integration gate"]
   G --> R["Release: PM pushes, brings it up, proves it live"]
-  M --> AA["After accept: memory, project life, docs"]
+  M --> AA["After accept: memory maintenance"]
   V -.->|"red check"| F["Failure class, intervention, retry or next writer"]
   F -.-> P
-  F -.->|"Lane Pilot's own fault"| PK["Park, self-repair, redrive"]
+  F -.->|"Lane Pilot's own fault"| PK["Park and backoff / unblock"]
 ```
 
 ## 1. The PM chat as the door
@@ -52,10 +52,9 @@ flowchart LR
 |---|---|
 | Change repository code | `lane_pilot_dispatch_writer`, then `lane_pilot_wait_writer`, `lane_pilot_update_task`, `lane_pilot_answer_writer`, `lane_pilot_cancel_task`, `lane_pilot_reassign_task` |
 | Research, digest, post, anything that is not repo code | `lane_pilot_route` (picks a ready graph), then `lane_pilot_run_workflow`, `lane_pilot_workflow_status`, `lane_pilot_workflow_amend` |
-| Heavy goal | `lane_pilot_phase` (answer, revise, return, correct, status) |
-| Specialists, one browser step | `lane_pilot_helpers` (`specialist`, `wait_specialist`, `browser`) |
+| Specialists, scouts, browser checks | `lane_pilot_helpers` (`scout`, `wait_scout`, `specialist`, `wait_specialist`, `browser`, `browser_qa`) |
 | Long browser or account work | `lane_pilot_errand`, `lane_pilot_wait_errand` |
-| Council, schedule, memory, relay | `lane_pilot_council`, `lane_pilot_schedule`, `lane_pilot_memory`, `lane_pilot_relay` |
+| Schedule, memory, relay, proposals | `lane_pilot_schedule`, `lane_pilot_memory`, `lane_pilot_relay`, `lane_pilot_propose` |
 | Owner question as a form | `lane_pilot_ask_owner` |
 
 ## 2. The task-v2 contract and its lint
@@ -82,8 +81,7 @@ Dispatch also does the following.
 
 - A repeat of the same task and plan within 30 minutes returns the existing task.
 - A second member of a task family (`x`, `x.2`) while one runs or is parked returns `task_in_progress`.
-- The wall can refuse a family (`wall_stop`).
-- The `topic_loop` guard refuses a fourth task on a topic: three earlier families in 72 hours on the same file (small fix-like tasks owning at most 3 entries) or the same test. The machine hunts that topic instead (see `docs/wall.md`). A family counts only when a writer's work was judged (accepted, or rejected by the task's own checks), not when its attempts died of the provider or the machine; only the tasks sent since the owner last wrote in the PM chat count, and his message reopens a closed topic; a loop wall holds its topic for 72 hours.
+- The `topic_loop` guard refuses a fourth task on a topic: three earlier families in 72 hours on the same file (small fix-like tasks owning at most 3 entries) or the same test. A family counts only when a writer's work was judged (accepted, or rejected by the task's own checks), not when its attempts died of the provider or the machine; only the tasks sent since the owner last wrote in the PM chat count, and his message reopens a closed topic.
 - `batchAdvice` in the answer lists the open tasks that hold the new one and, when three or more own one path, the fix. A `grain` line warns when a task is far smaller than the project's median accepted task.
 - A spend reserve check runs when a run token budget and a task `appetite.tokens` exist.
 
@@ -91,11 +89,12 @@ Dispatch also does the following.
 
 The graph `lp-task-pipeline` runs these steps in order (`docs/flows/task-pipeline.md`):
 
-1. `pm-read`: a scout reads the task's `read_first` files itself, in the project checkout and read-only, and reports how that code works today and what the plan leaves open. Its brief names the task, the plan and where to start; it carries no file contents. Off by default (`pm_read.enabled` false, `pm_read.min_lines` 350). A failed read stops nothing.
-2. `plan-critique`: by `quality_mode`. In `standard` it runs for risk high or critical, or when the run has 3 or more write tasks (`plan_critique.min_score` 7, `min_write_tasks` 3, `on_high_risk` true). In `plan_critique.mode` gate (default) a refusal stops the attempt before any writer starts.
-3. `specialist-review`: off by default (`specialist.enabled` false; `specialist.when` high_risk).
-4. `ownership-base`: records the ownership base commit; if it cannot be taken, the task is blocked with the reason.
-5. `task-folder`, then the `writer` step (sections 4 to 9).
+1. `admission-wait` (when needed): waits for dependencies or overlapping `owns_paths` via a durable wait (`lp.task.settled` event or `wakeAt` deadline on the engine clock).
+2. `pm-read`: a scout reads the task's `read_first` files itself, in the project checkout and read-only, and reports how that code works today and what the plan leaves open. Its brief names the task, the plan and where to start; it carries no file contents. Off by default (`pm_read.enabled` false, `pm_read.min_lines` 350). A failed read stops nothing.
+3. `plan-critique`: by `quality_mode`. In `standard` it runs for risk high or critical, or when the run has 3 or more write tasks (`plan_critique.min_score` 7, `min_write_tasks` 3, `on_high_risk` true). In `plan_critique.mode` gate (default) a refusal stops the attempt before any writer starts.
+4. `specialist-review`: off by default (`specialist.enabled` false; `specialist.when` high_risk).
+5. `ownership-base`: records the ownership base commit; if it cannot be taken, the task is blocked with the reason.
+6. `task-folder`, then the `writer` step (sections 4 to 9).
 
 If a run has `run_gate=pre-merge`, dispatch blocks the run with a `run-gate` receipt before any of this.
 
@@ -103,7 +102,7 @@ If a run has `run_gate=pre-merge`, dispatch blocks the run with a `run-gate` rec
 
 | Layer | How it works | Settings |
 |---|---|---|
-| Role to model table | Every agent step names a role; `role_model.<role>` names its model and optional pool (least loaded provider first). The writer is not a row of the table. See `docs/role-models.md`. | `role_model.<role>` |
+| Role to model table | Every agent step names a role; a node may override `provider`/`model`/`reasoning`, otherwise `role_model.<role>` or the built-in default runs (with automatic role fallback on auth/quota/subscription errors). The writer is configured separately below. See `docs/role-models.md`. | `role_model.<role>` |
 | The writer | No model picks it per task: the writer is the project's `writer.provider` / `writer.model` / `writer.reasoning_effort` (global when the project sets none). The effort is clamped to what the live catalog lists. | `writer.provider`, `writer.model`, `writer.reasoning_effort` |
 | Held provider | A provider whose usage window is spent (see `usage.skip_percent`) or a ZCode that cannot work now is skipped on the fallback chain. | `usage.skip_percent` 90 |
 | Skills | By rule, no model: the skills the PM names in the contract `skills` (max 8, only those the BB list has), the skills named like the project folder, `modern-web-guidance` when `taskTouchesWeb` matches web paths (`src/rooms/writer/server/skill-pick.ts:51-59`, `:109`), and the browser skill for a task checked on a page. A failed skill list leaves the role skills. | contract `skills` |
@@ -118,7 +117,7 @@ Sticky area writers: tasks of one `area` run one at a time. The area's writer ta
 - A git project gets a worktree of its own for every attempt (`docs/decisions.md`, ADR 1). Dependencies are linked or mirrored into it. The base commit is recorded so the attempt can be rolled back (`docs/rollback.md`).
 - A new dispatch into a folder without Git does not silently fall back to live-folder mode. The dispatch guard asks the owner to choose the project or section scope, binds the authenticated GitHub account on that host, and proceeds only after private-Git bootstrap succeeds; a declined choice, missing provider/auth, unknown probe, or stopped bootstrap is an explicit refusal. An attempt already admitted with `workspace_decision.reason=live_folder` continues through the legacy live-folder path (`docs/gotchas.md`): there is no worktree, commit or merge; one writer works per folder, so tasks queue; a snapshot covers at most 50,000 paths; backups of owned files last 7 days and refuse sets over 2 GiB; and a task that is not accepted is rolled back from the backup of its `owns_paths` (files outside `owns_paths` are not restored). The dispatch answer carries a `mode live-folder` warning for that legacy path.
 - A task whose paths all lie inside a git repository nested in the folder moves into that repository and gets its own worktree (`mode repository`).
-- Finished attempt environments and expired sticky worktrees are released by a sweep every 10 minutes (`attempt-worktree-sweep`).
+- Finished attempt environments and expired sticky worktrees are released via `lp.worktree-release` and scheduled `lp.worktree-cleanup` on the engine clock (`docs/worktrees.md`), plus startup recovery.
 
 ## 6. Baseline before the writer, regression after acceptance
 
@@ -127,8 +126,7 @@ Details in `docs/baseline.md`.
 - Before the first writer, the task's checks run once on the base in a throwaway worktree (skipped for mainfix tasks and live folders). `baseline.time_cap_sec` 300 bounds the estimated check time; checks with secrets are skipped.
 - If every check is green on the base, a `fix` or `check` task closes accepted without a writer (`checks.require_red_on_base` medium). Another kind at that risk is stopped. Otherwise `baseline.already_built` decides: `notify` (default) tells the PM and the writer starts; `stop` ends the attempt before any writer.
 - A check that cannot run, or is red only outside the task's files, stops the task before any writer and spends no attempt.
-- After the merge, checks that were green on the base and are red on main are named to the PM and drive a `-mainfix` follow-up.
-- The nightly `regress-nightly` pass (03:25) reruns recently accepted tasks' checks on main and bisects a regression to the commit and task. It never reverts or merges (`regress.nightly` on, `regress.last_n` 30, `regress.last_days` 14).
+- After the merge (`lp.attempt.merged`), `lp.landing-suite` and post-merge checks identify checks that were green on the base and are red on main, name them to the PM and drive a `-mainfix` follow-up.
 
 ## 7. Checks in the sandbox
 
@@ -160,16 +158,16 @@ Advisory stops a task only on a block or a blocking finding on a rubric criterio
 - Before the acceptance receipt, the finish step collects the stages that passed (`writer-agent` gates, `verification`, advisory `code-critique`). A set with no code-decided stage blocks the attempt as `acceptance_without_code_proof`.
 - `plan-fact` (`docs/plan-fact.md`): code checks each acceptance row's evidence in the writer's table against the diff and the check results, never the prose. `plan_fact.mode` is `record` by default (shows findings; a missing table is only skipped) or `gate` (an unproven item returns the task to the writer).
 - `critic.challenge_high` (off) can require the code critic's pass for high or critical risk.
-- `owner.words` (modes `sensitive` (default), `on`, `risky`, `off`; src/rooms/tasks/words.ts, classes in src/rooms/tasks/sensitive.ts). A task that asks waits in place, up to 6 hours, for the owner's yes recorded through `lane_pilot_queue` (action `word`); a no blocks it. `sensitive` asks only for money (payments, billing, prices, refunds, payouts), database migrations, schema changes and destructive data operations, and a deploy or release to production, by evidence: the changed files, the check commands, then a phrase in the title or objective (never the bare word «deploy», never staging, a preview or the drill, never a test or docs file by its name). `on` asks every task, `risky` a task of risk high or critical, `off` none. A phase's turns, a forge workflow, a contract clarification and a writer's permit follow the same rule: on `sensitive` only a step that is itself in the three classes asks.
+- `owner.words` (modes `sensitive` (default), `on`, `risky`, `off`; src/rooms/tasks/words.ts, classes in src/rooms/tasks/sensitive.ts). A task that asks waits in place, up to 6 hours, for the owner's yes recorded through `lane_pilot_queue` (action `word`); a no blocks it. `sensitive` asks only for money (payments, billing, prices, refunds, payouts), database migrations, schema changes and destructive data operations, and a deploy or release to production, by evidence: the changed files, the check commands, then a phrase in the title or objective (never the bare word «deploy», never staging, a preview or the drill, never a test or docs file by its name). `on` asks every task, `risky` a task of risk high or critical, `off` none. A contract clarification and a writer's permit follow the same rule: on `sensitive` only a step that is itself in the three classes asks.
 - The `acceptance-receipt` is validated against the acceptance-v2 schema. The acceptance card (`task_acceptance_card`) shows the contract, each stage with its proof kind, gate events, the plan-fact table, what did not run and the cost of the attempts.
 
 ## 10. Merge queue and conflicts
 
 - The attempt merges into main of the project's checkout under one lock per checkout. If main moved, the attempt is replayed on the new main and the task's checks (those without secrets) run again before the merge.
 - A conflict, or red replayed checks, goes back to the same writer in its own thread. It does not spend an attempt (failure class `merge`).
-- If another merge holds the lock, the task polls every 20 seconds for up to 15 minutes, then blocks as `merge_queue_timeout`. A reminder wakes the PM when the holder frees the checkout.
-- If the base checkout has uncommitted edits in files the task changes (`dirty_base`), Lane Pilot asks the chats working there to commit them and waits up to 2 hours, then blocks as `merge_blocked`. The task is parked and restarts by itself.
-- After a merge, the task's checks run again on main. Two tasks green alone can break main together; a red result creates one `-mainfix` task, and a mainfix that breaks main again is reported, not chained.
+- If another merge holds the lock, `lp-task-pipeline` parks (`wait_busy`) on a durable deadline (`timeoutOutput`), up to 15 minutes, then blocks as `merge_queue_timeout`. A reminder wakes the PM when the holder frees the checkout.
+- If the base checkout has uncommitted edits in files the task changes (`dirty_base`), Lane Pilot asks the chats working there to commit them and parks (`wait_dirty`) up to 2 hours, then blocks as `merge_blocked`. The task is parked and restarts by itself.
+- After a merge (`lp.attempt.merged`), `lp.landing-suite` and `lp.after-accept` are triggered and the task's checks run again on main. Two tasks green alone can break main together; a red result creates one `-mainfix` task, and a mainfix that breaks main again is reported, not chained.
 
 ## 11. Integration gate
 
@@ -178,8 +176,7 @@ The whole suite runs once per batch, not per task. `integration.gate_command` se
 ## 12. Browser check and the after-accept pass
 
 - Browser check: when an accepted task carries `qa_cases` and `qa_url`, the same graph runs `lp.browser-qa` after acceptance (step `lp.qa-gate`). The task is not done until the check passes; on a failure the PM sends a follow-up task with the same `qa_url` and `qa_cases`. `lane_pilot_wait_writer` returns only after the verdict. In the code, an explicit `browser_qa.enabled` of false skips the check. The check thread must report every requested case×viewport pair exactly once (cases carry `cN` ids); a missing, duplicate, unknown or malformed pair blocks the verdict. Each passed or failed pair also needs a screenshot the check thread copied into its own storage (`artifacts/browser-qa/cN-<width>.png`) before closing; the host re-reads and verifies every claimed file and stores `{case, viewport, hostId, path, sha256, size}` refs in the stage result — a pass without verified evidence is blocked with `browser_qa_evidence_failed`. A browser check left running by a plugin reload is adopted only when its stage receipt still carries the frozen expectation; receipts written before that field existed are blocked with `browser_qa_expectation_unavailable` rather than adopted unchecked.
-- After accept (`lp.after-accept`): the memory maintainer and the project-life maintainer run side by side. They write what the task taught and update PROGRESS and plans. A failure of either leaves the accepted task as it is.
-- Docs are a separate nightly pass (`lp.docs-night`, `docs.maintain`): it rewrites `docs/`, `README.md` and `PROJECT.md` from the code, lints them, and reverts hand edits.
+- After accept (`lp.after-accept`, triggered by `lp.attempt.merged`): runs memory maintenance (`memory-maintenance`) to record what the task taught. A failure leaves the accepted task as it is. No background Lane Pilot job rewrites repository documentation.
 - Lane Pilot itself sends the PM batched task results: a blocked task within minutes, accepted tasks once none is at work or every 30 minutes.
 
 ## 13. Release
@@ -187,8 +184,6 @@ The whole suite runs once per batch, not per task. `integration.gate_command` se
 Shipping is a PM duty, not a graph stage (`docs/ship.md`). When every task of the batch is accepted: (1) `git push origin <branch>` from the checkout (a force-push is refused; a rejected push means fetch, report, dispatch an integrating writer); (2) bring the project up the way it already runs (`PROJECT.md`, package scripts, a deploy script under its `scripts/` folder, compose, systemd); (3) prove it live with a healthcheck, a request or the service log. The PM reports each command, its exit code and the live check.
 
 - `bb lane-pilot reverify <task>` reruns an accepted task's checks on its merge commit. `bb lane-pilot revert <task> [--dry-run] [--no-gate]` takes the accepted work out in a scratch worktree and merges the revert (`docs/rollback.md`). `pause` and `resume` hold a run at stage boundaries.
-- Heavy goals run as phases on the `lp.*` graphs in their own candidate worktree and branch (`docs/phases.md`). Each stage has 2 tries (6 over the phase's life) and a replan 2 times.
-- Every 20 minutes the run-goal sweep checks finished runs: all accepted tasks' checks run together on main, and a red one is bisected to the culprit (`docs/run-goal.md`; `bb lane-pilot run-goal`).
 
 ## Sources
 

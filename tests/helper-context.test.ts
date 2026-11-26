@@ -230,11 +230,7 @@ describe("role profiles", () => {
     expect(policy.nativePlugins.names).toEqual([]);
   });
 
-  it("gives the docs maintainer docs skills, no code graph, and the browser check the browser plugin", () => {
-    const docs = (bind("docs-maintainer", "claude-code") as unknown as { experimental_vkRequiredSessionPolicy: { policy: Record<string, { names: string[] }> } }).experimental_vkRequiredSessionPolicy.policy;
-    expect(docs.bbPlugins.names).toEqual(["environment-project-checkout", "project-folders"]);
-    expect(docs.skills.names).toContain("lp-docs");
-    expect(docs.mcpServers.names).toEqual(["bb-bridge"]);
+  it("gives the browser check the browser plugin", () => {
     const qa = (bind("browser-qa", "claude-code") as unknown as { experimental_vkRequiredSessionPolicy: { policy: Record<string, { names: string[] }> } }).experimental_vkRequiredSessionPolicy.policy;
     expect(qa.bbPlugins.names).toContain("browser-automation");
   });
@@ -270,7 +266,7 @@ describe("owner changes per role", () => {
     const { parseHelperContextSettings: parse, roleProfilePolicy, effectiveGroup, effectiveSwitch } = await import("../src/rooms/contracts/helper-context");
     const parsed = parse({
       "helper.access.writer": { skills: { mode: "allow", names: ["ru-text", " ", "ru-text"] }, bbPlugins: { mode: "all" }, userInstructions: "include" },
-      "helper.access.docs-maintainer": { mcpServers: { mode: "allow", names: ["context7"] }, bogus: 1 },
+      "helper.access.code-critic": { mcpServers: { mode: "allow", names: ["context7"] }, bogus: 1 },
     });
     expect(parsed.ok).toBe(true);
     if (!parsed.ok) return;
@@ -278,9 +274,8 @@ describe("owner changes per role", () => {
     expect(writer.skills?.names).toEqual(["ru-text"]);
     expect(writer.bbPlugins).toBeUndefined();
     expect(writer.userInstructions).toBeUndefined();
-    const docs = roleProfilePolicy("docs-maintainer", parsed.settings.roleAccess?.["docs-maintainer"]);
-    expect(docs.mcpServers?.names).toEqual(["bb-bridge", "context7"]);
-    expect(docs.skills?.names).toContain("lp-docs");
+    const critic = roleProfilePolicy("code-critic", parsed.settings.roleAccess?.["code-critic"]);
+    expect(critic.mcpServers?.names).toEqual(["bb-bridge", "context7"]);
     expect(effectiveGroup("writer", "bbPlugins", parsed.settings.roleAccess?.writer)).toEqual({ names: null, source: "owner" });
     expect(effectiveSwitch("projectInstructions")).toEqual({ include: true, source: "role" });
   });

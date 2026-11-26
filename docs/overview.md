@@ -2,106 +2,97 @@
 title: Lane Pilot overview
 type: overview
 created: 2026-10-10
-updated: 2026-11-14
+updated: 2026-11-26
 status: active
-confidence: low
+confidence: high
 tags: [overview, bb-plugin, orchestration]
 sources:
   - package.json
   - server.ts
+  - app.tsx
+  - src/rooms/registry.ts
   - src/rooms/core/server/core.ts
   - src/rooms/core/server/rpc.ts
   - src/rooms/native-agent/ui/composer-enable.tsx
-  - src/rooms/writer/server/dispatch.ts
-  - src/rooms/writer/server/start.ts
-  - src/rooms/stability/server/reconcile.ts
-  - src/rooms/cockpit/ui/cockpit-page.tsx
-  - src/rooms/cockpit/server.ts
-  - src/rooms/cockpit/ui/screens-day.tsx
-  - src/rooms/cockpit/ui/screens-ops.tsx
-  - src/rooms/cockpit/ui/screens-work.tsx
-  - src/rooms/writer/server/verify.ts
-  - src/rooms/writer/server/finish.ts
-  - src/rooms/writer/server/finish-attempt-body.ts
-  - src/rooms/critique/server/critique-runs.ts
-  - src/rooms/critique/server/critique-runs/pm-read.ts
-  - src/rooms/critique/pm-read.ts
-  - src/rooms/writer/server/skill-pick.ts
+  - src/rooms/writer/server/services/dispatch.ts
+  - src/rooms/writer/server/services/start.ts
+  - src/rooms/writer/server/services/verify.ts
+  - src/rooms/writer/server/services/finish.ts
+  - src/rooms/writer/server/services/skill-pick.ts
+  - src/rooms/stability/server/services/reconcile.ts
+  - src/rooms/pages/ui/page.tsx
+  - src/rooms/pages/ui/project-nav.tsx
+  - src/rooms/pages/models/tabs-model.ts
+  - src/rooms/critique/server/services/pm-read.ts
+  - src/rooms/critique/models/pm-read.ts
+  - src/rooms/critique/models/citations.ts
   - src/rooms/storage/database.ts
   - src/rooms/migrations.ts
-  - src/rooms/harness/server/harness.ts
-  - src/rooms/harness/server/attempt.ts
-  - src/rooms/harness/server/reflect.ts
-  - src/rooms/harness/migrations.ts
-  - src/rooms/schedule/scheduler.ts
-  - src/rooms/anamnesis/collect.ts
-  - src/rooms/council/ui/council-page.tsx
-  - src/rooms/council/ui/office-scene.ts
-  - src/rooms/memory/server/memory.ts
-  - src/rooms/core/server/lifecycle-events.ts
-  - src/rooms/anamnesis/pii.ts
-  - src/rooms/anamnesis/year-review.ts
+  - src/rooms/schedule/server/handlers/board-clock.ts
+  - src/rooms/memory/server/services/memory.ts
   - src/rooms/memory/ui/memory-records.tsx
-  - src/rooms/runs/server/task-board.ts
-  - src/rooms/runs/server/task-graph.ts
+  - src/rooms/runs/server/services/task-board.ts
+  - src/rooms/runs/server/services/task-graph.ts
   - src/rooms/runs/server/rpc/runs.ts
   - src/rooms/runs/ui/task-board.tsx
+  - src/rooms/evolve/index.ts
   - packages/contracts/src/stage-proof.ts
+  - packages/workflow-engine/src/inbox.ts
+  - packages/workflow-engine/src/engine-clock.ts
   - workflows/lp-task-pipeline.json
-  - src/rooms/critique/citations.ts
-  - src/rooms/tasks/server/contract-lint.ts
-  - src/rooms/usage/server/attempt-metrics.ts
-  - src/rooms/tools/server/cli.ts
-  - src/rooms/tools/server/cli-project.ts
+  - src/rooms/tasks/models/contract-lint.ts
+  - src/rooms/usage/server/services/attempt-metrics.ts
+  - src/rooms/tools/server/handlers/cli-project.ts
   - src/rooms/contracts/quality-mode.ts
 ---
 
 # Lane Pilot overview
 
-TL;DR: Lane Pilot is a BB plugin that turns a project chat into an orchestration surface for isolated coding tasks, checks, reviews, and project maintenance.
+TL;DR: Lane Pilot is a BB plugin that turns a project chat into an orchestration surface for isolated coding tasks, checks, reviews, scheduled graphs, and project memory.
 
 ## Product shape
 
-The plugin is registered by BB from the `bb.server` entry in `package.json`; the entry opens plugin storage, builds a shared server core, mounts room services, then registers RPC and tools (`package.json:8-18`, `server.ts:331-535`). The plugin UI is a separate `bb.app` entry (`package.json:8-18`).
+The plugin is registered by BB from the `bb.server` entry in `package.json`; the entry opens plugin storage, builds a shared server core, composes room services from `src/rooms/registry.ts`, and registers RPC, tools, CLI verbs, and the single engine clock (`package.json:16-18`, `server.ts:104-376`). The plugin UI is a separate `bb.app` entry (`package.json:16-18`, `app.tsx`), and host machine work runs through `host.ts`.
 
-Every piece of work Lane Pilot runs is a graph (a workflow, in code and in English): writer tasks (`lp-task-pipeline`, which also runs the browser check of a task that has `qa_cases` and `qa_url`), phases (`lp.*`), errands, specialists, browser steps and browser checks, councils, scheduled agent routines and the after-accept pass. Graphs run without a PM chat; the PM chat is the door (it talks to the owner and passes his words into the machine), not the engine. In Russian UI the word is «граф».
+Every piece of work Lane Pilot runs is a graph (`workflows/*.json`, categorized via `GRAPH_CATEGORIES` in `packages/contracts/src/graph-categories.ts`): writer tasks (`lp-task-pipeline`, which also runs browser checks when a task has `qa_cases` and `qa_url`), errands, specialists, browser steps, scheduled routines, and the post-acceptance memory pass (`lp.after-accept`). Graphs are driven by events (`lane_pilot_wf_inbox`), durable waits with absolute deadlines, and the single engine clock (`engine-clock`); the PM chat is the door to the machine, not its engine.
 
-A user enables Lane Pilot for a new project chat through the composer. The UI gets activation context, requires a selected project and a resolvable writer binding, then sets a dispatch token and native agent selection (`src/rooms/native-agent/ui/composer-enable.tsx:49-60`, `:71-94`, `:96-123`).
+A user enables Lane Pilot for a project chat through the composer. The UI gets activation context, requires a selected project and a resolvable writer binding, then sets a dispatch token and native agent selection (`src/rooms/native-agent/ui/composer-enable.tsx`).
 
-When enabled, the writer harness assigns an adopted tree or the empty base to an attempt and records the selected tree and trial arm; always-on text and memory enter the writer brief, while skills, checks and hooks are materialized in supported non-live workspaces (`src/rooms/harness/server/attempt.ts:24-48`, `:70-95`). Candidate trees are trialed against the active tree, and reflection can submit a supported lesson to the rule pipeline (`src/rooms/harness/server/reflect.ts:1-8`, `:37-59`). See the [writer harness](harness.md) for editor evidence, retry behavior, trial rules and controls. The PM sends work through Lane Pilot tools. The writer dispatcher resolves task ownership and starts writer attempts; attempts use an isolated workspace, then verification and finish stages produce receipts and merge accepted work (`src/rooms/writer/server/dispatch.ts:1-82`, `src/rooms/writer/server/start.ts:1-80`, `src/rooms/writer/server/verify.ts:1-80`, `src/rooms/writer/server/finish.ts:11-39`). Before a writer starts, the skill picker combines project-folder skills, `modern-web-guidance` when `taskTouchesWeb` matches web file paths, the browser skill when a task checks a page, and catalogued PM hints (`src/rooms/writer/server/skill-pick.ts:37-59`, `:97-116`). When PM read is enabled, `runPmRead` checks the `read_first` excerpts to count lines and asks a helper to read the code and return a JSON summary, key facts, and open questions (`src/rooms/critique/server/critique-runs/pm-read.ts:23-113`, `src/rooms/critique/pm-read.ts:41-58`). The minimum line setting defaults to 350 and must be an integer from 50 to 5,000; selected excerpts below it skip the helper call, and provider/model settings fall back to the writer selection (`src/rooms/critique/pm-read.ts:15-27`, `src/rooms/critique/server/critique-runs/pm-read.ts:55-61`, `:75-79`). The result requires `summary`, `keyFacts`, and `openQuestions` within their schema limits, trimming oversized lists (`src/rooms/critique/pm-read.ts:30-37`, `:64-69`). An existing `pm-read` receipt is returned without another helper call; disabled PM read and excerpts below the line threshold are recorded as skipped, while provider, model, reasoning, output, and spawn errors are recorded as failed (`src/rooms/critique/server/critique-runs/pm-read.ts:35-54`, `:75-79`, `:80-115`).
+The PM sends work through Lane Pilot tools. The writer dispatcher resolves task ownership and starts writer attempts (`lp-task-pipeline`); attempts use an isolated workspace, then verification and finish stages produce receipts and merge accepted work (`src/rooms/writer/server/services/dispatch.ts`, `start.ts`, `verify.ts`, `finish.ts`). Before a writer starts, the skill picker combines project-folder skills, `modern-web-guidance` when `taskTouchesWeb` matches web file paths, the browser skill when a task checks a page, and catalogued PM hints (`src/rooms/writer/server/services/skill-pick.ts`). When PM read is enabled, `runPmRead` checks the `read_first` excerpts to count lines and asks a helper to read the code and return a JSON summary, key facts, and open questions (`src/rooms/critique/server/services/pm-read.ts`, `src/rooms/critique/models/pm-read.ts`). The minimum line setting defaults to 350 (50 to 5,000), provider/model settings fall back to the writer selection, existing `pm-read` receipts are reused without another helper call, and provider/model/spawn errors are recorded as failed (`src/rooms/critique/server/services/pm-read.ts`).
 
 ## Main areas
 
-The cockpit is the app's screen shell: it loads project and run context, remembers the selected project locally, signals silent-hub and signed-out states, and dispatches the selected screen (`src/rooms/cockpit/ui/cockpit-page.tsx:21-70`). Its RPC handler supplies screen state and event subscription methods (`src/rooms/cockpit/server.ts:17-76`); screen-specific behavior lives in the Today, Forge and Phases views (`src/rooms/cockpit/ui/screens-day.tsx:10-38`, `src/rooms/cockpit/ui/screens-ops.tsx:10-49`, `src/rooms/cockpit/ui/screens-work.tsx:14-35`).
+The plugin page (`LanePilotPage` in `src/rooms/pages/ui/page.tsx`, `project-nav.tsx`) exposes two system navigation groups — **Today** (`waiting`, `tasks`, `errands`, `schedule`) and **Setup** (`globals`, `agents`, `workflows`, `tokens`) — plus per-project and per-section settings across six tabs (`overview`, `team`, `work`, `knowledge`, `automation`, `runs`; `src/rooms/pages/models/tabs-model.ts`).
 
-When reload recovery finds the writer's prior thread idle or errored, the attempt loop resumes in that thread if its persisted run and contract context are valid; a canceled attempt is closed as canceled (`src/rooms/stability/server/reconcile.ts:111-145`). Eligible new attempts and fallbacks receive the prior task-owned validation failure; provider failures do not replace that context (`src/rooms/writer/server/start.ts:56-83`, `:669`, `:920`).
+When reload recovery (`taskReconcile.reconcile`) finds the writer's prior thread idle or errored, the attempt loop resumes in that thread if its persisted run and contract context are valid; a canceled attempt is closed as canceled (`src/rooms/stability/server/services/reconcile.ts`). Eligible new attempts and fallbacks receive the prior task-owned validation failure; provider failures do not replace that context (`src/rooms/writer/server/services/start.ts`).
 
-- **Project orchestration:** runs, tasks, attempts, stage receipts, checks, and merge coordination are stored in plugin SQLite (`src/rooms/migrations.ts:44-77`, `:142-150`). See [architecture](architecture.md) and [data model](data-model.md).
-- **Tasks screen:** the app shows task attempts and top-level workflow runs in a board or grouped list, with a detail page for contract, stage, attempt, and worker-thread data (`src/rooms/runs/ui/task-board.tsx:121-153`, `src/rooms/runs/server/task-board.ts:63-78`, `:147-209`). See [Tasks board](task-board.md).
-- **Settings and integrations:** typed RPC endpoints expose project settings, provider selection, workflows, schedules, council, memory, and knowledge to the UI (`src/rooms/core/server/rpc.ts:27-51`). The surface is declared in [RPC contracts](rpc-callers.md).
-- **Project knowledge:** memory RPCs create and retrieve project-scoped agent records; the UI displays the records and their lifecycle (`src/rooms/memory/server/memory.ts:19-78`, `src/rooms/memory/ui/memory-records.tsx:13-64`).
-- **Owner profile:** Anamnesis collects enabled sources, masks detected personal data, stores evidence-backed records, and can render an annual review (`src/rooms/anamnesis/collect.ts:29-63`, `src/rooms/anamnesis/pii.ts:41-72`, `src/rooms/anamnesis/year-review.ts:13-72`).
-- **Council and world view:** `CouncilPage` renders the council session UI; on desktop its office view builds an isometric cutaway floor with exterior ground, paving, trees and bushes, then floor zones, walls, doors and layout furniture. The Pixel World service is composed into the plugin services (`src/rooms/council/ui/council-page.tsx:64-65`, `src/rooms/council/ui/office-scene.ts:59-69`, `:90-136`, `:166-185`, `:300-303`, `server.ts:112-114`).
+- **Project orchestration:** runs, tasks, attempts, stage receipts, checks, workflow inbox events, and merge coordination are stored in plugin SQLite (`src/rooms/migrations.ts`, `src/rooms/storage/database.ts`). See [architecture](architecture.md) and [data model](data-model.md).
+- **Tasks screen:** the app shows task attempts and top-level workflow runs in a board or grouped list, with a detail page for contract, stage, attempt, and worker-thread data (`src/rooms/runs/ui/task-board.tsx`, `src/rooms/runs/server/services/task-board.ts`). See [Tasks board](task-board.md).
+- **Settings and integrations:** typed settings live in `src/rooms/settings-registry.ts` (including **model per function** with automatic fallback) and typed RPC endpoints expose settings, workflows, schedules, memory, and runs to the UI (`src/rooms/core/server/rpc.ts`). The surface is declared in [RPC contracts](rpc-callers.md).
+- **Schedule board and engine clock:** one clock (`packages/workflow-engine/src/engine-clock.ts`, `src/rooms/schedule/server/handlers/board-clock.ts`) wakes overdue waiting steps and due schedule-board rows (owner rows plus `SYSTEM_SCHEDULES` and `PROJECT_SCHEDULES`), respecting the board-wide pause (`schedule.paused_all`).
+- **Project knowledge:** memory RPCs create and retrieve project-scoped agent records; the UI displays records and lifecycle (`src/rooms/memory/server/services/memory.ts`, `src/rooms/memory/ui/memory-records.tsx`).
+- **Evolution building blocks:** per-step run facts (`lane_pilot_wf_step`), paired arm comparison and trial gating (`src/rooms/evolve/`), and planted-defect checker gating (`src/rooms/checkers/`) provide the primitives for the proposed `lp.evolve` graph (`docs/decisions/2026-11-25-evolution-graph.md`).
 
 ## Stage proof and attempt metrics
 
-Every stage declares what decides that it is done: a code predicate (a command's exit code, a file, a gate or receipt record, a schema validation) or `advisory` with a reason, which marks a model's opinion (`packages/contracts/src/stage-proof.ts:24-49`). The registry covers every stage id, so a new stage does not compile without a proof, and `workflows/lp-task-pipeline.json` carries the same declarations on its nodes (`workflows/lp-task-pipeline.json:71`, `:275`). The opinion stages are `pm-read`, `plan-critique`, `specialist-review` and `code-critique`. An opinion never accepts a task; it can still stop one. The plan critic in `plan_critique.mode` `gate` (the default) refuses a plan before any writer starts, and a refusing code critic holds the candidate (it runs whenever `code_critique.enabled`, and by default also for tasks of risk medium or higher through `critic.code.default_for_risk` = `medium`). A failed `pm-read` summary stops nothing: the task goes on without it. Code still checks their form: a blank pm-read summary fails the stage, and a critical or high finding that cites a file the reviewer was never shown, or a line past the end of a file it was shown, is read as medium (`src/rooms/critique/pm-read.ts:30`, `src/rooms/critique/citations.ts:20-50`).
+Every stage declares what decides that it is done: a code predicate (a command's exit code, a file, a gate or receipt record, a schema validation) or `advisory` with a reason, which marks a model's opinion (`packages/contracts/src/stage-proof.ts:24-49`). The registry covers every stage id, so a new stage does not compile without a proof, and `workflows/lp-task-pipeline.json` carries the same declarations on its nodes. The opinion stages are `pm-read`, `plan-critique`, `specialist-review` and `code-critique`. An opinion never accepts a task; it can still stop one. The plan critic in `plan_critique.mode` `gate` (the default) refuses a plan before any writer starts, and a refusing code critic holds the candidate (it runs whenever `code_critique.enabled`, and by default also for tasks of risk medium or higher through `critic.code.default_for_risk` = `medium`). A failed `pm-read` summary stops nothing: the task goes on without it. Code still checks their form: a blank pm-read summary fails the stage, and a critical or high finding that cites a file the reviewer was never shown, or a line past the end of a file it was shown, is read as medium (`src/rooms/critique/models/pm-read.ts`, `src/rooms/critique/models/citations.ts`).
 
-Acceptance refuses an opinion as its only reason. Before the acceptance receipt is written, the writer finish collects the stages that passed for the candidate, and a set with no code-decided stage blocks the attempt (`src/rooms/writer/server/finish-attempt-body.ts:328-350`, `packages/contracts/src/stage-proof.ts:55-61`).
+Acceptance refuses an opinion as its only reason. Before the acceptance receipt is written, the writer finish collects the stages that passed for the candidate, and a set with no code-decided stage blocks the attempt (`src/rooms/writer/server/services/finish-attempt-body.ts`, `packages/contracts/src/stage-proof.ts`).
 
 These are the pipeline's capabilities, not a project's live configuration: every opinion and review stage obeys its `*.enabled` project setting and `quality_mode` (`quick` disables both critiques, `standard` reads the settings, `full` enables them), so a stage with no setting is recorded `skipped` with reason `disabled_by_project_setting` (`src/rooms/contracts/quality-mode.ts:12-30`). The generated [enabled settings](enabled-settings.md) page lists the defaults and the global `*` values.
 
-The contract lint refuses a verification command that cannot fail (`true`, `:`, `exit 0`, a bare `echo`, or a failure hidden by `|| true`), and for risk medium or higher it warns, without refusing, when no check names a file that is missing on the base commit (`src/rooms/tasks/server/contract-lint.ts:139-154`, `:465-495`).
+The contract lint refuses a verification command that cannot fail (`true`, `:`, `exit 0`, a bare `echo`, or a failure hidden by `|| true`), and for risk medium or higher it warns, without refusing, when no check names a file that is missing on the base commit (`src/rooms/tasks/models/contract-lint.ts`).
 
-`bb lane-pilot metrics <project-id> [--days N]` and the `lp_attempt_metrics` RPC list each attempt with its stages passed or failed, seconds per stage, writer tokens and a list-price cost. A provider that reports no usage, such as acp-cursor, shows `not_measured` with no tokens and no cost, never zero; a model with no price or a thread shared by several attempts shows `partial` (`src/rooms/usage/server/attempt-metrics.ts:10-20`, `:150-164`, `src/rooms/tools/server/cli-project.ts:158-166`).
+`bb lane-pilot metrics <project-id> [--days N]` and the `lp_attempt_metrics` RPC list each attempt with its stages passed or failed, seconds per stage, writer tokens and a list-price cost. A provider that reports no usage, such as acp-cursor, shows `not_measured` with no tokens and no cost, never zero; a model with no price or a thread shared by several attempts shows `partial` (`src/rooms/usage/server/services/attempt-metrics.ts`, `src/rooms/tools/server/handlers/cli-project.ts`).
 
 ## Workspaces
 
-The root workspace contains BB-facing rooms and small shared packages. `@lane-pilot/ui-kit`, `@lane-pilot/workflow-engine`, and `@lane-pilot/world-sim` own their internal documentation; this page links to their overviews instead of restating internals ([UI kit overview](../packages/ui-kit/docs/overview.md), [workflow engine overview](../packages/workflow-engine/docs/overview.md), [world simulation overview](../packages/world-sim/docs/overview.md)). The remaining small packages are described in [packages](packages.md).
+The root workspace contains BB-facing rooms and 12 shared packages under `packages/*`. `@lane-pilot/ui-kit` and `@lane-pilot/workflow-engine` own their internal documentation ([UI kit overview](../packages/ui-kit/docs/overview.md), [workflow engine overview](../packages/workflow-engine/docs/overview.md)). The remaining packages (`contracts`, `handoff`, `host-calls`, `i18n`, `kit`, `memory-core`, `models`, `resilience`, `settings-catalog`, `thread-observe`) are listed in [packages](packages.md).
 
 ## System references
 
 - [Architecture](architecture.md) — runtime composition and dependency boundaries.
+- [Conventions](conventions.md) — enforced room layout, engine primitives, and ratchets.
 - [Deployment](deployment.md) — build, configuration, run, and deploy inputs.
 - [Gotchas](gotchas.md) — cross-cutting behavior and failure boundaries.
 - [Data model](data-model.md) — core entity map and domain-owned table references.

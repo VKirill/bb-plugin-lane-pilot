@@ -1,0 +1,158 @@
+{
+  "kind": "lane-pilot-sandbox-drill",
+  "date": "2026-11-14",
+  "stamp": "20261114-083920",
+  "startedAt": 1794634760935,
+  "finishedAt": 1794635141785,
+  "durationSec": 381,
+  "project": "proj_3tb652jpsi",
+  "runId": "lprun_876764951127427784a03f086c0229b6",
+  "pmThread": "thr_bhvzrb5p8j",
+  "sourceThread": "thr_9exuuh55ne",
+  "mode": "full",
+  "scenarioNames": [
+    "plan_revise"
+  ],
+  "commit": "7fb52d799ce7fb3ca753c3dde003ab20c878f442",
+  "skipped": {},
+  "result": "fail",
+  "problems": [
+    "plan_revise: no planner_revision edition: the critic never returned the plan, or the planner never revised it",
+    "plan_revise: the final plan-critique receipt is not passed: [('blocked', 'critique_changes_requested')]",
+    "plan_revise: the attempt went blocked (the PM would have been involved): ['blocked'] planner_stopped:planner_needs_pm: plan_critique_blocked",
+    "plan_revise: the task did not land: ['blocked'] planner_stopped:planner_needs_pm: plan_critique_blocked"
+  ],
+  "checks": null,
+  "tasks": null,
+  "dispatch": null,
+  "scenarios": [
+    {
+      "name": "plan_revise",
+      "result": "fail",
+      "problems": [
+        "no planner_revision edition: the critic never returned the plan, or the planner never revised it",
+        "the final plan-critique receipt is not passed: [('blocked', 'critique_changes_requested')]",
+        "the attempt went blocked (the PM would have been involved): ['blocked'] planner_stopped:planner_needs_pm: plan_critique_blocked",
+        "the task did not land: ['blocked'] planner_stopped:planner_needs_pm: plan_critique_blocked"
+      ],
+      "tasks": [
+        {
+          "task": "drill-20261114-083920-plan-revise",
+          "attempts": 1,
+          "states": [
+            "blocked"
+          ],
+          "state": "blocked",
+          "reason": "planner_stopped:planner_needs_pm: plan_critique_blocked",
+          "attempt": "lpattempt_e4f15961c25f4d6cba5f2585f7f05196",
+          "writerThread": null,
+          "workspace": null,
+          "environment": null,
+          "holder": null,
+          "file": "notes/drill/plan-revise-20261114-083920/alpha.md",
+          "fileInSandbox": false
+        }
+      ],
+      "editions": [
+        {
+          "edition": 1,
+          "reason": "created"
+        }
+      ],
+      "receipts": [
+        "blocked"
+      ],
+      "steps": [
+        "pm-read",
+        "quality-mode",
+        "plan-critique",
+        "plan-revise",
+        "block-plan-critique"
+      ]
+    }
+  ],
+  "seen": {
+    "stages": {
+      "acceptance-receipt": {
+        "passed": 1,
+        "skipped": 1
+      },
+      "memory-maintenance": {
+        "skipped": 1
+      },
+      "plan-critique": {
+        "blocked": 1,
+        "skipped": 1
+      },
+      "plan-fact": {
+        "passed": 1
+      },
+      "pm-read": {
+        "skipped": 2
+      },
+      "specialist-review": {
+        "skipped": 2
+      },
+      "verification": {
+        "passed": 1,
+        "skipped": 1
+      },
+      "writer-agent": {
+        "passed": 1,
+        "skipped": 1
+      }
+    },
+    "gates": {
+      "accept": {
+        "passed": 1
+      },
+      "owns-paths": {
+        "passed": 1
+      },
+      "validate": {
+        "passed": 1
+      },
+      "verification": {
+        "passed": 1
+      }
+    },
+    "moves": {
+      "queued>blocked": {
+        "ok": 1
+      },
+      "queued>queued": {
+        "ok": 3
+      },
+      "queued>spawn_requested": {
+        "ok": 1
+      },
+      "running>accepted": {
+        "ok": 1
+      },
+      "spawn_requested>running": {
+        "ok": 1
+      }
+    }
+  },
+  "judged": [
+    {
+      "name": "plan_revise",
+      "verdict": "fail",
+      "evidence": [
+        "tasks",
+        "editions",
+        "receipts",
+        "steps"
+      ],
+      "why": "no planner_revision edition: the critic never returned the plan, or the planner never revised it; the final plan-critique receipt is not passed: [('blocked', 'critique_changes_requested')]; the attempt went blocked (the PM would have been involved): ['blocked'] planner_stopped:planner_needs_pm: plan_critique_blocked; the task did not land: ['blocked'] planner_stopped:planner_needs_pm: plan_critique_blocked"
+    }
+  ],
+  "series": {
+    "verdict": "fail",
+    "missing": [],
+    "failed": [
+      "plan_revise"
+    ],
+    "skipped": []
+  }
+}

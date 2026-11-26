@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, waitFor } from "@testing-library/react";
-import { en, setLocaleOverride } from "@lane-pilot/i18n";
+import { setLocaleOverride } from "@lane-pilot/i18n";
 import { projectId, mountWithBackend, writerPicker, choosePickerValue, finish } from "./helpers";
 
 vi.mock("sonner", () => ({ toast: { info: vi.fn(), success: vi.fn(), error: vi.fn() } }));

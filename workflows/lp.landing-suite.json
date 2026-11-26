@@ -1,0 +1,199 @@
+{
+  "schemaVersion": 1,
+  "id": "lp.landing-suite",
+  "startedBy": "event:lp.attempt.merged",
+  "name": {
+    "en": "Post-merge landing suite",
+    "ru": "Пост-мердж проверка слияния"
+  },
+  "description": {
+    "en": "Event-driven landing verification workflow triggered by lp.attempt.merged after a task merges into main. Runs the single unified landing check (project integration gate or task checks and project suite) using only current proof receipts and dispatches at most one repair task on regression.",
+    "ru": "Событийная пост-мердж проверка, запускаемая по lp.attempt.merged после вливания задачи в main. Выполняет единый шаг проверки (общий гейт проекта или проверки задачи и набор проекта), учитывает только актуальные квитанции доказательств и при регрессии создаёт одну задачу починки."
+  },
+  "not_for": [
+    "manual runs or chat routing: Lane Pilot starts this workflow automatically when lp.attempt.merged fires after a merge"
+  ],
+  "category": "service",
+  "status": "published",
+  "version": 1,
+  "tags": [
+    "event",
+    "verification",
+    "landing"
+  ],
+  "triggers": [
+    {
+      "type": "event",
+      "event": "lp.attempt.merged"
+    }
+  ],
+  "scope": {
+    "level": "builtin"
+  },
+  "inputs": {
+    "attemptId": {
+      "type": "string",
+      "required": true
+    },
+    "runId": {
+      "type": "string",
+      "required": true
+    },
+    "taskId": {
+      "type": "string",
+      "required": true
+    },
+    "projectId": {
+      "type": "string",
+      "required": true
+    },
+    "pmThreadId": {
+      "type": "string",
+      "required": false
+    },
+    "writerThreadId": {
+      "type": "string",
+      "required": false
+    },
+    "hostId": {
+      "type": "string",
+      "required": true
+    },
+    "basePath": {
+      "type": "string",
+      "required": true
+    },
+    "mergeCommit": {
+      "type": "string",
+      "required": false
+    },
+    "worktreePath": {
+      "type": "string",
+      "required": false
+    },
+    "live": {
+      "type": "boolean",
+      "required": false
+    },
+    "produced": {
+      "type": "array",
+      "required": false
+    },
+    "greenInWorktree": {
+      "type": "array",
+      "required": false
+    }
+  },
+  "outputs": {
+    "status": "string",
+    "culprit_task_id": "string",
+    "mainfix_task_id": "string"
+  },
+  "live_success": {
+    "output": "status",
+    "in": [
+      "passed",
+      "red",
+      "skipped"
+    ]
+  },
+  "goal_audit": "exempt",
+  "budget": {
+    "max_minutes": 30,
+    "max_usd": 0.01
+  },
+  "guards": {
+    "maxSteps": 4,
+    "maxFanOut": 1
+  },
+  "nodes": [
+    {
+      "id": "landing",
+      "type": "action",
+      "label": "Run unified post-merge landing step",
+      "uses": "lp.landing_suite",
+      "timeoutSec": 1800,
+      "output": [
+        {
+          "name": "status",
+          "type": "string"
+        },
+        {
+          "name": "culprit_task_id",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "mainfix_task_id",
+          "type": "string",
+          "required": false
+        }
+      ]
+    },
+    {
+      "id": "done",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "landing.status",
+        "culprit_task_id": "landing.culprit_task_id",
+        "mainfix_task_id": "landing.mainfix_task_id"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "start",
+      "to": "landing",
+      "with": {
+        "attemptId": "$inputs.attemptId",
+        "runId": "$inputs.runId",
+        "taskId": "$inputs.taskId",
+        "projectId": "$inputs.projectId",
+        "pmThreadId": "$inputs.pmThreadId",
+        "writerThreadId": "$inputs.writerThreadId",
+        "hostId": "$inputs.hostId",
+        "basePath": "$inputs.basePath",
+        "mergeCommit": "$inputs.mergeCommit",
+        "worktreePath": "$inputs.worktreePath",
+        "live": "$inputs.live",
+        "produced": "$inputs.produced",
+        "greenInWorktree": "$inputs.greenInWorktree"
+      }
+    },
+    {
+      "from": "landing",
+      "to": "done"
+    }
+  ],
+  "test": {
+    "id": "lp-landing-suite-1",
+    "sim": {
+      "input": {
+        "attemptId": "att_1",
+        "runId": "run_1",
+        "taskId": "t1",
+        "projectId": "proj_1",
+        "hostId": "host_1",
+        "basePath": "/repo",
+        "mergeCommit": "abc123"
+      },
+      "stubs": {
+        "landing": {
+          "status": "passed",
+          "culprit_task_id": "",
+          "mainfix_task_id": ""
+        }
+      },
+      "expect_path": [
+        "landing",
+        "done"
+      ],
+      "expect_output": {
+        "status": "passed",
+        "culprit_task_id": "",
+        "mainfix_task_id": ""
+      }
+    }
+  }
+}

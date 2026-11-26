@@ -2,7 +2,7 @@ import { lstat, readFile, readlink, readdir, realpath, stat } from "node:fs/prom
 import { isAbsolute, join, relative } from "node:path";
 import type { ExperimentalHostRpcHandlers } from "@get-bb/plugin-sdk";
 import { hostContract } from "../../contracts";
-import { readBoundedWorkspaceFile, sha256Hex } from "@lane-pilot/kit";
+import { currentHostId, readBoundedWorkspaceFile, sha256Hex } from "@lane-pilot/kit";
 
 async function hashFile(path: string): Promise<string> {
   return sha256Hex(await readFile(path));
@@ -38,12 +38,12 @@ export const readOpenCodeTelemetry: ExperimentalHostRpcHandlers<typeof hostContr
   let content: string;
   try { content = new TextDecoder("utf-8", { fatal:true }).decode(bytes); }
   catch { throw new Error("telemetry log is not valid UTF-8"); }
-  return { hostId:process.env.BB_HOST_ID ?? input.requestedHostId, relativePath:normalized,
+  return { hostId:currentHostId(input.requestedHostId), relativePath:normalized,
     size:bytes.byteLength, sha256:sha256Hex(bytes), content };
 };
 
 export const readBoundedFile: ExperimentalHostRpcHandlers<typeof hostContract>["readBoundedFile"] = async (input) => {
-  const workerHost = process.env.BB_HOST_ID?.trim();
+  const workerHost = currentHostId();
   if (workerHost && workerHost !== input.requestedHostId) {
     throw new Error("lane_pilot_read_host_mismatch");
   }
@@ -60,7 +60,7 @@ const LIST_FOLDER_MAX = 500;
 
 /** The file names in each folder, for the contract lint's tests next to owned code («shoot.ts» → «__tests__/shoot-seo-audit.test.ts»). */
 export const listFolders: ExperimentalHostRpcHandlers<typeof hostContract>["listFolders"] = async (input) => ({
-  hostId: process.env.BB_HOST_ID ?? input.requestedHostId,
+  hostId: currentHostId(input.requestedHostId),
   entries: await Promise.all(input.paths.map(async (path) => {
     const names = await readdir(path, { withFileTypes:true })
       .then((entries) => entries.filter((entry) => entry.isFile() || entry.isSymbolicLink()).map((entry) => entry.name).sort(), () => [] as string[]);
@@ -69,7 +69,7 @@ export const listFolders: ExperimentalHostRpcHandlers<typeof hostContract>["list
 });
 
 export const snapshotDryRun: ExperimentalHostRpcHandlers<typeof hostContract>["snapshotDryRun"] = async (input) => ({
-  hostId: process.env.BB_HOST_ID ?? input.requestedHostId,
+  hostId: currentHostId(input.requestedHostId),
   entries: await Promise.all(input.paths.map(async (path) => {
     try {
       const info = await lstat(path);

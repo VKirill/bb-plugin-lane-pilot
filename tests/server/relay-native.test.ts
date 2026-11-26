@@ -1,6 +1,8 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
-import { createRelay, relayFor, type RelayItem } from "../../src/rooms/relay/server/relay";
+import type { RelayItem } from "../../src/rooms/relay/models/relay";
+import { createRelay } from "../../src/rooms/relay/server/services/relay";
+import { relayFor } from "../../src/rooms/relay/server/services/relay-runtime";
 import { openDatabase } from "../../src/rooms/plugin-db";
 
 type Queued = { threadId: string; text: string; sendAt: number };

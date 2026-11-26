@@ -1,0 +1,132 @@
+{
+  "kind": "lane-pilot-sandbox-drill",
+  "date": "2026-11-14",
+  "stamp": "20261114-084545",
+  "startedAt": 1794635145496,
+  "finishedAt": 1794635214296,
+  "durationSec": 69,
+  "project": "proj_3tb652jpsi",
+  "runId": "lprun_bfcc5dff81a146d0bd04111fc0811e63",
+  "pmThread": "thr_fdwezpav8c",
+  "sourceThread": "thr_iuvv33cswj",
+  "mode": "full",
+  "scenarioNames": [
+    "plan_revise_cap"
+  ],
+  "commit": "7fb52d799ce7fb3ca753c3dde003ab20c878f442",
+  "skipped": {},
+  "result": "pass",
+  "problems": [],
+  "checks": null,
+  "tasks": null,
+  "dispatch": null,
+  "scenarios": [
+    {
+      "name": "plan_revise_cap",
+      "result": "pass",
+      "problems": [],
+      "tasks": [
+        {
+          "task": "drill-20261114-084545-plan-cap",
+          "attempts": 1,
+          "states": [
+            "blocked"
+          ],
+          "state": "blocked",
+          "reason": "structural_plan_critique_blocked",
+          "attempt": "lpattempt_6ffe4eb112dd476cbc360c92a0640cfa",
+          "writerThread": null,
+          "workspace": null,
+          "environment": null,
+          "holder": null,
+          "file": "notes/drill/plan-cap-20261114-084545/note.md",
+          "fileInSandbox": false
+        }
+      ],
+      "editions": [
+        {
+          "edition": 1,
+          "reason": "created"
+        }
+      ],
+      "receipts": [
+        "blocked"
+      ],
+      "steps": [
+        "pm-read",
+        "quality-mode",
+        "plan-critique",
+        "block-plan-critique"
+      ]
+    }
+  ],
+  "seen": {
+    "stages": {
+      "acceptance-receipt": {
+        "canceled": 1,
+        "skipped": 1
+      },
+      "plan-critique": {
+        "blocked": 1,
+        "skipped": 1
+      },
+      "pm-read": {
+        "skipped": 2
+      },
+      "specialist-review": {
+        "skipped": 2
+      },
+      "verification": {
+        "canceled": 1,
+        "skipped": 1
+      },
+      "writer-agent": {
+        "canceled": 1,
+        "skipped": 1
+      }
+    },
+    "gates": {},
+    "moves": {
+      "cancel_requested>canceled": {
+        "ok": 1
+      },
+      "canceled>canceled": {
+        "ok": 1
+      },
+      "queued>blocked": {
+        "ok": 1
+      },
+      "queued>queued": {
+        "ok": 3
+      },
+      "queued>spawn_requested": {
+        "ok": 1
+      },
+      "running>cancel_requested": {
+        "ok": 1
+      },
+      "spawn_requested>running": {
+        "ok": 1
+      }
+    }
+  },
+  "judged": [
+    {
+      "name": "plan_revise_cap",
+      "verdict": "pass",
+      "evidence": [
+        "tasks",
+        "editions",
+        "receipts",
+        "steps"
+      ],
+      "why": ""
+    }
+  ],
+  "series": {
+    "verdict": "pass",
+    "missing": [],
+    "failed": [],
+    "skipped": []
+  }
+}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ownerAnswerText } from "../src/rooms/tools/owner-answer-text";
+import { ownerAnswerText } from "../src/rooms/tools";
 
 // The owner saw `{ "answered": true, "choice": null, "text": "…" }` in the chat (2026-10-27): the delivered result is now readable markdown.
 describe("lane_pilot_ask_owner's result text", () => {

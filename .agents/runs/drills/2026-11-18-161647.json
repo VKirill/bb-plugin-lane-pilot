@@ -1,0 +1,792 @@
+{
+  "kind": "lane-pilot-sandbox-drill",
+  "date": "2026-11-18",
+  "stamp": "20261118-161647",
+  "startedAt": 1795007807225,
+  "finishedAt": 1795009481793,
+  "durationSec": 1675,
+  "project": "proj_ibu6v9g64j",
+  "runId": "lprun_0f025a40212043848387b7a4aa1305e6",
+  "pmThread": "thr_5k2u8g5q8f",
+  "sourceThread": "thr_qhqizcyicb",
+  "mode": "full",
+  "scenarioNames": [
+    "helper_providers",
+    "memory_paths",
+    "skills",
+    "task_home",
+    "run_home",
+    "revert",
+    "plan_split",
+    "nogit",
+    "nogit_repo"
+  ],
+  "commit": "f2d8e993bb4c73b27692433f017c9e2c225ef817",
+  "skipped": {},
+  "result": "fail",
+  "problems": [
+    "plan_split: c_first_not_blocked: drill-20261118-161647-d-c was accepted although its check is red on purpose",
+    "plan_split: no_merge_commit: drill-20261118-161647-d-c.2 has no merge commit on record",
+    "plan_split: changed_paths_overlap: drill-20261118-161647-revert-a and drill-20261118-161647-revert-b both changed ['notes/drill/20261118-161647-revert.md']",
+    "nogit: the sandbox folder /Users/vechkasov/lp-sandbox-layouts/n-nogit is missing: recreate it (a folder without git) and its BB project (LP_DRILL_NOGIT_PROJECT)",
+    "nogit_repo: the sandbox folder /Users/vechkasov/lp-sandbox-layouts/n-nogit is missing: recreate it (a folder without git) and its BB project (LP_DRILL_NOGIT_PROJECT)"
+  ],
+  "checks": null,
+  "tasks": null,
+  "dispatch": null,
+  "scenarios": [
+    {
+      "name": "memory_paths",
+      "result": "pass",
+      "problems": [],
+      "token": "35e363af",
+      "lpVersion": "0.1.596",
+      "paths": [
+        {
+          "path": "writer.brief",
+          "found": true,
+          "negativeOk": true,
+          "latencyMs": 9369,
+          "detail": "carries note+core+rule: all found; 6082 chars"
+        },
+        {
+          "path": "writer.turn",
+          "found": true,
+          "negativeOk": true,
+          "latencyMs": 2,
+          "detail": "carries rule: all found; 2266 chars"
+        },
+        {
+          "path": "writer.repair",
+          "found": true,
+          "negativeOk": true,
+          "latencyMs": 428,
+          "detail": "carries note+core+rule: all found; 2079 chars"
+        },
+        {
+          "path": "pm.start",
+          "found": true,
+          "negativeOk": true,
+          "latencyMs": 1,
+          "detail": "carries rule: all found; 243 chars"
+        },
+        {
+          "path": "pm.resume",
+          "found": true,
+          "negativeOk": true,
+          "latencyMs": 1,
+          "detail": "carries rule: all found; 241 chars"
+        },
+        {
+          "path": "bb.thread",
+          "found": true,
+          "negativeOk": true,
+          "latencyMs": 13,
+          "detail": "carries core: all found; 278 chars"
+        },
+        {
+          "path": "pm.rules_tool",
+          "found": true,
+          "negativeOk": true,
+          "latencyMs": 1,
+          "detail": "carries rule: all found; 75 chars"
+        },
+        {
+          "path": "pm.memory_tool",
+          "found": true,
+          "negativeOk": true,
+          "latencyMs": 32,
+          "detail": "carries note+core: all found; 553 chars"
+        },
+        {
+          "path": "schedule.agent",
+          "found": true,
+          "negativeOk": true,
+          "latencyMs": 9,
+          "detail": "carries note+core: all found; 553 chars"
+        },
+        {
+          "path": "critic.code",
+          "found": true,
+          "negativeOk": true,
+          "latencyMs": 23,
+          "detail": "carries note+core: all found; 7348 chars"
+        },
+        {
+          "path": "night.review",
+          "found": true,
+          "negativeOk": true,
+          "latencyMs": 22,
+          "detail": "carries note+core: all found; 3031 chars"
+        },
+        {
+          "path": "council.evidence",
+          "found": true,
+          "negativeOk": true,
+          "latencyMs": 11,
+          "detail": "carries note+core: all found; 530 chars"
+        }
+      ],
+      "skipped": [
+        {
+          "path": "pm.contract",
+          "reason": "Handed back on the dispatch reply for the task's paths. Startup and resume do not pass paths, so a path selector stays quiet there."
+        },
+        {
+          "path": "hub.memory_import_eval",
+          "reason": "A measurement over the import receipt, read by the operator; nothing it finds reaches an agent prompt."
+        },
+        {
+          "path": "hub.session_rpc",
+          "reason": "The RPCs answer `bb lane-pilot memory search|write` (an agent's shell command, M2 rule): the agent reads the answer as command output, not as injected prompt text."
+        },
+        {
+          "path": "hook.prompt_recall",
+          "reason": "Confirmed notes of the caller's own project by the word index only, masked, one line each, three at most; the probe asks the PM and writer prompts, not a hook's context line (tests/sma/parity-g2-hooks-2.test.ts drives the verb on a real database)."
+        },
+        {
+          "path": "hook.subagent_pack",
+          "reason": "Accepted always-rules of the caller's sections and confirmed notes, masked, inside the 2 KB pack; it is the subagent's prompt, which the PM and writer probes do not see (tests/sma/parity-g2-hooks-2.test.ts drives the verb on a real database)."
+        },
+        {
+          "path": "cli.memory_load",
+          "reason": "A command's printed output (like the session search above), not text injected into a prompt; nothing reaches an agent unless it ran the command itself."
+        },
+        {
+          "path": "pm.cold",
+          "reason": "It only adds notes the active search missed. The probe's active note is already delivered by pm.memory_tool."
+        },
+        {
+          "path": "maintainer.existing",
+          "reason": "A dedupe aid for the stage that writes notes, not a delivery to a worker; the notes are data it compares against and acts on only by `supersedes`."
+        },
+        {
+          "path": "memory.golden_eval",
+          "reason": "It measures search quality for the owner and delivers nothing to an agent."
+        },
+        {
+          "path": "pm.replay_arm",
+          "reason": "The arm prompt wraps the same pmRulesOf/pmRulesBlock pair pm.start delivers; probing pm.start already proves the rules reach this prompt."
+        },
+        {
+          "path": "pm.owner_card",
+          "reason": "Facts about the owner from the anamnesis room, not project memory; it has its own checks (`bb lane-pilot anamnesis status`)."
+        },
+        {
+          "path": "analyze.owner_card",
+          "reason": "The same anamnesis card pm.owner_card names, not project memory; it rides only when the owner switched the gray-areas question on."
+        },
+        {
+          "path": "cli.parity_report",
+          "reason": "A command's printed comparison of ids, not text injected into a prompt; nothing reaches an agent unless it ran the command itself."
+        },
+        {
+          "path": "writer.file_notes",
+          "reason": "Only trust-confirmed notes of the task's own paths, masked and clipped, reach a file the guard reads at an Edit; the probe asks prompts, not that file (the test drives taskFileCards on a real db)."
+        },
+        {
+          "path": "passport.role_lenses",
+          "reason": "Structured PassportV1 claims and market rails from the passport room (not generic memory notes); verified directly by `bb lane-pilot project-passport probe` and tests/passport/ (deferral:passport-live-drill)."
+        }
+      ],
+      "unanswered": {
+        "windowDays": 30,
+        "ownerRepeats": 0,
+        "repeatConfirmations": 0
+      },
+      "writerAttempt": "lpattempt_c2ca58cafbd647ddb9c9fe859ccf0c5d",
+      "dispatch": "{\n  \"runId\": \"lprun_0f025a40212043848387b7a4aa1305e6\",\n  \"taskId\": \"drill-20261118-161647-memory\",\n  \"attemptId\": \"lpattempt_c2ca58cafbd647ddb9c9fe859ccf0c5d\",\n  \"writerThreadId\": null,\n  \"state\": \"queued\",\n  \"stages\": [\n    {\n      \"runId\": \"lprun_0f025a40212043848387b7a4aa1305e6\",\n      \"taskId\": \"drill-20261118-161647-memory\",\n      \"stageId\": \"acceptance-receipt\",\n      \"contractVersion\": 1,\n      \"state\": \"pending\",\n      \"inputSha256\": \"216be767b67dc26233346c943e1431775e5cc79a663d6e23325c7bb53e60a1bf\",\n      \"outputSha256\": null,\n      \"attempt\": 0,\n      \"providerId\": null,\n      \"model"
+    },
+    {
+      "name": "helper_providers",
+      "result": "pass",
+      "problems": [],
+      "providers": [
+        {
+          "provider": "claude-code",
+          "model": "claude-sonnet-5-5",
+          "ok": true,
+          "started": true,
+          "answered": true,
+          "threadId": "thr_eb9pp3dyjr",
+          "output": "OK",
+          "reason": null,
+          "ms": 52760
+        },
+        {
+          "provider": "codex",
+          "model": "gpt-6-luna",
+          "ok": true,
+          "started": true,
+          "answered": true,
+          "threadId": "thr_ajegjzhngk",
+          "output": "OK",
+          "reason": null,
+          "ms": 51345
+        },
+        {
+          "provider": "opencode2",
+          "model": "zai-coding-plan/glm-5.3-flash",
+          "ok": true,
+          "started": true,
+          "answered": true,
+          "threadId": "thr_dkgevb2k8m",
+          "output": "OK",
+          "reason": null,
+          "ms": 55852
+        }
+      ],
+      "quotaExhausted": []
+    },
+    {
+      "name": "skills",
+      "result": "pass",
+      "problems": [],
+      "tasks": [
+        {
+          "task": "drill-skill-20261118-161647",
+          "attempts": 1,
+          "states": [
+            "accepted"
+          ],
+          "state": "accepted",
+          "reason": "",
+          "attempt": "lpattempt_ec6100844b154c5ab2bc485ce5ebc885",
+          "writerThread": "thr_7g2hsnirj4",
+          "workspace": "/home/ubuntu/.lane-pilot/worktrees/lp-drill-sandbox/lpattempt_ec6100844b154c5ab2bc485ce5ebc885",
+          "environment": "env_phytvaqjrp",
+          "holder": null,
+          "file": "drills/skill-20261118-161647.md",
+          "fileInSandbox": true
+        }
+      ]
+    },
+    {
+      "name": "task_home",
+      "result": "pass",
+      "problems": [],
+      "proved": [
+        {
+          "node": "n233",
+          "ok": true,
+          "detail": "attempt kinds on disk for both tasks: True; outside attempts/<id>/: []"
+        },
+        {
+          "node": "n236",
+          "ok": true,
+          "detail": "context/plan-source.md names .agents/plans/drill-20261118-161647-shared.md with its sha256 in ['drill-20261118-161647-home-a', 'drill-20261118-161647-home-b']"
+        },
+        {
+          "node": "n294",
+          "ok": true,
+          "detail": "worktrees still on disk [] of 2; acceptance and receipt in each home: [True, True]"
+        },
+        {
+          "node": "n397",
+          "ok": true,
+          "detail": "brief and writer report in each home: [True, True]; neighbour problems []"
+        },
+        {
+          "node": "n405",
+          "ok": true,
+          "detail": "new files in shared folders for these tasks: []"
+        },
+        {
+          "node": "n1616",
+          "ok": true,
+          "detail": "plan and outcome in each home: [('drill-20261118-161647-home-a', ['PLAN.md'], ['OUTCOME.md']), ('drill-20261118-161647-home-b', ['PLAN.md'], ['OUTCOME.md'])]"
+        },
+        {
+          "node": "n1691",
+          "ok": true,
+          "detail": "34 manifest rows; rows without sha256 or producer: []"
+        }
+      ],
+      "tasks": [
+        {
+          "task": "drill-20261118-161647-home-a",
+          "attempts": 1,
+          "states": [
+            "accepted"
+          ],
+          "state": "accepted",
+          "reason": "",
+          "attempt": "lpattempt_0657f5c1dfe64b8396942714e509d683",
+          "writerThread": "thr_y9z3xxmqc8",
+          "workspace": "/home/ubuntu/.lane-pilot/worktrees/lp-drill-sandbox/lpattempt_0657f5c1dfe64b8396942714e509d683",
+          "environment": "env_i2q34wty29",
+          "holder": null,
+          "file": "notes/drill/20261118-161647-home-a.md",
+          "fileInSandbox": true,
+          "writerQuestions": []
+        },
+        {
+          "task": "drill-20261118-161647-home-b",
+          "attempts": 1,
+          "states": [
+            "accepted"
+          ],
+          "state": "accepted",
+          "reason": "",
+          "attempt": "lpattempt_7fed6fcd45554322af79353ab21bd18b",
+          "writerThread": "thr_iutjkc5j4g",
+          "workspace": "/home/ubuntu/.lane-pilot/worktrees/lp-drill-sandbox/lpattempt_7fed6fcd45554322af79353ab21bd18b",
+          "environment": "env_pnws94u45k",
+          "holder": null,
+          "file": "notes/drill/20261118-161647-home-b.md",
+          "fileInSandbox": true,
+          "writerQuestions": []
+        }
+      ]
+    },
+    {
+      "name": "run_home",
+      "result": "pass",
+      "problems": [],
+      "proved": [
+        {
+          "node": "n233",
+          "ok": true,
+          "detail": "each graph run's .agents/runs/<id>/manifest.json lists [1, 1] files, all on disk, in folders keyed by the run; clashes []"
+        }
+      ],
+      "runs": [
+        {
+          "id": "wfrun_e9af3ff8e2bc4527b1445b1edd61c1f5",
+          "status": "succeeded"
+        },
+        {
+          "id": "wfrun_bb89e32c969f470c9813b7132bab70bf",
+          "status": "succeeded"
+        }
+      ]
+    },
+    {
+      "name": "revert",
+      "result": "pass",
+      "problems": [],
+      "tasks": [
+        {
+          "task": "drill-20261118-161647-revert-a",
+          "attempts": 1,
+          "states": [
+            "accepted"
+          ],
+          "state": "accepted",
+          "reason": "",
+          "attempt": "lpattempt_903a3173906c420dbde94f3d39bf64d5",
+          "writerThread": "thr_ycjqtmqemh",
+          "workspace": "/home/ubuntu/.lane-pilot/worktrees/lp-drill-sandbox/lpattempt_903a3173906c420dbde94f3d39bf64d5",
+          "environment": "env_e8gjtkiarz",
+          "holder": null,
+          "file": "notes/drill/20261118-161647-revert.md",
+          "fileInSandbox": true
+        },
+        {
+          "task": "drill-20261118-161647-revert-b",
+          "attempts": 1,
+          "states": [
+            "accepted"
+          ],
+          "state": "accepted",
+          "reason": "",
+          "attempt": "lpattempt_ca5f8cff965042fbb343b9a9daf2ab38",
+          "writerThread": "thr_9w4hpq8pwn",
+          "workspace": "/home/ubuntu/.lane-pilot/worktrees/lp-drill-sandbox/lpattempt_ca5f8cff965042fbb343b9a9daf2ab38",
+          "environment": "env_h35sxttc65",
+          "holder": null,
+          "file": "notes/drill/20261118-161647-revert.md",
+          "fileInSandbox": true
+        }
+      ]
+    },
+    {
+      "name": "plan_split",
+      "result": "fail",
+      "problems": [
+        "c_first_not_blocked: drill-20261118-161647-d-c was accepted although its check is red on purpose",
+        "no_merge_commit: drill-20261118-161647-d-c.2 has no merge commit on record",
+        "changed_paths_overlap: drill-20261118-161647-revert-a and drill-20261118-161647-revert-b both changed ['notes/drill/20261118-161647-revert.md']"
+      ],
+      "runId": "lprun_0f025a40212043848387b7a4aa1305e6",
+      "sql": "SELECT a.task_id, a.id AS attempt_id, a.state, a.reason,\n  (SELECT min(at) FROM lane_pilot_attempt_transition t WHERE t.attempt_id=a.id AND t.to_state='spawn_requested') AS started,\n  (SELECT min(at) FROM lane_pilot_attempt_transition t WHERE t.attempt_id=a.id AND t.to_state='accepted') AS accepted,\n  (SELECT min(at) FROM lane_pilot_attempt_transition t WHERE t.attempt_id=a.id AND t.to_state='blocked' AND t.refused=0) AS blocked,\n  c.base_sha, c.merge_commit, c.changed_json\nFROM lane_pilot_attempt a LEFT JOIN lane_pilot_attempt_change c ON c.attempt_id=a.id\nWHERE a.run_id=:run ORDER BY started;",
+      "rows": [
+        {
+          "task_id": "drill-20261118-161647-d-x",
+          "attempt_id": "lpattempt_ef877638b723473685a26d6cefd96fda",
+          "state": "blocked",
+          "reason": "depends_on drill-20261118-161647-d-y: no such task was dispatched in this run",
+          "started": null,
+          "accepted": null,
+          "blocked": 1795009255692,
+          "base_sha": null,
+          "merge_commit": null,
+          "changed_json": null
+        },
+        {
+          "task_id": "drill-20261118-161647-memory",
+          "attempt_id": "lpattempt_c2ca58cafbd647ddb9c9fe859ccf0c5d",
+          "state": "canceled",
+          "reason": "canceled from the CLI",
+          "started": 1795007898489,
+          "accepted": null,
+          "blocked": null,
+          "base_sha": "8acefed8345a134a77d98de089d8dc3c92f25b4f",
+          "merge_commit": null,
+          "changed_json": "[]"
+        },
+        {
+          "task_id": "drill-skill-20261118-161647",
+          "attempt_id": "lpattempt_ec6100844b154c5ab2bc485ce5ebc885",
+          "state": "accepted",
+          "reason": null,
+          "started": 1795008108430,
+          "accepted": 1795008163154,
+          "blocked": null,
+          "base_sha": "8acefed8345a134a77d98de089d8dc3c92f25b4f",
+          "merge_commit": "a603debfb0a1e806222e9829dead92eb9d93ed3c",
+          "changed_json": "[{\"path\":\"drills/skill-20261118-161647.md\",\"status\":\"A\"}]"
+        },
+        {
+          "task_id": "drill-20261118-161647-home-a",
+          "attempt_id": "lpattempt_0657f5c1dfe64b8396942714e509d683",
+          "state": "accepted",
+          "reason": null,
+          "started": 1795008345520,
+          "accepted": 1795008460488,
+          "blocked": null,
+          "base_sha": "ed55eaddd34aa3a90faf7c591331da0d6531b829",
+          "merge_commit": "8d4ccc50cc26d7a519be9f37734f2d620ab9038f",
+          "changed_json": "[{\"path\":\"notes/drill/20261118-161647-home-a.md\",\"status\":\"A\"}]"
+        },
+        {
+          "task_id": "drill-20261118-161647-home-b",
+          "attempt_id": "lpattempt_7fed6fcd45554322af79353ab21bd18b",
+          "state": "accepted",
+          "reason": null,
+          "started": 1795008616459,
+          "accepted": 1795008708016,
+          "blocked": null,
+          "base_sha": "8d4ccc50cc26d7a519be9f37734f2d620ab9038f",
+          "merge_commit": "e4780d1740888e1a9b5bd1684ea2c049e31c3633",
+          "changed_json": "[{\"path\":\"notes/drill/20261118-161647-home-b.md\",\"status\":\"A\"}]"
+        },
+        {
+          "task_id": "drill-20261118-161647-revert-a",
+          "attempt_id": "lpattempt_903a3173906c420dbde94f3d39bf64d5",
+          "state": "accepted",
+          "reason": null,
+          "started": 1795008810566,
+          "accepted": 1795008873236,
+          "blocked": null,
+          "base_sha": "f042b765e3295b5bef3078dfb1bc47e799fbe34d",
+          "merge_commit": "482e75797cee88737815b3fd6baa7e29e2e64aae",
+          "changed_json": "[{\"path\":\"notes/drill/20261118-161647-revert.md\",\"status\":\"A\"}]"
+        },
+        {
+          "task_id": "drill-20261118-161647-revert-b",
+          "attempt_id": "lpattempt_ca5f8cff965042fbb343b9a9daf2ab38",
+          "state": "accepted",
+          "reason": null,
+          "started": 1795009002932,
+          "accepted": 1795009046793,
+          "blocked": null,
+          "base_sha": "eb4064cf6177436e3fb079373a132017e15b40d4",
+          "merge_commit": "c11803b43faf146b1a8387e4e83d11698cadd9c1",
+          "changed_json": "[{\"path\":\"notes/drill/20261118-161647-revert.md\",\"status\":\"A\"}]"
+        },
+        {
+          "task_id": "drill-20261118-161647-d-a",
+          "attempt_id": "lpattempt_0e954602784d4daa844f35d1949fae64",
+          "state": "accepted",
+          "reason": null,
+          "started": 1795009097123,
+          "accepted": 1795009170596,
+          "blocked": null,
+          "base_sha": "1884f3bf2f416daed91586e2a00faa8de36bc756",
+          "merge_commit": "1f784c41124fb991a7a42ab30884bbfcd77b130f",
+          "changed_json": "[{\"path\":\"notes/drill/20261118-161647-d-a.md\",\"status\":\"A\"}]"
+        },
+        {
+          "task_id": "drill-20261118-161647-d-e",
+          "attempt_id": "lpattempt_e3609273b4284beea788378e6a2ec945",
+          "state": "accepted",
+          "reason": null,
+          "started": 1795009104628,
+          "accepted": 1795009175511,
+          "blocked": null,
+          "base_sha": "1884f3bf2f416daed91586e2a00faa8de36bc756",
+          "merge_commit": "d4f4355ea52a3e8cd1106d687323672cfcd38353",
+          "changed_json": "[{\"path\":\"notes/drill/20261118-161647-d-e.md\",\"status\":\"A\"}]"
+        },
+        {
+          "task_id": "drill-20261118-161647-d-b",
+          "attempt_id": "lpattempt_ed57bd5ceac9487ab80c13ed36e5f2cd",
+          "state": "accepted",
+          "reason": null,
+          "started": 1795009175185,
+          "accepted": 1795009238876,
+          "blocked": null,
+          "base_sha": "d4f4355ea52a3e8cd1106d687323672cfcd38353",
+          "merge_commit": "6756c3aabb9da19986a7c1872dd247d809e0bfeb",
+          "changed_json": "[{\"path\":\"notes/drill/20261118-161647-d-b.md\",\"status\":\"A\"}]"
+        },
+        {
+          "task_id": "drill-20261118-161647-d-c",
+          "attempt_id": "lpattempt_1f03aa31629745bb93f6a6a5f460e352",
+          "state": "accepted",
+          "reason": null,
+          "started": 1795009178327,
+          "accepted": 1795009281833,
+          "blocked": 1795009249321,
+          "base_sha": "d4f4355ea52a3e8cd1106d687323672cfcd38353",
+          "merge_commit": "3b5609588d7dd3dd322d49e175bd0c8e2f887222",
+          "changed_json": "[{\"path\":\"notes/drill/20261118-161647-d-c.md\",\"status\":\"A\"}]"
+        },
+        {
+          "task_id": "drill-20261118-161647-d-c.2",
+          "attempt_id": "lpattempt_d3c9542b902a4f25b3f12c7a2970e107",
+          "state": "accepted",
+          "reason": null,
+          "started": 1795009261131,
+          "accepted": 1795009319181,
+          "blocked": null,
+          "base_sha": "6756c3aabb9da19986a7c1872dd247d809e0bfeb",
+          "merge_commit": null,
+          "changed_json": "[]"
+        },
+        {
+          "task_id": "drill-20261118-161647-d-d",
+          "attempt_id": "lpattempt_10123b37eb524da7ac4913b7c966b471",
+          "state": "accepted",
+          "reason": null,
+          "started": 1795009326277,
+          "accepted": 1795009376801,
+          "blocked": null,
+          "base_sha": "3b5609588d7dd3dd322d49e175bd0c8e2f887222",
+          "merge_commit": "3d527f118b49acd96d75b0cf1f8be50f4f28717b",
+          "changed_json": "[{\"path\":\"notes/drill/20261118-161647-d-d.md\",\"status\":\"A\"}]"
+        },
+        {
+          "task_id": "drill-20261118-161647-d-f",
+          "attempt_id": "lpattempt_dc3db04e79334d8fb117f4a01fcf5b1b",
+          "state": "accepted",
+          "reason": null,
+          "started": 1795009379467,
+          "accepted": 1795009430366,
+          "blocked": null,
+          "base_sha": "3d527f118b49acd96d75b0cf1f8be50f4f28717b",
+          "merge_commit": "b1c29cd248aa1baf3fcd3674f22a8b8f72ebb21d",
+          "changed_json": "[{\"path\":\"notes/drill/20261118-161647-d-f.md\",\"status\":\"A\"}]"
+        }
+      ],
+      "ddReason": "waiting for depends_on: drill-20261118-161647-d-c (drill-20261118-161647-d-c ended blocked or canceled; starts once it is sent again and accepted)",
+      "cycleReply": "{\n  \"runId\": \"lprun_0f025a40212043848387b7a4aa1305e6\",\n  \"state\": \"validation_failed\",\n  \"replan\": true,\n  \"reason\": \"contract lint: nothing was dispatched and no attempt was spent. Fix and send the task again:\\n- depends_on closes a cycle with the open tasks of this run (drill-20261118-161647-d-y → drill-20261118-161647-d-x → drill-20261118-161647-d-y), so none of them could start; drop the depends_on that is not a real output dependency\",\n  \"findings\": [\n    {\n      \"code\": \"depends_cycle\",\n      \"message\": \"depends_on closes a cycle with the open tasks of this run (drill-20261118-161647-d-y",
+      "dispatch": {
+        "drill-20261118-161647-d-a": "{\n  \"runId\": \"lprun_0f025a40212043848387b7a4aa1305e6\",\n  \"taskId\": \"drill-20261118-161647-d-a\",\n  \"attemptId\": \"lpattempt_0e954602784d4daa844f35d1949fae64\",\n  \"writerThreadId\": null,\n  \"state\": \"queued\",\n  \"stages\": [\n    {\n      \"runId\": \"lprun_0f025a40212043848387b7a4aa1305e6\",\n      \"taskId\": \"drill-20261118-161647-d-a\",\n      \"stageId\": \"acceptance-receipt\",\n      \"contractVersion\": 1,\n      \"state\": \"pending\",\n      \"inputSha256\": \"0dac641304d31d2d8de3ec231d81cc03824d87f095df1d2e4e8f4d129bfc3f1e\",\n      \"outputSha256\": null,\n      \"attempt\": 0,\n      \"providerId\": null,\n      \"model\": nul",
+        "drill-20261118-161647-d-e": "{\n  \"runId\": \"lprun_0f025a40212043848387b7a4aa1305e6\",\n  \"taskId\": \"drill-20261118-161647-d-e\",\n  \"attemptId\": \"lpattempt_e3609273b4284beea788378e6a2ec945\",\n  \"writerThreadId\": null,\n  \"state\": \"queued\",\n  \"stages\": [\n    {\n      \"runId\": \"lprun_0f025a40212043848387b7a4aa1305e6\",\n      \"taskId\": \"drill-20261118-161647-d-e\",\n      \"stageId\": \"acceptance-receipt\",\n      \"contractVersion\": 1,\n      \"state\": \"pending\",\n      \"inputSha256\": \"cd7cf3ab644acc73bef9e90ee3c47687ae71973b13633028197da3d3f67f0c3d\",\n      \"outputSha256\": null,\n      \"attempt\": 0,\n      \"providerId\": null,\n      \"model\": nul",
+        "drill-20261118-161647-d-b": "{\n  \"runId\": \"lprun_0f025a40212043848387b7a4aa1305e6\",\n  \"taskId\": \"drill-20261118-161647-d-b\",\n  \"attemptId\": \"lpattempt_ed57bd5ceac9487ab80c13ed36e5f2cd\",\n  \"writerThreadId\": null,\n  \"state\": \"queued\",\n  \"stages\": [\n    {\n      \"runId\": \"lprun_0f025a40212043848387b7a4aa1305e6\",\n      \"taskId\": \"drill-20261118-161647-d-b\",\n      \"stageId\": \"acceptance-receipt\",\n      \"contractVersion\": 1,\n      \"state\": \"pending\",\n      \"inputSha256\": \"9c47a6f04fd48049933cf2a0ea0a0bc17ec429155ac03dc03baf02e28ad2c9fe\",\n      \"outputSha256\": null,\n      \"attempt\": 0,\n      \"providerId\": null,\n      \"model\": nul",
+        "drill-20261118-161647-d-c": "{\n  \"runId\": \"lprun_0f025a40212043848387b7a4aa1305e6\",\n  \"taskId\": \"drill-20261118-161647-d-c\",\n  \"attemptId\": \"lpattempt_1f03aa31629745bb93f6a6a5f460e352\",\n  \"writerThreadId\": null,\n  \"state\": \"queued\",\n  \"stages\": [\n    {\n      \"runId\": \"lprun_0f025a40212043848387b7a4aa1305e6\",\n      \"taskId\": \"drill-20261118-161647-d-c\",\n      \"stageId\": \"acceptance-receipt\",\n      \"contractVersion\": 1,\n      \"state\": \"pending\",\n      \"inputSha256\": \"01fb6d32cade6e25a8e281e3e646545d09dfbeb006980847ce16455a6b5f51c5\",\n      \"outputSha256\": null,\n      \"attempt\": 0,\n      \"providerId\": null,\n      \"model\": nul",
+        "drill-20261118-161647-d-d": "{\n  \"runId\": \"lprun_0f025a40212043848387b7a4aa1305e6\",\n  \"taskId\": \"drill-20261118-161647-d-d\",\n  \"attemptId\": \"lpattempt_10123b37eb524da7ac4913b7c966b471\",\n  \"writerThreadId\": null,\n  \"state\": \"queued\",\n  \"stages\": [\n    {\n      \"runId\": \"lprun_0f025a40212043848387b7a4aa1305e6\",\n      \"taskId\": \"drill-20261118-161647-d-d\",\n      \"stageId\": \"acceptance-receipt\",\n      \"contractVersion\": 1,\n      \"state\": \"pending\",\n      \"inputSha256\": \"881c389b27ffa6c5b628037e77b5fd641d88f6a6808636cf0e81aa145e823caf\",\n      \"outputSha256\": null,\n      \"attempt\": 0,\n      \"providerId\": null,\n      \"model\": nul",
+        "drill-20261118-161647-d-f": "{\n  \"runId\": \"lprun_0f025a40212043848387b7a4aa1305e6\",\n  \"taskId\": \"drill-20261118-161647-d-f\",\n  \"attemptId\": \"lpattempt_dc3db04e79334d8fb117f4a01fcf5b1b\",\n  \"writerThreadId\": null,\n  \"state\": \"queued\",\n  \"stages\": [\n    {\n      \"runId\": \"lprun_0f025a40212043848387b7a4aa1305e6\",\n      \"taskId\": \"drill-20261118-161647-d-f\",\n      \"stageId\": \"acceptance-receipt\",\n      \"contractVersion\": 1,\n      \"state\": \"pending\",\n      \"inputSha256\": \"130fbf6f810024b826423fe3171dd0216bc77261e7f996eceb70399befd1f765\",\n      \"outputSha256\": null,\n      \"attempt\": 0,\n      \"providerId\": null,\n      \"model\": nul",
+        "drill-20261118-161647-d-c.2": "{\n  \"runId\": \"lprun_0f025a40212043848387b7a4aa1305e6\",\n  \"taskId\": \"drill-20261118-161647-d-c.2\",\n  \"attemptId\": \"lpattempt_d3c9542b902a4f25b3f12c7a2970e107\",\n  \"writerThreadId\": null,\n  \"state\": \"queued\",\n  \"stages\": [\n    {\n      \"runId\": \"lprun_0f025a40212043848387b7a4aa1305e6\",\n      \"taskId\": \"drill-20261118-161647-d-c.2\",\n      \"stageId\": \"acceptance-receipt\",\n      \"contractVersion\": 1,\n      \"state\": \"pending\",\n      \"inputSha256\": \"01fb6d32cade6e25a8e281e3e646545d09dfbeb006980847ce16455a6b5f51c5\",\n      \"outputSha256\": null,\n      \"attempt\": 0,\n      \"providerId\": null,\n      \"model\":"
+      }
+    },
+    {
+      "name": "nogit",
+      "result": "fail",
+      "problems": [
+        "the sandbox folder /Users/vechkasov/lp-sandbox-layouts/n-nogit is missing: recreate it (a folder without git) and its BB project (LP_DRILL_NOGIT_PROJECT)"
+      ]
+    },
+    {
+      "name": "nogit_repo",
+      "result": "fail",
+      "problems": [
+        "the sandbox folder /Users/vechkasov/lp-sandbox-layouts/n-nogit is missing: recreate it (a folder without git) and its BB project (LP_DRILL_NOGIT_PROJECT)"
+      ]
+    }
+  ],
+  "seen": {
+    "stages": {
+      "acceptance-receipt": {
+        "canceled": 1,
+        "failed": 1,
+        "passed": 12
+      },
+      "code-critique": {
+        "passed": 2
+      },
+      "memory-maintenance": {
+        "skipped": 12
+      },
+      "plan-critique": {
+        "passed": 2,
+        "skipped": 12
+      },
+      "plan-fact": {
+        "passed": 12
+      },
+      "pm-read": {
+        "skipped": 14
+      },
+      "project-life": {
+        "passed": 5
+      },
+      "specialist-review": {
+        "passed": 5,
+        "skipped": 9
+      },
+      "verification": {
+        "canceled": 1,
+        "failed": 1,
+        "passed": 12
+      },
+      "writer-agent": {
+        "canceled": 1,
+        "failed": 1,
+        "passed": 12
+      }
+    },
+    "gates": {
+      "accept": {
+        "passed": 12,
+        "skipped": 1
+      },
+      "owns-paths": {
+        "passed": 12
+      },
+      "validate": {
+        "passed": 12
+      },
+      "verification": {
+        "passed": 12
+      }
+    },
+    "moves": {
+      "blocked>running": {
+        "ok": 1
+      },
+      "cancel_requested>canceled": {
+        "ok": 1
+      },
+      "canceled>canceled": {
+        "ok": 1
+      },
+      "queued>blocked": {
+        "ok": 1
+      },
+      "queued>queued": {
+        "ok": 28
+      },
+      "queued>spawn_requested": {
+        "ok": 13
+      },
+      "running>accepted": {
+        "ok": 12
+      },
+      "running>blocked": {
+        "ok": 1
+      },
+      "running>cancel_requested": {
+        "ok": 1
+      },
+      "spawn_requested>running": {
+        "ok": 13
+      }
+    }
+  },
+  "judged": [
+    {
+      "name": "memory_paths",
+      "verdict": "pass",
+      "evidence": [
+        "token",
+        "lpVersion",
+        "paths",
+        "skipped",
+        "unanswered",
+        "writerAttempt",
+        "dispatch"
+      ],
+      "why": ""
+    },
+    {
+      "name": "helper_providers",
+      "verdict": "pass",
+      "evidence": [
+        "providers"
+      ],
+      "why": ""
+    },
+    {
+      "name": "skills",
+      "verdict": "pass",
+      "evidence": [
+        "tasks"
+      ],
+      "why": ""
+    },
+    {
+      "name": "task_home",
+      "verdict": "pass",
+      "evidence": [
+        "proved",
+        "tasks"
+      ],
+      "why": ""
+    },
+    {
+      "name": "run_home",
+      "verdict": "pass",
+      "evidence": [
+        "proved",
+        "runs"
+      ],
+      "why": ""
+    },
+    {
+      "name": "revert",
+      "verdict": "pass",
+      "evidence": [
+        "tasks"
+      ],
+      "why": ""
+    },
+    {
+      "name": "plan_split",
+      "verdict": "fail",
+      "evidence": [
+        "runId",
+        "sql",
+        "rows",
+        "ddReason",
+        "cycleReply",
+        "dispatch"
+      ],
+      "why": "c_first_not_blocked: drill-20261118-161647-d-c was accepted although its check is red on purpose; no_merge_commit: drill-20261118-161647-d-c.2 has no merge commit on record; changed_paths_overlap: drill-20261118-161647-revert-a and drill-20261118-161647-revert-b both changed ['notes/drill/20261118-161647-revert.md']"
+    },
+    {
+      "name": "nogit",
+      "verdict": "fail",
+      "evidence": [],
+      "why": "the sandbox folder /Users/vechkasov/lp-sandbox-layouts/n-nogit is missing: recreate it (a folder without git) and its BB project (LP_DRILL_NOGIT_PROJECT)"
+    },
+    {
+      "name": "nogit_repo",
+      "verdict": "fail",
+      "evidence": [],
+      "why": "the sandbox folder /Users/vechkasov/lp-sandbox-layouts/n-nogit is missing: recreate it (a folder without git) and its BB project (LP_DRILL_NOGIT_PROJECT)"
+    }
+  ],
+  "series": {
+    "verdict": "fail",
+    "missing": [],
+    "failed": [
+      "plan_split",
+      "nogit",
+      "nogit_repo"
+    ],
+    "skipped": []
+  }
+}

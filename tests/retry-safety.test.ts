@@ -1,7 +1,7 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
-import { retrySafetyStop, taskLimitStop, TASK_WALL_CLOCK_MIN, VERIFY_MAX_PASSES } from "../src/rooms/writer/server/retry-safety";
-import { createAttempt, createRun, createTask, openDatabase, appendGateEvaluation, recordSecretIssuance } from "../src/rooms/plugin-db";
+import { retrySafetyStop } from "../src/rooms/writer/server/services/retry-safety";
+import { createAttempt, createRun, createTask, openDatabase, recordSecretIssuance } from "../src/rooms/plugin-db";
 import { registerSecrets, forgetSecrets } from "@lane-pilot/kit";
 import type { TaskV2 } from "../src/rooms/contracts";
 
@@ -26,30 +26,6 @@ function db() {
 const hostOf = (script: (command: string) => { exitCode: number; stdout: string }) => ({
   call: async (method: string, _input: { command?: string }) =>
     method === "runCommand" ? { hostId: "h", stderr: "", ...script(_input.command ?? "") } : { hostId: "h", exitCode: 1, stdout: "", stderr: "" },
-});
-
-describe("taskLimitStop (H-05)", () => {
-  it("stops a task older than the wall-clock cap and leaves a younger one alone", () => {
-    const d = db();
-    const now = Date.now();
-    d.prepare("UPDATE lane_pilot_task SET created_at=? WHERE id='T1'").run(now - 800 * 60_000);
-    expect(taskLimitStop({ db: d, runId: RUN, taskId: "T1", wallClockMin: TASK_WALL_CLOCK_MIN, verifyMaxPasses: VERIFY_MAX_PASSES, now }))
-      .toMatch(/^task_wall_clock: T1 is \d+ min old/);
-    d.prepare("UPDATE lane_pilot_task SET created_at=? WHERE id='T1'").run(now - 10 * 60_000);
-    expect(taskLimitStop({ db: d, runId: RUN, taskId: "T1", wallClockMin: TASK_WALL_CLOCK_MIN, verifyMaxPasses: VERIFY_MAX_PASSES, now })).toBeNull();
-  });
-
-  it("stops a task at the verification pass cap and counts only failed/rejected evaluations", () => {
-    const d = db();
-    const evalIn = { projectId: PROJECT, runId: RUN, taskId: "T1", gate: "verification" as const, inputSha256: "x", outputSha256: null, attempt: 0 };
-    for (let i = 0; i < VERIFY_MAX_PASSES - 1; i++) appendGateEvaluation(d, { ...evalIn, status: "failed", occurredAt: Date.now() });
-    appendGateEvaluation(d, { ...evalIn, gate: "owns-paths", status: "rejected", occurredAt: Date.now() });
-    appendGateEvaluation(d, { ...evalIn, status: "passed", occurredAt: Date.now() });
-    expect(taskLimitStop({ db: d, runId: RUN, taskId: "T1", wallClockMin: 0, verifyMaxPasses: VERIFY_MAX_PASSES })).toBeNull();
-    appendGateEvaluation(d, { ...evalIn, status: "rejected", occurredAt: Date.now() });
-    expect(taskLimitStop({ db: d, runId: RUN, taskId: "T1", wallClockMin: 0, verifyMaxPasses: VERIFY_MAX_PASSES }))
-      .toMatch(/^verify_passes_exhausted: T1/);
-  });
 });
 
 describe("retrySafetyStop (H-04)", () => {

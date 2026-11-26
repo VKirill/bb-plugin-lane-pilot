@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, configure, fireEvent, waitFor } from "@testing-library/react";
 import { en, setLocaleOverride } from "@lane-pilot/i18n";
-import { isTestProject, splitProjects } from "../src/rooms/pages/service-projects";
+import { isTestProject, splitProjects } from "../src/rooms/pages/ui/service-projects";
 import { screenFixture, mountPage } from "./ui-harness";
 import { openTab } from "./ui-tabs";
 
@@ -79,7 +79,7 @@ describe("project list, header and overview", () => {
     expect(slot.getByTestId("project-subline").textContent).toContain("/tmp/lane-pilot-ui");
     // The old «Selected project» card is gone: one H1, the project's name.
     expect(slot.getByTestId("project-header").querySelectorAll("h1").length).toBe(1);
-    expect(slot.getByTestId("project-header").textContent).not.toContain(en.selectedProject);
+    expect(slot.getByTestId("project-header").textContent).not.toContain("Selected project");
     slot.lifecycle.unmount();
   });
 

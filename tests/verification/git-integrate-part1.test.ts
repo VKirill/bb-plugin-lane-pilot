@@ -1,9 +1,8 @@
-import { execFileSync, spawn } from "node:child_process";
-import { mkdir, readFile, utimes, writeFile } from "node:fs/promises";
+import { execFileSync } from "node:child_process";
+import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { expect, it, vi } from "vitest";
-import { integrateWorktree, prepareWorktree, withBaseLock } from "../../src/rooms/verification/git-integrate";
-import { gitOwnershipChangedPaths } from "../../src/rooms/verification/git-ownership";
+import { integrateWorktree } from "../../src/rooms/worktree";
 import { git, repo } from "./git-integrate-helpers";
 
 // These tests build real repositories and worktrees; inside Lane Pilot's sandboxed check the whole suite runs
@@ -37,7 +36,7 @@ it("merges two writers' edits to one file and reports a real conflict without to
 });
 
 it("links the base node_modules into a writer worktree and keeps the link out of commits", async () => {
-  const { prepareWorktree } = await import("../../src/rooms/verification/git-integrate");
+  const { prepareWorktree } = await import("../../src/rooms/worktree");
   const { mkdir } = await import("node:fs/promises");
   const { base, worktree } = await repo();
   await mkdir(join(base, "node_modules", "vitest"), { recursive: true });
@@ -50,7 +49,7 @@ it("links the base node_modules into a writer worktree and keeps the link out of
 });
 
 it("gives tool caches in node_modules their own folder so checks never write into the base checkout", async () => {
-  const { prepareWorktree } = await import("../../src/rooms/verification/git-integrate");
+  const { prepareWorktree } = await import("../../src/rooms/worktree");
   const { mkdir, lstat } = await import("node:fs/promises");
   const { base, worktree } = await repo();
   await mkdir(join(base, "node_modules", "vitest"), { recursive: true });
@@ -68,7 +67,7 @@ it("gives tool caches in node_modules their own folder so checks never write int
 // «EPERM symlink '../image-size/bin/image-size.js' -> '<worktree>/node_modules/.bin/.image-size-…'», exit 255: the
 // worktree's .bin was a link into the base checkout, which the verification sandbox does not let a check write.
 it("gives npm's own state in node_modules (.bin, .package-lock.json) to the worktree so npm install can run there", async () => {
-  const { prepareWorktree } = await import("../../src/rooms/verification/git-integrate");
+  const { prepareWorktree } = await import("../../src/rooms/worktree");
   const { mkdir, lstat, readlink, realpath, symlink } = await import("node:fs/promises");
   const { base, worktree } = await repo();
   await mkdir(join(base, "node_modules", "image-size", "bin"), { recursive: true });
@@ -92,7 +91,7 @@ it("gives npm's own state in node_modules (.bin, .package-lock.json) to the work
 });
 
 it("installs dependencies from the lockfile before the first writer so nobody runs npm install", async () => {
-  const { prepareWorktree } = await import("../../src/rooms/verification/git-integrate");
+  const { prepareWorktree } = await import("../../src/rooms/worktree");
   const { base, worktree } = await repo();
   const { mkdir, rm } = await import("node:fs/promises");
   await mkdir(join(base, "dep"));

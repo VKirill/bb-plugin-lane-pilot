@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { dirname, join, relative, resolve } from "node:path";
 import { EXTERNAL_OPS, EXTERNAL_OPS_WARNING } from "../runs";
 import { hashPath } from "@lane-pilot/kit";
-import { MANIFEST_ROWS, type ManifestRow } from "./manifest";
+import { MANIFEST_ROWS, type ManifestRow } from "./models/manifest";
 import { expandHomePath, lanePilotRoot, resolveHome } from "@lane-pilot/kit";
 import { observeExternalOps } from "./external-ops";
 

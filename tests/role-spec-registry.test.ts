@@ -1,13 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
-  COUNCIL_KEYS, COUNCIL_SEATS, PAIR_ROLE_SPECS, ROLE_SPECS, ROLE_SELECTION_KEYS, ROLE_TABLE,
+  PAIR_ROLE_SPECS, ROLE_SPECS, ROLE_SELECTION_KEYS, ROLE_TABLE,
   roleAtomicMessage, roleSpec, roleSpecKey, WRITER_FALLBACK_KEYS, WRITER_FALLBACK_SLOTS,
 } from "@lane-pilot/models";
 import { rpcSettings } from "../src/rooms/contracts/rpc-settings";
-import { SELECTION_SPECS, selectionKeys, type SelectionId } from "../src/rooms/pages/picker-selections";
+import { SELECTION_SPECS, selectionKeys, type SelectionId } from "../src/rooms/pages/ui/picker-selections";
 import { ROLE_GROUPS } from "../src/rooms/native-agent/ui/team-model";
 import { en, ru } from "@lane-pilot/i18n";
-import { NATIVE_CODE_CRITIQUE_KEYS, NATIVE_DOCS_KEYS, NATIVE_MEMORY_KEYS, NATIVE_NIGHT_REVIEW_KEYS, NATIVE_ONBOARDING_KEYS, NATIVE_PLAN_CRITIQUE_KEYS, NATIVE_PM_READ_KEYS, NATIVE_PROJECT_LIFE_KEYS, NATIVE_SPECIALIST_KEYS, NATIVE_WRITER_KEYS } from "../src/rooms/runs/server/run-routing";
+import { NATIVE_CODE_CRITIQUE_KEYS, NATIVE_DOCS_KEYS, NATIVE_MEMORY_KEYS, NATIVE_NIGHT_REVIEW_KEYS, NATIVE_ONBOARDING_KEYS, NATIVE_PLAN_CRITIQUE_KEYS, NATIVE_PM_READ_KEYS, NATIVE_PROJECT_LIFE_KEYS, NATIVE_SPECIALIST_KEYS, NATIVE_WRITER_KEYS } from "../src/rooms/runs/server";
 
 /**
  * The names the hand-written code had before the RoleSpec table (packages/models/role-specs.ts). The table is the one list now; this
@@ -16,7 +16,7 @@ import { NATIVE_CODE_CRITIQUE_KEYS, NATIVE_DOCS_KEYS, NATIVE_MEMORY_KEYS, NATIVE
 const OLD_RPC_NAMES = [
   "save_writer_selection", "save_memory_selection", "save_night_review_selection", "save_docs_selection",
   "save_project_life_selection", "save_pm_read_selection", "save_onboarding_selection", "save_plan_critique_selection",
-  "save_specialist_selection", "save_writer_fallback_selection", "save_council_seat_selection", "save_code_critique_selection",
+  "save_specialist_selection", "save_writer_fallback_selection", "save_code_critique_selection",
 ].sort();
 
 const OLD_SETTING_KEYS = [
@@ -30,7 +30,6 @@ const OLD_SETTING_KEYS = [
   "plan_critique.provider", "plan_critique.model", "plan_critique.reasoning_effort", "plan_critique.service_tier",
   "code_critique.provider", "code_critique.model", "code_critique.reasoning_effort", "code_critique.service_tier",
   "specialist.provider", "specialist.model", "specialist.reasoning_effort", "specialist.service_tier",
-  ...["product", "demand", "audience", "skeptic", "growth", "ux", "chair"].flatMap((seat) => [`council.${seat}.provider`, `council.${seat}.model`, `council.${seat}.reasoning_effort`]),
   ...[1, 2, 3].flatMap((slot) => [`writer.fallback${slot}.provider`, `writer.fallback${slot}.model`, `writer.fallback${slot}.reasoning_effort`]),
 ].sort();
 
@@ -68,7 +67,7 @@ describe("the RoleSpec table against the names it replaced", () => {
 
   it("owns exactly the setting keys the hand-written sets had", () => {
     expect([...ROLE_SELECTION_KEYS].sort()).toEqual(OLD_SETTING_KEYS);
-    expect([...PAIR_ROLE_SPECS.flatMap((spec) => [...spec.keys]), ...COUNCIL_KEYS].sort()).toEqual(OLD_PICKER_KEYS);
+    expect([...PAIR_ROLE_SPECS.flatMap((spec) => [...spec.keys])].sort()).toEqual(OLD_PICKER_KEYS);
   });
 
   it("derives the NATIVE_*_KEYS sets of the runs room from the same rows", () => {
@@ -80,12 +79,9 @@ describe("the RoleSpec table against the names it replaced", () => {
     for (const [id, set] of Object.entries(sets)) expect([...set].sort(), id).toEqual([...roleSpec(id)!.keys].sort());
   });
 
-  it("keeps the council seats and the writer fallback slots", () => {
-    expect([...COUNCIL_SEATS]).toEqual(["product", "demand", "audience", "skeptic", "growth", "ux", "chair"]);
+  it("keeps the writer fallback slots", () => {
     expect([...WRITER_FALLBACK_SLOTS]).toEqual([1, 2, 3]);
-    expect(COUNCIL_KEYS).toHaveLength(21);
     expect(WRITER_FALLBACK_KEYS).toHaveLength(9);
-    expect(roleSpec("council")!.keys).toEqual(COUNCIL_KEYS);
     expect(roleSpec("writer_fallback")!.keys).toEqual(WRITER_FALLBACK_KEYS);
   });
 

@@ -1,7 +1,7 @@
 import type { z } from "zod";
 import type { rpcContract } from "../../contracts";
 import { t, type I18nKey, type Locale } from "@lane-pilot/i18n";
-import { compareWorkflowCategories, isBuiltinWorkflowCategory, resolveCategoryLabel, workflowCategory } from "../categories";
+import { compareWorkflowCategories, isBuiltinWorkflowCategory, resolveCategoryLabel, workflowCategory, type BuiltinWorkflowCategory } from "../models/categories";
 
 type Listing = z.infer<(typeof rpcContract)["workflow_list"]["output"]>;
 export type LibraryRow = Listing["workflows"][number];
@@ -16,12 +16,17 @@ export const STATUS_PILL: Record<LibraryRow["status"], string> = { draft: "lp-pi
 
 export const shortTime = (at: number) => new Date(at).toLocaleString(undefined, { dateStyle: "short", timeStyle: "short" });
 
+const WF_CAT_KEYS: Partial<Record<BuiltinWorkflowCategory, I18nKey>> = {
+  seo: "wfCat_seo", marketing: "wfCat_marketing", code: "wfCat_code", content: "wfCat_content",
+  research: "wfCat_research", games: "wfCat_games", business: "wfCat_business", routines: "wfCat_routines", service: "wfCat_service",
+};
+
 const isDebug = () => {
   const env = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env;
   return Boolean(env?.DEBUG_FIX) || env?.LOG_LEVEL === "debug";
 };
 const catName = (cat: string, customLabel: { en: string; ru: string } | null | undefined, locale: Locale) =>
-  resolveCategoryLabel(cat, customLabel, locale === "ru" ? "ru" : "en", (b) => t(`wfCat_${b}` as I18nKey));
+  resolveCategoryLabel(cat, customLabel, locale === "ru" ? "ru" : "en", (b) => (WF_CAT_KEYS[b] ? t(WF_CAT_KEYS[b]!) : undefined));
 const runs30 = (rows: readonly LibraryRow[]) => rows.reduce((sum, row) => sum + row.stats.runs30d, 0);
 
 /** Rows bucketed by shelf, in category order; empty shelves are dropped (a filtered-out group simply is not rendered). */

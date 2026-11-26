@@ -1,12 +1,4 @@
 // Public API of checkers: the migrations only (storage imports them; the rest of the room is behind ./server so storage never loads it).
 export { checkerMigrations } from "./migrations";
-export type {
-  DIFF_INSPECTING_CHECKERS,
-  CandidateDiffHiddenAudit,
-  DiffHiddenAuditReport,
-  DiffHiddenCheckResult,
-  DiffHiddenRow,
-  DiffHiddenSummary,
-} from "./diff-hidden";
-export { latestRun as latestCheckerRun, listRows as checkerRows } from "./store";
-export { buildScorecard } from "./score";
+export { latestRun as latestCheckerRun, listRows as checkerRows } from "./server/repositories/checker-repository";
+export { buildScorecard } from "./models/score";

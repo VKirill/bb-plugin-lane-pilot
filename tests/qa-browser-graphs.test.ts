@@ -6,7 +6,7 @@ import { createAttempt, createRun, openDatabase, saveProjectSetting } from "../s
 import { QA_HOST_KEY } from "@lane-pilot/settings-catalog";
 import {builtinWorkflow} from "../src/rooms/workflow/builtin";
 import { recordStage } from "../src/rooms/runs/server";
-import { registerBrowserExecutors, runBrowserQaGraph, runBrowserStep } from "../src/rooms/qa/server/browser-graphs";
+import { registerBrowserExecutors, runBrowserQaGraph, runBrowserStep } from "../src/rooms/qa/server";
 import { registerPureActions } from "@lane-pilot/workflow-engine";
 
 type Call = { method: string; input: Record<string, unknown> };

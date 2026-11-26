@@ -4,12 +4,11 @@ import { createRun, openDatabase, setRunThread } from "../../src/rooms/plugin-db
 import type { LanePilotDatabase } from "../../src/rooms/plugin-db";
 import type { ServerCore } from "../../src/rooms/contracts/server";
 import type { Services } from "../../server";
-import { automationsOverRpc, createWorkflowTriggers, desiredSchedules, triggerScript } from "../../src/rooms/workflow/server/workflow-triggers";
-import type { AutomationsPort, TriggerDeps } from "../../src/rooms/workflow/server/workflow-triggers";
+import { createWorkflowTriggers, desiredSchedules } from "../../src/rooms/workflow/server/services/workflow-triggers";
+import type { ScheduleBoardPort, TriggerDeps } from "../../src/rooms/workflow/server/services/workflow-triggers";
 import { cronProblem, timezoneProblem } from "@lane-pilot/workflow-engine/ui";
 import { WorkflowEngine } from "@lane-pilot/workflow-engine";
 import { checkRequires } from "@lane-pilot/workflow-engine";
-import type { Workflow } from "@lane-pilot/workflow-engine";
 import type { StoredWorkflow, WorkflowStore } from "@lane-pilot/workflow-engine";
 import { definitionSha256 } from "@lane-pilot/workflow-engine";
 import { loadWorkflow, parseWorkflow, validateWorkflow } from "@lane-pilot/workflow-engine";
@@ -68,26 +67,31 @@ describe("a schedule in a workflow", () => {
     const project = stored(digest({ scope: { level: "project", projectId: "proj_b" }, triggers: [{ type: "schedule", cron: "30 7 * * 1" }] }), "project");
     expect(desiredSchedules([project], "proj_b")[0]).toMatchObject({ cron: "30 7 * * 1", inputs: {} });
   });
-
-  it("the automation's script calls the plugin's CLI with the project, the inputs and the tick, and survives a quote in the inputs", () => {
-    const script = triggerScript("daily-digest", { query: "it's cats" });
-    expect(script).toContain("bb lane-pilot workflow-trigger \"$BB_PROJECT_ID\" 'daily-digest' '{\"query\":\"it'\\''s cats\"}' \"${BB_AUTOMATION_RUN_ID:-}\"");
-    expect(script.startsWith("#!/usr/bin/env bash\nset -euo pipefail\n")).toBe(true);
-  });
 });
 
-function fakeAutomations(failures: { update?: Error; remove?: Error } = {}) {
+function fakeScheduleBoard(options: { missingOnUpdate?: boolean; failSave?: string } = {}) {
   const calls: Array<[string, Record<string, unknown>]> = [];
+  const rows = new Map<string, Record<string, unknown>>();
   let next = 0;
-  const port: AutomationsPort = {
-    create: async (input) => { calls.push(["create", input]); next += 1; return { id: `auto_${next}` }; },
-    update: async (input) => { calls.push(["update", input]); if (failures.update) throw failures.update; },
-    remove: async (input) => { calls.push(["remove", input]); if (failures.remove) throw failures.remove; },
+  const port: ScheduleBoardPort = {
+    save: async (raw, by) => {
+      const input = raw as Record<string, unknown>;
+      calls.push(["save", { ...input, by }]);
+      if (options.failSave) return { ok: false, problems: [options.failSave] };
+      const existingId = typeof input.id === "string" ? input.id : undefined;
+      if (existingId && (options.missingOnUpdate || !rows.has(existingId))) {
+        return { ok: false, problems: [`id: there is no schedule ${existingId}`] };
+      }
+      const id = existingId ?? `sch_${++next}`;
+      rows.set(id, { ...input, id, by });
+      return { ok: true, schedule: { id } };
+    },
+    remove: (id) => { calls.push(["remove", { id }]); return rows.delete(id); },
   };
-  return { port, calls };
+  return { port, calls, rows };
 }
 
-function world(options: { items?: StoredWorkflow[]; project?: "ok" | "no_machine"; pm?: boolean; preflight?: TriggerDeps["preflight"]; automations?: AutomationsPort } = {}) {
+function world(options: { items?: StoredWorkflow[]; project?: "ok" | "no_machine"; pm?: boolean; preflight?: TriggerDeps["preflight"]; scheduleBoard?: ScheduleBoardPort } = {}) {
   const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
   harness.sdk.stub("threads.getPluginMetadata", async ({ threadId }: { threadId: string }) => (threadId === PM ? { role: "pm" } : { role: "pm", architectProjectId: PROJECT }));
   const db: LanePilotDatabase = openDatabase(bb);
@@ -100,89 +104,80 @@ function world(options: { items?: StoredWorkflow[]; project?: "ok" | "no_machine
   const triggers = createWorkflowTriggers(ctx, { workflowEngine: engine } as unknown as Services, {
     loadStore: async () => ({ store: storeOf(...items), project }),
     ...(options.preflight ? { preflight: options.preflight } : {}),
-    ...(options.automations ? { automations: options.automations } : {}),
+    ...(options.scheduleBoard ? { scheduleBoard: options.scheduleBoard } : {}),
   });
   return { db, engine, triggers, logs, harness, setItems: (next: StoredWorkflow[]) => { items = next; }, setProject: (next: "ok" | "no_machine") => { project = next; } };
 }
 
-describe("the automations of schedules", () => {
+describe("the schedule-board rows of workflow triggers", () => {
   it("creates one when a workflow is published, leaves it when nothing changed, updates it when the schedule changes, removes it when the workflow is unpublished", async () => {
-    const automations = fakeAutomations();
-    const { triggers, db, setItems } = world({ automations: automations.port });
+    const board = fakeScheduleBoard();
+    const { triggers, db, setItems } = world({ scheduleBoard: board.port });
     expect(await triggers.sync(PROJECT)).toMatchObject({ created: 1, updated: 0, removed: 0, failed: [] });
-    expect(automations.calls).toHaveLength(1);
-    expect(automations.calls[0]![1]).toMatchObject({ projectId: PROJECT, name: "Lane Pilot: Daily digest", cron: "0 9 * * *", timezone: "Europe/Moscow" });
-    expect(String(automations.calls[0]![1].script)).toContain("'daily-digest'");
-    expect(db.prepare("SELECT workflow_id, slot, automation_id FROM lane_pilot_wf_trigger").all()).toEqual([{ workflow_id: "daily-digest", slot: 0, automation_id: "auto_1" }]);
+    expect(board.calls).toHaveLength(1);
+    expect(board.calls[0]![1]).toMatchObject({
+      projectId: PROJECT,
+      name: "Lane Pilot: Daily digest",
+      task: { kind: "workflow", workflowId: "daily-digest", inputs: { query: "cats" } },
+      when: { type: "cron", cron: "0 9 * * *", timezone: "Europe/Moscow" },
+      by: "workflow:daily-digest:0",
+    });
+    expect(db.prepare("SELECT workflow_id, slot, automation_id FROM lane_pilot_wf_trigger").all()).toEqual([{ workflow_id: "daily-digest", slot: 0, automation_id: "sch_1" }]);
 
     expect(await triggers.sync(PROJECT)).toMatchObject({ created: 0, updated: 0, removed: 0 });
-    expect(automations.calls).toHaveLength(1);
+    expect(board.calls).toHaveLength(1);
 
     setItems([stored(digest({ triggers: [{ type: "schedule", cron: "0 10 * * *", timezone: "Europe/Moscow", projectId: PROJECT, inputs: { query: "cats" } }] }))]);
     expect(await triggers.sync(PROJECT)).toMatchObject({ updated: 1 });
-    expect(automations.calls.at(-1)).toEqual(["update", expect.objectContaining({ automationId: "auto_1", cron: "0 10 * * *" })]);
+    expect(board.calls.at(-1)).toEqual(["save", expect.objectContaining({ id: "sch_1", when: { type: "cron", cron: "0 10 * * *", timezone: "Europe/Moscow" } })]);
 
     setItems([stored(digest({ status: "deprecated" }))]);
     expect(await triggers.sync(PROJECT)).toMatchObject({ removed: 1 });
-    expect(automations.calls.at(-1)).toEqual(["remove", { projectId: PROJECT, automationId: "auto_1" }]);
+    expect(board.calls.at(-1)).toEqual(["remove", { id: "sch_1" }]);
     expect(db.prepare("SELECT COUNT(*) AS n FROM lane_pilot_wf_trigger").get()).toEqual({ n: 0 });
   });
 
-  it("an unpublished workflow loses its automation, and so does one whose tests went red (it then counts as a draft)", async () => {
-    const automations = fakeAutomations();
-    const { triggers, setItems } = world({ automations: automations.port });
+  it("an unpublished workflow loses its schedule row, and so does one whose tests went red (it then counts as a draft)", async () => {
+    const board = fakeScheduleBoard();
+    const { triggers, setItems } = world({ scheduleBoard: board.port });
     await triggers.sync(PROJECT);
     setItems([stored(digest({ status: "draft" }))]);
     expect(await triggers.sync(PROJECT)).toMatchObject({ removed: 1 });
-    expect(automations.calls.map(([kind]) => kind)).toEqual(["create", "remove"]);
+    expect(board.calls.map(([kind]) => kind)).toEqual(["save", "remove"]);
   });
 
   it("removes nothing that merely went missing while the project's files cannot be read, but still creates and removes what is known to be unpublished", async () => {
-    const automations = fakeAutomations();
-    const { triggers, setItems, setProject } = world({ automations: automations.port });
+    const board = fakeScheduleBoard();
+    const { triggers, setItems, setProject } = world({ scheduleBoard: board.port });
     await triggers.sync(PROJECT);
     setProject("no_machine");
     setItems([]);
     expect(await triggers.sync(PROJECT)).toMatchObject({ removed: 0, complete: false });
-    expect(automations.calls.map(([kind]) => kind)).toEqual(["create"]);
+    expect(board.calls.map(([kind]) => kind)).toEqual(["save"]);
     setItems([stored(digest({ id: "other-digest" }))]);
     expect(await triggers.sync(PROJECT)).toMatchObject({ created: 1 });
     setItems([stored(digest({ id: "other-digest", status: "deprecated" }))]);
     expect(await triggers.sync(PROJECT)).toMatchObject({ removed: 1 });
   });
 
-  it("makes the automation again when the owner deleted it, and does not fail on removing one that is gone", async () => {
-    const gone = new Error("automation not found");
-    const automations = fakeAutomations({ update: gone, remove: gone });
-    const { triggers, setItems, db } = world({ automations: automations.port });
+  it("makes the schedule row again when the owner deleted it, and does not fail on removing one that is gone", async () => {
+    const board = fakeScheduleBoard({ missingOnUpdate: true });
+    const { triggers, setItems, db } = world({ scheduleBoard: board.port });
     await triggers.sync(PROJECT);
     setItems([stored(digest({ triggers: [{ type: "schedule", cron: "5 9 * * *", projectId: PROJECT }] }))]);
     expect(await triggers.sync(PROJECT)).toMatchObject({ updated: 1, failed: [] });
-    expect(automations.calls.map(([kind]) => kind)).toEqual(["create", "update", "create"]);
-    expect(db.prepare("SELECT automation_id FROM lane_pilot_wf_trigger").all()).toEqual([{ automation_id: "auto_2" }]);
+    expect(board.calls.map(([kind]) => kind)).toEqual(["save", "save", "save"]);
+    expect(db.prepare("SELECT automation_id FROM lane_pilot_wf_trigger").all()).toEqual([{ automation_id: "sch_2" }]);
     setItems([]);
     expect(await triggers.sync(PROJECT)).toMatchObject({ removed: 1, failed: [] });
   });
 
   it("keeps the row and reports a refusal, to try again at the next sync", async () => {
-    const down: AutomationsPort = { create: async () => { throw new Error("automations offline"); }, update: async () => undefined, remove: async () => undefined };
-    const { triggers, db, logs } = world({ automations: down });
-    expect(await triggers.sync(PROJECT)).toMatchObject({ created: 0, failed: [expect.stringContaining("automations offline")] });
+    const board = fakeScheduleBoard({ failSave: "schedule board offline" });
+    const { triggers, db, logs } = world({ scheduleBoard: board.port });
+    expect(await triggers.sync(PROJECT)).toMatchObject({ created: 0, failed: [expect.stringContaining("schedule board offline")] });
     expect(db.prepare("SELECT COUNT(*) AS n FROM lane_pilot_wf_trigger").get()).toEqual({ n: 0 });
     expect(logs[0]).toContain("not fully synced");
-  });
-
-  it("talks to BB's automations plugin as a script automation made by the app", async () => {
-    const calls: Array<{ pluginId: string; method: string; input: Record<string, unknown> }> = [];
-    const ctx = { bb: { sdk: { plugins: { callRpc: async (args: { pluginId: string; method: string; input: Record<string, unknown> }) => { calls.push(args); return { id: "auto_77" }; } } } } } as unknown as ServerCore;
-    const port = automationsOverRpc(ctx);
-    expect(await port.create({ projectId: PROJECT, name: "n", cron: "0 9 * * *", timezone: "UTC", script: "echo" })).toEqual({ id: "auto_77" });
-    await port.update({ projectId: PROJECT, automationId: "auto_77", name: "n", cron: "0 8 * * *", timezone: "UTC", script: "echo" });
-    await port.remove({ projectId: PROJECT, automationId: "auto_77" });
-    expect(calls.map((call) => `${call.pluginId}.${call.method}`)).toEqual(["automations.automations_create", "automations.automations_update", "automations.automations_delete"]);
-    expect(calls[0]!.input).toMatchObject({ projectId: PROJECT, enabled: true, origin: "app", trigger: { triggerType: "schedule", cron: "0 9 * * *", timezone: "UTC" },
-      execution: { mode: "script", interpreter: "bash", script: "echo" } });
-    expect(calls[2]!.input).toEqual({ projectId: PROJECT, automationId: "auto_77" });
   });
 });
 
@@ -213,13 +208,12 @@ describe("starting a workflow from the tab, a schedule or Telegram", () => {
     expect(logs.filter((line) => line.includes("metadata down"))).toHaveLength(1);
   });
 
-  it("refuses with a reason: unknown workflow, draft, missing input, no telegram trigger", async () => {
+  it("refuses with a reason: unknown workflow, draft, missing input, no trigger", async () => {
     const { triggers } = world({ items: [stored(digest()), stored(digest({ id: "wip", status: "draft" })), stored(digest({ id: "no-schedule", triggers: [{ type: "manual" }] }))] });
     const start = (workflowId: string, extra: Partial<Parameters<typeof triggers.start>[0]> = {}) => triggers.start({ projectId: PROJECT, workflowId, inputs: { query: "q" }, source: "manual", ...extra });
     expect(await start("nope")).toMatchObject({ ok: false, reason: "unknown_workflow" });
     expect(await start("wip")).toMatchObject({ ok: false, reason: "not_runnable" });
     expect(await start("daily-digest", { inputs: {} })).toMatchObject({ ok: false, reason: "missing_inputs", missing: ["query"] });
-    expect(await start("daily-digest", { source: "telegram" })).toMatchObject({ ok: false, reason: "no_trigger" });
     expect(await start("no-schedule", { source: "schedule" })).toMatchObject({ ok: false, reason: "no_trigger" });
   });
 
@@ -248,13 +242,6 @@ describe("starting a workflow from the tab, a schedule or Telegram", () => {
     const started = await triggers.start({ projectId: PROJECT, workflowId: "daily-digest", inputs: { query: "q" }, source: "schedule", key: "t" });
     expect(started).toMatchObject({ ok: true });
     expect(engine.snapshot((started as { runId: string }).runId)!.run).toMatchObject({ link_run_id: RUN });
-    await engine.idle();
-  });
-
-  it("a telegram start needs the workflow's telegram trigger", async () => {
-    const { triggers, engine } = world({ items: [stored(digest({ triggers: [{ type: "telegram" }] }))] });
-    const started = await triggers.start({ projectId: PROJECT, workflowId: "daily-digest", inputs: { query: "q" }, source: "telegram" });
-    expect(started).toMatchObject({ ok: true });
     await engine.idle();
   });
 

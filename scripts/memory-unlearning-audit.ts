@@ -7,8 +7,8 @@
  */
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { searchMemoryAllSections, storeMemoryRecords } from "../packages/memory-core/src";
-import { coldMatches } from "../src/rooms/memory-tiers/server/tiers";
-import { deleteMemoryRecord } from "../src/rooms/self-repair/server/insights";
+import { coldMatches } from "../src/rooms/memory-tiers/server";
+import { createMemoryConflicts, sessionMemoryRpc } from "../src/rooms/memory/server";
 import { openDatabase } from "../src/rooms/plugin-db";
 
 /** Where the deleted record's id or content can still be found. */
@@ -29,7 +29,8 @@ export function audit(db: ReturnType<typeof openDatabase>, projectId = "P"): { r
   storeMemoryRecords(db, { projectId, audience: "subagent", sourceSha256: "a".repeat(64), coreBudget: 99_999, noteBudget: 99_999, indexBudget: 999_999,
     entries: [{ kind: "note", content, concepts: ["audit", "canary"] }] });
   const id = (db.prepare("SELECT id FROM lane_pilot_memory WHERE project_id=? AND content=?").get(projectId, content) as { id: string }).id;
-  deleteMemoryRecord(db, projectId, id);
+  const memoryConflicts = createMemoryConflicts({ db, deferrals: () => ({ close() {} }) as never });
+  void sessionMemoryRpc({ db } as never, { memoryConflicts } as never).memory_record_delete({ projectId, id });
   return { residuals: unlearningResiduals(db, projectId, id, content) };
 }
 

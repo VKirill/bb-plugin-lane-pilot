@@ -3,9 +3,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnAsync, bestEffort } from "@lane-pilot/kit";
 import { buildFixture } from "./fixture";
-import { runScore, type ScoreReport } from "./service";
-import { CODE_CHECKERS, DEFECT_CLASSES, EXPECTED_CATCHERS, type CheckerId } from "./types";
-import { openClone, type ShellPort } from "./workspace";
+import { runScore, type ScoreReport } from "./server/services/score-service";
+import { CODE_CHECKERS, DEFECT_CLASSES, EXPECTED_CATCHERS, type CheckerId } from "./models/types";
+import { openClone, type ShellPort } from "./server/services/workspace";
 
 /** A shell on this machine: `sh -c`, killed when the time is out. */
 export const localShell: ShellPort = {

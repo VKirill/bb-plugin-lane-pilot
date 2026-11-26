@@ -3,8 +3,8 @@ import { createFakeWorktreeHost } from "./own-worktree-host";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import plugin from "../server";
 import type { TaskV2 } from "../src/rooms/contracts";
-import { shouldRunPlanCritique } from "../src/rooms/critique/critique";
-import { parsePlanRevision, planReviseConfig } from "../src/rooms/writer/server/plan-revise";
+import { shouldRunPlanCritique } from "../src/rooms/critique";
+import { parsePlanRevision, planReviseConfig } from "../src/rooms/writer/server/services/plan-revise";
 import { coreFileWrite, mapStore } from "./helpers/core-files";
 import { contractEditions, createRun, freezeRunBinding, getAttempt, getTaskPlan, listStageReceipts, openDatabase, renderTaskManifest, saveProjectSetting, savePrototypeConfig, setRunThread } from "../src/rooms/plugin-db";
 

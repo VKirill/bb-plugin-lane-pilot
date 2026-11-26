@@ -2,7 +2,7 @@ import { execFileSync, spawn } from "node:child_process";
 import { mkdir, readFile, utimes, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { expect, it, vi } from "vitest";
-import { integrateWorktree, prepareWorktree, withBaseLock } from "../../src/rooms/verification/git-integrate";
+import { integrateWorktree, prepareWorktree, withBaseLock } from "../../src/rooms/worktree";
 import { gitOwnershipChangedPaths } from "../../src/rooms/verification/git-ownership";
 import { git, repo } from "./git-integrate-helpers";
 
@@ -157,7 +157,7 @@ it("docs worktree: commits under its own lock and merges only what is committed,
 
 it("saves a released worktree's uncommitted edits and unshared commits as a patch", async () => {
   const { base, worktree } = await repo();
-  const { snapshotWorktree } = await import("../../src/rooms/verification/git-integrate");
+  const { snapshotWorktree } = await import("../../src/rooms/worktree");
   const a = await worktree("rejected");
   await writeFile(join(a, "kept.ts"), "export const committed = 1;\n");
   git(a, "add", "-A"); git(a, "commit", "-qm", "rejected commit");
@@ -175,7 +175,7 @@ it("saves a released worktree's uncommitted edits and unshared commits as a patc
 // docs/task-folder.md: the worktree no longer gets the base's whole .agents/plans/items/ (every task's plans and logs); the plugin places the
 // task's own home from its manifest at the brief. Mutation that breaks it: copyTaskItems copying the shared folder again.
 it("[sma:wi_spool] writes the old task folder in the base, excludes it once, copies no shared task folder into either worktree path, and does not commit it", async () => {
-  const { appendExcludeCommand, persistTaskFolder, prepareWorktree, createWorktree, TASK_FOLDER_EXCLUDE } = await import("../../src/rooms/verification/git-integrate");
+  const { appendExcludeCommand, persistTaskFolder, prepareWorktree, createWorktree, TASK_FOLDER_EXCLUDE } = await import("../../src/rooms/worktree");
   const { mkdir, readFile, writeFile } = await import("node:fs/promises");
   const { dirname } = await import("node:path");
   const { base, worktree } = await repo();

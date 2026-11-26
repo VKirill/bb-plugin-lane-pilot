@@ -10,6 +10,7 @@ import { buildGraph, runtimeClosure } from "../scripts/refactor/graph";
  */
 const ALLOWED: Record<string, string> = {
   "src/rooms/contracts/session-hook-source.ts": "the text of the session hook, written to the session's folder and run by Claude Code as its own short process; the host worker never executes it",
+  "src/rooms/contracts/native-hook-sources.ts": "the text of the shell guard hook; the names appear in its regex that refuses interpreter one-liners spawning processes",
 };
 
 const root = resolve(__dirname, "..");
@@ -26,7 +27,7 @@ function hostClosure(): string[] {
 
 it("reaches the host handlers' code (so the scan below cannot go quiet by finding nothing)", () => {
   const files = hostClosure();
-  for (const expected of ["host.ts", "src/rooms/host-worker/host-handlers.ts", "src/rooms/host-worker/jobs.ts", "src/rooms/verification/git-integrate.ts", "src/rooms/native-install/coexistence.ts", "src/rooms/native-install/stack-ops.ts", "packages/kit/src/spawn-async.ts"]) {
+  for (const expected of ["host.ts", "src/rooms/host-worker/handlers/index.ts", "src/rooms/host-worker/jobs.ts", "src/rooms/worktree/merge.ts", "src/rooms/native-install/coexistence.ts", "src/rooms/native-install/stack-ops.ts", "packages/kit/src/spawn-async.ts"]) {
     expect(files).toContain(expected);
   }
   expect(files.some((file) => file.startsWith("src/server/"))).toBe(false);

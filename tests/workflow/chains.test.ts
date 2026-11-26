@@ -34,7 +34,7 @@ describe("chains of the spec in JSON", () => {
     expect(get("x-to-telegram-digest")).toMatchObject({ triggers: [{ type: "chat" }, { type: "schedule" }, { type: "manual" }], budget: { maxCostUsd: 3, maxWallSeconds: 3600 }, guards: { maxFanOut: 4 } });
     // Skipping by quality mode and by condition, with a typed output for the skipped node.
     const analyze = get("analyze-plan-execute").nodes.find((node) => node.id === "qa")!;
-    expect(analyze).toMatchObject({ applicable_modes: ["full"], skip_when: "!plan.has_ui", skip_out: { status: "pass" } });
+    expect(analyze).toMatchObject({ applicable_modes: ["full"], skip_when: "!plan.has_ui", skip_out: { status: "not_run" } });
     // The value of a node input by quality mode.
     const call = get("analyze-plan-execute").nodes.find((node) => node.id === "analyze")!;
     expect((call as { with: Record<string, unknown> }).with.depth).toEqual({ by_mode: { quick: "quick", standard: "standard", full: "deep" } });
@@ -118,7 +118,7 @@ const posts = (count: number, dupes = 0) => Array.from({ length: count }, (_, in
 function stubs(world: { collect: unknown[]; sent: string[]; log: string[] }) {
   const agent: NodeExecutor = { reentrant: true, run: async (ctx: StepContext) => {
     world.log.push(ctx.nodeId);
-    const done = (output: Record<string, unknown>) => ({ output: { handoff: `${ctx.nodeId} done`, ...output } });
+    const done = (output: Record<string, unknown>) => ({ output: { handoff: `${ctx.nodeId} done`, ...output }, usage: { tokens: 0, costUsd: 0, costState: "measured" as const } });
     switch (ctx.nodeId) {
       case "collect": return done({ items: world.collect, count: world.collect.length, status: "done", reason: "" });
       case "widen": return done({ query: "design systems OR design-system", period: "30d" });

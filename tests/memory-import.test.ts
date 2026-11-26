@@ -1,4 +1,4 @@
-import { execFileSync, spawnSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -6,7 +6,7 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
 import { searchMemoryRecords, storeMemoryRecords, type MemorySettings } from "../packages/memory-core/src";
 import { openDatabase } from "../src/rooms/plugin-db";
-import { evalMemoryImport, formatImportSummary, maskImportContent, pmTopIds, runMemoryImport, type ImportReport } from "../src/rooms/memory/server/import";
+import { evalMemoryImport, formatImportSummary, maskImportContent, pmTopIds, runMemoryImport, type ImportReport } from "../src/rooms/memory/server/services/import";
 
 const PROJECT = "proj_import_test";
 const settings: MemorySettings = { enabled: true, maintain: true, inject: true, audience: "subagent", personalBot: "",

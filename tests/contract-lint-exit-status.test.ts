@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { TaskV2 } from "../src/rooms/contracts";
-import { lintContract } from "../src/rooms/tasks/server/contract-lint";
-import { maskedExitReason, needsCommitReason, passWithNoTestsReason, pipelinesOf } from "../src/rooms/tasks/server/lint-exit-status";
+import { lintContract, maskedExitReason, needsCommitReason, passWithNoTestsReason, pipelinesOf } from "../src/rooms/tasks/server";
 
 const root = "/tmp/writer";
 const base: TaskV2 = {

@@ -1,8 +1,8 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
 import { SECTION_RANK_BOOST, liftPreferred, parseMemorySettings, searchMemoryRecords, storeMemoryRecords } from "@lane-pilot/memory-core";
-import { pmMemoryContext } from "../src/rooms/memory/server/memory-mix";
-import { threadMemoryBlock } from "../src/rooms/memory/server/thread-block";
+import { pmMemoryContext } from "../src/rooms/memory/server/services/memory-mix";
+import { threadMemoryBlock } from "../src/rooms/memory/server/services/thread-block";
 import { openDatabase } from "../src/rooms/plugin-db";
 
 const limits = { sourceSha256: "d".repeat(64), audience: "subagent" as const, coreBudget: 99_999, noteBudget: 99_999, indexBudget: 999_999 };

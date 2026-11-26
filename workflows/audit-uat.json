@@ -23,6 +23,7 @@
     "audit",
     "uat"
   ],
+  "category": "qa",
   "inputs": {
     "propose_followup": {
       "type": "bool",
@@ -205,5 +206,9 @@
       ]
     }
   },
-  "goal_check": "validate"
+  "goal_check": "validate",
+  "not_for": [
+    "validate-phase",
+    "ui-audit"
+  ]
 }
