@@ -1,6 +1,5 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { expect, it } from "vitest";
-import "../server";
 import type { PrototypeConfig, TaskV2 } from "../src/rooms/contracts";
 import { createAttempt, createRun, createTask, openDatabase } from "../src/rooms/plugin-db";
 import { createWriterSpawn } from "../src/rooms/writer/server/services/spawn";

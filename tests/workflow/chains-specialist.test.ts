@@ -1,7 +1,7 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { runDraftTest, testCasesOf } from "@lane-pilot/workflow-engine";
 import { describe, expect, it } from "vitest";
-import { migrations } from "../../src/rooms/plugin-db";
+import { migrations } from "../../src/rooms/migrations";
 import { workflowCategory } from "../../src/rooms/workflow/models/categories";
 import { chainStore, runSim } from "./chain-harness";
 import { out, pathOf } from "./chain-helpers";

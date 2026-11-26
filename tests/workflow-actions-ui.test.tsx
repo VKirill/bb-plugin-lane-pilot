@@ -9,7 +9,7 @@ import { setLocaleOverride } from "@lane-pilot/i18n";
 import { createWorkflowLibrary } from "../src/rooms/workflow/server/services/workflow-library";
 import { createWorkflowOps } from "../src/rooms/workflow/server/services/workflow-ops";
 import type { ServerCore } from "../src/rooms/contracts/server";
-import type { Services } from "../server";
+import type { Services } from "../src/rooms/services";
 import { engineOn, journalDb, ok, trust, wf } from "./workflow/engine-helpers";
 import { workflow } from "./workflow/fixtures";
 

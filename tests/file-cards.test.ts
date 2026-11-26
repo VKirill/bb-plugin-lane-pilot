@@ -23,6 +23,7 @@ import { createAttempt, createRun, createTask, recordFinishedAttempt } from "../
 import { registerCli } from "../src/rooms/tools/server";
 import { createCore } from "../src/rooms/core/server/core";
 import type { Services } from "../server";
+import { createGitRepo, git } from "./helpers/git-repo";
 
 const newHost = () => createFakePluginHost({ pluginId: "lane-pilot" });
 const BUDGETS = { coreBudget: 9_999, noteBudget: 99_999, indexBudget: 999_999 };
@@ -201,18 +202,14 @@ describe("memory corpus care (parity wave g4)", () => {
 // ---- review fixes -------------------------------------------------------------------------------------------------
 
 const ROOT = join(__dirname, "..");
-const git = (cwd: string, ...args: string[]) => execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", ...args], { cwd, encoding: "utf8" });
 const dirs: string[] = [];
 const scratch = (prefix: string) => { const dir = mkdtempSync(join(tmpdir(), prefix)); dirs.push(dir); return dir; };
 afterEach(() => { while (dirs.length) rmSync(dirs.pop()!, { recursive: true, force: true }); });
 
 function makeRepo(files: Record<string, string | Buffer> = { "a.ts": "/**\n * Ledger helpers.\n */\nexport const A = 1;\n" }): string {
-  const repo = scratch("lp-g4repo-");
-  git(repo, "init", "-q", "-b", "main");
-  for (const [name, body] of Object.entries(files)) writeFileSync(join(repo, name), body);
-  git(repo, "add", "-A");
-  git(repo, "commit", "-q", "-m", "first");
-  return repo;
+  const { root } = createGitRepo({ prefix: "lp-g4repo-", files, commit: "first" });
+  dirs.push(root);
+  return root;
 }
 
 /** The real hook process: from the plain source (strip-types) or from the generated bundle. */

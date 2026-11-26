@@ -1,7 +1,7 @@
 import Database from "better-sqlite3";
 import { describe, expect, it } from "vitest";
 import { EMBED_DIM, dedupeProject, dropMemoryIndexes, duplicatePairs, duplicateWords, factsAgree, parseMemorySettings, searchMemoryRecords, storeMemoryRecords, storeVectors, textRelation, type MemoryCandidate } from "@lane-pilot/memory-core";
-import { migrations } from "../src/rooms/plugin-db";
+import { migrations } from "../src/rooms/migrations";
 import { runMemoryImport } from "../src/rooms/memory/server/services/import";
 import { dedupeAllProjects } from "../src/rooms/memory/server/services/memory-duplicates";
 import { runMemoryDuplicatesCli } from "../src/rooms/memory/server/handlers/memory-duplicates-cli";

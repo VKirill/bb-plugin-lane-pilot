@@ -52,10 +52,10 @@ export async function runMemoryEvalCommand(live: Pick<Database.Database, "prepar
       } finally { scratch.close(); }
     }
     if (flags.suite) {
+      if (flags["write-baseline"] && !extras.io) throw new Error("--write-baseline writes a file: run it with scripts/memory-eval.ts");
       const report = runSuite(migrations);
       if (flags["write-baseline"]) {
-        if (!extras.io) throw new Error("--write-baseline writes a file: run it with scripts/memory-eval.ts");
-        extras.io.write(flags["write-baseline"], `${JSON.stringify(baselineOf(report, `recorded ${new Date().toISOString().slice(0, 10)} with the stand-in embedding`), null, 2)}\n`);
+        extras.io!.write(flags["write-baseline"], `${JSON.stringify(baselineOf(report, `recorded ${new Date().toISOString().slice(0, 10)} with the stand-in embedding`), null, 2)}\n`);
         return { exitCode: 0, stdout: `${formatSuite(report)}\nbaseline written to ${flags["write-baseline"]}` };
       }
       const baseline = suiteBaseline as SuiteBaseline;

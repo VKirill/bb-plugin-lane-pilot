@@ -4,8 +4,8 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { openDatabase as openStorageDatabase } from "./storage";
 import { migrations } from "./migrations";
-import { coupledSettingKeys, validateSettingChanges, validateSettingValue, validateSettingsObject } from "./settings";
-import { wireMemoryAttemptEffects } from "./memory/server";
+import { coupledSettingKeys, validateSettingChanges, validateSettingValue, validateSettingsObject } from "./settings/models/setting-validation";
+import { wireMemoryAttemptEffects } from "./memory/server/repositories/attempt-effects";
 
 export * from "./storage";
 export { migrations } from "./migrations";

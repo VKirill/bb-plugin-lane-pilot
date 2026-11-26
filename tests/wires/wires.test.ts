@@ -1,21 +1,23 @@
-import { execFileSync, execSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { execSync } from "node:child_process";
+import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { brokenWireReason, readWires, wiresCommand } from "../../src/rooms/wires";
 import { planFactOutcome, type PlanFactCheck } from "../../src/rooms/tasks";
+import { createGitRepo } from "../helpers/git-repo";
 
 function repo() {
-  const dir = mkdtempSync(join(tmpdir(), "lp-wires-"));
-  const write = (path: string, text: string) => { mkdirSync(join(dir, path, ".."), { recursive: true }); writeFileSync(join(dir, path), text); };
-  write("src/settings.ts", "export function loadSettings() { return read('ui.theme'); }\n");
-  write("src/app.tsx", "import { loadSettings } from './settings';\nexport const App = () => <ThemeProvider value={loadSettings()} />;\n");
-  write("tests/app.test.ts", "loadSettings(); ThemeProvider; ui.theme; Footer;\n");
-  execFileSync("git", ["init", "-q"], { cwd: dir });
-  execFileSync("git", ["add", "-A"], { cwd: dir });
-  write("src/new-untracked.ts", "export const footer = () => Banner;\n");
-  return dir;
+  const { base } = createGitRepo({
+    prefix: "lp-wires-",
+    files: {
+      "src/settings.ts": "export function loadSettings() { return read('ui.theme'); }\n",
+      "src/app.tsx": "import { loadSettings } from './settings';\nexport const App = () => <ThemeProvider value={loadSettings()} />;\n",
+      "tests/app.test.ts": "loadSettings(); ThemeProvider; ui.theme; Footer;\n",
+    },
+    commit: false,
+  });
+  writeFileSync(join(base, "src/new-untracked.ts"), "export const footer = () => Banner;\n");
+  return base;
 }
 const run = (dir: string, command: string) => execSync(command, { cwd: dir, shell: "/bin/sh", encoding: "utf8" });
 

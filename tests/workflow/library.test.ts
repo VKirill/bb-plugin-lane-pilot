@@ -6,7 +6,7 @@ import { parseLpSignal } from "@lane-pilot/ui-kit/realtime-channel";
 import { createWorkflowLibrary, clipJson } from "../../src/rooms/workflow/server/services/workflow-library";
 import { rpcContract } from "../../src/rooms/contracts";
 import type { ServerCore } from "../../src/rooms/contracts/server";
-import type { Services } from "../../server";
+import type { Services } from "../../src/rooms/services";
 import { parseWorkflow } from "@lane-pilot/workflow-engine";
 import { draftView } from "@lane-pilot/workflow-engine/ui";
 import { conditionText, roleTone, workflowView } from "@lane-pilot/workflow-engine";

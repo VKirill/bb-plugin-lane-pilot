@@ -1,6 +1,6 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
-import { openDatabase } from "../../src/rooms/plugin-db";
+import { openDatabase } from "../../src/rooms/storage";
 import { HOOK_TIMEOUTS_KEY, mountHookTimeoutWatch, type HookTimeoutRecord } from "../../src/rooms/stability/server";
 import type { ServerCore } from "../../src/rooms/contracts/server";
 import packageJson from "../../package.json";
@@ -21,7 +21,7 @@ function setup(options: { vk?: boolean; draining?: boolean } = {}) {
   });
   let callback: Callback | null = null;
   if (options.vk !== false) (bb as unknown as { vk: unknown }).vk = { experimental_vkOnHookTimeout: (cb: Callback) => { callback = cb; return { dispose() {} }; } };
-  const db = openDatabase(bb);
+  const db = openDatabase(bb, { migrations: [] });
   void bb.storage.kv.set("self-repair:config", { projectId: "proj_lp", environmentId: "env_lp" } as never);
   let chain: Promise<unknown> = Promise.resolve();
   const host = { call: async (method: string, input: Record<string, unknown>) => method === "gitCreateWorktree"

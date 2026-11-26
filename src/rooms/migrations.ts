@@ -1,24 +1,24 @@
-import { nativeDirectoryMigrations } from "./storage";
+import { nativeDirectoryMigrations } from "./storage/native-directory-guard";
 // The composed Lane Pilot migration list, in apply order. Order is locked: tests/fixtures/migrations.lock.json hashes every statement.
 // Owner rooms export their slices; storage applies whatever list it is handed (openDatabase default lives above storage).
 import { handoffMigrations } from "@lane-pilot/handoff";
 import { workflowInboxMigrations, workflowMigrations, workflowNodeFormMigrations, workflowStepFactsMigrations } from "@lane-pilot/workflow-engine";
 import { workflowNotVerifiedMigrations, workflowOpsMigrations } from "@lane-pilot/workflow-engine";
 import { draftMigrations } from "@lane-pilot/workflow-engine";
-import { scheduleAgentMigrations, scheduleMigrations } from "./schedule";
-import { deferralKindMigrations, deferralMigrations, wallDeferralKindMigrations } from "./deferral";
-import { rollbackMigrations } from "./rollback";
-import { ownerWaitingMigrations } from "./owner-waiting";
-import { leadMigrations } from "./lead";
-import { baselineMigrations } from "./baseline";
-import { stageReturnMigrations } from "./stage-return";
-import { outageMigrations } from "./outage";
-import { backlogMigrations } from "./backlog";
-import { memoryTierMigrations } from "./memory-tiers";
-import { checkerMigrations } from "./checkers";
+import { scheduleAgentMigrations, scheduleMigrations } from "./schedule/migrations";
+import { deferralKindMigrations, deferralMigrations, wallDeferralKindMigrations } from "./deferral/migrations";
+import { rollbackMigrations } from "./rollback/migrations";
+import { ownerWaitingMigrations } from "./owner-waiting/migrations";
+import { leadMigrations } from "./lead/migrations";
+import { baselineMigrations } from "./baseline/migrations";
+import { stageReturnMigrations } from "./stage-return/migrations";
+import { outageMigrations } from "./outage/migrations";
+import { backlogMigrations } from "./backlog/migrations";
+import { memoryTierMigrations } from "./memory-tiers/migrations";
+import { checkerMigrations } from "./checkers/migrations";
 import { memoryConflictMigrations } from "@lane-pilot/memory-core";
-import { spMigrations } from "./specialist";
-import { trajectoryDeltaMigrations } from "./errands";
+import { spMigrations } from "./specialist/migrations";
+import { trajectoryDeltaMigrations } from "./errands/migrations";
 import {
   anamnesisOwnerMigrations,
   benchMigrations,

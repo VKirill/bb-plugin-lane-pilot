@@ -4,11 +4,11 @@ import { resolve } from "node:path";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { boundedReadCall } from "../../helpers/bounded-read";
 import { coreFileWrite, type FileStore } from "../../helpers/core-files";
-import { afterEach, describe, expect, it as vitestIt, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it as vitestIt } from "vitest";
 import plugin from "../../../server";
 import { runBrowserQaOnHost, type BrowserQaInput } from "../../../src/rooms/qa";
 import { storeMemoryRecords } from "@lane-pilot/memory-core";
-import { appendAcceptedFact, countChargedAttempts, createAttempt, createRun, createTask, getAttempt, getRun, listAcceptedFacts, listGateEvents, listPendingAcceptedFacts, listStageReceipts, loadProjectSettings, openDatabase, saveProjectSetting, savePrototypeConfig, saveStageReceipt, saveTaskPlan, setAttemptHolderThread, setRunThread, setRunWorkspace, transitionAttempt } from "../../../src/rooms/plugin-db";
+import { appendAcceptedFact, countChargedAttempts, createAttempt, createRun, createTask, getAttempt, getRun, listAcceptedFacts, listGateEvents, listPendingAcceptedFacts, listStageReceipts, loadProjectSettings, onAttemptChanged, openDatabase, saveProjectSetting, savePrototypeConfig, saveStageReceipt, saveTaskPlan, setAttemptHolderThread, setRunThread, setRunWorkspace, transitionAttempt } from "../../../src/rooms/plugin-db";
 import { memoryRecordId } from "../../../src/rooms/memory/models/memory";
 import type { TaskV2 } from "../../../src/rooms/contracts";
 import { buildRunPolicy } from "../../../src/rooms/tasks";
@@ -50,6 +50,7 @@ const readFirstLine = `- README.md L1-L2 (sha256 ${readmeSha8})`;
 // Memory is kept in the background right after acceptance (fa996c1), so a test that needs the child "still running"
 // holds its events.list until released instead of racing the PM's own call.
 const heldEvents = new Map<string,Promise<void>>();
+const heldEventResolvers = new Map<string,()=>void>();
 /** While true, the docs child reports no completion, so a test sees it running until it releases it. */
 let docsEventsHeld=false;
 /** Primary writer threads still to answer with a provider's plan notice instead of a report. */
@@ -67,9 +68,14 @@ const queueLog:string[]=[];
 /** BB's concurrency-limit plugin: the effective limit of the stage host; null is a hub without it. */
 let concurrencyPlugin:{limit:number}|null=null;
 const concurrencyCalls:string[]=[];
+const activityWaiters = new Set<()=>void>();
+function notifyActivity(){
+  for(const wake of [...activityWaiters]) wake();
+}
 export function holdEvents(threadId:string):()=>void {
   let release=()=>{};
-  heldEvents.set(threadId,new Promise<void>((resolve)=>{release=()=>{heldEvents.delete(threadId);resolve();};}));
+  heldEvents.set(threadId,new Promise<void>((resolve)=>{release=()=>{heldEvents.delete(threadId);heldEventResolvers.delete(threadId);resolve();notifyActivity();};}));
+  heldEventResolvers.set(threadId, release);
   return release;
 }
 export async function until<T>(what:string, read:()=>T|null|undefined|false, timeoutMs=8000):Promise<T> {
@@ -77,8 +83,14 @@ export async function until<T>(what:string, read:()=>T|null|undefined|false, tim
   for(;;){
     const value=read();
     if(value) return value;
-    if(Date.now()>deadline) throw new Error(`timed out waiting for ${what}`);
-    await new Promise((resolve)=>setTimeout(resolve,20));
+    const remaining=deadline-Date.now();
+    if(remaining<=0) throw new Error(`timed out waiting for ${what}`);
+    await new Promise<void>((resolve)=>{
+      let done=false;
+      const wake=()=>{if(done)return;done=true;clearTimeout(timer);activityWaiters.delete(wake);resolve();};
+      const timer=setTimeout(wake,Math.min(50,remaining));
+      activityWaiters.add(wake);
+    });
   }
 }
 const backgroundStages=new Set(["memory-maintenance"]);
@@ -108,89 +120,180 @@ let writerAnswerOverride:string|null=null;
 
 /** Threads the fake BB answers "Thread not found" for, like a deleted chat. */
 const goneThreads=new Set<string>();
-export async function setup(critiqueOutput:string, browserQaResult?:Record<string,unknown>|((input:unknown)=>Promise<Record<string,unknown>>), projectSettings:Record<string,unknown>={}, specialistOutput='{"decision":"approve","summary":"No unmitigated critical risk","risks":[]}', environmentId?:string, memoryOutput='[{"kind":"core","content":"Durable deployment convention uses managed workspaces","concepts":["deployment","workspace"]}]', nightOutput='{"decision":"clear","summary":"No actionable findings","findings":[]}', nightFixOutput="bounded fix applied", snapshotOverrides?:Array<Array<Record<string,string>>>, readFirstUnavailable=false, writerFailures=0, emergencySelection?:{providerId:string;model:string}, pmReadOutput='{"summary":"README notes the managed workspace contract.","keyFacts":["Managed workspaces isolate task edits."],"openQuestions":[]}', onboardingOutput?:string, writerControl:{hold:boolean;snapshots?:Array<Array<Record<string,string>>>;states:Map<string,"active"|"idle">}={hold:false,states:new Map()}, idleWaitThrowThreadId?:string, startingTurnCompletedThreadId?:string, eventsListThrowThreadId?:string, docsHoldEvents=false, docsControl:{inventoryGate?:Promise<void>;pages?:()=>Array<{path:string;modifiedAt:number;sha256:string;content:string}>;output?:string}={}, holdEventThreadIds:string[]=[], codeCritiqueOutputs?:string[], codeRepairOutput?:string) {
-  // A held child (docs, onboarding, night review) answers its second event read only after the first poll pause: those tests need the pause at its production length.
-  if(docsHoldEvents||holdEventThreadIds.length) process.env.LANE_PILOT_POLL_SCALE="1"; else process.env.LANE_PILOT_POLL_SCALE="0.05";
-  docsEventsHeld=false;
-  writerAnswerOverride=null;
-  extraListPaths=[];
-  limitThreadIds.clear();
-  writerControl = writerControl ?? {hold:false,states:new Map()};
-  const spawned:Array<Record<string,unknown>> = [];
-  const followUps=new Map<string,{at:number;seq:number}>();
-  const threadMeta=new Map<string,Record<string,unknown>>();
-  let docsInventoryCalls=0;
-  const fileReads:Array<{rootPath?:string;path:string}> = [];
-  let snapshots = 0;
-  let provisionedWorktrees = 0;
-  let checkedWorktrees = 0;
-  let lastDirt:Array<{path:string;sha256?:string}> = [];
-  let nextWriterFailure=writerFailures;
-  const failedThreadIds=new Set<string>();
-  const telemetryReads={count:0};
-  const sandboxRequests:Array<Record<string,unknown>>=[];
-  const gitChangedPaths:string[]=[];
-  let docsContent="# Documentation fixture\n\nDocs are maintained with a bounded, reviewed stage.\n";
-  let docsSecondContent="# Second documentation fixture\n";
-  const docsWrites:Array<Record<string,unknown>>=[];
-  let nextThread=0;
-  let nextCodeCritic=0;
-  const codeCritiqueQueue=[...(codeCritiqueOutputs??['{"decision":"approve","summary":"Candidate checked","findings":[]}'])];
-  const codeCritiqueByThread=new Map<string,string>();
-  let idleWaitGets=0;
-  const eventListCounts=new Map<string,number>();
-  const stopCalls:string[]=[];
-  const waitCalls:Array<{threadId:string;status?:string}>=[];
-  const qaHostId="host-qa-mini";
-  const hostRpcCalls:Array<{method:string;hostId:string;input:unknown}>=[];
-  // files.write/files.read share one store: packet inputs written create-only must read back byte-identical
-  // (prepareCriticPacket verifies sha256), and CAS writes see fixture content as the current bytes.
+type TestHostState = {
+  critiqueOutput:string;
+  browserQaResult?:Record<string,unknown>|((input:unknown)=>Promise<Record<string,unknown>>);
+  projectSettings:Record<string,unknown>;
+  specialistOutput:string;
+  memoryOutput:string;
+  nightOutput:string;
+  nightFixOutput:string;
+  snapshotOverrides?:Array<Array<Record<string,string>>>;
+  readFirstUnavailable:boolean;
+  pmReadOutput:string;
+  onboardingOutput?:string;
+  writerControl:{hold:boolean;snapshots?:Array<Array<Record<string,string>>>;states:Map<string,"active"|"idle">};
+  idleWaitThrowThreadId?:string;
+  startingTurnCompletedThreadId?:string;
+  eventsListThrowThreadId?:string;
+  docsHoldEvents:boolean;
+  docsControl:{inventoryGate?:Promise<void>;pages?:()=>Array<{path:string;modifiedAt:number;sha256:string;content:string}>;output?:string};
+  holdEventThreadIds:string[];
+  codeRepairOutput?:string;
+  spawned:Array<Record<string,unknown>>;
+  followUps:Map<string,{at:number;seq:number}>;
+  threadMeta:Map<string,Record<string,unknown>>;
+  docsInventoryCalls:number;
+  fileReads:Array<{rootPath?:string;path:string}>;
+  snapshots:number;
+  provisionedWorktrees:number;
+  checkedWorktrees:number;
+  lastDirt:Array<{path:string;sha256?:string}>;
+  nextWriterFailure:number;
+  failedThreadIds:Set<string>;
+  telemetryReads:{count:number};
+  sandboxRequests:Array<Record<string,unknown>>;
+  gitChangedPaths:string[];
+  docsContent:string;
+  docsSecondContent:string;
+  docsWrites:Array<Record<string,unknown>>;
+  nextThread:number;
+  nextCodeCritic:number;
+  codeCritiqueQueue:string[];
+  codeCritiqueByThread:Map<string,string>;
+  idleWaitGets:number;
+  eventListCounts:Map<string,number>;
+  stopCalls:string[];
+  waitCalls:Array<{threadId:string;status?:string}>;
+  qaHostId:string;
+  hostRpcCalls:Array<{method:string;hostId:string;input:unknown}>;
+  writtenFiles:Map<string,string>;
+  coreWrite:ReturnType<typeof coreFileWrite>;
+};
+
+type BootedHost = {
+  bb:ReturnType<typeof createFakePluginHost>["bb"];
+  db:ReturnType<typeof openDatabase>;
+  harness:ReturnType<typeof createFakePluginHost>["harness"];
+  dataTables:string[];
+  deleteTriggers:Array<{name:string;sql:string}>;
+  unsubAttempt:()=>void;
+};
+
+let activeSharedState:TestHostState|null=null;
+let sharedBoot:BootedHost|null=null;
+let sharedDirty=false;
+let sharedScopeDepth=0;
+const activeIsolatedBoots:BootedHost[]=[];
+const activeReloadedHarnesses:Array<ReturnType<typeof createFakePluginHost>["harness"]>=[];
+
+function createTestHostState(params:{
+  critiqueOutput:string;
+  browserQaResult?:Record<string,unknown>|((input:unknown)=>Promise<Record<string,unknown>>);
+  projectSettings:Record<string,unknown>;
+  specialistOutput:string;
+  memoryOutput:string;
+  nightOutput:string;
+  nightFixOutput:string;
+  snapshotOverrides?:Array<Array<Record<string,string>>>;
+  readFirstUnavailable:boolean;
+  writerFailures:number;
+  pmReadOutput:string;
+  onboardingOutput?:string;
+  writerControl:{hold:boolean;snapshots?:Array<Array<Record<string,string>>>;states:Map<string,"active"|"idle">};
+  idleWaitThrowThreadId?:string;
+  startingTurnCompletedThreadId?:string;
+  eventsListThrowThreadId?:string;
+  docsHoldEvents:boolean;
+  docsControl:{inventoryGate?:Promise<void>;pages?:()=>Array<{path:string;modifiedAt:number;sha256:string;content:string}>;output?:string};
+  holdEventThreadIds:string[];
+  codeCritiqueOutputs?:string[];
+  codeRepairOutput?:string;
+}):TestHostState {
   const writtenFiles = new Map<string,string>();
+  const state:TestHostState = {
+    ...params,
+    spawned:[],
+    followUps:new Map(),
+    threadMeta:new Map(),
+    docsInventoryCalls:0,
+    fileReads:[],
+    snapshots:0,
+    provisionedWorktrees:0,
+    checkedWorktrees:0,
+    lastDirt:[],
+    nextWriterFailure:params.writerFailures,
+    failedThreadIds:new Set(),
+    telemetryReads:{count:0},
+    sandboxRequests:[],
+    gitChangedPaths:[],
+    docsContent:"# Documentation fixture\n\nDocs are maintained with a bounded, reviewed stage.\n",
+    docsSecondContent:"# Second documentation fixture\n",
+    docsWrites:[],
+    nextThread:0,
+    nextCodeCritic:0,
+    codeCritiqueQueue:[...(params.codeCritiqueOutputs??['{"decision":"approve","summary":"Candidate checked","findings":[]}'])],
+    codeCritiqueByThread:new Map(),
+    idleWaitGets:0,
+    eventListCounts:new Map(),
+    stopCalls:[],
+    waitCalls:[],
+    qaHostId:"host-qa-mini",
+    hostRpcCalls:[],
+    writtenFiles,
+    coreWrite:null as never,
+  };
   const fixtureContent = (path:string): string|null => {
-    if (path.endsWith("README.md")) return readFirstUnavailable ? null : readmeFixture;
-    if (path.endsWith("docs/fixture.md")) return docsContent;
-    if (path.endsWith("docs/second.md")) return docsSecondContent;
+    if (path.endsWith("README.md")) return state.readFirstUnavailable ? null : readmeFixture;
+    if (path.endsWith("docs/fixture.md")) return state.docsContent;
+    if (path.endsWith("docs/second.md")) return state.docsSecondContent;
     if (path.endsWith(".txt")) {
-      const sha = lastDirt.find((row)=>path.endsWith(row.path))?.sha256;
+      const sha = state.lastDirt.find((row)=>path.endsWith(row.path))?.sha256;
       return (sha && noteBySha[sha]) || noteContent;
     }
     return null;
   };
   const fileStore: FileStore = {
-    get: (path) => writtenFiles.get(path) ?? fixtureContent(path),
-    set: (path, content) => { writtenFiles.set(path, content); },
+    get: (path) => state.writtenFiles.get(path) ?? fixtureContent(path),
+    set: (path, content) => { state.writtenFiles.set(path, content); },
   };
-  const coreWrite = coreFileWrite(fileStore);
-  const { bb, harness } = createFakePluginHost({
+  state.coreWrite = coreFileWrite(fileStore);
+  return state;
+}
+
+function createHostOptions(getState:()=>TestHostState) {
+  return {
     pluginId:"lane-pilot",
     sdk:{
       threads:{
-        getPluginMetadata:async ({ threadId }) => threadId === pmThreadId
+        getPluginMetadata:async ({ threadId }:{threadId:string}) => threadId === pmThreadId
           ? { role:"pm", lanePilotRunId:"stage-run" }
-          : seededThreadMeta.get(threadId) ?? threadMeta.get(threadId) ?? { role:"writer" },
-        spawn:async (args) => {
-          const request = args as unknown as Record<string,unknown>;
+          : seededThreadMeta.get(threadId) ?? getState().threadMeta.get(threadId) ?? { role:"writer" },
+        spawn:async (args:unknown) => {
+          const s = getState();
+          const request = args as Record<string,unknown>;
           // The writer's brief goes as input parts (some agent-only); a test reads it as the one text the agent gets.
           if(request.prompt===undefined && Array.isArray(request.input)) request.prompt=(request.input as Array<{text?:string}>).map((part)=>part.text??"").join("\n\n");
-          spawned.push(request);
+          s.spawned.push(request);
           const stageId = (request.pluginMetadata as Record<string,unknown>).stageId;
           const role=(request.pluginMetadata as Record<string,unknown>).role;
-          if(role === "workspace-provisioner") provisionedWorktrees+=1;
+          if(role === "workspace-provisioner") s.provisionedWorktrees+=1;
           if(throwOnRepairSpawn && Number((request.pluginMetadata as Record<string,unknown>).repairRound) > 0) {
             throw new Error("repair_spawn_crashed");
           }
           if(refuseStageSpawn && stageId === refuseStageSpawn) throw new Error("HTTP 409: Environment unavailable");
-          if(role === "writer" && nextWriterFailure > 0) {
-            nextWriterFailure-=1;
-            const id=`writer-failed-${++nextThread}`;
-            failedThreadIds.add(id);
-            threadMeta.set(id, (request.pluginMetadata as Record<string,unknown>) ?? { role });
+          if(role === "writer" && s.nextWriterFailure > 0) {
+            s.nextWriterFailure-=1;
+            const id=`writer-failed-${++s.nextThread}`;
+            s.failedThreadIds.add(id);
+            s.threadMeta.set(id, (request.pluginMetadata as Record<string,unknown>) ?? { role });
+            queueMicrotask(notifyActivity);
             return {id};
           }
-          const id=role === "workspace-provisioner" ? "workspace-provisioner-thread" : role === "writer" ? `writer-thread-${++nextThread}` : stageId === "pm-read" ? "pm-read-thread" : stageId === "plan-critique" ? "critic-thread" : stageId === "code-critique" ? `code-critic-thread-${++nextCodeCritic}` : stageId === "specialist-review" ? "specialist-thread" : stageId === "memory-maintenance" ? "memory-thread" : stageId === "docs-maintenance" ? "docs-thread" : stageId === "onboarding-preview" ? "onboarding-thread" : stageId === "night-review" ? "night-thread" : stageId === "night-fix" ? "night-fix-thread" : stageId === "gate-triage" ? "gate-triage-thread" : role === "emergency-writer" ? "emergency-thread" : `writer-thread-${++nextThread}`;
+          const id=role === "workspace-provisioner" ? "workspace-provisioner-thread" : role === "writer" ? `writer-thread-${++s.nextThread}` : stageId === "pm-read" ? "pm-read-thread" : stageId === "plan-critique" ? "critic-thread" : stageId === "code-critique" ? `code-critic-thread-${++s.nextCodeCritic}` : stageId === "specialist-review" ? "specialist-thread" : stageId === "memory-maintenance" ? "memory-thread" : stageId === "docs-maintenance" ? "docs-thread" : stageId === "onboarding-preview" ? "onboarding-thread" : stageId === "night-review" ? "night-thread" : stageId === "night-fix" ? "night-fix-thread" : stageId === "gate-triage" ? "gate-triage-thread" : role === "emergency-writer" ? "emergency-thread" : `writer-thread-${++s.nextThread}`;
           if(stageId === "code-critique") {
-            codeCritiqueByThread.set(id, codeCritiqueQueue.shift() ?? '{"decision":"approve","summary":"Candidate checked","findings":[]}');
-            if(mutateCritiqueSettingsOnFirstSpawn && setupDb && nextCodeCritic === 1) {
+            s.codeCritiqueByThread.set(id, s.codeCritiqueQueue.shift() ?? '{"decision":"approve","summary":"Candidate checked","findings":[]}');
+            if(mutateCritiqueSettingsOnFirstSpawn && setupDb && s.nextCodeCritic === 1) {
               saveProjectSetting(setupDb, projectId, "code_critique.model", "other-model");
               saveProjectSetting(setupDb, projectId, "code_critique.max_rounds", 3);
               saveProjectSetting(setupDb, projectId, "code_critique.provider", "codex");
@@ -198,60 +301,65 @@ export async function setup(critiqueOutput:string, browserQaResult?:Record<strin
           }
           queueLog.push(`spawn:${String(role)}`);
           if(role==="writer"&&limitWriters>0){limitWriters-=1;limitThreadIds.add(id);}
-          if(role==="writer"&&writerControl.hold)writerControl.states.set(id,"active");
-          threadMeta.set(id, (request.pluginMetadata as Record<string,unknown>) ?? { role });
+          if(role==="writer"&&s.writerControl.hold)s.writerControl.states.set(id,"active");
+          s.threadMeta.set(id, (request.pluginMetadata as Record<string,unknown>) ?? { role });
           request.threadIdAssigned=id;
+          queueMicrotask(notifyActivity);
           return { id };
         },
         wait:async ({ threadId, status }:{threadId:string;status?:string}) => {
-          waitCalls.push({ threadId, status });
-          if(startingTurnCompletedThreadId && threadId===startingTurnCompletedThreadId) {
+          const s = getState();
+          s.waitCalls.push({ threadId, status });
+          if(s.startingTurnCompletedThreadId && threadId===s.startingTurnCompletedThreadId) {
             throw new Error(status === "idle"
               ? "idle wait must not run before reading already-terminal events"
               : `Timed out waiting for thread ${threadId}`);
           }
-          if(idleWaitThrowThreadId && threadId===idleWaitThrowThreadId) throw new Error(`Timed out waiting for thread ${threadId} to reach status idle.`);
+          if(s.idleWaitThrowThreadId && threadId===s.idleWaitThrowThreadId) throw new Error(`Timed out waiting for thread ${threadId} to reach status idle.`);
           return { matched:true, thread:{ status:"idle" } };
         },
-        get:async ({ threadId }) => {
+        get:async ({ threadId }:{threadId:string}) => {
+          const s = getState();
           if(goneThreads.has(threadId)) throw new Error("HTTP 404: Thread not found");
           const parentIdentity={projectId,sourceThreadId:pmThreadId,lifecycleOwnerThreadId:pmThreadId};
-          if(startingTurnCompletedThreadId && threadId===startingTurnCompletedThreadId) {
+          if(s.startingTurnCompletedThreadId && threadId===s.startingTurnCompletedThreadId) {
             return { id:threadId, status:"starting", queuedWork:"none", ...parentIdentity };
           }
-          if(idleWaitThrowThreadId && threadId===idleWaitThrowThreadId) {
-            idleWaitGets+=1;
-            return { id:threadId, status:idleWaitGets===1 ? "stopping" : "idle", ...parentIdentity };
+          if(s.idleWaitThrowThreadId && threadId===s.idleWaitThrowThreadId) {
+            s.idleWaitGets+=1;
+            return { id:threadId, status:s.idleWaitGets===1 ? "stopping" : "idle", ...parentIdentity };
           }
           if(threadId==="workspace-provisioner-thread") {
             holderThreadGets+=1;
             const bound=holderBindAfterGets===0||holderThreadGets>=holderBindAfterGets;
             return {
               id:threadId,
-              status:failedThreadIds.has(threadId) ? "error" : writerControl.states.get(threadId)??"idle",
+              status:s.failedThreadIds.has(threadId) ? "error" : s.writerControl.states.get(threadId)??"idle",
               ...(bound ? {environmentId:"attempt-env"} : {}),
               ...parentIdentity,
             };
           }
           return {
             id:threadId,
-            status:failedThreadIds.has(threadId) ? "error" : writerControl.states.get(threadId)??"idle",
+            status:s.failedThreadIds.has(threadId) ? "error" : s.writerControl.states.get(threadId)??"idle",
             ...parentIdentity,
           };
         },
         events:{
-          list:async ({ threadId }) => {
+          list:async ({ threadId }:{threadId:string}) => {
+            const s = getState();
             const gate=heldEvents.get(threadId);
             if(gate) await gate;
-            if(eventsListThrowThreadId && threadId===eventsListThrowThreadId) throw new Error("sdk_events_list_filtered_unavailable");
+            if(s.eventsListThrowThreadId && threadId===s.eventsListThrowThreadId) throw new Error("sdk_events_list_filtered_unavailable");
             if(docsEventsHeld && threadId==="docs-thread") return [];
-            const hold=(docsHoldEvents && threadId==="docs-thread") || holdEventThreadIds.includes(threadId);
+            const hold=(s.docsHoldEvents && threadId==="docs-thread") || s.holdEventThreadIds.includes(threadId);
             if(hold) {
-              const n=(eventListCounts.get(threadId)??0)+1;
-              eventListCounts.set(threadId,n);
+              const n=(s.eventListCounts.get(threadId)??0)+1;
+              s.eventListCounts.set(threadId,n);
               if(n===1) return [];
             }
-            const followUp=followUps.get(threadId);
+            const followUp=s.followUps.get(threadId);
+            queueMicrotask(notifyActivity);
             return [
               { type:"turn/started", threadId, seq:1 },
               { type:"turn/completed", threadId, seq:2, data:{ status:"completed" } },
@@ -265,26 +373,35 @@ export async function setup(critiqueOutput:string, browserQaResult?:Record<strin
         },
         // A repair goes as a message into the writer's own thread: recorded like a spawn of that same writer, with a new turn.
         send:(async (args:{threadId:string;input:Array<{text?:string}>}) => {
+          const s = getState();
           if(throwOnRepairSpawn) throw new Error("repair_spawn_crashed");
-          const original=spawned.find((row)=>row.threadIdAssigned===args.threadId) ?? {};
-          const meta=(threadMeta.get(args.threadId) as Record<string,unknown>|undefined) ?? {};
+          const original=s.spawned.find((row)=>row.threadIdAssigned===args.threadId) ?? {};
+          const meta=(s.threadMeta.get(args.threadId) as Record<string,unknown>|undefined) ?? {};
           const repairRound=Number(meta.repairRound ?? 0)+1;
-          threadMeta.set(args.threadId,{...meta,repairRound});
-          spawned.push({...original,via:"send",threadIdAssigned:args.threadId,prompt:args.input[0]?.text,pluginMetadata:{...(original.pluginMetadata as Record<string,unknown>??{}),repairRound}});
-          followUps.set(args.threadId,{at:Date.now(),seq:(followUps.get(args.threadId)?.seq??2)+3});
+          s.threadMeta.set(args.threadId,{...meta,repairRound});
+          s.spawned.push({...original,via:"send",threadIdAssigned:args.threadId,prompt:args.input[0]?.text,pluginMetadata:{...(original.pluginMetadata as Record<string,unknown>??{}),repairRound}});
+          s.followUps.set(args.threadId,{at:Date.now(),seq:(s.followUps.get(args.threadId)?.seq??2)+3});
+          queueMicrotask(notifyActivity);
           return {} as never;
         }) as never,
-        stop:async ({ threadId }:{threadId:string}) => { stopCalls.push(threadId); return {ok:true} as never; },
-        output:async ({ threadId }) => threadId === "pm-read-thread" ? {output:pmReadOutput} : threadId === "docs-thread" ? {output:docsControl.output??JSON.stringify([{path:"docs/fixture.md",expectedSha256:createHash("sha256").update(docsContent).digest("hex"),content:"# Updated documentation fixture\n"}])} : threadId === "onboarding-thread" ? {output:onboardingOutput??JSON.stringify({summary:"Add a concise project guide",edits:[{path:"docs/fixture.md",expectedSha256:createHash("sha256").update(docsContent).digest("hex"),content:"# Onboarding guide\n"}]})} : threadId === "memory-thread" ? {output:memoryOutput} : threadId === "night-thread" ? {output:nightOutput} : threadId === "night-fix-thread" ? {output:nightFixOutput} : threadId === "gate-triage-thread" ? {output:JSON.stringify({decision:"recommendations",summary:"Verification failures need receipt inspection.",recommendations:[{stageId:"verification",state:"failed",count:1,action:"Inspect the verification receipt for the affected task."}]})} : threadId === "critic-thread"
-          ? { output:critiqueOutput } : threadId === "specialist-thread"
-            ? { output:specialistOutput }
+        stop:async ({ threadId }:{threadId:string}) => { getState().stopCalls.push(threadId); return {ok:true} as never; },
+        output:async ({ threadId }:{threadId:string}) => {
+          const s = getState();
+          queueMicrotask(notifyActivity);
+          return threadId === "pm-read-thread" ? {output:s.pmReadOutput} : threadId === "docs-thread" ? {output:s.docsControl.output??JSON.stringify([{path:"docs/fixture.md",expectedSha256:createHash("sha256").update(s.docsContent).digest("hex"),content:"# Updated documentation fixture\n"}])} : threadId === "onboarding-thread" ? {output:s.onboardingOutput??JSON.stringify({summary:"Add a concise project guide",edits:[{path:"docs/fixture.md",expectedSha256:createHash("sha256").update(s.docsContent).digest("hex"),content:"# Onboarding guide\n"}]})} : threadId === "memory-thread" ? {output:s.memoryOutput} : threadId === "night-thread" ? {output:s.nightOutput} : threadId === "night-fix-thread" ? {output:s.nightFixOutput} : threadId === "gate-triage-thread" ? {output:JSON.stringify({decision:"recommendations",summary:"Verification failures need receipt inspection.",recommendations:[{stageId:"verification",state:"failed",count:1,action:"Inspect the verification receipt for the affected task."}]})} : threadId === "critic-thread"
+          ? { output:s.critiqueOutput } : threadId === "specialist-thread"
+            ? { output:s.specialistOutput }
             : threadId.startsWith("code-critic-thread")
-              ? { output:codeCritiqueByThread.get(threadId) ?? '{"decision":"approve","summary":"Candidate checked","findings":[]}' }
+              ? { output:s.codeCritiqueByThread.get(threadId) ?? '{"decision":"approve","summary":"Candidate checked","findings":[]}' }
             : limitThreadIds.has(threadId) ? { output:"\n\nUpgrade your plan to continue\n" }
-            : { output: Number((threadMeta.get(threadId) as {repairRound?:unknown}|undefined)?.repairRound) > 0
-              ? (codeRepairOutput ?? '{"replies":[{"id":"f1","status":"fixed","evidence":"updated note.txt"}]}')
-              : (writerAnswerOverride ?? "writer created note.txt") },
-        list:async () => [...new Set([...threadMeta.keys(), ...seededThreadMeta.keys()])].map((id)=>({id})) as never,
+            : { output: Number((s.threadMeta.get(threadId) as {repairRound?:unknown}|undefined)?.repairRound) > 0
+              ? (s.codeRepairOutput ?? '{"replies":[{"id":"f1","status":"fixed","evidence":"updated note.txt"}]}')
+              : (writerAnswerOverride ?? "writer created note.txt") };
+        },
+        list:async () => {
+          const s = getState();
+          return [...new Set([...s.threadMeta.keys(), ...seededThreadMeta.keys()])].map((id)=>({id})) as never;
+        },
         queue:{list:async (args?:{threadId?:string})=>queuedRetries.filter((row)=>!args?.threadId||row.threadId===args.threadId)},
         queuedMessages:{delete:async ({queuedMessageId}:{queuedMessageId:string})=>{queueLog.push(`delete:${queuedMessageId}`);return {ok:true};}},
       },
@@ -313,7 +430,7 @@ export async function setup(critiqueOutput:string, browserQaResult?:Record<strin
       } as never,
       providers:{
         list:async () => ["codex", "critic"].map((id) => ({ id, available:true, capabilities:{ supportsServiceTier:true }, serviceTiers:[{ id:"default", label:"Default" }] })) as never,
-        models:async (args) => {
+        models:async (args:unknown) => {
           const providerId = (args as { providerId:string; hostId?:string } | undefined)?.providerId;
           const hostId = (args as { hostId?:string } | undefined)?.hostId;
           if (hostId === "host-qa-no-codex") return { models:[] as never };
@@ -327,7 +444,7 @@ export async function setup(critiqueOutput:string, browserQaResult?:Record<strin
       },
       environments:{
         listProviders:async ()=>listedEnvironmentProviders as never,
-        get:async ({environmentId})=>{
+        get:async ({environmentId}:{environmentId:string})=>{
           if(environmentId==="attempt-env"){
             holderEnvGets+=1;
             if(holderEnvStatusOverride) {
@@ -340,36 +457,44 @@ export async function setup(critiqueOutput:string, browserQaResult?:Record<strin
         },
       },
       projects:{
-        get:async ({ projectId:id }) => ({ id, name:id, sources:[{ hostId:config.hostId, path:config.writerWorkspacePath }] }),
+        get:async ({ projectId:id }:{projectId:string}) => ({ id, name:id, sources:[{ hostId:config.hostId, path:config.writerWorkspacePath }] }),
         list:async () => [{ id:projectId, name:projectId, sources:[{ hostId:config.hostId, path:config.writerWorkspacePath }] }],
       },
       files:{
         listPaths:async()=>({truncated:false,paths:[...defaultListPaths,...extraListPaths]}) as never,
-        read:async ({ path, rootPath }) => {
-          fileReads.push({ rootPath, path });
-          const stored = writtenFiles.get(path);
+        read:async ({ path, rootPath }:{path:string;rootPath?:string}) => {
+          const s = getState();
+          s.fileReads.push({ rootPath, path });
+          const stored = s.writtenFiles.get(path);
           if (stored !== undefined) return { content:stored };
-          const content = fixtureContent(path);
+          const content = s.readFirstUnavailable && path.endsWith("README.md") ? null
+            : path.endsWith("README.md") ? readmeFixture
+            : path.endsWith("docs/fixture.md") ? s.docsContent
+            : path.endsWith("docs/second.md") ? s.docsSecondContent
+            : path.endsWith(".txt") ? ((s.lastDirt.find((row)=>path.endsWith(row.path))?.sha256 && noteBySha[s.lastDirt.find((row)=>path.endsWith(row.path))!.sha256!]) || noteContent)
+            : null;
           if (content === null) return { content:null };
           return path.endsWith(".txt") ? { content, sha256:createHash("sha256").update(content,"utf8").digest("hex") } : { content };
         },
         write: (async (args: { path?: unknown; content?: unknown }) => {
-          const result = await coreWrite(args);
+          const s = getState();
+          const result = await s.coreWrite(args);
           if ((result as {outcome?:unknown}).outcome === "written") {
             const path = String(args.path ?? "");
             const content = String(args.content ?? "");
             if (path.includes("/docs/")) {
-              docsWrites.push(args as unknown as Record<string,unknown>);
-              if (path.endsWith("docs/fixture.md")) docsContent = content;
-              if (path.endsWith("docs/second.md")) docsSecondContent = content;
+              s.docsWrites.push(args as unknown as Record<string,unknown>);
+              if (path.endsWith("docs/fixture.md")) s.docsContent = content;
+              if (path.endsWith("docs/second.md")) s.docsSecondContent = content;
             }
           }
           return result;
         }) as never,
       },
     },
-    experimental_callHostRpc:async (call) => {
-      hostRpcCalls.push({method:call.method,hostId:call.hostId,input:call.input});
+    experimental_callHostRpc:async (call:{method:string;hostId:string;input:unknown}) => {
+      const s = getState();
+      s.hostRpcCalls.push({method:call.method,hostId:call.hostId,input:call.input});
       if(call.method==="inspectCritiqueCoverage") {
         const input=call.input as {plan?:unknown;tasks?:Array<{id:string;lane?:string;ownsPaths:string[];hasVerification:boolean}>};
         const plan=String(input.plan??"");
@@ -400,13 +525,13 @@ export async function setup(critiqueOutput:string, browserQaResult?:Record<strin
         if(!baseRef) return {hostId:config.hostId,status:"not-git",branch:null,headSha:null,baseRef:null,baseSha:null,compareCommitted:false,reason:"synthetic workspace has no git repository"};
         return {hostId:config.hostId,status:"ready",branch:"main",headSha:"a".repeat(40),baseRef:baseRef??null,baseSha:baseRef?"b".repeat(40):null,compareCommitted:!!baseRef,reason:null};
       }
-      if(call.method==="gitOwnershipChanges") return {hostId:config.hostId,status:"ready",headSha:"a".repeat(40),paths:[...gitChangedPaths],reason:null};
+      if(call.method==="gitOwnershipChanges") return {hostId:config.hostId,status:"ready",headSha:"a".repeat(40),paths:[...s.gitChangedPaths],reason:null};
       // Writers in their own worktree are merged into the run's base checkout by Lane Pilot (230560d, finish.ts).
       if(call.method==="gitIntegrate") return {hostId:config.hostId,status:"merged",commit:"d".repeat(40),conflicts:[],reason:null};
       if (call.method === "listDocsPages") {
-        docsInventoryCalls+=1;
-        if(docsControl.inventoryGate) await docsControl.inventoryGate;
-        const pages=docsControl.pages?.() ?? [{path:"docs/fixture.md",modifiedAt:Date.now(),sha256:createHash("sha256").update(docsContent).digest("hex"),content:docsContent}];
+        s.docsInventoryCalls+=1;
+        if(s.docsControl.inventoryGate) await s.docsControl.inventoryGate;
+        const pages=s.docsControl.pages?.() ?? [{path:"docs/fixture.md",modifiedAt:Date.now(),sha256:createHash("sha256").update(s.docsContent).digest("hex"),content:s.docsContent}];
         return {hostId:config.hostId,pages};
       }
       if (call.method === "applyOnboardingPages") {
@@ -415,14 +540,14 @@ export async function setup(critiqueOutput:string, browserQaResult?:Record<strin
         if(previewSha256!==input.previewSha256) return {hostId:config.hostId,previewSha256:input.previewSha256,status:"blocked",writes:[],reason:"preview hash mismatch"};
         const writes=[] as Array<{path:string;beforeSha256:string|null;afterSha256:string|null;status:"applied";reason:null}>;
         for(const edit of input.edits){
-          const beforeSha256=docsContent===null?null:createHash("sha256").update(docsContent).digest("hex");
+          const beforeSha256=s.docsContent===null?null:createHash("sha256").update(s.docsContent).digest("hex");
           if(edit.expectedSha256!==beforeSha256) return {hostId:config.hostId,previewSha256,status:"conflict",writes:[],reason:"stale"};
-          docsContent=edit.content;writes.push({path:edit.path,beforeSha256,afterSha256:createHash("sha256").update(docsContent).digest("hex"),status:"applied",reason:null});
+          s.docsContent=edit.content;writes.push({path:edit.path,beforeSha256,afterSha256:createHash("sha256").update(s.docsContent).digest("hex"),status:"applied",reason:null});
         }
         return {hostId:config.hostId,previewSha256,status:"applied",writes,reason:null};
       }
       if (call.method === "readOpenCodeTelemetry") {
-        telemetryReads.count+=1;
+        s.telemetryReads.count+=1;
         const content=JSON.stringify({t:"2026-09-24T00:00:00.000Z",src:"lane",mod:"budget",ok:true,
           data:{tool:"read",chars:27,dup:false,n:1,fp:"d7a091"},task:"TASK.md",session:"opencode-session-1"})+"\n";
         return {hostId:config.hostId,relativePath:"opencode-lane.jsonl",size:Buffer.byteLength(content),sha256:"a".repeat(64),content};
@@ -431,8 +556,8 @@ export async function setup(critiqueOutput:string, browserQaResult?:Record<strin
         if (call.hostId === "host-qa-offline") throw new Error("ECONNREFUSED");
         return {hostId:call.hostId, workspaceRealPath:String((call.input as {workspacePath?:string}).workspacePath ?? config.writerWorkspacePath), url:String((call.input as {url?:string}).url ?? ""), processHostId:call.hostId};
       }
-      if (call.method === "runBrowserQa" && typeof browserQaResult === "function") return browserQaResult(call.input);
-      if (call.method === "runBrowserQa") return browserQaResult ?? {
+      if (call.method === "runBrowserQa" && typeof s.browserQaResult === "function") return s.browserQaResult(call.input);
+      if (call.method === "runBrowserQa") return s.browserQaResult ?? {
         hostId:call.hostId, provider:"codex", runner:"browser-qa-codex", exitCode:0, verdict:"passed",
         actualModel:"gpt-6-luna", actualReasoningEffort:"medium", actualBackend:"chrome-qa",
         reportPath:".agents/qa/lp-qa-test/REPORT.md", reportSha256:"a".repeat(64),
@@ -443,7 +568,8 @@ export async function setup(critiqueOutput:string, browserQaResult?:Record<strin
         processPid:4242, runnerPath:"/tmp/browser-qa-codex",
       };
       if (call.method === "runSandboxedCommand") {
-        sandboxRequests.push(call.input as Record<string,unknown>);
+        s.sandboxRequests.push(call.input as Record<string,unknown>);
+        queueMicrotask(notifyActivity);
         return {
         hostId:config.hostId,backend:"macos-seatbelt",workspacePath:String((call.input as {workspacePath?:string}).workspacePath ?? config.writerWorkspacePath),
         cwd:String((call.input as {workspacePath?:string}).workspacePath ?? config.writerWorkspacePath),exitCode:0,policySha256:"c".repeat(64),stdout:"",stderr:"",
@@ -451,11 +577,11 @@ export async function setup(critiqueOutput:string, browserQaResult?:Record<strin
       }
       if (call.method === "readBoundedFile") {
         return boundedReadCall(call, config.hostId, (path) => {
-          if (path.endsWith("README.md")) return readFirstUnavailable ? null : readmeFixture;
-          if (path.endsWith("docs/fixture.md")) return docsContent;
-          if (path.endsWith("docs/second.md")) return docsSecondContent;
+          if (path.endsWith("README.md")) return s.readFirstUnavailable ? null : readmeFixture;
+          if (path.endsWith("docs/fixture.md")) return s.docsContent;
+          if (path.endsWith("docs/second.md")) return s.docsSecondContent;
           if (path.endsWith(".txt")) {
-            const sha = lastDirt.find((row)=>path.endsWith(row.path))?.sha256;
+            const sha = s.lastDirt.find((row)=>path.endsWith(row.path))?.sha256;
             return (sha && noteBySha[sha]) || noteContent;
           }
           return null;
@@ -465,36 +591,164 @@ export async function setup(critiqueOutput:string, browserQaResult?:Record<strin
       const command = String((call.input as { command?:string }).command ?? "");
       // The revision probe (0.1.416) runs `git status --porcelain` too, but it is not a dirt snapshot: counted as one, it shifted every
       // scripted sequence by one and 11 stage tests went red unnoticed (the deploy runs only the tests of changed files).
-      if (command === REVISION_PROBE) return { hostId:config.hostId, exitCode:0, stdout:"", stderr:"" };
+      if (command === REVISION_PROBE || command.includes("SNAPSHOT_FAIL")) return { hostId:config.hostId, exitCode:0, stdout:"", stderr:"" };
       if (command === projectGitProbe) return { hostId:config.hostId, exitCode:0, stdout:JSON.stringify({ state:"localNoOrigin", cwd:config.writerWorkspacePath, root:config.writerWorkspacePath, hasCommit:true }), stderr:"" };
       if (command.includes("porcelain")) {
-        snapshots += 1;
+        s.snapshots += 1;
         // Without an explicit sequence the dirt follows where the call runs. Every attempt works in its own worktree (the
         // run's own «worktree» mode excepted, which has one folder): the project folder stays clean, a worktree just made
         // starts clean, and a worktree the writer has been in shows its note.
         const cwd = String((call.input as { cwd?:string }).cwd ?? "");
-        const newWorktree = cwd !== config.writerWorkspacePath && provisionedWorktrees > checkedWorktrees;
-        if (newWorktree) checkedWorktrees = provisionedWorktrees;
+        const newWorktree = cwd !== config.writerWorkspacePath && s.provisionedWorktrees > s.checkedWorktrees;
+        if (newWorktree) s.checkedWorktrees = s.provisionedWorktrees;
         const written = [{ path:"note.txt", sha256:"new-content" }];
-        const byPlace = projectSettings["adoc.040"] === "worktree" ? (snapshots === 1 ? [] : written)
+        const byPlace = s.projectSettings["adoc.040"] === "worktree" ? (s.snapshots === 1 ? [] : written)
           : cwd === config.writerWorkspacePath || newWorktree ? [] : written;
-        const payload = writerControl.snapshots?.[snapshots-1] ?? snapshotOverrides?.[snapshots-1] ?? byPlace;
-        lastDirt = Array.isArray(payload) ? payload as Array<{path:string;sha256?:string}> : [];
+        const payload = s.writerControl.snapshots?.[s.snapshots-1] ?? s.snapshotOverrides?.[s.snapshots-1] ?? byPlace;
+        s.lastDirt = Array.isArray(payload) ? payload as Array<{path:string;sha256?:string}> : [];
         return { hostId:config.hostId, exitCode:0, stdout:JSON.stringify(payload), stderr:"" };
       }
       return { hostId:config.hostId, exitCode:0, stdout:"", stderr:"" };
     },
-  });
+  };
+}
+
+async function bootPluginHost(getState:()=>TestHostState):Promise<BootedHost> {
+  if (!process.env.LANE_PILOT_POLL_SCALE) process.env.LANE_PILOT_POLL_SCALE = "0.05";
+  const { bb, harness } = createFakePluginHost(createHostOptions(getState) as never);
   const db = openDatabase(bb);
+  const dataTables = (db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name != '_bb_migrations' AND name NOT LIKE 'lane_pilot_memory_fts_%'").all() as Array<{name:string}>).map((row)=>row.name);
+  const deleteTriggers = db.prepare("SELECT name, sql FROM sqlite_master WHERE type='trigger' AND LOWER(sql) LIKE '%before delete%'").all() as Array<{name:string;sql:string}>;
+  const unsubAttempt = onAttemptChanged(db, () => queueMicrotask(notifyActivity));
+  await plugin(bb);
+  // Wait once for the unawaited startup system-schedule seeding so Test 1's table clear never races it.
+  await until("startup schedule seed", () => (db.prepare("SELECT COUNT(*) AS n FROM lane_pilot_schedule").get() as {n:number}).n > 0, 2_000).catch(()=>undefined);
+  await new Promise<void>((resolve)=>setTimeout(resolve,5));
+  return { bb, db, harness, dataTables, deleteTriggers, unsubAttempt };
+}
+
+async function drainAndClearHost(boot:BootedHost) {
+  for(const [,release] of [...heldEventResolvers]) release();
+  heldEventResolvers.clear();
+  docsEventsHeld=false;
+  if(activeSharedState){
+    for(const [tid,st] of activeSharedState.writerControl.states){
+      if(st==="active") activeSharedState.writerControl.states.set(tid,"idle");
+    }
+  }
+  const openAttempts = boot.db.prepare("SELECT id FROM lane_pilot_attempt WHERE state IN ('queued','spawn_requested','running')").all() as Array<{id:string}>;
+  for(const row of openAttempts){
+    await boot.harness.behavior.callRpc("cancel_attempt",{attemptId:row.id}).catch(()=>undefined);
+  }
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  const hasRunningWf = () => (boot.db.prepare("SELECT COUNT(*) AS n FROM lane_pilot_wf_run WHERE status='running'").get() as {n:number}).n > 0;
+  if(hasRunningWf()){
+    await until("background workflow drives to stop", () => !hasRunningWf(), 5_000).catch(()=>undefined);
+  }
+  for(const key of await boot.bb.storage.kv.list()) await boot.bb.storage.kv.delete(key);
+  boot.db.pragma("foreign_keys = OFF");
+  boot.db.transaction(()=>{
+    for(const trig of boot.deleteTriggers) boot.db.prepare(`DROP TRIGGER IF EXISTS "${trig.name}"`).run();
+    for(const table of boot.dataTables) boot.db.prepare(`DELETE FROM "${table}"`).run();
+    for(const trig of boot.deleteTriggers) boot.db.exec(trig.sql);
+  })();
+  boot.db.pragma("foreign_keys = ON");
+}
+
+async function disposeBoot(boot:BootedHost) {
+  boot.unsubAttempt();
+  await boot.harness.lifecycle.dispose().catch(()=>undefined);
+}
+
+export async function setup(critiqueOutput:string, browserQaResult?:Record<string,unknown>|((input:unknown)=>Promise<Record<string,unknown>>), projectSettings:Record<string,unknown>={}, specialistOutput='{"decision":"approve","summary":"No unmitigated critical risk","risks":[]}', environmentId?:string, memoryOutput='[{"kind":"core","content":"Durable deployment convention uses managed workspaces","concepts":["deployment","workspace"]}]', nightOutput='{"decision":"clear","summary":"No actionable findings","findings":[]}', nightFixOutput="bounded fix applied", snapshotOverrides?:Array<Array<Record<string,string>>>, readFirstUnavailable=false, writerFailures=0, emergencySelection?:{providerId:string;model:string}, pmReadOutput='{"summary":"README notes the managed workspace contract.","keyFacts":["Managed workspaces isolate task edits."],"openQuestions":[]}', onboardingOutput?:string, writerControl:{hold:boolean;snapshots?:Array<Array<Record<string,string>>>;states:Map<string,"active"|"idle">}={hold:false,states:new Map()}, idleWaitThrowThreadId?:string, startingTurnCompletedThreadId?:string, eventsListThrowThreadId?:string, docsHoldEvents=false, docsControl:{inventoryGate?:Promise<void>;pages?:()=>Array<{path:string;modifiedAt:number;sha256:string;content:string}>;output?:string}={}, holdEventThreadIds:string[]=[], codeCritiqueOutputs?:string[], codeRepairOutput?:string) {
+  // A held child (docs, onboarding, night review) answers its second event read only after the first poll pause: those tests need the pause at its production length.
+  if(docsHoldEvents||holdEventThreadIds.length) process.env.LANE_PILOT_POLL_SCALE="1"; else process.env.LANE_PILOT_POLL_SCALE="0.05";
+  docsEventsHeld=false;
+  writerAnswerOverride=null;
+  extraListPaths=[];
+  limitThreadIds.clear();
+  writerControl = writerControl ?? {hold:false,states:new Map()};
+  const state = createTestHostState({
+    critiqueOutput, browserQaResult, projectSettings, specialistOutput, memoryOutput, nightOutput, nightFixOutput,
+    snapshotOverrides, readFirstUnavailable, writerFailures, pmReadOutput, onboardingOutput, writerControl,
+    idleWaitThrowThreadId, startingTurnCompletedThreadId, eventsListThrowThreadId, docsHoldEvents, docsControl,
+    holdEventThreadIds, codeCritiqueOutputs, codeRepairOutput,
+  });
+  const useIsolated = sharedScopeDepth === 0 || limitWriters > 0 || writerFailures > 0 || usageReadings !== null || concurrencyPlugin !== null;
+  let boot:BootedHost;
+  let wrappedHarness:BootedHost["harness"];
+  if (useIsolated) {
+    let localState = state;
+    boot = await bootPluginHost(() => localState);
+    activeIsolatedBoots.push(boot);
+    const dispose = async () => {
+      const idx = activeIsolatedBoots.indexOf(boot);
+      if (idx >= 0) activeIsolatedBoots.splice(idx, 1);
+      await disposeBoot(boot);
+    };
+    const reload: typeof boot.harness.reload = async (factory) => {
+      const idx = activeIsolatedBoots.indexOf(boot);
+      if (idx >= 0) activeIsolatedBoots.splice(idx, 1);
+      boot.unsubAttempt();
+      const rep = await boot.harness.reload(factory);
+      activeReloadedHarnesses.push(rep.harness);
+      return rep;
+    };
+    wrappedHarness = {
+      ...boot.harness,
+      dispose,
+      reload,
+      lifecycle: {
+        ...boot.harness.lifecycle,
+        dispose,
+        reload,
+      },
+    };
+  } else {
+    if (!sharedBoot) sharedBoot = await bootPluginHost(() => activeSharedState!);
+    else if (sharedDirty) {
+      await drainAndClearHost(sharedBoot);
+      sharedDirty = false;
+    }
+    boot = sharedBoot;
+    activeSharedState = state;
+    sharedDirty = true;
+    const dispose = async () => {
+      if (sharedBoot === boot && sharedDirty) {
+        await drainAndClearHost(boot);
+        sharedDirty = false;
+      }
+    };
+    const reload: typeof boot.harness.reload = async (factory) => {
+      if (sharedBoot === boot) {
+        sharedBoot = null;
+        sharedDirty = false;
+      }
+      boot.unsubAttempt();
+      const rep = await boot.harness.reload(factory);
+      activeReloadedHarnesses.push(rep.harness);
+      return rep;
+    };
+    wrappedHarness = {
+      ...boot.harness,
+      dispose,
+      reload,
+      lifecycle: {
+        ...boot.harness.lifecycle,
+        dispose,
+        reload,
+      },
+    };
+  }
+  const { bb, db } = boot;
   setupDb = db;
   savePrototypeConfig(db, emergencySelection ? {...config,pmProviderId:emergencySelection.providerId,pmModel:emergencySelection.model} : config);
-  for (const [key,value] of Object.entries({"memory.maintain_every":1,"plan_critique.min_score":0,"plan_critique.min_write_tasks":1,"browser_qa.host_id":qaHostId,"browser_qa.workspace_path":"/tmp/lane-pilot-qa","browser_qa.backend":"chrome-qa","browser_qa.provider":"codex","browser_qa.model":"gpt-6-luna",...projectSettings})) saveProjectSetting(db,projectId,key,value);
+  for (const [key,value] of Object.entries({"memory.maintain_every":1,"plan_critique.min_score":0,"plan_critique.min_write_tasks":1,"browser_qa.host_id":state.qaHostId,"browser_qa.workspace_path":"/tmp/lane-pilot-qa","browser_qa.backend":"chrome-qa","browser_qa.provider":"codex","browser_qa.model":"gpt-6-luna",...projectSettings})) saveProjectSetting(db,projectId,key,value);
   createRun(db, "stage-run", projectId, "bb", environmentId ? null : config.writerWorkspacePath,
     projectSettings["run.gate"] === "pre-merge" ? "pre-merge" : "none",buildRunPolicy(projectSettings),config.hostId);
   if (environmentId) setRunWorkspace(db,"stage-run",config.writerWorkspacePath,environmentId);
   setRunThread(db, "stage-run", pmThreadId);
-  await plugin(bb);
-  return { bb, db, harness, spawned, telemetryReads, docsWrites, sandboxRequests, gitChangedPaths, writerControl, fileReads, stopCalls, docsInventoryCalls:()=>docsInventoryCalls, hostRpcCalls, qaHostId };
+  return { bb, db, harness:wrappedHarness, spawned:state.spawned, telemetryReads:state.telemetryReads, docsWrites:state.docsWrites, sandboxRequests:state.sandboxRequests, gitChangedPaths:state.gitChangedPaths, writerControl:state.writerControl, fileReads:state.fileReads, stopCalls:state.stopCalls, docsInventoryCalls:()=>state.docsInventoryCalls, hostRpcCalls:state.hostRpcCalls, qaHostId:state.qaHostId };
 }
 
 /** The tests are registered in the order of the file; a part file runs the slice [from, to) of them (the file was one 94 s run). */
@@ -511,7 +765,33 @@ function slicedIt(part: number): typeof vitestIt {
 
 export function registerStageTests(part: number) {
   // Registered per file, not at import: a worker that keeps its module cache between files imports this module once.
-  afterEach(()=>{concurrencyPlugin=null;concurrencyCalls.length=0;usageReadings=null;usageCalls.length=0;queuedRetries=[];queueLog.length=0;});
+  beforeAll(async () => {
+    sharedScopeDepth += 1;
+    if (!sharedBoot) sharedBoot = await bootPluginHost(() => activeSharedState!);
+  });
+  afterAll(async () => {
+    sharedScopeDepth = Math.max(0, sharedScopeDepth - 1);
+    if (sharedScopeDepth === 0 && sharedBoot) {
+      await disposeBoot(sharedBoot);
+      sharedBoot = null;
+      sharedDirty = false;
+    }
+  });
+  afterEach(async () => {
+    for (const [, release] of [...heldEventResolvers]) release();
+    heldEventResolvers.clear();
+    for (const h of activeReloadedHarnesses.splice(0)) await h.lifecycle.dispose().catch(() => undefined);
+    for (const b of activeIsolatedBoots.splice(0)) await disposeBoot(b);
+    if (sharedBoot && sharedDirty) {
+      await drainAndClearHost(sharedBoot);
+      sharedDirty = false;
+    }
+    concurrencyPlugin=null;concurrencyCalls.length=0;usageReadings=null;usageCalls.length=0;queuedRetries=[];queueLog.length=0;
+    limitWriters=0;limitThreadIds.clear();throwOnRepairSpawn=false;refuseStageSpawn=null;projectLifeHostHiccup=false;mutateCritiqueSettingsOnFirstSpawn=false;
+    listedEnvironmentProviders=defaultEnvironmentProviders;extraListPaths=[];writerAnswerOverride=null;docsEventsHeld=false;goneThreads.clear();
+    resetHolderProvisionDelay();
+    process.env.LANE_PILOT_POLL_SCALE="0.05";
+  });
 describe("stage → native writer → receipt", () => {
   const it = slicedIt(part);
   it("queues distinct task-owned outputs at provider pool size one and records both writer receipts",async()=>{
@@ -531,15 +811,9 @@ describe("stage → native writer → receipt", () => {
       harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,objective:"Проверка диспетча",plan:"Queue the second isolated fixture output",task:secondTask},{threadId:pmThreadId,projectId}),
     ]);
     const writerRows=()=>spawned.filter(row=>(row.pluginMetadata as Record<string,unknown>).role==="writer");
-    const waitForWriterCount=async(count:number)=>{
-      for(let i=0;i<200;i++){
-        if(writerRows().length>=count)return;
-        await new Promise(resolve=>setTimeout(resolve,10));
-      }
-      throw new Error(`writer spawn count did not reach ${count}`);
-    };
+    const waitForWriterCount=(count:number)=>until(`writer spawn count ${count}`,()=>writerRows().length>=count,8_000);
     await waitForWriterCount(1);
-    await new Promise(resolve=>setTimeout(resolve,30));
+    await until("second task parked on provider pool",()=>db.prepare("SELECT 1 FROM lane_pilot_wf_step s JOIN lane_pilot_wf_run r ON r.id=s.run_id WHERE r.link_task_id=? AND s.node_id='admission-wait' AND s.state='waiting'").get(secondTask.id),8_000);
     expect(writerRows()).toHaveLength(1);
     const firstWriter=[...writerControl.states.keys()][0]!;
     writerControl.states.set(firstWriter,"idle");
@@ -575,7 +849,7 @@ describe("stage → native writer → receipt", () => {
     },{threadId:pmThreadId,projectId}))) as {attemptId:string;state:string};
     expect(queued.state).toBe("queued");
     const writerRows=()=>spawned.filter(row=>(row.pluginMetadata as Record<string,unknown>).role==="writer");
-    for(let i=0;i<200&&writerRows().length<1;i++)await new Promise(resolve=>setTimeout(resolve,10));
+    await until("first writer spawn",()=>writerRows().length>=1,8_000);
     expect(writerRows()).toHaveLength(1);
     expect(getAttempt(db,queued.attemptId)).toMatchObject({state:"queued",thread_id:null});
     expect(await harness.behavior.callRpc("cancel_attempt",{attemptId:queued.attemptId}))
@@ -591,7 +865,7 @@ describe("stage → native writer → receipt", () => {
     const restarted=await harness.reload(plugin);
     restarted.harness.runService("startup-recovery");
     const resumedDb=openDatabase(restarted.bb);
-    await new Promise(resolve=>setTimeout(resolve,40));
+    await restarted.harness.behavior.callRpc("resume_runs",{projectId});
     expect(getAttempt(resumedDb,queued.attemptId)?.state).toBe("canceled");
     expect(listStageReceipts(resumedDb,"stage-run",queuedTask.id).filter(row=>["writer-agent","verification","acceptance-receipt"].includes(row.stageId))
       .every(row=>row.state==="canceled")).toBe(true);
@@ -615,21 +889,15 @@ describe("stage → native writer → receipt", () => {
       createTask(db,{id:current.id,runId:"stage-run",kind:"bb",contract:current});
       saveTaskPlan(db,current.id,`Resume persisted task ${index+1}`);
       createAttempt(db,{id:`resume-attempt-${index+1}`,runId:"stage-run",taskId:current.id});
-      if(index===0)await new Promise(resolve=>setTimeout(resolve,5));
     }
+    db.prepare("UPDATE lane_pilot_attempt SET created_at=created_at-10 WHERE id=?").run("resume-attempt-1");
     const restarted=await harness.reload(plugin);
     restarted.harness.runService("startup-recovery");
     const resumedDb=openDatabase(restarted.bb);
     const writerRows=()=>spawned.filter(row=>(row.pluginMetadata as Record<string,unknown>).role==="writer");
-    const waitForWriterCount=async(count:number)=>{
-      for(let i=0;i<200;i++){
-        if(writerRows().length>=count)return;
-        await new Promise(resolve=>setTimeout(resolve,10));
-      }
-      throw new Error(`writer spawn count did not reach ${count}`);
-    };
+    const waitForWriterCount=(count:number)=>until(`writer spawn count ${count}`,()=>writerRows().length>=count,8_000);
     await waitForWriterCount(1);
-    await new Promise(resolve=>setTimeout(resolve,30));
+    await until("second resumed task parked on provider pool",()=>resumedDb.prepare("SELECT 1 FROM lane_pilot_stage_receipt WHERE task_id=? AND stage_id='writer-agent' AND state='pending' AND reason LIKE 'waiting:%'").get(secondTask.id),8_000);
     expect(writerRows()).toHaveLength(1);
     const firstWriter=[...writerControl.states.keys()][0]!;
     writerControl.states.set(firstWriter,"idle");
@@ -1409,7 +1677,7 @@ describe("stage → native writer → receipt", () => {
       runV2:{schemaVersion:1,pools:{provider:15,verification:2},score:2,risk:"low",sourceRisk:"low",scoreAdapter:"task-risk-v1"},
     });
     // The check runs in the attempt worktree, then once more on the run folder after the merge (the landing step, on lp.attempt.merged).
-    await vi.waitFor(() => expect(sandboxRequests).toHaveLength(2), { timeout: 5_000 });
+    await until("post-merge sandbox request", () => sandboxRequests.length >= 2, 5_000);
     expect(sandboxRequests[0]).toMatchObject({backend:"auto",requestedHostId:config.hostId,workspacePath:attemptWorktree});
     expect(sandboxRequests[1]).toMatchObject({workspacePath:config.writerWorkspacePath});
     expect((receipts.find((row) => row.stageId === "acceptance-receipt")?.result as { acceptancePath?:string })?.acceptancePath)
@@ -1980,7 +2248,13 @@ describe("stage → native writer → receipt", () => {
     await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,objective:"Проверка диспетча",plan:"Second step of the page",task:middle},{threadId:pmThreadId,projectId});
     await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,objective:"Проверка диспетча",plan:"First step of the page",task:first},{threadId:pmThreadId,projectId});
     const state=(id:string)=>(db.prepare("SELECT state FROM lane_pilot_attempt WHERE task_id=? ORDER BY attempt_no DESC LIMIT 1").get(id) as {state:string}|undefined)?.state;
-    for (let i=0;i<120&&state("area-a")!=="accepted";i+=1) await new Promise((wake)=>setTimeout(wake,250));
+    await new Promise<void>((resolve,reject)=>{
+      if(state("area-a")==="accepted"){resolve();return;}
+      let stop=()=>{};
+      const timer=setTimeout(()=>{stop();reject(new Error("timed out waiting for area-a to be accepted"));},30_000);
+      stop=onAttemptChanged(db,()=>{if(state("area-a")==="accepted"){clearTimeout(timer);stop();resolve();}});
+      if(state("area-a")==="accepted"){clearTimeout(timer);stop();resolve();}
+    });
     expect(state("area-a")).toBe("accepted");
     await harness.lifecycle.dispose();
   },60_000);
@@ -2201,10 +2475,7 @@ describe("stage → native writer → receipt", () => {
       [{path:"note.txt",sha256:noteMutatedSha}],[{path:"note.txt",sha256:noteMutatedSha}],
     ],{outputs:[finding,approved],holdEvents:["writer-thread-2"]});
     await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,objective:"Проверка диспетча",plan:"Write a verified fixture",task},{threadId:pmThreadId,projectId});
-    for (let i=0;i<200;i++) {
-      if (spawned.some((row)=>(row.pluginMetadata as Record<string,unknown>).repairRound===1)) break;
-      await new Promise((resolve)=>setTimeout(resolve,10));
-    }
+    await until("repair round 1",()=>spawned.some((row)=>(row.pluginMetadata as Record<string,unknown>).repairRound===1),8_000);
     expect(spawned.filter((row)=>(row.pluginMetadata as Record<string,unknown>).repairRound===1)).toHaveLength(1);
     const restarted=await harness.reload(plugin);
     restarted.harness.runService("startup-recovery");

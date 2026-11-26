@@ -1,6 +1,6 @@
 import { describe,expect,it } from "vitest";
 import { buildGateReport } from "../../src/rooms/tasks/server";
-import type { GateEventRow, StageEventRow } from "../../src/rooms/plugin-db";
+import type { GateEventRow, StageEventRow } from "../../src/rooms/storage";
 
 const events:StageEventRow[]=[
   {id:1,projectId:"p",runId:"r1",taskId:"t1",stageId:"plan-critique",state:"passed",inputSha256:"a".repeat(64),outputSha256:"b".repeat(64),attempt:1,occurredAt:90},

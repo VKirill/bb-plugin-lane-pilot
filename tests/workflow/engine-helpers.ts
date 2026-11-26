@@ -1,5 +1,5 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
-import type { LanePilotDatabase } from "../../src/rooms/plugin-db";
+import type { LanePilotDatabase } from "../../src/rooms/storage";
 import { CrashError, WorkflowEngine } from "@lane-pilot/workflow-engine";
 import type { EngineOptions, NodeExecutor, StepContext } from "@lane-pilot/workflow-engine";
 import { workflowInboxMigrations, workflowMigrations, workflowNodeFormMigrations, workflowStepFactsMigrations } from "@lane-pilot/workflow-engine";

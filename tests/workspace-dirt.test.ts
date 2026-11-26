@@ -1,24 +1,15 @@
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { WORKSPACE_DIRT_SCRIPT } from "../src/rooms/verification/models/workspace-dirt";
+import { createGitRepo, git } from "./helpers/git-repo";
 
 const roots: string[] = [];
 
-function git(cwd: string, ...args: string[]): void {
-  const ran = spawnSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", ...args], { cwd, encoding:"utf8" });
-  if (ran.status !== 0) throw new Error(ran.stderr);
-}
-
 function repo(): string {
-  const root = mkdtempSync(join(tmpdir(), "lane-pilot-dirt-"));
+  const { root } = createGitRepo({ prefix: "lane-pilot-dirt-", files: { "a.txt": "a\n" }, commit: "init" });
   roots.push(root);
-  git(root, "init", "-q");
-  writeFileSync(join(root, "a.txt"), "a\n");
-  git(root, "add", "a.txt");
-  git(root, "commit", "-qm", "init");
   return root;
 }
 

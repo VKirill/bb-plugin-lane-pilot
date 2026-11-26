@@ -9,17 +9,13 @@ import { describe, expect, it, vi } from "vitest";
 // default timed these out (2026-10-06 check log); 120 s matches the npm-install test in git-integrate.test.ts.
 vi.setConfig({ testTimeout: 120_000 });
 import { integrateWorktree, recoverStaleGitLock } from "../../src/rooms/worktree";
+import { createGitRepo, git } from "../helpers/git-repo";
 
-const git = (cwd: string, ...args: string[]) => execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", ...args], { cwd, encoding: "utf8" });
-
-async function repo() {
-  const base = join(await mkdtemp(join(tmpdir(), "lp-lock-")), "main");
-  execFileSync("git", ["init", "-q", "-b", "main", base]);
-  await writeFile(join(base, "server.ts"), "line1\n");
-  git(base, "add", "-A"); git(base, "commit", "-qm", "base");
-  const worktree = async (name: string) => { const path = join(base, "..", name); git(base, "worktree", "add", "-q", "-b", `bb/${name}`, path, "main"); return path; };
-  return { base, worktree };
-}
+const repo = () => createGitRepo({
+  prefix: "lp-lock-",
+  subdir: "main",
+  files: { "server.ts": "line1\n" },
+});
 
 const hasLsof = spawnSync("lsof", ["-v"]).error === undefined;
 const aged = async (path: string, seconds: number) => { const t = new Date(Date.now() - seconds * 1000); await utimes(path, t, t); };

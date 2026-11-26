@@ -1,27 +1,19 @@
-import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { createWorktree, worktreeOfBranch } from "../src/rooms/worktree";
+import { createGitRepo, git as rawGit } from "./helpers/git-repo";
 
 /**
  * An attempt's worktree is created again when the answer of the first create was lost (a plugin reload, a host call that timed out
  * on a machine deep in swap): its branch lane/<attempt> already exists, and `git worktree add -b` failed with «a branch named … already
  * exists», which parked the task (Vampirism Fire, 2026-10-28).
  */
-const git = (cwd: string, ...args: string[]) => execFileSync("git", args, { cwd, encoding: "utf8" }).trim();
+const git = (cwd: string, ...args: string[]) => rawGit(cwd, ...args).trim();
 
-async function repo() {
-  const root = await mkdtemp(join(tmpdir(), "lp-wt-exists-"));
-  const base = join(root, "base");
-  execFileSync("git", ["init", "-q", "-b", "main", base]);
-  git(base, "config", "user.email", "t@t");
-  git(base, "config", "user.name", "t");
-  await writeFile(join(base, "a.txt"), "one\n");
-  git(base, "add", "-A");
-  git(base, "commit", "-q", "-m", "one");
+function repo() {
+  const { root, base } = createGitRepo({ prefix: "lp-wt-exists-", subdir: "base", files: { "a.txt": "one\n" }, commit: "one" });
   return { root, base, target: join(root, "wt", "lpattempt_x") };
 }
 

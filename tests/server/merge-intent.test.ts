@@ -1,6 +1,4 @@
-import { execFileSync } from "node:child_process";
-import { mkdtemp, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it, vi } from "vitest";
@@ -9,26 +7,20 @@ import { createAttempt, createRun, getAttempt, listStageReceipts, openDatabase, 
 import { attemptMergeMessage, clearMergeIntent, createMergeIntentRecovery, mergeIntentKey, mergeLanded, recordMergeIntent, type MergeIntent, type RunOnHost } from "../../src/rooms/verification/server/services/merge-intent";
 import { recordStage } from "../../src/rooms/runs/server";
 import { integrateWorktree } from "../../src/rooms/worktree";
+import { createGitRepo, git as rawGit } from "../helpers/git-repo";
 
 // Real repositories: the proof that a merge landed is git's own answer, so the test asks git.
 vi.setConfig({ testTimeout: 120_000 });
 
-const git = (cwd: string, ...args: string[]) => execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", ...args], { cwd, encoding: "utf8" }).trim();
+const git = (cwd: string, ...args: string[]) => rawGit(cwd, ...args).trim();
 const run: RunOnHost = (hostId, cwd, command) => runCommandOnHost({ requestedHostId: hostId, cwd, command });
 
-async function repo() {
-  const root = await mkdtemp(join(tmpdir(), "lp-intent-"));
-  const base = join(root, "main");
-  execFileSync("git", ["init", "-q", "-b", "main", base]);
-  await writeFile(join(base, "server.ts"), "line1\n");
-  git(base, "add", "-A"); git(base, "commit", "-qm", "base");
-  const worktree = async (name: string, branch = `lane/${name}`) => {
-    const path = join(root, name);
-    git(base, "worktree", "add", "-q", "-b", branch, path, "main");
-    return path;
-  };
-  return { base, worktree };
-}
+const repo = () => createGitRepo({
+  prefix: "lp-intent-",
+  subdir: "main",
+  files: { "server.ts": "line1\n" },
+  worktreeBranchPrefix: "lane/",
+});
 
 const MESSAGE = attemptMergeMessage({ id: "T1", title: "Fix" }, "a1");
 const intentFor = async (kv: Parameters<typeof recordMergeIntent>[0], base: string, wt: string, message = MESSAGE) => {

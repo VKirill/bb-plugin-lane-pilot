@@ -2,7 +2,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnAsync, bestEffort } from "@lane-pilot/kit";
-import { buildFixture } from "./fixture";
+import { buildFixture, type Fixture } from "./fixture";
 import { runScore, type ScoreReport } from "./server/services/score-service";
 import { CODE_CHECKERS, DEFECT_CLASSES, EXPECTED_CATCHERS, type CheckerId } from "./models/types";
 import { openClone, type ShellPort } from "./server/services/workspace";
@@ -29,11 +29,11 @@ export type DrillReport = {
  * code checker raises something on the clean candidate, or when a class could not be planted at all (a drill that does not exercise a class
  * proves nothing about it). No model, no hub, a few seconds. `blind` makes a checker report nothing, to see the drill go red.
  */
-export async function runDrill(options: { shell?: ShellPort; blind?: readonly CheckerId[]; scratch?: string; log?: (line: string) => void } = {}): Promise<DrillReport> {
+export async function runDrill(options: { shell?: ShellPort; blind?: readonly CheckerId[]; scratch?: string; fixture?: Fixture; log?: (line: string) => void } = {}): Promise<DrillReport> {
   const shell = options.shell ?? localShell;
   const root = await mkdtemp(join(options.scratch ?? tmpdir(), "lp-checkers-drill-"));
   try {
-    const fixture = await buildFixture(root);
+    const fixture = options.fixture ?? await buildFixture(root);
     const report = await runScore({
       openVerification: (candidate) => openClone(shell, { repo: fixture.repo, baseSha: fixture.baseSha, scratch: join(root, "clones"), name: candidate.taskId, checkTimeoutSec: 60 }),
       ...(options.log ? { log: options.log } : {}),

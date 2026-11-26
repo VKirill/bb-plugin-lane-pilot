@@ -1,6 +1,6 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
-import { migrations } from "../../src/rooms/plugin-db";
+import { migrations } from "../../src/rooms/migrations";
 import { applyDraftOps, checkDraft, draftOpSchema, slugWorkflowId } from "@lane-pilot/workflow-engine";
 import type { DraftOp } from "@lane-pilot/workflow-engine";
 import { createDraftStore } from "@lane-pilot/workflow-engine";

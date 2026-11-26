@@ -10,7 +10,7 @@ import { formatEvalReport, runMemoryEval, score, stat } from "../src/rooms/memor
 import { exportEvalExtract, loadEvalData } from "../src/rooms/memory-eval/server/repositories/source";
 import type { EvalData, RawNote, RawQuestion } from "../src/rooms/contracts/memory-eval";
 import { runMemoryEvalCommand } from "../src/rooms/memory-eval/server/handlers/command";
-import { migrations } from "../src/rooms/plugin-db";
+import { migrations } from "../src/rooms/migrations";
 import { writerMemoryPicks } from "../src/rooms/memory/server";
 import { SHELF_CONFIGS, durabilityScore, formatShelf, pickThree, replayShelf, runShelfReplay } from "../src/rooms/memory-eval/server/services/shelf";
 

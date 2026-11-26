@@ -1,7 +1,6 @@
 // The daily pass's coverage (docs/worktrees.md) on real temp repositories: one decision per linked worktree with its class and reason, the
 // bounded home search (finds a repository the hub does not know, stays out of node_modules and below its depth), the copies outside the
 // managed classes (listed, never removed, even merged and detached), and BB environments (BB removes them; a live thread keeps them).
-import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { mkdtemp, realpath, utimes } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -12,23 +11,14 @@ import { openDatabase } from "../src/rooms/plugin-db";
 import { searchRepos, sweepWorktreeClasses } from "../src/rooms/worktree/worktree-sweep";
 import { worktreeJanitor } from "../src/rooms/host-worker";
 import { OUTSIDE_ITEM_PREFIX, runDailyWorktreePass, runWorktreeCleanupCli } from "../src/rooms/stability/server";
+import { createGitRepo, git } from "./helpers/git-repo";
 
 vi.setConfig({ testTimeout: 120_000 });
 
 const DAY = 86_400_000;
-const git = (cwd: string, ...args: string[]) => execFileSync("git", args, { cwd, stdio: ["ignore", "pipe", "pipe"] }).toString();
 
 /** A repository on main at `path` with one commit. */
-function repo(path: string): string {
-  mkdirSync(path, { recursive: true });
-  git(path, "init", "-q", "-b", "main");
-  git(path, "config", "user.email", "t@t");
-  git(path, "config", "user.name", "t");
-  writeFileSync(join(path, "a.txt"), "a\n");
-  git(path, "add", ".");
-  git(path, "commit", "-qm", "init");
-  return path;
-}
+const repo = (path: string): string => createGitRepo({ path, files: { "a.txt": "a\n" }, commit: "init" }).base;
 
 async function fixture() {
   const dir = await realpath(await mkdtemp(join(tmpdir(), "lp-wt-coverage-")));

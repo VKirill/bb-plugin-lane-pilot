@@ -1,24 +1,14 @@
-import { execFileSync } from "node:child_process";
-import { mkdtemp, readFile, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { expect, it } from "vitest";
 import { integrateWorktree, syncWorktree } from "../../src/rooms/worktree";
+import { createGitRepo, git } from "../helpers/git-repo";
 
-const git = (cwd: string, ...args: string[]) => execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", ...args], { cwd, encoding: "utf8" });
-
-async function repo() {
-  const base = join(await mkdtemp(join(tmpdir(), "lp-sync-")), "main");
-  execFileSync("git", ["init", "-q", "-b", "main", base]);
-  await writeFile(join(base, "page.vue"), "hero\nhow\nfaq\n");
-  git(base, "add", "-A"); git(base, "commit", "-qm", "base");
-  const worktree = (name: string) => {
-    const path = join(base, "..", name);
-    git(base, "worktree", "add", "-q", "-b", `bb/${name}`, path, "main");
-    return path;
-  };
-  return { base, worktree };
-}
+const repo = () => createGitRepo({
+  prefix: "lp-sync-",
+  subdir: "main",
+  files: { "page.vue": "hero\nhow\nfaq\n" },
+});
 
 it("[sma:k_v_syncbranch] [sma:k_lib_branchsync] brings a merged writer's worktree up to main, including other writers' work", async () => {
   const { base, worktree } = await repo();

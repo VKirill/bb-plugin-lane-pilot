@@ -1,14 +1,17 @@
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
-import { migrations } from "../src/rooms/plugin-db";
+import { beforeAll, describe, expect, it } from "vitest";
+import { migrations } from "../src/rooms/migrations";
 import { runMemoryEvalCommand } from "../src/rooms/memory-eval/server/handlers/command";
 import { E2E_VERDICTS, ABSTAIN_PHRASE, e2eCases, formatE2e, parseVerdict, runE2e, stubModel, type ModelCall } from "../src/rooms/memory-eval/server/services/e2e";
 import { formatPublic, loadFactConsolidation, loadLongMemEvalAbstention, runFactConsolidation, runLongMemEvalAbstention } from "../src/rooms/memory-eval/server/services/public-sets";
-import { formatSuite, plantSuite, regressions, runSuite, scoreSuite, standInEmbedding, type SuiteBaseline } from "../src/rooms/memory-eval/server/services/suite";
+import { formatSuite, plantSuite, regressions, runSuite, scoreSuite, standInEmbedding, type CaseResult, type SuiteBaseline, type SuiteReport } from "../src/rooms/memory-eval/server/services/suite";
 import { SUITE_CASES, SUITE_NOTES, SUITE_PACK_NOTES } from "../src/rooms/memory-eval/models/suite-fixture";
 import baseline from "../src/rooms/memory-eval/server/services/suite-baseline.json";
+
+let suiteJsonPromise: ReturnType<typeof runMemoryEvalCommand> | undefined;
+const getSuiteJson = () => (suiteJsonPromise ??= runMemoryEvalCommand(null, ["--suite", "--json"], migrations));
 
 // The offline memory suite (H1-H7 of the memory research, 2026-11-13). Update the baseline on purpose:
 //   npx tsx scripts/memory-eval.ts --suite --write-baseline src/rooms/memory-eval/server/suite-baseline.json
@@ -42,7 +45,11 @@ describe("memory suite: the fixture", () => {
 });
 
 describe("memory suite: retrieval scores", () => {
-  const report = runSuite(migrations);
+  let report!: SuiteReport;
+  beforeAll(async () => {
+    const parsed = JSON.parse((await getSuiteJson()).stdout!) as { report: Omit<SuiteReport, "cases"> & { cases: Array<Omit<CaseResult, "context">> } };
+    report = { ...parsed.report, cases: parsed.report.cases.map((item) => ({ ...item, context: "" })) };
+  });
 
   it("prints the score table", () => {
     process.stdout.write(`\n${formatSuite(report, baseline as SuiteBaseline)}\n\n`);
@@ -147,7 +154,7 @@ describe("memory suite: the command", () => {
     const suite = await runMemoryEvalCommand(null, ["--suite"], migrations);
     expect(suite.exitCode).toBe(0);
     expect(suite.stdout).toContain("no regression against the baseline");
-    expect(JSON.parse((await runMemoryEvalCommand(null, ["--suite", "--json"], migrations)).stdout!).regressions).toEqual([]);
+    expect(JSON.parse((await getSuiteJson()).stdout!).regressions).toEqual([]);
     expect((await runMemoryEvalCommand(null, ["--suite", "--write-baseline", "x.json"], migrations)).stderr).toMatch(/scripts\/memory-eval/);
     expect((await runMemoryEvalCommand(null, ["--longmemeval", "x.json"], migrations)).stderr).toMatch(/scripts\/memory-eval/);
     const bare = await runMemoryEvalCommand(null, ["--e2e"], migrations);
@@ -160,8 +167,7 @@ describe("memory suite: the command", () => {
     const dry = await runMemoryEvalCommand(null, ["--e2e", "--stub", "--limit", "4"], migrations);
     expect(dry.stdout).toMatch(/memory e2e: 4 questions/);
     expect((await runMemoryEvalCommand(null, ["--e2e", "--stub", "--limit", "0"], migrations)).stderr).toMatch(/--limit/);
-    // Runs the whole retrieval suite twice (7 s alone): the default 30 s ran out under the full suite on ovh-ci.
-  }, 120_000);
+  });
 });
 
 describe("memory suite: public sets from local files", () => {

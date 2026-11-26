@@ -1,6 +1,6 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
-import { migrations } from "../../src/rooms/plugin-db";
+import { migrations } from "../../src/rooms/migrations";
 import type { ServerCore } from "../../src/rooms/contracts/server";
 import type { Services } from "../../server";
 import { createWorkflowLibrary } from "../../src/rooms/workflow/server/services/workflow-library";
