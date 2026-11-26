@@ -30,14 +30,14 @@ TL;DR: Vitest runs four projects (`node`, `node-isolated`, `ui`, `ui-isolated`) 
 
 | Project | Files matched | Isolation and setup | Source |
 |---|---|---|---|
-| `node` | `tests/**/*.test.ts`, `src/rooms/**/tests/**/*.test.ts`, `packages/*/tests/**/*.test.ts` (excluding `mocking`) | `isolate: true`; runs `setup-jsdom.ts` and `setup-shared-modules.ts` | `vitest.config.ts:47`, `:78`; `tests/setup-shared-modules.ts:1` |
-| `node-isolated` | Files listed in `mocking` (calls to `vi.mock`/`vi.doMock` or module-level state) | Isolated module graph per file; enforced by `mocking-isolated.test.ts` | `vitest.config.ts:7-46`, `:79`; `tests/architecture/mocking-isolated.test.ts:14-21` |
-| `ui` | `tests/**/*.test.tsx`, `src/rooms/**/tests/**/*.test.tsx` (excluding `uiAlone`) | `isolate: false` with `uiTests` and jsdom `vi.resetModules()` per file | `vitest.config.ts:49-50`, `vitest.config.ts:80`; `tests/setup-jsdom.ts:6` |
-| `ui-isolated` | Page tests listed in `uiAlone` that require a clean document | Isolated per file | `vitest.config.ts:49`, `:81` |
+| `node` | `tests/**/*.test.ts`, `src/rooms/**/tests/**/*.test.ts`, `packages/*/tests/**/*.test.ts` (excluding `mocking`) | `isolate: false` (one module graph per worker); runs `setup-jsdom.ts` and `setup-shared-modules.ts` | `vitest.config.ts:39`, `:75`; `tests/setup-shared-modules.ts:1` |
+| `node-isolated` | Files listed in `mocking` (calls to `vi.mock`/`vi.doMock` or module-level state) | Isolated module graph per file; enforced by `mocking-isolated.test.ts` | `vitest.config.ts:7-38`, `:76`; `tests/architecture/mocking-isolated.test.ts:14-21` |
+| `ui` | `tests/**/*.test.tsx`, `src/rooms/**/tests/**/*.test.tsx` (excluding `uiAlone`) | `isolate: false` with `uiTests` and jsdom `vi.resetModules()` per file | `vitest.config.ts:41-42`, `vitest.config.ts:77`; `tests/setup-jsdom.ts:6` |
+| `ui-isolated` | Page tests listed in `uiAlone` that require a clean document | Isolated per file | `vitest.config.ts:41`, `:78` |
 
-- `testTimeout` is `30000` ms (`vitest.config.ts:68`).
-- `LongestFirstSequencer` schedules all projects from a single queue (failed files first, then longest cached duration, then largest file size) unless `LP_DEFAULT_ORDER` is set (`vitest.config.ts:70`, `tests/sequencer.ts:12-29`).
-- `workspaceAliases` maps every `@lane-pilot/*` package export to its local directory under `packages/` so tests in a git worktree execute that worktree's code instead of `node_modules` links (`vitest.config.ts:54-62`, `:84-86`).
+- `testTimeout` is `60000` ms (`vitest.config.ts:61`); `maxWorkers` is `50%` of the cores (`vitest.config.ts:64`).
+- `LongestFirstSequencer` schedules all projects from a single queue (failed files first, then longest cached duration, then largest file size) unless `LP_DEFAULT_ORDER` is set (`vitest.config.ts:66`, `tests/sequencer.ts:12-29`).
+- `workspaceAliases` maps every `@lane-pilot/*` package export to its local directory under `packages/` so tests in a git worktree execute that worktree's code instead of `node_modules` links (`vitest.config.ts:47`, `:82`).
 
 ## Test runtime environment
 

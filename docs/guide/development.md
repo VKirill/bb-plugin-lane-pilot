@@ -6,12 +6,14 @@ status: active
 created: 2026-11-06
 confidence: medium
 tags: [guide, development]
-updated: 2026-11-14
+updated: 2026-11-26
 sources:
   - package.json
+  - vitest.config.ts
   - src/rooms/migrations.ts
   - src/rooms/storage/database.ts
   - scripts/lp-drill.py
+  - tests/helpers/git-repo.ts
 ---
 
 # Development
@@ -39,7 +41,7 @@ sources:
 | Command | What it does |
 |---|---|
 | `npm install` | Installs dependencies and links the workspaces. |
-| `npx vitest run` (`npm test`) | The full suite. Vitest runs four projects: `node` (shared module graph), `node-isolated` (files that use `vi.mock`), `ui` and `ui-isolated` (jsdom; pages that cannot share a document), longest file first. |
+| `npx vitest run` (`npm test`) | The full suite. Vitest runs four projects: `node` (`isolate: false`, one module graph per worker), `node-isolated` (`mocking` list for `vi.mock` or module-level state), `ui` (`isolate: false`, jsdom) and `ui-isolated` (`uiAlone` pages that cannot share a document), longest file first on half the cores (`maxWorkers: "50%"`). |
 | `npm run test:changed` | Only tests that changed, tests whose imports match changed sources, and tests of a changed package. `-- --graph` uses Vitest's changed dependency graph. Writes no deploy receipt. |
 | `scripts/test-full.sh` | The full suite once per code state: on green and a clean tree it writes the receipt the deploy script checks, keyed by the tree of `HEAD` and the Node version. |
 | `node scripts/test-timing.mjs` | Summarizes Vitest's cached per-file timings (`node_modules/.vite/vitest/*/results.json` or a given path; supports `--top N` and `--json`). |
@@ -47,6 +49,8 @@ sources:
 | `npm run build` | `bb plugin build` (server, host and app bundles). |
 | `npm run test:layout` | The layout checks of the UI (`tests/layout/run.mjs`). |
 | `npm run check` | `npm test`, typecheck, build and layout tests in sequence. |
+
+**How the suite runs.** `vitest.config.ts` splits tests into four projects (`node`, `node-isolated`, `ui`, `ui-isolated`) scheduled by `tests/sequencer.ts` (longest file first) across `maxWorkers: "50%"` (half the cores). Both `node` and `ui` run with `isolate: false` (one module graph per worker; `tests/setup-jsdom.ts` resets `process.env` and `cwd` between files). Add a file to the `mocking` list in `vitest.config.ts` with a one-line reason when it calls `vi.mock`/`vi.doMock` (enforced by `tests/architecture/mocking-isolated.test.ts`) or depends on empty module-level state; do not mutate `LOG_LEVEL` mid-run (read once at entry in `initRuntimeEnv` — pass it as a parameter instead). `bb-plugin-push` (in `infrastructure/plugin-deploy`, outside this repo) runs checks under `nice -n 10`, and on `ovh-ci` under `systemd-run --user --scope -p CPUQuota=800% -p MemoryMax=8G` (8 of 16 cores, 8 GB; measured peak 5.9 GB). Measure slow files with `node scripts/test-timing.mjs`, and create temporary git repositories in tests with `tests/helpers/git-repo.ts` (`createGitRepo`, `git`).
 
 **Where to run what.** Parallel agents and quick edits run only their own tests. The tests that start git repositories, spawn processes or build worktrees (`tests/verification/**`, `tests/scenarios.test.ts`, `tests/pipeline*.test.ts`, `tests/acceptance-v2.test.ts`) must run outside the Lane Pilot check sandbox: inside a task's own sandboxed check they cannot run, which is what `verification.sandbox_unsafe` is for (a whole-suite check must exclude them with `--exclude`, and the contract lint refuses one that does not). A task's check should be the focused one (for example `npx vitest related <files> --run`); the whole suite is the integration gate's, once per batch. Vitest leaks temporary directories on a busy machine; `tests/global-setup.ts` gives each run one temp directory and removes it afterwards, but check free disk before a full run.
 
@@ -62,7 +66,7 @@ Release notes of every version are in [CHANGELOG.md](../../CHANGELOG.md); ADRs a
 
 ## Sources
 
-Where this page's claims start in the code: `package.json:1-21`, `src/rooms/migrations.ts:1-60`, `src/rooms/storage/database.ts:20-26`, `scripts/lp-drill.py:123-143`. The deep pages linked above cite the rest.
+Where this page's claims start in the code: `package.json:1-21`, `vitest.config.ts:6-79`, `src/rooms/migrations.ts:1-60`, `src/rooms/storage/database.ts:20-26`, `scripts/lp-drill.py:123-143`, `tests/helpers/git-repo.ts:1-67`. The deep pages linked above cite the rest.
 
 <!-- lane-pilot:backlinks -->
 ## Referenced by
