@@ -103,7 +103,8 @@ export function runFactConsolidation(migrations: readonly string[], cases: reado
   let hit = 0, tokens = 0;
   for (const group of byContext.values()) {
     const db = openScratchEvalDb(migrations, true);
-    const now = Date.now();
+    // Facts get past timestamps, newest last: a stamp after the search's own clock would read as not yet valid and drop the newest fact.
+    const now = Date.now() - group[0]!.facts.length;
     group[0]!.facts.forEach((fact, index) => {
       try { storeMemoryRecords(db as never, { projectId: PROJECT, audience: "subagent", sourceSha256: "f".repeat(64), coreBudget: 9_999, noteBudget: 9_999_999, indexBudget: 9_999_999, now: now + index, entries: [{ kind: "note", content: fact, concepts: ["fact"] }] }); } catch { /* a fact the write door refuses */ }
     });
