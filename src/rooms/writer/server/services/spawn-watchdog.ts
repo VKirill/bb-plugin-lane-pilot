@@ -29,6 +29,8 @@ export async function spawnWriterAttemptWatched(deps:{ db:ServerCore["db"]; log:
   let poll: ReturnType<typeof setInterval> | undefined;
   const watchdog = new Promise<SpawnResult>((resolve) => {
     poll = setInterval(() => {
+      // The plugin stopped (or a test closed its database) while a start still waited: nothing is left to watch.
+      if (!db.open) { clearInterval(poll); return; }
       const state = getAttempt(db, input.attemptId)?.state;
       const step = startSteps.get(input.attemptId) ?? "start";
       const stalled = Date.now() - started >= START_STALL_MS;
