@@ -9,6 +9,7 @@ tags: [deployment, build, configuration]
 sources:
   - package.json
   - .github/workflows/test.yml
+  - .github/workflows/changed.yml
   - packages/contracts/package.json
   - packages/handoff/package.json
   - packages/host-calls/package.json
@@ -58,7 +59,7 @@ BB loads the plugin's server and app from the manifest; the host bundle is the w
 
 For reload or shutdown, the VK lifecycle handler enables the same drain used by `deploy_drain`, waits for in-flight checkout writes and acceptance checks until the supplied deadline or abort, then stores the outcome in BB KV (`src/rooms/native-install/server/services/native-install-lifecycle.ts`, `src/rooms/stability/server/services/deploy-drain.ts`). The manifest gives the lifecycle drain a 300,000 ms deadline (`package.json`). Calls entering during an active drain wait; the drain expires after 20 minutes if it is not disabled. A clean reload snapshot with `afterDrain` skips redundant startup scans; other starts scan immediately.
 
-Package scripts define local commands: `npm test`, `npm run test:changed`, `npm run typecheck`, `npm run build`, `npm run test:layout`, and `npm run check` (`package.json`). By default, `npm run test:changed` compares dirty files with `HEAD` or a clean branch with its merge base against `main` (`scripts/test-changed.mjs`). `npm run test:changed -- --graph` runs Vitest's changed dependency graph. `scripts/test-full.sh` is the repository wrapper for the full suite (`scripts/test-full.sh`). On `push`, `pull_request`, and `workflow_dispatch`, GitHub Actions runs `npx tsc --noEmit -p .` and `npx vitest run` in the `test` workflow (`.github/workflows/test.yml`; see [Testing and verification](testing.md#continuous-integration)). Test isolation, DOM shims, and run-level temporary-directory cleanup are defined in `vitest.config.ts`, `tests/setup-jsdom.ts`, and `tests/global-setup.ts`.
+Package scripts define local commands: `npm test`, `npm run test:changed`, `npm run typecheck`, `npm run build`, `npm run test:layout`, and `npm run check` (`package.json`). By default, `npm run test:changed` compares dirty files with `HEAD` or a clean branch with its merge base against `main` (`scripts/test-changed.mjs`). `npm run test:changed -- --graph` runs Vitest's changed dependency graph. `scripts/test-full.sh` is the repository wrapper for the full suite (`scripts/test-full.sh`). On every `push`, GitHub Actions runs `npx tsc --noEmit -p .` and the tests of the pushed change in the `changed` workflow (`.github/workflows/changed.yml`); the full `npx vitest run` is the `test` workflow, started by hand (`.github/workflows/test.yml`; see [Testing and verification](testing.md#continuous-integration)). Test isolation, DOM shims, and run-level temporary-directory cleanup are defined in `vitest.config.ts`, `tests/setup-jsdom.ts`, and `tests/global-setup.ts`.
 
 ## Runtime requirements
 

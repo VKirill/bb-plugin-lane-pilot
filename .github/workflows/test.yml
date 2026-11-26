@@ -1,7 +1,8 @@
 name: test
+# The full suite, started by hand (owner, 2026-11-26: a full run on every push loaded ovh-ci and repeated the deploy's own
+# check). bb-plugin-push trusts a green run of this job (check name "test") as the full suite; pushes run changed.yml.
 # Runs only on the maintainer's own runners. No pull_request trigger: code from forks never reaches them.
 on:
-  push:
   workflow_dispatch:
 concurrency:
   group: test-${{ github.ref }}

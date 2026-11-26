@@ -1,0 +1,37 @@
+name: changed
+# Every push: typecheck and the tests of what the push changed (scripts/test-changed.mjs). Not the full suite: the job is
+# named "changed" so bb-plugin-push, which trusts only checks named "test", never takes it for one. The full suite runs
+# at deploy (bb-plugin-push) or by hand (test.yml).
+# Runs only on the maintainer's own runners. No pull_request trigger: code from forks never reaches them.
+on:
+  push:
+concurrency:
+  group: changed-${{ github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+jobs:
+  changed:
+    runs-on: [self-hosted, linux-ci]
+    timeout-minutes: 30
+    env:
+      NO_COLOR: "1"
+      VITE_CONFIG_NATIVE_IGNORE_WARNING: "true"
+      BEFORE: ${{ github.event.before }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+      - name: Local main for test-changed's default base
+        run: git show-ref --verify --quiet refs/heads/main || git branch main origin/main
+      - run: node -v && git --version
+      - run: npm ci --no-audit --no-fund
+      - name: Typecheck and the tests of this push
+        run: |
+          npx tsc --noEmit -p . > tsc.log 2>&1 & tsc=$!
+          # Base: the commit before this push; a new branch (all zeros) uses test-changed's own default.
+          case "$BEFORE" in ""|0000000000000000000000000000000000000000) base="" ;; *) base="$BEFORE" ;; esac
+          node scripts/test-changed.mjs $base; vt=$?
+          wait $tsc; tc=$?
+          [ $tc -eq 0 ] || { echo "::error::typecheck failed"; head -40 tsc.log; }
+          exit $(( vt || tc ))

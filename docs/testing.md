@@ -63,7 +63,10 @@ TL;DR: Vitest runs four projects (`node`, `node-isolated`, `ui`, `ui-isolated`) 
 
 ## Continuous integration
 
-- The repository has no hosted CI. Checks run on the maintainer's own Linux runner before every deploy: `npx tsc --noEmit -p .` plus `npm run test:changed` against the last fully green commit, and the full `npx vitest run` at least once a day or when dependencies, vitest or TypeScript configs change.
+- The repository has no hosted CI; every check runs on the maintainer's own Linux runner (`ovh-ci`).
+- Every push: `.github/workflows/changed.yml` runs `npx tsc --noEmit -p .` and `node scripts/test-changed.mjs <commit before the push>`. Its job is named `changed`, so the deploy script never counts it as the full suite.
+- Before a deploy, `bb-plugin-push` runs `npm run test:changed` against the last fully green commit, and the full `npx vitest run` when that commit is older than 24 hours or dependencies, vitest or TypeScript configs changed. Nothing runs on a schedule.
+- `.github/workflows/test.yml` is the full suite started by hand (`workflow_dispatch`); the deploy script accepts its green run as the full suite.
 - Reference environment for a green suite: Linux, Node `24.15.0`, `bubblewrap` and `sqlite3` installed, Playwright Chromium, full git history with a local `main` branch (parity and bisect tests read `main`), `NO_COLOR=1` and `VITE_CONFIG_NATIVE_IGNORE_WARNING=true`.
 - macOS and Windows are not reference platforms: Linux-only tests (bash, `bwrap`, systemd, crontab) fail there by design.
 
