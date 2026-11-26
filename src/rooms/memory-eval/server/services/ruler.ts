@@ -322,27 +322,3 @@ export function compareRulerArms(
   const adopt = ans.length > 0 && hit3.mean > 0 && (unans.length === 0 || noneOk.mean >= 0) && withinBudget && gateClean;
   return { pairs: shared.length, hit3, noneOk, tokens, latencyMs, candidate, control, withinBudget, adopt };
 }
-
-export function evaluateWorkingVsHeldOut(input: {
-  arm: string;
-  path: string;
-  workingControl: ScopeReport;
-  workingArm: ScopeReport;
-  heldOutControl: ScopeReport;
-  heldOutArm: ScopeReport;
-  log?: (line: string) => void;
-  gateClean?: boolean;
-  maxTokens?: number;
-  maxP95Ms?: number;
-}): { adopt: boolean; reason: "adopted" | "overfit" | "no_gain" | "budget_or_gate"; working: ArmComparison; heldOut: ArmComparison } {
-  const working = compareRulerArms(input.workingControl, input.workingArm, input);
-  const heldOut = compareRulerArms(input.heldOutControl, input.heldOutArm, input);
-  input.log?.(`INFO ${armLogLine(input.path, heldOut.candidate)}`);
-  if (working.hit3.mean > 0 && heldOut.hit3.mean <= 0) {
-    input.log?.(`WARN memory.arm overfit rejected arm=${input.arm} path=${input.path} working_hit3=${(working.hit3.mean * 100).toFixed(1)}% heldout_hit3=${(heldOut.hit3.mean * 100).toFixed(1)}%`);
-    return { adopt: false, reason: "overfit", working, heldOut };
-  }
-  if (!heldOut.withinBudget || input.gateClean === false) return { adopt: false, reason: "budget_or_gate", working, heldOut };
-  if (!heldOut.adopt) return { adopt: false, reason: "no_gain", working, heldOut };
-  return { adopt: true, reason: "adopted", working, heldOut };
-}

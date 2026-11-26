@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { nextAttemptState, resolveTransition, TRANSITION_TABLE, type AttemptState, type TransitionEvent } from "../src/rooms/contracts/state-machine";
+import { resolveTransition, TRANSITION_TABLE, type AttemptState, type TransitionEvent } from "../src/rooms/contracts/state-machine";
 import { RUNS_MAX_LIMIT, readRunsWindow } from "../src/rooms/runs/ui/runs-window";
 
 // Release stories — window suite (SMA rl_stories / n1133): the window model and the task's states seen through it.
@@ -8,7 +8,10 @@ import { RUNS_MAX_LIMIT, readRunsWindow } from "../src/rooms/runs/ui/runs-window
 const EVENTS: TransitionEvent[] = TRANSITION_TABLE.map((row) => row.event).filter((event, index, all) => all.indexOf(event) === index);
 
 function driveTo(state: AttemptState, events: TransitionEvent[]): AttemptState {
-  return events.reduce((from, event) => nextAttemptState(from, event), state);
+  return events.reduce<AttemptState>((from, event) => {
+    const to = resolveTransition(from, event);
+    return to === "stay" ? from : to;
+  }, state);
 }
 
 describe("window stories: the runs window model through its states", () => {
@@ -27,15 +30,16 @@ describe("window stories: the runs window model through its states", () => {
   it("the same task is idle, running, blocked, then accepted only on checks_passed", () => {
     const running = driveTo("queued", ["spawn_called", "spawn_ok"]);
     expect(running).toBe("running");
-    expect(nextAttemptState(running, "checks_passed")).toBe("accepted");
-    expect(nextAttemptState("running", "cancel")).not.toBe("accepted");
+    expect(resolveTransition(running, "checks_passed")).toBe("accepted");
+    expect(resolveTransition("running", "cancel")).not.toBe("accepted");
   });
 });
 
 describe("window stories: a window blocked and reopened", () => {
   it("a validation failure blocks the window's card after retries are spent, never accepts it", () => {
-    const failed = nextAttemptState("running", "validation_failed");
-    expect(nextAttemptState(failed, "retry_exhausted")).toBe("blocked");
+    const failed = resolveTransition("running", "validation_failed");
+    expect(failed).toBe("validation_failed");
+    expect(resolveTransition(failed as AttemptState, "retry_exhausted")).toBe("blocked");
     for (const event of EVENTS) {
       if (event === "retry" || event === "retry_exhausted") continue;
       expect(() => resolveTransition("blocked", event)).toThrow();

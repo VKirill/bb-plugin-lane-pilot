@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { readBoundedWorkspaceFile } from "@lane-pilot/kit";
-import { nextAttemptState, resolveTransition, TRANSITION_TABLE, type TransitionEvent } from "../src/rooms/contracts/state-machine";
+import { resolveTransition, TRANSITION_TABLE, type TransitionEvent } from "../src/rooms/contracts/state-machine";
 
 // Release stories — worker suite (SMA rl_stories / n1133): the real worker boundary guards and the law that a worker
 // cannot accept its own work (only checks_passed reaches `accepted`).
@@ -39,7 +39,6 @@ describe("a worker cannot accept its own work", () => {
         // an illegal event is also not an acceptance
       }
     }
-    expect(nextAttemptState("running", "checks_passed")).toBe("accepted");
   });
 
   it("a writer report with exit 0 and no verification stage leaves the attempt non-accepted", () => {

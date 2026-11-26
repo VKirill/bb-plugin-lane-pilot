@@ -1,12 +1,16 @@
 /** @vitest-environment jsdom */
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { cleanup, render } from "@testing-library/react";
+import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import { createElement } from "react";
+import { en } from "@lane-pilot/i18n";
 import { Disclosure } from "../packages/ui-kit/src/ui/disclosure";
 import { Alert, AlertTitle } from "../packages/ui-kit/src/ui/alert";
-import { fileContaining, filesContaining } from "./support/source-text";
+import { mountPage } from "./ui-harness";
+import { openTab } from "./ui-tabs";
+
+afterEach(() => { cleanup(); document.body.innerHTML = ""; });
 
 describe("layout geometry harness", () => {
   it("loads the full bundled prompt, not a stub", () => {
@@ -17,27 +21,65 @@ describe("layout geometry harness", () => {
     expect(bundled["dev-orchestrator"].tools[0]).toContain("Agent(");
   });
 
-  it("requires fieldset min-inline-size reset in Agents markup", () => {
-    const source = fileContaining('id="agent-prompt"').text;
-    expect(source).toContain("minInlineSize: 0");
-    expect(source).toContain("min-w-0 max-w-full");
-    expect(source).toContain("agentSavedUnknownHelp");
-    expect(source).toContain("items-start");
-    expect(source).toContain("CONTROL_H");
-    expect(source).toContain("<Disclosure");
-    expect(source).not.toMatch(/<details /);
+  it("requires fieldset min-inline-size reset in Agents markup", async () => {
+    const slot = await mountPage({
+      get_globals: () => ({
+        defaults: {},
+        revision: 0,
+        agents: [{ id: "dev-orchestrator", description: "Dev", prompt: "Help", sourceHash: "abc", sourceVersion: "lp-owned-1" }],
+      }),
+      get_agent_inventory: () => ({
+        skills: { status: "ready", items: [] },
+        mcpServers: { status: "ready", items: [] },
+        tools: { status: "ready", items: [] },
+        disallowedTools: { status: "ready", items: [] },
+      }),
+    });
+    fireEvent.click(await slot.findByRole("tab", { name: en.navAgents }));
+    await waitFor(() => expect(slot.container.querySelector("#agent-prompt")).toBeTruthy());
+    const prompt = slot.container.querySelector("#agent-prompt") as HTMLElement;
+    const fieldset = prompt.closest("fieldset") as HTMLFieldSetElement;
+    expect(fieldset.style.minInlineSize).toBe("0");
+    expect(fieldset.className).toContain("min-w-0");
+    expect(fieldset.className).toContain("max-w-full");
+    expect(fieldset.querySelector(".items-start")).toBeTruthy();
+    expect(slot.container.querySelector("#agent-description")?.className).toContain("h-9");
+    const details = Array.from(fieldset.querySelectorAll("details"));
+    expect(details.length).toBeGreaterThan(0);
+    for (const d of details) expect(d.querySelector("[data-disclosure-chevron]")).toBeTruthy();
+    slot.lifecycle.unmount();
   });
 
-  it("uses one Disclosure and matching control height on project settings", () => {
-    const source = fileContaining("titleOnly").text;
-    const header = fileContaining("settings-depth").text;
-    const service = filesContaining("<Disclosure", "src/rooms/runs");
-    expect(service.length).toBeGreaterThan(0);
-    expect(source).toContain("CONTROL_H");
-    expect(header).not.toMatch(/<details /);
-    expect(source).not.toMatch(/<details /);
-    expect(source).not.toMatch(/size="sm" variant=\{settingsDepth/);
-    expect(source).toContain("mb-0 leading-5");
+  it("uses one Disclosure and matching control height on project settings", async () => {
+    const slot = await mountPage({
+      save_setting: () => ({
+        ok: false, conflict: false, version: 1, value: false,
+        validation: { code: "setup_required", key: "writer.provider", params: [] },
+      }),
+    });
+    openTab(slot, "team");
+    const sw = await waitFor(() => {
+      const el = slot.container.querySelector("[role='switch']") as HTMLButtonElement | null;
+      if (!el) throw new Error("switch not rendered");
+      return el;
+    });
+    fireEvent.click(sw);
+    const err = await slot.findByTestId("setting-validation-error");
+    const title = err.querySelector("h5") ?? err.firstElementChild;
+    expect(title?.className).toContain("mb-0");
+    expect(title?.className).toContain("leading-5");
+    expect(err.querySelector("button")).toBeNull();
+
+    const depth = slot.getByTestId("settings-depth");
+    for (const btn of Array.from(depth.querySelectorAll("button"))) {
+      expect(btn.className).toContain("h-[1.875rem]");
+    }
+    openTab(slot, "runs");
+    await waitFor(() => expect(slot.container.querySelectorAll("details").length).toBeGreaterThan(0));
+    for (const d of Array.from(slot.container.querySelectorAll("details"))) {
+      expect(d.querySelector("[data-disclosure-chevron]")).toBeTruthy();
+    }
+    slot.lifecycle.unmount();
   });
 
   it("rotates only the summary chevron and keeps BB AlertTitle defaults", () => {

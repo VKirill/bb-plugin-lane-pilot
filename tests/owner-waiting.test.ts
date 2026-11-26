@@ -1,6 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
-import { rpcContract } from "../src/rooms/contracts";
 import { openDatabase } from "../src/rooms/plugin-db";
 import { closeOwnerItem, collectOwnerWaiting, postOwnerItem } from "../src/rooms/owner-waiting";
 import { ackDigest, inQuietHours, loadPushConfig, ownerWaitingRpc, planDigest, runWaitingCli, savePushConfig } from "../src/rooms/owner-waiting/server";
@@ -171,10 +170,6 @@ describe("bb lane-pilot waiting", () => {
 });
 
 describe("the RPCs", () => {
-  it("are in the contract", () => {
-    for (const method of ["owner_waiting", "owner_waiting_digest", "owner_waiting_ack", "owner_waiting_config"] as const) expect(rpcContract[method], method).toBeDefined();
-  });
-
   it("screen mutations invalidate the watched owner_waiting read; reads do not", async () => {
     const db = openDatabase(createFakePluginHost({ pluginId: "lane-pilot" }).bb);
     const invalidate = vi.fn();

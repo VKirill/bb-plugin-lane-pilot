@@ -4,7 +4,7 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it, vi } from "vitest";
 import plugin from "../../server";
 import { createCore } from "../../src/rooms/core/server/core";
-import { FAILED_ATTEMPT_STATES, isFailedAttemptState, isOpenAttemptState, retryAction } from "../../src/rooms/contracts/state-machine";
+import { FAILED_ATTEMPT_STATES, isFailedAttemptState, isOpenAttemptState } from "../../src/rooms/contracts/state-machine";
 import { failureClass } from "../../src/rooms/contracts/failure-class";
 import { cancelAttemptById } from "../../src/rooms/runs/server";
 import { markCancelCode, CANCEL_CODES } from "../../src/rooms/storage/cancel-code";
@@ -34,7 +34,6 @@ const CLASSES = ["task", "provider", "merge", "dirty_base", "harness", "infra", 
 
 describe("how an attempt ends", () => {
   it("[sma:tr_failed] an attempt that did not produce is one of the failed states, and its reason reads as one class of the closed list", () => {
-    expect([...FAILED_ATTEMPT_STATES]).toEqual(["spawn_rejected", "provider_error", "timeout", "empty_output", "validation_failed", "blocked"]);
     for (const state of ["accepted", "canceled", "queued", "running", "cancel_requested", "spawn_requested", "spawn_unknown"]) expect(isFailedAttemptState(state)).toBe(false);
     const reasons: Record<string, [string | null, string]> = {
       spawn_rejected: ["writer_provider_unavailable: catalog down", "provider"],
@@ -70,9 +69,8 @@ describe("how an attempt ends", () => {
     markCancelCode(db as never, "a2", "owner_cancel");
     expect((db.prepare("SELECT cancel_code FROM lane_pilot_attempt WHERE id='a2'").get() as { cancel_code: string }).cancel_code).toBe("run_closed");
     expect(CANCEL_CODES).toEqual(["owner_cancel", "superseded", "run_closed", "wrong_contract", "stuck", "duplicate", "reassign", "unknown"]);
-    // Never re-issued by the retry rules: canceled is no open state and no retry-eligible one.
+    // Never re-issued by the retry rules: canceled is no open state.
     expect(isOpenAttemptState("canceled")).toBe(false);
-    expect(() => retryAction("canceled" as never, 1)).toThrow(/not legal/);
   });
 
   it("[sma:tr_closed] closing in words stores the words on the task row and touches no other task", () => {

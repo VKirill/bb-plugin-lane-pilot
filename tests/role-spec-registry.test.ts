@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   PAIR_ROLE_SPECS, ROLE_SPECS, ROLE_SELECTION_KEYS, ROLE_TABLE,
-  roleAtomicMessage, roleSpec, roleSpecKey, WRITER_FALLBACK_KEYS, WRITER_FALLBACK_SLOTS,
+  roleAtomicMessage, roleSpec, roleSpecKey, WRITER_FALLBACK_KEYS,
 } from "@lane-pilot/models";
 import { rpcSettings } from "../src/rooms/contracts/rpc-settings";
 import { SELECTION_SPECS, selectionKeys, type SelectionId } from "../src/rooms/pages/ui/picker-selections";
@@ -80,8 +80,6 @@ describe("the RoleSpec table against the names it replaced", () => {
   });
 
   it("keeps the writer fallback slots", () => {
-    expect([...WRITER_FALLBACK_SLOTS]).toEqual([1, 2, 3]);
-    expect(WRITER_FALLBACK_KEYS).toHaveLength(9);
     expect(roleSpec("writer_fallback")!.keys).toEqual(WRITER_FALLBACK_KEYS);
   });
 

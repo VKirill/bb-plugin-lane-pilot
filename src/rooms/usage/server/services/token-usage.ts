@@ -32,7 +32,6 @@ import {
   type TokenUsageDiagnostics,
   type TokenUsageMismatch,
   type TokenUsageQuery,
-  type TokenUsageRebuildReset,
   type TokenUsageResult,
 } from "../../models/token-usage";
 import {
@@ -44,7 +43,6 @@ import {
   listDailyUsageMonths,
   listDailyUsageRows,
   loadCursor,
-  resetTokenUsageForRebuild,
 } from "../repositories/token-usage-repository";
 import { listThreadEvents } from "./thread-usage";
 import { emitTokenUsageAdded } from "./token-usage-bus";
@@ -223,12 +221,6 @@ export async function syncTokenUsage(ctx: { bb: BbPluginApi; db: LanePilotDataba
     await saveDiagnostics();
     throw cause;
   }
-}
-
-/** Reset (with backups) and re-sync from the thread events with the current delta rule. Safe to repeat: it ends in the same numbers. */
-export async function rebuildTokenUsage(ctx: { bb: BbPluginApi; db: LanePilotDatabase }, input: { sinceDays: number } = { sinceDays: 90 }): Promise<TokenUsageRebuildReset & { diagnostics: TokenUsageDiagnostics }> {
-  const reset = resetTokenUsageForRebuild(ctx.db);
-  return { ...reset, diagnostics: await syncTokenUsage(ctx, input) };
 }
 
 export async function queryTokenUsage(ctx: { bb: BbPluginApi; db: LanePilotDatabase }, input: TokenUsageQuery): Promise<TokenUsageResult> {

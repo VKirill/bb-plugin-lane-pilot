@@ -1,4 +1,5 @@
 import { t } from "@lane-pilot/i18n";
+import { parseMemorySettings } from "@lane-pilot/memory-core/settings";
 import { DocsPlaces } from "../../docs/ui";
 import { MemoryRecords } from "../../memory/ui";
 import { AdvancedRows, CatalogField, CatalogFields, Pill, SettingsGroup, asBoolean } from "../../ui-shell/ui";
@@ -24,7 +25,7 @@ export function KnowledgeTab({ page }: { page: LpPage }) {
       {segment === "memory" ? (
         <SettingsGroup testId="settings-memory" title={t("settingMemoryEnabled")} help={<HelpSup label={t("memoryPickerTechnical")}><p>{t("memoryPickerTechnical")}</p></HelpSup>}>
           <section className="space-y-2" data-testid="memory-knowledge">
-            <State page={page} enabledKey="memory.enabled" fallback={true} />
+            <State page={page} enabledKey="memory.enabled" fallback={parseMemorySettings({}).enabled} />
             <p className="max-w-xl text-xs text-muted-foreground">{t("memoryPickerHelp")}</p>
             {!isGlobal && projectId ? <MemoryRecords projectId={projectId} /> : null}
             <AdvancedRows show={advanced} testId="memory-advanced">

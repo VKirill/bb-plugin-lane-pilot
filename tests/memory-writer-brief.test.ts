@@ -13,7 +13,6 @@ import {
 import { taskV2Schema } from "../src/rooms/contracts";
 import {
   compareRulerArms,
-  evaluateWorkingVsHeldOut,
   parseRuler,
   runRuler,
   type RulerOptions,
@@ -339,12 +338,6 @@ describe("writer brief memory retrieval (Task 27)", () => {
     const buffer = db.serialize();
     db.close();
 
-    const workingQs = parseRuler(
-      [
-        { qid: "w1", project: "P", query: "How are concurrent checkout jobs serialized?", label: "answerable", gold: [goldId], paths: { owns_paths: ["src/orders/run.ts"], read_first: [] } },
-        { qid: "w2", project: "P", query: "Which color is the marketing header?", label: "unanswerable", gold: [] },
-      ].map((r) => JSON.stringify(r)).join("\n"),
-    );
     const heldOutQs = parseRuler(
       [
         { qid: "h1", project: "P", query: "How are concurrent checkout jobs serialized?", label: "answerable", gold: [goldId], paths: { owns_paths: ["src/orders/run.ts"], read_first: [] } },
@@ -379,22 +372,5 @@ describe("writer brief memory retrieval (Task 27)", () => {
     expect(cmp.hit3.mean).toBe(1);
     expect(cmp.noneOk.mean).toBe(0);
     expect(cmp.adopt).toBe(true);
-
-    // Working-set win + held-out loss -> WARN overfit rejected.
-    const workingControl = await runRuler(() => new Database(buffer), workingQs, { ...common, path: "none" });
-    const workingWin = await runRuler(() => new Database(buffer), workingQs, { ...common, path: "writer" });
-    const overfitLogs: string[] = [];
-    const verdict = evaluateWorkingVsHeldOut({
-      arm: "overfit-arm",
-      path: "writer",
-      workingControl: workingControl.scopes[0]!,
-      workingArm: workingWin.scopes[0]!,
-      heldOutControl: control.scopes[0]!,
-      heldOutArm: control.scopes[0]!,
-      log: (line) => overfitLogs.push(line),
-    });
-    expect(verdict.adopt).toBe(false);
-    expect(verdict.reason).toBe("overfit");
-    expect(overfitLogs.some((l) => l.startsWith("WARN memory.arm overfit rejected arm=overfit-arm"))).toBe(true);
   });
 });

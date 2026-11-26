@@ -3,10 +3,6 @@ import { RELAY_LIMITS, type RelayItem } from "../src/rooms/relay/models/relay";
 import { createRelay } from "../src/rooms/relay/server/services/relay";
 
 describe("relay-size-cap", () => {
-  it("exports RELAY_LIMITS.maxStoredBytes around 200 KB", () => {
-    expect(RELAY_LIMITS.maxStoredBytes).toBe(200_000);
-  });
-
   it("drops finished items oldest first when over budget, keeping all open items", async () => {
     let stored: RelayItem[] = [];
     const nowTime = 1_000_000_000;

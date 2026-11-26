@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cadenceAllowsToday, codeDocsVerdict, docsCadence, docsFactsKey, DOCS_PAUSE_AFTER_MS, DOCS_QUIET_AFTER_MS, fallbackDocsVerdict, type DocsWorthinessFacts } from "../../src/rooms/docs/models";
+import { codeDocsVerdict, docsCadence, docsFactsKey, DOCS_PAUSE_AFTER_MS, DOCS_QUIET_AFTER_MS, fallbackDocsVerdict, type DocsWorthinessFacts } from "../../src/rooms/docs/models";
 
 const facts = (over: Partial<DocsWorthinessFacts>): DocsWorthinessFacts => ({
   status: "ready", trackedFiles: 100, codeFiles: 0, testFiles: 0, contentFiles: 0, languages: [], commits30d: 5, manifests: [], deploy: false, docsPages: 0, ...over,
@@ -33,8 +33,5 @@ describe("docs worthiness", () => {
     expect(docsCadence({ lastReadAt: null, docsSince: now - DOCS_QUIET_AFTER_MS, now })).toBe("weekly");
     expect(docsCadence({ lastReadAt: now - DOCS_PAUSE_AFTER_MS, docsSince: 0, now })).toBe("paused");
     expect(docsCadence({ lastReadAt: null, docsSince: now - 5, now })).toBe("nightly");
-    expect(cadenceAllowsToday("weekly", "2026-10-05")).toBe(true);
-    expect(cadenceAllowsToday("weekly", "2026-10-06")).toBe(false);
-    expect(cadenceAllowsToday("paused", "2026-10-05")).toBe(false);
   });
 });

@@ -8,9 +8,6 @@ import { isServiceNoticeText } from "../../src/rooms/contracts/service-notice";
 import { SCHEDULE_RUN_KEY_PREFIX } from "../../src/rooms/contracts";
 import { forgetSecrets, registerSecrets } from "@lane-pilot/kit";
 import { parseWorkflow } from "@lane-pilot/workflow-engine";
-import { closeAfterAudit } from "../../packages/workflow-engine/src/engine-goal-audit";
-import { finishWriterAttemptBody } from "../../src/rooms/writer/server/services/finish-attempt-body";
-import { recordOutcome } from "../../src/rooms/writer/server/services/start-record-outcome";
 import type { RunRow } from "../../src/rooms/plugin-db";
 import { engineOn, journalDb, ok, wf } from "../workflow/engine-helpers";
 
@@ -214,7 +211,7 @@ describe("workflow PM notices", () => {
 
 describe("lead hand-over runs", () => {
   it("send nothing to the borrowed PM chat: the end goes back to the lead's road", async () => {
-    const { addRoad, decideRoad, getRoad, listRoad, proposeRoad, reopenRoad } = await import("../../src/rooms/lead/server/repositories/road-repository");
+    const { addRoad, getRoad, listRoad, proposeRoad, reopenRoad } = await import("../../src/rooms/lead/server/repositories/road-repository");
     const roadApi = { addRoad, getRoad, listRoad, doneRoad: (await import("../../src/rooms/lead/server/repositories/road-repository")).doneRoad, reopenRoad };
     const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
     const db = openDatabase(bb);
@@ -225,7 +222,7 @@ describe("lead hand-over runs", () => {
     const accepted = () => {
       const road = addRoad(db, { projectId, title: "fix the red test", kind: "direction", source: "lead", why: "the gate went red" });
       proposeRoad(db, road.id, `lead:${road.id}`);
-      decideRoad(db, road.id, "yes");
+      db.prepare("UPDATE lane_pilot_lead_road SET state='accepted' WHERE id=?").run(road.id);
       return road.id;
     };
     const blockedId = accepted();
@@ -327,8 +324,5 @@ describe("lead hand-over runs", () => {
     }).done;
     expect(result).toMatchObject({ status: "succeeded" });
     expect(audited).toEqual([]);
-    expect(typeof closeAfterAudit).toBe("function");
-    expect(typeof finishWriterAttemptBody).toBe("function");
-    expect(typeof recordOutcome).toBe("function");
   });
 });

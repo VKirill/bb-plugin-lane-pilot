@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
-import {builtinWorkflow} from "../../src/rooms/workflow/builtin";
-import { fileContaining } from "../support/source-text";
+import { builtinWorkflow } from "../../src/rooms/workflow/builtin";
 import { costTier, nodeEffortsFor, roleModelKey, validateChoice, type ModelCatalog } from "@lane-pilot/models";
+import { DELEGATED, registerDelegatedActions } from "../../src/rooms/workflow/server/services/workflow-delegated-actions";
 import { DELEGATED_ACTIONS, resolveStepExecutors, type StepExecutor } from "../../src/rooms/workflow/server/services/workflow-step-executors";
+import { engineOn, journalDb } from "./engine-helpers";
 
 const pm = { providerId: "claude-code", model: "claude-opus-5-5" };
 const writer = { "writer.provider": "codex", "writer.model": "gpt-6-luna", "writer.reasoning_effort": "high", "writer.service_tier": "fast" };
@@ -127,10 +128,14 @@ describe("step executors by node type", () => {
   });
 
   it("lists the same delegated actions the executors register", () => {
-    const source = fileContaining('"telegram.send_rich": { role:').text;
-    const block = source.slice(source.indexOf("const DELEGATED"), source.indexOf("for (const [key, spec] of Object.entries(DELEGATED))"));
-    const keys = [...block.matchAll(/^\s+"([a-z_.]+)": \{ role:/gm)].map((match) => match[1]);
-    expect([...DELEGATED_ACTIONS].sort()).toEqual(keys.sort());
+    const engine = engineOn(journalDb(), {});
+    registerDelegatedActions(engine, { bb: { storage: { kv: {} } } } as never, {} as never);
+    for (const key of Object.keys(DELEGATED)) {
+      expect(engine.hasExecutor(key), key).toBe(true);
+      expect(one({ id: "t", type: "action", action: key })).toMatchObject({ mode: "helper", agent: { role: "errand", label: key } });
+    }
+    expect([...DELEGATED_ACTIONS].sort()).toEqual(Object.keys(DELEGATED).sort());
+    expect(one({ id: "plain", type: "action", action: "unknown.action" })).toMatchObject({ mode: "none" });
   });
 });
 

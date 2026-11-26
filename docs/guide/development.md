@@ -42,6 +42,7 @@ sources:
 | `npx vitest run` (`npm test`) | The full suite. Vitest runs four projects: `node` (shared module graph), `node-isolated` (files that use `vi.mock`), `ui` and `ui-isolated` (jsdom; pages that cannot share a document), longest file first. |
 | `npm run test:changed` | Only tests that changed, tests whose imports match changed sources, and tests of a changed package. `-- --graph` uses Vitest's changed dependency graph. Writes no deploy receipt. |
 | `scripts/test-full.sh` | The full suite once per code state: on green and a clean tree it writes the receipt the deploy script checks, keyed by the tree of `HEAD` and the Node version. |
+| `node scripts/test-timing.mjs` | Summarizes Vitest's cached per-file timings (`node_modules/.vite/vitest/*/results.json` or a given path; supports `--top N` and `--json`). |
 | `npm run typecheck` | `tsc --noEmit`. |
 | `npm run build` | `bb plugin build` (server, host and app bundles). |
 | `npm run test:layout` | The layout checks of the UI (`tests/layout/run.mjs`). |

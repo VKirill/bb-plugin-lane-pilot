@@ -7,7 +7,6 @@ import {
   USAGE_SKIP_KEY,
   USAGE_SNAPSHOT_SCHEDULE,
 } from "../src/rooms/usage/server";
-import { TOKEN_USAGE_SCHEDULE } from "../src/rooms/usage/models/token-usage";
 import { attachTokenUsage } from "../src/rooms/usage/server/handlers/token-usage-events";
 import { queryTokenUsage } from "../src/rooms/usage/server/services/token-usage";
 import { mountRateLimitWatch } from "../src/rooms/stability/server";
@@ -71,7 +70,7 @@ describe("event-driven token usage and usage snapshots (Task 17)", () => {
     // Cursor replay on ready folded thr_replay.
     const initial = await queryTokenUsage({ bb, db }, { range: "7d" });
     expect(initial.byModel.reduce((sum, row) => sum + row.total, 0)).toBe(102);
-    expect(harness.registrations.schedules.map((s) => s.name)).not.toContain(TOKEN_USAGE_SCHEDULE);
+    expect(harness.registrations.schedules).toEqual([]);
 
     // Live turn event folds newly arrived events for thr_live without full sweep.
     eventsByThread.thr_live.push(usageEvent(1, 200, "turn_2"));

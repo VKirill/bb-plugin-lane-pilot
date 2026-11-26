@@ -6,12 +6,12 @@ import { costUsd } from "@lane-pilot/models";
 import { isCumulativeProvider, tokenDelta } from "../src/rooms/usage/models/token-math";
 import { EVENT_PAGE, TOKEN_USAGE_EVENT_TYPES } from "../src/rooms/usage/models/thread-usage";
 import {
-  TOKEN_USAGE_CACHE_SPLIT_RESET_KEY, TOKEN_USAGE_CURSOR_RESET_KEY, TOKEN_USAGE_SCHEDULE,
+  TOKEN_USAGE_CACHE_SPLIT_RESET_KEY, TOKEN_USAGE_CURSOR_RESET_KEY,
   normalizeModel, utcDay,
 } from "../src/rooms/usage/models/token-usage";
 import { resetTokenUsageForRebuild } from "../src/rooms/usage/server/repositories/token-usage-repository";
 import { threadUsage } from "../src/rooms/usage/server/services/thread-usage";
-import { queryTokenUsage, rebuildTokenUsage, syncTokenUsage } from "../src/rooms/usage/server/services/token-usage";
+import { queryTokenUsage, syncTokenUsage } from "../src/rooms/usage/server/services/token-usage";
 
 let dispose: (() => Promise<void> | void) | null = null;
 afterEach(async () => { await dispose?.(); dispose = null; });
@@ -390,7 +390,6 @@ describe("token usage event hook (no cron schedule)", () => {
     ]);
     dispose = () => harness.lifecycle.dispose();
     expect(booted).toBe("ready");
-    expect(harness.registrations.schedules.map((s) => s.name)).not.toContain(TOKEN_USAGE_SCHEDULE);
   });
 });
 
@@ -544,59 +543,7 @@ describe("cumulative providers (Codex undercount, 2026-10-10)", () => {
 });
 
 describe("token usage rebuild", () => {
-  const cum = (n: number) => ({ inputTokens: n * 100, outputTokens: n * 10, cachedInputTokens: n * 60, totalTokens: n * 110 });
-  const lastCall = { inputTokens: 100, outputTokens: 10, cachedInputTokens: 60, totalTokens: 110 };
   const suffix = utcDay(Date.now()).replace(/-/g, "");
-  const events = () => ({
-    thr_cx: [
-      { seq: 1, createdAt: Date.now(), type: "client/turn/requested", data: { execution: { model: "gpt-6-luna", providerId: "codex" } } },
-      usage(2, { last: lastCall, total: cum(30) }),
-    ],
-    thr_cc: [
-      { seq: 1, createdAt: Date.now(), type: "client/turn/requested", data: { execution: { model: "claude-opus-5-5", providerId: "claude-code" } } },
-      usage(2, { last, total: last }),
-    ],
-  });
-  const threads = [
-    { id: "thr_cx", projectId: "proj_a", providerId: "codex" },
-    { id: "thr_cc", projectId: "proj_a", providerId: "claude-code" },
-  ];
-  const snapshot = (db: ReturnType<typeof host>["db"]) => ({
-    daily: db.prepare(`SELECT * FROM lane_pilot_token_daily ORDER BY provider_id, model, day`).all(),
-    cursors: db.prepare(`SELECT thread_id, last_seq, last_json, total_json FROM lane_pilot_token_cursor ORDER BY thread_id`).all(),
-  });
-
-  it("backs up both tables, resets the cursors and recounts with the current rule; twice gives the same numbers", async () => {
-    const { bb, db } = host(events(), threads);
-    // The old rule's numbers: one last call for the Codex thread, 100x too low.
-    db.prepare(`INSERT INTO lane_pilot_token_daily (day, project_id, provider_id, model, input_tokens, output_tokens, cached_tokens, total_tokens, uncached_tokens, cache_read_tokens, cache_write_tokens)
-      VALUES (?, 'proj_a', 'codex', 'gpt-6-luna', 100, 10, 60, 110, 40, 60, 0)`).run(day);
-    db.prepare(`INSERT INTO lane_pilot_token_cursor (thread_id, project_id, provider_id, last_seq, last_json, total_json, last_model, last_provider, last_turn_id, updated_at)
-      VALUES ('thr_cx','proj_a','codex',2,'{}','{}','gpt-6-luna','codex','',0)`).run();
-    const before = snapshot(db);
-
-    const first = await rebuildTokenUsage({ bb, db }, { sinceDays: 90 });
-    expect(first).toMatchObject({ backups: [`lane_pilot_token_daily_bak_${suffix}`, `lane_pilot_token_cursor_bak_${suffix}`], backupsKept: [], cursorsCleared: 1, dailyRowsCleared: 1 });
-    const countOf = (table: string) => (db.prepare(`SELECT count(*) AS n FROM ${table}`).get() as { n: number }).n;
-    expect(countOf(`lane_pilot_token_daily_bak_${suffix}`)).toBe(1);
-    expect(countOf(`lane_pilot_token_cursor_bak_${suffix}`)).toBe(1);
-    expect(db.prepare(`SELECT total_tokens FROM lane_pilot_token_daily_bak_${suffix}`).get()).toEqual({ total_tokens: 110 });
-    expect(before.daily).toHaveLength(1);
-
-    const afterFirst = await queryTokenUsage({ bb, db }, { range: "7d" });
-    expect(afterFirst.byModel.find((row) => row.providerId === "codex")?.total).toBe(30 * 110);
-    expect(afterFirst.byModel.find((row) => row.providerId === "claude-code")?.total).toBe(14);
-    const numbers = snapshot(db);
-
-    const second = await rebuildTokenUsage({ bb, db }, { sinceDays: 90 });
-    expect(second).toMatchObject({ backups: [], backupsKept: [`lane_pilot_token_daily_bak_${suffix}`, `lane_pilot_token_cursor_bak_${suffix}`], cursorsCleared: 2 });
-    expect(snapshot(db)).toEqual(numbers);
-    // The first backup (the state before the rebuild) is not overwritten by the second run.
-    expect(db.prepare(`SELECT total_tokens FROM lane_pilot_token_daily_bak_${suffix}`).get()).toEqual({ total_tokens: 110 });
-    // A plain sync after a rebuild adds nothing.
-    await syncTokenUsage({ bb, db }, { sinceDays: 90 });
-    expect(snapshot(db)).toEqual(numbers);
-  });
 
   it("resetTokenUsageForRebuild copies and empties in one step", () => {
     const { db } = host({});

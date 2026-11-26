@@ -1,5 +1,4 @@
 import { describe, expect, it, vi } from "vitest";
-import { STEP_FACT_FIELDS } from "@lane-pilot/contracts";
 import { roleModelKey } from "@lane-pilot/models";
 import {
   applyDraftOps,
@@ -35,14 +34,6 @@ function runtime(settings: Record<string, unknown> = {}) {
 }
 
 describe("Task 29: node form (agent | plan | script) with fallback", () => {
-  it("exposes form_used, fallback_taken, and environment_fingerprint in STEP_FACT_FIELDS", () => {
-    expect(STEP_FACT_FIELDS).toEqual(expect.arrayContaining([
-      "form_used",
-      "fallback_taken",
-      "environment_fingerprint",
-    ]));
-  });
-
   it("defaults form to agent and rejects script without verify, missing fingerprint, or missing plan", () => {
     const defaultParsed = parseWorkflow(workflow({
       nodes: [

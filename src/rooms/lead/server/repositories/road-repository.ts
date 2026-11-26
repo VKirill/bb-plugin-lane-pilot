@@ -67,8 +67,6 @@ export function setRoadPayload(db: RoadDb, id: string, payload: unknown, now: nu
   return db.prepare("UPDATE lane_pilot_lead_road SET payload_json=?, updated_at=? WHERE id=?").run(payload === undefined || payload === null ? null : JSON.stringify(payload), now, id).changes > 0;
 }
 
-export const roadPayload = (row: Pick<RoadRow, "payload_json">): unknown => { try { return row.payload_json ? JSON.parse(row.payload_json) : null; } catch { return null; } };
-
 export const getRoad = (db: RoadDb, id: string): RoadRow | undefined =>
   db.prepare("SELECT * FROM lane_pilot_lead_road WHERE id=?").get(id) as RoadRow | undefined;
 
@@ -101,12 +99,6 @@ export function proposeRoad(db: RoadDb, id: string, decisionId: string, now: num
   if (!row || (row.state !== "open" && row.state !== "later")) return false;
   db.prepare("UPDATE lane_pilot_lead_road SET state='proposed', proposed_at=?, decision_id=?, updated_at=? WHERE id=?").run(now, decisionId, now, id);
   return true;
-}
-
-export function decideRoad(db: RoadDb, id: string, decision: "yes" | "later" | "no", text?: string, now: number = Date.now()): boolean {
-  const to: RoadState = decision === "yes" ? "accepted" : decision === "no" ? "rejected" : "later";
-  const append = decision === "no" ? `\n\nowner: no${text ? ` ${text}` : ""}` : null;
-  return settle(db, id, ["proposed"], to, append, now);
 }
 
 export function listRoad(db: RoadDb, filter: { projectId?: string | null; state?: RoadState | RoadState[]; kind?: RoadKind; parentId?: string | null; limit?: number } = {}): RoadRow[] {

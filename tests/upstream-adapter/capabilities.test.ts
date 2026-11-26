@@ -2,7 +2,6 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
   assessEngineCapabilities,
-  decideEngine,
 } from "../../src/rooms/native-install/models/capabilities";
 import { parseExecutionLineWindows } from "../../src/rooms/contracts";
 import { createOpenCodePluginShim } from "../../src/rooms/native-install/opencode-connect";
@@ -34,26 +33,6 @@ describe("upstream capability compatibility", () => {
     expect(baseline.adaptedCapabilities).toEqual([]);
   });
 
-  it("reuses a newer compatible engine with an empty write plan", () => {
-    const fixture = byLabel("v1.66.0-no-windows");
-    const decision = decideEngine(assessEngineCapabilities(fixture.capabilities), {
-      installed: true,
-      owner: "upstream",
-      modified: false,
-    });
-    expect(decision).toEqual({ decision: "reuse", compatible: true, writes: [], reason: null });
-  });
-
-  it("preserves a compatible custom engine, regardless of modified state or SHA", () => {
-    const fixture = byLabel("custom-compatible");
-    const decision = decideEngine(assessEngineCapabilities(fixture.capabilities), {
-      installed: true,
-      owner: "user",
-      modified: true,
-    });
-    expect(decision).toEqual({ decision: "reuse", compatible: true, writes: [], reason: null });
-  });
-
   it("pinpoints the missing required hook and its affected function", () => {
     const fixture = byLabel("incompatible-tool-hook");
     const assessment = assessEngineCapabilities(fixture.capabilities);
@@ -63,7 +42,6 @@ describe("upstream capability compatibility", () => {
       impactedFunction: "OpenCode tool evidence and budget handling",
       message: "Missing required interface opencode.hook.tool_execute_after; impacted function: OpenCode tool evidence and budget handling.",
     });
-    expect(decideEngine(assessment, { installed: true, owner: "user", modified: true }).writes).toEqual([]);
   });
 
   it("adapts packet line windows through a local interface", () => {

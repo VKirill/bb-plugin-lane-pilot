@@ -71,10 +71,3 @@ export function docsCadence(input: { lastReadAt: number | null; docsSince: numbe
   if (quiet >= DOCS_QUIET_AFTER_MS) return "weekly";
   return "nightly";
 }
-
-/** A weekly folder gets its pass on Mondays of its own machine's calendar. */
-export function cadenceAllowsToday(cadence: DocsCadence, localDate: string): boolean {
-  if (cadence === "nightly") return true;
-  if (cadence === "paused") return false;
-  return new Date(`${localDate}T12:00:00Z`).getUTCDay() === 1;
-}

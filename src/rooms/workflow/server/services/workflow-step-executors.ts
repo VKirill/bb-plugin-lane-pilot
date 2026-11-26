@@ -5,6 +5,7 @@ import { costTier, isZcodeProvider, modelFamily, offeredForRole, zcodeBlock, pee
 import { WRITER_MODEL_KEY, WRITER_PROVIDER_KEY, WRITER_REASONING_EFFORT_KEY } from "../../../writer";
 import { roleSpec } from "./workflow-agent";
 import { pmAuthorOf, resolveAgentModel } from "../../models/workflow-agent-model";
+import { DELEGATED_ACTION_KEYS } from "./workflow-delegated-actions";
 
 /**
  * Who works on a step, and with which model. One place answers it for every node type, from the same rules the executors
@@ -30,9 +31,9 @@ const isRaw = (value: unknown): value is Raw => typeof value === "object" && val
 const text = (value: unknown): string | null => (typeof value === "string" && value.trim() ? value.trim() : null);
 
 /**
- * The actions that run in an errand helper thread (see DELEGATED in workflow-executors.ts; a test keeps the two lists equal).
+ * The actions that run in an errand helper thread (owned by DELEGATED in workflow-delegated-actions.ts).
  */
-export const DELEGATED_ACTIONS = ["telegram.send_rich", "shell.skill_script", "shell.repo_script", "deploy.post_check", "lp.preflight", "lp.project_checks"] as const;
+export const DELEGATED_ACTIONS = DELEGATED_ACTION_KEYS;
 
 type StageDef = {
   /** The settings prefix of the stage's tier: `<stage>.service_tier`. */

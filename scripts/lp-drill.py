@@ -25,10 +25,6 @@ Scenarios (each writes its verdict into the receipt, .agents/runs/drills/<date>.
                  one word: each must start and answer. A provider that refuses its helpers fails the drill (0.1.194 refused
                  every OpenCode helper for six minutes and the writer-only drill stayed green)                       [--quick]
   parallel3      3 parallel, non-overlapping tasks (risk high): each accepted, each in a worktree of its own        [--quick]
-  phase_route    the phase route on the machine's own stages: a small phase is opened and nobody reports its stages; lp.analyze and lp.plan
-                 (their helpers write the phase's folder and the plans folder) must carry it to execution with no `auto_failed` in its book
-                 for repo_edited or a refused binary read, a pause at the first boundary holds (no stage starts), and so does stop_wave at
-                 execution. Full set only: it waits for two model stages and two holds, 20-30 minutes
   conflict       two tasks own the same file and rewrite the same line: both end, both accepted, no conflict markers left
   main_moved     main gets a commit while a writer works: the merge is rebased and keeps both
   provider_limit a bad writer.model in the sandbox: the task still ends accepted through the next writer; the setting is restored
@@ -94,10 +90,8 @@ import lp_drill.scenes.deferrals
 import lp_drill.scenes.hub_checks
 import lp_drill.scenes.checkers
 import lp_drill.scenes.revert
-import lp_drill.scenes.phase
 import lp_drill.scoped_settings
 import lp_drill.scenes.plan_loop
-import lp_drill.scenes.phase_words
 import lp_drill.scenes.providers
 import lp_drill.scenes.writers
 import lp_drill.scenes.nogit
@@ -108,9 +102,8 @@ import lp_drill.scenes.run_home
 import lp_drill.lock
 import lp_drill.prove
 import lp_drill.deliver
-import lp_drill.sma
 
-for _mod in (lp_drill.env, lp_drill.hub, lp_drill.report, lp_drill.tasks, lp_drill.context, lp_drill.select, lp_drill.series, lp_drill.preview, lp_drill.scenes.memory, lp_drill.scenes.owner, lp_drill.scenes.skills, lp_drill.scenes.guard, lp_drill.scenes.deferrals, lp_drill.scenes.hub_checks, lp_drill.scenes.checkers, lp_drill.scenes.revert, lp_drill.scenes.phase, lp_drill.scoped_settings, lp_drill.scenes.plan_loop, lp_drill.scenes.phase_words, lp_drill.scenes.providers, lp_drill.scenes.writers, lp_drill.scenes.nogit, lp_drill.scenes.plan_split, lp_drill.scenes.task_home, lp_drill.scenes.run_home, lp_drill.scenes.hub_outage, lp_drill.lock, lp_drill.prove, lp_drill.deliver, lp_drill.sma,):
+for _mod in (lp_drill.env, lp_drill.hub, lp_drill.report, lp_drill.tasks, lp_drill.context, lp_drill.select, lp_drill.series, lp_drill.preview, lp_drill.scenes.memory, lp_drill.scenes.owner, lp_drill.scenes.skills, lp_drill.scenes.guard, lp_drill.scenes.deferrals, lp_drill.scenes.hub_checks, lp_drill.scenes.checkers, lp_drill.scenes.revert, lp_drill.scoped_settings, lp_drill.scenes.plan_loop, lp_drill.scenes.providers, lp_drill.scenes.writers, lp_drill.scenes.nogit, lp_drill.scenes.plan_split, lp_drill.scenes.task_home, lp_drill.scenes.run_home, lp_drill.scenes.hub_outage, lp_drill.lock, lp_drill.prove, lp_drill.deliver,):
     for _name in dir(_mod):
         if not _name.startswith("__"):
             _value = getattr(_mod, _name)
@@ -145,10 +138,7 @@ del _mod, _name, _value
 for _tmp in ("_mname", "_member", "_wrap", "_fn"):
     globals().pop(_tmp, None)
 del _tmp
-# Region scenes of the SMA-parity proof: every scenes/sma_rNN.py, found by its file name (lp_drill/sma.py). Not in ALL, EXTRA, QUICK or SUITES:
-# `--scenario sma_r13` runs one, `--suite sma` all of them. Their functions stay out of this door's globals (a scene module keeps its own names).
-SMA_SCENES = lp_drill.sma.discover()
-ALL = ["guard_hash", "deferrals", "checkers", "watchdog", "memory_paths", "helper_providers", "parallel3", "conflict", "main_moved", "provider", "provider_limit", "live_word", "no_code_exit", "skills", "phase", "phase_route", "reload", "nogit", "nogit_repo", "flow_contract", "lead_shadow", "episodes", "memory_thread", "plan_revise", "plan_revise_cap", "plan_l", "phase_words_sensitive"]
+ALL = ["guard_hash", "deferrals", "checkers", "watchdog", "memory_paths", "helper_providers", "parallel3", "conflict", "main_moved", "provider", "provider_limit", "live_word", "no_code_exit", "skills", "reload", "nogit", "nogit_repo", "flow_contract", "lead_shadow", "episodes", "memory_thread", "plan_revise", "plan_revise_cap", "plan_l"]
 # Scenes that run only by name (--scenario) or under --series: the deploy drill (--quick) and a plain run never reach them.
 EXTRA = ["skills_screen", "revert", "plan_split", "task_home", "run_home"]
 QUICK = ["guard_hash", "deferrals", "checkers", "memory_paths", "helper_providers", "parallel3", "lead_shadow", "episodes"]
@@ -158,7 +148,7 @@ QUICK = ["guard_hash", "deferrals", "checkers", "memory_paths", "helper_provider
 SUITES = {
     "task": ["parallel3", "conflict", "main_moved", "provider", "provider_limit", "reload", "nogit", "nogit_repo", "revert", "plan_split", "plan_revise", "plan_revise_cap", "plan_l", "task_home", "run_home"],
     "batch": ["helper_providers", "flow_contract", "live_word"],
-    "phase": ["phase", "phase_route", "no_code_exit", "phase_words_sensitive"],
+    "phase": ["no_code_exit"],
     "release": ["guard_hash", "deferrals", "checkers", "watchdog"],
     "window": ["vitest:tests/release-stories-window.test.tsx"],
     "worker": ["vitest:tests/release-stories-worker.test.ts"],
@@ -240,7 +230,7 @@ def scout() -> dict:
     missing_files = [entry for entries in SUITES.values() for entry in entries if entry.startswith("vitest:") and not (ROOT / entry.split(":", 1)[1]).exists()]
     return {"defined": defined, "unlisted": [name for name in defined if name not in ALL and name not in EXTRA and name not in BY_NAME], "undefined": [name for name in ALL + EXTRA + BY_NAME if name not in defined],
             "suites": {name: entries for name, entries in SUITES.items()}, "ungrouped": ungrouped, "regrouped": regrouped, "unknown": unknown, "missingStories": missing_files,
-            "empty": [name for name, entries in SUITES.items() if not entries and name != "metrics"], "sma": {name: row["nodes"] for name, row in SMA_SCENES.items()}}
+            "empty": [name for name, entries in SUITES.items() if not entries and name != "metrics"]}
 
 
 def series_preparation(names: list[str] | None = None) -> dict:
@@ -329,18 +319,13 @@ def main() -> int:
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--repair-guard", action="store_true")
     parser.add_argument("--series", action="store_true", help="the release series: preparation, every scenario in a process of its own, the judges")
-    parser.add_argument("--suite", default="", help="only the scenarios of one named suite (task batch phase release window worker lockstep wiring metrics), or `sma`: every region scene scenes/sma_rNN.py")
+    parser.add_argument("--suite", default="", help="only the scenarios of one named suite (task batch phase release window worker lockstep wiring metrics)")
     parser.add_argument("--scout", action="store_true", help="only list the named suites against the scenario functions")
     args = parser.parse_args()
     receipt_dir = Path(os.environ.get("LP_DRILL_RECEIPT_DIR") or ROOT / ".agents/runs/drills")
     skipped: dict[str, str] = {}
-    series = args.series or bool(args.suite and args.suite != "sma")  # a suite is a part of the series: its judges and its metrics run with it
-    if args.suite == "sma":
-        names = list(SMA_SCENES)
-        if not names:
-            print("no region scene here: scripts/lp_drill/scenes/sma_rNN.py", file=sys.stderr)
-            return 2
-    elif args.suite:
+    series = args.series or bool(args.suite)  # a suite is a part of the series: its judges and its metrics run with it
+    if args.suite:
         if args.suite not in SUITES:
             print(f"unknown suite: {args.suite} (known: {', '.join(SUITES)})", file=sys.stderr)
             return 2
@@ -355,15 +340,12 @@ def main() -> int:
     for name, why in skipped.items():
         log(f"scenario {name}: skipped ({why})")
     repair_guard = args.repair_guard or os.environ.get("LP_DRILL_REPAIR_GUARD") == "1"
-    unknown = [n for n in names if n not in ALL and n not in EXTRA and n not in BY_NAME and n not in SMA_SCENES and not n.startswith("vitest:")]
+    unknown = [n for n in names if n not in ALL and n not in EXTRA and n not in BY_NAME and not n.startswith("vitest:")]
     if unknown:
-        print(f"unknown scenario: {', '.join(unknown)} (known: {', '.join(ALL + EXTRA + BY_NAME + list(SMA_SCENES))})", file=sys.stderr)
+        print(f"unknown scenario: {', '.join(unknown)} (known: {', '.join(ALL + EXTRA + BY_NAME)})", file=sys.stderr)
         return 2
     if args.dry_run:
         dry_run(names, series)
-        for name in names:
-            if name in SMA_SCENES:
-                print(f"expects {name}: {json.dumps({'proves': SMA_SCENES[name]['nodes'], 'how': 'prove(node, ok, detail) per node in the scene entry of the receipt'})}")
         return 0
     if args.scout:
         print(json.dumps(scout(), indent=1))
@@ -408,15 +390,13 @@ def main() -> int:
         print(f"SERIES={manifest}")
         return 0 if verdict_all == "pass" else 1
 
-    # Region scenes need no sandbox, PM or hub run: parallel agents run them at once, each with a receipt of its own, no lock.
-    sma_only = bool(names) and all(n in SMA_SCENES for n in names)
     lock = Path(tempfile.gettempdir()) / "lp-drill.lock"
     # A deploy stops the previous deploy's drill with SIGTERM: without this the `finally` below never ran, the lock stayed and the
     # next drill ended «red» with exit 2 (0.1.514, 2026-11-10). A lock whose process is gone (SIGKILL, OOM) is taken over.
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(143))
     # A drill already running (the nightly one at 03:30 met the 0.1.555 deploy drill, 2026-11-14) is waited for, not reported red.
     deadline = time.time() + float(os.environ.get("LP_DRILL_LOCK_WAIT_SEC", "2700"))
-    while not sma_only and not take_lock(lock):
+    while not take_lock(lock):
         if time.time() >= deadline:
             print(f"another drill is running ({lock})", file=sys.stderr)
             return 2
@@ -424,20 +404,12 @@ def main() -> int:
     start = time.time()
     tmp = Path(tempfile.mkdtemp(prefix="lp-drill-"))
     receipt = receipt_dir / f"{DATE}.json"
-    if receipt.exists() or sma_only:
-        receipt = receipt_dir / f"{DATE}-{STAMP.split('-')[1]}{f'-sma{os.getpid()}' if sma_only else ''}.json"
+    if receipt.exists():
+        receipt = receipt_dir / f"{DATE}-{STAMP.split('-')[1]}.json"
     scenarios: list[dict] = []
     problems: list[str] = []
     ctx: Context | None = None
     try:
-        for name in names:
-            if name in SMA_SCENES:
-                log(f"scenario {name}")
-                try:
-                    scenarios.append(SMA_SCENES[name]["run"](tmp))
-                except Exception as cause:
-                    scenarios.append(verdict(name, [f"scenario raised: {cause}"]))
-                log(f"scenario {name}: {scenarios[-1]['result']} {scenarios[-1]['problems']}")
         if "guard_hash" in names:
             log("scenario guard_hash")
             try:
@@ -496,7 +468,7 @@ def main() -> int:
             log(f"scenario memory_thread: {scenarios[-1]['result']} {scenarios[-1]['problems']}")
         # memory_paths first: its records are planted before the PM starts (its first prompt must carry the probe rule) and removed before
         # the writers of the other scenarios start.
-        main_names = sorted((n for n in names if n not in STANDALONE and n not in SMA_SCENES), key=lambda n: n != "memory_paths")
+        main_names = sorted((n for n in names if n not in STANDALONE), key=lambda n: n != "memory_paths")
         if main_names:
             ctx = Context(SANDBOX, tmp)
             if "memory_paths" in main_names:
@@ -540,8 +512,7 @@ def main() -> int:
             clean_memory_probe()  # also when the PM did not start or a scenario broke: a probe rule must not outlive the drill
         result = write_receipt(receipt, start, scenarios, ctx, problems, names, skipped, quick=args.quick or args.quick_all)
         shutil.rmtree(tmp, ignore_errors=True)
-        if not sma_only:
-            shutil.rmtree(lock, ignore_errors=True)
+        shutil.rmtree(lock, ignore_errors=True)
     # The owner measures on the hub: the receipt goes to its plugin folder, and a failure is a problem line in the local copy.
     delivery = deliver_receipt(receipt)
     if delivery:

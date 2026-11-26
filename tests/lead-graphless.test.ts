@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { GLOBAL_SETTINGS_PROJECT_ID } from "@lane-pilot/settings-catalog";
 import { LEAD_DEFAULTS } from "../src/rooms/lead/settings";
-import { listRoad, roadPayload } from "../src/rooms/lead/server/repositories/road-repository";
+import { listRoad } from "../src/rooms/lead/server/repositories/road-repository";
 import { architectPrompt, processPartsOf, processStemOf, seedForm, tickBrief } from "../src/rooms/lead/models/tick";
 import { registerLeadTickActions } from "../src/rooms/lead/server";
 import { graphlessErrands, hubSnapshot } from "../src/rooms/lead/server/services/tick-service";
@@ -105,7 +105,7 @@ describe("a process proposal with architectSeed", () => {
     const branch = listRoad(db).find((row) => row.kind === "option")!;
     expect(branch.state).toBe("proposed");
     expect(branch.class).toBe("process");
-    expect(roadPayload(branch)).toEqual({ architectSeed: { form: "graph", kind: "computer", stem: "партия моделей арендованной gpu", threadIds: ["thr_1", "thr_2", "thr_3"], samples: ["Тест: партия"] } });
+    expect(JSON.parse(branch.payload_json!)).toEqual({ architectSeed: { form: "graph", kind: "computer", stem: "партия моделей арендованной gpu", threadIds: ["thr_1", "thr_2", "thr_3"], samples: ["Тест: партия"] } });
     expect(db.prepare("SELECT key FROM lane_pilot_owner_item").all()).toEqual([]);
     // A second tick with the same stem adds no second branch (the title is the dedupe, in any state).
     const again = await run("lp.lead_propose", { "$inputs.tickId": "tick_b", "think.proposals": [seedProposal({ risk: "high" })], "think.branches": [] });

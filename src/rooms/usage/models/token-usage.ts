@@ -1,6 +1,5 @@
 import type { TokenBreakdown } from "./token-math";
 
-export const TOKEN_USAGE_SCHEDULE = "token-usage-sync";
 export const TOKEN_USAGE_LAST_SYNC_KEY = "token-usage:last-sync-at";
 export const TOKEN_USAGE_DIAGNOSTICS_KEY = "token-usage:diagnostics";
 export const TOKEN_USAGE_CURSOR_RESET_KEY = "token-usage:reset-cursors-0.1.152";

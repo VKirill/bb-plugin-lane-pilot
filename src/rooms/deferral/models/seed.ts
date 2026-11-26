@@ -18,7 +18,6 @@ const decision = (slug: string, what: string): SeedEntry => ({ id: `dfr_seed_pla
 export const SEED_ENTRIES: readonly SeedEntry[] = [
   skip("pipeline", "pipeline.test.ts", "the upstream agency binary is absent (NO_UPSTREAM): argv and 18-field schema checks"),
   skip("acceptance_v2", "acceptance-v2.test.ts", "the upstream agency checkout is absent (NO_UPSTREAM)"),
-  skip("fault_injection", "fault-injection.test.ts", "the upstream fixture is absent (UPSTREAM_FIXTURE)"),
   skip("install_failure", "install-failure.test.ts", "the upstream checkout is absent (NO_UPSTREAM): rollback and snapshot integrity"),
   skip("guard", "guard.test.ts", "the upstream PM_AGENTS is absent (NO_UPSTREAM)"),
   skip("capture_ui", "capture-ui.test.tsx", "CAPTURE is not 1 (UI screenshot HTML)"),

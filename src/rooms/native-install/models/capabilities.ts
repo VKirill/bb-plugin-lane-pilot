@@ -74,28 +74,3 @@ export function assessEngineCapabilities(
     })),
   };
 }
-
-export type EngineDecision = "reuse" | "install" | "conflict";
-
-export function decideEngine(
-  assessment: CapabilityAssessment,
-  state: { installed: boolean; modified?: boolean; owner?: "lane-pilot" | "user" | "upstream" | "unknown" },
-): { decision: EngineDecision; compatible: boolean; writes: string[]; reason: string | null } {
-  if (assessment.compatible && state.installed) {
-    return { decision: "reuse", compatible: true, writes: [], reason: null };
-  }
-  if (state.installed && (state.modified || state.owner === "user" || state.owner === "unknown")) {
-    return {
-      decision: "conflict",
-      compatible: false,
-      writes: [],
-      reason: assessment.diagnostics[0]?.message ?? "Existing user-owned engine is preserved.",
-    };
-  }
-  return {
-    decision: "install",
-    compatible: assessment.compatible,
-    writes: assessment.compatible ? [] : ["immutable-managed-engine"],
-    reason: assessment.diagnostics[0]?.message ?? null,
-  };
-}

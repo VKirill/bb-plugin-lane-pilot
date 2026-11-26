@@ -1,11 +1,16 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
-import { fileContaining } from "./support/source-text";
+import { describe, expect, it, vi } from "vitest";
+import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { STAGE_IDS, STAGE_PROOF, acceptanceProofGap, isAdvisoryProof, stageProofSchema } from "@lane-pilot/contracts";
 import type { StageId } from "@lane-pilot/contracts";
-import {builtinWorkflow} from "../src/rooms/workflow/builtin";
-import {LP_TASK_PIPELINE} from "../src/rooms/contracts";
+import { builtinWorkflow } from "../src/rooms/workflow/builtin";
+import { LP_TASK_PIPELINE, type PrototypeConfig, type TaskV2 } from "../src/rooms/contracts";
+import { createAttempt, createRun, createTask, getAttempt, listGateEventsForTask, openDatabase, saveProjectSetting, transitionAttempt } from "../src/rooms/plugin-db";
+import { createCore } from "../src/rooms/core/server/core";
+import { finishWriterAttemptBody } from "../src/rooms/writer/server/services/finish-attempt-body";
+import { runPostValidationGates } from "../src/rooms/writer/server/services/post-validation-gates";
+import { mountVerificationAttemptFinished } from "../src/rooms/writer/server/services/verification";
 import {
   candidateCitations,
   demoteUncited,
@@ -71,29 +76,84 @@ describe("a model's opinion alone never accepts a task", () => {
     expect(acceptanceProofGap(["pm-read", "plan-critique", "specialist-review", "code-critique", "acceptance-receipt"])).toBeNull();
   });
 
-  it("is checked where acceptance is decided: before the acceptance receipt is written", () => {
-    const { text: gateSource } = fileContaining("acceptanceProofGap(provenBy)");
-    const guard = gateSource.indexOf("acceptanceProofGap(provenBy)");
-    const passed = gateSource.indexOf('return { kind: "passed"');
-    expect(guard).toBeGreaterThan(0);
-    expect(passed).toBeGreaterThan(guard);
-    expect(gateSource.slice(guard, passed)).toContain('transitionAttempt(db, input.attemptId, "blocked"');
+  it("is checked where acceptance is decided: before the acceptance receipt is written", async () => {
+    const { bb, harness } = createFakePluginHost({
+      pluginId: "lane-pilot",
+      sdk: {
+        threads: {
+          get: async () => ({ status: "idle" }) as never,
+          output: async () => ({ text: "done" }) as never,
+          events: { list: async () => [] as never },
+          stop: async () => ({}) as never,
+        },
+        environments: { list: async () => [{ id: "env-1" }] as never },
+      },
+    });
+    const db = openDatabase(bb);
+    const ctx = createCore(bb, db);
+    const config: PrototypeConfig = {
+      projectId: "P", hostId: "h", pmWorkspacePath: "/repo", writerWorkspacePath: "/repo",
+      pmProviderId: "codex", pmModel: "codex-test", writerProviderId: "codex", writerModel: "codex-test",
+    };
+    const makeTask = (id: string, risk: TaskV2["risk"] = "low"): TaskV2 => ({
+      schema_version: 2, id, title: `Task ${id}`, risk, lane: "writer", project_cwd: "/repo",
+      read_first: [], interfaces: [], invariants: [], out_of_scope: [], expected_outputs: ["note.txt"],
+      owns_paths: ["note.txt"], never_touch: [], depends_on: [], objective: "write", acceptance: ["done"],
+      verify: "none", verification: [],
+    });
 
-    // Both the legacy finish body and the graph's critique -> merge path run post-validation gates before writing the acceptance receipt.
-    const { text: finishSource } = fileContaining("export async function finishWriterAttemptBody(");
-    const gated = finishSource.indexOf("await runPostValidationGates(");
-    const accept = finishSource.indexOf("await mergeAcceptedAttempt(");
-    expect(gated).toBeGreaterThan(0);
-    expect(accept).toBeGreaterThan(gated);
-    expect(finishSource.slice(gated, accept)).toContain('gated.kind !== "passed"');
+    createRun(db, "run", "P", "cli", "/repo");
+    saveProjectSetting(db, "P", "code_critique.enabled", false);
+    saveProjectSetting(db, "P", "owner.words", "off");
 
-    const { text: critiqueSource } = fileContaining('"lp.attempt-critique"');
-    expect(critiqueSource).toContain("await runPostValidationGates(");
-    const pipeline = builtinWorkflow(LP_TASK_PIPELINE)!;
-    expect(pipeline.edges.some((edge) => edge.from === "critique" && edge.to === "merge")).toBe(true);
-    expect(pipeline.edges.some((edge) => edge.from === "validate" && edge.to === "merge")).toBe(false);
-    expect(fileContaining("export async function integrateAttemptOnce(").text).toContain("services.persistWriterAcceptance(");
-    expect(fileContaining("export async function mergeAcceptedAttempt(").text).toContain("integrateAttemptOnce(");
+    const t1 = makeTask("t1");
+    createTask(db, { id: "t1", runId: "run", kind: "bb", contract: t1 });
+    createAttempt(db, { id: "a1", runId: "run", taskId: "t1" });
+    transitionAttempt(db, "a1", "spawn_requested");
+    transitionAttempt(db, "a1", "running", { threadId: "w1" });
+
+    const persistAcceptance = vi.fn(async () => ({ state: "passed" }));
+    const services = {
+      validateWriterResult: vi.fn(async () => ({ status: "accepted" as const, output: "done", produced: ["note.txt"], verification: [] })),
+      persistWriterAcceptance: persistAcceptance,
+      workspaceDirt: async () => ({ ok: true, snapshots: [] }),
+      stageHelperSettings: async () => ({}),
+      runBudgetFor: () => ({ snapshot: () => ({ limits: {} }) }),
+    };
+
+    const gated = await runPostValidationGates({
+      ctx,
+      services: services as never,
+      input: { projectId: "P", config, task: t1, runId: "run", taskId: "t1", attemptId: "a1", pmThreadId: "pm", writerThreadId: "w1", dirtBefore: [] },
+      candidate: { status: "needs_review" as never, output: "done", produced: ["note.txt"], verification: [] },
+      writerThreadId: "w1",
+      answer: "done",
+      endedByStop: () => null,
+      stoppedMeanwhile: () => null,
+    });
+    expect(gated).toMatchObject({ kind: "terminal", result: { status: "blocked", reason: expect.stringMatching(/^acceptance_without_code_proof/) } });
+    expect(getAttempt(db, "a1")?.state).toBe("blocked");
+    expect(listGateEventsForTask(db, "run", "t1")).toContainEqual(expect.objectContaining({ gate: "accept", status: "rejected" }));
+
+    // finishWriterAttemptBody never reaches merge/persistWriterAcceptance when post-validation gates block.
+    saveProjectSetting(db, "P", "critic.challenge_high", "on");
+    const t2 = makeTask("t2", "high");
+    createTask(db, { id: "t2", runId: "run", kind: "bb", contract: t2 });
+    createAttempt(db, { id: "a2", runId: "run", taskId: "t2" });
+    transitionAttempt(db, "a2", "spawn_requested");
+    transitionAttempt(db, "a2", "running", { threadId: "w2" });
+
+    const verification = mountVerificationAttemptFinished(ctx, services as never);
+    const finished = await finishWriterAttemptBody(
+      ctx,
+      services as never,
+      verification,
+      { projectId: "P", config, task: t2, runId: "run", taskId: "t2", attemptId: "a2", pmThreadId: "pm", writerThreadId: "w2", dirtBefore: [] },
+      { writerStopped: false },
+    );
+    expect(finished).toMatchObject({ status: "blocked", reason: expect.stringMatching(/^challenge_gate:/) });
+    expect(persistAcceptance).not.toHaveBeenCalled();
+    await harness.lifecycle.dispose();
   });
 });
 

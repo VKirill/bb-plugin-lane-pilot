@@ -6,7 +6,6 @@ import { MAIN_AGENT_PROFILE_IDS } from "../src/rooms/contracts/server";
 import { parseOwnedAgents } from "../src/rooms/native-agent/models/agent-profile";
 import { BB_AGENT_SESSIONS, laneSessionOverlayPrompt } from "../src/rooms/native-agent/models/native-agent-overlay";
 import { unionLpBridgeToolsOnAgentsJson } from "../src/rooms/native-agent/models/agent-overlay";
-import { NATIVE_LP_BRIDGE_SPECIALIST_TOOLS } from "../src/rooms/native-agent/models/bridge-tools";
 import { roleProfilePolicy, type HelperRole } from "../src/rooms/contracts/helper-context";
 import { LP_AGENT_OVERRIDES_KEY } from "@lane-pilot/settings-catalog";
 import { listSettingRows, openDatabase } from "../src/rooms/plugin-db";
@@ -219,6 +218,5 @@ describe("every specialist can plan an automation", () => {
       expect(BB_AGENT_SESSIONS[id], id).toContain("cannot create schedules");
     }
     for (const id of ["project-onboarder", "browser-qa"]) expect(BB_AGENT_SESSIONS[id], id).not.toContain("lane_pilot_schedule");
-    expect([...NATIVE_LP_BRIDGE_SPECIALIST_TOOLS]).toEqual(["lane_pilot_schedule"]);
   });
 });

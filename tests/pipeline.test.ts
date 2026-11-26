@@ -27,10 +27,11 @@ import { fileAllowedByOwns, fnmatch, matchOwnsPath } from "@lane-pilot/kit";
 import { NATIVE_LP_BRIDGE_PM_TOOLS } from "../src/rooms/native-agent/models/bridge-tools";
 import plugin from "../server";
 import {
-  nextAttemptState,
-  retryAction,
+  resolveTransition,
   TRANSITION_TABLE,
   WRITER_RETRY_LIMIT,
+  type AttemptState,
+  type TransitionEvent,
 } from "../src/rooms/contracts/state-machine";
 import { TASK_V2_REQUIRED, validateTaskV2 } from "../src/rooms/tasks";
 import { loadTaskV2Schema } from "../src/rooms/tasks/server";
@@ -47,7 +48,7 @@ const config = {
 };
 
 describe("§3.4 transition table", () => {
-  const cases: Array<{from:Parameters<typeof nextAttemptState>[0]; event:Parameters<typeof nextAttemptState>[1]; to:string}> = [
+  const cases: Array<{from:AttemptState | null; event:TransitionEvent; to:string}> = [
     { from:null, event:"form_task", to:"queued" },
     { from:"queued", event:"spawn_called", to:"spawn_requested" },
     { from:"spawn_requested", event:"spawn_ok", to:"running" },
@@ -78,14 +79,12 @@ describe("§3.4 transition table", () => {
   it("covers every spec row", () => expect(TRANSITION_TABLE).toHaveLength(cases.length));
   for (const row of cases) {
     it(`${row.from ?? "∅"} + ${row.event} → ${row.to}`, () => {
-      expect(nextAttemptState(row.from, row.event)).toBe(row.to);
+      const to = resolveTransition(row.from, row.event);
+      expect(to === "stay" ? row.from : to).toBe(row.to);
     });
   }
   it("retry limit is 3 visits", () => {
     expect(WRITER_RETRY_LIMIT).toBe(3);
-    expect(retryAction("validation_failed", 1)).toBe("retry");
-    expect(retryAction("validation_failed", 2)).toBe("retry");
-    expect(retryAction("validation_failed", 3)).toBe("retry_exhausted");
   });
 });
 
@@ -236,8 +235,6 @@ describe("retry creates a new attemptId", () => {
     createAttempt(db, { id:"a3", runId:"run-r", taskId:"t" });
     expect(countAttempts(db, "run-r", "t")).toBe(3);
     expect(getAttempt(db, "a3")?.attempt_no).toBe(3);
-    expect(retryAction("validation_failed", 2)).toBe("retry");
-    expect(retryAction("validation_failed", 3)).toBe("retry_exhausted");
     await harness.lifecycle.dispose();
   });
 });

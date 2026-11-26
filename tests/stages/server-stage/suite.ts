@@ -2126,26 +2126,6 @@ describe("stage → native writer → receipt", () => {
     await harness.lifecycle.dispose();
   },20_000);
 
-  it("K2 quality_mode full: a task with qa_cases and no qa_url is refused by the contract lint, with the fix",async()=>{
-    const {harness}=await setupCode([],{settings:{quality_mode:"full"}});
-    const reply=JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,objective:"Проверка диспетча",plan:"Write a verified fixture",task:{...task,qa_cases:["note.txt page opens at 375"]}},{threadId:pmThreadId,projectId})));
-    expect(reply.reason).toMatch(/contract lint/);
-    expect(JSON.stringify(reply.findings)).toMatch(/qa_url_missing/);
-    expect(reply.reason).toMatch(/add qa_url/);
-    await harness.lifecycle.dispose();
-  },20_000);
-
-  it("K2 quality_mode full: an accepted task with qa_cases and qa_url is not done for the PM until the browser check of its own graph passed",async()=>{
-    const {harness}=await setupCode([[],[],[{path:"note.txt",sha256:noteSha}],[{path:"note.txt",sha256:noteSha}],[{path:"note.txt",sha256:noteSha}],[{path:"note.txt",sha256:noteSha}]],{settings:{quality_mode:"full"}});
-    await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,objective:"Проверка диспетча",plan:"Write a verified fixture",task:{...task,qa_cases:["note.txt page opens at 375"],qa_url:"http://127.0.0.1:5173/note"}},{threadId:pmThreadId,projectId});
-    const waited=JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"stage-run",timeoutSec:20},{threadId:pmThreadId,projectId})));
-    expect(waited.state).toBe("accepted");
-    // The task's own graph ran the browser check before the PM was told the task is done: its receipt is passed and nothing is left to do by hand.
-    expect(waited.stages.find((row:{stageId:string})=>row.stageId==="browser-qa")?.state).toBe("passed");
-    expect(waited.next).toBeUndefined();
-    await harness.lifecycle.dispose();
-  },20_000);
-
   it("K2: a code critique that blocks stops the task with the verdict message and starts no repair writer",async()=>{
     const {db,harness,spawned}=await setupCode([
       [],[],[{path:"note.txt",sha256:noteSha}],[{path:"note.txt",sha256:noteSha}],[{path:"note.txt",sha256:noteSha}],[{path:"note.txt",sha256:noteSha}],

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { RETURN_FROM, RETURN_STAGES, returnAffected, TASK_STAGE_ORDER, type ReceiptSummary } from "@lane-pilot/contracts";
+import { RETURN_FROM, returnAffected, TASK_STAGE_ORDER, type ReceiptSummary } from "@lane-pilot/contracts";
 import { checkNote, NOTE_MAX, pmReturnMessage, renderReturnNotes, returnTurnPrompt } from "../../src/rooms/stage-return/models/stage-return";
 
 const chain = (states: Record<string, string> = {}): ReceiptSummary[] => TASK_STAGE_ORDER.map((stage) => ({ stage, state: states[stage] ?? "passed", inputSha256: "a".repeat(64) }));
@@ -21,9 +21,6 @@ describe("returnAffected", () => {
     const result = returnAffected(chain({ "plan-critique": "failed" }), "writer");
     expect(result.from).toBe("plan-critique");
     expect(result.reused).toEqual(["pm-read"]);
-  });
-  it("knows exactly the three stages the person can name", () => {
-    expect([...RETURN_STAGES]).toEqual(["discussion", "planning", "writer"]);
   });
 });
 

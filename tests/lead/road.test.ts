@@ -1,6 +1,6 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
-import { addRoad, decideRoad, doneRoad, getRoad, listRoad, proposeRoad, rejectRoad, renderRoadTree, roadCounts, roadTree } from "../../src/rooms/lead/server/repositories/road-repository";
+import { addRoad, doneRoad, getRoad, listRoad, proposeRoad, rejectRoad, renderRoadTree, roadCounts, roadTree } from "../../src/rooms/lead/server/repositories/road-repository";
 import { openDatabase } from "../../src/rooms/plugin-db";
 
 // The migration that owns this table lands in a sibling change; the test cannot wait for it, so the fixture applies the same DDL.
@@ -65,26 +65,17 @@ describe("rejectRoad and doneRoad", () => {
   });
 });
 
-describe("propose → decide", () => {
-  it("walks open → proposed → accepted/later/rejected and refuses wrong states", () => {
+describe("proposeRoad", () => {
+  it("moves open and later branches to proposed, and ignores rejected", () => {
     const db = world();
     addRoad(db, direction("a"));
     addRoad(db, direction("b"));
     addRoad(db, direction("c"));
-    expect(decideRoad(db, "a", "yes")).toBe(false);
     expect(proposeRoad(db, "a", "dec_1", 10)).toBe(true);
     expect(getRoad(db, "a")).toMatchObject({ state: "proposed", proposed_at: 10, decision_id: "dec_1" });
-    expect(decideRoad(db, "a", "yes", undefined, 20)).toBe(true);
-    expect(getRoad(db, "a")!.state).toBe("accepted");
-    proposeRoad(db, "b", "dec_2", 10);
-    expect(decideRoad(db, "b", "later", undefined, 20)).toBe(true);
-    expect(getRoad(db, "b")!.state).toBe("later");
+    db.prepare("UPDATE lane_pilot_lead_road SET state='later' WHERE id='b'").run();
     expect(proposeRoad(db, "b", "dec_3", 30)).toBe(true);
-    proposeRoad(db, "c", "dec_4", 10);
-    expect(decideRoad(db, "c", "no", "too risky", 20)).toBe(true);
-    const c = getRoad(db, "c")!;
-    expect(c.state).toBe("rejected");
-    expect(c.why).toContain("owner: no too risky");
+    rejectRoad(db, "c", "costs too much for now", "owner", 20);
     expect(proposeRoad(db, "c", "dec_5", 40)).toBe(false);
   });
 });

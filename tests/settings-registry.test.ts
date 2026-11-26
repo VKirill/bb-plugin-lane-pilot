@@ -1,8 +1,12 @@
+/** @vitest-environment jsdom */
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 import ts from "typescript";
 import { describe, expect, it } from "vitest";
+import { cleanup, waitFor } from "@testing-library/react";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
+import { mountPage } from "./ui-harness";
+import { openTab } from "./ui-tabs";
 import {
   GLOBAL_SETTINGS_PROJECT_ID,
   LEGACY_STORED_KEYS,
@@ -227,12 +231,17 @@ describe("typed settings registry (Task 33)", () => {
   });
 
   it("covers every shipped workflow agent role and service job on the model-per-function screen and applies updates to the next step", async () => {
-    // 1. tab-team puts RoleModelsPanel first before PmRow
-    const tabTeamSource = readFileSync(join(process.cwd(), "src/rooms/pages/ui/tab-team.tsx"), "utf8");
-    const roleIdx = tabTeamSource.indexOf("<RoleModelsPanel");
-    const pmIdx = tabTeamSource.indexOf("<PmRow");
-    expect(roleIdx).toBeGreaterThan(-1);
-    expect(pmIdx).toBeGreaterThan(roleIdx);
+    // 1. tab-team renders RoleModelsPanel before PmRow
+    const slot = await mountPage({
+      get_role_models: () => ({ roles: [], options: [] }),
+      workflow_model_catalog: () => ({ hosts: [], providers: [], runHostId: null }),
+    });
+    openTab(slot, "team");
+    const roleModels = await slot.findByTestId("role-models");
+    const pmRow = await waitFor(() => slot.getByTestId("main-agent"));
+    expect(Boolean(roleModels.compareDocumentPosition(pmRow) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true);
+    slot.lifecycle.unmount();
+    cleanup();
 
     // 2. Every concrete role referenced in workflows/*.json maps into ROLE_TABLE + roleFallbackModel
     const tableIds = new Set(ROLE_TABLE.map((row) => row.id));

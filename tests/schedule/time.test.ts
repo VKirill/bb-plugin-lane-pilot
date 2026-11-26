@@ -1,6 +1,6 @@
 import { CronExpressionParser } from "cron-parser";
 import { describe, expect, it } from "vitest";
-import { fireTimes, nextFire, offsetAt, parseDelay, scheduleTimeProblem } from "../../src/rooms/schedule/models/time";
+import { fireTimes, offsetAt, parseDelay, scheduleTimeProblem } from "../../src/rooms/schedule/models/time";
 
 const iso = (ms: number) => new Date(ms).toISOString();
 const at = (text: string) => Date.parse(text);
@@ -16,18 +16,9 @@ describe("fire times", () => {
     }
   });
 
-  it("is strictly after the start and finds the next day", () => {
-    expect(iso(nextFire("0 9 * * *", "UTC", at("2026-05-01T09:00:00Z"))!)).toBe("2026-05-02T09:00:00.000Z");
-    expect(iso(nextFire("0 9 * * *", "UTC", at("2026-05-01T08:59:59Z"))!)).toBe("2026-05-01T09:00:00.000Z");
-  });
-
   it("combines day of month and day of week with OR when both are set", () => {
     const list = fireTimes("0 0 13 * 5", "UTC", at("2026-02-01T00:00:00Z"), { limit: 4 }).map((ms) => iso(ms).slice(0, 10));
     expect(list).toEqual(["2026-02-06", "2026-02-13", "2026-02-20", "2026-02-27"]);
-  });
-
-  it("waits for a leap day", () => {
-    expect(iso(nextFire("0 0 29 2 *", "UTC", at("2026-03-01T00:00:00Z"))!)).toBe("2028-02-29T00:00:00.000Z");
   });
 
   it("refuses what is not a cron or a zone", () => {

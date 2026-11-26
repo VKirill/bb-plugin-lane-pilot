@@ -104,8 +104,6 @@ export function fireTimes(cron: string, timezone: string, afterMs: number, optio
   return [...new Set(found)].sort((a, b) => a - b).slice(0, limit);
 }
 
-export const nextFire = (cron: string, timezone: string, afterMs: number): number | null => fireTimes(cron, timezone, afterMs, { limit: 1 })[0] ?? null;
-
 /** What is wrong with a cron + zone pair, or null. */
 export function scheduleTimeProblem(cron: string, timezone: string): string | null {
   return cronProblem(cron) ?? timezoneProblem(timezone);

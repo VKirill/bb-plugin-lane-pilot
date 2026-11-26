@@ -91,7 +91,7 @@ print(json.dumps({"before": sorted(before), "leaks": m.shared_leaks(before, afte
     expect(out).toEqual(["the worktree of t1 holds the home of t2"]);
   });
 
-  // Framework 2 (docs/sma-evidence.md): the scene proves a map node only by its own prove() line. A complete home proves the seven nodes it
+  // The scene proves a map node only by its own prove() line. A complete home proves the seven nodes it
   // observes; each producer mutation turns its node's ok false: an attempt file outside attempts/<id>/ (n233), no plan-source (n236), the
   // worktree left on disk (n294), no brief (n397), a shared-folder leak (n405), no OUTCOME (n1616), a row without sha256 (n1691).
   it("[sma:k_v_manifest] proves n233, n236, n294, n397, n405, n1616, n1691 on a complete home and refuses each when its producer is mutated", () => {
@@ -126,7 +126,7 @@ print(json.dumps({"before": sorted(before), "leaks": m.shared_leaks(before, afte
   it("runs by name or in the series task suite, and dispatches two valid task-v2 documents whose plan names a shared .agents/plans file, so their homes snapshot it", () => {
     const { out } = py(`print(json.dumps({"specs": m.task_home_specs("/srv/sandbox"), "plan": m.shared_plan("/srv/sandbox")[0], "all": "task_home" in m.ALL, "extra": "task_home" in m.EXTRA, "series": "task_home" in m.SUITES["task"], "quick": "task_home" in m.QUICK}))`);
     const result = out as { specs: unknown[]; plan: string; all: boolean; extra: boolean; series: boolean; quick: boolean };
-    // A new scene runs by name or in the release series (suite task), never in the deploy drill or a plain run (the drill-defaults rule, tests/sma/parity-d2-drill-ship-1.test.ts).
+    // A new scene runs by name or in the release series (suite task), never in the deploy drill or a plain run (the drill-defaults rule).
     expect(result).toMatchObject({ all: false, extra: true, series: true });
     expect(result.quick).toBe(false);
     expect(result.plan).toMatch(/^\.agents\/plans\/drill-.+-shared\.md$/);

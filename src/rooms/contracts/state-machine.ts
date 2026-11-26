@@ -126,20 +126,6 @@ export function resolveTransition(from: AttemptState | null, event: TransitionEv
   return row.to;
 }
 
-export function nextAttemptState(from: AttemptState | null, event: TransitionEvent): AttemptState {
-  const to = resolveTransition(from, event);
-  if (to === "stay") {
-    if (from === null) throw new Error("stay is not valid from null");
-    return from;
-  }
-  return to;
-}
-
-export function retryAction(failed: AttemptState, usedAttempts: number): TransitionEvent {
-  if (!RETRY_ELIGIBLE.includes(failed)) throw new Error(`retry is not legal from ${failed}`);
-  return usedAttempts >= WRITER_RETRY_LIMIT ? "retry_exhausted" : "retry";
-}
-
 /**
  * Moves the pipeline makes that §3.4's table does not list, each with the reason it exists. Anything not in the table or
  * here is a bug in the caller: `transitionAttempt` refuses it. Add a row only for a move the product needs, never to

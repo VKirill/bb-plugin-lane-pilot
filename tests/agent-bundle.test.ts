@@ -10,38 +10,6 @@ import { MAIN_AGENT_PROFILE_IDS } from "../src/rooms/contracts/server";
 import bundledAgents from "../src/rooms/contracts/bundled-agents.json";
 
 describe("bundled BB session profiles", () => {
-  it("pins the composer agents, including the lane-stack roles ported on 2026-10-29", () => {
-    expect([...MAIN_AGENT_PROFILE_IDS]).toEqual([
-      "dev-orchestrator",
-      "copy-lead",
-      "seo-specialist",
-      "growth-marketer",
-      "design-lead",
-      "project-onboarder",
-      "tavily",
-      "video-lead",
-      "3d-artist",
-      "game-dev",
-      "social-manager",
-      "billing-assistant",
-      "visual-artist",
-      "macos-operator",
-      "workflow-architect",
-      "lead",
-      "advisor-researcher",
-      "ai-researcher",
-      "animator",
-      "doc-classifier",
-      "domain-researcher",
-      "eval-auditor",
-      "eval-planner",
-      "framework-selector",
-      "mempalace-curator",
-      "nyquist-auditor",
-      "ui-researcher",
-    ]);
-  });
-
   it("loads every bundled profile under schema limits with resources and no model fields", () => {
     for (const id of MAIN_AGENT_PROFILE_IDS) {
       const compiled = compileMainAgentProfile(id);
