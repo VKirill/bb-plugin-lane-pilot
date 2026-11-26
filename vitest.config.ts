@@ -57,6 +57,9 @@ export default defineConfig({
     // crossed 15 s there three times in two days; on 2026-11-26 tests of 5-7 s alone crossed 30 s on ovh-ci (host-no-sync-spawn 31 s,
     // memory-suite 33 s). A real hang still fails.
     testTimeout: 60000,
+    // Half the cores (owner, 2026-11-26): the suite shares ovh-ci (16 cores, load 21-33 while it ran) and the Mac with BB and the
+    // writers; with a worker per core, timing tests fell red under load.
+    maxWorkers: "50%",
     // One queue for all projects, longest file first (tests/sequencer.ts).
     ...(process.env.LP_DEFAULT_ORDER ? {} : { sequence: { sequencer: LongestFirstSequencer } }),
     setupFiles: ["./tests/setup-jsdom.ts"],
