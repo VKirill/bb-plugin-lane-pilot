@@ -12,6 +12,22 @@ export function within<T>(work: Promise<T>, ms: number): Promise<T> {
   return Promise.race([work, new Promise<never>((_resolve, reject) => { timer = setTimeout(() => reject(new Error("timeout")), ms); })]).finally(() => { if (timer) clearTimeout(timer); });
 }
 
+type CatalogRefreshedListener = (catalog: ModelCatalog) => void | Promise<void>;
+const catalogRefreshedListeners = new WeakMap<object, Set<CatalogRefreshedListener>>();
+
+/** Subscribes to fresh `ModelCatalog` reads on `bb`; returns an unsubscribe function. */
+export function onModelCatalogRefreshed(bb: object, listener: CatalogRefreshedListener): () => void {
+  let set = catalogRefreshedListeners.get(bb);
+  if (!set) {
+    set = new Set();
+    catalogRefreshedListeners.set(bb, set);
+  }
+  set.add(listener);
+  return () => {
+    set!.delete(listener);
+  };
+}
+
 /**
  * Every provider and model the hub's machines offer, read through `bb.sdk.providers` on each connected machine and merged: a
  * provider or model lists the machines it is available on, so a picker can say «only on the Mac mini». Kept for a minute; a machine
@@ -48,10 +64,15 @@ export function createModelCatalog(ctx: Pick<ServerCore, "bb" | "log">, now: () 
     }));
     // A model some machine has comes first; a provider like OpenCode lists hundreds, and the picker is typed into by its first letters.
     for (const entry of providers.values()) entry.models.sort((a, b) => Number(b.hostIds.length > 0) - Number(a.hostIds.length > 0) || a.displayName.localeCompare(b.displayName));
-    return {
+    const catalog: ModelCatalog = {
       hosts: hosts.map((host) => ({ id: host.id, name: host.name, connected: host.connected })),
       providers: [...providers.values()].sort((a, b) => Number(b.hostIds.length > 0) - Number(a.hostIds.length > 0) || a.displayName.localeCompare(b.displayName)),
     };
+    const listeners = catalogRefreshedListeners.get(bb);
+    if (listeners?.size) {
+      await Promise.allSettled([...listeners].map((listener) => Promise.resolve(listener(catalog))));
+    }
+    return catalog;
   }
 
   async function get(refresh = false): Promise<ModelCatalog> {

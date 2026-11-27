@@ -1,11 +1,13 @@
 import type Database from "better-sqlite3";
+import { replayPolicy, type ReplayPolicy, type ToolTier } from "@lane-pilot/contracts";
 
-import { WorkflowEngine } from "./engine";
+import { MissingValueError, WorkflowEngine } from "./engine";
 import type { NodeExecutor, StepContext } from "./engine";
 import { PURE_ACTION_KEYS, pureActionExecutor } from "./actions";
 import { contractSample } from "./contract";
 import { executorKey, lowerWorkflow, outputFields } from "./lower";
 import { registerReducers } from "./reducers";
+import type { ReplayCase } from "./replay-cases";
 import type { Field, GraphNode, Workflow } from "./schema";
 
 /**
@@ -29,7 +31,12 @@ export type DraftTestCase = {
   expectOutput?: Record<string, unknown>;
   /** The free-text expectations of the chains spec: shown, not checked. */
   notChecked: string[];
+  /** Set when built from a past-run ReplayCase: `mode === "real"` nodes run live and missing recorded outputs mark `replay_needs_stub`. */
+  isReplay?: boolean;
 };
+
+export const REPLAY_CASE_REASONS = ["replay_forbidden", "replay_needs_stub"] as const;
+export type ReplayCaseReason = (typeof REPLAY_CASE_REASONS)[number];
 
 export type DraftTestResult = {
   caseId: string;
@@ -38,6 +45,7 @@ export type DraftTestResult = {
   reason: string | null;
   error: string | null;
   failedNode: string | null;
+  nodeId?: string | null;
   path: string[];
   output: Record<string, unknown> | null;
   runId: string | null;
@@ -68,11 +76,32 @@ export function sampleValue(field: Field, owner: string): unknown {
 
 const sampleOutput = (fields: readonly Field[], owner: string): Record<string, unknown> => Object.fromEntries(fields.map((field) => [field.name, sampleValue(field, owner)]));
 
-/** The cases of a draft: the `test.sim` it carries (and its `variant_*` entries), or one smoke case made from the declared inputs. */
-export function testCasesOf(workflow: Workflow): DraftTestCase[] {
+const isReplayCaseInput = (value: DraftTestCase | ReplayCase): value is ReplayCase =>
+  "runId" in value && "recorded" in value && !("stubs" in value);
+
+/** Converts a past-run `ReplayCase` into a `DraftTestCase` whose stubs come from `recorded` and answers from `humanAnswers`. */
+export function draftTestCaseFromReplay(replayCase: ReplayCase): DraftTestCase {
+  const stubs: Record<string, Record<string, unknown>> = {};
+  for (const [nodeId, value] of Object.entries(replayCase.recorded)) {
+    if (isRecord(value)) stubs[nodeId] = value;
+  }
+  return {
+    id: `replay:${replayCase.runId}`,
+    input: { ...replayCase.inputs },
+    stubs,
+    humanAnswers: { ...replayCase.humanAnswers },
+    expectStatus: "succeeded",
+    notChecked: [],
+    isReplay: true,
+  };
+}
+
+/** The cases of a draft: the `test.sim` it carries (and its `variant_*` entries), or one smoke case made from the declared inputs, plus any replay cases. */
+export function testCasesOf(workflow: Workflow, options?: { cases?: readonly ReplayCase[] }): DraftTestCase[] {
   const smoke = (): DraftTestCase => ({ id: "smoke", input: sampleOutput(workflow.inputs, "input"), stubs: {}, humanAnswers: {}, expectStatus: "succeeded", notChecked: [] });
   const test = workflow.test as ({ id: string; sim?: unknown } & Record<string, unknown>) | undefined;
-  if (!test || !isRecord(test.sim)) return [smoke()];
+  const replay = (options?.cases ?? []).map(draftTestCaseFromReplay);
+  if (!test || !isRecord(test.sim)) return [smoke(), ...replay];
   const sim = test.sim;
   const build = (id: string, layer: Record<string, unknown>, base?: DraftTestCase): DraftTestCase => {
     const pick = (key: string) => (isRecord(layer[key]) ? layer[key] as Record<string, unknown> : {});
@@ -91,7 +120,7 @@ export function testCasesOf(workflow: Workflow): DraftTestCase[] {
   const main = build(test.id || "main", sim);
   const variants = Object.entries(sim).filter(([key, value]) => key.startsWith("variant_") && isRecord(value))
     .map(([key, value]) => build(`${main.id}/${key.slice("variant_".length)}`, value as Record<string, unknown>, { ...main, expectPath: undefined, expectOutput: undefined, notChecked: [] }));
-  return [main, ...variants];
+  return [main, ...variants, ...replay];
 }
 
 function answerFor(node: GraphNode | undefined, given: unknown, options: unknown): Record<string, unknown> {
@@ -109,18 +138,28 @@ export type DraftTestPorts = {
   db: Database.Database;
   harnessVersion: string;
   resolveWorkflow?: (id: string, version?: number) => Workflow | null;
+  executors?: Record<string, NodeExecutor>;
   now?: () => number;
   /** Real-time limit of one case; the run is canceled past it. */
   timeoutMs?: number;
+  log?: ((message: string) => void) | { debug?: (message: string) => void };
 };
 
 /** Runs one case on stubs and judges it. The run stays in the journal under the id `draft-test.<workflow id>`, so a screen can show it. */
-export async function runDraftTest(ports: DraftTestPorts, workflow: Workflow, testCase: DraftTestCase): Promise<DraftTestResult> {
+export async function runDraftTest(ports: DraftTestPorts, workflow: Workflow, testCaseInput: DraftTestCase | ReplayCase): Promise<DraftTestResult> {
+  const testCase = isReplayCaseInput(testCaseInput) ? draftTestCaseFromReplay(testCaseInput) : testCaseInput;
   const stubbed = new Map<string, { node: string; type: string; executor: string }>();
   const lowered = lowerWorkflow(workflow, ports.resolveWorkflow);
   const nodesById = new Map(lowered.nodes.filter((node): node is GraphNode => node.type !== "note").map((node) => [node.id, node]));
   const engine = new WorkflowEngine({ db: ports.db, harnessVersion: ports.harnessVersion, resolveWorkflow: ports.resolveWorkflow, now: ports.now, leaseMs: 120_000 });
   const visits = new Map<string, number>();
+  let replayBlock: { reason: ReplayCaseReason; nodeId: string; effect: ToolTier } | null = null;
+  const debugLog = (nodeId: string, policy: ReplayPolicy, action: "run" | "stub" | "refuse") => {
+    if (!ports.log) return;
+    const line = `DEBUG draft test replay node=${nodeId} policy=${policy} action=${action}`;
+    if (typeof ports.log === "function") ports.log(line);
+    else ports.log.debug?.(line);
+  };
   /** The case's stub for a node: its own id, the workflow a subworkflow node calls, the parent of a fan-out's body, the action key, then the node type. */
   const stubOf = (ctx: StepContext): Record<string, unknown> | undefined => {
     const node = ctx.node;
@@ -131,6 +170,8 @@ export async function runDraftTest(ports: DraftTestPorts, workflow: Workflow, te
     const entry = keys.map((key) => testCase.stubs[`${key}#${visit}`] ?? testCase.stubs[key]).find((value) => value !== undefined);
     return Array.isArray(entry) ? entry[Math.min(visit - 1, entry.length - 1)] : entry;
   };
+  const hasSimOutput = (ctx: StepContext): boolean =>
+    stubOf(ctx) !== undefined || (ctx.node.type === "human" && testCase.humanAnswers[ctx.nodeId] !== undefined);
   const answer = (ctx: StepContext, key: string): Record<string, unknown> => {
     const given = stubOf(ctx);
     visits.set(ctx.nodeId, (visits.get(ctx.nodeId) ?? 0) + 1);
@@ -141,7 +182,41 @@ export async function runDraftTest(ports: DraftTestPorts, workflow: Workflow, te
     return { ...(fields === "unknown" ? {} : { ...sampleOutput(fields, ctx.nodeId), ...contractSample("produces" in ctx.node ? ctx.node.produces : undefined, fields) }), ...(given ?? {}) };
   };
   // A stub spends nothing, and says so: an unmeasured cost would park a step under the graph's USD cap.
-  const stubFor = (key: string): NodeExecutor => ({ reentrant: true, run: async (ctx: StepContext) => ({ output: answer(ctx, key), usage: { tokens: 0, costUsd: 0, costState: "measured" } }) });
+  const stubOutcome = (ctx: StepContext, key: string) => ({ output: answer(ctx, key), usage: { tokens: 0, costUsd: 0, costState: "measured" as const } });
+  const blockReplay = (ctx: StepContext, reason: ReplayCaseReason, policy: ReplayPolicy): never => {
+    debugLog(ctx.nodeId, policy, "refuse");
+    if (!replayBlock) replayBlock = { reason, nodeId: ctx.nodeId, effect: ctx.node.effect! };
+    let rootId = ctx.runId;
+    for (let row = engine.journal.getRun(rootId); row?.parent_run_id; row = engine.journal.getRun(rootId)) rootId = row.parent_run_id;
+    engine.cancel(rootId, `${reason}:${ctx.nodeId}`);
+    throw new MissingValueError(reason, `${ctx.nodeId}: ${reason} (effect ${ctx.node.effect})`);
+  };
+  const guardExecutor = (key: string, mode: "stub" | "real" | "structural", real?: NodeExecutor, isOverride = false): NodeExecutor => ({
+    ...(real?.poll ? { poll: real.poll } : {}),
+    reentrant: real?.reentrant ?? true,
+    run: async (ctx: StepContext) => {
+      const policy = replayPolicy(ctx.node.effect);
+      const sim = hasSimOutput(ctx);
+      if (policy === "forbidden") {
+        if (sim) { debugLog(ctx.nodeId, policy, "stub"); return stubOutcome(ctx, key); }
+        return blockReplay(ctx, testCase.isReplay ? "replay_needs_stub" : "replay_forbidden", policy);
+      }
+      if (policy === "stubbed") {
+        if (isOverride && testCase.isReplay) {
+          debugLog(ctx.nodeId, policy, "run");
+          if (key !== "builtin:subworkflow") visits.set(ctx.nodeId, (visits.get(ctx.nodeId) ?? 0) + 1);
+          return real!.run(ctx);
+        }
+        if (sim) { debugLog(ctx.nodeId, policy, "stub"); return stubOutcome(ctx, key); }
+        return blockReplay(ctx, "replay_needs_stub", policy);
+      }
+      if (policy === "live") debugLog(ctx.nodeId, policy, mode !== "structural" && (!testCase.isReplay || mode === "stub") && sim ? "stub" : "run");
+      if (mode === "stub") return stubOutcome(ctx, key);
+      if (mode === "real" && !testCase.isReplay && sim) return stubOutcome(ctx, key);
+      if (mode === "real" && key !== "builtin:subworkflow") visits.set(ctx.nodeId, (visits.get(ctx.nodeId) ?? 0) + 1);
+      return real!.run(ctx);
+    },
+  });
   // The executors of the workflow and of every workflow it calls, however deep: a child run needs its own agents, tasks and actions answered too.
   const keys = new Set<string>();
   const seen = new Set<string>();
@@ -158,16 +233,25 @@ export async function runDraftTest(ports: DraftTestPorts, workflow: Workflow, te
   collect(lowered);
   // The code-only actions and the reducers are code: they run for real, unless the case stubs that node; everything else that reaches outside answers from a stub.
   registerReducers(engine);
-  for (const key of PURE_ACTION_KEYS) {
-    const real = pureActionExecutor(key);
-    engine.register(key, { reentrant: true, run: async (ctx) => { if (stubOf(ctx) !== undefined) return { output: answer(ctx, key) }; visits.set(ctx.nodeId, (visits.get(ctx.nodeId) ?? 0) + 1); return real.run(ctx); } });
+  const pureSet = new Set(PURE_ACTION_KEYS);
+  const realBuiltins = new Set(["builtin:subworkflow", "builtin:script"]);
+  for (const [key, exec] of [...engine.executors.entries()]) {
+    if (key === "builtin:human" || pureSet.has(key)) continue;
+    const override = ports.executors?.[key];
+    engine.register(key, guardExecutor(key, realBuiltins.has(key) || override ? "real" : "structural", override ?? exec, Boolean(override)));
   }
-  for (const key of keys) if (!engine.hasExecutor(key)) engine.register(key, stubFor(key));
+  for (const key of PURE_ACTION_KEYS) {
+    const override = ports.executors?.[key];
+    engine.register(key, guardExecutor(key, "real", override ?? pureActionExecutor(key), Boolean(override)));
+  }
+  for (const key of keys) {
+    if (!engine.hasExecutor(key)) {
+      const override = ports.executors?.[key];
+      engine.register(key, guardExecutor(key, override ? "real" : "stub", override, Boolean(override)));
+    }
+  }
   // A person answers at once, at any depth (a waiting question of a called workflow would hold the whole run): the case's human_answers, else the first option.
-  engine.register("builtin:human", stubFor("builtin:human"));
-  // A subworkflow the case stubs (by node id or by the id of the workflow it calls) answers from the stub; any other runs for real, its own steps on stubs too.
-  const realSub = (engine as unknown as { executors: Map<string, NodeExecutor> }).executors.get("builtin:subworkflow")!;
-  engine.register("builtin:subworkflow", { ...realSub, run: async (ctx: StepContext) => (stubOf(ctx) !== undefined ? { output: answer(ctx, "builtin:subworkflow") } : realSub.run(ctx)) });
+  engine.register("builtin:human", guardExecutor("builtin:human", "stub"));
 
   const failures: string[] = [];
   const base: DraftTestResult = { caseId: testCase.id, green: false, status: "not_started", reason: null, error: null, failedNode: null, path: [], output: null, runId: null, failures, stubbed: [], notChecked: testCase.notChecked };
@@ -205,6 +289,14 @@ export async function runDraftTest(ports: DraftTestPorts, workflow: Workflow, te
   const steps = engine.snapshot(summary.runId)?.steps ?? [];
   const path = steps.filter((step) => (step.state === "succeeded" || step.state === "skipped") && !step.node_id.includes(":")).map((step) => step.node_id);
 
+  if (replayBlock) {
+    const blocked: { reason: ReplayCaseReason; nodeId: string; effect: ToolTier } = replayBlock;
+    const status = blocked.reason === "replay_needs_stub" ? "skipped" : "failed";
+    const error = `${blocked.reason}: node "${blocked.nodeId}" has effect "${blocked.effect}" without ${testCase.isReplay ? "recorded" : "test.sim"} output`;
+    failures.push(error);
+    return { ...base, green: false, status, reason: blocked.reason, error, failedNode: blocked.nodeId, nodeId: blocked.nodeId, path, output: summary.output, runId: summary.runId, failures, stubbed: [...stubbed.values()] };
+  }
+
   if (summary.status !== testCase.expectStatus) {
     failures.push(`the run ended ${summary.status}${summary.reason ? ` (${summary.reason})` : ""}${summary.failedNode ? ` at ${summary.failedNode}` : ""}${summary.error ? `: ${summary.error}` : ""}; the case expects ${testCase.expectStatus}`);
   }
@@ -216,4 +308,19 @@ export async function runDraftTest(ports: DraftTestPorts, workflow: Workflow, te
     if (JSON.stringify(got) !== JSON.stringify(expected)) failures.push(`output ${name} is ${JSON.stringify(got)}, expected ${JSON.stringify(expected)}`);
   }
   return { ...base, green: failures.length === 0, status: summary.status, reason: summary.reason, error: summary.error, failedNode: summary.failedNode, path, output: summary.output, runId: summary.runId, failures, stubbed: [...stubbed.values()] };
+}
+
+/** Runs a workflow's authored cases and/or past-run replay cases through `runDraftTest`. */
+export async function runDraftTests(
+  ports: DraftTestPorts,
+  workflow: Workflow,
+  options: { cases?: readonly ReplayCase[]; testCaseId?: string; includeWorkflowCases?: boolean } = {},
+): Promise<DraftTestResult[]> {
+  const base = options.includeWorkflowCases === false
+    ? (options.cases ?? []).map(draftTestCaseFromReplay)
+    : testCasesOf(workflow, { cases: options.cases });
+  const selected = options.testCaseId ? base.filter((item) => item.id === options.testCaseId) : base;
+  const results: DraftTestResult[] = [];
+  for (const tc of selected) results.push(await runDraftTest(ports, workflow, tc));
+  return results;
 }

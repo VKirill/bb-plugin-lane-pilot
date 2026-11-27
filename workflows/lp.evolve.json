@@ -1,0 +1,330 @@
+{
+  "schemaVersion": 1,
+  "id": "lp.evolve",
+  "startedBy": "event:lp.evolve",
+  "name": {
+    "en": "Graph Evolution Loop",
+    "ru": "Контур эволюции графов"
+  },
+  "description": {
+    "en": "Event-driven evolution graph triggered by finished runs, threshold crossings, and model catalog changes. Ingests run outcomes, proposes node-level hypotheses, replays on held-out cases, decides report-only vs canary vs demotion, and re-proves promoted variants on catalog changes.",
+    "ru": "Событийный граф эволюции, запускаемый по завершении запусков, пересечению порогов и изменению каталога моделей. Принимает результаты, выдвигает гипотезы по узлам, прогоняет оффлайн-реплей, решает судьбу канарейки и перепроверяет модели при смене каталога."
+  },
+  "not_for": [
+    "manual runs or chat routing: Lane Pilot starts lp.evolve only from inbox events"
+  ],
+  "category": "service",
+  "status": "published",
+  "version": 1,
+  "tags": [
+    "event",
+    "evolve",
+    "service"
+  ],
+  "triggers": [
+    {
+      "type": "event",
+      "event": "lp.workflow.run-finished",
+      "inputs": {
+        "eventKind": "run_finished"
+      }
+    },
+    {
+      "type": "event",
+      "event": "lp.evolve.threshold-crossed",
+      "inputs": {
+        "eventKind": "threshold"
+      }
+    },
+    {
+      "type": "event",
+      "event": "lp.models.catalog-changed",
+      "inputs": {
+        "eventKind": "catalog_changed"
+      }
+    }
+  ],
+  "scope": {
+    "level": "builtin"
+  },
+  "inputs": {
+    "eventKind": {
+      "type": "string",
+      "required": false
+    },
+    "runId": {
+      "type": "string",
+      "required": false
+    },
+    "workflowId": {
+      "type": "string",
+      "required": false
+    },
+    "status": {
+      "type": "string",
+      "required": false
+    },
+    "graphVersion": {
+      "type": "number",
+      "required": false
+    },
+    "projectId": {
+      "type": "string",
+      "required": false
+    },
+    "prevSha": {
+      "type": "string",
+      "required": false
+    },
+    "nextSha": {
+      "type": "string",
+      "required": false
+    },
+    "reason": {
+      "type": "string",
+      "required": false
+    }
+  },
+  "outputs": {
+    "status": "string",
+    "kind": "string",
+    "workflowId": "string"
+  },
+  "goal_audit": "exempt",
+  "budget": {
+    "max_minutes": 15,
+    "max_usd": 1
+  },
+  "guards": {
+    "maxSteps": 16,
+    "maxFanOut": 1
+  },
+  "nodes": [
+    {
+      "id": "ingest",
+      "type": "action",
+      "label": "Ingest evolve event and check thresholds",
+      "uses": "lp.evolve_ingest",
+      "maxAttempts": 1,
+      "timeoutSec": 60,
+      "output": [
+        {
+          "name": "kind",
+          "type": "string"
+        },
+        {
+          "name": "route",
+          "type": "string"
+        },
+        {
+          "name": "workflowId",
+          "type": "string"
+        },
+        {
+          "name": "runId",
+          "type": "string"
+        },
+        {
+          "name": "ingested",
+          "type": "boolean"
+        },
+        {
+          "name": "skipped",
+          "type": "string",
+          "required": false
+        }
+      ]
+    },
+    {
+      "id": "route_event",
+      "type": "decision",
+      "label": "Route by event kind",
+      "uses": "builtin:decision",
+      "reads_node": "ingest"
+    },
+    {
+      "id": "reprove",
+      "type": "action",
+      "label": "Re-prove promoted model and plan variants",
+      "uses": "lp.evolve_reprove",
+      "maxAttempts": 1,
+      "timeoutSec": 180,
+      "output": [
+        {
+          "name": "checked",
+          "type": "number"
+        },
+        {
+          "name": "demotionsQueued",
+          "type": "number"
+        },
+        {
+          "name": "hypothesisIds",
+          "type": "array"
+        },
+        {
+          "name": "skipped",
+          "type": "string",
+          "required": false
+        }
+      ]
+    },
+    {
+      "id": "propose",
+      "type": "action",
+      "label": "Propose node-level evolution hypotheses",
+      "uses": "lp.evolve_propose",
+      "maxAttempts": 1,
+      "timeoutSec": 60,
+      "with": {
+        "workflowId": "{{ingest.workflowId}}"
+      },
+      "output": [
+        {
+          "name": "workflowId",
+          "type": "string"
+        },
+        {
+          "name": "hypothesisIds",
+          "type": "array"
+        },
+        {
+          "name": "replayCount",
+          "type": "number"
+        },
+        {
+          "name": "demoteCount",
+          "type": "number"
+        },
+        {
+          "name": "skipped",
+          "type": "string",
+          "required": false
+        }
+      ]
+    },
+    {
+      "id": "replay",
+      "type": "action",
+      "label": "Replay queued hypothesis offline",
+      "uses": "lp.evolve_replay",
+      "maxAttempts": 1,
+      "maxRepeats": 3,
+      "maxVisits": 3,
+      "timeoutSec": 300,
+      "with": {
+        "workflowId": "{{ingest.workflowId}}"
+      },
+      "output": [
+        {
+          "name": "hypothesisId",
+          "type": "string"
+        },
+        {
+          "name": "passed",
+          "type": "boolean"
+        },
+        {
+          "name": "remaining",
+          "type": "number"
+        },
+        {
+          "name": "skipped",
+          "type": "string",
+          "required": false
+        }
+      ]
+    },
+    {
+      "id": "decide",
+      "type": "action",
+      "label": "Decide report-only, canary, or demotion",
+      "uses": "lp.evolve_decide",
+      "maxAttempts": 1,
+      "timeoutSec": 60,
+      "with": {
+        "workflowId": "{{ingest.workflowId}}"
+      },
+      "output": [
+        {
+          "name": "decided",
+          "type": "number"
+        },
+        {
+          "name": "modes",
+          "type": "array"
+        },
+        {
+          "name": "skipped",
+          "type": "string",
+          "required": false
+        }
+      ]
+    },
+    {
+      "id": "done",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "'ok'",
+        "kind": "ingest.kind",
+        "workflowId": "ingest.workflowId"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "start",
+      "to": "ingest"
+    },
+    {
+      "from": "ingest",
+      "to": "route_event"
+    },
+    {
+      "from": "route_event",
+      "to": "reprove",
+      "when": "route_event.route == 'reprove'"
+    },
+    {
+      "from": "route_event",
+      "to": "propose",
+      "when": "route_event.route == 'propose'"
+    },
+    {
+      "from": "route_event",
+      "to": "done"
+    },
+    {
+      "from": "reprove",
+      "to": "done"
+    },
+    {
+      "from": "propose",
+      "to": "replay",
+      "when": "propose.replayCount > 0"
+    },
+    {
+      "from": "propose",
+      "to": "decide",
+      "when": "propose.demoteCount > 0"
+    },
+    {
+      "from": "propose",
+      "to": "done"
+    },
+    {
+      "from": "replay",
+      "to": "replay",
+      "when": "replay.remaining > 0"
+    },
+    {
+      "from": "replay",
+      "to": "decide"
+    },
+    {
+      "from": "decide",
+      "to": "done"
+    }
+  ]
+}

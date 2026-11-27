@@ -11,6 +11,9 @@ export const LP_EVENTS = {
   OWNER_ITEM_CREATED: "lp.owner.item-created",
   ATTEMPT_FINISHED: "lp.attempt.finished",
   ATTEMPT_MERGED: "lp.attempt.merged",
+  WORKFLOW_RUN_FINISHED: "lp.workflow.run-finished",
+  MODEL_CATALOG_CHANGED: "lp.models.catalog-changed",
+  EVOLVE_THRESHOLD_CROSSED: "lp.evolve.threshold-crossed",
 } as const;
 
 export type LpEventName = (typeof LP_EVENTS)[keyof typeof LP_EVENTS] | (string & {});

@@ -105,6 +105,11 @@ export const workflowMigrations: string[] = [
   `CREATE TRIGGER lane_pilot_wf_event_no_delete BEFORE DELETE ON lane_pilot_wf_event BEGIN SELECT RAISE(ABORT, 'workflow events are append-only'); END`,
 ];
 
+export const workflowCanaryMigrations: string[] = [
+  "ALTER TABLE lane_pilot_wf_run ADD COLUMN arm TEXT CHECK(arm IS NULL OR arm IN ('old','new'))",
+  "ALTER TABLE lane_pilot_wf_run ADD COLUMN trial_id TEXT",
+];
+
 /** `not_verified` is added by a later migration: the CREATE above is already applied and must not change. */
 export const RUN_STATUSES = ["running", "waiting", "succeeded", "failed", "blocked", "interrupted", "canceled", "not_verified"] as const;
 export type RunStatus = (typeof RUN_STATUSES)[number];
@@ -130,6 +135,9 @@ export type RunRow = {
   steps_used: number; tokens_used: number; cost_micro_usd: number; wait_ms: number; owner_id: string | null; lease_until: number; created_at: number; updated_at: number;
   /** K7: the goals of the run as JSON (see goals.ts); null for a run started without. */
   goals_json?: string | null;
+  /** Task 32: canary arm ('old'|'new') and trial id on top-level runs; null for baseline and child runs. */
+  arm?: "old" | "new" | null;
+  trial_id?: string | null;
 };
 
 export type StepRow = {
@@ -199,6 +207,14 @@ type WfReadDb = Pick<Database.Database, "prepare">;
 /** A run row by id. */
 export function wfRunRow(db: WfReadDb, id: string): RunRow | undefined {
   return db.prepare("SELECT * FROM lane_pilot_wf_run WHERE id=?").get(id) as RunRow | undefined;
+}
+
+/** The earliest top-level run of the same workflow & project started after `afterCreatedAt`, if any. */
+export function wfNextRunCreatedAt(db: WfReadDb, workflowId: string, projectId: string | null, afterCreatedAt: number): number | undefined {
+  const row = (projectId
+    ? db.prepare("SELECT created_at FROM lane_pilot_wf_run WHERE workflow_id=? AND project_id=? AND parent_run_id IS NULL AND created_at>? ORDER BY created_at ASC LIMIT 1").get(workflowId, projectId, afterCreatedAt)
+    : db.prepare("SELECT created_at FROM lane_pilot_wf_run WHERE workflow_id=? AND project_id IS NULL AND parent_run_id IS NULL AND created_at>? ORDER BY created_at ASC LIMIT 1").get(workflowId, afterCreatedAt)) as { created_at: number } | undefined;
+  return row?.created_at;
 }
 
 export function receiptThreadId(receiptJson: string | null | undefined): string | null {
@@ -307,6 +323,11 @@ export function wfFailedStepOfRun(db: WfReadDb, runId: string): { node_id: strin
 /** The run's workflow id (an errand check compares it to the errand graph's id). */
 export function wfWorkflowIdOfRun(db: WfReadDb, runId: string): string | null {
   return (db.prepare("SELECT workflow_id FROM lane_pilot_wf_run WHERE id=?").get(runId) as { workflow_id: string } | undefined)?.workflow_id ?? null;
+}
+
+/** Every step row of a run in execution order (the episode writer builds its trace from it). */
+export function wfStepsOfRun(db: WfReadDb, runId: string): Array<Record<string, unknown>> {
+  return db.prepare("SELECT * FROM lane_pilot_wf_step WHERE run_id = ? ORDER BY COALESCE(started_at, updated_at) ASC, rowid ASC").all(runId) as Array<Record<string, unknown>>;
 }
 
 /** The run's idempotency key and parent (a walk climbs parents to find a phase or schedule key). */

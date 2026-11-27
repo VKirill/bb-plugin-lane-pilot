@@ -120,6 +120,11 @@ export class WorkflowEngine {
     resolve?: ResolveWorkflow;
     /** The children the parent chain was started with; a child run is given its parent's. */
     pins?: Pins;
+    /** Pre-assigned run id (used by canary split so arm selection hashes the persisted run id). */
+    runId?: string;
+    /** Canary arm and trial id recorded on top-level runs only (child runs never inherit). */
+    arm?: "old" | "new";
+    trialId?: string;
   }): { runId: string; created: boolean; done: Promise<RunSummary> } { return start(this, input); }
 
   // ---------------------------------------------------------------- driving

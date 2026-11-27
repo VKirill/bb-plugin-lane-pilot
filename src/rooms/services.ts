@@ -22,6 +22,7 @@ import type { WriterStartApi } from "./writer/server";
 import type { WriterDispatchApi } from "./writer/server";
 import type { ArchitectApi, AttemptReopenApi, BuildCliInvocation, RecheckPlanFact, StageHelperSettings, TaskUsage, WorkflowEngineApi, WorkflowLibraryApi, WriterReassignApi } from "./platform/server";
 import type { WorkflowTriggersApi } from "./workflow/server";
+import type { ResolveCanary } from "./workflow/server";
 import type { OnAttemptFinished } from "./workflow/server";
 import type { MemoryProbeApi } from "./memory-probe/server";
 import type { ErrandsApi } from "./errands/server";
@@ -151,4 +152,14 @@ export interface Services {
   scheduleAgents: ScheduleAgentApi;
   /** The memory evaluation runner (src/rooms/memory-eval). */
   memoryEval: MemoryEvalRunner;
+  /** Structural dedup threshold (0.5-1.0) from lead settings, passed into the workflow room. */
+  dedupeThreshold?: number | (() => number);
+  /** Resolves an open canary trial and candidate draft definition for a workflow (src/rooms/evolve). */
+  resolveCanary?: ResolveCanary;
+  /** Publishes an approved or canary-winning evolution workflow draft through the publish authority. */
+  evolvePublishDraft?: (input: { draftId: string; ownerGrant?: boolean; threadId?: string }) => Promise<{ ok: boolean; projectId?: string; message: string; version?: number }>;
+  /** Rolls back a promoted evolution workflow draft to its prior snapshot or factory built-in. */
+  evolveRollbackDraft?: (input: { draftId: string; threadId?: string }) => Promise<{ ok: boolean; projectId?: string; message: string }>;
+  /** Ports wired in server.ts for the event-driven `lp.evolve` handlers (avoiding room import cycles). */
+  evolveWorkflowDeps?: import("./evolve/server").EvolveWorkflowDeps;
 }
