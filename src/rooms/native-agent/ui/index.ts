@@ -3,7 +3,7 @@
 export { ComposerAgentBadge } from "./composer-agent-badge";
 export { ComposerBoundary } from "./composer-boundary";
 export { EnableLanePilotAction } from "./composer-enable";
-export { HelperThreadPanel, useHelperThreadIndex } from "./helper-threads"
+export { HelperThreadPanel, HelperThreadsList, useHelperThreadIndex } from "./helper-threads"
 export { ROLE_GROUPS, originOfKeys, roleKey, roleName, rolePurpose } from "./team-model";
 export type { RoleOrigin, RoleSpec } from "./team-model";
 export { RESOURCE_KEYS, mergeInventoryItems, resourceModeOf } from "../models/agent-inventory";

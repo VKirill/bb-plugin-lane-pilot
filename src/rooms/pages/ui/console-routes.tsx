@@ -16,17 +16,19 @@ import { MemoryScreen } from "../../memory/ui";
 import { DecisionsScreen } from "../../owner-waiting/ui";
 import { ReviewDesk } from "../../reports/ui";
 import { ScheduleBoard, ScheduleForm } from "../../schedule/ui";
-import { AcceptanceCard as RawAcceptanceCard, HistoryScreen, TaskPage, WorkScreen } from "../../runs/ui";
+import { AcceptanceCard as RawAcceptanceCard, AcceptanceStats, HistoryScreen, TaskPage, WorkScreen } from "../../runs/ui";
+import { CriticValue } from "../../critique/ui";
 import { AgentsLoadout } from "../../settings/ui";
-import { HireWizard, StaffList } from "../../specialist/ui";
+import { ActionsLog, HireWizard, StaffList, StaffPage } from "../../specialist/ui";
 import { ReturnStage } from "../../stage-return/ui";
-import { TokenUsage } from "../../usage/ui";
+import { CostsScreen } from "../../usage/ui";
+import { WriterReuse } from "../../writer/ui";
 import { InputsForm, WorkflowsScreen } from "../../workflow/ui";
 import type { ConsoleRoute } from "../models/nav-model";
 import { useAgentsLoadoutBridge } from "./agents-page-bridge";
 import { ProjectHeader } from "./project-header";
-import { ServiceSegment } from "./service-segment";
 import { KnowledgeTab } from "./tab-knowledge";
+import { HealthScreen } from "./screens/health-screen";
 import { OverviewScreen } from "./screens/overview-screen";
 import { SystemHome } from "./screens/system-home";
 import { WorkTab } from "./tab-work";
@@ -124,23 +126,14 @@ function StaffSection({ route, go, projectId, sectionId, locale, page }: Console
   }
   if (route.staffRef) {
     return (
-      <Surface testId="staff-page-placeholder">
-        <SurfaceBody className="flex flex-wrap items-center justify-between gap-3">
-          <p className="text-sm text-muted-foreground">
-            {t("consoleStaffDetailPlaceholder")
-              .replace("{project}", route.staffRef.projectId)
-              .replace("{domain}", route.staffRef.domain)}
-          </p>
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            onClick={() => go({ section: "staff", ...(scopedProjectId ? { projectId: scopedProjectId } : {}), ...(sectionId ? { sectionId } : {}) })}
-          >
-            {t("consoleStaffBackToList")}
-          </Button>
-        </SurfaceBody>
-      </Surface>
+      <StaffPage
+        staffRef={route.staffRef}
+        view={route.view}
+        sectionId={sectionId}
+        projects={page.projects}
+        locale={locale}
+        go={(next) => go(next)}
+      />
     );
   }
   return (
@@ -267,13 +260,28 @@ function SystemSection({ route, go, projectId, locale, page }: ConsoleSectionPro
         <ScheduleBoard projectId={scopedProjectId} projects={page.projects} locale={locale} />
       );
     case "costs":
-      return <TokenUsage projects={page.projects} />;
-    case "health":
       return (
-        <div className="space-y-5" data-testid="service-panel">
-          <ServiceSegment page={page} />
-        </div>
+        <CostsScreen
+          projectId={scopedProjectId}
+          projects={page.projects}
+          view={route.view}
+          compact={page.tabSelect}
+          locale={locale}
+          onViewChange={(next) =>
+            go({
+              ...route,
+              section: "system",
+              page: "costs",
+              view: next === "spend" ? undefined : next,
+            })
+          }
+          WriterReuse={WriterReuse}
+          CriticValue={CriticValue}
+          AcceptanceStats={AcceptanceStats}
+        />
       );
+    case "health":
+      return <HealthScreen page={page} locale={locale} />;
     case "agents":
       return (
         <SystemAgentsPanel
@@ -343,6 +351,7 @@ function DecisionsSection({ route, go, projectId, locale, page }: ConsoleSection
       locale={locale}
       compact={page.tabSelect}
       ReviewDesk={ReviewDesk}
+      ActionsLog={ActionsLog}
       onOpenTask={(runId, taskId) => go({ ...route, section: "work", taskRef: { runId, taskId } })}
       onOpenWork={() => go({ ...route, section: "work", view: "tasks" })}
       onOpenSettings={() => go({ section: "system", page: "settings", projectId: route.projectId, sectionId: route.sectionId })}

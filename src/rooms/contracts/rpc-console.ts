@@ -380,6 +380,40 @@ export const rpcConsole = {
       }).strict()),
     }).strict(),
   },
+  outages_list: {
+    input: z.object({
+      days: z.number().int().min(1).max(365).default(7),
+    }).strict(),
+    output: z.object({
+      outages: z.array(z.object({
+        id: z.number().int(),
+        fromAt: z.number(),
+        toAt: z.number(),
+        minutes: z.number(),
+        cause: z.string().nullable(),
+        noticedAt: z.number(),
+      }).strict()),
+    }).strict(),
+  },
+  drills_list: {
+    input: z.object({
+      limit: z.number().int().min(1).max(50).default(10),
+    }).strict(),
+    output: z.object({
+      drills: z.array(z.object({
+        file: z.string(),
+        date: z.string().nullable(),
+        stamp: z.string().nullable(),
+        finishedAt: z.number().nullable(),
+        durationSec: z.number().nullable(),
+        mode: z.string().nullable(),
+        result: z.string(),
+        passedCount: z.number().int().nonnegative(),
+        totalCount: z.number().int().nonnegative(),
+        problems: z.array(z.string()),
+      }).strict()),
+    }).strict(),
+  },
 };
 
 export type ConsoleOverviewOutput = z.infer<typeof consoleOverviewOutput>;
@@ -402,3 +436,7 @@ export type LoadoutRole = z.infer<typeof loadoutRoleSchema>;
 export type AgentLoadoutOutput = z.infer<typeof rpcConsole.agent_loadout.output>;
 export type MemoryCardsListOutput = z.infer<typeof rpcConsole.memory_cards_list.output>;
 export type RepoTrustOutput = z.infer<typeof rpcConsole.repo_trust.output>;
+export type OutageRow = z.infer<typeof rpcConsole.outages_list.output>["outages"][number];
+export type OutagesListOutput = z.infer<typeof rpcConsole.outages_list.output>;
+export type DrillSummaryRow = z.infer<typeof rpcConsole.drills_list.output>["drills"][number];
+export type DrillsListOutput = z.infer<typeof rpcConsole.drills_list.output>;

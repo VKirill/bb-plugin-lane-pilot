@@ -46,3 +46,4 @@ export {
   execPluginPythonSync,
   execPluginPythonAsync,
 } from "./plugin-python";
+export { UNDO_METHODS, isAllowedUndoMethod, type UndoMethod } from "./models/actions-log";

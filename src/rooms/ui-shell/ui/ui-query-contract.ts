@@ -1,10 +1,10 @@
 import { defineRpcContract } from "@get-bb/plugin-sdk";
 import {
-  attemptLogTailInput, attemptLogTailOutput, brakesGetInput, brakesGetOutput, consoleOverviewInput, consoleOverviewOutput,
-  deskGetInput, deskGetOutput, emptyRpcInput, helperThreadLabelsInput, helperThreadLabelsOutput,
-  listHelperThreadsInput, listHelperThreadsOutput, moneyStatusOutput, ownerWaitingOutput, taskBoardInput, taskBoardOutput,
-  threadLiveInput, threadLiveOutput, workGraphStripsInput, workGraphStripsOutput, workGraphTaskInput, workGraphTaskOutput,
-  uiVersionOutput,
+  actionsLogInput, actionsLogOutput, attemptLogTailInput, attemptLogTailOutput, brakesGetInput, brakesGetOutput,
+  consoleOverviewInput, consoleOverviewOutput, deskGetInput, deskGetOutput, emptyRpcInput, helperThreadLabelsInput,
+  helperThreadLabelsOutput, listHelperThreadsInput, listHelperThreadsOutput, moneyStatusOutput, ownerWaitingOutput,
+  taskBoardInput, taskBoardOutput, threadLiveInput, threadLiveOutput, workGraphStripsInput, workGraphStripsOutput,
+  workGraphTaskInput, workGraphTaskOutput, uiVersionOutput,
 } from "../../contracts/ui";
 
 /**
@@ -55,4 +55,9 @@ export const uiQueryContract = defineRpcContract({
   },
   brakes_get: { input: brakesGetInput, output: brakesGetOutput, tags: () => ["brakes"] },
   desk_get: { input: deskGetInput, output: deskGetOutput, tags: () => ["owner_waiting", "review-desk"] },
+  actions_log: {
+    input: actionsLogInput,
+    output: actionsLogOutput,
+    tags: (input) => [`actions_log:${input.projectId ?? "all"}`],
+  },
 });

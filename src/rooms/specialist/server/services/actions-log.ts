@@ -1,5 +1,6 @@
 import type { ActionsLogOutput, AutonomousAction } from "../../../contracts";
 import type { LanePilotDatabase } from "../../../storage";
+import { isAllowedUndoMethod } from "../../models/actions-log";
 
 export interface ActionsLogInput {
   projectId?: string;
@@ -36,13 +37,6 @@ interface SpMutationRow {
   detail_json: string;
   applied_at: number;
 }
-
-const EXISTING_REVERT_RPCS = new Set([
-  "schedule_pause",
-  "workflow_draft_rollback",
-  "workflow_draft_restore",
-  "stack_rollback",
-]);
 
 function parseJsonObject(raw: string | null | undefined): Record<string, unknown> {
   if (!raw) return {};
@@ -102,7 +96,7 @@ function resolveMutationUndo(detail: Record<string, unknown>): AutonomousAction[
         ? (detail.undo as Record<string, unknown>)
         : null;
   const method = asNonEmptyString(candidate?.method) ?? asNonEmptyString(detail.revertMethod);
-  if (!method || !EXISTING_REVERT_RPCS.has(method)) return null;
+  if (!method || !isAllowedUndoMethod(method)) return null;
 
   const rawInput =
     candidate?.input && typeof candidate.input === "object" && !Array.isArray(candidate.input)

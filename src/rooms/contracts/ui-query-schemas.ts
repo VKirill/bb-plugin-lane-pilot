@@ -128,3 +128,19 @@ export type { TaskHistoryOutput, TaskHistoryRow } from "./rpc-console";
 export const memoryCardsListInput = rpcConsole.memory_cards_list.input;
 export const memoryCardsListOutput = rpcConsole.memory_cards_list.output;
 export type { MemoryCardsListOutput } from "./rpc-console";
+
+export const actionsLogInput = rpcConsole.actions_log.input;
+export const actionsLogOutput = rpcConsole.actions_log.output;
+export type { ActionsLogOutput, AutonomousAction } from "./rpc-console";
+export const specialistDetailInput = rpcConsole.specialist_detail.input;
+export const specialistDetailOutput = rpcConsole.specialist_detail.output;
+export type { SpecialistAutonomyRow, SpecialistDetailOutput } from "./rpc-console";
+
+export const agentLoadoutInput = rpcConsole.agent_loadout.input;
+export const agentLoadoutOutput = rpcConsole.agent_loadout.output;
+export type { AgentLoadoutOutput, LoadoutRole } from "./rpc-console";
+
+export const repoTrustInput = rpcConsole.repo_trust.input;
+export const repoTrustOutput = rpcConsole.repo_trust.output;
+export type { RepoTrustOutput } from "./rpc-console";
+export type { DrillSummaryRow, DrillsListOutput, OutageRow, OutagesListOutput } from "./rpc-console";

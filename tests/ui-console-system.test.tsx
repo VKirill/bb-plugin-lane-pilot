@@ -1,13 +1,27 @@
 /** @vitest-environment jsdom */
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, configure, fireEvent, waitFor, within } from "@testing-library/react";
+import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { installTestPluginRuntime, loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
 import { setLocaleOverride } from "@lane-pilot/i18n";
 import { roleModelKey } from "@lane-pilot/models";
 import type { AgentLoadoutOutput } from "../src/rooms/contracts";
+import { listRecentDrills } from "../src/rooms/coverage/drills";
+import { room as coverageRoom } from "../src/rooms/coverage/server";
+import { CriticValue } from "../src/rooms/critique/ui";
+import { insertOutage, room as outageRoom } from "../src/rooms/outage/server";
+import { HealthScreen } from "../src/rooms/pages/ui/screens/health-screen";
 import { SystemHome } from "../src/rooms/pages/ui/screens/system-home";
+import type { LpPage } from "../src/rooms/pages/ui/use-lp-page";
+import { openDatabase } from "../src/rooms/plugin-db";
+import { AcceptanceStats } from "../src/rooms/runs/ui";
 import { AgentsLoadout } from "../src/rooms/settings/ui";
+import { CostsScreen } from "../src/rooms/usage/ui";
+import { WriterReuse } from "../src/rooms/writer/ui";
 import { screenFixture } from "./ui-harness";
 import { choosePickerValue, type PickerNode, type PickerValue } from "./ui-settings-integration/helpers";
 
@@ -442,5 +456,289 @@ describe("AgentsLoadout (P13)", () => {
     await slot.findByTestId("model-overrides");
     await slot.findByTestId("owned-settings");
     slot.lifecycle.unmount();
+  });
+});
+
+describe("CostsScreen (P14)", () => {
+  beforeEach(() => {
+    cleanup();
+    document.body.innerHTML = "";
+    setLocaleOverride("ru");
+  });
+
+  afterEach(() => {
+    cleanup();
+    setLocaleOverride(null);
+  });
+
+  it("shows money_status cap, spend, left, 14-day bars, TokenUsage, and project-scoped Quality tab", async () => {
+    const onViewChange = vi.fn();
+    const moneyTable = Array.from({ length: 14 }, (_, i) => ({
+      day: `2026-11-${String(i + 10).padStart(2, "0")}`,
+      usd: i === 13 ? 12.5 : i * 0.5,
+    }));
+
+    const sysSlot = renderSlot(
+      {
+        component: () => (
+          <CostsScreen
+            projectId={null}
+            projects={[{ id: "proj_ui", name: "UI test" }]}
+            locale="ru"
+            onViewChange={onViewChange}
+            WriterReuse={WriterReuse}
+            CriticValue={CriticValue}
+            AcceptanceStats={AcceptanceStats}
+          />
+        ),
+      },
+      {},
+      {
+        context: { projectId: null, threadId: null },
+        rpc: {
+          money_status: () => ({
+            monthUsd: 18.75,
+            estimatedUsd: 1.25,
+            cap: 50,
+            left: 31.25,
+            table: moneyTable,
+          }),
+          token_usage: () => ({
+            byModel: [],
+            series: [],
+            byProject: [],
+            months: ["2026-11"],
+            lastSyncAt: null,
+            noDataProviders: [],
+            diagnostics: { threadsSeen: 0, threadsWithUsage: 0, threadsFailed: 0, lastError: null },
+            costUsd: 0,
+          }),
+        },
+      },
+    );
+
+    await sysSlot.findByTestId("costs-money-status");
+    await waitFor(() => expect(sysSlot.getByTestId("costs-kpi-month-spend").textContent).toContain("18,75"));
+    expect(sysSlot.getByTestId("costs-kpi-cap").textContent).toContain("50,00");
+    expect(sysSlot.getByTestId("costs-kpi-left").textContent).toContain("31,25");
+    expect(sysSlot.getByTestId("costs-money-bar-2026-11-23")).toBeTruthy();
+    expect(sysSlot.getByTestId("token-usage")).toBeTruthy();
+
+    fireEvent.click(sysSlot.getByTestId("seg-costs-view-quality"));
+    expect(onViewChange).toHaveBeenCalledWith("quality");
+    sysSlot.lifecycle.unmount();
+
+    const sysQuality = renderSlot(
+      {
+        component: () => (
+          <CostsScreen
+            projectId={null}
+            projects={[{ id: "proj_ui", name: "UI test" }]}
+            view="quality"
+            locale="ru"
+            WriterReuse={WriterReuse}
+            CriticValue={CriticValue}
+            AcceptanceStats={AcceptanceStats}
+          />
+        ),
+      },
+      {},
+      { context: { projectId: null, threadId: null }, rpc: {} },
+    );
+    await sysQuality.findByTestId("costs-quality-select-project");
+    sysQuality.lifecycle.unmount();
+
+    const projQuality = renderSlot(
+      {
+        component: () => (
+          <CostsScreen
+            projectId="proj_ui"
+            projects={[{ id: "proj_ui", name: "UI test" }]}
+            view="quality"
+            locale="ru"
+            WriterReuse={WriterReuse}
+            CriticValue={CriticValue}
+            AcceptanceStats={AcceptanceStats}
+          />
+        ),
+      },
+      {},
+      {
+        context: { projectId: "proj_ui", threadId: null },
+        rpc: {
+          writer_reuse_stats: () => ({
+            days: 7,
+            stats: { tasks: 0, accepted: 0, coldThreads: 0, continued: 0, coldPerAccepted: null, areaShare: null, tasksPerArea: null, medianMinutesToAccept: null },
+          }),
+          critic_stats: () => ({ days: 7, stats: [] }),
+          acceptance_stats: () => ({
+            days: 28,
+            totals: { dispatched: 0, firstTryAccepted: 0, eventuallyAccepted: 0, attempts: 0, attemptsPerAccepted: null, heldShare: null, redispatched: 0, families: 0, causes: {} },
+            projects: [],
+          }),
+        },
+      },
+    );
+    await projQuality.findByTestId("costs-quality");
+    expect(projQuality.getByTestId("writer-reuse")).toBeTruthy();
+    expect(projQuality.getByTestId("critic-value")).toBeTruthy();
+    expect(projQuality.getByTestId("acceptance-stats")).toBeTruthy();
+    projQuality.lifecycle.unmount();
+  });
+});
+
+describe("HealthScreen (P15)", () => {
+  beforeEach(() => {
+    cleanup();
+    document.body.innerHTML = "";
+    setLocaleOverride("ru");
+  });
+
+  afterEach(() => {
+    cleanup();
+    setLocaleOverride(null);
+  });
+
+  function fakePage(): LpPage {
+    return {
+      rpc: { call: vi.fn() } as unknown as LpPage["rpc"],
+      load: vi.fn(async () => undefined),
+      projectId: "proj_ui",
+      nativeState: { status: "enabled", error: null },
+      data: {
+        ...screenFixture(),
+        unapplied: [],
+        legacyStack: false,
+      } as unknown as LpPage["data"],
+      confirmOpen: false,
+      setConfirmOpen: vi.fn(),
+      pendingOp: null,
+      setPendingOp: vi.fn(),
+      snapshotPath: "",
+      setSnapshotPath: vi.fn(),
+      detectResult: null,
+      resultPatch: null,
+      resultSource: null,
+      stackControls: false,
+      diagnosticsGrouped: [],
+      writeDraft: vi.fn(),
+      applySetting: vi.fn(async () => undefined),
+      displayedValue: vi.fn(() => undefined),
+      runStack: vi.fn(async () => undefined),
+      hostLabel: vi.fn(() => "Mac mini"),
+      nativeHostId: "host_ui",
+      installNative: vi.fn(async () => undefined),
+    } as unknown as LpPage;
+  }
+
+  it("renders canary block, outages, last drills, and ServiceSegment", async () => {
+    const page = fakePage();
+    const slot = renderSlot(
+      { component: () => <HealthScreen page={page} locale="ru" /> },
+      {},
+      {
+        context: { projectId: "proj_ui", threadId: null },
+        rpc: {
+          canary_status: () => ({
+            version: "0.1.611",
+            since: 1_800_000_000_000,
+            window: { open: true, attempts: 12, minutes: 30, maxAttempts: 20, maxMinutes: 120 },
+            faults: 3,
+            rate: 0.25,
+            tripped: true,
+            rollback: "bash scripts/lp-canary.sh --rollback 0.1.610",
+            green: false,
+            pool: { works: false, held: ["codex/gpt-6-luna"], enabled: 2, blocked: [{ key: "codex/gpt-6-luna", projectIds: ["proj_ui"], reason: "limit" }] },
+          }),
+          outages_list: () => ({
+            outages: [
+              { id: 1, fromAt: 1_800_000_000_000, toAt: 1_800_000_600_000, minutes: 10, cause: "hub restart", noticedAt: 1_800_000_600_000 },
+            ],
+          }),
+          drills_list: () => ({
+            drills: [
+              {
+                file: "2026-11-24.json",
+                date: "2026-11-24",
+                stamp: "20261124-164536",
+                finishedAt: 1_800_000_100_000,
+                durationSec: 23,
+                mode: "quick",
+                result: "pass",
+                passedCount: 5,
+                totalCount: 5,
+                problems: [],
+              },
+            ],
+          }),
+        },
+      },
+    );
+
+    await slot.findByTestId("service-panel");
+    const canaryCard = await slot.findByTestId("health-canary");
+    await waitFor(() => expect(canaryCard.textContent).toContain("Сработала"));
+    expect(canaryCard.textContent).toContain("v0.1.611");
+    expect(canaryCard.textContent).toContain("scripts/lp-canary.sh --rollback 0.1.610");
+    expect(canaryCard.textContent).toContain("codex/gpt-6-luna");
+
+    const outagesCard = await slot.findByTestId("health-outages");
+    await waitFor(() => expect(outagesCard.textContent).toContain("hub restart"));
+    expect(outagesCard.textContent).toContain("10 мин");
+
+    const drillsCard = await slot.findByTestId("health-drills");
+    await waitFor(() => expect(drillsCard.textContent).toContain("20261124-164536"));
+    expect(drillsCard.textContent).toContain("5/5");
+    expect(slot.getByTestId("native-install")).toBeTruthy();
+    expect(slot.getByTestId("runs-resume")).toBeTruthy();
+    slot.lifecycle.unmount();
+  });
+
+  it("reads outages from the outage service and drill receipts from .agents/runs/drills", async () => {
+    const { bb } = createFakePluginHost({ pluginId: "lane-pilot" });
+    const db = openDatabase(bb);
+    const now = Date.now();
+    insertOutage(db, { fromAt: now - 600_000, toAt: now, minutes: 10 }, "deploy gap", now);
+
+    const outageHandlers = outageRoom.rpc!({ bb, db, log: bb.log } as never, {} as never) as {
+      outages_list: (input: { days: number }) => Promise<{ outages: Array<{ minutes: number; cause: string | null }> }>;
+    };
+    const outageResult = await outageHandlers.outages_list({ days: 7 });
+    expect(outageResult.outages).toHaveLength(1);
+    expect(outageResult.outages[0]).toMatchObject({ minutes: 10, cause: "deploy gap" });
+
+    const tmpRoot = mkdtempSync(join(tmpdir(), "lp-drills-reader-"));
+    try {
+      const drillsPath = join(tmpRoot, ".agents", "runs", "drills");
+      mkdirSync(drillsPath, { recursive: true });
+      writeFileSync(
+        join(drillsPath, "2026-11-27.json"),
+        JSON.stringify({
+          date: "2026-11-27",
+          stamp: "20261127-120000",
+          durationSec: 19,
+          mode: "quick",
+          result: "pass",
+          scenarios: [{ name: "guard_hash", result: "pass" }, { name: "checkers", result: "pass" }],
+          problems: [],
+        }),
+      );
+      const drills = listRecentDrills(tmpRoot, 5);
+      expect(drills).toHaveLength(1);
+      expect(drills[0]).toMatchObject({
+        file: "2026-11-27.json",
+        mode: "quick",
+        result: "pass",
+        passedCount: 2,
+        totalCount: 2,
+      });
+      const covHandlers = coverageRoom.rpc!({} as never, {} as never) as {
+        drills_list: (input: { limit: number }) => Promise<{ drills: unknown[] }>;
+      };
+      const covRes = await covHandlers.drills_list({ limit: 3 });
+      expect(Array.isArray(covRes.drills)).toBe(true);
+    } finally {
+      rmSync(tmpRoot, { recursive: true, force: true });
+    }
   });
 });

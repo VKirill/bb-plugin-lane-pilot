@@ -36,6 +36,9 @@ export function openTab(slot: Pick<TabSlot, "getByTestId"> & Partial<Pick<TabSlo
     if (seg) fireEvent.click(seg);
   } else if (route.section === "system" && route.page === "settings" && route.view === "docs") {
     fireEvent.click(slot.getByTestId("seg-knowledge-docs"));
+  } else if (route.section === "system" && route.page === "costs" && route.view === "quality") {
+    const seg = slot.queryByTestId?.("seg-costs-view-quality");
+    if (seg) fireEvent.click(seg);
   }
 }
 

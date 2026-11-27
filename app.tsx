@@ -7,7 +7,7 @@ import { LanePilotPage } from "./src/rooms/pages";
 import { useOwnerWaitingBadge } from "./src/rooms/ui-shell/ui";
 import { ComposerAgentBadge, ComposerBoundary } from "./src/rooms/native-agent/ui";
 import { EnableLanePilotAction } from "./src/rooms/native-agent/ui";
-import { HelperThreadPanel, useHelperThreadIndex } from "./src/rooms/native-agent/ui";
+import { HelperThreadPanel, HelperThreadsList, useHelperThreadIndex } from "./src/rooms/native-agent/ui";
 import { HELPER_PANEL_ACTION } from "./src/rooms/contracts/agent-picker";
 import { LANE_DRAFT_DIRECTIVE, LaneDraftCardDirective, RUN_CARD_DIRECTIVE, RunCardDirective, THREAD_LIVE_TAB_ID, ThreadLive, ThreadLivePanel } from "./src/rooms/runs/ui";
 import { bindThreadRowStatus } from "./src/rooms/runs/ui";
@@ -71,7 +71,7 @@ export default definePluginApp((app) => {
       layout: "flush",
       context: { kind: "thread" },
       availability: "fixed",
-      component: ({ threadId }) => <ThreadLivePanel threadId={threadId} locale={detectLocale()} />,
+      component: ({ threadId }) => <ThreadLivePanel threadId={threadId} locale={detectLocale()} HelpersList={HelperThreadsList} />,
     });
   }
   // What Lane Pilot does for this chat (tasks now, step by step), in the thread's info panel below the uncommitted files.

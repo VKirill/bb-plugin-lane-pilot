@@ -154,6 +154,7 @@ async function mountDecisions(rpcOverrides: Record<string, (input: unknown) => u
       list_sections: () => ({ sections: [] }),
       owner_waiting: () => waitingFixture(),
       desk_get: () => ({ week: "2026-W48", items: [] }),
+      actions_log: () => ({ rows: [] }),
       ...rpcOverrides,
     } as never,
   });
@@ -192,7 +193,7 @@ describe("Decisions screen — waiting tab (P2)", () => {
     expect(hasPanelSubPath(slot.inspection.navigateCalls, "decisions/desk")).toBe(true);
 
     fireEvent.click(slot.getByTestId("seg-decisions-view-autonomous"));
-    await slot.findByTestId("decisions-autonomous-placeholder");
+    await slot.findByTestId("actions-log");
     expect(hasPanelSubPath(slot.inspection.navigateCalls, "decisions/autonomous")).toBe(true);
 
     fireEvent.click(slot.getByTestId("seg-decisions-view-waiting"));

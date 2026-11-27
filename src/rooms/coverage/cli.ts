@@ -1,5 +1,6 @@
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { drillsDir, listDrillReceiptFiles } from "./drills";
 import { checkReceipt, coverageRows, codeNodes, holes, summarize, untermedGaps, type CoverageRow, type DrillReceipt } from "./models/model";
 import { NODE_KINDS } from "./models/registry";
 
@@ -17,10 +18,9 @@ function flagValue(argv: readonly string[], name: string): string | undefined {
 function loadReceipt(spec: string, cwd: string): { path: string; receipt: DrillReceipt } {
   let path = spec;
   if (spec === "latest") {
-    const dir = join(cwd, ".agents", "runs", "drills");
-    const files = existsSync(dir) ? readdirSync(dir).filter((name) => name.endsWith(".json")).sort() : [];
-    if (!files.length) throw new Error(`no drill receipt in ${dir}`);
-    path = join(dir, files[files.length - 1]!);
+    const files = listDrillReceiptFiles(cwd);
+    if (!files.length) throw new Error(`no drill receipt in ${drillsDir(cwd)}`);
+    path = join(drillsDir(cwd), files[files.length - 1]!);
   }
   return { path, receipt: JSON.parse(readFileSync(path, "utf8")) as DrillReceipt };
 }

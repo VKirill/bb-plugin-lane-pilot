@@ -14,6 +14,13 @@ export interface DecisionsDeskProps {
   locale?: Locale;
 }
 
+export interface DecisionsActionsLogProps {
+  projectId: string | null;
+  locale?: Locale;
+  onOpenTask?: (runId: string, taskId: string) => void;
+  onOpenWork?: () => void;
+}
+
 export interface DecisionsScreenProps {
   view?: string;
   week?: string;
@@ -25,6 +32,7 @@ export interface DecisionsScreenProps {
   onOpenWork?: () => void;
   onOpenSettings?: () => void;
   ReviewDesk?: ComponentType<DecisionsDeskProps>;
+  ActionsLog?: ComponentType<DecisionsActionsLogProps>;
   locale?: Locale;
   compact?: boolean;
 }
@@ -41,6 +49,7 @@ export function DecisionsScreen({
   onOpenWork,
   onOpenSettings,
   ReviewDesk,
+  ActionsLog,
   locale,
   compact,
 }: DecisionsScreenProps) {
@@ -77,9 +86,18 @@ export function DecisionsScreen({
           </p>
         )
       ) : activeView === "autonomous" ? (
-        <p className="text-sm text-muted-foreground" data-testid="decisions-autonomous-placeholder">
-          {t("consoleDecisionsAutonomousPlaceholder")}
-        </p>
+        ActionsLog ? (
+          <ActionsLog
+            projectId={projectId}
+            locale={locale}
+            onOpenTask={onOpenTask}
+            onOpenWork={onOpenWork}
+          />
+        ) : (
+          <p className="text-sm text-muted-foreground" data-testid="decisions-autonomous-placeholder">
+            {t("consoleDecisionsAutonomousPlaceholder")}
+          </p>
+        )
       ) : (
         <OwnerWaitingBoard
           projects={projects}

@@ -1,10 +1,10 @@
 import { HELPER_PANEL_ACTION } from "../../contracts/agent-picker";
-import { useMemo, useRef, type CSSProperties } from "react";
+import { useMemo, useRef, useState, type CSSProperties } from "react";
 import { ThreadChat, useBbContext, useBbNavigate, useRpc } from "@get-bb/plugin-sdk/app";
 import { useLpRealtime, useLpRpcQuery, useOpenThreadPanel } from "../../ui-shell/ui";
 import type { rpcContract } from "../../contracts";
 import { canonicalRoleId, roleName, t, type I18nKey } from "@lane-pilot/i18n";
-import { Icon, type IconName } from "@lane-pilot/ui-kit";
+import { ConfirmDialog, Icon, type IconName } from "@lane-pilot/ui-kit";
 import { TaskGraphView, type TaskGraphData } from "./task-graph-view";
 
 export type HelperThread = {
@@ -149,24 +149,31 @@ export function HelperChips({ threads, queued, frame }: { threads: HelperThread[
   );
 }
 
-/** The side-panel tab: the helper's chat, or the list of working helpers when opened from the launcher. */
-export function HelperThreadPanel({ threadId, params }: { threadId: string; params: unknown }) {
-  const target = params && typeof params === "object" && typeof (params as { threadId?: unknown }).threadId === "string"
-    ? (params as { threadId: string }).threadId : null;
-  const { threads: helpers, queued, graph } = useHelperThreads(target ? null : threadId);
+/** Reusable helpers list with TaskGraphView and ConfirmDialog cancellation (used in HelperThreadPanel and ChatPanel). */
+export function HelperThreadsList({ threadId, className = "p-3" }: { threadId: string; className?: string }) {
+  const { threads: helpers, queued, graph } = useHelperThreads(threadId);
   const open = useOpenHelper();
   const rpc = useRpc<typeof rpcContract>();
-  if (target) return <ThreadChat threadId={target} variant="compact" />;
+  const [pendingCancelId, setPendingCancelId] = useState<string | null>(null);
   // With the run's task graph the queue reads as steps (what runs side by side, what waits for what); the flat list is the fallback.
   const showGraph = Boolean(graph?.nodes.length);
+
+  const handleConfirmCancel = async () => {
+    if (!pendingCancelId) return;
+    const result = await rpc.call("cancel_attempt", { attemptId: pendingCancelId, code: "owner_cancel" });
+    if (!result.ok) {
+      throw new Error(result.reason ?? t("consoleTaskActionFailed"));
+    }
+  };
+
   return (
-    <div className="space-y-1 p-3" data-bb-plugin="lane-pilot" data-testid="helper-panel-list">
+    <div className={`space-y-1 ${className}`.trim()} data-bb-plugin="lane-pilot" data-testid="helper-panel-list">
       {showGraph ? (
         <TaskGraphView
           graph={graph!}
           onOpen={(node) => node.threadId && open({ id: node.threadId, title: node.id, status: "active", role: "writer", detail: null })}
           onRetry={(attemptId) => void rpc.call("retry_attempt", { attemptId }).catch(() => undefined)}
-          onCancel={(attemptId) => void rpc.call("cancel_attempt", { attemptId, code: "owner_cancel" }).catch(() => undefined)}
+          onCancel={(attemptId) => setPendingCancelId(attemptId)}
         />
       ) : null}
       {!showGraph && queued.length > 0 ? (
@@ -181,8 +188,28 @@ export function HelperThreadPanel({ threadId, params }: { threadId: string; para
           <span className="min-w-0 truncate">{helperHint(row)}</span>
         </button>
       ))}
+      <ConfirmDialog
+        open={pendingCancelId !== null}
+        title={t("consoleTaskConfirmCancelTitle")}
+        body={t("consoleTaskConfirmCancelBody")}
+        confirmLabel={t("consoleTaskConfirmCancelAction")}
+        cancelLabel={t("consoleTaskKeepRunning")}
+        tone="danger"
+        onOpenChange={(isOpen) => {
+          if (!isOpen) setPendingCancelId(null);
+        }}
+        onConfirm={handleConfirmCancel}
+      />
     </div>
   );
+}
+
+/** The side-panel tab: the helper's chat, or the list of working helpers when opened from the launcher. */
+export function HelperThreadPanel({ threadId, params }: { threadId: string; params: unknown }) {
+  const target = params && typeof params === "object" && typeof (params as { threadId?: unknown }).threadId === "string"
+    ? (params as { threadId: string }).threadId : null;
+  if (target) return <ThreadChat threadId={target} variant="compact" />;
+  return <HelperThreadsList threadId={threadId} />;
 }
 
 /** threadId → the helper's short role label, for the thread-list row badge (`experimental_threadRowMetadata`'s useData). */
