@@ -1,9 +1,13 @@
 import { z } from "zod";
+import { sha256Hex } from "@lane-pilot/kit";
 import type { ChainRuntime, ServerCore } from "../../../contracts/server";
-import { DETACHED_WAIT_SEC, detachHelperStart, registerObservedTool, spawnTextId } from "../../../platform/server";
+import { DETACHED_WAIT_SEC, bindTrajectoryDeltaReader, bindTrajectoryDeltaRecorder, detachHelperStart, registerObservedTool, spawnTextId } from "../../../platform/server";
 import { runBrowserStep } from "../../../qa/server";
 import { ERRAND_KINDS, classifyErrand } from "../../../schedule";
+import { hasExplicitSkillIntent } from "../../models/skill-intent";
 import { createErrandCore, type ErrandCore } from "../services/errand-core";
+import { writePendingEpisode } from "../repositories/episode-repository";
+import { listTrajectoryDeltasForRun, recordTrajectoryDelta } from "../repositories/trajectory-delta-repository";
 import {
   ERRAND_SPAWN_WAIT_MS,
   ERRAND_TERMINAL,
@@ -34,6 +38,41 @@ function registerBrowserTool(ctx: ServerCore, core: ErrandCore): void {
       return runBrowserStep(ctx, { projectId: context.projectId, runId, pmThreadId: context.threadId, url: params.url, goal: params.goal, changes: params.changes, authorized: params.authorized, timeoutSec: params.timeoutSec });
     },
   });
+}
+
+function noteErrandSkillRequest(
+  ctx: ServerCore,
+  input: {
+    projectId: string;
+    threadId: string;
+    workflowId: string;
+    runId: string;
+    stageArchetype: string;
+    task: string;
+    skills?: readonly string[] | undefined;
+  },
+): void {
+  if (!input.skills?.length && !hasExplicitSkillIntent(input.task)) return;
+  try {
+    const res = recordTrajectoryDelta(ctx.db, {
+      id: `tdelta_skill_${sha256Hex(`${input.runId}|${input.workflowId}|${input.task}`).slice(0, 24)}`,
+      projectId: input.projectId,
+      threadId: input.threadId,
+      workflowId: input.workflowId,
+      stageArchetype: input.stageArchetype,
+      interventionKind: "skill_request",
+      rawSummary: input.task,
+      ...(input.skills?.length ? { resolvedSkills: input.skills } : {}),
+    });
+    if (res.status === "rejected") {
+      ctx.bb.log?.warn?.(`trajectory delta write failed: ${res.reason ?? "rejected"}`);
+      return;
+    }
+    ctx.bb.log?.debug?.(`trajectory delta kind=skill_request run=${input.runId} graph=${input.workflowId}`);
+  } catch (cause) {
+    const message = cause instanceof Error ? cause.message : String(cause);
+    ctx.bb.log?.warn?.(`trajectory delta write failed: ${message}`);
+  }
 }
 
 function registerErrandTools(ctx: ServerCore, services: ErrandsServices, core: ErrandCore, graph: ErrandGraphService): void {
@@ -74,6 +113,23 @@ function registerErrandTools(ctx: ServerCore, services: ErrandsServices, core: E
           workflow, inputs, key: `${workflow.id}:${runId}:${spawnTextId(params.task)}`, link: { projectId: context.projectId, runId },
           runtime: { ctx, services, pmThreadId: context.threadId, projectId: context.projectId, runId } satisfies ChainRuntime,
         });
+        writePendingEpisode(ctx.db, {
+          runId: run.runId,
+          threadId: null,
+          projectId: context.projectId,
+          workflowId: workflow.id,
+          processKey: null,
+          now: Date.now(),
+        }, ctx.bb.log);
+        noteErrandSkillRequest(ctx, {
+          projectId: context.projectId,
+          threadId: context.threadId,
+          workflowId: workflow.id,
+          runId: run.runId,
+          stageArchetype: "errand",
+          task: params.task,
+          skills: params.skills,
+        });
         run.done.catch((cause: unknown) => ctx.log(`Lane Pilot ${workflow.id} run ${run.runId} stopped with an error: ${cause instanceof Error ? cause.message : String(cause)}`));
         return JSON.stringify({ workflowRunId: run.runId, state: "running", workflow: workflow.id, confidence,
           note: `this errand matched the graph ${workflow.id} (confidence ${confidence}): it runs as that graph; wait on it with lane_pilot_workflow_status; what the brief asks beyond the graph's result you do after it, nothing twice` }, null, 2);
@@ -87,6 +143,15 @@ function registerErrandTools(ctx: ServerCore, services: ErrandsServices, core: E
         providerId: params.providerId, model: params.model, reasoning: params.reasoning, serviceTier: params.serviceTier,
         ...(picked.kind !== "errand" ? { kind: picked.kind, kindBy: picked.by } : {}),
         routeTop: routed.top, routeWhy: routed.why,
+      });
+      noteErrandSkillRequest(ctx, {
+        projectId: context.projectId,
+        threadId: context.threadId,
+        workflowId: "errand",
+        runId: started.runId,
+        stageArchetype: picked.kind,
+        task: params.task,
+        skills: params.skills,
       });
       const deadline = Date.now() + ERRAND_SPAWN_WAIT_MS;
       let reply: Record<string, unknown> = { workflowRunId: started.runId, state: "running" };
@@ -130,6 +195,8 @@ function registerErrandTools(ctx: ServerCore, services: ErrandsServices, core: E
  * Without the services (a test of the core alone) there is no graph.
  */
 export function mountErrands(ctx: ServerCore, services?: ErrandsServices) {
+  bindTrajectoryDeltaRecorder(ctx.db, recordTrajectoryDelta);
+  bindTrajectoryDeltaReader(ctx.db, listTrajectoryDeltasForRun);
   const core = createErrandCore(ctx);
   registerBrowserTool(ctx, core);
   if (!services) {

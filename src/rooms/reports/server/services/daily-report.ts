@@ -1,6 +1,7 @@
 import { workflowWindowStats } from "@lane-pilot/workflow-engine";
 import { DRILL_SANDBOX_PROJECT_IDS, FAILED_ATTEMPT_STATES, isDrillTask } from "../../../contracts";
 import { listDeferrals } from "../../../deferral/server";
+import { listPathCandidates, type Candidate, type ListPathCandidatesInput } from "../../../lead/server";
 import { listOutages } from "../../../outage";
 import { ownerWaitingCounts, tableExists, type OwnerItemSweep } from "../../../owner-waiting";
 import { loadPushConfig, readOwnerConfigKey, writeOwnerConfigKey } from "../../../owner-waiting/server";
@@ -11,16 +12,24 @@ import {
   composeDailyReport,
   dailyDue,
   localDayHour,
+  type DailySummary,
 } from "../../models/daily-report";
 import { TelegramNotReadyError, type TelegramSend } from "../../models/telegram";
 
 const WINDOW_MS = 24 * 3_600_000;
+
+export type PathCandidatesReader = (
+  db: LanePilotDatabase,
+  input?: ListPathCandidatesInput,
+) => { free: Candidate[]; branch: Candidate[] };
 
 export type DailyDeps = {
   db: LanePilotDatabase;
   now?: () => number;
   windowMs?: number;
   sweeps?: readonly OwnerItemSweep[];
+  pathCandidates?: PathCandidatesReader;
+  log?: (message: string) => void;
 };
 
 export type DailyReportRunDeps = {
@@ -29,6 +38,7 @@ export type DailyReportRunDeps = {
   force?: boolean;
   send: TelegramSend;
   log: (message: string) => void;
+  pathCandidates?: PathCandidatesReader;
 };
 
 export type DailyReportOutcome = {
@@ -37,6 +47,40 @@ export type DailyReportOutcome = {
   day: string;
   text?: string;
 };
+
+function candidateScore(candidate: Candidate): number {
+  return candidate.count * Math.max(candidate.costMicroUsd, 1);
+}
+
+function summarizePathCandidates(
+  deps: Pick<DailyDeps, "db" | "pathCandidates" | "log">,
+  now: number,
+): DailySummary["paths"] {
+  const read = deps.pathCandidates ?? listPathCandidates;
+  try {
+    const { free, branch } = read(deps.db, {
+      now,
+      log: deps.log ? { warn: deps.log } : undefined,
+    });
+    const all = [...free, ...branch];
+    if (all.length === 0) return { candidates: 0, top: null };
+    all.sort(
+      (a, b) =>
+        candidateScore(b) - candidateScore(a)
+        || b.lastSeen - a.lastSeen
+        || a.key.localeCompare(b.key),
+    );
+    const best = all[0]!;
+    return {
+      candidates: all.length,
+      top: { label: best.label, count: best.count },
+    };
+  } catch (cause) {
+    const message = cause instanceof Error ? cause.message : String(cause);
+    deps.log?.(`daily report paths failed: ${message}`);
+    return { candidates: 0, top: null };
+  }
+}
 
 /** Collects 24h status facts directly from SQLite and formats the compact daily digest. */
 export async function buildDailyReport(deps: DailyDeps): Promise<string> {
@@ -73,6 +117,7 @@ export async function buildDailyReport(deps: DailyDeps): Promise<string> {
   }
 
   const outages = tableExists(deps.db, "lane_pilot_outage") ? listOutages(deps.db, since).length : 0;
+  const paths = summarizePathCandidates(deps, now);
 
   return composeDailyReport({
     day,
@@ -91,6 +136,7 @@ export async function buildDailyReport(deps: DailyDeps): Promise<string> {
     deferralsOpen,
     deferralsOverdue,
     outages,
+    paths,
   });
 }
 
@@ -103,7 +149,12 @@ export async function runDailyReport(deps: DailyReportRunDeps): Promise<DailyRep
   if (!due.due && !deps.force) {
     return { sent: false, reason: "not_due", day: due.day };
   }
-  const text = await buildDailyReport({ db: deps.db, now: () => deps.now });
+  const text = await buildDailyReport({
+    db: deps.db,
+    now: () => deps.now,
+    pathCandidates: deps.pathCandidates,
+    log: deps.log,
+  });
   if (dryRun) {
     deps.log(`[daily-report dry-run ${due.day}]\n${text}`);
     writeOwnerConfigKey(deps.db, DAILY_DRY_KEY, due.day, deps.now);

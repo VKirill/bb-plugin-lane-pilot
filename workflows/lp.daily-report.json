@@ -6,8 +6,8 @@
     "ru": "Ежедневный дайджест владельца"
   },
   "description": {
-    "en": "Scheduled service workflow that builds a compact 8-line daily summary of attempts, workflow runs, and measured costs from SQLite and sends it to Telegram.",
-    "ru": "Регулярный сервисный граф, формирующий короткую сводку до 8 строк из SQLite о попытках, графах и расходах за сутки с отправкой в Telegram."
+    "en": "Scheduled service workflow that builds a compact 9-line daily summary of attempts, workflow runs, and measured costs from SQLite and sends it to Telegram.",
+    "ru": "Регулярный сервисный граф, формирующий короткую сводку до 9 строк из SQLite о попытках, графах и расходах за сутки с отправкой в Telegram."
   },
   "category": "service",
   "status": "published",
@@ -84,5 +84,8 @@
         "day": "digest.day"
       }
     }
+  ],
+  "not_for": [
+    "the weekly owner decision review is lp.review-desk"
   ]
 }

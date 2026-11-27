@@ -6,6 +6,8 @@ import { openDatabase as openStorageDatabase } from "./storage";
 import { migrations } from "./migrations";
 import { coupledSettingKeys, validateSettingChanges, validateSettingValue, validateSettingsObject } from "./settings/models/setting-validation";
 import { wireMemoryAttemptEffects } from "./memory/server/repositories/attempt-effects";
+import { bindTrajectoryDeltaReader, bindTrajectoryDeltaRecorder } from "./platform/server";
+import { listTrajectoryDeltasForRun, recordTrajectoryDelta } from "./errands/server";
 
 export * from "./storage";
 export { migrations } from "./migrations";
@@ -13,5 +15,7 @@ export { migrations } from "./migrations";
 export function openDatabase(bb: BbPluginApi) {
   const db = openStorageDatabase(bb, { migrations, validateSetting: { validateSettingValue, validateSettingsObject, coupledSettingKeys, validateSettingChanges } });
   wireMemoryAttemptEffects(db);
+  bindTrajectoryDeltaRecorder(db, recordTrajectoryDelta);
+  bindTrajectoryDeltaReader(db, listTrajectoryDeltasForRun);
   return db;
 }

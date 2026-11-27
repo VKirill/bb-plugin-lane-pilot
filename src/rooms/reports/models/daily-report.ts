@@ -2,7 +2,7 @@ import type { CostState } from "@lane-pilot/contracts";
 
 /**
  * Pure formatting and schedule-due rules for the compact daily status digest.
- * Always stays within 8 lines and renders cost as "не измерено" (never 0) when cost facts are incomplete.
+ * Always stays within 9 lines and renders cost as "не измерено" (never 0) when cost facts are incomplete.
  */
 const DEFAULT_DAILY_AT_HOUR = 9;
 
@@ -26,6 +26,7 @@ export type DailySummary = {
   deferralsOpen: number;
   deferralsOverdue: number;
   outages: number;
+  paths: { candidates: number; top: { label: string; count: number } | null };
 };
 
 /** Formats local YYYY-MM-DD and 0-23 hour in `timezone`. */
@@ -67,7 +68,19 @@ function formatCostLine(summary: Pick<DailySummary, "costUsd" | "costState" | "m
   return `Расходы (24ч): $${summary.costUsd.toFixed(2)}`;
 }
 
-/** Composes the <= 8 line Telegram daily status digest from structured run, owner-waiting, deferral, and outage facts. */
+const PATH_LABEL_MAX_CHARS = 40;
+
+function clipPathLabel(label: string): string {
+  return label.replace(/\s+/g, " ").trim().slice(0, PATH_LABEL_MAX_CHARS);
+}
+
+function formatPathsLine(paths: DailySummary["paths"]): string | null {
+  if (paths.candidates <= 0) return null;
+  if (!paths.top) return `Дорожки: ${paths.candidates} кандидатов`;
+  return `Дорожки: ${paths.candidates} кандидатов, топ: ${clipPathLabel(paths.top.label)} ×${paths.top.count}`;
+}
+
+/** Composes the <= 9 line Telegram daily status digest from structured run, owner-waiting, path-discovery, deferral, and outage facts. */
 export function composeDailyReport(summary: DailySummary): string {
   const lines: string[] = [
     `Lane Pilot · ${summary.day} (24ч)`,
@@ -76,6 +89,10 @@ export function composeDailyReport(summary: DailySummary): string {
     formatCostLine(summary),
     `Ждут владельца: ${summary.waitingOpen}${summary.waitingOverdue > 0 ? ` (просрочено ${summary.waitingOverdue})` : ""}`,
   ];
+  const pathsLine = formatPathsLine(summary.paths);
+  if (pathsLine) {
+    lines.push(pathsLine);
+  }
   if (summary.deferralsOpen > 0 || summary.deferralsOverdue > 0) {
     lines.push(
       `Отсрочки: открыто ${summary.deferralsOpen}${summary.deferralsOverdue > 0 ? `, просрочено ${summary.deferralsOverdue}` : ""}`,
@@ -84,5 +101,5 @@ export function composeDailyReport(summary: DailySummary): string {
   if (summary.outages > 0) {
     lines.push(`Простои: ${summary.outages}`);
   }
-  return lines.slice(0, 8).join("\n");
+  return lines.slice(0, 9).join("\n");
 }

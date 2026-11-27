@@ -55,6 +55,65 @@ export function janitorKeptSample(db: LanePilotDatabase, since: number): Array<{
     .all(since, since) as Array<{ v: string; total: number }>;
 }
 
+export type ErrandEpisodeWindowRow = {
+  runId: string;
+  projectId: string | null;
+  workflowId: string;
+  threadId: string | null;
+  traceJson: string | null;
+  processKey: string | null;
+  processKeyProposed: string | null;
+  summaryJson: string | null;
+  createdAt: number;
+  updatedAt: number;
+};
+
+/** Latest-extractor episode rows whose activity falls on or after `since`. */
+export function listErrandEpisodesInWindow(
+  db: LanePilotDatabase,
+  input: { since: number; projectId?: string | null },
+): ErrandEpisodeWindowRow[] {
+  const cols = errandEpisodeColumns(db);
+  if (!cols.size) {
+    db.prepare("SELECT 1 FROM lane_pilot_errand_episode LIMIT 1").get();
+  }
+  const select = [
+    "e.run_id",
+    "e.project_id",
+    "e.workflow_id",
+    "e.thread_id",
+    "e.trace_json",
+    cols.has("process_key") ? "e.process_key" : "NULL AS process_key",
+    cols.has("process_key_proposed") ? "e.process_key_proposed" : "NULL AS process_key_proposed",
+    cols.has("summary_json") ? "e.summary_json" : "NULL AS summary_json",
+    "e.created_at",
+    "e.updated_at",
+  ];
+  const pid = input.projectId?.trim() || null;
+  const rows = db.prepare(
+    `SELECT ${select.join(", ")}
+     FROM lane_pilot_errand_episode e
+     WHERE COALESCE(e.updated_at, e.created_at) >= ?
+       ${pid ? "AND e.project_id = ?" : ""}
+       AND e.extractor_version = (
+         SELECT MAX(e2.extractor_version) FROM lane_pilot_errand_episode e2 WHERE e2.run_id = e.run_id
+       )
+     ORDER BY COALESCE(e.updated_at, e.created_at) DESC, e.run_id ASC`,
+  ).all(input.since, ...(pid ? [pid] : [])) as Array<Record<string, unknown>>;
+  return rows.map((row) => ({
+    runId: String(row.run_id),
+    projectId: typeof row.project_id === "string" && row.project_id ? row.project_id : null,
+    workflowId: String(row.workflow_id),
+    threadId: typeof row.thread_id === "string" && row.thread_id ? row.thread_id : null,
+    traceJson: typeof row.trace_json === "string" ? row.trace_json : null,
+    processKey: typeof row.process_key === "string" && row.process_key.trim() ? row.process_key.trim() : null,
+    processKeyProposed: typeof row.process_key_proposed === "string" && row.process_key_proposed.trim() ? row.process_key_proposed.trim() : null,
+    summaryJson: typeof row.summary_json === "string" ? row.summary_json : null,
+    createdAt: Number(row.created_at),
+    updatedAt: Number(row.updated_at),
+  }));
+}
+
 /** The newest extractor's episode row per run id (the diagnosis' episode fields). */
 export function latestErrandEpisodeRows(db: LanePilotDatabase, runIds: readonly string[]): Map<string, Record<string, unknown>> {
   const map = new Map<string, Record<string, unknown>>();

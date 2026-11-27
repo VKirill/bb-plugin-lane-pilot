@@ -10,6 +10,7 @@ A workflow is a graph, and every piece of work Lane Pilot does runs as one (a wr
 4. **Test** (`draft_test`): happy path plus one case per failure branch. See `workflows-lifecycle.md`.
 5. **Publish** (`draft_publish {confirm: true}`) only after the owner has heard what the graph sends or changes, what it needs, and where it is stored.
 6. **Start**: the PM routes a request (`lane_pilot_route`, `lane_pilot_run_workflow`), the owner presses Run, or a schedule fires. See `workflows-lifecycle.md`.
+7. **Path capture**: After an errand of 5 or more steps finishes well and no graph matched, ask the owner once: «сохранить эту дорожку как граф?». On yes call `lane_pilot_path_save`.
 
 ## Rules that decide whether a graph works
 

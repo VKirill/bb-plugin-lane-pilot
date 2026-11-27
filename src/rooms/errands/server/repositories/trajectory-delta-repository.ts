@@ -125,3 +125,77 @@ export function markTrajectoryDeltasProcessed(
   if (updated > 0) emitTrajectoryLog(log, "info", "processed", { count: updated, processedAt });
   return updated;
 }
+
+/** Lists trajectory deltas created at or after `since`, newest first. */
+export function listTrajectoryDeltasInWindow(
+  db: DbLike,
+  options: { readonly since: number; readonly projectId?: string | null; readonly onlyAccepted?: boolean; readonly limit?: number },
+): TrajectoryDeltaRow[] {
+  const limit = Math.max(1, Math.min(options.limit ?? 1000, 5000));
+  const onlyAccepted = options.onlyAccepted !== false;
+  const pid = options.projectId?.trim() || null;
+  const where = ["created_at >= ?", "(? = 0 OR owner_accepted = 1)"];
+  const params: unknown[] = [options.since, onlyAccepted ? 1 : 0];
+  if (pid) {
+    where.push("project_id = ?");
+    params.push(pid);
+  }
+  params.push(limit);
+  const rows = db.prepare(
+    `SELECT * FROM lane_pilot_trajectory_delta
+     WHERE ${where.join(" AND ")}
+     ORDER BY created_at DESC, id ASC LIMIT ?`,
+  ).all(...params) as Array<Record<string, unknown>>;
+  return rows.map(toTrajectoryDeltaRow);
+}
+
+/** Lists trajectory deltas associated with a workflow run, oldest first. */
+export function listTrajectoryDeltasForRun(
+  db: DbLike,
+  options: {
+    readonly projectId?: string | null;
+    readonly workflowId?: string | null;
+    readonly threadId?: string | null;
+    readonly since?: number;
+    readonly until?: number;
+    readonly onlyAccepted?: boolean;
+    readonly limit?: number;
+  },
+): TrajectoryDeltaRow[] {
+  const limit = Math.max(1, Math.min(options.limit ?? 100, 2000));
+  const onlyAccepted = options.onlyAccepted !== false;
+  const where: string[] = ["(? = 0 OR owner_accepted = 1)"];
+  const params: unknown[] = [onlyAccepted ? 1 : 0];
+  const pid = options.projectId?.trim() || null;
+  if (pid) {
+    where.push("project_id = ?");
+    params.push(pid);
+  } else if (options.projectId === null) {
+    where.push("project_id IS NULL");
+  }
+  const wf = options.workflowId?.trim() || null;
+  if (wf) {
+    where.push("workflow_id = ?");
+    params.push(wf);
+  }
+  const tid = options.threadId?.trim() || null;
+  if (tid) {
+    where.push("(thread_id = ? OR thread_id IS NULL)");
+    params.push(tid);
+  }
+  if (options.since !== undefined) {
+    where.push("created_at >= ?");
+    params.push(options.since);
+  }
+  if (options.until !== undefined) {
+    where.push("created_at < ?");
+    params.push(options.until);
+  }
+  params.push(limit);
+  const rows = db.prepare(
+    `SELECT * FROM lane_pilot_trajectory_delta
+     WHERE ${where.join(" AND ")}
+     ORDER BY created_at ASC, id ASC LIMIT ?`,
+  ).all(...params) as Array<Record<string, unknown>>;
+  return rows.map(toTrajectoryDeltaRow);
+}
