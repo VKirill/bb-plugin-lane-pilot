@@ -34,6 +34,16 @@ export function ComposerBoundary() {
 
   if (!line) return null;
   return (
-    <div style={{ fontSize: 11, opacity: 0.6, padding: "2px 8px" }}>{t(line)}</div>
+    <div
+      data-testid="composer-boundary"
+      style={{
+        fontSize: "11px",
+        lineHeight: 1.4,
+        color: "var(--muted-foreground, #8B8F98)",
+        padding: "2px 8px",
+      }}
+    >
+      {t(line)}
+    </div>
   );
 }

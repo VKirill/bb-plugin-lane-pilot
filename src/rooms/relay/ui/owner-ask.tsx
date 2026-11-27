@@ -23,7 +23,7 @@ export function OwnerAsk({ interaction, submit, cancel }: PluginPendingInteracti
 
   if (!payload) {
     return (
-      <div className="lp-card flex flex-col gap-3 p-3" data-bb-plugin="lane-pilot" data-testid="owner-ask-broken">
+      <div className="lp-card flex flex-col gap-3 p-4" data-bb-plugin="lane-pilot" data-testid="owner-ask-broken">
         <p className="text-sm text-muted-foreground">{t("ownerAskBroken")}</p>
         <Button type="button" variant="outline" size="sm" className="self-start" onClick={dismiss}>{t("ownerAskDismiss")}</Button>
       </div>
@@ -32,12 +32,12 @@ export function OwnerAsk({ interaction, submit, cancel }: PluginPendingInteracti
   const { question, detail, options, allowText } = payload;
   const words = text.trim();
   return (
-    <div className="lp-card flex min-w-0 flex-col gap-3 p-3" data-bb-plugin="lane-pilot" data-bb-ru-skip data-testid="owner-ask" data-source={payload.source}>
-      <div className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
+    <div className="lp-card flex min-w-0 flex-col gap-2.5 border-[1.5px] border-[var(--lp-info)] p-4" data-bb-plugin="lane-pilot" data-bb-ru-skip data-testid="owner-ask" data-source={payload.source}>
+      <div className="flex min-w-0 items-center gap-1.5 text-xs font-semibold text-[var(--lp-info)]">
         <Icon name="MessageQuestion" className="size-3.5 shrink-0" />
         <span className="min-w-0 truncate">{t("ownerAskHeading")}</span>
       </div>
-      <p className="whitespace-pre-wrap text-sm font-medium leading-snug" style={{ overflowWrap: "anywhere" }} data-testid="owner-ask-question">{question}</p>
+      <p className="whitespace-pre-wrap text-[13.5px] font-medium leading-snug text-foreground" style={{ overflowWrap: "anywhere" }} data-testid="owner-ask-question">{question}</p>
       {detail ? (
         <Disclosure summary={t("ownerAskContext")} compact testId="owner-ask-detail">
           <p className="max-h-48 overflow-y-auto whitespace-pre-wrap text-xs text-muted-foreground" style={{ overflowWrap: "anywhere" }}>{detail}</p>
@@ -45,8 +45,8 @@ export function OwnerAsk({ interaction, submit, cancel }: PluginPendingInteracti
       ) : null}
       {options.length ? (
         <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap" data-testid="owner-ask-options">
-          {options.map((option) => (
-            <Button key={option.id} type="button" variant="outline" disabled={busy} className="h-10 min-w-0 justify-start whitespace-normal text-left sm:h-9"
+          {options.map((option, index) => (
+            <Button key={option.id} type="button" variant={index === 0 ? "default" : "outline"} disabled={busy} className="h-10 min-w-0 justify-start whitespace-normal text-left sm:h-9"
               onClick={() => send({ choice: option.id, ...(words ? { text: words } : {}) })}>
               {option.label}
             </Button>
@@ -57,7 +57,7 @@ export function OwnerAsk({ interaction, submit, cancel }: PluginPendingInteracti
         <div className="flex flex-col gap-2">
           {/* 16px text on phones keeps iOS from zooming into the field. */}
           <textarea aria-label={t("ownerAskPlaceholder")} placeholder={t("ownerAskPlaceholder")} value={text} maxLength={4000} disabled={busy}
-            className="min-h-16 w-full rounded-lg border border-[var(--lp-outline)] bg-[var(--lp-card)] p-2 text-base shadow-[var(--lp-drop)] sm:text-sm"
+            className="min-h-16 w-full rounded-lg border border-[var(--lp-hairline)] bg-[var(--lp-well)]/40 p-2.5 text-base text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring sm:text-sm"
             style={{ overflowWrap: "anywhere" }}
             onChange={(event) => setText(event.target.value)}
             onKeyDown={(event) => { if (event.key === "Enter" && (event.metaKey || event.ctrlKey) && words && !busy) send({ text: words }); }} />

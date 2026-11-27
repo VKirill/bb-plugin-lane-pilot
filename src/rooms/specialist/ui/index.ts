@@ -4,3 +4,4 @@ export { HireWizard, type HireWizardProps, type ScheduleFormView } from "./hire-
 export { StaffList, type StaffFilter, type StaffListProps } from "./staff-list";
 export { UNDO_METHODS, isAllowedUndoMethod, type UndoMethod } from "../models/actions-log";
 export { StaffPage, type StaffPageProps } from "./staff-page";
+export { CharterEditor, type CharterEditorProps } from "./charter-editor";

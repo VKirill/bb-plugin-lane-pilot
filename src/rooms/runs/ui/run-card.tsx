@@ -3,6 +3,7 @@ import { useBbNavigate, useRpc, type PluginMessageDirectiveProps } from "@get-bb
 import { TERMINAL_ATTEMPT_STATES } from "@lane-pilot/contracts";
 import type { rpcContract } from "../../contracts";
 import { t, type I18nKey } from "@lane-pilot/i18n";
+import { StatusPill, type StatusPillTone } from "@lane-pilot/ui-kit";
 import { HELPER_PANEL_ACTION } from "../../contracts/agent-picker";
 import { useOpenThreadPanel } from "../../ui-shell/ui";
 
@@ -23,6 +24,12 @@ const STATE_LABEL: Record<string, I18nKey> = {
   spawn_rejected: "runCardState_spawn_rejected", internal_error: "runCardState_internal_error",
 };
 const stateText = (state: string | null) => state === null ? t("runCardState_none") : t(STATE_LABEL[state] ?? "runCardState_working");
+const stateTone = (state: string | null): StatusPillTone => {
+  if (state === "accepted") return "ok";
+  if (state === "blocked" || state === "validation_failed" || state === "provider_error" || state === "empty_output" || state === "spawn_rejected" || state === "internal_error") return "bad";
+  if (state === null || state === "queued" || state === "canceled") return "muted";
+  return "accent";
+};
 const BACKGROUND_LABEL: Record<string, I18nKey> = { "memory-maintenance": "runCardStage_memory", "project-life": "runCardStage_projectLife", "docs-maintenance": "runCardStage_docs" };
 const backgroundText = (stages: string[] | undefined) => stages?.length
   ? t("runCardBackgroundFailed").replace("{stages}", stages.map((stage) => BACKGROUND_LABEL[stage] ? t(BACKGROUND_LABEL[stage]!) : stage).join(", ")) : null;
@@ -68,10 +75,10 @@ export function RunCardDirective({ attributes, source }: PluginMessageDirectiveP
 
   if (card === null) {
     return offline
-      ? <div role="status" data-testid="run-card-offline" className="my-2 rounded-md border border-border px-3 py-2 text-sm text-muted-foreground">{t("runCardLoadFailed")}</div>
-      : <div role="status" aria-busy="true" className="my-2 h-12 animate-pulse rounded-md border border-border bg-muted/40" />;
+      ? <div role="status" data-bb-plugin="lane-pilot" data-testid="run-card-offline" className="lp-card my-2 px-4 py-3 text-sm text-muted-foreground">{t("runCardLoadFailed")}</div>
+      : <div role="status" aria-busy="true" data-bb-plugin="lane-pilot" className="my-2 h-12 animate-pulse rounded-xl border border-[var(--lp-hairline)] bg-[var(--lp-well)]" />;
   }
-  if (card === "missing") return <div className="my-2 rounded-md border border-border px-3 py-2 text-sm text-muted-foreground" title={source}>{t("runCardGone")}</div>;
+  if (card === "missing") return <div data-bb-plugin="lane-pilot" className="lp-card my-2 px-4 py-3 text-sm text-muted-foreground" title={source}>{t("runCardGone")}</div>;
   // The counter counts work, not rows: «T3», «T3.2», «T3.4» are one task sent again, done when its latest member is accepted
   // (magicseo 2026-10-30 showed «9 of 17» with all nine pieces of work accepted). The rows keep every attempt's history.
   const family = (id: string) => id.replace(/(\.\d+)+$/, "").replace(/-mainfix$/, "");
@@ -79,26 +86,26 @@ export function RunCardDirective({ attributes, source }: PluginMessageDirectiveP
   const done = [...latest.values()].filter((state) => state === "accepted").length;
   const shown = expanded ? card.tasks : card.tasks.slice(0, ROWS_SHOWN);
   return (
-    <div className="my-2 min-w-0 rounded-md border border-border text-sm" data-testid="run-card">
-      <div className="flex items-center justify-between gap-2 border-b border-border px-3 py-2">
-        <span className="font-medium">{t("runCardTitle")}</span>
-        <span className="text-xs text-muted-foreground">{card.closed ? t("runCardClosed") : t("runCardProgress").replace("{done}", String(done)).replace("{total}", String(latest.size))}</span>
+    <div className="lp-card my-2 min-w-0 text-sm" data-bb-plugin="lane-pilot" data-testid="run-card">
+      <div className="flex items-center justify-between gap-2.5 border-b border-[var(--lp-hairline)] px-4 py-3">
+        <span className="text-[13.5px] font-semibold text-foreground">{t("runCardTitle")}</span>
+        <StatusPill tone={card.closed ? "muted" : "accent"}>{card.closed ? t("runCardClosed") : t("runCardProgress").replace("{done}", String(done)).replace("{total}", String(latest.size))}</StatusPill>
       </div>
-      {offline ? <div role="status" data-testid="run-card-stale" className="border-b border-border px-3 py-1.5 text-xs text-muted-foreground">{t("runCardStale")}</div> : null}
-      <ul className="divide-y divide-border">
+      {offline ? <div role="status" data-testid="run-card-stale" className="border-b border-[var(--lp-hairline)] bg-[var(--lp-well)]/60 px-4 py-1.5 text-xs text-muted-foreground">{t("runCardStale")}</div> : null}
+      <ul className="divide-y divide-[var(--lp-hairline)]">
         {shown.map((task) => (
-          <li key={task.id} className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 px-3 py-1.5">
-            <span className="min-w-0 flex-1 truncate" title={`${task.id}: ${task.title}`}>{task.title}</span>
-            <span className="shrink-0 text-xs text-muted-foreground">{stateText(task.state)}</span>
-            {backgroundText(task.background) ? <span data-testid="run-card-background" className="shrink-0 text-xs text-amber-600 dark:text-amber-400">{backgroundText(task.background)}</span> : null}
+          <li key={task.id} className="flex min-w-0 flex-wrap items-center gap-x-2.5 gap-y-1.5 px-4 py-2.5">
+            <span className="min-w-0 flex-1 truncate text-[12.5px] font-medium text-foreground" title={`${task.id}: ${task.title}`}>{task.title}</span>
+            <StatusPill tone={stateTone(task.state)} className="shrink-0">{stateText(task.state)}</StatusPill>
+            {backgroundText(task.background) ? <span data-testid="run-card-background" className="lp-pill-warning shrink-0 rounded-full px-2 py-0.5 text-[11.5px] font-medium">{backgroundText(task.background)}</span> : null}
             {task.threadId ? (
-              <button type="button" className="shrink-0 text-xs underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              <button type="button" className="lp-raised shrink-0 cursor-pointer rounded-lg px-2.5 py-1 text-xs font-medium text-foreground hover:bg-state-hover focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                 onClick={() => {
                   if (!openPanel({ actionId: HELPER_PANEL_ACTION, title: task.title.slice(0, 40), params: { threadId: task.threadId } })) navigate.toThread(task.threadId!);
                 }}>{t("runCardOpenWriter")}</button>
             ) : null}
             {task.checkLog ? (
-              <button type="button" className="shrink-0 text-xs underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              <button type="button" className="lp-raised shrink-0 cursor-pointer rounded-lg px-2.5 py-1 text-xs font-medium text-foreground hover:bg-state-hover focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                 onClick={() => navigate.experimental_openFilePreview({ target: { kind: "host", hostId: task.checkLog!.hostId, path: task.checkLog!.path }, location: null })}>
                 {t("runCardOpenLog")}
               </button>
@@ -107,7 +114,7 @@ export function RunCardDirective({ attributes, source }: PluginMessageDirectiveP
         ))}
       </ul>
       {card.tasks.length > ROWS_SHOWN ? (
-        <button type="button" data-testid="run-card-toggle" className="w-full border-t border-border px-3 py-1.5 text-left text-xs text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+        <button type="button" data-testid="run-card-toggle" className="w-full cursor-pointer border-t border-[var(--lp-hairline)] px-4 py-2 text-left text-xs font-medium text-muted-foreground hover:bg-[var(--lp-well)]/50 hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
           onClick={() => setExpanded((open) => !open)}>
           {expanded ? t("runCardShowLess") : t("runCardShowAll").replace("{count}", String(card.tasks.length))}
         </button>

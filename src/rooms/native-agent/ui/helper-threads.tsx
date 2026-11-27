@@ -114,13 +114,31 @@ export function HelperChips({ threads, queued, frame }: { threads: HelperThread[
             data-testid={`helper-chip-${row.id}`}
             onClick={() => open(row)}
             className="relative inline-flex size-5 cursor-pointer items-center justify-center text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-            style={{ ...frame, borderRadius: "0.375rem" }}
+            style={{
+              backgroundColor: "var(--muted, #F6F6F3)",
+              borderWidth: "1px",
+              borderStyle: "solid",
+              borderColor: "var(--border, #E7E6E1)",
+              color: "var(--muted-foreground, #4B4F58)",
+              ...frame,
+              borderRadius: "0.375rem",
+            }}
           >
             <Icon name={roleOf(row).icon} className="size-3" />
             {isVerifying ? (
-              <span className="absolute size-1.5 rounded-full bg-success" style={corner} data-testid="verifying-dot" aria-hidden />
+              <span
+                className="absolute size-1.5 rounded-full bg-success"
+                style={{ ...corner, backgroundColor: "var(--success, #2F9E66)" }}
+                data-testid="verifying-dot"
+                aria-hidden
+              />
             ) : (
-              <span className="absolute size-1.5 animate-pulse rounded-full bg-primary" style={corner} data-testid="active-dot" aria-hidden />
+              <span
+                className="absolute size-1.5 animate-pulse rounded-full bg-primary"
+                style={{ ...corner, backgroundColor: "var(--timeline-accent, #3B5BDB)" }}
+                data-testid="active-dot"
+                aria-hidden
+              />
             )}
           </button>
         );
@@ -129,20 +147,38 @@ export function HelperChips({ threads, queued, frame }: { threads: HelperThread[
         <button type="button" data-testid="helper-chips-more" aria-label={t("helperMore").replace("{n}", String(rest))}
           onClick={() => openPanel({ actionId: HELPER_PANEL_ACTION, title: t("helperPanelTitle"), params: {} })}
           className="inline-flex h-5 cursor-pointer items-center px-1.5 text-xs leading-none text-muted-foreground hover:text-foreground"
-          style={{ ...frame, borderRadius: "0.375rem" }}>+{rest}</button>
+          style={{
+            backgroundColor: "var(--muted, #F6F6F3)",
+            borderWidth: "1px",
+            borderStyle: "solid",
+            borderColor: "var(--border, #E7E6E1)",
+            color: "var(--muted-foreground, #4B4F58)",
+            ...frame,
+            borderRadius: "0.375rem",
+          }}>+{rest}</button>
       ) : null}
       {queuedCount > 0 ? (
         <button
           type="button"
           data-testid="helper-chip-queue"
-          title={`Задачи в очереди: ${queued?.join(", ")}`}
-          aria-label={`В очереди: ${queuedCount}`}
+          title={t("helperQueueTitle").replace("{list}", queued?.join(", ") ?? "")}
+          aria-label={t("helperQueueAria").replace("{count}", String(queuedCount))}
           onClick={() => openPanel({ actionId: HELPER_PANEL_ACTION, title: t("helperPanelTitle"), params: {} })}
           className="inline-flex h-5 cursor-pointer items-center gap-1 px-1.5 text-xs leading-none text-muted-foreground hover:text-foreground"
-          style={{ ...frame, borderRadius: "0.375rem" }}
+          style={{
+            backgroundColor: "var(--muted, #F6F6F3)",
+            borderWidth: "1px",
+            borderStyle: "solid",
+            borderColor: "var(--border, #E7E6E1)",
+            color: "var(--muted-foreground, #4B4F58)",
+            fontSize: "11.5px",
+            fontWeight: 500,
+            ...frame,
+            borderRadius: "0.375rem",
+          }}
         >
           <Icon name="Clock" className="size-3" />
-          <span>в очереди {queuedCount}</span>
+          <span>{t("helperQueueChip").replace("{count}", String(queuedCount))}</span>
         </button>
       ) : null}
     </span>
@@ -177,8 +213,8 @@ export function HelperThreadsList({ threadId, className = "p-3" }: { threadId: s
         />
       ) : null}
       {!showGraph && queued.length > 0 ? (
-        <div className="mb-2 rounded border border-[var(--lp-hairline)] bg-[var(--lp-well)] p-2 text-xs text-muted-foreground" data-testid="helper-panel-queue">
-          <div className="font-semibold text-foreground">В очереди: {queued.length}</div>
+        <div className="mb-2 rounded-xl border border-[var(--lp-hairline)] bg-[var(--lp-well)] p-2.5 text-xs text-muted-foreground" data-testid="helper-panel-queue">
+          <div className="font-semibold text-foreground">{t("helperQueuePanel").replace("{count}", String(queued.length))}</div>
           <div className="mt-1">{queued.join(", ")}</div>
         </div>
       ) : null}

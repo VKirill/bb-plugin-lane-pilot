@@ -54,10 +54,18 @@ function AgentNameBadge(agent: { agentId: string; description: string; helpers?:
   const target = host && compact ? host.parentElement : host;
   const label = (
     <span
-      className="pointer-events-none text-xs leading-none text-muted-foreground"
+      className="pointer-events-none text-xs leading-none"
       style={{
+        backgroundColor: "#E8EDFC",
+        borderWidth: "1px",
+        borderStyle: "solid",
+        borderColor: "var(--border, #E7E6E1)",
         ...frame,
-        padding: "0.125rem 0.5rem",
+        color: "var(--timeline-accent, #3B5BDB)",
+        fontSize: "12px",
+        fontWeight: 600,
+        lineHeight: 1,
+        padding: "0.25rem 0.625rem",
         // The box's own radius turns a 20px chip into a pill; this keeps the box's shape.
         borderRadius: "0.375rem",
         whiteSpace: "nowrap",
@@ -70,13 +78,14 @@ function AgentNameBadge(agent: { agentId: string; description: string; helpers?:
   // The label and the working helpers' squares sit together on the box's top border.
   const chip = (
     <span
-      className="pointer-events-none flex items-center gap-1"
+      className="pointer-events-none flex items-center gap-2"
       style={{
         position: host ? "absolute" : undefined,
         left: host ? (compact ? `calc(${offset.left}px + ${PROMPT_BOX_AGENT_LABEL_LEFT})` : PROMPT_BOX_AGENT_LABEL_LEFT) : undefined,
         top: host ? (compact ? offset.top : 0) : undefined,
         transform: host ? "translateY(-50%)" : undefined,
         zIndex: host ? 10 : undefined,
+        gap: "0.5rem",
       }}
     >
       {label}

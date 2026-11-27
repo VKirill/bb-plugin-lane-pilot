@@ -273,12 +273,24 @@ export function EnableLanePilotAction() {
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         {/* data-lp-agent tells a theme what the chat runs (off, lane-pilot or a specialist) without reading the label. */}
-        <Button type="button" variant="outline" size="sm" className="h-7 min-h-7 max-w-[10rem] px-2 text-xs" disabled={disabled} aria-label={triggerLabel}
-          data-lp-agent={!selected ? "off" : laneOn ? "lane-pilot" : "specialist"}>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          data-bb-plugin="lane-pilot"
+          className={`h-7 min-h-7 max-w-[10rem] rounded-full px-2.5 text-xs font-semibold ${
+            selected
+              ? "border-transparent lp-pill-info"
+              : "border-[var(--lp-hairline)] bg-[var(--lp-card)] text-foreground"
+          }`}
+          disabled={disabled}
+          aria-label={triggerLabel}
+          data-lp-agent={!selected ? "off" : laneOn ? "lane-pilot" : "specialist"}
+        >
           <span className="truncate whitespace-nowrap">{triggerLabel}</span>
         </Button>
       </PopoverTrigger>
-      <PopoverContent align="start" className="w-80 max-w-[min(20rem,calc(100vw-2rem))] min-w-0 max-h-[min(30rem,70vh)] space-y-3 overflow-y-auto" data-testid="activation-popover">
+      <PopoverContent align="start" className="w-80 max-w-[min(20rem,calc(100vw-2rem))] min-w-0 max-h-[min(30rem,70vh)] space-y-3 overflow-y-auto rounded-xl border-[var(--lp-hairline)] bg-[var(--lp-card)] p-4 shadow-[var(--lp-drop)]" data-testid="activation-popover">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0 space-y-1">
             <Label htmlFor="lp-composer-switch">{t("panelTitle")}</Label>
@@ -300,7 +312,7 @@ export function EnableLanePilotAction() {
             disabled={busy}
             onValueChange={(id) => { if (id === NO_AGENT) disable(); else void prepare(id); }}
           >
-            <SelectTrigger id="lp-composer-agent" className={`${CONTROL_H} w-full min-w-0`} aria-label={t("composerAgentLabel")}><SelectValue /></SelectTrigger>
+            <SelectTrigger id="lp-composer-agent" className={`${CONTROL_H} w-full min-w-0 rounded-lg border-[var(--lp-hairline)] bg-[var(--lp-card)]`} aria-label={t("composerAgentLabel")}><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectItem value={NO_AGENT}>{t("composerAgentNone")}</SelectItem>
               {groupsOf(specialists).map((group) => (
@@ -314,8 +326,8 @@ export function EnableLanePilotAction() {
         </div>
         <p className="text-xs text-muted-foreground">{locked ?? (running ? t("composerChatRunning") : threadId ? t("composerChatHint") : t("nativeComposerHint"))}</p>
         {blocks.filter((row) => row.code !== "pending").length ? (
-          <div>
-            <p className="text-xs font-medium">{t("activationBlocks")}</p>
+          <div className="rounded-lg border border-[var(--lp-hairline)] bg-[var(--lp-well)] p-2.5">
+            <p className="text-xs font-medium text-foreground">{t("activationBlocks")}</p>
             {blocks.filter((row) => row.code !== "pending").map((row) => <p key={row.code} className="text-xs text-muted-foreground">{blockCopy(row)}</p>)}
           </div>
         ) : null}

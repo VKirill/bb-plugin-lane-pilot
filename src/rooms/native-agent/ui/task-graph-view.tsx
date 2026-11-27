@@ -1,16 +1,22 @@
 import { useLayoutEffect, useRef, useState } from "react";
+import { t, type I18nKey } from "@lane-pilot/i18n";
 
 export type TaskGraphNode = { id: string; title: string; state: "running" | "waiting" | "queued" | "blocked"; threadId: string | null; area?: string | null; attemptId?: string | null; reason?: string | null };
 export type TaskGraphEdge = { from: string; to: string; kind: "depends" | "files" | "folder" | "question" };
 export type TaskGraphData = { nodes: TaskGraphNode[]; edges: TaskGraphEdge[]; objective?: string | null };
 
-const EDGE_LOOK: Record<TaskGraphEdge["kind"], { color: string; dash?: string; label: string }> = {
-  depends: { color: "var(--color-primary, #8b5cf6)", label: "после неё (depends_on)" },
-  files: { color: "#d97706", dash: "4 3", label: "те же файлы" },
-  folder: { color: "#64748b", dash: "2 3", label: "одна папка без git" },
-  question: { color: "#dc2626", dash: "6 3", label: "ждёт ответа на вопрос" },
+const EDGE_LOOK: Record<TaskGraphEdge["kind"], { color: string; dash?: string; labelKey: I18nKey }> = {
+  depends: { color: "var(--lp-info, #3B5BDB)", labelKey: "taskGraphEdgeDepends" },
+  files: { color: "var(--lp-warning-text, #C77B0A)", dash: "4 3", labelKey: "taskGraphEdgeFiles" },
+  folder: { color: "var(--muted-foreground, #8B8F98)", dash: "2 3", labelKey: "taskGraphEdgeFolder" },
+  question: { color: "var(--lp-danger-text, #C9372C)", dash: "6 3", labelKey: "taskGraphEdgeQuestion" },
 };
-const STATE_LABEL: Record<TaskGraphNode["state"], string> = { running: "работает", waiting: "ждёт", queued: "в очереди", blocked: "заблокирована" };
+const STATE_LABEL: Record<TaskGraphNode["state"], I18nKey> = {
+  running: "taskGraphStateRunning",
+  waiting: "taskGraphStateWaiting",
+  queued: "taskGraphStateQueued",
+  blocked: "taskGraphStateBlocked",
+};
 
 /**
  * The step of each task: 0 for one that waits for no shown task, else one more than the latest step it waits for. Tasks on
@@ -75,9 +81,9 @@ export function TaskGraphView({ graph, onOpen, onRetry, onCancel }: { graph: Tas
   const areas = new Map<string, number>();
   for (const node of graph.nodes) if (node.area) areas.set(node.area, (areas.get(node.area) ?? 0) + 1);
   return (
-    <div className="mb-2 rounded border border-[var(--lp-hairline)] bg-[var(--lp-well)] p-2 text-xs" data-testid="task-graph">
-      <div className="mb-2 font-semibold text-foreground">Задачи прогона: {graph.nodes.length}</div>
-      {graph.objective ? <div className="mb-1 text-[11px] text-muted-foreground" data-testid="task-graph-scope">Цель: {graph.objective}</div> : null}
+    <div className="mb-2 rounded-xl border border-[var(--lp-hairline)] bg-[var(--lp-well)] p-3 text-xs" data-testid="task-graph">
+      <div className="mb-2 font-semibold text-foreground">{t("taskGraphTitle").replace("{count}", String(graph.nodes.length))}</div>
+      {graph.objective ? <div className="mb-1 text-[11px] text-muted-foreground" data-testid="task-graph-scope">{t("taskGraphObjective").replace("{objective}", graph.objective)}</div> : null}
       {areas.size ? <div className="mb-1 text-[11px] text-muted-foreground" data-testid="task-graph-composition">{[...areas.entries()].map(([area, count]) => `${area}: ${count}`).join(" · ")}</div> : null}
       <div ref={box} className="relative">
         <svg className="pointer-events-none absolute left-0 top-0" width={size.width} height={size.height} aria-hidden>
@@ -97,7 +103,8 @@ export function TaskGraphView({ graph, onOpen, onRetry, onCancel }: { graph: Tas
           {rows.map((row, index) => (
             <div key={index} data-testid={`task-step-${index}`}>
               <div className="mb-1 text-[11px] text-muted-foreground">
-                {index === 0 ? "Сейчас" : `Шаг ${index + 1}`}{row.length > 1 ? " · параллельно" : ""}
+                {index === 0 ? t("taskGraphStepNow") : t("taskGraphStepN").replace("{n}", String(index + 1))}
+                {row.length > 1 ? ` · ${t("taskGraphParallel")}` : ""}
               </div>
               <div className="flex flex-wrap gap-2">
                 {row.map((node) => (
@@ -105,11 +112,11 @@ export function TaskGraphView({ graph, onOpen, onRetry, onCancel }: { graph: Tas
                     key={node.id}
                     ref={(element) => { if (element) chips.current.set(node.id, element); else chips.current.delete(node.id); }}
                     type="button"
-                    title={`${node.title} — ${STATE_LABEL[node.state]}`}
+                    title={`${node.title} — ${t(STATE_LABEL[node.state])}`}
                     data-testid={`task-node-${node.id}`}
                     disabled={!node.threadId || !onOpen}
                     onClick={() => onOpen?.(node)}
-                    className="inline-flex max-w-full items-center gap-1.5 rounded border border-[var(--lp-hairline)] bg-background px-2 py-1 text-left text-foreground enabled:cursor-pointer enabled:hover:bg-state-hover disabled:cursor-default"
+                    className="inline-flex max-w-full items-center gap-1.5 rounded-lg border border-[var(--lp-hairline)] bg-[var(--lp-card)] px-2 py-1 text-left text-foreground enabled:cursor-pointer enabled:hover:bg-state-hover disabled:cursor-default"
                   >
                     <span aria-hidden className={`size-1.5 shrink-0 rounded-full ${node.state === "running" ? "animate-pulse bg-primary" : node.state === "blocked" ? "bg-destructive" : "bg-muted-foreground/50"}`} />
                     <span className="truncate">{node.id}</span>
@@ -117,12 +124,12 @@ export function TaskGraphView({ graph, onOpen, onRetry, onCancel }: { graph: Tas
                 ))}
               </div>
               {row.filter((node) => node.state === "blocked").map((node) => (
-                <div key={`blocked-${node.id}`} className="mt-1 rounded border border-destructive/40 bg-background px-2 py-1" data-testid={`task-blocked-${node.id}`}>
+                <div key={`blocked-${node.id}`} className="mt-1 rounded-lg border border-destructive/40 bg-[var(--lp-card)] px-2 py-1" data-testid={`task-blocked-${node.id}`}>
                   <div className="text-[11px] text-muted-foreground">{node.id}{node.reason ? `: ${node.reason}` : ""}</div>
                   {node.attemptId && (onRetry || onCancel) ? (
                     <div className="mt-1 flex gap-2">
-                      {onRetry ? <button type="button" data-testid={`task-retry-${node.id}`} onClick={() => onRetry(node.attemptId!)} className="rounded border border-[var(--lp-hairline)] px-1.5 py-0.5 text-[11px] text-foreground hover:bg-state-hover">Повторить</button> : null}
-                      {onCancel ? <button type="button" data-testid={`task-cancel-${node.id}`} onClick={() => onCancel(node.attemptId!)} className="rounded border border-[var(--lp-hairline)] px-1.5 py-0.5 text-[11px] text-destructive hover:bg-state-hover">Остановить</button> : null}
+                      {onRetry ? <button type="button" data-testid={`task-retry-${node.id}`} onClick={() => onRetry(node.attemptId!)} className="rounded-lg border border-[var(--lp-hairline)] px-1.5 py-0.5 text-[11px] text-foreground hover:bg-state-hover">{t("taskGraphRetry")}</button> : null}
+                      {onCancel ? <button type="button" data-testid={`task-cancel-${node.id}`} onClick={() => onCancel(node.attemptId!)} className="rounded-lg border border-[var(--lp-hairline)] px-1.5 py-0.5 text-[11px] text-destructive hover:bg-state-hover">{t("taskGraphCancel")}</button> : null}
                     </div>
                   ) : null}
                 </div>
@@ -136,7 +143,7 @@ export function TaskGraphView({ graph, onOpen, onRetry, onCancel }: { graph: Tas
           {kinds.map((kind) => (
             <span key={kind} className="inline-flex items-center gap-1">
               <svg width="16" height="6" aria-hidden><line x1="0" y1="3" x2="16" y2="3" stroke={EDGE_LOOK[kind].color} strokeWidth="1.5" strokeDasharray={EDGE_LOOK[kind].dash} /></svg>
-              {EDGE_LOOK[kind].label}
+              {t(EDGE_LOOK[kind].labelKey)}
             </span>
           ))}
         </div>

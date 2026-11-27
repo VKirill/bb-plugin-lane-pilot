@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 import { useBbNavigate, useRpc, type PluginMessageDirectiveProps } from "@get-bb/plugin-sdk/app";
+import { t } from "@lane-pilot/i18n";
+import { Button, StatusPill } from "@lane-pilot/ui-kit";
 import type { rpcContract } from "../../contracts";
 
 
@@ -35,22 +37,25 @@ export function LaneDraftCardDirective({ attributes, message }: PluginMessageDir
     return () => { alive = false; if (timer) clearTimeout(timer); };
   }, [rpc, draftId, message.projectId]);
 
-  if (!card) return <div role="status" aria-busy="true" className="my-2 h-14 animate-pulse rounded-md border border-border bg-muted/40" />;
+  if (!card) return <div role="status" aria-busy="true" data-bb-plugin="lane-pilot" className="my-2 h-14 animate-pulse rounded-xl border border-[var(--lp-hairline)] bg-[var(--lp-well)]" />;
   const create = async () => {
     setBusy(true);
     try { await rpc.call("task_draft_create", { draftId, ...scope }); const next = await rpc.call("task_draft_card", { draftId, ...scope }); setCard((next ?? null) as DraftCard | null); } finally { setBusy(false); }
   };
   const firstTask = card.taskIds[0];
+  const batchCount = card.groups.reduce((n, g) => n + g.titles.length, 0);
   return (
-    <div className="my-2 min-w-0 rounded-md border border-border text-sm" data-testid="lane-draft-card">
-      <div className="flex items-center justify-between gap-2 border-b border-border px-3 py-2">
-        <span className="min-w-0 truncate font-medium">{card.title}</span>
-        <span className="text-xs text-muted-foreground">{card.kind === "batch" ? `пачка · ${card.groups.reduce((n, g) => n + g.titles.length, 0)}` : "задача"}</span>
+    <div className="lp-card my-2 min-w-0 text-sm" data-bb-plugin="lane-pilot" data-testid="lane-draft-card">
+      <div className="flex items-center justify-between gap-2.5 border-b border-[var(--lp-hairline)] px-4 py-3">
+        <span className="min-w-0 truncate text-[13.5px] font-semibold text-foreground">{card.title}</span>
+        <StatusPill tone="muted" className="shrink-0">
+          {card.kind === "batch" ? t("draftCardKindBatch").replace("{count}", String(batchCount)) : t("draftCardKindTask")}
+        </StatusPill>
       </div>
-      <div className="px-3 py-2">
+      <div className="px-4 py-3 text-[12.5px]">
         <p className="text-muted-foreground">{card.promise}</p>
         {card.kind === "batch" ? (
-          <ul className="mt-1.5 space-y-1">
+          <ul className="mt-2 space-y-1 text-foreground">
             {card.groups.map((group) => (
               <li key={group.area || "_"}>
                 {group.area ? <span className="text-xs text-muted-foreground">{group.area}</span> : null}
@@ -60,16 +65,18 @@ export function LaneDraftCardDirective({ attributes, message }: PluginMessageDir
           </ul>
         ) : null}
       </div>
-      {card.failed?.length ? <ul className="px-3 pb-2 text-xs text-destructive" data-testid="lane-draft-failed">{card.failed.map((item, index) => <li key={index} className="break-words">{item.title}: {item.reason}</li>)}</ul> : null}
-      <div className="flex items-center gap-2 border-t border-border px-3 py-2">
+      {card.failed?.length ? <ul className="px-4 pb-2 text-xs text-destructive" data-testid="lane-draft-failed">{card.failed.map((item, index) => <li key={index} className="break-words">{item.title}: {item.reason}</li>)}</ul> : null}
+      <div className="flex flex-wrap items-center gap-2 border-t border-[var(--lp-hairline)] px-4 py-3">
         {card.state === "proposed" || card.state === "partial"
-          ? <button type="button" disabled={busy} onClick={() => void create()} data-testid="lane-draft-create"
-              className="rounded-md bg-primary px-3 py-1 text-xs font-medium text-primary-foreground disabled:opacity-50">{card.state === "partial" ? "Создать остальное" : "Создать"}</button>
+          ? <Button type="button" size="sm" variant="default" disabled={busy} onClick={() => void create()} data-testid="lane-draft-create">
+              {card.state === "partial" ? t("draftCardCreateRemaining") : t("draftCardCreate")}
+            </Button>
           : <>
-              <span className="text-xs text-muted-foreground">Создано · {card.taskIds.join(", ") || "—"}</span>
+              <span className="text-xs text-muted-foreground">{t("draftCardCreated").replace("{ids}", card.taskIds.join(", ") || "—")}</span>
               {firstTask && card.runId ? (
-                <button type="button" onClick={() => navigate.toPluginPanel("lane-pilot")}
-                  data-testid="lane-draft-graph" className="rounded-md border border-border px-3 py-1 text-xs">Открыть граф</button>
+                <Button type="button" size="sm" variant="outline" onClick={() => navigate.toPluginPanel("lane-pilot")} data-testid="lane-draft-graph">
+                  {t("draftCardOpenGraph")}
+                </Button>
               ) : null}
             </>}
       </div>

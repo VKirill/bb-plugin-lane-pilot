@@ -85,15 +85,15 @@ describe("Helper chips & panel phase rendering", () => {
     slot.lifecycle.unmount();
   });
 
-  it("renders queued chip with «в очереди N»", async () => {
+  it("renders queued chip with localized queued count", async () => {
     const slot = await mountBadge({
       helpers: [],
       queued: ["task-1", "task-2"],
     });
     const queueChip = await slot.findByTestId("helper-chip-queue");
     expect(queueChip).toBeTruthy();
-    expect(queueChip.textContent).toContain("в очереди 2");
-    expect(queueChip.getAttribute("title")).toBe("Задачи в очереди: task-1, task-2");
+    expect(queueChip.textContent).toContain("queued 2");
+    expect(queueChip.getAttribute("title")).toBe("Queued tasks: task-1, task-2");
     slot.lifecycle.unmount();
   });
 
@@ -143,9 +143,9 @@ describe("Helper chips & panel phase rendering", () => {
     });
     await waitFor(() => expect(slot.getByTestId("task-graph")).toBeTruthy());
     expect(slot.getByTestId("task-step-0").textContent).toContain("a");
-    expect(slot.getByTestId("task-step-1").textContent).toMatch(/параллельно[\s\S]*b[\s\S]*c/);
+    expect(slot.getByTestId("task-step-1").textContent).toMatch(/in parallel[\s\S]*b[\s\S]*c/);
     expect(slot.queryByTestId("helper-panel-queue")).toBeNull();
-    expect(slot.getByTestId("task-graph-legend").textContent).toContain("те же файлы");
+    expect(slot.getByTestId("task-graph-legend").textContent).toContain("same files");
     slot.lifecycle.unmount();
   });
 });

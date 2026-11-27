@@ -137,7 +137,7 @@ export function parseConsoleRoute(subPath: string): ConsoleRoute {
     case "staff":
       if (second === "hire") return { section: "staff", view: "hire" };
       if (second && third) {
-        return fourth && STAFF_TAB_SET.has(fourth)
+        return fourth && (STAFF_TAB_SET.has(fourth) || fourth === "edit")
           ? { section: "staff", staffRef: { projectId: second, domain: third }, view: fourth }
           : { section: "staff", staffRef: { projectId: second, domain: third } };
       }
@@ -180,7 +180,9 @@ export function buildConsolePath(route: ConsoleRoute): string {
       if (route.view === "hire") return "staff/hire";
       if (route.staffRef) {
         const base = `staff/${route.staffRef.projectId}/${route.staffRef.domain}`;
-        return route.view && STAFF_TAB_SET.has(route.view) ? `${base}/${route.view}` : base;
+        return route.view && (STAFF_TAB_SET.has(route.view) || route.view === "edit")
+          ? `${base}/${route.view}`
+          : base;
       }
       return "staff";
     case "work":

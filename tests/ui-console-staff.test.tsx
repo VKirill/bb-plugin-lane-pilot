@@ -930,3 +930,230 @@ describe("console staff page (P4)", () => {
     slot.lifecycle.unmount();
   });
 });
+
+describe("console charter editor (P4a)", () => {
+  beforeEach(() => {
+    cleanup();
+    document.body.innerHTML = "";
+    setLocaleOverride("ru");
+    vi.mocked(toast.success).mockClear();
+    vi.mocked(toast.error).mockClear();
+  });
+
+  afterEach(() => {
+    cleanup();
+    setLocaleOverride(null);
+    document.documentElement.lang = "en";
+  });
+
+  it("edits charter fields, saves draft without auto-approving budgets, shows side-by-side diff, and approves via ConfirmDialog", async () => {
+    const baseDetail = defaultRpc().specialist_detail({
+      projectId: "proj_alpha",
+      domain: "marketing",
+    }) as {
+      charter: {
+        version: number;
+        approvedBy: string | null;
+        approvedAt: number | null;
+        body: Record<string, unknown>;
+        pendingDraft: { draftId: string; body: Record<string, unknown> } | null;
+      };
+      [key: string]: unknown;
+    };
+
+    let state = {
+      ...baseDetail,
+      charter: {
+        ...baseDetail.charter,
+        pendingDraft: null as { draftId: string; body: Record<string, unknown> } | null,
+      },
+    };
+
+    const proposeCalls: unknown[] = [];
+    const approveCalls: unknown[] = [];
+
+    const slot = await mountStaff({
+      subPath: "staff/proj_alpha/marketing",
+      rpc: {
+        specialist_detail: () => state,
+        charter_propose: (input) => {
+          proposeCalls.push(input);
+          const payload = input as { charter: Record<string, unknown> };
+          state = {
+            ...state,
+            charter: {
+              ...state.charter,
+              pendingDraft: {
+                draftId: "draft_v4_new",
+                body: payload.charter,
+              },
+            },
+          };
+          return { draftId: "draft_v4_new" };
+        },
+        charter_approve: (input) => {
+          approveCalls.push(input);
+          const draftBody = state.charter.pendingDraft?.body ?? state.charter.body;
+          state = {
+            ...state,
+            charter: {
+              version: 4,
+              approvedBy: "owner",
+              approvedAt: 1_800_000_000_000,
+              body: draftBody,
+              pendingDraft: null,
+            },
+          };
+          return { ok: true, version: 4 };
+        },
+      },
+    });
+
+    await slot.findByTestId("staff-tab-charter");
+    fireEvent.click(slot.getByTestId("staff-charter-edit-btn"));
+    await slot.findByTestId("charter-editor");
+
+    expect(slot.inspection.navigateCalls).toContainEqual({
+      method: "toPluginPanel",
+      path: "lane-pilot",
+      options: { subPath: "staff/proj_alpha/marketing/edit" },
+    });
+
+    // Form is prefilled from current charter body.
+    expect((slot.getByTestId("charter-edit-metric") as HTMLInputElement).value).toBe("paid_orders_30d");
+    expect((slot.getByTestId("charter-edit-target") as HTMLInputElement).value).toBe("600");
+    expect((slot.getByTestId("charter-edit-budget-day") as HTMLInputElement).value).toBe("20");
+    expect((slot.getByTestId("charter-edit-budget-month") as HTMLInputElement).value).toBe("450");
+    expect((slot.getByTestId("charter-edit-budget-test") as HTMLInputElement).value).toBe("30");
+    expect((slot.getByTestId("charter-edit-channels") as HTMLInputElement).value).toBe(
+      "Яндекс Директ, Telegram Ads",
+    );
+    expect(slot.queryByTestId("charter-editor-diff")).toBeNull();
+
+    // Update target, add a constraint, raise daily/monthly budgets, and add a graph to allowed channels.
+    fireEvent.change(slot.getByTestId("charter-edit-target"), { target: { value: "750" } });
+    fireEvent.click(slot.getByTestId("charter-edit-constraint-add"));
+    fireEvent.change(slot.getByTestId("charter-edit-constraint-key-3"), {
+      target: { value: "min_samples" },
+    });
+    fireEvent.change(slot.getByTestId("charter-edit-constraint-val-3"), {
+      target: { value: "30" },
+    });
+    fireEvent.change(slot.getByTestId("charter-edit-budget-day"), { target: { value: "35" } });
+    fireEvent.change(slot.getByTestId("charter-edit-budget-month"), { target: { value: "600" } });
+    fireEvent.change(slot.getByTestId("charter-edit-channels"), {
+      target: { value: "Яндекс Директ, Telegram Ads, mkt-experiment-cycle" },
+    });
+
+    // «Сохранить черновик» proposes draft and NEVER auto-approves budgets.
+    fireEvent.click(slot.getByTestId("charter-save-draft-btn"));
+    await waitFor(() => {
+      expect(proposeCalls).toHaveLength(1);
+    });
+    expect(approveCalls).toHaveLength(0);
+    expect(proposeCalls[0]).toMatchObject({
+      projectId: "proj_alpha",
+      domain: "marketing",
+      charter: {
+        north_star: { target: 750, metric_id: "paid_orders_30d" },
+        guardrails: { max_cac: 600, min_samples: 30 },
+        budgets: { daily_cap_usd: 35, monthly_cap_usd: 600, cell_cap_usd: 30 },
+        channels: ["Яндекс Директ", "Telegram Ads", "mkt-experiment-cycle"],
+      },
+    });
+
+    // Side-by-side diff appears with old and new values.
+    await slot.findByTestId("charter-editor-diff");
+    expect(slot.getByTestId("charter-diff-old-target").textContent).toBe("600");
+    expect(slot.getByTestId("charter-diff-new-target").textContent).toBe("750");
+    expect(slot.getByTestId("charter-diff-old-budgetDay").textContent).toBe("20");
+    expect(slot.getByTestId("charter-diff-new-budgetDay").textContent).toBe("35");
+    expect(slot.getByTestId("charter-diff-new-channels").textContent).toContain("mkt-experiment-cycle");
+
+    // «Утвердить» opens ConfirmDialog first without calling charter_approve yet.
+    fireEvent.click(slot.getByTestId("charter-approve-btn"));
+    expect(approveCalls).toHaveLength(0);
+    const dialog = await slot.findByRole("alertdialog");
+    const confirmBtn = Array.from(dialog.querySelectorAll("button")).find((b) =>
+      b.textContent?.includes("Утвердить"),
+    )!;
+    fireEvent.click(confirmBtn);
+
+    await waitFor(() => {
+      expect(approveCalls).toEqual([
+        { projectId: "proj_alpha", domain: "marketing", draftId: "draft_v4_new" },
+      ]);
+    });
+
+    // Returns to Charter tab showing the approved v4 charter without draft banner.
+    await slot.findByTestId("staff-tab-charter");
+    expect(slot.getByTestId("staff-charter-version").textContent).toContain("Версия 4");
+    expect(slot.queryByTestId("staff-charter-draft-banner")).toBeNull();
+    expect(slot.getByTestId("staff-charter-budgets").textContent).toContain("600");
+
+    slot.lifecycle.unmount();
+  });
+
+  it("handles draft_not_found on approve by reloading detail and showing the stale-draft message", async () => {
+    let detailReads = 0;
+    let draftCleared = false;
+
+    const slot = await mountStaff({
+      subPath: "staff/proj_alpha/marketing/edit",
+      rpc: {
+        specialist_detail: (input) => {
+          detailReads += 1;
+          const base = defaultRpc().specialist_detail(input) as {
+            charter: { pendingDraft: unknown; [k: string]: unknown };
+            [k: string]: unknown;
+          };
+          if (!draftCleared) return base;
+          return {
+            ...base,
+            charter: { ...base.charter, pendingDraft: null },
+          };
+        },
+        charter_approve: () => {
+          draftCleared = true;
+          return { ok: false, reason: "draft_not_found" };
+        },
+      },
+    });
+
+    await slot.findByTestId("charter-editor-diff");
+    expect(slot.getByTestId("charter-diff-old-target").textContent).toBe("600");
+    expect(slot.getByTestId("charter-diff-new-target").textContent).toBe("700");
+
+    const readsBeforeApprove = detailReads;
+    fireEvent.click(slot.getByTestId("charter-approve-btn"));
+    const dialog = await slot.findByRole("alertdialog");
+    const confirmBtn = Array.from(dialog.querySelectorAll("button")).find((b) =>
+      b.textContent?.includes("Утвердить"),
+    )!;
+    fireEvent.click(confirmBtn);
+
+    const errAlert = await slot.findByTestId("charter-editor-error");
+    expect(errAlert.textContent).toContain("Черновик уже утверждён или удалён");
+    await waitFor(() => {
+      expect(detailReads).toBeGreaterThan(readsBeforeApprove);
+    });
+    expect(slot.queryByTestId("charter-editor-diff")).toBeNull();
+
+    slot.lifecycle.unmount();
+  });
+
+  it("disables saving draft when negative budget or target is entered", async () => {
+    const slot = await mountStaff({
+      subPath: "staff/proj_alpha/marketing/edit",
+    });
+
+    await slot.findByTestId("charter-editor");
+    fireEvent.change(slot.getByTestId("charter-edit-budget-day"), { target: { value: "-5" } });
+    expect((slot.getByTestId("charter-save-draft-btn") as HTMLButtonElement).disabled).toBe(true);
+
+    fireEvent.change(slot.getByTestId("charter-edit-budget-day"), { target: { value: "25" } });
+    expect((slot.getByTestId("charter-save-draft-btn") as HTMLButtonElement).disabled).toBe(false);
+
+    slot.lifecycle.unmount();
+  });
+});

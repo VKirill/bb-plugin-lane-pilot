@@ -30,6 +30,7 @@ import {
   resolveRoleName,
 } from "./staff-list-parts";
 import { StaffAutonomyTab, StaffLoadoutTab } from "./staff-page-autonomy-loadout";
+import { CharterEditor } from "./charter-editor";
 import { StaffPageHeader, StaffUnknownState } from "./staff-page-header";
 import {
   extractCharterSummary,
@@ -347,27 +348,46 @@ export function StaffPage({
       ) : detail ? (
         <>
           {activeTab === "charter" ? (
-            <StaffCharterTab
-              detail={detail}
-              summary={summary}
-              locale={locale}
-              onEditCharter={() =>
-                go({
-                  ...(sectionId ? { sectionId } : {}),
-                  section: "staff",
-                  staffRef,
-                  view: "edit",
-                })
-              }
-              onOpenShifts={() =>
-                go({
-                  ...(sectionId ? { sectionId } : {}),
-                  section: "staff",
-                  staffRef,
-                  view: "shifts",
-                })
-              }
-            />
+            view === "edit" ? (
+              <CharterEditor
+                projectId={projectId}
+                domain={domain}
+                charter={detail.charter}
+                onClose={() =>
+                  go({
+                    ...(sectionId ? { sectionId } : {}),
+                    section: "staff",
+                    staffRef,
+                    view: "charter",
+                  })
+                }
+                onRefresh={async () => {
+                  await detailQuery.refetch();
+                }}
+              />
+            ) : (
+              <StaffCharterTab
+                detail={detail}
+                summary={summary}
+                locale={locale}
+                onEditCharter={() =>
+                  go({
+                    ...(sectionId ? { sectionId } : {}),
+                    section: "staff",
+                    staffRef,
+                    view: "edit",
+                  })
+                }
+                onOpenShifts={() =>
+                  go({
+                    ...(sectionId ? { sectionId } : {}),
+                    section: "staff",
+                    staffRef,
+                    view: "shifts",
+                  })
+                }
+              />
+            )
           ) : null}
 
           {activeTab === "shifts" ? (

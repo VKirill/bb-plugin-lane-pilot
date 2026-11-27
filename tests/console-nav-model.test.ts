@@ -38,6 +38,11 @@ describe("console nav-model", () => {
         staffRef: { projectId: "proj-1", domain: "seo" },
         view,
       })),
+      {
+        section: "staff",
+        staffRef: { projectId: "proj-1", domain: "seo" },
+        view: "edit",
+      },
       { section: "work" },
       ...SECTION_VIEWS.work.map((view): ConsoleRoute => ({ section: "work", view })),
       { section: "work", taskRef: { runId: "run-42", taskId: "task-7" } },
