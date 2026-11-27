@@ -104,6 +104,7 @@
       "id": "direct",
       "type": "action",
       "action": "telegram.send_file",
+      "effect": "S",
       "title": {
         "en": "Send the file with the Telegram client",
         "ru": "Отправить файл клиентом Telegram"
@@ -135,6 +136,7 @@
       "id": "report_direct",
       "type": "action",
       "action": "telegram.send_rich",
+      "effect": "S",
       "title": {
         "en": "Report in the project topic",
         "ru": "Отчёт в тему проекта"
@@ -185,6 +187,7 @@
     },
     {
       "id": "send",
+      "effect": "S",
       "produces": [
         {
           "kind": "report",
@@ -218,6 +221,7 @@
       "id": "report",
       "type": "action",
       "action": "telegram.send_rich",
+      "effect": "S",
       "title": {
         "en": "Report in the project topic",
         "ru": "Отчёт в тему проекта"

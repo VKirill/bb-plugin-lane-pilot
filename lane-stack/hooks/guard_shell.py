@@ -1574,6 +1574,80 @@ def _lane_pilot_shell_checks(client: str, cmd: str, payload: dict) -> None:
 
 HELPER_DENIAL = "Helpers do not change the repository; report what should change and the PM dispatches a writer task."
 
+# copy of TIER_RANK in packages/contracts/src/tool-tiers.ts; tests/hooks/mcp-tier-guard.test.ts keeps them equal
+_MCP_TIER_RANK: dict[str, int] = {"R": 0, "D": 1, "L": 2, "S": 3}
+_MCP_TIERS_CACHE: dict[str, dict | None] = {}
+_MCP_TIERS_WARNED: set[str] = set()
+
+
+def _load_mcp_tiers(tiers_path: str) -> dict | None:
+    if not tiers_path:
+        if "" not in _MCP_TIERS_WARNED:
+            _MCP_TIERS_WARNED.add("")
+            print("lane-pilot mcp-tier: LANE_PILOT_TOOL_TIERS_FILE unset; treating MCP tools as L", file=sys.stderr)
+        return None
+    if tiers_path in _MCP_TIERS_CACHE:
+        return _MCP_TIERS_CACHE[tiers_path]
+    try:
+        data = json.loads(Path(tiers_path).read_text(encoding="utf-8"))
+        if not isinstance(data, dict) or not isinstance(data.get("servers"), dict):
+            raise ValueError("invalid tool tiers schema")
+    except (OSError, ValueError) as exc:
+        if tiers_path not in _MCP_TIERS_WARNED:
+            _MCP_TIERS_WARNED.add(tiers_path)
+            print(f"lane-pilot mcp-tier: cannot read tool tiers file {tiers_path}: {exc}; treating MCP tools as L", file=sys.stderr)
+        _MCP_TIERS_CACHE[tiers_path] = None
+        return None
+    _MCP_TIERS_CACHE[tiers_path] = data
+    return data
+
+
+def _mcp_tier_check(name: str) -> str | None:
+    """Enforces LANE_PILOT_NODE_EFFECT on mcp__<server>__<tool> calls when the step declares an effect."""
+    node_effect = os.environ.get("LANE_PILOT_NODE_EFFECT", "").strip()
+    if not node_effect:
+        return None
+    if not name or not name.startswith("mcp__"):
+        return None
+    rest = name[5:]
+    if "__" not in rest:
+        return None
+    server, tool = rest.split("__", 1)
+    if not server or not tool:
+        return None
+    if node_effect not in _MCP_TIER_RANK:
+        print(f"lane-pilot mcp-tier: invalid LANE_PILOT_NODE_EFFECT={node_effect!r} tool={name}", file=sys.stderr)
+        return f"Lane Pilot: invalid step effect={node_effect!r}; tool {name} cannot run."
+    policy = _load_mcp_tiers(os.environ.get("LANE_PILOT_TOOL_TIERS_FILE", "").strip())
+    default_tier = "L"
+    tier = default_tier
+    if isinstance(policy, dict):
+        raw_default = policy.get("default_unknown_tier")
+        if isinstance(raw_default, str) and raw_default in _MCP_TIER_RANK:
+            default_tier = raw_default
+            tier = default_tier
+        servers = policy.get("servers")
+        if isinstance(servers, dict):
+            srv = servers.get(server)
+            if srv is None and "_" in server:
+                srv = servers.get(server.replace("_", "-"))
+            if isinstance(srv, dict):
+                tools = srv.get("tools")
+                entry = tools.get(tool) if isinstance(tools, dict) else None
+                entry_tier = entry.get("tier") if isinstance(entry, dict) else None
+                if isinstance(entry_tier, str) and entry_tier in _MCP_TIER_RANK:
+                    tier = entry_tier
+                else:
+                    srv_default = srv.get("default")
+                    tier = srv_default if isinstance(srv_default, str) and srv_default in _MCP_TIER_RANK else default_tier
+    if _MCP_TIER_RANK[tier] > _MCP_TIER_RANK[node_effect]:
+        print(f"lane-pilot mcp-tier: denied tool={name} tier={tier} step={node_effect}", file=sys.stderr)
+        return (
+            f"Lane Pilot: this step is declared effect={node_effect}; tool {name} is tier {tier}. "
+            "Ask the PM to run it in a step with a higher effect or an owner gate."
+        )
+    return None
+
 
 def is_helper_role(key: str | None) -> bool:
     if not key:
@@ -3181,6 +3255,9 @@ def main() -> None:
         deps = _deps_guard_error(name, p)
         if deps:
             emit_deny(client, deps)
+    mcp_tier_err = _mcp_tier_check(name)
+    if mcp_tier_err:
+        emit_deny(client, mcp_tier_err)
     if is_helper_role(key):
         if is_edit_tool(name):
             path = file_path(p)
@@ -3360,6 +3437,9 @@ def main() -> None:
     emit_allow(client, "\n".join(advice) or None)
 
 if __name__ == "__main__":
+    if len(sys.argv) > 1 and sys.argv[1] == "--print-ranks":
+        print(json.dumps(_MCP_TIER_RANK))
+        sys.exit(0)
     try:
         main()
     except SystemExit:

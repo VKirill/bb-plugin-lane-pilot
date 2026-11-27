@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { coexistenceInventory, coexistenceManager, coexistenceOperation, coexistenceOperationResult, hostBaseFields, hostBaseInput, installReceiptSchema } from "@lane-pilot/contracts";
+import { coexistenceInventory, coexistenceManager, coexistenceOperation, coexistenceOperationResult, hostBaseFields, hostBaseInput, installReceiptSchema, TOOL_TIERS } from "@lane-pilot/contracts";
 
 /** What is installed on this machine: the lane stack itself, coexisting agent managers, and native-agent preparation. */
 export const stackHostMethods = {
@@ -104,6 +104,7 @@ export const stackHostMethods = {
       role: z.string().min(1).max(80),
       cwd: z.string().startsWith("/").optional(),
       taskHome: z.string().startsWith("/").optional(),
+      nodeEffect: z.enum(TOOL_TIERS).optional(),
     }).strict(),
     output: z.object({
       env: z.array(z.object({ name: z.string(), value: z.string(), reason: z.string() }).strict()),

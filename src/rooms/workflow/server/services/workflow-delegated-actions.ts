@@ -38,7 +38,7 @@ export function registerDelegatedActions(engine: WorkflowEngine, ctx: ServerCore
         const prompt = agentPrompt({ workflow: c.workflow.id, node: node.id, title, role: "errand", mode: c.mode, readOnly: key === "lp.preflight",
           task: `${spec.how}\n\nAction: ${key}\nParameters: ${redactKnown(JSON.stringify(params))}`, inputs: { ...c.input.with, ...reads }, contract: outputContract(fields),
           skills: [...spec.skills, ...stringList(params.skill)] });
-        const result = await agents.run(await withResolvedModel({ rt, workflowRunId: c.runId, workflowId: c.workflow.id, stepKey: c.stepKey, nodeId: node.id, spawnKey: c.spawnKey, role: spec.role, title, prompt, fields, skills: [...spec.skills, ...stringList(params.skill)], signal: c.signal }));
+        const result = await agents.run(await withResolvedModel({ rt, workflowRunId: c.runId, workflowId: c.workflow.id, stepKey: c.stepKey, nodeId: node.id, spawnKey: c.spawnKey, role: spec.role, title, prompt, fields, ...(node.effect ? { nodeEffect: node.effect } : {}), skills: [...spec.skills, ...stringList(params.skill)], signal: c.signal }));
         return { output: result.output, threadId: result.threadId, ...(result.usage ? { usage: result.usage } : {}), ...(result.detail ? { detail: result.detail } : {}) };
       },
     } as NodeExecutor<ChainRuntime>);

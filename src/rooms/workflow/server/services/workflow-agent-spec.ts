@@ -1,5 +1,5 @@
 import { ROLE_IDS, roleRowOf, SCOUT_SEAT_ROLES } from "@lane-pilot/models";
-import type { NodeForm } from "@lane-pilot/contracts";
+import type { NodeForm, ToolTier } from "@lane-pilot/contracts";
 import { READ_ONLY_LINE, wfRunIdemParent } from "@lane-pilot/workflow-engine";
 import type { ContractNode, Field, StepContext, Usage } from "@lane-pilot/workflow-engine";
 import { LEAD_ID } from "../../../contracts";
@@ -127,6 +127,8 @@ export type HelperRequest = {
   intoThread?: string | null;
   /** The step's declared risk (`$inputs.risk` of the graph), for the model downgrade guard: high/critical never cheapens. */
   risk?: string;
+  /** Declared step effect tier (`R | D | L | S`), enforced at runtime for MCP tools when present. */
+  nodeEffect?: ToolTier;
   /** The step contract (`produces`, `gates`): an answer that breaks it gets the same one repair turn as an answer without a JSON block. */
   contract?: ContractNode;
   /** The files the step's start packet points at (the `files` of its PacketPlan): the executor writes them on the PM checkout, `run` writes the same relative paths where the helper actually reads them (a placed specialist's own folder or host, a continued thread's environment). */

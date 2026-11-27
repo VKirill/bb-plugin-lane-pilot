@@ -96,6 +96,7 @@ export const prepareClaudeGuardHost: ExperimentalHostRpcHandlers<typeof hostCont
     role: input.role,
     cwd: input.cwd,
     taskHome: input.taskHome,
+    ...(input.nodeEffect ? { nodeEffect: input.nodeEffect } : {}),
     dataDir: context.experimental_paths.dataDir,
   })
 );

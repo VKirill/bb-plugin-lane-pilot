@@ -3,7 +3,8 @@ import { realpathSync } from "node:fs";
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
-import { sha256Hex } from "@lane-pilot/kit";
+import type { ToolTier } from "@lane-pilot/contracts";
+import { pluginRootFromModule, sha256Hex } from "@lane-pilot/kit";
 import { resolveCredentialPaths } from "../verification";
 import {
   HELPER_DISALLOWED_TOOLS,
@@ -74,6 +75,8 @@ export function claudeGuardLauncherScript(input: {
   agentType: string;
   /** Turns the launch may run (claude --max-turns); 0/undefined leaves the CLI's own default. */
   maxTurns?: number;
+  nodeEffect?: ToolTier;
+  toolTiersFile?: string | null;
 }): string {
   const inject = join(input.destDir, "hooks", "inject_agent_type.py");
   const guard = join(input.destDir, "hooks", "guard_shell.py");
@@ -92,6 +95,10 @@ export function claudeGuardLauncherScript(input: {
     "fi",
     `export LANE_PILOT_ROLE=${shellQuote(input.role)}`,
     `export LANE_PILOT_AGENT_TYPE=${shellQuote(input.agentType)}`,
+    ...(input.nodeEffect ? [
+      `export LANE_PILOT_NODE_EFFECT=${shellQuote(input.nodeEffect)}`,
+      ...(input.toolTiersFile ? [`export LANE_PILOT_TOOL_TIERS_FILE=${shellQuote(input.toolTiersFile)}`] : []),
+    ] : []),
     "export AGENT_HOOK_CLIENT=claude",
     "export LANE_SUBAGENT_CAP=0",
     `export LANE_PILOT_HOOK_TRACE=${shellQuote(join(input.destDir, "hook-trace.jsonl"))}`,
@@ -120,6 +127,7 @@ export async function prepareClaudeGuard(input: {
   role: string;
   cwd?: string | null;
   taskHome?: string | null;
+  nodeEffect?: ToolTier;
   dataDir: string;
 }): Promise<{ env: EnvEntry[]; isolation?: { denies: number; sandbox: boolean } }> {
   const role = input.role.trim();
@@ -131,9 +139,13 @@ export async function prepareClaudeGuard(input: {
   const taskHome = isWriter && input.taskHome?.trim().startsWith("/") ? input.taskHome.trim() : null;
   const isolationSettings = isWriter ? buildWriterIsolationSettings({ cwd, taskHome }) : null;
   const maxTurns = role === "writer" ? WRITER_MAX_TURNS : 0;
+  const nodeEffect = input.nodeEffect;
+  const toolTiersFile = nodeEffect ? join(pluginRootFromModule(import.meta.url), "policy", "ohmy-tool-tiers.json") : null;
   const digest = sha256Hex(JSON.stringify({
     role, agentType, command, cwd, taskHome, maxTurns,
     denies: isolationSettings?.permissions.deny.length ?? 0,
+    nodeEffect: nodeEffect ?? null,
+    toolTiersFile,
     version: 3,
   })).slice(0, 24);
   const dir = join(input.dataDir, "claude-guard", digest);
@@ -161,6 +173,7 @@ export async function prepareClaudeGuard(input: {
     role,
     agentType,
     maxTurns,
+    ...(nodeEffect ? { nodeEffect, toolTiersFile } : {}),
   }), 0o700);
   const reason = `Lane Pilot: ${role} claude thread runs the bundled guard`.slice(0, 500);
   return {
@@ -168,6 +181,10 @@ export async function prepareClaudeGuard(input: {
       { name: "BB_CLAUDE_CODE_EXECUTABLE", value: launcher, reason },
       { name: "LANE_PILOT_ROLE", value: role, reason },
       { name: "LANE_PILOT_AGENT_TYPE", value: agentType, reason: `Claude agentSetting ${agentType}`.slice(0, 500) },
+      ...(nodeEffect ? [
+        { name: "LANE_PILOT_NODE_EFFECT", value: nodeEffect, reason: `Lane Pilot: step declared effect=${nodeEffect}`.slice(0, 500) },
+        ...(toolTiersFile ? [{ name: "LANE_PILOT_TOOL_TIERS_FILE", value: toolTiersFile, reason: "Lane Pilot: ohmy tool tiers policy file" }] : []),
+      ] : []),
     ],
     isolation: {
       denies: isolationSettings?.permissions.deny.length ?? 0,
