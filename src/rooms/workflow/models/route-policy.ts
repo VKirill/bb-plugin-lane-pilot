@@ -61,17 +61,6 @@ export function policyProblem(card: RouterCard, policy: RoutePolicy): string | n
   return null;
 }
 
-/** The candidates the policy allows, and why each refused one was refused. */
-export function filterByPolicy(candidates: readonly RouterCard[], policy: RoutePolicy): { allowed: RouterCard[]; rejected: Array<{ id: string; reason: string }> } {
-  const allowed: RouterCard[] = [], rejected: Array<{ id: string; reason: string }> = [];
-  for (const card of candidates) {
-    const problem = policyProblem(card, policy);
-    if (problem) rejected.push({ id: card.id, reason: `policy: ${problem}` });
-    else allowed.push(card);
-  }
-  return { allowed, rejected };
-}
-
 const RISKS: readonly string[] = ["low", "medium", "high"];
 
 /** The project's route policy from its settings: `route.max_risk` and `secrets.allow`. */

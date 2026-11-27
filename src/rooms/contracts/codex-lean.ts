@@ -8,7 +8,6 @@
  *   writer home as Codex starts it today 16,267; with the owner's AGENTS.md left out and CODE_ROLE_OFF applied 8,098.
  *   judge: 5,856 with JUDGE_OFF_FEATURES and a short instructions file (default `codex exec` there: 13,846).
  */
-export const CODEX_LEAN_CHECKED_ON = "0.169.0";
 
 /** Feature flags no Lane Pilot role needs: Codex desktop/app surfaces, app and plugin catalogs, goals, tool suggestions. (Subagent tools go with `[agents] enabled = false`, set beside these; `features.multi_agent` is deprecated and only adds a warning.) */
 export const CODEX_LEAN_COMMON_OFF: readonly string[] = [

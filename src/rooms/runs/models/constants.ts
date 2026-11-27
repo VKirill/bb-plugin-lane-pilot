@@ -2,12 +2,6 @@
 export const TARGET_SHA = "6acbe4a3030750e5d10bfe71233653dc1c99a333";
 export const UPSTREAM_REPO = "https://github.com/VKirill/claude-lane-stack";
 
-export const S8_RELATIVE_PATHS = [
-  ".agents/routing.profile.yaml",
-  ".agents/night-shift.yaml",
-  ".agents/capabilities.json",
-] as const;
-
 export const EXTERNAL_OPS = [
   "npm install -g @rama_nigg/open-cursor",
   "open-cursor install",

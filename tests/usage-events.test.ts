@@ -5,7 +5,6 @@ import { openDatabase, saveProjectSetting } from "../src/rooms/plugin-db";
 import {
   mountUsageSnapshots,
   USAGE_SKIP_KEY,
-  USAGE_SNAPSHOT_SCHEDULE,
 } from "../src/rooms/usage/server";
 import { attachTokenUsage } from "../src/rooms/usage/server/handlers/token-usage-events";
 import { queryTokenUsage } from "../src/rooms/usage/server/services/token-usage";
@@ -145,7 +144,7 @@ describe("event-driven token usage and usage snapshots (Task 17)", () => {
     const snapshots = mountUsageSnapshots({ bb, db, isDisposed: () => false }, providerUsage);
     mountRateLimitWatch({ bb, db, isDisposed: () => false } as never, { onUpdated: () => { void snapshots.push(); } });
     attachTokenUsage({ bb, db, isDisposed: () => false });
-    expect(harness.registrations.schedules.map((s) => s.name)).not.toContain(USAGE_SNAPSHOT_SCHEDULE);
+    expect(harness.registrations.schedules.map((s) => s.name)).not.toContain("usage-snapshot-push");
 
     // 1. Initial ready push writes once.
     await snapshots.push();

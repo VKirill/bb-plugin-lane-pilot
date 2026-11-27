@@ -26,8 +26,6 @@ const MAX_GENERATIONS = 20;
 const MAX_KEY_LENGTH = 200;
 
 export const keyedSpawnSupported = (bb: BbPluginApi) => typeof threadsOf(bb).experimental_vkSpawnKeyed === "function";
-export const metadataLookupSupported = (bb: BbPluginApi) => typeof threadsOf(bb).experimental_vkFindByPluginMetadata === "function";
-
 /** What makes one logical spawn: the same identity repeated after a lost answer means the same thread. */
 export type SpawnIdentity = { stable: string; role: string };
 

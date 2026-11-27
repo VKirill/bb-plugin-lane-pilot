@@ -153,7 +153,6 @@ it("a sibling of an area with three tasks of one kind waits for the pilot, the f
 });
 
 import { waitWhileRunPaused } from "../src/rooms/runs/server";
-import { sweepWriterWakes } from "../src/rooms/writer/server/services/writer-wake";
 
 it("a pause-state read that keeps failing is never 'resumed': the caller's bound decides", async () => {
   const kv = { get: async () => { throw new Error("kv down"); }, set: async () => undefined };
@@ -182,6 +181,12 @@ it("a single pause-state read failure keeps waiting, and the next clean read res
 
 const PAUSE_READ_KEYS = new Set(["run-paused:run1", "run-halted:run1", "conveyor:off"]);
 
+function wakeQueuedT1(env: ReturnType<typeof setup>, all: Services) {
+  env.db.prepare("UPDATE lane_pilot_attempt SET wake_at=NULL WHERE id='T1-a1' AND state='queued'").run();
+  all.activeWriterTasks.delete("run1:T1");
+  all.startWriterTask({ projectId: "proj1", runId: "run1", taskId: "T1", firstAttemptId: "T1-a1", pmThreadId: "thr_pm", config, task: contract("T1"), plan: "Plan for T1" });
+}
+
 it("a plugin-store read failure before spawn parks the attempt for a retry instead of blocking it", async () => {
   const env = setup();
   const kv = env.bb.storage.kv as unknown as { get: (key: string) => Promise<unknown> };
@@ -197,38 +202,7 @@ it("a plugin-store read failure before spawn parks the attempt for a retry inste
   const parked = getAttempt(env.db, "T1-a1")!;
   expect(parked.state).toBe("queued");
   expect(spawned).toEqual([]);
-  env.db.prepare("UPDATE lane_pilot_attempt SET wake_at=0 WHERE id='T1-a1'").run();
-  await sweepWriterWakes(env.ctx, all as never);
-  await vi.waitFor(() => expect(writerStage(env.db).state).toBe("passed"), { timeout: 15_000 });
-  expect(spawned).toEqual(["T1-a1"]);
-  await env.harness.lifecycle.dispose();
-});
-
-it("a config read that fails on the wake re-wakes the attempt instead of stranding it", async () => {
-  const env = setup();
-  const kv = env.bb.storage.kv as unknown as { get: (key: string) => Promise<unknown> };
-  const realGet = kv.get.bind(kv);
-  let failed = false;
-  kv.get = async (key: string) => {
-    if (!failed && !PAUSE_READ_KEYS.has(key)) { failed = true; throw new Error("store blink"); }
-    return realGet(key);
-  };
-  const { all, spawned } = services(env);
-  start(env, all);
-  await vi.waitFor(() => expect(getAttempt(env.db, "T1-a1")?.reason ?? "").toContain("store_read:"));
-  // The config read of the wake throws: the attempt must be re-waked, not left queued with no wake.
-  const realConfigForRun = env.ctx.configForRun.bind(env.ctx);
-  (env.ctx as { configForRun: typeof realConfigForRun }).configForRun = async () => { throw new Error("config down"); };
-  env.db.prepare("UPDATE lane_pilot_attempt SET wake_at=0 WHERE id='T1-a1'").run();
-  await sweepWriterWakes(env.ctx, all as never);
-  const rewaked = env.db.prepare("SELECT state, wake_at FROM lane_pilot_attempt WHERE id='T1-a1'").get() as { state: string; wake_at: number | null };
-  expect(rewaked.state).toBe("queued");
-  expect(rewaked.wake_at).not.toBeNull();
-  expect(spawned).toEqual([]);
-  // The next tick, with the config readable again, starts the writer.
-  (env.ctx as { configForRun: typeof realConfigForRun }).configForRun = realConfigForRun;
-  env.db.prepare("UPDATE lane_pilot_attempt SET wake_at=0 WHERE id='T1-a1'").run();
-  await sweepWriterWakes(env.ctx, all as never);
+  wakeQueuedT1(env, all);
   await vi.waitFor(() => expect(writerStage(env.db).state).toBe("passed"), { timeout: 15_000 });
   expect(spawned).toEqual(["T1-a1"]);
   await env.harness.lifecycle.dispose();
@@ -246,8 +220,7 @@ it("a plugin store that stays unreadable blocks the attempt after the park bound
   start(env, all);
   await vi.waitFor(() => expect(getAttempt(env.db, "T1-a1")?.reason ?? "").toContain("store_read:"));
   for (let i = 0; i < 8 && getAttempt(env.db, "T1-a1")?.state !== "blocked"; i += 1) {
-    env.db.prepare("UPDATE lane_pilot_attempt SET wake_at=0 WHERE id='T1-a1' AND state='queued'").run();
-    await sweepWriterWakes(env.ctx, all as never);
+    wakeQueuedT1(env, all);
     await new Promise((resolve) => setTimeout(resolve, 30));
   }
   const attempt = getAttempt(env.db, "T1-a1")!;
@@ -260,8 +233,7 @@ it("a plugin store that stays unreadable blocks the attempt after the park bound
   transitionAttempt(env.db, "T1-a1", "queued", { reason: "retry after store read" });
   expect(items()).toEqual([expect.objectContaining({ key: "store-read:T1-a1:1", state: "closed" })]);
   for (let i = 0; i < 8 && getAttempt(env.db, "T1-a1")?.state !== "blocked"; i += 1) {
-    env.db.prepare("UPDATE lane_pilot_attempt SET wake_at=0 WHERE id='T1-a1' AND state='queued'").run();
-    await sweepWriterWakes(env.ctx, all as never);
+    wakeQueuedT1(env, all);
     await new Promise((resolve) => setTimeout(resolve, 30));
   }
   expect(getAttempt(env.db, "T1-a1")?.state).toBe("blocked");
@@ -290,14 +262,12 @@ it("a clean read after store_read parks resets the streak: the next failure park
   start(env, all);
   await vi.waitFor(() => expect(getAttempt(env.db, "T1-a1")?.reason ?? "").toContain("store_read:"));
   for (let i = 0; i < 3; i += 1) {
-    env.db.prepare("UPDATE lane_pilot_attempt SET wake_at=0 WHERE id='T1-a1' AND state='queued'").run();
-    await sweepWriterWakes(env.ctx, all as never);
+    wakeQueuedT1(env, all);
     await new Promise((resolve) => setTimeout(resolve, 30));
   }
   expect(getAttempt(env.db, "T1-a1")?.state).toBe("queued"); // 4 parks, still under the bound
   down = false; hangSpawn = true;
-  env.db.prepare("UPDATE lane_pilot_attempt SET wake_at=0 WHERE id='T1-a1' AND state='queued'").run();
-  await sweepWriterWakes(env.ctx, all as never);
+  wakeQueuedT1(env, all);
   await new Promise((resolve) => setTimeout(resolve, 100)); // the clean prepareRun finishes; the spawn hangs
   down = true; hangSpawn = false;
   // "Reload": the first pipeline is still hung in spawn, so free the dedup slot the way a restart would.

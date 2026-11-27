@@ -2,5 +2,5 @@
 export { room } from "./room";
 export { activeRunFor, allGuests, listGuests, saveGuests } from "./repositories/checkout-guests-repository";
 export { noteCheckoutGuest, withGuestsLock } from "./services/checkout-guests";
-export { CLAIMS_MAX, GUEST_LOCK_MS, GUEST_TTL_MS, trimGuests } from "../models/checkout-guests";
+export { GUEST_LOCK_MS, GUEST_TTL_MS, trimGuests } from "../models/checkout-guests";
 export type { Claim, Guest } from "../models/checkout-guests";

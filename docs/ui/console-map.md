@@ -6,7 +6,7 @@ updated: 2026-11-27
 status: draft
 tags: [ui, redesign, navigation, rpc]
 sources:
-  - src/rooms/pages/models/tabs-model.ts
+  - src/rooms/pages/models/nav-model.ts
   - src/rooms/pages/ui/page.tsx
   - app.tsx
   - src/rooms/core/server/plugin-contracts.ts
@@ -343,3 +343,4 @@ mindmap
 | 5 | Что убрать из «Системы» | Ничего не удаляется, всё уходит в P9–P16 |
 | 6 | Правка и закрепление записи памяти | В этом плане только просмотр и удаление; правка — отдельный план |
 | 7 | Доверие к репозиторию из GitHub Checks | В этом плане только своё: прогоны проверок Lane Pilot и откаты; GitHub Checks — отдельный план |
+| 8 | RPC `get_globals` и `save_globals` после удаления ветки `OwnedSettings scope="globals"` | Оба RPC остаются на сервере, потому что KV `defaults:v1` по-прежнему служит резервным источником чтения (`read fallback`) для настроек и профилей агентов |

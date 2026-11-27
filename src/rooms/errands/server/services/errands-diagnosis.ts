@@ -180,11 +180,3 @@ export function errandsDiagnosis(db: LanePilotDatabase, input: { days: number; p
     catalog: litter,
   };
 }
-
-/** The one morning line: null under 5 errands in the last week, else the headline numbers of the diagnosis. */
-export function errandsDiagnosisMorningLine(db: LanePilotDatabase): string | null {
-  const d = errandsDiagnosis(db, { days: 7 });
-  if (d.runs < 5) return null;
-  const cheaper = d.repeats.cheaperSecond.of ? `, второй прогон дешевле у ${d.repeats.cheaperSecond.count} из ${d.repeats.cheaperSecond.of}` : "";
-  return `Поручения за неделю: ${d.runs} (${d.outcomes.done} сделано, ${d.outcomes.failed} сбоев), цена $${d.cost.totalUsd.toFixed(2)}, итог без проверки неизвестен у ${d.unknownVerified.count} из ${d.ended}, повторов ${d.repeats.groups}${cheaper}.`;
-}

@@ -145,7 +145,6 @@ Purpose: canonical storage for project conventions (`kind = 'core'`) and context
   - `recordMemoryMiss` / `listMemoryMisses`: logs and reads search queries with zero hits (`packages/memory-core/src/store.ts:539-548, 693-707`).
   - `recordMemoryProbe` / `pruneMemoryProbeBefore`: logs and prunes probe evaluation results (`packages/memory-core/src/store.ts:595-599, 608-611`).
   - `expireMemory`: scans and expires idle/dated records (`packages/memory-core/src/lifecycle.ts:37-41`).
-  - `hideRecordsOfFile`: marks records superseded/expired when their source file is deleted or modified (`packages/memory-core/src/store.ts:286-289`).
   - `recordMemoryMixed` / `recordMemoryAccepted` / `recordCriticUse`: update usage counters and timestamps (`packages/memory-core/src/lifecycle.ts:94-97, 108-117`).
 - Readers:
   - `searchMemoryRecords` / `searchMemoryAllSections`: FTS5 and trigram searches (`packages/memory-core/src/store.ts:319-359`).
@@ -158,8 +157,6 @@ Purpose: canonical storage for project conventions (`kind = 'core'`) and context
   - `coreShelf`: queries active core conventions for prompts (`packages/memory-core/src/store.ts:252-258`).
   - `pendingVectors`: queries active records missing vector embeddings (`packages/memory-core/src/vectors.ts:41-48`).
   - `activeMemoryDigestRows`: retrieves active notes sorted by acceptance for cards (`packages/memory-core/src/store.ts:612-618`).
-  - `memoryFillRows` / `memoryHiddenRows`: calculates shelf fill and hidden counts by status (`packages/memory-core/src/store.ts:415-419, 429-431`).
-  - `firstUnusedCoreRecordId`: finds oldest unaccepted maintainer core record (`packages/memory-core/src/store.ts:434-439`).
   - `memoryRecordExists`: verifies whether record exists in project (`packages/memory-core/src/store.ts:618-635`).
   - `listMemoryReceipts`: reads recent retrieval receipts, globally or by project, with a limit clamped to 1–500 (`packages/memory-core/src/lifecycle.ts:130-153`).
 

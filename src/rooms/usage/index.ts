@@ -2,4 +2,3 @@
 export * from "./models";
 export { DEFAULT_USAGE_SKIP_PERCENT, USAGE_SKIP_KEY, usageSettings } from "./settings";
 export { attemptMetrics } from "./server/services/attempt-metrics";
-export { projectTokenTotalsSince } from "./server/repositories/token-usage-repository";

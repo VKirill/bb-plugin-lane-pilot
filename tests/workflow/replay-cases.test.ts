@@ -8,7 +8,6 @@ import {
   parseWorkflow,
   replayCasesFromRuns,
   runDraftTest,
-  runDraftTests,
   testCasesOf,
   workflowMigrations,
 } from "@lane-pilot/workflow-engine";
@@ -332,9 +331,9 @@ describe("replay cases from finished runs (Task 14)", () => {
       nodeId: "send",
     });
 
-    const batch = await runDraftTests({ db, harnessVersion: "t" }, wfWithS, { cases: [okCase], includeWorkflowCases: false });
-    expect(batch).toHaveLength(1);
-    expect(batch[0]!.green).toBe(true);
+    const replayTc = draftTestCaseFromReplay(okCase);
+    const replayResult = await runDraftTest({ db, harnessVersion: "t" }, wfWithS, replayTc);
+    expect(replayResult.green).toBe(true);
     expect(testCasesOf(wfWithS, { cases: [okCase] }).map((c) => c.id)).toEqual(["smoke", "replay:run_ok"]);
   });
 

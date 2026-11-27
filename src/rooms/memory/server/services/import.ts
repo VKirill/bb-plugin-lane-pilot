@@ -12,11 +12,6 @@ import { listActiveMemoryForImport, type ActiveImportMemoryRow } from "../reposi
 export const MEMORY_IMPORT_SOURCES = ["bb-memory", "claude-files"] as const;
 export type MemoryImportSource = (typeof MEMORY_IMPORT_SOURCES)[number];
 
-export const MEMORY_IMPORT_USAGE = [
-  "scripts/memory-import.sh <bb-memory|claude-files> <jsonl> <project-id> [--dry-run]   (RPC memory_import; the report lands next to the jsonl)",
-  "scripts/memory-import.sh eval <report.json>   (RPC memory_import_eval)",
-].join("\n");
-
 /** Source kinds the collectors emit, mapped to the tag the store keeps in concepts (`kind:<value>`; the store's own kind stays `note`). */
 const KIND_MAP: Record<string, string> = {
   user: "preference", feedback: "rule", project: "fact", reference: "fact",

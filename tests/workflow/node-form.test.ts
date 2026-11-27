@@ -5,7 +5,6 @@ import {
   computeEnvironmentFingerprint,
   loadWorkflow,
   parseWorkflow,
-  runStepFacts,
   type GraphNode,
   type StepContext,
 } from "@lane-pilot/workflow-engine";
@@ -181,13 +180,6 @@ describe("Task 29: node form (agent | plan | script) with fallback", () => {
       cost_state: "measured",
     });
 
-    const facts = runStepFacts(engine, summary.runId);
-    expect(facts.find((f) => f.nodeId === "work")).toMatchObject({
-      formUsed: "script",
-      fallbackTaken: null,
-      environmentFingerprint: fp,
-      costState: "measured",
-    });
     expect(infoLogs.some((line) => line.includes("wf.form node=work form=script"))).toBe(true);
     expect(warnLogs).toEqual([]);
   });

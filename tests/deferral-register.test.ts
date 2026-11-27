@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import plugin from "../server";
 import type { EventLike, ThreadLike } from "../src/rooms/contracts";
 import { SEED_ENTRIES } from "../src/rooms/deferral/models/seed";
-import { createDeferrals, noTermDeferralsOf, runDeferralCli } from "../src/rooms/deferral/server";
+import { createDeferrals, runDeferralCli } from "../src/rooms/deferral/server";
 import { sha256Hex } from "@lane-pilot/kit";
 import { parseOwnerRef, verifyOwnerMessage, type OwnerMessagePort } from "../src/rooms/deferral/server/services/verify";
 import { migrations, openDatabase } from "../src/rooms/plugin-db";
@@ -220,22 +220,11 @@ describe("first entries", () => {
     expect((await api.defer({ what: "dfr_seed_plan_containment" })).created).toBe(false);
   });
 
-  it("opens no term for the code either (a held memory conflict) and counts a project's open checks with no term as unproven, global and foreign ones not", async () => {
-    const { api, db } = register();
+  it("opens no term for the code either (a held memory conflict)", async () => {
+    const { api } = register();
     api.seed();
     api.open({ id: "dfr_conflict", kind: "memory_conflict", what: "two notes disagree", projectId: "proj_a" });
     expect(api.list().entries.find((item) => item.id === "dfr_conflict")).toMatchObject({ state: "needs_owner_term", due: null });
-    await api.defer({ what: "skipped e2e of the cabinet", kind: "skipped_test", reason: "needs the staging browser", projectId: "proj_a" });
-    await api.defer({ what: "flaky gate of b", kind: "gate", reason: "rewritten next week", projectId: "proj_b" });
-    const mine = noTermDeferralsOf(db, "proj_a");
-    expect(mine.map((row) => row.what)).toEqual(["skipped e2e of the cabinet"]);
-    expect(noTermDeferralsOf(db, "proj_c")).toEqual([]);
-    expect(noTermDeferralsOf(db, "")).toEqual([]);
-    api.close({ id: mine[0]!.id, evidence: "the staging browser runs it now" });
-    expect(noTermDeferralsOf(db, "proj_a")).toEqual([]);
-    // A deferral the owner gave a term is a term, not an unproven item: it is on its own clock.
-    await api.defer({ what: "dated skip", kind: "skipped_test", ownerMsg: "thr_owner#3", projectId: "proj_a" });
-    expect(noTermDeferralsOf(db, "proj_a")).toEqual([]);
   });
 
   it("a seeded entry takes a term an owner's message names, and a restart does not reset it", async () => {

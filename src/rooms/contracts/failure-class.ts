@@ -162,13 +162,6 @@ export function failureClass(state:string, reason:string | null | undefined):Fai
   return classifyFailure(state, reason).cls;
 }
 
-/** Which side owns the failure. The class itself stays as it was; this is only the side. */
-export type FailureSide = "agent" | "environment";
-const ENVIRONMENT_SIDE = new Set<FailureClass>(["infra", "provider", "limit", "harness", "merge", "dirty_base", "budget"]);
-export function failureSide(cls:FailureClass):FailureSide {
-  return ENVIRONMENT_SIDE.has(cls) ? "environment" : "agent";
-}
-
 // The machine, not the merged code: root-owned files left by a deploy (OVH `rmSync …/.output`), a stale output folder.
 // An error line that names a path or a system call (`EACCES: permission denied, rmSync '/x/.output'`, `npm error code EACCES`),
 // or the shell refusing the command itself (`sh: 1: vitest: Permission denied`).

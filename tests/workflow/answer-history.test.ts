@@ -2,7 +2,11 @@ import { describe, expect, it } from "vitest";
 import type { NodeExecutor, StepContext, Workflow, WorkflowEdge } from "@lane-pilot/workflow-engine";
 import { validateWorkflow } from "@lane-pilot/workflow-engine";
 import { engineOn, journalDb, ok, rows, wf } from "./engine-helpers";
-import { read } from "../../packages/workflow-engine/src/step-read";
+import { refOf } from "../../packages/workflow-engine/src/expr";
+import { env } from "../../packages/workflow-engine/src/step-read";
+
+const read = (engine: Parameters<typeof env>[0], run: Parameters<typeof env>[1], step: Parameters<typeof env>[2], text: string): unknown =>
+  env(engine, run, step).read(refOf(text)).value;
 
 /**
  * `ctx.answers.<humanNode>` — the settled outputs of every visit of a named HUMAN node in the current run and scope

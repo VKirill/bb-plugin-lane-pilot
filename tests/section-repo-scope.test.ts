@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { TaskV2 } from "../src/rooms/contracts";
 import { criticLevel, planCriticTier } from "../src/rooms/critique";
 import { checkoutBase, createAttempt, createRun, createTask, openDatabase, taskBasePath } from "../src/rooms/plugin-db";
-import { checkoutOwnsOverlap, leavesSection, parseRepoRoot, planWithRepoScope, rerootToRepoRoot, taskInRunScope } from "../src/rooms/tasks";
+import { checkoutOwnsOverlap, leavesSection, planWithRepoScope, rerootToRepoRoot, taskInRunScope } from "../src/rooms/tasks";
 import { batchAdviceFor } from "../src/rooms/writer/server/services/dispatch-guards";
 
 const R = "/srv/monorepo";
@@ -15,14 +15,6 @@ const task = (over: Partial<TaskV2> = {}): TaskV2 => ({
 });
 
 describe("the repository root of a section, as git answers on the host", () => {
-  it("reads the root, the way up from the run folder and the section's place; null for the root itself, no repository or a foreign answer", () => {
-    expect(parseRepoRoot({ exitCode: 0, stdout: `${R}\n${BOT}\n` })).toEqual({ up: "..", prefix: "aiphoto_bot" });
-    expect(parseRepoRoot({ exitCode: 0, stdout: `${R}\n${R}/apps/bots/a\n` })).toEqual({ up: "../../..", prefix: "apps/bots/a" });
-    expect(parseRepoRoot({ exitCode: 0, stdout: `${R}\n${R}\n` })).toBeNull();
-    expect(parseRepoRoot({ exitCode: 128, stdout: "" })).toBeNull();
-    expect(parseRepoRoot({ exitCode: 0, stdout: `/other\n${BOT}\n` })).toBeNull();
-    expect(parseRepoRoot(null)).toBeNull();
-  });
   it("sees which paths climb out of the section", () => {
     expect(leavesSection("../sdk/x.ts")).toBe(true);
     expect(leavesSection("./../sdk")).toBe(true);

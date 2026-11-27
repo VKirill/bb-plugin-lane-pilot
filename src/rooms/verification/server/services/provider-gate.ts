@@ -91,7 +91,6 @@ export function createProviderGate(input: {
     },
   };
 }
-export type ProviderGate = ReturnType<typeof createProviderGate>;
 
 /** The provider is registered in this core and offers itself on this machine. A core without the API lists none. */
 export async function providerListed(

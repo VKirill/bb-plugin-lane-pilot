@@ -63,7 +63,6 @@ export {
   loadAcceptanceV2Schema,
   validateAcceptanceV2,
 } from "../acceptance-v2";
-export { loadTaskV2Schema } from "../task-v2-schema";
 export {
   ownerSaidNo,
   readTaskApproach,

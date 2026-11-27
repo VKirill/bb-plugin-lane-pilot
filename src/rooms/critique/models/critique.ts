@@ -189,7 +189,7 @@ export function critiquePrompt(input: { plan: string; task: unknown; agent?: str
   ].join("\n\n");
 }
 
-/** `cites` is the code check on the findings' files (inputCitations): a serious finding that names a file the critic never saw counts as medium. */
+/** `cites` is the code check on the findings' files: a serious finding that names a file the critic never saw counts as medium. */
 export function parseCritique(output: string, cites?: Citation): CritiqueResult {
   const parsed = parseVerdictWithLegacy(output, {
     kind: "plan",

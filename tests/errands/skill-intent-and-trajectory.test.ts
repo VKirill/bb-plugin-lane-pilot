@@ -17,8 +17,7 @@ import {
   type TrajectoryInterventionKind,
 } from "../../src/rooms/errands";
 import {
-  listUnprocessedTrajectoryDeltas,
-  markTrajectoryDeltasProcessed,
+  listTrajectoryDeltasInWindow,
   mountErrands,
   recordTrajectoryDelta,
 } from "../../src/rooms/errands/server";
@@ -275,24 +274,11 @@ describe("lane_pilot_trajectory_delta & migrations.lock.json", () => {
       });
       expect(otherProject.status).toBe("recorded");
 
-      const acceptedProj1 = listUnprocessedTrajectoryDeltas(db, { projectId: "proj-1" });
+      const acceptedProj1 = listTrajectoryDeltasInWindow(db, { since: 0, projectId: "proj-1" }).reverse();
       expect(acceptedProj1.map((r) => r.id)).toEqual([first.row!.id]);
 
-      const allProj1 = listUnprocessedTrajectoryDeltas(db, { projectId: "proj-1", onlyAccepted: false });
+      const allProj1 = listTrajectoryDeltasInWindow(db, { since: 0, projectId: "proj-1", onlyAccepted: false }).reverse();
       expect(allProj1.map((r) => r.id)).toEqual([first.row!.id, unaccepted.row!.id]);
-
-      const processedLogs: string[] = [];
-      const marked = markTrajectoryDeltasProcessed(
-        db,
-        [first.row!.id],
-        1_730_000_010_000,
-        (m) => processedLogs.push(m),
-      );
-      expect(marked).toBe(1);
-      expect(processedLogs).toHaveLength(1);
-      expect(processedLogs[0]).toMatch(/^INFO \[errands\.trajectoryDelta\] processed /);
-
-      expect(listUnprocessedTrajectoryDeltas(db, { projectId: "proj-1" })).toEqual([]);
 
       expect(() =>
         db.prepare(`DELETE FROM ${TRAJECTORY_DELTA_TABLE} WHERE id = ?`).run(first.row!.id),
@@ -387,7 +373,7 @@ describe("live owner intervention writers", () => {
       const answerRes = await answerWorkflowQuestion(ctx, { workflowEngine: engine }, { runId: answerRun.runId, choice: "go" });
       expect(answerRes).toMatchObject({ ok: true });
 
-      const rows = listUnprocessedTrajectoryDeltas(db, { projectId: "proj-human" });
+      const rows = listTrajectoryDeltasInWindow(db, { since: 0, projectId: "proj-human" }).reverse();
       expect(rows).toHaveLength(2);
       expect(rows.every((r) => r.interventionKind === "variant_selected")).toBe(true);
       expect(rows[0]).toMatchObject({ workflowId: "human-delta-test", stageArchetype: "review-gate", maskedSummary: "fix: tests first" });
@@ -458,7 +444,7 @@ describe("live owner intervention writers", () => {
       await amendGoalsTool(deps, { runId: started.runId, reason: "Retry write step with updated query", rerun: { nodeId: "write_step", with: { query: "updated" } } }, toolCtx);
       await engine.idle();
 
-      const rows = listUnprocessedTrajectoryDeltas(db, { projectId: "proj-amend" });
+      const rows = listTrajectoryDeltasInWindow(db, { since: 0, projectId: "proj-amend" }).reverse();
       expect(rows).toHaveLength(2);
       expect(rows[0]).toMatchObject({
         workflowId: "amend-delta-test",
@@ -510,7 +496,7 @@ describe("live owner intervention writers", () => {
         { threadId: "pm-word", projectId: "proj-word" },
       );
 
-      const rows = listUnprocessedTrajectoryDeltas(db, { projectId: "proj-word" });
+      const rows = listTrajectoryDeltasInWindow(db, { since: 0, projectId: "proj-word" }).reverse();
       expect(rows).toHaveLength(2);
       expect(rows[0]).toMatchObject({ interventionKind: "over_constraint" });
       expect(rows[0]!.maskedSummary).toContain("Do not modify production billing schema");
@@ -572,7 +558,7 @@ describe("live owner intervention writers", () => {
         { threadId: "pm-errand", projectId: "proj-errand" },
       );
 
-      const rows = listUnprocessedTrajectoryDeltas(db, { projectId: "proj-errand" });
+      const rows = listTrajectoryDeltasInWindow(db, { since: 0, projectId: "proj-errand" }).reverse();
       expect(rows).toHaveLength(2);
       expect(rows.every((r) => r.interventionKind === "skill_request")).toBe(true);
       expect(rows[0]!.resolvedSkills).toEqual(["ru-text"]);

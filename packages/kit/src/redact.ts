@@ -75,8 +75,6 @@ export function registerSecrets(values:Iterable<string>):void {
 /** For tests: forgets every remembered value. */
 export function forgetSecrets():void { known.clear(); knownPattern = null; knownDirty = false; }
 
-export function knownSecretCount():number { return known.size; }
-
 /** The text with every remembered secret masked; a no-op while nothing has been handed out. */
 export function redactKnown(text:string):string {
   if (!known.size || !text) return text;

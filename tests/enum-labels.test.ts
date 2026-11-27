@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { en, ru, setLocaleOverride } from "@lane-pilot/i18n";
 import { SETTINGS_REGISTRY } from "../src/rooms/settings-registry";
-import { enumLabelKnown, isBrandEnumValue, presentEnumLabel } from "../src/rooms/ui-shell/ui/enum-labels";
+import { isBrandEnumValue, presentEnumLabel } from "../src/rooms/ui-shell/ui/enum-labels";
 
 describe("enum presentation labels", () => {
   it("keeps storage codes and localizes working labels in EN and RU", () => {
@@ -15,11 +15,12 @@ describe("enum presentation labels", () => {
     expect(rows.length).toBeGreaterThan(0);
     for (const row of rows) {
       for (const option of row.options) {
-        expect(enumLabelKnown(row.storageKey, option) || isBrandEnumValue(option)).toBe(true);
         setLocaleOverride("en");
         const english = presentEnumLabel(row.storageKey, option);
+        expect(english !== en.enumUnsupported || isBrandEnumValue(option)).toBe(true);
         setLocaleOverride("ru");
         const russian = presentEnumLabel(row.storageKey, option);
+        expect(russian !== ru.enumUnsupported || isBrandEnumValue(option)).toBe(true);
         expect(english.length).toBeGreaterThan(0);
         expect(russian.length).toBeGreaterThan(0);
         if (!isBrandEnumValue(option) && option !== "FTS5" && option !== "BM25" && option !== "fts5" && option !== "bm25") {

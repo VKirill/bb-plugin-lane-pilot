@@ -10,8 +10,8 @@ export { IntegrationGateRunner, gateRunVerdict } from "./services/integration-ga
 export { buildMainfixTask } from "../models/mainfix";
 export { registerLandingSuiteAction } from "./handlers/landing-suite";
 export { handleLandingRed, verifyProofReceiptsCurrent } from "./services/landing-suite";
-export { checkProofs, hostGit, phaseProofRecords, proofCurrency, renderProofCurrency } from "./services/proof-currency";
-export type { GitRun, ProofCurrencyResult, ProofCurrencyVerdict, ProofRecord, ProofResult, ProofVerdict } from "./services/proof-currency";
+export { hostGit, proofCurrency } from "./services/proof-currency";
+export type { GitRun, ProofCurrencyResult, ProofCurrencyVerdict } from "./services/proof-currency";
 export {
   beginVerdictReceipt,
   captureWorkspaceReceiptSnapshot,
@@ -31,4 +31,4 @@ export {
   providerSwitchOn,
   waitProviderEnvironment,
 } from "./services/provider-gate";
-export type { ProviderGate, ProviderHostStatus } from "./services/provider-gate";
+export type { ProviderHostStatus } from "./services/provider-gate";

@@ -19,7 +19,6 @@ export const REQUIRED_SESSION_HANDSHAKE_VERSION = 1;
 export const REQUIRED_SESSION_HOST_DAEMON_PROTOCOL = 216;
 export const MANDATORY_BB_PLUGINS = ["environment-project-checkout", "project-folders"] as const;
 export const MANDATORY_MCP_SERVERS = ["bb-bridge"] as const;
-export const REQUIRED_SESSION_COMPONENTS = [...MANDATORY_BB_PLUGINS, ...MANDATORY_MCP_SERVERS] as const;
 export const CORE_PROVIDER_GROUPS = {
   "claude-code": ["bbPlugins", "skills", "mcpServers", "nativePlugins"],
   codex: ["bbPlugins", "skills", "mcpServers", "nativePlugins"],
@@ -272,7 +271,6 @@ export const HELPER_SPAWN_ROLES = [
   "pm-reader", "plan-critic", "specialist-reviewer",
   "onboarder", "memory-maintainer", "night-fixer", "gate-triage",
 ] as const;
-export type HelperSpawnRole = (typeof HELPER_SPAWN_ROLES)[number];
 
 export type HelperContextSettings = {
   mode: HelperContextMode;
@@ -620,11 +618,3 @@ export function decideHelperDispatch(input: {
     snapshot: input.snapshot ?? { schemaVersion: 1, mode: settings.mode, settings, parentRequired, parentPolicy, policy },
   };
 }
-
-export function isHelperSpawnRole(role: unknown): role is HelperSpawnRole {
-  return typeof role === "string" && (HELPER_SPAWN_ROLES as readonly string[]).includes(role);
-}
-
-/** Helper roles whose stage produces a document: they may not start on an adapter version with no documentary receipt (SMA ap_caps). */
-export const DOCUMENTARY_ROLES: ReadonlySet<string> = new Set(["analyst", "planner", "memory-maintainer", "onboarder"]);
-export const isDocumentaryRole = (role: string | null | undefined): boolean => typeof role === "string" && DOCUMENTARY_ROLES.has(role);

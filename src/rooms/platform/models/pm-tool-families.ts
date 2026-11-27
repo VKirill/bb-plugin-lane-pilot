@@ -36,8 +36,6 @@ export const PM_TOOL_FAMILIES = {
   },
 } as const satisfies Record<string, ToolFamily>;
 
-export type PmToolFamilyName = keyof typeof PM_TOOL_FAMILIES;
-
 /** Tools the PM keeps by name: used in nearly every turn, or too weighty to hide behind an action. */
 export const PM_CORE_TOOLS = [
   "lane_pilot_read",

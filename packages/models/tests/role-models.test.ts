@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  ROLE_IDS, ROLE_MODEL_OPTIONS, ROLE_TABLE, WRITER_PROFILES, consistentProvider, crossFamilyPeer, crossFamilyPeers, judgeAgainstAuthor, modelFamily, modelTier, offeredForRole, peerOffSpent,
+  ROLE_IDS, ROLE_MODEL_OPTIONS, ROLE_TABLE, WRITER_PROFILES, consistentProvider, crossFamilyPeers, judgeAgainstAuthor, modelFamily, modelTier, offeredForRole, peerOffSpent,
   resolveRoleModel, roleFallbackModel, roleModelKey, roleModelProblem, roleModelOption, roleRow, roleRowOf, type ModelCatalog,
 } from "@lane-pilot/models";
 
@@ -99,11 +99,11 @@ describe("the cross-family rule for a judge", () => {
   const opus = { providerId: "claude-code", model: "claude-opus-5-5" };
 
   it("pairs the models by strength across the families", () => {
-    expect(crossFamilyPeer("claude-opus-5-5")).toEqual(sol);
-    expect(crossFamilyPeer("gpt-6.1-sol")).toEqual(opus);
-    expect(crossFamilyPeer("claude-sonnet-5-5")).toEqual({ providerId: "codex", model: "gpt-6.1-terra" });
-    expect(crossFamilyPeer("gpt-6-luna")).toEqual({ providerId: "claude-code", model: "claude-haiku-5-5" });
-    expect(crossFamilyPeer("composer-2.5")).toBeNull();
+    expect(crossFamilyPeers("claude-opus-5-5")[0] ?? null).toEqual(sol);
+    expect(crossFamilyPeers("gpt-6.1-sol")[0] ?? null).toEqual(opus);
+    expect(crossFamilyPeers("claude-sonnet-5-5")[0] ?? null).toEqual({ providerId: "codex", model: "gpt-6.1-terra" });
+    expect(crossFamilyPeers("gpt-6-luna")[0] ?? null).toEqual({ providerId: "claude-code", model: "claude-haiku-5-5" });
+    expect(crossFamilyPeers("composer-2.5")[0] ?? null).toBeNull();
   });
 
   it("puts the judge on GPT when the author is a Claude model, and on Claude when the author is a GPT model", () => {
@@ -139,7 +139,6 @@ describe("the third family: Gemini 3.8 Flash through 9router", () => {
   });
 
   it("has Sol as its peer, then Opus; Claude and GPT keep their pairs (the pairs of two families do not change)", () => {
-    expect(crossFamilyPeer(gemini.model)).toEqual(sol);
     expect(crossFamilyPeers(gemini.model)).toEqual([sol, opus]);
     expect(crossFamilyPeers("claude-opus-5-5")).toEqual([sol]);
     expect(crossFamilyPeers("gpt-6.1-sol")).toEqual([opus]);

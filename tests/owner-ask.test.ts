@@ -2,7 +2,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { createFakePluginHost, makeThreadResponse } from "@get-bb/plugin-sdk/testing";
 import plugin from "../server";
 import { createOwnerAsk, OWNER_ASK_OPEN_GRACE_MS } from "../src/rooms/relay/server/services/owner-ask";
-import { buildOwnerAskPayload, ownerAnswerText, ownerAskPayloadSchema, ownerAskTitle, resolveOwnerResponse } from "../src/rooms/relay/models/owner-ask";
+import { buildOwnerAskPayload, ownerAnswerText, ownerAskTitle, resolveOwnerResponse } from "../src/rooms/relay/models/owner-ask";
+import { ownerAskPayloadSchema } from "./support/owner-ask-schema";
 
 afterEach(() => { vi.useRealTimers(); });
 

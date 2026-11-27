@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { MAIN_AGENT_PROFILE_IDS } from "../src/rooms/contracts/server";
 import { compileMainAgentProfile } from "../src/rooms/native-agent/models/agent-profile";
-import { agentBadgeChart, agentKind, agentPickerLabel, composerAgentLabel, STOCK_AGENT_SEED_DESCRIPTIONS } from "../src/rooms/contracts/agent-display";
+import { agentKind, agentPickerLabel, composerAgentLabel, STOCK_AGENT_SEED_DESCRIPTIONS } from "../src/rooms/contracts/agent-display";
 import { t, setLocaleOverride } from "@lane-pilot/i18n";
 
 describe("agent picker display labels", () => {
@@ -26,14 +26,6 @@ describe("agent picker display labels", () => {
       .toBe("Координатор разработки");
     expect(agentPickerLabel({ id: "seo-specialist", description: "Мой SEO" }, t)).toBe("Мой SEO");
     setLocaleOverride(null);
-  });
-
-  it("assigns a stable theme chart token per stock agent", () => {
-    expect(agentBadgeChart("copy-lead")).toBe(2);
-    expect(agentBadgeChart("dev-orchestrator")).toBe(1);
-    expect(agentBadgeChart("design-lead")).toBe(4);
-    expect(agentBadgeChart("copy-lead")).not.toBe(agentBadgeChart("seo-specialist"));
-    expect(agentBadgeChart("night-desk")).toBe(agentBadgeChart("night-desk"));
   });
 
   it("classifies agents by the registry kind, falling back to the ids", () => {

@@ -9,7 +9,7 @@ import {
   codeCritiquePrompt,
   codeRepairPrompt,
   critiquePrompt,
-  pmReadPrompt,
+  pmReadPacketPrompt,
   pmReadResultSchema,
   specialistPrompt,
   verifierPrompt,
@@ -77,7 +77,7 @@ const JUDGES: ReadonlyArray<{ role: string; schema: z.ZodType; buildPrompt: () =
   {
     role: "pm-reader",
     schema: pmReadResultSchema,
-    buildPrompt: () => pmReadPrompt({ task: { id: "T-1", title: "PM read", goal: "Understand target", read_first: [] } }),
+    buildPrompt: () => pmReadPacketPrompt({ packet: "T-1: PM read" }),
   },
   {
     role: "code-repair",

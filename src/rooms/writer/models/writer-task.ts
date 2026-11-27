@@ -230,9 +230,6 @@ export function writerBriefSegments(task: TaskV2, memoryText="", executionPacket
   ].filter((segment) => segment.text.length > 0);
 }
 
-export function writerPrompt(...args: Parameters<typeof writerBriefSegments>): string {
-  return writerBriefSegments(...args).map((segment) => segment.text).join("\n\n");
-}
 
 /**
  * The writer's first message as BB input parts: a one-line task header and the contract stay in the chat, the rest is

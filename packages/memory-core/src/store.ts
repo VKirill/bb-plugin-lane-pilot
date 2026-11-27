@@ -16,13 +16,6 @@ import type { MemoryAudience, MemoryCandidate, MemoryKind, MemoryRecord, MemoryS
 /** The better-sqlite3 surface this package needs; BB's `bb.storage.database()` satisfies it. */
 export type MemoryDatabase = Pick<Database.Database, "prepare" | "transaction">;
 
-/** Columns the package expects; the owning plugin ships the migration. */
-export const MEMORY_SCHEMA = {
-  table: "lane_pilot_memory",
-  fts: "lane_pilot_memory_fts",
-  columns: ["id", "project_id", "personal_bot", "kind", "audience", "content", "concepts_json", "source_sha256", "created_at",
-    "status", "superseded_by", "valid_until", "valid_from", "last_used_at", "use_count", "accepted_count", "trust", "origin", "source_file_id", "scope_json", "file_fingerprint", "origin_task_id", "verification_json"],
-} as const;
 
 const COLUMNS = ["id", "project_id", "personal_bot", "kind", "audience", "content", "concepts_json", "source_sha256", "created_at",
   "status", "trust", "valid_until", "valid_from", "superseded_by", "source_file_id", "use_count", "accepted_count", "last_used_at", "file_fingerprint", "origin_task_id", "verification_json"];
@@ -304,11 +297,6 @@ export function storeMemoryRecordsKeepingOverflow(db: MemoryDatabase, input: Sto
   }
 }
 
-/** What a file that is no longer true leaves behind: the records it made are hidden, with the status that says why. */
-export function hideRecordsOfFile(db: MemoryDatabase, projectId: string, personalBot: string, fileId: string, status: "superseded" | "expired"): string[] {
-  const ids = (db.prepare("SELECT id FROM lane_pilot_memory WHERE project_id=? AND personal_bot=? AND source_file_id=? AND status='active'").all(projectId, personalBot, fileId) as Array<{ id: string }>).map((row) => row.id);
-  return ids.filter((id) => hideRecord(db, projectId, id, status, null, (project, record) => dropMemoryIndexes(db, project, record)));
-}
 
 /** Who may read a record: active and in date; a record only one session or import vouches for waits for a second source or the quarantine. */
 export type SearchOptions = { /** M7: umbrella project — bare scopes are not project-wide. */ umbrella?: boolean; now?: number; includeObserved?: boolean;
@@ -430,7 +418,7 @@ export function searchMemoryRecords(db: MemoryDatabase, projectId: string, query
 
 /**
  * The word layer: whole words (FTS5) and word forms (trigram), fused by rank, each row carrying the BM25 score of the whole-word hit (`_bm25`, lower is
- * better in SQLite; `wordCandidates` turns it into a score where higher is better). The base of the search under `vector_mode = bridge`.
+ * better in SQLite). The base of the search under `vector_mode = bridge`.
  */
 function wordRows(db: MemoryDatabase, projectId: string, tokens: string[], audience: MemoryAudience, personalBot: string, options: SearchOptions, limit: number): Array<Row & { _bm25?: number }> {
   if (!tokens.length) return [];
@@ -451,16 +439,6 @@ function wordRows(db: MemoryDatabase, projectId: string, tokens: string[], audie
   return fuse([words, parts], limit).map((row) => bm25.has(row.id) ? { ...row, _bm25: bm25.get(row.id)! } : row);
 }
 
-/**
- * The candidates of the word layer alone, best first, each with a score where higher is better (the BM25 of its whole-word hit; a note only the
- * trigram index found scores 0). No vectors, no lock: this is the layer `vector_mode = bridge` builds on, and what answers when no embedding is available.
- */
-export function wordCandidates(db: MemoryDatabase, projectId: string, query: string, limit: number, audience: MemoryAudience = "subagent", personalBot = "", options: SearchOptions = {}): Array<{ record: MemoryRecord; score: number }> {
-  if (options.includeArchive) indexArchive(db);
-  const tokens = [...new Set(memoryTokens(query))].slice(0, 32);
-  if (!tokens.length || limit <= 0) return [];
-  return wordRows(db, projectId, tokens, audience, personalBot, options, limit).map((row) => ({ record: toRecord(row), score: row._bm25 === undefined ? 0 : -row._bm25 }));
-}
 
 /**
  * The vector bridge: the word layer's rows stay the base; the vectors add only the notes in another language than the question (the words cannot
@@ -549,11 +527,6 @@ export function listMemory(db: MemoryDatabase, projectId: string, filter: { kind
 
 // ---- foreign-SQL reads moved home from the rooms (same SQL text, named) ----
 
-/** Fill of every project's memory shelf, by kind (the learning housekeeping's budget report). */
-export function memoryFillRows(db: Database.Database): Array<{ projectId: string; kind: string; n: number; bytes: number | null; used: number | null }> {
-  return db.prepare(`SELECT project_id AS projectId, kind, count(*) AS n, sum(length(CAST(content AS BLOB))) AS bytes, sum(CASE WHEN use_count>0 THEN 1 ELSE 0 END) AS used
-    FROM lane_pilot_memory WHERE status='active' GROUP BY project_id, kind`).all() as Array<{ projectId: string; kind: string; n: number; bytes: number | null; used: number | null }>;
-}
 
 /** Active memory records of one origin across every project (the hub-wide lessons query, SMA k_t_learnings). */
 export function listMemoryByOrigin(db: Database.Database, origin: string, text?: string, limit = 50): Array<{ id: string; projectId: string; content: string; createdAt: number }> {
@@ -563,16 +536,7 @@ export function listMemoryByOrigin(db: Database.Database, origin: string, text?:
     .map((row) => ({ id: row.id, projectId: row.project_id, content: row.content, createdAt: row.created_at }));
 }
 
-/** Hidden memory rows of every project, by status (the same report's shadow count). */
-export function memoryHiddenRows(db: Database.Database): Array<{ projectId: string; status: string; n: number }> {
-  return db.prepare("SELECT project_id AS projectId, status, count(*) AS n FROM lane_pilot_memory WHERE status<>'active' GROUP BY project_id, status").all() as Array<{ projectId: string; status: string; n: number }>;
-}
 
-/** The oldest maintainer core record no one accepted yet and that is not a rule (the insights' unused-convention pick). */
-export function firstUnusedCoreRecordId(db: Database.Database, projectId: string): string | null {
-  return (db.prepare(`SELECT id FROM lane_pilot_memory WHERE project_id=? AND kind='core' AND status='active' AND origin='maintainer'
-    AND accepted_count=0 AND concepts_json NOT LIKE '%"rule"%' ORDER BY created_at, id LIMIT 1`).get(projectId) as { id: string } | undefined)?.id ?? null;
-}
 
 const hasTable = (db: MemoryDatabase, name: string) => Boolean(db.prepare("SELECT 1 FROM sqlite_master WHERE name=?").get(name));
 
@@ -760,10 +724,6 @@ export function memoryWithoutTrace(db: MemoryDatabase, projectId?: string): Arra
     ORDER BY created_at, id`).all(...(projectId ? [projectId] : [])) as Array<{ id: string; content: string }>;
 }
 
-/** All active records of a project: the real total behind «N of M» (the digest read is capped at 80). */
-export function countActiveMemory(db: MemoryDatabase, projectId: string): number {
-  return (db.prepare("SELECT count(*) AS n FROM lane_pilot_memory WHERE project_id=? AND status='active'").get(projectId) as { n: number }).n;
-}
 
 /** One recorded miss, optionally an owner-reminded one tied to the record that held the answer (SMA k_v_mem_miss). */
 export function recordMemoryMiss(db: MemoryDatabase, projectId: string, query: string, now: number, kind: "empty" | "reminded" = "empty", noteId?: string): void {

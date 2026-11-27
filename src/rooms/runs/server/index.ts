@@ -87,7 +87,7 @@ export {
   reopenWriterStages,
   resetHelperStages,
 } from "./services/stage-records";
-export { createTaskReconcile, type TaskReconcile } from "./services/task-reconcile";
+export { createTaskReconcile } from "./services/task-reconcile";
 export {
   buildTaskBoard,
   inferTaskKind,

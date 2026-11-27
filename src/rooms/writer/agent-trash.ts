@@ -5,8 +5,6 @@ import { hashPath, lanePilotRoot } from "@lane-pilot/kit";
 import { AGENT_TRASH_SOURCE } from "./server/services/agent-trash-source";
 
 /** Writers, the live-folder restore and the shell guard name this path. (2026-10-29) not ~/.agents/bin from the legacy layout. */
-export const AGENT_TRASH_RELATIVE = ".agents/lane-pilot/bin/agent-trash";
-
 export function ownedAgentTrashPath(homeDir: string): string {
   return join(lanePilotRoot(homeDir), "bin", "agent-trash");
 }

@@ -1,6 +1,6 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { afterEach, describe, expect, it } from "vitest";
-import { EMBED_DIM, forgetLockTerms, languageOf, memoryJudgeStats, parseJudgeReply, parseMemorySettings, permutationOf, readJudgeReply, rememberLockTerms, rememberQueryVector, searchMemoryRecords, storeMemoryRecords, storeVectors, wordCandidates, type MemoryRecord } from "../packages/memory-core/src";
+import { EMBED_DIM, forgetLockTerms, languageOf, memoryJudgeStats, parseMemorySettings, permutationOf, readJudgeReply, rememberLockTerms, rememberQueryVector, searchMemoryRecords, storeMemoryRecords, storeVectors, type MemoryRecord } from "../packages/memory-core/src";
 import { judgeFound, openLuxJudge, setMemoryJudge, translateForLock, type MemoryJudge } from "../src/rooms/memory/server/services/memory-judge";
 import { explicitMemorySearch } from "../src/rooms/memory/server/services/memory-search";
 import { pmMemoryContext } from "../src/rooms/memory/server/services/memory-mix";
@@ -28,9 +28,8 @@ describe("M1: the word layer as a candidate generator", () => {
     const hit = put(db, "The export job writes ZX-7741-manifest.csv at 02:10 and uploads it.");
     put(db, "The import job reads a feed at 03:00 and writes a report.");
     put(db, "Gate 4 handles the evening batches.");
-    const found = wordCandidates(db, "P", "where is the ZX-7741 manifest uploaded", 10);
-    expect(found[0]!.record.id).toBe(hit);
-    expect(found[0]!.score).toBeGreaterThan(0);
+    const found = searchMemoryRecords(db, "P", "where is the ZX-7741 manifest uploaded", 10, "fts5");
+    expect(found[0]!.id).toBe(hit);
   });
 });
 
@@ -144,7 +143,7 @@ describe("M8: the reply parser", () => {
     expect(readJudgeReply("2, 9, 1", 3)).toEqual({ numbers: [2, 1], dropped: 1, none: false });
     expect(readJudgeReply("none", 3)).toMatchObject({ numbers: [], none: true });
     expect(readJudgeReply("I cannot say.", 3)).toBeNull();
-    expect(parseJudgeReply("[1]", 3)).toEqual([1]);
+    expect(readJudgeReply("[1]", 3)?.numbers).toEqual([1]);
   });
   it("a permutation is completed with the missing numbers in the previous order, and no reply is the previous order", () => {
     expect(permutationOf([3, 1], 4)).toEqual([3, 1, 2, 4]);

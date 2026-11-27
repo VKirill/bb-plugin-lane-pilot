@@ -102,7 +102,6 @@ The errands catalog includes labels for checked and unchecked outcomes and ident
 | `validationMessage` | Six literal codes and a `string[]` parameter list | Four setup codes return fixed translations; `invalid_choice` substitutes `params[0..1]`; remaining code path uses `params[0..3]` for the incompatible-setting message (`packages/i18n/src/i18n.ts:2596-2609`) |
 | `stateLabel` | Any string | Translates `state_<value>` if that key exists in English; otherwise returns the input (`packages/i18n/src/i18n.ts:2611-2614`) |
 | `unappliedReason` | Any string | Maps known catalog reason constants and a recognized invalid-flag format; unknown reasons pass through unchanged (`packages/i18n/src/i18n.ts:2616-2640`) |
-| `currentStrings` | No arguments | Returns the current translations for enable, enabling, failed, and already active (`packages/i18n/src/i18n.ts:2642-2649`) |
 | `roleName` | Any role ID string | Calls `roleDisplayName(id, detectLocale())` against [Canonical role names](role-names.md); unknown role IDs pass through unchanged (`packages/i18n/src/i18n.ts:2652-2654`) |
 
 ### Catalog entries that carry UI states
@@ -170,7 +169,6 @@ All declarations below are exported from `i18n.ts` and re-exported by the packag
 | `validationMessage(code, params)` | `packages/i18n/src/i18n.ts:2596-2609` | Translate supported validation errors |
 | `stateLabel(state)` | `packages/i18n/src/i18n.ts:2611-2614` | Translate known state key or preserve input |
 | `unappliedReason(reason)` | `packages/i18n/src/i18n.ts:2616-2640` | Translate known setting-application reason or preserve input |
-| `currentStrings()` | `packages/i18n/src/i18n.ts:2642-2649` | Return four current activation strings |
 | `roleName(id)` | `packages/i18n/src/i18n.ts:2652-2654` | Return canonical role display name in the active locale |
 
 ## Package shape

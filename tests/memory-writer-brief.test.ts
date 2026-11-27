@@ -12,9 +12,9 @@ import {
 } from "../packages/memory-core/src";
 import { taskV2Schema } from "../src/rooms/contracts";
 import {
-  compareRulerArms,
   parseRuler,
   runRuler,
+  summarizeScopeArm,
   type RulerOptions,
 } from "../src/rooms/memory-eval/server/services/ruler";
 import {
@@ -367,10 +367,7 @@ describe("writer brief memory retrieval (Task 27)", () => {
     const control = await runRuler(() => new Database(buffer), heldOutQs, { ...common, path: "none", arm: "control" });
     const writerArm = await runRuler(() => new Database(buffer), heldOutQs, { ...common, path: "writer", arm: "writer-meaning" });
     expect(logs.some((l) => l.startsWith("INFO memory.arm path=writer:project hit3=100.0% none_ok=100.0%"))).toBe(true);
-
-    const cmp = compareRulerArms(control.scopes[0]!, writerArm.scopes[0]!);
-    expect(cmp.hit3.mean).toBe(1);
-    expect(cmp.noneOk.mean).toBe(0);
-    expect(cmp.adopt).toBe(true);
+    expect(summarizeScopeArm(writerArm.scopes[0]!).hit3 - summarizeScopeArm(control.scopes[0]!).hit3).toBe(1);
+    expect(summarizeScopeArm(writerArm.scopes[0]!).noneOk).toBe(1);
   });
 });

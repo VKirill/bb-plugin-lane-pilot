@@ -2,11 +2,9 @@ import { execFileSync } from "node:child_process";
 import { describe, expect, it, vi } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { ceilingLine, tailWords } from "../../src/rooms/work-graph";
-import { workerSecretReach } from "../../src/rooms/verification";
 import { explainCatalog, explainWord, firstSection, VERDICT_LIST_COMMAND, verdictFiles, verdictInventory } from "../../src/rooms/tools";
 import { DRAFT_KEEP_MS, MAX_DRAFT_CONTRACTS, createFromDraft, getDraft, proposeDraft } from "../../src/rooms/tasks/server";
 import { createAttempt, createRun, createTask, freezeRunBinding, migrations, openDatabase, saveProjectSetting, savePrototypeConfig, setAttemptWorkspace, setRunThread } from "../../src/rooms/plugin-db";
-import { landingOf } from "../../src/rooms/rollback";
 import { getAttemptChange } from "../../src/rooms/rollback/server";
 import { writeTaskOutcome } from "../../src/rooms/writer/server/services/attempt-reactions";
 import { snapshotDryRun } from "../../src/rooms/host-worker";
@@ -351,7 +349,6 @@ describe("parity d10-rest-2", () => {
     expect(waited.state, JSON.stringify(waited)).toBe("accepted");
     const change = getAttemptChange(db, dispatched.attemptId)!;
     expect(change).toMatchObject({ outcome: "merged", mergeCommit: commit, checksGreen: 2 });
-    expect(landingOf(change)).toEqual({ commit, checksGreen: 2, files: 2, line: `landed ${commit.slice(0, 12)} · 2 checks green · 2 files` });
     // Nothing was added to the receipt table: it still holds only what reverify and revert write.
     expect((db.prepare("SELECT count(*) AS n FROM lane_pilot_task_receipt").get() as { n: number }).n).toBe(0);
     await harness.lifecycle.dispose();
@@ -416,25 +413,6 @@ describe("parity d10-rest-2", () => {
     // A running status writes nothing either.
     await writeTaskOutcome(w.ctx, w.event("x", "running"));
     expect(w.writes).toEqual([]);
-  });
-
-  // ---- m_ac_identity_probe ----
-
-  it("[sma:m_ac_identity_probe] workerSecretReach names a readable credential path as exposed and a closed one as not; ~/.lane-pilot is not probed, so a readable ~/.lane-pilot alone gives no warning; an invalid user fails without running sudo", async () => {
-    const home = "/home/owner";
-    calls.length = 0;
-    readable.clear();
-    readable.add(`${home}/.ssh`);
-    const probe = await workerSecretReach("lp-worker", home);
-    expect(probe.ok).toBe(false);
-    expect(probe.reachable).toEqual([`${home}/.ssh`]);
-    expect(calls.every((call) => call.args.slice(0, 4).join(" ") === "-n -u lp-worker /usr/bin/test")).toBe(true);
-    expect(calls.map((call) => call.args.at(-1))).not.toContain(`${home}/.lane-pilot`);
-    readable.clear();
-    readable.add(`${home}/.lane-pilot`);
-    expect(await workerSecretReach("lp-worker", home)).toEqual({ ok: true, reachable: [] });
-    await expect(workerSecretReach("root;rm -rf /")).rejects.toThrow(/worker_user_invalid/);
-    readable.clear();
   });
 
   describe("scripts/lp-worker-user.sh with a fake sudo on PATH", () => {

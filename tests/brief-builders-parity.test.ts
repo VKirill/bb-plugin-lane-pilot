@@ -3,7 +3,7 @@
  * src/rooms/brief, and the test fails when a fact or marker its downstream parser needs disappears.
  */
 import { describe, expect, it } from "vitest";
-import { pmReadPrompt } from "../src/rooms/critique";
+import { pmReadPacketPrompt } from "../src/rooms/critique";
 import { qaThreadPrompt } from "../src/rooms/qa/server";
 import { tickBrief } from "../src/rooms/lead/models/tick";
 import { WORKFLOW_ARCHITECT_SESSION } from "../src/rooms/native-agent";
@@ -11,8 +11,8 @@ import { memoryMaintenanceBrief } from "../packages/memory-core/src/context";
 import { renderBrief, validateBrief } from "../src/rooms/brief";
 
 describe("every brief builder renders through renderBrief and keeps its facts", () => {
-  it("pmReadPrompt keeps the plan, the task brief and the JSON answer spec", () => {
-    const prompt = pmReadPrompt({ plan: "PLAN TEXT", task: { title: "Fix login", objective: "make it work" } });
+  it("pmReadPacketPrompt keeps the input packet and the JSON answer spec", () => {
+    const prompt = pmReadPacketPrompt({ packet: "<task_brief>\nFix login\n</task_brief>\n\nPLAN TEXT" });
     for (const marker of ["PLAN TEXT", "<task_brief>", "Fix login", "keyFacts", "openQuestions", "Finish your final message with one JSON object", "\"outcome\": \"blocked\""]) expect(prompt).toContain(marker);
   });
 

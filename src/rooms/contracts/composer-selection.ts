@@ -45,12 +45,6 @@ export type ComposerSelectionSnapshot =
       reason: "existing-thread" | "queued-message" | "side-chat" | "native-selection-unavailable";
     };
 
-export type ComposerSelectionBlock =
-  | "resolving"
-  | "unsupported"
-  | "need_existing_environment"
-  | null;
-
 export function existingEnvironmentUsable(environment: ComposerEnvironmentSelection): boolean {
   if (environment.kind === "existing") {
     if (environment.type === "reuse") return Boolean(environment.environmentId);
@@ -79,13 +73,6 @@ export function nativeSelectionReady(snapshot: ComposerSelectionSnapshot | null)
   return true;
 }
 
-export function composerSelectionBlock(snapshot: ComposerSelectionSnapshot): ComposerSelectionBlock {
-  if (snapshot.status === "resolving") return "resolving";
-  if (snapshot.status === "unsupported") return "unsupported";
-  if (!nativeSelectionReady(snapshot)) return "need_existing_environment";
-  return null;
-}
-
 export function spawnEnvironmentFromSelection(snapshot: Extract<ComposerSelectionSnapshot, { status: "ready" }>): ComposerEnvironmentRequest {
   if (!isEnvironmentRequest(snapshot.environmentRequest)) {
     throw new Error("composer_environment_request_missing");
@@ -102,12 +89,6 @@ export function readyComposerSnapshot(snapshot: ComposerSelectionSnapshot, proje
   if (!nativeSelectionReady(snapshot)) throw new Error("composer_environment_not_spawnable");
   if (snapshot.environmentProvenance.projectId !== projectId) throw new Error("composer_snapshot_provenance_project_mismatch");
   return snapshot;
-}
-
-export function nativeSelectionProjectId(snapshot: ComposerSelectionSnapshot): string | null {
-  if (snapshot.status === "ready") return snapshot.projectId;
-  if (snapshot.scope.kind === "new-thread") return snapshot.scope.projectId;
-  return null;
 }
 
 /** The machine a new chat will run on, when the composer already knows it. */

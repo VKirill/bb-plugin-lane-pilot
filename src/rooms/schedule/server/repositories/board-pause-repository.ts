@@ -32,4 +32,3 @@ export function createBoardPause(kv: Kv, deps: { now?: () => number; log?: (mess
     },
   };
 }
-export type BoardPause = ReturnType<typeof createBoardPause>;

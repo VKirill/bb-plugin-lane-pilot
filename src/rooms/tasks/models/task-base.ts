@@ -170,15 +170,6 @@ export function repoRootCommand(runFolder: string): string {
  * The repository root as a path from the run folder as it is written there (`..`, `../..`) and the folder's place in the
  * repository (`aiphoto_bot`); null when the folder is the root itself, has no repository, or the answer is not an ancestor.
  */
-export function parseRepoRoot(ran: { exitCode: number; stdout: string } | null): { up: string; prefix: string } | null {
-  if (!ran || ran.exitCode !== 0) return null;
-  const [top, runReal] = ran.stdout.trim().split("\n").map((line) => line.trim());
-  if (!top || !runReal) return null;
-  const prefix = relativePath(top, runReal).split("\\").join("/");
-  if (!prefix || prefix.startsWith("..") || isAbsolutePath(prefix)) return null;
-  return { up: relativePath(runReal, top).split("\\").join("/"), prefix };
-}
-
 /** A path of the section as a path of the repository root; null when it leaves the repository (or is no relative path). */
 function rootRelative(path: string, prefix: string): string | null {
   if (path.startsWith("/") || path.includes("\\") || /^[A-Za-z]:/.test(path)) return null;

@@ -1,6 +1,6 @@
 import { parseCodeCritique } from "../../src/rooms/critique";
 import { describe, expect, it } from "vitest";
-import { VERDICT_BLOCK_PREFIX, blockReason, isHardCritical, isVerdictBlockReason, legacyDecisionToStatus, legacySeverityToVerdict, proseOnly, settleVerdict, verdictSchema, verdictSeverityToLegacy } from "@lane-pilot/workflow-engine";
+import { VERDICT_BLOCK_PREFIX, blockReason, isHardCritical, legacyDecisionToStatus, legacySeverityToVerdict, proseOnly, settleVerdict, verdictSchema, verdictSeverityToLegacy } from "@lane-pilot/workflow-engine";
 import type { Verdict } from "@lane-pilot/workflow-engine";
 
 const finding = (over: Record<string, unknown> = {}): never => ({ file: "src/a.ts", line: 12, severity: "high", evidence: "return null; // TODO: implement", ...over }) as never;
@@ -115,8 +115,6 @@ describe("the block message for the PM", () => {
     expect(text).toContain("src/a.ts:12 [critical] login handler only logs");
     expect(text).not.toContain("[low]");
     expect(text).toContain("stopped, not redone");
-    expect(isVerdictBlockReason(text)).toBe(true);
-    expect(isVerdictBlockReason("code_critique_blocked")).toBe(false);
   });
 
   it("stays a sentence of bounded length", () => {

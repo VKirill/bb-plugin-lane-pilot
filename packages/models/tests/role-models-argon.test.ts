@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  WRITER_PROFILES, crossFamilyPeer, modelFamily, modelTier, roleModelKey, roleModelOption, roleModelProblem,
+  WRITER_PROFILES, crossFamilyPeers, modelFamily, modelTier, roleModelKey, roleModelOption, roleModelProblem,
 } from "@lane-pilot/models";
 
 describe("Gemini 4 Argon (Antigravity) in the role table", () => {
@@ -10,7 +10,7 @@ describe("Gemini 4 Argon (Antigravity) in the role table", () => {
     });
     expect(modelFamily("gemini-4-argon")).toBe("google");
     expect(modelTier("gemini-4-argon")).toBe("strong");
-    expect(crossFamilyPeer("gemini-4-argon")).toEqual({ providerId: "codex", model: "gpt-6.1-sol" });
+    expect(crossFamilyPeers("gemini-4-argon")[0] ?? null).toEqual({ providerId: "codex", model: "gpt-6.1-sol" });
   });
 
   it("is in the writers' table on acp-antigravity", () => {

@@ -74,10 +74,6 @@ export function listDeferrals(db: DeferralDb, filter: { projectId?: string | und
  * gates. A global entry (no project, like the plugin's own seeds) and an entry of another project never block it, and a wall's backlog
  * item is its own line, not a deferral. Entries carry no run or task id, so the project is the narrowest scope there is.
  */
-export function noTermDeferralsOf(db: DeferralDb, projectId: string): Array<{ id: string; what: string }> {
-  if (!projectId) return [];
-  return listDeferrals(db, { states: ["needs_owner_term"] }).filter((row) => row.projectId === projectId && (row.kind === "skipped_test" || row.kind === "gate")).map((row) => ({ id: row.id, what: row.what }));
-}
 
 export function insertDeferral(db: DeferralDb, row: Deferral, ignoreExisting = false): boolean {
   const result = db.prepare(`INSERT ${ignoreExisting ? "OR IGNORE " : ""}INTO lane_pilot_deferral
@@ -99,10 +95,6 @@ export function closeDeferral(db: DeferralDb, id: string, evidence: string, now:
   db.prepare("UPDATE lane_pilot_deferral SET state='closed', closed_at=?, closed_by=?, updated_at=? WHERE id=?").run(now, evidence, now, id);
 }
 
-/** Deferrals of a project still open (not closed). */
-export function countOpenDeferrals(db: DeferralDb, projectId: string): number {
-  return (db.prepare("SELECT COUNT(*) AS n FROM lane_pilot_deferral WHERE project_id=? AND closed_at IS NULL").get(projectId) as { n: number }).n;
-}
 
 /** Open deferrals' id/kind/title for a receipt (optionally of one project). */
 export function listOpenDeferralBriefs(db: DeferralDb, projectId?: string): Array<{ id: string; kind: string; title: string }> {

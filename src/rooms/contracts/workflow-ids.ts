@@ -6,9 +6,6 @@ export const AFTER_ACCEPT = "lp.after-accept";
 export const SELF_REPAIR = "lp.self-repair";
 /** The body of the two worktree-cleanup system schedules (docs/worktrees.md); the daily pass posts its own owner line, a failure is the board's. */
 export const WORKTREE_CLEANUP = "lp.worktree-cleanup";
-/** The graph of the router's model step (`lane_pilot_route` escalates a request System One cannot decide alone): one read-only helper thread, a real run of its own. */
-/** The outer chain of the chains spec: analyze, plan, build, check, close. */
-export const ANALYZE_PLAN_EXECUTE = "analyze-plan-execute";
 
 /** Off keeps the previous issue-quick graph (triage, plan, build). Anything else, including a missing row, is the short path. */
 export const ISSUE_QUICK_SHORT_PATH = "issue_quick.short_path";

@@ -1,4 +1,3 @@
-export type UiStatus = "editable" | "readonly" | "hidden" | "gap" | "excluded";
 export type ControlKind = "select" | "switch" | "input" | "number" | "slider" | "path";
 export type ChannelKind = "OWN" | "NONE" | "INSTALL-ENV" | "ENV-PASSTHROUGH";
 export type CliBinary = "run-controller" | "lane-ctl";
@@ -61,10 +60,6 @@ export type SettingSpec = {
   env?: string;
   reason?: string;
 };
-
-export function unappliedNotValidReason(spec: SettingSpec, binary: CliBinary, subcommand: string): string {
-  return `${spec.channel} flag ${spec.flag ?? spec.env ?? spec.key} is not valid on ${binary} ${subcommand}`;
-}
 
 export type BoundKind =
   | "boolean"

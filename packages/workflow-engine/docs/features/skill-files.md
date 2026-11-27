@@ -20,7 +20,7 @@ This capability provides filesystem storage for global companion skill bundles (
 
 ## How it works
 
-1. `globalSkillsDir` resolves the global companion skills root at `<home>/.bb/skills`, and `listSkillBundleIds` scans it for non-symlink subdirectories matching `SKILL_BUNDLE_ID` (`packages/workflow-engine/src/skill-files.ts:173-190`).
+1. `globalSkillsDir` resolves the global companion skills root at `<home>/.bb/skills` (`packages/workflow-engine/src/skill-files.ts:166-169`).
 2. `validateSkillBundleFiles` checks the skill ID, requires at least one file including `SKILL.md`, rejects unsafe paths and duplicates, enforces UTF-8 byte and line limits, and orders `SKILL.md` first followed by lexicographically sorted `references/*.md` files (`packages/workflow-engine/src/skill-files.ts:193-227`).
 3. `computeSkillBundleSha256` computes a deterministic bundle digest from sorted `path:sha256(text)` lines (`packages/workflow-engine/src/skill-files.ts:230-232`).
 4. `readSkillBundle` checks `lstat` on the root, bundle directory, `SKILL.md`, `references/`, and each non-hidden `.md` file in `references/`, rejecting symlinks and returning the sorted files and `bundleSha256` (`packages/workflow-engine/src/skill-files.ts:54-63`, `packages/workflow-engine/src/skill-files.ts:96-128`, `packages/workflow-engine/src/skill-files.ts:235-246`).
@@ -31,7 +31,6 @@ This capability provides filesystem storage for global companion skill bundles (
 
 | Operation or branch | Condition | Result |
 |---|---|---|
-| `listSkillBundleIds` | Missing root, non-directory, or read error | Returns `[]` without throwing; symlinks are skipped (`packages/workflow-engine/src/skill-files.ts:178-190`). |
 | `readSkillBundle` | Invalid `skillId` | Throws `Error("invalid skill id: ...")` (`packages/workflow-engine/src/skill-files.ts:236`). |
 | `readSkillBundle` | Symlink encountered at root, bundle dir, `SKILL.md`, `references/`, or reference file | Emits `WARN` log if `options.log` is set and rethrows `SymlinkForbiddenError` (`packages/workflow-engine/src/skill-files.ts:54-63`, `packages/workflow-engine/src/skill-files.ts:238-245`). |
 | `casWriteSkillBundle` / `restoreSkillBundleSnapshot` | Validation failure or symlink target | Returns `{ status: "invalid", reason }` without modifying files (`packages/workflow-engine/src/skill-files.ts:249-264`, `packages/workflow-engine/src/skill-files.ts:279-302`). |
@@ -54,7 +53,7 @@ This capability provides filesystem storage for global companion skill bundles (
 |---|---|
 | `SKILL_BUNDLE_ID`, `ALLOWED_SKILL_BUNDLE_FILE`, `SKILL_MD_MAX_BYTES`, `SKILL_MD_MAX_LINES`, `SKILL_REF_MAX_BYTES` | Skill ID, file path, and byte/line budget constants (`packages/workflow-engine/src/skill-files.ts:8-13`). |
 | `SkillBundleFile`, `StoredSkillBundleFile`, `SkillBundleReadResult`, `SkillBundleWriteResult`, `SkillFilesOptions` | Input, read, write, and logging option types (`packages/workflow-engine/src/skill-files.ts:15-28`). |
-| `globalSkillsDir`, `listSkillBundleIds` | Resolve `~/.bb/skills` and list valid bundle directory IDs (`packages/workflow-engine/src/skill-files.ts:173-190`). |
+| `globalSkillsDir` | Resolve `~/.bb/skills` (`packages/workflow-engine/src/skill-files.ts:166-169`). |
 | `sortSkillBundleFiles`, `validateSkillBundleFiles`, `computeSkillBundleSha256` | Order, validate, and hash skill bundle file sets (`packages/workflow-engine/src/skill-files.ts:193-232`). |
 | `readSkillBundle`, `casWriteSkillBundle`, `restoreSkillBundleSnapshot` | Read, CAS-write, and snapshot-restore skill bundles on disk (`packages/workflow-engine/src/skill-files.ts:235-314`). |
 

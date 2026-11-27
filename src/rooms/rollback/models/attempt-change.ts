@@ -66,17 +66,6 @@ export type LandingPending = {
  * The landing record (SMA k_lib_landing) of an attempt whose merge landed green: the commit, the count of green checks and
  * the files it carried, read from the attempt's change row — no receipt, so the task's receipts stay as they were.
  */
-export function landingOf(change: AttemptChange | null | undefined): { commit: string; checksGreen: number | null; files: number; line: string } | null {
-  if (!change || change.outcome !== "merged" || !change.mergeCommit) return null;
-  const files = change.changed.length;
-  return {
-    commit: change.mergeCommit,
-    checksGreen: change.checksGreen,
-    files,
-    line: `landed ${change.mergeCommit.slice(0, 12)} · ${change.checksGreen ?? "?"} checks green · ${files} files`,
-  };
-}
-
 /**
  * The effect state of an attempt's change (SMA ac_effects): intended while only the base is on record, observed once git
  * was read (a merge or the worktree state), uncertain when the read failed (the reason kept, `changed` unknown — never

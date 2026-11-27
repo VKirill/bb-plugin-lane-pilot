@@ -109,15 +109,3 @@ export function endSpawnFailure(db: LanePilotDatabase, attemptId: string, reason
   transitionAttempt(db, attemptId, state, { reason: stopped ? `writer stop observed after: ${reason}`.slice(0, 500) : reason, ...(threadId ? { threadId } : {}) });
   return state;
 }
-
-/**
- * An attempt whose work ran before it was recorded (a native CLI run: the command has finished when the attempt is
- * written): journals the steps it went through, then its outcome. A blocked outcome needs no steps.
- */
-export function recordFinishedAttempt(db: LanePilotDatabase, attemptId: string, status: "accepted" | "blocked" | "running", reason?: string): void {
-  if (status !== "blocked") {
-    transitionAttempt(db, attemptId, "spawn_requested");
-    transitionAttempt(db, attemptId, "running");
-  }
-  if (status !== "running") transitionAttempt(db, attemptId, status, { reason });
-}

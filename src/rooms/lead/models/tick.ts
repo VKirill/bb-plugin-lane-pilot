@@ -65,38 +65,6 @@ export const seedForm = (seed: ArchitectSeed): ProcessForm | null => {
   return (PROCESS_FORMS as readonly string[]).includes(form) ? (form as ProcessForm) : null;
 };
 
-/** The architect seed of a `process` proposal, stored on the branch as { architectSeed: … }; null otherwise. */
-export const architectSeedOf = (payload: unknown): ArchitectSeed | null => {
-  const seed = payload && typeof payload === "object" ? (payload as { architectSeed?: unknown }).architectSeed : null;
-  return seed && typeof seed === "object" ? (seed as ArchitectSeed) : null;
-};
-
-/** What each of the four writer forms delivers; only `graph` goes to the architect instead (its own line below). */
-const FORM_TASK: Record<Exclude<ProcessForm, "graph">, string> = {
-  rule: "Write a RULE for this process: the trap or pitfall the errand threads keep hitting — what breaks and the warning that prevents it, one short «when / what / don't» block. When the nearest catalog units name an existing skill of this family, the rule is an edit of that skill, not a new file.",
-  reference: "Write a REFERENCE for this process: a per-variant file under references/ of the family's existing skill — the variant is one target of the same goal (one shop or service against another: Dia vs Carrefour is the shape). When the nearest list has the family's skill, name it and draft the file; otherwise propose the new skill that would hold it.",
-  script: "Write a SCRIPT for this process: the same command sequence the errand threads ran — tool and arguments, in order — as a runnable script the next run replays instead of re-deriving it. When the nearest list has a skill of this family, the script lives inside that skill instead of a new skill.",
-  skill: "Write a skill for this process from what these errand threads did: the steps in order, the places (addresses, hosts, folders, accounts), the pitfalls they hit and how they got past them, the check at the end that says it worked. Put it where this project's skills live (.agents/skills/<slug>/SKILL.md, or the folder the project already uses) so the next helper reads it before this work; no graph: no step here needs the owner's word or a timetable.",
-};
-/** Stage 1 is proposal-only: the writer hands the owner a file and its text, nothing reaches the canon by itself. */
-const PROPOSAL_ONLY = "Deliver a proposal — the file path and the full text — for the owner to approve; in this stage nothing is written into the canon.";
-
-/** The first message for the architect (graph) or the writer (the other four forms): the stem, the target, the errand kind, the titles, the threads and the nearest units. */
-export function architectPrompt(seed: ArchitectSeed, title: string): string {
-  const stem = text(seed.stem) || title.replace(PROCESS_TITLE, "").trim();
-  const kind = text(seed.kind) || "errand";
-  const samples = (Array.isArray(seed.samples) ? seed.samples : []).map(String).slice(0, 3);
-  const threads = (Array.isArray(seed.threadIds) ? seed.threadIds : []).map(String).slice(0, 10);
-  const nearest = (Array.isArray(seed.nearest) ? seed.nearest : []).flatMap((unit) => {
-    const entry = unit as { kind?: unknown; id?: unknown; score?: unknown };
-    return typeof entry?.id === "string" && entry.id ? [`${entry.kind === "skill" ? "skill" : "graph"}:${entry.id}${typeof entry.score === "number" && Number.isFinite(entry.score) ? ` (${entry.score.toFixed(2)})` : ""}`] : [];
-  }).slice(0, 4);
-  const facts = `Process: «${stem}» (errand kind ${kind}). Target: ${text(seed.target) || "—"}. Errand titles: ${samples.join("; ") || "—"}. Helper threads to learn from: ${threads.map((id) => `@thread:${id}`).join(", ") || "—"}. Nearest catalog units: ${nearest.join("; ") || "—"}.`;
-  const form = seedForm(seed) ?? "skill";
-  if (form === "graph") return `Build a tested graph for this process from what these errand threads did. ${facts}`;
-  return `${FORM_TASK[form]} ${PROPOSAL_ONLY} ${facts}`;
-}
-
 export type HubSnapshot = {
   at: string; tickId: string; trigger: string;
   settings: Pick<LeadSettings, "projects" | "priority" | "budgetDailyUsd" | "maxProposals">;

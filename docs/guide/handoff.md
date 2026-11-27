@@ -97,7 +97,7 @@ The idea of reading the task from one shared place is Multica's (the agent gets 
 
 `tests/handoff-standard.test.ts` reads the source. Its lists only shrink.
 
-- `NO_TOOLS_LINE` is only allowed in `packages/workflow-engine/src/model-json.ts`; the only other tool-ban string is the hand-written one for the memory maintainer in `packages/memory-core/src/context.ts`. No other file may tell an agent to open nothing.
+- Only the hand-written tool-ban string for the memory maintainer in `packages/memory-core/src/context.ts` tells an agent to open nothing. No other file may tell an agent to open nothing.
 - «JSON and nothing else» is confined to the legacy one-shot list in `tests/handoff-standard.test.ts`; no new file may add it.
 - The two read-only sentences come from their constants and are not copied by hand.
 

@@ -111,11 +111,6 @@ export function stallObserve(state: Record<string, number> | StallState, tool: s
   return { state: current, counts: current.counts, fingerprint, hint };
 }
 
-export function turnOutside(files: string[], claims: string[]): string[] {
-  if (!claims.length) return [];
-  return files.filter((file) => !claims.some((claim) => file === claim || file.endsWith(`/${claim}`) || claim.endsWith(`/${file}`) || file.includes(claim)));
-}
-
 /**
  * A path a subagent may be said to have written: it has a folder part, no «..», and does not start with «/» or «~». A bare file
  * name counts only when `rootHas` says a file of that exact name sits at the repo root (`console.log`, `res.json` and `Next.js` are not paths).

@@ -2,7 +2,6 @@ export * from "./activation";
 export * from "./agent-inventory";
 export * from "./agent-overlay";
 export * from "./agent-profile";
-export * from "./architect-launch";
 export * from "./bridge-tools";
 export * from "./claude-guard";
 export * from "./custom-agent";

@@ -12,8 +12,8 @@ import {
   START,
   dice,
   grams,
-  parseShippedWorkflowObject,
   parseWorkflow,
+  parseWorkflowObject,
   registerPureActions,
   stems,
   validateWorkflow,
@@ -123,10 +123,11 @@ describe("Task 44: graph library categories, descriptions, directory loader, and
     const parsed: Workflow[] = [];
     for (const file of files) {
       const raw = JSON.parse(readFileSync(join("workflows", file), "utf8")) as Record<string, unknown>;
-      const checked = parseShippedWorkflowObject(raw);
+      const checked = parseWorkflowObject(raw);
       expect(checked.success, `${file}: ${!checked.success ? checked.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ") : ""}`).toBe(true);
       if (!checked.success) continue;
-      expect(isKnownGraphCategory(checked.data.category.id), `${file}: unknown category ${checked.data.category.id}`).toBe(true);
+      expect(checked.data.category, `${file}: missing category`).toBeDefined();
+      expect(isKnownGraphCategory(checked.data.category!.id), `${file}: unknown category ${checked.data.category!.id}`).toBe(true);
       expect(checked.data.description.en.trim().length, `${file} description.en`).toBeGreaterThanOrEqual(MIN_GRAPH_DESCRIPTION_LENGTH);
       expect(checked.data.description.ru.trim().length, `${file} description.ru`).toBeGreaterThanOrEqual(MIN_GRAPH_DESCRIPTION_LENGTH);
       const problems = validateWorkflow(checked.data, { resolve: builtinWorkflow, shipped: true }).filter((p) => p.level === "error");

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
-import { fullAccessSpawn, providerSupportsServiceTier } from "../src/rooms/platform/server/services/pm-spawn";
+import { fullAccessSpawn } from "../src/rooms/platform/server/services/pm-spawn";
 import { mountErrands } from "../src/rooms/errands/server";
 import { runQaThread } from "../src/rooms/qa/server";
 import { createRun, openDatabase } from "../src/rooms/plugin-db";
@@ -8,29 +8,6 @@ import { createRun, openDatabase } from "../src/rooms/plugin-db";
 vi.mock("@lane-pilot/thread-observe", () => ({ observeStageChild: async () => ({ kind: "completed" }) }));
 
 describe("spawn service tier", () => {
-  describe("providerSupportsServiceTier", () => {
-    it("returns true when provider has capabilities.supportsServiceTier: true", () => {
-      expect(providerSupportsServiceTier({ capabilities: { supportsServiceTier: true } })).toBe(true);
-      expect(providerSupportsServiceTier({ capabilities: { supportsServiceTier: true }, serviceTiers: [{ id: "fast" }] })).toBe(true);
-    });
-
-    it("returns true when provider has top-level supportsServiceTier: true or non-empty serviceTiers", () => {
-      expect(providerSupportsServiceTier({ supportsServiceTier: true })).toBe(true);
-      expect(providerSupportsServiceTier({ serviceTiers: [{ id: "default" }] })).toBe(true);
-      expect(providerSupportsServiceTier({ serviceTiers: ["fast"] })).toBe(true);
-    });
-
-    it("returns false when provider has supportsServiceTier: false or empty serviceTiers", () => {
-      expect(providerSupportsServiceTier({ capabilities: { supportsServiceTier: false }, serviceTiers: [] })).toBe(false);
-      expect(providerSupportsServiceTier({ capabilities: { supportsServiceTier: false } })).toBe(false);
-      expect(providerSupportsServiceTier({ supportsServiceTier: false })).toBe(false);
-      expect(providerSupportsServiceTier({ serviceTiers: [] })).toBe(false);
-      expect(providerSupportsServiceTier({})).toBe(false);
-      expect(providerSupportsServiceTier(null)).toBe(false);
-      expect(providerSupportsServiceTier(undefined)).toBe(false);
-    });
-  });
-
   describe("central helper spawn (fullAccessSpawn)", () => {
     it("passes serviceTier: 'default' when no tier is specified and provider supports service tiers", async () => {
       const spawned: Record<string, unknown>[] = [];

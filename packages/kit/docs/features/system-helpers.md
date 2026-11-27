@@ -33,14 +33,13 @@ These utilities unify foundational system operations across the plugin: ensuring
    - `sha256File`: streams a file from disk into a SHA-256 hash in `sha256File` (`packages/kit/src/hash.ts:15-23`).
    - `sha256Tree`: deterministically hashes directory trees by sorting directory entries alphabetically and formatting entries as L, D, or F in `sha256Tree` (`packages/kit/src/hash.ts:25-45`).
    - `hashPath`: inspects a path via `lstat` and returns its entity kind along with its SHA-256 hash in `hashPath` (`packages/kit/src/hash.ts:47-60`).
-   - `sha256FileOrNull`: returns the file hash or `null` if the file is absent in `sha256FileOrNull` (`packages/kit/src/hash.ts:62-68`).
    - `outputHashes`: hashes a command result's stdout and stderr, treating an omitted stream as an empty string (`packages/kit/src/hash.ts:71-74`).
    - `markOutputChanges`: matches rerun items to recorded stdout hashes by exact command string, sets `expectedStdoutSha256` and `outputChanged` when both a recorded hash and current hash are present, and returns the number marked changed (`packages/kit/src/hash.ts:76-93`). This comparison does not determine the command's pass/fail result (`packages/kit/src/hash.ts:76-78`).
 2. **Directory and path resolution (`paths.ts`):**
    - `resolveHome`: determines home directory precedence: homeDir parameter, environment variable, or operating system directory (`packages/kit/src/paths.ts:5-7`).
    - `expandHomePath`: expands `~` and `$HOME` prefixes (`packages/kit/src/paths.ts:9-14`).
    - `agentsDir` and `lanePilotRoot`: resolve `.agents` and `lane-pilot` paths (`packages/kit/src/paths.ts:16-22`).
-   - `upstreamDir` and `managedEngineDir`: locate commit-pinned directories under `upstream` and `engines` (`packages/kit/src/paths.ts:24-30`).
+   - `managedEngineDir`: locates commit-pinned directory under `engines` (`packages/kit/src/paths.ts:24-26`).
    - `pluginRootFromModule`: walks directory ancestors of a module URL until locating the parent of `src` or `dist` (`packages/kit/src/paths.ts:33-39`).
    - `defaultGuardSource`: locates guard script path (`packages/kit/src/paths.ts:41-43`).
 3. **Hook identity normalization (`hook-shape.ts`):**
@@ -69,7 +68,6 @@ These utilities unify foundational system operations across the plugin: ensuring
 | Operation | Trigger condition | Result | Evidence |
 |---|---|---|---|
 | `sha256File` | Path missing or unreadable | Stream error rejects in `sha256File` | `packages/kit/src/hash.ts:15-22` |
-| `sha256FileOrNull` | Path is missing | Returns `null` without throwing in `sha256FileOrNull` | `packages/kit/src/hash.ts:62-68` |
 | `hookCommandWords` | Unclosed quotes or metacharacters present | Returns `null` in `hookCommandWords` | `packages/kit/src/hook-shape.ts:11-34` |
 | `stringAt` | Property is absent, non-string, or empty | Returns `null` in `stringAt` | `packages/kit/src/values.ts:11-14` |
 
@@ -89,15 +87,13 @@ These utilities unify foundational system operations across the plugin: ensuring
 | `sha256File` | `function` | Streams and computes SHA-256 hex string for a file | `packages/kit/src/hash.ts:15-23` |
 | `sha256Tree` | `function` | Computes deterministic SHA-256 fingerprint for a directory tree | `packages/kit/src/hash.ts:25-45` |
 | `hashPath` | `function` | Hashes any path according to its filesystem kind | `packages/kit/src/hash.ts:47-60` |
-| `sha256FileOrNull` | `function` | Returns file hash or `null` if absent | `packages/kit/src/hash.ts:62-69` |
 | `outputHashes` | `function` | Computes stdout and stderr SHA-256 fields for a command result | `packages/kit/src/hash.ts:71-74` |
 | `markOutputChanges` | `function` | Adds expected stdout hash and output-change fields to matching rerun items; returns the changed count | `packages/kit/src/hash.ts:76-93` |
 | `resolveHome` | `function` | Resolves home directory path | `packages/kit/src/paths.ts:5-7` |
 | `expandHomePath` | `function` | Expands `~` and `$HOME` in paths | `packages/kit/src/paths.ts:9-14` |
 | `agentsDir` | `function` | Returns `.agents` path | `packages/kit/src/paths.ts:16-18` |
 | `lanePilotRoot` | `function` | Returns `.agents/lane-pilot` path | `packages/kit/src/paths.ts:20-22` |
-| `upstreamDir` | `function` | Returns path to upstream clone for a commit SHA | `packages/kit/src/paths.ts:24-26` |
-| `managedEngineDir` | `function` | Returns path to managed engine for a commit SHA | `packages/kit/src/paths.ts:28-30` |
+| `managedEngineDir` | `function` | Returns path to managed engine for a commit SHA | `packages/kit/src/paths.ts:24-26` |
 | `pluginRootFromModule` | `function` | Finds plugin root above `src/` or `dist/` | `packages/kit/src/paths.ts:33-39` |
 | `defaultGuardSource` | `function` | Returns path to default shell guard hook script | `packages/kit/src/paths.ts:41-43` |
 | `hookCommandWords` | `function` | Splits command string into unquoted arguments | `packages/kit/src/hook-shape.ts:11-37` |

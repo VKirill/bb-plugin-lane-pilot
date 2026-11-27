@@ -41,12 +41,6 @@ export function spentSince(db: Db, sinceMs: number): { costMicroUsd: number; tic
 }
 
 /** A running tick older than the limit never wrote its receipt: it is closed as `no_receipt` so the morning list can say so. Returns the ids closed. */
-export function sweepStaleTicks(db: Db, olderThanMs: number, now: number = Date.now()): string[] {
-  const stale = db.prepare("SELECT id FROM lane_pilot_lead_tick WHERE status='running' AND started_at<?").all(now - olderThanMs) as Array<{ id: string }>;
-  for (const row of stale) closeTick(db, row.id, "no_receipt", now);
-  return stale.map((row) => row.id);
-}
-
 /** The start of the current day in a time zone, ms since the epoch (the daily budget resets there). */
 export function dayStart(now: number, timeZone: string): number {
   const parts = new Intl.DateTimeFormat("en-GB", { timeZone, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false }).formatToParts(new Date(now));

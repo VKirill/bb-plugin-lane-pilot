@@ -19,19 +19,11 @@ retrieval, and a token budget that is enforced before anything is stored or inje
 | `memoryMaintenancePrompt(input)` | The prompt for the maintenance model |
 | `estimateTokens(text)` | The budget unit used everywhere here |
 
-## Files
-
-claude-lane keeps memory as `.agents/memory/<id>.md` files with YAML front matter (schema 2).
-`parseLaneMemoryFile` reads the fields that matter, `laneMemoryFileToCandidate` maps a file to a
-record and an audience (public → export, internal → subagent, sensitive → owner), and
-`renderLaneMemoryFile` writes a record back as a file every CLI hook indexes like any other.
-
 ## Storage
 
 The package expects the `lane_pilot_memory` table and its `lane_pilot_memory_fts` FTS5 index. The trigram index `lane_pilot_memory_trgm` it makes itself on first use.
 Their migrations stay with the owning plugin (Lane Pilot: `src/database.ts`) because the
-migration history of an installed database cannot be renumbered. `MEMORY_SCHEMA` documents the
-expected columns for another plugin that wants to host the same corpus.
+migration history of an installed database cannot be renumbered.
 
 ## Who may use it
 

@@ -1,7 +1,5 @@
 export const ERRAND_EPISODE_TABLE = "lane_pilot_errand_episode";
 export const ERRAND_EPISODE_EXTRACTOR_VERSION = 1;
-/** Events of the helper thread the trace reads at most (the harness reader pages 100 at a time). */
-export const ERRAND_EPISODE_TRACE_EVENTS = 1500;
 
 export type ErrandOutcome = "running" | "done" | "blocked" | "failed" | "canceled";
 /** What the code saw of a done (errandCheck): `unknown` for a run before CHECK lines, and for one that did not end in a report. */

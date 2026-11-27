@@ -29,20 +29,6 @@ export function listTaskAttemptRows(db: LanePilotDatabase, runId: string, taskId
     .all(runId, taskId) as Array<{ id: string; state: string; reason: string | null; check_name: string | null }>;
 }
 
-/** Attempts of a run in the given states, oldest first. */
-export function listAttemptsInStates(db: LanePilotDatabase, runId: string, states: readonly string[]): Array<{ task_id: string; state: string; reason: string | null }> {
-  return db.prepare(`SELECT task_id, state, reason FROM lane_pilot_attempt WHERE run_id=? AND state IN (${states.map(() => "?").join(",")}) ORDER BY created_at`)
-    .all(runId, ...states) as Array<{ task_id: string; state: string; reason: string | null }>;
-}
-
-/** Attempts of a project since a time, with their stored model pick trace. */
-export function listTracedAttemptsSince(db: LanePilotDatabase, projectId: string, sinceMs: number): Array<{ trace_json: string; state: string }> {
-  return db.prepare(`SELECT t.trace_json, a.state FROM lane_pilot_attempt a
-    JOIN lane_pilot_run r ON r.id=a.run_id JOIN lane_pilot_attempt_reasoning t ON t.attempt_id=a.id
-    WHERE r.project_id=? AND a.created_at>=?`).all(projectId, sinceMs) as Array<{ trace_json: string; state: string }>;
-}
-
-
 /** The task's attempts before this one, newest first. */
 export function priorAttemptStates(db: LanePilotDatabase, runId: string, taskId: string, excludeAttemptId: string): Array<{ state: string; reason: string | null }> {
   return db.prepare("SELECT state, reason FROM lane_pilot_attempt WHERE run_id=? AND task_id=? AND id!=? ORDER BY updated_at DESC")
@@ -78,18 +64,6 @@ export function latestAttemptsForProject(db: LanePilotDatabase, projectId: strin
   return db.prepare(`SELECT a.task_id AS taskId, a.state, a.reason, a.failure_code AS failureCode, a.updated_at AS updatedAt FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id
     WHERE r.project_id=? AND a.created_at=(SELECT MAX(b.created_at) FROM lane_pilot_attempt b WHERE b.task_id=a.task_id) ORDER BY a.updated_at DESC LIMIT 500`)
     .all(projectId) as Array<{ taskId: string; state: string; reason: string | null; failureCode: string | null; updatedAt: number }>;
-}
-
-/** Attempt task_id/state pairs of a run, oldest first. */
-export function listRunAttemptStates(db: LanePilotDatabase, runId: string): Array<{ task_id: string; state: string }> {
-  return db.prepare("SELECT task_id, state FROM lane_pilot_attempt WHERE run_id=? ORDER BY created_at, attempt_no").all(runId) as
-    Array<{ task_id: string; state: string }>;
-}
-
-/** Attempts of a run in the given states. */
-export function countAttemptsInStates(db: LanePilotDatabase, runId: string, states: readonly string[]): number {
-  return (db.prepare(`SELECT COUNT(*) AS n FROM lane_pilot_attempt WHERE run_id=? AND state IN (${states.map(() => "?").join(",")})`)
-    .get(runId, ...states) as { n: number }).n;
 }
 
 /** Attempts in the given states untouched since a time (the orphan-stage sweep reads them). */
@@ -205,38 +179,6 @@ export function latestAttemptWorkForThread(db: LanePilotDatabase, threadId: stri
   return db.prepare(`SELECT a.run_id, a.task_id, r.project_id, r.pm_thread_id FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id
     WHERE a.thread_id=? ORDER BY a.updated_at DESC LIMIT 1`).get(threadId) as
     { run_id: string; task_id: string; project_id: string; pm_thread_id: string | null } | undefined;
-}
-
-/** Accepted attempts of a project with their task ids, newest first — the regression pass's candidate list. */
-export function acceptedAttemptTaskRefs(db: LanePilotDatabase, projectId: string, filter: { runId: string } | { updatedSince: number }): Array<{ attempt_id: string; task_id: string }> {
-  return ("runId" in filter
-    ? db.prepare(`SELECT a.id AS attempt_id, a.task_id AS task_id FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id
-        WHERE r.project_id=? AND a.run_id=? AND a.state='accepted' ORDER BY a.updated_at DESC, a.rowid DESC`).all(projectId, filter.runId)
-    : db.prepare(`SELECT a.id AS attempt_id, a.task_id AS task_id FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id
-        WHERE r.project_id=? AND a.state='accepted' AND a.updated_at>=? ORDER BY a.updated_at DESC, a.rowid DESC`).all(projectId, filter.updatedSince)) as Array<{ attempt_id: string; task_id: string }>;
-}
-
-/** Projects with an accepted attempt since a time (the regression sweep's project list). */
-export function acceptedAttemptProjectIds(db: LanePilotDatabase, since: number): string[] {
-  return (db.prepare("SELECT DISTINCT r.project_id AS id FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id WHERE a.state='accepted' AND a.updated_at>=? ORDER BY r.project_id")
-    .all(since) as Array<{ id: string }>).map((row) => row.id);
-}
-
-/** Accepted tasks per project since a time (the cost-per-verified report). */
-export function acceptedTaskCountsByProject(db: LanePilotDatabase, since: number): Array<{ projectId: string; n: number }> {
-  return db.prepare(`SELECT r.project_id AS projectId, COUNT(DISTINCT a.task_id) AS n FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id WHERE a.state='accepted' AND a.updated_at >= ? GROUP BY r.project_id`)
-    .all(since) as Array<{ projectId: string; n: number }>;
-}
-
-/** Whether the task has an accepted attempt (an outcome sweep's "the work landed" check). */
-export function hasAcceptedAttempt(db: LanePilotDatabase, runId: string, taskId: string): boolean {
-  return Boolean(db.prepare("SELECT 1 FROM lane_pilot_attempt WHERE run_id=? AND task_id=? AND state='accepted' LIMIT 1").get(runId, taskId));
-}
-
-/** Whether the task has an attempt still at work (an outcome sweep's "still undecided" check). */
-export function hasLiveAttempt(db: LanePilotDatabase, runId: string, taskId: string): boolean {
-  return Boolean(db.prepare(`SELECT 1 FROM lane_pilot_attempt WHERE run_id=? AND task_id=?
-    AND state IN ('queued','spawn_requested','spawn_unknown','running','cancel_requested') LIMIT 1`).get(runId, taskId));
 }
 
 /** The task's latest attempt by insertion order (a park sweep decides whether to block it). */

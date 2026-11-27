@@ -87,9 +87,6 @@ export function listConflicts(db: MemoryDatabase, filter: { projectId?: string |
   return (db.prepare(`SELECT * FROM lane_pilot_memory_conflict${where.length ? ` WHERE ${where.join(" AND ")}` : ""} ORDER BY detected_at, id`).all(...args) as Raw[]).map(fromRaw);
 }
 
-export function setDeferral(db: MemoryDatabase, id: string, deferralId: string): void {
-  db.prepare("UPDATE lane_pilot_memory_conflict SET deferral_id=? WHERE id=?").run(deferralId, id);
-}
 
 export function markSettled(db: MemoryDatabase, id: string, resolution: ConflictResolution, evidence: string, now: number): boolean {
   return db.prepare("UPDATE lane_pilot_memory_conflict SET state='settled', resolution=?, settled_at=?, settled_by=? WHERE id=? AND state='held'").run(resolution, now, evidence, id).changes === 1;

@@ -29,14 +29,6 @@ export interface Services {
 
 
 
-export type FailingGateCheck = {
-  command: string;
-  exitCode: number;
-  stdout: string;
-  stderr: string;
-  failedFiles: string[];
-};
-
 export { extractFailingFiles };
 
 

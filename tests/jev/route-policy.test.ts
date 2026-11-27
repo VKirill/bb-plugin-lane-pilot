@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { RouterCard } from "@lane-pilot/workflow-engine";
-import { filterByPolicy, manifestOf } from "../../src/rooms/workflow/models/route-policy";
+import { manifestOf, policyProblem } from "../../src/rooms/workflow/models/route-policy";
 
 const card = (id: string, requires: Partial<RouterCard["requires"]> = {}): RouterCard => ({
   id, name: { en: `${id} name`, ru: `${id} имя` }, description: { en: `${id} does work`, ru: "" }, examples: { en: [`do ${id}`], ru: [] },
@@ -25,14 +25,10 @@ describe("route policy manifest", () => {
   });
 
   it("a risk above the allowed level and a secret left out of secrets.allow are refused; an optional secret is not", () => {
-    const out = filterByPolicy(
-      [card("hi", { secrets: ["STRIPE_KEY"] }), card("opt", { secrets: ["TAVILY_API_KEY (optional research)"] }), card("ok")],
-      { maxRisk: "medium", secretsAllow: ["STRIPE_KEY"] },
-    );
-    expect(out.allowed.map((c) => c.id)).toEqual(["opt", "ok"]);
-    expect(out.rejected[0]).toMatchObject({ id: "hi" });
-    expect(out.rejected[0]!.reason).toContain("risk high");
-    const denied = filterByPolicy([card("hi", { secrets: ["STRIPE_KEY"] })], { secretsAllow: ["OTHER"] });
-    expect(denied.rejected[0]!.reason).toContain("STRIPE_KEY is left out");
+    const policy = { maxRisk: "medium" as const, secretsAllow: ["STRIPE_KEY"] };
+    expect(policyProblem(card("hi", { secrets: ["STRIPE_KEY"] }), policy)).toContain("risk high");
+    expect(policyProblem(card("opt", { secrets: ["TAVILY_API_KEY (optional research)"] }), policy)).toBeNull();
+    expect(policyProblem(card("ok"), policy)).toBeNull();
+    expect(policyProblem(card("hi", { secrets: ["STRIPE_KEY"] }), { secretsAllow: ["OTHER"] })).toContain("STRIPE_KEY is left out");
   });
 });

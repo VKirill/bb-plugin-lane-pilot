@@ -34,6 +34,5 @@ export * from "./repositories/hub-repository";
 export * from "./services/lp-service-tier";
 export * from "./services/clean-subthread";
 export * from "./services/child-tree";
-export * from "./services/code-facts";
 export * from "./services/lp-project";
 export * from "./services/trajectory-delta";

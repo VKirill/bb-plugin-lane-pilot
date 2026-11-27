@@ -31,46 +31,6 @@ export const settingValidationSchema = z.object({
   params: z.array(z.string()),
 }).strict();
 
-export const ruleProposalSchema = z.object({
-  id: z.string(),
-  rule: z.string(),
-  author: z.enum(["sweep", "pm", "owner", "model"]),
-  state: z.enum(["proposed", "accepted", "rejected", "revoked"]),
-  occurrences: z.number().int(),
-  taskCount: z.number().int(),
-  examples: z.array(z.string()),
-  evidence: z.array(z.object({ runId: z.string(), taskId: z.string(), attemptId: z.string(), reason: z.string() }).strict()),
-  lastSeenAt: z.number().int(),
-  decidedAt: z.number().int().nullable(),
-  decidedBy: z.enum(["owner", "auto"]).nullable(),
-  trialState: z.enum(["trial", "confirmed"]).nullable(),
-  revision: z.number().int(),
-  retiredReason: z.string().nullable(),
-  trial: z.object({ applied: z.number().int(), appliedAccepted: z.number().int(), recurrences: z.number().int() }).strict().nullable(),
-  scope: z.array(z.string()),
-  scopeLabel: z.string(),
-  audience: z.enum(["writer", "pm", "both"]),
-  always: z.boolean(),
-  /** 0.1.247: the lesson's form (always-on line, skill, check, hook, memory note), the situation it fires on, its confidence. */
-  form: z.enum(["always", "skill", "check", "hook", "memory"]).nullable().optional(),
-  cue: z.string().nullable().optional(),
-  confidence: z.string().nullable().optional(),
-  /** SMA block 6: why the rule has its form, and the mechanism (lint code, test, commit) that now enforces it. */
-  formReason: z.string().nullable().optional(),
-  mechanizedBy: z.string().nullable().optional(),
-}).strict();
-
-export const ruleScanSchema = z.object({
-  state: z.enum(["idle", "running", "done", "failed"]),
-  startedAt: z.number().int().nullable(), finishedAt: z.number().int().nullable(),
-  triaged: z.number().int(), groups: z.number().int(), proposals: z.number().int(), reason: z.string().nullable(),
-  adopted: z.number().int().optional(), confirmed: z.number().int().optional(), revised: z.number().int().optional(), retired: z.number().int().optional(),
-}).strict();
-
-export const rulesAnalyzerSchema = z.object({
-  providerId: z.string().min(1), model: z.string().min(1), reasoningLevel: z.string().min(1), serviceTier: z.enum(["default", "fast"]).nullable(),
-}).strict();
-
 /** An environment variable name, as the sandbox passes it; Env Catalog names follow the same rule. */
 export const secretNameSchema = z.string().regex(/^[A-Za-z_][A-Za-z0-9_]{0,127}$/);
 

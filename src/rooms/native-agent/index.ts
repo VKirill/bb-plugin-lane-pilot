@@ -1,7 +1,7 @@
 // Public API of native-agent: what other rooms import. Everything else in this room is private.
 // Add a name here to make it public; scripts/refactor/barrels.ts wrote the first version from the existing imports.
 export type { EmployeeManifest } from "../contracts/server";
-export { SKILL_CATALOG_BLOCK, SKILL_CATALOG_LINE, SKILL_CATALOG_LIMIT } from "./models/skill-catalog";
+export { SKILL_CATALOG_BLOCK, SKILL_CATALOG_LINE } from "./models/skill-catalog";
 export { affinityHostId, chooseEmployeePlace, placeEmployeeOn } from "./models/employee-place";
 export type { ListedHost } from "./models/employee-place";
 export {
@@ -38,7 +38,6 @@ export { PARITY_LAYERS, permissionEntries, terminalParity } from "./models/termi
 export type { ParityLayer, ParityLayerSet, ParityLine } from "./models/terminal-parity";
 export { pmSkillName } from "./models/pm-skill";
 export { ARCHITECT_LAUNCH, WORKFLOW_ARCHITECT_NAME, WORKFLOW_ARCHITECT_SESSION, WORKFLOW_ARCHITECT_TOOLS } from "./models/workflow-architect";
-export { requestArchitectLaunch, takeArchitectLaunch } from "./models/architect-launch";
 export { agentKind } from "./models/agent-profile";
 export { HELPER_DISALLOWED_TOOLS, WRITER_DISALLOWED_TOOLS, WRITER_MAX_TURNS } from "./models/claude-guard";
 export { WORKSPACE_MODE_SETTING } from "./settings";

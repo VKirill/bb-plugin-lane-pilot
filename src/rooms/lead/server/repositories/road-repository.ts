@@ -63,10 +63,6 @@ export function syncRoadProposal(db: RoadDb, id: string, input: { class: string;
 }
 
 /** A proposal on an existing open branch may bring the payload the branch lacked (a schedule for a `schedule` branch). */
-export function setRoadPayload(db: RoadDb, id: string, payload: unknown, now: number = Date.now()): boolean {
-  return db.prepare("UPDATE lane_pilot_lead_road SET payload_json=?, updated_at=? WHERE id=?").run(payload === undefined || payload === null ? null : JSON.stringify(payload), now, id).changes > 0;
-}
-
 export const getRoad = (db: RoadDb, id: string): RoadRow | undefined =>
   db.prepare("SELECT * FROM lane_pilot_lead_road WHERE id=?").get(id) as RoadRow | undefined;
 

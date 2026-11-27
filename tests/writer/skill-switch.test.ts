@@ -1,8 +1,9 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
 import { openDatabase } from "../../src/rooms/plugin-db";
+import { listSkillMetrics } from "../../src/rooms/storage";
 import { calculateSkillSwitches } from "../../src/rooms/writer/models/skill-switch";
-import { getSkillSwitchStats, recordSkillSwitchMetric } from "../../src/rooms/writer/server/repositories/skill-switch-store";
+import { recordSkillSwitchMetric } from "../../src/rooms/writer/server/repositories/skill-switch-store";
 import { extractSkillSequence } from "../../src/rooms/contracts";
 
 describe("skill-switch metric (Item 3)", () => {
@@ -31,7 +32,7 @@ describe("skill-switch metric (Item 3)", () => {
     });
   });
 
-  it("recordSkillSwitchMetric stores record and getSkillSwitchStats calculates correlation with outcome", () => {
+  it("recordSkillSwitchMetric stores switch counts and outcomes", () => {
     const { bb } = createFakePluginHost({ pluginId: "lane-pilot" });
     const db = openDatabase(bb);
     const now = Date.now();
@@ -76,20 +77,12 @@ describe("skill-switch metric (Item 3)", () => {
       now: now - 2000,
     });
 
-    const stats = getSkillSwitchStats(db, now - 10_000, now + 10_000);
-    expect(stats).not.toBeNull();
-    expect(stats!.totalTasks).toBe(4);
-    // 0 + 1 + 3 + 4 = 8 switches / 4 = 2.0 avg
-    expect(stats!.avgSwitches).toBe(2);
-
-    // low switch (<=1): 2 tasks (0 switches, 1 switch), 0 failed -> 0%
-    expect(stats!.lowSwitchTotal).toBe(2);
-    expect(stats!.lowSwitchFailures).toBe(0);
-    expect(stats!.lowSwitchFailRate).toBe(0);
-
-    // high switch (>=2): 2 tasks (3 switches, 4 switches), 2 failed -> 100%
-    expect(stats!.highSwitchTotal).toBe(2);
-    expect(stats!.highSwitchFailures).toBe(2);
-    expect(stats!.highSwitchFailRate).toBe(1.0);
+    const rows = listSkillMetrics(db as never, now - 10_000, now + 10_000);
+    expect(rows).toEqual([
+      { switch_count: 0, outcome: "accepted" },
+      { switch_count: 1, outcome: "accepted" },
+      { switch_count: 3, outcome: "failed" },
+      { switch_count: 4, outcome: "failed" },
+    ]);
   });
 });

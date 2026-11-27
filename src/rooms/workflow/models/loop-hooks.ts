@@ -10,12 +10,6 @@ export const LOOP_HOOK_MANIFEST = "loop-hooks.manifest.json";
 export type LoopHook = { workflow: string; version?: number; inputs: Record<string, string> };
 export type LoopHookManifest = { schemaVersion: 1; hooks: Record<Exclude<LoopHookPoint, "discuss:pre">, LoopHook[]> & { "discuss:pre"?: LoopHook[] } };
 export type LoopHookStatus = { status: Workflow["status"]; internal?: boolean; startedBy?: string };
-export type LoopHookSelection = {
-  point: LoopHookPoint;
-  workflow: string;
-  version?: number;
-  inputs: Record<string, string>;
-};
 export type PreparedLoopWorkflow = {
   workflow: Workflow;
   resolve: (id: string, version?: number) => Workflow | null;

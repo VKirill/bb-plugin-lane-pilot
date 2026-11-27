@@ -3,5 +3,5 @@
 export { buildCapsule, capsuleRestored, sessionSummaryLine } from "./models";
 export { conventionGateHits, type ConventionGate } from "./models";
 export { STREAMS, type StreamName } from "./models";
-export { GUARD_INVENTORY, guardInventoryGaps, type GuardRow } from "./models";
+export { GUARD_INVENTORY, type GuardRow } from "./models";
 export { spentWindows, windowAppliesTo, SNAPSHOT_MAX_AGE_MS, type SpendWindow } from "./models";

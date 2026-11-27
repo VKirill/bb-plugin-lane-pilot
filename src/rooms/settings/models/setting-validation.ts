@@ -21,14 +21,6 @@ import type { SettingValidationError } from "../../setting-validation";
 
 export type { SettingValidationError } from "../../setting-validation";
 
-/** Choices generated from registered select controls and shared by every consumer of a key. */
-export function allowedSettingChoices(key: string): string[] | null {
-  if (key.endsWith(".agent")) return null;
-  const def = SETTINGS_REGISTRY.get(key);
-  if (!def || def.uiStatus !== "editable" || def.control !== "select") return null;
-  return def.options.length ? [...def.options] : null;
-}
-
 /** The checks whose project-level rows the self-improvement screen edits as defaults (and `memory.note_budget`, which shares range validation). */
 const PROJECT_CHECK_KEYS: ReadonlySet<string> = new Set([...PROJECT_DEFAULT_KEYS, "memory.note_budget"]);
 
@@ -164,23 +156,8 @@ export function argvValidationMap(settings: Record<string, unknown>): ReadonlyMa
   return new Map(validateSettingsObject(settings).map((error) => [error.key, validationErrorText(error)]));
 }
 
-/** Keep the provider/effort group valid when its leading key changes. */
-export function normalizeWriterEffort(provider: string, currentEffort: unknown): { effort: string; changed: boolean } {
-  const allowed = WRITER_EFFORT_CHOICES_BY_PROVIDER[provider] ?? [];
-  if (typeof currentEffort === "string" && allowed.includes(currentEffort)) {
-    return { effort: currentEffort, changed: false };
-  }
-  const effort = allowed[0];
-  return effort ? { effort, changed: effort !== currentEffort } : { effort: String(currentEffort ?? ""), changed: false };
-}
-
 export function validationErrorText(error: SettingValidationError): string {
   return error.code === "invalid_choice"
     ? `invalid value; allowed: ${error.params[1] ?? ""}`
     : `invalid value; incompatible with ${error.params[1] ?? "setting"}=${error.params[2] ?? ""}; allowed: ${error.params[3] ?? ""}`;
-}
-
-export function invalidChoiceReason(key: string, value: unknown): string | null {
-  const error = validateSettingValue(key, value);
-  return error ? validationErrorText(error) : null;
 }

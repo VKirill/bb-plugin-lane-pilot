@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { enumCoverage, literalCoverage, schemaEnums } from "@lane-pilot/kit/prompt-coverage";
+import { literalCoverage, schemaEnums } from "@lane-pilot/kit/prompt-coverage";
 
 describe("literalCoverage", () => {
   it("matches whole words only", () => {
@@ -53,16 +53,6 @@ describe("schemaEnums", () => {
       { path: "#/properties/rows/items/properties/kind/anyOf/0/const", values: ["x"] },
       { path: "#/properties/rows/items/properties/kind/anyOf/1/enum", values: ["y", "z"] },
       { path: "#/$defs/level/enum", values: ["low", "high"] },
-    ]);
-  });
-
-  it("checks every group against the texts", () => {
-    const report = enumCoverage(schema, "pass, x, y and low");
-    expect(report.map((group) => [group.path, group.missing, group.partial])).toEqual([
-      ["#/properties/status/enum", ["fail"], true],
-      ["#/properties/rows/items/properties/kind/anyOf/0/const", [], false],
-      ["#/properties/rows/items/properties/kind/anyOf/1/enum", ["z"], true],
-      ["#/$defs/level/enum", ["high"], true],
     ]);
   });
 });

@@ -9,7 +9,7 @@ import { bestEffort, isNotFound, orMiss, outputText, redactKnown, stringAt } fro
 import { agentPrompt, contractProblems, contractRepairPrompt, describeProblems, goalsBlock, hasContractProblems, honestExit, outputContract, outputFields, parseAgentOutput } from "@lane-pilot/workflow-engine";
 import type { ContractProblems, Field, GraphNode, PacketPlan, StepContext } from "@lane-pilot/workflow-engine";
 import { roleMethod } from "../../../critique";
-import { findThreadsByMetadata, folderEnvironment, fullAccessSpawn, hiddenPlacement, keyedSpawnSupported, noteProviderLimit, noteProviderStartFailure, noteProviderStartSuccess, projectFolder, projectSources } from "../../../platform/server";
+import { findThreadsByMetadata, folderEnvironment, fullAccessSpawn, hiddenPlacement, noteProviderLimit, noteProviderStartFailure, noteProviderStartSuccess, projectFolder, projectSources } from "../../../platform/server";
 import { helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "../../../runs/server";
 import { createRepoGuard } from "./workflow-repo-guard";
 import type { RepoGuardDetail, RepoGuardPoint } from "./workflow-repo-guard";
@@ -467,5 +467,3 @@ export function agentRequest(ctx: StepContext<ChainRuntime>, node: Extract<Graph
     ...(plan.files.length ? { packetFiles: plan.files, ...(options.filesAt ? { packetFilesAt: options.filesAt } : {}) } : {}),
   };
 }
-
-export const agentUsesKeyedSpawn = (rt: ChainRuntime | undefined) => Boolean(rt && keyedSpawnSupported(rt.ctx.bb));

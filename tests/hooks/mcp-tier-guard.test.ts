@@ -3,7 +3,7 @@ import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { TIER_RANK, TOOL_TIERS, tierAllows, type ToolTier } from "@lane-pilot/contracts";
+import { TIER_RANK, TOOL_TIERS, type ToolTier } from "@lane-pilot/contracts";
 import { prepareClaudeGuard } from "../../src/rooms/native-agent";
 import { createClaudeGuardEnv } from "../../src/rooms/native-agent/server";
 import { prepareClaudeGuardHost } from "../../src/rooms/host-worker";
@@ -55,7 +55,7 @@ describe("MCP tier runtime guard in guard_shell.py", () => {
           LANE_PILOT_NODE_EFFECT: stepEffect,
           LANE_PILOT_TOOL_TIERS_FILE: POLICY_PATH,
         });
-        const expectedAllow = tierAllows(stepEffect, toolTier);
+        const expectedAllow = TIER_RANK[toolTier] <= TIER_RANK[stepEffect];
         expect(resPair.status, `step=${stepEffect} tool=${toolTier}`).toBe(expectedAllow ? 0 : 2);
       }
     }

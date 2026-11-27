@@ -99,8 +99,6 @@ export const rooms: readonly Room<Services>[] = [
 ];
 
 /** Typed settings contributed by registered rooms (in registry order). */
-export const registeredRoomSettings = rooms.flatMap((entry) => entry.settings ?? []);
-
 /** The RPC handlers of every room, one object; a key offered by two rooms is a start-up error, not a silent override. */
 export function roomRpcHandlers(ctx: ServerCore, services: Services): Record<string, unknown> {
   const handlers: Record<string, unknown> = {};

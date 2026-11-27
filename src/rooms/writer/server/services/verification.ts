@@ -1,5 +1,5 @@
 import { LP_EVENTS } from "@lane-pilot/contracts";
-import { buildMainfixTask, gateResolverFor, handleLandingRed, IntegrationGateRunner } from "../../../verification/server";
+import { gateResolverFor, handleLandingRed, IntegrationGateRunner } from "../../../verification/server";
 import { parseIntegrationGateSettings as parseGate } from "../../../contracts/integration-gate";
 import { listOpenAttempts, loadProjectSettings, getRunSettingsScopes } from "../../../storage";
 import { isRunHalted } from "../../../runs/server";
@@ -136,4 +136,3 @@ export function mountVerificationAttemptFinished(ctx: ServerCore, services: Serv
 }
 
 /** Single `-mainfix` builder owned by verification (`src/rooms/verification/server/landing-suite.ts`). */
-export const postMergeRepair = buildMainfixTask;

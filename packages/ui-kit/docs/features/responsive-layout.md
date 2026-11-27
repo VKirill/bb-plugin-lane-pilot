@@ -36,7 +36,6 @@ These helpers let app UI adapt based on the measured width of its shell or conte
 |---|---|---|---|
 | `chromeIsCompact` | Width `> 0` and `<= 448` px (`SHELL_COMPACT_MAX`) | `true`; otherwise `false` | (packages/ui-kit/src/ui/panel-layout.ts:4-10) |
 | `contentStacksControls` | Width `> 0` and `<= 350` px (`CONTENT_STACK_MAX`) | `true`; otherwise `false` | (packages/ui-kit/src/ui/panel-layout.ts:6-14) |
-| `DARK_COLOR_SCHEME_QUERY` | Media query `"(prefers-color-scheme: dark)"` | Constant query string | (packages/ui-kit/src/ui/hooks/use-media-query.ts:3) |
 | `COARSE_POINTER_TEXT_BASE_CLASS` | CSS `max-md:pointer-coarse` text variant | `"text-sm max-md:pointer-coarse:text-base"` | (packages/ui-kit/src/ui/coarse-pointer-sizing.ts:1-2) |
 | `COARSE_POINTER_INPUT_HEIGHT_CLASS` | CSS `max-md:pointer-coarse` height variant | `"h-9 max-md:pointer-coarse:h-10"` | (packages/ui-kit/src/ui/coarse-pointer-sizing.ts:4-5) |
 | `CONTROL_H` | Alias of `COARSE_POINTER_INPUT_HEIGHT_CLASS` | Matches standard control height | (packages/ui-kit/src/ui/control-row.ts:1-4) |
@@ -59,7 +58,7 @@ If browser APIs are unavailable, `getMediaQuerySnapshot` returns false and `subs
 | `SHELL_COMPACT_MAX`, `CONTENT_STACK_MAX`, `chromeIsCompact`, `contentStacksControls`, `PanelLayout`, `PanelLayoutContext`, `usePanelLayout`, `useObservedWidth` | Panel measurement and layout state | (packages/ui-kit/src/ui/panel-layout.ts:4-39) |
 | `COARSE_POINTER_TEXT_BASE_CLASS`, `COARSE_POINTER_INPUT_HEIGHT_CLASS` | CSS class strings for text size and control height | (packages/ui-kit/src/ui/coarse-pointer-sizing.ts:1-5) |
 | `CONTROL_H` | Alias for the coarse-pointer input height class | (packages/ui-kit/src/ui/control-row.ts:1-4) |
-| `DARK_COLOR_SCHEME_QUERY`, `subscribeMediaQuery`, `getMediaQuerySnapshot`, `useMediaQuery` | Media-query subscription API and React hook | (packages/ui-kit/src/ui/hooks/use-media-query.ts:3; packages/ui-kit/src/ui/hooks/use-media-query.ts:45-65) |
+| `subscribeMediaQuery`, `getMediaQuerySnapshot`, `useMediaQuery` | Media-query subscription API and React hook | (packages/ui-kit/src/ui/hooks/use-media-query.ts:43-63) |
 
 ## Dependencies
 

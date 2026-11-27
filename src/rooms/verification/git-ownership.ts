@@ -53,17 +53,6 @@ async function isNestedCheckout(cwd:string):Promise<boolean> {
 }
 
 /** Keep dirt that lives under a nested chat folder, with paths relative to that folder. */
-export function dirtInsideWorkspace<T extends {path:string}>(snapshots:T[], prefix:string):T[] {
-  if (!prefix) return snapshots;
-  const slash = prefix.endsWith("/") ? prefix : `${prefix}/`;
-  return snapshots.flatMap((row) => {
-    const path = row.path.replace(/^\.\//, "");
-    if (!path.startsWith(slash)) return [];
-    const relativePath = path.slice(slash.length);
-    return relativePath ? [{ ...row, path: relativePath }] : [];
-  });
-}
-
 async function resolveCommit(cwd:string,ref:string) {
   if(!ref.trim()||ref.length>240||ref.includes("\0")) return {ok:false as const,reason:"git base ref is empty or exceeds the allowed length"};
   const result=await git(cwd,["rev-parse","--verify","--end-of-options",`${ref}^{commit}`]);

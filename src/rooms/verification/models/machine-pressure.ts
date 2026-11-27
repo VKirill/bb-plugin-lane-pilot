@@ -45,12 +45,6 @@ function describe(reading: MachineReading): string {
 }
 
 /** One sentence on a single reading, for a place that has no pass to compare with (the regression pass's «red at its merge commit as well»); never names load without a reading. */
-export function readingNote(reading: MachineReading | null): string {
-  if (!reading) return `no machine reading was available before the run, so no load is claimed (${SAMPLING_NOTE})`;
-  const pressure = pressureOf(reading);
-  return pressure.length ? `machine pressure before the run on ${reading.hostId}: ${pressure.join("; ")} (${SAMPLING_NOTE})` : `no limit crossed before the run on ${reading.hostId} (${describe(reading)}; ${SAMPLING_NOTE})`;
-}
-
 /** The verdict on a failure that passed on the re-run, from the reading before the failing attempt only; never names load without a reading. */
 export function flakyEvidence(first: { exitCode: number; outputTail: string }, beforeFirst: MachineReading | null, beforeRerun: MachineReading | null): FlakyEvidence {
   const pressure = beforeFirst ? pressureOf(beforeFirst) : [];

@@ -2,7 +2,7 @@
 // Add a name here to make it public; scripts/refactor/barrels.ts wrote the first version from the existing imports.
 export { room } from "./room";
 export { mountHandoff } from "./handlers/handoff";
-export { createOwnerAsk, threadPendingInteractions } from "./services/owner-ask";
+export { createOwnerAsk } from "./services/owner-ask";
 export type { OwnerAsk, OwnerAnswer } from "./services/owner-ask";
 export {
   OWNER_LOCALE_PREFERENCE_KEY,

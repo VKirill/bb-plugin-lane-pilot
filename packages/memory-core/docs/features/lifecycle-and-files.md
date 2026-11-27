@@ -40,10 +40,8 @@ The lifecycle and file integration subsystem tracks facts over time, expires out
    - `pathsNamed` extracts repository file paths referenced in note content (`packages/memory-core/src/fingerprint.ts:6-8`).
    - `fileFingerprint` hashes sorted file paths and their byte contents, recording whether each file is present or missing (`packages/memory-core/src/fingerprint.ts:14-23`).
    - `filesDrifted` (`packages/memory-core/src/fingerprint.ts:26-29`) re-reads current disk contents and compares the resulting hash against stored hashes; if drifted, context packing marks the candidate as `stale` (`packages/memory-core/src/context-pack.ts:37`).
-8. Parsing memory files: `parseLaneMemoryFile` (`packages/memory-core/src/files.ts:46-92`) parses schema-2 front matter into `LaneMemoryFile` (`packages/memory-core/src/files.ts:8-20`). `laneMemoryFileToCandidate` (`packages/memory-core/src/files.ts:97-107`) maps files to candidates, resolving `audienceForSensitivity` (`packages/memory-core/src/files.ts:25-28`) and combining claim and body.
-9. Rendering memory files: `renderLaneMemoryFile` serializes a `MemoryRecord` back to schema-2 markdown, mapping kind to `context_priority` and generating a deterministic file name via `exportedFileName` (`packages/memory-core/src/files.ts:110-152`).
-10. Corpus review: `reviewMemory` reads active records, narrows same-subject note pairs through a per-project concept index before calling `sameSubject` in row order, and proposes note supersessions plus idle or dated expirations without writing the proposals (`packages/memory-core/src/lint.ts:125-157`).
-11. Note shortening: the [context packing helpers](context-packing.md) propose shorter wording; `applyShorter` stores an accepted shorter note as its replacement, and `undoShorter` reactivates the predecessor (`packages/memory-core/src/compress.ts:116-166`).
+8. Corpus review: `reviewMemory` reads active records, narrows same-subject note pairs through a per-project concept index before calling `sameSubject` in row order, and proposes note supersessions plus idle or dated expirations without writing the proposals (`packages/memory-core/src/lint.ts:125-157`).
+9. Note shortening: the [context packing helpers](context-packing.md) propose shorter wording; `applyShorter` stores an accepted shorter note as its replacement, and `undoShorter` reactivates the predecessor (`packages/memory-core/src/compress.ts:116-166`).
 
 ## Modes, variants and branches
 
@@ -56,7 +54,6 @@ The lifecycle and file integration subsystem tracks facts over time, expires out
 | Revoked or archived | Owner withdrawal or archival | Stored as `expired_reason` | Revoked rows do not revive from restatement; archived notes are eligible for cold-tier retrieval | `packages/memory-core/src/lifecycle.ts:10-11`, `packages/memory-core/src/store.ts:165-167, 639-650` |
 | Owner forget tombstone | `memory forget --expire` or `--replace` marks the record `expired_reason = 'owner'` | A matching restatement or file re-import does not revive it | Remains expired and is excluded from retrieval | `packages/memory-core/src/lifecycle.ts:10-11`, `packages/memory-core/src/store.ts:161-163` |
 | Check refutation | Check failure output contains 40 chars of note text | Tested by `noteRefutedByCheck` (`packages/memory-core/src/lifecycle.ts:14-19`) | Marked expired | Reason set to `'refuted'` |
-| Sensitivity mapping | `public` -> `export`; `internal` -> `subagent`; `sensitive` / `encrypted-required` -> `owner` | Maps YAML front matter sensitivity to memory audience | Enforces audience filtering in store | `packages/memory-core/src/files.ts:22-31` |
 | Corpus review proposal | Active note pairs share a project and concept plus subject, or a note is idle / past `valid_until` | `reviewMemory` | Returns sorted `supersede` or `expire` proposals without changing rows | `packages/memory-core/src/lint.ts:125-157` |
 | Shortening | Note row; proposed text must be non-empty and shorter by token estimate | `applyShorter` / `undoShorter` | Replaces the note and records a `compress` verification mark, or restores the predecessor | `packages/memory-core/src/compress.ts:116-166` |
 
@@ -64,10 +61,6 @@ The lifecycle and file integration subsystem tracks facts over time, expires out
 
 | Failure condition | Handling mechanism | Outcome | Evidence |
 |---|---|---|---|
-| Missing front matter in file | `parseLaneMemoryFile` checks for leading `---` and closing delimiter | Returns `null`; import skips file | `packages/memory-core/src/files.ts:47-49` |
-| Missing ID in file front matter | `top.id` validation in `parseLaneMemoryFile` | Returns `null`; file is not imported | `packages/memory-core/src/files.ts:78-79` |
-| Inactive status in file | `laneMemoryFileToCandidate` checks `file.status !== 'active'` | Returns `null`; candidate is dropped | `packages/memory-core/src/files.ts:98` |
-| Expired file date | `file.validUntil < now` in `laneMemoryFileToCandidate` | Returns `null`; candidate is dropped | `packages/memory-core/src/files.ts:99` |
 | Missing file during fingerprinting | `fileFingerprint` (`packages/memory-core/src/fingerprint.ts:14-23`) encounters `bytes === null` | Hashes `\0missing` sentinel | Distinct from empty bytes |
 | Ambiguous note ID prefix | Prefix names more than one active note | `resolveCompressible` | Returns an error asking for a longer prefix | `packages/memory-core/src/compress.ts:94-103` |
 | Shortening proposal is unchanged or not shorter | Empty, identical, or not fewer estimated tokens | `applyShorter` | Throws; no replacement is written | `packages/memory-core/src/compress.ts:116-121` |
@@ -77,7 +70,6 @@ The lifecycle and file integration subsystem tracks facts over time, expires out
 - Twenty-four hour quarantine: observed facts require 24 hours or a corroborating second source before being injected into working agent prompts (`packages/memory-core/src/lifecycle.ts:6`, `packages/memory-core/src/store.ts:352`).
 - Ninety-day idle cutoff: notes not utilized for `NOTE_IDLE_MS` (`packages/memory-core/src/lifecycle.ts:8`) are expired; core records, rules, and imports are protected by `idleSql` (`packages/memory-core/src/lifecycle.ts:46-48`).
 - Refutation threshold: check output must match at least 40 continuous characters of a note to confirm refutation; generic error messages do not refute facts (`packages/memory-core/src/lifecycle.ts:14-19`).
-- File content cap: imported markdown claims and bodies are capped at 4,000 characters (`packages/memory-core/src/files.ts:94, 100`).
 - Usefulness smoothing: usefulness formula $(\text{acceptedCount} + 1) / (\text{useCount} + 2)$ starts at neutral 0.5 and is bounded at 1.5 (`packages/memory-core/src/lifecycle.ts:89-93`).
 - Critic separation: reviewer and critic usage increments `critic_count` rather than `use_count`, preventing reviewer lookups from altering usefulness scores (`packages/memory-core/src/lifecycle.ts:141-144`).
 - Corpus review is advisory: `reviewMemory` returns proposals and performs no writes (`packages/memory-core/src/lint.ts:118-124`, `packages/memory-core/src/lint.ts:125-157`).
@@ -102,16 +94,11 @@ The lifecycle and file integration subsystem tracks facts over time, expires out
 - `pathsNamed(text)`: extracts repository file paths from text (`packages/memory-core/src/fingerprint.ts:6-8`).
 - `fileFingerprint(parts)`: computes SHA-256 fingerprint of named files (`packages/memory-core/src/fingerprint.ts:14-23`).
 - `filesDrifted(stored, paths, read)`: evaluates whether files have drifted from stored hash (`packages/memory-core/src/fingerprint.ts:26-29`).
-- `parseLaneMemoryFile(text)`: parses schema-2 YAML front matter (`packages/memory-core/src/files.ts:46-92`).
-- `laneMemoryFileToCandidate(file, now?)`: maps parsed file to candidate record (`packages/memory-core/src/files.ts:97-107`).
-- `renderLaneMemoryFile(record, audience, exportedAt?)`: renders record to schema-2 markdown (`packages/memory-core/src/files.ts:119-152`).
-- `exportedFileName(record)`: generates `lp-<id16>.md` file name (`packages/memory-core/src/files.ts:110-112`).
 
 ## Gotchas
 
 - Unindexing is mandatory when hiding records: `hideRecord` (`packages/memory-core/src/lifecycle.ts:32-36`) requires an `unindex` callback like `dropMemoryIndexes` (`packages/memory-core/src/store.ts:83-86`) to purge search tables.
 - A missing file produces `\0missing` in `fileFingerprint` (`packages/memory-core/src/fingerprint.ts:14-23`), meaning that deleting a referenced file causes the candidate note to be marked `stale` (`packages/memory-core/src/context-pack.ts:37`).
-- Exported file claims are truncated to 200 characters with ellipsis if the first line is long, placing the remainder in the markdown body (`packages/memory-core/src/files.ts:120-122`).
 
 <!-- lane-pilot:backlinks -->
 ## Referenced by

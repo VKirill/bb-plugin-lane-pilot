@@ -6,7 +6,7 @@ import type { TaskV2 } from "../src/rooms/contracts";
 import {
   createAttempt, createRun, createTask, listAttemptsForTask, openDatabase, recordCheckDuration, saveProjectSetting, savePrototypeConfig, setRunThread, transitionAttempt,
 } from "../src/rooms/plugin-db";
-import { postMergeRepair } from "../src/rooms/writer/server/services/finish";
+import { buildMainfixTask } from "../src/rooms/verification/server";
 import { acceptanceCommands, lintContract, lintProbePaths, lintReply, siblingTestFolders, type LintInput, type PathKind } from "../src/rooms/tasks/server";
 import { runnerFilterArgs } from "../src/rooms/contracts/check-commands";
 
@@ -63,11 +63,11 @@ describe("contract lint rules", () => {
       expect(standard({ display_title:"я".repeat(1001) }).map((error) => error.code)).toEqual(["display_title_too_long"]);
     });
     it("accepts a Lane Pilot mainfix task, which fills the three itself", () => {
-      const fix = postMergeRepair({ ...baseTask, id:"x".repeat(100), area:undefined }, [{ command:"npm test", exitCode:1 }]).fix;
+      const fix = buildMainfixTask({ ...baseTask, id:"x".repeat(100), area:undefined }, [{ command:"npm test", exitCode:1 }]).fix;
       expect(fix).toMatchObject({ kind:"fix", area:"maintenance" });
       expect(fix.display_title).toMatch(/^Починка main после /);
       expect(standard(fix)).toEqual([]);
-      expect(postMergeRepair({ ...baseTask, area:"page:/cards" }, [{ command:"npm test", exitCode:1 }]).fix.area).toBe("page:/cards");
+      expect(buildMainfixTask({ ...baseTask, area:"page:/cards" }, [{ command:"npm test", exitCode:1 }]).fix.area).toBe("page:/cards");
     });
   });
 

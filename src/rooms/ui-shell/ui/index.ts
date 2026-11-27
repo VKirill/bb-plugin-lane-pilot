@@ -16,7 +16,7 @@ export { settingHelp, settingLabel, settingUnitKey, settingUsesNumericControl } 
 export { CatalogField, CatalogFields } from "./catalog-field";
 export { ModelOverridesPanel } from "./model-overrides";
 export {
-  AdvancedRows, FieldControl, InheritanceContext, LocaleControls, OverviewLoading, SettingField,
+  FieldControl, InheritanceContext, LocaleControls, OverviewLoading, SettingField,
   SettingsGroup, StatusBadge, StatusRow, inheritanceSummary, settingHelpText,
 } from "./setting-controls";
 export { modelShort, providerShort } from "./model-names";
@@ -24,5 +24,5 @@ export { executorLine, sourceText } from "./executor-text";
 export { useModelCatalog } from "./model-catalog";
 export { NativeModelPicker, choiceFromPicker, pickerRouting, pickerValue } from "./native-model-picker";
 export type { PickerSeed } from "./native-model-picker";
-export { effortFor, firstChoice } from "./model-choice";
+export { effortFor } from "./model-choice";
 export type { ModelChoice } from "./model-choice";

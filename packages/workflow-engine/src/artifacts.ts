@@ -165,11 +165,6 @@ export function artifactDef(kind: string, version: number): ArtifactDef | undefi
   return defs.find((def) => def.kind === kind && def.version === version);
 }
 
-/** `plan/1` to its kind and version; null when the text is not that shape. */
-export function parseArtifactId(id: string): { kind: string; version: number } | null {
-  const match = /^([a-z][a-z0-9-]{0,39})\/([1-9][0-9]{0,2})$/.exec(id.trim());
-  return match ? { kind: match[1]!, version: Number(match[2]) } : null;
-}
 
 export type ArtifactCheck = { ok: true; value: unknown } | { ok: false; errors: string[] };
 

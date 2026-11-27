@@ -28,7 +28,6 @@ import { sendServiceMessage } from "../../../relay/server";
 
 /** The reason of the contract edition a planner revision writes: `planner_revision:<n>/<max>`. */
 export const plannerRevisionReason = (round: number, max: number): string => `planner_revision:${round}/${max}`;
-export const PLANNER_REVISION_PREFIX = "planner_revision:";
 /** The reason of the PM's contract edition that stopped a running planner loop: from then on the critic's returns go to the PM. */
 export const PM_STOPPED_PLANNER_LOOP = "pm_update:planner_loop_stopped";
 

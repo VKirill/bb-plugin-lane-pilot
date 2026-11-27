@@ -139,8 +139,6 @@ export function refCandidates(definition: Raw, id: string | null): string[] {
 
 // ------------------------------------------------------------------ operations
 
-export const addNodeOps = (node: Raw): DraftOp[] => [{ op: "add_node", node }];
-
 /**
  * A step added after another. When that step has one way out, the new one goes in between (the way out is re-pointed to it and a
  * second edge, carrying the same inputs, continues to the old target); otherwise it is only joined to it. A note has no edges.

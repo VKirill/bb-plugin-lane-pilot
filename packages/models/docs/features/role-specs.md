@@ -30,8 +30,7 @@ It maps UI picker rows to backend persistence keys and RPC handlers (`save_<role
 3. Populate `ROLE_SPEC_ROWS`: configure settings prefixes, RPC handler names, access roles, catalog host resolution strategies, and default effort policies (packages/models/src/role-specs.ts:93-152).
 4. Export table views: `ROLE_SPECS` contains all rows, and `PAIR_ROLE_SPECS` filters for `kind: "pair"` rows (packages/models/src/role-specs.ts:155-158).
 5. Expose lookup functions: `roleSpec` finds a role specification by its ID; `roleSpecKey` formats specific keys for pair roles (packages/models/src/role-specs.ts:170-179).
-6. Aggregate all keys in `ROLE_SELECTION_KEYS`: flat list of all configuration keys owned by any role selection (packages/models/src/role-specs.ts:182).
-7. Enforce atomic updates with `roleAtomicMessage`: when a caller attempts to modify a role key through general setting commands, emit an instruction directing them to use the atomic RPC (packages/models/src/role-specs.ts:185-188).
+6. Enforce atomic updates with `roleAtomicMessage`: when a caller attempts to modify a role key through general setting commands, emit an instruction directing them to use the atomic RPC (packages/models/src/role-specs.ts:185-188).
 
 ### Role specification registry entries
 
@@ -74,7 +73,6 @@ It maps UI picker rows to backend persistence keys and RPC handlers (`save_<role
 | `WRITER_FALLBACK_SLOTS` | Array of 3 writer fallback slot numbers | (packages/models/src/role-specs.ts:17) |
 | `COUNCIL_KEYS` | Flat array of all 21 council seat settings keys | (packages/models/src/role-specs.ts:27) |
 | `WRITER_FALLBACK_KEYS` | Flat array of all 9 writer fallback settings keys | (packages/models/src/role-specs.ts:28) |
-| `ROLE_SELECTION_KEYS` | Complete array of every settings key managed by role selections | (packages/models/src/role-specs.ts:182) |
 | `roleSpec` | Retrieves a `RoleSpec` by role identifier | (packages/models/src/role-specs.ts:170-172) |
 | `roleSpecKey` | Builds a settings key for a pair role and suffix | (packages/models/src/role-specs.ts:175-179) |
 | `roleAtomicMessage` | Builds atomic save instruction message for settings handlers | (packages/models/src/role-specs.ts:185-188) |

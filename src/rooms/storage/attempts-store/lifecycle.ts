@@ -26,13 +26,6 @@ export function reviveCanceledAttempt(db: LanePilotDatabase, attemptId: string, 
   return transitionAttempt(db, attemptId, "queued", { reason });
 }
 
-/** The Lane Pilot build the task's latest attempt was created by; null when it predates the column or the task has none. */
-export function latestAttemptHarnessVersion(db: LanePilotDatabase, runId: string, taskId: string): string | null {
-  const row = db.prepare("SELECT harness_version FROM lane_pilot_attempt WHERE run_id=? AND task_id=? ORDER BY created_at DESC, attempt_no DESC LIMIT 1")
-    .get(runId, taskId) as { harness_version: string | null } | undefined;
-  return row?.harness_version ?? null;
-}
-
 /** Bind a task attempt to one immutable writer workspace exactly once. */
 export function setAttemptWorkspace(db:LanePilotDatabase, attemptId:string, binding:{path:string;environmentId:string|null;decision:unknown}):boolean {
   if (!binding.path.startsWith("/")) throw new Error("attempt workspace path must be absolute");

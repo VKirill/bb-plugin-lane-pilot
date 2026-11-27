@@ -12,7 +12,9 @@ import { classifyFolderProbe, liveOwnedFiles, liveOwnedRoots, LIVE_BACKUP_SCRIPT
 import { LANE_PILOT_PM_SESSION } from "../src/rooms/native-agent/models/native-agent-overlay";
 import { createLiveFolder } from "../src/rooms/writer/server/services/live-folder";
 import { previousAttemptBrief } from "../src/rooms/writer/models/writer-brief-feedback";
-import { writerPrompt, writerSetupLines, WRITER_SETUP_LINES } from "../src/rooms/writer/models/writer-task";
+import { writerBriefSegments, writerSetupLines, WRITER_SETUP_LINES } from "../src/rooms/writer/models/writer-task";
+
+const writerPrompt = (...args: Parameters<typeof writerBriefSegments>) => writerBriefSegments(...args).map((segment) => segment.text).join("\n\n");
 
 const roots: string[] = [];
 const realHome = process.env.HOME;

@@ -109,5 +109,3 @@ export function createSecrets(deps: { bb: BbPluginApi; now?: () => number }) {
 
   return { list, record, check, resolve, save };
 }
-
-export type Secrets = ReturnType<typeof createSecrets>;

@@ -164,11 +164,3 @@ export function createOwnerAsk(bb: BbPluginApi, log: (message: string) => void) 
 }
 
 export type OwnerAsk = ReturnType<typeof createOwnerAsk>;
-
-/** How many interactions (approvals, questions, forms) wait for the owner on this thread; 0 on a BB that cannot list them. */
-export async function threadPendingInteractions(bb: BbPluginApi, threadId: string): Promise<number> {
-  const area = (bb as unknown as { sdk?: { threads?: { interactions?: { list?: (args: { threadId: string }) => Promise<unknown> } } } }).sdk?.threads?.interactions;
-  if (typeof area?.list !== "function") return 0;
-  const rows = await area.list({ threadId }).catch(() => null);
-  return Array.isArray(rows) ? rows.length : 0;
-}

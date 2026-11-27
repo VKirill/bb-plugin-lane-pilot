@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
-import { activeRunForProject, claimActivation, closeRun, createAttempt, createRun, createTask, getRun, listTaskLatestAttempts, listTaskTerminalStates, openDatabase, setRunState, transitionAttempt } from "../src/rooms/plugin-db";
+import { claimActivation, closeRun, createAttempt, createRun, createTask, getRun, listTaskLatestAttempts, listTaskTerminalStates, openDatabase, setRunState, transitionAttempt } from "../src/rooms/plugin-db";
 import { aggregateRun } from "../src/rooms/runs";
 import { recordStage } from "../src/rooms/runs/server";
 import type { AttemptState } from "../src/rooms/contracts/state-machine";
@@ -27,21 +27,15 @@ describe("a run's state counts task families", () => {
 });
 
 // 2026-11-15 layers audit (F8): setRunState wrote any run, so a refresh after the close (lane_pilot_update_task on a
-// gate-blocked task, an activation that still names the run) put a closed run back to «running» with closed_at set,
-// and activeRunForProject showed it as the project's open run. Nothing reopens a run.
+// gate-blocked task, an activation that still names the run) put a closed run back to «running» with closed_at set.
+// Nothing reopens a run.
 describe("a closed run", () => {
-  it("keeps «closed» under a late state write and is never the project's active run", () => {
+  it("keeps «closed» under a late state write", () => {
     const db = openDatabase(createFakePluginHost({ pluginId: "lane-pilot" }).bb);
     createRun(db, "run", "proj", "cli", "/repo");
     expect(closeRun(db, "run", "rpc")).toBe(true);
     setRunState(db, "run", "running");
     expect(getRun(db, "run")?.state).toBe("closed");
-    db.prepare("UPDATE lane_pilot_run SET state='running' WHERE id='run'").run();
-    expect(activeRunForProject(db, "proj")).toBeUndefined();
-    createRun(db, "run2", "proj", "cli", "/repo");
-    setRunState(db, "run2", "running");
-    expect(getRun(db, "run2")?.state).toBe("running");
-    expect(activeRunForProject(db, "proj")?.id).toBe("run2");
   });
 });
 

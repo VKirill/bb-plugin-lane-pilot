@@ -115,13 +115,13 @@ Every export from `src/index.ts` is listed below, grouped by source file. The `r
 | `Button`, `buttonVariants`, `ButtonProps` | (packages/ui-kit/src/ui/button.tsx:38-59) |
 | `Card`, `CardHeader`, `CardFooter`, `CardTitle`, `CardDescription`, `CardContent` | (packages/ui-kit/src/ui/card.tsx:76-83) |
 | `COARSE_POINTER_TEXT_BASE_CLASS`, `COARSE_POINTER_INPUT_HEIGHT_CLASS` | (packages/ui-kit/src/ui/coarse-pointer-sizing.ts:1-5) |
-| `DARK_COLOR_SCHEME_QUERY`, `subscribeMediaQuery`, `getMediaQuerySnapshot`, `useMediaQuery` | (packages/ui-kit/src/ui/hooks/use-media-query.ts:3; packages/ui-kit/src/ui/hooks/use-media-query.ts:45-65) |
+| `subscribeMediaQuery`, `getMediaQuerySnapshot`, `useMediaQuery` | (packages/ui-kit/src/ui/hooks/use-media-query.ts:43-63) |
 | `EXTENDED_ICON_MAP` | (packages/ui-kit/src/ui/icon-extended.tsx:209-313) |
 | `EXTENDED_ICON_NAMES`, `registerExtendedIcons`, `getExtendedIcons`, `subscribeExtendedIcons`, `ExtendedIconName`, `ExtendedIconMap` | (packages/ui-kit/src/ui/icon-registry.ts:3-107; packages/ui-kit/src/ui/icon-registry.ts:109-132) |
 | `ICON_NAMES`, `preloadExtendedIcons`, `isBuiltinIconName`, `Icon`, `BuiltinIconName`, `IconName`, `IconProps` | (packages/ui-kit/src/ui/icon.tsx:157-165; packages/ui-kit/src/ui/icon.tsx:172-182; packages/ui-kit/src/ui/icon.tsx:186-209) |
 | `Input` | (packages/ui-kit/src/ui/input.tsx:10-30) |
 | `Label` | (packages/ui-kit/src/ui/label.tsx:6-21) |
-| `CONTROL_HOVER_TRANSITION`, `LIST_HOVER_TRANSITION` | (packages/ui-kit/src/ui/motion.ts:1-4) |
+| `CONTROL_HOVER_TRANSITION` | (packages/ui-kit/src/ui/motion.ts:1-2) |
 | `isLastInputKeyboard` | (packages/ui-kit/src/ui/overlay-trigger.ts:20-22) |
 | `Popover`, `PopoverTrigger`, `PopoverContent`, `PopoverAnchor`, `PopoverClose` | (packages/ui-kit/src/ui/popover.tsx:7-46) |
 | `Select`, `SelectGroup`, `SelectValue`, `SelectTrigger`, `SelectContent`, `SelectLabel` | (packages/ui-kit/src/ui/select.tsx:149-160) |
@@ -134,13 +134,12 @@ Every export from `src/index.ts` is listed below, grouped by source file. The `r
 | `Tabs`, `TabsList`, `TabsTrigger`, `TabsContent` | (packages/ui-kit/src/ui/tabs.tsx:6-53) |
 | `Tooltip`, `TooltipTrigger`, `TooltipContent`, `TooltipProvider` | (packages/ui-kit/src/ui/tooltip.tsx:8-61) |
 | `usePortalScopeProps` | (packages/ui-kit/src/lib/portal-scope.ts:3-17) |
-| `cn`, `formatHomePathForDisplay` | (packages/ui-kit/src/lib/utils.ts:4-17) |
+| `cn` | (packages/ui-kit/src/lib/utils.ts:4-6) |
 | `CONTROL_H` | (packages/ui-kit/src/ui/control-row.ts:1-4) |
 | `SHELL_COMPACT_MAX`, `CONTENT_STACK_MAX`, `chromeIsCompact`, `contentStacksControls`, `PanelLayoutContext`, `usePanelLayout`, `useObservedWidth`, `PanelLayout` | (packages/ui-kit/src/ui/panel-layout.ts:4-39) |
 
 ## Gotchas
 
-- The utility `formatHomePathForDisplay` shortens recognized Unix home paths and Windows user paths; other paths return unchanged (packages/ui-kit/src/lib/utils.ts:8-17).
 - Component `Input` sets autoComplete to off before spreading caller props, so callers can override it (packages/ui-kit/src/ui/input.tsx:13-24).
 - The token `CONTROL_H` aliases the coarse-pointer input height class `COARSE_POINTER_INPUT_HEIGHT_CLASS` ((packages/ui-kit/src/ui/control-row.ts:1-4), (packages/ui-kit/src/ui/coarse-pointer-sizing.ts:4-5)).
 

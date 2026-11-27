@@ -1,8 +1,10 @@
 import { readFileSync, readdirSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
-  ROLE_ID_ALIASES, ROLE_NAMES, ROLE_NAME_IDS, canonicalRoleId, en, ru, roleDisplayName, roleLabel,
+  ROLE_ID_ALIASES, ROLE_NAMES, type RoleNameId, canonicalRoleId, en, ru, roleDisplayName,
 } from "@lane-pilot/i18n";
+
+const ROLE_NAME_IDS = Object.keys(ROLE_NAMES) as RoleNameId[];
 import { ROLE_IDS, ROLE_SPECS, ROLE_TABLE, WRITER_FALLBACK_SLOTS, roleModelOption } from "@lane-pilot/models";
 import { CODEX_LEAN_PROFILES } from "../src/rooms/contracts/codex-lean";
 import { HELPER_ROLES, HELPER_SPAWN_ROLES } from "../src/rooms/contracts/helper-context";
@@ -80,12 +82,11 @@ describe("the one map of agent names", () => {
     expect(ROLE_NAMES["codex-profile:code"].ru).not.toMatch(/писател/i);
   });
 
-  it("answers by name, with the id kept for a command line", () => {
+  it("answers by name", () => {
     expect(roleDisplayName("writer")).toBe("Исполнитель кода");
     expect(roleDisplayName("specialist:design-lead")).toBe("Дизайнер");
     expect(roleDisplayName("gate-triage", "en")).toBe("Failure triager");
     expect(roleDisplayName("a-role-nobody-named")).toBe("a-role-nobody-named");
-    expect(roleLabel("council")).toBe("Судья анализа (council)");
   });
 
   it("is what the dictionaries show for a role", () => {

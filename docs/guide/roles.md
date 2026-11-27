@@ -52,7 +52,7 @@ A helper is an agent in the project checkout with its own tools. Its brief says 
 - **Data the helper cannot reach rides in the message**, tagged and marked as data: hub records, the PM's plan, the owner's words, the previous step's handoff.
 - **One stated result.** The brief ends with the answer format the next step reads (`renderBrief`, `src/rooms/brief/index.ts:120-147`).
 
-The plan critic, the specialist reviewer, the code critic, the task scout (`pmReadPrompt`, `src/rooms/critique/pm-read.ts:41-58`) and the second pilot follow this. A graph's agent step gets the same shape from the engine: the node's task, a step packet of references and the previous step's handoff (`agentPrompt`, `packages/workflow-engine/src/agent-output.ts:94-128`).
+The plan critic, the specialist reviewer, the code critic, the task scout (`pmReadPacketPrompt`, `src/rooms/critique/models/pm-read.ts`) and the second pilot follow this. A graph's agent step gets the same shape from the engine: the node's task, a step packet of references and the previous step's handoff (`agentPrompt`, `packages/workflow-engine/src/agent-output.ts:94-128`).
 
 ## Employees and specialists
 

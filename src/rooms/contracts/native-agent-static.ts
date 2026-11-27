@@ -8,10 +8,6 @@ export const WORKFLOW_ARCHITECT_SUMMARY = "Workflow architect: interviews the ow
 /** The only check this package ships. Later packages add the real ones. */
 export const RESULT_EXISTS = "result-exists";
 
-export function resultExists(files: readonly string[]): { ok: true } | { ok: false; reason: string } {
-  return files.length ? { ok: true } : { ok: false, reason: "no result files" };
-}
-
 export type EmployeeManifest = {
   domain: string;
   machineAffinity: string;
@@ -144,9 +140,6 @@ export const EMPLOYEES: Record<string, EmployeeManifest> = {
     skillSections: ["Исследования/Поиск в вебе", "Исследования/Научные статьи", "Исследования/Прочие исследования"],
   },
 };
-
-/** The KV key of the role's lesson lines, shared by every reader (specialist brief, employee chat, PM tools). */
-export const roleLinesKey = (projectId: string, role: string) => `lp.role.lines:${projectId}:${role}`;
 
 export const MAIN_AGENT_ID = /^[a-z0-9][a-z0-9-]{0,63}$/;
 export const MAIN_AGENT_PROFILE_IDS = [

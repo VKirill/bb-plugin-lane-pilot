@@ -78,7 +78,6 @@ export * from "./ownership";
 export * from "./check-commands";
 export * from "./machine-pressure";
 export * from "./review-vocabulary";
-export * from "./docs-page";
 export * from "./agent-picker";
 export * from "./native-selection";
 export * from "./integration-gate";

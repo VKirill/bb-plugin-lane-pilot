@@ -28,7 +28,6 @@ TL;DR: `writerHold` and `walkWriterChain` check writer availability before spawn
 2. `writerHold` checks six availability gates in order and returns `{ reason, until }` or `null` (`src/rooms/writer/server/services/writer-hold.ts`).
 3. If a free member exists (or if every held member is held only by `usage_window`, index `0` is tried), `walkWriterChain` returns that member; when `money.strict` is enabled, a free subscription member is preferred over a paid member.
 4. If no member is free, `parkForWriter` parks the attempt as `queued` (`parkAttemptWake`) with `reason = waiting_writer:<shortest hold reason>` and `wake_at` (`src/rooms/writer/server/services/start-writer-holds.ts`, `src/rooms/storage/attempts-store/wake.ts`), unless `allUnsupported` is true (which transitions to `blocked`).
-5. `writer-wake` runs `sweepWriterWakes`, atomically clears `wake_at` with `claimAttemptWake`, and calls `startWriterTask` to re-walk the chain (`src/rooms/writer/server/services/writer-wake.ts`).
 
 ## Hold conditions (`writerHold`)
 
@@ -47,7 +46,6 @@ TL;DR: `writerHold` and `walkWriterChain` check writer availability before spawn
 
 - `parkAttemptWake` journals the park as an atomic `queued → queued` transition carrying `reason` and `wake_at` (`src/rooms/storage/attempts-store/wake.ts`).
 - `listDueWakes` selects queued attempts with `wake_at <= now`; `claimAttemptWake` clears `wake_at` atomically.
-- If `configForRun` fails during wake, `sweepWriterWakes` re-parks the attempt with `wake_config_unreadable:`.
 - When `walk.allOff` holds, `parkForWriter` posts a `writer_off` owner item (`writer-all-off:<projectId>`).
 - When `walk.allUnsupported` holds, the attempt ends `blocked` and `noteUnsupportedProvider` notifies the PM once per provider.
 

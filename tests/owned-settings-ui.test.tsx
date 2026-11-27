@@ -22,7 +22,6 @@ async function mount(locale: "en" | "ru") {
         tools: { status: "ready", items: [{ name: "Read", label: "Read" }, { name: "Edit", label: "Edit" }] },
         disallowedTools: { status: "ready", items: [{ name: "Read", label: "Read" }] },
       }),
-      save_globals: (input) => harness.behavior.callRpc("save_globals", input),
       save_agent_profile: (input) => harness.behavior.callRpc("save_agent_profile", input),
       delete_agent: (input) => harness.behavior.callRpc("delete_agent", input),
     },
@@ -33,8 +32,6 @@ afterEach(() => { cleanup(); setLocaleOverride(null); });
 describe("owned settings source DOM", () => {
   it.each(["en", "ru"] as const)("adds an agent with the New agent button, saves it as the owner's own and deletes it (%s)", async (locale) => {
     const { slot, harness } = await mount(locale);
-    const confirm = window.confirm;
-    window.confirm = () => true;
     try {
       const ru = locale === "ru";
       fireEvent.click(await slot.findByTestId("console-nav-system-agents"));
@@ -52,9 +49,11 @@ describe("owned settings source DOM", () => {
       expect(saved.agents).toMatchObject([{ id: "video-desk", custom: true, displayName: "Video desk", kind: "specialist" }]);
       await waitFor(() => expect(slot.getByTestId("agent-delete")).toBeTruthy());
       fireEvent.click(slot.getByTestId("agent-delete"));
+      const dialog = await slot.findByRole("alertdialog");
+      fireEvent.click(within(dialog).getByRole("button", { name: ru ? "Удалить агента" : "Delete agent" }));
       await waitFor(() => expect(slot.queryByTestId("agent-delete")).toBeNull());
       expect(((await harness.behavior.callRpc("list_agents", { custom: true })) as any).agents).toEqual([]);
-    } finally { window.confirm = confirm; slot.lifecycle.unmount(); await harness.lifecycle.dispose(); }
+    } finally { slot.lifecycle.unmount(); await harness.lifecycle.dispose(); }
   });
 
   it("retains a stale editor draft on CAS conflict without overwriting another editor", async () => {

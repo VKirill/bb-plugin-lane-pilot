@@ -4,15 +4,7 @@ import { roleNameEn, roleNameRu } from "./role-names";
  * step runs on from that table. Merged into the plugin dictionaries by i18n. English first, then Russian ("граф", never "воркфлоу").
  */
 export const roleModelsEn = {
-  roleModelsTitle: "Models by role",
-  roleModelsHelp: "One role, one model, the same in every graph: a step names a role and the role picks the model. Choose from the Claude, GPT and Gemini (through 9router) models your machines offer. The judges are from another family than the authors (Maslov's method), so a model never marks its own work.",
-  roleModelsWriters: "Not in this table: the writer of each task. It is picked per task from the writers' anamnesis.",
-  roleModelsLoading: "Reading the models of your machines…",
-  roleModelsLoadFailed: "Could not read the role table: {error}",
   roleModelsSaveFailed: "Not saved: {error}",
-  roleModelsSource_table: "set here",
-  roleModelsSource_stage: "earlier setting {key}",
-  roleModelsSource_default: "built-in default",
   roleModelsReset: "Default",
   roleModelsModelLabel: "Model of the role {role}",
   roleModelsLight: "A light model for this role: it judges or plans, and a small model does it worse.",
@@ -124,15 +116,7 @@ export const roleModelsEn = {
 };
 
 export const roleModelsRu: { [K in keyof typeof roleModelsEn]: string } = {
-  roleModelsTitle: "Модели по ролям",
-  roleModelsHelp: "Одна роль — одна модель, одна и та же в каждом графе: шаг называет роль, роль выбирает модель. Выбор — из моделей Claude, GPT и Gemini (через 9router), которые есть на ваших машинах. Судьи из другого семейства, чем авторы (метод Маслова), поэтому модель не проверяет собственную работу.",
-  roleModelsWriters: "В этой таблице нет исполнителя задачи: его для каждой задачи выбирают по анамнезу исполнителей.",
-  roleModelsLoading: "Читаю модели ваших машин…",
-  roleModelsLoadFailed: "Не удалось прочитать таблицу ролей: {error}",
   roleModelsSaveFailed: "Не сохранено: {error}",
-  roleModelsSource_table: "задано здесь",
-  roleModelsSource_stage: "прежняя настройка {key}",
-  roleModelsSource_default: "по умолчанию",
   roleModelsReset: "По умолчанию",
   roleModelsModelLabel: "Модель роли {role}",
   roleModelsLight: "Лёгкая модель для этой роли: она судит или планирует, и малая модель делает это хуже.",

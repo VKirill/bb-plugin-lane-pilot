@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { ROLE_PROFILES, HelperRole, requiredSessionPolicySpawnBinding, coreRequiredSessionAdvertisement } from "../src/rooms/contracts/helper-context";
 import { writerToolLine } from "../src/rooms/writer/models/writer-task";
-import { buildCandidateEvidence, codeCritiquePrompt, critiquePrompt, pmReadPrompt } from "../src/rooms/critique";
+import { buildCandidateEvidence, codeCritiquePrompt, critiquePrompt, pmReadPacketPrompt } from "../src/rooms/critique";
 
 describe("role MCP server configurations", () => {
   it("assigns expected MCP servers across all helper roles", () => {
@@ -138,9 +138,9 @@ describe("prompt hints for gitnexus and metamcp", () => {
 
   const expectedHint = "with gitnexus tools and a `.gitnexus/` index use `query`/`context`/`impact`; grep for literals.";
 
-  it("critiquePrompt and pmReadPrompt no longer point at tools the role does not load", () => {
+  it("critiquePrompt and pmReadPacketPrompt no longer point at tools the role does not load", () => {
     expect(critiquePrompt({ plan: "test-plan", task: { id: "t1" } })).not.toContain("gitnexus");
-    expect(pmReadPrompt({ task: { id: "t1" } })).not.toContain("gitnexus");
+    expect(pmReadPacketPrompt({ packet: "t1" })).not.toContain("gitnexus");
   });
 
   it("codeCritiquePrompt carries the gitnexus line only for a workspace that has the index", () => {

@@ -58,8 +58,6 @@ export const TASK_STAGE_ORDER = ["pm-read", "plan-critique", "specialist-review"
 export type TaskStage = (typeof TASK_STAGE_ORDER)[number];
 /** The stages that judge a saved candidate: a change to the judge re-runs them on the stored diff, without a writer. */
 export const JUDGE_STAGES: readonly TaskStage[] = ["verification", "code-critique", "plan-fact", "acceptance-receipt"];
-/** The stages Lane Pilot can restart in place today (stability's parked restart: `reopenWriterStages` + a resumed writer). */
-export const RESTARTABLE_STAGES: readonly TaskStage[] = ["writer-agent", "verification", "acceptance-receipt"];
 
 export type ReceiptSummary = { stage: string; state: string; inputSha256: string };
 export type Affected = {

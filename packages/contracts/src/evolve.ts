@@ -45,7 +45,6 @@ export const EVOLVE_VARIANT_KEYS = [
   "verify",
   "gates",
 ] as const;
-export type EvolveVariantKey = (typeof EVOLVE_VARIANT_KEYS)[number];
 
 export const EVOLVE_THRESHOLDS = {
   heldOutMin: 20,

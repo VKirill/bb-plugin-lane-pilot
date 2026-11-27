@@ -50,7 +50,6 @@ function installPickerDriver() {
 
 function loadoutFixture(): AgentLoadoutOutput {
   return {
-    hubSkills: 12,
     roles: [
       {
         role: "writer",

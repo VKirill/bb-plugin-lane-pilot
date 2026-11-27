@@ -41,13 +41,6 @@ function schemaOf(db: DarkDb): Map<string, Set<string>> {
   return tables;
 }
 
-/** Every `lane_pilot_*` table in this database, with the column its recency is read on. */
-export function tableClocks(db: DarkDb): Record<string, string> {
-  const clocks: Record<string, string> = {};
-  for (const [table, cols] of schemaOf(db)) clocks[table] = clockForColumns(table, cols);
-  return clocks;
-}
-
 /** The SQL a table's recency is counted on: a column name, or the day-as-ms expression `lane_pilot_token_daily` uses.
  * Pass the table's columns to derive the clock; without them only CLOCK_OVERRIDES can answer. */
 export const darkClockExpr = (table: string, cols?: ReadonlySet<string>): string | null => {
@@ -64,9 +57,4 @@ export function darkTables(db: DarkDb, since: number): DarkTableRow[] {
       : db.prepare(`SELECT COUNT(*) AS n, NULL AS last FROM ${table}`).get()) as { n: number; last: number | null };
     return { table, clock, n: row.n, last: row.last };
   });
-}
-
-/** The names of the tables that wrote nothing in the window — the «0 rows in 30 days» paragraph of the night summary. */
-export function darkTableNames(db: DarkDb, since: number): string[] {
-  return darkTables(db, since).filter((row) => row.n === 0).map((row) => row.table);
 }

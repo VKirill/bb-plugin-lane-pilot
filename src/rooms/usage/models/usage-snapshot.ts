@@ -3,7 +3,6 @@ import { DEFAULT_USAGE_SKIP_PERCENT } from "../settings";
 /**
  * The session guard's spend facts (SMA k_hs_spend): constants and pure cap interpretation.
  */
-export const USAGE_SNAPSHOT_SCHEDULE = "usage-snapshot-push";
 /** The subscription whose windows a lane session's spend is: the provider of the session itself. */
 export const SNAPSHOT_PROVIDER = "claude-code";
 /** Machines asked at one time. */

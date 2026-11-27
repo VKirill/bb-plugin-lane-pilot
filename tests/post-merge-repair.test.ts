@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { taskV2Schema } from "../src/rooms/contracts";
 import { classifyWriterOutput } from "../src/rooms/tasks";
-import { postMergeRepair } from "../src/rooms/writer/server/services/finish";
+import { buildMainfixTask } from "../src/rooms/verification/server";
 
 const original = readFileSync(join(__dirname, "fixtures/writer-brief-gc-pages-polish-2.md"), "utf8");
 const merged = taskV2Schema.parse(JSON.parse(original.slice(original.indexOf('{\n  "schema_version"'))));
@@ -11,7 +11,7 @@ const merged = taskV2Schema.parse(JSON.parse(original.slice(original.indexOf('{\
 // SelfyStudio cards-checkout-typecheck-fix-mainfix (2026-10-05): the follow-up inherited the merged task's
 // expected_outputs, so its writer, finding main green, edited routes.ts only to «put the required file in the diff».
 it("dispatches the main repair without the merged task's expected files", () => {
-  const { fix, plan } = postMergeRepair(merged, [{ command:"npx vitest run --root apps/api", exitCode:1, stdout:"", stderr:"1 failed" }]);
+  const { fix, plan } = buildMainfixTask(merged, [{ command:"npx vitest run --root apps/api", exitCode:1, stdout:"", stderr:"1 failed" }]);
   expect(taskV2Schema.safeParse(fix).success).toBe(true);
   expect(fix.id).toBe(`${merged.id}-mainfix`);
   expect(fix.owns_paths).toEqual(merged.owns_paths);
@@ -26,7 +26,7 @@ const red = [
 ];
 
 it("carries each failing command and its output tail in the objective, and no prose in expected_outputs", () => {
-  const { fix } = postMergeRepair(merged, red);
+  const { fix } = buildMainfixTask(merged, red);
   for (const check of red) {
     expect(fix.objective).toContain(`\`${check.command}\``);
     expect(fix.objective).toContain(check.stderr);
@@ -38,7 +38,7 @@ it("carries each failing command and its output tail in the objective, and no pr
 });
 
 it("saves the full output of every failing check under the task folder logs/", () => {
-  const { fix, logs } = postMergeRepair(merged, red);
+  const { fix, logs } = buildMainfixTask(merged, red);
   expect(logs).toHaveLength(red.length);
   for (const [index, log] of logs.entries()) {
     expect(log.path).toBe(`.agents/plans/items/${fix.id}/logs/${String(index + 1).padStart(2, "0")}-`
@@ -53,7 +53,7 @@ it("saves the full output of every failing check under the task folder logs/", (
 // ended mid-word and the plan critic blocked the repair (plan_critique_blocked).
 it("carries every acceptance item of the merged task whole", () => {
   const long = { ...merged, acceptance:["a".repeat(500) + " end-of-first", "b".repeat(400) + " end-of-second"] };
-  const { fix } = postMergeRepair(long, red);
+  const { fix } = buildMainfixTask(long, red);
   expect(taskV2Schema.safeParse(fix).success).toBe(true);
   expect(fix.acceptance.filter((line) => line.endsWith("end-of-first") || line.endsWith("end-of-second"))).toHaveLength(2);
 });

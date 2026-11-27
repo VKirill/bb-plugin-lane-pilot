@@ -301,11 +301,11 @@ sources:
 
 | Что | Где |
 |---|---|
-| Карта имён (единственный источник) | `packages/i18n/src/role-names.ts`: `ROLE_NAMES`, `ROLE_ID_ALIASES`, `roleDisplayName`, `roleLabel` |
+| Карта имён (единственный источник) | `packages/i18n/src/role-names.ts`: `ROLE_NAMES`, `ROLE_ID_ALIASES`, `roleDisplayName` |
 | Строки таблицы «роль → модель» и встроенные модели | `packages/models/src/role-models.ts` (`ROLE_TABLE`), `packages/models/src/role-specs.ts` |
 | Что загружает помощник каждой роли | `src/rooms/contracts/helper-context.ts` (`ROLE_PROFILES`) |
 | Профили Codex | `src/rooms/contracts/codex-lean.ts` (`CODEX_LEAN_PROFILES`) |
 | Виды поручений | `src/rooms/schedule/models/errand-kinds.ts` (`ERRAND_KINDS`) |
-| Экраны, где имя видно | команда «Модели по ролям» (`src/rooms/pages/ui/role-models.tsx`), список помощников (`src/rooms/native-agent/ui/helper-threads.tsx`), выбор агента в композере |
+| Экраны, где имя видно | раздел «Агенты и загрузка» (`src/rooms/settings/ui/agents-loadout.tsx`), список помощников (`src/rooms/native-agent/ui/helper-threads.tsx`), выбор агента в композере |
 | Команды | `bb lane-pilot agents list` показывает русское имя стоковых агентов |
 | Проверка | `tests/agents-doc.test.ts` |

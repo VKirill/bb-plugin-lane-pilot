@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { taskV2Schema } from "../src/rooms/contracts";
 import { providerForwardsAgentOnly } from "@lane-pilot/models";
-import { writerBriefInput, writerBriefSegments, writerPrompt, stickyTurnPrompt } from "../src/rooms/writer/models/writer-task";
+import { writerBriefInput, writerBriefSegments, stickyTurnPrompt } from "../src/rooms/writer/models/writer-task";
 import { chatBriefSection } from "../src/rooms/brief";
 
 const task = taskV2Schema.parse({
@@ -40,10 +40,6 @@ describe("writer brief as BB input parts", () => {
     expect(text).toContain("**owns_paths:** src/footer.ts");
     expect(text).toContain("ASK_PM:");
   });
-  it("is the same text as before, only cut into pieces", () => {
-    expect(writerBriefSegments(...args).map((segment) => segment.text).join("\n\n")).toBe(writerPrompt(...args));
-  });
-
   it("keeps the task header and the contract visible and hides the memory and execution packet", () => {
     const parts = writerBriefInput(task, writerBriefSegments(...args), "claude-code");
     expect(parts[0]).toEqual({ type: "text", text: "## Lane Pilot task t-1: Add the footer", mentions: [] });

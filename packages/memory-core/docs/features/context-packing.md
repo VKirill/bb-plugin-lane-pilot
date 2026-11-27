@@ -39,9 +39,8 @@ The context packing subsystem bounds and formats project memory for injection in
 4. Packing optional candidates: sorts remaining eligible candidates by relevance descending, tie-breaking by ID. Appends candidates one by one as long as `estimateTokens(text) <= budget`. Once budget is exceeded, remaining candidates receive reason `"cut:over-budget"` (`packages/memory-core/src/context-pack.ts:54-58`).
 5. Packaging context packet: generates an immutable `ContextPack` containing packed text, byte size, estimated token count, source arrays with exclusion reasons, and a deterministic `packId` (SHA-256 hash of project ID, role, and sorted packed candidate IDs) (`packages/memory-core/src/context-pack.ts:60-66`).
 6. Prompt-based packing: `memoryContext` provides a legacy text packing mechanism: ranks memory records by query stem overlap weighted by usefulness and verification bonus, appending lines until budget is reached (`packages/memory-core/src/context.ts:55-64`).
-7. Explaining delivery decisions: `explainMemory` compares candidate records against the output of `memoryContext`, returning delivery verdicts for each record: `"deliver <id> — matched the query"`, `"reject <id> — matched, cut by the context budget"`, or `"reject <id> — no token overlap"` (`packages/memory-core/src/context.ts:70-79`).
-8. Maintenance prompt generation: `memoryMaintenanceBrief` and `memoryMaintenancePrompt` format task descriptions, accepted results, existing core/notes, file excerpts, and wave facts into a zero-tool prompt for the memory maintainer model. Its instructions assign project technical facts and rules to Lane Pilot memory, designate the hub DB as the only memory store, and say agents use no other memory store (`packages/memory-core/src/context.ts:7-45`).
-9. Preparing note shortening: `shortenText` normalizes eligible spacing and removes repeated sentences while preserving structural lines and fenced code; `proposeShorter` returns a candidate only when the result is shorter and fits the requested token ceiling (`packages/memory-core/src/compress.ts:33-82`). Applying or undoing that candidate is documented in [lifecycle and files](lifecycle-and-files.md).
+7. Maintenance prompt generation: `memoryMaintenanceBrief` and `memoryMaintenancePrompt` format task descriptions, accepted results, existing core/notes, file excerpts, and wave facts into a zero-tool prompt for the memory maintainer model. Its instructions assign project technical facts and rules to Lane Pilot memory, designate the hub DB as the only memory store, and say agents use no other memory store (`packages/memory-core/src/context.ts:7-45`).
+8. Preparing note shortening: `shortenText` normalizes eligible spacing and removes repeated sentences while preserving structural lines and fenced code; `proposeShorter` returns a candidate only when the result is shorter and fits the requested token ceiling (`packages/memory-core/src/compress.ts:33-82`). Applying or undoing that candidate is documented in [lifecycle and files](lifecycle-and-files.md).
 
 ## Modes, variants and branches
 
@@ -82,10 +81,8 @@ The context packing subsystem bounds and formats project memory for injection in
 - `memoryCandidates(records, staleIds?)`: transforms `MemoryRecord` instances into `PackCandidate` structures (`packages/memory-core/src/context-pack.ts:88-92`).
 - `roleContextBudget(role, configured)`: clamps configured budget to role hard limits (`packages/memory-core/src/context.ts:51-53`).
 - `memoryContext(records, taskText, budget)`: formats and packs memory records into prompt text (`packages/memory-core/src/context.ts:55-64`).
-- `explainMemory(records, taskText, budget)`: generates deliver/reject status explanations for candidate records (`packages/memory-core/src/context.ts:70-79`).
 - `memoryMaintenanceBrief(input)`: constructs structured data for memory maintenance models (`packages/memory-core/src/context.ts:13-35`).
 - `memoryMaintenancePrompt(input)`: returns rendered prompt text for memory maintenance (`packages/memory-core/src/context.ts:43-45`).
-- `memoryMaintainerTools()`: returns empty tool array, enforcing zero-tool maintainer execution (`packages/memory-core/src/context.ts:7-9`).
 - `shortenText(content)`: reduces eligible spacing and repeated sentences while leaving structural lines and fenced blocks intact (`packages/memory-core/src/compress.ts:33-76`).
 - `proposeShorter(row, maxTokens)`: returns a shorter note text only when it saves tokens and fits the supplied ceiling (`packages/memory-core/src/compress.ts:77-82`).
 

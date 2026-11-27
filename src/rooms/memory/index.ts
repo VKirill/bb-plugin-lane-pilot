@@ -6,7 +6,7 @@ export { MEMORY_PATHS, MEMORY_PRIMITIVES, pathById } from "./models/memory-paths
 export type { MemoryPath, MemoryPrimitive, ProbeKind } from "./models/memory-paths";
 export { MAX_QUOTE, maskPii, scrubQuote } from "./models/pii";
 export type { Masked, PiiKind } from "./models/pii";
-export { MEMORY_LINE_CHARS, memoryLine, pathAnchors, reviewerMemoryPicks, writerMemory, writerMemoryPicks } from "./models/memory-picks";
+export { MEMORY_LINE_CHARS, memoryLine, pathAnchors, reviewerMemoryPicks, writerMemoryPicks } from "./models/memory-picks";
 export type { WriterPickOptions } from "./models/memory-picks";
 export { MEMORY_SETTING_KEYS } from "./settings";
 export type { CardKind } from "@lane-pilot/contracts";

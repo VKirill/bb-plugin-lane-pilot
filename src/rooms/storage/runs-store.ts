@@ -27,14 +27,6 @@ export function getRunWriterHost(db: LanePilotDatabase, runId: string): string |
   return hostId ? hostId : null;
 }
 
-/** Bind a provisioned BB managed worktree once, before the run can dispatch any tasks. */
-export function setRunWorkspace(db: LanePilotDatabase, runId: string, workspacePath: string, environmentId: string): boolean {
-  const result = db.prepare(`UPDATE lane_pilot_run SET writer_workspace_path=?, writer_environment_id=?, updated_at=?
-    WHERE id=? AND state='pending' AND writer_workspace_path IS NULL AND writer_environment_id IS NULL`)
-    .run(workspacePath, environmentId, Date.now(), runId);
-  return result.changes === 1;
-}
-
 export function freezeRunBinding(db: LanePilotDatabase, runId: string, binding: { hostId: string; workspacePath: string; environmentId: string }): boolean {
   const result = db.prepare(`UPDATE lane_pilot_run
     SET writer_host_id=?, writer_workspace_path=?, writer_environment_id=?, updated_at=?
@@ -101,12 +93,6 @@ export function persistRunHelperPolicyJson(db: LanePilotDatabase, runId: string,
   if (result.changes === 1) return true;
   const current = loadRunHelperPolicyJson(db, runId);
   return current === json;
-}
-
-/** Who closed the run: a person's act (`cli`, `rpc`) or the hub's own cleaning (`sweep`, `ttl`); null while it is open or unknown. */
-export function runClosedBy(db: LanePilotDatabase, runId: string): string | null {
-  const row = db.prepare("SELECT closed_by FROM lane_pilot_run WHERE id=? AND closed_at IS NOT NULL").get(runId) as {closed_by:string|null}|undefined;
-  return row?.closed_by ?? null;
 }
 
 export function getRun(db: LanePilotDatabase, runId: string): {
@@ -212,12 +198,6 @@ export function attemptRunRef(db: LanePilotDatabase, attemptId: string): { proje
     .get(attemptId) as { project_id: string; pm_thread_id: string | null; thread_id: string | null } | undefined;
 }
 
-/** The project's open run (pending or running), newest first. */
-export function activeRunForProject(db: LanePilotDatabase, projectId: string): { id: string; pm_thread_id: string | null } | undefined {
-  return db.prepare("SELECT id, pm_thread_id FROM lane_pilot_run WHERE project_id=? AND closed_at IS NULL AND state IN ('pending','running') ORDER BY created_at DESC LIMIT 1")
-    .get(projectId) as { id: string; pm_thread_id: string | null } | undefined;
-}
-
 /** Runs of a PM thread, most recently touched first. */
 export function listRunsForPmThread(db: LanePilotDatabase, threadId: string, limit = 30): Array<{ id: string; project_id: string }> {
   return db.prepare("SELECT id, project_id FROM lane_pilot_run WHERE pm_thread_id=? ORDER BY updated_at DESC LIMIT ?")
@@ -275,11 +255,6 @@ export function activeRunForWorkspacePath(db: LanePilotDatabase, path: string, s
     ORDER BY r.updated_at DESC LIMIT 1`).get(path, since) as { id: string; pmThreadId: string | null } | undefined;
 }
 
-/** Every run's id, project and creation time — the wiring sweeps scan the whole table. */
-export function listAllRunRefs(db: LanePilotDatabase): Array<{ id: string; project_id: string; created_at: number }> {
-  return db.prepare("SELECT id, project_id, created_at FROM lane_pilot_run").all() as Array<{ id: string; project_id: string; created_at: number }>;
-}
-
 /** A project's newest CLI PM chats touched since a time (the backlog scanner's PM lookup). */
 export function listCliPmThreads(db: LanePilotDatabase, projectId: string, sinceMs: number): Array<{ pm_thread_id: string }> {
   return db.prepare("SELECT pm_thread_id FROM lane_pilot_run WHERE project_id=? AND kind='cli' AND pm_thread_id IS NOT NULL AND updated_at>=? ORDER BY updated_at DESC LIMIT 20")
@@ -291,21 +266,6 @@ export function listCliPmProjects(db: LanePilotDatabase, sinceMs: number): Array
   return db.prepare("SELECT DISTINCT project_id FROM lane_pilot_run WHERE kind='cli' AND pm_thread_id IS NOT NULL AND updated_at>=?").all(sinceMs) as Array<{ project_id: string }>;
 }
 
-/** A project's runs that have a PM chat, newest first (the capability probe). */
-export function listRunsWithPmThread(db: LanePilotDatabase, projectId: string): Array<{ id: string; pm_thread_id: string }> {
-  return db.prepare("SELECT id, pm_thread_id FROM lane_pilot_run WHERE project_id=? AND pm_thread_id IS NOT NULL ORDER BY created_at DESC LIMIT 20").all(projectId) as Array<{ id: string; pm_thread_id: string }>;
-}
-
-/** PM thread ids of runs touched since a time (the replay harvest). */
-export function listPmThreadIdsSince(db: LanePilotDatabase, sinceMs: number): string[] {
-  return (db.prepare("SELECT pm_thread_id AS t FROM lane_pilot_run WHERE pm_thread_id IS NOT NULL AND updated_at>=?").all(sinceMs) as Array<{ t: string }>).map((row) => row.t);
-}
-
-/** PM thread ids the notice table names since a time (the replay harvest). */
-export function listPmNoticeThreadIdsSince(db: LanePilotDatabase, sinceMs: number): string[] {
-  return (db.prepare("SELECT DISTINCT pm_thread_id AS t FROM lane_pilot_pm_notice WHERE sent_at>=?").all(sinceMs) as Array<{ t: string }>).map((row) => row.t);
-}
-
 /** The first free placement claim on a run: host, workspace and environment land only on an unbound live run. */
 export function claimRunPlacement(db: LanePilotDatabase, input: { hostId: string; workspacePath: string; environmentId: string; runId: string }): boolean {
   return db.prepare(`UPDATE lane_pilot_run
@@ -313,11 +273,6 @@ export function claimRunPlacement(db: LanePilotDatabase, input: { hostId: string
     WHERE id=? AND writer_host_id IS NULL AND writer_workspace_path IS NULL AND writer_environment_id IS NULL
       AND state IN ('pending','running')`)
     .run(input.hostId, input.workspacePath, input.environmentId, Date.now(), input.runId).changes === 1;
-}
-
-/** Every run's id, project, close time and last touch — cross-run sweeps (run goals) compare close order. */
-export function listRunCloseRows(db: LanePilotDatabase): Array<{ id: string; project_id: string; closed_at: number | null; updated_at: number }> {
-  return db.prepare("SELECT id, project_id, closed_at, updated_at FROM lane_pilot_run ORDER BY updated_at").all() as Array<{ id: string; project_id: string; closed_at: number | null; updated_at: number }>;
 }
 
 /** PM skill-use rows since a time (the skill-usage count). */
@@ -361,52 +316,17 @@ export function silentThreadInStoreTables(db: LanePilotDatabase, threadId: strin
   return row.silent === 1;
 }
 
-export function listActiveProjectIds(db: LanePilotDatabase, since: number): string[] {
-  return (db.prepare("SELECT DISTINCT project_id FROM lane_pilot_run WHERE updated_at>=?").all(since) as Array<{ project_id: string }>).map((row) => row.project_id);
-}
-
 export function runPmThreadId(db: LanePilotDatabase, runId: string): string | null {
   return (db.prepare("SELECT pm_thread_id FROM lane_pilot_run WHERE id=?").get(runId) as { pm_thread_id: string | null } | undefined)?.pm_thread_id ?? null;
-}
-
-export function runProjectId(db: LanePilotDatabase, runId: string): string | null {
-  return (db.prepare("SELECT project_id FROM lane_pilot_run WHERE id=?").get(runId) as { project_id: string } | undefined)?.project_id ?? null;
-}
-
-export function runClosedAt(db: LanePilotDatabase, runId: string): number | null {
-  return (db.prepare("SELECT closed_at FROM lane_pilot_run WHERE id=?").get(runId) as { closed_at: number | null } | undefined)?.closed_at ?? null;
-}
-
-export function latestOpenPmThreadForProject(db: LanePilotDatabase, projectId: string): string | null {
-  return (db.prepare("SELECT pm_thread_id FROM lane_pilot_run WHERE project_id=? AND closed_at IS NULL AND pm_thread_id IS NOT NULL ORDER BY updated_at DESC LIMIT 1")
-    .get(projectId) as { pm_thread_id: string } | undefined)?.pm_thread_id ?? null;
-}
-
-export function runIdForPmThread(db: LanePilotDatabase, threadId: string): string | null {
-  return (db.prepare("SELECT id FROM lane_pilot_run WHERE pm_thread_id=? LIMIT 1").get(threadId) as { id: string } | undefined)?.id ?? null;
-}
-
-export function latestRunIdForPmThread(db: LanePilotDatabase, threadId: string): string | null {
-  return (db.prepare("SELECT id FROM lane_pilot_run WHERE pm_thread_id=? ORDER BY created_at DESC LIMIT 1").get(threadId) as { id: string } | undefined)?.id ?? null;
 }
 
 export function openRunIdForPmThread(db: LanePilotDatabase, threadId: string): string | null {
   return (db.prepare("SELECT id FROM lane_pilot_run WHERE pm_thread_id=? AND closed_at IS NULL LIMIT 1").get(threadId) as { id: string } | undefined)?.id ?? null;
 }
 
-export function projectIdForPmThread(db: LanePilotDatabase, threadId: string): string | null {
-  return (db.prepare("SELECT project_id FROM lane_pilot_run WHERE pm_thread_id=? LIMIT 1").get(threadId) as { project_id: string } | undefined)?.project_id ?? null;
-}
-
 export function runStateCounts(db: LanePilotDatabase, projectId: string): Record<string, number> {
   return Object.fromEntries((db.prepare("SELECT state, COUNT(*) AS n FROM lane_pilot_run WHERE project_id=? GROUP BY state")
     .all(projectId) as Array<{ state: string; n: number }>).map((row) => [row.state, row.n]));
-}
-
-export function latestAreaWriterBinding(db: LanePilotDatabase, projectId: string, area: string): { hostId: string | null; path: string | null } | undefined {
-  return db.prepare(`SELECT r.writer_host_id AS hostId, r.writer_workspace_path AS path FROM lane_pilot_run r JOIN lane_pilot_task t ON t.run_id=r.id
-    WHERE r.project_id=? AND r.writer_workspace_path IS NOT NULL AND r.writer_host_id IS NOT NULL AND COALESCE(json_extract(t.contract_json,'$.area'),'')=?
-    ORDER BY r.updated_at DESC LIMIT 1`).get(projectId, area) as { hostId: string | null; path: string | null } | undefined;
 }
 
 export function listRunIdsForProject(db: LanePilotDatabase, projectId: string): string[] {
@@ -418,12 +338,6 @@ export function checkoutRunProject(db: LanePilotDatabase, path: string): { proje
   const row = db.prepare("SELECT project_id, pm_thread_id FROM lane_pilot_run WHERE writer_workspace_path=? ORDER BY updated_at DESC LIMIT 1")
     .get(path) as { project_id: string; pm_thread_id: string | null } | undefined;
   return row ? { projectId: row.project_id, pmThreadId: row.pm_thread_id } : null;
-}
-
-/** The folders runs of this project used as their writer checkout, newest first, at most `limit` (window status scans them for guests). */
-export function listRunWorkspacePaths(db: LanePilotDatabase, projectId: string, limit = 5): string[] {
-  return (db.prepare("SELECT writer_workspace_path AS p FROM lane_pilot_run WHERE project_id=? AND writer_workspace_path IS NOT NULL GROUP BY writer_workspace_path ORDER BY MAX(updated_at) DESC LIMIT ?")
-    .all(projectId, limit) as Array<{ p: string }>).map((row) => row.p);
 }
 
 /** The base checkouts of runs touched since `since`, with their machine and environment (the daily worktree pass's project folders). */

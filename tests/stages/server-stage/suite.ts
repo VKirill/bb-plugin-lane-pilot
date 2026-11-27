@@ -8,7 +8,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it as vitestIt } from
 import plugin from "../../../server";
 import { runBrowserQaOnHost, type BrowserQaInput } from "../../../src/rooms/qa";
 import { storeMemoryRecords } from "@lane-pilot/memory-core";
-import { appendAcceptedFact, countChargedAttempts, createAttempt, createRun, createTask, getAttempt, getRun, listAcceptedFacts, listGateEvents, listPendingAcceptedFacts, listStageReceipts, loadProjectSettings, onAttemptChanged, openDatabase, saveProjectSetting, savePrototypeConfig, saveStageReceipt, saveTaskPlan, setAttemptHolderThread, setRunThread, setRunWorkspace, transitionAttempt } from "../../../src/rooms/plugin-db";
+import { appendAcceptedFact, countChargedAttempts, createAttempt, createRun, createTask, getAttempt, getRun, listAcceptedFacts, listGateEvents, listPendingAcceptedFacts, listStageReceipts, loadProjectSettings, onAttemptChanged, openDatabase, saveProjectSetting, savePrototypeConfig, saveStageReceipt, saveTaskPlan, setAttemptHolderThread, setRunThread, transitionAttempt } from "../../../src/rooms/plugin-db";
 import { memoryRecordId } from "../../../src/rooms/memory/models/memory";
 import type { TaskV2 } from "../../../src/rooms/contracts";
 import { buildRunPolicy } from "../../../src/rooms/tasks";
@@ -746,7 +746,7 @@ export async function setup(critiqueOutput:string, browserQaResult?:Record<strin
   for (const [key,value] of Object.entries({"memory.maintain_every":1,"plan_critique.min_score":0,"plan_critique.min_write_tasks":1,"browser_qa.host_id":state.qaHostId,"browser_qa.workspace_path":"/tmp/lane-pilot-qa","browser_qa.backend":"chrome-qa","browser_qa.provider":"codex","browser_qa.model":"gpt-6-luna",...projectSettings})) saveProjectSetting(db,projectId,key,value);
   createRun(db, "stage-run", projectId, "bb", environmentId ? null : config.writerWorkspacePath,
     projectSettings["run.gate"] === "pre-merge" ? "pre-merge" : "none",buildRunPolicy(projectSettings),config.hostId);
-  if (environmentId) setRunWorkspace(db,"stage-run",config.writerWorkspacePath,environmentId);
+  if (environmentId) db.prepare("UPDATE lane_pilot_run SET writer_workspace_path=?, writer_environment_id=? WHERE id=?").run(config.writerWorkspacePath, environmentId, "stage-run");
   setRunThread(db, "stage-run", pmThreadId);
   return { bb, db, harness:wrappedHarness, spawned:state.spawned, telemetryReads:state.telemetryReads, docsWrites:state.docsWrites, sandboxRequests:state.sandboxRequests, gitChangedPaths:state.gitChangedPaths, writerControl:state.writerControl, fileReads:state.fileReads, stopCalls:state.stopCalls, docsInventoryCalls:()=>state.docsInventoryCalls, hostRpcCalls:state.hostRpcCalls, qaHostId:state.qaHostId };
 }

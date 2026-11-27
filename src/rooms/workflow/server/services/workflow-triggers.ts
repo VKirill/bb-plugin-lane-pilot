@@ -445,4 +445,3 @@ export function createWorkflowTriggers(ctx: ServerCore, services: Pick<Services,
 
   return { start, emitEvent, sync, pmOf, pmOfOrUnknown, startRefusal };
 }
-export type WorkflowTriggers = ReturnType<typeof createWorkflowTriggers>;

@@ -3,7 +3,6 @@ import type { CostState } from "@lane-pilot/contracts";
 import type { Compiled } from "./compiled";
 import type { Journal, RunRow, StepRow } from "./journal";
 import type { GraphNode as WorkflowNode } from "./schema";
-import { asObject } from "./step-read";
 import { addSpend, resolveStepCost } from "./usage";
 import type { Usage } from "./usage";
 import type { WorkflowEngine } from "./engine";
@@ -387,7 +386,3 @@ export function holdStepForUnknownCost(
   return true;
 }
 
-export function stepWaitOutputMeta(step: StepRow): { isOwnerHold: boolean } {
-  const wait = asObject(step.await_json);
-  return { isOwnerHold: wait.reason === "unknown_cost" };
-}

@@ -40,7 +40,6 @@ export const verdictRubricItemSchema = z.object({
   result: z.enum(["ok", "fail"]),
   evidence: z.preprocess((value) => value == null ? "" : value, z.string().max(2000)),
 });
-export type VerdictRubricItem = z.infer<typeof verdictRubricItemSchema>;
 
 /** The ids each critic fills in. An id outside its list does not count. */
 export const CRITIC_RUBRIC = {
@@ -228,7 +227,6 @@ export function applyRubric(verdict: Verdict, kind: VerdictKind): Verdict {
 
 /** The text a verdict that tells the PM to stop carries; the same string is the attempt's reason and the receipt's. */
 export const VERDICT_BLOCK_PREFIX = "verdict_block:";
-export const isVerdictBlockReason = (reason: string | null | undefined): boolean => (reason ?? "").startsWith(VERDICT_BLOCK_PREFIX);
 
 export function blockReason(stage: string, input: { summary?: string; findings: readonly Pick<VerdictFinding, "file" | "line" | "severity" | "evidence" | "finding">[] }): string {
   const lead = (input.summary ?? "").replace(/\s+/g, " ").trim().slice(0, 300);

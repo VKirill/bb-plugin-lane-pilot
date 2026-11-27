@@ -24,7 +24,6 @@ export const OUTPUT_REPEAT_AFTER = 8_000;
 /** Default cap of one data block; callers may pass a tighter one per block. */
 export const DATA_BLOCK_BUDGET = 16_000;
 
-export type BriefRole = "writer" | "errand" | "critic" | "generic";
 export const BRIEF_BUDGETS: Record<string, { instructions: number; total: number }> = {
   writer: { instructions: INSTRUCTIONS_BUDGET, total: WRITER_BUDGET },
   errand: { instructions: 4_000, total: 12_000 },
@@ -150,10 +149,6 @@ export function renderBrief(input: BriefSectionInput): { text: string; instructi
   return { text, instructionsLength: instructions.length, violations, parts: { instructions, sections, data, restate } };
 }
 
-/** Who to tell about a violation: the spawn path wires bb.log; tests keep the default. */
-let violationLogger: (line: string) => void = (line) => console.warn(line);
-export function setBriefViolationLogger(log: (line: string) => void): void { violationLogger = log; }
-
 /** The last violations seen, for tests and for a spawn that wants them back. */
 export const recentBriefViolations: Array<{ kind: string; violations: BriefViolation[] }> = [];
 
@@ -163,7 +158,7 @@ export function checkBrief(kind: string, brief: string, opts?: { skillsPicked?: 
   if (violations.length) {
     recentBriefViolations.push({ kind, violations });
     if (recentBriefViolations.length > 50) recentBriefViolations.shift();
-    violationLogger(`Lane Pilot brief violation (${kind}): ${violations.map((v) => `${v.code} — ${v.detail}`).join("; ")}`);
+    console.warn(`Lane Pilot brief violation (${kind}): ${violations.map((v) => `${v.code} — ${v.detail}`).join("; ")}`);
   }
   return violations;
 }

@@ -84,11 +84,6 @@ export function parseLoopModes(raw: unknown): LoopModes {
   return result;
 }
 
-/** Reads one loop's mode from a raw `loops.mode` value, defaulting to `"on"`. */
-export function loopModeOf(raw: unknown, loop: LoopName): LoopMode {
-  return parseLoopModes(raw)[loop];
-}
-
 /** Validates a `loops.mode` setting value; returns null when valid or empty. */
 export function loopModesProblem(value: unknown): string | null {
   if (value === undefined || value === null || value === "") return null;

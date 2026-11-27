@@ -238,9 +238,9 @@ Task 29 defines the runtime form chain via `formChainOf()` (`packages/workflow-e
 
 ### 8. Observability and OTel GenAI Alignment
 
-Step facts on `lane_pilot_wf_step` already align field names with OpenTelemetry GenAI semantic conventions via `OTEL_GENAI_ATTRIBUTES` in `packages/contracts/src/run-facts.ts`:
+Step facts on `lane_pilot_wf_step` align field names with OpenTelemetry GenAI semantic conventions:
 
-| `lane_pilot_wf_step` column | `OTEL_GENAI_ATTRIBUTES` key |
+| `lane_pilot_wf_step` column | OTel GenAI attribute |
 |---|---|
 | `nodeKind` / operation | `gen_ai.operation.name` |
 | `answered_provider` / `requested_provider` | `gen_ai.provider.name` |

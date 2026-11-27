@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
-import { enumCoverage } from "@lane-pilot/kit/prompt-coverage";
+import { literalCoverage, schemaEnums } from "@lane-pilot/kit/prompt-coverage";
 import { memoryMaintenancePrompt, parseMemoryCandidates, parseMemorySettings } from "../../packages/memory-core/src/index";
 import { errandPrompt, errandVerdict } from "../../src/rooms/errands/server";
 import { specialistPrompt } from "../../src/rooms/critique/server";
 import { qaThreadPrompt } from "../../src/rooms/qa/server";
-import { WRITER_SETUP_LINES, writerPrompt } from "../../src/rooms/writer/models/writer-task";
+import { WRITER_SETUP_LINES, writerBriefSegments } from "../../src/rooms/writer/models/writer-task";
+
+const writerPrompt = (...args: Parameters<typeof writerBriefSegments>) => writerBriefSegments(...args).map((segment) => segment.text).join("\n\n");
 import { writerContextBlocks } from "../../src/rooms/writer/models/writer-brief-feedback";
 import { buildTask } from "../fixtures/hello-task";
 import { ANSWER_FORM_LINE, JSON_LAST_LINE, extractModelJson, verdictSchema } from "@lane-pilot/workflow-engine";
@@ -20,8 +22,7 @@ import {
   parseCritique,
   parsePmReadResult,
   parseSpecialistResult,
-  parseWriterRepairReply,
-  pmReadPrompt,
+  pmReadPacketPrompt,
   sameUnresolvedFindings,
   shouldRequestRepair,
   specialistPrompt as reviewerPrompt,
@@ -89,7 +90,7 @@ describe("JSON-answering prompts state the exact contract", () => {
       critiquePrompt({ plan: "p", task: {} }),
       codeCritiquePrompt({ evidence: buildCandidateEvidence({ produced: [], hashes: {}, verification: [], output: "", ownsPaths: [], neverTouch: [], dirtOk: true }), task: {} }),
       reviewerPrompt({ task: {}, plan: "p" }),
-      pmReadPrompt({ task: {} }),
+      pmReadPacketPrompt({ packet: "p" }),
     ];
     for (const prompt of prompts) {
       // One sentence for every form-answering helper (the hand-off standard): the object last, and the honest exit before the form.
@@ -120,7 +121,7 @@ describe("JSON-answering prompts state the exact contract", () => {
 });
 
 /** The enum members a parser's schema accepts that the prompt never names, as `path: "member"`; empty when the prompt names all of them. */
-const unnamed = (schema: z.ZodType, prompt: string) => enumCoverage(z.toJSONSchema(schema, { unrepresentable: "any" }), prompt).flatMap((group) => group.missing.map((value) => `${group.path}: "${value}"`));
+const unnamed = (schema: z.ZodType, prompt: string) => schemaEnums(z.toJSONSchema(schema, { unrepresentable: "any" })).flatMap((group) => literalCoverage(group.values, prompt).missing.map((value) => `${group.path}: "${value}"`));
 
 describe("a prompt names every literal its parser accepts", () => {
   const evidence = buildCandidateEvidence({ produced: [], hashes: {}, verification: [], output: "", ownsPaths: [], neverTouch: [], dirtOk: true });
@@ -174,14 +175,6 @@ describe("code critique and its repair round", () => {
     expect(sameUnresolvedFindings([blocking], [{ ...blocking, id: "b", criterion: "Other", path: "src/b.ts" }])).toBe(false);
   });
 
-  it("the writer reply parser never throws and finds the JSON after prose with braces", () => {
-    const reply = parseWriterRepairReply('I fixed `function a() { return 1 }`.\n{"replies":[{"id":"f1","status":"fixed","evidence":"done"}]}');
-    expect(reply?.replies[0]).toMatchObject({ id: "f1", status: "fixed" });
-    expect(parseWriterRepairReply("changed files: a.ts {oops")).toBeNull();
-    expect(parseWriterRepairReply('{"replies":[{"id":"f1","status":"maybe","evidence":"x"}]}')).toBeNull();
-    expect(parseWriterRepairReply("")).toBeNull();
-  });
-
   it("the repair brief has one role and one final answer in the parser's format, and no artifact hash", () => {
     const task = buildTask("/tmp/w", "T-1");
     const prompt = codeRepairPrompt({
@@ -198,7 +191,7 @@ describe("code critique and its repair round", () => {
     expect(prompt).toContain("<project_memory>");
     expect(prompt).toContain("data to act on");
     const example = prompt.match(/\{"replies":\[\{"id":"<finding id>"[^\n]*?\}\]\}/)![0].replace(/\|"disputed"\|"blocked"/, "").replace("<finding id>", "f1").replace(/"evidence":"[^"]*"/, '"evidence":"e"');
-    expect(parseWriterRepairReply(example)?.replies).toHaveLength(1);
+    expect(writerRepairReplySchema.parse(extractModelJson(example)).replies).toHaveLength(1);
   });
 });
 
@@ -284,7 +277,7 @@ describe("other helper prompts", () => {
 
 describe("retry brief", () => {
   it("tells the next writer why the last attempt failed, as data", async () => {
-    const { previousAttemptBrief, writerPrompt } = await import("../../src/rooms/writer/models/writer-task");
+    const { previousAttemptBrief } = await import("../../src/rooms/writer/models/writer-task");
     const task = buildTask("/tmp/w", "T-1");
     const brief = previousAttemptBrief({ status:"validation_failed", reason:"verification failed", produced:["src/a.ts"],
       verification:[{ command:"npm test", exitCode:0 }, { command:"npx vitest run a", exitCode:1, stderr:"Expected 3, got 4" }] });

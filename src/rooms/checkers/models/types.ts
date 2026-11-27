@@ -8,8 +8,6 @@ export const CHECKERS = ["verification", "ownership", "contract_lint", "plan_fac
 export type CheckerId = (typeof CHECKERS)[number];
 /** The checkers that are code: no model, no cost. The drill runs only these. */
 export const CODE_CHECKERS: readonly CheckerId[] = ["verification", "ownership", "contract_lint", "plan_fact", "test_fit"];
-export const MODEL_CHECKERS: readonly CheckerId[] = ["code_critic", "plan_critic"];
-
 export const DEFECT_CLASSES = [
   "test_assertion_deleted", "off_by_one", "outside_owns", "swallowed_error", "masked_check", "acceptance_missing", "hardcoded_value", "broken_import",
   "gilded_defect",

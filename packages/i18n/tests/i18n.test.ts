@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 import { describe, expect, it } from "vitest";
 import { afterEach, vi } from "vitest";
-import { UNAPPLIED_REASON, unappliedNotValidReason } from "@lane-pilot/settings-catalog";
+import { UNAPPLIED_REASON } from "@lane-pilot/settings-catalog";
 import { SETTINGS_REGISTRY } from "../../../src/rooms/settings-registry";
 import { detectLocale, detectLocaleHint, en, localeFromSources, ru, setLocaleOverride, subscribeToLocaleHintChanges, unappliedReason, type I18nKey } from "@lane-pilot/i18n";
 
@@ -94,11 +94,7 @@ describe("i18n dictionaries", () => {
       if (def.channel !== "NONE" || !def.reason) continue;
       expect(unappliedReason(def.reason)).not.toBe(def.reason);
     }
-    const dynamic = unappliedNotValidReason(
-      { key: "ops.poll_interval", channel: "OPS-DIRECT", flag: "--poll-interval" },
-      "lane-ctl",
-      "status",
-    );
+    const dynamic = "OPS-DIRECT flag --poll-interval is not valid on lane-ctl status";
     expect(unappliedReason(dynamic)).toMatch(/недопустим/);
     setLocaleOverride(null);
   });

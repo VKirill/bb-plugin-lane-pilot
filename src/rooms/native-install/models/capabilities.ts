@@ -16,8 +16,6 @@ export const REQUIRED_CAPABILITIES = [
 ] as const;
 
 export type RequiredCapability = (typeof REQUIRED_CAPABILITIES)[number];
-export type EngineCapability = RequiredCapability | (string & {});
-
 /** What Lane Pilot does itself when the engine lacks it (read-first line windows: tasks/read-first.ts). */
 export const ADAPTER_CAPABILITIES = [
   "execution_packet.line_windows",

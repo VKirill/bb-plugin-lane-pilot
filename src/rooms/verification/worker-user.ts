@@ -2,7 +2,6 @@ import { appendFile, mkdir } from "node:fs/promises";
 import { homedir, userInfo } from "node:os";
 import { join } from "node:path";
 import { bestEffort, spawnAsync } from "@lane-pilot/kit";
-import { CREDENTIAL_DIRS, CREDENTIAL_FILES, resolveCredentialPaths } from "./credential-paths";
 
 /**
  * The strict worker (SMA map: Separate worker user, Checks as the worker, Folder rights for the worker, List of granted rights,
@@ -58,22 +57,6 @@ export async function grantRunFolders(user: string, dirs: readonly string[], pla
 export function asWorker(user: string, program: string, args: readonly string[], keep: readonly string[]): { program: string; args: string[] } {
   if (!WORKER_USER.test(user)) throw new Error(`worker_user_invalid: ${user}`);
   return { program: SUDO, args: ["-n", "-u", user, ...(keep.length ? [`--preserve-env=${[...new Set(keep)].join(",")}`] : []), program, ...args] };
-}
-
-/** The owner's credential paths a worker should not read (SMA m_ac_identity_probe); each is probed with `test -r` as the worker. `~/.lane-pilot` is not one: the worker's own worktrees and jobs live there by design. */
-export const WORKER_SECRET_PATHS = [...CREDENTIAL_DIRS, ...CREDENTIAL_FILES] as const;
-
-/** Identity probe: the worker OS user cannot reach the owner's secrets (including resolved symlink targets). A readable path is reported as exposed; it is a warning, never a failing exit. */
-export async function workerSecretReach(user: string, ownerHome = homedir()): Promise<{ ok: boolean; reachable: string[] }> {
-  if (!WORKER_USER.test(user)) throw new Error(`worker_user_invalid: ${user}`);
-  const { dirs, files } = resolveCredentialPaths(ownerHome, { existingOnly: false });
-  const candidates = [...new Set([...dirs, ...files])];
-  const reachable: string[] = [];
-  for (const target of candidates) {
-    const probe = await spawnAsync(SUDO, ["-n", "-u", user, "/usr/bin/test", "-r", target], { timeout: 10_000 });
-    if (probe.status === 0) reachable.push(target);
-  }
-  return { ok: reachable.length === 0, reachable };
 }
 
 /** The home folder of an OS user, from the passwd database (getent on Linux, dscl on macOS); the usual place when the database does not say. */

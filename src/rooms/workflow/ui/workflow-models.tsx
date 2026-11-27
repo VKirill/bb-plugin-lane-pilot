@@ -118,16 +118,6 @@ export function CardModel({ executor, models, id }: { executor: StepExecutor; mo
 
 // ------------------------------------------------------------------ the table
 
-type Hosts = ModelCatalog["hosts"];
-
-const hostNames = (ids: readonly string[], hosts: Hosts): string => ids.map((id) => hosts.find((host) => host.id === id)?.name ?? id).join(", ");
-/** Where an entry is offered: nothing when it is on every connected machine, else the machines' names. */
-export const offeredOn = (ids: readonly string[], hosts: Hosts): string => {
-  if (!ids.length) return t("wfModelNotAvailable");
-  const connected = hosts.filter((host) => host.connected).map((host) => host.id);
-  return connected.length && connected.every((id) => ids.includes(id)) ? "" : t("wfModelOn").replace("{hosts}", hostNames(ids, hosts));
-};
-
 function ReadOnlyCells({ executor }: { executor: StepExecutor }) {
   return <div className="min-w-0 truncate text-xs" title={executor.model ?? ""} data-label={t("wfModelsColModel")} data-testid={`wf-model-line-${rowId(executor)}`}>{executorLine(executor)}</div>;
 }

@@ -17,75 +17,6 @@ export function countAcceptedForProject(db: LanePilotDatabase, projectId: string
     .get(projectId, since) as { n: number }).n;
 }
 
-export function listCheckFailureRows(db: LanePilotDatabase, projectId: string, since: number): Array<{ taskId: string; checkName: string }> {
-  return db.prepare(`SELECT a.task_id AS taskId, a.check_name AS checkName FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id
-    WHERE r.project_id=? AND a.created_at>=? AND a.failure_code IN ('verification_failed','verification_timeout') AND a.check_name IS NOT NULL`)
-    .all(projectId, since) as Array<{ taskId: string; checkName: string }>;
-}
-
-export function listFailedAttemptRows(db: LanePilotDatabase, states: readonly string[], updatedAfter: number): Array<{ id: string; run_id: string; task_id: string; thread_id: string | null; reason: string | null; updated_at: number; project_id: string }> {
-  return db.prepare(`SELECT a.id, a.run_id, a.task_id, a.thread_id, a.reason, a.updated_at, r.project_id FROM lane_pilot_attempt a
-    JOIN lane_pilot_run r ON r.id=a.run_id WHERE a.state IN (${states.map(() => "?").join(",")}) AND a.updated_at > ?`)
-    .all(...states, updatedAfter) as Array<{ id: string; run_id: string; task_id: string; thread_id: string | null; reason: string | null; updated_at: number; project_id: string }>;
-}
-
-export function listStaleAttemptsInState(db: LanePilotDatabase, state: string, updatedBefore: number): Array<{ id: string; run_id: string; task_id: string; thread_id: string | null; updated_at: number; project_id: string }> {
-  return db.prepare(`SELECT a.id, a.run_id, a.task_id, a.thread_id, a.updated_at, r.project_id FROM lane_pilot_attempt a
-    JOIN lane_pilot_run r ON r.id=a.run_id WHERE a.state=? AND a.updated_at < ?`)
-    .all(state, updatedBefore) as Array<{ id: string; run_id: string; task_id: string; thread_id: string | null; updated_at: number; project_id: string }>;
-}
-
-export function listStaleQueuedAttempts(db: LanePilotDatabase, updatedBefore: number, workingStates: readonly string[]): Array<{ id: string; run_id: string; task_id: string; updated_at: number; project_id: string; contract_json: string | null }> {
-  return db.prepare(`SELECT a.id, a.run_id, a.task_id, a.updated_at, r.project_id, t.contract_json FROM lane_pilot_attempt a
-    JOIN lane_pilot_run r ON r.id=a.run_id LEFT JOIN lane_pilot_task t ON t.id=a.task_id
-    WHERE a.state='queued' AND a.updated_at < ? AND r.state='running'
-      AND NOT EXISTS (SELECT 1 FROM lane_pilot_attempt b WHERE b.run_id=a.run_id AND b.state IN (${workingStates.map(() => "?").join(",")}))
-      AND NOT EXISTS (SELECT 1 FROM lane_pilot_attempt b WHERE b.run_id=a.run_id AND b.state<>'queued' AND b.updated_at >= ?)`)
-    .all(updatedBefore, ...workingStates, updatedBefore) as Array<{ id: string; run_id: string; task_id: string; updated_at: number; project_id: string; contract_json: string | null }>;
-}
-
-export function listRecentFailedAttemptRows(db: LanePilotDatabase, states: readonly string[], updatedAfter: number): Array<{ id: string; run_id: string; task_id: string; thread_id: string | null; reason: string | null; failure_code: string | null; updated_at: number; project_id: string; contract_json: string | null }> {
-  return db.prepare(`SELECT a.id, a.run_id, a.task_id, a.thread_id, a.reason, a.failure_code, a.updated_at, r.project_id, t.contract_json FROM lane_pilot_attempt a
-    JOIN lane_pilot_run r ON r.id=a.run_id LEFT JOIN lane_pilot_task t ON t.id=a.task_id
-    WHERE a.state IN (${states.map(() => "?").join(",")}) AND a.updated_at > ?`)
-    .all(...states, updatedAfter) as Array<{ id: string; run_id: string; task_id: string; thread_id: string | null; reason: string | null; failure_code: string | null; updated_at: number; project_id: string; contract_json: string | null }>;
-}
-
-export function listJournalAttemptRows(db: LanePilotDatabase, states: readonly string[], since: number, until: number): Array<{ id: string; run_id: string; task_id: string; state: string; reason: string | null; failure_code: string | null; updated_at: number; harness_version: string | null; project_id: string }> {
-  return db.prepare(`SELECT a.id, a.run_id, a.task_id, a.state, a.reason, a.failure_code, a.updated_at, a.harness_version, r.project_id
-    FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id
-    WHERE a.updated_at>=? AND a.updated_at<? AND a.state IN (${states.map(() => "?").join(",")})
-    ORDER BY a.updated_at`).all(since, until, ...states) as
-    Array<{ id: string; run_id: string; task_id: string; state: string; reason: string | null; failure_code: string | null; updated_at: number; harness_version: string | null; project_id: string }>;
-}
-
-export function listFinishedAttemptRows(db: LanePilotDatabase, notStates: readonly string[], before: number, limit: number): Array<{ id: string; run_id: string; task_id: string; state: string; reason: string | null; failure_code: string | null; updated_at: number; project_id: string }> {
-  return db.prepare(`SELECT a.id, a.run_id, a.task_id, a.state, a.reason, a.failure_code, a.updated_at, r.project_id
-    FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id
-    WHERE a.updated_at<=? AND a.state NOT IN (${notStates.map(() => "?").join(",")})
-    ORDER BY a.updated_at DESC LIMIT ?`).all(before, ...notStates, limit) as
-    Array<{ id: string; run_id: string; task_id: string; state: string; reason: string | null; failure_code: string | null; updated_at: number; project_id: string }>;
-}
-
-export function listFailedAttemptsSinceDesc(db: LanePilotDatabase, states: readonly string[], since: number, limit: number): Array<{ id: string; run_id: string; task_id: string; state: string; reason: string | null; failure_code: string | null; updated_at: number; project_id: string }> {
-  return db.prepare(`SELECT a.id, a.run_id, a.task_id, a.state, a.reason, a.failure_code, a.updated_at, r.project_id FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id
-    WHERE a.updated_at>=? AND a.state IN (${states.map(() => "?").join(",")})
-    ORDER BY a.updated_at DESC LIMIT ?`).all(since, ...states, limit) as
-    Array<{ id: string; run_id: string; task_id: string; state: string; reason: string | null; failure_code: string | null; updated_at: number; project_id: string }>;
-}
-
-export function listHarnessVersionTimeline(db: LanePilotDatabase, until: number, limit: number): Array<{ created_at: number; harness_version: string }> {
-  return (db.prepare("SELECT created_at, harness_version FROM lane_pilot_attempt WHERE harness_version IS NOT NULL AND created_at<=? ORDER BY created_at DESC LIMIT ?")
-    .all(until, limit) as Array<{ created_at: number; harness_version: string }>).reverse();
-}
-
-export function listAttemptBriefRows(db: LanePilotDatabase, projectId: string, since: number, until: number): Array<{ id: string; run_id: string; task_id: string; state: string; reason: string | null; attempt_no: number; trace_json: string | null }> {
-  return db.prepare(`SELECT a.id, a.run_id, a.task_id, a.state, a.reason, a.attempt_no, t.trace_json FROM lane_pilot_attempt a
-    JOIN lane_pilot_run r ON r.id=a.run_id LEFT JOIN lane_pilot_attempt_reasoning t ON t.attempt_id=a.id
-    WHERE r.project_id=? AND a.created_at>=? AND a.created_at<? ORDER BY a.created_at`).all(projectId, since, until) as
-    Array<{ id: string; run_id: string; task_id: string; state: string; reason: string | null; attempt_no: number; trace_json: string | null }>;
-}
-
 export function listTaskAcceptanceRows(db: LanePilotDatabase, projectId: string, since: number): Array<{ id: string; createdAt: number; area: string | null; acceptedAt: number | null }> {
   return db.prepare(`SELECT t.id, t.created_at AS createdAt, json_extract(t.contract_json,'$.area') AS area,
       (SELECT MIN(a.updated_at) FROM lane_pilot_attempt a WHERE a.task_id=t.id AND a.run_id=t.run_id AND a.state='accepted') AS acceptedAt
@@ -99,64 +30,13 @@ export function listWriterThreadTurns(db: LanePilotDatabase, projectId: string, 
     WHERE r.project_id=? AND t.kind='bb' AND t.created_at>=? AND a.thread_id IS NOT NULL GROUP BY a.thread_id`).all(projectId, since) as Array<{ threadId: string; turns: number }>;
 }
 
-export function cancelCodeCounts(db: LanePilotDatabase, since: number, limit: number): Array<{ code: string; n: number }> {
-  return db.prepare(`SELECT COALESCE(cancel_code, 'unknown') AS code, COUNT(*) AS n FROM lane_pilot_attempt
-    WHERE state='canceled' AND updated_at>=? GROUP BY code ORDER BY n DESC, code LIMIT ?`).all(since, limit) as Array<{ code: string; n: number }>;
-}
-
 export function attemptRowWithProject(db: LanePilotDatabase, id: string): { id: string; run_id: string; task_id: string; state: string; reason: string | null; updated_at: number; harness_version: string | null; project_id: string } | undefined {
   return db.prepare(`SELECT a.id, a.run_id, a.task_id, a.state, a.reason, a.updated_at, a.harness_version, r.project_id FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id WHERE a.id=?`)
     .get(id) as { id: string; run_id: string; task_id: string; state: string; reason: string | null; updated_at: number; harness_version: string | null; project_id: string } | undefined;
 }
 
-export function listFamilyAttemptRows(db: LanePilotDatabase, runId: string, family: string): Array<{ id: string; run_id: string; task_id: string; state: string; reason: string | null; updated_at: number; harness_version: string | null; project_id: string }> {
-  return db.prepare(`SELECT a.id, a.run_id, a.task_id, a.state, a.reason, a.updated_at, a.harness_version, r.project_id FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id
-    WHERE a.run_id=? AND (a.task_id=? OR a.task_id LIKE ?) ORDER BY a.created_at`).all(runId, family, `${family}.%`) as
-    Array<{ id: string; run_id: string; task_id: string; state: string; reason: string | null; updated_at: number; harness_version: string | null; project_id: string }>;
-}
-
-export function listAttemptReasonsLike(db: LanePilotDatabase, since: number, like: string, limit: number): Array<{ task_id: string; state: string; reason: string | null }> {
-  return db.prepare("SELECT task_id, state, substr(reason,1,160) AS reason FROM lane_pilot_attempt WHERE updated_at>? AND reason LIKE ? ORDER BY updated_at DESC LIMIT ?")
-    .all(since, like, limit) as Array<{ task_id: string; state: string; reason: string | null }>;
-}
-
-export function acceptedFamilyAttemptId(db: LanePilotDatabase, runId: string, family: string, updatedAfter: number): string | null {
-  return (db.prepare("SELECT id FROM lane_pilot_attempt WHERE run_id=? AND (task_id=? OR task_id LIKE ?) AND state='accepted' AND updated_at>? LIMIT 1")
-    .get(runId, family, `${family}.%`, updatedAfter) as { id: string } | undefined)?.id ?? null;
-}
-
-export function acceptedAttemptCiting(db: LanePilotDatabase, runId: string, updatedAfter: number, text: string): string | null {
-  return (db.prepare("SELECT a.id FROM lane_pilot_attempt a JOIN lane_pilot_task t ON t.id=a.task_id WHERE t.run_id=? AND a.state='accepted' AND a.updated_at>? AND instr(t.contract_json, ?)>0 LIMIT 1")
-    .get(runId, updatedAfter, text) as { id: string } | undefined)?.id ?? null;
-}
-
-export function listVersionedAttemptRows(db: LanePilotDatabase, version: string, since: number): Array<{ state: string; reason: string | null; failure_code: string | null; project_id: string }> {
-  return db.prepare(`SELECT a.state, a.reason, a.failure_code, r.project_id FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id WHERE a.harness_version=? AND a.created_at>=? AND a.state NOT IN ('queued','spawn_requested','spawn_unknown','running','cancel_requested','canceled')`)
-    .all(version, since) as Array<{ state: string; reason: string | null; failure_code: string | null; project_id: string }>;
-}
-
-export function listAcceptedAttemptsWithThread(db: LanePilotDatabase, since: number): Array<{ id: string; threadId: string; projectId: string }> {
-  return db.prepare(`SELECT a.id, a.thread_id AS threadId, r.project_id AS projectId FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id
-    WHERE a.state='accepted' AND a.thread_id IS NOT NULL AND a.updated_at>=?
-    ORDER BY a.updated_at DESC`).all(since) as Array<{ id: string; threadId: string; projectId: string }>;
-}
-
-export function listComplexTaskRows(db: LanePilotDatabase, since: number): Array<{ id: string; contract: string; projectId: string; attempts: number; first: number; last: number }> {
-  return db.prepare(`SELECT t.id, t.contract_json AS contract, r.project_id AS projectId, count(a.id) AS attempts, min(a.created_at) AS first, max(a.updated_at) AS last
-    FROM lane_pilot_task t JOIN lane_pilot_run r ON r.id=t.run_id JOIN lane_pilot_attempt a ON a.run_id=t.run_id AND a.task_id=t.id
-    WHERE t.created_at>=?
-      AND EXISTS (SELECT 1 FROM lane_pilot_attempt b WHERE b.run_id=t.run_id AND b.task_id=t.id AND b.state='accepted')
-      AND NOT EXISTS (SELECT 1 FROM lane_pilot_attempt c WHERE c.run_id=t.run_id AND c.task_id=t.id AND c.state IN ('queued','spawn_requested','running','cancel_requested'))
-    GROUP BY t.id ORDER BY t.created_at DESC`).all(since) as Array<{ id: string; contract: string; projectId: string; attempts: number; first: number; last: number }>;
-}
-
 export function attemptStateCounts(db: LanePilotDatabase, since: number): Array<{ state: string; n: number }> {
   return db.prepare("SELECT state, count(*) AS n FROM lane_pilot_attempt WHERE updated_at > ? GROUP BY state").all(since) as Array<{ state: string; n: number }>;
-}
-
-export function failedAttemptStateCounts(db: LanePilotDatabase, since: number): Array<{ state: string; n: number }> {
-  return db.prepare("SELECT state, count(*) AS n FROM lane_pilot_attempt WHERE updated_at>=? AND (state LIKE '%failed%' OR state IN ('blocked','provider_error')) GROUP BY state ORDER BY state")
-    .all(since) as Array<{ state: string; n: number }>;
 }
 
 export function listAcceptedAttemptsForTask(db: LanePilotDatabase, taskId: string): Array<{ id: string; updatedAt: number }> {
@@ -166,20 +46,6 @@ export function listAcceptedAttemptsForTask(db: LanePilotDatabase, taskId: strin
 
 export function listAttemptStatesForTask(db: LanePilotDatabase, taskId: string): Array<{ id: string; state: string }> {
   return db.prepare("SELECT id, state FROM lane_pilot_attempt WHERE task_id=? ORDER BY attempt_no").all(taskId) as Array<{ id: string; state: string }>;
-}
-
-export function attemptRunAndThread(db: LanePilotDatabase, attemptId: string): { run_id: string | undefined; thread_id: string | null } | undefined {
-  return db.prepare("SELECT run_id, thread_id FROM lane_pilot_attempt WHERE id=?").get(attemptId) as { run_id: string | undefined; thread_id: string | null } | undefined;
-}
-
-export function attemptStateForTaskRun(db: LanePilotDatabase, taskId: string, runId: string | null): string | null {
-  return (db.prepare(`SELECT a.state FROM lane_pilot_attempt a WHERE a.task_id = ? AND a.run_id = ?
-     ORDER BY (a.state = 'accepted') DESC, a.created_at DESC LIMIT 1`).get(taskId, runId) as { state: string } | undefined)?.state ?? null;
-}
-
-export function latestAttemptStateCreated(db: LanePilotDatabase, runId: string, taskId: string): string | null {
-  return (db.prepare("SELECT state FROM lane_pilot_attempt WHERE run_id=? AND task_id=? ORDER BY created_at DESC LIMIT 1")
-    .get(runId, taskId) as { state: string } | undefined)?.state ?? null;
 }
 
 /**
@@ -200,13 +66,6 @@ export function failedTasksAllProjects(db: LanePilotDatabase, since = 0): Array<
 /** The newest accepted attempt of a task, whatever its run: where a similar past work's files are read from (SMA ap_similar). */
 export function latestAcceptedAttemptOfTask(db: LanePilotDatabase, taskId: string): { run_id: string; id: string } | undefined {
   return db.prepare("SELECT run_id,id FROM lane_pilot_attempt WHERE task_id=? AND state='accepted' ORDER BY attempt_no DESC LIMIT 1").get(taskId) as { run_id: string; id: string } | undefined;
-}
-
-/** The attempts created since a moment, of one project or of all: the rows receipt coverage is counted over. */
-export function listAttemptRefsSince(db: LanePilotDatabase, since: number, projectId?: string): Array<{ id: string; run_id: string; task_id: string; attempt_no: number }> {
-  return (projectId
-    ? db.prepare("SELECT a.id, a.run_id, a.task_id, a.attempt_no FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id WHERE r.project_id=? AND a.created_at>=?").all(projectId, since)
-    : db.prepare("SELECT id, run_id, task_id, attempt_no FROM lane_pilot_attempt WHERE created_at>=?").all(since)) as Array<{ id: string; run_id: string; task_id: string; attempt_no: number }>;
 }
 
 /** The writer threads a run ever ran: a fresh run budget is seeded from their token cursors, so spend of attempts killed
@@ -255,17 +114,6 @@ export function settingsScopesForWorkspacePath(db: LanePilotDatabase, path: stri
 export function liveAttemptsOfRun(db: Pick<LanePilotDatabase, "prepare">, runId: string): Array<{ id: string; task_id: string }> {
   return db.prepare("SELECT id, task_id FROM lane_pilot_attempt WHERE run_id=? AND state IN ('queued','spawn_requested','spawn_unknown','running','cancel_requested') ORDER BY updated_at DESC")
     .all(runId) as Array<{ id: string; task_id: string }>;
-}
-
-/** What a machine worked on today: the projects whose runs write on this host and the attempts that moved in the window, by state (SMA m_sw_machines). */
-export function hostActivityToday(db: LanePilotDatabase, hostId: string, since: number): { projects: string[]; accepted: number; blocked: number; running: number } {
-  const rows = db.prepare(`SELECT r.project_id AS projectId, a.state AS state FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id WHERE r.writer_host_id=? AND a.updated_at>=?`).all(hostId, since) as Array<{ projectId: string; state: string }>;
-  return {
-    projects: [...new Set(rows.map((row) => row.projectId))].sort(),
-    accepted: rows.filter((row) => row.state === "accepted").length,
-    blocked: rows.filter((row) => row.state === "blocked").length,
-    running: rows.filter((row) => row.state === "running").length,
-  };
 }
 
 /** The latest accepted attempt of each task of the project's runs created since `sinceMs` (the project report's git and timeline rows). */

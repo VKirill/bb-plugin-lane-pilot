@@ -42,7 +42,6 @@ function makeDefaultRpc(overrides: Record<string, (input: unknown) => unknown> =
         remote: "git@github.com:VKirill/treba-online.git",
         githubRepoId: "VKirill/treba-online",
       },
-      isPm: true,
     }),
     repo_trust: () => ({
       repo: {
@@ -377,7 +376,6 @@ describe("Chat right panel (C1)", () => {
             hostId: "host_1",
             cwd: "/srv/treba-online",
             repo: { root: "/srv/treba-online", remote: null, githubRepoId: null },
-            isPm: false,
           }),
         }) as never,
       },
@@ -402,7 +400,6 @@ describe("Chat right panel (C1)", () => {
             hostId: "host_1",
             cwd: "/srv/docs",
             repo: null,
-            isPm: true,
           }),
         }) as never,
       },
@@ -493,7 +490,6 @@ describe("Chat right panel (C1)", () => {
             hostId: null,
             cwd: null,
             repo: null,
-            isPm: false,
           }),
         }) as never,
       },

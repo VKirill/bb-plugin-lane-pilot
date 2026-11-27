@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { NO_UPSTREAM, upstreamPath, offlineUpstream } from "./upstream-fixture";
-import { sha256FileOrNull } from "@lane-pilot/kit";
+import { readTextOrNull } from "@lane-pilot/kit";
 import {
   connectOpencodeStack,
   detectStack,
@@ -84,18 +84,18 @@ describe.skipIf(NO_UPSTREAM)("S1–S8 isolated HOME", () => {
   it("S2/S3 install reaches target SHA without external ops or S8 writes", async () => {
     const globalBefore = snapshotGlobalOpenCursor();
     const s8Before = {
-      routing: await sha256FileOrNull(join(home, ".agents/routing.profile.yaml")),
-      night: await sha256FileOrNull(join(home, ".agents/night-shift.yaml")),
-      caps: await sha256FileOrNull(join(home, ".agents/capabilities.json")),
+      routing: await readTextOrNull(join(home, ".agents/routing.profile.yaml")),
+      night: await readTextOrNull(join(home, ".agents/night-shift.yaml")),
+      caps: await readTextOrNull(join(home, ".agents/capabilities.json")),
     };
     const receipt = await installStack(ctx);
     expect(receipt.exitCode, receipt.notes.join("\n")).toBe(0);
     expect(receipt.sourceSha).toBeTruthy();
     expect(receipt.skippedExternalOps.length).toBeGreaterThan(0);
     expect(receipt.warning).toContain("откат не гарантированно");
-    expect(await sha256FileOrNull(join(home, ".agents/routing.profile.yaml"))).toBe(s8Before.routing);
-    expect(await sha256FileOrNull(join(home, ".agents/night-shift.yaml"))).toBe(s8Before.night);
-    expect(await sha256FileOrNull(join(home, ".agents/capabilities.json"))).toBe(s8Before.caps);
+    expect(await readTextOrNull(join(home, ".agents/routing.profile.yaml"))).toBe(s8Before.routing);
+    expect(await readTextOrNull(join(home, ".agents/night-shift.yaml"))).toBe(s8Before.night);
+    expect(await readTextOrNull(join(home, ".agents/capabilities.json"))).toBe(s8Before.caps);
     expect(readFileSync(join(home, ".agents/lane-pilot/pm/guard_shell.py"), "utf8")).toContain("LANE_PILOT_PM_AGENT_TYPES");
     expect(readFileSync(join(workspace, ".claude/settings.json"), "utf8")).toContain(`${home}/.agents/lane-pilot/pm/guard_shell.py`);
     const detected = await detectStack(ctx);

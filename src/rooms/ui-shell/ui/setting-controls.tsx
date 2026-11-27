@@ -41,11 +41,6 @@ export function SettingsGroup({
   );
 }
 
-/** Rows shown with «Advanced»; kept in the DOM while hidden. */
-export function AdvancedRows({ show, testId, children }: { show: boolean; testId?: string; children: ReactNode }) {
-  return <div hidden={!show} data-testid={testId} className="min-w-0 space-y-2 border-l-2 border-[var(--lp-hairline)] pl-3">{children}</div>;
-}
-
 /** One line of the Overview checklist: done, needs attention, or a plain step. */
 export function StatusRow({ state, title, detail, action, testId }: { state: "ok" | "todo" | "info"; title: string; detail: ReactNode; action?: ReactNode; testId?: string }) {
   const mark = state === "ok" ? "✓" : state === "todo" ? "!" : "→";

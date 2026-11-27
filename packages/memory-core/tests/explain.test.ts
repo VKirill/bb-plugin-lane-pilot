@@ -1,23 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { explainMemory, fileFingerprint, filesDrifted, pathsNamed, type MemoryRecord } from "../src/index";
-
-const note = (id: string, content: string): MemoryRecord => ({
-  id, projectId: "p", personalBot: "", kind: "note", content, concepts: ["memory"], sourceSha256: "a".repeat(64), createdAt: 1,
-});
-
-describe("memory pack explain", () => {
-  it("[sma:k_lib_explain_mem] [sma:k_v_mem_explain] a matched note that does not fit the budget is cut, and a note with no shared word is out", () => {
-    const records = [
-      note("keep", "deploy staging checklist for the hub"),
-      note("cut", "deploy staging checklist extra words ".repeat(40)),
-      note("miss", "borscht recipe with beets"),
-    ];
-    const lines = explainMemory(records, "deploy staging checklist", 30);
-    expect(lines.find((line) => line.startsWith("deliver keep"))).toBeTruthy();
-    expect(lines.find((line) => line.startsWith("reject cut"))).toMatch(/context budget/);
-    expect(lines.find((line) => line.startsWith("reject miss"))).toMatch(/no token overlap/);
-  });
-});
+import { fileFingerprint, filesDrifted, pathsNamed } from "../src/index";
 
 describe("memory file drift", () => {
   it("a note is due for a recheck when a file it names changed, and a missing file is a change", () => {

@@ -5,8 +5,6 @@ import { mountVerificationAttemptFinished } from "./verification";
 import type { FinishInput, Services } from "./finish-types";
 import { finishWriterAttemptBody } from "./finish-attempt-body";
 
-export { postMergeRepair } from "./verification";
-
 export function createWriterFinish(ctx: ServerCore, services: Services) {
   // The attempt-finished reactions, in run order: the settle record, the landed check (verification's,
   // fire-and-forget), the skill metric and materialize, the finish scan (attempt-reactions.ts).

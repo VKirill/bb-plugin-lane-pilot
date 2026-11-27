@@ -3,7 +3,7 @@ import {
   HELPER_ROLES, MANDATORY_MCP_SERVERS, ROLE_PROFILES, coreRequiredSessionAdvertisement, parseHelperContextSettings, requiredSessionPolicySpawnBinding, roleProfilePolicy,
 } from "../../src/rooms/contracts/helper-context";
 import type { HelperRole } from "../../src/rooms/contracts/helper-context";
-import { buildCandidateEvidence, codeCritiquePrompt, critiquePrompt, pmReadPrompt } from "../../src/rooms/critique";
+import { buildCandidateEvidence, codeCritiquePrompt, critiquePrompt, pmReadPacketPrompt } from "../../src/rooms/critique";
 import { roleSpec } from "../../src/rooms/workflow/server/services/workflow-agent";
 
 // Batch C of review 2: the one-shot readers answer from the message and carry no MCP schema (the code-graph tools cost ~8k tokens a turn).
@@ -65,7 +65,7 @@ describe("one-shot readers load no MCP server beyond the mandatory one", () => {
 
   it("the prompts of the one-shot readers do not send the model to tools it does not have", () => {
     expect(critiquePrompt({ plan: "p", task: { id: "t1" } })).not.toMatch(/gitnexus|`query`/);
-    expect(pmReadPrompt({ task: { id: "t1" } })).not.toMatch(/gitnexus|`query`/);
+    expect(pmReadPacketPrompt({ packet: "t1" })).not.toMatch(/gitnexus|`query`/);
     const evidence = buildCandidateEvidence({ produced: [], hashes: {}, verification: [], output: "", ownsPaths: [], neverTouch: [], dirtOk: true });
     // The critic's profile allows gitnexus, but the hint is named only when the workspace really has a `.gitnexus/` index.
     expect(codeCritiquePrompt({ evidence, task: { id: "t1" } })).not.toContain("gitnexus");

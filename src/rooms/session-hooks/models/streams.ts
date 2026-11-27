@@ -56,14 +56,6 @@ export const GUARD_INVENTORY: GuardRow[] = [
 ];
 
 /** A guard row with an empty field, and a deny tag no inventory row names. */
-export function guardInventoryGaps(denyTags: readonly string[] = []): { empty: string[]; unknown: string[] } {
-  const known = new Set(GUARD_INVENTORY.map((row) => row.id));
-  return {
-    empty: GUARD_INVENTORY.filter((row) => !row.matcher || !row.text || !row.switch).map((row) => row.id),
-    unknown: denyTags.filter((tag) => !known.has(tag)),
-  };
-}
-
 export type SpendWindow = { label?: string; usedPercent: number; resetsAt?: string | null; model?: string | null };
 
 /** A window of a model family (`opus`) applies to a model id that names it; a window of no model applies to all. */

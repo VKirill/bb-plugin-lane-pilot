@@ -101,11 +101,6 @@ export function resolveCompressible(db: MemoryDatabase, projectId: string, id: s
   return rows[0] ? { row: rows[0] } : { error: `no active note ${id} in project ${projectId}` };
 }
 
-/** One active note by id (or unique prefix), or null. */
-export function compressibleRow(db: MemoryDatabase, projectId: string, id: string): CompressibleRow | null {
-  const found = resolveCompressible(db, projectId, id);
-  return "row" in found ? found.row : null;
-}
 
 /**
  * Stores the shorter wording in place of a note: same layers, `supersedes: [old id]`. The new record keeps the old

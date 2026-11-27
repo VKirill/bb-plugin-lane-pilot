@@ -54,7 +54,7 @@ None found in the inspected package code.
 
 ### Unknown labels remain untranslated
 
-**Problem:** `stateLabel` returns an unrecognized state unchanged, `unappliedReason` returns an unknown reason or unmatched format unchanged, and `roleDisplayName`, `roleLabel`, and `roleName` return an unrecognized role ID unchanged (`packages/i18n/src/i18n.ts:2611-2614`, `packages/i18n/src/i18n.ts:2616-2640`, `packages/i18n/src/role-names.ts:154-163`, `packages/i18n/src/i18n.ts:2652-2654`).
+**Problem:** `stateLabel` returns an unrecognized state unchanged, `unappliedReason` returns an unknown reason or unmatched format unchanged, and `roleDisplayName` and `roleName` return an unrecognized role ID unchanged (`packages/i18n/src/i18n.ts:2611-2614`, `packages/i18n/src/i18n.ts:2616-2640`, `packages/i18n/src/role-names.ts:144-147`, `packages/i18n/src/i18n.ts:2652-2654`).
 
 **Risk:** Raw identifiers or reason text can appear in the UI when upstream values or new role IDs are added without corresponding entries (`packages/i18n/src/i18n.ts:2611-2654`, `packages/i18n/src/role-names.ts:148-163`).
 

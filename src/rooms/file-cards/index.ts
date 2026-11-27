@@ -4,7 +4,7 @@ export { buildFileCard, type FileCard, type GitFacts } from "./models/card.ts";
 // @ts-expect-error TS5097
 export { collectGitFacts, trackedFiles } from "./git.ts";
 // @ts-expect-error TS5097
-export { appendTouch, cardNotes, catalogDir, catalogExists, findRepo, readCatalog, readMeta, readTouches, repoHead, writeCatalog, type Touch } from "./store.ts";
+export { appendTouch, cardNotes, catalogDir, findRepo, readCatalog, readMeta, repoHead, type Touch } from "./store.ts";
 // @ts-expect-error TS5097
 export { buildCatalog, catalogNeedsBuild, collectCards, startCatalogBuild } from "./build.ts";
 // @ts-expect-error TS5097

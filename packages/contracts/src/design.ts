@@ -26,16 +26,6 @@ export function drawingFeedbackProblems(form: DrawingFeedback): string[] {
   return why;
 }
 
-/** The form as one note, sent as the owner's word: «Цель: … Что мешает: … Вопрос: …». Throws on an invalid field. */
-export function drawingFeedbackNote(form: DrawingFeedback): string {
-  const why = drawingFeedbackProblems(form);
-  if (why.length) throw new Error(`the drawing feedback form is not filled: ${why.join("; ")}`);
-  return `Цель: ${form.goal.trim()} Что мешает: ${form.obstacle.trim()} Вопрос: ${form.question.trim()}`;
-}
-
-/** One stored judge case: the drawing's sha, the form it was judged with and the verdict it should learn to give. */
-export type DesignCritiqueCase = { drawingSha: string; form: DrawingCritique; expectedVerdict: "pass" | "rework" };
-
 export type DesignJournalLine = {
   at: number; projectId: string; phaseId: string; designer: string; reviewer: string | null; drawingSha: string;
   firstPass: boolean; critique: DrawingCritique | null; codeScore: number | null; ownerWord: "yes" | "no" | null;
@@ -52,4 +42,3 @@ export type DesignJournalEvent =
   | { event: "owner-word"; at: number; phaseId: string; word: "yes" | "no"; line?: string; lineAt?: number }
   | { event: "design-pair"; at: number; phaseId: string; order: "ab" | "ba"; model: string | null; person: string | null; modelFrom?: "jev" | "shadow" };
 export type DesignJournalEntry = DesignJournalLine | DesignJournalEvent;
-export const isDesignJournalEvent = (entry: DesignJournalEntry): entry is DesignJournalEvent => "event" in entry;

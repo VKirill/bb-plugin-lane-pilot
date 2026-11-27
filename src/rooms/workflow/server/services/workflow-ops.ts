@@ -94,7 +94,6 @@ export function createWorkflowOps(ctx: ServerCore, services: Pick<Services, "wor
     },
   };
 }
-export type WorkflowOps = ReturnType<typeof createWorkflowOps>;
 
 const RISKS = ["low", "medium", "high", "critical"] as const;
 

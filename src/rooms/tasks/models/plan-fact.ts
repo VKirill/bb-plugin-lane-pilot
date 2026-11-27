@@ -13,8 +13,6 @@ import { brokenWireReason, type WireResult } from "../../wires";
  * round: by the lines that do the work and were left out of the changed hunks (FeedGen run 2026-10-23: the writer cited exactly those
  * and the check called the item unproven). The kind of item is read from the contract's text, never from the writer's.
  */
-export const PLAN_FACT_FENCE = "plan-fact";
-
 /** Pieces of evidence read per item; more are cut, not refused (a writer that cited 15 rebuilt pages lost its whole table to «<=8 items», cab-unslop 2026-10-31). */
 export const PLAN_FACT_EVIDENCE_MAX = 24;
 

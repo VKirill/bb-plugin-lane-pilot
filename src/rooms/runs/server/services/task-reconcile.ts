@@ -105,5 +105,3 @@ export function createTaskReconcile(ctx: ServerCore, services: Services) {
 
   return { reconcile, reconcileTasks, recoverMergeIntents: services.recoverMergeIntents };
 }
-
-export type TaskReconcile = ReturnType<typeof createTaskReconcile>;

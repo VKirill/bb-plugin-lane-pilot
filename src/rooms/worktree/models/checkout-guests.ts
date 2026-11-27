@@ -15,11 +15,9 @@ export const GUEST_LOCK_MS = 10_000;
 
 /** Entries kept per folder before trimming starts, and the most claims a folder may hold (a new claim past it is refused). */
 export const GUESTS_KEPT = 10;
-export const CLAIMS_MAX = 40;
-
 /**
  * Trim to GUESTS_KEPT: expired entries go first (oldest first), then live entries with no claim (oldest first). A live entry
- * that holds a claim is never dropped, so the list may stay longer than the cap; CLAIMS_MAX bounds that.
+ * that holds a claim is never dropped, so the list may stay longer than the cap.
  */
 export function trimGuests(guests: Guest[], now = Date.now()): Guest[] {
   const list = [...guests];

@@ -1,4 +1,4 @@
-import { OWNER_REASONS, type OwnerReason } from "@lane-pilot/contracts";
+import { type OwnerReason } from "@lane-pilot/contracts";
 import { DRILL_SANDBOX_PROJECT_IDS } from "../../contracts";
 
 /**
@@ -73,8 +73,6 @@ export type Answered = { owner: number; agent: number; lead: number; janitor: nu
  */
 export const NOW_CAP = 5;
 
-/** The four reasons a person is called (SMA: Four reasons to call): a decision only they make, work that cannot go on, something red, a term that ends. */
-export { OWNER_REASONS as CALL_REASONS };
 export type CallReason = OwnerReason;
 export function callReason(kind: string): CallReason {
   if (/canary|regress|red|outage/.test(kind)) return "red";

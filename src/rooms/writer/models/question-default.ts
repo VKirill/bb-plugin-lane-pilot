@@ -8,8 +8,6 @@ import { questionKind } from "../../tasks";
 export const DEFAULT_QUESTION_WAIT_MIN = 120;
 /** A PM that works in its thread right now answers first: the machine waits this long before it acts on a question that no rule settled. */
 export const PM_ACTIVE_GRACE_MS = 5 * 60_000;
-export const WRITER_QUESTION_WAIT_MS = DEFAULT_QUESTION_WAIT_MIN * 60_000;
-
 /** The one statement of who answers a writer's question; the writer brief, the PM prompt, the tools and the skills say this and nothing else. */
 export const WHO_ANSWERS = "Who answers a writer's question: the writer asks with `ASK_PM:` as the first line of its answer (the old `NEEDS_HUMAN:` still reads). Lane Pilot answers it itself within minutes, by rule first (a named file outside owns_paths is added to owns_paths, up to five files, never never_touch or another live task's; a test the contract itself names becomes an allowed edit; a sandbox fault is not the writer's; a task already done on the base is closed), then the second pilot, a read-only helper with the contract, plan and project memory; the PM may answer first with lane_pilot_answer_writer. A person is asked only for a secret or access, money, an irreversible act, or a product decision (what the product should do). There is no other channel for questions: not QUESTIONS.md, not the owner by default.";
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { kindForReadFirstPath, parseReadFirstHints, readFirstKindError, renderReadFirstInstructions } from "../../src/rooms/tasks";
+import { parseReadFirstHints } from "../../src/rooms/tasks";
 
 describe("task read_first execution hints", () => {
   it("preserves whole-file hints and parses 1-based inclusive windows", () => {
@@ -9,27 +9,9 @@ describe("task read_first execution hints", () => {
     ]);
   });
 
-  it("renders parsed hints into the actual writer packet", () => {
-    const packet = renderReadFirstInstructions(["docs/guide.md L5-L8"]);
-    expect(packet).toContain("Before editing, inspect the listed files");
-    expect(packet).toContain('"path": "docs/guide.md"');
-    expect(packet).toContain('"startLine": 5');
-    expect(packet).toContain('"endLine": 8');
-  });
-
   it.each(["../outside.md L1-L2", "/etc/passwd L1-L2", "C:\\secret.md L1-L2"])(
     "rejects unsafe read_first path %s", (hint) => {
       expect(() => parseReadFirstHints([hint])).toThrow("project-relative");
     },
   );
-
-  it("rejects a read_first path that lists as a directory", () => {
-    expect(kindForReadFirstPath("src/ui", [
-      { path:"src/ui", kind:"directory" },
-      { path:"README.md", kind:"file" },
-    ])).toBe("directory");
-    expect(readFirstKindError("src/ui", "directory")).toBe("read_first is a directory, not a file: src/ui");
-    expect(readFirstKindError("missing.md", undefined)).toBe("read_first source is missing: missing.md");
-    expect(readFirstKindError("README.md", "file")).toBeUndefined();
-  });
 });

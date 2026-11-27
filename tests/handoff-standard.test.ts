@@ -20,11 +20,7 @@ const using = (pattern: RegExp) => files.filter((file) => pattern.test(code(file
 
 describe("the hand-off standard in the source", () => {
   it("tells no agent with a checkout to open nothing: only the reviewer that judges data from the hub", () => {
-    expect(using(/\bNO_TOOLS_LINE\b/)).toEqual([
-      "packages/workflow-engine/src/model-json.ts",
-    ]);
-    // The ban written by hand, past the constant: the memory maintainer (no tools by its role) and the constant itself.
-    expect(using(/open no files|call no tools|run no commands/i)).toEqual(["packages/memory-core/src/context.ts", "packages/workflow-engine/src/model-json.ts"]);
+    expect(using(/open no files|call no tools|run no commands/i)).toEqual(["packages/memory-core/src/context.ts"]);
   });
 
   it("asks no new helper for «JSON and nothing else»: the form line of the standard, or the engine's contract", () => {

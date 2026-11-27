@@ -9,7 +9,6 @@ import {
   nextRepairAction,
   parseCodeCritique,
   parseCodeCritiqueSettings,
-  parseWriterRepairReply,
   persistLedgerFields,
   repairLedgerFromResult,
   sameUnresolvedFindings,
@@ -42,11 +41,6 @@ describe("code critique policy", () => {
     expect(shouldRequestRepair({ settings, result, round:0 })).toBe(true);
     expect(shouldRequestRepair({ settings, result, round:1 })).toBe(false);
     expect(sameUnresolvedFindings(result.findings, result.findings)).toBe(true);
-  });
-
-  it("parses a writer dispute without treating it as a self-clear", () => {
-    const reply = parseWriterRepairReply('{"replies":[{"id":"f1","status":"disputed","evidence":"already covered"}]}');
-    expect(reply?.replies[0]?.status).toBe("disputed");
   });
 
   it("resolves an outstanding attempt+round claim before current artifact files", () => {

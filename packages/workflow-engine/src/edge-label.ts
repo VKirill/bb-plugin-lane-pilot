@@ -165,4 +165,3 @@ export function edgeCaption(edge: { label: string | null; when: string | null },
   return edge.label?.trim() || humanCondition(edge.when, lang, nameOf, options);
 }
 
-export const OTHERWISE = { en: "otherwise", ru: "иначе" } as const;

@@ -45,8 +45,3 @@ export function listDueWakes(db: LanePilotDatabase, now: number): Array<{ id: st
 export function claimAttemptWake(db: LanePilotDatabase, attemptId: string): boolean {
   return db.prepare("UPDATE lane_pilot_attempt SET wake_at=NULL WHERE id=? AND state='queued' AND wake_at IS NOT NULL").run(attemptId).changes === 1;
 }
-
-/** The wait is over once the attempt leaves `queued`; a spawn that begins clears any wake still set. */
-export function clearAttemptWake(db: LanePilotDatabase, attemptId: string): void {
-  db.prepare("UPDATE lane_pilot_attempt SET wake_at=NULL WHERE id=?").run(attemptId);
-}

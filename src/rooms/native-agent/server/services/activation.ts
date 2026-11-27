@@ -224,5 +224,3 @@ export function createActivation(
 
   return { activate };
 }
-
-export type ActivationApi = ReturnType<typeof createActivation>;

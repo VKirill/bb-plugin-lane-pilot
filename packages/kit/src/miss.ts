@@ -1,5 +1,4 @@
 import { lstat, readFile, stat } from "node:fs/promises";
-import { readFileSync } from "node:fs";
 import type { Stats } from "node:fs";
 
 /**
@@ -58,16 +57,6 @@ export async function lstatOrNull(path: string): Promise<Stats | null> {
 export async function statOrNull(path: string): Promise<Stats | null> {
   try {
     return await stat(path);
-  } catch (cause) {
-    if (isFsAbsent(cause)) return null;
-    throw cause;
-  }
-}
-
-/** Sync twin of readTextOrNull for callers that cannot await. */
-export function readTextOrNullSync(path: string): string | null {
-  try {
-    return readFileSync(path, "utf8");
   } catch (cause) {
     if (isFsAbsent(cause)) return null;
     throw cause;

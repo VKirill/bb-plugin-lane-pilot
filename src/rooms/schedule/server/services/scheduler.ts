@@ -361,4 +361,3 @@ export function createScheduler(deps: SchedulerDeps) {
 
   return { store, materialise, nextDueAt, fireDue, dispatch, pollAll, settleWorkflowRun, supervise, tick, runNow, cancelRun, nextFires, kick };
 }
-export type Scheduler = ReturnType<typeof createScheduler>;

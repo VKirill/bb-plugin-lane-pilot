@@ -1,15 +1,16 @@
 export { extraSettingTab } from "./placement";
 export type { SettingTab } from "./placement";
-export { DEPTH_TABS, LEGACY_TABS, SEGMENT_LABELS, SEGMENTS, TAB_IDS, TAB_LABELS, resolveTab, segmentsFor } from "./tabs-model";
-export type { SegmentId, SegmentedTab, TabId } from "./tabs-model";
 export {
   CONSOLE_SECTIONS,
   LEGACY_SCOPES,
+  LEGACY_TABS,
   SECTION_VIEWS,
+  SEGMENTS,
   STAFF_TABS,
   SYSTEM_PAGES,
   buildConsolePath,
   parseConsoleRoute,
   resolveLegacyRoute,
+  resolveTab,
 } from "./nav-model";
-export type { ConsoleRoute, ConsoleSection, StaffTab, SystemPage } from "./nav-model";
+export type { ConsoleRoute, ConsoleSection, SystemPage } from "./nav-model";

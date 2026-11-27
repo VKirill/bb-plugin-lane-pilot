@@ -24,7 +24,6 @@ const bilingual = z.object({ en: z.string().min(1).max(2000), ru: z.string().min
 export const BUILTIN_WORKFLOW_CATEGORIES = GRAPH_CATEGORY_IDS;
 export const categorySlugSchema = z.string().regex(/^[a-z0-9][a-z0-9-]{0,31}$/, "category id: lowercase letters, digits, and -");
 export const workflowCategoryMetaSchema = z.object({ id: categorySlugSchema, label: bilingual.optional() }).strict();
-export type WorkflowCategoryMeta = z.infer<typeof workflowCategoryMetaSchema>;
 
 export const FIELD_TYPES = ["string", "number", "boolean", "enum", "array", "object", "json"] as const;
 export type FieldType = (typeof FIELD_TYPES)[number];
@@ -87,8 +86,6 @@ export const consumesSchema = z.object({ kind: artifactName, version: artifactVe
  * the check is not done (an agent gets one repair turn first).
  */
 export const producesSchema = z.object({ kind: artifactName, version: artifactVersion, required: z.boolean().default(true), field: fieldName.optional(), each: z.boolean().optional() }).strict();
-export type Consumes = z.infer<typeof consumesSchema>;
-export type Produces = z.infer<typeof producesSchema>;
 
 /** What every node but a note carries (without its id, so a parallel's child can reuse it). */
 const nodeBase = {
@@ -205,7 +202,6 @@ const childSchema = z.discriminatedUnion("type", [
   z.object({ ...nodeBase, type: z.literal("action"), ...actionBody }).strict(),
   z.object({ ...nodeBase, type: z.literal("subworkflow"), ...subworkflowBody }).strict(),
 ]);
-export type ParallelChild = z.infer<typeof childSchema>;
 
 const joinPolicy = z.object({
   policy: z.enum(JOIN_POLICIES).default("all"),
@@ -250,7 +246,6 @@ const noteNode = z.object({ id: nodeId, type: z.literal("note"), text: z.string(
 
 export const nodeSchema = z.discriminatedUnion("type", [agentNode, lpTaskNode, actionNode, decisionNode, humanNode, parallelNode, joinNode, subworkflowNode, noteNode]);
 export type WorkflowNode = z.infer<typeof nodeSchema>;
-export type NodeType = WorkflowNode["type"];
 /** A node that runs: everything but a note. */
 export type GraphNode = Exclude<WorkflowNode, { type: "note" }>;
 
@@ -284,7 +279,6 @@ const trigger = z.object({
     ctx.addIssue({ code: "custom", message: `trigger type "${value.type}" does not allow event or match` });
   }
 });
-export type WorkflowTrigger = z.infer<typeof trigger>;
 
 export const workflowSchema = z.object({
   schemaVersion: z.literal(WORKFLOW_SCHEMA_VERSION).default(WORKFLOW_SCHEMA_VERSION),
@@ -364,7 +358,6 @@ export const workflowSchema = z.object({
 }).strict();
 
 export type Workflow = z.infer<typeof workflowSchema>;
-export type WorkflowInput = z.input<typeof workflowSchema>;
 
 // ------------------------------------------------------------------ authoring spellings
 
@@ -494,6 +487,3 @@ export function normalizeWorkflow(raw: unknown): unknown {
 
 /** Parses a workflow in either spelling with the closed schema (zod issues carry the path in the normalized value). */
 export const parseWorkflowObject = (raw: unknown) => workflowSchema.safeParse(normalizeWorkflow(raw));
-/** Shipped graphs (`workflows/*.json`) require a known category from `@lane-pilot/contracts`. */
-export const shippedWorkflowSchema = workflowSchema.extend({ category: workflowCategoryMetaSchema.superRefine((cat, ctx) => { if (!(GRAPH_CATEGORY_IDS as readonly string[]).includes(cat.id)) ctx.addIssue({ code: "custom", path: ["id"], message: `unknown shipped category "${cat.id}"` }); }) });
-export const parseShippedWorkflowObject = (raw: unknown) => shippedWorkflowSchema.safeParse(normalizeWorkflow(raw));

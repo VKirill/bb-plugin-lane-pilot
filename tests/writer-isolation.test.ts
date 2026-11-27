@@ -8,7 +8,6 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import {
   CREDENTIAL_DIRS,
   CREDENTIAL_FILES,
-  WORKER_SECRET_PATHS,
   resolveCredentialPaths,
 } from "../src/rooms/verification";
 import { credentialMaskPaths } from "../src/rooms/verification/sandbox";
@@ -67,7 +66,6 @@ describe("writer credential isolation", () => {
 
     expect(CREDENTIAL_DIRS).toEqual(expect.arrayContaining([".ssh", ".bb", ".config/gh", ".codex", ".claude"]));
     expect(CREDENTIAL_FILES).toEqual(expect.arrayContaining([".claude.json", ".codex/auth.json", ".claude/.credentials.json"]));
-    expect(WORKER_SECRET_PATHS).toEqual([...CREDENTIAL_DIRS, ...CREDENTIAL_FILES]);
 
     expect(resolved.dirs).toEqual(expect.arrayContaining([
       join(home, ".ssh"),

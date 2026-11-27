@@ -70,7 +70,7 @@ This capability validates declared artifacts with `checkProduces` (`packages/wor
 | `contractProblems`, `contractSample`, `contractRepairPrompt` | Check and explain node output requirements (`packages/workflow-engine/src/contract.ts:26-93`). |
 | `outputContract`, `parseAgentOutput`, `agentPrompt`, `AgentOutputError` | Define and parse model output (`packages/workflow-engine/src/agent-output.ts:8-128`). |
 | `settleVerdict`, `verdictSides`, `RUBRIC_AXIS`, `isHardCritical`, `blockReason`, conversion helpers | Normalize verdicts, classify outcome and process, and determine blocking outcome (`packages/workflow-engine/src/verdict.ts:86-104`, `packages/workflow-engine/src/verdict.ts:159-240`). |
-| `extractModelJson`, `clipped`, `NO_TOOLS_LINE`, `REVIEW_READ_ONLY_LINE` | Extract bounded model JSON from text, clip lengths, and enforce tool boundaries (`packages/workflow-engine/src/model-json.ts:9-49`). |
+| `extractModelJson`, `clipped`, `REVIEW_READ_ONLY_LINE` | Extract bounded model JSON from text, clip lengths, and enforce tool boundaries (`packages/workflow-engine/src/model-json.ts:9-49`). |
 | `resolveTaskQualityMode`, `QualityPick` | Resolve a task's quality mode once, with an explicit conflict result (`packages/workflow-engine/src/quality-mode.ts:9-40`). |
 | `requireGreen`, `StageVerdict` | Ensure maintenance graph stages completed cleanly, throwing on red states (`packages/workflow-engine/src/require-green.ts:7-15`). |
 

@@ -363,8 +363,6 @@ export function crossFamilyPeers(model: string, authorFamily?: ModelFamily | nul
   const peers = ids.flatMap((id) => { const option = roleModelOption(id); return option ? [{ providerId: option.providerId, model: option.id }] : []; });
   return authorFamily ? [...peers.filter((peer) => modelFamily(peer.model) !== authorFamily), ...peers.filter((peer) => modelFamily(peer.model) === authorFamily)] : peers;
 }
-/** The first peer of the table (Opus <-> Sol, Gemini -> Sol), or null. */
-export const crossFamilyPeer = (model: string): { providerId: string; model: string } | null => crossFamilyPeers(model)[0] ?? null;
 
 /**
  * The cross-family rule for a judge of someone's work: when the author's model is of the judge's own family, the judge takes its peer in

@@ -75,7 +75,7 @@ async function mount(lang: string) {
       stack_rollback: () => ({ status: "ok" }),
     },
   });
-  await slot.findByText(lang === "ru" ? ru.tabWork : en.tabWork);
+  await slot.findByText(lang === "ru" ? ru.consoleNavWork : en.consoleNavWork);
   return slot;
 }
 

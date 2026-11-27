@@ -56,7 +56,7 @@ TL;DR: Browser-facing helpers turn validated workflows and incomplete drafts int
 | `@lane-pilot/workflow-engine`: `workflowView`, `conditionText`, `roleTone`, `WorkflowView`, `ViewNode`, `ViewEdge`, `NodeTone` | Complete-workflow graph projection and shared view types (`packages/workflow-engine/src/view.ts:5-6`, `packages/workflow-engine/src/view.ts:47-56`). |
 | `@lane-pilot/workflow-engine/ui` `cron` module: `cronProblem`, `timezoneProblem`, `localTimezone` | Schedule validation and default zone (`packages/workflow-engine/src/ui.ts:1`, `packages/workflow-engine/src/cron.ts:8-31`). |
 | `@lane-pilot/workflow-engine/ui` `draft` view module: `draftView`, `draftChanges` | Partial draft display and diff (`packages/workflow-engine/src/ui.ts:2`, `packages/workflow-engine/src/draft-view.ts:63-102`). |
-| `@lane-pilot/workflow-engine/ui` `edge` label module: `humanCondition`, `edgeCaption`, `OTHERWISE`, `LabelLang`, `NameOf` | Localized edge labels (`packages/workflow-engine/src/ui.ts:3`, `packages/workflow-engine/src/edge-label.ts:7-9`, `packages/workflow-engine/src/edge-label.ts:153-168`). |
+| `@lane-pilot/workflow-engine/ui` `edge` label module: `humanCondition`, `edgeCaption`, `LabelLang`, `NameOf` | Localized edge labels (`packages/workflow-engine/src/ui.ts:3`, `packages/workflow-engine/src/edge-label.ts:7-9`, `packages/workflow-engine/src/edge-label.ts:153-167`). |
 | `@lane-pilot/workflow-engine` `capabilities` entry: `modelsSection`, `collectCapabilities` | Build the model catalog projection (`modelsSection`) and collect queried capability sections (`collectCapabilities`) (`packages/workflow-engine/src/index.ts:5`, `packages/workflow-engine/src/capabilities.ts:37-178`). |
 
 ## Package shape

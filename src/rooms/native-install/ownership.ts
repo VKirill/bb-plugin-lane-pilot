@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { lstat, mkdir, readFile, rename, rmdir, unlink, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { hashPath, sha256Hex } from "@lane-pilot/kit";
-import type { CoexistenceManager, CoexistenceOwner } from "./models/coexistence-contracts";
+import type { CoexistenceManager } from "./models/coexistence-contracts";
 import { compareAndSwapText, readTextState } from "./cas";
 
 export type OwnershipEntry = {
@@ -391,8 +391,4 @@ export async function readSnapshot(home: string, id: string): Promise<Coexistenc
 
 export function newSnapshotId(): string {
   return randomUUID();
-}
-
-export function ownerForSnapshot(snapshot: CoexistenceSnapshot): CoexistenceOwner {
-  return snapshot.owner;
 }

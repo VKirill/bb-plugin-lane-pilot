@@ -69,7 +69,7 @@ The package manifest exposes `.` as its only import path to `src/index.ts` (`pac
 
 The package root re-exports declarations from `i18n.ts` and `role-names.ts` (`packages/i18n/src/index.ts:1-2`).
 
-The public API includes `en`, `ru`, `I18nKey`, `Locale`, and `LocalePreference` (`packages/i18n/src/i18n.ts:2521-2527`). Exported translation and locale helpers (`setLocaleOverride`, `localeFromSources`, `detectLocale`, `detectLocaleHint`, `subscribeToLocaleHintChanges`, `t`, `validationMessage`, `stateLabel`, `unappliedReason`, `currentStrings`, and `roleName`) are documented in [Locale resolution and translation](features/locale-and-translation.md#public-api). The canonical role-name registry and helpers (`ROLE_NAMES`, `ROLE_NAME_IDS`, `ROLE_ID_ALIASES`, `canonicalRoleId`, `roleDisplayName`, `roleLabel`, `roleNameEn`, `roleNameRu`, and role types) are documented in [Canonical role names](features/role-names.md#public-api).
+The public API includes `en`, `ru`, `I18nKey`, `Locale`, and `LocalePreference` (`packages/i18n/src/i18n.ts:2521-2527`). Exported translation and locale helpers (`setLocaleOverride`, `localeFromSources`, `detectLocale`, `detectLocaleHint`, `subscribeToLocaleHintChanges`, `t`, `validationMessage`, `stateLabel`, `unappliedReason`, and `roleName`) are documented in [Locale resolution and translation](features/locale-and-translation.md#public-api). The canonical role-name registry and helpers (`ROLE_NAMES`, `ROLE_ID_ALIASES`, `canonicalRoleId`, `roleDisplayName`, `roleNameEn`, `roleNameRu`, and role types) are documented in [Canonical role names](features/role-names.md#public-api).
 
 ## Workspace consumers
 

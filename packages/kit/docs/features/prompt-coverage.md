@@ -38,7 +38,6 @@ The entry point is exported as a browser-safe subpath (`packages/kit/package.jso
    - Resolves local reference pointers recursively in `schemaEnums` (`packages/kit/src/prompt-coverage.ts:42-53`).
    - Traverses schema combinators, object properties, and items (`packages/kit/src/prompt-coverage.ts:54-57`).
    - Maintains a `seen` set to avoid loops on shared sub-schemas (`packages/kit/src/prompt-coverage.ts:43-46`).
-4. **Combined schema audit (`enumCoverage`):** Calls `schemaEnums` on the schema and tests each discovered enum group against the provided instruction texts (`packages/kit/src/prompt-coverage.ts:64-66`).
 
 ### Modes, variants, and thresholds
 
@@ -71,9 +70,7 @@ The module performs in-memory inspection without throwing exceptions:
 | `LiteralCoverage` | `type` | Result structure containing `mentioned`, `missing`, and `partial` | `packages/kit/src/prompt-coverage.ts:17` |
 | `literalCoverage` | `function` | Audits an array of literal strings against target texts | `packages/kit/src/prompt-coverage.ts:20-29` |
 | `EnumGroup` | `type` | Discovered schema enum group containing `path` and `values` | `packages/kit/src/prompt-coverage.ts:31` |
-| `EnumCoverage` | `type` | Intersection of `EnumGroup` and `LiteralCoverage` | `packages/kit/src/prompt-coverage.ts:32` |
 | `schemaEnums` | `function` | Extracts all enum and const strings with JSON Pointers from a schema | `packages/kit/src/prompt-coverage.ts:42-61` |
-| `enumCoverage` | `function` | Audits prompt text coverage across all enums in a schema | `packages/kit/src/prompt-coverage.ts:64-66` |
 
 ## Gotchas
 

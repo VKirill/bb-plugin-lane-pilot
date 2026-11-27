@@ -1,27 +1,9 @@
 export type ComposerKind = "new-thread" | "thread" | "queued-message" | "side-chat";
-export type SessionKind = "new-thread" | "unstarted-thread" | "ordinary-started" | "lp-active";
 
 export type ActivationBlock = {
   code: "pending" | "need_project" | "need_binding" | "compiled_unsupported" | "no_projects" | "need_composer_selection";
   detail?: string;
 };
-
-const LIVE_STATUSES = new Set(["active", "starting", "stopping", "running"]);
-
-export function classifyComposerSession(input: {
-  composerKind?: ComposerKind | null;
-  threadId?: string | null;
-  pluginRole?: string | null;
-  threadStatus?: string | null;
-  hasTurnEvent?: boolean | null;
-  composerRunning?: boolean;
-}): SessionKind {
-  if (input.pluginRole === "pm") return "lp-active";
-  if (input.composerKind === "new-thread" || !input.threadId) return "new-thread";
-  const live = Boolean(input.composerRunning) || LIVE_STATUSES.has(input.threadStatus ?? "");
-  if (live || input.hasTurnEvent === true) return "ordinary-started";
-  return "unstarted-thread";
-}
 
 export function activationDisabledPredicate(input: {
   pending?: boolean;

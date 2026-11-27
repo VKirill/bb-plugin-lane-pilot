@@ -5,8 +5,10 @@ import { expect, it, vi } from "vitest";
 // The real-checkout test below spawns git and sh; inside the sandboxed check the suite runs ~2.5x slower and
 // vitest's 5 s default would cut it off (2026-10-06 check log, sibling git-integrate/git-lock timeouts).
 vi.setConfig({ testTimeout: 120_000 });
-import { stickyTurnPrompt, writerPrompt } from "../src/rooms/writer/models/writer-task";
-import { classifyWriterOutput, parseGitChangedPaths } from "../src/rooms/tasks";
+import { stickyTurnPrompt, writerBriefSegments } from "../src/rooms/writer/models/writer-task";
+import { classifyWriterOutput } from "../src/rooms/tasks";
+
+const writerPrompt = (...args: Parameters<typeof writerBriefSegments>) => writerBriefSegments(...args).map((segment) => segment.text).join("\n\n");
 import { appendExcludeCommand, persistTaskFolder, TASK_FOLDER_EXCLUDE } from "../src/rooms/worktree";
 import type { TaskV2 } from "../src/rooms/contracts";
 
@@ -41,7 +43,6 @@ it("keeps the compact contract inline and only adds the folder block when the fo
 });
 
 it("does not treat task-folder files as produced, stray, or owns_paths violations", () => {
-  expect(parseGitChangedPaths("?? .agents/plans/items/t1/PLAN.md\n M src/a.ts\n")).toEqual(["src/a.ts"]);
   expect(classifyWriterOutput({
     task, produced: [".agents/plans/items/t1/PLAN.md", "src/a.ts"], contents: { "src/a.ts": "x\n" },
   })).toEqual({ ok: true });

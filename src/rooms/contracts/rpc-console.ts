@@ -79,7 +79,6 @@ export const threadScopeOutput = z.object({
     remote: z.string().nullable(),
     githubRepoId: z.string().nullable(),
   }).strict().nullable(),
-  isPm: z.boolean(),
 }).strict();
 
 export const autonomousActionSchema = z.object({
@@ -298,7 +297,6 @@ export const rpcConsole = {
     }).strict(),
     output: z.object({
       roles: z.array(loadoutRoleSchema),
-      hubSkills: z.number().int(),
     }).strict(),
   },
   memory_cards_list: {

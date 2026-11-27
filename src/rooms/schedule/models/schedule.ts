@@ -79,12 +79,8 @@ export const whenSchema = z.discriminatedUnion("type", [
   /** One run at a moment (ms since epoch) or after a delay («2h», «через 2 ч») counted from the save. */
   z.object({ type: z.literal("once"), runAt: z.number().int().positive().optional(), delay: z.string().max(40).optional() }).strict(),
 ]);
-export type ScheduleWhen = z.infer<typeof whenSchema>;
-
 export const MISSED_POLICIES = ["run_once", "skip", "run_all"] as const;
 export const OVERLAP_POLICIES = ["skip", "queue", "parallel"] as const;
-export type MissedPolicy = (typeof MISSED_POLICIES)[number];
-export type OverlapPolicy = (typeof OVERLAP_POLICIES)[number];
 
 export const scheduleInputSchema = z.object({
   /** An existing schedule to change; absent creates one. */
@@ -162,7 +158,6 @@ export type RunRow = {
 };
 
 export const ACTIVE_RUN_STATUSES: readonly RunStatus[] = ["running", "waiting"];
-export const FINAL_RUN_STATUSES: readonly RunStatus[] = ["succeeded", "failed", "timed_out", "skipped", "canceled"];
 /** How many finished runs a schedule keeps. */
 export const KEEP_RUNS = 200;
 

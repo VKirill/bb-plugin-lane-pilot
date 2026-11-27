@@ -14,8 +14,6 @@ export type LanePilotDefaults = {
   qaHostId?: string;
 };
 
-export const EMPTY_DEFAULTS: LanePilotDefaults = {};
-
 export function parseLanePilotDefaults(raw: unknown): LanePilotDefaults {
   if (!raw || typeof raw !== "object") return {};
   const row = raw as Record<string, unknown>;

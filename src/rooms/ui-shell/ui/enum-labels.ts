@@ -115,7 +115,3 @@ export function presentEnumLabel(storageKey: string, value: string): string {
   if (key) return t(key);
   return t("enumUnsupported");
 }
-
-export function enumLabelKnown(storageKey: string, value: string): boolean {
-  return enumLabelKey(storageKey, value) !== null;
-}

@@ -24,12 +24,6 @@ export const TURN_CEILING_REASON = `${RUN_BUDGET_EXCEEDED_PREFIX}turn ceiling`;
  * The turn ceiling a run froze at creation (writer.max_turns, 1-10000), null for no ceiling: a policy without the field (a run
  * created while the setting was unset, 0 or off, or before it existed), an unreadable one, or no run at all.
  */
-export function turnCeilingOfRun(run:{ run_policy_json?:string | null } | null | undefined):number | null {
-  try {
-    const value = (JSON.parse(run?.run_policy_json ?? "null") as { maxTurns?: unknown } | null)?.maxTurns;
-    return typeof value === "number" && Number.isInteger(value) && value >= 1 && value <= 10_000 ? value : null;
-  } catch { return null; }
-}
 
 function eventType(event:unknown):string {
   const value = event && typeof event === "object" ? Reflect.get(event, "type") : undefined;
@@ -87,8 +81,6 @@ export async function countRunNudges(kv:Kv, attemptIds:string[]):Promise<number>
 }
 
 /** How a running writer's recent frames read: its turn closed, it loops one call with nothing written, or it moves. */
-export type WriterFrame = "closed" | "spinning" | "progressing";
-
 /** The same call this many times in a row, with nothing else between, reads as a loop: a check rerun three times is ordinary work. */
 export const SPIN_REPEATS = 6;
 /** A spinning writer hears about it at most this often, and is ended only when it loops again this long after its last nudge. */
@@ -130,12 +122,6 @@ export function repeatedCallOf(events: unknown[], since = 0): string | null {
  * The stall frame of a writer's last events (newest first, as listThreadEventsRaw returns them): closed when the turn
  * completed, spinning when the newest SPIN_REPEATS calls are one call with no file change between, progressing otherwise.
  */
-export function writerFrame(events: unknown[]): WriterFrame {
-  // Either edge may be the newest event (the sweep reads desc, tests may pass asc): a completed turn ends the frame.
-  const ends = [events[0], events[events.length - 1]];
-  if (ends.some((event) => eventType(event) === "turn/completed" || eventType(event) === "turn/failed")) return "closed";
-  return repeatedCallOf(events) ? "spinning" : "progressing";
-}
 
 /** Completed tool calls of one attempt: events newer than its start, read page by page (newest first) until past the start or past `stopAbove`. */
 async function countAttemptCalls(bb:never, attempt:SilenceAttempt, first:unknown[], stopAbove:number):Promise<number> {

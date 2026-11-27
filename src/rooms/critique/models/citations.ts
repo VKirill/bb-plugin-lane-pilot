@@ -10,20 +10,6 @@ export type Citation = (finding: Pick<VerdictFinding, "file" | "line">) => boole
 
 const normalize = (path: string): string => path.trim().replace(/^\.\//, "");
 
-/** `TASK` and `PLAN` name the contract and the plan themselves. */
-const isContractRef = (file: string): boolean => file === "TASK" || file === "PLAN";
-
-/**
- * For a reviewer that sees only what is in its prompt (plan critique, specialist review): a file counts when its path appears in
- * that input (the contract, the plan); a path the reviewer was never shown is invented.
- */
-export function inputCitations(...inputs: readonly string[]): Citation {
-  const text = inputs.join("\n");
-  return (finding) => {
-    const file = normalize(finding.file);
-    return file === "" || isContractRef(file) || text.includes(file);
-  };
-}
 
 /**
  * For the code critic: a file that is among the candidate's files must have the line the finding names. A file outside them is not

@@ -43,18 +43,6 @@ export function listErrandEpisodeRunIds(db: LanePilotDatabase): Set<string> {
   return new Set((db.prepare("SELECT run_id FROM lane_pilot_errand_episode").all() as Array<{ run_id: string }>).map((row) => row.run_id));
 }
 
-/** The janitor's freed bytes and removals of a window (the morning line). */
-export function janitorSums(db: LanePilotDatabase, since: number): { bytes: number | null; removed: number | null } {
-  return db.prepare("SELECT sum(freed_bytes + tmp_freed_bytes) AS bytes, sum(removed + tmp_removed) AS removed FROM lane_pilot_janitor WHERE at>=?")
-    .get(since) as { bytes: number | null; removed: number | null };
-}
-
-/** The janitor's kept copies of a window, up to three, with the total (the morning line). */
-export function janitorKeptSample(db: LanePilotDatabase, since: number): Array<{ v: string; total: number }> {
-  return db.prepare("SELECT value AS v, (SELECT count(*) FROM lane_pilot_janitor j2, json_each(j2.kept_json) WHERE j2.at>=?) AS total FROM lane_pilot_janitor, json_each(lane_pilot_janitor.kept_json) WHERE at>=? LIMIT 3")
-    .all(since, since) as Array<{ v: string; total: number }>;
-}
-
 export type ErrandEpisodeWindowRow = {
   runId: string;
   projectId: string | null;

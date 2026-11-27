@@ -51,4 +51,3 @@ export function createConcurrencyLimit(bb: Pick<BbPluginApi, "sdk">, now: () => 
   };
 }
 
-export type ConcurrencyLimit = ReturnType<typeof createConcurrencyLimit>;

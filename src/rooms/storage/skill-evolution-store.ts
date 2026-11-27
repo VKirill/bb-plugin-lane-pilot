@@ -203,21 +203,6 @@ export function listSkillEvolutionsForDraft(
   return rows.map((row) => toSkillEvolutionRow(row, options));
 }
 
-/** Returns the newest skill evolution event for a draft, optionally filtered by status. */
-export function latestSkillEvolutionForDraft(
-  db: Database.Database,
-  draftId: string,
-  options?: SkillEvolutionStoreOptions & { status?: SkillEvolutionStatus },
-): SkillEvolutionRow | null {
-  const clauses = ["draft_id = ?"];
-  const args: unknown[] = [draftId];
-  if (options?.status !== undefined) { clauses.push("status = ?"); args.push(options.status); }
-  const row = db.prepare(
-    `SELECT * FROM lane_pilot_skill_evolution WHERE ${clauses.join(" AND ")} ORDER BY created_at DESC, rowid DESC LIMIT 1`,
-  ).get(...args) as RawEvolutionRow | undefined;
-  return row ? toSkillEvolutionRow(row, options) : null;
-}
-
 /** Returns the newest active `published` event per skill for a multi-skill draft (excluding rolled-back skills). */
 export function listLatestActivePublishedSkillEvolutionsForDraft(
   db: Database.Database,
@@ -235,34 +220,4 @@ export function listLatestActivePublishedSkillEvolutionsForDraft(
     if (raw.status === "published") active.push(toSkillEvolutionRow(raw, options));
   }
   return active;
-}
-
-/** Returns the newest active `published` event for a draft (null if none or rolled back). */
-export function latestPublishedSkillEvolutionForDraft(
-  db: Database.Database,
-  draftId: string,
-  options?: SkillEvolutionStoreOptions,
-): SkillEvolutionRow | null {
-  return listLatestActivePublishedSkillEvolutionsForDraft(db, draftId, options)[0] ?? null;
-}
-
-/** Returns the newest `published` event for `skillId` not superseded by a newer `rolled_back` for the same `(draft_id, draft_version)`. */
-export function latestPublishedSkillEvolutionBySkill(
-  db: Database.Database,
-  skillId: string,
-  options?: SkillEvolutionStoreOptions,
-): SkillEvolutionRow | null {
-  const rows = db.prepare(
-    `SELECT * FROM lane_pilot_skill_evolution WHERE skill_id = ? AND status IN ('published', 'rolled_back') ORDER BY created_at DESC, rowid DESC`,
-  ).all(skillId) as RawEvolutionRow[];
-  const rolledBack = new Set<string>();
-  for (const raw of rows) {
-    const key = `${raw.draft_id}\u0000${raw.draft_version}`;
-    if (raw.status === "rolled_back") {
-      rolledBack.add(key);
-      continue;
-    }
-    if (!rolledBack.has(key)) return toSkillEvolutionRow(raw, options);
-  }
-  return null;
 }

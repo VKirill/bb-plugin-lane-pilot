@@ -48,10 +48,6 @@ const stepRef = (ctx: StepContext<DispatchRuntime>) => ({ runId: ctx.runId, step
 
 const engineServices = new WeakMap<WorkflowEngine, { ctx?: ServerCore; services: DispatchServices }>();
 
-export function bindDispatchRuntimeServices(engine: WorkflowEngine, services: DispatchServices, ctx?: ServerCore): void {
-  engineServices.set(engine, { services, ctx });
-}
-
 export { engineServices, need, text, endedReply, handoffOf, roundsOf, stepRef };
 export const dispatchRunKey = (attemptId: string, resume = 0): string => `lp-task:${attemptId}${resume ? `:resume-${resume}` : ""}`;
 

@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { en, ru } from "@lane-pilot/i18n";
-import { SETTING_META, settingLabelIsRaw } from "../src/rooms/ui-shell/ui/setting-copy";
+import { SETTING_META } from "../src/rooms/ui-shell/ui/setting-copy";
+import type { CatalogRow } from "@lane-pilot/settings-catalog";
+
+function settingLabelIsRaw(row: CatalogRow, localeText: string): boolean {
+  const raw = [row.storageKey, row.setting, row.id, `field_${row.id}`];
+  return raw.some((item) => item === localeText);
+}
 import { SETTINGS_REGISTRY } from "../src/rooms/settings-registry";
 import { estimateTokens } from "../src/rooms/memory/models/memory";
 

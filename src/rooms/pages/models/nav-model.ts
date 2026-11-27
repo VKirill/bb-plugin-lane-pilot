@@ -1,5 +1,31 @@
 import { GLOBAL_SETTINGS_PROJECT_ID } from "@lane-pilot/settings-catalog";
-import { LEGACY_TABS, SEGMENTS, TAB_IDS, resolveTab, type SegmentedTab, type TabId } from "./tabs-model";
+
+export const TAB_IDS = ["overview", "team", "work", "knowledge", "automation", "runs"] as const;
+export type TabId = (typeof TAB_IDS)[number];
+
+export const SEGMENTS = {
+  knowledge: ["memory", "docs"],
+  automation: ["workflows", "schedule"],
+  runs: ["board", "analytics", "service"],
+} as const;
+export type SegmentedTab = keyof typeof SEGMENTS;
+
+/** Where a pre-regroup tab id lives now. Old links, tests and the owner's habits keep working. */
+export const LEGACY_TABS: Record<string, { tab: TabId; segment?: string }> = {
+  settings: { tab: "work" },
+  checks: { tab: "work" },
+  access: { tab: "team" },
+  memory: { tab: "knowledge", segment: "memory" },
+  workflows: { tab: "automation", segment: "workflows" },
+  schedule: { tab: "automation", segment: "schedule" },
+  monitor: { tab: "runs", segment: "board" },
+  service: { tab: "runs", segment: "service" },
+};
+
+export function resolveTab(id: string): { tab: TabId; segment?: string } {
+  if ((TAB_IDS as readonly string[]).includes(id)) return { tab: id as TabId };
+  return LEGACY_TABS[id] ?? { tab: "overview" };
+}
 
 /** Top-level owner console sections. */
 export const CONSOLE_SECTIONS = ["overview", "decisions", "staff", "work", "memory", "system"] as const;
@@ -18,7 +44,6 @@ export const SECTION_VIEWS = {
 
 /** Tabs inside an individual staff member view. */
 export const STAFF_TABS = ["charter", "shifts", "autonomy", "loadout", "costs"] as const;
-export type StaffTab = (typeof STAFF_TABS)[number];
 
 export type ConsoleRoute = {
   section: ConsoleSection;

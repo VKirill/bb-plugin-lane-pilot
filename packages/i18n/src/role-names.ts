@@ -108,7 +108,6 @@ export const ROLE_NAMES = {
 } as const satisfies Record<string, RoleNameEntry>;
 
 export type RoleNameId = keyof typeof ROLE_NAMES;
-export const ROLE_NAME_IDS = Object.keys(ROLE_NAMES) as RoleNameId[];
 
 /**
  * Ids the code uses for the same job as an entry above (a thread role, a graph step's role, a stage's old name). They are not entries: one job,
@@ -145,12 +144,6 @@ export function canonicalRoleId(id: string): RoleNameId | null {
 export function roleDisplayName(id: string, lang: "ru" | "en" = "ru"): string {
   const key = canonicalRoleId(id);
   return key ? ROLE_NAMES[key][lang] : id;
-}
-
-/** «Name (id)»: for command output, where the internal id still has to be there to copy into a setting. */
-export function roleLabel(id: string, lang: "ru" | "en" = "ru"): string {
-  const key = canonicalRoleId(id);
-  return key ? `${ROLE_NAMES[key][lang]} (${id})` : id;
 }
 
 /** For the dictionaries of i18n: the name of a role in one language. */

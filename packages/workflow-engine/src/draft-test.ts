@@ -309,18 +309,3 @@ export async function runDraftTest(ports: DraftTestPorts, workflow: Workflow, te
   }
   return { ...base, green: failures.length === 0, status: summary.status, reason: summary.reason, error: summary.error, failedNode: summary.failedNode, path, output: summary.output, runId: summary.runId, failures, stubbed: [...stubbed.values()] };
 }
-
-/** Runs a workflow's authored cases and/or past-run replay cases through `runDraftTest`. */
-export async function runDraftTests(
-  ports: DraftTestPorts,
-  workflow: Workflow,
-  options: { cases?: readonly ReplayCase[]; testCaseId?: string; includeWorkflowCases?: boolean } = {},
-): Promise<DraftTestResult[]> {
-  const base = options.includeWorkflowCases === false
-    ? (options.cases ?? []).map(draftTestCaseFromReplay)
-    : testCasesOf(workflow, { cases: options.cases });
-  const selected = options.testCaseId ? base.filter((item) => item.id === options.testCaseId) : base;
-  const results: DraftTestResult[] = [];
-  for (const tc of selected) results.push(await runDraftTest(ports, workflow, tc));
-  return results;
-}

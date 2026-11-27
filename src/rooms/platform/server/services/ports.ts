@@ -52,8 +52,6 @@ export type ResumeDispatch = (attemptId: string) => Promise<{ resumed: true; liv
 
 /** writer/server/live-folder.ts */
 export type IsLiveFolder = (runId: string | undefined, hostId: string, folder: string, options?: { fresh?: boolean }) => Promise<boolean>;
-export type ProbeLiveFolder = (runId: string | undefined, hostId: string, folder: string) => Promise<"git"|"no-git"|"unknown">;
-export type InvalidateLiveFolder = (runId: string) => Promise<void>;
 
 /** writer/server/state.ts — the shared writer state. */
 export interface WriterStateApi {
@@ -151,9 +149,6 @@ export type BuildCliInvocation = (input: {
 export type RunVerification = (config: PrototypeConfig, task: TaskV2, runId?: string, writerThreadId?: string, options?: { isolated?: boolean; throwaway?: boolean }) => Promise<Array<{
   command: string; exitCode: number; stdout: string; stderr: string; hostError?: true;
 }>>;
-
-/** workflow/server/graph-helper.ts — one helper thread of a graph step: its id, answer text and spend. */
-export type GraphHelperRun = { threadId: string; text: string; usage: { usage?: { tokens: number; costUsd: number; unknown?: true }; threadId?: string } };
 
 /** workflow/server/workflow-triggers.ts — who may start a workflow and what it answers. */
 export type WorkflowTriggerSource = "manual" | "schedule" | "event";

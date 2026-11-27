@@ -153,21 +153,6 @@ export async function discoverClaudeAgents(cwd: string, signal?: AbortSignal) {
   };
 }
 
-export async function resolveInstalledAgentFile(cwd: string, agentId: string): Promise<{
-  id: string;
-  source: string;
-  path: string;
-} | null> {
-  const home = homedir();
-  const dir = process.env.CLAUDE_CONFIG_DIR
-    ? resolve(home, process.env.CLAUDE_CONFIG_DIR.replace(/^~\//, home + "/"))
-    : join(home, ".claude");
-  const id = nativeAgentCliId(agentId);
-  const agents = new Map<string, { id: string; source: string; path: string }>();
-  for (const row of await listInstalledAgentFiles(cwd, dir)) agents.set(row.id, row);
-  return agents.get(id) ?? null;
-}
-
 async function listInstalledAgentFiles(
   cwd: string,
   configDir: string,

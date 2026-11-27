@@ -77,12 +77,6 @@ export function env(engine: WorkflowEngine, run: RunRow, step: StepRow | null, i
   };
 }
 
-export function read(engine: WorkflowEngine, run: RunRow, step: StepRow | null, text: string): unknown {
-  const ref = refOf(text);
-  const found = env(engine, run, step).read(ref);
-  if (!found.ran) throw new MissingValueError("reference_missing", `"${text}" has no value yet`);
-  return found.value;
-}
 
 export function refRequired(c: Compiled, text: string): boolean {
   const ref = refOf(text);

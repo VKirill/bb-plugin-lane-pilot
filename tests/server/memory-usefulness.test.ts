@@ -3,7 +3,7 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { createAttempt, createRun, createTask, openDatabase, saveReasoningTrace, transitionAttempt } from "../../src/rooms/plugin-db";
 import { memoryContext, memoryUsefulness, recordMemoryMixed, searchMemoryRecords, storeMemoryRecords } from "../../packages/memory-core/src";
 import type { MemoryRecord } from "../../packages/memory-core/src";
-import { writerMemory } from "../../src/rooms/memory/server";
+import { memoryLine, writerMemoryPicks } from "../../src/rooms/memory/server";
 import { mixWriterMemory } from "../../src/rooms/memory/server/services/memory-mix";
 
 type Db = ReturnType<typeof openDatabase>;
@@ -52,7 +52,7 @@ describe("K8 usefulness: how often a note was mixed into a brief, and how often 
 
   it("keeps the search's order among the notes about the task's paths: the best match first, whatever the counters say", () => {
     const notes = ["one", "two", "three", "four"].map((word, index) => rec(`id${index}`, `The ${word} fact about components/greeting-cards`, index === 3 ? { useCount: 6, acceptedCount: 6 } : index === 0 ? { useCount: 6, acceptedCount: 0 } : {}));
-    const text = writerMemory(notes, task);
+    const text = writerMemoryPicks(notes, task).map(memoryLine).join("\n");
     expect(text.split("\n").map((line) => line.replace(/^- \[[\d-]+\] The (\w+) fact.*/, "$1"))).toEqual(["one", "two", "three"]);
   });
 

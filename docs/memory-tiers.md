@@ -24,10 +24,9 @@ Add a cold-note tier, task episodes, and miss records around the PM's `lane_pilo
 ## How it works
 
 1. The context handler verifies the active PM thread and run, loads memory settings, and returns `skipped` when memory is disabled. It selects the normal active memory context before invoking tier enrichment (`src/rooms/memory/server/services/memory.ts`).
-2. When fewer than three active records were selected, `coldMatches` reads expired notes without `valid_until` or a replacement id (`src/rooms/memory-tiers/server/services/tiers.ts`, `src/rooms/memory-tiers/models/tiers.ts`).
-3. `promote` changes each still-eligible match to `active`, sets `last_used_at`, restores its search indexes, and inserts a promotion record.
-4. `episodes` checks up to the 400 newest project tasks and returns up to three matches with latest attempt state.
-5. If there are no active records, promoted cold notes, or matching episodes, the query inserts a row into `lane_pilot_memory_miss`.
+2. When fewer than three active records were selected, `coldMatches` reads expired notes without `valid_until` or a replacement id and formats them for the PM context without changing their status (`src/rooms/memory-tiers/server/services/tiers.ts`, `src/rooms/memory-tiers/models/tiers.ts`).
+3. `episodes` checks up to the 400 newest project tasks and returns up to three matches with latest attempt state.
+4. If there are no active records, cold matches, or matching episodes, the query inserts a row into `lane_pilot_memory_miss`.
 
 | Mode or state | Inputs and result | Failure behavior |
 |---|---|---|

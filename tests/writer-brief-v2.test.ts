@@ -4,15 +4,17 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { taskV2Schema } from "../src/rooms/contracts";
 import { compactContract } from "../src/rooms/writer/models/writer-brief";
-import { writerMemory } from "../src/rooms/memory/server";
-import { stickyTurnPrompt, writerPrompt } from "../src/rooms/writer/models/writer-task";
+import { memoryLine, writerMemoryPicks } from "../src/rooms/memory/server";
+import { stickyTurnPrompt, writerBriefSegments } from "../src/rooms/writer/models/writer-task";
+
+const writerPrompt = (...args: Parameters<typeof writerBriefSegments>) => writerBriefSegments(...args).map((segment) => segment.text).join("\n\n");
 import { THREAD_MEMORY_RULE } from "../src/rooms/contracts/thread-rule";
 import { errandPrompt } from "../src/rooms/errands/server";
 import { codeCritiquePrompt, taskBrief } from "../src/rooms/critique";
 
 const original = readFileSync(join(__dirname, "fixtures/writer-brief-gc-pages-polish-2.md"), "utf8");
 const task = taskV2Schema.parse(JSON.parse(original.slice(original.indexOf('{\n  "schema_version"'))));
-const memory = writerMemory([{ kind: "core", concepts: [], content: "Use npm ci." }], task);
+const memory = writerMemoryPicks([{ kind: "core", concepts: [], content: "Use npm ci." }], task).map(memoryLine).join("\n");
 
 describe("writer brief v2", () => {
   it("renders the contract as tagged sections with no JSON dump, and keeps every contract item", () => {

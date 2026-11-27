@@ -86,7 +86,6 @@ describe("threadScope", () => {
         remote: "git@github.com:org/app.git",
         githubRepoId: "987654",
       },
-      isPm: true,
     });
     expect(memoryProjectFn).toHaveBeenCalledWith("ovh", "/srv/app/apps/api");
     expect(probeRepoFn).toHaveBeenCalledWith("ovh", "/srv/app/apps/api");
@@ -117,7 +116,6 @@ describe("threadScope", () => {
       hostId: "mini",
       cwd: "/Users/owner/notes",
       repo: null,
-      isPm: false,
     });
     expect(memoryProjectFn).not.toHaveBeenCalled();
     expect(probeRepoFn).toHaveBeenCalledTimes(1);
@@ -140,7 +138,6 @@ describe("threadScope", () => {
       hostId: null,
       cwd: null,
       repo: null,
-      isPm: false,
     });
     expect(probeRepoFn).not.toHaveBeenCalled();
   });
@@ -243,7 +240,6 @@ describe("threadScope", () => {
       hostId: null,
       cwd: null,
       repo: null,
-      isPm: false,
     });
   });
 });

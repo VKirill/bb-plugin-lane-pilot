@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { lstat, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { hashBytes, planJson, transitionOwned, type NativeInstallManifest } from "../src/rooms/native-install/native-install-owned";
+import { hashBytes, transitionOwned, type NativeInstallManifest } from "../src/rooms/native-install/native-install-owned";
 import { nativeInstallOperation } from "../src/rooms/native-install/native-install-host";
 import { detectOwnInstall, lanePilotEnv } from "../src/rooms/native-install/native-install-bootstrap";
 import { setLocaleOverride } from "@lane-pilot/i18n";
@@ -65,7 +65,7 @@ describe("native installation ownership", () => {
   it("disables, restores and removes owned files while preserving JSONC user changes", async () => {
     const { home, managed, m } = await fixture();
     await writeFile(join(home, "settings.jsonc"), '// keep comment\n{"foreign": true}\n');
-    m.json = await planJson(home, "settings.jsonc", { hooks: { Start: ["lane"] } });
+    m.json = [{ path: "settings.jsonc", key: ["hooks", "Start"], value: ["lane"], array: true, existed: false, parents: [["hooks"]] }];
     await transitionOwned(managed, m, "enable");
     await transitionOwned(managed, m, "disable");
     expect(await readFile(join(home, "settings.jsonc"), "utf8")).toContain("// keep comment");
@@ -86,7 +86,10 @@ describe("native installation ownership", () => {
   it("keeps pre-existing empty arrays and removes newly created empty config files", async () => {
     const { home, managed, m } = await fixture();
     await writeFile(join(home, "existing.json"), '{"hooks": []}');
-    m.json = [...await planJson(home, "existing.json", { hooks: ["lane"] }), ...await planJson(home, "new.json", { enabled: true })];
+    m.json = [
+      { path: "existing.json", key: ["hooks"], value: ["lane"], array: true, existed: true, parents: [] },
+      { path: "new.json", key: ["enabled"], value: true, array: false, existed: false, parents: [] },
+    ];
     m.createdConfigs = ["new.json"];
     await transitionOwned(managed, m, "enable"); await transitionOwned(managed, m, "disable");
     await transitionOwned(managed, m, "remove");

@@ -39,8 +39,6 @@ const GRAPH_CATEGORY_MAP: ReadonlyMap<string, GraphCategoryDef> = new Map(
 
 export const isKnownGraphCategory = (id: string): id is GraphCategoryId => GRAPH_CATEGORY_MAP.has(id);
 
-export const graphCategoryDef = (id: string): GraphCategoryDef | undefined => GRAPH_CATEGORY_MAP.get(id);
-
 export const graphCategoryLabel = (id: string, locale: "en" | "ru" = "en"): string | null => {
   const found = GRAPH_CATEGORY_MAP.get(id);
   return found ? found.label[locale] : null;

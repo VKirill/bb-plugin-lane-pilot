@@ -120,12 +120,6 @@ export function attemptStateSql(kind: AttemptStateSqlKind): string {
   return states.map((state) => `'${state}'`).join(",");
 }
 
-export function resolveTransition(from: AttemptState | null, event: TransitionEvent): AttemptState | "stay" {
-  const row = TRANSITION_TABLE.find((item) => item.from === from && item.event === event);
-  if (!row) throw new Error(`illegal transition ${from ?? "∅"} + ${event}`);
-  return row.to;
-}
-
 /**
  * Moves the pipeline makes that §3.4's table does not list, each with the reason it exists. Anything not in the table or
  * here is a bug in the caller: `transitionAttempt` refuses it. Add a row only for a move the product needs, never to

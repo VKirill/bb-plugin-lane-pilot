@@ -7,7 +7,6 @@ import { expect, it } from "vitest";
 import type { PrototypeConfig, TaskV2 } from "../src/rooms/contracts";
 import { createAttempt, createRun, createTask, getAttempt, openDatabase, setAttemptWorkspace, setRunThread } from "../src/rooms/plugin-db";
 import { createWriterSpawn, shouldMergeAttemptWorktree } from "../src/rooms/writer/server/services/spawn";
-import { dirtInsideWorkspace } from "../src/rooms/verification/git-ownership";
 
 const folder = "/repo/apps/bot";
 /** Where the host's gitCreateWorktree puts a nested chat folder: the same subfolder inside a worktree of the repo. */
@@ -134,17 +133,6 @@ it("does not merge or remove a worktree when the attempt stayed in the run folde
   expect(shouldMergeAttemptWorktree("/repo/apps/bot/", folder)).toBe(false);
   expect(shouldMergeAttemptWorktree("/home/me/.lane-pilot/worktrees/a1/bot", folder)).toBe(true);
   expect(shouldMergeAttemptWorktree(null, folder)).toBe(false);
-});
-
-it("keeps dirt paths relative to a nested chat folder", () => {
-  expect(dirtInsideWorkspace([
-    { path: "apps/bot/index.ts", sha256: "aa" },
-    { path: "apps/bot/new.ts", sha256: "bb" },
-    { path: "root.ts", sha256: "cc" },
-  ], "apps/bot")).toEqual([
-    { path: "index.ts", sha256: "aa" },
-    { path: "new.ts", sha256: "bb" },
-  ]);
 });
 
 it("snapshots nested-folder dirt in the folder itself, where the host answers workspace-relative paths", async () => {

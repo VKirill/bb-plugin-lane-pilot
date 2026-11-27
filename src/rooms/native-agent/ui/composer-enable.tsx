@@ -19,7 +19,6 @@ import { DEFAULT_NATIVE_AGENT } from "../../contracts/native-agent-id";
 import { nativeSelectionReady, selectionHostId } from "../../contracts/composer-selection";
 import { noteChatAgentChanged, setPendingNativeAgent } from "./pending-native-agent";
 import { useNativeComposerSelection } from "./composer-selection-hook";
-import { takeArchitectLaunch } from "../models/architect-launch";
 
 /** The «Без агента» row of the agent dropdown (a Select item cannot have an empty value). */
 const NO_AGENT = "__none__";
@@ -214,14 +213,6 @@ export function EnableLanePilotAction() {
   // A project with a main agent starts every new chat with Lane Pilot on and that agent picked, once per composer;
   // turning it off by hand stays off.
   const autoEnabled = useRef<string | null>(null);
-  // «Build with the architect» in the Workflows tab asks for its agent; it wins over the project's main agent, once.
-  useEffect(() => {
-    if (threadId || !ctx || !projectId || ctx.projectId !== projectId || blocked || autoEnabled.current === projectId) return;
-    const asked = takeArchitectLaunch(projectId);
-    if (!asked) return;
-    autoEnabled.current = projectId;
-    void prepare(asked);
-  }, [ctx, projectId, blocked]);
   useEffect(() => {
     const agent = ctx?.mainAgent;
     if (threadId || !agent || !projectId || ctx?.projectId !== projectId || blocked || autoEnabled.current === projectId) return;

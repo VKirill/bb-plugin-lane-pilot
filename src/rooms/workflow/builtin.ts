@@ -132,7 +132,7 @@ const loaded = loadBuiltinSourcesFromDir();
 /** The workflows that ship with Lane Pilot (`workflows/*.json`, loaded from the directory). */
 export const BUILTIN_SOURCES: ReadonlyArray<{ name: string; value: unknown }> = loaded.sources;
 
-export { LP_TASK_PIPELINE, AFTER_ACCEPT, SELF_REPAIR, ANALYZE_PLAN_EXECUTE } from "../contracts";
+export { LP_TASK_PIPELINE, AFTER_ACCEPT, SELF_REPAIR } from "../contracts";
 
 /** Emit the startup INFO summary and any one-time WARN notices for the shipped graph library. */
 export function logBuiltinLibraryStatus(logger: BuiltinLibraryLogger): void {

@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { GLOBAL_SETTINGS_PROJECT_ID } from "@lane-pilot/settings-catalog";
 import { LEAD_DEFAULTS } from "../src/rooms/lead/settings";
 import { listRoad } from "../src/rooms/lead/server/repositories/road-repository";
-import { architectPrompt, processPartsOf, processStemOf, seedForm, tickBrief } from "../src/rooms/lead/models/tick";
+import { processPartsOf, processStemOf, seedForm, tickBrief } from "../src/rooms/lead/models/tick";
 import { registerLeadTickActions } from "../src/rooms/lead/server";
 import { graphlessErrands, hubSnapshot } from "../src/rooms/lead/server/services/tick-service";
 import { errandStem } from "../src/rooms/errands";
@@ -125,20 +125,7 @@ describe("the five forms (stream G/R8)", () => {
     expect(seedForm({ form: 42 })).toBeNull();
   });
 
-  it("each form gets its own hand-over text and its own title stem; a formless seed takes the writer path", () => {
-    const base = { stem: "ss-photo доставка", kind: "computer", threadIds: ["thr_1"], samples: ["ss-photo: выдать фотографии"], nearest: [{ kind: "skill", id: "selfystudio", score: 0.8 }] };
-    expect(architectPrompt({ ...base, form: "rule" }, "Правило для: ss-photo доставка")).toContain("RULE");
-    expect(architectPrompt({ ...base, form: "reference" }, "Справка для: ss-photo доставка")).toContain("references/");
-    expect(architectPrompt({ ...base, form: "script" }, "Скрипт для: ss-photo доставка")).toContain("command sequence");
-    expect(architectPrompt({ ...base, form: "skill" }, "Навык для: ss-photo доставка")).toMatch(/^Write a skill/u);
-    expect(architectPrompt({ ...base, form: "graph" }, "Граф для: ss-photo доставка")).toMatch(/^Build a tested graph/u);
-    for (const form of ["rule", "reference", "script", "skill"] as const) {
-      const prompt = architectPrompt({ ...base, form }, "x");
-      expect(prompt).toContain("nothing is written into the canon");
-      expect(prompt).toContain("skill:selfystudio");
-    }
-    // A stored seed from before the five forms has no readable form: the writer path, not the architect.
-    expect(architectPrompt({}, "Навык для: без формы")).toContain("Write a skill");
+  it("extracts process form and stem case-insensitively", () => {
     expect(processStemOf("Навык для: Партия моделей")).toBe(processStemOf("Скрипт для: партия моделей"));
     expect(processStemOf("Справка для: Партия моделей")).toBe(processStemOf("Правило для: партия моделей"));
     expect(processPartsOf("Скрипт для: Партия моделей")).toEqual({ form: "script", stem: "партия моделей" });

@@ -1,6 +1,5 @@
 import { readHiddenProjects, splitProjects, writeHiddenProjects } from "./service-projects";
-import { resolveLegacyRoute, type ConsoleRoute } from "../models/nav-model";
-import { resolveTab, SEGMENTS, type SegmentedTab, type TabId } from "../models/tabs-model";
+import { type ConsoleRoute } from "../models/nav-model";
 import { selectionValue, SELECTION_SPECS, type SelectionId } from "./picker-selections";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -34,7 +33,6 @@ export function useLanePilotPage({
   subPath = "",
   scope = "projects",
   consoleRoute,
-  onNavigate,
 }: {
   subPath?: string;
   scope?: "projects" | "globals" | "agents" | "tokens" | "workflows" | "schedule" | "tasks" | "waiting" | "errands";
@@ -46,8 +44,7 @@ export function useLanePilotPage({
   // The plugin's own page (no project in the route, no project link) opens on «General settings», not on the last project (owner's word 2026-11-01).
   const [activeScope, setActiveScope] = useState(scope === "projects" && !subPath && !routeProjectId ? "globals" : scope);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
-  // The address may carry a tab after the project id (`<project>/<tab>`; «access» is the team's old name), so a link can open a tab of a project.
-  const [routeProject, routeTab] = (() => { const [head, rest] = subPath.replace(/^\/+/, "").split("/", 2); return [head || null, rest || null]; })();
+  const [routeProject] = (() => { const [head] = subPath.replace(/^\/+/, "").split("/", 2); return [head || null]; })();
   const consoleNeedsSettings =
     consoleRoute?.section === "system" &&
     (consoleRoute.page === "settings" || consoleRoute.page === "agents" || consoleRoute.page === "health");
@@ -73,30 +70,6 @@ export function useLanePilotPage({
   const [projectsLoaded, setProjectsLoaded] = useState(false);
   const [projectListError, setProjectListError] = useState(false);
   const providers = useProviders();
-  const routeTarget = resolveTab(routeTab ?? "");
-  const [tab, setTab] = useState<TabId>(routeTarget.tab);
-  // The part of a segmented tab that is open (the tabs that have segments: knowledge, automation, runs).
-  const [segments, setSegments] = useState<Record<string, string>>({ knowledge: "memory", automation: "workflows", runs: "board",
-    ...(routeTarget.segment && routeTarget.tab in SEGMENTS ? { [routeTarget.tab]: routeTarget.segment } : {}) });
-  const segmentOf = (id: SegmentedTab) => segments[id] ?? SEGMENTS[id][0];
-  const setSegment = (id: SegmentedTab, next: string) => setSegments((current) => ({ ...current, [id]: next }));
-  /** Opens a tab, and a part of it. Ids of the old ten tabs work too. */
-  const goTo = (id: string, segment?: string) => {
-    const target = resolveTab(id);
-    const part = segment ?? target.segment;
-    if (onNavigate && consoleRoute) {
-      const legacy = resolveLegacyRoute(part ? `${target.tab}/${part}` : target.tab);
-      if (legacy) {
-        onNavigate({ ...legacy, projectId: consoleRoute.projectId, sectionId: consoleRoute.sectionId });
-        return;
-      }
-    }
-    setTab(target.tab);
-    if (part && target.tab in SEGMENTS) setSegment(target.tab as SegmentedTab, part);
-  };
-  // A tab mounts when it is first opened and stays mounted after that: ten tabs at once cost 25 000 DOM nodes on a big project.
-  const visited = useRef(new Set<string>());
-  visited.current.add(tab);
   // How many of the newest runs the screen has fetched; the rest of the history comes by `list_runs` pages.
   const runsWindow = useRef(0);
   const [nativeState, setNativeState] = useState<{ status: string; error: string | null } | null>(null);
@@ -109,7 +82,6 @@ export function useLanePilotPage({
   const [resultSource, setResultSource] = useState<string | null>(null);
   const [locale, setLocale] = useState<Locale>(detectLocale);
   const [localePreference, setLocalePreference] = useState<LocalePreference>("auto");
-  const [settingsDepth, setSettingsDepth] = useState<"basic" | "advanced">("basic");
   const shellRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const shellWidth = useObservedWidth(shellRef);
@@ -238,7 +210,7 @@ export function useLanePilotPage({
   const runsPollMs = useLpRealtime(isGlobal || !projectScreenActive ? null : projectId, ["helpers"], () => { void refreshRuns(); });
   const runsVisible = consoleRoute
     ? (consoleRoute.section === "overview" && Boolean(consoleRoute.projectId) && !isGlobal)
-    : (projectScreenActive && tab === "overview");
+    : false;
   useLpPoll(runsVisible && projectId && !isGlobal ? runsPollMs : undefined, () => { void refreshRuns(); });
 
   useEffect(() => {
@@ -246,11 +218,6 @@ export function useLanePilotPage({
     setSelectedSectionId(null);
     setSections([]);
   }, [projectId, consoleRoute]);
-  useEffect(() => {
-    if (consoleRoute?.section === "system" && consoleRoute.page === "settings" && consoleRoute.view === "docs") {
-      setSegments((current) => (current.knowledge === "docs" ? current : { ...current, knowledge: "docs" }));
-    }
-  }, [consoleRoute?.section, consoleRoute?.page, consoleRoute?.view]);
   useEffect(() => {
     if (!projectId || isGlobal || !projectScreenActive) return;
     let current = true;
@@ -339,7 +306,6 @@ export function useLanePilotPage({
 
   const selectedProjectName = projects.find((item) => item.id === projectId)?.name ?? projectId;
   const selectedSectionName = sections.find((item) => item.id === selectedSectionId)?.name ?? null;
-  const mobileNavValue = activeScope === "projects" ? (selectedSectionId ? `section:${selectedSectionId}` : projectId ? `project:${projectId}` : "projects") : activeScope;
   // The selected project's sections in tree order, for the phone menu.
   const flatSections: Array<{ id: string; name: string; depth: number }> = [];
   const walkSections = (parentId: string | null, depth: number) => {
@@ -356,7 +322,6 @@ export function useLanePilotPage({
   const projectGroups = useMemo(() => splitProjects(projects, hiddenProjects), [projects, hiddenProjects]);
   const hideProject = (id: string) => setHiddenIds((current) => { const next = [...new Set([...current, id])]; writeHiddenProjects(next); return next; });
   const showProject = (id: string) => setHiddenIds((current) => { const next = current.filter((item) => item !== id); writeHiddenProjects(next); return next; });
-  const advanced = settingsDepth === "advanced";
   const hostLabel = (id: string | null | undefined) => (id ? data?.qaHosts?.find((host) => host.id === id)?.name ?? id : "—");
   const nativeHostId = data?.writerBinding?.status === "resolved" ? data.writerBinding.hostId : null;
   const installNative = async () => {
@@ -367,7 +332,7 @@ export function useLanePilotPage({
   // Read the machine's state while Maintenance is open, and every 5 s while it installs.
   const healthActive = consoleRoute
     ? (consoleRoute.section === "system" && consoleRoute.page === "health")
-    : (tab === "runs" && segments.runs === "service");
+    : false;
   useEffect(() => {
     if (!healthActive || !nativeHostId) return;
     let alive = true;
@@ -400,37 +365,27 @@ export function useLanePilotPage({
     });
   })();
 
-  const effectiveTab: TabId = consoleRoute
-    ? consoleRoute.section === "system" && consoleRoute.page === "settings"
-      ? "work"
-      : consoleRoute.section === "system" && consoleRoute.page === "agents"
-        ? "team"
-        : consoleRoute.section === "system" && consoleRoute.page === "health"
-          ? "runs"
-          : "overview"
-    : tab;
-
   return {
     pickers, subPath: routeProject,
-    activeScope, setActiveScope, rpc, routeProjectId, routeThreadId, selectedProjectId,
+    rpc, routeProjectId, routeThreadId, selectedProjectId,
     setSelectedProjectId, projectId, isGlobal, projectScreenActive, selectedSectionId, setSelectedSectionId,
     routingStats, setRoutingStats, fallbackTouched,
     sections, setSections, scoped, cacheKey, projects,
     setProjects, projectsLoaded, setProjectsLoaded, projectListError, setProjectListError,
-    providers, tab: effectiveTab, setTab, visited, runsWindow, nativeState, setNativeState, data, setData,
+    providers, runsWindow, nativeState, setNativeState, data, setData,
     error, setError, confirmOpen, setConfirmOpen,
     pendingOp, setPendingOp, snapshotPath, setSnapshotPath,
     resultPatch, setResultPatch, resultSource, setResultSource, locale, setLocale,
-    localePreference, setLocalePreference, settingsDepth, setSettingsDepth, shellRef, contentRef,
+    localePreference, setLocalePreference, shellRef, contentRef,
     shellWidth, contentWidth, compactChrome, stackControls, drafts, setDrafts,
     dataRef, draftsRef, writerDraftRef, writerDraft, setWriterDraft,
     selectedBinding, setSelectedBinding, projectCache,
     loadGeneration, chooseLocale, load, mergeRuns, refreshRuns,
-    runsPollMs, runsVisible, level, segmentOf, setSegment, goTo, diagnosticsGrouped, extrasGrouped, chooseProject,
+    runsPollMs, runsVisible, level, diagnosticsGrouped, extrasGrouped, chooseProject,
     pickerDrafts, savedPickerValue, pickerValue, catalogRow,
     hostId, routing, modelPicker, inheritReset,
-    selectedProjectName, selectedSectionName, mobileNavValue, flatSections, walkSections,
-    tabSelect, wideTable, hiddenProjects, projectGroups, hideProject, showProject, advanced, hostLabel, nativeHostId, installNative, writerChosen,
+    selectedProjectName, selectedSectionName, flatSections, walkSections,
+    tabSelect, wideTable, hiddenProjects, projectGroups, hideProject, showProject, hostLabel, nativeHostId, installNative, writerChosen,
     screenLoading, activeRuns, trackLines,
     ...savers,
   };

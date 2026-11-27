@@ -85,47 +85,6 @@ export function recordTrajectoryDelta(db: DbLike, input: RecordTrajectoryDeltaIn
   return { status: "recorded", row };
 }
 
-/** Lists unprocessed trajectory deltas in chronological order for nightly graph crystallization/evolution. */
-export function listUnprocessedTrajectoryDeltas(
-  db: DbLike,
-  options?: { readonly limit?: number; readonly projectId?: string; readonly onlyAccepted?: boolean },
-): TrajectoryDeltaRow[] {
-  const limit = Math.max(1, Math.min(options?.limit ?? 100, 500));
-  const onlyAccepted = options?.onlyAccepted !== false;
-  if (options?.projectId) {
-    const rows = db.prepare(
-      `SELECT * FROM lane_pilot_trajectory_delta
-       WHERE processed_at IS NULL AND project_id = ? AND (? = 0 OR owner_accepted = 1)
-       ORDER BY created_at ASC, id ASC LIMIT ?`,
-    ).all(options.projectId, onlyAccepted ? 1 : 0, limit) as Array<Record<string, unknown>>;
-    return rows.map(toTrajectoryDeltaRow);
-  }
-  const rows = db.prepare(
-    `SELECT * FROM lane_pilot_trajectory_delta
-     WHERE processed_at IS NULL AND (? = 0 OR owner_accepted = 1)
-     ORDER BY created_at ASC, id ASC LIMIT ?`,
-  ).all(onlyAccepted ? 1 : 0, limit) as Array<Record<string, unknown>>;
-  return rows.map(toTrajectoryDeltaRow);
-}
-
-/** Marks processed trajectory deltas with `processed_at` once a nightly pass has consumed them. */
-export function markTrajectoryDeltasProcessed(
-  db: DbLike,
-  ids: readonly string[],
-  processedAt = Date.now(),
-  log?: (message: string) => void,
-): number {
-  if (ids.length === 0) return 0;
-  const stmt = db.prepare(`UPDATE lane_pilot_trajectory_delta SET processed_at = ? WHERE id = ? AND processed_at IS NULL`);
-  let updated = 0;
-  for (const id of ids) {
-    if (!id) continue;
-    updated += stmt.run(processedAt, id).changes;
-  }
-  if (updated > 0) emitTrajectoryLog(log, "info", "processed", { count: updated, processedAt });
-  return updated;
-}
-
 /** Lists trajectory deltas created at or after `since`, newest first. */
 export function listTrajectoryDeltasInWindow(
   db: DbLike,

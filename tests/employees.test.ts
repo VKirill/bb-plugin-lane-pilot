@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { BB_AGENT_SESSIONS, LANE_PILOT_PM_SESSION, lanePmOverlayPrompt, laneSessionOverlayPrompt } from "../src/rooms/native-agent/models/native-agent-overlay";
 import { EMPLOYEES } from "../src/rooms/contracts/server";
-import { coreSkillsOf, isEmployeeSpecialist } from "../src/rooms/contracts/employee-manifest";
-import { SKILL_CATALOG_BLOCK, SKILL_CATALOG_LIMIT, SKILL_CATALOG_LINE } from "../src/rooms/native-agent/models/skill-catalog";
+import { isEmployeeSpecialist } from "../src/rooms/contracts/employee-manifest";
+import { SKILL_CATALOG_BLOCK, SKILL_CATALOG_LINE } from "../src/rooms/native-agent/models/skill-catalog";
 import { chooseEmployeePlace } from "../src/rooms/native-agent/models/employee-place";
 import { parseAgentFile } from "../src/rooms/native-agent/models/custom-agent";
 import { roleSpec } from "../src/rooms/workflow/server/services/workflow-agent";
@@ -45,8 +45,6 @@ describe("employee manifest", () => {
   });
 
   it("reads an old skills field as core skills", () => {
-    expect(coreSkillsOf({ skills: ["copywriter", "ru-check"] })).toEqual(["copywriter", "ru-check"]);
-    expect(coreSkillsOf({ coreSkills: ["a", "b", "c", "d"], skills: ["z"] })).toEqual(["a", "b", "c"]);
     const parsed = parseAgentFile(["---", "skills:", "  - copywriter", "  - ru-check", "---", "Write the page."].join("\n"));
     expect(parsed.coreSkills).toEqual(["copywriter", "ru-check"]);
     expect(parsed.skills).toEqual(["copywriter", "ru-check"]);
@@ -55,7 +53,7 @@ describe("employee manifest", () => {
 
 describe("skill catalog note", () => {
   it("fits the block, and every role overlay carries it (the PM, one line)", () => {
-    expect(SKILL_CATALOG_BLOCK.length).toBeLessThanOrEqual(SKILL_CATALOG_LIMIT);
+    expect(SKILL_CATALOG_BLOCK.length).toBeLessThanOrEqual(600);
     expect(LANE_PILOT_PM_SESSION).toContain(SKILL_CATALOG_LINE);
     expect(LANE_PILOT_PM_SESSION).not.toContain("## Skill catalog");
     expect(LANE_PILOT_PM_SESSION.length).toBeLessThanOrEqual(17_050); // 607 accounting: observed prompt is 16,994; see tests/prompt-budget.test.ts

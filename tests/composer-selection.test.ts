@@ -1,8 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  composerSelectionBlock,
   existingEnvironmentUsable,
-  nativeSelectionProjectId,
   nativeSelectionReady,
   spawnEnvironmentFromSelection,
   type ComposerSelectionSnapshot,
@@ -33,10 +31,7 @@ describe("native composer selection", () => {
 
   it("is ready only with host-owned environmentRequest and provenance", () => {
     expect(nativeSelectionReady(readyReuse)).toBe(true);
-    expect(nativeSelectionProjectId(readyReuse)).toBe("proj_a");
-    expect(composerSelectionBlock(readyReuse)).toBeNull();
     expect(nativeSelectionReady({ status: "resolving", scope: { kind: "new-thread", projectId: "proj_a" } })).toBe(false);
-    expect(composerSelectionBlock({ status: "resolving", scope: { kind: "new-thread", projectId: "proj_a" } })).toBe("resolving");
     expect(existingEnvironmentUsable({ kind: "existing", type: "project-default" })).toBe(false);
     expect(existingEnvironmentUsable({ kind: "provisioning", type: "provider", environmentProviderId: "project-checkout" })).toBe(true);
     const checkoutRequest = { type: "provider", environmentProviderId: "project-checkout", machine: { type: "existing", hostId: "host_1" }, inputs: { sourceId: "src_1" } };

@@ -111,5 +111,3 @@ export function createProviderRetryGuard(bb: Pick<BbPluginApi, "sdk" | "events" 
 
   return { abandon, cancelQueuedRetries };
 }
-
-export type ProviderRetryGuard = ReturnType<typeof createProviderRetryGuard>;

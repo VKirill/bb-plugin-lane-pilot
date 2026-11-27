@@ -15,8 +15,6 @@ export const CODE_FACTS_PROBE = [
 ].join(" ");
 
 /** The refresh itself: GitNexus re-analyzes the repository and rebuilds its .gitnexus store. */
-export const CODE_FACTS_REFRESH = "gitnexus analyze --index-only";
-
 /** The state of the index from the probe output: none, fresh, or stale by so many commits (count unknown: null). */
 export function codeFactsState(probe: string | null | undefined): CodeFacts {
   if (!probe || /^NONE/m.test(probe)) return { state: "none" };

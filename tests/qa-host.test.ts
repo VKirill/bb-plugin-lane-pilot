@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { mapListedQaHosts } from "../src/rooms/platform/models/qa-hosts";
-import { qaCodexPreflightReason, qaHostUnreachableReason, resolveBrowserQaTarget, resolveStaleBrowserQaReceipt } from "../src/rooms/qa";
+import { qaCodexPreflight, qaHostUnreachableReason, resolveBrowserQaTarget, resolveStaleBrowserQaReceipt } from "../src/rooms/qa";
 
 describe("browser QA host routing", () => {
   it("allows the writer host and requires an explicit cwd on another host", () => {
@@ -19,25 +19,25 @@ describe("browser QA host routing", () => {
   });
 
   it("fails closed when Codex is missing on the selected host", () => {
-    expect(qaCodexPreflightReason({
+    expect(qaCodexPreflight({
       hostId:"host-qa-mini", providers:[{ id:"codex", available:true }], models:[], model:"gpt-6-luna",
-    })).toBe("browser_qa_model_unavailable_on_host:host-qa-mini:codex/gpt-6-luna");
-    expect(qaCodexPreflightReason({
+    })).toEqual({ ok:false, reason:"browser_qa_model_unavailable_on_host:host-qa-mini:codex/gpt-6-luna" });
+    expect(qaCodexPreflight({
       hostId:"host-qa-mini",
       providers:[{ id:"codex", available:true }],
       models:[{ id:"gpt-6-luna", model:"gpt-6-luna", supportedReasoningEfforts:[{ reasoningEffort:"medium" }] }],
       model:"gpt-6-luna",
       reasoning:"high",
-    })).toBe("browser_qa_effort_unavailable_on_host:host-qa-mini:codex/gpt-6-luna/high");
-    expect(qaCodexPreflightReason({
+    })).toEqual({ ok:false, reason:"browser_qa_effort_unavailable_on_host:host-qa-mini:codex/gpt-6-luna/high" });
+    expect(qaCodexPreflight({
       hostId:"host-qa-mini",
       providers:[{ id:"codex", available:true }],
       models:[{ id:"gpt-6-luna", model:"gpt-6-luna", defaultReasoningEffort:"xhigh", supportedReasoningEfforts:[{ reasoningEffort:"medium" }] }],
       model:"gpt-6-luna",
-    })).toBe("browser_qa_effort_unavailable_on_host:host-qa-mini:codex/gpt-6-luna/xhigh");
-    expect(qaCodexPreflightReason({
+    })).toEqual({ ok:false, reason:"browser_qa_effort_unavailable_on_host:host-qa-mini:codex/gpt-6-luna/xhigh" });
+    expect(qaCodexPreflight({
       hostId:"host-qa-mini", providers:[{ id:"codex", available:true }], models:[{ id:"gpt-6-luna" }],
-    })).toBe("browser_qa_codex_requires_configured_model");
+    })).toEqual({ ok:false, reason:"browser_qa_codex_requires_configured_model" });
   });
 
   it("needs a project copy on another QA machine only for the script backends", () => {

@@ -21,10 +21,6 @@ export function lanePilotRoot(homeDir?: string): string {
   return join(agentsDir(homeDir), "lane-pilot");
 }
 
-export function upstreamDir(sha: string, homeDir?: string): string {
-  return join(lanePilotRoot(homeDir), "upstream", sha);
-}
-
 export function managedEngineDir(sha: string, homeDir?: string): string {
   return join(lanePilotRoot(homeDir), "engines", sha);
 }

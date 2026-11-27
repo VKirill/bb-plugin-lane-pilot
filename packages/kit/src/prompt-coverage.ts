@@ -29,7 +29,6 @@ export function literalCoverage(literals: readonly string[], texts: string | rea
 }
 
 export type EnumGroup = { path: string; values: string[] };
-export type EnumCoverage = EnumGroup & LiteralCoverage;
 
 const isObject = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null && !Array.isArray(value);
 const escapePointer = (key: string | number) => String(key).replace(/~/g, "~0").replace(/\//g, "~1");
@@ -58,9 +57,4 @@ export function schemaEnums(schema: unknown): EnumGroup[] {
   };
   walk(schema, "#");
   return groups;
-}
-
-/** `schemaEnums` of a schema, each group checked against the texts. */
-export function enumCoverage(schema: unknown, texts: string | readonly string[], options: CoverageOptions = {}): EnumCoverage[] {
-  return schemaEnums(schema).map((group) => ({ ...group, ...literalCoverage(group.values, texts, options) }));
 }

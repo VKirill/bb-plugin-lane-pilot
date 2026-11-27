@@ -3,7 +3,6 @@ import { MAX_BUDGET, estimateTokens, memoryJudgeStats, parseMemorySettings, quer
 import type { LanePilotDatabase } from "../../../storage";
 import { MEMORY_SETTING_KEYS } from "../../../memory";
 import { currentEmbedder, currentMemoryJudge, embedQuery, explicitMemorySearch, judgeWriterMemory, mixWriterMemory, setEmbedder, setMemoryJudge, type Embedder, type MemoryJudge } from "../../../memory/server";
-import { pairedBootstrapInterval, type BootstrapInterval } from "../../../evolve";
 import { copyOfDatabase, mergeIntoHub } from "../repositories/eval-db";
 
 export { copyOfDatabase, mergeIntoHub };
@@ -283,42 +282,4 @@ export function summarizeScopeArm(scopeReport: ScopeReport): ScopeArmSummary {
 
 export function armLogLine(path: string, summary: Pick<ScopeArmSummary, "hit3" | "noneOk" | "meanTokens" | "p95Ms">): string {
   return `memory.arm path=${path} hit3=${(summary.hit3 * 100).toFixed(1)}% none_ok=${(summary.noneOk * 100).toFixed(1)}% tokens=${Math.round(summary.meanTokens)} p95=${Math.round(summary.p95Ms)}ms`;
-}
-
-export type ArmComparison = {
-  pairs: number;
-  hit3: BootstrapInterval;
-  noneOk: BootstrapInterval;
-  tokens: BootstrapInterval;
-  latencyMs: BootstrapInterval;
-  candidate: ScopeArmSummary;
-  control: ScopeArmSummary;
-  withinBudget: boolean;
-  adopt: boolean;
-};
-
-export function compareRulerArms(
-  controlScope: ScopeReport,
-  candidateScope: ScopeReport,
-  options: { level?: number; resamples?: number; seed?: number; maxTokens?: number; maxP95Ms?: number; gateClean?: boolean } = {},
-): ArmComparison {
-  const control = summarizeScopeArm(controlScope);
-  const candidate = summarizeScopeArm(candidateScope);
-  const shared = [...control.byQuestion.keys()].filter((qid) => candidate.byQuestion.has(qid));
-  const ans = shared.filter((qid) => control.byQuestion.get(qid)!.answerable);
-  const unans = shared.filter((qid) => !control.byQuestion.get(qid)!.answerable);
-  const bootOpts = {
-    ...(options.level !== undefined ? { level: options.level } : {}),
-    ...(options.resamples !== undefined ? { resamples: options.resamples } : {}),
-    ...(options.seed !== undefined ? { seed: options.seed } : {}),
-  };
-  const hit3 = pairedBootstrapInterval(ans.map((q) => control.byQuestion.get(q)!.hit3), ans.map((q) => candidate.byQuestion.get(q)!.hit3), bootOpts);
-  const noneOk = pairedBootstrapInterval(unans.map((q) => control.byQuestion.get(q)!.noneOk), unans.map((q) => candidate.byQuestion.get(q)!.noneOk), bootOpts);
-  const tokens = pairedBootstrapInterval(shared.map((q) => control.byQuestion.get(q)!.tokens), shared.map((q) => candidate.byQuestion.get(q)!.tokens), bootOpts);
-  const latencyMs = pairedBootstrapInterval(shared.map((q) => control.byQuestion.get(q)!.latencyMs), shared.map((q) => candidate.byQuestion.get(q)!.latencyMs), bootOpts);
-  const withinBudget = (options.maxTokens === undefined || candidate.meanTokens <= options.maxTokens)
-    && (options.maxP95Ms === undefined || candidate.p95Ms <= options.maxP95Ms);
-  const gateClean = options.gateClean ?? true;
-  const adopt = ans.length > 0 && hit3.mean > 0 && (unans.length === 0 || noneOk.mean >= 0) && withinBudget && gateClean;
-  return { pairs: shared.length, hit3, noneOk, tokens, latencyMs, candidate, control, withinBudget, adopt };
 }

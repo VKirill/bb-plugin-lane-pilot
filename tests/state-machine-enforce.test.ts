@@ -1,6 +1,6 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it, vi } from "vitest";
-import { createAttempt, createRun, getAttempt, openDatabase, recordFinishedAttempt, setIllegalTransitionLog, transitionAttempt } from "../src/rooms/plugin-db";
+import { createAttempt, createRun, getAttempt, openDatabase, setIllegalTransitionLog, transitionAttempt } from "../src/rooms/plugin-db";
 import { ATTEMPT_STATES, IllegalTransitionError, OPERATIONAL_MOVES, TRANSITION_TABLE, isLegalMove } from "../src/rooms/contracts/state-machine";
 import { failureClass } from "../src/rooms/contracts/failure-class";
 
@@ -83,19 +83,5 @@ describe("transitionAttempt enforces the state machine", () => {
     const { db, attemptIn } = setup();
     expect(transitionAttempt(db, attemptIn("accepted"), "running")).toBe(false);
     expect(transitionAttempt(db, attemptIn("canceled"), "accepted")).toBe(false);
-  });
-
-  it("records a finished native run through the steps it went through", () => {
-    const { db, attemptIn } = setup();
-    const id = attemptIn("queued");
-    recordFinishedAttempt(db, id, "accepted");
-    expect(db.prepare("SELECT from_state, to_state FROM lane_pilot_attempt_transition WHERE attempt_id=? ORDER BY rowid").all(id))
-      .toEqual([{ from_state:"queued", to_state:"spawn_requested" }, { from_state:"spawn_requested", to_state:"running" }, { from_state:"running", to_state:"accepted" }]);
-    const blocked = attemptIn("queued");
-    recordFinishedAttempt(db, blocked, "blocked", "upstream refused");
-    expect(getAttempt(db, blocked)).toMatchObject({ state:"blocked", reason:"upstream refused" });
-    const running = attemptIn("queued");
-    recordFinishedAttempt(db, running, "running");
-    expect(getAttempt(db, running)?.state).toBe("running");
   });
 });

@@ -242,8 +242,3 @@ export function settingUsesNumericControl(row: CatalogRow): boolean {
   if (row.control === "slider" || row.control === "number") return true;
   return settingUnitKey(row) != null && row.control === "input";
 }
-
-export function settingLabelIsRaw(row: CatalogRow, localeText: string): boolean {
-  const raw = [row.storageKey, row.setting, row.id, `field_${row.id}`];
-  return raw.some((item) => item === localeText);
-}

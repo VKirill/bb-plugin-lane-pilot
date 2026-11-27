@@ -1,4 +1,4 @@
-import type { CostState, FactVerdict, NodeForm, StepFact } from "@lane-pilot/contracts";
+import type { CostState, FactVerdict, NodeForm } from "@lane-pilot/contracts";
 import type { RunRow, StepRow, StepState } from "./journal";
 import { stepFactVerdict } from "./step-output";
 import { resolveStepCost } from "./usage";
@@ -187,44 +187,4 @@ export function usageFromStepRow(step: StepRow): Usage | undefined {
     ...(step.request_id !== undefined ? { requestId: step.request_id } : {}),
     ...(step.session_id !== undefined ? { sessionId: step.session_id } : {}),
   };
-}
-
-/** Read typed per-step facts for a run from `lane_pilot_wf_step` + `lane_pilot_wf_run`. */
-export function runStepFacts(engine: WorkflowEngine, runId: string): StepFact[] {
-  const run = engine.journal.getRun(runId);
-  if (!run) return [];
-  const c = engine.compiled(run);
-  return engine.journal.steps(runId).map((step) => {
-    const nodeKind = c.nodes.get(step.node_id)?.type ?? "unknown";
-    const costState = (step.cost_state as CostState | null | undefined) ?? "not_measured";
-    const verdict = (step.verdict as FactVerdict | null | undefined)
-      ?? (step.state === "skipped" || step.state === "canceled" ? "not_run" : step.state === "failed" ? "fail" : "pass");
-    return {
-      runId: step.run_id,
-      stepId: step.step_key,
-      nodeId: step.node_id,
-      nodeKind,
-      requestedProvider: step.requested_provider ?? null,
-      requestedModel: step.requested_model ?? null,
-      answeredProvider: step.answered_provider ?? null,
-      answeredModel: step.answered_model ?? null,
-      inputTokens: step.input_tokens ?? 0,
-      outputTokens: step.output_tokens ?? 0,
-      cacheReadTokens: step.cache_read_tokens ?? 0,
-      cacheWriteTokens: step.cache_write_tokens ?? 0,
-      costMicroUsd: step.cost_micro_usd ?? null,
-      costState,
-      durationMs: step.duration_ms ?? 0,
-      verdict,
-      failureClass: step.failure_class ?? null,
-      reworkVisits: step.rework_visits ?? Math.max(0, step.visit - 1),
-      graphVersion: String(step.graph_version ?? run.workflow_version),
-      requestId: step.request_id ?? null,
-      attemptId: step.attempt_id ?? run.link_attempt_id ?? null,
-      sessionId: step.session_id ?? null,
-      formUsed: (step.form_used as NodeForm | null | undefined) ?? null,
-      fallbackTaken: step.fallback_taken ?? null,
-      environmentFingerprint: step.environment_fingerprint ?? null,
-    };
-  });
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { emergencyFallbackDecision, sameWriterSelection } from "../../src/rooms/writer/models/emergency-writer";
+import { emergencyFallbackDecision } from "../../src/rooms/writer/models/emergency-writer";
 
 describe("bounded emergency writer policy", () => {
   it("suppresses fallback after success and ambiguous or canceled outcomes", () => {
@@ -17,10 +17,5 @@ describe("bounded emergency writer policy", () => {
     expect(emergencyFallbackDecision({state:"validation_failed",reason:"verification failed (npm test): boom",failureCode:"verification_failed",checkEscalation:true})).toEqual({run:true,reason:"repeated_check"});
     expect(emergencyFallbackDecision({state:"validation_failed",reason:"verification failed (npm test): boom"}).run).toBe(false);
     expect(emergencyFallbackDecision({state:"spawn_rejected",reason:"execution_packet_failed:missing"}).run).toBe(false);
-  });
-
-  it("distinguishes a configured emergency provider/model from the failed primary", () => {
-    expect(sameWriterSelection({providerId:"codex",model:"gpt-6-luna"},{providerId:"router",model:"gpt-6-flash"})).toBe(false);
-    expect(sameWriterSelection({providerId:"codex",model:"gpt-6-luna"},{providerId:"codex",model:"gpt-6-luna"})).toBe(true);
   });
 });

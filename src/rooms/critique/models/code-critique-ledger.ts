@@ -13,16 +13,6 @@ export type FrozenCritiquePolicy = {
   serviceTier: string;
 };
 
-export type FrozenDispatchContext = {
-  memoryText: string;
-  executionPacket: string;
-  executionPacketSha256: string;
-  pmReadContext: string;
-  agent: string;
-  helperMode: string;
-  helperRequired: boolean;
-};
-
 export type WriterIdentity = {
   attemptId: string;
   providerId: string;

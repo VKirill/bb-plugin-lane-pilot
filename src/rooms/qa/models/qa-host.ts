@@ -48,11 +48,6 @@ export function qaCodexPreflight(args: {
   return { ok: true, effort };
 }
 
-export function qaCodexPreflightReason(args: Parameters<typeof qaCodexPreflight>[0]): string | null {
-  const result = qaCodexPreflight(args);
-  return result.ok ? null : result.reason;
-}
-
 export function resolveStaleBrowserQaReceipt(input: {
   state: string;
   result: unknown;

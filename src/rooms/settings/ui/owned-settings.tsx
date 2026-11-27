@@ -1,25 +1,12 @@
 import { useEffect, useState } from "react";
-import {
-  experimental_ProviderModelPicker as ProviderModelPicker,
-  experimental_useProviders as useProviders,
-  useRpc,
-  type ExperimentalProviderModelPickerValue,
-} from "@get-bb/plugin-sdk/app";
+import { useRpc } from "@get-bb/plugin-sdk/app";
 import type { rpcContract } from "../../contracts";
 import { mergeInventoryItems, RESOURCE_KEYS, resourceModeOf, type InventoryGroup, type ResourceKey, type ResourceMode } from "../../native-agent/ui";
-import { Button } from "@lane-pilot/ui-kit";
-import { Input } from "@lane-pilot/ui-kit";
-import { Label } from "@lane-pilot/ui-kit";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@lane-pilot/ui-kit";
+import { Button, ConfirmDialog, CONTROL_H, Disclosure, HelpSup, Input, Label, Select, SelectContent, SelectItem, SelectTrigger, SelectValue, Surface, SurfaceBody, SurfaceHeader, usePanelLayout } from "@lane-pilot/ui-kit";
 import type { Locale } from "@lane-pilot/i18n";
 import { t } from "@lane-pilot/i18n";
 import { agentPickerLabel } from "../../contracts/agent-display";
 import type { LanePilotDefaults } from "@lane-pilot/settings-catalog";
-import { CONTROL_H } from "@lane-pilot/ui-kit";
-import { Disclosure } from "@lane-pilot/ui-kit";
-import { HelpSup } from "@lane-pilot/ui-kit";
-import { usePanelLayout } from "@lane-pilot/ui-kit";
-import { Surface, SurfaceBody, SurfaceHeader } from "@lane-pilot/ui-kit";
 
 const FIELD = "min-w-0 w-full max-w-full";
 const CONTROL = `${FIELD} box-border`;
@@ -31,8 +18,7 @@ type Agent = {
   custom?: boolean;
   resourceModes?: Partial<Record<ResourceKey, ResourceMode>>;
 };
-type HostOption = { id: string; name: string; status: string; connected: boolean };
-type Snapshot = { defaults: LanePilotDefaults; agents: Agent[]; revision: number; hosts?: HostOption[]; requiredSessionPolicy?: "required" | "none" };
+type Snapshot = { defaults: LanePilotDefaults; agents: Agent[]; requiredSessionPolicy?: "required" | "none" };
 type Inventory = Record<ResourceKey, InventoryGroup>;
 
 const RESOURCE_LABEL: Record<ResourceKey, "agentAllowedTools" | "agentDisallowedTools" | "agentSkills" | "agentMcp"> = {
@@ -158,23 +144,21 @@ function ResourcePicker({
 }
 
 /** Kept mounted across navigation so unsaved drafts retain their original CAS token. */
-export function OwnedSettings({ scope, locale, onDefaultsSaved }: { scope: "projects" | "globals" | "agents"; locale: Locale; onDefaultsSaved?: (defaults: LanePilotDefaults) => void }) {
+export function OwnedSettings({ locale }: { locale: Locale }) {
   const rpc = useRpc<typeof rpcContract>();
-  const providers = useProviders();
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
-  const [defaults, setDefaults] = useState<LanePilotDefaults>({});
   const [agents, setAgents] = useState<Agent[]>([]);
-  const [hosts, setHosts] = useState<HostOption[]>([]);
   const [inventory, setInventory] = useState<Inventory | null>(null);
   const [selected, setSelected] = useState("dev-orchestrator");
   const [remote, setRemote] = useState<Snapshot | null>(null);
   const [newId, setNewId] = useState("");
   const [busy, setBusy] = useState(false);
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const [error, setError] = useState("");
   const [saved, setSaved] = useState(false);
   const loadInventory = async (next: Snapshot) => {
     const prefs = await rpc.call("get_preferences", { suggestedLocale: locale });
-    const hostId = next.defaults.qaHostId ?? next.hosts?.find((host) => host.connected)?.id ?? next.hosts?.[0]?.id ?? null;
+    const hostId = next.defaults.qaHostId ?? null;
     try {
       setInventory(await rpc.call("get_agent_inventory", { projectId: prefs.lastProjectId, hostId }));
     } catch (cause) {
@@ -187,61 +171,51 @@ export function OwnedSettings({ scope, locale, onDefaultsSaved }: { scope: "proj
     }
   };
   useEffect(() => {
-    if (snapshot || scope === "projects") return;
+    if (snapshot) return;
     let current = true;
     void rpc.call("get_globals", {}).then(async (next) => {
       if (!current) return;
-      setSnapshot(next); setDefaults(next.defaults); setAgents(next.agents); setHosts(next.hosts ?? []);
+      setSnapshot(next); setAgents(next.agents);
       await loadInventory(next);
     }).catch((cause) => { if (current) setError(String(cause)); });
     return () => { current = false; };
-  }, [rpc, scope, snapshot, locale]);
+  }, [rpc, snapshot, locale]);
   const { stackControls } = usePanelLayout();
   const agent = agents.find((item) => item.id === selected);
   const save = async () => {
-    if (!snapshot || busy) return;
+    if (!snapshot || !agent || busy) return;
     setBusy(true); setError(""); setSaved(false);
     try {
-      if (scope === "globals") {
-        const result = await rpc.call("save_globals", { defaults, expectedRevision: snapshot.revision });
-        if (!result.ok) throw new Error(t("owned01"));
-        const readback = await rpc.call("get_globals", {});
-        if (readback.revision !== result.revision) throw new Error(t("owned02"));
-        setSnapshot((current) => current ? { ...current, defaults: readback.defaults, revision: readback.revision } : current);
-        setDefaults(readback.defaults);
-        onDefaultsSaved?.(readback.defaults);
-      } else if (agent) {
-        const original = snapshot.agents.find((item) => item.id === agent.id);
-        const result = await rpc.call("save_agent_profile", {
-          id: agent.id,
-          prompt: agent.prompt,
-          description: agent.description,
-          expectedSourceHash: original?.sourceHash ?? "",
-          ...(agent.tools ? { tools: agent.tools } : {}),
-          ...(agent.disallowedTools ? { disallowedTools: agent.disallowedTools } : {}),
-          ...(agent.skills ? { skills: agent.skills } : {}),
-          ...(agent.mcpServers ? { mcpServers: agent.mcpServers } : {}),
-          resourceModes: {
-            tools: agent.resourceModes?.tools ?? resourceModeOf(agent.tools),
-            disallowedTools: agent.resourceModes?.disallowedTools ?? resourceModeOf(agent.disallowedTools),
-            skills: agent.resourceModes?.skills ?? resourceModeOf(agent.skills),
-            mcpServers: agent.resourceModes?.mcpServers ?? resourceModeOf(agent.mcpServers),
-          },
-        });
-        if (!result.ok) throw new Error(t("owned03"));
-        const readback = await rpc.call("get_globals", {});
-        const confirmed = readback.agents.find((item) => item.id === agent.id)!;
-        if (confirmed.sourceHash !== result.sourceHash) throw new Error(t("owned04"));
-        setSnapshot((current) => current ? { ...current, agents: [...current.agents.filter((item) => item.id !== confirmed.id), confirmed] } : current);
-        setAgents((current) => current.map((item) => item.id === confirmed.id ? confirmed : item));
-      }
+      const original = snapshot.agents.find((item) => item.id === agent.id);
+      const result = await rpc.call("save_agent_profile", {
+        id: agent.id,
+        prompt: agent.prompt,
+        description: agent.description,
+        expectedSourceHash: original?.sourceHash ?? "",
+        ...(agent.tools ? { tools: agent.tools } : {}),
+        ...(agent.disallowedTools ? { disallowedTools: agent.disallowedTools } : {}),
+        ...(agent.skills ? { skills: agent.skills } : {}),
+        ...(agent.mcpServers ? { mcpServers: agent.mcpServers } : {}),
+        resourceModes: {
+          tools: agent.resourceModes?.tools ?? resourceModeOf(agent.tools),
+          disallowedTools: agent.resourceModes?.disallowedTools ?? resourceModeOf(agent.disallowedTools),
+          skills: agent.resourceModes?.skills ?? resourceModeOf(agent.skills),
+          mcpServers: agent.resourceModes?.mcpServers ?? resourceModeOf(agent.mcpServers),
+        },
+      });
+      if (!result.ok) throw new Error(t("owned03"));
+      const readback = await rpc.call("get_globals", {});
+      const confirmed = readback.agents.find((item) => item.id === agent.id)!;
+      if (confirmed.sourceHash !== result.sourceHash) throw new Error(t("owned04"));
+      setSnapshot((current) => current ? { ...current, agents: [...current.agents.filter((item) => item.id !== confirmed.id), confirmed] } : current);
+      setAgents((current) => current.map((item) => item.id === confirmed.id ? confirmed : item));
       setSaved(true);
     } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
     finally { setBusy(false); }
   };
   const isDraft = Boolean(agent && snapshot && !snapshot.agents.some((item) => item.id === agent.id));
   const removeAgent = async () => {
-    if (!snapshot || !agent || busy || !window.confirm(t("agentDeleteConfirm"))) return;
+    if (!snapshot || !agent || busy) return;
     setBusy(true); setError(""); setSaved(false);
     try {
       if (!isDraft) {
@@ -254,69 +228,15 @@ export function OwnedSettings({ scope, locale, onDefaultsSaved }: { scope: "proj
     } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
     finally { setBusy(false); }
   };
-  return <section hidden={scope === "projects"} className="min-w-0 max-w-full space-y-6" style={{ minInlineSize: 0 }} data-testid="owned-settings">
+  return <section className="min-w-0 max-w-full space-y-6" style={{ minInlineSize: 0 }} data-testid="owned-settings">
     <div className="min-w-0 space-y-1">
-      <h1 className="text-xl font-medium">{scope === "globals" ? t("navGlobals") : t("navAgents")}</h1>
-      <p className="text-sm text-muted-foreground">{scope === "globals" ? t("globalsHelp") : t("agentsHelp")}</p>
+      <h1 className="text-xl font-medium">{t("navAgents")}</h1>
+      <p className="text-sm text-muted-foreground">{t("agentsHelp")}</p>
     </div>
     {error ? <div className="min-w-0 space-y-2"><p role="alert" className="break-words text-sm text-destructive">{error}</p><Button variant="outline" className={CONTROL_H} disabled={busy} onClick={() => { void rpc.call("get_globals", {}).then(setRemote).catch((cause) => setError(String(cause))); }}>{t("owned05")}</Button></div> : null}
-    {remote ? <section className="lp-card min-w-0 max-w-full space-y-2 p-3"><h2 className="text-sm font-medium">{t("owned06")}</h2><pre className="max-h-64 max-w-full overflow-auto whitespace-pre-wrap break-words text-xs">{scope === "globals" ? JSON.stringify(remote.defaults, null, 2) : remote.agents.find((item) => item.id === selected)?.prompt ?? "—"}</pre><p className="text-sm">{t("owned07")}</p><Button variant="outline" className={CONTROL_H} onClick={() => { setSnapshot(remote); setRemote(null); setError(""); }}>{t("owned08")}</Button></section> : null}
+    {remote ? <section className="lp-card min-w-0 max-w-full space-y-2 p-3"><h2 className="text-sm font-medium">{t("owned06")}</h2><pre className="max-h-64 max-w-full overflow-auto whitespace-pre-wrap break-words text-xs">{remote.agents.find((item) => item.id === selected)?.prompt ?? "—"}</pre><p className="text-sm">{t("owned07")}</p><Button variant="outline" className={CONTROL_H} onClick={() => { setSnapshot(remote); setRemote(null); setError(""); }}>{t("owned08")}</Button></section> : null}
     {!snapshot ? <p>{t("owned09")}</p> : <>
-      <fieldset disabled={busy} hidden={scope !== "globals"} className="min-w-0 max-w-full space-y-6" style={{ minInlineSize: 0 }}>
-        <Surface>
-          <SurfaceHeader><h2 className="text-sm font-medium">{t("globalsSectionPlacement")}</h2></SurfaceHeader>
-          <SurfaceBody>
-          <Select value={defaults.helperPlacement ?? "plugin"} onValueChange={(value) => { setDefaults((current) => ({ ...current, helperPlacement: value as "plugin" | "project_tree" })); setSaved(false); }}>
-            <SelectTrigger id="global-placement" aria-label={t("owned10")} className={`${CONTROL_H} ${CONTROL}`}><SelectValue /></SelectTrigger>
-            <SelectContent><SelectItem value="plugin">{t("owned11")}</SelectItem><SelectItem value="project_tree">{t("owned12")}</SelectItem></SelectContent>
-          </Select>
-          </SurfaceBody>
-        </Surface>
-        <Surface>
-          <SurfaceHeader><h2 className="text-sm font-medium">{t("globalsSectionMachine")}</h2></SurfaceHeader>
-          <SurfaceBody className="space-y-5">
-          <div className="min-w-0 max-w-full space-y-2">
-            <div className="flex min-w-0 items-center justify-between gap-2">
-              <h3 className="min-w-0 text-sm font-medium">{t("globalQaHost")}</h3>
-              <Button type="button" variant="ghost" className={`${CONTROL_H} shrink-0 px-2`} disabled={!defaults.qaHostId} onClick={() => { setDefaults((current) => { const next = { ...current }; delete next.qaHostId; return next; }); setSaved(false); }}>{t("inheritChoice")}</Button>
-            </div>
-            <Select value={defaults.qaHostId ?? "__inherit__"} onValueChange={(value) => { setDefaults((current) => ({ ...current, qaHostId: value === "__inherit__" ? undefined : value })); setSaved(false); }}>
-              <SelectTrigger id="global-qa-host" aria-label={t("globalQaHost")} className={`${CONTROL_H} ${CONTROL}`}><SelectValue placeholder={t("inheritChoice")} /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="__inherit__">{t("inheritChoice")}</SelectItem>
-                {hosts.map((host) => <SelectItem key={host.id} value={host.id}>{host.name} · {host.connected ? t("hostConnected") : t("hostOffline")}</SelectItem>)}
-              </SelectContent>
-            </Select>
-            {defaults.qaHostId && !hosts.some((host) => host.id === defaults.qaHostId) ? <p className="text-xs text-muted-foreground">{t("hostUnavailable")}</p> : null}
-          </div>
-          <div className="min-w-0 max-w-full space-y-2">
-            <div className="flex min-w-0 items-center justify-between gap-2">
-              <h3 className="min-w-0 text-sm font-medium">{t("globalWriterModel")}</h3>
-              <Button type="button" variant="ghost" className={`${CONTROL_H} shrink-0 px-2`} disabled={!defaults.writerProviderId && !defaults.writerModel} onClick={() => { setDefaults((current) => { const next = { ...current }; delete next.writerProviderId; delete next.writerModel; delete next.writerReasoningEffort; return next; }); setSaved(false); }}>{t("inheritChoice")}</Button>
-            </div>
-            <div className="min-w-0 max-w-full">
-              {defaults.qaHostId ? (
-                providers.providers?.length || defaults.writerProviderId
-                  ? <ProviderModelPicker
-                      value={{
-                        providerId: defaults.writerProviderId || providers.providers?.[0]?.id || "none",
-                        model: defaults.writerModel || "",
-                        reasoningLevel: (defaults.writerReasoningEffort || "medium") as ExperimentalProviderModelPickerValue["reasoningLevel"],
-                      }}
-                      routing={{ kind: "host", hostId: defaults.qaHostId }}
-                      onChange={(next: ExperimentalProviderModelPickerValue) => {
-                        setDefaults((current) => ({ ...current, writerProviderId: next.providerId, writerModel: next.model, writerReasoningEffort: next.reasoningLevel }));
-                        setSaved(false);
-                      }}
-                    />
-                  : <p className="text-sm text-muted-foreground">{providers.status === "loading" ? t("writerCatalogLoading") : t("writerCatalogUnavailable")}</p>
-              ) : <p className="text-xs text-muted-foreground">{t("catalogNeedsMachine")}</p>}
-            </div>
-          </div>
-          </SurfaceBody>
-        </Surface>
-      </fieldset>
-      <fieldset disabled={busy} hidden={scope !== "agents"} className="min-w-0 max-w-full space-y-6" style={{ minInlineSize: 0 }}>
+      <fieldset disabled={busy} className="min-w-0 max-w-full space-y-6" style={{ minInlineSize: 0 }}>
         <div className="flex min-w-0 items-start gap-1">
           <p className="text-xs text-muted-foreground">{snapshot.requiredSessionPolicy === "required" ? t("agentResourceLimitsAvailable") : t("agentResourceLimitsUnavailable")}</p>
           <HelpSup label={snapshot.requiredSessionPolicy === "required" ? t("requiredSessionReady") : t("requiredSessionUnavailable")}>
@@ -332,7 +252,7 @@ export function OwnedSettings({ scope, locale, onDefaultsSaved }: { scope: "proj
           </div>
           <Label htmlFor="owned-agent">{t("agentSelectedProfile")}</Label>
           <Select value={selected} onValueChange={(value) => { setSelected(value); setSaved(false); }}><SelectTrigger id="owned-agent" className={`${CONTROL_H} ${CONTROL}`}><SelectValue /></SelectTrigger><SelectContent>{agents.map((item) => <SelectItem key={item.id} value={item.id}>{agentPickerLabel(item, t)}</SelectItem>)}</SelectContent></Select>
-          {agent && (agent.custom || isDraft) ? <Button type="button" variant="outline" className={`${CONTROL_H} shrink-0`} data-testid="agent-delete" onClick={() => void removeAgent()}>{t("agentDelete")}</Button> : null}
+          {agent && (agent.custom || isDraft) ? <Button type="button" variant="outline" className={`${CONTROL_H} shrink-0`} data-testid="agent-delete" onClick={() => setConfirmDeleteOpen(true)}>{t("agentDelete")}</Button> : null}
           {agent ? <>
             <Label htmlFor="agent-description">{t("owned15")}</Label>
             <Input id="agent-description" className={`${CONTROL_H} ${CONTROL}`} value={agent.description} onChange={(event) => { setAgents((current) => current.map((item) => item.id === selected ? { ...item, description: event.target.value } : item)); setSaved(false); }} />
@@ -378,8 +298,18 @@ export function OwnedSettings({ scope, locale, onDefaultsSaved }: { scope: "proj
           </Disclosure>
         </> : null}
       </fieldset>
-      <Button className={CONTROL_H} disabled={busy || (scope === "agents" && (!agent?.prompt.trim() || !agent.description.trim()))} onClick={() => void save()}>{busy ? (t("owned17")) : (t("owned18"))}</Button>
+      <Button className={CONTROL_H} disabled={busy || !agent?.prompt.trim() || !agent.description.trim()} onClick={() => void save()}>{busy ? (t("owned17")) : (t("owned18"))}</Button>
       {saved ? <p role="status" className="text-sm">{t("owned19")}</p> : null}
+      <ConfirmDialog
+        open={confirmDeleteOpen}
+        title={t("agentDelete")}
+        body={t("agentDeleteConfirm")}
+        confirmLabel={t("agentDelete")}
+        cancelLabel={t("cancel")}
+        tone="danger"
+        onOpenChange={setConfirmDeleteOpen}
+        onConfirm={removeAgent}
+      />
     </>}
   </section>;
 }

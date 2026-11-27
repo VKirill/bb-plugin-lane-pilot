@@ -7,7 +7,6 @@ import type { StageId } from "./stage-contract";
  * code only reads for its shape. An advisory stage can never be the only reason a task is accepted (`acceptanceProofGap`).
  */
 export const PROOF_KINDS = ["command", "file", "gate", "receipt", "schema"] as const;
-export type ProofKind = (typeof PROOF_KINDS)[number];
 
 const checkText = z.string().min(8).max(500);
 

@@ -1,5 +1,4 @@
 import { z } from "zod";
-import { isAbsolutePath, resolvePath } from "./path-utils";
 
 const runPolicySchema=z.object({
   schemaVersion:z.literal(1),
@@ -101,9 +100,4 @@ export async function mapBounded<T,R>(items:readonly T[],limit:number,work:(item
   };
   await Promise.all(Array.from({length:Math.min(limit,items.length)},worker));
   return results;
-}
-
-export function normalizePoolFolderPath(path: string): string {
-  const normalized = (isAbsolutePath(path) ? resolvePath(path) : resolvePath("/", path)).replace(/\\/g, "/").replace(/\/+$/g, "");
-  return normalized || "/";
 }

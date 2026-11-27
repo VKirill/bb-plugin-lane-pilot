@@ -5,10 +5,9 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, configure, fireEvent, waitFor } from "@testing-library/react";
 import { SETTINGS_REGISTRY } from "../src/rooms/settings-registry";
-import { CONSOLE_SECTIONS, SYSTEM_PAGES } from "../src/rooms/pages/models/nav-model";
+import { CONSOLE_SECTIONS, SEGMENTS, SYSTEM_PAGES, resolveTab } from "../src/rooms/pages/models/nav-model";
 import { extraSettingTab } from "../src/rooms/pages/models/placement";
-import { SEGMENTS, resolveTab, segmentsFor } from "../src/rooms/pages/models/tabs-model";
-import { setLocaleOverride, en, ru } from "@lane-pilot/i18n";
+import { setLocaleOverride, en } from "@lane-pilot/i18n";
 import { HELPER_ROLES } from "../src/rooms/contracts/helper-context";
 import { ROLE_GROUPS } from "../src/rooms/native-agent/ui/team-model";
 import { screenFixture, mountPage } from "./ui-harness";
@@ -118,23 +117,12 @@ describe("console setting routes and dictionaries", () => {
     slot.lifecycle.unmount();
   });
 
-  it("names the tabs in both languages and keeps the old tab ids as aliases", () => {
-    for (const key of ["tabTeam", "tabWork", "tabKnowledge", "tabAutomation", "tabRuns"] as const) {
-      expect(en[key]).toBeTruthy();
-      expect(ru[key]).toBeTruthy();
-      expect(ru[key]).not.toBe(en[key]);
-    }
+  it("keeps the old tab ids as aliases", () => {
     expect(resolveTab("checks")).toEqual({ tab: "work" });
     expect(resolveTab("access")).toEqual({ tab: "team" });
     expect(resolveTab("service")).toEqual({ tab: "runs", segment: "service" });
     expect(resolveTab("monitor")).toEqual({ tab: "runs", segment: "board" });
     expect(resolveTab("team")).toEqual({ tab: "team" });
-  });
-
-  it("shows the segments of the knowledge tab", () => {
-    expect(segmentsFor("knowledge", "system")).toEqual(["memory", "docs"]);
-    expect(segmentsFor("knowledge", "project")).toEqual(["memory", "docs"]);
-    expect(segmentsFor("knowledge", "section")).toEqual(["memory", "docs"]);
   });
 
   it("lists every helper role in the team table once", () => {

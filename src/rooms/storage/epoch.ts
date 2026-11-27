@@ -8,6 +8,3 @@ export function statsEpochMs(raw: unknown): number {
   const at = Date.parse(String(raw ?? STATS_EPOCH_DEFAULT));
   return Number.isNaN(at) ? Date.parse(STATS_EPOCH_DEFAULT) : at;
 }
-
-/** The date line the wall and the daily summary show. */
-export const statsEpochLine = (epochMs: number): string => `счёт с ${new Date(epochMs).toISOString().slice(0, 10)}`;

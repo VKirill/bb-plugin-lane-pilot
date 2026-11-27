@@ -174,11 +174,6 @@ export function getTaskContractJson(db: LanePilotDatabase, taskId: string, runId
   return row?.contract_json ?? null;
 }
 
-/** Rewrite a task's stored contract JSON in place. */
-export function updateTaskContractJson(db: LanePilotDatabase, taskId: string, runId: string, contractJson: string): void {
-  taskFrame(db, taskId, "contract_json", null, () => db.prepare("UPDATE lane_pilot_task SET contract_json=? WHERE id=? AND run_id=?").run(contractJson, taskId, runId).changes > 0);
-}
-
 /** A task's row under its run (the PM's dispatch dedupe reads it). */
 export function getTaskRow(db: LanePilotDatabase, taskId: string, runId: string): { contract_json: string; created_at: number } | undefined {
   return db.prepare("SELECT contract_json, created_at FROM lane_pilot_task WHERE id=? AND run_id=?").get(taskId, runId) as
@@ -307,10 +302,6 @@ export function latestDocsTaskAt(db: LanePilotDatabase, input: { root: string; h
   return row?.at ?? null;
 }
 
-export function hasTask(db: LanePilotDatabase, id: string): boolean {
-  return Boolean(db.prepare("SELECT 1 FROM lane_pilot_task WHERE id = ? LIMIT 1").get(id));
-}
-
 export function listProjectTasks(db: LanePilotDatabase, projectId: string): Array<{ id: string; created_at: number }> {
   return db.prepare(`SELECT t.id, t.created_at FROM lane_pilot_task t JOIN lane_pilot_run r ON r.id=t.run_id WHERE r.project_id=?`)
     .all(projectId) as Array<{ id: string; created_at: number }>;
@@ -319,15 +310,6 @@ export function listProjectTasks(db: LanePilotDatabase, projectId: string): Arra
 export function countProjectTasksSince(db: LanePilotDatabase, projectId: string, since: number): number {
   return (db.prepare("SELECT COUNT(*) AS n FROM lane_pilot_task t JOIN lane_pilot_run r ON r.id=t.run_id WHERE r.project_id=? AND t.created_at>=?")
     .get(projectId, since) as { n: number }).n;
-}
-
-/** A project's open tasks (the newest attempt in a live state on an unclosed run) with their contracts: the window status lists their owns_paths. */
-export function openProjectTaskOwnsRows(db: LanePilotDatabase, projectId: string): Array<{ task_id: string; run_id: string; contract_json: string }> {
-  return db.prepare(`SELECT t.id AS task_id, t.run_id, t.contract_json FROM lane_pilot_task t JOIN lane_pilot_run r ON r.id=t.run_id
-    WHERE r.project_id=? AND r.closed_at IS NULL
-      AND (SELECT a.state FROM lane_pilot_attempt a WHERE a.run_id=t.run_id AND a.task_id=t.id ORDER BY a.attempt_no DESC, a.updated_at DESC LIMIT 1)
-        IN (${OPEN_ATTEMPT_STATES.map(() => "?").join(",")})`)
-    .all(projectId, ...OPEN_ATTEMPT_STATES) as Array<{ task_id: string; run_id: string; contract_json: string }>;
 }
 
 /** Reads recorded task-row transitions (`lane_pilot_task_transition`), scoped to a run (or all runs when `runId` is empty) and optional `taskId`. */

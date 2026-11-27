@@ -35,7 +35,6 @@ The absence module distinguishes anticipated non-existence from actionable error
    - `readTextOrNull`: reads file text via UTF-8; returns `null` on `ENOENT` or `ENOTDIR`, re-throwing all other errors (`packages/kit/src/miss.ts:38-44`).
    - `lstatOrNull`: retrieves file `Stats` or returns `null` if the target is absent (`packages/kit/src/miss.ts:48-54`).
    - `statOrNull`: retrieves dereferenced file `Stats` or returns `null` on absence (`packages/kit/src/miss.ts:58-64`).
-   - `readTextOrNullSync`: synchronous counterpart of `readTextOrNull` for non-async initialization code (`packages/kit/src/miss.ts:68-75`).
 4. **Resilient JSON parsing (`parseJsonOr`):** Parses JSON text; if `JSON.parse` fails due to syntax corruption, returns a supplied fallback value (`packages/kit/src/miss.ts:81-87`).
 5. **Typed absence wrapper (`orMiss`):** Awaits a promise and returns its result; if an error occurs and satisfies a passed predicate (`isFsAbsent` or `isNotFound`), it returns the fallback value; otherwise, it re-throws the error (`packages/kit/src/miss.ts:93-100`).
 6. **Isolated side-effect execution (`bestEffort`):** Awaits an asynchronous task. If the task fails, it formats the message, logs a single warning line using the provided `BestEffortLog`, and returns the fallback value without throwing (`packages/kit/src/best-effort.ts:10-23`).
@@ -47,7 +46,6 @@ The absence module distinguishes anticipated non-existence from actionable error
 | `isFsAbsent` | Error code is `ENOENT` or `ENOTDIR` | `true`; otherwise `false` | `packages/kit/src/miss.ts:11-14` |
 | `isNotFound` | `code`/`serverCode` is `"not_found"` or `"*_not_found"`, or 404 status | `true`; otherwise `false` | `packages/kit/src/miss.ts:16-35` |
 | `readTextOrNull` | File path is absent | Returns `null`; otherwise string content | `packages/kit/src/miss.ts:38-45` |
-| `readTextOrNullSync` | File path is absent synchronously | Returns `null`; otherwise string content | `packages/kit/src/miss.ts:68-75` |
 | `parseJsonOr` | Malformed JSON string | Returns `fallback` value | `packages/kit/src/miss.ts:81-87` |
 | `orMiss` | Error satisfies `expected(cause)` predicate | Returns `fallback`; otherwise throws | `packages/kit/src/miss.ts:93-100` |
 | `bestEffort` | Any error during side-effect execution | Logs warning via `log` and returns `fallback` | `packages/kit/src/best-effort.ts:17-24` |
@@ -75,7 +73,6 @@ The absence module distinguishes anticipated non-existence from actionable error
 | `readTextOrNull` | `function` | Asynchronously reads file text or returns `null` on absence | `packages/kit/src/miss.ts:38-45` |
 | `lstatOrNull` | `function` | Asynchronously retrieves file stats or returns `null` on absence | `packages/kit/src/miss.ts:48-55` |
 | `statOrNull` | `function` | Asynchronously retrieves dereferenced file stats or returns `null` on absence | `packages/kit/src/miss.ts:58-65` |
-| `readTextOrNullSync` | `function` | Synchronously reads file text or returns `null` on absence | `packages/kit/src/miss.ts:68-75` |
 | `parseJsonOr` | `function` | Parses JSON with an automatic fallback on syntax error | `packages/kit/src/miss.ts:81-87` |
 | `orMiss` | `function` | Wraps promise execution with a typed absence fallback predicate | `packages/kit/src/miss.ts:93-100` |
 | `BestEffortLog` | `type` | Logger interface accepting a log function or `{ warn(msg): void }` | `packages/kit/src/best-effort.ts:8` |

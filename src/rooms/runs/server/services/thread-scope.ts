@@ -46,7 +46,6 @@ function emptyScope(threadId: string): ThreadScope {
     hostId: null,
     cwd: null,
     repo: null,
-    isPm: false,
   };
 }
 
@@ -139,6 +138,5 @@ export async function threadScope(deps: ThreadScopeDeps, threadId: string): Prom
     hostId,
     cwd,
     repo,
-    isPm,
   };
 }

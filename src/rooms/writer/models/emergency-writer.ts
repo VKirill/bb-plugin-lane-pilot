@@ -30,7 +30,3 @@ export function emergencyFallbackDecision(trigger:EmergencyTrigger):EmergencyFal
   }
   return {run:false,reason:`not_safe_for_emergency_fallback:${trigger.state}`};
 }
-
-export function sameWriterSelection(primary:{providerId:string;model:string}, emergency:{providerId:string;model:string}):boolean {
-  return primary.providerId === emergency.providerId && primary.model === emergency.model;
-}

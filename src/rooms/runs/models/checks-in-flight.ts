@@ -29,10 +29,3 @@ export function beginChecks(threadId: string, pool: string, now = Date.now()): (
 export function checksMoved(pool: string, now = Date.now()): void {
   poolMovedAt.set(pool, now);
 }
-
-/** The thread's checks in flight and when their pool last moved; null when it has none. */
-export function checksInFlight(threadId: string): { pool: string; movedAt: number } | null {
-  const entry = threads.get(threadId);
-  if (!entry) return null;
-  return { pool: entry.pool, movedAt: poolMovedAt.get(entry.pool) ?? 0 };
-}

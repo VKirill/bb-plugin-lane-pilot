@@ -12,16 +12,6 @@ export type { AskKind, OwnerAskPayload, OwnerAskResponse, OwnerAskSource };
  */
 const TITLE_MAX = 160;
 
-export const ownerAskPayloadSchema = z.object({
-  v: z.literal(1),
-  source: z.enum(OWNER_ASK_SOURCES),
-  kind: z.enum(ASK_KINDS).default("decision"),
-  question: z.string().min(1).max(2000),
-  detail: z.string().max(4000).optional(),
-  options: z.array(z.object({ id: z.string().min(1).max(40), label: z.string().min(1).max(120) })).max(OWNER_ASK_MAX_OPTIONS),
-  allowText: z.boolean(),
-});
-
 /** What the form submits: the option the owner picked and/or words of their own. */
 export const ownerAskResponseSchema = z.object({
   choice: z.string().max(40).nullable().optional(),

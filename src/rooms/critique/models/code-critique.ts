@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { JSON_LAST_LINE, clipped, extractModelJson } from "@lane-pilot/workflow-engine";
+import { JSON_LAST_LINE, clipped } from "@lane-pilot/workflow-engine";
 import type { Citation } from "./citations";
 import { CRITIC_RUBRIC, VERDICT_STATUSES, legacyOutputToVerdict, verdictSeverityToLegacy, verdictSummary } from "@lane-pilot/workflow-engine";
 import type { Verdict, VerdictFinding, VerdictStatus } from "@lane-pilot/workflow-engine";
@@ -8,7 +8,6 @@ import { sha256Hex } from "@lane-pilot/kit";
 import type { CandidateEvidence } from "./candidate-evidence";
 import { taskBrief } from "./task-brief";
 
-export const CODE_CRITIQUE_STAGE = "code-critique" as const;
 export const CODE_CRITIQUE_MAX_ROUNDS = 3;
 
 /** An optional note a model writes as "" counts as absent, not as a parse error (hub 2026-10-30: findings[5].verificationExpectation). */
@@ -251,13 +250,6 @@ export const writerRepairReplySchema = z.object({
 
 export type WriterRepairReply = z.infer<typeof writerRepairReplySchema>;
 
-/** The repair thread's replies; null when the final message holds none that read. It runs inside acceptance, so it never throws. */
-export function parseWriterRepairReply(output: string): WriterRepairReply | null {
-  try {
-    const parsed = writerRepairReplySchema.safeParse(extractModelJson(output));
-    return parsed.success ? parsed.data : null;
-  } catch { return null; }
-}
 
 /**
  * The repair round's whole brief, in place of the writer's first brief: one role, one final answer. `setupLines`

@@ -27,7 +27,6 @@ export const laneWorktreeInputs = z.object({
   ownsPaths: z.array(z.string().max(300)).max(200).optional(),
   neverTouch: z.array(z.string().max(300)).max(200).optional(),
 }).strict();
-export type LaneWorktreeInputs = z.infer<typeof laneWorktreeInputs>;
 
 const errorMessage = (cause: unknown) => cause instanceof Error ? cause.message : String(cause);
 

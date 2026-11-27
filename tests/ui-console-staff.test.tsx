@@ -895,7 +895,6 @@ describe("console staff page (P4)", () => {
       subPath: "staff/proj_alpha/marketing/loadout",
       rpc: {
         agent_loadout: () => ({
-          hubSkills: 12,
           roles: [
             {
               role: "growth-marketer",

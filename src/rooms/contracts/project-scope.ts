@@ -1,5 +1,4 @@
 export const PERSONAL_PROJECT_KIND = "personal" as const;
-export const STANDARD_PROJECT_KIND = "standard" as const;
 export const PERSONAL_PROJECT_ID = "proj_personal";
 
 export type ListedProject = { id: string; name: string; kind?: string };

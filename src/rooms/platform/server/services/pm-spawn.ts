@@ -35,24 +35,6 @@ export function pmPrompt(runId: string, config: PrototypeConfig, managedWorkspac
   ].join("\n");
 }
 
-export function providerSupportsServiceTier(provider: {
-  capabilities?: { supportsServiceTier?: boolean };
-  supportsServiceTier?: boolean;
-  serviceTiers?: ReadonlyArray<{ id?: string } | string>;
-} | null | undefined): boolean {
-  if (!provider) return false;
-  if (provider.capabilities?.supportsServiceTier === false || provider.supportsServiceTier === false) {
-    return false;
-  }
-  if (provider.capabilities?.supportsServiceTier === true || provider.supportsServiceTier === true) {
-    return true;
-  }
-  if (Array.isArray(provider.serviceTiers) && provider.serviceTiers.length > 0) {
-    return true;
-  }
-  return false;
-}
-
 const PROVIDER_LIST_TTL_MS = 60_000;
 
 /** OpenCode v2's agent for every thread Lane Pilot starts on it (Lane Stack's `profiles/opencode/agents/lane-pilot.md`): its rules,

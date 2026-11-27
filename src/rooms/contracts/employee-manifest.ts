@@ -20,12 +20,6 @@ export function installEmployeeSpecialists(roles: string[]): void {
   for (const id of EMPLOYEE_IDS) if (!roles.includes(id)) roles.push(id);
 }
 
-/** The old `skills` field is the always-on list. A new `coreSkills` wins and is capped at 3. */
-export function coreSkillsOf(input: { skills?: readonly string[] | undefined; coreSkills?: readonly string[] | undefined }): string[] {
-  if (input.coreSkills) return input.coreSkills.slice(0, 3);
-  return [...(input.skills ?? [])];
-}
-
 type EmployeeMeta = {
   domain?: string | undefined;
   machineAffinity?: MachineAffinity | undefined;

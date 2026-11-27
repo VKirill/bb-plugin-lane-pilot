@@ -286,4 +286,3 @@ export function createStatusResolver(db: Database.Database) {
     },
   };
 }
-export type StatusResolver = ReturnType<typeof createStatusResolver>;

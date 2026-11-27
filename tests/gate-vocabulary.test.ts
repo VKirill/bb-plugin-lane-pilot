@@ -9,7 +9,7 @@ import { taskV2Schema } from "../src/rooms/contracts";
 import { GATE_CODES, gateVocabularyLines } from "../src/rooms/contracts";
 import { INVARIANT_ITEM, INVARIANT_WORDS } from "../src/rooms/tasks/models/plan-fact";
 import {builtinWorkflow} from "../src/rooms/workflow/builtin";
-import { writerBriefSegments, writerPrompt } from "../src/rooms/writer/models/writer-task";
+import { writerBriefSegments } from "../src/rooms/writer/models/writer-task";
 
 const task = taskV2Schema.parse({
   schema_version: 2, id: "t1", title: "t", risk: "low", lane: "writer", project_cwd: "/repo", read_first: [], interfaces: [], invariants: [], out_of_scope: [],
@@ -39,7 +39,7 @@ describe("the judged agents are told every gate word", () => {
   it("the writer's brief names every word of the two rules that judge its answer and its checks", () => {
     const brief = writerBriefSegments(task).map((segment) => segment.text);
     expect(literalCoverage([...INVARIANT_WORDS, ...EXISTENCE_ONLY_WORDS], brief).missing).toEqual([]);
-    expect(writerPrompt(task)).toContain(gateVocabularyLines("writer").join("\n"));
+    expect(brief.join("\n\n")).toContain(gateVocabularyLines("writer").join("\n"));
     // the contract's codes are the planner's: a writer never writes a contract
     expect(gateVocabularyLines("writer").join("\n")).not.toContain("check_cannot_run");
   });

@@ -4,5 +4,5 @@ export { deferralRpc } from "./handlers/deferral-rpc";
 export { createDeferrals, pmDeferralLines } from "./services/deferral-service";
 export type { DeferInput, DeferralApi, DeferralList, DeferralView } from "./services/deferral-service";
 export { sdkOwnerMessagePort } from "./services/verify";
-export { countOpenDeferrals, countTermedDeferrals, listDeferrals, listOpenDeferralBriefs, noTermDeferralsOf, overdueDeferrals } from "./repositories/deferral-repository";
+export { countTermedDeferrals, listDeferrals, listOpenDeferralBriefs, overdueDeferrals } from "./repositories/deferral-repository";
 export { room } from "./room";

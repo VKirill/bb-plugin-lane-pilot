@@ -66,8 +66,6 @@ export function catalogDir(cwd: string): string {
   return join(homedir(), ".lane-pilot", "catalog", key);
 }
 
-export const catalogExists = (cwd: string): boolean => existsSync(join(catalogDir(cwd), "cards.jsonl"));
-
 function parseLines<T>(text: string): T[] {
   const out: T[] = [];
   for (const line of text.split("\n")) {
@@ -89,17 +87,6 @@ function atomicWrite(file: string, body: string): void {
   const tmp = `${file}.${process.pid}.tmp`;
   writeFileSync(tmp, body);
   renameSync(tmp, file);
-}
-
-/** Stores cards replacing same-path entries, atomically (temp file then rename). */
-export function writeCatalog(cwd: string, cards: readonly FileCard[]): void {
-  const dir = catalogDir(cwd);
-  mkdirSync(dir, { recursive: true });
-  const byPath = new Map<string, FileCard>();
-  for (const card of readCatalog(cwd)) byPath.set(card.path, card);
-  for (const card of cards) byPath.set(card.path, card);
-  const body = [...byPath.values()].map((card) => JSON.stringify(card)).join("\n");
-  atomicWrite(join(dir, "cards.jsonl"), body ? `${body}\n` : "");
 }
 
 export function writeMeta(cwd: string, meta: CatalogMeta): void {
@@ -130,10 +117,6 @@ export function appendTouch(cwd: string, touch: Touch): void {
     const lines = readFileSync(file, "utf8").split("\n").filter(Boolean);
     atomicWrite(file, `${lines.slice(-TOUCH_KEEP_LINES).join("\n")}\n`);
   }
-}
-
-export function readTouches(cwd: string): Touch[] {
-  try { return parseLines<Touch>(readFileSync(join(catalogDir(cwd), "touch.jsonl"), "utf8")); } catch { return []; }
 }
 
 /** The one card line of a repo-relative path, found by scanning for its line so the whole catalog is not parsed. */

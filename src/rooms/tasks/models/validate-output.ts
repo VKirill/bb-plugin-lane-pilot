@@ -20,22 +20,6 @@ export type OutputCheck =
 /** `flakyEvidence`: with `flaky`, the first failure and the machine reading before it (src/rooms/verification/machine-pressure.ts). */
 export type VerifyResult = { command:string; exitCode:number; stdout:string; stderr:string; flaky?:true; flakyEvidence?:FlakyEvidence; /** The limit the check was given, when it timed out (exit 124): the fact listCheckTimeouts reads. */ timeoutSec?:number };
 
-export function parseGitChangedPaths(stdout: string): string[] {
-  const paths = new Set<string>();
-  for (const raw of stdout.split("\n")) {
-    const line = raw.replace(/\r$/, "");
-    if (!line.trim()) continue;
-    if (/^[ MADRCU?!]{2} /.test(line)) {
-      const rest = line.slice(3).trim();
-      const renamed = rest.includes(" -> ") ? rest.slice(rest.lastIndexOf(" -> ") + 4).trim() : rest;
-      if (renamed) paths.add(renamed.replace(/^\.\//, ""));
-      continue;
-    }
-    if (!line.startsWith("#")) paths.add(line.trim().replace(/^\.\//, ""));
-  }
-  return [...paths].filter((path) => !isTaskFolderFile(path));
-}
-
 /** An expected output that names a folder («dir/», «dir/**»): met by a file under it, never read as a file. */
 export const isOutputFolder = (entry: string): boolean => /\/(\*\*)?$/.test(entry.trim());
 

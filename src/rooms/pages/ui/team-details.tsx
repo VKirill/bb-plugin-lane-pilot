@@ -1,11 +1,8 @@
 import type { ExperimentalProviderModelPickerValue } from "@get-bb/plugin-sdk/app";
 import { t, validationMessage, type I18nKey } from "@lane-pilot/i18n";
 import { QA_HOST_KEY, QA_WORKSPACE_KEY } from "@lane-pilot/settings-catalog";
-import { Button } from "@lane-pilot/ui-kit";
-import { Input } from "@lane-pilot/ui-kit";
-import { Label } from "@lane-pilot/ui-kit";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@lane-pilot/ui-kit";
-import { AdvancedRows, CatalogField } from "../../ui-shell/ui";
+import { Button, Disclosure, Input, Label, Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@lane-pilot/ui-kit";
+import { CatalogField } from "../../ui-shell/ui";
 import type { LpPage } from "./use-lp-page";
 import {WRITER_FALLBACK_DEFAULTS, WRITER_FALLBACK_SLOTS, type WriterFallbackSlot, writerFallbackKeys, writerFallbackSeed, writerFallbackSlots} from "@lane-pilot/models";
 
@@ -13,7 +10,7 @@ const FALLBACK_TITLES: Record<WriterFallbackSlot, I18nKey> = { 1: "writerFallbac
 
 /** The writer's own settings: the three fallbacks, the agent profile and what the runs say about the pair. */
 export function WriterDetail({ page }: { page: LpPage }) {
-  const { data, modelPicker, saveWriterFallback, pickerDrafts, fallbackTouched, writerRejected, saveError, advanced } = page;
+  const { data, modelPicker, saveWriterFallback, pickerDrafts, fallbackTouched, writerRejected, saveError } = page;
   const slotRows = writerFallbackSlots(data?.values ?? {});
   return (
     <div className="space-y-3" data-testid="writer-detail">
@@ -51,16 +48,16 @@ export function WriterDetail({ page }: { page: LpPage }) {
         })}
       </div>
       {writerRejected && saveError ? <p className="max-w-xl text-xs text-destructive" data-testid="writer-save-error">{saveError.kind === "cas" ? t("casConflict") : validationMessage(saveError.code, saveError.params)}</p> : null}
-      <AdvancedRows show={advanced} testId="writer-agent">
+      <Disclosure compact testId="writer-agent" summary={t("consoleSettingsMore")}>
         <CatalogField page={page} keyName="writer.agent" />
-      </AdvancedRows>
+      </Disclosure>
     </div>
   );
 }
 
 /** The browser check: which machine runs it, in which folder and with which provider and approval. */
 export function BrowserDetail({ page }: { page: LpPage }) {
-  const { data, displayedValue, resetInherited, saveKey, writeDraft, advanced, extrasGrouped } = page;
+  const { data, displayedValue, resetInherited, saveKey, writeDraft, extrasGrouped } = page;
   const options = data?.qaHosts ?? [];
   const current = String(displayedValue(QA_HOST_KEY) ?? "");
   const known = options.some((host) => host.id === current);
@@ -81,7 +78,7 @@ export function BrowserDetail({ page }: { page: LpPage }) {
         </Select>
       )}
       {displayedValue(QA_HOST_KEY) && !options.some((host) => host.id === displayedValue(QA_HOST_KEY)) ? <p className="text-xs text-muted-foreground">{t("hostUnavailable")}</p> : null}
-      <AdvancedRows show={advanced}>
+      <Disclosure compact testId="browser-qa-more" summary={t("consoleSettingsMore")}>
         <Label htmlFor="browser-qa-workspace">{t("browserQaWorkspace")}</Label>
         <Input
           id="browser-qa-workspace"
@@ -94,7 +91,7 @@ export function BrowserDetail({ page }: { page: LpPage }) {
         {extrasGrouped.filter((group) => group.section === "browser-qa").flatMap((group) => group.rows.filter((row) => row.storageKey !== "browser_qa.enabled")).map((row) => (
           <CatalogField key={row.storageKey} page={page} keyName={row.storageKey} />
         ))}
-      </AdvancedRows>
+      </Disclosure>
     </div>
   );
 }

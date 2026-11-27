@@ -85,7 +85,6 @@ Purpose: register pairs of active notes that contradict each other on facts, lit
 
 - Writers:
   - `holdConflict`: writes newly detected disagreements (`packages/memory-core/src/conflict-store.ts:68-76`) or replacements of stable notes in `store.ts` (`packages/memory-core/src/store.ts:164-171`).
-  - `setDeferral`: links a conflict row to an owner deferral ID (`packages/memory-core/src/conflict-store.ts:90-92`).
   - `markSettled`: records operator resolution, changing state to `"settled"` (`packages/memory-core/src/conflict-store.ts:94-96`).
 - Readers:
   - `heldClause`: checked in all search queries (`searchMemoryRecords`, `listMemory`, `visibility`) (`packages/memory-core/src/conflict-store.ts:62-65`, `packages/memory-core/src/store.ts:309`).

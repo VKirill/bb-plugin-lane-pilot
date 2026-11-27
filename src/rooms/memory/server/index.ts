@@ -14,9 +14,9 @@ export { MEMORY_EMBED_ACTION, MEMORY_EMBED_WORKFLOW_ID, memoryEmbedWorkflow, mou
 export { MAX_SETTLED_PER_RUN, createMemoryConflicts } from "./services/memory-conflicts";
 export type { MemoryConflictsApi } from "./services/memory-conflicts";
 export { MEMORY_CONFLICT_USAGE, runMemoryConflictCli } from "./handlers/memory-conflict-cli";
-export { MEMORY_IMPORT_SOURCES, MEMORY_IMPORT_USAGE, evalMemoryImport, formatImportEval, formatImportSummary, maskImportContent, pmTopIds, runMemoryImport } from "./services/import";
+export { MEMORY_IMPORT_SOURCES, evalMemoryImport, formatImportEval, formatImportSummary, maskImportContent, pmTopIds, runMemoryImport } from "./services/import";
 export type { ImportOutcome, ImportReport, MemoryImportOptions, MemoryImportSource } from "./services/import";
-export { memoryLine, pathAnchors, reviewerMemoryPicks, writerMemory, writerMemoryPicks, type WriterPickOptions } from "../models/memory-picks";
+export { memoryLine, pathAnchors, reviewerMemoryPicks, writerMemoryPicks, type WriterPickOptions } from "../models/memory-picks";
 export { dedupeAllProjects } from "./services/memory-duplicates";
 export { MEMORY_DUPLICATES_USAGE, memoryDedupeChanges, runMemoryDuplicatesCli } from "./handlers/memory-duplicates-cli";
 export { applyMoveSection, moveSectionBackup, planMoveSection, rewriteSectionScope, type MoveSectionOptions, type MoveSectionPlan } from "./services/move-section";

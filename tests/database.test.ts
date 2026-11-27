@@ -1,6 +1,6 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
-import { inspectAttempt, inspectState, setRunObjective, appendGateEvaluation, casSetting, claimDailySchedule, claimStageSpawn, closeRun, createAttempt, createRun, createTask, freezeRunBinding, getAttempt, getRunWriterHost, getTaskGitBase, listGateEvents, listStageEvents, listStageReceipts, listUnfinishedStages, migrations, openDatabase, saveStageReceipt, saveTaskGitBase, setAttemptHolderThread, setAttemptWorkspace, setRunWorkspace, getRun, setRunThread, transitionAttempt } from "../src/rooms/plugin-db";
+import { inspectAttempt, inspectState, setRunObjective, appendGateEvaluation, casSetting, claimStageSpawn, closeRun, createAttempt, createRun, createTask, freezeRunBinding, getAttempt, getRunWriterHost, getTaskGitBase, listGateEvents, listStageEvents, listStageReceipts, listUnfinishedStages, migrations, openDatabase, saveStageReceipt, saveTaskGitBase, setAttemptHolderThread, setAttemptWorkspace, getRun, setRunThread, transitionAttempt } from "../src/rooms/plugin-db";
 
 describe("section 9 storage.database DDL", () => {
   it("migrates an existing populated database without losing rows and expands the run state check", async () => {
@@ -143,18 +143,6 @@ describe("section 9 storage.database DDL", () => {
     await harness.lifecycle.dispose();
   });
 
-  it("claims one scheduled docs run per project and local date with project isolation", async () => {
-    const {bb,harness} = createFakePluginHost({pluginId:"lane-pilot"});
-    const db = openDatabase(bb);
-    expect(claimDailySchedule(db,"project-a","docs-maintenance","2026-09-23")).toBe(true);
-    expect(claimDailySchedule(db,"project-a","docs-maintenance","2026-09-23")).toBe(false);
-    expect(claimDailySchedule(db,"project-a","docs-maintenance","2026-09-24")).toBe(true);
-    expect(claimDailySchedule(db,"project-b","docs-maintenance","2026-09-23")).toBe(true);
-    expect(() => claimDailySchedule(db,"project-a","../docs","2026-09-25")).toThrow("schedule name");
-    expect(() => claimDailySchedule(db,"project-a","docs-maintenance","2026-02-31")).toThrow("schedule date");
-    await harness.lifecycle.dispose();
-  });
-
   it("claims onboarding spawn once while running and thread_id is null", async () => {
     const {bb,harness} = createFakePluginHost({pluginId:"lane-pilot"});
     const db = openDatabase(bb);
@@ -169,20 +157,6 @@ describe("section 9 storage.database DDL", () => {
     expect(claimStageSpawn(db,"onboard-claim-run","onboard-claim-task","onboarding-preview")).toBe(true);
     expect(claimStageSpawn(db,"onboard-claim-run","onboard-claim-task","onboarding-preview")).toBe(false);
     expect((listStageReceipts(db,"onboard-claim-run","onboard-claim-task")[0].result as {spawnAttempted?:boolean}).spawnAttempted).toBe(true);
-    await harness.lifecycle.dispose();
-  });
-
-  it("binds a managed workspace exactly once before run dispatch", async () => {
-    const { bb, harness } = createFakePluginHost({ pluginId:"lane-pilot" });
-    const db = openDatabase(bb);
-    createRun(db, "worktree-run", "A", "bb", null);
-    expect(setRunWorkspace(db, "worktree-run", "/tmp/lane-managed-worktree", "env-managed")).toBe(true);
-    expect(setRunWorkspace(db, "worktree-run", "/tmp/other", "env-other")).toBe(false);
-    expect(getRun(db, "worktree-run")).toMatchObject({
-      writer_workspace_path:"/tmp/lane-managed-worktree", writer_environment_id:"env-managed", state:"pending",
-    });
-    setRunThread(db, "worktree-run", "pm-worktree");
-    expect(setRunWorkspace(db, "worktree-run", "/tmp/late", "env-late")).toBe(false);
     await harness.lifecycle.dispose();
   });
 

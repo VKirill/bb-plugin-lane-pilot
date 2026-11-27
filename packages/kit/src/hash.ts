@@ -1,8 +1,7 @@
 import { createHash, type BinaryLike } from "node:crypto";
 import { createReadStream } from "node:fs";
-import { lstat, readdir, readFile, readlink } from "node:fs/promises";
+import { lstat, readdir, readlink } from "node:fs/promises";
 import { join } from "node:path";
-import { isFsAbsent } from "./miss";
 
 /** The one SHA-256 hasher of the plugin: `sha256Hex` for a whole value, this for a stream read in chunks. */
 export const createSha256 = () => createHash("sha256");
@@ -66,15 +65,6 @@ export async function hashPath(path: string): Promise<{
   if (info.isFile()) return { kind: "file", sha256: await sha256File(path), symlinkTarget: null };
   if (info.isDirectory()) return { kind: "directory", sha256: await sha256Tree(path), symlinkTarget: null };
   return { kind: "other", sha256: null, symlinkTarget: null };
-}
-
-export async function sha256FileOrNull(path: string): Promise<string | null> {
-  try {
-    return sha256Hex(await readFile(path));
-  } catch (cause) {
-    if (isFsAbsent(cause)) return null;
-    throw cause;
-  }
 }
 
 /** The hashes a verification row records of one command's output (SMA ar_receipt). */

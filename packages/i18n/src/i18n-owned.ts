@@ -1,7 +1,5 @@
 /** Strings of the Agents page (profile editor) that used to be picked by `ru ? … : …`. Merged into the plugin dictionaries by i18n.ts. */
 export const ownedEn = {
-  owned01: "Settings changed in another window. Your draft is retained; load the current version below to compare.",
-  owned02: "A newer version appeared after saving. Your draft is retained.",
   owned03: "Profile changed in another window. Your draft is retained.",
   owned04: "The profile changed again after saving. Your draft is retained.",
   owned05: "Load current version to compare",
@@ -9,9 +7,6 @@ export const ownedEn = {
   owned07: "Your draft remains in the editor. The next save will replace the version shown here.",
   owned08: "Continue with my draft",
   owned09: "Loading…",
-  owned10: "Default helper placement",
-  owned11: "In Lane Pilot",
-  owned12: "In the project tree",
   owned13: "New profile ID",
   owned14: "New agent",
   owned15: "Name and purpose",
@@ -22,8 +17,6 @@ export const ownedEn = {
 };
 
 export const ownedRu: { [K in keyof typeof ownedEn]: string } = {
-  owned01: "Настройки изменены в другом окне. Черновик сохранён; загрузите текущую версию ниже для сравнения.",
-  owned02: "После сохранения появилась новая версия. Черновик сохранён.",
   owned03: "Профиль изменён в другом окне. Ваш черновик сохранён.",
   owned04: "После сохранения профиль снова изменился. Черновик сохранён.",
   owned05: "Загрузить текущую версию для сравнения",
@@ -31,9 +24,6 @@ export const ownedRu: { [K in keyof typeof ownedEn]: string } = {
   owned07: "Ваш черновик остаётся в редакторе. Следующее сохранение заменит показанную версию.",
   owned08: "Продолжить с моим черновиком",
   owned09: "Загрузка…",
-  owned10: "Расположение помощников по умолчанию",
-  owned11: "В разделе Lane Pilot",
-  owned12: "В дереве проекта",
   owned13: "ID нового профиля",
   owned14: "Новый агент",
   owned15: "Название и назначение",

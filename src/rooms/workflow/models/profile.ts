@@ -16,7 +16,6 @@ export function unsafeReason(text: string): string | null {
 /** The eight keys of a project's infra profile (SMA k_pl_infra): the `profile.<key>` project settings, written by `bb lane-pilot profile` and the start's profile writer. */
 /** The settings themselves, spelled out so a search for a key finds its reader. */
 export const PROFILE_KEYS = ["stack", "test_command", "release", "hosts", "start", "deploy", "logs", "style"] as const;
-export const PROFILE_SETTING_KEYS = PROFILE_KEYS.map((key) => `profile.${key}`) as unknown as readonly ["profile.stack", "profile.test_command", "profile.release", "profile.hosts", "profile.start", "profile.deploy", "profile.logs", "profile.style"];
 export const PROFILE_VALUE_MAX = 1000;
 
 /** Key names of a profile that hold a secret: whole words only (api_key, apiKey, DB_PASSWORD), so `monkey` or `keyboard_layout` pass. */

@@ -63,8 +63,6 @@ export {
   type RouteMissRow,
   type RouteMissSource,
 } from "./repositories/route-miss-repository";
-export { runGraphHelper, sumUsage } from "./services/graph-helper";
-export type { GraphHelperRun } from "./services/graph-helper";
 export { registerQualityLoopClassifyExecutor } from "./services/workflow-classify";
 export { provideLpTaskPipeline } from "./services/workflow-executors";
 export { createIntakeTrain, createPhaseIntake, mountPhaseIntake } from "./services/intake";

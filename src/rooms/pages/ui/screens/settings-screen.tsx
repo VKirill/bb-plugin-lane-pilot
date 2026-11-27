@@ -4,28 +4,70 @@ import { parseMemorySettings } from "@lane-pilot/memory-core/settings";
 import { HelpSup, PageHeader, Segments } from "@lane-pilot/ui-kit";
 import { DocsPlaces } from "../../../docs/ui";
 import { PushSettings } from "../../../owner-waiting/ui";
-import { CatalogField, CatalogFields, LocaleControls, SettingsGroup, sectionKey } from "../../../ui-shell/ui";
+import { CatalogField, CatalogFields, LocaleControls, Pill, SettingsGroup, asBoolean, sectionKey } from "../../../ui-shell/ui";
 import type { ConsoleRoute } from "../../models/nav-model";
 import { extraSettingTab } from "../../models/placement";
-import {
-  DOCS_ENABLED_SETTING_KEY,
-  MEMORY_ADVANCED_KEYS,
-  MEMORY_ENABLED_KEY,
-  ONBOARDING_DEPTH_KEY,
-} from "../tab-knowledge";
-import {
-  RoleState,
-  WORK_BASELINE_KEYS,
-  WORK_CHECK_GROUPS,
-  WORK_HELPER_PLACEMENT_KEY,
-  WORK_PM_READ_ENABLED_KEY,
-  WORK_PM_READ_MIN_LINES_KEY,
-  WORK_QUALITY_ADVANCED_KEYS,
-  WORK_QUALITY_KEY,
-  WORK_WORKSPACE_ADVANCED_KEYS,
-  WORK_WORKSPACE_KEY,
-} from "../tab-work";
 import type { LpPage } from "../use-lp-page";
+
+const MEMORY_ENABLED_KEY = "memory.enabled";
+const MEMORY_ADVANCED_KEYS = [
+  "memory.maintain", "memory.maintain_every", "memory.maintain_mode", "memory.salience_min",
+  "memory.pack_mode", "memory.query_floor", "memory.project_kind", "memory.inject",
+  "memory.audience", "memory.search_engine", "memory.personal_bot", "memory.core_budget",
+  "memory.note_budget", "memory.index_budget", "memory.context_budget", "memory.scope",
+  "memory.single_claim", "memory.tag_notes", "memory.judge.enabled", "memory.judge.model",
+  "memory.judge.fallback_model", "memory.judge.timeout_ms", "memory.judge.candidates",
+] as const;
+const DOCS_ENABLED_SETTING_KEY = "docs.enabled";
+const ONBOARDING_DEPTH_KEY = "onboarding.depth";
+
+const WORK_WORKSPACE_KEY = "adoc.040";
+const WORK_WORKSPACE_ADVANCED_KEYS = ["workspace.provider"] as const;
+const WORK_QUALITY_KEY = "quality_mode";
+const WORK_QUALITY_ADVANCED_KEYS = ["sandbox.backend", "verification.sandbox_unsafe", "secrets.allow", "plan_fact.mode"] as const;
+const WORK_BASELINE_KEYS = ["baseline.already_built", "baseline.time_cap_sec", "checks.require_red_on_base"] as const;
+const WORK_HELPER_PLACEMENT_KEY = "helper.placement";
+const WORK_PM_READ_ENABLED_KEY = "pm_read.enabled";
+const WORK_PM_READ_MIN_LINES_KEY = "pm_read.min_lines";
+
+const WORK_CHECK_GROUPS: ReadonlyArray<{
+  key: string;
+  keys: readonly string[];
+  titleKey: I18nKey;
+  helpKey: I18nKey;
+  testId: string;
+  enabled: { key: string; fallback: boolean };
+}> = [
+  {
+    key: "plan",
+    keys: ["plan_critique.mode", "plan_critique.min_score", "plan_critique.min_write_tasks", "plan_critique.on_high_risk"],
+    titleKey: "stagePlanCritique",
+    helpKey: "planCritiqueHelp",
+    testId: "plan-critique-policy",
+    enabled: { key: "plan_critique.enabled", fallback: true },
+  },
+  {
+    key: "code",
+    keys: ["code_critique.mode", "code_critique.auto_fix", "code_critique.max_rounds", "critic.code.default_for_risk"],
+    titleKey: "stageCodeCritique",
+    helpKey: "codeCritiqueHelp",
+    testId: "code-critique-policy",
+    enabled: { key: "code_critique.enabled", fallback: false },
+  },
+  {
+    key: "specialist",
+    keys: ["specialist.when"],
+    titleKey: "specialistReview",
+    helpKey: "settingSpecialistEnabledHelp",
+    testId: "specialist-policy",
+    enabled: { key: "specialist.enabled", fallback: false },
+  },
+];
+
+function RoleState({ page, enabledKey, fallback, teamLabel }: { page: LpPage; enabledKey: string; fallback: boolean; teamLabel: string }) {
+  const on = asBoolean(page.displayedValue(enabledKey), fallback);
+  return <span className="flex items-center gap-2"><Pill tone={on ? "success" : "muted"} testId={`state-${enabledKey}`}>{on ? t("on") : t("off")}</Pill><span className="text-xs text-muted-foreground">{teamLabel}</span></span>;
+}
 
 export type SettingsGroupId = "work" | "memory" | "docs" | "notifications";
 

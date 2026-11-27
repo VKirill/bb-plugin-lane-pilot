@@ -188,8 +188,6 @@ const VALIDATORS: Record<string, (path: string, deps: ValidatorDeps) => Promise<
   text: validateText, design: validatePage, page: validatePage, "3d": validate3d, video: validateVideo, invoice: validateInvoice, composite: validateComposite,
 };
 
-export const VALIDATOR_KINDS = Object.keys(VALIDATORS);
-
 /**
  * The acceptance check of a non-code deliverable. `artifact` (default) only requires the file to exist and be
  * non-empty. A kind with no runner installed reports not-installed rather than passing silently.

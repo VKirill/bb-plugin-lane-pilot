@@ -8,7 +8,8 @@ import { recordStage } from "../src/rooms/runs/server";
 import { countChargedAttempts, createAttempt, createRun, createTask, getAttempt, listUnansweredWriterQuestions, openDatabase, savePrototypeConfig, saveProjectSetting, saveTaskPlan, setRunThread, transitionAttempt } from "../src/rooms/plugin-db";
 import { createWriterFinish } from "../src/rooms/writer/server/services/finish";
 import { collectOwnerWaiting } from "../src/rooms/owner-waiting";
-import { isProductDecision, SAFE_DEFAULT_ANSWER, WRITER_QUESTION_WAIT_MS } from "../src/rooms/writer/models/question-default";
+import { DEFAULT_QUESTION_WAIT_MIN, isProductDecision, SAFE_DEFAULT_ANSWER } from "../src/rooms/writer/models/question-default";
+const WRITER_QUESTION_WAIT_MS = DEFAULT_QUESTION_WAIT_MIN * 60_000;
 import { markAnsweredByDefault } from "../src/rooms/writer/server/repositories/question-default-store";
 import { createWriterQuestionTimeout } from "../src/rooms/writer/server/services/question-timeout";
 

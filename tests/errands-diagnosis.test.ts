@@ -4,7 +4,7 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import type { StoredWorkflow } from "@lane-pilot/workflow-engine";
 import { openDatabase, type LanePilotDatabase } from "../src/rooms/plugin-db";
 import { diagnosisLines } from "../src/rooms/errands";
-import { errandsDiagnosis, errandsDiagnosisMorningLine } from "../src/rooms/errands/server";
+import { errandsDiagnosis } from "../src/rooms/errands/server";
 
 /**
  * The errand diagnosis (stage-1 stream F, plan R7): one inline journal reproduces every section — outcomes and the
@@ -155,19 +155,5 @@ describe("errandsDiagnosis", () => {
     const text = diagnosisLines(d).join("\n");
     expect(text).toContain("нет данных");
     db.close();
-  });
-
-  it("the morning line is null under 5 errands and a plain line from 5", () => {
-    const few = world().db;
-    for (let index = 0; index < 4; index += 1) {
-      addRun(few, { id: `few-${index}`, inputs: { task: `Errand number ${index}`, kind: "research" }, output: { state: "done", verified: "done_checked" }, costMicro: 10_000 });
-    }
-    expect(errandsDiagnosisMorningLine(few)).toBeNull();
-    addRun(few, { id: "few-4", inputs: { task: "Fifth errand", kind: "research" }, output: { state: "done", verified: "done_checked" }, costMicro: 10_000 });
-    const line = errandsDiagnosisMorningLine(few);
-    expect(line).toContain("Поручения за неделю: 5");
-    expect(line).toContain("$0.05");
-    const many = fullWorld();
-    expect(errandsDiagnosisMorningLine(many)).toContain("Поручения за неделю: 10");
   });
 });

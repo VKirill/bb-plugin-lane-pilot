@@ -74,7 +74,6 @@ describe("agentLoadout & agent_loadout RPC", () => {
     expect(typeof roomHandlers.agent_loadout).toBe("function");
 
     const out = await loadoutRpc(ctx).agent_loadout({});
-    expect(out.hubSkills).toBe(5);
 
     // Writer: lp-writer (absent on hub -> missing: true), karpathy-guidelines (present -> missing: false), gitnexus (in inventory -> missing: false).
     const writer = findRole(out, "writer");
@@ -275,7 +274,7 @@ describe("agentLoadout & agent_loadout RPC", () => {
     expect(projOnly.roles[0]!.model).toEqual({ provider: "codex", model: "gpt-6.1-sol", from: "project" });
   });
 
-  it("handles hub skill list failure gracefully (hubSkills: -1, missing: false, warn log) and unknown role", async () => {
+  it("handles hub skill list failure gracefully (missing: false, warn log) and unknown role", async () => {
     const { bb, harness } = createFakePluginHost({
       pluginId: "lane-pilot",
       sdk: {
@@ -293,7 +292,6 @@ describe("agentLoadout & agent_loadout RPC", () => {
     const warnSpy = vi.spyOn(bb.log, "warn");
 
     const out = await agentLoadout(ctx, { role: "writer" });
-    expect(out.hubSkills).toBe(-1);
     expect(out.roles).toHaveLength(1);
     for (const skill of itemsOf(out.roles[0]!, "skill")) {
       expect(skill.missing).toBe(false);
@@ -302,7 +300,6 @@ describe("agentLoadout & agent_loadout RPC", () => {
 
     const unknown = await agentLoadout(ctx, { role: "does-not-exist" });
     expect(unknown.roles).toEqual([]);
-    expect(unknown.hubSkills).toBe(-1);
 
     const pmFiltered = await agentLoadout(ctx, { role: "pm" });
     expect(pmFiltered.roles).toHaveLength(1);

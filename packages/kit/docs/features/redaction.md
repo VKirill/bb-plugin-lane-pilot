@@ -92,7 +92,6 @@ The redaction functions operate defensively without throwing runtime exceptions:
 | `secretStrings` | `function` | Extracts secret fields from environment catalog records | `packages/kit/src/redact.ts:46-58` |
 | `registerSecrets` | `function` | Registers secret strings into the global memory registry | `packages/kit/src/redact.ts:66-73` |
 | `forgetSecrets` | `function` | Clears all registered secrets and resets cached patterns | `packages/kit/src/redact.ts:76` |
-| `knownSecretCount` | `function` | Returns the number of currently remembered secrets | `packages/kit/src/redact.ts:78` |
 | `redactKnown` | `function` | Redacts all registered secrets from a text string | `packages/kit/src/redact.ts:81-85` |
 | `redactKnownDeep` | `function` | Recursively redacts registered secrets within structured objects | `packages/kit/src/redact.ts:88-96` |
 | `maskCredentials` | `function` | Masks selected credential shapes and registered secrets; returns text and a changed flag | `packages/kit/src/redact.ts:146-150` |

@@ -18,20 +18,6 @@ export type NodeForm = (typeof NODE_FORMS)[number];
 export const NODE_FORM_FALLBACKS = ["plan", "agent"] as const;
 export type NodeFormFallback = (typeof NODE_FORM_FALLBACKS)[number];
 
-/** OpenTelemetry GenAI semantic attribute names used when recording or exporting step facts. */
-export const OTEL_GENAI_ATTRIBUTES = {
-  operationName: "gen_ai.operation.name",
-  providerName: "gen_ai.provider.name",
-  requestModel: "gen_ai.request.model",
-  responseModel: "gen_ai.response.model",
-  responseId: "gen_ai.response.id",
-  conversationId: "gen_ai.conversation.id",
-  inputTokens: "gen_ai.usage.input_tokens",
-  outputTokens: "gen_ai.usage.output_tokens",
-  cacheReadInputTokens: "gen_ai.usage.cache_read.input_tokens",
-  cacheCreationInputTokens: "gen_ai.usage.cache_creation.input_tokens",
-} as const;
-
 /** Column names on `lane_pilot_wf_step` storing per-step execution facts. */
 export const STEP_FACT_FIELDS = [
   "run_id",
@@ -57,8 +43,6 @@ export const STEP_FACT_FIELDS = [
   "fallback_taken",
   "environment_fingerprint",
 ] as const;
-
-export type StepFactField = (typeof STEP_FACT_FIELDS)[number];
 
 export interface StepFact {
   runId: string;

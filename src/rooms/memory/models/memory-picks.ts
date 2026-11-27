@@ -57,15 +57,6 @@ export function pathAnchors(task:Pick<TaskV2, "owns_paths" | "read_first">):stri
 }
 
 /**
- * At most three notes: those that name a path of this task, then the project's core conventions, without their
- * tags. Raw failure episodes stay out: what repeats becomes a rule through the rules pipeline, and the brief
- * carries the rule instead.
- */
-export function writerMemory(notes:readonly MemoryNote[], task:Pick<TaskV2, "owns_paths" | "read_first">, tags:readonly string[] = [], options:WriterPickOptions = {}):string {
-  // One line per note: a note with line breaks could forge the next heading of the brief.
-  return writerMemoryPicks(notes, task, tags, options).map(memoryLine).join("\n");
-}
-
 /** One bullet per note, on one line, without the wrapper tags of the block it goes into: a note cannot close the block or forge a heading. */
 export function memoryLine(note:Pick<MemoryNote, "content" | "createdAt" | "validFrom" | "bestChunk">):string {
   // The day the fact began to hold, so a writer can tell an old note from a new one.

@@ -5,7 +5,6 @@ export const WRITER_MAX_CONCURRENT_KEY = "writer.max_concurrent";
 export const WRITER_SILENCE_NUDGE_MIN_KEY = "writer.silence_nudge_min";
 export const WRITER_QUESTION_WAIT_MIN_KEY = "writer.question_wait_min";
 export const WRITER_AUTO_RETURN_KEY = "writer.auto_return";
-export const WRITER_MAX_TURNS_KEY = "writer.max_turns";
 export const WRITER_REASONING_EFFORT_KEY = "writer.reasoning_effort";
 export const WRITER_FALLBACK_ON_PROVIDER_FAILURE_KEY = "writer.fallback_on_provider_failure";
 export const WRITER_AGENT_KEY = "writer.agent";

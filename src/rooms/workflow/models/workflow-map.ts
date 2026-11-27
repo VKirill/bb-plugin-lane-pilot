@@ -1,7 +1,6 @@
 import type { z } from "zod";
 import type { rpcContract } from "../../contracts";
-import type { StoredWorkflow, WorkflowStore } from "@lane-pilot/workflow-engine";
-import type { WorkflowNode } from "@lane-pilot/workflow-engine";
+import type { StoredWorkflow, WorkflowNode } from "@lane-pilot/workflow-engine";
 import { extractCategoryLabel, workflowCategory } from "./categories";
 import { describeStep } from "./step-describe";
 
@@ -57,9 +56,4 @@ export function buildWorkflowMap(items: StoredWorkflow[], statsOf: (workflowId: 
   }
 
   return { commit, generatedAt: Date.now(), graphs, steps, edges, calls };
-}
-
-/** The map over a loaded store (the library's `loadStore`), so built-in, global and project files all land in it. */
-export async function workflowMapFromStore(store: WorkflowStore, statsOf: (workflowId: string) => MapStats, commit: string | null): Promise<WorkflowMapData> {
-  return buildWorkflowMap(store.list(), statsOf, commit);
 }

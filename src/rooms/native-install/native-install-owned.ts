@@ -51,25 +51,6 @@ function at(value: unknown, key: string[]): unknown {
   return value;
 }
 
-export async function planJson(home: string, path: string, desired: Record<string, unknown>): Promise<OwnedJson[]> {
-  const current = (await jsonText(await safeTarget(home, path))).value, edits: OwnedJson[] = [];
-  function entry(key: string[], value: unknown, array: boolean): OwnedJson {
-    return { path, key, value, array, existed: at(current, key) !== undefined, parents: key.slice(0, -1).map((_, i) => key.slice(0, i + 1)).filter((parent) => at(current, parent) === undefined) };
-  }
-  function visit(value: unknown, key: string[]): void {
-    if (value && typeof value === "object" && !Array.isArray(value)) {
-      for (const [name, item] of Object.entries(value)) visit(item, [...key, name]);
-    } else if (Array.isArray(value)) {
-      const before = at(current, key);
-      if (before !== undefined && !Array.isArray(before)) throw new Error(`Invalid array at ${path}:${key.join(".")}`);
-      const added = value.filter((item) => !(before as unknown[] | undefined)?.some((old) => equal(old, item)));
-      if (added.length) edits.push(entry(key, added, true));
-    } else if (at(current, key) === undefined) edits.push(entry(key, value, false));
-  }
-  visit(desired, []);
-  return edits;
-}
-
 export async function transitionOwned(root: string, manifest: NativeInstallManifest, action: "enable" | "disable" | "remove", signal?: AbortSignal): Promise<void> {
   const enabling = action === "enable";
   for (const file of manifest.files) {

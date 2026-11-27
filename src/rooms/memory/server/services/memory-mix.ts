@@ -208,14 +208,6 @@ function pmSearchPinned(db: LanePilotDatabase, projectId: string, memory: Memory
   const merged = pins.length ? [...pins, ...floored.filter((record) => !pinnedIds.has(record.id))] : floored;
   return { found: isHistoryQuery(query) ? withHistory(db, projectId, merged) : merged, pinned: pinnedIds };
 }
-function pmSearch(db: LanePilotDatabase, projectId: string, memory: MemorySettings, query: string, chain: readonly string[] | undefined, floor: RelevanceFloor | null, now?: number) {
-  return pmSearchPinned(db, projectId, memory, query, chain, floor, now).found;
-}
-
-/** The PM path's ranked records after the relevance floor, before packing. */
-export function pmShortlist(db: LanePilotDatabase, projectId: string, memory: MemorySettings, query: string, chain?: readonly string[], floor: RelevanceFloor | null = memory.queryFloor === false ? null : DEFAULT_RELEVANCE_FLOOR): MemoryRecord[] {
-  return pmSearch(db, projectId, memory, query, chain, floor);
-}
 
 /**
  * The PM's automatic per-turn context and the helpers': the vector's best notes without a judge (the judge costs seconds, and the PM reads

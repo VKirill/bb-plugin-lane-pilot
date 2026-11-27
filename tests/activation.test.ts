@@ -1,17 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { activationDisabledPredicate, classifyComposerSession, composerButtonDisabled } from "../src/rooms/native-agent/models/activation";
+import { activationDisabledPredicate, composerButtonDisabled } from "../src/rooms/native-agent/models/activation";
 
 describe("composer activation", () => {
   it.each(["setup_required", "ambiguous", "offline", "catalog_unavailable"])("defers %s project binding to native dispatch only in mention mode", (bindingStatus) => {
     expect(activationDisabledPredicate({ projectId: "clients", bindingStatus, launchMode: "mention" })).toEqual([]);
     expect(activationDisabledPredicate({ projectId: "clients", bindingStatus, launchMode: "spawn", nativeSelectionReady: true })).toEqual([{ code: "need_binding", detail: bindingStatus }]);
-  });
-
-  it("classifies new-thread, unstarted, ordinary started, and LP-active sessions", () => {
-    expect(classifyComposerSession({ composerKind: "new-thread", threadId: null })).toBe("new-thread");
-    expect(classifyComposerSession({ composerKind: "thread", threadId: "thr_1" })).toBe("unstarted-thread");
-    expect(classifyComposerSession({ composerKind: "thread", threadId: "thr_1", threadStatus: "active" })).toBe("ordinary-started");
-    expect(classifyComposerSession({ composerKind: "thread", threadId: "thr_1", pluginRole: "pm" })).toBe("lp-active");
   });
 
   it("disables the Enable button only while pending, for no-project and selected-project", () => {

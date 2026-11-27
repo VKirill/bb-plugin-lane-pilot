@@ -7,7 +7,6 @@
  */
 export const PRESENCE_WINDOW_MS = 10 * 60_000;
 /** Kept so older callers still compile. Lane Pilot no longer reads this file; the marks come from BB threads. */
-export const PRESENCE_FILE = "~/.agents/state/owner-presence.json";
 export type Presence = { providerId: string; at: number; hostId: string; host: string | null };
 
 const LANE_METADATA_KEYS = ["role", "lanePilotRunId", "attemptId", "spawnId"] as const;

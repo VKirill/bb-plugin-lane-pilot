@@ -6,12 +6,15 @@ import { afterEach, describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { migrations, openDatabase } from "../src/rooms/plugin-db";
 import {
-  applyShorter, compressibleRow, dropMemoryIndexes, estimateTokens,
+  applyShorter, dropMemoryIndexes, estimateTokens,
   hideRecord, proposeShorter, searchMemoryRecords, storeMemoryRecords,
 } from "../packages/memory-core/src";
 import type { MemoryCandidate, MemoryDatabase } from "../packages/memory-core/src";
 import { buildFileCard } from "../src/rooms/file-cards/models/card";
-import { appendTouch, cardNotes, catalogDir, findRepo, readCatalog, readMeta, readTouches, repoHead, writeCatalog, writeMeta } from "../src/rooms/file-cards/store";
+import { appendTouch, cardNotes, catalogDir, findRepo, readCatalog, readMeta, replaceCatalog, repoHead, writeMeta } from "../src/rooms/file-cards/store";
+
+const readTouches = (cwd: string): Array<{ at: number; tool: string; path: string }> =>
+  readFileSync(join(catalogDir(cwd), "touch.jsonl"), "utf8").trim().split("\n").filter(Boolean).map((line) => JSON.parse(line));
 import { buildCatalog, catalogNeedsBuild, collectCards, takeBuildLock } from "../src/rooms/file-cards/build";
 import { SESSION_HOOK_SOURCE } from "../src/rooms/contracts/session-hook-source";
 import { workFilePathError } from "../src/rooms/runs/server";
@@ -19,13 +22,18 @@ import { shortenText, resolveCompressible, undoShorter } from "../packages/memor
 import { runCatalogCli } from "../src/rooms/file-cards/server/handlers/cli";
 import { historySearch } from "../src/rooms/memory-tiers/server/services/history";
 import { runStreams } from "../src/rooms/session-hooks/models";
-import { createAttempt, createRun, createTask, recordFinishedAttempt } from "../src/rooms/storage";
+import { createAttempt, createRun, createTask, transitionAttempt } from "../src/rooms/storage";
 import { registerCli } from "../src/rooms/tools/server";
 import { createCore } from "../src/rooms/core/server/core";
 import type { Services } from "../server";
 import { createGitRepo, git } from "./helpers/git-repo";
 
 const newHost = () => createFakePluginHost({ pluginId: "lane-pilot" });
+const acceptAttempt = (db: Parameters<typeof transitionAttempt>[0], attemptId: string, reason: string) => {
+  transitionAttempt(db, attemptId, "spawn_requested");
+  transitionAttempt(db, attemptId, "running");
+  transitionAttempt(db, attemptId, "accepted", { reason });
+};
 const BUDGETS = { coreBudget: 9_999, noteBudget: 99_999, indexBudget: 999_999 };
 const put = (db: MemoryDatabase, entries: MemoryCandidate[], projectId = "P") =>
   storeMemoryRecords(db, { projectId, sourceSha256: "a".repeat(64), audience: "subagent", trust: "confirmed", entries, ...BUDGETS }).insertedIds;
@@ -59,10 +67,12 @@ describe("memory corpus care (parity wave g4)", () => {
     const heavy = `${paragraph}\n\n${paragraph}\n\n${paragraph}\n\n${paragraph}`;
     expect(estimateTokens(heavy)).toBeGreaterThan(60);
     const [id] = put(db, [note(heavy, ["billing", "ledger"])]);
-    const row = compressibleRow(db, "P", id!)!;
-    const proposal = proposeShorter(row, 40);
+    const found = resolveCompressible(db, "P", id!);
+    const row = "row" in found ? found.row : null;
+    expect(row).not.toBeNull();
+    const proposal = proposeShorter(row!, 40);
     expect(proposal).toBe(paragraph);
-    const done = applyShorter(db, row, proposal!);
+    const done = applyShorter(db, row!, proposal!);
     expect(done.supersededIds).toEqual([id]);
     expect(done.insertedIds).toHaveLength(1);
     const kept = db.prepare("SELECT kind, audience, concepts_json, scope_json, trust, status FROM lane_pilot_memory WHERE id=?").get(done.insertedIds[0]!) as
@@ -119,8 +129,10 @@ describe("memory corpus care (parity wave g4)", () => {
     try {
       execFileSync("git", ["init", "-q"], { cwd: repo });
       writeFileSync(join(repo, "a.ts"), "export const A = 1;\n");
-      writeCatalog(repo, [buildFileCard({ path: "a.ts", bytes: "export const A = 1;\n", git: { lastCommit: "beef0001", commits: 1 } })]);
-      writeCatalog(repo, [buildFileCard({ path: "b.ts", bytes: "export const B = 2;\n" })]);
+      replaceCatalog(repo, [
+        buildFileCard({ path: "a.ts", bytes: "export const A = 1;\n", git: { lastCommit: "beef0001", commits: 1 } }),
+        buildFileCard({ path: "b.ts", bytes: "export const B = 2;\n" }),
+      ], { builtAt: 1, head: "beef0001", files: 2 });
       appendTouch(repo, { at: 1, tool: "edit", path: `${repo}/a.ts` });
       appendTouch(repo, { at: 2, tool: "write", path: `${repo}/b.ts` });
       const dir = catalogDir(repo);
@@ -174,7 +186,7 @@ describe("memory corpus care (parity wave g4)", () => {
     createRun(db, "run1", "P");
     createTask(db, { id: "t1", runId: "run1", kind: "bb", contract: { title: `Fix the ${word} rounding` } });
     createAttempt(db, { id: "a1", runId: "run1", taskId: "t1" });
-    recordFinishedAttempt(db, "a1", "accepted", `${word} patch accepted, key ${secret}`);
+    acceptAttempt(db, "a1", `${word} patch accepted, key ${secret}`);
     const hits = historySearch(db as never, "P", word, { limit: 20 });
     expect(new Set(hits.map((hit) => hit.source))).toEqual(new Set(["tasks", "execution"]));
     const text = hits.map((hit) => hit.excerpt).join("\n");
@@ -189,7 +201,7 @@ describe("memory corpus care (parity wave g4)", () => {
     createRun(db, "run1", "P");
     createTask(db, { id: "t1", runId: "run1", kind: "bb", contract: { title: `Fix the ${word} rounding` } });
     createAttempt(db, { id: "a1", runId: "run1", taskId: "t1" });
-    recordFinishedAttempt(db, "a1", "accepted", `${word} shipped, key ${secret}`);
+    acceptAttempt(db, "a1", `${word} shipped, key ${secret}`);
     const answer = await run(["memory", "history", word, "--project", "P"]);
     expect(answer.exitCode).toBe(0);
     for (const label of ["tasks", "execution"]) expect(answer.stdout).toContain(label);
@@ -235,7 +247,7 @@ describe("review fixes: the session hook and the file catalog", () => {
       execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", "add", "."], { cwd: repo });
       execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "a"], { cwd: repo });
       execFileSync("git", ["worktree", "add", "-q", tree], { cwd: repo });
-      writeCatalog(repo, [buildFileCard({ path: "a.ts", bytes: "export const A = 1;\n", git: { lastCommit: "beef0001", commits: 1 } })]);
+      replaceCatalog(repo, [buildFileCard({ path: "a.ts", bytes: "export const A = 1;\n", git: { lastCommit: "beef0001", commits: 1 } })], { builtAt: 1, head: "beef0001", files: 1 });
       const guardFile = join(__dirname, "../lane-stack/hooks/guard_shell.py");
       const edit = (cwd: string, file: string, session: string) => spawnSync("python3", [guardFile], {
         input: JSON.stringify({ tool_name: "Edit", tool_input: { file_path: file }, cwd, session_id: session }),
@@ -532,7 +544,7 @@ describe("review fixes: memory-compress and history", () => {
     createRun(h.db, "run1", "Q");
     createTask(h.db, { id: "t1", runId: "run1", kind: "bb", contract: { title: `Fix the ${word} rounding` } });
     createAttempt(h.db, { id: "a1", runId: "run1", taskId: "t1" });
-    recordFinishedAttempt(h.db, "a1", "accepted", `${word} shipped`);
+    acceptAttempt(h.db, "a1", `${word} shipped`);
     const foreign = await h.run(["memory", "history", word, "--project", "Q"], "thr_pm");
     expect(foreign.exitCode).toBe(1);
     expect(foreign.stderr).toMatch(/only that thread's own project \(P\), not Q/);

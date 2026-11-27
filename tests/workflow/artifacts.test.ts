@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { taskV2Schema } from "../../src/rooms/contracts";
-import { ARTIFACTS, artifactDef, artifactExample, artifactId, checkProduces, parseArtifactId, summarizeValue, validateArtifact } from "@lane-pilot/workflow-engine";
+import { ARTIFACTS, artifactDef, artifactExample, artifactId, checkProduces, summarizeValue, validateArtifact } from "@lane-pilot/workflow-engine";
 
 /** The registry of artifact kinds (W0): a schema and an example per kind, and the check of a step's output against them. */
 describe("the artifact registry", () => {
@@ -55,14 +55,6 @@ describe("the artifact registry", () => {
     const verification = artifactDef("verification", 1)!.example as Record<string, unknown>;
     expect(validateArtifact("verification", 1, { ...verification, layer3_wiring: "yes" }).ok).toBe(false);
     expect(validateArtifact("verification", 1, { ...verification, gaps: [{ id: "G", type: "mood", severity: "high", description: "d", source: "layer1" }] }).ok).toBe(false);
-  });
-
-  it("parses ids", () => {
-    expect(parseArtifactId("plan/1")).toEqual({ kind: "plan", version: 1 });
-    expect(parseArtifactId("search-results/12")).toEqual({ kind: "search-results", version: 12 });
-    expect(parseArtifactId("plan")).toBeNull();
-    expect(parseArtifactId("Plan/1")).toBeNull();
-    expect(parseArtifactId("plan/0")).toBeNull();
   });
 });
 

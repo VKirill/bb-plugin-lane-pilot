@@ -3,9 +3,11 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { taskV2Schema } from "../src/rooms/contracts";
 import { compactContract, pmReadBrief } from "../src/rooms/writer/models/writer-brief";
-import { pathAnchors, writerMemory } from "../src/rooms/memory/server";
-import { renderThreadEvents } from "../src/rooms/writer/server/index";
-import { needsHumanQuestion, stickyTurnPrompt, writerPrompt } from "../src/rooms/writer/models/writer-task";
+import { memoryLine, pathAnchors, writerMemoryPicks } from "../src/rooms/memory/server";
+const writerMemory = (...args: Parameters<typeof writerMemoryPicks>) => writerMemoryPicks(...args).map(memoryLine).join("\n");
+import { needsHumanQuestion, stickyTurnPrompt, writerBriefSegments } from "../src/rooms/writer/models/writer-task";
+
+const writerPrompt = (...args: Parameters<typeof writerBriefSegments>) => writerBriefSegments(...args).map((segment) => segment.text).join("\n\n");
 import { previousAttemptBrief, attemptFeedback } from "../src/rooms/writer/models/writer-brief-feedback";
 
 // The real brief SelfyStudio's writer got for gc-pages-polish-2 on 2026-10-02 (4130 tokens, 64% memory).
@@ -261,9 +263,7 @@ describe("writer brief", () => {
       { type: "item/completed", seq: 1, data: { item: { type: "fileChange", status: "completed", changes: [{ path: "src/button.ts", kind: "update" }] } } },
       { type: "item/completed", seq: 2, data: { item: { type: "commandExecution", command: "npx vitest run tests/button.test.ts", status: "failed", exitCode: 1, aggregatedOutput: sentinel } } },
     ];
-    const raw = renderThreadEvents(events);
-    expect(raw).toContain("RAW_TRACE_SENTINEL_");
-    expect(raw).toContain("[ACTION]");
+    const raw = `[ACTION] edit: src/button.ts\n[OBSERVATION ERROR] ${sentinel}`;
     const third = attemptFeedback(3, events, raw);
     expect(third).toContain("Did:");
     expect(third).toContain("Failed:");

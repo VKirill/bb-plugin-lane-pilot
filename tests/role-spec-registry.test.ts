@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  PAIR_ROLE_SPECS, ROLE_SPECS, ROLE_SELECTION_KEYS, ROLE_TABLE,
+  PAIR_ROLE_SPECS, ROLE_SPECS, ROLE_TABLE,
   roleAtomicMessage, roleSpec, roleSpecKey, WRITER_FALLBACK_KEYS,
 } from "@lane-pilot/models";
 import { rpcSettings } from "../src/rooms/contracts/rpc-settings";
@@ -66,7 +66,7 @@ describe("the RoleSpec table against the names it replaced", () => {
   });
 
   it("owns exactly the setting keys the hand-written sets had", () => {
-    expect([...ROLE_SELECTION_KEYS].sort()).toEqual(OLD_SETTING_KEYS);
+    expect([...ROLE_SPECS.flatMap((spec) => [...spec.keys])].sort()).toEqual(OLD_SETTING_KEYS);
     expect([...PAIR_ROLE_SPECS.flatMap((spec) => [...spec.keys])].sort()).toEqual(OLD_PICKER_KEYS);
   });
 

@@ -4,7 +4,6 @@ import {
   codeCritiquePrompt,
   codeRepairPrompt,
   critiquePrompt,
-  pmReadPrompt,
   specialistPrompt,
   taskBrief,
 } from "../../src/rooms/critique";
@@ -96,15 +95,6 @@ describe("each review stage hands the model a readable task, not the JSON contra
     expect(prompt).toContain("risk: high");
     expect(prompt).toContain("expected_outputs:\n- src/auth/login.ts");
     expect(prompt).toContain("depends_on:\n- T-3");
-    expect(prompt).not.toContain("npx vitest run tests/auth");
-  });
-
-  it("pm-read: what the task wants and the files it reads, no check commands", () => {
-    const prompt = pmReadPrompt({ task: TASK });
-    noContractJson(prompt);
-    expect(prompt).toContain("read_first:\n- src/auth/login.ts");
-    expect(prompt).toContain("expected_outputs:\n- src/auth/login.ts");
-    expect(prompt).not.toContain("risk:");
     expect(prompt).not.toContain("npx vitest run tests/auth");
   });
 

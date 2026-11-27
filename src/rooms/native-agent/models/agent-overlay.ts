@@ -11,47 +11,13 @@ import {
 } from "./bridge-tools";
 import { allowDirectoryMove } from "./native-directory-policy";
 
-/** Official `--agents` JSON fields from https://code.claude.com/docs/en/sub-agents */
-export const AGENTS_JSON_FIELDS = [
-  "description",
-  "tools",
-  "disallowedTools",
-  "model",
-  "permissionMode",
-  "mcpServers",
-  "hooks",
-  "maxTurns",
-  "skills",
-  "initialPrompt",
-  "memory",
-  "effort",
-  "background",
-  "omitClaudeMd",
-  "isolation",
-] as const;
-
-/** Plugin loader ignores these; `--agents` would activate them. */
-export const PLUGIN_IGNORED_FIELDS = [
-  "hooks",
-  "mcpServers",
-  "permissionMode",
-  "initialPrompt",
-] as const;
-
-/** BB session owns model/effort/full-access; do not copy from the agent file. */
-export const BB_SESSION_OWNED_FIELDS = ["model", "effort"] as const;
-
-export const AGENTS_JSON_FIELD_SET = new Set<string>(AGENTS_JSON_FIELDS);
-export const PLUGIN_IGNORED_SET = new Set<string>(PLUGIN_IGNORED_FIELDS);
-export const BB_SESSION_OWNED_SET = new Set<string>(BB_SESSION_OWNED_FIELDS);
-export const DROPPED_IDENTITY_FIELDS = new Set(["name", "color", "experimental"]);
-const CLI_SESSION_TOOLS = new Set(["SendMessage", "ListAgents", "TaskStop"]);
-
 /**
  * Claude Code defers MCP tool schemas (names only at start, the schema when the model asks) only when the session has
  * the ToolSearch tool. An agent whose `tools` list names tools one by one lacks it, so every MCP schema was sent up front
  * (Opus PMs: 36.6k tokens at the start, 15k of them MCP). The PM list adds it.
  */
+const CLI_SESSION_TOOLS = new Set(["SendMessage", "ListAgents", "TaskStop"]);
+
 export const DEFERRED_MCP_LOADER = "ToolSearch";
 /**
  * The whole BB bridge for the PM: the other BB plugins' tools (Image Studio, File Gateway, Env Catalog…) for a one-off call. In a PM thread
@@ -140,16 +106,6 @@ export function parseAgentMarkdown(text: string): { frontmatter: Record<string, 
     frontmatter[key] = parseScalar(rest);
   }
   return { frontmatter, prompt: match[2]! };
-}
-
-export function normalizeToolList(value: unknown): string[] | undefined {
-  if (value === undefined) return undefined;
-  const items = Array.isArray(value)
-    ? value.filter((item): item is string => typeof item === "string")
-    : typeof value === "string"
-      ? splitClaudeToolList(value)
-      : [];
-  return items;
 }
 
 /**

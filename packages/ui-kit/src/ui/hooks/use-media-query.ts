@@ -1,7 +1,5 @@
 import { useSyncExternalStore } from "react";
 
-export const DARK_COLOR_SCHEME_QUERY = "(prefers-color-scheme: dark)";
-
 type MediaQueryRef = {
   mql: MediaQueryList;
   subscribe: (notify: () => void) => () => void;

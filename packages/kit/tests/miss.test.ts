@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { isFsAbsent, isNotFound, readTextOrNull, sha256FileOrNull } from "../src/index";
+import { isFsAbsent, isNotFound, readTextOrNull } from "../src/index";
 
 // The shapes the plugin really sees (Grok R8 re-review): PluginRpcCallError carries code "not_found" or,
 // for a server code it does not know, code "unknown_error" + serverCode "<entity>_not_found"; a BbHttpError
@@ -36,7 +36,7 @@ describe("isFsAbsent", () => {
   });
 });
 
-describe("readTextOrNull / sha256FileOrNull", () => {
+describe("readTextOrNull", () => {
   it("return null for a missing path and for ENOTDIR, and propagate other errors", async () => {
     const dir = mkdtempSync(join(tmpdir(), "miss-"));
     try {
@@ -44,7 +44,6 @@ describe("readTextOrNull / sha256FileOrNull", () => {
       writeFileSync(fileAsDir, "x");
       expect(await readTextOrNull(join(fileAsDir, "child"))).toBeNull(); // ENOTDIR: "file" is not a directory
       expect(await readTextOrNull(join(dir, "missing"))).toBeNull();
-      expect(await sha256FileOrNull(join(fileAsDir, "child"))).toBeNull();
       mkdirSync(join(dir, "real-dir"));
       await expect(readTextOrNull(join(dir, "real-dir"))).rejects.toThrow(); // EISDIR is not absence
     } finally {

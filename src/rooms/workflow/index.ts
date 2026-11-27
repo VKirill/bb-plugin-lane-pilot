@@ -30,6 +30,6 @@ export {
   oneLine, ownsPathProblems, parkRoadmapRow, parseState, phaseFolder, quickRow, roadmapAnalysis, roadmapNumberingGaps, roadmapSection,
   sameStateIgnoringTime, stateBlockSections, stateBlockText, stateHasHeader, stateText,
 } from "./models/planning-files";
-export { PROFILE_KEYS, PROFILE_SETTING_KEYS, PROFILE_VALUE_MAX, profilePairProblem, secretKeyName, unsafeReason } from "./models/profile";
+export { PROFILE_KEYS, PROFILE_VALUE_MAX, profilePairProblem, secretKeyName, unsafeReason } from "./models/profile";
 export { INTERNAL_UPKEEP_WORKFLOWS, isInternalUpkeep } from "./models/internal-workflows";
 export * from "./settings";

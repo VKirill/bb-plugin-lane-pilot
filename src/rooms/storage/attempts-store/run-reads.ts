@@ -129,15 +129,6 @@ export function listProjectTransitionsSince(db: LanePilotDatabase, input: { proj
     Array<{ attempt_id: string; from_state: string; to_state: string; at: number; reason: string | null }>;
 }
 
-export function listAcceptedJoinRows(db: LanePilotDatabase, input: { since: number; until: number; projectId?: string | null }): Array<{ attemptId: string; taskId: string; projectId: string; hostId: string | null; workspace: string | null; contract: string }> {
-  return db.prepare(`SELECT a.id AS attemptId, a.task_id AS taskId, r.project_id AS projectId, r.writer_host_id AS hostId, r.writer_workspace_path AS workspace,
-      t.contract_json AS contract
-    FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id = a.run_id JOIN lane_pilot_task t ON t.id = a.task_id
-    WHERE a.state = 'accepted' AND a.updated_at >= ? AND a.updated_at < ? AND (? IS NULL OR r.project_id = ?)`)
-    .all(input.since, input.until, input.projectId ?? null, input.projectId ?? null) as
-    Array<{ attemptId: string; taskId: string; projectId: string; hostId: string | null; workspace: string | null; contract: string }>;
-}
-
 export function listCandidateTaskRows(db: LanePilotDatabase): Array<{ task_id: string; run_id: string; project_id: string; contract_json: string; initial_head_sha: string; base_sha: string | null; attempt_id: string; attempt_no: number; accepted_at: number }> {
   return db.prepare(`SELECT t.id AS task_id, t.run_id, r.project_id, t.contract_json, g.initial_head_sha, g.base_sha, a.id AS attempt_id, a.attempt_no, a.updated_at AS accepted_at
     FROM lane_pilot_task t
@@ -148,66 +139,4 @@ export function listCandidateTaskRows(db: LanePilotDatabase): Array<{ task_id: s
     WHERE t.id NOT LIKE 'drill-%' AND g.initial_head_sha <> ''
     GROUP BY t.id ORDER BY t.id`).all() as
     Array<{ task_id: string; run_id: string; project_id: string; contract_json: string; initial_head_sha: string; base_sha: string | null; attempt_id: string; attempt_no: number; accepted_at: number }>;
-}
-
-export function listAttemptTracesForRun(db: LanePilotDatabase, runId: string): Array<{ trace: string | null }> {
-  return db.prepare(`SELECT t.trace_json AS trace FROM lane_pilot_attempt a
-    LEFT JOIN lane_pilot_attempt_reasoning t ON t.attempt_id=a.id WHERE a.run_id=?`).all(runId) as Array<{ trace: string | null }>;
-}
-
-export function listAttemptIdsInStates(db: LanePilotDatabase, runId: string, taskId: string, states: readonly string[]): Array<{ id: string }> {
-  return db.prepare(`SELECT id FROM lane_pilot_attempt WHERE run_id=? AND task_id=? AND state IN (${states.map(() => "?").join(",")})`)
-    .all(runId, taskId, ...states) as Array<{ id: string }>;
-}
-
-export function countHarnessArmAttempts(db: LanePilotDatabase, since: number, treeIds: readonly [string, string]): number {
-  return (db.prepare("SELECT count(*) AS n FROM lane_pilot_attempt WHERE harness_arm IN ('new','old') AND created_at>=? AND harness_tree_id IN (?,?)")
-    .get(since, treeIds[0], treeIds[1]) as { n: number }).n;
-}
-
-export function attemptHarnessTreeId(db: LanePilotDatabase, attemptId: string): string | null {
-  return (db.prepare("SELECT harness_tree_id AS id FROM lane_pilot_attempt WHERE id=?").get(attemptId) as { id: string | null } | undefined)?.id ?? null;
-}
-
-export function latestAttemptIdForThread(db: LanePilotDatabase, runId: string, taskId: string, threadId: string): string | null {
-  return (db.prepare("SELECT id FROM lane_pilot_attempt WHERE run_id=? AND task_id=? AND thread_id=? ORDER BY created_at DESC LIMIT 1")
-    .get(runId, taskId, threadId) as { id: string } | undefined)?.id ?? null;
-}
-
-export function listAttemptEvidenceRows(db: LanePilotDatabase, input: { projectId: string; sinceMs: number; area: string; writerKey: string; attemptIds?: readonly string[]; limit: number }): Array<{
-  id: string; taskId: string; attemptNo: number; state: string; reason: string | null; createdAt: number; threadId: string | null; runId: string; contract: string | null; trace: string | null;
-}> {
-  const ids = input.attemptIds?.length ? `AND a.id IN (${input.attemptIds.map(() => "?").join(",")})` : "";
-  return db.prepare(`SELECT a.id, a.task_id AS taskId, a.attempt_no AS attemptNo, a.state, a.reason, a.created_at AS createdAt, a.thread_id AS threadId, a.run_id AS runId,
-      t.contract_json AS contract, x.trace_json AS trace
-    FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id JOIN lane_pilot_task t ON t.id=a.task_id LEFT JOIN lane_pilot_attempt_reasoning x ON x.attempt_id=a.id
-    WHERE r.project_id=? AND a.created_at>=? AND a.task_id NOT LIKE 'drill-%' AND a.state IN ('accepted','blocked','validation_failed','empty_output')
-      AND COALESCE(json_extract(t.contract_json,'$.area'),'')=?
-      AND (?='*' OR COALESCE(json_extract(x.trace_json,'$.dispatchContext.writerKey'),'*') IN (?, '*'))
-      ${ids}
-    ORDER BY a.created_at DESC LIMIT ?`)
-    .all(input.projectId, input.sinceMs, input.area, input.writerKey, input.writerKey, ...(input.attemptIds ?? []), input.limit) as
-    Array<{ id: string; taskId: string; attemptNo: number; state: string; reason: string | null; createdAt: number; threadId: string | null; runId: string; contract: string | null; trace: string | null }>;
-}
-
-export function listTeachingKeys(db: LanePilotDatabase, projectId: string, since: number, minAttempts: number, minSpanMs: number): Array<{ area: string; writerKey: string; attempts: number }> {
-  const rows = db.prepare(`SELECT COALESCE(json_extract(t.contract_json,'$.area'),'') AS area,
-      COALESCE(json_extract(x.trace_json,'$.dispatchContext.writerKey'), '*') AS writerKey, count(*) AS attempts, max(a.created_at) AS last
-    FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id JOIN lane_pilot_task t ON t.id=a.task_id
-    LEFT JOIN lane_pilot_attempt_reasoning x ON x.attempt_id=a.id
-    WHERE r.project_id=? AND a.created_at>=? AND a.task_id NOT LIKE 'drill-%' AND a.state IN ('accepted','blocked','validation_failed','empty_output')
-    GROUP BY 1,2 HAVING count(*)>=? AND max(a.created_at)-min(a.created_at)>=? ORDER BY last DESC`).all(projectId, since, minAttempts, minSpanMs) as
-    Array<{ area: string; writerKey: string; attempts: number }>;
-  return rows.map((row) => ({ area: row.area ?? "", writerKey: row.writerKey ?? "*", attempts: row.attempts }));
-}
-
-export function assignAttemptHarness(db: LanePilotDatabase, attemptId: string, harnessId: string, arm: "new" | "old" | null): void {
-  db.prepare("UPDATE lane_pilot_attempt SET harness_tree_id=?, harness_arm=? WHERE id=?").run(harnessId, arm, attemptId);
-}
-
-export function listHarnessTrialAttempts(db: LanePilotDatabase, input: { since: number; trialId: string; parentId: string | null }): Array<{ attemptId: string; taskId: string; state: string; attemptNo: number; arm: "new" | "old"; createdAt: number; runId: string }> {
-  return db.prepare(`SELECT a.id AS attemptId, a.task_id AS taskId, a.state, a.attempt_no AS attemptNo, a.harness_arm AS arm, a.created_at AS createdAt, a.run_id AS runId
-    FROM lane_pilot_attempt a WHERE a.created_at>=? AND ((a.harness_tree_id=? AND a.harness_arm='new') OR (a.harness_tree_id=? AND a.harness_arm='old'))
-    ORDER BY a.created_at`).all(input.since, input.trialId, input.parentId ?? "") as
-    Array<{ attemptId: string; taskId: string; state: string; attemptNo: number; arm: "new" | "old"; createdAt: number; runId: string }>;
 }

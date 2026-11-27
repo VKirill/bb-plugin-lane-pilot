@@ -32,12 +32,6 @@ export function dirnamePath(path: string): string {
   return trimmed.slice(0, idx);
 }
 
-export function joinPath(...parts: string[]): string {
-  const nonEmpty = parts.filter((part) => part.length > 0);
-  if (!nonEmpty.length) return ".";
-  return posixNormalize(nonEmpty.join("/"));
-}
-
 export function resolvePath(...paths: string[]): string {
   let resolved = "";
   let resolvedAbsolute = false;

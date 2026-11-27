@@ -231,10 +231,6 @@ export function wfCurrentNodeId(db: WfReadDb, runId: string): string | null {
     .get(runId) as { node_id: string } | undefined)?.node_id ?? null;
 }
 
-/** A live (running or waiting) run exists under this idempotency-key LIKE. */
-export function wfLiveRunWithIdem(db: WfReadDb, idemLike: string): boolean {
-  return Boolean(db.prepare("SELECT 1 AS live FROM lane_pilot_wf_run WHERE idem_key LIKE ? AND status IN ('running','waiting') LIMIT 1").get(idemLike));
-}
 
 /** A task's lp-task-pipeline run is still open (running or waiting). */
 export function wfLivePipelineRun(db: WfReadDb, linkRunId: string, linkTaskId: string): boolean {
@@ -269,11 +265,6 @@ export function wfRunInputsByKey(db: WfReadDb, idemKey: string, idemLike: string
     .all(idemKey, idemLike) as Array<{ inputs_json: string }>).map((row) => row.inputs_json);
 }
 
-/** Idem key and status of every run under an idem-key LIKE, newest first. */
-export function wfRunsByIdemPrefix(db: WfReadDb, idemLike: string): Array<{ idem_key: string; status: string }> {
-  return db.prepare("SELECT idem_key, status FROM lane_pilot_wf_run WHERE idem_key LIKE ? ORDER BY created_at DESC")
-    .all(idemLike) as Array<{ idem_key: string; status: string }>;
-}
 
 /** A run's project, optionally checked against its workflow. */
 export function wfRunProjectId(db: WfReadDb, runId: string, workflowId?: string): string | null {
@@ -283,16 +274,6 @@ export function wfRunProjectId(db: WfReadDb, runId: string, workflowId?: string)
   return row?.project_id ?? null;
 }
 
-/** A run's status, or null. */
-export function wfRunStatus(db: WfReadDb, runId: string): string | null {
-  return (db.prepare("SELECT status FROM lane_pilot_wf_run WHERE id=?").get(runId) as { status: string } | undefined)?.status ?? null;
-}
-
-/** The newest succeeded step of a node in a run. */
-export function wfLatestSucceededStep(db: WfReadDb, runId: string, nodeId: string): { input_json: string; receipt_json: string | null } | undefined {
-  return db.prepare("SELECT input_json, receipt_json FROM lane_pilot_wf_step WHERE run_id=? AND node_id=? AND state='succeeded' ORDER BY rowid DESC LIMIT 1")
-    .get(runId, nodeId) as { input_json: string; receipt_json: string | null } | undefined;
-}
 
 /** Top-level workflow runs a board lists: own work (no task link) still live or touched since a time, newest first. */
 export function wfBoardRuns(db: WfReadDb, input: { projectId?: string | null; doneSince: number; limit: number; linkRunIds?: readonly string[] }): Array<{
@@ -306,17 +287,6 @@ export function wfBoardRuns(db: WfReadDb, input: { projectId?: string | null; do
   }>;
 }
 
-/** Runs of a workflow under a shipped version since a time, finished or running (the wall's graph-class recurrence). */
-export function wfRunsOfWorkflow(db: WfReadDb, workflowId: string, input: { harnessVersion: string; since: number }): Array<{ status: string; reason: string | null }> {
-  return db.prepare("SELECT status, reason FROM lane_pilot_wf_run WHERE workflow_id=? AND harness_version=? AND created_at>=? AND status NOT IN ('running','waiting','canceled')")
-    .all(workflowId, input.harnessVersion, input.since) as Array<{ status: string; reason: string | null }>;
-}
-
-/** The latest failed or interrupted step of a run. */
-export function wfFailedStepOfRun(db: WfReadDb, runId: string): { node_id: string; error: string | null } | undefined {
-  return db.prepare("SELECT node_id, error FROM lane_pilot_wf_step WHERE run_id=? AND state IN ('failed','interrupted') ORDER BY updated_at DESC LIMIT 1")
-    .get(runId) as { node_id: string; error: string | null } | undefined;
-}
 
 // ---- room-facing read/write helpers over the wf tables (raw SQL lives here, callers take named rows) ----
 
@@ -335,12 +305,6 @@ export function wfRunIdemParent(db: WfReadDb, runId: string): { idem_key: string
   return db.prepare("SELECT idem_key, parent_run_id FROM lane_pilot_wf_run WHERE id=?").get(runId) as { idem_key: string | null; parent_run_id: string | null } | undefined;
 }
 
-/** The earliest workflow run a Lane Pilot run linked inside a window (a route's outcome is the graph it started). */
-export function wfEarliestLinkedRun(db: WfReadDb, linkRunId: string, from: number, to: number): { workflow_id: string; status: string } | undefined {
-  return db.prepare(`SELECT workflow_id, status FROM lane_pilot_wf_run
-    WHERE link_run_id = ? AND created_at >= ? AND created_at <= ? ORDER BY created_at LIMIT 1`)
-    .get(linkRunId, from, to) as { workflow_id: string; status: string } | undefined;
-}
 
 /** The child runs a subworkflow node spawned, in order (the run snapshot's children). */
 export function wfChildRuns(db: WfReadDb, runId: string): Array<{ id: string; parent_step_key: string; workflow_id: string; status: string }> {
@@ -356,12 +320,6 @@ export function wfRunOutcomeRows(db: WfReadDb, workflowId: string, projectId?: s
     .all(...args) as Array<{ status: string; output_json: string | null; definition_json: string | null; created_at: number }>;
 }
 
-/** The finished runs of a workflow of a project, newest first: the phase's grill gate reads the latest outcome. */
-export function wfFinishedRuns(db: WfReadDb, workflowId: string, projectId: string, since: number, limit = 10): Array<{ id: string; link_run_id: string | null; status: string; inputs_json: string | null; output_json: string | null; created_at: number }> {
-  return db.prepare(`SELECT id, link_run_id, status, inputs_json, output_json, created_at FROM lane_pilot_wf_run
-    WHERE workflow_id=? AND project_id=? AND created_at>=? ORDER BY created_at DESC, rowid DESC LIMIT ?`)
-    .all(workflowId, projectId, since, limit) as Array<{ id: string; link_run_id: string | null; status: string; inputs_json: string | null; output_json: string | null; created_at: number }>;
-}
 
 /** The newest run of a workflow (optionally of a project). */
 export function wfLastRun(db: WfReadDb, workflowId: string, projectId?: string): { id: string; status: string; created_at: number } | undefined {
@@ -484,21 +442,12 @@ export function wfErrandSpawnThreadIds(db: WfReadDb, runId: string): string[] {
 
 export const WF_RUN_TABLE = "lane_pilot_wf_run";
 
-export function wfLiveRun(db: WfReadDb, workflowId: string, projectId: string): boolean {
-  return Boolean(db.prepare("SELECT 1 FROM lane_pilot_wf_run WHERE workflow_id=? AND project_id=? AND status IN ('running','waiting') LIMIT 1").get(workflowId, projectId));
-}
-
 export function wfRunUsage(db: WfReadDb, runId: string): { tokens_used: number; cost_micro_usd: number } | undefined {
   return db.prepare("SELECT tokens_used, cost_micro_usd FROM lane_pilot_wf_run WHERE id=?").get(runId) as { tokens_used: number; cost_micro_usd: number } | undefined;
 }
 
 export function wfEffectResultJson(db: WfReadDb, runId: string, kind: string): string | null {
   return (db.prepare("SELECT result_json FROM lane_pilot_wf_effect WHERE run_id=? AND kind=? AND state='done'").get(runId, kind) as { result_json: string | null } | undefined)?.result_json ?? null;
-}
-
-export function wfEffectThreadId(db: WfReadDb, runId: string, kind: string): string | null {
-  return (db.prepare("SELECT json_extract(result_json,'$.threadId') AS thread_id FROM lane_pilot_wf_effect WHERE run_id=? AND kind=? AND state='done' LIMIT 1")
-    .get(runId, kind) as { thread_id: string | null } | undefined)?.thread_id ?? null;
 }
 
 export function listErrandWfRuns(db: WfReadDb, input: { since: number; projectId?: string | null; kind?: string | null; limit: number }): Array<{
@@ -529,25 +478,6 @@ export function listGraphlessErrandRows(db: WfReadDb, since: number): Array<{ id
       (SELECT json_extract(e.result_json,'$.threadId') FROM lane_pilot_wf_effect e WHERE e.run_id=r.id AND e.kind='errand.spawn' AND e.state='done' LIMIT 1) AS thread_id
     FROM lane_pilot_wf_run r WHERE r.workflow_id='errand' AND r.created_at>=?`).all(since) as
     Array<{ id: string; project_id: string | null; inputs_json: string; cost_micro_usd: number | null; thread_id: string | null }>;
-}
-
-export function listFailedWfRuns(db: WfReadDb, input: { since: number; until: number; failed: readonly string[]; skipped: readonly string[] }): Array<{
-  id: string; workflow_id: string; status: string; reason: string | null; updated_at: number; harness_version: string | null; project_id: string | null; link_task_id: string | null;
-}> {
-  return db.prepare(`SELECT r.id, r.workflow_id, r.status, r.reason, r.updated_at, r.harness_version, r.project_id, r.link_task_id
-    FROM lane_pilot_wf_run r
-    WHERE r.updated_at>=? AND r.updated_at<? AND r.status IN (${input.failed.map(() => "?").join(",")}) AND r.workflow_id NOT IN (${input.skipped.map(() => "?").join(",")})
-      AND NOT (r.workflow_id='lp.browser-qa' AND COALESCE(r.reason,'') LIKE 'step_failed:verdict%')
-      AND NOT EXISTS (SELECT 1 FROM lane_pilot_wf_run c WHERE c.parent_run_id=r.id AND c.status IN (${input.failed.map(() => "?").join(",")}))
-    ORDER BY r.updated_at`).all(input.since, input.until, ...input.failed, ...input.skipped, ...input.failed) as Array<{
-    id: string; workflow_id: string; status: string; reason: string | null; updated_at: number; harness_version: string | null; project_id: string | null; link_task_id: string | null;
-  }>;
-}
-
-export function listErrandRuns(db: WfReadDb): Array<{ id: string; project_id: string | null; status: string; reason: string | null; output_json: string | null; inputs_json: string; created_at: number }> {
-  return db.prepare(`SELECT r.id, r.project_id, r.status, r.reason, r.output_json, r.inputs_json, r.created_at
-    FROM lane_pilot_wf_run r WHERE r.workflow_id='errand' ORDER BY r.created_at DESC`).all() as
-    Array<{ id: string; project_id: string | null; status: string; reason: string | null; output_json: string | null; inputs_json: string; created_at: number }>;
 }
 
 export function listWfRunsSince(db: WfReadDb, input: { since: number; projectId?: string | null }): RunRow[] {

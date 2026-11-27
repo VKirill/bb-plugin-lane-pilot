@@ -47,30 +47,6 @@ export function casSetting(
   return result.changes === 1;
 }
 
-/** Atomically claim a project-scoped daily schedule date; duplicate callbacks and plugin reloads are no-ops. */
-export function claimDailySchedule(db:LanePilotDatabase, projectId:string, scheduleName:string, localDate:string):boolean {
-  if (!/^[a-z][a-z0-9-]{0,63}$/.test(scheduleName)) throw new Error("invalid schedule name");
-  const parsedDate = /^\d{4}-\d{2}-\d{2}$/.test(localDate) ? new Date(`${localDate}T00:00:00Z`) : null;
-  if (!parsedDate || Number.isNaN(parsedDate.getTime()) || parsedDate.toISOString().slice(0,10) !== localDate) {
-    throw new Error("invalid schedule date");
-  }
-  const key = `schedule.${scheduleName}.lastRunDate`;
-  return db.transaction(() => {
-    const current = db.prepare(`SELECT value,version FROM lane_pilot_project_settings
-      WHERE project_id=? AND binding_id='' AND key=?`).get(projectId,key) as {value:string;version:number}|undefined;
-    const value = JSON.stringify(localDate);
-    const now = Date.now();
-    if (!current) {
-      return db.prepare(`INSERT OR IGNORE INTO lane_pilot_project_settings
-        (project_id,binding_id,key,value,version,updated_at) VALUES (?,'',?,?,1,?)`).run(projectId,key,value,now).changes === 1;
-    }
-    if (current.value === value) return false;
-    return db.prepare(`UPDATE lane_pilot_project_settings SET value=?,version=version+1,updated_at=?
-      WHERE project_id=? AND binding_id='' AND key=? AND version=? AND value=?`)
-      .run(value,now,projectId,key,current.version,current.value).changes === 1;
-  }).immediate();
-}
-
 /** A section's settings live under binding_id "section:<id>"; the project's own under "". */
 export function sectionBindingId(sectionId: string): string {
   return `section:${sectionId}`;
@@ -409,35 +385,9 @@ export function putGlobalSettingValue(db: LanePilotDatabase, projectId: string, 
   return true;
 }
 
-/** Provider/model setting rows of every project (the capability inventory). */
-export function listProviderSettingRows(db: LanePilotDatabase): Array<{ project_id: string; key: string; value: string }> {
-  return db.prepare(`SELECT project_id, key, value FROM lane_pilot_project_settings WHERE binding_id='' AND (key LIKE '%.provider' OR key LIKE '%.model' OR key IN ('pmProviderId','pmModel','writerProviderId','writerModel'))`).all() as
-    Array<{ project_id: string; key: string; value: string }>;
-}
-
-/** A project's raw setting value by key across bindings (the sandbox hostId lookup). */
-export function projectSettingValue(db: LanePilotDatabase, projectId: string, key: string): string | undefined {
-  return (db.prepare("SELECT value FROM lane_pilot_project_settings WHERE project_id=? AND key=?").get(projectId, key) as { value: string } | undefined)?.value;
-}
-
 /** A binding-less setting's raw value (the schedule errand default). */
 export function bindingSettingValue(db: LanePilotDatabase, projectId: string, key: string): string | undefined {
   return (db.prepare("SELECT value FROM lane_pilot_project_settings WHERE project_id=? AND binding_id='' AND key=?").get(projectId, key) as { value: string } | undefined)?.value;
-}
-
-/** Projects that have any binding-less setting row (the docs nightly sweep). */
-export function listProjectsWithBindingSettings(db: LanePilotDatabase): string[] {
-  return (db.prepare("SELECT DISTINCT project_id FROM lane_pilot_project_settings WHERE binding_id=''").all() as Array<{ project_id: string }>).map((row) => row.project_id);
-}
-
-export function boundSettingValue(db: LanePilotDatabase, projectId: string, key: string): string | null {
-  return (db.prepare("SELECT value FROM lane_pilot_project_settings WHERE project_id=? AND binding_id='' AND key=?")
-    .get(projectId, key) as { value: string } | undefined)?.value ?? null;
-}
-
-export function settingValue(db: LanePilotDatabase, projectId: string, key: string): string | null {
-  return (db.prepare("SELECT value FROM lane_pilot_project_settings WHERE project_id=? AND key=?")
-    .get(projectId, key) as { value: string } | undefined)?.value ?? null;
 }
 
 export function settingValues(db: LanePilotDatabase, projectId: string, key: string): string[] {

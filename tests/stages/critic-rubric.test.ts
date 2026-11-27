@@ -11,7 +11,6 @@ import {
   shouldRequestRepair,
   specialistPrompt,
 } from "../../src/rooms/critique";
-import { failureSide } from "../../src/rooms/contracts/failure-class";
 
 const evidence = "the host-read diff and the check output were read";
 const codeRubric = (acceptance: "ok" | "fail", proof = "acceptance line 1 is not present in src/a.ts") => [
@@ -67,7 +66,7 @@ describe("a critic verdict comes from the rubric", () => {
     expect(specialistOk.status).toBe("pass");
   });
 
-  it("splits whether the work is done from how it was done, and a failure class into agent or environment", () => {
+  it("splits whether the work is done from how it was done", () => {
     const processFail = parseCodeCritique(JSON.stringify({
       status: "pass", summary: "fine", findings: [], evidence,
       rubric: codeRubric("ok").map((item) => item.id === "tests" ? { ...item, result: "fail", evidence: "an assertion was deleted from tests/money.test.ts" } : item),
@@ -77,12 +76,6 @@ describe("a critic verdict comes from the rubric", () => {
     expect(outcomeFail.verdict?.sides).toEqual({ outcome: "fail", process: "ok" });
     const clean = parseCodeCritique(JSON.stringify({ status: "pass", summary: "fine", findings: [], evidence }));
     expect(clean.verdict?.sides).toEqual({ outcome: "ok", process: "ok" });
-    expect(failureSide("infra")).toBe("environment");
-    expect(failureSide("provider")).toBe("environment");
-    expect(failureSide("budget")).toBe("environment");
-    expect(failureSide("task")).toBe("agent");
-    expect(failureSide("contract")).toBe("agent");
-    expect(failureSide("reassign")).toBe("agent");
   });
 
   it("the prompts name the rubric ids and the ok and fail results", () => {

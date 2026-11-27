@@ -92,14 +92,6 @@ export function readJudgeReply(reply: string, count: number): ReadReply | null {
   return null;
 }
 
-/**
- * The numbers the judge named (1-based, in the order it gave them), `[]` for none, `null` for a reply that is neither (an error of the judge,
- * handled like a timeout). The reading is `readJudgeReply`.
- */
-export function parseJudgeReply(reply: string, count: number): number[] | null {
-  const read = readJudgeReply(reply, count);
-  return read ? read.numbers : null;
-}
 
 /** The reranker's system prompt: it only orders, it never drops a note and never says none. */
 export const RERANK_SYSTEM = "You order a project's memory notes by how useful they are for answering a question. Every note stays in the list; you only change the order.";

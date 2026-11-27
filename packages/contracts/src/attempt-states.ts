@@ -7,7 +7,6 @@ export function isOpenAttemptState(state: string): boolean {
 
 /** Ended attempt states (accepted, blocked, canceled). */
 export const TERMINAL_ATTEMPT_STATES = ["accepted", "blocked", "canceled"] as const;
-export type TerminalAttemptState = (typeof TERMINAL_ATTEMPT_STATES)[number];
 
 export function isTerminalAttemptState(state: string): boolean {
   return (TERMINAL_ATTEMPT_STATES as readonly string[]).includes(state);
@@ -15,7 +14,6 @@ export function isTerminalAttemptState(state: string): boolean {
 
 /** Immutable final attempt states that never transition again. */
 export const FINAL_ATTEMPT_STATES = ["accepted", "canceled"] as const;
-export type FinalAttemptState = (typeof FINAL_ATTEMPT_STATES)[number];
 
 export function isFinalAttemptState(state: string): boolean {
   return (FINAL_ATTEMPT_STATES as readonly string[]).includes(state);

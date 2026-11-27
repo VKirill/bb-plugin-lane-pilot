@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { parseJudgeReply } from "../packages/memory-core/src";
+import { readJudgeReply } from "../packages/memory-core/src";
 import { migrations } from "../src/rooms/migrations";
 import { runMemoryEvalCommand } from "../src/rooms/memory-eval/server/handlers/command";
 import { copyOfDatabase, formatRuler, mergeIntoHub, parseRuler, runRuler, wilson, type RulerOptions } from "../src/rooms/memory-eval/server/services/ruler";
@@ -110,7 +110,7 @@ describe("the ruler", () => {
     expect(unparsed.scopes[0]!.runs[0]!.unparsed.k).toBeGreaterThan(0);
     // and the answer is still the previous order: nothing was lost
     expect(unparsed.scopes[0]!.runs[0]!.delivered).toEqual({ k: 1, n: 1 });
-    expect(parseJudgeReply("[1]", 1)).toEqual([1]);
+    expect(readJudgeReply("[1]", 1)?.numbers).toEqual([1]);
   });
 
   it("merging into the hub changes the copy only", () => {

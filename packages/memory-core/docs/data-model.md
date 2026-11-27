@@ -84,7 +84,7 @@ The data model operates entirely in SQLite using `better-sqlite3` bindings (`pac
 - `lane_pilot_memory_receipt`: captures an append-only audit trail of retrieved note IDs and token counts delivered to agent roles (`packages/memory-core/src/lifecycle.ts:100-105`).
 - Auxiliary operational tables: `lane_pilot_memory_promotion` tracks cold note re-activations (`packages/memory-core/src/store.ts:465-467`), `lane_pilot_memory_miss` logs queries that yielded zero results (`packages/memory-core/src/store.ts:481-483`), and `lane_pilot_memory_probe` logs synthetic health check runs (`packages/memory-core/src/store.ts:548-551`).
 
-Migrations for `lane_pilot_memory` and `lane_pilot_memory_fts` reside in the parent plugin (`src/rooms/migrations.ts:160-171`), documented by `MEMORY_SCHEMA` (`packages/memory-core/src/store.ts:15-20`), while `lane_pilot_memory_trgm` (`trigramReady` in `packages/memory-core/src/store.ts:60-75`) and `lane_pilot_memory_vec` (`vectorsReady` in `packages/memory-core/src/vectors.ts:19-32`) are created lazily upon first use.
+Migrations for `lane_pilot_memory` and `lane_pilot_memory_fts` reside in the parent plugin (`src/rooms/migrations.ts:160-171`), while `lane_pilot_memory_trgm` (`trigramReady` in `packages/memory-core/src/store.ts:60-75`) and `lane_pilot_memory_vec` (`vectorsReady` in `packages/memory-core/src/vectors.ts:19-32`) are created lazily upon first use.
 
 ## Domain areas
 

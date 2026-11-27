@@ -8,17 +8,7 @@ import { rewriteFoldedToolNames, LIVE_FOLDER_FILE_CAP, STICKY_WINDOW_MS } from "
 import { SESSION_MAX_MS, SESSION_MAX_TURNS } from "../../contracts/failure-class";
 import { DEPENDENCY_REDO_WAIT_MS } from "../../storage";
 import { BB_DOCS_OWNED, BB_LANGUAGE, BB_SPECIALIST_SCHEDULE, bbDocsRead } from "./shared-prompt-blocks";
-import {
-  AGENTS_JSON_FIELD_SET,
-  BB_SESSION_OWNED_SET,
-  DROPPED_IDENTITY_FIELDS,
-  PLUGIN_IGNORED_SET,
-  isCliLaneAgentPrompt,
-  normalizeToolList,
-  overlayDisallowedTools,
-  overlaySessionTools,
-  parseAgentMarkdown,
-} from "./agent-overlay";
+import { isCliLaneAgentPrompt } from "./agent-overlay";
 
 const PM_OWNER_FORMS = `Any \`lane_pilot_ask_owner\` text is written in the owner's language; it is shown to the owner.`;
 
@@ -305,41 +295,4 @@ export function overlayLaneAgentPrompt(agentId: string, stockPrompt: string): st
   if (!session) return stockPrompt;
   if (stockPrompt.includes(session)) return stockPrompt.endsWith("\n") ? stockPrompt : `${stockPrompt}\n`;
   return `${stockPrompt.trimEnd()}\n\n${session}\n`;
-}
-
-export function overlayLanePmPrompt(agentId: string, stockPrompt: string): string {
-  return overlayLaneAgentPrompt(agentId, stockPrompt);
-}
-
-export function stockAgentsOverlayFromInstalled(input: {
-  agentId: string;
-  source: string;
-  markdown: string;
-}): Record<string, unknown> | null {
-  const parsed = parseAgentMarkdown(input.markdown);
-  const tools = normalizeToolList(parsed.frontmatter.tools);
-  if (!tools || tools.includes("*")) return null;
-  const plugin = input.source.startsWith("plugin:");
-  const definition: Record<string, unknown> = {
-    description: typeof parsed.frontmatter.description === "string" && parsed.frontmatter.description.trim()
-      ? parsed.frontmatter.description
-      : input.agentId,
-    prompt: overlayLaneAgentPrompt(input.agentId, parsed.prompt),
-    tools: overlaySessionTools(input.agentId, tools),
-  };
-  for (const [key, value] of Object.entries(parsed.frontmatter)) {
-    if (key === "description" || key === "tools" || key === "prompt") continue;
-    if (DROPPED_IDENTITY_FIELDS.has(key) || BB_SESSION_OWNED_SET.has(key)) continue;
-    if (plugin && PLUGIN_IGNORED_SET.has(key)) continue;
-    if (!AGENTS_JSON_FIELD_SET.has(key)) continue;
-    if (key === "disallowedTools") {
-      const denied = normalizeToolList(value);
-      if (denied) definition[key] = denied;
-      continue;
-    }
-    definition[key] = value;
-  }
-  const disallowed = overlayDisallowedTools(input.agentId, definition.disallowedTools as string[] | undefined);
-  if (disallowed) definition.disallowedTools = disallowed;
-  return { [input.agentId]: definition };
 }

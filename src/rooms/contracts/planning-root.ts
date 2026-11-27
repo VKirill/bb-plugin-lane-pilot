@@ -53,11 +53,6 @@ export function planningHomeOf(settings: Record<string, unknown> | null | undefi
   return `/${clean(raw.trim())}`;
 }
 
-/** The root the `.agents/*` planning files are read and written under: the planning home when set, else the run's checkout. */
-export function planningRoot(run: { writer_workspace_path?: string | null } | null | undefined, settings: Record<string, unknown> | null | undefined, check: HomeCheck = {}, log?: HomeLog): string | null {
-  return planningHomeOf(settings, check, log) ?? run?.writer_workspace_path ?? null;
-}
-
 const quote = (text: string) => `'${text.replace(/'/g, `'\\''`)}'`;
 const confirmed = new Map<string, { ok: boolean; until: number }>();
 /** Forgets what was confirmed (tests). */
@@ -96,12 +91,6 @@ export async function resolvePlanningHome(args: { host: RunCommandHost; hostId: 
   const home = planningHomeOf(args.inputs.settings, { otherCheckouts: args.inputs.otherCheckouts }, args.log);
   if (!home || !args.hostId || !args.cwd) return null;
   return (await confirmPlanningHome(args.host, args.hostId, args.cwd, home, args.log)) ? home : null;
-}
-
-/** The home as already confirmed on its host (no host call): for texts built where nothing can wait. Null until some caller has run `resolvePlanningHome`. */
-export function confirmedPlanningHome(hostId: string | null | undefined, inputs: PlanningInputs): string | null {
-  const home = planningHomeOf(inputs.settings, { otherCheckouts: inputs.otherCheckouts });
-  return home && hostId && confirmed.get(`${hostId}\0${home}`)?.ok === true ? home : null;
 }
 
 /**

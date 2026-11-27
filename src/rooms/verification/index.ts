@@ -9,5 +9,5 @@ export { mergeInfo, revertCommitsInWorktree, worktreeState } from "./git-rollbac
 export type { MergeInfo, RevertResult, WorktreeState } from "./git-rollback";
 export { cachedReplayVerdicts, recordedReplayFailure, recordReplayVerdict, replayCacheLocation, replayKey } from "./replay-cache";
 export type { ReplayCacheEntry } from "./replay-cache";
-export { DEFAULT_WORKER, WORKER_SECRET_PATHS, workerSecretReach } from "./worker-user";
+export { DEFAULT_WORKER } from "./worker-user";
 export { CREDENTIAL_DIRS, CREDENTIAL_FILES, CREDENTIAL_SYMLINK_DIRS, credentialDirs, resolveCredentialPaths } from "./credential-paths";

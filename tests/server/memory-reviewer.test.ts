@@ -4,7 +4,7 @@ import { openDatabase, saveProjectSetting } from "../../src/rooms/plugin-db";
 import { memoryUsefulness, storeMemoryRecords } from "../../packages/memory-core/src";
 import type { MemoryCandidate } from "../../packages/memory-core/src";
 import { mixReviewerMemory, reviewerMemoryFor } from "../../src/rooms/memory/server/services/memory-mix";
-import { writerMemory } from "../../src/rooms/memory/server";
+import { writerMemoryPicks } from "../../src/rooms/memory/server";
 import { codeCritiquePrompt } from "../../src/rooms/critique";
 
 type Db = ReturnType<typeof openDatabase>;
@@ -88,7 +88,7 @@ describe("K8 reviewer role: reviewers and critics get the notes relevant to revi
     expect(reviewerMemoryFor(db, "P", null, task)).toContain("timezones");
     saveProjectSetting(db, "P", "memory.inject", "false");
     expect(reviewerMemoryFor(db, "P", null, task)).toBe("");
-    expect(writerMemory([{ content: "Review check about timezones", concepts: ["review"], kind: "note" }], task)).toBe("");
+    expect(writerMemoryPicks([{ content: "Review check about timezones", concepts: ["review"], kind: "note" }], task)).toEqual([]);
   });
 
   it("the critic prompt carries the notes as data, only when there are some", () => {

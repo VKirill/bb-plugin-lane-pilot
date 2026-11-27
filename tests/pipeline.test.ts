@@ -7,7 +7,7 @@ import { aggregateRun } from "../src/rooms/runs";
 import { buildCliInvocation } from "../src/rooms/writer/models/argv-builder";
 import { argvValidationMap } from "../src/rooms/settings/models/setting-validation";
 import { attemptProduced } from "../src/rooms/writer/models/cli-outcome";
-import { classifyWriterOutput, parseGitChangedPaths } from "../src/rooms/tasks";
+import { classifyWriterOutput } from "../src/rooms/tasks";
 import {
   claimActivation,
   countAttempts,
@@ -27,14 +27,12 @@ import { fileAllowedByOwns, fnmatch, matchOwnsPath } from "@lane-pilot/kit";
 import { NATIVE_LP_BRIDGE_PM_TOOLS } from "../src/rooms/native-agent/models/bridge-tools";
 import plugin from "../server";
 import {
-  resolveTransition,
   TRANSITION_TABLE,
   WRITER_RETRY_LIMIT,
   type AttemptState,
   type TransitionEvent,
 } from "../src/rooms/contracts/state-machine";
 import { TASK_V2_REQUIRED, validateTaskV2 } from "../src/rooms/tasks";
-import { loadTaskV2Schema } from "../src/rooms/tasks/server";
 
 const config = {
   projectId:"project-test",
@@ -79,7 +77,9 @@ describe("§3.4 transition table", () => {
   it("covers every spec row", () => expect(TRANSITION_TABLE).toHaveLength(cases.length));
   for (const row of cases) {
     it(`${row.from ?? "∅"} + ${row.event} → ${row.to}`, () => {
-      const to = resolveTransition(row.from, row.event);
+      const match = TRANSITION_TABLE.find((item) => item.from === row.from && item.event === row.event);
+      expect(match).toBeDefined();
+      const to = match!.to;
       expect(to === "stay" ? row.from : to).toBe(row.to);
     });
   }
@@ -167,7 +167,7 @@ describe("task-v2", () => {
   };
   // deferral:dfr_seed_skip_pipeline
   it.skipIf(NO_UPSTREAM)("requires the 18 upstream fields and keeps the copyrighted schema copy", () => {
-    const schema = loadTaskV2Schema();
+    const schema = JSON.parse(readFileSync(join(process.cwd(), "lane-stack/schemas/task-v2.schema.json"), "utf8")) as { required: string[]; additionalProperties: boolean };
     expect(schema.required).toEqual([...TASK_V2_REQUIRED]);
     expect(schema.additionalProperties).toBe(false);
     const copied = readFileSync(join(process.cwd(), "lane-stack/schemas/task-v2.schema.json"), "utf8");
@@ -288,13 +288,6 @@ describe("writer output validation", () => {
     });
     expect(classified.ok).toBe(false);
     if (!classified.ok) expect(classified.reason).toMatch(/owns_paths rejected src\/production.ts/);
-  });
-  it("parses git status --porcelain and name-only", () => {
-    expect(parseGitChangedPaths("?? hello.txt\n M src/production.ts\nsrc/other.ts\n")).toEqual([
-      "hello.txt",
-      "src/production.ts",
-      "src/other.ts",
-    ]);
   });
   it("rejects a pre-existing expected file that this attempt did not produce", () => {
     const produced = attemptProduced(["hello.txt"], ["hello.txt"]);

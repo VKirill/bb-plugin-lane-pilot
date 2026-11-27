@@ -476,7 +476,7 @@ export function AgentsLoadout({
         <AccessModePanel api={access} modeControl={renderModeFields ? renderModeFields() : null} />
       ) : null}
 
-      <OwnedSettings scope="agents" locale={locale} />
+      <OwnedSettings locale={locale} />
 
       {isGlobal ? <ModelOverridesPanel page={overridesPage} /> : null}
     </div>

@@ -3,12 +3,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { readBoundedWorkspaceFile } from "@lane-pilot/kit";
-import { resolveTransition, TRANSITION_TABLE, type TransitionEvent } from "../src/rooms/contracts/state-machine";
+import { TRANSITION_TABLE, type TransitionEvent } from "../src/rooms/contracts/state-machine";
 
 // Release stories — worker suite (SMA rl_stories / n1133): the real worker boundary guards and the law that a worker
 // cannot accept its own work (only checks_passed reaches `accepted`).
 
 const EVENTS: TransitionEvent[] = TRANSITION_TABLE.map((row) => row.event).filter((event, index, all) => all.indexOf(event) === index);
+const runningTransition = (event: TransitionEvent) => TRANSITION_TABLE.find((row) => row.from === "running" && row.event === event)?.to;
 
 describe("worker boundary stories", () => {
   const cwd = mkdtempSync(join(tmpdir(), "lp-story-"));
@@ -33,11 +34,7 @@ describe("worker boundary stories", () => {
 describe("a worker cannot accept its own work", () => {
   it("no event but checks_passed reaches accepted from running", () => {
     for (const event of EVENTS.filter((e) => e !== "checks_passed")) {
-      try {
-        expect(resolveTransition("running", event)).not.toBe("accepted");
-      } catch {
-        // an illegal event is also not an acceptance
-      }
+      expect(runningTransition(event)).not.toBe("accepted");
     }
   });
 
@@ -45,12 +42,8 @@ describe("a worker cannot accept its own work", () => {
     // The writer's own report is no event at all: only the machine's checks_passed moves an attempt to accepted.
     const reportEvents: TransitionEvent[] = ["spawn_ok", "reconcile_found"];
     for (const event of reportEvents) {
-      try {
-        expect(resolveTransition("running", event)).not.toBe("accepted");
-      } catch {
-        // an illegal event is also not an acceptance
-      }
+      expect(runningTransition(event)).not.toBe("accepted");
     }
-    expect(resolveTransition("running", "checks_passed")).toBe("accepted");
+    expect(runningTransition("checks_passed")).toBe("accepted");
   });
 });

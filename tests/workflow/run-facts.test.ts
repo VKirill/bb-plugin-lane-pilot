@@ -1,9 +1,9 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { OTEL_GENAI_ATTRIBUTES, STEP_FACT_FIELDS, factVerdictFromCheck } from "@lane-pilot/contracts";
+import { STEP_FACT_FIELDS, factVerdictFromCheck } from "@lane-pilot/contracts";
 import { costUsd } from "@lane-pilot/models";
-import { parseWorkflow, nodeCensus, runStepFacts, stepFactVerdict } from "@lane-pilot/workflow-engine";
+import { parseWorkflow, nodeCensus, stepFactVerdict } from "@lane-pilot/workflow-engine";
 import { readCheckRun } from "../../src/rooms/tasks/server";
 import { threadUsage } from "../../src/rooms/usage/server";
 import { spentBy } from "../../src/rooms/workflow/server/services/workflow-agent-facts";
@@ -13,7 +13,7 @@ const FIXTURES_DIR = join(process.cwd(), "tests/fixtures/test-runner-output");
 const readFixture = (name: string) => readFileSync(join(FIXTURES_DIR, name), "utf8");
 
 describe("Task 26: per-step run facts & node census", () => {
-  it("exports shared step-fact field names and OTel GenAI attributes from contracts", () => {
+  it("exports shared step-fact field names from contracts", () => {
     expect(STEP_FACT_FIELDS).toEqual(expect.arrayContaining([
       "run_id",
       "requested_provider",
@@ -35,10 +35,6 @@ describe("Task 26: per-step run facts & node census", () => {
       "attempt_id",
       "session_id",
     ]));
-    expect(OTEL_GENAI_ATTRIBUTES.requestModel).toBe("gen_ai.request.model");
-    expect(OTEL_GENAI_ATTRIBUTES.responseModel).toBe("gen_ai.response.model");
-    expect(OTEL_GENAI_ATTRIBUTES.inputTokens).toBe("gen_ai.usage.input_tokens");
-    expect(OTEL_GENAI_ATTRIBUTES.cacheReadInputTokens).toBe("gen_ai.usage.cache_read.input_tokens");
   });
 
   it("records requested vs answered model/provider separately and logs WARN + DEBUG", async () => {
@@ -312,9 +308,6 @@ describe("Task 26: per-step run facts & node census", () => {
       cost_micro_usd: 0,
       cost_state: "measured",
     });
-
-    const facts = runStepFacts(engine, summary.runId);
-    expect(facts.find((f) => f.nodeId === "run_check")).toMatchObject({ verdict: "not_run", failureClass: null });
   });
 
   it("tracks rework_visits on loop revisits and classifies code vs stable_agent vs open_agent in nodeCensus", async () => {

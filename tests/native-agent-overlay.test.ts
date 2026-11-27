@@ -1,6 +1,3 @@
-import { mkdir, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { expect, it } from "vitest";
 import bundledAgents from "../src/rooms/contracts/bundled-agents.json";
 import { compileMainAgentProfile } from "../src/rooms/native-agent/models/agent-profile";
@@ -9,35 +6,16 @@ import {
   unionLpBridgeToolsOnAgentsJson,
   overlaySessionTools,
   overlayDisallowedTools,
+  withoutCodeWritingSubagents,
 } from "../src/rooms/native-agent/models/agent-overlay";
 import {
-  stockAgentsOverlayFromInstalled,
   BB_AGENT_SESSIONS,
   LANE_PILOT_PM_SESSION,
   lanePmOverlayPrompt,
-  overlayLanePmPrompt,
   overlayLaneAgentPrompt,
   laneSessionOverlayPrompt,
 } from "../src/rooms/native-agent/models/native-agent-overlay";
 import { NATIVE_LP_BRIDGE_PM_TOOLS } from "../src/rooms/native-agent/models/bridge-tools";
-import { resolveInstalledAgentFile } from "../src/rooms/native-agent/native-claude-host";
-
-const PLUGIN_MD = `---
-name: dev-orchestrator
-description: "Solo PM."
-tools: Agent(lane-stack:run-supervisor, Explore), Read, Write, Bash
-permissionMode: bypassPermissions
-model: opus[1m]
-effort: high
-color: pink
-maxTurns: 120
-skills:
-  - lane-pilot
-initialPrompt: |
-  Boot now.
----
-You are **dev-orchestrator**.
-`;
 
 it("keeps Agent(...) as one tool when the list contains commas", () => {
   expect(splitClaudeToolList("Agent(lane-stack:run-supervisor, Explore), Read, Write")).toEqual([
@@ -45,54 +23,6 @@ it("keeps Agent(...) as one tool when the list contains commas", () => {
     "Read",
     "Write",
   ]);
-});
-
-it("overlays plugin stock from the installed file without activating ignored or BB-owned fields", () => {
-  const overlay = stockAgentsOverlayFromInstalled({
-    agentId: "dev-orchestrator",
-    source: "plugin:lane-stack",
-    markdown: PLUGIN_MD,
-  });
-  const body = overlay?.["dev-orchestrator"] as Record<string, unknown>;
-  expect(body.prompt).toBe(`You are **dev-orchestrator**.\n\n${LANE_PILOT_PM_SESSION}\n`);
-  expect(body.description).toBe("Solo PM.");
-  expect(body.tools).toEqual(expect.arrayContaining([
-    "Agent(Explore)",
-    "Read",
-    "Write",
-    "Bash",
-    "mcp__bb-bridge__lane_pilot_read",
-    "mcp__bb-bridge__lane_pilot_dispatch_writer",
-    "mcp__bb-bridge__lane_pilot_cancel_task",
-    "mcp__bb-bridge__lane_pilot_wait_writer",
-    "mcp__bb-bridge__lane_pilot_helpers",
-    "mcp__bb-bridge__lane_pilot_memory",
-    "mcp__bb-bridge__lane_pilot_workspace_status",
-  ]));
-  expect(body.tools).not.toContain("mcp__bb-bridge__lane_pilot_dispatch_cli");
-  expect(body.tools).not.toContain("mcp__bb-bridge__lane_pilot_night_review");
-  expect(body.tools).not.toContain("*");
-  expect(body.skills).toEqual(["lane-pilot"]);
-  expect(body.maxTurns).toBe(120);
-  expect(body).not.toHaveProperty("permissionMode");
-  expect(body).not.toHaveProperty("initialPrompt");
-  expect(body).not.toHaveProperty("model");
-  expect(body).not.toHaveProperty("effort");
-  expect(body).not.toHaveProperty("hooks");
-  expect(body).not.toHaveProperty("mcpServers");
-});
-
-it("keeps project-agent permissionMode because that loader honors it", () => {
-  const overlay = stockAgentsOverlayFromInstalled({
-    agentId: "dev-orchestrator",
-    source: "project",
-    markdown: PLUGIN_MD,
-  });
-  const body = overlay?.["dev-orchestrator"] as Record<string, unknown>;
-  expect(body.permissionMode).toBe("bypassPermissions");
-  expect(body.initialPrompt).toBe("Boot now.");
-  expect(body).not.toHaveProperty("model");
-  expect(body).not.toHaveProperty("effort");
 });
 
 it("unions LP tools onto an edited --agents JSON without replacing a custom prompt", () => {
@@ -159,13 +89,6 @@ it("gives specialists the schedule and no other bb-bridge tool, and keeps the fo
   expect(overlayDisallowedTools("dev-orchestrator", ["Bash"])).toEqual(["Bash", "mcp__bb-bridge__update_environment_directory", "mcp__bb-bridge__bb_workflow_run"]);
   expect(overlayDisallowedTools("copy-lead", undefined)).toBeUndefined();
   expect(compileMainAgentProfile("dev-orchestrator").disallowedTools).toEqual(expect.arrayContaining(["mcp__bb-bridge__update_environment_directory", "mcp__bb-bridge__bb_workflow_run"]));
-  const overlay = stockAgentsOverlayFromInstalled({
-    agentId: "dev-orchestrator",
-    source: "plugin:lane-stack",
-    markdown: PLUGIN_MD,
-  }) as Record<string, { tools: string[] }>;
-  // Specialists start as their own threads; the PM session carries no copy-lead companion.
-  expect(overlay).not.toHaveProperty("copy-lead");
 });
 
 it("does not rewrite a custom --agents prompt", () => {
@@ -179,28 +102,6 @@ it("does not rewrite a custom --agents prompt", () => {
   expect((next["dev-orchestrator"] as { prompt: string }).prompt).toBe(
     "Dispatch run-controller then project-onboarder for docs/llm. lane-ctl accept.",
   );
-});
-
-it("resolves the installed markdown from the actual cwd, not a bundled copy", async () => {
-  const root = join(tmpdir(), `lp-agent-src-${Date.now()}`);
-  const cwd = join(root, "project");
-  const config = join(root, "claude");
-  await mkdir(join(cwd, ".claude/agents"), { recursive: true });
-  await mkdir(join(config, "agents"), { recursive: true });
-  await writeFile(join(cwd, ".claude/agents/dev-orchestrator.md"), PLUGIN_MD);
-  const previous = process.env.CLAUDE_CONFIG_DIR;
-  process.env.CLAUDE_CONFIG_DIR = config;
-  try {
-    const found = await resolveInstalledAgentFile(cwd, "dev-orchestrator");
-    expect(found).toEqual({
-      id: "dev-orchestrator",
-      source: "project",
-      path: join(cwd, ".claude/agents/dev-orchestrator.md"),
-    });
-  } finally {
-    if (previous === undefined) delete process.env.CLAUDE_CONFIG_DIR;
-    else process.env.CLAUDE_CONFIG_DIR = previous;
-  }
 });
 
 it("is a unified BB PM instruction, not a CLI orchestrator patch", () => {
@@ -232,9 +133,7 @@ it("F-003: standard with the critic unset is not a mandatory code critic; full s
 });
 
 it("stock plugin compile is a BB session, not a CLI dump", () => {
-  const stock = bundledAgents["dev-orchestrator"].prompt;
   expect(compileMainAgentProfile("dev-orchestrator").prompt).toBe(lanePmOverlayPrompt("dev-orchestrator"));
-  expect(overlayLanePmPrompt("dev-orchestrator", stock)).not.toContain("Boot solo");
 });
 
 it("replaces bundled specialist dumps with BB sessions", () => {
@@ -246,42 +145,11 @@ it("replaces bundled specialist dumps with BB sessions", () => {
   expect(overlayLaneAgentPrompt("project-onboarder", bundledAgents["project-onboarder"].prompt)).not.toContain("docs/llm");
 });
 
-it("replaces a stock CLI orchestrator body instead of appending it", () => {
-  const overlay = stockAgentsOverlayFromInstalled({
-    agentId: "dev-orchestrator",
-    source: "plugin:lane-stack",
-    markdown: `---
-name: dev-orchestrator
-description: Solo PM.
-tools: Agent(lane-stack:run-supervisor, lane-stack:project-onboarder, lane-stack:docs-maintainer, lane-stack:design-lead, Explore), Read
----
-You are **dev-orchestrator**. Dispatch run-controller. Then spawn project-onboarder for CLAUDE / docs/llm. Use lane-ctl accept.
-`,
-  });
-  const body = overlay?.["dev-orchestrator"] as { prompt: string; tools: string[] };
-  expect(body.prompt).toBe(lanePmOverlayPrompt("dev-orchestrator"));
-  expect(body.prompt).not.toContain("docs/llm");
-  // Specialists are child threads (lane_pilot_specialist), not subagents of the PM session.
-  expect(body.tools[0]).toBe("Agent(Explore)");
-  expect(overlay).not.toHaveProperty("project-onboarder");
-  expect(overlay).not.toHaveProperty("copy-lead");
-  expect(overlay).not.toHaveProperty("browser-qa");
-});
-
-it("keeps a Lane PM from delegating code to general-purpose subagents", async () => {
-  const { withoutCodeWritingSubagents } = await import("../src/rooms/native-agent/models/agent-overlay");
-  const { stockAgentsOverlayFromInstalled } = await import("../src/rooms/native-agent/models/native-agent-overlay");
+it("keeps a Lane PM from delegating code to general-purpose subagents", () => {
   expect(withoutCodeWritingSubagents("dev-orchestrator", ["Agent(lane-stack:run-supervisor, Explore, Plan, general-purpose)", "Read"]))
     .toEqual(["Agent(Explore, Plan)", "Read"]);
   expect(withoutCodeWritingSubagents("lane-stack:dev-orchestrator", ["Agent"])).toEqual(["Agent(Explore, Plan)"]);
   expect(withoutCodeWritingSubagents("copy-lead", ["Agent(Explore, general-purpose)"])).toEqual(["Agent(Explore, general-purpose)"]);
-  const overlay = stockAgentsOverlayFromInstalled({
-    agentId: "dev-orchestrator",
-    source: "plugin:lane-stack",
-    markdown: "---\nname: dev-orchestrator\ndescription: PM\ntools: Agent(Explore, Plan, general-purpose), Read\n---\nBody",
-  }) as Record<string, { tools: string[] }>;
-  expect(overlay["dev-orchestrator"]!.tools[0]).toBe("Agent(Explore, Plan)");
-  expect((overlay["dev-orchestrator"] as unknown as { prompt: string }).prompt).toContain("lane_pilot_dispatch_writer");
   expect(withoutCodeWritingSubagents("dev-orchestrator", ["Agent(lane-stack:run-supervisor, lane-stack:design-lead, Explore)"])).toEqual(["Agent(Explore)"]);
   expect(withoutCodeWritingSubagents("dev-orchestrator", [
     "Agent(lane-stack:project-onboarder, lane-stack:docs-maintainer, lane-stack:night-reviewer, lane-stack:copy-lead, Explore)",

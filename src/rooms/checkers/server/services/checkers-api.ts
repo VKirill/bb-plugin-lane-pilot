@@ -28,8 +28,6 @@ export type ScoreRequest = {
   checkTimeoutSec?: number;
 };
 
-export const DEFAULT_CRITIC_MODEL = { providerId: "codex", model: "gpt-6-luna" } as const;
-
 export function createCheckers(deps: CheckersDeps) {
   async function score(request: ScoreRequest = {}): Promise<ScoreReport> {
     const loaded = await deps.load({ limit: request.limit ?? 6, ...(request.only ? { only: request.only } : {}), ...(request.checkTimeoutSec ? { checkTimeoutSec: request.checkTimeoutSec } : {}) });

@@ -108,44 +108,6 @@ export function agentPickerLabel(
   return agent.description;
 }
 
-const STOCK_CHART: Readonly<Record<string, 1 | 2 | 3 | 4 | 5>> = {
-  "dev-orchestrator": 1,
-  "copy-lead": 2,
-  "seo-specialist": 3,
-  "growth-marketer": 1,
-  "design-lead": 4,
-  "project-onboarder": 5,
-  tavily: 3,
-  "workflow-architect": 5,
-  lead: 1,
-  "video-lead": 4,
-  "3d-artist": 2,
-  "game-dev": 3,
-  "social-manager": 4,
-  "billing-assistant": 5,
-  "visual-artist": 1,
-  "macos-operator": 2,
-  "advisor-researcher": 2,
-  "ai-researcher": 3,
-  "animator": 4,
-  "doc-classifier": 5,
-  "domain-researcher": 1,
-  "eval-auditor": 2,
-  "eval-planner": 3,
-  "framework-selector": 5,
-  "mempalace-curator": 1,
-  "nyquist-auditor": 2,
-  "ui-researcher": 4,
-};
-
-export function agentBadgeChart(id: string): 1 | 2 | 3 | 4 | 5 {
-  const stock = STOCK_CHART[id];
-  if (stock) return stock;
-  let sum = 0;
-  for (let i = 0; i < id.length; i += 1) sum += id.charCodeAt(i);
-  return ((sum % 5) + 1) as 1 | 2 | 3 | 4 | 5;
-}
-
 /** One row of the composer picker. `custom` and `kind` come from the agent registry; both may be absent. */
 export type PickableAgent = {
   id: string;

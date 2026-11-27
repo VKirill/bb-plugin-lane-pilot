@@ -1,6 +1,6 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { afterEach, describe, expect, it } from "vitest";
-import { EMBED_DIM, JUDGE_DEFAULTS, judgeUserPrompt, maskSecretsForJudge, memoryJudgeStats, parseJudgeReply, parseMemorySettings, rememberQueryVector, shuffledBy, storeMemoryRecords, storeVectors, listMemoryReceipts, type MemoryRecord } from "../packages/memory-core/src";
+import { EMBED_DIM, JUDGE_DEFAULTS, judgeUserPrompt, maskSecretsForJudge, memoryJudgeStats, parseMemorySettings, readJudgeReply, rememberQueryVector, shuffledBy, storeMemoryRecords, storeVectors, listMemoryReceipts, type MemoryRecord } from "../packages/memory-core/src";
 import { judgeFound, judgeRoutes, openLuxJudge, setMemoryJudge } from "../src/rooms/memory/server/services/memory-judge";
 import { AgyFailure } from "../src/rooms/memory/agy-chat";
 import { judgeWriterMemory, mixWriterMemory, pmMemoryContext, pmMemoryContextJudged } from "../src/rooms/memory/server/services/memory-mix";
@@ -34,12 +34,12 @@ const noteNumberOf = (prompt: string, text: string): number => {
 
 describe("the judge's reply", () => {
   it("reads numbers, none, a last line after thinking aloud, and refuses the rest", () => {
-    expect(parseJudgeReply("2, 4", 4)).toEqual([2, 4]);
-    expect(parseJudgeReply("none", 4)).toEqual([]);
-    expect(parseJudgeReply("9", 4)).toBeNull();
-    expect(parseJudgeReply("", 4)).toBeNull();
-    expect(parseJudgeReply("I looked at all four notes and note 1 is about ports but the question asks about queues.\n3", 4)).toEqual([3]);
-    expect(parseJudgeReply("Notes 1 and 2 talk about it at length, but only the third one has the fact the question needs.\nnone", 4)).toEqual([]);
+    expect(readJudgeReply("2, 4", 4)?.numbers).toEqual([2, 4]);
+    expect(readJudgeReply("none", 4)?.numbers).toEqual([]);
+    expect(readJudgeReply("9", 4)).toBeNull();
+    expect(readJudgeReply("", 4)).toBeNull();
+    expect(readJudgeReply("I looked at all four notes and note 1 is about ports but the question asks about queues.\n3", 4)?.numbers).toEqual([3]);
+    expect(readJudgeReply("Notes 1 and 2 talk about it at length, but only the third one has the fact the question needs.\nnone", 4)?.numbers).toEqual([]);
   });
 
   it("masks secret-looking spans and keeps the key and the rest of the note", () => {

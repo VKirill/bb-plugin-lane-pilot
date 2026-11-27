@@ -28,11 +28,11 @@ export { HOOK_TIMEOUTS_KEY, type HookTimeoutRecord } from "../models/hook-timeou
 export { mountHookTimeoutWatch } from "./handlers/hook-timeouts";
 export { PROVIDER_RETRY_CONSENT_METHOD, type RetryEligibility } from "../models/provider-retry";
 export { retryEligibility } from "./services/provider-retry";
-export { createProviderRetryGuard, providerRetryConsentContract, type ProviderRetryGuard } from "./handlers/provider-retry";
+export { createProviderRetryGuard, providerRetryConsentContract } from "./handlers/provider-retry";
 export { PM_MAX_TURNS_DEFAULT, PM_TURN_LIMIT_MIN_DEFAULT, PM_TURN_OUTCOME_PREFIX, type PmTurnEndedEvent } from "../models/pm-turn";
 export { createPmTurnWatch, type PmTurnWatch, type PmTurnWatchDeps } from "./services/pm-turn-watch";
 export { mountPmTurnWatch } from "./handlers/pm-turn-watch";
-export { RATE_LIMIT_PREFIX, RATE_LIMIT_REWRITE_MS, snapshotAsBoardWindows, type RateLimitSnapshot, type RateLimitWindow } from "../models/rate-limit";
+export { RATE_LIMIT_PREFIX, RATE_LIMIT_REWRITE_MS, type RateLimitSnapshot, type RateLimitWindow } from "../models/rate-limit";
 export { readRateLimitSnapshot } from "./repositories/rate-limit-repository";
 export { mountRateLimitWatch } from "./handlers/rate-limit-watch";
 export { installThreadEventFeed, type FeedConsumer, type FeedEvent, type ThreadEventEmitter } from "./services/thread-event-feed";

@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
-import { replayPolicy, tierAllows, TIER_RANK, TOOL_TIERS } from "@lane-pilot/contracts";
+import { replayPolicy, TIER_RANK, TOOL_TIERS } from "@lane-pilot/contracts";
 import {
   applyDraftOps,
   computeEnvironmentFingerprint,
@@ -35,13 +35,6 @@ describe("effect-tier vocabulary in @lane-pilot/contracts", () => {
     expect(replayPolicy("L")).toBe("forbidden");
     expect(replayPolicy("S")).toBe("forbidden");
     expect(replayPolicy(undefined)).toBeNull();
-  });
-
-  it("checks whether a step tier allows a tool tier via tierAllows", () => {
-    expect(tierAllows("D", "R")).toBe(true);
-    expect(tierAllows("D", "D")).toBe(true);
-    expect(tierAllows("R", "L")).toBe(false);
-    expect(tierAllows("L", "S")).toBe(false);
   });
 
   it("keeps classifyToolTier returning L for an unknown tool under the shipped policy", () => {

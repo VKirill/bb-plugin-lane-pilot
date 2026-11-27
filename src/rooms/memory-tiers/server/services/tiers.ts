@@ -1,5 +1,5 @@
 import type Database from "better-sqlite3";
-import { addToIndexes, coldMemoryRows, countColdMemories, countMemoryPromotions, dropMemoryIndexes, estimateTokens, expireIdleMemory, listIdlePromotions, listMemoryMisses, reactivateColdMemory, recordMemoryMiss, recordMemoryPromotion, scopeValuesFor, type MemoryAudience, type MemoryScopeMode } from "@lane-pilot/memory-core";
+import { coldMemoryRows, countColdMemories, countMemoryPromotions, dropMemoryIndexes, estimateTokens, expireIdleMemory, listIdlePromotions, listMemoryMisses, recordMemoryMiss, scopeValuesFor, type MemoryAudience, type MemoryScopeMode } from "@lane-pilot/memory-core";
 import { listProjectEpisodeTaskRows } from "../../../storage";
 import { episodeLines, minHits, queryWords, wordHits, type Episode } from "../../models/tiers";
 
@@ -49,16 +49,6 @@ export function coldMatches(db: Db, projectId: string, query: string, limit = 3,
  * Brings cold notes back through the write door: active again, used now, in the search indexes. The read path does not
  * call this. A candidate stays expired until a write decides it still fits the budget.
  */
-export function promote(db: Db, projectId: string, notes: ReadonlyArray<{ id: string; content: string; concepts: string[] }>, query: string, now = Date.now()): number {
-  let promoted = 0;
-  for (const note of notes) {
-    if (!reactivateColdMemory(db, projectId, note.id, now)) continue;
-    addToIndexes(db as never, projectId, note.id, note.content, note.concepts);
-    recordMemoryPromotion(db, projectId, note.id, query, now);
-    promoted += 1;
-  }
-  return promoted;
-}
 
 /**
  * Back to cold (taxonomy audit #4): a note the write door re-activated but nobody was given for the same idle window goes

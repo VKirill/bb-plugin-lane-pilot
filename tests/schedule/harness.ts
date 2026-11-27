@@ -2,7 +2,7 @@ import Database from "better-sqlite3";
 import { normalizeSchedule, type RunRow, type ScheduleInput, type ScheduleKind } from "../../src/rooms/schedule/models/schedule";
 import { scheduleAgentMigrations, scheduleMigrations } from "../../src/rooms/schedule/migrations";
 import { createScheduleStore } from "../../src/rooms/schedule/server/repositories/schedule-repository";
-import { createScheduler, type Executor, type ExecutorInput, type PollResult, type Scheduler } from "../../src/rooms/schedule/server/services/scheduler";
+import { createScheduler, type Executor, type ExecutorInput, type PollResult } from "../../src/rooms/schedule/server/services/scheduler";
 
 /** A fake clock the scheduler's sleeps advance, so a minute of supervising costs no time. */
 export function createClock(start: number) {
@@ -46,7 +46,7 @@ export function createFakeExecutor(clock: { now(): number }, options: { duration
 
 export function bag(executor: Executor): Record<ScheduleKind, Executor> { return { workflow: executor, errand: executor, script: executor, agent: executor }; }
 
-export function schedulerOn(db: Database.Database, clock: { now(): number; sleep(ms: number): Promise<void> }, executor: Executor, extra: Partial<Parameters<typeof createScheduler>[0]> = {}): Scheduler {
+export function schedulerOn(db: Database.Database, clock: { now(): number; sleep(ms: number): Promise<void> }, executor: Executor, extra: Partial<Parameters<typeof createScheduler>[0]> = {}): ReturnType<typeof createScheduler> {
   return createScheduler({ db, executors: bag(executor), now: clock.now, sleep: clock.sleep, ...extra });
 }
 

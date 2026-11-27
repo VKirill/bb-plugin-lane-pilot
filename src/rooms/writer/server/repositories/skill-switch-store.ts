@@ -1,9 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { extractSkillSequence } from "../../../contracts";
 import type Database from "better-sqlite3";
-import { listSkillMetrics, recordSkillMetric } from "../../../storage";
+import { recordSkillMetric } from "../../../storage";
 export type Db = Pick<Database.Database, "prepare" | "transaction">;
-import { calculateSkillSwitches, type SkillSwitchRecord, type SkillSwitchStats } from "../../models/skill-switch";
+import { calculateSkillSwitches, type SkillSwitchRecord } from "../../models/skill-switch";
 
 export function recordSkillSwitchMetric(
   db: Db,
@@ -43,53 +43,4 @@ export function recordSkillSwitchMetric(
   }
 
   return record;
-}
-
-export function getSkillSwitchStats(
-  db: Db,
-  sinceMs: number = 0,
-  now: number = Date.now(),
-): SkillSwitchStats | null {
-  try {
-    const rows = listSkillMetrics(db as never, sinceMs, now);
-
-    if (!rows.length) return null;
-
-    let totalSwitches = 0;
-    let lowTotal = 0;
-    let lowFails = 0;
-    let highTotal = 0;
-    let highFails = 0;
-
-    for (const row of rows) {
-      totalSwitches += row.switch_count;
-      const failed = row.outcome !== "accepted";
-      if (row.switch_count <= 1) {
-        lowTotal++;
-        if (failed) lowFails++;
-      } else {
-        highTotal++;
-        if (failed) highFails++;
-      }
-    }
-
-    const totalTasks = rows.length;
-    const avgSwitches = Math.round((totalSwitches / totalTasks) * 10) / 10;
-    const lowSwitchFailRate = lowTotal > 0 ? lowFails / lowTotal : 0;
-    const highSwitchFailRate = highTotal > 0 ? highFails / highTotal : 0;
-
-    return {
-      totalTasks,
-      avgSwitches,
-      lowSwitchTotal: lowTotal,
-      lowSwitchFailures: lowFails,
-      lowSwitchFailRate,
-      highSwitchTotal: highTotal,
-      highSwitchFailures: highFails,
-      highSwitchFailRate,
-    };
-  } catch {
-    // The stats cannot be read: the caller reads no metrics rather than a false zero.
-    return null;
-  }
 }

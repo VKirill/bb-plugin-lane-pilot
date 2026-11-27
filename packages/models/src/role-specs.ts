@@ -164,9 +164,6 @@ export function roleSpecKey(id: string, suffix: "provider" | "model" | "reasonin
   return `${spec.prefix}.${suffix}`;
 }
 
-/** Every setting key a selection owns, in table order. */
-export const ROLE_SELECTION_KEYS: readonly string[] = ROLE_SPECS.flatMap((spec) => [...spec.keys]);
-
 /** The message `save_setting` answers when a role's keys are written directly. */
 export function roleAtomicMessage(id: string): string | null {
   const spec = roleSpec(id);

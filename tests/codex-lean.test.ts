@@ -2,7 +2,7 @@ import { chmodSync, existsSync, lstatSync, mkdtempSync, readFileSync, readdirSyn
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { CODEX_LEAN_CHECKED_ON, CODEX_LEAN_COMMON_OFF, CODEX_LEAN_SURFACE_OFF, JUDGE_OFF_FEATURES, codexLeanOffFeatures, codexLeanProfile, leanCodexConfig, setTomlKeys } from "../src/rooms/contracts";
+import { CODEX_LEAN_COMMON_OFF, CODEX_LEAN_SURFACE_OFF, JUDGE_OFF_FEATURES, codexLeanOffFeatures, codexLeanProfile, leanCodexConfig, setTomlKeys } from "../src/rooms/contracts";
 import { CodexFailure, codexChat, codexJudgeArgs, codexJudgeEffort, readCodexStream } from "../src/rooms/memory/codex-chat";
 import { CODEX_PREFIX, judgeRoutes, openLuxJudge } from "../src/rooms/memory/server/services/memory-judge";
 import { disableCodexMemories } from "../src/rooms/host-worker/handlers/machine";
@@ -43,8 +43,7 @@ describe("the trimmed codex config", () => {
     expect(setTomlKeys("[features]\nhooks = true\n", [{ table: "features", key: "goals", value: "false" }])).toBe("[features]\ngoals = false\nhooks = true\n");
     expect(setTomlKeys("a = 1\n[t]\nb = 2\n", [{ table: "", key: "c", value: "3" }])).toBe("c = 3\na = 1\n[t]\nb = 2\n");
   });
-  it("names the codex version it was checked on and sorts roles into profiles", () => {
-    expect(CODEX_LEAN_CHECKED_ON).toBe("0.169.0");
+  it("sorts roles into profiles", () => {
     expect(codexLeanProfile("writer")).toBe("code");
     expect(codexLeanProfile("code-critic")).toBe("quiet");
     expect(codexLeanProfile("specialist:tavily")).toBe("open");

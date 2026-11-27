@@ -5,10 +5,6 @@ import { contentChunks } from "./vectors";
 import { liftPreferred } from "./section-boost";
 import type { MemoryRecord, MemorySettings } from "./settings";
 
-/** The maintainer answers from this prompt. It is not given a tool or the model catalog. */
-export function memoryMaintainerTools(): readonly string[] {
-  return [];
-}
 
 export type MemoryMaintenanceBrief = { instructions: string[]; goal?: string; boundaries?: string; output?: string; data: { tag: string; title?: string; text: string; cap?: number }[] };
 
@@ -112,22 +108,6 @@ export function memoryContext(records:MemoryRecord[],taskText:string,budget:numb
   return {text,records:selected.filter((record)=>!headIds.has(record.id)),estimatedTokens:estimateTokens(text),cut,heads:headed};
 }
 
-/**
- * Why each retrieved note is in the pack or not. A note the query did not share a word with is out; a note that matched
- * and did not fit `budget` is cut. Core is not forced in: a session that wants every convention reads `session_memory_core`.
- */
-export function explainMemory(records:MemoryRecord[],taskText:string,budget:number):string[] {
-  const packed=memoryContext(records,taskText,budget);
-  const kept=new Set(packed.records.map((record)=>record.id));
-  const dropped=new Set(packed.cut.map((record)=>record.id));
-  const headed=new Set(packed.heads.map((record)=>record.id));
-  return records.map((record)=>{
-    if(headed.has(record.id))return `deliver ${record.id} — matched, over the context budget: shown as a head line`;
-    if(kept.has(record.id))return `deliver ${record.id} — matched the query`;
-    if(dropped.has(record.id))return `reject ${record.id} — matched, cut by the context budget`;
-    return `reject ${record.id} — no token overlap`;
-  });
-}
 
 /** Stems, so `ошибки` in the task finds `ошибка` in a note. */
 function tokens(text:string):string[] { return memoryTokens(text).map(memoryStem); }

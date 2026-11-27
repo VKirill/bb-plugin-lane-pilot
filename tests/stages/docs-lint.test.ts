@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, it } from "vitest";
-import { claimIdentifiers, expandCitationLists, pageCitations, parseFrontmatter, unlinkedPages } from "../../src/rooms/docs/models";
+import { claimIdentifiers, expandCitationLists, pageCitations, parseFrontmatter } from "../../src/rooms/docs/models";
 import { commitDocs } from "../../src/rooms/docs/git-docs";
 
 it("commits only the docs paths it is given", async () => {
@@ -27,11 +27,6 @@ it("commits only the docs paths it is given", async () => {
 it("reads a list of ranges after one file", () => {
   expect(expandCitationLists("dim 0-0.9 (`schema.ts:19-25,125-143`)")).toBe("dim 0-0.9 (`schema.ts:19-25, schema.ts:125-143`)");
   expect(pageCitations("A (a.ts:1-2, 7).").map((c) => `${c.start}-${c.end}`)).toEqual(["1-2", "7-7"]);
-});
-
-it("lists the pages a catalogue does not link", () => {
-  const catalogue = { path:"docs/capabilities.md", content:"# C\n\nSee [wardrobe](../apps/cabinet/docs/features/wardrobe.md).\n" };
-  expect(unlinkedPages(catalogue, ["apps/cabinet/docs/features/wardrobe.md", "apps/cabinet/docs/features/profiles.md"])).toEqual(["apps/cabinet/docs/features/profiles.md"]);
 });
 
 it("does not take a host and port for a file citation", () => {

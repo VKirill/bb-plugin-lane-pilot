@@ -23,11 +23,6 @@ export const CARD_LIMITS = {
   },
 } as const;
 
-export interface CardRef {
-  kind: CardKind;
-  key: string;
-}
-
 export interface Card {
   id: string;
   projectId: string | null;

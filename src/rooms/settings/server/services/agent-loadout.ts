@@ -81,7 +81,6 @@ export async function agentLoadout(
       .map((row) => (typeof row.name === "string" ? row.name.trim() : ""))
       .filter((name) => name.length > 0),
   );
-  const hubSkills = catalog.skillsAvailable ? hubSkillNames.size : -1;
 
   const enabledPlugins = new Set(
     catalog.pluginRows
@@ -409,10 +408,10 @@ export async function agentLoadout(
       }
       return false;
     });
-    return { roles: filtered, hubSkills };
+    return { roles: filtered };
   }
 
-  return { roles: builtRoles, hubSkills };
+  return { roles: builtRoles };
 }
 
 function nonEmpty(value: unknown): string | null {
