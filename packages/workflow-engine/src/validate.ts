@@ -551,9 +551,9 @@ export function validateWorkflow(workflow: Workflow, options: ValidateOptions = 
     }
   }
 
-  validateWorkflowRails(L, byId, error);
+  validateWorkflowRails(L, byId, error, warn);
   validateNodeModels(L, byId, error);
-  validateNodeForms(L, byId, options, envFor, ancestorOf, checkTemplate, error);
+  validateNodeForms(L, byId, options, envFor, ancestorOf, checkTemplate, error, warn);
 
   if (options.resolve) {
     const depth = subworkflowDepth(workflow, options.resolve);

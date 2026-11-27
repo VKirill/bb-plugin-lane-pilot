@@ -1,6 +1,6 @@
 import type Database from "better-sqlite3";
 
-import { workflowFinish } from "./business-outcome";
+import { finalRuleOf, workflowFinish } from "./business-outcome";
 import { legacyDefinitionSha256, type StoredWorkflow } from "./store";
 import type { Workflow } from "./schema";
 import type { WorkflowProblem } from "./validate";
@@ -85,6 +85,164 @@ export const workflowNotVerifiedMigrations: string[] = [
 
 export type StatusVerdict = { status: Workflow["status"]; notes: WorkflowProblem[] };
 
+export type ProvenOnEntry = {
+  nodeId: string;
+  provider: string;
+  model: string;
+  runs: number;
+  lastAt: number;
+  source: "live" | "proof";
+};
+
+export type ProvenOnOptions = {
+  rule?: Workflow["live_success"] | null;
+  legacySha256?: string;
+};
+
+type LiveRunRow = { id: string; updated_at: number; output_json: string | null; workflow_sha256: string; definition_json: string };
+
+const tableExists = (db: Database.Database, name: string): boolean => {
+  try {
+    return Boolean(db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(name));
+  } catch {
+    return false;
+  }
+};
+
+const columnExists = (db: Database.Database, table: string, column: string): boolean => {
+  try {
+    return (db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>).some((col) => col.name === column);
+  } catch {
+    return false;
+  }
+};
+
+/**
+ * Succeeded root runs of a workflow whose final output passes `live_success` (or the default business-outcome rule).
+ * Shared by `createStatusResolver().liveSuccess` and `provenOn`.
+ */
+function listLiveSuccessRuns(
+  db: Database.Database,
+  input: { workflowId: string; version?: number; rule?: Workflow["live_success"] | null; shas?: readonly string[] },
+): LiveRunRow[] {
+  if (!tableExists(db, "lane_pilot_wf_run")) return [];
+  const clauses = ["workflow_id=?", "status='succeeded'", "parent_run_id IS NULL"];
+  const params: unknown[] = [input.workflowId];
+  if (input.version !== undefined) {
+    clauses.push("workflow_version=?");
+    params.push(input.version);
+  }
+  if (input.shas && input.shas.length > 0) {
+    clauses.push(`workflow_sha256 IN (${input.shas.map(() => "?").join(",")})`);
+    params.push(...input.shas);
+  }
+  const rows = db.prepare(
+    `SELECT id, updated_at, output_json, workflow_sha256, definition_json FROM lane_pilot_wf_run WHERE ${clauses.join(" AND ")} ORDER BY updated_at DESC LIMIT 200`,
+  ).all(...params) as LiveRunRow[];
+  return rows.filter((row) => {
+    try {
+      const parsed = JSON.parse(row.output_json ?? "null") as unknown;
+      const output = parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed as Record<string, unknown> : null;
+      const rule = input.rule !== undefined ? input.rule : finalRuleOf(row.definition_json);
+      return workflowFinish(output, rule).ok;
+    } catch {
+      return false;
+    }
+  });
+}
+
+/** Appended to the plugin's migrations (append only): one row per (graph version, provider, model) proof run (written by the proof command). */
+export const workflowProofMigrations: string[] = [
+  `CREATE TABLE lane_pilot_wf_proof (workflow_id TEXT NOT NULL, definition_sha256 TEXT NOT NULL, provider TEXT NOT NULL, model TEXT NOT NULL, cases_n INTEGER NOT NULL, passed_n INTEGER NOT NULL, cost_micro_usd INTEGER, at INTEGER NOT NULL, PRIMARY KEY (workflow_id, definition_sha256, provider, model))`,
+];
+
+export type WorkflowProofRecord = {
+  workflowId: string;
+  definitionSha256: string;
+  provider: string;
+  model: string;
+  casesN: number;
+  passedN: number;
+  costMicroUsd?: number | null;
+  at?: number;
+};
+
+/** Upserts a model-proof summary row for a specific workflow definition sha and provider/model pair. */
+export function recordWorkflowProof(db: Database.Database, input: WorkflowProofRecord): void {
+  const at = input.at ?? Date.now();
+  const costMicroUsd = input.costMicroUsd ?? null;
+  db.prepare(
+    `INSERT INTO lane_pilot_wf_proof (workflow_id, definition_sha256, provider, model, cases_n, passed_n, cost_micro_usd, at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(workflow_id, definition_sha256, provider, model) DO UPDATE SET
+       cases_n = excluded.cases_n,
+       passed_n = excluded.passed_n,
+       cost_micro_usd = excluded.cost_micro_usd,
+       at = excluded.at`,
+  ).run(input.workflowId, input.definitionSha256, input.provider, input.model, input.casesN, input.passedN, costMicroUsd, at);
+}
+
+/**
+ * Per-node and graph-level models a specific workflow definition sha has passed on, combining live-success runs and
+ * `lane_pilot_wf_proof` records when present. Returns `[]` if the underlying tables are missing.
+ */
+export function provenOn(
+  db: Database.Database,
+  workflowId: string,
+  definitionSha256: string,
+  options?: ProvenOnOptions,
+): ProvenOnEntry[] {
+  const shas = options?.legacySha256 && options.legacySha256 !== definitionSha256
+    ? [definitionSha256, options.legacySha256]
+    : [definitionSha256];
+  const entries: ProvenOnEntry[] = [];
+
+  const liveRuns = listLiveSuccessRuns(db, { workflowId, rule: options?.rule, shas });
+  if (liveRuns.length > 0 && tableExists(db, "lane_pilot_wf_step") && columnExists(db, "lane_pilot_wf_step", "answered_model")) {
+    const runIds = liveRuns.map((row) => row.id);
+    const placeholders = runIds.map(() => "?").join(",");
+    const stepRows = db.prepare(
+      `SELECT node_id, COALESCE(answered_provider, '') AS provider, answered_model AS model,
+         COUNT(DISTINCT run_id) AS runs, MAX(COALESCE(ended_at, updated_at)) AS last_at
+       FROM lane_pilot_wf_step
+       WHERE run_id IN (${placeholders}) AND answered_model IS NOT NULL AND answered_model != ''
+       GROUP BY node_id, COALESCE(answered_provider, ''), answered_model
+       ORDER BY last_at DESC, node_id ASC, provider ASC, model ASC`,
+    ).all(...runIds) as Array<{ node_id: string; provider: string; model: string; runs: number; last_at: number }>;
+    for (const row of stepRows) {
+      entries.push({
+        nodeId: row.node_id,
+        provider: row.provider,
+        model: row.model,
+        runs: row.runs,
+        lastAt: row.last_at,
+        source: "live",
+      });
+    }
+  }
+
+  if (tableExists(db, "lane_pilot_wf_proof")) {
+    const proofRows = db.prepare(
+      `SELECT provider, model, passed_n, at
+       FROM lane_pilot_wf_proof
+       WHERE workflow_id=? AND definition_sha256=? AND passed_n > 0 AND passed_n >= cases_n
+       ORDER BY at DESC, provider ASC, model ASC`,
+    ).all(workflowId, definitionSha256) as Array<{ provider: string; model: string; passed_n: number; at: number }>;
+    for (const row of proofRows) {
+      entries.push({
+        nodeId: "*",
+        provider: row.provider,
+        model: row.model,
+        runs: row.passed_n,
+        lastAt: row.at,
+        source: "proof",
+      });
+    }
+  }
+
+  return entries;
+}
+
 /**
  * The status a workflow has here, which is not always the status its file says:
  * - a file of the owner (global or project) that says `tested` or `published` counts only with a green test receipt for exactly
@@ -99,17 +257,8 @@ export function createStatusResolver(db: Database.Database) {
    * definition (`definitionSha256`, which ignores canvas positions, or the older hash that still includes them).
    */
   const liveSuccess = (workflowId: string, version: number, rule?: Workflow["live_success"], sha?: { current: string; legacy: string }) => {
-    const rows = db.prepare("SELECT id, updated_at, output_json, workflow_sha256 FROM lane_pilot_wf_run WHERE workflow_id=? AND workflow_version=? AND status='succeeded' AND parent_run_id IS NULL ORDER BY updated_at DESC LIMIT 200")
-      .all(workflowId, version) as Array<{ id: string; updated_at: number; output_json: string | null; workflow_sha256: string }>;
-    const proves = (row: { output_json: string | null; workflow_sha256: string }) => {
-      if (sha && row.workflow_sha256 !== sha.current && row.workflow_sha256 !== sha.legacy) return false;
-      try {
-        const parsed = JSON.parse(row.output_json ?? "null") as unknown;
-        const output = parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed as Record<string, unknown> : null;
-        return workflowFinish(output, rule ?? null).ok;
-      } catch { return false; }
-    };
-    const hit = rows.find(proves);
+    const shas = sha ? (sha.legacy !== sha.current ? [sha.current, sha.legacy] : [sha.current]) : undefined;
+    const hit = listLiveSuccessRuns(db, { workflowId, version, rule: rule ?? null, shas })[0];
     return hit ? { id: hit.id, updated_at: hit.updated_at } : undefined;
   };
 

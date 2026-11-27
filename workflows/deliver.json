@@ -1,0 +1,198 @@
+{
+  "id": "deliver",
+  "name": {
+    "en": "Deliver message or file via channel (shared brick)",
+    "ru": "Доставка сообщения или файла через канал (общий блок)"
+  },
+  "description": {
+    "en": "Channel-agnostic delivery brick: routes a text, file, or delayed dispatch through the selected channel (currently telegram via telegram-send) and returns the delivery status unchanged.",
+    "ru": "Единый блок доставки по каналу: направляет текст, файл или отложенную отправку в выбранный канал (сейчас telegram через telegram-send) и возвращает статус доставки без изменений."
+  },
+  "internal": true,
+  "status": "published",
+  "live_success": {
+    "output": "status",
+    "in": [
+      "sent"
+    ]
+  },
+  "tags": [
+    "deliver",
+    "channel",
+    "send"
+  ],
+  "category": "content",
+  "inputs": [
+    {
+      "name": "channel",
+      "type": "enum",
+      "values": [
+        "telegram"
+      ],
+      "required": false,
+      "default": "telegram",
+      "note": "delivery channel"
+    },
+    {
+      "name": "recipient",
+      "type": "string",
+      "required": true,
+      "note": "recipient address on the chosen channel (@username, numeric id, link, or me for telegram)"
+    },
+    {
+      "name": "file_path",
+      "type": "string",
+      "required": false,
+      "default": "",
+      "note": "a file on the sending machine to send as a file"
+    },
+    {
+      "name": "text",
+      "type": "string",
+      "required": false,
+      "default": "",
+      "note": "the message text; with file_path it becomes the file's caption"
+    },
+    {
+      "name": "send_at",
+      "type": "string",
+      "required": false,
+      "default": "",
+      "note": "optional delayed send: a delay (+2h, 30m) or a local time in the owner's zone (2026-11-03T07:00)"
+    }
+  ],
+  "outputs": {
+    "status": "sent|send_failed|send_unconfirmed|scheduled|cannot_delay",
+    "message_id": "string",
+    "message_url": "string",
+    "schedule_id": "string",
+    "run_at": "string",
+    "send_at": "string",
+    "reason": "string"
+  },
+  "requires": {
+    "plugins": [
+      "lane-pilot"
+    ],
+    "skills": [
+      "telegram-user"
+    ],
+    "machines": [
+      "Telegram sender host with ~/toolkit/telegram/tg and a logged-in user session"
+    ],
+    "tools": [
+      "~/toolkit/telegram/tg"
+    ]
+  },
+  "budget": {
+    "max_minutes": 20,
+    "max_usd": 1
+  },
+  "goal_check": "artifact",
+  "nodes": [
+    {
+      "id": "channel",
+      "type": "decision",
+      "uses": "builtin:decision",
+      "title": {
+        "en": "Select delivery channel",
+        "ru": "Выбрать канал доставки"
+      }
+    },
+    {
+      "id": "telegram",
+      "type": "subworkflow",
+      "workflow": "telegram-send",
+      "effect": "S",
+      "title": {
+        "en": "Deliver via Telegram",
+        "ru": "Доставить через Telegram"
+      },
+      "with": {
+        "chat": "{{$inputs.recipient}}",
+        "file_path": "{{$inputs.file_path}}",
+        "text": "{{$inputs.text}}",
+        "send_at": "{{$inputs.send_at}}"
+      },
+      "out": {
+        "status": "sent|send_failed|send_unconfirmed|scheduled|cannot_delay",
+        "message_id": "string",
+        "message_url": "string",
+        "schedule_id": "string",
+        "run_at": "string",
+        "send_at": "string",
+        "reason": "string"
+      },
+      "guards": {
+        "maxAttempts": 1,
+        "maxVisits": 1,
+        "timeoutMin": 15
+      }
+    },
+    {
+      "id": "done",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "telegram.status",
+        "message_id": "telegram.message_id",
+        "message_url": "telegram.message_url",
+        "schedule_id": "telegram.schedule_id",
+        "run_at": "telegram.run_at",
+        "send_at": "telegram.send_at",
+        "reason": "telegram.reason"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "start",
+      "to": "channel"
+    },
+    {
+      "from": "channel",
+      "to": "telegram"
+    },
+    {
+      "from": "telegram",
+      "to": "done"
+    }
+  ],
+  "test": {
+    "id": "deliver-1",
+    "sim": {
+      "input": {
+        "channel": "telegram",
+        "recipient": "@ivan_romashka",
+        "text": "Счёт № 142 на 50 000 ₽",
+        "file_path": "/Users/owner/deals/romashka/invoice-142.pdf"
+      },
+      "stubs": {
+        "telegram": {
+          "status": "sent",
+          "message_id": "stub-1",
+          "message_url": "https://t.me/c/1/2",
+          "schedule_id": "",
+          "run_at": "",
+          "send_at": "",
+          "reason": ""
+        }
+      },
+      "expect_path": [
+        "channel",
+        "telegram",
+        "done"
+      ],
+      "expect_output": {
+        "status": "sent",
+        "message_id": "stub-1"
+      }
+    },
+    "live": "send a text or file via channel telegram to Saved Messages (recipient `me`); inherits telegram-send acceptance.",
+    "note": "Tested on stubs: telegram-send answers from a stub while channel routing and output mapping run on the real engine."
+  },
+  "not_for": [
+    "social-post",
+    "x-to-telegram-digest"
+  ]
+}

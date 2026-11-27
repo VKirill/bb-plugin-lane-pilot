@@ -10,7 +10,10 @@ type Agent = Extract<GraphNode, { type: "agent" }>;
 type ReportProblem = (code: string, message: string, extra?: { node?: string; edge?: number }) => void;
 
 const KNOWN_PROVIDERS = new Set([...Object.keys(PROVIDER_CAPABILITIES), ...ROLE_MODEL_OPTIONS.map((option) => option.providerId)]);
+const MAX_PLAN_STEPS = 10;
+const MAX_PROMPT_LINES = 100;
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null && !Array.isArray(value);
+const nonEmptyLineCount = (text: string): number => text.split(/\r?\n/).filter((line) => line.trim().length > 0).length;
 
 /** Validates node `form` (`agent | plan | script`), `fallback`, `script` fingerprint/command, `plan`, and mechanical `verify` checks. */
 export function validateNodeForms(
@@ -21,6 +24,7 @@ export function validateNodeForms(
   ancestorOf: (candidate: string, node: string, strict: boolean) => boolean,
   checkTemplate: (value: unknown, from: string, where: string, extra: { node?: string }) => void,
   error: ReportProblem,
+  warn: ReportProblem = error,
 ): void {
   const knownNodeIds = new Set(byId.keys());
   const checkVerifyExpr = (exprSource: Parameters<typeof toExpr>[0], node: Agent, where: string, extra: { node: string }) => {
@@ -110,6 +114,20 @@ export function validateNodeForms(
           }
         }
       }
+      const planSteps = typeof node.plan === "string"
+        ? nonEmptyLineCount(node.plan)
+        : Array.isArray(node.plan.steps)
+          ? node.plan.steps.length
+          : typeof node.plan.template === "string"
+            ? nonEmptyLineCount(node.plan.template)
+            : 0;
+      if (planSteps > MAX_PLAN_STEPS) {
+        warn("plan_over_budget", `${node.id}: plan has ${planSteps} steps (limit ${MAX_PLAN_STEPS}); split into nodes`, extra);
+      }
+    }
+    const promptLines = nonEmptyLineCount(node.prompt);
+    if (promptLines > MAX_PROMPT_LINES) {
+      warn("prompt_over_budget", `${node.id}: prompt has ${promptLines} non-empty lines (limit ${MAX_PROMPT_LINES}); split into nodes`, extra);
     }
     if (node.verify !== undefined) {
       if (typeof node.verify === "string" || (isRecord(node.verify) && ("field" in node.verify || "all" in node.verify || "any" in node.verify || "not" in node.verify))) {

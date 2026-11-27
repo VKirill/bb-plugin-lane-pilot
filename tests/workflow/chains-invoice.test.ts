@@ -19,7 +19,7 @@ describe("invoice-send", () => {
     expect(r.skipped).toEqual(["topic"]);
     expect(out(r)).toMatchObject({ status: "sent", invoice_number: "142", message_id: "stub-1", check_verdict: "match", pdf_path: created.pdf_path });
     expect(r.called("send")).toHaveLength(1);
-    expect(r.called("send")[0]!.input).toMatchObject({ chat: "@ivan_romashka", file_path: created.pdf_path, send_at: "" });
+    expect(r.called("send")[0]!.input).toMatchObject({ channel: "telegram", recipient: "@ivan_romashka", file_path: created.pdf_path, send_at: "" });
     expect(String(r.called("send")[0]!.input.text)).toContain("Счёт № 142 на 50000 ₽");
     expect(r.called("create")[0]!.input).toMatchObject({ company: "ООО «Ромашка»", inn: "7707083893", amount: 50000, service: "SEO-сопровождение за октябрь" });
   });
@@ -83,7 +83,7 @@ describe("invoice-send", () => {
     const r = await runSim("invoice-send", { input: { ...input, send_at: "2026-11-03T07:00" }, stubs: base({ send: { status: "scheduled", schedule_id: "sch-1", run_at: "2026-11-03 07:00" } }), humans: { approve_later: { answer_kind: "send" } } });
     expect(pathOf(r)).toBe("create check approve_later send scheduled");
     expect(r.called("approve")).toHaveLength(0);
-    expect(r.called("send")[0]!.input).toMatchObject({ chat: "@ivan_romashka", send_at: "2026-11-03T07:00" });
+    expect(r.called("send")[0]!.input).toMatchObject({ channel: "telegram", recipient: "@ivan_romashka", send_at: "2026-11-03T07:00" });
     expect(out(r)).toMatchObject({ status: "scheduled", invoice_number: "142", send_at: "2026-11-03T07:00", schedule_id: "sch-1", run_at: "2026-11-03 07:00" });
   });
 

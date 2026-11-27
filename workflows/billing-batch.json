@@ -122,6 +122,7 @@
           "inn": "{{item.inn}}",
           "amount": "{{item.amount}}",
           "service": "{{item.service}}",
+          "channel": "telegram",
           "recipient": "me"
         }
       },
@@ -233,6 +234,7 @@
           "inn": "{{item.inn}}",
           "amount": "{{item.amount}}",
           "service": "{{item.service}}",
+          "channel": "telegram",
           "recipient": "{{item.recipient}}",
           "report_chat": "{{$inputs.report_chat}}"
         }

@@ -33,7 +33,7 @@ describe("invoice-send: the owner already said send", () => {
     expect(pathOf(r)).toBe("create check send scheduled");
     expect(r.called("approve")).toHaveLength(0);
     expect(r.called("approve_later")).toHaveLength(0);
-    expect(r.called("send")[0]!.input).toMatchObject({ chat: "@ivan_romashka", send_at: "2026-11-03T07:00" });
+    expect(r.called("send")[0]!.input).toMatchObject({ channel: "telegram", recipient: "@ivan_romashka", send_at: "2026-11-03T07:00" });
     expect(out(r)).toMatchObject({ status: "scheduled", send_at: "2026-11-03T07:00", schedule_id: "sch-1", run_at: "2026-11-03 07:00" });
   });
 
