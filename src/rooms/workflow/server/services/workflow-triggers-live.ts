@@ -4,7 +4,7 @@ import { wfScheduledProjectIds } from "@lane-pilot/workflow-engine";
 import { realDeps } from "./workflow-architect";
 import { createWorkflowLibrary } from "./workflow-library";
 import { createWorkflowPreflight } from "./workflow-preflight";
-import { createWorkflowTriggers, type ScheduleBoardPort } from "./workflow-triggers";
+import { createWorkflowTriggers, type ResolveCanary, type ScheduleBoardPort } from "./workflow-triggers";
 
 
 import type { DocsApi } from "../../../docs/server";
@@ -15,10 +15,11 @@ import type { DispatchWriter } from "../../../platform/server";
 interface Services {
   dispatchWriter: DispatchWriter;
   docsPlaces: DocsApi["docsPlaces"];
-  schedules?: ScheduleBoardPort;
+  schedules?: ScheduleBoardPort & { pause?: { isPaused(): boolean } };
   workflowCatalog: WorkflowEngineApi["workflowCatalog"];
   workflowEngine: WorkflowEngineApi["workflowEngine"];
   workflowTriggers: WorkflowTriggersApi["workflowTriggers"];
+  resolveCanary?: ResolveCanary | undefined;
 }
 
 /**
@@ -31,6 +32,8 @@ export function createWorkflowTriggersService(ctx: ServerCore, services: Service
   const triggers = createWorkflowTriggers(ctx, services, {
     loadStore: (projectId) => library.loadStore(projectId),
     preflight: (workflow, input) => preflight.check(workflow, input),
+    isBoardPaused: () => Boolean(services.schedules?.pause?.isPaused()),
+    resolveCanary: (workflowId) => services.resolveCanary?.(workflowId) ?? null,
     scheduleBoard: {
       save: (raw, by) => services.schedules
         ? services.schedules.save(raw, by)

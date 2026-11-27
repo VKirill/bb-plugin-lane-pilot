@@ -71,6 +71,7 @@ export const ownerWaitingOutput = z.object({
   items: z.array(z.object({
     key: z.string(), source: z.string(), kind: z.string(), projectId: z.string().nullable(),
     what: z.string(), why: z.string(), since: z.number(), wake: z.boolean(), tier: z.enum(["now", "later"]),
+    desk: z.literal(true).optional(),
     evidence: z.array(z.object({ kind: z.enum(["attempt", "task", "run", "file", "note", "message", "command", "text"]), ref: z.string(), label: z.string().optional() }).strict()),
     actions: z.array(z.looseObject({ id: z.string(), label: z.string(), cli: z.string() })),
   }).strict()),

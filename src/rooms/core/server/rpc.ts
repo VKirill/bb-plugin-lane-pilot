@@ -60,7 +60,7 @@ export function registerRpc(ctx: ServerCore, services: Services, contract: typeo
     ...deferralRpc(services.deferrals),
     ...rollbackRpc(services.rollback),
     ...ownerWaitingRpc(ctx.db, ownerSweeps, (message) => ctx.log(message), postEvent,
-      () => invalidateRpcTags(ctx.bb, ["owner_waiting"])),
+      () => invalidateRpcTags(ctx.bb, ["owner_waiting"]), (message) => ctx.bb.log.debug(message)),
     ...errandsRpc(ctx, services),
     ...stageReturnRpc(services.stageReturn),
     ...workGraphRpc(ctx, { tokenCursorRow }),

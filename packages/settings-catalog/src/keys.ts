@@ -15,3 +15,12 @@ export const SETTING_BACKLOG_SCAN_MINUTES = "backlog.scan_minutes";
 export const SETTING_MEMORY_SINGLE_CLAIM = "memory.single_claim";
 export const SETTING_MEMORY_TAG_NOTES = "memory.tag_notes";
 export const SETTING_VERIFICATION_PROJECT_SUITE = "verification.project_suite";
+export const SETTING_WORKFLOW_DISABLED = "workflow.disabled";
+export const SETTING_LOOPS_MODE = "loops.mode";
+
+export const PATHS_DEDUPE_THRESHOLD_KEY = "paths.dedupe_threshold";
+export const DEFAULT_PATHS_DEDUPE_THRESHOLD = 0.8;
+export const PATHS_BRANCH_DRAFT_REPEATS_KEY = "paths.branch_draft_repeats";
+export const DEFAULT_PATHS_BRANCH_DRAFT_REPEATS = 3;
+export const PATHS_BRANCH_WINDOW_DAYS_KEY = "paths.branch_window_days";
+export const DEFAULT_PATHS_BRANCH_WINDOW_DAYS = 30;

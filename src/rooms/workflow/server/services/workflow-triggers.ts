@@ -1,9 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { orMiss, isNotFound } from "@lane-pilot/kit";
-import { getActivation, getRun, sha256, listOpenCliRuns } from "../../../storage";
+import { GLOBAL_SETTINGS_PROJECT_ID } from "@lane-pilot/settings-catalog";
+import { getActivation, getRun, loadProjectSettings, sha256, listOpenCliRuns, type LanePilotDatabase } from "../../../storage";
 import { cronProblem, localTimezone, timezoneProblem } from "@lane-pilot/workflow-engine/ui";
 import { loadPushConfig } from "../../../owner-waiting";
-import { insertInboxEvent, isPipeline, preflightRefusal, wfDeleteTrigger, wfSetTriggerAutomation, wfSetTriggerSignature, wfTriggersOfProject, wfUpsertTrigger } from "@lane-pilot/workflow-engine";
+import { insertInboxEvent, isPipeline, markInboxEventConsumed, preflightRefusal, wfDeleteTrigger, wfSetTriggerAutomation, wfSetTriggerSignature, wfTriggersOfProject, wfUpsertTrigger } from "@lane-pilot/workflow-engine";
 import type { PreflightResult } from "@lane-pilot/workflow-engine";
 import type { Workflow } from "@lane-pilot/workflow-engine";
 import type { StoredWorkflow, WorkflowStore } from "../../../storage";
@@ -13,6 +14,8 @@ import { isPmChat } from "../../../native-agent/server";
 import { SCHEDULE_RUN_KEY_PREFIX } from "../../../contracts";
 import type { ChainRuntime } from "../../../contracts/server";
 import { LoopHookRefusal, prepareLoopWorkflow } from "../../models/loop-hooks";
+import { WORKFLOW_DISABLED_KEY, parseWorkflowDisabled } from "../../settings";
+import { resolveCanarySplit, type CanaryTrialTarget, type ResolveCanary } from "./canary-split";
 
 import type { WorkflowEngineApi } from "./workflow";
 
@@ -29,6 +32,32 @@ interface Services {
  * project is there to give its helper threads and questions a parent.
  */
 export type TriggerSource = "manual" | "schedule" | "event";
+export type StartRefusalSource = TriggerSource | "pm";
+export type StartRefusalReason = "board_paused" | "workflow_disabled";
+
+/** Checks whether a workflow start is blocked by board pause (autonomous starts) or `workflow.disabled` (all starts). */
+export function workflowStartRefusal(input: {
+  db: LanePilotDatabase;
+  workflowId: string;
+  source: StartRefusalSource;
+  projectId?: string | null;
+  boardPaused?: boolean;
+}): StartRefusalReason | null {
+  if (input.boardPaused && (input.source === "event" || input.source === "schedule")) {
+    return "board_paused";
+  }
+  const settings = loadProjectSettings(input.db, input.projectId || GLOBAL_SETTINGS_PROJECT_ID);
+  if (parseWorkflowDisabled(settings[WORKFLOW_DISABLED_KEY]).has(input.workflowId)) {
+    return "workflow_disabled";
+  }
+  return null;
+}
+
+function refusalMessage(workflowId: string, reason: StartRefusalReason): string {
+  return reason === "board_paused"
+    ? `Board is paused; autonomous start of "${workflowId}" refused.`
+    : `Workflow "${workflowId}" is disabled by ${WORKFLOW_DISABLED_KEY}.`;
+}
 
 export type EmitEventOptions = { id?: string; key?: string; attemptKey?: string; projectId?: string };
 export type EmitEventResult = {
@@ -91,8 +120,12 @@ export type TriggerDeps = {
   loadStore(projectId?: string): Promise<{ store: WorkflowStore; project: "not_requested" | "ok" | "no_machine" | "unavailable"; loopHooks?: { manifest: import("../../models/loop-hooks").LoopHookManifest | null; sha256: string | null; error?: string } }>;
   preflight?(workflow: Workflow, input: { projectId: string; threadId?: string | null }): Promise<PreflightResult>;
   scheduleBoard?: ScheduleBoardPort;
+  isBoardPaused?: () => boolean;
+  resolveCanary?: ResolveCanary | undefined;
   now?: () => number;
 };
+
+export type { CanaryTrialTarget, ResolveCanary };
 
 /** Projects whose PM-chat metadata is currently unreadable: the failure is logged once per streak, not every tick. */
 const pmMetadataFailing = new Set<string>();
@@ -148,6 +181,13 @@ export function createWorkflowTriggers(ctx: ServerCore, services: Pick<Services,
   }
 
   const refuse = (reason: string, message: string, extra: Partial<Extract<TriggerResult, { ok: false }>> = {}): TriggerResult => ({ ok: false, reason, message, ...extra });
+  const isBoardPaused = (): boolean => deps.isBoardPaused
+    ? deps.isBoardPaused()
+    : Boolean((services as { schedules?: { pause?: { isPaused?: () => boolean } } }).schedules?.pause?.isPaused?.());
+
+  function startRefusal(workflowId: string, source: StartRefusalSource, projectId?: string | null): StartRefusalReason | null {
+    return workflowStartRefusal({ db, workflowId, source, projectId, boardPaused: isBoardPaused() });
+  }
 
   async function start(input: { projectId: string; workflowId: string; inputs: Record<string, unknown>; source: TriggerSource; key?: string | undefined; liveTrial?: boolean | undefined; origin?: "schedule" | undefined;
     /** A run that is nobody's business but the project's (the lead's tick): no PM chat, no run link, hidden helpers in the project's folder even when a PM chat is open. */
@@ -155,6 +195,12 @@ export function createWorkflowTriggers(ctx: ServerCore, services: Pick<Services,
     /** The starter a Lane Pilot system schedule names (schedule/server/system-schedules.ts): it may start the one starter graph whose `startedBy`
      * is this name. Only the schedule executor passes it, read from the row's `created_by`, which no caller chooses. */
     starter?: string | undefined }): Promise<TriggerResult> {
+    const refusalSource: StartRefusalSource = input.origin === "schedule" ? "schedule" : input.source;
+    const blocked = startRefusal(input.workflowId, refusalSource, input.projectId);
+    if (blocked) {
+      eventLog.info(`wf.start refused wf=${input.workflowId} source=${refusalSource} reason=${blocked}`);
+      return refuse(blocked, refusalMessage(input.workflowId, blocked));
+    }
     const loaded = await deps.loadStore(input.projectId);
     const { store } = loaded;
     const stored = store.get(input.workflowId);
@@ -163,7 +209,7 @@ export function createWorkflowTriggers(ctx: ServerCore, services: Pick<Services,
     // A starter graph is Lane Pilot's own: never the PM's, a chat's or a hand trigger's. Its own system schedule is the one exception (0.1.562 live:
     // both worktree-cleanup schedules ended start_failed here, so no janitor pass ran at all).
     const ownStarter = isPipeline(baseWorkflow) && input.starter !== undefined && baseWorkflow.startedBy === input.starter;
-    if ((isPipeline(baseWorkflow) && !ownStarter) || baseWorkflow.internal) return refuse("not_runnable", `"${baseWorkflow.id}" is not a workflow to start by hand.`);
+    if ((isPipeline(baseWorkflow) && !ownStarter) || (baseWorkflow.internal && !ownStarter)) return refuse("not_runnable", `"${baseWorkflow.id}" is not a workflow to start by hand.`);
     const trial = baseWorkflow.status === "tested" && input.liveTrial === true;
     if (baseWorkflow.status !== "published" && !trial) {
       return refuse("not_runnable", baseWorkflow.status === "tested"
@@ -200,6 +246,17 @@ export function createWorkflowTriggers(ctx: ServerCore, services: Pick<Services,
     const pm = input.detached || !input.projectId ? null : await pmOfOrUnknown(input.projectId);
     if (pm === "unknown") return refuse("pm_chat_unknown", "the owner's PM chat could not be read; the run is not started this tick");
 
+    const canary = resolveCanarySplit({
+      workflow,
+      resolve,
+      resolveCanary: deps.resolveCanary,
+      store,
+      ...(!ownStarter && loaded.loopHooks ? { loopHooks: loaded.loopHooks } : {}),
+      log: eventLog,
+    });
+    workflow = canary.workflow;
+    resolve = canary.resolve;
+
     let notChecked: string[] = [];
     if (deps.preflight) {
       const check = await deps.preflight(workflow, { projectId: input.projectId, ...(pm ? { threadId: pm.pmThreadId } : {}) });
@@ -214,7 +271,13 @@ export function createWorkflowTriggers(ctx: ServerCore, services: Pick<Services,
     const runtime: ChainRuntime = { ctx, services: services as Services, pmThreadId: pm?.pmThreadId ?? null, projectId: input.projectId, runId: pm?.runId ?? null, ...(fromSchedule ? { origin: "schedule" as const } : {}) };
     try {
       // The project's library finds its own children too; the run pins them, so a reload does not need the library again.
-      const started = services.workflowEngine.start({ workflow, inputs: given, key, runtime, resolve, link: { ...(input.projectId ? { projectId: input.projectId } : {}), ...(pm ? { runId: pm.runId } : {}) } });
+      const started = services.workflowEngine.start({
+        workflow, inputs: given, key, runtime, resolve,
+        link: { ...(input.projectId ? { projectId: input.projectId } : {}), ...(pm ? { runId: pm.runId } : {}) },
+        ...(canary.runId ? { runId: canary.runId } : {}),
+        ...(canary.arm ? { arm: canary.arm } : {}),
+        ...(canary.trialId ? { trialId: canary.trialId } : {}),
+      });
       started.done.catch((cause: unknown) => ctx.log(`Lane Pilot workflow run ${started.runId} (${workflow.id}) stopped with an error: ${cause instanceof Error ? cause.message : String(cause)}`));
       return { ok: true, runId: started.runId, created: started.created, status: services.workflowEngine.get(started.runId)?.status ?? "running", notChecked };
     } catch (cause) {
@@ -326,9 +389,30 @@ export function createWorkflowTriggers(ctx: ServerCore, services: Pick<Services,
 
     const started: Array<{ workflowId: string; runId: string; created: boolean }> = [];
     const failed: Array<{ workflowId: string; reason: string; message: string }> = [];
+    if (matching.length > 0 && startRefusal(matching[0]!.workflow.id, "event", projectId) === "board_paused") {
+      // Leave the inbox row unconsumed (`consumed_by IS NULL`) so the event retries once the pause lifts.
+      for (const { workflow } of matching) {
+        eventLog.info(`wf.start refused wf=${workflow.id} source=event reason=board_paused`);
+        failed.push({ workflowId: workflow.id, reason: "board_paused", message: refusalMessage(workflow.id, "board_paused") });
+      }
+      return { eventId, key, duplicate: false, woken, started, failed };
+    }
     for (const { workflow, trigger: matchedTrigger } of matching) {
       const targetProjectId = matchedTrigger.projectId ?? projectId ?? (workflow.scope.level === "project" ? workflow.scope.projectId : undefined) ?? "";
-      const starter = isPipeline(workflow) && workflow.startedBy === `event:${name}` ? workflow.startedBy : undefined;
+      const blocked = startRefusal(workflow.id, "event", targetProjectId);
+      if (blocked) {
+        eventLog.info(`wf.start refused wf=${workflow.id} source=event reason=${blocked}`);
+        failed.push({ workflowId: workflow.id, reason: blocked, message: refusalMessage(workflow.id, blocked) });
+        if (blocked === "workflow_disabled") {
+          markInboxEventConsumed(db, eventId, `disabled:${workflow.id}`);
+        }
+        continue;
+      }
+      const starter = isPipeline(workflow)
+        && (workflow.startedBy === `event:${name}`
+          || (workflow.startedBy?.startsWith("event:") && matchedTrigger.type === "event" && matchedTrigger.event === name))
+        ? workflow.startedBy
+        : undefined;
       try {
         const res = await start({
           projectId: targetProjectId,
@@ -355,6 +439,6 @@ export function createWorkflowTriggers(ctx: ServerCore, services: Pick<Services,
     return { eventId, key, duplicate: false, woken, started, failed };
   }
 
-  return { start, emitEvent, sync, pmOf, pmOfOrUnknown };
+  return { start, emitEvent, sync, pmOf, pmOfOrUnknown, startRefusal };
 }
 export type WorkflowTriggers = ReturnType<typeof createWorkflowTriggers>;

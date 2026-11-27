@@ -36,9 +36,15 @@ export const SYSTEM_SCHEDULES: readonly SystemSchedule[] = [
   } },
   { key: "daily-report", starter: "daily-report", definition: {
     name: "Ежедневный дайджест владельцу",
-    description: "Короткая утренняя сводка в Telegram (до 8 строк) о попытках, графах и расходах за 24 часа.",
+    description: "Короткая утренняя сводка в Telegram (до 9 строк) о попытках, графах и расходах за сутки.",
     task: { kind: "workflow", workflowId: "lp.daily-report", inputs: {} },
     when: { type: "cron", cron: "0 * * * *" }, missed: "run_once", overlap: "skip", timeoutSec: 120, maxFailures: 3,
+  } },
+  { key: "review-desk", starter: "review-desk", definition: {
+    name: "Еженедельный разбор владельца",
+    description: "Раз в неделю по понедельникам собирает решения всех циклов с вариантами по умолчанию и отправляет сводку в Telegram.",
+    task: { kind: "workflow", workflowId: "lp.review-desk", inputs: {} },
+    when: { type: "cron", cron: "0 10 * * 1" }, missed: "run_once", overlap: "skip", timeoutSec: 120, maxFailures: 3,
   } },
 ];
 

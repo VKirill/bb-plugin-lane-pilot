@@ -1,6 +1,6 @@
 import type Database from "better-sqlite3";
 import { clip } from "@lane-pilot/contracts";
-import type { OpenOwnerItemFilter, PostOwnerItem } from "../../models/owner-item";
+import { defaultWakeForReason, type OpenOwnerItemFilter, type PostOwnerItem } from "../../models/owner-item";
 
 type Db = Pick<Database.Database, "prepare">;
 
@@ -52,7 +52,7 @@ export function upsertOwnerItem(db: Db, item: PostOwnerItem, now: number): boole
       clip(item.why, 600),
       JSON.stringify(item.evidence ?? []),
       JSON.stringify(item.actions ?? []),
-      item.wake === false ? 0 : 1,
+      (item.wake ?? defaultWakeForReason(item.reason)) ? 1 : 0,
       now,
     );
   return result.changes > 0;
@@ -117,14 +117,16 @@ export function listOpenOwnerItems(
 ): Array<{ key: string; source: string; kind: string; projectId: string | null; what: string; why: string; createdAt: number }> {
   if (!tableExists(db, "lane_pilot_owner_item")) return [];
   const { where, params } = openOwnerItemWhere(filter);
+  const hasLimit = typeof filter.limit === "number" && Number.isFinite(filter.limit) && filter.limit > 0;
+  const limitSql = hasLimit ? " LIMIT ?" : "";
   return db
     .prepare(
       `SELECT key, source, kind, project_id AS projectId, what, why, created_at AS createdAt
          FROM lane_pilot_owner_item
         WHERE ${where}
-        ORDER BY created_at DESC`,
+        ORDER BY created_at DESC${limitSql}`,
     )
-    .all(...params) as Array<{
+    .all(...(hasLimit ? [...params, Math.floor(filter.limit!)] : params)) as Array<{
     key: string;
     source: string;
     kind: string;

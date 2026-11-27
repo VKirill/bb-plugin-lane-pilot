@@ -4,15 +4,19 @@ import { findOpenNativeRun, getRun, listTaskTerminalStates, latestRunForProjectT
 import type { LanePilotDatabase } from "../../../storage";
 import { redactKnown, sha256Hex, parseJsonOr } from "@lane-pilot/kit";
 import type { WorkflowEngine } from "@lane-pilot/workflow-engine";
-import { GOAL_REQUEST_MAX, goalsSchema, isOffered, isPipeline, needsLiveTrial, preflightRefusal, routeIntent, runRecords, wfRunExists, wfStepExists, workflowRunFactSummaries } from "@lane-pilot/workflow-engine";
+import { GOAL_REQUEST_MAX, classifyRouteMiss, goalsSchema, isOffered, isPipeline, preflightRefusal, routeIntent, runRecords, wfRunExists, wfStepExists, workflowRunFactSummaries } from "@lane-pilot/workflow-engine";
 import type { RouteDecision, RouterCard, RouterState, RunRecord, WorkflowRunFactSummary } from "@lane-pilot/workflow-engine";
-import { graphCategoryLabel } from "@lane-pilot/contracts";
-import { compareWorkflowCategories, extractCategoryLabel, workflowCategory } from "../../models/categories";
+import { isKnownGraphCategory } from "@lane-pilot/contracts";
+import { buildPmCatalog, type PmCatalogCategory, type PmCatalogGraph, type PmCatalogRunFacts } from "../../models/pm-catalog";
+import { workflowCategory } from "../../models/categories";
+import { workflowStartRefusal, type StartRefusalReason, type StartRefusalSource } from "../services/workflow-triggers";
+import { recordRouteMiss, type RecordRouteMissInput } from "../repositories/route-miss-repository";
 import type { RunGoal } from "@lane-pilot/workflow-engine";
 import type { PreflightResult } from "@lane-pilot/workflow-engine";
 import type { Workflow } from "@lane-pilot/workflow-engine";
 import type { WorkflowStore } from "../../../storage";
 import { bindGraphStepLookup, fenceOutside, noteWorkflowFollowedByPm, noteWorkflowReadByPm, registerObservedTool } from "../../../platform/server";
+import { noteGoalsAmended, noteNodeRerun } from "../services/owner-intervention";
 import { isOpenAttemptState } from "../../../contracts/state-machine";
 import { backlogMatches } from "../../../backlog";
 import type { TodoMeta } from "../../../backlog";
@@ -33,6 +37,7 @@ import type { DocsApi } from "../../../docs/server";
 
 import type { WorkflowTriggersApi } from "../services/workflow-triggers-live";
 import { LoopHookRefusal, prepareLoopWorkflow, type LoopHookManifest } from "../../models/loop-hooks";
+import { resolveCanarySplit, type ResolveCanary } from "../services/canary-split";
 
 /** The fields of the services bag this file reads, typed by the rooms that own them. */
 interface Services {
@@ -42,6 +47,7 @@ interface Services {
   workflowCatalog: WorkflowEngineApi["workflowCatalog"];
   workflowEngine: WorkflowEngineApi["workflowEngine"];
   workflowTriggers: WorkflowTriggersApi["workflowTriggers"];
+  resolveCanary?: ResolveCanary | undefined;
 }
 
 /**
@@ -67,6 +73,12 @@ export type WorkflowToolDeps = {
   routePolicy?(projectId: string): Promise<RoutePolicy>;
   /** The project's open backlog items (SMA m_sg_breakdown): a request matching one is asked about instead of duplicated. */
   backlogItems?(projectId: string): Promise<TodoMeta[]>;
+  /** Records catalog routing misses for discovery (Task 11). */
+  recordRouteMiss?(input: RecordRouteMissInput): void;
+  startRefusal?: (workflowId: string, source: StartRefusalSource, projectId?: string | null) => StartRefusalReason | null;
+  resolveCanary?: ResolveCanary | undefined;
+  info?(message: string): void;
+  debug?(message: string): void;
   warn(message: string): void;
 };
 
@@ -95,62 +107,7 @@ const ROUTE_NEXT_CLARIFY = "Ask the requester these questions (reply to the dele
 const ROUTE_NEXT_LIVE_TRIAL = "This workflow is flagged `notYetRunLive`: it passed its tests on stubs and has never run for real. The task assigned in this chat by the owner or a BB agent authorizes its first real run and the only test it can get, so start it now: call lane_pilot_run_workflow with `liveTrial: true` in this turn, tell the owner in one line that this is the graph's first real run, and read its receipts; its own forms (a send, a payment) still ask before the irreversible step, and Lane Pilot audits the run against its goals before it closes. Ask the requester first only when the assignment does not ask for the outcome; an agent assignment needs no extra owner message. Never put a routed graph aside for an errand or your own shell because it is new or lacks a step: run it for what it covers and add the missing step after it (a delayed message is a one-off lane_pilot_schedule or an errand). One successful run makes it published.";
 const ROUTE_NEXT_ROUTE = "Show the owner the workflow, the boundary contract (guesses are marked) and the goals. Ask for every entry of `missingInputs`, and check the `guessedInputs` (filled from the request, not read from it). The request in this chat, from the owner or a BB agent, is the agreement: with nothing missing, call lane_pilot_run_workflow with `workflowId` and `inputs` in this turn; ask only for the missing inputs.";
 
-export type PmCatalogRunFacts = WorkflowRunFactSummary | { runs: number; workDone: number; failed: number; lastRunAt: number | null };
-export type PmCatalogGraph = {
-  id: string;
-  name: string;
-  description: string;
-  not_for: string[];
-  notYetRunLive?: true;
-  runFacts?: PmCatalogRunFacts;
-};
-export type PmCatalogCategory = {
-  id: string;
-  label: string;
-  graphs: PmCatalogGraph[];
-};
-
-/** Groups offered graphs by category for the PM to choose from, with description, `not_for`, and Task 26 run facts when present. */
-export function buildPmCatalog(
-  workflows: readonly Workflow[],
-  options: { stats?: ReadonlyMap<string, RunRecord>; facts?: ReadonlyMap<string, WorkflowRunFactSummary>; locale?: "en" | "ru" } = {},
-): PmCatalogCategory[] {
-  const locale = options.locale ?? "en";
-  const byCategory = new Map<string, { customLabel: { en: string; ru: string } | null; graphs: PmCatalogGraph[] }>();
-  for (const wf of workflows) {
-    if (!isOffered(wf)) continue;
-    const catId = workflowCategory(wf);
-    const customLabel = extractCategoryLabel(wf.category);
-    let bucket = byCategory.get(catId);
-    if (!bucket) {
-      bucket = { customLabel, graphs: [] };
-      byCategory.set(catId, bucket);
-    } else if (!bucket.customLabel && customLabel) {
-      bucket.customLabel = customLabel;
-    }
-    const fact = options.facts?.get(wf.id);
-    const stat = options.stats?.get(wf.id);
-    const statRuns = stat ? stat.executed + stat.refused + stat.escalated + stat.failed : 0;
-    const runFacts: PmCatalogRunFacts | undefined = fact ?? (stat && statRuns > 0
-      ? { runs: statRuns, workDone: stat.workDone, failed: stat.failed, lastRunAt: stat.lastRunAt }
-      : undefined);
-    bucket.graphs.push({
-      id: wf.id,
-      name: wf.name[locale] || wf.name.en || wf.id,
-      description: wf.description[locale] || wf.description.en,
-      not_for: wf.not_for,
-      ...(needsLiveTrial(wf) ? { notYetRunLive: true } : {}),
-      ...(runFacts ? { runFacts } : {}),
-    });
-  }
-  return [...byCategory.entries()]
-    .sort(([a], [b]) => compareWorkflowCategories(a, b))
-    .map(([id, bucket]) => ({
-      id,
-      label: bucket.customLabel?.[locale] ?? graphCategoryLabel(id, locale) ?? id,
-      graphs: bucket.graphs.sort((a, b) => a.id.localeCompare(b.id)),
-    }));
-}
+export { buildPmCatalog, type PmCatalogCategory, type PmCatalogGraph, type PmCatalogRunFacts };
 
 export async function routeTool(deps: WorkflowToolDeps, params: { intent: string; request?: string | undefined; context?: string | undefined }, context: ToolContext): Promise<string> {
   if (!context.threadId || !context.projectId) throw new Error("route_needs_pm_thread: call this from a Lane Pilot PM chat");
@@ -162,15 +119,43 @@ export async function routeTool(deps: WorkflowToolDeps, params: { intent: string
   // The project's route policy cuts a candidate before the scorer ranks it; the PM picks among what remains.
   const policy = deps.routePolicy ? await deps.routePolicy(context.projectId).catch((): RoutePolicy => ({})) : {};
   const forbidden: string[] = [];
-  const offered = store.list().map((item) => item.workflow).filter((workflow) => {
+  const forbiddenIds = new Set<string>();
+  const allWorkflows = store.list().map((item) => item.workflow);
+  const offered = allWorkflows.filter((workflow) => {
     const problem = policyProblem({ requires: workflow.requires } as RouterCard, policy);
-    if (problem) forbidden.push(`${workflow.id}: ${problem}`);
+    if (problem) {
+      forbidden.push(`${workflow.id}: ${problem}`);
+      forbiddenIds.add(workflow.id);
+    }
     return !problem;
   });
   const stats = deps.stats?.();
   const facts = deps.runFacts?.();
   const byId = new Map(offered.map((wf) => [wf.id, wf]));
   const decision: RouteDecision = await routeIntent({ intent: params.intent, ...(params.request !== undefined ? { request: params.request } : {}), ...(mergedContext ? { context: mergedContext } : {}), workflows: offered, ...(state ? { state } : {}), model: null, ...(stats ? { stats } : {}) });
+  if (deps.recordRouteMiss) {
+    let policyTop: { id: string; confidence: number } | null = null;
+    if (decision.decision === "clarify" && forbiddenIds.size > 0) {
+      const unpolicied = await routeIntent({ intent: params.intent, ...(params.request !== undefined ? { request: params.request } : {}), ...(mergedContext ? { context: mergedContext } : {}), workflows: allWorkflows, ...(state ? { state } : {}), model: null, ...(stats ? { stats } : {}) });
+      const bestId = unpolicied.workflowId ?? unpolicied.suggested ?? unpolicied.candidates[0]?.id ?? null;
+      if (bestId && forbiddenIds.has(bestId) && (unpolicied.decision === "route" || (unpolicied.candidates[0]?.score ?? 0) > (decision.candidates[0]?.score ?? 0))) {
+        policyTop = { id: bestId, confidence: unpolicied.confidence };
+      }
+    }
+    const kind = classifyRouteMiss(decision, { intent: params.intent, ...(params.request !== undefined ? { request: params.request } : {}), ...(mergedContext ? { context: mergedContext } : {}), policyForbidden: Boolean(policyTop) });
+    if (kind) {
+      const missedId = decision.warnings.map((w) => /^the closest match (\S+) is not available:/.exec(w)?.[1]).find(Boolean) ?? null;
+      const bestCand = decision.suggested ?? (decision.candidates[0] && decision.candidates[0].score > 0 ? decision.candidates[0].id : null);
+      const topWorkflowId = kind === "blocked" ? (policyTop?.id ?? missedId ?? bestCand) : bestCand;
+      const topWf = topWorkflowId ? allWorkflows.find((wf) => wf.id === topWorkflowId) : undefined;
+      const cat = topWf ? workflowCategory(topWf) : null;
+      try {
+        deps.recordRouteMiss({ projectId: context.projectId, source: "pm_route", kind, brief: params.request ?? params.intent, topWorkflowId, confidence: policyTop?.confidence ?? decision.confidence, category: cat && isKnownGraphCategory(cat) ? cat : null });
+      } catch (cause) {
+        deps.warn(`route miss write failed: ${cause instanceof Error ? cause.message : String(cause)}`);
+      }
+    }
+  }
   const noWorkflow = decision.candidates.length === 0;
   const catalog = buildPmCatalog(offered, { stats, facts });
   // The phrase is compared with the backlog before anything else: a request that repeats a written-down item is asked
@@ -215,6 +200,13 @@ export async function runWorkflowTool(deps: WorkflowToolDeps, params: { workflow
   if (!runId) throw new Error("workflow_needs_pm_chat: call this from a Lane Pilot PM chat");
   const releaseAdmission = beginRunAdmission(deps.db, runId);
   try {
+  const killReason = deps.startRefusal
+    ? deps.startRefusal(params.workflowId, "pm", context.projectId)
+    : workflowStartRefusal({ db: deps.db, workflowId: params.workflowId, source: "pm", projectId: context.projectId });
+  if (killReason) {
+    (deps.info ?? deps.warn)(`wf.start refused wf=${params.workflowId} source=pm reason=${killReason}`);
+    return refused(killReason, { ok: false, workflow: params.workflowId });
+  }
   const loaded = deps.loadProject ? await deps.loadProject(context.projectId) : { store: await deps.store(context.projectId) };
   const store = loaded.store;
   const stored = store.get(params.workflowId);
@@ -273,6 +265,16 @@ export async function runWorkflowTool(deps: WorkflowToolDeps, params: { workflow
       workflow: workflow.id, required: missing.map((field) => ({ name: field.name, type: field.type, ...(field.description ?? field.note ? { detail: field.description ?? field.note } : {}) })),
     });
   }
+  const canary = resolveCanarySplit({
+    workflow,
+    resolve,
+    resolveCanary: deps.resolveCanary,
+    store,
+    ...(loaded.loopHooks ? { loopHooks: loaded.loopHooks } : {}),
+    log: { debug: deps.debug, warn: deps.warn },
+  });
+  workflow = canary.workflow;
+  resolve = canary.resolve;
   // What the workflow needs must exist before anything starts: a missing secret is asked for with env_request, a missing tool or login named.
   let unverified: string[] = [];
   if (deps.preflight) {
@@ -289,6 +291,9 @@ export async function runWorkflowTool(deps: WorkflowToolDeps, params: { workflow
     const started = deps.engine().start({
       workflow, inputs, key, resolve, runtime: deps.runtime({ pmThreadId: context.threadId, projectId: context.projectId, runId }), link: { projectId: context.projectId, runId },
       ...(params.goals?.length ? { goals: params.goals } : {}),
+      ...(canary.runId ? { runId: canary.runId } : {}),
+      ...(canary.arm ? { arm: canary.arm } : {}),
+      ...(canary.trialId ? { trialId: canary.trialId } : {}),
     });
     // The run goes on in the background: its steps report through lane_pilot_workflow_status, and a failure of the drive is only logged.
     started.done.catch((cause: unknown) => deps.warn(`Lane Pilot workflow run ${started.runId} (${workflow.id}) stopped with an error: ${cause instanceof Error ? cause.message : String(cause)}`));
@@ -350,6 +355,7 @@ export async function amendGoalsTool(deps: WorkflowToolDeps, params: { runId: st
   const snapshot = engine.snapshot(params.runId);
   if (!snapshot || snapshot.run.project_id !== context.projectId) return refused(`not_found: no workflow run "${params.runId}" in this project`, { workflowRunId: params.runId });
   const releaseAdmission = snapshot.run.link_run_id ? beginRunAdmission(deps.db, snapshot.run.link_run_id) : () => {};
+  const deltaLog = { debug: deps.debug, warn: deps.warn };
   try {
   if (!params.goals && !params.rerun) return refused("amend_refused: give goals, rerun, or both", { workflowRunId: params.runId });
   // The per-task pipeline keeps its runtime in memory: it is corrected through the task (lane_pilot_update_task), never re-run by hand.
@@ -358,6 +364,7 @@ export async function amendGoalsTool(deps: WorkflowToolDeps, params: { runId: st
     if (!engine.rerunNode) return refused("not_available: this engine cannot re-run a node", { workflowRunId: params.runId });
     const again = await engine.rerunNode(params.runId, params.rerun!.nodeId, undefined, params.rerun!.with);
     if (!again.ok) return refused(`rerun_refused: ${again.reason}`, { workflowRunId: params.runId });
+    noteNodeRerun(deps.db, { runId: params.runId, workflowId: snapshot.run.workflow_id, projectId: context.projectId, threadId: context.threadId, nodeId: params.rerun!.nodeId, stepKey: again.stepKey, reason: params.reason }, deltaLog);
     return JSON.stringify({ workflowRunId: params.runId, rerun: params.rerun!.nodeId, stepKey: again.stepKey, removed: again.removed,
       corrected: Object.keys(params.rerun!.with ?? {}), status: engine.get(params.runId)?.status ?? "running",
       note: "The node runs again on the same branch; the steps before it keep their results. Status/result: lane_pilot_workflow_status." }, null, 2);
@@ -365,9 +372,13 @@ export async function amendGoalsTool(deps: WorkflowToolDeps, params: { runId: st
   if (!engine.amendGoals) return refused("not_available: this engine cannot amend goals", { workflowRunId: params.runId });
   const result = engine.amendGoals(params.runId, params.goals, params.reason, "pm");
   if (!result.ok) return refused(`amend_refused: ${result.reason}`, { workflowRunId: params.runId });
+  noteGoalsAmended(deps.db, { runId: params.runId, workflowId: snapshot.run.workflow_id, projectId: context.projectId, threadId: context.threadId, version: result.version, reason: params.reason }, deltaLog);
   // New goals and a corrected node at once: the run is re-run from that node and audited against the new goals when it ends.
   const again = params.rerun && engine.rerunNode ? await engine.rerunNode(params.runId, params.rerun.nodeId, undefined, params.rerun.with) : null;
   if (again && !again.ok) return refused(`rerun_refused: ${again.reason} (the goals were amended, version ${result.version})`, { workflowRunId: params.runId });
+  if (again?.ok) {
+    noteNodeRerun(deps.db, { runId: params.runId, workflowId: snapshot.run.workflow_id, projectId: context.projectId, threadId: context.threadId, nodeId: params.rerun!.nodeId, stepKey: again.stepKey, reason: params.reason }, deltaLog);
+  }
   return JSON.stringify({ ...(again?.ok ? { rerun: params.rerun!.nodeId, stepKey: again.stepKey } : {}),
     workflowRunId: params.runId, amended: true, version: result.version, goals: params.goals.length,
     status: engine.get(params.runId)?.status ?? "running",
@@ -407,6 +418,11 @@ export function mountWorkflowTools(ctx: ServerCore, services: Services): void {
     runFacts: () => workflowRunFactSummaries(db),
     backlogItems: (projectId) => services.backlog.items(projectId),
     routePolicy: async (projectId) => routePolicyOf((await ctx.effectiveProjectSettings(projectId)).values as Record<string, unknown>),
+    recordRouteMiss: (input) => recordRouteMiss(db, input, bb.log),
+    startRefusal: (workflowId, source, projectId) => services.workflowTriggers.startRefusal(workflowId, source, projectId),
+    resolveCanary: (workflowId) => services.resolveCanary?.(workflowId) ?? null,
+    info: (message) => bb.log.info(message),
+    debug: (message) => bb.log.debug(message),
     warn: (message) => bb.log.warn(message),
   };
 

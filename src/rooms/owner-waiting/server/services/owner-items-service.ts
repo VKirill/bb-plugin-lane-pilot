@@ -11,6 +11,7 @@ import {
   REASON_RANK,
   SOURCE_ORDER,
   callReason,
+  defaultWakeForReason,
   isSandboxProject,
   parseJson,
   withReadButton,
@@ -23,6 +24,13 @@ import {
   type OwnerWaiting,
   type PostOwnerItem,
 } from "../../models/owner-item";
+import {
+  DECISION_DAY_KEY,
+  DECISION_DAY_KEYS_KEY,
+  MAX_DECISION_CAP,
+  localDateKey,
+} from "../../models/push-config";
+import { loadPushConfig, readOwnerConfigKey, writeOwnerConfigKey } from "./owner-config-service";
 import {
   closeOwnerItem,
   closeOwnerItemsByPrefix,
@@ -82,7 +90,7 @@ export function postOwnerItem(db: Db, item: PostOwnerItem, now: number = Date.no
       key: item.key,
       projectId: item.projectId ?? null,
       kind: item.kind,
-      wake: item.wake !== false,
+      wake: item.wake ?? defaultWakeForReason(item.reason),
       now,
     };
     for (const listener of ownerItemCreatedListeners) {
@@ -150,16 +158,131 @@ function inbox(db: Db): OwnerItem[] {
     }));
 }
 
-export function collectOwnerWaiting(db: Db, now: number = Date.now(), sweeps: readonly OwnerItemSweep[] = [], windowMs: number = OVERNIGHT_WINDOW_MS): OwnerWaiting {
+export type CollectOwnerWaitingOptions = {
+  windowMs?: number;
+  decisionCap?: number;
+  timezone?: string;
+  log?: (message: string) => void;
+};
+
+function readDecisionBudgetState(db: Db, day: string): { count: number; keys: Set<string>; rawDay: string | null; rawKeys: string | null } {
+  const rawDay = readOwnerConfigKey(db as never, DECISION_DAY_KEY);
+  const rawKeys = readOwnerConfigKey(db as never, DECISION_DAY_KEYS_KEY);
+  let count = 0;
+  if (rawDay) {
+    const colon = rawDay.lastIndexOf(":");
+    if (colon > 0 && rawDay.slice(0, colon) === day) {
+      const parsed = Number(rawDay.slice(colon + 1));
+      if (Number.isSafeInteger(parsed) && parsed >= 0) count = parsed;
+    }
+  }
+  const keys = new Set<string>();
+  if (rawKeys) {
+    const parsed = parseJson<{ day?: unknown; keys?: unknown }>(rawKeys, {});
+    if (parsed.day === day && Array.isArray(parsed.keys)) {
+      for (const k of parsed.keys) if (typeof k === "string") keys.add(k);
+    }
+  }
+  if (keys.size > count) count = keys.size;
+  return { count, keys, rawDay, rawKeys };
+}
+
+export function collectOwnerWaiting(
+  db: Db,
+  now: number = Date.now(),
+  sweeps: readonly OwnerItemSweep[] = [],
+  optionsOrWindowMs: number | CollectOwnerWaitingOptions = OVERNIGHT_WINDOW_MS,
+): OwnerWaiting {
+  const opts = typeof optionsOrWindowMs === "number" ? { windowMs: optionsOrWindowMs } : optionsOrWindowMs;
+  const windowMs = opts.windowMs ?? OVERNIGHT_WINDOW_MS;
   sweepOwnerItems(db, now, sweeps);
   const items = [...inbox(db)];
   const rank = (item: OwnerItem) => { const at = SOURCE_ORDER.indexOf(item.source); return at < 0 ? SOURCE_ORDER.indexOf("night") : at; };
   // The cost of putting a row off first, a row that would push before one that would not, then the sources' order and age; the first NOW_CAP are «now».
   items.sort((a, b) => REASON_RANK[callReason(a.kind)] - REASON_RANK[callReason(b.kind)] || Number(b.wake) - Number(a.wake) || rank(a) - rank(b) || a.since - b.since || a.key.localeCompare(b.key));
-  items.forEach((item, index) => { item.tier = index < NOW_CAP ? "now" : "later"; });
+
+  const config = loadPushConfig(db);
+  const rawCap = opts.decisionCap ?? config.decisionCap;
+  const cap = Number.isFinite(rawCap) ? Math.max(0, Math.min(MAX_DECISION_CAP, Math.floor(rawCap))) : config.decisionCap;
+  const timezone = opts.timezone ?? config.timezone;
+  const day = localDateKey(now, timezone);
+  const budget = readDecisionBudgetState(db, day);
+
+  let nowSlots = 0;
+  let admittedDecisions = 0;
+  let decisionsToday = budget.count;
+  let deferred = 0;
+
+  for (const item of items) {
+    const reason = callReason(item.kind);
+    if (reason !== "decision") {
+      item.tier = nowSlots < NOW_CAP ? "now" : "later";
+      if (item.tier === "now") nowSlots += 1;
+      continue;
+    }
+    if (cap === 0) {
+      item.tier = "later";
+      item.wake = false;
+      item.desk = true;
+      deferred += 1;
+      continue;
+    }
+    if (budget.keys.has(item.key)) {
+      if (admittedDecisions < cap && nowSlots < NOW_CAP) {
+        item.tier = "now";
+        nowSlots += 1;
+        admittedDecisions += 1;
+      } else if (admittedDecisions >= cap) {
+        item.tier = "later";
+        item.wake = false;
+        item.desk = true;
+        deferred += 1;
+      } else {
+        item.tier = "later";
+      }
+      continue;
+    }
+    if (item.wake) {
+      if (decisionsToday < cap && nowSlots < NOW_CAP) {
+        item.tier = "now";
+        nowSlots += 1;
+        decisionsToday += 1;
+        admittedDecisions += 1;
+        budget.keys.add(item.key);
+      } else if (decisionsToday >= cap) {
+        item.tier = "later";
+        item.wake = false;
+        item.desk = true;
+        deferred += 1;
+      } else {
+        item.tier = "later";
+      }
+      continue;
+    }
+    if (decisionsToday >= cap) {
+      item.tier = "later";
+      item.wake = false;
+      item.desk = true;
+      deferred += 1;
+    } else if (nowSlots < NOW_CAP) {
+      item.tier = "now";
+      nowSlots += 1;
+    } else {
+      item.tier = "later";
+    }
+  }
+
+  if (tableExists(db, "lane_pilot_owner_config")) {
+    const nextDayValue = `${day}:${decisionsToday}`;
+    const nextKeysValue = JSON.stringify({ day, keys: [...budget.keys] });
+    if (budget.rawDay !== nextDayValue) writeOwnerConfigKey(db as never, DECISION_DAY_KEY, nextDayValue, now);
+    if (budget.rawKeys !== nextKeysValue) writeOwnerConfigKey(db as never, DECISION_DAY_KEYS_KEY, nextKeysValue, now);
+  }
+  opts.log?.(`attention budget decisions_today=${decisionsToday} cap=${cap} deferred=${deferred}`);
+
   const counts: Record<string, number> = {};
   for (const item of items) counts[item.source] = (counts[item.source] ?? 0) + 1;
-  return { generatedAt: now, items, counts, overnight: overnight(db, now, windowMs), now: Math.min(items.length, NOW_CAP), answered: answered(db, now) };
+  return { generatedAt: now, items, counts, overnight: overnight(db, now, windowMs), now: nowSlots, answered: answered(db, now) };
 }
 
 /** Who closed the rows of the last 7 days (the answer statistics the research asked for: a reflex inbox shows as «janitor» and «agent», never «owner»). */

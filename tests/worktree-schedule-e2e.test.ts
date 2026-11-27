@@ -95,7 +95,7 @@ describe("the worktree-cleanup system schedules run their graph", () => {
     // Keep the next hourly tick clear of the daily 04:40 Europe/Madrid pass.
     vi.useFakeTimers({ toFake: ["Date"], now: Date.UTC(2026, 10, 16, 12) });
     const w = hub();
-    expect(await w.ensure()).toEqual(["worktree-cleanup-hourly", "worktree-cleanup-daily", "owner-push", "daily-report"]);
+    expect(await w.ensure()).toEqual(["worktree-cleanup-hourly", "worktree-cleanup-daily", "owner-push", "daily-report", "review-desk"]);
     const hourly = w.byKey("hourly");
     expect(hourly.project_id).toBe("*");
     const run = await w.fire(hourly.id);
@@ -223,7 +223,7 @@ describe("the other live edges of the batch", () => {
     await w.ensure();
     expect(w.schedules.remove(w.byKey("hourly").id)).toBe(true);
     expect(await w.ensure()).toEqual([]);
-    expect(w.schedules.store.list().map((row) => row.created_by)).toEqual(["system:worktree-cleanup-daily", "system:owner-push", "system:daily-report"]);
+    expect(w.schedules.store.list().map((row) => row.created_by)).toEqual(["system:worktree-cleanup-daily", "system:owner-push", "system:daily-report", "system:review-desk"]);
     const daily = w.byKey("daily");
     w.schedules.runNow(daily.id, "press");
     expect((await w.settled(daily.id)).status).toBe("succeeded");

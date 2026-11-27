@@ -23,9 +23,10 @@ export function ownerWaitingRpc(
   log: (message: string) => void = () => undefined,
   postEvent: PostEvent = async () => false,
   invalidate: () => void = () => undefined,
+  debugLog: (message: string) => void = () => undefined,
 ) {
   return {
-    owner_waiting: async () => collectOwnerWaiting(db, Date.now(), sweeps),
+    owner_waiting: async () => collectOwnerWaiting(db, Date.now(), sweeps, { log: debugLog }),
     // The webhook is the one sanctioned outbound path (SMA k_lib_notify): every wake item the digest sends also posts
     // owner.waiting there, and the pass ends with one pulse event; a project without events.webhook_url posts nothing.
     owner_waiting_digest: async () => {
@@ -51,6 +52,16 @@ export function ownerWaitingRpc(
     },
     owner_waiting_ack: async ({ keys }) => { const out = { acknowledged: ackDigest(db, keys) }; invalidate(); return out; },
     owner_waiting_close: async ({ key }) => { const out = { closed: closeOwnerItem(db, key, "screen") }; invalidate(); return out; },
-    owner_waiting_config: async ({ patch }) => { const out = patch ? savePushConfig(db, patch) : loadPushConfig(db); if (patch) invalidate(); return out; },
+    owner_waiting_config: async ({ patch }) => {
+      if (!patch) return loadPushConfig(db);
+      const normalized: Record<string, string | undefined> = {};
+      for (const [rawKey, rawVal] of Object.entries(patch)) {
+        const key = rawKey === "decisionCap" ? "decision_cap" : rawKey;
+        normalized[key] = typeof rawVal === "boolean" ? (rawVal ? "on" : "off") : rawVal === undefined ? undefined : String(rawVal);
+      }
+      const out = savePushConfig(db, normalized);
+      invalidate();
+      return out;
+    },
   } satisfies Pick<PluginRpcHandlers<typeof rpcContract>, "owner_waiting" | "owner_waiting_digest" | "owner_waiting_ack" | "owner_waiting_close" | "owner_waiting_config">;
 }

@@ -70,6 +70,10 @@ export function setRoadPayload(db: RoadDb, id: string, payload: unknown, now: nu
 export const getRoad = (db: RoadDb, id: string): RoadRow | undefined =>
   db.prepare("SELECT * FROM lane_pilot_lead_road WHERE id=?").get(id) as RoadRow | undefined;
 
+/** Finds an existing road row carrying `payload_json.key === key` for idempotent candidate sync. */
+export const findRoadByPayloadKey = (db: RoadDb, key: string): RoadRow | undefined =>
+  db.prepare("SELECT * FROM lane_pilot_lead_road WHERE payload_json IS NOT NULL AND json_extract(payload_json, '$.key') = ? ORDER BY created_at ASC LIMIT 1").get(key) as RoadRow | undefined;
+
 /** A state change plus an appended note on `why`; shared by reject/done/decide so the reason is never lost. */
 function settle(db: RoadDb, id: string, from: RoadState[], to: RoadState, whyAppend: string | null, now: number): boolean {
   const row = getRoad(db, id);
@@ -83,6 +87,17 @@ export function rejectRoad(db: RoadDb, id: string, why: string, by: string, now:
   const reason = why.trim();
   if (reason.length < 10) throw new Error("a rejection needs a reason of at least 10 chars");
   return settle(db, id, ["open", "proposed", "later"], "rejected", `\n\nrejected by ${by}: ${reason}`, now);
+}
+
+/** Defers an open or proposed road item to `later`. */
+export function laterRoad(db: RoadDb, id: string, by: string = "owner", now: number = Date.now()): boolean {
+  return settle(db, id, ["open", "proposed"], "later", `\n\nlater by ${by}`, now);
+}
+
+/** Marks an open, proposed, or deferred road item as `accepted`. */
+export function acceptRoad(db: RoadDb, id: string, note?: string, by: string = "owner", now: number = Date.now()): boolean {
+  const clean = note?.trim();
+  return settle(db, id, ["open", "proposed", "later"], "accepted", clean ? `\n\naccepted by ${by}: ${clean}` : `\n\naccepted by ${by}`, now);
 }
 
 export function doneRoad(db: RoadDb, id: string, note?: string, now: number = Date.now()): boolean {

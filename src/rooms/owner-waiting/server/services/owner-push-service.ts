@@ -1,5 +1,4 @@
 import type Database from "better-sqlite3";
-import { hubFields, writeHubFields } from "../../../platform";
 import {
   BELL_PREFIX,
   BELL_SEEDED,
@@ -10,12 +9,9 @@ import {
   localStartOfDayMs,
   nextDigestWindow,
   quietHoursEnd,
-  resolvePushConfig,
-  validatePushPatch,
   type BellNotice,
   type Digest,
   type PlanBellOptions,
-  type PushConfig,
 } from "../../models/push-config";
 import {
   countBellPushedSince,
@@ -24,33 +20,15 @@ import {
   hasOwnerConfigKey,
   insertIgnoreOwnerConfigKey,
   insertIgnoreOwnerPush,
-  listOwnerConfigRows,
   listOwnerPushKeys,
   listOwnerPushRows,
-  readOwnerConfigKey,
-  writeOwnerConfigKey,
 } from "../repositories/owner-push-repository";
+import { loadPushConfig, readOwnerConfigKey, savePushConfig, writeOwnerConfigKey } from "./owner-config-service";
 import { collectOwnerWaiting, type OwnerItemSweep } from "./owner-items-service";
 
-export { readOwnerConfigKey, writeOwnerConfigKey };
+export { loadPushConfig, readOwnerConfigKey, savePushConfig, writeOwnerConfigKey };
 
 type Db = Pick<Database.Database, "prepare" | "transaction">;
-
-export function loadPushConfig(db: Db): PushConfig {
-  const rows = listOwnerConfigRows(db);
-  const stored = Object.fromEntries(rows.map((row) => [row.key, row.value]));
-  const own = hubFields(db, "owner_push") as Partial<PushConfig>;
-  return resolvePushConfig(stored, own);
-}
-
-/** `enabled` on|off, `quiet` HH:MM-HH:MM ("" turns quiet hours off as 00:00-00:00), `timezone` an IANA name. A wrong value is refused with what is accepted. */
-export function savePushConfig(db: Db, patch: Record<string, string | undefined>, now: number = Date.now()): PushConfig {
-  const { ownKeys, hubFields: fields } = validatePushPatch(patch);
-  // Own-table keys: the bell, and dry_run (the Telegram reports of the reports room are composed and logged, never sent or acknowledged).
-  for (const { key, value } of ownKeys) writeOwnerConfigKey(db, key, value, now);
-  writeHubFields(db, "owner_push", fields, now);
-  return loadPushConfig(db);
-}
 
 /** What to send now. `keys` are all the new wake items, also the ones only counted: the caller acknowledges them after a successful send. */
 export function planDigest(db: Db, now: number = Date.now(), sweeps: readonly OwnerItemSweep[] = []): Digest {

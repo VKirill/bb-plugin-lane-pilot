@@ -1,4 +1,10 @@
 export { registerSpExecutors } from "./handlers/sp-executors";
+export {
+  SNAPSHOT_LOCKS_LIMIT,
+  SNAPSHOT_CURSORS_LIMIT,
+  SNAPSHOT_OWNER_ITEMS_LIMIT,
+  loadSpecialistMemory,
+} from "./services/sp-memory-loader";
 export type { SpBacklogPort, SpSchedulePort, SpServicesDeps } from "./services/sp-dispatch-runner";
 export {
   type SpecialistOverviewPayload,
@@ -6,6 +12,15 @@ export {
   specialistSnapshot,
   specialistItemSweep,
 } from "./services/sp-overview";
+export {
+  type SpScorecardLogger,
+  type SpScorecardOptions,
+  type SpecialistScorecardEntry,
+  type SpecialistCaseConclusiveEntry,
+  type SpecialistConclusiveHealth8w,
+  specialistScorecard,
+  specialistConclusiveHealth8w,
+} from "./services/sp-scorecard";
 export {
   type CharterRow,
   type BreakerRow,
@@ -32,7 +47,73 @@ export {
   upsertCohort,
   checkCohortMaturity,
   stageIntent,
+  decideHeldIntent,
 } from "./repositories/sp-locks-intents";
+export {
+  type AutonomyRow,
+  type AutonomyGrantRow,
+  type PromotionCandidate,
+  type RefusalCountSummary,
+  type OwnerGateDecision,
+  actionClassOfOrder,
+  resolveOrderTier,
+  isHighRiskActionClass,
+  formatRefusalDropReason,
+  parseRefusalDropReason,
+  countRefusalsByActionClass,
+  autonomyOf,
+  evaluateOwnerGate,
+  cohenKappa,
+  recomputeAutonomy,
+  promotionCandidates,
+  grantAutonomy,
+  revokeAutonomy,
+  listAutonomyRows,
+} from "./repositories/sp-autonomy";
+export {
+  type SpOutcomeLogger,
+  type IntentOutcomeRow,
+  type PendingOutcomeIntent,
+  type OutcomeMeasurementInput,
+  type RecordMeasurementResult,
+  resolveOutcomeCheckAt,
+  writePendingOutcome,
+  dueOutcomes,
+  recordMeasurement,
+  expireOutcomes,
+} from "./repositories/sp-outcomes";
+export {
+  type SpHypothesisLogger,
+  type SpHypothesisRow,
+  type UpsertHypothesisInput,
+  type LinkIntentResult,
+  type SettledHypothesisTransition,
+  type SettleHypothesesResult,
+  type HypothesisTreeEntry,
+  type OutcomePolarity,
+  classifyProjectOutcome,
+  upsertHypothesis,
+  linkIntent,
+  settleHypotheses,
+  triedAlready,
+  hypothesisTreeSnapshot,
+} from "./repositories/sp-hypotheses";
+export {
+  type SpRuleLogger,
+  type SpRuleRow,
+  type RuleWindow,
+  type RuleEvidenceEntry,
+  type RuleSnapshotEntry,
+  type RuleActionResult,
+  normalizeRuleText,
+  proposeLocalRule,
+  proposeSharedRule,
+  activateSharedRule,
+  retireRule,
+  retireContradictedRules,
+  activeRulesForSnapshot,
+  listProposedSharedRules,
+} from "./repositories/sp-rules";
 export {
   type BankQuestion,
   type TriageOutput,

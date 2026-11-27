@@ -2,15 +2,19 @@ import {
   HUB_KEYS,
   PROJECT_DEFAULT_KEYS,
   PROVIDER_POOL_KEY,
+  SETTING_LOOPS_MODE,
   SETTING_WRITER_SILENCE_NUDGE_MIN,
   WRITER_EFFORT_CHOICES_BY_PROVIDER,
   boundProblem,
   hubSettingProblem,
   providerPoolProblem,
 } from "@lane-pilot/settings-catalog";
+import { loopModesProblem } from "@lane-pilot/contracts";
 import { ROLE_MODEL_KEY_PREFIX, ZCODE_BACKGROUND_KEY, ZCODE_WINDOW_KEY, roleModelProblem, zcodeWindowProblem } from "@lane-pilot/models";
+import { evolveSettingProblem } from "../../evolve";
 import { leadSettingProblem } from "../../lead";
 import { SCHEDULE_ERRAND_DEFAULT_KEY, errandDefaultProblem } from "../../schedule";
+import { WORKFLOW_DISABLED_KEY, workflowDisabledProblem } from "../../workflow";
 import { PLANNING_HOME_SETTING, planningHomeProblem } from "../../contracts";
 import { SETTINGS_REGISTRY } from "../../settings-registry";
 import type { SettingValidationError } from "../../setting-validation";
@@ -33,6 +37,18 @@ const WORKFLOW_EFFORTS = ["low", "medium", "high", "xhigh", "max"];
 export function validateSettingValue(key: string, value: unknown): SettingValidationError | null {
   if (key === PLANNING_HOME_SETTING && value !== undefined && value !== null && value !== "") {
     const problem = typeof value === "string" ? planningHomeProblem(value) : "the planning home must be an absolute folder path";
+    return problem ? { code: "invalid_choice", key, params: [key, problem] } : null;
+  }
+  if (key === WORKFLOW_DISABLED_KEY) {
+    const problem = workflowDisabledProblem(value);
+    return problem ? { code: "invalid_choice", key, params: [key, problem] } : null;
+  }
+  if (key === SETTING_LOOPS_MODE) {
+    const problem = loopModesProblem(value);
+    return problem ? { code: "invalid_choice", key, params: [key, problem] } : null;
+  }
+  if (key.startsWith("evolve.")) {
+    const problem = evolveSettingProblem(key, value);
     return problem ? { code: "invalid_choice", key, params: [key, problem] } : null;
   }
   if (key.startsWith("lead.")) {

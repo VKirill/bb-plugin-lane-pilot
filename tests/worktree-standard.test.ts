@@ -393,10 +393,10 @@ describe("the cleanup is on the schedule board", () => {
       kv: { get: async (key: string) => kv.get(key) ?? null, set: async (key: string, value: unknown) => { kv.set(key, value); } },
       log: () => undefined,
     };
-    expect(await ensureSystemSchedules(deps)).toEqual(["worktree-cleanup-hourly", "worktree-cleanup-daily", "owner-push", "daily-report"]);
+    expect(await ensureSystemSchedules(deps)).toEqual(["worktree-cleanup-hourly", "worktree-cleanup-daily", "owner-push", "daily-report", "review-desk"]);
     expect(await ensureSystemSchedules(deps)).toEqual([]);
     rows.splice(1, 1);
     expect(await ensureSystemSchedules(deps)).toEqual([]);
-    expect(rows.map((row) => row.created_by)).toEqual(["system:worktree-cleanup-hourly", "system:owner-push", "system:daily-report"]);
+    expect(rows.map((row) => row.created_by)).toEqual(["system:worktree-cleanup-hourly", "system:owner-push", "system:daily-report", "system:review-desk"]);
   });
 });

@@ -45,6 +45,7 @@ export interface SpServicesDeps {
   phaseIntake?: unknown;
   planHome?: (projectId: string, checkout: { hostId: string; path: string }) => Promise<string | null>;
   allowScriptFixtureFallback?: boolean;
+  snapshotBytes?: number;
   /** Tells the run's manifest (.agents/runs/RUN/manifest.json) about files a node wrote; given by the workflow room, which owns the run folder. */
   noteRunFiles?: (c: StepContext<ChainRuntime>, rt: ChainRuntime, checkout: { hostId: string; path: string }, files: Array<{ repoPath: string; content: string; kind: "latest-pointer" }>) => Promise<void>;
 }
@@ -76,6 +77,7 @@ export async function executeSpecialistOrder(input: {
   };
   orderObj: Row;
   checkout: { hostId: string; path: string } | null;
+  proposeOnly?: boolean;
   writeCheckoutFile: (
     ctx: ServerCore,
     checkout: { hostId: string; path: string } | null,
@@ -83,10 +85,39 @@ export async function executeSpecialistOrder(input: {
     content: string,
   ) => Promise<string>;
 }): Promise<OrderExecutionResult> {
-  const { ctx, deps, c, rt, domain, sourceGraph, intentRow, orderObj, checkout, writeCheckoutFile } = input;
+  const { ctx, deps, c, rt, domain, sourceGraph, intentRow, orderObj, checkout, proposeOnly, writeCheckoutFile } = input;
   const { db } = ctx;
   const logicalKind = asStr(orderObj.kind, intentRow.order_kind);
   const shortHash = sha256Hex(`${intentRow.intent_id}:${intentRow.idem_key}`).slice(0, 8);
+
+  if (proposeOnly && (logicalKind === "schedule" || logicalKind === "sub_graph" || logicalKind === "code_task" || logicalKind === "specialist_handoff")) {
+    const itemKey = `sp:propose:${intentRow.intent_id}`;
+    const title = asStr(orderObj.title, logicalKind);
+    postOwnerItem(db, {
+      key: itemKey,
+      source: "specialist",
+      kind: "proposal",
+      reason: "decision",
+      projectId: rt.projectId,
+      what: `Предложение специалиста (${domain}, ${logicalKind}): ${title}`,
+      why: "Режим контура employee=report: автоисполнение отключено, действие ожидает подтверждения владельца.",
+      wake: false,
+      actions: [
+        {
+          id: "read",
+          label: "Принято",
+          cli: rpcLine("owner_waiting_close", { key: itemKey }),
+          rpc: { method: "owner_waiting_close", input: { key: itemKey } },
+        },
+      ],
+    });
+    return {
+      ok: true,
+      disposition: "proposed",
+      targetRef: itemKey,
+      receipt: { kind: logicalKind, mode: "propose_only", ownerItemKey: itemKey },
+    };
+  }
 
   // 1. `schedule`: create/update real recurring schedule in ScheduleService (`G-01` + `ASTRA-F-010`).
   if (logicalKind === "schedule") {

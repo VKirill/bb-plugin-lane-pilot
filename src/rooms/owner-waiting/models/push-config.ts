@@ -4,10 +4,15 @@ import { callReason, type OwnerItem } from "./owner-item";
  * Pure push configuration, quiet-hours math, and Telegram/bell digest formatting rules.
  * Runtime-neutral: no node:, no SQLite, no BB SDK.
  */
+export const DEFAULT_DECISION_CAP = 5;
+export const MAX_DECISION_CAP = 50;
+export const DECISION_DAY_KEY = "decision_day";
+export const DECISION_DAY_KEYS_KEY = "decision_day_keys";
+
 /** `bell` is the browser bell (SMA m_ws_notify): on unless the owner stored `off`. It skips what the Telegram digest already announced. */
-export type PushConfig = { enabled: boolean; quiet: string; timezone: string; bell?: boolean; dryRun?: boolean };
-export const DEFAULT_PUSH_CONFIG: PushConfig = { enabled: true, quiet: "23:00-08:00", timezone: "Europe/Madrid" };
-export const PUSH_CONFIG_KEYS = ["enabled", "quiet", "timezone", "bell", "dry_run"] as const;
+export type PushConfig = { enabled: boolean; quiet: string; timezone: string; bell?: boolean; dryRun?: boolean; decisionCap: number };
+export const DEFAULT_PUSH_CONFIG: PushConfig = { enabled: true, quiet: "23:00-08:00", timezone: "Europe/Madrid", decisionCap: DEFAULT_DECISION_CAP };
+export const PUSH_CONFIG_KEYS = ["enabled", "quiet", "timezone", "bell", "dry_run", "decision_cap"] as const;
 /** At most this many items are named in one message; the rest are counted. */
 export const DIGEST_LINES = 6;
 /** An open item is said again once, this long after its first push. */
@@ -43,11 +48,20 @@ export function validTimezone(zone: string): boolean {
   }
 }
 
+export function parseDecisionCap(raw: string | undefined): number | undefined {
+  if (raw === undefined) return undefined;
+  const trimmed = raw.trim();
+  if (!/^\d+$/.test(trimmed)) return undefined;
+  const n = Number(trimmed);
+  return Number.isSafeInteger(n) && n >= 0 && n <= MAX_DECISION_CAP ? n : undefined;
+}
+
 export function resolvePushConfig(stored: Record<string, string>, own: Partial<PushConfig>): PushConfig {
   const old: PushConfig = {
     enabled: stored.enabled === undefined ? DEFAULT_PUSH_CONFIG.enabled : stored.enabled === "on",
     quiet: stored.quiet && QUIET_RE.test(stored.quiet) ? stored.quiet : DEFAULT_PUSH_CONFIG.quiet,
     timezone: stored.timezone && validTimezone(stored.timezone) ? stored.timezone : DEFAULT_PUSH_CONFIG.timezone,
+    decisionCap: parseDecisionCap(stored.decision_cap) ?? DEFAULT_DECISION_CAP,
   };
   // A global row (`owner_push.*`, written by the screen and by this command) wins over the old table, which stays as the fallback.
   // The bell has no global row: it lives in this room's own table; unset is on, only a stored «off» silences it.
@@ -57,14 +71,15 @@ export function resolvePushConfig(stored: Record<string, string>, own: Partial<P
     timezone: own.timezone ?? old.timezone,
     bell: stored.bell !== "off",
     ...(stored.dry_run === "on" ? { dryRun: true } : {}),
+    decisionCap: own.decisionCap ?? old.decisionCap,
   };
 }
 
 export function validatePushPatch(patch: Record<string, string | undefined>): {
-  ownKeys: Array<{ key: "bell" | "dry_run"; value: string }>;
+  ownKeys: Array<{ key: "bell" | "dry_run" | "decision_cap"; value: string }>;
   hubFields: Record<string, unknown>;
 } {
-  const ownKeys: Array<{ key: "bell" | "dry_run"; value: string }> = [];
+  const ownKeys: Array<{ key: "bell" | "dry_run" | "decision_cap"; value: string }> = [];
   const hubFields: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(patch)) {
     if (value === undefined) continue;
@@ -77,6 +92,16 @@ export function validatePushPatch(patch: Record<string, string | undefined>): {
     if (key === "timezone" && !validTimezone(value)) {
       throw new Error(`unknown time zone «${value}» (an IANA name such as Europe/Madrid)`);
     }
+    if (key === "decision_cap") {
+      const trimmed = value.trim();
+      if (!/^\d+$/.test(trimmed)) throw new Error(`decision_cap must be an integer 0-${MAX_DECISION_CAP}`);
+      const n = Number(trimmed);
+      if (!Number.isSafeInteger(n) || n < 0 || n > MAX_DECISION_CAP) {
+        throw new Error(`decision_cap must be between 0 and ${MAX_DECISION_CAP}`);
+      }
+      ownKeys.push({ key, value: String(n) });
+      continue;
+    }
     if (!(PUSH_CONFIG_KEYS as readonly string[]).includes(key)) {
       throw new Error(`unknown setting «${key}» (${PUSH_CONFIG_KEYS.join(", ")})`);
     }
@@ -87,6 +112,11 @@ export function validatePushPatch(patch: Record<string, string | undefined>): {
     hubFields[key] = key === "enabled" ? value === "on" : value;
   }
   return { ownKeys, hubFields };
+}
+
+export function localDateKey(now: number, timezone: string): string {
+  const p = localParts(now, timezone);
+  return `${String(p.year).padStart(4, "0")}-${String(p.month).padStart(2, "0")}-${String(p.day).padStart(2, "0")}`;
 }
 
 export type LocalParts = { year: number; month: number; day: number; hour: number; minute: number };

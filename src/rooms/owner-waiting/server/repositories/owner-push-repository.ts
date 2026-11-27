@@ -1,25 +1,31 @@
 import type Database from "better-sqlite3";
+import { tableExists } from "./owner-item-repository";
 
 type Db = Pick<Database.Database, "prepare" | "transaction">;
 
 export function listOwnerConfigRows(db: Db): Array<{ key: string; value: string }> {
+  if (!tableExists(db, "lane_pilot_owner_config")) return [];
   return db.prepare("SELECT key, value FROM lane_pilot_owner_config").all() as Array<{ key: string; value: string }>;
 }
 
 export function hasOwnerConfigKey(db: Db, key: string): boolean {
+  if (!tableExists(db, "lane_pilot_owner_config")) return false;
   return db.prepare("SELECT 1 FROM lane_pilot_owner_config WHERE key=?").get(key) !== undefined;
 }
 
 export function insertIgnoreOwnerConfigKey(db: Db, key: string, value: string, now: number): void {
+  if (!tableExists(db, "lane_pilot_owner_config")) return;
   db.prepare("INSERT OR IGNORE INTO lane_pilot_owner_config(key,value,updated_at) VALUES (?,?,?)").run(key, value, now);
 }
 
 /** One key of the room's own key/value table (the reports room keeps «the daily report went out on this day» here). */
 export function readOwnerConfigKey(db: Db, key: string): string | null {
+  if (!tableExists(db, "lane_pilot_owner_config")) return null;
   return (db.prepare("SELECT value FROM lane_pilot_owner_config WHERE key=?").get(key) as { value: string } | undefined)?.value ?? null;
 }
 
 export function writeOwnerConfigKey(db: Db, key: string, value: string, now: number = Date.now()): void {
+  if (!tableExists(db, "lane_pilot_owner_config")) return;
   db.prepare("INSERT INTO lane_pilot_owner_config(key,value,updated_at) VALUES (?,?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at").run(key, value, now);
 }
 

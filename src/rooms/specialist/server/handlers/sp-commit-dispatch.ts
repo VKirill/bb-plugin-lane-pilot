@@ -1,8 +1,9 @@
+import { employeeProposeOnly } from "@lane-pilot/contracts";
 import { sha256Hex } from "@lane-pilot/kit";
 import type { GraphNode, StepContext } from "@lane-pilot/workflow-engine";
 import type { ChainRuntime, ServerCore } from "../../../contracts/server";
 import { postOwnerItem } from "../../../owner-waiting";
-import { renderArtifactsManifestJson } from "../../../storage";
+import { readLoopMode, renderArtifactsManifestJson } from "../../../storage";
 import { canonicalJson, normalizeOrdersInput } from "../../models/action-order";
 import { registerSpCommitMemoryExecutor } from "./sp-commit-memory";
 import { executeSpecialistOrder, type SpServicesDeps } from "../services/sp-dispatch-runner";
@@ -53,6 +54,26 @@ export function registerSpCommitAndDispatchExecutors(
     const role = asStr(params.role);
     const domain = asDomain(params.domain || (role === "seo-specialist" ? "seo" : "marketing"));
     const sourceGraph = asStr(params.sourceGraph, c.workflow.id);
+    const employeeMode = readLoopMode(db, "employee", rt.projectId);
+    if (employeeMode === "off") {
+      ctx.log(`loop.mode loop=employee mode=off skipped=sp.dispatch_tasks`);
+      const emptyOut: Row = {
+        dispatched_count: 0,
+        executed_count: 0,
+        proposed_count: 0,
+        waiting_owner_count: 0,
+        blocked_count: 0,
+        replayed_count: 0,
+        unknown_count: 0,
+        dispatched_ids: [],
+      };
+      const filtered: Row = {};
+      for (const f of node.out) {
+        if (emptyOut[f.name] !== undefined) filtered[f.name] = emptyOut[f.name];
+      }
+      return Object.keys(filtered).length ? filtered : emptyOut;
+    }
+    const proposeOnly = employeeProposeOnly(employeeMode);
     const checkout = await resolveCheckout(ctx, rt);
 
     if (params.orders !== undefined && params.orders !== null) {
@@ -64,6 +85,8 @@ export function registerSpCommitAndDispatchExecutors(
           sourceGraph,
           slotScope: c.runId,
           order: ord,
+          deferDirectApiGateToDispatch: true,
+          log: ctx.bb.log,
         });
       }
     }
@@ -160,6 +183,7 @@ export function registerSpCommitAndDispatchExecutors(
           orderObj,
           checkout,
           writeCheckoutFile,
+          proposeOnly,
         });
       } catch (err) {
         const errMsg = (err instanceof Error ? err.message : String(err)).slice(0, 300);

@@ -205,7 +205,7 @@ describe("event-driven token usage and usage snapshots (Task 17)", () => {
       kv: { get: async (k: string) => kv.get(k) ?? null, set: async (k: string, v: unknown) => { kv.set(k, v); } },
       log: () => undefined,
     };
-    expect(await ensureSystemSchedules(deps)).toEqual(["worktree-cleanup-hourly", "worktree-cleanup-daily", "owner-push", "daily-report"]);
+    expect(await ensureSystemSchedules(deps)).toEqual(["worktree-cleanup-hourly", "worktree-cleanup-daily", "owner-push", "daily-report", "review-desk"]);
     const first = await ensureProjectSchedules(deps, ["proj_a", "*", "proj_b"], { leadCron: "15 8 * * *" });
     expect(first).toEqual([
       { projectId: "proj_a", key: "backlog-scan" },

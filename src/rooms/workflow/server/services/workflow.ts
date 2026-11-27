@@ -14,6 +14,7 @@ import { createGoalAuditor } from "./workflow-goal-audit";
 import { chainRuntimeFor, registerChainExecutors } from "./workflow-executors";
 import { createRootObserver } from "./workflow-root-observation";
 import { notifyWorkflowIfEnded } from "./pm-notice";
+import { createRunFinished, type RunFinishedSubscriber } from "./run-finished";
 import type { LeadRoadApi } from "../../../contracts";
 import { createAfterAcceptStarter, mountWorkflowAttemptFinished, registerAfterAcceptExecutors, type OnAttemptFinished } from "./after-accept";
 import { registerInvoiceActions } from "./workflow-invoice";
@@ -30,7 +31,7 @@ import type { BaselineApi } from "../../../baseline/server";
 import type { WorkflowTriggersApi } from "./workflow-triggers-live";
 import { SCHEDULE_RUN_KEY_PREFIX } from "../../../contracts";
 import { LP_TASK_PIPELINE } from "../../../contracts";
-import {BUILTIN_SOURCES, builtinWorkflow, logBuiltinLibraryStatus} from "../../builtin";
+import {BUILTIN_SOURCES, archiveBuiltinWorkflows, builtinWorkflow, logBuiltinLibraryStatus} from "../../builtin";
 
 /** The fields of the services bag this file reads, typed by the rooms that own them. */
 interface Services {
@@ -50,6 +51,7 @@ interface Services {
   leadRoad: LeadRoadApi;
   onAttemptFinished: OnAttemptFinished;
   schedules?: {
+    pause?: { isPaused(): boolean };
     save: (
       raw: {
         projectId: string;
@@ -71,11 +73,19 @@ interface Services {
  * boundary when the instance is disposed. A drain does not stop it: the stages of the dispatch pipeline write no checkout
  * (the host calls that do are gated by the drain themselves), and stopping them would only end more dispatches at a reload.
  */
-export function createWorkflowEngine(ctx: ServerCore, services: Services) {
+export function createWorkflowEngine(
+  ctx: ServerCore,
+  services: Services,
+  options: { onRunEnded?: ReadonlyArray<RunFinishedSubscriber> } = {},
+) {
   const { bb, db } = ctx;
   // Open Workflows screens re-read a run when one of its steps moves: the project's channel and the global library's.
   const projectOf = new Map<string, string | null>();
   const engineRef: { current: WorkflowEngine | null } = { current: null };
+  const onRunEvent = createRunFinished(ctx, {
+    triggers: () => services.workflowTriggers,
+    subscribers: options.onRunEnded ?? [],
+  });
   const onEvent = (runId: string) => {
     if (projectOf.size > 500) projectOf.clear();
     if (!projectOf.has(runId)) projectOf.set(runId, wfRunProjectId(db, runId));
@@ -93,10 +103,12 @@ export function createWorkflowEngine(ctx: ServerCore, services: Services) {
     void notifyWorkflowIfEnded({ bb: ctx.bb, db, leadRoad: services.leadRoad, log: (message) => ctx.log(message), run, unmetGoalIds: unmet }).catch((cause: unknown) => {
       ctx.log(`Lane Pilot workflow ${runId}: PM notice failed: ${cause instanceof Error ? cause.message : String(cause)}`);
     });
+    void onRunEvent(runId);
   };
   const statuses = createStatusResolver(db);
   logBuiltinLibraryStatus({ info: (message) => bb.log.info(`Lane Pilot ${message}`), warn: (message) => bb.log.warn(`Lane Pilot ${message}`) });
-  const workflowCatalog = createWorkflowCatalog({ builtin: BUILTIN_SOURCES, log: (message) => bb.log.warn(`Lane Pilot ${message}`), resolveStatus: statuses.resolve });
+  archiveBuiltinWorkflows(db, { debug: (message) => bb.log.debug(`Lane Pilot ${message}`), warn: (message) => bb.log.warn(`Lane Pilot ${message}`) });
+  const workflowCatalog = createWorkflowCatalog({ builtin: BUILTIN_SOURCES, db, log: (message) => bb.log.warn(`Lane Pilot ${message}`), resolveStatus: statuses.resolve });
   const workflowAgents = createWorkflowAgents();
   const engine: WorkflowEngine = new WorkflowEngine({
     db, harnessVersion: HARNESS_VERSION, compatVersion: ENGINE_COMPAT_VERSION,
@@ -108,7 +120,7 @@ export function createWorkflowEngine(ctx: ServerCore, services: Services) {
       warn: (message) => bb.log.warn(`Lane Pilot ${message}`),
       error: (message) => bb.log.error(`Lane Pilot ${message}`),
     },
-    resolveWorkflow: (id, version) => workflowCatalog.peek()?.resolve(id, version) ?? builtinWorkflow(id, version),
+    resolveWorkflow: (id, version) => workflowCatalog.peek()?.resolve(id, version) ?? builtinWorkflow(id, version, db),
     // A node that runs as an agent the owner deleted is refused at the start with a message, not after the earlier steps ran.
     specialistKnown: (id) => (SPECIALIST_ROLES.includes(id as never) || isEmployeeSpecialist(id) ? true : ctx.knownCustomAgentIds()?.has(id) ?? null),
     isDisposed: ctx.isDisposed,
@@ -152,7 +164,7 @@ export function createWorkflowEngine(ctx: ServerCore, services: Services) {
   registerInvoiceActions(engine, ctx);
   registerTelegramActions(engine, ctx);
   bb.onDispose(() => engine.dispose());
-  const startAfterAcceptance = createAfterAcceptStarter(engine, ctx);
+  const startAfterAcceptance = createAfterAcceptStarter(engine, ctx, () => Boolean(services.schedules?.pause?.isPaused()));
   mountWorkflowAttemptFinished(ctx, { onAttemptFinished: services.onAttemptFinished, startAfterAcceptance });
   return { workflowEngine: engine, workflowCatalog, startAfterAcceptance };
 }

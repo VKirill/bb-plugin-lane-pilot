@@ -188,7 +188,7 @@ export const rpcOps = {
     output: z.unknown(),
   },
   owner_waiting_config: {
-    input: z.object({ patch: z.record(z.string().max(40), z.string().max(80)).optional() }).strict(),
+    input: z.object({ patch: z.record(z.string().max(40), z.union([z.string().max(80), z.number(), z.boolean()])).optional() }).strict(),
     output: z.unknown(),
   },
   /** The «Errands» page (src/rooms/errands): the kinds with the model in force and the period's counts, and the period's errand runs with outcome, source, helper thread and cost. */

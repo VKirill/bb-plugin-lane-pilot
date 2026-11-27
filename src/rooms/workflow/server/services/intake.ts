@@ -1,15 +1,16 @@
 import { bestEffort, isNotFound, orMiss, parseJsonOr, stringAt, withoutCredentials, withoutSelectionMarkers } from "@lane-pilot/kit";
-import { pathClassByRules, preflightRefusal, routeIntent, type PathRisk, type PathSize } from "@lane-pilot/workflow-engine";
+import { GOAL_REQUEST_MAX, MIN_CONFIDENCE, isOffered, pathClassByRules, preflightRefusal, routeIntent, wfRunRow, type Field, type PathRisk, type PathSize, type Workflow } from "@lane-pilot/workflow-engine";
 import { OPEN_ATTEMPT_STATES, type HandOverResult, type HandOverStarted, type IntakeRecord, type PhaseIntake } from "../../../contracts";
 import type { ServerCore } from "../../../contracts/server";
 import { sendServiceMessage } from "../../../relay/server";
 import { cancelAttemptById, isRunHalted, isRunPaused } from "../../../runs/server";
-import { finishedIntakeTaskRows, getRun, getRunSettingsScopes, loadProjectSettings, openIntakeAttemptRows, openIntakeTaskRows } from "../../../storage";
+import { finishedIntakeTaskRows, getRun, getRunSettingsScopes, loadProjectSettings, openIntakeAttemptRows, openIntakeTaskRows, type WorkflowStore } from "../../../storage";
 import type { ArchitectApi, WorkflowLibraryApi } from "../../../platform/server";
 import type { WorkflowEngineApi } from "./workflow";
 import type { WorkflowTriggersApi } from "./workflow-triggers-live";
 import { PHASE_RAILS_KEY, PHASE_TRAIN_KEY } from "../../settings";
-import { intakeByRules, intakeRunGoals, isMachineMessage, processHint, type IntakeKind, type ServiceKind } from "../../models/intake";
+import { GENERIC_PROJECT_WORKFLOW_IDS, intakeByRules, intakeRunGoals, isMachineMessage, missingTemplateInputsQuestion, parseMissingInputsAnswer, processHint, type IntakeKind, type ServiceKind } from "../../models/intake";
+import { workflowStartRefusal } from "./workflow-triggers";
 
 /** The fields of the services bag this file reads, typed locally so workflow does not depend on @services. */
 interface Services {
@@ -45,42 +46,175 @@ const HANDOVER_KEY = (projectId: string, key: string) => `phase-handover:${proje
 
 type Deps = Pick<ServerCore, "bb" | "db" | "effectiveProjectSettings" | "log" | "cancelQueuedAttempt">;
 
-/** Builds the intake train (issue-quick / issue-batch / issue-full / full-lifecycle, workflow architect, published-graph router) from workflow services. */
+function logInfo(ctx: Pick<ServerCore, "bb" | "log">, message: string): void {
+  const bbLog = (ctx.bb as { log?: { info?: (msg: string) => void } } | undefined)?.log;
+  if (bbLog?.info) bbLog.info(message);
+  else ctx.log(message);
+}
+
+/** Builds the intake train (issue-quick / issue-batch / issue-full / full-lifecycle or project templates, workflow architect, published-graph router) from workflow services. */
 export function createIntakeTrain(ctx: ServerCore, services: Services): IntakeTrain {
   const { db } = ctx;
+  const loadStore = async (projectId: string): Promise<WorkflowStore | null> => {
+    const library = services.workflowLibrary;
+    const fallbackStore = async (): Promise<WorkflowStore | null> =>
+      services.workflowCatalog ? await Promise.resolve(services.workflowCatalog.store()) : null;
+    if (library && typeof library.loadStore === "function") {
+      return library.loadStore(projectId).then((loaded) => loaded.store, fallbackStore);
+    }
+    return fallbackStore();
+  };
+
   return {
     start: async (input) => {
       const settings = loadProjectSettings(db, input.projectId);
       const library = services.workflowLibrary;
-      const workflowId = input.kind === "heavy" ? "full-lifecycle" : input.kind === "batch" ? "issue-batch" : input.kind === "full" ? "issue-full" : library?.issueQuickWorkflowId?.(settings) ?? "issue-quick";
-      const workflow = services.workflowEngine.resolveWorkflow(workflowId);
-      if (!workflow) return null;
-      const title = input.text.trim().split("\n").find((line) => line.trim())?.trim().slice(0, 120) ?? "Owner's request";
-      try {
-        const inputs = input.kind === "heavy" ? { goal: input.text.slice(0, 8000) } : { title, text: input.text.slice(0, 8000), ...(input.kind === "small" && input.path ? { size: input.path.size, risk: input.path.risk } : {}) };
-        const prepared = library && typeof library.prepareWorkflow === "function" ? await library.prepareWorkflow(input.projectId, workflow) : { workflow, resolve: services.workflowEngine.resolveWorkflow, composed: false };
-        const selected = prepared.composed ? prepared : { workflow, resolve: services.workflowEngine.resolveWorkflow };
-        if (prepared.composed) {
-          const admission = await services.workflowTriggers.preflight(selected.workflow, { projectId: input.projectId, threadId: input.pmThreadId });
-          if (!admission.ok) throw new Error(preflightRefusal(admission));
+      const startSelected = async (
+        workflow: Workflow,
+        resolveWorkflow: (id: string, version?: number) => Workflow | null,
+        inputs: Record<string, unknown>,
+      ): Promise<string | null> => {
+        try {
+          const prepared = library && typeof library.prepareWorkflow === "function"
+            ? await library.prepareWorkflow(input.projectId, workflow)
+            : { workflow, resolve: resolveWorkflow, composed: false };
+          const selected = prepared.composed ? prepared : { workflow, resolve: resolveWorkflow };
+          if (prepared.composed) {
+            const admission = await services.workflowTriggers.preflight(selected.workflow, { projectId: input.projectId, threadId: input.pmThreadId });
+            if (!admission.ok) throw new Error(preflightRefusal(admission));
+          }
+          const started = services.workflowEngine.start({
+            workflow: selected.workflow,
+            resolve: selected.resolve,
+            inputs,
+            goals: intakeRunGoals(input.text),
+            key: `intake:${input.pmThreadId}:${input.requestId}`,
+            runtime: { ctx, services, pmThreadId: input.pmThreadId, projectId: input.projectId, runId: input.runId },
+            link: { projectId: input.projectId, runId: input.runId },
+          });
+          started.done.catch((cause: unknown) => ctx.log(`intake: ${workflow.id} ${started.runId} stopped: ${cause instanceof Error ? cause.message : String(cause)}`));
+          return started.runId;
+        } catch (cause) {
+          ctx.log(`intake: ${workflow.id} did not start: ${cause instanceof Error ? cause.message : String(cause)}`);
+          return null;
         }
-        const started = services.workflowEngine.start({ workflow: selected.workflow, resolve: selected.resolve, inputs, goals: intakeRunGoals(input.text), key: `intake:${input.pmThreadId}:${input.requestId}`,
-          runtime: { ctx, services, pmThreadId: input.pmThreadId, projectId: input.projectId, runId: input.runId }, link: { projectId: input.projectId, runId: input.runId } });
-        started.done.catch((cause: unknown) => ctx.log(`intake: ${workflow.id} ${started.runId} stopped: ${cause instanceof Error ? cause.message : String(cause)}`));
-        return started.runId;
-      } catch (cause) {
-        ctx.log(`intake: ${workflow.id} did not start: ${cause instanceof Error ? cause.message : String(cause)}`);
+      };
+
+      if (input.kind !== "heavy") {
+        const workflowId = input.kind === "batch" ? "issue-batch" : input.kind === "full" ? "issue-full" : library?.issueQuickWorkflowId?.(settings) ?? "issue-quick";
+        const killReason = workflowStartRefusal({ db, workflowId, source: "pm", projectId: input.projectId });
+        if (killReason) {
+          ctx.log(`wf.start refused wf=${workflowId} source=pm reason=${killReason}`);
+          return null;
+        }
+        const workflow = services.workflowEngine.resolveWorkflow(workflowId);
+        if (!workflow) return null;
+        const title = input.text.trim().split("\n").find((line) => line.trim())?.trim().slice(0, 120) ?? "Owner's request";
+        const inputs = { title, text: input.text.slice(0, 8000), ...(input.kind === "small" && input.path ? { size: input.path.size, risk: input.path.risk } : {}) };
+        return startSelected(workflow, services.workflowEngine.resolveWorkflow, inputs);
+      }
+
+      const store = await loadStore(input.projectId);
+      const templates = (store?.list().map((item) => item.workflow) ?? []).filter(
+        (wf) => isOffered(wf) && wf.kind === "project" && !GENERIC_PROJECT_WORKFLOW_IDS.has(wf.id),
+      );
+      const routed = templates.length > 0
+        ? await routeIntent({ intent: input.text.slice(0, GOAL_REQUEST_MAX), workflows: templates, model: null, allowRulelessLong: true })
+        : null;
+      const candidate = routed && routed.decision === "route" && routed.workflowId && routed.confidence >= MIN_CONFIDENCE
+        ? templates.find((wf) => wf.id === routed.workflowId) ?? null
+        : null;
+      const chosen = candidate && candidate.status === "published" ? candidate : null;
+      const intakeConfidence = routed ? routed.confidence : 0;
+
+      const extractedInputs: Record<string, unknown> = chosen ? { ...(routed?.inputs ?? {}) } : {};
+      if (chosen && chosen.inputs.some((field) => field.name === "goal" && field.type === "string") && input.text.trim()) {
+        extractedInputs.goal = input.text.slice(0, 8000);
+      }
+      const missingFields: Field[] = chosen
+        ? chosen.inputs.filter((field) => field.required && field.default === undefined && extractedInputs[field.name] === undefined)
+        : [];
+      logInfo(ctx, `intake template chosen=${chosen ? chosen.id : "none"} conf=${intakeConfidence} missing=${missingFields.length}`);
+
+      const workflowId = chosen ? chosen.id : "full-lifecycle";
+      const killReason = workflowStartRefusal({ db, workflowId, source: "pm", projectId: input.projectId });
+      if (killReason) {
+        ctx.log(`wf.start refused wf=${workflowId} source=pm reason=${killReason}`);
         return null;
       }
+      const baseResolve = store?.resolve ?? services.workflowEngine.resolveWorkflow;
+      const workflow = chosen ?? store?.get("full-lifecycle")?.workflow ?? services.workflowEngine.resolveWorkflow("full-lifecycle");
+      if (!workflow) return null;
+
+      if (chosen && missingFields.length > 0) {
+        const { question, detail } = missingTemplateInputsQuestion({
+          workflowId: chosen.id,
+          workflowName: chosen.name,
+          missing: missingFields,
+          ru: /[А-Яа-яЁё]/.test(input.text),
+        });
+        let settledJob: Promise<string | null> | null = null;
+        const shown = ctx.ownerAsk
+          ? await ctx.ownerAsk.askInBackground(
+              input.pmThreadId,
+              { source: "pm", kind: "decision", question, detail },
+              (answer) => {
+                settledJob = (async (): Promise<string | null> => {
+                  if (answer.outcome !== "answered") {
+                    await ctx.ownerAsk.sendToThread(input.pmThreadId, ctx.ownerAsk.answerMessage(question, answer));
+                    return null;
+                  }
+                  const parsed = parseMissingInputsAnswer(missingFields, answer.text || answer.line);
+                  const mergedInputs: Record<string, unknown> = {
+                    ...extractedInputs,
+                    ...parsed,
+                    intakeTemplate: chosen.id,
+                    intakeConfidence,
+                  };
+                  const stillMissing = missingFields.filter((field) => mergedInputs[field.name] === undefined);
+                  if (stillMissing.length > 0) {
+                    await ctx.ownerAsk.sendToThread(
+                      input.pmThreadId,
+                      `Lane Pilot: template "${chosen.id}" still needs required inputs (${stillMissing.map((field) => field.name).join(", ")}), so it was not started.`,
+                    );
+                    return null;
+                  }
+                  const wfRunId = await startSelected(chosen, baseResolve, mergedInputs);
+                  if (wfRunId) {
+                    const key = KEY(input.pmThreadId);
+                    const existing = (await ctx.bb.storage.kv.get(key)) as IntakeRecord | null;
+                    if (existing && existing.requestId === input.requestId && !existing.wfRunId) {
+                      await ctx.bb.storage.kv.set(key, {
+                        ...existing,
+                        wfRunId,
+                        intakeTemplate: chosen.id,
+                        intakeConfidence,
+                      });
+                    }
+                  }
+                  return wfRunId;
+                })();
+                return settledJob.then(() => undefined);
+              },
+            )
+          : false;
+        if (settledJob) return await settledJob;
+        if (!shown) {
+          await bestEffort(ctx.log, "intake missing inputs notice", sendServiceMessage(ctx.bb as never, { threadId: input.pmThreadId, text: `${question}\n${detail}` }), undefined);
+        }
+        return null;
+      }
+
+      const runInputs = chosen
+        ? { ...extractedInputs, intakeTemplate: chosen.id, intakeConfidence }
+        : { goal: input.text.slice(0, 8000), intakeTemplate: null, intakeConfidence };
+      return startSelected(workflow, baseResolve, runInputs);
     },
     status: (wfRunId: string) => services.workflowEngine.get(wfRunId)?.status ?? null,
     startProcess: async (input) => (await services.architect.startOrder(input)).threadId,
     findPublished: async (input) => {
-      const library = services.workflowLibrary;
-      const fallbackStore = async () => await Promise.resolve(services.workflowCatalog.store());
-      const store = library && typeof library.loadStore === "function"
-        ? await library.loadStore(input.projectId).then((loaded) => loaded.store, fallbackStore)
-        : await fallbackStore();
+      const store = await loadStore(input.projectId);
+      if (!store) return null;
       const routed = await routeIntent({ intent: input.text, workflows: store.list().map((item) => item.workflow), model: null });
       if (routed.decision !== "route" || !routed.workflowId || routed.confidence < PUBLISHED_HINT_CONFIDENCE) return null;
       const name = routed.candidates.find((card) => card.id === routed.workflowId)?.name ?? routed.workflowId;
@@ -129,6 +263,7 @@ export function createPhaseIntake(ctx: Deps, train?: IntakeTrain): PhaseIntake {
     // A run the owner stopped or paused starts nothing on the machine's own: the PM reads the message instead.
     const stopped = await isRunHalted(bb.storage.kv as never, run.id) || await isRunPaused(bb.storage.kv as never, run.id);
     let heavyRunId: string | undefined;
+    let intakeTemplateMeta: { intakeTemplate?: string | null; intakeConfidence?: number } = {};
     // №6: a service request is answered from the LP store, the heavy PM stays asleep.
     if (kind === "service" && !stopped) {
       const answered = await serviceAnswer({ run, threadId, text, service: classified.service ?? null });
@@ -142,13 +277,26 @@ export function createPhaseIntake(ctx: Deps, train?: IntakeTrain): PhaseIntake {
     if (kind === "heavy") {
       if (!stopped && train) {
         heavyRunId = (await train.start({ projectId: run.project_id, pmThreadId: threadId, runId: run.id, requestId, text, kind: "heavy" })) ?? undefined;
-        if (heavyRunId) ctx.log(`phase intake: ${threadId} — the owner's request is heavy (${by}); full-lifecycle ${heavyRunId} started`);
-        else await heavyUnavailable(threadId, "the full-lifecycle graph did not start");
+        if (heavyRunId) {
+          const startedRun = wfRunRow(db, heavyRunId);
+          const startedInputs = startedRun ? parseJsonOr<Record<string, unknown>>(startedRun.inputs_json, {}) : {};
+          if ("intakeTemplate" in startedInputs) {
+            intakeTemplateMeta = {
+              intakeTemplate: typeof startedInputs.intakeTemplate === "string" || startedInputs.intakeTemplate === null ? startedInputs.intakeTemplate : undefined,
+              ...(typeof startedInputs.intakeConfidence === "number" ? { intakeConfidence: startedInputs.intakeConfidence } : {}),
+            };
+          }
+          ctx.log(`phase intake: ${threadId} — the owner's request is heavy (${by}); ${startedRun?.workflow_id ?? "full-lifecycle"} ${heavyRunId} started`);
+        } else {
+          const ownerAsk = (ctx as Partial<Pick<ServerCore, "ownerAsk">>).ownerAsk;
+          const waitingForInputs = ownerAsk ? await ownerAsk.pending(threadId) : false;
+          if (!waitingForInputs) await heavyUnavailable(threadId, "the full-lifecycle graph did not start");
+        }
       } else if (!stopped) {
         await heavyUnavailable(threadId, "the full-lifecycle graph is unavailable");
       }
     }
-    const record: IntakeRecord = { requestId, kind, by, phaseId: null, at: Date.now(), ...(heavyRunId ? { wfRunId: heavyRunId } : {}) };
+    const record: IntakeRecord = { requestId, kind, by, phaseId: null, at: Date.now(), ...(heavyRunId ? { wfRunId: heavyRunId } : {}), ...intakeTemplateMeta };
     await bb.storage.kv.set(KEY(threadId), record);
     return record;
   }

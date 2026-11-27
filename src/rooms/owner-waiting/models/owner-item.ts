@@ -33,9 +33,15 @@ export type OwnerItem = {
   wake: boolean;
   /** «now»: one of the NOW_CAP rows the owner sees first and the digest may push; «later» waits folded until a «now» row is settled (harness batch 2026-11-02). */
   tier: "now" | "later";
+  /** True when deferred past today's decision budget to wait for the weekly review desk. */
+  desk?: true;
   evidence: OwnerEvidence[];
   actions: OwnerAction[];
 };
+
+export type OwnerWaitingRow = OwnerItem;
+
+export const defaultWakeForReason = (reason: OwnerReason): boolean => reason === "red";
 
 export type OwnerWaiting = {
   generatedAt: number;
@@ -115,7 +121,7 @@ export type PostOwnerItem = Omit<OwnerItem, "since" | "wake" | "tier" | "evidenc
 
 export type OwnerItemCreatedEvent = { key: string; projectId: string | null; kind: string; wake: boolean; now: number };
 
-export type OpenOwnerItemFilter = { key?: string; source?: string; kind?: string; projectId?: string; since?: number };
+export type OpenOwnerItemFilter = { key?: string; source?: string; kind?: string; projectId?: string; since?: number; limit?: number };
 
 /** How a person-decision row ended (SMA tr_approval_row): open is «awaiting»; closed_by is '<outcome>:<by>' with outcome approved, returned, closed or stopped. */
 export function ownerItemOutcome(row: { state: string; closed_by: string | null }): "awaiting" | "approved" | "returned" | "closed" | "stopped" {

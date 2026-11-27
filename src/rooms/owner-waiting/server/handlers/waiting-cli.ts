@@ -8,7 +8,7 @@ export const WAITING_USAGE = [
   "bb lane-pilot waiting [--json]                  everything only the owner can decide: what, why it is his, evidence, the exact action; plus what went red overnight and what was accepted",
   "bb lane-pilot waiting digest [--json]           the Telegram message for NEW wake items now (empty in quiet hours, when disabled or when nothing is new); sends nothing",
   "bb lane-pilot waiting ack <key> [key …]         the keys of a digest went out: they never push again",
-  "bb lane-pilot waiting config [enabled=on|off] [quiet=23:00-08:00] [timezone=Europe/Madrid]   show or set the push settings",
+  "bb lane-pilot waiting config [enabled=on|off] [quiet=23:00-08:00] [timezone=Europe/Madrid] [decision_cap=5]   show or set the push settings (also: config decision_cap <n>)",
   "bb lane-pilot waiting post '<json>'             (night loop) open a waiting: {key, source, kind, what, why, projectId?, wake?, evidence?, actions?}",
   "bb lane-pilot waiting close <key> --by <text>   (night loop) the waiting is settled",
 ].join("\n");
@@ -70,11 +70,23 @@ export function runWaitingCli(db: Db, argv: string[], now: number = Date.now(), 
       return { exitCode: 0, stdout: json({ acknowledged: ackDigest(db, rest, now) }) };
     }
     if (op === "config") {
-      const patch = Object.fromEntries(rest.map((pair) => {
-        const at = pair.indexOf("=");
-        if (at < 1) throw new Error(`«${pair}» is not key=value (${PUSH_CONFIG_KEYS.join(", ")})`);
-        return [pair.slice(0, at), pair.slice(at + 1)];
-      }));
+      const patch: Record<string, string> = {};
+      for (let i = 0; i < rest.length; i += 1) {
+        const arg = rest[i]!;
+        const at = arg.indexOf("=");
+        if (at >= 1) {
+          patch[arg.slice(0, at)] = arg.slice(at + 1);
+          continue;
+        }
+        if ((PUSH_CONFIG_KEYS as readonly string[]).includes(arg)) {
+          const next = rest[i + 1];
+          if (next === undefined || next.includes("=")) throw new Error(`${arg} needs a value`);
+          patch[arg] = next;
+          i += 1;
+          continue;
+        }
+        throw new Error(`«${arg}» is not key=value (${PUSH_CONFIG_KEYS.join(", ")})`);
+      }
       return { exitCode: 0, stdout: json(rest.length ? savePushConfig(db, patch, now) : loadPushConfig(db)) };
     }
     if (op === "post") {

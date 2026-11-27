@@ -29,6 +29,7 @@ function seeded() {
 describe("the owner's waiting list", () => {
   it("ranks by the cost of delay and keeps at most five rows «now»; the digest pushes only those; who settled the week's rows is counted (harness batch 2026-11-02)", () => {
     const db = openDatabase(createFakePluginHost({ pluginId: "lane-pilot" }).bb);
+    savePushConfig(db, { decision_cap: "10" }, NOW);
     const post = (key: string, kind: string, at: number, wake = true) => postOwnerItem(db, { key, source: "night", kind, reason: kind === "canary_red" ? "red" : kind === "wall" ? "blocked" : "decision", what: `${key} what`, why: `${key}: why it is the owner's, long enough`, wake }, at);
     for (let i = 0; i < 6; i++) post(`d${i}`, "decision", NOW - (6 - i) * HOUR);
     post("wall1", "wall", NOW);
@@ -49,7 +50,7 @@ describe("the owner's waiting list", () => {
 
   it("holds the night loop's rows in a stable shape: posted once per key, shown, closed", () => {
     const db = seeded();
-    const row = { key: "night:proposal:graph-1", source: "night", kind: "proposal", reason: "decision" as const, what: "Add a stage between plan and writer", why: "Any graph change is the owner's (policy owner_only)",
+    const row = { key: "night:proposal:graph-1", source: "night", kind: "proposal", reason: "decision" as const, wake: true, what: "Add a stage between plan and writer", why: "Any graph change is the owner's (policy owner_only)",
       evidence: [{ kind: "file" as const, ref: "policy/night-policy.json" }], actions: [{ id: "yes", label: "Принять", cli: "bb lane-pilot night apply graph-1" }] };
     expect(postOwnerItem(db, row, NOW).created).toBe(true);
     expect(postOwnerItem(db, row, NOW + HOUR).created).toBe(false);
@@ -82,8 +83,8 @@ describe("the Telegram digest", () => {
   it("pushes only new wake items, once, and the daily report stays the reminder", () => {
     const db = seeded();
     expect(planDigest(db, NOW)).toMatchObject({ send: false, reason: "nothing_new" });
-    postOwnerItem(db, { key: "night:a", source: "night", kind: "proposal", reason: "decision", what: "First", why: "posted by a caller", evidence: [], actions: [] }, NOW);
-    postOwnerItem(db, { key: "night:b", source: "night", kind: "proposal", reason: "decision", what: "Second", why: "posted by a caller", evidence: [], actions: [] }, NOW);
+    postOwnerItem(db, { key: "night:a", source: "night", kind: "proposal", reason: "decision", wake: true, what: "First", why: "posted by a caller", evidence: [], actions: [] }, NOW);
+    postOwnerItem(db, { key: "night:b", source: "night", kind: "proposal", reason: "decision", wake: true, what: "Second", why: "posted by a caller", evidence: [], actions: [] }, NOW);
     const first = planDigest(db, NOW);
     expect(first).toMatchObject({ send: true, reason: null, keys: ["night:a", "night:b"] });
     expect(first.text).toContain("новых — 2");
@@ -93,13 +94,13 @@ describe("the Telegram digest", () => {
     expect(ackDigest(db, first.keys, NOW)).toBe(2);
     expect(ackDigest(db, first.keys, NOW)).toBe(0);
     expect(planDigest(db, NOW + HOUR)).toMatchObject({ send: false, reason: "nothing_new" });
-    postOwnerItem(db, { key: "night:wall:1", source: "wall", kind: "wall", reason: "blocked", what: "Stuck: three tasks fail the same check", why: "The loop stopped", evidence: [{ kind: "text", ref: "x" }], actions: [{ id: "a", label: "a", cli: "bb lane-pilot walls" }] }, NOW + HOUR);
+    postOwnerItem(db, { key: "night:wall:1", source: "wall", kind: "wall", reason: "blocked", wake: true, what: "Stuck: three tasks fail the same check", why: "The loop stopped", evidence: [{ kind: "text", ref: "x" }], actions: [{ id: "a", label: "a", cli: "bb lane-pilot walls" }] }, NOW + HOUR);
     expect(planDigest(db, NOW + 2 * HOUR).keys).toEqual(["night:wall:1"]);
   });
 
   it("is silent in quiet hours (23:00-08:00 Europe/Madrid) and sends what piled up after", () => {
     const db = seeded();
-    postOwnerItem(db, { key: "night:q", source: "night", kind: "proposal", reason: "decision", what: "q", why: "posted by a caller", evidence: [], actions: [] }, NOW);
+    postOwnerItem(db, { key: "night:q", source: "night", kind: "proposal", reason: "decision", wake: true, what: "q", why: "posted by a caller", evidence: [], actions: [] }, NOW);
     const madrid = (hour: number, minute = 0, month = 9, day = 22) => Date.UTC(2026, month, day, hour - (month === 9 ? 2 : 1), minute);
     expect(planDigest(db, madrid(23, 30))).toMatchObject({ send: false, reason: "quiet_hours" });
     expect(planDigest(db, madrid(3))).toMatchObject({ send: false, reason: "quiet_hours" });
@@ -115,7 +116,8 @@ describe("the Telegram digest", () => {
 
   it("pushes only the «now» rows (five at most); the rest wait their turn on the screen and are not even counted in the message", () => {
     const db = seeded();
-    for (let i = 0; i < 9; i++) postOwnerItem(db, { key: `night:p${i}`, source: "night", kind: "proposal", reason: "decision", what: `proposal ${i}`, why: "graph change", evidence: [], actions: [] }, NOW);
+    savePushConfig(db, { decision_cap: "10" }, NOW);
+    for (let i = 0; i < 9; i++) postOwnerItem(db, { key: `night:p${i}`, source: "night", kind: "proposal", reason: "decision", wake: true, what: `proposal ${i}`, why: "graph change", evidence: [], actions: [] }, NOW);
     const digest = planDigest(db, NOW);
     expect(digest.keys).toHaveLength(5);
     expect(digest).toMatchObject({ shown: 5, more: 0 });
@@ -128,8 +130,8 @@ describe("the Telegram digest", () => {
 
   it("has settings: on/off, quiet hours and time zone, refused when wrong", () => {
     const db = seeded();
-    expect(loadPushConfig(db)).toEqual({ enabled: true, quiet: "23:00-08:00", timezone: "Europe/Madrid", bell: true });
-    expect(savePushConfig(db, { quiet: "22:00-07:30", timezone: "Europe/Moscow" }, NOW)).toEqual({ enabled: true, quiet: "22:00-07:30", timezone: "Europe/Moscow", bell: true });
+    expect(loadPushConfig(db)).toEqual({ enabled: true, quiet: "23:00-08:00", timezone: "Europe/Madrid", bell: true, decisionCap: 5 });
+    expect(savePushConfig(db, { quiet: "22:00-07:30", timezone: "Europe/Moscow" }, NOW)).toEqual({ enabled: true, quiet: "22:00-07:30", timezone: "Europe/Moscow", bell: true, decisionCap: 5 });
     expect(savePushConfig(db, { bell: "off" }, NOW).bell).toBe(false);
     expect(savePushConfig(db, { bell: "on" }, NOW).bell).toBe(true);
     expect(() => savePushConfig(db, { quiet: "25:00-08:00" })).toThrow(/HH:MM-HH:MM/);
@@ -144,14 +146,14 @@ describe("the Telegram digest", () => {
 describe("bb lane-pilot waiting", () => {
   it("prints the list with action lines, and digest / ack / config / post / close work from the command line", () => {
     const db = seeded();
-    postOwnerItem(db, { key: "night:i1", source: "night", kind: "decision", reason: "decision", what: "Prefer short answers", why: "posted so waiting prints an item", evidence: [], actions: [] }, NOW);
+    postOwnerItem(db, { key: "night:i1", source: "night", kind: "decision", reason: "decision", wake: true, what: "Prefer short answers", why: "posted so waiting prints an item", evidence: [], actions: [] }, NOW);
     const list = runWaitingCli(db, [], NOW);
     expect(list.exitCode).toBe(0);
     expect(list.stdout).toContain("Ждут владельца: 1. Сейчас: 1, остальное подождёт (помечено «потом»). Ничего не блокируется.");
     expect(list.stdout).toContain("Prefer short answers");
     const initDigest = JSON.parse(runWaitingCli(db, ["digest", "--json"], NOW).stdout!);
     ackDigest(db, initDigest.keys, NOW);
-    postOwnerItem(db, { key: "night:x", source: "night", kind: "proposal", reason: "decision", what: "x", why: "posted by a caller", evidence: [], actions: [] }, NOW);
+    postOwnerItem(db, { key: "night:x", source: "night", kind: "proposal", reason: "decision", wake: true, what: "x", why: "posted by a caller", evidence: [], actions: [] }, NOW);
     const digest = JSON.parse(runWaitingCli(db, ["digest", "--json"], NOW).stdout!);
     expect(digest.keys).toHaveLength(1);
     expect(JSON.parse(runWaitingCli(db, ["ack", ...digest.keys], NOW).stdout!)).toEqual({ acknowledged: 1 });

@@ -4,6 +4,7 @@ import { baselineSettings } from "./baseline/settings";
 import { critiqueSettings } from "./critique/settings";
 import { docsSettings } from "./docs/settings";
 import { errandsSettings } from "./errands/settings";
+import { evolveSettings } from "./evolve/settings";
 import { leadSettings } from "./lead/settings";
 import { memorySettings } from "./memory/settings";
 import { moneySettings } from "./money/settings";
@@ -13,6 +14,7 @@ import { ownerWaitingSettings } from "./owner-waiting/settings";
 import { platformSettings } from "./platform/settings";
 import { qaSettings } from "./qa/settings";
 import { relaySettings } from "./relay/settings";
+import { reportsSettings } from "./reports/settings";
 import { runsSettings } from "./runs/settings";
 import { scheduleSettings, scheduleKeyFamilies } from "./schedule/settings";
 import { secretsSettings } from "./secrets/settings";
@@ -35,6 +37,7 @@ export const ROOM_SETTINGS_PARTS: readonly RoomSettingsPart[] = [
   { room: "critique", settings: critiqueSettings },
   { room: "docs", settings: docsSettings },
   { room: "errands", settings: errandsSettings },
+  { room: "evolve", settings: evolveSettings },
   { room: "lead", settings: leadSettings },
   { room: "memory", settings: memorySettings },
   { room: "money", settings: moneySettings },
@@ -44,6 +47,7 @@ export const ROOM_SETTINGS_PARTS: readonly RoomSettingsPart[] = [
   { room: "platform", settings: platformSettings },
   { room: "qa", settings: qaSettings },
   { room: "relay", settings: relaySettings },
+  { room: "reports", settings: reportsSettings },
   { room: "runs", settings: runsSettings },
   { room: "schedule", settings: scheduleSettings, keyFamilies: scheduleKeyFamilies },
   { room: "secrets", settings: secretsSettings },

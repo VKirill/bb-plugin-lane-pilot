@@ -1,11 +1,16 @@
 import { randomUUID } from "node:crypto";
+import { employeeProposeOnly } from "@lane-pilot/contracts";
 import { sha256Hex } from "@lane-pilot/kit";
 import type { GraphNode, StepContext } from "@lane-pilot/workflow-engine";
 import type { ChainRuntime, ServerCore } from "../../../contracts/server";
 import { postOwnerItem } from "../../../owner-waiting";
-import { renderArtifactsManifestJson, upsertProjectArtifact } from "../../../storage";
+import { readLoopMode, renderArtifactsManifestJson, upsertProjectArtifact } from "../../../storage";
 import { canonicalJson, normalizeOrdersInput } from "../../models/action-order";
+import { recomputeAutonomy } from "../repositories/sp-autonomy";
 import { acquireLock, stageIntent, upsertCohort } from "../repositories/sp-locks-intents";
+import { linkIntent, resolveOrderHypothesis, settleHypotheses } from "../repositories/sp-hypotheses";
+import { collectScriptBoundMeasurements, recordMeasurement } from "../repositories/sp-outcomes";
+import { retireContradictedRules } from "../repositories/sp-rules";
 import { recordQuestionAnswer } from "../repositories/sp-questions";
 import { advanceCursor, completeTick, recordSpecialistLedgerUsage } from "../repositories/sp-store";
 
@@ -49,12 +54,23 @@ export function registerSpCommitMemoryExecutor(
     const domain = asDomain(params.domain || (role === "seo-specialist" ? "seo" : "marketing"));
     const orders = normalizeOrdersInput(params.orders, domain);
     const ownerAnswer = asStr(params.ownerAnswer);
-    const forceHold = phase === "hold" || ownerAnswer === "hold" || ownerAnswer === "decline" || ownerAnswer === "abort";
+    const ownerDecision: "approve" | "decline" | undefined =
+      ownerAnswer === "approve" ? "approve" : ownerAnswer === "decline" ? "decline" : undefined;
+    const ownerRefusalReason = asStr(params.ownerDeclineReason) || undefined;
+    const ownerRefusalText = asStr(params.ownerAnswerText) || undefined;
+    const modelNeedsOwnerGo = Array.isArray(params.modelNeedsOwnerGo)
+      ? params.modelNeedsOwnerGo.some((v) => v === true || v === "true")
+      : typeof params.modelNeedsOwnerGo === "boolean"
+        ? params.modelNeedsOwnerGo
+        : undefined;
+    const employeeMode = readLoopMode(db, "employee", rt.projectId);
+    const forceHold = employeeProposeOnly(employeeMode) || phase === "hold" || ownerAnswer === "hold" || ownerAnswer === "timeout" || ownerAnswer === "abort";
     const now = Date.now();
 
     let stagedCount = 0;
     let heldCount = 0;
     let droppedCount = 0;
+    let ownerCardsCount = 0;
     const droppedReasons: string[] = [];
     const journalIds: string[] = [];
 
@@ -65,6 +81,7 @@ export function registerSpCommitMemoryExecutor(
         domain,
         sourceGraph: c.workflow.id,
         tickId: asStr(params.tickId) || null,
+        log: ctx.bb.log,
         order: {
           kind: "sub_graph",
           title: `Auto-repair outage via ${repairGraph}`,
@@ -81,6 +98,11 @@ export function registerSpCommitMemoryExecutor(
       journalIds.push(res.intentId);
     } else {
       for (const ord of orders) {
+        const resolvedHypId = resolveOrderHypothesis(
+          db,
+          { projectId: rt.projectId, domain, order: ord, nowMs: now },
+          ctx.bb.log,
+        );
         const res = stageIntent(db, {
           projectId: rt.projectId,
           domain,
@@ -89,11 +111,32 @@ export function registerSpCommitMemoryExecutor(
           slotScope: c.runId,
           order: ord,
           forceHold,
+          ...(modelNeedsOwnerGo !== undefined ? { modelNeedsOwnerGo: modelNeedsOwnerGo || ord.requires_owner_go } : {}),
+          ...(ownerDecision ? { ownerDecision } : {}),
+          ...(ownerRefusalReason ? { ownerRefusalReason } : {}),
+          ...(ownerRefusalText ? { ownerRefusalText } : {}),
+          log: ctx.bb.log,
         });
         journalIds.push(res.intentId);
-        if (res.status === "staged") stagedCount++;
-        else if (res.status === "held" || res.status === "queued_conflict") heldCount++;
-        else {
+        if (res.status === "staged") {
+          stagedCount++;
+          if (resolvedHypId) linkIntent(db, res.intentId, resolvedHypId, ctx.bb.log);
+        } else if (res.status === "held" || res.status === "queued_conflict") {
+          heldCount++;
+          if (res.status === "held" && res.dropReason === "owner_go_required" && rt.projectId) {
+            postOwnerItem(db, {
+              key: `sp:intent:${res.intentId}`,
+              source: "specialist",
+              kind: "question",
+              reason: "decision",
+              projectId: rt.projectId,
+              what: `Требуется подтверждение владельца (${domain}, ${res.actionClass}, класс ${res.tier}): ${ord.title}`,
+              why: `Кодовая отсечка удержала приказ до решения владельца (${c.workflow.id})`,
+              wake: res.tier === "L" || res.tier === "S",
+            });
+            ownerCardsCount += 1;
+          }
+        } else {
           droppedCount++;
           if (res.dropReason) droppedReasons.push(res.dropReason);
         }
@@ -221,7 +264,6 @@ export function registerSpCommitMemoryExecutor(
       }
     }
 
-    let ownerCardsCount = 0;
     const rawOwnerQs = parseJsonSafe<unknown>(params.ownerQuestions, []);
     const ownerQsList = Array.isArray(rawOwnerQs) ? rawOwnerQs : [];
     for (let idx = 0; idx < ownerQsList.length; idx++) {
@@ -241,6 +283,41 @@ export function registerSpCommitMemoryExecutor(
       ownerCardsCount += 1;
     }
 
+    let measurementsRecorded = 0;
+    let measurementsRefused = 0;
+    if (phase === "receipt" && node.params?.measurements !== undefined && node.params?.measurements !== null) {
+      const extracted = collectScriptBoundMeasurements(c, node.params.measurements, ctx.bb.log);
+      measurementsRefused += extracted.refused;
+      for (const item of extracted.items) {
+        const intentId = typeof item.intent_id === "string" ? item.intent_id.trim() : "";
+        if (!intentId) {
+          measurementsRefused += 1;
+          ctx.bb.log.warn("intent measurement refused intent=<missing>: missing intent_id");
+          continue;
+        }
+        const res = recordMeasurement(
+          db,
+          {
+            intentId,
+            measured: item.measured as number,
+            source: typeof item.source === "string" ? item.source : "",
+            now,
+          },
+          ctx.bb.log,
+        );
+        if (res.ok) measurementsRecorded += 1;
+        else measurementsRefused += 1;
+      }
+    }
+    if (phase === "receipt") {
+      settleHypotheses(db, { projectId: rt.projectId, domain, nowMs: now }, ctx.bb.log);
+      retireContradictedRules(db, { projectId: rt.projectId, domain, nowMs: now }, ctx.bb.log);
+    }
+
+    if (phase === "receipt" && rt.projectId) {
+      recomputeAutonomy(db, { projectId: rt.projectId, domain, now }, ctx.bb.log);
+    }
+
     if (phase === "receipt" && params.tickId) {
       completeTick(db, { projectId: rt.projectId, domain, ...(typeof params.scopeId === "string" && params.scopeId ? { scopeId: params.scopeId } : {}), tickId: asStr(params.tickId), markSlotCompleted: true, nowMs: now });
     }
@@ -253,7 +330,9 @@ export function registerSpCommitMemoryExecutor(
         : orders.flatMap((o) => (o.forecast ? [o.forecast] : []));
 
     const commitId = `spc_${randomUUID()}`;
+    const caseId = asStr(params.caseId) || `${rt.projectId}:${domain}`;
     const summaryObj: Row = {
+      case_id: caseId,
       workflow: c.workflow.id,
       phase,
       stagedCount,
@@ -360,6 +439,7 @@ export function registerSpCommitMemoryExecutor(
     ).c;
 
     const defaults: Row = {
+      case_id: caseId,
       held: heldCount,
       intents: stagedCount,
       dropped: droppedCount,
@@ -375,6 +455,8 @@ export function registerSpCommitMemoryExecutor(
       report_path: reportRel,
       dispatched_count: dispatchedSoFar,
       swept_questions: sweptQuestions,
+      measurements_recorded: measurementsRecorded,
+      measurements_refused: measurementsRefused,
       summary: `${c.workflow.id}:${phase} staged=${stagedCount} held=${heldCount}`,
     };
 

@@ -20,6 +20,7 @@ export type {
   OwnerItem,
   OwnerItemCreatedEvent,
   OwnerWaiting,
+  OwnerWaitingRow,
   Overnight,
   PostOwnerItem,
 } from "./models/owner-item";
@@ -42,5 +43,6 @@ export {
   ownerWaitingCounts,
   postOwnerItem,
   sweepOwnerItems,
+  type CollectOwnerWaitingOptions,
 } from "./server/services/owner-items-service";
 export { lanePilotProjectOrNotice } from "./server/services/lp-project-service";

@@ -1,0 +1,95 @@
+{
+  "id": "lp.review-desk",
+  "startedBy": "review-desk",
+  "internal": true,
+  "name": {
+    "en": "Weekly Owner Review Desk",
+    "ru": "Еженедельный разбор владельца"
+  },
+  "description": {
+    "en": "Scheduled service workflow that composes the weekly owner review desk with pre-selected defaults across all learning loops, posts one decision item, and sends a compact summary to Telegram.",
+    "ru": "Регулярный сервисный граф, который раз в неделю собирает решения всех циклов с вариантами по умолчанию, создаёт карточку разбора и отправляет сводку в Telegram."
+  },
+  "category": "service",
+  "status": "published",
+  "version": 1,
+  "tags": [
+    "schedule",
+    "telegram",
+    "reports",
+    "review-desk"
+  ],
+  "triggers": [
+    {
+      "type": "manual"
+    }
+  ],
+  "scope": {
+    "level": "builtin"
+  },
+  "inputs": {},
+  "outputs": {
+    "sent": "boolean",
+    "reason": "string",
+    "week": "string",
+    "items": "int"
+  },
+  "goal_audit": "exempt",
+  "budget": {
+    "max_minutes": 5,
+    "max_usd": 0.01
+  },
+  "guards": {
+    "maxSteps": 4,
+    "maxFanOut": 1
+  },
+  "nodes": [
+    {
+      "id": "desk",
+      "type": "action",
+      "label": "Compose and send weekly review desk",
+      "uses": "lp.review_desk",
+      "timeoutSec": 120,
+      "output": [
+        {
+          "name": "sent",
+          "type": "boolean"
+        },
+        {
+          "name": "reason",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "week",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "items",
+          "type": "int",
+          "required": false
+        }
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "from": "start",
+      "to": "desk"
+    },
+    {
+      "from": "desk",
+      "to": "end",
+      "with": {
+        "sent": "desk.sent",
+        "reason": "desk.reason",
+        "week": "desk.week",
+        "items": "desk.items"
+      }
+    }
+  ],
+  "not_for": [
+    "the daily 9-line status digest is lp.daily-report"
+  ]
+}

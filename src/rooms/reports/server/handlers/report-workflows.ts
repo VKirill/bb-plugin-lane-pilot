@@ -3,8 +3,9 @@ import type { ServerCore } from "../../../contracts/server";
 import { loadPushConfig } from "../../../owner-waiting/server";
 import type { DigestLike } from "../../models/owner-push";
 import type { TelegramSend } from "../../models/telegram";
-import { runDailyReport } from "../services/daily-report";
+import { runDailyReport, type PathCandidatesReader } from "../services/daily-report";
 import { runOwnerPush } from "../services/owner-push";
+import { runReviewDesk, type ComposeReviewDeskDeps } from "../services/review-desk";
 import { createTelegramSender } from "../services/telegram";
 
 export type ReportsDeps = {
@@ -13,11 +14,13 @@ export type ReportsDeps = {
   ack: (keys: string[]) => Promise<unknown> | unknown;
   send?: TelegramSend;
   now?: () => number;
+  pathCandidates?: PathCandidatesReader;
+  reviewDesk?: ComposeReviewDeskDeps;
 };
 
 /**
- * Registers the calendar-driven report step executors (`lp.owner_push` and `lp.daily_report`) on the workflow engine.
- * Scheduling lives in `SYSTEM_SCHEDULES` (`lp.owner-push` and `lp.daily-report`) so the owner sees and can pause them.
+ * Registers the calendar-driven report step executors (`lp.owner_push`, `lp.daily_report`, and `lp.review_desk`) on the workflow engine.
+ * Scheduling lives in `SYSTEM_SCHEDULES` so the owner sees and can pause them.
  */
 export function mountReports(ctx: ServerCore, deps: ReportsDeps): void {
   if (!deps.engine) return;
@@ -49,8 +52,24 @@ export function mountReports(ctx: ServerCore, deps: ReportsDeps): void {
         force: Boolean(step.inputs?.force),
         send,
         log: ctx.log,
+        pathCandidates: deps.pathCandidates,
       });
       return { output };
+    },
+  });
+
+  deps.engine.register("lp.review_desk", {
+    reentrant: true,
+    run: async () => {
+      if (ctx.isDisposed()) return { output: { sent: false, reason: "disposed", week: "", items: 0 } };
+      const output = await runReviewDesk({
+        db: ctx.db,
+        now: nowFn(),
+        send,
+        log: ctx.log,
+        composeDeps: deps.reviewDesk,
+      });
+      return { output: { sent: output.sent, reason: output.reason, week: output.week, items: output.items } };
     },
   });
 }

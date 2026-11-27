@@ -8,6 +8,7 @@ import type { MemoryStageApi } from "../../../memory/server";
 export type OnAttemptFinished = (ctx: ServerCore, subscriber: (event: { scope: string; status: string; projectId: string; runId: string; taskId: string; pmThreadId: string }) => void | Promise<void>, name?: string) => void;
 import { AFTER_ACCEPT } from "../../../contracts";
 import { builtinWorkflow } from "../../builtin";
+import { workflowStartRefusal } from "./workflow-triggers";
 
 /** The fields of the services bag this file reads, typed by the rooms that own them. */
 interface Services {
@@ -96,9 +97,14 @@ export function mountWorkflowAttemptFinished(ctx: ServerCore, services: { onAtte
   }, "workflow:after-accept");
 }
 
-export function createAfterAcceptStarter(engine: WorkflowEngine, ctx: ServerCore) {
+export function createAfterAcceptStarter(engine: WorkflowEngine, ctx: ServerCore, isBoardPaused?: () => boolean) {
   return function startAfterAcceptance(projectId: string, runId: string, taskId: string, pmThreadId: string): void {
     try {
+      const blocked = workflowStartRefusal({ db: ctx.db, workflowId: AFTER_ACCEPT, source: "event", projectId, boardPaused: isBoardPaused?.() });
+      if (blocked) {
+        ctx.bb.log.info(`wf.start refused wf=${AFTER_ACCEPT} source=event reason=${blocked}`);
+        return;
+      }
       const workflow = builtinWorkflow(AFTER_ACCEPT);
       if (!workflow) throw new Error(`built-in workflow ${AFTER_ACCEPT} is not loaded`);
       const started = engine.start({ workflow, inputs: { run_id: runId, task_id: taskId, pm_thread_id: pmThreadId }, key: afterAcceptKey(runId, taskId), link: { projectId, runId, taskId } });

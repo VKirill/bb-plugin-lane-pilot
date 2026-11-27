@@ -1,5 +1,5 @@
-import type { PrototypeConfig } from "@lane-pilot/contracts";
-import { GLOBAL_SETTINGS_PROJECT_ID } from "@lane-pilot/settings-catalog";
+import { parseLoopModes, type LoopMode, type LoopModes, type LoopName, type PrototypeConfig } from "@lane-pilot/contracts";
+import { GLOBAL_SETTINGS_PROJECT_ID, SETTING_LOOPS_MODE } from "@lane-pilot/settings-catalog";
 import type { SettingValidationError } from "../setting-validation";
 import { requireSettingValidator, type LanePilotDatabase } from "./database";
 import { noteProtectionDisarm, storedProtectionValue } from "./protections-store";
@@ -482,4 +482,14 @@ export function otherProjectCheckouts(db: LanePilotDatabase, projectId: string):
 export function listDistinctSettingKeys(db: LanePilotDatabase): string[] {
   return (db.prepare("SELECT DISTINCT key FROM lane_pilot_project_settings ORDER BY key").all() as Array<{ key: string }>)
     .map((row) => row.key);
+}
+
+/** Reads `loops.mode` merged onto defaults for the given project (or global scope). */
+export function readLoopModes(db: LanePilotDatabase, projectId?: string | null): LoopModes {
+  return parseLoopModes(loadProjectSettings(db, projectId || GLOBAL_SETTINGS_PROJECT_ID)[SETTING_LOOPS_MODE]);
+}
+
+/** Reads one loop's mode (`on` | `report` | `off`) from `loops.mode`. */
+export function readLoopMode(db: LanePilotDatabase, loop: LoopName, projectId?: string | null): LoopMode {
+  return readLoopModes(db, projectId)[loop];
 }

@@ -11,6 +11,7 @@ import {
   mountOwnerBell,
   OWNER_BELL_DAILY_CAP,
   quietHoursEnd,
+  savePushConfig,
 } from "../../src/rooms/owner-waiting/server";
 import { createWorkflowTriggers } from "../../src/rooms/workflow/server/services/workflow-triggers";
 import type { Services } from "../../src/rooms/services";
@@ -164,6 +165,7 @@ describe("owner bell event graph (lp.owner-bell)", () => {
   it("enforces OWNER_BELL_DAILY_CAP = 5 and folds overflow items into one digest at the next digest window", async () => {
     const start = Date.parse("2026-11-24T09:30:00.000Z"); // 10:30 Europe/Madrid
     const h = makeHarness(start);
+    savePushConfig(h.db, { decision_cap: "20" }, start);
     const { engine, unsub } = h.boot();
 
     for (let i = 1; i <= OWNER_BELL_DAILY_CAP; i += 1) {

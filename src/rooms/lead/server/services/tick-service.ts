@@ -7,14 +7,16 @@ import { taskMemoryContext } from "../../../memory/server";
 import { collectOwnerWaiting, isSandboxProject, loadPushConfig } from "../../../owner-waiting";
 import type { WorkflowEngineApi } from "../../../platform/server";
 import { specialistSnapshot } from "../../../specialist/server";
-import { countAcceptedForProject, countProjectTasksSince, errandEpisodeColumns, listErrandEpisodeFacts, listErrandEpisodeTraces, loadProjectSettings, runStateCounts, type LanePilotDatabase } from "../../../storage";
+import { countAcceptedForProject, countProjectTasksSince, errandEpisodeColumns, listErrandEpisodeFacts, listErrandEpisodeTraces, loadProjectSettings, readLoopMode, runStateCounts, type LanePilotDatabase } from "../../../storage";
 import { budgetSpentSweep, type ThreadToolTraceEntry } from "../../../writer/server";
 import { loadIdentity } from "../../identity";
-import type { GraphlessRow, HubSnapshot } from "../../models/tick";
+import type { FormHint, NearestUnit } from "../../models/nearest";
+import { proposalDecisionId, type GraphlessRow, type HubSnapshot } from "../../models/tick";
 import type { LeadSettings } from "../../settings";
-import { addRoad, getRoad, listRoad, roadCounts } from "../repositories/road-repository";
+import { addRoad, findRoadByPayloadKey, getRoad, listRoad, proposeRoad, roadCounts, syncRoadProposal } from "../repositories/road-repository";
 import { dayStart, listTicks, spentSince } from "../repositories/tick-repository";
 import { attachNearest } from "./nearest";
+import { listPathCandidateEntries } from "./path-candidates";
 import { OWNER_ITEM_SWEEPS } from "./sweeps";
 
 const USD = 1_000_000;
@@ -172,6 +174,22 @@ export async function hubSnapshot(ctx: Pick<ServerCore, "db" | "bb">, settings: 
   const windowed = [...ordered.slice(shift), ...ordered.slice(0, shift)].slice(0, WINDOW);
   const omitted = ordered.length - windowed.length;
   const zoneIds = new Set(inZone.map((project) => project.id));
+  const projectNameById = new Map(listed.map((project) => [project.id, project.name]));
+  const allowCandidateProject = (pid: string | null): boolean => {
+    if (pid === null) return true;
+    if (settings.projects.length > 0) return settings.projects.includes(pid);
+    if (listed.length > 0) return zoneIds.has(pid);
+    return !isSandboxProject(pid);
+  };
+  await syncDiscoveryCandidatesToRoad({
+    ctx,
+    settings,
+    tickId: input.tickId,
+    now,
+    allowProject: allowCandidateProject,
+    projectNameById,
+    services,
+  });
   const projects = windowed.map((project) => {
     const runs = runStateCounts(db, project.id);
     const tasks30d = countProjectTasksSince(db, project.id, since30);
@@ -192,7 +210,7 @@ export async function hubSnapshot(ctx: Pick<ServerCore, "db" | "bb">, settings: 
   const graphless = graphlessErrands(db, zoneIds, since30);
   // The nearest catalog units and the form hint are read once per tick, only when the rooms that own the catalogs are wired.
   if (services?.workflowCatalog && graphless.length) {
-    await attachNearest({ bb, workflowCatalog: services.workflowCatalog, fallbackProjectId: settings.project || null, rows: graphless, log: (message) => bb.log.warn(message) });
+    await attachNearest({ bb, db, workflowCatalog: services.workflowCatalog, fallbackProjectId: settings.project || null, rows: graphless, log: (message) => bb.log.warn(message) });
   }
   return {
     at: new Date(now).toISOString(), tickId: input.tickId, trigger: input.trigger,
@@ -204,4 +222,110 @@ export async function hubSnapshot(ctx: Pick<ServerCore, "db" | "bb">, settings: 
     waiting, lastTicks,
     graphless, specialists: specialistSnapshot(db, undefined, now),
   };
+}
+
+/** Syncs ranked free-work and ready branch candidates from `listPathCandidates` into `lane_pilot_lead_road` idempotently by candidate key. */
+async function syncDiscoveryCandidatesToRoad(input: {
+  ctx: Pick<ServerCore, "db" | "bb">;
+  settings: LeadSettings;
+  tickId: string;
+  now: number;
+  allowProject: (projectId: string | null) => boolean;
+  projectNameById: ReadonlyMap<string, string>;
+  services?: TickServices;
+}): Promise<void> {
+  const { ctx, settings, tickId, now, allowProject, projectNameById, services } = input;
+  const { db, bb } = ctx;
+  const discoveryMode = readLoopMode(db, "discovery", settings.projects.length === 1 ? settings.projects[0] : undefined);
+  if (discoveryMode !== "on") {
+    (bb.log as { info?: (message: string) => void } | undefined)?.info?.(`loop.mode loop=discovery mode=${discoveryMode} skipped=candidate_sync`);
+    return;
+  }
+  const discovered = listPathCandidateEntries(
+    db,
+    {
+      now,
+      windowDays: settings.branchWindowDays,
+      repeats: settings.branchDraftRepeats,
+      ...(settings.projects.length === 1 ? { projectId: settings.projects[0] } : {}),
+      log: bb.log,
+    },
+    { allowProject },
+  );
+  const toSync = [
+    ...discovered.free,
+    ...discovered.branch.filter((entry) => entry.candidate.ready),
+  ];
+  if (!toSync.length) return;
+
+  const enrichRows = toSync.map((entry) => ({
+    kind: entry.candidate.kind,
+    samples: entry.samples.length ? entry.samples : [entry.candidate.label],
+    projects: entry.projectIds,
+    signals: { repeatedTrace: null, providers: 0 },
+    nearest: [] as NearestUnit[],
+    hint: null as FormHint | null,
+  }));
+  if (services?.workflowCatalog) {
+    await attachNearest({
+      bb,
+      db,
+      workflowCatalog: services.workflowCatalog,
+      fallbackProjectId: settings.project || null,
+      rows: enrichRows,
+      log: (message) => bb.log.warn(message),
+    });
+  }
+
+  for (let i = 0; i < toSync.length; i += 1) {
+    const entry = toSync[i]!;
+    const enrich = enrichRows[i]!;
+    const candidate = entry.candidate;
+    const projectId = entry.projectIds.length === 1 ? entry.projectIds[0]! : null;
+    const roadClass = candidate.kind === "branch" ? "branch" : "process";
+    const title = clip(candidate.label || candidate.key, 300);
+    const costEstimate = candidate.costMicroUsd > 0 ? `$${(candidate.costMicroUsd / USD).toFixed(4)}` : "$0";
+    const why = candidate.kind === "branch"
+      ? clip(`Graph ${candidate.graphId ?? ""} accumulated ${candidate.count} repeated deviations in ${settings.branchWindowDays}d.`, 2000)
+      : clip(`Repeated unrouted path (${candidate.count}x, ${costEstimate}).`, 2000);
+    const evidence: RoadEvidence[] = candidate.runIds.length
+      ? candidate.runIds.slice(0, 12).map((ref) => ({ kind: "run" as const, ref }))
+      : [{ kind: "note" as const, ref: candidate.key.slice(0, 500) }];
+    const payload: Record<string, unknown> = {
+      key: candidate.key,
+      kind: candidate.kind,
+      count: candidate.count,
+      lastSeen: candidate.lastSeen,
+      costMicroUsd: candidate.costMicroUsd,
+      runIds: candidate.runIds,
+      ...(candidate.graphId ? { graphId: candidate.graphId } : {}),
+      ...(enrich.nearest.length ? { nearest: enrich.nearest } : {}),
+    };
+
+    const existing = findRoadByPayloadKey(db, candidate.key);
+    if (existing) {
+      if (existing.state === "open" || existing.state === "proposed" || existing.state === "later") {
+        syncRoadProposal(db, existing.id, { class: roadClass, why, evidence, costEstimate, projectId, payload }, now);
+        if (existing.state === "open" || existing.state === "later") {
+          proposeRoad(db, existing.id, proposalDecisionId(existing.id, tickId), now);
+        }
+      }
+      continue;
+    }
+
+    const parentId = projectRoot(db, projectId, projectNameById.get(projectId ?? "") ?? null, now).id;
+    const row = addRoad(db, {
+      parentId,
+      projectId,
+      title,
+      kind: "option",
+      source: "lead",
+      why,
+      evidence,
+      costEstimate,
+      class: roadClass,
+      payload,
+    }, now);
+    proposeRoad(db, row.id, proposalDecisionId(row.id, tickId), now);
+  }
 }

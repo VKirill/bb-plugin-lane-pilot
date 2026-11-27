@@ -9,6 +9,7 @@ import { loadPushConfig, savePushConfig } from "../src/rooms/owner-waiting/serve
 import { postOwnerItem } from "../src/rooms/owner-waiting";
 import { insertDeferral } from "../src/rooms/deferral/server/repositories/deferral-repository";
 import { insertOutage } from "../src/rooms/outage/server";
+import { recordRouteMiss } from "../src/rooms/workflow/server";
 import {
   buildDailyReport,
   composeDailyReport,
@@ -129,7 +130,7 @@ describe("Telegram sender (Env Catalog, no secrets in code)", () => {
 });
 
 describe("the compact SQLite daily digest", () => {
-  it("summarizes 24h attempts, workflow runs, owner waiting, deferrals, and outages within 8 lines", async () => {
+  it("summarizes 24h attempts, workflow runs, owner waiting, deferrals, and outages within 9 lines", async () => {
     const now = Date.parse("2026-11-15T09:00:00Z");
     const { bb } = createFakePluginHost({ pluginId: "lane-pilot" });
     const db = openDatabase(bb);
@@ -170,7 +171,7 @@ describe("the compact SQLite daily digest", () => {
 
     const text = await buildDailyReport({ db, now: () => now });
     const lines = text.split("\n").filter((line) => line.trim().length > 0);
-    expect(lines.length).toBeLessThanOrEqual(8);
+    expect(lines.length).toBeLessThanOrEqual(9);
     expect(text).toContain("Попытки: принято 1, не прошло 1 (всего 2)");
     expect(text).toContain("Графы: запусков 1 (успешно 1, сбой 0)");
     expect(text).toContain("Расходы (24ч): $1.25");
@@ -199,7 +200,7 @@ describe("the compact SQLite daily digest", () => {
     expect(costLine).not.toMatch(/\$?0\b/);
   });
 
-  it("omits Отсрочки and Простои when their counts are zero", () => {
+  it("omits Отсрочки, Простои, and Дорожки when their counts are zero", () => {
     const text = composeDailyReport({
       day: "2026-11-15",
       accepted: 2,
@@ -217,10 +218,78 @@ describe("the compact SQLite daily digest", () => {
       deferralsOpen: 0,
       deferralsOverdue: 0,
       outages: 0,
+      paths: { candidates: 0, top: null },
     });
+    expect(text).not.toContain("Дорожки");
     expect(text).not.toContain("Отсрочки");
     expect(text).not.toContain("Простои");
-    expect(text.split("\n").length).toBeLessThanOrEqual(8);
+    expect(text.split("\n").length).toBeLessThanOrEqual(9);
+  });
+
+  it("renders the Дорожки discovery line after Ждут владельца, clips label to 40 chars, and keeps total <= 9 lines with all conditional lines", () => {
+    const longLabel = "Export quarterly VAT ledger reconciliation report with detailed audit";
+    const text = composeDailyReport({
+      day: "2026-11-15",
+      accepted: 2,
+      failed: 1,
+      total: 3,
+      workflowRuns: 4,
+      workflowSucceeded: 3,
+      workflowFailed: 1,
+      costUsd: 1.5,
+      costState: "measured",
+      measuredSteps: 3,
+      notMeasuredSteps: 0,
+      waitingOpen: 2,
+      waitingOverdue: 1,
+      deferralsOpen: 1,
+      deferralsOverdue: 1,
+      outages: 1,
+      paths: { candidates: 4, top: { label: longLabel, count: 5 } },
+    });
+    const lines = text.split("\n");
+    expect(lines.length).toBeLessThanOrEqual(9);
+    const waitingIdx = lines.findIndex((line) => line.startsWith("Ждут владельца:"));
+    expect(waitingIdx).toBeGreaterThanOrEqual(0);
+    expect(lines[waitingIdx + 1]).toBe(`Дорожки: 4 кандидатов, топ: ${longLabel.slice(0, 40)} ×5`);
+    expect(text).toContain("Отсрочки:");
+    expect(text).toContain("Простои:");
+  });
+
+  it("reads path candidates from SQLite and omits the line with a WARN log if candidate reading fails", async () => {
+    const now = Date.parse("2026-11-15T09:00:00Z");
+    const { bb } = createFakePluginHost({ pluginId: "lane-pilot" });
+    const db = openDatabase(bb);
+    recordRouteMiss(db, {
+      projectId: "proj_a",
+      source: "errand_route",
+      kind: "no_candidate",
+      brief: "Reconcile monthly Stripe payouts",
+      now: now - 3_600_000,
+    });
+    recordRouteMiss(db, {
+      projectId: "proj_a",
+      source: "pm_route",
+      kind: "weak_match",
+      brief: "Reconcile monthly Stripe payouts",
+      now: now - 1_800_000,
+    });
+
+    const withPaths = await buildDailyReport({ db, now: () => now });
+    expect(withPaths).toContain("Дорожки: 1 кандидатов, топ: Reconcile monthly Stripe payouts ×2");
+    expect(withPaths.split("\n").length).toBeLessThanOrEqual(9);
+
+    const logs: string[] = [];
+    const onFail = await buildDailyReport({
+      db,
+      now: () => now,
+      log: (message) => logs.push(message),
+      pathCandidates: () => {
+        throw new Error("sqlite busy");
+      },
+    });
+    expect(onFail).not.toContain("Дорожки");
+    expect(logs).toContain("daily report paths failed: sqlite busy");
   });
 
   it("is due once a day, from nine o'clock in the owner's time zone", () => {
