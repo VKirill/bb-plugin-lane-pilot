@@ -119,3 +119,5 @@ export {
   type ProveWorkflowInput,
   type ProveWorkflowResult,
 } from "./services/workflow-prove";
+export { autonomousEffects } from "./services/autonomous-effects";
+export { readWfRunMetaByIds, type WfRunMetaRow } from "./repositories/wf-run-repository";

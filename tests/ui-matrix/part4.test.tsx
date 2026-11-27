@@ -15,6 +15,7 @@ describe("Lane Pilot UI", () => {
     const slot = await mountPage({
       save_setting: () => ({ ok: false, conflict: true, version: 3, value: "other" }),
     });
+    openTab(slot, "team");
     await waitFor(() => expect(slot.container.querySelector("[data-testid='bb-provider-model-picker']")).not.toBeNull());
     const sw = slot.container.querySelector("[role='switch']") as HTMLButtonElement;
     fireEvent.click(sw);
@@ -24,15 +25,17 @@ describe("Lane Pilot UI", () => {
 
   it("keeps the writer selection in one native catalog picker", async () => {
     const slot = await mountPage();
+    openTab(slot, "team");
     await waitFor(() => expect(slot.container.querySelector("[data-testid='bb-provider-model-picker']")).not.toBeNull());
     // Every model picker sits in the Team table, one row per role; the Work tab keeps the policies and no picker.
-    const team = slot.getByTestId("team-panel");
-    const work = slot.getByTestId("work-panel");
+    const team = slot.getByTestId("system-agents");
     expect(team.querySelector("[data-testid='writer-picker'] [data-testid='bb-provider-model-picker']")).not.toBeNull();
     expect(openRole(slot, "writer").querySelector("[data-testid='writer-effort-mode']")).toBeNull();
     expect(team.querySelector("[data-testid='access-role-writer'] [data-testid='browser-qa-host']")).toBeNull();
     expect(team.querySelector("[data-testid='access-role-browser_qa'] [data-testid='browser-qa-host']")).not.toBeNull();
     expect(team.querySelector("[data-testid='access-role-specialist_reviewer'] [data-testid='specialist-settings']")).not.toBeNull();
+    openTab(slot, "work");
+    const work = slot.getByTestId("system-settings");
     expect(work.querySelector("[data-testid='bb-provider-model-picker']")).toBeNull();
     expect(work.querySelector("[data-testid='writer-picker']")).toBeNull();
     expect(work.querySelector("[data-testid='browser-qa-host']")).toBeNull();
@@ -177,7 +180,8 @@ describe("Lane Pilot UI", () => {
         });
       },
     });
-    await waitFor(() => expect(slot.container.querySelector("[data-testid='bb-provider-model-picker']")).not.toBeNull());
+    openTab(slot, "work");
+    await waitFor(() => expect(slot.getByTestId("code-critique-policy")).toBeTruthy());
     const input = slot.getByTestId("code-critique-policy").querySelector("[data-testid='field-s380'] input[type='number']") as HTMLInputElement;
     fireEvent.change(input, { target: { value: "1" } });
     fireEvent.blur(input);

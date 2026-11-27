@@ -1,5 +1,5 @@
 /** @vitest-environment jsdom */
-import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, configure, fireEvent, waitFor } from "@testing-library/react";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
 import { setLocaleOverride } from "@lane-pilot/i18n";
@@ -7,11 +7,26 @@ import { setLocaleOverride } from "@lane-pilot/i18n";
 vi.setConfig({ testTimeout: 30_000 });
 configure({ asyncUtilTimeout: 10_000 });
 
+const storage = new Map<string, string>();
+const memoryStorage = {
+  getItem: (k: string) => storage.get(k) ?? null,
+  setItem: (k: string, v: string) => { storage.set(k, String(v)); },
+  removeItem: (k: string) => { storage.delete(k); },
+  clear: () => { storage.clear(); },
+  key: (i: number) => [...storage.keys()][i] ?? null,
+  get length() { return storage.size; },
+};
+
 beforeAll(() => {
   class Matrix { m22 = 1; m41 = 0; m42 = 0; constructor(_init?: string) {} }
   vi.stubGlobal("DOMMatrixReadOnly", Matrix);
 });
-afterEach(() => { cleanup(); setLocaleOverride(null); localStorage.clear(); });
+beforeEach(() => {
+  storage.clear();
+  if (!globalThis.localStorage) vi.stubGlobal("localStorage", memoryStorage);
+  else globalThis.localStorage.clear();
+});
+afterEach(() => { cleanup(); setLocaleOverride(null); globalThis.localStorage?.clear(); });
 
 const stats = (over: Record<string, unknown> = {}) => ({
   runs: 0, succeeded: 0, failed: 0, active: 0, executed: 0, workDone: 0, refused: 0, escalated: 0,

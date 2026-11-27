@@ -46,8 +46,8 @@ const empty = () => ({ schedules: [], hosts: [], now: Date.now() });
 describe("automation area in the page", { timeout: 20_000 }, () => {
   it("is a project tab beside Workflows and shows that project's board", async () => {
     const slot = await mountPage({ schedule_list: empty });
-    await slot.findByTestId("tab-automation");
-    expect(slot.getByTestId("tab-automation").textContent).toBe("Automation");
+    await slot.findByTestId("console-nav-system-schedules");
+    expect(slot.getByTestId("console-nav-system-graphs")).toBeTruthy();
     openTab(slot, "schedule");
     await slot.findByTestId("sch-empty");
     expect(slot.rpcCalls.find((call) => call.method === "schedule_list")?.input).toEqual({ projectId: "proj_ui", next: 5 });
@@ -56,7 +56,9 @@ describe("automation area in the page", { timeout: 20_000 }, () => {
 
   it("is a global page for the schedules of every project", async () => {
     const slot = await mountPage({ schedule_list: empty });
-    fireEvent.click(await slot.findByTestId("scope-nav-schedule"));
+    fireEvent.click(await slot.findByTestId("scope-switcher"));
+    fireEvent.click(await slot.findByTestId("scope-all"));
+    fireEvent.click(slot.getByTestId("console-nav-system-schedules"));
     await slot.findByTestId("sch-empty");
     expect(slot.rpcCalls.find((call) => call.method === "schedule_list")?.input).toEqual({ next: 5 });
     slot.lifecycle.unmount();

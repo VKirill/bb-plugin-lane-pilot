@@ -4,4 +4,5 @@ export type { BootstrapResult, EnsureResult, ProjectGit, ProjectGitDeps, ScopeIn
 export { createProjectGitDispatch } from "./services/dispatch-guard";
 export type { FolderPool, ProjectGitDispatch, ProjectGitDispatchArgs } from "./services/dispatch-guard";
 export { overlappingLiveRuns } from "./repositories/live-runs-repository";
+export { getBootstrapRecord, type Kv } from "./repositories/bootstrap-repository";
 export { room } from "./room";

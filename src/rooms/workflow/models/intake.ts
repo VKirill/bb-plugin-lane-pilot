@@ -1,15 +1,8 @@
 import type { Field } from "@lane-pilot/workflow-engine";
 import { isWholeConsent } from "../../tasks";
-import { INTAKE_KINDS, SERVICE_KINDS, isMachineMessage, type IntakeKind, type ServiceKind } from "../../contracts";
+import { GENERIC_PROJECT_WORKFLOW_IDS, INTAKE_KINDS, SERVICE_KINDS, isMachineMessage, type IntakeKind, type ServiceKind } from "../../contracts";
 
-export { INTAKE_KINDS, SERVICE_KINDS, isMachineMessage, type IntakeKind, type ServiceKind };
-
-/** Generic `kind: "project"` built-in workflows skipped during project-template lookup so intake falls back to `full-lifecycle` explicitly. */
-export const GENERIC_PROJECT_WORKFLOW_IDS: ReadonlySet<string> = new Set([
-  "full-lifecycle",
-  "roadmap-driven",
-  "project-start",
-]);
+export { GENERIC_PROJECT_WORKFLOW_IDS, INTAKE_KINDS, SERVICE_KINDS, isMachineMessage, type IntakeKind, type ServiceKind };
 
 /** Above this many characters a message the rules cannot place is taken as heavy: a goal, not a fix. */
 export const HEAVY_LENGTH = 700;

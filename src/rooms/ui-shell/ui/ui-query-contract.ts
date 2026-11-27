@@ -1,6 +1,6 @@
 import { defineRpcContract } from "@get-bb/plugin-sdk";
 import {
-  attemptLogTailInput, attemptLogTailOutput, emptyRpcInput, helperThreadLabelsInput, helperThreadLabelsOutput,
+  attemptLogTailInput, attemptLogTailOutput, brakesGetInput, brakesGetOutput, consoleOverviewInput, consoleOverviewOutput, emptyRpcInput, helperThreadLabelsInput, helperThreadLabelsOutput,
   listHelperThreadsInput, listHelperThreadsOutput, moneyStatusOutput, ownerWaitingOutput, taskBoardInput, taskBoardOutput,
   threadLiveInput, threadLiveOutput, workGraphStripsInput, workGraphStripsOutput, workGraphTaskInput, workGraphTaskOutput,
   uiVersionOutput,
@@ -41,4 +41,16 @@ export const uiQueryContract = defineRpcContract({
   work_graph_strips: { input: workGraphStripsInput, output: workGraphStripsOutput, tags: () => ["work-graph"] },
   work_graph_task: { input: workGraphTaskInput, output: workGraphTaskOutput, tags: () => ["work-graph"] },
   ui_version: { input: emptyRpcInput, output: uiVersionOutput, tags: () => ["ui_version"] },
+  console_overview: {
+    input: consoleOverviewInput,
+    output: consoleOverviewOutput,
+    tags: (input) => [
+      "helpers",
+      "owner_waiting",
+      `task-board:${input.projectId ?? "all"}`,
+      "money_status",
+      "work-graph",
+    ],
+  },
+  brakes_get: { input: brakesGetInput, output: brakesGetOutput, tags: () => ["brakes"] },
 });

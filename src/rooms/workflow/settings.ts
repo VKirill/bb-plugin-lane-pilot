@@ -27,6 +27,20 @@ export const PROJECT_PLANNING_HOME_KEY = "project.planning_home";
 export const PROJECT_START_RESEARCH_KEY = "project.start_research";
 export const RETRO_LIVING_KEY = "retro.living";
 export const WORKFLOW_DISABLED_KEY = SETTING_WORKFLOW_DISABLED;
+export const WORKFLOW_TRIGGERS_PAUSED_KEY = "workflow.triggers_paused";
+
+/** Checks whether `workflow.triggers_paused` is active (boolean, boolean-like string, or `{ paused: true }`). */
+export function isTriggersPaused(raw: unknown): boolean {
+  if (raw === true) return true;
+  if (typeof raw === "string") {
+    const normalized = raw.trim().toLowerCase();
+    return normalized === "true" || normalized === "on" || normalized === "1" || normalized === "yes";
+  }
+  if (raw && typeof raw === "object" && !Array.isArray(raw)) {
+    return (raw as { paused?: unknown }).paused === true;
+  }
+  return false;
+}
 
 /** Parses `workflow.disabled` (string array or JSON string array) into a set of disabled workflow ids. */
 export function parseWorkflowDisabled(raw: unknown): Set<string> {
@@ -100,6 +114,21 @@ export const workflowSettings: readonly SettingDefinition[] = [
     defaultValue: "[]",
     bounds: { kind: "json" },
     ui: { status: "hidden", control: "input", section: "other", scope: "project", reason: "Workflow ids disabled by the per-graph kill switch" },
+  }),
+  defineSetting({
+    key: WORKFLOW_TRIGGERS_PAUSED_KEY,
+    room: "workflow",
+    default: false,
+    bounds: { kind: "boolean", options: ["true", "false"] },
+    ui: {
+      status: "hidden",
+      control: "switch",
+      section: "other",
+      scope: "global",
+      options: ["true", "false"],
+      invType: "bool",
+      reason: "Global brake pausing autonomous workflow trigger starts",
+    },
   }),
 ];
 

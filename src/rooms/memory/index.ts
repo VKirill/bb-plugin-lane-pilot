@@ -9,3 +9,4 @@ export type { Masked, PiiKind } from "./models/pii";
 export { MEMORY_LINE_CHARS, memoryLine, pathAnchors, reviewerMemoryPicks, writerMemory, writerMemoryPicks } from "./models/memory-picks";
 export type { WriterPickOptions } from "./models/memory-picks";
 export { MEMORY_SETTING_KEYS } from "./settings";
+export type { CardKind } from "@lane-pilot/contracts";

@@ -4,6 +4,8 @@ export { preferencesRpc } from "./handlers/rpc/preferences";
 export { selectionsRpc } from "./handlers/rpc/selections";
 export { settingsRpc } from "./handlers/rpc/settings";
 export { roleModelsRpc } from "./handlers/rpc/role-models";
+export { loadoutRpc } from "./handlers/rpc/loadout";
+export { agentLoadout, type AgentLoadoutInput } from "./services/agent-loadout";
 export { stageHelperSettings } from "./services/stage-settings";
 export { readProjectSetting } from "./services/read-setting";
 export { room, warnUnknownStoredSettings } from "./room";

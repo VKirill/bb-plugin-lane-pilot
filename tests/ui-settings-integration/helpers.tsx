@@ -1,5 +1,5 @@
 import { expect, vi } from "vitest";
-import { openAllTabs } from "../ui-tabs";
+import { openAllTabs, openTab } from "../ui-tabs";
 import { act, waitFor } from "@testing-library/react";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { installTestPluginRuntime, loadPluginApp, renderSlot, type RenderedSlot } from "@get-bb/plugin-sdk/testing/app";
@@ -189,6 +189,7 @@ export async function mountWithBackend(options?:{ delayWriterSave?:(input:{provi
     },
   });
   await openAllTabs(slot);
+  openTab(slot, "team");
   await waitFor(() => {
     const picker = writerPicker(slot);
     expect(picker.getAttribute("data-provider")).toBe("codex");

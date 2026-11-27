@@ -57,14 +57,18 @@ describe("native writer settings against the registered SQLite backend", () => {
 
   it("keeps project selection left and user-facing settings separate from the Maintenance diagnostics", async () => {
     const { harness, slot } = await mountWithBackend();
-    expect(slot.getByTestId(`project-item-${projectId}`)).toBeTruthy();
+    fireEvent.click(slot.getByTestId("scope-switcher"));
+    expect(await slot.findByTestId(`scope-project-${projectId}`)).toBeTruthy();
+    fireEvent.keyDown(slot.getByRole("listbox"), { key: "Escape" });
     expect(slot.getByTestId("writer-picker")).toBeTruthy();
     expect(slot.getByTestId("memory-picker")).toBeTruthy();
     fireEvent.click(slot.getByTestId("role-open-writer"));
     expect(slot.queryByTestId("writer-effort-mode")).toBeNull();
     expect(slot.getByTestId("specialist-settings")).toBeTruthy();
     expect(slot.getByLabelText(en.specialistReview)).toBeTruthy();
-    for (const id of ["team", "work"]) expect(slot.getByTestId(`${id}-panel`).textContent).not.toContain("--writer-provider");
+    expect(slot.getByTestId("system-agents").textContent).not.toContain("--writer-provider");
+    openTab(slot, "work");
+    expect(slot.getByTestId("system-settings").textContent).not.toContain("--writer-provider");
     // Diagnostics sit folded inside Maintenance, away from the settings tabs.
     expect(slot.queryByTestId("service-panel")).toBeNull();
     openTab(slot, "service");

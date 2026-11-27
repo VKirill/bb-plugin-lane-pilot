@@ -15,4 +15,5 @@ export {
 } from "../settings";
 export { OWNER_ITEM_SWEEPS } from "./services/sweeps";
 export { mountLeadTool } from "./handlers/lead-tool";
+export { leadDecisions } from "./services/lead-decisions";
 export { room } from "./room";

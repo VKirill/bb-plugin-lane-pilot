@@ -23,7 +23,12 @@ export { mentionContext } from "./models/native-session";
 export { nativeAgentTypeKey, nativeEnvGenerationKey, nativeEnvKey, nativeSelectionKey, nativeThreadKey } from "../contracts";
 export { reconcileClaudeLane } from "./native-lane-reconcile";
 export { writerWorkspaceForPmInstructions } from "./models/native-dispatch-placement";
-export { NATIVE_LP_BRIDGE_PM_TOOLS } from "./models/bridge-tools";
+export {
+  NATIVE_LP_BRIDGE_ARCHITECT_TOOLS,
+  NATIVE_LP_BRIDGE_LEAD_TOOLS,
+  NATIVE_LP_BRIDGE_PM_TOOLS,
+  NATIVE_LP_BRIDGE_SPECIALIST_TOOLS,
+} from "./models/bridge-tools";
 export { LANE_PILOT_PM_SESSION } from "./models/native-agent-overlay";
 export { pendingSwitch } from "./models/native-session";
 export { resolveWriterBinding } from "./models/project-binding";

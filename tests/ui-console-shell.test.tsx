@@ -202,7 +202,7 @@ describe("console shell", () => {
       expect(slot.getByTestId(`console-nav-system-${page}`)).toBeTruthy();
     }
     expect(slot.getByTestId("console-nav-overview").getAttribute("aria-current")).toBe("page");
-    await slot.findByTestId("console-overview-placeholder");
+    await slot.findByTestId("console-overview");
     slot.lifecycle.unmount();
   });
 
@@ -253,7 +253,7 @@ describe("console shell", () => {
     await waitFor(() => expect(rememberProject).toHaveBeenCalledWith({ projectId: "proj_alpha" }));
     await waitFor(() => expect(listSections).toHaveBeenCalledWith({ projectId: "proj_alpha" }));
     await slot.findByTestId("console-overview");
-    expect(slot.getByTestId("project-header").textContent).toContain("Alpha app");
+    await waitFor(() => expect(slot.getByTestId("scope-switcher").textContent).toContain("Alpha app"));
     slot.lifecycle.unmount();
   });
 

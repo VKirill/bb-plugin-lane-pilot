@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { useBbContext } from "@get-bb/plugin-sdk/app";
+import { BrakeButton } from "../../owner-waiting/ui";
 import { InheritanceContext } from "../../ui-shell/ui";
 import { LEGACY_SCOPES, parseConsoleRoute, type ConsoleRoute } from "../models/nav-model";
 import { ConsoleRoutes } from "./console-routes";
@@ -48,7 +49,7 @@ export function LanePilotPage({
         reset: (keys) => void page.resetInherited(keys),
       }}
     >
-      <ConsoleShell route={route} go={go}>
+      <ConsoleShell route={route} go={go} headerExtras={<BrakeButton />}>
         <ConsoleRoutes
           route={route}
           go={go}

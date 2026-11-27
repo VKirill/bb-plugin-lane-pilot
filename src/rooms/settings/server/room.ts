@@ -2,6 +2,7 @@ import type { Room } from "../../contracts";
 import type { ServerCore } from "../../contracts/server";
 import { listDistinctSettingKeys, type LanePilotDatabase } from "../../storage";
 import { SETTINGS_REGISTRY } from "../../settings-registry";
+import { loadoutRpc } from "./handlers/rpc/loadout";
 import { preferencesRpc } from "./handlers/rpc/preferences";
 import { roleModelsRpc } from "./handlers/rpc/role-models";
 import { selectionsRpc } from "./handlers/rpc/selections";
@@ -22,6 +23,7 @@ export const room: Room<SettingsServices> = {
     ...settingsRpc(ctx, services),
     ...selectionsRpc(ctx, services),
     ...roleModelsRpc(ctx),
+    ...loadoutRpc(ctx),
   }),
   startup: (ctx: ServerCore) => {
     warnUnknownStoredSettings(ctx.db, (message) => ctx.bb.log.warn(message));

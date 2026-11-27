@@ -1,5 +1,5 @@
 // The one services bag: every function one server module offers another. server.ts fills it, every composition file reads it.
-import type { LaneProjectNotice, LeadRoadApi, MemoryEvalRunner, RuleScanSurface, ScheduleAgentApi, TaskWordPort } from "./contracts";
+import type { AutonomousAction, LaneProjectNotice, LeadRoadApi, MemoryEvalRunner, RuleScanSurface, ScheduleAgentApi, TaskWordPort } from "./contracts";
 import type { TokenCursorReader } from "./work-graph/server";
 import type { MemorySettings } from "@lane-pilot/memory-core";
 import type { ActivationApi, AgentOpsApi } from "./contracts/agent-ops";
@@ -162,4 +162,12 @@ export interface Services {
   evolveRollbackDraft?: (input: { draftId: string; threadId?: string }) => Promise<{ ok: boolean; projectId?: string; message: string }>;
   /** Ports wired in server.ts for the event-driven `lp.evolve` handlers (avoiding room import cycles). */
   evolveWorkflowDeps?: import("./evolve/server").EvolveWorkflowDeps;
+  /** Workflow-owned settled effects read for `actions_log` (wired in server.ts to avoid room cycles). */
+  autonomousEffects?: (db: import("./storage").LanePilotDatabase, since?: number, limit?: number, projectId?: string) => AutonomousAction[];
+  /** Lead-owned autonomous decisions read for `actions_log` (wired in server.ts to avoid room cycles). */
+  leadDecisions?: (db: import("./storage").LanePilotDatabase, since?: number, limit?: number, projectId?: string) => AutonomousAction[];
+  /** Reports-owned loop health read for `specialist_detail` (wired in server.ts to avoid room cycles). */
+  loopHealth?: (db: import("./storage").LanePilotDatabase, options?: { now?: number; projectId?: string | null; domain?: string }) => import("@lane-pilot/contracts").LoopHealthEntry[];
+  /** Workflow-owned run metadata read for `specialist_detail` (wired in server.ts to avoid room cycles). */
+  wfRunMeta?: (db: import("./storage").LanePilotDatabase, runIds: readonly string[]) => Map<string, import("@lane-pilot/workflow-engine").WfRunMetaRow>;
 }

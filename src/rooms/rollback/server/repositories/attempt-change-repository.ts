@@ -128,6 +128,12 @@ export function attemptChangeJson(db: RollbackDb, attemptId: string): string | u
   return (db.prepare("SELECT changed_json FROM lane_pilot_attempt_change WHERE attempt_id=?").get(attemptId) as { changed_json: string } | undefined)?.changed_json;
 }
 
+/** Merge commit SHA recorded for an attempt, or null if none was recorded. */
+export function mergeShaOf(db: RollbackDb, attemptId: string): string | null {
+  const row = db.prepare("SELECT merge_commit FROM lane_pilot_attempt_change WHERE attempt_id=?").get(attemptId) as { merge_commit: string | null } | undefined;
+  return row?.merge_commit || null;
+}
+
 /**
  * Merged landings the suite sweep may take now (SMA k_lib_landing): recorded after `since` (the sweep's first pass on this
  * install — history is never swept), newest first, at most `limit`. A row is free when it has no verdict, when its

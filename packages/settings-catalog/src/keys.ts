@@ -4,6 +4,11 @@
  * still live here so the read and the write cannot drift.
  */
 export const SETTING_WRITER_SILENCE_NUDGE_MIN = "writer.silence_nudge_min";
+export const WRITER_PROVIDER_KEY = "writer.provider";
+export const WRITER_MODEL_KEY = "writer.model";
+export const ONBOARDING_PROVIDER_KEY = "onboarding.provider";
+export const ONBOARDING_MODEL_KEY = "onboarding.model";
+export const HELPER_CONTEXT_MODE_KEY = "helper.context_mode";
 export const SETTING_WRITER_CAPACITY_WAIT_MAX_MIN = "writer.capacity_wait_max_min";
 export const SETTING_EVENTS_WEBHOOK_URL = "events.webhook_url";
 export const SETTING_WORKER_STRICT_USER = "worker.strict_user";

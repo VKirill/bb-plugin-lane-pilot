@@ -16,6 +16,7 @@ export type {
   Answered,
   OpenOwnerItemFilter,
   OwnerAction,
+  OwnerAttention,
   OwnerEvidence,
   OwnerItem,
   OwnerItemCreatedEvent,

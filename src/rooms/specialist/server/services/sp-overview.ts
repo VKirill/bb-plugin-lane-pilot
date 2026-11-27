@@ -3,8 +3,20 @@ import type { OwnerItemSweep } from "../../../owner-waiting";
 import { countActiveProjectArtifacts, listRunIdsForProject, listTaskTransitions, type LanePilotDatabase } from "../../../storage";
 import { specialistLedgerSummary } from "../repositories/sp-store";
 
+export interface SpecialistCharterOverview {
+  projectId: string;
+  domain: string;
+  version: number;
+  approvedBy: string | null;
+  updatedAt: number;
+  metric: string | null;
+  current: number | null;
+  target: number | null;
+  due: string | null;
+}
+
 export interface SpecialistOverviewPayload {
-  charters: Array<{ domain: string; version: number; approvedBy: string | null; updatedAt: number }>;
+  charters: SpecialistCharterOverview[];
   breakers: Array<{ domain: string; state: string; failureCount: number; cooldownUntil: number | null }>;
   pendingIntents: number;
   dispatchedCount: number;
@@ -17,6 +29,53 @@ export interface SpecialistOverviewPayload {
   spend30dUsd: number;
 }
 
+function asText(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function asNum(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function parseCharterGoal(
+  db: LanePilotDatabase,
+  projectId: string,
+  domain: string,
+  charterJson: string,
+): { metric: string | null; current: number | null; target: number | null; due: string | null } {
+  let obj: Record<string, unknown> = {};
+  try {
+    const parsed = JSON.parse(charterJson) as unknown;
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) obj = parsed as Record<string, unknown>;
+  } catch { /* malformed charter json yields null goal fields */ }
+  const ns =
+    obj.north_star && typeof obj.north_star === "object" && !Array.isArray(obj.north_star)
+      ? (obj.north_star as Record<string, unknown>)
+      : obj.northStar && typeof obj.northStar === "object" && !Array.isArray(obj.northStar)
+        ? (obj.northStar as Record<string, unknown>)
+        : null;
+  const metric =
+    asText(obj.metric) ??
+    asText(ns?.metric_id) ??
+    asText(ns?.metricId) ??
+    asText(ns?.metric) ??
+    asText(obj.goal);
+  const target = asNum(obj.target) ?? asNum(ns?.target);
+  const due = asText(obj.due) ?? asText(ns?.due) ?? asText(obj.deadline) ?? asText(ns?.deadline);
+  let current = asNum(obj.current) ?? asNum(ns?.current) ?? asNum(ns?.value);
+  if (current === null && metric) {
+    const row = db
+      .prepare(
+        `SELECT measured FROM lane_pilot_sp_intent_outcome
+         WHERE project_id = ? AND domain = ? AND metric = ? AND measured IS NOT NULL
+         ORDER BY COALESCE(measured_at, check_at) DESC LIMIT 1`,
+      )
+      .get(projectId, domain, metric) as { measured: number | null } | undefined;
+    current = asNum(row?.measured);
+  }
+  return { metric, current, target, due };
+}
+
 export function specialistOverview(db: LanePilotDatabase, projectId?: string, nowMs = Date.now()): SpecialistOverviewPayload {
   const projWhere = projectId ? "WHERE project_id = ?" : "";
   const projAnd = projectId ? "AND project_id = ?" : "";
@@ -24,9 +83,16 @@ export function specialistOverview(db: LanePilotDatabase, projectId?: string, no
 
   const charters = (
     db
-      .prepare(`SELECT domain, version, approved_by, updated_at FROM lane_pilot_sp_charter ${projWhere} ORDER BY domain ASC`)
-      .all(...projArgs) as Array<{ domain: string; version: number; approved_by: string | null; updated_at: number }>
-  ).map((r) => ({ domain: r.domain, version: r.version, approvedBy: r.approved_by, updatedAt: r.updated_at }));
+      .prepare(`SELECT project_id, domain, version, charter_json, approved_by, updated_at FROM lane_pilot_sp_charter ${projWhere} ORDER BY project_id ASC, domain ASC`)
+      .all(...projArgs) as Array<{ project_id: string; domain: string; version: number; charter_json: string; approved_by: string | null; updated_at: number }>
+  ).map((r) => ({
+    projectId: r.project_id,
+    domain: r.domain,
+    version: r.version,
+    approvedBy: r.approved_by,
+    updatedAt: r.updated_at,
+    ...parseCharterGoal(db, r.project_id, r.domain, r.charter_json),
+  }));
 
   const breakers = (
     db

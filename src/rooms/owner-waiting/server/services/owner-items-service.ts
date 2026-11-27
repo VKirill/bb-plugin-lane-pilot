@@ -282,7 +282,13 @@ export function collectOwnerWaiting(
 
   const counts: Record<string, number> = {};
   for (const item of items) counts[item.source] = (counts[item.source] ?? 0) + 1;
-  return { generatedAt: now, items, counts, overnight: overnight(db, now, windowMs), now: nowSlots, answered: answered(db, now) };
+  const attention = {
+    cap,
+    shown: decisionsToday,
+    remaining: Math.max(0, cap - decisionsToday),
+    day,
+  };
+  return { generatedAt: now, items, counts, overnight: overnight(db, now, windowMs), now: nowSlots, answered: answered(db, now), attention };
 }
 
 /** Who closed the rows of the last 7 days (the answer statistics the research asked for: a reflex inbox shows as «janitor» and «agent», never «owner»). */

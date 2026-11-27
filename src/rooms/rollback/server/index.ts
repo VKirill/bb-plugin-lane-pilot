@@ -15,6 +15,7 @@ export {
   listAttemptChanges,
   listLandingSuitePending,
   mergedAttemptChanges,
+  mergeShaOf,
   noteLandingSuite,
   upsertAttemptChange,
 } from "./repositories/attempt-change-repository";

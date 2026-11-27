@@ -1,4 +1,6 @@
-import { isFailedAttemptState, isOpenAttemptState, type AttemptState, type RunState } from "../../contracts/state-machine";
+import { FAILED_ATTEMPT_STATES, isFailedAttemptState, isOpenAttemptState, type AttemptState, type RunState } from "../../contracts/state-machine";
+
+export { FAILED_ATTEMPT_STATES, isOpenAttemptState };
 
 /** A task's latest attempt with its writer-agent stage, as refreshRun and the task graph read it (listTaskLatestAttempts). */
 export type LatestAttempt = { state: string; writerStage: string | null };

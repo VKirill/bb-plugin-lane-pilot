@@ -13,6 +13,31 @@ export {
 export { emitAttemptEvent } from "./services/attempt-event";
 export { childResultObject, memoryChildSnapshot, spawnRefused, type MemoryChildSnapshot } from "../models/child-snapshots";
 export { runsRpc } from "./handlers/runs-rpc";
+export { runsConsoleRpc, type ConsoleRpcServices } from "./handlers/console-rpc";
+export {
+  consoleOverview,
+  type ConsoleOverviewDeps,
+  type ConsoleOverviewInput,
+  type MoneyStatusLike,
+  type OwnerWaitingLike,
+  type SpecialistCharterLike,
+  type SpecialistOverviewLike,
+} from "./services/console-overview";
+export {
+  taskHistory,
+  type TaskHistoryDeps,
+  type TaskHistoryInput,
+  type TaskHistoryLog,
+} from "./services/task-history";
+export {
+  PROBE_CACHE_TTL_MS,
+  clearThreadScopeCache,
+  threadScope,
+  type ThreadPlaceLike,
+  type ThreadScopeCacheEntry,
+  type ThreadScopeDeps,
+  type ThreadScopeRepo,
+} from "./services/thread-scope";
 export {
   ENVIRONMENT_GRACE_MS,
   cancelRejection,

@@ -10,6 +10,7 @@ import { rpcKnowledge } from "./rpc-knowledge";
 import { rpcWorkflow } from "./rpc-workflow";
 import { rpcWorkflowExport } from "./rpc-workflow-export";
 import { rpcWorkflowMap } from "./rpc-workflow-map";
+import { rpcConsole } from "./rpc-console";
 
 // The RPC contracts of the plugin. The schemas are in schemas.ts, the host methods in host.ts and the methods of the
 // screens in the rpc-*.ts parts; this file assembles them and is the only public file of the room.
@@ -35,6 +36,7 @@ export const rpcMethods = {
   ...rpcWorkflow,
   ...rpcWorkflowExport,
   ...rpcWorkflowMap,
+  ...rpcConsole,
 };
 
 export const rpcContract = defineRpcContract(rpcMethods);
@@ -60,6 +62,7 @@ export type { SqlDb } from "./sql-db";
 export { asJsonText } from "./as-json-text";
 export * from "./state-machine";
 export * from "./hub-deny";
+export * from "./owner-only-rpc";
 export * from "./failure-class";
 export * from "./helper-context";
 export * from "./codex-lean";
@@ -98,3 +101,26 @@ export type { NativeSelection } from "./native-selection";
 export type { Room, RoomCliCall, RoomCliVerb } from "./room";
 export * from "./owner-turn";
 export * from "./owner-messages";
+export { BRAKE_IDS } from "./rpc-console";
+export type {
+  ActionsLogOutput,
+  ActiveItem,
+  AgentLoadoutOutput,
+  AutonomousAction,
+  BrakeId,
+  BrakeState,
+  BrakesOutput,
+  ConsoleOverviewOutput,
+  GoalLine,
+  LoadoutRole,
+  MemoryCardsListOutput,
+  RepoTrustOutput,
+  ReviewDeskItem,
+  ReviewDeskView,
+  SpecialistAutonomyRow,
+  SpecialistDetailOutput,
+  StopAllOutput,
+  TaskHistoryOutput,
+  TaskHistoryRow,
+  ThreadScope,
+} from "./rpc-console";

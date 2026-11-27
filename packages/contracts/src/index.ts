@@ -20,3 +20,4 @@ export * from "./loops";
 export * from "./specialist";
 export * from "./work-kinds";
 export * from "./publish-grant";
+export * from "./task-outcome";

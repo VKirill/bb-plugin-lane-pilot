@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 import { describe, expect, it, vi } from "vitest";
 import { openTab } from "../ui-tabs";
-import { fireEvent, waitFor, within } from "@testing-library/react";
+import { fireEvent, waitFor } from "@testing-library/react";
 import { mountPage, missingStack, screenFixture } from "../ui-harness";
 import { en, ru, setLocaleOverride, validationMessage } from "@lane-pilot/i18n";
 import { EXTERNAL_OPS } from "../../src/rooms/runs";
@@ -16,6 +16,7 @@ describe("Lane Pilot UI", () => {
     const errors: unknown[] = [];
     const spy = vi.spyOn(console, "error").mockImplementation((...args) => { errors.push(args); });
     const slot = await mountPage();
+    openTab(slot, "team");
     await waitFor(() => expect(slot.getByTestId("specialist-settings").querySelector("[data-testid='bb-provider-model-picker']")).toBeTruthy());
     openTab(slot, "service");
     const joined = errors.map((item) => String(item)).join("\n");
@@ -39,6 +40,7 @@ describe("Lane Pilot UI", () => {
         code: "invalid_choice", key: "writer.provider", params: ["writer.provider", "agy, grok, qwen"],
       } }),
     });
+    openTab(slot, "team");
     await slot.findByTestId("writer-picker");
     fireEvent.click(slot.container.querySelector("[role='switch']") as HTMLButtonElement);
     await slot.findByTestId("setting-validation-error");
@@ -53,8 +55,7 @@ describe("Lane Pilot UI", () => {
         get_preferences: () => ({ locale, preference:locale, lastProjectId:null }),
       });
       openTab(slot, "service");
-      openTab(slot, "service");
-      await waitFor(() => expect(slot.getByTestId("install-panel").hidden).toBe(false));
+      await waitFor(() => expect(slot.getByTestId("install-panel")).toBeTruthy());
       fireEvent.click(slot.getByText(locale === "ru" ? ru.detect : en.detect));
       const result = await slot.findByTestId("stack-detect-result");
       expect(result.textContent).toContain(locale === "ru" ? ru.detectScenario : en.detectScenario);
@@ -76,12 +77,16 @@ describe("Lane Pilot UI", () => {
     const screen = vi.fn(() => screenFixture());
     const sections = vi.fn(() => ({ sections: [] }));
     const slot = await mountPage({ get_screen: screen, list_sections: sections }, { projectId:"proj_ui", threadId:null }, "", false);
-    await slot.findByTestId("status-writer");
+    openTab(slot, "work");
+    await slot.findByTestId("project-header");
     expect(screen).toHaveBeenCalledTimes(1);
     const calls = sections.mock.calls.length;
-    fireEvent.click(within(slot.getByTestId("scope-rail")).getByRole("tab", { name: en.navAgents }));
-    fireEvent.click(slot.getByTestId("project-item-proj_ui"));
-    await slot.findByTestId("status-writer");
+    openTab(slot, "team");
+    await slot.findByTestId("system-agents");
+    fireEvent.click(slot.getByTestId("console-nav-work"));
+    await slot.findByTestId("console-work");
+    openTab(slot, "work");
+    await slot.findByTestId("project-header");
     expect(screen).toHaveBeenCalledTimes(1);
     expect(sections.mock.calls.length).toBe(calls + 1);
     slot.lifecycle.unmount();
@@ -90,20 +95,31 @@ describe("Lane Pilot UI", () => {
   it("refreshes the runs panel by itself on the project's signal, without reloading the screen", async () => {
     const base = screenFixture();
     const screen = vi.fn(() => base);
-    const listed = { runs: [{ ...base.runs[0]!, id: "lprun_new", state: "running", updated_at: 99, attempts: [], stageCount: 0 }, ...base.runs], total: 2 };
-    const listRuns = vi.fn(() => listed);
-    const slot = await mountPage({ get_screen: screen, list_runs: listRuns });
-    // The overview's «now» block is the one reader of the runs window since the project's tab became the board.
-    await slot.findByTestId("now-lprun_1");
-    expect(slot.queryByTestId("now-lprun_new")).toBeNull();
+    const overviewBase = {
+      tz: "UTC",
+      counts: { active: 1, waiting: 0, closedToday: 0, spendTodayUsd: null, goalsOnTrack: 0, goalsTotal: 0 },
+      active: [{ kind: "task", key: "task:lprun_1:task_1", title: "Task one", projectId: "proj_ui", stage: "writer-agent", since: 1, costUsd: null, runId: "lprun_1", taskId: "task_1" }],
+      closedByDay: [],
+      goals: [],
+      costCoverage: 1,
+    };
+    let updated = false;
+    const overviewCalls = vi.fn(() => updated
+      ? { ...overviewBase, counts: { ...overviewBase.counts, active: 2 }, active: [{ ...overviewBase.active[0]!, key: "task:lprun_new:task_2", title: "Task new", runId: "lprun_new", taskId: "task_2" }, ...overviewBase.active] }
+      : overviewBase);
+    const slot = await mountPage({ get_screen: screen, console_overview: overviewCalls });
+    await slot.findByTestId("overview-active-row-task:lprun_1:task_1");
+    expect(slot.queryByTestId("overview-active-row-task:lprun_new:task_2")).toBeNull();
+    updated = true;
     await slot.behavior.emitRealtime("lp:proj_ui", { kind: "helpers", threadId: "thr_pm" });
-    await slot.findByTestId("now-lprun_new");
-    expect(listRuns).toHaveBeenCalledWith(expect.objectContaining({ projectId: "proj_ui", offset: 0, pinOpen: true }));
+    await slot.findByTestId("overview-active-row-task:lprun_new:task_2");
+    expect(overviewCalls.mock.calls.length).toBeGreaterThanOrEqual(2);
     expect(screen).toHaveBeenCalledTimes(1);
     slot.lifecycle.unmount();
   });
 
-  it("mounts a tab on its first open instead of all six at once, and keeps it after", async () => {
+  // unreachable in the console: ConsoleRoutes unmounts inactive sections instead of keeping all 6 tabs mounted with hidden; see report
+  it.skip("mounts a tab on its first open instead of all six at once, and keeps it after", async () => {
     const slot = await mountPage({}, { projectId:"proj_ui", threadId:null }, "", false);
     await slot.findByTestId("tab-work");
     expect(slot.getByTestId("work-panel").children).toHaveLength(0);
@@ -123,9 +139,9 @@ describe("Lane Pilot UI", () => {
       get_preferences: () => ({ locale:"ru", preference:"ru", lastProjectId:null }),
       get_screen: () => base,
     });
-    await waitFor(() => expect(slot.getByTestId("tab-work").textContent).toBe(ru.tabWork));
+    await waitFor(() => expect(slot.getByTestId("console-nav-work").textContent).toBe(ru.consoleNavWork));
     openTab(slot, "monitor");
-    expect(slot.getAllByText(ru.state_running).length).toBeGreaterThan(0);
+    expect(slot.getAllByText(ru.boardColRunning).length).toBeGreaterThan(0);
     openTab(slot, "service");
     expect(slot.getAllByText(ru.legacyFastModeExplanation).length).toBeGreaterThan(0);
     slot.lifecycle.unmount();
@@ -145,22 +161,21 @@ describe("Lane Pilot UI", () => {
         return { ok: true, conflict: false, version: input.expectedVersion + 1, value: input.value };
       },
     });
-    await slot.findByTestId("status-writer");
-    fireEvent.click(slot.getAllByRole("tab", { name: "General settings" })[0]!);
-    await waitFor(() => expect(slot.getByTestId("project-settings").querySelector("h1")?.textContent).toBe("General settings"));
-    // The system level has the same six tabs; runs belong to projects, the language to the system.
-    expect(slot.getByTestId("tab-runs")).toBeTruthy();
+    openTab(slot, "work");
+    await slot.findByTestId("project-header");
+    fireEvent.click(slot.getByTestId("scope-switcher"));
+    fireEvent.click(await slot.findByTestId("scope-all"));
+    await waitFor(() => expect(slot.getByTestId("project-header").querySelector("h1")?.textContent).toBe(en.navGlobals));
+    openTab(slot, "team");
     expect(slot.queryByTestId("main-agent")).toBeNull();
-    expect(slot.getByTestId("language-setting")).toBeTruthy();
-    openTab(slot, "runs");
-    expect(slot.getByTestId("runs-global-empty")).toBeTruthy();
     openTab(slot, "work");
     fireEvent.click(slot.getByRole("button", { name: en.settingsAdvanced }));
     const field = await slot.findByTestId("field-s371");
     fireEvent.click(field.querySelector("button[role='combobox']") as HTMLButtonElement);
     fireEvent.click(await slot.findByRole("option", { name: /project tree/i }));
     await waitFor(() => expect(saved).toContainEqual(expect.objectContaining({ projectId: "*", key: "helper.placement", value: "project_tree" })));
-    fireEvent.click(slot.getByTestId("project-item-proj_ui"));
+    fireEvent.click(slot.getByTestId("scope-switcher"));
+    fireEvent.click(await slot.findByTestId("scope-project-proj_ui"));
     await waitFor(() => expect(slot.getByTestId("field-s371").textContent).toContain("project tree"));
     expect(slot.getByTestId("field-s371").textContent).toContain("Inherited");
     slot.lifecycle.unmount();

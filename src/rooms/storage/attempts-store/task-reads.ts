@@ -1,6 +1,7 @@
 import { taskRedispatchBase } from "@lane-pilot/contracts";
 import { attemptStateSql } from "../../contracts";
 import type { LanePilotDatabase } from "../database";
+import { sectionBindingId } from "../settings-store";
 
 /** Tasks of the run whose latest attempt ended (accepted, blocked or canceled). */
 export function listEndedTaskIds(db: LanePilotDatabase, runId: string): string[] {
@@ -317,6 +318,12 @@ export function openAttemptIdsOfRun(db: LanePilotDatabase, runId: string): strin
     .all(runId) as Array<{ id: string }>).map((row) => row.id);
 }
 
+/** Queued writer attempts across open runs (used by the conveyor brake impact counter). */
+export function countQueuedAttempts(db: LanePilotDatabase): number {
+  return (db.prepare(`SELECT COUNT(*) AS n FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id = a.run_id
+    WHERE a.state = 'queued' AND r.closed_at IS NULL`).get() as { n: number }).n;
+}
+
 /** Open attempts of a run, oldest first (the pause report's running/waiting split). */
 export function openAttemptsForPause(db: LanePilotDatabase, runId: string): Array<{ id: string; task_id: string; state: string }> {
   return db.prepare("SELECT id, task_id, state FROM lane_pilot_attempt WHERE run_id=? AND state IN ('queued','spawn_requested','spawn_unknown','running','cancel_requested') ORDER BY created_at")
@@ -369,4 +376,117 @@ export function recentAttemptWorkspaces(db: LanePilotDatabase, since: number): A
       (SELECT COUNT(*) FROM lane_pilot_attempt b WHERE b.run_id=a.run_id AND b.task_id=a.task_id AND b.created_at>a.created_at) AS later
     FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id
     WHERE a.workspace_path IS NOT NULL AND r.writer_host_id IS NOT NULL AND a.updated_at>=?`).all(since) as Array<{ path: string; env: string | null; state: string; updatedAt: number; host: string; runEnv: string | null; runClosed: number | null; later: number }>;
+}
+
+/**
+ * Latest attempt and attempt count for tasks touched since `sinceMs`, optionally narrowed by project or section scope.
+ * Used by `console_overview` to classify closed tasks into day buckets.
+ */
+export function listTaskOutcomeRowsSince(
+  db: LanePilotDatabase,
+  input: { projectId?: string | null; sectionId?: string | null; sinceMs: number },
+): Array<{ taskId: string; runId: string; projectId: string; finalState: string; attemptCount: number; finishedAt: number }> {
+  const filters: string[] = [];
+  const args: unknown[] = [input.sinceMs];
+  if (input.projectId) {
+    filters.push("r.project_id = ?");
+    args.push(input.projectId);
+  }
+  if (input.sectionId) {
+    filters.push("json_valid(r.settings_scopes_json) AND EXISTS (SELECT 1 FROM json_each(r.settings_scopes_json) WHERE value = ?)");
+    args.push(sectionBindingId(input.sectionId));
+  }
+  const extraWhere = filters.length ? `AND ${filters.join(" AND ")}` : "";
+  return db.prepare(`
+    SELECT a.task_id AS taskId, a.run_id AS runId, r.project_id AS projectId,
+      a.state AS finalState,
+      (SELECT COUNT(*) FROM lane_pilot_attempt cnt WHERE cnt.run_id = a.run_id AND cnt.task_id = a.task_id) AS attemptCount,
+      a.updated_at AS finishedAt
+    FROM lane_pilot_task t
+    JOIN lane_pilot_run r ON r.id = t.run_id
+    JOIN lane_pilot_attempt a ON a.run_id = t.run_id AND a.task_id = t.id
+    WHERE a.id = (
+      SELECT b.id FROM lane_pilot_attempt b
+      WHERE b.run_id = t.run_id AND b.task_id = t.id
+      ORDER BY b.attempt_no DESC, b.created_at DESC, b.rowid DESC
+      LIMIT 1
+    )
+      AND a.updated_at >= ?
+      ${extraWhere}
+  `).all(...args) as Array<{ taskId: string; runId: string; projectId: string; finalState: string; attemptCount: number; finishedAt: number }>;
+}
+
+/** Distinct project IDs with attempts created since `sinceMs` (used to aggregate cost coverage across all projects). */
+export function listAttemptProjectIdsSince(db: LanePilotDatabase, sinceMs: number): string[] {
+  return (db.prepare("SELECT DISTINCT r.project_id AS projectId FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id = a.run_id WHERE a.created_at >= ?")
+    .all(sinceMs) as Array<{ projectId: string }>).map((row) => row.projectId);
+}
+
+export interface TaskHistoryCandidateRow {
+  attemptId: string;
+  taskId: string;
+  runId: string;
+  projectId: string;
+  contractJson: string;
+  finalState: string;
+  reason: string | null;
+  attemptCount: number;
+  createdAt: number | null;
+  finishedAt: number;
+}
+
+/**
+ * Page of non-open tasks ordered by `(finishedAt DESC, taskId DESC)` for `task_history` keyset pagination.
+ */
+export function listTerminalTaskHistoryBatch(
+  db: LanePilotDatabase,
+  input: {
+    projectId?: string | null;
+    sectionId?: string | null;
+    cursor?: { finishedAt: number; taskId: string } | null;
+    limit: number;
+  },
+): TaskHistoryCandidateRow[] {
+  const filters: string[] = [];
+  const args: unknown[] = [];
+  if (input.projectId) {
+    filters.push("r.project_id = ?");
+    args.push(input.projectId);
+  }
+  if (input.sectionId) {
+    filters.push("json_valid(r.settings_scopes_json) AND EXISTS (SELECT 1 FROM json_each(r.settings_scopes_json) WHERE value = ?)");
+    args.push(sectionBindingId(input.sectionId));
+  }
+  if (input.cursor) {
+    filters.push("(a.updated_at < ? OR (a.updated_at = ? AND a.task_id < ?))");
+    args.push(input.cursor.finishedAt, input.cursor.finishedAt, input.cursor.taskId);
+  }
+  const extraWhere = filters.length ? `AND ${filters.join(" AND ")}` : "";
+  args.push(input.limit);
+  return db.prepare(`
+    SELECT
+      a.id AS attemptId,
+      a.task_id AS taskId,
+      a.run_id AS runId,
+      r.project_id AS projectId,
+      t.contract_json AS contractJson,
+      a.state AS finalState,
+      a.reason AS reason,
+      (SELECT COUNT(*) FROM lane_pilot_attempt cnt WHERE cnt.run_id = a.run_id AND cnt.task_id = a.task_id) AS attemptCount,
+      (SELECT MIN(first_a.created_at) FROM lane_pilot_attempt first_a WHERE first_a.run_id = a.run_id AND first_a.task_id = a.task_id) AS createdAt,
+      a.updated_at AS finishedAt
+    FROM lane_pilot_task t
+    JOIN lane_pilot_run r ON r.id = t.run_id
+    JOIN lane_pilot_attempt a ON a.run_id = t.run_id AND a.task_id = t.id
+    WHERE a.id = (
+      SELECT b.id FROM lane_pilot_attempt b
+      WHERE b.run_id = t.run_id AND b.task_id = t.id
+      ORDER BY b.attempt_no DESC, b.created_at DESC, b.rowid DESC
+      LIMIT 1
+    )
+      AND a.state NOT IN (${attemptStateSql("open")})
+      ${extraWhere}
+    ORDER BY a.updated_at DESC, a.task_id DESC
+    LIMIT ?
+  `).all(...args) as TaskHistoryCandidateRow[];
 }

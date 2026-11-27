@@ -14,7 +14,7 @@ import { isPmChat } from "../../../native-agent/server";
 import { SCHEDULE_RUN_KEY_PREFIX } from "../../../contracts";
 import type { ChainRuntime } from "../../../contracts/server";
 import { LoopHookRefusal, prepareLoopWorkflow } from "../../models/loop-hooks";
-import { WORKFLOW_DISABLED_KEY, parseWorkflowDisabled } from "../../settings";
+import { WORKFLOW_DISABLED_KEY, WORKFLOW_TRIGGERS_PAUSED_KEY, isTriggersPaused, parseWorkflowDisabled } from "../../settings";
 import { resolveCanarySplit, type CanaryTrialTarget, type ResolveCanary } from "./canary-split";
 
 import type { WorkflowEngineApi } from "./workflow";
@@ -33,9 +33,9 @@ interface Services {
  */
 export type TriggerSource = "manual" | "schedule" | "event";
 export type StartRefusalSource = TriggerSource | "pm";
-export type StartRefusalReason = "board_paused" | "workflow_disabled";
+export type StartRefusalReason = "board_paused" | "triggers_paused" | "workflow_disabled";
 
-/** Checks whether a workflow start is blocked by board pause (autonomous starts) or `workflow.disabled` (all starts). */
+/** Checks whether a workflow start is blocked by board pause, `workflow.triggers_paused` (autonomous starts), or `workflow.disabled` (all starts). */
 export function workflowStartRefusal(input: {
   db: LanePilotDatabase;
   workflowId: string;
@@ -47,6 +47,9 @@ export function workflowStartRefusal(input: {
     return "board_paused";
   }
   const settings = loadProjectSettings(input.db, input.projectId || GLOBAL_SETTINGS_PROJECT_ID);
+  if ((input.source === "event" || input.source === "schedule") && isTriggersPaused(settings[WORKFLOW_TRIGGERS_PAUSED_KEY])) {
+    return "triggers_paused";
+  }
   if (parseWorkflowDisabled(settings[WORKFLOW_DISABLED_KEY]).has(input.workflowId)) {
     return "workflow_disabled";
   }
@@ -54,9 +57,9 @@ export function workflowStartRefusal(input: {
 }
 
 function refusalMessage(workflowId: string, reason: StartRefusalReason): string {
-  return reason === "board_paused"
-    ? `Board is paused; autonomous start of "${workflowId}" refused.`
-    : `Workflow "${workflowId}" is disabled by ${WORKFLOW_DISABLED_KEY}.`;
+  if (reason === "board_paused") return `Board is paused; autonomous start of "${workflowId}" refused.`;
+  if (reason === "triggers_paused") return `Workflow triggers are paused by ${WORKFLOW_TRIGGERS_PAUSED_KEY}; autonomous start of "${workflowId}" refused.`;
+  return `Workflow "${workflowId}" is disabled by ${WORKFLOW_DISABLED_KEY}.`;
 }
 
 export type EmitEventOptions = { id?: string; key?: string; attemptKey?: string; projectId?: string };
@@ -389,11 +392,12 @@ export function createWorkflowTriggers(ctx: ServerCore, services: Pick<Services,
 
     const started: Array<{ workflowId: string; runId: string; created: boolean }> = [];
     const failed: Array<{ workflowId: string; reason: string; message: string }> = [];
-    if (matching.length > 0 && startRefusal(matching[0]!.workflow.id, "event", projectId) === "board_paused") {
+    const batchRefusal = matching.length > 0 ? startRefusal(matching[0]!.workflow.id, "event", projectId) : null;
+    if (batchRefusal === "board_paused" || batchRefusal === "triggers_paused") {
       // Leave the inbox row unconsumed (`consumed_by IS NULL`) so the event retries once the pause lifts.
       for (const { workflow } of matching) {
-        eventLog.info(`wf.start refused wf=${workflow.id} source=event reason=board_paused`);
-        failed.push({ workflowId: workflow.id, reason: "board_paused", message: refusalMessage(workflow.id, "board_paused") });
+        eventLog.info(`wf.start refused wf=${workflow.id} source=event reason=${batchRefusal}`);
+        failed.push({ workflowId: workflow.id, reason: batchRefusal, message: refusalMessage(workflow.id, batchRefusal) });
       }
       return { eventId, key, duplicate: false, woken, started, failed };
     }

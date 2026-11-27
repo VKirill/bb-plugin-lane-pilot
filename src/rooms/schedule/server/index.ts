@@ -12,4 +12,5 @@ export { mountScheduleTools } from "./handlers/schedule-tools";
 export { scheduleFailureItemKey, scheduleFailureSweep } from "./services/failure-item";
 export { PROJECT_SCHEDULES, SYSTEM_SCHEDULES, ensureProjectSchedules, ensureSystemSchedules, isSystemScheduleCreator, systemScheduleBy, systemStarterOf } from "./services/system-schedules";
 export type { SystemSchedule } from "./services/system-schedules";
+export { projectPlace, type ProjectPlace } from "./services/schedule-place";
 export { room } from "./room";

@@ -23,7 +23,7 @@ import {
   type CardMemoryRow,
 } from "../repositories/cards-repository";
 
-const DAY_MS = 86_400_000;
+export const DAY_MS = 86_400_000;
 const MAX_KEY_CHARS = 120;
 
 export interface CardCtx {
@@ -102,7 +102,7 @@ function isCardSourceKind(value: unknown): value is CardSourceKind {
   return typeof value === "string" && (CARD_SOURCE_KINDS as readonly string[]).includes(value);
 }
 
-function parseVerificationList(raw: string | null): StoredVerification[] {
+export function parseVerificationList(raw: string | null): StoredVerification[] {
   try {
     const parsed = JSON.parse(raw ?? "[]") as unknown;
     return Array.isArray(parsed) ? (parsed as StoredVerification[]) : [];
@@ -111,7 +111,7 @@ function parseVerificationList(raw: string | null): StoredVerification[] {
   }
 }
 
-function parseCardIdentity(concepts: readonly string[]): { kind: CardKind; key: string } | null {
+export function parseCardIdentity(concepts: readonly string[]): { kind: CardKind; key: string } | null {
   for (const concept of concepts) {
     if (!concept.startsWith("card:")) continue;
     const rest = concept.slice("card:".length);

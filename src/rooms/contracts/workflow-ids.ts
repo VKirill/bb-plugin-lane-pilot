@@ -15,3 +15,7 @@ export const ISSUE_QUICK_SHORT_PATH = "issue_quick.short_path";
 
 /** The idempotency key prefix of a run a schedule started; the origin is read back from it (and from the parent run) after a reload. */
 export const SCHEDULE_RUN_KEY_PREFIX = "wf-schedule:";
+
+/** Project-level workflows shown on the Work → Big projects tab and skipped during template lookup. */
+export const PROJECT_WORKFLOW_IDS = ["project-start", "full-lifecycle", "roadmap-driven"] as const;
+export const GENERIC_PROJECT_WORKFLOW_IDS: ReadonlySet<string> = new Set(PROJECT_WORKFLOW_IDS);

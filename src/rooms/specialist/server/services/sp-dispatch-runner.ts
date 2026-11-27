@@ -4,6 +4,7 @@ import type { ChainRuntime, ServerCore } from "../../../contracts/server";
 import { postOwnerItem, rpcLine } from "../../../owner-waiting";
 import { upsertProjectArtifact, writeCasCheckoutFile } from "../../../storage";
 import { noteEngineWrite } from "../../../verification/server";
+import { SPECIALIST_PAUSED_ALL_KEY } from "../../settings";
 import { executeDirectApiOrder } from "./sp-dispatch-direct";
 import { executeCreateExtensionOrder } from "./sp-dispatch-extensions";
 
@@ -89,6 +90,24 @@ export async function executeSpecialistOrder(input: {
   const { db } = ctx;
   const logicalKind = asStr(orderObj.kind, intentRow.order_kind);
   const shortHash = sha256Hex(`${intentRow.intent_id}:${intentRow.idem_key}`).slice(0, 8);
+
+  const kv = (ctx.bb as { storage?: { kv?: { get(key: string): Promise<unknown> } } })?.storage?.kv;
+  if (kv) {
+    const pausedFlag = await kv.get(SPECIALIST_PAUSED_ALL_KEY).catch(() => null);
+    const staffPaused =
+      pausedFlag === true ||
+      (pausedFlag !== null && typeof pausedFlag === "object" && (pausedFlag as { paused?: unknown }).paused === true);
+    if (staffPaused) {
+      ctx.log(`[brakes] specialist dispatcher refused intent=${intentRow.intent_id} kind=${logicalKind}: ${SPECIALIST_PAUSED_ALL_KEY}`);
+      return {
+        ok: false,
+        disposition: "blocked",
+        targetRef: intentRow.intent_id,
+        receipt: { kind: logicalKind, status: "paused_all", flag: SPECIALIST_PAUSED_ALL_KEY },
+        blockReason: "specialist_paused_all",
+      };
+    }
+  }
 
   if (proposeOnly && (logicalKind === "schedule" || logicalKind === "sub_graph" || logicalKind === "code_task" || logicalKind === "specialist_handoff")) {
     const itemKey = `sp:propose:${intentRow.intent_id}`;

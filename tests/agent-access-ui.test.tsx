@@ -100,8 +100,13 @@ async function mount(options: { mode?: string; modeOrigin?: Origin | null; prese
 }
 
 async function openAccessTab(slot: RenderedSlot) {
-  fireEvent.mouseDown(await slot.findByTestId("tab-team"), { button: 0 });
+  fireEvent.click(await slot.findByTestId("console-nav-system-agents"));
   await slot.findByTestId("access-role-writer");
+}
+
+async function selectScope(slot: RenderedSlot, optionTestId: string) {
+  fireEvent.click(slot.getByTestId("scope-switcher"));
+  fireEvent.click(await slot.findByTestId(optionTestId));
 }
 
 /** The table answers «…» until helper_access_view came back; the summary of a role is real from then on. */
@@ -298,9 +303,9 @@ describe("Agent access tab", () => {
   it("edits the global defaults with projectId «*», and a project shows them as «global», overrides them and falls back to global", async () => {
     const { slot, harness, saves, resets } = await mount({ modeOrigin: "global" });
     try {
-      fireEvent.click(await slot.findByRole("tab", { name: en.navGlobals }));
       await openAccessTab(slot);
-      expect(slot.getByTestId("agent-access").getAttribute("data-scope")).toBe("global");
+      await selectScope(slot, "scope-all");
+      await waitFor(() => expect(slot.getByTestId("agent-access").getAttribute("data-scope")).toBe("global"));
       expect(slot.getByTestId("access-scope-note").textContent).toBe(en.accessIntroGlobal);
       expect(slot.getByTestId("access-mode-origin").textContent).toContain(en.accessOrigin_global);
       await openRole(slot, "writer");
@@ -312,7 +317,7 @@ describe("Agent access tab", () => {
       expect(slot.getByTestId("access-writer-skills-origin").textContent).toBe(en.accessOrigin_global);
       expect(slot.getByTestId("access-writer-bbPlugins-origin").textContent).toBe(en.accessOrigin_role);
       // In the project the same change shows as «global», with the order of the levels spelled out.
-      fireEvent.click(slot.getByTestId(`project-item-${projectId}`));
+      await selectScope(slot, `scope-project-${projectId}`);
       await waitFor(() => expect(slot.getByTestId("agent-access").getAttribute("data-scope")).toBe("project"));
       expect(slot.getByTestId("access-scope-note").textContent).toBe(en.accessOrder);
       await waitFor(() => expect(slot.getByTestId("access-badge-writer").textContent).toBe(en.accessOrigin_global));
@@ -335,8 +340,8 @@ describe("Agent access tab", () => {
     const { slot, harness, resets, views } = await mount({ preset: { sec_a: { skills: { mode: "all" } }, sec_b: { userInstructions: "include" } } });
     try {
       await openAccessTab(slot);
-      fireEvent.click(slot.getByTestId(`project-item-${projectId}`));
-      fireEvent.click(await slot.findByTestId("section-item-sec_b"));
+      await selectScope(slot, `scope-project-${projectId}`);
+      await selectScope(slot, "scope-section-sec_b");
       await waitFor(() => expect(slot.getByTestId("agent-access").getAttribute("data-scope")).toBe("section"));
       // The nested section asks for its own view only: the level below rides in the same answer.
       await waitFor(() => expect(views).toContainEqual({ projectId, sectionId: "sec_b" }));

@@ -6,6 +6,15 @@ export type LoopMode = (typeof LOOP_MODES)[number];
 
 export type LoopModes = Record<LoopName, LoopMode>;
 
+export type LoopHealthEntry = {
+  loop: LoopName;
+  mode: LoopMode;
+  metric: number | null;
+  threshold: number;
+  failing: boolean;
+  evidence: Record<string, unknown>;
+};
+
 export const DEFAULT_LOOP_MODES: LoopModes = {
   discovery: "on",
   branches: "on",

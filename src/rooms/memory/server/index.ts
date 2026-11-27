@@ -6,7 +6,7 @@ export { explicitMemorySearch, type ExplicitResult, type ExplicitSearch } from "
 export { createMemoryStage, memoryRecurrenceDue, type MemoryStageApi } from "./services/memory";
 export { dropPackedLists, maintainerMemorySettings, memorySettingsFor } from "./services/memory-settings";
 export { confirmedWordHits } from "./services/session-memory";
-export { sessionMemoryRpc } from "./handlers/session-memory";
+export { projectScopeOf, sessionMemoryRpc } from "./handlers/session-memory";
 export { threadMemoryBlock, THREAD_MEMORY_RULE } from "./services/thread-block";
 export { mountThreadBlock } from "./handlers/thread-block";
 export { embedPending, embedQuery, currentEmbedder, googleEmbedder, setEmbedder, type Embedder } from "./services/embeddings";
@@ -30,4 +30,6 @@ export { getCard, listCards, loadCards, setCard, verifyCard, type CardCtx, type 
 export { CARDS_LOAD_ACTION, registerCardActions } from "./handlers/cards-action";
 export { mountCardTool } from "./handlers/cards-tool";
 export { CARD_USAGE, runCardsCli } from "./handlers/cards-cli";
+export { cardsRpc, listMemoryCards } from "./handlers/cards-rpc";
+export { lessonForTask } from "@lane-pilot/memory-core";
 export { room } from "./room";

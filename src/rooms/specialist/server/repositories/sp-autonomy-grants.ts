@@ -1,10 +1,19 @@
 import type { AutonomyClass } from "@lane-pilot/contracts";
 import type { LanePilotDatabase } from "../../../storage";
+import { loadSpPolicy } from "../../tool-tiers";
 import type { SpOutcomeLogger } from "./sp-outcomes";
 import { isHighRiskActionClass } from "./sp-autonomy-rules";
 
 const DAY_MS = 86_400_000;
 export const REVOKE_FREEZE_DAYS = 14;
+
+export interface AutonomyStateSnapshot {
+  autonomy_class: string;
+  samples_n: number;
+  wilson_lb: number;
+  high_risk: number;
+  frozen_until: number | null;
+}
 
 export interface AutonomyGrantRow {
   project_id: string;
@@ -16,16 +25,82 @@ export interface AutonomyGrantRow {
   reason: string | null;
 }
 
+/** Reads the current autonomy state row for `(projectId, domain, actionClass)`, if present. */
+export function getAutonomyRow(
+  db: LanePilotDatabase,
+  projectId: string,
+  domain: string,
+  actionClass: string,
+): AutonomyStateSnapshot | null {
+  return (
+    (db
+      .prepare(
+        `SELECT autonomy_class, samples_n, wilson_lb, high_risk, frozen_until
+         FROM lane_pilot_sp_autonomy
+         WHERE project_id = ? AND domain = ? AND action_class = ?`,
+      )
+      .get(projectId, domain, actionClass) as AutonomyStateSnapshot | undefined) ?? null
+  );
+}
+
+/** Sets `autonomy_class` to `observe` or `propose` while preserving existing sample/confidence stats and freeze timestamps. */
+export function setAutonomyRowLevel(
+  db: LanePilotDatabase,
+  input: { projectId: string; domain: string; actionClass: string; level: "observe" | "propose"; now?: number },
+): void {
+  const now = input.now ?? Date.now();
+  const highRiskInt = isHighRiskActionClass(input.actionClass) ? 1 : 0;
+  db.prepare(
+    `INSERT INTO lane_pilot_sp_autonomy
+      (project_id, domain, action_class, autonomy_class, samples_n, successes_k, wilson_lb, cohen_kappa, high_risk, frozen_until, updated_at)
+     VALUES (?, ?, ?, ?, 0, 0, 0, 0, ?, NULL, ?)
+     ON CONFLICT(project_id, domain, action_class) DO UPDATE SET
+      autonomy_class = excluded.autonomy_class,
+      updated_at = excluded.updated_at`,
+  ).run(input.projectId, input.domain, input.actionClass, input.level, highRiskInt, now);
+}
+
 /** Grants `bounded_auto` standing permission for an action class and appends a grant audit row. */
 export function grantAutonomy(
   db: LanePilotDatabase,
-  input: { projectId: string; domain: string; actionClass: string; by: string; reason?: string; now?: number },
+  input: {
+    projectId: string;
+    domain: string;
+    actionClass: string;
+    by: string;
+    reason?: string;
+    now?: number;
+    requireGates?: boolean;
+  },
   log?: SpOutcomeLogger,
 ): { ok: true; autonomyClass: AutonomyClass; grantedAt: number } | { ok: false; reason: string } {
   const now = input.now ?? Date.now();
   if (isHighRiskActionClass(input.actionClass)) {
     log?.warn?.(`sp autonomy grant refused class=${input.actionClass} reason=high_risk_never_auto`);
     return { ok: false, reason: "high_risk_never_auto" };
+  }
+
+  if (input.requireGates) {
+    const existing = getAutonomyRow(db, input.projectId, input.domain, input.actionClass);
+    if (existing?.high_risk === 1) {
+      log?.warn?.(`sp autonomy grant refused class=${input.actionClass} reason=high_risk_never_auto`);
+      return { ok: false, reason: "high_risk_never_auto" };
+    }
+    if (existing && existing.frozen_until !== null && existing.frozen_until > now) {
+      log?.warn?.(`sp autonomy grant refused class=${input.actionClass} reason=frozen`);
+      return { ok: false, reason: "frozen" };
+    }
+    const gates = loadSpPolicy().autonomy?.promotion_gates;
+    const minSamples = gates?.min_samples ?? 20;
+    const minConfidence = gates?.wilson_lower_bound_min ?? 0.8;
+    if ((existing?.samples_n ?? 0) < minSamples) {
+      log?.warn?.(`sp autonomy grant refused class=${input.actionClass} reason=insufficient_samples`);
+      return { ok: false, reason: "insufficient_samples" };
+    }
+    if ((existing?.wilson_lb ?? 0) < minConfidence) {
+      log?.warn?.(`sp autonomy grant refused class=${input.actionClass} reason=insufficient_confidence`);
+      return { ok: false, reason: "insufficient_confidence" };
+    }
   }
 
   const tx = db.transaction(() => {

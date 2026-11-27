@@ -68,9 +68,25 @@ PM_BB_READ_COMMANDS = {
 }
 # `bb plugin rpc call <plugin> ...` and `bb plugin run lane-pilot ...` for the plugins an agent works with every day.
 _PM_OPEN_PLUGINS = {"lane-pilot", "bb-plugin-lane-pilot", "env-catalog"}
+_LANE_PILOT_PLUGIN_IDS = {"lane-pilot", "bb-plugin-lane-pilot"}
+# RPC methods only the owner may call; keep in sync with OWNER_ONLY_RPC in src/rooms/contracts/owner-only-rpc.ts.
+_OWNER_ONLY_RPC = {"specialist_autonomy_set", "charter_approve", "desk_answer", "desk_accept_defaults", "brakes_set"}
+
+
+def _owner_only_rpc_method(words: list[str]) -> str | None:
+    if words[:3] == ["plugin", "rpc", "call"] and len(words) > 4 and words[3] in _LANE_PILOT_PLUGIN_IDS and words[4] in _OWNER_ONLY_RPC:
+        return words[4]
+    return None
+
+
+def _owner_only_rpc_error(words: list[str]) -> str | None:
+    method = _owner_only_rpc_method(words)
+    return f"{method} is the owner's alone; the owner uses the Lane Pilot page or a terminal" if method else None
 
 
 def _pm_plugin_call_open(words: list[str]) -> bool:
+    if _owner_only_rpc_method(words):
+        return False
     return (words[:3] == ["plugin", "rpc", "call"] and len(words) > 3 and words[3] in _PM_OPEN_PLUGINS) or (
         words[:3] == ["plugin", "run", "lane-pilot"])
 # Assignments and questions keep the real sender through Lane Pilot's relay.
@@ -1023,6 +1039,9 @@ def _pm_bb_error(args: list[str]) -> str | None:
     words = [arg for arg in args if not arg.startswith("-")]
     if any(arg in {"--help", "-h", "--version", "-V"} for arg in args):
         return None
+    owner_only = _owner_only_rpc_error(words)
+    if owner_only:
+        return owner_only
     allowed = PM_BB_READ_COMMANDS | PM_BB_MESSAGE_COMMANDS
     if any(tuple(words[:size]) in allowed for size in (1, 2, 3)) or _pm_plugin_call_open(words):
         return None
@@ -1332,6 +1351,9 @@ def _lane_pilot_bb_command_error(args: list[str], cwd: object = None) -> str | N
     words = [arg for arg in args if not arg.startswith("-")]
     if any(arg in {"--help", "-h", "--version", "-V"} for arg in args):
         return None
+    owner_only = _owner_only_rpc_error(words)
+    if owner_only:
+        return owner_only
     if any(tuple(words[:size]) in LANE_PILOT_FOLDER_COMMANDS for size in (2, 3)):
         return None
     if words[:3] in (["plugin", "rpc", "list"], ["plugin", "rpc", "inspect"]) and len(words) > 3 and words[3] == "project-folders":
@@ -1905,6 +1927,9 @@ def _hub_target(args: list[str]) -> bool:
 _REMOTE_SHELLS = {"ssh", "scp", "sftp", "rsync", "mosh", "autossh"}
 # The same plugin admin commands read as plain text, for a command line that is not valid shell.
 _PLUGIN_ADMIN_TEXT = re.compile(r"\bplugin\s+(?:" + "|".join(sorted(_BB_PLUGIN_ADMIN)) + r")\b")
+_OWNER_ONLY_RPC_TEXT = re.compile(
+    r"\bplugin\s+rpc\s+call\s+(?:lane-pilot|bb-plugin-lane-pilot)\s+(" + "|".join(sorted(_OWNER_ONLY_RPC)) + r")\b"
+)
 
 
 def _names_bb(word: str) -> bool:
@@ -1923,8 +1948,11 @@ def _lane_pilot_agent_session(key: str | None) -> bool:
 
 def _bb_args_error(args: list[str], strict: bool = False) -> str | None:
     """What `bb <args>` would do that can break the hub or BB's plugin runtime by mistake. strict (every agent but the PM): the plugin's own
-    admin commands (config, token, remove, safe-mode ...). Env Catalog, Lane Pilot's settings, schedules and anamnesis are not judged."""
+    admin commands (config, token, remove, safe-mode ...). Owner-only RPCs are closed to every agent shell, PM included."""
     words = [arg for arg in args if not arg.startswith("-")]
+    owner_only = _owner_only_rpc_error(words)
+    if owner_only:
+        return f"[lane-pilot-guard] {owner_only}"
     if strict:
         for index in range(min(len(words), 3)):
             if words[index] == "plugin" and len(words) > index + 1 and words[index + 1] in _BB_PLUGIN_ADMIN:
@@ -2011,6 +2039,9 @@ def _secret_cli_error(command: str, depth: int = 0, strict: bool = False) -> str
         lexer.commenters = ""
         tokens = list(lexer)
     except ValueError:
+        rpc_match = _OWNER_ONLY_RPC_TEXT.search(text)
+        if rpc_match:
+            return f"[lane-pilot-guard] {rpc_match.group(1)} is the owner's alone; the owner uses the Lane Pilot page or a terminal"
         match = _PLUGIN_ADMIN_TEXT.search(text) if strict else None
         return match.group(0) if match else None
     segment: list[str] = []
@@ -2028,10 +2059,14 @@ def _secret_cli_error(command: str, depth: int = 0, strict: bool = False) -> str
             if error:
                 return error
     # A script a shell reads from a pipe or a here-string cannot be followed token by token.
-    if strict and _SHELL_CONSUMER.search(text):
-        match = _PLUGIN_ADMIN_TEXT.search(text)
-        if match:
-            return match.group(0)
+    if _SHELL_CONSUMER.search(text):
+        rpc_match = _OWNER_ONLY_RPC_TEXT.search(text)
+        if rpc_match:
+            return f"[lane-pilot-guard] {rpc_match.group(1)} is the owner's alone; the owner uses the Lane Pilot page or a terminal"
+        if strict:
+            match = _PLUGIN_ADMIN_TEXT.search(text)
+            if match:
+                return match.group(0)
     return None
 
 
@@ -3248,6 +3283,8 @@ def main() -> None:
             except ValueError:
                 pass  # refused below as unparseable
         if secret_cli:
+            if secret_cli.startswith("[lane-pilot-guard] "):
+                emit_deny(client, secret_cli)
             emit_deny(client, f"[hub-guard] {secret_cli} is not available to Lane Pilot agents: it can break the hub or BB's plugin runtime by mistake. "
                       "Ask the owner to run it in their own terminal.")
     # The linked dependency store is refused on file-system facts, for every lane session.

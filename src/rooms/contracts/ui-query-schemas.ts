@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { TASK_KINDS } from "@lane-pilot/contracts";
+import { consoleOverviewOutput, rpcConsole } from "./rpc-console";
 
 /**
  * Browser-safe schemas of the RPC methods the UI watches (ui-query-contract.ts). They live apart from
@@ -79,6 +80,12 @@ export const ownerWaitingOutput = z.object({
   overnight: z.object({ windowMs: z.number(), red: z.array(z.object({ state: z.string(), count: z.number().int(), attempts: z.array(z.string()) }).strict()), accepted: z.number().int(), rulesAdopted: z.number().int(), rulesConfirmed: z.number().int() }).strict(),
   now: z.number().int(),
   answered: z.object({ owner: z.number().int(), agent: z.number().int(), lead: z.number().int(), janitor: z.number().int() }).strict(),
+  attention: z.object({
+    cap: z.number().int().nonnegative(),
+    shown: z.number().int().nonnegative(),
+    remaining: z.number().int().nonnegative(),
+    day: z.string(),
+  }).strict().optional(),
 }).strict();
 /** Money envelope: the scalars the window reads are typed; per-provider/day payloads and the specialist
  *  ledger are open records — the server adds fields without a contract bump. */
@@ -102,3 +109,11 @@ export const taskBoardOutput = z.object({ items: z.array(z.object({
   held: z.boolean(), gates: z.array(z.object({ name: z.enum(["discussion", "plan", "design"]), ok: z.boolean(), why: z.array(z.string()) }).strict()).nullable(),
   wave: z.object({ n: z.number().int(), m: z.number().int() }).strict().nullable(),
 }).strict()) }).strict();
+
+export const consoleOverviewInput = rpcConsole.console_overview.input;
+export { consoleOverviewOutput };
+export type { ActiveItem, ConsoleOverviewOutput, GoalLine } from "./rpc-console";
+
+export const brakesGetInput = rpcConsole.brakes_get.input;
+export const brakesGetOutput = rpcConsole.brakes_get.output;
+export type { BrakeId, BrakeState, BrakesOutput, StopAllOutput } from "./rpc-console";

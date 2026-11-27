@@ -135,11 +135,13 @@ function groupOf(item: Item, by: GroupBy, projectName: (id: string | null) => st
   return { key: "all", title: "" };
 }
 
-export function TaskBoard({ projects = [], serviceProjectIds = [], initialProjectId = null, lockedProjectId = null, locale, AcceptanceCard }: {
+export function TaskBoard({ projects = [], serviceProjectIds = [], initialProjectId = null, lockedProjectId = null, locale, AcceptanceCard, onOpen }: {
   projects?: ReadonlyArray<{ id: string; name: string }>; serviceProjectIds?: readonly string[]; initialProjectId?: string | null;
   /** The project's own tab: the board of this project only, without the project switch and the title the tab already carries. */
   lockedProjectId?: string | null; locale: string;
   AcceptanceCard: AcceptanceCardView;
+  /** When set, clicking a task or workflow card delegates navigation to the caller instead of opening local state. */
+  onOpen?: (item: Item) => void;
 }) {
   const navigate = useBbNavigate();
   const locked = lockedProjectId != null;
@@ -166,8 +168,14 @@ export function TaskBoard({ projects = [], serviceProjectIds = [], initialProjec
 
   if (open) return <TaskPage item={open} locale={locale} projectName={projectName(open.projectId)} onBack={() => setOpen(null)} AcceptanceCard={AcceptanceCard} />;
   const showProject = projectId === "all";
+  const openItem = (item: Item) => {
+    if (item.kind === "phase") { navigate.toPluginPanel("lane-pilot"); return; }
+    if (item.kind === "batch") { if (item.pmThreadId) navigate.toThread(item.pmThreadId); return; }
+    if (onOpen) { onOpen(item); return; }
+    setOpen(item);
+  };
   const tile = (item: Item) => <TaskCardTile key={item.key} item={item} showProject={showProject} projectName={projectName(item.projectId)} locale={locale}
-    onOpen={() => item.kind === "phase" ? navigate.toPluginPanel("lane-pilot") : item.kind === "batch" ? (item.pmThreadId ? navigate.toThread(item.pmThreadId) : undefined) : setOpen(item)} />;
+    onOpen={() => openItem(item)} />;
   return (
     <div className="space-y-3" data-testid="task-board">
       <div className="flex flex-wrap items-end justify-between gap-2">
@@ -253,7 +261,7 @@ export function TaskBoard({ projects = [], serviceProjectIds = [], initialProjec
           })}
         </div>
       ) : (
-        <TaskList items={shown} groupBy={groupBy} projectName={projectName} showProject={showProject} locale={locale} onOpen={setOpen} />
+        <TaskList items={shown} groupBy={groupBy} projectName={projectName} showProject={showProject} locale={locale} onOpen={openItem} />
       )}
     </div>
   );

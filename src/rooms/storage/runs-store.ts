@@ -1,5 +1,6 @@
 import { OPEN_ATTEMPT_STATES } from "../contracts/state-machine";
 import type { LanePilotDatabase } from "./database";
+import { sectionBindingId } from "./settings-store";
 
 export function createRun(db: LanePilotDatabase, id: string, projectId: string, kind: "bb"|"cli" = "bb", writerWorkspacePath: string | null = null, runGate: "none"|"pre-merge" = "none", runPolicy:unknown = {schemaVersion:1,pools:{provider:5,verification:2}}, writerHostId: string | null = null): void {
   const now = Date.now();
@@ -429,4 +430,13 @@ export function listRunWorkspacePaths(db: LanePilotDatabase, projectId: string, 
 export function recentRunWorkspaces(db: LanePilotDatabase, since: number): Array<{ id: string; host: string; path: string; env: string | null }> {
   return db.prepare("SELECT id, writer_host_id AS host, writer_workspace_path AS path, writer_environment_id AS env FROM lane_pilot_run WHERE writer_host_id IS NOT NULL AND writer_workspace_path IS NOT NULL AND updated_at>=?")
     .all(since) as Array<{ id: string; host: string; path: string; env: string | null }>;
+}
+
+/** Run IDs of a project (or all projects) whose `settings_scopes_json` includes the given section scope. */
+export function listRunIdsForSection(db: LanePilotDatabase, input: { projectId?: string | null; sectionId: string }): string[] {
+  const scope = sectionBindingId(input.sectionId);
+  const rows = input.projectId
+    ? db.prepare("SELECT id FROM lane_pilot_run WHERE project_id = ? AND json_valid(settings_scopes_json) AND EXISTS (SELECT 1 FROM json_each(settings_scopes_json) WHERE value = ?)").all(input.projectId, scope)
+    : db.prepare("SELECT id FROM lane_pilot_run WHERE json_valid(settings_scopes_json) AND EXISTS (SELECT 1 FROM json_each(settings_scopes_json) WHERE value = ?)").all(scope);
+  return (rows as Array<{ id: string }>).map((row) => row.id);
 }

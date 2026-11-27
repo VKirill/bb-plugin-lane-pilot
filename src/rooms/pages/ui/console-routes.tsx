@@ -10,22 +10,22 @@ import {
   Segments,
   Surface,
   SurfaceBody,
-  SurfaceHeader,
 } from "@lane-pilot/ui-kit";
 import { ErrandsScreen } from "../../errands/ui";
-import { MemoryRecords } from "../../memory/ui";
-import { OwnerWaitingBoard } from "../../owner-waiting/ui";
-import { AcceptanceCard as RawAcceptanceCard, TaskBoard } from "../../runs/ui";
+import { MemoryScreen } from "../../memory/ui";
+import { DecisionsScreen } from "../../owner-waiting/ui";
+import { AcceptanceCard as RawAcceptanceCard, WorkScreen } from "../../runs/ui";
 import { ScheduleBoard } from "../../schedule/ui";
 import { OwnedSettings } from "../../settings/ui";
 import { ReturnStage } from "../../stage-return/ui";
 import { TokenUsage } from "../../usage/ui";
-import { WorkflowsScreen } from "../../workflow/ui";
+import { InputsForm, WorkflowsScreen } from "../../workflow/ui";
 import { SYSTEM_PAGES, type ConsoleRoute, type SystemPage } from "../models/nav-model";
 import { ProjectHeader } from "./project-header";
 import { ServiceSegment } from "./service-segment";
 import { KnowledgeTab } from "./tab-knowledge";
-import { OverviewTab, SpecialistStatusCard } from "./tab-overview";
+import { OverviewScreen } from "./screens/overview-screen";
+import { SpecialistStatusCard } from "./tab-overview";
 import { TeamTab } from "./tab-team";
 import { WorkTab } from "./tab-work";
 import type { LpPage } from "./use-lp-page";
@@ -87,28 +87,6 @@ function SettingsAlerts({ page }: { page: LpPage }) {
   );
 }
 
-function OverviewSection({ projectId, page }: ConsoleSectionProps & { page: LpPage }) {
-  if (!projectId || projectId === GLOBAL_SETTINGS_PROJECT_ID) {
-    return (
-      <Surface testId="console-overview-placeholder">
-        <SurfaceHeader>
-          <h1 className="text-sm font-medium">{t("consoleOverviewPlaceholderTitle")}</h1>
-        </SurfaceHeader>
-        <SurfaceBody>
-          <p className="text-sm text-muted-foreground">{t("consoleOverviewPlaceholderBody")}</p>
-        </SurfaceBody>
-      </Surface>
-    );
-  }
-  return (
-    <div className="space-y-6" data-testid="console-overview">
-      <SettingsAlerts page={page} />
-      <ProjectHeader page={page} />
-      <OverviewTab page={page} />
-    </div>
-  );
-}
-
 function StaffSection({ projectId, page }: ConsoleSectionProps & { page: LpPage }) {
   if (projectId && projectId !== GLOBAL_SETTINGS_PROJECT_ID) {
     return (
@@ -137,52 +115,61 @@ function StaffSection({ projectId, page }: ConsoleSectionProps & { page: LpPage 
   );
 }
 
-function WorkSection({ route, go, projectId, locale, page }: ConsoleSectionProps & { page: LpPage }) {
-  const view = route.view === "errands" ? "errands" : "tasks";
+function WorkSection({ route, go, projectId, sectionId, locale, page }: ConsoleSectionProps & { page: LpPage }) {
   const scopedProjectId = projectId && projectId !== GLOBAL_SETTINGS_PROJECT_ID ? projectId : null;
   const serviceProjectIds = page.projectGroups.service.map((project) => project.id);
   return (
-    <div className="space-y-4" data-testid="console-work">
-      <Segments
-        testId="work-view"
-        label={t("consoleNavWork")}
-        compact={page.tabSelect}
-        value={view}
-        onChange={(next) => go({ ...route, section: "work", view: next })}
-        items={[
-          { id: "tasks", label: t("consoleWorkViewTasks") },
-          { id: "errands", label: t("consoleWorkViewErrands") },
-        ]}
-      />
-      {view === "errands" ? (
-        <ErrandsScreen projects={page.projects} locale={locale} />
-      ) : (
-        <TaskBoard
-          key={scopedProjectId ?? "all"}
-          projects={page.projects}
-          serviceProjectIds={serviceProjectIds}
-          lockedProjectId={scopedProjectId}
-          locale={locale}
-          AcceptanceCard={AcceptanceCard}
-        />
-      )}
-    </div>
+    <WorkScreen
+      view={route.view}
+      projectId={scopedProjectId}
+      sectionId={sectionId}
+      projects={page.projects}
+      serviceProjectIds={serviceProjectIds}
+      locale={locale}
+      compact={page.tabSelect}
+      AcceptanceCard={AcceptanceCard}
+      Errands={ErrandsScreen}
+      InputsForm={InputsForm}
+      go={(next) => go(next)}
+    />
   );
 }
 
-function MemorySection({ projectId }: ConsoleSectionProps) {
-  if (!projectId || projectId === GLOBAL_SETTINGS_PROJECT_ID) {
-    return (
-      <Surface testId="console-memory-select-project">
-        <SurfaceBody>
-          <p className="text-sm text-muted-foreground">{t("consoleMemorySelectProject")}</p>
-        </SurfaceBody>
-      </Surface>
-    );
-  }
+function MemorySection({ route, go, projectId, sectionId, locale, page }: ConsoleSectionProps & { page: LpPage }) {
+  const activeView = route.view === "history" ? "history" : "records";
+  const scopedProjectId = projectId && projectId !== GLOBAL_SETTINGS_PROJECT_ID ? projectId : null;
   return (
-    <div data-testid="console-memory">
-      <MemoryRecords projectId={projectId} />
+    <div className="space-y-4" data-testid="console-memory">
+      <PageHeader title={t("consoleNavMemory")} subtitle={t("consoleMemorySubtitle")} />
+      <Segments
+        testId="memory-view"
+        label={t("consoleNavMemory")}
+        compact={page.tabSelect}
+        value={activeView}
+        onChange={(next) => go({ ...route, section: "memory", view: next })}
+        items={[
+          { id: "records", label: t("consoleMemoryTabRecords") },
+          { id: "history", label: t("consoleMemoryTabHistory") },
+        ]}
+      />
+      {activeView === "history" ? (
+        <p className="text-sm text-muted-foreground" data-testid="memory-history-placeholder">
+          {t("consoleMemoryHistoryPlaceholder")}
+        </p>
+      ) : !scopedProjectId ? (
+        <Surface testId="console-memory-select-project">
+          <SurfaceBody>
+            <p className="text-sm text-muted-foreground">{t("consoleMemorySelectProject")}</p>
+          </SurfaceBody>
+        </Surface>
+      ) : (
+        <MemoryScreen
+          projectId={scopedProjectId}
+          sectionId={sectionId}
+          locale={locale}
+          onOpenTask={(runId, taskId) => go({ ...route, section: "work", taskRef: { runId, taskId } })}
+        />
+      )}
     </div>
   );
 }
@@ -251,13 +238,40 @@ function SystemSection({ route, go, projectId, locale, page }: ConsoleSectionPro
   }
 }
 
+function DecisionsSection({ route, go, projectId, page }: ConsoleSectionProps & { page: LpPage }) {
+  const scopedProjectId = projectId && projectId !== GLOBAL_SETTINGS_PROJECT_ID ? projectId : null;
+  return (
+    <DecisionsScreen
+      view={route.view}
+      onViewChange={(next) => go({ ...route, section: "decisions", view: next })}
+      projectId={scopedProjectId}
+      projects={page.projects}
+      compact={page.tabSelect}
+      onOpenTask={(runId, taskId) => go({ ...route, section: "work", taskRef: { runId, taskId } })}
+      onOpenWork={() => go({ ...route, section: "work", view: "tasks" })}
+      onOpenSettings={() => go({ section: "system", page: "settings", projectId: route.projectId, sectionId: route.sectionId })}
+    />
+  );
+}
+
 /** Maps the current `ConsoleRoute` to its screen component inside `ConsoleShell`. */
 export function ConsoleRoutes(props: ConsoleSectionProps & { page: LpPage }) {
   switch (props.route.section) {
-    case "overview":
-      return <OverviewSection {...props} />;
+    case "overview": {
+      const scopedProjectId =
+        props.projectId && props.projectId !== GLOBAL_SETTINGS_PROJECT_ID ? props.projectId : null;
+      return (
+        <OverviewScreen
+          projectId={scopedProjectId}
+          sectionId={props.sectionId}
+          go={props.go}
+          projects={props.page.projects}
+          locale={props.locale}
+        />
+      );
+    }
     case "decisions":
-      return <OwnerWaitingBoard projects={props.page.projects} />;
+      return <DecisionsSection {...props} />;
     case "staff":
       return <StaffSection {...props} />;
     case "work":

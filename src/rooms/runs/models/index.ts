@@ -5,6 +5,7 @@ export * from "./checks-in-flight";
 export * from "./child-snapshots";
 export * from "./constants";
 export * from "./conveyor";
+export * from "./task-outcome";
 export * from "./timeline";
 export * from "./unknown-codes";
 export * from "./writer-reuse-stats";

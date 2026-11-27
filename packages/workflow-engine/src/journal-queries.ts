@@ -157,3 +157,75 @@ export function wfCountRunsInWindow(
   ).get(workflowId, since, until) as { cnt?: unknown } | undefined;
   return Number(row?.cnt ?? 0);
 }
+
+export type AutonomousWfEffectRow = {
+  id: string;
+  run_id: string;
+  step_key: string;
+  effect_key: string;
+  kind: string;
+  state: "done" | "failed";
+  intent_json: string | null;
+  result_json: string | null;
+  created_at: number;
+  updated_at: number;
+  workflow_id: string;
+  project_id: string | null;
+  link_task_id: string | null;
+};
+
+/** Lists settled (`done` / `failed`) journaled workflow effects newest first, optionally scoped by `since` and `projectId`. */
+export function listAutonomousWfEffects(
+  db: WfReadDb,
+  since = 0,
+  limit = 50,
+  projectId?: string,
+): AutonomousWfEffectRow[] {
+  const cap = Math.max(1, Math.min(200, Math.floor(limit || 50)));
+  const where = ["e.state IN ('done', 'failed')", "e.updated_at >= ?"];
+  const args: unknown[] = [since];
+  if (projectId) {
+    where.push("r.project_id = ?");
+    args.push(projectId);
+  }
+  return db.prepare(
+    `SELECT e.id, e.run_id, e.step_key, e.effect_key, e.kind, e.state, e.intent_json, e.result_json,
+            e.created_at, e.updated_at, r.workflow_id, r.project_id, r.link_task_id
+     FROM lane_pilot_wf_effect e
+     JOIN lane_pilot_wf_run r ON r.id = e.run_id
+     WHERE ${where.join(" AND ")}
+     ORDER BY e.updated_at DESC, e.rowid DESC
+     LIMIT ?`,
+  ).all(...args, cap) as AutonomousWfEffectRow[];
+}
+
+export type WfRunMetaRow = {
+  id: string;
+  workflowId: string;
+  inputsJson: string;
+};
+
+/** Reads `workflow_id` and `inputs_json` for a batch of workflow run ids. */
+export function wfRunMetaByIds(
+  db: WfReadDb,
+  runIds: readonly string[],
+): Map<string, WfRunMetaRow> {
+  const out = new Map<string, WfRunMetaRow>();
+  const unique = [...new Set(runIds.map((id) => id.trim()).filter(Boolean))];
+  if (unique.length === 0) return out;
+  const hasTable = Boolean(
+    db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='lane_pilot_wf_run'").get(),
+  );
+  if (!hasTable) return out;
+  for (let at = 0; at < unique.length; at += 400) {
+    const chunk = unique.slice(at, at + 400);
+    const placeholders = chunk.map(() => "?").join(",");
+    const rows = db
+      .prepare(`SELECT id, workflow_id, inputs_json FROM lane_pilot_wf_run WHERE id IN (${placeholders})`)
+      .all(...chunk) as Array<{ id: string; workflow_id: string; inputs_json: string }>;
+    for (const row of rows) {
+      out.set(row.id, { id: row.id, workflowId: row.workflow_id, inputsJson: row.inputs_json });
+    }
+  }
+  return out;
+}

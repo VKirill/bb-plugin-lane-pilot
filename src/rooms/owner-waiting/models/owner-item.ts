@@ -43,6 +43,13 @@ export type OwnerWaitingRow = OwnerItem;
 
 export const defaultWakeForReason = (reason: OwnerReason): boolean => reason === "red";
 
+export type OwnerAttention = {
+  cap: number;
+  shown: number;
+  remaining: number;
+  day: string;
+};
+
 export type OwnerWaiting = {
   generatedAt: number;
   items: OwnerItem[];
@@ -53,6 +60,8 @@ export type OwnerWaiting = {
   now: number;
   /** Who settled the rows closed in the last 7 days. */
   answered: Answered;
+  /** Daily wake-decision attention budget (mirrors `decision_day` / `decision_day_keys` and `decisionCap`). */
+  attention?: OwnerAttention;
 };
 
 /** The owner himself (the screen, his CLI), the helper thread that decides for him (`--by agent…`), the lead, the janitor (terms, rows whose question went away). */

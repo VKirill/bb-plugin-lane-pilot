@@ -1,6 +1,6 @@
-import { GLOBAL_SETTINGS_PROJECT_ID, SETTING_INSTALL_LAST_RECEIPT } from "@lane-pilot/settings-catalog";
+import { SETTING_INSTALL_LAST_RECEIPT } from "@lane-pilot/settings-catalog";
 import { SCHEDULE_ERRAND_DEFAULT_KEY } from "../../../../schedule";
-import { ACCESS_GROUPS, ACCESS_SWITCHES, CORE_PROVIDER_GROUPS, HELPER_ROLES, MANDATORY_BB_PLUGINS, MANDATORY_MCP_SERVERS, effectiveGroup, effectiveSwitch, parseHelperContextSettings, parseRoleAccess, roleAccessKey } from "../../../../contracts/helper-context";
+import { HELPER_ROLES, roleAccessKey } from "../../../../contracts/helper-context";
 import { detectCompiledMainAgentCapability } from "../../../../native-agent";
 import { pickableAgent } from "../../../../contracts/agent-picker";
 import type { BuildCliInvocation } from "../../../../platform/server";
@@ -17,10 +17,11 @@ import { NATIVE_WRITER_KEYS } from "../../../../runs/server";
 import { asJsonText } from "../../../../contracts";
 import { buildRunPolicy, parseRunPolicy, turnCeilingOf } from "../../../../tasks";
 import { stringAt } from "@lane-pilot/kit";
-import { PAIR_ROLE_SPECS, PROVIDER_CAPABILITIES, roleAtomicMessage } from "@lane-pilot/models";
+import { PAIR_ROLE_SPECS, roleAtomicMessage } from "@lane-pilot/models";
 import type { PluginRpcHandlers } from "@get-bb/plugin-sdk";
 import { rpcContract } from "../../../../contracts";
 import type { ServerCore } from "../../../../contracts/server";
+import { createHelperAccessView } from "../../services/access-view";
 
 import type { WriterHostApi } from "../../../../platform/server";
 
@@ -66,78 +67,9 @@ export function settingsRpc(ctx: ServerCore, services: Services) {
       })));
     return listed.map((run) => ({ ...run, pmThread: pmThreads.get(run.id) ?? null }));
   };
-  // The BB plugin list and the skills catalog cost host calls (the skills catalog is ~385 KB) and change rarely: kept per catalog project for a minute.
-  const catalogCache = new Map<string, { at: number; value: { pluginRows: Array<{ id?: string; name?: string; displayName?: string }>; skillRows: Array<{ name?: string; description?: string }> } }>();
-  const CATALOG_TTL_MS = 60_000;
-  const loadCatalog = async (projectId: string, isGlobal: boolean) => {
-    const cached = catalogCache.get(projectId);
-    if (cached && Date.now() - cached.at < CATALOG_TTL_MS) return cached.value;
-    const pluginsRequest = (bb.sdk.plugins.list() as Promise<unknown>).catch(() => []);
-    // The skills catalog of the project; some BB versions want an environment, so the project's own is tried next.
-    // The global scope has no catalog of its own; the first project's stands in for it.
-    const listedProjects = isGlobal ? await (bb.sdk.projects.list() as Promise<unknown>).catch(() => []) : [];
-    const projectRows = (Array.isArray(listedProjects) ? listedProjects : ((listedProjects as { projects?: unknown[] })?.projects ?? [])) as Array<{ id?: string }>;
-    const catalogProject = isGlobal ? projectRows.find((p) => p?.id)?.id ?? projectId : projectId;
-    const listSkills = (environmentId: string | null) => bb.sdk.skills.list({ projectId: catalogProject, environmentId } as never) as Promise<unknown>;
-    let skills: unknown = await listSkills(null).catch((cause) => { ctx.log(`helper_access_view skills: ${cause instanceof Error ? cause.message : String(cause)}`); return null; });
-    if (!skills) {
-      const envs = await (bb.sdk.environments.list({ projectId: catalogProject } as never) as Promise<unknown>).catch(() => []);
-      const env = (Array.isArray(envs) ? envs : ((envs as { environments?: unknown[] })?.environments ?? [])) as Array<{ id?: string }>;
-      if (env[0]?.id) skills = await listSkills(env[0].id).catch((cause) => { ctx.log(`helper_access_view skills (env): ${cause instanceof Error ? cause.message : String(cause)}`); return []; });
-    }
-    const skillRows = (Array.isArray(skills) ? skills : ((skills as { skills?: unknown[] })?.skills ?? [])) as Array<{ name?: string; description?: string }>;
-    const plugins = await pluginsRequest;
-    const pluginRows = (Array.isArray(plugins) ? plugins : ((plugins as { plugins?: unknown[] })?.plugins ?? [])) as Array<{ id?: string; name?: string; displayName?: string }>;
-    const value = { pluginRows, skillRows };
-    if (pluginRows.length || skillRows.length) catalogCache.set(projectId, { at: Date.now(), value });
-    return value;
-  };
+  const helperAccessView = createHelperAccessView(ctx);
   return {
-    helper_access_view: async ({ projectId, sectionId }) => {
-      const scopes = sectionId ? sectionChain(await listProjectSections(projectId), sectionId) : [];
-      const bindingId = scopes.at(-1) ?? "";
-      const settings = loadProjectSettings(db, projectId, scopes);
-      const own = new Map(listSettingRows(db, projectId, bindingId).map((row) => [row.key, row]));
-      const parsed = parseHelperContextSettings(settings);
-      const versions = getSettingVersions(db, projectId, HELPER_ROLES.map(roleAccessKey), bindingId);
-      // Where a key's value comes from: the deepest scope that holds a row for it.
-      const isGlobal = projectId === GLOBAL_SETTINGS_PROJECT_ID;
-      const scopeRows: Array<[ "global" | "project" | "section", Set<string>]> = [
-        ...(isGlobal ? [] : [["global", new Set(listSettingRows(db, GLOBAL_SETTINGS_PROJECT_ID, "").map((row) => row.key))] as ["global", Set<string>]]),
-        [isGlobal ? "global" : "project", new Set(listSettingRows(db, projectId, "").map((row) => row.key))],
-        ...scopes.map((binding) => ["section", new Set(listSettingRows(db, projectId, binding).map((row) => row.key))] as ["section", Set<string>]),
-      ];
-      const originIn = (rows: typeof scopeRows, key: string) => { let found: "global" | "project" | "section" | null = null; for (const [name, keys] of rows) if (keys.has(key)) found = name; return found; };
-      const originOf = (key: string) => originIn(scopeRows, key);
-      // What the role falls back to when this level's change is removed: the origin one level up (none at the global level).
-      const originBelow = (key: string) => isGlobal ? null : originIn(scopeRows.slice(0, -1), key);
-      const roles = HELPER_ROLES.map((role) => {
-        const key = roleAccessKey(role);
-        const access = parseRoleAccess(settings[key]);
-        return {
-          role, key, version: versions[key] ?? 0, value: own.get(key)?.value ?? null,
-          inherited: !own.has(key) && settings[key] !== undefined,
-          origin: originOf(key),
-          originBelow: originBelow(key),
-          groups: Object.fromEntries(ACCESS_GROUPS.map((group) => [group, effectiveGroup(role, group, access)])) as never,
-          switches: Object.fromEntries(ACCESS_SWITCHES.map((sw) => [sw, effectiveSwitch(sw, access, role)])) as never,
-        };
-      });
-      const { pluginRows, skillRows } = await loadCatalog(projectId, isGlobal);
-      return {
-        mode: parsed.ok ? parsed.settings.mode : "invalid",
-        modeOrigin: originOf("helper.context_mode"),
-        roles,
-        catalog: {
-          bbPlugins: pluginRows.filter((p) => typeof p.id === "string").map((p) => ({ id: p.id!, name: p.displayName ?? p.name ?? p.id! })).sort((a, b) => a.id.localeCompare(b.id)),
-          skills: [...new Map(skillRows.filter((k) => typeof k.name === "string").map((k) => [k.name!, { name: k.name!, description: (k.description ?? "").slice(0, 200), store: typeof (k as { store?: unknown }).store === "string" && (k as { store?: string }).store ? (k as { store: string }).store : "общие BB" }])).values()].sort((a, b) => a.name.localeCompare(b.name)),
-          // Where the list looked (SMA m_sw_skills): an empty list names the places, not silence.
-          skillsLooked: ["общие навыки BB", `навыки проекта «${projectId}»`],
-        },
-        mandatory: { bbPlugins: [...MANDATORY_BB_PLUGINS], mcpServers: [...MANDATORY_MCP_SERVERS] },
-        providers: Object.fromEntries(Object.entries(CORE_PROVIDER_GROUPS).filter(([id]) => !PROVIDER_CAPABILITIES[id]?.notStarted).map(([id, groups]) => [id, [...groups]])),
-      };
-    },
+    helper_access_view: helperAccessView,
     get_screen: async ({ projectId, sectionId, runsLimit }) => {
       // A section shows its own values over its parents', its project's and the global ones.
       const scopes = sectionId ? sectionChain(await listProjectSections(projectId), sectionId) : [];

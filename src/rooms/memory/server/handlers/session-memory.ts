@@ -11,7 +11,7 @@ import type { ServerCore } from "../../../contracts/server";
 
 import { sha256Hex } from "@lane-pilot/kit";
 import { threadMemoryBlock } from "../services/thread-block";
-import { loadProjectSettings, projectHasScopedRun } from "../../../storage";
+import { loadProjectSettings, projectHasScopedRun, taskTimelineRow } from "../../../storage";
 
 import type { DocsApi } from "../../../docs/server";
 import type { MemoryConflictsApi } from "../services/memory-conflicts";
@@ -22,26 +22,33 @@ interface Services {
   memoryConflicts: Pick<MemoryConflictsApi, "detect" | "eraseRecord">;
 }
 
+/** Resolves the project and deepest section scope chain that contains `path` on `hostId`. */
+export async function projectScopeOf(
+  ctx: Pick<ServerCore, "bb" | "log">,
+  services: Pick<Services, "docsPlaces">,
+  { hostId, path }: { hostId: string; path: string },
+): Promise<{ projectId: string | null; scopes: string[] }> {
+  const target = resolve(path);
+  const projects = await ctx.bb.sdk.projects.list({ includePersonal: true } as never) as Array<{ id: string }>;
+  let best: { projectId: string; scopes: string[]; length: number } | null = null;
+  for (const project of projects) {
+    for (const place of await services.docsPlaces(project.id).catch((cause: unknown) => { ctx.log(`session memory: docs places of ${project.id} unreadable: ${cause instanceof Error ? cause.message : String(cause)}`); return []; })) {
+      const base = resolve(place.path);
+      if (place.hostId !== hostId || !(target === base || target.startsWith(`${base}/`))) continue;
+      if (!best || base.length > best.length) best = { projectId: project.id, scopes: place.scopes, length: base.length };
+    }
+  }
+  return best ? { projectId: best.projectId, scopes: best.scopes } : { projectId: null, scopes: [] };
+}
+
 /**
  * Project memory on the hub, for any machine. (2026-10-29) lane-memory no longer calls these.
  */
 export function sessionMemoryRpc(ctx: ServerCore, services: Services) {
-  const { bb, db } = ctx;
+  const { db } = ctx;
   return {
     // The project and section chain a folder on a machine belongs to: the deepest place that contains it.
-    session_memory_project: async ({ hostId, path }) => {
-      const target = resolve(path);
-      const projects = await bb.sdk.projects.list({ includePersonal: true } as never) as Array<{ id: string }>;
-      let best: { projectId: string; scopes: string[]; length: number } | null = null;
-      for (const project of projects) {
-        for (const place of await services.docsPlaces(project.id).catch((cause: unknown) => { ctx.log(`session memory: docs places of ${project.id} unreadable: ${cause instanceof Error ? cause.message : String(cause)}`); return []; })) {
-          const base = resolve(place.path);
-          if (place.hostId !== hostId || !(target === base || target.startsWith(`${base}/`))) continue;
-          if (!best || base.length > best.length) best = { projectId: project.id, scopes: place.scopes, length: base.length };
-        }
-      }
-      return best ? { projectId: best.projectId, scopes: best.scopes } : { projectId: null, scopes: [] };
-    },
+    session_memory_project: ({ hostId, path }) => projectScopeOf(ctx, services, { hostId, path }),
     memory_import: async ({ source, projectId, jsonl, dryRun }) => {
       const texts: string[] = [];
       for (const raw of jsonl.split("\n")) { try { const line = JSON.parse(raw) as { content?: unknown }; if (typeof line.content === "string") texts.push(maskImportContent(line.content)); } catch { /* the import reports the bad line */ } }
@@ -101,6 +108,14 @@ export function sessionMemoryRpc(ctx: ServerCore, services: Services) {
     memory_records_list: async ({ projectId }) => {
       const rows = listActiveMemoryRows(db as never, projectId, 500);
       const noTrace = new Set(memoryWithoutTrace(db as never, projectId).map((row) => row.id));
+      const runIdByTaskId = new Map<string, string | null>();
+      const resolveOriginRunId = (taskId: string | null): string | null => {
+        if (!taskId) return null;
+        if (!runIdByTaskId.has(taskId)) {
+          runIdByTaskId.set(taskId, taskTimelineRow(db, taskId)?.run_id ?? null);
+        }
+        return runIdByTaskId.get(taskId) ?? null;
+      };
       return {
         records: rows.map((row) => {
           let concepts: string[] = [];
@@ -108,7 +123,9 @@ export function sessionMemoryRpc(ctx: ServerCore, services: Services) {
           return {
             id: row.id, kind: row.kind, audience: row.audience, content: row.content, concepts,
             createdAt: row.created_at, rule: concepts.includes("rule"), useCount: row.use_count,
-            acceptedCount: row.accepted_count, originTaskId: row.origin_task_id, sourceFileId: row.source_file_id,
+            acceptedCount: row.accepted_count, originTaskId: row.origin_task_id,
+            originRunId: resolveOriginRunId(row.origin_task_id),
+            sourceFileId: row.source_file_id,
             noTrace: noTrace.has(row.id), origin: row.origin,
             scope: (() => {
               try {

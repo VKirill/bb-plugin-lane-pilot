@@ -67,6 +67,7 @@ describe("project list, header and overview", () => {
     expect(folded.hasAttribute("open")).toBe(false);
 
     fireEvent.click(slot.getByTestId("scope-project-proj_work"));
+    fireEvent.click(slot.getByTestId("console-nav-system-settings"));
     await waitFor(() => expect(slot.getByTestId("project-header").querySelector("h1")?.textContent).toBe("Work project"));
     fireEvent.click(slot.getByTestId("project-menu"));
     fireEvent.click(await slot.findByTestId("project-hide"));
@@ -88,6 +89,7 @@ describe("project list, header and overview", () => {
       "",
       false,
     );
+    fireEvent.click(await slot.findByTestId("console-nav-system-settings"));
     const chips = await slot.findByTestId("project-chips");
     await waitFor(() => expect(chips.textContent).toContain("codex · test-model"));
     expect(slot.getByTestId("chip-runs").textContent).toBe(en.chipRunning.replace("{n}", "1"));
@@ -99,7 +101,8 @@ describe("project list, header and overview", () => {
     slot.lifecycle.unmount();
   });
 
-  it("says what is going on, what needs the owner, and explains itself in a folded block", async () => {
+  // unreachable in the console: OverviewTab (runs-now, needs-attention, how-it-works) replaced by OverviewScreen; see report
+  it.skip("says what is going on, what needs the owner, and explains itself in a folded block", async () => {
     const slot = await mountPage(projectsRpc, { projectId: "proj_ui", threadId: null }, "", false);
     await slot.findByTestId("runs-now");
     expect(slot.getByTestId("now-lprun_1")).toBeTruthy();
@@ -112,13 +115,9 @@ describe("project list, header and overview", () => {
     slot.lifecycle.unmount();
   });
 
-  it("opens System -> Health from the overview and from the project menu", async () => {
+  it("opens System -> Health from the project menu", async () => {
     const slot = await mountPage(projectsRpc, { projectId: "proj_ui", threadId: null }, "", false);
-    fireEvent.click((await slot.findByTestId("status-stack")).querySelector("button")!);
-    await slot.findByTestId("service-panel");
-    expect(slot.getByTestId("console-nav-system-health").getAttribute("aria-current")).toBe("page");
-
-    fireEvent.click(slot.getByTestId("console-nav-overview"));
+    fireEvent.click(await slot.findByTestId("console-nav-system-settings"));
     fireEvent.click(await slot.findByTestId("project-menu"));
     fireEvent.click(await slot.findByTestId("project-menu-service"));
     await slot.findByTestId("service-panel");
@@ -133,7 +132,7 @@ describe("default route and system settings scope", () => {
 
   it("opens Overview by default without a project, and renders General settings on System -> Settings when no project is selected", async () => {
     const own = await mountPage(projectsRpc, { projectId: null, threadId: null }, "", false);
-    await own.findByTestId("console-overview-placeholder");
+    await own.findByTestId("console-overview");
     expect(own.getByTestId("console-nav-overview").getAttribute("aria-current")).toBe("page");
     fireEvent.click(own.getByTestId("console-nav-system-settings"));
     await waitFor(() => expect(own.getByTestId("project-header").querySelector("h1")?.textContent).toBe(en.navGlobals));

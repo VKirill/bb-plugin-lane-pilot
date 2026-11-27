@@ -28,14 +28,14 @@ import { expireOverdueHandoffs } from "@lane-pilot/handoff";
 import { createDeferrals, sdkOwnerMessagePort } from "./src/rooms/deferral/server";
 import { createRollback } from "./src/rooms/rollback/server";
 import { createBaseline } from "./src/rooms/baseline/server";
-import { addRoad, doneRoad, getRoad, listRoad, parseLeadSettings, reopenRoad, taskWordPort } from "./src/rooms/lead/server";
+import { addRoad, doneRoad, getRoad, leadDecisions, listRoad, parseLeadSettings, reopenRoad, taskWordPort } from "./src/rooms/lead/server";
 import { loadEvalData, runMemoryEval } from "./src/rooms/memory-eval/server";
 import type { StabilityPort } from "./src/rooms/contracts";
 import { createIntakeTrain, createPhaseIntake, mountPhaseIntake } from "./src/rooms/workflow/server";
 import { createGitWriter } from "./src/rooms/core/server";
 import { registerConversationTools, registerQueueTool } from "./src/rooms/tasks/server";
 import { mountOutbound, postEvent } from "./src/rooms/relay/server";
-import { mountReports } from "./src/rooms/reports/server";
+import { loopHealth, mountReports } from "./src/rooms/reports/server";
 import { ownerWaitingRpc } from "./src/rooms/owner-waiting/server";
 import { createMoney } from "./src/rooms/money";
 import { mountPermits } from "./src/rooms/writer/server";
@@ -71,7 +71,7 @@ import { createWriterStart } from "./src/rooms/writer/server";
 import { createAttemptReopen, createWriterReassign, recheckPlanFact, registerDispatchExecutors, restoreProviderBreaker, taskUsage } from "./src/rooms/writer/server";
 import { stageHelperSettings } from "./src/rooms/settings/server";
 import { wfRunRow } from "@lane-pilot/workflow-engine";
-import { builtinWorkflow, createDedupeGate, createProjectTemplateRunner, createWorkflowEngine, deriveRunVerdict, getRunVerdict, listRouteMisses, listRunVerdicts, proveWorkflow, publishEvolutionWorkflowDraft, registerRunVerdictPort, rollbackEvolutionWorkflowDraft, type RunFinishedSubscriber } from "./src/rooms/workflow/server";
+import { autonomousEffects, builtinWorkflow, createDedupeGate, createProjectTemplateRunner, createWorkflowEngine, deriveRunVerdict, getRunVerdict, listRouteMisses, listRunVerdicts, proveWorkflow, publishEvolutionWorkflowDraft, readWfRunMetaByIds, registerRunVerdictPort, rollbackEvolutionWorkflowDraft, type RunFinishedSubscriber } from "./src/rooms/workflow/server";
 import { onCanaryRun, onPostPromotionVerdict, resolveCanary } from "./src/rooms/evolve/server";
 import { architectStarter, createWorkflowLibrary } from "./src/rooms/workflow/server";
 import { createWorkflowTriggersService } from "./src/rooms/workflow/server";
@@ -133,7 +133,11 @@ export default async function plugin(originalBb: BbPluginApi) {
     resolveCanary: (workflowId) => resolveCanary(db, workflowId, { log: bb.log }),
     evolvePublishDraft: (input) => publishEvolutionWorkflowDraft(ctx, services, { ...input, ensureTests: true }),
     evolveRollbackDraft: (input) => rollbackEvolutionWorkflowDraft(ctx, services, input),
-  } satisfies Pick<Services, "buildCliInvocation" | "taskWords" | "laneProject" | "leadRoad" | "memorySettings" | "scheduleAgents" | "memoryEval" | "onAttemptFinished" | "dedupeThreshold" | "resolveCanary" | "evolvePublishDraft" | "evolveRollbackDraft">);
+    autonomousEffects,
+    leadDecisions,
+    loopHealth,
+    wfRunMeta: readWfRunMetaByIds,
+  } satisfies Pick<Services, "buildCliInvocation" | "taskWords" | "laneProject" | "leadRoad" | "memorySettings" | "scheduleAgents" | "memoryEval" | "onAttemptFinished" | "dedupeThreshold" | "resolveCanary" | "evolvePublishDraft" | "evolveRollbackDraft" | "autonomousEffects" | "leadDecisions" | "loopHealth" | "wfRunMeta">);
   mountNativeWiring(ctx); bindSubthreadProjectSettings(ctx.bb, (pid) => loadProjectSettings(db, pid));
   services.tokenCursorRow = tokenCursorRow;
   // The writer pool must exist before project-git and dispatch are composed: the Git guard and live admission share it.

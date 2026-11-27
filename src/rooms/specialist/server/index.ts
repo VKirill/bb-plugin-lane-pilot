@@ -7,6 +7,7 @@ export {
 } from "./services/sp-memory-loader";
 export type { SpBacklogPort, SpSchedulePort, SpServicesDeps } from "./services/sp-dispatch-runner";
 export {
+  type SpecialistCharterOverview,
   type SpecialistOverviewPayload,
   specialistOverview,
   specialistSnapshot,
@@ -128,4 +129,29 @@ export {
   runVerifiedSkillScript,
   mapScriptOutputToDeclaredFields,
 } from "./services/sp-script-runner";
+export { actionsLog, type ActionsLogDeps, type ActionsLogInput } from "./services/actions-log";
+export {
+  charterDraftKey,
+  specialistDetail,
+  type SpecialistDetailDeps,
+  type SpecialistDetailInput,
+  type SpecialistDetailLogger,
+} from "./services/sp-detail";
+export {
+  setSpecialistAutonomy,
+  type SetAutonomyDeps,
+  type SetAutonomyInput,
+  type SetAutonomyResult,
+} from "./services/sp-autonomy-service";
+export {
+  approveCharter,
+  proposeCharter,
+  saveCharter,
+  type ApproveCharterInput,
+  type ApproveCharterResult,
+  type CharterDomain,
+  type CharterProducer,
+  type ProposeCharterInput,
+  type SaveCharterInput,
+} from "./services/sp-charter-service";
 export { room } from "./room";

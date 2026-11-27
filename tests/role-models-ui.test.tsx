@@ -63,7 +63,7 @@ function tableRpc(initial: ReturnType<typeof view>) {
 }
 
 async function openTeam(slot: Awaited<ReturnType<typeof mountPage>>) {
-  await slot.findByTestId("status-writer");
+  await slot.findByTestId("console-shell");
   openTab(slot, "team");
   return await slot.findByTestId("role-models");
 }
@@ -201,7 +201,7 @@ describe("the table «role -> model» on the Team tab", () => {
     const { rpc } = tableRpc(view());
     const slot = await mountPage(rpc);
     await openTeam(slot);
-    const teamPanel = slot.getByTestId("team-panel");
+    const teamPanel = slot.getByTestId("system-agents");
     const roleModels = slot.getByTestId("role-models");
     const pmRow = slot.getByTestId("main-agent");
     expect(Boolean(roleModels.compareDocumentPosition(pmRow) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true);

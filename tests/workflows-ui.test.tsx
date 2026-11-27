@@ -372,10 +372,10 @@ describe("Workflows in the page", () => {
         list_sections: () => ({ sections: [] }),
       } as never,
     });
-    fireEvent.click(await slot.findByTestId("scope-nav-workflows"));
+    fireEvent.click(await slot.findByTestId("console-nav-system-graphs"));
     expect((await slot.findByTestId("workflows")).textContent).toContain("Workflows");
     await slot.findByTestId("wf-row-review-fix");
-    expect(slot.getByTestId("project-settings").hasAttribute("hidden")).toBe(true);
+    expect(slot.queryByTestId("system-settings")).toBeNull();
   });
 });
 

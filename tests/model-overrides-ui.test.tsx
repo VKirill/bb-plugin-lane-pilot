@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 import { describe, expect, it, vi } from "vitest";
 import { fireEvent, waitFor } from "@testing-library/react";
-import { en, ru, setLocaleOverride } from "@lane-pilot/i18n";
+import { en, setLocaleOverride } from "@lane-pilot/i18n";
 import { mountPage } from "./ui-harness";
 import { openTab } from "./ui-tabs";
 import { useMatrixHooks } from "./ui-matrix/helpers";
@@ -33,10 +33,10 @@ function overridesRpc(levels: Level[]) {
 }
 
 async function openGlobalTeam(slot: Awaited<ReturnType<typeof mountPage>>) {
-  await slot.findByTestId("status-writer");
-  fireEvent.click(slot.getAllByRole("tab", { name: "General settings" })[0]!);
-  await waitFor(() => expect(slot.getByTestId("project-settings").querySelector("h1")?.textContent).toBe("General settings"));
+  await slot.findByTestId("console-shell");
   openTab(slot, "team");
+  fireEvent.click(slot.getByTestId("scope-switcher"));
+  fireEvent.click(await slot.findByTestId("scope-all"));
   return await slot.findByTestId("model-overrides");
 }
 
@@ -97,7 +97,7 @@ describe("giving every project and section the global models back, from the glob
   it("is not on a project: there the role rows have their own reset", async () => {
     const { rpc } = overridesRpc([...LEVELS]);
     const slot = await mountPage(rpc);
-    await slot.findByTestId("status-writer");
+    await slot.findByTestId("console-shell");
     openTab(slot, "team");
     await slot.findByTestId("team-table");
     expect(slot.queryByTestId("model-overrides")).toBeNull();
@@ -108,11 +108,7 @@ describe("giving every project and section the global models back, from the glob
     setLocaleOverride("ru");
     const { rpc } = overridesRpc([...LEVELS]);
     const slot = await mountPage({ ...rpc, get_preferences: () => ({ locale: "ru", preference: "ru", lastProjectId: null }) });
-    await slot.findByTestId("status-writer");
-    fireEvent.click(slot.getAllByRole("tab", { name: ru.navGlobals })[0]!);
-    await waitFor(() => expect(slot.getByTestId("project-settings").querySelector("h1")?.textContent).toBe(ru.navGlobals));
-    openTab(slot, "team");
-    await slot.findByTestId("model-overrides");
+    await openGlobalTeam(slot);
     await waitFor(() => expect(slot.getByTestId("model-overrides-count").textContent).toBe("Мест со своими моделями или агентами: 3"));
     expect(slot.getByTestId("model-overrides-reset").textContent).toBe("Сбросить везде");
     slot.lifecycle.unmount();

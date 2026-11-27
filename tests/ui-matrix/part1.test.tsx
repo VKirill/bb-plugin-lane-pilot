@@ -17,17 +17,19 @@ describe("Lane Pilot UI", () => {
       list_projects: () => ({ projects:[{ id:"proj_ui", name:"UI test" }], lastProjectId:"proj_ui" }),
       remember_project: remember,
     }, { projectId:null, threadId:null });
-    const project = await slot.findByTestId("project-item-proj_ui");
-    fireEvent.click(project);
+    fireEvent.click(await slot.findByTestId("scope-switcher"));
+    fireEvent.click(await slot.findByTestId("scope-project-proj_ui"));
     await openAllTabs(slot);
+    openTab(slot, "team");
     await waitFor(() => expect(slot.container.querySelector("[data-testid='bb-provider-model-picker']")).not.toBeNull());
     expect(remember).toHaveBeenCalledWith({ projectId:"proj_ui" });
     expect(slot.queryByRole("button", { name: "Open project" })).toBeNull();
-    expect(slot.getByTestId("scope-rail")).toBeTruthy();
-    expect(slot.getByTestId("scope-nav").querySelector(".grid")).toBeNull();
-    expect(slot.getByTestId("tab-work").closest("[data-testid='project-settings']")).toBeTruthy();
+    expect(slot.getByTestId("console-sidebar")).toBeTruthy();
+    expect(slot.getByTestId("console-nav").querySelector(".grid")).toBeNull();
     expect(slot.getByTestId("main-agent").textContent).toContain(en.mainAgent);
     expect(slot.getByTestId("main-agent").textContent).not.toMatch(/spawn|compiled/i);
+    openTab(slot, "work");
+    expect(slot.getByTestId("work-panel-body").closest("[data-testid='system-settings']")).toBeTruthy();
     slot.lifecycle.unmount();
   });
 
@@ -74,12 +76,18 @@ describe("Lane Pilot UI", () => {
 
   it("shows a loading state on the overview until the screen arrives, never the defaults", async () => {
     let release: (value: unknown) => void = () => undefined;
-    const slot = await mountPage({ get_screen: () => new Promise((resolve) => { release = resolve; }) }, { projectId:"proj_ui", threadId:null }, "", false);
+    const slot = await mountPage({ console_overview: () => new Promise((resolve) => { release = resolve; }) }, { projectId:"proj_ui", threadId:null }, "", false);
     await slot.findByTestId("overview-loading");
-    expect(slot.getByTestId("overview-panel").textContent).not.toContain(en.overviewWriterMissing);
-    expect(slot.getByTestId("overview-panel").textContent).not.toContain(en.overviewNoRuns);
-    release(screenFixture());
-    await slot.findByTestId("status-writer");
+    expect(slot.getByTestId("console-overview").textContent).not.toContain(en.consoleOverviewActiveEmpty);
+    release({
+      tz: "UTC",
+      counts: { active: 0, waiting: 0, closedToday: 0, spendTodayUsd: null, goalsOnTrack: 0, goalsTotal: 0 },
+      active: [],
+      closedByDay: [],
+      goals: [],
+      costCoverage: 1,
+    });
+    await slot.findByTestId("overview-kpis");
     expect(slot.queryByTestId("overview-loading")).toBeNull();
     slot.lifecycle.unmount();
   });
@@ -90,15 +98,15 @@ describe("Lane Pilot UI", () => {
     const first = await mountPage({
       get_preferences: () => ({ locale:"ru", preference:"ru", lastProjectId:null }),
     });
-    await waitFor(() => expect(first.getByTestId("tab-work").textContent).toBe(ru.tabWork));
+    await waitFor(() => expect(first.getByTestId("console-nav-system-settings").textContent).toBe(ru.consoleSysSettings));
     expect(document.documentElement.lang).toBe("en");
     first.lifecycle.unmount();
     setLocaleOverride(null);
     const second = await mountPage({
       get_screen: () => ({ ...base, projectId: "proj_other", values: { ...base.values } }),
     });
-    await waitFor(() => expect(second.getByTestId("tab-work").textContent).toBe(en.tabWork));
-    expect(second.queryByText(ru.tabWork)).toBeNull();
+    await waitFor(() => expect(second.getByTestId("console-nav-system-settings").textContent).toBe(en.consoleSysSettings));
+    expect(second.queryByText(ru.consoleSysSettings)).toBeNull();
     second.lifecycle.unmount();
   });
 
@@ -106,7 +114,8 @@ describe("Lane Pilot UI", () => {
     const slot = await mountPage({
       save_setting: () => ({ ok: false, conflict: true, version: 9, value: 3 }),
     });
-    await waitFor(() => expect(slot.container.querySelector("[data-testid='bb-provider-model-picker']")).not.toBeNull());
+    openTab(slot, "work");
+    await waitFor(() => expect(slot.getByTestId("code-critique-policy")).toBeTruthy());
     const input = slot.getByTestId("code-critique-policy").querySelector("[data-testid='field-s380'] input[type='number']") as HTMLInputElement;
     fireEvent.change(input, { target: { value: "10" } });
     fireEvent.blur(input);

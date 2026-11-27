@@ -46,6 +46,8 @@ async function placeOf(ctx: ServerCore, services: Services, projectId: string): 
   };
 }
 
+export const projectPlace = placeOf;
+
 /** The places of the given projects, read once each. */
 export async function projectPlaces(ctx: ServerCore, services: Services, projectIds: readonly string[]): Promise<Map<string, ProjectPlace>> {
   const ids = [...new Set(projectIds)];

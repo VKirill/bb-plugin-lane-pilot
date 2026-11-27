@@ -1,6 +1,7 @@
 import { defineSetting, type SettingDefinition } from "@lane-pilot/settings-catalog";
 
 export const SPECIALIST_SNAPSHOT_BYTES_KEY = "specialist.snapshot_bytes";
+export const SPECIALIST_PAUSED_ALL_KEY = "specialist.paused_all";
 export const DEFAULT_SPECIALIST_SNAPSHOT_BYTES = 24_000;
 export const MIN_SPECIALIST_SNAPSHOT_BYTES = 8_000;
 export const MAX_SPECIALIST_SNAPSHOT_BYTES = 96_000;

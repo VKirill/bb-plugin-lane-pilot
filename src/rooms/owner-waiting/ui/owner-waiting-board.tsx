@@ -1,17 +1,28 @@
-import { useCallback, useEffect, useState } from "react";
-import { useLpRpcQuery } from "../../ui-shell/ui";
-import { useRpc } from "@get-bb/plugin-sdk/app";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useBbContext, useBbNavigate, useRpc } from "@get-bb/plugin-sdk/app";
 import { toast } from "sonner";
 import { t, type I18nKey } from "@lane-pilot/i18n";
-import { Button, Disclosure, Input, Switch } from "@lane-pilot/ui-kit";
+import { Button, ConfirmDialog, Disclosure, Input, Switch } from "@lane-pilot/ui-kit";
 import type { rpcContract } from "../../contracts";
+import { useLpRpcQuery } from "../../ui-shell/ui";
 import type { OwnerAction, OwnerItem, OwnerWaiting } from "../models/owner-item";
+import {
+  OwnerItemCard,
+  confirmTitleFor,
+  foldLabel,
+  isClosingAction,
+  isTaskWordNo,
+  kindLabel,
+  ownerChipClass,
+  resolveDeferTarget,
+  shortRef,
+  type DeferTarget,
+} from "./owner-waiting-card";
 
 /**
  * «Waiting for you» (SMA D0-3): the one screen of what only the owner can decide. It is read by a person who does not program (the owner,
  * 2026-11-01), so a card is four plain answers: what happened, why it is his, what to do (a button when the plugin has the RPC, else one
  * plain instruction), and «Details» folded under it with the technical part: when it appeared, the key, where to look, the commands.
- * A deferral's term needs a message of his own, so it stays a command and never a button. Nothing here blocks the work.
  */
 type Config = { enabled: boolean; quiet: string; timezone: string };
 const POLL_MS = 30_000;
@@ -24,80 +35,14 @@ const SECTIONS: Array<{ source: string; title: I18nKey; folded?: boolean }> = [
   { source: "memory_conflict", title: "ow_section_memory_conflict" },
   { source: "deferral_term", title: "ow_section_deferral_term", folded: true },
 ];
-const KIND_KEYS: Record<string, I18nKey> = { attempt: "ow_kind_attempt", task: "ow_kind_task", run: "ow_kind_run", file: "ow_kind_file", note: "ow_kind_note", message: "ow_kind_message", command: "ow_kind_command", text: "ow_kind_text" };
 const STATE_KEYS: Record<string, I18nKey> = { blocked: "ow_state_blocked", failed: "ow_state_failed", provider_error: "ow_state_provider_error", validation_failed: "ow_state_validation_failed" };
-const kindLabel = (kind: string) => (KIND_KEYS[kind] ? t(KIND_KEYS[kind]!) : kind);
 /** An attempt's state is a code (`validation_failed`): the known ones are said in words, the rest without the underscores. */
 const stateLabel = (state: string) => (STATE_KEYS[state] ? t(STATE_KEYS[state]!) : state.replace(/_/g, " "));
-const when = (ms: number) => new Date(ms).toLocaleString(undefined, { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
-const fold = (label: string) => <span className="text-[11px] text-muted-foreground">{label}</span>;
 const fill = (key: I18nKey, values: Record<string, string | number>) => Object.entries(values).reduce((text, [name, value]) => text.replace(`{${name}}`, String(value)), t(key));
-/** An attempt id is long and the same prefix every time: its first eight characters tell it apart, the whole id stays in the tooltip. */
-const shortRef = (kind: string, ref: string) => (kind === "attempt" ? ref.replace(/^[a-z]+_/, "").slice(0, 8) : ref);
 const FOLD_OVER = 8;
-const chip = "inline-flex max-w-full items-center gap-1 break-all rounded-md border border-border px-1.5 text-[11px] leading-5 text-muted-foreground";
 
-function CommandLine({ action, itemKey }: { action: OwnerAction; itemKey: string }) {
-  const [copied, setCopied] = useState(false);
-  const copy = () => {
-    void navigator.clipboard?.writeText(action.cli).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500); }).catch(() => undefined);
-  };
-  return (
-    <div className="min-w-0 space-y-1" data-testid={`owner-command-${itemKey}-${action.id}`}>
-      <div className="flex flex-wrap items-center gap-2 text-xs">
-        <span className="font-medium">{action.label}</span>
-        {action.needsOwnerMessage ? <span className={chip}>{t("ow_needs_message")}</span> : null}
-      </div>
-      <div className="flex min-w-0 items-start gap-2">
-        <code className="min-w-0 flex-1 break-all rounded bg-secondary/60 px-2 py-1 text-[11px] leading-5">{action.cli}</code>
-        <Button type="button" size="sm" variant="outline" className="h-7 shrink-0 px-2 text-xs" onClick={copy}>{copied ? t("ow_copied") : t("ow_copy")}</Button>
-      </div>
-      {action.hint ? <Disclosure summary={fold(t("ow_how"))} compact><p className="pt-1 text-[11px] leading-4 text-muted-foreground">{action.hint}</p></Disclosure> : null}
-    </div>
-  );
-}
-
-function ItemCard({ item, projectName, busy, onRun }: { item: OwnerItem; projectName: string | null; busy: boolean; onRun: (action: OwnerAction) => void }) {
-  const buttons = item.actions.filter((action) => action.rpc);
-  const commands = item.actions.filter((action) => !action.rpc);
-  return (
-    <li className="min-w-0 space-y-2 border-b border-border px-3.5 py-3 last:border-b-0" data-testid={`owner-item-${item.key}`}>
-      <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5">
-        <p className="min-w-0 break-words text-sm font-medium">{item.what}</p>
-        {projectName ? <span className="shrink-0 text-xs text-muted-foreground">{projectName}</span> : null}
-      </div>
-      <p className="text-xs leading-5 text-muted-foreground"><span className="font-medium text-foreground">{t("ow_why")}:</span> {item.why}</p>
-      {buttons.length ? (
-        <div className="flex flex-wrap gap-2">
-          {buttons.map((action) => (
-            <Button key={action.id} type="button" size="sm" variant={action.id === "accept" || action.id === "yes" ? "default" : "outline"} disabled={busy} data-testid={`owner-run-${item.key}-${action.id}`} onClick={() => onRun(action)}>{action.label}</Button>
-          ))}
-        </div>
-      ) : commands.length ? (
-        <p className="text-xs leading-5"><span className="font-medium">{t("ow_do")}:</span> {commands.map((action) => action.label).join(" · ")}</p>
-      ) : null}
-      <Disclosure summary={fold(t("ow_details"))} compact>
-        <div className="space-y-2 pt-1" data-testid={`owner-details-${item.key}`}>
-          <p className="text-[11px] text-muted-foreground">{t("ow_since")}: {when(item.since)} · {t("ow_key")}: <code className="break-all">{item.key}</code></p>
-          {item.evidence.length ? (
-            <div className="flex min-w-0 flex-wrap items-center gap-1.5" data-testid={`owner-evidence-${item.key}`}>
-              <span className="text-xs text-muted-foreground">{t("ow_evidence")}:</span>
-              {item.evidence.map((evidence, index) => <button type="button" key={`${evidence.kind}${index}`} className={chip} title={`${evidence.ref}${evidence.label ? ` (${evidence.label})` : ""}`} onClick={() => void navigator.clipboard?.writeText(evidence.ref)}>{kindLabel(evidence.kind)}: {shortRef(evidence.kind, evidence.ref)}{evidence.label ? ` (${evidence.label})` : ""}</button>)}
-            </div>
-          ) : null}
-          {item.actions.length ? (
-            <div className="space-y-2">
-              <p className="text-[11px] font-medium text-muted-foreground">{t("ow_dev")}</p>
-              {item.actions.map((action) => <CommandLine key={action.id} action={action} itemKey={item.key} />)}
-            </div>
-          ) : null}
-        </div>
-      </Disclosure>
-    </li>
-  );
-}
-
-function PushSettings() {
+/** Notification & quiet-hours settings block (kept exported for System → Settings migration in Task 34). */
+export function PushSettings() {
   const rpc = useRpc<typeof rpcContract>();
   const [config, setConfig] = useState<Config | null>(null);
   useEffect(() => { void rpc.call("owner_waiting_config", {}).then((value) => setConfig(value as Config)).catch(() => undefined); }, [rpc]);
@@ -122,29 +67,98 @@ function PushSettings() {
   );
 }
 
-export function OwnerWaitingBoard({ projects }: { projects: Array<{ id: string; name: string }> }) {
+export interface OwnerWaitingBoardProps {
+  projects: Array<{ id: string; name: string }>;
+  projectId?: string | null;
+  onOpenTask?: (runId: string, taskId: string) => void;
+  onOpenWork?: () => void;
+  onOpenSettings?: () => void;
+}
+
+export function OwnerWaitingBoard({ projects, projectId = null, onOpenTask, onOpenWork, onOpenSettings }: OwnerWaitingBoardProps) {
   const rpc = useRpc<typeof rpcContract>();
+  const navigate = useBbNavigate();
+  const { threadId: contextThreadId } = useBbContext();
   const [busy, setBusy] = useState<string | null>(null);
+  const [cardErrors, setCardErrors] = useState<Record<string, string>>({});
+  const [pendingConfirm, setPendingConfirm] = useState<{ item: OwnerItem; action: OwnerAction } | null>(null);
+  const [rejectReason, setRejectReason] = useState("");
   const query = useLpRpcQuery("owner_waiting", {}, { pollMs: POLL_MS });
   const waiting = (query.data ?? null) as OwnerWaiting | null;
   const failed = query.error != null;
   const load = useCallback(async () => { await query.refetch(); }, [query.refetch]);
 
-  const run = async (item: OwnerItem, action: OwnerAction) => {
-    if (!action.rpc) return;
+  const clearCardError = (key: string) => setCardErrors((prev) => {
+    if (!(key in prev)) return prev;
+    const next = { ...prev };
+    delete next[key];
+    return next;
+  });
+
+  const executeRpcAction = async (item: OwnerItem, method: string, input: Record<string, unknown>, successText = t("ow_done")) => {
     setBusy(item.key);
+    clearCardError(item.key);
     try {
-      const result = await (rpc.call as (method: string, input: unknown) => Promise<unknown>)(action.rpc.method, action.rpc.input) as { ok?: unknown; reason?: unknown } | null;
-      // Transport success is not business success: `lead_decide` answers {ok:false, reason} for a branch already settled elsewhere (Astra F-006).
-      if (result && typeof result === "object" && result.ok === false) toast.error(t("ow_action_refused"), { description: typeof result.reason === "string" ? result.reason : undefined });
-      else toast.success(t("ow_done"));
+      const result = await (rpc.call as (m: string, i: unknown) => Promise<unknown>)(method, input) as { ok?: unknown; reason?: unknown } | null;
+      // Transport success is not business success: `lead_decide` / `task_word` answer {ok:false, reason} for a branch already settled elsewhere.
+      if (result && typeof result === "object" && result.ok === false) {
+        const message = typeof result.reason === "string" && result.reason ? result.reason : t("ow_action_refused");
+        setCardErrors((prev) => ({ ...prev, [item.key]: message }));
+        toast.error(t("ow_action_refused"), { description: typeof result.reason === "string" ? result.reason : undefined });
+        throw new Error(message);
+      }
+      toast.success(successText);
       await load();
     } catch (cause) {
-      toast.error(t("ow_action_failed"), { description: cause instanceof Error ? cause.message : String(cause) });
-    } finally { setBusy(null); }
+      const message = cause instanceof Error ? cause.message : String(cause);
+      setCardErrors((prev) => ({ ...prev, [item.key]: message }));
+      console.warn("[lane-pilot:owner-waiting] action failed", { key: item.key, method, message });
+      toast.error(t("ow_action_failed"), { description: message });
+      throw cause;
+    } finally {
+      setBusy(null);
+    }
   };
+
+  const handleAction = (item: OwnerItem, action: OwnerAction) => {
+    if (!action.rpc) return;
+    if (isClosingAction(action)) {
+      setRejectReason("");
+      setPendingConfirm({ item, action });
+      return;
+    }
+    void executeRpcAction(item, action.rpc.method, action.rpc.input).catch(() => undefined);
+  };
+
+  const handleConfirm = async () => {
+    if (!pendingConfirm) return;
+    const { item, action } = pendingConfirm;
+    if (!action.rpc) return;
+    let input = action.rpc.input;
+    if (isTaskWordNo(action)) {
+      const trimmed = rejectReason.trim();
+      if (!trimmed) throw new Error(t("consoleDecisionsRejectReasonRequired"));
+      input = { ...input, decision: "no", text: trimmed };
+    }
+    await executeRpcAction(item, action.rpc.method, input);
+  };
+
+  const handleDefer = async (item: OwnerItem, target: DeferTarget) => {
+    const input = {
+      what: target.what,
+      ...(target.kind ? { kind: target.kind } : {}),
+      ...(item.projectId ? { projectId: item.projectId } : {}),
+      ownerMsg: contextThreadId ? `${contextThreadId}#0` : "console#0",
+    };
+    await executeRpcAction(item, "deferral_defer", input, t("consoleDecisionsDeferred")).catch(() => undefined);
+  };
+
   const projectName = (id: string | null) => (id ? projects.find((project) => project.id === id)?.name ?? id : null);
-  const items = waiting?.items ?? [];
+  const allItems = waiting?.items ?? [];
+  const items = useMemo(
+    () => (projectId ? allItems.filter((item) => item.projectId === projectId) : allItems),
+    [allItems, projectId],
+  );
   // «now» is the five rows worth his attention (items.ts NOW_CAP); the rest wait folded. A row without a tier (an older server) is «now».
   const tierOf = (item: OwnerItem) => (item as { tier?: "now" | "later" }).tier ?? "now";
   const nowItems = items.filter((item) => tierOf(item) === "now"), laterItems = items.filter((item) => tierOf(item) === "later");
@@ -156,7 +170,22 @@ export function OwnerWaitingBoard({ projects }: { projects: Array<{ id: string; 
     const title = section.title ? t(section.title) : section.source;
     const list = (
       <ul className="overflow-hidden rounded-lg border border-border bg-card" data-testid={`owner-list-${section.source}`}>
-        {rows.map((item) => <ItemCard key={item.key} item={item} projectName={projectName(item.projectId)} busy={busy === item.key} onRun={(action) => void run(item, action)} />)}
+        {rows.map((item) => {
+          const deferTarget = resolveDeferTarget(item);
+          return (
+            <OwnerItemCard
+              key={item.key}
+              item={item}
+              projectName={projectName(item.projectId)}
+              busy={busy === item.key}
+              error={cardErrors[item.key]}
+              onRun={(action) => handleAction(item, action)}
+              onDefer={deferTarget ? () => void handleDefer(item, deferTarget) : undefined}
+              onOpenTask={onOpenTask}
+              onOpenWork={onOpenWork}
+            />
+          );
+        })}
       </ul>
     );
     return (
@@ -173,11 +202,32 @@ export function OwnerWaitingBoard({ projects }: { projects: Array<{ id: string; 
     );
   });
   const redAttempts = waiting?.overnight.red.flatMap((row) => row.attempts) ?? [];
+  const attention = waiting?.attention;
+  const openSettings = () => {
+    if (onOpenSettings) onOpenSettings();
+    else navigate?.toPluginPanel?.("lane-pilot", { subPath: "system/settings" });
+  };
   return (
     <div className="space-y-4" data-testid="owner-waiting">
-      <div className="min-w-0">
-        <h2 className="text-lg font-semibold">{t("ow_title")} <span className="text-sm font-normal text-muted-foreground" data-testid="owner-count">{items.length}</span></h2>
-        <p className="text-sm text-muted-foreground">{t("ow_help")}</p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <h2 className="text-lg font-semibold">{t("ow_title")} <span className="text-sm font-normal text-muted-foreground" data-testid="owner-count">{items.length}</span></h2>
+          <p className="text-sm text-muted-foreground">{t("ow_help")}</p>
+        </div>
+        {attention ? (
+          <div className="shrink-0 space-y-1 text-right" data-testid="owner-attention">
+            <span className="text-xs font-medium text-muted-foreground">
+              {fill("consoleDecisionsAttention", { shown: attention.shown, cap: attention.cap })}
+            </span>
+            {attention.cap > 0 ? (
+              <div className="flex justify-end gap-1" aria-hidden>
+                {Array.from({ length: attention.cap }, (_, idx) => (
+                  <span key={idx} className={`h-1 w-4 rounded-full ${idx < attention.shown ? "bg-primary" : "bg-muted"}`} />
+                ))}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
       </div>
       {failed && !waiting ? <p role="alert" className="text-sm text-destructive">{t("ow_failed")}</p> : null}
       {!waiting && !failed ? <p className="text-sm text-muted-foreground">{t("ow_loading")}</p> : null}
@@ -189,8 +239,8 @@ export function OwnerWaitingBoard({ projects }: { projects: Array<{ id: string; 
           <p data-testid="owner-red"><span className="font-medium">{t("ow_red")}:</span> {waiting.overnight.red.length
             ? waiting.overnight.red.map((row) => `${stateLabel(row.state)} ${row.count}`).join(", ") : t("ow_red_none")}</p>
           {redAttempts.length ? (
-            <Disclosure summary={fold(t("ow_details"))} compact>
-              <div className="flex flex-wrap gap-1.5 pt-1">{redAttempts.map((id) => <span key={id} className={chip} title={id}>{kindLabel("attempt")}: {shortRef("attempt", id)}</span>)}</div>
+            <Disclosure summary={foldLabel(t("ow_details"))} compact>
+              <div className="flex flex-wrap gap-1.5 pt-1">{redAttempts.map((id) => <span key={id} className={ownerChipClass} title={id}>{kindLabel("attempt")}: {shortRef("attempt", id)}</span>)}</div>
             </Disclosure>
           ) : null}
         </section>
@@ -209,7 +259,38 @@ export function OwnerWaitingBoard({ projects }: { projects: Array<{ id: string; 
           </Disclosure>
         </section>
       ) : null}
-      <PushSettings />
+      <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border px-3.5 py-2.5 text-xs text-muted-foreground" data-testid="owner-push-link">
+        <span>{t("consoleDecisionsSettingsNote")}</span>
+        <Button type="button" variant="link" size="sm" className="h-auto p-0 text-xs" data-testid="owner-open-settings" onClick={openSettings}>
+          {t("consoleDecisionsSettingsLink")}
+        </Button>
+      </div>
+      <ConfirmDialog
+        open={pendingConfirm !== null}
+        onOpenChange={(open) => { if (!open) setPendingConfirm(null); }}
+        title={pendingConfirm ? confirmTitleFor(pendingConfirm.action) : ""}
+        tone="danger"
+        confirmLabel={pendingConfirm?.action.label ?? t("ow_done")}
+        cancelLabel={t("cancel")}
+        onConfirm={handleConfirm}
+        body={pendingConfirm ? (
+          <div className="space-y-3">
+            <p>{pendingConfirm.item.what}</p>
+            {isTaskWordNo(pendingConfirm.action) ? (
+              <label className="block space-y-1">
+                <span className="text-xs font-medium text-foreground">{t("consoleDecisionsRejectReasonLabel")}</span>
+                <Input
+                  value={rejectReason}
+                  onChange={(event) => setRejectReason(event.target.value)}
+                  placeholder={t("consoleDecisionsRejectReasonPlaceholder")}
+                  data-testid="owner-confirm-reason"
+                  autoFocus
+                />
+              </label>
+            ) : null}
+          </div>
+        ) : null}
+      />
     </div>
   );
 }

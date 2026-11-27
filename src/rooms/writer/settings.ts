@@ -1,7 +1,6 @@
-import { defineSetting, UNAPPLIED_REASON, type SettingDefinition, type SettingKeyFamily } from "@lane-pilot/settings-catalog";
+import { defineSetting, UNAPPLIED_REASON, WRITER_MODEL_KEY, WRITER_PROVIDER_KEY, type SettingDefinition, type SettingKeyFamily } from "@lane-pilot/settings-catalog";
 
-export const WRITER_PROVIDER_KEY = "writer.provider";
-export const WRITER_MODEL_KEY = "writer.model";
+export { WRITER_MODEL_KEY, WRITER_PROVIDER_KEY };
 export const WRITER_MAX_CONCURRENT_KEY = "writer.max_concurrent";
 export const WRITER_SILENCE_NUDGE_MIN_KEY = "writer.silence_nudge_min";
 export const WRITER_QUESTION_WAIT_MIN_KEY = "writer.question_wait_min";

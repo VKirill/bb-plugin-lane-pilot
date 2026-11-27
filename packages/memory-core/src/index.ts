@@ -37,3 +37,4 @@ export { JUDGE_DEFAULTS, JUDGE_FALLBACK_TOP, JUDGE_MASK, JUDGE_NOTE_CHARS, JUDGE
 export { DUP_CONTAINMENT, DUP_COSINE, addOrigin, dedupeProject, duplicatePairs, duplicateWords, factsAgree, nearDuplicate, duplicateDoor, withoutShadowedDuplicates, storedVectors, textRelation, type DedupeResult, type DuplicateHit, type DuplicatePair } from "./duplicates";
 export { DOOR_LOCKS, DOOR_MIN_WEIGHT, doorOpens, forgetLockTerms, lockQueryText, lockTermsFor, rememberLockTerms, type DoorLock } from "./door-lock";
 export { crossesLanguage, cyrillicShare, languageOf, type TextLanguage } from "./language";
+export { lessonForTask } from "./lesson";

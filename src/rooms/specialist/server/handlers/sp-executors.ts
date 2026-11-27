@@ -1,20 +1,20 @@
 import { isToolTier, type ToolTier } from "@lane-pilot/contracts";
-import { bestEffort, isNotFound, orMiss, sha256Hex, stringAt } from "@lane-pilot/kit";
+import { bestEffort, isNotFound, orMiss, sha256Hex } from "@lane-pilot/kit";
 import { GLOBAL_SETTINGS_PROJECT_ID } from "@lane-pilot/settings-catalog";
 import type { GraphNode, StepContext, WorkflowEngine } from "@lane-pilot/workflow-engine";
 import type { ChainRuntime, ServerCore } from "../../../contracts/server";
 import { postOwnerItem } from "../../../owner-waiting";
-import { loadProjectSettings, renderArtifactsManifestJson, upsertProjectArtifact, writeCasCheckoutFile } from "../../../storage";
-import { noteEngineWrite } from "../../../verification/server";
+import { loadProjectSettings, renderArtifactsManifestJson, upsertProjectArtifact } from "../../../storage";
 import { parseSpecialistSnapshotBytes, SPECIALIST_SNAPSHOT_BYTES_KEY } from "../../settings";
 import { registerSpCommitAndDispatchExecutors } from "./sp-commit-dispatch";
+import { resolveProjectCheckout, saveCharter, writeProjectCheckoutFile } from "../services/sp-charter-service";
 import { evaluateManualMutationPlan } from "../services/sp-dispatch-direct";
 import type { SpServicesDeps } from "../services/sp-dispatch-runner";
 import { loadSpecialistMemory } from "../services/sp-memory-loader";
 import { triageQuestions } from "../repositories/sp-questions";
 import { messageMatchSource, parseMessageMatchCapture, requireMessageMatchResult } from "../../models/sp-message-match";
 import { mapScriptOutputToDeclaredFields, runVerifiedSkillScript } from "../services/sp-script-runner";
-import { upsertBreakerState, upsertCharter } from "../repositories/sp-store";
+import { upsertBreakerState } from "../repositories/sp-store";
 
 type Row = Record<string, unknown>;
 type ActionReg = (key: string, run: (c: StepContext<ChainRuntime>, rt: ChainRuntime) => Promise<Row>) => void;
@@ -36,29 +36,10 @@ function parseJsonSafe<T>(val: unknown, fallback: T): T {
   return fallback;
 }
 
-async function resolveCheckout(ctx: ServerCore, rt: ChainRuntime): Promise<{ hostId: string; path: string } | null> {
-  return await bestEffort(
-    ctx.log,
-    "sp checkout resolve",
-    (async () => {
-      if (rt.pmThreadId) {
-        const pm = await orMiss(ctx.bb.sdk.threads.get({ threadId: rt.pmThreadId }), null, isNotFound);
-        const envId = stringAt(pm, "environmentId");
-        const env = envId ? await orMiss(ctx.bb.sdk.environments.get({ environmentId: envId }), null, isNotFound) : null;
-        const path = stringAt(env, "path");
-        const hostId = stringAt(env, "hostId");
-        if (path && hostId) return { hostId, path };
-      }
-      const proj = await orMiss(ctx.bb.sdk.projects.get({ projectId: rt.projectId }), null, isNotFound);
-      const sources = Array.isArray((proj as { sources?: unknown } | null)?.sources)
-        ? ((proj as { sources: Array<{ hostId?: string; path?: string }> }).sources)
-        : [];
-      const first = sources.find((s) => Boolean(s?.hostId && s?.path));
-      return first?.hostId && first?.path ? { hostId: first.hostId, path: first.path } : null;
-    })(),
-    null,
-  );
-}
+const resolveCheckout = (ctx: ServerCore, rt: ChainRuntime) =>
+  resolveProjectCheckout(ctx, { projectId: rt.projectId, pmThreadId: rt.pmThreadId });
+
+const writeCheckoutFile = writeProjectCheckoutFile;
 
 async function readCheckoutFileText(
   ctx: ServerCore,
@@ -117,25 +98,6 @@ async function collectScriptCheckoutFiles(
     }
   }
   return out;
-}
-
-async function writeCheckoutFile(
-  ctx: ServerCore,
-  checkout: { hostId: string; path: string } | null,
-  relPath: string,
-  content: string,
-): Promise<string> {
-  const cleanRel = relPath.replace(/^\/+/, "");
-  if (!checkout || cleanRel.split("/").includes("..")) return cleanRel;
-  noteEngineWrite(checkout.path, cleanRel);
-  const cas = await writeCasCheckoutFile(ctx.bb.sdk.files as never, {
-    hostId: checkout.hostId,
-    rootPath: checkout.path,
-    relPath: cleanRel,
-    content,
-  });
-  if (!cas.ok) throw new Error(`sp.writeCheckoutFile: CAS conflict on "${cleanRel}" (${cas.outcome})`);
-  return cleanRel;
 }
 
 /**
@@ -309,29 +271,13 @@ export function registerSpExecutors(
     const domain = asDomain(params.domain);
     const charterObj = parseJsonSafe<Row>(params.charter, { domain, goal: "growth" });
     const approvedBy = asStr(params.approvedBy, "owner");
-    const saved = upsertCharter(db, { projectId: rt.projectId, domain, charter: charterObj, approvedBy });
-
-    const checkout = await resolveCheckout(ctx, rt);
-    const charterRel = `.agents/${domain}/charter.json`;
-    const charterText = JSON.stringify({ ...charterObj, _version: saved.version, _sha256: saved.sha256 }, null, 2);
-    await writeCheckoutFile(ctx, checkout, charterRel, charterText);
-    if (rt.projectId) {
-      upsertProjectArtifact(db, {
-        projectId: rt.projectId,
-        artifactId: `${domain}.charter`,
-        domain,
-        kind: "charter_json",
-        relPath: charterRel,
-        sha256: sha256Hex(charterText),
-        summary: `${domain} charter v${saved.version}`,
-        producerWf: c.workflow.id,
-        producerRunId: c.runId,
-      });
-      if (checkout) {
-        await writeCheckoutFile(ctx, checkout, ".agents/manifest.json", renderArtifactsManifestJson(db, rt.projectId));
-      }
-    }
-    return { version: saved.version, sha256: saved.sha256 };
+    return await saveCharter(ctx, {
+      projectId: rt.projectId,
+      domain,
+      charter: charterObj,
+      approvedBy,
+      producer: { wf: c.workflow.id, runId: c.runId, pmThreadId: rt.pmThreadId },
+    });
   });
 
   action("sp.message_match", async (c, rt) => {

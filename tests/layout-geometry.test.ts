@@ -4,7 +4,6 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import { createElement } from "react";
-import { en } from "@lane-pilot/i18n";
 import { Disclosure } from "../packages/ui-kit/src/ui/disclosure";
 import { Alert, AlertTitle } from "../packages/ui-kit/src/ui/alert";
 import { mountPage } from "./ui-harness";
@@ -35,7 +34,7 @@ describe("layout geometry harness", () => {
         disallowedTools: { status: "ready", items: [] },
       }),
     });
-    fireEvent.click(await slot.findByRole("tab", { name: en.navAgents }));
+    fireEvent.click(await slot.findByTestId("console-nav-system-agents"));
     await waitFor(() => expect(slot.container.querySelector("#agent-prompt")).toBeTruthy());
     const prompt = slot.container.querySelector("#agent-prompt") as HTMLElement;
     const fieldset = prompt.closest("fieldset") as HTMLFieldSetElement;
@@ -70,11 +69,12 @@ describe("layout geometry harness", () => {
     expect(title?.className).toContain("leading-5");
     expect(err.querySelector("button")).toBeNull();
 
+    openTab(slot, "work");
     const depth = slot.getByTestId("settings-depth");
     for (const btn of Array.from(depth.querySelectorAll("button"))) {
       expect(btn.className).toContain("h-[1.875rem]");
     }
-    openTab(slot, "runs");
+    openTab(slot, "service");
     await waitFor(() => expect(slot.container.querySelectorAll("details").length).toBeGreaterThan(0));
     for (const d of Array.from(slot.container.querySelectorAll("details"))) {
       expect(d.querySelector("[data-disclosure-chevron]")).toBeTruthy();
