@@ -1,3 +1,4 @@
+import { TRAJECTORY_INTERVENTION_KINDS, type TrajectoryInterventionKind } from "@lane-pilot/contracts";
 import { redactKnown } from "@lane-pilot/kit";
 import { shouldEmitSkillLog, type SkillCatalogItem, type SkillIntentLogLevel } from "./skill-intent";
 
@@ -7,16 +8,7 @@ import { shouldEmitSkillLog, type SkillCatalogItem, type SkillIntentLogLevel } f
  */
 export const TRAJECTORY_DELTA_TABLE = "lane_pilot_trajectory_delta";
 
-export const TRAJECTORY_INTERVENTION_KINDS = [
-  "skill_request",
-  "rule_added",
-  "step_inserted",
-  "reference_branch",
-  "variant_selected",
-  "over_constraint",
-] as const;
-
-export type TrajectoryInterventionKind = (typeof TRAJECTORY_INTERVENTION_KINDS)[number];
+export { TRAJECTORY_INTERVENTION_KINDS, type TrajectoryInterventionKind };
 
 export type TrajectoryDeltaRow = {
   readonly id: string;

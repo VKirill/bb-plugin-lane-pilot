@@ -2,6 +2,7 @@ import type { GraphNode, Workflow } from "@lane-pilot/workflow-engine";
 import { closeOwnerItem } from "../../../owner-waiting";
 import type { ServerCore } from "../../../contracts/server";
 
+import { noteHumanAnswer } from "./owner-intervention";
 import { humanOptions, humanOutput, workflowQuestionKey } from "./workflow-executors";
 
 import type { WorkflowEngineApi } from "./workflow";
@@ -19,7 +20,11 @@ export type WorkflowAnswerResult =
   | { ok: true; stepKey: string; output: Record<string, unknown> }
   | { ok: false; reason: "not_found" | "not_waiting" | "answer_decides_nothing"; message: string; options?: string[] };
 
-export async function answerWorkflowQuestion(ctx: Pick<ServerCore, "db">, services: Pick<Services, "workflowEngine">, input: { runId: string; stepKey?: string | undefined; choice?: string | undefined; text?: string | undefined }): Promise<WorkflowAnswerResult> {
+export async function answerWorkflowQuestion(
+  ctx: Pick<ServerCore, "db"> & { bb?: { log?: { debug?: (message: string) => void; warn?: (message: string) => void } } | undefined },
+  services: Pick<Services, "workflowEngine">,
+  input: { runId: string; stepKey?: string | undefined; choice?: string | undefined; text?: string | undefined },
+): Promise<WorkflowAnswerResult> {
   const engine = services.workflowEngine;
   const run = engine.journal.getRun(input.runId);
   if (!run) return { ok: false, reason: "not_found", message: `there is no workflow run ${input.runId}` };
@@ -34,5 +39,15 @@ export async function answerWorkflowQuestion(ctx: Pick<ServerCore, "db">, servic
   if (!output) return { ok: false, reason: "answer_decides_nothing", message: `the answer names no option and the question takes no free text; the options are: ${options.join(", ")}`, options };
   if (!await engine.resolve(input.runId, step.step_key, output)) return { ok: false, reason: "not_waiting", message: `step ${step.step_key} of ${input.runId} could not take the answer (it moved on)` };
   closeOwnerItem(ctx.db, workflowQuestionKey(input.runId, step.step_key), "answered");
+  const option = typeof output.answer_kind === "string" ? output.answer_kind : input.choice?.trim();
+  const freeText = typeof output.answer === "string" ? output.answer : input.text?.trim();
+  noteHumanAnswer(ctx.db, {
+    runId: input.runId,
+    workflowId: run.workflow_id,
+    projectId: run.project_id,
+    nodeId: step.node_id,
+    option,
+    freeText,
+  }, ctx.bb?.log);
   return { ok: true, stepKey: step.step_key, output };
 }

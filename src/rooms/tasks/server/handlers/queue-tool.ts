@@ -1,5 +1,6 @@
 import { z } from "zod";
-import { callerPluginMetadata, registerObservedTool } from "../../../platform/server";
+import { sha256Hex } from "@lane-pilot/kit";
+import { callerPluginMetadata, recordTrajectoryDeltaSafe, registerObservedTool } from "../../../platform/server";
 import { ToolError, type ServerCore } from "../../../contracts/server";
 import { deadLetters, HOLD_FOREVER } from "../../models/rails";
 import { recordTaskWord, waitingAttemptId } from "../services/task-words";
@@ -66,6 +67,37 @@ export function registerQueueTool(
         if (!claim.ok) return JSON.stringify({ runId, taskId: input.taskId, ok: false, reason: claim.reason });
         await recordTaskWord(bb.storage.kv as never, runId, family, input.decision, input.text, Date.now(), wordFor);
         taskWords.answer(db, runId, family, input.decision, input.text, "pm");
+        const wordText = input.text.trim();
+        const projectId = context.projectId ?? getRun(db, runId)?.project_id ?? null;
+        if (input.decision === "no") {
+          recordTrajectoryDeltaSafe(
+            db,
+            {
+              id: `tdelta_word_${sha256Hex(`${runId}|${input.taskId}|over_constraint|${wordText}`).slice(0, 24)}`,
+              projectId,
+              threadId: context.threadId ?? null,
+              workflowId: null,
+              stageArchetype: "task-word",
+              interventionKind: "over_constraint",
+              rawSummary: wordText ? `${input.taskId}: ${wordText}` : `over_constraint on ${input.taskId}`,
+            },
+            { log: bb?.log, runId, graphId: null },
+          );
+        } else if (wordText) {
+          recordTrajectoryDeltaSafe(
+            db,
+            {
+              id: `tdelta_word_${sha256Hex(`${runId}|${input.taskId}|rule_added|${wordText}`).slice(0, 24)}`,
+              projectId,
+              threadId: context.threadId ?? null,
+              workflowId: null,
+              stageArchetype: "task-word",
+              interventionKind: "rule_added",
+              rawSummary: wordText,
+            },
+            { log: bb?.log, runId, graphId: null },
+          );
+        }
         if (wordFor) {
           const payload = { kind: "owner_word", decision: input.decision, text: input.text, runId, taskId: input.taskId, attemptId: wordFor };
           try { insertInboxEvent(db, { id: `evt_word_${Date.now()}`, name: LP_EVENTS.WRITER_ANSWERED, key: wordFor, payload, createdAt: Date.now() }); } catch { /* ignore */ }

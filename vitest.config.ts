@@ -10,6 +10,7 @@ const mocking = [
   "tests/server/memory-probe.test.ts",
   "tests/deploy-drain.test.ts",
   "tests/errand-episode-sweep.test.ts",
+  "tests/errands/episode-writer.test.ts",
   "tests/ui-version-invalidate.test.ts",
   "tests/stages/critic-answer-retry.test.ts",
   "tests/install-metadata.test.ts",

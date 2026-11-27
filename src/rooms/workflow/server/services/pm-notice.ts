@@ -10,22 +10,8 @@ import { isWorkflowFollowed, isWorkflowNoticeSuppressed } from "../../../platfor
 import { sendServiceMessage } from "../../../relay/server";
 import { chatCode } from "../../../brief";
 import type { LeadRoadApi } from "../../../contracts";
-import { AFTER_ACCEPT, LP_TASK_PIPELINE, SELF_REPAIR, WORKTREE_CLEANUP } from "../../../contracts";
-
-/**
- * The machine's own upkeep graphs: they tell no PM chat and post nothing to the owner's list (a failed one is the wall's and the next run's to settle).
- * The worktree cleanup's output carries a `report`, which a scheduled run would otherwise deliver as a line every hour; its daily pass posts the
- * one line a person needs itself, and a failed run is the schedule board's.
- */
-const UPKEEP_WORKFLOWS = new Set<string>([
-  AFTER_ACCEPT, SELF_REPAIR, WORKTREE_CLEANUP,
-  "lp.rules-scan",
-  "lp.owner-bell",
-  "lp.owner-push",
-  "lp.daily-report",
-  "lp.backlog-scan",
-  "lp.canary-check",
-]);
+import { LP_TASK_PIPELINE } from "../../../contracts";
+import { isInternalUpkeep } from "../../models/internal-workflows";
 
 export const WORKFLOW_NOTICE_STATUSES = ["succeeded", "failed", "blocked", "interrupted", "canceled", "not_verified"] as const;
 export type WorkflowNoticeStatus = (typeof WORKFLOW_NOTICE_STATUSES)[number];
@@ -77,7 +63,7 @@ export async function maybeNotifyWorkflowRun(input: {
   if (run.parent_run_id) return false;
   if (run.workflow_id === LP_TASK_PIPELINE || run.idem_key?.startsWith("lp-task:")) return false;
   // The upkeep after an accepted task (memory, project life) is the machine's: a notice per task would wake the PM for nothing.
-  if (UPKEEP_WORKFLOWS.has(run.workflow_id)) return false;
+  if (isInternalUpkeep(run.workflow_id)) return false;
   // A phase's stage run reports through the phase's gates and book; a notice of each one had the PM step into the machine's stage (live, 2026-10-25).
   if (run.idem_key?.startsWith("phase:")) return false;
   // The browser and synchronous scout tools wait for their graph and answer with its result: a notice would wake the PM a second time.
@@ -98,9 +84,10 @@ export async function maybeNotifyWorkflowRun(input: {
   // must reach it once with the actual outcome: a bare «succeeded» is not the business result, and a failed run has no
   // graph report left to carry it (the 0.1.573 status card covers only the synchronous PM_WAITS_FOR tools).
   const body = input.startedBySchedule ? delivered! : chatOutcome(run, input.unmetGoalIds);
+  const verdictLine = `Принять / вернуть: bb lane-pilot run-verdict ${run.id} accept|reject`;
   const text = input.startedBySchedule
-    ? `Lane Pilot: the scheduled run ${run.id} of ${run.workflow_id} finished. Show the owner this result in this chat as it is (no summary, nothing to act on):\n\n${body}`
-    : `## Lane Pilot · ${run.workflow_id}\n\nRun \`${run.id}\` ended ${run.status} (engine status).\n\n${body}`;
+    ? `Lane Pilot: the scheduled run ${run.id} of ${run.workflow_id} finished. Show the owner this result in this chat as it is (no summary, nothing to act on):\n\n${body}\n\n${verdictLine}`
+    : `## Lane Pilot · ${run.workflow_id}\n\nRun \`${run.id}\` ended ${run.status} (engine status).\n\n${body}\n\n${verdictLine}`;
   if (await input.bb.storage.kv.get(key)) return false;
   await bestEffort(input.log, "workflow notice record", input.bb.storage.kv.set(key, Date.now() as never), undefined);
   try {
@@ -164,7 +151,7 @@ const OWN_REPORT_WORKFLOWS = new Set(["agent-routine"]);
  */
 export function reportEndToOwner(db: LanePilotDatabase, run: RunRow, scheduled: boolean, unmetGoalIds?: string[]): boolean {
   if (!isNoticeStatus(run.status) || run.parent_run_id || !run.project_id || run.link_run_id) return false;
-  if (run.workflow_id === LP_TASK_PIPELINE || UPKEEP_WORKFLOWS.has(run.workflow_id) || run.idem_key?.startsWith("lp-task:") || run.idem_key?.startsWith("phase:")) return false;
+  if (run.workflow_id === LP_TASK_PIPELINE || isInternalUpkeep(run.workflow_id) || run.idem_key?.startsWith("lp-task:") || run.idem_key?.startsWith("phase:")) return false;
   // The machine's own graphs started by its crons (the night loop's lp.* graphs, the lead's tick) have no owner behind them: their end is a fact of the
   // log and the wall, and the lead reads their failures every tick (0.1.456: 22 such lines sat on the owner's list). A scheduled run that delivers a report is his.
   if (!scheduled && (run.workflow_id.startsWith("lp.") || run.workflow_id === "lead-tick")) return false;
@@ -173,7 +160,7 @@ export function reportEndToOwner(db: LanePilotDatabase, run: RunRow, scheduled: 
   if (run.status === "succeeded" && (OWN_REPORT_WORKFLOWS.has(run.workflow_id) || !delivered)) return false;
   const failed = run.status !== "succeeded";
   const unmet = run.status === "blocked" && unmetGoalIds?.length ? ` Не выполнены цели: ${unmetGoalIds.join(", ")}.` : "";
-  const why = delivered ?? `${run.reason ? `Причина: ${run.reason}.` : "Причина не записана."}${unmet}`;
+  const why = `${delivered ?? `${run.reason ? `Причина: ${run.reason}.` : "Причина не записана."}${unmet}`}\n\nПринять / вернуть: bb lane-pilot run-verdict ${run.id} accept|reject`;
   return postOwnerItem(db, {
     key: `workflow-end:${run.id}:${run.status}`, source: "workflow", kind: `workflow_${run.status}`, reason: failed ? "red" : "decision", projectId: run.project_id, wake: failed,
     what: `Процесс «${run.workflow_id}» ${failed ? END_RU[run.status] ?? `закончился со статусом ${run.status}` : "завершился"}`, why,

@@ -1,10 +1,13 @@
 import { observeStageChild, waitThreadIdle } from "@lane-pilot/thread-observe";
-import { isOffered, routeIntent, type StepContext, type Workflow, wfErrandSpawnRunOfThread, wfWorkflowIdOfRun } from "@lane-pilot/workflow-engine";
+import { isKnownGraphCategory } from "@lane-pilot/contracts";
+import { isOffered, routeIntent, type MissKind, type StepContext, type Workflow, wfErrandSpawnRunOfThread, wfWorkflowIdOfRun } from "@lane-pilot/workflow-engine";
 import { bestEffort, redactKnown } from "@lane-pilot/kit";
 import { SCHEDULE_RUN_KEY_PREFIX, type DocsPort, type ExtraAccess } from "../../../contracts";
 import type { ChainRuntime, ServerCore } from "../../../contracts/server";
 import { beginWorkflowWait, fenceOutside, findThreadsByMetadata, keyedSpawnSupported, noteWorkflowReadByPm, type WorkflowEngineApi, type WorkflowLibraryApi } from "../../../platform/server";
 import { withUsage } from "../../../usage/server";
+import { workflowCategory } from "../../../workflow";
+import { recordRouteMiss } from "../../../workflow/server";
 import type { ErrandSnapshot } from "../../models/errand-prompt";
 import type { ErrandCore } from "./errand-core";
 import { errandSpawnOf } from "./errands-overview";
@@ -149,10 +152,32 @@ export function createErrandGraphService(ctx: ServerCore, services: ErrandsServi
   async function routedGraph(input: { task: string; authorized: boolean; accounts: readonly string[]; projectId: string }): Promise<{ match: { workflow: Workflow; inputs: Record<string, unknown>; confidence: number } } | { top: string; why: string }> {
     const catalog = await offeredCatalog(input.projectId);
     const routed = await bestEffort(ctx.log, "errand route intent", routeIntent({ intent: input.task, workflows: catalog }), null);
-    if (!routed) return { top: "", why: "none" };
-    if (routed.decision !== "route" || !routed.workflowId) return { top: routed.suggested ? `${routed.suggested}:${routed.confidence}` : "", why: routed.suggested ? "below_confidence" : "none" };
+    const recordMiss = (kind: MissKind, topWorkflowId: string | null, confidence: number | null) => {
+      const topWf = topWorkflowId ? catalog.find((item) => item.id === topWorkflowId) : undefined;
+      const cat = topWf ? workflowCategory(topWf) : null;
+      recordRouteMiss(db, {
+        projectId: input.projectId,
+        source: "errand_route",
+        kind,
+        brief: input.task,
+        topWorkflowId,
+        confidence,
+        category: cat && isKnownGraphCategory(cat) ? cat : null,
+      }, bb?.log);
+    };
+    if (!routed) {
+      recordMiss("no_candidate", null, null);
+      return { top: "", why: "none" };
+    }
+    if (routed.decision !== "route" || !routed.workflowId) {
+      if (!routed.stateContinue) recordMiss(routed.suggested ? "near_miss" : "no_candidate", routed.suggested, routed.confidence);
+      return { top: routed.suggested ? `${routed.suggested}:${routed.confidence}` : "", why: routed.suggested ? "below_confidence" : "none" };
+    }
     const top = `${routed.workflowId}:${routed.confidence}`;
-    if (routed.confidence < ERRAND_ROUTE_CONFIDENCE) return { top, why: "below_confidence" };
+    if (routed.confidence < ERRAND_ROUTE_CONFIDENCE) {
+      recordMiss("near_miss", routed.workflowId, routed.confidence);
+      return { top, why: "below_confidence" };
+    }
     const workflow = catalog.find((item) => item.id === routed.workflowId);
     if (!workflow || !isOffered(workflow) || ERRAND_ROUTE_NEVER.has(workflow.id) || workflow.id.startsWith("lp.")) return { top, why: "not_offered" };
     // A brief with authorized: true routes only to a published graph: a tested one's first real run is decided by the owner, never under an authorized blanket.
