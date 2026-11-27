@@ -3,7 +3,6 @@
  * The reader is a person who does not program (the owner, 2026-11-01): plain words, no internal names; the technical part sits under «Details».
  */
 export const ownerEn = {
-  navOwnerWaiting: "Waiting for you",
   ow_title: "Waiting for you",
   ow_help: "Only what cannot be settled without you. Every card says what happened, why it is yours and what you can do; the technical part (ids, commands) is folded under «Details». Everything else the system settles itself; the day's summary below is just a report.",
   ow_empty: "Nothing waits for you.",
@@ -65,7 +64,6 @@ export const ownerEn = {
 };
 
 export const ownerRu: { [K in keyof typeof ownerEn]: string } = {
-  navOwnerWaiting: "Ждут владельца",
   ow_title: "Ждут владельца",
   ow_help: "Здесь только то, что без вас не решится. Каждая карточка говорит, что случилось, почему это к вам и что можно сделать; техника (номера, команды) спрятана под «Подробности». Всё остальное система решает сама; сводка за сутки ниже — просто отчёт.",
   ow_empty: "Вас ничто не ждёт.",

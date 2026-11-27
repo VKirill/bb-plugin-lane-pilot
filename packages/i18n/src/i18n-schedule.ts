@@ -1,6 +1,5 @@
 /** The strings of the automation area (schedule board, calendar, create forms). Merged into the plugin dictionaries by i18n.ts. */
 export const scheduleEn = {
-  navSchedule: "Schedule",
   schHelp: "Tasks Lane Pilot runs by itself: a chain, an errand for an agent, or a script on a machine, once or on a schedule.",
   schHelpAll: "All scheduled tasks of every project.",
   schViewBoard: "Board",
@@ -184,7 +183,6 @@ export const scheduleEn = {
 } as const;
 
 export const scheduleRu: { [K in keyof typeof scheduleEn]: string } = {
-  navSchedule: "Расписание",
   schHelp: "Задачи, которые Lane Pilot выполняет сам: граф, поручение агенту или скрипт на машине, один раз или по расписанию.",
   schHelpAll: "Все запланированные задачи всех проектов.",
   schViewBoard: "Доска",

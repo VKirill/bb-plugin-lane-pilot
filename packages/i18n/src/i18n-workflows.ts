@@ -1,6 +1,5 @@
 /** The strings of the Workflows screens (library, graph, run view). Merged into the plugin dictionaries by i18n.ts. */
 export const workflowEn = {
-  navWorkflows: "Workflows",
   wfTitle: "Workflows",
   wfHelp: "Chains of steps that Lane Pilot runs: built-in ones, yours on this hub, and the project's own. Open one to see its graph and its runs.",
   wfHelpProject: "Workflows available in this project: built-in, global and the ones kept in the project's .lane-pilot/workflows folder.",
@@ -143,7 +142,6 @@ export const workflowEn = {
 } as const;
 
 export const workflowRu: { [K in keyof typeof workflowEn]: string } = {
-  navWorkflows: "Графы",
   wfTitle: "Графы",
   wfHelp: "Графы шагов, которые запускает Lane Pilot: встроенные, ваши на хабе и собственные графы проекта. Откройте любой, чтобы увидеть шаги и запуски.",
   wfHelpProject: "Графы, доступные в этом проекте: встроенные, общие и лежащие в папке .lane-pilot/workflows проекта.",

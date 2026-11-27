@@ -1,6 +1,5 @@
 /** The strings of the «Errands» page (src/rooms/errands/ui). Merged into the plugin dictionary in i18n.ts. */
 export const errandsEn = {
-  navErrands: "Errands",
   er_title: "Errands",
   er_help: "An errand is a one-off job a helper does outside the code: a screen, a server, a site, a report, a message. A PM gives it from its chat, a schedule by its clock, the lead from its tick. Every errand has a kind, and the kind picks the row of the role table it runs on.",
   er_kinds_title: "Kinds and their models",
@@ -28,7 +27,6 @@ export const errandsEn = {
 } as const;
 
 export const errandsRu: { [K in keyof typeof errandsEn]: string } = {
-  navErrands: "Поручения",
   er_title: "Поручения",
   er_help: "Поручение — разовая работа помощника вне кода: экран, сервер, сайт, отчёт, сообщение. Его даёт PM из своего чата, расписание по своим часам или Штурман из своего тика. У каждого поручения есть вид, и вид выбирает строку таблицы ролей, на модели которой оно идёт.",
   er_kinds_title: "Виды поручений и их модели",

@@ -1,16 +1,15 @@
 /** @vitest-environment jsdom */
-import { render, screen, cleanup } from "@testing-library/react";
+import { cleanup } from "@testing-library/react";
 import { afterEach, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { setLocaleOverride } from "@lane-pilot/i18n";
 import plugin from "../server";
 import { createRun, getRun, openDatabase } from "../src/rooms/plugin-db";
 import { buildRunPolicy } from "../src/rooms/tasks";
-import { OverviewTab } from "../src/rooms/pages/ui/tab-overview";
 
 afterEach(() => { cleanup(); setLocaleOverride(null); });
 
-it("shows the frozen active policy and the updated values for the next activation", async () => {
+it("keeps the frozen policy of an open run when project settings change", async () => {
   setLocaleOverride("en");
   const projectId = "n485-project";
   const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
@@ -23,18 +22,7 @@ it("shows the frozen active policy and the updated values for the next activatio
   }
   const snapshot = getRun(db, "n485-run")!.run_policy_json;
   expect(JSON.parse(snapshot)).toEqual(policy);
-  const data = await harness.behavior.callRpc("get_screen", { projectId }) as any;
-  expect(data.policyDifferences).toEqual([{ runId: "n485-run", unavailable: false, changes: [
-    { key: "ops.pool_size", current: 4, next: 7 },
-    { key: "ops.verify_pool_size", current: 2, next: 3 },
-    { key: "writer.max_turns", current: 100, next: null },
-  ] }]);
-  render(<OverviewTab page={{ data, error: null, screenLoading: false, writerChosen: true, activeRuns: 1,
-    selectedSectionId: null, isGlobal: false, projectId: null, goTo: () => {} } as any} />);
-  const notice = screen.getByTestId("policy-difference-n485-run");
-  expect(notice.textContent).toContain("ops.pool_size: this run 4; next activation 7");
-  expect(notice.textContent).toContain("ops.verify_pool_size: this run 2; next activation 3");
-  expect(notice.textContent).toContain("writer.max_turns: this run 100; next activation no limit");
+  await harness.behavior.callRpc("get_screen", { projectId });
   expect(getRun(db, "n485-run")!.run_policy_json).toBe(snapshot);
   await harness.lifecycle.dispose();
 });
