@@ -101,9 +101,10 @@ export function listTrajectoryDeltasInWindow(
   }
   params.push(limit);
   const rows = db.prepare(
+    // id is a content hash: within one millisecond only rowid keeps "newest first" true.
     `SELECT * FROM lane_pilot_trajectory_delta
      WHERE ${where.join(" AND ")}
-     ORDER BY created_at DESC, id ASC LIMIT ?`,
+     ORDER BY created_at DESC, rowid DESC LIMIT ?`,
   ).all(...params) as Array<Record<string, unknown>>;
   return rows.map(toTrajectoryDeltaRow);
 }
