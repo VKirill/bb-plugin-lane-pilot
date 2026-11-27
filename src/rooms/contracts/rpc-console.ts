@@ -209,6 +209,25 @@ export const rpcConsole = {
     }).strict(),
     output: reviewDeskViewOutput,
   },
+  desk_answer: {
+    input: z.object({
+      itemId: idSchema,
+      option: z.string().min(1).max(200),
+    }).strict(),
+    output: z.union([
+      z.object({ ok: z.literal(true), item: reviewDeskItemSchema }).strict(),
+      z.object({ ok: z.literal(false), reason: z.string() }).strict(),
+    ]),
+  },
+  desk_accept_defaults: {
+    input: z.object({
+      week: weekSchema,
+    }).strict(),
+    output: z.object({
+      ok: z.boolean(),
+      accepted: z.number().int().nonnegative(),
+    }).strict(),
+  },
   brakes_get: {
     input: z.object({}).strict(),
     output: brakesOutput,
@@ -337,25 +356,6 @@ export const rpcConsole = {
 
 /** Console methods whose handlers land in later plan tasks; spread into rpcMethods in Task 18. */
 export const rpcConsoleLater = {
-  desk_answer: {
-    input: z.object({
-      itemId: idSchema,
-      option: z.string().min(1).max(200),
-    }).strict(),
-    output: z.union([
-      z.object({ ok: z.literal(true), item: reviewDeskItemSchema }).strict(),
-      z.object({ ok: z.literal(false), reason: z.string() }).strict(),
-    ]),
-  },
-  desk_accept_defaults: {
-    input: z.object({
-      week: weekSchema,
-    }).strict(),
-    output: z.object({
-      ok: z.boolean(),
-      accepted: z.number().int().nonnegative(),
-    }).strict(),
-  },
   repo_trust: {
     input: z.object({
       projectId: idSchema,

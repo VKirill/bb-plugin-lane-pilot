@@ -54,8 +54,8 @@ describe("a second choice made while the first save of a role picker is in fligh
     expect(screenCalls).toHaveLength(screensBefore);
     expect(picker()).toBe(node);
     expect(picker().getAttribute("data-provider")).toBe("claude-code");
-    // The role now has its own pair: the row says so and «Вернуть унаследованное» is live without a reload.
-    expect(slot.getByTestId("role-origin-specialist_reviewer").textContent).toBe(en.accessOrigin_project);
+    // The role now has its own pair: «Same as level above» is live without a reload.
+    expect(slot.getByTestId("loadout-reset-specialist_reviewer").textContent).toBe(en.consoleLoadoutResetLevelAbove);
     await finish(harness, slot);
   });
 

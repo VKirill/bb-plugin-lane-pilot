@@ -203,7 +203,7 @@ function RoleRow({ spec, page, access, open, onToggle, fallbackNames, tableRoles
 }
 
 /** The PM chat: the agent new chats of the project start with. It loads everything on purpose, so there is no access to set. */
-function PmRow({ page }: { page: LpPage }) {
+export function PmRow({ page }: { page: LpPage }) {
   const { data, rpc, scoped, projectId, displayedValue, writeDraft, setSaveError, setData, dataRef, setError, stackControls } = page;
   return (
     <Surface testId="main-agent">
@@ -240,9 +240,94 @@ function PmRow({ page }: { page: LpPage }) {
   );
 }
 
+/** Enabled switch / docs mode select for a RoleSpec row. */
+export function RoleEnabledSwitch({ spec, page }: { spec: RoleSpec; page: LpPage }) {
+  const { catalogRow, displayedValue, applySetting } = page;
+  if (!spec.enabled) return null;
+  const enabledKey = spec.enabled.key;
+  const row = catalogRow(enabledKey);
+  if (row && "mode" in spec.enabled) {
+    const raw = displayedValue(enabledKey);
+    const mode = raw === undefined || raw === null || raw === "" || raw === "auto" ? "auto" : asBoolean(raw, false) ? "true" : "false";
+    return (
+      <Select value={mode} onValueChange={(next) => void applySetting(row, next)}>
+        <SelectTrigger aria-label={t(spec.enabled.label)} data-testid="docs-mode" className="w-[5.5rem] min-w-0 max-w-full"><SelectValue /></SelectTrigger>
+        <SelectContent>
+          <SelectItem value="auto">{t("docsModeAuto")}</SelectItem>
+          <SelectItem value="true">{t("docsModeOn")}</SelectItem>
+          <SelectItem value="false">{t("docsModeOff")}</SelectItem>
+        </SelectContent>
+      </Select>
+    );
+  }
+  if (row && "fallback" in spec.enabled) {
+    return <Switch checked={asBoolean(displayedValue(enabledKey), spec.enabled.fallback)} aria-label={t(spec.enabled.label)} onCheckedChange={(next) => void applySetting(row, next)} />;
+  }
+  return null;
+}
+
+/** Writer model picker + fallback chain summary button. */
+export function WriterModelCell({
+  page,
+  open,
+  onToggle,
+  fallbackNames,
+}: {
+  page: LpPage;
+  open: boolean;
+  onToggle: () => void;
+  fallbackNames: ReadonlyMap<string, string>;
+}) {
+  const { data, modelPicker, pickerValue, saveWriterSelection } = page;
+  const chain = writerFallbackSummaryText(writerFallbackSlots(data?.values ?? {}), fallbackNames);
+  return (
+    <div className="min-w-0 space-y-1">
+      {modelPicker(pickerValue, (next) => { saveWriterSelection(next); })}
+      <button
+        type="button"
+        aria-expanded={open}
+        aria-controls="role-drawer-writer"
+        onClick={onToggle}
+        className="block w-full break-words rounded px-1 text-left text-xs text-muted-foreground hover:bg-[var(--lp-well)] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+        data-testid="writer-fallback-summary"
+      >
+        {t("writerFallbackSummary")} {chain}
+      </button>
+    </div>
+  );
+}
+
+/** Onboarder / pair-selection picker cell. */
+export function PairPickerCell({ selectionId, page }: { selectionId: NonNullable<Exclude<RoleSpec["model"], "writer" | undefined>>; page: LpPage }) {
+  const picker = page.pickers[selectionId];
+  return <>{page.modelPicker(picker.value, (next) => { void picker.save(next); })}</>;
+}
+
+/** Context mode fields inside AccessModePanel. */
+export function AccessModeFields({ page }: { page: LpPage }) {
+  const { displayedValue, catalogRow, applySetting, writeDraft } = page;
+  return (
+    <div className="space-y-2" data-testid="access-mode-fields">
+      {(["helper.context_mode", ...(displayedValue("helper.context_mode") === "selected" ? ["helper.skills", "helper.mcp_servers", "helper.bb_plugins", "helper.native_plugins"] : [])] as const).map((key) => {
+        const row = catalogRow(key);
+        return row ? (
+          <SettingField
+            key={key}
+            row={row}
+            value={displayedValue(key)}
+            disabled={false}
+            onChange={(next) => void applySetting(row, next)}
+            onDraft={(next) => writeDraft(key, next)}
+          />
+        ) : null;
+      })}
+    </div>
+  );
+}
+
 /** Who works: one table of every role with its on/off switch, model, where the value comes from and what the role loads. */
 export function TeamTab({ page }: { page: LpPage }) {
-  const { projectId, selectedSectionId, isGlobal, data, displayedValue, stackControls, wideTable, rpc } = page;
+  const { projectId, selectedSectionId, isGlobal, data, stackControls, wideTable, rpc } = page;
   const access = useAccessView(projectId!, selectedSectionId, data?.versions["helper.context_mode"] ?? 0);
   // The fallback chain names its models as the pickers do; until the catalog arrives it shows the raw model ids.
   const [catalog, setCatalog] = useState<FallbackCatalog | null>(null);
@@ -280,15 +365,7 @@ export function TeamTab({ page }: { page: LpPage }) {
   const toggle = (id: string) => setOpen((current) => { const next = new Set(current); if (next.has(id)) next.delete(id); else next.add(id); return next; });
   const wide = wideTable && !stackControls;
   const roleModeOff = access.view !== null && access.view.mode !== "roles";
-  const modeControl = (
-    <div className="space-y-2" data-testid="access-mode-fields">
-      {(["helper.context_mode", ...(displayedValue("helper.context_mode") === "selected" ? ["helper.skills", "helper.mcp_servers", "helper.bb_plugins", "helper.native_plugins"] : [])] as const).map((key) => {
-        const row = page.catalogRow(key);
-        return row ? <SettingField key={key} row={row} value={displayedValue(key)} disabled={false}
-          onChange={(next) => void page.applySetting(row, next)} onDraft={(next) => page.writeDraft(key, next)} /> : null;
-      })}
-    </div>
-  );
+  const modeControl = <AccessModeFields page={page} />;
   return (
     <div className="space-y-6" data-testid="agent-access" data-scope={access.scope}>
       <RoleModelsPanel page={page} refreshKey={tableTick} onSaved={() => setTableTick((tick) => tick + 1)} />

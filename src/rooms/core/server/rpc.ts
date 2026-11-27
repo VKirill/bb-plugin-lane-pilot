@@ -4,7 +4,7 @@ import { buildTaskBoard, conveyorState, runsConsoleRpc, runsRpc, setConveyor } f
 import { stackRpc } from "../../native-install/server";
 import { workspaceProviderRpc } from "../../native-agent/server";
 import { chatAgentRpc } from "./rpc-chat-agent";
-import { builtinWorkflows, workflowExportRpc, workflowsRpc, workflowOpsRpc, createWorkflowArchitect, architectStartRpc } from "../../workflow/server";
+import { builtinWorkflows, workflowExportRpc, workflowsRpc, workflowOpsRpc, createWorkflowArchitect, architectStartRpc, resolveWorkflowLoader } from "../../workflow/server";
 import { WORKFLOW_TRIGGERS_PAUSED_KEY, isTriggersPaused } from "../../workflow";
 import { projectPlace, schedulesRpc } from "../../schedule/server";
 import { taskOf } from "../../schedule";
@@ -250,7 +250,13 @@ export function registerRpc(ctx: ServerCore, services: Services, contract: typeo
       () => invalidateRpcTags(ctx.bb, ["owner_waiting"]), (message) => ctx.bb.log.debug(message)),
     ...brakesRpc(ctx, buildBrakesDeps(ctx, services, (runId) => runsHandlers.halt_run({ runId }))),
     ...errandsRpc(ctx, services),
-    ...deskRpc(ctx),
+    ...deskRpc(ctx, {
+      answerDeps: {
+        ...(services.workflowEngine ? { architect: createWorkflowArchitect(ctx, services) } : {}),
+        loadWorkflow: resolveWorkflowLoader(services),
+        ...(services.evolvePublishDraft ? { evolveDeps: { publishDraft: services.evolvePublishDraft } } : {}),
+      },
+    }),
     ...stageReturnRpc(services.stageReturn),
     ...workGraphRpc(ctx, { tokenCursorRow }),
     task_word: async ({ runId, taskId, decision, text }: { runId: string; taskId: string; decision: "yes" | "no"; text: string }) => {

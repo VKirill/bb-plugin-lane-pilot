@@ -303,3 +303,167 @@ describe("console work section (P5)", () => {
     slot.lifecycle.unmount();
   });
 });
+
+describe("console task page (P6)", () => {
+  beforeEach(() => {
+    cleanup();
+    document.body.innerHTML = "";
+  });
+
+  afterEach(() => {
+    cleanup();
+    setLocaleOverride(null);
+    document.documentElement.lang = "en";
+  });
+
+  it("renders TaskPage on deep link work/task/<runId>/<taskId> and goes back to work/tasks", async () => {
+    setLocaleOverride("en");
+    const slot = await mountWork({
+      subPath: "work/task/lprun_1/task_1",
+      rpc: {
+        task_card: () => ({
+          ...cardFixture(),
+          objective: "Ship checkout",
+          contract: {
+            objective: "Add card payment",
+            acceptance: ["Card charges work"],
+            ownsPaths: ["src/pay.ts"],
+            expectedOutputs: [],
+            dependsOn: [],
+            checks: ["npm test"],
+          },
+        }),
+        task_acceptance_card: () => ({
+          contract: { objective: "Add card payment", acceptance: ["Card charges work"], ownsPaths: ["src/pay.ts"] },
+          risk: "high",
+          base: { ref: "main", sha: "0123456789abcdef", branch: "lp/t1", compareCommitted: true },
+          receipts: [{ stageId: "plan-critique", state: "passed", proof: "advisory", proofKind: "advisory", reason: null, model: "test-model", updatedAt: 1 }],
+          gates: [],
+          planFact: null,
+          baseline: null,
+          notRun: [],
+          cost: { state: "measured", usd: 0.42, tokens: 1200, note: null, attempts: 1, measured: 1 },
+          awaitsWord: false,
+        }),
+      },
+    });
+
+    await slot.findByTestId("task-card");
+    await slot.findByTestId("task-stage-rail");
+    await slot.findByTestId("acceptance-card");
+    await slot.findByTestId("task-rail");
+    expect(slot.getByTestId("task-stage-rail").textContent).toContain("Plan critique");
+    expect(slot.getByTestId("task-diff")).toBeTruthy();
+    expect(slot.getByTestId("task-files")).toBeTruthy();
+    expect(slot.getByTestId("stage-receipts-lprun_1")).toBeTruthy();
+
+    fireEvent.click(slot.getByTestId("board-back"));
+    await waitFor(() =>
+      expect(slot.navigateCalls).toContainEqual({
+        method: "toPluginPanel",
+        path: "lane-pilot",
+        options: { subPath: "work/tasks" },
+      }),
+    );
+    await slot.findByTestId("task-board");
+    slot.lifecycle.unmount();
+  });
+
+  it("requires a reason for acceptance «No» and sends task_word no through ConfirmDialog", async () => {
+    setLocaleOverride("en");
+    const taskWordCalls: unknown[] = [];
+    const slot = await mountWork({
+      subPath: "work/task/lprun_1/task_1",
+      rpc: {
+        task_acceptance_card: () => ({
+          contract: { objective: "Add card payment", acceptance: ["Card charges work"], ownsPaths: ["src/pay.ts"] },
+          risk: "high",
+          base: null,
+          receipts: [],
+          gates: [],
+          planFact: null,
+          baseline: null,
+          notRun: [],
+          cost: { state: "not_measured", usd: null, tokens: null, note: null, attempts: 1, measured: 0 },
+          awaitsWord: true,
+        }),
+        task_word: (input) => {
+          taskWordCalls.push(input);
+          return { ok: true };
+        },
+      },
+    });
+
+    const noBtn = await slot.findByTestId("acc-word-no");
+    fireEvent.click(noBtn);
+
+    const dialog = await slot.findByRole("alertdialog");
+    const confirmBtn = dialog.querySelectorAll("button")[1]!;
+    fireEvent.click(confirmBtn);
+    await waitFor(() => expect(dialog.querySelector("[role='alert']")?.textContent).toContain("Enter a reason before rejecting."));
+    expect(taskWordCalls).toHaveLength(0);
+
+    fireEvent.change(slot.getByTestId("acc-word-no-reason"), { target: { value: "Missing receipt email" } });
+    fireEvent.click(confirmBtn);
+    await waitFor(() =>
+      expect(taskWordCalls).toContainEqual({
+        runId: "lprun_1",
+        taskId: "task_1",
+        decision: "no",
+        text: "Missing receipt email",
+      }),
+    );
+    slot.lifecycle.unmount();
+  });
+
+  it("opens ConfirmDialog with note input for cancel attempt and Stop, and sends cancel_attempt on confirm", async () => {
+    setLocaleOverride("en");
+    const cancelCalls: unknown[] = [];
+    const slot = await mountWork({
+      subPath: "work/task/lprun_1/task_1",
+      rpc: {
+        task_acceptance_card: () => ({
+          contract: { objective: "Add card payment", acceptance: ["Card charges work"], ownsPaths: ["src/pay.ts"] },
+          risk: null,
+          base: null,
+          receipts: [],
+          gates: [],
+          planFact: null,
+          baseline: null,
+          notRun: [],
+          cost: { state: "not_measured", usd: null, tokens: null, note: null, attempts: 1, measured: 0 },
+          awaitsWord: false,
+        }),
+        cancel_attempt: (input) => {
+          cancelCalls.push(input);
+          return { ok: true, state: "canceled", reason: null };
+        },
+      },
+    });
+
+    await slot.findByTestId("task-card");
+    // Note input only lives inside the ConfirmDialog, never inline on the page.
+    expect(slot.queryByTestId("board-cancel-note")).toBeNull();
+
+    // Stop button inside AcceptanceCard also opens the ConfirmDialog without immediately canceling.
+    fireEvent.click(await slot.findByTestId("acc-stop"));
+    const stopDialog = await slot.findByRole("alertdialog");
+    expect(slot.getByTestId("board-cancel-note")).toBeTruthy();
+    expect(cancelCalls).toHaveLength(0);
+    fireEvent.click(stopDialog.querySelectorAll("button")[0]!);
+    await waitFor(() => expect(slot.queryByRole("alertdialog")).toBeNull());
+
+    // Header cancel button opens the ConfirmDialog, accepts optional note, and calls cancel_attempt.
+    fireEvent.click(slot.getByTestId("task-cancel-btn"));
+    const cancelDialog = await slot.findByRole("alertdialog");
+    fireEvent.change(slot.getByTestId("board-cancel-note"), { target: { value: "Switching approach" } });
+    fireEvent.click(cancelDialog.querySelectorAll("button")[1]!);
+    await waitFor(() =>
+      expect(cancelCalls).toContainEqual({
+        attemptId: "lpattempt_1",
+        note: "Switching approach",
+      }),
+    );
+    slot.lifecycle.unmount();
+  });
+});

@@ -1,5 +1,5 @@
 import type { ComponentProps } from "react";
-import { t, validationMessage, type I18nKey, type Locale } from "@lane-pilot/i18n";
+import { t, validationMessage, type Locale } from "@lane-pilot/i18n";
 import { GLOBAL_SETTINGS_PROJECT_ID } from "@lane-pilot/settings-catalog";
 import {
   Alert,
@@ -14,19 +14,20 @@ import {
 import { ErrandsScreen } from "../../errands/ui";
 import { MemoryScreen } from "../../memory/ui";
 import { DecisionsScreen } from "../../owner-waiting/ui";
-import { AcceptanceCard as RawAcceptanceCard, WorkScreen } from "../../runs/ui";
+import { AcceptanceCard as RawAcceptanceCard, TaskPage, WorkScreen } from "../../runs/ui";
 import { ScheduleBoard } from "../../schedule/ui";
-import { OwnedSettings } from "../../settings/ui";
+import { AgentsLoadout } from "../../settings/ui";
+import { StaffList } from "../../specialist/ui";
 import { ReturnStage } from "../../stage-return/ui";
 import { TokenUsage } from "../../usage/ui";
 import { InputsForm, WorkflowsScreen } from "../../workflow/ui";
-import { SYSTEM_PAGES, type ConsoleRoute, type SystemPage } from "../models/nav-model";
+import type { ConsoleRoute } from "../models/nav-model";
+import { useAgentsLoadoutBridge } from "./agents-page-bridge";
 import { ProjectHeader } from "./project-header";
 import { ServiceSegment } from "./service-segment";
 import { KnowledgeTab } from "./tab-knowledge";
 import { OverviewScreen } from "./screens/overview-screen";
-import { SpecialistStatusCard } from "./tab-overview";
-import { TeamTab } from "./tab-team";
+import { SystemHome } from "./screens/system-home";
 import { WorkTab } from "./tab-work";
 import type { LpPage } from "./use-lp-page";
 
@@ -42,14 +43,32 @@ export interface ConsoleSectionProps {
   locale: Locale;
 }
 
-const SYSTEM_PAGE_TITLES: Record<SystemPage, I18nKey> = {
-  graphs: "consoleSysGraphs",
-  agents: "consoleSysAgents",
-  schedules: "consoleSysSchedules",
-  costs: "consoleSysCosts",
-  health: "consoleSysHealth",
-  settings: "consoleSysSettings",
-};
+function SystemAgentsPanel({
+  route,
+  go,
+  projectId,
+  sectionId,
+  locale,
+  page,
+}: ConsoleSectionProps & { page: LpPage }) {
+  const bridge = useAgentsLoadoutBridge(page, projectId);
+  return (
+    <div className="space-y-6" data-testid="system-agents">
+      <SettingsAlerts page={page} />
+      <AgentsLoadout
+        projectId={projectId}
+        sectionId={sectionId}
+        locale={locale}
+        projects={page.projects}
+        sections={page.sections}
+        onScopeChange={(next) =>
+          go({ ...route, section: "system", page: "agents", projectId: next.projectId, sectionId: next.sectionId })
+        }
+        {...bridge}
+      />
+    </div>
+  );
+}
 
 function SettingsAlerts({ page }: { page: LpPage }) {
   const { error, saveError, load } = page;
@@ -87,37 +106,80 @@ function SettingsAlerts({ page }: { page: LpPage }) {
   );
 }
 
-function StaffSection({ projectId, page }: ConsoleSectionProps & { page: LpPage }) {
-  if (projectId && projectId !== GLOBAL_SETTINGS_PROJECT_ID) {
+function StaffSection({ route, go, projectId, sectionId, locale, page }: ConsoleSectionProps & { page: LpPage }) {
+  const scopedProjectId = projectId && projectId !== GLOBAL_SETTINGS_PROJECT_ID ? projectId : null;
+  if (route.view === "hire") {
     return (
-      <div className="space-y-4" data-testid="console-staff">
-        <SpecialistStatusCard page={page} projectId={projectId} />
-      </div>
+      <Surface testId="staff-hire-placeholder">
+        <SurfaceBody className="flex flex-wrap items-center justify-between gap-3">
+          <p className="text-sm text-muted-foreground">{t("consoleStaffHirePlaceholder")}</p>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={() => go({ section: "staff", ...(scopedProjectId ? { projectId: scopedProjectId } : {}), ...(sectionId ? { sectionId } : {}) })}
+          >
+            {t("consoleStaffBackToList")}
+          </Button>
+        </SurfaceBody>
+      </Surface>
     );
   }
-  const mainProjects = page.projectGroups.main;
-  if (mainProjects.length === 0) {
+  if (route.staffRef) {
     return (
-      <p className="text-sm text-muted-foreground" data-testid="console-staff-empty">
-        {t("consoleStaffEmpty")}
-      </p>
+      <Surface testId="staff-page-placeholder">
+        <SurfaceBody className="flex flex-wrap items-center justify-between gap-3">
+          <p className="text-sm text-muted-foreground">
+            {t("consoleStaffDetailPlaceholder")
+              .replace("{project}", route.staffRef.projectId)
+              .replace("{domain}", route.staffRef.domain)}
+          </p>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={() => go({ section: "staff", ...(scopedProjectId ? { projectId: scopedProjectId } : {}), ...(sectionId ? { sectionId } : {}) })}
+          >
+            {t("consoleStaffBackToList")}
+          </Button>
+        </SurfaceBody>
+      </Surface>
     );
   }
   return (
-    <div className="space-y-4" data-testid="console-staff">
-      {mainProjects.map((project) => (
-        <div key={project.id} className="space-y-2">
-          <h2 className="text-sm font-medium">{project.name}</h2>
-          <SpecialistStatusCard page={page} projectId={project.id} />
-        </div>
-      ))}
-    </div>
+    <StaffList
+      projectId={scopedProjectId}
+      sectionId={sectionId}
+      projects={page.projects}
+      hiddenProjectIds={page.hiddenProjects}
+      locale={locale}
+      go={(next) => go(next)}
+    />
   );
 }
 
 function WorkSection({ route, go, projectId, sectionId, locale, page }: ConsoleSectionProps & { page: LpPage }) {
   const scopedProjectId = projectId && projectId !== GLOBAL_SETTINGS_PROJECT_ID ? projectId : null;
   const serviceProjectIds = page.projectGroups.service.map((project) => project.id);
+  if (route.taskRef) {
+    return (
+      <TaskPage
+        runId={route.taskRef.runId}
+        taskId={route.taskRef.taskId}
+        projects={page.projects}
+        locale={locale}
+        onBack={() =>
+          go({
+            section: "work",
+            view: "tasks",
+            ...(route.projectId ? { projectId: route.projectId } : {}),
+            ...(route.sectionId ? { sectionId: route.sectionId } : {}),
+          })
+        }
+        AcceptanceCard={AcceptanceCard}
+      />
+    );
+  }
   return (
     <WorkScreen
       view={route.view}
@@ -199,11 +261,14 @@ function SystemSection({ route, go, projectId, locale, page }: ConsoleSectionPro
       );
     case "agents":
       return (
-        <div className="space-y-6" data-testid="system-agents">
-          <SettingsAlerts page={page} />
-          <TeamTab page={page} />
-          <OwnedSettings scope="agents" locale={locale} />
-        </div>
+        <SystemAgentsPanel
+          route={route}
+          go={go}
+          projectId={scopedProjectId}
+          sectionId={route.sectionId ?? null}
+          locale={locale}
+          page={page}
+        />
       );
     case "settings":
       return (
@@ -214,27 +279,25 @@ function SystemSection({ route, go, projectId, locale, page }: ConsoleSectionPro
           <KnowledgeTab page={page} />
         </div>
       );
-    default:
+    default: {
+      const targetScreenProject = scopedProjectId ?? GLOBAL_SETTINGS_PROJECT_ID;
+      const targetScreenSection = scopedProjectId ? (route.sectionId ?? null) : null;
+      const explicitKeysCount =
+        page.data &&
+        page.data.projectId === targetScreenProject &&
+        (page.data.sectionId ?? null) === targetScreenSection
+          ? page.data.explicitKeys.length
+          : null;
       return (
-        <div className="space-y-4" data-testid="console-system-hub">
-          <PageHeader title={t("consoleNavSystem")} subtitle={t("consoleSystemLead")} />
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {SYSTEM_PAGES.map((sysPage) => (
-              <button
-                key={sysPage}
-                type="button"
-                data-testid={`system-tile-${sysPage}`}
-                className="lp-card flex flex-col items-start gap-1 p-4 text-left transition-colors hover:bg-state-hover"
-                onClick={() => go({ ...route, section: "system", page: sysPage })}
-              >
-                <span className="text-sm font-medium text-foreground">
-                  {t(SYSTEM_PAGE_TITLES[sysPage])}
-                </span>
-              </button>
-            ))}
-          </div>
-        </div>
+        <SystemHome
+          route={route}
+          go={go}
+          projectId={scopedProjectId}
+          sectionId={route.sectionId ?? null}
+          explicitKeysCount={explicitKeysCount}
+        />
       );
+    }
   }
 }
 

@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { useRpc } from "@get-bb/plugin-sdk/app";
 import { t, type I18nKey } from "@lane-pilot/i18n";
+import { ConfirmDialog, Input } from "@lane-pilot/ui-kit";
 import type { z } from "zod";
 import type { rpcContract } from "../../contracts";
 
@@ -38,16 +39,19 @@ function Block({ title, testId, children }: { title: string; testId?: string; ch
   );
 }
 
-export function AcceptanceCard({ runId, taskId, fallback, finished, refreshKey, onStop, ReturnStage }: {
+export function AcceptanceCard({ runId, taskId, fallback, finished, refreshKey, onStop, ReturnStage, className = "mt-5" }: {
   runId: string; taskId: string; refreshKey: unknown; finished: boolean;
   /** What the task page already knows of the contract, shown when the card cannot be read. */
   fallback: { objective: string | null; acceptance: string[] } | null;
   /** «Stop» beside Accept and Return (SMA sc_acceptance): the task page passes its cancel; null on a finished task. */
   onStop?: (() => void) | null;
   ReturnStage?: (props: { runId: string; taskId: string }) => ReactNode;
+  className?: string;
 }) {
   const rpc = useRpc<typeof rpcContract>();
   const [card, setCard] = useState<Card | null | "gone">(null);
+  const [rejectOpen, setRejectOpen] = useState(false);
+  const [rejectReason, setRejectReason] = useState("");
   useEffect(() => {
     let live = true;
     void rpc.call("task_acceptance_card", { runId, taskId }).then((result) => { if (live) setCard(result ?? "gone"); }).catch(() => { if (live) setCard("gone"); });
@@ -57,7 +61,7 @@ export function AcceptanceCard({ runId, taskId, fallback, finished, refreshKey, 
   if (card === null || card === "gone") {
     if (!fallback) return null;
     return (
-      <section className="mt-4" data-testid="acceptance-card-fallback">
+      <section className={className} data-testid="acceptance-card-fallback">
         {fallback.objective ? <p className="whitespace-pre-wrap text-sm leading-relaxed">{fallback.objective}</p> : null}
         {fallback.acceptance.length ? (
           <ul className="mt-3 space-y-1">{fallback.acceptance.map((row, index) => (
@@ -75,7 +79,7 @@ export function AcceptanceCard({ runId, taskId, fallback, finished, refreshKey, 
   const cost = card.cost;
   const usd = cost.usd === null ? null : `$${cost.usd.toFixed(cost.usd < 1 ? 3 : 2)}`;
   return (
-    <section className="mt-5 rounded-lg border border-border bg-card p-3 shadow-2xs @3xl:p-4" data-testid="acceptance-card">
+    <section className={`${className ? `${className} ` : ""}rounded-lg border border-border bg-card p-3 shadow-2xs @3xl:p-4`} data-testid="acceptance-card">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
         <h2 className="text-sm font-semibold">{t("acc_title")}</h2>
         <span className="flex flex-wrap gap-1.5">
@@ -223,9 +227,39 @@ export function AcceptanceCard({ runId, taskId, fallback, finished, refreshKey, 
           <button type="button" className="rounded-md border border-border px-2 py-1 text-xs hover:bg-[var(--lp-well)]" data-testid="acc-word-yes"
             onClick={() => void rpc.call("task_word", { runId, taskId, decision: "yes", text: "да" }).then(() => rpc.call("task_acceptance_card", { runId, taskId })).then((next) => setCard(next ?? "gone"))}>{t("accWordYes")}</button>
           <button type="button" className="rounded-md border border-border px-2 py-1 text-xs hover:bg-[var(--lp-well)]" data-testid="acc-word-no"
-            onClick={() => { const text = window.prompt(t("accWordWhyPrompt"))?.trim(); if (text) void rpc.call("task_word", { runId, taskId, decision: "no", text }).then(() => rpc.call("task_acceptance_card", { runId, taskId })).then((next) => setCard(next ?? "gone")); }}>{t("accWordNo")}</button>
+            onClick={() => { setRejectReason(""); setRejectOpen(true); }}>{t("accWordNo")}</button>
         </div>
       ) : null}
+      <ConfirmDialog
+        open={rejectOpen}
+        onOpenChange={(open) => { if (!open) setRejectOpen(false); }}
+        title={t("consoleDecisionsConfirmReject")}
+        tone="danger"
+        confirmLabel={t("accWordNo")}
+        cancelLabel={t("cancel")}
+        onConfirm={async () => {
+          const text = rejectReason.trim();
+          if (!text) throw new Error(t("consoleDecisionsRejectReasonRequired"));
+          const res = await rpc.call("task_word", { runId, taskId, decision: "no", text });
+          if (res && typeof res === "object" && "ok" in res && res.ok === false) {
+            throw new Error(typeof res.reason === "string" && res.reason ? res.reason : t("consoleTaskActionFailed"));
+          }
+          const next = await rpc.call("task_acceptance_card", { runId, taskId });
+          setCard(next ?? "gone");
+        }}
+        body={
+          <label className="block space-y-1">
+            <span className="text-xs font-medium text-foreground">{t("accWordWhyPrompt")}</span>
+            <Input
+              value={rejectReason}
+              onChange={(event) => setRejectReason(event.target.value)}
+              placeholder={t("consoleDecisionsRejectReasonPlaceholder")}
+              data-testid="acc-word-no-reason"
+              autoFocus
+            />
+          </label>
+        }
+      />
       {ReturnStage ? <ReturnStage runId={runId} taskId={taskId} /> : null}
       {onStop ? <button type="button" className="mt-3 rounded-md border border-border px-2 py-1 text-xs hover:bg-[var(--lp-well)]" data-testid="acc-stop" onClick={onStop}>{t("accStop")}</button> : null}
     </section>

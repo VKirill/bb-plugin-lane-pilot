@@ -67,8 +67,7 @@ describe("Lane Pilot UI", () => {
     slot.lifecycle.unmount();
   });
 
-  // unreachable in the console: P6 TaskPage at work/task/<runId>/<taskId> not yet wired in WorkScreen; see report
-  it.skip("renders TaskPage with task-rail and stage receipts when opening a task from the board", async () => {
+  it("renders TaskPage with task-rail and stage receipts when opening a task from the board", async () => {
     const taskBoard = vi.fn((_input: unknown) => boardFixture());
     const slot = await mountPage({ task_board: taskBoard });
     openTab(slot, "runs");

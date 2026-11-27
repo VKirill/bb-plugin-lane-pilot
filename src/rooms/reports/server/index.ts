@@ -63,7 +63,7 @@ export {
   type DeskAnswerResult,
 } from "./services/review-desk-answers";
 export { DESK_USAGE, runDeskCli } from "./handlers/desk-cli";
-export { deskRpc, nextDeskDefaultAt } from "./handlers/desk-rpc";
+export { deskRpc, nextDeskDefaultAt, type DeskRpcDeps } from "./handlers/desk-rpc";
 export { runOwnerPush } from "./services/owner-push";
 export { createTelegramSender } from "./services/telegram";
 export {

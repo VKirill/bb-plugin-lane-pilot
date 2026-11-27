@@ -1,0 +1,446 @@
+/** @vitest-environment jsdom */
+import React from "react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { cleanup, configure, fireEvent, waitFor, within } from "@testing-library/react";
+import { installTestPluginRuntime, loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
+import { setLocaleOverride } from "@lane-pilot/i18n";
+import { roleModelKey } from "@lane-pilot/models";
+import type { AgentLoadoutOutput } from "../src/rooms/contracts";
+import { SystemHome } from "../src/rooms/pages/ui/screens/system-home";
+import { AgentsLoadout } from "../src/rooms/settings/ui";
+import { screenFixture } from "./ui-harness";
+import { choosePickerValue, type PickerNode, type PickerValue } from "./ui-settings-integration/helpers";
+
+vi.setConfig({ testTimeout: 60_000 });
+vi.mock("sonner", () => ({ toast: { info: vi.fn(), success: vi.fn(), error: vi.fn() } }));
+configure({ asyncUtilTimeout: 10_000 });
+
+function installPickerDriver() {
+  installTestPluginRuntime();
+  const sdk = (globalThis as typeof globalThis & { __bbPluginRuntime: { pluginSdkApp: Record<string, unknown> } })
+    .__bbPluginRuntime.pluginSdkApp;
+  sdk.experimental_ProviderModelPicker = (props: { value: PickerValue; onChange: (next: PickerValue) => void }) =>
+    React.createElement("div", {
+      "data-testid": "bb-provider-model-picker",
+      "data-provider": props.value.providerId,
+      "data-model": props.value.model,
+      "data-effort": props.value.reasoningLevel,
+      ref: (node: PickerNode | null) => {
+        if (node) {
+          node.__pickerValue = props.value;
+          node.__pickerOnChange = props.onChange;
+        }
+      },
+    });
+}
+
+function loadoutFixture(): AgentLoadoutOutput {
+  return {
+    hubSkills: 12,
+    roles: [
+      {
+        role: "writer",
+        kind: "pipeline",
+        model: { provider: "codex", model: "gpt-6-luna", from: "project" },
+        items: [
+          { type: "skill", name: "lp-writer", from: "profile", missing: true },
+          { type: "skill", name: "karpathy-guidelines", from: "profile", missing: false },
+          { type: "plugin", name: "environment-project-checkout", from: "required", missing: false },
+          { type: "mcp", name: "gitnexus", from: "profile", missing: false },
+        ],
+        contextMode: "roles",
+        machine: null,
+        note: null,
+      },
+      {
+        role: "analyst",
+        kind: "pipeline",
+        model: { provider: "claude-code", model: "claude-opus-5-5", from: "builtin" },
+        items: [
+          { type: "plugin", name: "environment-project-checkout", from: "required", missing: false },
+          { type: "mcp", name: "bb-bridge", from: "required", missing: false },
+        ],
+        contextMode: "roles",
+        machine: null,
+        note: null,
+      },
+      {
+        role: "seo-specialist",
+        kind: "specialist",
+        model: { provider: "claude-code", model: "claude-sonnet-5-5", from: "project" },
+        items: [
+          { type: "skill", name: "seo-drmax-orchestrator", from: "profile", missing: false },
+          { type: "skill", name: "missing-seo-skill", from: "domain_pack", missing: true },
+          { type: "plugin", name: "env-catalog", from: "profile", missing: false },
+          { type: "mcp", name: "bb-bridge", from: "required", missing: false },
+        ],
+        contextMode: "roles",
+        machine: null,
+        note: "в шаге графа пакета нет",
+      },
+      {
+        role: "browser-qa",
+        kind: "pipeline",
+        model: { provider: "claude-code", model: "claude-sonnet-5-5", from: "builtin" },
+        items: [
+          { type: "plugin", name: "browser-automation", from: "profile", missing: true },
+          { type: "mcp", name: "bb-bridge", from: "required", missing: false },
+        ],
+        contextMode: "roles",
+        machine: "mac-mini",
+        note: null,
+      },
+      {
+        role: "dev-orchestrator",
+        kind: "pm",
+        model: { provider: "claude-code", model: "claude-opus-5-5", from: "project" },
+        items: [{ type: "plugin", name: "lane-pilot", from: "profile", missing: false }],
+        contextMode: "roles",
+        machine: null,
+        note: "плюс весь каталог BB",
+      },
+    ],
+  };
+}
+
+const CATALOG_FIXTURE = {
+  hosts: [{ id: "mini", name: "Mac mini", connected: true }],
+  providers: [
+    {
+      id: "claude-code",
+      displayName: "Claude Code",
+      logoUrl: null,
+      family: null,
+      supportsServiceTier: false,
+      serviceTiers: [],
+      hostIds: ["mini"],
+      models: [
+        { id: "claude-opus-5-5", model: "claude-opus-5-5", displayName: "Opus 5.5", efforts: ["low", "medium", "high"], defaultEffort: "high", isDefault: true, hostIds: ["mini"] },
+        { id: "claude-sonnet-5-5", model: "claude-sonnet-5-5", displayName: "Sonnet 5.5", efforts: ["low", "medium", "high"], defaultEffort: "medium", isDefault: false, hostIds: ["mini"] },
+      ],
+    },
+    {
+      id: "codex",
+      displayName: "Codex",
+      logoUrl: null,
+      family: null,
+      supportsServiceTier: false,
+      serviceTiers: [],
+      hostIds: ["mini"],
+      models: [
+        { id: "gpt-6.1-sol", model: "gpt-6.1-sol", displayName: "GPT-6.1 Sol", efforts: ["medium", "high"], defaultEffort: "high", isDefault: true, hostIds: ["mini"] },
+        { id: "gpt-6-luna", model: "gpt-6-luna", displayName: "GPT-6 Luna", efforts: ["low", "medium", "high"], defaultEffort: "medium", isDefault: false, hostIds: ["mini"] },
+      ],
+    },
+  ],
+  runHostId: "mini",
+};
+
+function accessFixture() {
+  return {
+    mode: "roles",
+    modeOrigin: null,
+    roles: [
+      {
+        role: "writer",
+        key: "helper.access.writer",
+        version: 2,
+        value: null,
+        inherited: false,
+        origin: "project",
+        originBelow: null,
+        groups: {
+          bbPlugins: { names: ["environment-project-checkout"], source: "role" },
+          skills: { names: ["lp-writer", "karpathy-guidelines"], source: "role" },
+          mcpServers: { names: ["gitnexus", "bb-bridge"], source: "role" },
+          nativePlugins: { names: [], source: "role" },
+        },
+        switches: {
+          userInstructions: { include: false, source: "role" },
+          projectInstructions: { include: true, source: "role" },
+        },
+      },
+      {
+        role: "analyst",
+        key: "helper.access.analyst",
+        version: 0,
+        value: null,
+        inherited: false,
+        origin: null,
+        originBelow: null,
+        groups: {
+          bbPlugins: { names: ["environment-project-checkout"], source: "role" },
+          skills: { names: [], source: "role" },
+          mcpServers: { names: ["bb-bridge"], source: "role" },
+          nativePlugins: { names: [], source: "role" },
+        },
+        switches: {
+          userInstructions: { include: false, source: "role" },
+          projectInstructions: { include: true, source: "role" },
+        },
+      },
+    ],
+    catalog: { bbPlugins: [], skills: [] },
+    mandatory: { bbPlugins: ["environment-project-checkout", "project-folders"], mcpServers: ["bb-bridge"] },
+    providers: {},
+  };
+}
+
+describe("SystemHome (P9)", () => {
+  beforeEach(() => {
+    cleanup();
+    document.body.innerHTML = "";
+    setLocaleOverride("ru");
+  });
+
+  afterEach(() => {
+    cleanup();
+    setLocaleOverride(null);
+  });
+
+  it("renders six tiles with live status lines and navigates on click", async () => {
+    const go = vi.fn();
+    const slot = renderSlot(
+      {
+        component: () => (
+          <SystemHome route={{ section: "system" }} go={go} projectId="proj_ui" sectionId={null} />
+        ),
+      },
+      {},
+      {
+        context: { projectId: "proj_ui", threadId: null },
+        rpc: {
+          workflow_list: () => ({ workflows: [{ id: "w1" }, { id: "w2" }, { id: "w3" }], problems: [], project: "ok" }),
+          workflow_evolution_list: () => ({ items: [], autoPublishedCount: 0, pendingApprovalCount: 2 }),
+          agent_loadout: () => loadoutFixture(),
+          schedule_list: () => ({ schedules: [{ state: "active" }, { state: "active" }, { state: "paused" }], hosts: [], now: 0, errandDefault: {} }),
+          money_status: () => ({ monthUsd: 12.5, cap: 50, left: 37.5 }),
+          brakes_get: () => ({ brakes: [{ id: "schedules", paused: true, since: 1, reason: "test", impact: { label: "s", count: 1 } }] }),
+          canary_status: () => ({ tripped: false, green: true }),
+          owner_waiting: () => ({ items: [{ source: "outage" }], counts: { outage: 1 } }),
+          get_screen: () => ({ ...screenFixture(), explicitKeys: ["a", "b", "c", "d"] }),
+        },
+      },
+    );
+
+    await slot.findByTestId("console-system-hub");
+    await waitFor(() => expect(slot.getByTestId("system-tile-status-graphs").textContent).toContain("3"));
+
+    expect(slot.getByTestId("system-tile-status-graphs").textContent).toContain("2 ждут");
+    expect(slot.getByTestId("system-tile-status-agents").textContent).toContain("5 ролей · 3 с нехваткой");
+    expect(slot.getByTestId("system-tile-status-schedules").textContent).toContain("2 активных · 1 на паузе");
+    expect(slot.getByTestId("system-tile-status-costs").textContent).toContain("$");
+    expect(slot.getByTestId("system-tile-status-health").textContent).toContain("Простои: 1");
+    expect(slot.getByTestId("system-tile-status-health").textContent).toContain("1 на паузе");
+    expect(slot.getByTestId("system-tile-status-settings").textContent).toContain("4");
+
+    fireEvent.click(slot.getByTestId("system-tile-agents"));
+    expect(go).toHaveBeenCalledWith({ section: "system", page: "agents" });
+    slot.lifecycle.unmount();
+  });
+});
+
+describe("AgentsLoadout (P13)", () => {
+  beforeEach(() => {
+    cleanup();
+    document.body.innerHTML = "";
+    setLocaleOverride("ru");
+  });
+
+  afterEach(() => {
+    cleanup();
+    setLocaleOverride(null);
+  });
+
+  it("renders roles from agent_loadout, flags missing hub items, saves role_model.<role>, resets overrides, and shows details", async () => {
+    installPickerDriver();
+    const saves: Array<Record<string, unknown>> = [];
+    const resets: Array<Record<string, unknown>> = [];
+    const onScopeChange = vi.fn();
+
+    const slot = renderSlot(
+      {
+        component: () => (
+          <AgentsLoadout
+            projectId="proj_ui"
+            sectionId={null}
+            locale="ru"
+            projects={[{ id: "proj_ui", name: "UI test" }]}
+            sections={[{ id: "sec_web", name: "Web" }]}
+            onScopeChange={onScopeChange}
+            renderWriterDetail={() => <div data-testid="writer-detail">writer detail</div>}
+            renderBrowserDetail={() => <div data-testid="browser-qa-detail">browser detail</div>}
+          />
+        ),
+      },
+      {},
+      {
+        context: { projectId: "proj_ui", threadId: null },
+        rpc: {
+          agent_loadout: () => loadoutFixture(),
+          get_role_models: () => ({
+            roles: [
+              {
+                role: "analyst",
+                providerId: "claude-code",
+                model: "claude-opus-5-5",
+                effort: "high",
+                source: "default",
+                sourceKey: null,
+                own: false,
+                version: 3,
+                defaultModel: "claude-opus-5-5",
+                defaultEffort: "high",
+                offered: true,
+                pool: [],
+              },
+              {
+                role: "seo-specialist",
+                providerId: "claude-code",
+                model: "claude-sonnet-5-5",
+                effort: "high",
+                source: "table",
+                sourceKey: "role_model.seo-specialist",
+                own: true,
+                version: 5,
+                defaultModel: "claude-sonnet-5-5",
+                defaultEffort: "high",
+                offered: true,
+                pool: [{ providerId: "codex", model: "gpt-6.1-sol", effort: "high" }],
+              },
+            ],
+            options: [],
+          }),
+          workflow_model_catalog: () => CATALOG_FIXTURE,
+          helper_access_view: () => accessFixture(),
+          get_globals: () => ({ defaults: {}, revision: 0, agents: [] }),
+          get_preferences: () => ({ locale: "ru", preference: "ru", lastProjectId: "proj_ui" }),
+          get_agent_inventory: () => ({
+            skills: { status: "ready", items: [] },
+            mcpServers: { status: "unavailable", items: [] },
+            tools: { status: "ready", items: [] },
+            disallowedTools: { status: "ready", items: [] },
+          }),
+          save_setting: (input: unknown) => {
+            saves.push(input as Record<string, unknown>);
+            return { ok: true, conflict: false, version: 4, value: (input as { value: unknown }).value };
+          },
+          reset_project_settings: (input: unknown) => {
+            resets.push(input as Record<string, unknown>);
+            return { ok: true, conflict: false, values: {}, versions: {} };
+          },
+        },
+      },
+    );
+
+    await slot.findByTestId("loadout-missing-banner");
+    expect(slot.getByTestId("loadout-missing-banner").textContent).toContain("3");
+
+    // Matrix renders roles from fixture and marks missing hub items.
+    const writerRow = await slot.findByTestId("access-role-writer");
+    expect(writerRow.textContent).toContain("нет на хабе");
+    expect(slot.getByTestId("loadout-skills-writer").textContent).toContain("2");
+    expect(slot.getByTestId("loadout-skills-writer").textContent).toContain("нет на хабе");
+    expect(slot.getByTestId("loadout-plugins-browser_qa").textContent).toContain("нет на хабе");
+
+    // Project scope does not render ModelOverridesPanel (system-only).
+    expect(slot.queryByTestId("model-overrides")).toBeNull();
+    // OwnedSettings scope="agents" is rendered below.
+    await slot.findByTestId("owned-settings");
+
+    // Changing analyst model calls save_setting with role_model.analyst.
+    const analystPickerWrap = await slot.findByTestId("loadout-model-pick-analyst");
+    const analystPicker = analystPickerWrap.querySelector("[data-testid='bb-provider-model-picker']") as PickerNode;
+    await choosePickerValue({ providerId: "codex", model: "gpt-6.1-sol", reasoningLevel: "high" }, analystPicker);
+    await waitFor(() => expect(saves.length).toBeGreaterThanOrEqual(1));
+    expect(saves[0]).toEqual({
+      projectId: "proj_ui",
+      key: roleModelKey("analyst"),
+      value: { provider: "codex", model: "gpt-6.1-sol", reasoning_effort: "high" },
+      expectedVersion: 3,
+    });
+
+    // Pool editing: remove pool entry on seo-specialist calls save_setting with role_model.seo-specialist without pool.
+    fireEvent.click(slot.getByTestId("loadout-pool-remove-seo-specialist-gpt-6.1-sol"));
+    await waitFor(() => expect(saves.length).toBeGreaterThanOrEqual(2));
+    expect(saves[1]).toEqual({
+      projectId: "proj_ui",
+      key: roleModelKey("seo-specialist"),
+      value: { provider: "claude-code", model: "claude-sonnet-5-5", reasoning_effort: "high" },
+      expectedVersion: 5,
+    });
+
+    // Expanding writer row shows loadout items + WriterDetail + RoleAccessBody.
+    fireEvent.click(slot.getByTestId("role-open-writer"));
+    const writerDrawer = await slot.findByTestId("role-drawer-writer");
+    expect(within(writerDrawer).getByTestId("loadout-item-writer-skill-lp-writer").textContent).toContain("нет на хабе");
+    expect(within(writerDrawer).getByTestId("writer-detail")).toBeTruthy();
+    expect(within(writerDrawer).getByTestId("access-body-writer")).toBeTruthy();
+
+    // Expanding browser-qa row shows BrowserDetail.
+    fireEvent.click(slot.getByTestId("role-open-browser_qa"));
+    const browserDrawer = await slot.findByTestId("role-drawer-browser_qa");
+    expect(within(browserDrawer).getByTestId("browser-qa-detail")).toBeTruthy();
+
+    // «Как у уровня выше» resets own overrides at project level.
+    fireEvent.click(slot.getByTestId("loadout-reset-specialist_seo_specialist"));
+    await waitFor(() => expect(resets).toHaveLength(1));
+    expect(resets[0]).toMatchObject({
+      projectId: "proj_ui",
+      keys: [roleModelKey("seo-specialist")],
+      expectedVersions: { [roleModelKey("seo-specialist")]: 5 },
+    });
+
+    // Level picker triggers scope change to system.
+    const levelPicker = slot.getByTestId("seg-loadout-level-picker");
+    fireEvent.click(within(levelPicker).getByRole("button", { name: "Система" }));
+    expect(onScopeChange).toHaveBeenCalledWith({});
+
+    slot.lifecycle.unmount();
+  });
+
+  it("renders ModelOverridesPanel at system level and mounts SystemHome + AgentsLoadout inside ConsoleRoutes", async () => {
+    const app = await loadPluginApp(() => import("../app"));
+    const slot = renderSlot(
+      app.navPanels[0]!,
+      { subPath: "system" },
+      {
+        context: { projectId: null, threadId: null },
+        rpc: {
+          get_preferences: () => ({ locale: "ru", preference: "ru", lastProjectId: null }),
+          list_projects: () => ({ projects: [{ id: "proj_ui", name: "UI test" }], lastProjectId: null }),
+          list_sections: () => ({ sections: [] }),
+          get_screen: () => ({ ...screenFixture(), projectId: "*", explicitKeys: ["k1"] }),
+          owner_waiting: () => ({ generatedAt: 1, items: [], counts: {}, overnight: { windowMs: 1, red: [], accepted: 0, rulesAdopted: 0, rulesConfirmed: 0 }, now: 0, answered: { owner: 0, agent: 0, lead: 0, janitor: 0 } }),
+          workflow_list: () => ({ workflows: [{ id: "wf1" }], problems: [], project: "ok" }),
+          workflow_evolution_list: () => ({ items: [], autoPublishedCount: 0, pendingApprovalCount: 0 }),
+          agent_loadout: () => loadoutFixture(),
+          schedule_list: () => ({ schedules: [], hosts: [], now: 0, errandDefault: {} }),
+          money_status: () => ({ monthUsd: 0, cap: null, left: null }),
+          brakes_get: () => ({ brakes: [] }),
+          canary_status: () => ({ tripped: false, green: true }),
+          get_role_models: () => ({ roles: [], options: [] }),
+          workflow_model_catalog: () => CATALOG_FIXTURE,
+          helper_access_view: () => accessFixture(),
+          get_globals: () => ({ defaults: {}, revision: 0, agents: [] }),
+          get_agent_inventory: () => ({
+            skills: { status: "ready", items: [] },
+            mcpServers: { status: "unavailable", items: [] },
+            tools: { status: "ready", items: [] },
+            disallowedTools: { status: "ready", items: [] },
+          }),
+          list_model_overrides: () => ({ levels: [] }),
+        },
+      },
+    );
+
+    await slot.findByTestId("console-system-hub");
+    await waitFor(() => expect(slot.getByTestId("system-tile-status-agents").textContent).toContain("5 ролей"));
+    fireEvent.click(slot.getByTestId("system-tile-agents"));
+
+    await slot.findByTestId("system-agents");
+    await slot.findByTestId("model-overrides");
+    await slot.findByTestId("owned-settings");
+    slot.lifecycle.unmount();
+  });
+});

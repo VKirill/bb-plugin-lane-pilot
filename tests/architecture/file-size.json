@@ -5,7 +5,6 @@
  "packages/workflow-engine/src/validate.ts": 600,
  "src/rooms/contracts/helper-context.ts": 700,
  "src/rooms/native-install/coexistence.ts": 800,
- "src/rooms/runs/ui/task-board.tsx": 600,
  "src/rooms/verification/sandbox.ts": 600,
  "src/rooms/workflow/ui/workflow-map.tsx": 700
 }

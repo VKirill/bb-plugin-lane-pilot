@@ -2,4 +2,6 @@
 // controls live in the ui-shell kit; these stay because they read the native-agent surfaces.
 export { AccessModePanel, ORIGIN_LABEL, PmAccessNote, RoleAccessBody, isChanged, roleSummary, useAccessView } from "./agent-access";
 export type { AccessApi, RoleView } from "./agent-access";
+export { AgentsLoadout } from "./agents-loadout";
+export type { AgentsLoadoutProps } from "./agents-loadout";
 export { OwnedSettings } from "./owned-settings";

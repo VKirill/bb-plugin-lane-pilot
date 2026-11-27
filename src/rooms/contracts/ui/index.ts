@@ -3,3 +3,10 @@
 // while these schemas are zod-only and must stay importable from the browser bundle.
 export * from "../ui-query-schemas";
 export { GENERIC_PROJECT_WORKFLOW_IDS, PROJECT_WORKFLOW_IDS } from "../workflow-ids";
+export { HELPER_PANEL_ACTION, type AgentListItem } from "../agent-picker";
+export {
+  DRILL_SANDBOX_PROJECT_IDS,
+  isSandboxProjectName,
+  userVisibleProjects,
+  type ListedProject,
+} from "../project-scope";

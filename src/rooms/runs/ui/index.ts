@@ -7,6 +7,7 @@ export { RUN_CARD_DIRECTIVE, RunCardDirective } from "./run-card";
 export { RunStages } from "./run-parts";
 export { readRunsWindow } from "./runs-window";
 export { TaskBoard } from "./task-board";
+export { TaskPage } from "./task-page";
 export { WorkScreen } from "./work-screen";
 export { THREAD_LIVE_TAB_ID, ThreadLive, ThreadLivePanel } from "./thread-live";
 export { bindThreadRowStatus } from "./thread-row-status";

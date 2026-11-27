@@ -3,11 +3,18 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
+import { GLOBAL_SETTINGS_PROJECT_ID } from "@lane-pilot/settings-catalog";
+import { createDraftStore } from "@lane-pilot/workflow-engine";
 import { afterEach, describe, expect, it } from "vitest";
+import plugin from "../server";
 import { rpcConsole } from "../src/rooms/contracts/rpc-console";
 import { createCore } from "../src/rooms/core/server/core";
-import { listOpenOwnerItems } from "../src/rooms/owner-waiting";
-import { getProjectArtifact, openDatabase } from "../src/rooms/plugin-db";
+import { addRoad, getRoad, proposeRoad } from "../src/rooms/lead/server";
+import { listOpenOwnerItems, postOwnerItem } from "../src/rooms/owner-waiting";
+import { savePushConfig } from "../src/rooms/owner-waiting/server";
+import { getProjectArtifact, openDatabase, readLoopModes } from "../src/rooms/plugin-db";
+import { deskRpc, deskWeekKey, reviewDeskOwnerItemKey } from "../src/rooms/reports/server";
+import { draftSha256, peekAuthority } from "../src/rooms/workflow/server";
 import {
   approveCharter,
   charterDraftKey,
@@ -297,5 +304,241 @@ describe("console owner controls: charter_propose and charter_approve", () => {
 
     const missing = await approveCharter(ctx, { projectId: "proj-1", domain: "specialist_os", draftId: "draft_none" });
     expect(missing).toEqual({ ok: false, reason: "draft_not_found" });
+  });
+});
+
+describe("console owner controls: desk_answer and desk_accept_defaults", () => {
+  it("answers a desk item, persists answered state in desk_get, applies same effect as CLI, and handles errors", async () => {
+    const { db, ctx, logs } = setupHarness();
+    const t0 = Date.parse("2026-11-27T12:00:00Z");
+    savePushConfig(db, { timezone: "UTC" }, t0);
+
+    const dir = addRoad(
+      db,
+      { id: "dir:proj-1", projectId: "proj-1", title: "Directions", kind: "direction", source: "lead", why: "Seed direction" },
+      t0 - 10_000,
+    );
+    const roadCand = addRoad(
+      db,
+      {
+        id: "road_desk_1",
+        parentId: dir.id,
+        projectId: "proj-1",
+        title: "Automate release notes",
+        kind: "option",
+        source: "lead",
+        why: "Repeated 3 times",
+        class: "process",
+        payload: { key: "cand:release-notes", count: 3 },
+      },
+      t0 - 5_000,
+    );
+    proposeRoad(db, roadCand.id, "dec-desk-1", t0 - 4_000);
+
+    const draft = createDraftStore(db, () => t0 - 3_000).create({
+      projectId: "proj-1",
+      threadId: null,
+      scope: "project",
+      name: "Weekly digest draft",
+      description: "Pending owner publish",
+      metadata: { source: "path-capture" },
+    });
+
+    const handlers = deskRpc(ctx, { now: () => t0 });
+
+    // Unknown item -> { ok: false, reason: "item_not_found" }
+    const missing = await handlers.desk_answer({ itemId: "road:missing", option: "later" });
+    expect(() => rpcConsole.desk_answer.output.parse(missing)).not.toThrow();
+    expect(missing).toEqual({ ok: false, reason: "item_not_found" });
+
+    // Invalid option -> { ok: false, reason: "invalid_option:..." }
+    const badOpt = await handlers.desk_answer({ itemId: "road:road_desk_1", option: "not_an_option" });
+    expect(() => rpcConsole.desk_answer.output.parse(badOpt)).not.toThrow();
+    expect(badOpt).toMatchObject({ ok: false, reason: expect.stringContaining("invalid_option:") });
+
+    // Answer road item -> updates DB road state and shows answered in desk_get
+    const ansRoad = await handlers.desk_answer({ itemId: "road:road_desk_1", option: "later" });
+    expect(() => rpcConsole.desk_answer.output.parse(ansRoad)).not.toThrow();
+    expect(ansRoad).toMatchObject({
+      ok: true,
+      item: {
+        id: "road:road_desk_1",
+        section: "candidates",
+        answered: "later",
+      },
+    });
+    expect(getRoad(db, "road_desk_1")?.state).toBe("later");
+    expect(logs.some((l) => l.level === "info" && l.message === "[desk] answer item=road:road_desk_1 option=later")).toBe(true);
+
+    // Answer draft item -> creates owner grant (same as CLI) and shows answered in desk_get
+    const ansDraft = await handlers.desk_answer({ itemId: `draft:${draft.id}`, option: "publish" });
+    expect(() => rpcConsole.desk_answer.output.parse(ansDraft)).not.toThrow();
+    expect(ansDraft).toMatchObject({
+      ok: true,
+      item: { id: `draft:${draft.id}`, answered: "publish" },
+    });
+    const auth = peekAuthority(db, draft.id, draftSha256(draft.definition));
+    expect(auth.ok).toBe(true);
+    if (auth.ok) {
+      expect(auth.authority.kind).toBe("owner");
+      if (auth.authority.kind === "owner") expect(auth.authority.via).toBe("desk");
+    }
+
+    const view = await handlers.desk_get({});
+    expect(() => rpcConsole.desk_get.output.parse(view)).not.toThrow();
+    expect(view.items.find((i) => i.id === "road:road_desk_1")?.answered).toBe("later");
+    expect(view.items.find((i) => i.id === `draft:${draft.id}`)?.answered).toBe("publish");
+  });
+
+  it("desk_accept_defaults answers all open items with their defaults and closes review-desk owner item", async () => {
+    const { db, ctx, logs } = setupHarness();
+    const t0 = Date.parse("2026-11-27T12:00:00Z");
+    savePushConfig(db, { timezone: "UTC" }, t0);
+    const week = deskWeekKey(t0, "UTC");
+
+    const dir = addRoad(
+      db,
+      { id: "dir:proj-1", projectId: "proj-1", title: "Directions", kind: "direction", source: "lead", why: "Seed direction" },
+      t0 - 10_000,
+    );
+    const cand1 = addRoad(
+      db,
+      {
+        id: "road_open_1",
+        parentId: dir.id,
+        projectId: "proj-1",
+        title: "Open candidate 1",
+        kind: "option",
+        source: "lead",
+        why: "Repeated",
+        class: "process",
+        payload: { key: "cand:open-1", count: 4 },
+      },
+      t0 - 5_000,
+    );
+    const cand2 = addRoad(
+      db,
+      {
+        id: "road_answered_first",
+        parentId: dir.id,
+        projectId: "proj-1",
+        title: "Pre-answered candidate",
+        kind: "option",
+        source: "lead",
+        why: "Repeated",
+        class: "branch",
+        payload: { key: "cand:pre", count: 2 },
+      },
+      t0 - 4_500,
+    );
+    proposeRoad(db, cand1.id, "dec-1", t0 - 4_000);
+    proposeRoad(db, cand2.id, "dec-2", t0 - 3_500);
+
+    const draft = createDraftStore(db, () => t0 - 3_000).create({
+      projectId: "proj-1",
+      threadId: null,
+      scope: "project",
+      name: "Keep draft by default",
+      description: "Draft awaiting owner",
+      metadata: { source: "path-capture" },
+    });
+
+    postOwnerItem(
+      db,
+      {
+        key: reviewDeskOwnerItemKey(week),
+        source: "reports",
+        kind: "review_desk",
+        reason: "decision",
+        wake: false,
+        what: `Review desk ${week}`,
+        why: "Weekly summary",
+        evidence: [],
+        actions: [{ id: "accept_defaults", label: "Accept defaults", cli: "bb lane-pilot desk accept-defaults" }],
+      },
+      t0 - 2_000,
+    );
+
+    let loopMode: "on" | "report" | "off" = "on";
+    const handlers = deskRpc(ctx, {
+      now: () => t0,
+      readLoopHealth: () =>
+        loopMode === "on"
+          ? [{ loop: "branches", mode: "on", metric: 0.1, threshold: 0.3, failing: true, evidence: { reason: "low_accept_rate" } }]
+          : [],
+    });
+
+    // Answer one item first; it should preserve its explicit answer and not be overwritten by accept-defaults.
+    await handlers.desk_answer({ itemId: "road:road_answered_first", option: "reject" });
+
+    // Mismatched week is refused.
+    const mismatch = await handlers.desk_accept_defaults({ week: "2026-W01" });
+    expect(() => rpcConsole.desk_accept_defaults.output.parse(mismatch)).not.toThrow();
+    expect(mismatch).toEqual({ ok: false, accepted: 0 });
+
+    // Accept defaults for current week answers all 3 open items (road_open_1 -> later, draft -> keep draft, loop -> switch to report-only).
+    const accepted = await handlers.desk_accept_defaults({ week });
+    loopMode = "report";
+    expect(() => rpcConsole.desk_accept_defaults.output.parse(accepted)).not.toThrow();
+    expect(accepted).toEqual({ ok: true, accepted: 3 });
+
+    expect(getRoad(db, "road_open_1")?.state).toBe("later");
+    expect(getRoad(db, "road_answered_first")?.state).toBe("rejected");
+    expect(readLoopModes(db, GLOBAL_SETTINGS_PROJECT_ID).branches).toBe("report");
+    expect(createDraftStore(db).get(draft.id)?.status).toBe("draft");
+    expect(listOpenOwnerItems(db, { key: reviewDeskOwnerItemKey(week) })).toEqual([]);
+    expect(logs.some((l) => l.level === "info" && l.message === `[desk] accept-defaults week=${week} n=3`)).toBe(true);
+
+    const after = await handlers.desk_get({ week });
+    expect(after.items.find((i) => i.id === "road:road_open_1")?.answered).toBe("later");
+    expect(after.items.find((i) => i.id === "road:road_answered_first")?.answered).toBe("reject");
+    expect(after.items.find((i) => i.id === `draft:${draft.id}`)?.answered).toBe("keep draft");
+    expect(after.items.find((i) => i.id === "loop:branches")?.answered).toBe("switch to report-only");
+    expect(after.items.every((i) => i.answered !== null)).toBe(true);
+  });
+
+  it("registers desk_answer and desk_accept_defaults in plugin rpcContract", async () => {
+    const { bb, harness, db } = setupHarness();
+    await plugin(bb);
+    const dir = addRoad(
+      db,
+      { id: "dir:proj-rpc", projectId: "proj-rpc", title: "Directions", kind: "direction", source: "lead", why: "Seed" },
+      Date.now() - 10_000,
+    );
+    const cand = addRoad(
+      db,
+      {
+        id: "road_rpc_1",
+        parentId: dir.id,
+        projectId: "proj-rpc",
+        title: "Candidate via RPC",
+        kind: "option",
+        source: "lead",
+        why: "Repeated",
+        class: "process",
+      },
+      Date.now() - 5_000,
+    );
+    proposeRoad(db, cand.id, "dec-rpc-1", Date.now() - 4_000);
+
+    const ans = await harness.behavior.callRpc("desk_answer", { itemId: "road:road_rpc_1", option: "save" });
+    expect(() => rpcConsole.desk_answer.output.parse(ans)).not.toThrow();
+    expect(ans).toMatchObject({ ok: true, item: { id: "road:road_rpc_1", answered: "save as draft" } });
+    expect(getRoad(db, "road_rpc_1")?.state).toBe("accepted");
+
+    const view = await harness.behavior.callRpc("desk_get", {}) as { week: string; items: Array<{ id: string; answered: string | null }> };
+    expect(view.items.find((i) => i.id === "road:road_rpc_1")?.answered).toBe("save as draft");
+    const createdDraftItem = view.items.find((i) => i.id.startsWith("draft:") && i.answered === null);
+    expect(createdDraftItem).toBeDefined();
+
+    const defaults = await harness.behavior.callRpc("desk_accept_defaults", { week: view.week });
+    expect(() => rpcConsole.desk_accept_defaults.output.parse(defaults)).not.toThrow();
+    expect(defaults).toEqual({ ok: true, accepted: 1 });
+
+    const afterDefaults = await harness.behavior.callRpc("desk_get", { week: view.week }) as {
+      week: string;
+      items: Array<{ id: string; answered: string | null }>;
+    };
+    expect(afterDefaults.items.find((i) => i.id === createdDraftItem!.id)?.answered).toBe("keep draft");
   });
 });

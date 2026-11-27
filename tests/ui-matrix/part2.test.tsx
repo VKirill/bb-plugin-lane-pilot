@@ -83,8 +83,7 @@ describe("Lane Pilot UI", () => {
     slot.lifecycle.unmount();
   });
 
-  // unreachable in the console: P6 TaskPage at work/task/<runId>/<taskId> not yet wired in WorkScreen; see report
-  it.skip("shows persisted stage receipts with translated stage labels", async () => {
+  it("shows persisted stage receipts with translated stage labels", async () => {
     setLocaleOverride("en");
     const slot = await mountPage();
     openTab(slot, "monitor");

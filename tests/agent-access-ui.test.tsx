@@ -145,7 +145,10 @@ describe("Agent access tab", () => {
     try {
       await openAccessTab(slot);
       await accessReady(slot);
-      for (const role of HELPER_ROLES) expect(slot.getByTestId(`access-role-${role.replace(/[:-]/g, "_")}`)).toBeTruthy();
+      for (const role of HELPER_ROLES) {
+        const rows = slot.getAllByTestId(`access-role-${role.replace(/[:-]/g, "_")}`);
+        expect(rows).toHaveLength(role === "scout" ? SCOUT_SEAT_ROLES.length : 1);
+      }
       expect(slot.getByTestId("access-summary-writer").textContent).toBe("2 skills · 1 MCP");
       expect(slot.getByTestId("access-summary-code_critic").textContent).toBe("1 MCP");
       expect(slot.getByTestId("access-summary-browser_qa").textContent).toBe("1 skill · 1 BB plugin");
@@ -249,12 +252,18 @@ describe("Agent access tab", () => {
       expect(rows).toHaveLength(HELPER_ROLES.length + SCOUT_SEAT_ROLES.length - 1);
       for (const role of HELPER_ROLES) {
         const id = role.replace(/[:-]/g, "_");
-        const row = slot.getByTestId(`access-role-${id}`);
-        expect(row.getAttribute("data-role-row"), role).toBe(role);
-        expect(slot.getByTestId(`access-summary-${id}`).textContent?.trim(), role).toBeTruthy();
-        expect(slot.getByTestId(`access-summary-${id}`).textContent, role).not.toBe("…");
+        const expectedCount = role === "scout" ? SCOUT_SEAT_ROLES.length : 1;
+        const matchingRows = slot.getAllByTestId(`access-role-${id}`);
+        expect(matchingRows, role).toHaveLength(expectedCount);
+        for (const row of matchingRows) expect(row.getAttribute("data-role-row"), role).toBe(role);
+        const summaries = slot.getAllByTestId(`access-summary-${id}`);
+        expect(summaries, role).toHaveLength(expectedCount);
+        for (const sum of summaries) {
+          expect(sum.textContent?.trim(), role).toBeTruthy();
+          expect(sum.textContent, role).not.toBe("…");
+        }
         // The badge is only for a change of the owner at this level.
-        expect(slot.queryByTestId(`access-badge-${id}`) !== null, role).toBe(role === "writer");
+        expect(slot.queryAllByTestId(`access-badge-${id}`), role).toHaveLength(role === "writer" ? 1 : 0);
       }
       // Counts, «all» for what BB has and the personal switch, as the old matrix showed them.
       const summary = (id: string) => slot.getByTestId(`access-summary-${id}`).textContent;
@@ -265,9 +274,11 @@ describe("Agent access tab", () => {
       expect(summary("writer")).toContain(en.accessUserOn);
       expect(summary("code_critic")).toBe("1 MCP");
       expect(slot.getByTestId("access-badge-writer").textContent).toBe(en.accessOrigin_project);
-      // The sections of the table keep the roles in groups.
-      for (const group of ["code", "check", "project", "browser", "specialists", "workflow"]) expect(slot.getByTestId(`access-section-${group}`)).toBeTruthy();
-      expect(within(slot.getByTestId("access-section-specialists")).getByTestId("access-role-specialist_seo_specialist")).toBeTruthy();
+      // The flat table filters specialists via the segmented filter pills (replacing access-section-* groups).
+      fireEvent.click(slot.getByTestId("seg-loadout-filter-specialist"));
+      expect(slot.getByTestId("access-role-specialist_seo_specialist")).toBeTruthy();
+      expect(slot.queryByTestId("access-role-writer")).toBeNull();
+      fireEvent.click(slot.getByTestId("seg-loadout-filter-all"));
       // A row opens its drawer with the editor, and closes it again.
       expect(slot.getByTestId("role-open-memory_maintainer").getAttribute("aria-expanded")).toBe("false");
       expect(slot.getByTestId("access-role-memory_maintainer").getAttribute("data-open")).toBe("false");
@@ -283,6 +294,9 @@ describe("Agent access tab", () => {
     } finally { slot.lifecycle.unmount(); await harness.lifecycle.dispose(); }
   });
 
+  // unreachable in the console: six access-section-* sub-section containers were replaced by the flat filterable matrix (seg-loadout-filter-*); see report
+  it.skip("groups helper rows into six access-section-* containers", () => {});
+
   it("shows the main agent (PM) with an information note and a picker, and no access controls", async () => {
     const { slot, harness } = await mount();
     try {
@@ -295,8 +309,8 @@ describe("Agent access tab", () => {
       expect(card.querySelectorAll("button, select, input, [role=combobox]")).toHaveLength(0);
       // Next to the note there is one picker of the main agent, and nothing else to set.
       expect(surface.querySelectorAll("button, select, input, [role=combobox]")).toHaveLength(1);
-      // It comes before the first group of helpers.
-      expect(card.compareDocumentPosition(slot.getByTestId("access-section-code")) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      // In the Agents & loadout layout, the unified helper matrix precedes the main agent card.
+      expect(slot.getByTestId("access-roles").compareDocumentPosition(card) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     } finally { slot.lifecycle.unmount(); await harness.lifecycle.dispose(); }
   });
 

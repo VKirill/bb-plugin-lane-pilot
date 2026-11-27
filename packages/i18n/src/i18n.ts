@@ -13,6 +13,7 @@ import { boardEn, boardRu } from "./i18n-board";
 import { ownerEn, ownerRu } from "./i18n-owner";
 import { tabsEn, tabsRu } from "./i18n-tabs";
 import { consoleEn, consoleRu } from "./i18n-console";
+import { consoleScreensEn, consoleScreensRu } from "./i18n-console-screens";
 import { graphEn, graphRu } from "./i18n-graph";
 import { ownedEn, ownedRu } from "./i18n-owned";
 import { leadUiEn, leadUiRu } from "./i18n-lead";
@@ -2003,8 +2004,8 @@ const chromeRu: { [K in keyof typeof chromeEn]: string } = {
   accessPurpose_specialist_lead: "Штурман в своём тике: читает состояние хаба из брифа и предлагает; ничего не правит.",
 };
 
-export const en = { ...chromeEn, ...fieldEn, ...workflowEn, ...libraryEn, ...editorEn, ...opsEn, ...modelsEn, ...canvasEn, ...scheduleEn, ...boardEn, ...ownerEn, ...tabsEn, ...consoleEn, ...ownedEn, ...leadUiEn, ...errandsEn, ...graphEn, ...roleModelsEn, ...agentLabelEn, ...exportEn, ...mapEn };
-export const ru: { [K in keyof typeof en]: string } = { ...chromeRu, ...fieldRu, ...workflowRu, ...libraryRu, ...editorRu, ...opsRu, ...modelsRu, ...canvasRu, ...scheduleRu, ...boardRu, ...ownerRu, ...tabsRu, ...consoleRu, ...ownedRu, ...leadUiRu, ...errandsRu, ...graphRu, ...roleModelsRu, ...agentLabelRu, ...exportRu, ...mapRu };
+export const en = { ...chromeEn, ...fieldEn, ...workflowEn, ...libraryEn, ...editorEn, ...opsEn, ...modelsEn, ...canvasEn, ...scheduleEn, ...boardEn, ...ownerEn, ...tabsEn, ...consoleEn, ...consoleScreensEn, ...ownedEn, ...leadUiEn, ...errandsEn, ...graphEn, ...roleModelsEn, ...agentLabelEn, ...exportEn, ...mapEn };
+export const ru: { [K in keyof typeof en]: string } = { ...chromeRu, ...fieldRu, ...workflowRu, ...libraryRu, ...editorRu, ...opsRu, ...modelsRu, ...canvasRu, ...scheduleRu, ...boardRu, ...ownerRu, ...tabsRu, ...consoleRu, ...consoleScreensRu, ...ownedRu, ...leadUiRu, ...errandsRu, ...graphRu, ...roleModelsRu, ...agentLabelRu, ...exportRu, ...mapRu };
 
 // keyof typeof en drops keys once the spread is large enough to export (2026-10-29 lane-stack port). The small module stays intact.
 export type I18nKey = keyof typeof en | keyof typeof agentLabelEn;
