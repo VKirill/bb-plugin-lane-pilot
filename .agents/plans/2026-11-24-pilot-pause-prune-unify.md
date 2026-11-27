@@ -188,7 +188,7 @@ isProject: true
 
 ### Step 8. Self-evolution graph — design with the owner first
 **Files**: `docs/decisions/2026-11-2x-evolution-graph.md` (create).
-**What**: one graph `lp.evolve` replaces wall-night, rules, lessons, learning, graph-evolve and the exams: what signal it reads (failed attempts, repeated errands), what it may change (graphs only, through drafts), and the owner-yes gate before any change goes live. Built only after the owner approves the record; building it is a separate plan.
+**What**: one graph `lp.evolve` replaces wall-night, rules, lessons, learning, graph-evolve and the exams: what signal it reads (failed attempts, repeated errands), what it may change (graphs only, through drafts), and the owner-yes gate before any change goes live, except where `docs/decisions/2026-11-25-evolution-graph.md` (accepted 2026-11-26) allows automatic canary promotion: graphs with at least 20 held-out and 10 working cases, one node change at a time, automatic rollback on the first owner reject. Built only after the owner approves the record; building it is a separate plan.
 **Where**: `docs/decisions/`.
 **Pattern**: `docs/workflows-evolution.md` and `.agents/plans/2026-11-02-graph-library-self-growth.md` (what to keep from them).
 **Key signatures**: none (design).

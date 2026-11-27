@@ -3,7 +3,7 @@ title: Self-evolution graph design record (lp.evolve)
 type: decisions
 created: 2026-11-25
 updated: 2026-11-25
-status: proposed
+status: accepted
 confidence: high
 tags: [decisions, evolve, workflow-engine, statistics, distillation, otel]
 sources:
@@ -32,6 +32,8 @@ sources:
 ---
 
 # Self-evolution graph design record (`lp.evolve`)
+
+Accepted by the owner on 2026-11-26 as written, including automatic promotion above the 20 + 10 case threshold (implementation plan: .ai-factory/plans/goal-driven-agent-graphs/index.md).
 
 TL;DR: Self-evolution becomes one event-driven workflow graph `lp.evolve` with no nightly cron. It reads only structured per-step run facts from `lane_pilot_wf_step`, proposes at most one node-level change (model, execution form, or check) or one deduplicated draft graph at a time, evaluates candidates outside the loop on frozen held-out real cases using deterministic checks + dual-order pairwise judging + paired bootstrap statistics, and promotes only when non-inferior in quality and better in cost per accepted task or latency. Building `lp.evolve` is a separate plan after the owner approves this record.
 
