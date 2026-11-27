@@ -1,10 +1,11 @@
 import { defineRpcContract } from "@get-bb/plugin-sdk";
 import {
   actionsLogInput, actionsLogOutput, attemptLogTailInput, attemptLogTailOutput, brakesGetInput, brakesGetOutput,
-  consoleOverviewInput, consoleOverviewOutput, deskGetInput, deskGetOutput, emptyRpcInput, helperThreadLabelsInput,
-  helperThreadLabelsOutput, listHelperThreadsInput, listHelperThreadsOutput, moneyStatusOutput, ownerWaitingOutput,
-  taskBoardInput, taskBoardOutput, threadLiveInput, threadLiveOutput, workGraphStripsInput, workGraphStripsOutput,
-  workGraphTaskInput, workGraphTaskOutput, uiVersionOutput,
+  consoleOverviewInput, consoleOverviewOutput, deskGetInput, deskGetOutput, docsProjectsInput, docsProjectsOutput,
+  emptyRpcInput, helperThreadLabelsInput, helperThreadLabelsOutput, listHelperThreadsInput, listHelperThreadsOutput,
+  manualModeGetInput, manualModeGetOutput, moneyStatusOutput, ownerWaitingOutput, taskBoardInput, taskBoardOutput,
+  threadLiveInput, threadLiveOutput, workGraphStripsInput, workGraphStripsOutput, workGraphTaskInput,
+  workGraphTaskOutput, uiVersionOutput,
 } from "../../contracts/ui";
 
 /**
@@ -54,6 +55,8 @@ export const uiQueryContract = defineRpcContract({
     ],
   },
   brakes_get: { input: brakesGetInput, output: brakesGetOutput, tags: () => ["brakes"] },
+  manual_mode_get: { input: manualModeGetInput, output: manualModeGetOutput, tags: () => ["manual_mode", "brakes"] },
+  docs_projects: { input: docsProjectsInput, output: docsProjectsOutput, tags: () => ["docs_projects"] },
   desk_get: { input: deskGetInput, output: deskGetOutput, tags: () => ["owner_waiting", "review-desk"] },
   actions_log: {
     input: actionsLogInput,

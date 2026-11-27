@@ -25,6 +25,8 @@ export default function setup() {
   // The owner is asked at the turns by default (owner.words, src/rooms/tasks/words.ts); the suite tests the machine path without him,
   // and a test of his word turns owner.words on itself.
   process.env.LANE_PILOT_OWNER_WORDS_DEFAULT ??= "off";
+  // The suite drives the automatic pipeline; the hub starts manual (src/rooms/contracts/manual-mode.ts).
+  process.env.LANE_PILOT_MANUAL_DEFAULT ??= "off";
   // Every project of the config runs this file (extends: true): the first one makes the directory, the others share it.
   if (process.env.LP_VITEST_RUN_DIR && existsSync(process.env.LP_VITEST_RUN_DIR)) return;
   const root = realpathSync(tmpdir());

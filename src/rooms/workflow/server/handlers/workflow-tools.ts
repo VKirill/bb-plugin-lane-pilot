@@ -75,7 +75,7 @@ export type WorkflowToolDeps = {
   backlogItems?(projectId: string): Promise<TodoMeta[]>;
   /** Records catalog routing misses for discovery (Task 11). */
   recordRouteMiss?(input: RecordRouteMissInput): void;
-  startRefusal?: (workflowId: string, source: StartRefusalSource, projectId?: string | null) => StartRefusalReason | null;
+  startRefusal?: (workflowId: string, source: StartRefusalSource, projectId?: string | null, workflow?: Pick<Workflow, "id" | "category" | "tags"> | null) => StartRefusalReason | null;
   resolveCanary?: ResolveCanary | undefined;
   info?(message: string): void;
   debug?(message: string): void;
@@ -214,6 +214,13 @@ export async function runWorkflowTool(deps: WorkflowToolDeps, params: { workflow
   const published = store.list().filter((item) => isOffered(item.workflow) && item.workflow.status === "published").map((item) => item.workflow.id);
   if (!stored) return refused(`unknown_workflow: there is no workflow "${params.workflowId}". Call lane_pilot_route, or choose one of: ${runnable.join(", ") || "(none published)"}`, { workflow: params.workflowId });
   const baseWorkflow = stored.workflow;
+  const postLoadReason = deps.startRefusal
+    ? deps.startRefusal(baseWorkflow.id, "pm", context.projectId, baseWorkflow)
+    : workflowStartRefusal({ db: deps.db, workflowId: baseWorkflow.id, source: "pm", projectId: context.projectId, workflow: baseWorkflow });
+  if (postLoadReason) {
+    (deps.info ?? deps.warn)(`wf.start refused wf=${baseWorkflow.id} source=pm reason=${postLoadReason}`);
+    return refused(postLoadReason, { ok: false, workflow: baseWorkflow.id });
+  }
   if (isPipeline(baseWorkflow)) return refused(`not_runnable: "${baseWorkflow.id}" starts with ${baseWorkflow.startedBy}, not with lane_pilot_run_workflow`, { workflow: baseWorkflow.id });
   if (baseWorkflow.internal) return refused(`not_runnable: "${baseWorkflow.id}" is a fragment of other workflows, not a workflow to start`, { workflow: baseWorkflow.id });
   // A tested workflow has passed its stub tests but never run for real: it starts only with an explicit first-live-run choice (liveTrial), and its first successful run makes it published.
@@ -419,7 +426,7 @@ export function mountWorkflowTools(ctx: ServerCore, services: Services): void {
     backlogItems: (projectId) => services.backlog.items(projectId),
     routePolicy: async (projectId) => routePolicyOf((await ctx.effectiveProjectSettings(projectId)).values as Record<string, unknown>),
     recordRouteMiss: (input) => recordRouteMiss(db, input, bb.log),
-    startRefusal: (workflowId, source, projectId) => services.workflowTriggers.startRefusal(workflowId, source, projectId),
+    startRefusal: (workflowId, source, projectId, workflow) => services.workflowTriggers.startRefusal(workflowId, source, projectId, workflow),
     resolveCanary: (workflowId) => services.resolveCanary?.(workflowId) ?? null,
     info: (message) => bb.log.info(message),
     debug: (message) => bb.log.debug(message),

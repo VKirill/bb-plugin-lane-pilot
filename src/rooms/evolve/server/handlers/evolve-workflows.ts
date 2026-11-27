@@ -31,7 +31,7 @@ export type {
 /** Registers the five `lp.evolve_*` workflow action executors for the `lp.evolve` graph. */
 export function registerEvolveActions(
   engine: WorkflowEngine,
-  ctx: Pick<ServerCore, "db" | "bb" | "log">,
+  ctx: Pick<ServerCore, "db" | "bb" | "log"> & Partial<Pick<ServerCore, "manualMode">>,
   deps: EvolveWorkflowDeps = {},
 ): void {
   const log = makeLogSink({ bb: ctx.bb, log: ctx.log });
@@ -152,7 +152,7 @@ export function registerEvolveActions(
     const modes: string[] = [];
     for (const hyp of targets) {
       const res = await decideHypothesis(
-        { db: ctx.db, bb: ctx.bb, projectId, settings, log },
+        { db: ctx.db, bb: ctx.bb, projectId, settings, log, manualMode: ctx.manualMode },
         {
           loadWorkflow: (id) => loadWorkflowForEvolve(ctx, deps, id, projectId),
           resolveWorkflow: resolveWf,

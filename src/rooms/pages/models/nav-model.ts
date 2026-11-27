@@ -32,7 +32,7 @@ export const CONSOLE_SECTIONS = ["overview", "decisions", "staff", "work", "memo
 export type ConsoleSection = (typeof CONSOLE_SECTIONS)[number];
 
 /** Pages nested under the System section. */
-export const SYSTEM_PAGES = ["graphs", "agents", "schedules", "costs", "health", "settings"] as const;
+export const SYSTEM_PAGES = ["automation", "graphs", "agents", "schedules", "costs", "health", "settings"] as const;
 export type SystemPage = (typeof SYSTEM_PAGES)[number];
 
 /** Sub-views within sections that expose tabs/segments. */

@@ -76,6 +76,12 @@ export async function applyDemotion(
   const hyp = getHypothesis(ctx.db, input.hypothesisId);
   if (!hyp) return { ok: false, mode: "not_found", reason: "hypothesis_not_found" };
 
+  // «Ручной режим»: never auto-demote and publish workflow/skill files while manual.
+  if (ctx.manualMode?.on()) {
+    log.info(`evolve demotion skipped hyp=${hyp.id}: manual mode`);
+    return { ok: false, mode: "manual_mode", reason: "manual_mode" };
+  }
+
   const allows = currentLoopAllows(ctx, deps);
   if (!allows.run) return { ok: false, mode: "disabled", reason: "loop_off" };
   if (!allows.publish) return { ok: false, mode: "report_only", reason: "loop_report_mode" };
@@ -361,6 +367,12 @@ export async function onCanaryRun(
       });
     }
     return { handled: true, action: "retire", trialId: trial.trialId, decision };
+  }
+
+  // «Ручной режим»: never auto-promote a canary trial or write workflows/skills while manual.
+  if (ctx.manualMode?.on()) {
+    log.info(`evolve canary promote skipped trial=${trial.trialId}: manual mode`);
+    return { handled: false, reason: "manual_mode" };
   }
 
   const allows = currentLoopAllows(ctx, deps);

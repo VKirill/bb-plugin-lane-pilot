@@ -12,7 +12,7 @@ import { memoryProbeRpc } from "./rpc-memory-probe";
 import { deferralRpc } from "../../deferral/server";
 import { rollbackRpc } from "../../rollback/server";
 import { collectOwnerWaiting } from "../../owner-waiting";
-import { brakesRpc, ownerWaitingRpc, type BrakesDeps } from "../../owner-waiting/server";
+import { brakesRpc, createManualModeService, manualModeRpc, ownerWaitingRpc, type BrakesDeps } from "../../owner-waiting/server";
 import { SPECIALIST_PAUSED_ALL_KEY } from "../../specialist";
 import { specialistOverview } from "../../specialist/server";
 import { countQueuedAttempts, loadProjectSettings, saveProjectSetting } from "../../storage";
@@ -250,6 +250,11 @@ export function registerRpc(ctx: ServerCore, services: Services, contract: typeo
     ...ownerWaitingRpc(ctx.db, ownerSweeps, (message) => ctx.log(message), postEvent,
       () => invalidateRpcTags(ctx.bb, ["owner_waiting"]), (message) => ctx.bb.log.debug(message)),
     ...brakesRpc(ctx, buildBrakesDeps(ctx, services, (runId) => runsHandlers.halt_run({ runId }))),
+    ...manualModeRpc(createManualModeService({
+      manualMode: ctx.manualMode,
+      brakes: { ...buildBrakesDeps(ctx, services, (runId) => runsHandlers.halt_run({ runId })), log: { info: (message) => ctx.bb.log.info(message), warn: (message) => ctx.log(message) } },
+      resumeWork: () => services.resumeWork?.() ?? Promise.resolve(),
+    })),
     ...errandsRpc(ctx, services),
     ...deskRpc(ctx, {
       answerDeps: {

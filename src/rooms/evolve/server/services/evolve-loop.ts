@@ -279,7 +279,7 @@ export async function loadWorkflowForEvolve(
 }
 
 export async function runEvolveIngest(
-  ctx: Pick<ServerCore, "db" | "bb" | "log">,
+  ctx: Pick<ServerCore, "db" | "bb" | "log"> & Partial<Pick<ServerCore, "manualMode">>,
   deps: EvolveWorkflowDeps,
   inputs: Record<string, unknown>,
   nowMs: number,
@@ -366,7 +366,7 @@ export async function runEvolveIngest(
 
   if (runRow?.trial_id) {
     await onCanaryRun(
-      { db: ctx.db, bb: ctx.bb, projectId: runRow.project_id ?? projectId, settings, log },
+      { db: ctx.db, bb: ctx.bb, projectId: runRow.project_id ?? projectId, settings, log, manualMode: ctx.manualMode },
       {
         publishDraft: deps.evolvePublishDraft,
         rollbackDraft: deps.evolveRollbackDraft,

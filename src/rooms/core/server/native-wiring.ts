@@ -74,6 +74,8 @@ export function mountNativeWiring(ctx: ServerCore) {
     events: bb.events,
     retry: (args) => bb.sdk.threads.retry(args),
     isDisposed: () => ctx.state.disposed,
+    manualMode: ctx.manualMode,
+    info: (message) => bb.log.info(message),
     log: (message) => bb.log.warn(message),
     failureDetail: async (threadId) => {
       const listed = await listThreadEventsRaw(bb, {

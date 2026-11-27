@@ -178,6 +178,12 @@ export async function publishEvolutionWorkflowDraft(
     gateLog.warn(`publish refused draft=${draft.id} reason=${authCheck.reason}`);
     return { ok: false, reason: authCheck.reason, message: `Публикация отклонена: ${authCheck.reason}` };
   }
+  // «Ручной режим»: automatic evolution receipts cannot publish workflows or ~/.bb/skills while manual;
+  // an explicit owner grant (`kind === "owner"`) is a person's press and still publishes.
+  if (ctx.manualMode?.on() && authCheck.authority.kind !== "owner" && !input.ownerGrant) {
+    gateLog.info(`publish skipped draft=${draft.id} reason=manual_mode`);
+    return { ok: false, reason: "manual_mode", message: "Публикация отклонена: включён ручной режим." };
+  }
   const archiveLog = makeArchiveLogger(ctx);
   const globalDir = (deps.globalDir ?? globalWorkflowDir)();
   const resolve = (id: string, version?: number) => builtinWorkflow(id, version, ctx.db);

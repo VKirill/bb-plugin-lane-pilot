@@ -1,3 +1,4 @@
+import type { ManualMode } from "../../../contracts";
 import type { ServerCore } from "../../../contracts/server";
 import { modelCatalogOf } from "../../../platform/server";
 import { GLOBAL_SETTINGS_PROJECT_ID } from "@lane-pilot/settings-catalog";
@@ -13,7 +14,7 @@ import { createUsageSnapshotPusher } from "../services/usage-snapshot";
  * with the subscription windows the usage source last measured and whether the spend ceiling is a human's or the default.
  */
 export function mountUsageSnapshots(
-  ctx: Pick<ServerCore, "bb" | "db"> & Partial<Pick<ServerCore, "isDisposed" | "log">>,
+  ctx: Pick<ServerCore, "bb" | "db"> & Partial<Pick<ServerCore, "isDisposed" | "log">> & { manualMode?: Pick<ManualMode, "on"> },
   providerUsage?: Pick<ProviderUsage, "readings">,
 ): { push: (targetHostIds?: readonly string[]) => Promise<void> } {
   const { push, forgetHost } = createUsageSnapshotPusher(ctx, providerUsage);

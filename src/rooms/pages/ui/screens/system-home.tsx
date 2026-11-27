@@ -4,6 +4,7 @@ import { detectLocale, t, type I18nKey } from "@lane-pilot/i18n";
 import { GLOBAL_SETTINGS_PROJECT_ID } from "@lane-pilot/settings-catalog";
 import { Icon, PageHeader, type BuiltinIconName } from "@lane-pilot/ui-kit";
 import type { AgentLoadoutOutput, BrakeState, rpcContract } from "../../../contracts";
+import type { ManualModeOutput } from "../../../contracts/ui";
 import { SYSTEM_PAGES, type ConsoleRoute, type SystemPage } from "../../models/nav-model";
 
 export interface SystemHomeProps {
@@ -15,6 +16,7 @@ export interface SystemHomeProps {
 }
 
 const TILE_TITLES: Record<SystemPage, I18nKey> = {
+  automation: "consoleSysAutomation",
   graphs: "consoleSysGraphs",
   agents: "consoleSysAgents",
   schedules: "consoleSysSchedules",
@@ -24,6 +26,7 @@ const TILE_TITLES: Record<SystemPage, I18nKey> = {
 };
 
 const TILE_DESCS: Record<SystemPage, I18nKey> = {
+  automation: "consoleSystemTileDesc_automation",
   graphs: "consoleSystemTileDesc_graphs",
   agents: "consoleSystemTileDesc_agents",
   schedules: "consoleSystemTileDesc_schedules",
@@ -33,6 +36,7 @@ const TILE_DESCS: Record<SystemPage, I18nKey> = {
 };
 
 const TILE_ICONS: Record<SystemPage, BuiltinIconName> = {
+  automation: "Workflow",
   graphs: "GitBranch",
   agents: "UserRoundPlus",
   schedules: "Clock",
@@ -44,6 +48,7 @@ const TILE_ICONS: Record<SystemPage, BuiltinIconName> = {
 type SummaryState = Record<SystemPage, { text: string; warn?: boolean } | null>;
 
 const EMPTY_SUMMARY: SummaryState = {
+  automation: null,
   graphs: null,
   agents: null,
   schedules: null,
@@ -77,7 +82,8 @@ export function SystemHome({ route, go, projectId, sectionId, explicitKeysCount 
     };
 
     const loadAll = async () => {
-      const [wfList, wfEvo, loadout, schedules, money, brakes, canary, waiting, screen] = await Promise.all([
+      const [manualMode, wfList, wfEvo, loadout, schedules, money, brakes, canary, waiting, screen] = await Promise.all([
+        rpc.call("manual_mode_get", {}).catch(() => null) as Promise<ManualModeOutput | null>,
         rpc.call("workflow_list", scopedProject ? { projectId: scopedProject } : {}).catch(() => null) as Promise<{ workflows?: unknown[] } | null>,
         rpc.call("workflow_evolution_list", scopedProject ? { projectId: scopedProject } : {}).catch(() => null) as Promise<{ pendingApprovalCount?: number } | null>,
         rpc.call("agent_loadout", scopeInput).catch(() => null) as Promise<AgentLoadoutOutput | null>,
@@ -91,6 +97,18 @@ export function SystemHome({ route, go, projectId, sectionId, explicitKeysCount 
           : Promise.resolve({ explicitKeys: Array.from({ length: explicitKeysCount }, (_, i) => String(i)) }),
       ]);
       if (!alive) return;
+
+      const automationLine = manualMode
+        ? (() => {
+            const pausedCount = manualMode.brakes.filter((brake) => brake.paused).length;
+            return {
+              text: manualMode.on
+                ? t("consoleSystemStatusAutomationManual")
+                : t("consoleSystemStatusAutomationAuto").replace("{paused}", String(pausedCount)),
+              warn: manualMode.on || pausedCount > 0,
+            };
+          })()
+        : null;
 
       const graphsLine = wfList
         ? {
@@ -169,6 +187,7 @@ export function SystemHome({ route, go, projectId, sectionId, explicitKeysCount 
           : null;
 
       setSummary({
+        automation: automationLine,
         graphs: graphsLine,
         agents: agentsLine,
         schedules: schedulesLine,

@@ -13,7 +13,7 @@ sources:
   - docs/enabled-settings.snapshot.json
 ---
 
-<!-- enabled-settings:structure 0e961e808d87c214 -->
+<!-- enabled-settings:structure 26d205d9e62838f2 -->
 
 # Enabled settings (generated)
 
@@ -56,7 +56,7 @@ switches: `quick` disables both critiques, `full` enables them (`src/rooms/criti
 | `code_critique.service_tier` | `standard` | — | critique setting (stages) |
 | `codex.lean_roles` | `default` | — | native-agent setting (stages) |
 | `critic.code.default_for_risk` | `medium` | — | critique setting (stages) |
-| `docs.enabled` | `auto` | — | docs setting (docs) |
+| `docs.enabled` | `false` | — | docs setting (docs) |
 | `episodes.collect` | `on` | — | errands setting (improvement) |
 | `episodes.process_key` | `shadow` | — | errands setting (improvement) |
 | `failure.interventions` | `on` | — | writer setting (writer) |

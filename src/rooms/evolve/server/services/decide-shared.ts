@@ -8,6 +8,7 @@ import {
   type PublishGrantVia,
   type RunVerdict,
 } from "@lane-pilot/contracts";
+import type { ManualMode } from "../../../contracts";
 import {
   insertEvolutionPublishReceipt,
   insertOwnerPublishGrant,
@@ -30,6 +31,7 @@ export type DecideContext = {
   projectId?: string | null | undefined;
   settings?: Record<string, unknown> | undefined;
   log?: EvolveLogSink | ((message: string) => void) | undefined;
+  manualMode?: Pick<ManualMode, "on"> | undefined;
 };
 
 export type PublishEvolutionResult = {
@@ -88,7 +90,12 @@ export type OwnerDecisionResult =
 
 export function currentLoopAllows(ctx: DecideContext, deps: DecideDeps) {
   const mode = deps.loopMode ?? readLoopMode(ctx.db, "evolve", ctx.projectId);
-  return { mode, ...evolveLoopAllows(mode) };
+  const allows = evolveLoopAllows(mode);
+  // «Ручной режим»: automatic promotion/demotion/trial opening never runs on its own while manual.
+  if (ctx.manualMode?.on()) {
+    return { mode, ...allows, publish: false, openTrials: false };
+  }
+  return { mode, ...allows };
 }
 
 export function issueEvolutionReceipt(

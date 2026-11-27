@@ -1,4 +1,5 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
+import type { ManualMode } from "../../../contracts";
 import { getRun, type LanePilotDatabase } from "../../../storage";
 import { ToolError } from "../../../contracts/server";
 import type { Realtime } from "./realtime";
@@ -11,6 +12,8 @@ export type ServerContext = {
   isDisposed: () => boolean;
   /** Tells open screens to re-read; absent in a bare context built by a test. */
   realtime?: Realtime;
+  /** «Ручной режим»: present on ServerCore, absent in a bare context built by a test (which means not manual). */
+  manualMode?: Pick<ManualMode, "on">;
 }
 
 /**

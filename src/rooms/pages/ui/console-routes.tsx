@@ -26,6 +26,7 @@ import { WriterReuse } from "../../writer/ui";
 import { InputsForm, WorkflowsScreen } from "../../workflow/ui";
 import type { ConsoleRoute } from "../models/nav-model";
 import { useAgentsLoadoutBridge } from "./agents-page-bridge";
+import { AutomationScreen } from "./screens/automation-screen";
 import { HealthScreen } from "./screens/health-screen";
 import { OverviewScreen } from "./screens/overview-screen";
 import { SettingsScreen } from "./screens/settings-screen";
@@ -245,6 +246,8 @@ function MemorySection({ route, go, projectId, sectionId, locale, page }: Consol
 function SystemSection({ route, go, projectId, locale, page }: ConsoleSectionProps & { page: LpPage }) {
   const scopedProjectId = projectId && projectId !== GLOBAL_SETTINGS_PROJECT_ID ? projectId : null;
   switch (route.page) {
+    case "automation":
+      return <AutomationScreen locale={locale} />;
     case "graphs":
       return (
         <WorkflowsScreen

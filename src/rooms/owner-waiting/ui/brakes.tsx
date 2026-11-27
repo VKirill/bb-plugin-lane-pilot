@@ -28,7 +28,7 @@ const STOP_ALL_CONFIRM_TEXT = "СТОП";
 const MIN_REASON_LEN = 3;
 const MAX_REASON_LEN = 300;
 
-const BRAKE_LABEL_KEYS: Record<BrakeId, I18nKey> = {
+export const BRAKE_LABEL_KEYS: Record<BrakeId, I18nKey> = {
   schedules: "consoleBrakesLabel_schedules",
   conveyor: "consoleBrakesLabel_conveyor",
   graphs: "consoleBrakesLabel_graphs",

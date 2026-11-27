@@ -103,6 +103,11 @@ export function mountMemoryEmbeddings(
 
   const handleCommit = async (evt: MemoryRecordCommittedEvent): Promise<void> => {
     if (ctx.isDisposed()) return;
+    // «Ручной режим»: skip background embedding/dedupe calls (and external API) on memory writes while manual.
+    if (ctx.manualMode?.on()) {
+      ctx.bb.log.info(`memory.embed-commit skipped project=${evt.projectId}: manual mode`);
+      return;
+    }
     const eventId = commitEventId(evt);
     const payload = {
       eventId,
@@ -169,7 +174,13 @@ export function mountMemoryEmbeddings(
   });
 
   const backfill = async (): Promise<{ started: boolean; runId?: string; stored?: number; merged?: number }> => {
-    if (ctx.isDisposed() || !hasStaleVectors(ctx.db)) return { started: false };
+    if (ctx.isDisposed()) return { started: false };
+    // «Ручной режим»: skip startup backfill of embeddings while manual.
+    if (ctx.manualMode?.on()) {
+      ctx.bb.log.info("memory.embed-backfill skipped: manual mode");
+      return { started: false };
+    }
+    if (!hasStaleVectors(ctx.db)) return { started: false };
     if (engine) {
       const started = engine.start({
         workflow: memoryEmbedWorkflow(),

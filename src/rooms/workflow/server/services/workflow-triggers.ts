@@ -14,6 +14,9 @@ import { isPmChat } from "../../../native-agent/server";
 import { SCHEDULE_RUN_KEY_PREFIX } from "../../../contracts";
 import type { ChainRuntime } from "../../../contracts/server";
 import { LoopHookRefusal, prepareLoopWorkflow } from "../../models/loop-hooks";
+import { workflowCategory } from "../../models/categories";
+import { builtinWorkflow } from "../../builtin";
+import { DOCS_ENABLED_KEY, parseDocsSettings } from "../../../docs";
 import { WORKFLOW_DISABLED_KEY, WORKFLOW_TRIGGERS_PAUSED_KEY, isTriggersPaused, parseWorkflowDisabled } from "../../settings";
 import { resolveCanarySplit, type CanaryTrialTarget, type ResolveCanary } from "./canary-split";
 
@@ -33,15 +36,16 @@ interface Services {
  */
 export type TriggerSource = "manual" | "schedule" | "event";
 export type StartRefusalSource = TriggerSource | "pm";
-export type StartRefusalReason = "board_paused" | "triggers_paused" | "workflow_disabled";
+export type StartRefusalReason = "board_paused" | "triggers_paused" | "workflow_disabled" | "docs_disabled";
 
-/** Checks whether a workflow start is blocked by board pause, `workflow.triggers_paused` (autonomous starts), or `workflow.disabled` (all starts). */
+/** Checks whether a workflow start is blocked by board pause, `workflow.triggers_paused` (autonomous starts), `workflow.disabled`, or `docs.enabled` off for docs graphs (all starts). */
 export function workflowStartRefusal(input: {
   db: LanePilotDatabase;
   workflowId: string;
   source: StartRefusalSource;
   projectId?: string | null;
   boardPaused?: boolean;
+  workflow?: Pick<Workflow, "id" | "category" | "tags"> | null;
 }): StartRefusalReason | null {
   if (input.boardPaused && (input.source === "event" || input.source === "schedule")) {
     return "board_paused";
@@ -53,12 +57,17 @@ export function workflowStartRefusal(input: {
   if (parseWorkflowDisabled(settings[WORKFLOW_DISABLED_KEY]).has(input.workflowId)) {
     return "workflow_disabled";
   }
+  const wf = input.workflow ?? builtinWorkflow(input.workflowId);
+  if (wf && workflowCategory(wf) === "docs" && !parseDocsSettings(settings).enabled) {
+    return "docs_disabled";
+  }
   return null;
 }
 
 function refusalMessage(workflowId: string, reason: StartRefusalReason): string {
   if (reason === "board_paused") return `Board is paused; autonomous start of "${workflowId}" refused.`;
   if (reason === "triggers_paused") return `Workflow triggers are paused by ${WORKFLOW_TRIGGERS_PAUSED_KEY}; autonomous start of "${workflowId}" refused.`;
+  if (reason === "docs_disabled") return `Documentation is off for this project (${DOCS_ENABLED_KEY}); "${workflowId}" refused.`;
   return `Workflow "${workflowId}" is disabled by ${WORKFLOW_DISABLED_KEY}.`;
 }
 
@@ -188,8 +197,8 @@ export function createWorkflowTriggers(ctx: ServerCore, services: Pick<Services,
     ? deps.isBoardPaused()
     : Boolean((services as { schedules?: { pause?: { isPaused?: () => boolean } } }).schedules?.pause?.isPaused?.());
 
-  function startRefusal(workflowId: string, source: StartRefusalSource, projectId?: string | null): StartRefusalReason | null {
-    return workflowStartRefusal({ db, workflowId, source, projectId, boardPaused: isBoardPaused() });
+  function startRefusal(workflowId: string, source: StartRefusalSource, projectId?: string | null, workflow?: Pick<Workflow, "id" | "category" | "tags"> | null): StartRefusalReason | null {
+    return workflowStartRefusal({ db, workflowId, source, projectId, boardPaused: isBoardPaused(), workflow });
   }
 
   async function start(input: { projectId: string; workflowId: string; inputs: Record<string, unknown>; source: TriggerSource; key?: string | undefined; liveTrial?: boolean | undefined; origin?: "schedule" | undefined;
@@ -209,6 +218,11 @@ export function createWorkflowTriggers(ctx: ServerCore, services: Pick<Services,
     const stored = store.get(input.workflowId);
     if (!stored) return refuse("unknown_workflow", `There is no workflow "${input.workflowId}".`);
     const baseWorkflow = stored.workflow;
+    const postLoadBlocked = startRefusal(baseWorkflow.id, refusalSource, input.projectId, baseWorkflow);
+    if (postLoadBlocked) {
+      eventLog.info(`wf.start refused wf=${baseWorkflow.id} source=${refusalSource} reason=${postLoadBlocked}`);
+      return refuse(postLoadBlocked, refusalMessage(baseWorkflow.id, postLoadBlocked));
+    }
     // A starter graph is Lane Pilot's own: never the PM's, a chat's or a hand trigger's. Its own system schedule is the one exception (0.1.562 live:
     // both worktree-cleanup schedules ended start_failed here, so no janitor pass ran at all).
     const ownStarter = isPipeline(baseWorkflow) && input.starter !== undefined && baseWorkflow.startedBy === input.starter;
@@ -392,7 +406,7 @@ export function createWorkflowTriggers(ctx: ServerCore, services: Pick<Services,
 
     const started: Array<{ workflowId: string; runId: string; created: boolean }> = [];
     const failed: Array<{ workflowId: string; reason: string; message: string }> = [];
-    const batchRefusal = matching.length > 0 ? startRefusal(matching[0]!.workflow.id, "event", projectId) : null;
+    const batchRefusal = matching.length > 0 ? startRefusal(matching[0]!.workflow.id, "event", projectId, matching[0]!.workflow) : null;
     if (batchRefusal === "board_paused" || batchRefusal === "triggers_paused") {
       // Leave the inbox row unconsumed (`consumed_by IS NULL`) so the event retries once the pause lifts.
       for (const { workflow } of matching) {
@@ -403,7 +417,7 @@ export function createWorkflowTriggers(ctx: ServerCore, services: Pick<Services,
     }
     for (const { workflow, trigger: matchedTrigger } of matching) {
       const targetProjectId = matchedTrigger.projectId ?? projectId ?? (workflow.scope.level === "project" ? workflow.scope.projectId : undefined) ?? "";
-      const blocked = startRefusal(workflow.id, "event", targetProjectId);
+      const blocked = startRefusal(workflow.id, "event", targetProjectId, workflow);
       if (blocked) {
         eventLog.info(`wf.start refused wf=${workflow.id} source=event reason=${blocked}`);
         failed.push({ workflowId: workflow.id, reason: blocked, message: refusalMessage(workflow.id, blocked) });

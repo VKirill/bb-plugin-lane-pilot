@@ -118,6 +118,15 @@ export const brakesGetInput = rpcConsole.brakes_get.input;
 export const brakesGetOutput = rpcConsole.brakes_get.output;
 export type { BrakeId, BrakeState, BrakesOutput, StopAllOutput } from "./rpc-console";
 
+export const manualModeGetInput = rpcConsole.manual_mode_get.input;
+export const manualModeGetOutput = rpcConsole.manual_mode_get.output;
+export type ManualModeOutput = z.infer<typeof manualModeGetOutput>;
+
+export const docsProjectsInput = rpcConsole.docs_projects.input;
+export const docsProjectsOutput = rpcConsole.docs_projects.output;
+export type DocsProjectsOutput = z.infer<typeof docsProjectsOutput>;
+export type DocsProject = DocsProjectsOutput["projects"][number];
+
 export const deskGetInput = rpcConsole.desk_get.input;
 export const deskGetOutput = rpcConsole.desk_get.output;
 export type { ReviewDeskItem, ReviewDeskView } from "./rpc-console";

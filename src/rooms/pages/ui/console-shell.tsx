@@ -46,6 +46,7 @@ const SECTION_ICONS: Record<ConsoleSection, BuiltinIconName> = {
 };
 
 const SYSTEM_PAGE_LABELS: Record<SystemPage, I18nKey> = {
+  automation: "consoleSysAutomation",
   graphs: "consoleSysGraphs",
   agents: "consoleSysAgents",
   schedules: "consoleSysSchedules",
@@ -55,6 +56,7 @@ const SYSTEM_PAGE_LABELS: Record<SystemPage, I18nKey> = {
 };
 
 const SYSTEM_PAGE_ICONS: Record<SystemPage, BuiltinIconName> = {
+  automation: "Workflow",
   graphs: "GitBranch",
   agents: "UserRoundPlus",
   schedules: "Clock",

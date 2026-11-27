@@ -101,6 +101,7 @@ export type { Room, RoomCliCall, RoomCliVerb } from "./room";
 export * from "./owner-turn";
 export * from "./owner-messages";
 export { BRAKE_IDS } from "./rpc-console";
+export * from "./manual-mode";
 export type {
   ActionsLogOutput,
   ActiveItem,

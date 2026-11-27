@@ -43,6 +43,7 @@ describe("docs in auto mode", () => {
     dispose = () => harness.lifecycle.dispose();
     const db = openDatabase(bb);
     savePrototypeConfig(db, { projectId, hostId: "ovh", pmWorkspacePath: "/home/ubuntu/project", writerWorkspacePath: "/home/ubuntu/project", pmProviderId: "codex", pmModel: "m", writerProviderId: "codex", writerModel: "m" });
+    saveProjectSetting(db, projectId, "docs.enabled", "auto");
 
     const overview = await harness.behavior.callRpc("docs_overview", { projectId }) as { places: Array<Record<string, any>> };
     const byPath = Object.fromEntries(overview.places.map((place) => [place.path, place]));

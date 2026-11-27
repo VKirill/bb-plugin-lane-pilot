@@ -1,3 +1,4 @@
+import type { ManualMode } from "../../../contracts";
 import type { ServerCore } from "../../../contracts/server";
 import { threadMemoryBlock } from "../services/thread-block";
 
@@ -10,9 +11,11 @@ import { threadMemoryBlock } from "../services/thread-block";
  */
 
 /** The second contributeInstructions contributor: the memory rule (and for an ordinary thread the facts) on every machine. */
-export function mountThreadBlock(ctx: ServerCore): void {
+export function mountThreadBlock(ctx: Pick<ServerCore, "bb" | "db"> & { manualMode?: Pick<ManualMode, "on"> }): void {
   const { bb, db } = ctx;
   try {
-    bb.agents.contributeInstructions(({ threadId, projectId }) => threadMemoryBlock(db, { projectId, threadId }));
+    bb.agents.contributeInstructions(({ threadId, projectId }) =>
+      threadMemoryBlock(db, { projectId, threadId, manualMode: ctx.manualMode, log: (m) => bb.log.debug(m) }),
+    );
   } catch (cause) { bb.log.info(`Lane Pilot memory cannot contribute instructions: ${cause instanceof Error ? cause.message : String(cause)}`); }
 }

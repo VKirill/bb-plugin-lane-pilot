@@ -38,6 +38,7 @@ export function relayFor(ctx: ServerContext): Relay {
   const existing = relays.get(bb);
   if (existing) return existing;
   const relay = createRelay({
+    manualMode: ctx.manualMode,
     load: () => loadRelayItems(bb.storage.kv),
     save: (items) => saveRelayItems(bb.storage.kv, items),
     send: async (threadId, text, senderThreadId) => { await sendServiceMessage(bb, { threadId, text, senderThreadId }); },
@@ -74,6 +75,11 @@ export function relayFor(ctx: ServerContext): Relay {
     // survives a reload. LANE_PILOT_NATIVE_REMINDERS=0 goes back to the sweep sending it when due.
     ...(process.env.LANE_PILOT_NATIVE_REMINDERS === "0" ? {} : {
       scheduleQueued: async (threadId: string, text: string, sendAt: number) => {
+        // «Ручной режим»: do not queue native reminders with sendAt into BB while manual.
+        if (ctx.manualMode?.on()) {
+          ctx.log("relay: native reminder queue skipped (manual mode)");
+          return null;
+        }
         const sent = await bb.sdk.threads.send({ threadId, mode: "queue-if-active", sendAt, input: [{ type: "text", text, mentions: [] }] } as never);
         // Anything but a queued row means BB took no `sendAt`: it cannot be undone, so say so loudly and let the sweep carry on.
         if (sent.delivery !== "queued") { ctx.log(`relay: BB sent a reminder at once instead of queueing it for ${new Date(sendAt).toISOString()}`); return null; }

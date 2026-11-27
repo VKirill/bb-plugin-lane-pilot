@@ -1,3 +1,4 @@
+import type { ManualMode } from "../../../contracts";
 import type { ServerCore } from "../../../contracts/server";
 import { hostContract } from "../../../contracts";
 import { listQaHosts } from "../../../platform/server";
@@ -12,7 +13,7 @@ import type { ProviderUsage } from "./provider-usage";
  * coalescing concurrent triggers so at most one pass is in flight at a time.
  */
 export function createUsageSnapshotPusher(
-  ctx: Pick<ServerCore, "bb" | "db"> & Partial<Pick<ServerCore, "isDisposed" | "log">>,
+  ctx: Pick<ServerCore, "bb" | "db"> & Partial<Pick<ServerCore, "isDisposed" | "log">> & { manualMode?: Pick<ManualMode, "on"> },
   providerUsage?: Pick<ProviderUsage, "readings">,
 ): {
   push: (targetHostIds?: readonly string[]) => Promise<void>;
@@ -24,7 +25,7 @@ export function createUsageSnapshotPusher(
   let dirty = false;
 
   const writeHosts = async (targetHostIds?: readonly string[]) => {
-    if (!providerUsage || ctx.isDisposed?.()) return;
+    if (!providerUsage || ctx.isDisposed?.() || ctx.manualMode?.on()) return;
     const settings = loadProjectSettings(ctx.db as never, GLOBAL_SETTINGS_PROJECT_ID) as Record<string, unknown>;
     const { skipSetByHuman, skipPercent } = humanSkip(settings[USAGE_SKIP_KEY]);
     const targetSet = targetHostIds?.length ? new Set(targetHostIds) : null;
@@ -54,6 +55,12 @@ export function createUsageSnapshotPusher(
   // A pass never throws: a failed read of the hosts or settings is one log line, the next event tries again.
   const push = (targetHostIds?: readonly string[]): Promise<void> => {
     if (ctx.isDisposed?.()) return Promise.resolve();
+    // «Ручной режим»: do not write ~/.lane-pilot/usage-snapshot.json to connected hosts while manual.
+    if (ctx.manualMode?.on()) {
+      if (ctx.bb.log?.info) ctx.bb.log.info("Lane Pilot usage snapshot skipped: manual mode");
+      else ctx.log?.("Lane Pilot usage snapshot skipped: manual mode");
+      return Promise.resolve();
+    }
     if (inflight) {
       dirty = true;
       return inflight;

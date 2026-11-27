@@ -71,7 +71,15 @@ export async function embedPending(db: MemoryDatabase, embedder: Embedder, limit
   return stored;
 }
 
-export async function runEmbedAndDedupe(ctx: ServerCore, embedder: Embedder): Promise<{ stored: number; merged: number }> {
+export async function runEmbedAndDedupe(
+  ctx: Pick<ServerCore, "bb" | "db" | "log"> & Partial<Pick<ServerCore, "manualMode">>,
+  embedder: Embedder,
+): Promise<{ stored: number; merged: number }> {
+  // «Ручной режим»: never call the external embedding API automatically while manual.
+  if (ctx.manualMode?.on()) {
+    (ctx.bb?.log?.info ? (m: string) => ctx.bb.log.info(m) : ctx.log)("memory embeddings skipped: manual mode");
+    return { stored: 0, merged: 0 };
+  }
   const stored = await embedPending(ctx.db, embedder);
   if (stored) ctx.log(`memory embeddings: ${stored} records`);
   const merged = dedupeAllProjects(ctx.db);

@@ -1,6 +1,7 @@
 // Public API of owner-waiting/server: what other rooms import. Everything else in this room is private.
 export { ownerWaitingRpc } from "./handlers/owner-waiting-rpc";
-export { brakesRpc } from "./handlers/brakes-rpc";
+export { brakesRpc, manualModeRpc } from "./handlers/brakes-rpc";
+export { createManualModeService } from "./services/manual-mode-service";
 export {
   createBrakesService,
   type BrakesDeps,

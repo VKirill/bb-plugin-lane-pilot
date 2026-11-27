@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { PrepareRecipient } from "../../../contracts";
+import type { ManualMode, PrepareRecipient } from "../../../contracts";
 import { ToolError } from "../../../contracts/server";
 import type { TaskOutcome } from "../../../storage";
 import {
@@ -67,6 +67,8 @@ export type RelayDeps = {
   dropQueued?(threadId: string, queuedMessageId: string): Promise<"deleted" | "gone" | "failed">;
   /** Whether the row still waits in the queue; `unknown` when BB could not say. */
   queuedState?(threadId: string, queuedMessageId: string): Promise<"waiting" | "gone" | "unknown">;
+  /** «Ручной режим»: skips queueing new reminders and firing sweeps/settle wakes while manual. */
+  manualMode?: Pick<ManualMode, "on">;
 };
 
 const id = (prefix: string) => `${prefix}_${randomUUID().replaceAll("-", "").slice(0, 16)}`;
@@ -176,6 +178,11 @@ export function createRelay(deps: RelayDeps) {
   }
 
   async function remind(input: { projectId: string; threadId: string; note: string; inMinutes: number; watchThreadId?: string | null; taskIds?: string[]; ownerDate?: boolean }) {
+    if (deps.manualMode?.on()) {
+      deps.log(`relay: reminder skipped for ${input.threadId} (manual mode)`);
+      const now = deps.now();
+      return { kind: "remind", id: id("rem"), projectId: input.projectId, threadId: input.threadId, note: input.note, dueAt: now + input.inMinutes * 60_000, watchThreadId: input.watchThreadId ?? null, createdAt: now, firedAt: now, firedBy: "canceled" } satisfies RelayReminder;
+    }
     return update(async (items) => {
       const mine = items.filter((row): row is RelayReminder => row.kind === "remind" && row.threadId === input.threadId);
       if (mine.filter((row) => !row.firedAt).length >= RELAY_LIMITS.openRemindersPerThread) {
@@ -300,6 +307,10 @@ export function createRelay(deps: RelayDeps) {
 
   /** A watched or asked thread finished its turn: wake whoever waits on it, pass its answer back if it gave none. */
   async function threadSettled(threadId: string) {
+    if (deps.manualMode?.on()) {
+      deps.log(`relay: threadSettled skipped for ${threadId} (manual mode)`);
+      return 0;
+    }
     return update(async (items) => {
       const waiting = items.some((row) => (row.kind === "remind" && !row.firedAt && row.watchThreadId === threadId)
         || (row.kind === "ask" && !row.answeredAt && !row.deliveryUnknown && row.toThreadId === threadId));
@@ -331,6 +342,10 @@ export function createRelay(deps: RelayDeps) {
 
   /** Fires due reminders and catches settled threads whose event was missed (a reload, a dropped stream). */
   async function sweep() {
+    if (deps.manualMode?.on()) {
+      deps.log("relay: sweep skipped (manual mode)");
+      return { fired: 0, settled: 0 };
+    }
     const watched = new Set<string>();
     const due = await update(async (items) => {
       let fired = await sendPendingTaskNotices(deps, items, dropQueuedRow);

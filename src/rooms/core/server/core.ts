@@ -11,6 +11,7 @@ import { aggregateRun } from "../../runs";
 import { TARGET_SHA } from "../../runs";
 import { hostContract } from "./plugin-contracts";
 import type { PrototypeConfig, TaskV2 } from "../../contracts";
+import { createManualMode } from "../../contracts";
 import type { ServerCore } from "../../contracts/server";
 import { getAttempt, getRun, getRunSettingsScopes, declaredWorktreeOwner, registerWorktree, releaseWorktree, getRunWriterHost, getTask, getTaskPlan, listAttemptsForTask, listStageReceipts, listTaskLatestAttempts, loadProjectSettings, loadPrototypeConfig, sectionBindingId, setIllegalTransitionLog, setRunSettingsScopes, setRunState, transitionAttempt } from "../../storage";
 import type { CancelCode, WorktreeOwner } from "../../storage";
@@ -373,5 +374,6 @@ export function createCore(bb: BbPluginApi, db: LanePilotDatabase): ServerCore {
   const writerBindingKey = (projectId: string) => `writer-binding:${projectId}`;
 
   const secrets = createSecrets({ bb });
-  return { bb, db, state, realtime, ownerAsk, secrets, isDisposed: () => state.disposed, log: (message: string) => bb.log.warn(message), host, deployDrain, nativeInstaller, nativeHost, serializedKv, ownedAgents, saveOwnedAgents, knownCustomAgentIds: () => customAgentIds, effectiveProjectSettings, screenWriterBinding, coexistenceInventory, coexistenceOperation, getThreadBounded, acceptedTaskWorkspace, workspaceExecutionEnvironment, refreshRun, markCanceledWriterStages, cancelQueuedAttempt, isRuntimeSettingKey, runPolicyFor, nativeRunConfig, sectionRowSchema, listProjectSections, sectionChain, settingsAbove, scopesForWorkspace, ensureRunScopes, configForRun, writerBindingKey };
+  const manualMode = createManualMode(bb.storage.kv as never);
+  return { bb, db, state, realtime, ownerAsk, secrets, isDisposed: () => state.disposed, manualMode, log: (message: string) => bb.log.warn(message), host, deployDrain, nativeInstaller, nativeHost, serializedKv, ownedAgents, saveOwnedAgents, knownCustomAgentIds: () => customAgentIds, effectiveProjectSettings, screenWriterBinding, coexistenceInventory, coexistenceOperation, getThreadBounded, acceptedTaskWorkspace, workspaceExecutionEnvironment, refreshRun, markCanceledWriterStages, cancelQueuedAttempt, isRuntimeSettingKey, runPolicyFor, nativeRunConfig, sectionRowSchema, listProjectSections, sectionChain, settingsAbove, scopesForWorkspace, ensureRunScopes, configForRun, writerBindingKey };
 }

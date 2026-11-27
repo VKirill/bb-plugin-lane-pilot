@@ -126,6 +126,15 @@ const brakeStateSchema = z.object({
   }).strict(),
 }).strict();
 
+const manualModeOutput = z.object({
+  on: z.boolean(),
+  since: z.number().nullable(),
+  reason: z.string().nullable(),
+  brakes: z.array(brakeStateSchema),
+}).strict();
+
+const docsProjectSchema = z.object({ projectId: z.string(), name: z.string(), on: z.boolean() }).strict();
+
 const brakesOutput = z.object({
   brakes: z.array(brakeStateSchema),
 }).strict();
@@ -250,6 +259,29 @@ export const rpcConsole = {
         ok: z.boolean(),
       }).strict()),
     }).strict(),
+  },
+  /** «Ручной режим» (src/rooms/contracts/manual-mode.ts) with the four brakes it sets. */
+  manual_mode_get: {
+    input: z.object({}).strict(),
+    output: manualModeOutput,
+  },
+  /** On: all four brakes go on. Off: they come off and the start-up resume skipped while manual runs once. Owner only. */
+  manual_mode_set: {
+    input: z.object({
+      on: z.boolean(),
+      reason: z.string().max(300).optional(),
+    }).strict(),
+    output: manualModeOutput,
+  },
+  /** Every project with its documentation switch (`docs.enabled`; off unless the owner turned it on). */
+  docs_projects: {
+    input: z.object({}).strict(),
+    output: z.object({ projects: z.array(docsProjectSchema) }).strict(),
+  },
+  /** The documentation switch of one project. Owner only. */
+  docs_set: {
+    input: z.object({ projectId: idSchema, on: z.boolean() }).strict(),
+    output: docsProjectSchema,
   },
   specialist_detail: {
     input: z.object({

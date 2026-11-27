@@ -1,6 +1,7 @@
 import { expect, it } from "vitest";
 import { createFakePluginHost, makeTurnFailedEvent } from "@get-bb/plugin-sdk/testing";
 import plugin from "../server";
+import { MANUAL_MODE_KEY } from "../src/rooms/contracts";
 import { createAttempt, createRun, createTask, openDatabase, transitionAttempt } from "../src/rooms/plugin-db";
 import { MAX_STREAM_RETRY_ATTEMPTS, streamRetryDecision } from "../src/rooms/writer/models/stream-retry";
 import { nativeSelectionSchema } from "../src/rooms/contracts/native-selection";
@@ -48,6 +49,7 @@ it("retries an owned native thread by reference and ignores a foreign chat", asy
       },
     },
   });
+  await fake.bb.storage.kv.set(MANUAL_MODE_KEY, { on: false });
   await plugin(fake.bb);
   await fake.bb.storage.kv.set("native-thread:thr_owned", nativeSelectionSchema.parse({
     token: "11111111-1111-4111-8111-111111111111",
@@ -101,6 +103,7 @@ it("retries an owned thread when Claude reports HTTP/2 CANCEL without a stream c
       },
     },
   });
+  await fake.bb.storage.kv.set(MANUAL_MODE_KEY, { on: false });
   await plugin(fake.bb);
   await fake.harness.behavior.emitThreadEvent("turn.failed", makeTurnFailedEvent({
     threadId: "thr_http2",
@@ -125,6 +128,7 @@ it("retries a Lane Pilot helper thread identified by plugin metadata", async () 
       },
     },
   });
+  await fake.bb.storage.kv.set(MANUAL_MODE_KEY, { on: false });
   await plugin(fake.bb);
   await fake.harness.behavior.emitThreadEvent("turn.failed", makeTurnFailedEvent({
     threadId: "thr_writer",
@@ -149,6 +153,7 @@ it("does not retry a writer the user canceled", async () => {
       },
     },
   });
+  await fake.bb.storage.kv.set(MANUAL_MODE_KEY, { on: false });
   await plugin(fake.bb);
   const db = openDatabase(fake.bb);
   createRun(db, "lprun_1", "project_a");
@@ -180,6 +185,7 @@ it("stream gate uses the same durable policy: ended attempt declines even with r
       },
     },
   });
+  await fake.bb.storage.kv.set(MANUAL_MODE_KEY, { on: false });
   await plugin(fake.bb);
   const db = openDatabase(fake.bb);
   createRun(db, "lprun_gate", "project_a");

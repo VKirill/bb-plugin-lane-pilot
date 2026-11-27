@@ -223,6 +223,7 @@ describe("SystemHome (P9)", () => {
       {
         context: { projectId: "proj_ui", threadId: null },
         rpc: {
+          manual_mode_get: () => ({ on: true, since: 1, reason: null, brakes: [{ id: "schedules", paused: true, since: 1, reason: "manual", impact: { label: "s", count: 1 } }] }),
           workflow_list: () => ({ workflows: [{ id: "w1" }, { id: "w2" }, { id: "w3" }], problems: [], project: "ok" }),
           workflow_evolution_list: () => ({ items: [], autoPublishedCount: 0, pendingApprovalCount: 2 }),
           agent_loadout: () => loadoutFixture(),
@@ -239,6 +240,7 @@ describe("SystemHome (P9)", () => {
     await slot.findByTestId("console-system-hub");
     await waitFor(() => expect(slot.getByTestId("system-tile-status-graphs").textContent).toContain("3"));
 
+    expect(slot.getByTestId("system-tile-status-automation").textContent).toContain("Ручной режим включён");
     expect(slot.getByTestId("system-tile-status-graphs").textContent).toContain("2 ждут");
     expect(slot.getByTestId("system-tile-status-agents").textContent).toContain("5 ролей · 3 с нехваткой");
     expect(slot.getByTestId("system-tile-status-schedules").textContent).toContain("2 активных · 1 на паузе");

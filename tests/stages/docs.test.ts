@@ -29,8 +29,8 @@ describe("living docs read-only inventory & settings policy", () => {
   });
 
   it("parses only supported controls and applies the defaults", () => {
-    // Unset means auto since 0.1.44: the folder's worthiness verdict decides per place.
-    expect(parseDocsSettings({})).toEqual({ enabled: true, mode: "auto", maintain: true, since: "yesterday", pageCap: 0, hour: 5 });
+    // Unset means off since 2026-11-28: docs graphs run only when the owner turns documentation on (or picks auto).
+    expect(parseDocsSettings({})).toEqual({ enabled: false, mode: "off", maintain: true, since: "yesterday", pageCap: 0, hour: 5 });
     expect(parseDocsSettings({ "docs.enabled": "auto" })).toMatchObject({ enabled: true, mode: "auto" });
     expect(parseDocsSettings({ "docs.enabled": false })).toMatchObject({ enabled: false, mode: "off" });
     expect(parseDocsSettings({ "docs.enabled": "on", "docs.maintain": false, "docs.since": "7 days ago", "docs.page_cap": "8", "docs.hour": 23 }))

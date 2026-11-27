@@ -18,6 +18,8 @@ export interface ServerCore {
   ownerAsk: OwnerAsk;
   secrets: Secrets;
   isDisposed: () => boolean;
+  /** «Ручной режим»: every automatic path asks it before acting (src/rooms/contracts/manual-mode.ts). */
+  manualMode: import("./manual-mode").ManualMode;
   log: (message: string) => void;
   host: ServerHost;
   deployDrain: DeployDrain;

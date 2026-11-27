@@ -37,7 +37,8 @@ export function attachRelayDeadlines(
   void refreshWatched();
 
   const armDeadline = (delayMs: number) => {
-    if (disposed || ctx.isDisposed()) return;
+    // «Ручной режим»: no reminder timers armed while manual.
+    if (disposed || ctx.isDisposed() || ctx.manualMode?.on()) return;
     const clamped = Math.max(0, delayMs);
     const due = Date.now() + clamped;
     if (sweepTimer && due >= nextSweepAt) return;
@@ -48,7 +49,7 @@ export function attachRelayDeadlines(
   };
 
   const rearmFromState = async () => {
-    if (disposed || ctx.isDisposed()) return;
+    if (disposed || ctx.isDisposed() || ctx.manualMode?.on()) return;
     let nearest = await relay.nextDeadline().catch(() => null);
     if (ctx.db && hasPendingRelayOutcomes(ctx.db)) {
       const due = Date.now() + settleMs;
@@ -59,6 +60,10 @@ export function attachRelayDeadlines(
 
   const runSweep = (): Promise<void> => {
     if (disposed || ctx.isDisposed()) return Promise.resolve();
+    if (ctx.manualMode?.on()) {
+      ctx.log("relay: deadline sweep skipped (manual mode)");
+      return Promise.resolve();
+    }
     if (sweepInFlight) return sweepInFlight;
     const job = relay.sweep().then(async (result) => {
       if (!disposed && !ctx.isDisposed() && (result.fired || result.settled)) ctx.log(`relay: fired ${result.fired}, settled ${result.settled}`);
@@ -78,6 +83,10 @@ export function attachRelayDeadlines(
         if (!event.id || disposed || ctx.isDisposed()) return;
         const commands = event.metadata?.statusChange?.activity?.activeBackgroundCommandCount;
         if (typeof commands === "number") onCommandCount(event.id, commands);
+        if (ctx.manualMode?.on()) {
+          if (watched.has(event.id)) ctx.log(`relay: ${event.id} settled skipped (manual mode)`);
+          return;
+        }
         if (!watched.has(event.id)) { armDeadline(0); return; }
         void relay.threadSettled(event.id).then((woken) => {
           if (woken) { ctx.log(`relay: ${event.id} settled, woke ${woken}`); void refreshWatched(); }

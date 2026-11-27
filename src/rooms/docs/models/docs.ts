@@ -7,9 +7,9 @@ export type DocsSince = (typeof DOCS_SINCE_CHOICES)[number];
 export { DOCS_DEFAULT_SELECTION };
 
 export type DocsMaintenanceSettings = {
-  /** On unless the mode is "off"; in "auto" the folder's worthiness verdict decides per place. */
+  /** Off by default; on when the owner picked "true" or "auto" (in "auto" the folder's worthiness verdict decides per place). */
   enabled: boolean;
-  /** "auto" (the default) keeps docs where a folder is worth it, "on" always, "off" never. */
+  /** "off" (the default), "on" always, or "auto" where a folder is worth it. */
   mode: "auto" | "on" | "off";
   maintain: boolean;
   since: DocsSince;
@@ -19,7 +19,7 @@ export type DocsMaintenanceSettings = {
 
 export function parseDocsSettings(raw: Record<string, unknown>): DocsMaintenanceSettings {
   const rawEnabled = raw[DOCS_ENABLED_KEY];
-  const mode = rawEnabled == null || rawEnabled === "" || rawEnabled === "auto" ? "auto" : parseBoolean(rawEnabled, false, DOCS_ENABLED_KEY) ? "on" : "off";
+  const mode = rawEnabled == null || rawEnabled === "" ? "off" : rawEnabled === "auto" ? "auto" : parseBoolean(rawEnabled, false, DOCS_ENABLED_KEY) ? "on" : "off";
   const enabled = mode !== "off";
   const maintain = parseBoolean(raw["docs.maintain"], true, "docs.maintain");
   const sinceValue = raw["docs.since"] ?? "yesterday";

@@ -75,6 +75,11 @@ export function mountLifecycleEvents(ctx: ServerCore, extra?: {
     const pmThreadId = getRun(db, attempt.run_id)?.pm_thread_id;
     bb.log.info(`Lane Pilot: the writer of ${attempt.task_id} (${threadId}) waits for the owner: ${what}`);
     if (pmThreadId && !isWriterWaitActive(pmThreadId)) {
+      // «Ручной режим»: do not wake the PM chat on our own while manual.
+      if (ctx.manualMode?.on()) {
+        bb.log.info(`Lane Pilot: interaction.pending PM notice for ${attempt.task_id} skipped (manual mode)`);
+        return;
+      }
       await sendServiceMessage(bb as never, { threadId: pmThreadId, mode: "queue-if-active", text: `Lane Pilot: the writer of task ${attempt.task_id} (@thread:${threadId}) is stopped on a question that needs the owner (${what}). The task stays running and will not go on by itself: tell the owner to open that thread and answer, or cancel the task.` });
     }
   });

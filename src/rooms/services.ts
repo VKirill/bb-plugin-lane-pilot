@@ -100,6 +100,8 @@ export interface Services {
   resolveProjectWriterHost: WriterHostApi["resolveProjectWriterHost"];
   resumeOrphans: ReconcileApi["resumeOrphans"];
   recheckCancels: ReconcileApi["recheckCancels"];
+  /** The start-up resume a manual start skipped; `manual_mode_set` off runs it once (server.ts). */
+  resumeWork?: () => Promise<void>;
   runBrowserQa: QaStagesApi["runBrowserQa"];
   resumeBrowserQaThreads: QaStagesApi["resumeBrowserQaThreads"];
   runMemoryContext: MemoryStageApi["runMemoryContext"];

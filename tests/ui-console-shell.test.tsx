@@ -187,14 +187,14 @@ describe("console shell", () => {
     document.documentElement.lang = "en";
   });
 
-  it("renders 6 sections and 6 system pages by default with Overview active", async () => {
+  it("renders 6 sections and all system pages by default with Overview active", async () => {
     const slot = await mountConsole();
     await slot.findByTestId("console-shell");
 
     const nav = slot.getByTestId("console-nav");
     const sysGroup = slot.getByTestId("console-nav-system-group");
-    expect(nav.querySelectorAll("button")).toHaveLength(6);
-    expect(sysGroup.querySelectorAll("button")).toHaveLength(6);
+    expect(nav.querySelectorAll("button")).toHaveLength(CONSOLE_SECTIONS.length);
+    expect(sysGroup.querySelectorAll("button")).toHaveLength(SYSTEM_PAGES.length);
     for (const section of CONSOLE_SECTIONS) {
       expect(slot.getByTestId(`console-nav-${section}`)).toBeTruthy();
     }

@@ -47,7 +47,8 @@ import { argvValidationMap } from "./src/rooms/settings";
 import { createPluginCheckers } from "./src/rooms/checkers/server";
 import { createStageReturn } from "./src/rooms/stage-return/server";
 import { pluginStopped } from "./src/rooms/contracts/errors";
-import { registerRpc, ownerItemSweeps } from "./src/rooms/core/server/rpc";
+import { registerRpc, ownerItemSweeps, buildBrakesDeps } from "./src/rooms/core/server/rpc";
+import { createManualModeService } from "./src/rooms/owner-waiting/server";
 import { mountOwnerBell } from "./src/rooms/owner-waiting/server";
 
 import { registerLaneWorktreeProvider } from "./src/rooms/native-agent/server";
@@ -112,6 +113,8 @@ export default async function plugin(originalBb: BbPluginApi) {
   // BB's thread events wake the watchers of writers and helper threads; without them they poll as before.
   installThreadSignals(bb);
   const ctx = createCore(bb, db);
+  // Read before anything automatic is wired: every such path asks it (src/rooms/contracts/manual-mode.ts).
+  await ctx.manualMode.load(process.env.LANE_PILOT_MANUAL_DEFAULT !== "off").catch((cause: unknown) => bb.log.warn(`Lane Pilot manual mode unreadable, staying manual: ${cause instanceof Error ? cause.message : String(cause)}`));
   bindToolLocale(bb, toolLocale(await knownOwnerLocale(bb)));
   // The register of deferrals: the first entries (skipped tests, old plan decisions) are written once; terms come only from the owner's messages.
   const deferrals = createDeferrals({ db, port: sdkOwnerMessagePort(bb), log: ctx.log });
@@ -150,7 +153,7 @@ export default async function plugin(originalBb: BbPluginApi) {
     const run = wfRunRow(db, verdict.runId);
     if (run?.trial_id) {
       await onCanaryRun(
-        { db, bb, projectId: run.project_id, log: bb.log },
+        { db, bb, projectId: run.project_id, log: bb.log, manualMode: ctx.manualMode },
         { publishDraft: services.evolvePublishDraft, getRunVerdict: (runId) => getRunVerdict(db, runId) },
         run,
       );
@@ -168,7 +171,7 @@ export default async function plugin(originalBb: BbPluginApi) {
     (run) => deriveRunVerdict(db, run, Date.now(), bb.log),
     (run) => projectTemplateRunner.onRun(run).then(() => undefined),
     (run) => onCanaryRun(
-      { db, bb, projectId: run.project_id, log: bb.log },
+      { db, bb, projectId: run.project_id, log: bb.log, manualMode: ctx.manualMode },
       { publishDraft: services.evolvePublishDraft, getRunVerdict: (runId) => getRunVerdict(db, runId) },
       run,
     ).then(() => undefined),
@@ -258,6 +261,9 @@ export default async function plugin(originalBb: BbPluginApi) {
   // Unified post-merge landing suite (graph lp.landing-suite ← event lp.attempt.merged) and attempt worktree release (graph lp.worktree-release).
   registerLandingSuiteAction(services.workflowEngine, ctx, services);
   registerWorktreeReleaseActions(services.workflowEngine, ctx);
+  // A manual start saves all four brakes before the schedule rows, the triggers and the board clock can act.
+  await createManualModeService({ manualMode: ctx.manualMode, brakes: buildBrakesDeps(ctx, services, async () => ({ ok: false })) }).holdAtStart()
+    .catch((cause: unknown) => bb.log.warn(`Lane Pilot manual mode brakes not set: ${cause instanceof Error ? cause.message : String(cause)}`));
   void ensureSystemSchedules({ list: () => services.schedules.store.list(), save: (raw, by) => services.schedules.save(raw, by), kv: bb.storage.kv, log: ctx.log })
     .catch((cause: unknown) => ctx.log(`Lane Pilot system schedules not made: ${cause instanceof Error ? cause.message : String(cause)}`));
   void (async () => {
@@ -365,6 +371,37 @@ export default async function plugin(originalBb: BbPluginApi) {
   const removeLaneWorktree = async (hostId:string, basePath:string, worktreePath:string) =>
     (await ctx.host.call("gitRemoveWorktree", { requestedHostId:hostId, basePath, worktreePath, release:true }, { hostId, timeoutMs:300_000 })).removed;
   const taskReconcile = createTaskReconcile(ctx, services);
+  type RecoveryStep = (name: string, work: () => Promise<unknown> | unknown) => Promise<void>;
+  // What the start resumes by itself: skipped while manual, run once when the owner turns manual off (manual_mode_set).
+  const resumeWork = async (step: RecoveryStep, signal?: AbortSignal) => {
+    // A reload drops the loops that watch background helpers; the stages are idempotent and find their child thread
+    // again. Started in the factory, their first host call failed with «unavailable during factory registration».
+    await step("resume of background helpers", () => {
+      // The after-acceptance graph run of a task is keyed by the task: a run the reload cut off is picked up again, one that never existed starts.
+      for (const stage of listUnfinishedStages(db, ["memory-maintenance"])) {
+        services.startAfterAcceptance(stage.projectId, stage.runId, stage.taskId, stage.pmThreadId);
+      }
+    });
+    await taskReconcile.reconcile(db, Date.now(), { step, afterResume: async () => {
+      await step("handoff expiry", () => {
+        const expired = expireOverdueHandoffs(db);
+        if (expired.length) bb.log.info(`Lane Pilot handoffs expired: ${expired.join(", ")}`);
+      });
+      await step("run sweep", () => sweepRuns(signal));
+      await step("worktree sweep", async () => {
+        await ensureLegacyWorktreesAdopted(ctx);
+        await reconcileWorktreeRegistry(ctx);
+        await sweepEnvironments(signal);
+        const removed = await cleanupStickyLaneWorktrees(db, removeLaneWorktree, releasedLaneWorktrees, Date.now(), signal);
+        if (removed.length) bb.log.info(`Lane Pilot released ${removed.length} area worktree(s) after their sticky window`);
+      });
+    } });
+    await step("recovery of lost owner questions", () => ctx.ownerAsk.recoverLost());
+  };
+  services.resumeWork = () => resumeWork(async (name, work) => {
+    if (ctx.isDisposed()) return;
+    try { await work(); } catch (cause) { bb.log.warn(`Lane Pilot ${name} skipped: ${cause instanceof Error ? cause.message : String(cause)}`); }
+  });
   // Startup recovery runs one ordered `reconcile(db, now)` pass at plugin ready (no periodic task-reconcile, attempt-worktree-sweep, or runs-sweep loops).
   bb.background.service("startup-recovery", {
     async start(signal) {
@@ -390,14 +427,6 @@ export default async function plugin(originalBb: BbPluginApi) {
             }
           });
         }
-        // A reload drops the loops that watch background helpers; the stages are idempotent and find their child thread
-        // again. Started in the factory, their first host call failed with «unavailable during factory registration».
-        await step("resume of background helpers", () => {
-          // The after-acceptance graph run of a task is keyed by the task: a run the reload cut off is picked up again, one that never existed starts.
-          for (const stage of listUnfinishedStages(db, ["memory-maintenance"])) {
-            services.startAfterAcceptance(stage.projectId, stage.runId, stage.taskId, stage.pmThreadId);
-          }
-        });
         await step("restore of the breakers", () => services.stability.restoreBreakers());
         await step("model catalog digest", () => catalogDigest.sync());
         await step("workflow trigger sync", () => services.workflowTriggers.syncTriggers());
@@ -405,24 +434,11 @@ export default async function plugin(originalBb: BbPluginApi) {
         await step("canary start", () => services.canary.noteStart());
         // SMA m_say_pipeline: a conveyor left off is said once at the start, with the way out; the work waiting behind it is no surprise.
         await step("conveyor start line", async () => { const line = conveyorStartLine(await conveyorState(bb.storage.kv as never)); if (line) bb.log.warn(line); });
-        await taskReconcile.reconcile(db, Date.now(), { step, afterResume: async () => {
-          await step("handoff expiry", () => {
-            const expired = expireOverdueHandoffs(db);
-            if (expired.length) bb.log.info(`Lane Pilot handoffs expired: ${expired.join(", ")}`);
-          });
-          await step("run sweep", () => sweepRuns(signal));
-          await step("worktree sweep", async () => {
-            await ensureLegacyWorktreesAdopted(ctx);
-            await reconcileWorktreeRegistry(ctx);
-            await sweepEnvironments(signal);
-            const removed = await cleanupStickyLaneWorktrees(db, removeLaneWorktree, releasedLaneWorktrees, Date.now(), signal);
-            if (removed.length) bb.log.info(`Lane Pilot released ${removed.length} area worktree(s) after their sticky window`);
-          });
-        } });
+        if (ctx.manualMode.on()) bb.log.warn("Lane Pilot is in manual mode: the start-up resume (attempts, graph runs, sweeps, lost questions) waits for «Ручной режим» off");
+        else await resumeWork(step, signal);
         // SMA m_confirm_later: a stop the start-up resume could not see is asked again about two minutes in.
         const cancelRecheck = setTimeout(() => { void step("cancel re-check", () => services.recheckCancels()); }, 120_000);
         signal.addEventListener("abort", () => clearTimeout(cancelRecheck), { once: true });
-        await step("recovery of lost owner questions", () => ctx.ownerAsk.recoverLost());
         await step("browser check recovery", () => {
           const adopted = services.resumeBrowserQaThreads();
           if (adopted) bb.log.info(`Lane Pilot adopted ${adopted} browser check(s) left running by a reload`);
@@ -434,7 +450,8 @@ export default async function plugin(originalBb: BbPluginApi) {
   await startBoardClock(ctx, services, (at) => {
     void stampBeat(ctx, at);
     const due = nextRunDeadline(db);
-    if (due !== null && at >= due) void sweepRuns();
+    // The run sweep archives threads and deletes environments: a person's press while manual, never the clock.
+    if (due !== null && at >= due && !ctx.manualMode.on()) void sweepRuns();
   });
   bb.log.info("Lane Pilot PM-to-writer pipeline loaded");
 }

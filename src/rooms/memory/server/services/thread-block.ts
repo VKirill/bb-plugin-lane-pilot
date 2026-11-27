@@ -1,5 +1,6 @@
 import { coreShelf, isSharedScope } from "@lane-pilot/memory-core";
 import { wfEffectMentionsThread, wfNightSpawnMentionsThread } from "@lane-pilot/workflow-engine";
+import type { ManualMode } from "../../../contracts";
 import { memorySettingsFor } from "./memory-settings";
 import { loadProjectSettings, pluginThreadInStoreTables, silentThreadInStoreTables, type LanePilotDatabase } from "../../../storage";
 import { listCoreScopes } from "../repositories/memory-queries";
@@ -80,7 +81,15 @@ function silentThread(db: LanePilotDatabase, threadId: string): boolean {
  * that record it, and a spawn records its id after the thread starts, so a just-spawned analyzer can still get the rule;
  * its own prompt forbids tools. Upgrade: pluginMetadata in contributeInstructions.
  */
-export function threadMemoryBlock(db: LanePilotDatabase, input: { projectId: string; threadId: string }): string | null {
+export function threadMemoryBlock(
+  db: LanePilotDatabase,
+  input: { projectId: string; threadId: string; manualMode?: Pick<ManualMode, "on">; log?: (message: string) => void },
+): string | null {
+  // «Ручной режим»: do not inject memory instructions into BB threads on our own while manual.
+  if (input.manualMode?.on()) {
+    input.log?.(`memory thread block skipped for ${input.threadId}: manual mode`);
+    return null;
+  }
   if (silentThread(db, input.threadId)) return null;
   const settings = memorySettingsFor(loadProjectSettings(db, input.projectId));
   if (!settings.enabled) return null;
