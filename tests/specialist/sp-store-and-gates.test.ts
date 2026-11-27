@@ -40,14 +40,14 @@ function freshDb() {
 }
 
 describe("Specialist OS SQLite store, safety gates, and role protections", () => {
-  it("migrates all 17 lane_pilot_sp_* tables and manages versioned charters", () => {
+  it("migrates all 21 lane_pilot_sp_* tables and manages versioned charters", () => {
     const db = freshDb();
     const tables = (
       db
         .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE 'lane_pilot_sp_%' ORDER BY name ASC")
         .all() as Array<{ name: string }>
     ).map((r) => r.name);
-    expect(tables).toHaveLength(17);
+    expect(tables).toHaveLength(21);
 
     const v1 = upsertCharter(db, {
       projectId: "p1",

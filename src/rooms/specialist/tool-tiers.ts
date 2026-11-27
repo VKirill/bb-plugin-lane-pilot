@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { type AutonomyClass, type ToolTier } from "@lane-pilot/contracts";
 import type { ActionOrder } from "./models/action-order";
 
 /**
@@ -20,7 +21,7 @@ export const SP_ACTION_KEYS = [
 ] as const;
 
 export type SpActionKey = (typeof SP_ACTION_KEYS)[number];
-export type ToolTier = "R" | "D" | "L" | "S";
+export type { ToolTier };
 
 interface ToolSpec {
   tier: ToolTier;
@@ -35,6 +36,17 @@ interface TierPolicy {
 }
 
 interface SpPolicy {
+  autonomy?: {
+    classes: AutonomyClass[];
+    default_class: AutonomyClass;
+    promotion_gates: {
+      min_samples: number;
+      wilson_lower_bound_min: number;
+      cohen_kappa_min: number;
+      zero_critical_incidents_days: number;
+    };
+    high_risk_never_auto: string[];
+  };
   budgets: {
     daily_cap_usd_default: number;
     cell_cap_usd_default: number;

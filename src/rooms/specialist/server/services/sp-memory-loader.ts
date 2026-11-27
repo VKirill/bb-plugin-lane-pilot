@@ -2,9 +2,13 @@ import { sha256Hex } from "@lane-pilot/kit";
 import type { Field } from "@lane-pilot/workflow-engine";
 import type { ServerCore } from "../../../contracts/server";
 import { listOpenOwnerItems } from "../../../owner-waiting";
-import { listActiveLocks } from "../repositories/sp-locks-intents";
 import { noteRunFileRead, resolveLatestPointer } from "../../../storage";
+import { DEFAULT_SPECIALIST_SNAPSHOT_BYTES } from "../../settings";
+import { hypothesisTreeSnapshot, settleHypotheses, triedAlready } from "../repositories/sp-hypotheses";
+import { listActiveLocks } from "../repositories/sp-locks-intents";
+import { dueOutcomes, expireOutcomes } from "../repositories/sp-outcomes";
 import { loadQuestionBank } from "../repositories/sp-questions";
+import { activeRulesForSnapshot, retireContradictedRules } from "../repositories/sp-rules";
 import {
   acquireTick,
   getBreakerState,
@@ -16,6 +20,97 @@ import {
 } from "../repositories/sp-store";
 
 type Row = Record<string, unknown>;
+
+export const SNAPSHOT_LOCKS_LIMIT = 50;
+export const SNAPSHOT_CURSORS_LIMIT = 50;
+export const SNAPSHOT_OWNER_ITEMS_LIMIT = 20;
+
+const SNAPSHOT_CHARTER_FIELDS = [
+  "case_id",
+  "snapshot_dropped",
+  "has_charter",
+  "cold_start",
+  "lease_ok",
+  "tick_id",
+  "scope_id",
+  "charter_json",
+] as const;
+
+// Fixed priority order from head (kept longest) to tail (dropped first):
+// charter -> budget -> breaker -> due outcomes -> hypothesis tree -> rules -> tried-already -> recent hypotheses -> locks -> owner items -> telemetry/negatives/pool history.
+const SNAPSHOT_DROPPABLE_PRIORITY = [
+  "budget_left_usd",
+  "api_budget_left",
+  "over_llm_budget",
+  "breaker_open",
+  "breaker_cooldown_until",
+  "breaker_codes_json",
+  "due_outcomes_json",
+  "hypothesis_tree_json",
+  "rules_json",
+  "tried_already_json",
+  "duplicate_of_refuted",
+  "recent_hypotheses_json",
+  "matured_forecasts",
+  "active_locks_json",
+  "cursors_json",
+  "open_assumptions_json",
+  "telemetry_map_json",
+  "shared_negatives_json",
+  "pools_history_json",
+  "ppc_bridge_json",
+  "ppc_bridge_run_id",
+  "bank_stats_json",
+  "brandcore_json",
+  "passport_json",
+  "market_rails_json",
+  "has_passport",
+  "previous_panel_path",
+  "atoms_index_path",
+  "snapshots_index_path",
+] as const;
+
+const EMPTY_JSON_ARRAY_FIELDS = new Set<string>([
+  "breaker_codes_json",
+  "due_outcomes_json",
+  "hypothesis_tree_json",
+  "rules_json",
+  "tried_already_json",
+  "recent_hypotheses_json",
+  "active_locks_json",
+  "open_assumptions_json",
+  "shared_negatives_json",
+  "pools_history_json",
+]);
+
+const EMPTY_JSON_OBJECT_FIELDS = new Set<string>([
+  "cursors_json",
+  "telemetry_map_json",
+  "ppc_bridge_json",
+  "bank_stats_json",
+  "brandcore_json",
+  "passport_json",
+  "market_rails_json",
+]);
+
+function emptyValueForSnapshotField(key: string, current: unknown, field?: Field): unknown {
+  if (EMPTY_JSON_ARRAY_FIELDS.has(key)) return "[]";
+  if (EMPTY_JSON_OBJECT_FIELDS.has(key)) return "{}";
+  if (field) {
+    if (field.type === "boolean") return false;
+    if (field.type === "number") return 0;
+    if (field.type === "array") return [];
+    return "";
+  }
+  if (typeof current === "boolean") return false;
+  if (typeof current === "number") return 0;
+  if (Array.isArray(current)) return [];
+  return "";
+}
+
+function jsonByteLength(obj: Row): number {
+  return Buffer.byteLength(JSON.stringify(obj), "utf8");
+}
 
 function parseJsonSafe<T>(val: unknown, fallback: T): T {
   if (val === null || val === undefined) return fallback;
@@ -36,18 +131,28 @@ export async function loadSpecialistMemory(input: {
   runId: string;
   domain: "seo" | "marketing" | "specialist_os";
   params: Row;
-  outFields: readonly Field[];
+  outFields?: readonly Field[];
   checkout: { hostId: string; path: string } | null;
   readCheckoutFileText: (
     ctx: ServerCore,
     checkout: { hostId: string; path: string } | null,
     relOrAbs: unknown,
   ) => Promise<string | null>;
+  snapshotBytes?: number;
 }): Promise<Row> {
   const { ctx, projectId, runId, domain, params, outFields, checkout, readCheckoutFileText } = input;
   const { db } = ctx;
   const now = Date.now();
+  const caseId = `${projectId}:${domain}`;
+  const cap =
+    typeof input.snapshotBytes === "number" && Number.isFinite(input.snapshotBytes) && input.snapshotBytes > 0
+      ? Math.floor(input.snapshotBytes)
+      : DEFAULT_SPECIALIST_SNAPSHOT_BYTES;
+
   spSweep(db, now);
+  expireOutcomes(db, now, ctx.bb.log);
+  settleHypotheses(db, { projectId, domain, nowMs: now }, ctx.bb.log);
+  retireContradictedRules(db, { projectId, domain, nowMs: now }, ctx.bb.log);
 
   // `G-04`: SEO charter bootstrap when SQLite charter is empty (`charter.json` on disk or default `"propose"` SEO charter).
   let charterRow = getCharter(db, projectId, domain);
@@ -62,8 +167,8 @@ export async function loadSpecialistMemory(input: {
     }
   }
 
-  const activeLocks = listActiveLocks(db, projectId, domain, now);
-  const cursors = listCursors(db, projectId, domain);
+  const activeLocks = listActiveLocks(db, projectId, domain, now, SNAPSHOT_LOCKS_LIMIT);
+  const cursors = listCursors(db, projectId, domain, SNAPSHOT_CURSORS_LIMIT);
   const budgetLeft = getBudgetRemainingUsd(db, projectId, domain, now);
 
   let leaseOk = true;
@@ -90,16 +195,21 @@ export async function loadSpecialistMemory(input: {
     _created_at: r.created_at,
   }));
 
+  const hypothesisTree = hypothesisTreeSnapshot(db, { projectId, domain });
+  const triedList = triedAlready(db, { projectId, domain });
+  const activeRules = activeRulesForSnapshot(db, { projectId, domain });
+
   const candidateHyp = String(params.hypothesisId ?? params.hypothesis ?? "").trim().toLowerCase();
   const duplicateOfRefuted = Boolean(
     candidateHyp &&
-      parsedCommits.some((c) => {
-        const dec = String(c.decision ?? "").toLowerCase();
-        if (dec !== "kill" && dec !== "killed" && dec !== "refuted") return false;
-        const prevId = String(c.hypothesisId ?? "").trim().toLowerCase();
-        const prevText = String(c.hypothesis ?? "").trim().toLowerCase();
-        return (prevId && prevId === candidateHyp) || (prevText && prevText === candidateHyp);
-      }),
+      (triedList.some((title) => title.trim().toLowerCase() === candidateHyp) ||
+        parsedCommits.some((c) => {
+          const dec = String(c.decision ?? "").toLowerCase();
+          if (dec !== "kill" && dec !== "killed" && dec !== "refuted") return false;
+          const prevId = String(c.hypothesisId ?? "").trim().toLowerCase();
+          const prevText = String(c.hypothesis ?? "").trim().toLowerCase();
+          return (prevId && prevId === candidateHyp) || (prevText && prevText === candidateHyp);
+        })),
   );
 
   // Real matured forecasts count from `lane_pilot_sp_memory_commit` (`0` on empty DB — never hardcoded `20`!).
@@ -143,7 +253,7 @@ export async function loadSpecialistMemory(input: {
     break;
   }
 
-  const openAssumptions = listOpenOwnerItems(db, { projectId, source: "specialist" }).map((item) => ({
+  const openAssumptions = listOpenOwnerItems(db, { projectId, source: "specialist", limit: SNAPSHOT_OWNER_ITEMS_LIMIT }).map((item) => ({
     key: item.key,
     kind: item.kind,
     what: item.what,
@@ -153,8 +263,22 @@ export async function loadSpecialistMemory(input: {
 
   const breaker = getBreakerState(db, projectId, domain);
   const breakerOpen = Boolean(breaker && breaker.state === "open" && (breaker.cooldown_until === null || breaker.cooldown_until > now));
+  const dueOutcomesList = dueOutcomes(db, { projectId, domain, now }).map((o) => ({
+    intent_id: o.intent_id,
+    metric: o.metric,
+    unit: o.unit,
+    baseline: o.baseline,
+    expected_lo: o.expected_lo,
+    expected_point: o.expected_point,
+    expected_hi: o.expected_hi,
+    check_at: new Date(o.check_at).toISOString(),
+    check_at_ms: o.check_at,
+  }));
 
+  const snapshotDropped: string[] = [];
   const baseOut: Row = {
+    case_id: caseId,
+    snapshot_dropped: snapshotDropped,
     has_charter: Boolean(charterRow),
     has_passport: false,
     lease_ok: leaseOk,
@@ -171,6 +295,10 @@ export async function loadSpecialistMemory(input: {
     cursors_json: JSON.stringify(cursors),
     open_assumptions_json: JSON.stringify(openAssumptions),
     recent_hypotheses_json: JSON.stringify(parsedCommits.slice(0, 10)),
+    hypothesis_tree_json: JSON.stringify(hypothesisTree),
+    tried_already_json: JSON.stringify(triedList),
+    rules_json: JSON.stringify(activeRules),
+    due_outcomes_json: JSON.stringify(dueOutcomesList),
     duplicate_of_refuted: duplicateOfRefuted,
     shared_negatives_json: sharedNegativesRaw ? JSON.stringify(parseJsonSafe(sharedNegativesRaw, [])) : "[]",
     ppc_bridge_json: ppcBridgeRaw ? JSON.stringify(parseJsonSafe(ppcBridgeRaw, {})) : "{}",
@@ -188,18 +316,49 @@ export async function loadSpecialistMemory(input: {
     snapshots_index_path: ".agents/marketing/snapshots/index.json",
   };
 
+  const hasFieldFilter = Array.isArray(outFields) && outFields.length > 0;
+  const fieldByName = new Map<string, Field>((outFields ?? []).map((f) => [f.name, f]));
+  const knownOrder = new Set<string>([...SNAPSHOT_CHARTER_FIELDS, ...SNAPSHOT_DROPPABLE_PRIORITY]);
+  const extraKeys = hasFieldFilter ? outFields.map((f) => f.name).filter((name) => !knownOrder.has(name)) : [];
+
   const out: Row = {};
-  for (const f of outFields) {
-    out[f.name] =
-      baseOut[f.name] !== undefined
-        ? baseOut[f.name]
-        : f.type === "boolean"
-          ? false
-          : f.type === "number"
-            ? 0
-            : f.type === "array"
-              ? []
-              : "";
+  for (const key of SNAPSHOT_CHARTER_FIELDS) {
+    if (!hasFieldFilter || key === "case_id" || key === "snapshot_dropped" || fieldByName.has(key)) {
+      out[key] = baseOut[key];
+    }
   }
+  for (const key of SNAPSHOT_DROPPABLE_PRIORITY) {
+    if (!hasFieldFilter || fieldByName.has(key)) {
+      out[key] = baseOut[key];
+    }
+  }
+  for (const key of extraKeys) {
+    const f = fieldByName.get(key)!;
+    out[key] = baseOut[key] !== undefined ? baseOut[key] : emptyValueForSnapshotField(key, undefined, f);
+  }
+
+  const tailDropKeys = [...extraKeys].reverse().concat([...SNAPSHOT_DROPPABLE_PRIORITY].reverse());
+  for (const key of tailDropKeys) {
+    if (jsonByteLength(out) <= cap) break;
+    if (!(key in out)) continue;
+    const fieldSpec = fieldByName.get(key);
+    const emptyVal = emptyValueForSnapshotField(key, out[key], fieldSpec);
+    const hadData = out[key] !== emptyVal;
+    if (!hasFieldFilter || fieldSpec?.required === false) {
+      if (hadData) snapshotDropped.push(key);
+      delete out[key];
+    } else if (hadData) {
+      out[key] = emptyVal;
+      snapshotDropped.push(key);
+    }
+  }
+
+  const finalBytes = jsonByteLength(out);
+  const droppedText = snapshotDropped.length > 0 ? snapshotDropped.join(",") : "none";
+  ctx.bb.log.debug?.(`sp snapshot case=${caseId} bytes=${finalBytes} dropped=${droppedText}`);
+  if (finalBytes > cap) {
+    ctx.bb.log.warn?.(`sp snapshot case=${caseId} bytes=${finalBytes} cap=${cap} dropped=${droppedText} charter_exceeds_cap`);
+  }
+
   return out;
 }

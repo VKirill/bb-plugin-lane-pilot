@@ -110,6 +110,10 @@ export function mapScriptOutputToDeclaredFields(
   aliases.matured_locks = int(raw.matured_locks, 0);
   aliases.readiness_json = canonicalJson(raw.summary ?? { ok: false, status: "not_run" });
   aliases.new_cursor_json = canonicalJson({ script, updated_by: raw.version ?? "1.0.0" });
+  aliases.measurements_json =
+    typeof raw.measurements_json === "string"
+      ? raw.measurements_json
+      : canonicalJson(Array.isArray(raw.measurements) ? raw.measurements : []);
   aliases.breaker_signals_json = canonicalJson({
     verdict: raw.verdict ?? "ok",
     critical: raw.verdict === "critical" || raw.verdict === "frozen",

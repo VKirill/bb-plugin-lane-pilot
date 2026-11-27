@@ -301,10 +301,12 @@ export function advanceCursor(
   return tx();
 }
 
-export function listCursors(db: LanePilotDatabase, projectId: string, domain: string): Record<string, unknown> {
+export function listCursors(db: LanePilotDatabase, projectId: string, domain: string, limit?: number): Record<string, unknown> {
+  // A bounded shift snapshot reads only the newest cursors; -1 means no limit in SQLite.
+  const cap = typeof limit === "number" && Number.isFinite(limit) && limit > 0 ? Math.floor(limit) : -1;
   const rows = db
-    .prepare("SELECT stream_key, cursor_json, version FROM lane_pilot_sp_cursor WHERE project_id = ? AND domain = ?")
-    .all(projectId, domain) as Array<{ stream_key: string; cursor_json: string; version: number }>;
+    .prepare("SELECT stream_key, cursor_json, version FROM lane_pilot_sp_cursor WHERE project_id = ? AND domain = ? ORDER BY updated_at DESC LIMIT ?")
+    .all(projectId, domain, cap) as Array<{ stream_key: string; cursor_json: string; version: number }>;
   const out: Record<string, unknown> = {};
   for (const r of rows) {
     try {

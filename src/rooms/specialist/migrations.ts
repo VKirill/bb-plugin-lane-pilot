@@ -239,3 +239,74 @@ export const spMigrations: readonly string[] = [
   )`,
   `CREATE INDEX idx_lane_pilot_sp_organic_proj_chan ON lane_pilot_sp_organic_unit(project_id, channel, status)`,
 ];
+
+/** Appended at the end of `src/rooms/migrations.ts` so historical indices stay untouched. */
+export const spIntentOutcomeMigrations: readonly string[] = [
+  `CREATE TABLE lane_pilot_sp_intent_outcome (
+    intent_id TEXT PRIMARY KEY REFERENCES lane_pilot_sp_intent(intent_id),
+    project_id TEXT NOT NULL,
+    domain TEXT NOT NULL,
+    metric TEXT NOT NULL,
+    unit TEXT NOT NULL,
+    baseline REAL,
+    expected_lo REAL NOT NULL,
+    expected_point REAL NOT NULL,
+    expected_hi REAL NOT NULL,
+    check_at INTEGER NOT NULL,
+    measured REAL,
+    measured_at INTEGER,
+    source TEXT,
+    verdict TEXT NOT NULL DEFAULT 'pending' CHECK(verdict IN ('pending','within','above','below','inconclusive')),
+    hypothesis_id TEXT
+  )`,
+  `CREATE INDEX idx_lane_pilot_sp_intent_outcome_due ON lane_pilot_sp_intent_outcome(project_id, domain, verdict, check_at)`,
+];
+
+/** Appended at the end of `src/rooms/migrations.ts` so historical indices stay untouched. */
+export const spHypothesisMigrations: readonly string[] = [
+  `CREATE TABLE lane_pilot_sp_hypothesis (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL,
+    domain TEXT NOT NULL,
+    parent_id TEXT,
+    title TEXT NOT NULL,
+    lever TEXT,
+    state TEXT NOT NULL CHECK(state IN ('open','testing','worked','refuted','dropped')),
+    evidence_json TEXT NOT NULL DEFAULT '[]',
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  )`,
+  `CREATE INDEX idx_lane_pilot_sp_hypothesis_proj_dom_state ON lane_pilot_sp_hypothesis(project_id, domain, state)`,
+];
+
+export const spAutonomyGrantMigrations: readonly string[] = [
+  `CREATE TABLE lane_pilot_sp_autonomy_grant (
+    project_id TEXT NOT NULL,
+    domain TEXT NOT NULL,
+    action_class TEXT NOT NULL,
+    granted_by TEXT NOT NULL,
+    granted_at INTEGER NOT NULL,
+    revoked_at INTEGER,
+    reason TEXT,
+    PRIMARY KEY (project_id, domain, action_class, granted_at)
+  )`,
+];
+
+/** Appended at the end of `src/rooms/migrations.ts` so historical indices stay untouched. */
+export const spRuleMigrations: readonly string[] = [
+  `CREATE TABLE lane_pilot_sp_rule (
+    id TEXT PRIMARY KEY,
+    domain TEXT NOT NULL,
+    project_id TEXT,
+    scope TEXT NOT NULL CHECK(scope IN ('local','shared')),
+    text TEXT NOT NULL,
+    evidence_json TEXT NOT NULL,
+    window_json TEXT NOT NULL,
+    uncertainty TEXT NOT NULL,
+    state TEXT NOT NULL CHECK(state IN ('proposed','active','retired')),
+    created_at INTEGER NOT NULL,
+    decided_at INTEGER,
+    CHECK ((scope = 'shared' AND project_id IS NULL) OR (scope = 'local' AND project_id IS NOT NULL))
+  )`,
+  `CREATE INDEX idx_lane_pilot_sp_rule_scope_dom_state ON lane_pilot_sp_rule(domain, scope, project_id, state, created_at DESC)`,
+];

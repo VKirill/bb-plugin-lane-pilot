@@ -1,13 +1,17 @@
 import { randomUUID } from "node:crypto";
+import type { ToolTier } from "@lane-pilot/contracts";
 import type { LanePilotDatabase } from "../../../storage";
 import {
   type ActionOrder,
+  actionOrderSchema,
   canonicalJson,
   computeIdemKey,
   computeSemanticKey,
   dbOrderKindOf,
 } from "../../models/action-order";
 import { estimateActionOrderCost } from "../../tool-tiers";
+import { evaluateOwnerGate, formatRefusalDropReason } from "./sp-autonomy";
+import { type SpOutcomeLogger, writePendingOutcome } from "./sp-outcomes";
 
 /**
  * Specialist OS SQLite store (Part 2): entity/URL/SEO-indexation locks (`G-04`, `G-09`),
@@ -27,15 +31,28 @@ export interface LockRow {
   expires_at: number;
 }
 
-export function listActiveLocks(db: LanePilotDatabase, projectId: string, domain?: string, nowMs = Date.now()): LockRow[] {
+export function listActiveLocks(
+  db: LanePilotDatabase,
+  projectId: string,
+  domain?: string,
+  nowMs = Date.now(),
+  limit?: number,
+): LockRow[] {
+  const hasLimit = typeof limit === "number" && Number.isFinite(limit) && limit > 0;
+  const limitSql = hasLimit ? " LIMIT ?" : "";
+  const limitArgs = hasLimit ? [Math.floor(limit!)] : [];
   if (domain) {
     return db
-      .prepare("SELECT * FROM lane_pilot_sp_lock WHERE project_id = ? AND domain = ? AND released_at IS NULL AND expires_at > ? ORDER BY acquired_at ASC")
-      .all(projectId, domain, nowMs) as LockRow[];
+      .prepare(
+        `SELECT * FROM lane_pilot_sp_lock WHERE project_id = ? AND domain = ? AND released_at IS NULL AND expires_at > ? ORDER BY acquired_at ASC${limitSql}`,
+      )
+      .all(projectId, domain, nowMs, ...limitArgs) as LockRow[];
   }
   return db
-    .prepare("SELECT * FROM lane_pilot_sp_lock WHERE project_id = ? AND released_at IS NULL AND expires_at > ? ORDER BY acquired_at ASC")
-    .all(projectId, nowMs) as LockRow[];
+    .prepare(
+      `SELECT * FROM lane_pilot_sp_lock WHERE project_id = ? AND released_at IS NULL AND expires_at > ? ORDER BY acquired_at ASC${limitSql}`,
+    )
+    .all(projectId, nowMs, ...limitArgs) as LockRow[];
 }
 
 function scopesOverlap(aType: string, aVal: string, bType: string, bVal: string): boolean {
@@ -217,18 +234,46 @@ export function stageIntent(
     slotScope?: string;
     order: ActionOrder;
     forceHold?: boolean;
+    modelNeedsOwnerGo?: boolean;
+    ownerDecision?: "approve" | "decline";
+    ownerRefusalReason?: string | null;
+    ownerRefusalText?: string | null;
+    deferDirectApiGateToDispatch?: boolean;
+    hypothesisId?: string | null;
+    log?: SpOutcomeLogger;
     nowMs?: number;
   },
-): { status: "staged" | "held" | "queued_conflict" | "dropped"; intentId: string; dropReason?: string } {
+): {
+  status: "staged" | "held" | "queued_conflict" | "dropped";
+  intentId: string;
+  dropReason?: string;
+  needsOwnerGo: boolean;
+  actionClass: string;
+  tier: ToolTier;
+} {
   const now = input.nowMs ?? Date.now();
   const idem = computeIdemKey(input.projectId, input.domain, input.order, input.slotScope ?? "");
   const sem = computeSemanticKey(input.domain, input.order);
+  const gate = evaluateOwnerGate(db, {
+    projectId: input.projectId,
+    domain: input.domain,
+    order: input.order,
+    modelNeedsOwnerGo: input.modelNeedsOwnerGo,
+    nowMs: now,
+  });
 
   const existing = db
     .prepare("SELECT intent_id, status FROM lane_pilot_sp_intent WHERE project_id = ? AND idem_key = ?")
     .get(input.projectId, idem) as { intent_id: string; status: string } | undefined;
   if (existing) {
-    return { status: "dropped", intentId: existing.intent_id, dropReason: "duplicate_idem_key" };
+    return {
+      status: "dropped",
+      intentId: existing.intent_id,
+      dropReason: "duplicate_idem_key",
+      needsOwnerGo: gate.needsOwnerGo,
+      actionClass: gate.actionClass,
+      tier: gate.tier,
+    };
   }
 
   // ASTRA-R3-002: Unfinished or un-reconciled intents always block semantic duplicates regardless of age;
@@ -245,23 +290,45 @@ export function stageIntent(
     )
     .get(input.projectId, input.domain, sem, now - 86_400_000) as { intent_id: string } | undefined;
   if (semDup) {
-    return { status: "dropped", intentId: semDup.intent_id, dropReason: "duplicate_semantic_key" };
+    return {
+      status: "dropped",
+      intentId: semDup.intent_id,
+      dropReason: "duplicate_semantic_key",
+      needsOwnerGo: gate.needsOwnerGo,
+      actionClass: gate.actionClass,
+      tier: gate.tier,
+    };
   }
 
   const cost = estimateActionOrderCost(input.order);
   const intentId = `int_${randomUUID()}`;
-  let status: "staged" | "held" | "queued_conflict" | "dropped" = input.forceHold ? "held" : "staged";
+  let status: "staged" | "held" | "queued_conflict" | "dropped" = "staged";
   let dropReason: string | undefined;
 
-  if (!cost.ok) {
+  if (input.ownerDecision === "decline") {
+    status = "dropped";
+    dropReason = formatRefusalDropReason(input.ownerRefusalReason, input.ownerRefusalText);
+  } else if (!cost.ok) {
     status = "dropped";
     dropReason = cost.reason ?? "cost_estimate_refused";
   } else if (input.order.is_stop_or_kill && input.order.cohort_key) {
-    const cohort = checkCohortMaturity(db, input.projectId, input.domain, input.order.cohort_key);
+    const cohort = checkCohortMaturity(db, input.projectId, input.domain, input.order.cohort_key, now);
     if (!cohort.mature) {
       status = "dropped";
       dropReason = "immature_cohort";
     }
+  }
+
+  if (
+    status === "staged" &&
+    gate.needsOwnerGo &&
+    input.ownerDecision !== "approve" &&
+    !(input.deferDirectApiGateToDispatch && input.order.kind === "direct_api")
+  ) {
+    status = "held";
+    dropReason = "owner_go_required";
+  } else if (status === "staged" && input.forceHold) {
+    status = "held";
   }
 
   if (status === "staged" && input.order.target_scope) {
@@ -276,6 +343,16 @@ export function stageIntent(
       dropReason = `lock_conflict:${conflicts[0]!.lock_id}`;
     }
   }
+
+  const storedOrder: Record<string, unknown> = {
+    ...input.order,
+    requires_owner_go: gate.needsOwnerGo,
+    model_requires_owner_go: gate.modelNeedsOwnerGo,
+    _tier: gate.tier,
+    _action_class: gate.actionClass,
+    ...(input.ownerDecision ? { _owner_decision: input.ownerDecision } : {}),
+    ...(input.ownerDecision === "decline" && input.ownerRefusalReason ? { _owner_refusal_reason: input.ownerRefusalReason } : {}),
+  };
 
   db.prepare(
     `INSERT INTO lane_pilot_sp_intent
@@ -293,10 +370,111 @@ export function stageIntent(
     input.order.reason_code,
     status,
     cost.upperBoundUsd,
-    canonicalJson(input.order),
+    canonicalJson(storedOrder),
     dropReason ?? null,
     now,
     now,
   );
-  return { status, intentId, ...(dropReason ? { dropReason } : {}) };
+  if (status === "staged" && input.order.forecast) {
+    writePendingOutcome(
+      db,
+      {
+        intentId,
+        projectId: input.projectId,
+        domain: input.domain,
+        createdAt: now,
+        ...(input.hypothesisId !== undefined ? { hypothesisId: input.hypothesisId } : {}),
+      },
+      input.order.forecast,
+      input.log,
+    );
+  }
+  return {
+    status,
+    intentId,
+    ...(dropReason ? { dropReason } : {}),
+    needsOwnerGo: gate.needsOwnerGo,
+    actionClass: gate.actionClass,
+    tier: gate.tier,
+  };
+}
+
+/** Resolves a held intent after an owner approve/decline decision. */
+export function decideHeldIntent(
+  db: LanePilotDatabase,
+  input: {
+    intentId: string;
+    decision: "approve" | "decline";
+    reason?: string | null;
+    text?: string | null;
+    nowMs?: number;
+  },
+  log?: SpOutcomeLogger,
+): { ok: boolean; status?: "staged" | "dropped"; dropReason?: string; reason?: string } {
+  const now = input.nowMs ?? Date.now();
+  const row = db
+    .prepare("SELECT intent_id, project_id, domain, status, order_json, created_at FROM lane_pilot_sp_intent WHERE intent_id = ?")
+    .get(input.intentId) as
+    | { intent_id: string; project_id: string; domain: string; status: string; order_json: string; created_at: number }
+    | undefined;
+  if (!row) return { ok: false, reason: "unknown_intent" };
+  if (row.status !== "held") return { ok: false, reason: `intent_not_held:${row.status}` };
+
+  let orderObj: Record<string, unknown> = {};
+  try {
+    orderObj = JSON.parse(row.order_json) as Record<string, unknown>;
+  } catch {
+    orderObj = {};
+  }
+
+  if (input.decision === "decline") {
+    const dropReason = formatRefusalDropReason(input.reason, input.text);
+    const nextOrder = {
+      ...orderObj,
+      _owner_decision: "decline",
+      ...(input.reason ? { _owner_refusal_reason: input.reason } : {}),
+    };
+    db.prepare("UPDATE lane_pilot_sp_intent SET status = 'dropped', drop_reason = ?, order_json = ?, updated_at = ? WHERE intent_id = ?").run(
+      dropReason,
+      canonicalJson(nextOrder),
+      now,
+      input.intentId,
+    );
+    return { ok: true, status: "dropped", dropReason };
+  }
+
+  const parsed = actionOrderSchema.safeParse(orderObj);
+  if (parsed.success) {
+    const cost = estimateActionOrderCost(parsed.data);
+    if (!cost.ok) {
+      const dropReason = cost.reason ?? "cost_estimate_refused";
+      db.prepare("UPDATE lane_pilot_sp_intent SET status = 'dropped', drop_reason = ?, updated_at = ? WHERE intent_id = ?").run(
+        dropReason,
+        now,
+        input.intentId,
+      );
+      return { ok: false, status: "dropped", dropReason, reason: dropReason };
+    }
+  }
+
+  const nextOrder = { ...orderObj, _owner_decision: "approve" };
+  db.prepare("UPDATE lane_pilot_sp_intent SET status = 'staged', drop_reason = NULL, order_json = ?, updated_at = ? WHERE intent_id = ?").run(
+    canonicalJson(nextOrder),
+    now,
+    input.intentId,
+  );
+  if (parsed.success && parsed.data.forecast) {
+    writePendingOutcome(
+      db,
+      {
+        intentId: row.intent_id,
+        projectId: row.project_id,
+        domain: row.domain,
+        createdAt: row.created_at,
+      },
+      parsed.data.forecast,
+      log,
+    );
+  }
+  return { ok: true, status: "staged" };
 }

@@ -44,6 +44,8 @@ export const intervalForecastSchema = z
     point: z.number().finite(),
     hi80: z.number().finite(),
     unit: z.string().min(1).default("ratio"),
+    baseline: z.number().finite().optional(),
+    check_at: z.string().datetime().optional(),
   })
   .refine((val) => val.lo80 <= val.point && val.point <= val.hi80, {
     message: "interval forecast must satisfy lo80 <= point <= hi80",
@@ -146,7 +148,16 @@ export const actionOrderSchema = z.object({
   owns_paths: z.array(z.string()).optional(),
   acceptance: z.array(z.string()).optional(),
   api_payload: z.record(z.string(), z.unknown()).optional(),
+  comparison: z.enum(["pre/post", "holdout"]).optional(),
   forecast: intervalForecastSchema.optional(),
+  hypothesis_id: z.string().min(1).optional(),
+  new_hypothesis: z
+    .object({
+      title: z.string().min(1).max(300),
+      parent_id: z.string().min(1).optional(),
+      lever: z.string().min(1).optional(),
+    })
+    .optional(),
 });
 
 export type ActionOrder = z.infer<typeof actionOrderSchema>;
