@@ -8,6 +8,7 @@ import { BUILTIN_PRESETS } from "@lane-pilot/models";
 import type { ChainRuntime } from "../../../contracts/server";
 import type { ServerCore } from "../../../contracts/server";
 import { ownerLocale, workflowHumanDetail } from "../../../relay/server";
+import { noteHumanAnswer } from "./owner-intervention";
 import type { WorkflowAgents } from "./workflow-agent";
 
 /** The line of the owner's list a question of a run with no PM chat is (answered with `workflow_answer`, which closes it). */
@@ -16,7 +17,7 @@ export const workflowQuestionKey = (runId: string, stepKey: string) => `workflow
 // ---------------------------------------------------------------- the owner's question
 
 /** The enum values that carry words, not a decision: a free answer may stand for one of them, never for approve/deploy/send/proceed. */
-const TEXT_KINDS = ["text", "answered", "provide", "given", "reason", "chosen", "resolved", "issues"];
+export const TEXT_KINDS = ["text", "answered", "provide", "given", "reason", "chosen", "resolved", "issues"] as const;
 
 /** What the form offers: the values of the node's `answer_kind` that a person can pick (not the clock's `timeout`, not the skip markers). */
 export function humanOptions(node: Extract<GraphNode, { type: "human" }>): string[] {
@@ -169,7 +170,19 @@ export function registerHumanForm(engine: WorkflowEngine, ctx: ServerCore, agent
           if (!output) { await ask(rt, runId, stepKey, node, `${(await bestEffort(rt.ctx.log, "workflow owner locale", ownerLocale(rt.ctx.bb), "ru")) === "ru" ? `Ответ не выбрал вариант (${listed}).` : `Your answer did not choose an option (${listed}).`} ${base}`, deadline, base); return; }
           // The form opens while the step is being recorded as waiting: an answer that arrives first is retried until the step can take it.
           for (let tries = 0; tries < 50; tries += 1) {
-            if (await engine.resolve(runId, stepKey, output)) return;
+            if (await engine.resolve(runId, stepKey, output)) {
+              const option = typeof output.answer_kind === "string" ? output.answer_kind : answer.choice?.label;
+              noteHumanAnswer(db, {
+                runId,
+                workflowId: engine.journal.getRun(runId)?.workflow_id ?? null,
+                projectId: rt.projectId,
+                threadId: rt.pmThreadId,
+                nodeId: node.id,
+                option,
+                freeText: answer.text,
+              }, bb?.log);
+              return;
+            }
             const state = engine.journal.getStep(runId, stepKey)?.state;
             if (state !== "running" && state !== "waiting" && state !== "pending") return;
             if (state !== "waiting") await new Promise((resolve) => setTimeout(resolve, 100));

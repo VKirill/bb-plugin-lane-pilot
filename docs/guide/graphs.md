@@ -6,14 +6,23 @@ status: active
 created: 2026-11-06
 confidence: medium
 tags: [guide, graphs]
-updated: 2026-11-22
+updated: 2026-11-27
 sources:
   - packages/workflow-engine/src/engine.ts
   - packages/workflow-engine/src/engine-clock.ts
   - packages/workflow-engine/src/inbox.ts
   - packages/workflow-engine/src/router.ts
+  - packages/workflow-engine/src/validate-rails.ts
+  - packages/workflow-engine/src/publish-authority.ts
   - packages/workflow-engine/src/index.ts
   - packages/contracts/src/graph-categories.ts
+  - packages/contracts/src/tool-tiers.ts
+  - packages/contracts/src/work-kinds.ts
+  - packages/contracts/src/publish-grant.ts
+  - src/rooms/workflow/server/services/path-save.ts
+  - src/rooms/workflow/server/services/project-template.ts
+  - src/rooms/workflow/server/services/publish-gate.ts
+  - src/rooms/workflow/server/services/workflow-prove.ts
 ---
 
 # Everything is a graph
@@ -22,7 +31,7 @@ sources:
 
 A workflow is a JSON file (`workflows/*.json`): inputs, outputs, `category`, `not_for` (distinguishing neighbours), `requires` (skills, plugins, secrets, machines), guards, triggers, nodes and edges. The shared engine (`packages/workflow-engine`) validates it, freezes a snapshot per run (`definition_json`), runs it as a resumable graph, journals every step in SQLite and resolves subworkflows. Node types in the shipped graphs: `agent` (a model step with a role, optional node model override and `form`: `agent | plan | script` with `fallback` and mechanical `verify`), `action` (code), `decision`, `human` (a form to the owner), `parallel`/`join`, `subworkflow`, `lp-task` (the writer task pipeline) and `note`. Model steps resolve `node -> role -> default` (with automatic role fallback on auth/quota/subscription errors, see [Roles, agents and models](roles.md)).
 
-- **Catalog.** 117 graphs ship with the plugin (110 `published`, 7 `tested`), organized across 13 categories (`packages/contracts/src/graph-categories.ts`: `code`, `planning`, `qa`, `ops`, `docs`, `seo`, `marketing`, `content`, `research`, `games`, `business`, `routines`, `service`). `builtin.ts` loads `workflows/*.json` from disk. A `tested` graph shows **Run for real** in the Workflows tab; one success makes it published. Owners can add graphs in the global or a project workflow folder.
+- **Catalog.** 120 graphs ship with the plugin (113 `published`, 7 `tested`), organized across 13 categories (`packages/contracts/src/graph-categories.ts`: `code`, `planning`, `qa`, `ops`, `docs`, `seo`, `marketing`, `content`, `research`, `games`, `business`, `routines`, `service`). `builtin.ts` loads `workflows/*.json` from disk. A `tested` graph shows **Run for real** in the Workflows tab; one success makes it published. Owners can add graphs in the global or a project workflow folder.
 - **Events, durable waits and one clock.** Events (`LP_EVENTS`) land in `lane_pilot_wf_inbox` via `emitEvent` (insert-or-ignore, filter match, `engine.wake` with compare-and-set on `state='waiting'` and attempt fencing). Every waiting step (`event` or `human`, 72 h default on `human`) carries an absolute epoch `deadline` (`await_json.deadline`) and a routed `timeoutOutput` edge enforced by `validate-rails.ts`; skipped checks record `not_run` rather than `pass`, and judge nodes cannot take worker sessions. One engine clock (`startClock` in `engine-clock.ts`, paused by `schedule.paused_all`) sleeps until the earliest step deadline or due schedule-board row (up to `CLOCK_BEAT_MS` = 60 s), drains up to 25 overdue waits per tick, and enforces per-node and per-run budgets (`maxTokens`, `maxCostUsd`, `maxWallSeconds`, `maxRepeats`), killing child processes/threads on stop.
 - **Router.** `lane_pilot_route` ranks graphs deterministically using BM25, trigram matches, rules, exclusions, `not_for` hints and requirements. A concise `intent` selects the task family; optional `request` preserves the complete assignment for goals, inputs and constraints (up to 4,000 characters). Without it, `intent` remains the full assignment. A recognized read-only request conflicting with a selected writing graph returns `clarify`, even if the short intent asks for deployment. This conservative check is not a general semantic validator: the PM must compare the selected graph's actions with the complete assignment. `clarify` permits no launch through candidates, live trials or fallback tools; clarify with the requester and route again. An owner or BB-agent assignment can authorize the selected outcome; graph human confirmations remain unchanged.
 - **Triggers.** A graph starts from the PM chat (`chat`), by hand from the Workflows tab (`manual`), from a schedule (`schedule`, synced to schedule-board rows), or on an engine event (`event`). All go through the same checks.
@@ -119,6 +128,8 @@ A workflow is a JSON file (`workflows/*.json`): inputs, outputs, `category`, `no
 | `lp.worktree-cleanup`, `lp.worktree-release` | Scheduled worktree cleanup and post-attempt worktree release (`service`). |
 | `lead-tick` | Hourly work-graph / nearest-unit scan surfacing hypotheses for graphless work (`service`). |
 | `sp-specialist-tick` | Periodic tick driving specialist background maintenance (`service`). |
+| `lp.evolve` | Event-driven evolution graph (run-finished ingest, node proposals, held-out replay, canary decide, catalog re-proof; `service`). |
+| `lp.review-desk` | Scheduled weekly review desk composing all learning loop decisions with conservative defaults (`internal: true`, `service`). |
 
 **Docs, SEO, marketing, research, content, games, business and routines**
 
@@ -128,10 +139,71 @@ A workflow is a JSON file (`workflows/*.json`): inputs, outputs, `category`, `no
 | `seo` | `seo-project-intake`, `seo-research`, `seo-cocoon` (tested), `seo-brief`, `seo-page`, `seo-page-refresh`, `seo-tech-audit`, `seo-structure-audit`, `seo-drop-diagnosis`, `seo-monitor`, `seo-ai-visibility`, `seo-mentions`, `seo-linkbuilding`, `seo-outreach`, `seo-trust`, `seo-template-scale`, `seo-release` |
 | `marketing` | `mkt-project-intake`, `mkt-landing-cro-audit`, `mkt-direct-search-campaign`, `mkt-tg-ads-campaign`, `mkt-tracking-setup`, `mkt-experiment-cycle`, `mkt-pulse-monitor` |
 | `research` | `web-research` (tested), `research-dossier`, `insights-post` (tested), `ins.post` |
-| `content` | `social-post`, `x-to-telegram-digest` (tested), `reels` (tested), `telegram-send` |
+| `content` | `social-post`, `x-to-telegram-digest` (tested), `reels` (tested), `telegram-send`, `deliver` (`internal: true`, shared delivery brick) |
 | `games` | `3d-asset`, `roblox-asset` |
 | `business` | `api-recon`, `invoice-send` (tested), `billing-batch` |
 | `routines` | `agent-routine`, `macos-routine` |
+
+## Step effect
+
+Every node can declare an optional `effect` from the single shared `TOOL_TIERS` vocabulary (`R | D | L | S` in `packages/contracts/src/tool-tiers.ts`), reusing the same rank order (`TIER_RANK`) as specialist tools:
+
+- **`R` (read-only)** — reads or checks; safe to replay live in the sandbox (`replayPolicy(tier) === "live"`). Example: `check` (`invoice.check`) in `workflows/invoice-send.json`.
+- **`D` (draft / idempotent local write)** — reversible or stubbed work; replayed with stubbed side effects (`"stubbed"`).
+- **`L` (live local/external mutation)** — creates or modifies state with side effects; never replayed (`"forbidden"`), only checked on recorded outputs. Example: `create` in `workflows/invoice-send.json` (`effect: "L"`, `form: "plan"`, `fallback: "agent"`).
+- **`S` (irreversible / send / spend)** — external delivery, payment, or destructive change; never replayed (`"forbidden"`). Example: `send` and `topic` in `workflows/invoice-send.json` (`effect: "S"`).
+
+Two static rails and one runtime guard enforce `effect`:
+
+- **Ungated irreversible warning.** `validateWorkflowRails` (`packages/workflow-engine/src/validate-rails.ts`) emits `effect_irreversible_ungated` if a `script` or `plan` node with `effect: "S"` is reachable from `start` without passing a `human` node or an `authorized: true` gate.
+- **Instruction budget warnings.** `validateNodeForms` (`packages/workflow-engine/src/validate-form.ts`) warns `prompt_over_budget` above 100 non-empty lines and `plan_over_budget` above 10 plan steps so steps stay compact.
+- **Per-model proof (`proven_on`).** `bb lane-pilot workflow prove <workflowId> --provider <p> --model <m> [--cases <n>]` runs a graph's authored and replay cases on stubs with non-judge agent nodes pinned to that model and records receipts in `lane_pilot_wf_proof`, exposed as `proven_on` in `workflow_get`.
+- **Runtime MCP effect check (and its limitation).** When a step declares `effect`, Lane Pilot exports `LANE_PILOT_NODE_EFFECT` into the helper environment and `lane-stack/hooks/guard_shell.py` denies any `mcp__<server>__<tool>` whose tier in `policy/ohmy-tool-tiers.json` exceeds `TIER_RANK[effect]`. **Limitation:** this runtime check only runs on clients where `guard_shell.py` is active (Claude Code and hook-compatible clients); providers/clients without `guard_shell.py` do not enforce `LANE_PILOT_NODE_EFFECT` on MCP calls.
+
+## Work kinds
+
+Workflows carry a top-level `kind` from `WORK_KINDS` (`routine | employee | project` in `packages/contracts/src/work-kinds.ts`), defaulting to `routine`:
+
+- **`routine`** — one-shot or scheduled task graphs (`workflows/invoice-send.json`, `workflows/telegram-send.json`).
+- **`employee`** — recurring domain shift graphs tied to a Specialist OS case folder (`workflows/sp-specialist-tick.json`).
+- **`project`** — multi-stage goal delivery (`workflows/full-lifecycle.json`, `workflows/roadmap-driven.json`, `workflows/project-start.json`).
+
+Long-running `project` runs pin the graph revision of every stage: when a workflow is updated or published over an older version, the previous revision is archived in `lane_pilot_wf_definition` (`definition-archive.ts`) so active runs continue resolving their pinned version across restarts and upgrades.
+
+## Bricks: `deliver`
+
+Shared multi-graph steps are extracted into reusable internal subworkflows ("bricks"). `workflows/deliver.json` is the channel-agnostic delivery brick: it accepts `{ channel, recipient, file_path, text, send_at }`, routes by channel (`telegram` -> `telegram-send`), and returns the delivery status unchanged. `workflows/invoice-send.json` (`send` node), `workflows/reels.json`, and `workflows/web-research.json` call `deliver` as a `subworkflow` instead of duplicating channel logic.
+
+## Saving a path
+
+When an errand or ad-hoc workflow run succeeds, the PM can capture it as a reusable project workflow draft with the `lane_pilot_path_save` PM tool or `bb lane-pilot path save <runId> [--note "<text>"]` (`src/rooms/workflow/server/services/path-save.ts`):
+
+- Reads the finished run's errand episode trace (`lane_pilot_errand_episode`) or executed step trace, plus any trajectory deltas (`lane_pilot_trajectory_delta`) and owner verdict (`lane_pilot_wf_run_verdict`), and creates a `source: "path-capture"` draft via `createWorkflowArchitect`.
+- Runs through the structural dedup gate (`createDedupeGate` in `dedupe-gate.ts`, comparing `graphSignature` / `traceSignature` against all library graphs and pending drafts at `paths.dedupe_threshold`, default `0.8`). If a near-twin already exists, path save refuses with `near_twin` and suggests adding a branch to that graph instead.
+- `lead` (`listPathCandidates` in `src/rooms/lead/server/services/path-candidates.ts`) aggregates repeated episodes, catalog misses (`lane_pilot_route_miss`), and trajectory deltas, surfacing the top discovery candidate in the daily report and on the weekly review desk.
+
+## Branches from deviations
+
+Repeated owner interventions on an existing graph (`lane_pilot_trajectory_delta`, recorded by `recordTrajectoryDelta` when the owner steps in or amends a run) cluster into branch candidates (`branchCandidateKey` in `packages/workflow-engine`). Once a candidate reaches `paths.branch_draft_repeats` (default `3`) within `paths.branch_window_days` (default `30`), or when requested explicitly, `lane_pilot_path_save` (with `branch: { graphId, candidateKey }`) or `bb lane-pilot path branch <graphId> <candidateKey> [--project <id>] [--note "<text>"]` opens a `source: "branch-capture"` draft from `graphId` (exempting `graphId` itself from dedup).
+
+- **Conditions into data.** When a `decision` node grows beyond 6 conditional `when` edges (`MAX_DECISION_WHEN_EDGES`), `validateWorkflowRails` warns `branches_into_data` to move conditions out of graph branching into a rule table or knowledge cards.
+
+## Project templates
+
+When a top-level `kind: "project"` run finishes (`succeeded`), passes its goal audit (`goal_audit`), and receives an owner `accept` verdict in `lane_pilot_wf_run_verdict`, `extractProjectTemplateFromRun` (`src/rooms/workflow/server/services/project-template.ts`) extracts a reusable `kind: "project"` draft (`source: "project-template"`) from its stage child runs and passes it through `createDedupeGate`:
+
+- If a near-twin template already exists, it does not create a duplicate draft; instead it records a `class: "branch"` proposal on `lane_pilot_lead_road`.
+- During intake (`createIntakeTrain`), matching published `project` templates are ranked and preferred over building a fresh chain from scratch.
+
+## Publishing: grants and receipts
+
+Every draft — from the Workflow architect, path capture, branch capture, project templates, or `lp.evolve` — passes through one draft store, one structural dedup gate, one permission-widening guard, and one publish authority gate (`lane_pilot_wf_publish_authority` in `packages/workflow-engine/src/publish-authority.ts`):
+
+- **Publish authority (`PublishAuthority`).** Publishing consumes a single-use row bound to `(draft_id, draft_sha256)`. It is either:
+  - an **owner grant** (`kind: "owner"`, `via: "desk" | "cli" | "chat"`), issued by `bb lane-pilot workflow publish <draftId> --owner`, by the weekly review desk (`workflow_draft_publish`), or by explicit owner confirmation in chat (`grantOwnerFromChatConfirmation`); or
+  - an **evolution receipt** (`kind: "evolution"`, `trialId`, `decision: "promote" | "demote"`), issued only by `lp.evolve` when a hypothesis passes the statistical and held-out gates above the sample threshold.
+- **Permission-widening guard (`draft-guard-policy.ts`).** Any learned draft (`path-capture`, `branch-capture`, `project-template`, `branch`) whose diff widens node effects, tools, skills, MCP access, or removes a human gate is flagged `needs_owner_review: "widens"` and posts a `workflow_draft_widens` item until granted by the owner (`workflow_draft_grant`). An `evolve` draft that widens permissions or touches evaluators is refused outright.
+- **Durability export (`npm run graphs:export`).** Graphs published or evolved on the hub live in SQLite (`lane_pilot_wf_definition`); run `npm run graphs:export` (`scripts/export-hub-graphs.ts`) in a clean checkout to export them back to `workflows/*.json` and mark the export timestamp (`bb lane-pilot graphs status`, `bb lane-pilot graphs mark-exported`).
 
 ## Sources
 

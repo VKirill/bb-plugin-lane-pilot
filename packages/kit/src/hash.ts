@@ -12,6 +12,15 @@ export function sha256Hex(data: BinaryLike): string {
   return createSha256().update(data).digest("hex");
 }
 
+/** JSON with object keys sorted at every depth and `undefined` keys dropped: the input of a hash that must not depend on key order. */
+export function canonicalJson(value: unknown): string {
+  if (value === null || typeof value !== "object") return JSON.stringify(value) ?? "null";
+  if (Array.isArray(value)) return `[${value.map((item) => canonicalJson(item)).join(",")}]`;
+  const obj = value as Record<string, unknown>;
+  const keys = Object.keys(obj).filter((key) => obj[key] !== undefined).sort();
+  return `{${keys.map((key) => `${JSON.stringify(key)}:${canonicalJson(obj[key])}`).join(",")}}`;
+}
+
 export async function sha256File(path: string): Promise<string> {
   return new Promise((resolve, reject) => {
     const hash = createSha256();

@@ -1,8 +1,9 @@
 import { randomUUID } from "node:crypto";
+import { TIER_RANK, type ToolTier } from "@lane-pilot/contracts";
 import type { StepContext } from "@lane-pilot/workflow-engine";
 import type { ChainRuntime, ServerCore } from "../../../contracts/server";
 import { postOwnerItem, rpcLine } from "../../../owner-waiting";
-import { classifyToolTier, type ToolTier } from "../../tool-tiers";
+import { classifyToolTier } from "../../tool-tiers";
 import type { OrderExecutionResult, SpServicesDeps } from "./sp-dispatch-runner";
 import { checkCohortMaturity, checkLockCollisions } from "../repositories/sp-locks-intents";
 import { getBreakerState } from "../repositories/sp-store";
@@ -11,8 +12,6 @@ type Row = Record<string, unknown>;
 
 const asStr = (v: unknown, fallback = ""): string =>
   typeof v === "string" ? v : v === null || v === undefined ? fallback : String(v);
-
-const TIER_RANK: Record<ToolTier, number> = { R: 1, D: 2, L: 3, S: 4 };
 
 export interface ManualMutationEvaluation {
   effectiveTier: ToolTier;

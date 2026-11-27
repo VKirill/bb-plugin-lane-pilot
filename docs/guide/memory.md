@@ -6,11 +6,17 @@ status: active
 created: 2026-11-06
 confidence: medium
 tags: [guide, memory]
-updated: 2026-11-06
+updated: 2026-11-27
 sources:
   - src/rooms/memory/server/memory.ts
   - src/rooms/memory/server/thread-block.ts
   - src/rooms/memory/server/import.ts
+  - src/rooms/memory/server/services/cards.ts
+  - src/rooms/specialist/server/services/sp-memory-loader.ts
+  - src/rooms/specialist/server/repositories/sp-autonomy.ts
+  - src/rooms/specialist/server/repositories/sp-rules.ts
+  - packages/contracts/src/cards.ts
+  - packages/contracts/src/specialist.ts
   - packages/memory-core/src/floor.ts
 ---
 
@@ -125,6 +131,36 @@ Search fuses an FTS5 word index (`bm25`) with an FTS5 trigram index (word forms 
 
 The Knowledge tab has Memory and Documents segments. Memory shows the switch, the project's records (facts and rules apart, kind, date, concepts; only facts have a remove button, via `memory_record_delete`) and, in advanced mode, the settings above.
 
+## Knowledge cards
+
+Business, niche, contact, and platform facts live as typed **cards** in hub memory rather than hard-coded graph branches (`packages/contracts/src/cards.ts`, `src/rooms/memory/server/services/cards.ts`):
+
+- **Kinds and default TTL (`CARD_LIMITS.defaultTtlDays`).** `niche` (90 days), `brand` (180 days), `contact` (365 days), `platform` (60 days). Each load injects up to `CARD_LIMITS.perLoad` (`4`) cards clipped to `CARD_LIMITS.chars` (`1200`) characters.
+- **Sources and trust.** `CARD_SOURCE_KINDS` (`owner | url | file | run`). Owner-written cards start as `confirmed`; cards from URLs or runs stay `observed` until verified (`bb lane-pilot card verify <id>` from a terminal, or `lane_pilot_card` action `verify`).
+- **Expiry and unverified marking.** Each card stores `verifiedAt` and `validUntil`. Expired cards are still returned by `lp.cards_load`, marked `UNVERIFIED (expired YYYY-MM-DD)` so the worker knows to double-check them rather than silently trusting stale business facts.
+- **Data fences and judge isolation.** `lp.cards_load` wraps cards in `<data> ... <cards> ... </cards> </data>` fences (`validate-rails.ts` warns `learned_text_unfenced` if an agent prompt embeds card outputs without `<data>`/`<cards>` fences, and warns `judge_reads_cards` if a judge/critic/verifier node reads card loader outputs).
+- **Tools and CLI.** PM tool `lane_pilot_card` (`set`, `get`, `verify`, `list`); CLI `bb lane-pilot card set|get|list|verify`.
+
+## Employee case folder
+
+Long-running standing employees (`kind: "employee"`, such as `sp-specialist-tick`) maintain a structured SQLite case folder on Specialist OS + `lane_pilot_lead_road` rather than re-reading chat history:
+
+- **Decision log (`lane_pilot_sp_intent` + `lane_pilot_sp_intent_outcome`).** Every action order logs its metric, unit, baseline, expected interval `[expected_lo, expected_point, expected_hi]`, and `check_at` date. After the window closes, measured values record `OUTCOME_VERDICTS` (`pending | within | above | below | inconclusive` in `packages/contracts/src/specialist.ts`).
+- **Hypothesis tree and "tried already" (`lane_pilot_sp_hypothesis`).** Hypotheses carry states `open | testing | worked | refuted | dropped`, parent links, lever, and outcome evidence (`sp-hypotheses.ts`). Refuted and dropped branches populate the shift's `triedAlready` list so the employee does not repeat failed experiments.
+- **Learned rules (`lane_pilot_sp_rule`).** A `worked` hypothesis with favourable measured outcomes creates a project-`local` rule (`active`). When at least two projects independently produce matching active local rules with at least two favourable measured outcomes each, the system proposes a cross-business `shared` rule (`state: "proposed"`), which activates only on explicit owner approval (via the weekly desk) and auto-retires if contradicted by later outcomes.
+- **Bounded shift snapshot (`loadSpecialistMemory` / `sp.load_memory`).** Each shift receives a deterministic JSON snapshot capped at `specialist.snapshot_bytes` (default `24000`, range `8000-96000`), dropping tail telemetry fields before charter, budget, breaker, due outcomes, hypothesis tree, and rules.
+- **Weekly scorecard.** `specialistScorecard` (`src/rooms/specialist/server/services/sp-scorecard.ts`) reports 7-day decisions, checked/worked counts, active hypotheses, next check day, and open owner asks on the weekly review desk.
+
+## Autonomy vocabulary
+
+Lane Pilot keeps one autonomy vocabulary per granularity, with no duplicate copies:
+
+- **Employees (per action class, [`packages/contracts/src/specialist.ts`](../../packages/contracts/src/specialist.ts)).** `AUTONOMY_CLASSES` defines `observe`, `propose`, and `bounded_auto`, stored in `lane_pilot_sp_autonomy` with an append-only audit log in `lane_pilot_sp_autonomy_grant` (`src/rooms/specialist/server/repositories/sp-autonomy.ts`):
+  - Irreversible `S`-tier actions and `high_risk_never_auto` classes can **never** enter `bounded_auto`.
+  - Promotion from `propose` to `bounded_auto` requires meeting policy evidence gates (`min_samples`, `wilson_lower_bound_min`, `cohen_kappa_min`, zero critical incidents window) and explicit owner approval (`bb lane-pilot specialist autonomy grant <project> <domain> <actionClass>` or the weekly review desk).
+  - Owner refusals (`OWNER_REFUSAL_REASONS`: `wrong_result | too_costly | off_brand | bad_timing | unsafe | other`) update `cohen_kappa` and `wilson_lb`; critical incidents or owner revocation (`bb lane-pilot specialist autonomy revoke ...`) demote back to `propose` and freeze re-promotion for `REVOKE_FREEZE_DAYS` (14 days). Inspect with `bb lane-pilot specialist autonomy <project> <domain>`.
+- **Workflow graphs (per graph).** Graph evolution autonomy uses the sample-count and canary table in [Self-evolution graph design record](../decisions/2026-11-25-evolution-graph.md) and [`EVOLVE_THRESHOLDS`](../../packages/contracts/src/evolve.ts) (below `20` held-out + `10` working cases: report-only to the owner; at or above: canary + auto-promote with automatic rollback on first reject or red hard check).
+
 ## Sources
 
-Where this page's claims start in the code: `src/rooms/memory/server/index.ts`, `src/rooms/memory/server/services/thread-block.ts`, `src/rooms/memory/server/services/memory-mix.ts`, `src/rooms/memory/server/handlers/embeddings.ts`, `packages/memory-core/src/floor.ts`. The deep pages linked above cite the rest.
+Where this page's claims start in the code: `src/rooms/memory/server/index.ts`, `src/rooms/memory/server/services/thread-block.ts`, `src/rooms/memory/server/services/memory-mix.ts`, `src/rooms/memory/server/services/cards.ts`, `src/rooms/memory/server/handlers/embeddings.ts`, `src/rooms/specialist/server/services/sp-memory-loader.ts`, `src/rooms/specialist/server/repositories/sp-autonomy.ts`, `packages/contracts/src/cards.ts`, `packages/contracts/src/specialist.ts`, `packages/memory-core/src/floor.ts`. The deep pages linked above cite the rest.

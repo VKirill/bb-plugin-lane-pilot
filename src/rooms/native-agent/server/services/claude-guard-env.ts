@@ -1,4 +1,5 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
+import { isToolTier } from "@lane-pilot/contracts";
 import { nativeThreadKey, resolvePlanningHome } from "../../../contracts";
 import { getReasoningTrace, getRun, planningHomeInputs, saveReasoningTrace, type LanePilotDatabase } from "../../../storage";
 import type { RunCommandHost } from "@lane-pilot/host-calls";
@@ -73,8 +74,10 @@ export function createClaudeGuardEnv(ctx: { bb: BbPluginApi; db: LanePilotDataba
       }
     } catch { /* the guard still applies; the project's own hooks are copied only when the workspace is known */ }
     const attemptId = stringAt(metadata, "attemptId") ?? null;
+    const rawEffect = stringAt(metadata, "nodeEffect");
+    const nodeEffect = isToolTier(rawEffect) ? rawEffect : undefined;
     const taskHome = WRITER_ROLES.has(role) ? parseTaskDir(metadata) : null;
-    const key = `${thread.hostId}\n${role}\n${cwd ?? ""}\n${taskHome ?? ""}`;
+    const key = `${thread.hostId}\n${role}\n${cwd ?? ""}\n${taskHome ?? ""}\n${nodeEffect ?? ""}`;
     const hit = cache.get(key);
     const now = Date.now();
     // The planning home is per project, never cached: two projects can share one checkout path, and a cleared setting must apply at once.
@@ -108,8 +111,12 @@ export function createClaudeGuardEnv(ctx: { bb: BbPluginApi; db: LanePilotDataba
     };
     if (hit && now - hit.at < CACHE_MS) return withHome(hit.env, hit.isolation);
     try {
+      if (nodeEffect) {
+        const nodeId = stringAt(metadata, "lanePilotWorkflowNode") ?? role;
+        ctx.bb.log.debug?.(`wf.launch node=${nodeId} effect=${nodeEffect}`);
+      }
       const prepared = await within(CALL_MS, "prepareClaudeGuard", Promise.resolve(ctx.nativeHost.call("prepareClaudeGuard", {
-        role, ...(cwd ? { cwd } : {}), ...(taskHome ? { taskHome } : {}),
+        role, ...(cwd ? { cwd } : {}), ...(taskHome ? { taskHome } : {}), ...(nodeEffect ? { nodeEffect } : {}),
       }, { hostId: thread.hostId }))) as { env?: EnvEntry[]; isolation?: { denies: number; sandbox: boolean } };
       const env = Array.isArray(prepared?.env) ? prepared.env : [];
       if (!env.some((entry) => entry.name === "BB_CLAUDE_CODE_EXECUTABLE")) throw new Error("prepareClaudeGuard returned no launcher");

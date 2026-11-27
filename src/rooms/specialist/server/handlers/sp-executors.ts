@@ -1,10 +1,12 @@
+import { isToolTier, type ToolTier } from "@lane-pilot/contracts";
 import { bestEffort, isNotFound, orMiss, sha256Hex, stringAt } from "@lane-pilot/kit";
+import { GLOBAL_SETTINGS_PROJECT_ID } from "@lane-pilot/settings-catalog";
 import type { GraphNode, StepContext, WorkflowEngine } from "@lane-pilot/workflow-engine";
 import type { ChainRuntime, ServerCore } from "../../../contracts/server";
 import { postOwnerItem } from "../../../owner-waiting";
-import { renderArtifactsManifestJson, upsertProjectArtifact, writeCasCheckoutFile } from "../../../storage";
+import { loadProjectSettings, renderArtifactsManifestJson, upsertProjectArtifact, writeCasCheckoutFile } from "../../../storage";
 import { noteEngineWrite } from "../../../verification/server";
-import type { ToolTier } from "../../tool-tiers";
+import { parseSpecialistSnapshotBytes, SPECIALIST_SNAPSHOT_BYTES_KEY } from "../../settings";
 import { registerSpCommitAndDispatchExecutors } from "./sp-commit-dispatch";
 import { evaluateManualMutationPlan } from "../services/sp-dispatch-direct";
 import type { SpServicesDeps } from "../services/sp-dispatch-runner";
@@ -147,6 +149,9 @@ export function registerSpExecutors(
 ): void {
   const { db } = ctx;
   const { action, resolveServices } = deps;
+  const mountedSnapshotBytes = parseSpecialistSnapshotBytes(
+    loadProjectSettings(db, GLOBAL_SETTINGS_PROJECT_ID)[SPECIALIST_SNAPSHOT_BYTES_KEY],
+  );
   const getSpDeps = (): SpServicesDeps => {
     const live = resolveServices ? resolveServices() : {};
     return {
@@ -162,6 +167,14 @@ export function registerSpExecutors(
     const role = asStr(params.role);
     const domain = asDomain(params.domain || (role === "seo-specialist" ? "seo" : "marketing"));
     const checkout = await resolveCheckout(ctx, rt);
+    const spDeps = getSpDeps();
+    const projectSetting = rt.projectId ? loadProjectSettings(db, rt.projectId)[SPECIALIST_SNAPSHOT_BYTES_KEY] : undefined;
+    const snapshotBytes =
+      spDeps.snapshotBytes !== undefined
+        ? spDeps.snapshotBytes
+        : projectSetting !== undefined
+          ? parseSpecialistSnapshotBytes(projectSetting, mountedSnapshotBytes)
+          : mountedSnapshotBytes;
     return await loadSpecialistMemory({
       ctx,
       projectId: rt.projectId,
@@ -171,6 +184,7 @@ export function registerSpExecutors(
       outFields: node.out,
       checkout,
       readCheckoutFileText,
+      snapshotBytes,
     });
   });
 
@@ -353,7 +367,7 @@ export function registerSpExecutors(
   action("sp.apply_mutation", async (c, rt) => {
     const node = c.node as Extract<GraphNode, { type: "action" }>;
     const params = c.template(node.params) as Row;
-    const tier = (params.tier === "R" || params.tier === "D" || params.tier === "S" ? params.tier : "L") as ToolTier;
+    const tier: ToolTier = isToolTier(params.tier) ? params.tier : "L";
     const domain = asDomain(params.domain || "marketing");
     const parsedPlan = parseJsonSafe<unknown>(params.plan, []);
     const items: Row[] = Array.isArray(parsedPlan)

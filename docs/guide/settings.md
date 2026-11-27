@@ -6,11 +6,19 @@ status: active
 created: 2026-11-06
 confidence: medium
 tags: [guide, settings]
-updated: 2026-11-10
+updated: 2026-11-27
 sources:
   - src/rooms/settings-registry.ts
   - packages/settings-catalog/src/define-setting.ts
   - packages/settings-catalog/src/lp-defaults.ts
+  - packages/settings-catalog/src/keys.ts
+  - packages/contracts/src/loops.ts
+  - src/rooms/workflow/settings.ts
+  - src/rooms/evolve/settings.ts
+  - src/rooms/reports/settings.ts
+  - src/rooms/lead/settings.ts
+  - src/rooms/specialist/settings.ts
+  - src/rooms/owner-waiting/models/push-config.ts
 ---
 
 # Settings and experimental features
@@ -64,6 +72,8 @@ The full generated list with defaults is [docs/enabled-settings.md](../enabled-s
 | `plan_fact.mode` | `record` | `gate` sends a task back when an acceptance item has no evidence. |
 | `owner.words` | `sensitive` | Whose word a verified task waits for (up to 6 hours) before it lands on main; the PM asks with `lane_pilot_ask_owner` and records the answer with `lane_pilot_queue` action `word`. `sensitive` (default): only money, database migrations and destructive data operations, and a deploy to production, whatever the task's risk; `on`: every task; `risky`: risk high or critical; `off`: none. A contract clarification and a permit ask by the same rule. |
 | `owner_push.enabled`, `.quiet`, `.timezone` | `true`, `23:00-08:00`, `Europe/Madrid` | The Telegram notifications for what waits for the owner (`lp.owner-bell` and `lp.owner-push`). |
+| `decision_cap` (owner config, `lane_pilot_owner_config`) | `5` (`NOW_CAP`, range `0-50`) | Daily budget of `decision` items allowed to wake the owner; excess decision items defer to the weekly review desk. Set with `bb lane-pilot waiting config decision_cap=<n>` (or `config decision_cap <n>` / RPC `owner_waiting_config`). |
+| `specialist.snapshot_bytes` | `24000` (`8000-96000`) | Byte cap for a Specialist OS shift snapshot (`loadSpecialistMemory`). |
 | `baseline.already_built`, `baseline.time_cap_sec`, `checks.require_red_on_base` | `notify`, `300`, `medium` | The baseline before a writer starts. |
 | `integration.gate_command`, `.gate_when`, `.gate_every` | auto-detected, `queue_drained`, `5` | The whole-suite check after a batch merged. |
 | `run.max_attempts`, `run.max_children`, `run.max_tokens`, `run.max_wall_minutes`, `run.gate` | unset, `none` | Run budgets and the operator-review gate. |
@@ -93,6 +103,10 @@ The full generated list with defaults is [docs/enabled-settings.md](../enabled-s
 | `workflow.node_budget_tokens`, `.node_budget_usd`, `.node_budget_wall_seconds` | unset | Per-node resource caps enforced by the workflow engine. |
 | `workflow.run_budget_tokens`, `.run_budget_usd`, `.run_budget_wall_seconds`, `workflow.stuck_repeat_limit` | unset | Per-run resource caps and loop repeat ceiling. |
 | `schedule.paused_all` | `false` | Pause or resume engine clock firing across the entire schedule board (`bb lane-pilot schedule pause-all\|resume-all`). |
+| `workflow.disabled` | `[]` | JSON array of workflow IDs disabled by the per-graph kill switch; blocks `pm`, `manual`, `schedule`, and `event` starts (`workflowStartRefusal`). |
+| `loops.mode` | `{"discovery":"on","branches":"on","evolve":"on","employee":"on","templates":"on"}` | Per-loop mode (`on \| report \| off`, `packages/contracts/src/loops.ts`): `report` runs analysis without opening trials/publishing/auto-actions; `off` skips the loop. |
+| `evolve.enabled`, `evolve.graphs`, `evolve.replay_max_runs` | `true`, `["invoice-send"]`, `120` | Master switch, allow-listed workflow IDs, and max agent executions per `lp.evolve` offline replay. |
+| `paths.dedupe_threshold`, `paths.branch_draft_repeats`, `paths.branch_window_days` | `0.8`, `3`, `30` | Structural dedup threshold (`0.5-1.0`), repeated trajectory deltas before proposing a branch (`1-20`), and rolling discovery window in days (`7-180`). |
 | Schedule entries | none | Created from the PM (`lane_pilot_schedule`) or the Schedule segment; each has `missed` and `overlap` policies. |
 
 ## Experimental features

@@ -6,13 +6,16 @@ status: active
 created: 2026-11-06
 confidence: medium
 tags: [guide, observability]
-updated: 2026-11-14
+updated: 2026-11-27
 sources:
   - src/rooms/owner-waiting/server/index.ts
   - src/rooms/reports/server/index.ts
   - src/rooms/reports/server/handlers/report-workflows.ts
   - src/rooms/reports/server/services/daily-report.ts
+  - src/rooms/reports/server/services/review-desk.ts
   - src/rooms/schedule/server/index.ts
+  - src/rooms/evolve/server/services/evolve-loop.ts
+  - src/rooms/workflow/server/services/run-finished.ts
   - packages/workflow-engine/src/engine-clock.ts
 ---
 
@@ -68,6 +71,36 @@ Lane Pilot schedules workflows, errands, named agent routines and host scripts i
 
 `bb lane-pilot money` (month-to-date paid spend against `money.monthly_cap_usd`), `outages` (gaps over five minutes in the plugin heartbeat), `owner-presence` (writers keep off a provider the owner used in the last ten minutes) and the live stability figures in `canary` and the daily report.
 
+## Goal-driven graph and learning loop log events
+
+Engine events added in `LP_EVENTS` (`packages/contracts/src/events.ts`): `lp.workflow.run-finished`, `lp.models.catalog-changed`, and `lp.evolve.threshold-crossed`. Runtime log events emitted by the workflow, evolve, card, specialist, and review-desk rooms:
+
+| Event | Level | Fields |
+|---|---|---|
+| `wf.finished` | `debug` / `warn` | `run`, `wf`, `status`, `emitted` (or subscriber/emit failure message) |
+| `lane-pilot mcp-tier: denied` | `stderr` | `tool`, `tier`, `step` (or invalid `LANE_PILOT_NODE_EFFECT`) |
+| `workflow prove` / `workflow prove refused` | `info` / `warn` | `wf`, `model`, `passed` (or refusal `reason`) |
+| `run verdict` / `run verdict refused` | `info` / `warn` | `run`, `verdict`, `source`, `reason` (note text never logged) |
+| `path save` / `path save refused` | `info` / `warn` | `run`, `draft` (or refusal `reason`) |
+| `branch draft` / `branch draft refused` | `info` / `warn` | `graph`, `draft`, `runs` (or refusal `reason`) |
+| `project template` / `project template skipped` | `info` / `warn` | `run`, `stages`, `draft` (or skip `reason`) |
+| `publish authority` / `publish refused` | `info` / `warn` | `kind`, `draft`, `sha` (or refusal `reason`) |
+| `draft guard` / `draft guard owner granted` | `warn` / `info` | `source`, `draft`, `widening`, `workflow`, `by` |
+| `graphs.export marked` | `info` | `at` (ISO timestamp) |
+| `evolve event` | `info` | `kind`, `wf` |
+| `evolve propose` / `evolve propose skipped` | `info` / `warn` | `wf`, `reason` |
+| `evolve replay` / `evolve replay aborted` | `info` / `warn` | `hyp`, `cases`, `k`, `pass`, `gain` (or abort `reason`) |
+| `evolve decide` / `evolve decide deferred` | `info` / `warn` | `hyp`, `mode`, `counts`, `form` (or open trial `trialId`) |
+| `evolve canary` / `evolve rollback` / `evolve publish failed` | `info` / `warn` / `error` | `trial`, `action`, `e`, `wf`, `hyp`, `reason` |
+| `judge calibration` | `warn` | `case`, `wf`, `outcome`, `reason`, `model` |
+| `card` / `card verified` / `card refused` / `cards load` | `info` / `warn` / `debug` | `id`, `kind`, `key`, `by`, `trust`, `refs`, `found`, `stale` |
+| `sp snapshot` | `debug` / `warn` | `case`, `bytes`, `cap`, `dropped` |
+| `sp rule` / `sp rule refused` | `info` / `warn` | `id`, `scope`, `state` (or refusal `reason`) |
+| `sp autonomy` / `granted` / `revoked` / `grant refused` | `info` / `warn` | `class`, `n`, `wilson`, `kappa`, `state`, `by`, `reason` |
+| `attention budget` | `debug` | `decisions_today`, `cap`, `deferred` |
+| `loop health` | `debug` | `loop`, `failing`, `metric` |
+| `review desk` / `review desk section failed` | `info` / `warn` | `items`, `sections`, `failed`, `section`, `reason` |
+
 ## Sources
 
-Where this page's claims start in the code: `src/rooms/owner-waiting/server/index.ts`, `src/rooms/reports/server/index.ts`, `src/rooms/schedule/server/handlers/board-clock.ts`, `packages/workflow-engine/src/engine-clock.ts`. The deep pages linked above cite the rest.
+Where this page's claims start in the code: `src/rooms/owner-waiting/server/index.ts`, `src/rooms/reports/server/index.ts`, `src/rooms/reports/server/handlers/report-workflows.ts`, `src/rooms/reports/server/services/daily-report.ts`, `src/rooms/reports/server/services/review-desk.ts`, `src/rooms/schedule/server/index.ts`, `src/rooms/evolve/server/services/evolve-loop.ts`, `src/rooms/workflow/server/services/run-finished.ts`, `packages/workflow-engine/src/engine-clock.ts`. The deep pages linked above cite the rest.
