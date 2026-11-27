@@ -115,8 +115,10 @@ describe("Lane Pilot UI", () => {
       save_setting: () => ({ ok: false, conflict: true, version: 9, value: 3 }),
     });
     openTab(slot, "work");
-    await waitFor(() => expect(slot.getByTestId("code-critique-policy")).toBeTruthy());
-    const input = slot.getByTestId("code-critique-policy").querySelector("[data-testid='field-s380'] input[type='number']") as HTMLInputElement;
+    const workMore = await slot.findByTestId("settings-more-work");
+    fireEvent.click(workMore.querySelector("summary")!);
+    await waitFor(() => expect(slot.getByTestId("work-code")).toBeTruthy());
+    const input = slot.getByTestId("work-code").querySelector("[data-testid='field-s380'] input[type='number']") as HTMLInputElement;
     fireEvent.change(input, { target: { value: "10" } });
     fireEvent.blur(input);
     await slot.findByTestId("cas-conflict");
@@ -141,7 +143,7 @@ describe("Lane Pilot UI", () => {
       reset_project_settings: () => { reset = true; return { ok: true, conflict: false, values: { "helper.placement": null }, versions: { "helper.placement": 2 } }; },
     });
     openTab(slot, "work");
-    fireEvent.click(slot.getByRole("button", { name: en.settingsAdvanced }));
+    fireEvent.click(slot.getByTestId("settings-more-work").querySelector("summary")!);
     const row = slot.getByTestId("field-s371");
     await waitFor(() => expect(row.textContent).toContain("Set on this project"));
     fireEvent.click(within(row).getByRole("button", { name: "Reset to inherited" }));

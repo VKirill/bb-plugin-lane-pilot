@@ -181,8 +181,8 @@ describe("Lane Pilot UI", () => {
       },
     });
     openTab(slot, "work");
-    await waitFor(() => expect(slot.getByTestId("code-critique-policy")).toBeTruthy());
-    const input = slot.getByTestId("code-critique-policy").querySelector("[data-testid='field-s380'] input[type='number']") as HTMLInputElement;
+    await waitFor(() => expect(slot.getByTestId("work-code")).toBeTruthy());
+    const input = slot.getByTestId("work-code").querySelector("[data-testid='field-s380'] input[type='number']") as HTMLInputElement;
     fireEvent.change(input, { target: { value: "1" } });
     fireEvent.blur(input);
     await waitFor(() => expect(deferred.length).toBe(1));
@@ -207,8 +207,9 @@ describe("Lane Pilot UI", () => {
       get_preferences: () => ({ locale: "ru", preference: "ru", lastProjectId: null }),
     });
     openTab(slot, "work");
-    expect(slot.getByTestId("settings-depth").textContent).toContain(ru.settingsBasic);
-    expect(slot.getByTestId("settings-depth").textContent).toContain(ru.settingsAdvanced);
+    expect(slot.getByTestId("seg-settings-level-picker").textContent).toContain(ru.consoleLoadoutLevelSystem);
+    expect(slot.getByTestId("seg-settings-level-picker").textContent).toContain(ru.consoleLoadoutLevelProject);
+    expect(slot.getByTestId("seg-settings-level-picker").textContent).toContain(ru.consoleLoadoutLevelSection);
     slot.lifecycle.unmount();
   });
 });

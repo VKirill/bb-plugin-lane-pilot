@@ -35,7 +35,11 @@ export function openTab(slot: Pick<TabSlot, "getByTestId"> & Partial<Pick<TabSlo
     const seg = slot.queryByTestId?.(`seg-decisions-view-${route.view}`);
     if (seg) fireEvent.click(seg);
   } else if (route.section === "system" && route.page === "settings" && route.view === "docs") {
-    fireEvent.click(slot.getByTestId("seg-knowledge-docs"));
+    const docsBtn =
+      slot.queryByTestId?.("settings-nav-docs") ??
+      slot.queryByTestId?.("seg-settings-groups-docs") ??
+      slot.queryByTestId?.("seg-knowledge-docs");
+    if (docsBtn) fireEvent.click(docsBtn);
   } else if (route.section === "system" && route.page === "costs" && route.view === "quality") {
     const seg = slot.queryByTestId?.("seg-costs-view-quality");
     if (seg) fireEvent.click(seg);

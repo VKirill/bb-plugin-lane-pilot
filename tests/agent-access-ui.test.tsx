@@ -294,9 +294,6 @@ describe("Agent access tab", () => {
     } finally { slot.lifecycle.unmount(); await harness.lifecycle.dispose(); }
   });
 
-  // unreachable in the console: six access-section-* sub-section containers were replaced by the flat filterable matrix (seg-loadout-filter-*); see report
-  it.skip("groups helper rows into six access-section-* containers", () => {});
-
   it("shows the main agent (PM) with an information note and a picker, and no access controls", async () => {
     const { slot, harness } = await mount();
     try {

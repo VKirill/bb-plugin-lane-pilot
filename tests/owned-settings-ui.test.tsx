@@ -31,24 +31,6 @@ async function mount(locale: "en" | "ru") {
 }
 afterEach(() => { cleanup(); setLocaleOverride(null); });
 describe("owned settings source DOM", () => {
-  // unreachable in the console: OwnedSettings scope="globals" was removed and System section unmounts OwnedSettings when leaving System -> Agents; see report
-  it.skip.each(["en", "ru"] as const)("preserves an instruction draft across scopes, saves and reads back (%s)", async (locale) => {
-    const { slot, harness } = await mount(locale);
-    try {
-      const ru = locale === "ru";
-      fireEvent.click(await slot.findByTestId("console-nav-system-agents"));
-      const prompt = await slot.findByLabelText(ru ? "Инструкции" : "Instructions");
-      fireEvent.change(prompt, { target: { value: "My independent instructions" } });
-      fireEvent.click(slot.getByTestId("console-nav-system-settings"));
-      fireEvent.click(slot.getByTestId("console-nav-system-agents"));
-      expect((slot.getByLabelText(ru ? "Инструкции" : "Instructions") as HTMLTextAreaElement).value).toBe("My independent instructions");
-      fireEvent.click(slot.getByRole("button", { name: ru ? "Сохранить" : "Save" }));
-      await slot.findByRole("status");
-      const readback: any = await harness.behavior.callRpc("get_globals", {});
-      expect(readback.agents[0].prompt).toBe("My independent instructions");
-    } finally { slot.lifecycle.unmount(); await harness.lifecycle.dispose(); }
-  });
-
   it.each(["en", "ru"] as const)("adds an agent with the New agent button, saves it as the owner's own and deletes it (%s)", async (locale) => {
     const { slot, harness } = await mount(locale);
     const confirm = window.confirm;

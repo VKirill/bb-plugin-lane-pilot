@@ -26,12 +26,10 @@ import { WriterReuse } from "../../writer/ui";
 import { InputsForm, WorkflowsScreen } from "../../workflow/ui";
 import type { ConsoleRoute } from "../models/nav-model";
 import { useAgentsLoadoutBridge } from "./agents-page-bridge";
-import { ProjectHeader } from "./project-header";
-import { KnowledgeTab } from "./tab-knowledge";
 import { HealthScreen } from "./screens/health-screen";
 import { OverviewScreen } from "./screens/overview-screen";
+import { SettingsScreen } from "./screens/settings-screen";
 import { SystemHome } from "./screens/system-home";
-import { WorkTab } from "./tab-work";
 import type { LpPage } from "./use-lp-page";
 
 const AcceptanceCard = (props: ComponentProps<typeof RawAcceptanceCard>) => (
@@ -297,9 +295,7 @@ function SystemSection({ route, go, projectId, locale, page }: ConsoleSectionPro
       return (
         <div className="space-y-6" data-testid="system-settings">
           <SettingsAlerts page={page} />
-          <ProjectHeader page={page} />
-          <WorkTab page={page} />
-          <KnowledgeTab page={page} />
+          <SettingsScreen route={route} go={go} page={page} />
         </div>
       );
     default: {

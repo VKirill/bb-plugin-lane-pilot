@@ -41,6 +41,17 @@ export const consoleSystemEn = {
   consoleHealthDrillFail: "fail",
   consoleHealthLoading: "Loading…",
   consoleHealthUnavailable: "Could not load status.",
+  consoleSettingsSubtitleProject: "Project {name} · unset fields inherit from the level above",
+  consoleSettingsSubtitleSection: "Section {section} · {project} · unset fields inherit from the level above",
+  consoleSettingsGroupWork: "Work and checks",
+  consoleSettingsGroupMemory: "Memory",
+  consoleSettingsGroupDocs: "Documents",
+  consoleSettingsGroupNotifications: "Language & notifications",
+  consoleSettingsMore: "More",
+  consoleSettingsMoreCount: "More ({n} settings)",
+  consoleSettingsInheritedFromSystem: "Inherited from system",
+  consoleSettingsInheritedFromProject: "Inherited from project",
+  consoleSettingsLanguageTitle: "Interface language",
 } as const;
 
 export const consoleSystemRu: { [K in keyof typeof consoleSystemEn]: string } = {
@@ -85,4 +96,15 @@ export const consoleSystemRu: { [K in keyof typeof consoleSystemEn]: string } = 
   consoleHealthDrillFail: "сбой",
   consoleHealthLoading: "Загрузка…",
   consoleHealthUnavailable: "Не удалось загрузить данные.",
+  consoleSettingsSubtitleProject: "Проект {name} · пустые поля берут значение уровнем выше",
+  consoleSettingsSubtitleSection: "Раздел {section} · {project} · пустые поля берут значение уровнем выше",
+  consoleSettingsGroupWork: "Работа и проверки",
+  consoleSettingsGroupMemory: "Память",
+  consoleSettingsGroupDocs: "Документы",
+  consoleSettingsGroupNotifications: "Язык и уведомления",
+  consoleSettingsMore: "Ещё",
+  consoleSettingsMoreCount: "Ещё ({n} настроек)",
+  consoleSettingsInheritedFromSystem: "Наследуется от системы",
+  consoleSettingsInheritedFromProject: "Наследуется от проекта",
+  consoleSettingsLanguageTitle: "Язык интерфейса",
 };

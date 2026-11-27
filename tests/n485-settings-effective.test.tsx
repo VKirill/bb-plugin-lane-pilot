@@ -1,14 +1,12 @@
 /** @vitest-environment jsdom */
-import { render, screen, cleanup, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, cleanup } from "@testing-library/react";
 import { afterEach, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { setLocaleOverride } from "@lane-pilot/i18n";
 import plugin from "../server";
-import { closeRun, createRun, getRun, openDatabase } from "../src/rooms/plugin-db";
+import { createRun, getRun, openDatabase } from "../src/rooms/plugin-db";
 import { buildRunPolicy } from "../src/rooms/tasks";
 import { OverviewTab } from "../src/rooms/pages/ui/tab-overview";
-import { mountPage } from "./ui-harness";
-import { openTab } from "./ui-tabs";
 
 afterEach(() => { cleanup(); setLocaleOverride(null); });
 
@@ -41,44 +39,6 @@ it("shows the frozen active policy and the updated values for the next activatio
   await harness.lifecycle.dispose();
 });
 
-
-// unreachable in the console: PolicyDifferences on OverviewScreen (OverviewTab was replaced by OverviewScreen); see report
-it.skip("refreshes the notice after page saves and a run closure signal", async () => {
-  setLocaleOverride("en");
-  const projectId = "proj_ui";
-  const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
-  const db = openDatabase(bb);
-  createRun(db, "n485-live", projectId, "bb", null, "none", buildRunPolicy({ "ops.pool_size": 4 }));
-  await plugin(bb);
-  expect(await harness.behavior.callRpc("save_setting", { projectId, key: "ops.pool_size", value: 4, expectedVersion: 0 })).toMatchObject({ ok: true });
-  const slot = await mountPage({
-    get_screen: (input) => harness.behavior.callRpc("get_screen", input) as Promise<unknown>,
-    save_setting: (input) => harness.behavior.callRpc("save_setting", input) as Promise<unknown>,
-    list_runs: (input) => harness.behavior.callRpc("list_runs", input) as Promise<unknown>,
-  }, { projectId, threadId: null }, "proj_ui/work", false);
-  await slot.findByTestId("tab-runs");
-  expect(slot.queryByTestId("policy-difference-n485-live")).toBeNull();
-  openTab(slot, "runs", "service");
-  fireEvent.click(slot.getByTestId("diagnostics-disclosure").querySelector("summary")!);
-  const input = () => slot.getByTestId("runs-panel").querySelector<HTMLInputElement>('[data-storage-key="ops.pool_size"] input')!;
-  expect(input()).toBeTruthy();
-  fireEvent.change(input(), { target: { value: "7" } });
-  fireEvent.blur(input());
-  await waitFor(async () => expect((await harness.behavior.callRpc("get_screen", { projectId }) as any).values["ops.pool_size"]).toBe(7));
-  // The overview has not mounted yet: it must not trust the initial screen's empty comparison.
-  openTab(slot, "overview");
-  await waitFor(() => expect(slot.getByTestId("policy-difference-n485-live").textContent).toContain("ops.pool_size: this run 4; next activation 7"));
-  openTab(slot, "runs", "service");
-  fireEvent.change(input(), { target: { value: "9" } });
-  fireEvent.blur(input());
-  await waitFor(() => expect(slot.getByTestId("policy-difference-n485-live").textContent).toContain("ops.pool_size: this run 4; next activation 9"));
-  expect(JSON.parse(getRun(db, "n485-live")!.run_policy_json).pools.provider).toBe(4);
-  expect(closeRun(db, "n485-live", "rpc")).toBe(true);
-  await slot.behavior.emitRealtime(`lp:${projectId}`, { kind: "helpers", threadId: "thr_pm" });
-  await waitFor(() => expect(slot.queryByTestId("policy-difference-n485-live")).toBeNull());
-  slot.lifecycle.unmount();
-  await harness.lifecycle.dispose();
-});
 
 it("does not consume the invalid ceiling warning while previewing settings", async () => {
   const projectId = "n485-warning";

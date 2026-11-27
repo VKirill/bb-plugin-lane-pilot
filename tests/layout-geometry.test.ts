@@ -70,8 +70,8 @@ describe("layout geometry harness", () => {
     expect(err.querySelector("button")).toBeNull();
 
     openTab(slot, "work");
-    const depth = slot.getByTestId("settings-depth");
-    for (const btn of Array.from(depth.querySelectorAll("button"))) {
+    const levelPicker = slot.getByTestId("seg-settings-level-picker");
+    for (const btn of Array.from(levelPicker.querySelectorAll("button"))) {
       expect(btn.className).toContain("h-[1.875rem]");
     }
     openTab(slot, "service");

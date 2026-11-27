@@ -62,11 +62,16 @@ describe("the «Waiting for you» screen", () => {
     expect(slot.getByTestId("owner-section-deferral_term").querySelector("details")?.hasAttribute("open")).toBe(false);
   });
 
-  // unreachable in the console: PushSettings (owner-push) moved out of OwnerWaitingBoard, pending System -> Settings migration; see report
-  it.skip("shows Telegram push settings on the waiting screen", async () => {
-    const slot = await mount({ owner_waiting: () => waiting(), owner_waiting_config: () => ({ enabled: true, quiet: "23:00-08:00", timezone: "Europe/Madrid" }) });
-    await slot.findByTestId("owner-waiting");
-    expect(slot.getByTestId("owner-push").textContent).toContain("Telegram");
+  it("shows Telegram push settings under System -> Settings", async () => {
+    const slot = await mountPage({
+      owner_waiting: () => waiting(),
+      owner_waiting_config: () => ({ enabled: true, quiet: "23:00-08:00", timezone: "Europe/Madrid" }),
+    });
+    fireEvent.click(await slot.findByTestId("console-nav-system-settings"));
+    fireEvent.click(await slot.findByTestId("settings-nav-notifications"));
+    const push = await slot.findByTestId("owner-push");
+    expect(push.textContent).toContain("Telegram");
+    slot.lifecycle.unmount();
   });
 
   it("shows the «now» rows first and folds the «later» ones; the badge counts «now» (harness batch 2026-11-02)", async () => {

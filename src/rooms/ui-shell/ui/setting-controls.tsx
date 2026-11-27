@@ -1,28 +1,42 @@
 import { createContext, useContext, type ReactNode } from "react";
-import { type CatalogRow } from "@lane-pilot/settings-catalog";
+import { GLOBAL_SETTINGS_PROJECT_ID, type CatalogRow } from "@lane-pilot/settings-catalog";
 import { t, type Locale, type LocalePreference } from "@lane-pilot/i18n";
 import { settingHelp, settingLabel, settingUsesNumericControl } from "./setting-copy";
-import { Badge } from "@lane-pilot/ui-kit";
-import { Button } from "@lane-pilot/ui-kit";
-import { Input } from "@lane-pilot/ui-kit";
-import { Label } from "@lane-pilot/ui-kit";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@lane-pilot/ui-kit";
-import { Switch } from "@lane-pilot/ui-kit";
-import { Skeleton } from "@lane-pilot/ui-kit";
-import { HelpSup } from "@lane-pilot/ui-kit";
+import { Badge, Button, Disclosure, HelpSup, Input, Label, Select, SelectContent, SelectItem, SelectTrigger, SelectValue, Skeleton, Surface, SurfaceBody, SurfaceHeader, Switch, usePanelLayout } from "@lane-pilot/ui-kit";
 import { presentEnumLabel } from "./enum-labels";
-import { usePanelLayout } from "@lane-pilot/ui-kit";
-import { Surface, SurfaceBody, SurfaceHeader } from "@lane-pilot/ui-kit";
 import { HELP_BY_KEY, ScreenPayload, asBoolean, numericUnit, reasonKey } from "./page-kit";
 
-export function SettingsGroup({ title, testId, help, children }: { title?: string; testId: string; help?: ReactNode; children: ReactNode }) {
+export function SettingsGroup({
+  title,
+  testId,
+  help,
+  more,
+  moreSummary,
+  moreTestId,
+  children,
+}: {
+  title?: string;
+  testId: string;
+  help?: ReactNode;
+  more?: ReactNode;
+  moreSummary?: ReactNode;
+  moreTestId?: string;
+  children: ReactNode;
+}) {
   return (
     <Surface testId={testId}>
       {title || help ? <SurfaceHeader>
         {title ? <h2 className="text-sm font-medium">{title}</h2> : null}
         {help}
       </SurfaceHeader> : null}
-      <SurfaceBody className="space-y-4">{children}</SurfaceBody>
+      <SurfaceBody className="space-y-4">
+        {children}
+        {more ? (
+          <Disclosure compact testId={moreTestId} summary={moreSummary ?? t("consoleSettingsMore")}>
+            <div className="space-y-4 pt-1">{more}</div>
+          </Disclosure>
+        ) : null}
+      </SurfaceBody>
     </Surface>
   );
 }
@@ -149,9 +163,13 @@ export function SettingHelp({ row }: { row: CatalogRow }) {
 
 export const InheritanceContext = createContext<{ locale: Locale; data: ScreenPayload | null; reset: (keys: string[]) => void } | null>(null);
 
-export function inheritanceSummary(storageKey: string, locale: Locale, data: ScreenPayload | null): string {
+export function inheritanceSummary(storageKey: string, _locale: Locale, data: ScreenPayload | null): string {
   if (data?.explicitKeys?.includes(storageKey)) return t("inheritSetHere");
-  if (data?.inheritedKeys?.includes(storageKey)) return t("inheritedFromGlobal");
+  if (data?.inheritedKeys?.includes(storageKey)) {
+    if (data.sectionId) return t("consoleSettingsInheritedFromProject");
+    if (data.projectId && data.projectId !== GLOBAL_SETTINGS_PROJECT_ID) return t("consoleSettingsInheritedFromSystem");
+    return t("inheritedFromGlobal");
+  }
   return t("inheritDefaultShort");
 }
 

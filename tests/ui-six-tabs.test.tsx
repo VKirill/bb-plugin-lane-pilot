@@ -53,7 +53,6 @@ describe("console setting routes and dictionaries", () => {
 
     fireEvent.click(await slot.findByTestId("console-nav-system-settings"));
     await slot.findByTestId("system-settings");
-    fireEvent.click(slot.getByTestId("settings-depth").querySelectorAll("button")[1]!);
 
     const seen = new Map<string, Set<string>>();
     const note = (route: string, panel: HTMLElement) => {
@@ -62,7 +61,7 @@ describe("console setting routes and dictionaries", () => {
 
     note("work", slot.getByTestId("work-panel-body"));
     for (const part of SEGMENTS.knowledge) {
-      fireEvent.click(slot.getByTestId(`seg-knowledge-${part}`));
+      fireEvent.click(slot.getByTestId(`settings-nav-${part}`));
       await waitFor(() => expect(slot.getByTestId(`settings-${part}`)).toBeTruthy());
       note("knowledge", slot.getByTestId(`settings-${part}`));
     }
@@ -113,7 +112,7 @@ describe("console setting routes and dictionaries", () => {
     fireEvent.click(slot.getByTestId("scope-switcher"));
     fireEvent.click(await slot.findByTestId("scope-all"));
 
-    await waitFor(() => expect(slot.getByTestId("project-header").querySelector("h1")?.textContent).toBe(en.navGlobals));
+    await waitFor(() => expect(slot.getByTestId("settings-screen").textContent).toContain(en.globalsHelp));
     for (const id of CONSOLE_SECTIONS) expect(slot.getByTestId(`console-nav-${id}`)).toBeTruthy();
     for (const id of SYSTEM_PAGES) expect(slot.getByTestId(`console-nav-system-${id}`)).toBeTruthy();
     slot.lifecycle.unmount();

@@ -27,7 +27,7 @@ import {
 import { Button, chromeIsCompact, contentStacksControls, useObservedWidth } from "@lane-pilot/ui-kit";
 import { ScreenPayload, useLpPoll, useLpRealtime } from "../../ui-shell/ui";
 import { readRunsWindow } from "../../runs/ui";
-import { BASIC_SETTING_KEYS, RoutingStats, WRITER_EFFORT, WRITER_MODEL, WRITER_PROVIDER, WRITER_SERVICE_TIER, diagnosticRows, extraSettingRows } from "./page-model";
+import { RoutingStats, WRITER_EFFORT, WRITER_MODEL, WRITER_PROVIDER, WRITER_SERVICE_TIER, diagnosticRows, extraSettingRows } from "./page-model";
 import { useLpPageSavers } from "./use-lp-page-savers";
 
 export function useLanePilotPage({
@@ -283,14 +283,13 @@ export function useLanePilotPage({
     const map = new Map<string, CatalogRow[]>();
     for (const section of SECTION_ORDER) map.set(section, []);
     for (const row of extraSettingRows()) {
-      if (settingsDepth === "basic" && !BASIC_SETTING_KEYS.has(row.storageKey)) continue;
       const list = map.get(row.section) ?? [];
       list.push(row);
       map.set(row.section, list);
     }
     return SECTION_ORDER.filter((section) => (map.get(section) ?? []).length > 0)
       .map((section) => ({ section, rows: map.get(section) ?? [] }));
-  }, [settingsDepth, locale]);
+  }, [locale]);
 
   const chooseProject = (next: string) => {
     if (dataRef.current) projectCache.current.set(cacheKey(dataRef.current.projectId, dataRef.current.sectionId), { data: dataRef.current, drafts: { ...draftsRef.current }, writer: writerDraftRef.current });

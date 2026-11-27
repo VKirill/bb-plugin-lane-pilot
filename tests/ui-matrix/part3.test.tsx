@@ -78,7 +78,7 @@ describe("Lane Pilot UI", () => {
     const sections = vi.fn(() => ({ sections: [] }));
     const slot = await mountPage({ get_screen: screen, list_sections: sections }, { projectId:"proj_ui", threadId:null }, "", false);
     openTab(slot, "work");
-    await slot.findByTestId("project-header");
+    await slot.findByTestId("settings-screen");
     expect(screen).toHaveBeenCalledTimes(1);
     const calls = sections.mock.calls.length;
     openTab(slot, "team");
@@ -86,7 +86,7 @@ describe("Lane Pilot UI", () => {
     fireEvent.click(slot.getByTestId("console-nav-work"));
     await slot.findByTestId("console-work");
     openTab(slot, "work");
-    await slot.findByTestId("project-header");
+    await slot.findByTestId("settings-screen");
     expect(screen).toHaveBeenCalledTimes(1);
     expect(sections.mock.calls.length).toBe(calls + 1);
     slot.lifecycle.unmount();
@@ -115,20 +115,6 @@ describe("Lane Pilot UI", () => {
     await slot.findByTestId("overview-active-row-task:lprun_new:task_2");
     expect(overviewCalls.mock.calls.length).toBeGreaterThanOrEqual(2);
     expect(screen).toHaveBeenCalledTimes(1);
-    slot.lifecycle.unmount();
-  });
-
-  // unreachable in the console: ConsoleRoutes unmounts inactive sections instead of keeping all 6 tabs mounted with hidden; see report
-  it.skip("mounts a tab on its first open instead of all six at once, and keeps it after", async () => {
-    const slot = await mountPage({}, { projectId:"proj_ui", threadId:null }, "", false);
-    await slot.findByTestId("tab-work");
-    expect(slot.getByTestId("work-panel").children).toHaveLength(0);
-    expect(slot.getByTestId("runs-panel").children).toHaveLength(0);
-    openTab(slot, "monitor");
-    await slot.findByTestId("task-board");
-    expect(slot.getByTestId("work-panel").children).toHaveLength(0);
-    openTab(slot, "overview");
-    expect(slot.getByTestId("task-board")).toBeTruthy();
     slot.lifecycle.unmount();
   });
 
@@ -162,14 +148,14 @@ describe("Lane Pilot UI", () => {
       },
     });
     openTab(slot, "work");
-    await slot.findByTestId("project-header");
+    await slot.findByTestId("settings-screen");
     fireEvent.click(slot.getByTestId("scope-switcher"));
     fireEvent.click(await slot.findByTestId("scope-all"));
-    await waitFor(() => expect(slot.getByTestId("project-header").querySelector("h1")?.textContent).toBe(en.navGlobals));
+    await waitFor(() => expect(slot.getByTestId("settings-screen").textContent).toContain(en.globalsHelp));
     openTab(slot, "team");
     expect(slot.queryByTestId("main-agent")).toBeNull();
     openTab(slot, "work");
-    fireEvent.click(slot.getByRole("button", { name: en.settingsAdvanced }));
+    fireEvent.click(slot.getByTestId("settings-more-work").querySelector("summary")!);
     const field = await slot.findByTestId("field-s371");
     fireEvent.click(field.querySelector("button[role='combobox']") as HTMLButtonElement);
     fireEvent.click(await slot.findByRole("option", { name: /project tree/i }));

@@ -742,3 +742,139 @@ describe("HealthScreen (P15)", () => {
     }
   });
 });
+
+describe("SettingsScreen (P16)", () => {
+  beforeEach(() => {
+    cleanup();
+    document.body.innerHTML = "";
+    setLocaleOverride("ru");
+  });
+
+  afterEach(() => {
+    cleanup();
+    setLocaleOverride(null);
+  });
+
+  it("renders 4 groups without Basic/Advanced toggle, switches levels, reveals rare fields under «Ещё», shows inheritance, and saves settings", async () => {
+    const saves: Array<Record<string, unknown>> = [];
+    const resets: Array<Record<string, unknown>> = [];
+    const setLocales: Array<Record<string, unknown>> = [];
+    const pushSaves: Array<Record<string, unknown>> = [];
+
+    const app = await loadPluginApp(() => import("../app"));
+    const slot = renderSlot(
+      app.navPanels[0]!,
+      { subPath: "system/settings" },
+      {
+        context: { projectId: "proj_ui", threadId: null },
+        rpc: {
+          get_preferences: () => ({ locale: "ru", preference: "ru", lastProjectId: "proj_ui" }),
+          set_locale: (input: unknown) => {
+            setLocales.push(input as Record<string, unknown>);
+            const { locale } = input as { locale: string };
+            return { locale: locale === "auto" ? "ru" : locale, preference: locale };
+          },
+          list_projects: () => ({ projects: [{ id: "proj_ui", name: "SelfyStudio" }], lastProjectId: "proj_ui" }),
+          list_sections: () => ({ sections: [{ id: "sec_web", parentId: null, name: "Web", path: "apps/web", kind: "folder" }] }),
+          get_screen: (input: unknown) => {
+            const { projectId, sectionId } = input as { projectId: string; sectionId?: string };
+            const base = screenFixture();
+            return {
+              ...base,
+              projectId,
+              sectionId: sectionId ?? null,
+              values: {
+                ...base.values,
+                quality_mode: "full",
+                "adoc.040": "worktree",
+                "helper.placement": "plugin",
+              },
+              explicitKeys: projectId === "*" ? ["quality_mode"] : sectionId ? ["adoc.040"] : ["quality_mode"],
+              inheritedKeys: projectId === "*" ? [] : sectionId ? ["quality_mode", "helper.placement"] : ["adoc.040", "helper.placement"],
+            };
+          },
+          save_setting: (input: unknown) => {
+            saves.push(input as Record<string, unknown>);
+            return { ok: true, conflict: false, version: 2, value: (input as { value: unknown }).value };
+          },
+          reset_project_settings: (input: unknown) => {
+            resets.push(input as Record<string, unknown>);
+            return { ok: true, conflict: false, values: {}, versions: {} };
+          },
+          docs_overview: () => ({ places: [] }),
+          owner_waiting: () => ({ generatedAt: 1, items: [], counts: {}, overnight: { windowMs: 1, red: [], accepted: 0, rulesAdopted: 0, rulesConfirmed: 0 }, now: 0, answered: { owner: 0, agent: 0, lead: 0, janitor: 0 } }),
+          owner_waiting_config: (input: unknown) => {
+            const patch = (input as { patch?: Record<string, string> })?.patch;
+            if (patch) pushSaves.push(patch);
+            return { enabled: patch?.enabled === "on" || !patch, quiet: patch?.quiet ?? "23:00-08:00", timezone: patch?.timezone ?? "Europe/Madrid" };
+          },
+          get_routing_hint: () => ({ current: null, stats: [] }),
+        },
+      },
+    );
+
+    await slot.findByTestId("settings-screen");
+    // Old ProjectHeader and Basic/Advanced toggle are removed.
+    expect(slot.queryByTestId("settings-depth")).toBeNull();
+    expect(slot.queryByTestId("project-header")).toBeNull();
+
+    // Project level active by default when context has proj_ui; inherited field shows «Наследуется от системы».
+    const screenEl = slot.getByTestId("settings-screen");
+    expect(within(slot.getByTestId("seg-settings-level-picker")).getByRole("button", { name: "Проект" }).getAttribute("aria-pressed")).toBe("true");
+    expect(screenEl.textContent).toContain("SelfyStudio");
+    expect(slot.getByTestId("field-s040").textContent).toContain("Наследуется от системы");
+    expect(slot.getByTestId("field-s423").textContent).toContain("Задано в этом проекте");
+
+    // «Ещё» inside Work starts collapsed and reveals former advanced fields when clicked.
+    const workMore = slot.getByTestId("settings-more-work");
+    expect(workMore.hasAttribute("open")).toBe(false);
+    fireEvent.click(workMore.querySelector("summary")!);
+    expect(workMore.hasAttribute("open")).toBe(true);
+    const placementField = within(workMore).getByTestId("field-s371");
+    expect(placementField.textContent).toContain("Наследуется от системы");
+
+    // Saving a setting calls save_setting.
+    fireEvent.click(placementField.querySelector("button[role='combobox']")!);
+    fireEvent.click(await slot.findByRole("option", { name: "В дереве проекта" }));
+    await waitFor(() =>
+      expect(saves).toContainEqual(expect.objectContaining({ projectId: "proj_ui", key: "helper.placement", value: "project_tree" })),
+    );
+
+    // Switching level to Раздел shows «Наследуется от проекта».
+    fireEvent.click(within(slot.getByTestId("seg-settings-level-picker")).getByRole("button", { name: "Раздел" }));
+    await waitFor(() => expect(slot.getByTestId("field-s423").textContent).toContain("Наследуется от проекта"));
+
+    // Switching level to Система queries projectId "*".
+    fireEvent.click(within(slot.getByTestId("seg-settings-level-picker")).getByRole("button", { name: "Система" }));
+    await waitFor(() =>
+      expect(within(slot.getByTestId("seg-settings-level-picker")).getByRole("button", { name: "Система" }).getAttribute("aria-pressed")).toBe("true"),
+    );
+
+    // Memory group «Ещё» reveals memory advanced settings.
+    fireEvent.click(slot.getByTestId("settings-nav-memory"));
+    const memoryMore = slot.getByTestId("settings-more-memory");
+    expect(memoryMore.hasAttribute("open")).toBe(false);
+    fireEvent.click(memoryMore.querySelector("summary")!);
+    expect(memoryMore.hasAttribute("open")).toBe(true);
+    expect(within(memoryMore).getByTestId("field-s104")).toBeTruthy();
+
+    // Docs group shows docs.enabled and «Ещё» reveals onboarding.depth.
+    fireEvent.click(slot.getByTestId("settings-nav-docs"));
+    expect(slot.getByTestId("field-s115")).toBeTruthy();
+    const docsMore = slot.getByTestId("settings-more-docs");
+    expect(docsMore.hasAttribute("open")).toBe(false);
+    fireEvent.click(docsMore.querySelector("summary")!);
+    expect(docsMore.querySelector("[data-storage-key='onboarding.depth']")).toBeTruthy();
+
+    // Language & notifications group wires LocaleControls -> set_locale and PushSettings -> owner_waiting_config.
+    fireEvent.click(slot.getByTestId("settings-nav-notifications"));
+    const localeGroup = slot.getByTestId("settings-locale");
+    fireEvent.click(within(localeGroup).getByRole("button", { name: "EN" }));
+    await waitFor(() => expect(setLocales).toContainEqual(expect.objectContaining({ locale: "en" })));
+    const pushBlock = await slot.findByTestId("owner-push");
+    fireEvent.click(within(pushBlock).getByTestId("owner-push-enabled"));
+    await waitFor(() => expect(pushSaves.length).toBeGreaterThanOrEqual(1));
+
+    slot.lifecycle.unmount();
+  });
+});

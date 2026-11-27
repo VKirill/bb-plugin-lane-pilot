@@ -93,9 +93,6 @@ describe("the table «role -> model» on the Team tab", () => {
     slot.lifecycle.unmount();
   });
 
-  // unreachable in the console: per-row source labels (role-model-source-*), roleModelWhy_* rationale, roleModelsHelp prose, and internal-only ROLE_TABLE rows are not rendered in the merged Agents & loadout table; see report
-  it.skip("shows where each ROLE_TABLE model comes from (set here / earlier setting) and why", () => {});
-
   it("the roster above names what a role runs on instead of a dash: the table's row with its pool, or the task writer's model", async () => {
     installPickerTestDriver();
     const { rpc, calls } = tableRpc(view({ analyst: { source: "table", own: true, version: 1, model: "claude-opus-5-5", effort: "high", sourceKey: "role_model.analyst", pool: [{ providerId: "codex", model: "gpt-6.1-sol", effort: null }] } }));
@@ -217,8 +214,6 @@ describe("the table «role -> model» on the Team tab", () => {
     slot.lifecycle.unmount();
   });
 
-  // unreachable in the console: service-jobs-section / classify fallback list is not rendered in the merged Agents & loadout screen; see report
-  it.skip("renders service jobs and their fallback models", () => {});
 });
 
 describe("the strings of the table", () => {

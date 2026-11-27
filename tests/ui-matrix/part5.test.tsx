@@ -85,7 +85,7 @@ describe("Lane Pilot UI", () => {
       } }),
     });
     openTab(slot, "work");
-    const field = await slot.findByTestId("code-critique-policy").then((panel) => panel.querySelector("[data-testid='field-s380']") as HTMLElement);
+    const field = await slot.findByTestId("work-code").then((panel) => panel.querySelector("[data-testid='field-s380']") as HTMLElement);
     expect(field).toBeTruthy();
     expect(field.querySelector("[role='slider']")).toBeNull();
     const input = field.querySelector("input[type='number']") as HTMLInputElement;
@@ -105,15 +105,17 @@ describe("Lane Pilot UI", () => {
     expect(slot.getByTestId("system-agents").querySelector("[data-testid='browser-qa-host']")).toBeTruthy();
     openTab(slot, "work");
     expect(slot.getByTestId("work-panel-body").querySelector("[data-testid='field-s004']")).toBeNull();
-    expect(slot.getByTestId("settings-execution")).toBeTruthy();
+    expect(slot.getByTestId("settings-work")).toBeTruthy();
     expect(slot.queryByTestId("settings-search")).toBeNull();
-    expect(slot.getByTestId("work-code").hidden).toBe(true);
-    fireEvent.click(slot.getByTestId("seg-knowledge-memory"));
-    expect(slot.getByTestId("memory-advanced").hidden).toBe(true);
-    fireEvent.click(slot.getByRole("button", { name: en.settingsAdvanced }));
+    expect(slot.getByTestId("settings-more-work").hasAttribute("open")).toBe(false);
+    fireEvent.click(slot.getByTestId("settings-nav-memory"));
+    expect(slot.getByTestId("settings-more-memory").hasAttribute("open")).toBe(false);
+    fireEvent.click(slot.getByTestId("settings-more-memory").querySelector("summary")!);
+    expect(slot.getByTestId("settings-more-memory").hasAttribute("open")).toBe(true);
+    fireEvent.click(slot.getByTestId("settings-nav-work"));
+    fireEvent.click(slot.getByTestId("settings-more-work").querySelector("summary")!);
     expect(slot.getByTestId("settings-group-workspace")).toBeTruthy();
-    expect(slot.getByTestId("work-code").hidden).toBe(false);
-    expect(slot.getByTestId("memory-advanced").hidden).toBe(false);
+    expect(slot.getByTestId("settings-more-work").hasAttribute("open")).toBe(true);
     expect(slot.getByTestId("memory-advanced").textContent).toContain(en.settingMemoryMaintain);
     expect(slot.getByTestId("memory-advanced").textContent).toContain(en.fieldUnitTokens);
     expect(slot.getByTestId("memory-advanced").textContent).not.toContain("memory.core_budget");
