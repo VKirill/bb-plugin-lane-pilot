@@ -22,6 +22,7 @@ import { stageReturnRpc } from "../../stage-return/server";
 import { workGraphRpc } from "../../work-graph/server";
 import { cardsRpc, projectScopeOf, sessionMemoryRpc } from "../../memory/server";
 import { createProjectGit, getBootstrapRecord } from "../../project-git/server";
+import { repoTrustRpc } from "../../repo-trust/server";
 import type { PluginRpcHandlers } from "@get-bb/plugin-sdk";
 import type { Services } from "../../services";
 
@@ -278,11 +279,15 @@ export function registerRpc(ctx: ServerCore, services: Services, contract: typeo
     money_status: async () => services.money.status(),
     conveyor: async ({ set, reason }: { set?: "on" | "off"; reason?: string }) => set ? await setConveyor(ctx.bb.storage.kv as never, set === "on", reason) : await conveyorState(ctx.bb.storage.kv as never),
     ...sessionMemoryRpc(ctx, services),
+    ...cardsRpc(ctx),
+    ...repoTrustRpc(ctx, {
+      projectPlace: (projectId) => projectPlace(ctx, services, projectId),
+      probe: scopeGit.probe,
+    }),
     ...createWorkflowArchitect(ctx, services).rpc,
     ...architectStartRpc(ctx, services),
   } satisfies Partial<RpcHandlers>;
-  const extra = "memory_cards_list" in contract ? cardsRpc(ctx) : {};
-  const handlers = { ...own, ...extra, ...roomRpcHandlers(ctx, services) } as Record<string, unknown> as RpcHandlers;
+  const handlers = { ...own, ...roomRpcHandlers(ctx, services) } as Record<string, unknown> as RpcHandlers;
   // The contract type no longer proves every key has a handler once rooms add theirs, so the start does.
   const missing = Object.keys(contract).filter((key) => !(key in handlers));
   if (missing.length) throw new Error(`rpc keys without a handler: ${missing.join(", ")}`);

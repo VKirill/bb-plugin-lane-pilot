@@ -23,6 +23,7 @@ export type StaffTab = (typeof STAFF_TABS)[number];
 export type ConsoleRoute = {
   section: ConsoleSection;
   view?: string;
+  week?: string;
   page?: SystemPage;
   projectId?: string;
   sectionId?: string;
@@ -45,6 +46,7 @@ export const LEGACY_SCOPES: Record<string, ConsoleRoute> = {
 
 const SYSTEM_PAGE_SET = new Set<string>(SYSTEM_PAGES);
 const STAFF_TAB_SET = new Set<string>(STAFF_TABS);
+const ISO_WEEK_RE = /^\d{4}-W\d{2}$/;
 const SECTION_VIEW_SETS = {
   decisions: new Set<string>(SECTION_VIEWS.decisions),
   work: new Set<string>(SECTION_VIEWS.work),
@@ -126,6 +128,9 @@ export function parseConsoleRoute(subPath: string): ConsoleRoute {
     case "overview":
       return { section: "overview" };
     case "decisions":
+      if (second === "desk" && third && ISO_WEEK_RE.test(third)) {
+        return { section: "decisions", view: "desk", week: third };
+      }
       return second && SECTION_VIEW_SETS.decisions.has(second)
         ? { section: "decisions", view: second }
         : { section: "decisions" };
@@ -165,6 +170,9 @@ export function buildConsolePath(route: ConsoleRoute): string {
     case "overview":
       return "overview";
     case "decisions":
+      if (route.view === "desk" && route.week && ISO_WEEK_RE.test(route.week)) {
+        return `decisions/desk/${route.week}`;
+      }
       return route.view && SECTION_VIEW_SETS.decisions.has(route.view)
         ? `decisions/${route.view}`
         : "decisions";

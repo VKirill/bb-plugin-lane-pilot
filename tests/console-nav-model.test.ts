@@ -29,6 +29,7 @@ describe("console nav-model", () => {
       { section: "overview" },
       { section: "decisions" },
       ...SECTION_VIEWS.decisions.map((view): ConsoleRoute => ({ section: "decisions", view })),
+      { section: "decisions", view: "desk", week: "2026-W48" },
       { section: "staff" },
       { section: "staff", view: "hire" },
       { section: "staff", staffRef: { projectId: "proj-1", domain: "marketing" } },

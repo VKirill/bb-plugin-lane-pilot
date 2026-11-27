@@ -43,6 +43,7 @@ import { room as ownerPresence } from "./owner-presence/server";
 import { room as fileCards } from "./file-cards/server";
 import { room as money } from "./money/server";
 import { room as evolve } from "./evolve/server";
+import { room as repoTrust } from "./repo-trust/server";
 import type { Services } from "./services";
 
 /**
@@ -94,6 +95,7 @@ export const rooms: readonly Room<Services>[] = [
   fileCards,
   money,
   evolve,
+  repoTrust,
 ];
 
 /** Typed settings contributed by registered rooms (in registry order). */

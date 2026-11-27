@@ -467,3 +467,278 @@ describe("console task page (P6)", () => {
     slot.lifecycle.unmount();
   });
 });
+
+describe("console history screen (P8)", () => {
+  beforeEach(() => {
+    cleanup();
+    document.body.innerHTML = "";
+  });
+
+  afterEach(() => {
+    cleanup();
+    setLocaleOverride(null);
+    document.documentElement.lang = "en";
+    vi.restoreAllMocks();
+  });
+
+  const HISTORY_ROWS = [
+    {
+      runId: "run_h1",
+      taskId: "task_acc_1",
+      projectId: "proj_ui",
+      title: "Fix offer typos",
+      outcome: "accepted" as const,
+      attempts: 1,
+      finishedAt: 1_790_000_000_000,
+      durationMs: 9 * 60_000,
+      costUsd: 0.12,
+      mergeSha: "77be0d1abcdef0123456789",
+      failureReason: null,
+      lessonMemoryId: null,
+    },
+    {
+      runId: "run_h2",
+      taskId: "task_rew_2",
+      projectId: "proj_alpha",
+      title: "Retry order button",
+      outcome: "reworked" as const,
+      attempts: 2,
+      finishedAt: 1_789_900_000_000,
+      durationMs: 54 * 60_000,
+      costUsd: 0.71,
+      mergeSha: null,
+      failureReason: null,
+      lessonMemoryId: null,
+    },
+    {
+      runId: "run_h3",
+      taskId: "task_fail_3",
+      projectId: "proj_ui",
+      title: "CRM order import",
+      outcome: "failed" as const,
+      attempts: 3,
+      finishedAt: 1_789_800_000_000,
+      durationMs: 130 * 60_000,
+      costUsd: 3.9,
+      mergeSha: null,
+      failureReason: "Legacy CRM emits three incompatible date formats",
+      lessonMemoryId: "mem_lesson_9",
+    },
+    {
+      runId: "run_h4",
+      taskId: "task_can_4",
+      projectId: "proj_alpha",
+      title: "Ad headline experiment",
+      outcome: "canceled" as const,
+      attempts: 1,
+      finishedAt: 1_789_700_000_000,
+      durationMs: null,
+      costUsd: 0,
+      mergeSha: null,
+      failureReason: "Stopped by owner",
+      lessonMemoryId: null,
+    },
+  ];
+
+  it("renders history rows, copies merge SHA, filters by outcome, and loads more via cursor", async () => {
+    setLocaleOverride("en");
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      value: { writeText },
+      configurable: true,
+    });
+
+    const historyCalls: unknown[] = [];
+    const slot = await mountWork({
+      subPath: "memory/history",
+      rpc: {
+        task_history: (input) => {
+          historyCalls.push(input);
+          const { outcome, cursor } = input as { outcome?: string; cursor?: string };
+          if (outcome) {
+            return {
+              rows: HISTORY_ROWS.filter((r) => r.outcome === outcome),
+              nextCursor: null,
+            };
+          }
+          if (cursor === "cur_page_2") {
+            return { rows: HISTORY_ROWS.slice(2), nextCursor: null };
+          }
+          return { rows: HISTORY_ROWS.slice(0, 2), nextCursor: "cur_page_2" };
+        },
+      },
+    });
+
+    await slot.findByTestId("history-screen");
+    const row1 = await slot.findByTestId("history-row-task_acc_1");
+    expect(row1.textContent).toContain("Fix offer typos");
+    expect(row1.textContent).toContain("UI test");
+    expect(row1.textContent).toContain("9m");
+    expect(row1.textContent).toContain("$0.12");
+    expect(row1.textContent).toContain("77be0d1");
+    expect(slot.getByTestId("history-outcome-task_acc_1").textContent).toContain("accepted");
+
+    // Copy merge SHA calls navigator.clipboard.writeText with the full SHA.
+    fireEvent.click(slot.getByTestId("history-copy-sha-task_acc_1"));
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith("77be0d1abcdef0123456789"));
+
+    // Cursor «Load more» appends the next page and hides when nextCursor is null.
+    const loadMoreBtn = slot.getByTestId("history-load-more");
+    fireEvent.click(loadMoreBtn);
+    await slot.findByTestId("history-row-task_fail_3");
+    await slot.findByTestId("history-row-task_can_4");
+    expect(slot.queryByTestId("history-load-more")).toBeNull();
+    expect(historyCalls.some((c) => (c as { cursor?: string }).cursor === "cur_page_2")).toBe(true);
+
+    // Outcome filter queries task_history with outcome.
+    fireEvent.click(slot.getByTestId("history-filter-failed"));
+    await waitFor(() => {
+      expect(slot.queryByTestId("history-row-task_fail_3")).toBeTruthy();
+      expect(slot.queryByTestId("history-row-task_acc_1")).toBeNull();
+    });
+    expect(historyCalls.some((c) => (c as { outcome?: string }).outcome === "failed")).toBe(true);
+    slot.lifecycle.unmount();
+  });
+
+  it("expands failed/canceled row with task_card + task_acceptance_card, links to plan & lesson memory, and retries via ConfirmDialog", async () => {
+    setLocaleOverride("en");
+    const returnCalls: unknown[] = [];
+    const slot = await mountWork({
+      subPath: "memory/history",
+      rpc: {
+        task_history: () => ({ rows: HISTORY_ROWS.slice(2), nextCursor: null }),
+        task_card: (input) => {
+          const { runId, taskId } = input as { runId: string; taskId: string };
+          return {
+            ...cardFixture(),
+            id: taskId,
+            projectId: runId === "run_h4" ? "proj_alpha" : "proj_ui",
+            state: taskId === "task_can_4" ? "canceled" : "blocked",
+            reason: taskId === "task_can_4" ? "Stopped by owner" : "Legacy CRM emits three incompatible date formats",
+            plan: "## Plan\nNormalize dates",
+          };
+        },
+        task_acceptance_card: () => ({
+          contract: { objective: "Import CRM orders", acceptance: ["Dates normalized"], ownsPaths: ["src/crm.ts"] },
+          risk: "medium",
+          base: null,
+          receipts: [
+            { stageId: "verification", state: "failed", proof: "code", proofKind: "checks", reason: "2 date tests failed", model: null, updatedAt: 1 },
+          ],
+          gates: [],
+          planFact: null,
+          baseline: {
+            state: "ran",
+            verdict: "red",
+            action: "proceed",
+            mode: "check",
+            summary: "1 red",
+            baseSha: "abc1234",
+            at: 1,
+            checks: [{ command: "npm test -- crm", status: "red", note: "Invalid date", cached: false }],
+            turnedRed: null,
+          },
+          notRun: [],
+          cost: { state: "measured", usd: 3.9, tokens: 5000, note: null, attempts: 3, measured: 3 },
+          awaitsWord: false,
+        }),
+        task_return_stage: (input) => {
+          returnCalls.push(input);
+          if ((input as { note: string }).note === "trigger-refusal") {
+            return { ok: false, state: "refused", reason: "Run is already closed" };
+          }
+          return { ok: true, state: "handed_to_pm" };
+        },
+        memory_records_list: () => ({
+          records: [
+            {
+              id: "mem_lesson_9",
+              kind: "note",
+              audience: "subagent",
+              content: "Normalize CRM dates before import.",
+              concepts: ["lesson"],
+              createdAt: 1_789_800_000_000,
+              rule: false,
+              useCount: 1,
+              acceptedCount: 1,
+              originTaskId: "task_fail_3",
+              originRunId: "run_h3",
+              sourceFileId: null,
+              noTrace: false,
+              origin: "lesson",
+              scope: [],
+              sources: 1,
+            },
+          ],
+        }),
+        memory_cards_list: () => ({ cards: [] }),
+      },
+    });
+
+    await slot.findByTestId("history-row-task_fail_3");
+
+    // Expand failed row -> fetches task_card + task_acceptance_card and shows reason, checks, plan link, lesson link.
+    fireEvent.click(slot.getByTestId("history-toggle-task_fail_3"));
+    await slot.findByTestId("history-detail-task_fail_3");
+    await slot.findByTestId("history-detail-checks-task_fail_3");
+    expect(slot.getByTestId("history-detail-reason-task_fail_3").textContent).toContain(
+      "Legacy CRM emits three incompatible date formats",
+    );
+    expect(slot.getByTestId("history-detail-checks-task_fail_3").textContent).toContain("npm test -- crm");
+    expect(slot.getByTestId("history-detail-checks-task_fail_3").textContent).toContain("2 date tests failed");
+
+    // «Retry with new plan» opens ConfirmDialog, requires a note, and calls task_return_stage { to: "planning", by: "owner", note }.
+    fireEvent.click(slot.getByTestId("history-retry-plan-task_fail_3"));
+    const dialog = await slot.findByRole("alertdialog");
+    const confirmBtn = dialog.querySelectorAll("button")[1]!;
+    fireEvent.click(confirmBtn);
+    await waitFor(() =>
+      expect(dialog.querySelector("[role='alert']")?.textContent).toContain("Enter a note before returning"),
+    );
+    expect(returnCalls).toHaveLength(0);
+
+    // Server refusal stays open and displays the reason.
+    fireEvent.change(slot.getByTestId("history-retry-note"), { target: { value: "trigger-refusal" } });
+    fireEvent.click(confirmBtn);
+    await waitFor(() =>
+      expect(dialog.querySelector("[role='alert']")?.textContent).toContain("Run is already closed"),
+    );
+
+    // Valid note succeeds and closes dialog.
+    fireEvent.change(slot.getByTestId("history-retry-note"), { target: { value: "Parse ISO, RU, and US dates" } });
+    fireEvent.click(confirmBtn);
+    await waitFor(() =>
+      expect(returnCalls).toContainEqual({
+        ref: "task_fail_3",
+        to: "planning",
+        by: "owner",
+        note: "Parse ISO, RU, and US dates",
+      }),
+    );
+    await waitFor(() => expect(slot.queryByRole("alertdialog")).toBeNull());
+
+    // Lesson memory link routes to memory/records for that project and selects the lesson record.
+    fireEvent.click(slot.getByTestId("history-lesson-link-task_fail_3"));
+    await slot.findByTestId("memory-screen");
+    await waitFor(() =>
+      expect(slot.getByTestId("memory-detail-text").textContent).toContain("Normalize CRM dates before import."),
+    );
+
+    // Navigate back to history, expand canceled row, and click plan link -> routes to work/task/<runId>/<taskId>.
+    fireEvent.click(slot.getByTestId("seg-memory-view-history"));
+    await slot.findByTestId("history-row-task_can_4");
+    fireEvent.click(slot.getByTestId("history-toggle-task_can_4"));
+    await slot.findByTestId("history-detail-task_can_4");
+    expect(slot.queryByTestId("history-lesson-link-task_can_4")).toBeNull();
+
+    fireEvent.click(slot.getByTestId("history-plan-link-task_can_4"));
+    await waitFor(() =>
+      expect(slot.navigateCalls).toContainEqual({
+        method: "toPluginPanel",
+        path: "lane-pilot",
+        options: { subPath: "work/task/run_h4/task_can_4" },
+      }),
+    );
+    slot.lifecycle.unmount();
+  });
+});

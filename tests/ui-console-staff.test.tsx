@@ -1,8 +1,9 @@
 /** @vitest-environment jsdom */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, configure, fireEvent } from "@testing-library/react";
+import { cleanup, configure, fireEvent, waitFor } from "@testing-library/react";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
 import { setLocaleOverride } from "@lane-pilot/i18n";
+import { toast } from "sonner";
 import { boardFixture, cardFixture, screenFixture } from "./ui-harness";
 
 vi.setConfig({ testTimeout: 60_000 });
@@ -226,7 +227,7 @@ describe("console staff list (P3)", () => {
     fireEvent.click(slot.getByTestId("console-nav-staff"));
     await slot.findByTestId("staff-hire-btn");
     fireEvent.click(slot.getByTestId("staff-hire-btn"));
-    await slot.findByTestId("staff-hire-placeholder");
+    await slot.findByTestId("staff-hire-wizard");
     expect(slot.inspection.navigateCalls).toContainEqual({
       method: "toPluginPanel",
       path: "lane-pilot",
@@ -253,6 +254,251 @@ describe("console staff list (P3)", () => {
     const errCard = await slot.findByTestId("staff-project-error-proj_beta");
     expect(errCard.textContent).toContain("Beta blog");
     expect(errCard.textContent).toContain("beta overview unavailable");
+
+    slot.lifecycle.unmount();
+  });
+});
+
+describe("console hire wizard (P3a)", () => {
+  beforeEach(() => {
+    cleanup();
+    document.body.innerHTML = "";
+    setLocaleOverride("ru");
+    vi.mocked(toast.success).mockClear();
+    vi.mocked(toast.error).mockClear();
+  });
+
+  afterEach(() => {
+    cleanup();
+    setLocaleOverride(null);
+    document.documentElement.lang = "en";
+  });
+
+  it("marketer path runs mkt-project-intake via workflow_run and routes to Decisions with toast", async () => {
+    const workflowRunCalls: unknown[] = [];
+    const sectionsCalls: unknown[] = [];
+    const slot = await mountStaff({
+      subPath: "staff/hire",
+      rpc: {
+        list_sections: (input) => {
+          sectionsCalls.push(input);
+          return {
+            sections: [
+              { id: "sec_web", parentId: null, name: "Web app", path: "apps/web", kind: "folder" },
+            ],
+          };
+        },
+        workflow_run: (input) => {
+          workflowRunCalls.push(input);
+          return { ok: true, runId: "wf_intake_1", created: true, status: "running" };
+        },
+      },
+    });
+
+    await slot.findByTestId("hire-step-role");
+    expect(slot.queryByTestId("hire-role-growth-marketer")).not.toBeNull();
+    expect(slot.queryByTestId("hire-role-copy-lead")).not.toBeNull();
+
+    // Select marketer and advance to step 2 (project & section).
+    fireEvent.click(slot.getByTestId("hire-role-growth-marketer"));
+    fireEvent.click(slot.getByTestId("hire-next-project"));
+    await slot.findByTestId("hire-step-project");
+    await waitFor(() => {
+      expect(sectionsCalls).toContainEqual({ projectId: "proj_alpha" });
+    });
+
+    // Advance to step 3 and start onboarding.
+    fireEvent.click(slot.getByTestId("hire-next-start"));
+    await slot.findByTestId("hire-step-intake");
+    fireEvent.click(slot.getByTestId("hire-start-intake"));
+
+    await waitFor(() => {
+      expect(workflowRunCalls).toEqual([
+        {
+          id: "mkt-project-intake",
+          projectId: "proj_alpha",
+          inputs: {},
+          source: "manual",
+        },
+      ]);
+    });
+
+    expect(vi.mocked(toast.success)).toHaveBeenCalledWith(
+      expect.stringContaining("вопросы придут сюда"),
+    );
+    expect(slot.inspection.navigateCalls).toContainEqual({
+      method: "toPluginPanel",
+      path: "lane-pilot",
+      options: { subPath: "decisions/waiting" },
+    });
+    await slot.findByTestId("console-decisions");
+
+    slot.lifecycle.unmount();
+  });
+
+  it("shows missing requirements list when workflow_run preflight refuses", async () => {
+    const slot = await mountStaff({
+      subPath: "staff/hire",
+      rpc: {
+        workflow_run: () => ({
+          ok: false,
+          reason: "requirements_missing",
+          message: "Missing requirements for onboarding",
+          missing: ["project_url"],
+          issues: [
+            {
+              kind: "secret",
+              name: "YANDEX_DIRECT_TOKEN",
+              level: "missing",
+              message: "Secret YANDEX_DIRECT_TOKEN is not configured",
+            },
+          ],
+          envRequests: [
+            {
+              name: "YANDEX_DIRECT_TOKEN",
+              kind: "secret",
+              purpose: "Read Yandex Direct campaigns",
+            },
+          ],
+        }),
+      },
+    });
+
+    await slot.findByTestId("hire-step-role");
+    fireEvent.click(slot.getByTestId("hire-next-project"));
+    await slot.findByTestId("hire-step-project");
+    fireEvent.click(slot.getByTestId("hire-next-start"));
+    await slot.findByTestId("hire-step-intake");
+
+    fireEvent.click(slot.getByTestId("hire-start-intake"));
+    const refused = await slot.findByTestId("hire-workflow-refused");
+    const reqList = await slot.findByTestId("hire-refusal-requirements");
+    expect(refused.textContent).toContain("Missing requirements for onboarding");
+    expect(reqList.textContent).toContain("Secret YANDEX_DIRECT_TOKEN is not configured");
+    expect(reqList.textContent).toContain("project_url");
+    expect(reqList.textContent).toContain("YANDEX_DIRECT_TOKEN: Read Yandex Direct campaigns");
+
+    slot.lifecycle.unmount();
+  });
+
+  it("copy-lead path opens ScheduleForm prefilled with kind agent, agentId copy-lead, and projectId", async () => {
+    const previewCalls: unknown[] = [];
+    const upsertCalls: unknown[] = [];
+    const slot = await mountStaff({
+      subPath: "staff/hire",
+      rpc: {
+        schedule_agents: () => ({
+          agents: [
+            { id: "copy-lead", displayName: "Копирайтер", description: "Copywriter" },
+          ],
+        }),
+        schedule_list: () => ({
+          schedules: [],
+          hosts: [],
+          now: 1_800_000_000_000,
+          errandDefault: undefined,
+        }),
+        workflow_list: () => ({ workflows: [], problems: [], project: "ok" }),
+        schedule_preview: (input) => {
+          previewCalls.push(input);
+          return {
+            ok: true,
+            problems: [],
+            warnings: [],
+            conflicts: [],
+            nextFires: [1_800_003_600_000],
+            timeoutSec: 600,
+          };
+        },
+        schedule_upsert: (input) => {
+          upsertCalls.push(input);
+          return {
+            ok: true,
+            schedule: null,
+            problems: [],
+            warnings: [],
+            conflicts: [],
+          };
+        },
+      },
+    });
+
+    await slot.findByTestId("hire-step-role");
+    fireEvent.click(slot.getByTestId("hire-role-copy-lead"));
+    fireEvent.click(slot.getByTestId("hire-next-project"));
+    await slot.findByTestId("hire-step-project");
+    fireEvent.click(slot.getByTestId("hire-next-start"));
+
+    await slot.findByTestId("hire-schedule-form-wrap");
+    await slot.findByTestId("schedule-form");
+
+    expect(slot.getByTestId("sch-kind-agent").getAttribute("aria-checked")).toBe("true");
+    expect(slot.getByTestId("sch-agent").textContent).toContain("copy-lead");
+
+    await waitFor(() => {
+      expect(previewCalls.length).toBeGreaterThan(0);
+    });
+    const lastPreview = previewCalls[previewCalls.length - 1] as {
+      definition: { projectId: string; task: { kind: string; agentId: string } };
+    };
+    expect(lastPreview.definition.projectId).toBe("proj_alpha");
+    expect(lastPreview.definition.task.kind).toBe("agent");
+    expect(lastPreview.definition.task.agentId).toBe("copy-lead");
+
+    fireEvent.click(slot.getByTestId("sch-save"));
+    await waitFor(() => {
+      expect(upsertCalls).toHaveLength(1);
+    });
+    const savedDef = (upsertCalls[0] as {
+      definition: { projectId: string; task: { kind: string; agentId: string } };
+    }).definition;
+    expect(savedDef.projectId).toBe("proj_alpha");
+    expect(savedDef.task.kind).toBe("agent");
+    expect(savedDef.task.agentId).toBe("copy-lead");
+
+    await slot.findByTestId("console-staff");
+    slot.lifecycle.unmount();
+  });
+
+  it("inline custom role form creates a role via save_agent_profile and selects it", async () => {
+    const saveCalls: unknown[] = [];
+    const slot = await mountStaff({
+      subPath: "staff/hire",
+      rpc: {
+        save_agent_profile: (input) => {
+          saveCalls.push(input);
+          const payload = input as { id: string };
+          return { ok: true, id: payload.id, sourceHash: "c".repeat(64) };
+        },
+      },
+    });
+
+    await slot.findByTestId("hire-step-role");
+    fireEvent.click(slot.getByTestId("hire-custom-role-btn"));
+    await slot.findByTestId("hire-custom-role-form");
+
+    fireEvent.change(slot.getByTestId("hire-custom-id"), { target: { value: "pr-manager" } });
+    fireEvent.change(slot.getByTestId("hire-custom-description"), {
+      target: { value: "PR-менеджер" },
+    });
+    fireEvent.change(slot.getByTestId("hire-custom-prompt"), {
+      target: { value: "Pitch tech media and write press releases." },
+    });
+    fireEvent.click(slot.getByTestId("hire-custom-save"));
+
+    await waitFor(() => {
+      expect(saveCalls).toHaveLength(1);
+    });
+    expect(saveCalls[0]).toMatchObject({
+      id: "pr-manager",
+      description: "PR-менеджер",
+      prompt: "Pitch tech media and write press releases.",
+      expectedSourceHash: "",
+    });
+
+    const createdChip = await slot.findByTestId("hire-role-pr-manager");
+    expect(createdChip.getAttribute("aria-pressed")).toBe("true");
+    expect(slot.queryByTestId("hire-custom-role-form")).toBeNull();
 
     slot.lifecycle.unmount();
   });

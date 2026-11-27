@@ -64,6 +64,14 @@ export function listTaskReceipts(db: RollbackDb, taskId: string, kind?: TaskRece
   }));
 }
 
+/** Counts settled (`state='merged'`) revert receipts for a project since `sinceMs`. */
+export function countRevertReceiptsSince(db: RollbackDb, projectId: string, sinceMs: number): number {
+  const row = db
+    .prepare("SELECT COUNT(*) AS n FROM lane_pilot_task_receipt WHERE project_id=? AND kind='revert' AND state='merged' AND at>=?")
+    .get(projectId, sinceMs) as { n?: number } | undefined;
+  return Number(row?.n ?? 0);
+}
+
 /** The receipt and all compensation outcomes become one SQLite commit. The intent is cleared only after this returns. */
 export function settleRevert(db: RollbackDb, input: RevertSettlement): number {
   const settle = (db as Database.Database).transaction(() => {

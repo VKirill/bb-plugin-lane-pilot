@@ -153,6 +153,7 @@ async function mountDecisions(rpcOverrides: Record<string, (input: unknown) => u
       list_projects: () => ({ projects: PROJECTS, lastProjectId: null }),
       list_sections: () => ({ sections: [] }),
       owner_waiting: () => waitingFixture(),
+      desk_get: () => ({ week: "2026-W48", items: [] }),
       ...rpcOverrides,
     } as never,
   });
@@ -187,7 +188,7 @@ describe("Decisions screen — waiting tab (P2)", () => {
     expect(slot.getByTestId("owner-push-link")).toBeTruthy();
 
     fireEvent.click(slot.getByTestId("seg-decisions-view-desk"));
-    await slot.findByTestId("decisions-desk-placeholder");
+    await slot.findByTestId("review-desk");
     expect(hasPanelSubPath(slot.inspection.navigateCalls, "decisions/desk")).toBe(true);
 
     fireEvent.click(slot.getByTestId("seg-decisions-view-autonomous"));

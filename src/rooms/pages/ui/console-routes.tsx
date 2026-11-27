@@ -1,4 +1,4 @@
-import type { ComponentProps } from "react";
+import { useState, type ComponentProps } from "react";
 import { t, validationMessage, type Locale } from "@lane-pilot/i18n";
 import { GLOBAL_SETTINGS_PROJECT_ID } from "@lane-pilot/settings-catalog";
 import {
@@ -14,10 +14,11 @@ import {
 import { ErrandsScreen } from "../../errands/ui";
 import { MemoryScreen } from "../../memory/ui";
 import { DecisionsScreen } from "../../owner-waiting/ui";
-import { AcceptanceCard as RawAcceptanceCard, TaskPage, WorkScreen } from "../../runs/ui";
-import { ScheduleBoard } from "../../schedule/ui";
+import { ReviewDesk } from "../../reports/ui";
+import { ScheduleBoard, ScheduleForm } from "../../schedule/ui";
+import { AcceptanceCard as RawAcceptanceCard, HistoryScreen, TaskPage, WorkScreen } from "../../runs/ui";
 import { AgentsLoadout } from "../../settings/ui";
-import { StaffList } from "../../specialist/ui";
+import { HireWizard, StaffList } from "../../specialist/ui";
 import { ReturnStage } from "../../stage-return/ui";
 import { TokenUsage } from "../../usage/ui";
 import { InputsForm, WorkflowsScreen } from "../../workflow/ui";
@@ -110,19 +111,15 @@ function StaffSection({ route, go, projectId, sectionId, locale, page }: Console
   const scopedProjectId = projectId && projectId !== GLOBAL_SETTINGS_PROJECT_ID ? projectId : null;
   if (route.view === "hire") {
     return (
-      <Surface testId="staff-hire-placeholder">
-        <SurfaceBody className="flex flex-wrap items-center justify-between gap-3">
-          <p className="text-sm text-muted-foreground">{t("consoleStaffHirePlaceholder")}</p>
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            onClick={() => go({ section: "staff", ...(scopedProjectId ? { projectId: scopedProjectId } : {}), ...(sectionId ? { sectionId } : {}) })}
-          >
-            {t("consoleStaffBackToList")}
-          </Button>
-        </SurfaceBody>
-      </Surface>
+      <HireWizard
+        projectId={scopedProjectId}
+        sectionId={sectionId}
+        projects={page.projects}
+        hiddenProjectIds={page.hiddenProjects}
+        locale={locale}
+        ScheduleForm={ScheduleForm}
+        go={(next) => go(next)}
+      />
     );
   }
   if (route.staffRef) {
@@ -200,6 +197,7 @@ function WorkSection({ route, go, projectId, sectionId, locale, page }: ConsoleS
 function MemorySection({ route, go, projectId, sectionId, locale, page }: ConsoleSectionProps & { page: LpPage }) {
   const activeView = route.view === "history" ? "history" : "records";
   const scopedProjectId = projectId && projectId !== GLOBAL_SETTINGS_PROJECT_ID ? projectId : null;
+  const [selectedMemoryId, setSelectedMemoryId] = useState<string | null>(null);
   return (
     <div className="space-y-4" data-testid="console-memory">
       <PageHeader title={t("consoleNavMemory")} subtitle={t("consoleMemorySubtitle")} />
@@ -208,16 +206,32 @@ function MemorySection({ route, go, projectId, sectionId, locale, page }: Consol
         label={t("consoleNavMemory")}
         compact={page.tabSelect}
         value={activeView}
-        onChange={(next) => go({ ...route, section: "memory", view: next })}
+        onChange={(next) => {
+          setSelectedMemoryId(null);
+          go({ ...route, section: "memory", view: next });
+        }}
         items={[
           { id: "records", label: t("consoleMemoryTabRecords") },
           { id: "history", label: t("consoleMemoryTabHistory") },
         ]}
       />
       {activeView === "history" ? (
-        <p className="text-sm text-muted-foreground" data-testid="memory-history-placeholder">
-          {t("consoleMemoryHistoryPlaceholder")}
-        </p>
+        <HistoryScreen
+          projectId={scopedProjectId}
+          sectionId={sectionId}
+          projects={page.projects}
+          locale={locale}
+          onOpenTask={(runId, taskId) => go({ ...route, section: "work", taskRef: { runId, taskId } })}
+          onOpenLesson={(lessonProjectId, memoryId) => {
+            setSelectedMemoryId(memoryId);
+            go({
+              section: "memory",
+              view: "records",
+              projectId: lessonProjectId,
+              ...(sectionId ? { sectionId } : {}),
+            });
+          }}
+        />
       ) : !scopedProjectId ? (
         <Surface testId="console-memory-select-project">
           <SurfaceBody>
@@ -229,6 +243,7 @@ function MemorySection({ route, go, projectId, sectionId, locale, page }: Consol
           projectId={scopedProjectId}
           sectionId={sectionId}
           locale={locale}
+          initialRecordId={selectedMemoryId}
           onOpenTask={(runId, taskId) => go({ ...route, section: "work", taskRef: { runId, taskId } })}
         />
       )}
@@ -301,15 +316,33 @@ function SystemSection({ route, go, projectId, locale, page }: ConsoleSectionPro
   }
 }
 
-function DecisionsSection({ route, go, projectId, page }: ConsoleSectionProps & { page: LpPage }) {
+function DecisionsSection({ route, go, projectId, locale, page }: ConsoleSectionProps & { page: LpPage }) {
   const scopedProjectId = projectId && projectId !== GLOBAL_SETTINGS_PROJECT_ID ? projectId : null;
   return (
     <DecisionsScreen
       view={route.view}
-      onViewChange={(next) => go({ ...route, section: "decisions", view: next })}
+      week={route.week}
+      onViewChange={(next) =>
+        go({
+          ...route,
+          section: "decisions",
+          view: next,
+          ...(next === "desk" && route.week ? { week: route.week } : { week: undefined }),
+        })
+      }
+      onWeekChange={(week) =>
+        go({
+          ...route,
+          section: "decisions",
+          view: "desk",
+          ...(week ? { week } : { week: undefined }),
+        })
+      }
       projectId={scopedProjectId}
       projects={page.projects}
+      locale={locale}
       compact={page.tabSelect}
+      ReviewDesk={ReviewDesk}
       onOpenTask={(runId, taskId) => go({ ...route, section: "work", taskRef: { runId, taskId } })}
       onOpenWork={() => go({ ...route, section: "work", view: "tasks" })}
       onOpenSettings={() => go({ section: "system", page: "settings", projectId: route.projectId, sectionId: route.sectionId })}

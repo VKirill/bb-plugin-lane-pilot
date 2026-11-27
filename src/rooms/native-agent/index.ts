@@ -41,3 +41,4 @@ export { ARCHITECT_LAUNCH, WORKFLOW_ARCHITECT_NAME, WORKFLOW_ARCHITECT_SESSION, 
 export { requestArchitectLaunch, takeArchitectLaunch } from "./models/architect-launch";
 export { agentKind } from "./models/agent-profile";
 export { HELPER_DISALLOWED_TOOLS, WRITER_DISALLOWED_TOOLS, WRITER_MAX_TURNS } from "./models/claude-guard";
+export { WORKSPACE_MODE_SETTING } from "./settings";

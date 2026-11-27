@@ -32,6 +32,7 @@ export interface MemoryScreenProps {
   projectId: string;
   sectionId?: string | null;
   locale?: Locale;
+  initialRecordId?: string | null;
   onOpenTask?: (runId: string, taskId: string) => void;
 }
 
@@ -64,7 +65,7 @@ function matchesCardQuery(card: MemoryCard, needle: string): boolean {
 }
 
 /** P7 Memory screen: filterable records & knowledge cards, debounced search, detail pane, and confirmed delete for non-rule records. */
-export function MemoryScreen({ projectId, sectionId, locale: localeProp, onOpenTask }: MemoryScreenProps) {
+export function MemoryScreen({ projectId, sectionId, locale: localeProp, initialRecordId, onOpenTask }: MemoryScreenProps) {
   const locale = localeProp ?? detectLocale();
   const rpc = useRpc<typeof rpcContract>();
 
@@ -83,10 +84,14 @@ export function MemoryScreen({ projectId, sectionId, locale: localeProp, onOpenT
   } | null>(null);
   const [searching, setSearching] = useState(false);
 
-  const [selectedKey, setSelectedKey] = useState<string | null>(null);
+  const [selectedKey, setSelectedKey] = useState<string | null>(initialRecordId ? `rec:${initialRecordId}` : null);
   const [pendingDelete, setPendingDelete] = useState<MemoryRecord | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const searchSeq = useRef(0);
+
+  useEffect(() => {
+    if (initialRecordId) setSelectedKey(`rec:${initialRecordId}`);
+  }, [initialRecordId]);
 
   const loadBase = useCallback(async () => {
     setLoadError(null);

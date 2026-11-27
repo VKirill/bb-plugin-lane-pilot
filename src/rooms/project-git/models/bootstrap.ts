@@ -16,6 +16,8 @@ export type GitProbe = {
   origin?: string;
   /** Whether the repository has a commit (origin and localNoOrigin). */
   hasCommit?: boolean;
+  /** Resolved HEAD commit SHA when the repository has a commit. */
+  head?: string | null;
   reason?: string;
 };
 

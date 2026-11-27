@@ -84,6 +84,26 @@ export function deskWeekKey(now: number, timezone: string): string {
   return `${date.getUTCFullYear()}-W${String(weekNo).padStart(2, "0")}`;
 }
 
+/** Returns the UTC Monday 00:00 date for an ISO week key (`YYYY-Www`), or `null` if invalid. */
+export function isoWeekMondayUtc(week: string): Date | null {
+  const match = /^(\d{4})-W(\d{2})$/.exec(week.trim());
+  if (!match) return null;
+  const year = Number(match[1]);
+  const weekNum = Number(match[2]);
+  if (!Number.isInteger(year) || !Number.isInteger(weekNum) || weekNum < 1 || weekNum > 53) return null;
+  const jan4 = new Date(Date.UTC(year, 0, 4));
+  const jan4Day = jan4.getUTCDay() || 7;
+  const week1MondayMs = jan4.getTime() - (jan4Day - 1) * 86_400_000;
+  return new Date(week1MondayMs + (weekNum - 1) * 7 * 86_400_000);
+}
+
+/** Shifts an ISO week key (`YYYY-Www`) by `deltaWeeks` (positive or negative). */
+export function shiftIsoWeek(week: string, deltaWeeks: number): string {
+  const monday = isoWeekMondayUtc(week);
+  if (!monday) return week;
+  return deskWeekKey(monday.getTime() + deltaWeeks * 7 * 86_400_000, "UTC");
+}
+
 export const reviewDeskOwnerItemKey = (week: string): string => `review-desk:${week}`;
 
 function clipText(value: string, max: number): string {

@@ -1,5 +1,7 @@
 import { defineSetting, type SettingDefinition, type SettingKeyFamily } from "@lane-pilot/settings-catalog";
 
+export const WORKSPACE_MODE_SETTING = "adoc.040";
+
 export const nativeAgentSettings: readonly SettingDefinition[] = [
   defineSetting({"key":"adoc.040","room":"native-agent","default":"auto","bounds":{"kind":"enum","options":["worktree","auto"],"strictOptions":true},"ui":{"id":"s040","status":"editable","control":"select","section":"workspace","scope":"project","options":["worktree","auto"],"invType":"str","legacyName":"workspace.mode"}}),
   defineSetting({"key":"codex.lean_roles","room":"native-agent","default":"default","bounds":{"kind":"string"},"ui":{"id":"s623","status":"editable","control":"input","section":"stages","scope":"global","invType":"str"}}),

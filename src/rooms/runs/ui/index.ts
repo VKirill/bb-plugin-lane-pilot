@@ -3,6 +3,7 @@
 export { AcceptanceCard } from "./acceptance-card";
 export { AcceptanceStats } from "./acceptance-stats";
 export { BigProjects } from "./big-projects";
+export { HistoryScreen } from "./history-screen";
 export { RUN_CARD_DIRECTIVE, RunCardDirective } from "./run-card";
 export { RunStages } from "./run-parts";
 export { readRunsWindow } from "./runs-window";

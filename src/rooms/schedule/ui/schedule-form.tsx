@@ -27,26 +27,37 @@ function Field({ label, htmlFor, children }: { label: string; htmlFor?: string; 
   return <div className="min-w-0 space-y-1"><label className="block text-xs font-medium" htmlFor={htmlFor}>{label}</label>{children}</div>;
 }
 
+export interface ScheduleFormInitial {
+  kind?: Kind;
+  agentId?: string;
+  projectId?: string;
+  name?: string;
+  task?: string;
+}
+
 /** The manual create / edit form. Every change is checked by `schedule_preview`, which shows the next runs and what is wrong before anything is saved. */
-export function ScheduleForm({ projectId, projects, hosts, existing, errandDefault, initialRunAt, locale, onSaved, onCancel }: {
+export function ScheduleForm({ projectId, projects, hosts, existing, errandDefault, initialRunAt, initial, locale, onSaved, onCancel }: {
   projectId: string | null; projects: ReadonlyArray<{ id: string; name: string }>; hosts: Hosts; existing?: ScheduleView | null; errandDefault?: ErrandDefaultView | undefined;
   /** A one-time task prefilled for this moment (a click on a calendar day). */
-  initialRunAt?: number | null; locale: Locale; onSaved: () => void; onCancel: () => void;
+  initialRunAt?: number | null;
+  /** Optional initial values when creating a schedule from another flow (e.g. hiring an agent). */
+  initial?: ScheduleFormInitial;
+  locale: Locale; onSaved: () => void; onCancel: () => void;
 }) {
   const rpc = useRpc<ScheduleBoardContract>();
   const task = existing?.task;
-  const [project, setProject] = useState(existing?.projectId ?? projectId ?? projects[0]?.id ?? "");
-  const [name, setName] = useState(existing?.name ?? "");
-  const [kind, setKind] = useState<Kind>(task?.kind ?? "errand");
+  const [project, setProject] = useState(existing?.projectId ?? initial?.projectId ?? projectId ?? projects[0]?.id ?? "");
+  const [name, setName] = useState(existing?.name ?? initial?.name ?? "");
+  const [kind, setKind] = useState<Kind>(task?.kind ?? initial?.kind ?? "errand");
   const [workflowId, setWorkflowId] = useState(task?.kind === "workflow" ? task.workflowId : "");
   const [inputsText, setInputsText] = useState(task?.kind === "workflow" ? JSON.stringify(task.inputs) : "{}");
-  const [errandText, setErrandText] = useState(task?.kind === "errand" ? task.task : "");
+  const [errandText, setErrandText] = useState(task?.kind === "errand" ? task.task : initial?.kind === "errand" ? (initial.task ?? "") : "");
   const [authorized, setAuthorized] = useState(task?.kind === "errand" ? task.authorized : false);
   const [fields, setFields] = useState<ModelFields>(task?.kind === "errand" ? modelFieldsOf(task) : {});
   const [accounts, setAccounts] = useState(task?.kind === "errand" ? (task.accounts ?? []).join(", ") : "");
   const agentTask = task?.kind === "agent" ? task : null;
-  const [agentId, setAgentId] = useState(agentTask?.agentId ?? "");
-  const [agentText, setAgentText] = useState(agentTask?.task ?? "");
+  const [agentId, setAgentId] = useState(agentTask?.agentId ?? initial?.agentId ?? "");
+  const [agentText, setAgentText] = useState(agentTask?.task ?? (initial?.kind === "agent" ? (initial.task ?? "") : ""));
   const [agentAuthorized, setAgentAuthorized] = useState(agentTask?.authorized ?? false);
   const [agentAccounts, setAgentAccounts] = useState((agentTask?.accounts ?? []).join(", "));
   const [historyRuns, setHistoryRuns] = useState(String(agentTask?.historyRuns ?? 5));

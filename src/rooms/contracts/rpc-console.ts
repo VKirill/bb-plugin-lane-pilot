@@ -352,10 +352,6 @@ export const rpcConsole = {
       z.object({ ok: z.literal(false), reason: z.string() }).strict(),
     ]),
   },
-};
-
-/** Console methods whose handlers land in later plan tasks; spread into rpcMethods in Task 18. */
-export const rpcConsoleLater = {
   repo_trust: {
     input: z.object({
       projectId: idSchema,
@@ -405,4 +401,4 @@ export type SpecialistAutonomyRow = z.infer<typeof specialistAutonomyRowSchema>;
 export type LoadoutRole = z.infer<typeof loadoutRoleSchema>;
 export type AgentLoadoutOutput = z.infer<typeof rpcConsole.agent_loadout.output>;
 export type MemoryCardsListOutput = z.infer<typeof rpcConsole.memory_cards_list.output>;
-export type RepoTrustOutput = z.infer<typeof rpcConsoleLater.repo_trust.output>;
+export type RepoTrustOutput = z.infer<typeof rpcConsole.repo_trust.output>;

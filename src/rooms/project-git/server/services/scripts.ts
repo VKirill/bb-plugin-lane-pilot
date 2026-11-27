@@ -25,12 +25,14 @@ def git(*args, at=None):
 top = git("rev-parse", "--show-toplevel")
 if top.returncode == 0:
     root = os.path.realpath(top.stdout.strip())
-    commit = git("rev-parse", "--verify", "-q", "HEAD", at=root).returncode == 0
+    head_run = git("rev-parse", "--verify", "-q", "HEAD", at=root)
+    commit = head_run.returncode == 0
+    head = head_run.stdout.strip() if commit and head_run.stdout.strip() else None
     origin = git("remote", "get-url", "origin", at=root)
     if origin.returncode == 0 and origin.stdout.strip():
-        say(state="origin", cwd=cwd, root=root, origin=origin.stdout.strip(), hasCommit=commit)
+        say(state="origin", cwd=cwd, root=root, origin=origin.stdout.strip(), hasCommit=commit, head=head)
     if origin.returncode == 2 or "no such remote" in origin.stderr.lower():
-        say(state="localNoOrigin", cwd=cwd, root=root, hasCommit=commit)
+        say(state="localNoOrigin", cwd=cwd, root=root, hasCommit=commit, head=head)
     say(state="unknown", cwd=cwd, root=root, reason="origin unreadable: " + origin.stderr.strip()[:300])
 err = top.stderr.strip()
 if top.returncode == 128 and "(or any of the parent directories)" in err:

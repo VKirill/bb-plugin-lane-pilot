@@ -19,7 +19,7 @@ export {
   noteLandingSuite,
   upsertAttemptChange,
 } from "./repositories/attempt-change-repository";
-export { appendTaskReceipt, listTaskReceipts, settleRevert } from "./repositories/receipt-repository";
+export { appendTaskReceipt, countRevertReceiptsSince, listTaskReceipts, settleRevert } from "./repositories/receipt-repository";
 export { clearRevertIntent, readRevertIntents, writeRevertIntent } from "./repositories/revert-intent-repository";
 export {
   REVERT_INTENT_PREFIX,

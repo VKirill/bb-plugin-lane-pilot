@@ -117,3 +117,14 @@ export type { ActiveItem, ConsoleOverviewOutput, GoalLine } from "./rpc-console"
 export const brakesGetInput = rpcConsole.brakes_get.input;
 export const brakesGetOutput = rpcConsole.brakes_get.output;
 export type { BrakeId, BrakeState, BrakesOutput, StopAllOutput } from "./rpc-console";
+
+export const deskGetInput = rpcConsole.desk_get.input;
+export const deskGetOutput = rpcConsole.desk_get.output;
+export type { ReviewDeskItem, ReviewDeskView } from "./rpc-console";
+export const taskHistoryInput = rpcConsole.task_history.input;
+export const taskHistoryOutput = rpcConsole.task_history.output;
+export type { TaskHistoryOutput, TaskHistoryRow } from "./rpc-console";
+
+export const memoryCardsListInput = rpcConsole.memory_cards_list.input;
+export const memoryCardsListOutput = rpcConsole.memory_cards_list.output;
+export type { MemoryCardsListOutput } from "./rpc-console";
