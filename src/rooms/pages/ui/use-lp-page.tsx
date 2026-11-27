@@ -1,4 +1,5 @@
 import { readHiddenProjects, splitProjects, writeHiddenProjects } from "./service-projects";
+import { resolveLegacyRoute, type ConsoleRoute } from "../models/nav-model";
 import { resolveTab, SEGMENTS, type SegmentedTab, type TabId } from "../models/tabs-model";
 import { selectionValue, SELECTION_SPECS, type SelectionId } from "./picker-selections";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -29,7 +30,17 @@ import { readRunsWindow } from "../../runs/ui";
 import { BASIC_SETTING_KEYS, RoutingStats, WRITER_EFFORT, WRITER_MODEL, WRITER_PROVIDER, WRITER_SERVICE_TIER, diagnosticRows, extraSettingRows } from "./page-model";
 import { useLpPageSavers } from "./use-lp-page-savers";
 
-export function useLanePilotPage({ subPath = "", scope = "projects" }: { subPath?: string; scope?: "projects" | "globals" | "agents" | "tokens" | "workflows" | "schedule" | "tasks" | "waiting" | "errands" }) {
+export function useLanePilotPage({
+  subPath = "",
+  scope = "projects",
+  consoleRoute,
+  onNavigate,
+}: {
+  subPath?: string;
+  scope?: "projects" | "globals" | "agents" | "tokens" | "workflows" | "schedule" | "tasks" | "waiting" | "errands";
+  consoleRoute?: ConsoleRoute;
+  onNavigate?: (next: ConsoleRoute) => void;
+}) {
   const rpc = useRpc<typeof rpcContract>();
   const { projectId: routeProjectId, threadId: routeThreadId } = useBbContext();
   // The plugin's own page (no project in the route, no project link) opens on «General settings», not on the last project (owner's word 2026-11-01).
@@ -37,13 +48,21 @@ export function useLanePilotPage({ subPath = "", scope = "projects" }: { subPath
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   // The address may carry a tab after the project id (`<project>/<tab>`; «access» is the team's old name), so a link can open a tab of a project.
   const [routeProject, routeTab] = (() => { const [head, rest] = subPath.replace(/^\/+/, "").split("/", 2); return [head || null, rest || null]; })();
+  const consoleNeedsSettings =
+    consoleRoute?.section === "system" &&
+    (consoleRoute.page === "settings" || consoleRoute.page === "agents" || consoleRoute.page === "health");
   // «Общие настройки» edit the global level every project inherits, with the same panel as a project.
-  const projectId = activeScope === "globals" ? GLOBAL_SETTINGS_PROJECT_ID : selectedProjectId ?? routeProjectId ?? routeProject;
+  const projectId = consoleRoute
+    ? (consoleRoute.projectId ?? (consoleNeedsSettings ? GLOBAL_SETTINGS_PROJECT_ID : null))
+    : (activeScope === "globals" ? GLOBAL_SETTINGS_PROJECT_ID : selectedProjectId ?? routeProjectId ?? routeProject);
   const isGlobal = projectId === GLOBAL_SETTINGS_PROJECT_ID;
-  // The project screen (get_screen and everything it feeds) is what «Projects» and «General settings» show; «Agents», «Tokens» and «Workflows» keep it hidden and must not pay for it.
-  const projectScreenActive = activeScope === "projects" || activeScope === "globals";
+  // The project screen (get_screen and everything it feeds) is what «Projects» and «General settings» show; other views must not pay for it.
+  const projectScreenActive = consoleRoute
+    ? (consoleRoute.section === "overview" && Boolean(consoleRoute.projectId)) || consoleNeedsSettings
+    : (activeScope === "projects" || activeScope === "globals");
   // A section keeps its own settings over its project's; null edits the project itself.
-  const [selectedSectionId, setSelectedSectionId] = useState<string | null>(null);
+  const [rawSelectedSectionId, setSelectedSectionId] = useState<string | null>(null);
+  const selectedSectionId = consoleRoute ? (consoleRoute.sectionId ?? null) : rawSelectedSectionId;
   const [routingStats, setRoutingStats] = useState<RoutingStats | null>(null);
   // Only a change the owner made by hand is saved: the picker reports a normalized value on mount.
   const fallbackTouched = useRef(new Set<number>());
@@ -64,8 +83,15 @@ export function useLanePilotPage({ subPath = "", scope = "projects" }: { subPath
   /** Opens a tab, and a part of it. Ids of the old ten tabs work too. */
   const goTo = (id: string, segment?: string) => {
     const target = resolveTab(id);
-    setTab(target.tab);
     const part = segment ?? target.segment;
+    if (onNavigate && consoleRoute) {
+      const legacy = resolveLegacyRoute(part ? `${target.tab}/${part}` : target.tab);
+      if (legacy) {
+        onNavigate({ ...legacy, projectId: consoleRoute.projectId, sectionId: consoleRoute.sectionId });
+        return;
+      }
+    }
+    setTab(target.tab);
     if (part && target.tab in SEGMENTS) setSegment(target.tab as SegmentedTab, part);
   };
   // A tab mounts when it is first opened and stays mounted after that: ten tabs at once cost 25 000 DOM nodes on a big project.
@@ -210,13 +236,21 @@ export function useLanePilotPage({ subPath = "", scope = "projects" }: { subPath
     } catch { /* the next signal or poll retries */ }
   }, [projectId, isGlobal, selectedSectionId, rpc]);
   const runsPollMs = useLpRealtime(isGlobal || !projectScreenActive ? null : projectId, ["helpers"], () => { void refreshRuns(); });
-  const runsVisible = projectScreenActive && tab === "overview";
+  const runsVisible = consoleRoute
+    ? (consoleRoute.section === "overview" && Boolean(consoleRoute.projectId) && !isGlobal)
+    : (projectScreenActive && tab === "overview");
   useLpPoll(runsVisible && projectId && !isGlobal ? runsPollMs : undefined, () => { void refreshRuns(); });
 
   useEffect(() => {
+    if (consoleRoute) return;
     setSelectedSectionId(null);
     setSections([]);
-  }, [projectId]);
+  }, [projectId, consoleRoute]);
+  useEffect(() => {
+    if (consoleRoute?.section === "system" && consoleRoute.page === "settings" && consoleRoute.view === "docs") {
+      setSegments((current) => (current.knowledge === "docs" ? current : { ...current, knowledge: "docs" }));
+    }
+  }, [consoleRoute?.section, consoleRoute?.page, consoleRoute?.view]);
   useEffect(() => {
     if (!projectId || isGlobal || !projectScreenActive) return;
     let current = true;
@@ -332,8 +366,11 @@ export function useLanePilotPage({ subPath = "", scope = "projects" }: { subPath
     setNativeState((current) => ({ status: "installing", error: current?.error ?? null }));
   };
   // Read the machine's state while Maintenance is open, and every 5 s while it installs.
+  const healthActive = consoleRoute
+    ? (consoleRoute.section === "system" && consoleRoute.page === "health")
+    : (tab === "runs" && segments.runs === "service");
   useEffect(() => {
-    if (tab !== "runs" || segments.runs !== "service" || !nativeHostId) return;
+    if (!healthActive || !nativeHostId) return;
     let alive = true;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const read = () => void rpc.call("native_install_status", { hostId: nativeHostId }).then((next) => {
@@ -343,7 +380,7 @@ export function useLanePilotPage({ subPath = "", scope = "projects" }: { subPath
     }).catch(() => { if (alive) setNativeState({ status: "offline", error: null }); });
     read();
     return () => { alive = false; if (timer) clearTimeout(timer); };
-  }, [tab, segments.runs, nativeHostId, nativeState?.status === "installing", rpc]);
+  }, [healthActive, nativeHostId, nativeState?.status === "installing", rpc]);
   const writerChosen = Boolean(data?.values[WRITER_PROVIDER] && data?.values[WRITER_MODEL]);
   // The overview waits for the screen instead of showing the defaults («no model», «no runs») that the data then replaces.
   const screenLoading = !data && !error && Boolean(projectId);
@@ -364,6 +401,16 @@ export function useLanePilotPage({ subPath = "", scope = "projects" }: { subPath
     });
   })();
 
+  const effectiveTab: TabId = consoleRoute
+    ? consoleRoute.section === "system" && consoleRoute.page === "settings"
+      ? "work"
+      : consoleRoute.section === "system" && consoleRoute.page === "agents"
+        ? "team"
+        : consoleRoute.section === "system" && consoleRoute.page === "health"
+          ? "runs"
+          : "overview"
+    : tab;
+
   return {
     pickers, subPath: routeProject,
     activeScope, setActiveScope, rpc, routeProjectId, routeThreadId, selectedProjectId,
@@ -371,7 +418,7 @@ export function useLanePilotPage({ subPath = "", scope = "projects" }: { subPath
     routingStats, setRoutingStats, fallbackTouched,
     sections, setSections, scoped, cacheKey, projects,
     setProjects, projectsLoaded, setProjectsLoaded, projectListError, setProjectListError,
-    providers, tab, setTab, visited, runsWindow, nativeState, setNativeState, data, setData,
+    providers, tab: effectiveTab, setTab, visited, runsWindow, nativeState, setNativeState, data, setData,
     error, setError, confirmOpen, setConfirmOpen,
     pendingOp, setPendingOp, snapshotPath, setSnapshotPath,
     resultPatch, setResultPatch, resultSource, setResultSource, locale, setLocale,

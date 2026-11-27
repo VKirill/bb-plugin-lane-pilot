@@ -188,7 +188,7 @@ type SpecialistOverviewView = {
   spend30dUsd?: number;
 };
 
-function SpecialistStatusCard({ page, projectId }: { page: LpPage; projectId: string }) {
+export function SpecialistStatusCard({ page, projectId }: { page: LpPage; projectId: string }) {
   const [ov, setOv] = useState<SpecialistOverviewView | null>(null);
   useEffect(() => {
     let alive = true;

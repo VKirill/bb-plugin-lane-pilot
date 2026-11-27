@@ -29,3 +29,7 @@ export * from "./lib/portal-scope";
 export * from "./lib/utils";
 export * from "./ui/control-row";
 export * from "./ui/panel-layout";
+export * from "./ui/confirm-dialog";
+export * from "./ui/kpi-tile";
+export * from "./ui/page-header";
+export * from "./ui/status-pill";

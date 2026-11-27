@@ -4,7 +4,6 @@ import { cleanup, configure, fireEvent, waitFor } from "@testing-library/react";
 import { en, setLocaleOverride } from "@lane-pilot/i18n";
 import { isTestProject, splitProjects } from "../src/rooms/pages/ui/service-projects";
 import { screenFixture, mountPage } from "./ui-harness";
-import { openTab } from "./ui-tabs";
 
 vi.setConfig({ testTimeout: 60_000 });
 vi.mock("sonner", () => ({ toast: { info: vi.fn(), success: vi.fn(), error: vi.fn() } }));
@@ -17,7 +16,14 @@ const PROJECTS = [
   { id: "proj_s1", name: "LP sandbox rules" },
   { id: "proj_work", name: "Work project" },
 ];
-const projectsRpc = { list_projects: () => ({ projects: PROJECTS, lastProjectId: "proj_ui" }) };
+
+const projectsRpc = {
+  list_projects: () => ({ projects: PROJECTS, lastProjectId: "proj_ui" }),
+  list_sections: () => ({ sections: [] }),
+  get_routing_hint: () => ({ current: null, stats: [] }),
+  specialist_overview: () => ({ breakers: [], pendingIntents: 0, dispatchedCount: 0, openQuestionsCount: 0, artifactsCount: 0, spend30dUsd: 0 }),
+  owner_waiting: () => ({ items: [], now: 0 }),
+};
 
 describe("service projects", () => {
   it("tells test projects by id and by name pattern, and keeps the rest", () => {
@@ -30,61 +36,71 @@ describe("service projects", () => {
   });
 });
 
+const storage = new Map<string, string>();
+const memoryStorage = {
+  getItem: (k: string) => storage.get(k) ?? null,
+  setItem: (k: string, v: string) => { storage.set(k, String(v)); },
+  removeItem: (k: string) => { storage.delete(k); },
+  clear: () => { storage.clear(); },
+  key: (i: number) => [...storage.keys()][i] ?? null,
+  get length() { return storage.size; },
+};
+
 describe("project list, header and overview", () => {
-  beforeEach(() => { cleanup(); document.body.innerHTML = ""; });
-  afterEach(() => { cleanup(); setLocaleOverride(null); document.documentElement.lang = "en"; });
+  beforeEach(() => {
+    cleanup();
+    document.body.innerHTML = "";
+    storage.clear();
+    if (!globalThis.localStorage) vi.stubGlobal("localStorage", memoryStorage);
+    else globalThis.localStorage.clear();
+  });
+  afterEach(() => { cleanup(); setLocaleOverride(null); document.documentElement.lang = "en"; vi.unstubAllGlobals(); });
 
-  it("folds the test projects under «Service projects» and hides a project on request", async () => {
-    const slot = await mountPage(projectsRpc);
-    const rail = await slot.findByTestId("scope-rail");
-    const folded = slot.getByTestId("service-projects");
+  it("folds test projects under «Service projects» in the scope switcher and hides a project on request", async () => {
+    const slot = await mountPage(projectsRpc, { projectId: "proj_ui", threadId: null }, "", false);
+    fireEvent.click(await slot.findByTestId("scope-switcher"));
+    const folded = await slot.findByTestId("service-projects");
     expect(folded.textContent).toContain(`${en.navGroupService} (3)`);
-    expect(folded.querySelector("[data-testid='project-item-proj_n1']")).not.toBeNull();
-    expect(folded.querySelector("[data-testid='project-item-proj_s1']")).not.toBeNull();
-    expect(folded.querySelector("[data-testid='project-item-proj_3tb652jpsi']")).not.toBeNull();
+    expect(folded.querySelector("[data-testid='scope-project-proj_n1']")).not.toBeNull();
+    expect(folded.querySelector("[data-testid='scope-project-proj_s1']")).not.toBeNull();
+    expect(folded.querySelector("[data-testid='scope-project-proj_3tb652jpsi']")).not.toBeNull();
     expect(folded.hasAttribute("open")).toBe(false);
-    expect(rail.querySelector("[data-testid='project-item-proj_ui']")?.closest("[data-testid='service-projects']")).toBeNull();
-    expect(rail.querySelector("[data-testid='project-item-proj_work']")?.closest("[data-testid='service-projects']")).toBeNull();
-    // The system pages sit in two groups apart from the projects: what needs the owner today, and the setup.
-    expect(rail.textContent).toContain(en.navGroupToday);
-    expect(rail.textContent).toContain(en.navGroupSetup);
-    expect(slot.getByTestId("scope-nav-group-today").querySelector("[data-testid='scope-nav-waiting']")).not.toBeNull();
-    expect(slot.getByTestId("scope-nav-group-setup").querySelector("[data-testid='scope-nav-workflows']")).not.toBeNull();
 
-    fireEvent.click(slot.getByTestId("project-item-proj_work"));
-    await slot.findByTestId("project-header");
+    fireEvent.click(slot.getByTestId("scope-project-proj_work"));
+    await waitFor(() => expect(slot.getByTestId("project-header").querySelector("h1")?.textContent).toBe("Work project"));
     fireEvent.click(slot.getByTestId("project-menu"));
     fireEvent.click(await slot.findByTestId("project-hide"));
+
+    fireEvent.click(slot.getByTestId("scope-switcher"));
     await waitFor(() => expect(slot.getByTestId("service-projects").textContent).toContain(`${en.navGroupService} (4)`));
-    expect(slot.getByTestId("service-projects").querySelector("[data-testid='project-item-proj_work']")).not.toBeNull();
-    // A hidden project comes back from the system overview.
-    fireEvent.click(slot.getByRole("tab", { name: en.navGlobals }));
-    const hidden = await slot.findByTestId("hidden-projects");
-    expect(hidden.textContent).toContain("Work project");
-    fireEvent.click(hidden.querySelector("button")!);
-    await waitFor(() => expect(slot.getByTestId("service-projects").textContent).toContain(`${en.navGroupService} (3)`));
+    expect(slot.getByTestId("service-projects").querySelector("[data-testid='scope-project-proj_work']")).not.toBeNull();
     slot.lifecycle.unmount();
   });
 
   it("shows status chips in the header: runs in progress, the writer's model and the machine", async () => {
     const base = screenFixture();
-    const slot = await mountPage({
-      ...projectsRpc,
-      get_screen: () => ({ ...base, writerBinding: { status: "resolved", hostId: "host_ui", path: "/tmp/lane-pilot-ui", source: "unique_source", bindings: [] } }),
-    });
+    const slot = await mountPage(
+      {
+        ...projectsRpc,
+        get_screen: () => ({ ...base, writerBinding: { status: "resolved", hostId: "host_ui", path: "/tmp/lane-pilot-ui", source: "unique_source", bindings: [] } }),
+      },
+      { projectId: "proj_ui", threadId: null },
+      "",
+      false,
+    );
     const chips = await slot.findByTestId("project-chips");
     await waitFor(() => expect(chips.textContent).toContain("codex · test-model"));
     expect(slot.getByTestId("chip-runs").textContent).toBe(en.chipRunning.replace("{n}", "1"));
     expect(slot.getByTestId("chip-machine").textContent).toBe(`Writer · ${en.hostConnected}`);
     expect(slot.getByTestId("project-subline").textContent).toContain("/tmp/lane-pilot-ui");
-    // The old «Selected project» card is gone: one H1, the project's name.
+    // One H1, the project's name.
     expect(slot.getByTestId("project-header").querySelectorAll("h1").length).toBe(1);
     expect(slot.getByTestId("project-header").textContent).not.toContain("Selected project");
     slot.lifecycle.unmount();
   });
 
   it("says what is going on, what needs the owner, and explains itself in a folded block", async () => {
-    const slot = await mountPage(projectsRpc);
+    const slot = await mountPage(projectsRpc, { projectId: "proj_ui", threadId: null }, "", false);
     await slot.findByTestId("runs-now");
     expect(slot.getByTestId("now-lprun_1")).toBeTruthy();
     expect(slot.getByTestId("needs-attention")).toBeTruthy();
@@ -96,52 +112,55 @@ describe("project list, header and overview", () => {
     slot.lifecycle.unmount();
   });
 
-  it("opens Runs, Service from the overview and from the project menu", async () => {
-    const slot = await mountPage(projectsRpc);
+  it("opens System -> Health from the overview and from the project menu", async () => {
+    const slot = await mountPage(projectsRpc, { projectId: "proj_ui", threadId: null }, "", false);
     fireEvent.click((await slot.findByTestId("status-stack")).querySelector("button")!);
     await slot.findByTestId("service-panel");
-    openTab(slot, "overview");
-    fireEvent.click(slot.getByTestId("project-menu"));
+    expect(slot.getByTestId("console-nav-system-health").getAttribute("aria-current")).toBe("page");
+
+    fireEvent.click(slot.getByTestId("console-nav-overview"));
+    fireEvent.click(await slot.findByTestId("project-menu"));
     fireEvent.click(await slot.findByTestId("project-menu-service"));
     await slot.findByTestId("service-panel");
-    expect(slot.getByTestId("seg-runs-service").getAttribute("aria-pressed")).toBe("true");
+    expect(slot.getByTestId("console-nav-system-health").getAttribute("aria-current")).toBe("page");
     slot.lifecycle.unmount();
   });
 });
 
-describe("the plugin's own page lands on General settings", () => {
-  it("opens «General settings» when the route has no project, and the last project only when the route names one", async () => {
-    const own = await mountPage(projectsRpc, { projectId: null, threadId: null });
-    await waitFor(() => expect(own.getByTestId("project-settings").querySelector("h1")?.textContent).toBe(en.navGlobals));
+describe("default route and system settings scope", () => {
+  beforeEach(() => { cleanup(); document.body.innerHTML = ""; });
+  afterEach(() => { cleanup(); setLocaleOverride(null); document.documentElement.lang = "en"; });
+
+  it("opens Overview by default without a project, and renders General settings on System -> Settings when no project is selected", async () => {
+    const own = await mountPage(projectsRpc, { projectId: null, threadId: null }, "", false);
+    await own.findByTestId("console-overview-placeholder");
+    expect(own.getByTestId("console-nav-overview").getAttribute("aria-current")).toBe("page");
+    fireEvent.click(own.getByTestId("console-nav-system-settings"));
+    await waitFor(() => expect(own.getByTestId("project-header").querySelector("h1")?.textContent).toBe(en.navGlobals));
     own.lifecycle.unmount();
-    const inProject = await mountPage(projectsRpc);
-    await waitFor(() => expect(inProject.getByTestId("project-settings").querySelector("h1")?.textContent).not.toBe(en.navGlobals));
+
+    const inProject = await mountPage(projectsRpc, { projectId: "proj_ui", threadId: null }, "", false);
+    fireEvent.click(await inProject.findByTestId("console-nav-system-settings"));
+    await waitFor(() => expect(inProject.getByTestId("project-header").querySelector("h1")?.textContent).toBe("UI test"));
     inProject.lifecycle.unmount();
   });
 });
 
-describe("the rail has an «Errands» page", () => {
-  it("opens the Errands screen from the rail", async () => {
-    const slot = await mountPage({ ...projectsRpc, errands_overview: () => ({ days: 7, kinds: [], errands: [] }) }, { projectId: null, threadId: null });
-    await slot.findByTestId("project-settings");
-    fireEvent.click(slot.getByRole("tab", { name: en.navErrands }));
-    await slot.findByTestId("errands-screen");
-    await slot.findByTestId("errands-empty");
-    slot.lifecycle.unmount();
-  });
-});
-
-describe("«Графы» takes the whole block", () => {
+describe("Work has an «Errands» view", () => {
   beforeEach(() => { cleanup(); document.body.innerHTML = ""; });
   afterEach(() => { cleanup(); setLocaleOverride(null); document.documentElement.lang = "en"; });
 
-  it("hides the section rail on a computer and brings it back with «Menu»", async () => {
-    const slot = await mountPage(projectsRpc);
-    fireEvent.click(await slot.findByTestId("scope-nav-workflows"));
-    const shell = slot.getByTestId("project-picker");
-    if (shell.dataset.lpChrome !== "rail") return; // a phone-width shell keeps its own compact picker
-    await waitFor(() => expect(slot.queryByTestId("scope-rail")).toBeNull());
-    fireEvent.click(slot.getByTestId("scope-rail-toggle"));
-    expect(await slot.findByTestId("scope-rail")).toBeTruthy();
+  it("opens the Errands screen from Work", async () => {
+    const slot = await mountPage(
+      { ...projectsRpc, errands_overview: () => ({ days: 7, kinds: [], errands: [] }) },
+      { projectId: null, threadId: null },
+      "",
+      false,
+    );
+    fireEvent.click(await slot.findByTestId("console-nav-work"));
+    fireEvent.click(await slot.findByTestId("seg-work-view-errands"));
+    await slot.findByTestId("errands-screen");
+    await slot.findByTestId("errands-empty");
+    slot.lifecycle.unmount();
   });
 });

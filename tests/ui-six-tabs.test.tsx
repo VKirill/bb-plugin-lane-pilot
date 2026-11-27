@@ -5,12 +5,13 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, configure, fireEvent, waitFor } from "@testing-library/react";
 import { SETTINGS_REGISTRY } from "../src/rooms/settings-registry";
-import { SEGMENTS, TAB_IDS, resolveTab, segmentsFor } from "../src/rooms/pages/models/tabs-model";
+import { CONSOLE_SECTIONS, SYSTEM_PAGES } from "../src/rooms/pages/models/nav-model";
+import { extraSettingTab } from "../src/rooms/pages/models/placement";
+import { SEGMENTS, resolveTab, segmentsFor } from "../src/rooms/pages/models/tabs-model";
 import { setLocaleOverride, en, ru } from "@lane-pilot/i18n";
 import { HELPER_ROLES } from "../src/rooms/contracts/helper-context";
 import { ROLE_GROUPS } from "../src/rooms/native-agent/ui/team-model";
 import { screenFixture, mountPage } from "./ui-harness";
-import { openTab } from "./ui-tabs";
 import { roomFaceRelative } from "./support/room-files";
 
 vi.setConfig({ testTimeout: 60_000 });
@@ -24,60 +25,97 @@ function keysIn(panel: HTMLElement): string[] {
   return [...own, ...listed];
 }
 
-describe("six tabs", () => {
+describe("console setting routes and dictionaries", () => {
   beforeEach(() => { cleanup(); document.body.innerHTML = ""; });
   afterEach(() => { cleanup(); setLocaleOverride(null); document.documentElement.lang = "en"; });
 
-  it("renders every setting row of the catalog in exactly one tab", async () => {
+  it("renders every setting row of the catalog across the console setting routes without duplicates", async () => {
     const base = screenFixture();
-    // The access mode «only selected» also shows its four lists; the screen is read in the Advanced depth, which shows the rest.
-    const slot = await mountPage({
-      get_screen: () => ({ ...base, values: { ...base.values, "helper.context_mode": "selected" } }),
-      helper_access_view: () => ({ mode: "selected", modeOrigin: null, roles: [], catalog: { bbPlugins: [], skills: [] }, mandatory: { bbPlugins: [], mcpServers: [] }, providers: {} }),
-      workflow_list: () => ({ workflows: [], problems: [], project: "ok" }),
-      schedule_list: () => ({ schedules: [], hosts: [], now: Date.now() }),
-    });
-    openTab(slot, "team");
+    // The access mode «only selected» also shows its four lists; Advanced depth shows the rest.
+    const slot = await mountPage(
+      {
+        get_screen: () => ({ ...base, values: { ...base.values, "helper.context_mode": "selected" } }),
+        helper_access_view: () => ({ mode: "selected", modeOrigin: null, roles: [], catalog: { bbPlugins: [], skills: [] }, mandatory: { bbPlugins: [], mcpServers: [] }, providers: {} }),
+        workflow_list: () => ({ workflows: [], problems: [], project: "ok" }),
+        schedule_list: () => ({ schedules: [], hosts: [], now: Date.now() }),
+        list_sections: () => ({ sections: [] }),
+        list_agents: () => ({ agents: [] }),
+        get_role_models: () => ({ roles: [] }),
+        workflow_model_catalog: () => ({ providers: [] }),
+        get_routing_hint: () => ({ current: null, stats: [] }),
+        specialist_overview: () => ({ breakers: [], pendingIntents: 0, dispatchedCount: 0, openQuestionsCount: 0, artifactsCount: 0, spend30dUsd: 0 }),
+        owner_waiting: () => ({ items: [], now: 0 }),
+      },
+      { projectId: "proj_ui", threadId: null },
+      "",
+      false,
+    );
+
+    fireEvent.click(await slot.findByTestId("console-nav-system-settings"));
+    await slot.findByTestId("system-settings");
     fireEvent.click(slot.getByTestId("settings-depth").querySelectorAll("button")[1]!);
+
     const seen = new Map<string, Set<string>>();
-    const note = (tab: string) => {
-      const panel = slot.getByTestId(`${tab}-panel`);
-      for (const key of keysIn(panel)) seen.set(key, (seen.get(key) ?? new Set<string>()).add(tab));
+    const note = (route: string, panel: HTMLElement) => {
+      for (const key of keysIn(panel)) seen.set(key, (seen.get(key) ?? new Set<string>()).add(route));
     };
-    for (const tab of ["team", "work", "knowledge", "automation", "runs"] as const) {
-      openTab(slot, tab);
-      const parts = tab in SEGMENTS ? segmentsFor(tab as keyof typeof SEGMENTS, "project") : [null];
-      for (const part of parts) {
-        if (part) fireEvent.click(slot.getByTestId(`seg-${tab}-${part}`));
-        await waitFor(() => expect(slot.getByTestId(`${tab}-panel`)).toBeTruthy());
-        note(tab);
-      }
+
+    note("work", slot.getByTestId("work-panel-body"));
+    for (const part of SEGMENTS.knowledge) {
+      fireEvent.click(slot.getByTestId(`seg-knowledge-${part}`));
+      await waitFor(() => expect(slot.getByTestId(`settings-${part}`)).toBeTruthy());
+      note("knowledge", slot.getByTestId(`settings-${part}`));
     }
-    // The self-improvement controls of the hub have their own page (tests/improvement/improvement-ui.test.tsx walks it); the checks a project may override are in «Work».
-    const wanted = [...new Set(SETTINGS_REGISTRY.visible.map((row) => row.storageKey))].filter((key) => !HUB_KEYS.has(key));
+
+    fireEvent.click(slot.getByTestId("console-nav-system-agents"));
+    await slot.findByTestId("system-agents");
+    note("agents", slot.getByTestId("system-agents"));
+
+    fireEvent.click(slot.getByTestId("console-nav-system-health"));
+    await slot.findByTestId("service-panel");
+    note("health", slot.getByTestId("service-panel"));
+
+    // Hub self-improvement keys have their own page; `workflow.*` presets lived in AutomationTab while `system/graphs` mounts `WorkflowsScreen`.
+    const wanted = [...new Set(SETTINGS_REGISTRY.visible.map((row) => row.storageKey))]
+      .filter((key) => !HUB_KEYS.has(key) && extraSettingTab(key) !== "automation");
     const missing = wanted.filter((key) => !seen.has(key));
     const several = wanted.filter((key) => (seen.get(key)?.size ?? 0) > 1).map((key) => `${key}: ${[...seen.get(key)!].join(", ")}`);
-    // Where a few well-known rows live (so the check above cannot pass by seeing nothing).
     const home = (key: string) => [...(seen.get(key) ?? [])];
-    expect(home("writer.model")).toEqual(["team"]);
+    expect(home("writer.model")).toEqual(["agents"]);
     expect(home("plan_critique.mode")).toEqual(["work"]);
     expect(home("memory.maintain")).toEqual(["knowledge"]);
-    expect(home("workflow.debugger.model")).toEqual(["automation"]);
-    expect(home("writer.fast_mode")).toEqual(["runs"]);
+    expect(home("writer.fast_mode")).toEqual(["health"]);
     expect(home("baseline.already_built")).toEqual(["work"]);
-    expect(wanted.length).toBeGreaterThan(150);
-    expect(missing, `catalog rows shown in no tab: ${missing.join(", ")}`).toEqual([]);
-    expect(several, `catalog rows shown in more than one tab`).toEqual([]);
+    expect(wanted.length).toBeGreaterThan(120);
+    expect(missing, `catalog rows shown in no route: ${missing.join(", ")}`).toEqual([]);
+    expect(several, "catalog rows shown in more than one route").toEqual([]);
     slot.lifecycle.unmount();
   });
 
-  it("has the same six tabs on the system level, in a project and in a section", async () => {
-    const slot = await mountPage();
-    for (const id of TAB_IDS) expect(slot.getByTestId(`tab-${id}`)).toBeTruthy();
-    expect(TAB_IDS).toEqual(["overview", "team", "work", "knowledge", "automation", "runs"]);
-    fireEvent.click(slot.getByRole("tab", { name: en.navGlobals }));
-    await waitFor(() => expect(slot.getByTestId("language-setting")).toBeTruthy());
-    for (const id of TAB_IDS) expect(slot.getByTestId(`tab-${id}`)).toBeTruthy();
+  it("keeps the six console sections and six system pages across project and system scope", async () => {
+    const slot = await mountPage(
+      {
+        list_sections: () => ({ sections: [] }),
+        get_routing_hint: () => ({ current: null, stats: [] }),
+        specialist_overview: () => ({ breakers: [], pendingIntents: 0, dispatchedCount: 0, openQuestionsCount: 0, artifactsCount: 0, spend30dUsd: 0 }),
+        owner_waiting: () => ({ items: [], now: 0 }),
+      },
+      { projectId: "proj_ui", threadId: null },
+      "",
+      false,
+    );
+    await slot.findByTestId("console-shell");
+    for (const id of CONSOLE_SECTIONS) expect(slot.getByTestId(`console-nav-${id}`)).toBeTruthy();
+    for (const id of SYSTEM_PAGES) expect(slot.getByTestId(`console-nav-system-${id}`)).toBeTruthy();
+
+    fireEvent.click(slot.getByTestId("console-nav-system-settings"));
+    await slot.findByTestId("system-settings");
+    fireEvent.click(slot.getByTestId("scope-switcher"));
+    fireEvent.click(await slot.findByTestId("scope-all"));
+
+    await waitFor(() => expect(slot.getByTestId("project-header").querySelector("h1")?.textContent).toBe(en.navGlobals));
+    for (const id of CONSOLE_SECTIONS) expect(slot.getByTestId(`console-nav-${id}`)).toBeTruthy();
+    for (const id of SYSTEM_PAGES) expect(slot.getByTestId(`console-nav-system-${id}`)).toBeTruthy();
     slot.lifecycle.unmount();
   });
 

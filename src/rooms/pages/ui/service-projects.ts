@@ -1,4 +1,11 @@
-import { DRILL_SANDBOX_PROJECT_IDS, isSandboxProjectName, type ListedProject } from "../../contracts/project-scope";
+import {
+  DRILL_SANDBOX_PROJECT_IDS,
+  isSandboxProjectName,
+  userVisibleProjects,
+  type ListedProject,
+} from "../../contracts/project-scope";
+
+export { userVisibleProjects, type ListedProject };
 
 const DRILL_IDS = new Set<string>(DRILL_SANDBOX_PROJECT_IDS);
 
