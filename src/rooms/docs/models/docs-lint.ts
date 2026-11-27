@@ -13,11 +13,6 @@ const CITATION_PATH = String.raw`(?:[A-Za-z0-9_@.\/\[\]+-]|\([A-Za-z0-9_@.\[\]+-
 export const CITATION_SOURCE = String.raw`(${CITATION_PATH}):(\d+)(?:-(\d+))?`;
 const CITATION = new RegExp(CITATION_SOURCE, "g");
 
-export type DocPage = { path:string; content:string };
-
-/** `target` names the page a finding is about when that is another page: a link's target. */
-export type DocsFinding = { path:string; rule:string; detail:string; target?:string };
-
 /** `file.ts:10-12,40-44` names two ranges of one file; written out, each is its own citation. */
 export function expandCitationLists(text:string):string {
   return text.replace(new RegExp(String.raw`(${CITATION_PATH}):(\d+(?:-\d+)?)((?:,\s*\d+(?:-\d+)?(?![\w.:\/-]))+)`, "g"),
@@ -50,12 +45,4 @@ export function claimIdentifiers(text:string):string[] {
     if (/\(\)$|_|\./.test(token) || (/^[a-z_$]/.test(token) && /[a-z][A-Z]/.test(token))) keep(token);
   }
   return [...ids];
-}
-
-/** Marks the Referenced by block Lane Pilot writes, so the lint can tell it from one an agent wrote. */
-export const BACKLINKS_MARK = "<!-- lane-pilot:backlinks -->";
-
-export function withoutBacklinks(text:string):string {
-  const at = text.indexOf(BACKLINKS_MARK);
-  return at < 0 ? text : text.slice(0, at).replace(/\s+$/, "\n");
 }

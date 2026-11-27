@@ -1,5 +1,3 @@
-export type ComposerKind = "new-thread" | "thread" | "queued-message" | "side-chat";
-
 export type ActivationBlock = {
   code: "pending" | "need_project" | "need_binding" | "compiled_unsupported" | "no_projects" | "need_composer_selection";
   detail?: string;

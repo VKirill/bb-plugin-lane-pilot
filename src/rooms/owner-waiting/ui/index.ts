@@ -3,5 +3,5 @@ export { BrakeButton, BrakesDialog } from "./brakes";
 export type { BrakesDialogProps } from "./brakes";
 export { DecisionsScreen } from "./decisions-screen";
 export type { DecisionsScreenProps, DecisionsView } from "./decisions-screen";
-export { OwnerWaitingBadge, OwnerWaitingBoard, PushSettings } from "./owner-waiting-board";
+export { OwnerWaitingBoard, PushSettings } from "./owner-waiting-board";
 export type { OwnerWaitingBoardProps } from "./owner-waiting-board";

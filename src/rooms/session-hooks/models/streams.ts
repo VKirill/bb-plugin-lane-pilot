@@ -35,27 +35,6 @@ const REQUIRED_STREAMS = new Set<StreamName>(["hard_rules"]);
 /** Only these streams may refuse the call (SMA k_hp_merge): a deny of any other stream merges as a warning. */
 const DENY_RIGHTS = new Set<StreamName>(["hard_rules"]);
 
-/**
- * Inventory of checkable gates (SMA k_d_ref_gates_inv): every pre-tool guard with when it fires
- * (matcher), the deny/advice it gives (text) and the switch that holds it (the env that tunes it or
- * the stream that can be left out of runStreams).
- */
-export type GuardRow = { id: string; matcher: string; text: string; switch: string };
-
-export const GUARD_INVENTORY: GuardRow[] = [
-  { id: "execution-without-agent", matcher: "a writer calls a subagent whose kind is not in the documentary list", text: "a writer does its task itself; only read-and-report agents may help", switch: "role writer" },
-  { id: "subagent-foreground", matcher: "run_in_background is set on a subagent call", text: "a lane session's subagent runs in the foreground", switch: "none: a background subagent is always refused" },
-  { id: "subagent-cap", matcher: "the session's spawned subagents reach the cap", text: "finish with what you have or do it yourself", switch: "LANE_SUBAGENT_CAP" },
-  { id: "spend-cap", matcher: "a usage window the owner capped (usage.skip_percent) is at or past its cap when a subagent is called", text: "no subagent until the window resets; finish with what you have", switch: "usage.skip_percent (0 turns it off)" },
-  { id: "hard_rules", matcher: "an owner hard rule matches the tool and its subject", text: "deny with the rule's own message", switch: "stream hard_rules" },
-  { id: "git_airbag", matcher: "a destructive git command runs on a dirty tree", text: "advice: the safety ref written and how to restore", switch: "stream git_airbag" },
-  { id: "dependency_store", matcher: "an edit tool touches a lockfile or node_modules", text: "advice: dependencies change through the package manager", switch: "stream dependency_store" },
-  { id: "reflexes", matcher: "a remembered failure line repeats in the tool call", text: "advice: the recorded fix", switch: "stream reflexes" },
-  { id: "rule_loops", matcher: "the same denial fires again in the session", text: "advice: stop and change approach", switch: "stream rule_loops" },
-  { id: "knowledge", matcher: "an edit tool call matches a knowledge note", text: "advice: the note's claim", switch: "stream knowledge" },
-];
-
-/** A guard row with an empty field, and a deny tag no inventory row names. */
 export type SpendWindow = { label?: string; usedPercent: number; resetsAt?: string | null; model?: string | null };
 
 /** A window of a model family (`opus`) applies to a model id that names it; a window of no model applies to all. */

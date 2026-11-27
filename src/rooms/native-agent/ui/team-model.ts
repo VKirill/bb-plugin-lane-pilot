@@ -55,11 +55,3 @@ export const ROLE_GROUPS: Array<{ id: RoleGroupId; roles: RoleSpec[] }> = [
 export const roleKey = (role: string) => role.replace(/[:-]/g, "_");
 export const roleName = (role: string) => `accessName_${roleKey(role)}` as I18nKey;
 export const rolePurpose = (role: string) => `accessPurpose_${roleKey(role)}` as I18nKey;
-
-/** Where a role's value comes from, read off the screen payload: set here, inherited from above, or the built-in default. */
-export type RoleOrigin = "here" | "inherited" | "default";
-export function originOfKeys(keys: string[], explicit: readonly string[] | undefined, inherited: readonly string[] | undefined): RoleOrigin {
-  if (keys.some((key) => explicit?.includes(key))) return "here";
-  if (keys.some((key) => inherited?.includes(key))) return "inherited";
-  return "default";
-}

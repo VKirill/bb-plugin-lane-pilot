@@ -12,7 +12,6 @@ export { claimStageSpawn, saveStageReceipt, deleteStageReceipt, GATE_CATEGORIES,
 export type { StageReceiptRow, StageEventRow, GateCategory, GateEventStatus, GateEventRow } from "./stages-store";
 export { savePrototypeConfig, loadPrototypeConfig, casSetting, sectionBindingId, loadProjectSettings, saveProjectSetting, listSettingRows, listDistinctSettingKeys, getSettingVersions, casUpsertSetting, casUpsertSettings, casResetSettings, listOwnSettingLevels, removeOwnSettings, clearSettingValue, bindingSettingValue, projectIdForCheckoutPath, planningHomeInputs, readLoopModes, readLoopMode } from "./settings-store";
 export { onSettingChanged } from "./setting-events";
-export { TABLE_SKIP_RE, clockForColumns, darkClockExpr, darkTables, type DarkDb, type DarkTableRow } from "./table-clocks";
 export type { SettingChange, SaveSettingsResult } from "./settings-store";
 export { recordSecretIssuance, listSecretIssuance, checkIdentity, checkHistoryKey, recordCheckDuration, listCheckTimeouts, listCheckRuns, listCheckDurations } from "./checks-store";
 export type { SecretIssuance, CheckRef } from "./checks-store";

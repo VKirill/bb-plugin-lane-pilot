@@ -44,34 +44,6 @@ export const STEP_FACT_FIELDS = [
   "environment_fingerprint",
 ] as const;
 
-export interface StepFact {
-  runId: string;
-  stepId: string;
-  nodeId: string;
-  nodeKind: string;
-  requestedProvider: string | null;
-  requestedModel: string | null;
-  answeredProvider: string | null;
-  answeredModel: string | null;
-  inputTokens: number;
-  outputTokens: number;
-  cacheReadTokens: number;
-  cacheWriteTokens: number;
-  costMicroUsd: number | null;
-  costState: CostState;
-  durationMs: number;
-  verdict: FactVerdict;
-  failureClass: string | null;
-  reworkVisits: number;
-  graphVersion: string;
-  requestId: string | null;
-  attemptId: string | null;
-  sessionId: string | null;
-  formUsed: NodeForm | null;
-  fallbackTaken: string | null;
-  environmentFingerprint: string | null;
-}
-
 export interface NodeCensusEntry {
   nodeId: string;
   nodeKind: string;

@@ -117,7 +117,6 @@ Purpose: canonical storage for project conventions (`kind = 'core'`) and context
 | `"active"` | `"expired"` | `expireIdleMemory` (`packages/memory-core/src/store.ts:524-528`) | Promoted note remaining idle past evaluation window (`listIdlePromotions`) | Reason `"idle"` |
 | `"active"` | `"expired"` | `hideRecord` (`packages/memory-core/src/lifecycle.ts:31-34`) | Caller records owner withdrawal (`"revoked"`), archival (`"archived"`), or owner forget/replace tombstone (`"owner"`) as the reason | `packages/memory-core/src/lifecycle.ts:9-10, 31-34`; owner tombstone handling: `packages/memory-core/src/store.ts:154-160` |
 | `"expired"` | `"active"` | `storeMemoryRecords` (`packages/memory-core/src/store.ts:154-162, 228-231`) | A restated expired record revives unless its reason is `"owner"`, `"revoked"`, or `"archived"` | `packages/memory-core/src/store.ts:154-162` |
-| `"expired"` | `"active"` | `reactivateColdMemory` (`packages/memory-core/src/store.ts:499-513`) | Cold idle or archived note re-activated during cold-tier retrieval | Resets `last_used_at`; archived rows are cold-tier candidates | `packages/memory-core/src/store.ts:499-513` |
 
 ### Lifecycle of `trust`
 
@@ -139,8 +138,6 @@ Purpose: canonical storage for project conventions (`kind = 'core'`) and context
   - `storeMemoryRecords` / `storeMemoryRecordsKeepingOverflow`: insert new candidates, demote core overflows, update indexes (`packages/memory-core/src/store.ts:121-240, 262-274`).
   - `insertMemoryRecord`: direct row insertion for corpus evaluation without admission or indexing side effects (`packages/memory-core/src/store.ts:550-556`).
   - `deleteMemoryRecord`: removes a record and drops search indexes (`packages/memory-core/src/store.ts:448-464`).
-  - `reactivateColdMemory`: re-activates an idle or archived cold note (`packages/memory-core/src/store.ts:499-513`).
-  - `recordMemoryPromotion`: records a promotion row on reactivation (`packages/memory-core/src/store.ts:513-517`).
   - `expireIdleMemory`: expires a still-active note as idle during demote sweep (`packages/memory-core/src/store.ts:524-528`).
   - `recordMemoryMiss` / `listMemoryMisses`: logs and reads search queries with zero hits (`packages/memory-core/src/store.ts:539-548, 693-707`).
   - `recordMemoryProbe` / `pruneMemoryProbeBefore`: logs and prunes probe evaluation results (`packages/memory-core/src/store.ts:595-599, 608-611`).

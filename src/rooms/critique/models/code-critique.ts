@@ -248,9 +248,6 @@ export const writerRepairReplySchema = z.object({
   }).strict()).max(30),
 }).strict();
 
-export type WriterRepairReply = z.infer<typeof writerRepairReplySchema>;
-
-
 /**
  * The repair round's whole brief, in place of the writer's first brief: one role, one final answer. `setupLines`
  * carries the writer's setup facts, and `contextBlocks` the workspace, read facts, memory and rules the first

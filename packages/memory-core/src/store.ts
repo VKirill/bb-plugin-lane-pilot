@@ -157,7 +157,7 @@ export function storeMemoryRecords(db: MemoryDatabase, input: StoreMemoryInput):
       if (hit.expired_reason === "owner") continue;
       // A hidden record comes back when its fact is stated again, or when the file it came from says so; a replaced one stays replaced otherwise.
       // A revoked one never does, on any path (restated, re-imported from its file): the owner withdrew that fact. An archived one
-      // stays in the cold tier too: the owner moved it there, and only a PM query (reactivateColdMemory) or the owner brings it back.
+      // stays in the cold tier too: the owner moved it there.
       if (hit.status === "expired" && (hit.expired_reason === "revoked" || hit.expired_reason === "archived" || hit.expired_reason === "duplicate")) continue;
       const wanted = hit.status === "expired" || (entry.sourceFileId != null && entry.sourceFileId === hit.source_file_id);
       if (wanted && (entry.validUntil == null || entry.validUntil > now)) revive.push({ entry, id: hit.id });
@@ -605,16 +605,6 @@ const COLD_TIER = "status='expired' AND kind='note' AND valid_until IS NULL AND 
 export function coldMemoryRows(db: MemoryDatabase, input: { projectId: string; audience: MemoryAudience; personalBot: string; chain: readonly string[]; includeObserved: boolean; now: number; scopeMode?: MemoryScopeMode }): Array<{ id: string; content: string; concepts_json: string }> {
   return db.prepare(`SELECT id, content, concepts_json FROM lane_pilot_memory WHERE project_id=? AND audience=? AND personal_bot=? AND ${COLD_TIER}${input.scopeMode === "project" ? "" : ` AND scope_json IN (${scopeValuesFor(input.chain).map(sqlString).join(",")})`}${input.includeObserved ? "" : ` AND (trust='confirmed' OR created_at<=${Math.floor(input.now) - OBSERVED_QUARANTINE_MS})`}${heldClause(db, "lane_pilot_memory")}`)
     .all(input.projectId, input.audience, input.personalBot) as Array<{ id: string; content: string; concepts_json: string }>;
-}
-
-/** Re-activates one cold-tier note; true when the row was still cold. */
-export function reactivateColdMemory(db: MemoryDatabase, projectId: string, id: string, now: number): boolean {
-  return db.prepare(`UPDATE lane_pilot_memory SET status='active', last_used_at=? WHERE project_id=? AND id=? AND ${COLD_TIER}`).run(now, projectId, id).changes === 1;
-}
-
-/** The promotion row a re-activation leaves (memory-tiers). */
-export function recordMemoryPromotion(db: MemoryDatabase, projectId: string, memoryId: string, query: string, now: number): void {
-  db.prepare("INSERT OR IGNORE INTO lane_pilot_memory_promotion(project_id,memory_id,query,at) VALUES (?,?,?,?)").run(projectId, memoryId, query.slice(0, 500), now);
 }
 
 /** Notes a promotion re-activated that stayed idle past the window (the demote sweep). */

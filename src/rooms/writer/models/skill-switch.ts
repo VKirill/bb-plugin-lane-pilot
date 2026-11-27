@@ -11,17 +11,6 @@ export type SkillSwitchRecord = {
   recordedAt: number;
 };
 
-export type SkillSwitchStats = {
-  totalTasks: number;
-  avgSwitches: number;
-  lowSwitchTotal: number;
-  lowSwitchFailures: number;
-  lowSwitchFailRate: number;
-  highSwitchTotal: number;
-  highSwitchFailures: number;
-  highSwitchFailRate: number;
-};
-
 /**
  * Calculates the number of skill switches (transitions between different skills in sequence).
  * e.g., [A, A, B, C, C, B] -> 3 switches (A->B, B->C, C->B).

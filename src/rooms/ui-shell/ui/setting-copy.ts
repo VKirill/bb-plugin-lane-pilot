@@ -214,10 +214,6 @@ export const SETTING_META: Record<string, SettingMeta> = {
   [SETTING_EPISODES_PROCESS_KEY]: { label: "field_s612", help: "reason_s612" },
 };
 
-export function settingMeta(storageKey: string): SettingMeta | undefined {
-  return SETTING_META[storageKey];
-}
-
 export function settingLabel(row: CatalogRow): string {
   const mapped = SETTING_META[row.storageKey];
   if (mapped) return t(mapped.label);

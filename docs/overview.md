@@ -30,7 +30,6 @@ sources:
   - src/rooms/migrations.ts
   - src/rooms/schedule/server/handlers/board-clock.ts
   - src/rooms/memory/server/services/memory.ts
-  - src/rooms/memory/ui/memory-records.tsx
   - src/rooms/runs/server/services/task-board.ts
   - src/rooms/runs/server/services/task-graph.ts
   - src/rooms/runs/server/rpc/runs.ts
@@ -70,7 +69,7 @@ When reload recovery (`taskReconcile.reconcile`) finds the writer's prior thread
 - **Tasks screen:** the app shows task attempts and top-level workflow runs in a board or grouped list, with a detail page for contract, stage, attempt, and worker-thread data (`src/rooms/runs/ui/task-board.tsx`, `src/rooms/runs/server/services/task-board.ts`). See [Tasks board](task-board.md).
 - **Settings and integrations:** typed settings live in `src/rooms/settings-registry.ts` (including **model per function** with automatic fallback) and typed RPC endpoints expose settings, workflows, schedules, memory, and runs to the UI (`src/rooms/core/server/rpc.ts`). The surface is declared in [RPC contracts](rpc-callers.md).
 - **Schedule board and engine clock:** one clock (`packages/workflow-engine/src/engine-clock.ts`, `src/rooms/schedule/server/handlers/board-clock.ts`) wakes overdue waiting steps and due schedule-board rows (owner rows plus `SYSTEM_SCHEDULES` and `PROJECT_SCHEDULES`), respecting the board-wide pause (`schedule.paused_all`).
-- **Project knowledge:** memory RPCs create and retrieve project-scoped agent records; the UI displays records and lifecycle (`src/rooms/memory/server/services/memory.ts`, `src/rooms/memory/ui/memory-records.tsx`).
+- **Project knowledge:** memory RPCs create and retrieve project-scoped agent records; the UI displays records and lifecycle (`src/rooms/memory/server/services/memory.ts`, `src/rooms/memory/ui/memory-screen.tsx`).
 - **Evolution building blocks:** per-step run facts (`lane_pilot_wf_step`), paired arm comparison and trial gating (`src/rooms/evolve/`), and planted-defect checker gating (`src/rooms/checkers/`) provide the primitives for the proposed `lp.evolve` graph (`docs/decisions/2026-11-25-evolution-graph.md`).
 
 ## Stage proof and attempt metrics

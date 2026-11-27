@@ -294,10 +294,3 @@ export function OwnerWaitingBoard({ projects, projectId = null, onOpenTask, onOp
     </div>
   );
 }
-
-/** The number next to the screen's name in the rail; nothing while it is 0 or cannot be read. */
-export function OwnerWaitingBadge() {
-  const waiting = (useLpRpcQuery("owner_waiting", {}, { pollMs: 60_000 }).data ?? null) as OwnerWaiting | null;
-  const count = waiting?.now ?? waiting?.items.length ?? 0;
-  return count ? <span className="ml-1.5 rounded-full bg-secondary px-1.5 text-[11px] leading-5 text-muted-foreground" data-testid="owner-badge">{count}</span> : null;
-}

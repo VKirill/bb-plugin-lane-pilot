@@ -9,7 +9,6 @@ tags: [memory, knowledge, maintenance]
 sources:
   - src/rooms/memory/server/services/memory.ts
   - src/rooms/memory/server/handlers/session-memory.ts
-  - src/rooms/memory/ui/memory-records.tsx
   - packages/memory-core/src/store.ts
   - packages/memory-core/src/lifecycle.ts
   - packages/memory-core/src/context.ts
@@ -50,9 +49,6 @@ Keep project facts and rules available to PM, writer, and terminal sessions thro
 3. `session_memory_search` retrieves subagent-visible records; `session_memory_core` returns active core records whose expiry is unset or in the future (`src/rooms/memory/server/handlers/session-memory.ts:50-59`).
 4. `createMemoryStage` runs after acceptance and validates PM/run/task ownership and requires a passed acceptance receipt before starting maintenance (`src/rooms/memory/server/services/memory.ts:22-47`).
 5. The maintenance stage creates or resumes one `memory-maintenance` stage receipt and skips work when memory is disabled or maintenance is off (`src/rooms/memory/server/services/memory.ts:58-83`). It runs inside `lp.after-accept`; a `gather` step that fails marks the run `step_failed:gather` and leaves the accepted task untouched — failures are recorded, never retried, and visible in the run's receipts (`workflows/lp.after-accept.json`).
-6. `MemoryRecords` loads the project's rows on mount and when `projectId` changes; a list RPC failure becomes an empty list (`src/rooms/memory/ui/memory-records.tsx:18-23`).
-7. It partitions rows by `rule`, then renders separate fact and rule disclosures. Each row shows its kind, creation date, content, and at most eight concepts; only fact rows render a remove button (`src/rooms/memory/ui/memory-records.tsx:36-50`, `:53-62`).
-8. Removing a fact marks that row busy and calls `memory_record_delete`. A refusal shows the rule-specific or missing-record toast; success reloads the list; a thrown error is shown as a toast, and `finally` clears the busy row (`src/rooms/memory/ui/memory-records.tsx:25-34`).
 
 ## Modes and states
 
@@ -62,9 +58,6 @@ Keep project facts and rules available to PM, writer, and terminal sessions thro
 | Observed session record | Stored for `subagent`, with `trust: observed` and `origin: session` (`src/rooms/memory/server/handlers/session-memory.ts:38-45`). |
 | Accepted task | Memory maintenance can run only after the writer acceptance receipt passed (`src/rooms/memory/server/services/memory.ts:43-47`). |
 | Existing terminal maintenance receipt | Reuse the prior result; another maintenance pass requires a new task (`src/rooms/memory/server/services/memory.ts:61-64`). |
-| Rule record | Displayed separately and cannot be deleted through the facts action (`src/rooms/memory/ui/memory-records.tsx:36-46`). |
-| List request failed | The UI stores an empty list; its disclosures render their empty state rather than an RPC error (`src/rooms/memory/ui/memory-records.tsx:18-21`, `:56-61`). |
-| Delete refused or throws | A refusal displays the rule or gone message and reloads; a thrown error displays its message; both clear the busy state (`src/rooms/memory/ui/memory-records.tsx:25-34`). |
 | Core budget full | During accepted-task maintenance, a core candidate that does not fit is stored as a note; `coreDemotedToNotes` reports the number demoted. Other budget failures still reject storage (`src/rooms/memory/server/services/memory.ts:100-120`, `packages/memory-core/src/store.ts:211-223`). |
 
 Maintainer output accepts a JSON array directly, inside a JSON fence, or within surrounding text. Empty extra fields are discarded; `review`, `pitfall`, `invariant`, `security`, or `regression` set to `true` becomes a concept when `concepts` is an array. Other non-empty unknown fields reject the candidate batch. Credential-like content and instruction-override text are also rejected (`packages/memory-core/src/candidates.ts:15-18`, `:58-66`).

@@ -14,5 +14,3 @@ export function schedulePayloadProblem(payload: unknown): string | null {
   if (!p.when || typeof p.when !== "object") return "schedule.when is missing";
   return null;
 }
-
-export type LeadScheduleResult = { ok: true; id: string; name: string } | { ok: false; reason: string };

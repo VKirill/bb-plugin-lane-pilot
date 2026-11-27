@@ -80,7 +80,6 @@ Primary exported functions include:
 - `deleteMemoryRecord`: removes record and purges search indexes (`packages/memory-core/src/store.ts:586-602`).
 - `searchMemoryRecords`: hybrid search combining FTS5 BM25, trigrams, and vector cosine ranking (`packages/memory-core/src/store.ts:409-430`).
 - `coldMemoryRows`: retrieves idle-expired and archived notes for cold-tier search (`packages/memory-core/src/store.ts:642-645`).
-- `reactivateColdMemory`: re-activates an idle-expired or archived note (`packages/memory-core/src/store.ts:648-650`).
 - `listMemoryMisses`: queries logged searches that returned zero results (`packages/memory-core/src/store.ts:679-686`).
 - `relevantRecords`: applies relevance thresholds based on query length and path anchors (`packages/memory-core/src/floor.ts:157-165`).
 - `weakAnswer` / `gateScore`: the answer gate's verdict and probability; kept for the judge's receipts and the offline suite, no warning reaches a reader (`packages/memory-core/src/floor.ts:141-154`). `judge.ts` holds the pure part of the last-stage judge: prompt, secret mask, reply parser, receipt shape.

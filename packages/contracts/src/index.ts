@@ -1,6 +1,5 @@
 export * from "./schemas";
 export * from "./limits";
-export * from "./design";
 export * from "./events";
 export * from "./stage-contract";
 export * from "./stage-proof";

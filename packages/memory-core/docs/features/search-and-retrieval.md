@@ -86,8 +86,6 @@ The search subsystem retrieves active project facts and rules matching natural l
 - `scopeValuesFor(chain: readonly string[])`: computes array of valid scope JSON strings for a section chain (`packages/memory-core/src/store.ts:333-337`).
 - `projectUsesSections(db, projectId, hasScopedRun)`: evaluates if a project uses section scopes via caller-supplied `hasScopedRun` run predicate (`packages/memory-core/src/store.ts:340-343`).
 - `coldMemoryRows(db, input)`: queries idle-expired or owner-archived note rows for one project's cold-tier read (`packages/memory-core/src/store.ts:642-645`).
-- `reactivateColdMemory(db, projectId, id, now)`: re-activates one cold-tier note to active status (`packages/memory-core/src/store.ts:648-650`).
-- `recordMemoryPromotion(db, projectId, memoryId, query, now)`: logs a promotion row on reactivation (`packages/memory-core/src/store.ts:653-655`).
 - `listIdlePromotions(db, beforeMs)`: lists notes re-activated by promotion that remained idle past the threshold (`packages/memory-core/src/store.ts:658-661`).
 - `expireIdleMemory(db, id)`: marks a still-active note expired with `expired_reason = 'idle'` (`packages/memory-core/src/store.ts:664-666`).
 - `recordMemoryMiss(db, projectId, query, now)`: records a search query that yielded no results (`packages/memory-core/src/store.ts:770-774`).
