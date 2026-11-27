@@ -1,5 +1,5 @@
 import type Database from "better-sqlite3";
-import type { CostState, NodeCensusClass, NodeCensusEntry } from "@lane-pilot/contracts";
+import type { CostState, FallbackRateEntry, NodeCensusClass, NodeCensusEntry, NodeForm } from "@lane-pilot/contracts";
 
 import { tallyOutcomes, type OutcomeRow } from "./business-outcome";
 import type { RunRecord } from "./router";
@@ -208,10 +208,26 @@ type CensusRawRow = {
   verdict: string | null;
   state: string;
   cost_micro_usd: number | null;
+  duration_ms: number | null;
   rework_visits: number | null;
   visit: number;
   definition_json: string;
 };
+
+export type NodeCensusOptions = {
+  workflowId?: string;
+  runIds?: readonly string[];
+  graphVersion?: number | string;
+};
+
+export type FallbackRatesOptions = {
+  workflowId?: string;
+  window?: number;
+};
+
+export type { FallbackRateEntry };
+
+const FALLBACK_MIN_SAMPLES = 10;
 
 type ParsedNodeInfo = {
   type?: string;
@@ -271,18 +287,32 @@ function classifyCensusNode(
 }
 
 /**
- * Node census for self-evolution (Task 26 / Task 20): classifies nodes as `code`, `stable_agent` (form-arm candidate),
- * or `open_agent` and computes each node's share of measured workflow cost using only step/run tables (no chat transcripts).
+ * Node census for self-evolution (Task 26 / Task 27): classifies nodes as `code`, `stable_agent` (form-arm candidate),
+ * or `open_agent` and computes each node's share of measured workflow cost and wall-clock duration using only step/run tables.
  */
-export function nodeCensus(db: Database.Database, options: { workflowId?: string } = {}): NodeCensusEntry[] {
-  const where = options.workflowId
-    ? "s.state IN ('succeeded','failed','skipped','canceled') AND r.workflow_id=?"
-    : "s.state IN ('succeeded','failed','skipped','canceled')";
-  const rows = (options.workflowId
-    ? db.prepare(`SELECT s.node_id, s.input_json, s.verdict, s.state, s.cost_micro_usd, s.rework_visits, s.visit, r.definition_json
-        FROM lane_pilot_wf_step s JOIN lane_pilot_wf_run r ON r.id=s.run_id WHERE ${where} ORDER BY s.rowid`).all(options.workflowId)
-    : db.prepare(`SELECT s.node_id, s.input_json, s.verdict, s.state, s.cost_micro_usd, s.rework_visits, s.visit, r.definition_json
-        FROM lane_pilot_wf_step s JOIN lane_pilot_wf_run r ON r.id=s.run_id WHERE ${where} ORDER BY s.rowid`).all()) as CensusRawRow[];
+export function nodeCensus(db: Pick<Database.Database, "prepare">, options: NodeCensusOptions = {}): NodeCensusEntry[] {
+  if (options.runIds !== undefined && options.runIds.length === 0) return [];
+  const conditions = ["s.state IN ('succeeded','failed','skipped','canceled')"];
+  const params: Array<string | number> = [];
+  if (options.workflowId !== undefined) {
+    conditions.push("r.workflow_id=?");
+    params.push(options.workflowId);
+  }
+  if (options.runIds !== undefined) {
+    conditions.push(`s.run_id IN (${options.runIds.map(() => "?").join(",")})`);
+    params.push(...options.runIds);
+  }
+  if (options.graphVersion !== undefined) {
+    const versionNum = typeof options.graphVersion === "number" ? options.graphVersion : Number(options.graphVersion);
+    if (!Number.isFinite(versionNum)) return [];
+    conditions.push("COALESCE(s.graph_version, r.workflow_version)=?");
+    params.push(versionNum);
+  }
+
+  const rows = db.prepare(`SELECT s.node_id, s.input_json, s.verdict, s.state, s.cost_micro_usd, s.duration_ms, s.rework_visits, s.visit, r.definition_json
+      FROM lane_pilot_wf_step s JOIN lane_pilot_wf_run r ON r.id=s.run_id
+      WHERE ${conditions.join(" AND ")}
+      ORDER BY s.rowid`).all(...params) as CensusRawRow[];
 
   const parsedDefs = new Map<string, Map<string, ParsedNodeInfo>>();
   const grouped = new Map<string, {
@@ -294,9 +324,11 @@ export function nodeCensus(db: Database.Database, options: { workflowId?: string
     notRun: number;
     totalReworkVisits: number;
     measuredCostMicroUsd: number;
+    totalDurationMs: number;
     inputShapes: Set<string>;
   }>();
   let totalMeasuredCostMicroUsd = 0;
+  let totalDurationMs = 0;
 
   for (const row of rows) {
     let nodes = parsedDefs.get(row.definition_json);
@@ -311,6 +343,7 @@ export function nodeCensus(db: Database.Database, options: { workflowId?: string
       notRun: 0,
       totalReworkVisits: 0,
       measuredCostMicroUsd: 0,
+      totalDurationMs: 0,
       inputShapes: new Set<string>(),
     };
     if (nodeInfo) { bucket.nodeInfo = nodeInfo; bucket.nodeKind = nodeInfo.type ?? bucket.nodeKind; }
@@ -324,6 +357,9 @@ export function nodeCensus(db: Database.Database, options: { workflowId?: string
       bucket.measuredCostMicroUsd += row.cost_micro_usd;
       totalMeasuredCostMicroUsd += row.cost_micro_usd;
     }
+    const durationMs = Math.max(0, row.duration_ms ?? 0);
+    bucket.totalDurationMs += durationMs;
+    totalDurationMs += durationMs;
     bucket.inputShapes.add(inputShapeSignature(row.input_json));
     grouped.set(row.node_id, bucket);
   }
@@ -338,6 +374,7 @@ export function nodeCensus(db: Database.Database, options: { workflowId?: string
       bucket.inputShapes,
     );
     const costShare = totalMeasuredCostMicroUsd > 0 ? bucket.measuredCostMicroUsd / totalMeasuredCostMicroUsd : 0;
+    const durationShare = totalDurationMs > 0 ? bucket.totalDurationMs / totalDurationMs : 0;
     return {
       nodeId,
       nodeKind: bucket.nodeKind,
@@ -349,7 +386,83 @@ export function nodeCensus(db: Database.Database, options: { workflowId?: string
       totalReworkVisits: bucket.totalReworkVisits,
       measuredCostMicroUsd: bucket.measuredCostMicroUsd,
       costShare,
-      formArmCandidate: classification === "stable_agent" && costShare > 0,
+      durationShare,
+      formArmCandidate: classification === "stable_agent" && (costShare > 0 || durationShare > 0),
     };
-  }).sort((a, b) => b.costShare - a.costShare || b.steps - a.steps || a.nodeId.localeCompare(b.nodeId));
+  }).sort((a, b) => b.costShare - a.costShare || b.durationShare - a.durationShare || b.steps - a.steps || a.nodeId.localeCompare(b.nodeId));
+}
+
+/**
+ * Rolling fallback rate over the last `window` finished steps per `(nodeId, graphVersion, form)` for `script` and `plan` nodes.
+ * Steps that fell back from `script` or `plan` to `agent` record `form_used='agent'` with `fallback_taken='script->...'` / `'plan->...'`,
+ * so both direct `form_used IN ('script','plan')` rows and `script->` / `plan->` fallback rows are attributed to the starting form.
+ */
+export function fallbackRates(
+  db: Pick<Database.Database, "prepare">,
+  options: FallbackRatesOptions = {},
+): FallbackRateEntry[] {
+  const window = Math.max(0, Math.floor(options.window ?? 50));
+  if (window === 0) return [];
+  const conditions = [
+    "s.state IN ('succeeded','failed','skipped','canceled')",
+    "(s.form_used IN ('script','plan') OR s.fallback_taken LIKE 'script->%' OR s.fallback_taken LIKE 'plan->%')",
+  ];
+  const params: Array<string | number> = [];
+  if (options.workflowId !== undefined) {
+    conditions.push("r.workflow_id=?");
+    params.push(options.workflowId);
+  }
+  const rows = db.prepare(`SELECT s.node_id, COALESCE(s.graph_version, r.workflow_version) AS graph_version, s.form_used, s.fallback_taken
+      FROM lane_pilot_wf_step s
+      JOIN lane_pilot_wf_run r ON r.id=s.run_id
+      WHERE ${conditions.join(" AND ")}
+      ORDER BY COALESCE(s.ended_at, s.updated_at) DESC, s.rowid DESC`).all(...params) as Array<{
+    node_id: string;
+    graph_version: number;
+    form_used: string | null;
+    fallback_taken: string | null;
+  }>;
+
+  const grouped = new Map<string, {
+    nodeId: string;
+    graphVersion: number;
+    form: Exclude<NodeForm, "agent">;
+    n: number;
+    fallbacks: number;
+  }>();
+
+  for (const row of rows) {
+    const form: Exclude<NodeForm, "agent"> | null =
+      row.fallback_taken?.startsWith("script->") ? "script"
+      : row.fallback_taken?.startsWith("plan->") ? "plan"
+      : row.form_used === "script" || row.form_used === "plan" ? row.form_used
+      : null;
+    if (!form) continue;
+    const graphVersion = Number(row.graph_version);
+    const key = `${row.node_id}\0${graphVersion}\0${form}`;
+    const bucket = grouped.get(key) ?? {
+      nodeId: row.node_id,
+      graphVersion,
+      form,
+      n: 0,
+      fallbacks: 0,
+    };
+    if (bucket.n >= window) continue;
+    bucket.n += 1;
+    if (row.fallback_taken !== null) bucket.fallbacks += 1;
+    grouped.set(key, bucket);
+  }
+
+  return [...grouped.values()]
+    .map((bucket) => ({
+      ...bucket,
+      rate: bucket.n >= FALLBACK_MIN_SAMPLES ? bucket.fallbacks / bucket.n : null,
+    }))
+    .sort((a, b) =>
+      (b.rate ?? -1) - (a.rate ?? -1)
+      || b.n - a.n
+      || a.nodeId.localeCompare(b.nodeId)
+      || b.graphVersion - a.graphVersion
+      || a.form.localeCompare(b.form),
+    );
 }

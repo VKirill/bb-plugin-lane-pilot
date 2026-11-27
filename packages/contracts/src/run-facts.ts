@@ -99,7 +99,17 @@ export interface NodeCensusEntry {
   totalReworkVisits: number;
   measuredCostMicroUsd: number;
   costShare: number;
+  durationShare: number;
   formArmCandidate: boolean;
+}
+
+export interface FallbackRateEntry {
+  nodeId: string;
+  graphVersion: number;
+  form: Exclude<NodeForm, "agent">;
+  n: number;
+  fallbacks: number;
+  rate: number | null;
 }
 
 /** Map a structured CheckVerdict to a step fact verdict and optional failure class. */

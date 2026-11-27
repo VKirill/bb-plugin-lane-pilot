@@ -8,6 +8,10 @@ export { prepareCriticPacket, readCanonicalPlan } from "./services/critique-pack
 export type { CriticPacket } from "./services/critique-packet";
 export { logJudgeVerdict, runHelperPrompt, runJudge, stopActiveThread } from "./services/judge-runner";
 export type { HelperRunOptions, HelperRunResult, JudgeRunResult, JudgeStepInput } from "./services/judge-runner";
+export { runPairwiseJudge } from "./services/pairwise-judge";
+export type { JudgeRef, PairwiseJudgeContext, PairwiseJudgeInput, PairwiseJudgeResult, PairwiseOutcome } from "./services/pairwise-judge";
+export { JUDGE_AGREEMENT_LOW, JUDGE_CALIBRATION_MIN_CASES, calibrateJudge, judgeTrusted } from "./services/judge-calibration";
+export type { CalibrationCase, CalibrationResult, JudgeCalibrationContext } from "./services/judge-calibration";
 export { lastOwnerTurnAt, ownerLastWroteAt, ownerWordsOfRun } from "./services/owner-words";
 export { PLAN_FIXABLE_FINDINGS, planCritiqueFindings, runPlanCritique } from "./services/plan-critique";
 export type { PlanCritiqueFinding, PlanCritiqueOutcome } from "./services/plan-critique";

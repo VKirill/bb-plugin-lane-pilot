@@ -10,6 +10,7 @@ export * from "./critic-stats";
 export * from "./critique";
 export * from "./dependency-findings";
 export * from "./judge-verdict";
+export * from "./pairwise-judge";
 export * from "./pm-read";
 export * from "./retry-effort";
 export * from "./role-method";

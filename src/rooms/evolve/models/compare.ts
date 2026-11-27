@@ -1,3 +1,4 @@
+import { EVOLVE_THRESHOLDS, median } from "@lane-pilot/contracts";
 import type { BenchResult, NoiseRecord } from "./types";
 
 /**
@@ -131,7 +132,6 @@ export type ArmWriter = { providerId: string; model: string };
 export type ArmSummary = { arm: string; repeats: number; tasks: Map<string, TaskStat>; selected: number; errored: string[]; incomplete: string[]; writer?: ArmWriter | null };
 
 const mean = (values: number[]): number => values.reduce((sum, value) => sum + value, 0) / values.length;
-import { median } from "@lane-pilot/contracts";
 export { median };
 
 /** One arm from its repeats: `byRepeat[i]` are the results of the i-th series (skipped-by-budget rows count as not run). */
@@ -164,6 +164,15 @@ export function summarizeArm(arm: string, byRepeat: readonly (readonly BenchResu
 export type Flip = { taskId: string; from: "pass" | "fail"; to: "pass" | "fail"; a: string; b: string; unstable: boolean };
 /** `ok: null`: the check could not be made (no measurement); it is neither a pass nor a fail. */
 export type Check = { name: string; ok: boolean | null; detail: string };
+export type CompareArmsOptions = {
+  /** Model arms intentionally compare different writers/models; skips the writer-mismatch inconclusive gate. */
+  allowWriterMismatch?: boolean;
+  /** Maps each task id to its task class for per-class regression checking. */
+  classOf?: (taskId: string) => string | null;
+  /** Non-inferiority margin on (candidate − baseline) pass-rate difference; defaults to `EVOLVE_THRESHOLDS.nonInferiority`. */
+  margin?: number;
+};
+
 export type Comparison = {
   armA: string; armB: string; pairedTasks: number; onlyA: string[]; onlyB: string[];
   passed: { a: number; b: number };
@@ -179,7 +188,32 @@ export type Comparison = {
   improvements: string[];
   /** 95% intervals. `diff` is B − A on the paired tasks; if it contains 0, the pass-rate change is inside the noise of this sample. */
   passCi: { level: 0.95; a: { rate: number; low: number; high: number }; b: { rate: number; low: number; high: number }; diff: { low: number; high: number } };
+  /** True when the lower bound of the paired difference CI meets the non-inferiority margin. */
+  nonInferior: boolean;
+  /** True when no class drops on any case that passed all baseline repeats and was not marked unstable. */
+  noRegressionByClass: boolean;
+  /** Strict measured gain beyond noise: cost per accepted task, median wall-clock time, none, or unknown when cost is unmeasured. */
+  gain: "cost" | "time" | "none" | "unknown";
+  /** Share of paired tasks passing in every repeat of each arm (`pass^k`). */
+  passK: { a: number; b: number };
 };
+
+/**
+ * Total measured USD spend across an arm's repeats divided by its total accepted count.
+ * Returns `null` when any task lacks measured cost (never coerced to 0) or when zero repeats were accepted.
+ */
+export function costPerAccepted(arm: ArmSummary, taskIds: readonly string[] = [...arm.tasks.keys()]): number | null {
+  if (!taskIds.length) return null;
+  let totalSpend = 0;
+  let totalAccepted = 0;
+  for (const id of taskIds) {
+    const stat = arm.tasks.get(id);
+    if (!stat || stat.costState !== "measured" || stat.costUsd === null) return null;
+    totalSpend += stat.costUsd * stat.repeats;
+    totalAccepted += stat.accepted;
+  }
+  return totalAccepted > 0 ? totalSpend / totalAccepted : null;
+}
 
 /** Noise from two identical arms: which tasks flipped between them, and how far apart their cost, time and stage counts were. */
 export function computeNoise(one: ArmSummary, two: ArmSummary): NoiseRecord["noise"] {
@@ -207,7 +241,7 @@ const pct = (value: number) => `${(value * 100).toFixed(1)}%`;
  * between the two identical runs are unstable: they are reported but cannot fail the rule. When too little was measured (see MIN_PAIRED_TASKS)
  * the verdict is `inconclusive`: no answer, and no pass or fail for anyone to act on.
  */
-export function compareArms(a: ArmSummary, b: ArmSummary, noise?: NoiseRecord | null): Comparison {
+export function compareArms(a: ArmSummary, b: ArmSummary, noise?: NoiseRecord | null, options?: CompareArmsOptions): Comparison {
   const idsA = [...a.tasks.keys()], idsB = [...b.tasks.keys()];
   const paired = idsA.filter((id) => b.tasks.has(id));
   const unstable = new Set(noise?.noise.unstableTasks ?? []);
@@ -246,9 +280,9 @@ export function compareArms(a: ArmSummary, b: ArmSummary, noise?: NoiseRecord | 
       : { name: "time", ok: secondsB <= secondsA * (1 + timeTol) + 1e-9, detail: `median ${Math.round(secondsB)}s vs ${Math.round(secondsA)}s over ${timed.length} tasks; tolerance ${pct(timeTol)}` },
     { name: "no_regression", ok: regressions.length === 0, detail: regressions.length ? `passed on A and not on B: ${regressions.map((flip) => flip.taskId).join(", ")}` : `no task that passed on A fails on B${flips.some((flip) => flip.unstable) ? " (unstable tasks excluded)" : ""}` },
   ];
-  // Two nights are one comparison only when they used the same writer. A silent swap (luna then haiku) is not "better" or "worse".
+  // Two nights are one comparison only when they used the same writer, unless comparing model arms intentionally.
   const named = (arm: ArmSummary) => arm.writer ? `${arm.writer.providerId}/${arm.writer.model}` : null;
-  const writerMismatch = (a.writer != null || b.writer != null) && (a.writer?.providerId !== b.writer?.providerId || a.writer?.model !== b.writer?.model);
+  const writerMismatch = !options?.allowWriterMismatch && (a.writer != null || b.writer != null) && (a.writer?.providerId !== b.writer?.providerId || a.writer?.model !== b.writer?.model);
   if (writerMismatch) checks.unshift({ name: "writer", ok: null, detail: `different writers: A ${named(a) ?? "unrecorded"}, B ${named(b) ?? "unrecorded"}; not compared` });
   // Without the coverage nothing below it is evidence, even a regression: it stands on a few tasks. A real regression with enough coverage fails
   // whatever else is unmeasured; a check that could not be made keeps the rest from passing. Different writers are never a pass or a fail of the change.
@@ -256,12 +290,24 @@ export function compareArms(a: ArmSummary, b: ArmSummary, noise?: NoiseRecord | 
   const aFlags = paired.map((id) => a.tasks.get(id)!.passed), bFlags = paired.map((id) => b.tasks.get(id)!.passed);
   const aPassed = aFlags.filter(Boolean).length, bPassed = bFlags.filter(Boolean).length;
   const aWilson = wilsonInterval(aPassed, paired.length), bWilson = wilsonInterval(bPassed, paired.length);
+  const diff = options
+    ? (() => { const boot = pairedBootstrapInterval(aFlags, bFlags); return { low: boot.low, high: boot.high }; })()
+    : pairedDiffInterval(aFlags, bFlags);
   const passCi: Comparison["passCi"] = {
     level: 0.95,
     a: { rate: paired.length ? aPassed / paired.length : 0, ...aWilson },
     b: { rate: paired.length ? bPassed / paired.length : 0, ...bWilson },
-    diff: pairedDiffInterval(aFlags, bFlags),
+    diff,
   };
+  const margin = options?.margin ?? EVOLVE_THRESHOLDS.nonInferiority;
+  const nonInferior = paired.length > 0 && diff.low >= margin - 1e-12;
+  const noRegressionByClass = checkNoRegressionByClass(a, b, paired, unstable, options?.classOf);
+  const cpaA = costPerAccepted(a, paired), cpaB = costPerAccepted(b, paired);
+  const costNoise = noise?.noise.costRel ?? 0, timeNoise = noise?.noise.secondsRel ?? 0;
+  const costDrops = cpaA !== null && cpaB !== null && cpaA > 0 && cpaB < cpaA * (1 - costNoise) - 1e-12;
+  const timeDrops = secondsA !== null && secondsB !== null && secondsA > 0 && secondsB < secondsA * (1 - timeNoise) - 1e-9;
+  const gain: Comparison["gain"] = costDrops ? "cost" : timeDrops ? "time" : (notMeasured.length > 0 || cpaA === null || cpaB === null) ? "unknown" : "none";
+  const passK = { a: passKShare(a, paired), b: passKShare(b, paired) };
   return {
     armA: a.arm, armB: b.arm, pairedTasks: paired.length, onlyA: idsA.filter((id) => !b.tasks.has(id)), onlyB: idsB.filter((id) => !a.tasks.has(id)),
     passed: { a: paired.filter((id) => a.tasks.get(id)!.passed).length, b: paired.filter((id) => b.tasks.get(id)!.passed).length },
@@ -269,7 +315,47 @@ export function compareArms(a: ArmSummary, b: ArmSummary, noise?: NoiseRecord | 
     seconds: { a: secondsA, b: secondsB }, flips,
     tolerance: { cost: costTol, time: timeTol, stages: stagesTol, calibratedOn: noise ? `${noise.armA} vs ${noise.armB}` : null },
     checks, verdict, improvements, passCi,
+    nonInferior, noRegressionByClass, gain, passK,
   };
+}
+
+function checkNoRegressionByClass(
+  a: ArmSummary,
+  b: ArmSummary,
+  paired: readonly string[],
+  unstable: ReadonlySet<string>,
+  classOf?: (taskId: string) => string | null,
+): boolean {
+  const byClass = new Map<string, string[]>();
+  for (const id of paired) {
+    const cls = classOf?.(id) ?? "__default__";
+    const list = byClass.get(cls) ?? [];
+    list.push(id);
+    byClass.set(cls, list);
+  }
+  const minRepeats = Math.max(1, a.repeats);
+  for (const ids of byClass.values()) {
+    for (const id of ids) {
+      if (unstable.has(id)) continue;
+      const x = a.tasks.get(id)!, y = b.tasks.get(id)!;
+      if (x.repeats >= minRepeats && x.accepted === x.repeats) {
+        const dropped = x.repeats === y.repeats ? y.accepted < x.accepted : y.accepted < y.repeats;
+        if (dropped) return false;
+      }
+    }
+  }
+  return true;
+}
+
+function passKShare(arm: ArmSummary, paired: readonly string[]): number {
+  if (!paired.length) return 0;
+  const targetK = Math.max(1, arm.repeats);
+  let allPassed = 0;
+  for (const id of paired) {
+    const stat = arm.tasks.get(id)!;
+    if (stat.repeats >= targetK && stat.accepted === stat.repeats) allPassed++;
+  }
+  return allPassed / paired.length;
 }
 
 export type ArenaRow = {

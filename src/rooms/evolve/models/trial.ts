@@ -1,5 +1,7 @@
+import { EVOLVE_THRESHOLDS, median } from "@lane-pilot/contracts";
 import type { ArmAttempt } from "./types";
 import { TERMINAL_ATTEMPT_STATES } from "../../contracts";
+import { COST_TIME_TOLERANCE } from "./compare";
 
 /**
  * The probe. Harness² probes a candidate by rolling the same task k times; a code task costs too much for that, so the
@@ -117,4 +119,160 @@ function decideLive(rows: readonly ArmAttempt[], startedAt: number, now: number,
   if (notWorseAcceptance && notWorseCritic && notWorseRetries && better) return { action: "adopt", reason: summary, arms };
   if (notWorseAcceptance && notWorseCritic && notWorseRetries) return { action: "retire", reason: `no measurable gain, the old tree stays: ${summary}`, arms };
   return { action: "retire", reason: `worse: ${summary}`, arms };
+}
+
+export type CanaryRow = {
+  arm: "old" | "new";
+  accepted: boolean;
+  costMicroUsd: number | null;
+  seconds: number | null;
+  hardRed?: boolean;
+};
+
+export type CanaryConfig = {
+  alpha: number;
+  margin: number;
+  minPerArm: number;
+  maxRuns: number;
+};
+
+export const CANARY_DEFAULTS: CanaryConfig = {
+  alpha: 0.05,
+  margin: EVOLVE_THRESHOLDS.nonInferiority,
+  minPerArm: 6,
+  maxRuns: 60,
+};
+
+export type CanaryDecision = {
+  action: "continue" | "promote" | "retire" | "rollback";
+  e: number;
+  eFail: number;
+  notes: string[];
+};
+
+const CANARY_LAMBDA = 0.5;
+const MIN_BET_FACTOR = 1e-6;
+
+function canaryCostPerAccepted(rows: readonly CanaryRow[]): number | null {
+  if (rows.length === 0) return null;
+  let total = 0;
+  let accepted = 0;
+  for (const row of rows) {
+    if (row.costMicroUsd === null || !Number.isFinite(row.costMicroUsd)) return null;
+    total += row.costMicroUsd;
+    if (row.accepted) accepted += 1;
+  }
+  return accepted > 0 ? total / accepted : null;
+}
+
+function canaryGainDetail(oldRows: readonly CanaryRow[], newRows: readonly CanaryRow[]): string | null {
+  const oldCpa = canaryCostPerAccepted(oldRows);
+  const newCpa = canaryCostPerAccepted(newRows);
+  const oldMedSec = median(oldRows.map((r) => r.seconds).filter((s): s is number => s !== null && Number.isFinite(s)));
+  const newMedSec = median(newRows.map((r) => r.seconds).filter((s): s is number => s !== null && Number.isFinite(s)));
+  const costDrops = oldCpa !== null && newCpa !== null && newCpa < oldCpa - 1e-9;
+  const timeDrops = oldMedSec !== null && newMedSec !== null && newMedSec < oldMedSec - 1e-9;
+  const costNotWorse = oldCpa === null || newCpa === null || newCpa <= oldCpa * (1 + COST_TIME_TOLERANCE) + 1e-9;
+  const timeNotWorse = oldMedSec === null || newMedSec === null || newMedSec <= oldMedSec * (1 + COST_TIME_TOLERANCE) + 1e-9;
+  if (costDrops && timeNotWorse) return `cost/accepted ${Math.round(newCpa)} < ${Math.round(oldCpa)} microUSD`;
+  if (timeDrops && costNotWorse) return `median seconds ${newMedSec.toFixed(1)}s < ${oldMedSec.toFixed(1)}s`;
+  return null;
+}
+
+/**
+ * Anytime-valid sequential canary monitor (§5.4).
+ * Evaluates rows in arrival order and stops at the first terminal boundary so growing prefixes never revert.
+ */
+export function decideCanary(rows: readonly CanaryRow[], config: Partial<CanaryConfig> = CANARY_DEFAULTS): CanaryDecision {
+  const alpha = config.alpha ?? CANARY_DEFAULTS.alpha;
+  const margin = config.margin ?? CANARY_DEFAULTS.margin;
+  const minPerArm = config.minPerArm ?? CANARY_DEFAULTS.minPerArm;
+  const maxRuns = config.maxRuns ?? CANARY_DEFAULTS.maxRuns;
+  if (!(alpha > 0 && alpha < 1) || !Number.isFinite(alpha)) {
+    throw new Error(`decideCanary alpha must be in (0, 1), got ${alpha}`);
+  }
+  if (!Number.isFinite(margin)) {
+    throw new Error(`decideCanary margin must be finite, got ${margin}`);
+  }
+  if (!Number.isInteger(minPerArm) || minPerArm < 0) {
+    throw new Error(`decideCanary minPerArm must be a non-negative integer, got ${minPerArm}`);
+  }
+  if (!Number.isInteger(maxRuns) || maxRuns < 1) {
+    throw new Error(`decideCanary maxRuns must be a positive integer, got ${maxRuns}`);
+  }
+
+  const threshold = 1 / alpha;
+  const oldRows: CanaryRow[] = [];
+  const newRows: CanaryRow[] = [];
+  let paired = 0;
+  let e = 1;
+  let eFail = 1;
+  let gainMissingNoted = false;
+
+  for (let i = 0; i < rows.length; i += 1) {
+    const row = rows[i]!;
+    if (row.arm === "new" && row.hardRed) {
+      return {
+        action: "rollback",
+        e,
+        eFail,
+        notes: [`hardRed flagged on new arm at run ${i + 1}`],
+      };
+    }
+
+    if (row.arm === "old") oldRows.push(row);
+    else newRows.push(row);
+
+    while (paired < oldRows.length && paired < newRows.length) {
+      const d = (newRows[paired]!.accepted ? 1 : 0) - (oldRows[paired]!.accepted ? 1 : 0);
+      e *= Math.max(MIN_BET_FACTOR, 1 + CANARY_LAMBDA * (d - margin));
+      eFail *= Math.max(MIN_BET_FACTOR, 1 + CANARY_LAMBDA * (margin - d));
+      paired += 1;
+    }
+
+    if (oldRows.length >= minPerArm && newRows.length >= minPerArm) {
+      if (eFail >= threshold) {
+        return {
+          action: "retire",
+          e,
+          eFail,
+          notes: [`inferiority bound reached: eFail=${eFail.toFixed(2)} >= ${threshold.toFixed(2)} over ${paired} pairs`],
+        };
+      }
+      if (e >= threshold) {
+        const gain = canaryGainDetail(oldRows, newRows);
+        if (gain) {
+          return {
+            action: "promote",
+            e,
+            eFail,
+            notes: [`non-inferiority bound reached: e=${e.toFixed(2)} >= ${threshold.toFixed(2)} over ${paired} pairs`, `gain: ${gain}`],
+          };
+        }
+        gainMissingNoted = true;
+      }
+    }
+
+    if (i + 1 >= maxRuns) {
+      return {
+        action: "retire",
+        e,
+        eFail,
+        notes: [
+          `inconclusive: maxRuns (${maxRuns}) reached (e=${e.toFixed(2)}, eFail=${eFail.toFixed(2)}, pairs=${paired})`,
+          ...(gainMissingNoted ? ["e reached threshold without measured cost or time gain"] : []),
+        ],
+      };
+    }
+  }
+
+  return {
+    action: "continue",
+    e,
+    eFail,
+    notes: [
+      `${paired} paired runs (old ${oldRows.length}, new ${newRows.length}, minPerArm ${minPerArm}); e=${e.toFixed(2)}, eFail=${eFail.toFixed(2)}`,
+      ...(gainMissingNoted ? ["e reached threshold; waiting for measured cost or time gain"] : []),
+    ],
+  };
 }

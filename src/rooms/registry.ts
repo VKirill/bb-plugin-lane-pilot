@@ -42,6 +42,7 @@ import { room as schedule } from "./schedule/server";
 import { room as ownerPresence } from "./owner-presence/server";
 import { room as fileCards } from "./file-cards/server";
 import { room as money } from "./money/server";
+import { room as evolve } from "./evolve/server";
 import type { Services } from "./services";
 
 /**
@@ -92,6 +93,7 @@ export const rooms: readonly Room<Services>[] = [
   ownerPresence,
   fileCards,
   money,
+  evolve,
 ];
 
 /** Typed settings contributed by registered rooms (in registry order). */

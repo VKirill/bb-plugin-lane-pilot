@@ -2,3 +2,13 @@
 export { checkerMigrations } from "./migrations";
 export { latestRun as latestCheckerRun, listRows as checkerRows } from "./server/repositories/checker-repository";
 export { buildScorecard } from "./models/score";
+export {
+  OUTPUT_DEFECT_KINDS,
+  plantOutputDefect,
+  scoreVerifier,
+  type OutputDefectKind,
+  type OutputVerifierCase,
+  type PlantOutputOptions,
+  type VerifierFn,
+  type VerifierScore,
+} from "./models/output-mutators";
