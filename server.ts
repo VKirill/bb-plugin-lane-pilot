@@ -39,7 +39,6 @@ import { loopHealth, mountReports } from "./src/rooms/reports/server";
 import { ownerWaitingRpc } from "./src/rooms/owner-waiting/server";
 import { createMoney } from "./src/rooms/money";
 import { mountPermits } from "./src/rooms/writer/server";
-import { createFront } from "./src/rooms/front";
 import { createBacklog, mountBacklog } from "./src/rooms/backlog/server";
 import { createOwnerPresence, mountOwnerPresence } from "./src/rooms/owner-presence/server";
 import { mountOutage, stampBeat } from "./src/rooms/outage/server";
@@ -237,7 +236,6 @@ export default async function plugin(originalBb: BbPluginApi) {
     createStageReturn(ctx, services),
     { phaseIntake: createPhaseIntake(ctx, createIntakeTrain(ctx, services)) },
     createMoney(ctx),
-    createFront(ctx),
     createBacklog(ctx),
     createOwnerPresence(ctx),
     { checkers: createPluginCheckers(ctx) },

@@ -164,10 +164,6 @@ export const rpcOps = {
     input: emptyRpcInput,
     output: uiVersionOutput,
   },
-  /** Project first-run onboarding interview (src/rooms/front). */
-  first_run_get: { input: z.object({ projectId: z.string().min(1).max(200) }).strict(), output: z.unknown() },
-  first_run_answer: { input: z.object({ projectId: z.string().min(1).max(200), step: z.enum(["goal", "writer", "quality", "words"]), answer: z.string().trim().min(1).max(2000) }).strict(), output: z.unknown() },
-  first_run_finish: { input: z.object({ projectId: z.string().min(1).max(200) }).strict(), output: z.unknown() },
   /** The owner's word on a task (owner.words on): a verified task waiting to land gets yes or no (src/rooms/tasks/words.ts). */
   task_word: {
     input: z.object({ runId: z.string().min(1).max(200), taskId: z.string().min(1).max(200), decision: z.enum(["yes", "no"]), text: z.string().trim().min(1).max(600) }).strict(),

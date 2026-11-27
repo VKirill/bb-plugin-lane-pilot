@@ -93,7 +93,7 @@ Keep BB app-to-server calls and plugin-server-to-host calls typed independently.
 
 ### `rpcOps` handlers
 
-1. `rpcOps` declares run control (`halt_run`, `cancel_attempt`, `retry_attempt`, `resume_runs`), statistics (`critic_stats`, `writer_reuse_stats`, `acceptance_stats`, `work_graph_stats`), `deploy_drain`, `canary_status`, `memory_probe`, `stack_*`, `deferral_*`, `task_diff`, `task_return_stage`, `work_graph_*`, `task_draft_*`, `conveyor`, `money_status`, `ui_version`, `first_run_*`, `task_word`, `owner_waiting*`, `errands_*`, and `specialist_overview` (`src/rooms/contracts/rpc-ops.ts:6-200`).
+1. `rpcOps` declares run control (`halt_run`, `cancel_attempt`, `retry_attempt`, `resume_runs`), statistics (`critic_stats`, `writer_reuse_stats`, `acceptance_stats`, `work_graph_stats`), `deploy_drain`, `canary_status`, `memory_probe`, `stack_*`, `deferral_*`, `task_diff`, `task_return_stage`, `work_graph_*`, `task_draft_*`, `conveyor`, `money_status`, `ui_version`, `task_word`, `owner_waiting*`, `errands_*`, and `specialist_overview` (`src/rooms/contracts/rpc-ops.ts:6-200`).
 2. Complex room-owned outputs use `z.unknown()` where schema details stay inside the owning room; strict inputs reject malformed payloads before handlers run.
 
 ### Memory routes and accepted-task maintenance

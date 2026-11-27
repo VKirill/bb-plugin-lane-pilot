@@ -3,7 +3,6 @@ import type { ServerCore } from "./contracts/server";
 import { room as checkers } from "./checkers/server";
 import { room as lead } from "./lead/server";
 import { room as baseline } from "./baseline/server";
-import { room as front } from "./front/server";
 import { room as specialist } from "./specialist/server";
 import { room as coverage } from "./coverage";
 import { room as settings } from "./settings/server";
@@ -55,7 +54,6 @@ export const rooms: readonly Room<Services>[] = [
   checkers,
   lead,
   baseline,
-  front,
   specialist,
   coverage,
   settings,

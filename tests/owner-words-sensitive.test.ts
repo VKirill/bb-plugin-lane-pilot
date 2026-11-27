@@ -2,7 +2,6 @@ import { afterEach, describe, expect, it } from "vitest";
 import { landingWordAsked, ownerWordsMode, ownerWordsOn, productionDeployText, sensitiveHits, taskStepEvidence } from "../src/rooms/tasks";
 import { permitOwnerRule } from "../src/rooms/writer/server/handlers/permits";
 import { criticLevel } from "../src/rooms/critique";
-import { firstRunSettings } from "../src/rooms/front";
 
 // owner.words = sensitive (the default since the owner's decision of 2026-11-14): his word is asked only for money, database changes and
 // destructive data operations, and a deploy to production. Everything else lands by the gates, whatever its risk.
@@ -109,14 +108,6 @@ describe("owner.words sensitive: the other person steps", () => {
     expect(permitOwnerRule("on", "rm -rf build/")).toMatch(/ask the owner first/);
     expect(permitOwnerRule("risky", "rm -rf build/")).toMatch(/ask the owner first/);
     expect(permitOwnerRule("off", "DROP TABLE users")).toMatch(/not asked/);
-  });
-
-  it("the first-run answer maps to the new mode", () => {
-    expect(firstRunSettings({ projectId: "p", answers: { words: "sensitive" }, at: 1 })["owner.words"]).toBe("sensitive");
-    expect(firstRunSettings({ projectId: "p", answers: { words: "только деньги и миграции" }, at: 1 })["owner.words"]).toBe("sensitive");
-    expect(firstRunSettings({ projectId: "p", answers: { words: "risky" }, at: 1 })["owner.words"]).toBe("risky");
-    expect(firstRunSettings({ projectId: "p", answers: { words: "yes" }, at: 1 })["owner.words"]).toBe("on");
-    expect(firstRunSettings({ projectId: "p", answers: { words: "no" }, at: 1 })["owner.words"]).toBe("off");
   });
 });
 

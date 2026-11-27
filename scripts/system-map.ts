@@ -18,7 +18,7 @@ export type SystemMap = { nodes: Node[]; edges: Edge[] };
 const AREAS: Record<string, string[]> = {
   "Task pipeline": ["writer", "runs", "tasks", "acceptance", "baseline", "verification", "validators", "critique", "qa", "stage-return", "phase", "rollback", "backlog", "work-graph"],
   "Graphs and schedule": ["workflow", "specialist", "night-graphs", "schedule", "relay"],
-  "PM, agents and doors": ["native-agent", "native-install", "session-hooks", "secrets", "tools", "front", "host-worker", "project-life"],
+  "PM, agents and doors": ["native-agent", "native-install", "session-hooks", "secrets", "tools", "host-worker", "project-life"],
   "Models, Jev, money": ["jev", "capability", "usage", "money"],
   "Memory and the owner": ["memory", "memory-eval", "memory-probe", "memory-tiers", "learning", "rule-forms", "docs"],
   "Self-improvement": ["wall", "night", "bench", "harness", "improvement", "self-repair", "lead", "errands", "policy", "checkers", "coverage", "forecast", "pm-replay", "wires"],

@@ -90,7 +90,6 @@ export const COVERAGE: readonly CoverageEntry[] = [
   { kind: "room", ids: ["critique"], tests: ["tests/critic-pair.test.ts", "tests/stages/critique-policy.test.ts"], reason: SANDBOX_OFF },
   { kind: "room", ids: ["docs"], tests: ["tests/stages/docs.test.ts"], reason: "nightly docs maintenance passes, off or idle in the sandbox" },
   { kind: "room", ids: ["native-install"], tests: ["tests/native-install.test.ts"], reason: "installs the native stack on hosts; guard_hash checks the installed guard's bytes but no scenario runs an install" },
-  { kind: "room", ids: ["front"], tests: ["tests/owner-words-sensitive.test.ts"], reason: "the window's front: screens and their reads; no drill opens a screen (scripts/lp-ui-drive.mjs runs scenes against a live window)" },
   { kind: "room", ids: ["money"], tests: ["tests/session-hooks/parity-g1-hooks-1.test.ts"], reason: "reads and reports over the hub's data (spend, receipts, history), not a step a drill task takes" },
   { kind: "mechanism", ids: ["tools.receipts"], tests: ["tests/shipgate.test.ts"], reason: "receipt chain and passports over the hub's data, not a step a drill task takes" },
   { kind: "mechanism", ids: ["relay.outbound"], tests: ["tests/relay/relay-parity.test.ts", "tests/ui-version-invalidate.test.ts"], reason: "the task-event webhook needs a live subscriber, not a step a drill task takes" },

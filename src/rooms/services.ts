@@ -32,7 +32,6 @@ import type { RollbackApi } from "./rollback/server";
 import type { BaselineApi } from "./baseline/server";
 import type { PhaseIntake } from "./contracts/server";
 import type { MoneyApi } from "./money";
-import type { FrontApi } from "./front";
 import type { BacklogApi } from "./backlog/server";
 import type { OwnerPresenceApi } from "./owner-presence/server";
 import type { CheckersApi } from "./checkers/server";
@@ -60,8 +59,6 @@ export interface Services {
   phaseIntake: PhaseIntake;
   /** The spend book, the money cap of paid lanes and the subscription windows (src/rooms/money). */
   money: MoneyApi;
-  /** First-run onboarding interview RPC handlers (src/rooms/front). */
-  front: FrontApi;
   /** The backlog scanner: ready todos with an estimate issued to the project's PM in queue order (src/rooms/backlog). */
   backlog: BacklogApi;
   /** The owner's presence on a provider in the last minutes: writers keep off it (src/rooms/owner-presence). */
