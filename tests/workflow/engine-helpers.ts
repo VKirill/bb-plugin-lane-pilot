@@ -2,7 +2,7 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import type { LanePilotDatabase } from "../../src/rooms/storage";
 import { CrashError, WorkflowEngine } from "@lane-pilot/workflow-engine";
 import type { EngineOptions, NodeExecutor, StepContext } from "@lane-pilot/workflow-engine";
-import { workflowInboxMigrations, workflowMigrations, workflowNodeFormMigrations, workflowStepFactsMigrations } from "@lane-pilot/workflow-engine";
+import { workflowCanaryMigrations, workflowDefinitionArchiveMigrations, workflowInboxMigrations, workflowMigrations, workflowNodeFormMigrations, workflowStepFactsMigrations } from "@lane-pilot/workflow-engine";
 import { createStatusResolver, workflowNotVerifiedMigrations, workflowOpsMigrations } from "@lane-pilot/workflow-engine";
 import { definitionSha256 } from "@lane-pilot/workflow-engine";
 import type { Workflow } from "@lane-pilot/workflow-engine";
@@ -13,7 +13,7 @@ import { workflow } from "./fixtures";
 export function journalDb(): LanePilotDatabase {
   const { bb } = createFakePluginHost({ pluginId: "lane-pilot" });
   const db = bb.storage.database();
-  bb.storage.migrate(db, [...workflowMigrations, ...workflowOpsMigrations, ...workflowNotVerifiedMigrations, ...workflowInboxMigrations, ...workflowStepFactsMigrations, ...workflowNodeFormMigrations]);
+  bb.storage.migrate(db, [...workflowMigrations, ...workflowOpsMigrations, ...workflowNotVerifiedMigrations, ...workflowInboxMigrations, ...workflowStepFactsMigrations, ...workflowNodeFormMigrations, ...workflowDefinitionArchiveMigrations, ...workflowCanaryMigrations]);
   return db;
 }
 

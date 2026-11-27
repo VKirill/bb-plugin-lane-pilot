@@ -4,8 +4,9 @@ import type { z } from "zod";
 import type { rpcContract } from "../../../contracts";
 ;
 import type { Field, Workflow } from "@lane-pilot/workflow-engine";
+import { workKindOf } from "@lane-pilot/contracts";
 import { sha256Hex, bestEffort, orMiss, isNotFound } from "@lane-pilot/kit";
-import { legacyDefinitionSha256, parseGoals, tallyOutcomes, type WorkflowView, wfChildRuns, wfLastRun, wfRecentRuns, wfRunOutcomeRows, wfTriggersOfWorkflow, workDoneRate, workflowView } from "@lane-pilot/workflow-engine";
+import { childId, legacyDefinitionSha256, parseGoals, provenOn, tallyOutcomes, type ProvenOnEntry, type WorkflowView, wfChildRuns, wfLastRun, wfRecentRuns, wfRunOutcomeRows, wfTriggersOfWorkflow, workDoneRate, workflowView } from "@lane-pilot/workflow-engine";
 import { HARNESS_VERSION, createStatusResolver, globalWorkflowDir, loadWorkflowStore, nodeFileSource, projectWorkflowDir, type StoredWorkflow, type WorkflowFileSource, type WorkflowStore } from "../../../storage";
 import { buildWorkflowMap } from "../../models/workflow-map";
 import type { ServerCore } from "../../../contracts/server";
@@ -47,6 +48,38 @@ export function clipJson(value: unknown, limit = STEP_OUTPUT_LIMIT): unknown {
 
 const parseJson = (text: string | null): unknown => { if (text === null) return null; try { return JSON.parse(text); } catch { return null; } };
 
+const agentNodeIdsOf = (workflow: Workflow): Set<string> =>
+  new Set(
+    workflow.nodes.flatMap((node) =>
+      node.type === "agent"
+        ? [node.id]
+        : node.type === "parallel" && node.child?.type === "agent"
+          ? [childId(node.id)]
+          : [],
+    ),
+  );
+
+function summarizeProvenOn(
+  entries: readonly ProvenOnEntry[],
+  agentNodeIds: ReadonlySet<string>,
+): Array<{ provider: string; model: string; runs: number }> {
+  const byModel = new Map<string, { provider: string; model: string; runs: number; lastAt: number }>();
+  for (const entry of entries) {
+    if (entry.source !== "proof" && !agentNodeIds.has(entry.nodeId)) continue;
+    const key = `${entry.provider}\u0000${entry.model}`;
+    const existing = byModel.get(key);
+    if (!existing) {
+      byModel.set(key, { provider: entry.provider, model: entry.model, runs: entry.runs, lastAt: entry.lastAt });
+    } else {
+      existing.runs = Math.max(existing.runs, entry.runs);
+      existing.lastAt = Math.max(existing.lastAt, entry.lastAt);
+    }
+  }
+  return [...byModel.values()]
+    .sort((a, b) => b.lastAt - a.lastAt || a.provider.localeCompare(b.provider) || a.model.localeCompare(b.model))
+    .map(({ provider, model, runs }) => ({ provider, model, runs }));
+}
+
 /**
  * The read side of the workflow screens: the library (built-in files, the hub's `~/.lane-pilot/workflows`, the project's
  * `.lane-pilot/workflows` read on the project's machine), run statistics from the journal, and a run as a live view.
@@ -86,7 +119,7 @@ export function createWorkflowLibrary(ctx: ServerCore, services: Pick<Services, 
       try { loopHooks = parseLoopHookManifest(project.files.get(LOOP_HOOK_MANIFEST)!); }
       catch (cause) { loopHooks = { manifest: null, sha256: null, error: cause instanceof Error ? cause.message : String(cause) }; }
     }
-    const store = await loadWorkflowStore({ builtin: BUILTIN_SOURCES, files, globalDir, ...(project.dir ? { projectDir: project.dir } : {}), resolveStatus: statuses.resolve });
+    const store = await loadWorkflowStore({ builtin: BUILTIN_SOURCES, files, globalDir, ...(project.dir ? { projectDir: project.dir } : {}), db, resolveStatus: statuses.resolve });
     return { store, project: project.state, files, loopHooks };
   }
 
@@ -103,7 +136,7 @@ export function createWorkflowLibrary(ctx: ServerCore, services: Pick<Services, 
 
   const summary = (item: StoredWorkflow, projectId?: string): WorkflowSummary => ({
     id: item.workflow.id, name: item.workflow.name, description: item.workflow.description, status: item.workflow.status, version: item.workflow.version,
-    scope: item.origin, internal: item.workflow.internal, tags: item.workflow.tags, nodes: item.workflow.nodes.filter((node) => node.type !== "note").length,
+    scope: item.origin, internal: item.workflow.internal, kind: workKindOf(item.workflow.kind), tags: item.workflow.tags, nodes: item.workflow.nodes.filter((node) => node.type !== "note").length,
     warnings: item.warnings.length, category: workflowCategory(item.workflow), categoryLabel: extractCategoryLabel(item.workflow.category),
     stats: statsFor(item.workflow.id, projectId),
   });
@@ -166,6 +199,10 @@ export function createWorkflowLibrary(ctx: ServerCore, services: Pick<Services, 
           schedules: wfTriggersOfWorkflow(db, workflow.id)
             .map((row) => ({ projectId: row.project_id, slot: row.slot, automationId: row.automation_id })),
           proven: (() => { const live = statuses.liveSuccess(workflow.id, workflow.version, workflow.live_success, { current: item.sha256, legacy: legacyDefinitionSha256(workflow) }); return live ? { runId: live.id, at: live.updated_at } : null; })(),
+          proven_on: summarizeProvenOn(
+            provenOn(db, workflow.id, item.sha256, { rule: workflow.live_success ?? null, legacySha256: legacyDefinitionSha256(workflow) }),
+            agentNodeIdsOf(workflow),
+          ),
           warningMessages: item.warnings.map((warning) => warning.message),
           graph: workflowView(workflow, store.resolve),
           runs: runs.map((row) => ({ id: row.id, status: row.status, reason: row.reason, mode: row.mode, createdAt: row.created_at, updatedAt: row.updated_at,

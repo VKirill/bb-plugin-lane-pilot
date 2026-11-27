@@ -30,6 +30,10 @@ export type IntakeRecord = {
   architectThreadId?: string;
   /** A published graph the request matched: the PM is told to run it, and no architect builds a second one. */
   hint?: { graphId: string; confidence: number };
+  /** Chosen project template id for a heavy request (`null` when generic `full-lifecycle` ran). */
+  intakeTemplate?: string | null;
+  /** Router confidence (0–100) for the project template match. */
+  intakeConfidence?: number;
 };
 
 export type HandOverStarted = { started: true; via: "phase" | "issue-quick" | "issue-batch" | "issue-full" | "full-lifecycle"; id: string };

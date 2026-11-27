@@ -31,6 +31,11 @@ export function start<R>(engine: WorkflowEngine, input: {
   resolve?: ResolveWorkflow;
   /** The children the parent chain was started with; a child run is given its parent's. */
   pins?: Pins;
+  /** Pre-assigned run id (used by canary split so arm selection hashes the persisted run id). */
+  runId?: string;
+  /** Canary arm and trial id recorded on top-level runs only (child runs never inherit). */
+  arm?: "old" | "new";
+  trialId?: string;
 }): { runId: string; created: boolean; done: Promise<RunSummary> } {
   const { workflow } = input;
   const existing = input.key ? engine.options.db.prepare("SELECT id FROM lane_pilot_wf_run WHERE idem_key=?").get(input.key) as { id: string } | undefined : undefined;
@@ -43,7 +48,11 @@ export function start<R>(engine: WorkflowEngine, input: {
   if (problems.length) throw new WorkflowError(problems.map((message) => ({ level: "error" as const, code: "preflight", message })));
   const withDefaults = { ...(input.inputs ?? {}) };
   for (const field of workflow.inputs) if (withDefaults[field.name] === undefined && field.default !== undefined) withDefaults[field.name] = field.default;
-  const inputs = checkOutput(workflow.inputs, withDefaults);
+  const inputs = {
+    ...checkOutput(workflow.inputs, withDefaults),
+    ...(withDefaults.intakeTemplate !== undefined ? { intakeTemplate: withDefaults.intakeTemplate } : {}),
+    ...(withDefaults.intakeConfidence !== undefined ? { intakeConfidence: withDefaults.intakeConfidence } : {}),
+  };
   const depth = input.depth ?? 0;
   if (depth > Math.min(workflow.guards.maxSubworkflowDepth, MAX_SUBWORKFLOW_DEPTH)) throw new MissingValueError("subworkflow_depth", `subworkflows go ${depth} deep; the limit is ${MAX_SUBWORKFLOW_DEPTH}`);
   // Contract and an explicit input beat the workflow; `fixed` still wins over an inherited `$mode`. full inside fixed quick is a conflict.
@@ -55,7 +64,7 @@ export function start<R>(engine: WorkflowEngine, input: {
   // A user workflow judged by its goals and started without them (the PM's tool, a trigger, a schedule) is for the request in its inputs.
   const required = (workflow as { goal_audit?: string }).goal_audit === "required" && !input.parent;
   const goals = goalsSchema.parse(input.goals?.length ? input.goals : required ? requestGoals(inputs) : []);
-  const runId = `wfrun_${randomUUID().replaceAll("-", "")}`;
+  const runId = !input.parent && input.runId ? input.runId : `wfrun_${randomUUID().replaceAll("-", "")}`;
   const j = engine.journal, at = engine.now();
   const pins = collectPins(workflow, resolveChild);
   const lowered: Workflow & { pinned?: Pins } = { ...lowerWorkflow(workflow, resolveChild), ...(Object.keys(pins).length ? { pinned: pins } : {}) };
@@ -67,6 +76,9 @@ export function start<R>(engine: WorkflowEngine, input: {
       .run(runId, input.key ?? null, workflow.id, workflow.version, definitionSha256(workflow), JSON.stringify(lowered), input.link?.projectId ?? null, input.link?.runId ?? null,
         input.link?.taskId ?? null, input.link?.attemptId ?? null, input.parent?.runId ?? null, input.parent?.stepKey ?? null, depth, mode, JSON.stringify(inputs), engine.options.harnessVersion, at, at);
     if (goals.length) j.db.prepare("UPDATE lane_pilot_wf_run SET goals_json=? WHERE id=?").run(JSON.stringify(goals), runId);
+    if (!input.parent && (input.arm !== undefined || input.trialId !== undefined)) {
+      j.db.prepare("UPDATE lane_pilot_wf_run SET arm=?, trial_id=? WHERE id=?").run(input.arm ?? null, input.trialId ?? null, runId);
+    }
     j.event(runId, null, "run", null, "running", `${workflow.id}@${workflow.version} mode ${mode}`);
     if (goals.length) j.event(runId, null, "goals", null, null, JSON.stringify({ goals, reason: "the goals the run started with", by: "start" }));
     engine.compiledRuns.set(runId, c);

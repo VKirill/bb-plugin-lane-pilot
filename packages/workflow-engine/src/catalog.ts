@@ -1,3 +1,5 @@
+import type Database from "better-sqlite3";
+import { archivedDefinition } from "./definition-archive";
 import { globalWorkflowDir, loadWorkflowStore } from "./store";
 import { parseWorkflow } from "./validate";
 import type { Workflow } from "./schema";
@@ -20,7 +22,7 @@ export type WorkflowCatalog = {
   builtins(): Workflow[];
 };
 
-export function createWorkflowCatalog(options: { builtin: Parameters<typeof loadWorkflowStore>[0]["builtin"]; globalDir?: string | null; files?: WorkflowFileSource; ttlMs?: number; now?: () => number; log?: (message: string) => void;
+export function createWorkflowCatalog(options: { builtin: Parameters<typeof loadWorkflowStore>[0]["builtin"]; db?: Database.Database; globalDir?: string | null; files?: WorkflowFileSource; ttlMs?: number; now?: () => number; log?: (message: string) => void;
   resolveStatus?: Parameters<typeof loadWorkflowStore>[0]["resolveStatus"] }): WorkflowCatalog {
   const now = options.now ?? Date.now;
   const ttl = options.ttlMs ?? 30_000;
@@ -28,7 +30,7 @@ export function createWorkflowCatalog(options: { builtin: Parameters<typeof load
   const globalDir = options.globalDir === undefined ? globalWorkflowDir() : options.globalDir ?? undefined;
   const load = async (): Promise<WorkflowStore> => {
     try {
-      const next = await loadWorkflowStore({ builtin: options.builtin, files: options.files, globalDir, ...(options.resolveStatus ? { resolveStatus: options.resolveStatus } : {}) });
+      const next = await loadWorkflowStore({ builtin: options.builtin, files: options.files, globalDir, ...(options.db ? { db: options.db } : {}), ...(options.resolveStatus ? { resolveStatus: options.resolveStatus } : {}) });
       last = next; loadedAt = now();
       for (const problem of next.problems) options.log?.(`workflow file ${problem.source} not loaded: ${problem.problems.filter((item) => item.level === "error").map((item) => item.message).join("; ")}`);
       return next;
@@ -61,7 +63,12 @@ export function createWorkflowCatalog(options: { builtin: Parameters<typeof load
     },
     peek: () => last,
     invalidate: () => { loadedAt = 0; },
-    builtin: (id, version) => { const found = parsedBuiltins().get(id) ?? null; return found && (version === undefined || found.version === version) ? found : null; },
+    builtin: (id, version) => {
+      const found = parsedBuiltins().get(id) ?? null;
+      if (found && (version === undefined || found.version === version)) return found;
+      if (version !== undefined && options.db) return archivedDefinition(options.db, id, version);
+      return null;
+    },
     builtins: () => [...parsedBuiltins().values()],
   };
 }

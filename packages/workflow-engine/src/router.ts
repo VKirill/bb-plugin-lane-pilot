@@ -509,7 +509,9 @@ function goalsFor(workflow: Workflow, intent: string): RouteGoal[] {
 export type RunRecord = { succeeded: number; failed: number; lastRunAt: number | null; executed: number; workDone: number; refused: number; escalated: number };
 export type RouteInput = { intent: string; request?: string; context?: string; workflows: ReadonlyArray<Workflow>; state?: RouterState; model?: RouterModel | null;
   /** Run statistics by workflow id: between candidates the text search scores (nearly) alike, the one that has run well and lately comes first. Never lets a worse text match win. */
-  stats?: ReadonlyMap<string, RunRecord>; now?: number; log?: (message: string) => void };
+  stats?: ReadonlyMap<string, RunRecord>; now?: number; log?: (message: string) => void;
+  /** Allow long (> LONG_WORDS) text-matched workflows without a priority rule when base text fit meets LONG_MIN_BASE (used by project template intake). */
+  allowRulelessLong?: boolean };
 
 /** How much the run record can move a score: less than the gap between two different text matches, enough to order two that are alike. */
 export const STAT_WEIGHT = 0.02;
@@ -627,7 +629,7 @@ export async function routeIntent(input: RouteInput): Promise<RouteDecision> {
   // Too weak, too broad, or no choice: questions, no workflow.
   const strongRule = hits.some((hit) => Object.values(hit.boosts).some((value) => value >= 0.3));
   const picked = chosen ? top.find((item) => item.workflow === chosen) : undefined;
-  const unbacked = Boolean(picked && s.wordCount > LONG_WORDS && (!picked.rules.length || picked.base < LONG_MIN_BASE));
+  const unbacked = Boolean(picked && s.wordCount > LONG_WORDS && ((!input.allowRulelessLong && !picked.rules.length) || picked.base < LONG_MIN_BASE));
   if (unbacked) warnings.push(`a ${s.wordCount}-word brief: ${chosen!.id} is not backed by both its own rule and its text, so it is a suggestion, not a route`);
   if (!chosen || output.confidence < MIN_CONFIDENCE || (broad && !strongRule) || (top[0]?.score ?? 0) < 0.12 || missedBest || unbacked) {
     const modelQuestions = output.questions.filter((question) => question.trim());
@@ -645,4 +647,39 @@ export async function routeIntent(input: RouteInput): Promise<RouteDecision> {
     boundary_contract: boundaryFor({ workflow: chosen, s: assignmentSignals, intent: request, context: input.context, hits: assignmentHits }), goals: goalsFor(chosen, request),
     inputs: filled.inputs, missingInputs: filled.missing, guessedInputs: filled.guessed,
   });
+}
+
+export type MissKind = "no_candidate" | "weak_match" | "blocked" | "near_miss";
+
+export type ClassifyRouteMissInput = {
+  intent: string;
+  request?: string;
+  context?: string;
+  missedBest?: boolean;
+  policyForbidden?: boolean;
+};
+
+/** Classifies a router decision into a catalog miss kind, or null when the prompt is not a real catalog miss. */
+export function classifyRouteMiss(decision: RouteDecision, input: ClassifyRouteMissInput): MissKind | null {
+  if (decision.decision !== "clarify" || decision.stateContinue) return null;
+  const intent = input.intent.trim();
+  const request = input.request === undefined ? intent : input.request.trim();
+  if (!intent || (input.request !== undefined && !request)) return null;
+  if (intent.length > GOAL_REQUEST_MAX || request.length > GOAL_REQUEST_MAX) return null;
+  const s = signalsOf(intent);
+  let broad = s.sig.length < 2;
+  if (broad && input.context?.trim() && signalsOf(`${intent}\n${input.context}`).sig.length >= 2) broad = false;
+  if (broad) return null;
+  if (decision.evidence.pattern.includes("conflicts with the full read-only request")) return null;
+  const missedBest = input.missedBest === true
+    || decision.warnings.some((warning) => /^the closest match .+ is not available:/.test(warning));
+  if (missedBest || input.policyForbidden === true) return "blocked";
+  if (decision.candidates.length === 0) return "no_candidate";
+  const top = decision.candidates[0]!;
+  const picked = decision.suggested ? decision.candidates.find((c) => c.id === decision.suggested) ?? top : top;
+  const unbacked = decision.warnings.some((warning) => /is not backed by both its own rule and its text/.test(warning))
+    || (s.wordCount > LONG_WORDS && (!picked.rules.length || picked.base < LONG_MIN_BASE));
+  if (top.score < 0.12 || unbacked) return "weak_match";
+  if (decision.suggested !== null && decision.confidence < MIN_CONFIDENCE) return "near_miss";
+  return null;
 }

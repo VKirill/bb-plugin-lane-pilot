@@ -2,7 +2,7 @@ import { GLOBAL_SETTINGS_PROJECT_ID } from "@lane-pilot/settings-catalog";
 import { LP_EVENTS } from "@lane-pilot/contracts";
 import { initRuntimeEnv } from "@lane-pilot/kit";
 import { listUnfinishedStages, loadPrototypeConfig, loadProjectSettings, openDatabase, listProjectsWithGlobalSettings, openRunOfPmThread } from "./src/rooms/storage";
-import { lanePilotOwnedTarget, withStandardServiceTier } from "./src/rooms/platform/server";
+import { lanePilotOwnedTarget, mountModelCatalogDigest, withStandardServiceTier } from "./src/rooms/platform/server";
 import { writerFallbackChain, writerFallbacks } from "@lane-pilot/models";
 import { migrations as lanePilotMigrations } from "./src/rooms/migrations";
 import { SETTINGS_REGISTRY } from "./src/rooms/settings-registry";
@@ -60,7 +60,7 @@ import { onAttemptFinished, walkWriterChain } from "./src/rooms/writer/server";
 import { createStageChildren, createQaStages, createWorkspaceStatus } from "./src/rooms/qa/server";
 import { createDocs } from "./src/rooms/docs/server";
 import { createMemoryStage, mountMemoryEmbeddings, mountThreadBlock } from "./src/rooms/memory/server";
-import { mountErrands } from "./src/rooms/errands/server";
+import { mountErrands, writeEpisode } from "./src/rooms/errands/server";
 import { registerTools } from "./src/rooms/tools/server";
 import { bindToolLocale, toolLocale } from "./src/rooms/platform/server";
 import { createWriterHost } from "./src/rooms/writer/server";
@@ -70,7 +70,9 @@ import { createWriterFinish } from "./src/rooms/writer/server";
 import { createWriterStart } from "./src/rooms/writer/server";
 import { createAttemptReopen, createWriterReassign, recheckPlanFact, registerDispatchExecutors, restoreProviderBreaker, taskUsage } from "./src/rooms/writer/server";
 import { stageHelperSettings } from "./src/rooms/settings/server";
-import { createWorkflowEngine } from "./src/rooms/workflow/server";
+import { wfRunRow } from "@lane-pilot/workflow-engine";
+import { builtinWorkflow, createDedupeGate, createProjectTemplateRunner, createWorkflowEngine, deriveRunVerdict, getRunVerdict, listRouteMisses, listRunVerdicts, proveWorkflow, publishEvolutionWorkflowDraft, registerRunVerdictPort, rollbackEvolutionWorkflowDraft, type RunFinishedSubscriber } from "./src/rooms/workflow/server";
+import { onCanaryRun, onPostPromotionVerdict, resolveCanary } from "./src/rooms/evolve/server";
 import { architectStarter, createWorkflowLibrary } from "./src/rooms/workflow/server";
 import { createWorkflowTriggersService } from "./src/rooms/workflow/server";
 import { createScheduleService, ensureProjectSchedules, ensureSystemSchedules, startBoardClock, registerAgentRoutineActions, registerScheduleScriptActions, scheduleAgentApi } from "./src/rooms/schedule/server";
@@ -127,12 +129,47 @@ export default async function plugin(originalBb: BbPluginApi) {
     scheduleAgents: scheduleAgentApi(),
     memoryEval: { load: loadEvalData, run: runMemoryEval },
     onAttemptFinished,
-  } satisfies Pick<Services, "buildCliInvocation" | "taskWords" | "laneProject" | "leadRoad" | "memorySettings" | "scheduleAgents" | "memoryEval" | "onAttemptFinished">);
+    dedupeThreshold: () => parseLeadSettings(loadProjectSettings(db, GLOBAL_SETTINGS_PROJECT_ID)).dedupeThreshold,
+    resolveCanary: (workflowId) => resolveCanary(db, workflowId, { log: bb.log }),
+    evolvePublishDraft: (input) => publishEvolutionWorkflowDraft(ctx, services, { ...input, ensureTests: true }),
+    evolveRollbackDraft: (input) => rollbackEvolutionWorkflowDraft(ctx, services, input),
+  } satisfies Pick<Services, "buildCliInvocation" | "taskWords" | "laneProject" | "leadRoad" | "memorySettings" | "scheduleAgents" | "memoryEval" | "onAttemptFinished" | "dedupeThreshold" | "resolveCanary" | "evolvePublishDraft" | "evolveRollbackDraft">);
   mountNativeWiring(ctx); bindSubthreadProjectSettings(ctx.bb, (pid) => loadProjectSettings(db, pid));
   services.tokenCursorRow = tokenCursorRow;
   // The writer pool must exist before project-git and dispatch are composed: the Git guard and live admission share it.
   Object.assign(services, createWriterState(ctx) satisfies WriterStatePort);
   const { writerSpawn, writerDispatch } = createGitWriter(ctx, services);
+  const projectTemplateRunner = createProjectTemplateRunner(ctx, services);
+  registerRunVerdictPort(db, async (verdict) => {
+    if (verdict.verdict === "accept") {
+      await projectTemplateRunner.onRunId(verdict.runId);
+    }
+    const run = wfRunRow(db, verdict.runId);
+    if (run?.trial_id) {
+      await onCanaryRun(
+        { db, bb, projectId: run.project_id, log: bb.log },
+        { publishDraft: services.evolvePublishDraft, getRunVerdict: (runId) => getRunVerdict(db, runId) },
+        run,
+      );
+    }
+    if (verdict.verdict === "reject" && verdict.source === "owner") {
+      await onPostPromotionVerdict(
+        { db, bb, projectId: run?.project_id ?? null, log: bb.log },
+        { rollbackDraft: services.evolveRollbackDraft },
+        verdict,
+      );
+    }
+  });
+  const onRunEnded: RunFinishedSubscriber[] = [
+    (run) => writeEpisode(db, run, Date.now(), bb.log),
+    (run) => deriveRunVerdict(db, run, Date.now(), bb.log),
+    (run) => projectTemplateRunner.onRun(run).then(() => undefined),
+    (run) => onCanaryRun(
+      { db, bb, projectId: run.project_id, log: bb.log },
+      { publishDraft: services.evolvePublishDraft, getRunVerdict: (runId) => getRunVerdict(db, runId) },
+      run,
+    ).then(() => undefined),
+  ];
   Object.assign(
     services,
     createReconcile(ctx, services) satisfies ReconcileApi,
@@ -147,7 +184,7 @@ export default async function plugin(originalBb: BbPluginApi) {
       pendingSwitch: (threadId: string) => pendingSwitch(ctx.bb.storage.kv, threadId),
     } satisfies AgentOpsApi & { resolveIntegrationGate: VerificationGatePort },
     { isTaskSatisfied } satisfies { isTaskSatisfied: IsTaskSatisfied },
-    createWorkflowEngine(ctx, services) satisfies WorkflowEngineApi,
+    createWorkflowEngine(ctx, services, { onRunEnded }) satisfies WorkflowEngineApi,
     createWorkflowTriggersService(ctx, services) satisfies WorkflowTriggersPort,
     writerSpawn,
     createWriterVerify(ctx, services) satisfies { runVerification: RunVerification },
@@ -229,6 +266,29 @@ export default async function plugin(originalBb: BbPluginApi) {
   })().catch((cause: unknown) => ctx.log(`Lane Pilot project schedules not made: ${cause instanceof Error ? cause.message : String(cause)}`));
   // The brief step of `specialist`, the graph behind lane_pilot_specialist.
   registerSpecialistActions(services.workflowEngine, ctx);
+  const catalogDigest = mountModelCatalogDigest(ctx, { emitEvent: services.workflowTriggers.emitEvent });
+  services.evolveWorkflowDeps = {
+    getRunVerdict: (runId) => getRunVerdict(db, runId),
+    listRunVerdicts: (filter) => listRunVerdicts(db, filter),
+    listRouteMisses: (filter) => listRouteMisses(db, filter),
+    loadBuiltinWorkflow: (workflowId) => builtinWorkflow(workflowId, undefined, db),
+    checkNearTwin: async (input) => {
+      const gate = createDedupeGate({
+        db,
+        threshold: services.dedupeThreshold,
+        loadLibraryWorkflows: async ({ projectId }) => (await services.workflowLibrary.loadStore(projectId)).store.list().map((item) => item.workflow),
+      });
+      return !(await gate.check(input)).ok;
+    },
+    proveWorkflow: (input) => proveWorkflow(
+      { db, bb, log: ctx.log },
+      {
+        loadStore: async (pid) => (await services.workflowLibrary.loadStore(pid)).store,
+        resolveWorkflow: services.workflowEngine.resolveWorkflow,
+      },
+      input,
+    ),
+  };
   // Rooms in src/rooms/registry.ts mount their own schedules, listeners and graph steps here, once the services bag is complete.
   for (const room of rooms) await room.startup?.(ctx, services);
   mountPhaseIntake(ctx, services.phaseIntake);
@@ -337,6 +397,7 @@ export default async function plugin(originalBb: BbPluginApi) {
           }
         });
         await step("restore of the breakers", () => services.stability.restoreBreakers());
+        await step("model catalog digest", () => catalogDigest.sync());
         await step("workflow trigger sync", () => services.workflowTriggers.syncTriggers());
         // A version's first start is its deploy time: the canary counts the attempts from here.
         await step("canary start", () => services.canary.noteStart());

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { GRAPH_CATEGORY_IDS, stageProofSchema } from "@lane-pilot/contracts";
+import { GRAPH_CATEGORY_IDS, TOOL_TIERS, WORK_KINDS, stageProofSchema } from "@lane-pilot/contracts";
 import { nodeFormFallbackSchema, nodeFormSchema, planConfigSchema, scriptConfigSchema, verifyObjectSchema } from "./node-form";
 
 /**
@@ -99,6 +99,8 @@ const nodeBase = {
   gates: z.array(z.string().min(1).max(300)).max(10).optional(),
   /** What decides the step is done: a code predicate, or `advisory` for a model's opinion (the built-in task pipeline declares it for every stage). */
   proof: stageProofSchema.optional(),
+  /** Effect class (`R` read, `D` draft, `L` live change, `S` irreversible/account-level): controls replay and runtime tool bounds. */
+  effect: z.enum(TOOL_TIERS).optional(),
   title: bilingual.optional(),
   label: z.string().max(80).optional(),
   /** Where the text of this node comes from (THIRD_PARTY_NOTICES). */
@@ -293,7 +295,7 @@ export const workflowSchema = z.object({
   /** Ids of neighbouring workflows this one is confused with; shown to the router's model as «not suitable if...». */
   not_for: z.array(z.string()).max(20).default([]),
   tags: z.array(z.string().max(40)).max(20).default([]),
-  category: workflowCategoryMetaSchema.optional(),
+  category: workflowCategoryMetaSchema.optional(), kind: z.enum(WORK_KINDS).optional(),
   /** A fragment called by a subworkflow node; it is not offered by the router. */
   internal: z.boolean().default(false),
   /** A starter graph: Lane Pilot starts it itself from this tool or event (e.g. `lane_pilot_dispatch_writer`). The router never offers it and `lane_pilot_run_workflow` refuses it. */
@@ -424,7 +426,7 @@ function fieldList(value: unknown, defaultRequired: boolean): unknown {
 
 const bilingualOf = (value: unknown): unknown => (typeof value === "string" ? { en: value, ru: value } : value);
 
-const ACTION_KEYS = new Set(["id", "type", "title", "label", "src", "consumes", "produces", "gates", "proof", "out", "output", "uses", "maxVisits", "maxAttempts", "timeoutSec", "budget", "maxRepeats", "guards", "applicable_modes", "skip_when", "skip_out", "with", "reads",
+const ACTION_KEYS = new Set(["id", "type", "title", "label", "src", "effect", "consumes", "produces", "gates", "proof", "out", "output", "uses", "maxVisits", "maxAttempts", "timeoutSec", "budget", "maxRepeats", "guards", "applicable_modes", "skip_when", "skip_out", "with", "reads",
   "model_preset", "profile", "position", "action", "params", "map", "test_mode"]);
 
 function normalizeNode(node: unknown, isChild = false): unknown {

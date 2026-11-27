@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { WORK_KINDS } from "./work-kinds";
 import { stageReceiptSchema } from "./stage-contract";
 
 /** A stage row as the screen lists it: no result body (`get_stage_result` loads it), only whether there is one. */
@@ -361,7 +362,7 @@ export const workflowStatsSchema = z.object({
 }).strict();
 export const workflowSummarySchema = z.object({
   id: z.string(), name: bilingualSchema, description: bilingualSchema, status: z.enum(["draft", "tested", "published", "deprecated"]), version: z.number().int(),
-  scope: z.enum(["builtin", "global", "project"]), internal: z.boolean(), tags: z.array(z.string()), nodes: z.number().int(), warnings: z.number().int(),
+  scope: z.enum(["builtin", "global", "project"]), internal: z.boolean(), kind: z.enum(WORK_KINDS).optional(), tags: z.array(z.string()), nodes: z.number().int(), warnings: z.number().int(),
   category: z.string().optional(), categoryLabel: bilingualSchema.nullable().optional(),
   stats: workflowStatsSchema,
 }).strict();
@@ -379,6 +380,8 @@ export const workflowDetailSchema = workflowSummarySchema.extend({
   startedBy: z.string().nullable(),
   /** The live run that proved this version (a `tested` workflow whose run succeeded counts as published); null until one did. */
   proven: z.object({ runId: z.string(), at: z.number().int() }).strict().nullable(),
+  /** Models this workflow definition has passed on (live runs and proof runs, deduplicated across agent nodes). */
+  proven_on: z.array(z.object({ provider: z.string(), model: z.string(), runs: z.number().int() }).strict()).default([]),
   /** The BB automations that run this workflow's schedule triggers (own, published workflows only). */
   schedules: z.array(z.object({ projectId: z.string(), slot: z.number().int(), automationId: z.string() }).strict()),
   warningMessages: z.array(z.string()),
@@ -436,8 +439,8 @@ export const workflowDraftPatchResultSchema = z.object({
 export const workflowDraftTestResultSchema = z.object({
   draftId: z.string(), version: z.number().int(), ran: z.boolean(), green: z.boolean(), reason: z.string().optional(), allCasesRun: z.boolean().optional(),
   cases: z.array(z.object({
-    caseId: z.string(), green: z.boolean(), status: z.string(), path: z.array(z.string()), output: z.unknown(), failures: z.array(z.string()),
-    runId: z.string().nullable(), failedNode: z.string().nullable(), stubbedCalls: z.array(z.string()), notChecked: z.array(z.string()).optional(),
+    caseId: z.string(), green: z.boolean(), status: z.string(), reason: z.string().nullable().optional(), path: z.array(z.string()), output: z.unknown(), failures: z.array(z.string()),
+    runId: z.string().nullable(), failedNode: z.string().nullable(), nodeId: z.string().nullable().optional(), stubbedCalls: z.array(z.string()), notChecked: z.array(z.string()).optional(),
   })).optional(),
   problems: draftProblems.optional(), note: z.string().optional(),
 });

@@ -25,6 +25,7 @@
   },
   "not_for": [],
   "status": "published",
+  "kind": "project",
   "inputs": {
     "project_cwd": {
       "type": "string"

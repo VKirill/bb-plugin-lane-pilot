@@ -1,7 +1,15 @@
+import type { Field } from "@lane-pilot/workflow-engine";
 import { isWholeConsent } from "../../tasks";
 import { INTAKE_KINDS, SERVICE_KINDS, isMachineMessage, type IntakeKind, type ServiceKind } from "../../contracts";
 
 export { INTAKE_KINDS, SERVICE_KINDS, isMachineMessage, type IntakeKind, type ServiceKind };
+
+/** Generic `kind: "project"` built-in workflows skipped during project-template lookup so intake falls back to `full-lifecycle` explicitly. */
+export const GENERIC_PROJECT_WORKFLOW_IDS: ReadonlySet<string> = new Set([
+  "full-lifecycle",
+  "roadmap-driven",
+  "project-start",
+]);
 
 /** Above this many characters a message the rules cannot place is taken as heavy: a goal, not a fix. */
 export const HEAVY_LENGTH = 700;
@@ -57,4 +65,113 @@ export function processHint(): string {
 /** The PM's note when the owner's process is a graph the catalog already has: run that one, no new graph is built. */
 export function publishedHint(found: { graphId: string; name: string; confidence: number }): string {
   return `[Lane Pilot intake] The owner's request matches the published graph ${found.graphId} («${found.name}», router confidence ${found.confidence}). No workflow architect was started for it. If it fits, start it (lane_pilot_route with the owner's words, then lane_pilot_run_workflow {workflowId: \"${found.graphId}\"}); if it does not, say why and build a new one (lane_pilot_forge).`;
+}
+
+/** Builds a single owner-ask form payload listing every missing required template input at once. */
+export function missingTemplateInputsQuestion(input: {
+  workflowId: string;
+  workflowName: { en: string; ru: string };
+  missing: readonly Field[];
+  ru: boolean;
+}): { question: string; detail: string } {
+  const names = input.missing.map((field) => field.name);
+  const title = input.ru ? (input.workflowName.ru || input.workflowName.en) : (input.workflowName.en || input.workflowName.ru);
+  const question = input.ru
+    ? `Для шаблона «${title}» (${input.workflowId}) нужны входные данные: ${names.join(", ")}.`
+    : `Template "${title}" (${input.workflowId}) needs required inputs: ${names.join(", ")}.`;
+  const lines = input.missing.map((field) => {
+    const typeHint = field.type === "enum" && field.values?.length ? field.values.join(" | ") : field.type;
+    const note = field.description ?? field.note;
+    return `- ${field.name} (${typeHint})${note ? ` — ${note}` : ""}`;
+  });
+  const hint = input.ru
+    ? "Ответьте значениями (если полей несколько — каждое с новой строки в виде `имя: значение`)."
+    : "Reply with the values (for multiple fields, one per line as `name: value`).";
+  return { question, detail: `${lines.join("\n")}\n\n${hint}` };
+}
+
+function coerceFieldValue(field: Field, raw: string): unknown {
+  const val = raw.trim();
+  if (!val) return undefined;
+  switch (field.type) {
+    case "number": {
+      const n = Number(val);
+      return Number.isFinite(n) ? n : undefined;
+    }
+    case "boolean": {
+      if (/^(true|yes|да|1|on)$/i.test(val)) return true;
+      if (/^(false|no|нет|0|off)$/i.test(val)) return false;
+      return undefined;
+    }
+    case "enum": {
+      const values = field.values ?? [];
+      return values.find((v) => v === val || v.toLowerCase() === val.toLowerCase());
+    }
+    case "array": {
+      if (val.startsWith("[")) {
+        try {
+          const parsed = JSON.parse(val) as unknown;
+          if (Array.isArray(parsed)) return parsed;
+        } catch { /* fall back to delimited items */ }
+      }
+      return val.split(/\n|,/).map((s) => s.trim()).filter(Boolean);
+    }
+    case "object": {
+      if (val.startsWith("{")) {
+        try {
+          const parsed = JSON.parse(val) as unknown;
+          if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) return parsed;
+        } catch { /* ignore invalid JSON object */ }
+      }
+      return undefined;
+    }
+    default:
+      return val;
+  }
+}
+
+/** Extracts missing template input values from the owner's single reply (`name: value` pairs, URL/file signals, or positional lines). */
+export function parseMissingInputsAnswer(missing: readonly Field[], text: string): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  const trimmed = text.trim();
+  if (!trimmed || missing.length === 0) return out;
+
+  const byName = new Map(missing.map((f) => [f.name.toLowerCase(), f]));
+  const unmatchedLines: string[] = [];
+  for (const line of trimmed.split(/\r?\n/)) {
+    const clean = line.trim();
+    if (!clean) continue;
+    const kv = /^([A-Za-z_][A-Za-z0-9_]{0,47})\s*[:=]\s*(.+)$/.exec(clean);
+    const field = kv ? byName.get(kv[1]!.toLowerCase()) : undefined;
+    if (field && kv) {
+      const coerced = coerceFieldValue(field, kv[2]!);
+      if (coerced !== undefined) {
+        out[field.name] = coerced;
+        continue;
+      }
+    }
+    unmatchedLines.push(clean);
+  }
+
+  const urls = [...trimmed.matchAll(/https?:\/\/[^\s)>"']+/g)].map((m) => m[0]);
+  for (const field of missing) {
+    if (out[field.name] !== undefined) continue;
+    if (/^(url|source|site_url|health_url|google_card_url|card_url)$/.test(field.name) && urls[0] && field.type === "string") {
+      out[field.name] = urls[0];
+    } else if (field.name === "post_urls" && urls.length && field.type === "array") {
+      out[field.name] = urls;
+    }
+  }
+
+  const remaining = missing.filter((f) => out[f.name] === undefined);
+  if (remaining.length === 1) {
+    const coerced = coerceFieldValue(remaining[0]!, unmatchedLines.length === 1 ? unmatchedLines[0]! : trimmed);
+    if (coerced !== undefined) out[remaining[0]!.name] = coerced;
+  } else if (remaining.length > 1 && unmatchedLines.length > 0) {
+    for (let i = 0; i < remaining.length && i < unmatchedLines.length; i += 1) {
+      const coerced = coerceFieldValue(remaining[i]!, unmatchedLines[i]!);
+      if (coerced !== undefined) out[remaining[i]!.name] = coerced;
+    }
+  }
+  return out;
 }

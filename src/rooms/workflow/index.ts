@@ -22,7 +22,7 @@ export type { ValidateOptions, WorkflowProblem } from "@lane-pilot/workflow-engi
 export { LOOP_HOOK_MANIFEST, LOOP_HOOK_POINTS, LoopHookRefusal, parseLoopHookManifest, prepareLoopWorkflow } from "./models/loop-hooks";
 export type { LoopHookManifest, LoopHookPoint, PreparedLoopWorkflow } from "./models/loop-hooks";
 export {
-  HEAVY_LENGTH, INTAKE_KINDS, SERVICE_KINDS, intakeByRules, intakeRunGoals, intakeTitle, isMachineMessage, processHint, publishedHint, serviceByRules,
+  GENERIC_PROJECT_WORKFLOW_IDS, HEAVY_LENGTH, INTAKE_KINDS, SERVICE_KINDS, intakeByRules, intakeRunGoals, intakeTitle, isMachineMessage, missingTemplateInputsQuestion, parseMissingInputsAnswer, processHint, publishedHint, serviceByRules,
 } from "./models/intake";
 export type { IntakeKind, ServiceKind } from "./models/intake";
 export {
@@ -31,4 +31,5 @@ export {
   sameStateIgnoringTime, stateBlockSections, stateBlockText, stateHasHeader, stateText,
 } from "./models/planning-files";
 export { PROFILE_KEYS, PROFILE_SETTING_KEYS, PROFILE_VALUE_MAX, profilePairProblem, secretKeyName, unsafeReason } from "./models/profile";
+export { INTERNAL_UPKEEP_WORKFLOWS, isInternalUpkeep } from "./models/internal-workflows";
 export * from "./settings";

@@ -32,6 +32,7 @@
     "full-lifecycle"
   ],
   "status": "published",
+  "kind": "project",
   "tags": [
     "code",
     "planning",
