@@ -22,6 +22,8 @@ export interface WorkflowEngineApi {
 /** workflow/server/workflow-library.ts — the graphs a project has, over the built-in and global stores. */
 export interface WorkflowLibraryApi {
   loadStore(projectId?: string): Promise<{ store: WorkflowStore; loopHooks?: { manifest: unknown; sha256: string | null; error?: string } }>;
+  /** A graph with the file it was read from, its text hashed: the base an edit or branch draft publishes over. Optional for test doubles. */
+  source?(input: { id: string; projectId?: string }): Promise<{ workflow: import("@lane-pilot/workflow-engine").Workflow; origin: import("@lane-pilot/workflow-engine").WorkflowOrigin; path: string; fileSha256: string | null; ids: string[] } | null>;
   /** Composes the project's reserved loop hooks without making consuming rooms import workflow internals. */
   prepareWorkflow(projectId: string, workflow: import("@lane-pilot/workflow-engine").Workflow): Promise<{ workflow: import("@lane-pilot/workflow-engine").Workflow; resolve: import("@lane-pilot/workflow-engine").ResolveWorkflow; composed: boolean }>;
   issueQuickWorkflowId(settings: Record<string, unknown> | null | undefined): "issue-quick" | "issue-quick-legacy";

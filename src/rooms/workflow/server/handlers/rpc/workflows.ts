@@ -6,6 +6,7 @@ import { createWorkflowLibrary } from "../../services/workflow-library";
 import { createWorkflowArchitect } from "../../services/workflow-architect";
 import { createWorkflowModels } from "../../services/workflow-models";
 import { listWorkflowEvolution, publishEvolutionWorkflowDraft, rollbackEvolutionWorkflowDraft } from "../../services/draft-evolution";
+import { grantOwner, publishGateLog } from "../../services/publish-gate";
 
 
 import type { DocsApi } from "../../../../docs/server";
@@ -57,7 +58,11 @@ export function workflowsRpc(ctx: ServerCore, services: Services) {
       return { draftId: draft.id, workflowId: copyId, reused: false };
     },
     workflow_evolution_list: ({ projectId }) => listWorkflowEvolution(ctx, { projectId }),
-    workflow_evolution_publish: (input) => publishEvolutionWorkflowDraft(ctx, services, input),
+    workflow_evolution_publish: async (input) => {
+      grantOwner(ctx.db, input.draftId, "desk", { log: publishGateLog(ctx) });
+      const res = await publishEvolutionWorkflowDraft(ctx, services, input);
+      return { ok: res.ok, ...(res.projectId !== undefined ? { projectId: res.projectId } : {}), message: res.message };
+    },
     workflow_draft_rollback: (input) => rollbackEvolutionWorkflowDraft(ctx, services, input),
   } satisfies Pick<PluginRpcHandlers<typeof rpcContract>, "workflow_list" | "workflow_map" | "workflow_get" | "workflow_run_snapshot" | "workflow_draft_create" | "workflow_step_executors" | "workflow_model_catalog" | "workflow_evolution_list" | "workflow_evolution_publish" | "workflow_draft_rollback">;
 }

@@ -1,10 +1,11 @@
 import { join } from "node:path";
 import { redactKnown, sha256Hex } from "@lane-pilot/kit";
 import {
-  WORKFLOW_FILE_ID, casWriteSkillBundle, casWriteWorkflowFile, computeSkillBundleSha256, globalSkillsDir, globalWorkflowDir,
-  loadWorkflow, loadWorkflowStore, nodeFileSource, readSkillBundle, removeWorkflowFile, restoreSkillBundleSnapshot,
-  runDraftTest, testCasesOf,
+  WORKFLOW_FILE_ID, casWriteSkillBundle, casWriteWorkflowFile, computeSkillBundleSha256,
+  globalSkillsDir, globalWorkflowDir, loadWorkflow, loadWorkflowStore, nodeFileSource,
+  readSkillBundle, removeWorkflowFile, restoreSkillBundleSnapshot, runDraftTest, testCasesOf,
 } from "@lane-pilot/workflow-engine";
+import { archivePreviousRevision, archivePublishedRevision, makeArchiveLogger } from "./archive-publish";
 import type { ServerCore } from "../../../contracts/server";
 import { closeOwnerItemsByPrefix, listOpenOwnerItems } from "../../../owner-waiting";
 import { projectFolder } from "../../../platform/server";
@@ -15,6 +16,7 @@ import {
 } from "../../../storage";
 import { BUILTIN_SOURCES, builtinWorkflow, isEvolvableDomainBuiltinId, rawBuiltinWorkflowSource } from "../../builtin";
 import type { WorkflowEngineApi } from "./workflow";
+import { draftSha256, grantOwner, peekAuthority, publishGateLog } from "./publish-gate";
 import { createWorkflowArchitect, realDeps } from "./workflow-architect";
 import type { WorkflowTriggersApi } from "./workflow-triggers-live";
 
@@ -126,7 +128,7 @@ async function retireSupersededLocal(
 async function publishDraftWithCleanup(
   ctx: ServerCore,
   deps: WorkflowEvolutionDeps,
-  opts: { draftId: string; projectId: string; workflowId: string; fallbackVersion: number; threadId?: string; closePrefix: string; eventName: "published" | "rolledBack" },
+  opts: { draftId: string; projectId: string; workflowId: string; fallbackVersion: number; threadId?: string; ownerGrant?: boolean; closePrefix: string; eventName: "published" | "rolledBack" },
 ): Promise<{ ok: true; projectId: string; version: number } | { ok: false; reason: string }> {
   const docsPlaces = deps.docsPlaces ?? (async (projectId: string) => {
     const folder = await projectFolder(ctx.bb, projectId).catch(() => null);
@@ -143,7 +145,12 @@ async function publishDraftWithCleanup(
     architectServices as never,
     deps.globalDir ? { ...realDeps(ctx, architectServices as never), globalDir: deps.globalDir } : undefined,
   );
-  const pub = await architect.publish({ projectId: opts.projectId, ...(opts.threadId ? { threadId: opts.threadId } : {}), draftId: opts.draftId });
+  const pub = await architect.publish({
+    projectId: opts.projectId,
+    ...(opts.threadId ? { threadId: opts.threadId } : {}),
+    draftId: opts.draftId,
+    ...(opts.ownerGrant ? { ownerGrant: true } : {}),
+  });
   if (!pub.published) {
     const reason = String((pub as { reason?: unknown }).reason ?? "publish_refused");
     ctx.log(`WARN [workflow.drafts] ${opts.eventName === "published" ? "publish_refused" : "rollback_publish_failed"} ${redactKnown(JSON.stringify({ draftId: opts.draftId, workflowId: opts.workflowId, reason }))}`);
@@ -160,17 +167,49 @@ async function publishDraftWithCleanup(
 export async function publishEvolutionWorkflowDraft(
   ctx: ServerCore,
   deps: WorkflowEvolutionDeps,
-  input: { draftId: string; threadId?: string },
-): Promise<{ ok: boolean; projectId?: string; message: string }> {
-  const draft = createDraftStore(ctx.db).get(input.draftId);
-  if (!draft) return { ok: false, message: `Черновик ${input.draftId} не найден.` };
+  input: { draftId: string; threadId?: string; ownerGrant?: boolean; ensureTests?: boolean },
+): Promise<{ ok: boolean; projectId?: string; version?: number; reason?: string; message: string }> {
+  const drafts = createDraftStore(ctx.db);
+  let draft = drafts.get(input.draftId);
+  if (!draft) return { ok: false, reason: "not_found", message: `Черновик ${input.draftId} не найден.` };
+  const gateLog = publishGateLog(ctx);
+  const authCheck = peekAuthority(ctx.db, draft.id, draftSha256(draft.definition));
+  if (!authCheck.ok) {
+    gateLog.warn(`publish refused draft=${draft.id} reason=${authCheck.reason}`);
+    return { ok: false, reason: authCheck.reason, message: `Публикация отклонена: ${authCheck.reason}` };
+  }
+  const archiveLog = makeArchiveLogger(ctx);
+  const globalDir = (deps.globalDir ?? globalWorkflowDir)();
+  const resolve = (id: string, version?: number) => builtinWorkflow(id, version, ctx.db);
+  if (input.ensureTests && (!draft.tests || draft.tests.version !== draft.version || !draft.tests.green)) {
+    const loaded = loadWorkflow(draft.definition, { resolve });
+    if (!loaded.ok) {
+      return { ok: false, message: `Публикация отклонена: invalid (${loaded.problems.filter((p) => p.level === "error").map((p) => p.message).join("; ")})` };
+    }
+    const results = [];
+    for (const tc of testCasesOf(loaded.workflow)) {
+      results.push(await runDraftTest({ db: ctx.db, harnessVersion: HARNESS_VERSION, resolveWorkflow: resolve }, loaded.workflow, tc));
+    }
+    draft = drafts.recordTests(draft.id, draft.version, results, true) ?? draft;
+    if (!results.length || !results.every((r) => r.green)) {
+      return { ok: false, message: "Публикация отклонена: tests_not_green" };
+    }
+  }
+  await archivePreviousRevision(ctx, { draft, drafts, globalDir, resolve, log: archiveLog });
   const res = await publishDraftWithCleanup(ctx, deps, {
     draftId: draft.id, projectId: draft.projectId, workflowId: draft.workflowId, fallbackVersion: draft.version,
-    threadId: input.threadId, closePrefix: `workflow-draft:${draft.id}:`, eventName: "published",
+    threadId: input.threadId, ...(input.ownerGrant ? { ownerGrant: true } : {}),
+    closePrefix: `workflow-draft:${draft.id}:`, eventName: "published",
   });
   if (!res.ok) return { ok: false, message: `Публикация отклонена: ${res.reason}` };
+  const publishedRow = drafts.get(draft.id);
+  if (publishedRow) {
+    const publishedScope = publishedRow.scope === "project" ? { level: "project" as const, projectId: publishedRow.projectId } : { level: "global" as const };
+    const loadedPub = loadWorkflow({ ...publishedRow.definition, status: "published", version: res.version, scope: publishedScope }, { resolve });
+    if (loadedPub.ok) archivePublishedRevision(ctx, { workflow: loadedPub.workflow, scope: publishedRow.scope, log: archiveLog });
+  }
 
-  const skillsRoot = (deps.skillsDir ?? globalSkillsDir)(), globalDir = (deps.globalDir ?? globalWorkflowDir)();
+  const skillsRoot = (deps.skillsDir ?? globalSkillsDir)();
   const staged = listSkillEvolutionsForDraft(ctx.db, draft.id, { draftVersion: draft.version, status: "staged" });
   const publishedSet = new Set(listSkillEvolutionsForDraft(ctx.db, draft.id, { draftVersion: draft.version, status: "published" }).map((r) => r.skillId));
   const seenSkills = new Set<string>();
@@ -194,7 +233,7 @@ export async function publishEvolutionWorkflowDraft(
     appendSkillEvolutionEvent(ctx.db, { ...row, evolutionId: undefined, createdAt: undefined, draftId: draft.id, draftVersion: draft.version, workflowId: draft.workflowId, status: "published", afterBundleSha256: afterSha, supersededSnapshots }, { log: ctx.log });
     ctx.log(`INFO [workflow.drafts] coupled_skill_published ${redactKnown(JSON.stringify({ draftId: draft.id, workflowId: draft.workflowId, skillId: row.skillId, supersededCount: supersededSnapshots.length }))}`);
   }
-  return { ok: true, projectId: res.projectId, message: `Граф ${draft.workflowId} (v${res.version}) опубликован.` };
+  return { ok: true, projectId: res.projectId, version: res.version, message: `Граф ${draft.workflowId} (v${res.version}) опубликован.` };
 }
 
 /** Rolls an evolved workflow back to its prior snapshot (or factory built-in) and restores coupled skill bundles. */
@@ -242,6 +281,7 @@ export async function rollbackEvolutionWorkflowDraft(
     publishedVersion = builtinWorkflow(draft.workflowId)?.version ?? 1;
     ctx.log(`INFO [workflow.drafts] rolledBackToFactoryBuiltin ${redactKnown(JSON.stringify({ draftId: draft.id, workflowId: draft.workflowId, version: publishedVersion }))}`);
   } else {
+    grantOwner(ctx.db, draft.id, "desk", { log: publishGateLog(ctx) });
     const res = await publishDraftWithCleanup(ctx, deps, {
       draftId: draft.id, projectId: draft.projectId, workflowId: draft.workflowId, fallbackVersion: restored.draft.version,
       threadId: input.threadId, closePrefix: `workflow-evolved:${draft.id}:`, eventName: "rolledBack",

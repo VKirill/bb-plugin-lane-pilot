@@ -90,12 +90,23 @@ export const rpcWorkflow = {
     output: z.object({ ok: z.boolean(), reason: z.string().optional(), currentVersion: z.number().int().optional(), version: z.number().int().optional(), definition: z.record(z.string(), z.unknown()).optional() }).strict(),
   },
   workflow_draft_test: {
-    input: z.object({ draftId: z.string().min(1), testCaseId: z.string().min(1).max(120).optional() }).strict(),
+    input: z.object({
+      draftId: z.string().min(1),
+      testCaseId: z.string().min(1).max(120).optional(),
+      fromRuns: z.object({
+        limit: z.number().int().min(1).max(200).optional(),
+        runIds: z.array(z.string().min(1)).max(200).optional(),
+      }).strict().optional(),
+    }).strict(),
     output: workflowDraftTestResultSchema,
   },
   workflow_draft_publish: {
     input: z.object({ draftId: z.string().min(1) }).strict(),
     output: workflowDraftPublishResultSchema,
+  },
+  workflow_draft_grant: {
+    input: z.object({ draftId: z.string().min(1) }).strict(),
+    output: z.object({ ok: z.boolean(), draftId: z.string(), granted: z.boolean(), reason: z.string().optional() }).strict(),
   },
   workflow_evolution_list: {
     input: z.object({ projectId: z.string().min(1).optional() }).strict(),

@@ -2,9 +2,9 @@ import { nativeDirectoryMigrations } from "./storage/native-directory-guard";
 // The composed Lane Pilot migration list, in apply order. Order is locked: tests/fixtures/migrations.lock.json hashes every statement.
 // Owner rooms export their slices; storage applies whatever list it is handed (openDatabase default lives above storage).
 import { handoffMigrations } from "@lane-pilot/handoff";
-import { workflowInboxMigrations, workflowMigrations, workflowNodeFormMigrations, workflowStepFactsMigrations } from "@lane-pilot/workflow-engine";
+import { workflowCanaryMigrations, workflowInboxMigrations, workflowMigrations, workflowNodeFormMigrations, workflowStepFactsMigrations } from "@lane-pilot/workflow-engine";
 import { workflowNotVerifiedMigrations, workflowOpsMigrations } from "@lane-pilot/workflow-engine";
-import { draftMigrations } from "@lane-pilot/workflow-engine";
+import { draftMetadataMigrations, draftMigrations, workflowDefinitionArchiveMigrations, workflowProofMigrations, workflowPublishAuthorityMigrations } from "@lane-pilot/workflow-engine";
 import { scheduleAgentMigrations, scheduleMigrations } from "./schedule/migrations";
 import { deferralKindMigrations, deferralMigrations, wallDeferralKindMigrations } from "./deferral/migrations";
 import { rollbackMigrations } from "./rollback/migrations";
@@ -17,8 +17,11 @@ import { backlogMigrations } from "./backlog/migrations";
 import { memoryTierMigrations } from "./memory-tiers/migrations";
 import { checkerMigrations } from "./checkers/migrations";
 import { memoryConflictMigrations } from "@lane-pilot/memory-core";
-import { spMigrations } from "./specialist/migrations";
+import { spAutonomyGrantMigrations, spHypothesisMigrations, spIntentOutcomeMigrations, spMigrations, spRuleMigrations } from "./specialist/migrations";
 import { trajectoryDeltaMigrations } from "./errands/migrations";
+import { workflowRoomMigrations } from "./workflow/migrations";
+import { critiqueMigrations } from "./critique/migrations";
+import { evolveMigrations } from "./evolve/migrations";
 import {
   anamnesisOwnerMigrations,
   benchMigrations,
@@ -885,4 +888,16 @@ export const migrations = [
   ...workflowInboxMigrations,
   ...workflowStepFactsMigrations,
   ...workflowNodeFormMigrations,
+  ...draftMetadataMigrations,
+  ...workflowProofMigrations,
+  ...workflowRoomMigrations,
+  ...critiqueMigrations,
+  ...evolveMigrations,
+  ...spIntentOutcomeMigrations,
+  ...workflowDefinitionArchiveMigrations,
+  ...spHypothesisMigrations,
+  ...spAutonomyGrantMigrations,
+  ...spRuleMigrations,
+  ...workflowCanaryMigrations,
+  ...workflowPublishAuthorityMigrations,
 ];

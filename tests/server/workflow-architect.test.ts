@@ -5,7 +5,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import plugin from "../../server";
 import { writeWorkflowFile } from "../../src/rooms/host-worker";
+import { openDatabase } from "../../src/rooms/plugin-db";
 import { REALTIME_WINDOW_MS } from "../../src/rooms/platform/server/services/realtime";
+import { grantOwner } from "../../src/rooms/workflow/server";
 import { globalWorkflowDir, loadWorkflowStore, projectWorkflowDir } from "@lane-pilot/workflow-engine";
 import { BROWSER_DIGEST_STEPS } from "../workflow/architect-fixture";
 
@@ -60,10 +62,11 @@ async function setup(options: { project?: string; secrets?: boolean } = {}) {
   });
   await plugin(bb);
   dispose = () => harness.lifecycle.dispose();
+  const db = openDatabase(bb);
   const call = async (name: string, params: Record<string, unknown>) =>
     JSON.parse(String(await harness.behavior.callAgentTool(name, params, { threadId, projectId }))) as Record<string, any>;
   const rpc = async (name: string, params: Record<string, unknown>) => await harness.behavior.callRpc(name, params) as Record<string, any>;
-  return { project, harness, call, rpc, hostCalls };
+  return { project, db, harness, call, rpc, hostCalls };
 }
 
 async function build(call: Awaited<ReturnType<typeof setup>>["call"], scope: "global" | "project" = "global") {
@@ -76,7 +79,7 @@ async function build(call: Awaited<ReturnType<typeof setup>>["call"], scope: "gl
 
 describe("workflow architect tools", () => {
   it("builds «browser search, document analysis, summary, Telegram» by patches, tests it on stubs and publishes it", async () => {
-    const { call, harness, rpc } = await setup();
+    const { db, call, harness, rpc } = await setup();
     const { created, draftId, patches } = await build(call);
     expect(created).toMatchObject({ workflowId: "browser-digest", version: 1, status: "draft" });
     // The frame alone is unfinished: problems come back with the next step, and it is saved all the same.
@@ -93,6 +96,7 @@ describe("workflow architect tools", () => {
     expect(tested.cases[0].stubbedCalls).toEqual(expect.arrayContaining(["send (action: telegram.send_rich)", "search (agent)"]));
     expect(tested.next).toContain("lane_pilot_workflow_draft, action publish");
 
+    grantOwner(db, draftId, "chat");
     const published = await call("lane_pilot_workflow_draft_publish", { draftId, confirm: true });
     // Since W3 the agent step and the Telegram send have live executors, so the published chain can run for real.
     expect(published).toMatchObject({ liveReady: true });
@@ -119,9 +123,10 @@ describe("workflow architect tools", () => {
   });
 
   it("publishes a project draft through the project's machine into its own .lane-pilot/workflows", async () => {
-    const { call, hostCalls, project } = await setup();
+    const { db, call, hostCalls, project } = await setup();
     const { draftId } = await build(call, "project");
     expect((await call("lane_pilot_workflow_draft_test", { draftId })).green).toBe(true);
+    grantOwner(db, draftId, "chat");
     const published = await call("lane_pilot_workflow_draft_publish", { draftId, confirm: true });
     expect(published).toMatchObject({ published: true, scope: "project", path: ".lane-pilot/workflows/browser-digest.json" });
     expect(hostCalls).toContain("writeWorkflowFile");
@@ -129,14 +134,17 @@ describe("workflow architect tools", () => {
     expect(store.get("browser-digest")).toMatchObject({ origin: "project", workflow: { scope: { level: "project", projectId } } });
     // Publishing again after a change is a new version over the file this draft wrote.
     await call("lane_pilot_workflow_draft_patch", { draftId, ops: [{ op: "update_node", id: "send", set: { maxAttempts: 2 } }] });
+    grantOwner(db, draftId, "chat");
     expect((await call("lane_pilot_workflow_draft_publish", { draftId, confirm: true })).reason).toBe("tests_stale");
     expect((await call("lane_pilot_workflow_draft_test", { draftId })).green).toBe(true);
+    grantOwner(db, draftId, "chat");
     expect(await call("lane_pilot_workflow_draft_publish", { draftId, confirm: true })).toMatchObject({ published: true, workflowVersion: 2 });
   });
 
   it("refuses to publish with red, missing or stale tests, and never overwrites a file it did not write", async () => {
-    const { call } = await setup();
+    const { db, call } = await setup();
     const { draftId } = await build(call);
+    grantOwner(db, draftId, "chat");
     expect(await call("lane_pilot_workflow_draft_publish", { draftId, confirm: true })).toMatchObject({ published: false, reason: "no_tests" });
 
     // A case that expects a path the graph does not take is red.
@@ -146,6 +154,7 @@ describe("workflow architect tools", () => {
     expect(red).toMatchObject({ green: false, status: "draft" });
     expect(red.cases[0].failures[0]).toContain("is not the expected");
     expect(red.next).toContain("fix");
+    grantOwner(db, draftId, "chat");
     const refused = await call("lane_pilot_workflow_draft_publish", { draftId, confirm: true });
     expect(refused).toMatchObject({ published: false, reason: "tests_not_green" });
     expect(refused.failing[0].caseId).toBe("wrong");
@@ -157,12 +166,14 @@ describe("workflow architect tools", () => {
     expect((await call("lane_pilot_workflow_draft_test", { draftId })).green).toBe(true);
     mkdirSync(globalWorkflowDir(), { recursive: true });
     writeFileSync(join(globalWorkflowDir(), "browser-digest.json"), "{\"mine\": true}");
+    grantOwner(db, draftId, "chat");
     const clash = await call("lane_pilot_workflow_draft_publish", { draftId, confirm: true });
     expect(clash).toMatchObject({ published: false, reason: "file_conflict" });
     expect(readFileSync(join(globalWorkflowDir(), "browser-digest.json"), "utf8")).toBe("{\"mine\": true}");
     // Another id publishes.
     await call("lane_pilot_workflow_draft_patch", { draftId, ops: [{ op: "set_meta", set: { id: "browser-digest-2" } }] });
     expect((await call("lane_pilot_workflow_draft_test", { draftId })).green).toBe(true);
+    grantOwner(db, draftId, "chat");
     expect(await call("lane_pilot_workflow_draft_publish", { draftId, confirm: true })).toMatchObject({ published: true, workflowId: "browser-digest-2" });
     // A built-in id is reserved.
     expect(await call("lane_pilot_workflow_draft_create", { name: "x", description: "y", workflowId: "analyze-plan-execute" })).toMatchObject({ ok: false, error: { code: "id_reserved" } });

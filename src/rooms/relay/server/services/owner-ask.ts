@@ -33,6 +33,7 @@ const LOST_TO_RELOAD = new Set(["plugin-disposed", "server-restarted"]);
  */
 export function createOwnerAsk(bb: BbPluginApi, log: (message: string) => void) {
   const open = new Set<string>();
+  const latestAnswered = new Map<string, { question: string; choice: string | null; text: string; line: string; at: number }>();
   const requestInput = (): RequestInput | null => {
     const ui = (bb as unknown as { ui?: { requestInput?: RequestInput } }).ui;
     return typeof ui?.requestInput === "function" ? ui.requestInput.bind(ui) : null;
@@ -74,7 +75,9 @@ export function createOwnerAsk(bb: BbPluginApi, log: (message: string) => void) 
       if (!parsed.success) return { outcome: "cancelled", reason: "unreadable_answer" };
       const answer = resolveOwnerResponse(payload, parsed.data);
       if (!answer.choice && !answer.text) return { outcome: "cancelled", reason: "empty_answer" };
-      return { outcome: "answered", ...answer, line: ownerAnswerText(answer) };
+      const line = ownerAnswerText(answer);
+      latestAnswered.set(threadId, { question: request.question, choice: answer.choice?.label ?? null, text: answer.text, line, at: Date.now() });
+      return { outcome: "answered", ...answer, line };
     } catch (cause) {
       return { outcome: "unavailable", reason: cause instanceof Error ? cause.message : String(cause) };
     } finally {
@@ -147,7 +150,17 @@ export function createOwnerAsk(bb: BbPluginApi, log: (message: string) => void) 
     await sendServiceMessage(bb, { threadId, text });
   }
 
-  return { ask, askInBackground, answerMessage, sendToThread, pending, recoverLost, available: () => requestInput() !== null };
+  return {
+    ask,
+    askInBackground,
+    answerMessage,
+    sendToThread,
+    pending,
+    recoverLost,
+    available: () => requestInput() !== null,
+    lastAnswered: (threadId: string) => latestAnswered.get(threadId) ?? null,
+    consumeLastAnswered: (threadId: string) => { latestAnswered.delete(threadId); },
+  };
 }
 
 export type OwnerAsk = ReturnType<typeof createOwnerAsk>;

@@ -4,6 +4,7 @@ import { isDebugFixEnabled } from "@lane-pilot/kit";
 
 import { applyDraftOps, checkDraft, newDraftDefinition, slugWorkflowId } from "./draft";
 import type { DraftCheck, DraftOp, DraftScope, RawDefinition, Refusal } from "./draft";
+import { isLearnedDraftSource, permissionDiff, type PermissionDiffEntry } from "./draft-guard";
 import type { DraftTestResult } from "./draft-test";
 import { loadWorkflow, type ValidateOptions } from "./validate";
 
@@ -38,8 +39,31 @@ export const draftMigrations: string[] = [
   )`,
 ];
 
+/** Appended to the plugin's migrations (append only): metadata JSON on workflow drafts. */
+export const draftMetadataMigrations: string[] = [
+  `ALTER TABLE lane_pilot_wf_draft ADD COLUMN metadata_json TEXT`,
+];
+
 export type DraftStatus = "draft" | "tested" | "published";
 export type DraftTests = { version: number; at: number; green: boolean; results: DraftTestResult[] };
+export type DraftDedupeDecision = {
+  id: string | null;
+  score: number;
+  threshold: number;
+  outcome: "pass" | "near_twin";
+  at: number;
+};
+export type DraftMetadata = {
+  source?: string;
+  sourceRunIds?: string[];
+  branchOf?: string;
+  dedupe?: DraftDedupeDecision;
+  needs_owner_review?: "widens" | string;
+  wideningDiff?: PermissionDiffEntry[];
+  ownerGrantedAt?: number;
+  ownerGrantedBy?: string;
+  [key: string]: unknown;
+};
 
 export type DraftRow = {
   id: string;
@@ -52,6 +76,7 @@ export type DraftRow = {
   version: number;
   definition: RawDefinition;
   tests: DraftTests | null;
+  metadata: DraftMetadata | null;
   testedVersion: number | null;
   publishedVersion: number | null;
   publishedPath: string | null;
@@ -62,13 +87,14 @@ export type DraftRow = {
 
 type Raw = {
   id: string; project_id: string; thread_id: string | null; scope: DraftScope["level"]; workflow_id: string; status: DraftStatus; version: number;
-  definition_json: string; tests_json: string | null; tested_version: number | null; published_version: number | null; published_path: string | null;
+  definition_json: string; tests_json: string | null; metadata_json?: string | null; tested_version: number | null; published_version: number | null; published_path: string | null;
   published_sha256: string | null; created_at: number; updated_at: number;
 };
 
 const toRow = (raw: Raw): DraftRow => ({
   id: raw.id, projectId: raw.project_id, threadId: raw.thread_id, scope: raw.scope, workflowId: raw.workflow_id, status: raw.status, version: raw.version,
   definition: JSON.parse(raw.definition_json) as RawDefinition, tests: raw.tests_json ? JSON.parse(raw.tests_json) as DraftTests : null,
+  metadata: raw.metadata_json ? JSON.parse(raw.metadata_json) as DraftMetadata : null,
   testedVersion: raw.tested_version, publishedVersion: raw.published_version, publishedPath: raw.published_path, publishedSha256: raw.published_sha256,
   createdAt: raw.created_at, updatedAt: raw.updated_at,
 });
@@ -86,6 +112,18 @@ export type PublishedSnapshotInfo = {
 };
 
 export function createDraftStore(db: Database.Database, now: () => number = Date.now) {
+  let hasMetaCol: boolean | null = null;
+  const hasMetadataColumn = (): boolean => {
+    if (hasMetaCol === null) {
+      try {
+        const cols = db.prepare("PRAGMA table_info(lane_pilot_wf_draft)").all() as Array<{ name: string }>;
+        hasMetaCol = cols.some((col) => col.name === "metadata_json");
+      } catch {
+        hasMetaCol = false;
+      }
+    }
+    return hasMetaCol;
+  };
   const get = (id: string): DraftRow | null => {
     const raw = db.prepare("SELECT * FROM lane_pilot_wf_draft WHERE id=?").get(id) as Raw | undefined;
     return raw ? toRow(raw) : null;
@@ -99,7 +137,7 @@ export function createDraftStore(db: Database.Database, now: () => number = Date
      * file of a workflow the owner edits); `base` is that file as published, so that publishing may replace it and no other.
      */
     create(input: { projectId: string; threadId: string | null; scope: DraftScope["level"]; name: string | { en: string; ru: string }; description: string | { en: string; ru: string }; workflowId?: string;
-      definition?: RawDefinition; base?: { path: string; sha256: string; version: number } }): DraftRow {
+      definition?: RawDefinition; base?: { path: string; sha256: string; version: number }; metadata?: DraftMetadata }): DraftRow {
       const id = `wfd_${randomUUID().replaceAll("-", "").slice(0, 16)}`;
       const nameText = typeof input.name === "string" ? input.name : input.name.en;
       const workflowId = input.workflowId ?? slugWorkflowId(nameText, id.slice(-4));
@@ -108,12 +146,27 @@ export function createDraftStore(db: Database.Database, now: () => number = Date
         ? { ...input.definition, id: workflowId, status: "draft", scope }
         : newDraftDefinition({ id: workflowId, name: input.name, description: input.description, scope });
       const at = now();
+      const metadataJson = input.metadata ? JSON.stringify(input.metadata) : null;
       db.transaction(() => {
-        db.prepare(`INSERT INTO lane_pilot_wf_draft(id,project_id,thread_id,scope,workflow_id,status,version,definition_json,published_version,published_path,published_sha256,created_at,updated_at) VALUES (?,?,?,?,?,'draft',1,?,?,?,?,?,?)`)
-          .run(id, input.projectId, input.threadId, input.scope, workflowId, JSON.stringify(definition), input.base?.version ?? null, input.base?.path ?? null, input.base?.sha256 ?? null, at, at);
+        if (hasMetadataColumn()) {
+          db.prepare(`INSERT INTO lane_pilot_wf_draft(id,project_id,thread_id,scope,workflow_id,status,version,definition_json,metadata_json,published_version,published_path,published_sha256,created_at,updated_at) VALUES (?,?,?,?,?,'draft',1,?,?,?,?,?,?,?)`)
+            .run(id, input.projectId, input.threadId, input.scope, workflowId, JSON.stringify(definition), metadataJson, input.base?.version ?? null, input.base?.path ?? null, input.base?.sha256 ?? null, at, at);
+        } else {
+          db.prepare(`INSERT INTO lane_pilot_wf_draft(id,project_id,thread_id,scope,workflow_id,status,version,definition_json,published_version,published_path,published_sha256,created_at,updated_at) VALUES (?,?,?,?,?,'draft',1,?,?,?,?,?,?)`)
+            .run(id, input.projectId, input.threadId, input.scope, workflowId, JSON.stringify(definition), input.base?.version ?? null, input.base?.path ?? null, input.base?.sha256 ?? null, at, at);
+        }
         db.prepare("INSERT INTO lane_pilot_wf_draft_version(draft_id,version,definition_json,summary,ops_json,at) VALUES (?,?,?,?,NULL,?)").run(id, 1, JSON.stringify(definition), input.definition ? "copied" : "created", at);
       })();
       return get(id)!;
+    },
+
+    /** Updates draft metadata JSON (source, sourceRunIds, dedupe decision, review flags). */
+    setMetadata(draftId: string, metadata: DraftMetadata | null): DraftRow | null {
+      if (hasMetadataColumn()) {
+        db.prepare("UPDATE lane_pilot_wf_draft SET metadata_json=?, updated_at=? WHERE id=?")
+          .run(metadata ? JSON.stringify(metadata) : null, now(), draftId);
+      }
+      return get(draftId);
     },
 
     /** The drafts of a project, newest change first. */
@@ -125,13 +178,17 @@ export function createDraftStore(db: Database.Database, now: () => number = Date
     },
 
     /** Applies operations as one new version. An operation that cannot be applied refuses all of them and saves nothing. */
-    patch(draftId: string, ops: readonly DraftOp[], options: { expectedVersion?: number; validate?: ValidateOptions; evolutionGate?: boolean } = {}): PatchResult {
+    patch(draftId: string, ops: readonly DraftOp[], options: { expectedVersion?: number; validate?: ValidateOptions; evolutionGate?: boolean; source?: string } = {}): PatchResult {
       return db.transaction((): PatchResult => {
         const draft = get(draftId);
         if (!draft) return { ok: false, reason: "not_found" };
         if (options.expectedVersion !== undefined && options.expectedVersion !== draft.version) return { ok: false, reason: "version_conflict", currentVersion: draft.version };
-        const applied = applyDraftOps(draft.definition, ops, { evolutionGate: options.evolutionGate });
+        const effectiveSource = options.source ?? (isLearnedDraftSource(draft.metadata?.source) ? draft.metadata?.source : undefined);
+        const applied = applyDraftOps(draft.definition, ops, { evolutionGate: options.evolutionGate, source: effectiveSource });
         if (!applied.ok) return { ok: false, reason: "refused", refused: applied.refused };
+        if (effectiveSource === "evolve" && permissionDiff(draft.definition, applied.definition).length > 0) {
+          return { ok: false, reason: "refused", refused: [{ index: 0, op: "draft_guard", reason: "widens_permissions" }] };
+        }
         const definitionId = typeof applied.definition.id === "string" ? applied.definition.id : draft.workflowId;
         const json = JSON.stringify(applied.definition);
         // Where the steps lie on the canvas (`ui`) is not what the workflow does: dragging a card or arranging the graph changes that place in
@@ -149,6 +206,14 @@ export function createDraftStore(db: Database.Database, now: () => number = Date
         db.prepare("INSERT INTO lane_pilot_wf_draft_version(draft_id,version,definition_json,summary,ops_json,at) VALUES (?,?,?,?,?,?)")
           .run(draftId, version, json, applied.changes.join("; ").slice(0, 2000), JSON.stringify(ops), at);
         return { ok: true, draft: get(draftId)!, check: checkDraft(applied.definition, options.validate), changes: applied.changes };
+      })();
+    },
+
+    /** Deletes a draft and its version history. Returns true when a draft row was removed. */
+    delete(draftId: string): boolean {
+      return db.transaction((): boolean => {
+        db.prepare("DELETE FROM lane_pilot_wf_draft_version WHERE draft_id=?").run(draftId);
+        return db.prepare("DELETE FROM lane_pilot_wf_draft WHERE id=?").run(draftId).changes > 0;
       })();
     },
 
@@ -309,4 +374,32 @@ function resolvePublishedVersionRow(db: Database.Database, draft: DraftRow): Ver
     ?? rows.find((r) => r.version < draft.version)
     ?? rows[0]
     ?? null;
+}
+
+/** Lists drafts whose `metadata_json.source` matches any of `sources`, newest updated first. */
+export function listDraftsBySources(
+  db: Database.Database,
+  sources: readonly string[],
+  limit = 500,
+): DraftRow[] {
+  const clean = [...new Set(sources.map((s) => s.trim()).filter(Boolean))];
+  if (clean.length === 0) return [];
+  const cols = db.prepare("PRAGMA table_info(lane_pilot_wf_draft)").all() as Array<{ name: string }>;
+  if (cols.length === 0 || !cols.some((c) => c.name === "metadata_json")) return [];
+  const ph = clean.map(() => "?").join(", ");
+  const capped = Math.max(1, Math.min(limit, 2000));
+  const rows = db.prepare(
+    `SELECT * FROM lane_pilot_wf_draft
+     WHERE json_extract(metadata_json, '$.source') IN (${ph})
+     ORDER BY updated_at DESC, id DESC
+     LIMIT ?`,
+  ).all(...clean, capped) as Raw[];
+  return rows.map(toRow);
+}
+
+/** Resolves the publication timestamp for an accepted/published draft, or `null` if never published. */
+export function draftPublishedAt(db: Database.Database, draft: DraftRow): number | null {
+  if (draft.status === "published") return draft.updatedAt;
+  if (draft.publishedVersion === null) return null;
+  return createDraftStore(db).latestPublishedSnapshot(draft.id)?.at ?? draft.updatedAt;
 }

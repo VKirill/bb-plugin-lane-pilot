@@ -1,9 +1,19 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import type Database from "better-sqlite3";
 import { MIN_GRAPH_DESCRIPTION_LENGTH } from "@lane-pilot/contracts";
-import type { Workflow } from "@lane-pilot/workflow-engine";
-import { parseWorkflow, validateWorkflow, WorkflowError } from "@lane-pilot/workflow-engine";
+import type { ArchiveLogger, GraphDriftEntry, Workflow } from "@lane-pilot/workflow-engine";
+import {
+  archiveDefinitionBatch,
+  archivedDefinition,
+  definitionSha256,
+  findHubDefinitionDrift,
+  listLatestHubDefinitions,
+  parseWorkflow,
+  validateWorkflow,
+  WorkflowError,
+} from "@lane-pilot/workflow-engine";
 import { gateVocabularyLines } from "../contracts";
 import { workflowCategory } from "./models/categories";
 
@@ -147,12 +157,42 @@ export const EVOLVABLE_DOMAIN_BUILTIN_IDS: ReadonlySet<string> = new Set([
   // Content, research & creative media craft workflows
   "social-post", "insights-post", "ins.post", "x-to-telegram-digest", "web-research",
   "research-dossier", "api-recon", "reels", "3d-asset", "roblox-asset",
+  // Business & delivery craft workflows
+  "invoice-send", "telegram-send",
 ]);
 
+let archiveDb: Database.Database | null = null;
+
+/** Binds the archive database used when `builtinWorkflow(id, version)` falls back to an older archived revision. */
+export const setBuiltinArchiveDb = (db: Database.Database | null): void => {
+  archiveDb = db;
+};
+
+/** Archives every built-in workflow definition into `lane_pilot_wf_definition` at startup (`INSERT OR IGNORE`). */
+export function archiveBuiltinWorkflows(db: Database.Database, log?: ArchiveLogger): number {
+  archiveDb = db;
+  return archiveDefinitionBatch(
+    db,
+    loaded.workflows.map((wf) => ({
+      workflowId: wf.id,
+      version: wf.version,
+      sha: definitionSha256(wf),
+      json: JSON.stringify(wf),
+      scope: "builtin",
+    })),
+    { log, bestEffort: true },
+  );
+}
+
 export const builtinWorkflows = (): Workflow[] => [...loaded.workflows];
-export const builtinWorkflow = (id: string, version?: number): Workflow | null => {
+export const builtinWorkflow = (id: string, version?: number, db?: Database.Database): Workflow | null => {
   const found = loaded.byId.get(id) ?? null;
-  return found && (version === undefined || found.version === version) ? found : null;
+  if (found && (version === undefined || found.version === version)) return found;
+  if (version !== undefined) {
+    const targetDb = db ?? archiveDb;
+    if (targetDb) return archivedDefinition(targetDb, id, version);
+  }
+  return null;
 };
 export const isEvolvableDomainBuiltinId = (id: string): boolean => EVOLVABLE_DOMAIN_BUILTIN_IDS.has(id.trim());
 export const isCoreLockedBuiltinId = (id: string): boolean => {
@@ -163,3 +203,24 @@ export const rawBuiltinWorkflowSource = (id: string): Record<string, unknown> | 
   const raw = loaded.rawById.get(id.trim());
   return raw ? (JSON.parse(JSON.stringify(raw)) as Record<string, unknown>) : null;
 };
+
+/**
+ * Compares the newest non-built-in hub definitions in `lane_pilot_wf_definition` against `workflows/<id>.json`.
+ * Returns graphs missing from `workflows/` or whose loaded SHA-256 differs from the hub revision.
+ */
+export function listWorkflowGitDrift(
+  db: Database.Database,
+  options: { workflowsDir?: string } = {},
+): GraphDriftEntry[] {
+  const dir = options.workflowsDir ?? defaultWorkflowsDir();
+  const hubRows = listLatestHubDefinitions(db);
+  return findHubDefinitionDrift(hubRows, (workflowId) => {
+    const filePath = join(dir, `${workflowId}.json`);
+    if (!existsSync(filePath)) return null;
+    try {
+      return readFileSync(filePath, "utf8");
+    } catch {
+      return null;
+    }
+  });
+}

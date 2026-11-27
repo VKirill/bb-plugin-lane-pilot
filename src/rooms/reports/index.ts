@@ -8,6 +8,27 @@ export {
   type DailySummary,
 } from "./models/daily-report";
 export { type DigestLike, type OwnerPushOutcome } from "./models/owner-push";
+export { type LoopHealthEntry } from "./models/loop-health";
+export {
+  DESK_KEEP_OPTIONS,
+  DESK_SECTIONS,
+  DESK_SECTION_LABELS,
+  deskWeekKey,
+  formatReviewDeskText,
+  normalizeDeskOption,
+  reviewDeskOwnerItemKey,
+  type ComposeReviewDeskResult,
+  type DeskItem,
+  type DeskItemAction,
+  type DeskSection,
+  type DeskSectionView,
+} from "./models/review-desk";
+export {
+  buildDurabilityDeskItems,
+  formatDurabilitySection,
+  type DurabilityDeskItem,
+  type DurabilitySummary,
+} from "./models/durability";
 export {
   TelegramNotReadyError,
   TelegramSendError,
@@ -16,3 +37,4 @@ export {
   TG_TOPIC_NAME,
   type TelegramSend,
 } from "./models/telegram";
+export * from "./settings";

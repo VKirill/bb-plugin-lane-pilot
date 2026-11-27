@@ -122,6 +122,7 @@ export const UNSHOWN_FIELDS: Readonly<Record<string, string>> = {
   "work_file_read.sizeBytes": "the file's size is the server's bound on the read, not something the owner is told",
   "owner_waiting.generatedAt": "server timestamp on the owner-waiting snapshot; screens show item age rather than the snapshot clock",
   "workflow_map.generatedAt": "server timestamp on the workflow map snapshot; diagnostic metadata not rendered in the UI",
+  "workflow_draft_grant.granted": "the owner's one-time grant for a draft that widens permissions; the CLI and the review desk confirm it, a screen shows only ok/reason",
 };
 
 /** Permission rules parity: the tools one place allows and the other does not. */

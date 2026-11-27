@@ -5,7 +5,7 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { afterEach, describe, expect, it } from "vitest";
 import { collectCapabilities, parseWorkflow, validateWorkflow } from "@lane-pilot/workflow-engine";
 import { roleSpec } from "../../src/rooms/workflow/server/services/workflow-agent";
-import { createWorkflowArchitect } from "../../src/rooms/workflow/server/services/workflow-architect";
+import { createWorkflowArchitect, grantOwner } from "../../src/rooms/workflow/server";
 import type { ArchitectDeps } from "../../src/rooms/workflow/server/services/workflow-architect";
 import type { Services } from "../../server";
 import { migrations } from "../../src/rooms/migrations";
@@ -93,11 +93,14 @@ describe("publishing a test fixture", () => {
       globalDir: () => globalDir, projectPlace: async () => null, writeProjectFile: async () => ({ status: "conflict", path: "", afterSha256: null, reason: "no machine" }),
       hasExecutor: () => true, capabilityPorts: () => ({}), projectName: async () => projectName,
     };
-    return createWorkflowArchitect({ db, log: () => undefined, realtime: { notify: () => undefined } } as never, { workflowEngine: null } as unknown as Pick<Services, "workflowEngine">, deps);
+    const architect = createWorkflowArchitect({ db, log: () => undefined, realtime: { notify: () => undefined } } as never, { workflowEngine: null } as unknown as Pick<Services, "workflowEngine">, deps);
+    return { db, architect };
   };
-  const publishAs = async (architect: Awaited<ReturnType<typeof setup>>, id: string, scope: "global" | "project") => {
+  const publishAs = async (setupResult: Awaited<ReturnType<typeof setup>>, id: string, scope: "global" | "project") => {
+    const { db, architect } = setupResult;
     const draft = architect.drafts.create({ projectId: "p1", threadId: null, scope, name: "Fixture", description: "A fixture" });
     architect.patch({ projectId: "p1", draftId: draft.id, ops: [{ op: "set_meta", set: { id } }] as never });
+    grantOwner(db, draft.id, "cli");
     return await architect.publish({ projectId: "p1", draftId: draft.id }) as { published: boolean; reason: string };
   };
 

@@ -102,6 +102,8 @@ type OwnerAsk = {
   pending(threadId: string): Promise<boolean>;
   recoverLost(): Promise<string[]>;
   available(): boolean;
+  lastAnswered?(threadId: string): { question: string; choice: string | null; text: string; line: string; at: number } | null;
+  consumeLastAnswered?(threadId: string): void;
 };
 
 type CredentialKind = "secret" | "ftp" | "ssh" | "login";

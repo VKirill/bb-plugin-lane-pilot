@@ -1,136 +1,40 @@
 import { z } from "zod";
 import type { PluginRpcHandlers } from "@get-bb/plugin-sdk";
 import type { rpcContract } from "../../../contracts";
-import { HARNESS_VERSION, findOpenNativeRun, getRunSettingsScopes, loadProjectSettings } from "../../../storage";
-import { QA_HOST_KEY } from "@lane-pilot/settings-catalog";
-import {mapListedQaHosts} from "../../../platform/server";
 import { collectCapabilities, CAPABILITY_SECTIONS } from "@lane-pilot/workflow-engine";
-import { draftOpSchema, checkDraft } from "@lane-pilot/workflow-engine";
+import { draftOpSchema, checkDraft, isLearnedDraftSource, permissionDiff } from "@lane-pilot/workflow-engine";
 import type { DraftCheck } from "@lane-pilot/workflow-engine";
+import { evaluateLearnedDraftGuard, grantFlaggedDraft, makeGuardLog, resolveDraftGuardBase } from "./draft-guard-policy";
 import { createDraftStore } from "../../../storage";
 import type { DraftRow, DraftStore } from "../../../storage";
-import { runDraftTest, testCasesOf } from "@lane-pilot/workflow-engine";
-import type { DraftTestResult } from "@lane-pilot/workflow-engine";
-import { builtinWorkflow, isEvolvableDomainBuiltinId } from "../../builtin";
+import { testCasesOf } from "@lane-pilot/workflow-engine";
+import { resolveDraftTestFromRuns, runArchitectDraftTests } from "./workflow-architect-test";
+import { builtinWorkflow, builtinWorkflows, isEvolvableDomainBuiltinId, setBuiltinArchiveDb } from "../../builtin";
 import { casWriteWorkflowFile } from "../../../storage";
+import { archivePreviousRevision, archivePublishedRevision, makeArchiveLogger } from "./archive-publish";
 import { sha256Hex, bestEffort } from "@lane-pilot/kit";
 import { executorKey, lowerWorkflow } from "@lane-pilot/workflow-engine";
-import type { Workflow } from "@lane-pilot/workflow-engine";
+import type { DraftMetadata, RawDefinition, Workflow } from "@lane-pilot/workflow-engine";
 import { createStatusResolver } from "../../../storage";
 import { checkRequires, effectiveRequires } from "@lane-pilot/workflow-engine";
-import { definitionSha256, globalWorkflowDir } from "../../../storage";
+import { definitionSha256 } from "../../../storage";
 import { loadWorkflow } from "@lane-pilot/workflow-engine";
-import { configuredSetting } from "../../../contracts/server";
-import { SPECIALIST_ROLES } from "../../../critique/server";
-import { isCustomAgentId } from "../../../contracts/server";
-import { EMPLOYEE_IDS, isEmployeeSpecialist } from "../../../contracts/employee-manifest";
-import {modelCatalogOf} from "../../../platform/server";
-import {registerObservedTool} from "../../../platform/server";
+import { registerObservedTool } from "../../../platform/server";
 import { ToolError } from "../../../contracts/server";
-import { stringAt, orMiss, isNotFound } from "@lane-pilot/kit";
+import { stringAt } from "@lane-pilot/kit";
 import { DRILL_SANDBOX_PROJECT_IDS, isSandboxProjectName } from "../../../contracts";
 import type { ServerCore } from "../../../contracts/server";
+import { createDedupeGate, type DedupeGateDecision, type DedupeGateRefusal } from "./dedupe-gate";
+import { consumeAuthority, draftSha256, grantOwner, grantOwnerFromChatConfirmation, publishGateLog } from "./publish-gate";
+import { realDeps, type ArchitectDeps, type Services } from "./workflow-architect-deps";
 
-import type { DocsApi } from "../../../docs/server";
-import type { WorkflowEngineApi } from "./workflow";
-import type { WorkflowTriggersApi } from "./workflow-triggers-live";
-
-/** The fields of the services bag this file reads, typed by the rooms that own them. */
-interface Services {
-  docsPlaces: DocsApi["docsPlaces"];
-  workflowCatalog: WorkflowEngineApi["workflowCatalog"];
-  workflowEngine: WorkflowEngineApi["workflowEngine"];
-  workflowTriggers: WorkflowTriggersApi["workflowTriggers"];
-}
+export { realDeps, type ArchitectDeps } from "./workflow-architect-deps";
 
 const bilingual = z.union([z.string().trim().min(1).max(2000), z.object({ en: z.string().trim().min(1).max(2000), ru: z.string().trim().min(1).max(2000) }).strict()]);
 const MAX_SHOWN_PROBLEMS = 30;
 
-type Place = { hostId: string; path: string };
-
 /** What the architect touches outside the plugin's database; a test replaces them. */
 const FIXTURE_ID = /^(pm-)?fixture-/;
-
-export type ArchitectDeps = {
-  globalDir: () => string;
-  /** The folder and machine of the project the calling chat works in. */
-  projectPlace: (threadId: string) => Promise<Place | null>;
-  /** The same for a publish from the Workflows tab, which has no chat: the project's own folder and machine. */
-  projectPlaceOf?: (projectId: string) => Promise<Place | null>;
-  writeProjectFile: (place: Place, id: string, content: string, expectedSha256: string | null) => Promise<{ status: "applied" | "conflict"; path: string; afterSha256: string | null; reason: string | null }>;
-  /** A skill, plugin, MCP, secret and machine lister for the project; see collectCapabilities. */
-  capabilityPorts: (input: { projectId: string; threadId: string }) => Parameters<typeof collectCapabilities>[0];
-  hasExecutor: (key: string) => boolean;
-  /** The project's name, to tell a sandbox (canary.ts isSandboxProjectName); null when unknown. */
-  projectName?: (projectId: string) => Promise<string | null>;
-  /** Whether `specialist:<id>` names a bundled specialist or an agent the owner created; null when the owner's agents have not been read yet. */
-  specialistKnown?: (id: string) => boolean | null;
-};
-
-export function realDeps(ctx: ServerCore, services: Services): ArchitectDeps {
-  const { bb, db, host } = ctx;
-  const hostsList = async () => mapListedQaHosts(await (bb.sdk as { hosts?: { list?: () => Promise<unknown> } }).hosts?.list?.() ?? []);
-  const place = async (threadId: string): Promise<Place | null> => {
-    const thread = await orMiss(bb.sdk.threads.get({ threadId }), null, isNotFound);
-    const environmentId = stringAt(thread, "environmentId");
-    const environment = environmentId ? await orMiss(bb.sdk.environments.get({ environmentId }), null, isNotFound) : null;
-    const path = stringAt(environment, "path"), hostId = stringAt(environment, "hostId");
-    return path?.startsWith("/") && hostId ? { hostId, path } : null;
-  };
-  const catalog = modelCatalogOf(ctx);
-  return {
-    globalDir: () => globalWorkflowDir(),
-    projectName: async (projectId) => stringAt(await orMiss(bb.sdk.projects.get({ projectId }), null, isNotFound), "name"),
-    specialistKnown: (id) => {
-      if (SPECIALIST_ROLES.includes(id as never) || isEmployeeSpecialist(id)) return true;
-      const own = ctx.knownCustomAgentIds();
-      return own ? own.has(id) : null;
-    },
-    projectPlace: place,
-    projectPlaceOf: async (projectId) => {
-      const places = await bestEffort(ctx.log, "architect project places", services.docsPlaces(projectId), []);
-      const root = places.find((item) => item.scopes.length === 0) ?? places[0];
-      return root ? { hostId: root.hostId, path: root.path } : null;
-    },
-    writeProjectFile: async (target, id, content, expectedSha256) => {
-      const written = await host.call("writeWorkflowFile", { requestedHostId: target.hostId, projectCwd: target.path, id, content, expectedSha256 }, { hostId: target.hostId, timeoutMs: 30_000 });
-      return { status: written.status, path: written.path, afterSha256: written.afterSha256, reason: written.reason };
-    },
-    hasExecutor: (key) => services.workflowEngine.hasExecutor(key),
-    capabilityPorts: ({ projectId, threadId }) => ({
-      skills: async () => {
-        const listed = await bb.sdk.skills.list({ projectId, environmentId: null });
-        return listed.skills.map((skill) => ({ name: skill.name, description: (skill as { description?: string }).description, pluginId: skill.pluginId }));
-      },
-      plugins: async () => {
-        const listed = await (bb.sdk.plugins.list() as Promise<unknown>);
-        const rows = (Array.isArray(listed) ? listed : ((listed as { plugins?: unknown[] })?.plugins ?? [])) as Array<{ id?: string; name?: string; displayName?: string }>;
-        return rows.filter((row) => typeof row.id === "string").map((row) => ({ id: row.id!, name: row.displayName ?? row.name ?? row.id! }));
-      },
-      mcpServers: async () => {
-        const machine = (await place(threadId))?.hostId ?? (await hostsList()).find((row) => row.connected)?.id;
-        if (!machine) throw new Error("no connected machine to ask");
-        return (await host.call("session_inventory", { cwd: null }, { hostId: machine })).mcpServers;
-      },
-      secrets: async () => await ctx.secrets.list(),
-      hosts: async () => (await hostsList()).map((row) => ({ id: row.id, name: row.name, connected: row.connected })),
-      browserHostId: () => {
-        const runId = findOpenNativeRun(db, projectId, threadId);
-        const value = configuredSetting(loadProjectSettings(db, projectId, runId ? getRunSettingsScopes(db, runId) : []), QA_HOST_KEY);
-        return typeof value === "string" && value.trim() ? value.trim() : null;
-      },
-      specialists: async () => [...new Set([...SPECIALIST_ROLES, ...EMPLOYEE_IDS, ...Object.entries(await ctx.ownedAgents()).filter(([id, row]) => isCustomAgentId(id) && !row.compiledCorrupt).map(([id]) => id)])],
-      models: async () => {
-        const read = await Promise.race([catalog.get(), new Promise<null>((resolveTimeout) => setTimeout(() => resolveTimeout(null), 6_000))]);
-        if (!read) return null;
-        const settings = await ctx.effectiveProjectSettings(projectId).then((row) => row.values, () => ({}));
-        // The helpers of a chain run on the machine of this project's chat: the pairs are judged against that machine.
-        const runHostId = (await place(threadId))?.hostId ?? null;
-        return { catalog: { ...read, runHostId }, settings };
-      },
-    }),
-  };
-}
 
 const bothLanguages = (value: unknown): { en: string; ru: string } => {
   if (typeof value === "string") return { en: value, ru: value };
@@ -139,11 +43,42 @@ const bothLanguages = (value: unknown): { en: string; ru: string } => {
   return { en, ru: typeof row.ru === "string" ? row.ru : en };
 };
 
-export function createWorkflowArchitect(ctx: ServerCore, services: Pick<Services, "workflowEngine"> & Partial<Pick<Services, "workflowCatalog" | "workflowTriggers">>, deps: ArchitectDeps = realDeps(ctx, services as Services)) {
+type CreateInputBase = {
+  projectId: string;
+  threadId: string;
+  name: string | { en: string; ru: string };
+  description: string | { en: string; ru: string };
+  scope: "global" | "project";
+  workflowId?: string;
+  definition?: Record<string, unknown>;
+  metadata?: DraftMetadata;
+};
+type CreateDedupeInput = CreateInputBase & { dedupe: true; trace?: readonly string[]; signature?: ReadonlySet<string>; exemptWorkflowId?: string; branchOf?: string };
+type CreateResult = { draftId: string; workflowId: string; version: number; scope: "global" | "project"; status: DraftRow["status"]; metadata?: DraftMetadata; next: string };
+
+export function createWorkflowArchitect(ctx: ServerCore, services: Pick<Services, "workflowEngine"> & Partial<Pick<Services, "workflowCatalog" | "workflowTriggers" | "workflowLibrary" | "dedupeThreshold">>, deps: ArchitectDeps = realDeps(ctx, services as Services)) {
   const { db } = ctx;
+  setBuiltinArchiveDb(db);
   const drafts: DraftStore = createDraftStore(db);
-  const resolve = (id: string, version?: number) => builtinWorkflow(id, version);
+  const resolve = (id: string, version?: number) => builtinWorkflow(id, version, db);
   const changed = (draft: DraftRow, threadId?: string) => ctx.realtime.notify(draft.projectId, "workflow-draft", threadId ?? draft.threadId ?? undefined, draft.id);
+  const debugLog = (message: string) => {
+    const bbLog = (ctx.bb as { log?: { debug?: (msg: string) => void } } | undefined)?.log;
+    if (bbLog?.debug) bbLog.debug(message);
+    else ctx.log(message);
+  };
+  const archiveLog = makeArchiveLogger(ctx);
+  const guardLog = makeGuardLog(ctx);
+  const dedupeGate = createDedupeGate({
+    threshold: () => (typeof deps.dedupeThreshold === "function" ? deps.dedupeThreshold() : deps.dedupeThreshold) ?? (typeof services.dedupeThreshold === "function" ? services.dedupeThreshold() : services.dedupeThreshold),
+    db,
+    loadLibraryWorkflows: async ({ scope, projectId }) => {
+      if (deps.loadLibraryWorkflows) return await deps.loadLibraryWorkflows({ scope, projectId });
+      if (typeof services.workflowLibrary?.loadStore === "function") return (await services.workflowLibrary.loadStore(projectId)).store.list();
+      return builtinWorkflows();
+    },
+    debug: debugLog,
+  });
 
   const validation = { resolve, ...(deps.specialistKnown ? { specialistKnown: deps.specialistKnown } : {}) };
   const checkOf = (draft: DraftRow): DraftCheck => checkDraft(draft.definition, validation);
@@ -180,25 +115,51 @@ export function createWorkflowArchitect(ctx: ServerCore, services: Pick<Services
     return draft;
   }
 
-  function create(input: { projectId: string; threadId: string; name: string | { en: string; ru: string }; description: string | { en: string; ru: string }; scope: "global" | "project"; workflowId?: string }) {
+  function create(input: CreateDedupeInput): Promise<CreateResult | DedupeGateRefusal>;
+  function create(input: CreateInputBase & { dedupe?: false }): CreateResult;
+  function create(input: CreateInputBase & { dedupe?: boolean; trace?: readonly string[]; signature?: ReadonlySet<string>; exemptWorkflowId?: string; branchOf?: string }): CreateResult | Promise<CreateResult | DedupeGateRefusal> {
     if (input.workflowId && builtinWorkflow(input.workflowId)) throw new ToolError(`workflow id "${input.workflowId}" belongs to a built-in workflow`, { code: "id_reserved", retryable: false, sideEffects: "none" });
-    const draft = drafts.create({ projectId: input.projectId, threadId: input.threadId, scope: input.scope, name: input.name, description: input.description, workflowId: input.workflowId });
-    changed(draft, input.threadId);
-    return { draftId: draft.id, workflowId: draft.workflowId, version: draft.version, scope: draft.scope, status: draft.status,
-      next: "ask the owner the short questions, then build with lane_pilot_workflow_draft, action patch: set_meta (inputs, outputs, requires), then the nodes and edges a step at a time" };
+    const branchOf = input.branchOf ?? input.metadata?.branchOf;
+    const baseMeta = branchOf ? { ...input.metadata, branchOf } : input.metadata;
+    const finalize = (dedupe?: DedupeGateDecision): CreateResult => {
+      const metadata: DraftMetadata | undefined = dedupe ? { ...baseMeta, dedupe } : baseMeta;
+      const draft = drafts.create({ projectId: input.projectId, threadId: input.threadId, scope: input.scope, name: input.name, description: input.description, workflowId: input.workflowId, definition: input.definition, metadata });
+      changed(draft, input.threadId);
+      return {
+        draftId: draft.id, workflowId: draft.workflowId, version: draft.version, scope: draft.scope, status: draft.status, ...(metadata ? { metadata } : {}),
+        next: "ask the owner the short questions, then build with lane_pilot_workflow_draft, action patch: set_meta (inputs, outputs, requires), then the nodes and edges a step at a time",
+      };
+    };
+    if (!input.dedupe) return finalize();
+    return dedupeGate.check({ scope: input.scope, projectId: input.projectId, definition: input.definition as RawDefinition | undefined, trace: input.trace, signature: input.signature, exemptWorkflowId: input.exemptWorkflowId ?? branchOf }).then((gate) =>
+      gate.ok ? finalize(gate.decision) : { ok: false, reason: gate.reason, workflowId: gate.workflowId, score: gate.score, threshold: gate.threshold, outcome: gate.outcome, decision: gate.decision },
+    );
   }
 
-  function patch(input: { projectId: string; threadId?: string; draftId: string; ops: z.input<typeof draftOpSchema>[]; expectedVersion?: number }) {
-    own(input.draftId, input.projectId);
-    const result = drafts.patch(input.draftId, input.ops, { expectedVersion: input.expectedVersion, validate: validation });
+  function patch(input: { projectId: string; threadId?: string; draftId: string; ops: z.input<typeof draftOpSchema>[]; expectedVersion?: number; source?: string }) {
+    const existing = own(input.draftId, input.projectId);
+    const source = input.source ?? (isLearnedDraftSource(existing.metadata?.source) ? existing.metadata.source : "owner");
+    const result = drafts.patch(input.draftId, input.ops, { expectedVersion: input.expectedVersion, validate: validation, source });
     if (!result.ok) {
+      if (source === "evolve" && result.reason === "refused" && result.refused?.some((r) => r.reason === "widens_permissions")) {
+        guardLog.warn(`draft guard source=evolve draft=${existing.id} widening=1`);
+      }
       if (result.reason === "refused") return { ok: false, applied: false, refused: result.refused, note: "nothing was changed: fix the refused operations and send the patch again" };
       if (result.reason === "version_conflict") return { ok: false, applied: false, reason: "version_conflict", currentVersion: result.currentVersion, note: "the draft changed since you read it (the owner or another chat): lane_pilot_workflow_draft, action get, then patch again" };
       throw new ToolError("draft does not exist", { code: "not_found", retryable: false, sideEffects: "none" });
     }
-    changed(result.draft, input.threadId);
-    return { ok: true, applied: true, draftId: result.draft.id, version: result.draft.version, status: result.draft.status, changes: result.changes,
-      valid: result.check.valid, errors: result.check.errors, warnings: result.check.warnings, nodes: result.check.nodes, edges: result.check.edges, ...problemsOf(result.check), next: nextStep(result.draft, result.check) };
+    const base = resolveDraftGuardBase({ draft: existing, drafts, resolve });
+    const guarded = evaluateLearnedDraftGuard({ db, drafts, draft: result.draft, source, base, log: guardLog });
+    changed(guarded, input.threadId);
+    return { ok: true, applied: true, draftId: guarded.id, version: guarded.version, status: guarded.status, changes: result.changes,
+      valid: result.check.valid, errors: result.check.errors, warnings: result.check.warnings, nodes: result.check.nodes, edges: result.check.edges, ...problemsOf(result.check), next: nextStep(guarded, result.check) };
+  }
+
+  function grant(input: { projectId: string; draftId: string; by?: string }) {
+    const draft = own(input.draftId, input.projectId);
+    const updated = grantFlaggedDraft({ db, drafts, draft, by: input.by, log: guardLog });
+    changed(updated, updated.threadId ?? undefined);
+    return { ok: true, draftId: updated.id, granted: true };
   }
 
   function get(input: { projectId: string; draftId?: string; history?: boolean }) {
@@ -207,7 +168,7 @@ export function createWorkflowArchitect(ctx: ServerCore, services: Pick<Services
     }
     const draft = own(input.draftId, input.projectId);
     const check = checkOf(draft);
-    return { draft: summary(draft, check), definition: draft.definition, valid: check.valid, ...problemsOf(check), tests: draft.tests && { version: draft.tests.version, green: draft.tests.green, stale: draft.tests.version !== draft.version,
+    return { draft: summary(draft, check), definition: draft.definition, ...(draft.metadata ? { metadata: draft.metadata } : {}), valid: check.valid, ...problemsOf(check), tests: draft.tests && { version: draft.tests.version, green: draft.tests.green, stale: draft.tests.version !== draft.version,
       cases: draft.tests.results.map((result) => ({ caseId: result.caseId, green: result.green, failures: result.failures })) },
     ...(input.history ? { history: drafts.history(draft.id) } : {}), next: nextStep(draft, check) };
   }
@@ -238,35 +199,35 @@ export function createWorkflowArchitect(ctx: ServerCore, services: Pick<Services
     return check.issues.filter((issue) => issue.level === "missing").map((issue) => issue.message);
   }
 
-  async function test(input: { projectId: string; threadId?: string; draftId: string; testCaseId?: string }) {
+  async function test(input: { projectId: string; threadId?: string; draftId: string; testCaseId?: string; fromRuns?: { limit?: number; runIds?: string[] } }) {
     const draft = own(input.draftId, input.projectId);
     const load = loaded(draft);
     if (!load.ok) return { draftId: draft.id, version: draft.version, green: false, ran: false, reason: "invalid", problems: load.problems.filter((problem) => problem.level === "error").slice(0, MAX_SHOWN_PROBLEMS), next: "fix the errors with lane_pilot_workflow_draft, action patch first" };
-    const cases = testCasesOf(load.workflow);
-    const selected = input.testCaseId ? cases.filter((item) => item.id === input.testCaseId) : cases;
-    if (!selected.length) throw new ToolError(`no test case "${input.testCaseId}"; the draft has: ${cases.map((item) => item.id).join(", ")}`, { code: "not_found", retryable: false, sideEffects: "none" });
-    const results: DraftTestResult[] = [];
-    for (const testCase of selected) results.push(await runDraftTest({ db, harnessVersion: HARNESS_VERSION, resolveWorkflow: resolve }, load.workflow, testCase));
-    // A single case merges into the earlier results of this version; the draft is «tested» only when every case has run and is green.
-    const earlier = draft.tests?.version === draft.version ? draft.tests.results.filter((row) => !results.some((fresh) => fresh.caseId === row.caseId)) : [];
-    const merged = [...earlier, ...results].filter((row) => cases.some((item) => item.id === row.caseId));
-    const complete = cases.every((item) => merged.some((row) => row.caseId === item.id));
-    const recorded = drafts.recordTests(draft.id, draft.version, merged, complete) ?? draft;
-    changed(recorded, input.threadId);
-    const green = results.every((row) => row.green);
-    return {
-      draftId: draft.id, version: draft.version, ran: true, green, status: recorded.status, allCasesRun: complete,
-      cases: results.map((row) => ({ caseId: row.caseId, green: row.green, status: row.status, path: row.path, output: row.output, failures: row.failures, runId: row.runId, failedNode: row.failedNode,
-        stubbedCalls: row.stubbed.map((call) => `${call.node} (${call.type}${call.executor !== call.type ? `: ${call.executor}` : ""})`), ...(row.notChecked.length ? { notChecked: row.notChecked } : {}) })),
-      note: "agents, code tasks and actions ran on stubs: nothing was sent, searched or changed outside",
-      next: !green ? "read the failures, fix the draft or the case with lane_pilot_workflow_draft, action patch, test again"
-        : complete ? "all cases are green: show the owner the result, then lane_pilot_workflow_draft, action publish" : "this case is green; run the others (lane_pilot_workflow_draft, action test without testCaseId) before publishing",
-    };
+    return await runArchitectDraftTests({
+      draft, workflow: load.workflow, resolve, db, drafts, debugLog, changed,
+      threadId: input.threadId, testCaseId: input.testCaseId, fromRuns: resolveDraftTestFromRuns(draft, input.fromRuns),
+    });
   }
 
-  async function publish(input: { projectId: string; threadId?: string; draftId: string }) {
-    const draft = own(input.draftId, input.projectId);
-    const refuse = (reason: string, next: string, extra: Record<string, unknown> = {}) => ({ draftId: draft.id, published: false, reason, next, ...extra });
+  async function publish(input: { projectId: string; threadId?: string; draftId: string; ownerGrant?: boolean }) {
+    let draft = own(input.draftId, input.projectId);
+    const refuse = (reason: string, next: string, extra: Record<string, unknown> = {}) => ({ ok: false as const, draftId: draft.id, published: false, reason, next, ...extra });
+    const authority = consumeAuthority(db, draft.id, draftSha256(draft.definition), { log: publishGateLog(ctx) });
+    if (!authority.ok) {
+      return refuse(
+        authority.reason,
+        authority.reason === "draft_changed_after_grant"
+          ? "the draft changed after the owner's grant: ask the owner again and re-grant before publishing"
+          : "publish requires an owner grant (`bb lane-pilot workflow publish <draftId> --owner`, owner confirmation in chat, or review desk) or an evolution gate receipt",
+      );
+    }
+    if (draft.metadata?.needs_owner_review === "widens") {
+      if (!input.ownerGrant) {
+        guardLog.warn(`workflow_publish_refused:needs_owner_review ${draft.id} ${draft.workflowId}`);
+        return refuse("needs_owner_review", "a learned draft widens permissions; review the diff on the desk item and grant it before publishing", { wideningDiff: draft.metadata.wideningDiff });
+      }
+      draft = grantFlaggedDraft({ db, drafts, draft, by: "owner", log: guardLog });
+    }
     // A test fixture (pm-fixture-*, fixture-*) is published only into a sandbox project, never globally: the router of a real project must not offer it.
     const draftId = stringAt(draft.definition, "id") ?? "";
     if (FIXTURE_ID.test(draftId) && !(draft.scope === "project" && (DRILL_SANDBOX_PROJECT_IDS.includes(draft.projectId) || isSandboxProjectName(await deps.projectName?.(draft.projectId) ?? null)))) {
@@ -282,14 +243,20 @@ export function createWorkflowArchitect(ctx: ServerCore, services: Pick<Services
       return refuse("tests_not_green", "fix the failing cases and test again; a draft is published only when every case is green", { failing: draft.tests.results.filter((row) => !row.green).map((row) => ({ caseId: row.caseId, failures: row.failures })) });
     }
     const id = load.workflow.id;
-    if (builtinWorkflow(id) && !(draft.scope === "global" && isEvolvableDomainBuiltinId(id))) {
+    const existingBuiltin = builtinWorkflow(id);
+    if (existingBuiltin && !(draft.scope === "global" && isEvolvableDomainBuiltinId(id))) {
       return refuse("id_reserved", `"${id}" is a built-in workflow: rename with set_meta {id}`);
     }
-    const version = draft.publishedVersion ? draft.publishedVersion + 1 : load.workflow.version;
+    const version = draft.publishedVersion
+      ? draft.publishedVersion + 1
+      : draft.metadata?.source === "evolve"
+        ? (existingBuiltin ? existingBuiltin.version : load.workflow.version) + 1
+        : load.workflow.version;
     const final: Workflow = { ...load.workflow, status: "published", version, scope: draft.scope === "project" ? { level: "project", projectId: draft.projectId } : { level: "global" } };
     const reloaded = loadWorkflow(JSON.parse(JSON.stringify(final)), { resolve });
     if (!reloaded.ok) return refuse("round_trip_failed", "the file would not load back; fix the errors", { problems: reloaded.problems.slice(0, MAX_SHOWN_PROBLEMS) });
     const content = `${JSON.stringify(final, null, 2)}\n`;
+    await archivePreviousRevision(ctx, { draft, drafts, globalDir: deps.globalDir(), resolve, log: archiveLog });
     // The file may be overwritten only when it is the one this draft published earlier (same place, same content).
     const expected = draft.publishedSha256 && draft.publishedPath?.endsWith(`${id}.json`) ? draft.publishedSha256 : null;
     let written: { status: "applied" | "conflict"; path: string; afterSha256: string | null; reason: string | null };
@@ -302,6 +269,7 @@ export function createWorkflowArchitect(ctx: ServerCore, services: Pick<Services
     }
     if (written.status === "conflict") return refuse("file_conflict", `${written.reason}; choose another id with set_meta {id} or ask the owner`, { path: written.path });
     const sha256 = written.afterSha256 ?? sha256Hex(content);
+    archivePublishedRevision(ctx, { workflow: reloaded.workflow, json: content, scope: draft.scope, log: archiveLog });
     // The file is only as good as its tests: the receipt says this exact definition passed them, which the library asks for before it counts the file as published.
     createStatusResolver(db).recordTest(id, definitionSha256(reloaded.workflow), true, draft.tests.results.map((row) => ({ caseId: row.caseId, green: row.green, path: row.path })));
     const published = drafts.markPublished(draft.id, { version: draft.version, path: written.path, sha256, workflowVersion: version }) ?? draft;
@@ -335,7 +303,7 @@ export function createWorkflowArchitect(ctx: ServerCore, services: Pick<Services
       if (!draft) throw new Error(`draft ${draftId} does not exist`);
       const parsed = z.array(draftOpSchema).min(1).max(40).safeParse(ops);
       if (!parsed.success) return { ok: false, applied: false, refused: parsed.error.issues.slice(0, 5).map((issue) => ({ index: typeof issue.path[0] === "number" ? issue.path[0] : 0, op: "invalid", reason: issue.message })) };
-      const result = patch({ projectId: draft.projectId, threadId: draft.threadId ?? undefined, draftId, ops: parsed.data, expectedVersion }) as Record<string, unknown>;
+      const result = patch({ projectId: draft.projectId, threadId: draft.threadId ?? undefined, draftId, ops: parsed.data, expectedVersion, source: "owner" }) as Record<string, unknown>;
       return result.applied ? { ...result, definition: drafts.get(draftId)?.definition } as never : result as never;
     },
     workflow_draft_restore: ({ draftId, version, expectedVersion }) => {
@@ -344,38 +312,73 @@ export function createWorkflowArchitect(ctx: ServerCore, services: Pick<Services
       changed(result.draft);
       return { ok: true, version: result.draft.version, definition: result.draft.definition };
     },
-    workflow_draft_test: async ({ draftId, testCaseId }) => {
+    workflow_draft_test: async ({ draftId, testCaseId, fromRuns }) => {
       const draft = drafts.get(draftId);
       if (!draft) throw new Error(`draft ${draftId} does not exist`);
-      return await test({ projectId: draft.projectId, threadId: draft.threadId ?? undefined, draftId, testCaseId }) as never;
+      return await test({ projectId: draft.projectId, threadId: draft.threadId ?? undefined, draftId, testCaseId, fromRuns }) as never;
     },
     workflow_draft_publish: async ({ draftId }) => {
       const draft = drafts.get(draftId);
       if (!draft) throw new Error(`draft ${draftId} does not exist`);
+      grantOwner(db, draftId, "desk", { log: publishGateLog(ctx) });
       return await publish({ projectId: draft.projectId, threadId: draft.threadId ?? undefined, draftId }) as never;
+    },
+    workflow_draft_grant: ({ draftId }) => {
+      const draft = drafts.get(draftId);
+      if (!draft) return { ok: false, draftId, granted: false, reason: "not_found" };
+      return grant({ projectId: draft.projectId, draftId, by: "owner" });
     },
     workflow_capabilities: async ({ projectId, draftId }) => {
       const draft = draftId ? drafts.get(draftId) : null;
       return { capabilities: await capabilities({ projectId, threadId: draft?.threadId ?? "", sections: ["skills", "plugins", "mcpServers", "secrets", "hosts", "specialists"] }) };
     },
-  } satisfies Pick<PluginRpcHandlers<typeof rpcContract>, "workflow_draft_list" | "workflow_draft_get" | "workflow_draft_patch" | "workflow_draft_restore" | "workflow_draft_test" | "workflow_draft_publish" | "workflow_capabilities">;
+  } satisfies Pick<PluginRpcHandlers<typeof rpcContract>, "workflow_draft_list" | "workflow_draft_get" | "workflow_draft_patch" | "workflow_draft_restore" | "workflow_draft_test" | "workflow_draft_publish" | "workflow_draft_grant" | "workflow_capabilities">;
 
+  type CreateFromBase = {
+    projectId: string; scope: "global" | "project"; workflowId: string; definition: Record<string, unknown>; name: { en: string; ru: string }; description: { en: string; ru: string };
+    base?: { path: string; sha256: string; version: number }; metadata?: DraftMetadata;
+  };
+  type CreateFromDedupe = CreateFromBase & { dedupe: true; trace?: readonly string[]; signature?: ReadonlySet<string>; exemptWorkflowId?: string; branchOf?: string };
+  function createFrom(input: CreateFromDedupe): Promise<DraftRow | DedupeGateRefusal>;
+  function createFrom(input: CreateFromBase & { dedupe?: false }): DraftRow;
   /** A draft that starts from a workflow that exists: a copy of a built-in one, or the file of one the owner edits. */
-  function createFrom(input: { projectId: string; scope: "global" | "project"; workflowId: string; definition: Record<string, unknown>; name: { en: string; ru: string }; description: { en: string; ru: string };
-    base?: { path: string; sha256: string; version: number } }): DraftRow {
-    const draft = drafts.create({ projectId: input.projectId, threadId: null, scope: input.scope, name: input.name, description: input.description, workflowId: input.workflowId, definition: input.definition, base: input.base });
-    changed(draft);
-    return draft;
+  function createFrom(input: CreateFromBase & { dedupe?: boolean; trace?: readonly string[]; signature?: ReadonlySet<string>; exemptWorkflowId?: string; branchOf?: string }): DraftRow | Promise<DraftRow | DedupeGateRefusal> {
+    const branchOf = input.branchOf ?? input.metadata?.branchOf;
+    const baseMeta = branchOf ? { ...input.metadata, branchOf } : input.metadata;
+    const save = (dedupe?: DedupeGateDecision, fallbackBase?: Workflow | null): DraftRow => {
+      const source = baseMeta?.source;
+      const baseDef = isLearnedDraftSource(source) ? resolveDraftGuardBase({ branchOf, source, resolve, fallbackWorkflow: fallbackBase }) : null;
+      if (source === "evolve" && permissionDiff(baseDef, input.definition).length > 0) {
+        const diffs = permissionDiff(baseDef, input.definition);
+        guardLog.warn(`draft guard source=evolve draft=${input.workflowId} widening=${diffs.length}`);
+        throw new ToolError("evolve draft widens permissions", { code: "widens_permissions", retryable: false, sideEffects: "none" });
+      }
+      const metadata = dedupe ? { ...baseMeta, dedupe } : baseMeta;
+      const draft = drafts.create({ projectId: input.projectId, threadId: null, scope: input.scope, name: input.name, description: input.description, workflowId: input.workflowId, definition: input.definition, base: input.base, metadata });
+      const guarded = evaluateLearnedDraftGuard({ db, drafts, draft, source, base: baseDef, log: guardLog });
+      changed(guarded);
+      return guarded;
+    };
+    if (!input.dedupe) return save();
+    return dedupeGate.check({ scope: input.scope, projectId: input.projectId, definition: input.definition as RawDefinition, trace: input.trace, signature: input.signature, exemptWorkflowId: input.exemptWorkflowId ?? branchOf }).then(async (gate) => {
+      if (!gate.ok) return { ok: false, reason: gate.reason, workflowId: gate.workflowId, score: gate.score, threshold: gate.threshold, outcome: gate.outcome, decision: gate.decision };
+      const unwrap = (item: Workflow | { workflow: Workflow }): Workflow => ("workflow" in item ? item.workflow : item);
+      const fallbackBase = branchOf && !resolve(branchOf) && deps.loadLibraryWorkflows
+        ? (await deps.loadLibraryWorkflows({ scope: input.scope, projectId: input.projectId })).map(unwrap).find((w) => w.id === branchOf) ?? null
+        : null;
+      return save(gate.decision, fallbackBase);
+    });
   }
 
-  return { drafts, create, createFrom, patch, get, capabilities, test, publish, summary, rpc };
+  return { drafts, create, createFrom, patch, grant, get, capabilities, test, publish, summary, rpc };
 }
 
 export type WorkflowArchitect = ReturnType<typeof createWorkflowArchitect>;
 
 const draftId = z.string().min(1).max(40);
 
-export function mountWorkflowArchitect(ctx: ServerCore, services: Services, architect: WorkflowArchitect = createWorkflowArchitect(ctx, services)): WorkflowArchitect {
+export function mountWorkflowArchitect(ctx: ServerCore, services: Services, architect?: WorkflowArchitect, options?: { dedupeThreshold?: number | (() => number) }): WorkflowArchitect {
+  architect ??= createWorkflowArchitect(ctx, options?.dedupeThreshold !== undefined ? { ...services, dedupeThreshold: options.dedupeThreshold } : services);
   const { bb } = ctx;
   const needChat = (context: { threadId: string; projectId: string }) => {
     if (!context.threadId || !context.projectId) throw new ToolError("workflow tools need a chat in a project", { code: "needs_project_chat", retryable: false, sideEffects: "none" });
@@ -419,7 +422,11 @@ export function mountWorkflowArchitect(ctx: ServerCore, services: Services, arch
     name: "lane_pilot_workflow_draft_test",
     description: "Run the draft's test cases on stubs (nothing leaves the machine) and report the path, the outputs and what failed.",
     instructions: "Every agent, code task and action node answers with a stub (made from its declared out, or the answer the case gives), human nodes are answered from the case, and the real engine routes the graph, so conditions, loops and guards are tested for real. The case is the draft's `test` (set_meta {test:{id, sim:{input, stubs:{nodeId:{field:value}}, human_answers:{nodeId:'answer_kind'}, expect_path:[...], expect_output:{...}, variant_<name>:{...}}}}); without one a smoke case runs. Stub the nodes that decide a branch, or the run takes the first enum value. `testCaseId` runs one case. A draft is publishable only when every case is green on its current version.",
-    parameters: z.object({ draftId, testCaseId: z.string().min(1).max(120).optional() }).strict(),
+    parameters: z.object({
+      draftId,
+      testCaseId: z.string().min(1).max(120).optional(),
+      fromRuns: z.object({ limit: z.number().int().min(1).max(200).optional(), runIds: z.array(z.string().min(1)).max(200).optional() }).strict().optional(),
+    }).strict(),
     execute: async (params, context) => { const c = needChat(context); return json(await architect.test({ projectId: c.projectId, threadId: c.threadId, ...params })); },
   });
 
@@ -428,7 +435,11 @@ export function mountWorkflowArchitect(ctx: ServerCore, services: Services, arch
     description: "Publish a tested draft as a workflow file (project or global) so the library and the router can use it.",
     instructions: "Only after the owner agreed to the chain. Refused unless every test case is green on the current version of the draft; the answer says what to fix. Writes <project>/.lane-pilot/workflows/<id>.json (scope project, through the project's machine) or ~/.lane-pilot/workflows/<id>.json (scope global); a file that is not this draft's earlier publication is never overwritten. The answer lists actions that have no executor registered yet (they ran on stubs in the test).",
     parameters: z.object({ draftId, confirm: z.literal(true) }).strict(),
-    execute: async (params, context) => { const c = needChat(context); return json(await architect.publish({ projectId: c.projectId, threadId: c.threadId, draftId: params.draftId })); },
+    execute: async (params, context) => {
+      const c = needChat(context);
+      await grantOwnerFromChatConfirmation(ctx, c.threadId, params.draftId);
+      return json(await architect.publish({ projectId: c.projectId, threadId: c.threadId, draftId: params.draftId }));
+    },
   });
 
   return architect;

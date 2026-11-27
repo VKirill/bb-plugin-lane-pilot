@@ -55,7 +55,7 @@ describe("the workflow reference the architect reads", () => {
     // Nothing on a node names a model any more, and the reference no longer lists presets or the generic selection.
     expect(reference).not.toContain("workflow.agent");
     expect(reference).not.toContain("cheap-fast");
-    expect(WORKFLOW_REFERENCE.models.advice).toContain("put no model on a node");
+    expect(WORKFLOW_REFERENCE.models.advice).toContain("a node's own `provider`/`model` wins over the role row");
   });
 
   it("keeps the architect's own text in line with it", () => {

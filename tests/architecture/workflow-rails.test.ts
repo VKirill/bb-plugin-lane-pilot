@@ -6,6 +6,7 @@ import type { Workflow } from "@lane-pilot/workflow-engine";
 
 const ROOT = resolve(__dirname, "../..");
 const WORKFLOWS_DIR = join(ROOT, "workflows");
+const INSTRUCTION_BUDGET_WARNINGS = new Set(["plan_over_budget", "prompt_over_budget"]);
 
 function loadCatalog(): { byId: Map<string, Workflow>; files: Array<{ file: string; raw: string }> } {
   const files = readdirSync(WORKFLOWS_DIR)
@@ -47,5 +48,22 @@ describe("architecture: shipped workflows obey wait, skip_out, and judge session
     }
 
     expect(failures).toEqual([]);
+  });
+
+  it("keeps every shipped workflow within the instruction budget (plan <= 10 steps, prompt <= 100 non-empty lines)", () => {
+    const { byId, files } = loadCatalog();
+    const resolveWf = (id: string) => byId.get(id) ?? null;
+    const overBudget: Array<{ file: string; warnings: string[] }> = [];
+
+    for (const { file, raw } of files) {
+      const loaded = loadWorkflow(raw, { resolve: resolveWf });
+      if (!loaded.ok) continue;
+      const warnings = loaded.warnings
+        .filter((p) => INSTRUCTION_BUDGET_WARNINGS.has(p.code))
+        .map((p) => `[${p.code}] ${p.message}`);
+      if (warnings.length > 0) overBudget.push({ file, warnings });
+    }
+
+    expect(overBudget).toEqual([]);
   });
 });

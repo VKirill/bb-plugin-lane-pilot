@@ -1,6 +1,8 @@
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { homedir } from "node:os";
+import type Database from "better-sqlite3";
+import { archivedDefinition } from "./definition-archive";
 import type { Workflow } from "./schema";
 import { loadWorkflow, validateWorkflow } from "./validate";
 import type { WorkflowProblem } from "./validate";
@@ -52,6 +54,7 @@ export async function loadWorkflowStore(input: {
   files?: WorkflowFileSource;
   globalDir?: string;
   projectDir?: string;
+  db?: Database.Database;
   /** The status a workflow has here when it is not the one its file says (untested files, a live run that lifted a tested chain). */
   resolveStatus?: (item: StoredWorkflow) => { status: Workflow["status"]; notes: WorkflowProblem[] };
 }): Promise<WorkflowStore> {
@@ -78,11 +81,14 @@ export async function loadWorkflowStore(input: {
   }
   for (const item of parsed.sort((a, b) => RANK[a.origin] - RANK[b.origin])) first.set(item.workflow.id, item);
 
-  // Pass 2: references between workflows, against the merged set.
-  const resolve = (id: string, version?: number) => {
-    const found = first.get(id)?.workflow ?? null;
-    return found && (version === undefined || found.version === version) ? found : null;
+  // Pass 2: references between workflows, against the merged set (with archive fallback for pinned revisions).
+  const resolveFrom = (map: ReadonlyMap<string, StoredWorkflow>, id: string, version?: number): Workflow | null => {
+    const found = map.get(id)?.workflow ?? null;
+    if (found && (version === undefined || found.version === version)) return found;
+    if (version !== undefined && input.db) return archivedDefinition(input.db, id, version);
+    return null;
   };
+  const resolve = (id: string, version?: number) => resolveFrom(first, id, version);
   const final = new Map<string, StoredWorkflow>();
   for (const [id, item] of first) {
     const issues = validateWorkflow(item.workflow, { resolve });
@@ -95,10 +101,7 @@ export async function loadWorkflowStore(input: {
   return {
     list: () => [...final.values()],
     get: (id) => final.get(id) ?? null,
-    resolve: (id, version) => {
-      const found = final.get(id)?.workflow ?? null;
-      return found && (version === undefined || found.version === version) ? found : null;
-    },
+    resolve: (id, version) => resolveFrom(final, id, version),
     problems,
   };
 }

@@ -18,6 +18,7 @@ import { listOpenOwnerItems, postOwnerItem } from "../../src/rooms/owner-waiting
 import { openDatabase } from "../../src/rooms/plugin-db";
 import {
   createWorkflowArchitect,
+  grantOwner,
   workflowsRpc,
 } from "../../src/rooms/workflow/server";
 import type { ServerCore } from "../../src/rooms/contracts/server";
@@ -262,6 +263,7 @@ describe("workflow evolution RPC in Graphs room", () => {
     });
     await runStubTests(v2Draft.id);
     const architect = createWorkflowArchitect(ctx, { workflowEngine: { hasExecutor: () => false } } as never);
+    grantOwner(db, v2Draft.id, "cli");
     const pub1 = await architect.publish({ projectId: "*", draftId: v2Draft.id });
     expect(pub1.published).toBe(true);
 
@@ -271,6 +273,7 @@ describe("workflow evolution RPC in Graphs room", () => {
       "Утреннее обновление v1 -> v2: добавлен чек",
     );
     await runStubTests(v2Draft.id);
+    grantOwner(db, v2Draft.id, "cli");
     const pub2 = await architect.publish({ projectId: "*", draftId: v2Draft.id });
     expect(pub2.published).toBe(true);
     postOwnerItem(db, {
