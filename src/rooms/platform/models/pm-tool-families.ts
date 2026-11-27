@@ -57,10 +57,12 @@ export const PM_CORE_TOOLS = [
   "lane_pilot_run_workflow",
   "lane_pilot_workflow_status",
   "lane_pilot_workflow_amend",
+  "lane_pilot_run_verdict",
+  "lane_pilot_path_save",
 ] as const;
 
 /** Families that were a tool of their own before (lane_pilot_schedule is one tool with actions from the start). */
-export const PM_FAMILY_TOOLS = [...Object.keys(PM_TOOL_FAMILIES), "lane_pilot_schedule", "lane_pilot_queue", "lane_pilot_facts", "lane_pilot_check", "lane_pilot_permit"] as string[];
+export const PM_FAMILY_TOOLS = [...Object.keys(PM_TOOL_FAMILIES), "lane_pilot_schedule", "lane_pilot_queue", "lane_pilot_facts", "lane_pilot_check", "lane_pilot_permit", "lane_pilot_card"] as string[];
 
 /** Where an old tool name lives now: `{ tool: "lane_pilot_relay", action: "ask" }`; undefined for a tool that kept its name. */
 export function foldedToolHome(oldName: string): { tool: string; action: string } | undefined {

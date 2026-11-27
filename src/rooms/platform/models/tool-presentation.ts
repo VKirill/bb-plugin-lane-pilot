@@ -40,6 +40,8 @@ export const TOOL_PRESENTATION: Record<string, Entry> = {
   lane_pilot_route: row("Choosing a workflow", "Chose a workflow", "Подбираю граф", "Граф подобран"),
   lane_pilot_run_workflow: row("Starting a workflow", "Started a workflow", "Запускаю граф", "Граф запущен"),
   lane_pilot_workflow_amend: row("Changing the goals of a run", "Changed the goals of a run", "Меняю цели запуска", "Цели запуска изменены"),
+  lane_pilot_run_verdict: row("Recording run verdict", "Recorded run verdict", "Записываю оценку запуска", "Оценка запуска записана"),
+  lane_pilot_path_save: row("Saving path as draft", "Saved path as draft", "Сохраняю дорожку в черновик", "Дорожка сохранена в черновик"),
   lane_pilot_workflow_status: row("Checking a workflow run", "Checked a workflow run", "Смотрю ход графа", "Ход графа получен", true),
   lane_pilot_specialist: row("Starting a specialist", "Started a specialist", "Запускаю специалиста", "Специалист запущен"),
   lane_pilot_workflow_draft_create: row("Starting a workflow draft", "Started a workflow draft", "Начинаю черновик графа", "Черновик графа создан"),
@@ -54,6 +56,7 @@ export const TOOL_PRESENTATION: Record<string, Entry> = {
   lane_pilot_facts: row("Reading the facts", "Read the facts", "Читаю факты", "Факты прочитал"),
   lane_pilot_check: row("Running a check", "Ran a check", "Запускаю проверку", "Проверку запустил"),
   lane_pilot_permit: row("Answering a permit", "Answered a permit", "Отвечаю на разрешение", "На разрешение ответил"),
+  lane_pilot_card: row("Working with a knowledge card", "Updated knowledge card", "Работаю с карточкой знаний", "Карточка знаний обновлена"),
   // The PM's folded tools (pm-tool-families.ts): one row per family, BB cannot label by action.
   lane_pilot_helpers: row("Calling a helper", "Called a helper", "Зову помощника", "Помощник отработал"),
   lane_pilot_relay: row("Writing to another chat", "Wrote to another chat", "Пишу в другой чат", "Другой чат получил сообщение"),

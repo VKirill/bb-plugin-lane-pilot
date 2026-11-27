@@ -24,6 +24,7 @@ import { createRun, openDatabase, setRunThread } from "../../src/rooms/plugin-db
 import { BUILTIN_SOURCES } from "../../src/rooms/workflow/builtin";
 import { createWorkflowAgents } from "../../src/rooms/workflow/server/services/workflow-agent";
 import { chainRuntimeFor, registerChainExecutors } from "../../src/rooms/workflow/server/services/workflow-executors";
+import { registerCardActions } from "../../src/rooms/memory/server";
 import { registerDispatchExecutors, taskUsage } from "../../src/rooms/writer/server/index";
 
 export type Row = Record<string, unknown>;
@@ -196,6 +197,7 @@ export async function setupLiveSpecialistEnv(
   registerReducers(engine);
   registerChainExecutors(engine, ctx, services, createWorkflowAgents());
   registerDispatchExecutors(engine, ctx.bb);
+  registerCardActions(engine, ctx);
 
   // Mirror server.ts initialization order: schedules and backlog attach AFTER registerChainExecutors!
   (services as unknown as Record<string, unknown>).workflowEngine = engine;

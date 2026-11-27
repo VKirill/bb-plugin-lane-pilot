@@ -135,6 +135,8 @@ it("gives specialists the schedule and no other bb-bridge tool, and keeps the fo
     "mcp__bb-bridge__lane_pilot_run_workflow",
     "mcp__bb-bridge__lane_pilot_workflow_status",
     "mcp__bb-bridge__lane_pilot_workflow_amend",
+    "mcp__bb-bridge__lane_pilot_run_verdict",
+    "mcp__bb-bridge__lane_pilot_path_save",
     "mcp__bb-bridge__lane_pilot_helpers",
     "mcp__bb-bridge__lane_pilot_relay",
     "mcp__bb-bridge__lane_pilot_memory",
@@ -144,6 +146,7 @@ it("gives specialists the schedule and no other bb-bridge tool, and keeps the fo
     "mcp__bb-bridge__lane_pilot_facts",
     "mcp__bb-bridge__lane_pilot_check",
     "mcp__bb-bridge__lane_pilot_permit",
+    "mcp__bb-bridge__lane_pilot_card",
     "mcp__bb-bridge__lane_pilot_tool_search",
     // Without ToolSearch Claude Code sends every MCP schema at the start; with it the schemas load when the PM asks.
     "ToolSearch",

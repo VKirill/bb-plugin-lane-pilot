@@ -26,4 +26,8 @@ export { MEMORY_COMPRESS_USAGE, memoryCompressChanges, runMemoryCompressCli } fr
 export { envCatalogKey } from "./repositories/env-catalog-key";
 export { wireMemoryAttemptEffects } from "./repositories/attempt-effects";
 export { applyRuleScopeRebind, applyScopeMigration, planScopeMigration, revertRuleScopeRebind } from "./repositories/scope-migration";
+export { getCard, listCards, loadCards, setCard, verifyCard, type CardCtx, type GetCardInput, type ListCardsInput, type LoadCardsInput, type LoadCardsResult, type SetCardInput, type VerifyCardInput } from "./services/cards";
+export { CARDS_LOAD_ACTION, registerCardActions } from "./handlers/cards-action";
+export { mountCardTool } from "./handlers/cards-tool";
+export { CARD_USAGE, runCardsCli } from "./handlers/cards-cli";
 export { room } from "./room";

@@ -15,7 +15,7 @@ export {
   type MemorySearchEngine,
   type MemorySettings,
 } from "./settings";
-export { estimateTokens, memoryEntrySupported, memoryRecordId, parseMemoryCandidates, memoryEntrySalience, memoryClaimIssue } from "./candidates";
+export { estimateTokens, memoryContentIssue, memoryEntrySupported, memoryRecordId, parseMemoryCandidates, memoryEntrySalience, memoryClaimIssue } from "./candidates";
 export { isSharedScope, resolveProjectKind, sharedScope, UNASSIGNED_SCOPE, type ProjectKind } from "./sections";
 export { ANSWER_GATE, weakAnswer, gateScore, answerProbability, DEFAULT_RELEVANCE_FLOOR, DENSE_PREFILTER, NOTHING_RELEVANT, clearsFloor, floorThreshold, recordRelevance, relevantRecords, wordFrequencies, questionWords, pathAnchorsOf, type RelevanceFloor, type RecordRelevance } from "./floor";
 export { buildContextPack, memoryCandidates, shadowPackCompare, type ContextPack, type PackCandidate, type PackSource } from "./context-pack";
