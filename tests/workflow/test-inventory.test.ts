@@ -1,11 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { mkdtempSync, writeFileSync, mkdirSync, rmSync } from "node:fs";
+import { mkdtempSync, writeFileSync, mkdirSync, rmSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
 import { registerCheckoutActions } from "../../src/rooms/workflow/server/services/workflow-checkout-actions";
 import { execFileSync, spawnSync } from "node:child_process";
-import { measureTestInventory, diffTestInventory, parseInventory } from "../../src/rooms/workflow/server/services/test-inventory";
+import { measureTestInventory, diffTestInventory, parseInventory, RUNNER_NODE_MAJORS } from "../../src/rooms/workflow/server/services/test-inventory";
 import type { ServerCore } from "../../src/rooms/contracts/server";
 
 const host = { async call(_method: string, input: { command: string; cwd: string; requestedHostId: string }) {
@@ -33,9 +33,15 @@ describe("node runner inventory", () => {
       const merge = commit(dir), after = await measureTestInventory(host, "local", dir);
       expect(after).toMatchObject({ status: "measured" });
       if (after.status !== "measured") throw Error(after.reason);
-      expect(await diffTestInventory(host, baseline.receipt, after.receipt, merge, ["test/a.test.js"])).toMatchObject({ status: "measured", testsAdded: 3, expectedFailureAdded: 1 });
+      // Node 22 has no expectFailure option: there the xfail case is an ordinary failing test.
+      const xfail = spawnSync("node", ["-e", "require('node:test').test('x',{expectFailure:true},()=>{throw Error('x')})"], { cwd: dir }).status === 0;
+      expect(await diffTestInventory(host, baseline.receipt, after.receipt, merge, ["test/a.test.js"])).toMatchObject({ status: "measured", testsAdded: xfail ? 3 : 4, expectedFailureAdded: xfail ? 1 : 0 });
       expect(() => parseInventory(after.receipt.raw.replace(/\{"type":"lp:end"\}\n/, ""), after.receipt.nonce)).toThrow();
     } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+  it("measures on every Node major the plugin's engines field supports", () => {
+    const engines = JSON.parse(readFileSync(join(__dirname, "../../package.json"), "utf8")).engines.node as string;
+    expect([...RUNNER_NODE_MAJORS]).toEqual([...engines.matchAll(/\^(\d+)\./g)].map((m) => m[1]));
   });
   it("refuses unsupported scripts, duplicates, and file load failures", async () => {
     const dir = fixture();

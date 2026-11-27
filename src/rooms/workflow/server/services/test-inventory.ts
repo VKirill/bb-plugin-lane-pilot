@@ -3,8 +3,10 @@ import { runOnHost } from "@lane-pilot/host-calls";
 import type { ServerCore } from "../../../contracts/server";
 import { gitRepoSnapshot, type RepoSnapshot } from "../../../verification/server";
 
-// This adapter intentionally accepts only the Node version whose reporter stream was examined.
-const RUNNER_VERSION = "24.15.0";
+// The node:test reporter stream this adapter parses is the same on every Node major Lane Pilot supports.
+// Copy of the majors in package.json "engines"; tests/workflow/test-inventory.test.ts fails when they drift.
+export const RUNNER_NODE_MAJORS = ["22", "24", "26"] as const;
+const supportedNode = (version: unknown) => typeof version === "string" && (RUNNER_NODE_MAJORS as readonly string[]).includes(version.split(".")[0]!);
 const MAX_REPORT = 8 * 1024 * 1024;
 const reporter = `export default async function* (source) {
   for await (const e of source) if (["test:start", "test:pass", "test:fail", "test:summary"].includes(e.type)) {
@@ -24,7 +26,7 @@ try {
  const environment = require('node:crypto').createHash('sha256').update(JSON.stringify(Object.entries(process.env).filter(([k]) => !['_','SHLVL'].includes(k)).sort(([a],[b]) => a.localeCompare(b)))).digest('hex');
  const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
  const command = pkg.scripts?.test;
- if (version !== '${RUNNER_VERSION}' || typeof command !== 'string' || !/^node --test(?: +[A-Za-z0-9_./*?-]+)+ *$/.test(command)) { emit({type:'lp:unsupported',version,command}); process.exit(0); }
+ if (!${JSON.stringify(RUNNER_NODE_MAJORS)}.includes(version.split('.')[0]) || typeof command !== 'string' || !/^node --test(?: +[A-Za-z0-9_./*?-]+)+ *$/.test(command)) { emit({type:'lp:unsupported',version,command}); process.exit(0); }
  const args = command.trim().split(/ +/).slice(2), root = fs.realpathSync('.');
  if (args.some(x => x.startsWith('/') || x.split('/').includes('..'))) throw Error('unsafe test path');
  const selections = args.map(x => fs.globSync(x));
@@ -54,7 +56,7 @@ export function parseInventory(raw: string, expectedNonce: string): { command: s
   if (Buffer.byteLength(raw) > MAX_REPORT) throw Error("report too large");
   const rows = raw.trimEnd().split("\n").map(line => JSON.parse(line));
   const begin = rows.shift(), exit = rows.pop(), end = rows.pop();
-  if (begin?.type !== "lp:begin" || begin.nonce !== expectedNonce || begin.version !== RUNNER_VERSION || !Array.isArray(begin.files) || !begin.files.length || typeof begin.root !== "string" || typeof begin.command !== "string" || !/^[a-f0-9]{64}$/.test(begin.environment) || exit?.type !== "lp:exit" || exit.nonce !== expectedNonce || !Number.isInteger(exit.exit) || end?.type !== "lp:end") throw Error("incomplete receipt");
+  if (begin?.type !== "lp:begin" || begin.nonce !== expectedNonce || !supportedNode(begin.version) || !Array.isArray(begin.files) || !begin.files.length || typeof begin.root !== "string" || typeof begin.command !== "string" || !/^[a-f0-9]{64}$/.test(begin.environment) || exit?.type !== "lp:exit" || exit.nonce !== expectedNonce || !Number.isInteger(exit.exit) || end?.type !== "lp:end") throw Error("incomplete receipt");
   const files = begin.files as string[];
   if (new Set(files).size !== files.length || files.some(f => typeof f !== "string" || !f.startsWith(begin.root + "/"))) throw Error("invalid file selection");
   const stacks = new Map<string, { name: string; line: number; nesting: number; children: boolean; identity: string }[]>();
