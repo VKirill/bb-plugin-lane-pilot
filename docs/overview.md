@@ -2,7 +2,7 @@
 title: Lane Pilot overview
 type: overview
 created: 2026-10-10
-updated: 2026-11-26
+updated: 2026-11-27
 status: active
 confidence: high
 tags: [overview, bb-plugin, orchestration]
@@ -21,8 +21,9 @@ sources:
   - src/rooms/writer/server/services/skill-pick.ts
   - src/rooms/stability/server/services/reconcile.ts
   - src/rooms/pages/ui/page.tsx
-  - src/rooms/pages/ui/project-nav.tsx
-  - src/rooms/pages/models/tabs-model.ts
+  - src/rooms/pages/ui/console-shell.tsx
+  - src/rooms/pages/ui/console-routes.tsx
+  - src/rooms/pages/models/nav-model.ts
   - src/rooms/critique/server/services/pm-read.ts
   - src/rooms/critique/models/pm-read.ts
   - src/rooms/critique/models/citations.ts
@@ -61,12 +62,12 @@ The PM sends work through Lane Pilot tools. The writer dispatcher resolves task 
 
 ## Main areas
 
-The plugin page (`LanePilotPage` in `src/rooms/pages/ui/page.tsx`, `project-nav.tsx`) exposes two system navigation groups — **Today** (`waiting`, `tasks`, `errands`, `schedule`) and **Setup** (`globals`, `agents`, `workflows`, `tokens`) — plus per-project and per-section settings across six tabs (`overview`, `team`, `work`, `knowledge`, `automation`, `runs`; `src/rooms/pages/models/tabs-model.ts`).
+The plugin page (`LanePilotPage` + `ConsoleShell` in `src/rooms/pages/ui/page.tsx`, `console-shell.tsx`, `console-routes.tsx`) exposes six owner-console sections (`overview`, `decisions`, `staff`, `work`, `memory`, `system`), six sub-pages under **System** (`graphs`, `agents`, `schedules`, `costs`, `health`, `settings`; `src/rooms/pages/models/nav-model.ts`), a top scope switcher (`ScopeSwitcher` for all projects, a project, or a section), and a global `BrakeButton` (`BrakesDialog`). Legacy routes (`LEGACY_TABS`, `LEGACY_SCOPES`) resolve to the corresponding sections.
 
 When reload recovery (`taskReconcile.reconcile`) finds the writer's prior thread idle or errored, the attempt loop resumes in that thread if its persisted run and contract context are valid; a canceled attempt is closed as canceled (`src/rooms/stability/server/services/reconcile.ts`). Eligible new attempts and fallbacks receive the prior task-owned validation failure; provider failures do not replace that context (`src/rooms/writer/server/services/start.ts`).
 
 - **Project orchestration:** runs, tasks, attempts, stage receipts, checks, workflow inbox events, and merge coordination are stored in plugin SQLite (`src/rooms/migrations.ts`, `src/rooms/storage/database.ts`). See [architecture](architecture.md) and [data model](data-model.md).
-- **Tasks screen:** the app shows task attempts and top-level workflow runs in a board or grouped list, with a detail page for contract, stage, attempt, and worker-thread data (`src/rooms/runs/ui/task-board.tsx`, `src/rooms/runs/server/services/task-board.ts`). See [Tasks board](task-board.md).
+- **Work and tasks:** **Work → Tasks** (`WorkScreen` + `TaskBoard` in `src/rooms/runs/ui/work-screen.tsx`, `task-board.tsx`) shows task attempts and top-level workflow runs in a board or grouped list alongside **Big projects** and **Errands**, with `TaskPage` for contract, stage, attempt, and worker-thread detail (`src/rooms/runs/server/services/task-board.ts`). See [Tasks board](task-board.md).
 - **Settings and integrations:** typed settings live in `src/rooms/settings-registry.ts` (including **model per function** with automatic fallback) and typed RPC endpoints expose settings, workflows, schedules, memory, and runs to the UI (`src/rooms/core/server/rpc.ts`). The surface is declared in [RPC contracts](rpc-callers.md).
 - **Schedule board and engine clock:** one clock (`packages/workflow-engine/src/engine-clock.ts`, `src/rooms/schedule/server/handlers/board-clock.ts`) wakes overdue waiting steps and due schedule-board rows (owner rows plus `SYSTEM_SCHEDULES` and `PROJECT_SCHEDULES`), respecting the board-wide pause (`schedule.paused_all`).
 - **Project knowledge:** memory RPCs create and retrieve project-scoped agent records; the UI displays records and lifecycle (`src/rooms/memory/server/services/memory.ts`, `src/rooms/memory/ui/memory-screen.tsx`).

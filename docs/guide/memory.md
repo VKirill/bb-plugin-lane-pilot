@@ -48,7 +48,7 @@ Every ordinary BB thread of a project, on any machine, gets a short memory block
 
 ## Records
 
-- **Kind.** `core` is always loaded for a role. `note` is retrieved by relevance. A rule is a core record tagged `rule`; the Knowledge tab lists rules apart and does not delete them through the facts action.
+- **Kind.** `core` is always loaded for a role. `note` is retrieved by relevance. A rule is a core record tagged `rule`; **Memory & history → Records** lists rules alongside facts and cards and does not expose a delete button for rules.
 - **Audience.** `owner`, `subagent` (default) or `export`. `memory.personal_bot` isolates bot-scoped memory.
 - **Scope.** A record belongs to the project root (`[]`) or to a section chain (`section:<id>`). A reader sees the root plus the prefixes of its own chain, never a sibling section. A reader that passes no chain sees the root only. Root core that names a file waits for a section unless it is tagged `convention`; a stored `memory.scope_map:<project>` can move such rows onto sections.
 - **Trust.** `confirmed` (maintainer, rule, file, or two sources) or `observed` (one session wrote it). Observed notes reach writers after a second source or 24 hours. A hedged maintainer note ("maybe", "seems") is stored as observed.
@@ -129,7 +129,7 @@ Search fuses an FTS5 word index (`bm25`) with an FTS5 trigram index (word forms 
 
 ## UI
 
-The Knowledge tab has Memory and Documents segments. Memory shows the switch, the project's records (facts and rules apart, kind, date, concepts; only facts have a remove button, via `memory_record_delete`) and, in advanced mode, the settings above.
+**Memory & history → Records** (`MemoryScreen`) shows the project's records (facts, decisions, rules, lessons, and knowledge cards, searchable via `session_memory_search`; only non-rule records have a delete action via `memory_record_delete`). Memory and Documents settings live in **System → Settings** (**Memory** and **Documents** groups, with advanced fields folded under **More**).
 
 ## Knowledge cards
 

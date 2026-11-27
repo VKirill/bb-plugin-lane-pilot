@@ -6,7 +6,7 @@ status: active
 created: 2026-11-06
 confidence: medium
 tags: [guide, roles]
-updated: 2026-11-14
+updated: 2026-11-27
 sources:
   - packages/models/src/role-models.ts
   - src/rooms/platform/server/launch-tuning.ts
@@ -75,7 +75,7 @@ The PM starts a specialist with `lane_pilot_helpers` (action `specialist`); it r
 
 Eleven more stock agents are bundled as standalone roles: `advisor-researcher`, `ai-researcher`, `animator`, `doc-classifier`, `domain-researcher`, `eval-auditor`, `eval-planner`, `framework-selector` (shown as "Model selector"), `mempalace-curator`, `nyquist-auditor` (shown as "Check auditor") and `ui-researcher`. `project-onboarder` is an internal orientation session, and `browser-qa` is reserved for the `lp.browser-qa` graph.
 
-The owner can create custom agents on the Agents page or with `bb lane-pilot agents create|update|delete|list|show` (JSON, or markdown with frontmatter: id, display name, prompt, tools, skills, MCP servers, optional model and effort). Custom agents without a row of their own use the `specialist` row. A specialist can also be pinned to a model per agent. The "Agent access" part of the Team tab sets, per kind of helper, what its session loads.
+The owner can create custom agents in **System → Agents & loadout** (or via **Staff → Hire → Custom role**) or with `bb lane-pilot agents create|update|delete|list|show` (JSON, or markdown with frontmatter: id, display name, prompt, tools, skills, MCP servers, optional model and effort). Custom agents without a row of their own use the `specialist` row. A specialist can also be pinned to a model per agent. Per-role access and helper context mode in **System → Agents & loadout** set, per kind of helper, what its session loads.
 
 ## Errands, browser, relay, memory and planning
 

@@ -25,26 +25,22 @@ sources:
 
 > Part of the [Lane Pilot guide](../../README.md#the-guide). Moved out of the root README on 2026-11-06.
 
-Every setting is a row in the plugin database, read at the moment it is used, so **no setting needs a plugin reload** and a change applies to the next attempt or stage. Settings exist on three levels that share the same six tabs: **General settings** (system defaults, the `*` row), a **project**, and a **section** of a project (BB Project Folders). A project value overrides the default; a section value overrides its project. A write carries the setting's version, so two editors cannot silently overwrite each other. Tabs marked below have a **Basic / Advanced** switch; advanced rows are the ones most people never touch.
-
-System pages next to the project list: **Today** (**Waiting for you**, **Tasks**, **Errands**, **Schedule**) and **Setup** (**General settings**, **Agents**, **Workflows**, **Tokens**).
+Every setting is a row in the plugin database, read at the moment it is used, so **no setting needs a plugin reload** and a change applies to the next attempt or stage. Settings exist on three levels selected in **System → Settings** and **System → Agents & loadout**: **System** (system defaults, the `*` row), a **Project**, and a **Section** of a project (BB Project Folders). A project value overrides the default; a section value overrides its project. A write carries the setting's version, so two editors cannot silently overwrite each other. Rare settings inside each group sit under a **More** disclosure.
 
 The full generated list with defaults is [docs/enabled-settings.md](../enabled-settings.md). Settings are declared through the typed `defineSetting` catalog (`packages/settings-catalog/src/define-setting.ts`) and composed from `src/rooms/registry.ts` in `src/rooms/settings-registry.ts`.
 
-## The six tabs
+## Where settings live in the console
 
-| Tab | What it holds |
+| Console area | What it holds |
 |---|---|
-| **Overview** | Getting-started checklist (writer chosen, stack on the machine, how to start a run), runs in progress, what needs attention, UI language. |
-| **Team** | The role roster (`RoleModelsPanel`) with model, on/off, where the value comes from and what the role's session loads; the project's main agent for new chats; agent access; Browser QA machine settings. |
-| **Work** | Where and how the writer works (workspace mode, quality mode, sandbox), baseline checks, helper context, plan and code critique, specialist review, PM read, run and workflow budgets, owner push settings, integration gate. Settings without a dedicated control (most `writer.*`) appear here as grouped extra rows. |
-| **Knowledge** | Segments **Memory** and **Documents**. |
-| **Automation** | Segments **Workflows** (catalog, canvas editor, run, model presets) and **Schedule** (including board-wide `schedule.paused_all`). |
-| **Runs** | Segments **Board**, **Analytics** (acceptance statistics) and **Service** (the Lane Pilot stack on each host). |
+| **System → Settings** (`SettingsScreen`) | Four groups across System / Project / Section: **Work and checks** (workspace mode, quality mode, baseline, helper context, critique & PM read policies, budgets, integration gate, extra catalog rows under **More**), **Memory** (master switch plus tuning under **More**), **Documents** (`docs.enabled`, docs places, onboarding depth under **More**), and **Language & notifications** (UI locale override and Telegram owner-push settings). |
+| **System → Agents & loadout** (`AgentsLoadout`) | Unified role matrix (`role_model.<role>`, pools, skills, plugins, MCP, missing-on-hub flags, per-role access), **Main agent** (`main.agent`), `helper.context_mode`, custom agents (`OwnedSettings`), and system-level override reset (`ModelOverridesPanel`). |
+| **System → Graphs** (`WorkflowsScreen`) | Workflow library, map, canvas editor, run history, evolution drafts, and workflow model presets / budgets. |
+| **System → Schedules** (`ScheduleBoard`) | Cron/interval schedules (`missed` and `overlap` policies) and calendar/history. Global pauses (`schedules`, `conveyor`, `graphs`, `staff`) and **Stop all** also live in the header **Brakes** dialog. |
 
-## Most important settings per tab
+## Most important settings by area
 
-**Team**
+**System → Agents & loadout**
 
 | Setting | Default | What it does |
 |---|---|---|
@@ -54,7 +50,7 @@ The full generated list with defaults is [docs/enabled-settings.md](../enabled-s
 | `helper.context_mode` | `roles` | What helper sessions load: by role (default), inherited, or selected allowlists (`helper.skills`, `helper.mcp_servers`, `helper.bb_plugins`, `helper.native_plugins`). |
 | `browser_qa.enabled`, `browser_qa.backend`, `browser_qa.provider` | catalog `false`, `bb-browser`, `codex` | The browser check of accepted tasks. Unset, the check still runs for a task that carries `qa_cases` and `qa_url`; an explicit `false` skips it. |
 
-**Work**
+**System → Settings → Work and checks**
 
 | Setting | Default | What it does |
 |---|---|---|
@@ -81,7 +77,7 @@ The full generated list with defaults is [docs/enabled-settings.md](../enabled-s
 | `writer.task_wall_clock_min`, `writer.verify_max_passes`, `writer.retry_safety`, `failure.interventions` | `720`, `10`, `on`, `on` | Retry caps and gates, see [Failure handling and stability](failures.md). |
 | `usage.skip_percent` | `90` | Share of a provider's usage window from which its writer models are skipped until reset. |
 
-**Knowledge**
+**System → Settings → Memory**
 
 | Setting | Default | What it does |
 |---|---|---|
@@ -94,7 +90,7 @@ The full generated list with defaults is [docs/enabled-settings.md](../enabled-s
 | `memory.pack_mode` | `shadow` | Context pack compiler, see [Experimental features](settings.md#experimental-features). |
 | `docs.enabled` | `auto` | Documentation support per project. |
 
-**Automation**
+**System → Graphs & Schedules**
 
 | Setting | Default | What it does |
 |---|---|---|
@@ -102,16 +98,16 @@ The full generated list with defaults is [docs/enabled-settings.md](../enabled-s
 | `workflow.debugger.*` | unset | Model of workflow agent steps with no model of their own. |
 | `workflow.node_budget_tokens`, `.node_budget_usd`, `.node_budget_wall_seconds` | unset | Per-node resource caps enforced by the workflow engine. |
 | `workflow.run_budget_tokens`, `.run_budget_usd`, `.run_budget_wall_seconds`, `workflow.stuck_repeat_limit` | unset | Per-run resource caps and loop repeat ceiling. |
-| `schedule.paused_all` | `false` | Pause or resume engine clock firing across the entire schedule board (`bb lane-pilot schedule pause-all\|resume-all`). |
+| `schedule.paused_all` | `false` | Pause or resume engine clock firing across the entire schedule board (`bb lane-pilot schedule pause-all\|resume-all` or the **Brakes** dialog). |
 | `workflow.disabled` | `[]` | JSON array of workflow IDs disabled by the per-graph kill switch; blocks `pm`, `manual`, `schedule`, and `event` starts (`workflowStartRefusal`). |
 | `loops.mode` | `{"discovery":"on","branches":"on","evolve":"on","employee":"on","templates":"on"}` | Per-loop mode (`on \| report \| off`, `packages/contracts/src/loops.ts`): `report` runs analysis without opening trials/publishing/auto-actions; `off` skips the loop. |
 | `evolve.enabled`, `evolve.graphs`, `evolve.replay_max_runs` | `true`, `["invoice-send"]`, `120` | Master switch, allow-listed workflow IDs, and max agent executions per `lp.evolve` offline replay. |
 | `paths.dedupe_threshold`, `paths.branch_draft_repeats`, `paths.branch_window_days` | `0.8`, `3`, `30` | Structural dedup threshold (`0.5-1.0`), repeated trajectory deltas before proposing a branch (`1-20`), and rolling discovery window in days (`7-180`). |
-| Schedule entries | none | Created from the PM (`lane_pilot_schedule`) or the Schedule segment; each has `missed` and `overlap` policies. |
+| Schedule entries | none | Created from the PM (`lane_pilot_schedule`) or **System → Schedules**; each has `missed` and `overlap` policies. |
 
 ## Experimental features
 
-These switches are off, in shadow, or at their neutral value by default. Each one is a normal setting (live, no reload) with its own evidence trail, so you can turn it on for one project, watch the numbers and turn it off again. Defaults are from the settings catalog. Where a feature has a per-project scope, set it on the project's **Work** tab (advanced rows) or **Knowledge** tab; global ones live on **General settings**.
+These switches are off, in shadow, or at their neutral value by default. Each one is a normal setting (live, no reload) with its own evidence trail, so you can turn it on for one project, watch the numbers and turn it off again. Defaults are from the settings catalog. Set them in **System → Settings** (**Work and checks → More** or **Memory → More**) at the **Project** or **System** level.
 
 | Setting | Default | What it is for | How it works | Turn it on, and what to watch |
 |---|---|---|---|---|

@@ -2,7 +2,7 @@
 title: Who works a role — the role table and model pools
 type: component
 created: 2026-10-29
-updated: 2026-10-29
+updated: 2026-11-27
 status: active
 confidence: medium
 tags: [models, roles, providers, settings]
@@ -16,8 +16,10 @@ sources:
   - src/rooms/settings/server/handlers/rpc/settings.ts
   - src/rooms/settings/models/model-keys.ts
   - src/rooms/contracts/rpc-settings.ts
+  - src/rooms/settings/ui/agents-loadout.tsx
+  - src/rooms/settings/ui/agents-loadout-row.tsx
   - src/rooms/pages/ui/tab-team.tsx
-  - src/rooms/pages/ui/role-models.tsx
+  - src/rooms/pages/ui/agents-page-bridge.tsx
   - src/rooms/writer/server/services/start.ts
   - packages/models/src/model-tiers.ts
 ---
@@ -68,19 +70,20 @@ The `zcode` provider serves one option, `glm-5.3-flash-free` («ZCode · GLM-5.3
 
 - By default the model belongs to the role (`packages/models/src/role-models.ts:1-4`); individual workflow graph `agent` nodes may also override `model` and `provider` on the node itself.
 - The specialist, the workflow architect and eleven helper roles run as Claude Code agent profiles and take only Claude models of their pool (`packages/models/src/agent-model.ts:6`, `:130-135`).
-- Saving the row keeps the pool: the settings panel and the team roster both send the remaining pool entries with every change of the main model (`src/rooms/pages/ui/role-models.tsx:88-91`, `src/rooms/pages/ui/tab-team.tsx:240-247`).
+- Saving the row keeps the pool: **System → Agents & loadout** sends the remaining pool entries with every change of the main model (`src/rooms/settings/ui/agents-loadout.tsx:213-247`).
 - «Reset everywhere» takes back a project's or section's model rows and its `<role>.agent` keys, while preserving pinned models on sandbox projects (`src/rooms/settings/models/model-keys.ts:4-13`, `src/rooms/settings/server/handlers/rpc/settings.ts:333-350`).
 
 ## Public API or commands
 
 - `get_role_models` returns each role's resolved model with its `pool`, source, version and default (`src/rooms/settings/server/handlers/rpc/role-models.ts:16-35`, contract at `src/rooms/contracts/rpc-settings.ts:38-50`); `save_setting` stores `role_model.<role>`.
+- `agent_loadout` (`src/rooms/settings/server/services/agent-loadout.ts`) combines the resolved role model with effective skills, plugins, MCP servers, instructions, tools, and missing-on-hub flags for **System → Agents & loadout** and the staff **Loadout** tab.
 - `list_model_overrides` lists the places with their own model rows or agents (sandboxes screened out); `reset_model_overrides` removes the given levels' rows and agents (`src/rooms/settings/server/handlers/rpc/settings.ts:333-350`).
 - `resolveSpawnModel` (helpers) and `resolveAgentModel` (pure) are the resolution entry points (`src/rooms/platform/server/services/spawn-model.ts:68-100`, `packages/models/src/agent-model.ts:108-150`).
 - The writer has no per-task pick: it is the project's `writer.provider`/`writer.model`/`writer.reasoning_effort` with the fallback chain (`packages/models/src/writer-fallbacks.ts`), and the effort is the setting clamped to the live catalog (`packages/models/src/writer-reasoning.ts`).
 
 ## Gotchas
 
-- The team roster's model column reads the same table: a row of it replaces an older stage picker on screen, `code-repair` shows "the task writer's model", and the writer and onboarder keep pickers of their own (`src/rooms/pages/ui/tab-team.tsx:27-29`, `:104-115`).
+- The **System → Agents & loadout** matrix (`src/rooms/settings/ui/agents-loadout.tsx`, `agents-loadout-row.tsx`) reads the same table: `code-repair` shows "the task writer's model", while the writer and onboarder keep dedicated pickers (`src/rooms/pages/ui/tab-team.tsx`, `agents-page-bridge.tsx`).
 - The ten-percent band means two providers within a few percentage points of spent stay in the owner's order (`packages/models/src/agent-model.ts:74-78`).
 - A pool is read only when the row's source is the table: a legacy stage selection has no pool (`src/rooms/settings/server/handlers/rpc/role-models.ts:34`, `packages/models/src/agent-model.ts:130-134`).
 - Repairer's built-in default is GPT-6.1 Sol: the owner moved the repairs off Claude's window (`packages/models/src/role-models.ts:117-118`); Grok 4.6 (Cursor) is one of the catalog writer profiles (`packages/models/src/model-profiles.ts:31-33`).

@@ -2,7 +2,7 @@
 title: "Errands: the page and the read model"
 type: component
 status: active
-updated: 2026-11-01
+updated: 2026-11-27
 ---
 
 # Errands: the page and the read model
@@ -10,15 +10,15 @@ updated: 2026-11-01
 **What it is.** An errand is a one-off job a helper does outside the code: the screen of a machine, a server, a site in the owner's browser, a report,
 a message. A PM gives it from its chat (`lane_pilot_errand`), or a schedule of kind `errand` runs it. Every errand runs
 the graph `errand` (`src/rooms/errands/server/handlers/errands-graph.ts`, `src/rooms/errands/server/services/errand-graph.ts`); it has a **kind**, and the kind names the row of the role table it runs
-on (`docs/schedule-board.md`, «Errand kinds»). The «Errands» page of the scope rail lives in `src/rooms/errands` (`errands-screen.tsx`, rail item `navErrands`).
+on (`docs/schedule-board.md`, «Errand kinds»). The «Errands» view sits under **Work → Errands** (`work/errands` in `src/rooms/pages/models/nav-model.ts`), rendered by `ErrandsScreen` (`src/rooms/errands/ui/errands-screen.tsx`).
 
-**The page** (`src/rooms/errands/ui/errands-screen.tsx`, rail item `navErrands`, test id `errands-screen`):
+**The page** (`src/rooms/errands/ui/errands-screen.tsx`, test id `errands-screen`):
 
 1. *Kinds and their models*: one line per kind (`computer`, `devops`, `browser`, `research`, `message`, no kind), what it is, BB's own model
    window (`NativeModelPicker`) seeded with the row of the role table at the global level (`get_role_models` for `GLOBAL_SETTINGS_PROJECT_ID`),
    «your choice» or «built-in default» under it and «Back to default» when the owner set the row, and the period's runs, done, stopped, failed,
    cost. A choice is saved as `role_model.<role>` at the global level with the row's
-   version and its pool kept, exactly as the role table of General settings → Team saves it (0.1.469, the owner: «the native BB picker here»).
+   version and its pool kept, exactly as the role table in **System → Agents & loadout** saves it (0.1.469, the owner: «the native BB picker here»).
    Two kinds on one row (`message` and no kind, both `errand`) get one window; the second line says whose model it shares. A kind with no runs
    in the period shows dashes instead of a row of zeros.
 2. *Errands of the last N days* (7, 30, 90; a kind filter): when, project, the errand's title (the title it was given, else the first line of its
@@ -27,14 +27,7 @@ on (`docs/schedule-board.md`, «Errand kinds»). The «Errands» page of the sco
    connected machine»; anything else as written), who asked (the PM chat; the schedule by name, or just «schedule» when it is named after
    the errand; «deleted» when the schedule is gone), the cost, and «Open the chat» for the helper's thread (the same side panel every helper opens in).
 
-**Where it sits.** The rail groups the system pages for a person reading top-down (0.1.469, the owner: «systematise the pages so I am not
-lost»): «Today» holds what the machines are doing and what waits for the owner's word (Waiting for you, Tasks, Errands, Schedule); then the
-projects; then «Setup» (General settings, Agent profiles, Workflows, Tokens, Self-improvement). The phone select has the same three groups
-(`src/rooms/pages/ui/project-nav.tsx`). The work area is the full width of the plugin's pane (`src/rooms/pages/ui/page.tsx`).
-The rule: a rail page shows a thing across all projects, a project's tab shows the same thing for that project under the same
-name. So the project's «Tasks» tab is the rail's board locked to the project (`TaskBoard lockedProjectId`, `src/rooms/pages/ui/tab-runs.tsx`),
-the rail's «Schedule» and «Workflows» are what the project's «Automation» tab shows for one project, and «Agent profiles» (who the agents are)
-is kept apart from a project's «Team» (who works there).
+**Where it sits.** The owner console (`ConsoleShell` in `src/rooms/pages/ui/console-shell.tsx`, full pane width via `src/rooms/pages/ui/page.tsx`) has six top-level sections (**Overview**, **Decisions**, **Staff**, **Work**, **Memory & history**, **System**) and a top scope switcher (**All projects**, project, or section; on narrow screens the left rail folds into a select). Errands sits inside **Work** (`WorkScreen` in `src/rooms/runs/ui/work-screen.tsx`) alongside **Tasks** and **Big projects** (`work/tasks`, `work/projects`, `work/errands`). Legacy links to the old `errands` scope resolve to `work/errands` via `LEGACY_SCOPES`.
 
 **The errand routes its brief.** Before `lane_pilot_errand` starts a plain errand it routes the brief with the same router the PM's
 `lane_pilot_route` uses, over the project's offered catalog (`routedGraph` in `src/rooms/errands/server/services/errand-graph.ts`). A match with `decision: "route"` and

@@ -2,7 +2,7 @@
 title: Canonical role names
 type: component
 created: 2026-11-14
-updated: 2026-11-24
+updated: 2026-11-27
 status: active
 confidence: medium
 tags: [i18n, role-names, agents, localization]
@@ -13,11 +13,12 @@ sources:
   - packages/i18n/src/i18n-agent-labels.ts
   - packages/i18n/src/i18n-role-models.ts
   - tests/agents-doc.test.ts
-  - src/rooms/pages/tab-team.tsx
+  - src/rooms/settings/ui/agents-loadout-row.tsx
+  - src/rooms/specialist/ui/staff-list-parts.tsx
+  - src/rooms/pages/ui/screens/overview-parts.tsx
   - src/rooms/native-agent/ui/helper-threads.tsx
-  - src/rooms/council/ui/council-page.tsx
-  - src/rooms/native-agent/server/agents-cli.ts
-  - src/rooms/tools/server/cli-project.ts
+  - src/rooms/native-agent/server/handlers/agents-cli.ts
+  - src/rooms/tools/server/handlers/cli-project.ts
 ---
 # Canonical role names
 
@@ -72,7 +73,7 @@ All declarations from `role-names.ts` and `roleName` (`packages/i18n/src/i18n.ts
 - `packages/i18n/src/role-names.ts` holds the registry, alias map, and language-parameterized helpers (`packages/i18n/src/role-names.ts:1-167`).
 - `packages/i18n/src/index.ts` re-exports both `i18n.ts` and `role-names.ts` (`packages/i18n/src/index.ts:1-2`).
 - `i18n.ts`, `i18n-agent-labels.ts`, and `i18n-role-models.ts` import `roleNameEn` and `roleNameRu` to populate static dictionary entries (`packages/i18n/src/i18n.ts:1`, `packages/i18n/src/i18n-agent-labels.ts:1`, `packages/i18n/src/i18n-role-models.ts:1`).
-- Root UI and CLI modules import `roleName`, `roleDisplayName`, and `canonicalRoleId` from `@lane-pilot/i18n` (`src/rooms/pages/tab-team.tsx:106`, `src/rooms/native-agent/ui/helper-threads.tsx:51`, `src/rooms/council/ui/council-page.tsx:45`, `src/rooms/native-agent/server/agents-cli.ts:38`, `src/rooms/tools/server/cli-project.ts:133`).
+- Root UI and CLI modules import `roleName`, `roleDisplayName`, and `canonicalRoleId` from `@lane-pilot/i18n` (`src/rooms/settings/ui/agents-loadout-row.tsx:2`, `src/rooms/specialist/ui/staff-list-parts.tsx:1`, `src/rooms/pages/ui/screens/overview-parts.tsx:1`, `src/rooms/native-agent/ui/helper-threads.tsx:6`, `src/rooms/native-agent/server/handlers/agents-cli.ts:2`, `src/rooms/tools/server/handlers/cli-project.ts:133`).
 
 ## Internal model
 

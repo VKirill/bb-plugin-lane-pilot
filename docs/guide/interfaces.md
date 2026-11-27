@@ -6,10 +6,13 @@ status: active
 created: 2026-11-06
 confidence: medium
 tags: [guide, interfaces]
-updated: 2026-11-06
+updated: 2026-11-27
 sources:
   - src/rooms/tools/server/cli.ts
   - src/rooms/contracts/index.ts
+  - src/rooms/pages/models/nav-model.ts
+  - src/rooms/pages/ui/console-shell.tsx
+  - src/rooms/runs/ui/chat-panel.tsx
   - server.ts
 ---
 
@@ -81,36 +84,31 @@ Writers in code worktrees get no `lane_pilot_*` tools in these allow-lists. In h
 
 ## UI surfaces
 
-Lane Pilot adds one page (`Lane Pilot`) to the BB sidebar and panels to threads.
+Lane Pilot adds one six-section owner console (`LanePilotPage` + `ConsoleShell`) to the BB sidebar and panels to threads.
 
-**System navigation**
+**Console navigation and top bar**
 
-| Group | Pages |
+The left sidebar (`ConsoleShell`, collapsing to a compact `Select` below 900 px) lists six top-level sections plus direct links to the six **System** sub-pages (`CONSOLE_SECTIONS` and `SYSTEM_PAGES` in `src/rooms/pages/models/nav-model.ts`). A top **ScopeSwitcher** chooses **All projects**, a single project, or a project section (`remember_project`), and **Brakes** (`BrakeButton` / `BrakesDialog`) exposes global pauses (`schedules`, `conveyor`, `graphs`, `staff`) and **Stop all**.
+
+| Section | Content |
 |---|---|
-| Today | Waiting for you (with count badge), Tasks, Errands, Schedule |
-| Setup | General settings, Agents, Workflows, Tokens |
+| **Overview** (`overview`) | Live KPIs, active runs table, closed-by-day chart, staff goals, and upcoming scheduled runs. |
+| **Decisions** (`decisions`, with live `waiting` badge) | Tabs **Waiting for you** (`OwnerWaitingBoard`), **Weekly desk** (`ReviewDesk`), and **Done autonomously** (`ActionsLog`). |
+| **Staff** (`staff`) | Chartered and task-based staff cards (`StaffList`), 3-step **Hire** wizard (`HireWizard`), and per-staff detail (`StaffPage`: Charter, Shifts, Autonomy + repo trust, Loadout, Costs). |
+| **Work** (`work`) | Tabs **Tasks** (`TaskBoard` board/list + `TaskPage`), **Big projects** (`BigProjects`), and **Errands** (`ErrandsScreen`). |
+| **Memory & history** (`memory`) | Tabs **Records** (`MemoryScreen` for project memory records and knowledge cards) and **Task history** (`HistoryScreen`). |
+| **System** (`system`) | Hub tiles linking to **Graphs** (`WorkflowsScreen`), **Agents & loadout** (`AgentsLoadout` unified role matrix + `OwnedSettings` + `ModelOverridesPanel`), **Schedules** (`ScheduleBoard`), **Costs** (`CostsScreen` Spend & Quality), **Health** (`HealthScreen` canary, outages, drills, `ServiceSegment`), and **Settings** (`SettingsScreen`: Work and checks, Memory, Documents, Language & notifications across System / Project / Section with rare fields under **More**). |
 
-Below those groups sits one entry per project.
+Pre-redesign URLs and `scope` values (`LEGACY_TABS`, `LEGACY_SCOPES`) resolve to the corresponding console route via `resolveLegacyRoute`.
 
-**Project tabs.** The same six tabs exist at system, project and section level: Overview, Team, Work, Knowledge, Automation, Runs. Four of them (Team, Work, Knowledge, Automation) have a Basic/Advanced switch.
-
-| Tab | Content |
-|---|---|
-| Overview | Project status and how to start. |
-| Team | The role roster with each role's model and pool, plus "Agent access". |
-| Work | Writer, critics and the other work settings. |
-| Knowledge | Segments Memory, Documents. |
-| Automation | Segments Workflows, Schedule. |
-| Runs | Segments Board, Analytics, Service. |
-
-**In chats.** The composer action "Enable Lane Pilot" and the "Lane Pilot / agent" menu pick the PM, a specialist or the workflow architect for a new chat; a banner shows the selected agent. A "Lane Pilot helpers" tab and an actions-menu entry open the helpers of a thread. The fixed thread live panel (`ThreadLivePanel`, `thread_live`, `liveTitle`) shows what Lane Pilot is doing for the chat, and a context segment above the composer shows the same. A PM line `::lane-run{id="..."}` or `::lane-draft{id="..."}` renders a live run or proposal card. Questions to the owner (PM, gate, workflow human wait) arrive as BB pending interactions, which BB's notification plugin also sends to the phone. Sidebar rows of helper threads carry a short role mark. Several of these slots are feature-tested, so older BB versions draw less.
+**In chats.** The composer action "Enable Lane Pilot" and the "Lane Pilot / agent" menu pick the PM, a specialist or the workflow architect for a new chat; a banner shows the selected agent. A "Lane Pilot helpers" tab (`lane-helper-thread`) and an actions-menu entry open the helpers of a thread. The fixed right-hand panel (`ChatPanel` in `experimental_tab` `lane-pilot-live`, plus the thread-header button and command palette shortcuts) shows a **Section / Whole project** scope switch (`thread_scope`), repository trust status (`repo_trust`), four tabs (**Tasks**, **Memory**, **History**, **Helpers**), repository autonomy rules, and a follow-up composer (`threads.send`); a context segment (`ThreadLive`) also appears in the thread info section. A PM line `::lane-run{id="..."}` or `::lane-draft{id="..."}` renders a live run or proposal card. Questions to the owner (PM, gate, workflow human wait) arrive as BB pending interactions, which BB's notification plugin also sends to the phone. Sidebar rows of helper threads carry a short role mark. Several of these slots are feature-tested, so older BB versions draw less.
 
 ## RPC and BB hooks
 
-The plugin's RPC surface is one validated contract built from nine method maps: `rpcShell`, `rpcNative`, `rpcRuns`, `rpcSettings`, `rpcOps`, `rpcKnowledge`, `rpcWorkflow`, `rpcWorkflowExport`, and `rpcWorkflowMap`. Inputs are strict, and each handler is timed. The host worker has a separate `hostContract` (native install, git worktree and integrate, host jobs, snapshots and model calls). See `docs/rpc-callers.md` and `docs/rpc-callers/contract-map.md`.
+The plugin's RPC surface is one validated contract built from ten method maps: `rpcShell`, `rpcNative`, `rpcRuns`, `rpcSettings`, `rpcOps`, `rpcKnowledge`, `rpcWorkflow`, `rpcWorkflowExport`, `rpcWorkflowMap`, and `rpcConsole`. Inputs are strict, and each handler is timed. The host worker has a separate `hostContract` (native install, git worktree and integrate, host jobs, snapshots and model calls). See `docs/rpc-callers.md` and `docs/rpc-callers/contract-map.md`.
 
 BB hooks: `message.dispatch` runs `handleNativeDispatch` (resolves the selected agent profile and the thread binding, and records owner presence); a mention provider resolves the `native-selection:<token>` the composer attached; an environment contributor adds the native launcher and, for helper threads, `LANE_PILOT_ROLE` and the guard `PATH`. Hook time limits are set in `package.json` (`messageDispatch` 20 s, `contributeEnv` 10 s), with a 300 s drain on reload.
 
 ## Sources
 
-Where this page's claims start in the code: `src/rooms/tools/server/handlers/cli-commands.ts`, `src/rooms/platform/models/pm-tool-families.ts`, `src/rooms/contracts/index.ts`, `src/rooms/pages/ui/page.tsx`, `server.ts`. The deep pages linked above cite the rest.
+Where this page's claims start in the code: `src/rooms/tools/server/handlers/cli-commands.ts`, `src/rooms/platform/models/pm-tool-families.ts`, `src/rooms/contracts/index.ts`, `src/rooms/pages/ui/page.tsx`, `src/rooms/pages/models/nav-model.ts`, `src/rooms/runs/ui/chat-panel.tsx`, `server.ts`. The deep pages linked above cite the rest.

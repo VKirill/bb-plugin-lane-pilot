@@ -20,7 +20,7 @@ sources:
 # Что получает каждый агент
 
 > [!important] Где правда
-> Правила живут в коде: `ROLE_PROFILES` и `CORE_PROVIDER_GROUPS` в `src/rooms/contracts/helper-context.ts`, сотрудники в `EMPLOYEES` (`src/rooms/contracts/native-agent-static.ts`), модели в `ROLE_TABLE` (`packages/models/src/role-models.ts`). Этот файл объясняет их. Итог для конкретной роли показывает экран P13 «Агенты и загрузка» (`agent_loadout`, см. [`docs/ui/console-map.md`](ui/console-map.md)). Имена ролей описаны в [`docs/agents.md`](agents.md).
+> Правила живут в коде: `ROLE_PROFILES` и `CORE_PROVIDER_GROUPS` в `src/rooms/contracts/helper-context.ts`, сотрудники в `EMPLOYEES` (`src/rooms/contracts/native-agent-static.ts`), модели в `ROLE_TABLE` (`packages/models/src/role-models.ts`). Этот файл объясняет их. Итог для конкретной роли показывает раздел **Система → Агенты и загрузка** (P13, RPC `agent_loadout`, см. [`docs/ui/console-map.md`](ui/console-map.md)) и вкладка **Загрузка** в карточке сотрудника (P4). Имена ролей описаны в [`docs/agents.md`](agents.md).
 
 ## Как BB собирает сессию
 
@@ -102,7 +102,7 @@ flowchart TD
 - Инструменты: 30 инструментов `NATIVE_LP_BRIDGE_PM_TOOLS`, плюс gitnexus, metamcp и подагенты из `bundled-agents.json`.
 - Инструкции: `LANE_PILOT_PM_SESSION` и `pmRunInstructions`; это единственный тред, куда Lane Pilot добавляет инструкции через `bb.agents.configure`.
 - Скиллы: karpathy-guidelines, lane-pilot, project-life, project-resume, project-onboard, project-design, web-design, ui-ux-pro-max, app-architect, page-prototype, metamcp.
-- Сессия PM **не сужается**: он видит весь каталог BB. Поэтому P13 показывает для PM список «основных» скиллов и пометку «плюс весь каталог».
+- Сессия PM **не сужается**: он видит весь каталог BB. Поэтому раздел **Система → Агенты и загрузка** показывает для PM список «основных» скиллов и пометку «плюс весь каталог».
 
 ## Когда Lane Pilot выключен
 
@@ -112,7 +112,7 @@ flowchart TD
 
 | # | Что | Последствие | Куда |
 |---|---|---|---|
-| 1 | 9 своих скиллов Lane Pilot (`lane-pilot`, `lane-memory`, `lp-writer`, `lp-plan`, `lp-implement`, `lp-verify`, `lp-docs`, `lp-project-setup`, `lp-agentic-discipline`) не объявлены в `package.json → bb.skills` и не опубликованы на хаб | роли, которым они назначены (исполнитель, архитектор, PM), их не получают | решение владельца: объявить корень скиллов или опубликовать на хаб |
+| 1 | 9 своих скиллов Lane Pilot (`lane-pilot`, `lane-memory`, `lp-writer`, `lp-plan`, `lp-implement`, `lp-verify`, `lp-docs`, `lp-project-setup`, `lp-agentic-discipline`) не объявлены в `package.json → bb.skills` и не опубликованы на хаб | роли, которым они назначены (исполнитель, архитектор, PM), их не получают; **Система → Агенты и загрузка** отмечает их значком «нет на хабе» | решение владельца: объявить корень скиллов или опубликовать на хаб |
 | 2 | Копии `mkt-telegram-ads-method`, `mkt-yandex-direct-epk`, `project-resume` на хабе отличаются от репозитория | агенты читают копию хаба | сверить и опубликовать одну версию |
-| 3 | `bundled-agents.json` у seo-specialist перечисляет 8 MCP, а `ROLE_PROFILES` их отрезает | в профиле видно больше, чем агент получает | P13 показывает итог, а не профиль |
-| 4 | Нет одного места, где видна итоговая загрузка роли | владелец не может проверить, что получит агент | `agent_loadout` и P13 |
+| 3 | `bundled-agents.json` у seo-specialist перечисляет 8 MCP, а `ROLE_PROFILES` их отрезает | в профиле видно больше, чем агент получает | **Система → Агенты и загрузка** (`agent_loadout`) показывает итог, а не профиль |
+| 4 | Итоговая загрузка роли не была собрана в одном месте *(решено)* | теперь видна в **Система → Агенты и загрузка** (P13) и на вкладке **Загрузка** сотрудника (P4) | `agent_loadout` |

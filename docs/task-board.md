@@ -2,7 +2,7 @@
 title: Tasks board and work graph
 type: component
 created: 2026-10-13
-updated: 2026-10-29
+updated: 2026-11-27
 status: active
 confidence: medium
 tags: [tasks, runs, ui, task-graph]
@@ -10,29 +10,31 @@ sources:
   - src/rooms/runs/server/services/task-board.ts
   - src/rooms/runs/server/handlers/runs-rpc.ts
   - src/rooms/runs/ui/task-board.tsx
+  - src/rooms/runs/ui/work-screen.tsx
+  - src/rooms/runs/ui/chat-panel.tsx
   - src/rooms/runs/server/services/task-graph.ts
   - src/rooms/native-agent/ui/task-graph-view.tsx
   - src/rooms/contracts/rpc-runs.ts
   - src/rooms/contracts/rpc-native.ts
   - src/rooms/native-agent/ui/helper-threads.tsx
   - src/rooms/pages/ui/page.tsx
-  - src/rooms/pages/ui/project-nav.tsx
+  - src/rooms/pages/ui/console-routes.tsx
   - packages/i18n/src/i18n-board.ts
 ---
 
 # Tasks board and work graph
 
-TL;DR: The Tasks screen presents Lane Pilot tasks and top-level workflow runs as a filterable board or grouped list, with detail cards and dependency graphs for active work.
+TL;DR: The **Work → Tasks** view presents Lane Pilot tasks and top-level workflow runs as a filterable board or grouped list, with detail cards and dependency graphs for active work.
 
 ## Purpose
 
-The app's Tasks navigation scope renders `TaskBoard`; it reads the board and task card through the runs RPC methods (`src/rooms/pages/ui/page.tsx:45-56`, `src/rooms/pages/ui/project-nav.tsx:9-30`, `src/rooms/runs/ui/task-board.tsx:121-153`). The helper-thread panel can show the open run's task dependency graph (`src/rooms/native-agent/ui/helper-threads.tsx:70-84`, `src/rooms/contracts/rpc-native.ts:127-144`).
+**Work → Tasks** (`WorkScreen` in `src/rooms/runs/ui/work-screen.tsx`, rendered inside `ConsoleRoutes`) renders `TaskBoard` locked to the active `ScopeSwitcher` project (or across all projects); it reads the board and task card through the runs RPC methods (`src/rooms/pages/ui/page.tsx`, `src/rooms/pages/ui/console-routes.tsx`, `src/rooms/runs/ui/task-board.tsx:121-153`). In a chat, `ChatPanel` (`src/rooms/runs/ui/chat-panel.tsx`) shows scoped live and board tasks alongside `HelperThreadsList` (`src/rooms/native-agent/ui/helper-threads.tsx`), which can show the open run's task dependency graph (`src/rooms/contracts/rpc-native.ts:127-144`).
 
-Since 0.1.470 the project's «Tasks» tab (`src/rooms/pages/ui/tab-runs.tsx`, segment `board`) shows the same board locked to the project: `TaskBoard lockedProjectId` hides the project switch and the title, asks `task_board` for that project only, and the task page carries the run's stage receipts (`RunStages`, `src/rooms/runs/ui/task-board.tsx`). The per-run list of the old «Runs» tab with its history pages (`list_runs` paging in the page hook) is gone; «Resume» moved to the Maintenance segment (`src/rooms/pages/ui/service-segment.tsx`, `runs-resume`), and a run left without open attempts is closed by the sweep (`closeStaleRuns`, `src/rooms/runs/server/services/run-finish.ts`), so the manual «Finish PM run» button went too. The overview's «All tasks» and its attention rows open the board (`goTo("runs", "board")`); the old `monitor` id resolves there.
+Closed tasks also appear in **Memory & history → Task history** (`HistoryScreen`), while **System → Health** (`HealthScreen` wrapping `ServiceSegment` in `src/rooms/pages/ui/service-segment.tsx`) holds **Resume** (`resume_runs`). A run left without open attempts is closed by the sweep (`closeStaleRuns`, `src/rooms/runs/server/services/run-finish.ts`). **Overview** (`OverviewScreen`) opens **Work** (`work`) or **Work → Task** (`work/task/<runId>/<taskId>`), and legacy routes (`runs/board`, `monitor`) resolve there via `nav-model.ts`.
 
 ## How it works
 
-1. The `tasks` navigation scope mounts `TaskBoard` with visible projects and the selected project (`src/rooms/pages/ui/page.tsx:45-56`).
+1. Selecting **Work → Tasks** mounts `TaskBoard` with visible projects and the active `ScopeSwitcher` project (`src/rooms/runs/ui/work-screen.tsx:80-95`).
 2. The screen calls `task_board` immediately and every eight seconds, sending the selected project when scoped and a completion window. A failed refresh clears nothing: the first failure before anything loaded shows a loading-failed note, a failure after a result keeps the last result on screen with a stale-data note, and polling continues (`src/rooms/runs/ui/task-board.tsx:135-144`, `:215`; strings `boardLoadFailed`/`boardStale`, `packages/i18n/src/i18n-board.ts:34-35`).
 3. The server selects each task's latest attempt, includes live work and recent terminal work, removes superseded task-family attempts, derives column/phase from attempt and stage receipts, and adds top-level workflow runs (`src/rooms/runs/server/services/task-board.ts:63-78`, `:81-144`).
 4. The UI filters by task/workflow kind, project, search text, and service-project visibility, then renders fixed columns or a list grouped by goal, chat, area, project, or no group (`src/rooms/runs/ui/task-board.tsx:121-151`, `:172-212`).

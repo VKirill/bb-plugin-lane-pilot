@@ -2,7 +2,7 @@
 title: Locale resolution and translation
 type: component
 created: 2026-10-24
-updated: 2026-11-24
+updated: 2026-11-27
 status: active
 confidence: high
 tags: [i18n, locale, translations]
@@ -13,6 +13,11 @@ sources:
   - packages/i18n/src/i18n-agent-labels.ts
   - packages/i18n/src/i18n-board.ts
   - packages/i18n/src/i18n-cockpit.ts
+  - packages/i18n/src/i18n-console.ts
+  - packages/i18n/src/i18n-console-screens.ts
+  - packages/i18n/src/i18n-console-staff.ts
+  - packages/i18n/src/i18n-console-system.ts
+  - packages/i18n/src/i18n-console-chat.ts
   - packages/i18n/src/i18n-fields.ts
   - packages/i18n/src/i18n-improvement.ts
   - packages/i18n/src/i18n-role-models.ts
@@ -34,7 +39,7 @@ sources:
   - src/rooms/workflow/ui/workflow-detail.tsx
   - src/rooms/cockpit/ui/screens-work.tsx
   - src/rooms/native-install/native-install-lifecycle.ts
-  - src/rooms/pages/service-segment.tsx
+  - src/rooms/pages/ui/service-segment.tsx
   - packages/i18n/tests/i18n.test.ts
   - src/rooms/runs/ui/run-card.tsx
   - src/rooms/runs/ui/task-board.tsx
@@ -43,8 +48,8 @@ sources:
   - src/rooms/work-graph/ui/work-breakdown.tsx
   - src/rooms/cockpit/ui/screens-day.tsx
   - src/rooms/cockpit/ui/screens-ops.tsx
-  - src/rooms/pages/tab-team.tsx
-  - src/rooms/pages/role-models.tsx
+  - src/rooms/settings/ui/agents-loadout-row.tsx
+  - src/rooms/runs/ui/chat-panel-tabs.tsx
   - src/rooms/ui-shell/ui/model-overrides.tsx
   - packages/settings-catalog/src/channels.ts
   - packages/i18n/package.json
@@ -54,7 +59,6 @@ sources:
   - src/rooms/ui-shell/ui/setting-copy.ts
   - src/rooms/workflow/ui/workflow-library-parts.tsx
   - src/rooms/runs/ui/thread-live.tsx
-  - src/rooms/pages/tab-overview.tsx
 ---
 # Locale resolution and translation
 
@@ -68,7 +72,7 @@ The agent-label keys are added to `I18nKey` explicitly (`packages/i18n/src/i18n.
 
 The separate `agentLabelEn` catalog defines those keys (`packages/i18n/src/i18n-agent-labels.ts:3`).
 
-Feature catalogs partition strings by workflow screens, library filters and views, export dialog, graph map, editor, operations, model view, canvas, task board, schedules, tabs, self-improvement, errands, role models, fields, cockpit, and agent picker names. The library, export, and map catalogs each define a Marketing category in English and Russian (`packages/i18n/src/i18n-workflow-library.ts:2-6`, `packages/i18n/src/i18n-workflow-library.ts:23-27`, `packages/i18n/src/i18n-workflow-export.ts:18-20`, `packages/i18n/src/i18n-workflow-export.ts:45-47`, `packages/i18n/src/i18n-workflow-map.ts:6-10`, `packages/i18n/src/i18n-workflow-map.ts:48-52`). The base dictionary adds the bilingual access name and purpose for the Growth marketer specialist (`packages/i18n/src/i18n.ts:1239-1240`, `packages/i18n/src/i18n.ts:2487-2488`), for the codebase scout (`scout`) helper role and access entry (`packages/i18n/src/i18n.ts:120`, `packages/i18n/src/i18n.ts:1199-1200`, `packages/i18n/src/i18n.ts:1368`, `packages/i18n/src/i18n.ts:2447-2448`), and for the chat-digestion (`digest-light`, `digest-analyst`) and graph-evolution (`evolve-planner`, `evolve-critic`, `evolve-architect`, `evolve-auditor`) roles (`packages/i18n/src/i18n.ts:1205-1216`, `packages/i18n/src/i18n.ts:2453-2464`). Role display keys in `i18n.ts`, `i18n-agent-labels.ts`, and `i18n-role-models.ts` read their strings from the canonical role-name map via `roleNameEn` and `roleNameRu` (`packages/i18n/src/i18n.ts:1`, `packages/i18n/src/i18n-agent-labels.ts:1`, `packages/i18n/src/i18n-role-models.ts:1`); see [Canonical role names](role-names.md). Catalog declarations include `packages/i18n/src/i18n-workflows.ts:2`, `packages/i18n/src/i18n-workflow-library.ts:1-20`, `packages/i18n/src/i18n-workflow-export.ts:1-26`, `packages/i18n/src/i18n-workflow-map.ts:1-41`, `packages/i18n/src/i18n-workflow-editor.ts:2`, `packages/i18n/src/i18n-workflow-ops.ts:2`, `packages/i18n/src/i18n-workflow-models.ts:2`, `packages/i18n/src/i18n-workflow-canvas.ts:2`, `packages/i18n/src/i18n-board.ts:2`, `packages/i18n/src/i18n-schedule.ts:2`, `packages/i18n/src/i18n-tabs.ts:2`, `packages/i18n/src/i18n-improvement.ts:2`, `packages/i18n/src/i18n-errands.ts:1-2`, `packages/i18n/src/i18n-role-models.ts:6`, `packages/i18n/src/i18n-fields.ts:1`, `packages/i18n/src/i18n-cockpit.ts:2`, `packages/i18n/src/i18n-agent-labels.ts:3`.
+Feature catalogs partition strings by workflow screens, library filters and views, export dialog, graph map, editor, operations, model view, canvas, task board, schedules, tabs, console navigation, screens, staff, system, and chat panel, self-improvement, errands, role models, fields, cockpit, and agent picker names. The library, export, and map catalogs each define a Marketing category in English and Russian (`packages/i18n/src/i18n-workflow-library.ts:2-6`, `packages/i18n/src/i18n-workflow-library.ts:23-27`, `packages/i18n/src/i18n-workflow-export.ts:18-20`, `packages/i18n/src/i18n-workflow-export.ts:45-47`, `packages/i18n/src/i18n-workflow-map.ts:6-10`, `packages/i18n/src/i18n-workflow-map.ts:48-52`). The base dictionary adds the bilingual access name and purpose for the Growth marketer specialist, for the codebase scout (`scout`) helper role and access entry, and for the chat-digestion (`digest-light`, `digest-analyst`) and graph-evolution (`evolve-planner`, `evolve-critic`, `evolve-architect`, `evolve-auditor`) roles. Role display keys in `i18n.ts`, `i18n-agent-labels.ts`, and `i18n-role-models.ts` read their strings from the canonical role-name map via `roleNameEn` and `roleNameRu` (`packages/i18n/src/i18n.ts:1`, `packages/i18n/src/i18n-agent-labels.ts:1`, `packages/i18n/src/i18n-role-models.ts:1`); see [Canonical role names](role-names.md). Console catalogs live in `i18n-console.ts`, `i18n-console-screens.ts`, `i18n-console-staff.ts`, `i18n-console-system.ts`, and `i18n-console-chat.ts`.
 
 The role-model catalog contains Growth marketer's name and rationale in both languages (`packages/i18n/src/i18n-role-models.ts:63`, `packages/i18n/src/i18n-role-models.ts:80`, `packages/i18n/src/i18n-role-models.ts:188`, `packages/i18n/src/i18n-role-models.ts:205`). It also contains the codebase scout (`scout`), rules analyzer, episode analyst, chat-digestion (`digest-light`, `digest-analyst`), graph-evolution (`evolve-planner`, `evolve-critic`, `evolve-architect`, `evolve-auditor`), night wall hunter, and API reconnaissance names and rationales in English and Russian (`packages/i18n/src/i18n-role-models.ts:39-53`, `packages/i18n/src/i18n-role-models.ts:99-113`, `packages/i18n/src/i18n-role-models.ts:164-178`, `packages/i18n/src/i18n-role-models.ts:224-238`). It also contains the lead role, the light plan-critic role (`plan-critic-light`), and four errand-kind rows in both languages (`packages/i18n/src/i18n-role-models.ts:28`, `packages/i18n/src/i18n-role-models.ts:32`, `packages/i18n/src/i18n-role-models.ts:76`, `packages/i18n/src/i18n-role-models.ts:92`, `packages/i18n/src/i18n-role-models.ts:54-57`, `packages/i18n/src/i18n-role-models.ts:153`, `packages/i18n/src/i18n-role-models.ts:157`, `packages/i18n/src/i18n-role-models.ts:179-182`, `packages/i18n/src/i18n-role-models.ts:201`, `packages/i18n/src/i18n-role-models.ts:217`).
 
@@ -118,13 +122,12 @@ The run card selects labels by attempt state and maps background-stage labels be
 | `runCardLoadFailed`, `runCardStale` | `packages/i18n/src/i18n.ts:100-101` | The run card shows the load-failure text when no card was loaded and the stale text above the last known states (`src/rooms/runs/ui/run-card.tsx:70`, `src/rooms/runs/ui/run-card.tsx:86`) |
 | `runCardBackgroundFailed`, `runCardStage_memory`, `runCardStage_projectLife`, `runCardStage_docs` | `packages/i18n/src/i18n.ts:102-105` | A task has failed background stages; the card replaces `{stages}` with the stage labels (`memory-maintenance`, `project-life`, `docs-maintenance`) and shows an unknown stage name as is (`src/rooms/runs/ui/run-card.tsx:25-27`) |
 | `helperRole_emergencyWriter`, `helperRole_apiRecon`, `helperRole_scout` | `packages/i18n/src/i18n.ts:110-111`, `packages/i18n/src/i18n.ts:120`, `packages/i18n/src/i18n.ts:1358-1359`, `packages/i18n/src/i18n.ts:1368` | Helper role labels sourced from `ROLE_NAMES` for emergency writer, API reconnaissance, and codebase scout threads |
-| `policyDifferences`, `policyDifference`, `policyUnavailable`, `policyNoLimit` | `packages/i18n/src/i18n.ts:140-143`, `packages/i18n/src/i18n.ts:1388-1391` | Overview panel comparing frozen run settings with the next activation policy; formats `{key}`, `{current}`, and `{next}`, uses `policyNoLimit` for `null` bounds, and shows `policyUnavailable` when the policy could not be read (`src/rooms/pages/tab-overview.tsx:130-138`) |
 | `boardLoadFailed`, `boardStale` | `packages/i18n/src/i18n-board.ts:46-47`, `packages/i18n/src/i18n-board.ts:256-257` | The task board is offline: `boardLoadFailed` while no task list was loaded, `boardStale` when the last known states stay on screen; hidden on the stats view (`src/rooms/runs/ui/task-board.tsx:235`) |
 | `boardKindPhases`, `boardKindPhase`, `boardKindBatch`, `boardHeld`, `boardGates`, `boardGate_*`, `boardWave` | `packages/i18n/src/i18n-board.ts:9-17`, `packages/i18n/src/i18n-board.ts:208-216` | The task board labels phase and batch entries, and labels held state, failed discussion/plan/design gates, and wave position (`src/rooms/runs/ui/task-board.tsx:114-120`, `src/rooms/runs/ui/task-board.tsx:206`) |
 | `boardStepResults`, `stage_state_succeeded`, `stage_state_canceled`, `stage_state_waiting` | `packages/i18n/src/i18n-board.ts:44`, `packages/i18n/src/i18n-board.ts:182-184`, `packages/i18n/src/i18n-board.ts:254`, `packages/i18n/src/i18n-board.ts:381-383` | Workflow cards render a Step results disclosure (`src/rooms/runs/ui/task-board.tsx:453`, `src/rooms/runs/ui/workflow-run-steps.tsx:32`) and translate engine step states (`succeeded`, `canceled`, `waiting`) via `stage_state_*` (`src/rooms/runs/ui/workflow-run-steps.tsx:15`) |
 | `accStop` | `packages/i18n/src/i18n-board.ts:110`, `packages/i18n/src/i18n-board.ts:240` | The acceptance card shows the translated Stop control when its `onStop` callback is present (`src/rooms/acceptance/ui/acceptance-card.tsx:68`, `src/rooms/acceptance/ui/acceptance-card.tsx:230`) |
-| `teamModelAsWriter`, `teamModelFromTable` | `packages/i18n/src/i18n.ts:202-203`, `packages/i18n/src/i18n.ts:1450-1451` | The team roster's model column: roles that use the task writer's model, or roles whose model is read from the role table, with `+N` for additional role models (`src/rooms/pages/tab-team.tsx:135-146`) |
-| `roleModelsPool*`, `teamPoolNone` | `packages/i18n/src/i18n.ts:204-208`, `packages/i18n/src/i18n.ts:1452-1456` | Fallback list labels in settings, its no-fallback hint, and add/remove button labels with `{role}` and `{model}` (`src/rooms/pages/role-models.tsx:116-131`) |
+| `teamModelAsWriter` | `packages/i18n/src/i18n.ts:150`, `packages/i18n/src/i18n.ts:1100` | The **System → Agents & loadout** matrix label for roles that use the task writer's model (`src/rooms/settings/ui/agents-loadout-row.tsx`) |
+| `roleModelsPool*` | `packages/i18n/src/i18n.ts:151-154`, `packages/i18n/src/i18n.ts:1101-1104` | Fallback list labels in **System → Agents & loadout**, its no-fallback hint, and add/remove button labels with `{role}` and `{model}` (`src/rooms/settings/ui/agents-loadout-row.tsx:38-95`) |
 | `wfSuccessRate`, `wfOutcomeCounts` | `packages/i18n/src/i18n-workflows.ts:27-28`, `packages/i18n/src/i18n-workflows.ts:169-170` | The catalog defines the work-done percentage and outcome-count labels; the workflow library renders `wfSuccessRate` only when `stats.successRate` is non-null (`src/rooms/workflow/ui/workflow-library-parts.tsx:56`) |
 | `wfRunStatus_not_verified` | `packages/i18n/src/i18n-workflows.ts:56`, `packages/i18n/src/i18n-workflows.ts:198` | A run closed as not verified gets its own label ("Not verified"); the run detail status map includes it (`src/rooms/workflow/ui/workflow-detail.tsx:36`) |
 | `agentDisplay*` | `packages/i18n/src/i18n-agent-labels.ts:3-17`, `packages/i18n/src/i18n-agent-labels.ts:19-33` | The agent picker shows the translated name for a stock agent only while its stored description still equals the bundled one; otherwise it shows the description (`src/rooms/contracts/agent-display.ts:100-108`). Thirteen agent names have keys here—eleven ported from Claude Lane, the lead, and Growth marketer—populated via `roleNameEn` (`packages/i18n/src/i18n-agent-labels.ts:4-16`) from `ROLE_NAMES` (`packages/i18n/src/role-names.ts:22-116`), and mapped from stock agent IDs in `STOCK_LABEL_KEYS` (`src/rooms/contracts/agent-display.ts:63-92`). |
@@ -134,10 +137,10 @@ The run card selects labels by attempt state and maps background-stage labels be
 | `ckWorkerRunning` | `packages/i18n/src/i18n-cockpit.ts:122`, `packages/i18n/src/i18n-cockpit.ts:331` | The day screen displays a worker's running count and task names while that worker has running work (`src/rooms/cockpit/ui/screens-day.tsx:193`) |
 | `ckMemoryWeak` | `packages/i18n/src/i18n-cockpit.ts:100`, `packages/i18n/src/i18n-cockpit.ts:309` | The cockpit shows this note when memory search returns related records without a confident answer (`src/rooms/cockpit/ui/screens-ops.tsx:75`) |
 | `graphTurnsCeil`, `graphMonthCeil`, `graphMonthCeilOf` | `packages/i18n/src/i18n-graph.ts:5-7`, `packages/i18n/src/i18n-graph.ts:65-67` | The work breakdown labels a turn ceiling and monthly spend, with a separate label when a monthly cap is present (`src/rooms/work-graph/ui/work-breakdown.tsx:98-99`) |
-| `liveSessionOpen` | `packages/i18n/src/i18n-graph.ts:58`, `packages/i18n/src/i18n-graph.ts:119` | The thread live panel shows an open-session row with the run ID when `live.session` is present, opening the cockpit `tasks` view on click (`src/rooms/runs/ui/thread-live.tsx:85-91`) |
-| `nativeInstallFailed` | `packages/i18n/src/i18n.ts:156`, `packages/i18n/src/i18n.ts:1404` | The text of the error thrown when the Lane Pilot install reports a failure that differs from the previous one; `{error}` is filled by the caller (`src/rooms/native-install/native-install-lifecycle.ts:96`) |
-| `largeFileRead*` | `packages/i18n/src/i18n.ts:888-894`, `packages/i18n/src/i18n.ts:2136-2142` | The base dictionaries label task preparation as code scouting and supply the English and Russian help text for the separate helper, `read_first` line threshold, model picker, and helper failure behavior. These entries are translated copy; this package does not implement that helper. |
-| `cliOnlyTitle`, `cliOnlyHelp`, `settingOpsCliHelp`, `settingOpsPoolHelp` | `packages/i18n/src/i18n-improvement.ts:16-17`, `packages/i18n/src/i18n-improvement.ts:200-201`, `packages/i18n/src/i18n.ts:872-873`, `packages/i18n/src/i18n.ts:2120-2121` | Retired Lane Stack CLI flags are described as not applied with their stored values kept, in a disclosure that keeps the retired rows out of the live ops section (`src/rooms/pages/service-segment.tsx:191`); pool-size settings use the native run-policy help (`src/rooms/ui-shell/ui/setting-copy.ts:115-130`) |
+| `liveSessionOpen` | `packages/i18n/src/i18n-graph.ts:58`, `packages/i18n/src/i18n-graph.ts:119` | `ChatPanel` and `ThreadLive` show an open-session row with the run ID when `live.session` is present, opening the console (`src/rooms/runs/ui/chat-panel-tabs.tsx:180-189`, `src/rooms/runs/ui/thread-live.tsx:85-91`) |
+| `nativeInstallFailed` | `packages/i18n/src/i18n.ts:116`, `packages/i18n/src/i18n.ts` | The text of the error thrown when the Lane Pilot install reports a failure that differs from the previous one; `{error}` is filled by the caller (`src/rooms/native-install/native-install-lifecycle.ts:96`) |
+| `largeFileRead*` | `packages/i18n/src/i18n.ts` | The base dictionaries label task preparation as code scouting and supply the English and Russian help text for the separate helper, `read_first` line threshold, model picker, and helper failure behavior. These entries are translated copy; this package does not implement that helper. |
+| `cliOnlyTitle`, `cliOnlyHelp`, `settingOpsCliHelp`, `settingOpsPoolHelp` | `packages/i18n/src/i18n-improvement.ts:16-17`, `packages/i18n/src/i18n-improvement.ts:200-201`, `packages/i18n/src/i18n.ts` | Retired Lane Stack CLI flags are described as not applied with their stored values kept, in a disclosure that keeps the retired rows out of the live ops section (`src/rooms/pages/ui/service-segment.tsx`); pool-size settings use the native run-policy help (`src/rooms/ui-shell/ui/setting-copy.ts:115-130`) |
 | `modelOverrides*` | `packages/i18n/src/i18n.ts:209-222`, `packages/i18n/src/i18n.ts:1457-1470` | The "Reset everywhere" panel counts and resets places with own models or agents; the help text states that LP bench projects and sandboxes keep theirs (`src/rooms/ui-shell/ui/model-overrides.tsx:64-74`) |
 | `composerBoundarySensitive`, `enumOwnerWordsSensitive` | `packages/i18n/src/i18n.ts:55`, `packages/i18n/src/i18n.ts:971`, `packages/i18n/src/i18n.ts:1303`, `packages/i18n/src/i18n.ts:2219` | Composer boundary text and enum label for `owner.words=sensitive` (money, database changes, and production deploys only) |
 | `settingPlanReviseBy*`, `settingPlanMaxRounds*`, `settingPlanMinOwnsPaths*`, `enumReviseByPm`, `enumReviseByPlanner`, `fieldUnitPaths` | `packages/i18n/src/i18n.ts:744`, `packages/i18n/src/i18n.ts:813-818`, `packages/i18n/src/i18n.ts:972-973`, `packages/i18n/src/i18n.ts:2005`, `packages/i18n/src/i18n.ts:2061-2066`, `packages/i18n/src/i18n.ts:2220-2221` | Plan critique revision routing (`planner` default vs `pm`), planner revision round limit, and the 8-path owned-files threshold (`0 = off`) (`src/rooms/ui-shell/ui/setting-copy.ts:56-58`) |
