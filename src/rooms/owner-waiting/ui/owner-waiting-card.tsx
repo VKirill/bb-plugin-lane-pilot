@@ -236,19 +236,17 @@ export function OwnerItemCard({
   const commands = item.actions.filter((action) => !action.rpc);
   const hasActionButtons = buttons.length > 0 || Boolean(onDefer);
   return (
-    <li className="min-w-0 space-y-2 border-b border-border px-3.5 py-3 last:border-b-0" data-testid={`owner-item-${item.key}`}>
-      <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5">
-        <p className="min-w-0 break-words text-sm font-medium">{item.what}</p>
-        {projectName ? <span className="shrink-0 text-xs text-muted-foreground">{projectName}</span> : null}
-      </div>
-      <p className="text-xs leading-5 text-muted-foreground"><span className="font-medium text-foreground">{t("ow_why")}:</span> {item.why}</p>
+    <li className="lp-card min-w-0 space-y-3 p-5" data-testid={`owner-item-${item.key}`}>
+      {projectName ? <p className="text-[13px] text-[var(--lp-muted)]">{projectName}</p> : null}
+      <p className="min-w-0 break-words text-base font-semibold leading-snug text-[var(--lp-ink)]">{item.what}</p>
+      <p className="text-[13.5px] leading-relaxed text-[var(--lp-body)]"><span className="font-medium text-[var(--lp-ink)]">{t("ow_why")}:</span> {item.why}</p>
       {hasActionButtons ? (
-        <div className="flex flex-wrap gap-2">
-          {buttons.map((action) => (
-            <Button key={action.id} type="button" size="sm" variant={action.id === "accept" || action.id === "yes" ? "default" : "outline"} disabled={busy} data-testid={`owner-run-${item.key}-${action.id}`} onClick={() => onRun(action)}>{action.label}</Button>
+        <div className="flex flex-wrap items-center gap-2 pt-1">
+          {buttons.map((action, index) => (
+            <Button key={action.id} type="button" size="sm" variant={index === 0 || action.id === "accept" || action.id === "yes" ? "default" : "outline"} disabled={busy} data-testid={`owner-run-${item.key}-${action.id}`} onClick={() => onRun(action)}>{action.label}</Button>
           ))}
           {onDefer ? (
-            <Button type="button" size="sm" variant="outline" disabled={busy} data-testid={`owner-defer-${item.key}`} onClick={onDefer}>
+            <Button type="button" size="sm" variant="ghost" className="ml-auto text-[var(--lp-muted)]" disabled={busy} data-testid={`owner-defer-${item.key}`} onClick={onDefer}>
               {t("consoleDecisionsDefer")}
             </Button>
           ) : null}

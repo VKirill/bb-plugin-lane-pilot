@@ -13,12 +13,7 @@ import {
   Surface,
   SurfaceBody,
   SurfaceHeader,
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
+  StatusPill,
   usePanelLayout,
 } from "@lane-pilot/ui-kit";
 import { LP_ALL_PROJECTS } from "@lane-pilot/ui-kit/realtime-channel";
@@ -42,6 +37,8 @@ type CalendarPayload = { planned: CalendarPlannedItem[]; past?: unknown[]; trunc
 
 const CALENDAR_LOOKAHEAD_DAYS = 30;
 const DAY_MS = 86_400_000;
+/** The prototype frame shows four running tasks; the rest sit behind the toggle. */
+const ACTIVE_COLLAPSED_ROWS = 4;
 
 export interface OverviewScreenProps {
   projectId: string | null;
@@ -112,6 +109,10 @@ export function OverviewScreen({ projectId, sectionId, go, projects = [], locale
   }).format(new Date(now));
   const scopeLabel = projectId ? resolveProject(projectId) : t("consoleAllProjects");
 
+  const [showAllActive, setShowAllActive] = useState(false);
+  const visibleActive = showAllActive ? data?.active ?? [] : (data?.active ?? []).slice(0, ACTIVE_COLLAPSED_ROWS);
+  const hiddenActive = (data?.active.length ?? 0) - visibleActive.length;
+
   const upcomingRuns = useMemo(() => {
     const planned = calendarQuery.data?.planned ?? [];
     return [...planned].sort((a, b) => a.at - b.at).slice(0, 5);
@@ -135,7 +136,7 @@ export function OverviewScreen({ projectId, sectionId, go, projects = [], locale
       : undefined;
 
   return (
-    <div className="space-y-5" data-testid="console-overview">
+    <div className="space-y-[18px]" data-testid="console-overview">
       <PageHeader
         title={t("consoleNavOverview")}
         subtitle={`${subtitleDate} · ${scopeLabel}`}
@@ -184,7 +185,7 @@ export function OverviewScreen({ projectId, sectionId, go, projects = [], locale
         </div>
       ) : data ? (
         <>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5" data-testid="overview-kpis">
+          <div className="grid grid-cols-2 gap-3.5 sm:grid-cols-3 lg:grid-cols-5" data-testid="overview-kpis">
             <KpiTile
               testId="kpi-active"
               label={t("consoleOverviewKpiActive")}
@@ -227,22 +228,22 @@ export function OverviewScreen({ projectId, sectionId, go, projects = [], locale
             />
           </div>
 
-          <div className="grid gap-4 lg:grid-cols-3">
-            <div className="min-w-0 space-y-4 lg:col-span-2">
-              <Surface testId="overview-active">
+          <div className="lpv-body">
+            <div className="min-w-0 space-y-[18px]">
+              <Surface testId="overview-active" className="lpv-live">
                 <SurfaceHeader className="justify-between">
                   <div className="flex items-center gap-2">
                     <span
                       aria-hidden
                       className={`size-2 rounded-full ${data.active.length > 0 ? "bg-[var(--lp-success)]" : "bg-muted-foreground"}`}
                     />
-                    <h2 className="text-sm font-medium">{t("consoleOverviewActiveTitle")}</h2>
+                    <h2 className="text-sm font-semibold text-[var(--lp-ink)]">{t("consoleOverviewActiveTitle")}</h2>
                   </div>
                   <Button
                     type="button"
                     size="sm"
                     variant="ghost"
-                    className="h-7 px-2 text-xs"
+                    className="lpv-link h-7 px-2 text-xs"
                     data-testid="overview-all-work"
                     onClick={() => go({ ...scopedBase, section: "work" })}
                   >
@@ -275,56 +276,61 @@ export function OverviewScreen({ projectId, sectionId, go, projects = [], locale
                       </div>
                     </div>
                   ) : (
-                    <Table data-testid="overview-active-table">
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>{t("consoleOverviewColTask")}</TableHead>
-                          <TableHead>{t("consoleOverviewColProject")}</TableHead>
-                          <TableHead>{t("consoleOverviewColStage")}</TableHead>
-                          <TableHead className="text-right">{t("consoleOverviewColElapsed")}</TableHead>
-                          <TableHead className="text-right">{t("consoleOverviewColCost")}</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {data.active.map((item) => (
-                          <TableRow
-                            key={item.key}
-                            tabIndex={0}
-                            data-testid={`overview-active-row-${item.key}`}
-                            className="cursor-pointer hover:bg-state-hover focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                            onClick={() => openActiveItem(item)}
-                            onKeyDown={(event) => {
-                              if (event.key === "Enter" || event.key === " ") {
-                                event.preventDefault();
-                                openActiveItem(item);
-                              }
-                            }}
-                          >
-                            <TableCell className="max-w-[16rem] truncate font-medium">{item.title}</TableCell>
-                            <TableCell className="text-xs text-muted-foreground">
-                              {resolveProject(item.projectId)}
-                            </TableCell>
-                            <TableCell className="text-xs text-muted-foreground">
-                              {stageLabel(item.stage)}
-                            </TableCell>
-                            <TableCell className="text-right text-xs tabular-nums text-muted-foreground">
-                              {formatElapsed(item.since, now)}
-                            </TableCell>
-                            <TableCell className="text-right text-xs tabular-nums text-muted-foreground">
-                              {formatUsd(item.costUsd, locale)}
-                            </TableCell>
-                          </TableRow>
+                    <>
+                      <ul className="lpv-live-list" data-testid="overview-active-table">
+                        {visibleActive.map((item) => (
+                          <li key={item.key}>
+                            <div
+                              role="button"
+                              tabIndex={0}
+                              data-testid={`overview-active-row-${item.key}`}
+                              className="lpv-live-row focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                              onClick={() => openActiveItem(item)}
+                              onKeyDown={(event) => {
+                                if (event.key === "Enter" || event.key === " ") {
+                                  event.preventDefault();
+                                  openActiveItem(item);
+                                }
+                              }}
+                            >
+                              <div className="lpv-live-what">
+                                <span className="lpv-live-title">{item.title}</span>
+                                <span className="lpv-live-who">{resolveProject(item.projectId)}</span>
+                              </div>
+                              <div className="lpv-live-stage">
+                                {item.stage ? <StatusPill tone="accent">{stageLabel(item.stage)}</StatusPill> : null}
+                              </div>
+                              <div className="lpv-live-meta">
+                                <span className="lpv-live-elapsed">{formatElapsed(item.since, now)}</span>
+                                <span className="lpv-live-cost">{formatUsd(item.costUsd, locale)}</span>
+                              </div>
+                            </div>
+                          </li>
                         ))}
-                      </TableBody>
-                    </Table>
+                      </ul>
+                      {hiddenActive > 0 || showAllActive ? (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          className="lpv-link mt-1 h-7 px-0 text-xs"
+                          data-testid="overview-active-toggle"
+                          aria-expanded={showAllActive}
+                          onClick={() => setShowAllActive((open) => !open)}
+                        >
+                          {showAllActive
+                            ? t("consoleOverviewActiveCollapse")
+                            : t("consoleOverviewActiveShowAll").replace("{n}", String(data.active.length))}
+                        </Button>
+                      ) : null}
+                    </>
                   )}
                 </SurfaceBody>
               </Surface>
 
               <Surface testId="overview-closed-by-day">
                 <SurfaceHeader className="justify-between">
-                  <h2 className="text-sm font-medium">{t("consoleOverviewClosedChartTitle")}</h2>
-                  <span className="text-xs text-muted-foreground">{tz}</span>
+                  <h2 className="text-sm font-semibold text-[var(--lp-ink)]">{t("consoleOverviewClosedChartTitle")}</h2>
                 </SurfaceHeader>
                 <SurfaceBody>
                   <ClosedByDayChart rows={data.closedByDay} tz={tz} locale={locale} days={days} />
@@ -332,12 +338,12 @@ export function OverviewScreen({ projectId, sectionId, go, projects = [], locale
               </Surface>
             </div>
 
-            <div className="min-w-0 space-y-4">
+            <div className="min-w-0 space-y-[18px]">
               <Surface testId="overview-goals">
                 <SurfaceHeader>
-                  <h2 className="text-sm font-medium">{t("consoleOverviewGoalsTitle")}</h2>
+                  <h2 className="text-sm font-semibold text-[var(--lp-ink)]">{t("consoleOverviewGoalsTitle")}</h2>
                 </SurfaceHeader>
-                <SurfaceBody className="space-y-1">
+                <SurfaceBody className="space-y-3">
                   {data.goals.length === 0 ? (
                     <p className="text-xs text-muted-foreground" data-testid="overview-goals-empty">
                       {t("consoleOverviewGoalsEmpty")}
@@ -364,12 +370,12 @@ export function OverviewScreen({ projectId, sectionId, go, projects = [], locale
 
               <Surface testId="overview-upcoming">
                 <SurfaceHeader className="justify-between">
-                  <h2 className="text-sm font-medium">{t("consoleOverviewUpcomingTitle")}</h2>
+                  <h2 className="text-sm font-semibold text-[var(--lp-ink)]">{t("consoleOverviewUpcomingTitle")}</h2>
                   <Button
                     type="button"
                     size="sm"
                     variant="ghost"
-                    className="h-7 px-2 text-xs"
+                    className="lpv-link h-7 px-2 text-xs"
                     data-testid="overview-all-schedules"
                     onClick={() => go({ ...scopedBase, section: "system", page: "schedules" })}
                   >
@@ -386,19 +392,17 @@ export function OverviewScreen({ projectId, sectionId, go, projects = [], locale
                       {t("consoleOverviewUpcomingEmpty")}
                     </p>
                   ) : (
-                    <ul className="divide-y divide-[var(--lp-hairline)]" data-testid="overview-upcoming-list">
+                    <ul className="space-y-3" data-testid="overview-upcoming-list">
                       {upcomingRuns.map((run) => (
                         <li
                           key={`${run.scheduleId}:${run.at}`}
-                          className="flex min-w-0 items-baseline justify-between gap-3 py-1.5 text-xs first:pt-0 last:pb-0"
+                          className="flex min-w-0 gap-3 text-[12.5px] leading-snug"
                           data-testid={`overview-upcoming-item-${run.scheduleId}`}
                         >
-                          <span className="shrink-0 font-mono font-medium tabular-nums text-foreground">
+                          <span className="w-[62px] shrink-0 text-xs font-semibold tabular-nums text-[var(--lp-ink)]">
                             {formatUpcomingTime(run.at, now, tz, locale)}
                           </span>
-                          <span className="min-w-0 flex-1 truncate text-right text-muted-foreground">
-                            {run.scheduleId}
-                          </span>
+                          <span className="min-w-0 flex-1 break-words text-[var(--lp-body)]">{run.scheduleId}</span>
                         </li>
                       ))}
                     </ul>

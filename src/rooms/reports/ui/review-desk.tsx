@@ -13,7 +13,6 @@ import {
   StatusPill,
   Surface,
   SurfaceBody,
-  SurfaceHeader,
 } from "@lane-pilot/ui-kit";
 import type { rpcContract } from "../../contracts";
 import type { ReviewDeskItem, ReviewDeskView } from "../../contracts/ui";
@@ -302,6 +301,16 @@ export function ReviewDesk({ week, onWeekChange, onOpenTask, locale: localeProp 
                 .replace("{answered}", String(answeredCount))}
             </span>
           ) : null}
+          <Button
+          type="button"
+          variant="default"
+          size="sm"
+          disabled={!data || isReadOnly || isPreviousWeek || openCount === 0}
+          data-testid="desk-accept-defaults"
+          onClick={() => setConfirmDefaultsOpen(true)}
+        >
+          {t("consoleDeskAcceptDefaults")}
+        </Button>
         </div>
       </div>
 
@@ -341,14 +350,12 @@ export function ReviewDesk({ week, onWeekChange, onOpenTask, locale: localeProp 
       ) : data ? (
         <div className="space-y-4" data-testid="desk-sections">
           {sections.map((group) => (
-            <Surface key={group.section} testId={`desk-section-${group.section}`}>
-              <SurfaceHeader className="justify-between">
-                <div className="flex items-center gap-2">
-                  <StatusPill tone="accent">{sectionTitle(group.section)}</StatusPill>
-                  <span className="text-xs text-muted-foreground">{group.items.length}</span>
-                </div>
-              </SurfaceHeader>
-              <SurfaceBody className="divide-y divide-[var(--lp-hairline)] space-y-0 p-0">
+            <section key={group.section} data-testid={`desk-section-${group.section}`} className="space-y-3.5">
+              <div className="flex items-center gap-2">
+                <StatusPill tone="accent">{sectionTitle(group.section)}</StatusPill>
+                <span className="text-xs text-muted-foreground">{group.items.length}</span>
+              </div>
+              <div className="space-y-3.5">
                 {group.items.map((item) => {
                   const defaultLabel = formatDefaultAt(item.defaultAt, locale);
                   const isAnswered = item.answered !== null;
@@ -356,13 +363,13 @@ export function ReviewDesk({ week, onWeekChange, onOpenTask, locale: localeProp 
                   return (
                     <div
                       key={item.id}
-                      className="space-y-2.5 px-4 py-3.5"
+                      className="lp-card space-y-2.5 p-4"
                       data-testid={`desk-item-${item.id}`}
                       data-answered={item.answered ?? ""}
                     >
                       <div className="flex flex-wrap items-start justify-between gap-2">
                         <div className="min-w-0 flex-1 space-y-1">
-                          <p className="text-sm font-medium text-foreground" data-testid={`desk-question-${item.id}`}>
+                          <p className="text-[14.5px] font-semibold text-[var(--lp-ink)]" data-testid={`desk-question-${item.id}`}>
                             {item.question}
                           </p>
                           {item.evidence ? (
@@ -389,7 +396,7 @@ export function ReviewDesk({ week, onWeekChange, onOpenTask, locale: localeProp 
                       <div
                         role="radiogroup"
                         aria-label={item.question}
-                        className="flex flex-col gap-1.5 sm:flex-row sm:flex-wrap"
+                        className="flex flex-col gap-2 sm:flex-row sm:flex-wrap"
                         data-testid={`desk-options-${item.id}`}
                       >
                         {item.options.map((opt) => {
@@ -398,14 +405,15 @@ export function ReviewDesk({ week, onWeekChange, onOpenTask, locale: localeProp 
                             <label
                               key={opt.id}
                               data-testid={`desk-option-label-${item.id}-${opt.id}`}
-                              className={`inline-flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-1.5 text-xs transition-colors ${
-                                selected
-                                  ? "border-primary bg-primary/10 font-medium text-foreground"
-                                  : "border-[var(--lp-hairline)] bg-[var(--lp-well)]/40 text-foreground hover:bg-state-hover"
+                              className={`inline-flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-[7px] text-[12.5px] font-medium transition-colors ${
+                                selected || (opt.isDefault && item.answered === null)
+                                  ? "border-[var(--lp-accent)] bg-[var(--lp-accent-soft)] text-[var(--lp-accent)]"
+                                  : "border-[var(--lp-line)] bg-[var(--lp-surface)] text-[var(--lp-ink)] hover:bg-state-hover"
                               } ${isReadOnly || busyItemId === item.id ? "cursor-not-allowed opacity-70" : ""}`}
                             >
                               <input
                                 type="radio"
+                                className="sr-only"
                                 name={`desk-radio-${item.id}`}
                                 value={opt.id}
                                 checked={selected}
@@ -416,7 +424,7 @@ export function ReviewDesk({ week, onWeekChange, onOpenTask, locale: localeProp 
                               <span>{opt.label}</span>
                               {opt.isDefault ? (
                                 <span
-                                  className="text-[11px] font-normal text-muted-foreground"
+                                  className="text-[11px] font-normal opacity-80"
                                   data-testid={`desk-default-mark-${item.id}-${opt.id}`}
                                 >
                                   ({t("consoleDeskOptionDefaultUntil").replace("{date}", defaultLabel)})
@@ -435,34 +443,11 @@ export function ReviewDesk({ week, onWeekChange, onOpenTask, locale: localeProp 
                     </div>
                   );
                 })}
-              </SurfaceBody>
-            </Surface>
+              </div>
+            </section>
           ))}
         </div>
       ) : null}
-
-      <footer
-        className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[var(--lp-hairline)] bg-[var(--lp-card)] px-4 py-3"
-        data-testid="desk-footer"
-      >
-        <div className="text-xs text-muted-foreground">
-          {data
-            ? t("consoleDeskSummaryCounts")
-                .replace("{open}", String(openCount))
-                .replace("{answered}", String(answeredCount))
-            : null}
-        </div>
-        <Button
-          type="button"
-          variant="default"
-          size="sm"
-          disabled={!data || isReadOnly || isPreviousWeek || openCount === 0}
-          data-testid="desk-accept-defaults"
-          onClick={() => setConfirmDefaultsOpen(true)}
-        >
-          {t("consoleDeskAcceptDefaults")}
-        </Button>
-      </footer>
 
       <ConfirmDialog
         open={confirmDefaultsOpen}

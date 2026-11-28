@@ -169,7 +169,7 @@ export function OwnerWaitingBoard({ projects, projectId = null, onOpenTask, onOp
     if (!rows.length) return null;
     const title = section.title ? t(section.title) : section.source;
     const list = (
-      <ul className="overflow-hidden rounded-lg border border-border bg-card" data-testid={`owner-list-${section.source}`}>
+      <ul className="space-y-3.5" data-testid={`owner-list-${section.source}`}>
         {rows.map((item) => {
           const deferTarget = resolveDeferTarget(item);
           return (
@@ -211,18 +211,17 @@ export function OwnerWaitingBoard({ projects, projectId = null, onOpenTask, onOp
     <div className="space-y-4" data-testid="owner-waiting">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
-          <h2 className="text-lg font-semibold">{t("ow_title")} <span className="text-sm font-normal text-muted-foreground" data-testid="owner-count">{items.length}</span></h2>
-          <p className="text-sm text-muted-foreground">{t("ow_help")}</p>
+          <h2 className="text-sm font-semibold text-[var(--lp-ink)]">{t("ow_title")} <span className="text-sm font-normal text-muted-foreground" data-testid="owner-count">{items.length}</span></h2>
         </div>
         {attention ? (
           <div className="shrink-0 space-y-1 text-right" data-testid="owner-attention">
-            <span className="text-xs font-medium text-muted-foreground">
+            <span className="text-xs font-medium text-[var(--lp-body)]">
               {fill("consoleDecisionsAttention", { shown: attention.shown, cap: attention.cap })}
             </span>
             {attention.cap > 0 ? (
               <div className="flex justify-end gap-1" aria-hidden>
                 {Array.from({ length: attention.cap }, (_, idx) => (
-                  <span key={idx} className={`h-1 w-4 rounded-full ${idx < attention.shown ? "bg-primary" : "bg-muted"}`} />
+                  <span key={idx} className={`h-[5px] w-[30px] rounded-[3px] ${idx < attention.shown ? "bg-[var(--lp-accent)]" : "bg-[var(--lp-line)]"}`} />
                 ))}
               </div>
             ) : null}
@@ -232,7 +231,7 @@ export function OwnerWaitingBoard({ projects, projectId = null, onOpenTask, onOp
       {failed && !waiting ? <p role="alert" className="text-sm text-destructive">{t("ow_failed")}</p> : null}
       {!waiting && !failed ? <p className="text-sm text-muted-foreground">{t("ow_loading")}</p> : null}
       {waiting ? (
-        <section className="space-y-1 rounded-lg border border-border p-3.5 text-sm" data-testid="owner-overnight">
+        <section className="lp-card space-y-1 p-4 text-[13px] text-[var(--lp-body)]" data-testid="owner-overnight">
           <h3 className="text-xs font-semibold text-muted-foreground">{t("ow_overnight")}</h3>
           <p data-testid="owner-accepted">{fill("ow_accepted", { n: waiting.overnight.accepted, adopted: waiting.overnight.rulesAdopted, confirmed: waiting.overnight.rulesConfirmed })}</p>
           {waiting.answered ? <p data-testid="owner-answered">{fill("ow_answered", waiting.answered)}</p> : null}
@@ -259,7 +258,7 @@ export function OwnerWaitingBoard({ projects, projectId = null, onOpenTask, onOp
           </Disclosure>
         </section>
       ) : null}
-      <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border px-3.5 py-2.5 text-xs text-muted-foreground" data-testid="owner-push-link">
+      <div className="flex flex-wrap items-center justify-between gap-2 px-1 text-xs text-[var(--lp-muted)]" data-testid="owner-push-link">
         <span>{t("consoleDecisionsSettingsNote")}</span>
         <Button type="button" variant="link" size="sm" className="h-auto p-0 text-xs" data-testid="owner-open-settings" onClick={openSettings}>
           {t("consoleDecisionsSettingsLink")}

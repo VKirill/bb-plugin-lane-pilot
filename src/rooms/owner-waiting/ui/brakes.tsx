@@ -180,7 +180,7 @@ export function BrakesDialog({
           if (!nextOpen && busyId === null) onOpenChange(false);
         }}
       >
-        <AlertDialogContent data-testid="brakes-dialog" className="max-w-lg">
+        <AlertDialogContent data-testid="brakes-dialog" className="lpv-brakes max-w-[600px]">
           <AlertDialogHeader>
             <AlertDialogTitle>{t("consoleBrakesTitle")}</AlertDialogTitle>
             <AlertDialogDescription>{t("consoleBrakesSubtitle")}</AlertDialogDescription>
@@ -212,7 +212,7 @@ export function BrakesDialog({
           ) : null}
 
           {brakes.length > 0 ? (
-            <div className="divide-y divide-[var(--lp-hairline)] rounded-xl border border-[var(--lp-hairline)] bg-[var(--lp-card)]" data-testid="brakes-list">
+            <div className="lpv-brakes-list" data-testid="brakes-list">
               {brakes.map((brake) => {
                 const label = brakeLabel(brake.id);
                 const impact = t("consoleBrakesImpact").replace("{n}", String(brake.impact.count));
@@ -220,12 +220,12 @@ export function BrakesDialog({
                 return (
                   <div
                     key={brake.id}
-                    className="flex items-center justify-between gap-4 px-4 py-3"
+                    className="lpv-brake-row"
                     data-testid={`brake-row-${brake.id}`}
                   >
                     <div className="min-w-0 flex-1">
-                      <div className="text-sm font-medium text-foreground">{label}</div>
-                      <div className="text-xs text-muted-foreground" data-testid={`brake-impact-${brake.id}`}>
+                      <div className="lpv-brake-name">{label}</div>
+                      <div className="lpv-brake-impact" data-testid={`brake-impact-${brake.id}`}>
                         {impact}
                         {unavailable}
                       </div>

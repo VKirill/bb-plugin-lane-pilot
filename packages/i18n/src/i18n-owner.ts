@@ -4,7 +4,6 @@
  */
 export const ownerEn = {
   ow_title: "Waiting for you",
-  ow_help: "Only what cannot be settled without you. Every card says what happened, why it is yours and what you can do; the technical part (ids, commands) is folded under «Details». Everything else the system settles itself; the day's summary below is just a report.",
   ow_empty: "Nothing waits for you.",
   ow_loading: "Loading…",
   ow_failed: "Could not read the list",
@@ -65,7 +64,6 @@ export const ownerEn = {
 
 export const ownerRu: { [K in keyof typeof ownerEn]: string } = {
   ow_title: "Ждут владельца",
-  ow_help: "Здесь только то, что без вас не решится. Каждая карточка говорит, что случилось, почему это к вам и что можно сделать; техника (номера, команды) спрятана под «Подробности». Всё остальное система решает сама; сводка за сутки ниже — просто отчёт.",
   ow_empty: "Вас ничто не ждёт.",
   ow_loading: "Загрузка…",
   ow_failed: "Не удалось прочитать список",

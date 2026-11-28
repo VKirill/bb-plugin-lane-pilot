@@ -736,3 +736,51 @@
     box-shadow: 1px 1px 0 0 #0f172a;
   }
 }
+
+/* visual:overview-decisions start */
+/* Overview (frame "6 · Обзор (дашборд)"): body grid, running-now rows, closed-by-day bars. */
+.lpv-body { display: grid; gap: 18px; grid-template-columns: minmax(0, 1fr); }
+@media (min-width: 1100px) { .lpv-body { grid-template-columns: minmax(0, 1fr) 340px; } }
+
+.lpv-link { color: var(--lp-accent); font-weight: 500; }
+.lpv-link:hover { background-color: transparent; color: var(--lp-accent); text-decoration: underline; }
+
+.lpv-live { container-type: inline-size; }
+.lpv-live-list { margin: 0; padding: 0; list-style: none; }
+.lpv-live-list > li { border-top: 1px solid var(--lp-line); }
+.lpv-live-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "what meta" "stage meta"; align-items: center; gap: 6px 16px; padding: 10px 0; cursor: pointer; }
+.lpv-live-what { grid-area: what; display: flex; min-width: 0; flex-direction: column; gap: 3px; }
+.lpv-live-title { overflow: hidden; color: var(--lp-ink); font-size: 13.5px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.lpv-live-row:hover .lpv-live-title { color: var(--lp-accent); }
+.lpv-live-who { overflow: hidden; color: var(--lp-muted); font-size: 11.5px; text-overflow: ellipsis; white-space: nowrap; }
+.lpv-live-stage { grid-area: stage; min-width: 0; }
+.lpv-live-stage:empty { display: none; }
+.lpv-live-meta { grid-area: meta; display: flex; flex-direction: column; align-items: flex-end; gap: 2px; font-variant-numeric: tabular-nums; }
+.lpv-live-elapsed { color: var(--lp-ink); font-size: 12px; font-weight: 500; white-space: nowrap; }
+.lpv-live-cost { color: var(--lp-muted); font-size: 11.5px; white-space: nowrap; }
+@container (min-width: 480px) {
+  .lpv-live-row { grid-template-columns: minmax(0, 330px) minmax(0, 1fr) 70px; grid-template-areas: "what stage meta"; }
+}
+
+.lpv-bars { display: flex; align-items: flex-end; height: 110px; }
+.lpv-bar-day { display: flex; flex: 1 1 0; min-width: 0; flex-direction: column; align-items: center; justify-content: flex-end; gap: 4px; height: 100%; }
+.lpv-bar-stack { display: flex; flex-direction: column-reverse; width: 100%; max-width: 28px; height: 90px; }
+.lpv-bar-stack > span:last-child { border-radius: 3px 3px 0 0; }
+.lpv-bar-tick { color: var(--lp-muted); font-size: 11px; line-height: 1.2; white-space: nowrap; }
+.lpv-bars[data-dense="1"] .lpv-bar-day:not(:nth-child(5n + 1)) .lpv-bar-tick { visibility: hidden; }
+
+/* Brakes dialog (frame "19 · Тормоза и подтверждение"): white 16px card, rows split by hairlines, a paused brake is a red switch. */
+.lpv-brakes { width: min(600px, calc(100vw - 24px)); gap: 12px; padding: 22px; border: 1px solid var(--lp-line); border-radius: 16px; background-color: var(--lp-surface); }
+.lpv-brakes :is(h2, p) { text-align: left; }
+.lpv-brakes h2 { color: var(--lp-ink); font-size: 20px; font-weight: 650; line-height: 1.25; }
+.lpv-brakes p { color: var(--lp-body); font-size: 12.5px; }
+.lpv-brakes-list { display: flex; flex-direction: column; }
+.lpv-brake-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 0; border-top: 1px solid var(--lp-line); }
+.lpv-brake-name { color: var(--lp-ink); font-size: 13.5px; font-weight: 600; }
+.lpv-brake-impact { margin-top: 2px; color: var(--lp-muted); font-size: 12px; }
+.lpv-brakes [data-testid^="brake-switch-"][data-state="checked"] { background-color: var(--lp-bad); }
+.lpv-brakes [data-testid^="brake-switch-"][data-state="unchecked"] { background-color: var(--lp-line); }
+.lpv-brakes [data-testid="brakes-stop-all"] { background-color: var(--lp-bad); color: #ffffff; }
+.lpv-brakes [data-testid="brakes-stop-all"]:hover:not(:disabled) { background-color: color-mix(in oklab, var(--lp-bad) 88%, #000000); }
+.lpv-brakes [data-testid="brakes-paused-summary"] { color: var(--lp-bad); font-weight: 550; }
+/* visual:overview-decisions end */

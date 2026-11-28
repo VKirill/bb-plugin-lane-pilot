@@ -80,7 +80,7 @@ export function formatUpcomingTime(at: number, now: number, tz: string, locale: 
   }).format(new Date(at));
 }
 
-/** Stacked SVG bar chart for closed task outcomes per day in the owner's timezone. */
+/** Stacked bar chart for closed task outcomes per day in the owner's timezone (frame "Closed chart"). */
 export function ClosedByDayChart({
   rows,
   tz,
@@ -92,93 +92,56 @@ export function ClosedByDayChart({
   locale: string;
   days: OverviewDays;
 }) {
-  const maxTotal = Math.max(
-    1,
-    ...rows.map((row) => row.accepted + row.reworked + row.canceled + row.failed),
-  );
-  const svgWidth = Math.max(280, rows.length * 40 + 24);
-  const barAreaTop = 8;
-  const barAreaHeight = 116;
-  const labelY = barAreaTop + barAreaHeight + 16;
-  const svgHeight = labelY + 8;
-  const slotWidth = (svgWidth - 24) / Math.max(1, rows.length);
-  const barWidth = Math.min(28, Math.max(8, Math.floor(slotWidth * 0.56)));
+  const totalOf = (row: ConsoleOverviewOutput["closedByDay"][number]) =>
+    row.accepted + row.reworked + row.canceled + row.failed;
+  const maxTotal = Math.max(1, ...rows.map(totalOf));
 
   return (
     <div className="space-y-3" data-testid="overview-closed-chart">
       {rows.length === 0 ? (
         <p className="text-xs text-muted-foreground">{t("consoleOverviewClosedEmpty")}</p>
       ) : (
-        <svg
-          viewBox={`0 0 ${svgWidth} ${svgHeight}`}
-          className="h-40 w-full overflow-visible"
-          role="img"
-          aria-label={t("consoleOverviewClosedChartTitle")}
-        >
-          <line
-            x1={8}
-            x2={svgWidth - 8}
-            y1={barAreaTop + barAreaHeight}
-            y2={barAreaTop + barAreaHeight}
-            stroke="var(--lp-hairline)"
-            strokeWidth={1}
-          />
-          {rows.map((row, index) => {
-            const x = 12 + index * slotWidth + (slotWidth - barWidth) / 2;
-            const total = row.accepted + row.reworked + row.canceled + row.failed;
-            let cursorY = barAreaTop + barAreaHeight;
-            const segments = CLOSED_SERIES.map((series) => {
-              const count = row[series.key];
-              if (count <= 0) return null;
-              const h = Math.max(3, Math.round((count / maxTotal) * barAreaHeight));
-              cursorY -= h;
-              return (
-                <rect
-                  key={series.key}
-                  x={x}
-                  y={cursorY}
-                  width={barWidth}
-                  height={h}
-                  rx={2}
-                  fill={series.fill}
-                  data-series={series.key}
-                />
-              );
-            });
-            return (
-              <g key={row.day} data-testid={`overview-chart-bar-${row.day}`} data-total={total}>
-                <title>
-                  {`${row.day}: ${CLOSED_SERIES.map((s) => `${t(s.labelKey)} ${row[s.key]}`).join(", ")}`}
-                </title>
-                {segments}
-                <text
-                  x={x + barWidth / 2}
-                  y={labelY}
-                  textAnchor="middle"
-                  fill="var(--muted-foreground)"
-                  fontSize="11"
-                >
-                  {formatDayTick(row.day, tz, locale, days === 30)}
-                </text>
-              </g>
-            );
-          })}
-        </svg>
+        <div className="lpv-bars" data-dense={rows.length > 14 ? "1" : undefined} role="img" aria-label={t("consoleOverviewClosedChartTitle")}>
+          {rows.map((row) => (
+            <div
+              key={row.day}
+              className="lpv-bar-day"
+              data-testid={`overview-chart-bar-${row.day}`}
+              data-total={totalOf(row)}
+              title={`${row.day}: ${CLOSED_SERIES.map((s) => `${t(s.labelKey)} ${row[s.key]}`).join(", ")}`}
+            >
+              <div className="lpv-bar-stack">
+                {CLOSED_SERIES.map((series) =>
+                  row[series.key] > 0 ? (
+                    <span
+                      key={series.key}
+                      data-series={series.key}
+                      style={{ height: `${Math.max(3, (row[series.key] / maxTotal) * 100)}%`, backgroundColor: series.fill }}
+                    />
+                  ) : null,
+                )}
+              </div>
+              <span className="lpv-bar-tick">{formatDayTick(row.day, tz, locale, days === 30)}</span>
+            </div>
+          ))}
+        </div>
       )}
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11.5px] text-[var(--lp-body)]">
         {CLOSED_SERIES.map((series) => (
           <span key={series.key} className="inline-flex items-center gap-1.5">
-            <span
-              aria-hidden
-              className="inline-block size-2.5 rounded-xs"
-              style={{ backgroundColor: series.fill }}
-            />
+            <span aria-hidden className="inline-block size-[9px] rounded-xs" style={{ backgroundColor: series.fill }} />
             {t(series.labelKey)}
           </span>
         ))}
       </div>
     </div>
   );
+}
+
+function formatDueDate(due: string, locale: string): string {
+  const ms = Date.parse(`${due}T00:00:00Z`);
+  if (!Number.isFinite(ms)) return due;
+  return new Intl.DateTimeFormat(locale, { timeZone: "UTC", day: "numeric", month: "short" }).format(new Date(ms));
 }
 
 /** Progress row for a specialist charter goal, clickable to open that staff member's page. */
@@ -215,14 +178,14 @@ export function GoalRow({
       type="button"
       onClick={onOpen}
       data-testid={`overview-goal-${goal.projectId}-${goal.domain}`}
-      className="flex w-full min-w-0 flex-col gap-1.5 rounded-lg px-2 py-2 text-left transition-colors hover:bg-state-hover focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+      className="-mx-2 flex w-[calc(100%+1rem)] min-w-0 flex-col gap-1.5 rounded-lg px-2 py-1 text-left transition-colors hover:bg-state-hover focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
     >
-      <div className="flex min-w-0 items-center justify-between gap-2 text-xs">
-        <span className="min-w-0 truncate font-medium text-foreground">
+      <div className="flex min-w-0 items-center justify-between gap-2 text-[12.5px]">
+        <span className="min-w-0 truncate font-medium text-[var(--lp-ink)]">
           {roleDisplayName(goal.domain, locale)}
           {projectName ? ` · ${projectName}` : ""}
         </span>
-        <span className={`shrink-0 font-medium tabular-nums ${toneText}`}>
+        <span className={`shrink-0 font-semibold tabular-nums ${toneText}`}>
           {pct !== null
             ? `${pct}%`
             : goal.onTrack === true
@@ -233,14 +196,10 @@ export function GoalRow({
         </span>
       </div>
       <ProgressBar value={pct ?? 0} tone={goal.onTrack === true ? "ok" : goal.onTrack === false ? "warn" : "muted"} />
-      <div className="flex min-w-0 items-center justify-between gap-2 text-[11px] text-muted-foreground">
-        <span className="min-w-0 truncate">{progressText}</span>
-        {goal.due ? (
-          <span className="shrink-0">
-            {t("consoleOverviewGoalsDue").replace("{due}", goal.due)}
-          </span>
-        ) : null}
-      </div>
+      <p className="min-w-0 text-[11.5px] text-[var(--lp-muted)]">
+        {progressText}
+        {goal.due ? ` ${t("consoleOverviewGoalsDue").replace("{due}", formatDueDate(goal.due, locale))}` : ""}
+      </p>
     </button>
   );
 }
