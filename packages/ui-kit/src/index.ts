@@ -16,6 +16,7 @@ export * from "./ui/label";
 export * from "./ui/motion";
 export * from "./ui/overlay-trigger";
 export * from "./ui/popover";
+export * from "./ui/progress-bar";
 export * from "./ui/segments";
 export * from "./ui/select";
 export * from "./ui/separator";

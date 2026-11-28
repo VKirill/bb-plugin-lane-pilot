@@ -188,7 +188,7 @@ describe("ui-kit console primitives", () => {
       );
 
       expect(screen.getByText("Running").className).toContain("lp-pill-success");
-      expect(screen.getByText("Pending").className).toContain("lp-pill-neutral");
+      expect(screen.getByText("Pending").className).toContain("lp-pill-warning");
       expect(screen.getByText("Failed").className).toContain("lp-pill-danger");
       expect(screen.getByText("Active").className).toContain("lp-pill-info");
       expect(screen.getByText("Paused").className).toContain("lp-pill-muted");

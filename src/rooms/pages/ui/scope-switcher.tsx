@@ -3,6 +3,7 @@ import { useRpc } from "@get-bb/plugin-sdk/app";
 import { t } from "@lane-pilot/i18n";
 import { GLOBAL_SETTINGS_PROJECT_ID } from "@lane-pilot/settings-catalog";
 import {
+  Icon,
   Select,
   SelectContent,
   SelectGroup,
@@ -43,10 +44,12 @@ function flattenSections(sections: SectionRow[]): Array<{ id: string; name: stri
 export interface ScopeSwitcherProps {
   route: ConsoleRoute;
   go: (next: ConsoleRoute) => void;
+  /** "sidebar": the dark card with a caption at the top of the sidebar; "inline": a plain select in the compact top bar. */
+  variant?: "sidebar" | "inline";
 }
 
 /** Top-level scope selector: All projects, any visible project, sections of the active project, and folded service projects. */
-export function ScopeSwitcher({ route, go }: ScopeSwitcherProps) {
+export function ScopeSwitcher({ route, go, variant = "inline" }: ScopeSwitcherProps) {
   const rpc = useRpc<typeof rpcContract>();
   const activeProjectId =
     route.projectId && route.projectId !== GLOBAL_SETTINGS_PROJECT_ID ? route.projectId : null;
@@ -141,10 +144,24 @@ export function ScopeSwitcher({ route, go }: ScopeSwitcherProps) {
     >
       <SelectTrigger
         aria-label={t("consoleScopeLabel")}
-        className={`${CONTROL_H} w-auto min-w-[11rem] max-w-[20rem]`}
+        className={
+          variant === "sidebar"
+            ? "lp-side-scope h-auto w-full min-w-0 gap-2 border-0 bg-[var(--lp-side-raise)] px-2.5 py-[9px] text-white hover:bg-[var(--lp-side-active)]"
+            : `${CONTROL_H} w-auto min-w-[11rem] max-w-[20rem]`
+        }
         data-testid="scope-switcher"
       >
-        <SelectValue placeholder={activeProjectId ?? t("consoleAllProjects")} />
+        {variant === "sidebar" ? (
+          <div className="flex min-w-0 flex-col items-start gap-0.5 text-left">
+            <span className="lp-side-caption">{t("consoleScopeCaption")}</span>
+            <span className="max-w-full truncate text-[13px] font-medium">
+              <SelectValue placeholder={activeProjectId ?? t("consoleAllProjects")} />
+            </span>
+          </div>
+        ) : (
+          <SelectValue placeholder={activeProjectId ?? t("consoleAllProjects")} />
+        )}
+        {variant === "sidebar" ? <Icon name="ChevronsUpDown" className="size-3.5 shrink-0 text-[var(--lp-side-muted)]" aria-hidden /> : null}
       </SelectTrigger>
       <SelectContent>
         <SelectItem value={ALL_PROJECTS_VALUE} data-testid="scope-all">

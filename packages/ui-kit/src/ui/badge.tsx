@@ -4,7 +4,7 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "../lib/utils";
 
 const badgeVariants = cva(
-  "inline-flex items-center whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2",
+  "inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-[9px] py-[3px] text-[11.5px] font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2",
   {
     variants: {
       variant: {
@@ -13,6 +13,8 @@ const badgeVariants = cva(
         destructive: "lp-pill-danger",
         outline: "lp-pill-neutral",
         success: "lp-pill-success",
+        warning: "lp-pill-warning",
+        accent: "lp-pill-accent",
       },
     },
     defaultVariants: {

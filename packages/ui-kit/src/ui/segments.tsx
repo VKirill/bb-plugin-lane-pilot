@@ -6,7 +6,7 @@ import { CONTROL_H } from "./control-row";
  * 2 to 5 slices of one set (DESIGN.md): a segment control on a wide column, one select on a phone.
  * `testId` names the control; each segment is `seg-<testId>-<id>`.
  */
-export function Segments({ testId, label, items, value, onChange, compact, badge }: {
+export function Segments({ testId, label, items, value, onChange, compact, badge, size = "md" }: {
   testId: string;
   label: string;
   items: Array<{ id: string; label: string }>;
@@ -14,6 +14,8 @@ export function Segments({ testId, label, items, value, onChange, compact, badge
   onChange: (next: string) => void;
   compact: boolean;
   badge?: Record<string, string | number | null | undefined>;
+  /** "md": a page-level filter (white track, ink chosen option); "sm": a small ladder inside a card row. */
+  size?: "sm" | "md";
 }) {
   const text = (item: { id: string; label: string }) => (badge?.[item.id] != null && badge[item.id] !== 0 ? `${item.label} ${badge[item.id]}` : item.label);
   if (compact) {
@@ -25,10 +27,10 @@ export function Segments({ testId, label, items, value, onChange, compact, badge
     );
   }
   return (
-    <div className="lp-seg max-w-full flex-wrap" role="group" aria-label={label} data-testid={`seg-${testId}`}>
+    <div className="lp-seg max-w-full flex-wrap" data-size={size} role="group" aria-label={label} data-testid={`seg-${testId}`}>
       {items.map((item) => (
         <Button key={item.id} variant="ghost" data-testid={`seg-${testId}-${item.id}`}
-          className="lp-seg-item h-[1.875rem] px-3 hover:bg-transparent aria-pressed:bg-[var(--lp-card)] aria-pressed:hover:bg-[var(--lp-card)]"
+          className={size === "sm" ? "lp-seg-item h-[22px] px-2 text-[11px] hover:bg-transparent aria-pressed:bg-[var(--lp-card)] aria-pressed:hover:bg-[var(--lp-card)]" : "lp-seg-item h-[1.875rem] px-3 text-[12.5px] hover:bg-transparent aria-pressed:bg-[var(--lp-ink)] aria-pressed:text-white aria-pressed:hover:bg-[var(--lp-ink)] aria-pressed:hover:text-white"}
           aria-pressed={value === item.id} onClick={() => onChange(item.id)}>{text(item)}</Button>
       ))}
     </div>

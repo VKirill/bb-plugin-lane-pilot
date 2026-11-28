@@ -1,20 +1,37 @@
 /*
- * Lane Pilot in the Pokecut look (https://pokecut.rakibulism.space), the same
- * visual language as the Pokecut BB theme: nested cards (a gray well with a
- * hairline around a white card with a soft drop), segmented controls with a
- * raised white option, outlined white secondary buttons, the pink-violet
- * gradient on primary actions, soft tinted status pills.
- *
- * The --lp-* tokens read the theme's --pk-* tokens and fall back to BB's own
- * palette, so the plugin stays tidy under any BB theme, light or dark.
- * Radii: 8px rows, buttons and inputs; 6px segments inside a 9px track;
- * 12px inner cards; 14px single cards and the header strip; 16px panels.
+ * Lane Pilot owner console, drawn after the Pencil prototype (docs/ui/prototype-tokens.md).
+ * Home of the look: the --lp-* palette below carries the prototype's variables by name. The console root (.lp-console)
+ * and Lane Pilot's own overlays rewire BB's theme variables and the semantic --lp-* tokens (card, hairline, pills...) to
+ * that palette, so every shadcn-style class on a screen follows. Other slots (chat panel, composer) keep reading BB's theme.
+ * Radii: 8px buttons, inputs and rows; 12px cards, KPI tiles and pills; 10px inset blocks; 6px segment track, 5px segment.
  * Rules sit in the components layer: a Tailwind utility on an element wins.
  */
 @import "@xyflow/react/dist/base.css" layer(base);
 
 [data-bb-plugin="lane-pilot"],
 [data-bb-plugin-root]:not([data-bb-plugin]) {
+  --lp-bg: #f6f6f3;
+  --lp-surface: #ffffff;
+  --lp-ink: #17181c;
+  --lp-body: #4b4f58;
+  --lp-muted: #8b8f98;
+  --lp-line: #e7e6e1;
+  --lp-side: #1c1d21;
+  --lp-side-ink: #c9cbd1;
+  --lp-side-muted: #7c7f88;
+  --lp-side-raise: #2a2b30;
+  --lp-side-line: #2e2f35;
+  --lp-side-active: #2e3036;
+  --lp-accent: #3b5bdb;
+  --lp-accent-soft: #e8edfc;
+  --lp-ok: #2f9e66;
+  --lp-ok-soft: #e3f4ea;
+  --lp-warn: #c77b0a;
+  --lp-warn-soft: #fbf0dc;
+  --lp-bad: #c9372c;
+  --lp-bad-soft: #fbe6e4;
+  --lp-font: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+
   --lp-well: var(--pk-well, color-mix(in oklab, var(--muted) 45%, var(--card)));
   --lp-card: var(--pk-card, var(--card));
   --lp-outline: var(--pk-outline, var(--input));
@@ -22,8 +39,6 @@
   --lp-drop: var(--pk-drop, 0 1px 2px rgb(0 0 0 / 0.06));
   --lp-card-drop: var(--pk-card-drop, none);
   --lp-raise: 0 1px 3px 0 rgb(0 0 0 / 0.12);
-  --lp-accent: var(--pk-accent-gradient, linear-gradient(var(--primary), var(--primary)));
-  --lp-accent-edge: var(--pk-accent-edge, none);
   --lp-success: var(--success, #3fae4a);
   --lp-success-text: var(--diff-added, #2f8a45);
   --lp-info: var(--timeline-accent, #3e7be8);
@@ -35,15 +50,61 @@
   --lp-card-pad: 20px;
 }
 
+/* The console look: the prototype palette answers for BB's theme variables. Always light; the sidebar is always dark. */
+.lp-console,
+[data-bb-plugin="lane-pilot"][data-bb-portaled-overlay] {
+  --background: var(--lp-bg);
+  --foreground: var(--lp-ink);
+  --card: var(--lp-surface);
+  --card-foreground: var(--lp-ink);
+  --popover: var(--lp-surface);
+  --popover-foreground: var(--lp-ink);
+  --primary: var(--lp-ink);
+  --primary-foreground: #ffffff;
+  --secondary: var(--lp-bg);
+  --secondary-foreground: var(--lp-ink);
+  --muted: var(--lp-bg);
+  --muted-foreground: var(--lp-muted);
+  --accent: var(--lp-bg);
+  --accent-foreground: var(--lp-ink);
+  --destructive: var(--lp-bad);
+  --destructive-foreground: #ffffff;
+  --border: var(--lp-line);
+  --input: var(--lp-line);
+  --ring: var(--lp-accent);
+  --radius: 0.5rem;
+  --state-hover: color-mix(in oklab, var(--lp-ink) 5%, transparent);
+  --state-active: color-mix(in oklab, var(--lp-ink) 8%, transparent);
+  --lp-well: var(--lp-bg);
+  --lp-card: var(--lp-surface);
+  --lp-outline: var(--lp-line);
+  --lp-hairline: var(--lp-line);
+  --lp-drop: none;
+  --lp-card-drop: none;
+  --lp-raise: none;
+  --lp-success: var(--lp-ok);
+  --lp-success-text: var(--lp-ok);
+  --lp-info: var(--lp-accent);
+  --lp-warning: var(--lp-warn);
+  --lp-warning-text: var(--lp-warn);
+  --lp-danger-text: var(--lp-bad);
+  color-scheme: light;
+  color: var(--lp-ink);
+  font-family: var(--lp-font);
+}
+
+.lp-console {
+  background-color: var(--lp-bg);
+}
+
 @layer components {
-  /* Nested card: the well frames a header line and the white body card. */
+  /* Card (frame "Live" of the prototype): white surface, hairline, 12px radius; a header row and a body inside. */
   .lp-panel {
     min-width: 0;
     max-width: 100%;
-    padding: 4px;
     border: 1px solid var(--lp-hairline);
-    border-radius: 16px;
-    background-color: var(--lp-well);
+    border-radius: 12px;
+    background-color: var(--lp-card);
     box-shadow: var(--lp-card-drop);
   }
 
@@ -52,84 +113,181 @@
     min-width: 0;
     align-items: center;
     gap: 8px;
-    padding: 8px 10px;
+    padding: 16px 18px 0;
   }
 
   .lp-panel-body {
     min-width: 0;
     max-width: 100%;
-    padding: 12px;
+    padding: 12px 18px 18px;
+  }
+
+  /* The same card without a header row: KPI tiles and single blocks. */
+  .lp-card {
+    min-width: 0;
     border: 1px solid var(--lp-hairline);
     border-radius: 12px;
     background-color: var(--lp-card);
     box-shadow: var(--lp-drop);
   }
 
-  /* A single white card, for blocks that need no header well. */
-  .lp-card {
-    min-width: 0;
-    border: 1px solid var(--lp-hairline);
-    border-radius: 14px;
-    background-color: var(--lp-card);
-    box-shadow: var(--lp-drop);
-  }
-
-  /* Page header strip: Pokecut's top bar, a quiet card holding the title. */
+  /* Header strip of a block that is not a page: a quiet card holding the title. */
   .lp-strip {
     min-width: 0;
     padding: 10px 14px;
     border: 1px solid var(--lp-hairline);
-    border-radius: 14px;
+    border-radius: 12px;
     background-color: var(--lp-well);
   }
 
-  /* Raised white surface: buttons, the active segment, the selected nav row. */
+  /* Page header: the title sits straight on the page, no card (frames Header of the prototype). */
+  .lp-page-head {
+    min-width: 0;
+    align-items: flex-end;
+  }
+
+  .lp-page-title {
+    margin: 0;
+    color: var(--lp-ink);
+    font-size: 26px;
+    font-weight: 650;
+    line-height: 1.15;
+  }
+
+  .lp-page-sub {
+    margin: 0;
+    color: var(--lp-body);
+    font-size: 13.5px;
+    line-height: 1.4;
+  }
+
+  /* Raised white surface: outlined secondary buttons ("Отмена"), the selected nav row. */
   .lp-raised {
     border: 1px solid var(--lp-outline);
     background-color: var(--lp-card);
     box-shadow: var(--lp-drop);
   }
 
+  /* Primary action ("Нанять сотрудника"): flat ink button with white text. */
   .lp-accent {
     border-color: transparent;
-    background-color: var(--primary);
-    background-image: var(--lp-accent);
-    box-shadow: var(--lp-accent-edge);
+    background-color: var(--lp-ink);
+    box-shadow: none;
     color: #ffffff;
+    font-weight: 600;
   }
 
   .lp-accent:hover:not(:disabled) {
-    filter: brightness(1.05) saturate(1.05);
+    background-color: color-mix(in oklab, var(--lp-ink) 88%, #ffffff);
   }
 
-  /* Segmented control: a gray track, the chosen option raised in white. */
+  /* Segmented control ("Предлагает / Спрашивает / Сам"): a page-coloured track, the chosen option a white tile with a hairline. */
   .lp-seg {
     display: inline-flex;
     max-width: 100%;
     align-items: center;
     gap: 2px;
-    padding: 3px;
-    border: 1px solid var(--lp-hairline);
-    border-radius: 9px;
-    background-color: var(--lp-well);
+    padding: 2px;
+    border-radius: 6px;
+    background-color: var(--lp-bg);
   }
 
   .lp-seg-item {
-    border-radius: 6px;
-    color: var(--muted-foreground);
+    border: 1px solid transparent;
+    border-radius: 5px;
+    color: var(--lp-muted);
     font-weight: 500;
   }
 
   .lp-seg-item:hover {
-    color: var(--foreground);
+    color: var(--lp-ink);
   }
 
   .lp-seg-item:is([data-state="active"], [aria-pressed="true"]) {
-    background-color: var(--lp-card);
-    box-shadow: var(--lp-raise);
-    color: var(--foreground);
+    border-color: var(--lp-line);
+    background-color: var(--lp-surface);
+    color: var(--lp-ink);
     font-weight: 600;
   }
+
+  /* The page-level variant ("Сегодня / 7 дней / 30 дней"): a white track with a hairline, the chosen option solid ink. */
+  .lp-seg[data-size="md"] {
+    padding: 3px;
+    border: 1px solid var(--lp-line);
+    border-radius: 8px;
+    background-color: var(--lp-surface);
+  }
+
+  .lp-seg[data-size="md"] .lp-seg-item {
+    border-radius: 6px;
+    color: var(--lp-body);
+  }
+
+  .lp-seg[data-size="md"] .lp-seg-item:is([data-state="active"], [aria-pressed="true"]) {
+    border-color: var(--lp-ink);
+    background-color: var(--lp-ink);
+    color: #ffffff;
+    font-weight: 500;
+  }
+
+  /* Sidebar (component "Sidebar" of the prototype): 248 px, always dark; brand, project card, main list, System group pinned to the bottom. */
+  .lp-side {
+    box-sizing: border-box;
+    display: flex;
+    width: 248px;
+    flex-shrink: 0;
+    flex-direction: column;
+    gap: 4px;
+    overflow-y: auto;
+    padding: 20px 14px;
+    background-color: var(--lp-side);
+    color: var(--lp-side-ink);
+    font-family: var(--lp-font);
+  }
+
+  .lp-side-brand { display: flex; align-items: center; gap: 10px; padding: 4px 8px 18px; }
+  .lp-side-logo { display: flex; width: 28px; height: 28px; align-items: center; justify-content: center; border-radius: 7px; background-color: var(--lp-accent); color: #ffffff; }
+  .lp-side-scope > svg:last-child { display: none; }
+  .lp-side-name { color: #ffffff; font-size: 15px; font-weight: 600; }
+
+  .lp-side-caption { color: var(--lp-side-muted); font-size: 10px; font-weight: 600; letter-spacing: 0.6px; line-height: 1.2; text-transform: uppercase; }
+  .lp-side-caption-link { padding: 0 10px 4px; border: 0; background: transparent; text-align: left; cursor: pointer; }
+  .lp-side-caption-link:hover, .lp-side-caption-link[aria-current="page"] { color: #ffffff; }
+
+  .lp-side-item {
+    display: flex;
+    width: 100%;
+    align-items: center;
+    gap: 10px;
+    padding: 9px 10px;
+    border-radius: 8px;
+    color: var(--lp-side-ink);
+    font-size: 13.5px;
+    font-weight: 500;
+    line-height: 1.25;
+    text-align: left;
+    cursor: pointer;
+    border: 0;
+    box-sizing: border-box;
+    background-color: transparent;
+    transition: background-color 0.12s, color 0.12s;
+  }
+  .lp-side-item:hover { background-color: color-mix(in oklab, #ffffff 6%, transparent); }
+  .lp-side-item[aria-current="page"] { background-color: var(--lp-side-active); color: #ffffff; }
+  .lp-side-item:focus-visible, .lp-side-caption-link:focus-visible { outline: 2px solid var(--lp-accent); outline-offset: -2px; }
+  .lp-side-item[data-system] { padding: 7px 10px; color: var(--lp-side-muted); font-size: 12.5px; font-weight: 400; }
+  .lp-side-item[data-system]:hover, .lp-side-item[data-system][aria-current="page"] { color: #ffffff; }
+
+  .lp-side-system { display: flex; flex-direction: column; gap: 2px; padding-top: 12px; border-top: 1px solid var(--lp-side-line); }
+
+  /* A control from a light screen (the Brakes button) restated in the dark sidebar's colours. */
+  .lp-side-extras {
+    --foreground: var(--lp-side-ink);
+    --lp-card: var(--lp-side-raise);
+    --lp-outline: var(--lp-side-line);
+    --state-hover: color-mix(in oklab, #ffffff 8%, transparent);
+  }
+  .lp-side-extras > button { width: 100%; justify-content: flex-start; }
 
   /* Navigation rows: quiet until chosen; the chosen one is a raised pill. */
   .lp-nav-item {
@@ -161,7 +319,6 @@
 
   .lp-switch[data-state="checked"] {
     background-color: var(--primary);
-    background-image: var(--lp-accent);
   }
 
   .lp-switch[data-state="unchecked"] {
@@ -172,17 +329,27 @@
     box-shadow: 0 1px 2px rgb(0 0 0 / 0.2);
   }
 
-  /* Status pills: soft tint, coloured text. */
-  .lp-pill-success { background-color: color-mix(in oklab, var(--lp-success) 14%, transparent); color: var(--lp-success-text); }
-  .lp-pill-info { background-color: color-mix(in oklab, var(--lp-info) 13%, transparent); color: var(--lp-info); }
-  .lp-pill-danger { background-color: color-mix(in oklab, var(--destructive) 12%, transparent); color: var(--lp-danger-text); }
-  .lp-pill-neutral { background-color: var(--lp-card); box-shadow: inset 0 0 0 1px var(--lp-outline); color: var(--foreground); }
-  .lp-pill-muted { background-color: color-mix(in oklab, var(--foreground) 7%, transparent); color: var(--foreground); }
+  /* Status pills: soft tint, coloured text; a dot variant ("На смене") and a solid accent for counts (the Decisions badge). */
+  .lp-pill-success { background-color: var(--lp-ok-soft); color: var(--lp-ok); }
+  .lp-pill-info { background-color: var(--lp-accent-soft); color: var(--lp-accent); }
+  .lp-pill-warning { background-color: var(--lp-warn-soft); color: var(--lp-warn); }
+  .lp-pill-danger { background-color: var(--lp-bad-soft); color: var(--lp-bad); }
+  .lp-pill-accent { background-color: var(--lp-accent); color: #ffffff; }
+  .lp-pill-neutral { background-color: var(--lp-surface); box-shadow: inset 0 0 0 1px var(--lp-line); color: var(--lp-ink); }
+  .lp-pill-muted { background-color: var(--lp-bg); color: var(--lp-muted); }
+  .lp-pill-dot::before { content: ""; width: 6px; height: 6px; flex: none; border-radius: 9999px; background-color: currentColor; }
+
+  /* Progress bar (frame "Bar"): a 6px hairline track, the fill in the tone of the status. */
+  .lp-progress { height: 6px; overflow: hidden; border-radius: 3px; background-color: var(--lp-line); }
+  .lp-progress > span { display: block; height: 100%; border-radius: 3px; background-color: var(--lp-muted); }
+  .lp-progress[data-tone="ok"] > span { background-color: var(--lp-ok); }
+  .lp-progress[data-tone="warn"] > span { background-color: var(--lp-warn); }
+  .lp-progress[data-tone="bad"] > span { background-color: var(--lp-bad); }
+  .lp-progress[data-tone="accent"] > span { background-color: var(--lp-accent); }
 
   .lp-text-success { color: var(--lp-success-text); }
   .lp-text-warning { color: var(--lp-warning-text); }
 
-  .lp-pill-warning { background-color: color-mix(in oklab, var(--lp-warning) 16%, transparent); color: var(--lp-warning-text); }
 
   /*
    * Workflow canvas (Workflows tab), drawn the way n8n draws one. A card carries --wf-tone, the colour of what its step does: plan blue, build green,

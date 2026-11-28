@@ -1,4 +1,5 @@
 import { roleDisplayName, t, type I18nKey, type Locale } from "@lane-pilot/i18n";
+import { ProgressBar } from "@lane-pilot/ui-kit";
 import type { ConsoleOverviewOutput, GoalLine } from "../../../contracts/ui";
 
 export type OverviewDays = 1 | 7 | 30;
@@ -202,12 +203,6 @@ export function GoalRow({
       : goal.onTrack === false
         ? "lp-text-warning"
         : "text-muted-foreground";
-  const barFill =
-    goal.onTrack === true
-      ? "bg-[var(--lp-success)]"
-      : goal.onTrack === false
-        ? "bg-[var(--lp-warning)]"
-        : "bg-muted-foreground";
   const progressText =
     goal.current !== null && goal.target !== null
       ? t("consoleOverviewGoalsProgress")
@@ -237,12 +232,7 @@ export function GoalRow({
                 : "—"}
         </span>
       </div>
-      <div className="h-1.5 w-full overflow-hidden rounded-full bg-[var(--lp-well)]">
-        <div
-          className={`h-full rounded-full ${barFill}`}
-          style={{ width: `${pct ?? 0}%` }}
-        />
-      </div>
+      <ProgressBar value={pct ?? 0} tone={goal.onTrack === true ? "ok" : goal.onTrack === false ? "warn" : "muted"} />
       <div className="flex min-w-0 items-center justify-between gap-2 text-[11px] text-muted-foreground">
         <span className="min-w-0 truncate">{progressText}</span>
         {goal.due ? (

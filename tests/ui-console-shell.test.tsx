@@ -193,8 +193,9 @@ describe("console shell", () => {
 
     const nav = slot.getByTestId("console-nav");
     const sysGroup = slot.getByTestId("console-nav-system-group");
-    expect(nav.querySelectorAll("button")).toHaveLength(CONSOLE_SECTIONS.length);
-    expect(sysGroup.querySelectorAll("button")).toHaveLength(SYSTEM_PAGES.length);
+    // The System landing is the caption of the bottom group, so the main list has one row less.
+    expect(nav.querySelectorAll("button")).toHaveLength(CONSOLE_SECTIONS.length - 1);
+    expect(sysGroup.querySelectorAll("button")).toHaveLength(SYSTEM_PAGES.length + 1);
     for (const section of CONSOLE_SECTIONS) {
       expect(slot.getByTestId(`console-nav-${section}`)).toBeTruthy();
     }

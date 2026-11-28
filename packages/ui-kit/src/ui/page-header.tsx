@@ -8,21 +8,21 @@ export interface PageHeaderProps {
   className?: string;
 }
 
-/** Console page header strip with title, optional subtitle, and right-aligned actions slot. */
+/** Console page header (title 26 px, subtitle, no card) with title, optional subtitle, and right-aligned actions slot. */
 export function PageHeader({ title, subtitle, actions, className }: PageHeaderProps) {
   return (
     <header
       className={cn(
-        "lp-strip flex flex-wrap items-start justify-between gap-x-4 gap-y-2",
+        "lp-page-head flex flex-wrap justify-between gap-x-4 gap-y-2",
         className,
       )}
     >
-      <div className="min-w-0 space-y-0.5">
-        <h1 className="text-base font-semibold leading-tight text-foreground">
+      <div className="min-w-0 space-y-1">
+        <h1 className="lp-page-title">
           {title}
         </h1>
         {subtitle !== undefined && subtitle !== null ? (
-          <p className="text-xs text-muted-foreground">{subtitle}</p>
+          <p className="lp-page-sub">{subtitle}</p>
         ) : null}
       </div>
       {actions !== undefined && actions !== null ? (

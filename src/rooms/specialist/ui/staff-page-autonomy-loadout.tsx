@@ -152,6 +152,7 @@ export function StaffAutonomyTab({
                         testId={`autonomy-level-${row.actionClass}`}
                         label={row.actionClass}
                         compact={stackControls}
+                        size="sm"
                         value={row.level}
                         items={levelItems}
                         onChange={(next) => {

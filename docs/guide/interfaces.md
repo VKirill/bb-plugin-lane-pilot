@@ -88,7 +88,7 @@ Lane Pilot adds one six-section owner console (`LanePilotPage` + `ConsoleShell`)
 
 **Console navigation and top bar**
 
-The left sidebar (`ConsoleShell`, collapsing to a compact `Select` below 900 px) lists six top-level sections plus direct links to the six **System** sub-pages (`CONSOLE_SECTIONS` and `SYSTEM_PAGES` in `src/rooms/pages/models/nav-model.ts`). A top **ScopeSwitcher** chooses **All projects**, a single project, or a project section (`remember_project`), and **Brakes** (`BrakeButton` / `BrakesDialog`) exposes global pauses (`schedules`, `conveyor`, `graphs`, `staff`) and **Stop all**.
+The dark left sidebar (`ConsoleShell`, collapsing to a compact `Select` below 900 px) lists five main sections, and the **System** group pinned to the bottom (its caption opens the System landing) links the **System** sub-pages (`CONSOLE_SECTIONS` and `SYSTEM_PAGES` in `src/rooms/pages/models/nav-model.ts`). The **ScopeSwitcher** at the top of the sidebar (in the top bar when compact) chooses **All projects**, a single project, or a project section (`remember_project`), and **Brakes** (`BrakeButton` / `BrakesDialog`, above the System group; in the top bar when compact) exposes global pauses (`schedules`, `conveyor`, `graphs`, `staff`) and **Stop all**.
 
 | Section | Content |
 |---|---|

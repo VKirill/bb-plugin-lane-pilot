@@ -2,7 +2,6 @@ import { useRef, type ReactNode } from "react";
 import { t, type I18nKey } from "@lane-pilot/i18n";
 import {
   Badge,
-  Button,
   CONTROL_H,
   Icon,
   PanelLayoutContext,
@@ -36,14 +35,18 @@ const SECTION_LABELS: Record<ConsoleSection, I18nKey> = {
   system: "consoleNavSystem",
 };
 
-const SECTION_ICONS: Record<ConsoleSection, BuiltinIconName> = {
-  overview: "Target",
-  decisions: "MessageQuestion",
-  staff: "Bot",
-  work: "ListTodo",
-  memory: "Archive",
-  system: "Workflow",
+/** The System landing is the caption of the bottom group, not a row of the main list, so it has no icon here. */
+const SECTION_ICONS: Record<Exclude<ConsoleSection, "system">, BuiltinIconName> = {
+  overview: "Dashboard",
+  decisions: "Inbox",
+  staff: "Users",
+  work: "FolderKanban",
+  memory: "Library",
 };
+
+const MAIN_SECTIONS = CONSOLE_SECTIONS.filter(
+  (section): section is Exclude<ConsoleSection, "system"> => section !== "system",
+);
 
 const SYSTEM_PAGE_LABELS: Record<SystemPage, I18nKey> = {
   automation: "consoleSysAutomation",
@@ -57,12 +60,12 @@ const SYSTEM_PAGE_LABELS: Record<SystemPage, I18nKey> = {
 
 const SYSTEM_PAGE_ICONS: Record<SystemPage, BuiltinIconName> = {
   automation: "Workflow",
-  graphs: "GitBranch",
-  agents: "UserRoundPlus",
-  schedules: "Clock",
-  costs: "Zap",
-  health: "CircleCheck",
-  settings: "Code",
+  graphs: "GitFork",
+  agents: "Cpu",
+  schedules: "CalendarClock",
+  costs: "Wallet",
+  health: "Activity",
+  settings: "Settings",
 };
 
 /** Breakpoint below which left console navigation collapses into a compact Select. */
@@ -118,85 +121,87 @@ export function ConsoleShell({ route, go, headerExtras, children }: ConsoleShell
     <PanelLayoutContext.Provider value={{ compactChrome: compactNav, stackControls }}>
       <div
         ref={shellRef}
-        className={`flex h-full min-h-0 min-w-0 flex-1 overflow-hidden ${compactNav ? "flex-col" : "flex-row"}`}
+        className={`lp-console flex h-full min-h-0 min-w-0 flex-1 overflow-hidden ${compactNav ? "flex-col" : "flex-row"}`}
         data-testid="console-shell"
         data-lp-chrome={compactNav ? "compact" : "rail"}
         data-lp-stack={stackControls ? "1" : "0"}
         data-bb-ru-skip
       >
         {!compactNav ? (
-          <nav
-            className="flex w-[14.5rem] shrink-0 flex-col gap-3 overflow-y-auto border-r border-[var(--lp-hairline)] bg-[var(--lp-well)]/40 px-3 py-4"
-            aria-label={t("consoleNavAria")}
-            data-testid="console-sidebar"
-          >
-            <div className="flex flex-col gap-0.5" data-testid="console-nav">
-              {CONSOLE_SECTIONS.map((section) => {
-                const active =
-                  section === "system"
-                    ? route.section === "system" && !route.page
-                    : route.section === section;
-                return (
-                  <Button
-                    key={section}
-                    type="button"
-                    size="sm"
-                    variant="ghost"
-                    aria-current={active ? "page" : undefined}
-                    data-testid={`console-nav-${section}`}
-                    className="lp-nav-item h-8 w-full justify-start gap-2 px-2.5 text-sm hover:bg-state-hover"
-                    onClick={() => goSection(section)}
-                  >
-                    <Icon name={SECTION_ICONS[section]} className="size-4 shrink-0" aria-hidden />
-                    <span className="min-w-0 flex-1 truncate text-left">{t(SECTION_LABELS[section])}</span>
-                    {section === "decisions" && waitingBadge ? (
-                      <Badge
-                        variant="destructive"
-                        className="ml-auto px-1.5 py-0 text-[11px] leading-5"
-                        data-testid="decisions-badge"
-                        aria-label={t("consoleDecisionsBadgeAria").replace("{n}", String(waitingBadge.count))}
-                      >
-                        {waitingBadge.label}
-                      </Badge>
-                    ) : null}
-                  </Button>
-                );
-              })}
+          <nav className="lp-side" aria-label={t("consoleNavAria")} data-testid="console-sidebar">
+            <div className="lp-side-brand">
+              <span className="lp-side-logo" aria-hidden>
+                <Icon name="Workflow" className="size-4" />
+              </span>
+              <span className="lp-side-name">Lane Pilot</span>
             </div>
-            <div className="border-t border-[var(--lp-hairline)] pt-3" data-testid="console-nav-system-group">
-              <div className="px-2.5 pb-1">
-                <span className="text-xs font-medium text-muted-foreground">{t("consoleNavSystem")}</span>
-              </div>
-              <div className="flex flex-col gap-0.5">
-                {SYSTEM_PAGES.map((sysPage) => {
-                  const active = route.section === "system" && route.page === sysPage;
-                  return (
-                    <Button
-                      key={sysPage}
-                      type="button"
-                      size="sm"
-                      variant="ghost"
-                      aria-current={active ? "page" : undefined}
-                      data-testid={`console-nav-system-${sysPage}`}
-                      className="lp-nav-item h-8 w-full justify-start gap-2 px-2.5 text-sm hover:bg-state-hover"
-                      onClick={() => goSystemPage(sysPage)}
+            <ScopeSwitcher route={route} go={go} variant="sidebar" />
+            <div className="mt-3.5 flex flex-col gap-1" data-testid="console-nav">
+              {MAIN_SECTIONS.map((section) => (
+                <button
+                  key={section}
+                  type="button"
+                  className="lp-side-item"
+                  aria-current={route.section === section ? "page" : undefined}
+                  data-testid={`console-nav-${section}`}
+                  onClick={() => goSection(section)}
+                >
+                  <Icon name={SECTION_ICONS[section]} className="size-[17px] shrink-0" aria-hidden />
+                  <span className="min-w-0 truncate text-left">{t(SECTION_LABELS[section])}</span>
+                  {section === "decisions" && waitingBadge ? (
+                    <Badge
+                      variant="accent"
+                      className="px-[7px] py-0.5 text-[11px] leading-[1.2]"
+                      data-testid="decisions-badge"
+                      aria-label={t("consoleDecisionsBadgeAria").replace("{n}", String(waitingBadge.count))}
                     >
-                      <Icon name={SYSTEM_PAGE_ICONS[sysPage]} className="size-4 shrink-0" aria-hidden />
-                      <span className="min-w-0 flex-1 truncate text-left">{t(SYSTEM_PAGE_LABELS[sysPage])}</span>
-                    </Button>
-                  );
-                })}
+                      {waitingBadge.label}
+                    </Badge>
+                  ) : null}
+                </button>
+              ))}
+            </div>
+            <div className="mt-auto flex flex-col gap-3 pt-4">
+              {headerExtras ? (
+                <div className="lp-side-extras" data-testid="console-header-extras">
+                  {headerExtras}
+                </div>
+              ) : null}
+              <div className="lp-side-system" data-testid="console-nav-system-group">
+                <button
+                  type="button"
+                  className="lp-side-caption lp-side-caption-link"
+                  aria-current={route.section === "system" && !route.page ? "page" : undefined}
+                  data-testid="console-nav-system"
+                  onClick={() => goSection("system")}
+                >
+                  {t(SECTION_LABELS.system)}
+                </button>
+                {SYSTEM_PAGES.map((sysPage) => (
+                  <button
+                    key={sysPage}
+                    type="button"
+                    className="lp-side-item"
+                    data-system
+                    aria-current={route.section === "system" && route.page === sysPage ? "page" : undefined}
+                    data-testid={`console-nav-system-${sysPage}`}
+                    onClick={() => goSystemPage(sysPage)}
+                  >
+                    <Icon name={SYSTEM_PAGE_ICONS[sysPage]} className="size-[15px] shrink-0" aria-hidden />
+                    <span className="min-w-0 truncate text-left">{t(SYSTEM_PAGE_LABELS[sysPage])}</span>
+                  </button>
+                ))}
               </div>
             </div>
           </nav>
         ) : null}
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-          <header
-            className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-[var(--lp-hairline)] px-4 py-2.5 sm:px-6"
-            data-testid="console-topbar"
-          >
-            <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
-              {compactNav ? (
+          {compactNav ? (
+            <header
+              className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-[var(--lp-hairline)] px-4 py-2.5"
+              data-testid="console-topbar"
+            >
+              <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
                 <Select value={compactNavValue} onValueChange={handleCompactNavChange}>
                   <SelectTrigger
                     aria-label={t("consoleNavAria")}
@@ -232,15 +237,19 @@ export function ConsoleShell({ route, go, headerExtras, children }: ConsoleShell
                     </SelectGroup>
                   </SelectContent>
                 </Select>
-              ) : null}
-              <ScopeSwitcher route={route} go={go} />
-            </div>
-            <div className="flex shrink-0 items-center gap-2" data-testid="console-header-extras">
-              {headerExtras}
-            </div>
-          </header>
+                <ScopeSwitcher route={route} go={go} />
+              </div>
+              <div className="flex shrink-0 items-center gap-2" data-testid="console-header-extras">
+                {headerExtras}
+              </div>
+            </header>
+          ) : null}
           <div className="min-h-0 min-w-0 flex-1 overflow-y-auto">
-            <div ref={contentRef} className="w-full min-w-0 space-y-6 px-6 py-5" data-testid="console-content">
+            <div
+              ref={contentRef}
+              className={`w-full min-w-0 space-y-5 ${compactNav ? "px-4 py-4" : "px-9 py-7"}`}
+              data-testid="console-content"
+            >
               {children}
             </div>
           </div>

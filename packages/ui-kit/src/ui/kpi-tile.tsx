@@ -13,6 +13,7 @@ export interface KpiTileProps {
   testId?: string;
 }
 
+/** The tone colours the caption under the number, as in the prototype; the number itself stays ink. */
 const TONE_CLASS: Record<KpiTileTone, string> = {
   ok: "lp-text-success",
   warn: "lp-text-warning",
@@ -41,11 +42,11 @@ export function KpiTile({
   const content = (
     <>
       <span className="text-xs font-medium text-muted-foreground">{label}</span>
-      <span className={cn("text-2xl font-semibold tabular-nums leading-tight", TONE_CLASS[tone])}>
+      <span className="text-2xl font-[650] tabular-nums leading-tight text-[var(--lp-ink)]">
         {value}
       </span>
       {hasNote ? (
-        <span id={noteId} className="text-xs text-muted-foreground">
+        <span id={noteId} className={cn("text-[11.5px] font-medium", TONE_CLASS[tone])}>
           {note}
         </span>
       ) : null}
@@ -62,7 +63,7 @@ export function KpiTile({
         data-testid={testId}
         data-tone={tone}
         className={cn(
-          "lp-card flex min-w-0 cursor-pointer flex-col gap-1 p-3.5 text-left transition-colors hover:bg-state-hover focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+          "lp-card flex min-w-0 cursor-pointer flex-col gap-1 px-4 py-3.5 text-left transition-colors hover:bg-state-hover focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
           className,
         )}
       >
@@ -75,7 +76,7 @@ export function KpiTile({
     <div
       data-testid={testId}
       data-tone={tone}
-      className={cn("lp-card flex min-w-0 flex-col gap-1 p-3.5 text-left", className)}
+      className={cn("lp-card flex min-w-0 flex-col gap-1 px-4 py-3.5 text-left", className)}
     >
       {content}
     </div>
