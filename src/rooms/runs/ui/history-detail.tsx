@@ -109,7 +109,7 @@ export function HistoryDetail({
 
   return (
     <div
-      className="space-y-3 rounded-md border border-destructive/20 bg-destructive/[0.03] px-4 py-3 text-sm"
+      className="space-y-2.5 text-[12.5px] text-[var(--lp-ink)]"
       data-testid={`history-detail-${row.taskId}`}
     >
       {detail?.status === "loading" ? (
@@ -126,7 +126,7 @@ export function HistoryDetail({
       ) : null}
 
       {reason ? (
-        <p className="whitespace-pre-wrap break-words text-sm text-foreground" data-testid={`history-detail-reason-${row.taskId}`}>
+        <p className="whitespace-pre-wrap break-words text-[12.5px] text-[var(--lp-ink)]" data-testid={`history-detail-reason-${row.taskId}`}>
           <span className="font-medium text-muted-foreground">{reasonLabel}: </span>
           {reason}
         </p>
@@ -157,7 +157,7 @@ export function HistoryDetail({
         <button
           type="button"
           data-testid={`history-plan-link-${row.taskId}`}
-          className="font-medium text-primary underline decoration-primary/40 underline-offset-2 hover:decoration-primary"
+          className="font-medium text-[var(--lp-accent)] hover:underline"
           onClick={() => onOpenTask?.(row.runId, row.taskId)}
         >
           {t("consoleHistoryPlanLink")}
@@ -167,7 +167,7 @@ export function HistoryDetail({
           <button
             type="button"
             data-testid={`history-lesson-link-${row.taskId}`}
-            className="font-medium text-primary underline decoration-primary/40 underline-offset-2 hover:decoration-primary"
+            className="font-medium text-[var(--lp-accent)] hover:underline"
             onClick={() => onOpenLesson?.(row.projectId, row.lessonMemoryId!)}
           >
             {t("consoleHistoryLessonLink")}
@@ -178,7 +178,7 @@ export function HistoryDetail({
           type="button"
           size="sm"
           variant="outline"
-          className="ml-auto h-7 px-2.5 text-xs"
+          className="h-7 px-2.5 text-xs"
           data-testid={`history-retry-plan-${row.taskId}`}
           onClick={() => onRetryWithNewPlan(row)}
         >

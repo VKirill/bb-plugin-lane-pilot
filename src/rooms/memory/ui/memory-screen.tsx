@@ -6,12 +6,9 @@ import {
   Alert,
   AlertDescription,
   AlertTitle,
-  Badge,
-  Button,
   ConfirmDialog,
   Icon,
   Input,
-  StatusPill,
   Surface,
   SurfaceBody,
 } from "@lane-pilot/ui-kit";
@@ -37,6 +34,8 @@ export interface MemoryScreenProps {
 }
 
 const SEARCH_DEBOUNCE_MS = 300;
+/** Records listed before «Show more»: a project keeps hundreds, and the owner reads the newest first. */
+const RECORDS_PAGE = 25;
 
 function fallbackRecordFromSearch(hit: MemorySearchRecord): MemoryRecord {
   return {
@@ -87,6 +86,7 @@ export function MemoryScreen({ projectId, sectionId, locale: localeProp, initial
   const [selectedKey, setSelectedKey] = useState<string | null>(initialRecordId ? `rec:${initialRecordId}` : null);
   const [pendingDelete, setPendingDelete] = useState<MemoryRecord | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [shown, setShown] = useState(RECORDS_PAGE);
   const searchSeq = useRef(0);
 
   useEffect(() => {
@@ -221,6 +221,10 @@ export function MemoryScreen({ projectId, sectionId, locale: localeProp, initial
     return entries;
   }, [filter, categorizedRecords, activeCards]);
 
+  useEffect(() => {
+    setShown(RECORDS_PAGE);
+  }, [filter, trimmedQuery]);
+
   const selectedItem = useMemo(
     () => visibleItems.find((item) => item.key === selectedKey) ?? visibleItems[0] ?? null,
     [visibleItems, selectedKey],
@@ -265,13 +269,9 @@ export function MemoryScreen({ projectId, sectionId, locale: localeProp, initial
         </Alert>
       ) : null}
 
-      <div className="flex flex-wrap items-center gap-2">
-        <div className="relative min-w-[14rem] flex-1 sm:max-w-sm">
-          <Icon
-            name="Search"
-            className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground"
-            aria-hidden
-          />
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2.5">
+        <div className="lp-wm-search">
+          <Icon name="Search" className="pointer-events-none size-[15px] shrink-0 text-[var(--lp-muted)]" aria-hidden />
           <Input
             type="search"
             value={searchQuery}
@@ -279,30 +279,23 @@ export function MemoryScreen({ projectId, sectionId, locale: localeProp, initial
             placeholder={t("consoleMemorySearchPlaceholder")}
             aria-label={t("consoleMemorySearchPlaceholder")}
             data-testid="memory-search"
-            className="pl-8"
+            className="h-auto border-0 bg-transparent p-0 text-[13px] shadow-none focus-visible:ring-0"
           />
         </div>
-        <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label={t("consoleMemoryFilterAll")}>
-          {chips.map((chip) => {
-            const active = filter === chip.id;
-            return (
-              <Button
-                key={chip.id}
-                type="button"
-                size="sm"
-                variant={active ? "default" : "outline"}
-                aria-pressed={active}
-                data-testid={`memory-filter-${chip.id}`}
-                className="h-7 rounded-full px-2.5 text-xs"
-                onClick={() => setFilter(chip.id)}
-              >
-                <span>{chip.label}</span>
-                <span className={active ? "ml-1 opacity-80 tabular-nums" : "ml-1 text-muted-foreground tabular-nums"}>
-                  {chip.count}
-                </span>
-              </Button>
-            );
-          })}
+        <div className="flex flex-wrap items-center gap-2" role="group" aria-label={t("consoleMemoryFilterAll")}>
+          {chips.map((chip) => (
+            <button
+              key={chip.id}
+              type="button"
+              aria-pressed={filter === chip.id}
+              data-testid={`memory-filter-${chip.id}`}
+              className="lp-wm-chip"
+              onClick={() => setFilter(chip.id)}
+            >
+              <span>{chip.label}</span>
+              <span>{chip.count}</span>
+            </button>
+          ))}
         </div>
       </div>
 
@@ -321,9 +314,9 @@ export function MemoryScreen({ projectId, sectionId, locale: localeProp, initial
           {t("consoleMemoryLoading")}
         </p>
       ) : (
-        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_22rem]">
-          <Surface testId="memory-list">
-            <SurfaceBody className="divide-y divide-[var(--lp-hairline)] p-0">
+        <div className="grid items-start gap-[18px] lg:grid-cols-[minmax(0,1fr)_360px]">
+          <Surface testId="memory-list" className="overflow-hidden">
+            <SurfaceBody className="space-y-0 p-0">
               {searching && visibleItems.length === 0 ? (
                 <p className="p-4 text-sm text-muted-foreground">{t("consoleMemoryLoading")}</p>
               ) : visibleItems.length === 0 ? (
@@ -331,7 +324,7 @@ export function MemoryScreen({ projectId, sectionId, locale: localeProp, initial
                   {trimmedQuery ? t("consoleMemorySearchEmpty") : t("memoryRecordsEmpty")}
                 </p>
               ) : (
-                visibleItems.map((item) => {
+                visibleItems.slice(0, shown).map((item) => {
                   const selected = selectedItem?.key === item.key;
                   if (item.kind === "card") {
                     const { card } = item;
@@ -342,27 +335,23 @@ export function MemoryScreen({ projectId, sectionId, locale: localeProp, initial
                         aria-selected={selected}
                         data-testid={`memory-card-${card.id.slice(0, 12)}`}
                         onClick={() => setSelectedKey(item.key)}
-                        className={`flex w-full flex-col gap-1 px-4 py-3 text-left transition-colors hover:bg-state-hover ${
-                          selected ? "bg-accent/50" : ""
-                        }`}
+                        className="lp-wm-rec"
                       >
-                        <div className="flex flex-wrap items-center gap-2">
-                          <StatusPill tone="accent">{t("consoleMemoryTagCard")}</StatusPill>
-                          <Badge variant="outline">{card.kind}</Badge>
-                          {card.stale ? (
-                            <span data-testid={`memory-card-stale-${card.id.slice(0, 12)}`}>
-                              <StatusPill tone="warn">{t("consoleMemoryCardStale")}</StatusPill>
-                            </span>
-                          ) : null}
-                          <span className="ml-auto text-[11px] text-muted-foreground tabular-nums">
-                            v{card.version}
+                        <span className="lp-wm-type" data-tone="warn">{t("consoleMemoryTagCard")}</span>
+                        <span className="min-w-0 space-y-1">
+                          <span className="lp-wm-rec-text">{card.title}</span>
+                          <span className="lp-wm-rec-meta">
+                            <span>{card.kind}</span>
+                            <span>v{card.version}</span>
+                            {card.verifiedAt ? <span>{formatMemoryDate(card.verifiedAt, locale)}</span> : null}
+                            {card.ref ? <span className="truncate">{card.ref}</span> : null}
+                            {card.stale ? (
+                              <span className="font-semibold text-[var(--lp-warn)]" data-testid={`memory-card-stale-${card.id.slice(0, 12)}`}>
+                                {t("consoleMemoryCardStale")}
+                              </span>
+                            ) : null}
                           </span>
-                        </div>
-                        <p className="text-sm font-medium text-foreground">{card.title}</p>
-                        <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
-                          {card.verifiedAt ? <span>{formatMemoryDate(card.verifiedAt, locale)}</span> : null}
-                          {card.ref ? <span className="truncate">{card.ref}</span> : null}
-                        </div>
+                        </span>
                       </button>
                     );
                   }
@@ -375,35 +364,30 @@ export function MemoryScreen({ projectId, sectionId, locale: localeProp, initial
                       aria-selected={selected}
                       data-testid={`memory-item-${record.id.slice(0, 12)}`}
                       onClick={() => setSelectedKey(item.key)}
-                      className={`flex w-full flex-col gap-1 px-4 py-3 text-left transition-colors hover:bg-state-hover ${
-                        selected ? "bg-accent/50" : ""
-                      }`}
+                      className="lp-wm-rec"
                     >
-                      <div className="flex flex-wrap items-center gap-2">
-                        <StatusPill tone={meta.tone}>{t(meta.labelKey)}</StatusPill>
-                        {record.sources > 1 ? (
-                          <Badge variant="outline">
-                            {t("memorySources").replace("{n}", String(record.sources))}
-                          </Badge>
-                        ) : null}
-                        {record.noTrace ? <Badge variant="outline">{t("memoryRecordNoTrace")}</Badge> : null}
-                      </div>
-                      <p className="line-clamp-2 text-sm text-foreground" style={{ overflowWrap: "anywhere" }}>
-                        {record.content}
-                      </p>
-                      <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-muted-foreground">
-                        <span>{record.origin}</span>
-                        {record.createdAt > 0 ? <span>· {formatMemoryDate(record.createdAt, locale)}</span> : null}
-                        {record.useCount > 0 ? (
-                          <span>
-                            · {t("consoleMemoryFieldUses")}: {record.useCount}
-                          </span>
-                        ) : null}
-                      </div>
+                      <span className="lp-wm-type" data-tone={meta.tone}>{t(meta.labelKey)}</span>
+                      <span className="min-w-0 space-y-1">
+                        <span className="lp-wm-rec-text lp-wm-rec-clamp" style={{ overflowWrap: "anywhere" }}>{record.content}</span>
+                        <span className="lp-wm-rec-meta">
+                          <span>{record.origin}</span>
+                          {record.createdAt > 0 ? <span>{formatMemoryDate(record.createdAt, locale)}</span> : null}
+                          {record.useCount > 0 ? <span>{t("consoleMemoryFieldUses")}: {record.useCount}</span> : null}
+                          {record.sources > 1 ? <span>{t("memorySources").replace("{n}", String(record.sources))}</span> : null}
+                          {record.noTrace ? <span>{t("memoryRecordNoTrace")}</span> : null}
+                        </span>
+                      </span>
                     </button>
                   );
                 })
               )}
+              {visibleItems.length > shown ? (
+                <div className="p-3">
+                  <button type="button" className="lp-wm-more" data-testid="memory-more" onClick={() => setShown((n) => n + RECORDS_PAGE)}>
+                    {t("consoleShowMore").replace("{n}", String(visibleItems.length - shown))}
+                  </button>
+                </div>
+              ) : null}
             </SurfaceBody>
           </Surface>
 

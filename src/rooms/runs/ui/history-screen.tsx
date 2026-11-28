@@ -9,7 +9,6 @@ import {
   Button,
   ConfirmDialog,
   Icon,
-  StatusPill,
   Surface,
   SurfaceBody,
   Table,
@@ -254,24 +253,19 @@ export function HistoryScreen({
 
   return (
     <div className="space-y-4" data-testid="history-screen">
-      <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label={t("consoleHistoryColOutcome")}>
-        {filterChips.map((chip) => {
-          const active = outcomeFilter === chip;
-          return (
-            <Button
-              key={chip}
-              type="button"
-              size="sm"
-              variant={active ? "default" : "outline"}
-              aria-pressed={active}
-              data-testid={`history-filter-${chip}`}
-              className="h-7 rounded-full px-2.5 text-xs"
-              onClick={() => setOutcomeFilter(chip)}
-            >
-              {t(OUTCOME_FILTER_LABELS[chip])}
-            </Button>
-          );
-        })}
+      <div className="flex flex-wrap items-center gap-2" role="group" aria-label={t("consoleHistoryColOutcome")}>
+        {filterChips.map((chip) => (
+          <button
+            key={chip}
+            type="button"
+            aria-pressed={outcomeFilter === chip}
+            data-testid={`history-filter-${chip}`}
+            className="lp-wm-chip"
+            onClick={() => setOutcomeFilter(chip)}
+          >
+            <span>{t(OUTCOME_FILTER_LABELS[chip])}</span>
+          </button>
+        ))}
       </div>
 
       {loadError ? (
@@ -297,18 +291,18 @@ export function HistoryScreen({
           </SurfaceBody>
         </Surface>
       ) : (
-        <Surface testId="history-table-card">
-          <Table data-testid="history-table">
+        <Surface testId="history-table-card" className="overflow-hidden">
+          <Table data-testid="history-table" className="lp-wm-table">
             <TableHeader>
               <TableRow>
                 <TableHead>{t("consoleHistoryColTask")}</TableHead>
-                <TableHead>{t("consoleHistoryColProject")}</TableHead>
+                {projectId === null ? <TableHead className="lp-wm-hide-sm">{t("consoleHistoryColProject")}</TableHead> : null}
                 <TableHead>{t("consoleHistoryColOutcome")}</TableHead>
-                <TableHead className="text-right">{t("consoleHistoryColAttempts")}</TableHead>
-                <TableHead className="text-right">{t("consoleHistoryColDuration")}</TableHead>
-                <TableHead className="text-right">{t("consoleHistoryColCost")}</TableHead>
-                <TableHead>{t("consoleHistoryColCommit")}</TableHead>
-                <TableHead className="text-right">{t("consoleHistoryColFinished")}</TableHead>
+                <TableHead className="lp-wm-hide-sm">{t("consoleHistoryColAttempts")}</TableHead>
+                <TableHead className="lp-wm-hide-sm">{t("consoleHistoryColDuration")}</TableHead>
+                <TableHead className="lp-wm-hide-sm">{t("consoleHistoryColCost")}</TableHead>
+                <TableHead className="lp-wm-hide-sm">{t("consoleHistoryColCommit")}</TableHead>
+                <TableHead className="lp-wm-hide-sm">{t("consoleHistoryColFinished")}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -321,15 +315,15 @@ export function HistoryScreen({
 
                 return (
                   <Fragment key={row.taskId}>
-                    <TableRow data-testid={`history-row-${row.taskId}`}>
-                      <TableCell className="max-w-[18rem]">
+                    <TableRow data-testid={`history-row-${row.taskId}`} className={isExpanded ? "lp-wm-row-open" : undefined} data-outcome={row.outcome}>
+                      <TableCell className="lp-wm-cell-strong lp-wm-title-cell w-full max-w-0">
                         {expandable ? (
                           <button
                             type="button"
                             aria-expanded={isExpanded}
                             data-testid={`history-toggle-${row.taskId}`}
                             onClick={() => toggleRow(row)}
-                            className="flex w-full min-w-0 items-center gap-2 text-left font-medium text-foreground hover:underline"
+                            className="flex w-full min-w-0 items-center gap-2 text-left hover:underline"
                           >
                             <Icon
                               name={isExpanded ? "ChevronDown" : "ChevronRight"}
@@ -337,7 +331,7 @@ export function HistoryScreen({
                               aria-hidden
                             />
                             <span className="min-w-0 truncate">{row.title}</span>
-                            <span className="shrink-0 font-mono text-[11px] font-normal text-muted-foreground">
+                            <span className="lp-wm-hide-sm shrink-0 font-mono text-[11px] font-normal text-muted-foreground">
                               {shortTaskId(row.taskId)}
                             </span>
                           </button>
@@ -346,33 +340,33 @@ export function HistoryScreen({
                             type="button"
                             data-testid={`history-open-${row.taskId}`}
                             onClick={() => onOpenTask?.(row.runId, row.taskId)}
-                            className="flex w-full min-w-0 items-center gap-2 text-left font-medium text-foreground hover:underline"
+                            className="flex w-full min-w-0 items-center gap-2 text-left hover:underline"
                           >
                             <span className="min-w-0 truncate">{row.title}</span>
-                            <span className="shrink-0 font-mono text-[11px] font-normal text-muted-foreground">
+                            <span className="lp-wm-hide-sm shrink-0 font-mono text-[11px] font-normal text-muted-foreground">
                               {shortTaskId(row.taskId)}
                             </span>
                           </button>
                         )}
                       </TableCell>
-                      <TableCell className="text-xs text-muted-foreground">{projectLabel}</TableCell>
+                      {projectId === null ? <TableCell className="lp-wm-hide-sm whitespace-nowrap">{projectLabel}</TableCell> : null}
                       <TableCell>
                         <span data-testid={`history-outcome-${row.taskId}`}>
-                          <StatusPill tone={pill.tone}>{t(pill.labelKey)}</StatusPill>
+                          <span className="lp-wm-outcome" data-tone={pill.tone}>{t(pill.labelKey)}</span>
                         </span>
                       </TableCell>
-                      <TableCell className="text-right text-xs tabular-nums text-muted-foreground">
+                      <TableCell className="lp-wm-hide-sm whitespace-nowrap tabular-nums">
                         {row.attempts > 0 ? row.attempts : "—"}
                       </TableCell>
-                      <TableCell className="text-right text-xs tabular-nums text-muted-foreground">
+                      <TableCell className="lp-wm-hide-sm whitespace-nowrap tabular-nums">
                         {formatDuration(row.durationMs)}
                       </TableCell>
-                      <TableCell className="text-right text-xs tabular-nums text-muted-foreground">
+                      <TableCell className="lp-wm-hide-sm whitespace-nowrap tabular-nums">
                         {formatCost(row.costUsd, locale)}
                       </TableCell>
-                      <TableCell className="text-xs">
+                      <TableCell className="lp-wm-hide-sm">
                         {row.mergeSha ? (
-                          <span className="inline-flex items-center gap-1 font-mono text-muted-foreground">
+                          <span className="inline-flex items-center gap-1 font-mono">
                             <span title={row.mergeSha}>{row.mergeSha.slice(0, 7)}</span>
                             <Button
                               type="button"
@@ -390,13 +384,13 @@ export function HistoryScreen({
                           <span className="text-muted-foreground">—</span>
                         )}
                       </TableCell>
-                      <TableCell className="text-right text-xs tabular-nums text-muted-foreground">
+                      <TableCell className="lp-wm-hide-sm whitespace-nowrap tabular-nums">
                         {formatFinishedAt(row.finishedAt, locale)}
                       </TableCell>
                     </TableRow>
                     {isExpanded ? (
-                      <TableRow className="hover:bg-transparent">
-                        <TableCell colSpan={8} className="bg-muted/20 p-3">
+                      <TableRow className="lp-wm-row-open" data-outcome={row.outcome}>
+                        <TableCell colSpan={projectId === null ? 8 : 7} className="lp-wm-row-detail">
                           <HistoryDetail
                             row={row}
                             detail={details[row.taskId]}
@@ -420,18 +414,9 @@ export function HistoryScreen({
       )}
 
       {nextCursor ? (
-        <div className="flex justify-center">
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            disabled={loadingMore}
-            data-testid="history-load-more"
-            onClick={() => void loadMore()}
-          >
-            {loadingMore ? t("boardLoading") : t("consoleHistoryLoadMore")}
-          </Button>
-        </div>
+        <button type="button" className="lp-wm-more" disabled={loadingMore} data-testid="history-load-more" onClick={() => void loadMore()}>
+          {loadingMore ? t("boardLoading") : t("consoleHistoryLoadMore")}
+        </button>
       ) : null}
 
       <ConfirmDialog

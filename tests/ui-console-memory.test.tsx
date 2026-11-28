@@ -298,4 +298,24 @@ describe("console memory screen (P7)", () => {
 
     slot.lifecycle.unmount();
   });
+  it("lists the first page of a long record list and unfolds the rest on «Show more»", async () => {
+    const many = Array.from({ length: 60 }, (_, index) => ({
+      ...SAMPLE_RECORDS[0]!,
+      id: `rec_many_${String(index).padStart(6, "0")}`,
+      content: `Fact number ${index}`,
+    }));
+    const slot = await mountMemory({ rpc: { memory_records_list: () => ({ records: many }), memory_cards_list: () => ({ cards: [] }) } });
+
+    await slot.findByTestId("memory-list");
+    expect(slot.getByTestId("memory-list").querySelectorAll("[data-testid^='memory-item-']")).toHaveLength(25);
+    expect(slot.getByTestId("memory-filter-all").textContent).toContain("60");
+
+    fireEvent.click(slot.getByTestId("memory-more"));
+    expect(slot.getByTestId("memory-list").querySelectorAll("[data-testid^='memory-item-']")).toHaveLength(50);
+    fireEvent.click(slot.getByTestId("memory-more"));
+    expect(slot.getByTestId("memory-list").querySelectorAll("[data-testid^='memory-item-']")).toHaveLength(60);
+    expect(slot.queryByTestId("memory-more")).toBeNull();
+
+    slot.lifecycle.unmount();
+  });
 });

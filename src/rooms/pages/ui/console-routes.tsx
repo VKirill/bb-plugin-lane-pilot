@@ -193,20 +193,22 @@ function MemorySection({ route, go, projectId, sectionId, locale, page }: Consol
   return (
     <div className="space-y-4" data-testid="console-memory">
       <PageHeader title={t("consoleNavMemory")} subtitle={t("consoleMemorySubtitle")} />
-      <Segments
-        testId="memory-view"
-        label={t("consoleNavMemory")}
-        compact={page.tabSelect}
-        value={activeView}
-        onChange={(next) => {
-          setSelectedMemoryId(null);
-          go({ ...route, section: "memory", view: next });
-        }}
-        items={[
-          { id: "records", label: t("consoleMemoryTabRecords") },
-          { id: "history", label: t("consoleMemoryTabHistory") },
-        ]}
-      />
+      <div className="lp-wm-tabs">
+        <Segments
+          testId="memory-view"
+          label={t("consoleNavMemory")}
+          compact={page.tabSelect}
+          value={activeView}
+          onChange={(next) => {
+            setSelectedMemoryId(null);
+            go({ ...route, section: "memory", view: next });
+          }}
+          items={[
+            { id: "records", label: t("consoleMemoryTabRecords") },
+            { id: "history", label: t("consoleMemoryTabHistory") },
+          ]}
+        />
+      </div>
       {activeView === "history" ? (
         <HistoryScreen
           projectId={scopedProjectId}

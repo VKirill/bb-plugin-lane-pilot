@@ -1,6 +1,6 @@
-import type { ComponentType } from "react";
+import { useState, type ComponentType } from "react";
 import { t, type Locale } from "@lane-pilot/i18n";
-import { Segments } from "@lane-pilot/ui-kit";
+import { Button, PageHeader, Segments } from "@lane-pilot/ui-kit";
 import { BigProjects, type InputsFormView } from "./big-projects";
 import { TaskBoard, type AcceptanceCardView } from "./task-board";
 
@@ -47,6 +47,7 @@ export function WorkScreen({
   go,
 }: WorkScreenProps) {
   const activeView = resolveWorkView(view);
+  const [startOpen, setStartOpen] = useState(false);
   const scopedScope = {
     ...(projectId ? { projectId } : {}),
     ...(sectionId ? { sectionId } : {}),
@@ -54,26 +55,54 @@ export function WorkScreen({
 
   return (
     <div className="space-y-4" data-testid="console-work">
-      <Segments
-        testId="work-view"
-        label={t("consoleNavWork")}
-        compact={compact}
-        value={activeView}
-        onChange={(next) =>
-          go({
-            section: "work",
-            view: next as WorkView,
-            ...scopedScope,
-          })
+      <PageHeader
+        title={t("consoleWorkTitle")}
+        subtitle={t("consoleWorkSubtitle")}
+        actions={
+          <Button
+            type="button"
+            size="sm"
+            className="lp-accent"
+            data-testid="big-projects-start"
+            onClick={() => {
+              if (activeView !== "projects") go({ section: "work", view: "projects", ...scopedScope });
+              setStartOpen((open) => activeView !== "projects" || !open);
+            }}
+          >
+            <span aria-hidden className="mr-1.5 text-base leading-none">+</span>
+            {t("consoleBigProjectStart")}
+          </Button>
         }
-        items={[
-          { id: "tasks", label: t("consoleWorkViewTasks") },
-          { id: "projects", label: t("consoleWorkViewProjects") },
-          { id: "errands", label: t("consoleWorkViewErrands") },
-        ]}
       />
+      <div className="lp-wm-tabs">
+        <Segments
+          testId="work-view"
+          label={t("consoleNavWork")}
+          compact={compact}
+          value={activeView}
+          onChange={(next) =>
+            go({
+              section: "work",
+              view: next as WorkView,
+              ...scopedScope,
+            })
+          }
+          items={[
+            { id: "tasks", label: t("consoleWorkViewTasks") },
+            { id: "projects", label: t("consoleWorkViewProjects") },
+            { id: "errands", label: t("consoleWorkViewErrands") },
+          ]}
+        />
+      </div>
       {activeView === "projects" ? (
-        <BigProjects projectId={projectId} projects={projects} locale={locale} InputsForm={InputsForm} />
+        <BigProjects
+          projectId={projectId}
+          projects={projects}
+          locale={locale}
+          InputsForm={InputsForm}
+          startOpen={startOpen}
+          onStartOpenChange={setStartOpen}
+        />
       ) : activeView === "errands" ? (
         <Errands projects={projects} locale={locale} />
       ) : (

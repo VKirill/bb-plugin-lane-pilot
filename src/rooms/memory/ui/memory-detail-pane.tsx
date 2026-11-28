@@ -2,9 +2,7 @@ import type { ReactNode } from "react";
 import type { z } from "zod";
 import { t, type I18nKey, type Locale } from "@lane-pilot/i18n";
 import {
-  Badge,
   Button,
-  StatusPill,
   Surface,
   SurfaceBody,
   type StatusPillTone,
@@ -50,9 +48,9 @@ export function formatMemoryDate(ms: number, locale: Locale): string {
 
 function DetailRow({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <div className="flex flex-col gap-0.5 border-b border-[var(--lp-hairline)] pb-2 last:border-b-0 last:pb-0">
-      <dt className="text-[11px] font-medium text-muted-foreground">{label}</dt>
-      <dd className="min-w-0 break-words text-xs text-foreground">{children}</dd>
+    <div className="flex flex-col gap-0.5">
+      <dt className="text-[11px] text-[var(--lp-muted)]">{label}</dt>
+      <dd className="m-0 min-w-0 break-words text-[12.5px] text-[var(--lp-ink)]">{children}</dd>
     </div>
   );
 }
@@ -83,15 +81,15 @@ export function MemoryDetailPane({
         ) : selectedItem.kind === "card" ? (
           <>
             <div className="flex flex-wrap items-center gap-2">
-              <StatusPill tone="accent">{t("consoleMemoryTagCard")}</StatusPill>
-              <StatusPill tone={selectedItem.card.stale ? "warn" : "ok"}>
+              <span className="lp-wm-type" data-tone="warn">{t("consoleMemoryTagCard")}</span>
+              <span className="lp-wm-type" data-tone={selectedItem.card.stale ? "warn" : "ok"}>
                 {selectedItem.card.stale ? t("consoleMemoryCardStale") : t("consoleMemoryCardFresh")}
-              </StatusPill>
+              </span>
             </div>
-            <p className="text-sm font-medium leading-relaxed text-foreground" data-testid="memory-detail-text">
+            <p className="text-[15px] font-semibold leading-snug text-[var(--lp-ink)]" data-testid="memory-detail-text">
               {selectedItem.card.title}
             </p>
-            <dl className="space-y-2">
+            <dl className="space-y-3">
               <DetailRow label={t("consoleMemoryFieldKind")}>{selectedItem.card.kind}</DetailRow>
               <DetailRow label={t("consoleMemoryFieldVersion")}>v{selectedItem.card.version}</DetailRow>
               <DetailRow label={t("consoleMemoryFieldVerifiedAt")}>
@@ -113,21 +111,21 @@ export function MemoryDetailPane({
         ) : (
           <>
             <div className="flex flex-wrap items-center gap-2">
-              <StatusPill tone={CATEGORY_META[selectedItem.category].tone}>
+              <span className="lp-wm-type" data-tone={CATEGORY_META[selectedItem.category].tone}>
                 {t(CATEGORY_META[selectedItem.category].labelKey)}
-              </StatusPill>
-              <Badge variant={selectedItem.record.kind === "core" ? "secondary" : "outline"}>
+              </span>
+              <span className="lp-wm-type" data-tone={selectedItem.record.kind === "core" ? "accent" : "muted"}>
                 {selectedItem.record.kind === "core" ? t("memoryKindCore") : t("memoryKindNote")}
-              </Badge>
+              </span>
             </div>
             <p
-              className="whitespace-pre-wrap text-sm leading-relaxed text-foreground"
+              className={`whitespace-pre-wrap leading-snug text-[var(--lp-ink)] ${selectedItem.record.content.length > 160 ? "text-[13px] font-medium" : "text-[15px] font-semibold"}`}
               style={{ overflowWrap: "anywhere" }}
               data-testid="memory-detail-text"
             >
               {selectedItem.record.content}
             </p>
-            <dl className="space-y-2">
+            <dl className="space-y-3">
               <DetailRow label={t("consoleMemoryFieldOrigin")}>{selectedItem.record.origin}</DetailRow>
               <DetailRow label={t("consoleMemoryFieldTask")}>
                 {selectedItem.record.originTaskId ? (
@@ -167,7 +165,8 @@ export function MemoryDetailPane({
                 <Button
                   type="button"
                   size="sm"
-                  variant="destructive"
+                  variant="outline"
+                  className="text-[var(--lp-bad)]"
                   data-testid="memory-detail-delete"
                   disabled={deletingId === selectedItem.record.id}
                   onClick={() => onRequestDelete(selectedItem.record)}

@@ -242,8 +242,8 @@ mindmap
 |---|---|---|---|
 | **Задачи:** доска или список, фильтры вида, поиск, окно «закрыто» | `TaskBoard` по выбранной области | `rpc task_board`, `rpc work_graph_strips` | только чтение |
 | Карточка | открывает P6 | маршрут `work/task/<runId>/<taskId>` | ничего |
-| **Большие проекты:** графы `project-start`, `full-lifecycle`, `roadmap-driven` по этапам | запуск и прогресс проектных графов | `rpc workflow_runs`, `rpc workflow_run_snapshot` | только чтение |
-| «Начать проект» | запуск проектного графа с брифом | `rpc workflow_run` | `lane_pilot_wf_run` |
+| **Большие проекты:** графы `project-start`, `full-lifecycle`, `roadmap-driven`; карточки по пять, дальше «Показать ещё»; этапы подгружаются при раскрытии | запуск и прогресс проектных графов | `rpc workflow_runs`, `rpc workflow_run_snapshot` | только чтение |
+| «Новая задача по брифу» (в шапке страницы, на любой вкладке) | открывает форму запуска проектного графа с брифом | `rpc workflow_run` | `lane_pilot_wf_run` |
 | **Поручения:** реестр видов, модели, диагностика повторов и список | `ErrandsScreen` | `rpc errands_overview`, `rpc errands_diagnosis`, `rpc get_role_models`, `rpc save_setting` | глобальный `role_model.<role>` при смене модели |
 
 ### P6 · Задача

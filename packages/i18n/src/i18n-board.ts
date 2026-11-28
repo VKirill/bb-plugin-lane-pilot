@@ -1,7 +1,5 @@
 /** The strings of the «Tasks» board (src/rooms/runs/ui/task-board.tsx). Merged into the plugin dictionaries by i18n.ts. */
 export const boardEn = {
-  navTasks: "Tasks",
-  boardHelp: "Every task and chain Lane Pilot runs, in every chat: what waits, what works, what is being checked, what is stuck.",
   boardAllProjects: "All projects",
   boardAllKinds: "Tasks and chains",
   boardKindTasks: "Code tasks",
@@ -36,7 +34,6 @@ export const boardEn = {
   boardDiff: "What changed",
   boardAttempts: "Attempts",
   boardThreads: "Agents and sub-agents",
-  boardSteps: "Steps",
   boardStepResults: "Step results",
   boardLoading: "Loading…",
   boardLoadFailed: "Could not load tasks. Retrying…",
@@ -65,7 +62,6 @@ export const boardEn = {
   boardChat: "PM chat",
   boardUpdated: "Updated",
   boardTechTitle: "Technical title",
-  boardProgress: "Progress",
   boardFiles: "Files and checks",
   boardOpenThread: "Open chat",
   boardWorkingNow: "{n} working now",
@@ -186,8 +182,6 @@ export const boardEn = {
 };
 
 export const boardRu: { [K in keyof typeof boardEn]: string } = {
-  navTasks: "Задачи",
-  boardHelp: "Все задачи и графы Lane Pilot во всех чатах: что ждёт, что в работе, что на проверке, что застряло.",
   boardAllProjects: "Все проекты",
   boardAllKinds: "Задачи и графы",
   boardKindTasks: "Задачи кода",
@@ -226,7 +220,6 @@ export const boardRu: { [K in keyof typeof boardEn]: string } = {
   boardDiff: "Что изменилось",
   boardAttempts: "Попытки",
   boardThreads: "Агенты и субагенты",
-  boardSteps: "Шаги",
   boardStepResults: "Результаты шагов",
   boardLoading: "Загрузка…",
   boardLoadFailed: "Не удалось загрузить задачи. Пробую снова…",
@@ -255,7 +248,6 @@ export const boardRu: { [K in keyof typeof boardEn]: string } = {
   boardChat: "Чат PM",
   boardUpdated: "Обновлено",
   boardTechTitle: "Техническое название",
-  boardProgress: "Ход работы",
   boardFiles: "Файлы и проверки",
   boardOpenThread: "Открыть чат",
   boardWorkingNow: "работают сейчас: {n}",

@@ -41,6 +41,9 @@ const COLUMNS: Array<{ id: Column; label: I18nKey }> = [
   { id: "done", label: "boardColDone" },
 ];
 const POLL_MS = 8_000;
+/** A column or the list shows this many cards before «Show more»: a stuck backlog of hundreds must not make the page hundreds of screens tall. */
+const COLUMN_PAGE = 12;
+const LIST_PAGE = 40;
 
 /** The one line that says where the work is: a live dot with the stage and model while an agent works, what it waits for, why it stopped. */
 function PhaseLine({ item, locale }: { item: Item; locale: string }) {
@@ -160,6 +163,8 @@ export function TaskBoard({
   const [drills, setDrills] = useState(false);
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState<Item | null>(null);
+  const [columnShown, setColumnShown] = useState<Record<string, number>>({});
+  const [listShown, setListShown] = useState(LIST_PAGE);
   const board = useLpRpcQuery("task_board", { ...(projectId === "all" ? {} : { projectId }), doneHours }, { pollMs: POLL_MS });
   const items = (board.data as { items?: Item[] } | undefined)?.items ?? null;
   const offline = board.error != null;
@@ -200,25 +205,19 @@ export function TaskBoard({
   );
   return (
     <div className="space-y-3" data-testid="task-board">
-      <div className="flex flex-wrap items-end justify-between gap-2">
-        {locked ? (
-          <span className="text-sm text-muted-foreground" data-testid="board-count">{shown.length}</span>
-        ) : (
-          <div className="min-w-0">
-            <h2 className="text-lg font-semibold">{t("navTasks")} <span className="text-sm font-normal text-muted-foreground">{shown.length}</span></h2>
-            <p className="text-sm text-muted-foreground">{t("boardHelp")}</p>
-          </div>
-        )}
-        <div className="inline-flex rounded-md border border-border p-0.5" role="tablist" data-testid="board-view">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span className="text-sm text-muted-foreground" data-testid="board-count">{shown.length}</span>
+        <div className="lp-seg" data-size="sm" role="tablist" data-testid="board-view">
           {(["board", "list", "stats"] as const).map((id) => (
             <button
               key={id}
               type="button"
               role="tab"
               aria-selected={view === id}
+              data-state={view === id ? "active" : undefined}
               onClick={() => setView(id)}
               data-testid={`board-view-${id}`}
-              className={`rounded px-2.5 py-1 text-xs ${view === id ? "bg-secondary font-medium text-foreground" : "text-muted-foreground hover:text-foreground"}`}
+              className="lp-seg-item h-[22px] px-2 text-[11px]"
             >
               {t(id === "board" ? "boardViewBoard" : id === "list" ? "boardViewList" : "graphViewStats")}
             </button>
@@ -279,6 +278,7 @@ export function TaskBoard({
         <div className={narrow ? "flex flex-col gap-3" : "-mx-1 flex items-start gap-3 overflow-x-auto px-1 pb-3"} data-testid="board-columns" data-narrow={narrow || undefined}>
           {COLUMNS.map((column) => {
             const cards = shown.filter((item) => item.column === column.id);
+            const limit = columnShown[column.id] ?? COLUMN_PAGE;
             return (
               <section key={column.id} className={narrow ? "flex w-full flex-col" : "flex w-[264px] shrink-0 flex-col"} data-testid={`board-col-${column.id}`}>
                 <div className="flex items-center gap-1.5 px-1 pb-2 text-sm font-semibold">
@@ -287,14 +287,24 @@ export function TaskBoard({
                   <span className="font-normal text-muted-foreground">{cards.length}</span>
                 </div>
                 <div className="flex min-h-16 flex-col gap-2 rounded-lg bg-[var(--lp-well,transparent)] p-1">
-                  {cards.length ? cards.map(tile) : <p className="px-1.5 py-2 text-xs text-muted-foreground">{t("boardEmptyColumn")}</p>}
+                  {cards.length ? cards.slice(0, limit).map(tile) : <p className="px-1.5 py-2 text-xs text-muted-foreground">{t("boardEmptyColumn")}</p>}
+                  {cards.length > limit ? (
+                    <button
+                      type="button"
+                      className="lp-wm-more"
+                      data-testid={`board-more-${column.id}`}
+                      onClick={() => setColumnShown((prev) => ({ ...prev, [column.id]: limit + COLUMN_PAGE }))}
+                    >
+                      {t("consoleShowMore").replace("{n}", String(cards.length - limit))}
+                    </button>
+                  ) : null}
                 </div>
               </section>
             );
           })}
         </div>
       ) : (
-        <TaskList items={shown} groupBy={groupBy} projectName={projectName} showProject={showProject} locale={locale} onOpen={openItem} />
+        <TaskList items={shown} groupBy={groupBy} projectName={projectName} showProject={showProject} locale={locale} onOpen={openItem} limit={listShown} onMore={() => setListShown((n) => n + LIST_PAGE)} />
       )}
     </div>
   );
@@ -309,6 +319,8 @@ function TaskList({
   showProject,
   locale,
   onOpen,
+  limit,
+  onMore,
 }: {
   items: Item[];
   groupBy: GroupBy;
@@ -316,6 +328,8 @@ function TaskList({
   showProject: boolean;
   locale: string;
   onOpen: (item: Item) => void;
+  limit: number;
+  onMore: () => void;
 }) {
   const groups = new Map<string, { title: string; items: Item[] }>();
   for (const item of items) {
@@ -324,20 +338,25 @@ function TaskList({
   }
   const ordered = [...groups].sort(([, a], [, b]) => Math.min(...a.items.map((item) => ORDER[item.column])) - Math.min(...b.items.map((item) => ORDER[item.column])));
   const strips = useStageStrips(items.flatMap((item) => (item.kind === "task" && item.taskId ? [{ runId: item.runId, taskId: item.taskId }] : [])));
+  let budget = limit;
   return (
-    <div className="@container overflow-hidden rounded-lg border border-border bg-card" data-testid="board-list">
+    <>
+    <div className="@container overflow-hidden rounded-xl border border-border bg-card" data-testid="board-list">
       {ordered.map(([key, group]) => {
+        if (budget <= 0) return null;
         const done = group.items.filter((item) => item.column === "done").length;
         const stuck = group.items.filter((item) => item.column === "blocked").length;
+        const rows = [...group.items].sort((a, b) => ORDER[a.column] - ORDER[b.column] || b.updatedAt - a.updatedAt).slice(0, budget);
+        budget -= rows.length;
         return (
           <section key={key} data-testid={`board-group-${key}`}>
             {groupBy !== "none" ? (
-              <div className="flex items-center gap-2 border-b border-border bg-secondary/40 px-3.5 py-1.5 text-xs">
+              <div className="flex items-center gap-2 border-b border-border bg-[var(--lp-bg)] px-3.5 py-2 text-[11.5px]">
                 <span className="min-w-0 flex-1 truncate font-semibold text-foreground">{group.title}</span>
                 <span className="shrink-0 text-muted-foreground">{fill("boardGroupSummary", { n: group.items.length, done, stuck })}</span>
               </div>
             ) : null}
-            {[...group.items].sort((a, b) => ORDER[a.column] - ORDER[b.column] || b.updatedAt - a.updatedAt).map((item) => (
+            {rows.map((item) => (
               <button
                 key={item.key}
                 type="button"
@@ -363,5 +382,13 @@ function TaskList({
       })}
       {!items.length ? <p className="p-4 text-sm text-muted-foreground">{t("boardEmptyColumn")}</p> : null}
     </div>
+    {items.length > limit ? (
+      <div className="mt-3 flex justify-center">
+        <button type="button" className="lp-wm-more" data-testid="board-list-more" onClick={onMore}>
+          {t("consoleShowMore").replace("{n}", String(items.length - limit))}
+        </button>
+      </div>
+    ) : null}
+    </>
   );
 }

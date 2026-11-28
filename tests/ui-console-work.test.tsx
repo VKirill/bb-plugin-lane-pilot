@@ -280,6 +280,37 @@ describe("console work section (P5)", () => {
     slot.lifecycle.unmount();
   });
 
+  it("opens the brief form from the page header on any tab and folds big projects beyond the first page", async () => {
+    const runs = Array.from({ length: 7 }, (_, index) => ({
+      id: `wfrun_many_${index}`,
+      status: "succeeded",
+      reason: null,
+      mode: "standard",
+      createdAt: 1_790_000_000_000 + index,
+      updatedAt: 1_790_000_000_000 + index,
+      tokens: 1,
+      costUsd: 0,
+      parentRunId: null,
+      stepsUsed: 1,
+    }));
+    const slot = await mountWork({
+      subPath: "work/projects",
+      projectId: "proj_ui",
+      rpc: { workflow_runs: (input) => ({ runs: (input as { id: string }).id === "full-lifecycle" ? runs : [], hasMore: false }) },
+    });
+
+    await slot.findByTestId("big-project-run-wfrun_many_6");
+    expect(slot.getByTestId("big-projects-list").children).toHaveLength(5);
+    fireEvent.click(slot.getByTestId("big-projects-more"));
+    expect(slot.getByTestId("big-projects-list").children).toHaveLength(7);
+    expect(slot.queryByTestId("big-projects-more")).toBeNull();
+
+    expect(slot.queryByTestId("big-projects-start-panel")).toBeNull();
+    fireEvent.click(slot.getByTestId("big-projects-start"));
+    await slot.findByTestId("big-projects-start-panel");
+    slot.lifecycle.unmount();
+  });
+
   it("switches between tasks, projects, and errands tabs via route.view", async () => {
     const slot = await mountWork({ subPath: "work/tasks" });
     await slot.findByTestId("task-board");
