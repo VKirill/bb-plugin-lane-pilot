@@ -12,6 +12,7 @@ import {
 import { resetTokenUsageForRebuild } from "../src/rooms/usage/server/repositories/token-usage-repository";
 import { threadUsage } from "../src/rooms/usage/server/services/thread-usage";
 import { queryTokenUsage, syncTokenUsage } from "../src/rooms/usage/server/services/token-usage";
+import { rpcKnowledge } from "../src/rooms/contracts/rpc-knowledge";
 
 let dispose: (() => Promise<void> | void) | null = null;
 afterEach(async () => { await dispose?.(); dispose = null; });
@@ -140,7 +141,10 @@ describe("token usage sync", () => {
       ],
     });
     await syncTokenUsage({ bb: fallbackHost.bb, db: fallbackHost.db }, { sinceDays: 90 });
-    expect((await queryTokenUsage({ bb: fallbackHost.bb, db: fallbackHost.db }, { range: "7d" })).byModel[0]?.model).toBe("sonnet");
+    const fallback = await queryTokenUsage({ bb: fallbackHost.bb, db: fallbackHost.db }, { range: "7d" });
+    expect(fallback.byModel[0]?.model).toBe("sonnet");
+    // A model fallback used to leak `mismatches` into the answer, and the strict RPC output check refused the whole Costs screen.
+    expect(rpcKnowledge.token_usage.output.safeParse(fallback).success).toBe(true);
   });
 
   it("does not advance the cursor when listing fails, counts threadsFailed, and logs the first error once", async () => {

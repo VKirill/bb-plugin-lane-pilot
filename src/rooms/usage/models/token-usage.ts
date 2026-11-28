@@ -24,15 +24,13 @@ export type TokenUsageDiagnostics = {
   mismatches?: TokenUsageMismatch[];
 };
 export type TokenUsageResult = {
-  /** The model mismatches the last sync saw (SMA m_cf_book_usage): the person is told the turn ran elsewhere. */
-  mismatches: TokenUsageMismatch[];
   byModel: Array<{ providerId: string; model: string; input: number; output: number; cached: number; total: number; costUsd: number | null }>;
   series: Array<{ day: string; models: Array<{ providerId: string; model: string; total: number }> }>;
   byProject: Array<{ projectId: string; projectName: string; total: number; share: number; topModel: string; costUsd: number | null }>;
   months: string[];
   lastSyncAt: number | null;
   noDataProviders: string[];
-  diagnostics: TokenUsageDiagnostics;
+  diagnostics: Omit<TokenUsageDiagnostics, "mismatches">;
   costUsd: number | null;
 };
 

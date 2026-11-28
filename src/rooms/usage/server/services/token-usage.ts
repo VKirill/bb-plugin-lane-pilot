@@ -298,5 +298,7 @@ export async function queryTokenUsage(ctx: { bb: BbPluginApi; db: LanePilotDatab
   }).sort((a, b) => b.total - a.total || a.projectId.localeCompare(b.projectId));
   const priced = byModel.map((row) => row.costUsd).filter((value): value is number => value !== null);
   const totalCost = priced.length > 0 ? priced.reduce((sum, value) => sum + value, 0) : null;
-  return { byModel, series, byProject, months, lastSyncAt, noDataProviders, diagnostics, mismatches: diagnostics.mismatches ?? [], costUsd: totalCost };
+  // The stored mismatches stay with the sync; the Costs screen has no place for them yet, and the strict RPC output refuses unknown keys.
+  const { threadsSeen, threadsWithUsage, threadsFailed, lastError } = diagnostics;
+  return { byModel, series, byProject, months, lastSyncAt, noDataProviders, diagnostics: { threadsSeen, threadsWithUsage, threadsFailed, lastError }, costUsd: totalCost };
 }
