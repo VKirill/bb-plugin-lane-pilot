@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { AUTONOMY_CLASSES, type AutonomyClass } from "@lane-pilot/contracts";
+import type { AutonomyClass } from "@lane-pilot/contracts";
 import { t, type I18nKey } from "@lane-pilot/i18n";
 import {
   Alert,
@@ -13,12 +13,6 @@ import {
   Surface,
   SurfaceBody,
   SurfaceHeader,
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
   usePanelLayout,
 } from "@lane-pilot/ui-kit";
 import type {
@@ -27,9 +21,8 @@ import type {
   RepoTrustOutput,
   SpecialistAutonomyRow,
 } from "../../contracts/ui";
-import { errorText } from "./staff-list-parts";
+import { autonomyLevelItems, errorText } from "./staff-list-parts";
 import {
-  AUTONOMY_LEVEL_LABELS,
   formatAutonomyLabel,
   pickLoadoutRole,
 } from "./staff-page-helpers";
@@ -103,10 +96,7 @@ export function StaffAutonomyTab({
   } | null>(null);
   const [refused, setRefused] = useState<{ actionClass: string; reason: string } | null>(null);
 
-  const levelItems = AUTONOMY_CLASSES.map((cls) => ({
-    id: cls,
-    label: t(AUTONOMY_LEVEL_LABELS[cls]),
-  }));
+  const levelItems = autonomyLevelItems();
 
   return (
     <div className="space-y-4" data-testid="staff-tab-autonomy">
@@ -119,66 +109,57 @@ export function StaffAutonomyTab({
         </Alert>
       ) : null}
 
-      <Surface testId="staff-autonomy-table">
-        <SurfaceHeader>
-          <p className="text-xs text-muted-foreground">{t("consoleStaffAutonomyLead")}</p>
-        </SurfaceHeader>
-        <SurfaceBody>
-          {autonomy.length === 0 ? (
-            <p className="text-xs text-muted-foreground">{t("consoleStaffAutonomyEmpty")}</p>
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>{t("consoleStaffAutonomyColAction")}</TableHead>
-                  <TableHead>{t("consoleStaffAutonomyColLevel")}</TableHead>
-                  <TableHead>{t("consoleStaffAutonomyColSample")}</TableHead>
-                  <TableHead>{t("consoleStaffAutonomyColConfidence")}</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {autonomy.map((row) => (
-                  <TableRow key={row.actionClass} data-testid={`staff-autonomy-row-${row.actionClass}`}>
-                    <TableCell className="text-xs font-medium">
-                      <div className="flex flex-wrap items-center gap-1.5">
-                        <span>{row.actionClass}</span>
-                        {row.frozen ? (
-                          <StatusPill tone="warn">{t("consoleStaffAutonomyFrozen")}</StatusPill>
-                        ) : null}
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <Segments
-                        testId={`autonomy-level-${row.actionClass}`}
-                        label={row.actionClass}
-                        compact={stackControls}
-                        size="sm"
-                        value={row.level}
-                        items={levelItems}
-                        onChange={(next) => {
-                          const target = next as AutonomyClass;
-                          if (target === row.level) return;
-                          setRefused(null);
-                          setPendingChange({
-                            actionClass: row.actionClass,
-                            from: row.level,
-                            to: target,
-                          });
-                        }}
-                      />
-                    </TableCell>
-                    <TableCell className="text-xs tabular-nums text-muted-foreground">
-                      {row.sample > 0 ? row.sample : "—"}
-                    </TableCell>
-                    <TableCell className="text-xs tabular-nums text-muted-foreground">
-                      {row.confidence !== null ? `${Math.round(row.confidence * 100)}%` : "—"}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          )}
-        </SurfaceBody>
+      <p className="text-[13px] leading-[1.4] text-[var(--lp-body)]">{t("consoleStaffAutonomyLead")}</p>
+
+      <Surface testId="staff-autonomy-table" className="overflow-hidden">
+        {autonomy.length === 0 ? (
+          <p className="p-4 text-xs text-[var(--lp-muted)]">{t("consoleStaffAutonomyEmpty")}</p>
+        ) : (
+          <>
+            <div className="lp-autonomy-row lp-autonomy-head hidden bg-[var(--lp-bg)] sm:grid">
+              <span>{t("consoleStaffAutonomyColAction")}</span>
+              <span>{t("consoleStaffAutonomyColLevel")}</span>
+              <span>{t("consoleStaffAutonomyColSample")}</span>
+              <span>{t("consoleStaffAutonomyColConfidence")}</span>
+            </div>
+            {autonomy.map((row) => (
+              <div
+                key={row.actionClass}
+                className="lp-autonomy-row border-t border-[var(--lp-line)]"
+                data-testid={`staff-autonomy-row-${row.actionClass}`}
+              >
+                <span className="flex min-w-0 flex-wrap items-center gap-1.5 text-[12.5px] font-medium text-[var(--lp-ink)]">
+                  <span className="min-w-0 break-words">{row.actionClass}</span>
+                  {row.frozen ? <StatusPill tone="warn">{t("consoleStaffAutonomyFrozen")}</StatusPill> : null}
+                </span>
+                <Segments
+                  testId={`autonomy-level-${row.actionClass}`}
+                  label={row.actionClass}
+                  compact={stackControls}
+                  size="sm"
+                  value={row.level}
+                  items={levelItems}
+                  onChange={(next) => {
+                    const target = next as AutonomyClass;
+                    if (target === row.level) return;
+                    setRefused(null);
+                    setPendingChange({
+                      actionClass: row.actionClass,
+                      from: row.level,
+                      to: target,
+                    });
+                  }}
+                />
+                <span className="text-[12.5px] tabular-nums text-[var(--lp-body)]">
+                  {row.sample > 0 ? row.sample : "—"}
+                </span>
+                <span className="text-[12.5px] tabular-nums text-[var(--lp-body)]">
+                  {row.confidence !== null ? `${Math.round(row.confidence * 100)}%` : "—"}
+                </span>
+              </div>
+            ))}
+          </>
+        )}
       </Surface>
 
       <Surface testId="staff-repo-trust">
@@ -199,7 +180,7 @@ export function StaffAutonomyTab({
             </p>
           ) : repoTrust ? (
             <>
-              <dl className="grid gap-3 text-xs sm:grid-cols-2 lg:grid-cols-4">
+              <dl className="grid gap-3 text-xs sm:grid-cols-2 lg:grid-cols-4 [&_dd]:m-0">
                 <div>
                   <dt className="text-muted-foreground">{t("consoleStaffRepoTrustGate")}</dt>
                   <dd className="mt-0.5 font-medium text-foreground">
@@ -327,14 +308,6 @@ export function StaffLoadoutTab({
 
   return (
     <div className="space-y-4" data-testid="staff-tab-loadout">
-      {missingCount > 0 ? (
-        <Alert data-testid="staff-loadout-missing-banner">
-          <AlertTitle>
-            {t("consoleLoadoutMissingBanner").replace("{n}", String(missingCount))}
-          </AlertTitle>
-        </Alert>
-      ) : null}
-
       <Surface testId="staff-loadout-card">
         <SurfaceHeader className="justify-between gap-2">
           <h3 className="text-sm font-semibold">{t("consoleStaffLoadoutTitle")}</h3>
@@ -345,14 +318,14 @@ export function StaffLoadoutTab({
           ) : null}
         </SurfaceHeader>
         <SurfaceBody className="space-y-4">
-          <div className="flex flex-wrap items-center gap-2 rounded-lg bg-[var(--lp-well)]/60 p-3 text-xs">
-            <span className="text-muted-foreground">{t("consoleStaffLoadoutModelLabel")}:</span>
-            <span className="font-medium text-foreground" data-testid="staff-loadout-model">
-              {modelText}
-            </span>
-            <Badge variant="secondary" className="text-[11px]" data-testid="staff-loadout-model-from">
-              {t("consoleStaffLoadoutModelFrom").replace("{from}", entry.model.from)}
-            </Badge>
+          <div className="space-y-1.5">
+            <div className="lp-caption">{t("consoleStaffLoadoutModelLabel")}</div>
+            <div className="lp-tag gap-1.5 px-2 py-1">
+              <span data-testid="staff-loadout-model">{modelText}</span>
+              <span className="text-[10.5px] font-medium text-[var(--lp-muted)]" data-testid="staff-loadout-model-from">
+                {t("consoleStaffLoadoutModelFrom").replace("{from}", entry.model.from)}
+              </span>
+            </div>
           </div>
 
           <div className="space-y-3">
@@ -365,20 +338,20 @@ export function StaffLoadoutTab({
                   className="space-y-1.5"
                   data-testid={`staff-loadout-group-${groupType}`}
                 >
-                  <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                  <div className="lp-caption">
                     {t(LOADOUT_GROUP_KEYS[groupType])}
                   </div>
                   <div className="flex flex-wrap gap-2">
                     {items.map((item) => (
                       <div
                         key={`${item.type}:${item.name}`}
-                        className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--lp-hairline)] bg-[var(--lp-card)] px-2.5 py-1 text-xs"
+                        className="lp-tag max-w-full gap-1.5 px-2 py-1"
                         data-testid={`staff-loadout-item-${item.name}`}
                       >
-                        <span className="font-medium text-foreground">{item.name}</span>
-                        <Badge variant="outline" className="text-[10px]">
+                        <span className="min-w-0 break-all">{item.name}</span>
+                        <span className="text-[10.5px] font-medium text-[var(--lp-muted)]">
                           {t("consoleLoadoutFromPrefix").replace("{from}", item.from)}
-                        </Badge>
+                        </span>
                         {item.missing ? (
                           <StatusPill tone="warn" className="text-[10px]">
                             <span data-testid={`staff-loadout-missing-${item.name}`}>
@@ -396,6 +369,15 @@ export function StaffLoadoutTab({
               <p className="text-xs text-muted-foreground">{t("consoleStaffLoadoutGroupEmpty")}</p>
             ) : null}
           </div>
+
+          {missingCount > 0 ? (
+            <p
+              className="rounded-lg bg-[var(--lp-warn-soft)] p-2.5 text-[11.5px] font-medium text-[var(--lp-warn)]"
+              data-testid="staff-loadout-missing-banner"
+            >
+              {t("consoleLoadoutMissingBanner").replace("{n}", String(missingCount))}
+            </p>
+          ) : null}
 
           {entry.note ? <p className="text-xs text-muted-foreground">{entry.note}</p> : null}
         </SurfaceBody>

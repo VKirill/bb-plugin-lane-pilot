@@ -10,6 +10,7 @@ import type { ScheduleBoardContract } from "../../schedule";
 
 export type StaffScheduleItem = z.infer<ScheduleBoardContract["schedule_list"]["output"]>["schedules"][number];
 import {
+  AUTONOMY_LEVEL_LABELS,
   computeOnTrack,
   DEFAULT_DOMAIN_ROLE,
   domainOfAgent,
@@ -33,11 +34,6 @@ export const STAFF_TAB_LABELS: Readonly<Record<StaffPageTab, I18nKey>> = {
   costs: "consoleStaffTabCosts",
 };
 
-export const AUTONOMY_LEVEL_LABELS: Readonly<Record<AutonomyClass, I18nKey>> = {
-  observe: "consoleStaffAutonomyObserve",
-  propose: "consoleStaffAutonomyPropose",
-  bounded_auto: "consoleStaffAutonomyAuto",
-};
 
 export function resolveStaffTab(view?: string): StaffPageTab {
   if (view && (STAFF_PAGE_TABS as readonly string[]).includes(view)) {

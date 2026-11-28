@@ -46,16 +46,16 @@ export function HireNextCard({ chartered }: { chartered: boolean }) {
   return (
     <Surface testId="hire-next-card">
       <SurfaceHeader>
-        <h2 className="text-sm font-semibold text-foreground">{t("consoleHireNextBoxTitle")}</h2>
+        <h2 className="text-sm font-semibold text-[var(--lp-ink)]">{t("consoleHireNextBoxTitle")}</h2>
       </SurfaceHeader>
       <SurfaceBody>
-        <ol className="space-y-2.5 text-xs text-muted-foreground">
+        <ol className="space-y-2.5 text-[12.5px] text-[var(--lp-body)]">
           {steps.map((line, index) => (
             <li key={line} className="flex items-start gap-2.5">
-              <span className="mt-0.5 inline-flex size-5 shrink-0 items-center justify-center rounded-full bg-[var(--lp-well)] text-[11px] font-semibold text-foreground">
+              <span className="inline-flex size-[22px] shrink-0 items-center justify-center rounded-full bg-[var(--lp-accent-soft)] text-[11.5px] font-semibold text-[var(--lp-accent)]">
                 {index + 1}
               </span>
-              <span className="leading-relaxed">{line}</span>
+              <span className="leading-[1.45]">{line}</span>
             </li>
           ))}
         </ol>
@@ -92,11 +92,11 @@ export function HireRoleStep({
 }) {
   return (
     <div className="space-y-6" data-testid="hire-step-role">
-      <section className="space-y-2.5">
-        <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+      <section className="space-y-3.5">
+        <div className="lp-caption">
           {t("consoleHireGroupChartered")} · {t("consoleHireGroupCharteredHint")}
         </div>
-        <div className="grid gap-3 sm:grid-cols-2">
+        <div className="grid gap-3.5 sm:grid-cols-2">
           {charteredAgents.map((agent) => {
             const active = selectedRoleId === agent.id;
             const intakeId = intakeWorkflowIdOf(agent);
@@ -107,24 +107,20 @@ export function HireRoleStep({
                 data-testid={`hire-role-${agent.id}`}
                 aria-pressed={active}
                 onClick={() => onSelectRole(agent.id)}
-                className={`flex flex-col justify-between rounded-xl border p-4 text-left transition ${
-                  active
-                    ? "border-[var(--lp-accent,#2563eb)] bg-[var(--lp-card)] ring-1 ring-[var(--lp-accent,#2563eb)]"
-                    : "border-[var(--lp-hairline)] bg-[var(--lp-card)] hover:border-[var(--lp-outline)]"
-                }`}
+                className="lp-role-card"
               >
-                <div className="flex w-full items-start justify-between gap-2">
-                  <span className="text-sm font-semibold text-foreground">
+                <div className="flex w-full items-center justify-between gap-2">
+                  <span className="text-base font-semibold text-[var(--lp-ink)]">
                     {resolveRoleName(agent, agent.id, locale)}
                   </span>
                   <StatusPill tone={active ? "accent" : "muted"}>
                     {active ? t("consoleHireSelected") : t("consoleHireGroupChartered")}
                   </StatusPill>
                 </div>
-                <p className="mt-2 line-clamp-2 text-xs text-muted-foreground">
+                <p className="line-clamp-2 text-[12.5px] text-[var(--lp-body)]">
                   {agent.summary || agent.description}
                 </p>
-                <p className="mt-3 font-mono text-[11px] text-muted-foreground">
+                <p className="text-[11.5px] text-[var(--lp-muted)]">
                   {t("consoleHireIntakeGraph").replace("{id}", intakeId)}
                 </p>
               </button>
@@ -133,36 +129,35 @@ export function HireRoleStep({
         </div>
       </section>
 
-      <section className="space-y-2.5">
-        <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+      <section className="space-y-3.5">
+        <div className="lp-caption">
           {t("consoleHireGroupTask")} · {t("consoleHireGroupTaskHint")}
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap gap-2 max-sm:grid max-sm:grid-cols-2">
           {taskAgents.map((agent) => {
             const active = selectedRoleId === agent.id;
             return (
-              <Button
+              <button
                 key={agent.id}
                 type="button"
-                size="sm"
-                variant={active ? "default" : "outline"}
+                className="lp-chip"
                 aria-pressed={active}
                 data-testid={`hire-role-${agent.id}`}
                 onClick={() => onSelectRole(agent.id)}
               >
                 {resolveRoleName(agent, agent.id, locale)}
-              </Button>
+              </button>
             );
           })}
-          <Button
+          <button
             type="button"
-            size="sm"
-            variant={customOpen ? "secondary" : "outline"}
+            className="lp-chip"
+            aria-pressed={customOpen}
             data-testid="hire-custom-role-btn"
             onClick={() => onToggleCustom(!customOpen)}
           >
             {t("consoleHireCustomRoleBtn")}
-          </Button>
+          </button>
         </div>
 
         {customOpen ? (

@@ -3,8 +3,8 @@ import {
   Alert,
   AlertDescription,
   AlertTitle,
-  Badge,
   Button,
+  ProgressBar,
   StatusPill,
   Surface,
   SurfaceBody,
@@ -23,6 +23,13 @@ import {
   shiftOutcomeTone,
   type ExtractedCharterSummary,
 } from "./staff-page-helpers";
+
+const SHIFT_DOT_COLOR = {
+  ok: "var(--lp-ok)",
+  bad: "var(--lp-bad)",
+  accent: "var(--lp-accent)",
+  muted: "var(--lp-muted)",
+} as const;
 
 const CAP_PERIOD_KEYS: Readonly<Record<"day" | "month" | "test", I18nKey>> = {
   day: "consoleStaffCapPeriod_day",
@@ -71,8 +78,8 @@ export function StaffCharterTab({
   const targetText = summary.target !== null ? summary.target.toLocaleString(locale) : "—";
 
   return (
-    <div className="grid gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]" data-testid="staff-tab-charter">
-      <div className="space-y-4">
+    <div className="grid gap-[22px] lg:grid-cols-[minmax(0,1fr)_340px]" data-testid="staff-tab-charter">
+      <div className="min-w-0 space-y-3.5">
         {charter.pendingDraft ? (
           <Alert data-testid="staff-charter-draft-banner">
             <AlertTitle>
@@ -82,128 +89,110 @@ export function StaffCharterTab({
           </Alert>
         ) : null}
 
-        <Surface testId="staff-charter-goal-card">
-          <SurfaceHeader className="justify-between gap-2">
-            <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+        <Surface testId="staff-charter-goal-card" className="space-y-3.5 border-[var(--lp-accent)] p-5">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-[11px] font-bold uppercase tracking-[0.5px] text-[var(--lp-accent)]">
               {t("consoleStaffCharterGoalTitle")}
             </span>
-            <Button
+            <button
               type="button"
-              size="sm"
-              variant="outline"
+              className="text-[12.5px] font-semibold text-[var(--lp-accent)] hover:underline"
               data-testid="staff-charter-edit-btn"
               onClick={onEditCharter}
             >
               {t("consoleStaffCharterEditBtn")}
-            </Button>
-          </SurfaceHeader>
-          <SurfaceBody className="space-y-3">
-            {summary.goal ? (
-              <p className="text-base font-semibold text-foreground" data-testid="staff-charter-goal-text">
-                {summary.goal}
-              </p>
-            ) : null}
-            <dl className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-              <div className="rounded-lg bg-[var(--lp-well)]/60 p-2.5">
-                <dt className="text-[11px] text-muted-foreground">{t("consoleStaffCharterMetric")}</dt>
-                <dd className="mt-0.5 text-xs font-medium text-foreground" data-testid="staff-charter-metric">
-                  {summary.metric ?? "—"}
-                </dd>
-              </div>
-              <div className="rounded-lg bg-[var(--lp-well)]/60 p-2.5">
-                <dt className="text-[11px] text-muted-foreground">
-                  {t("consoleStaffGoalTarget").replace("{current}", currentText).replace("{target}", targetText)}
-                </dt>
-                <dd className="mt-0.5 text-xs font-medium tabular-nums text-foreground">
-                  {currentText} → {targetText}
-                </dd>
-              </div>
-              <div className="rounded-lg bg-[var(--lp-well)]/60 p-2.5">
-                <dt className="text-[11px] text-muted-foreground">{t("consoleStaffCharterDue")}</dt>
-                <dd className="mt-0.5 text-xs font-medium text-foreground">{summary.due ?? "—"}</dd>
-              </div>
-              <div className="rounded-lg bg-[var(--lp-well)]/60 p-2.5">
-                <dt className="text-[11px] text-muted-foreground">{t("consoleStaffCharterDataSource")}</dt>
-                <dd className="mt-0.5 text-xs font-medium text-foreground" data-testid="staff-charter-data-source">
-                  {summary.dataSource ?? "—"}
-                </dd>
-              </div>
-            </dl>
-            <div className="rounded-lg bg-[var(--lp-well)]/40 p-2.5 text-xs">
-              <span className="text-muted-foreground">{t("consoleStaffCharterFormula")}: </span>
-              <span className="font-mono text-foreground" data-testid="staff-charter-formula">
-                {summary.formula ?? "—"}
-              </span>
+            </button>
+          </div>
+          {summary.goal ? (
+            <p
+              className="text-xl font-semibold leading-[1.4] text-[var(--lp-ink)]"
+              data-testid="staff-charter-goal-text"
+            >
+              {summary.goal}
+            </p>
+          ) : null}
+          <dl className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="lp-field">
+              <dt>{t("consoleStaffCharterMetric")}</dt>
+              <dd data-testid="staff-charter-metric">{summary.metric ?? "—"}</dd>
             </div>
-          </SurfaceBody>
+            <div className="lp-field">
+              <dt>{t("consoleStaffGoalTarget").replace("{current}", currentText).replace("{target}", targetText)}</dt>
+              <dd className="tabular-nums">
+                {currentText} → {targetText}
+              </dd>
+            </div>
+            <div className="lp-field">
+              <dt>{t("consoleStaffCharterDue")}</dt>
+              <dd>{summary.due ?? "—"}</dd>
+            </div>
+            <div className="lp-field">
+              <dt>{t("consoleStaffCharterDataSource")}</dt>
+              <dd data-testid="staff-charter-data-source">{summary.dataSource ?? "—"}</dd>
+            </div>
+          </dl>
+          <div className="lp-field">
+            <dt>{t("consoleStaffCharterFormula")}</dt>
+            <dd className="font-mono text-xs" data-testid="staff-charter-formula">
+              {summary.formula ?? "—"}
+            </dd>
+          </div>
         </Surface>
 
-        <div className="grid gap-4 md:grid-cols-2">
-          <Surface testId="staff-charter-constraints">
-            <SurfaceHeader>
-              <h3 className="text-sm font-semibold">{t("consoleStaffCharterConstraints")}</h3>
-            </SurfaceHeader>
-            <SurfaceBody>
-              {summary.constraints.length === 0 ? (
-                <p className="text-xs text-muted-foreground">{t("consoleStaffCharterConstraintsEmpty")}</p>
-              ) : (
-                <dl className="space-y-2 text-xs">
-                  {summary.constraints.map((item) => (
-                    <div key={item.key} className="flex items-baseline justify-between gap-2">
-                      <dt className="text-muted-foreground">{item.label}</dt>
-                      <dd className="text-right font-medium text-foreground">{item.value}</dd>
-                    </div>
-                  ))}
-                </dl>
-              )}
-            </SurfaceBody>
+        <div className="grid items-start gap-3.5 md:grid-cols-2">
+          <Surface testId="staff-charter-constraints" className="space-y-2.5 p-[18px]">
+            <h3 className="text-[13.5px] font-semibold text-[var(--lp-ink)]">{t("consoleStaffCharterConstraints")}</h3>
+            {summary.constraints.length === 0 ? (
+              <p className="text-xs text-[var(--lp-muted)]">{t("consoleStaffCharterConstraintsEmpty")}</p>
+            ) : (
+              <dl>
+                {summary.constraints.map((item) => (
+                  <div key={item.key} className="lp-kv">
+                    <dt>{item.label}</dt>
+                    <dd>{item.value}</dd>
+                  </div>
+                ))}
+              </dl>
+            )}
           </Surface>
 
-          <Surface testId="staff-charter-budgets">
-            <SurfaceHeader>
-              <h3 className="text-sm font-semibold">{t("consoleStaffCharterBudgets")}</h3>
-            </SurfaceHeader>
-            <SurfaceBody className="space-y-2">
-              {summary.budgets.length === 0 ? (
-                <p className="text-xs text-muted-foreground">{t("consoleStaffCharterBudgetsEmpty")}</p>
-              ) : (
-                <dl className="space-y-2 text-xs">
-                  {summary.budgets.map((item) => (
-                    <div key={item.key} className="flex items-baseline justify-between gap-2">
-                      <dt className="text-muted-foreground">{item.label}</dt>
-                      <dd className="font-medium tabular-nums text-foreground">{item.value}</dd>
-                    </div>
-                  ))}
-                </dl>
-              )}
-              <p className="pt-1 text-[11px] text-muted-foreground">{t("consoleStaffCharterBudgetsHint")}</p>
-            </SurfaceBody>
+          <Surface testId="staff-charter-budgets" className="space-y-2.5 p-[18px]">
+            <h3 className="text-[13.5px] font-semibold text-[var(--lp-ink)]">{t("consoleStaffCharterBudgets")}</h3>
+            {summary.budgets.length === 0 ? (
+              <p className="text-xs text-[var(--lp-muted)]">{t("consoleStaffCharterBudgetsEmpty")}</p>
+            ) : (
+              <dl>
+                {summary.budgets.map((item) => (
+                  <div key={item.key} className="lp-kv">
+                    <dt>{item.label}</dt>
+                    <dd className="tabular-nums">{item.value}</dd>
+                  </div>
+                ))}
+              </dl>
+            )}
+            <p className="text-[11.5px] leading-[1.4] text-[var(--lp-muted)]">{t("consoleStaffCharterBudgetsHint")}</p>
           </Surface>
         </div>
 
-        <Surface testId="staff-charter-channels">
-          <SurfaceHeader>
-            <h3 className="text-sm font-semibold">{t("consoleStaffCharterChannels")}</h3>
-          </SurfaceHeader>
-          <SurfaceBody className="space-y-2">
-            {summary.channels.length === 0 ? (
-              <p className="text-xs text-muted-foreground">{t("consoleStaffCharterChannelsEmpty")}</p>
-            ) : (
-              <div className="flex flex-wrap gap-1.5">
-                {summary.channels.map((ch) => (
-                  <Badge key={ch} variant="secondary" className="text-xs">
-                    {ch}
-                  </Badge>
-                ))}
-              </div>
-            )}
-            {summary.emergencyNote ? (
-              <p className="text-xs text-muted-foreground">{summary.emergencyNote}</p>
-            ) : null}
-          </SurfaceBody>
+        <Surface testId="staff-charter-channels" className="space-y-2.5 p-[18px]">
+          <h3 className="text-[13.5px] font-semibold text-[var(--lp-ink)]">{t("consoleStaffCharterChannels")}</h3>
+          {summary.channels.length === 0 ? (
+            <p className="text-xs text-[var(--lp-muted)]">{t("consoleStaffCharterChannelsEmpty")}</p>
+          ) : (
+            <div className="flex flex-wrap gap-2">
+              {summary.channels.map((ch) => (
+                <span key={ch} className="lp-tag">
+                  {ch}
+                </span>
+              ))}
+            </div>
+          )}
+          {summary.emergencyNote ? (
+            <p className="text-xs leading-[1.4] text-[var(--lp-body)]">{summary.emergencyNote}</p>
+          ) : null}
         </Surface>
 
-        <p className="text-xs text-muted-foreground" data-testid="staff-charter-version">
+        <p className="text-xs text-[var(--lp-muted)]" data-testid="staff-charter-version">
           {t("consoleStaffCharterVersion").replace("{v}", String(charter.version))}
           {charter.approvedBy
             ? ` · ${t("consoleStaffCharterApprovedBy").replace("{by}", charter.approvedBy)}`
@@ -214,35 +203,36 @@ export function StaffCharterTab({
         </p>
       </div>
 
-      <Surface testId="staff-charter-shifts-preview" className="h-fit">
-        <SurfaceHeader className="justify-between gap-2">
-          <h3 className="text-sm font-semibold">{t("consoleStaffCharterRecentShifts")}</h3>
-          <Button type="button" size="sm" variant="ghost" onClick={onOpenShifts}>
+      <Surface testId="staff-charter-shifts-preview" className="h-fit space-y-3.5 p-[18px]">
+        <div className="flex items-center justify-between gap-2">
+          <h3 className="text-[13.5px] font-semibold text-[var(--lp-ink)]">{t("consoleStaffCharterRecentShifts")}</h3>
+          <button type="button" className="text-xs font-medium text-[var(--lp-accent)] hover:underline" onClick={onOpenShifts}>
             {t("consoleStaffCharterAllShifts")}
-          </Button>
-        </SurfaceHeader>
-        <SurfaceBody>
-          {recentPreview.length === 0 ? (
-            <p className="text-xs text-muted-foreground">{t("consoleStaffShiftsNone")}</p>
-          ) : (
-            <ul className="space-y-2.5 text-xs">
-              {recentPreview.map((shift, idx) => (
-                <li key={`${shift.at}-${idx}`} className="flex items-start justify-between gap-2">
-                  <div className="min-w-0">
-                    <div className="font-medium text-foreground">{shift.depth}</div>
-                    <div className="text-[11px] text-muted-foreground">
-                      {formatShiftTime(shift.at, locale)}
-                      {shift.workflowId ? ` · ${shift.workflowId}` : ""}
-                    </div>
+          </button>
+        </div>
+        {recentPreview.length === 0 ? (
+          <p className="text-xs text-[var(--lp-muted)]">{t("consoleStaffShiftsNone")}</p>
+        ) : (
+          <ul className="space-y-3.5">
+            {recentPreview.map((shift, idx) => (
+              <li key={`${shift.at}-${idx}`} className="flex items-start gap-2.5">
+                <span
+                  className="mt-1.5 size-2 shrink-0 rounded-full"
+                  style={{ backgroundColor: SHIFT_DOT_COLOR[shiftOutcomeTone(shift.outcome)] }}
+                  title={shift.outcome}
+                  aria-label={shift.outcome}
+                />
+                <div className="min-w-0 space-y-0.5">
+                  <div className="text-[11.5px] font-medium text-[var(--lp-muted)]">
+                    {formatShiftTime(shift.at, locale)}
+                    {shift.workflowId ? ` · ${shift.workflowId}` : ""}
                   </div>
-                  <StatusPill tone={shiftOutcomeTone(shift.outcome)} className="shrink-0">
-                    {shift.outcome}
-                  </StatusPill>
-                </li>
-              ))}
-            </ul>
-          )}
-        </SurfaceBody>
+                  <div className="text-[12.5px] leading-[1.4] text-[var(--lp-ink)]">{shift.depth}</div>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
       </Surface>
     </div>
   );
@@ -393,12 +383,12 @@ export function StaffCostsTab({
                 cap.capUsd !== null && cap.capUsd > 0
                   ? Math.max(0, Math.min(100, Math.round((cap.usedUsd / cap.capUsd) * 100)))
                   : 0;
-              const barColor =
+              const tone =
                 cap.capUsd !== null && cap.capUsd > 0 && cap.usedUsd >= cap.capUsd
-                  ? "bg-[var(--lp-danger)]"
+                  ? "bad"
                   : pct >= 80
-                    ? "bg-[var(--lp-warning)]"
-                    : "bg-[var(--lp-success)]";
+                    ? "warn"
+                    : "ok";
 
               return (
                 <div key={cap.period} className="space-y-1.5" data-testid={`staff-cap-${cap.period}`}>
@@ -409,13 +399,7 @@ export function StaffCostsTab({
                       {cap.capUsd !== null ? formatUsdAmount(cap.capUsd, locale) : t("consoleStaffCapNoLimit")}
                     </span>
                   </div>
-                  <div className="h-2 w-full overflow-hidden rounded-full bg-[var(--lp-well)]">
-                    <div
-                      className={`h-full rounded-full ${barColor}`}
-                      style={{ width: `${pct}%` }}
-                      data-testid={`staff-cap-bar-${cap.period}`}
-                    />
-                  </div>
+                  <ProgressBar value={pct} tone={tone} label={t(CAP_PERIOD_KEYS[cap.period])} testId={`staff-cap-bar-${cap.period}`} />
                 </div>
               );
             })}

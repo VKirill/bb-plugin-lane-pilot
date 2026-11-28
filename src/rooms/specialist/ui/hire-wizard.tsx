@@ -330,11 +330,11 @@ export function HireWizard({
           const reachable =
             num === 1 || (num === 2 && Boolean(selectedAgent)) || (num === 3 && Boolean(selectedAgent && selectedProjectId));
           return (
-            <Button
+            <button
               key={num}
               type="button"
-              size="sm"
-              variant={active ? "default" : "outline"}
+              className="lp-step"
+              aria-current={active ? "step" : undefined}
               disabled={!reachable && !active}
               data-testid={`hire-step-${num}`}
               onClick={() => {
@@ -342,7 +342,7 @@ export function HireWizard({
               }}
             >
               {label}
-            </Button>
+            </button>
           );
         })}
       </div>
@@ -360,7 +360,7 @@ export function HireWizard({
           <Skeleton className="h-16 rounded-xl" />
         </div>
       ) : (
-        <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
+        <div className="grid gap-[18px] lg:grid-cols-[1fr_380px]">
           <div className="min-w-0 space-y-4">
             {step === 1 ? (
               <>

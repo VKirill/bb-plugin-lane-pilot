@@ -284,7 +284,12 @@ describe("console staff list (P3)", () => {
     expect(slot.getByTestId("staff-card-status-proj_alpha:marketing").textContent).toContain("В графике");
     expect(slot.getByTestId("staff-card-budget-proj_alpha:marketing").textContent).toMatch(/\$31[.,]40/);
     expect(slot.getByTestId("staff-card-budget-proj_alpha:marketing").textContent).toMatch(/\$45[.,]00/);
-    expect(slot.getByTestId("staff-card-autonomy-proj_alpha:marketing").textContent).toContain("Сам 1");
+    expect(
+      slot.getByTestId("seg-card-proj_alpha:marketing-bid_adjust-bounded_auto").getAttribute("aria-pressed"),
+    ).toBe("true");
+    expect(
+      slot.getByTestId("seg-card-proj_alpha:marketing-new_campaign-propose").getAttribute("aria-pressed"),
+    ).toBe("true");
 
     // Chat button present on marketer (has latestThreadId) and hidden on copy-lead (no thread).
     expect(slot.queryByTestId("staff-chat-proj_alpha:marketing")).not.toBeNull();
@@ -317,6 +322,17 @@ describe("console staff list (P3)", () => {
       method: "toPluginPanel",
       path: "lane-pilot",
       options: { subPath: "staff/proj_alpha/marketing" },
+    });
+
+    // The autonomy ladder on a card leads to the autonomy tab, where a change is confirmed.
+    fireEvent.click(slot.getByTestId("console-nav-staff"));
+    await slot.findByTestId("staff-hire-btn");
+    fireEvent.click(slot.getByTestId("seg-card-proj_alpha:marketing-new_campaign-bounded_auto"));
+    await slot.findByTestId("staff-tab-autonomy");
+    expect(slot.inspection.navigateCalls).toContainEqual({
+      method: "toPluginPanel",
+      path: "lane-pilot",
+      options: { subPath: "staff/proj_alpha/marketing/autonomy" },
     });
 
     // Navigating back and clicking «Нанять» routes to staff/hire.
