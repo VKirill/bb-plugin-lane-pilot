@@ -21,7 +21,6 @@ import type { ScheduleBoardContract } from "../../schedule";
 import {
   buildCharterPayload,
   computeCharterDiff,
-  mergeDraftIntoBody,
   parseCharterForm,
   parseOptionalNonNegativeNumber,
   type CharterEditorForm,
@@ -50,9 +49,7 @@ export function CharterEditor({
 
   const initialForm = useMemo(
     () =>
-      parseCharterForm(
-        pendingDraft ? mergeDraftIntoBody(currentBody, pendingDraft.body) : currentBody,
-      ),
+      parseCharterForm(pendingDraft ? pendingDraft.body : currentBody),
     // Re-seed only when the underlying version or pending draft id changes so user edits aren't clobbered.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [charter?.version, pendingDraft?.draftId],

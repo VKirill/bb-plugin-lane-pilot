@@ -34,29 +34,9 @@ export interface MemoryScreenProps {
 }
 
 const SEARCH_DEBOUNCE_MS = 300;
+type RecordEntry = Exclude<MemoryListEntry, { kind: "card" }>;
 /** Records listed before «Show more»: a project keeps hundreds, and the owner reads the newest first. */
 const RECORDS_PAGE = 25;
-
-function fallbackRecordFromSearch(hit: MemorySearchRecord): MemoryRecord {
-  return {
-    id: hit.id,
-    kind: hit.kind,
-    audience: "subagent",
-    content: hit.content,
-    concepts: hit.concepts,
-    createdAt: 0,
-    rule: hit.concepts.includes("rule"),
-    useCount: 0,
-    acceptedCount: 0,
-    originTaskId: null,
-    originRunId: null,
-    sourceFileId: null,
-    noTrace: false,
-    origin: "memory",
-    scope: [],
-    sources: 1,
-  };
-}
 
 function matchesCardQuery(card: MemoryCard, needle: string): boolean {
   const haystacks = [card.title, card.kind, card.ref ?? "", ...card.concepts];
@@ -84,7 +64,7 @@ export function MemoryScreen({ projectId, sectionId, locale: localeProp, initial
   const [searching, setSearching] = useState(false);
 
   const [selectedKey, setSelectedKey] = useState<string | null>(initialRecordId ? `rec:${initialRecordId}` : null);
-  const [pendingDelete, setPendingDelete] = useState<MemoryRecord | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<Pick<MemoryRecord, "id" | "content"> | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [shown, setShown] = useState(RECORDS_PAGE);
   const searchSeq = useRef(0);
@@ -162,12 +142,15 @@ export function MemoryScreen({ projectId, sectionId, locale: localeProp, initial
     [records],
   );
 
-  const activeRecords = useMemo<MemoryRecord[]>(() => {
-    if (!trimmedQuery) return records ?? [];
-    if (!searchState || searchState.query !== trimmedQuery) return records ?? [];
+  const recordEntries = useMemo<RecordEntry[]>(() => {
+    const fromRecord = (record: MemoryRecord): RecordEntry =>
+      ({ kind: "record", key: `rec:${record.id}`, record, category: classifyRecord(record) });
+    if (!trimmedQuery || !searchState || searchState.query !== trimmedQuery) return (records ?? []).map(fromRecord);
     return searchState.hits.map((hit) => {
       const full = recordsById.get(hit.id);
-      return full ? { ...full, content: hit.content, concepts: hit.concepts } : fallbackRecordFromSearch(hit);
+      return full
+        ? fromRecord({ ...full, content: hit.content, concepts: hit.concepts })
+        : { kind: "hit", key: `rec:${hit.id}`, hit, category: classifyRecord(hit) };
     });
   }, [trimmedQuery, searchState, records, recordsById]);
 
@@ -178,30 +161,26 @@ export function MemoryScreen({ projectId, sectionId, locale: localeProp, initial
     return base.filter((card) => matchesCardQuery(card, needle));
   }, [cards, trimmedQuery]);
 
-  const categorizedRecords = useMemo(
-    () => activeRecords.map((record) => ({ record, category: classifyRecord(record) })),
-    [activeRecords],
-  );
-
   const counts = useMemo(() => {
     let facts = 0;
     let decisions = 0;
     let rules = 0;
     let lessons = 0;
-    for (const item of categorizedRecords) {
+    for (const item of recordEntries) {
       if (item.category === "fact") facts += 1;
       else if (item.category === "decision") decisions += 1;
       else if (item.category === "rule") rules += 1;
       else lessons += 1;
     }
     const cardsCount = activeCards.length;
-    return { all: categorizedRecords.length + cardsCount, facts, decisions, rules, lessons, cards: cardsCount };
-  }, [categorizedRecords, activeCards]);
+    return { all: recordEntries.length + cardsCount, facts, decisions, rules, lessons, cards: cardsCount };
+  }, [recordEntries, activeCards]);
 
   const visibleItems = useMemo<MemoryListEntry[]>(() => {
     const entries: MemoryListEntry[] = [];
     if (filter !== "cards") {
-      for (const { record, category } of categorizedRecords) {
+      for (const entry of recordEntries) {
+        const { category } = entry;
         if (
           filter === "all" ||
           (filter === "facts" && category === "fact") ||
@@ -209,7 +188,7 @@ export function MemoryScreen({ projectId, sectionId, locale: localeProp, initial
           (filter === "rules" && category === "rule") ||
           (filter === "lessons" && category === "lesson")
         ) {
-          entries.push({ kind: "record", key: `rec:${record.id}`, record, category });
+          entries.push(entry);
         }
       }
     }
@@ -219,7 +198,7 @@ export function MemoryScreen({ projectId, sectionId, locale: localeProp, initial
       }
     }
     return entries;
-  }, [filter, categorizedRecords, activeCards]);
+  }, [filter, recordEntries, activeCards]);
 
   useEffect(() => {
     setShown(RECORDS_PAGE);
@@ -230,7 +209,7 @@ export function MemoryScreen({ projectId, sectionId, locale: localeProp, initial
     [visibleItems, selectedKey],
   );
 
-  const handleDeleteConfirm = async (record: MemoryRecord) => {
+  const handleDeleteConfirm = async (record: Pick<MemoryRecord, "id">) => {
     setDeletingId(record.id);
     try {
       const result = await rpc.call("memory_record_delete", { projectId, id: record.id });
@@ -355,27 +334,28 @@ export function MemoryScreen({ projectId, sectionId, locale: localeProp, initial
                       </button>
                     );
                   }
-                  const { record, category } = item;
-                  const meta = CATEGORY_META[category];
+                  const meta = CATEGORY_META[item.category];
+                  const { id, content } = item.kind === "record" ? item.record : item.hit;
+                  const record = item.kind === "record" ? item.record : null;
                   return (
                     <button
                       key={item.key}
                       type="button"
                       aria-selected={selected}
-                      data-testid={`memory-item-${record.id.slice(0, 12)}`}
+                      data-testid={`memory-item-${id.slice(0, 12)}`}
                       onClick={() => setSelectedKey(item.key)}
                       className="lp-wm-rec"
                     >
                       <span className="lp-wm-type" data-tone={meta.tone}>{t(meta.labelKey)}</span>
                       <span className="min-w-0 space-y-1">
-                        <span className="lp-wm-rec-text lp-wm-rec-clamp" style={{ overflowWrap: "anywhere" }}>{record.content}</span>
-                        <span className="lp-wm-rec-meta">
+                        <span className="lp-wm-rec-text lp-wm-rec-clamp" style={{ overflowWrap: "anywhere" }}>{content}</span>
+                        {record ? <span className="lp-wm-rec-meta">
                           <span>{record.origin}</span>
                           {record.createdAt > 0 ? <span>{formatMemoryDate(record.createdAt, locale)}</span> : null}
                           {record.useCount > 0 ? <span>{t("consoleMemoryFieldUses")}: {record.useCount}</span> : null}
                           {record.sources > 1 ? <span>{t("memorySources").replace("{n}", String(record.sources))}</span> : null}
                           {record.noTrace ? <span>{t("memoryRecordNoTrace")}</span> : null}
-                        </span>
+                        </span> : null}
                       </span>
                     </button>
                   );

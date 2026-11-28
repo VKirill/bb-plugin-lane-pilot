@@ -3,6 +3,7 @@ import { useMemo, useRef, useState, type CSSProperties } from "react";
 import { ThreadChat, useBbContext, useBbNavigate, useRpc } from "@get-bb/plugin-sdk/app";
 import { useLpRealtime, useLpRpcQuery, useOpenThreadPanel } from "../../ui-shell/ui";
 import type { rpcContract } from "../../contracts";
+import { HELPER_VERIFYING_PHASES } from "../../contracts/ui";
 import { canonicalRoleId, roleName, t, type I18nKey } from "@lane-pilot/i18n";
 import { ConfirmDialog, Icon, type IconName } from "@lane-pilot/ui-kit";
 import { TaskGraphView, type TaskGraphData } from "./task-graph-view";
@@ -104,7 +105,7 @@ export function HelperChips({ threads, queued, frame }: { threads: HelperThread[
         // The chips are portaled into BB's prompt box, outside this plugin's CSS, so only BB's own Tailwind classes apply there;
         // BB 0.46 has no `-top-0.5` and the dot fell to the middle of the right edge. The corner offsets are inline.
         const corner = { top: "-0.125rem", right: "-0.125rem" };
-        const isVerifying = row.phase === "проверка" || row.phase === "приёмка" || row.phase === "ждёт слияния";
+        const isVerifying = row.phase != null && HELPER_VERIFYING_PHASES.has(row.phase);
         return (
           <button
             key={row.id}

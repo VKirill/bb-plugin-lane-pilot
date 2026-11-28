@@ -5,6 +5,8 @@ import { isAllowedUndoMethod } from "../../models/actions-log";
 export interface ActionsLogInput {
   projectId?: string;
   since?: number;
+  /** Only rows strictly older than this: the console's «Ещё» passes the oldest row it shows. */
+  before?: number;
   limit?: number;
 }
 
@@ -14,12 +16,14 @@ export interface ActionsLogDeps {
     since?: number,
     limit?: number,
     projectId?: string,
+    before?: number,
   ) => AutonomousAction[];
   leadDecisions?: (
     db: LanePilotDatabase,
     since?: number,
     limit?: number,
     projectId?: string,
+    before?: number,
   ) => AutonomousAction[];
   log?: { warn?: (message: string) => void; debug?: (message: string) => void };
 }
@@ -112,9 +116,14 @@ function readSpecialistMutations(
   since: number,
   limit: number,
   projectId?: string,
+  before?: number,
 ): AutonomousAction[] {
   const where = ["status != 'simulated'", "applied_at >= ?"];
   const args: unknown[] = [since];
+  if (before !== undefined) {
+    where.push("applied_at < ?");
+    args.push(before);
+  }
   if (projectId) {
     where.push("project_id = ?");
     args.push(projectId);
@@ -186,22 +195,23 @@ export function actionsLog(
   const since = typeof input.since === "number" && Number.isFinite(input.since) ? input.since : 0;
   const limit = Math.max(1, Math.min(200, Math.floor(input.limit ?? 50)));
   const projectId = input.projectId;
+  const before = typeof input.before === "number" && Number.isFinite(input.before) ? input.before : undefined;
 
   const mutations = runPart("specialist_mutations", [] as AutonomousAction[], deps.log, () =>
-    readSpecialistMutations(db, since, limit, projectId),
+    readSpecialistMutations(db, since, limit, projectId, before),
   );
   const effects = runPart("workflow_effects", [] as AutonomousAction[], deps.log, () =>
-    deps.autonomousEffects ? deps.autonomousEffects(db, since, limit, projectId) : [],
+    deps.autonomousEffects ? deps.autonomousEffects(db, since, limit, projectId, before) : [],
   );
   const decisions = runPart("lead_decisions", [] as AutonomousAction[], deps.log, () =>
-    deps.leadDecisions ? deps.leadDecisions(db, since, limit, projectId) : [],
+    deps.leadDecisions ? deps.leadDecisions(db, since, limit, projectId, before) : [],
   );
 
   const merged = [...mutations, ...effects, ...decisions]
-    .filter((row) => row.at >= since && (!projectId || row.projectId === projectId))
+    .filter((row) => row.at >= since && (before === undefined || row.at < before) && (!projectId || row.projectId === projectId))
     .sort((a, b) => b.at - a.at || a.id.localeCompare(b.id))
     .slice(0, limit);
 
-  deps.log?.debug?.(`[console] actions_log project=${projectId ?? "all"} rows=${merged.length}`);
+  deps.log?.debug?.(`[console] actions_log project=${projectId ?? "all"} before=${before ?? "none"} rows=${merged.length}`);
   return { rows: merged };
 }

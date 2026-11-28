@@ -174,16 +174,18 @@ export function HistoryDetail({
           </button>
         ) : null}
 
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          className="h-7 px-2.5 text-xs"
-          data-testid={`history-retry-plan-${row.taskId}`}
-          onClick={() => onRetryWithNewPlan(row)}
-        >
-          {t("consoleHistoryRetryNewPlan")}
-        </Button>
+        {row.canRetry ? (
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className="h-7 px-2.5 text-xs"
+            data-testid={`history-retry-plan-${row.taskId}`}
+            onClick={() => onRetryWithNewPlan(row)}
+          >
+            {t("consoleHistoryRetryNewPlan")}
+          </Button>
+        ) : null}
       </div>
     </div>
   );

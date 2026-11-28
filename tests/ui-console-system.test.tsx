@@ -11,7 +11,7 @@ import { setLocaleOverride } from "@lane-pilot/i18n";
 import { roleModelKey } from "@lane-pilot/models";
 import type { AgentLoadoutOutput } from "../src/rooms/contracts";
 import { listRecentDrills } from "../src/rooms/coverage/drills";
-import { room as coverageRoom } from "../src/rooms/coverage/server";
+import { createCoverageRoom } from "../src/rooms/coverage/server";
 import { CriticValue } from "../src/rooms/critique/ui";
 import { insertOutage, room as outageRoom } from "../src/rooms/outage/server";
 import { HealthScreen } from "../src/rooms/pages/ui/screens/health-screen";
@@ -733,11 +733,19 @@ describe("HealthScreen (P15)", () => {
         passedCount: 2,
         totalCount: 2,
       });
-      const covHandlers = coverageRoom.rpc!({} as never, {} as never) as {
-        drills_list: (input: { limit: number }) => Promise<{ drills: unknown[] }>;
-      };
-      const covRes = await covHandlers.drills_list({ limit: 3 });
-      expect(Array.isArray(covRes.drills)).toBe(true);
+      // On the hub the working folder is BB's, not the plugin's: the room reads the receipts of the root it was given.
+      const elsewhere = mkdtempSync(join(tmpdir(), "lp-drills-cwd-"));
+      const cwd = vi.spyOn(process, "cwd").mockReturnValue(elsewhere);
+      try {
+        const covHandlers = createCoverageRoom(tmpRoot).rpc!({} as never, {} as never) as {
+          drills_list: (input: { limit: number }) => Promise<{ drills: unknown[] }>;
+        };
+        const covRes = await covHandlers.drills_list({ limit: 3 });
+        expect(covRes.drills).toEqual(drills);
+      } finally {
+        cwd.mockRestore();
+        rmSync(elsewhere, { recursive: true, force: true });
+      }
     } finally {
       rmSync(tmpRoot, { recursive: true, force: true });
     }

@@ -54,7 +54,7 @@ function probeCacheKey(hostId: string, cwd: string): string {
 }
 
 /**
- * Resolves the project, section, machine/folder, repository, and PM flag for any BB thread,
+ * Resolves the project, section, machine/folder and repository for any BB thread,
  * including ordinary chats and folders without Git. Caches repo probe results per `hostId+cwd` for 5 minutes.
  */
 export async function threadScope(deps: ThreadScopeDeps, threadId: string): Promise<ThreadScope> {

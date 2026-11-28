@@ -53,11 +53,6 @@ const label = (prefix: string, id: string | null): string | null => {
   return !text || text === key ? id : text;
 };
 
-export function isDoneToday(updatedAt: number, todayStartMs: number): boolean {
-  // Synthetic test fixtures often use small epoch numbers (e.g. 1); real timestamps before today are excluded.
-  return updatedAt >= todayStartMs || (updatedAt > 0 && updatedAt < 1e11);
-}
-
 export function mergeScopeTasks(input: {
   liveItems: readonly ThreadLiveItem[];
   boardItems: readonly TaskBoardItem[];
@@ -118,7 +113,7 @@ export function groupChatTasks(items: readonly ChatTaskItem[], now = Date.now())
     running: items.filter((item) => item.column === "running" || item.column === "checking"),
     waiting: items.filter((item) => item.column === "blocked" || (item.held && item.column !== "done")),
     queued: items.filter((item) => item.column === "queued" && !item.held),
-    doneToday: items.filter((item) => item.column === "done" && isDoneToday(item.updatedAt, todayStartMs)),
+    doneToday: items.filter((item) => item.column === "done" && item.updatedAt >= todayStartMs),
   };
 }
 

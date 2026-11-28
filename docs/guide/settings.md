@@ -37,6 +37,17 @@ The full generated list with defaults is [docs/enabled-settings.md](../enabled-s
 | **System → Agents & loadout** (`AgentsLoadout`) | Unified role matrix (`role_model.<role>`, pools, skills, plugins, MCP, missing-on-hub flags, per-role access), **Main agent** (`main.agent`), `helper.context_mode`, custom agents (`OwnedSettings`), and system-level override reset (`ModelOverridesPanel`). |
 | **System → Graphs** (`WorkflowsScreen`) | Workflow library, map, canvas editor, run history, evolution drafts, and workflow model presets / budgets. |
 | **System → Schedules** (`ScheduleBoard`) | Cron/interval schedules (`missed` and `overlap` policies) and calendar/history. Global pauses (`schedules`, `conveyor`, `graphs`, `staff`) and **Stop all** also live in the header **Brakes** dialog. |
+| **System → Automation** (`AutomationScreen`) | **Manual mode** switch, the four brakes (read only) and one **Documentation** switch per project (`docs_projects`, `docs_set`). Turning manual mode off goes through a confirmation that lists what starts. |
+
+## Manual mode
+
+Manual mode is the safe start: while it is on, Lane Pilot starts nothing by itself (`src/rooms/contracts/manual-mode.ts`, `src/rooms/owner-waiting/server/services/manual-mode-service.ts`).
+
+- **Default.** With no saved state the plugin starts manual. `server.ts` reads it right after the core is created, before schedules, subscriptions and the clock, and sets all four brakes with the reason `manual mode`. `LANE_PILOT_MANUAL_DEFAULT=off` makes an unsaved state start automatic; the test suite sets it (`tests/global-setup.ts`). An unreadable state stays manual.
+- **What it holds back.** Besides the brakes: the start-up resume of attempts and graph runs, the worktree sweep, the run sweep, lost-question notices, stream retries, relay reminders, the PM-chat notice on `interaction.pending`, the memory block in ordinary threads, memory embeddings and their backfill, usage snapshots on machines, and publishing graph variants and skills.
+- **What still runs.** The guard install on machines at enable (`~/.config/opencode`, `~/.lane-pilot`, no project folders) and guard stops (PM turn time limit, dropping stale retries): they only stop, never start.
+- **Turning it off.** `manual_mode_set` (owner-only, listed in `src/rooms/contracts/owner-only-rpc.ts` and `lane-stack/hooks/guard_shell.py`) lifts the brakes and runs the skipped start-up resume once. Schedules marked `missed: run_once` then fire once right away.
+- **Documentation per project.** `docs.enabled` defaults to off. A docs graph in a project where it is off is refused with `docs_disabled` (`src/rooms/workflow/server/services/workflow-triggers.ts`).
 
 ## Most important settings by area
 

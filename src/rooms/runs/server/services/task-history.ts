@@ -145,6 +145,8 @@ export function taskHistory(
     mergeSha: mergeShaOf(db, row.attemptId),
     failureReason: row.reason ?? null,
     lessonMemoryId: readLesson(db, row.taskId),
+    // Matches the stage return's refusals: merged work (accepted, reworked), a canceled task, a closed run.
+    canRetry: outcome === "failed" && row.runOpen === 1,
   }));
 
   const lastRow = selected[selected.length - 1]?.row;

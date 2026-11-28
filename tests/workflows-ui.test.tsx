@@ -377,6 +377,23 @@ describe("Workflows in the page", () => {
     await slot.findByTestId("wf-row-review-fix");
     expect(slot.queryByTestId("system-settings")).toBeNull();
   });
+
+  it("opens the graph a system/graphs/<id> link names (the staff page's chosen-graph link)", async () => {
+    const { rpc } = await world();
+    const app = await loadPluginApp(() => import("../app"));
+    const slot = await renderSlot(app.navPanels[0]!, { subPath: "system/graphs/review-fix" }, {
+      context: { projectId: null, threadId: null },
+      providers: { status: "ready", providers: [] as never },
+      rpc: {
+        ...rpc,
+        list_projects: () => ({ projects: [{ id: "proj_ui", name: "UI test" }], lastProjectId: null }),
+        get_screen: () => { throw new Error("not needed here"); },
+        list_sections: () => ({ sections: [] }),
+      } as never,
+    });
+    await slot.findByTestId("wf-node-build");
+    expect(slot.queryByTestId("wf-row-x-digest")).toBeNull();
+  });
 });
 
 /** A draft as the architect leaves it half-way: an entry, one agent, and an edge to a node that does not exist yet. */

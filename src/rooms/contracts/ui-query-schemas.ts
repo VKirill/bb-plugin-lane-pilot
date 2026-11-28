@@ -10,6 +10,11 @@ import { consoleOverviewOutput, rpcConsole } from "./rpc-console";
  * server accepts.
  */
 export const listHelperThreadsInput = z.object({ threadId: z.string().min(1) }).strict();
+/** The phases list_helper_threads reports for a helper chat, in the owner's words. */
+export const HELPER_PHASES = { working: "работает", verifying: "проверка", accepting: "приёмка", awaitingMerge: "ждёт слияния" } as const;
+/** Phases after the writer stopped writing: the chip shows its «verifying» mark for these. */
+export const HELPER_VERIFYING_PHASES: ReadonlySet<string> = new Set([HELPER_PHASES.verifying, HELPER_PHASES.accepting, HELPER_PHASES.awaitingMerge]);
+
 export const listHelperThreadsOutput = z.object({
   threads: z.array(z.object({
     id: z.string(),

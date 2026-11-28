@@ -526,6 +526,7 @@ describe("console history screen (P8)", () => {
       mergeSha: "77be0d1abcdef0123456789",
       failureReason: null,
       lessonMemoryId: null,
+      canRetry: false,
     },
     {
       runId: "run_h2",
@@ -540,6 +541,7 @@ describe("console history screen (P8)", () => {
       mergeSha: null,
       failureReason: null,
       lessonMemoryId: null,
+      canRetry: false,
     },
     {
       runId: "run_h3",
@@ -554,6 +556,7 @@ describe("console history screen (P8)", () => {
       mergeSha: null,
       failureReason: "Legacy CRM emits three incompatible date formats",
       lessonMemoryId: "mem_lesson_9",
+      canRetry: true,
     },
     {
       runId: "run_h4",
@@ -568,6 +571,7 @@ describe("console history screen (P8)", () => {
       mergeSha: null,
       failureReason: "Stopped by owner",
       lessonMemoryId: null,
+      canRetry: false,
     },
   ];
 

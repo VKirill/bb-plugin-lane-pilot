@@ -19,6 +19,7 @@ export const activeItemSchema = z.object({
   costUsd: z.number().nullable(),
   runId: z.string().nullable(),
   taskId: z.string().nullable(),
+  pmThreadId: z.string().nullable(),
 }).strict();
 
 export const goalLineSchema = z.object({
@@ -66,6 +67,7 @@ export const taskHistoryRowSchema = z.object({
   mergeSha: z.string().nullable(),
   failureReason: z.string().nullable(),
   lessonMemoryId: z.string().nullable(),
+  canRetry: z.boolean(),
 }).strict();
 
 export const threadScopeOutput = z.object({
@@ -205,6 +207,7 @@ export const rpcConsole = {
     input: z.object({
       projectId: idSchema.optional(),
       since: z.number().optional(),
+      before: z.number().optional(),
       limit: z.number().int().min(1).max(200).default(50),
     }).strict(),
     output: z.object({

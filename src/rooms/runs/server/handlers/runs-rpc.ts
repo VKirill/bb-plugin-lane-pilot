@@ -13,7 +13,7 @@ import { employeeView } from "../../../contracts/employee-manifest";
 import { pickableAgent } from "../../../contracts/agent-picker";
 import { detectRequiredSessionPolicyCapability } from "../../../contracts/helper-context";
 import { DEFAULT_NATIVE_AGENT, nativeAgentCliId } from "../../../contracts/native-agent-id";
-import { TERMINAL_ATTEMPT_STATES, nativeAgentTypeKey, nativeThreadKey, hostContract, rpcContract, type ActivationApi, type AgentOpsApi } from "../../../contracts";
+import { HELPER_PHASES, TERMINAL_ATTEMPT_STATES, nativeAgentTypeKey, nativeThreadKey, hostContract, rpcContract, type ActivationApi, type AgentOpsApi } from "../../../contracts";
 import { nativeDiagnostics, nativeSelectionSchema } from "../../../contracts/native-selection";
 import { userVisibleProjects } from "../../../contracts/project-scope";
 import { RETRY_ELIGIBLE, WRITER_RETRY_LIMIT, type AttemptState } from "../../../contracts/state-machine";
@@ -208,7 +208,7 @@ export function runsRpc(ctx: ServerCore, services: Services) {
 
         let phase: string | null = null;
         if (statusStr !== "idle") {
-          phase = "работает";
+          phase = HELPER_PHASES.working;
         } else {
           const attempt = openAttemptsByThread.get(threadIdStr);
           if (attempt && openRun) {
@@ -221,16 +221,16 @@ export function runsRpc(ctx: ServerCore, services: Services) {
             const isAccepting = acceptance?.state === "running" || (verification?.state === "passed" && (!acceptance || acceptance.state === "pending"));
 
             if (isVerifying) {
-              phase = "проверка";
+              phase = HELPER_PHASES.verifying;
             } else if (isAccepting) {
-              phase = "приёмка";
+              phase = HELPER_PHASES.accepting;
             } else if (attempt.reason?.includes("merge") || attempt.reason?.includes("busy") || attempt.reason?.includes("conflict")) {
-              phase = "ждёт слияния";
+              phase = HELPER_PHASES.awaitingMerge;
             } else {
-              phase = "проверка";
+              phase = HELPER_PHASES.verifying;
             }
           } else {
-            phase = "работает";
+            phase = HELPER_PHASES.working;
           }
         }
 

@@ -256,6 +256,7 @@ function SystemSection({ route, go, projectId, locale, page }: ConsoleSectionPro
           locale={locale}
           projectId={scopedProjectId}
           architectProjectId={scopedProjectId}
+          openGraphId={route.view ?? null}
         />
       );
     case "schedules":

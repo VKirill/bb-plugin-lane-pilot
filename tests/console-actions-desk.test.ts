@@ -196,6 +196,13 @@ describe("actionsLog & actions_log", () => {
       "sp_mut:mut-auto-1",
     ]);
 
+    // «Ещё» pages back with `before` (the oldest shown); it used to send `since` and got the same newest rows again.
+    const deps = { autonomousEffects, leadDecisions };
+    const page1 = actionsLog(db, { projectId: "proj-1", since: t0, limit: 2 }, deps);
+    const page2 = actionsLog(db, { projectId: "proj-1", since: t0, limit: 2, before: page1.rows.at(-1)!.at }, deps);
+    const page3 = actionsLog(db, { projectId: "proj-1", since: t0, limit: 2, before: page2.rows.at(-1)!.at }, deps);
+    expect([...page1.rows, ...page2.rows, ...page3.rows].map((r) => r.id)).toEqual(out.rows.map((r) => r.id));
+
     expect(out.rows[0]).toMatchObject({
       actor: "workflow:lp.worktree-cleanup",
       authority: "maintenance",

@@ -33,6 +33,7 @@ export function leadDecisions(
   since = 0,
   limit = 50,
   projectId?: string,
+  before?: number,
 ): AutonomousAction[] {
   const cap = Math.max(1, Math.min(200, Math.floor(limit || 50)));
   const where = [
@@ -43,6 +44,10 @@ export function leadDecisions(
     "split != 'backtest'",
   ];
   const args: unknown[] = [since];
+  if (before !== undefined) {
+    where.push("answered_at < ?");
+    args.push(before);
+  }
   if (projectId) {
     where.push("project_id = ?");
     args.push(projectId);

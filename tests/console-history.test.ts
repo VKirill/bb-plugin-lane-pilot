@@ -217,6 +217,31 @@ describe("taskHistory", () => {
     expect(debugs[0]).toMatch(/^\[console\] task_history rows=20 next=true ms=\d+$/);
   });
 
+  it("offers a retry only where the stage return will take it: a failed task of an open run", () => {
+    // The History button used to show on accepted, canceled and closed-run rows, and the server refused each one.
+    const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
+    dispose = () => harness.lifecycle.dispose();
+    const db = openDatabase(bb);
+    const now = Date.parse("2026-11-27T12:00:00.000Z");
+    createRun(db, "run-open", "proj-1");
+    createRun(db, "run-closed", "proj-1");
+    const seed = (runId: string, taskId: string, state: string, at: number) => {
+      createTask(db, { id: taskId, runId, kind: "bb", contract: { title: taskId } });
+      createAttempt(db, { id: `att-${taskId}`, runId, taskId });
+      setAttemptTimes(db, `att-${taskId}`, state, at - 10_000, at, state === "accepted" ? null : "why");
+    };
+    seed("run-open", "t-failed-open", "validation_failed", now - 1_000);
+    seed("run-closed", "t-failed-closed", "validation_failed", now - 2_000);
+    seed("run-open", "t-accepted", "accepted", now - 3_000);
+    seed("run-open", "t-canceled", "canceled", now - 4_000);
+    db.prepare("UPDATE lane_pilot_run SET closed_at = ? WHERE id = ?").run(now - 1_000, "run-closed");
+
+    const rows = taskHistory(db, { projectId: "proj-1" }, now).rows;
+    expect(Object.fromEntries(rows.map((row) => [row.taskId, row.canRetry]))).toEqual({
+      "t-failed-open": true, "t-failed-closed": false, "t-accepted": false, "t-canceled": false,
+    });
+  });
+
   it("registers task_history in runsConsoleRpc and conforms to rpcConsole.task_history.output", async () => {
     const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
     dispose = () => harness.lifecycle.dispose();

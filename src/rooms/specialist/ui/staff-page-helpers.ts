@@ -262,23 +262,17 @@ export function scheduleMatchesDomain(schedule: StaffScheduleItem, domain: strin
   );
 }
 
-/** Selects the primary domain tick schedule for «Run shift now». */
+/**
+ * Selects the domain's shift (`sp-specialist-tick`) schedule for «Run shift now». Only the tick: `sp:<domain>:<graph>`
+ * names also cover dispatched graphs such as the pulse monitor, and running one of those is not a shift.
+ */
 export function pickTickSchedule(
   schedules: ReadonlyArray<StaffScheduleItem>,
-  domain: string,
 ): StaffScheduleItem | null {
-  if (schedules.length === 0) return null;
-  const dom = domain.trim().toLowerCase();
-  return (
-    schedules.find(
-      (s) =>
-        s.name.toLowerCase().startsWith(`sp:${dom}:`) ||
-        (s.task.kind === "workflow" && s.task.workflowId === "sp-specialist-tick"),
-    ) ??
-    schedules.find((s) => s.state === "active") ??
-    schedules[0] ??
-    null
+  const ticks = schedules.filter(
+    (s) => s.task.kind === "workflow" && s.task.workflowId === "sp-specialist-tick",
   );
+  return ticks.find((s) => s.state === "active") ?? ticks[0] ?? null;
 }
 
 export function resolveStaffThreadId(

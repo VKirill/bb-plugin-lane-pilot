@@ -35,6 +35,7 @@ function overviewFixture(overrides: Partial<ConsoleOverviewOutput> = {}): Consol
         costUsd: 0.42,
         runId: "run-1",
         taskId: "task-1",
+        pmThreadId: "thr_pm_task",
       },
       {
         kind: "batch",
@@ -44,8 +45,9 @@ function overviewFixture(overrides: Partial<ConsoleOverviewOutput> = {}): Consol
         stage: null,
         since: NOW - 10 * 60_000,
         costUsd: null,
-        runId: "thr_pm_batch",
+        runId: "run-batch",
         taskId: null,
+        pmThreadId: "thr_pm_batch",
       },
     ],
     closedByDay: [

@@ -117,7 +117,7 @@ export function ActionsLog({ projectId, locale: localeProp, onOpenTask, onOpenWo
     try {
       const nextPage = await rpc.call("actions_log", {
         ...(projectId ? { projectId } : {}),
-        since: oldestAt,
+        before: oldestAt,
         limit: PAGE_LIMIT,
       });
       if (scopeSeq.current !== seq) return;

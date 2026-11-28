@@ -7,9 +7,11 @@ import { createProjectGit, type ProjectGitDeps } from "../../../project-git/serv
 import { countRevertReceiptsSince } from "../../../rollback/server";
 import { acceptanceStats } from "../../../runs/server";
 import { readProjectSetting } from "../../../settings/server";
+import { landingWordAsked } from "../../../tasks";
 import {
   fullGateVerdict,
   latestGateRun,
+  loadProjectSettings,
   sectionBindingId,
   type GateRunRow,
   type LanePilotDatabase,
@@ -20,6 +22,9 @@ import {
   buildTrustRules,
   computeTrustLevel,
 } from "../../models/trust-level";
+
+/** A path the gate's data class recognises as a migration (tasks/models/sensitive.ts DATA_PATH). */
+const MIGRATION_EXAMPLE_PATH = "migrations/0001_example.sql";
 
 export type RepoTrustInput = {
   projectId: string;
@@ -184,6 +189,13 @@ export async function repoTrust(
     readProjectSetting(ctx.db, input.projectId, QUALITY_MODE_SETTING, { scopes }).value,
   );
   const workspaceMode = readProjectSetting(ctx.db, input.projectId, WORKSPACE_MODE_SETTING, { scopes }).value;
+  // The landing gate (writer post-validation) decides with landingWordAsked on these same settings; asking it about an ordinary
+  // task and a migration task keeps the summary from promising an unasked landing the gate would hold.
+  const wordSettings = loadProjectSettings(ctx.db, input.projectId, scopes);
+  const landingWord = {
+    ordinary: landingWordAsked(wordSettings, undefined, {}),
+    migration: landingWordAsked(wordSettings, undefined, { paths: [MIGRATION_EXAMPLE_PATH] }),
+  };
 
   return {
     repo: {
@@ -197,6 +209,6 @@ export async function repoTrust(
     rollbacks30d,
     acceptedFirstTry30d,
     level: computeTrustLevel({ gateState: gate.state, fresh: gate.fresh, rollbacks30d }),
-    rules: buildTrustRules({ qualityMode, workspaceMode }),
+    rules: buildTrustRules({ qualityMode, workspaceMode, landingWord }),
   };
 }

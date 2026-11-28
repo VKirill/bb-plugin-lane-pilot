@@ -334,49 +334,44 @@ export function buildCharterPayload(
 
   next.budgets = budgets;
 
-  // Channels & allowed graphs
-  const channelsList = form.channels
-    .split(",")
-    .map((entry) => entry.trim())
-    .filter(Boolean);
-  next.channels = [...new Set(channelsList)];
-  if ("arsenal" in next) {
-    delete next.arsenal;
-  }
-
+  applyChannels(next, readChannelsList(baseBody ?? {}), form.channels);
   return next;
 }
 
+/** Keeps an entry of a channel collection (array or `{name: true | "value" | [...]}`) only when its text is still listed. */
+function keepListed(raw: unknown, listed: ReadonlySet<string>): unknown {
+  if (Array.isArray(raw)) return raw.filter((entry) => listed.has(asText(entry)));
+  const record = asRecord(raw);
+  if (!record) return raw;
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(record)) {
+    if (Array.isArray(value)) out[key] = keepListed(value, listed);
+    else if (value === true) { if (listed.has(key)) out[key] = value; }
+    else if (typeof value === "string" && value.trim()) { if (listed.has(`${key}: ${value.trim()}`)) out[key] = value; }
+    else out[key] = value;
+  }
+  return out;
+}
+
 /**
- * Resolves a pending draft body over the current charter body so partial patches
- * (e.g. `{ north_star: { target: 700 } }`) keep unchanged fields from the current charter.
+ * The form shows channels and the intake graph's `arsenal` (allowed channels and graphs) as one list. A removed entry leaves the
+ * collection it lived in, a new one goes to `channels`, and an unchanged list leaves the body as written: specialists read it.
  */
-export function mergeDraftIntoBody(
-  baseBody: Record<string, unknown> | null | undefined,
-  draftBody: Record<string, unknown>,
-): Record<string, unknown> {
-  const base = baseBody ?? {};
-  const merged: Record<string, unknown> = { ...base, ...draftBody };
-
-  const baseNs = asRecord(base.north_star) ?? asRecord(base.northStar);
-  const draftNs = asRecord(draftBody.north_star) ?? asRecord(draftBody.northStar);
-  if (baseNs || draftNs) {
-    merged.north_star = { ...(baseNs ?? {}), ...(draftNs ?? {}) };
+function applyChannels(next: Record<string, unknown>, before: readonly string[], text: string): void {
+  const listed = [...new Set(text.split(",").map((entry) => entry.trim()).filter(Boolean))];
+  if (listed.length === before.length && listed.every((entry, index) => entry === before[index])) return;
+  const keep = new Set(listed);
+  const added = listed.filter((entry) => !before.includes(entry));
+  const arsenal = asRecord(next.arsenal);
+  if (arsenal) {
+    const fields = ["channels", "allowed_channels", "allowed_graphs"].filter((key) => arsenal[key] !== undefined);
+    next.arsenal = fields.length
+      ? { ...arsenal, ...Object.fromEntries(fields.map((key) => [key, keepListed(arsenal[key], keep)])) }
+      : keepListed(arsenal, keep);
   }
-
-  const baseBudgets = asRecord(base.budgets);
-  const draftBudgets = asRecord(draftBody.budgets);
-  if (baseBudgets || draftBudgets) {
-    merged.budgets = { ...(baseBudgets ?? {}), ...(draftBudgets ?? {}) };
-  }
-
-  const baseGuardrails = asRecord(base.guardrails);
-  const draftGuardrails = asRecord(draftBody.guardrails);
-  if (baseGuardrails && draftGuardrails && !("constraints" in draftBody)) {
-    merged.guardrails = draftGuardrails;
-  }
-
-  return merged;
+  const own = next.channels === undefined ? [] : keepListed(next.channels, keep);
+  if (Array.isArray(own) || !added.length) next.channels = Array.isArray(own) ? [...own, ...added] : own;
+  else next.channels = { ...(own as Record<string, unknown>), ...Object.fromEntries(added.map((entry) => [entry, true])) };
 }
 
 function formatConstraintsSummary(constraints: ReadonlyArray<CharterConstraintDraft>): string {
@@ -391,13 +386,16 @@ function displayText(raw: string): string {
   return raw.trim() ? raw.trim() : "—";
 }
 
-/** Computes changed field rows for the side-by-side old/new diff panel. */
+/**
+ * Computes changed field rows for the side-by-side old/new diff panel. The draft is read as is: `charter_approve`
+ * writes the draft body as the whole charter, so a field missing from it is removed, not kept.
+ */
 export function computeCharterDiff(
   currentBody: Record<string, unknown> | null | undefined,
   draftBody: Record<string, unknown>,
 ): CharterDiffRow[] {
   const prev = parseCharterForm(currentBody);
-  const next = parseCharterForm(mergeDraftIntoBody(currentBody, draftBody));
+  const next = parseCharterForm(draftBody);
 
   const pairs: Array<{ fieldKey: string; label: string; oldValue: string; newValue: string }> = [
     {

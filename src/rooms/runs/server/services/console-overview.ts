@@ -180,6 +180,7 @@ export function consoleOverview(deps: ConsoleOverviewDeps, input: ConsoleOvervie
           costUsd,
           runId: item.runId,
           taskId: item.taskId,
+          pmThreadId: item.pmThreadId,
         };
       });
   });

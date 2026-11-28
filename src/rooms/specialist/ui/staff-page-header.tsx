@@ -138,16 +138,22 @@ export function StaffPageHeader({
           <StatusPill tone={statusTone} dot>
             <span data-testid="staff-header-status">{statusLabel}</span>
           </StatusPill>
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            disabled={!hasTickSchedule || runBusy}
-            data-testid="staff-run-now"
-            onClick={onRunNow}
+          {/* The reason sits on a wrapper: a disabled button gets no hover, so its own title would never show. */}
+          <span
+            title={hasTickSchedule ? undefined : t("consoleStaffRunNowNoSchedule")}
+            data-testid="staff-run-now-wrap"
           >
-            {runBusy ? t("consoleStaffRunningNow") : t("consoleStaffRunNow")}
-          </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={!hasTickSchedule || runBusy}
+              data-testid="staff-run-now"
+              onClick={onRunNow}
+            >
+              {runBusy ? t("consoleStaffRunningNow") : t("consoleStaffRunNow")}
+            </Button>
+          </span>
           <Button
             type="button"
             size="sm"

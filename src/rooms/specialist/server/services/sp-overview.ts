@@ -61,7 +61,7 @@ function parseCharterGoal(
     asText(ns?.metric) ??
     asText(obj.goal);
   const target = asNum(obj.target) ?? asNum(ns?.target);
-  const due = asText(obj.due) ?? asText(ns?.due) ?? asText(obj.deadline) ?? asText(ns?.deadline);
+  const due = asText(obj.due) ?? asText(ns?.due) ?? asText(obj.deadline) ?? asText(ns?.deadline) ?? asText(ns?.horizon_date);
   let current = asNum(obj.current) ?? asNum(ns?.current) ?? asNum(ns?.value);
   if (current === null && metric) {
     const row = db

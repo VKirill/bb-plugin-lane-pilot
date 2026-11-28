@@ -52,8 +52,9 @@ export function autonomousEffects(
   since = 0,
   limit = 50,
   projectId?: string,
+  before?: number,
 ): AutonomousAction[] {
-  const rows = listAutonomousWfEffects(db as never, since, limit, projectId);
+  const rows = listAutonomousWfEffects(db as never, since, limit, projectId, before);
   return rows.map((row) => {
     const intent = parseJsonObject(row.intent_json);
     const resultObj = parseJsonObject(row.result_json);

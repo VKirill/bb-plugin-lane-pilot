@@ -173,8 +173,8 @@ export function StaffPage({
   const detail = detailQuery.data;
   const matchingSchedules = schedulesQuery.data ?? [];
   const tickSchedule = useMemo(
-    () => pickTickSchedule(matchingSchedules, domain),
-    [matchingSchedules, domain],
+    () => pickTickSchedule(matchingSchedules),
+    [matchingSchedules],
   );
   const activeSchedules = useMemo(
     () => matchingSchedules.filter((s) => s.state !== "paused"),

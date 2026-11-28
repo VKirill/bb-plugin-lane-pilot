@@ -65,17 +65,17 @@ describe("giving every project and section the global models back, from the glob
     await openGlobalTeam(slot);
     await waitFor(() => expect(slot.getAllByTestId("model-overrides-level")).toHaveLength(3));
     fireEvent.click(slot.getByTestId("model-overrides-reset"));
-    const dialog = await waitFor(() => document.querySelector("[data-testid='model-overrides-dialog']") as HTMLElement);
+    const dialog = await waitFor(() => document.querySelector("[role='alertdialog']") as HTMLElement);
     expect(dialog.textContent).toContain(en.modelOverridesConfirmTitle);
     expect(dialog.querySelectorAll("[data-testid='model-overrides-level']")).toHaveLength(3);
     expect(calls.some((call) => call.method === "reset_model_overrides")).toBe(false);
     // Cancel: nothing is sent.
     fireEvent.click(Array.from(dialog.querySelectorAll("button")).find((button) => button.textContent === en.confirmCancel)!);
-    await waitFor(() => expect(document.querySelector("[data-testid='model-overrides-dialog']")).toBeNull());
+    await waitFor(() => expect(document.querySelector("[role='alertdialog']")).toBeNull());
     expect(calls.some((call) => call.method === "reset_model_overrides")).toBe(false);
     // Confirm: the listed places, and the list is read again.
     fireEvent.click(slot.getByTestId("model-overrides-reset"));
-    fireEvent.click(await waitFor(() => document.querySelector("[data-testid='model-overrides-confirm']") as HTMLElement));
+    fireEvent.click(await waitFor(() => Array.from(document.querySelectorAll("[role='alertdialog'] button")).find((button) => button.textContent === en.modelOverridesConfirm) as HTMLElement));
     await waitFor(() => expect(calls.filter((call) => call.method === "reset_model_overrides")).toHaveLength(1));
     expect(calls.find((call) => call.method === "reset_model_overrides")!.input).toEqual({ levels: [
       { projectId: "p1", sectionId: null }, { projectId: "p1", sectionId: "s1" }, { projectId: "gone", sectionId: null },

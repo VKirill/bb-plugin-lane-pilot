@@ -43,7 +43,7 @@ TL;DR: Vitest runs four projects (`node`, `node-isolated`, `ui`, `ui-isolated`) 
 
 - `tests/global-setup.ts` creates one per-run temporary root (`lp-vitest-<pid>-`), assigns `TMPDIR`, `TEMP`, and `TMP`, sweeps directories from dead PIDs, removes the run directory on teardown, and sets `LANE_PILOT_OWNER_WORDS_DEFAULT ??= "off"` (`tests/global-setup.ts:9-38`).
 - `vitest.config.ts` sets `LANE_PILOT_AGY_BIN: ""` so tests never invoke the external Antigravity CLI (`vitest.config.ts:73`).
-- `tests/setup-jsdom.ts` restores `process.env` and `process.cwd()` between files, stubs `ResizeObserver`, `scrollIntoView`, pointer capture, and `matchMedia`, caches footer locale marker lookups, and defaults `LANE_PILOT_HOST_JOBS="0"`, `LANE_PILOT_THREAD_SIGNALS="0"`, and `LANE_PILOT_POLL_SCALE="0.05"` (`tests/setup-jsdom.ts:10-70`). Set `LP_TEST_RESET=1` to force `vi.resetModules()` before every node test file (`tests/setup-jsdom.ts:4-6`).
+- `tests/setup-jsdom.ts` restores `process.env` and `process.cwd()` between files, stubs `ResizeObserver`, `scrollIntoView`, pointer capture, and `matchMedia`, caches footer locale marker lookups, and defaults `LANE_PILOT_HOST_JOBS="0"`, `LANE_PILOT_THREAD_SIGNALS="0"`, and `LANE_PILOT_POLL_SCALE="0.05"` (`tests/setup-jsdom.ts:10-70`). `tests/global-setup.ts` sets `LANE_PILOT_MANUAL_DEFAULT=off`, so a test core starts automatic unless it saves manual mode itself (the hub starts manual, see [docs/guide/settings.md](guide/settings.md#manual-mode)). Set `LP_TEST_RESET=1` to force `vi.resetModules()` before every node test file (`tests/setup-jsdom.ts:4-6`).
 
 ## Verification commands
 

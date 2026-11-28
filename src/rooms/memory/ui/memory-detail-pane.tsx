@@ -18,6 +18,8 @@ export type RecordCategory = "fact" | "decision" | "rule" | "lesson";
 
 export type MemoryListEntry =
   | { kind: "record"; key: string; record: MemoryRecord; category: RecordCategory }
+  /** A search hit absent from the loaded list: only the fields the search returns are known. */
+  | { kind: "hit"; key: string; hit: MemorySearchRecord; category: RecordCategory }
   | { kind: "card"; key: string; card: MemoryCard };
 
 export const CATEGORY_META: Record<RecordCategory, { tone: StatusPillTone; labelKey: I18nKey }> = {
@@ -27,11 +29,11 @@ export const CATEGORY_META: Record<RecordCategory, { tone: StatusPillTone; label
   lesson: { tone: "ok", labelKey: "consoleMemoryTagLesson" },
 };
 
-export function isRuleRecord(record: Pick<MemoryRecord, "rule" | "concepts">): boolean {
-  return record.rule || record.concepts.includes("rule");
+export function isRuleRecord(record: { rule?: boolean; concepts: string[] }): boolean {
+  return record.rule === true || record.concepts.includes("rule");
 }
 
-export function classifyRecord(record: Pick<MemoryRecord, "rule" | "concepts" | "origin">): RecordCategory {
+export function classifyRecord(record: { rule?: boolean; concepts: string[]; origin?: string }): RecordCategory {
   if (isRuleRecord(record)) return "rule";
   if (record.concepts.includes("lesson") || record.origin === "lesson" || record.origin === "lessons") return "lesson";
   if (record.concepts.includes("decision") || record.origin === "decision") return "decision";
@@ -55,12 +57,30 @@ function DetailRow({ label, children }: { label: string; children: ReactNode }) 
   );
 }
 
+function DeleteRow({ disabled, onClick }: { disabled: boolean; onClick: () => void }) {
+  return (
+    <div className="border-t border-[var(--lp-hairline)] pt-3">
+      <Button
+        type="button"
+        size="sm"
+        variant="outline"
+        className="text-[var(--lp-bad)]"
+        data-testid="memory-detail-delete"
+        disabled={disabled}
+        onClick={onClick}
+      >
+        {t("consoleMemoryDelete")}
+      </Button>
+    </div>
+  );
+}
+
 export interface MemoryDetailPaneProps {
   selectedItem: MemoryListEntry | null;
   locale: Locale;
   deletingId: string | null;
   onOpenTask?: (runId: string, taskId: string) => void;
-  onRequestDelete: (record: MemoryRecord) => void;
+  onRequestDelete: (record: Pick<MemoryRecord, "id" | "content">) => void;
 }
 
 /** Right-hand detail pane for the selected memory record or knowledge card. */
@@ -108,6 +128,32 @@ export function MemoryDetailPane({
               ) : null}
             </dl>
           </>
+        ) : selectedItem.kind === "hit" ? (
+          <>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="lp-wm-type" data-tone={CATEGORY_META[selectedItem.category].tone}>
+                {t(CATEGORY_META[selectedItem.category].labelKey)}
+              </span>
+              <span className="lp-wm-type" data-tone={selectedItem.hit.kind === "core" ? "accent" : "muted"}>
+                {selectedItem.hit.kind === "core" ? t("memoryKindCore") : t("memoryKindNote")}
+              </span>
+            </div>
+            <p
+              className="whitespace-pre-wrap text-[13px] font-medium leading-snug text-[var(--lp-ink)]"
+              style={{ overflowWrap: "anywhere" }}
+              data-testid="memory-detail-text"
+            >
+              {selectedItem.hit.content}
+            </p>
+            {selectedItem.hit.concepts.length > 0 ? (
+              <dl className="space-y-3">
+                <DetailRow label={t("consoleMemoryFieldConcepts")}>{selectedItem.hit.concepts.join(" · ")}</DetailRow>
+              </dl>
+            ) : null}
+            {!isRuleRecord(selectedItem.hit) ? (
+              <DeleteRow disabled={deletingId === selectedItem.hit.id} onClick={() => onRequestDelete(selectedItem.hit)} />
+            ) : null}
+          </>
         ) : (
           <>
             <div className="flex flex-wrap items-center gap-2">
@@ -128,20 +174,20 @@ export function MemoryDetailPane({
             <dl className="space-y-3">
               <DetailRow label={t("consoleMemoryFieldOrigin")}>{selectedItem.record.origin}</DetailRow>
               <DetailRow label={t("consoleMemoryFieldTask")}>
-                {selectedItem.record.originTaskId ? (
+                {selectedItem.record.originTaskId && selectedItem.record.originRunId ? (
                   <button
                     type="button"
                     data-testid="memory-detail-task-link"
                     className="font-mono underline decoration-input underline-offset-2 hover:decoration-current"
                     onClick={() =>
-                      onOpenTask?.(
-                        selectedItem.record.originRunId ?? selectedItem.record.originTaskId!,
-                        selectedItem.record.originTaskId!,
-                      )
+                      onOpenTask?.(selectedItem.record.originRunId!, selectedItem.record.originTaskId!)
                     }
                   >
                     {selectedItem.record.originTaskId}
                   </button>
+                ) : selectedItem.record.originTaskId ? (
+                  // The task route needs its run; without one the id is shown, not linked.
+                  <span className="font-mono">{selectedItem.record.originTaskId}</span>
                 ) : (
                   "—"
                 )}
@@ -161,19 +207,7 @@ export function MemoryDetailPane({
               ) : null}
             </dl>
             {!isRuleRecord(selectedItem.record) ? (
-              <div className="border-t border-[var(--lp-hairline)] pt-3">
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  className="text-[var(--lp-bad)]"
-                  data-testid="memory-detail-delete"
-                  disabled={deletingId === selectedItem.record.id}
-                  onClick={() => onRequestDelete(selectedItem.record)}
-                >
-                  {t("consoleMemoryDelete")}
-                </Button>
-              </div>
+              <DeleteRow disabled={deletingId === selectedItem.record.id} onClick={() => onRequestDelete(selectedItem.record)} />
             ) : null}
           </>
         )}

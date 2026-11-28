@@ -5,7 +5,7 @@ import { createCore } from "../src/rooms/core/server/core";
 import { collectOwnerWaiting, postOwnerItem } from "../src/rooms/owner-waiting";
 import { savePushConfig } from "../src/rooms/owner-waiting/server";
 import { openDatabase } from "../src/rooms/plugin-db";
-import { setRunSettingsScopes, createRun, createTask, createAttempt } from "../src/rooms/storage";
+import { setRunSettingsScopes, createRun, createTask, createAttempt, insertTaskDraftRow } from "../src/rooms/storage";
 import { classifyOutcome, TASK_OUTCOMES } from "../src/rooms/runs";
 import { consoleOverview, runsConsoleRpc } from "../src/rooms/runs/server";
 import { specialistOverview, upsertCharter } from "../src/rooms/specialist/server";
@@ -218,6 +218,27 @@ describe("consoleOverview", () => {
     expect(secA.counts.active).toBe(1);
     expect(secA.counts.waiting).toBe(1);
     expect(warnings).toContain("[console] overview part=spend failed: money down");
+  });
+
+  it("carries a batch's PM thread id apart from its run id so the row can open the thread", async () => {
+    const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
+    dispose = () => harness.lifecycle.dispose();
+    const db = openDatabase(bb);
+    const nowMs = Date.parse("2026-11-28T01:00:00Z");
+    insertTaskDraftRow(db, {
+      id: "draft-9", run_id: "run-batch", project_id: "proj-1", thread_id: "thr_pm_batch", kind: "batch",
+      contracts_json: "[]", objective: "Batch of tasks", plan: null, state: "proposed", task_ids_json: null, results_json: null,
+      created_at: nowMs - 60_000, updated_at: nowMs - 60_000,
+    });
+
+    const overview = consoleOverview(
+      { db, money: { status: () => ({}) }, specialistOverview, tz: "UTC", now: () => nowMs },
+      { projectId: "proj-1", days: 7 },
+    );
+
+    expect(overview.active).toEqual([
+      expect.objectContaining({ kind: "batch", key: "batch:draft-9", runId: "run-batch", pmThreadId: "thr_pm_batch" }),
+    ]);
   });
 
   it("wires runsConsoleRpc using loadPushConfig timezone", async () => {

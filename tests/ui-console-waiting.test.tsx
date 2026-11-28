@@ -217,30 +217,16 @@ describe("Decisions screen — waiting tab (P2)", () => {
     expect(slot.getByTestId("owner-item-task-word:run_1:t1:att_1")).toBeTruthy();
   });
 
-  it("calls deferral_defer and refreshes owner_waiting when «Отложить» is clicked", async () => {
+  it("asks for the term in the chat instead of sending a deferral with an owner message the console cannot prove", async () => {
+    // A term comes only from the owner's own message with a date (deferral-service verifies it); the console used to send «console#0» and always failed.
     const deferRpc = vi.fn().mockResolvedValue({ entry: { id: "dfr_b" }, created: false });
-    let waitingReads = 0;
-    const slot = await mountDecisions({
-      owner_waiting: () => { waitingReads += 1; return waitingFixture(); },
-      deferral_defer: deferRpc,
-    });
+    const slot = await mountDecisions({ owner_waiting: () => waitingFixture(), deferral_defer: deferRpc });
 
-    const deferBtn = await slot.findByTestId("owner-defer-deferral:dfr_b");
-    expect(deferBtn.textContent).toBe("Отложить");
-    // Non-deferral items without a defer target do not get «Отложить».
-    expect(slot.queryByTestId("owner-defer-task-word:run_1:t1:att_1")).toBeNull();
-
-    const readsBefore = waitingReads;
-    fireEvent.click(deferBtn);
-
-    await waitFor(() => expect(deferRpc).toHaveBeenCalledTimes(1));
-    expect(deferRpc).toHaveBeenCalledWith(expect.objectContaining({
-      what: "dfr_b",
-      projectId: "proj_alpha",
-      ownerMsg: "console#0",
-    }));
-    await waitFor(() => expect(waitingReads).toBeGreaterThan(readsBefore));
-    expect(toast.success).toHaveBeenCalled();
+    const hint = await slot.findByTestId("owner-defer-hint-deferral:dfr_b");
+    expect(hint.textContent).toContain("в чате");
+    expect(slot.queryByTestId("owner-defer-deferral:dfr_b")).toBeNull();
+    expect(slot.queryByTestId("owner-defer-hint-task-word:run_1:t1:att_1")).toBeNull();
+    expect(deferRpc).not.toHaveBeenCalled();
   });
 
   it("opens ConfirmDialog for «Нет» (task_word no), requires reason, and sends task_word with typed reason without window.prompt", async () => {

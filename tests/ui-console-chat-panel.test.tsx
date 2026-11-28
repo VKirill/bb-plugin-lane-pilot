@@ -5,6 +5,7 @@ import { renderSlot } from "@get-bb/plugin-sdk/testing/app";
 import { setLocaleOverride } from "@lane-pilot/i18n";
 import { HelperThreadsList } from "../src/rooms/native-agent/ui";
 import { ChatPanel, ThreadLivePanel } from "../src/rooms/runs/ui";
+import { groupChatTasks } from "../src/rooms/runs/ui/chat-panel-tabs";
 
 vi.setConfig({ testTimeout: 30_000 });
 configure({ asyncUtilTimeout: 5_000 });
@@ -303,6 +304,17 @@ function makeDefaultRpc(overrides: Record<string, (input: unknown) => unknown> =
     ...overrides,
   };
 }
+
+describe("groupChatTasks", () => {
+  it("counts a done task as closed today only when it closed after midnight", () => {
+    const done = (key: string, updatedAt: number) =>
+      ({ key, column: "done", updatedAt, held: false }) as Parameters<typeof groupChatTasks>[0][number];
+    const now = new Date(2026, 10, 28, 15, 0).getTime();
+    const keys = groupChatTasks([done("today", now - 60_000), done("epoch", 1), done("yesterday", now - 86_400_000)], now)
+      .doneToday.map((item) => item.key);
+    expect(keys).toEqual(["today"]);
+  });
+});
 
 describe("Chat right panel (C1)", () => {
   beforeEach(() => {

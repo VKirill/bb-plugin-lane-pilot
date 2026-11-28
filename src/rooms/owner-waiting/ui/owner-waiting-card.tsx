@@ -25,7 +25,7 @@ export const ownerChipClass = "inline-flex max-w-full items-center gap-1 break-a
 
 const when = (ms: number) => new Date(ms).toLocaleString(undefined, { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
 
-export type DeferTarget = { what: string; kind?: string };
+type DeferTarget = { what: string; kind?: string };
 
 /** Resolves whether an owner item can be deferred via `deferral_defer`, returning its deferral target id/summary. */
 export function resolveDeferTarget(item: OwnerItem): DeferTarget | null {
@@ -212,14 +212,14 @@ function CommandLine({ action, itemKey }: { action: OwnerAction; itemKey: string
   );
 }
 
-/** Single decision card on the Waiting board with actions, defer button, inline error, and folded details. */
+/** Single decision card on the Waiting board with actions, the defer hint, inline error, and folded details. */
 export function OwnerItemCard({
   item,
   projectName,
   busy,
   error,
   onRun,
-  onDefer,
+  canDefer,
   onOpenTask,
   onOpenWork,
 }: {
@@ -228,13 +228,13 @@ export function OwnerItemCard({
   busy: boolean;
   error?: string;
   onRun: (action: OwnerAction) => void;
-  onDefer?: () => void;
+  canDefer?: boolean;
   onOpenTask?: (runId: string, taskId: string) => void;
   onOpenWork?: () => void;
 }) {
   const buttons = item.actions.filter((action) => action.rpc);
   const commands = item.actions.filter((action) => !action.rpc);
-  const hasActionButtons = buttons.length > 0 || Boolean(onDefer);
+  const hasActionButtons = buttons.length > 0;
   return (
     <li className="lp-card min-w-0 space-y-3 p-5" data-testid={`owner-item-${item.key}`}>
       {projectName ? <p className="text-[13px] text-[var(--lp-muted)]">{projectName}</p> : null}
@@ -245,15 +245,12 @@ export function OwnerItemCard({
           {buttons.map((action, index) => (
             <Button key={action.id} type="button" size="sm" variant={index === 0 || action.id === "accept" || action.id === "yes" ? "default" : "outline"} disabled={busy} data-testid={`owner-run-${item.key}-${action.id}`} onClick={() => onRun(action)}>{action.label}</Button>
           ))}
-          {onDefer ? (
-            <Button type="button" size="sm" variant="ghost" className="ml-auto text-[var(--lp-muted)]" disabled={busy} data-testid={`owner-defer-${item.key}`} onClick={onDefer}>
-              {t("consoleDecisionsDefer")}
-            </Button>
-          ) : null}
         </div>
       ) : commands.length ? (
         <p className="text-xs leading-5"><span className="font-medium">{t("ow_do")}:</span> {commands.map((action) => action.label).join(" · ")}</p>
       ) : null}
+      {/* A term comes only from the owner's own chat message with a date (deferral-service checks it), so the console cannot set one. */}
+      {canDefer ? <p className="text-xs leading-5 text-[var(--lp-muted)]" data-testid={`owner-defer-hint-${item.key}`}>{t("consoleDecisionsDeferHint")}</p> : null}
       {error ? (
         <p role="alert" className="text-xs text-destructive" data-testid={`owner-error-${item.key}`}>
           {error}

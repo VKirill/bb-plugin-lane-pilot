@@ -298,6 +298,40 @@ describe("console memory screen (P7)", () => {
 
     slot.lifecycle.unmount();
   });
+  it("shows the origin task as plain text when its run is unknown, instead of a link built from the task id", async () => {
+    const orphan = { ...SAMPLE_RECORDS[0]!, originTaskId: "task_77", originRunId: null };
+    const slot = await mountMemory({ rpc: { memory_records_list: () => ({ records: [orphan] }), memory_cards_list: () => ({ cards: [] }) } });
+
+    await slot.findByTestId("memory-item-rec_fact_111");
+    expect(slot.getByTestId("memory-detail").textContent).toContain("task_77");
+    expect(slot.queryByTestId("memory-detail-task-link")).toBeNull();
+
+    slot.lifecycle.unmount();
+  });
+
+  it("shows only the stored fields of a search hit missing from the record list", async () => {
+    const slot = await mountMemory({
+      rpc: {
+        memory_cards_list: () => ({ cards: [] }),
+        session_memory_search: () => ({ records: [{ id: "rec_hit_999999", kind: "note", content: "Older fact found by search.", concepts: ["deploy"] }] }),
+      },
+    });
+
+    await slot.findByTestId("memory-item-rec_fact_111");
+    fireEvent.change(slot.getByTestId("memory-search"), { target: { value: "older" } });
+    fireEvent.click(await slot.findByTestId("memory-item-rec_hit_9999"));
+
+    const detail = slot.getByTestId("memory-detail");
+    expect(slot.getByTestId("memory-detail-text").textContent).toContain("Older fact found by search.");
+    expect(detail.textContent).toContain("deploy");
+    for (const label of ["Origin", "Sources", "Scope", "Used", "Accepted", "Whole project"]) {
+      expect(detail.textContent).not.toContain(label);
+    }
+    expect(slot.getByTestId("memory-detail-delete")).toBeTruthy();
+
+    slot.lifecycle.unmount();
+  });
+
   it("lists the first page of a long record list and unfolds the rest on «Show more»", async () => {
     const many = Array.from({ length: 60 }, (_, index) => ({
       ...SAMPLE_RECORDS[0]!,

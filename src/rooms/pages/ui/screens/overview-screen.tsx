@@ -123,8 +123,8 @@ export function OverviewScreen({ projectId, sectionId, go, projects = [], locale
       go({ ...scopedBase, section: "work", taskRef: { runId: item.runId, taskId: item.taskId } });
       return;
     }
-    if (item.kind === "batch" && item.runId) {
-      navigate?.toThread?.(item.runId);
+    if (item.kind === "batch" && item.pmThreadId) {
+      navigate?.toThread?.(item.pmThreadId);
       return;
     }
     go({ ...scopedBase, section: "work" });

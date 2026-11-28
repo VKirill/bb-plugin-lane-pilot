@@ -817,6 +817,42 @@ describe("console staff page (P4)", () => {
     slot.lifecycle.unmount();
   });
 
+  it("does not run a non-tick schedule: with only the pulse monitor, «Запустить смену сейчас» is disabled with a reason", async () => {
+    const runNowCalls: unknown[] = [];
+    const pulse = {
+      ...tickScheduleFixture("active"),
+      id: "sched_mkt_pulse",
+      name: "sp:marketing:mkt-pulse-monitor",
+      task: { kind: "workflow", workflowId: "mkt-pulse-monitor", inputs: { domain: "marketing" } },
+    };
+    const slot = await mountStaff({
+      subPath: "staff/proj_alpha/marketing",
+      rpc: {
+        schedule_list: () => ({
+          schedules: [pulse],
+          hosts: [],
+          now: 1_800_000_000_000,
+          errandDefault: { effective: null, source: null, project: null, global: null, projectVersion: 0, globalVersion: 0 },
+        }),
+        schedule_run_now: (input) => {
+          runNowCalls.push(input);
+          return { ok: true, run: null, created: true };
+        },
+      },
+    });
+
+    await slot.findByTestId("staff-page");
+    // The pause button counts the pulse schedule, so the schedule list has arrived.
+    await waitFor(() => expect((slot.getByTestId("staff-pause-btn") as HTMLButtonElement).disabled).toBe(false));
+    const runNow = slot.getByTestId("staff-run-now") as HTMLButtonElement;
+    expect(runNow.disabled).toBe(true);
+    expect(slot.getByTestId("staff-run-now-wrap").getAttribute("title")).toBe("Нет расписания смены для запуска");
+    fireEvent.click(runNow);
+    expect(runNowCalls).toEqual([]);
+
+    slot.lifecycle.unmount();
+  });
+
   it("changes autonomy through ConfirmDialog, shows refusal reason, and renders repo_trust", async () => {
     const autonomyCalls: unknown[] = [];
     let shouldRefuse = false;
@@ -1153,6 +1189,32 @@ describe("console charter editor (P4a)", () => {
       expect(detailReads).toBeGreaterThan(readsBeforeApprove);
     });
     expect(slot.queryByTestId("charter-editor-diff")).toBeNull();
+
+    slot.lifecycle.unmount();
+  });
+
+  it("shows a budget the draft cleared as removed, because approving writes the draft body as the whole charter", async () => {
+    const slot = await mountStaff({
+      subPath: "staff/proj_alpha/marketing/edit",
+      rpc: {
+        specialist_detail: (input) => {
+          const base = defaultRpc().specialist_detail(input) as {
+            charter: { body: Record<string, unknown>; [k: string]: unknown };
+            [k: string]: unknown;
+          };
+          const { daily_cap_usd: _cleared, ...budgets } = base.charter.body.budgets as Record<string, unknown>;
+          return {
+            ...base,
+            charter: { ...base.charter, pendingDraft: { draftId: "draft_v4", body: { ...base.charter.body, budgets } } },
+          };
+        },
+      },
+    });
+
+    await slot.findByTestId("charter-editor-diff");
+    expect(slot.getByTestId("charter-diff-old-budgetDay").textContent).toBe("20");
+    expect(slot.getByTestId("charter-diff-new-budgetDay").textContent).toBe("—");
+    expect((slot.getByTestId("charter-edit-budget-day") as HTMLInputElement).value).toBe("");
 
     slot.lifecycle.unmount();
   });

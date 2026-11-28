@@ -1,10 +1,7 @@
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { t } from "@lane-pilot/i18n";
-import {
-  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
-  Button, Surface, SurfaceBody, SurfaceHeader,
-} from "@lane-pilot/ui-kit";
+import { Button, ConfirmDialog, Surface, SurfaceBody, SurfaceHeader } from "@lane-pilot/ui-kit";
 import type { ModelOverridesPage } from "./page-kit";
 
 type Level = { projectId: string; projectName: string | null; sectionId: string | null; sectionName: string | null; keys: string[] };
@@ -67,19 +64,16 @@ export function ModelOverridesPanel({ page }: { page: ModelOverridesPage }) {
             </>
           ) : <p className="text-sm text-muted-foreground" data-testid="model-overrides-none">{t("modelOverridesNone")}</p>}
       </SurfaceBody>
-      <AlertDialog open={confirming} onOpenChange={setConfirming}>
-        <AlertDialogContent data-testid="model-overrides-dialog" className="max-h-[min(80vh,100dvh)] overflow-y-auto">
-          <AlertDialogHeader>
-            <AlertDialogTitle className="text-wrap break-words">{t("modelOverridesConfirmTitle")}</AlertDialogTitle>
-            <AlertDialogDescription className="text-left text-wrap break-words">{t("modelOverridesConfirmBody")}</AlertDialogDescription>
-          </AlertDialogHeader>
-          {list}
-          <AlertDialogFooter>
-            <AlertDialogCancel>{t("confirmCancel")}</AlertDialogCancel>
-            <AlertDialogAction data-testid="model-overrides-confirm" disabled={busy} onClick={(event) => { event.preventDefault(); void reset(); }}>{t("modelOverridesConfirm")}</AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <ConfirmDialog
+        open={confirming}
+        onOpenChange={setConfirming}
+        title={t("modelOverridesConfirmTitle")}
+        body={<div className="space-y-2 text-left break-words"><p>{t("modelOverridesConfirmBody")}</p>{list}</div>}
+        confirmLabel={t("modelOverridesConfirm")}
+        cancelLabel={t("confirmCancel")}
+        tone="danger"
+        onConfirm={reset}
+      />
     </Surface>
   );
 }

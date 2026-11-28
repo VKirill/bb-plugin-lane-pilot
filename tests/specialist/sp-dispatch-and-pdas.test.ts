@@ -436,3 +436,16 @@ describe("Specialist OS live ActionOrder dispatch, PDAS v1 artifacts, and G-22..
     expect(startedCount).toBe(1);
   });
 });
+
+describe("specialistOverview goal", () => {
+  it("reads the due date the intake charter writes as north_star.horizon_date", () => {
+    const { bb } = createFakePluginHost({ pluginId: "lane-pilot" });
+    const db = openDatabase(bb);
+    upsertCharter(db, {
+      projectId: "p1",
+      domain: "marketing",
+      charter: { north_star: { metric_id: "paid_orders_30d", target: 600, horizon_date: "2027-03-01" } },
+    });
+    expect(specialistOverview(db, "p1").charters[0]).toMatchObject({ metric: "paid_orders_30d", target: 600, due: "2027-03-01" });
+  });
+});

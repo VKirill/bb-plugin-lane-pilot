@@ -60,8 +60,10 @@ export function matches(row: Row, query: string): boolean {
  * With a project it lists that project's view of the library (built-in, global and the project's own files); without
  * one, the hub's. The list re-reads on the server's `workflow` signal, so run counts and the active marker stay current.
  */
-export function WorkflowsScreen({ locale, projectId, architectProjectId = projectId, renderNodePanel, headerActions, mapView: mapSlot }: {
+export function WorkflowsScreen({ locale, projectId, architectProjectId = projectId, openGraphId = null, renderNodePanel, headerActions, mapView: mapSlot }: {
   locale: Locale; projectId: string | null;
+  /** A graph a link named (`system/graphs/<id>`): it opens instead of the library. */
+  openGraphId?: string | null;
   /** The project the architect is started in; the library of a project starts it there, the global one in the project the page has open. */
   architectProjectId?: string | null;
   /** W6: the editor's property form for the selected node, in the graph views' panel slot. */
@@ -87,7 +89,7 @@ export function WorkflowsScreen({ locale, projectId, architectProjectId = projec
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<string>(ANY);
   const [scope, setScope] = useState<string>(ANY);
-  const [openId, setOpenId] = useState<string | null>(null);
+  const [openId, setOpenId] = useState<string | null>(openGraphId);
   const [section, setSection] = useState<"library" | "map">("library");
   const [view, setView] = useState<LibraryView>(storedView);
   const [focusCat, setFocusCat] = useState<string | null>(null);
@@ -110,7 +112,7 @@ export function WorkflowsScreen({ locale, projectId, architectProjectId = projec
       setError(null);
     } catch (cause) { if (mine === generation.current) setError(cause instanceof Error ? cause.message : String(cause)); }
   }, [projectId, architectProjectId, rpc]);
-  useEffect(() => { setListing(null); setDrafts([]); setEvolution(null); setOpenId(null); setOpenDraft(null); void load(); }, [load]);
+  useEffect(() => { setListing(null); setDrafts([]); setEvolution(null); setOpenId(openGraphId); setOpenDraft(null); void load(); }, [load, openGraphId]);
 
   // The detail view has its own subscription; this one keeps the library's counts and «running» marks fresh.
   const pollMs = useLpRealtime(projectId ?? LP_ALL_PROJECTS, ["workflow", "workflow-draft"], (signal) => {

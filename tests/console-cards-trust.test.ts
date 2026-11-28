@@ -6,6 +6,7 @@ import { createCore } from "../src/rooms/core/server/core";
 import { registerRpc } from "../src/rooms/core/server/rpc";
 import { cardsRpc, setCard } from "../src/rooms/memory/server";
 import { WORKSPACE_MODE_SETTING } from "../src/rooms/native-agent";
+import { OWNER_WORDS_KEY } from "../src/rooms/tasks";
 import {
   createRun,
   finishGateRun,
@@ -408,5 +409,35 @@ describe("repo_trust and merged console contract", () => {
     });
     const viaHost = await hostHarness.behavior.callRpc("repo_trust", { projectId: "proj-rules" });
     expect(consoleContracts.rpcConsole.repo_trust.output.safeParse(viaHost).success).toBe(true);
+  });
+
+  it("does not advertise an unasked merge where the landing gate waits for the owner's word (owner.words)", async () => {
+    const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
+    dispose = () => harness.lifecycle.dispose();
+    const db = openDatabase(bb);
+    const ctx = createCore(bb, db);
+    const rulesFor = async (projectId: string, ownerWords: string) => {
+      saveProjectSetting(db, projectId, QUALITY_MODE_SETTING, "quick");
+      saveProjectSetting(db, projectId, OWNER_WORDS_KEY, ownerWords);
+      const out = await repoTrust(ctx, { projectId }, { probe: async () => ({ state: "unknown", reason: "offline" }) });
+      return out.rules;
+    };
+
+    expect(await rulesFor("proj-words-on", "on")).toEqual([
+      { actionClass: "merge_without_owner", mode: "ask" },
+      { actionClass: "migrations", mode: "ask" },
+      { actionClass: "deploy", mode: "owner_only" },
+    ]);
+    // On sensitive an ordinary task lands by the machine's gates, a migration (data class) waits for the word.
+    expect(await rulesFor("proj-words-sensitive", "sensitive")).toEqual([
+      { actionClass: "merge_without_owner", mode: "auto" },
+      { actionClass: "migrations", mode: "ask" },
+      { actionClass: "deploy", mode: "owner_only" },
+    ]);
+    expect(await rulesFor("proj-words-off", "off")).toEqual([
+      { actionClass: "merge_without_owner", mode: "auto" },
+      { actionClass: "migrations", mode: "auto" },
+      { actionClass: "deploy", mode: "owner_only" },
+    ]);
   });
 });

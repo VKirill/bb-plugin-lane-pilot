@@ -24,16 +24,24 @@ export function computeTrustLevel(input: {
   return "medium";
 }
 
-/** Maps project/section `quality_mode` and workspace mode (`adoc.040`) to read-only action-class rules. */
+const MODE_RANK: Record<TrustRule["mode"], number> = { auto: 0, ask: 1, owner_only: 2 };
+const stricter = (a: TrustRule["mode"], b: TrustRule["mode"]): TrustRule["mode"] => (MODE_RANK[a] >= MODE_RANK[b] ? a : b);
+
+/**
+ * Maps project/section `quality_mode`, workspace mode (`adoc.040`) and whether the landing gate waits for the owner's word
+ * (`owner.words`, decided by the caller with the gate's own predicate) to read-only action-class rules.
+ */
 export function buildTrustRules(settings: {
   qualityMode: QualityMode;
   workspaceMode: unknown;
+  landingWord: { ordinary: boolean; migration: boolean };
 }): TrustRule[] {
   const workspace = typeof settings.workspaceMode === "string" ? settings.workspaceMode.trim().toLowerCase() : "auto";
   const mergeMode: TrustRule["mode"] =
-    settings.qualityMode === "full" || workspace === "in_place" ? "ask" : "auto";
-  const migrationsMode: TrustRule["mode"] =
+    settings.qualityMode === "full" || workspace === "in_place" || settings.landingWord.ordinary ? "ask" : "auto";
+  const qualityMigrationsMode: TrustRule["mode"] =
     settings.qualityMode === "full" ? "owner_only" : settings.qualityMode === "quick" ? "auto" : "ask";
+  const migrationsMode = settings.landingWord.migration ? stricter(qualityMigrationsMode, "ask") : qualityMigrationsMode;
   return [
     { actionClass: "merge_without_owner", mode: mergeMode },
     { actionClass: "migrations", mode: migrationsMode },

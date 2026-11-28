@@ -282,7 +282,7 @@ describe("Decisions console screen & Brakes (Tasks 20–23)", () => {
     slot.lifecycle.unmount();
   });
 
-  it("renders autonomous actions columns, paginates «Ещё» by since, and enforces UNDO_METHODS allow list", async () => {
+  it("renders autonomous actions columns, paginates «Ещё» by before, and enforces UNDO_METHODS allow list", async () => {
     // No `revert` RPC exists, so a row naming it must not get an undo button.
     expect(isAllowedUndoMethod("revert")).toBe(false);
     expect(isAllowedUndoMethod("schedule_pause")).toBe(true);
@@ -316,13 +316,13 @@ describe("Decisions console screen & Brakes (Tasks 20–23)", () => {
       },
     ];
 
-    const calls: Array<{ since?: number; limit?: number }> = [];
+    const calls: Array<{ before?: number; limit?: number }> = [];
     const slot = await mountDecisions(
       {
         actions_log: (input: unknown) => {
-          const req = (input ?? {}) as { since?: number; limit?: number };
+          const req = (input ?? {}) as { before?: number; limit?: number };
           calls.push(req);
-          if (req.since !== undefined) return { rows: page2 };
+          if (req.before !== undefined) return { rows: page2 };
           return { rows: page1 };
         },
       },
@@ -339,12 +339,12 @@ describe("Decisions console screen & Brakes (Tasks 20–23)", () => {
     expect(firstRow.textContent).toContain("Выполнено");
     expect(firstRow.textContent).toContain("run_10:task_10");
 
-    // «Ещё» sends `since` of oldest row and appends older rows without duplicates.
+    // «Ещё» sends `before` = the oldest row and appends older rows without duplicates.
     const loadMoreBtn = await slot.findByTestId("actions-log-load-more");
     expect(loadMoreBtn.textContent).toBe("Ещё");
     fireEvent.click(loadMoreBtn);
 
-    await waitFor(() => expect(calls[1]).toEqual({ since: oldestAt, limit: 50 }));
+    await waitFor(() => expect(calls[1]).toEqual({ before: oldestAt, limit: 50 }));
     await slot.findByTestId("actions-log-row-row-older");
     expect(slot.queryByTestId("actions-log-load-more")).toBeNull();
 
@@ -427,8 +427,7 @@ describe("Decisions console screen & Brakes (Tasks 20–23)", () => {
     await slot.findByTestId("owner-waiting");
     expect(slot.getByTestId("owner-attention").textContent).toContain("3 из 5");
 
-    fireEvent.click(await slot.findByTestId("owner-defer-deferral:dfr_b"));
-    await waitFor(() => expect(deferRpc).toHaveBeenCalledWith(expect.objectContaining({ what: "dfr_b", projectId: "proj_alpha" })));
+    expect(await slot.findByTestId("owner-defer-hint-deferral:dfr_b")).toBeTruthy();
 
     fireEvent.click(await slot.findByTestId("owner-run-task-word:run_1:t1:att_1-no"));
     const reasonInput = await slot.findByTestId("owner-confirm-reason");

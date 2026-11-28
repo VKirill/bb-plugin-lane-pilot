@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useBbContext, useBbNavigate, useRpc } from "@get-bb/plugin-sdk/app";
+import { useBbNavigate, useRpc } from "@get-bb/plugin-sdk/app";
 import { toast } from "sonner";
 import { t, type I18nKey } from "@lane-pilot/i18n";
 import { Button, ConfirmDialog, Disclosure, Input, Switch } from "@lane-pilot/ui-kit";
@@ -16,7 +16,6 @@ import {
   ownerChipClass,
   resolveDeferTarget,
   shortRef,
-  type DeferTarget,
 } from "./owner-waiting-card";
 
 /**
@@ -78,7 +77,6 @@ export interface OwnerWaitingBoardProps {
 export function OwnerWaitingBoard({ projects, projectId = null, onOpenTask, onOpenWork, onOpenSettings }: OwnerWaitingBoardProps) {
   const rpc = useRpc<typeof rpcContract>();
   const navigate = useBbNavigate();
-  const { threadId: contextThreadId } = useBbContext();
   const [busy, setBusy] = useState<string | null>(null);
   const [cardErrors, setCardErrors] = useState<Record<string, string>>({});
   const [pendingConfirm, setPendingConfirm] = useState<{ item: OwnerItem; action: OwnerAction } | null>(null);
@@ -143,16 +141,6 @@ export function OwnerWaitingBoard({ projects, projectId = null, onOpenTask, onOp
     await executeRpcAction(item, action.rpc.method, input);
   };
 
-  const handleDefer = async (item: OwnerItem, target: DeferTarget) => {
-    const input = {
-      what: target.what,
-      ...(target.kind ? { kind: target.kind } : {}),
-      ...(item.projectId ? { projectId: item.projectId } : {}),
-      ownerMsg: contextThreadId ? `${contextThreadId}#0` : "console#0",
-    };
-    await executeRpcAction(item, "deferral_defer", input, t("consoleDecisionsDeferred")).catch(() => undefined);
-  };
-
   const projectName = (id: string | null) => (id ? projects.find((project) => project.id === id)?.name ?? id : null);
   const allItems = waiting?.items ?? [];
   const items = useMemo(
@@ -171,7 +159,6 @@ export function OwnerWaitingBoard({ projects, projectId = null, onOpenTask, onOp
     const list = (
       <ul className="space-y-3.5" data-testid={`owner-list-${section.source}`}>
         {rows.map((item) => {
-          const deferTarget = resolveDeferTarget(item);
           return (
             <OwnerItemCard
               key={item.key}
@@ -180,7 +167,7 @@ export function OwnerWaitingBoard({ projects, projectId = null, onOpenTask, onOp
               busy={busy === item.key}
               error={cardErrors[item.key]}
               onRun={(action) => handleAction(item, action)}
-              onDefer={deferTarget ? () => void handleDefer(item, deferTarget) : undefined}
+              canDefer={resolveDeferTarget(item) !== null}
               onOpenTask={onOpenTask}
               onOpenWork={onOpenWork}
             />

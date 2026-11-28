@@ -375,6 +375,8 @@ export interface TaskHistoryCandidateRow {
   attemptCount: number;
   createdAt: number | null;
   finishedAt: number;
+  /** 1 while the run is open: a stage return refuses a closed run. */
+  runOpen: number;
 }
 
 /**
@@ -416,7 +418,8 @@ export function listTerminalTaskHistoryBatch(
       a.reason AS reason,
       (SELECT COUNT(*) FROM lane_pilot_attempt cnt WHERE cnt.run_id = a.run_id AND cnt.task_id = a.task_id) AS attemptCount,
       (SELECT MIN(first_a.created_at) FROM lane_pilot_attempt first_a WHERE first_a.run_id = a.run_id AND first_a.task_id = a.task_id) AS createdAt,
-      a.updated_at AS finishedAt
+      a.updated_at AS finishedAt,
+      (r.closed_at IS NULL) AS runOpen
     FROM lane_pilot_task t
     JOIN lane_pilot_run r ON r.id = t.run_id
     JOIN lane_pilot_attempt a ON a.run_id = t.run_id AND a.task_id = t.id
