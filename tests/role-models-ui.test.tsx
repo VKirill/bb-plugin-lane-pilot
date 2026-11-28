@@ -187,7 +187,7 @@ describe("the table «role -> model» on the Team tab", () => {
     const { rpc } = tableRpc(view());
     const slot = await mountPage({ ...rpc, get_preferences: () => ({ locale: "ru", preference: "ru", lastProjectId: null }) });
     const panel = await openTeam(slot);
-    await waitFor(() => expect(panel.textContent).toContain(ru.teamTitle));
+    await waitFor(() => expect(panel.textContent).toContain(ru.consoleLoadoutColRole));
     expect(panel.textContent).toContain("граф");
     // In the merged table, rows show accessPurpose_* descriptions (which pre-date this card and include accessPurpose_workflow_architect «цепочки (графы)»); check the model cells and all roleModels* / consoleLoadout* strings instead.
     for (const cell of Array.from(panel.querySelectorAll("[data-testid^='loadout-model-']"))) {
