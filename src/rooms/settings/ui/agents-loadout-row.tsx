@@ -8,6 +8,9 @@ import { NativeModelPicker, type ModelChoice } from "../../ui-shell/ui";
 import { ORIGIN_LABEL, RoleAccessBody, PmAccessNote, isChanged, roleKey, roleSummary, type AccessApi, type Origin, type RoleView } from "./agent-access";
 import { AS_WRITER, TABLE_EFFORTS, type TableRoleRow } from "./agents-loadout-helpers";
 
+/** Required items are the same for every role and are named once under the table, so the cells list only what a role adds. */
+const isOptionalItem = (item: LoadoutRole["items"][number]): boolean => item.from !== "required";
+
 const itemLabel = (type: LoadoutRole["items"][number]["type"]): string => {
   if (type === "skill") return t("consoleLoadoutColSkills");
   if (type === "plugin") return t("consoleLoadoutColPlugins");
@@ -97,19 +100,24 @@ function PoolLine({
 }
 
 function CountCell({
-  count,
+  names,
+  heading,
   missingCount,
   label,
   testId,
 }: {
-  count: number;
+  names: readonly string[];
+  heading: string;
   missingCount: number;
   label: string;
   testId: string;
 }) {
   return (
-    <div className="flex min-w-0 flex-wrap items-center gap-1.5 text-xs" data-testid={testId}>
-      <span className="tabular-nums text-foreground">{count > 0 ? label.replace("{n}", String(count)) : "—"}</span>
+    <div className="flex min-w-0 flex-wrap items-center gap-1.5 text-[12.5px] text-[var(--lp-body)]" data-testid={testId}>
+      <span className="text-muted-foreground md:hidden">{heading}:</span>
+      <span className="min-w-0 break-words" title={names.length > 0 ? label.replace("{n}", String(names.length)) : undefined}>
+        {names.length > 0 ? names.join(", ") : "—"}
+      </span>
       {missingCount > 0 ? (
         <StatusPill tone="warn" className="text-[11px]">
           {t("consoleLoadoutMissingFlag")}
@@ -297,11 +305,11 @@ export function LoadoutRoleRow({
       data-origin={accessOrigin}
       className="min-w-0 scroll-mt-3 border-t border-[var(--lp-hairline)] first:border-t-0"
     >
-      <div data-testid={spec?.testId} className={wide ? `${MATRIX_GRID} px-3 py-2.5` : "grid min-w-0 gap-2 px-3 py-3"}>
+      <div data-testid={spec?.testId} className={wide ? `${MATRIX_GRID} px-4 py-[11px]` : "grid min-w-0 gap-2 px-4 py-3"}>
         <div className="flex min-w-0 items-start justify-between gap-2">
           <div className="min-w-0 space-y-0.5">
             <div className="flex flex-wrap items-center gap-1.5">
-              <span className="text-sm font-medium text-foreground">{displayName}</span>
+              <span className="text-[12.5px] font-[550] text-[var(--lp-ink)]">{displayName}</span>
               {entry.machine ? (
                 <Badge variant="outline" className="text-[10px]">
                   {entry.machine}
@@ -328,19 +336,22 @@ export function LoadoutRoleRow({
         </div>
 
         <CountCell
-          count={skills.length}
+          names={skills.filter(isOptionalItem).map((item) => item.name)}
+          heading={t("consoleLoadoutColSkills")}
           missingCount={missingSkills}
           label={t("consoleLoadoutCountSkills")}
           testId={`loadout-skills-${id}`}
         />
         <CountCell
-          count={plugins.length}
+          names={plugins.filter(isOptionalItem).map((item) => item.name)}
+          heading={t("consoleLoadoutColPlugins")}
           missingCount={missingPlugins}
           label={t("consoleLoadoutCountPlugins")}
           testId={`loadout-plugins-${id}`}
         />
         <CountCell
-          count={mcps.length}
+          names={mcps.filter(isOptionalItem).map((item) => item.name)}
+          heading={t("consoleLoadoutColMcp")}
           missingCount={missingMcps}
           label={t("consoleLoadoutCountMcp")}
           testId={`loadout-mcp-${id}`}

@@ -2,8 +2,9 @@ import { createContext, useContext, type ReactNode } from "react";
 import { GLOBAL_SETTINGS_PROJECT_ID, type CatalogRow } from "@lane-pilot/settings-catalog";
 import { t, type Locale, type LocalePreference } from "@lane-pilot/i18n";
 import { settingHelp, settingLabel, settingUsesNumericControl } from "./setting-copy";
-import { Badge, Button, Disclosure, HelpSup, Input, Label, Select, SelectContent, SelectItem, SelectTrigger, SelectValue, Skeleton, Surface, SurfaceBody, SurfaceHeader, Switch, usePanelLayout } from "@lane-pilot/ui-kit";
+import { Badge, Button, Disclosure, HelpSup, Input, Label, Select, SelectContent, SelectItem, SelectTrigger, SelectValue, Skeleton, Switch, usePanelLayout } from "@lane-pilot/ui-kit";
 import { presentEnumLabel } from "./enum-labels";
+import { Pill } from "./pill";
 import { HELP_BY_KEY, ScreenPayload, asBoolean, numericUnit, reasonKey } from "./page-kit";
 
 export function SettingsGroup({
@@ -24,20 +25,20 @@ export function SettingsGroup({
   children: ReactNode;
 }) {
   return (
-    <Surface testId={testId}>
-      {title || help ? <SurfaceHeader>
-        {title ? <h2 className="text-sm font-medium">{title}</h2> : null}
+    <section className="lp-sys-fields" data-testid={testId}>
+      {title || help ? <div className="lp-sys-fields-head">
+        {title ? <h2>{title}</h2> : null}
         {help}
-      </SurfaceHeader> : null}
-      <SurfaceBody className="space-y-4">
-        {children}
-        {more ? (
+      </div> : null}
+      <div className="lp-sys-rows">{children}</div>
+      {more ? (
+        <div className="lp-sys-more">
           <Disclosure compact testId={moreTestId} summary={moreSummary ?? t("consoleSettingsMore")}>
             <div className="space-y-4 pt-1">{more}</div>
           </Disclosure>
-        ) : null}
-      </SurfaceBody>
-    </Surface>
+        </div>
+      ) : null}
+    </section>
   );
 }
 
@@ -185,28 +186,17 @@ export function SettingField({
   const { stackControls } = usePanelLayout();
   const inherited = value == null || value === "";
   const controlValue = inherited ? row.defaultValue : value;
+  const explicit = Boolean(inheritance?.data?.explicitKeys?.includes(row.storageKey));
   return (
     <div
       data-testid={`field-${row.id}`}
       data-storage-key={row.storageKey}
       data-ui-status={row.uiStatus}
-      className={stackControls
-        ? "grid min-h-11 min-w-0 gap-1 py-1"
-        : "grid min-h-11 min-w-0 gap-1 py-1 md:grid-cols-[minmax(0,1fr)_minmax(11rem,16rem)] md:items-center"}
+      className={stackControls ? "lp-sys-field" : "lp-sys-field lp-sys-field-wide"}
     >
       <div className="min-w-0">
         <div className="flex min-h-8 flex-wrap items-center gap-x-1">
-          <span><Label className="text-sm">{settingLabel(row)}</Label><SettingHelp row={row} /></span>
-          {inheritance ? (
-            <span className="text-xs text-muted-foreground">
-              {inheritanceSummary(row.storageKey, inheritance.locale, inheritance.data)}
-            </span>
-          ) : null}
-          {inheritance?.data?.explicitKeys?.includes(row.storageKey) ? (
-            <Button variant="ghost" size="sm" className="h-7 px-2" disabled={disabled} onClick={() => inheritance.reset([row.storageKey])}>
-              {t("inheritResetShort")}
-            </Button>
-          ) : null}
+          <span><Label className="text-[13px] font-[550] text-[var(--lp-ink)]">{settingLabel(row)}</Label><SettingHelp row={row} /></span>
         </div>
         {row.min !== null && row.max !== null ? (
           <p className="text-xs text-muted-foreground">{t("fieldLimits")} {row.min}–{row.max} {t(numericUnit(row))}</p>
@@ -214,6 +204,16 @@ export function SettingField({
         {disabled ? <p className="text-xs text-muted-foreground">{t(reasonKey(row.id))}</p> : null}
       </div>
       <FieldControl row={row} value={controlValue} disabled={disabled} onChange={onChange} onDraft={onDraft} />
+      {inheritance ? (
+        <div className="lp-sys-field-meta">
+          <Pill tone={explicit ? "info" : "muted"}>{inheritanceSummary(row.storageKey, inheritance.locale, inheritance.data)}</Pill>
+          {explicit ? (
+            <button type="button" className="lp-sys-link" disabled={disabled} onClick={() => inheritance.reset([row.storageKey])}>
+              {t("inheritResetShort")}
+            </button>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   );
 }

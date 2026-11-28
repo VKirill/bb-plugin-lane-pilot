@@ -79,8 +79,8 @@ export function TokenUsage({ projects }: { projects: Array<{ id: string; name: s
 
   return (
     <div className="space-y-4" data-testid="token-usage">
-      <div className="lp-strip">
-        <h1 className="break-words text-xl font-medium">{t("tabTokens")}</h1>
+      <div className="space-y-0.5">
+        <h2 className="break-words text-sm font-[650] text-[var(--lp-ink)]">{t("tabTokens")}</h2>
         <p className="max-w-xl text-xs text-muted-foreground">{t("tokenUsageHelp")}</p>
       </div>
       <Surface testId="token-usage-panel">
@@ -128,26 +128,26 @@ export function TokenUsage({ projects }: { projects: Array<{ id: string; name: s
             <p className="text-xs text-muted-foreground" data-testid="token-usage-empty">{t("tokenUsageEmpty")}</p>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full caption-bottom text-xs" data-testid="token-usage-table">
+              <table className="lp-sys-table" data-testid="token-usage-table">
                 <thead>
-                  <tr className="border-b text-left text-muted-foreground">
-                    <th className="px-2 py-1.5 font-medium">{t("tokenUsageModel")}</th>
-                    <th className="px-2 py-1.5 font-medium">{t("tokenUsageInput")}</th>
-                    <th className="px-2 py-1.5 font-medium">{t("tokenUsageOutput")}</th>
-                    <th className="px-2 py-1.5 font-medium">{t("tokenUsageCached")}</th>
-                    <th className="px-2 py-1.5 font-medium">{t("tokenUsageTotal")}</th>
-                    <th className="px-2 py-1.5 font-medium">{t("tokenUsageApiCost")}</th>
+                  <tr>
+                    <th>{t("tokenUsageModel")}</th>
+                    <th>{t("tokenUsageInput")}</th>
+                    <th>{t("tokenUsageOutput")}</th>
+                    <th>{t("tokenUsageCached")}</th>
+                    <th>{t("tokenUsageTotal")}</th>
+                    <th>{t("tokenUsageApiCost")}</th>
                   </tr>
                 </thead>
                 <tbody>
                   {data.byModel.map((row) => (
-                    <tr key={`${row.providerId}:${row.model}`} className="border-b" data-testid={`token-usage-row-${row.model}`}>
-                      <td className="px-2 py-1.5">{row.providerId ? `${row.providerId} · ${row.model}` : row.model}</td>
-                      <td className="px-2 py-1.5">{fmt(row.input)}</td>
-                      <td className="px-2 py-1.5">{fmt(row.output)}</td>
-                      <td className="px-2 py-1.5">{fmt(row.cached)}</td>
-                      <td className="px-2 py-1.5 font-medium">{fmt(row.total)}</td>
-                      <td className="px-2 py-1.5">{fmtCost(row.costUsd)}</td>
+                    <tr key={`${row.providerId}:${row.model}`} data-testid={`token-usage-row-${row.model}`}>
+                      <td>{row.providerId ? `${row.providerId} · ${row.model}` : row.model}</td>
+                      <td>{fmt(row.input)}</td>
+                      <td>{fmt(row.output)}</td>
+                      <td>{fmt(row.cached)}</td>
+                      <td>{fmt(row.total)}</td>
+                      <td>{fmtCost(row.costUsd)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -192,24 +192,24 @@ export function TokenUsage({ projects }: { projects: Array<{ id: string; name: s
           </SurfaceHeader>
           <SurfaceBody>
             <div className="overflow-x-auto">
-              <table className="w-full caption-bottom text-xs" data-testid="token-usage-project-table">
+              <table className="lp-sys-table" data-testid="token-usage-project-table">
                 <thead>
-                  <tr className="border-b text-left text-muted-foreground">
-                    <th className="px-2 py-1.5 font-medium">{t("tokenUsageProject")}</th>
-                    <th className="px-2 py-1.5 font-medium">{t("tokenUsageTotal")}</th>
-                    <th className="px-2 py-1.5 font-medium">{t("tokenUsageShare")}</th>
-                    <th className="px-2 py-1.5 font-medium">{t("tokenUsageTopModel")}</th>
-                    <th className="px-2 py-1.5 font-medium">{t("tokenUsageApiCost")}</th>
+                  <tr>
+                    <th>{t("tokenUsageProject")}</th>
+                    <th>{t("tokenUsageTotal")}</th>
+                    <th>{t("tokenUsageShare")}</th>
+                    <th>{t("tokenUsageTopModel")}</th>
+                    <th>{t("tokenUsageApiCost")}</th>
                   </tr>
                 </thead>
                 <tbody>
                   {data.byProject.map((row) => (
-                    <tr key={row.projectId} className="border-b" data-testid={`token-usage-project-${row.projectId}`}>
-                      <td className="px-2 py-1.5">{row.projectName || projectName(row.projectId)}</td>
-                      <td className="px-2 py-1.5">{fmt(row.total)}</td>
-                      <td className="px-2 py-1.5">{pct(row.share)}</td>
-                      <td className="px-2 py-1.5">{row.topModel}</td>
-                      <td className="px-2 py-1.5">{fmtCost(row.costUsd)}</td>
+                    <tr key={row.projectId} data-testid={`token-usage-project-${row.projectId}`}>
+                      <td>{row.projectName || projectName(row.projectId)}</td>
+                      <td>{fmt(row.total)}</td>
+                      <td>{pct(row.share)}</td>
+                      <td>{row.topModel}</td>
+                      <td>{fmtCost(row.costUsd)}</td>
                     </tr>
                   ))}
                 </tbody>

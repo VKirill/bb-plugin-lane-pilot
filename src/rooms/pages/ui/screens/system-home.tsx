@@ -203,40 +203,44 @@ export function SystemHome({ route, go, projectId, sectionId, explicitKeysCount 
     };
   }, [rpc, projectId, sectionId, explicitKeysCount, locale]);
 
+  const tile = (sysPage: SystemPage) => {
+    const status = summary[sysPage];
+    const strip = sysPage === "settings";
+    return (
+      <button
+        key={sysPage}
+        type="button"
+        data-testid={`system-tile-${sysPage}`}
+        className={strip ? "lp-sys-strip" : "lp-sys-tile"}
+        onClick={() => go({ ...route, section: "system", page: sysPage })}
+      >
+        <span className="lp-sys-tile-head">
+          <span className="lp-sys-tile-icon">
+            <Icon name={TILE_ICONS[sysPage]} className="size-[17px]" aria-hidden />
+          </span>
+          <span className="lp-sys-tile-text">
+            <span className="lp-sys-tile-title">{t(TILE_TITLES[sysPage])}</span>
+            <span
+              className={`lp-sys-tile-count ${status?.warn ? "lp-text-warning" : ""}`}
+              data-testid={`system-tile-status-${sysPage}`}
+            >
+              {status ? status.text : t("consoleSystemStatusLoading")}
+            </span>
+          </span>
+        </span>
+        <span className="lp-sys-tile-desc">{t(TILE_DESCS[sysPage])}</span>
+        <span className="lp-sys-tile-foot">
+          <span className="lp-sys-tile-open">{t("consoleSystemTileOpen")}</span>
+        </span>
+      </button>
+    );
+  };
+
   return (
     <div className="space-y-4" data-testid="console-system-hub">
       <PageHeader title={t("consoleNavSystem")} subtitle={t("consoleSystemLead")} />
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        {SYSTEM_PAGES.map((sysPage) => {
-          const status = summary[sysPage];
-          return (
-            <button
-              key={sysPage}
-              type="button"
-              data-testid={`system-tile-${sysPage}`}
-              className="lp-card flex min-w-0 flex-col items-start justify-between gap-3 p-4 text-left transition-colors hover:bg-state-hover focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-              onClick={() => go({ ...route, section: "system", page: sysPage })}
-            >
-              <div className="flex w-full min-w-0 items-start gap-2.5">
-                <span className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-lg bg-[var(--lp-well)] text-foreground">
-                  <Icon name={TILE_ICONS[sysPage]} className="size-4" aria-hidden />
-                </span>
-                <div className="min-w-0 flex-1 space-y-0.5">
-                  <div className="text-sm font-medium text-foreground">{t(TILE_TITLES[sysPage])}</div>
-                  <div
-                    className={`truncate text-xs ${status?.warn ? "lp-text-warning" : "text-muted-foreground"}`}
-                    data-testid={`system-tile-status-${sysPage}`}
-                  >
-                    {status ? status.text : t("consoleSystemStatusLoading")}
-                  </div>
-                </div>
-              </div>
-              <p className="line-clamp-2 text-xs text-muted-foreground">{t(TILE_DESCS[sysPage])}</p>
-              <span className="text-xs font-medium text-primary">{t("consoleSystemTileOpen")}</span>
-            </button>
-          );
-        })}
-      </div>
+      <div className="lp-sys-tiles">{SYSTEM_PAGES.filter((page) => page !== "settings").map(tile)}</div>
+      {tile("settings")}
     </div>
   );
 }

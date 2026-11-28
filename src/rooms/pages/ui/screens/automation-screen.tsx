@@ -21,6 +21,7 @@ import { BRAKE_LABEL_KEYS } from "../../../owner-waiting/ui";
 import { useLpRpcQuery } from "../../../ui-shell/ui";
 
 const AUTOMATION_POLL_MS = 30_000;
+const DOCS_ROWS_SHOWN = 8;
 
 function formatDateTime(ms: number, locale: Locale): string {
   return new Date(ms).toLocaleString(locale === "ru" ? "ru-RU" : "en-US", {
@@ -51,6 +52,7 @@ export function AutomationScreen({ locale: localeProp }: { locale?: Locale }) {
   const [docsBusyId, setDocsBusyId] = useState<string | null>(null);
   const [confirmOffOpen, setConfirmOffOpen] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [docsExpanded, setDocsExpanded] = useState(false);
 
   useEffect(() => {
     setManualOverride(null);
@@ -117,7 +119,7 @@ export function AutomationScreen({ locale: localeProp }: { locale?: Locale }) {
   const brakes = manual?.brakes ?? [];
 
   return (
-    <div className="space-y-5" data-testid="automation-screen">
+    <div className="lp-sys-narrow space-y-5" data-testid="automation-screen">
       <PageHeader title={t("consoleSysAutomation")} subtitle={t("consoleAutomationSubtitle")} />
 
       {actionError ? (
@@ -237,7 +239,7 @@ export function AutomationScreen({ locale: localeProp }: { locale?: Locale }) {
             </p>
           ) : docsProjects ? (
             <div className="divide-y divide-[var(--lp-hairline)] rounded-xl border border-[var(--lp-hairline)] bg-[var(--lp-card)]" data-testid="automation-docs-list">
-              {docsProjects.map((project) => (
+              {(docsExpanded ? docsProjects : docsProjects.slice(0, DOCS_ROWS_SHOWN)).map((project) => (
                 <div
                   key={project.projectId}
                   className="flex items-center justify-between gap-4 px-4 py-3"
@@ -256,6 +258,16 @@ export function AutomationScreen({ locale: localeProp }: { locale?: Locale }) {
                   />
                 </div>
               ))}
+              {!docsExpanded && docsProjects.length > DOCS_ROWS_SHOWN ? (
+                <button
+                  type="button"
+                  className="lp-sys-link block w-full px-4 py-3 text-left"
+                  data-testid="automation-docs-show-more"
+                  onClick={() => setDocsExpanded(true)}
+                >
+                  {t("consoleAutomationDocsShowMore").replace("{n}", String(docsProjects.length - DOCS_ROWS_SHOWN))}
+                </button>
+              ) : null}
             </div>
           ) : null}
         </SurfaceBody>
