@@ -87,8 +87,8 @@ export function useOpenHelper() {
 }
 
 /**
- * The working helpers beside the agent badge: one square each with the role icon and a pulse/status dot, the task on hover
- * (the owner wants icons only); click opens its chat. Past three, the rest fold into a «+N» that opens the list.
+ * The working helpers beside the agent badge: one pill each with the role in words and a pulse/status dot, the task on hover;
+ * click opens its chat. Past three, the rest fold into a «+N» that opens the list.
  * Queued tasks appear as an extra «в очереди N» chip.
  */
 export function HelperChips({ threads, queued, frame }: { threads: HelperThread[]; queued?: string[]; frame?: CSSProperties }) {
@@ -99,12 +99,11 @@ export function HelperChips({ threads, queued, frame }: { threads: HelperThread[
   const shown = threads.slice(0, 3);
   const rest = threads.length - shown.length;
   return (
-    <span className="pointer-events-auto flex items-center gap-1" data-testid="helper-chips">
+    <span className="pointer-events-auto flex min-w-0 items-center gap-1" data-testid="helper-chips">
       {shown.map((row) => {
-        // The chips are portaled into BB's prompt box, outside this plugin's CSS, so only BB's own Tailwind classes apply there;
-        // BB 0.46 has no `-top-0.5` and the dot fell to the middle of the right edge. The corner offsets are inline.
-        const corner = { top: "-0.125rem", right: "-0.125rem" };
         const isVerifying = row.phase === "проверка" || row.phase === "приёмка" || row.phase === "ждёт слияния";
+        // The chips are portaled into BB's prompt box, outside this plugin's CSS, so only BB's own Tailwind classes apply there;
+        // every measure that matters is inline. A pill with the working role in words and a status dot, like the prototype.
         return (
           <button
             key={row.id}
@@ -113,48 +112,47 @@ export function HelperChips({ threads, queued, frame }: { threads: HelperThread[
             aria-label={`${helperHint(row)}. ${t("helperOpen")}`}
             data-testid={`helper-chip-${row.id}`}
             onClick={() => open(row)}
-            className="relative inline-flex size-5 cursor-pointer items-center justify-center text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+            className="inline-flex cursor-pointer items-center transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
             style={{
+              gap: "0.375rem",
+              minWidth: 0,
+              padding: "0.25rem 0.625rem",
               backgroundColor: "var(--muted, #F6F6F3)",
               borderWidth: "1px",
               borderStyle: "solid",
               borderColor: "var(--border, #E7E6E1)",
               color: "var(--muted-foreground, #4B4F58)",
+              fontSize: "11.5px",
+              fontWeight: 500,
+              lineHeight: 1,
+              whiteSpace: "nowrap",
               ...frame,
-              borderRadius: "0.375rem",
+              borderRadius: "999px",
             }}
           >
-            <Icon name={roleOf(row).icon} className="size-3" />
-            {isVerifying ? (
-              <span
-                className="absolute size-1.5 rounded-full bg-success"
-                style={{ ...corner, backgroundColor: "var(--success, #2F9E66)" }}
-                data-testid="verifying-dot"
-                aria-hidden
-              />
-            ) : (
-              <span
-                className="absolute size-1.5 animate-pulse rounded-full bg-primary"
-                style={{ ...corner, backgroundColor: "var(--timeline-accent, #3B5BDB)" }}
-                data-testid="active-dot"
-                aria-hidden
-              />
-            )}
+            <span
+              className={isVerifying ? "" : "animate-pulse"}
+              data-testid={isVerifying ? "verifying-dot" : "active-dot"}
+              style={{ width: "6px", height: "6px", flexShrink: 0, borderRadius: "999px", backgroundColor: isVerifying ? "var(--success, #2F9E66)" : "var(--timeline-accent, #3B5BDB)" }}
+              aria-hidden
+            />
+            <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{roleText(row.role)}</span>
           </button>
         );
       })}
       {rest > 0 ? (
         <button type="button" data-testid="helper-chips-more" aria-label={t("helperMore").replace("{n}", String(rest))}
           onClick={() => openPanel({ actionId: HELPER_PANEL_ACTION, title: t("helperPanelTitle"), params: {} })}
-          className="inline-flex h-5 cursor-pointer items-center px-1.5 text-xs leading-none text-muted-foreground hover:text-foreground"
+          className="inline-flex cursor-pointer items-center text-xs leading-none text-muted-foreground hover:text-foreground"
           style={{
+            padding: "0.25rem 0.625rem",
             backgroundColor: "var(--muted, #F6F6F3)",
             borderWidth: "1px",
             borderStyle: "solid",
             borderColor: "var(--border, #E7E6E1)",
             color: "var(--muted-foreground, #4B4F58)",
             ...frame,
-            borderRadius: "0.375rem",
+            borderRadius: "999px",
           }}>+{rest}</button>
       ) : null}
       {queuedCount > 0 ? (
@@ -164,8 +162,9 @@ export function HelperChips({ threads, queued, frame }: { threads: HelperThread[
           title={t("helperQueueTitle").replace("{list}", queued?.join(", ") ?? "")}
           aria-label={t("helperQueueAria").replace("{count}", String(queuedCount))}
           onClick={() => openPanel({ actionId: HELPER_PANEL_ACTION, title: t("helperPanelTitle"), params: {} })}
-          className="inline-flex h-5 cursor-pointer items-center gap-1 px-1.5 text-xs leading-none text-muted-foreground hover:text-foreground"
+          className="inline-flex cursor-pointer items-center gap-1 text-xs leading-none text-muted-foreground hover:text-foreground"
           style={{
+            padding: "0.25rem 0.625rem",
             backgroundColor: "var(--muted, #F6F6F3)",
             borderWidth: "1px",
             borderStyle: "solid",
@@ -174,7 +173,7 @@ export function HelperChips({ threads, queued, frame }: { threads: HelperThread[
             fontSize: "11.5px",
             fontWeight: 500,
             ...frame,
-            borderRadius: "0.375rem",
+            borderRadius: "999px",
           }}
         >
           <Icon name="Clock" className="size-3" />

@@ -3,7 +3,7 @@ import { useComposer, useRpc } from "@get-bb/plugin-sdk/app";
 import type { rpcContract } from "../../contracts";
 import { t, detectLocale, setLocaleOverride, type I18nKey } from "@lane-pilot/i18n";
 import { agentKind, composerAgentLabel, type PickableAgent } from "../../contracts/agent-display";
-import { Button } from "@lane-pilot/ui-kit";
+import { Button, Icon } from "@lane-pilot/ui-kit";
 import { Label } from "@lane-pilot/ui-kit";
 import { Popover, PopoverContent, PopoverTrigger } from "@lane-pilot/ui-kit";
 import { Switch } from "@lane-pilot/ui-kit";
@@ -269,9 +269,9 @@ export function EnableLanePilotAction() {
           variant="outline"
           size="sm"
           data-bb-plugin="lane-pilot"
-          className={`h-7 min-h-7 max-w-[10rem] rounded-full px-2.5 text-xs font-semibold ${
+          className={`h-[26px] min-h-[26px] max-w-[10rem] gap-1.5 rounded-full px-2.5 text-xs font-semibold shadow-none [&_svg]:size-3 ${
             selected
-              ? "border-transparent lp-pill-info"
+              ? "border-transparent lp-pill-info text-[var(--lp-accent)]"
               : "border-[var(--lp-hairline)] bg-[var(--lp-card)] text-foreground"
           }`}
           disabled={disabled}
@@ -279,6 +279,7 @@ export function EnableLanePilotAction() {
           data-lp-agent={!selected ? "off" : laneOn ? "lane-pilot" : "specialist"}
         >
           <span className="truncate whitespace-nowrap">{triggerLabel}</span>
+          <Icon name="ChevronDown" aria-hidden />
         </Button>
       </PopoverTrigger>
       <PopoverContent align="start" className="w-80 max-w-[min(20rem,calc(100vw-2rem))] min-w-0 max-h-[min(30rem,70vh)] space-y-3 overflow-y-auto rounded-xl border-[var(--lp-hairline)] bg-[var(--lp-card)] p-4 shadow-[var(--lp-drop)]" data-testid="activation-popover">

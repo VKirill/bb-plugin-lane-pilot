@@ -1,5 +1,7 @@
 /** Console strings for chat composer, helper chips, task graph, and draft cards. Merged by i18n.ts. */
 export const consoleChatEn = {
+  consoleChatShowMore: "Show {n} more",
+  ownerAskOwnAnswer: "Your own answer",
   draftCardKindBatch: "batch · {count}",
   draftCardKindTask: "task",
   draftCardCreate: "Create",
@@ -28,6 +30,8 @@ export const consoleChatEn = {
 } as const;
 
 export const consoleChatRu: { [K in keyof typeof consoleChatEn]: string } = {
+  consoleChatShowMore: "Показать ещё {n}",
+  ownerAskOwnAnswer: "Свой ответ",
   draftCardKindBatch: "пачка · {count}",
   draftCardKindTask: "задача",
   draftCardCreate: "Создать",

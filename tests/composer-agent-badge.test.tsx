@@ -172,10 +172,9 @@ describe("Lane Pilot composer agent badge", () => {
     const wrapper = label.parentElement as HTMLElement;
     expect(wrapper.style.left).toBe(PROMPT_BOX_AGENT_LABEL_LEFT);
     expect(wrapper.style.position).toBe("absolute");
-    expect(label.style.borderStyle).toBe("dashed");
-    expect(label.style.borderColor).toBe("rgb(20, 30, 40)");
-    expect(label.style.backgroundColor).toBe("rgb(5, 6, 7)");
-    expect(label.style.borderRadius).toBe("0.375rem");
+    // A filled pill: its own tint covers the box's border line, so it needs none of the box's frame.
+    expect(label.style.backgroundColor).toBe("rgb(232, 237, 252)");
+    expect(label.style.borderRadius).toBe("999px");
     slot.lifecycle.unmount();
   });
 

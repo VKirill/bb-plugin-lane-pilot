@@ -56,18 +56,14 @@ function AgentNameBadge(agent: { agentId: string; description: string; helpers?:
     <span
       className="pointer-events-none text-xs leading-none"
       style={{
+        // The prototype's accent on its soft tint: a filled pill that covers the box's border, readable on BB's light and dark themes.
         backgroundColor: "#E8EDFC",
-        borderWidth: "1px",
-        borderStyle: "solid",
-        borderColor: "var(--border, #E7E6E1)",
-        ...frame,
-        color: "var(--timeline-accent, #3B5BDB)",
+        color: "#3B5BDB",
         fontSize: "12px",
         fontWeight: 600,
         lineHeight: 1,
         padding: "0.25rem 0.625rem",
-        // The box's own radius turns a 20px chip into a pill; this keeps the box's shape.
-        borderRadius: "0.375rem",
+        borderRadius: "999px",
         whiteSpace: "nowrap",
       }}
       aria-label={t("composerAgentBadge")}
@@ -86,6 +82,8 @@ function AgentNameBadge(agent: { agentId: string; description: string; helpers?:
         transform: host ? "translateY(-50%)" : undefined,
         zIndex: host ? 10 : undefined,
         gap: "0.5rem",
+        // On a phone the pills would run past the box; they shrink and cut their words instead.
+        maxWidth: host ? "calc(100% - 2rem)" : undefined,
       }}
     >
       {label}

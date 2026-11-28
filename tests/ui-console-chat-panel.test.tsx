@@ -316,6 +316,31 @@ describe("Chat right panel (C1)", () => {
     setLocaleOverride(null);
   });
 
+  it("caps a long group at a few rows and shows the rest on request", async () => {
+    const blocked = Array.from({ length: 12 }, (_, n) => ({
+      ...makeDefaultRpc().task_board().items[0]!,
+      key: `workflow:wf_${n}`,
+      runId: `wf_${n}`,
+      taskId: null,
+      title: `Сбой ${n}`,
+      pmThreadId: "thr_pm",
+    }));
+    const slot = renderSlot(
+      { component: () => <ChatPanel threadId="thr_pm" locale="ru" HelpersList={HelperThreadsList} /> },
+      {},
+      {
+        context: { projectId: "proj_1", threadId: "thr_pm" },
+        rpc: makeDefaultRpc({ task_board: () => ({ items: blocked }), thread_live: () => null }) as never,
+      },
+    );
+    const group = await slot.findByTestId("chat-tasks-group-waiting");
+    expect(group.querySelectorAll("[data-testid^='chat-task-row-']")).toHaveLength(5);
+    fireEvent.click(slot.getByTestId("chat-tasks-more-waiting"));
+    await waitFor(() => expect(group.querySelectorAll("[data-testid^='chat-task-row-']")).toHaveLength(12));
+    expect(slot.queryByTestId("chat-tasks-more-waiting")).toBeNull();
+    slot.lifecycle.unmount();
+  });
+
   it("shows section/project switch in section chat, hides in whole-project chat, and toggles scope queries", async () => {
     const repoTrustCalls: unknown[] = [];
     const historyCalls: unknown[] = [];

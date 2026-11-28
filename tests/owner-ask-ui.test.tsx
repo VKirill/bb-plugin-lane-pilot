@@ -42,6 +42,9 @@ describe("the owner's question form (H8)", () => {
 
   it("sends words of the owner's own, alone or with an option; Send needs text", async () => {
     const { view, submitted } = await mount(buildOwnerAskPayload({ source: "pm", kind: "decision", question: "Which provider?", options: ["Stripe"] }));
+    // With tappable answers the text field waits behind «Your own answer».
+    expect(view.container.querySelector("textarea")).toBeNull();
+    fireEvent.click(view.getByTestId("owner-ask-own"));
     const send = Array.from(view.container.querySelectorAll("button")).find((button) => /Send|Отправить/.test(button.textContent ?? ""))! as HTMLButtonElement;
     expect(send.disabled).toBe(true);
     const field = view.container.querySelector("textarea")!;
