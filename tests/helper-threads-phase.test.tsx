@@ -53,9 +53,9 @@ describe("Helper chips & panel phase rendering", () => {
     slot.lifecycle.unmount();
   });
 
-  // 2026-10-12: the chips live in BB's prompt box, where only BB's Tailwind applies (BB 0.46 had no `-top-0.5` and the dot fell to
-  // the middle of the right edge). The dot is now part of the pill's flow, and its size must not depend on a host class either.
-  it("sizes the status dot with inline styles, not host classes", async () => {
+  // 2026-10-12: the chips live in BB's prompt box, where only BB's Tailwind applies; BB 0.46 has no `-top-0.5`, so the dot sat
+  // in the middle of the right edge. Its corner must not depend on a host class.
+  it("pins the status dot to the chip's top-right corner with inline offsets", async () => {
     const slot = await mountBadge({
       helpers: [
         { id: "thr_1", title: "Task 1", status: "active", role: "specialist", detail: null, phase: "работает" },
@@ -64,9 +64,9 @@ describe("Helper chips & panel phase rendering", () => {
     });
     await slot.findByTestId("helper-chip-thr_2");
     for (const dot of [slot.getByTestId("active-dot"), slot.getByTestId("verifying-dot")]) {
-      expect(dot.style.width).toBe("6px");
-      expect(dot.style.height).toBe("6px");
-      expect(dot.className).not.toMatch(/size-|-top-|-right-/);
+      expect(dot.style.top).toBe("-0.125rem");
+      expect(dot.style.right).toBe("-0.125rem");
+      expect(dot.className).not.toMatch(/-top-|-right-/);
     }
     slot.lifecycle.unmount();
   });
