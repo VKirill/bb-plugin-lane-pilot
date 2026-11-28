@@ -2,9 +2,9 @@ import { useState, type ReactNode } from "react";
 import { useBbNavigate, useRpc } from "@get-bb/plugin-sdk/app";
 import { CARD_STAGE_ORDER } from "@lane-pilot/contracts";
 import { t } from "@lane-pilot/i18n";
-import { Disclosure, Icon } from "@lane-pilot/ui-kit";
+import { Disclosure, Icon, StatusPill, Surface, Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@lane-pilot/ui-kit";
 import type { rpcContract } from "../../contracts";
-import { roleName, stageName, type TaskCardData } from "./task-shared";
+import { ago, attemptState, fill, reasonText, roleName, shortModel, stageName, stageState, type TaskCardData } from "./task-shared";
 
 type Thread = NonNullable<TaskCardData["threads"]>;
 type StageRailEntry = { id: string; label: string; state: string };
@@ -37,20 +37,13 @@ function buildStageRail(card: TaskCardData): StageRailEntry[] {
   });
 }
 
-function stagePillTone(state: string): { cls: string; mark: string } {
-  if (state === "passed" || state === "succeeded") {
-    return {
-      cls: "border-[var(--color-success,#16a34a)]/30 bg-[var(--color-success,#16a34a)]/10 text-[var(--color-success,#16a34a)]",
-      mark: "✓",
-    };
-  }
-  if (state === "running") {
-    return { cls: "border-primary/30 bg-primary/10 text-primary", mark: "●" };
-  }
-  if (state === "failed" || state === "blocked") {
-    return { cls: "border-destructive/30 bg-destructive/10 text-destructive", mark: "✗" };
-  }
-  return { cls: "border-border bg-muted/30 text-muted-foreground", mark: "○" };
+type StageTone = "ok" | "accent" | "bad" | "muted";
+
+function stageTone(state: string): { tone: StageTone; mark: string } {
+  if (state === "passed" || state === "succeeded") return { tone: "ok", mark: "✓" };
+  if (state === "running") return { tone: "accent", mark: "●" };
+  if (state === "failed" || state === "blocked") return { tone: "bad", mark: "✗" };
+  return { tone: "muted", mark: "○" };
 }
 
 /** Top horizontal stage rail summarizing pipeline or workflow stages. */
@@ -58,28 +51,83 @@ export function StageRail({ card }: { card: TaskCardData }) {
   const entries = buildStageRail(card);
   if (entries.length === 0) return null;
   return (
-    <div
-      className="mt-4 flex flex-wrap gap-1.5"
-      role="list"
-      aria-label={t("consoleTaskStageRailAria")}
-      data-testid="task-stage-rail"
-    >
+    <div className="lp-wm-rail" role="list" aria-label={t("consoleTaskStageRailAria")} data-testid="task-stage-rail">
       {entries.map((entry) => {
-        const { cls, mark } = stagePillTone(entry.state);
+        const { tone, mark } = stageTone(entry.state);
         return (
-          <div
-            key={entry.id}
-            role="listitem"
-            data-stage={entry.id}
-            data-state={entry.state}
-            className={`inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium ${cls}`}
-          >
+          <div key={entry.id} role="listitem" data-stage={entry.id} data-state={entry.state} data-tone={tone} className="lp-wm-rail-pill">
             <span aria-hidden className={entry.state === "running" ? "animate-pulse" : undefined}>{mark}</span>
-            <span>{entry.label}</span>
+            <span className="min-w-0">{entry.label}</span>
           </div>
         );
       })}
     </div>
+  );
+}
+
+/** One row per stage, then one per attempt when the task was tried more than once: who did it, when it last moved and how it ended. */
+export function StageTable({ card, locale }: { card: TaskCardData; locale: string }) {
+  const rows = [
+    ...card.stages.map((stage, index) => ({
+      key: `${stage.id}:${index}`,
+      title: stage.title ?? stageName(stage.id),
+      who: shortModel(stage.model),
+      at: stage.updatedAt,
+      state: stage.state,
+      label: stageState(stage.state),
+      note: reasonText(stage.reason),
+    })),
+    ...(card.attempts.length > 1
+      ? card.attempts.map((attempt) => ({
+          key: `attempt:${attempt.id}`,
+          title: fill("consoleTaskAttemptN", { n: attempt.no }),
+          who: null,
+          at: attempt.updatedAt,
+          state: attempt.state,
+          label: attemptState(attempt.state),
+          note: reasonText(attempt.reason),
+        }))
+      : []),
+  ];
+  if (rows.length === 0) return null;
+  return (
+    <Surface testId="task-card-stages" className="overflow-hidden">
+      <Table className="lp-wm-table">
+        <TableHeader>
+          <TableRow>
+            <TableHead>{t("consoleTaskColStage")}</TableHead>
+            <TableHead>{t("consoleTaskColWho")}</TableHead>
+            <TableHead className="lp-wm-col-when">{t("boardUpdated")}</TableHead>
+            <TableHead>{t("consoleHistoryColOutcome")}</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {rows.map((row) => (
+            <TableRow key={row.key}>
+              <TableCell className="lp-wm-cell-strong first-letter:uppercase">{row.title}</TableCell>
+              <TableCell>{row.who ?? ""}</TableCell>
+              <TableCell className="lp-wm-col-when whitespace-nowrap">{row.at ? ago(row.at, locale) : ""}</TableCell>
+              <TableCell>
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                  <StatusPill tone={stageTone(row.state).tone}>{row.label}</StatusPill>
+                  {row.note ? <span className="min-w-0 break-words text-[11.5px] text-[var(--lp-muted)]">{row.note}</span> : null}
+                </div>
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </Surface>
+  );
+}
+
+/** Summary row of a disclosure card: the title on the left, what is inside in muted text on the right. */
+export function DiscSummary({ title, meta }: { title: ReactNode; meta?: ReactNode }) {
+  return (
+    <span className="flex min-w-0 items-center justify-between gap-3">
+      <span className="lp-wm-disc-title">{title}</span>
+      {meta ? <span className="lp-wm-disc-meta">{meta}</span> : null}
+    </span>
   );
 }
 
@@ -101,26 +149,20 @@ export function ThreadRow({ node, depth }: { node: Thread; depth: number }) {
   return (
     <>
       {node.id ? (
-        <div
-          className="mb-2 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md border border-border bg-card px-3 py-2 shadow-2xs"
-          style={{ marginLeft: depth * 16 }}
-          data-testid={`board-thread-${node.id}`}
-        >
-          <span className={`flex w-24 shrink-0 items-center gap-1.5 text-xs font-medium ${live ? "text-[var(--color-success,#16a34a)]" : "text-muted-foreground"}`}>
-            <span aria-hidden className={`size-1.5 rounded-full ${live ? "animate-pulse bg-[var(--color-success,#16a34a)]" : "bg-muted-foreground/50"}`} />
-            <span className="truncate">{node.status ?? "—"}</span>
-          </span>
-          {/* basis-56: below ~224px of room the button wraps to the status row instead of squeezing the title into a 1-2 letter column (390px phones). */}
-          <div className="min-w-0 flex-1 basis-56">
-            <div className="break-words text-sm font-medium" title={node.title ?? node.id}>{node.title ?? node.id}</div>
-            <div className="truncate text-xs text-muted-foreground">{roleName(node.role)}</div>
+        <div className="lp-wm-thread" style={{ paddingLeft: depth * 14 }} data-testid={`board-thread-${node.id}`}>
+          <div className="min-w-0">
+            <div className="break-words text-[12.5px] font-medium text-[var(--lp-ink)]" title={node.title ?? node.id}>{node.title ?? node.id}</div>
+            <div className="truncate text-[11px] text-[var(--lp-muted)]">{roleName(node.role)}</div>
           </div>
           <button
             type="button"
             onClick={() => navigate.toThread(node.id)}
-            className="ml-auto flex shrink-0 items-center gap-1 text-xs font-medium underline decoration-input underline-offset-2 hover:decoration-current"
+            aria-label={`${t("boardOpenThread")}: ${node.title ?? node.id}`}
+            className="lp-wm-thread-open"
+            data-live={live || undefined}
           >
-            {t("boardOpenThread")}<Icon name="ArrowUpRight" className="size-3" />
+            <span>{node.status ?? "—"}</span>
+            <Icon name="ArrowUpRight" className="size-3" />
           </button>
         </div>
       ) : null}
@@ -138,8 +180,8 @@ export function countLiveThreads(node: Thread): number {
 export function RailRow({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="py-1">
-      <div className="text-[11px] font-semibold text-muted-foreground">{label}</div>
-      <div className="mt-0.5 min-w-0 break-words text-sm">{children}</div>
+      <div className="text-[11px] font-semibold text-[var(--lp-muted)]">{label}</div>
+      <div className="mt-0.5 min-w-0 break-words text-[12.5px] text-[var(--lp-ink)]">{children}</div>
     </div>
   );
 }
@@ -154,7 +196,7 @@ export function TaskDiff({ attemptId }: { attemptId: string }) {
     void rpc.call("task_diff", { ref: attemptId }).then((answer) => setResult(answer as never)).catch(() => setResult({ reason: "?" }));
   };
   return (
-    <Disclosure compact testId="task-diff" summary={attemptId.slice(0, 12)} onToggle={load}>
+    <Disclosure compact testId="task-diff" summary={<DiscSummary title={t("boardDiff")} meta={attemptId.slice(0, 12)} />} onToggle={load}>
       {result === null || result === "loading" ? (
         <p className="text-xs text-muted-foreground">{t("boardLoading")}</p>
       ) : "reason" in result ? (

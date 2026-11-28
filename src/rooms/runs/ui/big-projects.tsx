@@ -4,18 +4,14 @@ import { t, type I18nKey, type Locale } from "@lane-pilot/i18n";
 import {
   Button,
   CONTROL_H,
-  Icon,
-  PageHeader,
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-  StatusPill,
   Surface,
   SurfaceBody,
   SurfaceHeader,
-  type StatusPillTone,
 } from "@lane-pilot/ui-kit";
 import { LP_ALL_PROJECTS } from "@lane-pilot/ui-kit/realtime-channel";
 import type { z } from "zod";
@@ -50,16 +46,12 @@ const GRAPH_TITLE_KEYS: Record<string, I18nKey> = {
   "roadmap-driven": "consoleProjectGraph_roadmap_driven",
 };
 
-const STAGE_BAR_CLASS: Record<StageStatus, string> = {
-  done: "bg-[var(--color-success,#16a34a)]",
-  running: "animate-pulse bg-[var(--color-timeline-accent,#7c3aed)]",
-  waiting: "bg-[var(--color-attention,#d97706)]",
-  failed: "bg-destructive",
-  skipped: "bg-muted-foreground/30",
-  pending: "bg-border",
-};
+/** Big projects shown before «Show more»: the three project graphs keep their whole history, the page shows the newest. */
+const RUNS_PAGE = 5;
 
-function runStatusTone(status: string): StatusPillTone {
+type RunTone = "ok" | "accent" | "warn" | "muted" | "bad";
+
+function runStatusTone(status: string): RunTone {
   if (status === "succeeded") return "ok";
   if (status === "running") return "accent";
   if (status === "waiting") return "warn";
@@ -129,17 +121,22 @@ export function BigProjects({
   projects,
   locale,
   InputsForm,
+  startOpen,
+  onStartOpenChange,
 }: {
   projectId: string | null;
   projects: ReadonlyArray<{ id: string; name: string }>;
   locale: Locale;
   InputsForm: InputsFormView;
+  /** The start form opens from the page header's «New task from a brief» button, which the work screen owns. */
+  startOpen: boolean;
+  onStartOpenChange: (open: boolean) => void;
 }) {
   const rpc = useRpc<typeof rpcContract>();
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set());
   const [snapshots, setSnapshots] = useState<Record<string, SnapshotState>>({});
 
-  const [startOpen, setStartOpen] = useState(false);
+  const [shown, setShown] = useState(RUNS_PAGE);
   const [selectedGraph, setSelectedGraph] = useState<(typeof PROJECT_WORKFLOW_IDS)[number]>("full-lifecycle");
   const [targetProjectId, setTargetProjectId] = useState<string>(projectId ?? projects[0]?.id ?? "");
   const [fields, setFields] = useState<InputField[] | null>(null);
@@ -201,6 +198,11 @@ export function BigProjects({
     };
   }, [startOpen, selectedGraph, targetProjectId, rpc]);
 
+  const ordered = useMemo(
+    () => (runs ? [...runs].sort((a, b) => Number(ACTIVE_STATUSES.has(b.status)) - Number(ACTIVE_STATUSES.has(a.status))) : null),
+    [runs],
+  );
+
   const toggleRun = (runId: string) => {
     const opening = !expanded.has(runId);
     setExpanded((prev) => {
@@ -245,7 +247,7 @@ export function BigProjects({
         setSubmitError(t("wfRunRefused").replace("{reason}", reason));
         return;
       }
-      setStartOpen(false);
+      onStartOpenChange(false);
       void runsQuery.refetch();
     } catch (cause) {
       setSubmitError(cause instanceof Error ? cause.message : String(cause));
@@ -256,22 +258,6 @@ export function BigProjects({
 
   return (
     <div className="space-y-4" data-testid="big-projects">
-      <PageHeader
-        title={t("consoleWorkViewProjects")}
-        actions={
-          <Button
-            type="button"
-            size="sm"
-            className="lp-accent"
-            data-testid="big-projects-start"
-            onClick={() => setStartOpen((open) => !open)}
-          >
-            <Icon name="Plus" className="mr-1.5 size-3.5" aria-hidden />
-            {t("consoleBigProjectStart")}
-          </Button>
-        }
-      />
-
       {startOpen ? (
         <Surface testId="big-projects-start-panel">
           <SurfaceHeader>
@@ -339,7 +325,7 @@ export function BigProjects({
                 busy={submitting}
                 submitLabel={t("wfRunStart")}
                 onSubmit={(inputs) => void handleStart(inputs)}
-                onCancel={() => setStartOpen(false)}
+                onCancel={() => onStartOpenChange(false)}
               />
             )}
             {submitError ? (
@@ -355,119 +341,92 @@ export function BigProjects({
         <p className="text-sm text-destructive-text" role="alert" data-testid="big-projects-error">
           {t("consoleBigProjectsLoadError")}
         </p>
-      ) : runs === null ? (
+      ) : ordered === null ? (
         <p className="text-sm text-muted-foreground" role="status">
           {t("boardLoading")}
         </p>
-      ) : runs.length === 0 ? (
+      ) : ordered.length === 0 ? (
         <Surface testId="big-projects-empty">
           <SurfaceBody>
             <p className="text-sm text-muted-foreground">{t("consoleBigProjectsEmpty")}</p>
           </SurfaceBody>
         </Surface>
       ) : (
-        <div className="space-y-3" data-testid="big-projects-list">
-          {runs.map((run) => {
-            const isExpanded = expanded.has(run.id);
-            const snapState = snapshots[run.id];
-            const active = ACTIVE_STATUSES.has(run.status);
-            const snapProjectId =
-              snapState?.status === "ready" ? snapState.snapshot.run.projectId : null;
-            const projLabel = snapProjectId ? (projectNames.get(snapProjectId) ?? snapProjectId) : null;
-            const stages =
-              snapState?.status === "ready" ? stageListFromSnapshot(snapState.snapshot, locale) : [];
+        <>
+          <p className="lp-wm-cap">{t("consoleWorkBigCaption")}</p>
+          <div className="space-y-2.5" data-testid="big-projects-list">
+            {ordered.slice(0, shown).map((run) => {
+              const isExpanded = expanded.has(run.id);
+              const snapState = snapshots[run.id];
+              const snapProjectId = snapState?.status === "ready" ? snapState.snapshot.run.projectId : null;
+              const projLabel = snapProjectId ? (projectNames.get(snapProjectId) ?? snapProjectId) : null;
+              const goal = snapState?.status === "ready" ? snapState.snapshot.goals[0]?.done_when : null;
+              const stages = snapState?.status === "ready" ? stageListFromSnapshot(snapState.snapshot, locale) : [];
+              const tone = runStatusTone(run.status);
 
-            return (
-              <Surface key={run.id} testId={`big-project-run-${run.id}`}>
-                <button
-                  type="button"
-                  aria-expanded={isExpanded}
-                  data-testid={`big-project-toggle-${run.id}`}
-                  onClick={() => toggleRun(run.id)}
-                  className="flex w-full flex-wrap items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-state-hover"
-                >
-                  <Icon
-                    name={isExpanded ? "ChevronDown" : "ChevronRight"}
-                    className="size-4 shrink-0 text-muted-foreground"
-                    aria-hidden
-                  />
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="text-sm font-medium text-foreground">
-                        {graphLabel(run.workflowId)}
-                      </span>
-                      <span className="font-mono text-xs text-muted-foreground">{run.id}</span>
-                      {active ? (
-                        <span
-                          aria-hidden
-                          className="size-1.5 animate-pulse rounded-full bg-[var(--color-success,#16a34a)]"
-                        />
-                      ) : null}
+              return (
+                <Surface key={run.id} testId={`big-project-run-${run.id}`}>
+                  <div className="lp-wm-run" data-expanded={isExpanded || undefined}>
+                    <button
+                      type="button"
+                      aria-expanded={isExpanded}
+                      data-testid={`big-project-toggle-${run.id}`}
+                      onClick={() => toggleRun(run.id)}
+                      className="lp-wm-run-name"
+                    >
+                      <span className="lp-wm-run-title">{graphLabel(run.workflowId)}</span>
+                      <span className="lp-wm-run-sub">{projLabel ?? run.id}</span>
+                      {goal ? <span className="lp-wm-run-sub text-foreground">{goal}</span> : null}
+                    </button>
+                    <div className="lp-wm-run-mid">
+                      {!isExpanded ? null : !snapState || snapState.status === "loading" ? (
+                        <p className="text-xs text-muted-foreground" role="status">
+                          {t("boardLoading")}
+                        </p>
+                      ) : snapState.status === "gone" ? (
+                        <p className="text-xs text-muted-foreground">{t("wfRunGone")}</p>
+                      ) : snapState.status === "error" ? (
+                        <p className="text-xs text-destructive-text">{t("consoleBigProjectsLoadError")}</p>
+                      ) : stages.length === 0 ? (
+                        <p className="text-xs text-muted-foreground">{t("consoleBigProjectsSnapshotEmpty")}</p>
+                      ) : (
+                        <div className="lp-wm-stages" data-testid={`big-project-stages-${run.id}`}>
+                          {stages.map((stage) => (
+                            <div
+                              key={stage.id}
+                              data-testid={`big-project-stage-${run.id}-${stage.id}`}
+                              data-stage-status={stage.status}
+                              title={t(`wfNode_${stage.status}` as I18nKey)}
+                              className="lp-wm-stage"
+                            >
+                              <span className="lp-wm-stage-bar" />
+                              <span className="lp-wm-stage-label">{stage.label}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
-                    <div className="mt-0.5 flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
-                      <span>{formatWhen(run.createdAt, locale)}</span>
-                      <span>{t("wfHistorySteps").replace("{n}", String(run.stepsUsed))}</span>
-                      {run.costUsd > 0 ? <span>${run.costUsd.toFixed(2)}</span> : null}
-                      {run.reason ? <span className="truncate">{run.reason}</span> : null}
+                    <div className="lp-wm-run-state">
+                      <span className="lp-wm-run-status" data-tone={tone}>{runStatusLabel(run.status)}</span>
+                      <span>
+                        {formatWhen(run.createdAt, locale)} · {t("wfHistorySteps").replace("{n}", String(run.stepsUsed))}
+                        {run.costUsd > 0 ? ` · $${run.costUsd.toFixed(2)}` : ""}
+                      </span>
+                      {run.reason ? <span className="lp-wm-run-reason">{run.reason}</span> : null}
                     </div>
                   </div>
-                  <StatusPill tone={runStatusTone(run.status)}>{runStatusLabel(run.status)}</StatusPill>
-                </button>
-
-                {isExpanded ? (
-                  <SurfaceBody className="border-t border-border/60 pt-3">
-                    {!snapState || snapState.status === "loading" ? (
-                      <p className="text-xs text-muted-foreground" role="status">
-                        {t("boardLoading")}
-                      </p>
-                    ) : snapState.status === "gone" ? (
-                      <p className="text-xs text-muted-foreground">{t("wfRunGone")}</p>
-                    ) : snapState.status === "error" ? (
-                      <p className="text-xs text-destructive-text">{t("consoleBigProjectsLoadError")}</p>
-                    ) : (
-                      <div className="space-y-2.5" data-testid={`big-project-stages-${run.id}`}>
-                        {projLabel || snapState.snapshot.goals.length > 0 ? (
-                          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
-                            {projLabel ? <span>{projLabel}</span> : null}
-                            {snapState.snapshot.goals[0]?.done_when ? (
-                              <span className="truncate text-foreground">
-                                {snapState.snapshot.goals[0].done_when}
-                              </span>
-                            ) : null}
-                          </div>
-                        ) : null}
-                        {stages.length === 0 ? (
-                          <p className="text-xs text-muted-foreground">
-                            {t("consoleBigProjectsSnapshotEmpty")}
-                          </p>
-                        ) : (
-                          <div className="flex flex-wrap gap-2">
-                            {stages.map((stage) => (
-                              <div
-                                key={stage.id}
-                                data-testid={`big-project-stage-${run.id}-${stage.id}`}
-                                data-stage-status={stage.status}
-                                className="min-w-[6.5rem] flex-1 space-y-1"
-                              >
-                                <div className={`h-1.5 w-full rounded-full ${STAGE_BAR_CLASS[stage.status]}`} />
-                                <div className="truncate text-xs font-medium text-foreground">
-                                  {stage.label}
-                                </div>
-                                <div className="text-[11px] text-muted-foreground">
-                                  {t(`wfNode_${stage.status}` as I18nKey)}
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </SurfaceBody>
-                ) : null}
-              </Surface>
-            );
-          })}
-        </div>
+                </Surface>
+              );
+            })}
+          </div>
+          {ordered.length > shown ? (
+            <div className="flex justify-center">
+              <Button type="button" variant="outline" size="sm" data-testid="big-projects-more" onClick={() => setShown((n) => n + RUNS_PAGE)}>
+                {t("consoleShowMore").replace("{n}", String(ordered.length - shown))}
+              </Button>
+            </div>
+          ) : null}
+        </>
       )}
     </div>
   );

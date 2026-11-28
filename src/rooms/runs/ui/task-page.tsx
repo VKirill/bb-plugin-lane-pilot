@@ -2,13 +2,15 @@ import { useCallback, useEffect, useState } from "react";
 import { useBbNavigate, useRpc } from "@get-bb/plugin-sdk/app";
 import { CHECK_STAGE_IDS, OPEN_ATTEMPT_STATES } from "@lane-pilot/contracts";
 import { t, type I18nKey } from "@lane-pilot/i18n";
-import { Button, ConfirmDialog, Disclosure, Icon, Input } from "@lane-pilot/ui-kit";
+import { Button, ConfirmDialog, Disclosure, Input, PageHeader } from "@lane-pilot/ui-kit";
 import type { rpcContract } from "../../contracts";
 import { WorkBreakdown } from "../../work-graph/ui";
 import { RunStages } from "./run-parts";
 import {
+  DiscSummary,
   RailRow,
   StageRail,
+  StageTable,
   TaskDiff,
   TaskSection,
   ThreadRow,
@@ -20,15 +22,10 @@ import {
   StatusIcon,
   ago,
   areaLabel,
-  attemptState,
   chip,
   fill,
-  reasonText,
   runState,
-  shortModel,
   shortTaskId,
-  stageName,
-  stageState,
   type AcceptanceCardView,
   type BoardColumn,
   type TaskBoardItem,
@@ -135,167 +132,141 @@ export function TaskPage({ runId, taskId, item, locale, projectName, projects = 
     updatedMs ? ago(updatedMs, locale) : null,
   ].filter(Boolean);
 
+  const title = resolved ? `${breadId} · ${resolved.title}` : item ? `${breadId} · ${item.title}` : breadId;
+
   return (
-    <div className="space-y-3" data-testid="task-card">
-      <div className="flex flex-wrap items-center gap-2 text-sm">
-        <button type="button" onClick={onBack} data-testid="board-back" className="text-muted-foreground hover:text-foreground">{t("navTasks")}</button>
-        <Icon name="ChevronRight" className="size-3.5 text-muted-foreground" />
-        <span className="font-medium tabular-nums">{breadId}</span>
-        <span className="ml-auto flex flex-wrap gap-2">
-          {canRetry ? <Button size="sm" variant="outline" onClick={handleRetry}>{t("retry")}</Button> : null}
-          {canStop ? <Button size="sm" variant="destructive" data-testid="task-cancel-btn" onClick={openCancelDialog}>{t("cancel")}</Button> : null}
-          <Button size="sm" variant="outline" onClick={onBack}>{t("boardBack")}</Button>
-        </span>
-      </div>
+    <div className="space-y-4" data-testid="task-card">
+      <PageHeader
+        title={title}
+        subtitle={subtitleParts.length > 0 ? subtitleParts.join(" · ") : undefined}
+        actions={
+          <>
+            {canRetry ? <Button size="sm" variant="outline" onClick={handleRetry}>{t("retry")}</Button> : null}
+            {canStop ? <Button size="sm" variant="destructive" data-testid="task-cancel-btn" onClick={openCancelDialog}>{t("cancel")}</Button> : null}
+            <Button size="sm" variant="outline" data-testid="board-back" onClick={onBack}>{t("boardBack")}</Button>
+          </>
+        }
+      />
 
       {card === null ? (
         <p className="text-sm text-muted-foreground">{t("boardLoading")}</p>
       ) : card === "gone" ? (
         <p className="text-sm text-muted-foreground">{t("boardGone")}</p>
       ) : (
-        <div className="@container rounded-lg bg-[var(--lp-well,transparent)] p-2">
-          <div className="rounded-lg border border-border bg-card p-5 shadow-2xs @3xl:p-7">
-            <div>
+        <>
+          <StageRail card={card} />
+          <div className="lp-wm-task">
+            <div className="min-w-0 space-y-3.5">
               {card.objective ? (
-                <div className="mb-3">
-                  <span className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-border bg-secondary px-2.5 py-0.5 text-xs text-muted-foreground shadow-2xs">
-                    {t("boardGoal")}<span className="min-w-0 truncate font-medium text-foreground">{card.objective}</span>
-                  </span>
-                </div>
+                <p className="text-[12.5px] text-[var(--lp-muted)]">
+                  {t("boardGoal")}: <span className="font-medium text-[var(--lp-ink)]">{card.objective}</span>
+                </p>
               ) : null}
-              <h1 className="text-2xl font-semibold leading-tight">{card.title}</h1>
-              {subtitleParts.length > 0 ? (
-                <p className="mt-1 text-xs text-muted-foreground">{subtitleParts.join(" · ")}</p>
+              {card.reason && !finished(card.state) ? (
+                <p className="whitespace-pre-wrap break-words rounded-xl border border-destructive/40 bg-destructive/5 p-3 text-sm">{card.reason}</p>
               ) : null}
-              <StageRail card={card} />
-            </div>
-
-            <div className="mt-5 grid gap-6 @3xl:grid-cols-[minmax(0,1fr)_23rem]">
-              <div className="min-w-0 space-y-6">
-                {card.reason && !finished(card.state) ? (
-                  <p className="whitespace-pre-wrap break-words rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm">{card.reason}</p>
-                ) : null}
-                {card.contract?.dependsOn.length ? (
-                  <TaskSection title={t("boardDepends")}>
-                    <div className="flex flex-wrap gap-1.5">
-                      {card.contract.dependsOn.map((id) => <span key={id} className={chip} title={id}>{shortTaskId(id)}</span>)}
-                    </div>
-                  </TaskSection>
-                ) : null}
-                {card.kind === "task" && cardTaskId ? (
-                  <TaskSection title={t("graphTitle")}>
-                    <WorkBreakdown runId={runId} taskId={cardTaskId} locale={locale} />
-                  </TaskSection>
-                ) : null}
-                {card.kind === "task" && cardTaskId ? null : card.stages.length ? (
-                  <TaskSection title={card.kind === "workflow" ? t("boardSteps") : t("boardProgress")}>
-                    <ol className="relative space-y-0 border-l border-border pl-4" data-testid="task-card-stages">
-                      {card.stages.map((stage, index) => (
-                        <li key={`${stage.id}:${index}`} className="relative pb-2.5">
-                          <span aria-hidden className={`absolute -left-[21px] top-1.5 size-2.5 rounded-full border-2 border-card ${stage.state === "passed" || stage.state === "succeeded" ? "bg-[var(--color-success,#16a34a)]" : stage.state === "running" ? "animate-pulse bg-[var(--color-attention,#d97706)]" : stage.state === "failed" || stage.state === "blocked" ? "bg-destructive" : "bg-muted-foreground/40"}`} />
-                          <div className="flex flex-wrap items-baseline gap-x-2 text-sm">
-                            <span className="font-medium">{stage.title ?? stageName(stage.id)}</span>
-                            <span className="text-xs text-muted-foreground">{stageState(stage.state)}</span>
-                            {stage.model ? <span className="text-xs text-muted-foreground">{shortModel(stage.model)}</span> : null}
-                            {stage.updatedAt ? <span className="text-xs text-muted-foreground">{ago(stage.updatedAt, locale)}</span> : null}
-                          </div>
-                          {stage.reason ? <div className="mt-0.5 break-words text-xs text-muted-foreground">{reasonText(stage.reason)}</div> : null}
-                        </li>
-                      ))}
-                    </ol>
-                    {card.kind === "workflow" ? <WorkflowRunSteps runId={runId} locale={locale} /> : null}
-                  </TaskSection>
-                ) : null}
-                {card.attempts.length > 1 ? (
-                  <TaskSection title={t("boardAttempts")}>
-                    <div className="space-y-1">
-                      {card.attempts.map((attempt) => (
-                        <div key={attempt.id} className="flex min-w-0 flex-wrap items-baseline gap-x-2 text-sm">
-                          <span className="tabular-nums text-muted-foreground">#{attempt.no}</span>
-                          <span>{attemptState(attempt.state)}</span>
-                          <span className="text-xs text-muted-foreground">{ago(attempt.updatedAt, locale)}</span>
-                          {attempt.reason ? <span className="w-full break-words text-xs text-muted-foreground">{attempt.reason}</span> : null}
-                        </div>
-                      ))}
-                    </div>
-                  </TaskSection>
-                ) : null}
+              <StageTable card={card} locale={locale} />
+              {card.contract?.dependsOn.length ? (
+                <TaskSection title={t("boardDepends")}>
+                  <div className="flex flex-wrap gap-1.5">
+                    {card.contract.dependsOn.map((id) => <span key={id} className={chip} title={id}>{shortTaskId(id)}</span>)}
+                  </div>
+                </TaskSection>
+              ) : null}
+              {card.kind === "task" && cardTaskId ? (
+                <section className="lp-card p-4">
+                  <h2 className="mb-2 text-[13px] font-semibold text-[var(--lp-ink)]">{t("graphTitle")}</h2>
+                  <WorkBreakdown runId={runId} taskId={cardTaskId} locale={locale} />
+                </section>
+              ) : null}
+              {card.kind === "workflow" && card.stages.length ? (
+                <WorkflowRunSteps runId={runId} locale={locale} />
+              ) : null}
+              <div className="lp-wm-discs space-y-2.5">
                 {card.attempts.length ? (
-                  <TaskSection title={t("boardDiff")}>
-                    <TaskDiff attemptId={([...card.attempts].reverse().find((attempt) => attempt.state === "accepted") ?? card.attempts[card.attempts.length - 1]!).id} />
-                  </TaskSection>
+                  <TaskDiff attemptId={([...card.attempts].reverse().find((attempt) => attempt.state === "accepted") ?? card.attempts[card.attempts.length - 1]!).id} />
                 ) : null}
                 {card.contract && (card.contract.ownsPaths.length || card.contract.expectedOutputs.length || card.contract.checks.length) ? (
-                  <TaskSection title={t("boardFiles")}>
-                    <Disclosure compact testId="task-files" summary={`${card.contract.ownsPaths.length + card.contract.expectedOutputs.length} · ${card.contract.checks.length}`}>
-                      <div className="space-y-3 text-xs">
-                        {[[t("boardOwns"), card.contract.ownsPaths], [t("boardOutputs"), card.contract.expectedOutputs], [t("boardChecks"), card.contract.checks]].map(([title, rows]) =>
-                          (rows as string[]).length ? (
-                            <div key={title as string}>
-                              <div className="mb-1 font-semibold text-muted-foreground">{title as string}</div>
-                              <ul className="space-y-0.5 font-mono">
-                                {(rows as string[]).map((row) => <WorkFileLine key={row} runId={runId} path={row} />)}
-                              </ul>
-                            </div>
-                          ) : null,
-                        )}
-                      </div>
-                    </Disclosure>
-                  </TaskSection>
+                  <Disclosure
+                    compact
+                    testId="task-files"
+                    summary={<DiscSummary title={t("boardFiles")} meta={`${card.contract.ownsPaths.length + card.contract.expectedOutputs.length} · ${card.contract.checks.length}`} />}
+                  >
+                    <div className="space-y-3 text-xs">
+                      {[[t("boardOwns"), card.contract.ownsPaths], [t("boardOutputs"), card.contract.expectedOutputs], [t("boardChecks"), card.contract.checks]].map(([title, rows]) =>
+                        (rows as string[]).length ? (
+                          <div key={title as string}>
+                            <div className="mb-1 font-semibold text-muted-foreground">{title as string}</div>
+                            <ul className="space-y-0.5 font-mono">
+                              {(rows as string[]).map((row) => <WorkFileLine key={row} runId={runId} path={row} />)}
+                            </ul>
+                          </div>
+                        ) : null,
+                      )}
+                    </div>
+                  </Disclosure>
                 ) : null}
                 {card.plan ? (
-                  <TaskSection title={t("boardPlan")}>
-                    <Disclosure compact testId="task-plan" summary={card.plan.split("\n").find((line) => line.trim())?.slice(0, 80) ?? ""}>
-                      <pre className="max-h-[32rem] overflow-auto whitespace-pre-wrap break-words text-xs">{card.plan}</pre>
-                    </Disclosure>
-                  </TaskSection>
+                  <Disclosure
+                    compact
+                    testId="task-plan"
+                    summary={<DiscSummary title={t("boardPlan")} meta={card.plan.split("\n").find((line) => line.trim())?.slice(0, 80) ?? ""} />}
+                  >
+                    <pre className="max-h-[32rem] overflow-auto whitespace-pre-wrap break-words text-xs">{card.plan}</pre>
+                  </Disclosure>
                 ) : null}
                 {card.kind !== "workflow" && card.stages.length ? (
                   <RunStages runId={runId} count={card.stages.length} />
                 ) : null}
               </div>
+            </div>
 
-              <div className="min-w-0 space-y-6">
-                {card.kind === "task" && cardTaskId ? (
-                  <AcceptanceCard
-                    runId={runId}
-                    taskId={cardTaskId}
-                    refreshKey={card}
-                    finished={finished(card.state)}
-                    fallback={card.contract ? { objective: card.contract.objective, acceptance: card.contract.acceptance } : null}
-                    onStop={canStop ? openCancelDialog : null}
-                    className=""
-                  />
-                ) : null}
-                <TaskSection title={t("boardThreads")} extra={card.threads && countLiveThreads(card.threads) ? fill("boardWorkingNow", { n: countLiveThreads(card.threads) }) : undefined}>
-                  {card.threads ? <ThreadRow node={card.threads} depth={0} /> : <p className="text-sm text-muted-foreground">{t("boardNoThreads")}</p>}
-                </TaskSection>
-                <aside className="rounded-lg border border-border bg-card p-3.5" data-testid="task-rail">
-                  <RailRow label={t("boardStatus")}>
-                    <span className="inline-flex items-center gap-1.5">
-                      <StatusIcon column={derived.column} phase={derived.phase} />
-                      {card.kind === "workflow" ? runState(card.state) : t(`phase_${derived.phase}` as I18nKey)}
-                    </span>
-                  </RailRow>
-                  <RailRow label={t("boardKind")}><KindChip kind={card.taskKind} /></RailRow>
-                  {card.area ? <RailRow label={t("boardArea")}>{areaLabel(card.area)}</RailRow> : null}
-                  <RailRow label={t("boardProject")}>{resolvedProjectName}</RailRow>
-                  {card.pmThreadId ? (
-                    <RailRow label={t("boardChat")}>
-                      <button type="button" className="text-left underline decoration-input underline-offset-2 hover:decoration-current" onClick={() => navigate.toThread(card.pmThreadId!)}>
-                        {item?.pmThreadTitle ?? t("boardOpenChat")}
-                      </button>
-                    </RailRow>
+            <div className="min-w-0 space-y-3.5">
+              {card.kind === "task" && cardTaskId ? (
+                <AcceptanceCard
+                  runId={runId}
+                  taskId={cardTaskId}
+                  refreshKey={card}
+                  finished={finished(card.state)}
+                  fallback={card.contract ? { objective: card.contract.objective, acceptance: card.contract.acceptance } : null}
+                  onStop={canStop ? openCancelDialog : null}
+                  className=""
+                />
+              ) : null}
+              <section className="lp-card p-4" data-testid="task-threads">
+                <h2 className="mb-2.5 text-sm font-[650] text-[var(--lp-ink)]">
+                  {t("boardThreads")}
+                  {card.threads && countLiveThreads(card.threads) ? (
+                    <span className="ml-2 text-xs font-normal text-[var(--lp-muted)]">{fill("boardWorkingNow", { n: countLiveThreads(card.threads) })}</span>
                   ) : null}
-                  {card.attempts.length ? <RailRow label={t("boardAttempts")}>{card.attempts.length}</RailRow> : null}
-                  {updatedMs ? <RailRow label={t("boardUpdated")}>{ago(updatedMs, locale)}</RailRow> : null}
-                  {card.techTitle ? <RailRow label={t("boardTechTitle")}><span className="text-xs text-muted-foreground">{card.techTitle}</span></RailRow> : null}
-                  <RailRow label="ID"><span className="break-all font-mono text-xs text-muted-foreground">{card.id}</span></RailRow>
-                </aside>
-              </div>
+                </h2>
+                {card.threads ? <ThreadRow node={card.threads} depth={0} /> : <p className="text-sm text-muted-foreground">{t("boardNoThreads")}</p>}
+              </section>
+              <aside className="lp-card p-4" data-testid="task-rail">
+                <RailRow label={t("boardStatus")}>
+                  <span className="inline-flex items-center gap-1.5">
+                    <StatusIcon column={derived.column} phase={derived.phase} />
+                    {card.kind === "workflow" ? runState(card.state) : t(`phase_${derived.phase}` as I18nKey)}
+                  </span>
+                </RailRow>
+                <RailRow label={t("boardKind")}><KindChip kind={card.taskKind} /></RailRow>
+                {card.area ? <RailRow label={t("boardArea")}>{areaLabel(card.area)}</RailRow> : null}
+                <RailRow label={t("boardProject")}>{resolvedProjectName}</RailRow>
+                {card.pmThreadId ? (
+                  <RailRow label={t("boardChat")}>
+                    <button type="button" className="text-left underline decoration-input underline-offset-2 hover:decoration-current" onClick={() => navigate.toThread(card.pmThreadId!)}>
+                      {item?.pmThreadTitle ?? t("boardOpenChat")}
+                    </button>
+                  </RailRow>
+                ) : null}
+                {card.attempts.length ? <RailRow label={t("boardAttempts")}>{card.attempts.length}</RailRow> : null}
+                {updatedMs ? <RailRow label={t("boardUpdated")}>{ago(updatedMs, locale)}</RailRow> : null}
+                {card.techTitle ? <RailRow label={t("boardTechTitle")}><span className="text-xs text-muted-foreground">{card.techTitle}</span></RailRow> : null}
+                <RailRow label="ID"><span className="break-all font-mono text-xs text-muted-foreground">{card.id}</span></RailRow>
+              </aside>
             </div>
           </div>
-        </div>
+        </>
       )}
 
       <ConfirmDialog

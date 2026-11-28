@@ -92,7 +92,7 @@ describe("Lane Pilot tasks board", () => {
     fireEvent.click(slot.getByTestId("board-card-task:run2:b1"));
     await slot.findByTestId("task-card");
     await waitFor(() => expect(slot.getByTestId("board-thread-thr_sub")).toBeTruthy());
-    expect(slot.getByTestId("task-card").textContent).toMatch(/Goal[\s\S]*Login fixes[\s\S]*Title b1[\s\S]*Fix the form[\s\S]*form saves/);
+    expect(slot.getByTestId("task-card").textContent).toMatch(/Title b1[\s\S]*Goal[\s\S]*Login fixes[\s\S]*Fix the form[\s\S]*form saves/);
     expect(slot.getByTestId("board-thread-thr_w").textContent).toContain("Writer · attempt 1");
     await waitFor(() => expect(slot.getByTestId("task-card").textContent).toMatch(/Plan critique[\s\S]*1 working now/));
     fireEvent.click(slot.getByText("Retry"));

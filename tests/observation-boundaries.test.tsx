@@ -136,7 +136,7 @@ it("shows a board read error, recovers, marks stale data and recovers again", as
   await waitFor(() => expect(slot.queryByTestId("board-offline")).toBeNull());
 });
 
-it("does not hide the 121st board card behind a count of 121", async () => {
+it("does not hide the 121st board card behind a count of 121: the column says how many are folded and one click shows them", async () => {
   await loadPluginApp(() => import("../app"));
   setLocaleOverride("en");
   const { TaskBoard } = await import("../src/rooms/runs/ui/task-board");
@@ -145,6 +145,13 @@ it("does not hide the 121st board card behind a count of 121", async () => {
     state: "queued", phase: "queued", waitingFor: [], taskKind: "feature", updatedAt: 1, attemptNo: 1,
   }));
   const slot = renderSlot({ component: () => <TaskBoard locale="en" AcceptanceCard={AcceptanceCard} /> }, {}, { rpc: { task_board: () => ({ items }), work_graph_strips: () => ({}) } as never });
+  const more = await slot.findByTestId("board-more-queued");
+  expect(more.textContent).toContain("Show 109 more");
+  for (let i = 0; i < 10; i += 1) {
+    const next = slot.queryByTestId("board-more-queued");
+    if (next) fireEvent.click(next);
+  }
   await slot.findByTestId("board-card-k120");
+  expect(slot.queryByTestId("board-more-queued")).toBeNull();
   expect(slot.getByTestId("board-col-queued").querySelectorAll("button")).toHaveLength(121);
 });

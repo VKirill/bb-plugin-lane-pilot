@@ -26,6 +26,7 @@ const BY: Record<string, I18nKey> = { pm: "er_by_pm", hint: "er_by_hint", schedu
 const fill = (key: I18nKey, values: Record<string, string | number>) => Object.entries(values).reduce((text, [name, value]) => text.replace(`{${name}}`, String(value)), t(key));
 const usd = (value: number) => (value > 0 ? `$${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : "—");
 const when = (ms: number, locale: Locale) => new Date(ms).toLocaleString(locale === "ru" ? "ru-RU" : "en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+const ERRANDS_PAGE = 20;
 const th = "py-1.5 pr-3 font-medium";
 const td = "py-2 pr-3 align-top";
 
@@ -60,6 +61,7 @@ export function ErrandsScreen({ projects, locale }: { projects: Array<{ id: stri
   const [failed, setFailed] = useState(false);
   const [saveError, setSaveError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [shown, setShown] = useState(ERRANDS_PAGE);
   const loadRoles = useCallback(() => rpc.call("get_role_models", { projectId: GLOBAL_SETTINGS_PROJECT_ID }).then((next) => setRoles((next as { roles: RoleRow[] }).roles), () => setRoles(null)), [rpc]);
   const load = useCallback(() => {
     void rpc.call("errands_overview", { days }).then((next) => { setData(next as Payload); setFailed(false); }, () => setFailed(true));
@@ -99,8 +101,8 @@ export function ErrandsScreen({ projects, locale }: { projects: Array<{ id: stri
   const seenRole = new Set<string>();
   return (
     <div className="space-y-6" data-testid="errands-screen">
-      <div>
-        <h1 className="text-lg font-semibold">{t("er_title")}</h1>
+      <div className="space-y-1">
+        <h2 className="lp-wm-cap">{t("er_title")}</h2>
         <p className="max-w-3xl text-xs text-muted-foreground">{t("er_help")}</p>
       </div>
       <Surface testId="errand-kinds">
@@ -194,7 +196,7 @@ export function ErrandsScreen({ projects, locale }: { projects: Array<{ id: stri
                     <th className={th}>{t("er_col_model")}</th><th className={th}>{t("er_col_outcome")}</th><th className={th}>{t("er_col_source")}</th><th className={`${th} text-right`}>{t("er_col_cost")}</th><th className={th} />
                   </tr></thead>
                   <tbody>
-                    {list.map((row) => (
+                    {list.slice(0, shown).map((row) => (
                       <tr key={row.id} className="border-b last:border-b-0" data-testid="errand-row" data-kind={row.kind} data-outcome={row.outcome}>
                         <td className={`${td} whitespace-nowrap tabular-nums`}>{when(row.startedAt, locale)}</td>
                         <td className={td}>{projectName(row.projectId)}</td>
@@ -209,6 +211,11 @@ export function ErrandsScreen({ projects, locale }: { projects: Array<{ id: stri
                     ))}
                   </tbody>
                 </table>
+                {list.length > shown ? (
+                  <button type="button" className="lp-wm-more mt-3" data-testid="errands-more" onClick={() => setShown((n) => n + ERRANDS_PAGE)}>
+                    {t("consoleShowMore").replace("{n}", String(list.length - shown))}
+                  </button>
+                ) : null}
               </div>
             )}
         </SurfaceBody>

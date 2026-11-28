@@ -736,3 +736,112 @@
     box-shadow: 1px 1px 0 0 #0f172a;
   }
 }
+
+/* visual:work-memory start */
+/* Work, task page, memory and task history: the pieces the prototype frames 4, 8, 9 and 13 draw and the shared layer does not have. Unlayered on purpose: the Segments and Button utilities sit in the utilities layer. */
+.lp-wm-cap { margin: 0; color: var(--lp-muted); font-size: 11px; font-weight: 700; letter-spacing: 0.6px; text-transform: uppercase; }
+
+.lp-wm-tabs { min-width: 0; border-bottom: 1px solid var(--lp-line); }
+.lp-wm-tabs .lp-seg { gap: 24px; padding: 0; border: 0; border-radius: 0; background: none; box-shadow: none; }
+.lp-wm-tabs .lp-seg-item { height: auto; margin-bottom: -1px; padding: 0 0 11px; border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: none; box-shadow: none; color: var(--lp-muted); font-size: 13.5px; font-weight: 500; }
+.lp-wm-tabs .lp-seg-item:hover { background: none; color: var(--lp-ink); }
+.lp-wm-tabs .lp-seg-item:is([aria-pressed="true"], [data-state="active"]) { border-bottom-color: var(--lp-ink); background: none; color: var(--lp-ink); font-weight: 600; }
+
+.lp-wm-chip { display: inline-flex; align-items: center; gap: 6px; padding: 6px 11px; border: 1px solid var(--lp-line); border-radius: 20px; background-color: var(--lp-surface); color: var(--lp-body); font-size: 12.5px; font-weight: 500; line-height: 1.2; }
+.lp-wm-chip:hover { border-color: var(--lp-muted); }
+.lp-wm-chip > span + span { color: var(--lp-muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.lp-wm-chip[aria-pressed="true"] { border-color: var(--lp-ink); background-color: var(--lp-ink); color: #ffffff; }
+.lp-wm-chip[aria-pressed="true"] > span + span { color: var(--lp-side-ink); }
+
+.lp-wm-more { width: 100%; padding: 7px 12px; border: 1px solid var(--lp-line); border-radius: 8px; background-color: var(--lp-surface); color: var(--lp-body); font-size: 12px; font-weight: 500; }
+.lp-wm-more:hover { border-color: var(--lp-muted); color: var(--lp-ink); }
+
+/* Big task card (frame 4): name and project, the stage strip, the state on the right. */
+.lp-wm-run { display: grid; grid-template-columns: minmax(0, 240px) minmax(0, 1fr) minmax(0, 180px); align-items: center; gap: 24px; padding: 16px 20px; }
+.lp-wm-run-name { display: flex; min-width: 0; flex-direction: column; gap: 4px; text-align: left; }
+.lp-wm-run-title { color: var(--lp-ink); font-size: 14.5px; font-weight: 600; line-height: 1.4; }
+.lp-wm-run-sub { color: var(--lp-muted); font-size: 12px; overflow-wrap: anywhere; }
+.lp-wm-run-state { display: flex; min-width: 0; flex-direction: column; align-items: flex-end; gap: 4px; color: var(--lp-muted); font-size: 12px; text-align: right; }
+.lp-wm-run-status { color: var(--lp-muted); font-size: 12.5px; font-weight: 600; }
+.lp-wm-run-status[data-tone="ok"] { color: var(--lp-ok); }
+.lp-wm-run-status[data-tone="accent"] { color: var(--lp-accent); }
+.lp-wm-run-status[data-tone="warn"] { color: var(--lp-warn); }
+.lp-wm-run-status[data-tone="bad"] { color: var(--lp-bad); }
+.lp-wm-run-reason { display: -webkit-box; max-width: 100%; overflow: hidden; font-size: 11.5px; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.lp-wm-stages { display: grid; grid-template-columns: repeat(auto-fit, minmax(68px, 1fr)); gap: 4px; }
+.lp-wm-stage { display: flex; min-width: 0; flex-direction: column; gap: 5px; }
+.lp-wm-stage-bar { display: block; height: 5px; border-radius: 3px; background-color: var(--lp-line); }
+.lp-wm-stage-label { overflow: hidden; color: var(--lp-muted); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.lp-wm-stage[data-stage-status="done"] .lp-wm-stage-bar { background-color: var(--lp-ok); }
+.lp-wm-stage[data-stage-status="running"] .lp-wm-stage-bar { background-color: var(--lp-accent); }
+.lp-wm-stage[data-stage-status="waiting"] .lp-wm-stage-bar { background-color: var(--lp-warn); }
+.lp-wm-stage[data-stage-status="failed"] .lp-wm-stage-bar { background-color: var(--lp-bad); }
+.lp-wm-stage[data-stage-status="skipped"] .lp-wm-stage-bar { background-color: color-mix(in oklab, var(--lp-muted) 35%, var(--lp-line)); }
+.lp-wm-stage:is([data-stage-status="running"], [data-stage-status="waiting"], [data-stage-status="failed"]) .lp-wm-stage-label { color: var(--lp-ink); font-weight: 600; }
+@media (max-width: 1100px) {
+  .lp-wm-run { grid-template-columns: minmax(0, 1fr) minmax(0, 190px); gap: 10px 16px; padding: 14px 16px; }
+  .lp-wm-run-mid { grid-column: 1 / -1; grid-row: 2; }
+  .lp-wm-run-mid:empty { display: none; }
+}
+/* Table of the prototype (frames 9 and 13): a page-coloured head row, hairline rows, 12.5 px cells. */
+.lp-wm-table { border-collapse: collapse; }
+.lp-wm-table th { height: auto; padding: 10px 16px; background-color: var(--lp-bg); color: var(--lp-muted); font-size: 11.5px; font-weight: 600; text-align: left; white-space: nowrap; }
+.lp-wm-table td { padding: 11px 16px; color: var(--lp-body); font-size: 12.5px; vertical-align: middle; }
+.lp-wm-table thead tr { border-bottom: 0; }
+.lp-wm-table tbody tr { border-bottom: 1px solid var(--lp-line); }
+.lp-wm-table tbody tr:last-child { border-bottom: 0; }
+.lp-wm-table tbody tr:hover { background-color: transparent; }
+.lp-wm-cell-strong { color: var(--lp-ink); font-weight: 550; }
+@media (max-width: 640px) {
+  .lp-wm-table th, .lp-wm-table td { padding: 9px 10px; }
+  .lp-wm-col-when { display: none; }
+}
+
+/* Task page (frame 13): the stage rail, two columns, disclosure cards, threads. */
+.lp-wm-rail { display: flex; flex-wrap: wrap; gap: 6px; }
+.lp-wm-rail-pill { display: flex; flex: 1 1 auto; min-width: 0; align-items: center; gap: 6px; padding: 9px 12px; border-radius: 8px; background-color: var(--lp-bg); color: var(--lp-body); font-size: 12.5px; font-weight: 600; }
+.lp-wm-rail-pill[data-tone="ok"] { background-color: var(--lp-ok-soft); color: var(--lp-ok); }
+.lp-wm-rail-pill[data-tone="accent"] { background-color: var(--lp-accent-soft); color: var(--lp-accent); }
+.lp-wm-rail-pill[data-tone="bad"] { background-color: var(--lp-bad-soft); color: var(--lp-bad); }
+.lp-wm-task { display: grid; grid-template-columns: minmax(0, 1fr) 360px; align-items: start; gap: 18px; }
+@media (max-width: 1100px) { .lp-wm-task { grid-template-columns: minmax(0, 1fr); } }
+.lp-wm-task [data-testid="acceptance-card"] { padding: 16px; border-radius: 12px; box-shadow: none; }
+.lp-wm-discs details { border: 1px solid var(--lp-line); border-radius: 12px; background-color: var(--lp-surface); }
+.lp-wm-discs details > summary { min-height: 0; padding: 12px 16px; border: 0; border-radius: 12px; background: none; color: var(--lp-ink); font-size: 13px; font-weight: 600; }
+.lp-wm-discs details > summary:hover { background-color: var(--lp-bg); }
+.lp-wm-discs details > div { margin: 0; padding: 0 16px 14px; border-left: 0; }
+.lp-wm-disc-title { flex: none; color: var(--lp-ink); font-size: 13px; font-weight: 600; }
+.lp-wm-disc-meta { overflow: hidden; color: var(--lp-muted); font-size: 12px; font-weight: 400; text-overflow: ellipsis; white-space: nowrap; }
+.lp-wm-thread { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding-top: 6px; padding-bottom: 6px; }
+.lp-wm-thread-open { display: inline-flex; flex: none; align-items: center; gap: 3px; color: var(--lp-accent); font-size: 12px; font-weight: 550; }
+.lp-wm-thread-open:hover { text-decoration: underline; }
+/* Memory (frame 8): search, records with a type tag, the detail card. */
+.lp-wm-search { display: flex; width: 340px; max-width: 100%; align-items: center; gap: 8px; padding: 9px 12px; border: 1px solid var(--lp-line); border-radius: 8px; background-color: var(--lp-surface); }
+.lp-wm-rec { display: grid; width: 100%; grid-template-columns: 84px minmax(0, 1fr); align-items: start; gap: 14px; padding: 13px 18px; border-bottom: 1px solid var(--lp-line); text-align: left; }
+.lp-wm-rec:last-child { border-bottom: 0; }
+.lp-wm-rec:hover { background-color: var(--lp-bg); }
+.lp-wm-rec[aria-selected="true"] { background-color: color-mix(in oklab, var(--lp-accent-soft) 45%, var(--lp-surface)); }
+.lp-wm-rec-text { display: block; color: var(--lp-ink); font-size: 13px; font-weight: 500; line-height: 1.4; }
+.lp-wm-rec-clamp { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.lp-wm-rec-meta { display: flex; flex-wrap: wrap; gap: 2px 12px; color: var(--lp-muted); font-size: 11.5px; }
+.lp-wm-type { display: inline-flex; width: fit-content; min-width: 0; align-items: center; justify-content: center; padding: 2px 8px; border-radius: 5px; background-color: var(--lp-bg); color: var(--lp-body); font-size: 11px; font-weight: 600; }
+.lp-wm-rec > .lp-wm-type { width: 100%; }
+.lp-wm-type[data-tone="bad"] { background-color: var(--lp-bad-soft); color: var(--lp-bad); }
+.lp-wm-type[data-tone="accent"] { background-color: var(--lp-accent-soft); color: var(--lp-accent); }
+.lp-wm-type[data-tone="ok"] { background-color: var(--lp-ok-soft); color: var(--lp-ok); }
+.lp-wm-type[data-tone="warn"] { background-color: var(--lp-warn-soft); color: var(--lp-warn); }
+@media (max-width: 640px) { .lp-wm-rec { grid-template-columns: minmax(0, 1fr); gap: 8px; padding: 12px 14px; } .lp-wm-rec > .lp-wm-type { width: fit-content; } }
+/* History (frame 9): the outcome with a dot, the open failed row on a red wash. */
+.lp-wm-outcome { display: inline-flex; align-items: center; gap: 5px; color: var(--lp-muted); font-size: 11.5px; font-weight: 600; white-space: nowrap; }
+.lp-wm-outcome::before { content: ""; width: 6px; height: 6px; flex: none; border-radius: 9999px; background-color: currentColor; }
+.lp-wm-outcome[data-tone="ok"] { color: var(--lp-ok); }
+.lp-wm-outcome[data-tone="warn"] { color: var(--lp-warn); }
+.lp-wm-outcome[data-tone="bad"] { color: var(--lp-bad); }
+.lp-wm-table tbody tr.lp-wm-row-open[data-outcome="failed"] { background-color: color-mix(in oklab, var(--lp-bad-soft) 30%, var(--lp-surface)); }
+.lp-wm-table tbody tr.lp-wm-row-open:has(+ .lp-wm-row-open) { border-bottom: 0; }
+.lp-wm-table td.lp-wm-row-detail { padding-top: 0; }
+@media (max-width: 640px) {
+  .lp-wm-hide-sm { display: none; }
+  .lp-wm-table td.lp-wm-title-cell { width: auto; max-width: 12rem; }
+}
+/* visual:work-memory end */
