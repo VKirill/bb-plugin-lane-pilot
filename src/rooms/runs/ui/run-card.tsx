@@ -75,10 +75,10 @@ export function RunCardDirective({ attributes, source }: PluginMessageDirectiveP
 
   if (card === null) {
     return offline
-      ? <div role="status" data-bb-plugin="lane-pilot" data-testid="run-card-offline" className="lp-card my-2 px-4 py-3 text-sm text-muted-foreground">{t("runCardLoadFailed")}</div>
+      ? <div role="status" data-bb-plugin="lane-pilot" data-testid="run-card-offline" className="lp-chat lp-card my-2 px-4 py-3 text-sm text-muted-foreground">{t("runCardLoadFailed")}</div>
       : <div role="status" aria-busy="true" data-bb-plugin="lane-pilot" className="my-2 h-12 animate-pulse rounded-xl border border-[var(--lp-hairline)] bg-[var(--lp-well)]" />;
   }
-  if (card === "missing") return <div data-bb-plugin="lane-pilot" className="lp-card my-2 px-4 py-3 text-sm text-muted-foreground" title={source}>{t("runCardGone")}</div>;
+  if (card === "missing") return <div data-bb-plugin="lane-pilot" className="lp-chat lp-card my-2 px-4 py-3 text-sm text-muted-foreground" title={source}>{t("runCardGone")}</div>;
   // The counter counts work, not rows: «T3», «T3.2», «T3.4» are one task sent again, done when its latest member is accepted
   // (magicseo 2026-10-30 showed «9 of 17» with all nine pieces of work accepted). The rows keep every attempt's history.
   const family = (id: string) => id.replace(/(\.\d+)+$/, "").replace(/-mainfix$/, "");
@@ -86,26 +86,26 @@ export function RunCardDirective({ attributes, source }: PluginMessageDirectiveP
   const done = [...latest.values()].filter((state) => state === "accepted").length;
   const shown = expanded ? card.tasks : card.tasks.slice(0, ROWS_SHOWN);
   return (
-    <div className="lp-card my-2 min-w-0 text-sm" data-bb-plugin="lane-pilot" data-testid="run-card">
-      <div className="flex items-center justify-between gap-2.5 border-b border-[var(--lp-hairline)] px-4 py-3">
+    <div className="lp-chat lp-card my-2 flex min-w-0 flex-col gap-2.5 p-4 text-sm" data-bb-plugin="lane-pilot" data-testid="run-card">
+      <div className="flex items-center justify-between gap-2.5">
         <span className="text-[13.5px] font-semibold text-foreground">{t("runCardTitle")}</span>
         <StatusPill tone={card.closed ? "muted" : "accent"}>{card.closed ? t("runCardClosed") : t("runCardProgress").replace("{done}", String(done)).replace("{total}", String(latest.size))}</StatusPill>
       </div>
-      {offline ? <div role="status" data-testid="run-card-stale" className="border-b border-[var(--lp-hairline)] bg-[var(--lp-well)]/60 px-4 py-1.5 text-xs text-muted-foreground">{t("runCardStale")}</div> : null}
-      <ul className="divide-y divide-[var(--lp-hairline)]">
+      {offline ? <div role="status" data-testid="run-card-stale" className="rounded-lg bg-[var(--lp-well)]/60 px-2.5 py-1.5 text-xs text-muted-foreground">{t("runCardStale")}</div> : null}
+      <ul className="flex flex-col gap-2.5">
         {shown.map((task) => (
-          <li key={task.id} className="flex min-w-0 flex-wrap items-center gap-x-2.5 gap-y-1.5 px-4 py-2.5">
-            <span className="min-w-0 flex-1 truncate text-[12.5px] font-medium text-foreground" title={`${task.id}: ${task.title}`}>{task.title}</span>
+          <li key={task.id} className="flex min-w-0 flex-wrap items-center gap-x-2.5 gap-y-1.5">
+            <span className="min-w-0 flex-[1_1_9rem] truncate text-[12.5px] font-medium text-foreground" title={`${task.id}: ${task.title}`}>{task.title}</span>
             <StatusPill tone={stateTone(task.state)} className="shrink-0">{stateText(task.state)}</StatusPill>
             {backgroundText(task.background) ? <span data-testid="run-card-background" className="lp-pill-warning shrink-0 rounded-full px-2 py-0.5 text-[11.5px] font-medium">{backgroundText(task.background)}</span> : null}
             {task.threadId ? (
-              <button type="button" className="lp-raised shrink-0 cursor-pointer rounded-lg px-2.5 py-1 text-xs font-medium text-foreground hover:bg-state-hover focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              <button type="button" className="lp-raised shrink-0 cursor-pointer rounded-lg px-2.5 py-1 text-xs font-medium text-foreground shadow-none hover:bg-state-hover focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                 onClick={() => {
                   if (!openPanel({ actionId: HELPER_PANEL_ACTION, title: task.title.slice(0, 40), params: { threadId: task.threadId } })) navigate.toThread(task.threadId!);
                 }}>{t("runCardOpenWriter")}</button>
             ) : null}
             {task.checkLog ? (
-              <button type="button" className="lp-raised shrink-0 cursor-pointer rounded-lg px-2.5 py-1 text-xs font-medium text-foreground hover:bg-state-hover focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              <button type="button" className="lp-raised shrink-0 cursor-pointer rounded-lg px-2.5 py-1 text-xs font-medium text-foreground shadow-none hover:bg-state-hover focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                 onClick={() => navigate.experimental_openFilePreview({ target: { kind: "host", hostId: task.checkLog!.hostId, path: task.checkLog!.path }, location: null })}>
                 {t("runCardOpenLog")}
               </button>
@@ -114,7 +114,7 @@ export function RunCardDirective({ attributes, source }: PluginMessageDirectiveP
         ))}
       </ul>
       {card.tasks.length > ROWS_SHOWN ? (
-        <button type="button" data-testid="run-card-toggle" className="w-full cursor-pointer border-t border-[var(--lp-hairline)] px-4 py-2 text-left text-xs font-medium text-muted-foreground hover:bg-[var(--lp-well)]/50 hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+        <button type="button" data-testid="run-card-toggle" className="cursor-pointer self-start rounded-lg text-left text-xs font-medium text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
           onClick={() => setExpanded((open) => !open)}>
           {expanded ? t("runCardShowLess") : t("runCardShowAll").replace("{count}", String(card.tasks.length))}
         </button>

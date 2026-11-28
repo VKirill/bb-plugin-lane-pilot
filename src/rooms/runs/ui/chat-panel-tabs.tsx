@@ -1,9 +1,10 @@
+import { useState } from "react";
 import { useBbNavigate } from "@get-bb/plugin-sdk/app";
 import { t, type I18nKey } from "@lane-pilot/i18n";
 import { Badge, Button, StatusPill, type StatusPillTone } from "@lane-pilot/ui-kit";
 import type { TaskHistoryRow } from "../../contracts/ui";
 import type { ThreadLiveItem } from "./thread-live-followup";
-import { StatusIcon, ago, runState, shortModel, shortTaskId, stageName, type BoardColumn, type TaskBoardItem } from "./task-shared";
+import { ago, runState, shortModel, shortTaskId, stageName, type BoardColumn, type TaskBoardItem } from "./task-shared";
 
 export type ChatMemoryRecord = {
   id: string;
@@ -41,6 +42,9 @@ const OUTCOME_TONES: Record<TaskHistoryRow["outcome"], { tone: StatusPillTone; l
   canceled: { tone: "muted", labelKey: "consoleHistoryOutcomeCanceled" },
   failed: { tone: "bad", labelKey: "consoleHistoryOutcomeFailed" },
 };
+
+/** Rows a group shows before «Show N more»: a project with a long failure backlog would otherwise fill the whole panel. */
+const GROUP_ROWS_SHOWN = 5;
 
 const label = (prefix: string, id: string | null): string | null => {
   if (!id) return null;
@@ -160,6 +164,7 @@ export function ChatTasksTab({
   loading: boolean;
 }) {
   const navigate = useBbNavigate();
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const grouped = groupChatTasks(items);
   const sections: Array<{
     id: string;
@@ -168,21 +173,21 @@ export function ChatTasksTab({
     metaClass: string;
     rows: ChatTaskItem[];
   }> = [
-    { id: "running", title: t("consoleChatGroupRunning"), dotClass: "bg-[var(--lp-info)]", metaClass: "text-[var(--lp-info)]", rows: grouped.running },
-    { id: "waiting", title: t("consoleChatGroupWaiting"), dotClass: "bg-[var(--lp-warning)]", metaClass: "lp-text-warning", rows: grouped.waiting },
-    { id: "queued", title: t("consoleChatGroupQueued"), dotClass: "bg-muted-foreground/60", metaClass: "text-muted-foreground", rows: grouped.queued },
-    { id: "done-today", title: t("consoleChatGroupDoneToday"), dotClass: "bg-[var(--lp-success)]", metaClass: "lp-text-success", rows: grouped.doneToday },
+    { id: "running", title: t("consoleChatGroupRunning"), dotClass: "bg-[var(--lp-chat-accent)]", metaClass: "text-[var(--lp-chat-accent)]", rows: grouped.running },
+    { id: "waiting", title: t("consoleChatGroupWaiting"), dotClass: "bg-[var(--lp-chat-warn)]", metaClass: "text-[var(--lp-chat-warn)]", rows: grouped.waiting },
+    { id: "queued", title: t("consoleChatGroupQueued"), dotClass: "bg-muted-foreground", metaClass: "text-muted-foreground", rows: grouped.queued },
+    { id: "done-today", title: t("consoleChatGroupDoneToday"), dotClass: "bg-[var(--lp-chat-ok)]", metaClass: "text-[var(--lp-chat-ok)]", rows: grouped.doneToday },
   ].filter((section) => section.rows.length > 0);
 
   return (
-    <div className="space-y-3" data-testid="chat-panel-tasks">
+    <div className="space-y-3.5" data-testid="chat-panel-tasks">
       {session ? (
         <button
           type="button"
           data-testid="live-session"
           title={session.runId}
           onClick={() => navigate.toPluginPanel("lane-pilot")}
-          className="flex w-full min-w-0 items-center justify-between gap-2 rounded-lg border border-[var(--lp-hairline)] bg-[var(--lp-card)] px-2.5 py-1.5 text-left text-xs hover:bg-state-hover"
+          className="flex w-full min-w-0 items-center justify-between gap-2 rounded-lg border border-[var(--lp-hairline)] bg-[var(--lp-card)] px-[11px] py-[9px] text-left text-xs hover:bg-state-hover"
         >
           <span className="shrink-0 font-medium text-foreground">{t("liveSessionOpen")}</span>
           <span className="min-w-0 truncate font-mono text-muted-foreground">{session.runId}</span>
@@ -194,48 +199,60 @@ export function ChatTasksTab({
           {loading ? t("boardLoading") : t("consoleChatTasksEmpty")}
         </p>
       ) : (
-        sections.map((section) => (
+        sections.map((section) => {
+          const shown = expanded[section.id] ? section.rows : section.rows.slice(0, GROUP_ROWS_SHOWN);
+          const hidden = section.rows.length - shown.length;
+          return (
           <section key={section.id} className="space-y-1.5" data-testid={`chat-tasks-group-${section.id}`}>
-            <div className="flex items-center gap-1.5 px-0.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-              <span aria-hidden className={`size-1.5 shrink-0 rounded-full ${section.dotClass}`} />
+            <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-[0.5px] text-muted-foreground">
+              <span aria-hidden className={`size-[7px] shrink-0 rounded-full ${section.dotClass}`} />
               <span>{section.title}</span>
-              <span className="ml-auto font-normal tabular-nums">{section.rows.length}</span>
+              {section.rows.length > GROUP_ROWS_SHOWN ? <span className="ml-auto font-medium tabular-nums">{section.rows.length}</span> : null}
             </div>
             <div className="space-y-1.5">
-              {section.rows.map((item) => {
+              {shown.map((item) => {
                 const subPath = taskSubPath(item);
                 const when = formatTimeOrAgo(item, locale);
                 const meta = formatTaskMeta(item, locale);
+                const numbered = item.taskId ? /^\d+$/.test(shortTaskId(item.taskId)) : false;
                 return (
                   <button
                     key={item.key}
                     type="button"
                     data-testid={`chat-task-row-${item.key}`}
                     onClick={() => navigate.toPluginPanel("lane-pilot", { subPath })}
-                    className="lp-card block w-full min-w-0 cursor-pointer px-2.5 py-2 text-left transition-colors hover:border-input"
+                    className="lp-card flex w-full min-w-0 cursor-pointer flex-col gap-[3px] rounded-lg px-[11px] py-[9px] text-left transition-colors hover:border-input"
                   >
-                    <div className="flex min-w-0 items-center gap-1.5">
-                      <StatusIcon column={item.column} phase={item.state === "canceled" ? "canceled" : undefined} />
-                      {item.taskId ? (
-                        <span className="shrink-0 font-mono text-[11px] text-muted-foreground tabular-nums">
-                          {shortTaskId(item.taskId)}
-                        </span>
-                      ) : null}
-                      <span className="min-w-0 flex-1 truncate text-xs font-medium text-foreground">{item.title}</span>
+                    <div className="flex min-w-0 items-baseline gap-2">
+                      <span className="min-w-0 flex-1 truncate text-[12.5px] font-medium text-foreground">
+                        {item.taskId ? (
+                          numbered ? <>#{shortTaskId(item.taskId)} </> : <span className="mr-1.5 font-mono text-[11px] text-muted-foreground">{shortTaskId(item.taskId)}</span>
+                        ) : null}
+                        {item.title}
+                      </span>
                       {when ? <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground">{when}</span> : null}
                     </div>
-                    {meta ? (
-                      <div className={`mt-0.5 truncate pl-5 text-[11px] ${section.metaClass}`}>{meta}</div>
-                    ) : null}
+                    {meta ? <div className={`truncate text-[11.5px] font-semibold ${section.metaClass}`}>{meta}</div> : null}
                     {item.column === "blocked" && item.detail ? (
-                      <div className="mt-0.5 line-clamp-2 pl-5 text-[11px] text-muted-foreground">{item.detail}</div>
+                      <div className="line-clamp-2 break-words text-[11px] text-muted-foreground">{item.detail}</div>
                     ) : null}
                   </button>
                 );
               })}
             </div>
+            {hidden > 0 ? (
+              <button
+                type="button"
+                data-testid={`chat-tasks-more-${section.id}`}
+                onClick={() => setExpanded((prev) => ({ ...prev, [section.id]: true }))}
+                className="w-full cursor-pointer rounded-lg border border-dashed border-[var(--lp-hairline)] px-[11px] py-1.5 text-center text-xs font-medium text-muted-foreground hover:text-foreground"
+              >
+                {t("consoleChatShowMore").replace("{n}", String(hidden))}
+              </button>
+            ) : null}
           </section>
-        ))
+          );
+        })
       )}
     </div>
   );
@@ -280,7 +297,7 @@ export function ChatMemoryTab({
             <div
               key={record.id}
               data-testid={`chat-memory-row-${record.id}`}
-              className="lp-card space-y-1 px-2.5 py-2 text-xs"
+              className="lp-card space-y-1 rounded-lg px-[11px] py-[9px] text-xs"
             >
               <div className="flex flex-wrap items-center gap-1.5">
                 <Badge variant={record.rule ? "destructive" : record.kind === "core" ? "secondary" : "outline"}>
@@ -334,7 +351,7 @@ export function ChatHistoryTab({
               type="button"
               data-testid={`chat-history-row-${row.taskId}`}
               onClick={() => navigate.toPluginPanel("lane-pilot", { subPath: `work/task/${row.runId}/${row.taskId}` })}
-              className="lp-card block w-full min-w-0 cursor-pointer space-y-1 px-2.5 py-2 text-left text-xs hover:border-input"
+              className="lp-card block w-full min-w-0 cursor-pointer space-y-1 rounded-lg px-[11px] py-[9px] text-left text-xs hover:border-input"
             >
               <div className="flex min-w-0 items-center gap-1.5">
                 <span className="shrink-0 font-mono text-[11px] text-muted-foreground tabular-nums">

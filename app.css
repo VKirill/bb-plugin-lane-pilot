@@ -736,3 +736,51 @@
     box-shadow: 1px 1px 0 0 #0f172a;
   }
 }
+
+/* visual:chat start */
+/*
+ * Chat surfaces (right panel, run/draft cards, owner question, composer pieces) sit inside BB, so they keep BB's theme for
+ * surfaces and ink and take only the prototype's tones. The tones are mixed with BB's ink so they stay readable on a dark theme
+ * (light: nearly the prototype's colour; dark: lifted toward white).
+ */
+@layer components {
+  .lp-chat {
+    --lp-chat-accent: color-mix(in oklab, var(--lp-accent) 82%, var(--foreground));
+    --lp-chat-ok: color-mix(in oklab, var(--lp-ok) 85%, var(--foreground));
+    --lp-chat-warn: color-mix(in oklab, var(--lp-warn) 85%, var(--foreground));
+    --lp-chat-bad: color-mix(in oklab, var(--lp-bad) 85%, var(--foreground));
+    --lp-chat-body: color-mix(in oklab, var(--foreground) 72%, var(--background));
+  }
+
+  .lp-chat.lp-card,
+  .lp-chat .lp-card,
+  .lp-chat .lp-raised {
+    box-shadow: none;
+  }
+
+  .lp-chat-panel {
+    background-color: var(--muted);
+    font-family: var(--lp-font);
+  }
+
+  /* BB's ink for the flat primary button, so it does not vanish into a dark card. */
+  .lp-chat .lp-accent {
+    background-color: var(--foreground);
+    color: var(--background);
+  }
+
+  .lp-chat .lp-seg {
+    background-color: var(--muted);
+  }
+
+  .lp-chat .lp-seg-item {
+    color: var(--muted-foreground);
+  }
+
+  .lp-chat .lp-seg-item:is([aria-pressed="true"], [data-state="active"]) {
+    border-color: var(--border);
+    background-color: var(--card);
+    color: var(--foreground);
+  }
+}
+/* visual:chat end */

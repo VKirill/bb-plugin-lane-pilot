@@ -47,14 +47,14 @@ export function ThreadLiveFollowup({ threadId }: { threadId: string }) {
   };
 
   return (
-    <form className="space-y-2 border-t border-[var(--lp-hairline)] pt-3" data-testid="thread-live-followup" onSubmit={(e) => void onSubmit(e)}>
+    <form className="space-y-2" data-testid="thread-live-followup" onSubmit={(e) => void onSubmit(e)}>
       <textarea
         rows={2}
         value={text}
         onChange={(e) => setText(e.target.value)}
         placeholder={t("threadLivePlaceholder")}
         data-testid="thread-live-followup-input"
-        className="w-full resize-none rounded-md border border-border bg-background px-2.5 py-1.5 text-sm text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+        className="w-full resize-none rounded-[10px] border border-[var(--lp-hairline)] bg-[var(--lp-card)] px-3 py-2 text-[12.5px] text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
       />
       <div className="flex items-center justify-between gap-2">
         <div className="min-w-0 text-xs">

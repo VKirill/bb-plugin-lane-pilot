@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type ComponentType } from "react";
 import { useRpc } from "@get-bb/plugin-sdk/app";
 import { detectLocale, t, type I18nKey } from "@lane-pilot/i18n";
-import { Icon, StatusPill, type StatusPillTone } from "@lane-pilot/ui-kit";
+import { Icon } from "@lane-pilot/ui-kit";
 import type { RepoTrustOutput, TaskHistoryRow, ThreadScope, rpcContract } from "../../contracts";
 import { useLpRpcQuery } from "../../ui-shell/ui";
 import {
@@ -22,12 +22,12 @@ type ScopeMode = "section" | "project";
 const POLL_MS = 8_000;
 const HISTORY_LIMIT = 20;
 
-const GATE_LABELS: Record<RepoTrustOutput["gate"]["state"], { key: I18nKey; tone: StatusPillTone }> = {
-  passed: { key: "consoleChatGate_passed", tone: "ok" },
-  failed: { key: "consoleChatGate_failed", tone: "bad" },
-  running: { key: "consoleChatGate_running", tone: "accent" },
-  not_run: { key: "consoleChatGate_not_run", tone: "muted" },
-  none: { key: "consoleChatGate_none", tone: "muted" },
+const GATE_LABELS: Record<RepoTrustOutput["gate"]["state"], { key: I18nKey; toneClass: string }> = {
+  passed: { key: "consoleChatGate_passed", toneClass: "text-[var(--lp-chat-ok)]" },
+  failed: { key: "consoleChatGate_failed", toneClass: "text-[var(--lp-chat-bad)]" },
+  running: { key: "consoleChatGate_running", toneClass: "text-[var(--lp-chat-accent)]" },
+  not_run: { key: "consoleChatGate_not_run", toneClass: "text-muted-foreground" },
+  none: { key: "consoleChatGate_none", toneClass: "text-muted-foreground" },
 };
 
 const RULE_ACTION_LABELS: Record<string, I18nKey> = {
@@ -37,9 +37,9 @@ const RULE_ACTION_LABELS: Record<string, I18nKey> = {
 };
 
 const RULE_MODE_LABELS: Record<RepoTrustOutput["rules"][number]["mode"], { key: I18nKey; toneClass: string }> = {
-  auto: { key: "consoleChatRuleMode_auto", toneClass: "lp-text-success" },
-  ask: { key: "consoleChatRuleMode_ask", toneClass: "lp-text-warning" },
-  owner_only: { key: "consoleChatRuleMode_owner_only", toneClass: "text-destructive" },
+  auto: { key: "consoleChatRuleMode_auto", toneClass: "text-[var(--lp-chat-ok)]" },
+  ask: { key: "consoleChatRuleMode_ask", toneClass: "text-[var(--lp-chat-warn)]" },
+  owner_only: { key: "consoleChatRuleMode_owner_only", toneClass: "text-[var(--lp-chat-bad)]" },
 };
 
 function repoDisplayName(root: string | null | undefined): string {
@@ -231,11 +231,17 @@ export function ChatPanel({ threadId, locale: localeProp, HelpersList }: ChatPan
 
   return (
     <div
-      className="flex h-full min-h-0 flex-col justify-between gap-3 p-3"
+      className="lp-chat lp-chat-panel flex h-full min-h-0 flex-col gap-3.5 p-[18px]"
       data-bb-plugin="lane-pilot"
       data-testid="thread-live-panel"
     >
-      <div className="min-h-0 flex-1 space-y-3 overflow-y-auto">
+      <div className="flex shrink-0 items-center gap-2">
+        <span className="flex size-[22px] items-center justify-center rounded-md bg-[var(--lp-accent)] text-white" aria-hidden>
+          <Icon name="Workflow" className="size-[13px]" />
+        </span>
+        <span className="text-sm font-semibold text-foreground">{t("panelTitle")}</span>
+      </div>
+      <div className="min-h-0 flex-1 space-y-3.5 overflow-y-auto">
         {noProjectLinked ? (
           <div className="space-y-3" data-testid="chat-panel-unlinked">
             <div
@@ -254,10 +260,10 @@ export function ChatPanel({ threadId, locale: localeProp, HelpersList }: ChatPan
         ) : (
           <>
             {projectId ? (
-              <header className="space-y-2" data-testid="chat-panel-header">
+              <header className="lp-card flex flex-col gap-2 rounded-[10px] p-3" data-testid="chat-panel-header">
                 {hasSection ? (
                   <div
-                    className="lp-seg w-full"
+                    className="lp-seg self-start"
                     role="group"
                     aria-label={t("consoleChatScopeAria")}
                     data-testid="chat-panel-scope"
@@ -269,7 +275,7 @@ export function ChatPanel({ threadId, locale: localeProp, HelpersList }: ChatPan
                         aria-pressed={scopeMode === mode}
                         data-testid={`chat-scope-${mode}`}
                         onClick={() => setScopeMode(mode)}
-                        className="lp-seg-item h-7 flex-1 cursor-pointer px-2.5 text-xs"
+                        className="lp-seg-item cursor-pointer px-2.5 py-1 text-[11.5px] font-semibold"
                       >
                         {t(mode === "section" ? "consoleChatScopeSection" : "consoleChatScopeProject")}
                       </button>
@@ -278,23 +284,19 @@ export function ChatPanel({ threadId, locale: localeProp, HelpersList }: ChatPan
                 ) : null}
 
                 {scope?.repo !== null ? (
-                  <div className="lp-card space-y-1.5 px-3 py-2 text-xs" data-testid="chat-panel-repo">
-                    <div className="flex min-w-0 items-center gap-1.5 font-medium text-foreground">
-                      <Icon name="GitBranch" className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
+                  <div className="flex flex-col gap-2" data-testid="chat-panel-repo">
+                    <div className="flex min-w-0 items-center gap-2 text-[12.5px] font-semibold text-foreground">
+                      <Icon name="GitBranch" className="size-[15px] shrink-0" aria-hidden />
                       <span className="min-w-0 truncate" title={rootPath ?? undefined}>
                         {remoteLabel ?? rootName}
                       </span>
                       {remoteLabel && rootName && !remoteLabel.endsWith(rootName) ? (
-                        <span className="shrink-0 text-muted-foreground">· {rootName}</span>
+                        <span className="shrink-0 font-normal text-muted-foreground">· {rootName}</span>
                       ) : null}
                     </div>
                     {repoTrust ? (
-                      <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
-                        {gateMeta ? (
-                          <StatusPill tone={gateMeta.tone} className="text-[10px] leading-4">
-                            {t(gateMeta.key)}
-                          </StatusPill>
-                        ) : null}
+                      <div className="flex flex-wrap items-center gap-x-1.5 text-[11.5px] leading-snug text-muted-foreground [&>span+span]:before:mr-1.5 [&>span+span]:before:content-['·']">
+                        {gateMeta ? <span className={`font-semibold ${gateMeta.toneClass}`}>{t(gateMeta.key)}</span> : null}
                         {repoTrust.tests.lastCount !== null ? (
                           <span>{t("consoleChatRepoTests").replace("{n}", String(repoTrust.tests.lastCount))}</span>
                         ) : null}
@@ -304,7 +306,7 @@ export function ChatPanel({ threadId, locale: localeProp, HelpersList }: ChatPan
                   </div>
                 ) : (
                   <div
-                    className="lp-card flex items-center gap-1.5 px-3 py-2 text-xs text-muted-foreground"
+                    className="flex items-center gap-1.5 text-xs text-muted-foreground"
                     data-testid="chat-panel-no-repo"
                   >
                     <Icon name="Folder" className="size-3.5 shrink-0" aria-hidden />
@@ -316,7 +318,7 @@ export function ChatPanel({ threadId, locale: localeProp, HelpersList }: ChatPan
 
             {projectId ? (
               <nav
-                className="flex flex-wrap items-center gap-1 border-b border-[var(--lp-hairline)] pb-1"
+                className="flex flex-wrap items-center gap-x-[18px] border-b border-[var(--lp-hairline)]"
                 role="tablist"
                 aria-label={t("consoleChatTabsAria")}
                 data-testid="chat-panel-tabs"
@@ -331,14 +333,14 @@ export function ChatPanel({ threadId, locale: localeProp, HelpersList }: ChatPan
                       aria-selected={selected}
                       data-testid={`chat-tab-${tab.id}`}
                       onClick={() => setActiveTab(tab.id)}
-                      className={`inline-flex cursor-pointer items-center gap-1 border-b-2 px-2 py-1 text-xs transition-colors ${
+                      className={`-mb-px inline-flex cursor-pointer items-center gap-1 border-b-2 pb-[9px] text-[13px] transition-colors ${
                         selected
                           ? "border-foreground font-semibold text-foreground"
-                          : "border-transparent text-muted-foreground hover:text-foreground"
+                          : "border-transparent font-medium text-muted-foreground hover:text-foreground"
                       }`}
                     >
                       <span>{tab.label}</span>
-                      {tab.count ? <span className="tabular-nums text-[11px] text-muted-foreground">{tab.count}</span> : null}
+                      {tab.count ? <span className="tabular-nums">{tab.count}</span> : null}
                     </button>
                   );
                 })}
@@ -367,35 +369,33 @@ export function ChatPanel({ threadId, locale: localeProp, HelpersList }: ChatPan
             )}
           </>
         )}
-      </div>
-
-      <div className="shrink-0 space-y-3">
         {!noProjectLinked && projectId && repoTrust?.rules.length ? (
           <section
-            className="lp-card space-y-1.5 px-3 py-2 text-xs"
+            className="lp-card flex flex-col gap-[7px] rounded-[10px] p-3"
             data-testid="chat-panel-autonomy"
           >
-            <div className="font-semibold text-foreground">{t("consoleChatAutonomyTitle")}</div>
-            <div className="space-y-1">
-              {repoTrust.rules.map((rule) => {
-                const actionKey = RULE_ACTION_LABELS[rule.actionClass];
-                const modeMeta = RULE_MODE_LABELS[rule.mode];
-                return (
-                  <div
-                    key={rule.actionClass}
-                    className="flex items-center justify-between gap-2 text-[11px]"
-                    data-testid={`chat-autonomy-rule-${rule.actionClass}`}
-                  >
-                    <span className="min-w-0 truncate text-muted-foreground">
-                      {actionKey ? t(actionKey) : rule.actionClass}
-                    </span>
-                    <span className={`shrink-0 font-medium ${modeMeta.toneClass}`}>{t(modeMeta.key)}</span>
-                  </div>
-                );
-              })}
-            </div>
+            <div className="text-[12.5px] font-semibold text-foreground">{t("consoleChatAutonomyTitle")}</div>
+            {repoTrust.rules.map((rule) => {
+              const actionKey = RULE_ACTION_LABELS[rule.actionClass];
+              const modeMeta = RULE_MODE_LABELS[rule.mode];
+              return (
+                <div
+                  key={rule.actionClass}
+                  className="flex items-center justify-between gap-2 text-xs"
+                  data-testid={`chat-autonomy-rule-${rule.actionClass}`}
+                >
+                  <span className="min-w-0 truncate text-[var(--lp-chat-body)]">
+                    {actionKey ? t(actionKey) : rule.actionClass}
+                  </span>
+                  <span className={`shrink-0 font-semibold ${modeMeta.toneClass}`}>{t(modeMeta.key)}</span>
+                </div>
+              );
+            })}
           </section>
         ) : null}
+      </div>
+
+      <div className="shrink-0">
         <ThreadLiveFollowup threadId={threadId} />
       </div>
     </div>
