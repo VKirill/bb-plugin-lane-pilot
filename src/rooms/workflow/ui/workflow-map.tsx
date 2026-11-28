@@ -311,7 +311,7 @@ const VOWEL = /[аеёиоуыэюяaeiouy]/i;
  * a hyphen even where the browser has no Russian hyphenation dictionary (Chrome on Linux). Rules: a break needs a vowel on
  * both sides and two letters at each end; after й/ь/ъ; between vowel and consonant+vowel; between two consonants.
  */
-// ponytail: syllable heuristics, not a dictionary — a rare odd split, swap for a pattern set if titles ever look wrong
+// syllable heuristics, not a dictionary — a rare odd split, swap for a pattern set if titles ever look wrong
 export function softHyphens(text: string): string {
   return text.replace(/[а-яё]{10,}/gi, (word) => {
     let out = word[0]!;

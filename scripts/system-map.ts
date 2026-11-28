@@ -86,7 +86,7 @@ export function collectSystemMap(root: string): SystemMap {
   }
   const tables = new Map([...declared].map(([table, { owner }]) => [table, owner]));
   for (const [table, owner] of tables) add({ id: `table:${table}`, label: table, type: "table", parent: owner });
-  // ponytail: substring scan, tables × files; fine at ~120 tables and ~1500 files (a second or two).
+  // substring scan, tables × files; fine at ~120 tables and ~1500 files (a second or two).
   for (const [path, text] of source) {
     const from = ownerOf(path);
     if (!from || describers.has(from)) continue;

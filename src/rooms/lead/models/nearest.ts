@@ -18,7 +18,7 @@ export const SKILL_NEAR_SCORE = 0.5;
 const SCHEDULE_WORDS = /cron|расписан|ежеднев|еженедельно|каждый день|каждую неделю|ежемесяч|schedule/iu;
 const GATE_WORDS = /оплат|плат[её]ж|деньг|publish|публикац|отправ|send|delete|удал|письм|email|invoice|счёт|счет|договор|money/iu;
 
-/** ponytail: gate/schedule words are a regex over the sample titles plus provider diversity — a ceiling (a process can
+/** gate/schedule words are a regex over the sample titles plus provider diversity — a ceiling (a process can
  * hide its gate in the task text, not the title). */
 export function graphSignalsOf(row: { samples: string[]; signals: GroupSignals }): boolean {
   if (row.signals.providers >= 2) return true;

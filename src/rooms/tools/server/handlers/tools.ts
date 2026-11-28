@@ -377,7 +377,7 @@ export function registerTools(ctx: ServerCore, services: Services, familyContrib
   const prepareRecipient = createRecipientResolver(ctx);
   mountHandoff(ctx, { startChild: (input) => startChildPm(ctx, input), prepareRecipient });
   mountHealth(ctx, services);
-  // ponytail: specialists.ts is owned by the critics branch. Push until that file lists the new ids.
+  // specialists.ts is owned by the critics branch. Push until that file lists the new ids.
   installEmployeeSpecialists(SPECIALIST_ROLES as unknown as string[]);
   mountSpecialists(ctx, services);
   // The browser step and the browser check of an accepted task (graphs browser-step and lp.browser-qa), next to the errand graph:

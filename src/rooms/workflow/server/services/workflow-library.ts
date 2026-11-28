@@ -124,7 +124,7 @@ export function createWorkflowLibrary(ctx: ServerCore, services: Pick<Services, 
   }
 
   function statsFor(workflowId: string, projectId?: string): WorkflowStats {
-    // ponytail: the same full scan as runRecords. Ceiling: a workflow with a very long history. Upgrade: a stored outcome column.
+    // the same full scan as runRecords. Ceiling: a workflow with a very long history. Upgrade: a stored outcome column.
     const rows = wfRunOutcomeRows(db, workflowId, projectId);
     const since30d = Date.now() - 30 * 86_400_000;
     const tally = tallyOutcomes(rows);

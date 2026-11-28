@@ -4,7 +4,7 @@ import { mixWriterMemory } from "../../../memory/server";
 
 /**
  * Frozen 40-case gate (5 groups × 8). No model.
- * ponytail: checks the search pack and the writer pack only. Cold tier, episodes and the BB catalog are not
+ * checks the search pack and the writer pack only. Cold tier, episodes and the BB catalog are not
  * folded into this text; the upgrade is to pass those packed strings through the same forbid and budget checks.
  */
 export const GATE_GROUPS = ["namespace", "change", "no-answer", "needed", "budget"] as const;

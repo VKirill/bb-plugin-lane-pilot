@@ -44,7 +44,7 @@ export const goalsSha = (goals: readonly RunGoal[]): string => sha256(JSON.strin
  * claim the goal). `met` when the writer was accepted and the task names acceptance commands, or the plan already found
  * the repository does it. `unmet` when a tiny run claims `closed` without that.
  *
- * ponytail: the engine reads this off a succeeded step whose id is `class` (issue-quick). Another graph with that node id
+ * the engine reads this off a succeeded step whose id is `class` (issue-quick). Another graph with that node id
  * opts in. Upgrade: a workflow flag `goal_audit: "code"`.
  */
 export function tinyGoalByCode(input: { size: unknown; status: unknown; accepted: boolean; acceptance: unknown; alreadyMet: boolean }): "skip" | "met" | "unmet" {

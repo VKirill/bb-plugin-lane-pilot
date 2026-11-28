@@ -43,7 +43,7 @@ const storedView = (): LibraryView => {
   try {
     const saved = localStorage.getItem(VIEW_KEY);
     if (saved === "grid" || saved === "list") return saved;
-    // ponytail: viewport width decides only the first run; the owner's toggle wins from then on.
+    // viewport width decides only the first run; the owner's toggle wins from then on.
     return typeof matchMedia === "function" && matchMedia("(max-width: 767px)").matches ? "list" : "grid";
   } catch { return "grid"; }
 };

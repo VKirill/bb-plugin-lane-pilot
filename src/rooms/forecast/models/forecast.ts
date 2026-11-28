@@ -66,7 +66,7 @@ export function dependenciesAddedInDiff(diff: string): string[] {
     const body = raw.trim();
     const base = file.split("/").pop() ?? "";
     if (base === "package.json") {
-      // ponytail: a package.json entry counts as a dependency only when its value reads as a version spec
+      // a package.json entry counts as a dependency only when its value reads as a version spec
       // (or inside a dependencies block). Known ceiling: an added "version" field still counts — a rename would fix it.
       if (depIndent !== null && indent <= depIndent) depIndent = null;
       if (/^"(?:dev|peer|optional|bundled)?[Dd]ependencies"\s*:\s*\{/.test(body)) { depIndent = indent; continue; }

@@ -73,7 +73,7 @@ export function lintSkillFiles(files: SkillFile[], expectedName?: string, { draf
   for (const file of files) {
     if (!isScript(file.path)) continue;
     file.text.split("\n").forEach((line, index) => {
-      // ponytail: a '#' inside a string truncates the line for this check; a missed swallow is a warning, not a gate.
+      // a '#' inside a string truncates the line for this check; a missed swallow is a warning, not a gate.
       const code = line.replace(/#.*$/, "");
       if (!code.trim() || /^\s*(if|while|until)\b/.test(code)) return;
       const where = `${file.path}:${index + 1}`;

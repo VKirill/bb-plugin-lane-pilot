@@ -176,7 +176,7 @@ export function workflowRunFactSummaries(db: Database.Database): Map<string, Wor
 
 /** How each workflow has run: finished top-level runs by business outcome and when the last one started. The router's tiebreaker reads it. */
 export function runRecords(db: Database.Database): Map<string, RunRecord> {
-  // ponytail: classifies every top-level run in JS. Ceiling: a long journal. Upgrade: a stored outcome column.
+  // classifies every top-level run in JS. Ceiling: a long journal. Upgrade: a stored outcome column.
   const rows = db.prepare(`SELECT workflow_id AS id, status, output_json, definition_json, created_at
     FROM lane_pilot_wf_run WHERE parent_run_id IS NULL`).all() as Array<OutcomeRow & { id: string; created_at: number }>;
   const grouped = new Map<string, { rows: OutcomeRow[]; last: number | null }>();

@@ -173,7 +173,7 @@ export async function runPlanCritique(input: { bb: BbPluginApi; db: ReturnType<t
   // «Three write tasks» means a plan of three tasks, not a chat's history: a PM chat is one run for days, and counting every
   // task still at work made 28 of the 41 plan critiques of the owner's prototype chat run on low-risk one-page fixes
   // (thr_zwif89vbnb, 2026-11-02). The batch is the live tasks that share this task's plan text.
-  // ponytail: a plan edited between two dispatches of one batch splits the count; a batch id on dispatch would be exact.
+  // a plan edited between two dispatches of one batch splits the count; a batch id on dispatch would be exact.
   // Tasks with a home (docs/task-folder.md) compare the PLAN.md hash their manifests recorded (a path-line plan is its file's text there).
   const ownPlan = resolveTaskFile(input.db, input.taskId, "plan");
   const planTasks = runTasks.filter((task) => task.id === input.taskId || (ownPlan && !ownPlan.legacy
@@ -312,7 +312,7 @@ export async function runPlanCritique(input: { bb: BbPluginApi; db: ReturnType<t
           helperRequired: helperPolicy.policy?.required === true,
           ...graphStepMetadata(input.workflow),
         },
-        // ponytail: the critic reads the checkout itself, so a file it cites may be one it opened; the hub cannot see the host's files to check
+        // the critic reads the checkout itself, so a file it cites may be one it opened; the hub cannot see the host's files to check
         // the path, so only file, line and quoted evidence are required (settleVerdict). A host-side path check if invented paths show up.
         parse: (tid, raw) => readAnswer(input.bb, tid, raw, parseCritique, "status, summary, findings and evidence"),
       }],

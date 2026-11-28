@@ -15,7 +15,7 @@ const FACT_CHARS = 160;
 
 /**
  * Whether the plugin itself spawned this thread: the id is recorded in the run/attempt/receipt rows or inside a
- * workflow effect's spawn result. ponytail: a plugin thread no table recorded still gets the block (the block only
+ * workflow effect's spawn result. A plugin thread no table recorded still gets the block (the block only
  * points at lane-memory, it carries no facts of its own); the upgrade path is a thread registry at spawn time or a
  * pluginMetadata check once contributeInstructions can see it.
  */
@@ -77,7 +77,7 @@ function silentThread(db: LanePilotDatabase, threadId: string): boolean {
 
 /**
  * What a thread of the project is handed: facts + rule for an ordinary thread, the rule alone for the pilot's own working
- * threads, null for a PM thread, a hidden analyzer, or a project with memory off. ponytail: a thread is known by the rows
+ * threads, null for a PM thread, a hidden analyzer, or a project with memory off. A thread is known by the rows
  * that record it, and a spawn records its id after the thread starts, so a just-spawned analyzer can still get the rule;
  * its own prompt forbids tools. Upgrade: pluginMetadata in contributeInstructions.
  */

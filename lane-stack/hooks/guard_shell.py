@@ -343,7 +343,7 @@ def _without_data_heredocs(command: str) -> str:
 
 # Git options that sit before the subcommand and take the next word (`git -C path`, `git --git-dir path`).
 # An attached form (`-Cpath`, `-ckey=value`, `--git-dir=path`) is one token. `--exec-path` without `=` does not take the next word.
-# ponytail: an unknown global that takes a separate word is skipped as a flag, so that word can be read as the subcommand.
+# An unknown global that takes a separate word is skipped as a flag, so that word can be read as the subcommand.
 # Add it to this set when git grows one.
 _GIT_GLOBAL_VALUE = {
     "-C", "-c", "--git-dir", "--work-tree", "--namespace", "--super-prefix", "--config-env", "--attr-source", "--list-cmds",

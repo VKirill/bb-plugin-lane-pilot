@@ -37,7 +37,7 @@ Every agent session on a machine runs all of them, a writer and a helper include
 |---|---|---|
 | Lane Pilot's session hooks | `src/rooms/session-hooks`, written per native session by `native-session-hooks.ts` | Built to the rules: one fail-open process, six streams under the 1.5 s budget, the pack for a subagent, the stall detector, the capsule before compaction; merged over the project's and the person's hooks without removing them. |
 | Lane Pilot's guards | `lane-stack/hooks/guard_shell.py` and the `guard-*.sh` scripts in `~/.claude/hooks` | Refuse on purpose (rule 1's exception). Three processes on a shell call, about 60 ms together (measured 2026-11-10). |
-| The person's hooks | `~/.claude/settings.json`, Codex `~/.codex/hooks.json`, plugins (ADHD, Ponytail) | Checked by the audit below. Loaded by the owner's own chats and a PM chat only: a helper or writer on Claude Code does not load the `user` setting source (see «One layer on every machine»). |
+| The person's hooks | `~/.claude/settings.json`, Codex `~/.codex/hooks.json`, plugins | Checked by the audit below. Loaded by the owner's own chats and a PM chat only: a helper or writer on Claude Code does not load the `user` setting source (see «One layer on every machine»). |
 | A project's hooks | `<project>/.claude/settings.json` | Checked by the audit below. A tracked file reaches a writer's worktree. |
 
 ## The audit
@@ -61,7 +61,7 @@ skills, not hooks). Measured 2026-11-10 through `scripts/hooks-audit.py --host`:
 | Lane Pilot threads in 14 days | 3,735 | 2,837 | 0 | 0 |
 | Lane Pilot's guard (`~/.agents/lane-pilot/pm/guard_shell.py`) | same file | same file | same file | absent |
 | The person's Claude Code hooks | 14 | 0 | 0 | 1 |
-| The person's Claude Code plugins | Ponytail 5.3.3, ADHD 0.4.1, typesafe, fast-jev-compaction | ADHD 0.4.1, remotion, fast-jev-compaction | ADHD 0.4.1, fast-jev-compaction | none |
+| The person's Claude Code plugins | typesafe, fast-jev-compaction and two output-style plugins | remotion, fast-jev-compaction and one output-style plugin | fast-jev-compaction and one output-style plugin | none |
 | Codex hooks (`~/.codex/hooks.json`) | 2 (the old Lane Stack guard) | 0 | 0 | 0 |
 | Project hooks | 6 in 5 projects | 0 | 0 | 0 |
 | Audit findings | 0 | 0 | 0 | 0 |
@@ -85,13 +85,12 @@ What a helper no longer inherits on OVH, with the reason (rule 6: removed with a
 
 ## The person's rules: one file on the hub
 
-How an answer is shaped for the owner and how code is built (the ADHD rules and the Ponytail ladder) are not hook output any more.
+How an answer is shaped for the owner and how code is built are not hook output any more.
 They are one file, `~/.bb/AGENTS.md` on the hub: BB core reads it as the user's instructions into every thread of every provider on
 every machine (delivery checked 2026-11-10 on Codex, Claude Code, Devin, Cursor and OpenCode on OVH and on Codex on the Mac mini). A helper does not get it: `userInstructions` is off in a
 role's default context (`helper-context.ts`), and a writer has the ladder in the hub skill `lp-writer`.
 
-The two plugins stay installed for their on-demand skills, with the automatic start text off on all four machines: the ADHD flag
-`~/.claude/.i-have-adhd-always` is removed and Ponytail's `~/.config/ponytail/config.json` says `{"defaultMode":"off"}`. Before this
+The two output-style plugins that used to carry these rules were removed from every machine on 2026-11-28. Before the hub file
 the rules reached Claude Code and Codex chats on OVH only, twice in a chat that had both the plugin and the instructions file, and
 were paid again after every compaction.
 
@@ -109,5 +108,4 @@ the notes that were in `~/.claude/projects/*/memory` on OVH were copied there (1
   Lane Pilot's guard (the same file the Macs have), the edit one exits 0. Left in place: editing the file drops the trust Codex gave it, which only the owner can give again.
 - Windows has no Lane Pilot layer: `host-detect` refuses a Windows path, the guard is a `python3` script. No Lane Pilot thread ran
   there in 14 days.
-- Codex on the Macs and Windows has no ADHD or Ponytail plugin; the rules reach those chats through the hub file above.
 - The static audit cannot see what a script file does: `guard-*.sh`, `gitnexus-hook.cjs` and plugin hooks answer for their own exit code.

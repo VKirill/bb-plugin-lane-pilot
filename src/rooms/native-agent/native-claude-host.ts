@@ -227,7 +227,7 @@ export function nativeLauncherScript(input: {
 /**
  * Claude Code keeps only the last `--settings` it is given. BB core passes its own flag layer (native plugins off,
  * CLAUDE.md excludes, denied MCP servers, skill overrides) as `--settings`, and a launcher that appended the guard file
- * as a second `--settings` threw that layer away: the owner's ADHD and ponytail hooks then ran in every helper (2026-11-07).
+ * as a second `--settings` threw that layer away: the owner's personal plugin hooks then ran in every helper (2026-11-07).
  * The exec line merges every `--settings` it sees with the guard file (guard last; hook lists concatenate) and hands
  * Claude one. No `--settings` from core: the guard file goes as before. A layer that cannot be read: guard only, said on stderr.
  *

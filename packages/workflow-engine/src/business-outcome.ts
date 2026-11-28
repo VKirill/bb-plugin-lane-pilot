@@ -54,7 +54,7 @@ export type OutcomeTally = {
 
 const ENGINE_BAD = new Set(["failed", "blocked", "interrupted", "not_verified"]);
 
-/** ponytail: every run's output is parsed in JS. Ceiling: a workflow with a very long history. Upgrade: store the kind when the run closes. */
+/** every run's output is parsed in JS. Ceiling: a workflow with a very long history. Upgrade: store the kind when the run closes. */
 export function tallyOutcomes(rows: readonly OutcomeRow[]): OutcomeTally {
   const tally: OutcomeTally = { runs: rows.length, active: 0, executed: 0, workDone: 0, refused: 0, escalated: 0, engineBad: 0 };
   for (const row of rows) {

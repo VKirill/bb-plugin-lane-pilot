@@ -51,7 +51,7 @@ it("hands claude one --settings: the core flag layer merged with the guard file,
   const launcher = join(dest, "claude");
   await writeFile(launcher, nativeLauncherScript({ destDir: dest, command, settingsPath, agentId: "dev-orchestrator", settingId: "dev-orchestrator", extraArgs: [] }));
   await chmod(launcher, 0o700);
-  const core = JSON.stringify({ enabledPlugins: { "i-have-adhd@i-have-adhd": false }, hooks: { PreToolUse: [{ matcher: "*", hooks: [{ type: "command", command: "core" }] }] } });
+  const core = JSON.stringify({ enabledPlugins: { "example-plugin@example": false }, hooks: { PreToolUse: [{ matcher: "*", hooks: [{ type: "command", command: "core" }] }] } });
   const run = spawnSync(launcher, ["-p", "hi", "--settings", core], { encoding: "utf8" });
   expect(run.status).toBe(0);
   const args = run.stdout.trim().split("\n");
@@ -59,7 +59,7 @@ it("hands claude one --settings: the core flag layer merged with the guard file,
   expect(args.slice(0, 2)).toEqual(["-p", "hi"]);
   expect(args.slice(-2)).toEqual(["--agent", "'dev-orchestrator'".replace(/'/g, "")]);
   const merged = JSON.parse(readFileSync(args[args.indexOf("--settings") + 1], "utf8"));
-  expect(merged.enabledPlugins).toEqual({ "i-have-adhd@i-have-adhd": false });
+  expect(merged.enabledPlugins).toEqual({ "example-plugin@example": false });
   expect(merged.hooks.PreToolUse.map((h: { hooks: { command: string }[] }) => h.hooks[0].command)).toEqual(["core", "guard"]);
   const plain = spawnSync(launcher, ["-p", "hi"], { encoding: "utf8" }).stdout.trim().split("\n");
   // No core layer: the guard file still goes through the merge, so auto-memory is off here too.

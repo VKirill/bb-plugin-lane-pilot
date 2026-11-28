@@ -120,7 +120,7 @@ type StoredFolderBlock = { reason: string; at: number };
 /** How long an observed refusal holds (`provider.folder_block_ttl_ms` setting; 6 h default) — then the provider is offered again. */
 export const PROVIDER_FOLDER_BLOCK_TTL_MS = 6 * 60 * 60_000;
 
-// ponytail: one block per machine, not per machine+provider; a second documents-sensitive provider would need the key widened again.
+// one block per machine, not per machine+provider; a second documents-sensitive provider would need the key widened again.
 const providerFolderBlockKey = (hostId: string | null) => `provider-folder-block:${hostId ?? "?"}`;
 const legacyProviderFolderBlockKey = (hostId: string | null, providerId: string) => `provider-folder-block:${hostId ?? "?"}:${providerId}`;
 

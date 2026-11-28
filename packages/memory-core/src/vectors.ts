@@ -175,7 +175,7 @@ export function denseRank(db: MemoryDatabase, projectId: string, query: Float32A
  * Question vectors an async caller made before a sync search: the search paths are synchronous (the writer's brief, the PM context),
  * the embedding call is not, so the caller awaits the embedding first and the search finds the vector here by the question's text.
  * A question nobody embedded is searched by words, as before.
- * ponytail: a process-wide map of the last 256 questions; pass the vector through SearchOptions if two callers ever need different ones.
+ * a process-wide map of the last 256 questions; pass the vector through SearchOptions if two callers ever need different ones.
  */
 const queryVectors = new Map<string, Float32Array>();
 export function rememberQueryVector(query: string, vector: Float32Array): void {

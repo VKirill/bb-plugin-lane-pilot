@@ -17,7 +17,7 @@ export function errandKindRole(kind: string | null | undefined): string {
 export type ErrandKindHints = { task: string; skills?: readonly string[] | undefined; plugins?: readonly string[] | undefined; mcp?: readonly string[] | undefined };
 
 type Hint = { kind: ErrandKind; names: readonly string[]; words: RegExp };
-// ponytail: word lists in Russian and English only; a brief the regexes miss runs on the generic errand row, and the PM names the kind when it matters.
+// word lists in Russian and English only; a brief the regexes miss runs on the generic errand row, and the PM names the kind when it matters.
 // Order matters within a pass: the first kind with a hit wins, research last because its words are the broadest.
 const HINTS: readonly Hint[] = [
   { kind: "computer", names: ["computer-use", "claude-video", "roblox-build", "roblox-toolkit"], words: /запи(с[ьи]|ши) экран|screen ?record|roblox studio|открой приложение|open the app\b|на рабочем столе|desktop app|xcode\b|\bfinder\b/i },

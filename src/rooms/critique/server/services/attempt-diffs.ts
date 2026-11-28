@@ -63,7 +63,7 @@ export async function candidatePatches(bb: { sdk: { environments: { list: (args:
  * text, so a test the attempt created «existed before the task» and a weakened test equalled itself. A string is HEAD's text, null says
  * the attempt created the file, and a path left out means git could not say (no git, an old BB, the change already committed, a
  * project_cwd below the repository root): the caller keeps its own reading.
- * ponytail: HEAD, not the folder as the attempt found it. Dirt left by an earlier attempt of the task is compared as this one's change.
+ * HEAD, not the folder as the attempt found it. Dirt left by an earlier attempt of the task is compared as this one's change.
  */
 export async function headSides(bb: unknown, db: ReturnType<typeof openDatabase>,
   input: { runId: string; taskId: string; hostId: string; cwd: string; paths: string[] }): Promise<Map<string, string | null>> {
