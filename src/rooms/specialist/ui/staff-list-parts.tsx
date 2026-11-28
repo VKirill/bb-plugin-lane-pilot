@@ -1,5 +1,6 @@
-import { canonicalRoleId, roleDisplayName, t, type Locale } from "@lane-pilot/i18n";
-import { Button, StatusPill, Surface, SurfaceBody, SurfaceHeader } from "@lane-pilot/ui-kit";
+import { AUTONOMY_CLASSES, type AutonomyClass } from "@lane-pilot/contracts";
+import { canonicalRoleId, roleDisplayName, t, type I18nKey, type Locale } from "@lane-pilot/i18n";
+import { Button, ProgressBar, Segments, StatusPill, Surface } from "@lane-pilot/ui-kit";
 import type { AgentListItem } from "../../contracts/ui";
 
 export type StaffFilter = "all" | "chartered" | "task";
@@ -50,7 +51,7 @@ export interface StaffCardItem {
   breakerOpen: boolean;
   budgetUsedUsd: number | null;
   budgetCapUsd: number | null;
-  autonomySummary: string;
+  autonomyRows: ReadonlyArray<{ actionClass: string; level: string }>;
   threadId: string | null;
   summaryText: string | null;
 }
@@ -107,27 +108,6 @@ function formatUsd(value: number | null, locale: string): string {
   return `$${value.toLocaleString(locale, { minimumFractionDigits: digits, maximumFractionDigits: digits })}`;
 }
 
-export function formatAutonomySummary(
-  rows?: ReadonlyArray<{ level: string }> | null,
-  rawSummary?: string | null,
-): string {
-  if (typeof rawSummary === "string" && rawSummary.trim()) return rawSummary.trim();
-  if (!rows || rows.length === 0) return t("consoleStaffAutonomyDefault");
-  let observe = 0;
-  let propose = 0;
-  let auto = 0;
-  for (const row of rows) {
-    if (row.level === "observe") observe += 1;
-    else if (row.level === "bounded_auto") auto += 1;
-    else propose += 1;
-  }
-  const parts: string[] = [];
-  if (observe > 0) parts.push(`${t("consoleStaffAutonomyObserve")} ${observe}`);
-  if (propose > 0) parts.push(`${t("consoleStaffAutonomyPropose")} ${propose}`);
-  if (auto > 0) parts.push(`${t("consoleStaffAutonomyAuto")} ${auto}`);
-  return parts.length > 0 ? parts.join(" · ") : t("consoleStaffAutonomyDefault");
-}
-
 export function domainOfAgent(agent: AgentListItem): string {
   if (agent.domain && agent.domain.trim()) return agent.domain.trim();
   if (agent.id === "growth-marketer") return "marketing";
@@ -146,22 +126,23 @@ export function resolveRoleName(agent: AgentListItem | undefined, fallbackId: st
   return canonicalRoleId(fallbackId) ? roleDisplayName(fallbackId, locale) : fallbackId;
 }
 
-function formatGoalLine(card: StaffCardItem, locale: Locale): string {
-  if (card.category === "task") {
-    return card.summaryText ?? t("consoleStaffTaskBasedSummary");
-  }
-  if (!card.metric) return t("consoleStaffNoGoal");
-  const progress =
-    card.current !== null && card.target !== null
-      ? `${card.metric}: ${card.current.toLocaleString(locale)} / ${card.target.toLocaleString(locale)}`
-      : card.target !== null
-        ? `${card.metric}: — / ${card.target.toLocaleString(locale)}`
-        : card.metric;
-  if (!card.due) return progress;
-  return `${progress} · ${t("consoleOverviewGoalsDue").replace("{due}", card.due)}`;
+export const AUTONOMY_LEVEL_LABELS: Readonly<Record<AutonomyClass, I18nKey>> = {
+  observe: "consoleStaffAutonomyObserve",
+  propose: "consoleStaffAutonomyPropose",
+  bounded_auto: "consoleStaffAutonomyAuto",
+};
+
+/** Options of the «Наблюдает / Предлагает / Сам» control, in the autonomy ladder order. */
+export function autonomyLevelItems(): Array<{ id: AutonomyClass; label: string }> {
+  return AUTONOMY_CLASSES.map((level) => ({ id: level, label: t(AUTONOMY_LEVEL_LABELS[level]) }));
 }
 
-/** Single employee summary card in the Staff list (P3). */
+function formatGoalText(card: StaffCardItem): string {
+  if (!card.metric) return t("consoleStaffNoGoal");
+  return card.due ? `${card.metric} · ${t("consoleOverviewGoalsDue").replace("{due}", card.due)}` : card.metric;
+}
+
+/** Single employee summary card in the Staff list (P3): head, goal or scheduled assignment, budget figure, autonomy ladder. */
 export function StaffCard({
   card,
   locale,
@@ -170,7 +151,7 @@ export function StaffCard({
 }: {
   card: StaffCardItem;
   locale: Locale;
-  onOpen: (projectId: string, domain: string) => void;
+  onOpen: (projectId: string, domain: string, view?: string) => void;
   onOpenChat: (threadId: string, title: string) => void;
 }) {
   const budgetText =
@@ -179,122 +160,138 @@ export function StaffCard({
           .replace("{used}", formatUsd(card.budgetUsedUsd, locale))
           .replace("{cap}", formatUsd(card.budgetCapUsd, locale))
       : formatUsd(card.budgetUsedUsd, locale);
-  const statusTone = card.breakerOpen
-    ? "bad"
-    : card.category === "task"
-      ? "muted"
-      : card.onTrack === true
-        ? "ok"
-        : card.onTrack === false
-          ? "warn"
-          : "muted";
-  const statusLabel = card.breakerOpen
-    ? t("consoleStaffBreakerOpen")
-    : card.category === "task"
-      ? t("consoleStaffFilterTask")
-      : card.onTrack === true
-        ? t("consoleOverviewGoalOnTrack")
-        : card.onTrack === false
-          ? t("consoleOverviewGoalBehind")
-          : t("consoleStaffGoalPending");
+  const goalTone = card.onTrack === true ? "ok" : card.onTrack === false ? "warn" : "muted";
+  const goalLabel =
+    card.onTrack === true
+      ? t("consoleOverviewGoalOnTrack")
+      : card.onTrack === false
+        ? t("consoleOverviewGoalBehind")
+        : t("consoleStaffGoalPending");
   const pct =
     card.current !== null && card.target !== null && card.target > 0
       ? Math.max(0, Math.min(100, Math.round((card.current / card.target) * 100)))
       : null;
+  const isGoalCard = card.category === "chartered";
 
   return (
-    <Surface testId={`staff-card-${card.key}`} className="flex flex-col">
-      <SurfaceHeader className="justify-between gap-2">
-        <div className="min-w-0">
+    <Surface testId={`staff-card-${card.key}`} className="flex flex-col gap-4 p-5">
+      <div className="flex items-center gap-3">
+        <span className="lp-avatar" aria-hidden>
+          {card.roleName.slice(0, 1).toUpperCase()}
+        </span>
+        <div className="min-w-0 flex-1">
           <h2
-            className="min-w-0 truncate text-sm font-semibold text-foreground"
+            className="truncate text-[15.5px] font-semibold text-[var(--lp-ink)]"
             data-testid={`staff-card-role-${card.key}`}
           >
             {card.roleName}
           </h2>
           <p
-            className="min-w-0 truncate text-xs text-muted-foreground"
+            className="truncate text-xs text-[var(--lp-muted)]"
             data-testid={`staff-card-project-${card.key}`}
           >
             {card.projectName}
           </p>
         </div>
-        <StatusPill tone={statusTone} className="shrink-0">
-          <span data-testid={`staff-card-status-${card.key}`}>{statusLabel}</span>
-        </StatusPill>
-      </SurfaceHeader>
+        {card.breakerOpen ? (
+          <StatusPill tone="bad" dot className="shrink-0">
+            <span data-testid={`staff-card-status-${card.key}`}>{t("consoleStaffBreakerOpen")}</span>
+          </StatusPill>
+        ) : !isGoalCard ? (
+          <StatusPill tone="muted" dot className="shrink-0">
+            <span data-testid={`staff-card-status-${card.key}`}>{t("consoleStaffFilterTask")}</span>
+          </StatusPill>
+        ) : null}
+      </div>
 
-      <SurfaceBody className="flex flex-1 flex-col justify-between gap-3">
-        <div className="space-y-3">
-          <div className="rounded-lg bg-[var(--lp-well)]/60 p-3">
-            <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-              {card.category === "chartered"
-                ? t("consoleStaffGoalLabel")
-                : t("consoleStaffFilterTask")}
-            </div>
-            <p
-              className="mt-1 text-xs font-medium text-foreground"
-              data-testid={`staff-card-goal-${card.key}`}
-            >
-              {formatGoalLine(card, locale)}
-            </p>
-            {pct !== null ? (
-              <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-[var(--lp-well)]">
-                <div
-                  className={`h-full rounded-full ${card.onTrack === false ? "bg-[var(--lp-warning)]" : "bg-[var(--lp-success)]"}`}
-                  style={{ width: `${pct}%` }}
-                />
-              </div>
-            ) : null}
+      {isGoalCard ? (
+        <div className="lp-inset space-y-2" data-testid={`staff-card-goal-${card.key}`}>
+          <div className="flex items-center justify-between gap-2">
+            <span className="lp-caption">{t("consoleStaffGoalLabel")}</span>
+            <StatusPill tone={goalTone}>
+              {card.breakerOpen ? goalLabel : <span data-testid={`staff-card-status-${card.key}`}>{goalLabel}</span>}
+            </StatusPill>
           </div>
-
-          <dl className="grid grid-cols-2 gap-3 text-xs">
-            <div>
-              <dt className="text-muted-foreground">{t("consoleStaffBudgetLabel")}</dt>
-              <dd
-                className="mt-0.5 font-medium tabular-nums text-foreground"
-                data-testid={`staff-card-budget-${card.key}`}
-              >
-                {budgetText}
-              </dd>
+          <p className="text-sm font-semibold leading-[1.4] text-[var(--lp-ink)]">{formatGoalText(card)}</p>
+          {card.current !== null ? (
+            <div className="flex items-end justify-between gap-2">
+              <span className="text-[22px] font-semibold leading-none tabular-nums text-[var(--lp-ink)]">
+                {card.current.toLocaleString(locale)}
+              </span>
+              {card.target !== null ? (
+                <span className="text-xs font-medium text-[var(--lp-muted)]">
+                  {t("consoleStaffGoalOf").replace("{target}", card.target.toLocaleString(locale))}
+                </span>
+              ) : null}
             </div>
-            <div>
-              <dt className="text-muted-foreground">{t("consoleStaffAutonomyLabel")}</dt>
-              <dd
-                className="mt-0.5 font-medium text-foreground"
-                data-testid={`staff-card-autonomy-${card.key}`}
-              >
-                {card.autonomySummary}
-              </dd>
-            </div>
-          </dl>
+          ) : null}
+          {pct !== null ? <ProgressBar value={pct} tone={goalTone} label={goalLabel} /> : null}
         </div>
+      ) : (
+        <div className="lp-inset space-y-1.5" data-testid={`staff-card-goal-${card.key}`}>
+          <span className="lp-caption">{t("consoleStaffRoutineCaption")}</span>
+          <p className="text-sm font-semibold leading-[1.4] text-[var(--lp-ink)]">
+            {card.summaryText ?? t("consoleStaffTaskBasedSummary")}
+          </p>
+        </div>
+      )}
 
-        <div className="flex flex-wrap items-center gap-2 border-t border-[var(--lp-hairline)] pt-3">
-          {card.projectId ? (
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              data-testid={`staff-open-${card.key}`}
-              onClick={() => onOpen(card.projectId!, card.domain)}
-            >
-              {t("consoleStaffOpen")}
-            </Button>
-          ) : null}
-          {card.threadId ? (
-            <Button
-              type="button"
-              size="sm"
-              variant="ghost"
-              data-testid={`staff-chat-${card.key}`}
-              onClick={() => onOpenChat(card.threadId!, card.roleName)}
-            >
-              {t("consoleStaffOpenChat")}
-            </Button>
-          ) : null}
+      {card.budgetUsedUsd !== null ? (
+        <div className="space-y-0.5">
+          <div className="text-[15px] font-semibold tabular-nums text-[var(--lp-ink)]" data-testid={`staff-card-budget-${card.key}`}>
+            {budgetText}
+          </div>
+          <div className="text-[11.5px] text-[var(--lp-muted)]">{t("consoleStaffBudgetLabel")}</div>
         </div>
-      </SurfaceBody>
+      ) : null}
+
+      {card.autonomyRows.length > 0 && card.projectId ? (
+        <div
+          className="space-y-2 border-t border-[var(--lp-line)] pt-3"
+          data-testid={`staff-card-autonomy-${card.key}`}
+        >
+          <span className="lp-caption">{t("consoleStaffAutonomyLabel")}</span>
+          {card.autonomyRows.map((row) => (
+            <div key={row.actionClass} className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
+              <span className="min-w-0 truncate text-[12.5px] text-[var(--lp-body)]">{row.actionClass}</span>
+              <Segments
+                testId={`card-${card.key}-${row.actionClass}`}
+                label={row.actionClass}
+                compact={false}
+                size="sm"
+                value={row.level}
+                items={autonomyLevelItems()}
+                onChange={() => onOpen(card.projectId!, card.domain, "autonomy")}
+              />
+            </div>
+          ))}
+        </div>
+      ) : null}
+
+      <div className="mt-auto flex flex-wrap items-center gap-2">
+        {card.projectId ? (
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            data-testid={`staff-open-${card.key}`}
+            onClick={() => onOpen(card.projectId!, card.domain)}
+          >
+            {t("consoleStaffOpen")}
+          </Button>
+        ) : null}
+        {card.threadId ? (
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            data-testid={`staff-chat-${card.key}`}
+            onClick={() => onOpenChat(card.threadId!, card.roleName)}
+          >
+            {t("consoleStaffOpenChat")}
+          </Button>
+        ) : null}
+      </div>
     </Surface>
   );
 }

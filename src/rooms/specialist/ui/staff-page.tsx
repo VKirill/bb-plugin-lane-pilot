@@ -162,7 +162,7 @@ export function StaffPage({
   const loadoutQuery = useLpRpcQuery<AgentLoadoutOutput>(
     null,
     { kind: "staff-loadout", projectId, sectionId, roleId },
-    { enabled: activeTab === "loadout", fetcher: fetchLoadout },
+    { enabled: activeTab === "loadout" || activeTab === "autonomy", fetcher: fetchLoadout },
   );
 
   useLpRealtime(projectId, ["helpers", "schedule"], () => {
@@ -309,24 +309,26 @@ export function StaffPage({
         onOpenChat={handleOpenChat}
       />
 
-      <Segments
-        testId="staff-tabs"
-        label={t("consoleStaffTabsAria")}
-        compact={stackControls}
-        value={activeTab}
-        onChange={(next) =>
-          go({
-            ...(sectionId ? { sectionId } : {}),
-            section: "staff",
-            staffRef,
-            view: next,
-          })
-        }
-        items={STAFF_PAGE_TABS.map((tabId) => ({
-          id: tabId,
-          label: t(STAFF_TAB_LABELS[tabId]),
-        }))}
-      />
+      <div className="lp-tabs-scroll">
+        <Segments
+          testId="staff-tabs"
+          label={t("consoleStaffTabsAria")}
+          compact={stackControls}
+          value={activeTab}
+          onChange={(next) =>
+            go({
+              ...(sectionId ? { sectionId } : {}),
+              section: "staff",
+              staffRef,
+              view: next,
+            })
+          }
+          items={STAFF_PAGE_TABS.map((tabId) => ({
+            id: tabId,
+            label: t(STAFF_TAB_LABELS[tabId]),
+          }))}
+        />
+      </div>
 
       {detailQuery.error ? (
         <Alert variant="destructive" data-testid="staff-page-error">
@@ -415,13 +417,22 @@ export function StaffPage({
           ) : null}
 
           {activeTab === "autonomy" ? (
-            <StaffAutonomyTab
-              autonomy={detail.autonomy}
-              repoTrust={repoTrustQuery.data}
-              repoTrustLoading={repoTrustQuery.isLoading}
-              repoTrustError={repoTrustQuery.error}
-              onSetAutonomy={handleSetAutonomy}
-            />
+            <div className="grid items-start gap-[18px] lg:grid-cols-[minmax(0,1fr)_400px]">
+              <StaffAutonomyTab
+                autonomy={detail.autonomy}
+                repoTrust={repoTrustQuery.data}
+                repoTrustLoading={repoTrustQuery.isLoading}
+                repoTrustError={repoTrustQuery.error}
+                onSetAutonomy={handleSetAutonomy}
+              />
+              <StaffLoadoutTab
+                loadout={loadoutQuery.data}
+                loading={loadoutQuery.isLoading}
+                error={loadoutQuery.error}
+                roleId={roleId}
+                domain={domain}
+              />
+            </div>
           ) : null}
 
           {activeTab === "loadout" ? (

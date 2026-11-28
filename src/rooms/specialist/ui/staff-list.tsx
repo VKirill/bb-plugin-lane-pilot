@@ -34,7 +34,6 @@ import {
   DEFAULT_DOMAIN_ROLE,
   domainOfAgent,
   errorText,
-  formatAutonomySummary,
   resolveRoleName,
   StaffCard,
   UNLISTED_DEVELOPER_IDS,
@@ -71,6 +70,9 @@ interface StaffQueryResult {
   projectsCount: number;
 }
 
+/** Cards shown before «Показать ещё»; the prototype frame shows three cards and the hire card. */
+const INITIAL_CARDS = 6;
+
 const SANDBOX_IDS = new Set<string>(DRILL_SANDBOX_PROJECT_IDS);
 
 /** Staff list screen (P3): chartered specialists per project and task-based roles with filter and chat links. */
@@ -88,6 +90,7 @@ export function StaffList({
   const navigate = useBbNavigate();
   const openPanel = useOpenThreadPanel();
   const [filter, setFilter] = useState<StaffFilter>("all");
+  const [showAll, setShowAll] = useState(false);
 
   const scopedProjectId =
     projectId && projectId !== GLOBAL_SETTINGS_PROJECT_ID ? projectId : null;
@@ -213,9 +216,8 @@ export function StaffList({
           breakerOpen: openBreakers.has(dom),
           budgetUsedUsd,
           budgetCapUsd,
-          autonomySummary: formatAutonomySummary(
-            charter.autonomy ?? ov.autonomy?.[dom],
-            charter.autonomySummary,
+          autonomyRows: (charter.autonomy ?? ov.autonomy?.[dom] ?? []).flatMap((row) =>
+            row.actionClass ? [{ actionClass: row.actionClass, level: row.level }] : [],
           ),
           threadId: threadId || null,
           summaryText: null,
@@ -244,7 +246,7 @@ export function StaffList({
         breakerOpen: false,
         budgetUsedUsd: null,
         budgetCapUsd: null,
-        autonomySummary: t("consoleStaffAutonomyDefault"),
+        autonomyRows: [],
         threadId: null,
         summaryText: agent.summary ?? null,
       });
@@ -268,6 +270,9 @@ export function StaffList({
     const all = data?.cards ?? [];
     return filter === "all" ? all : all.filter((card) => card.category === filter);
   }, [data?.cards, filter]);
+
+  const shownCards = showAll ? visibleCards : visibleCards.slice(0, INITIAL_CARDS);
+  const hiddenCount = visibleCards.length - shownCards.length;
 
   const subtitle = scopedProjectId
     ? `${t("consoleStaffSubtitle")} · ${projectNames.get(scopedProjectId) ?? scopedProjectId}`
@@ -343,7 +348,7 @@ export function StaffList({
             </SurfaceBody>
           </Surface>
         ) : (
-          <div className="grid gap-4 md:grid-cols-2" data-testid="staff-grid">
+          <div className="grid gap-[18px] md:grid-cols-2" data-testid="staff-grid">
             {data.projectErrors.map(({ project, message }) => (
               <Surface key={`err:${project.id}`} testId={`staff-project-error-${project.id}`}>
                 <SurfaceHeader className="justify-between">
@@ -358,13 +363,18 @@ export function StaffList({
               </Surface>
             ))}
 
-            {visibleCards.map((card) => (
+            {shownCards.map((card) => (
               <StaffCard
                 key={card.key}
                 card={card}
                 locale={locale}
-                onOpen={(pid, dom) =>
-                  go({ ...scopedBase, section: "staff", staffRef: { projectId: pid, domain: dom } })
+                onOpen={(pid, dom, view) =>
+                  go({
+                    ...scopedBase,
+                    section: "staff",
+                    staffRef: { projectId: pid, domain: dom },
+                    ...(view ? { view } : {}),
+                  })
                 }
                 onOpenChat={(threadId, title) => {
                   if (
@@ -379,8 +389,27 @@ export function StaffList({
                 }}
               />
             ))}
+
+            <button
+              type="button"
+              className="lp-hire-card md:col-span-1"
+              data-testid="staff-hire-card"
+              onClick={() => go({ ...scopedBase, section: "staff", view: "hire" })}
+            >
+              <Icon name="UserRoundPlus" className="size-6 text-[var(--lp-muted)]" aria-hidden />
+              <span className="text-sm font-semibold text-[var(--lp-ink)]">{t("consoleStaffHireCardTitle")}</span>
+              <span className="text-xs text-[var(--lp-muted)]">{t("consoleStaffHireCardNote")}</span>
+            </button>
           </div>
         )
+      ) : null}
+
+      {hiddenCount > 0 ? (
+        <div className="flex justify-center">
+          <Button type="button" variant="outline" size="sm" data-testid="staff-show-more" onClick={() => setShowAll(true)}>
+            {t("consoleStaffShowMore").replace("{n}", String(hiddenCount))}
+          </Button>
+        </div>
       ) : null}
     </div>
   );

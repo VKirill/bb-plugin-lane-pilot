@@ -1,5 +1,5 @@
 import { t, type Locale } from "@lane-pilot/i18n";
-import { Button, PageHeader, StatusPill, Surface, SurfaceBody } from "@lane-pilot/ui-kit";
+import { Button, StatusPill, Surface, SurfaceBody } from "@lane-pilot/ui-kit";
 import type { SpecialistDetailOutput } from "../../contracts/ui";
 import type { ExtractedCharterSummary, StaffScheduleItem } from "./staff-page-helpers";
 
@@ -107,63 +107,69 @@ export function StaffPageHeader({
 
   return (
     <>
-      <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+      <div className="flex items-center gap-1.5 text-[12.5px] font-medium text-[var(--lp-muted)]">
         <button
           type="button"
-          className="hover:text-foreground hover:underline"
+          className="hover:text-[var(--lp-ink)] hover:underline"
           data-testid="staff-back-to-list"
           onClick={onBack}
         >
           {t("consoleNavStaff")}
         </button>
         <span>/</span>
-        <span className="text-foreground">{roleName}</span>
+        <span>{roleName}</span>
       </div>
 
-      <PageHeader
-        title={`${roleName} · ${projectName}`}
-        subtitle={
-          <span data-testid="staff-header-goal">
-            {goalParts.length > 0 ? goalParts.join(" · ") : domain}
-          </span>
-        }
-        actions={
-          <div className="flex flex-wrap items-center gap-2">
-            <StatusPill tone={statusTone}>
-              <span data-testid="staff-header-status">{statusLabel}</span>
-            </StatusPill>
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              disabled={!hasTickSchedule || runBusy}
-              data-testid="staff-run-now"
-              onClick={onRunNow}
-            >
-              {runBusy ? t("consoleStaffRunningNow") : t("consoleStaffRunNow")}
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              disabled={activeSchedulesCount === 0}
-              data-testid="staff-pause-btn"
-              onClick={onPause}
-            >
-              {t("consoleStaffPauseBtn")}
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              disabled={!hasThread}
-              data-testid="staff-open-chat"
-              onClick={onOpenChat}
-            >
-              {t("consoleStaffOpenChat")}
-            </Button>
-          </div>
-        }
-      />
+      <header className="flex flex-wrap items-center gap-x-3.5 gap-y-3">
+        <span className="lp-avatar" data-size="lg" aria-hidden>
+          {roleName.slice(0, 1).toUpperCase()}
+        </span>
+        <div className="min-w-0 flex-1 basis-60 space-y-0.5">
+          <h1 className="text-[22px] font-semibold leading-tight text-[var(--lp-ink)]">
+            {roleName} · {projectName}
+          </h1>
+          <p className="text-[12.5px] text-[var(--lp-muted)]">
+            <span data-testid="staff-header-goal">
+              {goalParts.length > 0 ? goalParts.join(" · ") : domain}
+            </span>
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <StatusPill tone={statusTone} dot>
+            <span data-testid="staff-header-status">{statusLabel}</span>
+          </StatusPill>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            disabled={!hasTickSchedule || runBusy}
+            data-testid="staff-run-now"
+            onClick={onRunNow}
+          >
+            {runBusy ? t("consoleStaffRunningNow") : t("consoleStaffRunNow")}
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            disabled={!hasThread}
+            data-testid="staff-open-chat"
+            onClick={onOpenChat}
+          >
+            {t("consoleStaffOpenChat")}
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            disabled={activeSchedulesCount === 0}
+            data-testid="staff-pause-btn"
+            onClick={onPause}
+          >
+            {t("consoleStaffPauseBtn")}
+          </Button>
+        </div>
+      </header>
     </>
   );
 }
