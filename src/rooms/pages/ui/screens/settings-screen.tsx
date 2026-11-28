@@ -194,7 +194,7 @@ export function SettingsScreen({ route, go, page }: SettingsScreenProps) {
         }
       />
 
-      <div className={stackControls ? "space-y-4" : "grid gap-6 md:grid-cols-[13.5rem_minmax(0,1fr)] md:items-start"}>
+      <div className={stackControls ? "space-y-4" : "grid gap-[18px] md:grid-cols-[220px_minmax(0,1fr)] md:items-start"}>
         {stackControls ? (
           <Segments
             testId="settings-groups"
@@ -205,7 +205,7 @@ export function SettingsScreen({ route, go, page }: SettingsScreenProps) {
             items={GROUP_IDS.map((id) => ({ id, label: t(GROUP_LABELS[id]) }))}
           />
         ) : (
-          <nav className="flex flex-col gap-1" aria-label={t("consoleSysSettings")} data-testid="settings-groups-nav">
+          <nav className="flex flex-col gap-1 lp-sys-nav" aria-label={t("consoleSysSettings")} data-testid="settings-groups-nav">
             {GROUP_IDS.map((id) => {
               const active = activeGroup === id;
               return (
@@ -215,11 +215,7 @@ export function SettingsScreen({ route, go, page }: SettingsScreenProps) {
                   data-testid={`settings-nav-${id}`}
                   aria-current={active ? "true" : undefined}
                   onClick={() => selectGroup(id)}
-                  className={
-                    active
-                      ? "rounded-lg border border-[var(--lp-hairline)] bg-[var(--lp-card)] px-3 py-2 text-left text-sm font-medium text-foreground shadow-xs"
-                      : "rounded-lg px-3 py-2 text-left text-sm text-muted-foreground hover:bg-state-hover hover:text-foreground"
-                  }
+                  className="lp-sys-nav-item"
                 >
                   {t(GROUP_LABELS[id])}
                 </button>

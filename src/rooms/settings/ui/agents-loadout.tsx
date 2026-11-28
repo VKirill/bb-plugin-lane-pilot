@@ -3,7 +3,7 @@ import { useRpc } from "@get-bb/plugin-sdk/app";
 import { detectLocale, t, type Locale } from "@lane-pilot/i18n";
 import { roleModelKey, roleRow, type ModelTier } from "@lane-pilot/models";
 import { GLOBAL_SETTINGS_PROJECT_ID } from "@lane-pilot/settings-catalog";
-import { Alert, AlertDescription, AlertTitle, PageHeader, Segments, Surface, SurfaceBody, SurfaceHeader, usePanelLayout } from "@lane-pilot/ui-kit";
+import { Alert, AlertDescription, AlertTitle, PageHeader, Segments, usePanelLayout } from "@lane-pilot/ui-kit";
 import type { AgentLoadoutOutput, LoadoutRole, rpcContract } from "../../contracts";
 import type { RoleSpec } from "../../native-agent/ui";
 import { ModelOverridesPanel, useModelCatalog, type ModelChoice, type ScreenPayload } from "../../ui-shell/ui";
@@ -353,9 +353,9 @@ export function AgentsLoadout({
       />
 
       {missingItemsTotal > 0 ? (
-        <Alert data-testid="loadout-missing-banner">
-          <AlertTitle>{t("consoleLoadoutMissingBanner").replace("{n}", String(missingItemsTotal))}</AlertTitle>
-        </Alert>
+        <div className="lp-sys-warn" role="status" data-testid="loadout-missing-banner">
+          {t("consoleLoadoutMissingBanner").replace("{n}", String(missingItemsTotal))}
+        </div>
       ) : null}
 
       {loadError ? (
@@ -371,21 +371,18 @@ export function AgentsLoadout({
         </Alert>
       ) : null}
 
-      <Surface testId="role-models">
-        <SurfaceHeader className="flex-wrap justify-between gap-2">
-          <h2 className="text-sm font-medium">{t("teamTitle")}</h2>
-          {rolesList.length > 0 ? (
-            <Segments
-              testId="loadout-filter"
-              label={t("consoleLoadoutColRole")}
-              compact={stackControls}
-              value={filter}
-              onChange={(next) => setFilter(next as LoadoutFilter)}
-              items={filterItems}
-            />
-          ) : null}
-        </SurfaceHeader>
-        <SurfaceBody className="space-y-3">
+      <section className="space-y-4" data-testid="role-models">
+        {rolesList.length > 0 ? (
+          <Segments
+            testId="loadout-filter"
+            label={t("consoleLoadoutColRole")}
+            compact={stackControls}
+            value={filter}
+            onChange={(next) => setFilter(next as LoadoutFilter)}
+            items={filterItems}
+          />
+        ) : null}
+        <div className="space-y-3">
           {!loadout && !loadoutFallback && rolesList.length === 0 ? (
             <p className="text-sm text-muted-foreground" data-testid="loadout-loading">
               {t("consoleLoadoutLoading")}
@@ -396,9 +393,9 @@ export function AgentsLoadout({
             </p>
           ) : (
             <div className={roleModeOff ? "opacity-60" : undefined} data-testid="access-roles" data-inactive={roleModeOff}>
-              <div className="overflow-hidden rounded-xl border border-[var(--lp-hairline)] bg-[var(--lp-card)]" data-testid="team-table">
+              <div className="lp-sys-table-card" data-testid="team-table">
                 {wide ? (
-                  <div className={`${MATRIX_GRID} bg-[var(--lp-well)] px-3 py-1.5 text-xs font-medium text-muted-foreground`} aria-hidden>
+                  <div className={`${MATRIX_GRID} lp-sys-thead max-md:hidden`} aria-hidden>
                     <span>{t("consoleLoadoutColRole")}</span>
                     <span>{t("consoleLoadoutColModel")}</span>
                     <span>{t("consoleLoadoutColSkills")}</span>
@@ -467,8 +464,8 @@ export function AgentsLoadout({
             </div>
           )}
           <p className="text-xs text-muted-foreground">{t("consoleLoadoutMandatoryFootnote")}</p>
-        </SurfaceBody>
-      </Surface>
+        </div>
+      </section>
 
       {renderPmRow ? renderPmRow() : null}
 

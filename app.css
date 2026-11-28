@@ -736,3 +736,107 @@
     box-shadow: 1px 1px 0 0 #0f172a;
   }
 }
+
+/* visual:system start */
+/*
+ * System section screens (P9 hub, P13 loadout, P14 costs, P15 health, P16 settings, Automation) after the Pencil frames
+ * 5, 14, 15, 16, 17. Kept outside the components layer on purpose: the shared Table and a few Tailwind utilities on the
+ * same elements would otherwise win over these cell paddings.
+ */
+
+/* P9: tiles (3 across, then the settings strip). */
+.lp-sys-tiles { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
+@media (min-width: 700px) { .lp-sys-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (min-width: 1180px) { .lp-sys-tiles { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+
+.lp-sys-tile, .lp-sys-strip {
+  display: flex; min-width: 0; flex-direction: column; gap: 10px; padding: 20px; text-align: left;
+  border: 1px solid var(--lp-line); border-radius: 12px; background-color: var(--lp-surface);
+}
+.lp-sys-tile:hover, .lp-sys-strip:hover { border-color: color-mix(in oklab, var(--lp-line) 60%, var(--lp-muted)); }
+.lp-sys-tile:focus-visible, .lp-sys-strip:focus-visible { outline: 2px solid var(--lp-accent); outline-offset: 2px; }
+.lp-sys-tile-head { display: flex; min-width: 0; align-items: center; gap: 10px; }
+.lp-sys-tile-icon {
+  display: flex; width: 34px; height: 34px; flex: none; align-items: center; justify-content: center;
+  border-radius: 8px; background-color: var(--lp-bg); color: var(--lp-ink);
+}
+.lp-sys-tile-text { display: flex; min-width: 0; flex: 1; flex-direction: column; gap: 2px; }
+.lp-sys-tile-title { color: var(--lp-ink); font-size: 15px; font-weight: 600; line-height: 1.3; }
+.lp-sys-tile-count { color: var(--lp-muted); font-size: 12px; line-height: 1.35; }
+.lp-sys-tile-count.lp-text-warning { color: var(--lp-warn); }
+.lp-sys-tile-desc { color: var(--lp-body); font-size: 12.5px; line-height: 1.45; }
+.lp-sys-tile-foot { display: flex; width: 100%; justify-content: flex-end; border-top: 1px solid var(--lp-line); padding-top: 8px; margin-top: auto; }
+.lp-sys-tile-open { color: var(--lp-accent); font-size: 12px; font-weight: 600; }
+.lp-sys-strip { width: 100%; flex-direction: row; flex-wrap: wrap; align-items: center; gap: 8px 28px; padding: 14px 20px; }
+.lp-sys-strip .lp-sys-tile-head { flex: none; }
+.lp-sys-strip .lp-sys-tile-desc { min-width: 0; flex: 1 1 14rem; }
+.lp-sys-strip .lp-sys-tile-foot { width: auto; margin: 0 0 0 auto; border-top: 0; padding-top: 0; }
+
+/* Banner above the matrix (frame "Warn"). */
+.lp-sys-warn {
+  padding: 10px 14px; border-radius: 10px; background-color: var(--lp-warn-soft); color: var(--lp-warn);
+  font-size: 12.5px; font-weight: 550; line-height: 1.45;
+}
+
+/* Tables: white card, page-coloured head row, hairline row rules (frames "Table"). */
+.lp-sys-table-card { overflow: hidden; border: 1px solid var(--lp-line); border-radius: 12px; background-color: var(--lp-surface); }
+.lp-sys-thead {
+  padding: 10px 16px; background-color: var(--lp-bg); color: var(--lp-muted); font-size: 11.5px; font-weight: 600;
+}
+.lp-sys-table { width: 100%; border-collapse: collapse; font-size: 12.5px; color: var(--lp-body); }
+.lp-sys-table th {
+  height: auto; padding: 10px 16px; background-color: var(--lp-bg); color: var(--lp-muted);
+  font-size: 11.5px; font-weight: 600; text-align: left; white-space: nowrap;
+}
+.lp-sys-table td { padding: 11px 16px; vertical-align: middle; }
+.lp-sys-table tbody tr { border: 0; border-top: 1px solid var(--lp-line); }
+.lp-sys-table tbody tr:first-child { border-top: 0; }
+.lp-sys-table tbody tr:hover { background-color: transparent; }
+.lp-sys-table td:first-child { color: var(--lp-ink); font-weight: 550; }
+@media (max-width: 520px) { .lp-sys-table th, .lp-sys-table td { padding-left: 10px; padding-right: 10px; } .lp-sys-table th { white-space: normal; } }
+
+/* Cards of the health screen (frames "C Машины" ...): padding 16, title 14/650. */
+.lp-sys-card { min-width: 0; padding: 16px; border: 1px solid var(--lp-line); border-radius: 12px; background-color: var(--lp-surface); }
+.lp-sys-card > :not(.lp-sys-card-head) { margin-top: 10px; }
+.lp-sys-card-head { display: flex; min-width: 0; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+.lp-sys-card-head > h2 { color: var(--lp-ink); font-size: 14px; font-weight: 650; }
+/* A table inside a card runs edge to edge, so its head row is a band like the standalone table frames. */
+.lp-sys-card > div:has(> .relative > .lp-sys-table) { margin: 12px -16px -16px; overflow: hidden; border-radius: 0 0 12px 12px; }
+
+/* P14 chart (frame "Chart"). */
+.lp-sys-chart {
+  display: flex; min-width: 0; flex-direction: column; gap: 10px; padding: 16px;
+  border: 1px solid var(--lp-line); border-radius: 12px; background-color: var(--lp-surface);
+}
+.lp-sys-chart-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px; }
+.lp-sys-chart-head > h2 { color: var(--lp-ink); font-size: 13px; font-weight: 650; }
+.lp-sys-bars { display: flex; min-height: 150px; align-items: flex-end; gap: 8px; }
+.lp-sys-bar-slot { display: flex; min-width: 0; flex: 1; flex-direction: column; justify-content: flex-end; }
+.lp-sys-bar { width: 100%; border-radius: 3px; background-color: var(--lp-accent); }
+.lp-sys-bar[data-tone="warn"] { background-color: var(--lp-warn); }
+.lp-sys-bar[data-tone="none"] { background-color: var(--lp-line); }
+@media (max-width: 520px) { .lp-sys-bars { gap: 3px; } }
+
+/* P16: groups nav and the field card (frames "Groups" and "Fields"). */
+.lp-sys-nav-item {
+  padding: 9px 12px; border: 1px solid transparent; border-radius: 8px; color: var(--lp-body);
+  font-size: 13px; font-weight: 500; text-align: left;
+}
+.lp-sys-nav-item:hover { color: var(--lp-ink); }
+.lp-sys-nav-item[aria-current="true"] { border-color: var(--lp-line); background-color: var(--lp-surface); color: var(--lp-ink); font-weight: 600; }
+.lp-sys-fields { min-width: 0; overflow: hidden; border: 1px solid var(--lp-line); border-radius: 12px; background-color: var(--lp-surface); }
+.lp-sys-fields-head { display: flex; align-items: center; gap: 8px; padding: 14px 16px; }
+.lp-sys-fields-head > h2 { color: var(--lp-ink); font-size: 14px; font-weight: 650; }
+.lp-sys-rows > * { padding: 13px 16px; border-top: 1px solid var(--lp-line); }
+.lp-sys-more { padding: 10px 16px 14px; border-top: 1px solid var(--lp-line); }
+.lp-sys-field { display: grid; min-width: 0; min-height: 44px; gap: 6px; }
+.lp-sys-field-wide { align-items: center; gap: 12px; grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.4fr) auto; }
+@media (max-width: 767px) { .lp-sys-field-wide { grid-template-columns: minmax(0, 1fr); } }
+.lp-sys-field-meta { display: flex; min-width: 0; flex-wrap: wrap; align-items: center; gap: 8px; }
+.lp-sys-field-wide .lp-sys-field-meta { justify-content: flex-end; }
+.lp-sys-link { color: var(--lp-accent); font-size: 12px; font-weight: 550; }
+.lp-sys-link:disabled { opacity: 0.5; }
+
+/* Automation: a reading width, not edge to edge. */
+.lp-sys-narrow { max-width: 880px; }
+/* visual:system end */

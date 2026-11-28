@@ -1,15 +1,10 @@
 import { useMemo, type ComponentType } from "react";
 import { detectLocale, t, type Locale } from "@lane-pilot/i18n";
-import {
-  KpiTile,
-  PageHeader,
-  Segments,
-  Surface,
-  SurfaceBody,
-  SurfaceHeader,
-} from "@lane-pilot/ui-kit";
+import { KpiTile, PageHeader, Segments, Surface, SurfaceBody } from "@lane-pilot/ui-kit";
 import { useLpRpcQuery } from "../../ui-shell/ui";
 import { TokenUsage } from "./token-usage";
+
+const BAR_AREA_PX = 150;
 
 type MoneyDay = { day: string; usd: number };
 type MoneyPayload = {
@@ -83,6 +78,16 @@ export function CostsScreen({
         ? t("consoleCostsUnlimited")
         : t("consoleCostsNoCap");
 
+  const spendNote =
+    [
+      money?.cap !== null && money?.cap !== undefined ? t("consoleCostsOfCapNote").replace("{cap}", formatUsd(money.cap, locale)) : null,
+      money?.estimatedUsd && money.estimatedUsd > 0
+        ? t("consoleCostsEstimatedNote").replace("{amount}", formatUsd(money.estimatedUsd, locale))
+        : null,
+    ]
+      .filter(Boolean)
+      .join(" · ") || undefined;
+
   const leftTone =
     money && money.left !== null
       ? money.left <= 0
@@ -137,11 +142,7 @@ export function CostsScreen({
                 testId="costs-kpi-month-spend"
                 label={t("consoleCostsMonthSpend")}
                 value={money ? formatUsd(money.monthUsd, locale) : "—"}
-                note={
-                  money?.estimatedUsd && money.estimatedUsd > 0
-                    ? t("consoleCostsEstimatedNote").replace("{amount}", formatUsd(money.estimatedUsd, locale))
-                    : undefined
-                }
+                note={spendNote}
                 tone={spendTone}
               />
               <KpiTile
@@ -159,47 +160,40 @@ export function CostsScreen({
             </div>
 
             {dailyRows.length > 0 ? (
-              <Surface testId="costs-money-chart">
-                <SurfaceHeader className="justify-between">
-                  <h2 className="text-sm font-medium">{t("consoleCostsDailyChart")}</h2>
+              <section className="lp-sys-chart" data-testid="costs-money-chart">
+                <div className="lp-sys-chart-head">
+                  <h2>{t("consoleCostsDailyChart")}</h2>
                   {!hasDailySpend ? (
                     <span className="text-xs text-muted-foreground">{t("consoleCostsDailyEmpty")}</span>
                   ) : null}
-                </SurfaceHeader>
-                <SurfaceBody className="space-y-2">
-                  <div className="flex items-end gap-1" style={{ minHeight: "4.5rem" }}>
-                    {dailyRows.map((day) => {
-                      const heightPx = day.usd > 0
-                        ? Math.max(6, Math.round((day.usd / dailyMax) * 72))
-                        : 2;
-                      const overPace = dailyCapThreshold !== null && day.usd > dailyCapThreshold;
-                      return (
+                </div>
+                <div className="lp-sys-bars">
+                  {dailyRows.map((day) => {
+                    const heightPx = day.usd > 0
+                      ? Math.max(6, Math.round((day.usd / dailyMax) * BAR_AREA_PX))
+                      : 2;
+                    const overPace = dailyCapThreshold !== null && day.usd > dailyCapThreshold;
+                    return (
+                      <div
+                        key={day.day}
+                        className="lp-sys-bar-slot"
+                        title={`${day.day}: ${formatUsd(day.usd, locale)}`}
+                        data-testid={`costs-money-bar-${day.day}`}
+                      >
                         <div
-                          key={day.day}
-                          className="flex min-w-0 flex-1 flex-col justify-end"
-                          title={`${day.day}: ${formatUsd(day.usd, locale)}`}
-                          data-testid={`costs-money-bar-${day.day}`}
-                        >
-                          <div
-                            className={`w-full rounded-sm ${
-                              day.usd <= 0
-                                ? "bg-[var(--lp-well)]"
-                                : overPace
-                                  ? "bg-[var(--lp-warning)]"
-                                  : "bg-primary"
-                            }`}
-                            style={{ height: `${heightPx}px` }}
-                          />
-                        </div>
-                      );
-                    })}
-                  </div>
-                  <div className="flex justify-between text-[11px] tabular-nums text-muted-foreground">
-                    <span>{dailyRows[0]?.day}</span>
-                    <span>{dailyRows[dailyRows.length - 1]?.day}</span>
-                  </div>
-                </SurfaceBody>
-              </Surface>
+                          className="lp-sys-bar"
+                          data-tone={day.usd <= 0 ? "none" : overPace ? "warn" : "accent"}
+                          style={{ height: `${heightPx}px` }}
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
+                <div className="flex justify-between text-[11px] tabular-nums text-muted-foreground">
+                  <span>{dailyRows[0]?.day}</span>
+                  <span>{dailyRows[dailyRows.length - 1]?.day}</span>
+                </div>
+              </section>
             ) : null}
           </section>
 

@@ -4,9 +4,6 @@ import { detectLocale, t, type Locale } from "@lane-pilot/i18n";
 import {
   PageHeader,
   StatusPill,
-  Surface,
-  SurfaceBody,
-  SurfaceHeader,
   Table,
   TableBody,
   TableCell,
@@ -121,15 +118,15 @@ export function HealthScreen({ page, locale: localeProp }: { page: LpPage; local
     <div className="space-y-5" data-testid="service-panel">
       <PageHeader title={t("consoleSysHealth")} subtitle={t("consoleHealthSubtitle")} />
 
-      <div className="grid gap-4 lg:grid-cols-2">
-        <Surface testId="health-canary">
-          <SurfaceHeader className="justify-between">
-            <h2 className="text-sm font-medium">{t("consoleHealthCanaryTitle")}</h2>
+      <div className="grid items-start gap-4 lg:grid-cols-2">
+        <section className="lp-sys-card" data-testid="health-canary">
+          <div className="lp-sys-card-head">
+            <h2>{t("consoleHealthCanaryTitle")}</h2>
             {canaryState === "ready" && canary ? (
               <StatusPill tone={canaryTone}>{canaryLabel}</StatusPill>
             ) : null}
-          </SurfaceHeader>
-          <SurfaceBody className="space-y-1.5 text-xs">
+          </div>
+          <div className="space-y-1.5 text-xs">
             {canaryState === "loading" ? (
               <p className="text-muted-foreground">{t("consoleHealthLoading")}</p>
             ) : canaryState === "error" || !canary ? (
@@ -172,14 +169,14 @@ export function HealthScreen({ page, locale: localeProp }: { page: LpPage; local
                 ) : null}
               </>
             )}
-          </SurfaceBody>
-        </Surface>
+          </div>
+        </section>
 
-        <Surface testId="health-outages">
-          <SurfaceHeader>
-            <h2 className="text-sm font-medium">{t("consoleHealthOutagesTitle")}</h2>
-          </SurfaceHeader>
-          <SurfaceBody>
+        <section className="lp-sys-card" data-testid="health-outages">
+          <div className="lp-sys-card-head">
+            <h2>{t("consoleHealthOutagesTitle")}</h2>
+          </div>
+          <div>
             {outagesState === "loading" ? (
               <p className="text-xs text-muted-foreground">{t("consoleHealthLoading")}</p>
             ) : outagesState === "error" || !outages ? (
@@ -189,7 +186,7 @@ export function HealthScreen({ page, locale: localeProp }: { page: LpPage; local
                 {t("consoleHealthOutagesNone")}
               </p>
             ) : (
-              <Table data-testid="health-outages-table">
+              <Table className="lp-sys-table" data-testid="health-outages-table">
                 <TableHeader>
                   <TableRow>
                     <TableHead>{t("consoleHealthOutageWhen")}</TableHead>
@@ -200,27 +197,27 @@ export function HealthScreen({ page, locale: localeProp }: { page: LpPage; local
                 <TableBody>
                   {outages.map((row) => (
                     <TableRow key={row.id} data-testid={`health-outage-${row.id}`}>
-                      <TableCell className="whitespace-nowrap text-xs tabular-nums">
+                      <TableCell className="tabular-nums">
                         {formatDateTime(row.fromAt, locale)}
                       </TableCell>
-                      <TableCell className="whitespace-nowrap text-xs tabular-nums">
+                      <TableCell className="tabular-nums">
                         {t("consoleHealthOutageMinutes").replace("{n}", String(row.minutes))}
                       </TableCell>
-                      <TableCell className="text-xs text-muted-foreground">{row.cause ?? "—"}</TableCell>
+                      <TableCell className="whitespace-normal break-words">{row.cause ?? "—"}</TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
               </Table>
             )}
-          </SurfaceBody>
-        </Surface>
+          </div>
+        </section>
       </div>
 
-      <Surface testId="health-drills">
-        <SurfaceHeader>
-          <h2 className="text-sm font-medium">{t("consoleHealthDrillsTitle")}</h2>
-        </SurfaceHeader>
-        <SurfaceBody>
+      <section className="lp-sys-card" data-testid="health-drills">
+        <div className="lp-sys-card-head">
+          <h2>{t("consoleHealthDrillsTitle")}</h2>
+        </div>
+        <div>
           {drillsState === "loading" ? (
             <p className="text-xs text-muted-foreground">{t("consoleHealthLoading")}</p>
           ) : drillsState === "error" || !drills ? (
@@ -230,7 +227,7 @@ export function HealthScreen({ page, locale: localeProp }: { page: LpPage; local
               {t("consoleHealthDrillsEmpty")}
             </p>
           ) : (
-            <Table data-testid="health-drills-table">
+            <Table className="lp-sys-table" data-testid="health-drills-table">
               <TableHeader>
                 <TableRow>
                   <TableHead>{t("consoleHealthDrillWhen")}</TableHead>
@@ -246,22 +243,22 @@ export function HealthScreen({ page, locale: localeProp }: { page: LpPage; local
                   const passed = drill.result === "pass";
                   return (
                     <TableRow key={drill.file} data-testid={`health-drill-${drill.file}`}>
-                      <TableCell className="whitespace-nowrap text-xs tabular-nums">
+                      <TableCell className="whitespace-nowrap tabular-nums">
                         {drill.stamp ?? drill.date ?? drill.file}
                       </TableCell>
-                      <TableCell className="text-xs text-muted-foreground">{drill.mode ?? "—"}</TableCell>
+                      <TableCell>{drill.mode ?? "—"}</TableCell>
                       <TableCell>
                         <StatusPill tone={passed ? "ok" : "bad"}>
                           {passed ? t("consoleHealthDrillPass") : t("consoleHealthDrillFail")}
                         </StatusPill>
                       </TableCell>
-                      <TableCell className="text-xs tabular-nums text-muted-foreground">
+                      <TableCell className="tabular-nums">
                         {`${drill.passedCount}/${drill.totalCount}`}
                       </TableCell>
-                      <TableCell className="text-right text-xs tabular-nums text-muted-foreground">
+                      <TableCell className="text-right tabular-nums">
                         {drill.durationSec !== null ? `${drill.durationSec}s` : "—"}
                       </TableCell>
-                      <TableCell className="max-w-[18rem] truncate text-xs text-muted-foreground">
+                      <TableCell className="max-w-[18rem] truncate">
                         {drill.problems[0] ?? "—"}
                       </TableCell>
                     </TableRow>
@@ -270,8 +267,8 @@ export function HealthScreen({ page, locale: localeProp }: { page: LpPage; local
               </TableBody>
             </Table>
           )}
-        </SurfaceBody>
-      </Surface>
+        </div>
+      </section>
 
       <ServiceSegment page={page} />
     </div>

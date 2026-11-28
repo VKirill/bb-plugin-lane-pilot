@@ -354,7 +354,7 @@ describe("AgentsLoadout (P13)", () => {
     // Matrix renders roles from fixture and marks missing hub items.
     const writerRow = await slot.findByTestId("access-role-writer");
     expect(writerRow.textContent).toContain("нет на хабе");
-    expect(slot.getByTestId("loadout-skills-writer").textContent).toContain("2");
+    expect(slot.getByTestId("loadout-skills-writer").textContent).toContain("lp-writer");
     expect(slot.getByTestId("loadout-skills-writer").textContent).toContain("нет на хабе");
     expect(slot.getByTestId("loadout-plugins-browser_qa").textContent).toContain("нет на хабе");
 

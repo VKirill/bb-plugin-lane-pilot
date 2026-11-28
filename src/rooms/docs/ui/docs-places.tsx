@@ -37,7 +37,7 @@ export function DocsPlaces({ projectId }: { projectId: string }) {
       <Disclosure compact summary={`${t("docsPlaces")} (${places?.length ?? "…"})`}>
         <div className="space-y-2 pt-1">
           {(places ?? []).map((place) => (
-            <div key={`${place.hostId}:${place.path}`} className="space-y-0.5 text-xs" data-testid={`docs-place-${place.name}`}>
+            <div key={`${place.hostId}:${place.path}:${place.name}`} className="space-y-0.5 text-xs" data-testid={`docs-place-${place.name}`}>
               <div className="flex flex-wrap items-center gap-2">
                 <span className="font-medium">{place.name}</span>
                 <Badge variant={place.mode === "off" || (place.mode === "auto" && place.verdict && !place.verdict.need) ? "outline" : "secondary"}>
